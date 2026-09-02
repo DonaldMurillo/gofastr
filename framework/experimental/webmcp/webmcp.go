@@ -29,7 +29,9 @@
 //	    Method:      "POST",
 //	    Path:        "/api/notes",
 //	})
-//	// ...
+//	// Handle declares the tool and binds its route in one call; see
+//	// handle.go. Register every tool before Mount; the set freezes
+//	// there.
 //	scriptURL, err := h.Mount(app.Router(), uiHost)
 //
 // On a browser without WebMCP the bridge script is a no-op: it feature-
@@ -62,8 +64,8 @@ const (
 	ManifestRoute = "/__gofastr/webmcp/tools.json"
 )
 
-// defaultInputSchema is used when a Tool declares no InputSchema: a tool
-// that takes an empty object.
+// defaultInputSchema is used when a Tool declares no InputSchema: a
+// tool that takes an empty object.
 const defaultInputSchema = `{"type":"object","properties":{}}`
 
 //go:embed bridge.js
@@ -78,6 +80,10 @@ var toolNameRe = regexp.MustCompile(`^[A-Za-z0-9_.-]{1,128}$`)
 
 // toolsPlaceholder is the token in bridge.js the frozen manifest replaces.
 const toolsPlaceholder = "__GOFASTR_WEBMCP_TOOLS__"
+
+// debugPlaceholder is the token in bridge.js Mount replaces with the
+// literal true/false enabling the bridge's bounded debug state.
+const debugPlaceholder = "__GOFASTR_WEBMCP_DEBUG__"
 
 // Tool declares one WebMCP tool: what the agent sees (Name, Title,
 // Description, InputSchema) and where execute() proxies to (Method,
@@ -95,6 +101,13 @@ type Tool struct {
 	// app registers through its own JS.
 	Name string `json:"name"`
 
+	// Group tags the tool as belonging to a group declared with
+	// Host.Group. Set by Group.Register/Group.Handle; Mount fails if it
+	// references a group that was never declared. Pure metadata for the
+	// manifest: it never renames the tool, changes its endpoint, or
+	// affects authorization.
+	Group string `json:"group,omitempty"`
+
 	// Title is an optional human-readable display name.
 	Title string `json:"title,omitempty"`
 
@@ -106,6 +119,22 @@ type Tool struct {
 	// InputSchema is the JSON Schema for the tool's input, as a JSON
 	// object. Defaults to {"type":"object","properties":{}}.
 	InputSchema json.RawMessage `json:"inputSchema"`
+
+	// Examples are usage examples validated against InputSchema at
+	// registration (a minimal structural check: the input must be an
+	// object, required keys present, declared property types respected)
+	// and preserved in the manifest. The browser proposal has no
+	// examples field in registerTool, so in-browser agents see them
+	// only through the manifest; server-side agents read them from
+	// /tools.json.
+	Examples []Example `json:"examples,omitempty"`
+
+	// OutputSchema documents the tool's response shape as a JSON
+	// object. Descriptive only: the endpoint's response is returned to
+	// the agent verbatim with NO runtime validation against this
+	// schema — do not treat it as a guarantee without checking the
+	// body yourself.
+	OutputSchema json.RawMessage `json:"outputSchema,omitempty"`
 
 	// Method is the HTTP method execute() uses: GET, POST, PUT, PATCH,
 	// or DELETE. Defaults to POST. GET folds the input object into the
@@ -127,7 +156,9 @@ type Tool struct {
 	// UntrustedContentHint tells the agent the tool's result can carry
 	// content the app does not control (user-generated text), forwarded
 	// as annotations.untrustedContentHint. Advisory only: it never
-	// replaces output sanitization.
+	// replaces output sanitization. Keep it on tools whose outputs
+	// include user-controlled content, even when they also declare an
+	// OutputSchema.
 	UntrustedContentHint bool `json:"untrustedContentHint,omitempty"`
 }
 
@@ -140,39 +171,83 @@ type ScriptRegistrar interface {
 // Host collects tool declarations and, once mounted, serves the bridge
 // script and manifest. Zero value is not usable; call New.
 type Host struct {
-	mu      sync.Mutex
-	tools   []Tool
-	names   map[string]bool
-	mounted bool
+	mu           sync.Mutex
+	tools        []Tool
+	names        map[string]bool
+	mounted      bool
+	observer     func(ToolEvent)
+	instructions string
+	groups       []*groupMeta
 }
 
-// New returns an empty Host.
-func New() *Host {
-	return &Host{names: make(map[string]bool)}
+// New returns an empty Host, configured by opts (WithObserver,
+// WithInstructions).
+func New(opts ...HostOption) *Host {
+	h := &Host{names: make(map[string]bool)}
+	for _, opt := range opts {
+		if opt != nil {
+			opt(h)
+		}
+	}
+	return h
 }
 
 // Register adds a tool declaration. It returns an error (naming the
 // exact field) for a missing name or description, a duplicate name, an
-// unsupported method, a path that is not a same-origin absolute path, or
-// an InputSchema that is not a JSON object. Registration after Mount is
-// refused: the script and manifest are frozen at Mount so every page
-// render ships the same tool set.
+// unsupported method, a path that is not a same-origin absolute path, an
+// InputSchema or OutputSchema that is not a JSON object, or examples
+// that contradict the InputSchema. Registration after Mount is refused:
+// the script and manifest are frozen at Mount so every page render
+// ships the same tool set. Every refusal is reported to the observer
+// (if installed) as a register-phase ToolEvent.
 func (h *Host) Register(t Tool) error {
+	declared := t
+	t, class, err := validateTool(t)
+	if err == nil {
+		h.mu.Lock()
+		switch {
+		case h.mounted:
+			class, err = "after_mount", fmt.Errorf("webmcp: Register(%q) refused: Mount already froze the tool set; register every tool before Mount", t.Name)
+		case h.names[t.Name]:
+			class, err = "duplicate_name", fmt.Errorf("webmcp: Register: duplicate tool name %q (the browser refuses duplicate registrations)", t.Name)
+		case h.instructions != "" && t.Name == InstructionsToolName:
+			class, err = "reserved_name", fmt.Errorf("webmcp: Register(%q) refused: WithInstructions reserves that name for the generated orientation tool; use a different name or drop WithInstructions", t.Name)
+		case t.Group != "" && !h.groupDeclaredLocked(t.Group):
+			class, err = "undeclared_group", fmt.Errorf("webmcp: Register(%q): references group %q, which was never declared with Host.Group; declare the group first", t.Name, t.Group)
+		default:
+			h.names[t.Name] = true
+			h.tools = append(h.tools, t)
+		}
+		h.mu.Unlock()
+	}
+	if err != nil {
+		h.emitRegister(declared, class)
+	}
+	return err
+}
+
+// validateTool normalizes and validates one declaration. It applies the
+// defaults Register and Handle document (method POST, empty-object
+// input schema), clones the caller-owned schema and example bytes so a
+// later mutation of the source slices cannot corrupt the frozen
+// manifest, and returns the error class alongside the error so the
+// observer can name the failure without string matching.
+func validateTool(t Tool) (Tool, string, error) {
 	if !toolNameRe.MatchString(t.Name) {
-		return fmt.Errorf("webmcp: Register: tool name %q must match the WebMCP grammar [A-Za-z0-9_.-]{1,128}; the browser rejects anything else and the tool would silently never appear in getTools()", t.Name)
+		return t, "tool_name", fmt.Errorf("webmcp: Register: tool name %q must match the WebMCP grammar [A-Za-z0-9_.-]{1,128}; the browser rejects anything else and the tool would silently never appear in getTools()", t.Name)
 	}
 	if strings.TrimSpace(t.Description) == "" {
-		return fmt.Errorf("webmcp: Register(%q): Description is required; an agent cannot pick an undescribed tool", t.Name)
+		return t, "description", fmt.Errorf("webmcp: Register(%q): Description is required; an agent cannot pick an undescribed tool", t.Name)
 	}
 	switch t.Method {
 	case "":
 		t.Method = http.MethodPost
 	case http.MethodGet, http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete:
 	default:
-		return fmt.Errorf("webmcp: Register(%q): unsupported method %q (GET, POST, PUT, PATCH, DELETE)", t.Name, t.Method)
+		return t, "method", fmt.Errorf("webmcp: Register(%q): unsupported method %q (GET, POST, PUT, PATCH, DELETE)", t.Name, t.Method)
 	}
 	if !validToolPath(t.Path) {
-		return fmt.Errorf("webmcp: Register(%q): Path %q must be a same-origin absolute path (\"/api/x\", query allowed; no scheme, host, fragment, backslash, control chars, or \".\"/\"..\" segments)", t.Name, t.Path)
+		return t, "path", fmt.Errorf("webmcp: Register(%q): Path %q must be a same-origin absolute path (\"/api/x\", query allowed; no scheme, host, fragment, backslash, control chars, or \".\"/\"..\" segments)", t.Name, t.Path)
 	}
 	if len(t.InputSchema) == 0 {
 		t.InputSchema = json.RawMessage(defaultInputSchema)
@@ -183,19 +258,12 @@ func (h *Host) Register(t Tool) error {
 		t.InputSchema = append(json.RawMessage(nil), t.InputSchema...)
 	}
 	if !json.Valid(t.InputSchema) || !strings.HasPrefix(strings.TrimSpace(string(t.InputSchema)), "{") {
-		return fmt.Errorf("webmcp: Register(%q): InputSchema must be a JSON object", t.Name)
+		return t, "input_schema", fmt.Errorf("webmcp: Register(%q): InputSchema must be a JSON object", t.Name)
 	}
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	if h.mounted {
-		return fmt.Errorf("webmcp: Register(%q) refused: Mount already froze the tool set; register every tool before Mount", t.Name)
+	if class, err := validateMetadata(&t); err != nil {
+		return t, class, err
 	}
-	if h.names[t.Name] {
-		return fmt.Errorf("webmcp: Register: duplicate tool name %q (the browser refuses duplicate registrations)", t.Name)
-	}
-	h.names[t.Name] = true
-	h.tools = append(h.tools, t)
-	return nil
+	return t, "", nil
 }
 
 // Mount freezes the tool set, registers ScriptRoute and ManifestRoute on
@@ -204,13 +272,36 @@ func (h *Host) Register(t Tool) error {
 // script URL so hosts that render their own <script> tags can inject it
 // themselves (pass scripts == nil in that case).
 //
+// Options tailor the framework-owned asset routes for credential-gated
+// surfaces: WithAssetAuthorization wraps them with middleware,
+// WithPageScope gates them on a per-request predicate, WithPrivateAssets
+// switches them to the private no-store cache policy, and
+// WithBridgeDebug bakes the bridge's bounded debug state into the
+// script. Any of the first three implies the private policy, since the
+// assets become requester-dependent and a shared cache must never replay
+// an authenticated asset to anonymous traffic. The zero-option mount
+// serves exactly the public policies it always did.
+//
+// When WithInstructions was set at New, Mount additionally serves the
+// instructions at InstructionsRoute — under the same asset policies —
+// and appends the deterministic read-only orientation tool that returns
+// them, so in-browser agents can read the cross-tool contract.
+//
 // Mounting with zero tools is an error: the wiring would silently do
-// nothing. Mounting twice, or onto a router that already holds either
-// route, is an error. A failed Mount (route conflict, bad embedded
-// asset, script-rail refusal) registers nothing and leaves the Host
-// re-mountable after the cause is fixed. On a grouped router the
-// served routes and the returned script URL carry the group prefix.
-func (h *Host) Mount(rt *router.Router, scripts ScriptRegistrar) (string, error) {
+// nothing. Mounting twice, onto a router that already holds any of the
+// asset routes, or with a group referencing an undeclared group or a
+// dangling PreferredFirst name, is an error. A failed Mount (route
+// conflict, bad embedded asset, script-rail refusal) registers nothing
+// and leaves the Host re-mountable after the cause is fixed. On a
+// grouped router the served routes and the returned script URL carry
+// the group prefix.
+func (h *Host) Mount(rt *router.Router, scripts ScriptRegistrar, opts ...MountOption) (string, error) {
+	var cfg mountConfig
+	for _, opt := range opts {
+		if opt != nil {
+			opt(&cfg)
+		}
+	}
 	h.mu.Lock()
 	if h.mounted {
 		h.mu.Unlock()
@@ -225,7 +316,21 @@ func (h *Host) Mount(rt *router.Router, scripts ScriptRegistrar) (string, error)
 	// before the first route registration, so a failed Mount leaves no
 	// half-mounted state behind.
 	h.mounted = true
+	if err := h.validateGroupsLocked(h.tools); err != nil {
+		h.mounted = false
+		h.mu.Unlock()
+		return "", err
+	}
 	tools := h.tools
+	instructions := h.instructions
+	groups := h.groupInfos()
+	if instructions != "" {
+		// The generated orientation tool joins the LOCAL copy only: a
+		// failed Mount must be able to retry without appending it
+		// twice. Full-slice expression clones so the frozen set never
+		// aliases h.tools' backing array.
+		tools = append(tools[:len(tools):len(tools)], orientationTool(rt.Prefix()))
+	}
 	h.mu.Unlock()
 	fail := func(err error) (string, error) {
 		h.mu.Lock()
@@ -235,8 +340,10 @@ func (h *Host) Mount(rt *router.Router, scripts ScriptRegistrar) (string, error)
 	}
 
 	manifest, err := json.Marshal(struct {
-		Tools []Tool `json:"tools"`
-	}{Tools: tools})
+		Instructions string      `json:"instructions,omitempty"`
+		Groups       []groupInfo `json:"groups,omitempty"`
+		Tools        []Tool      `json:"tools"`
+	}{Instructions: instructions, Groups: groups, Tools: tools})
 	if err != nil {
 		return fail(fmt.Errorf("webmcp: Mount: marshal manifest: %w", err))
 	}
@@ -254,10 +361,16 @@ func (h *Host) Mount(rt *router.Router, scripts ScriptRegistrar) (string, error)
 	if err != nil {
 		return fail(fmt.Errorf("webmcp: Mount: quote tools manifest: %w", err))
 	}
-	if !strings.Contains(bridgeJS, toolsPlaceholder) {
-		return fail(fmt.Errorf("webmcp: Mount: bridge.js is missing the %s placeholder; the embedded asset is corrupt", toolsPlaceholder))
+	for _, ph := range []string{toolsPlaceholder, debugPlaceholder} {
+		if !strings.Contains(bridgeJS, ph) {
+			return fail(fmt.Errorf("webmcp: Mount: bridge.js is missing the %s placeholder; the embedded asset is corrupt", ph))
+		}
 	}
-	script := []byte(strings.Replace(bridgeJS, toolsPlaceholder, string(quotedTools), 1))
+	debugLit := "false"
+	if cfg.bridgeDebug {
+		debugLit = "true"
+	}
+	script := []byte(strings.Replace(strings.Replace(bridgeJS, toolsPlaceholder, string(quotedTools), 1), debugPlaceholder, debugLit, 1))
 
 	// A grouped router prepends its prefix to every registration, so
 	// the served paths (and therefore the rail URL and the conflict
@@ -266,6 +379,7 @@ func (h *Host) Mount(rt *router.Router, scripts ScriptRegistrar) (string, error)
 	// the unprefixed URL on the script rail, a guaranteed 404.
 	scriptPath := rt.Prefix() + ScriptRoute
 	manifestPath := rt.Prefix() + ManifestRoute
+	instructionsPath := rt.Prefix() + InstructionsRoute
 
 	// Pre-flight the route patterns: the router panics on conflicts, so
 	// a second Host on the same router (or an app squatting on the
@@ -273,8 +387,12 @@ func (h *Host) Mount(rt *router.Router, scripts ScriptRegistrar) (string, error)
 	// touched, keeping "a failed Mount leaves nothing behind" true.
 	// Routes() reports full (prefix-joined) patterns.
 	for _, route := range rt.Routes() {
-		if route.Method == http.MethodGet &&
-			(route.Pattern == scriptPath || route.Pattern == manifestPath) {
+		if route.Method != http.MethodGet {
+			continue
+		}
+		conflict := route.Pattern == scriptPath || route.Pattern == manifestPath ||
+			(instructions != "" && route.Pattern == instructionsPath)
+		if conflict {
 			return fail(fmt.Errorf("webmcp: Mount: %s is already registered on this router (a second webmcp Host on the same router? mount one Host per router)", route.Pattern))
 		}
 	}
@@ -286,8 +404,28 @@ func (h *Host) Mount(rt *router.Router, scripts ScriptRegistrar) (string, error)
 		}
 	}
 
-	rt.Get(ScriptRoute, uihost.ScriptHandler(script))
-	rt.Get(ManifestRoute, manifestHandler(manifest))
+	private := cfg.requesterDependent()
+	scriptH := http.Handler(uihost.ScriptHandler(script))
+	manifestH := http.Handler(manifestHandler(manifest))
+	if private {
+		scriptH = privateTextHandler("application/javascript; charset=utf-8", string(script), privateETag(script))
+		manifestH = privateTextHandler("application/json; charset=utf-8", string(manifest), privateETag(manifest))
+	}
+	rt.Get(ScriptRoute, cfg.wrap(scriptH, "application/javascript; charset=utf-8", ""))
+	rt.Get(ManifestRoute, cfg.wrap(manifestH, "application/json; charset=utf-8", `{"tools":[]}`))
+	if instructions != "" {
+		body, err := json.Marshal(struct {
+			Instructions string `json:"instructions"`
+		}{Instructions: instructions})
+		if err != nil {
+			return fail(fmt.Errorf("webmcp: Mount: marshal instructions: %w", err))
+		}
+		instrH := http.Handler(manifestHandler(body))
+		if private {
+			instrH = privateTextHandler("application/json; charset=utf-8", string(body), privateETag(body))
+		}
+		rt.Get(InstructionsRoute, cfg.wrap(instrH, "application/json; charset=utf-8", `{"instructions":""}`))
+	}
 	return scriptURL, nil
 }
 
@@ -343,10 +481,7 @@ func validToolPath(p string) bool {
 			return false
 		}
 	}
-	pathOnly := p
-	if i := strings.IndexByte(p, '?'); i >= 0 {
-		pathOnly = p[:i]
-	}
+	pathOnly := pathPortion(p)
 	decoded, err := url.PathUnescape(pathOnly)
 	if err != nil {
 		return false
