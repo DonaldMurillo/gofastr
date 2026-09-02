@@ -9,5 +9,5 @@ import (
 )
 
 func TestIntWrap(t *testing.T) {
-	analysistest.Run(t, analysistest.TestData(), intwrap.Analyzer, "a", "b", "c")
+	analysistest.Run(t, analysistest.TestData(), intwrap.Analyzer, "a", "b", "c", "d")
 }

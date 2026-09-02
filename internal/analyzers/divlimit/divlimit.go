@@ -11,15 +11,25 @@
 // OffsetForPage already guarded its own division.
 //
 // Silent postures, deliberately:
-//   - any comparison of the divisor against 0 or 1 earlier in the
-//     function (the fix posture, including `limit <= 0 { return }`);
+//   - a comparison of the divisor against 0 or 1 that DOMINATES the
+//     division: it sits in the same block before it, in an enclosing
+//     block before the statement holding it, or is the condition of an
+//     enclosing if whose then-branch holds it (the fix posture,
+//     including `limit <= 0 { return }`). A guard inside a nested
+//     conditional body of an earlier statement (a flag-gated check)
+//     executes only when the flag is set and dominates nothing;
 //   - divisors not named in the limit/perPage/pageSize/size/count/n
-//     family: a divisor called `rows` or `stride` is not recognizably
-//     caller pagination, and this rule refuses to guess;
+//     family (parameters, or struct fields of that family — a limit
+//     decoded into a request struct is the standard handler spelling):
+//     a divisor called `rows` or `stride` is not recognizably caller
+//     pagination, and this rule refuses to guess;
 //   - constants and len(...) results: they cannot become 0 from
 //     outside;
 //   - float division: no panic, no rule;
 //   - _test.go files.
+//
+// Every function body is examined, including divisions inside
+// package-level function literals (the handler-table spelling).
 package divlimit
 
 import (
@@ -31,6 +41,8 @@ import (
 	"strings"
 
 	"golang.org/x/tools/go/analysis"
+
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/dominance"
 )
 
 var Analyzer = &analysis.Analyzer{
@@ -50,23 +62,26 @@ func run(pass *analysis.Pass) (any, error) {
 		if strings.HasSuffix(pass.Fset.Position(f.Pos()).Filename, "_test.go") {
 			continue
 		}
-		for _, d := range f.Decls {
-			fn, ok := d.(*ast.FuncDecl)
-			if !ok || fn.Body == nil {
-				continue
+		ast.Inspect(f, func(n ast.Node) bool {
+			switch fn := n.(type) {
+			case *ast.FuncDecl:
+				if fn.Body != nil {
+					checkFunc(pass, fn.Type, fn.Body)
+				}
+			case *ast.FuncLit:
+				checkFunc(pass, fn.Type, fn.Body)
 			}
-			checkFunc(pass, fn)
-		}
+			return true
+		})
 	}
 	return nil, nil
 }
 
-func checkFunc(pass *analysis.Pass, fn *ast.FuncDecl) {
-	body := fn.Body
+func checkFunc(pass *analysis.Pass, fnType *ast.FuncType, body *ast.BlockStmt) {
 	bound := bindings(pass, body)
 	params := map[types.Object]bool{}
-	if fn.Type.Params != nil {
-		for _, f := range fn.Type.Params.List {
+	if fnType.Params != nil {
+		for _, f := range fnType.Params.List {
 			for _, name := range f.Names {
 				if obj := pass.TypesInfo.ObjectOf(name); obj != nil {
 					params[obj] = true
@@ -74,6 +89,7 @@ func checkFunc(pass *analysis.Pass, fn *ast.FuncDecl) {
 			}
 		}
 	}
+	parents := dominance.Parents(body)
 
 	ast.Inspect(body, func(n ast.Node) bool {
 		bin, ok := n.(*ast.BinaryExpr)
@@ -87,57 +103,88 @@ func checkFunc(pass *analysis.Pass, fn *ast.FuncDecl) {
 		if divisor == nil || !isInteger(pass, bin.X) || !isInteger(pass, bin.Y) {
 			return true
 		}
-		if guardedBefore(pass, body, divisor, bin) {
+		if guardedBefore(pass, body, parents, divisor, bin) {
 			return true
 		}
 		pass.Reportf(bin.Pos(),
 			"integer division by %s, a caller-supplied value, with no zero-or-one guard: it panics when 0; compare it against 0 (or 1) before dividing",
-			divisor.Name())
+			types.ExprString(divisor))
 		return true
 	})
 }
 
-// guardedBefore reports whether the divisor was compared against 0 or 1
-// anywhere in the function before the division.
-func guardedBefore(pass *analysis.Pass, body *ast.BlockStmt, divisor types.Object, div *ast.BinaryExpr) bool {
-	guarded := false
-	ast.Inspect(body, func(n ast.Node) bool {
-		if guarded {
-			return false
+// guardedBefore reports whether the divisor was compared against 0 or
+// 1 in a statement or condition that dominates the division: the same
+// block before it, an enclosing block before it, or the condition of
+// an enclosing if whose then-branch holds it. A comparison inside the
+// body of a nested conditional of an earlier statement runs only when
+// that branch is taken and is not a guard.
+func guardedBefore(pass *analysis.Pass, body *ast.BlockStmt, parents map[ast.Node]ast.Node, divisor ast.Expr, div *ast.BinaryExpr) bool {
+	if spineComparesDivisor(pass, dominance.Spine(divisor), divisor) {
+		return true
+	}
+	for _, stmts := range dominance.Prefix(div, parents, body) {
+		for _, st := range stmts {
+			if spineComparesDivisor(pass, dominance.Spine(st), divisor) {
+				return true
+			}
 		}
+	}
+	for _, cond := range dominance.EnclosingIfConds(div, parents, body) {
+		if spineComparesDivisor(pass, dominance.Spine(cond), divisor) {
+			return true
+		}
+	}
+	return false
+}
+
+// spineComparesDivisor reports whether any comparison in nodes matches
+// the divisor expression against a constant 0 or 1.
+func spineComparesDivisor(pass *analysis.Pass, nodes []ast.Node, divisor ast.Expr) bool {
+	for _, n := range nodes {
 		bin, ok := n.(*ast.BinaryExpr)
 		if !ok {
-			return true
+			continue
 		}
 		switch bin.Op {
 		case token.EQL, token.NEQ, token.LSS, token.LEQ, token.GTR, token.GEQ:
 		default:
-			return true
-		}
-		if bin.Pos() >= div.Pos() {
-			return true
+			continue
 		}
 		var other ast.Expr
 		switch {
-		case isIdentObj(pass, bin.X, divisor):
+		case isDivisorExpr(pass, bin.X, divisor):
 			other = bin.Y
-		case isIdentObj(pass, bin.Y, divisor):
+		case isDivisorExpr(pass, bin.Y, divisor):
 			other = bin.X
 		default:
-			return true
+			continue
 		}
 		if isZeroOrOne(pass, other) {
-			guarded = true
+			return true
 		}
-		return true
-	})
-	return guarded
+	}
+	return false
+}
+
+// isDivisorExpr reports whether e spells the divisor expression: the
+// same identifier object, or the same printed selector (`q.Limit`).
+func isDivisorExpr(pass *analysis.Pass, e ast.Expr, divisor ast.Expr) bool {
+	switch d := divisor.(type) {
+	case *ast.Ident:
+		return isIdentObj(pass, e, pass.TypesInfo.ObjectOf(d))
+	case *ast.SelectorExpr:
+		ds, ok := e.(*ast.SelectorExpr)
+		return ok && types.ExprString(ds) == types.ExprString(d)
+	}
+	return false
 }
 
 // divisorCandidate resolves the divisor to a limit-named function
-// parameter, or a local of that name bound to a query/param accessor.
-// Constants and len(...) locals are not caller-supplied.
-func divisorCandidate(pass *analysis.Pass, e ast.Expr, bound map[types.Object]ast.Expr, params map[types.Object]bool) types.Object {
+// parameter, a limit-named struct field, or a local of that name bound
+// to a query/param accessor. Constants and len(...) locals are not
+// caller-supplied.
+func divisorCandidate(pass *analysis.Pass, e ast.Expr, bound map[types.Object]ast.Expr, params map[types.Object]bool) ast.Expr {
 	switch x := e.(type) {
 	case *ast.BasicLit:
 		return nil // constants cannot become 0 from outside
@@ -151,7 +198,7 @@ func divisorCandidate(pass *analysis.Pass, e ast.Expr, bound map[types.Object]as
 		}
 		if params[obj] {
 			if limitName.MatchString(x.Name) {
-				return obj
+				return x
 			}
 			return nil
 		}
@@ -167,7 +214,15 @@ func divisorCandidate(pass *analysis.Pass, e ast.Expr, bound map[types.Object]as
 		}
 		switch qualifiedFunc(pass, call.Fun) {
 		case "strconv.Atoi", "strconv.ParseInt", "strconv.ParseUint":
-			return obj
+			return x
+		}
+		return nil
+	case *ast.SelectorExpr:
+		// A limit-named field of anything the caller filled in: the
+		// decoded-request spelling (`q.Total / q.Limit`).
+		obj, ok := pass.TypesInfo.ObjectOf(x.Sel).(*types.Var)
+		if ok && obj.IsField() && limitName.MatchString(x.Sel.Name) {
+			return x
 		}
 		return nil
 	case *ast.CallExpr:

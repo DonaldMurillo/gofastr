@@ -14,20 +14,25 @@
 // Silent postures, deliberately:
 //   - any CanSet() call in the function on the same value (directly or
 //     through the same local) — the fix posture;
-//   - named-field access (FieldByName/FieldByNameFunc): narrowed out
-//     on 2026-09-02, when the whole-repo run measured all eight such
-//     sites (core-ui/style tokenmap.go) walking the package's OWN token
-//     structs with named exported fields — a deliberate field pick,
-//     not the indexed every-field walk that bit Inject;
-//   - receivers that do not come from Field()/FieldByIndex(): a Set on
-//     an addressable Value obtained another way (Elem, Index, a
-//     function result) has its own rules and its own failures;
+//   - named-field access with the name WRITTEN HERE: FieldByName with
+//     a string-literal name, or FieldByNameFunc with an inline
+//     predicate func. Narrowed 2026-09-02, when the whole-repo run
+//     measured all eight such sites (core-ui/style tokenmap.go)
+//     walking the package's OWN token structs — a deliberate field
+//     pick. A caller-supplied name (or predicate) is not written here:
+//     it is the same one-unexported-field panic the index spelling
+//     carries, and fires;
+//   - receivers that do not come from Field()/FieldByIndex()/
+//     FieldByName()/FieldByNameFunc(): a Set on an addressable Value
+//     obtained another way (Elem, Index, a function result) has its
+//     own rules and its own failures;
 //   - non-reflect.Value receivers (a type with its own Set method);
 //   - _test.go files.
 package reflectset
 
 import (
 	"go/ast"
+	"go/token"
 	"go/types"
 	"strings"
 
@@ -100,9 +105,10 @@ func checkFunc(pass *analysis.Pass, body *ast.BlockStmt) {
 	})
 }
 
-// fieldOrigin returns the printed form of the receiver's indexed field
-// origin — Field(i) / FieldByIndex — or "" otherwise. One level of
-// local binding is resolved.
+// fieldOrigin returns the printed form of the receiver's field origin —
+// Field(i) / FieldByIndex, or FieldByName / FieldByNameFunc with a
+// non-literal name argument — or "" otherwise. One level of local
+// binding is resolved.
 func fieldOrigin(pass *analysis.Pass, recv ast.Expr, bound map[types.Object]ast.Expr) string {
 	e := recv
 	for range 8 {
@@ -121,6 +127,18 @@ func fieldOrigin(pass *analysis.Pass, recv ast.Expr, bound map[types.Object]ast.
 			switch sel.Sel.Name {
 			case "Field", "FieldByIndex":
 				return types.ExprString(e)
+			case "FieldByName":
+				if len(x.Args) == 1 && isStringLiteral(x.Args[0]) {
+					return "" // a deliberate named pick, written here
+				}
+				return types.ExprString(e)
+			case "FieldByNameFunc":
+				if len(x.Args) == 1 {
+					if _, ok := x.Args[0].(*ast.FuncLit); ok {
+						return "" // an inline predicate: the pick is written here
+					}
+				}
+				return types.ExprString(e)
 			}
 			return ""
 		default:
@@ -128,6 +146,11 @@ func fieldOrigin(pass *analysis.Pass, recv ast.Expr, bound map[types.Object]ast.
 		}
 	}
 	return ""
+}
+
+func isStringLiteral(e ast.Expr) bool {
+	lit, ok := e.(*ast.BasicLit)
+	return ok && lit.Kind == token.STRING
 }
 
 // canSetChecked reports whether the function calls CanSet on the same

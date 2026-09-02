@@ -17,9 +17,13 @@
 //
 // A bound counts only when it DOMINATES the conversion: it must sit in
 // the same block, or an enclosing block, before the statement holding
-// the conversion. A check in a sibling case arm of the same type switch
-// guards nothing — that is exactly how the uint arm shipped without the
-// check its uint64 sibling had.
+// the conversion — inspected only over the parts of that statement
+// that always execute — or be the condition of an enclosing if whose
+// then-branch holds the conversion. A check in a sibling case arm of
+// the same type switch guards nothing — that is exactly how the uint
+// arm shipped without the check its uint64 sibling had — and neither
+// does a check inside a flag-gated nested body of an earlier
+// statement.
 //
 // Silent postures, deliberately:
 //   - uint8/uint16 sources: they fit every signed target this rule
@@ -34,13 +38,14 @@
 //   - _test.go files.
 //
 // Narrowed 2026-09-02 after the whole-repo run: both shapes fire only
-// when the operand is a case variable of a type switch over an
-// any/empty-interface tag — the genuinely unbounded source. Every
-// other hit in the repo was semantically bounded by its caller (Unix
-// seconds, read-capped frame lengths, float exponents ≤ 324, counter
-// values, ULID timestamps ≤ 2^48, generated hex ids), and the only
-// unbounded one — core/i18n's JSON number coercion — was any-boxed,
-// exactly the toInt64 shape.
+// when the operand is unboxed from an any/empty-interface — a case
+// variable of a type switch over one, or the value variable of a
+// comma-ok assertion from one (`if u, ok := box.(uint64); ok`) — the
+// genuinely unbounded sources. Every other hit in the repo was
+// semantically bounded by its caller (Unix seconds, read-capped frame
+// lengths, float exponents ≤ 324, counter values, ULID timestamps ≤
+// 2^48, generated hex ids), and the only unbounded one — core/i18n's
+// JSON number coercion — was any-boxed, exactly the toInt64 shape.
 package intwrap
 
 import (
@@ -51,6 +56,8 @@ import (
 	"strings"
 
 	"golang.org/x/tools/go/analysis"
+
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/dominance"
 )
 
 var Analyzer = &analysis.Analyzer{
@@ -69,9 +76,9 @@ func run(pass *analysis.Pass) (any, error) {
 			if !ok || fn.Body == nil {
 				continue
 			}
-			parents := recordParents(fn.Body)
+			parents := dominance.Parents(fn.Body)
 			abs := isAbsFunc(fn)
-			anyVars := anySwitchVars(pass, fn.Body)
+			anyVars := unboundedSources(pass, fn.Body)
 			ast.Inspect(fn.Body, func(n ast.Node) bool {
 				switch x := n.(type) {
 				case *ast.CallExpr:
@@ -126,7 +133,7 @@ func checkUnsignedConv(pass *analysis.Pass, call *ast.CallExpr, parents map[ast.
 		return // the compiler rejects out-of-range constant conversions
 	}
 	if !anyVars[obj] {
-		return // bounded source: narrowed 2026-09-02, see anySwitchVars
+		return // bounded source: narrowed 2026-09-02, see unboundedSources
 	}
 	src, ok := pass.TypesInfo.TypeOf(arg).Underlying().(*types.Basic)
 	if !ok || src.Info()&types.IsUnsigned == 0 {
@@ -159,7 +166,7 @@ func checkAbsNeg(pass *analysis.Pass, un *ast.UnaryExpr, parents map[ast.Node]as
 	}
 	subj := subjectOf(pass, un.X)
 	if subj.str == "" || subj.obj == nil || !anyVars[subj.obj] {
-		return // narrowed 2026-09-02 to unbounded sources; see anySwitchVars
+		return // narrowed 2026-09-02 to unbounded sources; see unboundedSources
 	}
 	if dominatingBound(pass, un, parents, body, subj, boundMin) {
 		return
@@ -207,79 +214,35 @@ const (
 // dominatingBound reports whether node is dominated by a comparison of
 // obj against a bound: the comparison must sit in the same block as the
 // node, or an enclosing block, in a statement before the one holding
-// the node. Sibling branches (other case arms) guard nothing.
+// the node — inspected only over the parts of that statement that
+// always execute — or be the condition of an enclosing if whose
+// then-branch holds the node. Sibling branches (other case arms) and
+// flag-gated nested bodies guard nothing.
 func dominatingBound(pass *analysis.Pass, node ast.Node, parents map[ast.Node]ast.Node, body *ast.BlockStmt, subj subject, family string) bool {
-	for _, stmts := range dominatingPrefix(node, parents, body) {
+	for _, stmts := range dominance.Prefix(node, parents, body) {
 		for _, st := range stmts {
-			if stmtBounds(pass, st, subj, family) {
+			if spineBounds(pass, dominance.Spine(st), subj, family) {
 				return true
 			}
 		}
 	}
-	return false
-}
-
-// dominatingPrefix returns the statement lists that dominate node: for
-// each enclosing block (BlockStmt / case or comm clause), the
-// statements before the one on the path down to node.
-func dominatingPrefix(node ast.Node, parents map[ast.Node]ast.Node, body *ast.BlockStmt) [][]ast.Stmt {
-	var out [][]ast.Stmt
-	cur := node
-	for {
-		p, ok := parents[cur]
-		if !ok || p == nil {
-			break
-		}
-		var stmts []ast.Stmt
-		switch b := p.(type) {
-		case *ast.BlockStmt:
-			stmts = b.List
-		case *ast.CaseClause:
-			stmts = b.Body
-		case *ast.CommClause:
-			stmts = b.Body
-		}
-		if stmts != nil {
-			for i, st := range stmts {
-				if st == cur || containsPath(st, node, parents) {
-					out = append(out, stmts[:i])
-					break
-				}
-			}
-		}
-		if p == body {
-			break
-		}
-		cur = p
-	}
-	return out
-}
-
-// containsPath reports whether node sits inside st per the parent map,
-// for when the path child is nested below statement level.
-func containsPath(st ast.Node, node ast.Node, parents map[ast.Node]ast.Node) bool {
-	for c := node; c != nil; {
-		p, ok := parents[c]
-		if !ok || p == nil {
-			return false
-		}
-		if p == st {
+	for _, cond := range dominance.EnclosingIfConds(node, parents, body) {
+		if spineBounds(pass, dominance.Spine(cond), subj, family) {
 			return true
 		}
-		c = p
 	}
 	return false
 }
 
-// stmtBounds reports whether st compares obj against the bound family:
-// math.MaxInt/MaxInt32/MaxInt64 or math.MinInt/MinInt64 (resolved by
-// import path, not spelling), or an integer literal of bound size.
-func stmtBounds(pass *analysis.Pass, st ast.Stmt, subj subject, family string) bool {
-	found := false
-	ast.Inspect(st, func(n ast.Node) bool {
+// spineBounds reports whether nodes compare obj against the bound
+// family: math.MaxInt/MaxInt32/MaxInt64 or math.MinInt/MinInt64
+// (resolved by import path, not spelling), or an integer literal of
+// bound size.
+func spineBounds(pass *analysis.Pass, nodes []ast.Node, subj subject, family string) bool {
+	for _, n := range nodes {
 		bin, ok := n.(*ast.BinaryExpr)
 		if !ok || !isComparison(bin.Op) {
-			return true
+			continue
 		}
 		var other ast.Expr
 		switch {
@@ -288,14 +251,13 @@ func stmtBounds(pass *analysis.Pass, st ast.Stmt, subj subject, family string) b
 		case matchesSubject(pass, bin.Y, subj):
 			other = bin.X
 		default:
-			return true
+			continue
 		}
 		if isMathBound(pass, other, family) || isBoundLiteral(pass, other, family) {
-			found = true
+			return true
 		}
-		return true
-	})
-	return found
+	}
+	return false
 }
 
 func isMathBound(pass *analysis.Pass, e ast.Expr, family string) bool {
@@ -386,27 +348,50 @@ func isIdentObj(pass *analysis.Pass, e ast.Expr, obj types.Object) bool {
 	return ok && pass.TypesInfo.ObjectOf(id) == obj
 }
 
-// recordParents maps every node in the body to its parent node.
-func recordParents(body ast.Node) map[ast.Node]ast.Node {
-	parents := map[ast.Node]ast.Node{}
-	var visit func(n ast.Node)
-	visit = func(n ast.Node) {
-		if n == nil {
-			return
-		}
-		ast.Inspect(n, func(c ast.Node) bool {
-			if c == n {
-				return true
-			}
-			if c != nil {
-				parents[c] = n
-				visit(c)
-			}
-			return false
-		})
+// unboundedSources collects the objects of the genuinely unbounded
+// operands: case variables of a type switch over an any/empty-interface
+// tag (anySwitchVars), and the value variables of comma-ok assertions
+// from one (anyAssertVars) — the same JSON-box value obtained with
+// `if u, ok := box.(uint64); ok` instead of a switch arm. A conversion
+// or negation of a plain int parameter is usually semantically bounded
+// by its caller (Unix seconds, frame lengths under a read cap, float
+// exponents ≤ 324), and the 2026-09-02 whole-repo run measured exactly
+// that: every non-any-boxed hit was bounded, the only unbounded one
+// (core/i18n's JSON number coercion) was any-boxed.
+func unboundedSources(pass *analysis.Pass, body *ast.BlockStmt) map[types.Object]bool {
+	out := anySwitchVars(pass, body)
+	for obj := range anyAssertVars(pass, body) {
+		out[obj] = true
 	}
-	visit(body)
-	return parents
+	return out
+}
+
+// anyAssertVars collects the value variables of comma-ok type
+// assertions whose operand has an empty-interface type.
+func anyAssertVars(pass *analysis.Pass, body *ast.BlockStmt) map[types.Object]bool {
+	out := map[types.Object]bool{}
+	ast.Inspect(body, func(n ast.Node) bool {
+		st, ok := n.(*ast.AssignStmt)
+		if !ok || len(st.Lhs) != 2 || len(st.Rhs) != 1 {
+			return true
+		}
+		ta, ok := st.Rhs[0].(*ast.TypeAssertExpr)
+		if !ok || ta.Type == nil {
+			return true // `x.(type)` or a single-value assert
+		}
+		if t := pass.TypesInfo.TypeOf(ta.X); t == nil {
+			return true
+		} else if iface, ok := t.Underlying().(*types.Interface); !ok || iface.NumMethods() != 0 {
+			return true
+		}
+		if id, ok := st.Lhs[0].(*ast.Ident); ok && id.Name != "_" {
+			if obj := pass.TypesInfo.ObjectOf(id); obj != nil {
+				out[obj] = true
+			}
+		}
+		return true
+	})
+	return out
 }
 
 // anySwitchVars collects the objects of case variables whose type

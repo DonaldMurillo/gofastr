@@ -9,5 +9,5 @@ import (
 )
 
 func TestDiscardedErr(t *testing.T) {
-	analysistest.Run(t, analysistest.TestData(), discardederr.Analyzer, "a", "b", "c")
+	analysistest.Run(t, analysistest.TestData(), discardederr.Analyzer, "a", "b", "c", "d")
 }

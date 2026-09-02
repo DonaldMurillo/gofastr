@@ -9,5 +9,5 @@ import (
 )
 
 func TestReflectSet(t *testing.T) {
-	analysistest.Run(t, analysistest.TestData(), reflectset.Analyzer, "a", "b", "c")
+	analysistest.Run(t, analysistest.TestData(), reflectset.Analyzer, "a", "b", "c", "d")
 }
