@@ -370,7 +370,7 @@ func (s *Server) listTools(ctx context.Context) []Tool {
 	gate := s.callGate
 	snapshot := make([]Tool, 0, len(s.tools))
 	for _, t := range s.tools {
-		if gate != nil && gate(t.Name) != nil {
+		if gate != nil && runCallGate(gate, t.Name) != nil {
 			continue // gated tool excluded from listing
 		}
 		snapshot = append(snapshot, t)
@@ -427,6 +427,19 @@ func (s *Server) checkToolGate(ctx context.Context, t Tool) (err error) {
 	return nil
 }
 
+// runCallGate evaluates the registry-wide call gate with the same net
+// checkToolGate gives the per-tool gate: a panicking gate refuses the
+// call instead of unwinding the transport loop it runs on
+// (recovercallback pins this).
+func runCallGate(gate func(toolName string) error, name string) (err error) {
+	defer func() {
+		if rec := recover(); rec != nil {
+			err = errors.New("internal tool error")
+		}
+	}()
+	return gate(name)
+}
+
 // listToolsUnfiltered applies only the name-based call gate (disabled
 // modules), not per-caller gates. See ListTools.
 func (s *Server) listToolsUnfiltered() []Tool {
@@ -436,7 +449,7 @@ func (s *Server) listToolsUnfiltered() []Tool {
 	gate := s.callGate
 	tools := make([]Tool, 0, len(s.tools))
 	for _, t := range s.tools {
-		if gate != nil && gate(t.Name) != nil {
+		if gate != nil && runCallGate(gate, t.Name) != nil {
 			continue
 		}
 		tools = append(tools, t)
@@ -461,14 +474,22 @@ func (s *Server) SetGate(gate func(ctx context.Context) error) {
 	s.mu.Unlock()
 }
 
-// checkServerGate evaluates the server-wide gate, if any.
-func (s *Server) checkServerGate(ctx context.Context) error {
+// checkServerGate evaluates the server-wide gate, if any, with the
+// same fail-closed net checkToolGate gives the per-tool gate: a
+// panicking gate answers as an error, not an unwound transport
+// (recovercallback pins this).
+func (s *Server) checkServerGate(ctx context.Context) (err error) {
 	s.mu.RLock()
 	gate := s.serverGate
 	s.mu.RUnlock()
 	if gate == nil {
 		return nil
 	}
+	defer func() {
+		if rec := recover(); rec != nil {
+			err = errors.New("internal tool error")
+		}
+	}()
 	return gate(ctx)
 }
 
@@ -504,7 +525,7 @@ func (s *Server) callTool(ctx context.Context, name string, params map[string]an
 	gate := s.callGate
 	s.mu.RUnlock()
 	if gate != nil {
-		if err := gate(name); err != nil {
+		if err := runCallGate(gate, name); err != nil {
 			return nil, &RPCError{
 				Code:    ErrInternalError,
 				Message: "tool unavailable",

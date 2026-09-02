@@ -313,7 +313,7 @@ func (q *MemoryQueue) processJob(job Job) {
 	// Gate: defer jobs whose owning module is disabled. Re-enqueue after
 	// a short delay so the job runs when the module re-enables without
 	// hot-looping the worker.
-	if gate != nil && !gate(job.Type) {
+	if gate != nil && !gateAllows(q.logger, gate, job.Type, job.ID) {
 		q.deferGated(job)
 		return
 	}

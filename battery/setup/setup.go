@@ -97,6 +97,10 @@ type Runner struct {
 	// wizard state, protected by mu
 	mu          sync.Mutex
 	currentStep int
+	// stepInFlight is set while a step runs OUTSIDE the mutex (see
+	// runStepSerialized): it preserves exactly-once step execution
+	// across the lock release.
+	stepInFlight bool
 
 	// token is the one-time URL token; zeroed after the first
 	// successful exchange so it can't be replayed from access logs.

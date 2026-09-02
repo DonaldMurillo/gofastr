@@ -179,7 +179,10 @@ func (n *Notifier) Send(ctx context.Context, msg Notification) error {
 	onError := n.onError
 	n.mu.RUnlock()
 
-	selected := router(msg.Type, msg.To, chanNames)
+	selected, rerr := routeSafe(router, msg, chanNames)
+	if rerr != nil {
+		return rerr
+	}
 	if len(selected) == 0 {
 		return ErrNoChannels
 	}
@@ -230,6 +233,19 @@ func (n *Notifier) Send(ctx context.Context, msg Notification) error {
 		}
 	}
 	return firstErr
+}
+
+// routeSafe selects channels through the installed router, turning a
+// panicking router into an error instead of an unwound caller: Send
+// fans out through its collect loop on paths with no recover net
+// (recovercallback pins this).
+func routeSafe(router Router, msg Notification, chanNames []string) (selected []string, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("notify: router panic: %v", r)
+		}
+	}()
+	return router(msg.Type, msg.To, chanNames), nil
 }
 
 func (n *Notifier) renderFor(ctx context.Context, t Templater, msg Notification, channel string) (Rendered, error) {

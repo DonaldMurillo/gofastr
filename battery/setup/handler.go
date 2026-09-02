@@ -235,18 +235,31 @@ func (r *Runner) handleSubmit(w http.ResponseWriter, req *http.Request) {
 	http.Redirect(w, req, "/setup", http.StatusSeeOther)
 }
 
-// runStepSerialized runs one step under the mutex and advances
-// currentStep in the same critical section. Checking currentStep ==
-// stepIdx under the lock before running (and advancing before
-// releasing) eliminates the window in which a concurrent POST could
-// re-run an intermediate step.
+// runStepSerialized claims one step under the mutex and runs it
+// OUTSIDE it. Steps are app-supplied callback code (AdminStep creates
+// the admin account over HTTP-round-tripped stores): a blocking or
+// panicking step must not wedge every other setup request against
+// r.mu (callbackunderlock pins this), and a panic must reach the
+// net/http recover net rather than skip a plain Unlock.
+//
+// Exactly-once survives the lock release through stepInFlight: the
+// claim (currentStep check + Complete re-check + flag) and the advance
+// are each atomic under mu, and a concurrent POST for the same step
+// finds the flag set and treats the step as already-advanced. A FAILED
+// step clears the flag and leaves currentStep where it was, so the
+// retry path is unchanged.
 func (r *Runner) runStepSerialized(ctx context.Context, stepIdx int, step Step, values map[string]string) error {
 	r.mu.Lock()
-	defer r.mu.Unlock()
-
 	// Re-check: if a concurrent request already advanced past this
 	// step, skip (treat as already-advanced).
 	if r.currentStep != stepIdx {
+		r.mu.Unlock()
+		return nil
+	}
+	// Another request is running this step right now (it released the
+	// mutex to do so): treat as already-advanced.
+	if r.stepInFlight {
+		r.mu.Unlock()
 		return nil
 	}
 
@@ -260,18 +273,42 @@ func (r *Runner) runStepSerialized(ctx context.Context, stepIdx int, step Step, 
 	// is not.
 	done, err := r.cfg.Complete(ctx)
 	if err != nil {
+		r.mu.Unlock()
 		return fmt.Errorf("setup: completion check failed, refusing to run step: %w", err)
 	}
 	if done {
+		r.mu.Unlock()
 		return nil
 	}
 
-	if err := step.Run(ctx, values); err != nil {
+	r.stepInFlight = true
+	r.mu.Unlock()
+
+	// The deferred clear also runs when the step PANICS: the claim is
+	// released while the panic unwinds to the net/http recover net,
+	// exactly as it did before the step left the lock, so the wizard
+	// is never stuck treating the step as in-flight.
+	defer func() {
+		r.mu.Lock()
+		r.stepInFlight = false
+		r.mu.Unlock()
+	}()
+
+	// Run outside the lock: a slow or panicking step holds nothing.
+	err = step.Run(ctx, values)
+	if err != nil {
 		return err
 	}
 
-	// Advance under the same lock, no window between run and advance.
-	r.currentStep = stepIdx + 1
+	// Advance under the lock, no window between run and advance: only
+	// the in-flight runner reaches here (the flag kept every other
+	// request out), and the currentStep guard keeps a test-driven
+	// reset from double-advancing.
+	r.mu.Lock()
+	if r.currentStep == stepIdx {
+		r.currentStep = stepIdx + 1
+	}
+	r.mu.Unlock()
 	return nil
 }
 

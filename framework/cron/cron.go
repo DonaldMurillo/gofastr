@@ -257,7 +257,7 @@ func (s *Scheduler) RunOnce(ctx context.Context, now time.Time) {
 	s.mu.RUnlock()
 
 	for _, job := range firing {
-		if s.gate != nil && !s.gate(job.Name) {
+		if s.gate != nil && !s.gateAllow(job.Name) {
 			continue
 		}
 		s.inflight.Add(1)
@@ -273,6 +273,20 @@ func (s *Scheduler) RunOnce(ctx context.Context, now time.Time) {
 			}
 		}(job)
 	}
+}
+
+// gateAllow evaluates the registered gate with the same net the job
+// run gets below: a panicking gate reports and denies the job instead
+// of killing the scheduler goroutine (recovercallback pins this —
+// RunOnce sits on the ticker-driven dispatch loop).
+func (s *Scheduler) gateAllow(name string) (allow bool) {
+	defer func() {
+		if r := recover(); r != nil {
+			s.reportError(name, fmt.Errorf("panic in gate: %v\n%s", r, debug.Stack()))
+			allow = false
+		}
+	}()
+	return s.gate(name)
 }
 
 // reportError forwards a job failure to OnError under its own recover
