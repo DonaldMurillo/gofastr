@@ -237,6 +237,45 @@ func stripJSCommentsAndStrings(src string) string {
 			}
 			continue
 		}
+		// Regex literal: /…/flags. Blanked like a string, because its body
+		// is pattern text, not code — `/var\s+\w+/` is a pattern that
+		// MATCHES var declarations, not one. Whether a `/` opens a regex
+		// or is division depends on what precedes it: after a value
+		// (identifier, number, `)`, `]`) it divides; after an operator,
+		// an opener, a separator, or a keyword like return/typeof it
+		// starts a pattern. That is the same heuristic every JS tokenizer
+		// without a parser uses, and it is enough here because the lint
+		// only needs the body blanked, never parsed.
+		if c == '/' && regexLiteralStartsAt(out) {
+			out = append(out, ' ')
+			i++
+			inClass := false
+			for i < len(src) && src[i] != '\n' {
+				if src[i] == '\\' && i+1 < len(src) {
+					out = append(out, ' ', ' ')
+					i += 2
+					continue
+				}
+				if src[i] == '[' {
+					inClass = true
+				} else if src[i] == ']' {
+					inClass = false
+				} else if src[i] == '/' && !inClass {
+					out = append(out, ' ')
+					i++
+					break
+				}
+				out = append(out, ' ')
+				i++
+			}
+			// Flags are identifier characters that cannot spell `var`
+			// on their own, but blank them for symmetry.
+			for i < len(src) && (src[i] >= 'a' && src[i] <= 'z') {
+				out = append(out, ' ')
+				i++
+			}
+			continue
+		}
 		// String literal (single, double, backtick), handle escapes.
 		if c == '\'' || c == '"' || c == '`' {
 			quote := c
@@ -296,4 +335,36 @@ func stripJSCommentsAndStrings(src string) string {
 		i++
 	}
 	return string(out)
+}
+
+// regexLiteralStartsAt reports whether a `/` at the current position
+// opens a regex literal, judged by the last non-space byte already
+// emitted. A value before it (identifier, number, closing paren or
+// bracket) makes it division; anything else — the start of the input,
+// an operator, an opener, a separator — makes it a pattern. The keyword
+// case (`return /x/`, `typeof /x/`) is caught because the keyword ends
+// in a letter: the identifier rule would call it division, so the few
+// keywords that can precede an expression are checked by name.
+func regexLiteralStartsAt(out []byte) bool {
+	j := len(out) - 1
+	for j >= 0 && (out[j] == ' ' || out[j] == '\t' || out[j] == '\n' || out[j] == '\r') {
+		j--
+	}
+	if j < 0 {
+		return true
+	}
+	prev := out[j]
+	isWord := prev == '_' || prev == '$' || (prev >= 'a' && prev <= 'z') || (prev >= 'A' && prev <= 'Z') || (prev >= '0' && prev <= '9')
+	if !isWord {
+		return prev != ')' && prev != ']'
+	}
+	k := j
+	for k >= 0 && (out[k] == '_' || out[k] == '$' || (out[k] >= 'a' && out[k] <= 'z') || (out[k] >= 'A' && out[k] <= 'Z') || (out[k] >= '0' && out[k] <= '9')) {
+		k--
+	}
+	switch string(out[k+1 : j+1]) {
+	case "return", "typeof", "instanceof", "in", "of", "new", "delete", "void", "throw", "case", "do", "else", "yield", "await":
+		return true
+	}
+	return false
 }

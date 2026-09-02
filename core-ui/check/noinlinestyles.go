@@ -192,7 +192,9 @@ func checkStyleKeyInComposite(node *ast.CompositeLit, fset *token.FileSet, filen
 		if !ok || key.Kind != token.STRING {
 			continue
 		}
-		if stripStringLiteral(key.Value) != "style" {
+		// HTML attribute names are case-insensitive: {"Style": …} emits
+		// the same attribute the browser strips under strict CSP.
+		if !strings.EqualFold(stripStringLiteral(key.Value), "style") {
 			continue
 		}
 		if !valueLooksLikeString(kv.Value) {
