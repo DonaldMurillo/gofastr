@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"math"
 	"strings"
 	"time"
 
@@ -271,6 +272,14 @@ func (p *Plugin) clampLimit(n int) int {
 func intParam(params map[string]any, name string, def int) int {
 	switch v := params[name].(type) {
 	case float64:
+		// Bound before converting: int(1e308) saturates on arm64 but
+		// wraps negative on amd64, and clampLimit only caps from above,
+		// so an unbounded conversion reached make(..., limit) with a
+		// negative cap (probe TestMCPArgsAdversarialNoPanic, red on
+		// amd64 only). Anything past MaxInt32 is "as many as allowed".
+		if v > math.MaxInt32 {
+			return math.MaxInt32
+		}
 		if v > 0 {
 			return int(v)
 		}
