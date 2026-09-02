@@ -176,3 +176,20 @@ func TestProbe_RegexAfterKeywordAndInClassIsQuiet(t *testing.T) {
 		t.Fatalf("regex literals flagged as declarations: %v", res.Error())
 	}
 }
+
+// An escape that swallows a newline inside a regex literal must keep the
+// newline in the sanitized stream: line numbers come from that stream.
+func TestRegexEscapedNewlineKeepsLineNumbers(t *testing.T) {
+	dir := t.TempDir()
+	body := "const r = /a\\\nb/;\nconst c = 1;\nvar leak = 2;\n"
+	if err := os.WriteFile(filepath.Join(dir, "nl.js"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	res, err := LintNoVarJS(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.HasErrors() || !strings.Contains(res.Error(), "nl.js:4:") {
+		t.Fatalf("var on line 4 must be reported at line 4, got: %v", res)
+	}
+}

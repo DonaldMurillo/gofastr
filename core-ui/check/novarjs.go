@@ -252,7 +252,14 @@ func stripJSCommentsAndStrings(src string) string {
 			inClass := false
 			for i < len(src) && src[i] != '\n' {
 				if src[i] == '\\' && i+1 < len(src) {
-					out = append(out, ' ', ' ')
+					// Keep the newline an escape swallows: the scanner
+					// counts lines from this stream, and dropping one
+					// would shift every later line number by one.
+					if src[i+1] == '\n' {
+						out = append(out, ' ', '\n')
+					} else {
+						out = append(out, ' ', ' ')
+					}
 					i += 2
 					continue
 				}

@@ -112,6 +112,12 @@ func (p *pusher) deliver(recs []*PushConfigRecord, ev StreamResponse) {
 // only on this request; the client cannot follow a redirect (see
 // PushOptions.Client), so they cannot leak to a second host.
 func (p *pusher) post(cfg PushNotificationConfig, payload []byte) error {
+	// Defence for a config stored before the registration-time check
+	// existed: credentials never leave over plain http unless the
+	// deployment opted into internal receivers.
+	if hasCredentials(cfg) && !p.allowPrivate && !strings.EqualFold(schemeOf(cfg.URL), "https") {
+		return fmt.Errorf("a2a: refusing to send push credentials over %q", cfg.URL)
+	}
 	// The deadline rides on the request as well as on the default
 	// client's Timeout, so a caller-supplied client without one cannot
 	// turn a hung receiver into a goroutine that never returns.
@@ -152,7 +158,7 @@ func (p *pusher) post(cfg PushNotificationConfig, payload []byte) error {
 //
 // When allowPrivate is true the host checks are skipped (test/dev
 // posture); the scheme and userinfo guards run in both modes.
-func validatePushURL(raw string, allowPrivate bool) error {
+func validatePushURL(raw string, credentialed, allowPrivate bool) error {
 	if raw == "" {
 		return fmt.Errorf("a2a: push URL required")
 	}
@@ -163,6 +169,13 @@ func validatePushURL(raw string, allowPrivate bool) error {
 	scheme := strings.ToLower(u.Scheme)
 	if scheme != "http" && scheme != "https" {
 		return fmt.Errorf("a2a: scheme %q not allowed (need http or https)", u.Scheme)
+	}
+	if scheme == "http" && credentialed && !allowPrivate {
+		// The token and Authorization header ride on every delivery; over
+		// plain http they ride in the clear. Loopback receivers in tests
+		// and internal deployments opt in with AllowPrivate, the same
+		// switch that admits their addresses.
+		return fmt.Errorf("a2a: push URL %q carries credentials over plain http; use https (or set AllowPrivate for an internal receiver)", raw)
 	}
 	if u.Host == "" {
 		return fmt.Errorf("a2a: push URL missing host")
@@ -291,4 +304,21 @@ func (g *guardedRoundTripper) RoundTrip(r *http.Request) (*http.Response, error)
 		}
 	}
 	return g.inner.RoundTrip(r)
+}
+
+// hasCredentials reports whether a delivery to cfg would carry a secret:
+// the notification token, or Authorization credentials.
+func hasCredentials(cfg PushNotificationConfig) bool {
+	if cfg.Token != "" {
+		return true
+	}
+	return cfg.Authentication != nil && cfg.Authentication.Credentials != ""
+}
+
+func schemeOf(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return ""
+	}
+	return u.Scheme
 }

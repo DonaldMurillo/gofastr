@@ -122,7 +122,7 @@ func (t *taskRun) taskID() string {
 // run context is deliberately not used (a canceled run must still
 // persist its final state), so this is the only thing standing between
 // a wedged database and a goroutine that never returns.
-const storeOpTimeout = 30 * time.Second
+var storeOpTimeout = 30 * time.Second
 
 // Request returns the HTTP request that started or resumed this run.
 // Its Context is deliberately not the handler's context, so handlers

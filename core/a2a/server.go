@@ -603,7 +603,7 @@ func (s *Server) validateInbound(p *SendMessageRequest) *Error {
 		if cfg.URL == "" {
 			return Errorf(CodeInvalidParams, "taskPushNotificationConfig.url is required")
 		}
-		if err := validatePushURL(cfg.URL, s.push.allowPrivate); err != nil {
+		if err := validatePushURL(cfg.URL, hasCredentials(*cfg), s.push.allowPrivate); err != nil {
 			return Errorf(CodeInvalidParams, "%v", err)
 		}
 	}
@@ -1187,7 +1187,7 @@ func (s *Server) handleCreatePushConfig(w http.ResponseWriter, req *rpcRequest, 
 		s.internalErr(w, req.ID, "get task for push config", err)
 		return
 	}
-	if err := validatePushURL(cfg.URL, s.push.allowPrivate); err != nil {
+	if err := validatePushURL(cfg.URL, hasCredentials(cfg), s.push.allowPrivate); err != nil {
 		s.writeResult(w, req.ID, nil, Errorf(CodeInvalidParams, "%v", err))
 		return
 	}
