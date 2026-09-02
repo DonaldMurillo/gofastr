@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"slices"
@@ -93,6 +94,7 @@ func NewWatcher(idx Index, opts WatchOptions) *Watcher {
 func (w *Watcher) safeMetadata(absPath string) (m map[string]any) {
 	defer func() {
 		if rec := recover(); rec != nil {
+			slog.Default().Error("semantic: MetadataFunc panicked; indexing without metadata", "path", absPath, "panic", rec)
 			m = nil
 		}
 	}()

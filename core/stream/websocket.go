@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/url"
@@ -453,7 +454,11 @@ func (c *WebSocketConn) Close() error {
 			// goroutine, which has no net: a panicking hook must not
 			// take the process down with the connection.
 			go func(fn func()) {
-				defer func() { _ = recover() }()
+				defer func() {
+					if rec := recover(); rec != nil {
+						slog.Default().Error("stream: websocket close hook panicked", "panic", rec)
+					}
+				}()
 				fn()
 			}(fn)
 		}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"runtime/debug"
 	"strconv"
 	"strings"
@@ -283,7 +284,9 @@ func (s *Scheduler) reportError(jobName string, err error) {
 		return
 	}
 	defer func() {
-		_ = recover()
+		if rec := recover(); rec != nil {
+			slog.Default().Error("cron: OnError panicked", "job", jobName, "panic", rec, "err", err)
+		}
 	}()
 	s.OnError(jobName, err)
 }
