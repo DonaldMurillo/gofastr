@@ -140,7 +140,13 @@ MCP tools `framework_docs_list` / `framework_docs_get` /
   (never range a map while writing output — iterate
   `slices.Sorted(maps.Keys(m))`, so SSR/email/prompt bytes are
   deterministic), `unboundedbody`, `errleak`, `fieldtypeswitch`,
-  `reqparamlimit`, `discardmutator`, and the two `hygiene` passes. Each
+  `reqparamlimit`, `discardmutator`, `controlbytes` (request-derived
+  strings must pass a scrub before slog/otel/header/stdio sinks —
+  name the helper scrub/sanitize/… or byte-index the value),
+  `callbackunderlock` (never invoke func-typed fields or map
+  callbacks between Lock and Unlock — snapshot under the lock, call
+  outside), `recovercallback` (registry callbacks on goroutine/read
+  loop paths need a recover guard), and the two `hygiene` passes. Each
   analyzer's own doc comment carries the bug that produced it and the
   postures it deliberately stays silent on. New invariants go in
   `internal/analyzers/` ONLY when they need type information;

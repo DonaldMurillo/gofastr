@@ -30,11 +30,14 @@ import (
 	"golang.org/x/tools/go/analysis/passes/unusedwrite"
 	"golang.org/x/tools/go/analysis/passes/waitgroup"
 
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/callbackunderlock"
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/controlbytes"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/discardmutator"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/errleak"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/fieldtypeswitch"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/hygiene"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/mapwriter"
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/recovercallback"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/reqparamlimit"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/unboundedbody"
 )
@@ -46,6 +49,13 @@ func main() {
 		unboundedbody.Analyzer,
 		errleak.Analyzer,
 		fieldtypeswitch.Analyzer,
+
+		// The 419-probe audit shapes: control-byte sinks, callbacks
+		// under locks, callbacks without a recover net. Each fired on
+		// its pre-fix site and stays quiet on the fixed spelling.
+		controlbytes.Analyzer,
+		callbackunderlock.Analyzer,
+		recovercallback.Analyzer,
 
 		// Checks that currently find nothing. They cost no cleanup and
 		// hold classes this repo already drove to zero. A hit here means
