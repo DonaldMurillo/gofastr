@@ -7,6 +7,8 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+## [0.80.0] - 2026-09-02
+
 ### Fixed
 - **The sandbox conformance-probe runner now enforces its own wall budget
   and reads its child's result correctly** (#136 audit probes). A child

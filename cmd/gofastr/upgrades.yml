@@ -19,7 +19,7 @@
 # The registry is complete through this release: releases ≤ through
 # with no entry below genuinely had no migration-relevant changes.
 # Targets beyond it make the CLI warn that it may be out of date.
-through: v0.79.0
+through: v0.80.0
 
 releases:
   - version: v0.3.0
@@ -927,3 +927,12 @@ releases:
       - change: "gofastr verify gained GOFASTR1808 rendering/fallback-drift - a var(--token, fallback) in a design-system tree whose fallback is not the token's declared value"
         breaking: false
         guidance: "Fires only under paths containing core-ui/, framework/ui/, framework/uihost/, framework/sdkdocs/, framework/pluginhost/, framework/dev/, or battery/, so an app is unaffected unless it vendors those trees. Fix by writing the declared value (style.TokenNames lists them); rem and px are compared by size."
+  - version: v0.80.0
+    title: Route matches and recovery screens, WebMCP mounts, StateChannel, document-scoped scripts
+    notes:
+      - change: "new opt-in surfaces - uihost.RouteMatchMiddleware / app.MatchFromContext / uihost.RenderScreen, uihost.RegisterDocumentScript, pluginhost.WithWorkerCSP / WithCache on AssetServer.AddBytes, webmcp Host.Handle / Mount options / WithObserver / WithInstructions / Group, stream.StateChannel plus the ws runtime module, ui.MenuConfig.TriggerElement"
+        breaking: false
+        guidance: "All additive; nothing changes for an app that does not call them. webmcp.New and Mount take variadic options, AssetServer.AddBytes takes variadic options, so existing calls compile unchanged."
+      - change: "core-ui/check treats a capitalised Style map key like the lowercase one in the inline-style lint, and no longer flags a regex literal that happens to contain the word var as a declaration"
+        breaking: false
+        guidance: "A vendored design-system tree that set inline styles through a capitalised map key is now reported; move the styling into a component (rule GOFASTR1401 explains). Apps outside those trees are unaffected."
