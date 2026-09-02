@@ -118,7 +118,8 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   section used to decode and emit nothing. Blueprint validation also
   refuses `.json` duplicate keys, non-scalar `db.driver`/`db.url`,
   non-integer seed `count`/`weights`, nav icons carrying markup (icons
-  are now emitted), duplicate seed blocks, unknown seed row keys, forward
+  are now emitted through `ui.Icon`, so a registered name renders its
+  SVG and an unregistered one renders nothing), duplicate seed blocks, unknown seed row keys, forward
   seed references, and count seeds over required relations; complex seed
   values are emitted as Go literals instead of `nil`. A generated app
   carrying a hook is now compiled by the test suite, which caught the

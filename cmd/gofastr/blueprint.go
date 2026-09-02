@@ -8041,7 +8041,11 @@ func renderNavItemGo(sb *strings.Builder, item BlueprintNavItem, indent string) 
 	// the loud gate; this backstop keeps an unvalidated blueprint from
 	// shipping an icon that escapes the slot.
 	if item.Icon != "" && blueprintNavIconSafe(item.Icon) {
-		sb.WriteString(fmt.Sprintf(", Icon: %q", item.Icon))
+		// Through the design system's icon registry, never as raw
+		// markup: a registered name renders its SVG, an unregistered
+		// one renders nothing (ui.Icon's contract), so the literal name
+		// can never appear beside the label.
+		sb.WriteString(fmt.Sprintf(", Icon: ui.Icon(%q, ui.IconConfig{})", item.Icon))
 	}
 	if len(item.Items) > 0 {
 		sb.WriteString(", Children: []ui.SidebarItem{\n")
