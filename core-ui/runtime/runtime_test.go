@@ -345,6 +345,36 @@ func TestRuntimeModule_SSE(t *testing.T) {
 	}
 }
 
+func TestRuntimeModule_WS(t *testing.T) {
+	src, ok := Module("ws")
+	if !ok {
+		t.Fatal("ws module not embedded")
+	}
+	for _, want := range []string{
+		"NS.connectWebSocket",       // sequenced WebSocket client (#377)
+		"NS.createSequencedReducer", // reject-stale ordering guard (#375)
+		"onGenerationStart",         // socket open hook
+		"onHydrated",                // snapshot hydration hook
+		"onGenerationEnd",           // transport gone hook
+		"reasonClass",               // bounded close classification
+		"resyncComplete",            // protocol resynchronization marker
+		"loadedModules",
+	} {
+		if !strings.Contains(src, want) {
+			t.Errorf("ws module missing %q", want)
+		}
+	}
+	// Ceiling near the current size, same shape as the modules above.
+	if size := ModuleSize("ws"); size > 8000 {
+		t.Errorf("ws module is %d bytes — budget is 8000", size)
+	}
+	// The module must never log: close reasons, payloads, and
+	// credentials stay out of the console by construction.
+	if strings.Contains(src, "console.") {
+		t.Error("ws module calls console.* — it must not log payloads, close reasons, or credentials")
+	}
+}
+
 func TestRuntimeModule_NetworkRetryBanner(t *testing.T) {
 	src, ok := Module("networkretrybanner")
 	if !ok {

@@ -694,6 +694,43 @@ prefix matches the existing `gofastr:navigate` convention. The
 NetworkRetryBanner reads `lastEventAt` for its silence trigger and
 listens for the event to re-probe its health endpoint on reconnect.
 
+### Sequenced WebSocket client (`__gofastr.connectWebSocket`)
+
+The `ws` demand module (`runtime/src/ws.js`) is the browser half of the
+`core/stream.StateChannel` contract (see `framework/docs/content/`
+→ reactivity and core-packages). Unlike every other module it has no
+DOM marker: an application loads it explicitly with
+`__gofastr.loadModule('ws')` and calls two functions.
+
+`__gofastr.createSequencedReducer(initial, apply)` returns
+`reduce(envelope)`; it applies an envelope only when
+`envelope.sequence` is strictly greater than the last applied one, so a
+reconnect snapshot captured before a live mutation cannot resurrect the
+state that mutation replaced. Results carry `{ applied, state,
+appliedSequence }`.
+
+`__gofastr.connectWebSocket(url, opts)` manages one WebSocket with
+reconnect and a distinct generation per reconnect:
+
+| Hook | Fires when |
+| --- | --- |
+| `opts.onGenerationStart({generation, resumedAfterSequence})` | socket open, once per generation |
+| `opts.onHydrated({generation, snapshotSequence})` | the application calls `handle.hydrated(seq)`, once per generation |
+| `opts.onGenerationEnd({generation, reasonClass})` | the socket is gone, once per generation |
+| `opts.onMessage({data, raw, generation})` | every message (`data` is parsed JSON or null) |
+
+`handle.status` is one live object (same shape as `sseStatus`):
+`{ generation, phase, reasonClass, attempts, lastSequence }`, with
+phase `connecting → open → hydrated → resynced` (via
+`handle.resyncComplete()`) and `closed`/`stopped` at the ends.
+`reasonClass` is one of `closed`, `error`, `stop` — the module never
+logs and never surfaces raw close reasons, payloads, or credentials.
+
+A new generation invalidates only generation-bound work; which state
+survives a reconnect is the application's decision. WebSocket recovery
+proves nothing about media protocols layered on top (WebRTC and
+friends); those resynchronize through these hooks.
+
 ### Cross-replica presence (`gofastr.presence` fanout lane)
 
 Presence rosters aggregate across `serve` replicas over the existing
@@ -1356,7 +1393,7 @@ core-ui/
                  optimisticaction, passwordinput, popover, rangeslider,
                  reveal, scrollspy, searchinput, shortcut, slider,
                  sortablelist, sse, taginput, textarea, themeswitch,
-                 toasts, toc, toggleaction, tree, widgets
+                 toasts, toc, toggleaction, tree, widgets, ws
   runtime/colorscheme.js : dark/light mode bootstrap (runs sync in <head>
                  before CSS parses, reads localStorage + OS hint,
                  sets data-color-scheme on <html>)

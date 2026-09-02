@@ -43,6 +43,26 @@ add an SSE or WebSocket endpoint; the framework's island-push and event
 bus layer on `SSEBroker`. Start at `core/stream/sse_broker.go`:
 `SSEBroker`.
 
+Above the WebSocket client sits `StateChannel`
+(`core/stream/state_channel.go`), for apps that reconnect into live
+state: it hydrates each new connection with a role's snapshot and then
+delivers events with strictly increasing sequences, so the browser
+helper (`core-ui/runtime/src/ws.js`,
+`__gofastr.createSequencedReducer`) can reject anything stale and a
+snapshot captured before a mutation cannot resurrect the state that
+mutation replaced. Your side of the contract is the `SnapshotSource`:
+`SnapshotFor` returns the snapshot payload and its sequence from ONE
+immutable read, and `FilterEvent` shapes each event per role BEFORE
+serialization. Filtering there is the minimization boundary — a field
+`FilterEvent` strips never crosses the transport, while hiding a field
+in the UI is not data minimization at all. Sequences share one space
+per channel across roles; delivery is best-effort like `Hub` (a slow
+connection drops events, a connection that cannot accept its snapshot
+is closed to reconnect), and like the other stream primitives a
+channel spans replicas only through `fanout`. Each accepted connection
+carries a `ConnectionID()` (set `WSConfig.ConnectionID` to mint your
+own) for correlating a client's reconnects in server-side logs.
+
 ### fanout
 
 The lossy, best-effort cross-replica transport behind real-time

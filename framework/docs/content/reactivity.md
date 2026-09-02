@@ -158,6 +158,48 @@ See [Events and SSE](events.md) for the broker contract, [Presence](presence.md)
 for the canonical push case, and [Live dashboards](live-dashboards.md) for the
 decision between SSE push and polling.
 
+## WebSockets: when the app owns the protocol
+
+The four rungs cover pages. Some surfaces need bidirectional frames the
+page model does not shape: WebRTC signaling, multiplayer protocols,
+anything where the client talks back on the same connection the server
+pushes on. Those use `core/stream` WebSockets directly, and they carry
+two obligations the framework does not assume for you.
+
+**Ordering across reconnects.** When a client reconnects, it needs a
+snapshot of current state plus the events that follow it, and the two
+must share one sequence so a delayed snapshot cannot resurrect state a
+newer event replaced — a reconnect can otherwise replay a stale banner
+over a live clear. `stream.StateChannel` (see
+[Core packages](core-packages.md) → stream) owns that contract
+server-side: one snapshot per connect from one immutable read, events
+with strictly increasing sequences, per-role filtering before
+serialization. In the browser, load the `ws` runtime module
+(`__gofastr.loadModule('ws')`) and fold every envelope through
+`__gofastr.createSequencedReducer(initial, apply)`, which applies only
+`sequence > appliedSequence` and rejects everything older, whatever its
+payload says.
+
+**Generations, not "it's back".** A recovered socket does not mean the
+protocol layered on it recovered: browser state can still hold a stale
+offer, a failed peer, or a dedup entry that swallows the server's fresh
+event as a duplicate. `__gofastr.connectWebSocket(url, opts)` gives
+each reconnect a distinct generation and the hooks to resynchronize:
+`onGenerationStart` (socket open), `onHydrated` (the application
+applied the snapshot, via `handle.hydrated(sequence)`), and
+`onGenerationEnd` with a bounded reason class (`closed`, `error`,
+`stop`) — never the raw close reason, and never a payload or
+credential in any log. Hooks are idempotent per generation. A new
+generation invalidates only generation-bound work; which state survives
+(a healthy peer, the session) is the application's call, and so is
+marking the protocol caught-up with `handle.resyncComplete()`.
+
+WebSocket recovery does not prove WebRTC/media recovery. A live socket
+says nothing about a peer connection that failed or an offer that went
+stale; the application must renegotiate through these hooks and verify
+its own media returned. See [Core packages](core-packages.md) → stream
+for the Go-side helpers.
+
 ## Which rung fits
 
 Three questions, in order:
@@ -252,3 +294,9 @@ request to whichever replica the load balancer picks.
 - **Polling a path that mutates.** `data-fui-poll-src` should be a read. Polls
   fire on a timer; a poll that writes would write on every tab, on every
   interval, in every browser.
+- **Treating a reconnected WebSocket as recovered application state.**
+  The socket coming back says nothing about a stale offer, a failed
+  peer, or a dedup key that eats the server's next event. Key
+  generation-bound work to the reconnect generation and resynchronize
+  through the `ws` module's hooks; verify media protocols returned on
+  their own terms.
