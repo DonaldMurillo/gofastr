@@ -30,11 +30,14 @@ import (
 	"golang.org/x/tools/go/analysis/passes/unusedwrite"
 	"golang.org/x/tools/go/analysis/passes/waitgroup"
 
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/asciifold"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/callbackunderlock"
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/compositekey"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/controlbytes"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/discardederr"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/discardmutator"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/divlimit"
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/emitident"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/errleak"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/fieldtypeswitch"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/hygiene"
@@ -70,6 +73,9 @@ func main() {
 		intwrap.Analyzer,
 		reflectset.Analyzer,
 		discardederr.Analyzer,
+		compositekey.Analyzer,
+		emitident.Analyzer,
+		asciifold.Analyzer,
 
 		// Checks that currently find nothing. They cost no cleanup and
 		// hold classes this repo already drove to zero. A hit here means

@@ -15,6 +15,10 @@ contracts:
     # deliberately broken apps that the embed analyzer is tested against;
     # linting them reports the fixtures' intended defects as defects.
     - cmd/check-embed/embedcheck/testdata/**
+    # Same class: every vet analyzer under internal/analyzers is tested
+    # against fixtures that reproduce the bug it exists to catch, so the
+    # fixtures carry the exact strings the contract rules also match.
+    - internal/analyzers/**/testdata/**
 
   rules:
     GOFASTR1801: # rendering/bespoke-css

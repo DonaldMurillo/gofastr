@@ -140,35 +140,39 @@ MCP tools `framework_docs_list` / `framework_docs_get` /
   (never range a map while writing output — iterate
   `slices.Sorted(maps.Keys(m))`, so SSR/email/prompt bytes are
   deterministic), `unboundedbody`, `errleak`, `fieldtypeswitch`,
-  `reqparamlimit`, `discardmutator`, `controlbytes` (request-derived
-  strings must pass a scrub before slog/otel/header/stdio sinks —
-  name the helper scrub/sanitize/… or byte-index the value),
-  `callbackunderlock` (never invoke func-typed fields or map
-  callbacks between Lock and Unlock — snapshot under the lock, call
-  outside), `recovercallback` (registry callbacks on goroutine/read
-  loop paths need a recover guard), and the two `hygiene` passes. Each
+  `reqparamlimit`, `discardmutator`, and the two `hygiene` passes. Each
   analyzer's own doc comment carries the bug that produced it and the
   postures it deliberately stays silent on. New invariants go in
   `internal/analyzers/` ONLY when they need type information;
   pattern-shaped rules belong in the contracts pipeline
   (`framework/contracts`, `gofastr verify`), which already owns bespoke
   CSS, hard navigation, bespoke EventSource, and inline style/script.
-  Six more arrived with the 2026-09 adversarial probe audit, one per
-  bug SHAPE the 419 probes kept finding: `laxcoerce` (a failed type
-  assertion on a `map[string]any` entry is treated as absence — the
-  key was present with the wrong type, so the caller's filter is
-  silently dropped), `rootwrite` (writes under a root whose containment
-  is `filepath.Join` + prefix only, with no `EvalSymlinks` on the
-  chain, and zip entry names built from a parameter with no
+  Twelve more arrived with the 2026-09 adversarial probe audit, one per
+  bug SHAPE the 419 probes kept finding; each fires on the pre-fix
+  site and stays quiet on the fix:
+  `controlbytes` (request-derived strings pass a scrub before
+  slog/otel/header/stdio sinks — name the helper scrub/sanitize/… or
+  byte-index the value), `callbackunderlock` (never invoke func-typed
+  fields or map callbacks between Lock and Unlock — snapshot under the
+  lock, call outside), `recovercallback` (registry callbacks on
+  goroutine/read-loop paths need a recover guard), `compositekey`
+  (never key a map or keyed store on a control-character-joined
+  concatenation — struct keys or length prefixes), `emitident` (never
+  Sprintf an ungated name into an identifier slot of emitted code — Go
+  declarations, SQL DDL, CSS string slots, route paths; toCamelCase
+  transforms but does not validate), `asciifold` (never key a registry
+  lookup on `strings.ToLower`/`ToUpper` — Unicode folding maps
+  homoglyphs onto ASCII, ſ → S; refuse non-ASCII first), `laxcoerce` (a
+  failed type assertion on a `map[string]any` entry is not absence —
+  split presence from type, or return an error), `rootwrite` (writes
+  under a root contained by `filepath.Join` + prefix only, with no
+  `EvalSymlinks` on the chain, and zip entry names with no
   `path.Clean`), `divlimit` (integer division by a caller-supplied
-  limit/pageSize/n with no zero-or-one guard — it panics on 0),
-  `intwrap` (unsigned→signed conversion and MinInt negation without a
-  dominating bound check — wrapped values read negative and slip past
-  Max-only validators), `reflectset` (reflect `Set*` on a
-  `Field`-derived value with no `CanSet` — an unexported field panics
-  at Set), and `discardederr` (an error dropped in a multi-value
-  assignment while the other results march on — usually the only
-  signal that the call refused).
+  limit/pageSize/n with no zero-or-one guard), `intwrap`
+  (unsigned→signed conversion and MinInt negation without a dominating
+  bound check), `reflectset` (reflect `Set*` on a `Field`-derived value
+  with no `CanSet`), and `discardederr` (an error dropped from a
+  three-plus-result method call while the kept results march on).
   An analyzer package that is written but not registered must say why
   in `cmd/vettool/main.go` — `TestEveryAnalyzerIsWiredOrExplained`
   fails on one that is neither registered nor explained.
