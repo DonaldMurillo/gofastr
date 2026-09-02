@@ -324,7 +324,10 @@ func (r *Report) OnlyFiles(files map[string]bool) *Report {
 }
 
 // containedPath resolves rel against root and refuses anything that lands
-// outside it. Returns the absolute path to write.
+// outside it. Returns the absolute path to write. Containment is checked
+// BOTH lexically and on the symlink-resolved paths: a file inside the
+// tree that is a symlink pointing outside passes the lexical check, and
+// writing through it would edit the target instead.
 func containedPath(root, rel string) (string, error) {
 	if filepath.IsAbs(rel) {
 		return "", fmt.Errorf("apply fixes to %s: absolute paths are not applied", rel)
@@ -333,6 +336,17 @@ func containedPath(root, rel string) (string, error) {
 	base := filepath.Clean(root)
 	if abs != base && !strings.HasPrefix(abs, base+string(filepath.Separator)) {
 		return "", fmt.Errorf("apply fixes to %s: resolves outside the project root", rel)
+	}
+	realAbs, err := filepath.EvalSymlinks(abs)
+	if err != nil {
+		return "", fmt.Errorf("apply fixes to %s: %w", rel, err)
+	}
+	realRoot, err := filepath.EvalSymlinks(base)
+	if err != nil {
+		return "", fmt.Errorf("apply fixes: resolve root: %w", err)
+	}
+	if realAbs != realRoot && !strings.HasPrefix(realAbs, realRoot+string(filepath.Separator)) {
+		return "", fmt.Errorf("apply fixes to %s: symlink resolves outside the project root", rel)
 	}
 	return abs, nil
 }

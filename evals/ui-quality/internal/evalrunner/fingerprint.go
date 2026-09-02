@@ -99,26 +99,14 @@ func frameworkInputFingerprint(repoRoot, gofastrBin string) (string, error) {
 			if walkErr != nil {
 				return walkErr
 			}
-			if entry.Type().IsRegular() {
-				files = append(files, path)
-			}
+			collectFingerprintFile(&files, path, entry)
 			return nil
 		})
 		if err != nil {
 			return "", fmt.Errorf("walk %s: %w", rel, err)
 		}
 	}
-	sort.Strings(files)
-	for _, path := range files {
-		rel, err := filepath.Rel(repoRoot, path)
-		if err != nil {
-			return "", err
-		}
-		if err := hashFile(h, filepath.ToSlash(rel), path); err != nil {
-			return "", err
-		}
-	}
-	return hex.EncodeToString(h.Sum(nil)), nil
+	return hashFingerprintFiles(files, repoRoot)
 }
 
 func verifyFrameworkIntegrity(repoRoot, gofastrBin, expected string) error {
@@ -169,26 +157,13 @@ func generatedGuidanceFingerprint(workspace string) (string, error) {
 			if walkErr != nil {
 				return walkErr
 			}
-			if entry.Type().IsRegular() {
-				files = append(files, path)
-			}
+			collectFingerprintFile(&files, path, entry)
 			return nil
 		}); err != nil {
 			return "", err
 		}
 	}
-	sort.Strings(files)
-	h := sha256.New()
-	for _, path := range files {
-		rel, err := filepath.Rel(workspace, path)
-		if err != nil {
-			return "", err
-		}
-		if err := hashFile(h, filepath.ToSlash(rel), path); err != nil {
-			return "", err
-		}
-	}
-	return hex.EncodeToString(h.Sum(nil)), nil
+	return hashFingerprintFiles(files, workspace)
 }
 
 func workspaceSourceFingerprint(workspace string) (string, error) {
@@ -200,18 +175,47 @@ func workspaceSourceFingerprint(workspace string) (string, error) {
 		if entry.IsDir() && (entry.Name() == ".git" || entry.Name() == ".cache") {
 			return filepath.SkipDir
 		}
-		if entry.Type().IsRegular() {
-			files = append(files, path)
-		}
+		collectFingerprintFile(&files, path, entry)
 		return nil
 	})
 	if err != nil {
 		return "", err
 	}
+	return hashFingerprintFiles(files, workspace)
+}
+
+// collectFingerprintFile appends path to files when it is a regular file
+// the fingerprint must see — INCLUDING through a symlink. The walkers'
+// fs.DirEntry does not follow symlinks, so a builder-planted symlink
+// contributed nothing to the hash while go build and the served binary
+// read through it; the gates these hashes back (workspace reuse, the
+// framework-integrity check) stayed green while the content behind the
+// link was free to change. Content is hashed under the link's own path,
+// so identity is stable and swapping the target changes the hash.
+// Directory symlinks stay invisible: following them cannot be bounded
+// (link cycles), and no gate needs them.
+func collectFingerprintFile(files *[]string, path string, entry fs.DirEntry) bool {
+	if entry.Type().IsRegular() {
+		*files = append(*files, path)
+		return true
+	}
+	if entry.Type()&fs.ModeSymlink != 0 {
+		if info, err := os.Stat(path); err == nil && info.Mode().IsRegular() {
+			*files = append(*files, path)
+			return true
+		}
+	}
+	return false
+}
+
+// hashFingerprintFiles sorts files and hashes each under its
+// root-relative path. Sorted so the hash is stable regardless of walk
+// order.
+func hashFingerprintFiles(files []string, root string) (string, error) {
 	sort.Strings(files)
 	h := sha256.New()
 	for _, path := range files {
-		rel, err := filepath.Rel(workspace, path)
+		rel, err := filepath.Rel(root, path)
 		if err != nil {
 			return "", err
 		}

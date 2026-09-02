@@ -2691,10 +2691,28 @@ func (a *App) AddQueue(q schedulerStartStop) *App {
 		q.Start(ctx)
 		return nil
 	})
-	a.OnStop(func() error {
-		return q.Close()
-	})
+	// The stop side bounds the Close join by the drain deadline, the
+	// same posture AddCron gets from StopContext: a queue whose Close
+	// blocks joining a ctx-ignoring job handler can't hang SIGTERM
+	// forever. schedulerStartStop has no context-aware Close, so the
+	// join is abandoned at the deadline (the underlying Close keeps
+	// running) and the abandonment is reported as the drain error.
+	a.lc.PrependDrainer(lifecycle.DrainFunc(func(ctx context.Context) error {
+		return drainQueueClose(ctx, q)
+	}))
 	return a
+}
+
+// drainQueueClose runs q.Close and abandons the join when ctx expires.
+func drainQueueClose(ctx context.Context, q schedulerStartStop) error {
+	done := make(chan error, 1)
+	go func() { done <- q.Close() }()
+	select {
+	case err := <-done:
+		return err
+	case <-ctx.Done():
+		return fmt.Errorf("queue Close abandoned after the drain deadline (a job handler ignored its cancelled context): %w", ctx.Err())
+	}
 }
 
 // Shutdown gracefully stops the HTTP server, stops every registered

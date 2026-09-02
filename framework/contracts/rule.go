@@ -185,6 +185,18 @@ func LookupRule(idOrSlug string) (Rule, bool) {
 
 func lookupRuleLocked(idOrSlug string) (Rule, bool) {
 	key := strings.TrimSpace(idOrSlug)
+	// Rule references are repo content (a suppression directive, a
+	// `rules:` key in gofastr.contracts.yml), and the catalog's IDs and
+	// slugs are ASCII by construction (reRuleID / reRuleSlug). Unicode
+	// case folding maps look-alikes ONTO ASCII — ſ uppercases to S — so a
+	// fold-equivalent spelling ("gofaſtr1003") resolves GOFASTR1003 and
+	// silently suppresses it while reading like a typo in review. Refuse
+	// any non-ASCII key: it can only be a homoglyph, never a catalog
+	// entry. With the key known ASCII, ToUpper/ToLower cannot fold
+	// anything beyond ASCII letter case.
+	if strings.ContainsFunc(key, func(r rune) bool { return r >= 0x80 }) {
+		return Rule{}, false
+	}
 	if r, ok := rulesByID[strings.ToUpper(key)]; ok {
 		return r, true
 	}
@@ -263,11 +275,25 @@ func SuggestRules(idOrSlug string) []string {
 	return out
 }
 
+// maxSuggestNeedle bounds the needle suggestByDistance will rank. Longest
+// legal catalog key (12-letter prefix + 4 digits, or a kebab slug) plus
+// generous headroom; a needle longer than any key plus the budget can
+// never rank within reach.
+const maxSuggestNeedle = 64
+
 // suggestByDistance ranks catalog entries by edit distance from the
 // needle. The budget scales with length so a short slug does not match
 // half the catalog, and caps at three so a wild guess gets nothing rather
 // than a misleading list. Caller holds ruleMu.
 func suggestByDistance(needle string) []string {
+	// Ranking is O(needle × catalog) and the needle is attacker-chosen:
+	// the unknown-rule branches hand it the raw reference from a comment
+	// or YAML key in the verified repo. Cap it before the edit distance —
+	// a multi-megabyte reference would otherwise make one comment cost
+	// seconds of CPU.
+	if len(needle) > maxSuggestNeedle {
+		needle = needle[:maxSuggestNeedle]
+	}
 	budget := len(needle) / 4
 	if budget < 1 {
 		budget = 1
