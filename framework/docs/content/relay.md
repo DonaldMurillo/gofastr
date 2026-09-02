@@ -89,6 +89,7 @@ posture is fixed:
 | Credentials stripped (inbound) | `Cookie`, `Authorization`, `Proxy-Authorization`, `X-CSRF-Token`, `X-API-Key`, and every `X-Forwarded-*` never reach the vendor. |
 | Forwarded metadata | `X-Forwarded-For` is the connection's peer (or your `Config.ClientIP`), `X-Forwarded-Proto` comes from the actual TLS state. Inbound forwarding headers are never trusted — they are one `curl -H` away from arbitrary values. |
 | Auth stripped (outbound) | `Set-Cookie`, `WWW-Authenticate`, `Proxy-Authenticate`, and `Access-Control-*` never reach the browser. `X-Content-Type-Options: nosniff` is always added. |
+| Browser state stripped (outbound) | `Refresh` (a header-driven navigation to any origin) and `Clear-Site-Data` (deletes the visitor's app-origin storage from the vendor's side) never reach the browser. A `Link` header whose target is an absolute or protocol-relative URL is dropped; relative targets (`</page/2>; rel="next"`) resolve against the app origin and are forwarded. |
 | No redirects | Any `3xx` carrying a `Location` header is replaced with a plain `502` and logged: forwarding it would leak the vendor origin (absolute) or point outside the mount (relative). `304` passes. |
 | Compression | Proxied bytes are never decompressed or re-encoded: a gzip body arrives byte-identical. |
 | Timeouts | Dial 5s, TLS handshake 5s, response headers 10s, whole request min(inherited context, 30s). Deadlines/timeouts → `504`; other transport failures → `502`. Error bodies are plain text; upstream error detail goes to the log only. |

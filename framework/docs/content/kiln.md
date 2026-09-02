@@ -44,6 +44,13 @@ empty-state host and use the floating panel. Important endpoints are:
 | `POST/GET /mcp/app` | Rebuilt app's entity MCP tools. |
 | `GET /.kiln/events` | Journal/build SSE stream. |
 
+The three read routes (`/kiln/world`, `/kiln/status`, `/.kiln/events`)
+refuse a browser request whose `Origin` is cross-site, and one whose
+`Host` is not a loopback address when an `Origin` is present (a
+rebound page and the listener agree on the attacker-named host, so only
+the Host pin catches it). Requests without an `Origin` header, the
+agent transports and `curl`, pass untouched.
+
 `kiln mcp` exposes the same tools over stdio MCP. `kiln acp` speaks the
 published Agent Client Protocol v1 instead (see
 [ACP](/docs/acp)): `initialize` → `session/new` → `session/prompt`, with
@@ -96,7 +103,14 @@ Safety and session:
 Every transport uses the same typed dispatcher. Destructive deletes require an
 approved plan naming the exact operation and target. An approval is
 single-use. `undo` truncates one journal entry and deterministically rebuilds;
-`reset_session` clears the journal and ephemeral schema.
+`reset_session` clears the journal and ephemeral schema. The runtime
+database is derived from the journal: boot, `undo`, and `reset_session`
+drop every table, re-migrate, and re-apply the world's seeds, and an
+approved `delete_entity` drops the entity's table, so rows from a reset
+or undone world cannot resurrect through the CRUD surface. A seed's
+rows are inserted before its journal entry is durable; a seed the
+database refuses leaves nothing behind. A journal whose last line was
+torn by a crash loses exactly that in-flight entry at open.
 
 Those rules are enforced during **replay**, not only at the tool call. The
 journal is the authorization record, so a destructive entry carries the

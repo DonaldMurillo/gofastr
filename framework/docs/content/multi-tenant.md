@@ -77,6 +77,9 @@ automatically.
 
 > The standalone helpers `framework.ApplyTenantFilter` / `InjectTenantID`
 > always use the default `tenant_id` column (they have no entity context).
+> `InjectTenantID` fails closed: with no tenant in the context it deletes
+> a body-supplied `tenant_id` rather than letting the caller name the
+> row's tenant.
 > A custom `TenantField` is honored by the automatic CRUD scoping, which is
 > the path you normally use; reach for the standalone helpers only with the
 > default column.

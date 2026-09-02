@@ -77,7 +77,7 @@ The snapshot's header records the embedder's `Name()` and `Dim()`. Reopening wit
 - **`MemoryKeyword`**: in-process BM25-flavoured backend. Zero deps. Recommended default.
 - **`WrapSearchBackend(b search.Backend)`**: adapter over `battery/search` so an app that already runs Postgres FTS or a Bleve index reuses it.
 
-When `Query.Hybrid=true` and `Options.Keyword != nil`, the index gathers the top-`4K` candidates from vector and keyword separately, fuses them with reciprocal-rank fusion (`k=60`), and feeds the union into MMR/rerank. When `Keyword == nil`, `Hybrid=true` silently degrades to vector-only.
+When `Query.Hybrid=true` and `Options.Keyword != nil`, the index gathers the top-`4K` candidates from vector and keyword separately, fuses them with reciprocal-rank fusion (`k=60`), and feeds the union into MMR/rerank. The keyword leg receives at most the first 64 whitespace-separated terms of the query text, the same cap `battery/search` applies, so a token-stuffed query cannot buy an unbounded scoring sweep. When `Keyword == nil`, `Hybrid=true` silently degrades to vector-only.
 
 ## Diversity (MMR)
 

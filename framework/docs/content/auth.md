@@ -209,6 +209,14 @@ Form-flow responses set the session cookie before redirecting, so the
 runtime's [form interceptor](runtime-contract.md#forms)
 follows the `Location` header and lands the user on the next page.
 
+Both surfaces decode credentials strictly. A body that names `email` or
+`password` twice, or spells one as a case-folded variant (`EMAIL`,
+`PASSword`), is a `400` on the JSON and the form surface alike: the two
+parsers used to resolve such a body to different identities (`net/url`
+keeps the first value, `encoding/json` the last), so the ambiguity is
+refused rather than resolved by parser accident. Extra JSON keys that
+match no credential name stay ignored.
+
 Open-redirect protection: the `?next=` (query or form) override is
 honored only for same-origin paths starting with `/`. `//evil.example`
 and full URLs are rejected, falling back to `/`.

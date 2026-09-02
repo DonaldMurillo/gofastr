@@ -144,6 +144,13 @@ Three load-bearing points:
    so the runner's advisory-lock + checksum-integrity + single-transaction
    atomicity are preserved with zero runner changes (`core/migrate` is fed,
    never forked).
+4. **Distinct module names derive distinct schemas.** The schema and role
+   are `module_<name>` for a name made of lowercase letters and digits.
+   A name the identifier sanitizer would fold (`billing-1`, `billing_1`,
+   `Widget`) carries a 12-hex digest of the original name
+   (`module_billing_1_<digest>`), so two operator-approved modules can
+   never share one schema behind one role, where the `REVOKE` fence
+   would bound each to the other's objects.
 
 The short-lived **migration coordinator** (`App.NewModuleMigrationCoordinator`)
 loads approved SQL from the digest-verified artifact, validates it against

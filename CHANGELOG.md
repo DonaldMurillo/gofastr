@@ -22,6 +22,163 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   posture of A2A push and webhook egress; classified hardening, not an
   attacker-reachable bug, since the endpoints come from the dev-anchored
   issuer's own document.
+- **Auth decodes credentials strictly**: a login or register body that
+  names `email` or `password` twice, or through a case-folded key, is a
+  400 on both the JSON and the form surface. `net/url` kept the first
+  duplicate and `encoding/json` the last, so one smuggled body
+  authenticated a different identity depending on Content-Type.
+- **The relay strips `Refresh` and `Clear-Site-Data` from vendor
+  responses and drops `Link` headers with absolute targets**: a
+  header-driven navigation to the vendor origin, a wipe of the visitor's
+  app-origin storage, and a direct preload connection to the vendor all
+  defeated the first-party posture the `Location` refusal exists for.
+- **Kiln**: the world-disclosing GET routes refuse cross-site and
+  DNS-rebound browser subscribers the way the POST family does; `ALTER
+  TABLE` and `PRAGMA` identifiers are quoted, so a hostile column name can
+  no longer run a second statement through the multi-statement SQLite
+  driver; journal-derived strings with control characters are omitted
+  from the agent's system prompt instead of rewriting it; graduation and
+  the preview manifest refuse or coerce off-origin PWA `start_url` and
+  `scope` values.
+- **Contracts**: `Report.Apply` (and so `verify --fix` and the MCP fix
+  tool) refuses a symlink that resolves outside the analysed root; a rule
+  reference spelled with a Unicode fold-equivalent (`gofaſtr1003`) is an
+  unknown rule, never a live suppression; the generated-source exemption
+  needs the full `// Code generated … DO NOT EDIT.` line; report text
+  strips control bytes; suggestion ranking caps its needle.
+- **`framework.InjectTenantID` fails closed**: with no tenant in the
+  context it deletes a body-supplied `tenant_id` instead of letting the
+  caller name the row's tenant.
+- **Host head and discovery URLs**: `WithFavicon` and `WithPreconnect`
+  gate their URLs like every other head emitter (`javascript:`, `data:`,
+  `file:`, `blob:` and protocol-relative values are dropped); a
+  `preload`, `modulepreload` or `prefetch` rel in caller head HTML is
+  detected on the parsed token list, not a literal spelling;
+  `X-Forwarded-Proto` is honoured only as `http` or `https`; the
+  alternate `Link` path strips control bytes.
+- **A panicking handler or gate no longer kills a stdio process**:
+  moduleproto recovers a handler panic into a paired internal error, and
+  MCP evaluates listing gates outside the registry lock and fails closed
+  on a panicking gate everywhere, including `tools/call`.
+- **`netguard` classifies 0.0.0.0/8 and 240.0.0.0/4 as internal**, closing
+  the `http://0/` SSRF bypass and the limited-broadcast address.
+- **Generators refuse identifier injection**: a blueprint hook handler,
+  a CLI field name, and an SDK entity or table that cannot survive the
+  identifier or string-literal position they are emitted into are
+  refused at spec build, and derived names that collide (`events` /
+  `Events`, `blog_posts` / `blog-posts`) are refused instead of emitting
+  a second definition.
+- **Harness**: a WebSocket command body naming a session other than the
+  socket's own is refused; the cost tracker's running total is monotone
+  against a negative usage report; a PEM private key is redacted header
+  through footer; tool progress and argument summaries are sanitized
+  before they reach the terminal.
+- **Browser runtime**: every DOM-borne value that reaches a selector is
+  `CSS.escape`d, widget registry reads are own-property gated so
+  `constructor` cannot resolve through the prototype chain, the kiln tool
+  POST path is gated to an identifier, and the sortable list's conflict
+  refresh mounts a response body only on a 2xx.
+- **Eval reports escape candidate text**: RESULTS.md and leaderboard.md
+  render evidence through HTML entities with newlines flattened, the CLI
+  shim writes one log line per invocation, and workspace fingerprints
+  hash through symlinks.
+
+### Changed
+- **BREAKING: process-module schema and role names for names containing
+  `-`, `_` or an upper-case letter carry a digest suffix**
+  (`module_billing_1_<12 hex>`): distinct operator-approved modules used
+  to sanitize onto one schema behind one role, and the `REVOKE` fence
+  then bounded each to the other's objects. Pure lowercase-alphanumeric
+  names are unchanged. Re-provisioning a module with such a name creates
+  a new schema; migrate its data before upgrading.
+- **Custom endpoint tool names keep hyphens and mark path parameters**
+  (`posts_get_feed-items`, `posts_get_items_-id-`), and entity and path
+  spelling is no longer case-folded, so distinct routes keep distinct tool
+  and operation ids. Names for endpoints without hyphens, parameters or
+  upper case are unchanged.
+- `Operation.AddParameter` keeps the first declaration of a `(name, in)`
+  pair; the entity list operation can no longer declare `sort`, `page`,
+  `cursor`, `q` or `trashed` twice when a field shares the name.
+- `component.NewWidget` slugifies its ID onto `[A-Za-z0-9_-]`, the
+  alphabet the browser's behavior-script gate honours; `island.Manager.
+  Subscribe` returns a closed channel on a cap-refused connect instead
+  of one that never delivers; `interactive.SetSignal` and friends, and
+  a store slice declaration, panic on the reserved names `__proto__`,
+  `constructor` and `prototype` the kernel refuses every write to.
+- The fanout envelope carries a non-UTF-8 body base64-encoded in a new
+  optional `x` field; UTF-8 bodies are byte-identical on the wire.
+- Kiln's runtime database is derived from the journal: boot,
+  `reset_session` and `undo` rebuild it, an approved `delete_entity`
+  drops the table, a seed's rows are inserted before its entry is
+  durable, and a crash-torn last journal line is healed at open.
+
+### Fixed
+- **Blueprint hooks reach the generated app**: a stub per handler in
+  `stubs.go` and a `HookRegistry` registration in `main.go`; the hooks
+  section used to decode and emit nothing. Blueprint validation also
+  refuses `.json` duplicate keys, non-scalar `db.driver`/`db.url`,
+  non-integer seed `count`/`weights`, nav icons carrying markup (icons
+  are now emitted), duplicate seed blocks, unknown seed row keys, forward
+  seed references, and count seeds over required relations; complex seed
+  values are emitted as Go literals instead of `nil`. A generated app
+  carrying a hook is now compiled by the test suite, which caught the
+  stub's own compile error.
+- **CRUD**: a single-field cursor naming a foreign column is refused;
+  repeating a relation in `?include=` with two filter sets unions the
+  rows instead of AND-ing an impossible predicate; the in-process nested
+  filter honours the IN cap; the streaming list survives `limit` 0; an
+  upsert with a caller-supplied auto-increment key updates that row
+  instead of inserting a duplicate; the MCP `_list` tool forwards array
+  filter values one per element; `Define` refuses a cursor field that
+  names no declared column.
+- **OpenAPI and SDK docs**: documented endpoint paths drop dot segments,
+  a versioned entity's group prefix replaces the API prefix instead of
+  nesting under it (`/api/v1/posts`, never `/api/api/v1/posts`),
+  reference pages address versioned entities at their real base path and
+  render one section per registered version; `sdk.PackZip` refuses a
+  prefix that escapes the extraction directory.
+- **UI**: `NumberInput` emits each bound only when declared, `TagInput`
+  caps server-rendered values at `MaxLength`, a `Section`'s heading id
+  follows its explicit `ID`, filter pill ids get an ordinal suffix only
+  when two options fold to one slug, `FontFaceCSS` neutralizes
+  declaration breakers in config values, and `Router.Resolve` never
+  binds an empty path segment to a parameter.
+- **Batteries**: access-log entries percent-encode control bytes and
+  `log_filter` errors on a timestamp of the wrong JSON type; Redis
+  `Reclaim` quarantines a corrupt processing entry to the dead-letter
+  list instead of deleting the job's only copy; a transient subscriber
+  lookup error keeps a webhook delivery retryable and a stale
+  non-terminal settle cannot regress a delivered or dead row; the hybrid
+  keyword leg caps query terms at 64.
+- **Core**: the YAML parser unquotes mapping keys so the duplicate guard
+  sees `"title"` and `title` as one key, and refuses anchor, alias, tag
+  and flow decorations on keys; `ValidateMIME` compares base media types
+  so a `text/plain` allowlist matches the sniffed `text/plain;
+  charset=utf-8`; `Force(v, true)` refreshes a drifted checksum; a2a
+  stores a push config before its task so a refused send leaves no
+  orphan, keys its memory store by struct so a NUL in an owner cannot
+  leak another's rows, and reports backend errors generically; the
+  idempotency shard is length-prefixed and injective and its failure
+  log scrubs the key; span names and attributes scrub control bytes;
+  `Int` refuses a `uint` above `MaxInt64` instead of wrapping negative;
+  duplicate frontmatter keys resolve first-wins; the pack round trip
+  keeps quoted keys.
+- **Framework**: `AddQueue`'s stop is bounded by the drain deadline
+  instead of hanging SIGTERM behind a job handler that ignores its
+  context.
+- **Kiln**: replay refuses `add_page` with an empty path and
+  `update_page_element` with a null page; graduation refuses seeds the
+  live runtime would refuse and names a handler stub even for an id with
+  no identifier characters; `add_seed` for an unknown entity is a
+  validation error at ingestion; `abs(MinInt64)` saturates.
+- **Analyzers**: `mapwriter` resolves sinks reached without selector
+  syntax (bound method values, bound package functions, dot imports,
+  `WriteString`-only types), map-ordered range sources hidden behind a
+  variable or `slices.Collect`, and binds the `len(m) == 1` exemption by
+  variable identity rather than spelling. `stability.Classify` matches
+  manifest prefixes on a path-segment boundary.
+- **Harness TUI, contracts and the CSP linter**: the inline-style gate
+  also catches `/`-separated attributes and unquoted values.
 
 ## [0.80.0] - 2026-09-02
 

@@ -227,7 +227,11 @@ job (never silently dropped):
 - **MemoryQueue**: stored in a bounded in-memory slice (cap 1 000; oldest
   evicted on overflow).
 - **DBQueue**: row status set to `'failed'`.
-- **RedisQueue**: appended to the `<queue>:dead` Redis list.
+- **RedisQueue**: appended to the `<queue>:dead` Redis list. `Reclaim`
+  sends an unparseable processing-hash entry there too, and removes it
+  from the hash only once the push landed: that hash holds a claimed
+  job's only durable copy, so a corrupt entry is quarantined, never
+  deleted.
 
 `MemoryQueue` and `DBQueue` log every handler failure at WARN and every
 dead-letter at ERROR (via `slog.Default()`, or a custom logger passed as

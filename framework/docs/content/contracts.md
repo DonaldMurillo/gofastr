@@ -341,8 +341,10 @@ by `make clean`), so it never ships.
 
 Three things are absent on purpose rather than pending.
 
-**Generated files.** Analyzers skip anything carrying a `Code generated …
-DO NOT EDIT` header: the developer cannot fix a finding there, only the
+**Generated files.** Analyzers skip anything carrying the full
+`// Code generated … DO NOT EDIT.` line (either half alone exempts
+nothing: the header is repo content, and a bare `DO NOT EDIT` comment
+must not buy a whole-tree exemption): the developer cannot fix a finding there, only the
 generator can, and a finding nobody can act on trains people to stop
 reading. This is why `cmd/check-csp` still exists alongside the
 rendering rules. It scans generated output at `make build` time, where
