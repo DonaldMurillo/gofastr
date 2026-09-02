@@ -273,3 +273,49 @@ func TestUpsert_BodyTenantFieldWithoutContextRejected(t *testing.T) {
 		t.Fatal("SECURITY: [upsert-tenant] attacker-supplied tenant_id accepted without tenant context. Attack: forged tenant assignment on upsert.")
 	}
 }
+
+// TestUpsertAutoIncrementPKHonored pins the ON CONFLICT edge for entities
+// whose primary key is AutoGenerate=AutoIncrement. The column loop in
+// UpsertOne omits AutoIncrement columns unconditionally (to avoid the 0
+// placeholder colliding on id=0), which also drops a caller-SUPPLIED pk:
+// the INSERT then carries no id, the DB assigns a fresh one, and ON
+// CONFLICT (id) can never fire. A caller targeting their own existing row
+// gets a silent duplicate insert instead of the documented update
+// ("every writable field in body overwrites the existing row") — while
+// upsertPreflight treats the very same body pk as the conflict target
+// (a foreign/soft-deleted row at that id IS refused), so the write half
+// disagrees with the preflight half on the same input.
+func TestUpsertAutoIncrementPKHonored(t *testing.T) {
+	cfg := makeEntityConfig("counter_items", "counter_items", "", []schema.Field{
+		{Name: "id", Type: schema.Int, AutoGenerate: schema.AutoIncrement},
+		{Name: "title", Type: schema.String},
+	})
+	ch, db := setupSecurityTestHandler(t, cfg,
+		`CREATE TABLE counter_items (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT)`)
+	seedRows(t, db, "counter_items", []map[string]any{
+		{"id": 1, "title": "original"},
+	})
+
+	row, err := ch.UpsertOne(context.Background(), map[string]any{
+		"id":    1,
+		"title": "updated",
+	})
+	if err != nil {
+		t.Fatalf("upsert failed unexpectedly: %v", err)
+	}
+
+	var n int
+	if err := db.QueryRow("SELECT COUNT(*) FROM counter_items").Scan(&n); err != nil {
+		t.Fatalf("count: %v", err)
+	}
+	if n != 1 {
+		t.Fatalf("SECURITY: [upsert-autoinc] upsert targeting existing pk 1 left %d rows (want 1). Attack: the caller-supplied AutoIncrement pk is dropped from the INSERT column list, so ON CONFLICT never fires and the 'update' silently inserts a duplicate (returned row id=%v).", n, row["id"])
+	}
+	var title string
+	if err := db.QueryRow("SELECT title FROM counter_items WHERE id = 1").Scan(&title); err != nil {
+		t.Fatalf("read row 1: %v", err)
+	}
+	if title != "updated" {
+		t.Fatalf("SECURITY: [upsert-autoinc] row 1 title = %q, want \"updated\". Attack: upsert of an existing row became a fresh insert instead of the documented overwrite.", title)
+	}
+}

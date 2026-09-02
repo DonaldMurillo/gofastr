@@ -402,3 +402,54 @@ func TestReplayRefusesEntityPageCollision(t *testing.T) {
 		}}))
 	})
 }
+
+// Property: replay must enforce the live tool's own page-shape rules.
+// protocol.AddPage refuses an empty path ("missing page.path") and
+// UpdatePageElement always journals a non-nil New; replay checks
+// neither, so two degenerate shapes enter the world IR only through a
+// hand-authored journal:
+//
+//   - add_page with path "" — the live tool refuses it; the uihost
+//     screen registration of an empty path is undefined.
+//   - update_page_element with new:null — applyWorldEdit stores a NIL
+//     page under the path (ValidatePageActions returns nil for nil), and
+//     both readers then skip it silently (kiln/render applyUIHostPages,
+//     freeze screenMaps: `if page == nil { continue }`): the journal
+//     records an applied edit while the page quietly vanishes from the
+//     preview AND from the graduation artifact, a silent-loss shape.
+func TestReplayRefusesDegeneratePageEdits(t *testing.T) {
+	t.Run("add_page with empty path", func(t *testing.T) {
+		s := NewSession()
+		err := Apply(s, worldEdit(OpAddPage, AddPagePayload{Page: &world.Page{
+			Path: "", Tree: world.Node{Kind: "div"},
+		}}))
+		if err == nil {
+			t.Error("SECURITY: [integrity] replay accepted add_page with an empty path; protocol.AddPage refuses it (\"missing page.path\"), so this shape exists only in a hand-authored journal and its uihost screen registration is undefined.")
+		}
+		if _, installed := s.World.Pages[""]; installed {
+			t.Error("SECURITY: [integrity] the empty-path page was installed in the world")
+		}
+	})
+	t.Run("update_page_element with null page", func(t *testing.T) {
+		s := newSessionWithEntity(t)
+		mustApply(t, s, worldEdit(OpAddPage, AddPagePayload{Page: &world.Page{
+			Path: "/posts", Tree: world.Node{Kind: "div"},
+		}}))
+		err := Apply(s, worldEdit(OpUpdatePageElement, UpdatePageElementPayload{Path: "/posts", New: nil}))
+		if err == nil {
+			t.Error("SECURITY: [integrity] replay accepted update_page_element with new:null and stored a nil page: both readers (kiln/render applyUIHostPages, freeze screenMaps) silently skip nil pages, so the journal records an applied edit while the page vanishes from the preview and the graduation artifact.")
+		}
+		if got := s.World.Pages["/posts"]; got == nil {
+			t.Error("SECURITY: [integrity] the nil page was installed in the world map")
+		}
+	})
+	t.Run("legitimate page update still applies", func(t *testing.T) {
+		s := NewSession()
+		mustApply(t, s, worldEdit(OpAddPage, AddPagePayload{Page: &world.Page{
+			Path: "/ok", Tree: world.Node{Kind: "div"},
+		}}))
+		mustApply(t, s, worldEdit(OpUpdatePageElement, UpdatePageElementPayload{
+			Path: "/ok", New: &world.Page{Path: "/ok", Tree: world.Node{Kind: "span"}},
+		}))
+	})
+}

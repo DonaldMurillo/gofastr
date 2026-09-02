@@ -203,3 +203,177 @@ func stripGoDoubleQuoted(src string) string {
 	}
 	return b.String()
 }
+
+// TestScaffoldNameGuardedByValidate: the `gofastr generate entity|screen
+// <name>` argv is the same trust boundary the entity mode above defends —
+// a name typed (or scripted) at the CLI becomes the blueprint fragment's
+// entity/screen name, which lands in identifier position and in the emitted
+// file name (entities/<name>.go, screens via screenFileName). The scaffold
+// path must inherit validateBlueprint's identifier guard rather than
+// synthesizing a fragment that bypasses it: generateBlueprint runs the same
+// validateBlueprint, so a literal-breaking or path-shaped name must be
+// refused there. Pinned green: the guard exists; this keeps a future
+// "scaffold skips validation for convenience" refactor from opening it.
+func TestScaffoldNameGuardedByValidate(t *testing.T) {
+	for _, name := range []string{
+		`x"); PWN() //`, // breaks out of the emitted Go literal
+		`../evil`,       // path traversal via the derived file name
+		`a/b`,           // ditto, slash survives toCamelCase
+		`2fa_tokens`,    // leading digit: no valid Go identifier
+		"x`y",           // backtick: raw struct-tag literal
+	} {
+		bp := Blueprint{Entities: []framework.EntityDeclaration{{
+			Name:   name,
+			Fields: []framework.FieldDeclaration{{Name: "name", Type: "string", Required: true}},
+		}}}
+		err := validateBlueprint(bp)
+		if err == nil {
+			t.Errorf("scaffold entity name %q: accepted; it must be refused before entities/%s.go is emitted", name, name)
+			continue
+		}
+		if !strings.Contains(err.Error(), "identifier") && !strings.Contains(err.Error(), name) {
+			t.Errorf("scaffold entity name %q: error neither names the value nor says identifier: %v", name, err)
+		}
+	}
+	// Control: the names the scaffold is FOR still pass.
+	bp := Blueprint{Entities: []framework.EntityDeclaration{{
+		Name:   "two_fa_tokens",
+		Fields: []framework.FieldDeclaration{{Name: "name", Type: "string", Required: true}},
+	}}}
+	if err := validateBlueprint(bp); err != nil {
+		t.Fatalf("plain scaffold name must validate: %v", err)
+	}
+}
+
+// TestGenerateCLI_FieldNameMustDeriveIdentifier: buildCLIEntity guards
+// ent.Struct (isGoIdentifier) and ent.Table (literal-safe), but a FIELD name
+// lands in generated identifier positions with no guard of its own:
+//
+//	flt%s := fs.String(...)  (list filters)
+//	fld%s := fs.String(...)  (create/update/patch flags)
+//	set(%q, *flt%s)          (list param wiring)
+//	body[%q] = *fld%s        (mutation payload wiring)
+//
+// toCamelCase only splits on _/-/space, so every other byte survives into
+// `fld`+name. A NoQuery writable field reaches only the statement-context
+// sinks (flag decl + body assignment), where `x;pwn();y` renders
+//
+//	fldX;pwn();y := fs.String("x;pwn();y", "", "…")
+//	body["x;pwn();y"] = *fldX;pwn();y
+//
+// — syntactically valid Go with pwn() at statement position, which passes
+// the format.Source gate emitCLIFiles relies on and ships in the operator's
+// CLI. Same trust boundary as the entity/table guards above (hand-written
+// entities/*.go via packReadEntities); the field is the one input the guard
+// forgot.
+func TestCLIFieldNameMustDeriveIdentifier(t *testing.T) {
+	for _, name := range []string{
+		"x;PWN();y",  // statement-position call, parses (the NoQuery shape below)
+		"x:=pwn();y", // walrus at flag decl
+		`ti"tle`,     // closes the emitted identifier into expression position
+		"x`y",        // backtick through identifier + struct-tag-ish help text
+		"x\npwn();y", // newline: line-splitting escape
+	} {
+		decls := []framework.EntityDeclaration{{
+			Name:  "events",
+			Table: "events",
+			Fields: []framework.FieldDeclaration{
+				{Name: name, Type: "string", NoQuery: true},
+			},
+		}}
+		_, err := buildCLISpec(decls, defaultCLIOptions(), "example.com/app/entities/client")
+		if err == nil {
+			t.Errorf("field name %q: buildCLISpec accepted a name that does not derive a Go identifier (it is emitted as generated variable names)", name)
+			continue
+		}
+		if !strings.Contains(err.Error(), name) {
+			t.Errorf("field name %q: error does not name the offending field: %v", name, err)
+		}
+	}
+	// Control: real field names, including unicode and digits, still derive
+	// identifiers and must pass.
+	for _, name := range []string{"title", "created_at", "x2fa", "café"} {
+		decls := []framework.EntityDeclaration{{
+			Name:  "events",
+			Table: "events",
+			Fields: []framework.FieldDeclaration{
+				{Name: name, Type: "string"},
+			},
+		}}
+		if _, err := buildCLISpec(decls, defaultCLIOptions(), "example.com/app/entities/client"); err != nil {
+			t.Errorf("clean field name %q must generate: %v", name, err)
+		}
+	}
+}
+
+// TestGenerateCLI_FieldPayloadBecomesStatements: the hazard the guard above
+// must close, pinned the way TestGenerateCLI_SelectionSinkIsCommentBodied
+// pins its sink. Today the emitted file PARSES with pwn() at statement
+// position — the format.Source gate cannot see it — so refusal at spec
+// build is the only boundary. This subtest proves the payload is live code,
+// not data, until the guard exists.
+func TestCLIFieldPayloadBecomesStatements(t *testing.T) {
+	decls := []framework.EntityDeclaration{{
+		Name:  "events",
+		Table: "events",
+		Fields: []framework.FieldDeclaration{
+			{Name: "x;PWN();y", Type: "string", NoQuery: true},
+		},
+	}}
+	spec, err := buildCLISpec(decls, defaultCLIOptions(), "example.com/app/entities/client")
+	if err != nil {
+		t.Skipf("spec build now refuses the payload (guard landed): %v", err)
+	}
+	files := renderCLIFiles(spec)
+	for _, f := range files {
+		if !strings.Contains(f.content, "PWN") {
+			continue
+		}
+		assertIRStayedData(t, "cli-field-identifier", f.name, f.content)
+	}
+}
+
+// TestCLIFileCollisionsFailGeneration: two entities whose tables derive the
+// same command form (user_posts / user-posts) would emit the same
+// <command>.go twice, and a table carrying parent traversal (../evil) would
+// emit a file name that escapes the output dir. Both must fail generation
+// with an error naming the file, not silently overwrite or write outside
+// --out. Pinned green: FileSet.Add + SafeRelativePath carry this; the pin
+// keeps a future "skip the fileset, write directly" refactor from opening it.
+func TestCLIFileCollisionsFailGeneration(t *testing.T) {
+	t.Run("same command form collides", func(t *testing.T) {
+		decls := []framework.EntityDeclaration{
+			{Name: "userPosts", Table: "user_posts", Fields: []framework.FieldDeclaration{{Name: "title", Type: "string"}}},
+			{Name: "userposts", Table: "user-posts", Fields: []framework.FieldDeclaration{{Name: "title", Type: "string"}}},
+		}
+		spec, err := buildCLISpec(decls, defaultCLIOptions(), "example.com/app/entities/client")
+		if err != nil {
+			t.Fatalf("distinct tables must build: %v", err)
+		}
+		_, err = fileSetFromGeneratedFiles(renderCLIFiles(spec), "cli")
+		if err == nil {
+			t.Fatal("SECURITY: [silent-overwrite] colliding command forms wrote one entity over the other with no error")
+		}
+		if !strings.Contains(err.Error(), "user-posts.go") {
+			t.Errorf("collision error must name the colliding file: %v", err)
+		}
+	})
+	t.Run("traversal table refused", func(t *testing.T) {
+		decls := []framework.EntityDeclaration{{
+			Name:   "events",
+			Table:  "../evil",
+			Fields: []framework.FieldDeclaration{{Name: "title", Type: "string"}},
+		}}
+		spec, err := buildCLISpec(decls, defaultCLIOptions(), "example.com/app/entities/client")
+		if err != nil {
+			t.Skipf("spec build now refuses traversal tables (guard landed): %v", err)
+		}
+		_, err = fileSetFromGeneratedFiles(renderCLIFiles(spec), "cli")
+		if err == nil {
+			t.Fatal("SECURITY: [path-escape] table with parent traversal produced a file name outside the output dir")
+		}
+		if !strings.Contains(err.Error(), "parent traversal") {
+			t.Errorf("traversal error must say so: %v", err)
+		}
+	})
+}

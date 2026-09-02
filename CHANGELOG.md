@@ -7,6 +7,22 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+### Security
+- **OIDC discovery endpoints are transport-validated and fetches never
+  follow redirects** (hardening): every endpoint the discovery document
+  names (`token_endpoint`, `jwks_uri`, `userinfo_endpoint`,
+  `authorization_endpoint`) must be `https://` — or plain `http://` on a
+  literal-loopback host under a literal-loopback `http://` issuer — and
+  must not carry userinfo; distinct hosts stay allowed. The provider's
+  HTTP client now answers redirects as final responses instead of
+  following them, so a token endpoint that answers 307/308 can no longer
+  have the exchange POST body (`client_secret`, code) re-sent verbatim to
+  the redirect target (the forwarded-body mechanics are pinned red-first
+  by `TestOIDCSec_TokenRedirectKeepsSecret`). Mirrors the redirects-off
+  posture of A2A push and webhook egress; classified hardening, not an
+  attacker-reachable bug, since the endpoints come from the dev-anchored
+  issuer's own document.
+
 ## [0.80.0] - 2026-09-02
 
 ### Fixed

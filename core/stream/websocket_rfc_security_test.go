@@ -2,6 +2,7 @@ package stream
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -128,4 +129,143 @@ func wsTextFrag(opcode byte, fin bool, payload string) []byte {
 		b0 |= 0x80
 	}
 	return append([]byte{b0, byte(len(payload))}, payload...)
+}
+
+// Property: the close-code echo boundary documented on wsEchoableCloseCode
+// holds on the wire, not just in the predicate. Each row is one boundary
+// class from that doc comment, not byte-variants of one class:
+//
+//   - never echoed (→1002): 1004 (reserved §7.4.1), 1015 (reserved,
+//     MUST NOT appear on the wire), 1012 (IANA but not RFC-6455-defined),
+//     2001 (§7.4.2 extension range), 65535 (outside the code space)
+//   - echoed verbatim: 1000/1011 (RFC-defined bounds), 3000/4999
+//     (library/private-use bounds)
+//
+// 1005/1006/999 and the 1001 positive are already pinned in
+// websocket_review_test.go and not repeated.
+func TestCloseEchoCodeBoundary(t *testing.T) {
+	never := []uint16{1004, 1015, 1012, 2001, 65535}
+	verbatim := []uint16{1000, 1011, 3000, 4999}
+
+	t.Run("predicate surface", func(t *testing.T) {
+		for _, code := range never {
+			if wsEchoableCloseCode(code) {
+				t.Errorf("wsEchoableCloseCode(%d) = true, want false", code)
+			}
+		}
+		for _, code := range verbatim {
+			if !wsEchoableCloseCode(code) {
+				t.Errorf("wsEchoableCloseCode(%d) = false, want true", code)
+			}
+		}
+	})
+
+	t.Run("wire surface", func(t *testing.T) {
+		for _, code := range never {
+			t.Run(fmt.Sprintf("code-%d-echoes-1002", code), func(t *testing.T) {
+				body := []byte{byte(code >> 8), byte(code)}
+				frame := driveCloseEcho(t, body)
+				if len(frame) < 4 || frame[0]&0x0F != wsopcodeClose {
+					t.Fatalf("expected Close echo, got %x", frame)
+				}
+				if frame[2] != echo1002[0] || frame[3] != echo1002[1] {
+					t.Fatalf("code %d echoed as %02x %02x, want 03 EA (1002)", code, frame[2], frame[3])
+				}
+			})
+		}
+		for _, code := range verbatim {
+			t.Run(fmt.Sprintf("code-%d-echoed-verbatim", code), func(t *testing.T) {
+				body := []byte{byte(code >> 8), byte(code)}
+				frame := driveCloseEcho(t, body)
+				if len(frame) != 4 {
+					t.Fatalf("echo frame = %x, want header+status only", frame)
+				}
+				if frame[2] != body[0] || frame[3] != body[1] {
+					t.Fatalf("code %d echoed as %02x %02x, want %02x %02x", code, frame[2], frame[3], body[0], body[1])
+				}
+			})
+		}
+	})
+}
+
+// Property: the echo Close frame carries the peer's status code and
+// nothing else — the peer-controlled reason bytes are never replayed on
+// our wire, even at the 125-byte control-frame payload maximum.
+func TestCloseEchoDropsPeerReason(t *testing.T) {
+	for name, reason := range map[string]string{
+		"short reason":      "bye",
+		"max-length reason": strings.Repeat("R", 123), // 2 code bytes + 123 = control max
+	} {
+		t.Run(name, func(t *testing.T) {
+			body := append([]byte{0x03, 0xE8}, reason...) // 1000 + reason
+			frame := driveCloseEcho(t, body)
+			if len(frame) != 4 {
+				t.Fatalf("echo frame = %x (%d bytes), want exactly 2-byte header + 2-byte status", frame, len(frame))
+			}
+			if frame[2] != 0x03 || frame[3] != 0xE8 {
+				t.Fatalf("echo status = %02x %02x, want 03 E8 (1000)", frame[2], frame[3])
+			}
+		})
+	}
+}
+
+// Property: a Close frame arriving mid-fragmented-message aborts the
+// message; the partial fragment accumulated so far is never handed to
+func TestCloseFrameAbortsFragmentedMsg(t *testing.T) {
+	frames := append(wsTextFrag(0x1, false, "par"), 0x88, 0x02, 0x03, 0xE9)
+	// wsConnFromBytes does not initialise the close-handshake channels
+	// (its streams never carried a Close frame before), so build the
+	// conn fully: readFrame closes peerClosed when it parses the Close.
+	c := &WebSocketConn{
+		conn:       readOnlyConn{Reader: bytes.NewReader(frames)},
+		sendBuffer: make(chan []byte, 8),
+		closed:     make(chan struct{}),
+		peerClosed: make(chan struct{}),
+		config:     WSConfig{ReadLimit: 1 << 20},
+	}
+
+	f, err := c.readFrame()
+	if err == nil {
+		t.Fatal("Close during an open fragmented message was not surfaced as an error")
+	}
+	if f != nil {
+		t.Fatalf("partial fragment delivered as a complete message: opcode=0x%X payload=%q", f.opcode, f.payload)
+	}
+	select {
+	case <-c.peerClosed:
+	default:
+		t.Error("peerClosed was not signalled after the Close frame was parsed")
+	}
+}
+
+// Property: an UNMASKED client close frame is a protocol error, not a
+// close handshake. A hostile client that skips masking must not get the
+// courtesy of an echoed status code — the frame is rejected before the
+// close handling runs, no peerClosed signal fires, and Close() would
+// fall back to the bodyless echo rather than replaying peer bytes.
+func TestUnmaskedCloseIsProtocolError(t *testing.T) {
+	unmaskedClose := []byte{0x88, 0x02, 0x03, 0xE9} // CLOSE, code 1001, no mask
+	c := &WebSocketConn{
+		conn:       readOnlyConn{Reader: bytes.NewReader(unmaskedClose)},
+		sendBuffer: make(chan []byte, 8),
+		closed:     make(chan struct{}),
+		peerClosed: make(chan struct{}),
+		config:     WSConfig{ReadLimit: 1 << 20, requireMask: true},
+	}
+
+	f, err := c.readFrame()
+	if err == nil {
+		t.Fatal("unmasked client close frame was accepted (requireMask enforcement skipped it)")
+	}
+	if f != nil {
+		t.Fatalf("frame delivered for a protocol error: %x", f.payload)
+	}
+	select {
+	case <-c.peerClosed:
+		t.Error("unmasked close still signalled peerClosed; a protocol error must not complete a handshake")
+	default:
+	}
+	if echo := c.peerClosePayload.Load(); echo != nil {
+		t.Errorf("unmasked close captured echo payload %x; peer bytes from a protocol-violating frame must not be stored for echo", *echo)
+	}
 }

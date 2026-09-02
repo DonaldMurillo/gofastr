@@ -2,11 +2,15 @@ package render
 
 import (
 	"database/sql"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
 	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 
+	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/kiln/world"
 )
 
@@ -217,5 +221,166 @@ func TestKilnToolNameKeepsRealTools(t *testing.T) {
 		if !strings.Contains(out, `data-kiln-tool="`+name+`"`) {
 			t.Errorf("real tool %q dropped: %s", name, out)
 		}
+	}
+}
+
+// newWorldApp builds a framework app the way render_test.go's newTestApp
+// does; this file lives in the internal test package, so it needs its own.
+func newWorldApp(t *testing.T) *framework.App {
+	t.Helper()
+	db, err := sql.Open("sqlite3", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	return framework.NewApp(framework.WithDB(db))
+}
+
+// Property: an agent-authored PWA start_url/scope can never make the
+// served web app manifest resolve cross-origin.
+//
+// The world's PWA config reaches applyUIHostPages verbatim (set_app_config
+// over HTTP), and the manifest is what the operator's browser installs: a
+// start_url of "//evil.com" is scheme-relative, so the installed PWA
+// launches on the attacker's origin with the kiln app's name and icon.
+// freeze.validateGraduation checks `strings.HasPrefix(value, "/")` for
+// exactly this reason — but that check admits "//evil.com" too, and the
+// live preview applies no check at all.
+func TestPWAManifestStaysSameOrigin(t *testing.T) {
+	for name, tc := range map[string]struct {
+		startURL, scope string
+		bad             bool
+	}{
+		"scheme-relative start_url": {"//evil.example/pwa", "/", true},
+		"absolute start_url":        {"https://evil.example/", "/", true},
+		"backslash trick":           {"/\\evil.example/", "/", true},
+		"scheme-relative scope":     {"/app", "//evil.example/", true},
+		"ordinary paths":            {"/app", "/app", false},
+	} {
+		app := newWorldApp(t)
+		w := world.New()
+		w.Pages["/p"] = &world.Page{Path: "/p", Title: "P", Type: "page", Tree: world.Node{Kind: "div"}}
+		w.App.PWA = world.PWAConfig{
+			Enabled: true, Display: "standalone",
+			StartURL: tc.startURL, Scope: tc.scope,
+		}
+		if err := Apply(app, w); err != nil {
+			t.Fatalf("%s: Apply: %v", name, err)
+		}
+		res := httptest.NewRecorder()
+		app.Router().ServeHTTP(res, httptest.NewRequest(http.MethodGet, "/manifest.webmanifest", nil))
+		if res.Code != http.StatusOK {
+			t.Fatalf("%s: manifest: status %d body %.200s", name, res.Code, res.Body.String())
+		}
+		var manifest struct {
+			StartURL string `json:"start_url"`
+			Scope    string `json:"scope"`
+		}
+		if err := json.Unmarshal(res.Body.Bytes(), &manifest); err != nil {
+			t.Fatalf("%s: manifest JSON: %v", name, err)
+		}
+		for field, value := range map[string]string{"start_url": manifest.StartURL, "scope": manifest.Scope} {
+			// Browsers resolve backslashes as slashes in special URLs,
+			// so normalize before judging the value.
+			lower := strings.ReplaceAll(strings.ToLower(value), "\\", "/")
+			crossOrigin := strings.HasPrefix(lower, "//") || strings.Contains(lower, "://")
+			if tc.bad && crossOrigin {
+				t.Errorf("SECURITY: %s: manifest serves %s %q verbatim; the operator's browser installs it and the PWA launches on the attacker's origin", name, field, value)
+			}
+			if !tc.bad && crossOrigin {
+				t.Errorf("%s: ordinary %s %q was rejected", name, field, value)
+			}
+		}
+	}
+}
+
+// Property: the middleware catalog is closed. An agent-authored
+// middleware name the catalog does not know fails Apply loudly rather
+// than being dropped (leaving the operator previewing an app whose
+// declared middleware silently does not run).
+func TestUnknownMiddlewareRefused(t *testing.T) {
+	for _, name := range []string{"csrf", "auth", "rate_limit", "RECOVER", "recover "} {
+		app := newWorldApp(t)
+		w := world.New()
+		w.Middleware = []*world.Middleware{{Name: name, Cfg: map[string]any{}}}
+		if err := Apply(app, w); err == nil {
+			t.Errorf("Apply accepted unknown middleware %q", name)
+		}
+	}
+	// The one catalog entry still applies.
+	app := newWorldApp(t)
+	w := world.New()
+	w.Middleware = []*world.Middleware{{Name: "recover", Cfg: map[string]any{}}}
+	if err := Apply(app, w); err != nil {
+		t.Fatalf("catalog middleware rejected: %v", err)
+	}
+}
+
+// Property: a hostile route action degrades to a 500, never a panic on
+// the serving goroutine. applyRoutes installs raw http.HandlerFuncs and
+// panic recovery is an opt-in catalog middleware, so every action-shape
+// below must be contained by Resolve/WriteTo's own guards.
+func TestRouteHostileAction500sNotPanics(t *testing.T) {
+	routes := []*world.Route{
+		{Method: "GET", Path: "/status-expr", Action: world.Action{
+			Kind:   world.ActionRespondJSON,
+			Params: map[string]any{"status": "len(ctx.path) * 999"}, // > 999 for any path
+		}},
+		{Method: "GET", Path: "/status-nonint", Action: world.Action{
+			Kind:   world.ActionRespondJSON,
+			Params: map[string]any{"status": "1.5"},
+		}},
+		{Method: "GET", Path: "/body-error", Action: world.Action{
+			Kind:   world.ActionRespondJSON,
+			Params: map[string]any{"body": "ctx.nope"},
+		}},
+		{Method: "GET", Path: "/unknown-kind", Action: world.Action{
+			Kind:   world.ActionSetField,
+			Params: map[string]any{"field": "x"},
+		}},
+	}
+	for _, rt := range routes {
+		app := newWorldApp(t)
+		w := world.New()
+		w.Routes = []*world.Route{rt}
+		if err := Apply(app, w); err != nil {
+			t.Fatalf("%s: Apply: %v", rt.Path, err)
+		}
+		res := httptest.NewRecorder()
+		survived := true
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					survived = false
+					t.Errorf("%s: panicked the serving goroutine: %v", rt.Path, r)
+				}
+			}()
+			app.Router().ServeHTTP(res, httptest.NewRequest(http.MethodGet, rt.Path, nil))
+		}()
+		if !survived {
+			continue
+		}
+		if res.Code != http.StatusInternalServerError {
+			t.Errorf("%s: status = %d, want 500 (a hostile action is a render failure, not a served response)", rt.Path, res.Code)
+		}
+		// And nothing world-derived leaked into a response header.
+		if v := res.Header().Get("X-Evil"); v != "" {
+			t.Errorf("%s: response header set from action params: %q", rt.Path, v)
+		}
+	}
+	// Control: a healthy route still 200s.
+	app := newWorldApp(t)
+	w := world.New()
+	w.Routes = []*world.Route{{Method: "GET", Path: "/ok", Action: world.Action{
+		Kind:   world.ActionRespondJSON,
+		Params: map[string]any{"status": float64(200), "body": `"fine"`},
+	}}}
+	if err := Apply(app, w); err != nil {
+		t.Fatal(err)
+	}
+	res := httptest.NewRecorder()
+	app.Router().ServeHTTP(res, httptest.NewRequest(http.MethodGet, "/ok", nil))
+	if res.Code != http.StatusOK {
+		t.Errorf("healthy route: status = %d, want 200", res.Code)
 	}
 }

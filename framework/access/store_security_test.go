@@ -214,3 +214,197 @@ func TestGrantRevokeCrossReplicaConverge(t *testing.T) {
 			"shared state, not per-replica baselines).", canA, canB, rows, tombs)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Property: handleRemote treats a fanout payload as a REFRESH SIGNAL only —
+// malformed payloads are dropped without panicking and without marking any
+// role dirty, while a well-formed FOREIGN signal marks exactly its role.
+// The delivery goroutine is shared with every other topic; a panic or a
+// spurious full reload here wedges or floods the refresh path.
+// ---------------------------------------------------------------------------
+
+func TestHandleRemoteIgnoresMalformedSignals(t *testing.T) {
+	db := openAccessDB(t)
+	store, _ := seedStore(t, db, "editor", Permission("posts:read"))
+	stop, err := store.SetFanout(fanout.NewInProcess())
+	if err != nil {
+		t.Fatalf("SetFanout: %v", err)
+	}
+	defer stop()
+
+	malformed := [][]byte{
+		nil,
+		[]byte(""),
+		[]byte("not json at all"),
+		[]byte(`{"node":"broken`), // truncated envelope
+	}
+	for i, raw := range malformed {
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					t.Fatalf("SECURITY: [access] handleRemote panicked on malformed payload #%d: %v", i, r)
+				}
+			}()
+			store.handleRemote(raw)
+		}()
+	}
+
+	// A well-formed envelope whose BODY is not the invalidate struct is
+	// dropped too (json.Unmarshal error), not treated as role "".
+	store.handleRemote(fanout.Wrap("foreign-node", []byte("garbage-body")))
+	store.dirtyMu.Lock()
+	dirty := len(store.dirty)
+	store.dirtyMu.Unlock()
+	if dirty != 0 {
+		t.Errorf("malformed signals marked %d roles dirty, want 0", dirty)
+	}
+
+	// Control: a well-formed foreign signal for a role marks that role and
+	// the worker drains it.
+	store.handleRemote(fanout.Wrap("foreign-node", []byte(`{"role":"editor"}`)))
+	if !pollAccessUntil(2*time.Second, func() bool { return storeRoleDirtyCleared(store) }) {
+		t.Fatal("worker never drained the well-formed signal")
+	}
+}
+
+// storeRoleDirtyCleared reports whether the dirty set is empty.
+func storeRoleDirtyCleared(s *GrantStore) bool {
+	s.dirtyMu.Lock()
+	defer s.dirtyMu.Unlock()
+	return len(s.dirty) == 0
+}
+
+// pollAccessUntil polls fn until true or the deadline passes.
+func pollAccessUntil(timeout time.Duration, fn func() bool) bool {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if fn() {
+			return true
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	return false
+}
+
+// ---------------------------------------------------------------------------
+// Property: an empty-role signal ("") converges the WHOLE policy from
+// authoritative DB state — a drifted in-memory grant the DB never saw is
+// removed by the full reload, the same convergent path a failed reload
+// retries through. The signal must never be able to GRANT anything itself.
+// ---------------------------------------------------------------------------
+
+func TestEmptyRoleSignalConvergesDrift(t *testing.T) {
+	db := openAccessDB(t)
+	store, policy := seedStore(t, db, "editor", Permission("posts:read"))
+
+	stop, err := store.SetFanout(fanout.NewInProcess())
+	if err != nil {
+		t.Fatalf("SetFanout: %v", err)
+	}
+	defer stop()
+
+	// Drift: an in-memory-only grant the DB and baseline never saw.
+	if err := policy.Grant("editor", Permission("drift:only")); err != nil {
+		t.Fatalf("drift grant: %v", err)
+	}
+	if len(policy.PermissionsOf("editor")) != 2 {
+		t.Fatalf("setup: editor holds %v, want 2", policy.PermissionsOf("editor"))
+	}
+
+	// Foreign replica says "reload everything".
+	store.handleRemote(fanout.Wrap("foreign-node", []byte(`{"role":""}`)))
+
+	if !pollAccessUntil(3*time.Second, func() bool {
+		return len(policy.PermissionsOf("editor")) == 1
+	}) {
+		t.Errorf("SECURITY: [access] empty-role signal did not converge drifted grants; editor still holds %v (stale in-memory grant survived an authoritative reload)", policy.PermissionsOf("editor"))
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Property: teardown is quiet — stop is idempotent, and publish/handleRemote
+// after stop (a Grant racing shutdown) are safe no-ops that neither panic
+// nor resurrect the worker. The framework registers stop as an OnStop
+// drainer, so a late Grant during shutdown takes exactly this path.
+// ---------------------------------------------------------------------------
+
+func TestSetFanoutStopThenLateActivityQuiet(t *testing.T) {
+	db := openAccessDB(t)
+	store, policy := seedStore(t, db, "editor", Permission("posts:read"))
+
+	stop, err := store.SetFanout(fanout.NewInProcess())
+	if err != nil {
+		t.Fatalf("SetFanout: %v", err)
+	}
+	stop()
+	stop() // idempotent
+
+	before := policy.PermissionsOf("editor")
+	quiet := func() {
+		defer func() {
+			if r := recover(); r != nil {
+				t.Fatalf("SECURITY: [access] post-stop activity panicked: %v", r)
+			}
+		}()
+		store.publish("editor")                                      // send == nil path
+		store.handleRemote(fanout.Wrap("f", []byte(`{"role":"x"}`))) // dirty == nil path
+		store.handleRemote(fanout.Wrap("f", []byte(`{"role":""}`)))  // full-reload signal post-stop
+	}
+	quiet()
+	quiet()
+
+	got := policy.PermissionsOf("editor")
+	if len(got) != len(before) {
+		t.Errorf("policy mutated after stop: %v -> %v", before, got)
+	}
+	// Post-stop signals may still land in the (now workerless) dirty set;
+	// that is benign bookkeeping. What must hold — asserted above — is that
+	// no reload ran (policy unchanged) and nothing panicked.
+}
+
+// ---------------------------------------------------------------------------
+// Property: invalidation coalescing loses no ROLES — the wake channel is
+// buffered(1), so N distinct roles invalidated while the worker is busy
+// must all be reloaded (the dirty set, not the wake count, carries them).
+// A lost role here is a replica running on stale grants indefinitely.
+// ---------------------------------------------------------------------------
+
+func TestRefreshCoalescingLosesNoRoles(t *testing.T) {
+	db := openAccessDB(t)
+	ctx := context.Background()
+
+	storeA, _ := seedStore(t, db, "r0", Permission("seed:0"))
+	storeB, policyB := seedStore(t, db, "r0", Permission("seed:0"))
+
+	f := fanout.NewInProcess()
+	stopA, err := storeA.SetFanout(f)
+	if err != nil {
+		t.Fatalf("SetFanout A: %v", err)
+	}
+	defer stopA()
+	stopB, err := storeB.SetFanout(f)
+	if err != nil {
+		t.Fatalf("SetFanout B: %v", err)
+	}
+	defer stopB()
+
+	roles := []string{"r1", "r2", "r3", "r4", "r5"}
+	for _, r := range roles {
+		if err := storeA.Grant(ctx, r, Permission("p")); err != nil {
+			t.Fatalf("Grant %s: %v", r, err)
+		}
+	}
+
+	ok := pollAccessUntil(3*time.Second, func() bool {
+		for _, r := range roles {
+			perms := policyB.PermissionsOf(r)
+			if len(perms) == 0 {
+				return false
+			}
+		}
+		return true
+	})
+	if !ok {
+		t.Errorf("SECURITY: [access] coalesced invalidations lost roles; replica B holds: %v", policyB.Snapshot())
+	}
+}

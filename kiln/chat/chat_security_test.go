@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/kiln/db"
 	"github.com/DonaldMurillo/gofastr/kiln/journal"
@@ -403,4 +404,239 @@ func TestNoOriginApproveStillWorks(t *testing.T) {
 	if !approved {
 		t.Errorf("no-Origin approve_plan did not approve p2; the agent transport contract (plan_gate_test.go) is broken: %.200s", rec.Body.String())
 	}
+}
+
+// Property 7: every agent-authored world identifier interpolated into
+// the panel chrome is escaped at its sink. The plan card and chat rows
+// are pinned above; the snapshot pill, its tooltip attribute, and the
+// quickstart tray are the remaining sinks for world names and page
+// paths, which add_page accepts as arbitrary non-dynamic strings.
+func TestPanelWorldNamesStayEscaped(t *testing.T) {
+	l, tools := newCSRFTestServer(t)
+	const hostilePath = `/p" onmouseover="alert(1)"><img src=x onerror=alert(2)>`
+	res := tools.AddPage(context.Background(), protocol.AddPageArgs{
+		Page: &world.Page{Path: hostilePath, Tree: world.Node{Kind: "div"}},
+	})
+	if !res.OK {
+		t.Fatalf("add_page with a quote-carrying static path failed: %+v (hint: %s)", res, res.Hint)
+	}
+	pe := &panelEnv{live: l, tools: tools}
+	// The header's snapshot pill text and its tooltip attribute are the
+	// two sinks for world identifiers; the tooltip is where page paths
+	// land (worldSnapshotTooltipLocked lists every page).
+	doc := pe.headerHTML()
+	if strings.Contains(doc, `onmouseover="alert(1)"`) {
+		t.Errorf("SECURITY: page path broke out into an attribute:\n%s", doc)
+	}
+	if strings.Contains(doc, "<img src=x onerror") {
+		t.Errorf("SECURITY: page path injected live markup:\n%s", doc)
+	}
+	if want := render.Escape(hostilePath); !strings.Contains(doc, want) {
+		t.Errorf("hostile path no longer round-trips escaped (render.Escape); tooltip dropped it.\nwant fragment %q in:\n%.600s", want, doc)
+	}
+}
+
+// Property 8: chat message text never breaks out of its row — neither
+// the body nor the [page=…] chip the widget prepends. The message is
+// fully attacker-chosen (POST /kiln/panel/send, /kiln/chat/message), and
+// the log is inserted via innerHTML, so escaping is the only barrier.
+func TestChatRowInjectionNeutralized(t *testing.T) {
+	l, tools := newCSRFTestServer(t)
+	messages := []string{
+		`[page=/"><img src=x onerror=alert(1)>] </li><li>injected row`,
+		`</ol><script>alert(2)</script>`,
+		`[page=/x] <b>bold</b> & "quoted" 'apostrophe'`,
+	}
+	for _, msg := range messages {
+		res := tools.Chat(context.Background(), protocol.ChatArgs{Role: "user", Text: msg})
+		if !res.OK {
+			t.Fatalf("chat %q rejected: %+v", msg, res)
+		}
+	}
+	pe := &panelEnv{live: l, tools: tools}
+	doc := pe.logHTMLForCurrent()
+	for _, raw := range []string{
+		"<img src=x onerror", "<script>", "</ol><script", "<li>injected row",
+	} {
+		if strings.Contains(doc, raw) {
+			t.Errorf("SECURITY: chat message leaked %q into the log unescaped:\n%s", raw, doc)
+		}
+	}
+	// The text still renders (escaped), chip included.
+	if !strings.Contains(doc, "&lt;b&gt;bold&lt;/b&gt;") {
+		t.Errorf("message body no longer round-trips escaped:\n%.400s", doc)
+	}
+	if !strings.Contains(doc, `kiln-msg-page`) {
+		t.Errorf("page chip disappeared for a prefixed message:\n%.400s", doc)
+	}
+}
+
+// Property 9: plan text fields (reason, steps, reject reason) stay
+// escaped. The plan card's attribute surfaces are pinned by Property 1;
+// these are the text sinks of the same card, and the reject reason is
+// operator-visible context for a destructive op.
+func TestPlanCardTextFieldsStayEscaped(t *testing.T) {
+	l, tools := newCSRFTestServer(t)
+	res := tools.ProposePlan(context.Background(), protocol.ProposePlanArgs{
+		PlanID: "plan-text",
+		Reason: `<b>because</b> <img src=x onerror=alert(1)>`,
+		Steps: []string{
+			`</li><li>fake step<img src=x onerror=alert(2)>`,
+			`legitimate step`,
+		},
+	})
+	if !res.OK {
+		t.Fatalf("propose_plan rejected: %+v (hint: %s)", res, res.Hint)
+	}
+	pe := &panelEnv{live: l, tools: tools}
+	doc := pe.logHTMLForCurrent()
+	for _, raw := range []string{"<b>because</b>", "<img src=x onerror", "<li>fake step"} {
+		if strings.Contains(doc, raw) {
+			t.Errorf("SECURITY: plan text leaked %q unescaped into the card:\n%s", raw, doc)
+		}
+	}
+	if !strings.Contains(doc, "legitimate step") {
+		t.Error("legitimate plan step dropped")
+	}
+	// The rejected variant renders the operator-given reject reason.
+	if res := tools.RejectPlan(context.Background(), protocol.RejectPlanArgs{
+		PlanID: "plan-text", Reason: `</div><script>alert(3)</script>`,
+	}); !res.OK {
+		t.Fatalf("reject_plan: %+v", res)
+	}
+	doc = pe.logHTMLForCurrent()
+	if strings.Contains(doc, "<script>") {
+		t.Errorf("SECURITY: reject reason leaked unescaped:\n%s", doc)
+	}
+}
+
+// Property 10: the tool dispatch surface is a closed catalog. A tool
+// name the switch does not know is a 400 naming the tool, never a
+// wildcard match, a panic, or a silently-empty success.
+func TestDispatchUnknownToolIs400(t *testing.T) {
+	l, _ := newCSRFTestServer(t)
+	for _, name := range []string{"system.exec", "Approve_Plan", "__del__"} {
+		req := httptest.NewRequest(http.MethodPost, "http://localhost:8765/kiln/tool/"+name, strings.NewReader(`{}`))
+		rec := httptest.NewRecorder()
+		l.ServeHTTP(rec, req)
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("unknown tool %q: status = %d (%.200s), want 400", name, rec.Code, rec.Body.String())
+		}
+		if !strings.Contains(rec.Body.String(), "unknown tool") {
+			t.Errorf("unknown tool %q: response does not name the problem: %.200s", name, rec.Body.String())
+		}
+	}
+}
+
+// Property 11: every inbound kiln body is capped before buffering.
+// The tool dispatcher and the panel RPCs wrap r.Body in MaxBytesReader;
+// a body past the cap is refused (or silently dropped for the ack-only
+// panel path) without ever being fully read into memory.
+func TestToolBodyCapEnforced(t *testing.T) {
+	l, _ := newCSRFTestServer(t)
+	// Tool dispatcher: 5 MB against a 4 MB cap.
+	oversize := `{"text": "` + strings.Repeat("a", 5<<20) + `"}`
+	req := httptest.NewRequest(http.MethodPost, "http://localhost:8765/kiln/tool/chat", strings.NewReader(oversize))
+	rec := httptest.NewRecorder()
+	l.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("oversize tool body: status = %d, want 400", rec.Code)
+	}
+	// Panel send: 2 MB against a 1 MB cap; the handler acks rather than
+	// 4xx-ing, but the message must NOT be journaled.
+	before := chatCount(l)
+	req = httptest.NewRequest(http.MethodPost, "http://localhost:8765/kiln/panel/send", strings.NewReader(oversize))
+	rec = httptest.NewRecorder()
+	l.ServeHTTP(rec, req)
+	if rec.Code >= 500 {
+		t.Errorf("oversize panel send: status = %d, want an ack", rec.Code)
+	}
+	if after := chatCount(l); after != before {
+		t.Errorf("oversize panel send journaled a message anyway: %d -> %d chat events", before, after)
+	}
+}
+
+func chatCount(l *live.Live) int {
+	n := 0
+	l.ReadSession(func(sess *journal.Session) { n = len(sess.Chat) })
+	return n
+}
+
+// Property: the world-disclosing GET surfaces must refuse a cross-site
+// or rebound browser subscriber.
+//
+// Mount wraps every state-changing POST in sameOriginOnly but registers
+// the read half bare: /kiln/world (whole in-memory IR), /kiln/status,
+// and the /.kiln/events stream (every entry, op and summary as it
+// happens). A plain cross-origin fetch cannot read those bodies without
+// CORS, but DNS rebinding needs no CORS: after the rebind the
+// attacker's page is same-origin (Origin agrees with the attacker-named
+// Host), so both checks sameOriginOnly would apply pass. The framework
+// learned this exact lesson for its own SSE half — core/mcp's
+// sseGetHandler now enforces the origin/Host gate because "without it
+// the stream is a cross-origin read" (origin_security_test.go) — and
+// cmd/kiln's outer originGuard covers only its own process. chat.Mount
+// is a library surface; the POST family here already carries its own
+// guard, the GET family must too.
+func TestReadRoutesRefuseCrossSiteSub(t *testing.T) {
+	l, _ := newCSRFTestServer(t)
+
+	cases := []struct {
+		name   string
+		origin string
+		host   string
+	}{
+		{"cross-site Origin", "http://evil.example", "localhost:8765"},
+		{"rebound Host with matching Origin", "http://evil.test:8765", "evil.test:8765"},
+		{"Origin null (sandboxed frame)", "null", "localhost:8765"},
+	}
+	surfaces := []string{"/kiln/world", "/kiln/status", "/.kiln/events"}
+
+	get := func(t *testing.T, path, origin, host string) *httptest.ResponseRecorder {
+		t.Helper()
+		ctx, cancel := context.WithCancel(context.Background())
+		go func() {
+			time.Sleep(500 * time.Millisecond)
+			cancel()
+		}()
+		req := httptest.NewRequest(http.MethodGet, path, nil).WithContext(ctx)
+		if origin != "" {
+			req.Header.Set("Origin", origin)
+		}
+		req.Host = host
+		rec := httptest.NewRecorder()
+		l.ServeHTTP(rec, req)
+		return rec
+	}
+
+	for _, surface := range surfaces {
+		for _, tc := range cases {
+			t.Run(tc.name+" on "+surface, func(t *testing.T) {
+				rec := get(t, surface, tc.origin, tc.host)
+				if rec.Code != http.StatusForbidden {
+					t.Errorf("SECURITY: %s with %s (Host %s) got status %d and streamed %q.\n"+
+						"The route discloses the live world; under DNS rebinding the subscriber is same-origin\n"+
+						"with the listener and reads the whole IR / edit stream. The POST family beside it is\n"+
+						"sameOriginOnly-wrapped; the framework's SSE half applies its own origin/Host gate\n"+
+						"(core/mcp sseGetHandler).",
+						surface, tc.origin, tc.host, rec.Code, strings.TrimSpace(rec.Body.String()))
+				}
+			})
+		}
+	}
+
+	// Contract guards: the non-browser transport (no Origin at all) and
+	// the operator's own panel (same-origin) keep working, exactly as
+	// the POST family's guard promises (plan_gate_test.go pins the
+	// unauthenticated transport as intended).
+	t.Run("no-Origin GET still works", func(t *testing.T) {
+		if rec := get(t, "/kiln/world", "", "localhost:8765"); rec.Code != http.StatusOK {
+			t.Errorf("no-Origin GET /kiln/world (curl / agent transport) got %d, want 200", rec.Code)
+		}
+	})
+	t.Run("same-origin GET still works", func(t *testing.T) {
+		if rec := get(t, "/kiln/world", "http://localhost:8765", "localhost:8765"); rec.Code != http.StatusOK {
+			t.Errorf("same-origin GET /kiln/world (operator panel) got %d, want 200", rec.Code)
+		}
+	})
 }

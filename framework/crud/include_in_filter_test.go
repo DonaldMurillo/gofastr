@@ -129,3 +129,75 @@ func TestInclude_MultiValueINNode(t *testing.T) {
 		t.Fatalf("status_in=a|b returned %d comments, want 2: %v", len(got), got)
 	}
 }
+
+// TestIncludeRepeatedRelationKeepsFilters pins the tree-merge edge when the
+// SAME relation is listed twice with different scoped filters
+// (?include=comments(status=draft),comments(status=archived)). The node
+// cache in parseIncludeTreeQ reuses the first mention's node and APPENDS
+// the second filter set onto it, and the loader AND-composes filter sets —
+// so the request degenerates to status=draft AND status=archived, an
+// impossible predicate, and the relation silently comes back EMPTY. Each
+// mention alone returns its rows. The union (or an explicit 400 naming
+// the duplicate) is the only defensible reading; a silent empty include
+// is data loss the caller cannot distinguish from "no matching rows".
+func TestIncludeRepeatedRelationKeepsFilters(t *testing.T) {
+	ddl := `
+CREATE TABLE dup_posts (
+	id    TEXT PRIMARY KEY,
+	title TEXT
+);
+CREATE TABLE dup_comments (
+	id      TEXT PRIMARY KEY,
+	post_id TEXT NOT NULL,
+	status  TEXT
+);
+`
+	postCfg := makeEntityConfig("dup_posts", "dup_posts", "",
+		[]schema.Field{{Name: "title", Type: schema.String}},
+		func(c *entity.EntityConfig) {
+			c.Relations = []entity.Relation{
+				entity.HasMany("comments", "dup_comments", "post_id"),
+			}
+		},
+	)
+	commentCfg := makeEntityConfig("dup_comments", "dup_comments", "",
+		[]schema.Field{
+			{Name: "post_id", Type: schema.String, Required: true},
+			{Name: "status", Type: schema.String},
+		},
+	)
+
+	ch, db := setupSecurityTestHandler(t, postCfg, ddl)
+	commentEnt := entity.Define(commentCfg.Table, commentCfg)
+	commentEnt.SetDB(db)
+	reg := newTestRegistry(t)
+	reg.add(t, ch.Entity)
+	reg.add(t, commentEnt)
+	ch.Registry = reg
+
+	seedRows(t, db, "dup_posts", []map[string]any{
+		{"id": "p1", "title": "post"},
+	})
+	seedRows(t, db, "dup_comments", []map[string]any{
+		{"id": "c1", "post_id": "p1", "status": "draft"},
+		{"id": "c2", "post_id": "p1", "status": "archived"},
+	})
+
+	req := makeRequest(t, RequestOpts{
+		Method: http.MethodGet,
+		Path:   "/dup_posts?include=comments(status=draft),comments(status=archived)",
+		UserID: "u1",
+	})
+	rr := httptest.NewRecorder()
+	ch.List()(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("list+include returned %d (body=%s)", rr.Code, rr.Body.String())
+	}
+	body := rr.Body.String()
+	// Both mentions are individually satisfiable, so the merged include must
+	// surface both rows (union) — never zero.
+	if !strings.Contains(body, `"draft"`) || !strings.Contains(body, `"archived"`) {
+		t.Fatalf("DATA: [include-merge] repeating a relation with two filter sets returned an empty relation (AND-merged impossible predicate). Body: %s", body)
+	}
+}

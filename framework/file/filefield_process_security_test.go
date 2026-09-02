@@ -3,7 +3,9 @@ package file_test
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
+	"strings"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/core/upload"
@@ -315,4 +317,110 @@ func TestProcessFileFieldDeriveFailureOrphans(t *testing.T) {
 			t.Fatalf("control: success path must keep exactly the primary (saved=%v deleted=%v storageRef=%q)", store.saved, store.deleted, ff.StorageRef)
 		}
 	})
+}
+
+// failAfterReader yields ok bytes, then a read error: a client that
+// hangs up (or a proxy that resets) partway through the body.
+type failAfterReader struct {
+	data []byte
+	off  int
+	done bool
+}
+
+func (r *failAfterReader) Read(p []byte) (int, error) {
+	if r.off < len(r.data) {
+		n := copy(p, r.data[r.off:])
+		r.off += n
+		return n, nil
+	}
+	if !r.done {
+		r.done = true
+		return 0, errors.New("connection reset by peer")
+	}
+	return 0, errors.New("connection reset by peer")
+}
+
+// TestProcessFileFieldReadErrorStoresNothing: a body whose read fails
+// mid-stream must surface the error and never call store.Save. A
+// partial object persisted under a generated key is unreferenced by
+// any row and invisible to row-driven cleanup — the same orphan shape
+// TestProcessFileFieldDeriveFailureOrphans pins for derive failures.
+func TestProcessFileFieldReadErrorStoresNothing(t *testing.T) {
+	store := &captureStorage{}
+	body := append([]byte("\x89PNG\r\n\x1a\n"), bytes.Repeat([]byte{0x00}, 512)...)
+	r := &failAfterReader{data: body}
+
+	if _, err := file.ProcessFileField(context.Background(), store, r, "half.png", "posts", "attachment"); err == nil {
+		t.Fatal("a mid-body read error must fail the upload")
+	}
+	if store.key != "" {
+		t.Fatalf("partial upload was saved to storage key %q after a read error; nothing may persist", store.key)
+	}
+}
+
+// TestProcessFileFieldCapBoundary: MaxProcessFileSize is a boundary,
+// not an off-by-one. Exactly-at-cap bodies are accepted (the cap is
+// inclusive) and one byte past is refused — without buffering the rest
+// of the stream (pinned elsewhere as "without buffering the rest of
+// the body"; here only the accept/reject edge is asserted).
+func TestProcessFileFieldCapBoundary(t *testing.T) {
+	atCap := &captureStorage{}
+	body := bytes.Repeat([]byte{0x61}, int(file.MaxProcessFileSize))
+	ff, err := file.ProcessFileField(context.Background(), atCap, bytes.NewReader(body), "big.txt", "posts", "attachment")
+	if err != nil {
+		t.Fatalf("exactly-at-cap upload rejected: %v", err)
+	}
+	if ff.Size != file.MaxProcessFileSize {
+		t.Fatalf("at-cap Size = %d, want %d", ff.Size, file.MaxProcessFileSize)
+	}
+
+	overCap := &captureStorage{}
+	body = append(body, 0x61)
+	if _, err := file.ProcessFileField(context.Background(), overCap, bytes.NewReader(body), "big2.txt", "posts", "attachment"); err == nil {
+		t.Fatal("one-past-cap upload accepted")
+	}
+	if overCap.key != "" {
+		t.Fatalf("over-cap upload was stored under %q before rejection", overCap.key)
+	}
+}
+
+// TestGenerateFilePathNeverEscapesUploads: the storage key built from a
+// client-controlled multipart filename must always stay a relative
+// path under the uploads/ root — no traversal segment, no absolute
+// path, no backslash, no control byte. This is the key-construction
+// half of the traversal property whose validation half
+// TestFileFieldRejectsFilenameTraversal pins.
+func TestGenerateFilePathNeverEscapesUploads(t *testing.T) {
+	hostile := []string{
+		"../../../etc/passwd",
+		"..\\..\\..\\windows\\system32\\evil.dll",
+		"con\r\ntrol\x00name.png",
+		"..",
+		".",
+		"",
+		"/absolute/path.png",
+		"C:\\absolute\\win.png",
+		"inner..dots.png",
+	}
+	for _, name := range hostile {
+		key := file.GenerateFilePath("posts", "attachment", name)
+		if key == "" {
+			t.Fatalf("GenerateFilePath(%q) returned an empty key", name)
+		}
+		if strings.Contains(key, "..") {
+			t.Errorf("key for %q contains a dot-pair segment: %q", name, key)
+		}
+		if strings.HasPrefix(key, "/") || strings.HasSuffix(key, "/") {
+			t.Errorf("key for %q is not a safe relative path: %q", name, key)
+		}
+		if strings.Contains(key, "\\") {
+			t.Errorf("key for %q contains a backslash: %q", name, key)
+		}
+		for i := range len(key) {
+			if key[i] < 0x20 || key[i] == 0x7F {
+				t.Errorf("key for %q contains control byte 0x%02X: %q", name, key[i], key)
+				break
+			}
+		}
+	}
 }

@@ -605,3 +605,213 @@ func TestModuleSrcValidatesNameShape(t *testing.T) {
 		}
 	}
 }
+
+// TestSelectorInterpolationEscaped asserts the codebase-wide selector
+// hygiene property: every value read from the DOM (or from DOM-borne
+// config attributes) and interpolated into a querySelector/closest
+// selector string is wrapped in CSS.escape() first.
+//
+// The runtime already established this convention at eight sites
+// (sse.js island names, toasts.js stacks, widgets.js names, panehost.js
+// URL keys, sortablelist.js groups, scrollspy.js anchors, runtime.js
+// signal names): a value carrying `"]` (or any selector metacharacter)
+// either re-targets the lookup at an unintended element or throws
+// SyntaxError, which silently kills the enclosing module's wiring. The
+// surfaces below interpolate the SAME class of DOM-attribute-borne
+// value without the escape, so a server reflecting request input into
+// the attribute (the threat TestSseIslandSelectorEscaped documents)
+// breaks or re-targets them.
+//
+// Escape acceptance covers the module-local alias: scrollspy.js wraps
+// with cssEscape(), its own CSS.escape shim.
+//
+// Surfaces are every interpolated selector call site in the shipped
+// runtime (runtime.js + src/*); the "escaped" column is the control
+// group proving the assertion detects a missing escape, not a missing
+// site.
+func TestSelectorInterpolationEscaped(t *testing.T) {
+	surfaces := []struct {
+		file   string
+		anchor string // unique literal at the selector call site
+		win    int    // bytes from the anchor that make up the statement(s)
+		where  string // human-readable surface description
+	}{
+		// Interpolated sites with NO escape today. Windows are sized to
+		// the statement(s) so a CSS.escape belonging to a NEIGHBOURING
+		// lookup cannot satisfy the check (widgets.js:193 sits 11 lines
+		// above an escaped lookup of the same name).
+		{"src/conditionalfield.js", `'[name="'`, 170, "data-when-name value → [name=…] lookup"},
+		{"src/multiselect.js", `label[for="`, 170, "checkbox id → label[for=…] lookup"},
+		{"src/carousel.js", `data-fui-carousel-deferred-for="`, 210, "carousel id → manifest script lookup"},
+		{"src/carousel.js", `'[data-fui-carousel-defer="`, 170, "manifest key → defer placeholder lookup"},
+		{"src/rangeslider.js", `data-fui-range-slider="`, 420, "data-fui-range-slider value → pair lookups (3 selectors)"},
+		{"src/slider.js", `output[for="`, 170, "input id → output[for=…] lookup"},
+		{"src/widgets.js", `link[data-fui-style="`, 170, "widget name → style-link dedup lookup"},
+		{"runtime.js", `link[data-fui-style="`, 210, "component name → style-link dedup lookup"},
+		{"runtime.js", `[data-widget="${`, 230, "closest data-component/data-widget value → hydrate lookup"},
+		// Control group: these sites escape today and must keep doing so.
+		{"src/sse.js", `'[data-island="'`, 200, "island name lookup (pinned by TestSseIslandSelectorEscaped)"},
+		{"src/toasts.js", `'[data-fui-toast-stack="'`, 200, "toast stack name lookup"},
+		{"src/sortablelist.js", `data-fui-sortable-group="`, 200, "sortable group lookup"},
+		{"src/panehost.js", `'[data-fui-pane-key="'`, 200, "URL-borne pane key lookup"},
+		{"src/scrollspy.js", `'#' + cssEscape(`, 200, "anchor id lookup (module-local cssEscape shim)"},
+		{"src/widgets.js", `'[data-fui-widget="'`, 200, "widget name → mounted-widget lookup"},
+		{"src/widgets.js", `'[data-fui-backdrop="'`, 200, "widget name → backdrop lookup"},
+		{"runtime.js", `'[data-fui-signal="'`, 200, "signal name → consumer fanout lookup"},
+	}
+
+	for _, s := range surfaces {
+		src := readSrc(t, s.file)
+		idx := strings.Index(src, s.anchor)
+		if idx < 0 {
+			t.Fatalf("could not locate selector anchor %q in %s — source drifted, update the surface table", s.anchor, s.file)
+		}
+		// The per-surface window holds the whole selector statement(s)
+		// without reaching a neighbouring lookup's escape.
+		end := idx + len(s.anchor) + s.win
+		if end > len(src) {
+			end = len(src)
+		}
+		window := src[idx:end]
+		if !strings.Contains(window, "CSS.escape(") && !strings.Contains(window, "cssEscape(") {
+			t.Errorf("SECURITY: [selector-injection] %s: %s — interpolated value reaches querySelector without CSS.escape(); a value carrying '\"]' re-targets the lookup or throws and silently drops the module's wiring", s.file, s.where)
+		}
+	}
+}
+
+// TestRegistryLookupsAreOwnProps extends the family pinned by
+// TestComputedReducerOwnPropOnly: a registry keyed by an attribute-borne
+// name must be read as an OWN property, never through the prototype
+// chain. `_widgetCatalog` / `_widgets` are plain `{}` objects, so an
+// attribute value like "constructor" resolves to Object.prototype
+// members: the truthiness gate passes, `entry.cfg` is undefined, and
+// _mountByName throws (widget never opens), while `NS._widgets[name]`
+// truthiness makes openWidget treat "constructor"/"toString" as
+// already-mounted. The fix idiom is the one computed.js already uses,
+// Object.prototype.hasOwnProperty.call(reg, name).
+//
+// Surfaces: every read of these registries keyed by a DOM-attribute
+// variable (data-fui-open / data-fui-widget / data-fui-rpc-refresh /
+// data-fui-popover names). Writes keyed by cfg.name (catalog-borne)
+// are out of scope.
+func TestRegistryLookupsAreOwnProps(t *testing.T) {
+	needles := []struct {
+		file, needle string
+	}{
+		{"src/widgets.js", `NS._widgetCatalog[name]`},
+		{"src/widgets.js", `NS._widgets[name]`},
+		{"src/rpc.js", `NS._widgets[widgetName]`},
+		{"src/rpc.js", `NS._widgets[refreshName]`},
+		{"src/popover.js", `NS._widgets[name]`},
+		{"src/widgetfocus.js", `G._widgets[name]`},
+	}
+
+	for _, n := range needles {
+		src := readSrc(t, n.file)
+		count := strings.Count(src, n.needle)
+		if count == 0 {
+			t.Fatalf("could not locate registry lookup %q in %s — source drifted, update the surface table", n.needle, n.file)
+		}
+		for i, idx := 0, 0; i < count; i++ {
+			pos := strings.Index(src[idx:], n.needle)
+			if pos < 0 {
+				break
+			}
+			at := idx + pos
+			start := at - 160
+			if start < 0 {
+				start = 0
+			}
+			end := at + len(n.needle) + 160
+			if end > len(src) {
+				end = len(src)
+			}
+			window := src[start:end]
+			if !strings.Contains(window, "hasOwnProperty") {
+				t.Errorf("SECURITY: [registry-lookup] %s: occurrence %d of %q is a plain bracket read on a {{}} registry — an attribute-borne name like \"constructor\" resolves through the prototype chain and breaks/bypasses the gate; gate it with Object.prototype.hasOwnProperty.call(reg, name) (the idiom src/computed.js already uses)", n.file, i+1, n.needle)
+			}
+			idx = at + len(n.needle)
+		}
+	}
+}
+
+// TestResponseHTMLMountedOnlyAfterOK asserts every runtime path that
+// mounts fetched text via innerHTML first checks the response status.
+// The convention is explicit elsewhere: poll.js's comment requires that
+// "an HTTP error must reach .catch", and rpc.js/intercept.js/infinitescroll.js
+// all gate on !r.ok before consuming the body. A path that skips the
+// check mounts whatever the server (or an intercepting proxy) returns
+// for an error — error pages routinely reflect the request URL and
+// attacker-influenced path segments, so mounting them as page markup
+// turns reflected error output into injected HTML.
+//
+// Surfaces: every response-text → innerHTML site in the shipped
+// modules. sortablelist's conflict-recovery path is the one that skips
+// the status check today: dest.innerHTML = html runs for any status,
+// including the 4xx/5xx body, replacing the column with an error page.
+func TestResponseHTMLMountedOnlyAfterOK(t *testing.T) {
+	surfaces := []struct {
+		file     string
+		from, to string // unique literals bracketing the fetch→mount span
+		where    string
+	}{
+		{"src/sortablelist.js", "fetch(crpc", "dest.innerHTML = html", "conflict-recovery refresh"},
+		{"src/infinitescroll.js", "await fetch(path", "tmp.innerHTML = html", "infinite-scroll append"},
+		{"src/poll.js", "fetch(src", "el.innerHTML = html", "poll region swap"},
+		{"src/intercept.js", "fetch(path", "mount(res.html", "intercept overlay mount"},
+	}
+
+	for _, s := range surfaces {
+		src := readSrc(t, s.file)
+		from := strings.Index(src, s.from)
+		if from < 0 {
+			t.Fatalf("could not locate fetch anchor %q in %s — source drifted, update the surface table", s.from, s.file)
+		}
+		to := strings.Index(src[from:], s.to)
+		if to < 0 {
+			t.Fatalf("could not locate mount anchor %q after the fetch in %s — source drifted, update the surface table", s.to, s.file)
+		}
+		span := src[from : from+to]
+		if !strings.Contains(span, ".ok") {
+			t.Errorf("SECURITY: [response-html] %s: %s mounts response text via innerHTML without checking r.ok — an error body (which reflects the request URL) replaces live page markup", s.file, s.where)
+		}
+	}
+}
+
+// TestAttributePathSegmentsValidated extends the family pinned by
+// TestModuleSrcValidatesNameShape: a value read from a DOM attribute
+// and interpolated into a URL PATH must be validated against the shape
+// the framework emits before the request fires, because the browser
+// normalizes `../` segments and re-targets the request onto any
+// same-origin route (past the handler that owns the prefix).
+//
+// loadModule's name gate is the control surface (already pinned).
+// _kilnPost builds '/kiln/tool/' + data-kiln-tool verbatim: on a kiln
+// build-mode page (body.kiln-app) any injected markup carrying
+// data-kiln-tool="../../admin/…" POSTs attacker JSON to an arbitrary
+// same-origin route, with the page's CSRF token attached. Kiln tool
+// names are emitted as [A-Za-z0-9_-]+, so an anchored shape check
+// rejects nothing legitimate.
+//
+// Surface: _kilnPost in src/rpc.js (the only remaining attribute-borne
+// path build in the runtime's fetch surface).
+func TestAttributePathSegmentsValidated(t *testing.T) {
+	src := readSrc(t, "src/rpc.js")
+	start := strings.Index(src, "const _kilnPost")
+	if start < 0 {
+		t.Fatal("could not locate _kilnPost in src/rpc.js — source drifted, update this test")
+	}
+	body := src[start:]
+	if end := strings.Index(body, "_dispatchKiln"); end > 0 {
+		body = body[:end]
+	}
+	if !strings.Contains(body, "fetch(") {
+		t.Fatal("could not locate the fetch inside _kilnPost — source drifted, update this test")
+	}
+	// The gate shape the module loader uses: an anchored allow-list of
+	// the emitted name alphabet, applied between the attribute read and
+	// the fetch.
+	if !strings.Contains(body, "[A-Za-z0-9_-]") {
+		t.Errorf("SECURITY: [attr-path] src/rpc.js: _kilnPost builds '/kiln/tool/' + data-kiln-tool with no name-shape validation — a tool value carrying '../' re-targets the POST onto any same-origin route with the page's CSRF token; gate the name like loadModule does (see TestModuleSrcValidatesNameShape)")
+	}
+}

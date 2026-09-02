@@ -1,6 +1,8 @@
 package expr_test
 
 import (
+	"math"
+	"sort"
 	"strings"
 	"testing"
 
@@ -143,5 +145,174 @@ func TestMinMaxMixedNumericTypes(t *testing.T) {
 		if f != want {
 			t.Errorf("%q = %v, want %v", src, f, want)
 		}
+	}
+}
+
+// Property: every DefaultEnv builtin is a total function — any argument
+// shape the parser can produce yields a value or an error, never a panic.
+//
+// Builtins receive scope-resolved values (entity fields, ctx), so their
+// argument types are attacker-chosen even when the call site itself is a
+// benign IR expression. The builtins after min/max (abs, starts_with,
+// ends_with, now) had no pin at all; this loops the whole catalog so a
+// newly added builtin fails here the moment it trusts its arguments.
+func TestBuiltinsTotalOnHostileArgs(t *testing.T) {
+	env := expr.DefaultEnv()
+	shapes := [][]any{
+		{},                       // zero args
+		{nil},                    // JSON null
+		{true},                   // bool
+		{int64(1)},               // int64
+		{1},                      // int
+		{1.5},                    // float
+		{"s"},                    // string
+		{[]any{1}},               // list
+		{map[string]any{"k": 1}}, // map
+		{[]any{[]any{1}}},        // nested uncomparable
+		{"a", 1},                 // two mixed args
+		{"a", "b", "c"},          // three args
+		{[]any{"x"}, []any{"y"}}, // uncomparable pair (equals path)
+	}
+	names := make([]string, 0, len(env.Functions))
+	for name := range env.Functions {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		fn := env.Functions[name]
+		for i, args := range shapes {
+			func() {
+				defer func() {
+					if r := recover(); r != nil {
+						var first any = "<none>"
+						if len(args) > 0 {
+							first = args[0]
+						}
+						t.Errorf("%s(arg shape %d, %d args, first type %T) panicked: %v", name, i, len(args), first, r)
+					}
+				}()
+				_, _ = fn(args)
+			}()
+		}
+	}
+	// The same hostility through the compiled path, so the parser's
+	// argument plumbing (arg list build, evaluation order) stays in the
+	// loop too.
+	for _, src := range []string{
+		"len(1)", "lower([1])", "upper(map)", "abs(\"x\")", "now(1)",
+		"contains(1, 2)", "starts_with(nil, \"x\")", "ends_with(\"x\", nil)",
+		"min(\"a\")", "max(true)", "len()", "now()",
+	} {
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					t.Errorf("%q panicked: %v", src, r)
+				}
+			}()
+			_, _ = expr.EvalBool(src, nil, nil)
+		}()
+	}
+}
+
+// Property: arithmetic and comparison over extreme operands error or
+// produce a defined value; nothing crashes the evaluating goroutine.
+// int64 overflow wraps (defined Go behaviour), float overflow yields
+// ±Inf, and Inf-Inf yields NaN — all values equals()/compare() must
+// tolerate.
+func TestArithExtremeOperandsNoPanic(t *testing.T) {
+	scope := expr.MapScope{
+		"min": int64(math.MinInt64), "max": int64(math.MaxInt64),
+		"inf": math.Inf(1),
+	}
+	for _, src := range []string{
+		"1 / 0", "1 % 0", "1.5 / 0", "1.5 % 0",
+		"min / -1", "min % -1", "min * -1", "min - 1", "max + 1",
+		"(inf - inf) == (inf - inf)", // NaN == NaN via equals()
+		"(inf - inf) != 0",           // NaN != via equals()
+		"(inf - inf) < 1",            // NaN ordering via compare()
+		"(inf - inf) >= min",         // NaN ordering, int64 operand
+		"inf * 0 == inf",             // NaN == Inf
+		"min == max",                 // int64 extremes
+	} {
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					t.Errorf("%q panicked: %v", src, r)
+				}
+			}()
+			if _, err := expr.EvalBool(src, scope, nil); err != nil {
+				t.Logf("%q -> error (acceptable): %v", src, err)
+			}
+		}()
+	}
+}
+
+// Property: abs() never returns a negative result.
+//
+// builtinAbs negates with -v, which wraps for math.MinInt64 and silently
+// returns the most negative value from a `abs(balance) < 100` style
+// guard. Reachable through Go-typed scopes (int64 literals from
+// value_literal set_field); JSON-decoded numbers arrive as float64 and
+// take the float path, which is correct.
+func TestAbsNeverReturnsNegative(t *testing.T) {
+	e, err := expr.Compile("abs(min)")
+	if err != nil {
+		t.Fatalf("compile: %v", err)
+	}
+	got, err := e.Eval(expr.MapScope{"min": int64(math.MinInt64)}, nil)
+	if err != nil {
+		t.Fatalf("eval abs(min): %v", err)
+	}
+	n, ok := got.(int64)
+	if !ok {
+		t.Fatalf("abs(min) = %T, want int64", got)
+	}
+	if n < 0 {
+		t.Errorf("abs(-9223372036854775808) = %d: negation wrapped, abs returned a negative value", n)
+	}
+}
+
+// Property: indexing with a hostile index is a validation error, never an
+// out-of-bounds panic. Pins the int64-width bounds guard in indexNode
+// (int(i) truncates on 32-bit builds, so the check must compare at
+// int64 width) plus the type guards for both containers.
+func TestHostileIndexErrorsNotPanics(t *testing.T) {
+	scope := expr.MapScope{
+		"list": []any{int64(1), int64(2), int64(3)},
+		"m":    map[string]any{"k": "v"},
+		"n":    "scalar",
+	}
+	for _, src := range []string{
+		"list[9223372036854775807]", // int64 max index
+		"list[20000000000]",         // index above 32-bit int range
+		"list[-1]",
+		"list[1.5]",  // non-integral float
+		"list[true]", // bool index
+		`list["1"]`,  // string index on a list
+		"m[0]",       // int key on a map
+		"m[true]",    // bool key
+		"m[1.0]",     // float key
+		"n[0]",       // index a scalar
+		"list[1][0]", // index into a scalar element
+		`m["missing"]`,
+	} {
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					t.Errorf("%q panicked: %v", src, r)
+				}
+			}()
+			if _, err := expr.EvalBool(src, scope, nil); err != nil {
+				t.Logf("%q -> error (acceptable): %v", src, err)
+			}
+		}()
+	}
+	// In-range indexes keep working, including the integral-float form.
+	got, err := expr.EvalBool("list[2.0] == 3 && m[\"k\"] == \"v\"", scope, nil)
+	if err != nil {
+		t.Fatalf("in-range control: %v", err)
+	}
+	if !got {
+		t.Error("in-range index stopped evaluating")
 	}
 }

@@ -925,6 +925,44 @@ func TestMCP_ListToolOmitsHiddenFieldFilters(t *testing.T) {
 	}
 }
 
+// TestMCPListToolArrayFilterValues pins that a list-tool filter parameter
+// carrying a JSON ARRAY (the natural spelling an MCP client/agent sends
+// for a multi-value _in filter) forwards as one query entry per element,
+// not as the Go %v rendering of the slice. listTool builds the re-dispatch
+// query via fmt.Sprint(params[key]), so []any{"draft","archived"} becomes
+// the single literal "[draft archived]" — a filter that matches nothing,
+// and the tool answers a silent empty page where the HTTP surface returns
+// the union (the comma spelling works). Agent-facing fail-silent wrong
+// answer; same stringify applies to every non-scalar param the tool
+// forwards (sort, q, page, limit).
+func TestMCPListToolArrayFilterValues(t *testing.T) {
+	t.Parallel()
+	installSecurityOwnerExtractor(t)
+	ddl := `CREATE TABLE mcp_arrays (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, status TEXT)`
+	cfg := makeEntityConfig("mcp_arrays", "mcp_arrays", "user_id", []schema.Field{
+		{Name: "user_id", Type: schema.String, Required: true},
+		{Name: "status", Type: schema.String},
+	})
+	ch, _ := setupSecurityTestHandler(t, cfg, ddl)
+
+	var gotQuery url.Values
+	rec := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotQuery = r.URL.Query()
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[],"total":0}`))
+	})
+
+	handler := ch.listTool(rec)
+	_, _ = handler(context.Background(), map[string]any{
+		"status_in": []any{"draft", "archived"},
+	})
+
+	got := gotQuery["status_in"]
+	if len(got) != 2 || got[0] != "draft" || got[1] != "archived" {
+		t.Errorf("SECURITY: [mcp] _list tool forwarded array status_in as %q (len %d). Attack: fmt.Sprint stringifies the slice into one literal that matches nothing — the agent gets a silent empty result where the string spelling returns the union.", got, len(got))
+	}
+}
+
 // =============================================================================
 // JSON case/field mapping attacks (tests 36–40)
 // =============================================================================

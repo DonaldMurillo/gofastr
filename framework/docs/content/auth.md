@@ -1233,6 +1233,20 @@ IdP endpoint moves. The document's `issuer` MUST match the configured
 an `https://` URL; `http://` is accepted only for `localhost`/`127.0.0.1`
 (local IdPs and tests).
 
+Every endpoint the discovery document names (`token_endpoint`, `jwks_uri`,
+`userinfo_endpoint`, `authorization_endpoint`) is transport-validated when
+the document is accepted: it must be `https://` — or, under a
+literal-loopback `http://` issuer, plain `http://` on a literal-loopback
+host only — and must not carry userinfo. Distinct hosts are allowed (OIDC
+legitimately serves JWKS or userinfo from another origin); a scheme or
+cleartext-host downgrade is not. None of the provider's fetches follow
+redirects: these endpoints are pinned by the issuer's document, a
+redirect answer is not a shape a conformant IdP produces on them, and
+following one would re-send the token exchange's POST body —
+`client_secret` and code — verbatim to the redirect target (Go's client
+preserves method and body on 307/308). Mirrors the redirects-off posture
+of A2A push delivery and webhook egress.
+
 **What gets verified** before `ExchangeCode` returns:
 
 - the id_token signature against the IdP's JWKS;

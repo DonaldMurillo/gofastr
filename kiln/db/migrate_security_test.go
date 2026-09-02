@@ -1,6 +1,7 @@
 package db
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -138,5 +139,69 @@ func TestAlterAddColumnEscapesHostileDefault(t *testing.T) {
 			"at the attacker's quote, so the tail executed as separate statements instead of "+
 			"being stored; the whole rendering must survive as one quoted literal.\nstatement: %s",
 			stored, stmt)
+	}
+}
+
+// TestAlterTableQuotesHostileIdentifiers pins the same one-statement
+// property on the IDENTIFIER fields of the package's own builders:
+// alterAddColumn interpolates the table and column names raw
+// (migrate.go: `ALTER TABLE %s ADD COLUMN %s`) and tableColumns
+// interpolates the table raw into `PRAGMA table_info(...)`. Both derive
+// from agent-authored world IR (entity name / table override / field
+// name over the unauthenticated add_entity/add_field surface), and the
+// modernc driver executes multi-statement strings — the exact primitive
+// the DEFAULT fix above closed. A field or table name carrying a `; --`
+// tail must not become a second statement.
+func TestAlterTableQuotesHostileIdentifiers(t *testing.T) {
+	dir := t.TempDir()
+	attachAt := func(n int) string {
+		return filepath.ToSlash(filepath.Join(dir, fmt.Sprintf("kiln-pwn-%d.db", n)))
+	}
+	d, cleanup, err := EphemeralSQLite("kiln-red")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanup()
+	if _, err := d.Exec(`CREATE TABLE posts (id TEXT PRIMARY KEY)`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.Exec(`CREATE TABLE t (id TEXT PRIMARY KEY)`); err != nil {
+		t.Fatal(err)
+	}
+
+	// Surface 1: hostile COLUMN identifier.
+	attach := attachAt(1)
+	stmt := alterAddColumn("t", schema.Field{
+		Name: `meta; ATTACH DATABASE '` + attach + `' AS q; --`, Type: schema.Text,
+	})
+	_, _ = d.Exec(stmt) // error or not, no second statement may run
+	if _, err := os.Stat(attach); err == nil {
+		t.Errorf("SECURITY: [kiln/db] the hostile COLUMN name in alterAddColumn executed as a "+
+			"second statement: ATTACH created %s.\nstatement: %s\nIdentifiers must be quoted "+
+			"(query.QuoteIdent) exactly like the DEFAULT literal is.", attach, stmt)
+	}
+
+	// Surface 2: hostile TABLE identifier.
+	attach = attachAt(2)
+	stmt = alterAddColumn(`t; ATTACH DATABASE '`+attach+`' AS q; --`, schema.Field{
+		Name: "meta", Type: schema.Text,
+	})
+	_, _ = d.Exec(stmt)
+	if _, err := os.Stat(attach); err == nil {
+		t.Errorf("SECURITY: [kiln/db] the hostile TABLE name in alterAddColumn executed as a "+
+			"second statement: ATTACH created %s.\nstatement: %s", attach, stmt)
+	}
+
+	// Surface 3: hostile TABLE identifier in the PRAGMA probe.
+	attach = attachAt(3)
+	_, _ = tableColumns(d, `t) ; ATTACH DATABASE '`+attach+`' AS q; --`)
+	if _, err := os.Stat(attach); err == nil {
+		t.Errorf("SECURITY: [kiln/db] tableColumns interpolated the table raw into "+
+			"PRAGMA table_info(...): the attacker tail executed and created %s.", attach)
+	}
+
+	// The witness table must survive every attempt above.
+	if _, err := d.Query(`SELECT id FROM posts LIMIT 1`); err != nil {
+		t.Fatalf("posts table did not survive the hostile identifiers: %v", err)
 	}
 }

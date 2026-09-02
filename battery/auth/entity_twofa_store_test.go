@@ -321,3 +321,32 @@ func TestEntityTwoFA_PluginEnsuresSchema(t *testing.T) {
 		t.Fatalf("plugin Init did not create the 2FA table: %v", err)
 	}
 }
+
+// Nil-state semantics: SetTwoFA(ctx, uid, nil) IS a delete (the doc
+// contract "a nil state deletes the row"), and deleting an absent row is
+// not an error. A nil upsert that left the enrollment row behind would
+// keep a disabled-but-enrolled ghost that HasTwoFactorEnabled still
+// reports and every step-up gate still enforces.
+func TestSetTwoFANilDeletesEnrollment(t *testing.T) {
+	s := newTwoFAStore(t)
+	ctx := context.Background()
+
+	if err := s.SetTwoFA(ctx, "u-nil", &TwoFAState{Enabled: true, Secret: "S", Verified: true}); err != nil {
+		t.Fatalf("enroll: %v", err)
+	}
+	if err := s.SetTwoFA(ctx, "u-nil", nil); err != nil {
+		t.Fatalf("SetTwoFA(nil): %v", err)
+	}
+	got, err := s.GetTwoFA(ctx, "u-nil")
+	if err != nil {
+		t.Fatalf("GetTwoFA after nil upsert: %v", err)
+	}
+	if got != nil {
+		t.Errorf("SECURITY: [twofa-nil-delete] SetTwoFA(nil) left enrollment %+v behind — the row still reads as enrolled", got)
+	}
+
+	// Deleting a user who never enrolled is a no-op success.
+	if err := s.DeleteTwoFA(ctx, "never-enrolled"); err != nil {
+		t.Errorf("DeleteTwoFA(absent) = %v, want nil", err)
+	}
+}

@@ -190,3 +190,56 @@ func TestNackDoesNotDeleteNewerClaimEntry(t *testing.T) {
 		t.Fatalf("reclaim after W2 crash recovered %d jobs (err %v), want 1 — job lost", n, err)
 	}
 }
+
+// ============================================================================
+// Property: a malformed job record is QUARANTINED, never silently
+// destroyed. Dequeue's own contract (pinned in queue_security_test.go:
+// KeepsSkippedOnBadJSON / QuarantinesBadJSON) moves an unparseable main-
+// list entry to the dead-letter list instead of dropping it — the
+// no-silent-loss stance Nack, Reclaim and Replay all repeat. The
+// processing hash is the ONLY durable copy of a claimed job, so Reclaim's
+// corrupt-entry arm is the highest-stakes instance of the property: it
+// currently HDel's the entry outright. The bytes (a claimed job's last
+// copy) vanish with no dead-letter, no log, while Reclaim reports
+// success.
+// ============================================================================
+
+// TestReclaimKeepsCorruptEntryObservable: a processing entry that rotted
+// (partial write, version skew, external tampering) must survive Reclaim
+// somewhere observable — quarantined to the dead-letter list like
+// Dequeue's bad-JSON path, or left in place — never silently deleted.
+func TestReclaimKeepsCorruptEntryObservable(t *testing.T) {
+	r := newMockRedis()
+	q := NewRedisQueue(r, "jobs")
+	ctx := context.Background()
+
+	const raw = `{"job":"pay","expiresAt":` // truncated JSON, unparseable as a processingEntry
+	r.mu.Lock()
+	if r.hashes[q.processingQueue] == nil {
+		r.hashes[q.processingQueue] = map[string]string{}
+	}
+	r.hashes[q.processingQueue]["pay"] = raw
+	r.mu.Unlock()
+
+	if _, err := q.Reclaim(ctx); err != nil {
+		t.Fatalf("reclaim: %v", err)
+	}
+
+	// Somewhere observable: still in the processing hash, or moved to the
+	// dead-letter list.
+	r.mu.Lock()
+	_, stillTracked := r.hashes[q.processingQueue]["pay"]
+	dlq := append([]string(nil), r.lists[q.deadLetterQueue]...)
+	r.mu.Unlock()
+
+	quarantined := false
+	for _, v := range dlq {
+		if v == raw {
+			quarantined = true
+		}
+	}
+	if !stillTracked && !quarantined {
+		t.Fatalf("SECURITY: [queue] Reclaim silently deleted a corrupt processing entry: the claimed job's only durable copy is gone (not in the processing hash, not in %q, no dead-letter, no log) while Reclaim reported success — the exact silent loss the queue's own quarantine contract forbids on the main list",
+			q.deadLetterQueue)
+	}
+}

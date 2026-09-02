@@ -116,3 +116,54 @@ func TestServeGuard_ExtCaseFolding(t *testing.T) {
 		}
 	}
 }
+
+// Property: the stored-XSS guard applies to HEAD requests at both
+// serving paths, not only GET. A HEAD probe must report the same
+// headers a GET would send (octet-stream + attachment + nosniff) and
+// no body, on the non-seekable Get path and the RangeGetter path alike
+// — otherwise a caching layer that HEAD-warms from these responses
+// re-serves scriptable content as inline on the cached GET.
+func TestServeGuardAppliesToHeadRequests(t *testing.T) {
+	t.Parallel()
+
+	local := NewLocalStorage(t.TempDir())
+	saveKey(t, local, "x.svg", "<svg onload=alert(1)>")
+	saveKey(t, local, "y.html", "<html><script>alert(2)</script></html>")
+
+	scenarios := []struct {
+		name    string
+		storage Storage
+		key     string
+	}{
+		// nonSeekableStorage returns one fixed body for every key, so
+		// it can only exercise the sniff leg.
+		{"get path, sniff leg", nonSeekableStorage{data: "<html><script>alert(1)</script></html>"}, "y.html"},
+		{"range path, sniff leg", local, "y.html"},
+		{"range path, ext leg", local, "x.svg"},
+	}
+	for _, sc := range scenarios {
+		t.Run(sc.name, func(t *testing.T) {
+			h := ServeHandler(sc.storage)
+			req := httptest.NewRequest(http.MethodHead, "/uploads/"+sc.key, nil)
+			req.SetPathValue("key", sc.key)
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, req)
+
+			if rec.Code != http.StatusOK {
+				t.Fatalf("HEAD status = %d, want 200", rec.Code)
+			}
+			if ct := rec.Header().Get("Content-Type"); ct != "application/octet-stream" {
+				t.Errorf("SECURITY: [serve] HEAD Content-Type = %q, want application/octet-stream. Attack: stored XSS — a browser-renderable type survives the guard on the HEAD path.", ct)
+			}
+			if cd := rec.Header().Get("Content-Disposition"); cd != "attachment" {
+				t.Errorf("HEAD Content-Disposition = %q, want attachment", cd)
+			}
+			if nos := rec.Header().Get("X-Content-Type-Options"); nos != "nosniff" {
+				t.Errorf("HEAD X-Content-Type-Options = %q, want nosniff", nos)
+			}
+			if rec.Body.Len() != 0 {
+				t.Errorf("HEAD carried a body of %d bytes", rec.Body.Len())
+			}
+		})
+	}
+}
