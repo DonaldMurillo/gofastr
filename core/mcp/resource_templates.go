@@ -128,17 +128,28 @@ func (s *Server) handleResourcesTemplatesList(ctx context.Context, req Request) 
 	if err != nil {
 		return newErrorResponse(req.ID, ErrInvalidParams, err.Error())
 	}
+	// Snapshot under the read lock, evaluate the per-caller gates
+	// outside it: gates are app-supplied callback code and must never
+	// contend with the registry lock (notifications.go's rule). One
+	// slow gate used to stall every registration; a panicking one
+	// unwound past the RUnlock and wedged the registry.
 	s.mu.RLock()
-	list := make([]ResourceTemplate, 0, len(s.templates))
+	snapshot := make([]ResourceTemplate, 0, len(s.templates))
 	for _, tpl := range s.templates {
+		snapshot = append(snapshot, tpl)
+	}
+	s.mu.RUnlock()
+	list := make([]ResourceTemplate, 0, len(snapshot))
+	for _, tpl := range snapshot {
 		// A template the caller cannot use is not listed to them: the
-		// uriTemplate and description are the disclosure.
-		if tpl.gate != nil && tpl.gate(ctx) != nil {
+		// uriTemplate and description are the disclosure. gateRefused
+		// also converts a panicking gate into a refusal instead of a
+		// transport crash.
+		if gateRefused(tpl.gate, ctx) {
 			continue
 		}
 		list = append(list, tpl)
 	}
-	s.mu.RUnlock()
 	slices.SortFunc(list, func(a, b ResourceTemplate) int {
 		return strings.Compare(a.URITemplate, b.URITemplate)
 	})

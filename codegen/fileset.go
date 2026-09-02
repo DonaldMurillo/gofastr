@@ -351,9 +351,21 @@ func EnsureNoSymlinkLeaf(path string) error {
 	return nil
 }
 
+// pruneEmptyParents removes now-empty directories from dir upward,
+// stopping at root. The containment check is on the segment boundary:
+// a sibling of root that merely shares its leading letters
+// (/work vs /worktree) must not be walked into — a generated relative
+// path like "../worktree/x" would otherwise prune a tree the codegen
+// run does not own.
 func pruneEmptyParents(root, dir string) {
 	root = filepath.Clean(root)
-	for filepath.Clean(dir) != root && strings.HasPrefix(filepath.Clean(dir), root) {
+	sep := string(filepath.Separator)
+	if root == sep {
+		// Pruning toward the filesystem root is never wanted, and the
+		// boundary suffix below does not exist for the root itself.
+		return
+	}
+	for strings.HasPrefix(filepath.Clean(dir), root+sep) {
 		if err := os.Remove(dir); err != nil {
 			return
 		}

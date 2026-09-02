@@ -45,11 +45,18 @@ var stripInboundHeaders = []string{
 // stripOutboundHeaders never reach the client. Set-Cookie and the
 // authenticate challenges are the vendor trying to establish identity
 // the relay deliberately withholds; Access-Control-* would make the
-// app origin advertise a third party's CORS policy.
+// app origin advertise a third party's CORS policy. Refresh is a
+// header-driven navigation (a vendor 200 can steer the browser to any
+// origin, the same leak the Location→502 refusal exists to close, and
+// an open redirector on top); Clear-Site-Data is its destructive
+// sibling, deleting the visitor's app-origin cookies and storage from
+// the vendor's side.
 var stripOutboundHeaders = []string{
 	http.CanonicalHeaderKey("Set-Cookie"),
 	http.CanonicalHeaderKey("WWW-Authenticate"),
 	http.CanonicalHeaderKey("Proxy-Authenticate"),
+	http.CanonicalHeaderKey("Refresh"),
+	http.CanonicalHeaderKey("Clear-Site-Data"),
 }
 
 // reverseProxy keeps the concrete type in one place; the handler layer
@@ -169,11 +176,14 @@ func (r *Relay) proxyError(w http.ResponseWriter, req *http.Request, err error) 
 		return
 	}
 	if errors.Is(err, context.DeadlineExceeded) || isTimeoutError(err) {
-		r.logger.Warn("relay: upstream timeout", "method", req.Method, "path", req.URL.EscapedPath(), "err", err.Error())
+		// The method is request-borne: percent-encode control bytes the
+		// way every other log sink scrubs them, so a forged method
+		// cannot paint a forged line into the operator's tail.
+		r.logger.Warn("relay: upstream timeout", "method", url.PathEscape(req.Method), "path", req.URL.EscapedPath(), "err", err.Error())
 		http.Error(w, "upstream timeout", http.StatusGatewayTimeout)
 		return
 	}
-	r.logger.Warn("relay: upstream unreachable", "method", req.Method, "path", req.URL.EscapedPath(), "err", err.Error())
+	r.logger.Warn("relay: upstream unreachable", "method", url.PathEscape(req.Method), "path", req.URL.EscapedPath(), "err", err.Error())
 	http.Error(w, "upstream unavailable", http.StatusBadGateway)
 }
 
@@ -221,6 +231,7 @@ func (r *Relay) modifyResponse(rt *routeRuntime, resp *http.Response) {
 			resp.Header.Del(name)
 		}
 	}
+	stripAbsoluteLinkTargets(resp.Header)
 	resp.Header.Set("X-Content-Type-Options", "nosniff")
 	if !rt.cacheOK {
 		resp.Header.Set("Cache-Control", "no-store")
@@ -235,6 +246,32 @@ func (r *Relay) modifyResponse(rt *routeRuntime, resp *http.Response) {
 	// now" is the relay's own warning about this direction, and nothing
 	// enforced it.
 	resp.Body = &cappedBody{ReadCloser: resp.Body, remaining: rt.maxBody}
+}
+
+// stripAbsoluteLinkTargets drops Link header values whose target is an
+// absolute URL. A relative Link target resolves against the app origin
+// (the mount), so pagination hints like `</page/2>; rel="next"` stay
+// forwarded; an absolute one — typically a vendor `rel=preload` — hands
+// the browser a direct connection to a third-party origin, re-opening
+// the exact channel the first-party posture exists to close. A value
+// mixing relative and absolute targets is dropped whole: conservative
+// beats leaking.
+func stripAbsoluteLinkTargets(h http.Header) {
+	values := h.Values("Link")
+	if len(values) == 0 {
+		return
+	}
+	kept := make([]string, 0, len(values))
+	for _, v := range values {
+		if strings.Contains(v, "://") || strings.Contains(v, "<//") {
+			continue
+		}
+		kept = append(kept, v)
+	}
+	h.Del("Link")
+	for _, v := range kept {
+		h.Add("Link", v)
+	}
 }
 
 // cappedBody stops a response body at a byte budget. It reports io.EOF

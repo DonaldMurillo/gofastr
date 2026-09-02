@@ -89,6 +89,24 @@ func (s *LocalStorage) Save(_ context.Context, key string, r io.Reader) error {
 	if err := fileperm.RestrictDirectoryTree(dir, s.baseDir); err != nil {
 		return scrub("restricting directories", err)
 	}
+	// The prefix checks above are lexical only, and RestrictDirectoryTree
+	// is a no-op off Windows: a symlinked directory inside the storage
+	// tree still funnels the write outside baseDir (the probe class
+	// TestApplyRefusesSymlinkEscape hit in framework/contracts). Resolve
+	// symlinks on both sides and re-check containment before the file is
+	// created. The leaf need not exist yet, so only the directory chain
+	// is resolved.
+	realBase, err := filepath.EvalSymlinks(absBase)
+	if err != nil {
+		return scrub("resolving storage root", err)
+	}
+	realDir, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		return scrub("resolving upload directory", err)
+	}
+	if !strings.HasPrefix(realDir, realBase+string(os.PathSeparator)) && realDir != realBase {
+		return fmt.Errorf("%w: path escapes base directory through a symlink", ErrInvalidKey)
+	}
 
 	// Mode 0o600 keeps uploaded files readable only by the process
 	// owner. The default umask leaves os.Create at 0o644, which on a

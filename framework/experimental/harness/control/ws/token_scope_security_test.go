@@ -1,6 +1,7 @@
 package ws
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -177,5 +178,95 @@ func TestWSTokenCommandScopeEnforced(t *testing.T) {
 			"AllowsSession but Conn carries no claims into handleText, which dispatches any decoded "+
 			"command; rest.go enforces AllowsCommand for the same verbs on every command route.",
 			got)
+	}
+}
+
+// TestWSTokenSessionScopeOnCommandBody pins the session side of the
+// token-scope property the test above pins on the command side: the
+// Sessions claim must gate every dispatched command's TARGET session,
+// not just the URL the socket upgraded on.
+//
+// The upgrade path checks claims.AllowsSession(sessParam) once, but
+// Conn.handleText then dispatches whatever SessionID the command BODY
+// carries: handleSendInput/handleCancel/handleAnswer all look up
+// m.engines[cmd.SessionID] without comparing it to c.session. rest.go
+// does not have this hole — it derives c.SessionID = sessID from the
+// URL path (overriding any body value) after a per-route
+// AllowsSession check, and its comments claim ws.go "mirrors" that.
+// It doesn't: a token minted for session A (a web sidecar's token, a
+// spawned agent's token) can drive a whole other session's engine —
+// inject input, cancel turns, answer that session's permission
+// prompts — by typing B into the body of the frame.
+func TestWSTokenSessionScopeOnCommandBody(t *testing.T) {
+	sessionA := ids.NewSessionID()
+	sessionB := ids.NewSessionID()
+	busA := engine.NewBus(sessionA)
+	busB := engine.NewBus(sessionB)
+	t.Cleanup(func() { busA.Close(); busB.Close() })
+
+	mux := multiplex.New()
+	for _, setup := range []struct {
+		sess ids.SessionID
+		bus  *engine.Bus
+	}{
+		{sessionA, busA},
+		{sessionB, busB},
+	} {
+		reg := tool.NewRegistry()
+		d := engine.NewDispatcher(setup.bus, reg)
+		mux.RegisterEngine(engine.NewEngine(setup.sess, setup.bus, fakeProvider{}, "fake", d))
+	}
+
+	secret, err := auth.GenerateSecret()
+	if err != nil {
+		t.Fatalf("secret: %v", err)
+	}
+	enc := auth.NewEncoder(secret)
+	tok, err := enc.Encode(auth.Claims{
+		Ver:           auth.VerCurrent,
+		JTI:           ids.NewJTI(),
+		Sessions:      []ids.SessionID{sessionA}, // bound to A only
+		Commands:      []string{"SendInput", "CancelTurn", "AnswerPermission"},
+		IdentityClass: control.IdentityHuman,
+		ExpiresAt:     time.Now().Add(time.Hour).Unix(),
+	})
+	if err != nil {
+		t.Fatalf("encode: %v", err)
+	}
+
+	h := &Handler{Mux: mux, Encoder: enc, Revocations: auth.NewRevocationList()}
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+	host := strings.TrimPrefix(srv.URL, "http://")
+
+	// In-process observer of session B's bus: the harm is a turn
+	// starting on B, and the attacker socket is subscribed to A's bus
+	// so the attack itself is silent on the wire.
+	obsCtx, obsCancel := context.WithCancel(context.Background())
+	t.Cleanup(obsCancel)
+	eventsB := busB.Subscribe(obsCtx)
+
+	// Attach legally through session A.
+	conn := dialWS(t, host, sessionA, tok)
+	defer conn.Close()
+
+	// Attack: command body names session B.
+	sendCommandFrame(t, conn, control.SendInput{
+		SessionID: sessionB,
+		Content:   engine.SimpleInput("pwned-via-body-session"),
+	})
+
+	// The refusal must come back on the socket…
+	if got := readRefusalFrame(t, conn); !wsRefusal(got) {
+		t.Errorf("SECURITY: [ws-session-scope] no refusal for a cross-session SendInput body (got %q)", got)
+	}
+	// …and session B's engine must never have started a turn.
+	select {
+	case env, ok := <-eventsB:
+		if ok {
+			t.Errorf("SECURITY: [ws-session-scope] a token bound to session A drove session B: bus B saw %q", env.Payload)
+		}
+	case <-time.After(300 * time.Millisecond):
+		// Clean: nothing arrived on B.
 	}
 }

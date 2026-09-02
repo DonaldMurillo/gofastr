@@ -3,9 +3,14 @@ package auth
 import (
 	"crypto/hmac"
 	"crypto/sha256"
+	"fmt"
+	"io"
 	"maps"
 	"math/big"
+	"net/http"
+	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -479,5 +484,148 @@ func TestOIDCNoKidAmbiguousKeyset(t *testing.T) {
 	if _, err := p.ExchangeCode(ctxBg(), "any-code"); err == nil {
 		t.Fatal("SECURITY: [oidc-kid] a kid-less id_token verified against a TWO-key JWKS; " +
 			"lookup must fail closed unless the set is unambiguous")
+	}
+}
+
+// ── discovery endpoint pinning + credential redirect refusal (hardening) ────
+//
+// Extends the issuer-pinning family: TestOIDCHttpIssuerOnlyLiteralLoopback
+// pins the ISSUER's transport; these pin the endpoints the issuer's
+// discovery document hands us, and the redirect posture of the fetches.
+// The loopback-http dev posture itself stays pinned by every fakeIdP test
+// in this suite (all of them run a literal-loopback http IdP end to end).
+
+// Property: every URL the provider fetches from discovery (token, jwks,
+// userinfo) keeps the issuer's transport trust — https from any host, or
+// plain http only on a literal-loopback host under a loopback-http issuer —
+// and never carries embedded userinfo. Distinct hosts remain allowed:
+// OIDC discovery legitimately serves jwks/userinfo from another origin.
+// Surfaces: fetchDiscovery's acceptance of each endpoint field, driven
+// through its consuming method.
+func TestOIDCSec_EndpointDowngradeRefused(t *testing.T) {
+	for _, field := range []string{"token_endpoint", "jwks_uri", "userinfo_endpoint"} {
+		t.Run(field, func(t *testing.T) {
+			f := newFakeIdP(t)
+			f.endpointsOverride = map[string]string{field: "http://attacker.example/leak"}
+			p := newTestProvider(t, f)
+			var err error
+			switch field {
+			case "token_endpoint", "jwks_uri":
+				_, err = p.ExchangeCode(ctxBg(), "code-1")
+			case "userinfo_endpoint":
+				_, err = p.FetchUserInfo(ctxBg(), "some-access-token")
+			}
+			if err == nil {
+				t.Fatalf("downgraded %s was accepted", field)
+			}
+			if !strings.Contains(err.Error(), "must be https") {
+				t.Fatalf("err = %v, want the discovery endpoint transport-validation error", err)
+			}
+		})
+	}
+}
+
+// Property: a credential-bearing provider fetch never follows a redirect.
+// Surface: ExchangeCode's token POST — the provider client serves
+// discovery/JWKS/userinfo alike, so the posture covers them all. The
+// mechanics this pins: Go's client re-sends method and body verbatim on
+// 307/308, so client_secret and the authorization code would arrive at
+// whatever origin the token endpoint redirects to. 301/302/303 degrade to
+// a bodyless GET and are covered by the same refusal.
+func TestOIDCSec_TokenRedirectKeepsSecret(t *testing.T) {
+	for _, status := range []int{http.StatusTemporaryRedirect, http.StatusPermanentRedirect} {
+		t.Run(fmt.Sprintf("status%d", status), func(t *testing.T) {
+			var mu sync.Mutex
+			var bodies []string
+			collector := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				b, _ := io.ReadAll(r.Body)
+				mu.Lock()
+				bodies = append(bodies, fmt.Sprintf("%s %s", r.Method, b))
+				mu.Unlock()
+				writeJSON(t, w, map[string]any{}) // no id_token: the exchange must fail either way
+			}))
+			t.Cleanup(collector.Close)
+
+			var idp *httptest.Server
+			idp = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch r.URL.Path {
+				case "/.well-known/openid-configuration":
+					writeJSON(t, w, map[string]any{
+						"issuer":                 idp.URL,
+						"authorization_endpoint": idp.URL + "/authorize",
+						"token_endpoint":         idp.URL + "/token",
+						"jwks_uri":               idp.URL + "/jwks",
+						"userinfo_endpoint":      idp.URL + "/userinfo",
+					})
+				case "/token":
+					http.Redirect(w, r, collector.URL+"/steal", status)
+				default:
+					writeJSON(t, w, map[string]any{})
+				}
+			}))
+			t.Cleanup(idp.Close)
+
+			const secret = "super-secret-do-not-forward"
+			p, err := NewOIDCProvider(OIDCConfig{
+				Issuer:       idp.URL,
+				ClientID:     "test-client",
+				ClientSecret: secret,
+				RedirectURL:  "https://app.example.com/cb",
+			})
+			if err != nil {
+				t.Fatalf("NewOIDCProvider: %v", err)
+			}
+			_, err = p.ExchangeCode(ctxBg(), "auth-code-1")
+			mu.Lock()
+			got := strings.Join(bodies, " | ")
+			mu.Unlock()
+			if strings.Contains(got, secret) || strings.Contains(got, "auth-code-1") {
+				t.Fatalf("SECURITY: redirect target received the exchange payload: %s", got)
+			}
+			if err == nil {
+				t.Fatal("exchange must fail: a redirect answer is not a token response")
+			}
+		})
+	}
+}
+
+// TestValidateOIDCEndpoint pins the transport rule itself, both issuer
+// postures. Under an https issuer NO plain-http endpoint is accepted, not
+// even a literal loopback one (that would downgrade below the issuer's own
+// transport). Under the loopback-http dev posture only literal loopback
+// endpoint hosts ride cleartext — same literal set as the issuer rule, so
+// a dev issuer cannot direct traffic at another cleartext host.
+func TestValidateOIDCEndpoint(t *testing.T) {
+	httpsIssuer := []struct {
+		raw  string
+		want bool
+	}{
+		{"https://any.example/token", true},
+		{"https://other.origin.example/jwks", true}, // distinct hosts allowed
+		{"https://alice:pw@idp.example/token", false},
+		{"http://idp.example/token", false},
+		{"http://localhost:8080/jwks", false}, // below the issuer's transport
+		{"javascript:alert(1)", false},
+		{"/relative/path", false},
+	}
+	for _, tc := range httpsIssuer {
+		if err := validateOIDCEndpoint(tc.raw, false); (err == nil) != tc.want {
+			t.Errorf("https issuer: %q err=%v, want ok=%v", tc.raw, err, tc.want)
+		}
+	}
+	loopbackIssuer := []struct {
+		raw  string
+		want bool
+	}{
+		{"http://localhost:9999/jwks", true},
+		{"http://127.0.0.1:9999/token", true},
+		{"http://[::1]:9999/userinfo", true},
+		{"http://127.0.0.2:9999/jwks", false}, // non-literal loopback
+		{"http://intra.example/token", false}, // cleartext, non-loopback
+	}
+	for _, tc := range loopbackIssuer {
+		if err := validateOIDCEndpoint(tc.raw, true); (err == nil) != tc.want {
+			t.Errorf("loopback-http issuer: %q err=%v, want ok=%v", tc.raw, err, tc.want)
+		}
 	}
 }

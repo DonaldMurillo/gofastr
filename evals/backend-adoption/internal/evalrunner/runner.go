@@ -536,13 +536,39 @@ func RenderMarkdown(aggregate *Aggregate) string {
 			for _, check := range phase.result.Checks {
 				if !check.Passed {
 					fmt.Fprintf(&b, "- `%s` %s: **%s** — %s\n",
-						trial.ID, phase.name, check.ID, truncateText(check.Evidence, 220))
+						trial.ID, phase.name, check.ID, escapeMarkdownText(truncateText(check.Evidence, 220)))
 				}
 			}
 		}
 	}
 	return b.String()
 }
+
+// markdownTextEscapes neutralises candidate-controlled text on its way
+// into the committed RESULTS.md. Evidence bytes come from the thing
+// being evaluated (HTTP bodies via %q, compiler output raw), so an
+// image reference or a leading "# " would otherwise plant a beacon
+// every renderer of the committed report fetches, or rewrite the
+// document structure the operator reads scores from. Markdown-
+// significant bytes become HTML entities (renderers show the literal
+// character, never structure) and embedded newlines are flattened so
+// candidate output cannot add lines to the report.
+var markdownTextEscapes = strings.NewReplacer(
+	"&", "&amp;",
+	"<", "&lt;",
+	">", "&gt;",
+	"!", "&#33;",
+	"[", "&#91;",
+	"]", "&#93;",
+	"#", "&#35;",
+	"*", "&#42;",
+	"`", "&#96;",
+	"\n", " ",
+	"\r", " ",
+)
+
+// escapeMarkdownText applies markdownTextEscapes to one field.
+func escapeMarkdownText(s string) string { return markdownTextEscapes.Replace(s) }
 
 func writeJSON(path string, value any) error {
 	data, err := json.MarshalIndent(value, "", "  ")

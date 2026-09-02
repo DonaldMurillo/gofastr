@@ -84,14 +84,31 @@ func applyUIHostPages(fwApp *framework.App, w *world.World) error {
 		}
 		opts = append(opts, uihost.WithPWA(uihost.PWAConfig{
 			Name: w.App.PWA.Name, ShortName: w.App.PWA.ShortName,
-			Description: w.App.PWA.Description, StartURL: w.App.PWA.StartURL,
-			Scope: w.App.PWA.Scope, Display: uihost.PWADisplay(w.App.PWA.Display),
+			Description: w.App.PWA.Description, StartURL: sameOriginPWAPath(w.App.PWA.StartURL),
+			Scope: sameOriginPWAPath(w.App.PWA.Scope), Display: uihost.PWADisplay(w.App.PWA.Display),
 			ThemeColor: w.App.PWA.ThemeColor, BackgroundColor: w.App.PWA.BackgroundColor,
 			DenyPaths: deny,
 		}))
 	}
 	fwApp.Mount(uihost.New(site, opts...))
 	return nil
+}
+
+// sameOriginPWAPath coerces an agent-authored start_url/scope to a
+// same-origin path. The manifest is what the operator's browser
+// installs: a scheme-relative "//evil.example/pwa" (or the backslash
+// spelling, which browsers normalize to it) launches the installed PWA
+// on the attacker's origin under the kiln app's name, so anything that
+// is not a plain root-absolute path falls back to the same default
+// uihost uses. Coerced, not refused: the preview keeps its PWA chrome,
+// and freeze refuses the value outright at graduation.
+func sameOriginPWAPath(v string) string {
+	normalized := strings.ReplaceAll(strings.ToLower(v), "\\", "/")
+	if v == "" ||
+		(strings.HasPrefix(v, "/") && !strings.HasPrefix(normalized, "//") && !strings.Contains(normalized, "://")) {
+		return v
+	}
+	return "/"
 }
 
 type worldScreen struct{ page *world.Page }

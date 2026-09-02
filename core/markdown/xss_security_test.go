@@ -1,6 +1,7 @@
 package markdown
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -191,5 +192,198 @@ func TestMarkdown_FenceInfoAttrEscaped(t *testing.T) {
 		if strings.Contains(html, "<img") || strings.Contains(html, "<script") {
 			t.Errorf("SECURITY: [markdown] fence info string broke out of class attribute: %s. Attack: XSS via info string.", html)
 		}
+	}
+}
+
+// --- table syntax (post-xss-pass surface) ----------------------------------
+//
+// Property: table cell text flows through the SAME inline pipeline
+// (code-span extraction, link/image scheme guards, HTML escaping) as
+// paragraph text. The table renderer is newer than every test above, and
+// a cell is attacker-controlled wherever markdown is user-submitted.
+// Surfaces: <th> cells, <td> cells, image-with-quote payloads in cells.
+func TestMarkdown_TableCellsEscapeInline(t *testing.T) {
+	docs := []string{
+		"| h |\n| --- |\n| <script>alert(1)</script> |",
+		"| h |\n| --- |\n| [x](javascript:alert(1)) |",
+		"| h |\n| --- |\n| ![o](x\" onerror=\"alert(1)) |",
+		"| <img src=x onerror=alert(1)> |\n| --- |\n| c |",
+	}
+	for _, d := range docs {
+		html := string(RenderHTML(d))
+		if strings.Contains(html, "<script") || strings.Contains(html, "<img src=x") {
+			t.Errorf("SECURITY: [markdown] table cell produced unescaped markup from %q: %s. "+
+				"Attack: a cell bypasses the inline escape pipeline paragraphs are subject to.", d, html)
+		}
+		if strings.Contains(html, `href="javascript:`) {
+			t.Errorf("SECURITY: [markdown] javascript: link survived in a table cell: %s", html)
+		}
+		// A quote smuggled into a URL must arrive escaped, never as a bare
+		// `"` that would terminate the src attribute.
+		if i := strings.Index(html, "<img"); i >= 0 {
+			tag := html[i:]
+			if end := strings.Index(tag, ">"); end >= 0 {
+				tag = tag[:end]
+				if strings.Contains(tag, `" onerror=`) {
+					t.Errorf("SECURITY: [markdown] unescaped quote broke out of a cell image attribute: %s", tag)
+				}
+			}
+		}
+	}
+	// Happy path: ordinary cell text still renders.
+	if html := string(RenderHTML("| a | b |\n| --- | --- |\n| 1 | 2 |")); !strings.Contains(html, "<td>1</td>") {
+		t.Errorf("[markdown] ordinary table broken: %s", html)
+	}
+}
+
+// TestMarkdown_TableAlignClassFixedSet pins that the only attacker-influenced
+// thing a delimiter row can put into the output is a class name from the
+// fixed enum md-align-{left,right,center}: any other byte shape (letters,
+// quotes, spaces-as-content) disqualifies the row from being a table at
+// all, and the renderer maps the surviving colon shapes onto the enum.
+func TestMarkdown_TableAlignClassFixedSet(t *testing.T) {
+	classRe := regexp.MustCompile(`class="[^"]*"`)
+	docs := map[string]string{
+		"left":   "| h |\n| :--- |\n| c |",
+		"right":  "| h |\n| ---: |\n| c |",
+		"center": "| h |\n| :--: |\n| c |",
+		"none":   "| h |\n| --- |\n| c |",
+	}
+	for want, d := range docs {
+		html := string(RenderHTML(d))
+		switch want {
+		case "none":
+			if strings.Contains(html, "md-align-") {
+				t.Errorf("[markdown] plain delimiter row gained a class: %s", html)
+			}
+		default:
+			if !strings.Contains(html, `class="md-align-`+want+`"`) {
+				t.Errorf("[markdown] delimiter row for %s did not map onto the enum: %s", want, html)
+			}
+		}
+		// Every class attribute the table renderer emits must come from the
+		// fixed enum — no other bytes from the delimiter row survive.
+		for _, m := range classRe.FindAllString(html, -1) {
+			switch m {
+			case `class="md-align-left"`, `class="md-align-right"`, `class="md-align-center"`:
+			default:
+				t.Errorf("SECURITY: [markdown] table emitted non-enum class %q from %q", m, d)
+			}
+		}
+	}
+	// Hostile delimiter rows: not tables at all, so no class attribute and
+	// no <table> in which to carry the payload.
+	for _, d := range []string{
+		"| h |\n| :javascript:x: |\n| c |",
+		"| h |\n| :\"onmouseover=\"alert(1): |\n| c |",
+	} {
+		html := string(RenderHTML(d))
+		if strings.Contains(html, "<table") || strings.Contains(html, "class=\"") {
+			t.Errorf("SECURITY: [markdown] hostile delimiter row became a table/class: %s. "+
+				"Attack: the alignment cell writes into an attribute position.", html)
+		}
+	}
+}
+
+// TestMarkdown_LinkURLBoundaryShapes pins that parseLink's URL capture —
+// which ends at the FIRST ')' and trims surrounding whitespace — always
+// feeds the captured prefix through the scheme guard. Truncation and
+// padding are how a payload tries to arrive "split" across the boundary;
+// none of these shapes may yield an executable href.
+func TestMarkdown_LinkURLBoundaryShapes(t *testing.T) {
+	docs := []string{
+		"[t](javascript:alert(1))x)",          // payload plus decoy ')' tail
+		"[t]( javascript:alert(1) )",          // whitespace-padded scheme
+		"[t](JaVaScRiPt:alert(1))",            // case-folded scheme
+		"[t](data:image/svg+xml;base64,AAAA)", // svg data URI in a LINK
+		"[t](vbscript:msgbox)",                // vbscript
+	}
+	for _, d := range docs {
+		html := string(RenderHTML(d))
+		lower := strings.ToLower(html)
+		for _, scheme := range []string{`href="javascript:`, `href="vbscript:`, `href="data:image/svg`, `href="data:text/html`} {
+			if strings.Contains(lower, scheme) {
+				t.Errorf("SECURITY: [markdown] boundary-truncated URL smuggled %q past the scheme guard: %s", scheme, html)
+			}
+		}
+	}
+	// A genuinely safe URL must keep its href: the guard is a filter, not
+	// a blanket replacement.
+	if html := string(RenderHTML("[t](https://example.com/a(b))")); !strings.Contains(html, `href="https://example.com/a(b"`) {
+		t.Errorf("[markdown] safe URL with interior paren mangled: %s", html)
+	}
+}
+
+// TestMarkdown_FrontmatterDelimShapes pins that frontmatter content never
+// reaches the rendered HTML as markup, regardless of delimiter shape:
+// space-padded `--- ` delimiters still open/close the block, an UNCLOSED
+// block renders as ordinary (escaped) body text rather than silently
+// swallowing or executing the rest, and a `<script>` in a frontmatter
+// value stays out of the HTML entirely.
+func TestMarkdown_FrontmatterDelimShapes(t *testing.T) {
+	// Padded delimiters: still frontmatter; script value never in HTML.
+	doc := Render("--- \ntitle: \"<script>alert(1)</script>\"\n--- \nbody text\n")
+	html := string(doc.HTML)
+	if strings.Contains(html, "<script") {
+		t.Errorf("SECURITY: [markdown] padded-delimiter frontmatter leaked markup into the body: %s", html)
+	}
+	if !strings.Contains(html, "body text") {
+		t.Errorf("[markdown] padded delimiters swallowed the body: %q", html)
+	}
+
+	// Unclosed block: the leading `---` renders as a rule and the key: value
+	// line as ESCAPED text — never raw markup.
+	doc = Render("---\ntitle: \"<img src=x onerror=alert(1)>\"\nno closing delimiter")
+	html = string(doc.HTML)
+	if strings.Contains(html, "<img src=x") {
+		t.Errorf("SECURITY: [markdown] unclosed frontmatter executed as body markup: %s", html)
+	}
+	// Frontmatter keys/values never appear raw even when they look like markdown.
+	doc = Render("---\nx: [link](javascript:alert(1))\n---\nok")
+	html = string(doc.HTML)
+	if strings.Contains(html, `href="javascript:`) || strings.Contains(html, "<script") {
+		t.Errorf("SECURITY: [markdown] frontmatter value rendered as live markup: %s", html)
+	}
+}
+
+// Property: a frontmatter key defined twice must not silently resolve
+// to the LAST value. splitFrontmatter writes fm[key] = val with no
+// duplicate detection, so in
+//
+//	---
+//	title: Safe Title
+//	title: <img src=x onerror=alert(1)>
+//	---
+//
+// Document.Title silently becomes the second line. The sibling YAML
+// parser (core/yaml) rejects duplicate mapping keys precisely because
+// silent last-wins lets a stale or hostile line override the value a
+// reviewer believes is in force — and frontmatter is the same
+// config-adjacent surface (Title flows into <title>, SEO meta, and
+// templated page chrome). With no error channel on Render, the minimum
+// fail-closed rule is: ambiguity must not resolve to the value a
+// top-to-bottom reader did not see.
+//
+// Surfaces: the Frontmatter map itself and the Title fallback
+// (markdown.go:28 reads fm["title"]), which is the value hosts
+// interpolate into page chrome.
+func TestFrontmatterDupKeysNotLastWins(t *testing.T) {
+	doc := Render("---\ntitle: Safe Title\ntitle: EVIL<title>\n---\nbody text\n")
+	if got := doc.Frontmatter["title"]; got != "Safe Title" {
+		t.Errorf("SECURITY: [markdown] duplicate frontmatter key resolved to %q — silent last-wins lets a stale/hostile line override the value a reviewer read first.", got)
+	}
+	if strings.Contains(string(doc.HTML), "EVIL") {
+		t.Errorf("SECURITY: [markdown] losing duplicate value leaked into the body: %s", doc.HTML)
+	}
+	// Title fallback reads the same map, so it inherits the defect.
+	doc = Render("---\ntitle: First\ntitle: Second\n---\n\nNo heading here.\n")
+	if doc.Title != "First" {
+		t.Errorf("SECURITY: [markdown] Document.Title resolved duplicate frontmatter title to %q, want the first definition", doc.Title)
+	}
+	// False-positive guard: distinct keys keep parsing, last-wins has no
+	// excuse to be reachable via them.
+	doc = Render("---\ntitle: Only\nauthor: Don\n---\n\nNo heading here.\n")
+	if doc.Title != "Only" {
+		t.Errorf("single title key mis-parsed: %q", doc.Title)
 	}
 }

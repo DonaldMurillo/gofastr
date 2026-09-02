@@ -156,6 +156,12 @@ func irQuotingSites(payload string) []irSite {
 	add("nav.child.label", func(b *Blueprint) {
 		b.Nav = []BlueprintNavItem{{Label: "Top", Items: []BlueprintNavItem{{Label: payload, Href: "/"}}}}
 	})
+	add("nav.child.href", func(b *Blueprint) {
+		b.Nav = []BlueprintNavItem{{Label: "Top", Items: []BlueprintNavItem{{Label: "Kid", Href: payload}}}}
+	})
+	add("nav.child.role", func(b *Blueprint) {
+		b.Nav = []BlueprintNavItem{{Label: "Top", Items: []BlueprintNavItem{{Label: "Kid", Href: "/", Role: payload}}}}
+	})
 
 	// ---- entity ----
 	add("field.pattern", func(b *Blueprint) { ent(b).Fields[0].Pattern = payload })
@@ -234,6 +240,12 @@ func irQuotingSites(payload string) []irSite {
 	})
 
 	// ---- screen ----
+	// Screen chrome strings the 2026-08-04 sweep never reached: title and
+	// description feed the SEO describers and the registrar table, route
+	// feeds the router registration AND the e2e/axe test files.
+	add("screen.title", func(b *Blueprint) { b.Screens[0].Title = payload })
+	add("screen.description", func(b *Blueprint) { b.Screens[0].Description = payload })
+	add("screen.route", func(b *Blueprint) { b.Screens[0].Route = payload })
 	add("screen.layout", func(b *Blueprint) { b.Screens[0].Layout = payload })
 	add("screen.access.role", func(b *Blueprint) {
 		b.Screens[0].Access = BlueprintAccess{Auth: true, Role: payload}
@@ -288,6 +300,13 @@ func irQuotingSites(payload string) []irSite {
 		Kind: "entity_detail", Entity: "tickets",
 		Transitions: []BlueprintTransition{{Label: "Open it", Status: "open", Stamp: payload}},
 	})
+	// Typed block string fields the sweep never reached: they all flow into
+	// the uinode Props literal (renderGoLiteral), the catalog emitters, or
+	// the empty-state copy of a list block.
+	block("block.text", BlueprintBlock{Kind: "text", Text: payload})
+	block("block.class", BlueprintBlock{Kind: "div", Class: payload})
+	block("block.href", BlueprintBlock{Kind: "text", Text: "hi", Href: payload})
+	block("block.empty_text", BlueprintBlock{Kind: "entity_list", Entity: "tickets", Fields: []string{"title"}, EmptyText: payload})
 
 	// ---- endpoints / stubs ----
 	add("endpoint.name", func(b *Blueprint) {
@@ -485,4 +504,155 @@ func TestRelationNameMustBeAnIdentifier(t *testing.T) {
 			}
 		}
 	}
+}
+
+// Property: `gofastr generate sdk` reads the same hand-written entities/*.go
+// packReadEntities serves `gofastr generate cli` (the boundary the tests in
+// generate_cli_injection_security_test.go defend), but buildSDKSpec applies
+// NONE of the guards buildCLIEntity applies: no isGoIdentifier on the
+// derived struct name, no literal-safety check on the table. The table lands
+// raw inside "/%s" path literals in renderClientEntity — the same sink the
+// CLI guards — and a table like x"+PWN()+"y yields
+//
+//	path := "/x"+PWN()+"y"
+//
+// which PARSES, so the format.Source gate renderSDKGoFiles leans on waves it
+// through: the injected call compiles into the downloadable, auto-built Go
+// SDK (dist/sdk-go.zip, consumed via `go build` in downstream repos). The
+// refusal belongs at buildSDKSpec so both targets (go + js) are covered
+// before any file is rendered.
+func TestSDKSpecRefusesHostileDeclarations(t *testing.T) {
+	hostile := map[string]framework.EntityDeclaration{
+		"table closes the path literal": {
+			Name: "events", Table: `x"+PWN()+"y`,
+			Fields: []framework.FieldDeclaration{{Name: "title", Type: "string"}},
+		},
+		"table backslash escapes the closing quote": {
+			Name: "events", Table: `x\`,
+			Fields: []framework.FieldDeclaration{{Name: "title", Type: "string"}},
+		},
+		"table with newline": {
+			Name: "events", Table: "x\ny",
+			Fields: []framework.FieldDeclaration{{Name: "title", Type: "string"}},
+		},
+		"entity name is not an identifier": {
+			Name: `po"sts`, Table: "posts",
+			Fields: []framework.FieldDeclaration{{Name: "title", Type: "string"}},
+		},
+	}
+	for label, decl := range hostile {
+		opts := sdkOptions{name: "app"}
+		spec, err := buildSDKSpec([]framework.EntityDeclaration{decl}, &opts)
+		if err != nil {
+			continue // refused at the boundary, like generate cli
+		}
+		// Not refused at spec build: the artifact must at least refuse to
+		// render (the parse gate) rather than carry the payload.
+		if _, err := renderSDKGoFiles(spec); err != nil {
+			continue
+		}
+		// Neither layer refused: prove the payload reached expression
+		// position in the emitted, parsing client.go.
+		files, _ := renderSDKGoFiles(spec)
+		for _, f := range files {
+			assertIRStayedData(t, "sdk."+label, f.name, f.content)
+		}
+	}
+	// Control: the plain declarations real apps generate still pass both
+	// layers.
+	opts := sdkOptions{name: "app"}
+	spec, err := buildSDKSpec([]framework.EntityDeclaration{{
+		Name: "events", Table: "blog_posts",
+		Fields: []framework.FieldDeclaration{{Name: "title", Type: "string"}},
+	}}, &opts)
+	if err != nil {
+		t.Fatalf("plain declaration rejected at spec build: %v", err)
+	}
+	if _, err := renderSDKGoFiles(spec); err != nil {
+		t.Fatalf("plain declaration rejected at render: %v", err)
+	}
+}
+
+// Property: distinct entities must derive distinct client identifiers.
+// jsResourceProp is toCamelJSON(table), which collapses blog_posts,
+// blog-posts and "blog posts" onto blogPosts. Two such entities emit
+//
+//	export const blogPostsFields = Object.freeze({...})  // entity A
+//	export const blogPostsFields = Object.freeze({...})  // entity B — SyntaxError
+//	this["blogPosts"] = new Resource(this, "blog_posts") // entity A
+//	this["blogPosts"] = new Resource(this, "blogPosts")  // entity B — last wins
+//
+// into the SAME client.js — the artifact sdkdocs serves to browsers at
+// /docs/api/sdk/client.js. The duplicate const is a hard SyntaxError (the
+// whole SDK stops parsing), and the duplicate binding silently points
+// client.blogPosts at the second table. The Go target has the same disease
+// past its own gate: duplicate `type BlogPosts struct` PARSES (format.Source
+// passes) and only fails when the consumer builds the zip. buildSDKSpec must
+// refuse the collision before anything renders; the FileSet collision guard
+// cannot see inside one file.
+func TestSDKDerivedNamesMustNotCollide(t *testing.T) {
+	for label, tables := range map[string][2]string{
+		"underscore vs camel": {"blog_posts", "blogPosts"},
+		"underscore vs dash":  {"blog_posts", "blog-posts"},
+		"underscore vs space": {"blog_posts", "blog posts"},
+	} {
+		decls := []framework.EntityDeclaration{
+			{Name: tables[0], Table: tables[0], Fields: []framework.FieldDeclaration{{Name: "title", Type: "string"}}},
+			{Name: tables[1], Table: tables[1], Fields: []framework.FieldDeclaration{{Name: "title", Type: "string"}}},
+		}
+		opts := sdkOptions{name: "app"}
+		spec, err := buildSDKSpec(decls, &opts)
+		if err != nil {
+			continue // refused at the boundary: the fix
+		}
+		// Surface: the served client.js must declare each resource once.
+		jsFiles := renderSDKJSFiles(spec)
+		js, dts := jsFiles[0].content, jsFiles[1].content
+		for _, needle := range []string{"export const blogPostsFields", `this["blogPosts"]`} {
+			if n := strings.Count(js, needle); n > 1 {
+				t.Errorf("SECURITY: [derived-collision] %s: client.js emits %q %d times — duplicate const is a SyntaxError in the served artifact and the second this[...] binding silently re-points client.blogPosts at the other table", label, needle, n)
+			}
+		}
+		// Surface: the d.ts must not declare the property twice.
+		if n := strings.Count(dts, "readonly blogPosts:"); n > 1 {
+			t.Errorf("SECURITY: [derived-collision] %s: client.d.ts declares readonly blogPosts %d times", label, n)
+		}
+		// Surface: the Go SDK must not declare the same type twice.
+		goFiles, rerr := renderSDKGoFiles(spec)
+		if rerr != nil {
+			t.Errorf("%s: go render failed: %v", label, rerr)
+			continue
+		}
+		if n := strings.Count(goFiles[0].content, "type BlogPosts struct"); n > 1 {
+			t.Errorf("SECURITY: [derived-collision] %s: client.go declares type BlogPosts %d times — parses (format.Source passes) and only fails in the consumer's go build", label, n)
+		}
+	}
+
+	// The same property at the CLI emitter: two entity NAMES whose
+	// toCamelCase forms collide (events / Events) derive the same struct
+	// prefix, so runEventsList is DEFINED TWICE across two distinct,
+	// individually-parsing files. No layer catches it — the FileSet guard
+	// only sees paths, and each file parses — and the operator's first
+	// signal is a confusing compile error in code they were told is theirs.
+	t.Run("cli struct names collide", func(t *testing.T) {
+		decls := []framework.EntityDeclaration{
+			{Name: "events", Table: "events", Fields: []framework.FieldDeclaration{{Name: "title", Type: "string"}}},
+			{Name: "Events", Table: "event_log", Fields: []framework.FieldDeclaration{{Name: "title", Type: "string"}}},
+		}
+		spec, err := buildCLISpec(decls, defaultCLIOptions(), "example.com/app/entities/client")
+		if err != nil {
+			return // refused at the boundary: the fix
+		}
+		files := renderCLIFiles(spec)
+		if _, err := fileSetFromGeneratedFiles(files, "cli"); err != nil {
+			return // the write layer refused: also the fix
+		}
+		defs := 0
+		for _, f := range files {
+			defs += strings.Count(f.content, "func runEventsList(")
+		}
+		if defs > 1 {
+			t.Errorf("SECURITY: [derived-collision] events/Events both derive struct Events: runEventsList defined %d times across files that pass every generation gate — the generated CLI cannot compile and nothing refused it", defs)
+		}
+	})
 }

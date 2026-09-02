@@ -1,6 +1,7 @@
 package crud
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -95,4 +96,25 @@ func contains(s, sub string) bool {
 		}
 		return false
 	})()
+}
+
+// TestStreamingListZeroLimitNoPanic: ServeStreamingList is an EXPORTED
+// in-process entrypoint that takes an arbitrary limit (its sibling
+// OffsetForPage guards its own division for exactly that reason, and its
+// doc names this method as the example). The trailing totalPages math
+// divides by limit unguarded: a caller passing limit 0 gets
+// "runtime error: integer divide by zero", taking down the goroutine
+// (and any in-process caller that lacks a recover) instead of an
+// error or a well-formed envelope.
+func TestStreamingListZeroLimitNoPanic(t *testing.T) {
+	ch := pageOverflowHandler(t)
+
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("DATA: [stream-limit] ServeStreamingList panicked on limit=0: %v. Attack: exported in-process entrypoint performs unguarded total/limit division.", r)
+		}
+	}()
+	req := withTestUser(httptest.NewRequest("GET", "/items?stream=true", nil), "u1")
+	rec := httptest.NewRecorder()
+	ch.ServeStreamingList(context.Background(), rec, req, ch.visibleFields(), nil, nil, nil, 1, 0, nil)
 }

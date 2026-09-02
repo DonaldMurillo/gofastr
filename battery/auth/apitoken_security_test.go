@@ -505,3 +505,123 @@ func TestTokenCreate_StoreErrNotLeaked(t *testing.T) {
 		t.Errorf("SECURITY: [api-token-err-leak] POST /auth/tokens answered a store failure with %d, want 5xx — a persistence-layer fault is not a client-input problem (400)", w.Code)
 	}
 }
+
+// ─── 11. last-used touch throttle boundaries ───────────────────────────────
+
+// Property: the touch throttle admits a stamp only when the previous one
+// is strictly older than the interval. At exactly the interval the answer
+// is "no touch": the write path is what keeps the hot request path off
+// the DB, so a boundary that rounds the wrong way restores a write per
+// request under steady traffic.
+func TestShouldTouchLastUsedBoundaries(t *testing.T) {
+	now := time.Now()
+	cases := []struct {
+		name string
+		last *time.Time
+		want bool
+	}{
+		{"never used", nil, true},
+		{"59s ago", new(now.Add(-59 * time.Second)), false},
+		{"61s ago", new(now.Add(-lastUsedTouchInterval - time.Second)), true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := shouldTouchLastUsed(tc.last); got != tc.want {
+				t.Errorf("shouldTouchLastUsed(%v) = %v, want %v", tc.last, got, tc.want)
+			}
+		})
+	}
+}
+
+// ─── 12. expiry boundary: ExpiresAt == now is EXPIRED ─────────────────────
+
+// A token whose ExpiresAt is exactly the current instant must fail closed
+// (anonymous): `!ExpiresAt.After(now)` treats the boundary as expired, so
+// a token cannot be revived by the microsecond between the check and the
+// clock. A token expiring in the future still authenticates.
+func TestTokenExpiryBoundaryFailsClosed(t *testing.T) {
+	db, ts, _ := newTokenTestDB(t)
+	ctx := context.Background()
+	users := &staticUserStore{byID: map[string]User{"u": &BasicUser{ID: "u"}}}
+
+	atBoundary, rec, err := IssueToken(ctx, ts, TokenSpec{
+		Name: "boundary", OwnerKind: "user", OwnerID: "u", TTL: time.Hour,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Expire it exactly at "now": by the time the middleware compares,
+	// the clock has moved strictly past the stamp.
+	if _, err := db.ExecContext(ctx,
+		"UPDATE auth_api_tokens SET expires_at = $1 WHERE id = $2",
+		time.Now().UTC(), rec.ID); err != nil {
+		t.Fatal(err)
+	}
+	if seen := runMwClearsUser(t, users, nil, ts, atBoundary); seen != nil {
+		t.Errorf("SECURITY: [token-expiry-boundary] a token expiring exactly at the check instant resolved as %+v — the boundary must fail closed (expired), not grant one last request", seen)
+	}
+
+	// Control: a future expiry still authenticates the owner.
+	future, _, err := IssueToken(ctx, ts, TokenSpec{
+		Name: "future", OwnerKind: "user", OwnerID: "u", TTL: time.Hour,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var seen User
+	mw := TokenMiddleware(users, nil, ts)
+	h := mw(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		seen = GetCurrentUser(r.Context())
+	}))
+	h.ServeHTTP(httptest.NewRecorder(), bearerRequest("GET", "/x", future, ""))
+	if seen == nil || seen.GetID() != "u" {
+		t.Errorf("future-expiry control: principal = %v, want u (boundary test is only about the at-now shape)", seen)
+	}
+}
+
+// ─── 13. garbage owner_kind resolves to owner_missing, not a principal ────
+
+// A token row whose owner_kind is neither "user" nor "service" (direct
+// row insert, a future kind, or a corrupted row) must resolve to NO
+// principal and audit owner_missing — the default branch of
+// resolveTokenOwner is a fail-closed arm, not a pass-through.
+func TestGarbageOwnerKindFailsClosed(t *testing.T) {
+	_, ts, _ := newTokenTestDB(t)
+	ctx := context.Background()
+	users := &staticUserStore{byID: map[string]User{"u": &BasicUser{ID: "u"}}}
+
+	cred, err := generateAPITokenPlaintext(TokenPrefix)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ts.Create(ctx, APIToken{
+		ID: "tok-garbage-kind", Name: "t", OwnerKind: "attacker", OwnerID: "u",
+		Prefix: tokenDisplayPrefix(cred), Scopes: []string{"a:read"}, CreatedAt: time.Now().UTC(),
+	}, sha256hex(cred)); err != nil {
+		t.Fatal(err)
+	}
+
+	sink := &capturingSink{}
+	mw := TokenMiddleware(users, nil, ts, WithTokenAudit(sink))
+	var seen User
+	h := mw(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		seen = GetCurrentUser(r.Context())
+	}))
+	h.ServeHTTP(httptest.NewRecorder(), bearerRequest("GET", "/x", cred, ""))
+
+	if seen != nil {
+		t.Errorf("SECURITY: [token-owner-kind] a token with owner_kind=%q resolved as principal %+v — an unknown owner kind must fail closed to anonymous", "attacker", seen)
+	}
+	var sawReason bool
+	sink.mu.Lock()
+	for _, ev := range sink.events {
+		if ev.Kind == "token.auth_failed" && ev.Meta["reason"] == "owner_missing" {
+			sawReason = true
+		}
+	}
+	sink.mu.Unlock()
+	if !sawReason {
+		t.Error("garbage owner_kind did not audit token.auth_failed reason=owner_missing")
+	}
+	sink.assertNoLeak(t, cred)
+}

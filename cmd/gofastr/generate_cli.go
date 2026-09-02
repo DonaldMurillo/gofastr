@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"go/token"
 	"os"
 	"path/filepath"
 	"sort"
@@ -459,6 +460,9 @@ func buildCLISpec(decls []framework.EntityDeclaration, opts cliOptions, clientIm
 		}
 		return false
 	}
+	// Derived struct names must be unique across the selection (see the
+	// check inside the loop).
+	structOwners := map[string]string{} // derived struct name → declaring entity name
 	for _, decl := range decls {
 		if len(opts.only) > 0 && !matchesAny(decl, opts.only) {
 			continue
@@ -482,8 +486,18 @@ func buildCLISpec(decls []framework.EntityDeclaration, opts cliOptions, clientIm
 		if err != nil {
 			return cliSpec{}, err
 		}
+		// Distinct entities must derive distinct struct prefixes: events and
+		// Events both become struct Events, so runEventsList is defined twice
+		// across two individually-parsing files. The file-set guard only sees
+		// paths and each file parses, so the operator's first signal is a
+		// confusing compile error in code they were told is theirs.
+		if prev, dup := structOwners[ent.Struct]; dup {
+			return cliSpec{}, fmt.Errorf("entities %q and %q both derive the Go struct name %s: their generated command funcs collide and the CLI cannot compile. Rename one entity", prev, decl.Name, ent.Struct)
+		}
+		structOwners[ent.Struct] = decl.Name
 		spec.Entities = append(spec.Entities, ent)
 	}
+
 	if len(spec.Entities) == 0 {
 		return cliSpec{}, fmt.Errorf("selection matches no entities: nothing to generate")
 	}
@@ -575,6 +589,17 @@ func buildCLIEntity(decl framework.EntityDeclaration, verbs []string) (cliEntity
 	}
 	seen := map[string]string{} // flag name → field, to catch duplicates
 	for _, f := range ent.Fields {
+		// Field names land in identifier positions with no re-escaping:
+		// fld%s/flt%s variable declarations and their *fld%s reads. The
+		// entity/table guards above cover the declaration's other strings;
+		// the field was the one input without its own boundary. token.
+		// IsIdentifier is unicode-aware (Go identifiers allow unicode
+		// letters), matching what the derived name can legally be. The raw
+		// name (not %q) goes in the message: a quote or newline in the name
+		// must survive verbatim so tooling can match on it.
+		if ident := toCamelCase(f.Flag); !token.IsIdentifier(ident) {
+			return cliEntity{}, fmt.Errorf("entity %q: field %s does not derive a valid Go identifier (it is emitted as generated variable names); rename it to letters, digits and underscores starting with a letter", decl.Name, f.Snake)
+		}
 		flags := []string{f.Flag}
 		if f.Comparable {
 			flags = append(flags, f.Flag+"-gt", f.Flag+"-gte", f.Flag+"-lt", f.Flag+"-lte")

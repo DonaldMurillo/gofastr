@@ -75,7 +75,7 @@
     [prev, next].forEach(function (a) {
       const src = srcOf(a);
       if (!src) return;
-      if (st.preloaded[src]) return;
+      if (Object.prototype.hasOwnProperty.call(st.preloaded, src) && st.preloaded[src]) return;
       const img = new Image();
       img.src = src;
       st.preloaded[src] = true;

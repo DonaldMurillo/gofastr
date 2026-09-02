@@ -3,6 +3,7 @@ package framework
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
 	"errors"
@@ -422,10 +423,24 @@ func execModuleSchemaRoleStmts(ctx context.Context, adminDB *sql.DB, stmts []str
 // ---- helpers ----
 
 // moduleSchemaRole derives the schema + role names from a module name.
-// Non-identifier characters collapse to '_' so the names stay
-// dash-free and quote-safe (module names may contain '-' / '_').
+// The stem is sanitized for identifier safety, and any name that the
+// sanitizer would FOLD (hyphen, underscore, or upper case — all become
+// '_' / lowercase) gets the name's digest appended: distinct module names
+// must derive DISTINCT schemas, or two modules share one schema behind
+// one role and the §7 REVOKE fence bounds each to the other's objects
+// (and reprovisioning either rotates the shared role's password). Pure
+// lowercase-alphanumeric names keep the bare stem, so existing
+// derivations for those names are unchanged.
 func moduleSchemaRole(moduleName string) (schema, role string) {
 	base := sanitizeIdent("module_" + moduleName)
+	for _, r := range moduleName {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			continue
+		}
+		sum := sha256.Sum256([]byte(moduleName))
+		base += "_" + hex.EncodeToString(sum[:6])
+		break
+	}
 	return base, base + "_role"
 }
 

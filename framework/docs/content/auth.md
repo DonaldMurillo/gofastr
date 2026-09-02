@@ -209,6 +209,14 @@ Form-flow responses set the session cookie before redirecting, so the
 runtime's [form interceptor](runtime-contract.md#forms)
 follows the `Location` header and lands the user on the next page.
 
+Both surfaces decode credentials strictly. A body that names `email` or
+`password` twice, or spells one as a case-folded variant (`EMAIL`,
+`PASSword`), is a `400` on the JSON and the form surface alike: the two
+parsers used to resolve such a body to different identities (`net/url`
+keeps the first value, `encoding/json` the last), so the ambiguity is
+refused rather than resolved by parser accident. Extra JSON keys that
+match no credential name stay ignored.
+
 Open-redirect protection: the `?next=` (query or form) override is
 honored only for same-origin paths starting with `/`. `//evil.example`
 and full URLs are rejected, falling back to `/`.
@@ -1232,6 +1240,20 @@ IdP endpoint moves. The document's `issuer` MUST match the configured
 `Issuer` exactly (OIDC §4.3, issuer-spoofing guard). `Issuer` must be
 an `https://` URL; `http://` is accepted only for `localhost`/`127.0.0.1`
 (local IdPs and tests).
+
+Every endpoint the discovery document names (`token_endpoint`, `jwks_uri`,
+`userinfo_endpoint`, `authorization_endpoint`) is transport-validated when
+the document is accepted: it must be `https://` — or, under a
+literal-loopback `http://` issuer, plain `http://` on a literal-loopback
+host only — and must not carry userinfo. Distinct hosts are allowed (OIDC
+legitimately serves JWKS or userinfo from another origin); a scheme or
+cleartext-host downgrade is not. None of the provider's fetches follow
+redirects: these endpoints are pinned by the issuer's document, a
+redirect answer is not a shape a conformant IdP produces on them, and
+following one would re-send the token exchange's POST body —
+`client_secret` and code — verbatim to the redirect target (Go's client
+preserves method and body on 307/308). Mirrors the redirects-off posture
+of A2A push delivery and webhook egress.
 
 **What gets verified** before `ExchangeCode` returns:
 

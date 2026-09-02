@@ -289,8 +289,15 @@ implements it:
 | `handler` | The Go func to write, registered via `framework/hook` |
 | `description` | What the hook is for |
 
-Like `endpoints`, this is a declaration, not generated behavior: the
-blueprint records which hook runs where, and you write the handler. See
+`gofastr generate` emits a stub for each handler in `stubs.go` (the
+`framework.HookFunc` shape, `func(ctx context.Context, data any) error`)
+and registers it in `main.go` on the entity's hook registry at the named
+lifecycle point, so the surface exists the moment the app generates and
+you fill in the action. Validation refuses a hook whose `entity` is not
+declared, whose `when` is outside the list above, or whose `handler` is
+missing, is not a Go identifier, or is shared with another hook: the
+kiln preview refuses the same shapes, so a hook that ran in the preview
+cannot silently vanish from the shipped app. See
 [Lifecycle hooks](hooks-and-transactions.md) for the registration API.
 
 `kiln freeze` emits this section from the world's hooks, so a validation

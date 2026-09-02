@@ -76,3 +76,137 @@ func TestIsInternalTranslationPrefixes(t *testing.T) {
 		})
 	}
 }
+
+// Property: every guarded range is EXACT — the first and last address of
+// the block are internal, and the address one position outside on either
+// side is external. An off-by-one in any mask lets an internal address
+// through as "public" (SSRF straight to metadata / private services) or
+// refuses a public one; the boundary is the only place that can break.
+// Reason must agree at every boundary, since battery/webhook rejects via
+// Reason, not IsInternal.
+func TestRangeBoundariesExact(t *testing.T) {
+	families := []struct {
+		name          string
+		first, last   net.IP // inside the guarded block
+		before, after net.IP // one address outside each edge
+	}{
+		{"loopback v4 127.0.0.0/8", net.ParseIP("127.0.0.0"), net.ParseIP("127.255.255.255"),
+			net.ParseIP("126.255.255.255"), net.ParseIP("128.0.0.0")},
+		{"private v4 10.0.0.0/8", net.ParseIP("10.0.0.0"), net.ParseIP("10.255.255.255"),
+			net.ParseIP("9.255.255.255"), net.ParseIP("11.0.0.0")},
+		{"private v4 172.16.0.0/12", net.ParseIP("172.16.0.0"), net.ParseIP("172.31.255.255"),
+			net.ParseIP("172.15.255.255"), net.ParseIP("172.32.0.0")},
+		{"private v4 192.168.0.0/16", net.ParseIP("192.168.0.0"), net.ParseIP("192.168.255.255"),
+			net.ParseIP("192.167.255.255"), net.ParseIP("192.169.0.0")},
+		{"link-local v4 169.254.0.0/16", net.ParseIP("169.254.0.0"), net.ParseIP("169.254.255.255"),
+			net.ParseIP("169.253.255.255"), net.ParseIP("169.255.0.0")},
+		{"CGNAT 100.64.0.0/10", net.ParseIP("100.64.0.0"), net.ParseIP("100.127.255.255"),
+			net.ParseIP("100.63.255.255"), net.ParseIP("100.128.0.0")},
+		{"unique-local fc00::/7", net.ParseIP("fc00::"), net.ParseIP("fdff:ffff:ffff:ffff:ffff:ffff:ffff:ffff"),
+			net.ParseIP("fbff:ffff:ffff:ffff:ffff:ffff:ffff:ffff"), net.ParseIP("fe00::")},
+		{"link-local v6 fe80::/10", net.ParseIP("fe80::"), net.ParseIP("febf:ffff:ffff:ffff:ffff:ffff:ffff:ffff"),
+			net.ParseIP("fe7f:ffff:ffff:ffff:ffff:ffff:ffff:ffff"), net.ParseIP("fec0::")},
+	}
+	for _, f := range families {
+		t.Run(f.name, func(t *testing.T) {
+			for _, c := range []struct {
+				ip       net.IP
+				internal bool
+			}{{f.first, true}, {f.last, true}, {f.before, false}, {f.after, false}} {
+				if got := IsInternal(c.ip); got != c.internal {
+					t.Errorf("SECURITY: [netguard] IsInternal(%v) = %v at a %s boundary, want %v. "+
+						"Attack: an off-by-one mask is a public↔internal misclassification at the SSRF guard.", c.ip, got, f.name, c.internal)
+				}
+				if got := Reason(c.ip); (got != "") != c.internal {
+					t.Errorf("Reason(%v) disagrees with the boundary verdict: %q", c.ip, got)
+				}
+			}
+		})
+	}
+}
+
+// Property: classification depends on the ADDRESS, not on which of its
+// byte representations arrived. netguard's callers hand it 16-byte
+// IPv4-in-IPv6 values (net.ParseIP), 4-byte values (To4 results,
+// net.IP{a,b,c,d} literals), and net.IPv4(...) values; the IPv4-mapped
+// ::ffff:a.b.c.d form is how an IPv6 socket presents an IPv4 peer, so a
+// mapped internal literal that slipped the v4 checks would be an SSRF
+// straight past every dial-time Control guard.
+func TestMappedMatchesPlainClassification(t *testing.T) {
+	pairs := []struct {
+		plain, mapped net.IP
+		internal      bool
+	}{
+		{net.ParseIP("169.254.169.254"), net.ParseIP("::ffff:169.254.169.254"), true}, // cloud metadata
+		{net.ParseIP("100.64.0.1"), net.ParseIP("::ffff:100.64.0.1"), true},           // CGNAT
+		{net.ParseIP("10.1.2.3"), net.ParseIP("::ffff:10.1.2.3"), true},               // RFC1918
+		{net.ParseIP("127.0.0.1"), net.ParseIP("::ffff:127.0.0.1"), true},             // loopback
+		{net.ParseIP("8.8.8.8"), net.ParseIP("::ffff:8.8.8.8"), false},                // genuinely public
+	}
+	for _, p := range pairs {
+		if a, b := IsInternal(p.plain), IsInternal(p.mapped); a != b || a != p.internal {
+			t.Errorf("SECURITY: [netguard] representation changed the verdict: plain %v=%v, mapped %v=%v, want %v. "+
+				"Attack: an IPv6 socket presents the peer as ::ffff:a.b.c.d; a mapped internal literal must not pass as public.",
+				p.plain, a, p.mapped, b, p.internal)
+		}
+		if Reason(p.mapped) == "" && p.internal {
+			t.Errorf("Reason(%v) empty for a mapped internal address", p.mapped)
+		}
+	}
+	// 4-byte slices classify identically to their 16-byte forms.
+	for _, c := range []struct {
+		ip       net.IP
+		internal bool
+	}{
+		{net.IP{169, 254, 169, 254}, true},
+		{net.IP{100, 64, 0, 1}, true},
+		{net.IPv4(100, 64, 0, 1), true},
+		{net.IP{8, 8, 8, 8}, false},
+	} {
+		if got := IsInternal(c.ip); got != c.internal {
+			t.Errorf("IsInternal(%v) = %v, want %v (4-byte form)", c.ip, got, c.internal)
+		}
+	}
+}
+
+// Property: reserved, non-routable IPv4 space is internal. The ladder
+// in internalRange enumerates loopback/private/link-local/multicast/
+// CGNAT, but three whole families of non-public space classify as
+// "public":
+//
+//   - 0.0.0.0/8 ("this network", RFC 791): only the bare 0.0.0.0 is
+//     caught by IsUnspecified; 0.0.0.1 … 0.255.255.255 pass. Linux and
+//     macOS route destinations in 0/8 to the local host (the classic
+//     `http://0/`-family SSRF bypass), so a fetch guard that waves them
+//     through as public reaches localhost services.
+//   - 240.0.0.0/4 (reserved for future use, RFC 1112): never routable
+//     on the public internet.
+//   - 255.255.255.255 (limited broadcast): one packet to every host on
+//     the local segment — a LAN-wide probe from any SSRF-able fetch.
+//
+// Surfaces: IsInternal and Reason together (battery/webhook rejects via
+// Reason, so an address IsInternal flags but Reason cannot name is a
+// half-fix).
+func TestIsInternalReservedIPv4Ranges(t *testing.T) {
+	reserved := []net.IP{
+		net.IPv4(0, 0, 0, 1),         // 0.0.0.0/8, past bare unspecified
+		net.IPv4(0, 1, 2, 3),         // 0.0.0.0/8 interior
+		net.IPv4(240, 0, 0, 1),       // 240.0.0.0/4 first host
+		net.IPv4(255, 255, 255, 254), // 240/4 interior
+		net.IPv4(255, 255, 255, 255), // limited broadcast
+	}
+	for _, ip := range reserved {
+		if !IsInternal(ip) {
+			t.Errorf("SECURITY: [netguard] IsInternal(%v) = false — reserved non-routable space classifies as public. Attack: SSRF fetch to 0/8 reaches the local host on Linux/macOS; 255.255.255.255 broadcasts to the whole LAN segment.", ip)
+		}
+		if Reason(ip) == "" {
+			t.Errorf("SECURITY: [netguard] Reason(%v) = \"\" for reserved space — webhook's Reason-based rejection cannot name it.", ip)
+		}
+	}
+	// False-positive guard: genuinely public unicast stays external.
+	for _, ip := range []net.IP{net.IPv4(8, 8, 8, 8), net.IPv4(1, 1, 1, 1)} {
+		if IsInternal(ip) {
+			t.Errorf("IsInternal(%v) = true for a public address (overreach)", ip)
+		}
+	}
+}

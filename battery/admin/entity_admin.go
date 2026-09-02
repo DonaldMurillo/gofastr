@@ -17,6 +17,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"reflect"
 	"strconv"
 	"strings"
@@ -638,8 +639,10 @@ func (b *Battery) entityDelete(ent *entity.Entity) http.HandlerFunc {
 		// is the documented benign case, the row is simply absent from the
 		// caller's re-rendered list.
 		if code >= http.StatusInternalServerError {
+			// The id is request-borne and percent-decoded: escape it so
+			// control bytes cannot forge lines in the operator's tail.
 			b.logger().Error("admin: delete failed",
-				"entity", ent.GetName(), "id", r.PathValue("id"), "status", code)
+				"entity", ent.GetName(), "id", url.PathEscape(r.PathValue("id")), "status", code)
 		}
 		html := b.renderTable(r.Context(), ent, r.URL.Query())
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")

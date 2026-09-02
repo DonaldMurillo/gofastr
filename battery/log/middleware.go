@@ -60,9 +60,9 @@ func accessMiddleware(logger *slog.Logger, trustXFF bool) middleware.Middleware 
 			// Snapshot path/method up front, inner middleware may
 			// rewrite r.URL; the access log records what the client
 			// actually sent.
-			method := r.Method
-			path := truncateString(r.URL.Path, maxPathLen)
-			forwardedRaw := truncateString(r.Header.Get("X-Forwarded-For"), maxPathLen)
+			method := scrubControlBytes(r.Method)
+			path := truncateString(scrubControlBytes(r.URL.Path), maxPathLen)
+			forwardedRaw := truncateString(scrubControlBytes(r.Header.Get("X-Forwarded-For")), maxPathLen)
 			rw := &countingResponseWriter{ResponseWriter: w, status: http.StatusOK}
 			defer func() {
 				logger.LogAttrs(r.Context(), slog.LevelInfo, "http.access",
@@ -71,14 +71,57 @@ func accessMiddleware(logger *slog.Logger, trustXFF bool) middleware.Middleware 
 					slog.Int("status", rw.status),
 					slog.Int64("bytes", rw.bytes),
 					slog.Int64("dur_ms", time.Since(start).Milliseconds()),
-					slog.String("request_id", middleware.GetRequestID(r.Context())),
-					slog.String("remote", remoteAddr(r, trustXFF)),
+					slog.String("request_id", scrubControlBytes(middleware.GetRequestID(r.Context()))),
+					slog.String("remote", scrubControlBytes(remoteAddr(r, trustXFF))),
 					slog.String("forwarded_for", forwardedRaw),
 				)
 			}()
 			next.ServeHTTP(rw, r)
 		})
 	}
+}
+
+// c0AndDelSet is the full C0 control range plus DEL, the probe set for
+// scrubControlBytes. Mirrors core/middleware's set (logging.go): the
+// fast path must cover every byte the encoder handles, or a string
+// carrying only an uncovered byte bypasses the encoder and is logged
+// raw.
+var c0AndDelSet = func() string {
+	var b [33]byte
+	for i := range 32 {
+		b[i] = byte(i)
+	}
+	b[32] = 0x7f
+	return string(b[:])
+}()
+
+// scrubControlBytes percent-encodes ASCII control bytes (the C0 range)
+// and DEL in a request-derived log field. battery/log is the production
+// access path: r.URL.Path is percent-DECODED, so %1b/%0d%0a/%00 in a
+// request URL are real ESC/CRLF/NUL by the time accessMiddleware
+// snapshots them, and entries fan out to the file sink, the webhook
+// sink, the console sink and the MCP ring. A raw ESC is terminal-escape
+// injection into every operator tail; a CRLF forges entries in any
+// downstream line-oriented consumer. slog's JSON handler escapes these
+// for valid JSON, but a JSON-escaped \r\n is still visible to text
+// grep, and naive log shippers render the injected payload on its own
+// line. Parity with core/middleware's scrubControlBytes, which guards
+// the framework's own logging sinks the same way.
+func scrubControlBytes(s string) string {
+	if !strings.ContainsAny(s, c0AndDelSet) {
+		return s
+	}
+	var b strings.Builder
+	b.Grow(len(s))
+	for i := range s {
+		c := s[i]
+		if c < 0x20 || c == 0x7f {
+			fmt.Fprintf(&b, "%%%02x", c)
+			continue
+		}
+		b.WriteByte(c)
+	}
+	return b.String()
 }
 
 // recoveryMiddleware recovers panics, reports them through the configured

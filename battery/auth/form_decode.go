@@ -80,6 +80,20 @@ func decodeAuthCredentials(w http.ResponseWriter, r *http.Request) (email, passw
 			writeAuthError(w, http.StatusBadRequest, "invalid form body")
 			return "", "", true, false
 		}
+		// SECURITY: net/url keeps the FIRST value of a duplicated form
+		// field while the JSON surface keeps the LAST — one body naming
+		// email (or password) twice would authenticate a different
+		// account depending on Content-Type. Reject the ambiguity at
+		// decode instead of letting the parser pick, mirroring the
+		// strict top-level key rule decodeJSONLimitedStrict enforces
+		// for the JSON surface and core/handler.Bind enforces for every
+		// bound handler.
+		for _, field := range []string{"email", "password"} {
+			if len(r.PostForm[field]) > 1 {
+				writeAuthError(w, http.StatusBadRequest, "invalid form body")
+				return "", "", true, false
+			}
+		}
 		email = CanonicalEmail(r.PostFormValue("email"))
 		password = r.PostFormValue("password")
 		if !emailWithinLimit(w, email) {
@@ -92,7 +106,7 @@ func decodeAuthCredentials(w http.ResponseWriter, r *http.Request) (email, passw
 		Email    string `json:"email"`
 		Password string `json:"password"`
 	}
-	if !decodeJSONLimited(w, r, &body) {
+	if !decodeJSONLimitedStrict(w, r, &body, "email", "password") {
 		return "", "", false, false
 	}
 	email = CanonicalEmail(body.Email)

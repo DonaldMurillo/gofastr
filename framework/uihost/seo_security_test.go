@@ -217,3 +217,83 @@ func TestSEO_TypedURLsAcceptHTTPS(t *testing.T) {
 		t.Fatalf("safe canonical URL dropped: page=%s", page)
 	}
 }
+
+// preloadRelBypasses are HTML-valid spellings of a preload/modulepreload
+// rel that defeat isSafeLinkTag's substring blocklist. The gate matches
+// literal `rel="preload"` spellings, but the HTML parser accepts
+// whitespace around `=`, trims the attribute value, and treats rel as a
+// space-separated token list — so all three of these parse as preload
+// links the scrubber was written to strip (see dangerousHeadTags'
+// link-preload-script / link-modulepreload-js entries).
+var preloadRelBypasses = []struct{ name, payload string }{
+	// HTML5: attribute name, whitespace, '=', whitespace, value.
+	{"eq-whitespace", `<link rel = "preload" as="script" href="https://evil.example/x.js">`},
+	// Leading/trailing whitespace in the value is trimmed by the parser.
+	{"value-padding", `<link rel=" preload " as="script" href="https://evil.example/x.js">`},
+	// rel is a token list: rel="modulepreload preload" applies BOTH rels.
+	{"token-list", `<link rel="modulepreload preload" href="https://evil.example/x.js">`},
+}
+
+// TestHeadLinkRelSpellingBypass pins the property that the head-scrub
+// link gate decides on the PARSED rel/href, not on literal spellings.
+// Every bypass below is a preload of attacker-origin script on the
+// framework's own page (the exact shape dangerousHeadTags forbids),
+// slipped past the gate by spelling the same rel differently.
+//
+// Surfaces: both caller-supplied head-HTML escape hatches
+// (WithHeadHTML and SEOScreen.HeadHTML), like the sibling tests above.
+func TestHeadLinkRelSpellingBypass(t *testing.T) {
+	for _, tc := range preloadRelBypasses {
+		t.Run(tc.name, func(t *testing.T) {
+			pages := map[string]func() string{
+				"WithHeadHTML": func() string { return renderHeadPage(t, WithHeadHTML(tc.payload)) },
+				"SEOScreen":    func() string { return renderScreenHeadPage(t, tc.payload) },
+			}
+			for label, render := range pages {
+				if page := render(); strings.Contains(page, `https://evil.example/x.js`) {
+					t.Errorf("SECURITY: [uihost-head] %s: the preload-rel gate was slipped by an HTML-valid "+
+						"spelling of the same rel; the attacker's script preload survived into <head>: %q",
+						label, tc.payload)
+				}
+			}
+		})
+	}
+
+	// Control: the canonical spelling the sibling pins stays stripped, so
+	// this test cannot pass merely because the gate was deleted outright.
+	page := renderHeadPage(t, WithHeadHTML(`<link rel="preload" as="script" href="https://evil.example/x.js">`))
+	if strings.Contains(page, `https://evil.example/x.js`) {
+		t.Fatalf("control: canonical rel=\"preload\" spelling must still be stripped, got %s", page)
+	}
+}
+
+// TestHeadURLOnFaviconAndPreconnect extends the typed-URL scheme
+// allow-list (pinned above for canonical/og/twitter on both the helper
+// and bundle paths) to the two remaining URL-typed head emitters:
+// WithFavicon and WithPreconnect emit `<link href>` with only HTML
+// escaping — no isSafeHeadURL gate — so a javascript:/data: value is
+// reflected into every page's head verbatim. Same property, same
+// surfaces family, currently ungated emitters.
+func TestHeadURLOnFaviconAndPreconnect(t *testing.T) {
+	for _, u := range dangerousURLs {
+		t.Run("favicon/"+u, func(t *testing.T) {
+			page := renderHeadPage(t, WithFavicon(u))
+			if strings.Contains(strings.ToLower(page), strings.ToLower(u)) {
+				t.Errorf("SECURITY: [uihost-head] WithFavicon(%q) reflected the URL into the page head", u)
+			}
+		})
+		t.Run("preconnect/"+u, func(t *testing.T) {
+			page := renderHeadPage(t, WithPreconnect(u))
+			if strings.Contains(strings.ToLower(page), strings.ToLower(u)) {
+				t.Errorf("SECURITY: [uihost-head] WithPreconnect(%q) reflected the URL into the page head", u)
+			}
+		})
+	}
+	// Controls: safe values still flow through both emitters.
+	if page := renderHeadPage(t, WithFavicon("/favicon.png")); !strings.Contains(page, `href="/favicon.png"`) {
+		t.Fatalf("control: safe favicon URL dropped: %s", page)
+	}
+	if page := renderHeadPage(t, WithPreconnect("https://cdn.example")); !strings.Contains(page, `https://cdn.example`) {
+		t.Fatalf("control: safe preconnect origin dropped: %s", page)
+	}
+}

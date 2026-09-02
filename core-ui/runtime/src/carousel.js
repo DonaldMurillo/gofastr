@@ -199,7 +199,7 @@
     const id = carousel.getAttribute('id');
     if (!id) return;
     const manifestEl = carousel.querySelector(
-      'script[type="application/json"][data-fui-carousel-deferred-for="' + id + '"]'
+      'script[type="application/json"][data-fui-carousel-deferred-for="' + CSS.escape(id) + '"]'
     );
     if (!manifestEl) return;
     let manifest;
@@ -209,7 +209,7 @@
       // No observer support, hydrate everything upfront so the
       // carousel is at least functional.
       for (const k of Object.keys(manifest)) {
-        const ph = carousel.querySelector('[data-fui-carousel-defer="' + k + '"]');
+        const ph = carousel.querySelector('[data-fui-carousel-defer="' + CSS.escape(k) + '"]');
         if (ph) { ph.innerHTML = manifest[k]; ph.removeAttribute('data-fui-carousel-defer'); }
       }
       return;

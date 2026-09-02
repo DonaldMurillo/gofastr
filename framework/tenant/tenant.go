@@ -147,9 +147,16 @@ func GetTenantID(ctx context.Context) string {
 // the current tenant from the context. Like ApplyTenantFilter, it uses the
 // default "tenant_id" column; entities with a custom EntityConfig.TenantField
 // are handled by the CRUD layer (CrudHandler.InjectTenant), not this helper.
+//
+// The resolved tenant always wins over a body-supplied value, and with
+// no tenant in ctx the body's value is removed rather than kept: a
+// caller must never be able to name the row's tenant when resolution
+// failed.
 func InjectTenantID(data map[string]any, ctx context.Context) {
 	tenantID := GetTenantID(ctx)
-	if tenantID != "" {
-		data["tenant_id"] = tenantID
+	if tenantID == "" {
+		delete(data, "tenant_id")
+		return
 	}
+	data["tenant_id"] = tenantID
 }

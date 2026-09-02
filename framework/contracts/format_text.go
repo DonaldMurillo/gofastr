@@ -63,13 +63,13 @@ func FormatText(r *Report, opts TextOptions) string {
 		fmt.Fprintf(&b, "  %s\n", c.dim(string(head.Capability)+" · "+head.Slug))
 
 		for _, d := range ds {
-			fmt.Fprintf(&b, "\n  %s\n", c.bold(d.Location()))
-			fmt.Fprintf(&b, "    %s\n", d.Message)
+			fmt.Fprintf(&b, "\n  %s\n", c.bold(sanitizeText(d.Location())))
+			fmt.Fprintf(&b, "    %s\n", sanitizeText(d.Message))
 			if d.Snippet != "" {
-				fmt.Fprintf(&b, "    %s %s\n", c.dim("│"), c.dim(truncate(d.Snippet, 110)))
+				fmt.Fprintf(&b, "    %s %s\n", c.dim("│"), c.dim(sanitizeText(truncate(d.Snippet, 110))))
 			}
 			if d.Suggestion != "" && (opts.Verbose || d.Suggestion != fix) {
-				fmt.Fprintf(&b, "    %s %s\n", c.cyan("fix:"), d.Suggestion)
+				fmt.Fprintf(&b, "    %s %s\n", c.cyan("fix:"), sanitizeText(d.Suggestion))
 			}
 			if d.Fix != nil {
 				fmt.Fprintf(&b, "    %s %s\n", c.green("autofix:"), d.Fix.Description)
@@ -301,4 +301,20 @@ func FormatExplain(r Rule, color bool) string {
 	fmt.Fprintf(&b, "\n%s\n  //gofastr:allow(%s) <reason>\n", c.bold("Suppress once"), r.ID)
 	fmt.Fprintf(&b, "\n%s\n  contracts:\n    rules:\n      %s: warn   # or off\n", c.bold("Relax project-wide"), r.ID)
 	return b.String()
+}
+
+// sanitizeText strips the raw control bytes repo content can carry (a
+// rule reference, a source snippet, a file name) out of report text. An
+// ESC reaching the terminal is escape-injection into the operator running
+// `gofastr verify` on a hostile PR; NUL and VT corrupt framing the same
+// way. Newline and tab stay: they are ordinary formatting. Applied at the
+// FormatText print boundary so repo-derived strings cannot reach the
+// terminal raw.
+func sanitizeText(s string) string {
+	return strings.Map(func(r rune) rune {
+		if (r < 0x20 && r != '\n' && r != '\t') || r == 0x7f {
+			return -1
+		}
+		return r
+	}, s)
 }

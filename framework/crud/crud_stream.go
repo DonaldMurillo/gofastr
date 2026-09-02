@@ -158,9 +158,17 @@ func (ch *CrudHandler) ServeStreamingList(ctx context.Context, w http.ResponseWr
 			flusher.Flush()
 		}
 	}
-	totalPages := total / limit
-	if total%limit != 0 {
-		totalPages++
+	// Guard the division: ServeStreamingList is an exported in-process
+	// entrypoint taking an arbitrary limit, and a limit < 1 used to
+	// panic here with "integer divide by zero" (OffsetForPage guards its
+	// own division for the same reason). totalPages 0 is the coherent
+	// companion of perPage 0 in the envelope.
+	totalPages := 0
+	if limit > 0 {
+		totalPages = total / limit
+		if total%limit != 0 {
+			totalPages++
+		}
 	}
 	fmt.Fprintf(w, `],"total":%d,"page":%d,"perPage":%d,"totalPages":%d}`, total, page, limit, totalPages)
 }

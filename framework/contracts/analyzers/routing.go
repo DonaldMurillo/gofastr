@@ -3,6 +3,7 @@ package analyzers
 import (
 	"fmt"
 	"go/ast"
+	"go/token"
 	"regexp"
 	"sort"
 	"strings"
@@ -20,6 +21,7 @@ func init() {
 			contracts.RuleUntestedRoute,
 			contracts.RuleStateAsRoute,
 			contracts.RuleNonUppercaseVerb,
+			contracts.RulePrefixSegmentBoundary,
 		},
 		Run: runRouting,
 	})
@@ -53,12 +55,17 @@ var stateSegments = map[string]bool{
 }
 
 func runRouting(p *contracts.Pass) ([]contracts.Diagnostic, error) {
-	table := Routes(p)
-	if !table.Registered {
-		return nil, nil
-	}
 	var out []contracts.Diagnostic
 
+	// The prefix rule needs no route table, so it runs before the
+	// Registered gate: a module that registers no routes can still match
+	// a path against a prefix with no segment boundary.
+	out = append(out, checkPrefixBoundary(p)...)
+
+	table := Routes(p)
+	if !table.Registered {
+		return out, nil
+	}
 	out = append(out, checkMethodCase(p, table)...)
 	out = append(out, checkColonParams(p, table)...)
 	out = append(out, checkDuplicates(p, table)...)
@@ -133,9 +140,17 @@ func checkDuplicates(p *contracts.Pass, table *RouteTable) []contracts.Diagnosti
 		file string
 		line int
 	}
-	seen := map[string][]site{}
-	order := []string{}
-	byKey := map[string]Route{}
+	// routeKey is the dedup identity of a registration. A struct, not
+	// package+"\x00"+method+" "+pattern: a joined string is ambiguous when
+	// a part embeds the separator (gofastrcompositekey).
+	type routeKey struct {
+		pkg     string
+		method  string
+		pattern string
+	}
+	seen := map[routeKey][]site{}
+	order := []routeKey{}
+	byKey := map[routeKey]Route{}
 	for _, r := range table.Routes {
 		// An unresolved group prefix makes the full path unknown, so two
 		// routes that look identical here may well be distinct. Skip them
@@ -148,7 +163,7 @@ func checkDuplicates(p *contracts.Pass, table *RouteTable) []contracts.Diagnosti
 		// each serve "/healthz", and none of them collide with each
 		// other. Only a second registration in the same package is a
 		// real conflict.
-		key := r.Package + "\x00" + r.Method + " " + r.Pattern
+		key := routeKey{r.Package, r.Method, r.Pattern}
 		if _, ok := seen[key]; !ok {
 			order = append(order, key)
 			byKey[key] = r
@@ -331,4 +346,200 @@ func replaceLiteralFix(p *contracts.Pass, rel string, line int, oldText, newText
 			New:   `"` + newText + `"`,
 		}},
 	}
+}
+
+// ----------------------------------------------------------------------
+// GOFASTR1006: strings.HasPrefix on a path without a segment boundary.
+// ----------------------------------------------------------------------
+
+// Bug class: a `/`-separated path or route matched by HasPrefix against a
+// prefix that carries no boundary. stability.Classify shipped exactly this
+// (probe TestClassifyRequiresSegmentBoundary, fixed e9e50673): manifest
+// entries like {"cmd", Provisional} classified every `cmd*` sibling, so a
+// package the manifest never named silently inherited a tier and the
+// add-it-to-the-manifest gate stayed quiet. framework/uihost's document
+// script scope matched the same shape earlier in v0.80. The rule is
+// shape-based, not stability-based: any path-like operand matched against
+// a boundary-less prefix is the finding.
+// Deliberately silent on:
+//   - a literal prefix that already ends in "/" ("internal/"), "/" and ""
+//     themselves, and — narrowed after the first whole-repo run — any
+//     literal or resolvable constant whose value contains no "/" at all
+//     ("x_", "dark.", "color-", "v", "&"): those operate on namespace-ish
+//     value spaces (YAML keys, token names, versions) where every longer
+//     sibling IS the intent, not a confusion. The bug class is about
+//     slash-separated trees; a prefix that contains no slash, or one that
+//     ends in it, is either bounded or not about segments;
+//   - a prefix identifier that resolves to a local or file-scope constant
+//     carrying its own boundary (const prefix = "/__gofastr/runtime/"):
+//     the boundary is written down one line up;
+//   - any prefix built by concatenation at the call (`root+"/"`,
+//     `base+sep`): the caller wrote a boundary decision down, and judging
+//     a runtime-computed one from the AST would be guessing;
+//   - a haystack whose name carries no path/route/prefix semantics
+//     (`HasPrefix(hash, "$argon2id$")`) — the shape is a PATH matched by
+//     PREFIX, and key/uri/dir naming is the net it uses to catch the
+//     ones that don't say "path" out loud;
+//   - _test.go and generated files (AppFiles already excludes both).
+func checkPrefixBoundary(p *contracts.Pass) []contracts.Diagnostic {
+	var out []contracts.Diagnostic
+	for _, f := range p.AppFiles() {
+		file, ok := p.AST(f.Rel)
+		if !ok {
+			continue
+		}
+		aliases := importAliases(file)
+		fileLits := fileScopedLits(file)
+		for _, fn := range functionsIn(file) {
+			localLits := bodyScopedLits(fn.body)
+			ast.Inspect(fn.body, func(n ast.Node) bool {
+				call, ok := qualifiedCall(n, aliases, "strings", "HasPrefix")
+				if !ok || len(call.Args) != 2 {
+					return true
+				}
+				if !pathishExpr(call.Args[0]) {
+					return true
+				}
+				if !unboundedPrefix(call.Args[1], localLits, fileLits) {
+					return true
+				}
+				hay, needle := exprText(call.Args[0]), exprText(call.Args[1])
+				d := diag(p, contracts.RulePrefixSegmentBoundary, f.Rel, call.Pos(),
+					fmt.Sprintf("HasPrefix(%s, %s) matches without a segment boundary: the prefix also matches longer siblings (\"cmd\" matches \"cmdline\") — compare equality or HasPrefix(%s, %s+\"/\")",
+						hay, needle, hay, needle))
+				d.Evidence = map[string]string{"haystack": hay, "prefix": needle}
+				out = append(out, d)
+				return true
+			})
+		}
+	}
+	return out
+}
+
+// unboundedPrefix reports whether the prefix argument can name a
+// slash-hierarchical tree while carrying no segment boundary. Dynamic
+// prefixes (params, fields, range variables) are always treated as
+// unbounded: their values are invisible to a parse-only pass, and the
+// stability bug lived in exactly one. Literals and resolvable constants
+// are judged by their value: no "/" at all is a namespace match, not a
+// segment match; a trailing "/" is a boundary.
+func unboundedPrefix(e ast.Expr, localLits, fileLits map[string]string) bool {
+	switch v := e.(type) {
+	case *ast.BasicLit:
+		val, ok := stringLit(v)
+		return ok && segmentPrefixCandidate(val)
+	case *ast.Ident:
+		if val, ok := localLits[v.Name]; ok {
+			return segmentPrefixCandidate(val)
+		}
+		if val, ok := fileLits[v.Name]; ok {
+			return segmentPrefixCandidate(val)
+		}
+		return true
+	case *ast.BinaryExpr:
+		// `root+"/"` and every runtime-computed prefix: the boundary
+		// decision was written at this call, which is what the rule
+		// asks for.
+		return false
+	}
+	// Selectors (r.prefix, cfg.BasePath), calls, index expressions:
+	// dynamic.
+	return true
+}
+
+// segmentPrefixCandidate reports whether a known prefix value names part
+// of a slash-separated tree without being bounded to it: it must contain
+// an interior or leading slash and not end in one.
+func segmentPrefixCandidate(val string) bool {
+	return val != "" && strings.Contains(val, "/") && !strings.HasSuffix(val, "/")
+}
+
+// fileScopedLits maps package-level const/var names initialized from a
+// single string literal.
+func fileScopedLits(file *ast.File) map[string]string {
+	lits := map[string]string{}
+	for _, decl := range file.Decls {
+		gd, ok := decl.(*ast.GenDecl)
+		if !ok || (gd.Tok != token.CONST && gd.Tok != token.VAR) {
+			continue
+		}
+		for _, spec := range gd.Specs {
+			vs, ok := spec.(*ast.ValueSpec)
+			if !ok || len(vs.Values) != 1 || len(vs.Names) != 1 {
+				continue
+			}
+			if lit, ok := vs.Values[0].(*ast.BasicLit); ok {
+				if val, ok := stringLit(lit); ok {
+					lits[vs.Names[0].Name] = val
+				}
+			}
+		}
+	}
+	return lits
+}
+
+// bodyScopedLits maps const/var/assignment names in one function body
+// (including nested literals) to a single string literal value.
+func bodyScopedLits(body ast.Node) map[string]string {
+	lits := map[string]string{}
+	ast.Inspect(body, func(n ast.Node) bool {
+		switch v := n.(type) {
+		case *ast.GenDecl:
+			if v.Tok != token.CONST && v.Tok != token.VAR {
+				return true
+			}
+			for _, spec := range v.Specs {
+				vs, ok := spec.(*ast.ValueSpec)
+				if !ok || len(vs.Values) != 1 || len(vs.Names) != 1 {
+					continue
+				}
+				if lit, ok := vs.Values[0].(*ast.BasicLit); ok {
+					if val, ok := stringLit(lit); ok {
+						lits[vs.Names[0].Name] = val
+					}
+				}
+			}
+		case *ast.AssignStmt:
+			if len(v.Lhs) != 1 || len(v.Rhs) != 1 {
+				return true
+			}
+			id, ok := v.Lhs[0].(*ast.Ident)
+			if !ok {
+				return true
+			}
+			if lit, ok := v.Rhs[0].(*ast.BasicLit); ok {
+				if val, ok := stringLit(lit); ok {
+					lits[id.Name] = val
+				}
+			}
+		}
+		return true
+	})
+	return lits
+}
+
+// rePathishName names what the first operand usually carries: a path, a
+// route, a relative path, a URL, a prefix, a directory, a key. Substring
+// match, because real code says importPath, baseURL, routePrefix, docKey.
+var rePathishName = regexp.MustCompile(`(?i)path|rel|route|url|uri|prefix|dir|key`)
+
+// pathishExpr reports whether e names or reaches something path-like: an
+// identifier in the expression matches rePathishName, or the expression
+// selects through a URL field (r.URL.Path, r.URL.Query().Get(...)).
+func pathishExpr(e ast.Expr) bool {
+	found := false
+	ast.Inspect(e, func(n ast.Node) bool {
+		switch v := n.(type) {
+		case *ast.Ident:
+			if rePathishName.MatchString(v.Name) {
+				found = true
+			}
+		case *ast.SelectorExpr:
+			if v.Sel != nil && v.Sel.Name == "URL" {
+				found = true
+			}
+		}
+		return !found
+	})
+	return found
 }

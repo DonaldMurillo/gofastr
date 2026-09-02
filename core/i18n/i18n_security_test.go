@@ -1,6 +1,7 @@
 package i18n
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -138,5 +139,101 @@ func TestNegotiatedTagIsBounded(t *testing.T) {
 	r.Header.Set("X-Locale", "ja")
 	if got := Negotiate(tr, r).Tag; got != "ja" {
 		t.Errorf("[i18n] X-Locale no longer wins outright: got %q want ja", got)
+	}
+}
+
+// --- interpolation at the params boundary ----------------------------------
+//
+// Property: a parameter VALUE is substituted once and is never re-parsed
+// as template syntax. Message templates are developer-supplied (trusted);
+// params are runtime values — callers interpolate user-display names,
+// emails, and other attacker-influenced strings — so a value containing
+// {{...}} must land in the output verbatim, not gain template semantics
+// (double expansion). HTML escaping is deliberately out of scope here:
+// i18n produces plain strings; the render layer owns markup safety.
+func TestInterpolatedValueNotReexpanded(t *testing.T) {
+	cat := NewMapCatalog()
+	cat.Set("en", "welcome", Message{Text: "Hi {{name}}!"})
+	cat.Set("en", "items", Message{Plural: map[string]string{
+		"one":   "{{count}} item for {{name}}",
+		"other": "{{count}} items for {{name}}",
+	}})
+	tr := NewTranslator(cat, "en")
+	ctx := context.Background()
+
+	cases := []struct {
+		key    string
+		params map[string]any
+		want   string
+	}{
+		{"welcome", map[string]any{"name": "{{admin}}"}, "Hi {{admin}}!"},
+		{"welcome", map[string]any{"name": "{{name}}"}, "Hi {{name}}!"},
+		{"items", map[string]any{"count": 2, "name": "{{count}}"}, "2 items for {{count}}"},
+	}
+	for _, c := range cases {
+		if got := tr.T(ctx, c.key, c.params); got != c.want {
+			t.Errorf("T(%q, %v) = %q, want %q — a param value was re-expanded as a template", c.key, c.params, got, c.want)
+		}
+	}
+
+	// A value that LOOKS like a placeholder for an unknown name stays
+	// visible (documented "unknown placeholders are left as-is"), and a
+	// value cannot reference a param the message never declared.
+	if got := tr.T(ctx, "welcome", map[string]any{"name": "{{secret}}"}); !strings.Contains(got, "{{secret}}") || strings.Contains(got, "(redacted)") {
+		t.Errorf("value placeholder mangled: %q", got)
+	}
+}
+
+// TestPluralCountHostileShapesSafe pins that plural selection only honors
+// genuinely numeric count params: garbage-typed counts (bool, map,
+// non-numeric string, integer-overflow string) fall back to the "other"
+// variant instead of panicking or inventing a category.
+func TestPluralCountHostileShapesSafe(t *testing.T) {
+	cat := NewMapCatalog()
+	cat.Set("en", "items", Message{Plural: map[string]string{
+		"one":   "ONE",
+		"other": "OTHER",
+	}})
+	tr := NewTranslator(cat, "en")
+	ctx := context.Background()
+
+	hostile := []map[string]any{
+		{"count": "not-a-number"},
+		{"count": true},
+		{"count": map[string]any{}},
+		{"count": "99999999999999999999999"},
+		{"count": nil},
+	}
+	for _, p := range hostile {
+		if got := tr.T(ctx, "items", p); got != "OTHER" {
+			t.Errorf("T(items, %v) = %q, want the %q fallback for a non-numeric count", p, got, "OTHER")
+		}
+	}
+	// The happy paths keep working on both spellings.
+	if got := tr.T(ctx, "items", map[string]any{"count": 1}); got != "ONE" {
+		t.Errorf("numeric count 1 = %q, want ONE", got)
+	}
+	if got := tr.T(ctx, "items", map[string]any{"n": "3"}); got != "OTHER" {
+		t.Errorf(`string count "3" = %q, want OTHER`, got)
+	}
+}
+
+// TestNilSurfacesReturnBareKey pins the documented fallback at every nil
+// seam: a nil Translator, a Translator with a nil catalog, and a catalog
+// missing the locale all return the bare key — never a panic, which would
+// turn a boot-order race into a request-time crash.
+func TestNilSurfacesReturnBareKey(t *testing.T) {
+	ctx := context.Background()
+	var nilTr *Translator
+	if got := nilTr.T(ctx, "greeting"); got != "greeting" {
+		t.Errorf("nil Translator T = %q, want bare key", got)
+	}
+	if tr := NewTranslator(nil, "en"); tr.T(ctx, "greeting") != "greeting" {
+		t.Errorf("nil catalog T = %q, want bare key", tr.T(ctx, "greeting"))
+	}
+	cat := NewMapCatalog()
+	cat.Set("en", "greeting", Message{Text: "hello"})
+	if tr := NewTranslator(cat, ""); tr.T(context.WithValue(ctx, ctxKey{}, Locale{Tag: "fr"}), "greeting") != "greeting" {
+		t.Errorf("missing-locale lookup should fall through to the bare key with no fallback configured")
 	}
 }

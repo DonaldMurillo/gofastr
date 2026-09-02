@@ -220,7 +220,13 @@ func EntityOpenAPI(registry entity.Registry, title, version string, crudMounted 
 		batchRespRef := map[string]any{"$ref": "#/components/schemas/BatchResponse"}
 		// apiPrefix first, then any per-entity version group: the router
 		// mounts /api/v2/posts, so the document has to key it that way.
+		// A versioned entity's group prefix is mounted absolutely by the
+		// router, so it replaces the API prefix rather than nesting
+		// under it ("/api/v1/posts", never "/api/api/v1/posts").
 		path := apiPrefix + pathPrefix + "/" + tableName
+		if ent.Version != "" {
+			path = pathPrefix + "/" + tableName
+		}
 
 		// Auto-CRUD is secure-by-default (issue #65): an entity requires
 		// an authenticated session for every operation unless it opts

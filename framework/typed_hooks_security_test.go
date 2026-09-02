@@ -249,3 +249,143 @@ func TestHooks_AfterRecoveryStillCallsLater(t *testing.T) {
 		t.Fatalf("expected loop to stop at first failing hook; got %d calls", calls)
 	}
 }
+
+// hookSecEdge carries the tag shapes the merge-back must respect: a
+// non-camelCase json tag (userId) and a json:"-" skipped field.
+type hookSecEdge struct {
+	ID     string `json:"id,omitempty"`
+	UserID string `json:"userId,omitempty"`
+	Secret string `json:"-"`
+	Title  string `json:"title,omitempty"`
+}
+
+// TestTypedHook_SkippedFieldNeverMerged: a field tagged json:"-" is never
+// written back into the payload map, whatever the hook does to it. The
+// merge path is the boundary between a typed hook's private bookkeeping
+// and the body the crud layer persists/serialises; a skipped field landing
+// there would persist data the model explicitly marks non-serialisable.
+func TestTypedHook_SkippedFieldNeverMerged(t *testing.T) {
+	body := map[string]any{"title": "t"}
+	var v hookSecEdge
+	if err := unmarshalHookPayload(body, &v); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	before := v
+	v.Secret = "supersecret"
+	if err := mergeStructIntoMap(&before, &v, body); err != nil {
+		t.Fatalf("merge: %v", err)
+	}
+	if got, ok := body["secret"]; ok {
+		t.Errorf("SECURITY: [typed-hooks] json:\"-\" field leaked into the payload map as %q", got)
+	}
+	if len(body) != 1 {
+		t.Errorf("body = %v, want only the original key (no widening)", body)
+	}
+}
+
+// TestTypedHook_JSONTagHonoredOnWriteBack: the write-back key comes from
+// the field's json tag re-snake-cased (userId → user_id), so a typed hook's
+// mutation lands on the same column the untyped path reads. A mismatch
+// would silently no-op the hook's override.
+func TestTypedHook_JSONTagHonoredOnWriteBack(t *testing.T) {
+	body := map[string]any{"user_id": "u1"}
+	var v hookSecEdge
+	if err := unmarshalHookPayload(body, &v); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if v.UserID != "u1" {
+		t.Fatalf("UserID = %q, want the snake_case source key mapped through the camelCase tag", v.UserID)
+	}
+	before := v
+	v.UserID = "u2"
+	if err := mergeStructIntoMap(&before, &v, body); err != nil {
+		t.Fatalf("merge: %v", err)
+	}
+	if body["user_id"] != "u2" {
+		t.Errorf("body[user_id] = %v, want u2 (tag-derived key, snake-cased)", body["user_id"])
+	}
+}
+
+// TestTypedHook_UnknownKeysNeitherBreakNorEcho: keys the typed model does
+// not declare are ignored on the way in and are not re-emitted on the way
+// back — the hook sees the model's view, and the persisted body keeps
+// exactly what it had.
+func TestTypedHook_UnknownKeysNeitherBreakNorEcho(t *testing.T) {
+	body := map[string]any{"title": "t", "hax": map[string]any{"injected": true}}
+	var v hookSecEdge
+	if err := unmarshalHookPayload(body, &v); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	before := v
+	v.Title = "changed" // touch one known field
+	if err := mergeStructIntoMap(&before, &v, body); err != nil {
+		t.Fatalf("merge: %v", err)
+	}
+	if body["title"] != "changed" {
+		t.Errorf("body[title] = %v, want changed", body["title"])
+	}
+	// The unknown key survives as-is (it was already in the body) but the
+	// merge must not have touched or duplicated it under another casing.
+	hax, ok := body["hax"].(map[string]any)
+	if !ok || hax["injected"] != true {
+		t.Errorf("body[hax] = %v, want the original unknown value untouched", body["hax"])
+	}
+	if _, ok := body["Hax"]; ok {
+		t.Error("merge re-emitted the unknown key under a second casing")
+	}
+}
+
+// TestTypedHook_TypeConfusedPayloadFailsClosed: a payload whose value
+// cannot unmarshal into *T must surface as an ERROR from every typed-hook
+// surface (Before/After × Create/Update) with the callback never invoked —
+// the hook must not run against a silently zero-valued struct while the
+// request body said something else. Attack shape: a client sends a string
+// where the model declares a number (or vice versa).
+func TestTypedHook_TypeConfusedPayloadFailsClosed(t *testing.T) {
+	type shape struct {
+		N int `json:"n,omitempty"`
+	}
+	surfaces := []struct {
+		name string
+		reg  func(app *App, fn func(context.Context, *shape) error)
+		fire func(app *App) error
+	}{
+		{"OnBeforeCreate", func(a *App, fn func(context.Context, *shape) error) {
+			OnBeforeCreate(a, "edges", fn)
+		}, func(a *App) error {
+			return a.HookRegistry("edges").ExecuteHooks(context.Background(), hook.BeforeCreate, map[string]any{"n": "not-a-number"})
+		}},
+		{"OnAfterCreate", func(a *App, fn func(context.Context, *shape) error) {
+			OnAfterCreate(a, "edges", fn)
+		}, func(a *App) error {
+			return a.HookRegistry("edges").ExecuteHooks(context.Background(), hook.AfterCreate, map[string]any{"n": "not-a-number"})
+		}},
+		{"OnBeforeUpdate", func(a *App, fn func(context.Context, *shape) error) {
+			OnBeforeUpdate(a, "edges", fn)
+		}, func(a *App) error {
+			return a.HookRegistry("edges").ExecuteHooks(context.Background(), hook.BeforeUpdate, map[string]any{"n": []any{1, 2}})
+		}},
+		{"OnAfterUpdate", func(a *App, fn func(context.Context, *shape) error) {
+			OnAfterUpdate(a, "edges", fn)
+		}, func(a *App) error {
+			return a.HookRegistry("edges").ExecuteHooks(context.Background(), hook.AfterUpdate, map[string]any{"n": false})
+		}},
+	}
+	for _, s := range surfaces {
+		t.Run(s.name, func(t *testing.T) {
+			app := NewApp(WithoutDefaultMiddleware())
+			invoked := false
+			s.reg(app, func(context.Context, *shape) error {
+				invoked = true
+				return nil
+			})
+			err := s.fire(app)
+			if err == nil {
+				t.Fatalf("SECURITY: [typed-hooks] %s accepted a type-confused payload (n as wrong JSON type)", s.name)
+			}
+			if invoked {
+				t.Error("SECURITY: [typed-hooks] callback ran on a type-confused payload (would see a zero-valued struct, not the body)")
+			}
+		})
+	}
+}

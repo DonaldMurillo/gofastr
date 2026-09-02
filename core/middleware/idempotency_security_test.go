@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -452,4 +453,274 @@ func newWALSQLIdemStore(t *testing.T, inFlightTTL time.Duration) (*sql.DB, *SQLI
 		t.Fatalf("new: %v", err)
 	}
 	return db, s
+}
+
+// ----- identity headers beyond Set-Cookie -----------------------------------
+//
+// Property: no identity-bearing response header from the original request
+// is replayed to a later caller. headersStrippedFromReplay lists five;
+// the Set-Cookie surface is pinned by TestIdempotency_StripsHandlerSetCookieFromReplay.
+// This loop covers the remaining four surfaces plus a benign handler
+// header that MUST survive the strip.
+func TestReplayStripsAllCredentialHeaders(t *testing.T) {
+	for _, hdr := range []string{"Cookie", "Authorization", "Proxy-Authorization", "Www-Authenticate"} {
+		t.Run(hdr, func(t *testing.T) {
+			mw := Idempotency(IdempotencyConfig{Principal: testPrincipal})
+			srv := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set(hdr, "secret-credential-token")
+				w.Header().Set("X-Trace", "keep-me")
+				w.WriteHeader(http.StatusCreated)
+			}))
+			do := func() *httptest.ResponseRecorder {
+				req := httptest.NewRequest(http.MethodPost, "/pay", nil)
+				req.Header.Set("X-Caller", "u1")
+				req.Header.Set(IdempotencyKeyHeader, "k-"+hdr)
+				rec := httptest.NewRecorder()
+				srv.ServeHTTP(rec, req)
+				return rec
+			}
+			do()
+			replay := do()
+			if replay.Header().Get(hdr) != "" {
+				t.Fatalf("identity header %s was replayed to the second caller", hdr)
+			}
+			if replay.Header().Get("X-Trace") != "keep-me" {
+				t.Fatal("benign handler header was wrongly stripped from the replay")
+			}
+		})
+	}
+}
+
+// ----- fingerprint binds the full request shape ------------------------------
+//
+// Property: the idempotency fingerprint binds a key to the FULL request
+// identity — principal, method, path, query, content-type, and body — so
+// reusing a key with ANY differing component is a 422 mismatch, never the
+// other request's cached response. The body surface is pinned by
+// TestIdempotency_FingerprintMismatchReturns422; this loops the rest.
+func TestFingerprintBindsFullRequestShape(t *testing.T) {
+	type spec struct {
+		method, target, ct, body string
+	}
+	cases := []struct {
+		name  string
+		first spec
+		retry spec
+	}{
+		{"different path", spec{"POST", "/orders", "", ""}, spec{"POST", "/transfers", "", ""}},
+		{"different query", spec{"POST", "/pay?x=1", "", ""}, spec{"POST", "/pay?x=2", "", ""}},
+		{"different method", spec{"POST", "/pay", "", ""}, spec{"PUT", "/pay", "", ""}},
+		{"different content-type", spec{"POST", "/pay", "", "same"}, spec{"POST", "/pay", "text/plain", "same"}},
+		{"different body", spec{"POST", "/pay", "", "a"}, spec{"POST", "/pay", "", "b"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var calls int32
+			mw := Idempotency(IdempotencyConfig{Principal: testPrincipal})
+			srv := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				atomic.AddInt32(&calls, 1)
+				w.WriteHeader(http.StatusCreated)
+			}))
+			send := func(s spec) *httptest.ResponseRecorder {
+				req := httptest.NewRequest(s.method, s.target, strings.NewReader(s.body))
+				if s.ct != "" {
+					req.Header.Set("Content-Type", s.ct)
+				}
+				req.Header.Set("X-Caller", "u1")
+				req.Header.Set(IdempotencyKeyHeader, "shared-key")
+				rec := httptest.NewRecorder()
+				srv.ServeHTTP(rec, req)
+				return rec
+			}
+			if rec := send(tc.first); rec.Code != http.StatusCreated {
+				t.Fatalf("first request: %d", rec.Code)
+			}
+			rec := send(tc.retry)
+			if rec.Code != http.StatusUnprocessableEntity {
+				t.Fatalf("key reuse with differing %s must 422, got %d (body %q)", tc.name, rec.Code, rec.Body.String())
+			}
+			if n := atomic.LoadInt32(&calls); n != 1 {
+				t.Fatalf("handler ran %d times; the mismatched retry must not execute it", n)
+			}
+		})
+	}
+}
+
+// ----- store shard: same key, different principals ---------------------------
+//
+// Property: the "principal\x00key" shard keeps two principals using the
+// SAME Idempotency-Key value in separate entries — the second principal
+// gets its OWN claim (not ErrInFlight) and its OWN replay (never the
+// first principal's cached body). Surfaces: memory store and SQL store.
+func TestIdemStoreKeyShardedByPrincipal(t *testing.T) {
+	run := func(t *testing.T, s IdempotencyStore) {
+		t.Helper()
+		ctx := context.Background()
+		shard := func(principal, key string) string { return principal + "\x00" + key }
+		k1, k2 := shard("u1", "shared-key"), shard("u2", "shared-key")
+
+		if _, ok, err := s.Begin(ctx, k1, "fp1"); err != nil || ok {
+			t.Fatalf("u1 first claim: ok=%v err=%v", ok, err)
+		}
+		if _, ok, err := s.Begin(ctx, k2, "fp1"); err != nil || ok {
+			t.Fatalf("u2 claim collided with u1's in-flight shard: ok=%v err=%v", ok, err)
+		}
+		_ = s.Finish(ctx, k1, "fp1", &IdempotentResponse{Status: 201, Header: http.Header{}, Body: []byte("u1-secret")})
+		_ = s.Finish(ctx, k2, "fp1", &IdempotentResponse{Status: 201, Header: http.Header{}, Body: []byte("u2-secret")})
+
+		resp, ok, err := s.Begin(ctx, k2, "fp1")
+		if err != nil || !ok {
+			t.Fatalf("u2 replay: ok=%v err=%v", ok, err)
+		}
+		if string(resp.Body) != "u2-secret" {
+			t.Fatalf("u2 was served u1's cached body: %q", resp.Body)
+		}
+	}
+	t.Run("memory", func(t *testing.T) {
+		run(t, NewMemoryIdempotencyStore(time.Minute))
+	})
+	t.Run("sql", func(t *testing.T) {
+		_, s := openSQLIdemStore(t)
+		run(t, s)
+	})
+}
+
+// ----- shard ambiguity under NUL --------------------------------------------
+//
+// Property: the storage shard must be injective over (principal, key)
+// pairs — two DIFFERENT pairs must never land on the same shard entry.
+// The middleware builds the shard as principal + "\x00" + key, which is
+// ambiguous when either side contains NUL: ("a\x00b","c") and ("a",
+// "b\x00c") both produce "a\x00b\x00c". The fingerprint difference (the
+// principal is hashed in) saves this from being a body leak — the second
+// caller gets 422 — but that caller is still DENIED a key it is the first
+// and only user of: a cross-principal cache-poisoning DoS whenever a
+// Principal function can return NUL-bearing subjects (e.g. one that
+// surfaces a request-derived value). Driven through the middleware so the
+// construction site itself is under test.
+func TestIdemShardAmbiguousUnderNULPrincipal(t *testing.T) {
+	mw := Idempotency(IdempotencyConfig{
+		Principal: func(r *http.Request) string { return r.Header.Get("X-Caller") },
+	})
+	srv := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	send := func(caller, key string) int {
+		req := httptest.NewRequest(http.MethodPost, "/pay", nil)
+		req.Header.Set("X-Caller", caller)
+		req.Header.Set(IdempotencyKeyHeader, key)
+		rec := httptest.NewRecorder()
+		srv.ServeHTTP(rec, req)
+		return rec.Code
+	}
+	if code := send("a\x00b", "c"); code != http.StatusOK {
+		t.Fatalf("first pair: %d", code)
+	}
+	if code := send("a", "b\x00c"); code != http.StatusOK {
+		t.Fatalf("distinct (principal,key) pair collided onto the first pair's shard and was denied: got %d, want 200", code)
+	}
+}
+
+// ----- Finish-failure log sink ----------------------------------------------
+//
+// Property (same family as TestLogSinksScrubAndBound): a request-derived
+// value a middleware writes into a slog attribute is control-byte
+// scrubbed at EVERY sink. The Idempotency-Key is request-borne and the
+// Finish-failure path logs it RAW ("key", key): a forged key paints a
+// forged line into the operator's tail. Attack shapes: SOH, ESC-prefixed
+// ANSI, DEL.
+type finishFailStore struct{}
+
+func (finishFailStore) Begin(context.Context, string, string) (*IdempotentResponse, bool, error) {
+	return nil, false, nil
+}
+func (finishFailStore) Finish(context.Context, string, string, *IdempotentResponse) error {
+	return errors.New("db down")
+}
+
+func TestIdempotencyFinishLogKeyScrubbed(t *testing.T) {
+	sink := &captureHandler{}
+	mw := Idempotency(IdempotencyConfig{
+		Store:     finishFailStore{},
+		Principal: testPrincipal,
+		Logger:    slog.New(sink),
+	})
+	srv := mw(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	for _, key := range []string{"k\x01quiet", "k\x1b[31mred", "k\x7fdel"} {
+		sink.reset()
+		req := httptest.NewRequest(http.MethodPost, "/pay", nil)
+		req.Header.Set("X-Caller", "u1")
+		req.Header.Set(IdempotencyKeyHeader, key)
+		srv.ServeHTTP(httptest.NewRecorder(), req)
+		if got := sink.get("key"); strings.ContainsAny(got, c0AndDelSet) {
+			t.Errorf("raw Idempotency-Key logged on Finish failure: %q", got)
+		}
+	}
+}
+
+// ----- in-flight branch: Retry-After ----------------------------------------
+//
+// Property: the in-flight branch answers 409 with a Retry-After so a
+// concurrent duplicate backs off instead of hot-looping. The concurrent
+// 409 is pinned by TestIdempotency_ConcurrentReturnsInFlight; this pins
+// the Retry-After half deterministically (stubbed store, no goroutines)
+// and that the handler is not invoked.
+type inFlightStore struct{}
+
+func (inFlightStore) Begin(context.Context, string, string) (*IdempotentResponse, bool, error) {
+	return nil, false, ErrInFlight
+}
+func (inFlightStore) Finish(context.Context, string, string, *IdempotentResponse) error {
+	return nil
+}
+
+func TestIdempotencyInFlightSetsRetryAfter(t *testing.T) {
+	mw := Idempotency(IdempotencyConfig{Store: inFlightStore{}, Principal: testPrincipal})
+	srv := mw(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		t.Fatal("handler must not run on the in-flight branch")
+	}))
+	req := httptest.NewRequest(http.MethodPost, "/pay", nil)
+	req.Header.Set("X-Caller", "u1")
+	req.Header.Set(IdempotencyKeyHeader, "k")
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected 409, got %d", rec.Code)
+	}
+	if got := rec.Header().Get("Retry-After"); got != "1" {
+		t.Fatalf("expected Retry-After: 1, got %q", got)
+	}
+}
+
+// ----- key-length cap boundary ----------------------------------------------
+//
+// Property: the Idempotency-Key length cap rejects at 256 and still
+// admits its boundary value (255) — an off-by-one here would either let
+// unbounded keys into the store or reject valid ones.
+func TestIdempotencyKeyLengthBoundary(t *testing.T) {
+	var calls int32
+	mw := Idempotency(IdempotencyConfig{Principal: testPrincipal})
+	srv := mw(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		atomic.AddInt32(&calls, 1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	send := func(n int) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPost, "/pay", nil)
+		req.Header.Set("X-Caller", "u1")
+		req.Header.Set(IdempotencyKeyHeader, strings.Repeat("k", n))
+		rec := httptest.NewRecorder()
+		srv.ServeHTTP(rec, req)
+		return rec
+	}
+	if rec := send(255); rec.Code != http.StatusOK {
+		t.Fatalf("255-char key (boundary) must be accepted, got %d", rec.Code)
+	}
+	if rec := send(256); rec.Code != http.StatusBadRequest {
+		t.Fatalf("256-char key must be rejected 400, got %d", rec.Code)
+	}
+	if n := atomic.LoadInt32(&calls); n != 1 {
+		t.Fatalf("handler ran %d times; the oversized key must not reach it", n)
+	}
 }

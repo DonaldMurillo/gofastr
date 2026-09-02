@@ -1030,7 +1030,7 @@ func (pe *panelEnv) serveSend(w http.ResponseWriter, r *http.Request) {
 		Text string `json:"text"`
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, maxPanelBody)
-	_ = json.NewDecoder(r.Body).Decode(&body)
+	_ = json.NewDecoder(r.Body).Decode(&body) //gofastr:allow(GOFASTR1407) kiln chat panel transport envelope on the build-mode dev server
 	if strings.TrimSpace(body.Text) == "" {
 		// Don't 4xx on empty, that would surface as an RPC failure
 		// in the runtime. Silent ack: nothing to do, no journal write.
@@ -1051,7 +1051,7 @@ func (pe *panelEnv) serveApprove(w http.ResponseWriter, r *http.Request) {
 		PlanID string `json:"plan_id"`
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, maxPanelBody)
-	_ = json.NewDecoder(r.Body).Decode(&body)
+	_ = json.NewDecoder(r.Body).Decode(&body) //gofastr:allow(GOFASTR1407) kiln chat panel transport envelope on the build-mode dev server
 	pe.tools.ApprovePlan(r.Context(), protocol.ApprovePlanArgs{PlanID: body.PlanID})
 	ack(w)
 }
@@ -1062,7 +1062,7 @@ func (pe *panelEnv) serveReject(w http.ResponseWriter, r *http.Request) {
 		Reason string `json:"reason"`
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, maxPanelBody)
-	_ = json.NewDecoder(r.Body).Decode(&body)
+	_ = json.NewDecoder(r.Body).Decode(&body) //gofastr:allow(GOFASTR1407) kiln chat panel transport envelope on the build-mode dev server
 	pe.tools.RejectPlan(r.Context(), protocol.RejectPlanArgs{PlanID: body.PlanID, Reason: body.Reason})
 	ack(w)
 }

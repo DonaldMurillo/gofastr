@@ -1,7 +1,6 @@
 package contracts
 
 import (
-	"bytes"
 	"fmt"
 	"go/ast"
 	"go/parser"
@@ -9,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -352,17 +352,26 @@ func (p *Pass) Rel(abs string) string {
 }
 
 // IsGeneratedSource reports whether body carries the conventional
-// generated-code header (https://pkg.go.dev/cmd/go#hdr-Generate_Go_files).
-// Only the first 512 bytes are inspected, so a doc comment mentioning the
-// phrase further down does not exempt a hand-written file.
+// generated-code header (https://pkg.go.dev/cmd/go#hdr-Generate_Go_files):
+// a line reading `// Code generated … DO NOT EDIT.`. The FULL header is
+// required, not either half: the exemption removes a file from every
+// analyzer, and the header is repo content, so a bare `// DO NOT EDIT`
+// added to the file carrying a violation would buy a whole-tree
+// exemption that reads like a comment in review. Only the first 512
+// bytes are inspected, so a doc comment mentioning the phrase further
+// down does not exempt a hand-written file.
 func IsGeneratedSource(body []byte) bool {
 	head := body
 	if len(head) > 512 {
 		head = head[:512]
 	}
-	return bytes.Contains(head, []byte("// Code generated")) ||
-		bytes.Contains(head, []byte("DO NOT EDIT"))
+	return reGeneratedHeader.Match(head)
 }
+
+// reGeneratedHeader is the conventional generated-code marker, the same
+// line shape cmd/go documents. Line-anchored at both ends so the phrase
+// must stand as the whole comment line.
+var reGeneratedHeader = regexp.MustCompile(`(?m)^// Code generated .* DO NOT EDIT\.$`)
 
 // readModulePath returns the `module` line from root/go.mod, or "".
 func readModulePath(root string) string {

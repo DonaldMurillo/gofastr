@@ -306,7 +306,7 @@ func TestCreateMigrationsTable_ExecAndAlterErrors(t *testing.T) {
 	// Backfill ALTER error (Postgres path).
 	m2, mock2 := newTestMigrator(t)
 	mock2.ExpectExec("CREATE TABLE IF NOT EXISTS").WillReturnResult(sqlmock.NewResult(0, 0))
-	mock2.ExpectExec("ADD COLUMN IF NOT EXISTS checksum").WillReturnError(errors.New("fail"))
+	mock2.ExpectExec("ADD COLUMN IF NOT EXISTS \"checksum\"").WillReturnError(errors.New("fail"))
 	if err := m2.CreateMigrationsTable(context.Background()); err == nil {
 		t.Fatal("expected backfill alter error")
 	}
@@ -316,8 +316,8 @@ func TestEnsureTrackingColumns_SQLiteIgnoresDupButFailsOther(t *testing.T) {
 	// SQLite path: a duplicate-column error is ignored, a real error is not.
 	m, mock := newTestMigratorWithDialect(t, DialectSQLite)
 	mock.ExpectExec("CREATE TABLE IF NOT EXISTS").WillReturnResult(sqlmock.NewResult(0, 0))
-	mock.ExpectExec("ADD COLUMN checksum").WillReturnError(errors.New("duplicate column name: checksum"))
-	mock.ExpectExec("ADD COLUMN dirty").WillReturnError(errors.New("disk full"))
+	mock.ExpectExec("ADD COLUMN \"checksum\"").WillReturnError(errors.New("duplicate column name: checksum"))
+	mock.ExpectExec("ADD COLUMN \"dirty\"").WillReturnError(errors.New("disk full"))
 	if err := m.CreateMigrationsTable(context.Background()); err == nil {
 		t.Fatal("expected the non-duplicate ALTER error to surface")
 	}

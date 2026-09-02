@@ -27,7 +27,7 @@ type memoryUserStore struct {
 	// state locks it. A value-type mutex is zero-value safe, so existing
 	// zero-value memoryUserStore values keep working with no lazy init.
 	mu    sync.Mutex
-	links map[string]memoryLinkEntry
+	links map[linkKey]memoryLinkEntry
 }
 
 type storeEntry struct {

@@ -70,7 +70,7 @@ func (s *CSRFSkipper) Skip(r *http.Request) bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	for _, p := range s.prefixes {
-		if strings.HasPrefix(path, p) {
+		if strings.HasPrefix(path, p) { //gofastr:allow(GOFASTR1006) documented literal-prefix semantics: the trailing slash is the caller's boundary knob (see the CSRFSkipper doc)
 			return true
 		}
 	}

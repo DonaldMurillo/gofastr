@@ -1,6 +1,9 @@
 package evalrunner
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 // The codex child compiles and executes its own output under the developer's
 // environment; looksCredentialBearing is the only containment that child
@@ -26,5 +29,36 @@ func TestCredentialFilterCatchesTokenShapes(t *testing.T) {
 		if looksCredentialBearing(name) {
 			t.Errorf("looksCredentialBearing(%q) = true for a benign name", name)
 		}
+	}
+}
+
+// Property: the codex child must run under exactly the harness's chosen
+// Codex identity, never one inherited from the operator's desktop.
+//
+// codexEnvironment strips every CODEX_-prefixed variable and then appends
+// the single CODEX_HOME chosen by normalizeConfig. A parent CODEX_* pair
+// (Desktop task identity, policy overrides, or a second CODEX_HOME) would
+// otherwise decide which session store and policy the eval's builder
+// agent launches under — the wrong half of the blind protocol.
+func TestCodexChildGetsSingleCodexHome(t *testing.T) {
+	t.Setenv("CODEX_HOME", "/attacker/controlled/home")
+	t.Setenv("CODEX_SANDBOX_NETWORK_DISABLED", "0")
+	home := "/eval/chosen/codex-home"
+	env := codexEnvironment(home, "/eval/tools", "/eval/workspace")
+	codexHome := 0
+	for _, entry := range env {
+		name, value, _ := strings.Cut(entry, "=")
+		if strings.HasPrefix(name, "CODEX_") {
+			if name != "CODEX_HOME" {
+				t.Errorf("SECURITY: [env-leak] codex child inherited %q from the operator environment", name)
+			}
+			codexHome++
+			if value != home {
+				t.Errorf("SECURITY: [env-leak] CODEX_HOME = %q, want the harness-chosen %q", value, home)
+			}
+		}
+	}
+	if codexHome != 1 {
+		t.Errorf("SECURITY: [env-leak] codex child sees %d CODEX_HOME entries, want exactly the harness-chosen one", codexHome)
 	}
 }

@@ -199,6 +199,10 @@ type fakeIdP struct {
 
 	// discovery.
 	discoveryIssuer string // overrides the doc's "issuer" field (mismatch test)
+
+	// endpointsOverride replaces individual discovery endpoint fields
+	// (token_endpoint, jwks_uri, userinfo_endpoint) — the downgrade tests.
+	endpointsOverride map[string]string
 }
 
 func newFakeIdP(t *testing.T) *fakeIdP {
@@ -228,6 +232,9 @@ func newFakeIdP(t *testing.T) *fakeIdP {
 		}
 		if !f.omitUserinfoEp {
 			doc["userinfo_endpoint"] = ui
+		}
+		for k, v := range f.endpointsOverride {
+			doc[k] = v
 		}
 		writeJSON(t, w, doc)
 	})

@@ -818,6 +818,10 @@ func TestFormActionSinksRejectUnsafeURL(t *testing.T) {
 		{"SignOut", func(a string) render.HTML {
 			return ui.SignOut(ui.SignOutConfig{Action: a})
 		}},
+		{"StepWizard", func(a string) render.HTML {
+			return ui.StepWizard(ui.StepWizardConfig{Action: a,
+				Steps: []ui.StepWizardStep{{Heading: "H"}}})
+		}},
 	}
 	for _, s := range sinks {
 		t.Run(s.name, func(t *testing.T) {
@@ -908,5 +912,72 @@ func TestSearchInputExtraAttrsCaseInsensitiveProtected(t *testing.T) {
 				t.Errorf("SECURITY: ExtraAttrs[%q] (case-variant of a protected attr) leaked into <input>:\n%s", key, out)
 			}
 		})
+	}
+}
+
+// TestRailAnchorsStayFragmentReferences pins the in-page rail/summary
+// anchor family: these components force a "#" prefix onto caller
+// anchors (or an id), so a data-derived anchor value can never become a
+// navigable scheme URL — "#"javascript:… is a same-page fragment, inert
+// by construction. Surfaces: AnchoredRail item anchors, StepRail item
+// anchors, and ValidationSummary field anchors. StepRail's MetaHref is
+// the contrast surface: it renders a real href (no forced "#"), so it
+// must go through the html.Link scheme allow-list and be dropped, not
+// rendered, when dangerous.
+func TestRailAnchorsStayFragmentReferences(t *testing.T) {
+	anchors := []string{"javascript:alert(1)", "https://evil.example/x", "//evil.example/x"}
+
+	for _, a := range anchors {
+		rail := string(ui.AnchoredRail(ui.AnchoredRailConfig{Label: "L", Items: []ui.RailItem{
+			{Anchor: a, Text: "T"},
+		}}))
+		if !strings.Contains(rail, `href="#`+a+`"`) {
+			t.Errorf("AnchoredRail: anchor %q must render as a same-page fragment href, got:\n%s", a, rail)
+		}
+
+		step := string(ui.StepRail(ui.StepRailConfig{Items: []ui.StepRailItem{
+			{Number: "01", Anchor: a, Label: "T"},
+		}}))
+		if !strings.Contains(step, `href="#`+a+`"`) {
+			t.Errorf("StepRail: anchor %q must render as a same-page fragment href, got:\n%s", a, step)
+		}
+	}
+
+	summary := string(ui.ValidationSummary(ui.ValidationSummaryConfig{
+		Errors:   ui.FieldErrors{"email": "invalid"},
+		FieldIDs: map[string]string{"email": `javascript:alert(1)`},
+	}))
+	if !strings.Contains(summary, `href="#javascript:alert(1)"`) {
+		t.Errorf("ValidationSummary: field anchor must stay a fragment reference:\n%s", summary)
+	}
+
+	meta := string(ui.StepRail(ui.StepRailConfig{
+		Title:    "Steps",
+		Meta:     "Help",
+		MetaHref: "javascript:alert(1)",
+		Items:    []ui.StepRailItem{{Number: "01", Anchor: "a", Label: "T"}},
+	}))
+	if strings.Contains(strings.ToLower(meta), `href="javascript`) {
+		t.Errorf("SECURITY: StepRail MetaHref rendered a live javascript: link:\n%s", meta)
+	}
+}
+
+// TestSignOutNextFieldEscapesBreakout pins the SignOut redirect field:
+// Next is round-tripped into a hidden input, so it must be
+// attribute-escaped (quote-breakout neutralised). Scheme safety of the
+// redirect itself is enforced at the sink, battery/auth's
+// successRedirect/isSafeRelativePath (same-origin relative path or
+// fallback), so this test only owns the markup-safety surface.
+func TestSignOutNextFieldEscapesBreakout(t *testing.T) {
+	payload := `"><script>alert(1)</script>`
+	h := string(ui.SignOut(ui.SignOutConfig{Next: payload}))
+	if strings.Contains(h, payload) || strings.Contains(h, "<script>") {
+		t.Errorf("SECURITY: SignOut Next field rendered unescaped:\n%s", h)
+	}
+	if !strings.Contains(h, `name="next"`) {
+		t.Errorf("SignOut must still emit the hidden next field:\n%s", h)
+	}
+	if !strings.Contains(h, "&lt;script&gt;") {
+		t.Errorf("SignOut Next should appear escaped:\n%s", h)
 	}
 }

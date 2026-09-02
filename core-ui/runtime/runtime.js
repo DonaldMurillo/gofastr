@@ -180,8 +180,11 @@
   // -----------------------------------------------------------------------
   // Helpers
   // -----------------------------------------------------------------------
+  // Own-prop read for {} registries keyed by attribute-borne names: an
+  // inherited "constructor" is truthy and must not pass as an entry.
+  const own = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
   const closestAttr = (el, attr) => {
-    const node = el.closest(`[${attr}]`);
+    const node = el.closest(`[${CSS.escape(attr)}]`);
     return node?.getAttribute(attr) ?? null;
   };
 
@@ -286,7 +289,8 @@
     // --- State helpers (compiled Go code uses these) ---
 
     getState(key, defaultVal) {
-      return state[key] ?? defaultVal;
+      const v = own(state, key) ? state[key] : undefined;
+      return v ?? defaultVal;
     },
 
     setState(key, val) {
@@ -354,7 +358,7 @@
     syncBindings() {
       document.querySelectorAll('[data-bind]').forEach(el => {
         const key = el.getAttribute('data-bind');
-        if (key && state[key] !== undefined) {
+        if (key && own(state, key) && state[key] !== undefined) {
           el.value = state[key];
         }
       });
@@ -411,7 +415,7 @@
     _pendingLinks: new Set(),
     loadComponentCSS(name) {
       if (!name || this._pendingLinks.has(name)) return;
-      if (document.querySelector('link[data-fui-style="' + name + '"]')) return;
+      if (document.querySelector('link[data-fui-style="' + CSS.escape(name) + '"]')) return;
       const e = (window.__gofastr_catalog || {})[name];
       if (!e) return;
       this._pendingLinks.add(name);
@@ -625,7 +629,7 @@
         unset signals. Used by data-fui-signal-inc and data-fui-signal-toggle
         to read-modify-write without an RPC round-trip. */
     getSignal(name) {
-      const s = this._signals[name];
+      const s = own(this._signals, name) ? this._signals[name] : undefined;
       return s ? s.value : undefined;
     },
     /** Push a value into a named signal and reflect it into all
@@ -644,7 +648,7 @@
         console.warn('[gofastr] refused reserved signal name:', name);
         return;
       }
-      let s = this._signals[name];
+      let s = own(this._signals, name) ? this._signals[name] : undefined;
       if (!s) { s = this._signals[name] = { value: undefined, listeners: [] }; }
       // opts.untrusted marks a value that came from the URL (the
       // deep-link seed in widgets.js). Recorded on the signal so the
@@ -767,7 +771,7 @@
 
     /** Read the current value of a named signal. */
     signal(name) {
-      return this._signals[name]?.value;
+      return (own(this._signals, name) ? this._signals[name] : undefined)?.value;
     },
   });
 
@@ -1867,12 +1871,12 @@
     if (!target) return;
 
     const action = target.getAttribute('data-action');
-    const componentId = closestAttr(e.target, 'data-component')
+    const name = closestAttr(e.target, 'data-component')
       ?? closestAttr(e.target, 'data-widget');
 
-    if (componentId && action) {
+    if (name && action) {
       e.preventDefault();
-      window.__gofastr.trigger(componentId, action, collectParams(target));
+      window.__gofastr.trigger(name, action, collectParams(target));
     }
   });
 
@@ -1885,13 +1889,13 @@
       const action = target.getAttribute(`data-action-${eventType}`) || target.getAttribute('data-action');
       if (!action) return;
 
-      const componentId = closestAttr(e.target, 'data-component')
+      const name = closestAttr(e.target, 'data-component')
         ?? closestAttr(e.target, 'data-widget');
 
-      if (componentId) {
+      if (name) {
         e.preventDefault();
         const params = { ...collectParams(target), value: e.target.value ?? '', eventType };
-        window.__gofastr.trigger(componentId, action, params);
+        window.__gofastr.trigger(name, action, params);
       }
     });
   }
@@ -1908,18 +1912,18 @@
   // Hydration on first interaction
   const hydrated = new Set();
 
-  const hydrate = (componentId) => {
-    if (hydrated.has(componentId)) return;
+  const hydrate = (name) => {
+    if (hydrated.has(name)) return;
 
-    const el = document.querySelector(`[data-widget="${componentId}"]`)
-      ?? document.querySelector(`[data-component="${componentId}"]`);
+    const el = document.querySelector(`[data-widget="${CSS.escape(name)}"]`)
+      ?? document.querySelector(`[data-component="${CSS.escape(name)}"]`);
     if (!el) return;
     // Mark hydrated only once the element was actually found, marking
     // before the lookup made a too-early call (root not yet in the DOM)
     // permanently block that id's behavior script. Never cleared across
     // navs: the behavior script URL is keyed by id, so process-lifetime
     // dedup is correct for re-inserted same-id DOM.
-    hydrated.add(componentId);
+    hydrated.add(name);
 
     // data-behavior is the most privileged attribute the runtime reads:
     // it becomes a <script src>. Only the one shape the framework emits
@@ -2029,11 +2033,14 @@
   })();
   const _modulePromises = {};
   function loadModule(name) {
-    if (window.__gofastr.loadedModules?.[name]) {
+    const lm = window.__gofastr.loadedModules;
+    if (lm && own(lm, name) && lm[name]) {
       return Promise.resolve();
     }
-    if (_modulePromises[name]) return _modulePromises[name];
-    _modulePromises[name] = new Promise((resolve, reject) => {
+    if (own(_modulePromises, name) && _modulePromises[name]) {
+      return _modulePromises[name];
+    }
+    const modPromise = new Promise((resolve, reject) => {
       // Module names come from DOM attributes (data-fui-prefetch,
       // data-behavior), so they are caller input. Without a shape check
       // a "../../../evil" token normalizes out of the runtime serve
@@ -2056,7 +2063,8 @@
       };
       document.head.appendChild(s);
     });
-    return _modulePromises[name];
+    _modulePromises[name] = modPromise;
+    return modPromise;
   }
 
   // Live compositions keep one document-level bridge so a click or submit
@@ -2398,7 +2406,8 @@
       if (name === 'rpc' && document.__fuiStaticDispatch) continue;
       // Skip if the module is already loaded, its own internal scanner
       // takes care of newly inserted DOM via the MutationObserver.
-      if (window.__gofastr.loadedModules?.[name]) continue;
+      const lm = window.__gofastr.loadedModules;
+      if (lm && own(lm, name) && lm[name]) continue;
       // Test the scope node ITSELF as well as its descendants: a
       // lazily-mounted widget root appended to <body> carries root
       // markers (data-fui-drag-dismiss) on the node handed to us.
@@ -2570,9 +2579,9 @@
     for (const el of scope.querySelectorAll('[data-action-mount]')) {
       const action = el.getAttribute('data-action-mount');
       if (!action) continue;
-      const componentId = closestAttr(el, 'data-component') ?? closestAttr(el, 'data-widget');
-      if (!componentId) continue;
-      G.trigger(componentId, action, collectParams(el));
+      const name = closestAttr(el, 'data-component') ?? closestAttr(el, 'data-widget');
+      if (!name) continue;
+      G.trigger(name, action, collectParams(el));
     }
   };
   window.addEventListener('gofastr:navigate', () => _runMountActions(document));

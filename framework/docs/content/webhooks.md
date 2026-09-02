@@ -150,7 +150,13 @@ attempt using `Options.Backoff`, and the worker picks it up at the
 scheduled time.
 
 After `Options.MaxAttempts` attempts the delivery transitions to
-`dead`. Dead deliveries are not retried; they remain in the store for
+`dead`. A transient error looking the subscriber up (a store blip, a
+cancelled worker context) is not one of those: it records `failed` and
+schedules the next attempt, since `dead` is reserved for an exhausted
+attempt budget or a subscriber that is definitively gone or inactive. A
+row already `success` or `dead` is fenced: a stale claimant's late
+non-terminal settle is a no-op, never a re-queue of a delivered row.
+Dead deliveries are not retried; they remain in the store for
 inspection / replay via your own admin tooling.
 
 If a subscriber is removed while a delivery for it is pending, the

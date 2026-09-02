@@ -227,7 +227,14 @@
             let crpc = attr(dest, 'data-fui-sortable-conflict');
             if (crpc && window.__gofastr?._originOK?.(crpc)) {
               fetch(crpc, { credentials: 'same-origin' })
-                .then(function (r) { return r.text(); })
+                .then(function (r) {
+                  // Same convention as poll.js/rpc.js: an HTTP error must
+                  // reach .catch, never the innerHTML mount — an error
+                  // body reflects the request URL and would replace live
+                  // page markup with reflected output.
+                  if (!r.ok) throw new Error('conflict refresh failed: ' + r.status);
+                  return r.text();
+                })
                 .then(function (html) {
                   dest.innerHTML = html;
                   if (srcList && srcList !== dest && srcSnap)

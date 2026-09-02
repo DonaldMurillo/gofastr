@@ -537,7 +537,7 @@ func TestRebuildSQLitePreservesGroupName(t *testing.T) {
 
 	// Simulate a table that has group_name data but a single-column PK:
 	// manually add the column and insert a row with a non-default group.
-	if _, err := db.Exec("ALTER TABLE _migrations ADD COLUMN group_name TEXT NOT NULL DEFAULT ''"); err != nil {
+	if _, err := db.Exec("ALTER TABLE _migrations ADD COLUMN \"group_name\" TEXT NOT NULL DEFAULT ''"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := db.Exec("INSERT INTO _migrations (group_name, version, name, checksum, dirty) VALUES ('custom', 2, 'manual', '', 0)"); err != nil {

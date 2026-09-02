@@ -4,7 +4,9 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
+	"sort"
 
+	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/migrate"
@@ -81,7 +83,7 @@ func alignColumns(d *sql.DB, entity *framework.Entity) error {
 }
 
 func tableColumns(d *sql.DB, table string) (map[string]struct{}, error) {
-	rows, err := d.Query(`PRAGMA table_info(` + table + `)`)
+	rows, err := d.Query(`PRAGMA table_info(` + query.QuoteIdent(table) + `)`)
 	if err != nil {
 		return nil, err
 	}
@@ -101,7 +103,15 @@ func tableColumns(d *sql.DB, table string) (map[string]struct{}, error) {
 }
 
 func alterAddColumn(table string, f schema.Field) string {
-	col := f.Name + " " + sqlType(f)
+	// Identifiers are quoted, not trusted: table and column names derive
+	// from agent-authored world IR (entity name / table override / field
+	// name over the unauthenticated add_entity/add_field surface), and
+	// modernc's SQLite driver executes multi-statement strings, so a
+	// `; --` tail in a raw interpolation becomes a second statement
+	// (arbitrary DDL, ATTACH-based file creation). Quoting makes the
+	// whole tail one (weird, harmless) identifier — the exact property
+	// sqlDefault already pins for DEFAULT literals.
+	col := query.QuoteIdent(f.Name) + " " + sqlType(f)
 	if f.Default != nil {
 		col += fmt.Sprintf(" DEFAULT %s", sqlDefault(f))
 	}
@@ -109,7 +119,7 @@ func alterAddColumn(table string, f schema.Field) string {
 	// honor only Default. Required-without-default added columns become
 	// nullable in the live DB; the freeze step emits a proper migration
 	// later if the user wants strictness in production.
-	return fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s", table, col)
+	return fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s", query.QuoteIdent(table), col)
 }
 
 // Mirror of framework's sqlType / sqlDefault, kept private to avoid
@@ -156,4 +166,53 @@ func sqlType(f schema.Field) string {
 // kiln's local store is SQLite, so the dialect is fixed here.
 func sqlDefault(f schema.Field) string {
 	return migrate.SQLDefault(f, migrate.DialectSQLite)
+}
+
+// DropTable removes one table from the live SQLite database. The name
+// comes from the registry (live's delete_entity side effect), but it is
+// validated and quoted anyway: the same rule ApplySeeds applies to seed
+// tables. IF EXISTS because a rebuild may not have created the table
+// yet.
+func DropTable(d *sql.DB, table string) error {
+	t, err := query.SafeIdent(table)
+	if err != nil {
+		return fmt.Errorf("kiln/db: drop: %w", err)
+	}
+	if _, err := d.Exec("DROP TABLE IF EXISTS " + query.QuoteIdent(t)); err != nil {
+		return fmt.Errorf("kiln/db: drop %s: %w", table, err)
+	}
+	return nil
+}
+
+// DropAllTables removes every user table from the live SQLite database
+// (SQLite's own sqlite_% internals excluded). live uses it to re-derive
+// the ephemeral runtime DB from the journal: the DB is derived state,
+// so a reset, undo, or reboot rebuilds it rather than carrying rows no
+// journal entry authorizes.
+func DropAllTables(d *sql.DB) error {
+	rows, err := d.Query(`SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'`)
+	if err != nil {
+		return fmt.Errorf("kiln/db: list tables: %w", err)
+	}
+	var tables []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			rows.Close()
+			return fmt.Errorf("kiln/db: scan table name: %w", err)
+		}
+		tables = append(tables, name)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return fmt.Errorf("kiln/db: list tables: %w", err)
+	}
+	rows.Close()
+	sort.Strings(tables)
+	for _, t := range tables {
+		if err := DropTable(d, t); err != nil {
+			return err
+		}
+	}
+	return nil
 }

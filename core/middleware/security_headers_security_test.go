@@ -153,3 +153,46 @@ func TestDefaultCSPBoundsFormAndObject(t *testing.T) {
 		t.Errorf("host-supplied CSP was modified: %q", got)
 	}
 }
+
+// hstsForPlainHTTP mirrors hstsFor but over a plain-HTTP target, so
+// neither the dummy TLS state httptest.NewRequest stamps on https URLs
+// nor any header can satisfy the HTTPS precondition except the header
+// under test.
+func hstsForPlainHTTP(t *testing.T, cfg SecurityHeadersConfig, xfp string) string {
+	t.Helper()
+	h := SecurityHeaders(cfg)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	req := httptest.NewRequest(http.MethodGet, "http://app.example/", nil)
+	if xfp != "" {
+		req.Header.Set("X-Forwarded-Proto", xfp)
+	}
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	return rr.Header().Get("Strict-Transport-Security")
+}
+
+// Property: X-Forwarded-Proto counts as HTTPS only on the exact value
+// "https" (any case) — every other spelling must NOT mint HSTS on a
+// plain-HTTP connection. Surfaces: multi-hop proxy chains ("https,http"),
+// scheme-with-suffix, whitespace padding, plain "http", and no header at
+// all; the exact-match happy path is already pinned by
+// TestHSTSHonorsForwardedProto / TestHSTSForwardedProtoCaseInsensitive.
+//
+// FLAG for the owner: "https,http" is what a second TLS-terminating hop
+// appends when two proxies each stamp X-Forwarded-Proto; EqualFold
+// rejects it and HSTS silently disappears behind chained proxies. That is
+// a missing-header gap, not a contradicted contract (the doc promises
+// only exact "https"), so it is pinned as-is for a ruling.
+func TestHSTSForwardedProtoExactValueOnly(t *testing.T) {
+	for _, v := range []string{"https,http", "https://", "httpsx", "https ", "http"} {
+		t.Run(v, func(t *testing.T) {
+			if got := hstsForPlainHTTP(t, SecurityHeadersConfig{}, v); got != "" {
+				t.Fatalf("X-Forwarded-Proto %q must not mint HSTS on plain HTTP, got %q", v, got)
+			}
+		})
+	}
+	if got := hstsForPlainHTTP(t, SecurityHeadersConfig{}, ""); got != "" {
+		t.Fatalf("no X-Forwarded-Proto must not mint HSTS on plain HTTP, got %q", got)
+	}
+}

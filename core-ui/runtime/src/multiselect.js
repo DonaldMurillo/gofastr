@@ -21,7 +21,7 @@
     const checked = root.querySelectorAll('.ui-multiselect__check:checked');
     chips.innerHTML = '';
     checked.forEach(function (cb) {
-      const label = root.querySelector('label[for="' + cb.id + '"] .ui-multiselect__row-label');
+      const label = root.querySelector('label[for="' + CSS.escape(cb.id) + '"] .ui-multiselect__row-label');
       const text = label ? label.textContent : cb.value;
       const chip = document.createElement('span');
       chip.className = 'ui-multiselect__chip';

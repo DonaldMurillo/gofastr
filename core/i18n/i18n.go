@@ -30,6 +30,7 @@ import (
 	"fmt"
 	"io/fs"
 	"maps"
+	"math"
 	"net/http"
 	"path"
 	"sort"
@@ -164,12 +165,22 @@ func (t *Translator) render(tag string, m Message, params map[string]any) string
 }
 
 func (t *Translator) pluralCategory(tag string, n int) string {
+	// Snapshot the registered rule under the read lock and evaluate it
+	// outside: plural rules are registered callbacks (RegisterRule),
+	// and a rule that blocks or panics must not hold every other
+	// translator call behind t.mu — the same registry rule core/mcp's
+	// listing gates learned.
 	t.mu.RLock()
-	defer t.mu.RUnlock()
+	var rule func(int) string
 	for _, c := range tagFallbacks(tag) {
 		if r, ok := t.rules[c]; ok {
-			return r(n)
+			rule = r
+			break
 		}
+	}
+	t.mu.RUnlock()
+	if rule != nil {
+		return rule(n)
 	}
 	return englishPlural(n)
 }
@@ -704,10 +715,18 @@ func extractCount(p map[string]any) (int, bool) {
 			case int64:
 				return int(x), true
 			case uint:
-				return int(x), true
-			case uint32:
+				// Same overflow check core/schema's toInt64 carries:
+				// uint is 64 bits wide on this repo's platforms, and an
+				// out-of-int-range count converts to a negative, which
+				// then picks the wrong CLDR plural category.
+				if x > math.MaxInt {
+					return 0, false
+				}
 				return int(x), true
 			case uint64:
+				if x > math.MaxInt64 {
+					return 0, false
+				}
 				return int(x), true
 			case float32:
 				return int(x), true

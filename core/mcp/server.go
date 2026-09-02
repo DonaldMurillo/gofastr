@@ -357,23 +357,74 @@ func (s *Server) ListToolsFor(ctx context.Context) ([]Tool, error) {
 // are cut from this listing across separate requests, so map iteration
 // order would reshuffle items between pages and duplicate or drop them.
 func (s *Server) listTools(ctx context.Context) []Tool {
+	// Snapshot the registry under the read lock, then evaluate the
+	// per-caller gates OUTSIDE it. Gates are app-supplied callback code
+	// (an auth check free to do I/O), and notifications.go states this
+	// package's own rule: per-caller gates "must never contend with (or
+	// nest inside) the registry lock". One slow gate used to block every
+	// registration — and Go's RWMutex is writer-preferring, so a queued
+	// RegisterTool blocked every other reader too; a gate that panicked
+	// unwound past the plain (non-deferred) RUnlock and wedged the
+	// registry permanently.
 	s.mu.RLock()
 	gate := s.callGate
-	tools := make([]Tool, 0, len(s.tools))
+	snapshot := make([]Tool, 0, len(s.tools))
 	for _, t := range s.tools {
 		if gate != nil && gate(t.Name) != nil {
 			continue // gated tool excluded from listing
 		}
+		snapshot = append(snapshot, t)
+	}
+	s.mu.RUnlock()
+	tools := make([]Tool, 0, len(snapshot))
+	for _, t := range snapshot {
 		// A tool the caller cannot invoke is not listed to them: the
 		// inputSchema is the disclosure, not the call.
-		if t.Gate != nil && t.Gate(ctx) != nil {
+		if gateRefused(t.Gate, ctx) {
 			continue
 		}
 		tools = append(tools, t)
 	}
-	s.mu.RUnlock()
 	slices.SortFunc(tools, func(a, b Tool) int { return strings.Compare(a.Name, b.Name) })
 	return tools
+}
+
+// gateRefused evaluates an app-supplied gate under a recover guard and
+// reports whether the caller is refused. A panic in gate code fails
+// CLOSED — the item is hidden from the listing — and never unwinds into
+// the transport loop (stdio has no per-request recover net). The same
+// contract checkPromptGate and gateAllows carry, shaped for the listing
+// filters.
+func gateRefused(gate func(ctx context.Context) error, ctx context.Context) (refused bool) {
+	if gate == nil {
+		return false
+	}
+	defer func() {
+		if recover() != nil {
+			refused = true
+		}
+	}()
+	return gate(ctx) != nil
+}
+
+// checkToolGate runs a tool's caller gate ([WithToolGate]) under a
+// recover guard — the prompt-side contract of checkPromptGate. A
+// panicking gate must become a well-formed internal error, never a
+// transport crash; on stdio there is no net/http per-request recover
+// net, so an escaped panic kills the whole process.
+func (s *Server) checkToolGate(ctx context.Context, t Tool) (err error) {
+	if t.Gate == nil {
+		return nil
+	}
+	defer func() {
+		if rec := recover(); rec != nil {
+			err = &RPCError{Code: ErrInternalError, Message: "internal tool error"}
+		}
+	}()
+	if gErr := t.Gate(ctx); gErr != nil {
+		return &RPCError{Code: ErrInvalidParams, Message: gErr.Error()}
+	}
+	return nil
 }
 
 // listToolsUnfiltered applies only the name-based call gate (disabled
@@ -463,10 +514,8 @@ func (s *Server) callTool(ctx context.Context, name string, params map[string]an
 
 	// Per-tool caller gate (WithToolGate). Runs before the handler; the
 	// same predicate decided whether this tool appeared in tools/list.
-	if t.Gate != nil {
-		if err := t.Gate(ctx); err != nil {
-			return nil, &RPCError{Code: ErrInvalidParams, Message: err.Error()}
-		}
+	if err := s.checkToolGate(ctx, t); err != nil {
+		return nil, err
 	}
 
 	result, err := s.invokeHandler(ctx, t, params)

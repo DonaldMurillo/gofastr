@@ -9,10 +9,13 @@
   'use strict';
 
   function pairFor(id) {
+    // The id is DOM-borne (data-fui-range-slider): escape it before it
+    // reaches a selector, a value carrying '"]' re-targets or throws.
+    const sel = CSS.escape(id);
     return {
-      min: document.querySelector('input[data-fui-range-slider="' + id + '"].ui-range-slider__input--min'),
-      max: document.querySelector('input[data-fui-range-slider="' + id + '"].ui-range-slider__input--max'),
-      out: document.querySelector('output[data-fui-range-slider-value="' + id + '"]'),
+      min: document.querySelector('input[data-fui-range-slider="' + sel + '"].ui-range-slider__input--min'),
+      max: document.querySelector('input[data-fui-range-slider="' + sel + '"].ui-range-slider__input--max'),
+      out: document.querySelector('output[data-fui-range-slider-value="' + sel + '"]'),
     };
   }
 

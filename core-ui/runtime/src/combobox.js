@@ -35,7 +35,7 @@
     if (opt) {
       opt.classList.add('is-active');
       const input = document.querySelector(
-        '[role="combobox"][aria-controls="' + lb.id + '"]'
+        '[role="combobox"][aria-controls="' + CSS.escape(lb.id) + '"]'
       );
       if (input) input.setAttribute('aria-activedescendant', opt.id || '');
     }
@@ -204,7 +204,7 @@
     const lb = opt.closest('[role="listbox"]');
     if (!lb || !lb.id) return;
     const input = document.querySelector(
-      '[role="combobox"][aria-controls="' + lb.id + '"]'
+      '[role="combobox"][aria-controls="' + CSS.escape(lb.id) + '"]'
     );
     if (!input) return;
     e.preventDefault();

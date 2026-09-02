@@ -149,9 +149,12 @@ type SidebarItem struct {
 	Active bool
 
 	// MatchPath, when set, overrides the default "current URL equals
-	// Href" check used to mark the item as active. Pass a literal
-	// prefix ("/customers") to highlight on sub-paths, or use
-	// CurrentPath in your screen and set Active manually.
+	// Href" check used to mark the item as active. Pass a section
+	// prefix ("/customers") to highlight on the section root and its
+	// sub-paths; the match is on the path-segment boundary, so
+	// "/customers" does not light up "/customers-archive". For anything
+	// non-trivial, use CurrentPath in your screen and set Active
+	// manually.
 	MatchPath string
 
 	// Open forces a group to render expanded on first paint regardless
@@ -479,7 +482,7 @@ func writeSidebarItem(b *strings.Builder, it SidebarItem, st *sidebarNavState, d
 	active := it.Active
 	if !active && st.currentPath != "" {
 		if it.MatchPath != "" {
-			active = strings.HasPrefix(st.currentPath, it.MatchPath)
+			active = pathMatches(st.currentPath, it.MatchPath)
 		} else if it.Href != "" {
 			active = st.currentPath == it.Href
 		}
@@ -654,6 +657,13 @@ type WidgetMounter interface {
 	MountWidget(def *widget.Definition)
 }
 
+// pathMatches reports whether currentPath is the prefix itself or falls
+// under it on a segment boundary. A boundary-less prefix match would
+// mark "/customers-archive" active for MatchPath "/customers".
+func pathMatches(currentPath, prefix string) bool {
+	return currentPath == prefix || strings.HasPrefix(currentPath, strings.TrimSuffix(prefix, "/")+"/")
+}
+
 // hasActiveDescendant returns true when any descendant of it matches
 // currentPath via the same rules used at the leaf level (MatchPath
 // prefix, or exact Href).
@@ -665,7 +675,7 @@ func hasActiveDescendant(it SidebarItem, currentPath string) bool {
 		if c.Active {
 			return true
 		}
-		if c.MatchPath != "" && strings.HasPrefix(currentPath, c.MatchPath) {
+		if c.MatchPath != "" && pathMatches(currentPath, c.MatchPath) {
 			return true
 		}
 		if c.Href != "" && currentPath == c.Href {

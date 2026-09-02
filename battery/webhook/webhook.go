@@ -66,6 +66,17 @@ const (
 	StatusDead    DeliveryStatus = "dead"
 )
 
+// isTerminalStatus reports whether s is a terminal delivery state. A
+// settle write carrying a NON-terminal status must never overwrite a
+// terminal row: a worker that overran its lease had the row re-claimed
+// under it (the designed crash recovery), and its late failure settle
+// must not re-queue the recovery claimant's delivered row (duplicate
+// POST) nor a dead-letter someone triaged. The store-side sibling of
+// battery/queue's fenced completions (claim_token / ownsClaim).
+func isTerminalStatus(s DeliveryStatus) bool {
+	return s == StatusSuccess || s == StatusDead
+}
+
 // Delivery is one attempt-set against a Subscriber for a single event.
 type Delivery struct {
 	ID            string
@@ -482,7 +493,21 @@ func (m *Manager) attempt(ctx context.Context, d Delivery) {
 	// failuresTotal stays <= deliveriesTotal. Success bumps nothing else.
 	m.deliveriesTotal.Add(1)
 	sub, err := m.store.GetSubscriber(ctx, d.SubscriberID)
-	if err != nil || sub == nil || !sub.Active {
+	if err != nil {
+		// Transient lookup failure (DB blip, canceled worker context
+		// on a ctx-aware store): says nothing about the subscriber.
+		// Retryable — StatusDead is reserved for an exhausted attempt
+		// budget (Options.MaxAttempts) or a definitively gone/inactive
+		// subscriber; conflating the two burned the whole retry budget
+		// on one store blip.
+		m.failuresTotal.Add(1)
+		d.Status = StatusFailed
+		d.LastError = fmt.Sprintf("subscriber lookup failed: %v", err)
+		m.schedule(&d)
+		m.saveDelivery(d)
+		return
+	}
+	if sub == nil || !sub.Active {
 		m.failuresTotal.Add(1)
 		d.Status = StatusDead
 		d.LastError = "subscriber gone or inactive"

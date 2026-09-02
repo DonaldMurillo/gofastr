@@ -534,7 +534,7 @@ func (ds *UIHost) handleEmbedExchange(w http.ResponseWriter, r *http.Request) {
 	// Cap the body: this endpoint is reachable by anything that can send a
 	// POST, and a token is a few hundred bytes.
 	var req embedExchangeRequest
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8<<10)).Decode(&req); err != nil {
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8<<10)).Decode(&req); err != nil { //gofastr:allow(GOFASTR1407) single-use embed token exchange: ambient credentials are stripped above and Exchange validates the token, so ambiguity is self-inflicted
 		embedError(w, http.StatusBadRequest, "malformed body", err)
 		return
 	}

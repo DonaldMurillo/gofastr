@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 )
 
 type ctxKey string
@@ -322,4 +324,271 @@ func listToolNames(t *testing.T, s *Server, ctx context.Context) []string {
 
 func contains(hay []string, needle string) bool {
 	return slices.Contains(hay, needle)
+}
+
+// Property: a per-caller gate is app-supplied callback code and must run
+// OUTSIDE the registry lock. listTools, handlePromptsList and
+// handleResourcesTemplatesList all evaluate the gate while holding
+// s.mu.RLock, so one slow gate (an auth check doing I/O under
+// attacker-induced load) blocks every registration — and because Go's
+// RWMutex is writer-preferring, a queued writer blocks new readers too:
+// the whole data surface stalls behind one caller's gate.
+// notifications.go states the package's own rule in the negative: fan-out
+// "must never contend with (or nest inside) the registry lock".
+func TestListingGateNeverBlocksRegistry(t *testing.T) {
+	surfaces := []struct {
+		name   string
+		method string
+		gated  func(s *Server, gate func(context.Context) error)
+		writer func(s *Server) error
+	}{
+		{
+			name:   "tools/list",
+			method: "tools/list",
+			gated:  func(s *Server, g func(context.Context) error) { mustRegisterGated(t, s, "gated", g) },
+			writer: func(s *Server) error {
+				return s.RegisterTool("writer", "d", nil, func(context.Context, map[string]any) (any, error) { return nil, nil })
+			},
+		},
+		{
+			name:   "prompts/list",
+			method: "prompts/list",
+			gated: func(s *Server, g func(context.Context) error) {
+				mustRegisterPrompt(t, s, "gated", noopPrompt, WithPromptGate(g))
+			},
+			writer: func(s *Server) error { return s.RegisterPrompt("writer", noopPrompt) },
+		},
+		{
+			name:   "resources/templates/list",
+			method: "resources/templates/list",
+			gated: func(s *Server, g func(context.Context) error) {
+				mustRegisterTemplate(t, s, "ui://gated/{id}", "gated", WithResourceTemplateGate(g))
+			},
+			writer: func(s *Server) error {
+				return s.RegisterResourceTemplate("ui://writer/{id}", "writer", "text/markdown")
+			},
+		},
+	}
+
+	for _, sf := range surfaces {
+		t.Run(sf.name, func(t *testing.T) {
+			s := NewServer()
+			entered := make(chan struct{}, 1)
+			release := make(chan struct{})
+			blocking := func(context.Context) error {
+				entered <- struct{}{}
+				<-release
+				return nil
+			}
+			sf.gated(s, blocking)
+
+			listDone := make(chan Response, 1)
+			go func() {
+				listDone <- s.HandleRequest(context.Background(), Request{JSONRPC: "2.0", ID: 1, Method: sf.method})
+			}()
+			<-entered // the listing is now inside its gate, holding the registry
+
+			regDone := make(chan error, 1)
+			go func() { regDone <- sf.writer(s) }()
+			select {
+			case err := <-regDone:
+				if err != nil {
+					t.Fatalf("unrelated registration failed: %v", err)
+				}
+				close(release)
+				<-listDone
+			case <-time.After(750 * time.Millisecond):
+				t.Errorf("SECURITY: [DoS] registration stalled behind a blocked %s gate: per-caller gates must not run under the registry lock", sf.method)
+				// Drain the writer that arrived late so no goroutine
+				// outlives the subtest mid-registration. (regDone carries
+				// exactly one send; on the success branch above the select
+				// has already consumed it, so a second receive there would
+				// deadlock a correctly behaving build.)
+				close(release)
+				<-listDone
+				if err := <-regDone; err != nil {
+					t.Fatalf("late registration failed: %v", err)
+				}
+			}
+		})
+	}
+
+	// The panic flavour of the same root: listTools releases the RLock
+	// with a plain call (no defer), so a gate that panics unwinds past
+	// the release and the registry stays read-locked forever.
+	t.Run("panicking gate wedges registry", func(t *testing.T) {
+		s := NewServer()
+		mustRegisterGated(t, s, "gated", func(context.Context) error { panic("gate boom") })
+		func() {
+			defer func() { _ = recover() }() // observe how far the panic gets
+			_ = s.HandleRequest(context.Background(), Request{JSONRPC: "2.0", ID: 1, Method: "tools/list"})
+		}()
+		regDone := make(chan error, 1)
+		go func() {
+			regDone <- s.RegisterTool("after", "d", nil, func(context.Context, map[string]any) (any, error) { return nil, nil })
+		}()
+		select {
+		case err := <-regDone:
+			if err != nil {
+				t.Fatalf("registration after a recovered gate panic failed: %v", err)
+			}
+		case <-time.After(750 * time.Millisecond):
+			t.Errorf("SECURITY: [DoS] registry wedged after a gate panic: the RLock taken around the gate was never released")
+		}
+	})
+}
+
+// Property: a panicking gate fails closed as a well-formed refusal at
+// every gate evaluation surface — the package's own stated contract
+// (checkPromptGate: "a panicking gate must become a well-formed error,
+// never a transport crash"; gateAllows: same for delivery time).
+// prompts/get is already pinned by TestPromptsGetPanicBecomesError's
+// boom_gate case; these are the surfaces it does not reach.
+func TestPanickingGateFailsClosedEverywhere(t *testing.T) {
+	t.Run("tools/call", func(t *testing.T) {
+		s := NewServer()
+		mustRegisterGated(t, s, "t", func(context.Context) error { panic("gate boom") })
+		panicked := func() (p bool) {
+			defer func() {
+				if recover() != nil {
+					p = true
+				}
+			}()
+			params, _ := json.Marshal(map[string]any{"name": "t"})
+			_ = s.HandleRequest(context.Background(), Request{JSONRPC: "2.0", ID: 1, Method: "tools/call", Params: params})
+			return false
+		}()
+		if panicked {
+			t.Errorf("SECURITY: [robustness] a panicking tool gate escaped tools/call: callTool runs t.Gate outside any recover guard (invokeHandler recovers only the handler) — on stdio this crashes the process")
+		}
+	})
+	t.Run("resources/read", func(t *testing.T) {
+		s := NewServer()
+		ran := false
+		if err := s.RegisterResource("gate://x", "X", "text/plain", func(context.Context) (ResourceContents, error) {
+			ran = true
+			return ResourceContents{Text: "secret"}, nil
+		}, WithResourceGate(func(context.Context) error { panic("gate boom") })); err != nil {
+			t.Fatal(err)
+		}
+		p, _ := json.Marshal(map[string]any{"uri": "gate://x"})
+		resp := s.HandleRequest(context.Background(), Request{JSONRPC: "2.0", ID: 1, Method: "resources/read", Params: p})
+		if resp.Error == nil || resp.Error.Code != ErrInternalError {
+			t.Fatalf("panicking resource gate must become an internal-error response, got %+v", resp)
+		}
+		if ran {
+			t.Error("contents func ran behind a panicking gate")
+		}
+	})
+	t.Run("notification delivery", func(t *testing.T) {
+		s := NewServer()
+		s.SetGate(func(context.Context) error { panic("gate boom") })
+		sub := s.addSSESubscriber(context.Background())
+		defer s.removeSSESubscriber(sub)
+		panicked, ok := func() (panicked, ok bool) {
+			defer func() {
+				if recover() != nil {
+					panicked = true
+				}
+			}()
+			return false, s.subscriberMayReceive(sub, sseNotification{method: "notifications/tools/list_changed"})
+		}()
+		if panicked {
+			t.Error("SECURITY: a panicking server gate must be recovered at delivery time (gateAllows), not unwind the stream loop")
+		}
+		if ok {
+			t.Error("a panicking gate must fail closed: the notification must be refused")
+		}
+	})
+}
+
+// Property: subscriber gates are re-evaluated at DELIVERY time against
+// the live predicate, never snapshotted at subscribe time — a principal
+// revoked mid-stream stops receiving immediately (sseGetHandler's own
+// comment: "a long-lived stream must reflect gate decisions that change
+// mid-connection"). The existing gate tests only exercise gates that
+// refuse from the start.
+func TestGateRevokedMidStreamStopsDelivery(t *testing.T) {
+	var revoked atomic.Bool
+	s := NewServer()
+	s.SetGate(func(ctx context.Context) error {
+		if revoked.Load() {
+			return errors.New("revoked mid-stream")
+		}
+		return requireUser(ctx)
+	})
+	ts := newNotificationServer(t, s)
+	events := openStream(t, ts, true)
+
+	// Before revocation the authed stream receives.
+	s.NotifyToolsListChanged()
+	ev := awaitSSE(t, events, "list_changed before revocation")
+	if ev.event != "message" {
+		t.Fatalf("event = %q, want message", ev.event)
+	}
+
+	// After revocation the same stream goes silent.
+	revoked.Store(true)
+	s.NotifyToolsListChanged()
+	expectNoSSE(t, events, "notification after mid-stream revocation")
+
+	// Item-gate surface: a resources/updated notice gated by the
+	// resource's own gate flips from deny to allow mid-stream (and back).
+	revoked.Store(false)
+	var allowUpdates atomic.Bool
+	if err := s.RegisterResource("secret://flip", "Flip", "text/csv",
+		func(context.Context) (ResourceContents, error) { return ResourceContents{Text: "x"}, nil },
+		WithResourceGate(func(context.Context) error {
+			if !allowUpdates.Load() {
+				return errors.New("updates denied")
+			}
+			return nil
+		})); err != nil {
+		t.Fatal(err)
+	}
+	// RegisterResource fires a (gate-less, by design) list_changed; drain
+	// it so the item-gate assertions below see only resources/updated.
+	if ev := awaitSSE(t, events, "list_changed from RegisterResource"); ev.event != "message" {
+		t.Fatalf("event = %q, want message", ev.event)
+	}
+	postMCP(t, ts, true, `{"jsonrpc":"2.0","id":2,"method":"resources/subscribe","params":{"uri":"secret://flip"}}`)
+	s.NotifyResourceUpdated("secret://flip")
+	expectNoSSE(t, events, "updated while the item gate denies")
+	allowUpdates.Store(true)
+	s.NotifyResourceUpdated("secret://flip")
+	method, uri := decodeNotification(t, awaitSSE(t, events, "updated after the item gate flips"))
+	if method != "notifications/resources/updated" || uri != "secret://flip" {
+		t.Fatalf("updated notification = %s %q", method, uri)
+	}
+}
+
+// Property: the server-wide gate covers every resources method, not just
+// the tools and prompts surfaces the earlier tests pinned. A refused
+// caller must not list, read, or arm subscriptions.
+func TestServerGateClosesResourcesSurface(t *testing.T) {
+	s := NewServer()
+	if err := staticResource(s, "ui://pub", "Pub", "text/html", "x"); err != nil {
+		t.Fatal(err)
+	}
+	s.SetGate(requireUser)
+
+	cases := []struct {
+		method string
+		params string
+	}{
+		{"resources/list", ""},
+		{"resources/read", `{"uri":"ui://pub"}`},
+		{"resources/subscribe", `{"uri":"ui://pub"}`},
+		{"resources/unsubscribe", `{"uri":"ui://pub"}`},
+	}
+	for _, c := range cases {
+		req := Request{JSONRPC: "2.0", ID: 1, Method: c.method}
+		if c.params != "" {
+			req.Params = json.RawMessage(c.params)
+		}
+		resp := s.HandleRequest(context.Background(), req)
+		if resp.Error == nil {
+			t.Errorf("SECURITY: [authz] %s answered a server-gate-refused caller: %+v", c.method, resp)
+		}
+	}
 }

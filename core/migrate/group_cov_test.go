@@ -27,9 +27,9 @@ import (
 // group_name), in that order.
 func expectCreateTableGA(mock sqlmock.Sqlmock) {
 	mock.ExpectExec("CREATE TABLE IF NOT EXISTS").WillReturnResult(sqlmock.NewResult(0, 0))
-	mock.ExpectExec("ADD COLUMN IF NOT EXISTS checksum").WillReturnResult(sqlmock.NewResult(0, 0))
-	mock.ExpectExec("ADD COLUMN IF NOT EXISTS dirty").WillReturnResult(sqlmock.NewResult(0, 0))
-	mock.ExpectExec("ADD COLUMN IF NOT EXISTS group_name").WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectExec("ADD COLUMN IF NOT EXISTS \"checksum\"").WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectExec("ADD COLUMN IF NOT EXISTS \"dirty\"").WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectExec("ADD COLUMN IF NOT EXISTS \"group_name\"").WillReturnResult(sqlmock.NewResult(0, 0))
 }
 
 // expectPKComposite makes ensureCompositeKey a no-op: primaryKeyColumns returns
@@ -409,9 +409,9 @@ func TestPrimaryKeyColumns_PGErrors(t *testing.T) {
 
 func expectCreateTableGASQLite(mock sqlmock.Sqlmock) {
 	mock.ExpectExec("CREATE TABLE IF NOT EXISTS").WillReturnResult(sqlmock.NewResult(0, 0))
-	mock.ExpectExec("ADD COLUMN checksum").WillReturnResult(sqlmock.NewResult(0, 0))
-	mock.ExpectExec("ADD COLUMN dirty").WillReturnResult(sqlmock.NewResult(0, 0))
-	mock.ExpectExec("ADD COLUMN group_name").WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectExec("ADD COLUMN \"checksum\"").WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectExec("ADD COLUMN \"dirty\"").WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectExec("ADD COLUMN \"group_name\"").WillReturnResult(sqlmock.NewResult(0, 0))
 }
 
 // gaSQLiteRebuildPreamble sets up through primaryKeyColumns returning a legacy
@@ -511,8 +511,8 @@ func TestHasGroupColumn_SQLiteBranch(t *testing.T) {
 		m, mock := newTestMigratorWithDialect(t, DialectSQLite)
 		ctx := context.Background()
 		mock.ExpectExec("CREATE TABLE IF NOT EXISTS").WillReturnResult(sqlmock.NewResult(0, 0))
-		mock.ExpectExec("ADD COLUMN checksum").WillReturnResult(sqlmock.NewResult(0, 0))
-		mock.ExpectExec("ADD COLUMN dirty").WillReturnResult(sqlmock.NewResult(0, 0))
+		mock.ExpectExec("ADD COLUMN \"checksum\"").WillReturnResult(sqlmock.NewResult(0, 0))
+		mock.ExpectExec("ADD COLUMN \"dirty\"").WillReturnResult(sqlmock.NewResult(0, 0))
 		mock.ExpectQuery("pragma_table_info").
 			WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
 		mock.ExpectQuery("SELECT version, name, applied_at, checksum, dirty FROM").
@@ -534,8 +534,8 @@ func TestHasGroupColumn_SQLiteBranch(t *testing.T) {
 		m, mock := newTestMigratorWithDialect(t, DialectSQLite)
 		ctx := context.Background()
 		mock.ExpectExec("CREATE TABLE IF NOT EXISTS").WillReturnResult(sqlmock.NewResult(0, 0))
-		mock.ExpectExec("ADD COLUMN checksum").WillReturnResult(sqlmock.NewResult(0, 0))
-		mock.ExpectExec("ADD COLUMN dirty").WillReturnResult(sqlmock.NewResult(0, 0))
+		mock.ExpectExec("ADD COLUMN \"checksum\"").WillReturnResult(sqlmock.NewResult(0, 0))
+		mock.ExpectExec("ADD COLUMN \"dirty\"").WillReturnResult(sqlmock.NewResult(0, 0))
 		mock.ExpectQuery("pragma_table_info").
 			WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow("not-a-number"))
 		if _, err := m.Status(ctx); err == nil {
@@ -621,8 +621,8 @@ func TestDown_Status_AppliedVersionsErrors(t *testing.T) {
 	{
 		m, mock := newTestMigrator(t)
 		mock.ExpectExec("CREATE TABLE IF NOT EXISTS").WillReturnResult(sqlmock.NewResult(0, 0))
-		mock.ExpectExec("ADD COLUMN IF NOT EXISTS checksum").WillReturnResult(sqlmock.NewResult(0, 0))
-		mock.ExpectExec("ADD COLUMN IF NOT EXISTS dirty").WillReturnResult(sqlmock.NewResult(0, 0))
+		mock.ExpectExec("ADD COLUMN IF NOT EXISTS \"checksum\"").WillReturnResult(sqlmock.NewResult(0, 0))
+		mock.ExpectExec("ADD COLUMN IF NOT EXISTS \"dirty\"").WillReturnResult(sqlmock.NewResult(0, 0))
 		mock.ExpectQuery("pg_attribute").
 			WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
 		mock.ExpectQuery("SELECT version, name, applied_at, checksum, dirty FROM").
@@ -732,8 +732,8 @@ func TestStatus_GroupAwareRead(t *testing.T) {
 	// real shape: here the disk HAS a group_name column, so the group-aware
 	// SELECT runs and a knowledge row is reported with its real group.
 	mock.ExpectExec("CREATE TABLE IF NOT EXISTS").WillReturnResult(sqlmock.NewResult(0, 0))
-	mock.ExpectExec("ADD COLUMN IF NOT EXISTS checksum").WillReturnResult(sqlmock.NewResult(0, 0))
-	mock.ExpectExec("ADD COLUMN IF NOT EXISTS dirty").WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectExec("ADD COLUMN IF NOT EXISTS \"checksum\"").WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectExec("ADD COLUMN IF NOT EXISTS \"dirty\"").WillReturnResult(sqlmock.NewResult(0, 0))
 	mock.ExpectQuery("pg_attribute").
 		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
 	mock.ExpectQuery("checksum, dirty, group_name").

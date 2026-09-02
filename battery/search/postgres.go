@@ -162,9 +162,17 @@ func (p *PostgresSearch) Index(ctx context.Context, doc Document) error {
 	var tsv strings.Builder
 	fmt.Fprintf(&tsv, "setweight(to_tsvector($%d::regconfig, $%d), 'A')", langIdx, textIdx)
 	for _, key := range p.weightedFieldOrder {
-		val, ok := doc.Fields[key].(string)
-		if !ok {
+		v, present := doc.Fields[key]
+		if !present {
 			continue
+		}
+		val, ok := v.(string)
+		if !ok {
+			// A configured weighted field present with a non-string
+			// value is a data mismatch, not an absent field: silently
+			// skipping it leaves the value unsearchable with no signal
+			// to the indexer (the laxcoerce shape).
+			return fmt.Errorf("search: index %q: weighted field %q must be a string, got %T", doc.ID, key, v)
 		}
 		args = append(args, val)
 		fmt.Fprintf(&tsv, " || setweight(to_tsvector($%d::regconfig, $%d), '%c')",

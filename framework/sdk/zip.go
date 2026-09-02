@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"fmt"
+	"path"
 	"sort"
 	"strings"
 )
@@ -17,6 +18,14 @@ import (
 // placed under (e.g. "myapp-sdk" → "myapp-sdk/go.mod"), so extracting the
 // archive never splats files into the current directory.
 func PackZip(prefix string, files []File) ([]byte, error) {
+	if prefix != "" {
+		clean := path.Clean(prefix)
+		if strings.HasPrefix(prefix, "/") || clean == "." || clean == ".." ||
+			strings.HasPrefix(clean, "../") || strings.Contains(prefix, "..") {
+			return nil, fmt.Errorf("sdk: unsafe zip prefix %q", prefix)
+		}
+		prefix = clean
+	}
 	sorted := make([]File, len(files))
 	copy(sorted, files)
 	sort.Slice(sorted, func(i, j int) bool { return sorted[i].Path < sorted[j].Path })

@@ -412,6 +412,8 @@ func buildSDKSpec(decls []framework.EntityDeclaration, opts *sdkOptions) (sdkSpe
 		}
 		return false
 	}
+	structOwners := map[string]string{} // derived Go type name → declaring entity
+	propOwners := map[string]string{}   // derived client.js property → declaring entity
 	for _, decl := range decls {
 		if len(opts.only) > 0 && !matchesAny(decl, opts.only) {
 			continue
@@ -419,8 +421,40 @@ func buildSDKSpec(decls []framework.EntityDeclaration, opts *sdkOptions) (sdkSpe
 		if matchesAny(decl, opts.exclude) {
 			continue
 		}
+		ent := buildEntityModel(decl, cliVerbs)
+		// `generate sdk` reads the same hand-written entities/*.go the CLI
+		// generator reads (packReadEntities), so it inherits the same trust
+		// boundary buildCLIEntity defends: the derived struct name lands in
+		// identifier position (`type %s struct`, `func (c *Client)
+		// List%s`), and the table lands raw inside "/%s" path literals in
+		// renderClientEntity. A table like x"+PWN()+"y parses as Go, so the
+		// format.Source gate renderSDKGoFiles leans on waves it through —
+		// the refusal belongs here, before any target renders.
+		if !isGoIdentifier(ent.Struct) {
+			return sdkSpec{}, fmt.Errorf("entity %q does not produce a valid Go identifier (%q); it is emitted as the SDK's generated type names. Rename it to letters, digits and underscores starting with a letter", decl.Name, ent.Struct)
+		}
+		if strings.ContainsFunc(ent.Table, func(r rune) bool { return r == '"' || r == '\\' || r < 0x20 || r == 0x7f }) {
+			return sdkSpec{}, fmt.Errorf("entity %q table %q contains a character that cannot survive the Go string literals the SDK emits it into. Rename the table", decl.Name, ent.Table)
+		}
+		// Derived names must be unique per target. jsResourceProp is
+		// toCamelJSON(table), which collapses blog_posts / blog-posts /
+		// "blog posts" onto blogPosts: two such entities emit `export const
+		// blogPostsFields` twice (a SyntaxError in the client.js sdkdocs
+		// serves to browsers) and a second `this["blogPosts"]` binding that
+		// silently re-points the property at the other table. The Go side
+		// has the same disease past its own gate: duplicate `type BlogPosts
+		// struct` parses and only fails in the consumer's build. The
+		// file-set collision guard cannot see inside one file.
+		if prev, dup := propOwners[jsResourceProp(ent)]; dup {
+			return sdkSpec{}, fmt.Errorf("entities %q and %q both derive the client property %s (their tables collapse under camelCase): client.js would declare it twice and the second binding would win. Rename one table", prev, decl.Name, jsResourceProp(ent))
+		}
+		if prev, dup := structOwners[ent.Struct]; dup {
+			return sdkSpec{}, fmt.Errorf("entities %q and %q both derive the Go type %s: client.go would declare it twice and only fail when the consumer builds the SDK. Rename one entity", prev, decl.Name, ent.Struct)
+		}
+		propOwners[jsResourceProp(ent)] = decl.Name
+		structOwners[ent.Struct] = decl.Name
 		spec.Decls = append(spec.Decls, decl)
-		spec.Entities = append(spec.Entities, buildEntityModel(decl, cliVerbs))
+		spec.Entities = append(spec.Entities, ent)
 	}
 	if len(spec.Decls) == 0 {
 		return sdkSpec{}, fmt.Errorf("selection matches no entities: nothing to generate")

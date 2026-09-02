@@ -439,6 +439,12 @@ func WithNoLiveChannel() Option {
 
 func WithFavicon(href string) Option {
 	return func(ds *UIHost) {
+		// Same head-URL allow-list as every URL-typed head emitter: the
+		// href is reflected into every page's <head>, a javascript:/data:
+		// value there is executed by anything that follows the icon URL.
+		if !isSafeHeadURL(href) {
+			return
+		}
 		ds.headTags = append(ds.headTags, fmt.Sprintf(`<link rel="icon" href="%s">`, stdhtml.EscapeString(href)))
 		ds.faviconURL = href
 	}
@@ -531,9 +537,14 @@ func WithCanonicalURL(url string) Option {
 
 // WithPreconnect adds <link rel="preconnect"> tags for the given origins.
 // Use for early DNS/TCP/TLS connections to external resources (fonts, CDNs).
+// Origins failing the head-URL allow-list are dropped, matching every other
+// URL-typed head emitter.
 func WithPreconnect(origins ...string) Option {
 	return func(ds *UIHost) {
 		for _, o := range origins {
+			if !isSafeHeadURL(o) {
+				continue
+			}
 			ds.headTags = append(ds.headTags, fmt.Sprintf(`<link rel="preconnect" href="%s">`, stdhtml.EscapeString(o)))
 		}
 	}
@@ -1134,7 +1145,11 @@ func setSessionCookie(w http.ResponseWriter, r *http.Request, id string) {
 	if secure && !requestIsSecure(r) {
 		plaintextRemoteWarnOnce.Do(func() {
 			slog.Default().Warn("uihost: session cookie sent Secure over a plaintext non-loopback origin: browsers will drop it and every session check will 401",
-				"host", r.Host,
+				// r.Host is request-borne: scrub control bytes the way
+				// every other log sink does (markdownAlternate's C0
+				// filter, battery/log's scrubControlBytes), so a forged
+				// Host cannot paint a forged line into the tail.
+				"host", scrubCtl(r.Host),
 				"fix", "serve over TLS (or a reverse proxy setting X-Forwarded-Proto), or use http://localhost for development")
 		})
 	}
@@ -1146,6 +1161,30 @@ func setSessionCookie(w http.ResponseWriter, r *http.Request, id string) {
 		Secure:   secure,
 		SameSite: http.SameSiteStrictMode,
 	})
+}
+
+// scrubCtl percent-encodes C0/DEL control bytes in a request-derived
+// log field. Local spelling of core/middleware and battery/log's
+// scrubControlBytes: both are package-private, and a copy of a
+// six-line filter is cheaper than an export cycle. Tab and printable
+// bytes pass through untouched.
+func scrubCtl(s string) string {
+	for i := range len(s) {
+		if c := s[i]; c < 0x20 && c != '\t' || c == 0x7f {
+			var b strings.Builder
+			b.Grow(len(s))
+			for j := range len(s) {
+				d := s[j]
+				if d < 0x20 && d != '\t' || d == 0x7f {
+					fmt.Fprintf(&b, "%%%02x", d)
+					continue
+				}
+				b.WriteByte(d)
+			}
+			return b.String()
+		}
+	}
+	return s
 }
 
 // readSessionCookie returns the session id from the cookie that matches
@@ -2373,7 +2412,7 @@ func rejectCrossOrigin(w http.ResponseWriter, r *http.Request) bool {
 // returns false. Used by mutating /__gofastr/* endpoints.
 func decodeBounded(w http.ResponseWriter, r *http.Request, dst any) bool {
 	r.Body = http.MaxBytesReader(w, r.Body, maxMutatingBodyBytes)
-	if err := json.NewDecoder(r.Body).Decode(dst); err != nil {
+	if err := json.NewDecoder(r.Body).Decode(dst); err != nil { //gofastr:allow(GOFASTR1407) island RPC action payloads behind session auth and the CSRF middleware: no credential resolution
 		if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
 			http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
 			return false
@@ -3594,16 +3633,18 @@ func stripInlineScripts(s string) string {
 	return out
 }
 
-// isSafeLinkTag reports whether a <link …> tag's href and rel are safe
-// to inject into the head from a caller-supplied head HTML escape
-// hatch. The framework's own per-render <link> emissions never go
-// through this path; they're constructed directly.
 func isSafeLinkTag(tag string) bool {
-	low := strings.ToLower(tag)
-	// Reject preload/modulepreload/prefetch: they pull arbitrary
-	// resources into the page on the framework's behalf.
-	for _, rel := range []string{`rel="modulepreload"`, `rel='modulepreload'`, `rel=modulepreload`, `rel="prefetch"`, `rel='prefetch'`, `rel=prefetch`, `rel="preload"`, `rel='preload'`, `rel=preload`} {
-		if strings.Contains(low, rel) {
+	// Decide on the PARSED rel, not on literal spellings: the HTML
+	// parser tolerates whitespace around '=', trims the attribute
+	// value, and treats rel as a space-separated token list, so
+	// `<link rel = " preload ">` and rel="modulepreload preload" are
+	// preload links a substring blocklist never sees.
+	rel := extractAttrValue(tag, "rel")
+	for _, tok := range strings.Fields(strings.ToLower(rel)) {
+		switch tok {
+		case "preload", "modulepreload", "prefetch":
+			// They pull arbitrary resources into the page on the
+			// framework's behalf.
 			return false
 		}
 	}
@@ -3619,30 +3660,37 @@ func isSafeLinkTag(tag string) bool {
 // extractAttrValue is a permissive attribute-value extractor for the
 // scrub path. Not for production rendering, only for "is this href
 // safe enough to keep" decisions on caller-supplied HTML fragments.
+//
+// It decides the way the HTML parser does: the attribute name matches
+// case-insensitively as its own word, whitespace is allowed around '=',
+// and a quoted value keeps its interior verbatim (the parser trims it).
+// attrValueRegexps caches one compiled matcher per attribute name:
+// extractAttrValue runs on every caller-supplied head tag at render time,
+// and the attribute set is tiny and fixed (rel, href, as).
+var attrValueRegexps sync.Map
+
+func attrValueRegexp(attr string) *regexp.Regexp {
+	if re, ok := attrValueRegexps.Load(attr); ok {
+		return re.(*regexp.Regexp)
+	}
+	re := regexp.MustCompile(`(?is)["'/\s]` + regexp.QuoteMeta(attr) + `\s*=\s*("([^"]*)"|'([^']*)'|[^\s/>]*)`)
+	attrValueRegexps.Store(attr, re)
+	return re
+}
+
 func extractAttrValue(tag, attr string) string {
-	low := strings.ToLower(tag)
-	key := strings.ToLower(attr) + "="
-	i := strings.Index(low, key)
-	if i < 0 {
+	m := attrValueRegexp(attr).FindStringSubmatch(tag)
+	if m == nil {
 		return ""
 	}
-	rest := tag[i+len(key):]
-	if rest == "" {
-		return ""
+	switch {
+	case strings.HasPrefix(m[1], `"`):
+		return m[2]
+	case strings.HasPrefix(m[1], `'`):
+		return m[3]
+	default:
+		return m[1]
 	}
-	quote := rest[0]
-	if quote == '"' || quote == '\'' {
-		end := strings.IndexByte(rest[1:], quote)
-		if end < 0 {
-			return ""
-		}
-		return rest[1 : 1+end]
-	}
-	end := strings.IndexAny(rest, " \t/>")
-	if end < 0 {
-		end = len(rest)
-	}
-	return rest[:end]
 }
 
 // isSafeHeadURL is the allow-list for URLs that may appear in caller-

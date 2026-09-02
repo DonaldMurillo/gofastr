@@ -457,3 +457,166 @@ func TestParamsKeepsDeclaredKeys(t *testing.T) {
 		}
 	}
 }
+
+// --- sanitizer truncation semantics ----------------------------------------
+//
+// Property: SanitizePathParam TRUNCATES at the first forbidden byte (keeps
+// the clean prefix) rather than rejecting or mangling the whole value, and
+// leaves ordinary byte sequences that merely LOOK dangerous ("...", "a..b")
+// alone. The scrub set is exactly {CR, LF, NUL, "/" when single-segment,
+// ".." when segment-bounded}. This is the exported contract Bind and every
+// hand-rolled consumer build on; the siblings above assert only that a bad
+// byte is absent from the output, not what survives around it.
+func TestSanitizeTruncatesAtFirstBadByte(t *testing.T) {
+	cases := []struct {
+		in       string
+		catchAll bool
+		want     string
+	}{
+		{"ok", false, "ok"},                // happy path
+		{"a/evil", false, "a"},             // %2F smuggled separator
+		{"a/../../etc/passwd", false, "a"}, // ".." plus separator, single-segment
+		{"../etc/passwd", true, ""},        // leading ".." in a catch-all
+		{"a/../../etc/passwd", true, "a/"}, // interior ".." in a catch-all
+		{"a\nb", true, "a"},                // CR/LF/NUL scrubbed in BOTH forms
+		{"a\rb", false, "a"},
+		{"a\x00b", false, "a"},
+		{"...", true, "..."},               // ordinary: three dots is not a segment
+		{"a..b", false, "a..b"},            // ordinary: unbounded interior dots
+		{"docs/a/b/c", true, "docs/a/b/c"}, // legitimate multi-segment catch-all
+	}
+	for _, c := range cases {
+		if got := SanitizePathParam(c.in, c.catchAll); got != c.want {
+			t.Errorf("SanitizePathParam(%q, catchAll=%v) = %q, want %q", c.in, c.catchAll, got, c.want)
+		}
+	}
+}
+
+// TestRouterEmptySegmentShapes pins that an empty path segment can never
+// masquerade as a parameter value. Property: {name} requires a non-empty
+// segment, so "/users/" and "/users" 404 without dispatching the handler,
+// while a catch-all that legitimately matches zero segments ("/files/")
+// exposes its declared key with the empty string — presence means declared,
+// and the value is what the caller must check (see TestParamsKeepsDeclaredKeys).
+func TestRouterEmptySegmentShapes(t *testing.T) {
+	r := New()
+	var itemCalls, allCalls int
+	var got map[string]string
+	r.Get("/users/{id}", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		itemCalls++
+	}))
+	r.Get("/files/{rest...}", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		allCalls++
+		got = Params(req)
+	}))
+
+	for _, u := range []string{"/users/", "/users"} {
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, u, nil))
+		if w.Code != http.StatusNotFound || itemCalls != 0 {
+			t.Errorf("SECURITY: [router] GET %s -> %d (handler called %d times), want 404 with no dispatch. "+
+				"Attack: an empty-segment match would hand the item handler an empty {id} it may not reject.", u, w.Code, itemCalls)
+		}
+	}
+
+	got = nil
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/files/", nil))
+	if w.Code != http.StatusOK || allCalls != 1 {
+		t.Fatalf("[router] GET /files/ -> %d (calls=%d), want 200/1", w.Code, allCalls)
+	}
+	if v, ok := got["rest"]; !ok || v != "" {
+		t.Errorf("[router] catch-all on /files/ must expose the declared key with an empty value, got %#v", got)
+	}
+}
+
+// TestRouterUnregisteredMethodGets405 pins that a request whose method is
+// not registered never dispatches the handler, and that the Allow header
+// advertises EXACTLY the registered methods. Property: the router must not
+// synthesize per-method access — no implicit OPTIONS handling (which would
+// bypass per-method route gates), no extra verbs in Allow (which would
+// enumerate a disabled surface). Authorization is per-method; every method
+// not in the table must land on the 405 path.
+//
+// Note: HEAD matching a "GET /x" pattern is net/http's documented ServeMux
+// behavior, asserted here so a future swap of the underlying mux can't
+// silently change method semantics either.
+func TestRouterUnregisteredMethodGets405(t *testing.T) {
+	r := New()
+	var getCalls int
+	r.Get("/thing/{id}", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		getCalls++
+	}))
+	r.Put("/thing/{id}", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {}))
+
+	// HEAD is implied by GET per net/http; it must dispatch like a GET.
+	getCalls = 0
+	r.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodHead, "/thing/1", nil))
+	if getCalls != 1 {
+		t.Errorf("[router] HEAD on a GET pattern dispatched %d times, want 1 (net/http GET-implies-HEAD)", getCalls)
+	}
+
+	for _, m := range []string{http.MethodPost, http.MethodPatch, http.MethodOptions, "PROPFIND"} {
+		getCalls = 0
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, httptest.NewRequest(m, "/thing/1", nil))
+		if w.Code != http.StatusMethodNotAllowed || getCalls != 0 {
+			t.Errorf("SECURITY: [router] %s /thing/{id} -> %d (GET handler ran %d times), want 405 with no dispatch. "+
+				"Attack: an unregistered method reaching a handler bypasses that method's route gate.", m, w.Code, getCalls)
+		}
+		if allow := w.Header().Get("Allow"); allow != "GET, PUT" {
+			t.Errorf("[router] %s Allow = %q, want exactly \"GET, PUT\" (no synthesized verbs)", m, allow)
+		}
+	}
+}
+
+// TestParamUnknownNameFailsEmpty pins the fail-closed lookup surfaces:
+// asking Param for a name the pattern does not declare yields "" (never a
+// neighboring parameter's value), and Params on a request the router did
+// not match (empty r.Pattern — e.g. inside a NotFound handler) yields nil
+// rather than an empty-but-present map.
+func TestParamUnknownNameFailsEmpty(t *testing.T) {
+	r := New()
+	var req *http.Request
+	r.Get("/users/{id}", http.HandlerFunc(func(_ http.ResponseWriter, rq *http.Request) {
+		req = rq
+	}))
+	r.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/users/42", nil))
+	if req == nil {
+		t.Fatal("handler did not run")
+	}
+	if got := Param(req, "other"); got != "" {
+		t.Errorf("Param(undeclared name) = %q, want \"\"", got)
+	}
+
+	miss := httptest.NewRequest(http.MethodGet, "/nowhere", nil)
+	if p := Params(miss); p != nil {
+		t.Errorf("Params(unmatched request) = %#v, want nil", p)
+	}
+	if got := Param(miss, "id"); got != "" {
+		t.Errorf("Param(unmatched request) = %q, want \"\"", got)
+	}
+}
+
+// TestParamsSkipsEndAnchorToken pins the "{$}" branch of Params: the
+// end-of-path anchor in a pattern like "/exact/{id}/{$}" is not a
+// parameter. A stray "{$}" or "$" key in the map would collide with
+// caller namespaces and, worse, suggest a value the caller never declared.
+func TestParamsSkipsEndAnchorToken(t *testing.T) {
+	r := New()
+	var got map[string]string
+	r.Get("/exact/{id}/{$}", http.HandlerFunc(func(_ http.ResponseWriter, req *http.Request) {
+		got = Params(req)
+	}))
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/exact/7/", nil))
+	if w.Code != http.StatusOK || got == nil {
+		t.Fatalf("GET /exact/7/ -> %d, params=%#v", w.Code, got)
+	}
+	if v, ok := got["$"]; ok {
+		t.Errorf("Params exposed the end-anchor as a parameter: $=%q", v)
+	}
+	if len(got) != 1 || got["id"] != "7" {
+		t.Errorf("Params = %#v, want exactly {id:7}", got)
+	}
+}

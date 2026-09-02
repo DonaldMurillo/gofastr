@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"math"
 	"strings"
 	"time"
 
@@ -271,6 +272,14 @@ func (p *Plugin) clampLimit(n int) int {
 func intParam(params map[string]any, name string, def int) int {
 	switch v := params[name].(type) {
 	case float64:
+		// Bound before converting: int(1e308) saturates on arm64 but
+		// wraps negative on amd64, and clampLimit only caps from above,
+		// so an unbounded conversion reached make(..., limit) with a
+		// negative cap (probe TestMCPArgsAdversarialNoPanic, red on
+		// amd64 only). Anything past MaxInt32 is "as many as allowed".
+		if v > math.MaxInt32 {
+			return math.MaxInt32
+		}
 		if v > 0 {
 			return int(v)
 		}
@@ -302,8 +311,20 @@ func boolParam(params map[string]any, name string, def bool) bool {
 // caller surfaces it back to the agent instead of silently filtering
 // nothing.
 func timeParam(params map[string]any, name string) (time.Time, bool, error) {
-	s, ok := params[name].(string)
-	if !ok || s == "" {
+	v, present := params[name]
+	if !present {
+		return time.Time{}, false, nil
+	}
+	s, ok := v.(string)
+	if !ok {
+		// The tool schema declares this field an RFC3339 string; a
+		// present value of another JSON type (e.g. a numeric Unix
+		// timestamp) is malformed, not absent. Treating it as absent
+		// makes the agent believe it narrowed the window while the
+		// response quietly contains everything.
+		return time.Time{}, false, fmt.Errorf("%s: want RFC3339 timestamp string, got %T", name, v)
+	}
+	if s == "" {
 		return time.Time{}, false, nil
 	}
 	t, err := time.Parse(time.RFC3339Nano, s)

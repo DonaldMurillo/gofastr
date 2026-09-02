@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 	"sync"
 
@@ -186,7 +187,14 @@ func (c *SimpleCostTracker) SpentUSD(s ids.SessionID) float64 {
 
 // Add accumulates additional spend for a session. Typically wired by
 // subscribing to the bus and calling Add on every CostIncremented.
+//
+// The total is monotone: a non-positive or NaN increment is ignored.
+// Usage figures arrive from the provider's wire, and a negative or
+// absurd report must not un-spend real dollars under a budget cap.
 func (c *SimpleCostTracker) Add(s ids.SessionID, usd float64) {
+	if !(usd > 0) || math.IsInf(usd, 0) {
+		return
+	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.totals[s] += usd

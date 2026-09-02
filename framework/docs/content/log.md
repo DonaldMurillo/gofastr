@@ -78,7 +78,7 @@ running app live:
 | Tool            | Use                                                                                                  |
 |-----------------|------------------------------------------------------------------------------------------------------|
 | `log_recent`    | Last N entries from the ring, optional level filter.                                                 |
-| `log_filter`    | Match by `msg`/`path`/`request_id`/`since_ts`/`until_ts`/`level`. `historical=true` tails the file sink for entries evicted from the ring. |
+| `log_filter`    | Match by `msg`/`path`/`request_id`/`since_ts`/`until_ts`/`level` (`since_ts`/`until_ts` are RFC 3339 strings; another JSON type is an error, never an ignored filter). `historical=true` tails the file sink for entries evicted from the ring. |
 | `log_metrics`   | Current counter snapshot, the same data as `Plugin.Metrics()`.                                          |
 | `log_set_level` | Mutate the runtime log level (e.g. flip to DEBUG for an investigation, back to INFO afterward). Only registered when `AllowMCPMutation` is set. |
 

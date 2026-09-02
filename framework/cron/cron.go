@@ -154,9 +154,7 @@ func (s *Scheduler) runTick(ctx context.Context, now time.Time) bool {
 	}
 	held, release, err := s.leader.Acquire(ctx)
 	if err != nil {
-		if s.OnError != nil {
-			s.OnError("(leader-election)", err)
-		}
+		s.reportError("(leader-election)", err)
 		return false
 	}
 	if !held {
@@ -241,15 +239,23 @@ func (s *Scheduler) StopContext(ctx context.Context) error {
 // (Register during tick) are safe because the mutex is held only for the
 // read, new jobs appear on the next tick.
 func (s *Scheduler) RunOnce(ctx context.Context, now time.Time) {
+	// Snapshot the firing jobs under the read lock, then evaluate the
+	// gate OUTSIDE it. Gates are registered callbacks (SetGate) free to
+	// do I/O, and a blocking gate holding s.mu stalls Register,
+	// NextRun and every other RunOnce — the same registry rule core/
+	// mcp's listing gates learned (b79942f7). Registered jobs are
+	// immutable values, so a snapshot is exact.
 	s.mu.RLock()
-	defer s.mu.RUnlock()
-
+	var firing []CronJob
 	for i := range s.jobs {
 		sj := &s.jobs[i]
-		if !sj.expr.matches(now) {
-			continue
+		if sj.expr.matches(now) {
+			firing = append(firing, sj.job)
 		}
-		job := sj.job
+	}
+	s.mu.RUnlock()
+
+	for _, job := range firing {
 		if s.gate != nil && !s.gate(job.Name) {
 			continue
 		}
@@ -258,16 +264,28 @@ func (s *Scheduler) RunOnce(ctx context.Context, now time.Time) {
 			defer s.inflight.Done()
 			defer func() {
 				if r := recover(); r != nil {
-					if s.OnError != nil {
-						s.OnError(j.Name, fmt.Errorf("panic: %v\n%s", r, debug.Stack()))
-					}
+					s.reportError(j.Name, fmt.Errorf("panic: %v\n%s", r, debug.Stack()))
 				}
 			}()
-			if err := j.Run(ctx); err != nil && s.OnError != nil {
-				s.OnError(j.Name, err)
+			if err := j.Run(ctx); err != nil {
+				s.reportError(j.Name, err)
 			}
 		}(job)
 	}
+}
+
+// reportError forwards a job failure to OnError under its own recover
+// guard: OnError is app-supplied callback code running on the scheduler
+// loop, which has no per-request net — a panicking error handler must
+// not take the scheduler (and the process) down with it.
+func (s *Scheduler) reportError(jobName string, err error) {
+	if s.OnError == nil {
+		return
+	}
+	defer func() {
+		_ = recover()
+	}()
+	s.OnError(jobName, err)
 }
 
 func (s *Scheduler) run(ctx context.Context) {

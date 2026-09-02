@@ -331,3 +331,90 @@ func TestSQLRateLimit_RejectsBadTableName(t *testing.T) {
 	}()
 	NewSQLRateLimitStore(nil, "limits; DROP TABLE users --")
 }
+
+// Window boundary: an attempt made at EXACTLY now-Window is out of the
+// window (the prune predicate is `attempted_at_ms <= cutoff`), while an
+// attempt strictly inside it still counts. Both halves pinned
+// deterministically from seeded rows — no sleeping.
+func TestSQLRateLimit_WindowBoundaryAttempt(t *testing.T) {
+	s, db := newRLStore(t)
+	ctx := context.Background()
+	// MaxAttempts=1: any counted attempt means the next Allow blocks.
+	cfg := RateLimiterConfig{MaxAttempts: 1, Window: time.Hour, BlockDuration: time.Hour}
+
+	// Boundary key: attempt at exactly now-Window. Allow's own cutoff is
+	// computed from a now >= seeding time, so the row is always pruned.
+	boundary := time.Now().Add(-cfg.Window).UnixMilli()
+	if _, err := db.Exec("INSERT INTO auth_rate_limits_attempts (rl_key, attempted_at_ms) VALUES ('ip:boundary', $1)", boundary); err != nil {
+		t.Fatalf("seed boundary attempt: %v", err)
+	}
+	ok, _, err := s.Allow(ctx, "ip:boundary", cfg)
+	if err != nil || !ok {
+		t.Fatalf("attempt at exactly the window edge still counted: got ok=%v err=%v, want allowed (boundary is out of window)", ok, err)
+	}
+
+	// In-window key: 30 minutes old, comfortably inside the 1h window.
+	inWindow := time.Now().Add(-30 * time.Minute).UnixMilli()
+	if _, err := db.Exec("INSERT INTO auth_rate_limits_attempts (rl_key, attempted_at_ms) VALUES ('ip:inwindow', $1)", inWindow); err != nil {
+		t.Fatalf("seed in-window attempt: %v", err)
+	}
+	ok, retry, err := s.Allow(ctx, "ip:inwindow", cfg)
+	if err != nil || ok {
+		t.Fatalf("attempt 30m into a 1h window with MaxAttempts=1: got ok=%v retry=%v err=%v, want blocked", ok, retry, err)
+	}
+}
+
+// Block expiry resets the ATTEMPT BUDGET, not just the block: when an
+// expired block is cleared, the key's attempt rows are deleted too, so
+// the attacker does not resume at (MaxAttempts - inWindowAttempts) —
+// they start a fresh window. Otherwise a steady low-and-slow attacker
+// keeps every attempt they made before each block.
+func TestSQLRateLimit_BlockExpiryResetsBudget(t *testing.T) {
+	s, db := newRLStore(t)
+	ctx := context.Background()
+	cfg := RateLimiterConfig{MaxAttempts: 1, Window: time.Hour, BlockDuration: time.Hour}
+
+	// An expired block AND an in-window attempt for the same key.
+	pastBlock := time.Now().Add(-time.Minute).UnixMilli()
+	if _, err := db.Exec("INSERT INTO auth_rate_limits (rl_key, blocked_until_ms) VALUES ('ip:reset', $1)", pastBlock); err != nil {
+		t.Fatalf("seed expired block: %v", err)
+	}
+	inWindow := time.Now().Add(-30 * time.Minute).UnixMilli()
+	if _, err := db.Exec("INSERT INTO auth_rate_limits_attempts (rl_key, attempted_at_ms) VALUES ('ip:reset', $1)", inWindow); err != nil {
+		t.Fatalf("seed in-window attempt: %v", err)
+	}
+
+	ok, _, err := s.Allow(ctx, "ip:reset", cfg)
+	if err != nil || !ok {
+		t.Fatalf("expired block must clear WITH its attempts (fresh budget): got ok=%v err=%v", ok, err)
+	}
+	var blocks int
+	if err := db.QueryRow("SELECT COUNT(*) FROM auth_rate_limits WHERE rl_key = 'ip:reset'").Scan(&blocks); err != nil {
+		t.Fatal(err)
+	}
+	if blocks != 0 {
+		t.Errorf("expired block row survived the Allow that cleared it: %d remain", blocks)
+	}
+}
+
+// Block boundary: a block whose blocked_until_ms is <= the current
+// millisecond is NOT honoured. `nowMs < blockedUntilMs` is strict, so the
+// exact-instant boundary clears the block rather than holding it — a
+// boundary that rounded the other way would extend every block by up to
+// a retry-loop tick.
+func TestSQLRateLimit_BlockBoundaryClears(t *testing.T) {
+	s, db := newRLStore(t)
+	ctx := context.Background()
+	cfg := RateLimiterConfig{MaxAttempts: 3, Window: time.Hour, BlockDuration: time.Hour}
+
+	// Seed the block at the CURRENT millisecond: whatever ms Allow reads,
+	// its nowMs >= this stamp, so the strict < cannot hold.
+	nowMs := time.Now().UnixMilli()
+	if _, err := db.Exec("INSERT INTO auth_rate_limits (rl_key, blocked_until_ms) VALUES ('ip:edge', $1)", nowMs); err != nil {
+		t.Fatalf("seed boundary block: %v", err)
+	}
+	ok, retry, err := s.Allow(ctx, "ip:edge", cfg)
+	if err != nil || !ok {
+		t.Fatalf("block at the current instant must clear: got ok=%v retry=%v err=%v", ok, retry, err)
+	}
+}

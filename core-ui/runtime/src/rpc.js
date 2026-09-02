@@ -27,12 +27,21 @@
   const _kilnOK = (el) =>
     document.body.classList.contains('kiln-app') || el.closest('[data-fui-trusted]');
 
-  const _kilnPost = (el, body) =>
-    fetch('/kiln/tool/' + el.getAttribute('data-kiln-tool'), {
+  const _kilnPost = (el, body) => {
+    // The tool name is DOM-borne (data-kiln-tool) and lands in a URL
+    // PATH: without a shape gate a "../../admin/…" value normalizes and
+    // re-targets the POST onto any same-origin route, carrying the
+    // page's CSRF token. Kiln emits tool names as plain identifiers, so
+    // the anchored [A-Za-z0-9_-] class rejects nothing legitimate — the
+    // same posture as loadModule's name gate in boot.js.
+    const tool = el.getAttribute('data-kiln-tool') || '';
+    if (!/^[A-Za-z0-9_-]+$/.test(tool)) return Promise.resolve();
+    return fetch('/kiln/tool/' + tool, {
       method: 'POST',
       headers: _csrf({ 'Content-Type': 'application/json' }),
       body,
     }).catch(() => {});
+  };
 
   async function _dispatchKiln(node) {
     if (!_kilnOK(node)) return;
@@ -193,7 +202,9 @@
 
     const widgetEl = node.closest('[data-fui-widget]');
     const widgetName = (widgetEl && widgetEl.getAttribute('data-fui-widget')) || '';
-    const wentry = widgetName && NS._widgets && NS._widgets[widgetName];
+    const wentry = widgetName && NS._widgets
+      && Object.prototype.hasOwnProperty.call(NS._widgets, widgetName)
+      && NS._widgets[widgetName];
     const headers = _csrf({});
     if (widgetName) headers['X-FUI-Widget'] = widgetName;
     if (body && !bodyIsFormData) headers['Content-Type'] = 'application/json';
@@ -265,7 +276,9 @@
       }
 
       const refreshName = node.getAttribute('data-fui-rpc-refresh') || widgetName;
-      const rentry = NS._widgets && NS._widgets[refreshName];
+      const rentry = NS._widgets
+        && Object.prototype.hasOwnProperty.call(NS._widgets, refreshName)
+        && NS._widgets[refreshName];
       if (rentry && rentry.pollNow) rentry.pollNow();
 
       const openWidgetName = node.getAttribute('data-fui-rpc-open');

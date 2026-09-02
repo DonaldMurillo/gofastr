@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"maps"
 	"net/http"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -217,8 +218,16 @@ func Idempotency(cfg IdempotencyConfig) Middleware {
 			fp := requestFingerprint(r, body, principal)
 			// Namespace the storage key by principal too; that defends
 			// even when the Principal function returns empty for some
-			// callers, by binding the key shard to "principal:key".
-			storeKey := principal + "\x00" + key
+			// callers, by binding the key shard to "principal:key". The
+			// byte-length prefix keeps the shard injective over
+			// (principal, key) pairs: with a bare "\x00" separator,
+			// ("a\x00b", "c") and ("a", "b\x00c") both collapse to
+			// "a\x00b\x00c", and the second caller is wrongly refused
+			// (422 fingerprint mismatch) on a key it is the first and
+			// only user of — a cross-principal cache-poisoning DoS for
+			// any Principal function that can return NUL-bearing
+			// subjects.
+			storeKey := strconv.Itoa(len(principal)) + "\x00" + principal + key
 
 			replay, ok, beginErr := cfg.Store.Begin(r.Context(), storeKey, fp)
 			switch {
@@ -273,7 +282,10 @@ func Idempotency(cfg IdempotencyConfig) Middleware {
 			finish := func(resp *IdempotentResponse) {
 				if err := cfg.Store.Finish(finishCtx, storeKey, fp, resp); err != nil {
 					cfg.Logger.Error("idempotency: Finish failed (claim stranded; retries of this key will 409 until TTL)",
-						"key", key, "error", err)
+						// The key is request-borne: scrub it the way every
+						// slog sink does, so a forged key cannot paint a
+						// forged line into the operator's tail.
+						"key", scrubControlBytes(key), "error", err)
 				}
 			}
 			switch {

@@ -242,7 +242,7 @@ func leaderboardMarkdown(summary Summary) string {
 	for _, c := range summary.Candidates {
 		fmt.Fprintf(&b, "### %s / %s / run %d\n\n", c.VariantID, c.ScenarioID, c.Repetition)
 		if c.HistoricalOnlyReason != "" {
-			fmt.Fprintf(&b, "Historical-only framework snapshot: %s This candidate is research evidence only and is not eligible for promotion.\n\n", c.HistoricalOnlyReason)
+			fmt.Fprintf(&b, "Historical-only framework snapshot: %s This candidate is research evidence only and is not eligible for promotion.\n\n", escapeMarkdownText(c.HistoricalOnlyReason))
 		}
 		fmt.Fprintf(&b, "Holistic %.2f (minimum %.2f); mobile %.2f (minimum %.2f); holistic/mobile shadcn consensus `%t`/`%t`; technical pass `%t`; quality pass `%t`.\n\n",
 			c.Overall, c.MinimumDimension, c.MobileOverall, c.MobileMinimumDimension,
@@ -250,26 +250,53 @@ func leaderboardMarkdown(summary Summary) string {
 		fmt.Fprintf(&b, "Dev-loop funnel (non-deterministic): builder invoked `gofastr dev` `%t`; %d gofastr CLI call(s) total.\n\n",
 			c.BuilderUsedDevServer, c.BuilderCLICalls)
 		fmt.Fprintf(&b, "Docs funnel (non-deterministic): %d `gofastr docs` call(s); capability map `%t`; topics `%s`; searches `%s`.\n\n",
-			c.BuilderDocsCalls, c.BuilderUsedCapabilityMap, strings.Join(c.BuilderDocsTopics, ", "), strings.Join(c.BuilderDocsSearches, ", "))
+			c.BuilderDocsCalls, c.BuilderUsedCapabilityMap,
+			escapeMarkdownText(strings.Join(c.BuilderDocsTopics, ", ")),
+			escapeMarkdownText(strings.Join(c.BuilderDocsSearches, ", ")))
 		fmt.Fprintf(&b, "MCP funnel (non-deterministic): builder touched `/mcp` `%t`; served candidate exposes %d MCP tool(s), introspection `%t`, dev-only log tools leaked into prod boot `%t`.\n\n",
 			c.BuilderUsedMCP, c.CandidateMCPTools, c.CandidateMCPIntrospection, c.CandidateMCPLogToolsProd)
 		if len(c.Weakest) > 0 {
 			b.WriteString("Weakest visible decisions:\n\n")
 			for _, item := range c.Weakest {
-				fmt.Fprintf(&b, "- %s\n", item)
+				fmt.Fprintf(&b, "- %s\n", escapeMarkdownText(item))
 			}
 			b.WriteString("\n")
 		}
 		if len(c.NextIterations) > 0 {
 			b.WriteString("Suggested next iteration:\n\n")
 			for _, item := range c.NextIterations {
-				fmt.Fprintf(&b, "- %s\n", item)
+				fmt.Fprintf(&b, "- %s\n", escapeMarkdownText(item))
 			}
 			b.WriteString("\n")
 		}
 	}
 	return b.String()
 }
+
+// markdownTextEscapes neutralises eval-output text on its way into the
+// committed leaderboard.md. Judge feedback and the CLI-shim funnel lines
+// are produced by the thing being evaluated, so an image reference would
+// plant a beacon every renderer of the committed report fetches, and a
+// leading "# " would rewrite the document the operator reads winners
+// from. Markdown-significant bytes become HTML entities (renderers show
+// the literal character, never structure) and embedded newlines are
+// flattened so eval output cannot add lines to the report.
+var markdownTextEscapes = strings.NewReplacer(
+	"&", "&amp;",
+	"<", "&lt;",
+	">", "&gt;",
+	"!", "&#33;",
+	"[", "&#91;",
+	"]", "&#93;",
+	"#", "&#35;",
+	"*", "&#42;",
+	"`", "&#96;",
+	"\n", " ",
+	"\r", " ",
+)
+
+// escapeMarkdownText applies markdownTextEscapes to one field.
+func escapeMarkdownText(s string) string { return markdownTextEscapes.Replace(s) }
 
 func hasTechnicalEligibleVariant(variants []VariantSummary) bool {
 	for _, variant := range variants {

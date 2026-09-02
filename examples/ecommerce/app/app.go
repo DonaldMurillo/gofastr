@@ -62,11 +62,11 @@ var fontFaceCSS = style.FontFaceCSS("")
 // sidebarConfig returns the navigation sidebar configuration.
 func sidebarConfig(ctx context.Context) ui.SidebarConfig {
 	cfg := ui.SidebarConfig{Title: "ShopFront", Items: []ui.SidebarItem{
-		{Label: "Home", Href: "/"},
-		{Label: "Products", Href: "/products"},
-		{Label: "Categories", Href: "/categories"},
-		{Label: "Orders", Href: "/orders"},
-		{Label: "Reviews", Href: "/reviews"},
+		{Label: "Home", Href: "/", Icon: ui.Icon("home", ui.IconConfig{})},
+		{Label: "Products", Href: "/products", Icon: ui.Icon("package", ui.IconConfig{})},
+		{Label: "Categories", Href: "/categories", Icon: ui.Icon("folder", ui.IconConfig{})},
+		{Label: "Orders", Href: "/orders", Icon: ui.Icon("shopping-cart", ui.IconConfig{})},
+		{Label: "Reviews", Href: "/reviews", Icon: ui.Icon("star", ui.IconConfig{})},
 	}}
 	var authAction render.HTML
 	if u, ok := handler.GetUser(ctx); ok && u != nil {

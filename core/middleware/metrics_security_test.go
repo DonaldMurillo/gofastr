@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 )
@@ -154,5 +155,73 @@ func TestMetricsCollectorPanicDiscardsPartialOutput(t *testing.T) {
 	}
 	if strings.Contains(body, "partial_metric") {
 		t.Errorf("SECURITY: partial output from a panicking collector leaked into the scrape:\n%s", body)
+	}
+}
+
+// Property: every metrics label derived from a request is either
+// allow-list bounded (method) or collapsed to the "unmatched" sentinel
+// (route when no mux pattern matched) — no raw request path reaches the
+// exposition, so neither label injection nor cardinality growth is
+// reachable from the URL. Surfaces: percent-decoded CRLF paths,
+// exposition-syntax paths, unicode paths, an 8 KB path, and forged
+// methods; asserted on the scrape output as a whole (no C0/DEL).
+func TestMetrics_UnmatchedPathsOneRouteLabel(t *testing.T) {
+	m := NewMetrics()
+	h := MetricsMiddleware(m)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	newRequest := func(method, target string) *http.Request {
+		u, err := url.Parse(target)
+		if err != nil {
+			t.Fatalf("parse target %q: %v", target, err)
+		}
+		return &http.Request{
+			Method:     method,
+			URL:        u,
+			Header:     http.Header{},
+			Body:       http.NoBody,
+			Host:       u.Host,
+			RequestURI: target,
+		}
+	}
+	deepPath := strings.Repeat("/seg", 2000)
+	paths := []string{
+		"/a%0d%0aX-Forged:%201",
+		`/x"},evil="1`,
+		`/unmatched/metric",status="200`,
+		"/%C3%A9%E4%B8%AD",
+		deepPath,
+	}
+	for _, p := range paths {
+		h.ServeHTTP(httptest.NewRecorder(), newRequest(http.MethodGet, p))
+	}
+	for _, meth := range []string{"G\x01T", "FAKEMETHOD"} {
+		h.ServeHTTP(httptest.NewRecorder(), newRequest(meth, "/m"))
+	}
+
+	scrape := httptest.NewRecorder()
+	MetricsHandler(m).ServeHTTP(scrape, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	body := scrape.Body.String()
+
+	routes := map[string]bool{}
+	for _, line := range strings.Split(body, "\n") {
+		const marker = `route="`
+		i := strings.Index(line, marker)
+		if i < 0 {
+			continue
+		}
+		rest := line[i+len(marker):]
+		routes[rest[:strings.IndexByte(rest[0:], '"')]] = true
+	}
+	if len(routes) != 1 || !routes["unmatched"] {
+		t.Fatalf("expected the single sentinel route label %q, got %v", "unmatched", routes)
+	}
+	if strings.Contains(body, "/seg") {
+		t.Error("raw request path leaked into the metrics exposition")
+	}
+	if i := strings.IndexFunc(body, func(r rune) bool {
+		return (r < 0x20 && r != '\n') || r == 0x7f
+	}); i >= 0 {
+		t.Fatalf("control byte in exposition at offset %d: %q", i, body[i:])
 	}
 }

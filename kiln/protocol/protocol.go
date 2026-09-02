@@ -628,6 +628,14 @@ func (t *Tools) AddSeed(_ context.Context, args AddSeedArgs) Result {
 	if args.Seed == nil || args.Seed.Entity == "" {
 		return invalid("seed.entity required")
 	}
+	// A seed for an entity the world does not have fails at the DB
+	// side-effect stage ("no such table") after the request was
+	// accepted as well-formed; refusing it at ingestion answers with the
+	// validation kind the other shape errors carry, so the agent sees
+	// a fixable argument problem, not a runtime failure.
+	if _, ok := t.live.Session().World.Entities[args.Seed.Entity]; !ok {
+		return invalid("seed entity %q not found: add_entity first", args.Seed.Entity)
+	}
 	return t.applyEdit(journal.OpAddSeed, journal.AddSeedPayload{Seed: args.Seed})
 }
 

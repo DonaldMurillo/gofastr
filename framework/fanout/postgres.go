@@ -368,8 +368,17 @@ func (p *PostgresFanout) deliver(topic string, payload []byte) {
 	}
 	p.mu.RUnlock()
 	for _, s := range cbs {
-		s.send(payload)
+		s.deliverOne(payload)
 	}
+}
+
+// deliverOne hands the payload to the subscriber's send under a recover
+// guard: send is registered callback code running on the single
+// LISTEN/NOTIFY dispatcher goroutine, which has no per-request net — a
+// panicking subscriber must not freeze delivery to every other topic.
+func (s *pgSub) deliverOne(payload []byte) {
+	defer func() { _ = recover() }()
+	s.send(payload)
 }
 
 // Subscribe registers fn for topic. fn is wrapped in a per-subscriber bounded

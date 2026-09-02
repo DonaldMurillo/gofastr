@@ -125,28 +125,67 @@ func TestPackEntityPropertiesKeyInjection(t *testing.T) {
 }
 
 // TestPackHostileValueRoundTrips is the control: the same payload in VALUE
-// position is quoted and round-trips exactly. The asymmetry (values guarded,
-// keys raw) is the finding.
+// position is quoted and round-trips exactly, at EVERY writer surface — the
+// asymmetry (values guarded, keys raw) is the finding. Seed rows were the
+// original surface; the loop keeps every other value context honest (app
+// name, description, nav labels, screen titles) so a future putStr caller
+// that forgets quoteYAMLString cannot reintroduce the asymmetry silently.
 func TestPackHostileValueRoundTrips(t *testing.T) {
-	orig := Blueprint{Seed: []BlueprintSeedEntity{{
-		Entity: "posts",
-		Rows:   []map[string]any{{"status": hostileSeedKey}},
-	}}}
-	yml, err := encodeBlueprintYAML(orig)
-	if err != nil {
-		t.Fatalf("value control: encode refused a VALUE-only hostile blueprint (keys here are benign): %v", err)
+	build := func(mutate func(bp *Blueprint)) Blueprint {
+		bp := Blueprint{
+			App:      BlueprintApp{Name: "probe"},
+			Entities: []framework.EntityDeclaration{{Name: "posts", Table: "posts"}},
+			Nav:      []BlueprintNavItem{{Label: "Home", Href: "/"}},
+			Screens:  []BlueprintScreen{{Name: "home", Route: "/", Type: "page"}},
+			Seed:     []BlueprintSeedEntity{{Entity: "posts"}},
+		}
+		mutate(&bp)
+		return bp
 	}
-	back, err := decodeBlueprintString(yml)
-	if err != nil {
-		t.Fatalf("value control: re-parse failed: %v\n%s", err, yml)
+	surfaces := map[string]struct {
+		bp       Blueprint
+		extract  func(bp Blueprint) string
+		leakLine string
+	}{
+		"seed row value": {
+			build(func(bp *Blueprint) { bp.Seed[0].Rows = []map[string]any{{"status": hostileSeedKey}} }),
+			func(bp Blueprint) string { return bp.Seed[0].Rows[0]["status"].(string) },
+			"  - entity: admins",
+		},
+		"app name value": {
+			build(func(bp *Blueprint) { bp.App.Name = hostileSeedKey }),
+			func(bp Blueprint) string { return bp.App.Name },
+			"- name: forged",
+		},
+		"nav label value": {
+			build(func(bp *Blueprint) { bp.Nav[0].Label = hostileSeedKey }),
+			func(bp Blueprint) string { return bp.Nav[0].Label },
+			"- name: forged",
+		},
+		"screen title value": {
+			build(func(bp *Blueprint) { bp.Screens[0].Title = hostileSeedKey }),
+			func(bp Blueprint) string { return bp.Screens[0].Title },
+			"- name: forged",
+		},
 	}
-	if len(back.Seed) != 1 || back.Seed[0].Entity != "posts" ||
-		len(back.Seed[0].Rows) != 1 || back.Seed[0].Rows[0]["status"] != hostileSeedKey {
-		t.Fatalf("value control: hostile VALUE must round-trip verbatim, got %+v\n%s", back.Seed, yml)
-	}
-	for _, ln := range strings.Split(yml, "\n") {
-		if strings.HasPrefix(ln, "  - entity: admins") {
-			t.Fatalf("value control: structure leaked despite quoting:\n%s", yml)
+	for surface, tc := range surfaces {
+		yml, err := encodeBlueprintYAML(tc.bp)
+		if err != nil {
+			t.Errorf("%s: encode refused a VALUE-only hostile blueprint (keys here are benign): %v", surface, err)
+			continue
+		}
+		back, err := decodeBlueprintString(yml)
+		if err != nil {
+			t.Errorf("%s: re-parse failed: %v\n%s", surface, err, yml)
+			continue
+		}
+		if got := tc.extract(back); got != hostileSeedKey {
+			t.Errorf("%s: hostile VALUE must round-trip verbatim, got %q\n%s", surface, got, yml)
+		}
+		for _, ln := range strings.Split(yml, "\n") {
+			if strings.HasPrefix(ln, tc.leakLine) {
+				t.Errorf("%s: structure leaked despite quoting:\n%s", surface, yml)
+			}
 		}
 	}
 }

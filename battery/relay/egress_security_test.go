@@ -3,6 +3,7 @@ package relay
 import (
 	"io"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 )
@@ -144,5 +145,76 @@ func TestUpstreamResponseBodyCapped(t *testing.T) {
 
 	if n > defaultMaxBodyBytes {
 		t.Errorf("client read %d bytes from one upstream response (readErr=%v) with no cap hit: the response direction needs the same bound the request direction enforces (defaultMaxBodyBytes=%d)", n, readErr, defaultMaxBodyBytes)
+	}
+}
+
+// TestVendorBrowserStateHeadersStripped pins that a vendor cannot steer
+// the browser or mutate app-origin state through response headers the
+// relay forwards.
+//
+// The response-side contract (relay.md hardening table, "Auth stripped
+// (outbound)"; proxy.go stripOutboundHeaders) is that vendor identity
+// never reaches the browser and the first-party posture holds: "No
+// redirects" exists because "forwarding [a Location] would leak the
+// vendor origin". Two headers achieve the same effects as Location and
+// Set-Cookie without being either:
+//
+//   - Refresh: <delay>;url=<abs> — a header-driven navigation. A vendor
+//     (or vendor-side compromise) sends it on a plain 200 and the
+//     browser navigates to the vendor origin, leaking exactly what the
+//     Location refusal exists to prevent — plus it turns the relay into
+//     an open redirector (Refresh url is not even restricted to the
+//     declared upstream).
+//   - Clear-Site-Data — a vendor directive applied to the APP'S origin:
+//     it deletes the visitor's app cookies (including the session
+//     cookie), localStorage, and storage. Set-Cookie is stripped
+//     precisely because "the vendor [trying] to establish identity the
+//     relay deliberately withholds"; Clear-Site-Data is the destructive
+//     sibling — it doesn't establish identity, it destroys the app's.
+//
+// Surfaces: both route shapes (subtree and exact) share modifyResponse,
+// and each route owns its proxy pipeline; both are asserted.
+func TestVendorBrowserStateHeadersStripped(t *testing.T) {
+	base := startRelay(t, func(up string) Config {
+		return Config{Routes: []Route{
+			{Prefix: "e/", Upstream: up, Methods: []string{http.MethodGet}},
+			{Prefix: "ping", Upstream: up, Methods: []string{http.MethodGet}},
+		}}
+	}, func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Refresh", "0; url=https://vendor.example/next")
+		w.Header().Set("Clear-Site-Data", `"*"`)
+		// Link rel=preload: a third directive that hands the browser the
+		// vendor origin to open a connection to, same leak class.
+		w.Header().Set("Link", `<https://vendor.example/sdk.js>; rel=preload; as=script`)
+		// Control: a header the relay already strips must stay stripped,
+		// so a pass here means the pipeline ran, not that forwarding is fine.
+		w.Header().Set("Set-Cookie", "vendor_id=x; Path=/")
+		w.WriteHeader(http.StatusOK)
+	})
+
+	for _, path := range []string{"/__gofastr/t/e/x", "/__gofastr/t/ping"} {
+		res, err := http.Get(base + path)
+		if err != nil {
+			t.Fatalf("get %s: %v", path, err)
+		}
+		res.Body.Close()
+		if res.StatusCode != http.StatusOK {
+			t.Fatalf("%s: status = %d, want 200", path, res.StatusCode)
+		}
+		if got := res.Header.Get("Refresh"); got != "" {
+			t.Errorf("SECURITY: [relay] %s: upstream Refresh header reached the browser (%q): a header-driven navigation to the vendor origin defeats the same first-party posture the Location→502 refusal enforces and makes the mount an open redirector", path, got)
+		}
+		if got := res.Header.Values("Clear-Site-Data"); len(got) != 0 {
+			t.Errorf("SECURITY: [relay] %s: upstream Clear-Site-Data reached the browser (%q): a third party must not be able to delete the visitor's app-origin cookies and storage, the same withheld-vendor-influence contract Set-Cookie stripping defends", path, got)
+		}
+		if got := res.Header.Values("Set-Cookie"); len(got) != 0 {
+			t.Errorf("%s: control failed: Set-Cookie reached the browser (%q), the existing outbound strip regressed", path, got)
+		}
+		if got := res.Header.Get("X-Content-Type-Options"); got != "nosniff" {
+			t.Errorf("%s: X-Content-Type-Options = %q, want nosniff (modifyResponse must still run)", path, got)
+		}
+		if got := res.Header.Get("Link"); strings.Contains(got, "vendor.example") {
+			t.Errorf("SECURITY: [relay] %s: upstream Link preload header reached the browser (%q): it re-opens a direct browser connection to the vendor origin, the exact channel the first-party posture exists to close", path, got)
+		}
 	}
 }

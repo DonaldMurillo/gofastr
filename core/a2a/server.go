@@ -269,7 +269,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req rpcRequest
-	if err := json.Unmarshal(raw, &req); err != nil {
+	if err := json.Unmarshal(raw, &req); err != nil { //gofastr:allow(GOFASTR1407) A2A JSON-RPC envelope (jsonrpc/method/params/id): the whole object is the protocol unit, no field is an identity
 		s.writeTransport(w, http.StatusBadRequest, Errorf(CodeParseError, "parse request: %v", err))
 		return
 	}
@@ -658,15 +658,29 @@ func (s *Server) prepareNewTask(r *http.Request, owner string, p *SendMessageReq
 		CreatedAt: s.now(),
 		UpdatedAt: s.now(),
 	}
-	if err := s.store.CreateTask(r.Context(), rec); err != nil {
-		s.log.Error("a2a: create task", "taskId", taskID, "err", err)
-		return nil, nil, nil, Errorf(CodeInternalError, "internal error")
-	}
+	// Store the push config BEFORE the task row, and compensate with a
+	// delete if the task insert then fails. The opposite order left a
+	// half-built send behind when the config insert failed: an
+	// unreachable SUBMITTED task with no run that would never settle
+	// (validateInbound's no-half-built posture, but for the post-create
+	// failure path). A push config for a task id that never materialized
+	// is inert by comparison, and DeletePushConfig removes even that.
 	if cfg := pushConfigOf(p); cfg != nil {
 		cfg.TaskID = taskID // the task id did not exist when the client built the request
 		if aerr := s.storePushConfig(r.Context(), owner, cfg); aerr != nil {
 			return nil, nil, nil, aerr
 		}
+	}
+	if err := s.store.CreateTask(r.Context(), rec); err != nil {
+		s.log.Error("a2a: create task", "taskId", taskID, "err", err)
+		if cfg := pushConfigOf(p); cfg != nil {
+			if derr := s.store.DeletePushConfig(r.Context(), owner, taskID, cfg.ID); derr != nil {
+				// The config row is inert without its task, so this is
+				// a log line, not a second error to report.
+				s.log.Error("a2a: delete push config after failed task create", "taskId", taskID, "err", derr)
+			}
+		}
+		return nil, nil, nil, Errorf(CodeInternalError, "internal error")
 	}
 	t := newTaskRun(s, rec, msg, r, owner)
 	if rerr != nil {
@@ -728,7 +742,13 @@ func (s *Server) prepareResume(r *http.Request, owner string, p *SendMessageRequ
 	t := newTaskRun(s, rec, msg, r, owner)
 	if err := t.resumeWorking(msg); err != nil {
 		s.releaseRun(rn)
-		return nil, nil, nil, Errorf(CodeUnsupportedOperation, "task %s changed concurrently, retry", taskID)
+		if errors.Is(err, errConcurrentChange) {
+			return nil, nil, nil, Errorf(CodeUnsupportedOperation, "task %s changed concurrently, retry", taskID)
+		}
+		// Any other failure here is a backend error: report the generic
+		// internal error (errors.go's contract), never the driver text.
+		s.log.Error("a2a: resume task", "taskId", taskID, "err", err)
+		return nil, nil, nil, Errorf(CodeInternalError, "internal error")
 	}
 	sk, ok := s.byID[rec.SkillID]
 	if !ok || sk.Handler == nil {

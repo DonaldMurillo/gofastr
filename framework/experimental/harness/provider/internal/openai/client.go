@@ -61,7 +61,7 @@ func (c *Client) Chat(ctx context.Context, req *provider.Request) (<-chan provid
 	}
 
 	ch := make(chan provider.StreamEvent, 32)
-	go parseSSEStream(resp.Body, ch)
+	go parseSSEStream(ctx, resp.Body, ch)
 	return ch, nil
 }
 
@@ -268,9 +268,32 @@ type deltaToolCallFunc struct {
 	Arguments string `json:"arguments,omitempty"`
 }
 
-func parseSSEStream(body io.ReadCloser, ch chan<- provider.StreamEvent) {
+// Every send selects on ctx.Done: the engine's CollectStream returns on
+// cancel and never reads the channel again, so a pump that only knows
+// how to send parks on the 33rd pending event for the life of the
+// process, holding the goroutine, the channel, and the un-Closed body
+// (probe TestAbortMidStreamReleasesPump). The transport closes the body
+// on the same cancel, which ends the Scan loop; the select ends the
+// send.
+func parseSSEStream(ctx context.Context, body io.ReadCloser, ch chan<- provider.StreamEvent) {
 	defer body.Close()
 	defer close(ch)
+	send := func(ev provider.StreamEvent) bool {
+		// Delivery first: a consumer that is still draining after the
+		// abort (TestAbortVisibleToDrainingConsumer) must see the
+		// terminal event, and a done ctx would otherwise race it away.
+		select {
+		case ch <- ev:
+			return true
+		default:
+		}
+		select {
+		case ch <- ev:
+			return true
+		case <-ctx.Done():
+			return false
+		}
+	}
 	scanner := bufio.NewScanner(body)
 	scanner.Buffer(make([]byte, 64*1024), 4*1024*1024)
 
@@ -293,12 +316,16 @@ func parseSSEStream(body io.ReadCloser, ch chan<- provider.StreamEvent) {
 		}
 		payload := strings.TrimPrefix(line, "data: ")
 		if payload == "[DONE]" {
-			ch <- provider.StreamEvent{Kind: provider.KindStop, FinishReason: "stop"}
+			if !send(provider.StreamEvent{Kind: provider.KindStop, FinishReason: "stop"}) {
+				return
+			}
 			return
 		}
 		var chunk streamChunk
 		if err := json.Unmarshal([]byte(payload), &chunk); err != nil {
-			ch <- provider.StreamEvent{Kind: provider.KindError, Err: fmt.Errorf("parse chunk: %w", err)}
+			if !send(provider.StreamEvent{Kind: provider.KindError, Err: fmt.Errorf("parse chunk: %w", err)}) {
+				return
+			}
 			return
 		}
 		for _, c := range chunk.Choices {
@@ -308,11 +335,15 @@ func parseSSEStream(body io.ReadCloser, ch chan<- provider.StreamEvent) {
 			// well-formed when the engine re-emits it on the bus.
 			if reasoning := c.Delta.ReasoningContent + c.Delta.Reasoning; reasoning != "" {
 				if quoted, err := json.Marshal(reasoning); err == nil {
-					ch <- provider.StreamEvent{Kind: provider.KindThinkingDelta, Thinking: quoted}
+					if !send(provider.StreamEvent{Kind: provider.KindThinkingDelta, Thinking: quoted}) {
+						return
+					}
 				}
 			}
 			if c.Delta.Content != "" {
-				ch <- provider.StreamEvent{Kind: provider.KindTextDelta, Text: c.Delta.Content}
+				if !send(provider.StreamEvent{Kind: provider.KindTextDelta, Text: c.Delta.Content}) {
+					return
+				}
 			}
 			for _, tc := range c.Delta.ToolCalls {
 				if _, exists := activeToolCalls[tc.Index]; !exists {
@@ -331,14 +362,18 @@ func parseSSEStream(body io.ReadCloser, ch chan<- provider.StreamEvent) {
 				}
 				// Emit Start once we have a name.
 				if !emittedStarts[tc.Index] && active.Name != "" {
-					ch <- provider.StreamEvent{Kind: provider.KindToolUseStart, ToolUse: &control.ToolUse{ID: active.ID, Name: active.Name}}
+					if !send(provider.StreamEvent{Kind: provider.KindToolUseStart, ToolUse: &control.ToolUse{ID: active.ID, Name: active.Name}}) {
+						return
+					}
 					emittedStarts[tc.Index] = true
 				}
 				if tc.Function != nil && tc.Function.Arguments != "" {
-					ch <- provider.StreamEvent{
+					if !send(provider.StreamEvent{
 						Kind:       provider.KindToolUseDelta,
 						ToolUseID:  active.ID,
 						InputDelta: tc.Function.Arguments,
+					}) {
+						return
 					}
 				}
 			}
@@ -346,10 +381,14 @@ func parseSSEStream(body io.ReadCloser, ch chan<- provider.StreamEvent) {
 				// Stop any open tool calls.
 				for idx := range emittedStarts {
 					if emittedStarts[idx] {
-						ch <- provider.StreamEvent{Kind: provider.KindToolUseStop, ToolUseID: activeToolCalls[idx].ID}
+						if !send(provider.StreamEvent{Kind: provider.KindToolUseStop, ToolUseID: activeToolCalls[idx].ID}) {
+							return
+						}
 					}
 				}
-				ch <- provider.StreamEvent{Kind: provider.KindStop, FinishReason: *c.FinishReason}
+				if !send(provider.StreamEvent{Kind: provider.KindStop, FinishReason: *c.FinishReason}) {
+					return
+				}
 				sawTerminal = true
 			}
 		}
@@ -368,15 +407,21 @@ func parseSSEStream(body io.ReadCloser, ch chan<- provider.StreamEvent) {
 				CacheReadTokens:  cacheRead,
 				CacheWriteTokens: chunk.Usage.CacheCreationInputTokens,
 			}
-			ch <- provider.StreamEvent{Kind: provider.KindUsage, Usage: usage}
+			if !send(provider.StreamEvent{Kind: provider.KindUsage, Usage: usage}) {
+				return
+			}
 		}
 	}
 	if err := scanner.Err(); err != nil {
-		ch <- provider.StreamEvent{Kind: provider.KindError, Err: err}
+		if !send(provider.StreamEvent{Kind: provider.KindError, Err: err}) {
+			return
+		}
 		return
 	}
 	if !sawTerminal {
-		ch <- provider.StreamEvent{Kind: provider.KindError, Err: ErrStreamTruncated}
+		if !send(provider.StreamEvent{Kind: provider.KindError, Err: ErrStreamTruncated}) {
+			return
+		}
 	}
 }
 

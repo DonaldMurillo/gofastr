@@ -278,7 +278,7 @@ func (p *MagicLinkPlugin) sendHandler(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Email string `json:"email"`
 	}
-	if !decodeJSONLimited(w, r, &body) {
+	if !decodeJSONLimitedStrict(w, r, &body, "email") {
 		return
 	}
 	// Canonicalize at ingestion (#270): the email rides inside the

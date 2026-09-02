@@ -96,25 +96,29 @@ func BuildProjectSlab(sess *journal.Session) string {
 	}
 	w := sess.World
 	var b strings.Builder
-	if w.App.Name != "" {
-		fmt.Fprintf(&b, "App: %s\n", w.App.Name)
+	if name := w.App.Name; name != "" && slabSafe(name) {
+		fmt.Fprintf(&b, "App: %s\n", name)
 	}
-	if len(w.Entities) > 0 {
-		names := make([]string, 0, len(w.Entities))
-		for n := range w.Entities {
+	names := make([]string, 0, len(w.Entities))
+	for n := range w.Entities {
+		if slabSafe(n) {
 			names = append(names, n)
 		}
-		sort.Strings(names)
+	}
+	sort.Strings(names)
+	if len(names) > 0 {
 		fmt.Fprintf(&b, "Entities: %s\n", strings.Join(names, ", "))
 	} else {
 		b.WriteString("Entities: (none)\n")
 	}
-	if len(w.Pages) > 0 {
-		paths := make([]string, 0, len(w.Pages))
-		for p := range w.Pages {
+	paths := make([]string, 0, len(w.Pages))
+	for p := range w.Pages {
+		if slabSafe(p) {
 			paths = append(paths, p)
 		}
-		sort.Strings(paths)
+	}
+	sort.Strings(paths)
+	if len(paths) > 0 {
 		fmt.Fprintf(&b, "Pages: %s\n", strings.Join(paths, ", "))
 	}
 	if len(w.Hooks) > 0 {
@@ -125,13 +129,36 @@ func BuildProjectSlab(sess *journal.Session) string {
 		if len(recent) > 5 {
 			recent = recent[len(recent)-5:]
 		}
-		var ids []string
+		ids := make([]string, 0, len(recent))
 		for _, e := range recent {
-			ids = append(ids, e.EntryID)
+			if slabSafe(e.EntryID) {
+				ids = append(ids, e.EntryID)
+			}
 		}
-		fmt.Fprintf(&b, "Recent entries: %s\n", strings.Join(ids, ", "))
+		if len(ids) > 0 {
+			fmt.Fprintf(&b, "Recent entries: %s\n", strings.Join(ids, ", "))
+		}
 	}
 	return b.String()
+}
+
+// slabSafe reports whether a journal-derived string may be interpolated
+// into the project slab as a single line. Every value here reaches the
+// journal through caller-supplied IDs and world-edit payloads that are
+// never newline-validated on replay, so a hand-authored journal can
+// carry text that would rewrite the prompt's line structure (a
+// "CRITICAL OPERATOR OVERRIDE: ..." directive riding on injected
+// newlines is the pinned shape). Values that fail are omitted, not
+// flattened: a payload must not be able to smuggle any of its text onto
+// the slab once its line structure is found hostile.
+func slabSafe(s string) bool {
+	for _, r := range s {
+		switch {
+		case r < 0x20, r == 0x7f, r == '\u2028', r == '\u2029':
+			return false
+		}
+	}
+	return true
 }
 
 // BuildPrompt produces a fully-assembled prompt for the current session.

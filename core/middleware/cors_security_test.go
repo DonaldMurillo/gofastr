@@ -203,3 +203,59 @@ func TestCORS_AppendsVaryInsteadOfClobbering(t *testing.T) {
 		t.Errorf("CORS did not vary on Origin; got %v", vary)
 	}
 }
+
+// Property: Access-Control-Allow-Origin is echoed only on EXACT byte
+// equality with a configured origin — never on substring, prefix,
+// case-folded, or whitespace resemblance. EndsWith/prefix matching is the
+// classic CORS misconfig that turns an allow-list into an any-origin
+// policy. Surfaces: subdomain of an allowed origin, allowed origin as
+// suffix, trailing dot/space, upper-case scheme+host, NUL-terminated
+// lookalike, and the "null" origin; happy surface asserts the exact echo
+// AND the Vary: Origin cache marker.
+func TestCORS_OriginMatchIsExactNotSubstring(t *testing.T) {
+	h := CORS(CORSConfig{AllowedOrigins: []string{"https://good.example"}})(
+		http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		}))
+
+	rejected := []string{
+		"https://good.example.evil.com",     // allowed origin as prefix (subdomain trick)
+		"https://evil.com/good.example",     // allowed origin as substring
+		"https://good.example.",             // trailing dot
+		"https://good.example ",             // trailing space
+		"HTTPS://GOOD.EXAMPLE",              // case-folded
+		"https://good.example\x00.evil.com", // NUL-terminated lookalike
+		"null",                              // sandboxed-iframe origin
+	}
+	for _, origin := range rejected {
+		t.Run(origin, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/", nil)
+			req.Header.Set("Origin", origin)
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, req)
+			if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "" {
+				t.Fatalf("unconfigured origin %q was echoed as ACAO %q", origin, got)
+			}
+		})
+	}
+
+	// Happy surface: exact configured origin echoes verbatim and the
+	// response is marked Vary: Origin so a shared cache cannot pin one
+	// origin's CORS variant for another.
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Header.Set("Origin", "https://good.example")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "https://good.example" {
+		t.Fatalf("configured origin not echoed verbatim: %q", got)
+	}
+	var varyOrigin bool
+	for _, v := range rec.Header().Values("Vary") {
+		if v == "Origin" {
+			varyOrigin = true
+		}
+	}
+	if !varyOrigin {
+		t.Fatal("echoed ACAO response missing Vary: Origin (shared-cache cross-origin replay)")
+	}
+}

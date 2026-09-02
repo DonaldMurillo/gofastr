@@ -26,6 +26,7 @@ func EntityEndpointPath(ent *entity.Entity, path string) string {
 		}
 		path = base + "/" + strings.TrimPrefix(path, "/")
 	}
+	path = dropDotSegments(path)
 	return crud.NormalizePath(convertColonParams(path))
 }
 
@@ -47,11 +48,36 @@ func EntityEndpointPath(ent *entity.Entity, path string) string {
 // absolute (see EntityOpenAPI), so the documented endpoint path has to be the
 // mounted one, and routing through the same helper is what keeps the escape
 // hatch behaving identically in both.
+//
+// A versioned entity (App.GroupEntity) carries its group prefix as
+// Version, and the router mounts that prefix absolutely, so the API
+// prefix is not applied on top of it: "/api/v1/posts/revoke", never
+// "/api/api/v1/posts/revoke".
 func EntityEndpointRoutePath(ent *entity.Entity, path, apiPrefix string) string {
 	relative := !strings.HasPrefix(strings.TrimSpace(path), "/")
 	out := EntityEndpointPath(ent, path)
-	if relative && apiPrefix != "" {
+	if relative && apiPrefix != "" && ent.Version == "" {
 		out = strings.TrimSuffix(apiPrefix, "/") + out
+	}
+	return out
+}
+
+// dropDotSegments removes "." and ".." path segments. A documented
+// endpoint path is a literal: no client can send "/posts/../admin" as
+// written, and a spec or SDK that carried it would describe a route the
+// server never mounts (or, resolved by a client, a different one).
+func dropDotSegments(p string) string {
+	parts := strings.Split(p, "/")
+	kept := parts[:0]
+	for _, seg := range parts {
+		if seg == "." || seg == ".." {
+			continue
+		}
+		kept = append(kept, seg)
+	}
+	out := strings.Join(kept, "/")
+	if out == "" {
+		return "/"
 	}
 	return out
 }
@@ -95,8 +121,14 @@ func EndpointOutputSchema(ep entity.Endpoint) map[string]any {
 // DefaultEndpointToolName synthesises an MCP tool name from an entity +
 // method + path triple. Used as a fallback when an Endpoint doesn't supply
 // an explicit MCPName.
+//
+// Distinct routes keep distinct names: "/" becomes "_", a hyphen stays a
+// hyphen (MCP tool names allow it), and a {param} segment becomes
+// "-param-", so "/feed/items" and "/feed-items", or "/items/{id}" and
+// "/items/id", never fold together. Only the method is case-folded;
+// entity and path spelling is preserved, since routes are case-sensitive.
 func DefaultEndpointToolName(entityName, method, path string) string {
 	cleaned := strings.Trim(path, "/")
-	cleaned = strings.NewReplacer("/", "_", "{", "", "}", "", "-", "_").Replace(cleaned)
-	return strings.ToLower(entityName + "_" + method + "_" + cleaned)
+	cleaned = strings.NewReplacer("/", "_", "{", "-", "}", "-").Replace(cleaned)
+	return entityName + "_" + strings.ToLower(method) + "_" + cleaned
 }

@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -93,3 +94,50 @@ func TestToolPanicBecomesRPCError(t *testing.T) {
 // arrived nil from somewhere) instead of a local the compiler can see
 // through, which reads as a defect rather than a fixture.
 func nilStringMap() map[string]any { return nil }
+
+// Property: every typed-struct params decode on the request surface
+// refuses JSON type confusion with invalid-params — a caller who sends a
+// number, string, array or object where the schema wants the other kind
+// gets a clean refusal, never a panic and never a coerced value reaching
+// a handler. One shape per confusion class per surface.
+func TestParamsTypeConfusionRefused(t *testing.T) {
+	s := NewServer()
+	mustRegisterOpen(t, s, "t")
+	if err := s.RegisterPrompt("p", noopPrompt); err != nil {
+		t.Fatal(err)
+	}
+
+	cases := []struct {
+		method string
+		params string
+	}{
+		// name: number-for-string, object-for-string.
+		{"tools/call", `{"name":5}`},
+		{"tools/call", `{"name":{"a":1}}`},
+		{"prompts/get", `{"name":true}`},
+		{"prompts/get", `{"name":["p"]}`},
+		// arguments: string-for-object, array-for-object.
+		{"tools/call", `{"name":"t","arguments":"flat"}`},
+		{"tools/call", `{"name":"t","arguments":[1,2]}`},
+		{"prompts/get", `{"name":"p","arguments":"flat"}`},
+		{"prompts/get", `{"name":"p","arguments":{"a":1}}`}, // number-for-string value
+		// uri: number-for-string, object-for-string, array-for-string.
+		{"resources/read", `{"uri":7}`},
+		{"resources/read", `{"uri":{"a":1}}`},
+		{"resources/read", `{"uri":["x"]}`},
+		{"resources/subscribe", `{"uri":true}`},
+		{"resources/subscribe", `{"uri":9.5}`},
+	}
+	for _, c := range cases {
+		resp := s.HandleRequest(context.Background(), Request{
+			JSONRPC: "2.0", ID: 1, Method: c.method, Params: json.RawMessage(c.params),
+		})
+		if resp.Error == nil {
+			t.Errorf("SECURITY: [type-confusion] %s accepted %s as a success: %+v", c.method, c.params, resp)
+			continue
+		}
+		if resp.Error.Code != ErrInvalidParams {
+			t.Errorf("%s on %s: code = %d, want invalid params %d", c.method, c.params, resp.Error.Code, ErrInvalidParams)
+		}
+	}
+}

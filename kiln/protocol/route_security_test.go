@@ -245,3 +245,48 @@ func TestAddPageRejectsEntityMountCollisions(t *testing.T) {
 		})
 	}
 }
+
+// Property: the world_get selector grammar fails closed. Path is an
+// agent-authored string; the only magic selectors are "" (whole world),
+// "_chat" and "_plans", plus the literal "entities.<name>" /
+// "pages.<path>" map lookups. Every other shape — traversal bytes, dot
+// chaining, empty suffixes, near-miss magic names — must come back
+// not-found/validation, never the whole world and never a panic: the
+// lookups are map keys, and a selector that "falls through" to the
+// whole-world shape would hand the caller far more than it asked for.
+func TestWorldGetSelectorsFailClosed(t *testing.T) {
+	tools := newTools(t)
+	if res, p := addEntityRecovered(t, tools, "posts"); p != nil || !res.OK {
+		t.Fatalf("baseline AddEntity: panicked=%v res=%+v", p, res)
+	}
+	for _, path := range []string{
+		"entities.nonexistent",
+		"entities.",
+		"pages./../etc",
+		"entities.posts.title", // dot chaining is not a sub-field path
+		"./entities.posts",
+		"_world", "world", "_plans.extra", "*",
+	} {
+		res, panicked := func() (res protocol.Result, panicked any) {
+			defer func() { panicked = recover() }()
+			res = tools.WorldGet(context.Background(), protocol.WorldGetArgs{Path: path})
+			return
+		}()
+		if panicked != nil {
+			t.Errorf("SECURITY: world_get(%q) panicked: %v", path, panicked)
+			continue
+		}
+		if res.OK {
+			t.Errorf("SECURITY: world_get(%q) returned OK — a selector outside the\n"+
+				"entities./pages./_chat/_plans grammar must fail closed, not resolve to broader\n"+
+				"data than it names: %+v", path, res)
+		}
+	}
+	// Positive guards: the real grammar keeps working.
+	if res := tools.WorldGet(context.Background(), protocol.WorldGetArgs{Path: "entities.posts"}); !res.OK {
+		t.Errorf("entities.posts lookup failed: %+v", res)
+	}
+	if res := tools.WorldGet(context.Background(), protocol.WorldGetArgs{Path: ""}); !res.OK {
+		t.Errorf("whole-world lookup failed: %+v", res)
+	}
+}

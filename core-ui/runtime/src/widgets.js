@@ -31,7 +31,10 @@
   NS._chromeCache = NS._chromeCache || {};
 
   NS.openWidget = async function (name, opts) {
-    const entry = NS._widgetCatalog && NS._widgetCatalog[name];
+    const entry = NS._widgetCatalog
+      && Object.prototype.hasOwnProperty.call(NS._widgetCatalog, name)
+        ? NS._widgetCatalog[name]
+        : undefined;
     if (!entry) {
       // Static export + the target widget isn't registered (e.g. a note-only
       // showcase demo whose modal was never mounted). Don't fail silently,
@@ -66,15 +69,19 @@
     if (o.pushUrl && cfg.deepLinkKey && cfg.deepLinkValue) {
       if (!NS._deepLinkPushUrl) await NS.loadModule('widgetlinks');
       // Skip if dismissed while the module loaded (cold cache).
-      if (!NS._widgets[name]) return;
+      const stillMounted = Object.prototype.hasOwnProperty.call(NS._widgets, name) && NS._widgets[name];
+      if (!stillMounted) return;
       NS._deepLinkPushUrl(cfg, params);
     }
   };
 
   NS._mountByName = async function (name, ctx) {
-    const entry = NS._widgetCatalog && NS._widgetCatalog[name];
+    const entry = NS._widgetCatalog
+      && Object.prototype.hasOwnProperty.call(NS._widgetCatalog, name)
+        ? NS._widgetCatalog[name]
+        : undefined;
     if (!entry) return;
-    if (NS._widgets[name]) return; // already mounted
+    if (Object.prototype.hasOwnProperty.call(NS._widgets, name) && NS._widgets[name]) return; // already mounted
     const cfg = entry.cfg;
     const existing = document.querySelector('[data-fui-widget="' + CSS.escape(name) + '"]');
     if (existing) {
@@ -159,7 +166,9 @@
   };
 
   NS.closeWidget = function (name) {
-    const w = NS._widgets[name];
+    const w = Object.prototype.hasOwnProperty.call(NS._widgets, name)
+      ? NS._widgets[name]
+      : undefined;
     if (w && typeof w.dismiss === 'function') w.dismiss();
   };
 
@@ -178,7 +187,10 @@
       // openWidget's pushUrl defaults to falsy, so syncing FROM the URL
       // cannot write back to it, no explicit opt-out needed.
       const hit = url.searchParams.get(cfg.deepLinkKey) === cfg.deepLinkValue;
-      if (hit !== !!NS._widgets[name]) {
+      const mounted = Object.prototype.hasOwnProperty.call(NS._widgets, name)
+        ? !!NS._widgets[name]
+        : false;
+      if (hit !== mounted) {
         if (hit) NS.openWidget(name);
         else NS.closeWidget(name);
       }
@@ -190,7 +202,7 @@
     NS._widgets[cfg.name] = { cfg };
 
     // Stylesheet
-    if (!document.querySelector('link[data-fui-style="' + cfg.name + '"]')) {
+    if (!document.querySelector('link[data-fui-style="' + CSS.escape(cfg.name) + '"]')) {
       const link = document.createElement('link');
       link.rel = 'stylesheet';
       link.href = cfg.stylePath;
@@ -418,7 +430,7 @@
       if (cfg.closeOnClick) {
         const oh = (e) => {
           if (w.contains(e.target)) return;
-          const trigger = e.target.closest('[data-fui-open="' + cfg.name + '"]');
+          const trigger = e.target.closest('[data-fui-open="' + CSS.escape(cfg.name) + '"]');
           if (trigger) return;
           dismiss();
         };

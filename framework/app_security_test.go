@@ -361,3 +361,41 @@ func TestWarnUnresolvableRelationsIsSelective(t *testing.T) {
 		t.Errorf("a fully-registered graph must boot silently: %s", buf.String())
 	}
 }
+
+// blockedCloseQueue satisfies the schedulerStartStop interface AddQueue
+// takes; Close blocks until released, the deterministic stand-in for a
+// DBQueue.Close joining a worker whose job handler ignores its already-
+// cancelled context.
+type blockedCloseQueue struct{ release chan struct{} }
+
+func (b *blockedCloseQueue) Start(context.Context) {}
+func (b *blockedCloseQueue) Close() error          { <-b.release; return nil }
+
+// Property: every background-work join App wires must honor the shutdown
+// deadline. The HTTP server got a force-close for it (Shutdown calls
+// srv.Close past the deadline), and AddCron drains through StopContext
+// with the explicit comment "a job that ignores its context can't hang
+// SIGTERM forever". AddQueue wires q.Close() through OnStop, whose drainer
+// adapter ignores the ctx entirely, so a queue whose Close blocks hangs
+// App.Shutdown past any deadline — the same hazard, unfixed on the third
+// background-work surface.
+func TestAddQueueDrainHonorsShutdownDeadline(t *testing.T) {
+	app := NewApp(WithoutDefaultMiddleware())
+	block := make(chan struct{})
+	app.AddQueue(&blockedCloseQueue{release: block})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- app.Shutdown(ctx) }()
+
+	select {
+	case <-done:
+		// Shutdown returned despite the blocked Close: the drain honored
+		// the deadline ctx.
+	case <-time.After(5 * time.Second):
+		close(block)
+		t.Fatal("SECURITY: [lifecycle] App.Shutdown hung past its deadline ctx: AddQueue drains the queue through the ctx-ignoring OnStop path, so a queue Close blocked on a ctx-ignoring job handler hangs SIGTERM forever (AddCron got StopContext for exactly this hazard; the HTTP drain got a force-close)")
+	}
+	close(block)
+}

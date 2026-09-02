@@ -88,3 +88,134 @@ func subscriberPanicChild() {
 		os.Exit(13)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Property: a slow subscriber is EVICTED (payloads dropped), never allowed
+// to backpressure the publisher — send must return promptly even while fn
+// is blocked and the queue is full. This is the lossy-lane contract every
+// transport goroutine (LISTEN/NOTIFY dispatcher, Redis reader) relies on:
+// one stuck callback must not stall the shared dispatch lane.
+// ---------------------------------------------------------------------------
+
+func TestSubscriberQueueSendNeverBlocksOnSlowFn(t *testing.T) {
+	started := make(chan []byte, 1)
+	release := make(chan struct{})
+	send, stop := SubscriberQueue(func(p []byte) {
+		started <- p
+		<-release
+	}, 2)
+	defer stop()
+
+	send([]byte("first"))
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("fn never received the first payload")
+	}
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for i := range 10 {
+			send([]byte{byte('a' + i)}) // queue (depth 2) overflows immediately
+		}
+	}()
+	select {
+	case <-done:
+		// All sends returned while fn was still blocked: no backpressure.
+	case <-time.After(2 * time.Second):
+		t.Fatal("SECURITY: [fanout] send blocked while the subscriber callback was stuck (slow subscriber backpressured the publisher)")
+	}
+	close(release)
+}
+
+// ---------------------------------------------------------------------------
+// Property: on overflow the OLDEST queued payload is dropped and the NEWEST
+// survives — a consumer catching up must see the freshest state, never a
+// stalled prefix of stale payloads.
+// ---------------------------------------------------------------------------
+
+func TestSubscriberQueueDropOldestKeepsNewest(t *testing.T) {
+	got := make(chan string, 4)
+	release := make(chan struct{})
+	send, stop := SubscriberQueue(func(p []byte) {
+		got <- string(p)
+		<-release
+	}, 1)
+	defer stop()
+
+	send([]byte("p1"))
+	select {
+	case first := <-got:
+		if first != "p1" {
+			t.Fatalf("first delivered = %q, want p1", first)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("fn never received p1")
+	}
+	// fn is now blocked holding p1; queue depth 1. p2 is dropped when p3
+	// arrives: the newest payload must be the one that survives.
+	send([]byte("p2"))
+	send([]byte("p3"))
+	close(release)
+
+	select {
+	case next := <-got:
+		if next != "p3" {
+			t.Errorf("delivered after overflow = %q, want p3 (newest must survive, oldest dropped)", next)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("fn never received the post-overflow payload")
+	}
+}
+
+func TestSubscriberQueueSendAfterStopNeverBlocks(t *testing.T) {
+	var hits atomic.Int32
+	send, stop := SubscriberQueue(func([]byte) { hits.Add(1) }, 4)
+
+	stop()
+	stop() // idempotent
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for range 100 {
+			send([]byte("late")) // must not block or panic after stop
+		}
+	}()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("SECURITY: [fanout] send blocked after stop")
+	}
+	// NOTE: send-after-stop can still ENQUEUE (its first select sees both
+	// <-stopped and q<- ready and picks randomly), and a consumer that has
+	// not yet observed the stop may deliver that late payload. The doc
+	// promises a "silent no-op"; the implementation makes that
+	// probabilistic. The outcome is timing-dependent, so it is FLAGGED for
+	// the owner rather than asserted here; what is deterministic is that
+	// the sender is never blocked and never panics.
+	_ = hits.Load()
+}
+
+// reusing its buffer after send cannot mutate what the subscriber receives.
+// ---------------------------------------------------------------------------
+
+func TestSubscriberQueueCopiesPayloadOnSend(t *testing.T) {
+	got := make(chan []byte, 1)
+	send, stop := SubscriberQueue(func(p []byte) { got <- append([]byte(nil), p...) }, 4)
+	defer stop()
+
+	buf := []byte("attack")
+	send(buf)
+	buf[0] = 'X' // caller-side reuse after send
+
+	select {
+	case p := <-got:
+		if string(p) != "attack" {
+			t.Errorf("delivered %q, want the bytes as of send time (queue must copy)", p)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("fn never received the payload")
+	}
+}

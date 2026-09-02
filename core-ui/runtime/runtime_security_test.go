@@ -6,6 +6,8 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/core-ui/check"
 )
 
 // The runtime is shipped as JavaScript with no JS engine available in
@@ -603,5 +605,322 @@ func TestModuleSrcValidatesNameShape(t *testing.T) {
 				t.Errorf("SECURITY: [module-src] %s: loadModule name guard class [%s] admits %q — traversal or scheme characters must not be allow-listed", rel, cls, bad)
 			}
 		}
+	}
+}
+
+// TestSelectorInterpolationEscaped asserts the codebase-wide selector
+// hygiene property: every value read from the DOM (or from DOM-borne
+// config attributes) and interpolated into a querySelector/closest
+// selector string is wrapped in CSS.escape() first.
+//
+// The runtime already established this convention at eight sites
+// (sse.js island names, toasts.js stacks, widgets.js names, panehost.js
+// URL keys, sortablelist.js groups, scrollspy.js anchors, runtime.js
+// signal names): a value carrying `"]` (or any selector metacharacter)
+// either re-targets the lookup at an unintended element or throws
+// SyntaxError, which silently kills the enclosing module's wiring. The
+// surfaces below interpolate the SAME class of DOM-attribute-borne
+// value without the escape, so a server reflecting request input into
+// the attribute (the threat TestSseIslandSelectorEscaped documents)
+// breaks or re-targets them.
+//
+// Escape acceptance covers the module-local alias: scrollspy.js wraps
+// with cssEscape(), its own CSS.escape shim.
+//
+// Surfaces are every interpolated selector call site in the shipped
+// runtime (runtime.js + src/*); the "escaped" column is the control
+// group proving the assertion detects a missing escape, not a missing
+// site.
+func TestSelectorInterpolationEscaped(t *testing.T) {
+	// The escape-window check this probe used to carry inline now
+	// lives in core-ui/check.LintSelectorInterpolation, so the
+	// property holds over EVERY selector call site in the shipped
+	// runtime, not only the ones listed below. The surface table
+	// remains as the drift tripwire: every anchor must still exist
+	// (renamed attribute or rewritten lookup ⇒ update the table
+	// deliberately), and the "escaped" control-group entries document
+	// the sites the audit fixed, whose escapes the lint must keep
+	// seeing.
+	surfaces := []struct {
+		file   string
+		anchor string // unique literal at the selector call site
+		where  string // human-readable surface description
+	}{
+		{"src/conditionalfield.js", `'[name="'`, "data-when-name value → [name=…] lookup"},
+		{"src/multiselect.js", `label[for="`, "checkbox id → label[for=…] lookup"},
+		{"src/carousel.js", `data-fui-carousel-deferred-for="`, "carousel id → manifest script lookup"},
+		{"src/carousel.js", `'[data-fui-carousel-defer="`, "manifest key → defer placeholder lookup"},
+		{"src/rangeslider.js", `data-fui-range-slider="`, "data-fui-range-slider value → pair lookups (3 selectors)"},
+		{"src/slider.js", `output[for="`, "input id → output[for=…] lookup"},
+		{"src/widgets.js", `link[data-fui-style="`, "widget name → style-link dedup lookup"},
+		{"runtime.js", `link[data-fui-style="`, "component name → style-link dedup lookup (composed from frag/kernel.js)"},
+		{"runtime.js", `[data-widget="${`, "closest data-component/data-widget value → hydrate lookup (composed from frag/boot.js)"},
+		// Control group: these sites escape today and must keep doing so.
+		{"src/sse.js", `'[data-island="'`, "island name lookup (pinned by TestSseIslandSelectorEscaped)"},
+		{"src/toasts.js", `'[data-fui-toast-stack="'`, "toast stack name lookup"},
+		{"src/sortablelist.js", `data-fui-sortable-group="`, "sortable group lookup"},
+		{"src/panehost.js", `'[data-fui-pane-key="'`, "URL-borne pane key lookup"},
+		{"src/scrollspy.js", `'#' + cssEscape(`, "anchor id lookup (module-local cssEscape shim)"},
+		{"src/widgets.js", `'[data-fui-widget="'`, "widget name → mounted-widget lookup"},
+		{"src/widgets.js", `'[data-fui-backdrop="'`, "widget name → backdrop lookup"},
+		{"runtime.js", `'[data-fui-signal="'`, "signal name → consumer fanout lookup"},
+	}
+
+	for _, s := range surfaces {
+		src := readSrc(t, s.file)
+		if !strings.Contains(src, s.anchor) {
+			t.Fatalf("could not locate selector anchor %q in %s — source drifted, update the surface table", s.anchor, s.file)
+		}
+	}
+
+	// The property itself, over the whole runtime (frag/ + src/; the
+	// generated runtime.js is pinned byte-identical to the fragments by
+	// TestComposedRuntimeMatchesOnDiskFile).
+	res, err := check.LintSelectorInterpolation(".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.HasErrors() {
+		t.Errorf("SECURITY: [selector-injection] unescaped interpolated selector(s) in the shipped runtime:\n%s",
+			strings.TrimSpace(res.Error()))
+	}
+
+	// Vacuity control: the pre-fix spelling (conditionalfield.js at
+	// 7bd789e9) must still fire the lint, so a quiet result above
+	// means the code is clean, not that the lint went blind.
+	vdir := t.TempDir()
+	vfile := filepath.Join(vdir, "vacuity.js")
+	vsrc := "function wireField(form, whenName) {\n" +
+		"  return form.querySelectorAll('[name=\"' + whenName + '\"]');\n" +
+		"}\n"
+	if err := os.WriteFile(vfile, []byte(vsrc), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	vres, err := check.LintSelectorInterpolation(vdir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !vres.HasErrors() {
+		t.Error("VACUITY: LintSelectorInterpolation no longer fires on the pre-fix '[name=\"' + whenName spelling — the probe above cannot detect a regression")
+	}
+}
+
+// TestRegistryLookupsAreOwnProps extends the family pinned by
+// TestComputedReducerOwnPropOnly: a registry keyed by an attribute-borne
+// name must be read as an OWN property, never through the prototype
+// chain. `_widgetCatalog` / `_widgets` are plain `{}` objects, so an
+// attribute value like "constructor" resolves to Object.prototype
+// members: the truthiness gate passes, `entry.cfg` is undefined, and
+// _mountByName throws (widget never opens), while `NS._widgets[name]`
+// truthiness makes openWidget treat "constructor"/"toString" as
+// already-mounted. The fix idiom is the one computed.js already uses,
+// Object.prototype.hasOwnProperty.call(reg, name).
+//
+// Surfaces: every read of these registries keyed by a DOM-attribute
+// variable (data-fui-open / data-fui-widget / data-fui-rpc-refresh /
+// data-fui-popover names). Writes keyed by cfg.name (catalog-borne)
+// are out of scope.
+func TestRegistryLookupsAreOwnProps(t *testing.T) {
+	// The nearby-hasOwnProperty window check this probe used to carry
+	// inline now lives in core-ui/check.LintRegistryOwnProps, enforced
+	// over every {} registry read in the shipped runtime. The needle
+	// table remains as the drift tripwire: every lookup must still
+	// exist (a renamed registry or refactored read ⇒ update the table
+	// deliberately).
+	needles := []struct {
+		file, needle string
+	}{
+		{"src/widgets.js", `NS._widgetCatalog[name]`},
+		{"src/widgets.js", `NS._widgets[name]`},
+		{"src/rpc.js", `NS._widgets[widgetName]`},
+		{"src/rpc.js", `NS._widgets[refreshName]`},
+		{"src/popover.js", `NS._widgets[name]`},
+		{"src/widgetfocus.js", `G._widgets[name]`},
+	}
+
+	for _, n := range needles {
+		src := readSrc(t, n.file)
+		if !strings.Contains(src, n.needle) {
+			t.Fatalf("could not locate registry lookup %q in %s — source drifted, update the surface table", n.needle, n.file)
+		}
+	}
+
+	// The property itself, over the whole runtime.
+	res, err := check.LintRegistryOwnProps(".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.HasErrors() {
+		t.Errorf("SECURITY: [registry-lookup] prototype-chain registry read(s) in the shipped runtime:\n%s",
+			strings.TrimSpace(res.Error()))
+	}
+
+	// Vacuity control: the pre-fix spelling (rpc.js at 7bd789e9) must
+	// still fire the lint.
+	vdir := t.TempDir()
+	decls := "window.__gofastr = window.__gofastr || {};\n" +
+		"window.__gofastr._widgets = window.__gofastr._widgets || {};\n"
+	readers := "const NS = window.__gofastr;\n" +
+		"function rpcRefresh(widgetName) {\n" +
+		"  const wentry = NS._widgets && NS._widgets[widgetName];\n" +
+		"  return wentry;\n" +
+		"}\n"
+	if err := os.WriteFile(filepath.Join(vdir, "decls.js"), []byte(decls), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(vdir, "readers.js"), []byte(readers), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	vres, err := check.LintRegistryOwnProps(vdir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !vres.HasErrors() {
+		t.Error("VACUITY: LintRegistryOwnProps no longer fires on the pre-fix NS._widgets[widgetName] spelling — the probe above cannot detect a regression")
+	}
+}
+
+// TestResponseHTMLMountedOnlyAfterOK asserts every runtime path that
+// mounts fetched text via innerHTML first checks the response status.
+// The convention is explicit elsewhere: poll.js's comment requires that
+// "an HTTP error must reach .catch", and rpc.js/intercept.js/infinitescroll.js
+// all gate on !r.ok before consuming the body. A path that skips the
+// check mounts whatever the server (or an intercepting proxy) returns
+// for an error — error pages routinely reflect the request URL and
+// attacker-influenced path segments, so mounting them as page markup
+// turns reflected error output into injected HTML.
+//
+// Surfaces: every response-text → innerHTML site in the shipped
+// modules. sortablelist's conflict-recovery path is the one that skips
+// the status check today: dest.innerHTML = html runs for any status,
+// including the 4xx/5xx body, replacing the column with an error page.
+func TestResponseHTMLMountedOnlyAfterOK(t *testing.T) {
+	// The fetch→mount span check this probe used to carry inline now
+	// lives in core-ui/check.LintResponseMountedAfterOK, enforced over
+	// every fetch chain in the shipped runtime. The surface table
+	// remains as the drift tripwire: both anchors of every span must
+	// still exist.
+	surfaces := []struct {
+		file     string
+		from, to string // unique literals bracketing the fetch→mount span
+		where    string
+	}{
+		{"src/sortablelist.js", "fetch(crpc", "dest.innerHTML = html", "conflict-recovery refresh"},
+		{"src/infinitescroll.js", "await fetch(path", "tmp.innerHTML = html", "infinite-scroll append"},
+		{"src/poll.js", "fetch(src", "el.innerHTML = html", "poll region swap"},
+		{"src/intercept.js", "fetch(path", "mount(res.html", "intercept overlay mount"},
+	}
+
+	for _, s := range surfaces {
+		src := readSrc(t, s.file)
+		from := strings.Index(src, s.from)
+		if from < 0 {
+			t.Fatalf("could not locate fetch anchor %q in %s — source drifted, update the surface table", s.from, s.file)
+		}
+		if to := strings.Index(src[from:], s.to); to < 0 {
+			t.Fatalf("could not locate mount anchor %q after the fetch in %s — source drifted, update the surface table", s.to, s.file)
+		}
+	}
+
+	// The property itself, over the whole runtime.
+	res, err := check.LintResponseMountedAfterOK(".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.HasErrors() {
+		t.Errorf("SECURITY: [response-html] fetch chain(s) that mount response text without an .ok check:\n%s",
+			strings.TrimSpace(res.Error()))
+	}
+
+	// Vacuity control: the pre-fix conflict-recovery chain
+	// (sortablelist.js at 7bd789e9) must still fire the lint.
+	vdir := t.TempDir()
+	vsrc := "function conflictRefresh(dest, crpc) {\n" +
+		"  fetch(crpc, { credentials: 'same-origin' })\n" +
+		"    .then(function (r) { return r.text(); })\n" +
+		"    .then(function (html) { dest.innerHTML = html; })\n" +
+		"    .catch(function () {});\n" +
+		"}\n"
+	if err := os.WriteFile(filepath.Join(vdir, "vacuity.js"), []byte(vsrc), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	vres, err := check.LintResponseMountedAfterOK(vdir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !vres.HasErrors() {
+		t.Error("VACUITY: LintResponseMountedAfterOK no longer fires on the pre-fix .text()→innerHTML chain — the probe above cannot detect a regression")
+	}
+}
+
+// TestAttributePathSegmentsValidated extends the family pinned by
+// TestModuleSrcValidatesNameShape: a value read from a DOM attribute
+// and interpolated into a URL PATH must be validated against the shape
+// the framework emits before the request fires, because the browser
+// normalizes `../` segments and re-targets the request onto any
+// same-origin route (past the handler that owns the prefix).
+//
+// loadModule's name gate is the control surface (already pinned).
+// _kilnPost builds '/kiln/tool/' + data-kiln-tool verbatim: on a kiln
+// build-mode page (body.kiln-app) any injected markup carrying
+// data-kiln-tool="../../admin/…" POSTs attacker JSON to an arbitrary
+// same-origin route, with the page's CSRF token attached. Kiln tool
+// names are emitted as [A-Za-z0-9_-]+, so an anchored shape check
+// rejects nothing legitimate.
+//
+// Surface: _kilnPost in src/rpc.js (the only remaining attribute-borne
+// path build in the runtime's fetch surface).
+func TestAttributePathSegmentsValidated(t *testing.T) {
+	// The kilnPost gate check is kept inline (it pins the exact gate
+	// spelling on the one known surface), and the general property —
+	// no attribute-borne value joins a URL path ungated, anywhere in
+	// the runtime — now lives in
+	// core-ui/check.LintAttributePathSegments.
+	src := readSrc(t, "src/rpc.js")
+	start := strings.Index(src, "const _kilnPost")
+	if start < 0 {
+		t.Fatal("could not locate _kilnPost in src/rpc.js — source drifted, update this test")
+	}
+	body := src[start:]
+	if end := strings.Index(body, "_dispatchKiln"); end > 0 {
+		body = body[:end]
+	}
+	if !strings.Contains(body, "fetch(") {
+		t.Fatal("could not locate the fetch inside _kilnPost — source drifted, update this test")
+	}
+	// The gate shape the module loader uses: an anchored allow-list of
+	// the emitted name alphabet, applied between the attribute read and
+	// the fetch.
+	if !strings.Contains(body, "[A-Za-z0-9_-]") {
+		t.Errorf("SECURITY: [attr-path] src/rpc.js: _kilnPost builds '/kiln/tool/' + data-kiln-tool with no name-shape validation — a tool value carrying '../' re-targets the POST onto any same-origin route with the page's CSRF token; gate the name like loadModule does (see TestModuleSrcValidatesNameShape)")
+	}
+
+	// The property itself, over the whole runtime.
+	res, err := check.LintAttributePathSegments(".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.HasErrors() {
+		t.Errorf("SECURITY: [attr-path] attribute-borne value(s) joined into URL paths ungated:\n%s",
+			strings.TrimSpace(res.Error()))
+	}
+
+	// Vacuity control: the pre-fix _kilnPost (rpc.js at 7bd789e9)
+	// must still fire the lint.
+	vdir := t.TempDir()
+	vsrc := "const _kilnPost = (el, body) =>\n" +
+		"  fetch('/kiln/tool/' + el.getAttribute('data-kiln-tool'), {\n" +
+		"    method: 'POST',\n" +
+		"    body,\n" +
+		"  }).catch(() => {});\n"
+	if err := os.WriteFile(filepath.Join(vdir, "vacuity.js"), []byte(vsrc), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	vres, err := check.LintAttributePathSegments(vdir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !vres.HasErrors() {
+		t.Error("VACUITY: LintAttributePathSegments no longer fires on the pre-fix '/kiln/tool/' + data-kiln-tool spelling — the probe above cannot detect a regression")
 	}
 }

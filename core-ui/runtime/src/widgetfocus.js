@@ -10,7 +10,9 @@
       if (e.key !== 'Escape') return;
       if (G._modalStack && G._modalStack.length) {
         const name = G._modalStack[G._modalStack.length - 1];
-        const top = G._widgets[name];
+        const top = G._widgets && Object.prototype.hasOwnProperty.call(G._widgets, name)
+          ? G._widgets[name]
+          : undefined;
         if (top && top.closeOnEscape) {
           e.stopPropagation();
           G.closeWidget(name);
@@ -19,7 +21,9 @@
       }
       if (G._popoverStack && G._popoverStack.length) {
         const name = G._popoverStack[G._popoverStack.length - 1];
-        const top = G._widgets[name];
+        const top = G._widgets && Object.prototype.hasOwnProperty.call(G._widgets, name)
+          ? G._widgets[name]
+          : undefined;
         if (top && top.closeOnEscape) {
           e.stopPropagation();
           G.closeWidget(name);
@@ -33,7 +37,9 @@
     document.addEventListener('keydown', function (e) {
       if (e.key !== 'Tab' || !G._modalStack || !G._modalStack.length) return;
       const name = G._modalStack[G._modalStack.length - 1];
-      const root = G._widgets[name]?.root;
+      const root = G._widgets && Object.prototype.hasOwnProperty.call(G._widgets, name)
+        ? G._widgets[name]?.root
+        : undefined;
       if (!root) return;
       const nodes = Array.from(root.querySelectorAll(G._focusSel)).filter(function (el) {
         return el.offsetParent !== null || el === document.activeElement;

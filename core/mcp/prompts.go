@@ -159,18 +159,28 @@ func (s *Server) handlePromptsList(ctx context.Context, req Request) Response {
 	if err != nil {
 		return newErrorResponse(req.ID, ErrInvalidParams, err.Error())
 	}
+	// Snapshot under the read lock, evaluate the per-caller gates
+	// outside it: gates are app-supplied callback code and must never
+	// contend with the registry lock (notifications.go's rule). One
+	// slow gate used to stall every registration; a panicking one
+	// unwound past the RUnlock and wedged the registry.
 	s.mu.RLock()
-	list := make([]Prompt, 0, len(s.prompts))
+	snapshot := make([]Prompt, 0, len(s.prompts))
 	for _, p := range s.prompts {
+		snapshot = append(snapshot, p)
+	}
+	s.mu.RUnlock()
+	list := make([]Prompt, 0, len(snapshot))
+	for _, p := range snapshot {
 		// A prompt the caller cannot get is not listed to them: the
 		// description and argument list are the disclosure, same as a
-		// tool's inputSchema.
-		if p.gate != nil && p.gate(ctx) != nil {
+		// tool's inputSchema. gateRefused also converts a panicking
+		// gate into a refusal instead of a transport crash.
+		if gateRefused(p.gate, ctx) {
 			continue
 		}
 		list = append(list, p)
 	}
-	s.mu.RUnlock()
 	slices.SortFunc(list, func(a, b Prompt) int { return strings.Compare(a.Name, b.Name) })
 	page, next := pageList(s, "prompts/list", list, offset)
 	return newSuccessResponse(req.ID, promptsListResult{Prompts: page, NextCursor: next})

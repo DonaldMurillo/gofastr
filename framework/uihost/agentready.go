@@ -699,7 +699,15 @@ func (ds *UIHost) resolveBaseURL(req *http.Request) string {
 	if req.TLS != nil {
 		scheme = "https"
 	}
-	if u := req.Header.Get("X-Forwarded-Proto"); u != "" {
+	// X-Forwarded-Proto is honored for the scheme ONLY as an exact
+	// "http"/"https": the raw value is request-controlled and this
+	// origin is reflected into cacheable output (the Link header, the
+	// agent card's service URL), so a non-scheme value like
+	// "https://evil.example/p" would poison both with an attacker-named
+	// origin — the same reflection the Host refusal above exists to
+	// prevent. framework/pluginhost/assets.go applies the identical
+	// enum check for the identical reason.
+	if u := req.Header.Get("X-Forwarded-Proto"); u == "http" || u == "https" {
 		scheme = u
 	}
 	return scheme + "://" + req.Host
@@ -798,7 +806,22 @@ func (ds *UIHost) writeAgentLinkHeaders(w http.ResponseWriter, req *http.Request
 
 // markdownAlternate maps an HTML page path to its /llm.md markdown
 // counterpart (the GoFastr convention served via WithPublicLLMMD).
+//
+// r.URL.Path is percent-DECODED, so a request path carrying %0d%0a or %00
+// arrives here with raw CR/LF/NUL. The result is concatenated into the
+// outbound Link header, and net/http only collapses CR/LF at write time —
+// NUL and every other C0 byte reach w.Header() consumers (recorders,
+// header-copying middleware, proxies) verbatim. Strip them; tab is kept,
+// it is legal in a header field value.
 func markdownAlternate(path string) string {
+	var b strings.Builder
+	b.Grow(len(path))
+	for i := range len(path) {
+		if c := path[i]; c >= 0x20 || c == '\t' {
+			b.WriteByte(c)
+		}
+	}
+	path = b.String()
 	if path == "" || path == "/" {
 		return "/llm.md"
 	}

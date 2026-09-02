@@ -31,7 +31,7 @@
     const form = el.closest('form') || el.closest('[data-fui-comp="ui-form"]') || document.body;
 
     // Find all inputs/selects/textareas with the matching name.
-    const inputs = form.querySelectorAll('[name="' + whenName + '"]');
+    const inputs = form.querySelectorAll('[name="' + CSS.escape(whenName) + '"]');
     let matched = false;
 
     for (const input of inputs) {

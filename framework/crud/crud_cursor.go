@@ -220,10 +220,16 @@ func decodeCursorAny(cursor string, fields []string) (map[string]string, error) 
 		}
 		return out, nil
 	}
-	// Fall back to single-field cursor.
-	if _, val, err := pagination.DecodeCursor(cursor); err == nil && len(fields) > 0 {
+	// Fall back to single-field cursor. The decoded name must
+	// exact-match the expected keyset column: the name selects which
+	// column the value keysets on, so a foreign name binds a foreign
+	// value under the expected column.
+	if name, val, err := pagination.DecodeCursor(cursor); err == nil && len(fields) > 0 {
 		if len(fields) > 1 {
 			return nil, fmt.Errorf("cursor shape mismatch: single-field cursor, expected %d fields", len(fields))
+		}
+		if name != fields[0] {
+			return nil, fmt.Errorf("cursor field %q does not match expected keyset field %q", name, fields[0])
 		}
 		out[fields[0]] = val
 		return out, nil

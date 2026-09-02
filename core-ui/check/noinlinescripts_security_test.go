@@ -158,3 +158,37 @@ func TestSecurityMarkupCaseInsensitive(t *testing.T) {
 		}
 	})
 }
+
+// CHECK-R5: inlineStyleAttrRe (noinlinestyles.go:62) anchors the style
+// attribute to start-of-string or whitespace (`(?:^|\s)style`) and
+// requires a quoted value. HTML5 attribute separators include `/`
+// (the tokenizer treats it like whitespace between attributes), and
+// attribute values may be unquoted — browsers apply BOTH forms, so
+// `<img/src=x style=color:red>` and `<div style=color:red>` are live
+// inline styles the gate passes. Same contract as R4: markup the
+// browser applies must be flagged, evaluated against the HTML parser,
+// not the regex's dialect.
+//
+// Surfaces: the quoted-value requirement and the separator anchor of
+// the single inlineStyleAttrRe pattern, driven through
+// checkInlineStyleInString (the same entry the AST scanner uses).
+func TestSecurityStyleAttrSeparatorBypass(t *testing.T) {
+	cases := []struct {
+		name string
+		lit  string
+	}{
+		{"control: quoted style after a space is flagged", `<div style="color:red">x</div>`},
+		{"slash-separated style applies in browsers", `<img/src=x/style="color:red">`},
+		{"unquoted style value applies in browsers", `<div style=color:red>x</div>`},
+		{"slash separator with single quotes", `<img/src=x/style='color:red'>`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			res := &Result{}
+			checkInlineStyleInString(tc.lit, 1, "fixture.go", res)
+			if !res.HasErrors() {
+				t.Errorf("CSP gate passed, but browsers apply this inline style under the same parse as its quoted/space-separated twin.\nliteral: %q\nviolations: %v", tc.lit, res.Violations)
+			}
+		})
+	}
+}

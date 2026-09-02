@@ -77,3 +77,34 @@ func TestSearchFieldsValidColumnsOK(t *testing.T) {
 		t.Fatalf("SearchFields = %v", e.Config.SearchFields)
 	}
 }
+
+// TestValidateRelationFieldRequiresTo pins Validate's relation branch:
+// a Relation-typed field without a To target is a declaration error,
+// not a field that silently degrades to an untyped column. Define
+// derives a BelongsTo from {Type: Relation, To: target}; an empty To
+// would leave a relation column nothing points at.
+func TestValidateRelationFieldRequiresTo(t *testing.T) {
+	e := Define("posts", EntityConfig{
+		Fields: []schema.Field{
+			{Name: "title", Type: schema.String},
+			{Name: "author", Type: schema.Relation},
+		},
+	})
+	err := e.Validate()
+	if err == nil {
+		t.Fatal("Validate accepted a Relation field with no To target")
+	}
+	if !strings.Contains(err.Error(), "must specify To") {
+		t.Fatalf("want relation-To error, got: %v", err)
+	}
+
+	ok := Define("posts", EntityConfig{
+		Fields: []schema.Field{
+			{Name: "title", Type: schema.String},
+			{Name: "author", Type: schema.Relation, To: "users"},
+		},
+	})
+	if err := ok.Validate(); err != nil {
+		t.Fatalf("Relation field with To rejected: %v", err)
+	}
+}

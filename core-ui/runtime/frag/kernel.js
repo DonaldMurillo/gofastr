@@ -172,8 +172,11 @@
   // -----------------------------------------------------------------------
   // Helpers
   // -----------------------------------------------------------------------
+  // Own-prop read for {} registries keyed by attribute-borne names: an
+  // inherited "constructor" is truthy and must not pass as an entry.
+  const own = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
   const closestAttr = (el, attr) => {
-    const node = el.closest(`[${attr}]`);
+    const node = el.closest(`[${CSS.escape(attr)}]`);
     return node?.getAttribute(attr) ?? null;
   };
 
@@ -278,7 +281,8 @@
     // --- State helpers (compiled Go code uses these) ---
 
     getState(key, defaultVal) {
-      return state[key] ?? defaultVal;
+      const v = own(state, key) ? state[key] : undefined;
+      return v ?? defaultVal;
     },
 
     setState(key, val) {
@@ -346,7 +350,7 @@
     syncBindings() {
       document.querySelectorAll('[data-bind]').forEach(el => {
         const key = el.getAttribute('data-bind');
-        if (key && state[key] !== undefined) {
+        if (key && own(state, key) && state[key] !== undefined) {
           el.value = state[key];
         }
       });
@@ -403,7 +407,7 @@
     _pendingLinks: new Set(),
     loadComponentCSS(name) {
       if (!name || this._pendingLinks.has(name)) return;
-      if (document.querySelector('link[data-fui-style="' + name + '"]')) return;
+      if (document.querySelector('link[data-fui-style="' + CSS.escape(name) + '"]')) return;
       const e = (window.__gofastr_catalog || {})[name];
       if (!e) return;
       this._pendingLinks.add(name);

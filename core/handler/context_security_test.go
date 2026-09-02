@@ -92,4 +92,37 @@ func TestContext_NilContextSafe(t *testing.T) {
 
 type testSecurityUser struct{ id string }
 
+// Property: each context value is reachable only through its own typed
+// getter — a value stored under one key never surfaces under another
+// (no phantom user from a tenant-only context, and vice versa), and each
+// getter round-trips exactly what its setter stored.
+func TestContext_TypedKeysNeverCrossRead(t *testing.T) {
+	ctx := context.Background()
+	ctx = SetUser(ctx, "user-1")
+	ctx = SetTenant(ctx, "tenant-1")
+	ctx = SetRequestID(ctx, "req-1")
+	ctx = SetLogger(ctx, "logger-1")
+
+	if u, ok := GetUser(ctx); !ok || u != "user-1" {
+		t.Fatalf("GetUser = (%v, %v)", u, ok)
+	}
+	if tn, ok := GetTenant(ctx); !ok || tn != "tenant-1" {
+		t.Fatalf("GetTenant = (%v, %v)", tn, ok)
+	}
+	if id, ok := GetRequestID(ctx); !ok || id != "req-1" {
+		t.Fatalf("GetRequestID = (%v, %v)", id, ok)
+	}
+	if l, ok := GetLogger(ctx); !ok || l != "logger-1" {
+		t.Fatalf("GetLogger = (%v, %v)", l, ok)
+	}
+
+	onlyTenant := SetTenant(context.Background(), "t")
+	if _, ok := GetUser(onlyTenant); ok {
+		t.Fatal("phantom user read from a tenant-only context")
+	}
+	if _, ok := GetRequestID(onlyTenant); ok {
+		t.Fatal("phantom request id read from a tenant-only context")
+	}
+}
+
 func (u *testSecurityUser) GetID() string { return u.id }

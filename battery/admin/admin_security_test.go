@@ -14,6 +14,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
+	"github.com/DonaldMurillo/gofastr/framework/tenant"
 )
 
 type errBrowsableQueue struct {
@@ -244,5 +245,196 @@ func TestAdminNavDrawerChromeRequiresAuth(t *testing.T) {
 		}
 		t.Fatalf("SECURITY: [admin] anonymous GET /core-ui/widget/admin-nav/chrome returned %d, want 401/403 — the admin nav drawer is mounted without the admin gate and its chrome discloses the back-office entity map (body links /admin/e/posts: %t), violating the package contract \"There is no unauthenticated or self-service path\". Body starts: %q",
 			rr.Code, disclosesEntity, body)
+	}
+}
+
+// asTenantUser is asUser plus a server-side tenant id, the shape a real
+// multi-tenant app's auth layer produces (tenant never comes from the
+// request itself — see framework/tenant.TenantMiddleware).
+func asTenantUser(base http.Handler, user any, tenantID string) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+		if user != nil {
+			ctx = handler.SetUser(ctx, user)
+		}
+		if tenantID != "" {
+			ctx = tenant.SetTenantID(ctx, tenantID)
+		}
+		base.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
+func orgsConfig() entity.EntityConfig {
+	return entity.EntityConfig{
+		Table: "org_docs",
+		Scope: &entity.ScopeConfig{MultiTenant: true},
+		Fields: []schema.Field{
+			{Name: "title", Type: schema.String, Required: true},
+			{Name: "tenant_id", Type: schema.String},
+		},
+	}.WithTimestamps(false)
+}
+
+// TestEntityAdminSuperuserKeepsTenantScope pins that the admin battery's
+// superuser policy escalation (adminSuperuserCtx grants access.Wildcard
+// so per-entity RBAC cannot lock the back-office out) never widens TENANT
+// scope: the wildcard travels with the caller's own tenant id, so an
+// admin of tenant A still sees only tenant A's rows, and an admin ctx
+// with no tenant at all fails closed (the documented errTenantRequired
+// posture for MultiTenant entities) instead of seeing every tenant.
+//
+// Surfaces: the list screen, the _rows island fragment, and the edit
+// screen — the three read paths adminSuperuserCtx feeds.
+func TestEntityAdminSuperuserKeepsTenantScope(t *testing.T) {
+	db := newDB(t)
+	app := newHostedApp(t, db, map[string]entity.EntityConfig{"org_docs": orgsConfig()})
+	base := mountAdminBattery(t, app, Config{Entities: []string{"org_docs"}})
+
+	// Seed one row per tenant through the admin's own create route.
+	for _, tenant := range []string{"tenant-a", "tenant-b"} {
+		h := asTenantUser(base, testUser{"admin-" + tenant}, tenant)
+		if rr := postForm(h, "/admin/e/org_docs/_create", url.Values{
+			"title": {"doc for " + tenant},
+		}); rr.Code != http.StatusSeeOther {
+			t.Fatalf("tenant %s create failed: %d body=%s", tenant, rr.Code, rr.Body.String())
+		}
+	}
+
+	// Tenant A's admin: only tenant A's doc, on every read surface.
+	a := asTenantUser(base, testUser{"admin-a"}, "tenant-a")
+	for _, path := range []string{"/admin/e/org_docs", "/admin/e/org_docs/_rows"} {
+		body := get(a, path).Body.String()
+		if !strings.Contains(body, "doc for tenant-a") {
+			t.Errorf("%s: tenant-a admin cannot see own-tenant doc (list broken?)", path)
+		}
+		if strings.Contains(body, "doc for tenant-b") {
+			t.Errorf("SECURITY: [admin] %s: superuser policy leaked tenant-b's row to tenant-a's admin — the access.Wildcard grant must not widen tenant scope", path)
+		}
+	}
+
+	// The edit screen for tenant B's row must not load for tenant A.
+	var idTenantB string
+	if err := db.QueryRow(`SELECT id FROM org_docs WHERE title = 'doc for tenant-b'`).Scan(&idTenantB); err != nil {
+		t.Fatalf("query tenant-b id: %v", err)
+	}
+	if body := get(a, "/admin/e/org_docs/edit/"+idTenantB).Body.String(); !strings.Contains(body, "Record not found") {
+		t.Errorf("SECURITY: [admin] tenant-a admin loaded tenant-b's row on the edit screen: superuser policy must not widen tenant scope. body=%s", body)
+	}
+
+	// No-tenant admin ctx: fail closed, never every tenant's rows.
+	noTenant := asUser(base, testUser{"admin-nt"})
+	body := get(noTenant, "/admin/e/org_docs").Body.String()
+	if strings.Contains(body, "doc for tenant-a") || strings.Contains(body, "doc for tenant-b") {
+		t.Errorf("SECURITY: [admin] a no-tenant admin ctx saw multi-tenant rows: MultiTenant entities must fail closed without a tenant id, not fall back to unscoped")
+	}
+}
+
+// TestEntityHostileSortParamsHarmless pins the list screen's sort/dir
+// boundary: query params are attacker input (hand-typed or bookmarked
+// URLs), and only columns the entity declares sortable may reach the
+// CrudHandler query; anything else must degrade to the default view, not
+// 400/500/blank the grid or surface driver text.
+func TestEntityHostileSortParamsHarmless(t *testing.T) {
+	db := newDB(t)
+	app := newHostedApp(t, db, map[string]entity.EntityConfig{"posts": postsConfig()})
+	h := mountEntityAdmin(t, app, Config{Entities: []string{"posts"}}, testUser{"u1"})
+	postForm(h, "/admin/e/posts/_create", url.Values{"title": {"Sortable"}, "status": {"draft"}})
+
+	hostile := []string{
+		"/admin/e/posts?sort=" + url.QueryEscape("title; DROP TABLE posts;--"),
+		"/admin/e/posts?sort=" + url.QueryEscape("title desc, (SELECT 1)"),
+		"/admin/e/posts?sort[]=title&dir=desc",
+		"/admin/e/posts?sort=title&dir=" + url.QueryEscape("desc; DELETE FROM posts"),
+		"/admin/e/posts?sort=" + url.QueryEscape("nonexistent_column"),
+		"/admin/e/posts?sort=&dir=ASC",
+	}
+	for _, path := range hostile {
+		rr := get(h, path)
+		if rr.Code != http.StatusOK {
+			t.Errorf("%s: status %d, want 200 (hostile sort must degrade to the default view)", path, rr.Code)
+			continue
+		}
+		body := rr.Body.String()
+		if !strings.Contains(body, "Sortable") {
+			t.Errorf("%s: row missing from list: hostile sort blanked the grid instead of falling back to the default ordering. body=%s", path, body)
+		}
+		if strings.Contains(body, "syntax error") || strings.Contains(body, "no such column") {
+			t.Errorf("SECURITY: [admin] %s: driver error text surfaced in the list response: %s", path, body)
+		}
+	}
+
+	// The row survives intact.
+	var n int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM posts WHERE title = 'Sortable'`).Scan(&n); err != nil || n != 1 {
+		t.Errorf("posts row count = %d err=%v, want 1 (hostile sort must not mutate data)", n, err)
+	}
+}
+
+// TestAdminPushStateHeaderControlBytes pins the X-Gofastr-Push-State
+// response header (entityRows echoes the active query back for
+// refresh/share/back): attacker-supplied CR/LF/NUL in the q/sort params
+// must never reach the header raw, whatever url.Values.Encode does today.
+func TestAdminPushStateHeaderControlBytes(t *testing.T) {
+	db := newDB(t)
+	app := newHostedApp(t, db, map[string]entity.EntityConfig{"posts": postsConfig()})
+	h := mountEntityAdmin(t, app, Config{Entities: []string{"posts"}}, testUser{"u1"})
+	postForm(h, "/admin/e/posts/_create", url.Values{"title": {"Needle"}, "status": {"draft"}})
+
+	path := "/admin/e/posts/_rows?" + url.Values{
+		"q":    {"ev\r\nSet-Cookie: pwn=1\r\n\x00tail"},
+		"sort": {"title\x00"},
+	}.Encode()
+	rr := get(h, path)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status %d body=%s", rr.Code, rr.Body.String())
+	}
+	hdr := rr.Header().Get("X-Gofastr-Push-State")
+	if hdr == "" {
+		t.Fatalf("no X-Gofastr-Push-State header on _rows response")
+	}
+	for _, bad := range []byte{'\r', '\n', 0} {
+		if strings.ContainsRune(hdr, rune(bad)) {
+			t.Errorf("SECURITY: [admin] X-Gofastr-Push-State carries raw control byte %q from the request query: %q", bad, hdr)
+		}
+	}
+}
+
+// TestEntityListSearchValueParameterized pins the quick-search boundary:
+// the ?q= value is request-borne input forwarded to the CrudHandler as a
+// <col>_like filter. Hostile SQL/wildcard/quote shapes must be treated
+// as literal text (parameterized, LIKE-wildcard consequences bounded to
+// a wrong result set), never error, leak driver text, or mutate rows.
+func TestEntityListSearchValueParameterized(t *testing.T) {
+	db := newDB(t)
+	app := newHostedApp(t, db, map[string]entity.EntityConfig{"posts": postsConfig()})
+	h := mountEntityAdmin(t, app, Config{Entities: []string{"posts"}}, testUser{"u1"})
+	postForm(h, "/admin/e/posts/_create", url.Values{"title": {"Needle post"}, "status": {"draft"}})
+
+	hostile := []string{
+		`Robert'); DROP TABLE posts;--`,
+		`%`, `%%`, `%Needle%`, `_`, `[]`,
+		`' OR '1'='1`,
+		"Needle\x00tail",
+	}
+	for _, q := range hostile {
+		rr := get(h, "/admin/e/posts?q="+url.QueryEscape(q))
+		if rr.Code != http.StatusOK {
+			t.Errorf("q=%q: status %d, want 200 (a hostile search term is data, not SQL)", q, rr.Code)
+			continue
+		}
+		body := rr.Body.String()
+		if strings.Contains(body, "syntax error") || strings.Contains(body, "unterminated") || strings.Contains(body, "no such") {
+			t.Errorf("SECURITY: [admin] q=%q surfaced driver error text in the list response", q)
+		}
+	}
+
+	// A literal match still finds the row, and the row count is intact.
+	body := get(h, "/admin/e/posts?q="+url.QueryEscape("Needle")).Body.String()
+	if !strings.Contains(body, "Needle post") {
+		t.Errorf("literal search term no longer matches the seeded row (search broken)")
+	}
+	var n int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM posts`).Scan(&n); err != nil || n != 1 {
+		t.Errorf("posts count = %d err=%v, want 1 (hostile search must not mutate rows)", n, err)
 	}
 }

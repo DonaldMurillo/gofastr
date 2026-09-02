@@ -56,10 +56,10 @@ func expectCreateTable(mock sqlmock.Sqlmock) {
 	)`,
 	)).WillReturnResult(sqlmock.NewResult(0, 0))
 	mock.ExpectExec(regexp.QuoteMeta(
-		`ALTER TABLE "_migrations" ADD COLUMN IF NOT EXISTS checksum TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE "_migrations" ADD COLUMN IF NOT EXISTS "checksum" TEXT NOT NULL DEFAULT ''`,
 	)).WillReturnResult(sqlmock.NewResult(0, 0))
 	mock.ExpectExec(regexp.QuoteMeta(
-		`ALTER TABLE "_migrations" ADD COLUMN IF NOT EXISTS dirty BOOLEAN NOT NULL DEFAULT FALSE`,
+		`ALTER TABLE "_migrations" ADD COLUMN IF NOT EXISTS "dirty" BOOLEAN NOT NULL DEFAULT FALSE`,
 	)).WillReturnResult(sqlmock.NewResult(0, 0))
 }
 

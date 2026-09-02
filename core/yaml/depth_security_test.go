@@ -67,3 +67,16 @@ func TestYAML_DeepNestingNoStackExhaust(t *testing.T) {
 		t.Fatalf("SECURITY: [yaml] Parse of deep nesting crashed the subprocess (no depth cap → stack exhaustion): %v\n%s", err, out)
 	}
 }
+
+// Property: the depth cap is exactly where it is documented (128):
+// nesting at 127 parses, one level deeper is refused. An off-by-one in
+// either direction either eats legal configs or silently admits the
+// first layer of the exhaustion range the cap exists to stop.
+func TestYAMLDepthBoundaryExact(t *testing.T) {
+	if _, err := Parse(nestedYAML(127)); err != nil {
+		t.Errorf("127-level nesting (one under the cap) must parse, got: %v", err)
+	}
+	if _, err := Parse(nestedYAML(128)); err == nil {
+		t.Error("SECURITY: [yaml] 128-level nesting parsed — the documented maxNestingDepth=128 cap is off by one on the admit side.")
+	}
+}

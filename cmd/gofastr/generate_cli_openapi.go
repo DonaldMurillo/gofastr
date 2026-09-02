@@ -462,7 +462,10 @@ func buildOpenAPICLISpec(doc map[string]any, opts cliOptions, clientImport strin
 	for _, p := range pathKeys {
 		item, ok := paths[p].(map[string]any)
 		if !ok {
-			continue
+			// A path present with a non-object value is malformed, not
+			// absent: silently skipping it would generate a CLI that
+			// quietly lacks the endpoint (the laxcoerce shape).
+			return spec, fmt.Errorf("path %s: want an object, got %T", p, paths[p])
 		}
 		item, err := oaResolve(doc, item)
 		if err != nil {
@@ -470,9 +473,13 @@ func buildOpenAPICLISpec(doc map[string]any, opts cliOptions, clientImport strin
 		}
 		baseParams, _ := item["parameters"].([]any)
 		for _, m := range oaMethods {
-			opNode, ok := item[m].(map[string]any)
-			if !ok {
+			v, present := item[m]
+			if !present {
 				continue
+			}
+			opNode, ok := v.(map[string]any)
+			if !ok {
+				return spec, fmt.Errorf("%s %s: want an object, got %T", strings.ToUpper(m), p, v)
 			}
 			where := strings.ToUpper(m) + " " + p
 			op, err := oaBuildOp(doc, opNode, baseParams, strings.ToUpper(m), p)
@@ -512,7 +519,10 @@ func oaSecurity(doc map[string]any, spec *cliSpec) error {
 	for _, n := range names {
 		s, ok := schemes[n].(map[string]any)
 		if !ok {
-			continue
+			// A named security scheme present with a non-object value
+			// is malformed, not absent: skipping it would quietly fall
+			// back to the default header (the laxcoerce shape).
+			return fmt.Errorf("securityScheme %s: want an object, got %T", n, schemes[n])
 		}
 		typ, _ := s["type"].(string)
 		switch {

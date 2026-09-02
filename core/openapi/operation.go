@@ -21,7 +21,19 @@ func NewOperation() *Operation {
 
 // AddParameter appends a parameter to the operation.
 // location is one of "path", "query", "header", "cookie".
+//
+// A parameter is identified by (name, in); declaring one that already
+// exists is a no-op, so the first declaration wins. The entity list
+// operation relies on this: its fixed controls (sort, page, cursor, q,
+// trashed) are declared before the per-field filters, and a field that
+// happens to share a control's name, or a field whose _in suffix lands on
+// another field's exact name, cannot declare the same parameter twice.
 func (o *Operation) AddParameter(name, location, description string, required bool, schema map[string]any) {
+	for _, existing := range o.Parameters {
+		if existing["name"] == name && existing["in"] == location {
+			return
+		}
+	}
 	param := map[string]any{
 		"name":        name,
 		"in":          location,

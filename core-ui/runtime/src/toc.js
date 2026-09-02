@@ -54,7 +54,7 @@
         navEl.querySelectorAll('.ui-toc__link.is-active').forEach(function (a) {
           a.classList.remove('is-active');
         });
-        if (links[id]) links[id].classList.add('is-active');
+        if (Object.prototype.hasOwnProperty.call(links, id) && links[id]) links[id].classList.add('is-active');
       });
     }, { rootMargin: '0px 0px -70% 0px', threshold: 0 });
     heads.forEach(function (h) { observer.observe(h); });

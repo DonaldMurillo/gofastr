@@ -47,21 +47,67 @@ func FontFaceCSS(dir string, fonts ...WebFont) string {
 	if dir == "" {
 		dir = DefaultFontDir
 	}
-	dir = strings.TrimSuffix(dir, "/")
+	dir = quotedSlotSanitized(strings.TrimSuffix(dir, "/"))
 
 	var b strings.Builder
 	seen := make(map[string]bool, len(fonts))
 	for _, f := range fonts {
-		if f.Family == "" || seen[f.Family] {
+		family := quotedSlotSanitized(f.Family)
+		if family == "" || seen[family] {
 			continue
 		}
-		seen[f.Family] = true
+		seen[family] = true
 		fmt.Fprintf(&b,
 			"@font-face { font-family: '%s'; font-style: %s; font-weight: %s; font-display: %s; src: url('%s/%s.woff2') format('woff2'); }\n",
-			f.Family, orDefault(f.Style, "normal"), orDefault(f.Weight, "400 700"),
-			orDefault(f.Display, "swap"), dir, f.fileName())
+			family, bareSlotValue(f.Style, "normal"), bareSlotValue(f.Weight, "400 700"),
+			bareSlotValue(f.Display, "swap"), dir, quotedSlotSanitized(f.fileName()))
 	}
 	return b.String()
+}
+
+// quotedSlotSanitized returns v with every rune that could break out of
+// the single-quoted CSS string slots FontFaceCSS interpolates into
+// (family name, file basename, url prefix) removed. Inside a CSS string
+// only the closing quote, the escape character, and newlines can end
+// the string; ; { } < > are stripped too so the emitted rule stays
+// balanced even against a future refactor that drops the quotes. This
+// is FontFaceCSS's ingestion boundary: its inputs arrive file-borne
+// (gofastr.yml theme map → cmd/gofastr/blueprint.go), the same reason
+// ApplyTokens validates every token value (tokenmap.go cssDeclBreakers).
+// A family whose runes were stripped simply matches no font and the
+// browser falls back, which is where a typo'd family lands too.
+func quotedSlotSanitized(v string) string {
+	var b strings.Builder
+	b.Grow(len(v))
+	for _, r := range v {
+		switch r {
+		case '\'', '"', '\\', ';', '{', '}', '<', '>', '\n', '\r':
+			continue
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
+}
+
+// bareSlotValue validates a value interpolated into an UNQUOTED
+// declaration slot (font-style / font-weight / font-display) and falls
+// back to the documented default when it carries anything outside the
+// bare-value grammar (letters, digits, space, hyphen): every legitimate
+// value — normal, italic, "oblique 40deg", "400 700", swap — fits it,
+// and a quote, brace, or semicolon is a breakout attempt that never
+// reaches the stylesheet. The font still renders, with the default.
+func bareSlotValue(v, fallback string) string {
+	if v == "" {
+		return fallback
+	}
+	for _, r := range v {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == ' ', r == '-':
+		default:
+			return fallback
+		}
+	}
+	return v
 }
 
 // FontFamilies lists the distinct, non-empty families in declaration

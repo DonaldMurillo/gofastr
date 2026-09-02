@@ -59,7 +59,7 @@
     // Subscribe to every dependency. Ensure the slot exists so a
     // dependency that hasn't been seeded/set yet still wires up.
     for (const d of deps) {
-      if (!G._signals[d]) G._signals[d] = { value: undefined, listeners: [] };
+      if (!Object.prototype.hasOwnProperty.call(G._signals, d) || !G._signals[d]) G._signals[d] = { value: undefined, listeners: [] };
       G._signals[d].listeners.push(recompute);
     }
 
@@ -84,7 +84,7 @@
       el.__fuiComputedEntry = null;
       if (!entry) continue;
       for (const d of entry.deps) {
-        const slot = G._signals[d];
+        const slot = Object.prototype.hasOwnProperty.call(G._signals, d) ? G._signals[d] : undefined;
         if (!slot || !slot.listeners) continue;
         const i = slot.listeners.indexOf(entry.recompute);
         if (i !== -1) slot.listeners.splice(i, 1);

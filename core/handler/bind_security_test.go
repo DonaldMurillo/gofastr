@@ -156,6 +156,41 @@ func TestBind_NonJSONContentTypeSkipped(t *testing.T) {
 	}
 }
 
+// Property: a POST with Content-Type: application/json and an EMPTY body
+// leaves the query-bound values in place instead of failing or zeroing —
+// the len(body)==0 branch must return before validation and decode.
+func TestBind_EmptyBodyKeepsQueryValues(t *testing.T) {
+	var dst struct {
+		Name string `json:"name" query:"name"`
+	}
+	req := httptest.NewRequest(http.MethodPost, "/?name=from-query", strings.NewReader(""))
+	req.Header.Set("Content-Type", "application/json")
+
+	if err := Bind(req, &dst); err != nil {
+		t.Fatalf("empty JSON body must not error: %v", err)
+	}
+	if dst.Name != "from-query" {
+		t.Fatalf("query-bound value lost on empty body: %q", dst.Name)
+	}
+}
+
+// Property: a repeated query parameter binds its FIRST value — the second
+// occurrence never smuggles a different value past the first (bindQuery
+// uses values[0]).
+func TestBind_RepeatedQueryBindsFirstValue(t *testing.T) {
+	var dst struct {
+		Role string `query:"role"`
+	}
+	req := httptest.NewRequest(http.MethodGet, "/?role=member&role=admin", nil)
+
+	if err := Bind(req, &dst); err != nil {
+		t.Fatalf("Bind error: %v", err)
+	}
+	if dst.Role != "member" {
+		t.Fatalf("second query occurrence smuggled in: %q", dst.Role)
+	}
+}
+
 func TestBind_JSONPrefixSpoofingRejected_JSONP(t *testing.T) {
 	var dst struct {
 		Name string `json:"name" query:"name"`

@@ -50,6 +50,14 @@ type DurableScheduler struct {
 	beforeOccurrenceCommit func()
 }
 
+// hookBeforeOccurrenceCommit runs the hook under a recover guard: it
+// fires on the scheduler loop, which has no per-request net, and a
+// panicking hook must not take the scheduler (or the process) with it.
+func (s *DurableScheduler) hookBeforeOccurrenceCommit() {
+	defer func() { _ = recover() }()
+	s.beforeOccurrenceCommit()
+}
+
 // DurableScheduleBuilder configures one persisted recurring schedule.
 type DurableScheduleBuilder struct {
 	scheduler   *DurableScheduler
@@ -311,7 +319,7 @@ func (s *DurableScheduler) runOnce(ctx context.Context, now time.Time) (bool, er
 			continue
 		}
 		if s.beforeOccurrenceCommit != nil {
-			s.beforeOccurrenceCommit()
+			s.hookBeforeOccurrenceCommit()
 		}
 		if err := s.commitOccurrences(ctx, schedule, ticks, nextRun, fence, now); err != nil {
 			return true, err

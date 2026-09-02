@@ -29,8 +29,14 @@ func installCLIShim(dir, realBin, logPath string) error {
 			"\"" + realBin + "\" %*\r\n"
 		return os.WriteFile(filepath.Join(dir, "gofastr.cmd"), []byte(shim), 0o755)
 	}
+	// ONE invocation must yield exactly ONE log line: the log is parsed
+	// line-wise into the adoption-funnel metrics (CLI calls, docs
+	// searches, topics), and an argument containing newlines would forge
+	// as many additional invocation records as it carries lines.
+	// Embedded newlines and carriage returns are flattened to spaces
+	// before the line is appended.
 	shim := "#!/bin/sh\n" +
-		"printf '%s\\n' \"$*\" >> \"" + logPath + "\"\n" +
+		"printf '%s\\n' \"$(printf '%s' \"$*\" | tr '\\n\\r' '  ')\" >> \"" + logPath + "\"\n" +
 		"exec \"" + realBin + "\" \"$@\"\n"
 	return os.WriteFile(filepath.Join(dir, "gofastr"), []byte(shim), 0o755)
 }
@@ -114,6 +120,21 @@ func cliDocsInvocationStats(logPath string) cliDocumentationStats {
 		case strings.HasPrefix(rest, "--grep"):
 			query := strings.Trim(strings.TrimSpace(strings.TrimPrefix(rest, "--grep")), `"'`)
 			if query != "" {
+				searches[query] = true
+			}
+		case rest == "search" || strings.HasPrefix(rest, "search "):
+			// `gofastr docs search --query X` (and a bare
+			// `docs search X`): the intuitive subcommand spelling
+			// agents type when they mean --grep. The search intent is
+			// real, so it is recorded as a search, not as a topic
+			// named "search".
+			sr := strings.TrimSpace(strings.TrimPrefix(rest, "search"))
+			if strings.HasPrefix(sr, "--query=") {
+				sr = strings.TrimPrefix(sr, "--query=")
+			} else {
+				sr = strings.TrimSpace(strings.TrimPrefix(sr, "--query"))
+			}
+			if query := strings.Trim(strings.TrimSpace(sr), `"'`); query != "" {
 				searches[query] = true
 			}
 		default:

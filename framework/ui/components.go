@@ -105,7 +105,9 @@ func slug(s string) string {
 // SectionConfig configures a labelled content section.
 //
 // ID behavior:
-//   - If ID is set, it's used verbatim. Caller controls the anchor.
+//   - If ID is set, it's used verbatim. Caller controls the anchor, and
+//     the heading's own id derives from it ("ui-section-<id>"), so a
+//     repeated heading text with distinct IDs never shares a target.
 //   - If ID is empty and Heading is set, the section auto-slugs the
 //     heading as its id ("Forms" → id="forms"). This is the typical
 //     case for in-page navs / scrollspy rails where the rail's
@@ -171,7 +173,13 @@ func Section(cfg SectionConfig, body ...render.HTML) render.HTML {
 	}
 	headingID := ""
 	if cfg.Heading != "" {
+		// The heading id follows the section's explicit ID when one is
+		// given, so two sections with one heading text and distinct IDs
+		// keep distinct aria-labelledby targets.
 		headingID = "ui-section-" + slug(cfg.Heading)
+		if cfg.ID != "" {
+			headingID = "ui-section-" + slug(cfg.ID)
+		}
 		out = append(out, html.Heading(html.HeadingConfig{
 			Level: 2, ID: headingID, Class: "ui-section__heading",
 		}, render.Text(cfg.Heading)))

@@ -630,7 +630,7 @@ func (p *Peer) buildResponse(f *Frame) *Frame {
 	p.mu.Unlock()
 	defer p.retireCancel(id, slot)
 
-	result, err := h(ctx, f.Params)
+	result, err := runHandler(h, ctx, f.Params)
 	if err != nil {
 		// If the handler returned a *Error, echo its code; else default to
 		// the standard internal-error code.
@@ -650,6 +650,27 @@ func (p *Peer) buildResponse(f *Frame) *Frame {
 	return NewSuccessResponse(id, resultRaw)
 }
 
+// errHandlerPanicked is what runHandler returns in place of a panic.
+// The recovered value is deliberately NOT surfaced: it can be anything,
+// including internal detail the counterparty must not see.
+var errHandlerPanicked = errors.New("moduleproto: handler panicked")
+
+// runHandler invokes an inbound handler under a recover guard. Handlers
+// are fed counterparty-supplied params — from the host's side, a
+// compromised child is the peer — so a panic in one must become a
+// well-formed outcome (paired internal error for requests, a silent
+// drop for notifications), never an unrecovered panic in the serve
+// goroutine that takes down the whole process.
+func runHandler(h Handler, ctx context.Context, params json.RawMessage) (result any, err error) {
+	defer func() {
+		if rec := recover(); rec != nil {
+			result = nil
+			err = errHandlerPanicked
+		}
+	}()
+	return h(ctx, params)
+}
+
 func (p *Peer) serveNotification(f *Frame) {
 	p.mu.Lock()
 	h, ok := p.handlers[f.Method]
@@ -664,8 +685,9 @@ func (p *Peer) serveNotification(f *Frame) {
 	// no inbound id to register under, so we use a throwaway ctx.
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	// Best-effort; errors are unobservable on the wire.
-	_, _ = h(ctx, f.Params)
+	// Best-effort; errors are unobservable on the wire. A panicking
+	// handler is recovered here so it only drops the notification.
+	_, _ = runHandler(h, ctx, f.Params)
 }
 
 // maxAbandonedIDs bounds how many abandoned ids the peer remembers. A late

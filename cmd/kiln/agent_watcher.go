@@ -183,9 +183,22 @@ func enrichPrompt(text string) string {
 	return text
 }
 
+// safeBuildArgs runs the adapter's argv builder under a recover guard:
+// the watcher loop that drives turns has no per-request net, so a
+// panicking adapter must cost one skipped turn, not the process.
+func safeBuildArgs(logger *log.Logger, adapter Adapter, text string) (argv []string) {
+	defer func() {
+		if rec := recover(); rec != nil {
+			logger.Printf("agent: adapter %q panicked building argv: %v", adapter.Name, rec)
+			argv = nil
+		}
+	}()
+	return adapter.BuildArgs(text)
+}
+
 func runOneAgentTurn(ctx context.Context, logger *log.Logger, tools *protocol.Tools, adapter Adapter, kilnURL, text string) {
 	enriched := enrichPrompt(text)
-	argv := adapter.BuildArgs(enriched)
+	argv := safeBuildArgs(logger, adapter, enriched)
 	if len(argv) == 0 {
 		logger.Printf("agent: adapter %q produced empty argv", adapter.Name)
 		return

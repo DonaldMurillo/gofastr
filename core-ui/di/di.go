@@ -129,6 +129,14 @@ func (c *Container) Inject(target any) error {
 			continue
 		}
 		fieldType := field.Type
+		// reflect Value.Set panics on a value obtained from an unexported
+		// field, and Inject runs before the render pipeline's recover
+		// (app.RenderPageResult), so one lowercased tagged field would
+		// take the page down on every request. Report it as the wiring
+		// error it is instead.
+		if !ev.Field(i).CanSet() {
+			return fmt.Errorf("di: injected field %s of type %v is not settable — inject-tagged fields must be exported", field.Name, fieldType)
+		}
 		if c.resolved[fieldType] {
 			ev.Field(i).Set(reflect.ValueOf(c.singletons[fieldType]))
 		} else if provider, ok := c.providers[fieldType]; ok {

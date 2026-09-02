@@ -32,15 +32,21 @@ type memoryLinkEntry struct {
 // on first use so existing callers (which never touch the linker surface)
 // pay no allocation cost. Callers MUST already hold s.mu (every method below
 // locks it), so the lazy init is race-free.
-func (s *memoryUserStore) linksMap() map[string]memoryLinkEntry {
+func (s *memoryUserStore) linksMap() map[linkKey]memoryLinkEntry {
 	if s.links == nil {
-		s.links = make(map[string]memoryLinkEntry)
+		s.links = make(map[linkKey]memoryLinkEntry)
 	}
 	return s.links
 }
 
-// linkKey is the composite (provider, providerID) map key.
-func linkKey(provider, providerID string) string { return provider + "\x00" + providerID }
+// linkKey is the composite (provider, providerID) map key. A struct, not
+// provider+"\x00"+providerID: a joined string is ambiguous when a part
+// embeds the separator (gofastrcompositekey; the a2a store's pre-b79942f7
+// shape this test store mirrored).
+type linkKey struct {
+	provider   string
+	providerID string
+}
 
 // FindByOAuth implements OAuthLinker. Returns ErrUserNotFound when no link
 // exists, mirroring EntityUserStore's contract so resolveOAuthUser can
@@ -48,7 +54,7 @@ func linkKey(provider, providerID string) string { return provider + "\x00" + pr
 func (s *memoryUserStore) FindByOAuth(_ context.Context, provider, providerID string) (User, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if e, ok := s.linksMap()[linkKey(provider, providerID)]; ok {
+	if e, ok := s.linksMap()[linkKey{provider, providerID}]; ok {
 		if u, ok := s.byID[e.userID]; ok {
 			return u.user, nil
 		}
@@ -63,7 +69,7 @@ func (s *memoryUserStore) LinkOAuth(_ context.Context, userID, provider, provide
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	m := s.linksMap()
-	k := linkKey(provider, providerID)
+	k := linkKey{provider, providerID}
 	if _, exists := m[k]; !exists {
 		m[k] = memoryLinkEntry{userID: userID, linkedAt: time.Now()}
 	}
@@ -77,7 +83,7 @@ func (s *memoryUserStore) LinkOAuthEnriched(_ context.Context, userID, provider,
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	m := s.linksMap()
-	k := linkKey(provider, providerID)
+	k := linkKey{provider, providerID}
 	prev := m[k]
 	prev.userID = userID // immutable from this path's perspective; set once
 	prev.profile = profile
@@ -96,8 +102,7 @@ func (s *memoryUserStore) ListAccounts(_ context.Context, userID string) ([]Acco
 		if e.userID != userID {
 			continue
 		}
-		provider, providerID := splitLinkKey(k)
-		a := Account{Provider: provider, ProviderID: providerID,
+		a := Account{Provider: k.provider, ProviderID: k.providerID,
 			Email: e.profile.Email, Name: e.profile.Name, AvatarURL: e.profile.AvatarURL}
 		t := e.linkedAt
 		a.LinkedAt = &t
@@ -124,7 +129,7 @@ func (s *memoryUserStore) UnlinkOAuth(_ context.Context, userID, provider string
 	m := s.linksMap()
 	for k, e := range m {
 		if e.userID == userID {
-			if p, _ := splitLinkKey(k); p == provider {
+			if k.provider == provider {
 				delete(m, k)
 			}
 		}
@@ -167,16 +172,6 @@ func (s *memoryUserStore) CreateUserNoPassword(_ context.Context, email string, 
 	s.users[email] = entry
 	s.byID[id] = entry
 	return user, nil
-}
-
-// splitLinkKey reverses linkKey.
-func splitLinkKey(k string) (provider, providerID string) {
-	for i := 0; i < len(k); i++ {
-		if k[i] == 0 {
-			return k[:i], k[i+1:]
-		}
-	}
-	return k, ""
 }
 
 // itoa is a tiny strconv.Itoa without the import, used only for

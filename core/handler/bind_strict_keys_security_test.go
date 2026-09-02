@@ -112,3 +112,75 @@ func TestBind_AcceptsEmbeddedStructKeys(t *testing.T) {
 		}
 	})
 }
+
+// Property: duplicate detection compares DECODED key bytes, so a raw key
+// and its \u-escaped spelling of the same name still count as duplicates.
+// Stdlib json alone silently takes the last one — the escape is the
+// smuggling shape that survives naive byte-comparison.
+func TestBind_RejectsEscapedDuplicateKeys(t *testing.T) {
+	for _, body := range []string{
+		`{"name":"alice","n\u0061me":"bob"}`,
+		`{"n\u0061me":"bob","name":"alice"}`,
+	} {
+		t.Run(body, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			var dst strictKeysReq
+			err := Bind(req, &dst)
+			if err == nil {
+				t.Fatalf("escaped duplicate key accepted; last-wins smuggled name=%q", dst.Name)
+			}
+		})
+	}
+}
+
+// PIN (documented no-op, bind.go validateBodyKeys: "a no-op when dst is
+// not a struct pointer"): a *map destination accepts duplicate, unknown,
+// and case-folded keys with last-wins semantics — handlers that Bind into
+// a map get NONE of the strict-key protection.
+//
+// FLAG for the owner, not an assertion of the opposite: today the doc
+// comment is the contract. Consider whether map destinations should at
+// least reject duplicate top-level keys (last-wins on a map is a silent
+// mass-assignment seam for {"role":"user","role":"admin"} bodies).
+func TestBind_MapDstSkipsStrictKeys(t *testing.T) {
+	body := `{"name":"a","Name":"b","name":"c","unknown":1}`
+	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+
+	var dst map[string]any
+	if err := Bind(req, &dst); err != nil {
+		t.Fatalf("map destination rejected a body the documented no-op must accept: %v", err)
+	}
+	if dst["name"] != "c" {
+		t.Fatalf("expected documented last-wins on map duplicate, got %v", dst["name"])
+	}
+}
+
+// PIN (documented top-level-only scope, bind.go validateBodyKeys: "strict
+// top-level key handling"): duplicate keys NESTED inside a sub-object are
+// not rejected; encoding/json's last-wins applies. A handler whose struct
+// nests a sub-struct or map gets no protection against
+// {"user":{"role":"a","role":"b"}} smuggling.
+//
+// FLAG for the owner, not an assertion of the opposite: the doc comment
+// promises top-level only. Extending the walk one level (or through
+// struct-typed fields) would close a real last-wins seam.
+func TestBind_NestedDupKeysLastWins(t *testing.T) {
+	type inner struct {
+		Role string `json:"role"`
+	}
+	var dst struct {
+		User inner `json:"user"`
+	}
+	body := `{"user":{"role":"member","role":"admin"}}`
+	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+
+	if err := Bind(req, &dst); err != nil {
+		t.Fatalf("nested duplicate rejected, contradicting documented top-level-only scope: %v", err)
+	}
+	if dst.User.Role != "admin" {
+		t.Fatalf("expected documented last-wins, got %q", dst.User.Role)
+	}
+}

@@ -108,7 +108,13 @@ func Classify(importPath string) (Tier, bool) {
 		if r.prefix == "" {
 			continue
 		}
-		if rel == strings.TrimSuffix(r.prefix, "/") || strings.HasPrefix(rel, r.prefix) {
+		// Match on a path-segment boundary: "cmd" classifies cmd and
+		// cmd/..., never a sibling tree that merely starts with the
+		// same letters (cmdline, kiln2, corev9). A tree the manifest
+		// does not name must stay unclassified, which is the gate's
+		// signal to add it.
+		root := strings.TrimSuffix(r.prefix, "/")
+		if rel == root || strings.HasPrefix(rel, root+"/") {
 			if !found || len(r.prefix) > len(best) {
 				best, bestTier, found = r.prefix, r.tier, true
 			}

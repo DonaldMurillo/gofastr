@@ -78,7 +78,7 @@ func (ch *CrudHandler) listTool(router http.Handler) mcp.ToolHandler {
 		values := make(url.Values)
 		for _, key := range []string{"page", "limit", "sort"} {
 			if v, ok := params[key]; ok {
-				values.Set(key, fmt.Sprint(v))
+				values[key] = toolParamValues(v)
 			}
 		}
 		for _, field := range ch.Entity.GetFields() {
@@ -103,7 +103,7 @@ func (ch *CrudHandler) listTool(router http.Handler) mcp.ToolHandler {
 			for _, suffix := range []string{"", "_gt", "_gte", "_lt", "_lte", "_like", "_in"} {
 				key := mcpFieldKey(field) + suffix
 				if v, ok := params[key]; ok {
-					values.Set(key, fmt.Sprint(v))
+					values[key] = toolParamValues(v)
 				}
 			}
 		}
@@ -111,7 +111,7 @@ func (ch *CrudHandler) listTool(router http.Handler) mcp.ToolHandler {
 		// declares SearchFields (the schema below advertises it only then).
 		if len(ch.Entity.Config.SearchFields) > 0 {
 			if v, ok := params["q"]; ok {
-				values.Set("q", fmt.Sprint(v))
+				values["q"] = toolParamValues(v)
 			}
 		}
 		path := ch.mcpBase()
@@ -120,6 +120,23 @@ func (ch *CrudHandler) listTool(router http.Handler) mcp.ToolHandler {
 		}
 		return runToolRequest(ctx, router, http.MethodGet, path, nil)
 	}
+}
+
+// toolParamValues renders one tool-call parameter for the re-dispatch query.
+// A JSON array (the natural spelling an MCP client sends for a multi-value
+// _in filter) becomes one query entry per element: fmt.Sprint stringifies
+// []any{"draft","archived"} into "[draft archived]", a single literal that
+// matches nothing, so the agent gets a silent empty page where the HTTP
+// surface returns the union. Scalars keep the fmt.Sprint spelling.
+func toolParamValues(v any) []string {
+	if arr, ok := v.([]any); ok {
+		out := make([]string, 0, len(arr))
+		for _, e := range arr {
+			out = append(out, fmt.Sprint(e))
+		}
+		return out
+	}
+	return []string{fmt.Sprint(v)}
 }
 
 func (ch *CrudHandler) getTool(router http.Handler) mcp.ToolHandler {

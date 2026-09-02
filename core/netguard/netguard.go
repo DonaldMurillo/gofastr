@@ -24,6 +24,18 @@ import "net"
 // both live behind it.
 var cgnatRange = net.IPNet{IP: net.IPv4(100, 64, 0, 0), Mask: net.CIDRMask(10, 32)}
 
+// thisNetworkV4 is the RFC 791 "this network" block 0.0.0.0/8. Only the
+// bare 0.0.0.0 is caught by IsUnspecified; the rest (0.0.0.1 …) is
+// reserved space that Linux and macOS route to the local host — the
+// classic `http://0/` SSRF bypass.
+var thisNetworkV4 = net.IPNet{IP: net.IPv4(0, 0, 0, 0), Mask: net.CIDRMask(8, 32)}
+
+// reservedV4 is the RFC 1112 "reserved for future use" block
+// 240.0.0.0/4, which ends at 255.255.255.255: never routable on the
+// public internet, and its last address is the limited-broadcast that
+// reaches every host on the local segment.
+var reservedV4 = net.IPNet{IP: net.IPv4(240, 0, 0, 0), Mask: net.CIDRMask(4, 32)}
+
 // metadataIPv4 is the cloud instance-metadata address. It already falls
 // inside the link-local range; naming it separately means a deployment
 // that ever loosens the link-local rule still cannot reach it.
@@ -31,7 +43,8 @@ var metadataIPv4 = net.IPv4(169, 254, 169, 254)
 
 // IsInternal reports whether ip is loopback, link-local (which covers
 // cloud instance metadata), private (RFC1918 + IPv6 unique-local),
-// unspecified, multicast, or CGNAT.
+// unspecified, multicast, CGNAT, or reserved/non-routable IPv4 space
+// (0.0.0.0/8, 240.0.0.0/4).
 //
 // IPv4-mapped IPv6 addresses (`::ffff:a.b.c.d`) are normalized to their
 // 4-byte form first, so a mapped internal literal cannot slip past the
@@ -74,7 +87,7 @@ func internalRange(ip net.IP) bool {
 		ip.IsInterfaceLocalMulticast():
 		return true
 	}
-	if cgnatRange.Contains(ip) {
+	if cgnatRange.Contains(ip) || thisNetworkV4.Contains(ip) || reservedV4.Contains(ip) {
 		return true
 	}
 	return ip.Equal(metadataIPv4)
@@ -173,8 +186,12 @@ func rangeReason(ip net.IP) string {
 		return "link-local address (covers cloud instance metadata)"
 	case ip.IsMulticast(), ip.IsInterfaceLocalMulticast():
 		return "multicast address"
+	case thisNetworkV4.Contains(ip):
+		return `reserved "this network" address (0.0.0.0/8)`
 	case cgnatRange.Contains(ip):
 		return "carrier-grade NAT address (RFC 6598)"
+	case reservedV4.Contains(ip):
+		return "reserved address (240.0.0.0/4; includes limited broadcast)"
 	case ip.Equal(metadataIPv4):
 		return "cloud instance-metadata address"
 	}

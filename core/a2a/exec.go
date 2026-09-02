@@ -213,6 +213,13 @@ func (t *taskRun) RequireAuth(parts ...Part) error {
 	return t.mutate(t.pauseFn(TaskStateAuthRequired, parts))
 }
 
+// errConcurrentChange marks a mutation refused because the task moved
+// concurrently — a version conflict, or a terminal state reached under
+// us. The caller's honest answer is "changed concurrently, retry"; any
+// OTHER persist error is a backend failure and must surface as the
+// generic internal error, not as this.
+var errConcurrentChange = errors.New("a2a: task changed concurrently")
+
 func errTerminalRefusal(id string, state, want TaskState) error {
 	return fmt.Errorf("a2a: task %s is %s; refusing transition to %s", id, state, want)
 }
@@ -265,7 +272,9 @@ func (t *taskRun) setStatusInPlace(task *Task, state TaskState, parts []Part) *S
 func (t *taskRun) resumeWorking(msg *Message) error {
 	return t.mutate(func(task *Task) (*StreamResponse, error) {
 		if state := task.Status.State; state.Terminal() {
-			return nil, errTerminalRefusal(task.ID, state, TaskStateWorking)
+			// The caller just checked this task was non-terminal; a
+			// terminal state here means it moved under us.
+			return nil, fmt.Errorf("%w: task %s is %s", errConcurrentChange, task.ID, state)
 		}
 		in := *msg
 		in.TaskID = task.ID
@@ -307,7 +316,7 @@ func (t *taskRun) mutate(build func(task *Task) (*StreamResponse, error)) error 
 		if errors.Is(err, ErrConflict) {
 			// The store moved on without us: the task was canceled or
 			// another replica resumed it. This run's writes are done.
-			return fmt.Errorf("a2a: task %s changed concurrently (canceled elsewhere?); update refused", t.rec.Task.ID)
+			return fmt.Errorf("%w: task %s update refused (canceled or resumed elsewhere)", errConcurrentChange, t.rec.Task.ID)
 		}
 		return fmt.Errorf("a2a: persist task %s: %w", t.rec.Task.ID, err)
 	}

@@ -154,10 +154,20 @@ func NewOIDCProvider(cfg OIDCConfig) (*OIDCProvider, error) {
 	if hc == nil {
 		hc = defaultOAuthHTTPClient
 	}
+	// The provider's fetches never follow redirects: every URL it fetches
+	// is pinned by the configured issuer's discovery document
+	// (transport-validated in fetchDiscovery); a redirect answer is not a
+	// shape a conformant IdP produces on those endpoints, and following one
+	// re-sends the request at another origin — for the token exchange that
+	// means the POST body (client_secret, code) verbatim on 307/308, pinned
+	// by TestOIDCSec_TokenRedirectKeepsSecret. Mirrors the redirects-off
+	// posture of core/a2a push delivery and battery/webhook.
+	hc = oidcNoRedirect(hc)
 	ttl := cfg.JWKSCacheTTL
 	if ttl <= 0 {
 		ttl = time.Hour
 	}
+
 	cfg.Claims = claims
 
 	return &OIDCProvider{
@@ -204,6 +214,48 @@ func isLocalhostHost(host string) bool {
 		return true
 	}
 	return false
+}
+
+// validateOIDCEndpoint enforces the transport trust of one URL the
+// provider will fetch because a discovery document named it: https from
+// any host, or plain http only when BOTH the configured issuer itself is
+// plain-http (the documented literal-loopback dev posture) AND the
+// endpoint's own host is a literal loopback (the same literal set as
+// isLocalhostHost — a loopback-http issuer must not be able to direct
+// token/JWKS/userinfo traffic at a non-loopback cleartext host).
+// Distinct hosts ARE allowed: OIDC discovery legitimately serves
+// jwks/userinfo from another origin. Embedded userinfo and non-HTTP(S)
+// schemes are refused outright.
+func validateOIDCEndpoint(raw string, plainHTTPIssuer bool) error {
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return fmt.Errorf("endpoint %q is not an absolute http(s) URL", raw)
+	}
+	if u.User != nil {
+		return fmt.Errorf("endpoint %q must not carry userinfo", raw)
+	}
+	switch u.Scheme {
+	case "https":
+		return nil
+	case "http":
+		if plainHTTPIssuer && isLocalhostHost(u.Hostname()) {
+			return nil
+		}
+		return fmt.Errorf("endpoint %q must be https (plain http is only allowed on literal loopback hosts under a loopback-http issuer)", raw)
+	default:
+		return fmt.Errorf("endpoint %q must be an http(s) URL", raw)
+	}
+}
+
+// oidcNoRedirect returns a shallow copy of c that answers redirects as
+// final responses instead of following them. The copy shares Transport,
+// Timeout and Jar; the caller's own *http.Client value is never mutated.
+func oidcNoRedirect(c *http.Client) *http.Client {
+	cp := *c
+	cp.CheckRedirect = func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
+	return &cp
 }
 
 // ensureDiscovery returns the cached discovery document, fetching it on first
@@ -253,6 +305,23 @@ func (p *OIDCProvider) fetchDiscovery(ctx context.Context) (*oidcDiscovery, erro
 	}
 	if d.AuthorizationEndpoint == "" || d.TokenEndpoint == "" || d.JWKSURI == "" {
 		return nil, errors.New("oidc: discovery document missing required endpoints")
+	}
+	plainHTTPIssuer := false
+	if iu, perr := url.Parse(p.cfg.Issuer); perr == nil && iu.Scheme == "http" {
+		plainHTTPIssuer = true // issuer passed NewOIDCProvider's loopback literal check
+	}
+	for _, ep := range []struct{ field, raw string }{
+		{"authorization_endpoint", d.AuthorizationEndpoint},
+		{"token_endpoint", d.TokenEndpoint},
+		{"jwks_uri", d.JWKSURI},
+		{"userinfo_endpoint", d.UserinfoEndpoint},
+	} {
+		if ep.raw == "" {
+			continue // userinfo_endpoint is optional
+		}
+		if verr := validateOIDCEndpoint(ep.raw, plainHTTPIssuer); verr != nil {
+			return nil, fmt.Errorf("oidc: discovery %s: %v", ep.field, verr)
+		}
 	}
 	return &d, nil
 }

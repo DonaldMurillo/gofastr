@@ -19,7 +19,7 @@
 # The registry is complete through this release: releases ≤ through
 # with no entry below genuinely had no migration-relevant changes.
 # Targets beyond it make the CLI warn that it may be out of date.
-through: v0.80.0
+through: v0.81.0
 
 releases:
   - version: v0.3.0
@@ -936,3 +936,22 @@ releases:
       - change: "core-ui/check treats a capitalised Style map key like the lowercase one in the inline-style lint, and no longer flags a regex literal that happens to contain the word var as a declaration"
         breaking: false
         guidance: "A vendored design-system tree that set inline styles through a capitalised map key is now reported; move the styling into a component (rule GOFASTR1401 explains). Apps outside those trees are unaffected."
+  - version: v0.81.0
+    title: Probe-audit hardening, static rules from the probes, per-module schemas
+    notes:
+      - change: "process-module schema and role names for names containing a hyphen, an underscore or an upper-case letter carry a digest suffix (module_billing_1_<12 hex>); pure lowercase-alphanumeric names are unchanged"
+        breaking: true
+        detect: 'RegisterProcessModule\('
+        guidance: "Distinct operator-approved modules used to sanitize onto one schema behind one role. Re-provisioning a module with such a name creates a new schema and role: migrate its data out of the old sanitized schema before upgrading, or rename the module to lowercase alphanumerics to keep the old one."
+      - change: "gofastr verify gains GOFASTR1006 (strings.HasPrefix on a path with no segment boundary), GOFASTR1406 (X-Forwarded-Proto used as a scheme with no http/https check) and GOFASTR1407 (a request body decoded with encoding/json outside handler.Bind)"
+        breaking: false
+        guidance: "A strict run that was green can report new errors; each finding names its fix (compare equality or HasPrefix with a trailing slash, enum the header to http or https, decode through handler.Bind or a strict top-level key walk), and a JSON-RPC envelope transport that takes the whole object as-is annotates the line with gofastr:allow(GOFASTR1407) and the reason."
+      - change: "battery/auth decodes every JSON body strictly: a duplicate or case-folded top-level key on login, register, password reset, 2FA verify, magic link or API-token create is a 400 on both the JSON and the form surface"
+        breaking: false
+        guidance: "Hardening. A client sending a key twice was resolving by parser accident (stdlib kept the last, forms kept the first); send each field once with its documented casing."
+      - change: "ui.NumberInput emits min whenever either bound is declared and max only when Max is non-zero"
+        breaking: false
+        guidance: "A Min 0 Max N config keeps its zero floor; a Min-only config no longer fabricates an empty range. A caller that allows negatives beside a Max sets Min explicitly."
+      - change: "custom endpoint MCP tool names keep hyphens and mark path parameters, and entity and path spelling is no longer case-folded"
+        breaking: false
+        guidance: "Names for endpoints without hyphens, parameters or upper case are unchanged. An agent that pinned a folded name for one that has them re-lists tools; every entity tool keeps its name."

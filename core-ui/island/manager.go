@@ -276,8 +276,20 @@ func NewManager(opts ...ManagerOption) *Manager {
 // removes exactly this subscription (idempotent). Every subscriber,
 // each tab sharing the session cookie, receives every update; the
 // session's entry is deleted when its last subscriber cancels.
+//
+// A connect refused by the stream caps (WithStreamCaps) returns a
+// CLOSED channel and a no-op cancel: the documented consume pattern
+// (doc.go) is `for upd := range ch`, and a channel that never delivers
+// and never closes would hang that loop forever with no signal the
+// connect was refused. Callers that need the refusal reason use
+// ConnectSession, whose error the SSE path surfaces as a 429.
 func (m *Manager) Subscribe(sessionID string) (<-chan IslandUpdate, func()) {
-	ch, cancel, _ := m.subscribeImpl(sessionID)
+	ch, cancel, err := m.subscribeImpl(sessionID)
+	if err != nil {
+		refused := make(chan IslandUpdate)
+		close(refused)
+		return refused, cancel
+	}
 	return ch, cancel
 }
 

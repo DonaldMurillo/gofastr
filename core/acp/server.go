@@ -459,6 +459,20 @@ func (st *serverState) requireReady() bool {
 	return st.ready
 }
 
+// runAuthenticate invokes the app-supplied auth callback under a
+// recover guard: the transport loop that reaches here has no
+// per-request net, so a panicking authenticator must become a protocol
+// error, not a process crash (the contract core/mcp's checkToolGate
+// established for gates).
+func (st *serverState) runAuthenticate(ctx context.Context, methodID string) (err error) {
+	defer func() {
+		if rec := recover(); rec != nil {
+			err = fmt.Errorf("authenticate panicked")
+		}
+	}()
+	return st.srv.opts.Authenticate(ctx, methodID)
+}
+
 func (st *serverState) handleAuthenticate(ctx context.Context, frame wireRequest) wireResponse {
 	var p struct {
 		MethodID string `json:"methodId"`
@@ -471,7 +485,7 @@ func (st *serverState) handleAuthenticate(ctx context.Context, frame wireRequest
 			if st.srv.opts.Authenticate == nil {
 				return st.errResp(ErrInternalError, "authenticate: no handler configured for %q", p.MethodID)
 			}
-			if err := st.srv.opts.Authenticate(ctx, p.MethodID); err != nil {
+			if err := st.runAuthenticate(ctx, p.MethodID); err != nil {
 				return st.errResp(ErrAuthRequired, "authenticate %q: %v", p.MethodID, err)
 			}
 			return wireResponse{Result: map[string]any{}}

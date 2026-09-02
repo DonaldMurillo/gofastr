@@ -471,3 +471,40 @@ func TestSecurity_ConcurrentRender_SameIsland(t *testing.T) {
 	wg.Wait()
 	t.Logf("NOTE: 100 concurrent Renders completed safely (Render called %d times)", tc.Count())
 }
+
+// TestSubscribeCapRefusalObservable pins the reject-not-evict stream-cap
+// contract at the PUBLIC Subscribe entry point. subscribeImpl refuses an
+// over-cap connect with ErrSessionStreamLimit / ErrGlobalStreamLimit and
+// the SSE path surfaces that as a 429, but Subscribe discards the error
+// and hands back a nil channel with a no-op cancel: a caller that ranges
+// over the channel (the documented consume pattern, doc.go) blocks
+// forever with no signal the connect was refused. Property: a refused
+// subscription must be observable by its caller, never a silent hang.
+// Surfaces: per-session cap, global cap.
+func TestSubscribeCapRefusalObservable(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name      string
+		per, glob int
+	}{
+		{"per-session cap", 1, 0},
+		{"global cap", 0, 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			mgr := island.NewManager(island.WithStreamCaps(tc.per, tc.glob))
+			_, cancelFirst := mgr.Subscribe("sess")
+			defer cancelFirst()
+
+			ch, cancelRefused := mgr.Subscribe("sess")
+			defer cancelRefused()
+			select {
+			case _, ok := <-ch:
+				if !ok {
+					return // closed channel: refusal observable, property holds
+				}
+			case <-time.After(250 * time.Millisecond):
+				t.Errorf("SECURITY: [subscribe-cap] refused Subscribe returned a channel that never delivers and never closes — the reject-not-evict refusal is unobservable through the public API and a consumer ranging over it hangs forever")
+			}
+		})
+	}
+}

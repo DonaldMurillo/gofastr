@@ -287,8 +287,8 @@ func decodeBlueprintFile(path string) (Blueprint, error) {
 	}
 	var node *coreyaml.Node
 	if strings.EqualFold(filepath.Ext(path), ".json") {
-		var raw any
-		if err := json.Unmarshal(data, &raw); err != nil {
+		raw, err := strictJSONValue(data)
+		if err != nil {
 			return Blueprint{}, fmt.Errorf("parse %s: %w", path, err)
 		}
 		node = yamlNodeFromJSON(raw)
@@ -321,6 +321,84 @@ func yamlNodeFromJSON(value any) *coreyaml.Node {
 		return out
 	default:
 		return &coreyaml.Node{Kind: coreyaml.Scalar, Value: v, Line: 1, Column: 1}
+	}
+}
+
+// strictJSONValue decodes one JSON document, refusing duplicate mapping
+// keys. encoding/json is silent last-wins on duplicates, and the YAML leg
+// of this decoder already rejects them at the parser (core/yaml: "silent
+// last-wins lets a stale or hostile copy-paste line override the value a
+// reviewer believes is in force"); the .json leg must not be the seam
+// where a merged or agent-transcribed blueprint quietly takes the second
+// copy. Numbers decode as float64, exactly as json.Unmarshal would, so
+// downstream node values keep their type.
+func strictJSONValue(data []byte) (any, error) {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	v, err := decodeJSONValue(dec)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := dec.Token(); err != io.EOF {
+		if err == nil {
+			return nil, fmt.Errorf("unexpected trailing data after JSON value")
+		}
+		return nil, err
+	}
+	return v, nil
+}
+
+// decodeJSONValue walks json.Decoder tokens into the same any-shape
+// json.Unmarshal produces (map[string]any, []any, string, float64, bool,
+// nil), erroring on a repeated object key anywhere in the tree.
+func decodeJSONValue(dec *json.Decoder) (any, error) {
+	tok, err := dec.Token()
+	if err != nil {
+		return nil, err
+	}
+	delim, ok := tok.(json.Delim)
+	if !ok {
+		return tok, nil // string, float64, bool or nil
+	}
+	switch delim {
+	case '{':
+		obj := map[string]any{}
+		for dec.More() {
+			keyTok, err := dec.Token()
+			if err != nil {
+				return nil, err
+			}
+			key, ok := keyTok.(string)
+			if !ok {
+				return nil, fmt.Errorf("object key is not a string")
+			}
+			if _, dup := obj[key]; dup {
+				return nil, fmt.Errorf("duplicate object key %q (silent last-wins would override the value a reviewer believes is in force)", key)
+			}
+			val, err := decodeJSONValue(dec)
+			if err != nil {
+				return nil, err
+			}
+			obj[key] = val
+		}
+		if _, err := dec.Token(); err != nil { // consume '}'
+			return nil, err
+		}
+		return obj, nil
+	case '[':
+		arr := []any{}
+		for dec.More() {
+			val, err := decodeJSONValue(dec)
+			if err != nil {
+				return nil, err
+			}
+			arr = append(arr, val)
+		}
+		if _, err := dec.Token(); err != nil { // consume ']'
+			return nil, err
+		}
+		return arr, nil
+	default:
+		return nil, fmt.Errorf("unexpected delimiter %v", delim)
 	}
 }
 
@@ -463,8 +541,21 @@ func decodeBlueprintApp(node *coreyaml.Node) (BlueprintApp, error) {
 		if err := rejectUnknownKeys(db, map[string]bool{"driver": true, "url": true}, "app.db"); err != nil {
 			return BlueprintApp{}, err
 		}
-		app.DBDriver = stringValue(db["driver"])
-		app.DBURL = stringValue(db["url"])
+		// driver/url answer "" for a map or list node (stringValue), and an
+		// empty driver+url silently generates a DB-less app — the theme
+		// decoder built requireScalarString for exactly this shape; db is the
+		// sharper surface (every CRUD screen 500s at runtime, seed data
+		// aborts boot), so it refuses the shape instead of defaulting it.
+		driver, err := requireScalarString(db["driver"], "app.db", "driver")
+		if err != nil {
+			return BlueprintApp{}, err
+		}
+		url, err := requireScalarString(db["url"], "app.db", "url")
+		if err != nil {
+			return BlueprintApp{}, err
+		}
+		app.DBDriver = driver
+		app.DBURL = url
 	}
 	if themeNode := m["theme"]; themeNode != nil {
 		theme, dark, err := decodeappTheme(themeNode)
@@ -1673,7 +1764,11 @@ func decodeBlueprintSeed(node *coreyaml.Node) ([]BlueprintSeedEntity, error) {
 		}
 		count := 0
 		if cn := m["count"]; cn != nil {
-			count = intValue(cn)
+			var err error
+			count, err = strictIntValue(cn, fmt.Sprintf("seed[%d].count", i))
+			if err != nil {
+				return nil, err
+			}
 			if count < 0 {
 				return nil, fmt.Errorf("seed[%d].count must be >= 0", i)
 			}
@@ -1705,7 +1800,10 @@ func decodeSeedWeights(node *coreyaml.Node, label string) (map[string]map[string
 		}
 		vw := make(map[string]int, len(valMap))
 		for val, wNode := range valMap {
-			w := intValue(wNode)
+			w, err := strictIntValue(wNode, fmt.Sprintf("%s.%s.%s", label, col, val))
+			if err != nil {
+				return nil, err
+			}
 			if w < 0 {
 				return nil, fmt.Errorf("%s.%s.%s must be >= 0", label, col, val)
 			}
@@ -1714,6 +1812,35 @@ func decodeSeedWeights(node *coreyaml.Node, label string) (map[string]map[string
 		out[col] = vw
 	}
 	return out, nil
+}
+
+// strictIntValue reads a whole-number scalar, refusing every other shape.
+//
+// intValue, the lax decoder, maps a string ("5"), a fractional float (3.7),
+// or a list to 0 — and 0 is legal, so `count: "5"` silently generated no
+// rows at all while the author asked for five. Same coercion on a weight
+// silently zeroed it. This is the count/weights sibling of protectiveBool: a
+// lax decoder guessing at a value the author demonstrably tried to set.
+// Integral floats decode (mirroring seedValueRejection's toInt64, which
+// accepts them, so the generate-time verdict never disagrees with boot).
+func strictIntValue(node *coreyaml.Node, label string) (int, error) {
+	if node == nil {
+		return 0, nil
+	}
+	if node.Kind != coreyaml.Scalar {
+		return 0, fmt.Errorf("%s must be a whole number, got a %s", label, yamlKindName(node.Kind))
+	}
+	switch v := node.Value.(type) {
+	case int64:
+		return int(v), nil
+	case float64:
+		if v != math.Trunc(v) {
+			return 0, fmt.Errorf("%s must be a whole number, got %v", label, v)
+		}
+		return int(v), nil
+	default:
+		return 0, fmt.Errorf("%s must be a whole number, got %q", label, fmt.Sprint(node.Value))
+	}
 }
 
 // blueprintExpandSeed appends Count auto-generated demo rows to each seed
@@ -2359,6 +2486,7 @@ func validateBlueprint(bp Blueprint) error {
 	// Seed values are typed inserts the generated app runs through the
 	// CRUD validators at boot. Check them here. See validateBlueprintSeedTypes.
 	errs.add(validateBlueprintSeedTypes(bp, entitiesByName))
+	errs.add(validateBlueprintSeedStructure(bp, entitiesByName))
 	routes := map[string]bool{}
 	for _, screen := range bp.Screens {
 		if screen.Name == "" {
@@ -2468,6 +2596,59 @@ func validateBlueprint(bp Blueprint) error {
 			errs.add(fmt.Errorf("blueprint: endpoint %q cannot set mcp=true without Go MCP handler", endpoint.Name))
 		}
 	}
+	// Hooks are the sibling construct of endpoints: a surface the generated
+	// app must implement in owned Go (the handler stub) and the registry
+	// wiring. They get the same boundary checks endpoints get: a handler
+	// string that lands in identifier position must derive an identifier,
+	// and a hook whose entity or lifecycle point is wrong can never fire —
+	// the author believes a validation is enforced and no such hook exists.
+	// The kiln live preview already rejects these shapes (applyHooks:
+	// "missing entity" / mapHookType), so the generator refusing them keeps
+	// graduation from preview to app honest.
+	hookHandlers := map[string]bool{}
+	for _, hook := range bp.Hooks {
+		if hook.Entity == "" {
+			errs.add(fmt.Errorf("blueprint: hook %q entity is required: name the entity whose lifecycle the hook runs on (it becomes the HookRegistry the generated app registers the handler on)", hook.ID))
+			continue
+		}
+		if !entityNames[hook.Entity] {
+			errs.add(fmt.Errorf("blueprint: hook %q targets unknown entity %q: declare an entity named %q under entities: (or fix the hook's entity: value)", hook.ID, hook.Entity, hook.Entity))
+			continue
+		}
+		if _, ok := blueprintHookTypes[hook.When]; !ok {
+			errs.add(fmt.Errorf("blueprint: hook %q when %q is not a lifecycle point; use one of %s", hook.ID, hook.When, strings.Join(sortedMapKeys(blueprintHookTypes), ", ")))
+			continue
+		}
+		handler := strings.TrimSpace(hook.Handler)
+		if handler == "" {
+			errs.add(fmt.Errorf("blueprint: hook %q handler is required: name the owned-Go func the generated app calls (a stub is emitted for you to implement)", hook.ID))
+			continue
+		}
+		if !isGoIdentifier(handler) {
+			errs.add(fmt.Errorf("blueprint: hook %q handler %q does not produce a valid Go identifier: it is emitted as the stub func the app registers, so the generated code would not compile; use letters, digits and underscores starting with a letter", hook.ID, hook.Handler))
+			continue
+		}
+		if hookHandlers[handler] {
+			errs.add(fmt.Errorf("blueprint: duplicate hook handler %q: two hooks would emit the same stub func, which would not compile", hook.Handler))
+			continue
+		}
+		hookHandlers[handler] = true
+	}
+	// A nav item's icon is rendered as raw HTML inside the sidebar's icon
+	// slot (ui.SidebarItem.Icon is render.HTML, emitted unescaped), so an
+	// icon carrying markup is not styling, it is an injection into every
+	// page the shell renders. Icons are names or emoji; anything with
+	// markup characters is refused rather than sanitized.
+	var validateNavIcons func(items []BlueprintNavItem)
+	validateNavIcons = func(items []BlueprintNavItem) {
+		for _, item := range items {
+			if item.Icon != "" && !blueprintNavIconSafe(item.Icon) {
+				errs.add(fmt.Errorf("blueprint: nav item %q icon %q contains markup or control characters: the icon renders as raw HTML in the sidebar icon slot, so only plain text or an emoji is allowed (write markup in your own sidebar code)", item.Label, item.Icon))
+			}
+			validateNavIcons(item.Items)
+		}
+	}
+	validateNavIcons(bp.Nav)
 	for _, group := range []struct {
 		label string
 		items []BlueprintNamedStub
@@ -2556,6 +2737,127 @@ func validateBlueprintSeedTypes(bp Blueprint, entitiesByName map[string]framewor
 		}
 	}
 	return errs.err()
+}
+
+// validateBlueprintSeedStructure holds the seed checks that are about
+// WHICH rows run and in what order, not about value types (those live in
+// validateBlueprintSeedTypes). Every check here exists because the
+// generated seed hook is fail-fast at boot: a block the hook silently
+// skips, a row whose key matches no column, or a reference that cannot
+// resolve in declaration order each generate green and then abort (or
+// quietly lose data) on every fresh database.
+func validateBlueprintSeedStructure(bp Blueprint, entitiesByName map[string]framework.EntityDeclaration) error {
+	var errs schemaErrors
+	seeded := map[string]bool{}
+	for _, seed := range bp.Seed {
+		decl, known := entitiesByName[seed.Entity]
+		if seeded[seed.Entity] {
+			// The generated hook gates each block on CountAll(entity) > 0:
+			// the first block inserts, the second is skipped wholesale, and
+			// rows the author wrote never land. Directory merges concatenate
+			// seed blocks before validating, so this also catches the same
+			// duplicate arriving as two files.
+			errs.add(fmt.Errorf("blueprint: duplicate seed blocks for entity %q: the generated seed hook skips later blocks once the entity has rows, so only the first block's rows would land; merge them into one block", seed.Entity))
+		}
+		seeded[seed.Entity] = true
+		if !known {
+			continue // validateBlueprintSeedTypes names the unknown entity
+		}
+		// Count-seeding fabricates scalars but never relations
+		// (blueprintGenerateSeedRows skips them), so a required relation
+		// leaves every fabricated row failing CreateOne's required check —
+		// and a failed seed row aborts startup.
+		if seed.Count > 0 {
+			for _, f := range decl.Fields {
+				if strings.EqualFold(strings.TrimSpace(f.Type), "relation") && f.Required {
+					errs.add(fmt.Errorf("blueprint: seed count for entity %q cannot fabricate the required relation %q: every generated row would lack it and fail CreateOne's required check, aborting startup. Seed explicit rows instead (reference a row seeded earlier with %q)", seed.Entity, f.Name, "@"+strings.TrimSpace(f.To)+"."+blueprintSeedRefFieldHint(entitiesByName, f.To)+"=<value>"))
+				}
+			}
+		}
+		for i, row := range seed.Rows {
+			for _, name := range sortedMapKeys(row) {
+				// A key that matches no declared column is silently dropped
+				// by CreateOne (it writes declared columns only), and when
+				// the real column is required the boot error names the
+				// missing column, never the typo the author wrote. Every
+				// other transcribed name in the blueprint gets an
+				// unknown-target check; the seed row key is the same class.
+				if _, ok := blueprintSeedFieldKind(decl, name); !ok {
+					errs.add(fmt.Errorf("blueprint: seed row %d for entity %q sets %q, which matches no declared column: the value would be silently dropped at boot. Fix the key, or declare the column on the entity", i+1, seed.Entity, name))
+					continue
+				}
+				// "@entity.field=value" references resolve at boot, in
+				// block order. A forward reference stays unresolved, fails
+				// UUID validation on the relation column, and aborts every
+				// fresh database. Only blueprint entities are checkable
+				// here: a target registered by app code is outside the
+				// generator's knowledge.
+				if ref, ok := blueprintSeedRefTarget(fmt.Sprint(row[name])); ok {
+					if _, isBlueprintEntity := entitiesByName[ref]; isBlueprintEntity && !seeded[ref] {
+						errs.add(fmt.Errorf("blueprint: seed row %d for entity %q references %q, but %s is seeded later (or never): resolveSeedRefs runs at boot in block order and leaves unresolvable references as-is, so the shipped app aborts on a fresh database. Seed %s first, or in the same block", i+1, seed.Entity, fmt.Sprint(row[name]), ref, ref))
+					}
+				}
+			}
+		}
+	}
+	return errs.err()
+}
+
+// blueprintSeedRefTarget extracts the entity named by a
+// "@entity.field=value" seed reference (the form resolveSeedRefs rewrites
+// at boot), mirroring its exact grammar: leading @, a dot at index >= 1,
+// and an = after the dot. ok is false for any other string.
+func blueprintSeedRefTarget(v string) (entity string, ok bool) {
+	if !strings.HasPrefix(v, "@") {
+		return "", false
+	}
+	rest := v[1:]
+	dot := strings.IndexByte(rest, '.')
+	eq := strings.IndexByte(rest, '=')
+	if dot < 1 || eq <= dot+1 {
+		return "", false
+	}
+	return rest[:dot], true
+}
+
+// blueprintSeedRefFieldHint names the target entity's display field for
+// the "@entity.field=value" example in refusal messages, mirroring the
+// hint validateBlueprintSeedTypes already gives.
+func blueprintSeedRefFieldHint(entitiesByName map[string]framework.EntityDeclaration, target string) string {
+	if decl, ok := entitiesByName[strings.TrimSpace(target)]; ok {
+		return blueprintDisplayField(decl)
+	}
+	return "id"
+}
+
+// blueprintHookTypes maps the blueprint/kiln `when` spellings to the
+// framework lifecycle constants the generated app registers. It is the
+// closed set mapHookType (kiln/render) accepts; the preview and the
+// generator must agree or a hook that fires in the preview fires nowhere
+// in the shipped app.
+var blueprintHookTypes = map[string]string{
+	"before_create": "framework.BeforeCreate",
+	"after_create":  "framework.AfterCreate",
+	"before_update": "framework.BeforeUpdate",
+	"after_update":  "framework.AfterUpdate",
+	"before_delete": "framework.BeforeDelete",
+	"after_delete":  "framework.AfterDelete",
+	"before_list":   "framework.BeforeList",
+	"after_list":    "framework.AfterList",
+}
+
+// blueprintNavIconSafe reports whether a nav icon can render in the
+// sidebar's raw-HTML icon slot without carrying markup with it.
+func blueprintNavIconSafe(icon string) bool {
+	for _, r := range icon {
+		switch {
+		case r < 0x20 || r == 0x7f:
+			return false
+		case r == '<' || r == '>' || r == '&' || r == '"' || r == '\'' || r == '`' || r == '\\':
+			return false
+		}
+	}
+	return true
 }
 
 // blueprintSeedFieldKind resolves a seed row key to the field declaration
@@ -3281,7 +3583,7 @@ func renderBlueprintFilesWithOrder(bp Blueprint, entityOrderOffset, screenOrderO
 		// wire RBAC into admin.Config without editing generated files.
 		files = append(files, generatedFile{name: "admin_register.go", content: blueprintAdminRegisterGo})
 	}
-	if len(bp.Endpoints) > 0 || len(bp.Middleware) > 0 || len(bp.Plugins) > 0 || len(bp.Helpers) > 0 || len(bp.Seed) > 0 {
+	if len(bp.Endpoints) > 0 || len(bp.Middleware) > 0 || len(bp.Plugins) > 0 || len(bp.Helpers) > 0 || len(bp.Seed) > 0 || len(bp.Hooks) > 0 {
 		files = append(files, generatedFile{name: "stubs.go", content: renderBlueprintStubs(bp)})
 	}
 	if emitsApp {
@@ -4534,6 +4836,18 @@ func renderBlueprintMain(bp Blueprint) string {
 		sb.WriteString("\t}\n")
 	}
 	sb.WriteString("\tentities.RegisterAll(fwApp)\n")
+	for _, hook := range bp.Hooks {
+		handler := strings.TrimSpace(hook.Handler)
+		lifecycle, known := blueprintHookTypes[hook.When]
+		// The emitter is reachable without validateBlueprint
+		// (loadBlueprintPath(path, false)): never wire a handler that is
+		// not a Go identifier or a lifecycle point outside the closed set;
+		// validateBlueprint is the loud gate for both.
+		if !isGoIdentifier(handler) || !known {
+			continue
+		}
+		sb.WriteString(fmt.Sprintf("\tfwApp.HookRegistry(%q).RegisterHook(%s, %s)\n", hook.Entity, lifecycle, handler))
+	}
 	sb.WriteString("\tsite := uiapp.NewApp(appName)\n")
 	sb.WriteString("\tRegisterGenerated(fwApp, site, db)\n")
 	if hasSeed {
@@ -5269,8 +5583,15 @@ func renderBlueprintCrudFile(entity string, screens []BlueprintScreen, bp Bluepr
 	}
 	if len(ordered) == 0 && resourceStmt != "" {
 		mountName := "mount" + toCamelCase(entity) + "Resource"
-		sb.WriteString(fmt.Sprintf("// %s wires the %s resource (no screen mounts it; it is looked up by\n// data sources / relation labels elsewhere).\nfunc %s(fwApp *framework.App, site *app.App, db *sql.DB) {\n%s}\n\n", mountName, entity, mountName, resourceStmt))
-		initLines = append(initLines, fmt.Sprintf("\t\tscreenRegistrar{order: 0, fn: %s},", mountName))
+		// The emitter is reachable without validateBlueprint
+		// (loadBlueprintPath(path, false)): never emit a mount func whose
+		// name is not a Go identifier, same rule as the hook stubs. A
+		// resource that fails here vanishes from this file only;
+		// validateBlueprint is the loud gate.
+		if isGoIdentifier(mountName) {
+			sb.WriteString(fmt.Sprintf("// %s wires the %s resource (no screen mounts it; it is looked up by\n// data sources / relation labels elsewhere).\nfunc %s(fwApp *framework.App, site *app.App, db *sql.DB) {\n%s}\n\n", mountName, entity, mountName, resourceStmt))
+			initLines = append(initLines, fmt.Sprintf("\t\tscreenRegistrar{order: 0, fn: %s},", mountName))
+		}
 	}
 	sb.WriteString("func init() {\n\tscreenRegistrars = append(screenRegistrars,\n" + strings.Join(initLines, "\n") + "\n\t)\n}\n")
 	return generatedFile{name: screenFileName(entity + "_crud"), content: sb.String()}
@@ -6964,8 +7285,13 @@ func renderBlueprintStubs(bp Blueprint) string {
 	needsHTTP := len(bp.Endpoints) > 0 || len(bp.Middleware) > 0
 	needsFramework := len(bp.Plugins) > 0
 	needsJSON := false
-	if needsHTTP || needsFramework || needsJSON {
+	// Hook stubs take framework.HookFunc's signature (context.Context, any).
+	needsContext := len(bp.Hooks) > 0
+	if needsHTTP || needsFramework || needsJSON || needsContext {
 		sb.WriteString("import (\n")
+		if needsContext {
+			sb.WriteString("\t\"context\"\n")
+		}
 		if needsHTTP {
 			sb.WriteString("\t\"net/http\"\n")
 		}
@@ -7007,6 +7333,25 @@ func renderBlueprintStubs(bp Blueprint) string {
 	for _, item := range bp.Helpers {
 		name := toCamelCase(item.Name)
 		sb.WriteString(fmt.Sprintf("func %s() {\n\t// TODO: implement helper %q.\n}\n\n", name, item.Name))
+	}
+	// Hook handler stubs: the owned-Go seam the BlueprintHook doc comment
+	// promises ("Handler names the func to write"). main.go registers each
+	// stub on the entity's HookRegistry at the hook's lifecycle point, so
+	// the surface exists the moment the app generates; the author fills in
+	// the action. Description and ID go through blueprintCommentSafe: a
+	// newline in transcribed text would put the rest at statement position.
+	for _, hook := range bp.Hooks {
+		handler := strings.TrimSpace(hook.Handler)
+		if !isGoIdentifier(handler) {
+			continue // validateBlueprint refuses it; never emit a non-identifier
+		}
+		sb.WriteString(fmt.Sprintf("// %s implements hook %q (entity %s, %s): %s\n",
+			handler, hook.ID, hook.Entity, hook.When, blueprintCommentSafe(hook.Description)))
+		sb.WriteString("// Registered in main.go; returning a non-nil error aborts the operation.\n")
+		sb.WriteString(fmt.Sprintf("func %s(ctx context.Context, data any) error {\n", handler))
+		sb.WriteString("\t_, _ = ctx, data // TODO: implement the hook's action here.\n")
+		sb.WriteString("\treturn nil\n")
+		sb.WriteString("}\n\n")
 	}
 	if len(bp.Seed) > 0 {
 		sb.WriteString("// seedEntity is one entity's ordered seed rows.\n")
@@ -7051,21 +7396,13 @@ func renderBlueprintStubs(bp Blueprint) string {
 					case bool:
 						sb.WriteString(fmt.Sprintf("%q: %t", k, val))
 					case []any:
-						sb.WriteString(fmt.Sprintf("%q: []any{", k))
-						for i, item := range val {
-							if i > 0 {
-								sb.WriteString(", ")
-							}
-							switch itemVal := item.(type) {
-							case string:
-								sb.WriteString(fmt.Sprintf("%q", itemVal))
-							case int, int64, float64, bool:
-								sb.WriteString(fmt.Sprintf("%v", itemVal))
-							default:
-								sb.WriteString("nil")
-							}
-						}
-						sb.WriteString("}")
+						sb.WriteString(fmt.Sprintf("%q: %s", k, blueprintSeedGoLiteral(val)))
+					case map[string]any:
+						// A map (an object on a json column, an object inside
+						// a list) is a value the validator accepts and the
+						// boot validator marshals and inserts; emitting nil
+						// here would seed NULL where the author wrote data.
+						sb.WriteString(fmt.Sprintf("%q: %s", k, blueprintSeedGoLiteral(val)))
 					case nil:
 						sb.WriteString(fmt.Sprintf("%q: nil", k))
 					default:
@@ -7080,6 +7417,41 @@ func renderBlueprintStubs(bp Blueprint) string {
 		// Add json import if needed
 	}
 	return sb.String()
+}
+
+// blueprintSeedGoLiteral renders a decoded seed value as a Go expression
+// that reproduces it: the emitter-side guarantee that every value the
+// validator accepted reaches seedData() verbatim instead of being nulled.
+// Maps emit their keys sorted so regeneration stays deterministic.
+func blueprintSeedGoLiteral(v any) string {
+	switch val := v.(type) {
+	case string:
+		return fmt.Sprintf("%q", val)
+	case int:
+		return strconv.Itoa(val)
+	case int64:
+		return strconv.FormatInt(val, 10)
+	case float64:
+		return fmt.Sprintf("%v", val)
+	case bool:
+		return fmt.Sprintf("%t", val)
+	case nil:
+		return "nil"
+	case []any:
+		parts := make([]string, len(val))
+		for i, item := range val {
+			parts[i] = blueprintSeedGoLiteral(item)
+		}
+		return "[]any{" + strings.Join(parts, ", ") + "}"
+	case map[string]any:
+		parts := make([]string, 0, len(val))
+		for _, k := range sortedMapKeys(val) {
+			parts = append(parts, fmt.Sprintf("%q: %s", k, blueprintSeedGoLiteral(val[k])))
+		}
+		return "map[string]any{" + strings.Join(parts, ", ") + "}"
+	default:
+		return fmt.Sprintf("nil // unsupported type %T", val)
+	}
 }
 
 func renderBlueprintApp(bp Blueprint) string {
@@ -7669,6 +8041,18 @@ func renderNavItemGo(sb *strings.Builder, item BlueprintNavItem, indent string) 
 	sb.WriteString(fmt.Sprintf("%s{Label: %q, Href: %q", indent, item.Label, item.Href))
 	if item.Role != "" {
 		sb.WriteString(fmt.Sprintf(", Roles: []string{%q}", item.Role))
+	}
+	// Icon renders in the sidebar's raw-HTML icon slot (render.HTML), so
+	// it is emitted only when it passes the same grammar validateBlueprint
+	// enforces: plain text or an emoji, never markup. validateBlueprint is
+	// the loud gate; this backstop keeps an unvalidated blueprint from
+	// shipping an icon that escapes the slot.
+	if item.Icon != "" && blueprintNavIconSafe(item.Icon) {
+		// Through the design system's icon registry, never as raw
+		// markup: a registered name renders its SVG, an unregistered
+		// one renders nothing (ui.Icon's contract), so the literal name
+		// can never appear beside the label.
+		sb.WriteString(fmt.Sprintf(", Icon: ui.Icon(%q, ui.IconConfig{})", item.Icon))
 	}
 	if len(item.Items) > 0 {
 		sb.WriteString(", Children: []ui.SidebarItem{\n")

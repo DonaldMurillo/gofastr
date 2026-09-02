@@ -1167,3 +1167,50 @@ func TestThemeEditTokenIsNotTheHarnessSigningKey(t *testing.T) {
 		t.Errorf("theme edit token is not per-session random: two calls returned the same value %q", tok)
 	}
 }
+
+// TestThemeEditApplyRejectsDeclarationBreaks extends the invalid-value test
+// above across EVERY token class the editor exposes, because each class has
+// its own setter in style.ApplyTokens and any one of them accepting a
+// declaration-breaking value would let that token's class inject rules into
+// the variant CSS the preview iframe loads (same-origin /preview). The
+// blueprint emitter's copy of this boundary is TestThemeValueCannotInjectCSS;
+// this is the theme-edit API's copy — the two must not drift.
+func TestThemeEditRejectsDeclarationBreaks(t *testing.T) {
+	srv := newTestServer(t)
+	breakers := []string{
+		"#fff; } body { display:none } :root{ --x:1", // declaration/block break
+		"red; background:url(//evil.test/x)",         // exfil via injected url()
+		"var(--color-primary)) url(",                 // url( smuggled via var
+		"#fff}",                                      // block close alone
+		`"><img src=x onerror=PWN()>`,                // markup (page re-render)
+	}
+	for _, key := range []string{
+		"color-primary", "dark.color-primary",
+		"font-heading", "font-body",
+		"shadow-md",
+		"tk-kw",
+		"text-base",
+	} {
+		for _, v := range breakers {
+			before := srv.currentTokens()[key]
+			if _, err := srv.applyToken(key, v); err == nil {
+				t.Errorf("SECURITY: [theme-css-injection] token %q accepted declaration-breaking value %q", key, v)
+			}
+			if after := srv.currentTokens()[key]; after != before {
+				t.Errorf("token %q mutated despite rejection: %q -> %q", key, before, after)
+			}
+		}
+	}
+	// Control: the values real themes carry (font stacks, oklch, shadow
+	// lists) still apply — the boundary rejects, it does not sanitise.
+	for _, tc := range []struct{ key, value string }{
+		{"color-primary", "oklch(0.62 0.19 255)"},
+		{"font-heading", "'Hanken Grotesk', ui-sans-serif, system-ui"},
+		{"shadow-md", "0 4px 6px -1px rgb(0 0 0 / 0.1)"},
+		{"text-base", "1rem"},
+	} {
+		if _, err := srv.applyToken(tc.key, tc.value); err != nil {
+			t.Errorf("legitimate %s value %q rejected: %v", tc.key, tc.value, err)
+		}
+	}
+}

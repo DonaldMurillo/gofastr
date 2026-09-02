@@ -254,9 +254,25 @@ func (s *SQLStore) UpdateDelivery(ctx context.Context, d Delivery) error {
 	if !d.NextAttemptAt.IsZero() {
 		nextAt = d.NextAttemptAt
 	}
-	_, err := s.db.ExecContext(ctx, s.deliveryUpdate(),
-		d.Attempts, string(d.Status), d.LastError, nextAt, d.UpdatedAt, d.ID,
-	)
+	q := s.deliveryUpdate()
+	args := []any{d.Attempts, string(d.Status), d.LastError, nextAt, d.UpdatedAt, d.ID}
+	if !isTerminalStatus(d.Status) {
+		// Fence: a non-terminal settle must not overwrite a terminal
+		// row (isTerminalStatus) — a worker that overran its lease
+		// had the row re-claimed under it, and its late failure write
+		// must not re-queue the delivered row nor a triaged
+		// dead-letter. The WHERE clause matches no row, Exec reports
+		// nil: the stale write is a no-op, not a failure, mirroring
+		// the fenced completions in battery/queue.
+		if s.dialect == "postgres" {
+			q += ` AND status NOT IN ($7,$8)`
+			args = append(args, string(StatusSuccess), string(StatusDead))
+		} else {
+			q += ` AND status NOT IN (?,?)`
+			args = append(args, string(StatusSuccess), string(StatusDead))
+		}
+	}
+	_, err := s.db.ExecContext(ctx, q, args...)
 	return err
 }
 
