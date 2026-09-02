@@ -1145,7 +1145,11 @@ func setSessionCookie(w http.ResponseWriter, r *http.Request, id string) {
 	if secure && !requestIsSecure(r) {
 		plaintextRemoteWarnOnce.Do(func() {
 			slog.Default().Warn("uihost: session cookie sent Secure over a plaintext non-loopback origin: browsers will drop it and every session check will 401",
-				"host", r.Host,
+				// r.Host is request-borne: scrub control bytes the way
+				// every other log sink does (markdownAlternate's C0
+				// filter, battery/log's scrubControlBytes), so a forged
+				// Host cannot paint a forged line into the tail.
+				"host", scrubCtl(r.Host),
 				"fix", "serve over TLS (or a reverse proxy setting X-Forwarded-Proto), or use http://localhost for development")
 		})
 	}
@@ -1157,6 +1161,30 @@ func setSessionCookie(w http.ResponseWriter, r *http.Request, id string) {
 		Secure:   secure,
 		SameSite: http.SameSiteStrictMode,
 	})
+}
+
+// scrubCtl percent-encodes C0/DEL control bytes in a request-derived
+// log field. Local spelling of core/middleware and battery/log's
+// scrubControlBytes: both are package-private, and a copy of a
+// six-line filter is cheaper than an export cycle. Tab and printable
+// bytes pass through untouched.
+func scrubCtl(s string) string {
+	for i := range len(s) {
+		if c := s[i]; c < 0x20 && c != '\t' || c == 0x7f {
+			var b strings.Builder
+			b.Grow(len(s))
+			for j := range len(s) {
+				d := s[j]
+				if d < 0x20 && d != '\t' || d == 0x7f {
+					fmt.Fprintf(&b, "%%%02x", d)
+					continue
+				}
+				b.WriteByte(d)
+			}
+			return b.String()
+		}
+	}
+	return s
 }
 
 // readSessionCookie returns the session id from the cookie that matches

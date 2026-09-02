@@ -164,12 +164,22 @@ func (t *Translator) render(tag string, m Message, params map[string]any) string
 }
 
 func (t *Translator) pluralCategory(tag string, n int) string {
+	// Snapshot the registered rule under the read lock and evaluate it
+	// outside: plural rules are registered callbacks (RegisterRule),
+	// and a rule that blocks or panics must not hold every other
+	// translator call behind t.mu — the same registry rule core/mcp's
+	// listing gates learned.
 	t.mu.RLock()
-	defer t.mu.RUnlock()
+	var rule func(int) string
 	for _, c := range tagFallbacks(tag) {
 		if r, ok := t.rules[c]; ok {
-			return r(n)
+			rule = r
+			break
 		}
+	}
+	t.mu.RUnlock()
+	if rule != nil {
+		return rule(n)
 	}
 	return englishPlural(n)
 }

@@ -449,7 +449,13 @@ func (c *WebSocketConn) Close() error {
 			err = closer.Close()
 		}
 		for _, fn := range callbacks {
-			go fn()
+			// Close hooks are app-supplied callbacks on their own
+			// goroutine, which has no net: a panicking hook must not
+			// take the process down with the connection.
+			go func(fn func()) {
+				defer func() { _ = recover() }()
+				fn()
+			}(fn)
 		}
 	})
 	return err

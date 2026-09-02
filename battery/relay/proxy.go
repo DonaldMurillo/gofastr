@@ -176,11 +176,14 @@ func (r *Relay) proxyError(w http.ResponseWriter, req *http.Request, err error) 
 		return
 	}
 	if errors.Is(err, context.DeadlineExceeded) || isTimeoutError(err) {
-		r.logger.Warn("relay: upstream timeout", "method", req.Method, "path", req.URL.EscapedPath(), "err", err.Error())
+		// The method is request-borne: percent-encode control bytes the
+		// way every other log sink scrubs them, so a forged method
+		// cannot paint a forged line into the operator's tail.
+		r.logger.Warn("relay: upstream timeout", "method", url.PathEscape(req.Method), "path", req.URL.EscapedPath(), "err", err.Error())
 		http.Error(w, "upstream timeout", http.StatusGatewayTimeout)
 		return
 	}
-	r.logger.Warn("relay: upstream unreachable", "method", req.Method, "path", req.URL.EscapedPath(), "err", err.Error())
+	r.logger.Warn("relay: upstream unreachable", "method", url.PathEscape(req.Method), "path", req.URL.EscapedPath(), "err", err.Error())
 	http.Error(w, "upstream unavailable", http.StatusBadGateway)
 }
 

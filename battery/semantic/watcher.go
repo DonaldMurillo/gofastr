@@ -86,6 +86,19 @@ func NewWatcher(idx Index, opts WatchOptions) *Watcher {
 // (unless PollInterval <= 0) loops re-scanning on every tick until
 // ctx is canceled. Returns ctx.Err() on cancellation, or the first
 // indexing error encountered.
+// safeMetadata runs the app-supplied metadata callback under a recover
+// guard: it fires on the watcher loop, which has no per-request net, so
+// a panicking metadata hook must degrade to no metadata, not kill the
+// watcher.
+func (w *Watcher) safeMetadata(absPath string) (m map[string]any) {
+	defer func() {
+		if rec := recover(); rec != nil {
+			m = nil
+		}
+	}()
+	return w.opts.MetadataFunc(absPath)
+}
+
 func (w *Watcher) Run(ctx context.Context, roots ...string) error {
 	if len(roots) == 0 {
 		return errors.New("semantic: Watcher.Run requires at least one root")
@@ -195,7 +208,7 @@ func (w *Watcher) upsert(ctx context.Context, path string, info os.FileInfo) err
 		ID:       docID,
 		Source:   path,
 		Text:     string(data),
-		Metadata: w.opts.MetadataFunc(path),
+		Metadata: w.safeMetadata(path),
 	}
 	if err := w.idx.Add(ctx, doc); err != nil {
 		return fmt.Errorf("semantic: watcher add %q: %w", path, err)
