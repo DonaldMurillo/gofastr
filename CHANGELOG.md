@@ -5,6 +5,44 @@ All notable changes to GoFastr. Follows
 calendar versions (`YYYY-MM-DD` per substantive release until the API
 stabilises). Breaking changes are clearly marked with **BREAKING**.
 
+## [Unreleased]
+
+### Fixed
+- **The sandbox conformance-probe runner now enforces its own wall budget
+  and reads its child's result correctly** (#136 audit probes). A child
+  killed mid-attempt used to be filed as "unreachable" for every probe; the
+  runner's own stdout-protocol comment says a kill is not a clean denial,
+  so the denial probes (P1–P5, P7) now report FAIL and only the
+  resource-limit probe (P6) stays unreachable. A sandbox wrapper's stderr
+  line ahead of the child's `PASS` (sandbox-exec warns before it execs)
+  no longer turns every probe into "unrecognized output": the parser
+  finds the sentinel line rather than trusting the buffer's first line.
+  And `cmd.WaitDelay` is set, so a descendant that left the process group
+  and held the output pipe can no longer keep `cmd.Wait` blocked past
+  `probeTimeout` — proven with a hostile backend whose grandchild calls
+  `setsid`.
+- **`core-ui/check`: the inline-style linter treats `"Style"` like
+  `"style"`** (HTML attribute names are case-insensitive), and the no-var
+  JS lint no longer flags a regex literal such as `/var\s+\w+/` as a
+  declaration: the sanitizer blanks regex literals, telling a pattern from
+  division by what precedes the `/`.
+- **`core/a2a` review fixes**: an artifact-update event with `append`
+  set now carries only the new parts (a receiver appends the event's
+  parts, so the merged artifact would have doubled them); a non-streaming
+  `SendMessage` no longer pins its goroutine for the whole task timeout
+  when the client hangs up (the run continues, the wait does not); push
+  delivery and the registration-time DNS check carry their own deadlines,
+  so a caller-supplied client without a timeout or a stalling resolver
+  cannot hold a goroutine or a request open; every store call the run
+  makes is bounded.
+
+### Added
+- Probe tests kept from the #136 audit as regression pins: the pack
+  encode/decode round-trip property over a randomized hostile corpus, the
+  Levenshtein scaling benchmark, `Timeout`'s deterministic boundary and an
+  env-gated done-vs-timer race probe, and two refutations against the SQL
+  idempotency store through the full default middleware chain.
+
 ## [0.79.0] - 2026-09-01
 
 ### Added
