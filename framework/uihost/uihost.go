@@ -101,7 +101,7 @@ type UIHost struct {
 	actionHandlers      map[string]*component.ActionRegistry // componentID → action registry for server-side handlers
 	actionComps         map[string]component.Component       // componentID → the component the registry was compiled FROM (embed_actions.go walks it)
 	customCSS           string                               // extra CSS to inject (e.g. demo.css)
-	extraScripts        []string                             // extra <script src="…"> URLs to inject before </body>
+	extraScripts        []externalScript                     // extra <script src="…"> rail before </body>; every-page + document-lifetime entries (register_script.go)
 	scriptMu            sync.Mutex                           // guards post-construction extraScripts appends + the servingStarted latch (see register_script.go)
 	servingStarted      atomic.Bool                          // latched on the first full-shell render; RegisterExternalScript refuses after it
 	staticDir           string                               // directory to serve static files from
@@ -342,6 +342,14 @@ type routeInfoJSON struct {
 	// innermost (app.LayoutLayer.Key). The runtime compares it against the
 	// DOM's data-fui-layout-key spine to swap at the deepest shared layer.
 	Layouts []string `json:"layouts,omitempty"`
+	// DocScripts lists the document-lifetime external scripts (src
+	// values, RegisterDocumentScript) in scope for this route. The
+	// client runtime compares the destination's set against the live
+	// document's data-fui-doc scripts and performs a real document load
+	// when they differ: removing a script tag does not revoke
+	// document-installed capabilities (WebMCP's navigator.modelContext
+	// tools), and a partial swap never runs a body script.
+	DocScripts []string `json:"docScripts,omitempty"`
 	// Redirect is the target path (or pattern) for a redirect entry.
 	// Empty for screens. The client-side router rewrites a navigation to
 	// this entry's path to Redirect without a server round-trip.
@@ -376,7 +384,9 @@ func WithCustomCSS(css string) Option {
 // CSP-safe: every URL becomes an external resource, no inline JS.
 func WithExtraScripts(urls ...string) Option {
 	return func(ds *UIHost) {
-		ds.extraScripts = append(ds.extraScripts, urls...)
+		for _, u := range urls {
+			ds.extraScripts = append(ds.extraScripts, externalScript{src: u})
+		}
 	}
 }
 
@@ -816,7 +826,7 @@ func New(application *app.App, opts ...Option) *UIHost {
 	// (see framework/dev/livereload.go). Both halves are gated by the
 	// same env predicate, so the host needs zero code change.
 	if dev.LiveReloadEnabled() {
-		ds.extraScripts = append(ds.extraScripts, dev.LiveReloadScriptURL)
+		ds.extraScripts = append(ds.extraScripts, externalScript{src: dev.LiveReloadScriptURL})
 	}
 	// #215: a partial DarkColors silently keeps light values in dark mode
 	// (the map is what renders under a dark preference; editing Colors
@@ -951,6 +961,16 @@ func (ds *UIHost) buildRouteScriptUncached() string {
 			Layouts:     r.Layouts,
 			Redirect:    r.RedirectTo,
 		}
+		// Document-lifetime scripts in scope for this route, sorted so
+		// the manifest bytes are deterministic. The scope sees the
+		// route PATTERN here and the concrete path at render time;
+		// prefix-style predicates answer both the same way.
+		for _, s := range ds.extraScripts {
+			if s.scope != nil && s.scope(r.Path) {
+				infos[i].DocScripts = append(infos[i].DocScripts, s.src)
+			}
+		}
+		sort.Strings(infos[i].DocScripts)
 		if r.Intercept != nil {
 			infos[i].Intercept = &interceptJSON{
 				From: r.Intercept.From,
@@ -1777,8 +1797,15 @@ func (ds *UIHost) injectChromeModeFor(page, pagePath, sessionID, presenceTopic s
 		bodyClose.WriteString(`<script src="/__gofastr/actions.js"></script>`)
 		bodyClose.WriteByte('\n')
 	}
-	for _, src := range ds.extraScripts {
-		fmt.Fprintf(bodyClose, `<script src=%q></script>`+"\n", src)
+	for _, s := range ds.extraScripts {
+		if s.scope != nil && !s.scope(pagePath) {
+			continue // document-lifetime script out of scope on this page
+		}
+		docAttr := ""
+		if s.scope != nil {
+			docAttr = " data-fui-doc"
+		}
+		fmt.Fprintf(bodyClose, `<script src=%q%s></script>`+"\n", s.src, docAttr)
 	}
 
 	// Color-scheme bootstrap runs SYNCHRONOUSLY at the top of <head>

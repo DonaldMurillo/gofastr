@@ -16,6 +16,7 @@ type mountConfig struct {
 	private     bool
 	pageScope   func(*http.Request) bool
 	bridgeDebug bool
+	docScope    func(path string) bool
 }
 
 // WithBridgeDebug bakes the bridge's bounded debug state into the
@@ -89,6 +90,39 @@ func WithPageScope(include func(*http.Request) bool) MountOption {
 // private no-store cache policy.
 func (c *mountConfig) requesterDependent() bool {
 	return c.private || c.pageScope != nil || len(c.assetMW) > 0
+}
+
+// WithDocumentScope gives the bridge a document lifetime on the host's
+// script rail (uihost's RegisterDocumentScript): the bridge tag ships
+// only on pages the scope predicate accepts — every other page omits it
+// entirely — and the host's SPA runtime performs a real document load
+// when a navigation enters or leaves that page set.
+//
+// The reason is a browser fact, not a policy: removing the bridge tag
+// does not unregister tools already installed on
+// navigator.modelContext, and a partial (SPA) swap never runs a body
+// script. A landing page that soft-swapped over a support page would
+// keep the support tools alive in the same document. The hard boundary
+// is the safe fallback while WebMCP remains experimental; it also means
+// back/forward across the edge loads the destination fresh, so a
+// document only ever carries its own tools.
+//
+// The predicate takes the page path: the concrete request path when a
+// page renders ("/session/42") and the route pattern when the manifest
+// is built ("/session/:id"). Write it prefix-style
+// (strings.HasPrefix(path, "/session/")) so both calls agree.
+//
+// Page scope is structural, not authorization: it decides which
+// DOCUMENT carries the bridge, never who may fetch the assets. Keep
+// WithAssetAuthorization (or endpoint auth) for that; WithPageScope
+// remains the per-request gate. This option requires the registrar to
+// implement the document-script seam (a *uihost.UIHost does) and
+// refuses a nil registrar, since the host must know the scope to
+// enforce the boundary.
+func WithDocumentScope(include func(path string) bool) MountOption {
+	return func(c *mountConfig) {
+		c.docScope = include
+	}
 }
 
 // wrap composes one asset's handler for registration: the

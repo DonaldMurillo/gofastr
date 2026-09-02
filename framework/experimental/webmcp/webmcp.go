@@ -168,6 +168,14 @@ type ScriptRegistrar interface {
 	RegisterExternalScript(src string) error
 }
 
+// documentScriptRegistrar is the seam WithDocumentScope needs: the
+// host's document-lifetime script rail. *uihost.UIHost satisfies it.
+// Kept structural (like ScriptRegistrar) so the option type below
+// stays satisfied by any host that grows the same rail.
+type documentScriptRegistrar interface {
+	RegisterDocumentScript(src string, scope func(path string) bool) error
+}
+
 // Host collects tool declarations and, once mounted, serves the bridge
 // script and manifest. Zero value is not usable; call New.
 type Host struct {
@@ -398,7 +406,24 @@ func (h *Host) Mount(rt *router.Router, scripts ScriptRegistrar, opts ...MountOp
 	}
 
 	scriptURL := uihost.ScriptURL(scriptPath, script)
-	if scripts != nil {
+	if cfg.docScope != nil {
+		// Document lifetime: the tag ships only on in-scope pages and
+		// the runtime hard-navigates across the scope edge. The host
+		// registrar must carry the document rail; a nil registrar
+		// (render-your-own-tag) cannot feed the route manifest the
+		// boundary needs, so refuse rather than ship a scope edge the
+		// client cannot see.
+		if scripts == nil {
+			return fail(fmt.Errorf("webmcp: Mount: WithDocumentScope needs the host registrar (pass the *uihost.UIHost, not nil); a self-rendered tag cannot declare the boundary in the route manifest"))
+		}
+		dsr, ok := scripts.(documentScriptRegistrar)
+		if !ok {
+			return fail(fmt.Errorf("webmcp: Mount: WithDocumentScope needs a registrar with RegisterDocumentScript (a *uihost.UIHost); got %T", scripts))
+		}
+		if err := dsr.RegisterDocumentScript(scriptURL, cfg.docScope); err != nil {
+			return fail(fmt.Errorf("webmcp: Mount: register document-scoped bridge script: %w", err))
+		}
+	} else if scripts != nil {
 		if err := scripts.RegisterExternalScript(scriptURL); err != nil {
 			return fail(fmt.Errorf("webmcp: Mount: register bridge script: %w", err))
 		}

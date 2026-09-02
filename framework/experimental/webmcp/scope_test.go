@@ -6,7 +6,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/core-ui/app"
+	"github.com/DonaldMurillo/gofastr/core-ui/html"
+	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/router"
+	"github.com/DonaldMurillo/gofastr/framework/uihost"
 )
 
 // requireRole answers 401 without a session cookie and 403 when the
@@ -207,5 +211,85 @@ func TestAuthRunsBeforePageScope(t *testing.T) {
 	}
 	if rec := get(t, rt, ManifestRoute); rec.Code != http.StatusUnauthorized {
 		t.Fatalf("anonymous out-of-scope manifest: %d, want 401", rec.Code)
+	}
+}
+
+// plainRegistrar implements only the every-page seam; a host that
+// cannot carry a document script must fail the mount loudly.
+type plainRegistrar struct{}
+
+func (plainRegistrar) RegisterExternalScript(string) error { return nil }
+
+// homeScreen is the minimal screen the uihost integration below needs.
+type homeScreen struct{}
+
+func (homeScreen) Render() render.HTML         { return html.Div(html.DivConfig{}, render.Text("hi")) }
+func (homeScreen) SetParams(map[string]string) {}
+
+func TestWithDocumentScopeNeedsDocumentRail(t *testing.T) {
+	newHost := func() *Host {
+		h := New()
+		if err := h.Register(validTool()); err != nil {
+			t.Fatal(err)
+		}
+		return h
+	}
+	scope := func(string) bool { return true }
+
+	if _, err := newHost().Mount(router.New(), nil, WithDocumentScope(scope)); err == nil {
+		t.Error("nil registrar with WithDocumentScope = nil error, want refusal")
+	}
+	if _, err := newHost().Mount(router.New(), plainRegistrar{}, WithDocumentScope(scope)); err == nil {
+		t.Error("registrar without RegisterDocumentScript = nil error, want refusal")
+	}
+
+	// A failed mount leaves the Host re-mountable: the registrar-less
+	// refusal above registered nothing.
+	h := newHost()
+	if _, err := h.Mount(router.New(), nil, WithDocumentScope(scope)); err == nil {
+		t.Fatal("expected refusal")
+	}
+	if _, err := h.Mount(router.New(), nil); err != nil {
+		t.Fatalf("re-mount after refusal: %v", err)
+	}
+}
+
+// WithDocumentScope on a real uihost: the bridge tag rides the
+// document rail — data-fui-doc, in scope only — and the route manifest
+// carries docScripts for the scoped route so the client sees the
+// boundary.
+func TestWithDocumentScopeRidesHostRail(t *testing.T) {
+	application := app.NewApp("docscope")
+	application.RegisterScreen(app.NewScreen("/", &homeScreen{}), nil)
+	application.RegisterScreen(app.NewScreen("/support", &homeScreen{}), nil)
+	ds := uihost.New(application)
+	rt := router.New()
+	ds.Mount(rt)
+
+	h := New()
+	if err := h.Register(validTool()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.Mount(rt, ds, WithDocumentScope(func(path string) bool {
+		return strings.HasPrefix(path, "/support")
+	})); err != nil {
+		t.Fatalf("mount: %v", err)
+	}
+
+	rec := httptest.NewRecorder()
+	rt.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/support", nil))
+	page := rec.Body.String()
+	if n := strings.Count(page, `data-fui-doc`); n != 1 {
+		t.Errorf("/support carries %d data-fui-doc tags, want 1:\n%s", n, page)
+	}
+	if !strings.Contains(page, `"docScripts":["/__gofastr/webmcp.js`) {
+		t.Errorf("route manifest does not declare the bridge for /support:\n%s", page)
+	}
+
+	rec = httptest.NewRecorder()
+	rt.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+	home := rec.Body.String()
+	if strings.Contains(home, `data-fui-doc`) || strings.Contains(home, `src="/__gofastr/webmcp.js`) {
+		t.Errorf("out-of-scope / ships the bridge:\n%s", home)
 	}
 }

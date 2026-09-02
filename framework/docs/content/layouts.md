@@ -118,6 +118,20 @@ the boundary in `X-Gofastr-Swap`. Shared chrome is never re-sent. A
 boundary the DOM doesn't have (a deploy changed the chains mid-session)
 falls back to a full-page load.
 
+One difference between routes always overrides the chain comparison:
+document-lifetime scripts. A script registered with
+`uihost.RegisterDocumentScript(src, scope)` ships only on pages the
+scope accepts, tagged `data-fui-doc`, and the route manifest carries
+each route's set as `docScripts`. The runtime compares the
+destination's set against the live document's tags at every soft-nav
+entry point; a difference — entering or leaving the scope — is a real
+navigation, never a partial swap, because removing a script tag does
+not uninstall what the script installed in the document (WebMCP tools
+are the case that made this a boundary) and a partial swap never runs
+a body script. Same-set routes keep swapping at their deepest shared
+layer as usual, and Back/Forward across an edge loads the destination
+document fresh.
+
 ## Prefetch
 
 A route can declare that the client may fetch its content before the

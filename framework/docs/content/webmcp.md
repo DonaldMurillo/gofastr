@@ -171,11 +171,13 @@ scriptURL, err := tools.Mount(app.Router(), uiHost,
 )
 ```
 
-Role-scoped support console — landing and operator pages carry nothing:
-pass a nil registrar (the script rail ships on every page, which is
-wrong for a scoped surface), render the returned URL yourself on the
-pages that need it, and keep the predicate and auth as the fetch-time
-backstop:
+Role-scoped support console — landing and operator pages carry nothing.
+On a `uihost` app, `WithDocumentScope` (next section) is the
+first-class shape: the rail itself becomes page-scoped and the SPA
+boundary is enforced. Hosts that render their own tags pass a nil
+registrar (the script rail ships on every page, which is wrong for a
+scoped surface), render the returned URL yourself on the pages that
+need it, and keep the predicate and auth as the fetch-time backstop:
 
 <!-- gofastr:compile
 stmt: _ = err
@@ -205,6 +207,58 @@ Two rules hold across every shape. Page inclusion is not
 authorization: a page that renders the tag without the asset routes
 being gated serves the manifest to whoever asks. And the marker header
 attributes a call; it never grants one.
+
+## Capability lifetime across navigation
+
+Removing the bridge script from the DOM does not unregister tools: a
+tool registered on `navigator.modelContext` belongs to the document,
+not to the tag. A partial (SPA) swap never runs a body script either,
+so a public page that soft-swapped over a support page would keep the
+support tools alive in the same document. When the bridge belongs to
+one part of an SPA host, declare that part as a document scope:
+
+<!-- gofastr:compile
+stmt: _ = scriptURL
+stmt: _ = err
+import "strings"
+import "github.com/DonaldMurillo/gofastr/framework"
+import "github.com/DonaldMurillo/gofastr/framework/experimental/webmcp"
+import "github.com/DonaldMurillo/gofastr/framework/uihost"
+var tools *webmcp.Host
+var app *framework.App
+var uiHost *uihost.UIHost
+-->
+```go
+scriptURL, err := tools.Mount(app.Router(), uiHost,
+    webmcp.WithDocumentScope(func(path string) bool {
+        return strings.HasPrefix(path, "/support/")
+    }),
+)
+```
+
+The bridge tag then ships only on pages the scope accepts (marked
+`data-fui-doc`), the route manifest declares the set for those routes,
+and the host's client runtime turns the scope's edge into a document
+boundary: entering or leaving it performs a real navigation instead of
+a partial swap, and Back/Forward across the edge loads the destination
+fresh, so a document only ever carries its own tools. Navigations
+between two in-scope pages stay partial.
+
+The predicate receives the page path — the concrete request path when
+a page renders (`/session/42`) and the route pattern when the manifest
+is built (`/session/:id`) — so write it prefix-style. The scope is
+structural, not authorization: it decides which document carries the
+bridge, never who may fetch it. Keep `WithAssetAuthorization` (or
+endpoint auth) alongside, and `WithPageScope` when the assets
+themselves are requester-dependent. The option needs the host registrar
+(`*uihost.UIHost`); Mount refuses nil or a registrar without the
+document-script rail, because a self-rendered tag cannot declare the
+boundary in the route manifest.
+
+For hosts that are not a `uihost`, the same contract holds by hand:
+render the tag only on in-scope pages, give it `data-fui-doc`, and add
+the script URL to the route manifest's `docScripts` for those routes —
+or mark the routes `NoSPA`, which makes every link to them a full load.
 
 ## Observing tools without seeing inputs
 

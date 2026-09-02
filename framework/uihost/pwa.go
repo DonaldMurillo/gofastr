@@ -127,7 +127,7 @@ func WithPWA(cfg PWAConfig) Option {
 		if cfg.ThemeColor != "" {
 			ds.headTags = append(ds.headTags, fmt.Sprintf(`<meta name="theme-color" content="%s">`, stdhtml.EscapeString(cfg.ThemeColor)))
 		}
-		ds.extraScripts = append(ds.extraScripts, "/__gofastr/pwa/register.js")
+		ds.extraScripts = append(ds.extraScripts, externalScript{src: "/__gofastr/pwa/register.js"})
 	}
 }
 

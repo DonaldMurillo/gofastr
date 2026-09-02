@@ -211,6 +211,7 @@ nav	2	_statefulParams
 nav	2	announceRoute
 nav	2	cacheScreen
 nav	2	closeDisclosures
+nav	2	crossesDocBoundary
 nav	2	domChainKeys
 nav	2	findSlot
 nav	2	finishNav
@@ -240,6 +241,8 @@ nav	4	clean
 nav	4	cur
 nav	4	d
 nav	4	data
+nav	4	de
+nav	4	dest
 nav	4	dom
 nav	4	el
 nav	4	el
@@ -267,6 +270,7 @@ nav	4	r
 nav	4	r
 nav	4	seq
 nav	4	set
+nav	4	srcs
 nav	4	st
 nav	4	stateful
 nav	4	store
@@ -293,6 +297,7 @@ nav	6	slot
 nav	6	swapKey
 nav	6	title
 nav	6	u
+nav	6	v
 nav	8	a
 nav	8	dest
 nav	8	el

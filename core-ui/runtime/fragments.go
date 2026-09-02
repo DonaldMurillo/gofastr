@@ -151,6 +151,12 @@ var fragmentAttrs = map[string][]string{
 		"data-fui-layout",
 		"data-fui-layout-key",
 		"data-fui-layout-slot",
+		// data-fui-doc marks a document-lifetime script (uihost's
+		// RegisterDocumentScript rail): the live set of these srcs is
+		// the document's capability identity, compared against the
+		// destination route's manifest docScripts at every soft-nav
+		// entry point. A difference is a hard document load.
+		"data-fui-doc",
 		"data-fui-screen-group",
 	},
 	"widgets-boot": {
