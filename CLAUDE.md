@@ -153,6 +153,22 @@ MCP tools `framework_docs_list` / `framework_docs_get` /
   pattern-shaped rules belong in the contracts pipeline
   (`framework/contracts`, `gofastr verify`), which already owns bespoke
   CSS, hard navigation, bespoke EventSource, and inline style/script.
+  Six more arrived with the 2026-09 adversarial probe audit, one per
+  bug SHAPE the 419 probes kept finding: `laxcoerce` (a failed type
+  assertion on a `map[string]any` entry is treated as absence — the
+  key was present with the wrong type, so the caller's filter is
+  silently dropped), `rootwrite` (writes under a root whose containment
+  is `filepath.Join` + prefix only, with no `EvalSymlinks` on the
+  chain, and zip entry names built from a parameter with no
+  `path.Clean`), `divlimit` (integer division by a caller-supplied
+  limit/pageSize/n with no zero-or-one guard — it panics on 0),
+  `intwrap` (unsigned→signed conversion and MinInt negation without a
+  dominating bound check — wrapped values read negative and slip past
+  Max-only validators), `reflectset` (reflect `Set*` on a
+  `Field`-derived value with no `CanSet` — an unexported field panics
+  at Set), and `discardederr` (an error dropped in a multi-value
+  assignment while the other results march on — usually the only
+  signal that the call refused).
   An analyzer package that is written but not registered must say why
   in `cmd/vettool/main.go` — `TestEveryAnalyzerIsWiredOrExplained`
   fails on one that is neither registered nor explained.

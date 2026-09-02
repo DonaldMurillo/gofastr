@@ -32,13 +32,19 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/callbackunderlock"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/controlbytes"
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/discardederr"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/discardmutator"
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/divlimit"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/errleak"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/fieldtypeswitch"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/hygiene"
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/intwrap"
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/laxcoerce"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/mapwriter"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/recovercallback"
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/reflectset"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/reqparamlimit"
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/rootwrite"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/unboundedbody"
 )
 
@@ -50,12 +56,20 @@ func main() {
 		errleak.Analyzer,
 		fieldtypeswitch.Analyzer,
 
-		// The 419-probe audit shapes: control-byte sinks, callbacks
-		// under locks, callbacks without a recover net. Each fired on
-		// its pre-fix site and stays quiet on the fixed spelling.
+		// Invariants born from the 2026-09 adversarial probe audit
+		// (419 probes over audit/red-tests): each names a shape that
+		// produced a real failing probe, fires on the pre-fix site, and
+		// stays quiet on the fix. Each analyzer's doc comment carries
+		// the probe and the postures it deliberately stays silent on.
 		controlbytes.Analyzer,
 		callbackunderlock.Analyzer,
 		recovercallback.Analyzer,
+		laxcoerce.Analyzer,
+		rootwrite.Analyzer,
+		divlimit.Analyzer,
+		intwrap.Analyzer,
+		reflectset.Analyzer,
+		discardederr.Analyzer,
 
 		// Checks that currently find nothing. They cost no cleanup and
 		// hold classes this repo already drove to zero. A hit here means
