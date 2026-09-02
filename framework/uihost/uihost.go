@@ -3318,6 +3318,12 @@ func (ds *UIHost) componentCSSTags(page string, bundle bool) string {
 			if !ok {
 				continue
 			}
+			if !safeComponentName(n) {
+				// A name outside the marker charset would rewrite the
+				// /__gofastr/comp/<name>.css path instead of naming a
+				// component. Fail closed: no <link> for it.
+				continue
+			}
 			if i > 0 {
 				b.WriteByte('\n')
 			}
@@ -3342,6 +3348,25 @@ func (ds *UIHost) componentCSSTags(page string, bundle bool) string {
 	return fmt.Sprintf(
 		`<link rel="stylesheet" href="/__gofastr/comp-bundle.css?names=%s&v=%s" data-fui-bundle="%s">`,
 		joined, bundleV, joined)
+}
+
+// safeComponentName reports whether n is safe to interpolate as the
+// /__gofastr/comp/<name>.css path segment: exactly the charset the
+// data-fui-comp marker regex captures (registry/render.go), so any
+// name Scan can produce — and anything a registered component may
+// carry that would rewrite the path ('/', '?', '#', ".." tricks need
+// chars outside it) — is refused before it reaches the URL.
+func safeComponentName(n string) bool {
+	if n == "" {
+		return false
+	}
+	for _, r := range n {
+		if !(r == '_' || r == ':' || r == '.' || r == '-' ||
+			r >= '0' && r <= '9' || r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z') {
+			return false
+		}
+	}
+	return true
 }
 
 // catalogJSONScript returns the inline JSON block embedding the
