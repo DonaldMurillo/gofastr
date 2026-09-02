@@ -40,8 +40,17 @@ func splitFrontmatter(input string) (map[string]string, string) {
 		key := strings.TrimSpace(line[:idx])
 		val := strings.TrimSpace(line[idx+1:])
 		val = unquote(val)
+		// A key defined twice must not silently resolve to the LAST
+		// value: a stale or hostile line lower in the block would
+		// override the value a reviewer read first, and Title flows
+		// into <title>, SEO meta, and templated page chrome. There is
+		// no error channel on Render, so the fail-closed minimum is
+		// first-wins — ambiguity never resolves to the line a
+		// top-to-bottom reader did not see.
 		if key != "" {
-			fm[key] = val
+			if _, dup := fm[key]; !dup {
+				fm[key] = val
+			}
 		}
 	}
 	body := strings.Join(lines[end+1:], "\n")

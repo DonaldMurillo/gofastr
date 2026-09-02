@@ -180,9 +180,9 @@ func (p *parser) parseMapSeeded(indent int, seed map[string]int) (*Node, error) 
 		if !ok || strings.TrimSpace(key) == "" {
 			return nil, fmt.Errorf("yaml:%d:%d: expected key: value", line.line, line.indent+1)
 		}
-		key = strings.TrimSpace(key)
-		if strings.ContainsAny(key, "[]{}") {
-			return nil, fmt.Errorf("yaml:%d:%d: unsupported key syntax %q", line.line, line.indent+1, key)
+		key, err := normalizeKey(key, line.line, line.indent+1)
+		if err != nil {
+			return nil, err
 		}
 		if first, dup := seen[key]; dup {
 			return nil, fmt.Errorf("yaml:%d:%d: duplicate mapping key %q (first defined at line %d)", line.line, line.indent+1, key, first)
@@ -209,6 +209,41 @@ func (p *parser) parseMapSeeded(indent int, seed map[string]int) (*Node, error) 
 		out.Map[key] = node
 	}
 	return out, nil
+}
+
+// normalizeKey validates and canonicalises the KEY side of "key: value".
+// Keys were previously taken verbatim after TrimSpace, so `"title"`,
+// `&title`, and `title` were three DISTINCT map keys: a duplicate
+// smuggled in under quoting or an anchor/tag decoration shadowed
+// nothing, conflicted with nothing, and a reader saw one key configured
+// while the parser held two — exactly the ambiguity the duplicate-key
+// guard exists to refuse. Quoted keys unquote to their bare spelling so
+// the guard sees them; anchor/alias/tag decorations are rejected,
+// mirroring parseScalar's value-side rejection; flow characters stay
+// unsupported on the key side (checked on the raw spelling, so a
+// quoted key containing them is refused too).
+func normalizeKey(raw string, line, column int) (string, error) {
+	key := strings.TrimSpace(raw)
+	if key == "" {
+		return "", fmt.Errorf("yaml:%d:%d: empty mapping key", line, column)
+	}
+	if strings.HasPrefix(key, "&") || strings.HasPrefix(key, "*") || strings.HasPrefix(key, "!") {
+		return "", fmt.Errorf("yaml:%d:%d: anchors, aliases, and tags are not supported in mapping keys", line, column)
+	}
+	if strings.ContainsAny(key, "[]{}") {
+		return "", fmt.Errorf("yaml:%d:%d: unsupported key syntax %q", line, column, key)
+	}
+	if strings.HasPrefix(key, "\"") || strings.HasPrefix(key, "'") {
+		value, err := parseQuoted(key)
+		if err != nil {
+			return "", fmt.Errorf("yaml:%d:%d: %w", line, column, err)
+		}
+		if value == "" || strings.TrimSpace(value) != value {
+			return "", fmt.Errorf("yaml:%d:%d: invalid quoted mapping key %q", line, column, key)
+		}
+		key = value
+	}
+	return key, nil
 }
 
 func (p *parser) parseList(indent int) (*Node, error) {
@@ -243,15 +278,24 @@ func (p *parser) parseList(indent int) (*Node, error) {
 		}
 		if key, value, ok := strings.Cut(item, ":"); ok && strings.TrimSpace(key) != "" && !strings.HasPrefix(item, "\"") && !strings.HasPrefix(item, "'") && !strings.HasPrefix(item, "[") {
 			child := &Node{Kind: Map, Line: line.line, Column: line.indent + 1, Map: map[string]*Node{}}
+			// The item's first key is a mapping key like any other:
+			// normalize it so flow characters and anchor/tag
+			// decorations are refused here too (the plain map path
+			// enforces this via normalizeKey) and a quoted spelling
+			// cannot dodge the continuation-seed duplicate check.
+			normKey, kErr := normalizeKey(key, line.line, line.indent+3)
+			if kErr != nil {
+				return nil, kErr
+			}
 			value = strings.TrimSpace(value)
 			if value == "" {
-				child.Map[strings.TrimSpace(key)] = &Node{Kind: Map, Map: map[string]*Node{}, Line: line.line, Column: line.indent + 3}
+				child.Map[normKey] = &Node{Kind: Map, Map: map[string]*Node{}, Line: line.line, Column: line.indent + 3}
 			} else {
 				scalar, err := parseScalar(value, line.line, strings.Index(line.text, value)+line.indent+1, 0)
 				if err != nil {
 					return nil, err
 				}
-				child.Map[strings.TrimSpace(key)] = scalar
+				child.Map[normKey] = scalar
 			}
 			if p.pos < len(p.lines) && p.lines[p.pos].indent > indent {
 				// Seed with the key this item already defined, so a repeat

@@ -395,12 +395,21 @@ func TestListingGateNeverBlocksRegistry(t *testing.T) {
 				if err != nil {
 					t.Fatalf("unrelated registration failed: %v", err)
 				}
+				close(release)
+				<-listDone
 			case <-time.After(750 * time.Millisecond):
 				t.Errorf("SECURITY: [DoS] registration stalled behind a blocked %s gate: per-caller gates must not run under the registry lock", sf.method)
+				// Drain the writer that arrived late so no goroutine
+				// outlives the subtest mid-registration. (regDone carries
+				// exactly one send; on the success branch above the select
+				// has already consumed it, so a second receive there would
+				// deadlock a correctly behaving build.)
+				close(release)
+				<-listDone
+				if err := <-regDone; err != nil {
+					t.Fatalf("late registration failed: %v", err)
+				}
 			}
-			close(release)
-			<-listDone
-			<-regDone
 		})
 	}
 

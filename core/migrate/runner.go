@@ -722,11 +722,17 @@ func (m *Migrator) Force(ctx context.Context, version uint64, applied bool, grou
 		}
 		if tableGa {
 			// Upsert a clean row. ON CONFLICT (group_name, version) works on
-			// Postgres and SQLite >=3.24; it clears the dirty flag whether the
-			// row exists or not.
+			// Postgres and SQLite >=3.24. The conflict arm must also refresh
+			// name and checksum from EXCLUDED, not only clear dirty: Force is
+			// the documented reconciliation after post-apply drift ("its name
+			// and checksum are recorded so future drift checks line up"), and
+			// a row that keeps its OLD checksum makes the next Up refuse with
+			// ChecksumMismatchError — the reconciliation the operator just
+			// performed never took. applied_at stays: the migration was
+			// applied when the original row says it was.
 			upsert := fmt.Sprintf(
 				"INSERT INTO %s (group_name, version, name, applied_at, checksum, dirty) VALUES (%s, %s, %s, %s, %s, FALSE) "+
-					"ON CONFLICT (group_name, version) DO UPDATE SET dirty = FALSE",
+					"ON CONFLICT (group_name, version) DO UPDATE SET dirty = FALSE, name = EXCLUDED.name, checksum = EXCLUDED.checksum",
 				tbl, m.placeholder(1), m.placeholder(2), m.placeholder(3), m.placeholder(4), m.placeholder(5),
 			)
 			_, err = conn.ExecContext(ctx, upsert, group, version, name, time.Now().UTC(), checksum)
@@ -734,7 +740,7 @@ func (m *Migrator) Force(ctx context.Context, version uint64, applied bool, grou
 		}
 		upsert := fmt.Sprintf(
 			"INSERT INTO %s (version, name, applied_at, checksum, dirty) VALUES (%s, %s, %s, %s, FALSE) "+
-				"ON CONFLICT (version) DO UPDATE SET dirty = FALSE",
+				"ON CONFLICT (version) DO UPDATE SET dirty = FALSE, name = EXCLUDED.name, checksum = EXCLUDED.checksum",
 			tbl, m.placeholder(1), m.placeholder(2), m.placeholder(3), m.placeholder(4),
 		)
 		_, err = conn.ExecContext(ctx, upsert, version, name, time.Now().UTC(), checksum)

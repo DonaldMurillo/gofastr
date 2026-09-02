@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"sort"
-	"strings"
 	"sync"
 	"time"
 )
@@ -16,23 +15,28 @@ import (
 // across replicas.
 type MemoryStore struct {
 	mu    sync.Mutex
-	tasks map[string]*TaskRecord
-	push  map[string]*PushConfigRecord
+	tasks map[taskKey]*TaskRecord
+	push  map[pushKey]*PushConfigRecord
 }
 
 // NewMemoryStore returns an empty in-memory store.
 func NewMemoryStore() *MemoryStore {
 	return &MemoryStore{
-		tasks: map[string]*TaskRecord{},
-		push:  map[string]*PushConfigRecord{},
+		tasks: map[taskKey]*TaskRecord{},
+		push:  map[pushKey]*PushConfigRecord{},
 	}
 }
 
-func taskKey(owner, id string) string { return owner + "\x00" + id }
+// taskKey and pushKey are the store's map keys. They are structs, not
+// owner+"\x00"+id string concatenations: a string composite is
+// ambiguous when a field itself contains NUL — ("alice\x00t1", "evil")
+// collides with ("alice", "t1\x00evil") on GetTask, and ListTasks'
+// prefix scan matched the former against alice's "owner\x00" prefix,
+// leaking one owner's task list to another. Struct keys are injective
+// by construction; no delimiter can be smuggled through them.
+type taskKey struct{ owner, id string }
 
-func pushKey(owner, taskID, id string) string {
-	return owner + "\x00" + taskID + "\x00" + id
-}
+type pushKey struct{ owner, taskID, id string }
 
 func (m *MemoryStore) CreateTask(_ context.Context, rec *TaskRecord) error {
 	if rec == nil {
@@ -40,7 +44,7 @@ func (m *MemoryStore) CreateTask(_ context.Context, rec *TaskRecord) error {
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	key := taskKey(rec.Owner, rec.Task.ID)
+	key := taskKey{rec.Owner, rec.Task.ID}
 	if _, exists := m.tasks[key]; exists {
 		return ErrConflict
 	}
@@ -57,7 +61,7 @@ func (m *MemoryStore) CreateTask(_ context.Context, rec *TaskRecord) error {
 func (m *MemoryStore) GetTask(_ context.Context, owner, id string) (*TaskRecord, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	rec, ok := m.tasks[taskKey(owner, id)]
+	rec, ok := m.tasks[taskKey{owner, id}]
 	if !ok {
 		// Unknown id and someone else's task answer identically: task
 		// ids must not enumerate across owners.
@@ -72,7 +76,7 @@ func (m *MemoryStore) UpdateTask(_ context.Context, rec *TaskRecord) error {
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	key := taskKey(rec.Owner, rec.Task.ID)
+	key := taskKey{rec.Owner, rec.Task.ID}
 	stored, ok := m.tasks[key]
 	if !ok {
 		return ErrNotFound
@@ -92,10 +96,13 @@ func (m *MemoryStore) UpdateTask(_ context.Context, rec *TaskRecord) error {
 func (m *MemoryStore) ListTasks(_ context.Context, owner string, q ListQuery) (recs []*TaskRecord, total int, err error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	prefix := owner + "\x00"
 	var matched []*TaskRecord
 	for key, rec := range m.tasks {
-		if !strings.HasPrefix(key, prefix) {
+		// Exact owner equality, not a delimiter prefix: with string
+		// keys, an owner literally named "alice\x00t1" made alice's
+		// prefix scan match its rows. The struct key makes the fields
+		// unambiguous; compare the field, never a concatenation.
+		if key.owner != owner {
 			continue
 		}
 		if !matchesQuery(rec, q) {
@@ -171,7 +178,7 @@ func (m *MemoryStore) CreatePushConfig(_ context.Context, rec *PushConfigRecord)
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	key := pushKey(rec.Owner, rec.Config.TaskID, rec.Config.ID)
+	key := pushKey{rec.Owner, rec.Config.TaskID, rec.Config.ID}
 	if _, exists := m.push[key]; exists {
 		return ErrConflict
 	}
@@ -188,7 +195,7 @@ func (m *MemoryStore) CreatePushConfig(_ context.Context, rec *PushConfigRecord)
 func (m *MemoryStore) GetPushConfig(_ context.Context, owner, taskID, id string) (*PushConfigRecord, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	rec, ok := m.push[pushKey(owner, taskID, id)]
+	rec, ok := m.push[pushKey{owner, taskID, id}]
 	if !ok {
 		return nil, ErrNotFound
 	}
@@ -200,10 +207,11 @@ func (m *MemoryStore) GetPushConfig(_ context.Context, owner, taskID, id string)
 func (m *MemoryStore) ListPushConfigs(_ context.Context, owner, taskID string) ([]*PushConfigRecord, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	prefix := owner + "\x00" + taskID + "\x00"
 	var recs []*PushConfigRecord
 	for key, rec := range m.push {
-		if !strings.HasPrefix(key, prefix) {
+		// Field equality on the struct key, never a delimiter prefix
+		// (see taskKey).
+		if key.owner != owner || key.taskID != taskID {
 			continue
 		}
 		out := *rec
@@ -222,7 +230,7 @@ func (m *MemoryStore) ListPushConfigs(_ context.Context, owner, taskID string) (
 func (m *MemoryStore) DeletePushConfig(_ context.Context, owner, taskID, id string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	key := pushKey(owner, taskID, id)
+	key := pushKey{owner, taskID, id}
 	if _, ok := m.push[key]; !ok {
 		return ErrNotFound
 	}

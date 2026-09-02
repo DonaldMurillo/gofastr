@@ -55,11 +55,15 @@ func Tracing() Middleware {
 			// r.Pattern isn't populated until after the mux matches, so we
 			// start the span with a placeholder name + "unmatched" route and
 			// update both after the handler returns.
-			ctx, span := tracer.Start(ctx, fmt.Sprintf("HTTP %s", r.Method),
+			// r.Method and r.URL.Path are request-borne (a forged method,
+			// a %0d%0a path). Scrub both at the sink — the same
+			// control-byte rule the slog sinks carry — so a forged value
+			// cannot render as a forged line in collector UIs/exporters.
+			ctx, span := tracer.Start(ctx, fmt.Sprintf("HTTP %s", scrubControlBytes(r.Method)),
 				trace.WithSpanKind(trace.SpanKindServer),
 				trace.WithAttributes(
-					attribute.String("http.method", r.Method),
-					attribute.String("http.target", r.URL.Path),
+					attribute.String("http.method", scrubControlBytes(r.Method)),
+					attribute.String("http.target", scrubControlBytes(r.URL.Path)),
 				),
 			)
 			defer span.End()
@@ -72,9 +76,9 @@ func Tracing() Middleware {
 			if route == "" {
 				route = "unmatched"
 			}
-			span.SetName(fmt.Sprintf("HTTP %s %s", r.Method, route))
+			span.SetName(fmt.Sprintf("HTTP %s %s", scrubControlBytes(r.Method), scrubControlBytes(route)))
 			span.SetAttributes(
-				attribute.String("http.route", route),
+				attribute.String("http.route", scrubControlBytes(route)),
 				attribute.Int("http.status_code", ww.status),
 			)
 			if ww.status >= 500 {

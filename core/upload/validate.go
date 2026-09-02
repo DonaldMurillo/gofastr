@@ -37,11 +37,26 @@ func ValidateMIME(file io.ReadSeeker, allowed []string) error {
 
 	detected := http.DetectContentType(buf[:n])
 
-	if slices.Contains(allowed, detected) {
+	// http.DetectContentType appends parameters ("text/plain;
+	// charset=utf-8"), while an allowlist entry is naturally the bare
+	// media type. Compare base-to-base so listing "text/plain" matches
+	// what the sniff returns for a plain-text body.
+	base := mediaType(detected)
+	if slices.ContainsFunc(allowed, func(a string) bool { return mediaType(a) == base }) {
 		return nil
 	}
 
 	return fmt.Errorf("unsupported MIME type: %s (allowed: %s)", detected, strings.Join(allowed, ", "))
+}
+
+// mediaType strips any "; parameter" suffix and normalizes case and
+// surrounding whitespace, leaving the base media type both sides of an
+// allowlist comparison share.
+func mediaType(v string) string {
+	if i := strings.IndexByte(v, ';'); i >= 0 {
+		v = v[:i]
+	}
+	return strings.ToLower(strings.TrimSpace(v))
 }
 
 // ValidateSize checks that the file size does not exceed max.
