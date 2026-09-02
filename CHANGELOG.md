@@ -211,6 +211,9 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   manifest prefixes on a path-segment boundary.
 - **Harness TUI, contracts and the CSP linter**: the inline-style gate
   also catches `/`-separated attributes and unquoted values.
+- **Harness**: the OpenAI provider's SSE pump exits on context cancel
+  instead of parking forever after the consumer aborts, and a consumer
+  still draining after the abort receives the terminal event.
 - **Found by the new analyzers**: `cron` evaluated the job gate and
   `i18n` a registered plural rule while holding the scheduler or
   translator lock; app callbacks on the ACP transport, the semantic
