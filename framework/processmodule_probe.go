@@ -467,6 +467,14 @@ func runOneProbe(ctx context.Context, b SandboxBackend, p ProbeID, scratch strin
 		return ProbeResult{ID: p, Status: ProbeStatusUnreachable, Detail: "backend.Wrap: " + err.Error()}
 	}
 
+	// WaitDelay bounds cmd.Wait after the child exits or is killed: Wait
+	// otherwise blocks on the stdout/stderr copier until EVERY holder of
+	// the pipe's write end is gone, and a descendant that left the process
+	// group (setsid) holds it for as long as it likes. Without this the
+	// probeTimeout below was a promise the runner could not keep — the
+	// group kill landed and the runner still hung on the pipe. Same fix
+	// as codegen/extension_command.go.
+	cmd.WaitDelay = 2 * time.Second
 	runCtx, cancel := context.WithTimeout(ctx, probeTimeout)
 	defer cancel()
 	if err := cmd.Start(); err != nil {
@@ -511,11 +519,19 @@ const (
 // pass-ish, others treat it as fail).
 func parseProbeOutput(p ProbeID, stdout string, timedOut bool, stderr string) ProbeResult {
 	stdout = strings.TrimSpace(stdout)
-	// The child prints its result line; the first line wins (any output
-	// after it is diagnostic, captured in stderr/Detail).
-	first := stdout
-	if idx := strings.IndexByte(stdout, '\n'); idx >= 0 {
-		first = strings.TrimSpace(stdout[:idx])
+	// The child prints its result line. It is the FIRST line that starts
+	// with one of the sentinels, not the first line of the buffer: stdout
+	// and stderr share one buffer, and a sandbox wrapper (sandbox-exec
+	// prints warnings to stderr before it execs the child) can put its
+	// own line ahead of the child's. Taking the buffer's first line
+	// turned every PASS on such a host into "unrecognized output".
+	first := ""
+	for _, line := range strings.Split(stdout, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, probeOutPass) || strings.HasPrefix(line, probeOutBreach) || strings.HasPrefix(line, probeOutUnreachable) {
+			first = line
+			break
+		}
 	}
 	if timedOut {
 		// P6's whole point is "the limit fires and caps the child". A
@@ -535,10 +551,26 @@ func parseProbeOutput(p ProbeID, stdout string, timedOut bool, stderr string) Pr
 		return ProbeResult{ID: p, Status: ProbeStatusFail, Detail: strings.TrimSpace(strings.TrimPrefix(first, probeOutBreach))}
 	case strings.HasPrefix(first, probeOutUnreachable):
 		return ProbeResult{ID: p, Status: ProbeStatusUnreachable, Detail: strings.TrimSpace(strings.TrimPrefix(first, probeOutUnreachable))}
-	case first == "":
-		return ProbeResult{ID: p, Status: ProbeStatusUnreachable, Detail: "child produced no output; stderr tail: " + tailForDetail(stderr)}
 	default:
-		return ProbeResult{ID: p, Status: ProbeStatusUnreachable, Detail: "unrecognized output: " + first}
+		// No sentinel line at all: the child exited without finishing its
+		// protocol (killed by the sandbox mid-attempt, or crashed). The
+		// stdout-protocol contract above says what that means: for P6 the
+		// limit may have fired, so UNREACHABLE; for every other probe the
+		// sandbox did not deny the action cleanly, it killed the child,
+		// and that is surfaced as FAIL rather than filed under "could not
+		// run". Both block Conforms; the difference is what the operator
+		// reads in the report.
+		detail := "child produced no result line"
+		if stdout != "" {
+			detail = "unrecognized output: " + tailForDetail(stdout)
+		}
+		if stderr != "" && stdout == "" {
+			detail += "; stderr tail: " + tailForDetail(stderr)
+		}
+		if p == ProbeResourceLimits {
+			return ProbeResult{ID: p, Status: ProbeStatusUnreachable, Detail: detail}
+		}
+		return ProbeResult{ID: p, Status: ProbeStatusFail, Detail: "child killed or crashed before reporting (not a clean denial): " + detail}
 	}
 }
 

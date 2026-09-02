@@ -244,14 +244,25 @@ func TestParseProbeOutput_Contract(t *testing.T) {
 		{"PASS child uid=42 isolated", false, ProbeStatusPass},
 		{"BREACH setuid(0) succeeded", false, ProbeStatusFail},
 		{"UNREACHABLE no /proc", false, ProbeStatusUnreachable},
-		{"", false, ProbeStatusUnreachable},
+		// No result line (killed mid-attempt, or crashed) is FAIL for a
+		// denial probe: the sandbox did not deny cleanly, it killed the
+		// child, and the report must say so rather than "could not run".
+		{"", false, ProbeStatusFail},
 		{"PASS", true, ProbeStatusUnreachable},
-		{"garbage line", false, ProbeStatusUnreachable},
+		{"garbage line", false, ProbeStatusFail},
+		// A wrapper's stderr line ahead of the child's sentinel must not
+		// shadow it: stdout and stderr share one buffer.
+		{"sandbox-exec: warning: compilation options changed\nPASS uid isolated", false, ProbeStatusPass},
 	} {
 		got := parseProbeOutput(ProbeNoInheritedSecret, tc.in, tc.timedOut, tc.in).Status
 		if got != tc.want {
 			t.Errorf("parseProbeOutput(%q, timedOut=%v) = %s, want %s", tc.in, tc.timedOut, got, tc.want)
 		}
+	}
+	// P6 is the one probe where no output can mean the limit fired, so
+	// it stays UNREACHABLE rather than FAIL.
+	if got := parseProbeOutput(ProbeResourceLimits, "", false, "").Status; got != ProbeStatusUnreachable {
+		t.Errorf("P6 no-output = %s, want unreachable", got)
 	}
 }
 
