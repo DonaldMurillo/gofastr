@@ -99,10 +99,14 @@ func Run(ctx context.Context, suite *Suite, opts Options) (Summary, string, erro
 		return Summary{}, runDir, err
 	}
 
-	versions := make(map[string]string)
+	// agentMemoKey identifies one agent config for the version memo. A
+	// struct, not backend+"\x00"+program+...: a joined string is ambiguous
+	// when a part embeds the separator (gofastrcompositekey).
+	type agentMemoKey struct{ backend, program, prefixArgs string }
+	versions := make(map[agentMemoKey]string)
 	resolveProvenance := func(cfg AgentConfig) (AgentProvenance, error) {
 		version := "not-invoked-dry-run"
-		key := cfg.Backend + "\x00" + cfg.Program + "\x00" + strings.Join(cfg.PrefixArgs, "\x00")
+		key := agentMemoKey{cfg.Backend, cfg.Program, strings.Join(cfg.PrefixArgs, "\x00")}
 		if !opts.DryRun {
 			var ok bool
 			version, ok = versions[key]

@@ -5583,8 +5583,15 @@ func renderBlueprintCrudFile(entity string, screens []BlueprintScreen, bp Bluepr
 	}
 	if len(ordered) == 0 && resourceStmt != "" {
 		mountName := "mount" + toCamelCase(entity) + "Resource"
-		sb.WriteString(fmt.Sprintf("// %s wires the %s resource (no screen mounts it; it is looked up by\n// data sources / relation labels elsewhere).\nfunc %s(fwApp *framework.App, site *app.App, db *sql.DB) {\n%s}\n\n", mountName, entity, mountName, resourceStmt))
-		initLines = append(initLines, fmt.Sprintf("\t\tscreenRegistrar{order: 0, fn: %s},", mountName))
+		// The emitter is reachable without validateBlueprint
+		// (loadBlueprintPath(path, false)): never emit a mount func whose
+		// name is not a Go identifier, same rule as the hook stubs. A
+		// resource that fails here vanishes from this file only;
+		// validateBlueprint is the loud gate.
+		if isGoIdentifier(mountName) {
+			sb.WriteString(fmt.Sprintf("// %s wires the %s resource (no screen mounts it; it is looked up by\n// data sources / relation labels elsewhere).\nfunc %s(fwApp *framework.App, site *app.App, db *sql.DB) {\n%s}\n\n", mountName, entity, mountName, resourceStmt))
+			initLines = append(initLines, fmt.Sprintf("\t\tscreenRegistrar{order: 0, fn: %s},", mountName))
+		}
 	}
 	sb.WriteString("func init() {\n\tscreenRegistrars = append(screenRegistrars,\n" + strings.Join(initLines, "\n") + "\n\t)\n}\n")
 	return generatedFile{name: screenFileName(entity + "_crud"), content: sb.String()}

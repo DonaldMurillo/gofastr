@@ -69,11 +69,15 @@ func (m *Migrator) ensureTrackingColumns(ctx context.Context, x connish, tbl str
 		adds = append(adds, struct{ col, def string }{"group_name", "TEXT NOT NULL DEFAULT ''"})
 	}
 	for _, a := range adds {
+		// a.col is one of three lowercase constants above, but quoting it
+		// keeps every ADD COLUMN identifier in this file visibly gated
+		// (query.QuoteIdent), the same posture entity_store.go holds.
+		col := query.QuoteIdent(a.col)
 		var stmt string
 		if m.dialect == DialectPostgres {
-			stmt = fmt.Sprintf("ALTER TABLE %s ADD COLUMN IF NOT EXISTS %s %s", tbl, a.col, a.def)
+			stmt = fmt.Sprintf("ALTER TABLE %s ADD COLUMN IF NOT EXISTS %s %s", tbl, col, a.def)
 		} else {
-			stmt = fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s", tbl, a.col, a.def)
+			stmt = fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s", tbl, col, a.def)
 		}
 		if _, err := x.ExecContext(ctx, stmt); err != nil {
 			if m.dialect != DialectPostgres && isDuplicateColumn(err) {

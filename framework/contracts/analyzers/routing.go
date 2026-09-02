@@ -133,9 +133,17 @@ func checkDuplicates(p *contracts.Pass, table *RouteTable) []contracts.Diagnosti
 		file string
 		line int
 	}
-	seen := map[string][]site{}
-	order := []string{}
-	byKey := map[string]Route{}
+	// routeKey is the dedup identity of a registration. A struct, not
+	// package+"\x00"+method+" "+pattern: a joined string is ambiguous when
+	// a part embeds the separator (gofastrcompositekey).
+	type routeKey struct {
+		pkg     string
+		method  string
+		pattern string
+	}
+	seen := map[routeKey][]site{}
+	order := []routeKey{}
+	byKey := map[routeKey]Route{}
 	for _, r := range table.Routes {
 		// An unresolved group prefix makes the full path unknown, so two
 		// routes that look identical here may well be distinct. Skip them
@@ -148,7 +156,7 @@ func checkDuplicates(p *contracts.Pass, table *RouteTable) []contracts.Diagnosti
 		// each serve "/healthz", and none of them collide with each
 		// other. Only a second registration in the same package is a
 		// real conflict.
-		key := r.Package + "\x00" + r.Method + " " + r.Pattern
+		key := routeKey{r.Package, r.Method, r.Pattern}
 		if _, ok := seen[key]; !ok {
 			order = append(order, key)
 			byKey[key] = r
