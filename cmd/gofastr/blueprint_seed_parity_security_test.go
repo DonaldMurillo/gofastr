@@ -350,16 +350,35 @@ seed:
 // check above exists for exactly this fail-late shape; a seed with no
 // database to seed into is the same class one step earlier.
 func TestSeedRequiresDatabase(t *testing.T) {
+	// A seeded blueprint with no app.db is NOT a database-less app: the
+	// generator defaults any entity-bearing blueprint to SQLite
+	// (renderBlueprintMain: driver "sqlite", DSN "file:gofastr.db"),
+	// the contract blueprints.md documents for an empty driver. So the
+	// probe pins that default end to end: validation passes, and the
+	// emitted openDB carries the SQLite fallback the seed hook runs on.
+	// The only route to a DB-less app is an explicit driver: none.
 	bp := Blueprint{
 		App:      BlueprintApp{Name: "NoDB", Module: "example.com/nodb"},
 		Entities: []framework.EntityDeclaration{{Name: "posts", Fields: []framework.FieldDeclaration{{Name: "title", Type: "string", Required: true}}}},
 		Seed:     []BlueprintSeedEntity{{Entity: "posts", Rows: []map[string]any{{"title": "x"}}}},
 	}
-	err := validateBlueprint(bp)
-	if err == nil {
-		t.Fatal("SECURITY: [seed] blueprint with seed data but no app.db validated; the emitted seed hook aborts every boot with \"no DB configured\" while generate reports success")
+	if err := validateBlueprint(bp); err != nil {
+		t.Fatalf("seeded blueprint without app.db must validate under the SQLite default: %v", err)
 	}
-	// Control: with a db declared the same blueprint must pass.
+	files, err := renderBlueprintFiles(bp)
+	if err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	var mainGo string
+	for _, f := range files {
+		if f.name == "main.go" {
+			mainGo = f.content
+		}
+	}
+	if !strings.Contains(mainGo, `getEnv("DB_DRIVER", "sqlite")`) || !strings.Contains(mainGo, `"file:gofastr.db"`) {
+		t.Fatalf("emitted main.go does not carry the SQLite default the seed hook depends on:\n%s", mainGo)
+	}
+	// Control: an explicit db is honoured verbatim.
 	bp.App.DBDriver, bp.App.DBURL = "sqlite", "file:x.db"
 	if err := validateBlueprint(bp); err != nil {
 		t.Fatalf("seeded blueprint with a db must validate: %v", err)
