@@ -69,8 +69,91 @@
     return d.querySelector(':scope > [role="menu"]');
   };
 
+  // --- Caller-owned trigger elements ---------------------------------
+  // A Menu rendered with MenuConfig.TriggerElement ships the caller's
+  // own button/anchor inside a [data-fui-menu-trigger="<menu-id>"]
+  // wrapper, BESIDE a summary-less <details data-fui-menu="<menu-id>">
+  // holding the panel. The wrapper is component-rendered, so IT carries
+  // the marker: attributes cannot be injected into the caller's raw
+  // HTML server-side. This module makes the caller's element the
+  // disclosure controller:
+  //
+  //   - scan wires aria-haspopup="menu", aria-controls (the panel's
+  //     id), and aria-expanded onto the first interactive element in
+  //     the wrapper, and re-runs for SPA-swapped markup through
+  //     _moduleScanners / gofastr:navigate.
+  //   - click on the wrapper toggles the paired details.
+  //     preventDefault: the trigger opens the menu, it does not
+  //     navigate or submit (an <a href> or type=submit trigger would
+  //     otherwise both toggle and act). A defaultPrevented earlier
+  //     listener — the host wired the element itself — wins.
+  //   - Tab from the caller's element closes its menu before focus
+  //     moves on: menuitems are tabindex=-1, so Tab would otherwise
+  //     jump past the panel and strand the menu open.
+  //
+  // Escape-close-one-level, the aria-expanded mirror on toggle, and
+  // focus-on-open live in the disclosure module (the same listeners the
+  // summary path uses); it resolves the trigger element through
+  // NS._menuTriggerOf below.
+  const TRIGGER_WRAP = '[data-fui-menu-trigger]';
+  const INTERACTIVE = 'button, a, input, select, textarea, [role="button"]';
+
+  const detailsOfTrigger = (w) => {
+    const id = w.getAttribute('data-fui-menu-trigger');
+    if (!id) return null;
+    return document.querySelector('details[data-fui-menu="' + CSS.escape(id) + '"]');
+  };
+
+  // The interactive element inside a menu's trigger wrapper, or null.
+  // Exported for the disclosure module's Escape focus-return and
+  // aria-expanded mirror; guarded there because this module may not be
+  // loaded (a trigger menu that was never opened cannot be open).
+  const triggerElOf = (d) => {
+    const id = d && d.getAttribute('data-fui-menu');
+    if (!id) return null;
+    const w = document.querySelector('[data-fui-menu-trigger="' + CSS.escape(id) + '"]');
+    return w ? w.querySelector(INTERACTIVE) : null;
+  };
+  NS._menuTriggerOf = triggerElOf;
+
+  const wireTrigger = (w) => {
+    const d = detailsOfTrigger(w);
+    if (!d) return;
+    const el = w.querySelector(INTERACTIVE);
+    if (!el) return;
+    el.setAttribute('aria-haspopup', 'menu');
+    const panel = d.querySelector(':scope > [role="menu"]');
+    if (panel && panel.id) el.setAttribute('aria-controls', panel.id);
+    el.setAttribute('aria-expanded', d.open ? 'true' : 'false');
+  };
+
+  document.addEventListener('click', (e) => {
+    if (e.defaultPrevented) return;
+    const t = e.target;
+    if (!t || !t.closest) return;
+    const w = t.closest(TRIGGER_WRAP);
+    if (!w) return;
+    const d = detailsOfTrigger(w);
+    if (!d) return;
+    e.preventDefault();
+    d.toggleAttribute('open');
+  });
+
+
   let _menuTypeBuf = '', _menuTypeAt = 0;
   document.addEventListener('keydown', (e) => {
+    // Tab from a caller-owned trigger closes its menu before focus
+    // moves on. The caller's element sits OUTSIDE the panel, so the
+    // menuitem-scoped Tab branch further down cannot see it. No
+    // preventDefault: Tab must still move focus.
+    if (e.key === 'Tab') {
+      const t = e.target;
+      const w = t && t.closest && t.closest(TRIGGER_WRAP);
+      if (w) {
+        const d = detailsOfTrigger(w);
+        if (d) d.removeAttribute('open');
+      }
+    }
     const item = e.target && e.target.closest && e.target.closest(ITEM);
     if (!item) return;
     const panel = item.closest('[role="menu"]');
@@ -176,6 +259,16 @@
       }
     }
   });
+
+  // Wire SSR'd trigger wrappers now and re-wire after SPA navigation /
+  // island swaps (idempotent setAttribute writes, no per-element
+  // listeners — the click and keydown handlers above are delegated).
+  const scanTriggers = (root) => {
+    for (const w of (root || document).querySelectorAll(TRIGGER_WRAP)) wireTrigger(w);
+  };
+  scanTriggers(document);
+  (NS._moduleScanners ||= {}).menu = scanTriggers;
+  window.addEventListener('gofastr:navigate', () => scanTriggers(document));
 
   (NS.loadedModules ||= {}).menu = true;
 })();

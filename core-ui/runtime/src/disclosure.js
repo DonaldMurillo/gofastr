@@ -2,13 +2,16 @@
 //
 // Keyboard + assistive-tech behaviour for <details data-fui-disclosure>:
 //
-//   - aria-expanded mirroring on the <summary> (native <summary> reports
-//     as "button" with no expanded state)
+//   - aria-expanded mirroring on the disclosure's controller — the
+//     <summary>, or the caller-owned trigger element of a summary-less
+//     menu (native <summary> reports as "button" with no expanded
+//     state, and so does the caller's button until this runs)
 //   - Escape closes any open disclosure from anywhere on the page
 //     (native <details> only handles Escape while the summary itself
 //     has focus); when focus is INSIDE an open disclosure, only the
 //     deepest containing one closes, so nested menu submenus dismiss
-//     one level at a time
+//     one level at a time, and focus returns to that disclosure's
+//     controller (summary or caller-owned trigger)
 //   - menu disclosures (data-fui-menu) move focus to the first
 //     menuitem (menuitemradio rows included) on open, so keyboard
 //     users land inside the panel without a Tab
@@ -29,10 +32,22 @@
   window.__gofastr = window.__gofastr || {};
   const NS = window.__gofastr;
 
-  // Mirror details.open → summary aria-expanded for screen readers.
+  // The controller of a disclosure: its <summary>, or — for a menu
+  // whose trigger is a caller-owned element (summary-less details,
+  // framework/ui MenuConfig.TriggerElement) — that element, resolved
+  // through the menu module's _menuTriggerOf. Guarded: the menu module
+  // may not be loaded, and a trigger menu that was never opened cannot
+  // be open, so the fallback is unreachable in that state anyway.
+  const controllerOf = (d) =>
+    d.querySelector(':scope > summary') || (NS._menuTriggerOf ? NS._menuTriggerOf(d) : null);
+
+  // Mirror details.open → the controller's aria-expanded for screen
+  // readers (native <summary> reports as "button" with no expanded
+  // state; a caller-owned trigger reports as a button with none either
+  // until this runs).
   const mirror = (d) => {
-    const s = d.querySelector(':scope > summary');
-    if (s) s.setAttribute('aria-expanded', d.open ? 'true' : 'false');
+    const t = controllerOf(d);
+    if (t) t.setAttribute('aria-expanded', d.open ? 'true' : 'false');
   };
   NS._mirrorDisclosure = mirror;
 
@@ -186,7 +201,9 @@
       }
       if (deepest) {
         deepest.removeAttribute('open');
-        deepest.querySelector('summary')?.focus();
+        // Focus returns to the disclosure's controller: the summary, or
+        // the caller-owned trigger element on a summary-less menu.
+        controllerOf(deepest)?.focus();
         return;
       }
       for (const d of open) d.removeAttribute('open');
