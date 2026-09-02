@@ -152,6 +152,93 @@ Useful options:
 **`fwApp.Start`** runs migrations, binds the port, serves. Nothing
 UI-specific.
 
+## Guards on dynamic screens
+
+Middleware that guards a dynamic screen (`/session/{sessionId}`) needs
+two things the plain wiring doesn't give it: the route parameters
+before the screen renders, and a way to answer with a real page when
+the guard fails.
+
+**Route parameters: `host.RouteMatchMiddleware()`.** It resolves every
+request path against the site's screen router and stores the result as
+an `app.Match` on the request context. Register it *before* the
+middleware whose guards read the parameters (`Router.Use` runs the
+first-registered middleware outermost, and `fwApp.Use` appends):
+
+```go
+host := uihost.New(site)
+fwApp.Use(host.RouteMatchMiddleware()) // before the guards
+fwApp.Use(auth.Session(...))           // your auth middleware
+fwApp.Mount(host)
+```
+
+The guard reads the match instead of re-parsing the path:
+
+```go
+match, ok := uiapp.MatchFromContext(r.Context())
+if ok {
+    sessionID := match.Param("sessionId")  // "abc" for /session/abc
+    screen := match.ScreenID()             // "/session/:sessionId"
+}
+```
+
+`Param` returns the same values the screen's `SetParams` receives,
+trailing slash included (`/session/abc/` matches too). The match is
+read-only: no accessor hands out the parameter map. A path no screen
+matches carries no match — let the request fall through so unknown
+routes keep their truthful 404. Screen policies see the same match
+without any middleware: the host populates it before the policy chain
+runs.
+
+**Recovery screens: `host.RenderScreen`.** A guard that fails answers
+with a branded page through the normal chrome (default layout,
+runtime.js, theme) and the status you name, instead of middleware
+plain text or a sentinel path:
+
+```go
+// SessionGoneScreen is a normal component; register nothing for it.
+type SessionGoneScreen struct{}
+
+func (s *SessionGoneScreen) Render() render.HTML {
+    return render.Tag("h1", nil, render.Text("This session has ended"))
+}
+
+func guard(host *uihost.UIHost, next http.Handler) http.Handler {
+    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        match, ok := uiapp.MatchFromContext(r.Context())
+        if ok && sessions.Expired(match.Param("sessionId")) {
+            host.RenderScreen(w, r, &SessionGoneScreen{}, uihost.ScreenResponse{
+                Status: http.StatusGone,
+            })
+            return
+        }
+        next.ServeHTTP(w, r)
+    })
+}
+```
+
+`RenderScreen` renders; it authorizes nothing and mints no session.
+The caller owns the decision, and with it the status:
+
+| Situation | Answer |
+|---|---|
+| Authentication failed on a route that exists | 401 / 403 via `RenderScreen` |
+| Route resolved, resource gone or not found for this caller | 410, or a 404 body with `ScreenStatusCode` on the screen itself |
+| No route matches | nothing — the `WithNotFoundScreen` 404 stays truthful |
+
+Render the same recovery screen for a missing and an expired session:
+an unauthorized caller must not learn from the difference whether a
+session exists.
+
+Both full and client-side navigation (`X-Gofastr-Navigate`) requests
+get the same status and the same `Cache-Control: private, no-store`
+(the default; `ScreenResponse.CacheControl` overrides it). The partial
+arm carries bare content — the runtime surfaces a non-2xx partial as a
+navigation error and stays on the current page, a full load renders
+the branded page. See [security](security.md) → "Recovery screens and
+cache policy" for why the no-store default is not optional.
+
+
 ## Common mistakes
 
 - **Registering screens after `fwApp.Mount(uihost.New(site))`.**

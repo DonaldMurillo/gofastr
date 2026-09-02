@@ -1198,6 +1198,16 @@ func (ds *UIHost) handlePage(w http.ResponseWriter, r *http.Request) {
 	// screens can read URL query params, headers, etc. SSG builds
 	// pass nil and the helpers degrade to empty values.
 	ctx := app.WithRequest(r.Context(), r)
+	// Route match on the render context: RouteMatchMiddleware
+	// normally installed it before application middleware. Standalone
+	// hosts (and hosts whose app skipped the middleware) get it here
+	// so a Policy or ScreenLoader on a dynamic route can read the
+	// same params the render pipeline injects.
+	if _, ok := app.MatchFromContext(ctx); !ok {
+		if m, ok := ds.App.Router.MatchFor(path); ok {
+			ctx = app.WithMatch(ctx, m)
+		}
+	}
 	// Install the per-request signal value bag BEFORE rendering so a
 	// producer's Slice.Seed(ctx, v) during Load (and a consumer's
 	// Bind(ctx, …) during RenderCtx) write/read the same bag that
@@ -1995,6 +2005,13 @@ func (ds *UIHost) handlePartialPage(w http.ResponseWriter, r *http.Request, path
 	// query (sort, page, filters) just like full-render screens do.
 	ctx := app.WithRequest(r.Context(), r)
 	ctx = store.WithValues(ctx) // capture producer-seeded values for the partial seed
+	// Route match for policies/screens on the partial path too, same
+	// as handlePage: RouteMatchMiddleware normally installed it.
+	if _, ok := app.MatchFromContext(ctx); !ok {
+		if m, ok := ds.App.Router.MatchFor(path); ok {
+			ctx = app.WithMatch(ctx, m)
+		}
+	}
 
 	// Intercepting routes (#130 slice 5): the client ASKS for an overlay
 	// by sending X-Gofastr-Intercept plus the location it is navigating

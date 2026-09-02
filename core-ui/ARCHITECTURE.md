@@ -1003,6 +1003,23 @@ triggers a screen-partial fetch.*
 
 ---
 
+### Guarding a dynamic screen (route match + `RenderScreen`)
+
+Middleware that guards `/session/:sessionId` must not re-parse the
+path: `host.RouteMatchMiddleware()` resolves every request against the
+screen router and stores an immutable `app.Match` on the context, and
+`app.MatchFromContext(ctx)` hands the guard the same parameter values
+the screen's `SetParams` receives (trailing slash included). The host
+also populates the match on the render context itself, so a screen
+Policy sees it with no middleware. A guard that refuses answers with
+`host.RenderScreen(w, r, screen, uihost.ScreenResponse{Status: 410})`:
+the branded page through the normal chrome on a full load, the bare
+body on a client-side navigation, the same status and
+`Cache-Control: private, no-store` on both, no session minted. A path
+no screen matches carries no match; the guard falls through and the
+`WithNotFoundScreen` 404 stays truthful. See
+`framework/docs/content/ui-wiring.md` → "Guards on dynamic screens".
+
 ## Theme
 
 The framework's design tokens live in `core-ui/style.Theme`, a
