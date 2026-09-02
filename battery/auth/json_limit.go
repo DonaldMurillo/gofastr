@@ -40,37 +40,12 @@ func isJSONContentType(ct string) bool {
 	return false
 }
 
-// decodeJSONLimited decodes r.Body into dst with a hard size cap.
-// On a missing or non-JSON Content-Type, it writes 415 and returns false.
-// On a body that exceeds the cap, it writes 413 and returns false.
-// On any other decode error, it writes 400 and returns false.
-// On success, returns true.
-//
-// Centralising this means every auth handler gets the same DoS protection,
-// the same content-type strictness, and the same error contract, see
-// handler_limits_test.go and content_type_security_test.go.
-func decodeJSONLimited(w http.ResponseWriter, r *http.Request, dst any) bool {
-	if !isJSONContentType(r.Header.Get("Content-Type")) {
-		writeAuthError(w, http.StatusUnsupportedMediaType, "expected application/json")
-		return false
-	}
-	r.Body = http.MaxBytesReader(w, r.Body, maxAuthBodyBytes)
-	if err := json.NewDecoder(r.Body).Decode(dst); err != nil {
-		if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
-			writeAuthError(w, http.StatusRequestEntityTooLarge, "request body too large")
-			return false
-		}
-		writeAuthError(w, http.StatusBadRequest, "invalid JSON")
-		return false
-	}
-	return true
-}
-
-// decodeJSONLimitedStrict is decodeJSONLimited plus the strict
-// top-level key rule the framework enforces for every handler.Bind
-// consumer (core/handler/bind.go validateBodyKeys): a top-level object
-// key that duplicates an earlier key, or that is a case-folded variant
-// of one of the allowed names without matching it exactly, is a 400.
+// decodeJSONLimitedStrict is the auth battery's single JSON body decode:
+// a hard size cap, content-type strictness, and the strict top-level key
+// rule the framework enforces for every handler.Bind consumer
+// (core/handler/bind.go validateBodyKeys). A top-level object key that
+// duplicates an earlier key, or that is a case-folded variant of one of
+// the allowed names without matching it exactly, is a 400.
 //
 // SECURITY: stdlib encoding/json keeps the LAST duplicate and matches
 // key names case-insensitively, while net/url form parsing keeps the
@@ -79,10 +54,15 @@ func decodeJSONLimited(w http.ResponseWriter, r *http.Request, dst any) bool {
 // authenticates a different identity depending on Content-Type. The
 // ambiguity itself is the attack; rejecting it at decode is the only
 // resolution that does not privilege one parser's pick. Unknown keys
-// that fold to no allowed name keep decodeJSONLimited's historical
-// ignore behaviour so legitimate callers sending extra fields are not
-// broken by this rule. Bodies that are not a top-level object flow
-// through to the decoder unchanged.
+// that fold to no allowed name are ignored so legitimate callers sending
+// extra fields are not broken by this rule. Bodies that are not a
+// top-level object flow through to the decoder unchanged.
+//
+// The per-handler allowed names are the credential-bearing fields of the
+// body each endpoint decodes; everything routes through here since the
+// probe that found login/register accepting smuggled bodies
+// (TestLoginJSONStrictTopLevelKeys) — the siblings decoded the same
+// shapes and owed the same refusal.
 func decodeJSONLimitedStrict(w http.ResponseWriter, r *http.Request, dst any, allowed ...string) bool {
 	if !isJSONContentType(r.Header.Get("Content-Type")) {
 		writeAuthError(w, http.StatusUnsupportedMediaType, "expected application/json")
@@ -102,6 +82,7 @@ func decodeJSONLimitedStrict(w http.ResponseWriter, r *http.Request, dst any, al
 		writeAuthError(w, http.StatusBadRequest, "invalid JSON")
 		return false
 	}
+	//gofastr:allow(GOFASTR1407) rejectAmbiguousTopLevelKeys above already refused duplicate and case-folded keys; this Unmarshal only decodes a vetted body
 	if err := json.Unmarshal(body, dst); err != nil {
 		writeAuthError(w, http.StatusBadRequest, "invalid JSON")
 		return false

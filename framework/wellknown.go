@@ -37,14 +37,19 @@ import (
 // caches from serving one caller's value to another.
 //
 // X-Forwarded-Proto IS honored, a TLS-terminating proxy is the normal
-// deployment, and the worst a forged value does is emit an https:// or
-// http:// prefix for the same host.
+// deployment — but only as an exact "http"/"https". The raw value is
+// request-controlled and this origin is reflected into the well-known
+// document's absolute URLs, so a forged "https://evil.example/p" would
+// paint an attacker-named origin into cacheable output, and "https,http"
+// (a two-hop proxy chain) is not a scheme at all. Vary narrows who
+// receives a poisoned entry; it does not clean the value. Same enum as
+// framework/uihost/agentready.go and framework/pluginhost/assets.go.
 func resolveWellKnownBase(r *http.Request) string {
 	scheme := "http"
 	if r.TLS != nil {
 		scheme = "https"
 	}
-	if u := r.Header.Get("X-Forwarded-Proto"); u != "" {
+	if u := r.Header.Get("X-Forwarded-Proto"); u == "http" || u == "https" {
 		scheme = u
 	}
 	return strings.TrimRight(scheme+"://"+r.Host, "/")

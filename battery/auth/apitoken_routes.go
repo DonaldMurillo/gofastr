@@ -118,7 +118,7 @@ func (p *TokensPlugin) createTokenHandler() http.HandlerFunc {
 			return
 		}
 		var body createTokenRequest
-		if !decodeJSONLimited(w, r, &body) {
+		if !decodeJSONLimitedStrict(w, r, &body, "name", "scopes", "ttl_seconds", "owner_kind", "owner_id") {
 			return
 		}
 		// Owner is ALWAYS the session user, body owner_kind/owner_id are

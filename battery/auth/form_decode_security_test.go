@@ -152,3 +152,53 @@ func TestDecodeDuplicateResolvesDifferentlyPerSurface(t *testing.T) {
 		t.Errorf("ambiguous credential body must be a 400 decode failure on both surfaces, got form=%d json=%d", formW.Code, jsonW.Code)
 	}
 }
+
+// The same property on the sibling endpoints that shared login's
+// decoder: password reset (token + password), magic-link send, and the
+// rest migrated to decodeJSONLimitedStrict with the probe that found
+// login/register. This pin keeps them from drifting back — each of them
+// decodes a credential-bearing field, so a smuggled duplicate on any of
+// them is the same parser-accident identity swap.
+func TestSiblingEndpointsRejectAmbiguousJSONKeys(t *testing.T) {
+	store := newUserStoreWithPassword()
+	mgr := New(AuthConfig{
+		SessionTTL:    time.Hour,
+		SessionCookie: "session_id",
+		UserStore:     store,
+		DevMode:       true,
+	})
+	mgr.Use(NewCorePlugin())
+	mgr.Use(NewPasswordResetPlugin(PasswordResetConfig{
+		BaseURL:  "http://localhost",
+		TokenTTL: time.Hour,
+		DevMode:  true,
+	}))
+	if err := mgr.Init(nil); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	r := router.New()
+	mgr.RegisterRoutes(r)
+
+	post := func(body string) int {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodPost, "/auth/forgot-password", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, req)
+		return rec.Code
+	}
+
+	// Control: an exact single-key body decodes fine and, by the
+	// no-enumeration contract, still answers 200.
+	if code := post(`{"email":"alice@example.com"}`); code != http.StatusOK {
+		t.Fatalf("control: single-key forgot-password must be 200, got %d", code)
+	}
+	for _, body := range []string{
+		`{"email":"alice@example.com","email":"mallory@example.com"}`,
+		`{"EMAIL":"alice@example.com"}`,
+	} {
+		if code := post(body); code != http.StatusBadRequest {
+			t.Errorf("SECURITY: [auth-strict-json] forgot-password accepted an ambiguous email body (%d), want 400: %s", code, body)
+		}
+	}
+}

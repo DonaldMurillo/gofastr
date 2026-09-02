@@ -445,7 +445,7 @@ func (p *TwoFAPlugin) verifyHandler(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Code string `json:"code"`
 	}
-	if !decodeJSONLimited(w, r, &body) {
+	if !decodeJSONLimitedStrict(w, r, &body, "code") {
 		return
 	}
 	if body.Code == "" {
@@ -537,7 +537,7 @@ func (p *TwoFAPlugin) challengeHandler(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Code string `json:"code"`
 	}
-	if !decodeJSONLimited(w, r, &body) {
+	if !decodeJSONLimitedStrict(w, r, &body, "code") {
 		return
 	}
 	if body.Code == "" {

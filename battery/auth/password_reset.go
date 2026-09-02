@@ -127,7 +127,7 @@ func (p *PasswordResetPlugin) forgotHandler(w http.ResponseWriter, r *http.Reque
 	var body struct {
 		Email string `json:"email"`
 	}
-	if !decodeJSONLimited(w, r, &body) {
+	if !decodeJSONLimitedStrict(w, r, &body, "email") {
 		return
 	}
 
@@ -239,7 +239,7 @@ func (p *PasswordResetPlugin) resetHandler(w http.ResponseWriter, r *http.Reques
 		Token    string `json:"token"`
 		Password string `json:"password"`
 	}
-	if !decodeJSONLimited(w, r, &body) {
+	if !decodeJSONLimitedStrict(w, r, &body, "token", "password") {
 		return
 	}
 	if body.Token == "" || body.Password == "" {
