@@ -62,6 +62,11 @@ type fragmentDef struct {
 // is triggered by <meta name="gofastr-embed"> and owns one attribute,
 // data-fui-embed-state, which reports the frame's lifecycle.
 //
+// The ws module also owns zero data-fui-* attributes and has no marker
+// at all: it is a pure API module an application loads explicitly with
+// __gofastr.loadModule('ws') (connectWebSocket /
+// createSequencedReducer). Nothing scans the DOM for it.
+//
 // boot-embed depends on kernel. RPC requests inside an embed route through
 // boot's delegation bridge and load src/rpc.js at interaction time. It also
 // relies on boot's mutation observer to hydrate injected content, but boot is
@@ -151,6 +156,12 @@ var fragmentAttrs = map[string][]string{
 		"data-fui-layout",
 		"data-fui-layout-key",
 		"data-fui-layout-slot",
+		// data-fui-doc marks a document-lifetime script (uihost's
+		// RegisterDocumentScript rail): the live set of these srcs is
+		// the document's capability identity, compared against the
+		// destination route's manifest docScripts at every soft-nav
+		// entry point. A difference is a hard document load.
+		"data-fui-doc",
 		"data-fui-screen-group",
 	},
 	"widgets-boot": {
@@ -303,6 +314,7 @@ var moduleAttrs = map[string][]string{
 	"menu": {
 		"data-fui-menu",
 		"data-fui-menu-radio",
+		"data-fui-menu-trigger",
 	},
 	"multiselect": {
 		"data-fui-multiselect",

@@ -113,7 +113,7 @@
   // -----------------------------------------------------------------------
   // Router: known routes from screen registration
   // -----------------------------------------------------------------------
-  const routes = new Map(); // path → { title, preload, layouts, redirect }
+  const routes = new Map(); // path → { title, preload, layouts, redirect, docScripts }
   let currentPath = location.pathname + location.search;
 
   const registerRoutes = (routeList) => {
@@ -126,6 +126,11 @@
         // Layout chain as layer keys, outermost → innermost.
         layouts: r.layouts ?? r.Layouts ?? [],
         redirect: r.redirect ?? r.Redirect ?? '',
+        // Document-lifetime scripts in scope for this route (src
+        // values). Nav compares the destination's set against the live
+        // document's data-fui-doc scripts; a difference is a document
+        // boundary, never a partial swap.
+        docScripts: r.docScripts ?? r.DocScripts ?? [],
       });
     }
   };

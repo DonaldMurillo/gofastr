@@ -72,6 +72,7 @@ func newWebmcpServer(t *testing.T) *webmcpServer {
 	}))
 
 	h := New()
+	h.Group("scene", WithDescription("Scene tools."))
 	for _, tl := range []Tool{
 		{
 			Name:        "echo_upper",
@@ -109,12 +110,29 @@ func newWebmcpServer(t *testing.T) *webmcpServer {
 			Method:      http.MethodPost,
 			Path:        "/api/echo",
 		},
+		{
+			// Richer metadata (group, examples, output schema) must not
+			// break registration: the browser proposal cannot forward
+			// these fields, and the bridge must degrade safely — ignore
+			// what it cannot pass on, register what it can.
+			Name:        "grouped_probe",
+			Group:       "scene",
+			Description: "Schema stress: group, examples, output schema.",
+			InputSchema: json.RawMessage(`{"type":"object","properties":{"msg":{"type":"string"}},"required":["msg"]}`),
+			Examples: []Example{{
+				Summary: "Shout a message",
+				Input:   json.RawMessage(`{"msg":"hello"}`),
+			}},
+			OutputSchema: json.RawMessage(`{"type":"object","properties":{"msg":{"type":"string"}}}`),
+			Method:       http.MethodPost,
+			Path:         "/api/echo",
+		},
 	} {
 		if err := h.Register(tl); err != nil {
 			t.Fatalf("register %s: %v", tl.Name, err)
 		}
 	}
-	scriptURL, err := h.Mount(rt, nil)
+	scriptURL, err := h.Mount(rt, nil, WithBridgeDebug())
 	if err != nil {
 		t.Fatalf("mount: %v", err)
 	}
@@ -131,8 +149,6 @@ func newWebmcpServer(t *testing.T) *webmcpServer {
 	}))
 
 	// The real double-submit CSRF middleware wraps everything: the
-	// bridge's unsafe-method calls must carry X-CSRF-Token matching the
-	// cookie or the echo/broken tools 403.
 	handler := middleware.CSRF(middleware.CSRFConfig{
 		SecretKey: []byte("webmcp-e2e-test-key"),
 	})(rt)
@@ -218,7 +234,19 @@ func TestBridgeRegistersAndExecutesTools(t *testing.T) {
 		t.Skip("modelContext absent even with --enable-blink-features=WebMCP; browser predates WebMCP (needs Chromium 146+)")
 	}
 
-	waitForTools(t, ctx, "broken,echo_upper,proto_probe,search")
+	waitForTools(t, ctx, "broken,echo_upper,grouped_probe,proto_probe,search")
+
+	// The opt-in debug state is bounded and truthful: every tool
+	// attempted, every tool registered, nothing failed, no invocation
+	// yet.
+	var dbg string
+	if err := chromedp.Run(ctx, chromedp.Evaluate(
+		`JSON.stringify(window.__gofastrWebMCP)`, &dbg)); err != nil {
+		t.Fatalf("debug state: %v", err)
+	}
+	if want := `{"supported":true,"attempted":5,"registered":5,"failed":[],"lastStatus":""}`; dbg != want {
+		t.Fatalf("debug state = %s, want %s", dbg, want)
+	}
 
 	// POST tool: input arrives as a JSON body, session cookie and the
 	// WebMCP marker header ride along, result text is the endpoint body.
@@ -276,6 +304,16 @@ func TestBridgeRegistersAndExecutesTools(t *testing.T) {
 		t.Fatalf("execute broken: %v", err)
 	}
 	assertToolResult(t, res, true, "boom")
+
+	// The debug state's last invocation status reflects the failing
+	// call without echoing any input.
+	if err := chromedp.Run(ctx, chromedp.Evaluate(
+		`window.__gofastrWebMCP.lastStatus`, &dbg)); err != nil {
+		t.Fatalf("debug lastStatus: %v", err)
+	}
+	if dbg != "http_500" {
+		t.Fatalf("debug lastStatus = %q, want http_500", dbg)
+	}
 }
 
 // TestBridgeReadsCSRFMetaAtDispatchTime proves the CSRF token is read
@@ -298,7 +336,7 @@ func TestBridgeReadsCSRFMetaAtDispatchTime(t *testing.T) {
 	if !has {
 		t.Skip("modelContext absent even with --enable-blink-features=WebMCP; browser predates WebMCP (needs Chromium 146+)")
 	}
-	waitForTools(t, ctx, "broken,echo_upper,proto_probe,search")
+	waitForTools(t, ctx, "broken,echo_upper,grouped_probe,proto_probe,search")
 
 	// Stash the token, then remove the meta tag entirely.
 	var token string

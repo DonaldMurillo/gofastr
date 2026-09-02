@@ -345,6 +345,36 @@ func TestRuntimeModule_SSE(t *testing.T) {
 	}
 }
 
+func TestRuntimeModule_WS(t *testing.T) {
+	src, ok := Module("ws")
+	if !ok {
+		t.Fatal("ws module not embedded")
+	}
+	for _, want := range []string{
+		"NS.connectWebSocket",       // sequenced WebSocket client (#377)
+		"NS.createSequencedReducer", // reject-stale ordering guard (#375)
+		"onGenerationStart",         // socket open hook
+		"onHydrated",                // snapshot hydration hook
+		"onGenerationEnd",           // transport gone hook
+		"reasonClass",               // bounded close classification
+		"resyncComplete",            // protocol resynchronization marker
+		"loadedModules",
+	} {
+		if !strings.Contains(src, want) {
+			t.Errorf("ws module missing %q", want)
+		}
+	}
+	// Ceiling near the current size, same shape as the modules above.
+	if size := ModuleSize("ws"); size > 8000 {
+		t.Errorf("ws module is %d bytes — budget is 8000", size)
+	}
+	// The module must never log: close reasons, payloads, and
+	// credentials stay out of the console by construction.
+	if strings.Contains(src, "console.") {
+		t.Error("ws module calls console.* — it must not log payloads, close reasons, or credentials")
+	}
+}
+
 func TestRuntimeModule_NetworkRetryBanner(t *testing.T) {
 	src, ok := Module("networkretrybanner")
 	if !ok {
@@ -431,14 +461,21 @@ func TestRuntimeModule_Menu(t *testing.T) {
 		"ArrowDown",
 		"ArrowUp",
 		"_menuTypeBuf",
+		"data-fui-menu-trigger",
 		"loadedModules",
 	} {
 		if !strings.Contains(src, want) {
 			t.Errorf("menu module missing %q", want)
 		}
 	}
-	if size := ModuleSize("menu"); size > 4000 {
-		t.Errorf("menu module is %d bytes — budget is 4000", size)
+	// 4700, up from 4000: the caller-owned trigger-element path
+	// (#369 — wrapper scan/aria wiring, click toggle, Tab close, Space
+	// on anchor triggers, closing the submenu chain with the root) grew
+	// the module ~1.1 KB minified. The gzip budget in budget_test.go
+	// stays the load-bearing gate (~1.4 KB of its 3 KB line); this raw
+	// line is the tripwire and moves with the feature.
+	if size := ModuleSize("menu"); size > 4700 {
+		t.Errorf("menu module is %d bytes — budget is 4700", size)
 	}
 }
 
@@ -625,6 +662,59 @@ func TestRuntimeNavigateRejectsUnsafeSchemes(t *testing.T) {
 		!strings.Contains(body, "javascript:") {
 		t.Errorf("navigate() must reject unsafe and cross-origin targets before pushState; "+
 			"found body (truncated): %q", truncate(body, 400))
+	}
+}
+
+// TestRuntimeDocScriptBoundaryShape pins the source-level contract of
+// document-lifetime scripts (data-fui-doc): every soft-nav entry point
+// must consult crossesDocBoundary BEFORE its history write, and the
+// fallback arms must be real document loads (location.assign/replace),
+// never partial swaps. Removing a document script's tag does not
+// uninstall what it installed (WebMCP tools), so reusing the document
+// across a scope edge is the capability leak #372 describes.
+//
+// Behavioral proof (same-scope stays partial, edge hard-loads, back
+// restores only the destination's tools) is in
+// capability_boundary_e2e_test.go.
+func TestRuntimeDocScriptBoundaryShape(t *testing.T) {
+	js, err := RuntimeJS()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The live-document truth is read from the DOM, and the
+	// destination's set comes from the manifest field kernel maps.
+	if !strings.Contains(js, "script[data-fui-doc]") {
+		t.Error("runtime never reads script[data-fui-doc]; the live document's capability set is unknown to nav")
+	}
+	if !strings.Contains(js, "docScripts:r.docScripts??r.DocScripts??[]") {
+		t.Error("kernel does not map the manifest docScripts field; destinations carry an empty set and every boundary is invisible")
+	}
+	// Click hijack: stand down BEFORE preventDefault so the browser
+	// performs an ordinary link navigation. (Token-level match: the
+	// minifier rewrites whitespace around the call.)
+	clickGate := "crossesDocBoundary(fullPath)"
+	ci := strings.Index(js, clickGate)
+	if ci == -1 {
+		t.Fatal("click hijack has no crossesDocBoundary gate")
+	}
+	handler := js[strings.LastIndex(js[:ci], "document.addEventListener('click'"):]
+	if strings.Index(handler, clickGate) > strings.Index(handler, "e.preventDefault()") {
+		t.Error("click gate must run before preventDefault: after it, the router has already claimed the click")
+	}
+	// navigate() and the loadPage backstop hard-load via location.
+	navIdx := strings.Index(js, "navigate(path")
+	if navIdx == -1 {
+		t.Fatal("navigate() not found")
+	}
+	navBody := js[navIdx:min(navIdx+1400, len(js))]
+	if !strings.Contains(navBody, "crossesDocBoundary(path)") || !strings.Contains(navBody, "location.assign(path)") {
+		t.Errorf("navigate() must hard-load across a document boundary; body: %q", truncate(navBody, 400))
+	}
+	if !strings.Contains(js, "crossesDocBoundary(path)") || !strings.Contains(js, "location.assign(path)") {
+		t.Error("loadPage has no document-boundary backstop (redirect legs and future callers rely on it)")
+	}
+	if !strings.Contains(js, "location.replace(path)") {
+		t.Error("popstate arm does not replace-load a cross-boundary destination")
 	}
 }
 

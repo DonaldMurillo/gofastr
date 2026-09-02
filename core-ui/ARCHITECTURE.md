@@ -180,9 +180,10 @@ server side and the runtime does the work.
 | `data-fui-toast-dismiss` | Click target inside a toast item that triggers dismiss. Pairs with the runtime's CSS-driven fade-out animation. |
 | `data-fui-embed-state` *(on the embed root)* | Lifecycle of an embedded surface. The server writes `loading` into the shell HTML; the `boot-embed` fragment writes every later value, and ships **only** in the `embed` bundle served at `/__gofastr/embed-runtime.js`. `ready` once the handshake completed and the surface's server-rendered content was injected. `error` when there is no parent to hand over a nonce, no token arrived within 15s, the exchange was refused, or the content fetch failed. `expired` when the grant's absolute lifetime ran out and refresh could not renew it. Nothing in the runtime branches on it; it exists so tests can see the frame's state. The host page is cross-origin and can neither read nor style inside the frame. See `framework/docs/content/embed.md`. |
 | `data-fui-toast-fallback` | Marks the degraded inline container core injects when the `toasts` module fails to load (transient 5xx, network hiccup). Used by `__gofastr._fallbackToast(cfg)` so an X-Gofastr-Toast payload still reaches the user even when the full module is unavailable. Unstyled-but-visible; no TTL, no animation. |
-| `data-fui-menu` | Marks a `<details data-fui-disclosure>` as a `framework/ui.Menu` dropdown — at the top level and on nested submenu rows alike (`MenuItem.Children` renders a nested `<details data-fui-menu>` whose `<summary role="menuitem">` carries `aria-haspopup="menu"`). The runtime focuses the first `[role=menuitem]`/`[role=menuitemradio]` when the disclosure opens; arrow keys / Home / End / type-ahead navigate within the item's own panel (a submenu's rows never leak into the parent's rotation); ArrowRight opens a submenu and moves focus into it, ArrowLeft closes the enclosing submenu and returns focus to its parent row (swapped in RTL); Escape closes the deepest open disclosure one level at a time; Tab closes the whole chain and lets focus escape naturally. |
+| `data-fui-menu` | Marks a `<details data-fui-disclosure>` as a `framework/ui.Menu` dropdown — at the top level and on nested submenu rows alike (`MenuItem.Children` renders a nested `<details data-fui-menu>` whose `<summary role="menuitem">` carries `aria-haspopup="menu"`). The runtime focuses the first `[role=menuitem]`/`[role=menuitemradio]` when the disclosure opens; arrow keys / Home / End / type-ahead navigate within the item's own panel (a submenu's rows never leak into the parent's rotation); ArrowRight opens a submenu and moves focus into it, ArrowLeft closes the enclosing submenu and returns focus to its parent row (swapped in RTL); Escape closes the deepest open disclosure one level at a time; Tab closes the whole chain and lets focus escape naturally. When `MenuConfig.TriggerElement` is set the details is summary-less and the panel is its only child; the caller's trigger element (see `data-fui-menu-trigger`) is the controller instead. |
 | `data-fui-menu-radio="<group>"` | Emitted by `framework/ui.Menu` on a `role="menuitemradio"` row: `MenuItem.Radio` names the group, `MenuItem.Checked` the initial `aria-checked` state. On activation (click / Enter / Space) the menu module arbitrates the group client-side — the activated row goes `aria-checked="true"`, every same-group sibling anywhere in the same menu — submenus included; a group split across a submenu boundary stays one group — goes `false` (the same mutex pattern `data-fui-toggle-group` uses for ToggleAction). A row carrying `data-fui-rpc` or an href still fires it; the server re-render stays authoritative. The check indicator is a CSS pseudo-element, so it never pollutes the row's textContent, type-ahead matching, or accessible name. |
 | `data-fui-menu-panel` | Emitted by `framework/ui.Menu` on the `role="menu"` panel `<div>`. No runtime or CSS consumer today (the menu module scopes by `data-fui-menu` + `.ui-menu__panel`); emit-only structural marker. |
+| `data-fui-menu-trigger="<menu-id>"` | Emitted by `framework/ui.Menu` when `MenuConfig.TriggerElement` is set: the presentation wrapper (`role="presentation"`, `display: contents`) holding the caller's own button/anchor, beside the summary-less `<details data-fui-menu="<menu-id>" data-fui-disclosure>` that carries the panel. An interactive element inside `<summary>` is axe `nested-interactive` (SERIOUS), so a caller-owned trigger must not route through `TriggerHTML`. The value pairs the wrapper with its details. The `menu` runtime module wires `aria-haspopup="menu"`, `aria-controls` (the panel id), and `aria-expanded` onto the first interactive element inside the wrapper at hydration (attributes cannot be injected into raw caller HTML server-side, which is why the wrapper — component-rendered — carries this marker instead), toggles the details on click (preventDefaulted: the trigger opens the menu, it does not navigate or submit; a `defaultPrevented` earlier listener wins), and closes the menu on Tab from the caller's element before focus moves on. Escape-close-one-level with focus returned to the caller's element, the `aria-expanded` mirror on toggle, and focus-on-open come from the disclosure module, which resolves a disclosure's controller as its `<summary>` or this element. |
 | `data-fui-match-prefix` | On a `<nav> <a>` link: opts the link into prefix-matching for active-route highlighting. The runtime tags it `aria-current="page"` + `.active` when the current path equals the link's href or continues it at a segment boundary: `/docs` and `/docs/` both light up on `/docs` and `/docs/getting-started`, and neither matches `/docs-old`. Without this attribute the runtime does exact-href matching only, so breadcrumbs and sidebars (where multiple links share prefixes) keep the server-rendered single active item. Root `/` is never a prefix match. |
 | `data-fui-activelink-skip` | On a `<nav> <a>` link: opts OUT of active-route highlighting entirely. The `activelink` runtime module neither sets nor clears `aria-current` or `.active` on it, at load or after SPA navigation. The escape hatch for a link whose current-state is owned by something else: a hand-set attribute (`aria-current="location"` on an in-page anchor), app JS, a signal binding. Same hands-off treatment as href-less links. |
 | `data-fui-fileupload` | Marks the drag-drop zone surrounding a `framework/ui.FileUpload` `<input type="file">`. The runtime wires dragover/dragleave/drop handlers that forward dropped File objects into the input's `files` property and dispatch a `change` event so form RPC pipelines fire uniformly whether the user clicked-to-pick or dragged-to-drop. |
@@ -259,6 +260,7 @@ server side and the runtime does the work.
 | `data-fui-popover-trigger` | Written by the runtime onto the originating trigger button while its anchored popover is open. The runtime also adds the `.is-popover-trigger-active` class so the trigger can be highlighted while its popover is the currently-active surface. Both are stripped on dismiss or when the popover re-anchors to a different trigger. |
 | `data-fui-prefetch="<module>"` | On any element: opt the page into hover/focus-prefetch of a split runtime module (e.g. `data-fui-prefetch="fileupload"`). On the first `pointerover` or `focusin` (capture phase, once per element) the runtime fires `__gofastr.loadModule(<module>)` so the module is ready by the time the user clicks. Multiple modules can be listed space-separated. Used to keep typical pages on `core.js` only while still feeling instant on interaction. Module names are shape-checked (`^[\w-]+$`) before the URL is built: the value is DOM input, and a `../../../evil` token would otherwise normalize out of the runtime serve route onto an arbitrary same-origin script. See `framework/docs/content/runtime-minification.md` for the size story. |
 | `data-fui-nav="off"` | On an anchor: decline SPA navigation for this link. The runtime lets the click through to the browser, so the destination gets a full document load. For hosts whose destination page binds behavior at script load — a soft swap never re-runs those initializers, so every handler on the destination dies. The screen-level equivalent is `Screen.NoSPA`, which excludes a route from the client manifest so *every* link to it loads fully. |
+| `data-fui-doc` | On a `<script src>` emitted by `uihost.RegisterDocumentScript(src, scope)`: the script has a DOCUMENT lifetime, shipping only on routes the scope predicate accepts (the predicate sees the registered route pattern, `/session/:id`, at render time and in the manifest alike). The runtime reads the live document's `data-fui-doc` srcs and compares them against the destination route's manifest `docScripts` at every soft-nav entry point (click hijack before `preventDefault`, `navigate()`, `popstate`, `loadPage`'s redirect leg). A difference — entering OR leaving the scope — performs a real document load instead of a partial swap; equal sets stay partial, and Back/Forward across an edge loads the destination fresh. The reason is a browser fact: such a script installs capabilities INTO the document (WebMCP's `navigator.modelContext` tools are the driving case), and DOM removal is not capability revocation, nor does a partial swap ever run a body script. |
 | `data-fui-screen-group="<prefix>"` | On the `.fui-screen-group` wrapper div around each group layer. Since the layout-chain rewrite the swap logic no longer keys on it (chains carry group identity in `data-fui-layout-key`); the runtime still reads it in one place, locating the outermost shell element for a cross-chain shell replacement, and it remains the CSS/introspection contract for group boundaries. The prefix matches the group's URL prefix (trailing slash). |
 | `data-fui-pane-host` | Emitted by `framework/ui.PaneHost` on its root `<div>` (alongside `data-fui-comp="ui-pane-host"`). Marker the demand-loaded `panehost` runtime module scans for to wire open/close/swap triggers and the responsive overlay-drawer collapse. |
 | `data-fui-pane="primary\|secondary\|tertiary"` | Emitted by `PaneHost` on each of its three slot children. The runtime addresses a pane by this value when opening/closing it; CSS keys the open-state grid columns and the overlay-drawer chrome off the combination of the root's open modifier classes and this slot marker. |
@@ -692,6 +694,43 @@ prefix matches the existing `gofastr:navigate` convention. The
 NetworkRetryBanner reads `lastEventAt` for its silence trigger and
 listens for the event to re-probe its health endpoint on reconnect.
 
+### Sequenced WebSocket client (`__gofastr.connectWebSocket`)
+
+The `ws` demand module (`runtime/src/ws.js`) is the browser half of the
+`core/stream.StateChannel` contract (see `framework/docs/content/`
+→ reactivity and core-packages). Unlike every other module it has no
+DOM marker: an application loads it explicitly with
+`__gofastr.loadModule('ws')` and calls two functions.
+
+`__gofastr.createSequencedReducer(initial, apply)` returns
+`reduce(envelope)`; it applies an envelope only when
+`envelope.sequence` is strictly greater than the last applied one, so a
+reconnect snapshot captured before a live mutation cannot resurrect the
+state that mutation replaced. Results carry `{ applied, state,
+appliedSequence }`.
+
+`__gofastr.connectWebSocket(url, opts)` manages one WebSocket with
+reconnect and a distinct generation per reconnect:
+
+| Hook | Fires when |
+| --- | --- |
+| `opts.onGenerationStart({generation, resumedAfterSequence})` | socket open, once per generation |
+| `opts.onHydrated({generation, snapshotSequence})` | the application calls `handle.hydrated(seq)`, once per generation |
+| `opts.onGenerationEnd({generation, reasonClass})` | the socket is gone, once per generation |
+| `opts.onMessage({data, raw, generation})` | every message (`data` is parsed JSON or null) |
+
+`handle.status` is one live object (same shape as `sseStatus`):
+`{ generation, phase, reasonClass, attempts, lastSequence }`, with
+phase `connecting → open → hydrated → resynced` (via
+`handle.resyncComplete()`) and `closed`/`stopped` at the ends.
+`reasonClass` is one of `closed`, `error`, `stop` — the module never
+logs and never surfaces raw close reasons, payloads, or credentials.
+
+A new generation invalidates only generation-bound work; which state
+survives a reconnect is the application's decision. WebSocket recovery
+proves nothing about media protocols layered on top (WebRTC and
+friends); those resynchronize through these hooks.
+
 ### Cross-replica presence (`gofastr.presence` fanout lane)
 
 Presence rosters aggregate across `serve` replicas over the existing
@@ -1002,6 +1041,23 @@ just knows: *RPC response can carry a `pushState` header; popstate
 triggers a screen-partial fetch.*
 
 ---
+
+### Guarding a dynamic screen (route match + `RenderScreen`)
+
+Middleware that guards `/session/:sessionId` must not re-parse the
+path: `host.RouteMatchMiddleware()` resolves every request against the
+screen router and stores an immutable `app.Match` on the context, and
+`app.MatchFromContext(ctx)` hands the guard the same parameter values
+the screen's `SetParams` receives (trailing slash included). The host
+also populates the match on the render context itself, so a screen
+Policy sees it with no middleware. A guard that refuses answers with
+`host.RenderScreen(w, r, screen, uihost.ScreenResponse{Status: 410})`:
+the branded page through the normal chrome on a full load, the bare
+body on a client-side navigation, the same status and
+`Cache-Control: private, no-store` on both, no session minted. A path
+no screen matches carries no match; the guard falls through and the
+`WithNotFoundScreen` 404 stays truthful. See
+`framework/docs/content/ui-wiring.md` → "Guards on dynamic screens".
 
 ## Theme
 
@@ -1337,7 +1393,7 @@ core-ui/
                  optimisticaction, passwordinput, popover, rangeslider,
                  reveal, scrollspy, searchinput, shortcut, slider,
                  sortablelist, sse, taginput, textarea, themeswitch,
-                 toasts, toc, toggleaction, tree, widgets
+                 toasts, toc, toggleaction, tree, widgets, ws
   runtime/colorscheme.js : dark/light mode bootstrap (runs sync in <head>
                  before CSS parses, reads localStorage + OS hint,
                  sets data-color-scheme on <html>)

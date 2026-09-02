@@ -101,7 +101,7 @@ type UIHost struct {
 	actionHandlers      map[string]*component.ActionRegistry // componentID → action registry for server-side handlers
 	actionComps         map[string]component.Component       // componentID → the component the registry was compiled FROM (embed_actions.go walks it)
 	customCSS           string                               // extra CSS to inject (e.g. demo.css)
-	extraScripts        []string                             // extra <script src="…"> URLs to inject before </body>
+	extraScripts        []externalScript                     // extra <script src="…"> rail before </body>; every-page + document-lifetime entries (register_script.go)
 	scriptMu            sync.Mutex                           // guards post-construction extraScripts appends + the servingStarted latch (see register_script.go)
 	servingStarted      atomic.Bool                          // latched on the first full-shell render; RegisterExternalScript refuses after it
 	staticDir           string                               // directory to serve static files from
@@ -342,6 +342,14 @@ type routeInfoJSON struct {
 	// innermost (app.LayoutLayer.Key). The runtime compares it against the
 	// DOM's data-fui-layout-key spine to swap at the deepest shared layer.
 	Layouts []string `json:"layouts,omitempty"`
+	// DocScripts lists the document-lifetime external scripts (src
+	// values, RegisterDocumentScript) in scope for this route. The
+	// client runtime compares the destination's set against the live
+	// document's data-fui-doc scripts and performs a real document load
+	// when they differ: removing a script tag does not revoke
+	// document-installed capabilities (WebMCP's navigator.modelContext
+	// tools), and a partial swap never runs a body script.
+	DocScripts []string `json:"docScripts,omitempty"`
 	// Redirect is the target path (or pattern) for a redirect entry.
 	// Empty for screens. The client-side router rewrites a navigation to
 	// this entry's path to Redirect without a server round-trip.
@@ -376,7 +384,9 @@ func WithCustomCSS(css string) Option {
 // CSP-safe: every URL becomes an external resource, no inline JS.
 func WithExtraScripts(urls ...string) Option {
 	return func(ds *UIHost) {
-		ds.extraScripts = append(ds.extraScripts, urls...)
+		for _, u := range urls {
+			ds.extraScripts = append(ds.extraScripts, externalScript{src: u})
+		}
 	}
 }
 
@@ -816,7 +826,7 @@ func New(application *app.App, opts ...Option) *UIHost {
 	// (see framework/dev/livereload.go). Both halves are gated by the
 	// same env predicate, so the host needs zero code change.
 	if dev.LiveReloadEnabled() {
-		ds.extraScripts = append(ds.extraScripts, dev.LiveReloadScriptURL)
+		ds.extraScripts = append(ds.extraScripts, externalScript{src: dev.LiveReloadScriptURL})
 	}
 	// #215: a partial DarkColors silently keeps light values in dark mode
 	// (the map is what renders under a dark preference; editing Colors
@@ -951,6 +961,16 @@ func (ds *UIHost) buildRouteScriptUncached() string {
 			Layouts:     r.Layouts,
 			Redirect:    r.RedirectTo,
 		}
+		// Document-lifetime scripts in scope for this route, sorted so
+		// the manifest bytes are deterministic. The scope sees the
+		// route PATTERN here and the concrete path at render time;
+		// prefix-style predicates answer both the same way.
+		for _, s := range ds.extraScripts {
+			if s.scope != nil && s.scope(r.Path) {
+				infos[i].DocScripts = append(infos[i].DocScripts, s.src)
+			}
+		}
+		sort.Strings(infos[i].DocScripts)
 		if r.Intercept != nil {
 			infos[i].Intercept = &interceptJSON{
 				From: r.Intercept.From,
@@ -1198,6 +1218,16 @@ func (ds *UIHost) handlePage(w http.ResponseWriter, r *http.Request) {
 	// screens can read URL query params, headers, etc. SSG builds
 	// pass nil and the helpers degrade to empty values.
 	ctx := app.WithRequest(r.Context(), r)
+	// Route match on the render context: RouteMatchMiddleware
+	// normally installed it before application middleware. Standalone
+	// hosts (and hosts whose app skipped the middleware) get it here
+	// so a Policy or ScreenLoader on a dynamic route can read the
+	// same params the render pipeline injects.
+	if _, ok := app.MatchFromContext(ctx); !ok {
+		if m, ok := ds.App.Router.MatchFor(path); ok {
+			ctx = app.WithMatch(ctx, m)
+		}
+	}
 	// Install the per-request signal value bag BEFORE rendering so a
 	// producer's Slice.Seed(ctx, v) during Load (and a consumer's
 	// Bind(ctx, …) during RenderCtx) write/read the same bag that
@@ -1767,8 +1797,27 @@ func (ds *UIHost) injectChromeModeFor(page, pagePath, sessionID, presenceTopic s
 		bodyClose.WriteString(`<script src="/__gofastr/actions.js"></script>`)
 		bodyClose.WriteByte('\n')
 	}
-	for _, src := range ds.extraScripts {
-		fmt.Fprintf(bodyClose, `<script src=%q></script>`+"\n", src)
+	// Document-lifetime scopes are asked about the ROUTE, not the
+	// concrete path: the same identity the manifest uses. A predicate
+	// that saw "/session/:id" when the manifest was built and
+	// "/session/42" here could answer differently, and a disagreement is
+	// a partial swap that keeps a capability the destination never
+	// emitted. An unregistered path (a 404 shell) is its own identity.
+	scopeKey := pagePath
+	if ds.App != nil && ds.App.Router != nil {
+		if screen, _, ok := ds.App.Router.Resolve(pagePath); ok && screen != nil {
+			scopeKey = screen.Path
+		}
+	}
+	for _, s := range ds.extraScripts {
+		if s.scope != nil && !s.scope(scopeKey) {
+			continue // document-lifetime script out of scope on this page
+		}
+		docAttr := ""
+		if s.scope != nil {
+			docAttr = " data-fui-doc"
+		}
+		fmt.Fprintf(bodyClose, `<script src=%q%s></script>`+"\n", s.src, docAttr)
 	}
 
 	// Color-scheme bootstrap runs SYNCHRONOUSLY at the top of <head>
@@ -1924,14 +1973,7 @@ func (ds *UIHost) serveNotFound(w http.ResponseWriter, r *http.Request, path str
 		if ds.App.Name != "" {
 			appName = ds.App.Name
 		}
-		// Build a minimal document shell so injectChrome's strings.Replace
-		// targets (`<head>`, `</head>`, `<body>`) actually exist. Without
-		// this the customCSS / runtime / color-scheme bootstrap silently
-		// don't attach and the page renders as bare browser-default styles.
-		shell := fmt.Sprintf(
-			`<!DOCTYPE html><html lang="%s"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>404: %s</title></head><body>%s</body></html>`,
-			stdhtml.EscapeString(ds.EffectiveLang()), stdhtml.EscapeString(appName), string(body))
-		page := ds.injectChrome(shell, path, "", "")
+		page := ds.injectChrome(ds.documentShell("404: "+appName, string(body)), path, "", "")
 		w.WriteHeader(http.StatusNotFound)
 		fmt.Fprint(w, page)
 		return
@@ -1995,6 +2037,13 @@ func (ds *UIHost) handlePartialPage(w http.ResponseWriter, r *http.Request, path
 	// query (sort, page, filters) just like full-render screens do.
 	ctx := app.WithRequest(r.Context(), r)
 	ctx = store.WithValues(ctx) // capture producer-seeded values for the partial seed
+	// Route match for policies/screens on the partial path too, same
+	// as handlePage: RouteMatchMiddleware normally installed it.
+	if _, ok := app.MatchFromContext(ctx); !ok {
+		if m, ok := ds.App.Router.MatchFor(path); ok {
+			ctx = app.WithMatch(ctx, m)
+		}
+	}
 
 	// Intercepting routes (#130 slice 5): the client ASKS for an overlay
 	// by sending X-Gofastr-Intercept plus the location it is navigating
@@ -2927,10 +2976,7 @@ func (ds *UIHost) serveMethodNotAllowedPage(w http.ResponseWriter, r *http.Reque
 	if ds.App != nil && ds.App.Name != "" {
 		appName = ds.App.Name
 	}
-	shell := fmt.Sprintf(
-		`<!DOCTYPE html><html lang="%s"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>405: %s</title></head><body>%s</body></html>`,
-		stdhtml.EscapeString(ds.EffectiveLang()), stdhtml.EscapeString(appName), string(body))
-	page := ds.injectChrome(shell, path, "", "")
+	page := ds.injectChrome(ds.documentShell("405: "+appName, string(body)), path, "", "")
 	w.WriteHeader(http.StatusMethodNotAllowed)
 	fmt.Fprint(w, page)
 }
@@ -3755,4 +3801,17 @@ func ReadCustomCSSFile(path string) string {
 		return ""
 	}
 	return string(data)
+}
+
+// documentShell is the one document envelope every host-rendered
+// fallback page (404, 405, recovery screens) is built from: a bare
+// <html> with charset and viewport meta, a title, and the body, so
+// injectChrome's `<head>` / `</head>` / `<body>` targets exist and the
+// runtime, theme, and colour-scheme bootstrap attach exactly as they
+// do on a registered screen. Title and lang are escaped here; body is
+// already-rendered HTML.
+func (ds *UIHost) documentShell(title, body string) string {
+	return fmt.Sprintf(
+		`<!DOCTYPE html><html lang="%s"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>%s</title></head><body>%s</body></html>`,
+		stdhtml.EscapeString(ds.EffectiveLang()), stdhtml.EscapeString(title), body)
 }

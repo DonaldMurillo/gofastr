@@ -1,7 +1,9 @@
 // nav.js: SPA router (spec fragment `nav`, boot class; deps: kernel+signals).
 // Owns: <a> click hijack, history.pushState, popstate, screen cache,
-// layout-chain-aware swaps (deepest shared layer), updateActiveLink,
-// document.title writes, the navigate() namespace member.
+// layout-chain-aware swaps (deepest shared layer), document-lifetime
+// script boundaries (hard document load at a data-fui-doc scope edge),
+// updateActiveLink, document.title writes, the navigate() namespace
+// member.
 
   // -----------------------------------------------------------------------
   // Screen cache: stores rendered screens for instant back-navigation.
@@ -94,6 +96,36 @@
     let d = 0;
     while (d < dom.length && d < layouts.length && layouts[d] && dom[d] === layouts[d]) d++;
     return d;
+  };
+
+  // --- Document-lifetime scripts (capability boundary) ---
+  // A script the host registers with a page scope rides the rail as
+  // <script src data-fui-doc>, and the route manifest carries each
+  // route's set as docScripts. Such a script installs capabilities
+  // INTO the document (WebMCP's navigator.modelContext tools are the
+  // driving case), and two browser facts make its scope edge a
+  // document boundary: removing the tag does not uninstall what the
+  // script installed, and a partial swap never runs a body script, so
+  // a destination needing a script this document never loaded would
+  // stay without it. Navigation across an edge must therefore load a
+  // real document; equal sets stay partial.
+  // Truth for THIS document is the live DOM (a stale manifest entry
+  // must never lend this document's capabilities to a route); the
+  // destination's entry carries the empty set when unknown. Compare
+  // sorted src lists joined on a newline: the manifest array is sorted
+  // server-side, and a newline can never appear in a registered src
+  // (the rail rejects control characters), so unlike a comma it cannot
+  // make two different sets read as one string.
+  const crossesDocBoundary = (destPath) => {
+    const de = routeEntry(destPath);
+    const dest = (de && de.docScripts) || [];
+    const srcs = [];
+    for (const s of document.querySelectorAll('script[data-fui-doc]')) {
+      const v = s.getAttribute('src');
+      if (v) srcs.push(v);
+    }
+    srcs.sort();
+    return srcs.join('\n') !== dest.join('\n');
   };
 
   // Cache the initial page so back-navigation to it works instantly.
@@ -359,6 +391,10 @@
     // credentials and swapped into the DOM. A javascript: or data: URL
     // resolves to a null origin, so this subsumes the scheme check too.
     if (!window.__gofastr._originOK(path)) return;
+    // Document-boundary backstop: the click hijack, navigate(), and
+    // popstate gate this BEFORE any history write; this arm covers the
+    // X-Gofastr-Location redirect leg and any future caller.
+    if (crossesDocBoundary(path)) { location.assign(path); return; }
     // Dedup in-flight nav (10 clicks → 1 fetch), but only while path is
     // still the destination: on A→B→A the pending A fetch holds a stale
     // epoch and is dropped, so returning here left the URL at /a showing B.
@@ -653,6 +689,11 @@
       // Already there, let the browser handle the click (focus, scroll, etc.).
       return;
     }
+    // A document-lifetime script's scope edge is a document boundary.
+    // Stand down BEFORE preventDefault so the browser performs a real
+    // navigation with ordinary link semantics (history, focus, target),
+    // exactly like a data-fui-nav="off" link.
+    if (crossesDocBoundary(fullPath)) return;
     // Preserve the #fragment: resolvePath strips it (path-only is what
     // route matching + cache keys want), but the URL bar and the
     // post-nav scroll target need it. loadPage reads location.hash, so
@@ -747,6 +788,12 @@
     if (path !== currentPath && currentPath !== '') {
       if (_onlyStatefulDiff(currentPath, path)) {
         currentPath = path;
+      } else if (crossesDocBoundary(path)) {
+        // Reachable only through deploy skew or history written around
+        // the router (a crossing click loads a new document, so one
+        // document never holds both sides). Load the destination
+        // rather than lend this document's capabilities to it.
+        location.replace(path);
       } else {
         _pendingScroll = _scrollStore[_entryId] || null;
         loadPage(path);
@@ -779,6 +826,13 @@
       // for all programmatic SPA navigation, so the guard lives
       // here. Reuses the same gate as Lightbox AllowDownload etc.
       if (!this._originOK(path)) return;
+      // Document boundary: load a real document instead of swapping.
+      // assign/replace keep the push/replace shape the caller asked for.
+      if (crossesDocBoundary(path)) {
+        if (replace) { try { location.replace(path); } catch (_) {} }
+        else location.assign(path);
+        return;
+      }
       const origin = currentPath;
       _pushURL(path, { replace: replace || path === currentPath });
       loadPage(path, { bypassCache: force, from: origin });

@@ -2,6 +2,7 @@ package a2a
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -47,6 +48,9 @@ const pushConcurrency = 16
 // pushDeliveryTimeout bounds one push POST. A hung receiver must not
 // accumulate goroutines for the TaskTimeout duration.
 const pushDeliveryTimeout = 10 * time.Second
+
+// pushLookupTimeout bounds the registration-time DNS check of a push URL.
+const pushLookupTimeout = 3 * time.Second
 
 type pusher struct {
 	client       *http.Client
@@ -108,7 +112,18 @@ func (p *pusher) deliver(recs []*PushConfigRecord, ev StreamResponse) {
 // only on this request; the client cannot follow a redirect (see
 // PushOptions.Client), so they cannot leak to a second host.
 func (p *pusher) post(cfg PushNotificationConfig, payload []byte) error {
-	req, err := http.NewRequest(http.MethodPost, cfg.URL, bytes.NewReader(payload))
+	// Defence for a config stored before the registration-time check
+	// existed: credentials never leave over plain http unless the
+	// deployment opted into internal receivers.
+	if hasCredentials(cfg) && !p.allowPrivate && !strings.EqualFold(schemeOf(cfg.URL), "https") {
+		return fmt.Errorf("a2a: refusing to send push credentials over %q", cfg.URL)
+	}
+	// The deadline rides on the request as well as on the default
+	// client's Timeout, so a caller-supplied client without one cannot
+	// turn a hung receiver into a goroutine that never returns.
+	ctx, cancel := context.WithTimeout(context.Background(), pushDeliveryTimeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, cfg.URL, bytes.NewReader(payload))
 	if err != nil {
 		return err
 	}
@@ -143,7 +158,7 @@ func (p *pusher) post(cfg PushNotificationConfig, payload []byte) error {
 //
 // When allowPrivate is true the host checks are skipped (test/dev
 // posture); the scheme and userinfo guards run in both modes.
-func validatePushURL(raw string, allowPrivate bool) error {
+func validatePushURL(raw string, credentialed, allowPrivate bool) error {
 	if raw == "" {
 		return fmt.Errorf("a2a: push URL required")
 	}
@@ -154,6 +169,13 @@ func validatePushURL(raw string, allowPrivate bool) error {
 	scheme := strings.ToLower(u.Scheme)
 	if scheme != "http" && scheme != "https" {
 		return fmt.Errorf("a2a: scheme %q not allowed (need http or https)", u.Scheme)
+	}
+	if scheme == "http" && credentialed && !allowPrivate {
+		// The token and Authorization header ride on every delivery; over
+		// plain http they ride in the clear. Loopback receivers in tests
+		// and internal deployments opt in with AllowPrivate, the same
+		// switch that admits their addresses.
+		return fmt.Errorf("a2a: push URL %q carries credentials over plain http; use https (or set AllowPrivate for an internal receiver)", raw)
 	}
 	if u.Host == "" {
 		return fmt.Errorf("a2a: push URL missing host")
@@ -177,15 +199,20 @@ func validatePushURL(raw string, allowPrivate bool) error {
 	if ip := net.ParseIP(host); ip != nil {
 		return rejectInternal(ip)
 	}
-	addrs, err := net.LookupIP(host)
+	// Bounded: the hostname is client-supplied, and a name whose
+	// resolver stalls must not hold the registration request for the
+	// resolver's own timeout.
+	ctx, cancel := context.WithTimeout(context.Background(), pushLookupTimeout)
+	defer cancel()
+	ipAddrs, err := net.DefaultResolver.LookupIPAddr(ctx, host)
 	if err != nil {
 		// DNS failure at registration is not a refusal: the receiver
 		// need not be live yet, and the dial-time guard is what stops a
 		// later resolution onto an internal address.
 		return nil
 	}
-	for _, ip := range addrs {
-		if err := rejectInternal(ip); err != nil {
+	for _, ip := range ipAddrs {
+		if err := rejectInternal(ip.IP); err != nil {
 			return err
 		}
 	}
@@ -277,4 +304,21 @@ func (g *guardedRoundTripper) RoundTrip(r *http.Request) (*http.Response, error)
 		}
 	}
 	return g.inner.RoundTrip(r)
+}
+
+// hasCredentials reports whether a delivery to cfg would carry a secret:
+// the notification token, or Authorization credentials.
+func hasCredentials(cfg PushNotificationConfig) bool {
+	if cfg.Token != "" {
+		return true
+	}
+	return cfg.Authentication != nil && cfg.Authentication.Credentials != ""
+}
+
+func schemeOf(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return ""
+	}
+	return u.Scheme
 }

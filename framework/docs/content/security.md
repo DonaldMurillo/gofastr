@@ -261,6 +261,33 @@ most N per period, then lock out" on your own routes. See
 [rate-limit.md](rate-limit.md) for the quickstart and the token-bucket-vs-
 sliding-window choice.
 
+## Recovery screens and cache policy
+
+When middleware refuses a guarded screen route, it answers with
+`uihost.UIHost.RenderScreen` (see [ui-wiring](ui-wiring.md) → "Guards
+on dynamic screens"). That helper defaults to
+`Cache-Control: private, no-store` on both the full-page and the
+client-side-navigation arm, and mints no session cookie. Three rules
+keep the failure surfaces safe:
+
+- **A recovery page is per-user.** It was rendered for one caller's
+  auth state; a shared cache replaying it to a second visitor leaks
+  that state and can pin a stale grant. Don't override the default
+  `CacheControl` without a reason you can write down.
+- **Don't reveal existence.** Answer an expired session and a missing
+  session with the same screen and status, so an unauthorized caller
+  can't probe whether a given id is live.
+- **Keep statuses truthful.** 401/403 for an authentication failure on
+  a route that exists, 410 (or a 404 via the screen's
+  `ScreenStatusCode`) for a route that resolved but whose resource is
+  gone, and a plain 404 — never a recovery screen — for a path nothing
+  matches.
+
+The partial-navigation arm matters as much as the full page: the
+runtime keeps the response out of the screen cache on a non-2xx, but
+any proxy between client and server obeys the headers, which is what
+`no-store` is for.
+
 ## OpenAPI coverage for auth endpoints
 
 Auth endpoints registered by `AuthManager.RegisterRoutes` (login,

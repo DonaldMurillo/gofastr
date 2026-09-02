@@ -63,6 +63,9 @@ interface; failing at boot beats both that and the quieter repair of
 404ing the frame document forever. A server with no specs at all is the
 legitimate byte-backed case (`AddBytes` only) and is left alone.
 
+Byte-backed assets also cover a third shape: trusted host-page workers
+with their own narrow response policy (see "Trusted host-page workers").
+
 ## The wasm opt-in tier
 
 WebAssembly cannot compile inside a plugin frame by default: the framed
@@ -125,6 +128,124 @@ re-filters against the same allowlist at serve time, mirroring how
 `SharedArrayBuffer`, which require COOP/COEP cross-origin isolation —
 and cross-origin isolation is incompatible with the opaque-origin frame
 design. Build the engine single-threaded for the plugin frame.
+
+## Trusted host-page workers
+
+The frame is for code you did not audit. A third shape showed up in
+production: a worker the app compiles in and vouches for — Field
+Assist's OpenCV and ONNX depth workers — which needs runtime
+compilation the host document must never grant. Before the worker
+profile, such an app bypassed `AssetServer` and hand-rolled a handler
+with its own response CSP. Widening the document's policy to
+`'unsafe-eval'` was the one-line alternative, and it would have handed
+string eval to every script on every page.
+
+The mechanism is that a dedicated worker enforces the CSP delivered with
+its OWN script response, not the document's. `AddBytes` takes options:
+`WithWorkerCSP` marks the asset as a worker and names the narrow
+relaxation its response carries, `WithCache` names the cache posture.
+
+```go
+srv.AddBytes("/__w/depth.js", "text/javascript; charset=utf-8", false, workerJS,
+	pluginhost.WithWorkerCSP(pluginhost.WorkerCSP{
+		ScriptKeywords: []string{"'unsafe-eval'"},
+		ConnectSources: []string{"'self'"},
+		WASM:           true,
+	}),
+	pluginhost.WithCache(pluginhost.CachePrivateNoStore),
+)
+```
+
+The worker policy is a fixed skeleton plus validated tokens:
+
+```text
+default-src 'self'; script-src 'self' <keywords>; connect-src 'none'|'self'; worker-src 'self'; object-src 'none'
+```
+
+- `ScriptKeywords` allowlist: `'unsafe-eval'` (string eval, `new
+  Function` — what runtimes that generate code on the fly need) and
+  `'wasm-unsafe-eval'` (WebAssembly compilation only). Prefer
+  `WASM: true` when the worker only compiles; reach for `'unsafe-eval'`
+  only when the runtime actually requires it.
+- `ConnectSources` allowlist: `'self'`, for fetching the wasm binary and
+  model bytes from your own origin. Nothing else names a network grant,
+  and this server is not a remote-artifact proxy.
+- A token outside the allowlists panics at `AddBytes` — at boot, with
+  the offending token in the message — and the header assembler
+  re-filters at serve time, the same double gate `Manifest.CSP` uses for
+  framed assets.
+- `worker-src 'self'` plus `script-src 'self'` keeps nested workers
+  working in browsers that predate `worker-src` (it falls back to
+  `script-src` there).
+
+Everything else on the worker response passes through the app's global
+headers unchanged: `nosniff`, `Cross-Origin-Resource-Policy:
+same-origin` (the host page fetches the worker same-origin; no framed
+relaxation applies), `X-Frame-Options`. The host document's CSP is
+untouched byte-for-byte — the relaxation is per-worker, never
+per-document.
+
+Two browser notes where worker semantics differ from the frame's:
+
+- `'self'` is correct here. A dedicated worker is same-origin and
+  non-opaque, so `'self'` is its own origin in Chrome and Safari alike —
+  unlike the opaque plugin frame, where `'self'` means `null` and Safari
+  refuses the frame's own subresources (the reason framed responses key
+  their CSP to the explicit origin).
+- Safari releases that predate `'wasm-unsafe-eval'` block WebAssembly
+  compilation unless `'unsafe-eval'` is present. If you must support
+  them, include `'unsafe-eval'` in `ScriptKeywords`; it is a superset
+  that covers wasm compilation too.
+
+Like the frame tier, workers here are single-threaded: no COEP header
+is added (see [compute](compute.md)), so no `SharedArrayBuffer` and no
+wasm threads. Build engines single-threaded for the worker.
+
+### Worker or sandboxed frame?
+
+- **Worker**: app-owned code you trust like your own route handlers; no
+  DOM need; heavy compute (OpenCV, ONNX, wasm engines); talks to the
+  page by `postMessage` and to the server by ordinary same-origin
+  requests.
+- **Frame**: third-party or unaudited megabyte bundles; anything that
+  renders UI; the plugin protocol with capabilities and an opaque
+  origin. The test is trust, not size: `'unsafe-eval'` on a worker you
+  compiled in is contained; on a bundle you didn't audit it is not. If
+  you would not ship it as a route handler, it does not get a worker
+  profile.
+
+### Cache postures
+
+| Profile | Header | Use |
+| --- | --- | --- |
+| `CacheDefault` | `no-store, max-age=0` | the pre-profile default |
+| `CachePublicImmutable` | `public, max-age=31536000, immutable` | content-hashed, secret-free bytes |
+| `CachePrivateRevalidate` | `private, no-cache` | browser-cached, revalidated every use |
+| `CachePrivateNoStore` | `private, no-store` | per-session bytes, shared machines |
+
+The profile is an enum, not a string: the exact header text stays the
+server's decision. Anything behind authentication belongs in a
+`private` posture — `public` means shared caches along the path may
+keep a copy.
+
+### Pinning runtimes and models same-origin
+
+Applications own pinning, integrity, licensing, availability, and the
+SSRF boundary of external models and runtimes. The recipe that keeps
+`connect-src 'self'` honest:
+
+1. Vendor the runtime and model bytes into the app's own module
+   (`embed.FS`), pinned by version in `go.mod` and your lockfile.
+2. Serve them same-origin through `AssetServer` under a content-hashed
+   URL (`depth-<sha256prefix>.wasm`) with
+   `WithCache(pluginhost.CachePublicImmutable)`.
+3. Register the worker itself with the narrowest `WorkerCSP` that lets
+   it boot, and have it fetch the pinned bytes same-origin.
+
+What this is deliberately NOT: a generic proxy that forwards arbitrary
+remote URLs. A proxy moves the pinning decision to whoever can reach the
+route, which is exactly the SSRF and licensing boundary you were
+supposed to own.
 
 ## The protocol
 
@@ -377,3 +498,13 @@ or capability set.
   `Manifest.HostRequirements` and use the host-captures / frame-decodes
   shape; `CheckHostRequirements` says at boot when the app's
   `Permissions-Policy` denies it.
+- **Widening the host document's CSP so a worker can compile.** A
+  dedicated worker enforces its own response's policy, not the
+  document's: register it with `WithWorkerCSP` (see "Trusted host-page
+  workers") and the document stays byte-identical. `'unsafe-eval'` on
+  the document hands string eval to every script on every page.
+- **Proxying a CDN model or runtime URL instead of pinning bytes.** The
+  worker profile's `connect-src` allowlist is `'self'` on purpose; a
+  fetch-through proxy moves pinning, integrity, and the SSRF boundary to
+  whoever can reach the route. Vendor the bytes and serve them
+  same-origin.

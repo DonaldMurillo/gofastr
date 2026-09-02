@@ -1,6 +1,7 @@
 package stream
 
 import (
+	"crypto/rand"
 	"crypto/sha1"
 	"encoding/base64"
 	"encoding/binary"
@@ -42,6 +43,11 @@ type WebSocketConn struct {
 	closeOnce  sync.Once
 	onClose    []func()
 	config     WSConfig
+
+	// connectionID identifies this WebSocket across logs and reconnects.
+	// Set from WSConfig.ConnectionID or generated at Upgrade; see
+	// ConnectionID for the reconnect-generation contract.
+	connectionID string
 
 	// lastReadActivity is updated on every successful frame read and on
 	// pong receipt. Used by the keepalive goroutine to decide when to
@@ -132,6 +138,14 @@ type WSConfig struct {
 	// client offered AND we support is echoed back via
 	// Sec-WebSocket-Protocol. If no match, no header is sent (RFC 6455).
 	Subprotocols []string
+
+	// ConnectionID identifies this connection in logs and reconnect
+	// bookkeeping. Empty (the default) means Upgrade generates a random
+	// id. Set it explicitly when the application mints its own ids
+	// (e.g. one per browser session, so a client's reconnect after a
+	// socket drop correlates across server-side logs). See
+	// WebSocketConn.ConnectionID for the reconnect-generation contract.
+	ConnectionID string
 
 	// OnClose is called when the connection closes.
 	OnClose func()
@@ -246,14 +260,22 @@ func Upgrade(w http.ResponseWriter, r *http.Request, cfg WSConfig) (*WebSocketCo
 	cfg.ReadLimit = readLimit
 	cfg.SendBuffer = sendBuf
 
+	// Per-connection identity for logs and reconnect correlation. A
+	// caller-supplied id wins; otherwise mint a random one.
+	connectionID := cfg.ConnectionID
+	if connectionID == "" {
+		connectionID = randomConnectionID()
+	}
+
 	wsc := &WebSocketConn{
-		conn:       conn,
-		sendBuffer: make(chan []byte, sendBuf),
-		closed:     make(chan struct{}),
-		peerClosed: make(chan struct{}),
-		readMsgs:   make(chan []byte, 8),
-		readDone:   make(chan struct{}),
-		config:     cfg,
+		conn:         conn,
+		sendBuffer:   make(chan []byte, sendBuf),
+		closed:       make(chan struct{}),
+		peerClosed:   make(chan struct{}),
+		readMsgs:     make(chan []byte, 8),
+		readDone:     make(chan struct{}),
+		config:       cfg,
+		connectionID: connectionID,
 	}
 	wsc.lastReadActivity.Store(time.Now().UnixNano())
 
@@ -269,6 +291,20 @@ func Upgrade(w http.ResponseWriter, r *http.Request, cfg WSConfig) (*WebSocketCo
 	wsc.startReadPump()
 
 	return wsc, nil
+}
+
+// randomConnectionID mints a per-connection id: 8 random bytes, hex.
+// Random (not monotonic) so the id carries no ordering information
+// across users; distinctness per reconnect is what correlates a
+// browser generation with a server-side connection.
+func randomConnectionID() string {
+	var b [8]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		// crypto/rand failing is a broken runtime; fall back to a
+		// time-derived id rather than refusing the connection.
+		return fmt.Sprintf("t%016x", time.Now().UnixNano())
+	}
+	return fmt.Sprintf("%x", b[:])
 }
 
 // pickSubprotocol returns the first server-preferred subprotocol that
@@ -446,6 +482,20 @@ func (c *WebSocketConn) OnClose(fn func()) {
 // Closed returns a channel closed when the connection closes.
 func (c *WebSocketConn) Closed() <-chan struct{} {
 	return c.closed
+}
+
+// ConnectionID returns the connection's stable identifier: the
+// WSConfig.ConnectionID value, or a random id minted at Upgrade.
+//
+// The id distinguishes server-side connections from each other; it
+// does NOT by itself model reconnects. A client that reconnects gets a
+// NEW connection and therefore a new id (or a fresh browser-side
+// generation, see core-ui/runtime/src/ws.js). Applications that need
+// "same user, new transport" semantics correlate the two explicitly:
+// echo this id to the client on connect, or key the client's
+// generation counter against it in logs.
+func (c *WebSocketConn) ConnectionID() string {
+	return c.connectionID
 }
 
 // startKeepalive starts the idle-timeout / ping-pong watcher goroutine.

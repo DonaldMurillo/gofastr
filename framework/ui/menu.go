@@ -179,6 +179,28 @@ type MenuConfig struct {
 	// avatar buttons, icon-only triggers, etc.
 	TriggerHTML render.HTML
 
+	// TriggerElement replaces the framework-rendered summary with a
+	// caller-owned interactive element: inline HTML for a real <button>
+	// (or <a>). The menu renders a summary-less <details
+	// data-fui-disclosure> holding the panel, with the element in a
+	// presentation wrapper beside it, and the runtime makes the
+	// element the disclosure controller: click, Enter, and Space toggle
+	// the panel; aria-haspopup / aria-controls / aria-expanded are wired
+	// onto the element at hydration (attributes cannot be injected into
+	// raw caller HTML server-side); focus lands on the first menuitem on
+	// open; Escape closes one level at a time and returns focus to the
+	// element; Tab closes the chain. Use for host-styled triggers whose
+	// markup and classes the page owns: routing such an element through
+	// TriggerHTML nests an interactive control inside the summary
+	// control, which axe reports as nested-interactive (SERIOUS).
+	// Activation is preventDefaulted — the element opens the menu, it
+	// does not navigate or submit; put navigation on menu items.
+	// Overrides Label and TriggerHTML; TriggerClass is inert (the
+	// element brings its own classes). Auto-generated IDs fold the
+	// markup in, but two structurally identical trigger menus on one
+	// page still need distinct IDs.
+	TriggerElement render.HTML
+
 	// Items is the menu's contents. Required (empty menus panic at
 	// render time. They signal a bug, not a runtime state).
 	Items []MenuItem
@@ -192,9 +214,10 @@ type MenuConfig struct {
 	PanelClass   string
 
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
-	// analytics markers, ARIA overrides) to the menu's root <details>
-	// element. Keys the component owns are dropped: class, id, and
-	// data-fui-* (the disclosure wiring).
+	// analytics markers, ARIA overrides) to the menu's root element
+	// (the <details> on the summary path, the wrapper <div> when
+	// TriggerElement is set). Keys the component owns are dropped:
+	// class, id, and data-fui-* (the disclosure wiring).
 	ExtraAttrs html.Attrs
 }
 
@@ -207,7 +230,10 @@ var menuStyle = registry.RegisterStyle("ui-menu", menuCSS)
 // machinery (Esc closes one level at a time, SPA nav closes,
 // aria-expanded mirroring), augmented with arrow / type-ahead keyboard
 // navigation that the runtime applies to any `[role=menu]` inside an
-// open disclosure.
+// open disclosure. With TriggerElement set there is no framework
+// summary: the caller's element is the controller, and the runtime
+// supplies the toggle, the aria wiring, and the same keyboard
+// behaviour (see MenuConfig.TriggerElement).
 func Menu(cfg MenuConfig) render.HTML {
 	if len(cfg.Items) == 0 {
 		panic("ui: Menu requires at least one Item")
@@ -219,22 +245,58 @@ func Menu(cfg MenuConfig) render.HTML {
 
 	id := cfg.ID
 	if id == "" {
-		id = "ui-menu-" + shortHash(cfg.Label+positionsForHash(cfg.Items))
+		// The trigger-element path folds the caller markup into the
+		// auto-id input: two trigger menus with identical items must not
+		// share a data-fui-menu value, because the runtime resolves a
+		// trigger's details BY THAT VALUE — a shared id would make the
+		// second trigger toggle the first menu. The summary path keeps
+		// its exact historical input (Label + positions).
+		hashIn := cfg.Label
+		if cfg.TriggerElement != "" {
+			hashIn += string(cfg.TriggerElement)
+		}
+		id = "ui-menu-" + shortHash(hashIn+positionsForHash(cfg.Items))
 	}
 	panelID := id + "-panel"
 
 	var b strings.Builder
-	// `<details>` is the toggle. data-fui-disclosure adds Escape close
-	// and closes on SPA nav for free.
-	//
-	// PanelClass / TriggerClass are caller-supplied and pass through
-	// render.Escape so a value containing `"` or `'` cannot break out of
-	// the class attribute into a sibling attribute context
-	// (`onclick=…`, etc.).
+	// PanelClass is caller-supplied and passes through render.Escape so
+	// a value containing `"` or `'` cannot break out of the class
+	// attribute into a sibling attribute context (`onclick=…`, etc.).
 	cls := "ui-menu ui-menu--" + string(pos)
 	if cfg.PanelClass != "" {
 		cls += " " + cfg.PanelClass
 	}
+
+	if cfg.TriggerElement != "" {
+		// Caller-owned trigger: no <summary> (an interactive element
+		// inside one is axe nested-interactive, and the UA summary
+		// activation would not run for it anyway). The root is a plain
+		// div carrying the positioning classes; the caller's element
+		// sits in a presentation wrapper BESIDE a summary-less
+		// <details data-fui-disclosure> that holds the panel, and the
+		// runtime resolves the pairing through the shared menu id in
+		// data-fui-menu-trigger. The panel markup is byte-identical to
+		// the summary path's.
+		b.WriteString(`<div class="` + render.Escape(cls) + `"`)
+		b.WriteString(serializeExtraAttrs(html.SafeExtraAttrs(cfg.ExtraAttrs)))
+		b.WriteString(`>`)
+		b.WriteString(`<div data-fui-menu-trigger="` + render.Escape(id) + `" role="presentation">`)
+		b.WriteString(string(cfg.TriggerElement))
+		b.WriteString(`</div>`)
+		b.WriteString(`<details data-fui-disclosure data-fui-menu="` + render.Escape(id) + `">`)
+		b.WriteString(`<div class="ui-menu__panel" id="` + render.Escape(panelID) + `" role="menu" data-fui-menu-panel>`)
+		writeMenuItems(&b, cfg.Items, panelID)
+		b.WriteString(`</div></details></div>`)
+		return menuStyle.WrapHTML(render.HTML(b.String()))
+	}
+
+	// `<details>` is the toggle. data-fui-disclosure adds Escape close
+	// and closes on SPA nav for free.
+	//
+	// TriggerClass is caller-supplied and passes through render.Escape
+	// so a value containing `"` or `'` cannot break out of the class
+	// attribute into a sibling attribute context (`onclick=…`, etc.).
 	b.WriteString(`<details class="` + render.Escape(cls) + `" data-fui-disclosure data-fui-menu="` + render.Escape(id) + `"`)
 	b.WriteString(serializeExtraAttrs(html.SafeExtraAttrs(cfg.ExtraAttrs)))
 	b.WriteString(`>`)
@@ -548,6 +610,16 @@ func menuCSS(_ style.Theme) string {
    whole menu (the trigger's own activation state lies). Hide explicitly;
    the open state is the UA default. */
 [data-fui-comp="ui-menu"]:not([open]) .ui-menu__panel { display: none; }
+/* Trigger-element path (MenuConfig.TriggerElement): the root is a div,
+   so the rule above cannot key [open] on it — the closed panel is
+   hidden through the summary-less <details data-fui-menu> child for
+   the same author-display:grid reason. The wrapper generates no box
+   (display:contents), so the caller's element is laid out as a direct
+   child of the root and host CSS written against the element itself
+   (header button.rounded-full) keeps working; role="presentation"
+   keeps it out of the accessibility tree. */
+[data-fui-comp="ui-menu"] > [data-fui-menu-trigger] { display: contents; }
+[data-fui-comp="ui-menu"] > details[data-fui-menu]:not([open]) .ui-menu__panel { display: none; }
 [data-fui-comp="ui-menu"].ui-menu--bottom-start .ui-menu__panel { inset-inline-start: 0; top: calc(100% + 4px); }
 [data-fui-comp="ui-menu"].ui-menu--bottom-end   .ui-menu__panel { inset-inline-end: 0;   top: calc(100% + 4px); }
 [data-fui-comp="ui-menu"].ui-menu--top-start    .ui-menu__panel { inset-inline-start: 0; bottom: calc(100% + 4px); }
