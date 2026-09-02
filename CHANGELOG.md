@@ -37,6 +37,88 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   makes is bounded.
 
 ### Added
+- **Route matches on the request context, and status-aware recovery
+  screens** (#379): `host.RouteMatchMiddleware()` stores an immutable
+  `app.Match` (screen id, path, parameters from the authoritative screen
+  router, trailing slash tolerant) on the request, so middleware guarding
+  `/session/:sessionId` reads `match.Param("sessionId")` instead of
+  re-parsing the path; the host populates the same match on the render
+  context, so a screen Policy sees it with no middleware at all.
+  `host.RenderScreen(w, r, screen, uihost.ScreenResponse{Status: 410})`
+  answers a guard with a real screen at the status the caller names:
+  full chrome on a full load, bare body on a client-side navigation, the
+  same status and `Cache-Control: private, no-store` on both arms, no
+  session minted. A path no screen matches carries no match, so the
+  `WithNotFoundScreen` 404 stays truthful. ui-wiring.md carries the
+  guard recipe and the status table (authentication failure, resource
+  gone, unknown route); security.md says why the no-store default is
+  not optional.
+- **Trusted host-page workers with their own narrow CSP** (#380):
+  `AssetServer.AddBytes` takes options. `WithWorkerCSP` marks a worker
+  the app compiles in (an OpenCV or ONNX depth worker) and names the
+  relaxation its own response carries, a fixed skeleton plus tokens
+  matched byte-for-byte against a closed allowlist (`'unsafe-eval'`,
+  `'wasm-unsafe-eval'`, connect `'self'`); `WithCache` picks one of four
+  cache postures by enum. The host document's policy is untouched, and
+  asserted byte-identical with a worker registered; invalid tokens, a
+  worker profile on a framed asset, and an unknown cache profile panic
+  at registration, and the assembler re-filters at serve time. Chrome
+  proves the worker evals and compiles wasm under the profile and
+  refuses both without it. plugin-platform.md carries the worker-versus-
+  frame guidance and the same-origin pinning recipe; there is no proxy.
+- **WebMCP: one call binds a tool and its route** (#378): `Host.Handle`
+  declares the tool and registers the handler at its method and path in
+  one call, so the manifest cannot advertise a path the router does not
+  serve and a conditional tool appears in, and disappears from, both
+  together. `WithHTTPMiddleware` puts the authorization decision beside
+  the declaration it protects; a method and path already on the router
+  fail before anything is registered. Declaration-only `Register` is
+  unchanged.
+- **WebMCP: scoped and authorized mounts** (#371): `Mount` takes options.
+  `WithAssetAuthorization` wraps the framework-owned bridge script and
+  manifest routes with middleware, `WithPageScope` gates them on request
+  identity (an out-of-scope fetch gets an empty script or an empty tool
+  set), and `WithPrivateAssets` serves them under
+  `Cache-Control: private, no-store`; any of the three forces that
+  policy, so a credential-gated bridge is never shared-cacheable. The
+  authorization middleware runs outside the scope gate, so an anonymous
+  request fails with the middleware's status. The zero-option mount is
+  pinned byte-identical to before.
+- **WebMCP: metadata-safe observability** (#374): `webmcp.New(WithObserver(fn))`
+  reports refused declarations and agent-driven invocations of
+  `Handle`-registered routes as `ToolEvent`s carrying name, method, the
+  declared path, status, duration, and an error class, and never a body,
+  header, or query string (a planted secret never reaches the observer).
+  Only requests carrying the marker header are invocations, so a manual
+  call and an agent call to the same handler stay distinguishable. A
+  random invocation id rides the request context, the
+  `X-Gofastr-WebMCP-Invocation` response header, and the event, so an
+  app can correlate a command with its own delivery records.
+  `WithBridgeDebug()` on `Mount` bakes a bounded, opt-in debug state into
+  the served script. Everything is off by default.
+- **WebMCP: instructions, groups, examples, output schemas** (#373):
+  `WithInstructions` carries the cross-tool contract in the manifest and,
+  because the browser proposal has no field for it, serves it through a
+  deterministic read-only `get_app_instructions` tool. `Host.Group` tags
+  tools with a description and a preferred-first tool without renaming
+  them or touching routing or authorization. `Tool.Examples` are checked
+  against the input schema at registration (object shape, required keys,
+  declared property types) and `Tool.OutputSchema` is preserved as
+  documentation with no runtime validation. The bridge degrades safely:
+  it forwards what `registerTool` accepts and the manifest keeps the
+  rest.
+- **`ui.Menu` takes a caller-owned trigger** (#369): `MenuConfig.TriggerElement`
+  is the inline HTML of your own `<button>` (or `<a>`), rendered in a
+  presentation wrapper beside a summary-less `<details>` that holds the
+  panel, so a host-styled trigger no longer nests inside `<summary>`
+  (axe `nested-interactive`, SERIOUS). The runtime makes the element the
+  disclosure controller: `aria-haspopup`, `aria-controls` and
+  `aria-expanded` wired at hydration, click, Enter and Space toggle with
+  activation prevented, focus on the first menuitem on open, Escape one
+  level at a time with focus returned to the element, Tab from the
+  element closes the chain. The summary path is byte-identical to before.
+  New runtime attribute `data-fui-menu-trigger`, documented in
+  core-ui/ARCHITECTURE.md and runtime-contract.md.
 - Probe tests kept from the #136 audit as regression pins: the pack
   encode/decode round-trip property over a randomized hostile corpus, the
   Levenshtein scaling benchmark, `Timeout`'s deterministic boundary and an
