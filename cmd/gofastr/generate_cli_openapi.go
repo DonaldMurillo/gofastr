@@ -241,7 +241,11 @@ func oaResolve(root, node map[string]any) (map[string]any, error) {
 			return nil, fmt.Errorf("$ref %q does not resolve to an object", ref)
 		}
 	}
-	if parts, ok := node["allOf"].([]any); ok {
+	if raw, has := node["allOf"]; has {
+		parts, ok := raw.([]any)
+		if !ok {
+			return nil, fmt.Errorf("allOf: want a list, got %T", raw)
+		}
 		merged := map[string]any{"type": "object"}
 		props := map[string]any{}
 		var required []any
@@ -677,7 +681,11 @@ func oaBuildOp(root, opNode map[string]any, baseParams []any, method, path strin
 		return op, fmt.Errorf("path template %q has placeholder {%s} with no declared path parameter", path, ph)
 	}
 
-	if body, ok := opNode["requestBody"].(map[string]any); ok {
+	if bodyNode, has := opNode["requestBody"]; has {
+		body, ok := bodyNode.(map[string]any)
+		if !ok {
+			return op, fmt.Errorf("operation %s %s: requestBody must be an object, got %T", strings.ToUpper(method), path, bodyNode)
+		}
 		body, err := oaResolve(root, body)
 		if err != nil {
 			return op, err

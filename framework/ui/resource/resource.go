@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"math"
 	"net/http"
 	"net/url"
@@ -399,7 +400,13 @@ func (c Config) List(ctx context.Context) render.HTML {
 	}
 	q := appui.QueryFromContext(ctx)
 	search := strings.TrimSpace(q.Get("q"))
-	total, _ := c.Crud.CountAll(ctx, crud.ListOptions{Filters: c.queryFilters(q, search)})
+	total, err := c.Crud.CountAll(ctx, crud.ListOptions{Filters: c.queryFilters(q, search)})
+	if err != nil {
+		// The count only feeds pagination chrome; a refused count
+		// degrades to unknown totals rather than a failed screen, but
+		// the refusal is logged rather than dropped.
+		slog.Warn("resource: count", "entity", c.Title, "error", err)
+	}
 
 	actionList := append([]render.HTML{}, c.ExtraActions...)
 	if c.CanCreate {
@@ -476,7 +483,12 @@ func (c Config) table(ctx context.Context, total int) render.HTML {
 	}
 
 	if total < 0 {
-		total, _ = c.Crud.CountAll(ctx, crud.ListOptions{Filters: filters})
+		var err error
+		total, err = c.Crud.CountAll(ctx, crud.ListOptions{Filters: filters})
+		if err != nil {
+			// Same as List: the count feeds pagination chrome only.
+			slog.Warn("resource: count", "entity", c.Title, "error", err)
+		}
 	}
 	// WithReadHooks: these rows are rendered to an end user.
 	rows, err := c.Crud.ListAll(crud.WithReadHooks(ctx), crud.ListOptions{Filters: filters, Sorts: sorts, Limit: limit, Offset: fwpagination.OffsetForPage(page, limit)})

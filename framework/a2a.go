@@ -378,7 +378,10 @@ func entityInvocation(msg *a2a.Message) (operation string, args map[string]any, 
 				continue
 			}
 			op, isStr := obj["operation"].(string)
-			if !isStr || op == "" {
+			if !isStr {
+				return "", nil, fmt.Errorf(`data part "operation" must be a string, got %T`, obj["operation"])
+			}
+			if op == "" {
 				continue
 			}
 			args = map[string]any{}

@@ -9,6 +9,7 @@ package resources
 
 import (
 	"context"
+	"log/slog"
 	"sort"
 	"sync"
 
@@ -133,7 +134,13 @@ func (c *Catalog) ListSessions() []SessionInfo {
 func (c *Catalog) ListProviders(ctx context.Context) []ProviderInfo {
 	out := make([]ProviderInfo, 0, len(c.Providers))
 	for _, p := range c.Providers {
-		models, _ := p.Models(ctx)
+		models, err := p.Models(ctx)
+		if err != nil {
+			// The catalog is display-only; a refused listing degrades
+			// to an empty model list rather than a failed page, but
+			// the refusal is logged rather than dropped.
+			slog.Warn("harness control: listing models", "provider", p.Name(), "error", err)
+		}
 		out = append(out, ProviderInfo{Name: p.Name(), Models: models})
 	}
 	return out

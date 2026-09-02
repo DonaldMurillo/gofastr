@@ -85,13 +85,16 @@ func startHTTPListener(h *xharness.Harness, sess ids.SessionID, bindAddr string)
 	// chat page. The page embeds it in a meta tag so the inline JS
 	// can use it for fetch + EventSource without round-tripping
 	// through a separate /auth endpoint.
-	token, _ = enc.Encode(auth.Claims{
+	token, err = enc.Encode(auth.Claims{
 		Ver:           auth.VerCurrent,
 		JTI:           ids.NewJTI(),
 		Sessions:      []ids.SessionID{sess},
 		IdentityClass: control.IdentityHuman,
 		ExpiresAt:     time.Now().Add(24 * time.Hour).Unix(),
 	})
+	if err != nil {
+		return "", "", nil, fmt.Errorf("encode harness token: %w", err)
+	}
 
 	mux := http.NewServeMux()
 	mux.Handle("/v1/ws", wsHandler)

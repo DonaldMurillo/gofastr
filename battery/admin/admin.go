@@ -411,7 +411,13 @@ func adminSuperuserCtx(ctx context.Context) context.Context {
 func (b *Battery) handleIndex(w http.ResponseWriter, r *http.Request) {
 	var stats queue.JobStats
 	if b.cfg.Queue != nil {
-		stats, _ = b.cfg.Queue.Stats(r.Context())
+		var err error
+		stats, err = b.cfg.Queue.Stats(r.Context())
+		if err != nil {
+			// The overview page degrades to zero counts; the refusal
+			// is logged rather than dropped.
+			b.logger().Warn("admin: queue stats", "error", err)
+		}
 	}
 	var auditCount int
 	db := b.effectiveDB()
@@ -443,7 +449,10 @@ func (b *Battery) handleQueue(w http.ResponseWriter, r *http.Request) {
 			adminError("Could not load queue jobs. Check the server logs for details."))
 		return
 	}
-	stats, _ := b.cfg.Queue.Stats(r.Context())
+	stats, err := b.cfg.Queue.Stats(r.Context())
+	if err != nil {
+		b.logger().Warn("admin: queue stats", "error", err)
+	}
 	// Offer per-row Replay only on the failed view and only when the backend
 	// supports replay (DBQueue does; memory/redis don't yet).
 	showReplay := false
