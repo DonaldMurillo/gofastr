@@ -2,6 +2,7 @@ package expr
 
 import (
 	"fmt"
+	"math"
 	"strings"
 	"time"
 )
@@ -112,6 +113,15 @@ func builtinAbs(args []any) (any, error) {
 	switch v := args[0].(type) {
 	case int64:
 		if v < 0 {
+			if v == math.MinInt64 {
+				// |MinInt64| is MaxInt64+1, which does not fit; -v
+				// wraps back to MinInt64 and abs would return a
+				// negative. Saturate: the magnitude is honest to the
+				// representable range and errs away from every
+				// threshold guard that consumes abs() (abs(x) < N
+				// fails closed on the saturated value).
+				return int64(math.MaxInt64), nil
+			}
 			return -v, nil
 		}
 		return v, nil

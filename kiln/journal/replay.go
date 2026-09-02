@@ -298,6 +298,12 @@ func applyWorldEdit(s *Session, e Entry) error {
 		if p.Page == nil {
 			return fmt.Errorf("add_page: nil page")
 		}
+		// The live tool refuses it ("missing page or page.path"); an
+		// empty path reaches this dispatch only through a hand-authored
+		// journal, and its uihost screen registration is undefined.
+		if p.Page.Path == "" {
+			return fmt.Errorf("add_page: missing page.path")
+		}
 		if err := world.ValidatePageActions(p.Page); err != nil {
 			return fmt.Errorf("add_page %q: %w", p.Page.Path, err)
 		}
@@ -337,13 +343,18 @@ func applyWorldEdit(s *Session, e Entry) error {
 		if err := e.Decode(&p); err != nil {
 			return err
 		}
+		// UpdatePageElement always journals a non-nil New; new:null
+		// stores a nil page under the path, which both readers then
+		// silently skip — the journal would record an applied edit while
+		// the page vanishes from the preview and the graduation artifact.
+		if p.New == nil {
+			return fmt.Errorf("update_page_element %q: nil page", p.Path)
+		}
 		if err := world.ValidatePageActions(p.New); err != nil {
 			return fmt.Errorf("update_page_element %q: %w", p.Path, err)
 		}
-		if p.New != nil {
-			if err := world.ValidatePageTree(p.New.Tree); err != nil {
-				return fmt.Errorf("update_page_element %q: %w", p.Path, err)
-			}
+		if err := world.ValidatePageTree(p.New.Tree); err != nil {
+			return fmt.Errorf("update_page_element %q: %w", p.Path, err)
 		}
 		if _, exists := w.Pages[p.Path]; !exists {
 			return fmt.Errorf("update_page_element: page %q not found", p.Path)

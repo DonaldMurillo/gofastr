@@ -87,11 +87,11 @@ func (s *Server) Mount(r *router.Router) {
 	r.Get("/kiln/chat/widget.css", http.HandlerFunc(s.serveWidgetCSS))
 	r.Get("/kiln/chat/base.css", http.HandlerFunc(s.serveBaseCSS))
 	r.Get("/kiln/theme.css", http.HandlerFunc(s.serveThemeCSS))
-	r.Get("/kiln/world", http.HandlerFunc(s.serveWorld))
-	r.Get("/kiln/status", http.HandlerFunc(s.serveStatus))
+	r.Get("/kiln/world", readGuard(http.HandlerFunc(s.serveWorld)))
+	r.Get("/kiln/status", readGuard(http.HandlerFunc(s.serveStatus)))
 	r.Post("/kiln/chat/message", sameOriginOnly(http.HandlerFunc(s.serveChatMessage)))
 	r.Post("/kiln/tool/{name}", sameOriginOnly(http.HandlerFunc(s.serveToolDispatch)))
-	r.Get("/.kiln/events", http.HandlerFunc(s.live.ServeSSE))
+	r.Get("/.kiln/events", readGuard(http.HandlerFunc(s.live.ServeSSE)))
 	r.Get("/.kiln/reload.js", http.HandlerFunc(live.ServeReloadJS))
 }
 

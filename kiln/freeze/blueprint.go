@@ -8,6 +8,7 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/kiln/world"
 )
 
@@ -46,6 +47,34 @@ func validateGraduation(w *world.World) error {
 	if w.App.Auth.Enabled && !w.App.Auth.DevMode && w.App.Auth.JWTSecret == "" {
 		return fmt.Errorf("freeze: production auth requires app.auth.jwt_secret; set it or keep auth.dev_mode true for local development")
 	}
+	// Seeds must graduate only when the live runtime would apply them.
+	// Every add_seed runs through kiln/render.ApplySeeds
+	// (live.applySideEffects), which refuses a seed whose entity has no
+	// table and validates the entity name and every row key as a SQL
+	// identifier; a blueprint that ships a seed the preview refused makes
+	// the frozen app fail at first boot — the exact divergence this gate
+	// exists to prevent.
+	for i, s := range w.Seeds {
+		if s == nil {
+			continue
+		}
+		if s.Entity == "" {
+			return fmt.Errorf("freeze: seed %d: empty entity", i)
+		}
+		if _, err := query.SafeIdent(s.Entity); err != nil {
+			return fmt.Errorf("freeze: seed %d (%s): %w", i, s.Entity, err)
+		}
+		if _, ok := w.Entities[s.Entity]; !ok {
+			return fmt.Errorf("freeze: seed %d targets entity %q, which is not in the world: the live runtime refuses it too (no such table)", i, s.Entity)
+		}
+		for _, row := range s.Rows {
+			for k := range row {
+				if _, err := query.SafeIdent(k); err != nil {
+					return fmt.Errorf("freeze: seed %d (%s) column: %w", i, s.Entity, err)
+				}
+			}
+		}
+	}
 	if w.App.PWA.Enabled {
 		switch w.App.PWA.Display {
 		case "", "standalone", "fullscreen", "minimal-ui", "browser":
@@ -55,6 +84,14 @@ func validateGraduation(w *world.World) error {
 		for label, value := range map[string]string{"start_url": w.App.PWA.StartURL, "scope": w.App.PWA.Scope} {
 			if value != "" && !strings.HasPrefix(value, "/") {
 				return fmt.Errorf("freeze: app.pwa.%s must start with /", label)
+			}
+			// HasPrefix("/") alone admits scheme-relative and backslash
+			// forms: browsers resolve "//evil.example/pwa" and
+			// "/\evil.example/" against the attacker's origin, and the
+			// graduated manifest is what the operator's browser installs.
+			// A same-origin path starts with exactly one slash.
+			if strings.HasPrefix(value, "//") || strings.HasPrefix(value, `/\`) {
+				return fmt.Errorf("freeze: app.pwa.%s must be a same-origin path, got %q", label, value)
 			}
 		}
 	}
@@ -228,7 +265,7 @@ func entityMaps(w *world.World) []any {
 				endpoints = append(endpoints, compact(map[string]any{
 					"name": name, "method": strings.ToUpper(ep.Method), "path": ep.Path,
 					"description": ep.Description, "mcp": ep.MCP,
-					"handler": identifier(e.Name + "_" + name),
+					"handler": handlerName("endpoint", e.Name+"_"+name, i),
 				}))
 			}
 			m["endpoints"] = endpoints
@@ -341,7 +378,7 @@ func hookMaps(w *world.World) []any {
 			"id":          id,
 			"entity":      h.Entity,
 			"when":        h.When,
-			"handler":     identifier(id),
+			"handler":     handlerName("hook", id, i),
 			"description": desc,
 		}))
 	}
@@ -360,7 +397,7 @@ func endpointMaps(w *world.World) []any {
 		}
 		handler := ep.Handler
 		if handler == "" {
-			handler = identifier(name)
+			handler = handlerName("endpoint", name, i)
 		}
 		out = append(out, compact(map[string]any{
 			"name": name, "method": strings.ToUpper(ep.Method), "path": ep.Path,
@@ -375,7 +412,7 @@ func endpointMaps(w *world.World) []any {
 		name := endpointName(route.Method, route.Path, len(out)+i)
 		out = append(out, map[string]any{
 			"name": name, "method": strings.ToUpper(route.Method), "path": route.Path,
-			"handler":     identifier(name),
+			"handler":     handlerName("route", name, i),
 			"description": "Kiln declarative action " + route.Action.Kind + "; implement the owned-Go handler after generation",
 		})
 	}
@@ -393,6 +430,20 @@ func middlewareMaps(w *world.World) []any {
 		out = append(out, compact(map[string]any{"name": item.Name, "description": item.Description}))
 	}
 	return out
+}
+
+// handlerName maps an agent-authored surface name to the Go identifier
+// of its owned-handler stub. identifier() strips to letters, digits and
+// underscore, so a name with none of those ("🔴", "???", "   ")
+// sanitizes to the empty string — and compact() would then drop the
+// handler key entirely, shipping a stub surface the generator has
+// nothing valid to name. Fall back to a deterministic positional name
+// instead; colliding hostile names get distinct indices.
+func handlerName(prefix, value string, i int) string {
+	if id := identifier(value); id != "" {
+		return id
+	}
+	return fmt.Sprintf("%s_%d", prefix, i+1)
 }
 
 func namedStubMaps(items []world.NamedStub) []any {

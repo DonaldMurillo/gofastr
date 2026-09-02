@@ -2,6 +2,7 @@ package journal
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -111,10 +112,26 @@ func OpenJSONL(path string) (*JSONL, error) {
 	if err != nil {
 		return nil, fmt.Errorf("journal: open %s: %w", path, err)
 	}
-	count, err := countLines(f)
+	count, end, err := countLines(f)
 	if err != nil {
 		f.Close()
 		return nil, fmt.Errorf("journal: count entries in %s: %w", path, err)
+	}
+	// Heal a crash-torn tail: countLines reports the offset just past
+	// the last complete line, and anything after it is a partial line
+	// the interrupted Append never terminated. Dropping it here keeps
+	// the count, the next Append's write offset, and every later Read
+	// in agreement — without the heal, a later Append would splice onto
+	// the fragment and corrupt the line.
+	if fi, err := f.Stat(); err == nil && fi.Size() > end {
+		if err := f.Truncate(end); err != nil {
+			f.Close()
+			return nil, fmt.Errorf("journal: heal torn tail in %s: %w", path, err)
+		}
+		if err := f.Sync(); err != nil {
+			f.Close()
+			return nil, fmt.Errorf("journal: fsync healed %s: %w", path, err)
+		}
 	}
 	if _, err := f.Seek(0, io.SeekEnd); err != nil {
 		f.Close()
@@ -123,20 +140,38 @@ func OpenJSONL(path string) (*JSONL, error) {
 	return &JSONL{path: path, file: f, count: count}, nil
 }
 
-func countLines(f *os.File) (int, error) {
+// countLines counts the complete ('\n'-terminated) journal lines in f
+// and returns the byte offset just past the last complete line. A
+// trailing fragment with no '\n' is the torn in-flight Append the crash
+// contract already writes off ("a crash loses at most the in-flight
+// entry"): it is not counted, and the offset lets the caller heal the
+// file by truncating the fragment away.
+func countLines(f *os.File) (int, int64, error) {
 	if _, err := f.Seek(0, io.SeekStart); err != nil {
-		return 0, err
+		return 0, 0, err
 	}
-	scanner := bufio.NewScanner(f)
-	scanner.Buffer(make([]byte, 64*1024), maxLineBytes)
+	r := bufio.NewReader(f)
 	n := 0
-	for scanner.Scan() {
-		if len(scanner.Bytes()) == 0 {
-			continue
+	var end int64
+	for {
+		line, err := r.ReadBytes('\n')
+		if err == io.EOF {
+			// Bytes after the last '\n' (none when the file is
+			// clean): the torn tail, not an entry.
+			break
 		}
-		n++
+		if err != nil {
+			return 0, 0, err
+		}
+		if len(line) > maxLineBytes {
+			return 0, 0, fmt.Errorf("journal: line %d is %d bytes, over the %d-byte scan limit", n+1, len(line), maxLineBytes)
+		}
+		end += int64(len(line))
+		if len(bytes.TrimRight(line, "\r\n")) > 0 {
+			n++
+		}
 	}
-	return n, scanner.Err()
+	return n, end, nil
 }
 
 // maxLineBytes bounds one journal line. The readers' bufio.Scanner is

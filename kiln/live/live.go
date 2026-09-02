@@ -2,6 +2,7 @@ package live
 
 import (
 	"fmt"
+	"log/slog"
 	"net/http"
 	"sync"
 
@@ -75,11 +76,15 @@ func New(j journal.Journal, factory AppFactory) (*Live, error) {
 		aux:     router.New(),
 	}
 	// aux handles kiln-internal paths (chat panel, /.kiln/events, etc.)
-	// and falls through to the rebuilt app for everything else.
 	l.aux.NotFound(http.HandlerFunc(l.serveApp))
 	if err := l.rebuild(); err != nil {
 		return nil, err
 	}
+	// The runtime DB is journal-derived state: boot rebuilds it (drop,
+	// migrate, seed) so a restart over the same journal serves the rows
+	// the log says the world has — seeds used to exist only in the
+	// process that wrote them.
+	l.rederiveDB()
 	return l, nil
 }
 
@@ -96,6 +101,21 @@ func (l *Live) Aux() *router.Router { return l.aux }
 func (l *Live) Apply(e journal.Entry) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	// A delete_entity side effect must drop the entity's table, and the
+	// rebuild below removes the entity from the registry, so capture the
+	// registry-derived table name before the world is mutated.
+	dropTable := ""
+	if e.Kind == journal.KindWorldEdit && e.Op == journal.OpDeleteEntity {
+		var p journal.DeleteEntityPayload
+		if err := e.Decode(&p); err == nil && l.app != nil {
+			for _, ent := range l.app.Registry.All() {
+				if ent.GetName() == p.Name {
+					dropTable = ent.GetTable()
+					break
+				}
+			}
+		}
+	}
 	if err := journal.Apply(l.sess, e); err != nil {
 		return fmt.Errorf("kiln/live: apply to session: %w", err)
 	}
@@ -106,15 +126,26 @@ func (l *Live) Apply(e journal.Entry) error {
 		l.restoreFromJournal()
 		return fmt.Errorf("kiln/live: rebuild: %w", err)
 	}
+	// Side effects run here too, still BEFORE the durable Append: a seed
+	// the DB cannot take (missing table, hostile ident) or a table that
+	// cannot drop must leave nothing behind — not the journal entry, not
+	// the in-memory world, not the rows. The old order (Append, then
+	// side effects) reported failure with the entry already durable, so
+	// every restart and every freeze replayed a seed the runtime itself
+	// refused to apply.
+	if err := l.applySideEffects(e, dropTable); err != nil {
+		l.restoreFromJournal()
+		l.rederiveDB()
+		return fmt.Errorf("kiln/live: side-effects: %w", err)
+	}
 	if _, err := l.journal.Append(e); err != nil {
 		// Rebuild succeeded but the durable write failed, the in-memory
 		// session is now ahead of the journal. Roll back so state never
-		// outlives the durable record.
+		// outlives the durable record; re-derive the DB too, the side
+		// effect already ran against it.
 		l.restoreFromJournal()
+		l.rederiveDB()
 		return fmt.Errorf("kiln/live: append to journal: %w", err)
-	}
-	if err := l.applySideEffects(e); err != nil {
-		return fmt.Errorf("kiln/live: side-effects: %w", err)
 	}
 	l.bus.Send(Event{
 		EntryID: e.ID,
@@ -144,46 +175,105 @@ func (l *Live) Notify(kind, summary string) {
 	l.bus.Send(Event{Kind: kind, Summary: summary})
 }
 
-// applySideEffects runs DB-level side effects keyed to specific ops that
-// can't be rebuilt idempotently. Today: OpAddSeed inserts the seed rows
-// after the rebuild has migrated the schema.
-func (l *Live) applySideEffects(e journal.Entry) error {
+// applySideEffects runs the DB-level side effects of an entry: a seed
+// inserts its rows, a delete_entity drops the entity's table. It runs
+// BEFORE the durable Append (validation stage), so a failure rolls the
+// session back and re-derives the DB leaving nothing durable behind.
+func (l *Live) applySideEffects(e journal.Entry, dropTable string) error {
 	if e.Kind != journal.KindWorldEdit {
-		return nil
-	}
-	if e.Op != journal.OpAddSeed {
 		return nil
 	}
 	if l.app == nil || l.app.DB == nil {
 		return nil
 	}
-	var p journal.AddSeedPayload
-	if err := e.Decode(&p); err != nil {
-		return err
+	switch e.Op {
+	case journal.OpAddSeed:
+		var p journal.AddSeedPayload
+		if err := e.Decode(&p); err != nil {
+			return err
+		}
+		if p.Seed == nil {
+			return nil
+		}
+		w := &world.World{Seeds: []*world.Seed{p.Seed}}
+		return kilnrender.ApplySeeds(l.app.DB, w)
+	case journal.OpDeleteEntity:
+		if dropTable == "" {
+			return nil
+		}
+		return kilndb.DropTable(l.app.DB, dropTable)
 	}
-	if p.Seed == nil {
-		return nil
+	return nil
+}
+
+// rederiveDB rebuilds the runtime DB from the journal-derived world:
+// every user table is dropped, the schema re-migrated, and the world's
+// seeds re-applied. The runtime DB is derived state of the journal —
+// the boot, reset, and undo paths all funnel here — so afterwards the
+// database holds exactly what the journal authorizes, never rows from a
+// reset world, an undone seed, or a deleted entity. Caller must hold
+// l.mu. A seed the world cannot apply (a degenerate hand-authored
+// journal) is skipped with a warning rather than bricking boot: the
+// freeze gate refuses that world separately.
+func (l *Live) rederiveDB() {
+	if l.app == nil || l.app.DB == nil {
+		return
 	}
-	w := &world.World{Seeds: []*world.Seed{p.Seed}}
-	return kilnrender.ApplySeeds(l.app.DB, w)
+	db := l.app.DB
+	if err := kilndb.DropAllTables(db); err != nil {
+		slog.Warn("kiln/live: re-derive: drop tables failed", "err", err)
+		return
+	}
+	if err := kilndb.Migrate(db, l.app.Registry); err != nil {
+		slog.Warn("kiln/live: re-derive: migrate failed", "err", err)
+		return
+	}
+	for i, s := range l.sess.World.Seeds {
+		if s == nil {
+			continue
+		}
+		w := &world.World{Seeds: []*world.Seed{s}}
+		if err := kilnrender.ApplySeeds(db, w); err != nil {
+			slog.Warn("kiln/live: re-derive skipped a seed the world refuses",
+				"seed", i, "entity", s.Entity, "err", err)
+		}
+	}
 }
 
 // Reload discards the in-memory session and rebuilds it from the journal.
 // Useful after out-of-band journal writes or recovery from inconsistency.
+// The DB is re-derived too: truncation surfaces (reset_session, undo)
+// rewrite the world from the log, and the schema plus rows must follow.
 func (l *Live) Reload() error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	return l.reloadBody()
+}
+
+// reloadBody is the shared boot/reload sequence: replay the journal,
+// rebuild the app, then re-derive the DB from the replayed world.
+// Caller must hold l.mu.
+func (l *Live) reloadBody() error {
 	sess, err := journal.Replay(l.journal)
 	if err != nil {
 		return fmt.Errorf("kiln/live: reload replay: %w", err)
 	}
 	l.sess = sess
-	return l.rebuild()
+	if err := l.rebuild(); err != nil {
+		return err
+	}
+	// Reset/undo re-derive: truncation rewrites the world from the log,
+	// and the DB must follow — the old schema and rows from before the
+	// truncation would otherwise survive (re-adding an entity resurrects
+	// the previous world's data through the public CRUD surface).
+	l.rederiveDB()
+	return nil
 }
 
 // rebuild constructs a new framework.App from the current world. Caller
 // must hold l.mu. If the host wired a DB, AutoMigrate runs after Apply
 // so live entity edits propagate to the schema.
+
 func (l *Live) rebuild() (err error) {
 	// A world edit reaches net/http's pattern parser and framework
 	// App.Mount, and both PANIC on input they cannot register: a path
