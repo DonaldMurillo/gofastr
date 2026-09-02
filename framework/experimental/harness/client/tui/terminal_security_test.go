@@ -175,10 +175,17 @@ func TestProgressLinesStripTerminalEscapes(t *testing.T) {
 			return control.ToolCallProgress{CallID: ids.NewCallID(), Partial: text}
 		}},
 		{"PermissionRequested args", func(text string) control.Event {
+			// Encoded the way the wire carries it: a control byte in a
+			// JSON string is escaped (\u001b), never raw, and decodes
+			// back to the byte the terminal would interpret.
+			args, err := json.Marshal(map[string]string{"cmd": "echo " + text})
+			if err != nil {
+				t.Fatal(err)
+			}
 			return control.PermissionRequested{
 				CallID: ids.NewCallID(),
 				Tool:   "Bash",
-				Args:   json.RawMessage(`{"cmd":"echo ` + strings.ReplaceAll(text, `"`, `\"`) + `"}`),
+				Args:   json.RawMessage(args),
 			}
 		}},
 	}

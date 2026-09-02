@@ -287,9 +287,55 @@ func (c *Conn) handleText(ctx context.Context, payload []byte) {
 		c.writeText(controlError("token is not scoped for " + cmd.CommandKind()))
 		return
 	}
+	// The body names its own target session and the mux routes by it.
+	// The upgrade bound this socket to one session; a body naming
+	// another would drive that session's engine with this token's
+	// scope never having been checked against it. Attach and detach
+	// legitimately name a different session, so those are gated by the
+	// token's session scope instead.
+	if sid, ok := commandSession(cmd); ok {
+		switch cmd.(type) {
+		case control.AttachSession, control.DetachSession:
+			if !c.claims.AllowsSession(sid) {
+				c.writeText(controlError("token is not scoped for session " + string(sid)))
+				return
+			}
+		default:
+			if sid != c.session {
+				c.writeText(controlError("command names session " + string(sid) + " but this connection is attached to " + string(c.session)))
+				return
+			}
+		}
+	}
 	if err := c.mux.Dispatch(ctx, c, cmd); err != nil {
 		c.writeText(controlError(err.Error()))
 	}
+}
+
+// commandSession returns the session a command body targets, for every
+// command shape that carries one.
+func commandSession(cmd control.Command) (ids.SessionID, bool) {
+	switch v := cmd.(type) {
+	case control.SendInput:
+		return v.SessionID, true
+	case control.CancelTurn:
+		return v.SessionID, true
+	case control.AnswerPermission:
+		return v.SessionID, true
+	case control.AttachSession:
+		return v.SessionID, true
+	case control.DetachSession:
+		return v.SessionID, true
+	case control.SetModel:
+		return v.SessionID, true
+	case control.EnterPlanMode:
+		return v.SessionID, true
+	case control.ExitPlanMode:
+		return v.SessionID, true
+	case control.CustomCommand:
+		return v.SessionID, true
+	}
+	return "", false
 }
 
 // eventPump forwards bus events to the client. The subscription is

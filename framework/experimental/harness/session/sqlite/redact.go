@@ -55,6 +55,13 @@ var redactionSubs = []redactionSub{
 		regex: regexp.MustCompile(`Bearer\s+[A-Za-z0-9\-_\.=]{20,}`),
 		repl:  "Bearer «redacted:bearer»",
 	},
+	// A PEM block is redacted whole, header through footer: the key
+	// material is the body, and a header-only match left it intact. A
+	// header with no footer (a truncated echo) still loses its label.
+	{
+		regex: regexp.MustCompile(`(?s)-----BEGIN [A-Z ]+PRIVATE KEY-----.*?-----END [A-Z ]+PRIVATE KEY-----`),
+		repl:  "-----BEGIN «redacted:private-key»-----",
+	},
 	{
 		regex: regexp.MustCompile(`-----BEGIN [A-Z ]+PRIVATE KEY-----`),
 		repl:  "-----BEGIN «redacted:private-key»-----",

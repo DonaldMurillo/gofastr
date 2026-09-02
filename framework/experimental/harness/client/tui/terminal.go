@@ -323,10 +323,12 @@ func (t *TUI) renderEvent(env control.EventEnvelope) {
 		// Claude Code-style: `● Tool(args)`, filled circle bullet
 		// followed by the function-call notation so args read like
 		// code rather than a JSON dump.
-		t.appendMultiline("● ", fmt.Sprintf("%s(%s)", v.Tool, summarizeArgs(v.Args)))
+		t.appendMultiline("● ", fmt.Sprintf("%s(%s)", v.Tool, sanitizeAgentText(summarizeArgs(v.Args))))
 		t.assistantOpen = false
 	case control.ToolCallProgress:
-		t.appendMultiline("  ⎿ ", truncate(v.Partial, 400))
+		// Partial output is tool stdout: text this process did not
+		// write, sanitized like every other external string.
+		t.appendMultiline("  ⎿ ", truncate(sanitizeAgentText(v.Partial), 400))
 		t.assistantOpen = false
 	case control.ToolResult:
 		summary := strings.TrimSpace(sanitizeAgentText(summarizeContent(v.Content)))
@@ -387,7 +389,7 @@ func (t *TUI) renderEvent(env control.EventEnvelope) {
 		t.ensureBlankBefore()
 		t.appendMultiline(
 			fmt.Sprintf("[permission] %s requested — ", v.Tool),
-			summarizeArgs(v.Args))
+			sanitizeAgentText(summarizeArgs(v.Args)))
 		// Help line: indent under the start of the label content
 		// (column-aligned with "B" of "Bash requested..."). `[permission] `
 		// is 13 runes, so the indent is exactly 13 spaces.
