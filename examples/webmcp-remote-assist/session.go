@@ -301,6 +301,20 @@ func (a *assistApp) dropLocked(s *assistSession) {
 	}()
 }
 
+// joinOpen reports whether the token could still be exchanged, without
+// exchanging it: the confirmation page's GET asks this, so fetching the
+// link spends nothing.
+func (a *assistApp) joinOpen(token string) bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	sid, found := a.byToken[token]
+	if !found {
+		return false
+	}
+	s := a.sessions[sid]
+	return s != nil && !s.joinUsed && time.Now().Before(s.expires)
+}
+
 // exchangeJoin consumes the one-time join token and mints the
 // operator's role cookie value. The second caller with the same token
 // gets ok=false and learns nothing beyond "gone".
@@ -426,8 +440,12 @@ func crossSite(r *http.Request) bool {
 // applyCommand is the single mutation path. Manual form posts, WebMCP
 // tool calls, and the operator ack all land here after decoding into
 // assistCommand. It validates, mutates under the store lock, bumps the
-// channel-wide sequence, and publishes the event AFTER releasing the
-// lock (Publish is non-blocking and channel-owned).
+// channel-wide sequence, and publishes the event while still holding
+// the lock: Publish is non-blocking by contract (it enqueues or drops),
+// and publishing under the lock is what makes event order equal
+// mutation order. Two callers racing would otherwise be able to
+// enqueue their events in the opposite order of their mutations, and
+// every page would converge on the wrong final state.
 //
 // cmd.Ref is the WebMCP InvocationID for agent-issued commands ("" for
 // the manual button); the ack command echoes the instruction's ref back
@@ -468,11 +486,10 @@ func (a *assistApp) applyCommand(cmd assistCommand) (assistSnapshot, int, error)
 		return assistSnapshot{}, http.StatusBadRequest, errBadRequest{"unknown command kind"}
 	}
 	s.seq++
-	ch := s.channel
+	s.channel.Publish(ev.Kind, ev)
+	snap := a.snapshotLocked(roleSupport, s)
 	a.mu.Unlock()
-
-	ch.Publish(ev.Kind, ev)
-	return a.snapshotFor(roleSupport, s), http.StatusOK, nil
+	return snap, http.StatusOK, nil
 }
 
 // snapshotOf returns a role's view of a session id, nil-safe so a
@@ -517,10 +534,8 @@ func (a *assistApp) presence(s *assistSession, r role, delta int) {
 		s.supConns += delta
 	}
 	s.seq++
-	ev := assistEvent{Kind: "presence", Online: a.onlineLocked(s, r), Role: r}
-	ch := s.channel
+	s.channel.Publish("presence", assistEvent{Kind: "presence", Online: a.onlineLocked(s, r), Role: r})
 	a.mu.Unlock()
-	ch.Publish("presence", ev)
 }
 
 func (a *assistApp) onlineLocked(s *assistSession, r role) bool {
@@ -537,9 +552,8 @@ func (a *assistApp) setMedia(s *assistSession, up bool) {
 	a.mu.Lock()
 	s.mediaUp = up
 	s.seq++
-	ch := s.channel
+	s.channel.Publish("media", assistEvent{Kind: "media", MediaUp: up})
 	a.mu.Unlock()
-	ch.Publish("media", assistEvent{Kind: "media", MediaUp: up})
 }
 
 // relaySignal forwards one signaling frame from `from` to the peer
@@ -552,7 +566,8 @@ func (a *assistApp) setMedia(s *assistSession, up bool) {
 // version must advance with it: a snapshot whose sequence trailed the
 // events a page had already applied would be rejected by the page's
 // reducer, and a reconnect would never rehydrate. Every Publish in
-// this file is paired with one s.seq increment for that reason.
+// this file is paired with one s.seq increment, under the same lock
+// hold, for that reason.
 func (a *assistApp) relaySignal(s *assistSession, from role, msg signalMessage) bool {
 	peer := roleOperator
 	if from == roleOperator {
@@ -573,11 +588,10 @@ func (a *assistApp) relaySignal(s *assistSession, from role, msg signalMessage) 
 	}
 	a.mu.Lock()
 	s.seq++
-	ch := s.channel
-	a.mu.Unlock()
-	ch.Publish("signal", assistEvent{Kind: "signal", Signal: &signalMessage{
+	s.channel.Publish("signal", assistEvent{Kind: "signal", Signal: &signalMessage{
 		From: from, To: peer, Type: msg.Type, Data: msg.Data,
 	}})
+	a.mu.Unlock()
 	return true
 }
 

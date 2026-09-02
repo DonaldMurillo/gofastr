@@ -82,6 +82,7 @@ func buildApp() *framework.App {
 	site.RegisterScreen(uiapp.NewScreen("/support", &SupportHomeScreen{}).WithTitle("Assist sessions"), nil)
 	site.RegisterScreen(uiapp.NewScreen("/support/session/{id}", &SupportConsoleScreen{}).WithTitle("Support console"), nil)
 	site.RegisterScreen(uiapp.NewScreen("/session/{id}", &OperatorScreen{}).WithTitle("Assist session"), nil)
+	site.RegisterScreen(uiapp.NewScreen("/join/{token}", &JoinScreen{}).WithTitle("Join assist session"), nil)
 
 	host := uihost.New(site,
 		// Every dead end is the same branded page: unknown session,
@@ -121,7 +122,10 @@ func buildApp() *framework.App {
 	support.Post("/session/{id}/clear", assist.handleManualForm(cmdClear))
 	operator := rt.Group("/session", sameOrigin, assist.requireOperator())
 	operator.Post("/{id}/ack", assist.handleAck())
-	rt.Get("/join/{token}", assist.handleJoin(host))
+	// The join link's GET renders a confirmation page and spends
+	// nothing, so a link previewer (chat unfurls, mail scanners) cannot
+	// burn the one-time token; the page's POST is the exchange.
+	rt.Post("/join/{token}", sameOrigin(assist.handleJoin(host))) //gofastr:allow(GOFASTR1902) the join exchange is the operator's credential: the one-time token in the path is what it checks
 
 	// ── Realtime: one channel per session, two role-scoped sockets ─
 	rt.Get("/support/session/{id}/ws", assist.handleWS(roleSupport))
@@ -243,6 +247,13 @@ func (a *assistApp) guard(host *uihost.UIHost) router.Middleware {
 						host.RenderScreen(w, r, &SessionGoneScreen{}, uihost.ScreenResponse{Status: http.StatusGone})
 						return
 					}
+				case "/join/:token":
+					// A spent or unknown token is the same 410 as a dead
+					// session; the check consumes nothing.
+					if !a.joinOpen(m.Param("token")) {
+						host.RenderScreen(w, r, &SessionGoneScreen{}, uihost.ScreenResponse{Status: http.StatusGone})
+						return
+					}
 				}
 			}
 			next.ServeHTTP(w, r)
@@ -316,9 +327,10 @@ func (a *assistApp) handleAck() http.Handler {
 	})
 }
 
-// handleJoin exchanges the one-time link for the operator cookie and
-// redirects to the operator page. A spent or unknown token renders the
-// same 410 screen a dead session does.
+// handleJoin is the confirmation page's POST: it exchanges the one-time
+// token for the operator cookie and redirects to the operator page. A
+// spent or unknown token renders the same 410 screen a dead session
+// does.
 func (a *assistApp) handleJoin(host *uihost.UIHost) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		sid, cookieValue, ok := a.exchangeJoin(router.Param(r, "token"))
