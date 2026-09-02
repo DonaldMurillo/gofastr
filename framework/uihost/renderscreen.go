@@ -2,7 +2,6 @@ package uihost
 
 import (
 	"fmt"
-	stdhtml "html"
 	"net/http"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
@@ -121,10 +120,7 @@ func (ds *UIHost) RenderScreen(w http.ResponseWriter, r *http.Request, comp comp
 			title = name + " — " + appName
 		}
 	}
-	shell := fmt.Sprintf(
-		`<!DOCTYPE html><html lang="%s"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>%s</title></head><body>%s</body></html>`,
-		stdhtml.EscapeString(ds.EffectiveLang()), stdhtml.EscapeString(title), string(body))
-	page := ds.injectChrome(shell, r.URL.Path, "", "")
+	page := ds.injectChrome(ds.documentShell(title, string(body)), r.URL.Path, "", "")
 	w.WriteHeader(status)
 	fmt.Fprint(w, page)
 }

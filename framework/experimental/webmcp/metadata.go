@@ -198,6 +198,10 @@ func validateMetadata(t *Tool) (string, error) {
 	if err := json.Unmarshal(t.InputSchema, &sk); err != nil {
 		return "examples", fmt.Errorf("webmcp: Register(%q): InputSchema is too malformed to validate examples against: %v", t.Name, err)
 	}
+	// Clone the slice before its elements: the caller owns the backing
+	// array too, and a Summary reassigned after Register would otherwise
+	// rewrite the manifest frozen at Mount.
+	t.Examples = slices.Clone(t.Examples)
 	for i := range t.Examples {
 		// Clone: the caller owns the RawMessage backing arrays.
 		t.Examples[i].Input = append(json.RawMessage(nil), t.Examples[i].Input...)

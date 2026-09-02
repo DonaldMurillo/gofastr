@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/router"
 )
@@ -299,5 +300,41 @@ func TestHandleConditionalRegistrationIsAtomic(t *testing.T) {
 				t.Fatalf("disabled: route=%d tools=%+v", rec.Code, tools)
 			}
 		}
+	}
+}
+
+// Two wildcard patterns that overlap without one being more specific
+// ("/api/{id}" and "/api/{name}") pass the identical-pattern pre-flight
+// but make net/http's ServeMux panic inside rt.Handle. That panic must
+// come back as Handle's error, leave nothing registered, and never hold
+// the host lock: a Register afterwards still works.
+func TestHandleOverlappingPatternsIsAnError(t *testing.T) {
+	h := New()
+	rt := router.New()
+	ok := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(204) })
+	first := validTool()
+	first.Name, first.Method, first.Path = "get_by_id", http.MethodGet, "/api/{id}"
+	if err := h.Handle(rt, first, ok); err != nil {
+		t.Fatalf("first Handle: %v", err)
+	}
+	second := validTool()
+	second.Name, second.Method, second.Path = "get_by_name", http.MethodGet, "/api/{name}"
+	done := make(chan error, 1)
+	go func() { done <- h.Handle(rt, second, ok) }()
+	select {
+	case err := <-done:
+		if err == nil || !strings.Contains(err.Error(), "conflicts") {
+			t.Fatalf("overlapping pattern: err = %v, want a route-conflict error", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Handle hung on an overlapping pattern (panic escaped with the lock held?)")
+	}
+	if len(h.tools) != 1 {
+		t.Fatalf("a failed Handle must register nothing; tools = %d", len(h.tools))
+	}
+	third := validTool()
+	third.Name, third.Path = "still_works", "/api/other"
+	if err := h.Register(third); err != nil {
+		t.Fatalf("Register after the failed Handle: %v (the host lock leaked)", err)
 	}
 }

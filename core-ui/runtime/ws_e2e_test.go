@@ -435,3 +435,91 @@ func TestWSCloseReasonNeverLogged(t *testing.T) {
 		}
 	}
 }
+
+// A channel whose source has never mutated sends its snapshot at
+// sequence 0, and that snapshot must hydrate: the reducer's "nothing
+// applied" mark sits below 0, not at it. A second sequence-0 snapshot
+// after event 1 is still rejected.
+func TestWSReducerAppliesSequenceZeroSnapshot(t *testing.T) {
+	mux := http.NewServeMux()
+	script := wsConsoleTap + `
+    __gofastr.loadModule('ws').then(() => {
+      const reduce = __gofastr.createSequencedReducer({ n: -1 }, (s, env) => ({ n: env.payload.n }));
+      const r1 = reduce({ sequence: 0, type: 'snapshot', payload: { n: 0 } });
+      const r2 = reduce({ sequence: 1, type: 'ev', payload: { n: 1 } });
+      const r3 = reduce({ sequence: 0, type: 'snapshot', payload: { n: 0 } });
+      window.__res = [r1, r2, r3];
+      window.__done = true;
+    });
+  `
+	base := wsTestPage(t, mux, script)
+	ctx := newSeedBrowserCtx(t)
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/"),
+		chromedp.WaitVisible(`#ready`, chromedp.ByID),
+		chromedp.Poll(`window.__done === true`, nil, chromedp.WithPollingTimeout(10*time.Second)),
+	); err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	var raw string
+	if err := chromedp.Run(ctx, chromedp.Evaluate(`JSON.stringify(window.__res.map(r => [r.applied, r.state.n]))`, &raw)); err != nil {
+		t.Fatal(err)
+	}
+	if raw != `[[true,0],[true,1],[false,1]]` {
+		t.Fatalf("sequence-0 hydration: %s, want [[true,0],[true,1],[false,1]]", raw)
+	}
+}
+
+// hydrated and resyncComplete are bound to the generation the caller
+// names and to the phase order open → hydrated → resynced: a stale
+// completion from an earlier generation, or a resync before hydration,
+// is refused instead of advancing the current generation.
+func TestWSLifecycleBoundToGeneration(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
+		conn, err := wsHandshake(w, r)
+		if err != nil {
+			return
+		}
+		// Hold the socket open until the test ends.
+		buf := make([]byte, 1)
+		_, _ = conn.Read(buf)
+		_ = conn.Close()
+	})
+	script := wsConsoleTap + `
+    __gofastr.loadModule('ws').then(() => {
+      const url = 'ws://' + location.host + '/ws';
+      const h = __gofastr.connectWebSocket(url, {
+        onGenerationStart: ({ generation }) => {
+          const r = [];
+          r.push(h.resyncComplete(generation));        // before hydrated: refused
+          r.push(h.hydrated(5, generation + 1));       // wrong generation: refused
+          r.push(h.status.phase);                      // still open
+          r.push(h.hydrated(5, generation));           // right generation: applies
+          r.push(h.hydrated(5, generation));           // once per generation
+          r.push(h.resyncComplete(generation + 1));    // wrong generation: refused
+          r.push(h.resyncComplete(generation));        // right generation: applies
+          r.push(h.status.phase);
+          window.__res = r;
+          window.__done = true;
+        },
+      });
+    });
+  `
+	base := wsTestPage(t, mux, script)
+	ctx := newSeedBrowserCtx(t)
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/"),
+		chromedp.WaitVisible(`#ready`, chromedp.ByID),
+		chromedp.Poll(`window.__done === true`, nil, chromedp.WithPollingTimeout(10*time.Second)),
+	); err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	var raw string
+	if err := chromedp.Run(ctx, chromedp.Evaluate(`JSON.stringify(window.__res)`, &raw)); err != nil {
+		t.Fatal(err)
+	}
+	if raw != `[false,false,"open",true,false,false,true,"resynced"]` {
+		t.Fatalf("lifecycle binding: %s, want [false,false,\"open\",true,false,false,true,\"resynced\"]", raw)
+	}
+}

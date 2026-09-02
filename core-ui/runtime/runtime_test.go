@@ -468,13 +468,14 @@ func TestRuntimeModule_Menu(t *testing.T) {
 			t.Errorf("menu module missing %q", want)
 		}
 	}
-	// 4400, up from 4000: the caller-owned trigger-element path
-	// (#369 — wrapper scan/aria wiring, click toggle, Tab close) grew
-	// the module ~880 minified bytes. The gzip budget in budget_test.go
-	// stays the load-bearing gate (~1.3 KB of its 3 KB line); this raw
+	// 4700, up from 4000: the caller-owned trigger-element path
+	// (#369 — wrapper scan/aria wiring, click toggle, Tab close, Space
+	// on anchor triggers, closing the submenu chain with the root) grew
+	// the module ~1.1 KB minified. The gzip budget in budget_test.go
+	// stays the load-bearing gate (~1.4 KB of its 3 KB line); this raw
 	// line is the tripwire and moves with the feature.
-	if size := ModuleSize("menu"); size > 4400 {
-		t.Errorf("menu module is %d bytes — budget is 4400", size)
+	if size := ModuleSize("menu"); size > 4700 {
+		t.Errorf("menu module is %d bytes — budget is 4700", size)
 	}
 }
 

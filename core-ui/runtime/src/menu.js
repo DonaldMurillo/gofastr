@@ -127,6 +127,18 @@
     el.setAttribute('aria-expanded', d.open ? 'true' : 'false');
   };
 
+  // closeChain closes a trigger menu AND every submenu still open
+  // inside it: the panel is hidden when the root closes, so a submenu
+  // left open would reappear expanded on the next open.
+  const closeChain = (d) => {
+    for (const sub of d.querySelectorAll('details[open]')) sub.removeAttribute('open');
+    d.removeAttribute('open');
+  };
+  const toggleTrigger = (d) => {
+    if (d.open) closeChain(d);
+    else d.setAttribute('open', '');
+  };
+
   document.addEventListener('click', (e) => {
     if (e.defaultPrevented) return;
     const t = e.target;
@@ -136,7 +148,7 @@
     const d = detailsOfTrigger(w);
     if (!d) return;
     e.preventDefault();
-    d.toggleAttribute('open');
+    toggleTrigger(d);
   });
 
 
@@ -151,7 +163,19 @@
       const w = t && t.closest && t.closest(TRIGGER_WRAP);
       if (w) {
         const d = detailsOfTrigger(w);
-        if (d) d.removeAttribute('open');
+        if (d) closeChain(d);
+      }
+    }
+    // Space activates a native <button> (the click above handles it)
+    // but not an <a>; an anchor trigger must still open on Space, and
+    // the page must not scroll.
+    if (e.key === ' ' && e.target && e.target.closest && e.target.matches('a')) {
+      const w = e.target.closest(TRIGGER_WRAP);
+      const d = w && detailsOfTrigger(w);
+      if (d) {
+        e.preventDefault();
+        toggleTrigger(d);
+        return;
       }
     }
     const item = e.target && e.target.closest && e.target.closest(ITEM);

@@ -126,6 +126,16 @@ func TestStoreCallOnRunIsBounded(t *testing.T) {
 func TestSendReturnsWhenClientHangsUp(t *testing.T) {
 	h := newHarness(t, nil)
 	release := make(chan struct{})
+	// A server-side witness: the request handler's return, independent
+	// of the client's own deadline. Under the previous code (an
+	// unconditional wait on the run) the client still timed out, but
+	// this channel would not close until release.
+	returned := make(chan struct{})
+	front := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h.srv.ServeHTTP(w, r)
+		close(returned)
+	}))
+	t.Cleanup(front.Close)
 	h.setHandler(func(ctx context.Context, tc TaskContext) error {
 		if err := tc.Working(); err != nil {
 			return err
@@ -140,16 +150,19 @@ func TestSendReturnsWhenClientHangsUp(t *testing.T) {
 	body := `{"jsonrpc":"2.0","id":"c1","method":"SendMessage","params":{"message":{"role":"ROLE_USER","parts":[{"text":"hi"}],"metadata":{"skill":"echo"}}}}`
 	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
 	defer cancel()
-	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, h.ts.URL, strings.NewReader(body))
+	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, front.URL, strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Owner", "alice")
-	started := time.Now()
 	_, err := http.DefaultClient.Do(req)
 	if err == nil {
 		t.Fatal("the request must fail on the client's own deadline while the handler blocks")
 	}
-	if time.Since(started) > 2*time.Second {
-		t.Fatalf("client hang-up took %v to surface", time.Since(started))
+	// The property: the server handler returned because the client
+	// left, BEFORE the run was released.
+	select {
+	case <-returned:
+	case <-time.After(2 * time.Second):
+		t.Fatal("handleSend did not return after the client hung up; it is still waiting on the run")
 	}
 	// The run is still alive and completes once released.
 	_, e, _ := h.call("alice", MethodListTasks, map[string]any{"status": string(TaskStateWorking)})

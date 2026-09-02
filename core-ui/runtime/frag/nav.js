@@ -112,7 +112,10 @@
   // Truth for THIS document is the live DOM (a stale manifest entry
   // must never lend this document's capabilities to a route); the
   // destination's entry carries the empty set when unknown. Compare
-  // sorted src lists: the manifest array is sorted server-side.
+  // sorted src lists joined on a newline: the manifest array is sorted
+  // server-side, and a newline can never appear in a registered src
+  // (the rail rejects control characters), so unlike a comma it cannot
+  // make two different sets read as one string.
   const crossesDocBoundary = (destPath) => {
     const de = routeEntry(destPath);
     const dest = (de && de.docScripts) || [];
@@ -122,7 +125,7 @@
       if (v) srcs.push(v);
     }
     srcs.sort();
-    return srcs.join() !== dest.join();
+    return srcs.join('\n') !== dest.join('\n');
   };
 
   // Cache the initial page so back-navigation to it works instantly.

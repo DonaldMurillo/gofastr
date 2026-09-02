@@ -158,7 +158,7 @@ srv.AddBytes("/__w/depth.js", "text/javascript; charset=utf-8", false, workerJS,
 
 The worker policy is a fixed skeleton plus validated tokens:
 
-```
+```text
 default-src 'self'; script-src 'self' <keywords>; connect-src 'none'|'self'; worker-src 'self'; object-src 'none'
 ```
 

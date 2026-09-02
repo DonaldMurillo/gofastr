@@ -13,6 +13,12 @@ import (
 // createSequencedReducer) applies an envelope only when its sequence is
 // strictly greater than the last applied one, so a delayed snapshot can
 // never resurrect state a newer event already replaced.
+//
+// Sequence is a uint64 on the wire and a Number in the browser, which
+// compares exactly up to 2^53 (nine quadrillion events on one channel).
+// That bound is stated rather than engineered around: a string-or-BigInt
+// protocol would cost every consumer a conversion for a limit no
+// deployment reaches.
 type SequencedEnvelope[T any] struct {
 	Sequence uint64    `json:"sequence"`
 	Type     string    `json:"type"`

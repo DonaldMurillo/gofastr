@@ -281,3 +281,36 @@ func TestDocumentScriptRegistrationRefusals(t *testing.T) {
 		t.Error("registration after serving began = nil error, want refusal")
 	}
 }
+
+// The scope predicate sees one identity, the route pattern, at render
+// time and in the manifest alike: a predicate that accepts exactly
+// "/session/:id" still emits on "/session/42", and one that accepts a
+// concrete path never matches anything (there is no concrete path to
+// see). A predicate answering differently on the two sides was the
+// capability leak: manifest says in scope, page never emitted.
+func TestDocumentScriptScopeSeesRoutePattern(t *testing.T) {
+	ds := newTestUIHost()
+	ds.App.RegisterScreen(app.NewScreen("/session/:id", &setParamsComp{}).WithTitle("Session"), nil)
+	if err := ds.RegisterDocumentScript("/pat.js", func(path string) bool { return path == "/session/:id" }); err != nil {
+		t.Fatal(err)
+	}
+	if err := ds.RegisterDocumentScript("/concrete.js", func(path string) bool { return path == "/session/42" }); err != nil {
+		t.Fatal(err)
+	}
+	w := httptest.NewRecorder()
+	ds.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/session/42", nil))
+	body := w.Body.String()
+	if !strings.Contains(body, `<script src="/pat.js" data-fui-doc></script>`) {
+		t.Errorf("pattern-scoped script must emit on the concrete page:\n%s", truncate(body, 400))
+	}
+	if strings.Contains(body, `src="/concrete.js"`) {
+		t.Errorf("a predicate written against a concrete path must not match: the scope identity is the route pattern:\n%s", truncate(body, 400))
+	}
+	manifest := ds.buildRouteScriptUncached()
+	if !strings.Contains(manifest, `"docScripts":["/pat.js"]`) {
+		t.Errorf("manifest must list the pattern-scoped script for /session/:id:\n%s", truncate(manifest, 600))
+	}
+	if strings.Contains(manifest, "/concrete.js") {
+		t.Errorf("manifest must not list a script whose scope matches no route pattern")
+	}
+}

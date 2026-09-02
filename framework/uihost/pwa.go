@@ -379,9 +379,7 @@ func (ds *UIHost) PWAOfflineHTML() string {
 		body = html.Heading(html.HeadingConfig{Level: 1}, render.Text("You're offline")) +
 			html.Paragraph(html.TextConfig{}, render.Text("This page isn't available without a connection. Reconnect and try again."))
 	}
-	shell := fmt.Sprintf(
-		`<!DOCTYPE html><html lang="%s"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Offline — %s</title></head><body><main role="main">%s</main></body></html>`,
-		stdhtml.EscapeString(ds.EffectiveLang()), stdhtml.EscapeString(cfg.Name), string(body))
+	shell := ds.documentShell("Offline — "+cfg.Name, `<main role="main">`+string(body)+`</main>`)
 	// bundle=false (same as RenderStaticPage): component CSS must be
 	// direct per-component links. The bundle URL depends on the page's
 	// component set: precaching it would answer every OTHER page's

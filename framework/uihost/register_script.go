@@ -64,13 +64,12 @@ func (ds *UIHost) RegisterExternalScript(src string) error {
 // across an edge loads the destination fresh, so a document only ever
 // carries its own capabilities.
 //
-// scope is called with the page path: the concrete request path when a
-// page renders ("/session/42") and the route pattern when the manifest
-// is built ("/session/:id"). Write prefix-style predicates
-// (strings.HasPrefix(path, "/session/")) so both calls agree; a
-// predicate that answers differently for a pattern and its concrete
-// paths degrades every in-scope navigation to a full load — safe, but
-// it forfeits the soft-nav cache.
+// scope is called with ONE identity, the registered route pattern in
+// the router's canonical ":param" form ("/session/:id"), both when a
+// page renders and when the route manifest is built. A request path
+// no screen matches (a 404 shell) is passed as itself. A predicate
+// therefore cannot answer differently for the same route on the two
+// sides, which is what keeps the client's boundary check truthful.
 //
 // src follows the same same-origin grammar as RegisterExternalScript.
 // A duplicate every-page registration is idempotent; a src already on

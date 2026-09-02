@@ -61,11 +61,14 @@ func TestExamplesClonedFromCaller(t *testing.T) {
 	in := json.RawMessage(`{"body":"hi"}`)
 	tl := validTool()
 	tl.InputSchema = json.RawMessage(`{"type":"object","properties":{"body":{"type":"string"}},"required":["body"]}`)
-	tl.Examples = []Example{{Input: in}}
+	tl.Examples = []Example{{Summary: "a", Input: in}}
 	if err := h.Register(tl); err != nil {
 		t.Fatal(err)
 	}
 	copy(in, `X"body":"by`)
+	// The slice elements are the caller's too: a Summary reassigned after
+	// Register must not rewrite the frozen manifest.
+	tl.Examples[0].Summary = "b"
 	rt := router.New()
 	if _, err := h.Mount(rt, nil); err != nil {
 		t.Fatal(err)
@@ -77,6 +80,9 @@ func TestExamplesClonedFromCaller(t *testing.T) {
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &m); err != nil {
 		t.Fatalf("manifest corrupted by caller-side mutation: %v", err)
+	}
+	if got := m.Tools[0].Examples[0].Summary; got != "a" {
+		t.Fatalf("manifest example summary = %q, want the value at Register time (the caller's slice was not cloned)", got)
 	}
 	if got := string(m.Tools[0].Examples[0].Input); got != `{"body":"hi"}` {
 		t.Fatalf("example aliased the caller's buffer: %s", got)

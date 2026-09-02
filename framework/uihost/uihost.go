@@ -1797,8 +1797,20 @@ func (ds *UIHost) injectChromeModeFor(page, pagePath, sessionID, presenceTopic s
 		bodyClose.WriteString(`<script src="/__gofastr/actions.js"></script>`)
 		bodyClose.WriteByte('\n')
 	}
+	// Document-lifetime scopes are asked about the ROUTE, not the
+	// concrete path: the same identity the manifest uses. A predicate
+	// that saw "/session/:id" when the manifest was built and
+	// "/session/42" here could answer differently, and a disagreement is
+	// a partial swap that keeps a capability the destination never
+	// emitted. An unregistered path (a 404 shell) is its own identity.
+	scopeKey := pagePath
+	if ds.App != nil && ds.App.Router != nil {
+		if screen, _, ok := ds.App.Router.Resolve(pagePath); ok && screen != nil {
+			scopeKey = screen.Path
+		}
+	}
 	for _, s := range ds.extraScripts {
-		if s.scope != nil && !s.scope(pagePath) {
+		if s.scope != nil && !s.scope(scopeKey) {
 			continue // document-lifetime script out of scope on this page
 		}
 		docAttr := ""
@@ -1961,14 +1973,7 @@ func (ds *UIHost) serveNotFound(w http.ResponseWriter, r *http.Request, path str
 		if ds.App.Name != "" {
 			appName = ds.App.Name
 		}
-		// Build a minimal document shell so injectChrome's strings.Replace
-		// targets (`<head>`, `</head>`, `<body>`) actually exist. Without
-		// this the customCSS / runtime / color-scheme bootstrap silently
-		// don't attach and the page renders as bare browser-default styles.
-		shell := fmt.Sprintf(
-			`<!DOCTYPE html><html lang="%s"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>404: %s</title></head><body>%s</body></html>`,
-			stdhtml.EscapeString(ds.EffectiveLang()), stdhtml.EscapeString(appName), string(body))
-		page := ds.injectChrome(shell, path, "", "")
+		page := ds.injectChrome(ds.documentShell("404: "+appName, string(body)), path, "", "")
 		w.WriteHeader(http.StatusNotFound)
 		fmt.Fprint(w, page)
 		return
@@ -2971,10 +2976,7 @@ func (ds *UIHost) serveMethodNotAllowedPage(w http.ResponseWriter, r *http.Reque
 	if ds.App != nil && ds.App.Name != "" {
 		appName = ds.App.Name
 	}
-	shell := fmt.Sprintf(
-		`<!DOCTYPE html><html lang="%s"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>405: %s</title></head><body>%s</body></html>`,
-		stdhtml.EscapeString(ds.EffectiveLang()), stdhtml.EscapeString(appName), string(body))
-	page := ds.injectChrome(shell, path, "", "")
+	page := ds.injectChrome(ds.documentShell("405: "+appName, string(body)), path, "", "")
 	w.WriteHeader(http.StatusMethodNotAllowed)
 	fmt.Fprint(w, page)
 }
@@ -3799,4 +3801,17 @@ func ReadCustomCSSFile(path string) string {
 		return ""
 	}
 	return string(data)
+}
+
+// documentShell is the one document envelope every host-rendered
+// fallback page (404, 405, recovery screens) is built from: a bare
+// <html> with charset and viewport meta, a title, and the body, so
+// injectChrome's `<head>` / `</head>` / `<body>` targets exist and the
+// runtime, theme, and colour-scheme bootstrap attach exactly as they
+// do on a registered screen. Title and lang are escaped here; body is
+// already-rendered HTML.
+func (ds *UIHost) documentShell(title, body string) string {
+	return fmt.Sprintf(
+		`<!DOCTYPE html><html lang="%s"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>%s</title></head><body>%s</body></html>`,
+		stdhtml.EscapeString(ds.EffectiveLang()), stdhtml.EscapeString(title), body)
 }

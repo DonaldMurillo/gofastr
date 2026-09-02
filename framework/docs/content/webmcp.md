@@ -244,9 +244,9 @@ a partial swap, and Back/Forward across the edge loads the destination
 fresh, so a document only ever carries its own tools. Navigations
 between two in-scope pages stay partial.
 
-The predicate receives the page path — the concrete request path when
-a page renders (`/session/42`) and the route pattern when the manifest
-is built (`/session/:id`) — so write it prefix-style. The scope is
+The predicate receives the registered route pattern (`/session/:id`),
+the same value at render time and when the manifest is built, so a
+route cannot be in scope on one side and out on the other. The scope is
 structural, not authorization: it decides which document carries the
 bridge, never who may fetch it. Keep `WithAssetAuthorization` (or
 endpoint auth) alongside, and `WithPageScope` when the assets

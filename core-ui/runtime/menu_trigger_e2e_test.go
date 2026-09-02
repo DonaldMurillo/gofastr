@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -297,5 +298,63 @@ func TestMenuTriggerTabCloses(t *testing.T) {
 	}
 	if topOpen != "false" {
 		t.Fatal("Tab from the caller's trigger must close its menu")
+	}
+}
+
+// menuTriggerAnchorFixture is the same menu with an <a> as the
+// caller's trigger: Space does not activate a native anchor, so the
+// module has to open the menu itself (and keep the page from
+// scrolling).
+var menuTriggerAnchorFixture = strings.Replace(menuTriggerFixture,
+	`<button type="button" class="rounded-full">Open user menu</button>`,
+	`<a href="/account" class="rounded-full">Open user menu</a>`, 1)
+
+func TestMenuTriggerAnchorOpensOnSpace(t *testing.T) {
+	g := startGadgetServer(t, `[]`, menuTriggerAnchorFixture)
+	ctx := newSeedBrowserCtx(t)
+	var open, href string
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(g.Srv.URL+"/"),
+		chromedp.WaitVisible(`#ready`, chromedp.ByID),
+		chromedp.Sleep(700*time.Millisecond),
+		chromedp.Focus(`a.rounded-full`, chromedp.ByQuery),
+		chromedp.SendKeys(`a.rounded-full`, " ", chromedp.ByQuery),
+		chromedp.Sleep(150*time.Millisecond),
+		menuTriggerOpen(&open),
+		chromedp.Evaluate(`location.pathname`, &href),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if open != "true" {
+		t.Fatalf("anchor trigger: menu open after Space = %s, want true", open)
+	}
+	if href != "/" {
+		t.Fatalf("Space on the anchor trigger navigated to %s; activation must be prevented", href)
+	}
+}
+
+// Tab from the trigger closes the whole chain: a submenu left open
+// inside a closed root would reappear expanded on the next open.
+func TestMenuTriggerTabClosesSubmenuToo(t *testing.T) {
+	g := startGadgetServer(t, `[]`, menuTriggerFixture)
+	ctx := newSeedBrowserCtx(t)
+	var topOpen, subOpen string
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(g.Srv.URL+"/"),
+		chromedp.WaitVisible(`#ready`, chromedp.ByID),
+		chromedp.Sleep(700*time.Millisecond),
+		chromedp.Evaluate(menuTriggerClick, nil),
+		chromedp.Sleep(150*time.Millisecond),
+		chromedp.Evaluate(`document.querySelector('details[data-fui-menu="um-panel-sub-1"]').setAttribute('open','')`, nil),
+		chromedp.Focus(`button.rounded-full`, chromedp.ByQuery),
+		chromedp.SendKeys(`button.rounded-full`, kb.Tab, chromedp.ByQuery),
+		chromedp.Sleep(150*time.Millisecond),
+		menuTriggerOpen(&topOpen),
+		menuTriggerSubOpen(&subOpen),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if topOpen != "false" || subOpen != "false" {
+		t.Fatalf("after Tab from the trigger: top open = %s, submenu open = %s, want both false", topOpen, subOpen)
 	}
 }

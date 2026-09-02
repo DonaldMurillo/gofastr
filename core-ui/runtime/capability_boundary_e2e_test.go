@@ -332,6 +332,8 @@ func TestBackForwardRestoresDocCapabilities(t *testing.T) {
 	if err := chromedp.Run(ctx, chromedp.Evaluate(`history.forward(); true`, nil)); err != nil {
 		t.Fatalf("forward: %v", err)
 	}
+	waitForURL(t, ctx, "/c")
+	waitFor(t, ctx, `!!document.getElementById('screen-c')`, 10*time.Second)
 	if ok, _ := evalBool(ctx, `typeof window.__fuiCap !== 'undefined'`); ok {
 		t.Error("forward to the unscoped page still carries the capability")
 	}

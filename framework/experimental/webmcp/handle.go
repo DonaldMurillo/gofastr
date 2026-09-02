@@ -78,11 +78,10 @@ func (h *Host) Handle(rt *router.Router, t Tool, handler http.Handler, opts ...H
 		// returned error BEFORE anything is registered, keeping "a failed
 		// Handle leaves nothing behind" true. Routes() reports full
 		// (prefix-joined) patterns.
-		full := rt.Prefix() + pattern
 		for _, route := range rt.Routes() {
-			if route.Method == t.Method && route.Pattern == full {
+			if route.Method == t.Method && route.Pattern == full(rt, pattern) {
 				class = "route_conflict"
-				err = fmt.Errorf("webmcp: Handle(%q): %s %s is already registered on this router; one endpoint cannot serve two tool declarations (and the manifest must not advertise a path the router would panic on)", t.Name, t.Method, full)
+				err = fmt.Errorf("webmcp: Handle(%q): %s %s is already registered on this router; one endpoint cannot serve two tool declarations (and the manifest must not advertise a path the router would panic on)", t.Name, t.Method, full(rt, pattern))
 				break
 			}
 		}
@@ -99,9 +98,19 @@ func (h *Host) Handle(rt *router.Router, t Tool, handler http.Handler, opts ...H
 		if h.observer != nil {
 			final = h.observeHandler(t, final)
 		}
-		rt.Handle(t.Method, pattern, final)
-		h.names[t.Name] = true
-		h.tools = append(h.tools, t)
+		// The pre-flight above catches identical patterns; net/http's
+		// ServeMux also refuses two patterns that overlap without one
+		// being more specific ("/api/{id}" against "/api/{name}"), and
+		// it reports that by panicking inside rt.Handle. Convert the
+		// panic into the returned error the contract promises, and
+		// never let it escape with h.mu held.
+		if perr := registerRoute(rt, t.Method, pattern, final); perr != nil {
+			class = "route_conflict"
+			err = fmt.Errorf("webmcp: Handle(%q): %s %s conflicts with a route already on this router: %v", t.Name, t.Method, full(rt, pattern), perr)
+		} else {
+			h.names[t.Name] = true
+			h.tools = append(h.tools, t)
+		}
 	}
 	h.mu.Unlock()
 	if err != nil {
@@ -118,4 +127,19 @@ func pathPortion(p string) string {
 		return p[:i]
 	}
 	return p
+}
+
+// full is the prefix-joined pattern the router reports for a registration.
+func full(rt *router.Router, pattern string) string { return rt.Prefix() + pattern }
+
+// registerRoute wraps rt.Handle so a ServeMux registration panic
+// (overlapping wildcard patterns) becomes an error.
+func registerRoute(rt *router.Router, method, pattern string, h http.Handler) (err error) {
+	defer func() {
+		if p := recover(); p != nil {
+			err = fmt.Errorf("%v", p)
+		}
+	}()
+	rt.Handle(method, pattern, h)
+	return nil
 }

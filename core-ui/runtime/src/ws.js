@@ -23,9 +23,12 @@
   // replaced: sequence <= applied is rejected, whatever its payload.
   // apply(state, envelope, sequence) returns the next state; the
   // reducer returns { applied, state, appliedSequence }.
+  // appliedSequence starts at -1, "nothing applied": a channel whose
+  // source has never mutated sends its hydration snapshot at sequence
+  // 0, and that snapshot must apply.
   NS.createSequencedReducer = (initialState, apply) => {
     let state = initialState;
-    let appliedSequence = 0;
+    let appliedSequence = -1;
     return (envelope) => {
       const seq = envelope ? Number(envelope.sequence) : NaN;
       if (!Number.isFinite(seq) || seq <= appliedSequence) {
@@ -48,7 +51,7 @@
   //
   // opts (all optional):
   //   onGenerationStart({generation, resumedAfterSequence}) - socket open
-  //   onHydrated({generation, snapshotSequence})            - handle.hydrated()
+  //   onHydrated({generation, snapshotSequence})            - handle.hydrated(seq, gen)
   //   onGenerationEnd({generation, reasonClass})            - socket gone
   //   onMessage({data, raw, generation})                    - data: parsed JSON or null
   //   reconnect: false disables reconnect (default true)
@@ -135,8 +138,14 @@
         return true;
       },
       // The application applied the reconnect snapshot; snapshotSequence
-      // defaults to the highest sequence observed. Once per generation.
-      hydrated: (snapshotSequence) => {
+      // defaults to the highest sequence observed. Once per generation,
+      // and only for the CURRENT generation: pass the generation the
+      // snapshot came from (onGenerationStart / onMessage carry it) so
+      // an async apply from generation 1 finishing after generation 2
+      // opened cannot mark generation 2 hydrated.
+      hydrated: (snapshotSequence, forGeneration) => {
+        if (forGeneration !== undefined && forGeneration !== generation) return false;
+        if (status.phase !== 'open') return false;
         if (hydratedGeneration === generation) return false;
         hydratedGeneration = generation;
         const seq = Number.isFinite(Number(snapshotSequence)) ? Number(snapshotSequence) : status.lastSequence;
@@ -146,8 +155,13 @@
         return true;
       },
       // The application finished resynchronizing its protocol (media,
-      // presence, whatever) on this generation. Once per generation.
-      resyncComplete: () => {
+      // presence, whatever) on this generation. Once per generation,
+      // only after hydrated, and only for the generation named (same
+      // rule as hydrated): the phases are open → hydrated → resynced,
+      // never out of order.
+      resyncComplete: (forGeneration) => {
+        if (forGeneration !== undefined && forGeneration !== generation) return false;
+        if (status.phase !== 'hydrated') return false;
         if (resyncGeneration === generation) return false;
         resyncGeneration = generation;
         status.phase = 'resynced';

@@ -107,10 +107,9 @@ func (c *mountConfig) requesterDependent() bool {
 // back/forward across the edge loads the destination fresh, so a
 // document only ever carries its own tools.
 //
-// The predicate takes the page path: the concrete request path when a
-// page renders ("/session/42") and the route pattern when the manifest
-// is built ("/session/:id"). Write it prefix-style
-// (strings.HasPrefix(path, "/session/")) so both calls agree.
+// The predicate takes the registered route pattern ("/session/:id"),
+// the same value at render time and when the manifest is built, so a
+// route cannot be in scope on one side and out on the other.
 //
 // Page scope is structural, not authorization: it decides which
 // DOCUMENT carries the bridge, never who may fetch the assets. Keep
