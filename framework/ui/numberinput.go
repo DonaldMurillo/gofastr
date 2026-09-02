@@ -29,7 +29,10 @@ type NumberInputConfig struct {
 	// Label is the accessible label (required, used as <label for=…>).
 	Label string
 	// Min / Max bound the value. When both 0, no client-side bound is
-	// applied (server is still authoritative).
+	// applied (server is still authoritative). When either is set, Min
+	// is a real floor even at 0 (Max: 10 means 0..10); a caller that
+	// allows negatives sets Min explicitly. Max is emitted only when
+	// non-zero, so Min: 1 alone never fabricates an empty 1..0 range.
 	Min int
 	Max int
 	// Step is the +/- button granularity. Default 1.
@@ -97,10 +100,11 @@ func NumberInput(cfg NumberInputConfig) render.HTML {
 		"step":  strconv.Itoa(step),
 		"value": strconv.Itoa(cfg.Value),
 	}
-	// Each bound is emitted only when declared: a Min-only config must
-	// not fabricate max="0" (an empty range), and a Max-only config must
-	// not fabricate min="0" (forbidding the negatives the caller allows).
-	if cfg.Min != 0 {
+	// min is emitted whenever a bound is declared: the documented zero
+	// floor is what a Min: 0, Max: N caller means (the site's quantity
+	// field). max is emitted only when declared, so a Min-only config
+	// never fabricates max="0", an empty range.
+	if cfg.Min != 0 || cfg.Max != 0 {
 		inputAttrs["min"] = strconv.Itoa(cfg.Min)
 	}
 	if cfg.Max != 0 {

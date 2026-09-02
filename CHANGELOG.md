@@ -169,7 +169,7 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   reference pages address versioned entities at their real base path and
   render one section per registered version; `sdk.PackZip` refuses a
   prefix that escapes the extraction directory.
-- **UI**: `NumberInput` emits each bound only when declared, `TagInput`
+- **UI**: `NumberInput` never fabricates `max="0"` beside a positive Min (a zero Min beside a Max stays the documented floor), `TagInput`
   caps server-rendered values at `MaxLength`, a `Section`'s heading id
   follows its explicit `ID`, filter pill ids get an ordinal suffix only
   when two options fold to one slug, `FontFaceCSS` neutralizes

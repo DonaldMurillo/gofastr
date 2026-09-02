@@ -10,13 +10,13 @@ import (
 
 // Property: a numeric input's declared bounds must describe the range
 // the caller intended. NumberInput uses the int zero value as "unset"
-// (its doc: "When both 0, no client-side bound is applied"), but the
-// emitter gates on `Min != 0 || Max != 0` and then writes BOTH
-// attributes — so a one-sided bound silently fabricates the other side
-// at zero. Min-only produces min="1" max="0": an EMPTY valid range,
-// every value invalid. Max-only produces min="0": negative values the
-// caller never forbade are rejected. NumberField (pointer bounds) is
-// the correct contrast and is pinned green below.
+// only when BOTH bounds are zero (its doc: "When both 0, no client-side
+// bound is applied"); once either is set, Min is a real floor even at 0
+// (Max: 10 means 0..10, the site's quantity field), and a caller that
+// allows negatives says so with an explicit negative Min. What must
+// never happen is a fabricated max="0" beside a positive Min: that is
+// an EMPTY valid range, every value invalid. NumberField (pointer
+// bounds) is the correct contrast and is pinned green below.
 func TestNumberInputOneSidedBoundBadRange(t *testing.T) {
 	t.Run("min-only-fabricates-empty-range", func(t *testing.T) {
 		h := string(ui.NumberInput(ui.NumberInputConfig{
@@ -29,15 +29,23 @@ func TestNumberInputOneSidedBoundBadRange(t *testing.T) {
 			t.Errorf("NumberInput dropped the declared lower bound:\n%s", h)
 		}
 	})
-	t.Run("max-only-fabricates-zero-floor", func(t *testing.T) {
+	t.Run("max-only-keeps-the-documented-zero-floor", func(t *testing.T) {
 		h := string(ui.NumberInput(ui.NumberInputConfig{
-			Name: "n", Label: "N", Max: 10, Value: -2,
+			Name: "n", Label: "N", Max: 10, Value: 2,
 		}))
-		if strings.Contains(h, `min="0"`) {
-			t.Errorf("RED: NumberInput Max-only emitted min=\"0\", silently forbidding the negative values the caller allowed:\n%s", h)
+		if !strings.Contains(h, `min="0"`) {
+			t.Errorf("NumberInput Max-only dropped the documented zero floor (Max: 10 means 0..10):\n%s", h)
 		}
 		if !strings.Contains(h, `max="10"`) {
 			t.Errorf("NumberInput dropped the declared upper bound:\n%s", h)
+		}
+	})
+	t.Run("explicit-negative-min-is-honoured", func(t *testing.T) {
+		h := string(ui.NumberInput(ui.NumberInputConfig{
+			Name: "n", Label: "N", Min: -2, Max: 10, Value: -1,
+		}))
+		if !strings.Contains(h, `min="-2"`) || !strings.Contains(h, `max="10"`) {
+			t.Errorf("NumberInput rewrote an explicit negative floor:\n%s", h)
 		}
 	})
 }
