@@ -39,7 +39,7 @@ func RegisterFrameClientRoute(rt *router.Router) {
 		return
 	}
 	rt.Get(FrameClientScriptURL, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		writeAsset(w, r, frameClientJSBytes, "text/javascript; charset=utf-8", true, nil)
+		writeAsset(w, r, frameClientJSBytes, "text/javascript; charset=utf-8", responsePolicy{framed: true})
 	}))
 }
 

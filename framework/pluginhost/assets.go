@@ -159,12 +159,20 @@ type AssetServer struct {
 	csp    []string      // per-plugin script-src keywords from [Manifest.CSP], set via [AssetServer.WithCSP]
 }
 
-// loadedAsset is a byte-backed asset (host-page script served outside the FS).
+// loadedAsset is a byte-backed asset (host-page script or trusted worker
+// served outside the FS).
 type loadedAsset struct {
 	path        string
 	contentType string
 	framed      bool
-	bytes       []byte
+	// worker is non-nil for a trusted host-page worker carrying its own
+	// response policy. Mutually exclusive with framed: [AssetServer.AddBytes]
+	// panics on the combination.
+	worker *WorkerCSP
+	// cache is the cache posture; [CacheDefault] keeps the pre-profile
+	// header.
+	cache CacheProfile
+	bytes []byte
 }
 
 // NewAssetServer builds an AssetServer that reads the named specs lazily from
@@ -191,14 +199,39 @@ func (s *AssetServer) WithCSP(tokens []string) *AssetServer {
 }
 
 // AddBytes registers an asset from pre-loaded bytes at an explicit full route
-// path. Use it for host-page scripts (the broker adapter) that are not part of
-// the framed FS. framed should be false for host scripts. An empty contentType
-// is derived from route's extension, as for [AssetSpec.ContentType].
-func (s *AssetServer) AddBytes(route, contentType string, framed bool, b []byte) {
+// path. Use it for host-page scripts (the broker adapter) and trusted
+// host-page workers that are not part of the framed FS. framed should be
+// false for host scripts. An empty contentType is derived from route's
+// extension, as for [AssetSpec.ContentType].
+//
+// opts customise the asset: [WithWorkerCSP] marks a trusted host-page worker
+// and names the narrow policy its own response carries, [WithCache] sets an
+// explicit cache posture. Both are validated HERE, at registration — a token
+// outside the allowlists, a worker profile on a framed asset, or an unknown
+// cache profile panics at boot with the cause, the same posture
+// [AssetServer.Register] takes on a nil fs.FS.
+func (s *AssetServer) AddBytes(route, contentType string, framed bool, b []byte, opts ...AssetOption) {
+	var o assetOptions
+	for _, opt := range opts {
+		opt(&o)
+	}
+	if o.worker != nil {
+		if framed {
+			panic("pluginhost: WithWorkerCSP on a framed asset: the framed policy is fixed by the platform — register the worker separately with framed=false")
+		}
+		if err := validateWorkerProfile(*o.worker); err != nil {
+			panic(err.Error())
+		}
+	}
+	if !o.cache.valid() {
+		panic("pluginhost: unknown cache profile " + strconv.Itoa(int(o.cache)))
+	}
 	s.extra = append(s.extra, loadedAsset{
 		path:        route,
 		contentType: resolveContentType(route, contentType),
 		framed:      framed,
+		worker:      o.worker,
+		cache:       o.cache,
 		bytes:       b,
 	})
 }
@@ -256,7 +289,7 @@ func (s *AssetServer) serveFS(spec AssetSpec) http.HandlerFunc {
 			http.NotFound(w, r)
 			return
 		}
-		writeAsset(w, r, b, contentType, spec.Framed, s.csp)
+		writeAsset(w, r, b, contentType, responsePolicy{framed: spec.Framed, csp: s.csp})
 	}
 }
 
@@ -283,12 +316,32 @@ func resolveContentType(name, declared string) string {
 
 func (s *AssetServer) serveBytes(a loadedAsset) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		writeAsset(w, r, a.bytes, a.contentType, a.framed, s.csp)
+		writeAsset(w, r, a.bytes, a.contentType, responsePolicy{
+			framed: a.framed,
+			csp:    s.csp,
+			worker: a.worker,
+			cache:  a.cache,
+		})
 	}
 }
 
-// writeAsset emits the bytes with a fixed Content-Type and a dev Cache-Control,
-// then, for framed assets only, applies the framing/CORP/CSP relaxation.
+// responsePolicy is the per-asset header posture [writeAsset] applies: which
+// relaxation (framed plugin frame, trusted worker, or none) and the cache
+// posture. framed and worker are mutually exclusive by construction —
+// [AssetServer.AddBytes] panics on the combination — so writeAsset can apply
+// them as independent branches; the invariant lives at registration, not in
+// every handler.
+type responsePolicy struct {
+	framed bool
+	csp    []string   // framed keyword extensions from [Manifest.CSP]
+	worker *WorkerCSP // trusted host-page worker profile; nil = not a worker
+	cache  CacheProfile
+}
+
+// writeAsset emits the bytes with a fixed Content-Type and the profile's
+// Cache-Control, then applies exactly one relaxation: the framing/CORP/CSP
+// one for framed assets, or the worker's own narrow policy for a trusted
+// host-page worker.
 //
 // GoFastr's global security middleware sends anti-embedding headers on EVERY
 // response: X-Frame-Options: DENY, CSP frame-ancestors 'none', and
@@ -307,13 +360,20 @@ func (s *AssetServer) serveBytes(a loadedAsset) http.HandlerFunc {
 //     the load-bearing framing permission.
 //   - Cross-Origin-Resource-Policy: cross-origin, so the opaque ("null") frame
 //     may fetch these public, secret-free static assets.
-func writeAsset(w http.ResponseWriter, r *http.Request, b []byte, contentType string, framed bool, csp []string) {
+//
+// A trusted worker changes nothing but its own response's CSP. No framing
+// relaxation (a script response is never framed), no CORP relaxation (the
+// host page fetches the worker same-origin), so every global header —
+// including the document CSP on every OTHER response — passes through
+// untouched. That is the point: the relaxation is per-worker, never
+// per-document.
+func writeAsset(w http.ResponseWriter, r *http.Request, b []byte, contentType string, p responsePolicy) {
 	h := w.Header()
 	// A framed asset's CSP is keyed to a request-controlled origin; a bad
 	// origin means we cannot build a safe policy, so refuse rather than serve
 	// the untrusted document with no / a poisoned CSP.
 	var origin string
-	if framed {
+	if p.framed {
 		var ok bool
 		origin, ok = requestOrigin(r)
 		if !ok {
@@ -324,15 +384,17 @@ func writeAsset(w http.ResponseWriter, r *http.Request, b []byte, contentType st
 	h.Set("Content-Type", contentType)
 	// Never let a browser MIME-sniff a plugin asset into a more dangerous type.
 	h.Set("X-Content-Type-Options", "nosniff")
-	// no-store (not no-cache): these dev assets carry no cache validator, and the
-	// frame document references editor.js/css by an un-versioned relative path, so
-	// a stale browser copy could otherwise linger across rebuilds. no-store forces
-	// a fresh fetch every load. (A prod build would content-hash the URLs instead.)
-	h.Set("Cache-Control", "no-store, max-age=0")
-	if framed {
+	// The cache posture is the profile's exact header; CacheDefault is the
+	// historical dev posture (no-store: un-versioned paths, no validators,
+	// a stale copy must not linger across rebuilds — see [CacheProfile]).
+	h.Set("Cache-Control", p.cache.cacheControl())
+	if p.framed {
 		h.Del("X-Frame-Options")
-		h.Set("Content-Security-Policy", framedCSP(origin, csp))
+		h.Set("Content-Security-Policy", framedCSP(origin, p.csp))
 		h.Set("Cross-Origin-Resource-Policy", "cross-origin")
+	}
+	if p.worker != nil {
+		h.Set("Content-Security-Policy", workerCSP(*p.worker))
 	}
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(b)
