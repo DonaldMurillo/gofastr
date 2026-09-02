@@ -430,7 +430,7 @@
       if (cfg.closeOnClick) {
         const oh = (e) => {
           if (w.contains(e.target)) return;
-          const trigger = e.target.closest('[data-fui-open="' + cfg.name + '"]');
+          const trigger = e.target.closest('[data-fui-open="' + CSS.escape(cfg.name) + '"]');
           if (trigger) return;
           dismiss();
         };

@@ -173,11 +173,14 @@
   })();
   const _modulePromises = {};
   function loadModule(name) {
-    if (window.__gofastr.loadedModules?.[name]) {
+    const lm = window.__gofastr.loadedModules;
+    if (lm && own(lm, name) && lm[name]) {
       return Promise.resolve();
     }
-    if (_modulePromises[name]) return _modulePromises[name];
-    _modulePromises[name] = new Promise((resolve, reject) => {
+    if (own(_modulePromises, name) && _modulePromises[name]) {
+      return _modulePromises[name];
+    }
+    const modPromise = new Promise((resolve, reject) => {
       // Module names come from DOM attributes (data-fui-prefetch,
       // data-behavior), so they are caller input. Without a shape check
       // a "../../../evil" token normalizes out of the runtime serve
@@ -200,7 +203,8 @@
       };
       document.head.appendChild(s);
     });
-    return _modulePromises[name];
+    _modulePromises[name] = modPromise;
+    return modPromise;
   }
 
   // Live compositions keep one document-level bridge so a click or submit
@@ -542,7 +546,8 @@
       if (name === 'rpc' && document.__fuiStaticDispatch) continue;
       // Skip if the module is already loaded, its own internal scanner
       // takes care of newly inserted DOM via the MutationObserver.
-      if (window.__gofastr.loadedModules?.[name]) continue;
+      const lm = window.__gofastr.loadedModules;
+      if (lm && own(lm, name) && lm[name]) continue;
       // Test the scope node ITSELF as well as its descendants: a
       // lazily-mounted widget root appended to <body> carries root
       // markers (data-fui-drag-dismiss) on the node handed to us.

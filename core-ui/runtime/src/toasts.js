@@ -34,7 +34,10 @@
     items.forEach((item) => {
       const id = item.getAttribute('data-fui-toast-id');
       present[id] = true;
-      if (NS._toastTimers[id]) return; // already wired
+      // Own-prop read: ids are attribute-borne (data-fui-toast-id), an
+      // inherited member like "constructor" would read as already
+      // wired and the toast would never arm its dismiss timer.
+      if (Object.prototype.hasOwnProperty.call(NS._toastTimers, id) && NS._toastTimers[id]) return; // already wired
       const ttl = parseInt(item.getAttribute('data-fui-toast-ttl-ms') || '0', 10);
       if (ttl > 0) {
         const rec = { remaining: ttl, startedAt: Date.now(), timer: 0 };
@@ -79,7 +82,7 @@
   NS._dismissToast = function (item, id) {
     if (!item || item.classList.contains('is-leaving')) return;
     item.classList.add('is-leaving');
-    const rec = NS._toastTimers[id];
+    const rec = Object.prototype.hasOwnProperty.call(NS._toastTimers, id) ? NS._toastTimers[id] : undefined;
     if (rec) { clearTimeout(rec.timer); delete NS._toastTimers[id]; }
     const cs = getComputedStyle(item);
     const ms = parseFloat(cs.animationDuration) * 1000 || 200;

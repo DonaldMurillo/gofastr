@@ -85,7 +85,7 @@
     let resyncGeneration = 0;
 
     const hook = (name, info) => {
-      if (typeof o[name] === 'function') { try { o[name](info); } catch (_) {} }
+      if (Object.prototype.hasOwnProperty.call(o, name) && typeof o[name] === 'function') { try { o[name](info); } catch (_) {} }
     };
 
     const endGeneration = (reasonClass) => {

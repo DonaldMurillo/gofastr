@@ -40,6 +40,8 @@ boot	4	el
 boot	4	idleQueue
 boot	4	init
 boot	4	key
+boot	4	lm
+boot	4	modPromise
 boot	4	name
 boot	4	names
 boot	4	node
@@ -63,6 +65,7 @@ boot	6	enctype
 boot	6	form
 boot	6	form
 boot	6	id
+boot	6	lm
 boot	6	mode
 boot	6	msg
 boot	6	name
@@ -147,6 +150,7 @@ kernel	2	currentPath
 kernel	2	doc
 kernel	2	docEl
 kernel	2	handlers
+kernel	2	own
 kernel	2	registerRoutes
 kernel	2	routes
 kernel	2	state
@@ -181,6 +185,7 @@ kernel	6	session
 kernel	6	sessionCookie
 kernel	6	text
 kernel	6	trimmed
+kernel	6	v
 kernel	8	c
 kernel	8	el
 kernel	8	key

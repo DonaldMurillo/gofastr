@@ -28,7 +28,7 @@
         unset signals. Used by data-fui-signal-inc and data-fui-signal-toggle
         to read-modify-write without an RPC round-trip. */
     getSignal(name) {
-      const s = this._signals[name];
+      const s = own(this._signals, name) ? this._signals[name] : undefined;
       return s ? s.value : undefined;
     },
     /** Push a value into a named signal and reflect it into all
@@ -47,7 +47,7 @@
         console.warn('[gofastr] refused reserved signal name:', name);
         return;
       }
-      let s = this._signals[name];
+      let s = own(this._signals, name) ? this._signals[name] : undefined;
       if (!s) { s = this._signals[name] = { value: undefined, listeners: [] }; }
       // opts.untrusted marks a value that came from the URL (the
       // deep-link seed in widgets.js). Recorded on the signal so the
@@ -170,7 +170,7 @@
 
     /** Read the current value of a named signal. */
     signal(name) {
-      return this._signals[name]?.value;
+      return (own(this._signals, name) ? this._signals[name] : undefined)?.value;
     },
   });
 

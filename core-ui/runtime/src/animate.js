@@ -45,8 +45,15 @@
     if (!G) return;
 
     // Ensure the signal slot exists so we can attach a listener.
-    if (!G._signals[name]) {
-      G._signals[name] = { value: undefined, listeners: [] };
+    // Own-prop read: an inherited Object.prototype member ("toString")
+    // must not pass the truthiness gate and leave the slot missing —
+    // the listeners.push below would then throw and drop the wiring.
+    let slot = Object.prototype.hasOwnProperty.call(G._signals, name)
+      ? G._signals[name]
+      : undefined;
+    if (!slot) {
+      slot = { value: undefined, listeners: [] };
+      G._signals[name] = slot;
     }
 
     // Avoid double-wiring on SPA re-scan.
@@ -62,14 +69,14 @@
     };
 
     // Subscribe to future changes.
-    G._signals[name].listeners.push(apply);
+    slot.listeners.push(apply);
 
     // Remember the subscription so we can tear it down on SPA navigation.
     el.__fuiAnimateEntry = { name: name, apply: apply };
     wired.add(el);
 
     // Apply current value immediately.
-    apply(G._signals[name].value);
+    apply(slot.value);
   };
 
   // Remove subscriptions for elements that left the document. Called on

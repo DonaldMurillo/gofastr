@@ -56,7 +56,7 @@
     };
     const markActive = (id) => {
       clearActive();
-      const a = anchorByID[id];
+      const a = Object.prototype.hasOwnProperty.call(anchorByID, id) ? anchorByID[id] : undefined;
       if (a) {
         a.classList.add('is-active');
         a.setAttribute('aria-current', 'true');

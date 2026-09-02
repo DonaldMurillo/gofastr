@@ -7,35 +7,33 @@ import (
 )
 
 const (
-	// 12984, raised 176 bytes from 12808 on 2026-09-01 for #372's
-	// document-capability boundary, under the same documented RULE
-	// EXCEPTION as every raise below: the shrink was measured, not
-	// skipped.
+	// 13063, raised 79 bytes from 12984 on 2026-09-02 for the
+	// prototype-chain registry guards (branch w/rules-E), under the
+	// same documented RULE EXCEPTION as every raise below: the shrink
+	// was measured, not skipped.
 	//
-	// What bought the bytes: crossesDocBoundary and its four gates in
-	// the nav fragment. A script registered document-scoped
-	// (data-fui-doc on the tag, docScripts in the route manifest)
-	// installs capabilities INTO the document — WebMCP's
-	// navigator.modelContext tools are the case — and removing the tag
-	// does not uninstall them, so a soft swap across the scope's edge
-	// would leave the destination document carrying the origin's
-	// capabilities. Every soft-nav entry point (click hijack, navigate,
-	// popstate, loadPage's redirect leg) must compare the destination's
-	// manifest set against the live document's tags and stand down for
-	// a real document load.
+	// What bought the bytes: own-property reads on the {} registries
+	// keyed by attribute-borne names — loadModule's loadedModules /
+	// _modulePromises gates, _scanForModules' skip, and the kernel
+	// signal store's getSignal/setSignal/signal/getState/syncBindings
+	// reads, all via one shared `own()` helper in the kernel fragment.
+	// A module name like "constructor" (attribute-borne through
+	// data-fui-prefetch, and legal under the loader's /^[\w-]+$/ shape
+	// gate) resolves through Object.prototype as a truthy entry: the
+	// module reads as loaded and never loads, the cached "promise" is
+	// the inherited Object, and a signal slot that should have been
+	// created is treated as existing. The same class the audit's
+	// e936f791 fixes pinned for the widget catalog; these are the
+	// sites the runtime-shape lints (core-ui/check) found beyond it.
 	//
-	// It cannot be carved into a demand module: the click gate runs
-	// synchronously before preventDefault, before any pointerover
-	// prefetch could be relied on, and a cold module at keyboard-Enter
-	// time is a missed boundary, which is the capability leak the check
-	// exists to stop — the same fatal-for-the-path class as the confirm
-	// gate and the click bridge.
+	// It cannot be carved into a demand module: the loader IS the
+	// choke point that loads demand modules, and the signal store is
+	// kernel core read by every fragment.
 	//
-	// The merged bundle measures 12976 at level 6; the cheapest correct
-	// spelling (sorted-src join compare, one helper) is what ships. The
-	// line carries 8 bytes of clearance, the same margin the 12808 raise
-	// used. Re-measure after a merge, not before.
-	coreGoalGZ = 12*1024 + 696
+	// The merged bundle measures 13055 at level 6; the line carries 8
+	// bytes of clearance, the same margin the 12984 raise used.
+	// Re-measure after a merge, not before.
+	coreGoalGZ = 12*1024 + 771
 	// 14.7 KB, not the 14 KB initial congestion window it started as.
 	//
 	// The window is still the constraint that matters, and the artifact still
@@ -83,16 +81,13 @@ const (
 	// reported more headroom than exists. The value below was re-measured
 	// on the merged bundle, which is the only measurement that means
 	// anything. Re-measure after a merge, not before.
-	// 14984, raised 196 bytes from 14788 on 2026-09-01 under the same
-	// exception recorded on coreGoalGZ above, for the same change
-	// (#372's document-capability boundary gates; see that comment).
-	// The real merged bundle measures 14981 at level 1; the line carries
-	// 3 bytes of clearance. The ceiling bracket above (14800–14825)
-	// moved with the bundle: with core sitting 8 bytes under the level-6
-	// goal, the fixture's level-1 size (14991) sits 10 bytes over the
-	// real bundle's, and the line was verified against the cliff test by
+	// 15076, raised 92 bytes from 14984 on 2026-09-02 under the same
+	// exception recorded on coreGoalGZ above, for the same change (the
+	// prototype-chain registry guards; see that comment). The real
+	// merged bundle measures 15073 at level 1; the line carries 3 bytes
+	// of clearance, and the move was verified against the cliff test by
 	// running it, not by arithmetic.
-	coreCongestionWindowGZ = 14*1024 + 648
+	coreCongestionWindowGZ = 14*1024 + 740
 )
 
 func coreBudgetViolation(t *testing.T, src string, budget int) (level, got, limit int) {

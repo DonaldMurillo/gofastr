@@ -32,7 +32,7 @@
   function updatePreviews(input) {
     if (!input.hasAttribute('data-fui-dropzone-preview')) return;
     const container = document.querySelector(
-      '[data-fui-dropzone-preview-for="' + input.id + '"]'
+      '[data-fui-dropzone-preview-for="' + CSS.escape(input.id) + '"]'
     );
     if (!container) return;
     container.innerHTML = '';

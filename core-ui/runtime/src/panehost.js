@@ -61,7 +61,9 @@
     }
     return s;
   };
-  const paneEl = (host, pane) => host.querySelector('[data-fui-pane="' + pane + '"]');
+  // CSS.escape: pane values arrive from data-fui-pane-* attributes; the
+  // sibling key lookup below (line ~154) already established the idiom.
+  const paneEl = (host, pane) => host.querySelector('[data-fui-pane="' + CSS.escape(pane) + '"]');
   const has = (host, pane) => !!paneEl(host, pane);
   const topmost = (host) => { const k = st(host).stack; return k.length ? k[k.length - 1] : null; };
   const sibling = (pane) => (pane === 'secondary' ? 'tertiary' : 'secondary');
