@@ -34,8 +34,9 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   host Playwright contract that pins `getByText` to the first visible
   match or `getByLabel` to exactly one element, or SEO that must not
   index hidden row text. Host JS that binds rows by id at page load
-  needs delegated listeners instead. The zero value renders the exact
-  bytes it did before.
+  needs delegated listeners instead, and with JavaScript disabled the
+  menu opens empty. The zero value renders the exact bytes it did
+  before.
 
 ### Fixed
 - **Analyzers, contract rules, and runtime lints**: five reviewers

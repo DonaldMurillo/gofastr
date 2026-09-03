@@ -219,7 +219,9 @@ type MenuConfig struct {
 	// one, and SEO crawlers that would otherwise index hidden row
 	// text. The cost: rows are not in the DOM until first open, so
 	// host JS that binds rows by id at page load must use delegated
-	// listeners instead. The zero value (false) renders rows inline
+	// listeners instead, and with JavaScript disabled the menu opens
+	// empty (only the disclosure module mounts the rows). The zero
+	// value (false) renders rows inline
 	// exactly as before — byte-identical output. Applies to the
 	// summary path and TriggerElement alike; nested submenus live
 	// inside the template and mount with the rest.
