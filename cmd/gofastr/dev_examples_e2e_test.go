@@ -59,6 +59,9 @@ func TestE2E_DevLoop_Examples(t *testing.T) {
 				// The child resolves isolation from its cwd; a linked worktree
 				// would silently remap the polled port.
 				"GOFASTR_ISOLATION=off",
+				// The generated apps refuse to seed their admin on a fresh
+				// database without this and exit; CI has no .env to supply it.
+				"ADMIN_SEED_PASSWORD=dev-loop-examples-admin-seed-2026", // not-a-secret: test fixture
 			)
 			var out syncBuffer
 			dev.Stdout = &out
