@@ -240,7 +240,7 @@ jobs:
         run: |
           # shellcheck disable=SC2046  # word splitting of go list output is intended
           go test -timeout=20m -p 2 \
-            -skip 'TestBlueprintCLIGeneratesEntireWorkingAppE2E|TestE2E_HotReload_BrowserAutoRefreshes|TestLivereloadSameBuildIDDoesNotReload' \
+            -skip 'TestBlueprintCLIGeneratesEntireWorkingAppE2E|TestE2E_HotReload_BrowserAutoRefreshes|TestLivereloadSameBuildIDDoesNotReload|TestE2E_DevLoop_Examples' \
             $(go list ./... | grep -vE 'gofastr/(examples/site|examples/meridian|kiln/integration|core-ui/runtime|core-ui/widget|evals/ui-quality/internal/evalrunner)$')
 
       - name: Race detector (concurrency packages)
@@ -411,8 +411,11 @@ jobs:
             # Every cmd/gofastr test that drives a real Chrome, the
             # blueprint app E2E plus the two dev livereload browser tests.
             # Kept out of the deterministic step so the websocket connect
-            # isn't starved by parallel package load.
-            run: go test -count=1 -timeout=10m -run 'TestBlueprintCLIGeneratesEntireWorkingAppE2E|TestE2E_HotReload_BrowserAutoRefreshes|TestLivereloadSameBuildIDDoesNotReload' ./cmd/gofastr/
+            # isn't starved by parallel package load. TestE2E_DevLoop_Examples
+            # (builds and boots every example under `gofastr dev`) rides
+            # here too: it needs no Chrome, but its eleven builds would
+            # push the deterministic job past its 20m budget.
+            run: go test -count=1 -timeout=15m -run 'TestBlueprintCLIGeneratesEntireWorkingAppE2E|TestE2E_HotReload_BrowserAutoRefreshes|TestLivereloadSameBuildIDDoesNotReload|TestE2E_DevLoop_Examples' ./cmd/gofastr/
           - suite: core-ui-runtime
             # The runtime hydration suite launches a real Chrome per test
             # binary; under the deterministic job's -p 2 package
