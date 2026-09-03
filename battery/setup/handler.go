@@ -18,7 +18,7 @@ import (
 //     validates, runs the step, and advances or re-renders on error.
 //   - Atomic exit: when the final step succeeds, swap() is called to
 //     switch to the real app handler. Step execution is serialized and
-//     Complete is re-checked under the mutex so two racing submissions
+//     Complete is re-checked on every claim so two racing submissions
 //     can't both run the steps.
 func (r *Runner) Handler(swap func(), healthz, readyz http.HandlerFunc) http.Handler {
 	r.mu.Lock()
@@ -242,13 +242,33 @@ func (r *Runner) handleSubmit(w http.ResponseWriter, req *http.Request) {
 // r.mu (callbackunderlock pins this), and a panic must reach the
 // net/http recover net rather than skip a plain Unlock.
 //
-// Exactly-once survives the lock release through stepInFlight: the
-// claim (currentStep check + Complete re-check + flag) and the advance
-// are each atomic under mu, and a concurrent POST for the same step
-// finds the flag set and treats the step as already-advanced. A FAILED
-// step clears the flag and leaves currentStep where it was, so the
-// retry path is unchanged.
+// The Complete re-check ALSO runs outside the mutex, for the same
+// reason: Complete is app-supplied callback code too. It used to fire
+// while r.mu was held with no deferred unlock registered yet, so a
+// panicking Complete left the mutex locked and wedged every later
+// setup request; a slow one blocked them all. Exactly-once survives
+// the probe leaving the lock through stepInFlight: the claim
+// (currentStep check + stepInFlight check + flag) and the advance are
+// each atomic under mu, and a concurrent POST for the same step finds
+// the flag set and treats the step as already-advanced. A FAILED step
+// clears the flag and leaves currentStep where it was, so the retry
+// path is unchanged.
 func (r *Runner) runStepSerialized(ctx context.Context, stepIdx int, step Step, values map[string]string) error {
+	// Re-check Complete before taking the mutex.
+	//
+	// A probe ERROR is not "not done", it is "unknown", and this guard is
+	// the only thing standing between a second caller and a re-run of a
+	// step that typically creates the admin account. Refuse rather than
+	// proceed: a failed setup step is recoverable, a silently re-run one
+	// is not.
+	done, err := r.cfg.Complete(ctx)
+	if err != nil {
+		return fmt.Errorf("setup: completion check failed, refusing to run step: %w", err)
+	}
+	if done {
+		return nil
+	}
+
 	r.mu.Lock()
 	// Re-check: if a concurrent request already advanced past this
 	// step, skip (treat as already-advanced).
@@ -259,24 +279,6 @@ func (r *Runner) runStepSerialized(ctx context.Context, stepIdx int, step Step, 
 	// Another request is running this step right now (it released the
 	// mutex to do so): treat as already-advanced.
 	if r.stepInFlight {
-		r.mu.Unlock()
-		return nil
-	}
-
-	// Re-check Complete: if setup already finished (concurrent path),
-	// don't re-run.
-	//
-	// A probe ERROR is not "not done", it is "unknown", and this guard is
-	// the only thing standing between a second caller and a re-run of a
-	// step that typically creates the admin account. Refuse rather than
-	// proceed: a failed setup step is recoverable, a silently re-run one
-	// is not.
-	done, err := r.cfg.Complete(ctx)
-	if err != nil {
-		r.mu.Unlock()
-		return fmt.Errorf("setup: completion check failed, refusing to run step: %w", err)
-	}
-	if done {
 		r.mu.Unlock()
 		return nil
 	}

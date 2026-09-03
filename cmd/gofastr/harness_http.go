@@ -51,7 +51,25 @@ func startHTTPListener(h *xharness.Harness, sess ids.SessionID, bindAddr string)
 	// callers can query it via /v1/sessions/<id>.
 	h.Catalog.RegisterEngine(h.Mux.EngineFor(sess))
 
-	// Bind first: the Host/Origin guards below must be pinned to the
+	// Token is generated FIRST, before the listener opens: it depends
+	// on nothing net.Listen produces, and encoding it after Listen
+	// meant an encode failure returned with the socket still open —
+	// repeated startup failures leaked listening sockets. The chat
+	// page embeds it in a meta tag so the inline JS can use it for
+	// fetch + EventSource without round-tripping through a separate
+	// /auth endpoint.
+	token, err = enc.Encode(auth.Claims{
+		Ver:           auth.VerCurrent,
+		JTI:           ids.NewJTI(),
+		Sessions:      []ids.SessionID{sess},
+		IdentityClass: control.IdentityHuman,
+		ExpiresAt:     time.Now().Add(24 * time.Hour).Unix(),
+	})
+	if err != nil {
+		return "", "", nil, fmt.Errorf("encode harness token: %w", err)
+	}
+
+	// Bind: the Host/Origin guards below must be pinned to the
 	// authority we actually got, which for the default "127.0.0.1:0"
 	// is only known after Listen picks the ephemeral port.
 	ln, lerr := net.Listen("tcp", bindAddr)
@@ -79,21 +97,6 @@ func startHTTPListener(h *xharness.Harness, sess ids.SessionID, bindAddr string)
 		Revocations:    revs,
 		AllowedHosts:   hosts,
 		AllowedOrigins: origins,
-	}
-
-	// Token is generated before mux so we can hand it to the SSR
-	// chat page. The page embeds it in a meta tag so the inline JS
-	// can use it for fetch + EventSource without round-tripping
-	// through a separate /auth endpoint.
-	token, err = enc.Encode(auth.Claims{
-		Ver:           auth.VerCurrent,
-		JTI:           ids.NewJTI(),
-		Sessions:      []ids.SessionID{sess},
-		IdentityClass: control.IdentityHuman,
-		ExpiresAt:     time.Now().Add(24 * time.Hour).Unix(),
-	})
-	if err != nil {
-		return "", "", nil, fmt.Errorf("encode harness token: %w", err)
 	}
 
 	mux := http.NewServeMux()

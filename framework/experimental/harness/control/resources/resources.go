@@ -138,8 +138,11 @@ func (c *Catalog) ListProviders(ctx context.Context) []ProviderInfo {
 		if err != nil {
 			// The catalog is display-only; a refused listing degrades
 			// to an empty model list rather than a failed page, but
-			// the refusal is logged rather than dropped.
+			// the refusal is logged rather than dropped. Models may
+			// come back partially built alongside the error — those
+			// entries are not vouched for, so drop them too.
 			slog.Warn("harness control: listing models", "provider", p.Name(), "error", err)
+			models = nil
 		}
 		out = append(out, ProviderInfo{Name: p.Name(), Models: models})
 	}

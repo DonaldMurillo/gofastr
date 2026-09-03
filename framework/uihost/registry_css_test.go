@@ -327,6 +327,73 @@ func TestComponentCSS_RejectsInvalidNames(t *testing.T) {
 	}
 }
 
+// registerUnsafeNameStyle registers a component whose NAME would
+// rewrite the /__gofastr/comp/<name>.css path ("/", the exact char the
+// marker charset and validNameRe refuse). registry.RegisterStyle
+// validates non-emptiness only, so such an entry can exist; the CSS
+// link generation and both CSS handlers must refuse to serve it.
+func registerUnsafeNameStyle(t *testing.T, name string, opts ...registry.Option) {
+	t.Helper()
+	registry.RegisterStyle(name, func(style.Theme) string {
+		return ".x{color:red}"
+	}, opts...)
+}
+
+// TestComponentCSS_DirectLinkRefusesUnsafeName: a LoadAlways entry
+// outside the marker charset reaches componentCSSTags via EagerNames
+// (Scan's marker regex cannot produce it). The direct-link path must
+// fail closed: no <link> for it at all, rather than a link whose href
+// the name rewrites.
+func TestComponentCSS_DirectLinkRefusesUnsafeName(t *testing.T) {
+	registry.IsolateForTest(t)
+	registerUnsafeNameStyle(t, "evil-a/../escape", registry.WithLoad(registry.LoadAlways))
+
+	ds := newTestUIHost()
+	body := pageBody(t, ds, "/")
+	if strings.Contains(body, `href="/__gofastr/comp/`) {
+		t.Errorf("unsafe component name must not emit a direct <link> (it rewrites the comp path):\n%s", truncate(body, 800))
+	}
+	if strings.Contains(body, "comp-bundle.css") {
+		t.Errorf("unsafe component name must not appear in a bundle URL either:\n%s", truncate(body, 800))
+	}
+}
+
+// TestComponentCSS_ServeRefusesRegisteredUnsafeName: unlike
+// TestComponentCSS_RejectsInvalidNames (unregistered names, where a
+// missing Lookup would 404 anyway), this registers the unsafe name so
+// ONLY validNameRe stands between the request and the stylesheet. The
+// guard, not the registry miss, must produce the 404.
+func TestComponentCSS_ServeRefusesRegisteredUnsafeName(t *testing.T) {
+	registry.IsolateForTest(t)
+	// The "/" is %2F-encoded in the request so the router does not
+	// path-clean it into a redirect before the handler runs.
+	registerUnsafeNameStyle(t, "serve-evil/a/b")
+
+	ds := newTestUIHost()
+	req := httptest.NewRequest("GET", "/__gofastr/comp/serve-evil%2Fa%2Fb.css", nil)
+	w := httptest.NewRecorder()
+	ds.ServeHTTP(w, req)
+	if w.Code != 404 {
+		t.Errorf("registered unsafe name must 404 (validNameRe), got %d body=%s", w.Code, w.Body.String())
+	}
+}
+
+// TestComponentCSS_BundleRefusesRegisteredUnsafeName: same property on
+// the bundle handler — a REGISTERED unsafe name in ?names= must be
+// rejected by validNameRe, not served because Lookup succeeds.
+func TestComponentCSS_BundleRefusesRegisteredUnsafeName(t *testing.T) {
+	registry.IsolateForTest(t)
+	registerUnsafeNameStyle(t, "bundle-evil/a/../b")
+
+	ds := newTestUIHost()
+	req := httptest.NewRequest("GET", "/__gofastr/comp-bundle.css?names=bundle-evil/a/../b", nil)
+	w := httptest.NewRecorder()
+	ds.ServeHTTP(w, req)
+	if w.Code != 404 {
+		t.Errorf("registered unsafe name in bundle must 404 (validNameRe), got %d body=%s", w.Code, w.Body.String())
+	}
+}
+
 func TestComponentCSS_BundleEmitsBundleAttr(t *testing.T) {
 	a := registerTestStyle(t, "battr-a")
 	b := registerTestStyle(t, "battr-b")

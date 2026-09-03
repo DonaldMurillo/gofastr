@@ -1,8 +1,11 @@
 package queue
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"log/slog"
+	"strings"
 	"testing"
 	"time"
 )
@@ -40,6 +43,46 @@ func TestDurableSchedulerWatermarkCASUsesVersionNotTimestamps(t *testing.T) {
 	}
 	if version != 1 {
 		t.Fatalf("watermark version = %d, want 1", version)
+	}
+}
+
+// TestDurableSchedulerHookPanicLogsAndCommits: the partition hook
+// fires on the scheduler loop, which has no per-request net, so a
+// panicking hook must be logged and swallowed while the occurrence
+// commit continues — the recover guard in hookBeforeOccurrenceCommit
+// is what keeps a poison hook from wedging every schedule.
+func TestDurableSchedulerHookPanicLogsAndCommits(t *testing.T) {
+	db := openDurableSchedulerDB(t)
+	q := newDurableTestQueue(t, db)
+	base := time.Date(2026, 7, 18, 12, 0, 0, 0, time.UTC)
+	sched, err := NewDurableScheduler(q, DurableSchedulerConfig{
+		OwnerID: "hook-panic", LeaseDuration: time.Minute,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := sched.Every("digest", time.Minute).Job("send-digest", nil).RegisterAt(base); err != nil {
+		t.Fatal(err)
+	}
+
+	var buf bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, nil)))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	sched.beforeOccurrenceCommit = func() { panic("hook boom") }
+
+	if err := sched.RunOnce(context.Background(), base.Add(time.Minute)); err != nil {
+		t.Fatalf("RunOnce must continue past a panicking hook: %v", err)
+	}
+	if jobs := pendingJobs(t, q); len(jobs) != 1 {
+		t.Fatalf("occurrence commit did not continue: pending jobs = %d, want 1", len(jobs))
+	}
+	if got := occurrenceStatuses(t, q)["enqueued"]; got != 1 {
+		t.Fatalf("enqueued occurrences = %d, want 1", got)
+	}
+	if !strings.Contains(buf.String(), "hook boom") {
+		t.Fatalf("panicking hook not logged; log = %q", buf.String())
 	}
 }
 
