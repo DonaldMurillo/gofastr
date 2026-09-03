@@ -1,10 +1,11 @@
 // Package rootwrite catches writes whose containment under a root is
 // resolved lexically only: os.WriteFile / os.Create / os.OpenFile(write
-// flag) / os.MkdirAll on a path built with filepath.Join(root, …) where
-// root is a caller-supplied parameter or field — with no
-// filepath.EvalSymlinks anywhere on the path-producing chain — plus the
-// archive twin: zip.Writer entry names assembled from a parameter with
-// no path.Clean in the function.
+// flag) / os.MkdirAll on a path built under a root — filepath.Join, or
+// a flat `root + "/" + x` concatenation — where the root is a
+// caller-supplied parameter or field — with no filepath.EvalSymlinks
+// on that path's chain — plus the archive twin: zip.Writer entry names
+// assembled from a parameter with no path.Clean on the entry-name
+// chain.
 //
 // The bug class: lexical prefix checks cannot see symlinks. Probes
 // TestApplyRefusesSymlinkEscape (framework/contracts report.go
@@ -15,31 +16,37 @@
 // in 1501a555: a "../" prefix placed archive entries above the target
 // directory on extract).
 //
+// Every gate is per write and on the write's own dataflow: resolution,
+// validation, and cleaning on an unrelated path (or consulted for a
+// boolean and leaving the path components untouched) gate nothing.
+//
 // Silent postures, deliberately:
-//   - any filepath.EvalSymlinks on the chain (writing function, or the
-//     same-package helper that produced the path) — the fix posture;
-//   - roots that are not parameters or root/base/dir-named fields: a
+//   - the write's path (or a component of it, or the Join's root) is
+//     bound to a filepath.EvalSymlinks result, or an EvalSymlinks ran
+//     on this path expression — resolution on the chain (the fix
+//     posture);
+//   - calls to symlink-named guards (EnsureNoSymlinkPath): resolution
+//     by another name;
+//   - a sanitizer/validator whose RESULT replaces a joined component
+//     (sanitize(name) feeding the Join): the component that reaches
+//     the disk passed through it. A validator consulted for its
+//     boolean cannot see symlinks and gates nothing;
+//   - roots that are not parameters or root/base/dir-named fields (a
 //     constant or computed root has no caller-controlled boundary to
-//     defend;
-//   - joins whose every non-root argument is a literal: nothing
-//     caller-controlled is appended under the root;
+//     defend), including a rooty local resolved through one;
+//   - builds whose every non-root argument is a literal — nothing
+//     caller-controlled is appended under the root. This holds at the
+//     helper hop too: a same-package containment helper called with
+//     literal-only non-root arguments stays quiet, and a helper whose
+//     body resolves symlinks is the fix posture;
 //   - temp roots: a local bound to os.MkdirTemp or t.TempDir is
 //     throwaway by construction;
 //   - zip entry names assembled only from literals or non-parameter
-//     values, and any function that calls path.Clean / filepath.Clean;
+//     values (a wrapper forwarding its own name parameter composes
+//     nothing), and entry names whose assembly is bound to a
+//     path.Clean / filepath.Clean result;
 //   - reads (os.Open, os.ReadFile, O_RDONLY) by construction;
 //   - _test.go files.
-//
-// Narrowed 2026-09-02 after the whole-repo run: a direct Join must
-// carry a caller-controlled (parameter-derived) component beside the
-// root — formatted timestamps, counters, manifest literals, and
-// generated ids are not escape vectors — and zip entry names must be
-// COMPOSED from a parameter, not forwarded through a wrapper whose own
-// callers compose. Calls to symlink-named guards (EnsureNoSymlinkPath)
-// count as resolution. A same-package containment helper (rooty first
-// parameter joined with the rest) feeding a write still fires when
-// neither side resolves symlinks: that is the containedPath/Apply pair
-// this rule was born from.
 package rootwrite
 
 import (
@@ -57,6 +64,19 @@ var Analyzer = &analysis.Analyzer{
 	Doc:  "forbids writes under a root whose containment is lexical only: resolve with filepath.EvalSymlinks, and path.Clean zip entry names",
 	Run:  run,
 }
+
+// validatorRe matches sanitizer/validator callee names: only their
+// RESULT replacing a path component shields a write. "clean" is NOT
+// here: path.Clean normalizes separators and dots and passes every
+// symlinked component through, so a clean-named callee shields only
+// when it resolves to a same-package declaration (cleanNamedRe below)
+// and never when it is a stdlib normalizer.
+var validatorRe = regexp.MustCompile(`(?i)sanit|valid|safe`)
+
+// cleanNamedRe matches the clean-shaped helper names that still shield
+// when the callee is a declaration of this package (cleanName), never
+// the stdlib Clean.
+var cleanNamedRe = regexp.MustCompile(`(?i)clean`)
 
 func run(pass *analysis.Pass) (any, error) {
 	pkgFuncs := map[string]*ast.FuncDecl{}
@@ -86,15 +106,13 @@ func run(pass *analysis.Pass) (any, error) {
 }
 
 func checkFunc(pass *analysis.Pass, fn *ast.FuncDecl, pkgFuncs map[string]*ast.FuncDecl) {
-	guarded := callsQualified(fn.Body, pass, "path/filepath.EvalSymlinks") || callsSymlinkNamed(fn.Body)
-	cleans := callsQualified(fn.Body, pass, "path.Clean") || callsQualified(fn.Body, pass, "path/filepath.Clean")
 	bound := bindings(pass, fn.Body)
 	params := paramObjects(pass, fn)
-	// A function that runs its components through a validator or
-	// sanitizer (validateScaffoldName, sanitizeMigrationName) is doing
-	// its own containment: cmd/gofastr's scaffold and migrate's
-	// generator both sanitize before joining. Measured 2026-09-02.
-	validates := callsNamedLike(fn.Body, `(?i)sanit|valid|clean|safe`)
+	// Resolution and validation gates are per WRITE, not per function:
+	// an EvalSymlinks (or validator, or Clean) on an unrelated path
+	// resolves nothing for this one.
+	evals := evalSymlinkCalls(pass, fn.Body)
+	symlinkGuard := callsSymlinkNamed(pass, fn.Body)
 
 	ast.Inspect(fn.Body, func(n ast.Node) bool {
 		call, ok := n.(*ast.CallExpr)
@@ -111,12 +129,15 @@ func checkFunc(pass *analysis.Pass, fn *ast.FuncDecl, pkgFuncs map[string]*ast.F
 				pathArg = argAt(call, 0)
 			}
 		}
-		if pathArg != nil && !guarded && !validates &&
+		if pathArg != nil && !symlinkGuard &&
+			!symlinkResolved(pass, pathArg, bound, evals) &&
+			!validatorShields(pass, pathArg, bound) &&
 			joinsUnderRooty(pass, pathArg, bound, params, pkgFuncs) {
 			pass.Reportf(call.Pos(),
 				"write under a root with lexical containment only: a symlinked directory component escapes the root undetected; resolve with filepath.EvalSymlinks before writing")
 		}
-		// zip.Writer entries named from a parameter without a Clean.
+		// zip.Writer entries named from a parameter without a Clean on
+		// the entry-name chain.
 		sel, ok := call.Fun.(*ast.SelectorExpr)
 		if ok && (sel.Sel.Name == "Create" || sel.Sel.Name == "CreateHeader") && isZipWriter(pass, sel.X) {
 			var name ast.Expr
@@ -125,7 +146,7 @@ func checkFunc(pass *analysis.Pass, fn *ast.FuncDecl, pkgFuncs map[string]*ast.F
 			} else {
 				name = headerName(pass, argAt(call, 0), bound)
 			}
-			if name != nil && !cleans && composedFromParam(pass, name, bound, params) {
+			if name != nil && !cleanedEntryName(pass, name, bound) && composedFromParam(pass, name, bound, params) {
 				pass.Reportf(call.Pos(),
 					"zip entry name built from a parameter without path.Clean: an uncleaned name can place entries outside the target directory on extract; path.Clean and reject \"..\" segments")
 			}
@@ -134,15 +155,181 @@ func checkFunc(pass *analysis.Pass, fn *ast.FuncDecl, pkgFuncs map[string]*ast.F
 	})
 }
 
+// evalSymlinkCalls collects the filepath.EvalSymlinks calls in body.
+func evalSymlinkCalls(pass *analysis.Pass, body *ast.BlockStmt) []*ast.CallExpr {
+	var out []*ast.CallExpr
+	ast.Inspect(body, func(n ast.Node) bool {
+		if call, ok := n.(*ast.CallExpr); ok &&
+			qualifiedFunc(pass, call.Fun) == "path/filepath.EvalSymlinks" {
+			out = append(out, call)
+		}
+		return true
+	})
+	return out
+}
+
+// symlinkResolved reports whether the write's path is resolved against
+// symlinks ON THE CHAIN: the path itself is an EvalSymlinks result, a
+// resolved local feeds it, or an EvalSymlinks ran on this path
+// expression (directly or through a local). An EvalSymlinks on an
+// unrelated path resolves nothing.
+func symlinkResolved(pass *analysis.Pass, pathArg ast.Expr, bound map[types.Object]ast.Expr, evals []*ast.CallExpr) bool {
+	isEval := func(c *ast.CallExpr) bool {
+		return qualifiedFunc(pass, c.Fun) == "path/filepath.EvalSymlinks"
+	}
+	r := resolve(pass, pathArg, bound, 0)
+	if call, ok := r.(*ast.CallExpr); ok && isEval(call) {
+		return true
+	}
+	if mentionsCall(pass, pathArg, bound, isEval, 0) {
+		return true
+	}
+	for _, ev := range evals {
+		for _, a := range ev.Args {
+			if argTouchesPath(pass, a, bound, r) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// argTouchesPath reports whether an EvalSymlinks argument mentions a
+// local bound to the same expression as the write path — the resolved
+// leaf, its Dir, or the path itself.
+func argTouchesPath(pass *analysis.Pass, arg ast.Expr, bound map[types.Object]ast.Expr, r ast.Expr) bool {
+	found := false
+	ast.Inspect(arg, func(n ast.Node) bool {
+		id, ok := n.(*ast.Ident)
+		if !ok {
+			return true
+		}
+		if b, ok := bound[pass.TypesInfo.ObjectOf(id)]; ok {
+			if b == r || types.ExprString(b) == types.ExprString(r) {
+				found = true
+				return false
+			}
+		}
+		return !found
+	})
+	return found
+}
+
+// validatorShields reports whether a sanitizer/validator's RESULT
+// replaces a component of the built path: that is the only validator
+// posture that touches what reaches the disk. A validator consulted
+// for its boolean (validName(name) in a guard) cannot see symlinks
+func validatorShields(pass *analysis.Pass, pathArg ast.Expr, bound map[types.Object]ast.Expr) bool {
+	isValidator := func(c *ast.CallExpr) bool {
+		switch fun := c.Fun.(type) {
+		case *ast.Ident:
+			if validatorRe.MatchString(fun.Name) {
+				return true
+			}
+			// A clean-named bare callee shields only when it
+			// resolves to a declaration of this package: a local
+			// cleanName helper, not an import or a func variable.
+			if cleanNamedRe.MatchString(fun.Name) {
+				if fn, ok := pass.TypesInfo.ObjectOf(fun).(*types.Func); ok {
+					return fn.Pkg() == pass.Pkg
+				}
+			}
+			return false
+		case *ast.SelectorExpr:
+			if q := qualifiedFunc(pass, c.Fun); q == "path.Clean" || q == "path/filepath.Clean" {
+				return false // stdlib normalizer: passes symlinks through
+			}
+			if validatorRe.MatchString(fun.Sel.Name) {
+				return true
+			}
+			if cleanNamedRe.MatchString(fun.Sel.Name) {
+				if fn, ok := pass.TypesInfo.ObjectOf(fun.Sel).(*types.Func); ok {
+					return fn.Pkg() == pass.Pkg
+				}
+			}
+			return false
+		}
+		return false
+	}
+	r := resolve(pass, pathArg, bound, 0)
+	for _, comp := range pathComponents(r) {
+		if mentionsCall(pass, comp, bound, isValidator, 0) {
+			return true
+		}
+	}
+	return false
+}
+
+// pathComponents returns the caller-facing components of a built path:
+// the arguments of the building call, or everything concatenated after
+// the leading operand.
+func pathComponents(r ast.Expr) []ast.Expr {
+	switch x := r.(type) {
+	case *ast.CallExpr:
+		return x.Args
+	case *ast.BinaryExpr:
+		if x.Op == token.ADD {
+			if ops := concatOperands(x, nil); len(ops) >= 2 {
+				return ops[1:]
+			}
+		}
+	}
+	return nil
+}
+
+// cleanedEntryName reports whether the zip entry name's assembly is
+// bound to a path.Clean / filepath.Clean result. A Clean on an
+// unrelated path cleans no entry name.
+func cleanedEntryName(pass *analysis.Pass, name ast.Expr, bound map[types.Object]ast.Expr) bool {
+	isClean := func(c *ast.CallExpr) bool {
+		q := qualifiedFunc(pass, c.Fun)
+		return q == "path.Clean" || q == "path/filepath.Clean"
+	}
+	return mentionsCall(pass, name, bound, isClean, 0)
+}
+
+// mentionsCall reports whether e's assembly involves (directly, or
+// through locals bound in this function) a call matching pred.
+func mentionsCall(pass *analysis.Pass, e ast.Expr, bound map[types.Object]ast.Expr, pred func(*ast.CallExpr) bool, depth int) bool {
+	if depth > 6 {
+		return false
+	}
+	found := false
+	ast.Inspect(e, func(n ast.Node) bool {
+		if found {
+			return false
+		}
+		if call, ok := n.(*ast.CallExpr); ok && pred(call) {
+			found = true
+			return false
+		}
+		if id, ok := n.(*ast.Ident); ok {
+			if obj := pass.TypesInfo.ObjectOf(id); obj != nil {
+				if b, ok := bound[obj]; ok && mentionsCall(pass, b, bound, pred, depth+1) {
+					found = true
+					return false
+				}
+			}
+		}
+		return !found
+	})
+	return found
+}
+
 // callsSymlinkNamed reports whether the body calls any function whose
 // name says symlink (EnsureNoSymlinkPath, EnsureNoSymlinkLeaf): the
 // codegen fileset posture, which refuses symlinked components without
-// spelling filepath.EvalSymlinks.
-func callsSymlinkNamed(body *ast.BlockStmt) bool {
+// spelling filepath.EvalSymlinks. filepath.EvalSymlinks itself is
+// excluded — its resolution is judged on the write's chain, not by
+// name presence.
+func callsSymlinkNamed(pass *analysis.Pass, body *ast.BlockStmt) bool {
 	found := false
 	ast.Inspect(body, func(n ast.Node) bool {
 		call, ok := n.(*ast.CallExpr)
 		if !ok {
+			return true
+		}
+		if qualifiedFunc(pass, call.Fun) == "path/filepath.EvalSymlinks" {
 			return true
 		}
 		var name string
@@ -176,12 +363,16 @@ func composedFromParam(pass *analysis.Pass, e ast.Expr, bound map[types.Object]a
 	}
 }
 
-// joinsUnderRooty reports whether e resolves — directly, through locals,
-// or through one same-package helper call — to filepath.Join(root, …)
-// with root a root/base/dir-named parameter or field and at least one
-// non-literal joined component after it.
+// joinsUnderRooty reports whether e resolves — directly, through
+// locals, or through one same-package helper call — to a path built
+// under a root/base/dir-named parameter or field: a filepath.Join, or
+// a flat `root + "/" + x` concatenation, with at least one
+// caller-controlled component after the root.
 func joinsUnderRooty(pass *analysis.Pass, e ast.Expr, bound map[types.Object]ast.Expr, params map[types.Object]bool, pkgFuncs map[string]*ast.FuncDecl) bool {
 	e = resolve(pass, e, bound, 0)
+	if be, ok := e.(*ast.BinaryExpr); ok && be.Op == token.ADD {
+		return concatUnderRooty(pass, be, bound, params)
+	}
 	call, ok := e.(*ast.CallExpr)
 	if !ok {
 		return false
@@ -190,7 +381,7 @@ func joinsUnderRooty(pass *analysis.Pass, e ast.Expr, bound map[types.Object]ast
 		if len(call.Args) < 2 {
 			return false
 		}
-		root := rootyParamOrField(pass, call.Args[0], bound, params)
+		root := rootyRoot(pass, call.Args[0], bound, params)
 		if root == nil {
 			return false
 		}
@@ -208,7 +399,9 @@ func joinsUnderRooty(pass *analysis.Pass, e ast.Expr, bound map[types.Object]ast
 		return false
 	}
 	// A helper that joins its own root parameter (e.g. containedPath).
-	// The non-root arguments at the call site must carry caller data.
+	// The non-root arguments at the call site must carry caller data:
+	// a helper called with literal-only components appends nothing
+	// caller-controlled under the root.
 	decl := calleeDecl(pass, call.Fun, pkgFuncs)
 	if decl == nil {
 		return false
@@ -217,10 +410,103 @@ func joinsUnderRooty(pass *analysis.Pass, e ast.Expr, bound map[types.Object]ast
 	if rootParam == "" || !helperJoinsParam(pass, decl, rootParam) {
 		return false
 	}
-	if callsQualified(decl.Body, pass, "path/filepath.EvalSymlinks") || callsSymlinkNamed(decl.Body) {
+	if callsQualified(decl.Body, pass, "path/filepath.EvalSymlinks") || callsSymlinkNamed(pass, decl.Body) {
 		return false // the helper resolves symlinks: the fix posture
 	}
-	return true
+	rootIdx := rootyParamIndex(decl, rootParam)
+	for i, a := range call.Args {
+		if i == rootIdx {
+			continue
+		}
+		if mentionsParam(pass, a, bound, params, 0) {
+			return true
+		}
+	}
+	return false
+}
+
+// rootyRoot resolves the Join's first argument to the root expression:
+// a rooty parameter or field directly, or a local whose binding is a
+// rooty param/field selector — including one passed through a
+// root-returning helper (root, err := resolveRoot(v.root)).
+func rootyRoot(pass *analysis.Pass, e ast.Expr, bound map[types.Object]ast.Expr, params map[types.Object]bool) ast.Expr {
+	if r := rootyParamOrField(pass, e, bound, params); r != nil {
+		return r
+	}
+	id, ok := e.(*ast.Ident)
+	if !ok {
+		return nil
+	}
+	b, ok := bound[pass.TypesInfo.ObjectOf(id)]
+	if !ok {
+		return nil
+	}
+	if r := rootyParamOrField(pass, b, bound, params); r != nil {
+		return r
+	}
+	if c, ok := b.(*ast.CallExpr); ok {
+		for _, a := range c.Args {
+			if r := rootyParamOrField(pass, a, bound, params); r != nil {
+				return r
+			}
+		}
+	}
+	return nil
+}
+
+// concatUnderRooty reports whether a flat ADD chain is rooted at a
+// rooty param/field with caller data concatenated after it — the same
+// lexical-only containment a Join spells.
+func concatUnderRooty(pass *analysis.Pass, be *ast.BinaryExpr, bound map[types.Object]ast.Expr, params map[types.Object]bool) bool {
+	ops := concatOperands(be, nil)
+	if len(ops) < 2 {
+		return false
+	}
+	root := rootyRoot(pass, ops[0], bound, params)
+	if root == nil {
+		return false
+	}
+	if isTempRoot(pass, root, bound) {
+		return false
+	}
+	for _, o := range ops[1:] {
+		if mentionsParam(pass, o, bound, params, 0) {
+			return true
+		}
+	}
+	return false
+}
+
+// concatOperands flattens a left-associated ADD chain, leftmost first.
+func concatOperands(be *ast.BinaryExpr, out []ast.Expr) []ast.Expr {
+	if inner, ok := be.X.(*ast.BinaryExpr); ok && inner.Op == token.ADD {
+		out = concatOperands(inner, out)
+	} else {
+		out = append(out, be.X)
+	}
+	return append(out, be.Y)
+}
+
+// rootyParamIndex returns the positional index of decl's parameter
+// named rootParam, or -1.
+func rootyParamIndex(decl *ast.FuncDecl, rootParam string) int {
+	if decl.Type.Params == nil {
+		return -1
+	}
+	idx := 0
+	for _, f := range decl.Type.Params.List {
+		if len(f.Names) == 0 {
+			idx++
+			continue
+		}
+		for _, name := range f.Names {
+			if name.Name == rootParam {
+				return idx
+			}
+			idx++
+		}
+	}
+	return -1
 }
 
 // rootyParamOrField returns the root expression when e is a parameter
@@ -540,30 +826,4 @@ func isLiteral(e ast.Expr) bool {
 	default:
 		return false
 	}
-}
-
-// callsNamedLike reports whether the body calls any function whose name
-// matches the pattern: validators and sanitizers that shield the path
-// components this function joins.
-func callsNamedLike(body *ast.BlockStmt, pattern string) bool {
-	re := regexp.MustCompile(pattern)
-	found := false
-	ast.Inspect(body, func(n ast.Node) bool {
-		call, ok := n.(*ast.CallExpr)
-		if !ok {
-			return true
-		}
-		var name string
-		switch fun := call.Fun.(type) {
-		case *ast.Ident:
-			name = fun.Name
-		case *ast.SelectorExpr:
-			name = fun.Sel.Name
-		}
-		if name != "" && re.MatchString(name) {
-			found = true
-		}
-		return !found
-	})
-	return found
 }

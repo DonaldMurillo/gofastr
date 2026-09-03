@@ -54,7 +54,11 @@ type DurableScheduler struct {
 // fires on the scheduler loop, which has no per-request net, and a
 // panicking hook must not take the scheduler (or the process) with it.
 func (s *DurableScheduler) hookBeforeOccurrenceCommit() {
-	defer func() { _ = recover() }()
+	defer func() {
+		if rec := recover(); rec != nil {
+			slog.Default().Error("queue: durable scheduler hook panicked; occurrence commit continues", "panic", rec)
+		}
+	}()
 	s.beforeOccurrenceCommit()
 }
 

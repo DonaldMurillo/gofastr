@@ -97,3 +97,96 @@ func renderPath(table string) string {
 func renderBehaviorURL(id string) string {
 	return fmt.Sprintf("data-behavior=\"/__gofastr/widget/%s.js\"", id) // want `identifier slot "/__gofastr/widget/%s"`
 }
+
+// ---- round 2: prose defenses and deeper slots -------------------------
+
+// e1/e2: a format-INITIAL keyword in a lowercase message is prose, not
+// a declaration — no positive code evidence after the verb.
+func e1(kind string) string {
+	return fmt.Sprintf("type %s is not a struct", kind)
+}
+
+func e2(fn string) string {
+	return fmt.Sprintf("func %s(ctx) was replaced by New; kept for compat", fn)
+}
+
+// e3: a deeper route segment rewrites the route the same way the
+// first one does.
+func e3(table string) string {
+	return fmt.Sprintf("path := \"/api/v1/%s\"\n", table) // want `identifier slot ".*/api/v1/%s"`
+}
+
+// e4/e5: index and INSERT identifier positions are the same breakout
+// slot the table spellings are.
+func e4(table string) string {
+	return fmt.Sprintf("CREATE INDEX idx_%s ON %s(col)", table, table) // want `identifier slot "create index %s"`
+}
+
+func e5(table string) string {
+	return fmt.Sprintf("INSERT INTO %s(a) VALUES (1)", table) // want `identifier slot "insert into %s"`
+}
+
+// e6: a CSS string slot outside @font-face — the quote-breakout works
+// identically in content.
+func e6(text string) string {
+	return fmt.Sprintf("a.hint::after { content: '%s' }", text) // want `identifier slot "'%s'"`
+}
+
+func isGoIdentifier(value string) bool {
+	for _, r := range value {
+		if !(r == '_' || r >= '0' && r <= '9' || r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z') {
+			return false
+		}
+	}
+	return value != ""
+}
+
+func warned(format string, args ...any) {}
+
+// e7: a check that only warns does not gate — warn-and-continue is
+// not rejection; the hostile name still reaches the Fprintf.
+func e7(sb *strings.Builder, hook string) {
+	if !isGoIdentifier(hook) {
+		warned("ignoring invalid hook name %q", hook)
+	}
+	fmt.Fprintf(sb, "func %s(ctx context.Context, data any) error {\n", hook) // want `identifier slot "func %s"`
+}
+
+// e8: a struct field whose NAME says type is not a gate — nothing
+// validated the value.
+type decl struct {
+	HandlerType string
+}
+
+func e8(d decl) string {
+	return fmt.Sprintf("func %s(ctx context.Context) error {\n", d.HandlerType) // want `identifier slot "func %s"`
+}
+
+// e9: a suffix on the emitted identifier — "func %sHandler(ctx
+// context.Context) error {" — is the same declaration slot; the
+// parenthesis follows the identifier RUN, not the verb.
+func e9(hook string) string {
+	return fmt.Sprintf("func %sHandler(ctx context.Context) error {\n", hook) // want `identifier slot "func %s"`
+}
+
+// e10: continue only skips the current iteration. The post-loop emit
+func e10(names []string, sb *strings.Builder) {
+	var n string
+	for _, n = range names {
+		if !isGoIdentifier(n) {
+			continue
+		}
+		fmt.Fprintf(sb, "func %s(ctx context.Context) error {\n", n)
+	}
+	fmt.Sprintf("func %s(ctx context.Context) error {\n", n) // want `identifier slot "func %s"`
+}
+
+// emitType/emitVar: format-initial declarations WITH code evidence
+// after the verb still fire.
+func emitType(name string) string {
+	return fmt.Sprintf("type %s struct {\n\tID string\n}\n", name) // want `identifier slot "type %s"`
+}
+
+func emitVar(name string) string {
+	return fmt.Sprintf("var %s = 1\n", name) // want `identifier slot "var %s"`
+}

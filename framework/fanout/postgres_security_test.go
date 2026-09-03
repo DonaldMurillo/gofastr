@@ -6,8 +6,10 @@ package fanout
 // Postgres — any transport touch on a zero-value fanout's nil db would
 // nil-pointer, which is exactly what makes "validated before transport"
 import (
+	"bytes"
 	"context"
 	"database/sql"
+	"log/slog"
 	"strings"
 	"testing"
 	"time"
@@ -54,6 +56,50 @@ func TestPublishValidatesBeforeTransport(t *testing.T) {
 	p.closed.Store(true)
 	if err := p.Publish(context.Background(), "orders", []byte(`{}`)); err == nil {
 		t.Error("SECURITY: [fanout] Publish on a closed fanout returned nil, want an error")
+	}
+}
+
+// Property: a subscriber whose send PANICS must not take the single
+// LISTEN/NOTIFY dispatch goroutine down with it — delivery to a
+// healthy subscriber on the SAME topic continues, and the panic is
+// logged rather than dropped. Subscribe wraps callbacks in
+// SubscriberQueue (whose send never panics); the panicking send here
+// is wired directly at the pgSub level, the extension point
+// deliverOne's recover guard exists for.
+func TestDeliverSurvivesPanickingSubscriber(t *testing.T) {
+	p := &PostgresFanout{subs: map[string]map[uint64]*pgSub{}}
+	p.mu.Lock()
+	p.subs["orders"] = map[uint64]*pgSub{
+		1: {send: func([]byte) { panic("subscriber boom") }, stop: func() {}},
+	}
+	p.mu.Unlock()
+
+	healthy := make(chan []byte, 1)
+	cancelHealthy, err := p.Subscribe("orders", func(b []byte) { healthy <- b })
+	if err != nil {
+		t.Fatalf("subscribe healthy: %v", err)
+	}
+	defer cancelHealthy()
+
+	var buf bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, nil)))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	// deliver runs on this (the dispatch-shaped) goroutine: without
+	// the recover guard this call panics the dispatcher.
+	p.deliver("orders", []byte(`{"ok":1}`))
+
+	select {
+	case b := <-healthy:
+		if string(b) != `{"ok":1}` {
+			t.Fatalf("healthy subscriber got %q", b)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("SECURITY: [fanout] a panicking subscriber stopped delivery to a healthy subscriber on the same topic")
+	}
+	if !strings.Contains(buf.String(), "subscriber boom") {
+		t.Fatalf("panicking subscriber not logged; log = %q", buf.String())
 	}
 }
 

@@ -9,5 +9,5 @@ import (
 )
 
 func TestDivLimit(t *testing.T) {
-	analysistest.Run(t, analysistest.TestData(), divlimit.Analyzer, "a", "b", "c")
+	analysistest.Run(t, analysistest.TestData(), divlimit.Analyzer, "a", "b", "c", "d")
 }

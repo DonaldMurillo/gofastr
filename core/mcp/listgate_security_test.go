@@ -438,6 +438,70 @@ func TestListingGateNeverBlocksRegistry(t *testing.T) {
 	})
 }
 
+// Property: the REGISTRY-WIDE call gate is app-supplied callback code
+// too, and must run OUTSIDE the registry lock. listTools and
+// listToolsUnfiltered evaluated runCallGate while still holding
+// s.mu.RLock, so a gate that (directly, or via a module toggle that
+// ends in RegisterTool) re-entered the registry deadlocked it: the
+// gate cannot return while the write lock waits, and the read lock
+// cannot release until the gate returns. Same contract the per-caller
+// gate test above pins, on the surfaces it did not cover.
+func TestCallGateNeverBlocksRegistry(t *testing.T) {
+	surfaces := []struct {
+		name string
+		list func(s *Server)
+	}{
+		{
+			name: "listTools",
+			list: func(s *Server) { _, _ = s.ListToolsFor(context.Background()) },
+		},
+		{
+			name: "listToolsUnfiltered",
+			list: func(s *Server) { _ = s.ListTools() },
+		},
+	}
+	for _, sf := range surfaces {
+		t.Run(sf.name, func(t *testing.T) {
+			s := NewServer()
+			mustRegisterOpen(t, s, "open")
+			entered := make(chan struct{}, 1)
+			release := make(chan struct{})
+			s.SetCallGate(func(string) error {
+				entered <- struct{}{}
+				<-release
+				return nil
+			})
+
+			listDone := make(chan struct{}, 1)
+			go func() {
+				sf.list(s)
+				listDone <- struct{}{}
+			}()
+			<-entered // the listing is now inside its call gate
+
+			regDone := make(chan error, 1)
+			go func() {
+				regDone <- s.RegisterTool("writer", "d", nil, func(context.Context, map[string]any) (any, error) { return nil, nil })
+			}()
+			select {
+			case err := <-regDone:
+				if err != nil {
+					t.Fatalf("unrelated registration failed: %v", err)
+				}
+				close(release)
+				<-listDone
+			case <-time.After(750 * time.Millisecond):
+				t.Errorf("SECURITY: [DoS] registration stalled behind a blocked %s call gate: the registry-wide gate must not run under the registry lock", sf.name)
+				close(release)
+				<-listDone
+				if err := <-regDone; err != nil {
+					t.Fatalf("late registration failed: %v", err)
+				}
+			}
+		})
+	}
+}
+
 // Property: a panicking gate fails closed as a well-formed refusal at
 // every gate evaluation surface — the package's own stated contract
 // (checkPromptGate: "a panicking gate must become a well-formed error,

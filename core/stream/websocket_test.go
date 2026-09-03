@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"encoding/binary"
 	"io"
+	"log/slog"
 	"runtime"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -84,6 +86,67 @@ func TestWebSocketConnClose(t *testing.T) {
 			runtime.Gosched()
 		}
 	}
+}
+
+// TestWebSocketConnClosePanickingHook: OnClose hooks are app-supplied
+// callbacks on their own goroutine, which has no recover net — a
+// panicking hook must be logged and swallowed while Close stays
+// successful (and the closed channel still signals).
+func TestWebSocketConnClosePanickingHook(t *testing.T) {
+	conn := &WebSocketConn{
+		conn:       &nopConn{r: bytes.NewReader(nil), w: &bytes.Buffer{}},
+		sendBuffer: make(chan []byte, 8),
+		closed:     make(chan struct{}),
+		onClose:    []func(){func() { panic("close hook boom") }},
+	}
+	go conn.writePump()
+
+	var buf lockedBuffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, nil)))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	if err := conn.Close(); err != nil {
+		t.Fatalf("Close must succeed despite a panicking close hook: %v", err)
+	}
+	select {
+	case <-conn.Closed():
+	case <-time.After(time.Second):
+		t.Fatal("closed channel not signaled")
+	}
+
+	// The hook runs (and its recovery logs) on the hook goroutine.
+	deadline := time.After(2 * time.Second)
+	for {
+		if s := buf.String(); strings.Contains(s, "close hook boom") {
+			return
+		}
+		select {
+		case <-deadline:
+			t.Fatalf("panicking close hook not logged; log = %q", buf.String())
+		default:
+			runtime.Gosched()
+		}
+	}
+}
+
+// lockedBuffer is a mutex-guarded bytes.Buffer: the hook goroutine
+// writes the recovered-panic log while the test goroutine polls it.
+type lockedBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *lockedBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *lockedBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
 }
 
 func TestWebSocketConnWriteAfterClose(t *testing.T) {

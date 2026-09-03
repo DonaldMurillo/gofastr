@@ -18,7 +18,7 @@ import (
 //     validates, runs the step, and advances or re-renders on error.
 //   - Atomic exit: when the final step succeeds, swap() is called to
 //     switch to the real app handler. Step execution is serialized and
-//     Complete is re-checked under the mutex so two racing submissions
+//     Complete is re-checked on every claim so two racing submissions
 //     can't both run the steps.
 func (r *Runner) Handler(swap func(), healthz, readyz http.HandlerFunc) http.Handler {
 	r.mu.Lock()
@@ -235,23 +235,26 @@ func (r *Runner) handleSubmit(w http.ResponseWriter, req *http.Request) {
 	http.Redirect(w, req, "/setup", http.StatusSeeOther)
 }
 
-// runStepSerialized runs one step under the mutex and advances
-// currentStep in the same critical section. Checking currentStep ==
-// stepIdx under the lock before running (and advancing before
-// releasing) eliminates the window in which a concurrent POST could
-// re-run an intermediate step.
+// runStepSerialized claims one step under the mutex and runs it
+// OUTSIDE it. Steps are app-supplied callback code (AdminStep creates
+// the admin account over HTTP-round-tripped stores): a blocking or
+// panicking step must not wedge every other setup request against
+// r.mu (callbackunderlock pins this), and a panic must reach the
+// net/http recover net rather than skip a plain Unlock.
+//
+// The Complete re-check ALSO runs outside the mutex, for the same
+// reason: Complete is app-supplied callback code too. It used to fire
+// while r.mu was held with no deferred unlock registered yet, so a
+// panicking Complete left the mutex locked and wedged every later
+// setup request; a slow one blocked them all. Exactly-once survives
+// the probe leaving the lock through stepInFlight: the claim
+// (currentStep check + stepInFlight check + flag) and the advance are
+// each atomic under mu, and a concurrent POST for the same step finds
+// the flag set and treats the step as already-advanced. A FAILED step
+// clears the flag and leaves currentStep where it was, so the retry
+// path is unchanged.
 func (r *Runner) runStepSerialized(ctx context.Context, stepIdx int, step Step, values map[string]string) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	// Re-check: if a concurrent request already advanced past this
-	// step, skip (treat as already-advanced).
-	if r.currentStep != stepIdx {
-		return nil
-	}
-
-	// Re-check Complete: if setup already finished (concurrent path),
-	// don't re-run.
+	// Re-check Complete before taking the mutex.
 	//
 	// A probe ERROR is not "not done", it is "unknown", and this guard is
 	// the only thing standing between a second caller and a re-run of a
@@ -266,12 +269,48 @@ func (r *Runner) runStepSerialized(ctx context.Context, stepIdx int, step Step, 
 		return nil
 	}
 
-	if err := step.Run(ctx, values); err != nil {
+	r.mu.Lock()
+	// Re-check: if a concurrent request already advanced past this
+	// step, skip (treat as already-advanced).
+	if r.currentStep != stepIdx {
+		r.mu.Unlock()
+		return nil
+	}
+	// Another request is running this step right now (it released the
+	// mutex to do so): treat as already-advanced.
+	if r.stepInFlight {
+		r.mu.Unlock()
+		return nil
+	}
+
+	r.stepInFlight = true
+	r.mu.Unlock()
+
+	// The deferred clear also runs when the step PANICS: the claim is
+	// released while the panic unwinds to the net/http recover net,
+	// exactly as it did before the step left the lock, so the wizard
+	// is never stuck treating the step as in-flight.
+	defer func() {
+		r.mu.Lock()
+		r.stepInFlight = false
+		r.mu.Unlock()
+	}()
+
+	// Run outside the lock: a slow or panicking step holds nothing.
+	err = step.Run(ctx, values)
+	if err != nil {
 		return err
 	}
 
-	// Advance under the same lock, no window between run and advance.
-	r.currentStep = stepIdx + 1
+	// Advance under the lock, no window between run and advance: only
+	// the in-flight runner reaches here (the flag kept every other
+	// request out), and the currentStep guard keeps a test-driven
+	// reset from double-advancing.
+	r.mu.Lock()
+	if r.currentStep == stepIdx {
+		r.currentStep = stepIdx + 1
+	}
+	r.mu.Unlock()
 	return nil
 }
 

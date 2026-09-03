@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"runtime/debug"
 	"strconv"
 	"strings"
@@ -32,8 +33,8 @@ var ErrNilJobRun = errors.New("cron: job Run is nil")
 // runs at the next yield point.
 //
 // If Run returns an error it is forwarded to the scheduler's OnError
-// callback (if set); otherwise it is silently dropped, jobs should not
-// crash the process.
+// callback (if set); otherwise it is logged via slog.Default(), jobs
+// should not crash the process.
 type CronJob struct {
 	Name string
 	Spec string
@@ -239,24 +240,29 @@ func (s *Scheduler) StopContext(ctx context.Context) error {
 // (Register during tick) are safe because the mutex is held only for the
 // read, new jobs appear on the next tick.
 func (s *Scheduler) RunOnce(ctx context.Context, now time.Time) {
-	// Snapshot the firing jobs under the read lock, then evaluate the
-	// gate OUTSIDE it. Gates are registered callbacks (SetGate) free to
-	// do I/O, and a blocking gate holding s.mu stalls Register,
-	// NextRun and every other RunOnce — the same registry rule core/
-	// mcp's listing gates learned (b79942f7). Registered jobs are
-	// immutable values, so a snapshot is exact.
+	// Snapshot the firing jobs AND the gate under the read lock, then
+	// evaluate the gate OUTSIDE it. Gates are registered callbacks
+	// (SetGate) free to do I/O, and a blocking gate holding s.mu
+	// stalls Register, NextRun and every other RunOnce — the same
+	// registry rule core/mcp's listing gates learned (b79942f7).
+	// Registered jobs are immutable values, so a snapshot is exact.
+	// The gate is snapshotted too (not re-read in gateAllow): SetGate
+	// may swap or clear it concurrently, and a torn nil-check/invoke
+	// pair would call a gate that is already gone.
 	s.mu.RLock()
 	var firing []CronJob
+	var gate func(jobName string) bool
 	for i := range s.jobs {
 		sj := &s.jobs[i]
 		if sj.expr.matches(now) {
 			firing = append(firing, sj.job)
 		}
 	}
+	gate = s.gate
 	s.mu.RUnlock()
 
 	for _, job := range firing {
-		if s.gate != nil && !s.gate(job.Name) {
+		if gate != nil && !s.gateAllow(gate, job.Name) {
 			continue
 		}
 		s.inflight.Add(1)
@@ -274,16 +280,37 @@ func (s *Scheduler) RunOnce(ctx context.Context, now time.Time) {
 	}
 }
 
+// gateAllow evaluates the snapshot gate with the same net the job run
+// gets above: a panicking gate reports and denies the job instead of
+// killing the scheduler goroutine (recovercallback pins this —
+// RunOnce sits on the ticker-driven dispatch loop).
+func (s *Scheduler) gateAllow(gate func(jobName string) bool, name string) (allow bool) {
+	defer func() {
+		if r := recover(); r != nil {
+			s.reportError(name, fmt.Errorf("panic in gate: %v\n%s", r, debug.Stack()))
+			allow = false
+		}
+	}()
+	return gate(name)
+}
+
 // reportError forwards a job failure to OnError under its own recover
 // guard: OnError is app-supplied callback code running on the scheduler
 // loop, which has no per-request net — a panicking error handler must
-// not take the scheduler (and the process) down with it.
+// not take the scheduler (and the process) down with it. With no
+// OnError configured the failure still lands somewhere observable: the
+// scheduler loop has no caller to hand it to, so it goes to
+// slog.Default() (a recovered gate panic used to drop the panic value
+// and stack on the floor while the job silently skipped).
 func (s *Scheduler) reportError(jobName string, err error) {
 	if s.OnError == nil {
+		slog.Default().Error("cron: job failed", "job", jobName, "err", err)
 		return
 	}
 	defer func() {
-		_ = recover()
+		if rec := recover(); rec != nil {
+			slog.Default().Error("cron: OnError panicked", "job", jobName, "panic", rec, "err", err)
+		}
 	}()
 	s.OnError(jobName, err)
 }

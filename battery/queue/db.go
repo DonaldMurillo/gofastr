@@ -426,11 +426,29 @@ func (q *DBQueue) eligibleTypes() []string {
 	}
 	out := types[:0]
 	for _, t := range types {
-		if gate(t) {
+		if gateAllows(q.logger, gate, t, "") {
 			out = append(out, t)
 		}
 	}
 	return out
+}
+
+// gateAllows evaluates the queue gate with the same net safeHandle
+// gives handlers: a panicking gate fails CLOSED — the job type is
+// excluded here, deferred at the worker — instead of tearing down the
+// code path that runs it (recovercallback pins this; eligibleTypes and
+// the worker loop sit on dispatch paths).
+func gateAllows(logger *slog.Logger, gate func(jobType string) bool, jobType, jobID string) (allow bool) {
+	defer func() {
+		if r := recover(); r != nil {
+			logger.Error("queue: gate panic; failing closed",
+				"job_type", jobType,
+				"job_id", jobID,
+				"panic", fmt.Sprintf("%v", r))
+			allow = false
+		}
+	}()
+	return gate(jobType)
 }
 
 // Enqueue inserts a job. Fills in ID/CreatedAt/MaxAttempts/ScheduledAt
@@ -1024,7 +1042,7 @@ func (q *DBQueue) workerLoop(ctx context.Context, lane string) {
 		q.mu.RLock()
 		gate := q.gate
 		q.mu.RUnlock()
-		if gate != nil && !gate(job.Type) {
+		if gate != nil && !gateAllows(q.logger, gate, job.Type, job.ID) {
 			_ = q.release(ctx, job.ID)
 			continue
 		}

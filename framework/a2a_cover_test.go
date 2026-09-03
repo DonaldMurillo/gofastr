@@ -117,6 +117,44 @@ func TestEntityInvocationRefusals(t *testing.T) {
 	}
 }
 
+// TestEntityInvocationMissingOperationFallsThrough pins the data-part
+// loop's presence-before-type contract: a part whose object simply
+// LACKS "operation" (e.g. a routing hint) is skipped, not rejected, so
+// a valid operation in a LATER part still parses. The laxcoerce bug
+// shape: a failed type assertion on a missing key is not absence of
+// the key.
+func TestEntityInvocationMissingOperationFallsThrough(t *testing.T) {
+	hint := any(map[string]any{"skill": "entity.notes"})
+	valid := any(map[string]any{"operation": "list"})
+	op, args, err := entityInvocation(&a2a.Message{Parts: []a2a.Part{
+		{Data: &hint},
+		{Data: &valid},
+	}})
+	if err != nil {
+		t.Fatalf("missing key before a later valid part must fall through, got err = %v", err)
+	}
+	if op != "list" || args == nil || len(args) != 0 {
+		t.Fatalf("op=%q args=%v, want list with empty args", op, args)
+	}
+}
+
+// TestEntityInvocationPresentNonStringRejected: a PRESENT non-string
+// "operation" is a client error, not a skip — the empty-string skip
+// and the missing-key skip must not swallow it.
+func TestEntityInvocationPresentNonStringRejected(t *testing.T) {
+	num := any(3.0)
+	badOp := any(map[string]any{"operation": num})
+	if _, _, err := entityInvocation(&a2a.Message{Parts: []a2a.Part{{Data: &badOp}}}); err == nil ||
+		!strings.Contains(err.Error(), `data part "operation" must be a string`) {
+		t.Fatalf("present non-string operation: err = %v, want the must-be-a-string client error", err)
+	}
+	// A nil-valued operation is present-but-not-a-string too.
+	nilOp := any(map[string]any{"operation": nil})
+	if _, _, err := entityInvocation(&a2a.Message{Parts: []a2a.Part{{Data: &nilOp}}}); err == nil {
+		t.Fatal("nil-valued operation must be rejected, not skipped")
+	}
+}
+
 // A tool refusal (update without an id) fails the task and carries the
 // refusal text; it is not a rejection, which is reserved for a request
 // the skill cannot even read.

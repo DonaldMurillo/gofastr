@@ -10,6 +10,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 // helperBuildRunner creates a Runner with the given steps and a simple
@@ -213,12 +214,16 @@ func TestSecretNeverPrefilled(t *testing.T) {
 }
 
 // TestConcurrentStepExecution_OneRun verifies that two concurrent step
-// submissions don't both execute the step, the mutex + Complete
-// re-check must serialize them.
+// submissions don't both execute the step: the mutex + Complete
+// re-check must serialize them. The sequencing is deterministic —
+// caller A blocks inside Run (so it can neither advance currentStep
+// nor release stepInFlight) until caller B has gone through the guard
+// and returned, which is the only way to prove B hit stepInFlight
+// rather than the currentStep check.
 func TestConcurrentStepExecution_OneRun(t *testing.T) {
 	var runCount atomic.Int64
-	// Complete returns false until the step has run; then true.
-	completed := int32(0)
+	runEntered := make(chan struct{})
+	releaseRun := make(chan struct{})
 
 	cfg := Config{
 		Steps: []Step{
@@ -227,28 +232,92 @@ func TestConcurrentStepExecution_OneRun(t *testing.T) {
 				Fields: []Field{{Name: "x", EnvVar: "CONCURRENT_X"}},
 				Run: func(_ context.Context, _ map[string]string) error {
 					runCount.Add(1)
-					atomic.StoreInt32(&completed, 1)
+					// Hold the claim open: currentStep cannot advance
+					// while Run is blocked, so the later caller can
+					// only be turned away by stepInFlight.
+					runEntered <- struct{}{}
+					<-releaseRun
 					return nil
 				},
 			},
 		},
-		Complete: func(_ context.Context) (bool, error) {
-			return atomic.LoadInt32(&completed) == 1, nil
-		},
+		Complete: func(_ context.Context) (bool, error) { return false, nil },
 	}
 	r := New(cfg)
 
-	// Two concurrent calls to runStepSerialized for the same step.
-	var wg sync.WaitGroup
-	for range 2 {
-		wg.Go(func() {
-			_ = r.runStepSerialized(context.Background(), 0, cfg.Steps[0], map[string]string{"x": "v"})
-		})
+	// Caller A claims the step and blocks inside Run.
+	aDone := make(chan error, 1)
+	go func() {
+		aDone <- r.runStepSerialized(context.Background(), 0, cfg.Steps[0], nil)
+	}()
+	<-runEntered
+
+	// Caller B arrives while A provably holds stepInFlight: it must be
+	// treated as already-advanced without running the step.
+	bDone := make(chan error, 1)
+	go func() {
+		bDone <- r.runStepSerialized(context.Background(), 0, cfg.Steps[0], nil)
+	}()
+	select {
+	case err := <-bDone:
+		if err != nil {
+			t.Fatalf("caller B turned away with error: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("caller B never returned from the stepInFlight guard")
 	}
-	wg.Wait()
+
+	// Release A and let it finish + advance.
+	close(releaseRun)
+	if err := <-aDone; err != nil {
+		t.Fatalf("caller A: %v", err)
+	}
 
 	if got := runCount.Load(); got != 1 {
 		t.Fatalf("expected step.Run called exactly once, got %d", got)
+	}
+}
+
+// TestCompletePanicLeavesRunnerUsable pins the contract the review's
+// deadlock fix carries: Config.Complete is app-supplied callback code,
+// so runStepSerialized must never hold r.mu while probing it. A
+// panicking Complete used to unwind past a plain (non-deferred) Unlock
+// and leave r.mu locked forever — every later setup request blocked
+// until the process restarted.
+func TestCompletePanicLeavesRunnerUsable(t *testing.T) {
+	r := New(Config{
+		DisableToken: true,
+		Complete:     func(_ context.Context) (bool, error) { panic("complete boom") },
+		Steps: []Step{
+			{Name: "s", Run: func(_ context.Context, _ map[string]string) error { return nil }},
+		},
+	})
+
+	// The first call panics (net/http recovers this in production).
+	func() {
+		defer func() {
+			if rec := recover(); rec == nil {
+				t.Fatal("expected the panicking Complete to unwind to the caller")
+			}
+		}()
+		_ = r.runStepSerialized(context.Background(), 0, r.cfg.Steps[0], nil)
+	}()
+
+	// The later request must be able to acquire r.mu. TryLock instead
+	// of Lock: on the bug a plain Lock hangs the test binary past its
+	// deadline, TryLock fails fast with a message naming the wedge.
+	if !r.mu.TryLock() {
+		t.Fatal("r.mu still locked after Complete panicked: every later setup request blocks forever")
+	}
+	r.mu.Unlock()
+
+	// And the runner still executes steps once Complete behaves again.
+	r.cfg.Complete = func(_ context.Context) (bool, error) { return false, nil }
+	if err := r.runStepSerialized(context.Background(), 0, r.cfg.Steps[0], nil); err != nil {
+		t.Fatalf("post-panic runStepSerialized: %v", err)
+	}
+	if r.currentStep != 1 {
+		t.Fatalf("currentStep = %d, want 1 after the recovery run", r.currentStep)
 	}
 }
 

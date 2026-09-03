@@ -156,7 +156,10 @@ func searchPosts(index search.Backend) http.HandlerFunc {
 
 // postsByStatus returns a handler that lists posts filtered by status.
 func postsByStatus(app *framework.App, status string) http.HandlerFunc {
-	entity, _ := app.Registry.Get("posts")
+	entity, err := app.Registry.Get("posts")
+	if err != nil {
+		log.Fatalf("blog: posts entity: %v", err)
+	}
 	handler := framework.NewCrudHandler(entity, app.DB)
 	listHandler := handler.List()
 

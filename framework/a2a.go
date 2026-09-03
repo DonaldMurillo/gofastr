@@ -363,9 +363,11 @@ func (a *App) entitySkillHandler(set entitySkillSet) a2a.Handler {
 }
 
 // entityInvocation reads the data-part contract from the message: the
-// first data part whose object carries a string "operation", with an
-// optional "arguments" object (missing → empty arguments; a present
-// non-object is a client error). A nil error return means ok.
+// first data part whose object carries a string "operation" (a part
+// whose object lacks the key is skipped, a present non-string is a
+// client error), with an optional "arguments" object (missing → empty
+// arguments; a present non-object is a client error). A nil error
+// return means ok.
 func entityInvocation(msg *a2a.Message) (operation string, args map[string]any, ierr error) {
 	if msg != nil {
 		for i := range msg.Parts {
@@ -377,8 +379,19 @@ func entityInvocation(msg *a2a.Message) (operation string, args map[string]any, 
 			if !ok {
 				continue
 			}
-			op, isStr := obj["operation"].(string)
-			if !isStr || op == "" {
+			raw, present := obj["operation"]
+			if !present {
+				// Absent key: this part carries no invocation, keep
+				// scanning (a failed type assertion on a missing key
+				// is not absence — that error shape used to reject a
+				// valid operation in a LATER part).
+				continue
+			}
+			op, isStr := raw.(string)
+			if !isStr {
+				return "", nil, fmt.Errorf(`data part "operation" must be a string, got %T`, raw)
+			}
+			if op == "" {
 				continue
 			}
 			args = map[string]any{}

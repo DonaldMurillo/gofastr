@@ -822,7 +822,11 @@ func mapQueryResult(res any) (any, error) {
 	}
 	rows, _ := json.Marshal(env["data"])
 	total := 0
-	if t, ok := env["total"].(float64); ok {
+	if raw, present := env["total"]; present {
+		t, ok := raw.(float64)
+		if !ok {
+			return nil, fmt.Errorf("query result envelope: %q must be a number, got %T", "total", raw)
+		}
 		total = int(t)
 	}
 	return moduleproto.EntityQueryResult{Rows: rows, Total: total}, nil

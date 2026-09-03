@@ -14,6 +14,9 @@
 // Silent postures, deliberately:
 //   - `_ = f()` and `_, _ = f()`: discarding everything is a
 //     statement, and an idiomatic one;
+//   - database/sql result accessors (Result.RowsAffected,
+//     Result.LastInsertId): reads after an already-checked Exec whose
+//     count is display-only;
 //   - assignments where no kept value is ever used: nothing marches on
 //     with the refusal hidden;
 //   - _test.go files.
@@ -23,7 +26,13 @@
 // result and the call is a method on a receiver — the subscribeImpl
 // posture, where the error is a refusal back-channel beside usable
 // results. Package-function drops (strconv.Atoi and friends) are not
-// this rule's to police.
+// this rule's to police. The arity gate (≥3 results) was dropped the
+// same day: the bug-class paragraph's own "empty list that reads as
+// 'nothing found'" is a two-result shape. Measured with the gate open
+// and the sql accessors excluded: 165 broad, 33 at last+method (25 of
+// them RowsAffected), 8 two-result method drops — all 8 genuine
+// swallowed refusals, fixed in their packages — and the tree now vets
+// clean at 0.
 package discardederr
 
 import (
@@ -68,6 +77,9 @@ func run(pass *analysis.Pass) (any, error) {
 
 func checkFunc(pass *analysis.Pass, body *ast.BlockStmt) {
 	ast.Inspect(body, func(n ast.Node) bool {
+		if _, isLit := n.(*ast.FuncLit); isLit {
+			return false // nested closures get their own checkFunc pass
+		}
 		st, ok := n.(*ast.AssignStmt)
 		if !ok || len(st.Lhs) < 2 || len(st.Rhs) != 1 {
 			return true
@@ -102,14 +114,12 @@ func checkFunc(pass *analysis.Pass, body *ast.BlockStmt) {
 		if !ok || isPkgName(pass, sel.X) {
 			return true
 		}
-		// And the call must hand back a RESOURCE with its cleanup, not a
-		// plain (value, error): 2-result drops degrade to an observable
-		// zero value (stats panels, catalogs, counts), while dropping the
-		// refusal beside a channel+cancel pair leaves a consumer waiting
-		// on something that will never deliver. Measured 2026-09-02:
-		// 165 broad, 33 at last+method (25 of them the RowsAffected
-		// accessor after an already-checked Exec), 0 at ≥3 results.
-		if tuple.Len() < 3 {
+		// The ≥3-result requirement was dropped 2026-09-02: the doc's
+		// own bug class names the two-result refusal ("an empty list
+		// that reads as 'nothing found'"), and the 25 RowsAffected
+		// drops that motivated the arity gate are a nameable stdlib
+		// accessor, excluded below instead of by arity.
+		if isSQLResultMethod(pass, call) {
 			return true
 		}
 		if !keepsUsedValue(pass, body, st) {
@@ -184,6 +194,36 @@ func calleeName(call *ast.CallExpr) string {
 		return fun.Sel.Name + "()"
 	}
 	return "call"
+}
+
+// isSQLResultMethod reports whether the call is a database/sql result
+// accessor (Result.RowsAffected, Result.LastInsertId): reads after an
+// already-checked Exec whose count is display-only. The 2026-09-02
+// run measured 25 such drops — the noise the old arity gate shed by
+// discarding the whole two-result class.
+func isSQLResultMethod(pass *analysis.Pass, call *ast.CallExpr) bool {
+	sel, ok := call.Fun.(*ast.SelectorExpr)
+	if !ok {
+		return false
+	}
+	switch sel.Sel.Name {
+	case "RowsAffected", "LastInsertId":
+	default:
+		return false
+	}
+	t := pass.TypesInfo.TypeOf(sel.X)
+	if t == nil {
+		return false
+	}
+	if p, ok := t.(*types.Pointer); ok {
+		t = p.Elem()
+	}
+	named, ok := t.(*types.Named)
+	if !ok {
+		return false
+	}
+	obj := named.Obj()
+	return obj != nil && obj.Pkg() != nil && obj.Pkg().Path() == "database/sql"
 }
 
 var errorIface = types.Universe.Lookup("error").Type().Underlying().(*types.Interface)

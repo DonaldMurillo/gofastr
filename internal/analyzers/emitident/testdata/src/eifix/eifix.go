@@ -167,3 +167,31 @@ func callShape(kind, cond string) string {
 func apostropheProse(slot string) string {
 	return fmt.Sprintf("// fontFaceCSS holds the app's fonts.\nvar fontFaceCSS = style.FontFaceCSS(\"\"%s)\n", slot)
 }
+
+// renderHookStubSuccessArm: the emit sits inside the check's success
+// arm, so every path to it is dominated by the check — silent without
+// any diverging statement.
+func renderHookStubSuccessArm(sb *strings.Builder, h hook) {
+	handler := strings.TrimSpace(h.Handler)
+	if isGoIdentifier(handler) {
+		fmt.Sprintf("func %s(ctx context.Context) error {\n", handler)
+	}
+}
+
+// queryParamVerb: a verb after '?' parameterizes the query string, not
+// the path — a different grammar (QueryEscape), not scanned.
+func queryParamVerb(names string) string {
+	return fmt.Sprintf(`<link href="/__gofastr/comp-bundle.css?names=%s&v=%s">`, names, "1")
+}
+
+// quotedTableFixture: the treatment-named field gate. A store that
+// constructed the value through a quoting helper and named the field
+// for what was done to it (quoted/sanitized/escaped) is trusted; the
+// noun-named fields in package ei are not.
+type quotedTableFixture struct {
+	quotedTable string
+}
+
+func emitDDL(q quotedTableFixture) string {
+	return fmt.Sprintf(`DELETE FROM %s WHERE id = ?`, q.quotedTable)
+}

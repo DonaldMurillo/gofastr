@@ -58,7 +58,9 @@
     if (declared.length) {
       const url = new URL(window.location.href);
       for (const k of declared) {
-        const fromCaller = (k in params);
+        // Own-property check: `in` walks the prototype chain, and a
+        // param literally named "constructor" would pass it.
+        const fromCaller = Object.prototype.hasOwnProperty.call(params, k);
         const v = fromCaller ? params[k] : url.searchParams.get(k);
         // Values read off the query string are attacker-supplied.
         // Flagging them here is what lets setSignal's html render mode

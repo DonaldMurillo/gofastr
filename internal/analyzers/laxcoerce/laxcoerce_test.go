@@ -9,5 +9,5 @@ import (
 )
 
 func TestLaxCoerce(t *testing.T) {
-	analysistest.Run(t, analysistest.TestData(), laxcoerce.Analyzer, "a", "b", "c")
+	analysistest.Run(t, analysistest.TestData(), laxcoerce.Analyzer, "a", "b", "c", "d")
 }

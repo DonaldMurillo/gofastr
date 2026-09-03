@@ -181,3 +181,15 @@ func SprintfKey(owner, id string, m map[string]int) bool {
 func LogOnlyHelper(a, b string) string {
 	return a + "\x00" + b
 }
+
+// ClaimStore pins the keyed-store leg's declared name gate: the join
+// feeds a keyed store behind an interface whose parameter is named
+// claim, not "key" — this leg is name-gated (see the package doc), so
+// it stays silent; the join itself is visible to no map sink here.
+type ClaimStore interface {
+	Put(ctx context.Context, claim string, v []byte) error
+}
+
+func putJoin(cs ClaimStore, ctx context.Context, owner, id string) error {
+	return cs.Put(ctx, owner+"\x00"+id, nil)
+}

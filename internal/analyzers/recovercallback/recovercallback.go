@@ -2,30 +2,47 @@
 // recover in scope on a dispatch path that has no net.
 //
 // The bug class is one panic killing a whole process: a handler or
-// gate obtained from a registry map or a struct field is app-supplied
-// code, and the dispatch sites that run it are transport loops — a
-// stdio JSON-RPC loop, a peer read loop, a goroutine spawned per
-// frame — where net/http's per-request recover net does not exist.
-// The 419-probe audit found this shape twice (both fixed b79942f7):
-// moduleproto's Peer served inbound requests and notifications by
-// calling the map-registered handler directly, so a panicking module
-// handler crashed the host process instead of answering a paired error
-// (probe TestHandlerPanicBecomesErrorResponse, fixed by runHandler's
-// recover guard), and core/mcp's callTool evaluated a tool's Gate
-// callback with no guard, so a panicking gate unwound the transport
-// (probe TestPanickingGateFailsClosedEverywhere, fixed by
-// checkToolGate's recover guard).
+// gate obtained from a registry map, a struct field, or a local copied
+// from one (`gate := t.Gate; gate()` — the nil-check-and-call spelling
+// any careful author writes) is app-supplied code, and the dispatch
+// sites that run it are transport loops — a stdio JSON-RPC loop, a
+// peer read loop, a goroutine spawned per frame, a ticker-driven
+// periodic dispatcher — where net/http's per-request recover net does
+// not exist. The 419-probe audit found this shape twice (both fixed
+// b79942f7): moduleproto's Peer served inbound requests and
+// notifications by calling the map-registered handler directly, so a
+// panicking module handler crashed the host process instead of
+// answering a paired error (probe TestHandlerPanicBecomesErrorResponse,
+// fixed by runHandler's recover guard), and core/mcp's callTool
+// evaluated a tool's Gate callback with no guard, so a panicking gate
+// unwound the transport (probe TestPanickingGateFailsClosedEverywhere,
+// fixed by checkToolGate's recover guard).
 //
 // "Dispatch path" is condition (a) of the shape, computed across the
 // package rather than lexically: a function is on a dispatch path if
 // it is reachable within the package from a goroutine literal, from a
 // `go`/time.AfterFunc target, or from a function whose body contains a
-// for-loop that blocks on input (a channel receive or a
-// Read/Scan/Recv/Decode-style call). The lexical reading alone — "runs
-// in a goroutine literal or is a method whose body contains the loop"
-// — misses the real callTool site, whose loop (ServeStdio) sits three
-// call frames above it; the transitive reading is what the probes
-// actually exercised, so that is what ships.
+// for-loop that blocks on input (a channel receive — including a bare
+// receive on a *time.Ticker/*time.Timer channel, `for { <-w.t.C; ... }`,
+// which is a timer-driven dispatcher, not a coordination wait — or a
+// Read/Scan/Recv/Decode-style call). A method call through an
+// interface declared in this package adds edges to every package-local
+// method with the same name and arity, so interface dispatch keeps the
+// flood honest for the ordinary Go way to decouple a transport from
+// its handlers. The lexical reading alone — "runs in a goroutine
+// literal or is a method whose body contains the loop" — misses the
+// real callTool site, whose loop (ServeStdio) sits three call frames
+// above it; the transitive reading is what the probes actually
+// exercised, so that is what ships.
+//
+// A recover counts when it runs on the panicking frame: the node's own
+// deferred recover (the inline `defer func(){ recover() }()` literal,
+// or `defer guard()` where the package-local guard function or method
+// recovers — recover works when called directly by the deferred
+// function, and the guard IS the deferred function), or the enclosing
+// owner's for a literal that runs synchronously. A recover inside a
+// nested function literal does NOT count: it runs on that literal's
+// own stack (a goroutine's recover cannot catch the parent's panic).
 //
 // Postures it deliberately stays silent on, because they are not this
 // bug: http.Handler-shaped callbacks — a value whose type is
@@ -34,12 +51,16 @@
 // request, and likewise an http-handler-shaped function never seeds
 // hotness even when its body loops (an SSE hold loop inside a handler
 // still runs under the server's recover net); context.CancelFunc
-// fields (never user code); named function calls (their guards are
-// their own business); callbacks reached only from ordinary
-// synchronous call sites, goroutine or no goroutine elsewhere in the
-// package — reachability, not adjacency, is the test; and everything
-// in _test.go, where a panic failing the test is the intended
-// outcome.
+// fields (never user code), including func(error)-shaped cancel-cause
+// slots under a cancel-named field (cancelFn, cancelFunc — the
+// context.WithCancelCause cancels kiln's AdapterStore stores) and
+// locals copied from them; clock and printf-shaped fields (test seams
+// and logging plumbing, not app callbacks) — including locals copied
+// from them; named function calls (their guards are their own
+// business); callbacks reached only from ordinary synchronous call
+// sites, goroutine or no goroutine elsewhere in the package —
+// reachability, not adjacency, is the test; and everything in
+// _test.go, where a panic failing the test is the intended outcome.
 package recovercallback
 
 import (
@@ -75,7 +96,7 @@ type node struct {
 	hasRecover  bool
 	readLoop    bool
 	handlerShpd bool
-	mapDerived  map[types.Object]bool // locals whose value came out of a map
+	derived     map[types.Object]bool // locals whose value came out of a map or a func-typed field
 	calls       []callbackCall
 	edges       []*node
 }
@@ -139,7 +160,7 @@ func (g *graph) makeNode(body *ast.BlockStmt, typ types.Type, owner *node) *node
 		owner:      owner,
 		hasRecover: hasRecover(body),
 		readLoop:   containsReadLoop(g.pass, body),
-		mapDerived: mapDerivedVars(g.pass, body),
+		derived:    derivedVars(g.pass, body),
 	}
 	if sig, ok := typ.(*types.Signature); ok {
 		n.handlerShpd = isHandlerShape(sig)
@@ -177,6 +198,25 @@ func (g *graph) link(pass *analysis.Pass, n *node) {
 		g.markAsync(goStmt.Call.Fun, n)
 		return true
 	})
+	// R5: a deferred package-local guard whose body calls recover()
+	// DIRECTLY protects this node exactly like the inline literal —
+	// recover works when called directly by the deferred function, and
+	// the guard IS the deferred function. A guard whose OWN body defers
+	// its recover does not: that nested recover runs on the guard's
+	// frame and cannot catch a panic from this node, so only
+	// directRecover counts here.
+	ast.Inspect(n.body, func(x ast.Node) bool {
+		def, ok := x.(*ast.DeferStmt)
+		if !ok {
+			return true
+		}
+		if target, ok := g.byObj[g.callTarget(def.Call.Fun)]; ok {
+			if directRecover(target.body) {
+				n.hasRecover = true
+			}
+		}
+		return true
+	})
 	ast.Inspect(n.body, func(x ast.Node) bool {
 		call, ok := x.(*ast.CallExpr)
 		if !ok || goCalls[call] {
@@ -187,12 +227,64 @@ func (g *graph) link(pass *analysis.Pass, n *node) {
 			return true
 		}
 		if obj := g.callTarget(call.Fun); obj != nil {
-			if target, ok := g.byObj[obj]; ok && target != n {
-				n.edges = append(n.edges, target)
+			if target, ok := g.byObj[obj]; ok {
+				if target != n {
+					n.edges = append(n.edges, target)
+				}
+			} else {
+				// R1: a method call through an interface declared in
+				// this package resolves to the interface's method, not
+				// any implementation. Add an edge to every
+				// package-local method with the same name and arity —
+				// a cheap dispatch approximation that keeps the
+				// reachability flood honest for the ordinary Go way to
+				// decouple a transport from its handlers.
+				for _, target := range g.interfaceImplementations(obj.(*types.Func)) {
+					if target != n {
+						n.edges = append(n.edges, target)
+					}
+				}
 			}
 		}
 		return true
 	})
+}
+
+// interfaceImplementations: the package-local method nodes with the
+// same name and parameter count as the interface method m, when m
+// belongs to an interface declared in this package.
+func (g *graph) interfaceImplementations(m *types.Func) []*node {
+	sig, ok := m.Type().(*types.Signature)
+	if !ok || sig.Recv() == nil {
+		return nil
+	}
+	recv := sig.Recv().Type()
+	if ptr, ok := recv.(*types.Pointer); ok {
+		recv = ptr.Elem()
+	}
+	named, ok := recv.(*types.Named)
+	if !ok {
+		return nil
+	}
+	if _, ok := named.Underlying().(*types.Interface); !ok {
+		return nil
+	}
+	if p := named.Obj().Pkg(); p == nil || p.Path() != g.pass.Pkg.Path() {
+		return nil
+	}
+	var out []*node
+	for obj, target := range g.byObj {
+		fn, ok := obj.(*types.Func)
+		if !ok || fn.Name() != m.Name() {
+			continue
+		}
+		s2, ok := fn.Type().(*types.Signature)
+		if !ok || s2.Recv() == nil || s2.Params().Len() != sig.Params().Len() {
+			continue
+		}
+		out = append(out, target)
+	}
+	return out
 }
 
 // markAsync marks a `go`/AfterFunc target: the literal (matched by
@@ -235,7 +327,9 @@ func (g *graph) callTarget(fun ast.Expr) types.Object {
 
 // callbackCallee reports whether call invokes a registry callback —
 // through a func-typed struct field, a map element, or a local whose
-// value came out of a map — and its printed description.
+// value came out of a map or was copied from a func-typed field (the
+// nil-check-and-call spelling any careful author writes) — and its
+// printed description.
 func (g *graph) callbackCallee(call *ast.CallExpr, n *node) (string, bool) {
 	pass := g.pass
 	switch fun := unparen(call.Fun).(type) {
@@ -244,7 +338,7 @@ func (g *graph) callbackCallee(call *ast.CallExpr, n *node) (string, bool) {
 		if !ok || s.Kind() != types.FieldVal {
 			return "", false
 		}
-		if !isCallbackType(s.Type()) {
+		if !isCallbackType(s.Type()) || isCancelNamed(s.Obj().Name()) {
 			return "", false
 		}
 		return types.ExprString(fun), true
@@ -255,21 +349,38 @@ func (g *graph) callbackCallee(call *ast.CallExpr, n *node) (string, bool) {
 		if _, isMap := underlyingMap(pass.TypesInfo.TypeOf(fun.X)); !isMap {
 			return "", false
 		}
+
 		if isCallbackType(pass.TypesInfo.TypeOf(fun)) {
 			return types.ExprString(fun), true
 		}
 	case *ast.Ident:
 		obj := pass.TypesInfo.ObjectOf(fun)
-		if obj != nil && n.mapDerived[obj] {
+		if obj != nil && n.derived[obj] {
 			return fun.Name, true
 		}
 	}
 	return "", false
 }
 
-// mapDerivedVars records the variables whose value comes out of a
-// map: `v, ok := m[k]` and the value variable of `for _, v := range m`.
-func mapDerivedVars(pass *analysis.Pass, body *ast.BlockStmt) map[types.Object]bool {
+var cancelFieldName = regexp.MustCompile(`(?i)^cancel`)
+
+// isCancelNamed: a func-typed field whose name says cancel (cancel,
+// cancelFn, cancelFunc, cancelTurn, ...). The cancel-cause slots the
+// repo stores (context.WithCancelCause cancels — kiln's AdapterStore
+// cancelFn) are context plumbing exactly like context.CancelFunc:
+// they never run app code, however func(error)-shaped they look, and
+// locals copied from them inherit that.
+func isCancelNamed(name string) bool {
+	return cancelFieldName.MatchString(name)
+}
+
+// derivedVars records the variables whose value comes out of a map
+// (`v, ok := m[k]`, the value variable of `for _, v := range m`) or is
+// copied from a callback-typed struct field (`gate := t.Gate`). Those
+// are registry callbacks even when called through the local's name;
+// infrastructure-shaped fields (printf loggers, handlers, clocks,
+// CancelFuncs) copied to a local stay plumbing.
+func derivedVars(pass *analysis.Pass, body *ast.BlockStmt) map[types.Object]bool {
 	out := map[types.Object]bool{}
 	ast.Inspect(body, func(x ast.Node) bool {
 		switch x := x.(type) {
@@ -283,16 +394,27 @@ func mapDerivedVars(pass *analysis.Pass, body *ast.BlockStmt) map[types.Object]b
 			}
 		case *ast.AssignStmt:
 			for i, rhs := range x.Rhs {
-				idx, ok := unparen(rhs).(*ast.IndexExpr)
-				if !ok || i >= len(x.Lhs) {
+				if i >= len(x.Lhs) {
 					continue
 				}
-				if _, isMap := underlyingMap(pass.TypesInfo.TypeOf(idx.X)); !isMap {
+				if idx, ok := unparen(rhs).(*ast.IndexExpr); ok {
+					if _, isMap := underlyingMap(pass.TypesInfo.TypeOf(idx.X)); !isMap {
+						continue
+					}
+					if id, ok := x.Lhs[i].(*ast.Ident); ok {
+						if obj := pass.TypesInfo.Defs[id]; obj != nil {
+							out[obj] = true
+						}
+					}
 					continue
 				}
-				if id, ok := x.Lhs[i].(*ast.Ident); ok {
-					if obj := pass.TypesInfo.Defs[id]; obj != nil {
-						out[obj] = true
+				if sel, ok := unparen(rhs).(*ast.SelectorExpr); ok {
+					if s, ok := pass.TypesInfo.Selections[sel]; ok && s.Kind() == types.FieldVal && isCallbackType(s.Type()) && !isCancelNamed(s.Obj().Name()) {
+						if id, ok := x.Lhs[i].(*ast.Ident); ok {
+							if obj := pass.TypesInfo.Defs[id]; obj != nil {
+								out[obj] = true
+							}
+						}
 					}
 				}
 			}
@@ -356,18 +478,43 @@ func (g *graph) protected(n *node) bool {
 func hasRecover(body *ast.BlockStmt) bool {
 	found := false
 	ast.Inspect(body, func(x ast.Node) bool {
-		def, ok := x.(*ast.DeferStmt)
-		if !ok {
-			return true
-		}
-		ast.Inspect(def.Call, func(y ast.Node) bool {
-			if call, ok := y.(*ast.CallExpr); ok {
-				if id, ok := unparen(call.Fun).(*ast.Ident); ok && id.Name == "recover" {
-					found = true
+		switch x := x.(type) {
+		case *ast.FuncLit:
+			// A recover deferred inside a nested literal runs on that
+			// literal's own stack — a goroutine's recover cannot catch
+			// a panic in this body. Deferred literals are visited from
+			// their DeferStmt below.
+			return false
+		case *ast.DeferStmt:
+			ast.Inspect(x.Call, func(y ast.Node) bool {
+				if call, ok := y.(*ast.CallExpr); ok {
+					if id, ok := unparen(call.Fun).(*ast.Ident); ok && id.Name == "recover" {
+						found = true
+					}
 				}
+				return !found
+			})
+		}
+		return !found
+	})
+	return found
+}
+
+// directRecover: a recover() call in the node's own linear body, not
+// under a defer and not inside a nested literal. Useless for the node
+// itself, but effective when the node is the DEFERRED function —
+// that is the named-guard spelling (defer guard()).
+func directRecover(body *ast.BlockStmt) bool {
+	found := false
+	ast.Inspect(body, func(x ast.Node) bool {
+		if _, ok := x.(*ast.FuncLit); ok {
+			return false
+		}
+		if call, ok := x.(*ast.CallExpr); ok {
+			if id, ok := unparen(call.Fun).(*ast.Ident); ok && id.Name == "recover" {
+				found = true
 			}
-			return !found
-		})
+		}
 		return !found
 	})
 	return found
@@ -375,9 +522,11 @@ func hasRecover(body *ast.BlockStmt) bool {
 
 // containsReadLoop reports whether body has a for (or channel-range)
 // loop that blocks on input: a Read/Scan/Recv/Decode-style call in the
-// condition, a channel range, a receive ASSIGNED in the body, or a
-// select inside the loop. A bare discard receive (`<-ready`) alone
-// does not count — that is a coordination wait, not a dispatch.
+// condition, a channel range, a receive ASSIGNED in the body, a
+// select inside the loop, or a bare receive on the channel of a
+// *time.Ticker/*time.Timer (`<-w.t.C`). A bare discard receive on an
+// ordinary channel (`<-ready`) alone does not count — that is a
+// coordination wait, not a dispatch.
 func containsReadLoop(pass *analysis.Pass, body *ast.BlockStmt) bool {
 	found := false
 	ast.Inspect(body, func(x ast.Node) bool {
@@ -413,8 +562,13 @@ func forLoopReads(pass *analysis.Pass, loop *ast.ForStmt) bool {
 			// A bare DISCARD receive (`<-ready`) does not make a loop
 			// a dispatcher: that is a coordination wait (the cached
 			// resolver's singleflight), and every real dispatch loop
-			// in this repo selects or reads instead.
-			_ = y
+			// in this repo selects or reads instead — UNLESS the
+			// channel is a ticker's or timer's .C, which no
+			// coordination wait looks like: that is a timer-driven
+			// dispatcher whose callback panic kills the process.
+			if u, ok := unparen(y.X).(*ast.UnaryExpr); ok && isReceive(u) && isTimerChan(pass, u.X) {
+				reads = true
+			}
 		case *ast.AssignStmt:
 			for _, rhs := range y.Rhs {
 				if u, ok := unparen(rhs).(*ast.UnaryExpr); ok && isReceive(u) {
@@ -432,6 +586,25 @@ func forLoopReads(pass *analysis.Pass, loop *ast.ForStmt) bool {
 		return !reads
 	})
 	return reads
+}
+
+// isTimerChan: `<-w.t.C` — the channel of a *time.Ticker or
+// *time.Timer. A periodic dispatch loop written over a ticker is a
+// timer-driven dispatcher; no singleflight coordination wait receives
+// on a .C selector.
+func isTimerChan(pass *analysis.Pass, e ast.Expr) bool {
+	sel, ok := unparen(e).(*ast.SelectorExpr)
+	if !ok || sel.Sel.Name != "C" {
+		return false
+	}
+	t := pass.TypesInfo.TypeOf(sel.X)
+	if t == nil {
+		return false
+	}
+	if ptr, ok := t.(*types.Pointer); ok {
+		t = ptr.Elem()
+	}
+	return isNamed(t, "time", "Ticker") || isNamed(t, "time", "Timer")
 }
 
 func isReceive(u *ast.UnaryExpr) bool { return u.Op.String() == "<-" }

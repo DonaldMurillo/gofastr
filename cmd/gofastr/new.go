@@ -155,7 +155,14 @@ func scaffoldHandler(baseDir, rawName, method, path string, overwrite bool) erro
 		return fmt.Errorf("invalid handler name: %w", err)
 	}
 	name := rawName
-	filename := filepath.Join(baseDir, strings.ToLower(name)+"_handler.go")
+	// Resolve the base dir before joining: a symlinked component would
+	// otherwise redirect the scaffolded file outside it undetected
+	// (lexical containment cannot see symlinks).
+	realDir, err := filepath.EvalSymlinks(baseDir)
+	if err != nil {
+		return fmt.Errorf("resolve base dir: %w", err)
+	}
+	filename := filepath.Join(realDir, strings.ToLower(name)+"_handler.go")
 	if !overwrite {
 		if _, err := os.Stat(filename); err == nil {
 			return fmt.Errorf("handler file already exists: %s", filename)

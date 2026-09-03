@@ -21,13 +21,22 @@
 // from: a call whose name says identifier/quote/slug/sanitize/safe/escape
 // (query.QuoteIdent, SlugifyWidgetID, quotedSlotSanitized, url.PathEscape,
 // sqlType...), a strconv/strings result, a constant, a local that an
-// isXIdent/token.IsIdentifier check in the same function guards, or a
-// derivation rooted at a struct field the SAME PACKAGE identifier-checks
-// somewhere (validate-side gates count: the check may live in the
-// validator while the emitter only renders). toCamelCase and kin are
-// deliberately NOT gates: they transform, they do not validate — that is
-// precisely the miss the CLI probe drove, and why the fix wrapped the
-// derivation in token.IsIdentifier rather than trusting the casing.
+// isXIdent/token.IsIdentifier check in the same function guards —
+// guarding means the emit site is inside the check's success arm or
+// after a failure arm that diverges (return/panic/os.Exit, or a
+// continue confined to emits inside the same loop body); a
+// warn-and-continue check gates nothing — or a derivation rooted at
+// a struct field the SAME PACKAGE identifier-checks somewhere
+// (validate-side gates count: the check may live in the validator
+// while the emitter only renders), or at a field whose own name states
+// the value's TREATMENT (quotedTable, sanitizedSlot). A struct field
+// whose name is a noun for what the value IS (HandlerType, FieldType,
+// Ident, SafeWord) is NOT a gate: the schema's word for a value says
+// nothing about how it was treated.
+// toCamelCase and kin are deliberately NOT gates: they transform, they
+// do not validate — that is precisely the miss the CLI probe drove,
+// and why the fix wrapped the derivation in token.IsIdentifier rather
+// than trusting the casing.
 //
 // The rule is deliberately silent on:
 //   - format slots that are not identifier positions: plain %s/%q in
@@ -41,11 +50,31 @@
 //   - concatenation into SQL (`"SELECT ..." + x`): GOFASTR1401 owns that
 //     shape; this rule only sees the Sprintf family, so the two cannot
 //     double-report.
+//   - format-INITIAL func/type/var keywords without code evidence:
+//     lowercase messages start with the same nouns ("type %s is not a
+//     struct", "func %s(ctx) was replaced"). A format-initial keyword
+//     is code only with positive evidence after the verb: for func, a
+//     parenthesis immediately after the identifier run plus a '{' or
+//     newline later in the format; for type, one of struct/interface/
+//     map/func/chan/'='/'['/'*' next; for var, '='/':=' or one of
+//     those keywords. After a real code boundary (newline, tab, brace,
+//     paren, semicolon, colon, equals) the keyword alone is evidence.
+//   - SQL statement shapes outside the anchored phrase list (alter/add/
+//     create/drop table, create unique index/index, drop index, create
+//     view/trigger, insert (or replace) into, delete from, pragma
+//     table_info), with the verb allowed to complete an identifier the
+//     phrase began (`create index idx_%s`): a shape not in the list is
+//     silent until its phrase is added.
+//   - verbs after '?' or '#' inside a '/'-leading quoted string: route
+//     slots cover the PATH portion only. A query parameter is a
+//     different grammar with a different escaper (url.QueryEscape),
+//     not an identifier slot.
 package emitident
 
 import (
 	"go/ast"
 	"go/constant"
+	"go/token"
 	"go/types"
 	"regexp"
 	"strings"
@@ -69,6 +98,15 @@ var gateNameRe = regexp.MustCompile(`(?i)ident|quote|slug|sanit|safe|escape|type
 // or quoting it (query.QuoteIdent, query.SafeIdent). Used for the
 // function-local guard tracking and the package field memo.
 var checkNameRe = regexp.MustCompile(`(?i)ident|quote|safe|validat`)
+
+// treatedFieldRe matches field names that state the VALUE'S TREATMENT
+// (quoted, sanitized, escaped): the store constructed the value through
+// a quoting/validation helper and named the field for what was done to
+// it — the battery stores' quotedTable shape. This is deliberately
+// narrower than gateNameRe: noun families like HandlerType/FieldType/
+// Ident describe what a value IS, not how it was treated, and gate
+// nothing.
+var treatedFieldRe = regexp.MustCompile(`(?i)quoted|sanit|escap`)
 
 // isCheckCall reports whether a call is treated as an identifier gate:
 // named for checking/quoting identifiers, and not one of the stdlib
@@ -202,71 +240,217 @@ func run(pass *analysis.Pass) (any, error) {
 	return nil, nil
 }
 
+// checkFile reports ungated names formatted into identifier slots. The
+// function-local guard is computed per emit site: a check-named call
+// gates its arguments only where it dominates the emit — the emit
+// inside the check's success arm, or after a failure arm that diverges
+// (return/panic/os.Exit, or a continue guarding emits inside the same
+// loop body only). A check that only warns and falls
+// through gates nothing: the hostile name still reaches the format.
 func checkFile(pass *analysis.Pass, f *ast.File, helperDecls map[*types.Func]*ast.FuncDecl, memo map[string]bool, paramGate map[*types.Var]bool) {
 	bound := boundExprs(pass, f)
 
-	// Function-local ident guards: objects checked by an isXIdent-style
-	// call in some if-statement of the same function.
-	guarded := map[types.Object]bool{}
-	ast.Inspect(f, func(n ast.Node) bool {
-		if st, ok := n.(*ast.IfStmt); ok {
-			// A check in the if's INIT counts too:
-			// `if _, err := query.SafeIdent(table); err != nil`.
-			for _, root := range []ast.Node{st.Init, st.Cond} {
-				if root == nil {
-					continue
+	type guard struct {
+		obj        types.Object
+		st         *ast.IfStmt
+		bodyIsFail bool // check negated (or in the if's INIT): the Body is the failure arm
+	}
+	var processBody func(body *ast.BlockStmt)
+	processBody = func(body *ast.BlockStmt) {
+		var ifs []*ast.IfStmt
+		var loops []ast.Node
+		var emits []*ast.CallExpr
+		ast.Inspect(body, func(n ast.Node) bool {
+			switch e := n.(type) {
+			case *ast.FuncLit:
+				processBody(e.Body) // a closure may run later: separate scope
+				return false
+			case *ast.IfStmt:
+				ifs = append(ifs, e)
+			case *ast.ForStmt, *ast.RangeStmt:
+				loops = append(loops, e)
+			case *ast.CallExpr:
+				if _, ok := fmtCalls[qualifiedCallee(pass, e.Fun)]; ok {
+					emits = append(emits, e)
 				}
-				ast.Inspect(root, func(c ast.Node) bool {
-					call, ok := c.(*ast.CallExpr)
-					if !ok || !isCheckCall(pass, call.Fun) {
-						return true
+			}
+			return true
+		})
+		var guards []guard
+		addGuards := func(call *ast.CallExpr, st *ast.IfStmt, bodyIsFail bool) {
+			for _, a := range call.Args {
+				if id, ok := a.(*ast.Ident); ok {
+					if obj := pass.TypesInfo.ObjectOf(id); obj != nil {
+						guards = append(guards, guard{obj: obj, st: st, bodyIsFail: bodyIsFail})
 					}
-					for _, a := range call.Args {
-						if id, ok := a.(*ast.Ident); ok {
-							if obj := pass.TypesInfo.ObjectOf(id); obj != nil {
-								guarded[obj] = true
-							}
-						}
+				}
+			}
+		}
+		for _, st := range ifs {
+			if st.Cond != nil {
+				collectCondChecks(pass, st.Cond, 0, func(call *ast.CallExpr, neg int) {
+					addGuards(call, st, neg%2 == 1)
+				})
+			}
+			if st.Init != nil {
+				// A check in the if's INIT:
+				// `if _, err := query.SafeIdent(table); err != nil`
+				// — the Body tests the check's failure.
+				ast.Inspect(st.Init, func(c ast.Node) bool {
+					if call, ok := c.(*ast.CallExpr); ok && isCheckCall(pass, call.Fun) {
+						addGuards(call, st, true)
 					}
 					return true
 				})
 			}
 		}
-		return true
-	})
+		for _, emit := range emits {
+			guarded := map[types.Object]bool{}
+			for _, g := range guards {
+				if g.bodyIsFail {
+					// The else arm of a negated check is its success arm.
+					if g.st.Else != nil && emit.Pos() >= g.st.Else.Pos() && emit.Pos() <= g.st.Else.End() {
+						guarded[g.obj] = true
+						continue
+					}
+					if emit.Pos() > g.st.End() {
+						if bodyDiverges(pass, g.st.Body) {
+							guarded[g.obj] = true
+						} else if bodyContinues(g.st.Body) && sameLoopBody(loops, g.st, emit) {
+							// A continue only skips the current
+							// iteration: it guards emits inside the
+							// same loop body, never an emit after the
+							// loop — the value that hit the continue
+							// is exactly the unchecked one a post-loop
+							// emit can format.
+							guarded[g.obj] = true
+						}
+					}
+					continue
+				}
+				if emit.Pos() >= g.st.Body.Pos() && emit.Pos() <= g.st.Body.End() {
+					guarded[g.obj] = true
+				}
+			}
+			checkEmit(pass, emit, bound, helperDecls, guarded, memo, paramGate)
+		}
+	}
+	for _, decl := range f.Decls {
+		if fd, ok := decl.(*ast.FuncDecl); ok && fd.Body != nil {
+			processBody(fd.Body)
+		}
+	}
+}
 
-	ast.Inspect(f, func(n ast.Node) bool {
-		call, ok := n.(*ast.CallExpr)
-		if !ok {
+// collectCondChecks finds check-named calls in an if condition, tracking
+// how many negations wrap each (the parity decides which arm is the
+// check's success arm).
+func collectCondChecks(pass *analysis.Pass, x ast.Expr, neg int, add func(call *ast.CallExpr, neg int)) {
+	switch e := x.(type) {
+	case *ast.ParenExpr:
+		collectCondChecks(pass, e.X, neg, add)
+	case *ast.UnaryExpr:
+		n := neg
+		if e.Op == token.NOT {
+			n++
+		}
+		collectCondChecks(pass, e.X, n, add)
+	case *ast.BinaryExpr:
+		collectCondChecks(pass, e.X, neg, add)
+		collectCondChecks(pass, e.Y, neg, add)
+	}
+	if call, ok := x.(*ast.CallExpr); ok && isCheckCall(pass, call.Fun) {
+		add(call, neg)
+	}
+}
+
+// bodyDiverges reports whether the block's control flow unconditionally
+// leaves the FUNCTION: a top-level return, panic, or os.Exit. Statements
+// nested in inner conditionals do not count — their other paths fall
+// through. A continue does not count either: it only skips to the next
+// iteration (see bodyContinues).
+func bodyDiverges(pass *analysis.Pass, body *ast.BlockStmt) bool {
+	for _, st := range body.List {
+		switch s := st.(type) {
+		case *ast.ReturnStmt:
+			return true
+		case *ast.ExprStmt:
+			if call, ok := s.X.(*ast.CallExpr); ok {
+				if id, ok := call.Fun.(*ast.Ident); ok && id.Name == "panic" {
+					return true
+				}
+				if qualifiedCallee(pass, call.Fun) == "os.Exit" {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+// bodyContinues reports whether the block's top level is a continue.
+func bodyContinues(body *ast.BlockStmt) bool {
+	for _, st := range body.List {
+		if s, ok := st.(*ast.BranchStmt); ok && s.Tok == token.CONTINUE {
 			return true
 		}
-		formatIndex, ok := fmtCalls[qualifiedCallee(pass, call.Fun)]
-		if !ok || formatIndex >= len(call.Args) {
-			return true
-		}
-		format, ok := stringLiteralValue(pass, call.Args[formatIndex])
-		if !ok {
-			return true
-		}
-		for _, s := range scanSlots(format) {
-			argIndex := formatIndex + 1 + s.verbIndex
-			if argIndex >= len(call.Args) {
-				break
+	}
+	return false
+}
+
+// sameLoopBody reports whether st and emit sit inside the same loop's
+// BODY: the innermost loop enclosing st, with emit lexically inside
+// that loop's body. A continue divergence guards only there.
+func sameLoopBody(loops []ast.Node, st *ast.IfStmt, emit *ast.CallExpr) bool {
+	var innermost ast.Node
+	for _, lp := range loops {
+		if st.Pos() >= lp.Pos() && st.End() <= lp.End() {
+			if innermost == nil || lp.End()-lp.Pos() < innermost.End()-innermost.Pos() {
+				innermost = lp
 			}
-			if s.quoted {
-				continue // %q is the quoting mechanism in this slot's grammar
-			}
-			gated, fields := resolveArg(pass, call.Args[argIndex], bound, helperDecls, guarded, memo, paramGate, 0)
-			if gated || allInMemo(fields, memo) {
-				continue
-			}
-			pass.Reportf(call.Pos(),
-				"fmt format substitutes an ungated value into identifier slot %q of emitted code: a name carrying quotes, operators, or keywords changes what the emitted code does; validate it (isGoIdentifier/token.IsIdentifier) or quote it for that grammar",
-				s.text)
-			break // one report per call
 		}
-		return true
-	})
+	}
+	if innermost == nil {
+		return false
+	}
+	var body *ast.BlockStmt
+	switch l := innermost.(type) {
+	case *ast.ForStmt:
+		body = l.Body
+	case *ast.RangeStmt:
+		body = l.Body
+	}
+	return body != nil && emit.Pos() >= body.Pos() && emit.End() <= body.End()
+}
+
+// checkEmit scans one Sprintf-family call's format for identifier slots
+// and reports the first ungated one.
+func checkEmit(pass *analysis.Pass, call *ast.CallExpr, bound map[types.Object]ast.Expr, helperDecls map[*types.Func]*ast.FuncDecl, guarded map[types.Object]bool, memo map[string]bool, paramGate map[*types.Var]bool) {
+	formatIndex, ok := fmtCalls[qualifiedCallee(pass, call.Fun)]
+	if !ok || formatIndex >= len(call.Args) {
+		return
+	}
+	format, ok := stringLiteralValue(pass, call.Args[formatIndex])
+	if !ok {
+		return
+	}
+	for _, s := range scanSlots(format) {
+		argIndex := formatIndex + 1 + s.verbIndex
+		if argIndex >= len(call.Args) {
+			break
+		}
+		if s.quoted {
+			continue // %q is the quoting mechanism in this slot's grammar
+		}
+		gated, fields := resolveArg(pass, call.Args[argIndex], bound, helperDecls, guarded, memo, paramGate, 0)
+		if gated || allInMemo(fields, memo) {
+			continue
+		}
+		pass.Reportf(call.Pos(),
+			"fmt format substitutes an ungated value into identifier slot %q of emitted code: a name carrying quotes, operators, or keywords changes what the emitted code does; validate it (isGoIdentifier/token.IsIdentifier) or quote it for that grammar",
+			s.text)
+		break // one report per call
+	}
 }
 
 // ---- format scanning ----------------------------------------------------
@@ -360,22 +544,39 @@ func identSlotText(format string, i int, quoted bool) (string, bool) {
 	for _, kw := range []string{"func", "type", "var"} {
 		kwStart := pb - len(kw)
 		if kwStart >= 0 && strings.HasSuffix(lower[:pb], kw) && (kwStart == 0 || !isIdentByte(lower[kwStart-1])) {
-			// The keyword must start a code context, not English prose:
-			// at the format's start or after a code boundary
-			// (newline, tab, brace, paren, semicolon, colon, equals).
-			// "component type %s from another package" is prose.
-			if kwStart == 0 || strings.IndexByte("\n\t{;(:=", lower[kwStart-1]) >= 0 {
+			if kwStart == 0 {
+				// A format-INITIAL keyword is not evidence by itself:
+				// lowercase messages start with the same nouns
+				// ("type %s is not a struct"). Demand positive code
+				// evidence after the verb (declFollows).
+				if declFollows(format, after, kw) {
+					return kw + " " + format[b:after], true
+				}
+				continue
+			}
+			// After a code boundary (newline, tab, brace, paren,
+			// semicolon, colon, equals) the keyword alone is evidence:
+			// "component type %s from another package" is prose, but
+			// nothing but code follows a boundary.
+			if strings.IndexByte("\n\t{;(:=", lower[kwStart-1]) >= 0 {
 				return kw + " " + format[b:after], true
 			}
 		}
 	}
 
-	// SQL DDL identifier slots. %q here IS the quoting mechanism
-	// (SQLite/Postgres double-quoted identifiers).
+	// SQL identifier slots. %q here IS the quoting mechanism
+	// (SQLite/Postgres double-quoted identifiers). This is an anchored
+	// phrase list, declared as such: a statement shape outside it is
+	// silent until its phrase is added. The verb may complete an
+	// identifier the phrase began (`create index idx_%s`).
 	if !quoted {
 		for _, phrase := range []string{
 			"alter table ", "add column if not exists ", "add column ",
-			"create table if not exists ", "create table ", "drop table ",
+			"create table if not exists ", "create table ",
+			"drop table if exists ", "drop table ",
+			"create unique index ", "create index ", "drop index ",
+			"create view ", "create trigger ",
+			"insert or replace into ", "insert into ", "delete from ",
 			"pragma table_info(",
 		} {
 			if slotAfterPhrase(lower, i, phrase) {
@@ -384,31 +585,107 @@ func identSlotText(format string, i int, quoted bool) (string, bool) {
 		}
 	}
 
-	// CSS string slots inside an @font-face rule: any verb inside a
-	// single-quoted run opened after a colon or paren —
-	// `font-family: '%s'`, `url('%s/%s.woff2')`. An odd quote count alone
-	// would let an apostrophe in prose ("the app's fonts") open a run.
-	if !quoted && strings.Contains(lower, "@font-face") && strings.Count(lower[:i], "'")%2 == 1 { //gofastr:allow(GOFASTR1801) the analyzer names the CSS at-rule it inspects; no CSS is emitted here
+	// CSS string slots: any verb inside a single-quoted run opened as a
+	// CSS string — after a property name and colon (`content: '%s'`,
+	// `font-family: '%s'`) or inside a function call (`url('...')`).
+	// @font-face is only where these slots first appeared. The property
+	// prefix is what keeps an apostrophe in prose ("the app's fonts")
+	// from opening a run; an odd quote count alone would let one.
+	if !quoted && strings.Count(lower[:i], "'")%2 == 1 {
 		q := strings.LastIndexByte(lower[:i], '\'')
-		if q > 0 && (lower[q-1] == '(' || (lower[q-1] == ' ' && q >= 2 && lower[q-2] == ':')) {
+		if q > 0 && cssStringOpen(lower[:q]) {
 			return "'%s'", true
 		}
 	}
 
-	// Route path literals: `"/%s` (a quoted path whose first segment is
-	// the name) and the widget behavior URL shape.
-	if !quoted && i >= 2 && strings.HasPrefix(format[i-2:], "\"/") && b == i {
-		return `"/%s`, true
-	}
+	// The widget behavior URL shape, then route path literals generally:
+	// a verb that starts a path segment anywhere inside a double-quoted
+	// string beginning with "/" — `"/%s"` and `"/api/v1/%s"` alike; a
+	// deeper segment rewrites the route the same way the first does.
 	if !quoted && strings.Contains(lower, "/__gofastr/widget/") {
 		return "/__gofastr/widget/%s", true
+	}
+	if !quoted && b == i {
+		if q := strings.LastIndexByte(format[:i], '"'); q >= 0 && format[q+1] == '/' {
+			// The PATH portion only: a verb after '?' or '#' sits in
+			// the query string or fragment, a different grammar with a
+			// different escaper.
+			if frag := format[q:i]; !strings.ContainsAny(frag, "?#") {
+				return frag + "%s", true
+			}
+		}
 	}
 	return "", false
 }
 
+// declFollows reports whether the text after a format-initial
+// func/type/var keyword's identifier slot is positive evidence of a
+// declaration rather than prose: for func, a parenthesis immediately
+// after the identifier run plus a brace or newline later in the format
+// ("func %s(ctx context.Context) error {", not "func %s(ctx) was
+// replaced"); for type/var, the next word being struct/interface/map/
+// func/chan (or '*'/'[') or an assignment operator.
+func declFollows(format string, after int, kw string) bool {
+	rest := format[after:]
+	spaces := 0
+	for spaces < len(rest) && (rest[spaces] == ' ' || rest[spaces] == '\t') {
+		spaces++
+	}
+	rest = rest[spaces:]
+	switch kw {
+	case "func":
+		// The parenthesis follows the identifier RUN, not the verb:
+		// "func %sHandler(ctx context.Context) error {".
+		for len(rest) > 0 && isIdentByte(rest[0]) {
+			rest = rest[1:]
+		}
+		return strings.HasPrefix(rest, "(") &&
+			(strings.IndexByte(rest, '{') >= 0 || strings.IndexByte(rest, '\n') >= 0)
+	case "type", "var":
+		for _, t := range []string{"struct", "interface", "map", "func", "chan"} {
+			if strings.HasPrefix(rest, t) && (len(rest) == len(t) || !isIdentByte(rest[len(t)])) {
+				return true
+			}
+		}
+		return strings.HasPrefix(rest, "=") || strings.HasPrefix(rest, "[") ||
+			strings.HasPrefix(rest, "*") || (kw == "var" && strings.HasPrefix(rest, ":="))
+	}
+	return false
+}
+
+// cssStringOpen reports whether the text before a single quote opens a
+// CSS string: a property name then a colon (`content: '`), or an open
+// paren (`url('`).
+func cssStringOpen(before string) bool {
+	j := len(before)
+	for j > 0 && (before[j-1] == ' ' || before[j-1] == '\t') {
+		j--
+	}
+	if j == 0 {
+		return false
+	}
+	switch before[j-1] {
+	case '(':
+		return true
+	case ':':
+		n := 0
+		for j--; j > 0 && isPropByte(before[j-1]); j-- {
+			n++
+		}
+		return n > 0
+	}
+	return false
+}
+
+func isPropByte(c byte) bool {
+	return c >= 'a' && c <= 'z' || c >= '0' && c <= '9' || c == '-'
+}
+
 // slotAfterPhrase reports whether the verb at offset i is the identifier
-// slot directly following the given (lowercased) phrase, allowing only
-// spaces between.
+// slot directly following the given (lowercased) phrase: whitespace,
+// then optionally an identifier prefix the verb completes
+// (`create index idx_%s`). Prose words between phrase and verb (a word
+// followed by more space) disqualify the slot.
 func slotAfterPhrase(lower string, i int, phrase string) bool {
 	start := 0
 	for {
@@ -421,11 +698,26 @@ func slotAfterPhrase(lower string, i int, phrase string) bool {
 		if end > i {
 			return false
 		}
-		if strings.TrimRight(lower[end:i], " \t") == "" {
+		if gapOK(lower[end:i]) {
 			return true
 		}
 		start = p + 1
 	}
+}
+
+// gapOK reports whether the text between a phrase and its verb is only
+// whitespace followed by identifier bytes glued to the verb.
+func gapOK(s string) bool {
+	i := 0
+	for i < len(s) && (s[i] == ' ' || s[i] == '\t') {
+		i++
+	}
+	for ; i < len(s); i++ {
+		if !isIdentByte(s[i]) {
+			return false
+		}
+	}
+	return true
 }
 
 func isIdentByte(c byte) bool { return strings.IndexByte(identChars, c) >= 0 }
@@ -472,8 +764,8 @@ func resolveArg(pass *analysis.Pass, x ast.Expr, bound map[types.Object]ast.Expr
 		_, sub := resolveArg(pass, e.X, bound, helperDecls, guarded, memo, paramGate, depth+1)
 		collect(sub)
 		fields[e.Sel.Name] = true
-		if gateNameRe.MatchString(e.Sel.Name) {
-			return true, fields // quotedTable, safeIdent: self-describing
+		if treatedFieldRe.MatchString(e.Sel.Name) {
+			return true, fields // quotedTable, sanitizedSlot: the name states the VALUE'S TREATMENT
 		}
 		if literalField(pass, e, bound, helperDecls, depth) {
 			return true, fields // a field fixed to a literal: no input to smuggle

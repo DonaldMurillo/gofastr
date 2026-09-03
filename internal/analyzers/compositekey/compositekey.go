@@ -13,6 +13,13 @@
 // ("a", "b\x00c") collapsed onto one claim and cross-poisoned
 // fingerprints). Both were fixed in b79942f7: the store moved to struct
 // keys, the shard to a length-prefixed encoding.
+
+// The join is recognized through the indirections a real bug wears: a
+// local or struct field bound from it, a one-result helper whose body
+// reduces to returning it (statements that only rebind the helper's
+// parameters in front of the return do not hide it), and the one-arg
+// string-preserving normalizers around it at the sink
+// (strings.ToLower/ToUpper/TrimSpace — the usual key normalizers).
 //
 // The rule is deliberately silent on:
 //   - printable separators (":", ".", " ", "|", "-", "/"...): those key
@@ -24,6 +31,15 @@
 //     not a collision.
 //   - fmt.Sprintf keys: interpolation belongs to the emitident /
 //     GOFASTR1401 families, not this one.
+//   - keyed-store arguments whose callee parameter name does not say
+//     "key": the Store.Begin/Finish leg fires only when the parameter
+//     name contains "key" (key, storeKey, cacheKey). A keyed store
+//     behind an interface leaves no type-level trace that an argument
+//     is used as a key — the parameter name is the only intent signal
+//     available — so a store naming it claim/name/id stays silent by
+//     declaration, not by oversight. A join that also reaches a map,
+//     map-literal key, or prefix scan in this package is reported
+//     regardless of the name.
 //   - length-prefixed joins: any operand of the form strconv.Itoa(len(x))
 //     or fmt.Sprint(len(x)) with x also an operand pins the boundary and
 //     makes the join injective (the fixed idempotency shard).
@@ -58,8 +74,11 @@ func run(pass *analysis.Pass) (any, error) {
 }
 
 // joinHelpers collects package functions with exactly one result whose
-// body is a single `return <delimiter join>`: the taskKey/pushKey shape,
-// where the join hides behind a helper call at the sink.
+// body reduces to a single `return <delimiter join>` — the taskKey/
+// pushKey shape, where the join hides behind a helper call at the sink.
+// Statements in front of the return are allowed while they only rebind
+// the parameters: the guarded `if owner == "" { owner = "anon" }`
+// prefix is the realistic spelling of such a helper.
 func joinHelpers(pass *analysis.Pass) map[*types.Func]ast.Expr {
 	out := map[*types.Func]ast.Expr{}
 	for _, f := range pass.Files {
@@ -68,18 +87,18 @@ func joinHelpers(pass *analysis.Pass) map[*types.Func]ast.Expr {
 			if !ok || fd.Body == nil || fd.Type.Results == nil {
 				continue
 			}
-			if len(fd.Type.Results.List) != 1 {
+			if len(fd.Type.Results.List) != 1 || len(fd.Body.List) == 0 {
 				continue
 			}
-			if len(fd.Body.List) != 1 {
-				continue
-			}
-			ret, ok := fd.Body.List[0].(*ast.ReturnStmt)
+			ret, ok := fd.Body.List[len(fd.Body.List)-1].(*ast.ReturnStmt)
 			if !ok || len(ret.Results) != 1 {
 				continue
 			}
 			fn, ok := pass.TypesInfo.Defs[fd.Name].(*types.Func)
 			if !ok {
+				continue
+			}
+			if !rebindsOnly(pass, fd.Body.List[:len(fd.Body.List)-1], fn) {
 				continue
 			}
 			if joinSeparator(pass, ret.Results[0], nil) != "" {
@@ -88,6 +107,61 @@ func joinHelpers(pass *analysis.Pass) map[*types.Func]ast.Expr {
 		}
 	}
 	return out
+}
+
+// rebindsOnly reports whether every statement only rebinds parameters
+// of fn: `=` assignments to the parameters, and ifs whose branches
+// contain nothing but such assignments. A `:=` declares a NEW binding
+// (never a parameter of fn) and disqualifies the helper.
+func rebindsOnly(pass *analysis.Pass, stmts []ast.Stmt, fn *types.Func) bool {
+	sig, ok := fn.Type().(*types.Signature)
+	if !ok {
+		return false
+	}
+	params := sig.Params()
+	isParam := func(id *ast.Ident) bool {
+		obj := pass.TypesInfo.ObjectOf(id)
+		for i := range params.Len() {
+			if params.At(i) == obj {
+				return true
+			}
+		}
+		return false
+	}
+	for _, st := range stmts {
+		switch s := st.(type) {
+		case *ast.AssignStmt:
+			// token.ASSIGN only: a := declares a new binding, whose
+			// object is never one of fn's parameters.
+			if s.Tok != token.ASSIGN {
+				return false
+			}
+			for _, lhs := range s.Lhs {
+				id, ok := lhs.(*ast.Ident)
+				if !ok || !isParam(id) {
+					return false
+				}
+			}
+		case *ast.IfStmt:
+			if s.Init != nil {
+				return false
+			}
+			branch := append([]ast.Stmt{}, s.Body.List...)
+			if s.Else != nil {
+				eb, ok := s.Else.(*ast.BlockStmt)
+				if !ok {
+					return false
+				}
+				branch = append(branch, eb.List...)
+			}
+			if !rebindsOnly(pass, branch, fn) {
+				return false
+			}
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 // checkFile reports every delimiter join that reaches a keyed sink. Each
@@ -211,10 +285,34 @@ func keyOrigin(pass *analysis.Pass, x ast.Expr, bound map[types.Object]ast.Expr,
 			}
 		}
 		return nil
+	case *ast.SelectorExpr:
+		// A join parked on a struct field (`h.k = a + SEP + b`) and
+		// keyed later: boundExprs binds the field object.
+		obj := pass.TypesInfo.ObjectOf(e.Sel)
+		if obj == nil {
+			return nil
+		}
+		if src, ok := bound[obj]; ok {
+			if o := keyOrigin(pass, src, bound, helpers, depth+1); o != nil {
+				if o.obj != nil {
+					return o // a helper or upstream binding is the origin
+				}
+				return &keySource{obj: obj, join: o.join, node: src}
+			}
+		}
+		return nil
 	case *ast.CallExpr:
 		if fn, ok := calleeFunc(pass, e.Fun); ok {
 			if join, ok := helpers[fn]; ok {
 				return &keySource{obj: fn, join: join, node: e}
+			}
+		}
+		// Peel the one-argument string-preserving normalizers — the
+		// most common key wrapper is strings.ToLower around the join.
+		switch qualifiedCallee(pass, e.Fun) {
+		case "strings.ToLower", "strings.ToUpper", "strings.TrimSpace":
+			if len(e.Args) == 1 {
+				return keyOrigin(pass, e.Args[0], bound, helpers, depth+1)
 			}
 		}
 		return nil
@@ -383,8 +481,17 @@ func boundExprs(pass *analysis.Pass, f *ast.File) map[types.Object]ast.Expr {
 			if len(st.Lhs) != 1 || len(st.Rhs) != 1 {
 				return true
 			}
-			if id, ok := st.Lhs[0].(*ast.Ident); ok && id.Name != "_" {
-				if obj := pass.TypesInfo.ObjectOf(id); obj != nil {
+			switch lhs := st.Lhs[0].(type) {
+			case *ast.Ident:
+				if lhs.Name != "_" {
+					if obj := pass.TypesInfo.ObjectOf(lhs); obj != nil {
+						m[obj] = st.Rhs[0]
+					}
+				}
+			case *ast.SelectorExpr:
+				// `h.k = a + SEP + b`: bind the field's object, so a join
+				// parked on a struct field and keyed later is recognized.
+				if obj := pass.TypesInfo.ObjectOf(lhs.Sel); obj != nil {
 					m[obj] = st.Rhs[0]
 				}
 			}

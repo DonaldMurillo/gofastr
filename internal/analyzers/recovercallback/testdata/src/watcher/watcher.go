@@ -7,6 +7,7 @@ package watcher
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"time"
 )
@@ -63,3 +64,28 @@ func (w *Watcher) cancelFunc() {
 		w.cancel()
 	})
 }
+
+// cancelCauseSlot is quiet: a func(error)-shaped field under a
+// cancel-named slot is a context.WithCancelCause cancel — context
+// plumbing like CancelFunc, never user code — including through the
+// local copy.
+type turn struct {
+	cancelFn  func(cause error)
+	onFailure func(cause error)
+}
+
+func (t *turn) cancelPrev() {
+	prev := t.cancelFn
+	if prev != nil {
+		prev(errSwitched)
+	}
+}
+
+func startTurn(t *turn) {
+	go func() {
+		t.cancelPrev()
+		t.onFailure(errSwitched) // want `recovercallback: t\.onFailure is invoked with no recover in scope`
+	}()
+}
+
+var errSwitched = errors.New("switched")

@@ -411,8 +411,19 @@ func adminSuperuserCtx(ctx context.Context) context.Context {
 func (b *Battery) handleIndex(w http.ResponseWriter, r *http.Request) {
 	var stats queue.JobStats
 	if b.cfg.Queue != nil {
-		stats, _ = b.cfg.Queue.Stats(r.Context())
+		var err error
+		stats, err = b.cfg.Queue.Stats(r.Context())
+		if err != nil {
+			// The overview page degrades to zero counts; the refusal
+			// is logged rather than dropped. Stats can return a
+			// partially populated map with the error (DBQueue does on
+			// a mid-scan rows.Err()); those counts are not trustworthy,
+			// so reset to the zero-value display.
+			b.logger().Warn("admin: queue stats", "error", err)
+			stats = queue.JobStats{}
+		}
 	}
+
 	var auditCount int
 	db := b.effectiveDB()
 	if db != nil {
@@ -443,10 +454,19 @@ func (b *Battery) handleQueue(w http.ResponseWriter, r *http.Request) {
 			adminError("Could not load queue jobs. Check the server logs for details."))
 		return
 	}
-	stats, _ := b.cfg.Queue.Stats(r.Context())
+	stats, err := b.cfg.Queue.Stats(r.Context())
+	if err != nil {
+		// Partially populated stats can ride along with the error (see
+		// handleIndex); the filter chips must show zero counts, not
+		// stale numbers.
+		b.logger().Warn("admin: queue stats", "error", err)
+		stats = queue.JobStats{}
+	}
+
 	// Offer per-row Replay only on the failed view and only when the backend
 	// supports replay (DBQueue does; memory/redis don't yet).
 	showReplay := false
+
 	if status == "failed" {
 		if _, ok := b.cfg.Queue.(queue.Replayable); ok {
 			showReplay = true

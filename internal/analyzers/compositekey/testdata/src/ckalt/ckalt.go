@@ -72,3 +72,34 @@ func StaticKey(m map[string]int) bool {
 	_, ok := m["fixed"+"\x00"+"key"]
 	return ok
 }
+
+// ---- indirections a real bug wears -----------------------------------
+
+// loweredGet wraps the join in the standard key normalizer: the join
+// still reaches the sink, one call deeper.
+func loweredGet(r *sessionRegistry, user, token string) *session {
+	return r.sessions[strings.ToLower(user+"\x00"+token)] // want `this concatenation joins parts with the "\\x00" separator into a key`
+}
+
+// holder parks the join on a struct field before keying.
+type holder struct {
+	k string // want `k joins parts with the "\\x00" separator into a key`
+}
+
+func fieldKey(r *sessionRegistry, h *holder, user, token string) {
+	h.k = user + "\x00" + token
+	r.sessions[h.k] = &session{user: user, token: token}
+}
+
+// guardedShard is the helper shape with a guard in front of the join:
+// statements that only rebind parameters do not hide the join.
+func guardedShard(tenant, shard string) string { // want `guardedShard joins parts with the "\\t" separator into a key`
+	if tenant == "" {
+		tenant = "anon"
+	}
+	return tenant + "\t" + shard
+}
+
+func claimedGuarded(claims map[string]bool, tenant, shard string) bool {
+	return claims[guardedShard(tenant, shard)]
+}

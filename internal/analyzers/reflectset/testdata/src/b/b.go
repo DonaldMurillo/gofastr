@@ -4,11 +4,12 @@ package b
 
 import "reflect"
 
-// stamp overwrites a caller-NAMED field: FieldByName access on a known
-// package type is deliberately outside the rule since the 2026-09-02
-// narrowing (the tokenmap posture), kept as the documented negative.
+// stamp overwrites a caller-NAMED field: FieldByName with a
+// non-literal name is the same one-unexported-field panic as an index
+// (widened 2026-09-02 after the adversarial review); literal names
+// remain the tokenmap silence.
 func stamp(v reflect.Value, name string, val string) error {
-	v.FieldByName(name).SetString(val)
+	v.FieldByName(name).SetString(val) // want `reflect SetString on a field value without a CanSet check`
 	return nil
 }
 

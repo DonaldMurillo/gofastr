@@ -125,11 +125,15 @@ func main() {
 	// ----- Search backend wired to /search ----------------------------
 	idx := search.NewMemory()
 	fwApp.Router().GetFunc("/search", func(w http.ResponseWriter, r *http.Request) {
-		results, _ := idx.Search(r.Context(), search.Query{
+		results, err := idx.Search(r.Context(), search.Query{
 			Text:  r.URL.Query().Get("q"),
 			Type:  "posts",
 			Limit: 10,
 		})
+		if err != nil {
+			http.Error(w, "search failed", http.StatusInternalServerError)
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{"results": results})
 	})

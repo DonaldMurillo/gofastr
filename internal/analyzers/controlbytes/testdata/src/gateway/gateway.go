@@ -19,7 +19,7 @@ type EdgeFilter struct {
 func (e *EdgeFilter) observe(r *http.Request) {
 	ua := r.Header.Get("User-Agent")
 	traceparent := r.Header.Get("Traceparent")
-	e.log.Warn("gateway: rejected at edge", // want `controlbytes: request-derived value reaches logger.Info/Warn/Error key-value unscrubbed`
+	e.log.Warn("gateway: rejected at edge", // want `controlbytes: request-derived value reaches logger.Debug/Info/Warn/Error key-value unscrubbed`
 		"user_agent", ua,
 		"traceparent", traceparent,
 		"route", r.PathValue("route"),

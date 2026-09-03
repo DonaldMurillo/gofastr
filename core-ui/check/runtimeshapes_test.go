@@ -357,10 +357,10 @@ function conflictRefresh(dest, crpc, restoreFn) {
     .catch(function () { restoreFn(); });
 }
 
-// Synthetic positives (never in this repo): a swap helper and an
-// insertAdjacentHTML mount.
+// Synthetic positives (never in this repo): one of the runtime's own
+// swap helpers and an insertAdjacentHTML mount.
 function loadPanel(slot, path) {
-  fetch(path).then(r => r.json()).then(d => { swap(slot, d.panel); });
+  fetch(path).then(r => r.json()).then(d => { swapPane(slot, d.panel); });
 }
 function loadBadge(el, src) {
   fetch(src).then(r => r.text()).then(t => el.insertAdjacentHTML('beforeend', t));
@@ -523,5 +523,541 @@ func TestLintAttributePathSegments_RepoIsClean(t *testing.T) {
 	}
 	if res.HasErrors() {
 		t.Errorf("runtime JS joins attribute-borne values into URL paths ungated:\n%s", res.Error())
+	}
+}
+
+// ── review findings (7-14): named .then handlers, statusText gates,
+// template URLs, hoisted guards, long for-in bodies, window.CSS.escape,
+// revocable safe identifiers ────────────────────────────────────────────
+
+const namedThenFixture = `// .then continuations passed by bare reference (review finding 7):
+// the fetched text is handed to a named function one declaration away,
+// so nothing inside the chain span itself carries the mount token.
+function mountPanel(el, html) {
+  el.innerHTML = html;
+}
+function refresh(el, src) {
+  fetch(src).then(r => r.text()).then(function (t) { mountPanel(el, t); }).catch(() => {});
+}
+// The handler itself passed by bare reference (function declaration).
+function refresh2(el, src) {
+  fetch(src).then(r => r.text()).then(bind);
+  function bind(t) { mountPanel(el, t); }
+}
+// Bare reference to a const-arrow declaration.
+function refresh3(el, src) {
+  fetch(src).then(r => r.text()).then(panel);
+  const panel = (t) => { el.insertAdjacentHTML('beforeend', t); };
+}
+// Control: the inline spelling the lint already catches.
+function refreshInline(el, src) {
+  fetch(src).then(r => r.text()).then(t => { el.innerHTML = t; });
+}
+// Silent: a named continuation that never mounts.
+function logIt(t) { console.log(t); }
+function refreshLog(el, src) {
+  fetch(src).then(r => r.text()).then(logIt);
+}
+// Silent: a named continuation that gates before mounting.
+function mountChecked(el, t) {
+  if (!t.ok) return;
+  el.innerHTML = t.body;
+}
+function refreshChecked(el, src) {
+  fetch(src).then(r => r.json()).then(mountChecked);
+}
+`
+
+func TestLintResponseMountedAfterOK_NamedThenHandler(t *testing.T) {
+	dir := writeRuntimeFixture(t, "named.js", namedThenFixture)
+	res, err := LintResponseMountedAfterOK(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Violations) != 4 {
+		t.Fatalf("expected 4 findings (refresh, refresh2, refresh3, refreshInline), got %d:\n%s",
+			len(res.Violations), res.Error())
+	}
+	for _, v := range res.Violations {
+		if !strings.HasPrefix(v.Message, "[response-mounted-unchecked]") {
+			t.Errorf("unexpected message: %s", v.Message)
+		}
+	}
+}
+
+const statusTextFixture = `// .statusText displayed is not a .status check (review finding 14):
+// the gate is a whole-token .ok/.status read in a condition context,
+// not the substring ".status" anywhere in the chain.
+function load(el, src, note) {
+  fetch(src).then(function (r) {
+    note.textContent = 'HTTP ' + r.statusText;
+    return r.text();
+  }).then(function (t) { el.innerHTML = t; });
+}
+// Control: no status mention at all — fires.
+function loadCtl(el, src, note) {
+  fetch(src).then(function (r) {
+    note.textContent = 'loading';
+    return r.text();
+  }).then(function (t) { el.innerHTML = t; });
+}
+// .okButton is not .ok either — token boundary required.
+function loadOkButton(el, src, note) {
+  fetch(src).then(function (r) {
+    note.textContent = r.okButton;
+    return r.text();
+  }).then(function (t) { el.innerHTML = t; });
+}
+// Gates that count, all silent: negated .ok, compared .status, .ok in
+// an if condition, ternary on .ok.
+function loadNeg(el, src) {
+  fetch(src).then(r => { if (!r.ok) throw new Error('x'); return r.text(); }).then(t => { el.innerHTML = t; });
+}
+function loadCmp(el, src) {
+  fetch(src).then(r => { if (r.status !== 200) throw new Error('x'); return r.text(); }).then(t => { el.innerHTML = t; });
+}
+function loadTruthy(el, src) {
+  fetch(src).then(r => { if (r.ok) return r.text(); throw new Error('x'); }).then(t => { el.innerHTML = t; });
+}
+function loadTern(el, src) {
+  fetch(src).then(r => r.ok ? r.text() : Promise.reject(new Error('x'))).then(t => { el.innerHTML = t; });
+}
+`
+
+func TestLintResponseMountedAfterOK_StatusTextIsNotAGate(t *testing.T) {
+	dir := writeRuntimeFixture(t, "statustext.js", statusTextFixture)
+	res, err := LintResponseMountedAfterOK(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Violations) != 3 {
+		t.Fatalf("expected exactly 3 findings (load, loadCtl, loadOkButton), got %d:\n%s",
+			len(res.Violations), res.Error())
+	}
+	for _, v := range res.Violations {
+		if !strings.HasPrefix(v.Message, "[response-mounted-unchecked]") {
+			t.Errorf("unexpected message: %s", v.Message)
+		}
+	}
+}
+
+// attrTplFixtureRaw uses ~ for JS backticks; untailed below.
+const attrTplFixtureRaw = `// Template-literal URL building (review finding 8): the same
+// attribute-borne value joined into the path after a literal chunk
+// ending in "/".
+const postTpl = (el, body) => {
+  return fetch(~/kiln/tool/${el.getAttribute('data-kiln-tool')}~, {
+    method: 'POST',
+    body,
+  }).catch(() => {});
+};
+// Template via a variable holding the attribute read.
+function loadNote(btn) {
+  const note = btn.getAttribute('data-note-id');
+  fetch(~ /api/notes/${note}~);
+}
+// Template plus a '+' operand on the same expression.
+function mixed(el) {
+  const id = el.dataset.rowId;
+  fetch(~ /rows/${id}~ + '?full=1');
+}
+// Silent: the adjacent literal chunk does not end in "/" (query form).
+function queryish(el) {
+  fetch(~ /find?q=${el.getAttribute('data-q')}~);
+}
+// Control: the '+' spelling the lint already catches.
+const postCat = (el, body) => {
+  return fetch('/kiln/tool/' + el.getAttribute('data-kiln-tool'), {
+    method: 'POST',
+    body,
+  }).catch(() => {});
+};
+`
+
+var attrTplFixture = strings.ReplaceAll(attrTplFixtureRaw, "~", "\x60")
+
+func TestLintAttributePathSegments_TemplateLiterals(t *testing.T) {
+	dir := writeRuntimeFixture(t, "tpl.js", attrTplFixture)
+	res, err := LintAttributePathSegments(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Violations) != 4 {
+		t.Fatalf("expected exactly 4 findings (postTpl, loadNote, mixed, postCat), got %d:\n%s",
+			len(res.Violations), res.Error())
+	}
+	for _, v := range res.Violations {
+		if !strings.HasPrefix(v.Message, "[attr-path-segment]") {
+			t.Errorf("unexpected message: %s", v.Message)
+		}
+	}
+}
+
+const registryHoistedFixture = `// Guard hoisted into a compute-once boolean (review finding 9): a
+// boolean assigned exactly once from the guard idiom, referenced in the
+// condition of the if/ternary that guards the read, counts.
+const catalog = {};
+const other = {};
+function find(name) {
+  const known = Object.prototype.hasOwnProperty.call(catalog, name);
+  if (!known) return null;
+  return catalog[name];
+}
+function findTern(name) {
+  const has = Object.prototype.hasOwnProperty.call(catalog, name);
+  return has ? catalog[name] : null;
+}
+function findInline(name) {
+  if (Object.prototype.hasOwnProperty.call(catalog, name)) {
+    return catalog[name];
+  }
+  return null;
+}
+// The repo's own fixed spelling: guard on the previous line.
+function findFixed(name) {
+  const entry = Object.prototype.hasOwnProperty.call(catalog, name)
+    ? catalog[name]
+    : undefined;
+  return entry;
+}
+// A boolean initialized from a guard on a DIFFERENT registry does not
+// guard this one, and per-function scoping keeps one function's boolean
+// from laundering another's read.
+function findMixed(name) {
+  const known = Object.prototype.hasOwnProperty.call(other, name);
+  if (!known) return null;
+  return catalog[name];
+}
+// Still fires: no guard at all.
+function findAny(name) {
+  return catalog[name];
+}
+`
+
+func TestLintRegistryOwnProps_HoistedGuardBoolean(t *testing.T) {
+	dir := writeRuntimeFixture(t, "hoisted.js", registryHoistedFixture)
+	res, err := LintRegistryOwnProps(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Violations) != 2 {
+		t.Fatalf("expected exactly 2 findings (findMixed, findAny), got %d:\n%s",
+			len(res.Violations), res.Error())
+	}
+	for _, v := range res.Violations {
+		if !strings.HasPrefix(v.Message, "[registry-own-prop] catalog[") {
+			t.Errorf("finding on a fixed/silent spelling: %s:%d: %s", v.File, v.Line, v.Message)
+		}
+	}
+}
+
+const longForInFixture = `// A for-in loop whose body far exceeds any fixed byte window (review
+// finding 10): the loop span is brace-matched, so the enumeration-key
+// read stays bound however long the body grows.
+const reg = {};
+for (const k in reg) {
+  console.log('padding step 0 with a reasonably long line of ordinary code');
+  console.log('padding step 1 with a reasonably long line of ordinary code');
+  console.log('padding step 2 with a reasonably long line of ordinary code');
+  console.log('padding step 3 with a reasonably long line of ordinary code');
+  console.log('padding step 4 with a reasonably long line of ordinary code');
+  console.log('padding step 5 with a reasonably long line of ordinary code');
+  console.log('padding step 6 with a reasonably long line of ordinary code');
+  console.log('padding step 7 with a reasonably long line of ordinary code');
+  console.log('padding step 8 with a reasonably long line of ordinary code');
+  console.log('padding step 9 with a reasonably long line of ordinary code');
+  console.log('padding step 10 with a reasonably long line of ordinary code');
+  console.log('padding step 11 with a reasonably long line of ordinary code');
+  console.log('padding step 12 with a reasonably long line of ordinary code');
+  console.log('padding step 13 with a reasonably long line of ordinary code');
+  total += reg[k];
+}
+// The same identifier OUTSIDE the loop: the binding ends at the brace.
+after += reg[k];
+`
+
+func TestLintRegistryOwnProps_LongForInBody(t *testing.T) {
+	dir := writeRuntimeFixture(t, "longforin.js", longForInFixture)
+	res, err := LintRegistryOwnProps(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Violations) != 1 {
+		t.Fatalf("expected exactly 1 finding (the read after the loop), got %d:\n%s",
+			len(res.Violations), res.Error())
+	}
+	if !strings.HasPrefix(res.Violations[0].Message, "[registry-own-prop] reg[") {
+		t.Errorf("unexpected message: %s", res.Violations[0].Message)
+	}
+}
+
+const selReassignFixture = `// window.CSS.escape (review finding 11): the defensive global
+// reference is the same escape.
+function viaWindow(id) {
+  return document.querySelector('#' + window.CSS.escape(id));
+}
+// Reassigned literal (review finding 13): kind is initialized from a
+// literal but REASSIGNED from an attribute before use — not provably a
+// literal at the lookup.
+let kind = 'input';
+kind = el.dataset.kind;
+document.querySelector('[data-kind="' + kind + '"]');
+// Same name, different functions: the escape in viaEsc must not launder
+// the attribute-borne sel in viaAttr.
+function viaEsc(id) {
+  const sel = CSS.escape(id);
+  return document.querySelector('[data-x="' + sel + '"]');
+}
+function viaAttr(el) {
+  const sel = el.dataset.sel;
+  return document.querySelector('[data-x="' + sel + '"]');
+}
+// Silent postures that must survive: literal constant, literal read
+// with no reassignment, for-of over an array of literals.
+const IS_OPEN2 = 'data-fui-open';
+document.querySelectorAll('[' + IS_OPEN2 + ']');
+function viaLit() {
+  const tag = 'section';
+  return document.querySelector(tag + '[data-live]');
+}
+for (const ev of ['input', 'change']) {
+  document.querySelector('[data-action-type="' + ev + '"]');
+}
+`
+
+func TestLintSelectorInterpolation_WindowEscapeAndReassignedSafeIdents(t *testing.T) {
+	dir := writeRuntimeFixture(t, "reassign.js", selReassignFixture)
+	res, err := LintSelectorInterpolation(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Violations) != 2 {
+		t.Fatalf("expected exactly 2 findings (the reassigned kind, viaAttr's sel), got %d:\n%s",
+			len(res.Violations), res.Error())
+	}
+	for _, v := range res.Violations {
+		if !strings.Contains(v.Message, `"kind"`) && !strings.Contains(v.Message, `"sel"`) {
+			t.Errorf("finding on a fixed/silent spelling: %s:%d: %s", v.File, v.Line, v.Message)
+		}
+	}
+}
+
+// ── review 5 findings: revoked escape results, regex delimiters,
+// numeric interpolation, string-literal code, inline registry decls,
+// attribute indices, the in operator, compound mounts, optional
+// chaining, unanchored and late gates, numeric coercion, fragments ──
+
+// selRevTwoFixtureRaw uses ~ for JS backticks; untailed below.
+const selRevTwoFixtureRaw = `// An escape result revoked by a later attribute reassignment
+// (review 5): the safe set follows assignments, not spellings.
+function findTarget(el) {
+  let id = CSS.escape('fixed');
+  id = el.dataset.target;
+  return document.querySelector('[data-target="' + id + '"]');
+}
+// A regex literal carrying an unbalanced delimiter inside a selector
+// call must not truncate the call span (review 5): the closing paren
+// of selectorPrefix(/[}]/) is not the closing paren of querySelector.
+function viaPrefix(el) {
+  return document.querySelector(selectorPrefix(/[}]/) + el.dataset.target);
+}
+function selectorPrefix(pattern) { return '#'; }
+// Arithmetic on a numeric literal cannot carry selector
+// metacharacters (review 5): nth-child(index + 1) is quiet.
+function rows(list) {
+  const found = [];
+  for (let index = 0; index < 3; index++) {
+    found.push(list.querySelector(~li:nth-child(${index + 1})~));
+  }
+  return found;
+}
+`
+
+var selRevTwoFixture = strings.ReplaceAll(selRevTwoFixtureRaw, "~", "\x60")
+
+func TestLintSelectorInterpolation_Review5SpansAndArithmetic(t *testing.T) {
+	dir := writeRuntimeFixture(t, "review5sel.js", selRevTwoFixture)
+	res, err := LintSelectorInterpolation(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Violations) != 2 {
+		t.Fatalf("expected exactly 2 findings (the revoked id, the regex-delim span), got %d:\n%s",
+			len(res.Violations), res.Error())
+	}
+	if !strings.Contains(res.Violations[0].Message, `"id"`) &&
+		!strings.Contains(res.Violations[1].Message, `"id"`) {
+		t.Errorf("expected one finding on the revoked id: %s", res.Error())
+	}
+	if !strings.Contains(res.Error(), "selectorPrefix") {
+		t.Errorf("expected a finding in the span past the regex delimiter: %s", res.Error())
+	}
+}
+
+// Code-shaped text inside string literals is prose, not a call (review
+// 5): both examples must stay quiet under the selector and attribute
+// lints.
+const stringCodeFixture = `const selectorExample = ~document.querySelector('[data-target="' + el.dataset.target + '"]')~;
+const fetchExample = ~fetch('/kiln/tool/' + el.dataset.tool)~;
+console.log(selectorExample, fetchExample);
+`
+
+var stringCodeFixtureJS = strings.ReplaceAll(stringCodeFixture, "~", "\x60")
+
+func TestLintSelectorAndAttribute_StringLiteralCodeIsQuiet(t *testing.T) {
+	dir := writeRuntimeFixture(t, "stringcode.js", stringCodeFixtureJS)
+	sel, err := LintSelectorInterpolation(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sel.HasErrors() {
+		t.Errorf("selector lint fired on string-literal prose:\n%s", sel.Error())
+	}
+	attr, err := LintAttributePathSegments(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if attr.HasErrors() {
+		t.Errorf("attribute lint fired on string-literal prose:\n%s", attr.Error())
+	}
+}
+
+const registryReview5Fixture = `// Review 5: declarations mid-line (a one-line function or minified
+// source declares its {} registry like any other), attribute-borne
+// member indices, and the in operator.
+function lookupInline(name){const REGISTRY={};return REGISTRY[name]}
+const REGISTRY2 = {};
+function lookupMember(el) {
+  return REGISTRY2[el.dataset.name];
+}
+// The in operator walks the prototype chain — it is the bug this lint
+// exists for, not a guard against it, so this read reports.
+function lookupIn(name) {
+  if (name in REGISTRY2) return REGISTRY2[name];
+}
+// A correctly dominating own-property guard spread over several lines
+// by the formatter stays quiet.
+function lookupMultiline(name) {
+  if (
+    Object.prototype.hasOwnProperty.call(
+      REGISTRY2,
+      name,
+    )
+  ) {
+    return REGISTRY2[name];
+  }
+}
+`
+
+func TestLintRegistryOwnProps_Review5DeclsIndicesAndIn(t *testing.T) {
+	dir := writeRuntimeFixture(t, "review5reg.js", registryReview5Fixture)
+	res, err := LintRegistryOwnProps(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Violations) != 3 {
+		t.Fatalf("expected exactly 3 findings (inline decl, member index, in-guarded read), got %d:\n%s",
+			len(res.Violations), res.Error())
+	}
+	for _, v := range res.Violations {
+		if !strings.HasPrefix(v.Message, "[registry-own-prop] REGISTRY") {
+			t.Errorf("finding on a fixed/silent spelling: %s:%d: %s", v.File, v.Line, v.Message)
+		}
+	}
+}
+
+const responseReview5Fixture = `// Review 5: every compound assignment to innerHTML/outerHTML is a
+// mount, ?.then is a chain step, and the mount-helper list is
+// explicit — swapCase is a string transform, not a mount.
+function plusMount(target, src) {
+  return fetch(src).then(r => r.text()).then(html => { target.innerHTML += html; });
+}
+function optionalChain(target, src) {
+  return fetch(src)
+    ?.then(r => r.text())
+    ?.then(html => { target.innerHTML = html; });
+}
+function loadWord(src) {
+  return fetch(src).then(r => r.text()).then(text => swapCase(text));
+}
+function swapCase(text) {
+  return [...text].map(char => char === char.toUpperCase() ? char.toLowerCase() : char.toUpperCase()).join('');
+}
+// The runtime's own swap helpers (swapPane/swapAtSlot/swapShell) are
+// mounts.
+function loadSlot(slot, src) {
+  return fetch(src).then(r => r.json()).then(d => { swapPane(slot, d.panel); });
+}
+`
+
+func TestLintResponseMountedAfterOK_Review5MountsAndChains(t *testing.T) {
+	dir := writeRuntimeFixture(t, "review5resp.js", responseReview5Fixture)
+	res, err := LintResponseMountedAfterOK(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Violations) != 3 {
+		t.Fatalf("expected exactly 3 findings (+=, ?.then, swapPane), got %d:\n%s",
+			len(res.Violations), res.Error())
+	}
+	for _, v := range res.Violations {
+		if !strings.HasPrefix(v.Message, "[response-mounted-unchecked]") {
+			t.Errorf("unexpected message: %s", v.Message)
+		}
+	}
+}
+
+// attrReview5FixtureRaw uses ~ for JS backticks; untailed below.
+const attrReview5FixtureRaw = `// Review 5: bracket dataset reads, unanchored gates, gates after the
+// construction, numeric coercion, and fragment hrefs.
+function loadTool(el) {
+  return fetch(~/kiln/tool/${el.dataset.tool}~);
+}
+function loadToolBracket(el) {
+  return fetch('/kiln/tool/' + el.dataset['tool']);
+}
+// /./ accepts ../admin — an unanchored gate is no gate.
+function loadDot(el) {
+  const tool = el.dataset.tool;
+  if (/./.test(tool)) {
+    return fetch('/kiln/tool/' + tool);
+  }
+}
+// The validating regex runs AFTER the request was built: too late.
+function loadLate(el) {
+  const tool = el.dataset.tool;
+  const request = fetch('/kiln/tool/' + tool);
+  if (!/^[A-Za-z0-9_-]+$/.test(tool)) return;
+  return request;
+}
+// Number() output is a number or NaN: never a traversal segment.
+function loadItem(el) {
+  return fetch('/items/' + Number(el.dataset.itemId));
+}
+// A '#'-prefixed literal sets a fragment: no request path is built.
+function setRoute(link, el) {
+  link.href = '#/settings/' + el.dataset.tab;
+}
+`
+
+var attrReview5Fixture = strings.ReplaceAll(attrReview5FixtureRaw, "~", "\x60")
+
+func TestLintAttributePathSegments_Review5GatesAndSanitizers(t *testing.T) {
+	dir := writeRuntimeFixture(t, "review5attr.js", attrReview5Fixture)
+	res, err := LintAttributePathSegments(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Violations) != 4 {
+		t.Fatalf("expected exactly 4 findings (template, bracket, unanchored gate, late gate), got %d:\n%s",
+			len(res.Violations), res.Error())
+	}
+	for _, v := range res.Violations {
+		if !strings.HasPrefix(v.Message, "[attr-path-segment]") {
+			t.Errorf("unexpected message: %s", v.Message)
+		}
+		if strings.Contains(v.Message, "Number(") || strings.Contains(v.Message, "'#/settings/'") {
+			t.Errorf("finding on a sanitized or fragment-only use: %s", v.Message)
+		}
 	}
 }

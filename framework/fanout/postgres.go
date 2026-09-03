@@ -368,7 +368,7 @@ func (p *PostgresFanout) deliver(topic string, payload []byte) {
 	}
 	p.mu.RUnlock()
 	for _, s := range cbs {
-		s.deliverOne(payload)
+		s.deliverOne(topic, payload)
 	}
 }
 
@@ -376,8 +376,12 @@ func (p *PostgresFanout) deliver(topic string, payload []byte) {
 // guard: send is registered callback code running on the single
 // LISTEN/NOTIFY dispatcher goroutine, which has no per-request net — a
 // panicking subscriber must not freeze delivery to every other topic.
-func (s *pgSub) deliverOne(payload []byte) {
-	defer func() { _ = recover() }()
+func (s *pgSub) deliverOne(topic string, payload []byte) {
+	defer func() {
+		if rec := recover(); rec != nil {
+			slog.Default().Error("fanout: subscriber panicked; delivery to it dropped", "topic", topic, "panic", rec)
+		}
+	}()
 	s.send(payload)
 }
 
