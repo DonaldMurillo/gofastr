@@ -214,10 +214,11 @@ type MenuConfig struct {
 	// runtime's disclosure module moves them into the panel on first
 	// open (the panel <div> itself always renders, so aria-controls
 	// still resolves while closed). Use it when page-scoped consumers
-	// must not see closed-menu rows: host test contracts that pin
-	// getByText('Theme') to a visible element or getByLabel to exactly
-	// one, and SEO crawlers that would otherwise index hidden row
-	// text. The cost: rows are not in the DOM until first open, so
+	// must not see closed-menu rows in the live DOM: host test
+	// contracts that pin getByText('Theme') to a visible element or
+	// getByLabel to exactly one. The rows are still in the HTML
+	// source, so this hides nothing from a crawler that parses the
+	// response. The cost: rows are not in the DOM until first open, so
 	// host JS that binds rows by id at page load must use delegated
 	// listeners instead, and with JavaScript disabled the menu opens
 	// empty (only the disclosure module mounts the rows). The zero

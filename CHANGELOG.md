@@ -30,10 +30,10 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   runtime moves them into the panel on first open, ahead of its
   focus-on-open, or at scan time for a details that was already open.
   The panel `<div>` stays, so `aria-controls` resolves while closed.
-  Use it when page-scoped consumers must not see closed-menu rows: a
-  host Playwright contract that pins `getByText` to the first visible
-  match or `getByLabel` to exactly one element, or SEO that must not
-  index hidden row text. Host JS that binds rows by id at page load
+  Use it when live-DOM queries must not see closed-menu rows: a host
+  Playwright contract that pins `getByText` to the first visible match
+  or `getByLabel` to exactly one element. The rows are still in the
+  HTML source, so nothing is hidden from a crawler. Host JS that binds rows by id at page load
   needs delegated listeners instead, and with JavaScript disabled the
   menu opens empty. The zero value renders the exact bytes it did
   before.
