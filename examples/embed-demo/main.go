@@ -31,19 +31,23 @@ import (
 	"net/http"
 	"os"
 	"slices"
+	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	fembed "github.com/DonaldMurillo/gofastr/framework/embed"
+	"github.com/DonaldMurillo/gofastr/framework/isolation"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 	"github.com/DonaldMurillo/gofastr/framework/uihost"
 )
 
 const (
-	appAddr      = ":8087"
-	customerAddr = ":8088"
-	appOrigin    = "http://localhost" + appAddr
+	// defaultAppAddr is the app's fallback when $PORT is unset; `gofastr dev`
+	// injects PORT and isolation.ListenAddr honours it. The customer site
+	// keeps a fixed port because its origin is what the allowlist names.
+	defaultAppAddr = ":8087"
+	customerAddr   = ":8088"
 	// The customer's origin, exactly as it must appear in the allowlist.
 	// Exact origins only, http://localhost:8088 does not cover
 	// http://127.0.0.1:8088, and that is the point.
@@ -126,7 +130,26 @@ func (s *demoSource) Allows(_ context.Context, _, origin string) (bool, error) {
 	return false, nil
 }
 
+// appOrigin is the app's origin as the customer page must reference it,
+// derived from the resolved listen address in main.
+var appOrigin string
+
+// localOrigin renders a listen address as an origin: a bare ":8087" is
+// http://localhost:8087, a host:port is used as is.
+func localOrigin(addr string) string {
+	if strings.HasPrefix(addr, ":") {
+		return "http://localhost" + addr
+	}
+	return "http://" + addr
+}
+
 func main() {
+	appAddr, err := isolation.ListenAddr(".", defaultAppAddr)
+	if err != nil {
+		log.Fatal(err)
+	}
+	appOrigin = localOrigin(appAddr)
+
 	secret := os.Getenv("GOFASTR_SECRET")
 	if secret == "" {
 		// Embeds require a real secret, a per-boot key would invalidate every

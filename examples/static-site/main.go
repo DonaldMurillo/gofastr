@@ -7,6 +7,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core/static"
 	"github.com/DonaldMurillo/gofastr/framework"
+	"github.com/DonaldMurillo/gofastr/framework/isolation"
 )
 
 func main() {
@@ -28,10 +29,13 @@ func main() {
 		// index.html is served automatically for "/".
 	})
 
-	log.Println("Static site example starting on :3070")
+	addr, err := isolation.ListenAddr(".", ":3070")
+	if err != nil {
+		log.Fatal(err)
+	}
+	log.Printf("Static site example starting on %s", addr)
 	log.Println("Serving files from:", pagesDir)
-	log.Println("Open http://localhost:3070 in your browser")
-	if err := app.Start(":3070"); err != nil {
+	if err := app.Start(addr); err != nil {
 		log.Fatal(err)
 	}
 }

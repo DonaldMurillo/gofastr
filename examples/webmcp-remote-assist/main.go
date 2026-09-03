@@ -41,6 +41,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/experimental/webmcp"
+	"github.com/DonaldMurillo/gofastr/framework/isolation"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 	"github.com/DonaldMurillo/gofastr/framework/ui/theme"
 	"github.com/DonaldMurillo/gofastr/framework/uihost"
@@ -53,14 +54,20 @@ var appJS []byte
 // their own via buildApp and reset it per server.
 var assist *assistApp
 
-const listenAddr = ":8090"
+// defaultAddr is the fallback when $PORT is unset; `gofastr dev` and PaaS
+// runtimes inject PORT and isolation.ListenAddr honours it.
+const defaultAddr = ":8090"
 
 func main() {
 	fwApp := buildApp()
 	if os.Getenv("ASSIST_SUPPORT_KEY") == "" {
 		log.Printf("support sign-in key (set ASSIST_SUPPORT_KEY to choose one): %s", assist.supportKey)
 	}
-	log.Printf("webmcp-remote-assist listening on http://localhost%s", listenAddr)
+	listenAddr, err := isolation.ListenAddr(".", defaultAddr)
+	if err != nil {
+		log.Fatal(err)
+	}
+	log.Printf("webmcp-remote-assist listening on %s", localURL(listenAddr))
 	if err := fwApp.Start(listenAddr); err != nil && err != http.ErrServerClosed {
 		log.Fatal(err)
 	}
@@ -469,4 +476,13 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(v)
+}
+
+// localURL renders a listen address as the URL to open: a bare ":8090"
+// becomes http://localhost:8090, a host:port is used as is.
+func localURL(addr string) string {
+	if strings.HasPrefix(addr, ":") {
+		return "http://localhost" + addr
+	}
+	return "http://" + addr
 }

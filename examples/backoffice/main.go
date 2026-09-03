@@ -17,7 +17,6 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"os"
 
 	"github.com/DonaldMurillo/gofastr/battery/admin"
 	appui "github.com/DonaldMurillo/gofastr/core-ui/app"
@@ -31,6 +30,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 	"github.com/DonaldMurillo/gofastr/framework/uihost"
 
+	"github.com/DonaldMurillo/gofastr/framework/isolation"
 	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 )
 
@@ -39,8 +39,9 @@ const sessionCookie = "bo_session"
 func main() {
 	app := setupApp(":memory:")
 	addr := ":8086"
-	if p := os.Getenv("PORT"); p != "" {
-		addr = ":" + p
+	addr, err := isolation.ListenAddr(".", addr)
+	if err != nil {
+		log.Fatal(err)
 	}
 	log.Printf("backoffice on %s; visit /login (any email), then /admin", addr)
 	if err := http.ListenAndServe(addr, app.Router()); err != nil {

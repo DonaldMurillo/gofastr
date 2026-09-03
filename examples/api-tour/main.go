@@ -30,6 +30,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/core/upload"
 	"github.com/DonaldMurillo/gofastr/framework"
+	"github.com/DonaldMurillo/gofastr/framework/isolation"
 	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 )
 
@@ -124,8 +125,9 @@ func main() {
 	seedDemoData(db)
 
 	addr := ":8080"
-	if port := os.Getenv("PORT"); port != "" {
-		addr = ":" + port
+	addr, err = isolation.ListenAddr(".", addr)
+	if err != nil {
+		log.Fatal(err)
 	}
 	log.Printf("api-tour listening on %s", addr)
 	if err := app.Start(addr); err != nil {

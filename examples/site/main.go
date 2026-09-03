@@ -34,6 +34,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/docs"
 	"github.com/DonaldMurillo/gofastr/framework/gallery"
 	fwimage "github.com/DonaldMurillo/gofastr/framework/image"
+	"github.com/DonaldMurillo/gofastr/framework/isolation"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 	"github.com/DonaldMurillo/gofastr/framework/uihost"
 )
@@ -71,10 +72,12 @@ func main() {
 		return
 	}
 
-	// Port from $PORT (dev-watch sets it); default 8083 for plain `go run .`.
-	addr := ":8083"
-	if p := os.Getenv("PORT"); p != "" {
-		addr = ":" + p
+	// $PORT wins (gofastr dev, dev-watch, and PaaS runtimes inject it, as a
+	// bare port or host:port); default 8083 for plain `go run .`.
+	addr, err := isolation.ListenAddr(".", ":8083")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "listen address: %v\n", err)
+		os.Exit(1)
 	}
 	fmt.Println("━─────────────────────────────────────────────")
 	fmt.Println("  GoFastr product site (v2)")
