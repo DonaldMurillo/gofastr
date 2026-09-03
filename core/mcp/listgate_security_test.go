@@ -680,6 +680,9 @@ func TestPanickingGatesAreLoggedNotSwallowed(t *testing.T) {
 	if !strings.Contains(logged, "kiln_probe") {
 		t.Errorf("runCallGate: log must carry the tool name: %q", logged)
 	}
+	if !strings.Contains(logged, `operation="call gate"`) {
+		t.Errorf("runCallGate: log must carry the structured operation field: %q", logged)
+	}
 
 	buf.Reset()
 	s := NewServer()
@@ -691,7 +694,7 @@ func TestPanickingGatesAreLoggedNotSwallowed(t *testing.T) {
 	if !strings.Contains(logged, "server gate boom") {
 		t.Errorf("checkServerGate: recovered panic not logged: %q", logged)
 	}
-	if !strings.Contains(logged, "server gate") {
-		t.Errorf("checkServerGate: log must name the operation: %q", logged)
+	if !strings.Contains(logged, `operation="server gate"`) {
+		t.Errorf("checkServerGate: log must carry the structured operation field: %q", logged)
 	}
 }

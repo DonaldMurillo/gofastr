@@ -1069,21 +1069,32 @@ func TestLintAttributePathSegments_Review5GatesAndSanitizers(t *testing.T) {
 // function scopes early ─────────────────────────────────────────────
 
 const responseReview6Fixture = `// Review 6: a bare .status truthiness gate passes for 404 and 500,
-// and < 400 admits every client error — only .ok or a comparison that
-// requires a 2xx response is a gate.
+// and < 400 admits every redirect — only .ok or a comparison that
+// requires a 2xx response is a gate. A bound of 399 is the same leak
+// in <= clothing, alone, mirrored, or conjoined with a >= 200 lower
+// bound.
 function mountStatusTruthy(target, src) {
   return fetch(src).then(r => { if (r.status) return r.text(); }).then(html => { target.innerHTML = html; });
 }
 function mountStatusWeakLt400(target, src) {
   return fetch(src).then(r => { if (r.status < 400) return r.text(); }).then(html => { target.innerHTML = html; });
 }
+function mountStatusLe399(target, src) {
+  return fetch(src).then(r => { if (r.status <= 399) return r.text(); }).then(html => { target.innerHTML = html; });
+}
+function mountStatusMirror399(target, src) {
+  return fetch(src).then(r => { if (399 >= r.status) return r.text(); }).then(html => { target.innerHTML = html; });
+}
+function mountStatusWeakRangeLt400(target, src) {
+  return fetch(src).then(r => { if (r.status >= 200 && r.status < 400) return r.text(); }).then(html => { target.innerHTML = html; });
+}
+function mountStatusWeakRangeLe399(target, src) {
+  return fetch(src).then(r => { if (r.status >= 200 && r.status <= 399) return r.text(); }).then(html => { target.innerHTML = html; });
+}
 // Valid gates stay quiet: .ok truthiness (negated or not) and 2xx-only
 // status comparisons.
 function mountOkChecked(target, src) {
   return fetch(src).then(r => { if (r.ok) return r.text(); }).then(html => { target.innerHTML = html; });
-}
-function mountNotOkThrow(target, src) {
-  return fetch(src).then(r => { if (!r.ok) throw new Error('http'); return r.text(); }).then(html => { target.innerHTML = html; });
 }
 function mountStatusEq200(target, src) {
   return fetch(src).then(r => { if (r.status === 200) return r.text(); }).then(html => { target.innerHTML = html; });
@@ -1102,8 +1113,8 @@ func TestLintResponseMountedAfterOK_Review6StatusGates(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(res.Violations) != 2 {
-		t.Fatalf("expected exactly 2 findings (status truthiness, < 400), got %d:\n%s",
+	if len(res.Violations) != 6 {
+		t.Fatalf("expected exactly 6 findings (truthiness, < 400, <= 399, mirrored 399 >=, range < 400, range <= 399), got %d:\n%s",
 			len(res.Violations), res.Error())
 	}
 	for _, v := range res.Violations {
@@ -1232,6 +1243,8 @@ func TestLintSelectorInterpolation_Review6NumericIdentifiersMustBeProven(t *test
 
 const regexEscapeReview6Fixture = `// Review 6: \x2f, \u002f, \/ and \\ in a "name-safe" gate match a
 // path separator or an arbitrary character — the gate accepts foo/bar.
+// The m flag is the same leak by other means: ^ and $ go line-bound,
+// so "ok\n../admin" passes the gate.
 function loadHexSlash(el) {
   const tool = el.getAttribute('data-tool');
   if (/^[A-Za-z0-9_\x2f-]+$/.test(tool)) {
@@ -1256,6 +1269,12 @@ function loadBackslash(el) {
     return fetch('/kiln/tool/' + tool);
   }
 }
+function loadMultiline(el) {
+  const tool = el.getAttribute('data-tool');
+  if (/^[A-Za-z0-9_-]+$/m.test(tool)) {
+    return fetch('/kiln/tool/' + tool);
+  }
+}
 `
 
 func TestLintAttributePathSegments_Review6SeparatorMatchingEscapes(t *testing.T) {
@@ -1264,17 +1283,23 @@ func TestLintAttributePathSegments_Review6SeparatorMatchingEscapes(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(res.Violations) != 4 {
-		t.Fatalf("expected exactly 4 findings (\\x2f, \\u002f, \\/, \\\\), got %d:\n%s",
+	if len(res.Violations) != 5 {
+		t.Fatalf("expected exactly 5 findings (\\x2f, \\u002f, \\/, \\\\, m flag), got %d:\n%s",
 			len(res.Violations), res.Error())
 	}
 }
 
 const safeIdentReview6Fixture = `// Review 6: a member assignment is not an identifier assignment, and
 // a function parameter shadows a file-scope safe name inside that
-// function.
+// function. memberOnly's bare id sits in a scope that binds no id and
+// precedes the const, so it fires today; were holder.id = 'fixed'
+// recorded as a file-scope safe event (the guard this pins), it would
+// launder that use instead.
 const holder = {};
 holder.id = 'fixed';
+function memberOnly() {
+  return document.querySelector('[data-member="' + id + '"]');
+}
 function usePlain(id) {
   return document.querySelector('[data-plain="' + id + '"]');
 }
@@ -1299,8 +1324,8 @@ func TestLintSelectorInterpolation_Review6MemberAssignAndParamShadowing(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(res.Violations) != 2 {
-		t.Fatalf("expected exactly 2 findings (member-launded id, shadowed parameter id), got %d:\n%s",
+	if len(res.Violations) != 3 {
+		t.Fatalf("expected exactly 3 findings (unbound id before the const, plain parameter id, shadowed parameter id), got %d:\n%s",
 			len(res.Violations), res.Error())
 	}
 }

@@ -1848,11 +1848,13 @@ var reCmpNumBefore = regexp.MustCompile(`(\d+)\s*(===|==|!==|!=|<=|>=|<|>)\s*$`)
 // statusCompAdmitsOnly2xx reports whether the .status member read at
 // span[start:end] is compared in a way only a 2xx response satisfies:
 // an exact 2xx equality (either polarity — `if (r.status !== 200)
-// throw` leaves exactly 200 on the continuing path), an upper bound
-// below 400, or a >= 200 lower bound conjoined (&&) with such an upper
-// bound later in the same statement. Everything else — truthiness,
-// weak bounds, inequalities against non-2xx literals — still admits a
-// response the mount must not see.
+// throw` leaves exactly 200 on the continuing path), a 2xx-only upper
+// bound (`<` admits at most 300, `<=` at most 299 — a 399 bound admits
+// every redirect exactly like the rejected `< 400`), or a >= 200 lower
+// bound conjoined (&&) with such an upper bound later in the same
+// statement. Everything else — truthiness, weak bounds, inequalities
+// against non-2xx literals — still admits a response the mount must
+// not see.
 func statusCompAdmitsOnly2xx(span string, start, end int) bool {
 	// Comparison to the right: r.status < 300 / === 200 / !== 200 / >= 200.
 	if i := skipSpace(span, end); i < len(span) {
@@ -1866,7 +1868,7 @@ func statusCompAdmitsOnly2xx(span string, start, end int) bool {
 						return true
 					}
 				case op[1] == "<" || op[1] == "<=":
-					if lit <= 399 {
+					if (op[1] == "<" && lit <= 300) || (op[1] == "<=" && lit <= 299) {
 						return true
 					}
 				case op[1] == ">" || op[1] == ">=":
@@ -1883,7 +1885,7 @@ func statusCompAdmitsOnly2xx(span string, start, end int) bool {
 		case "===", "==", "!==", "!=":
 			return lit >= 200 && lit <= 299
 		case "<", "<=":
-			return lit <= 399
+			return (mirror == "<" && lit <= 300) || (mirror == "<=" && lit <= 299)
 		}
 	}
 	return false
@@ -1891,13 +1893,17 @@ func statusCompAdmitsOnly2xx(span string, start, end int) bool {
 
 // reStatusUpperBound matches a .status upper-bound comparison
 // (< 300, <= 299) — the partner a >= 200 lower bound needs to admit
-// only 2xx. Static and run-once, like every gate pattern here.
-var reStatusUpperBound = regexp.MustCompile(`\.\s*status\s*(?:<=|<)\s*(\d+)`)
+// only 2xx. The operator is captured so each spelling can be judged
+// per its own threshold. Static and run-once, like every gate pattern
+// here.
+var reStatusUpperBound = regexp.MustCompile(`\.\s*status\s*(<=|<)\s*(\d+)`)
 
 // lowerBoundConjoined reports whether a >= 200-style lower bound is
-// conjoined (&&) with an upper bound below 400 on the status in the
-// same statement: r.status >= 200 && r.status < 300 admits only 2xx,
-// while the bare lower bound admits every error status.
+// conjoined (&&) with a 2xx-only upper bound (< at most 300, <= at
+// most 299) on the status in the same statement: r.status >= 200 &&
+// r.status < 300 admits only 2xx, while the bare lower bound admits
+// every error status and a < 400 / <= 399 partner admits every
+// redirect.
 func lowerBoundConjoined(span string, from, lit int) bool {
 	if lit < 200 {
 		return false
@@ -1911,7 +1917,11 @@ func lowerBoundConjoined(span string, from, lit int) bool {
 		return false
 	}
 	for _, m := range reStatusUpperBound.FindAllStringSubmatch(rest[and:], -1) {
-		if n, err := strconv.Atoi(m[1]); err == nil && n <= 399 {
+		n, err := strconv.Atoi(m[2])
+		if err != nil {
+			continue
+		}
+		if (m[1] == "<" && n <= 300) || (m[1] == "<=" && n <= 299) {
 			return true
 		}
 	}
@@ -2555,10 +2565,14 @@ const regexSafeClassChars = "abcdefghijklmnopqrstuvwxyz" +
 // regexGateAnchored reports whether a regex literal (with its slashes,
 // optionally flagged) accepts a bounded name shape only: anchored at
 // both ends (^…$) and built exclusively from name-safe characters and
-// classes. An explicit allowlist, so a separator-producing escape
-// disqualifies the gate wherever it sits in the body — review 5's
-// /./ accepts "../admin", review 6's /^[A-Za-z0-9_\x2f-]+$/ accepts
-// "foo/bar" even though no "/" appears in the literal.
+// classes, with flags drawn from i, g, u, y alone. An explicit
+// allowlist, so a separator-producing escape disqualifies the gate
+// wherever it sits in the body — review 5's /./ accepts "../admin",
+// review 6's /^[A-Za-z0-9_\x2f-]+$/ accepts "foo/bar" even though no
+// "/" appears in the literal — and the m flag is rejected with it:
+// multiline makes ^ and $ match at line boundaries, so
+// /^[A-Za-z0-9_-]+$/m accepts "ok\n../admin" (an attribute value can
+// carry the newline) and bounds nothing.
 func regexGateAnchored(lit string) bool {
 	if len(lit) < 3 || lit[0] != '/' {
 		return false
@@ -2566,6 +2580,11 @@ func regexGateAnchored(lit string) bool {
 	end := strings.LastIndexByte(lit, '/')
 	if end <= 0 {
 		return false
+	}
+	for _, r := range lit[end+1:] { // flags: only i, g, u, y keep ^…$ whole-string anchors
+		if !strings.ContainsRune("iguy", r) {
+			return false
+		}
 	}
 	body := lit[1:end]
 	if !strings.HasPrefix(body, "^") || !strings.HasSuffix(body, "$") {
@@ -2583,7 +2602,7 @@ func regexGateAnchored(lit string) bool {
 }
 
 // enclosingFunction returns the [start, end) span of the innermost
-// function containing pos (a '{'-block whose header ends in '=>' or a
+// function containing pos (a '{-block whose header ends in '=>' or a
 // function keyword), or the whole file when pos is at top level.
 func enclosingFunction(code string, pos int) (int, int) {
 	depth := 0

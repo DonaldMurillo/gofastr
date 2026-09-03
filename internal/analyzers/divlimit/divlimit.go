@@ -169,11 +169,13 @@ func guardedBefore(pass *analysis.Pass, body *ast.BlockStmt, parents map[ast.Nod
 // condProvesNonzero walks a condition's operator tree and reports
 // whether it proves the divisor nonzero: when holds, the condition
 // itself held on the reaching path; when !holds, it failed and the
-// other side of the branch is what runs. For && the held side proves
-// any one operand (A && B held means both held; ¬(A && B) is ¬A ∨ ¬B,
-// so any operand's failure proves it). For || held, WHICH operand is
-// unknown, so every operand must prove it; failed, ¬(A ∨ B) is
-// ¬A ∧ ¬B and any operand's failure still proves it.
+// other side of the branch is what runs. For && held, any one operand
+// suffices (A && B held means both held); failed, ¬(A && B) is ¬A ∨
+// ¬B — which operand failed is unknown, so EVERY operand's failure
+// must prove it (`if limit == 0 && strict { return }` with strict
+// false still divides by zero). For || held, which operand is unknown,
+// so every operand must prove it; failed, ¬(A ∨ B) is ¬A ∧ ¬B — both
+// failed, so any one operand's failure proves it.
 func condProvesNonzero(pass *analysis.Pass, cond ast.Expr, divisor ast.Expr, holds bool) bool {
 	switch x := cond.(type) {
 	case *ast.ParenExpr:
@@ -185,7 +187,10 @@ func condProvesNonzero(pass *analysis.Pass, cond ast.Expr, divisor ast.Expr, hol
 	case *ast.BinaryExpr:
 		switch x.Op {
 		case token.LAND:
-			return condProvesNonzero(pass, x.X, divisor, holds) || condProvesNonzero(pass, x.Y, divisor, holds)
+			if holds {
+				return condProvesNonzero(pass, x.X, divisor, true) || condProvesNonzero(pass, x.Y, divisor, true)
+			}
+			return condProvesNonzero(pass, x.X, divisor, false) && condProvesNonzero(pass, x.Y, divisor, false)
 		case token.LOR:
 			if holds {
 				return condProvesNonzero(pass, x.X, divisor, true) && condProvesNonzero(pass, x.Y, divisor, true)

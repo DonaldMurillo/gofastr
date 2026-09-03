@@ -262,11 +262,13 @@ func dominatingBound(pass *analysis.Pass, node ast.Node, parents map[ast.Node]as
 // condBounds walks a condition's operator tree and reports whether it
 // proves the subject inside the safe range: when holds, the condition
 // itself held on the reaching path; when !holds, it failed and the
-// other side of the branch is what runs. For && the held side proves
-// any one operand (A && B held means both held; ¬(A && B) is ¬A ∨ ¬B,
-// so any operand's failure proves it). For || held, WHICH operand is
-// unknown, so every operand must prove it; failed, ¬(A ∨ B) is
-// ¬A ∧ ¬B and any operand's failure still proves it.
+// other side of the branch is what runs. For && held, any one operand
+// suffices (A && B held means both held); failed, ¬(A && B) is ¬A ∨
+// ¬B — which operand failed is unknown, so EVERY operand's failure
+// must prove it (`if u > math.MaxInt64 && strict { return }` with
+// strict false still converts the out-of-range u). For || held, which
+// operand is unknown, so every operand must prove it; failed, ¬(A ∨ B)
+// is ¬A ∧ ¬B — both failed, so any one operand's failure proves it.
 func condBounds(pass *analysis.Pass, cond ast.Expr, subj subject, family string, holds bool) bool {
 	switch x := cond.(type) {
 	case *ast.ParenExpr:
@@ -278,7 +280,10 @@ func condBounds(pass *analysis.Pass, cond ast.Expr, subj subject, family string,
 	case *ast.BinaryExpr:
 		switch x.Op {
 		case token.LAND:
-			return condBounds(pass, x.X, subj, family, holds) || condBounds(pass, x.Y, subj, family, holds)
+			if holds {
+				return condBounds(pass, x.X, subj, family, true) || condBounds(pass, x.Y, subj, family, true)
+			}
+			return condBounds(pass, x.X, subj, family, false) && condBounds(pass, x.Y, subj, family, false)
 		case token.LOR:
 			if holds {
 				return condBounds(pass, x.X, subj, family, true) && condBounds(pass, x.Y, subj, family, true)

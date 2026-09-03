@@ -98,3 +98,24 @@ func keyGuardEmptyRange(total, limit int, xs []int, clamps map[bool]int) int {
 	}
 	return total / limit // want `integer division by limit`
 }
+
+// conjDiverging: the failure of `limit == 0 && strict` can be strict
+// alone — ¬(A && B) is ¬A ∨ ¬B, and which operand failed is unknown —
+// so BOTH operands' failure must prove the divisor nonzero for the
+// diverging guard to count. strict's failure proves nothing, and
+// limit == 0 still reaches the division.
+func conjDiverging(total, limit int, strict bool) int {
+	if limit == 0 && strict {
+		return 0
+	}
+	return total / limit // want `integer division by limit`
+}
+
+// conjHeld: the conjoined enclosing condition held means every operand
+// held, so any one operand proving the divisor nonzero suffices.
+func conjHeld(total, limit int, strict bool) int {
+	if limit > 0 && strict {
+		return total / limit
+	}
+	return 0
+}
