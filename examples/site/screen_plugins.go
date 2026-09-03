@@ -19,6 +19,7 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
+	"io"
 	"path"
 	"strings"
 	"sync"
@@ -94,10 +95,66 @@ func parsePluginRegistry(data []byte) (*pluginRegistry, error) {
 	if reg.Release == nil || reg.Release.Tag == "" {
 		return nil, fmt.Errorf("plugins.json: no release stamp; vendor a published copy with scripts/vendor-plugins-json.sh")
 	}
-	if len(reg.Plugins) == 0 {
-		return nil, fmt.Errorf("plugins.json: no plugins")
+	if _, err := dec.Token(); err != io.EOF {
+		return nil, fmt.Errorf("plugins.json: trailing data after the registry object")
+	}
+	if err := validatePluginRegistry(&reg); err != nil {
+		return nil, err
 	}
 	return &reg, nil
+}
+
+// validatePluginRegistry enforces what the decoder cannot: every row is
+// complete, names are unique, the isolation value is one the pages know
+// how to present, and the trusted/sandbox pairing matches that value. An
+// unknown isolation would otherwise render as a sandboxed iframe, the
+// safer-looking posture, which is the wrong way for a mistake to fail.
+func validatePluginRegistry(reg *pluginRegistry) error {
+	if len(reg.Plugins) == 0 {
+		return fmt.Errorf("plugins.json: no plugins")
+	}
+	if reg.Release.Commit == "" || reg.Release.Published == "" || !strings.HasPrefix(reg.Release.Source, "https://") {
+		return fmt.Errorf("plugins.json: release stamp incomplete: %+v", *reg.Release)
+	}
+	seen := make(map[string]bool, len(reg.Plugins))
+	root := ""
+	for _, p := range reg.Plugins {
+		if seen[p.Name] {
+			return fmt.Errorf("plugins.json: duplicate row %q", p.Name)
+		}
+		seen[p.Name] = true
+		for k, v := range map[string]string{"name": p.Name, "modulePath": p.ModulePath, "version": p.Version, "description": p.Description, "frameworkCompat": p.FrameworkCompat, "routePrefix": p.RoutePrefix} {
+			if v == "" {
+				return fmt.Errorf("plugins.json: row %q has an empty %s", p.Name, k)
+			}
+		}
+		if root == "" {
+			root = pluginRootModule(p.ModulePath)
+		} else if got := pluginRootModule(p.ModulePath); got != root {
+			return fmt.Errorf("plugins.json: row %q lives in module %q, the rest in %q", p.Name, got, root)
+		}
+		switch p.Isolation {
+		case "sandbox-iframe-opaque":
+			if p.Trusted {
+				return fmt.Errorf("plugins.json: sandboxed row %q is marked trusted", p.Name)
+			}
+			for _, tok := range p.Sandbox {
+				if tok == "allow-same-origin" {
+					return fmt.Errorf("plugins.json: row %q grants allow-same-origin, which collapses the opaque origin", p.Name)
+				}
+			}
+		case "trusted-host-page":
+			if !p.Trusted {
+				return fmt.Errorf("plugins.json: trusted-host-page row %q lacks trusted:true", p.Name)
+			}
+			if len(p.Sandbox) != 0 {
+				return fmt.Errorf("plugins.json: trusted row %q declares sandbox tokens %v", p.Name, p.Sandbox)
+			}
+		default:
+			return fmt.Errorf("plugins.json: row %q has unknown isolation %q", p.Name, p.Isolation)
+		}
+	}
+	return nil
 }
 
 var (

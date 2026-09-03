@@ -16,68 +16,90 @@ func TestPluginRegistryVendoredCopy(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if reg.Release.Commit == "" || reg.Release.Published == "" || reg.Release.Source == "" {
-		t.Errorf("release stamp incomplete: %+v", *reg.Release)
-	}
-	if !strings.HasPrefix(reg.Release.Source, "https://github.com/") {
-		t.Errorf("release source %q is not a GitHub URL", reg.Release.Source)
-	}
-	seen := map[string]bool{}
-	root := ""
-	for _, p := range reg.Plugins {
-		if seen[p.Name] {
-			t.Errorf("%s: duplicate row", p.Name)
-		}
-		seen[p.Name] = true
-		for k, v := range map[string]string{"modulePath": p.ModulePath, "version": p.Version, "description": p.Description, "isolation": p.Isolation, "frameworkCompat": p.FrameworkCompat, "routePrefix": p.RoutePrefix} {
-			if v == "" {
-				t.Errorf("%s: empty %s", p.Name, k)
-			}
-		}
-		if root == "" {
-			root = pluginRootModule(p.ModulePath)
-		} else if got := pluginRootModule(p.ModulePath); got != root {
-			t.Errorf("%s: root module %q, want %q", p.Name, got, root)
-		}
-		switch p.Isolation {
-		case "sandbox-iframe-opaque":
-			if p.Trusted {
-				t.Errorf("%s: sandboxed row marked trusted", p.Name)
-			}
-			for _, tok := range p.Sandbox {
-				if tok == "allow-same-origin" {
-					t.Errorf("%s: sandbox grants allow-same-origin, which collapses the opaque origin", p.Name)
-				}
-			}
-		case "trusted-host-page":
-			if !p.Trusted {
-				t.Errorf("%s: trusted-host-page row without trusted:true", p.Name)
-			}
-			if len(p.Sandbox) != 0 {
-				t.Errorf("%s: trusted row declares sandbox tokens %v", p.Name, p.Sandbox)
-			}
-		default:
-			t.Errorf("%s: unknown isolation %q", p.Name, p.Isolation)
-		}
+	if len(reg.Plugins) < 2 {
+		t.Fatalf("vendored registry has %d plugins; the mutation cases below need at least two", len(reg.Plugins))
 	}
 }
 
-func TestPluginRegistryRejectsUnstampedOrUnknown(t *testing.T) {
+// mutateRegistry decodes the vendored copy loosely, lets the case edit it,
+// and re-encodes it, so every guard in parsePluginRegistry is exercised
+// against a copy that is valid except for the one thing the case breaks.
+func mutateRegistry(t *testing.T, edit func(raw map[string]any, rows []map[string]any)) []byte {
+	t.Helper()
 	var raw map[string]any
 	if err := json.Unmarshal(pluginRegistryJSON, &raw); err != nil {
 		t.Fatal(err)
 	}
-	delete(raw, "release")
-	unstamped, _ := json.Marshal(raw)
-	if _, err := parsePluginRegistry(unstamped); err == nil {
-		t.Error("a copy with no release stamp parsed; a hand copy from git would pass as published")
+	rowsAny := raw["plugins"].([]any)
+	rows := make([]map[string]any, len(rowsAny))
+	for i, r := range rowsAny {
+		rows[i] = r.(map[string]any)
 	}
-	raw["release"] = map[string]string{"tag": "v0.0.0", "commit": "x", "published": "now", "source": "https://github.com/x/y"}
-	raw["newKey"] = true
-	unknown, _ := json.Marshal(raw)
-	if _, err := parsePluginRegistry(unknown); err == nil {
-		t.Error("a copy with an unknown top-level key parsed; a new registry field would be silently dropped")
+	edit(raw, rows)
+	out, err := json.Marshal(raw)
+	if err != nil {
+		t.Fatal(err)
 	}
+	return out
+}
+
+func TestPluginRegistryGuardsEachFail(t *testing.T) {
+	sandboxed := func(rows []map[string]any) map[string]any {
+		for _, r := range rows {
+			if r["isolation"] == "sandbox-iframe-opaque" {
+				return r
+			}
+		}
+		t.Fatal("no sandboxed row in the vendored copy")
+		return nil
+	}
+	trusted := func(rows []map[string]any) map[string]any {
+		for _, r := range rows {
+			if r["isolation"] == "trusted-host-page" {
+				return r
+			}
+		}
+		t.Fatal("no trusted row in the vendored copy")
+		return nil
+	}
+	cases := map[string]func(raw map[string]any, rows []map[string]any){
+		"no release stamp":             func(raw map[string]any, _ []map[string]any) { delete(raw, "release") },
+		"release stamp without commit": func(raw map[string]any, _ []map[string]any) { delete(raw["release"].(map[string]any), "commit") },
+		"unknown top-level key":        func(raw map[string]any, _ []map[string]any) { raw["newKey"] = true },
+		"unknown row key":              func(_ map[string]any, rows []map[string]any) { rows[0]["newKey"] = true },
+		"registry version 2":           func(raw map[string]any, _ []map[string]any) { raw["registryVersion"] = "2" },
+		"no plugins":                   func(raw map[string]any, _ []map[string]any) { raw["plugins"] = []any{} },
+		"duplicate name":               func(_ map[string]any, rows []map[string]any) { rows[1]["name"] = rows[0]["name"] },
+		"empty version":                func(_ map[string]any, rows []map[string]any) { rows[0]["version"] = "" },
+		"unknown isolation":            func(_ map[string]any, rows []map[string]any) { rows[0]["isolation"] = "same-origin-frame" },
+		"sandboxed row marked trusted": func(_ map[string]any, rows []map[string]any) { sandboxed(rows)["trusted"] = true },
+		"sandboxed row allows same-origin": func(_ map[string]any, rows []map[string]any) {
+			r := sandboxed(rows)
+			r["sandbox"] = append(toAnySlice(r["sandbox"]), "allow-same-origin")
+		},
+		"trusted row without trusted:true": func(_ map[string]any, rows []map[string]any) { delete(trusted(rows), "trusted") },
+		"trusted row with sandbox tokens":  func(_ map[string]any, rows []map[string]any) { trusted(rows)["sandbox"] = []any{"allow-scripts"} },
+		"row in a different module":        func(_ map[string]any, rows []map[string]any) { rows[1]["modulePath"] = "github.com/someone/else/x" },
+	}
+	for name, edit := range cases {
+		t.Run(name, func(t *testing.T) {
+			if _, err := parsePluginRegistry(mutateRegistry(t, edit)); err == nil {
+				t.Errorf("parsed a copy with %s; that guard is not guarding", name)
+			}
+		})
+	}
+	t.Run("trailing data", func(t *testing.T) {
+		if _, err := parsePluginRegistry(append(append([]byte{}, pluginRegistryJSON...), []byte(" {}")...)); err == nil {
+			t.Error("parsed a copy followed by a second JSON value")
+		}
+	})
+}
+
+func toAnySlice(v any) []any {
+	if v == nil {
+		return nil
+	}
+	return v.([]any)
 }
 
 func TestPluginsIndexListsEveryPlugin(t *testing.T) {
