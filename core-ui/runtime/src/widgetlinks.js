@@ -7,7 +7,9 @@
     const url = new URL(location.href);
     url.searchParams.set(cfg.deepLinkKey, cfg.deepLinkValue);
     for (const key of cfg.deepLinkParams || []) {
-      if (key in params) url.searchParams.set(key, params[key]);
+      // Own-property check: `in` walks the prototype chain, and a
+      // param literally named "constructor" would pass it.
+      if (Object.prototype.hasOwnProperty.call(params, key)) url.searchParams.set(key, params[key]);
     }
     if (url.href !== location.href) G._pushURL(url.pathname + url.search + url.hash);
   };

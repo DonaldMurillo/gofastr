@@ -189,7 +189,11 @@
     if (i >= 0) s.stack.splice(i, 1);
     if (!syncing) stripPane(host, pane);
     host.dispatchEvent(new CustomEvent('pane-host:close', { bubbles: true, detail: { pane } }));
-    const trig = s.triggers[pane];
+    // Own-property read: pane ids are attribute-borne, and "constructor"
+    // would otherwise resolve through the prototype chain.
+    const trig = Object.prototype.hasOwnProperty.call(s.triggers, pane)
+      ? s.triggers[pane]
+      : null;
     if (trig && typeof trig.focus === 'function') {
       try { trig.focus({ preventScroll: true }); } catch (_) { trig.focus(); }
     }
