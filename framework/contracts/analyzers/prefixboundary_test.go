@@ -280,3 +280,132 @@ func TestClassify(t *testing.T) {
 	assertNot(t, ds, contracts.RulePrefixSegmentBoundary,
 		"_test.go is a documented silence")
 }
+
+// Review 5, flow-insensitive literals: a local counts as a resolvable
+// literal only when it is not a parameter and EVERY assignment to it in
+// the function is a string literal. The stale spelling — a parameter
+// conditionally defaulted to "/api/" — lets the executed "/api" claim
+// /apiary, and the mixed spelling (one literal, one dynamic assignment)
+// is just as unprovable: both are dynamic and report.
+func TestPrefixBoundaryEveryAssignmentMustBeALiteral(t *testing.T) {
+	ds := fixture(t, map[string]string{
+		"stale.go": `package main
+
+import "strings"
+
+func under(path, prefix string) bool {
+	if prefix == "" {
+		prefix = "/api/"
+	}
+	return strings.HasPrefix(path, prefix)
+}
+
+func reassigned(path string, base string) bool {
+	local := "/api/"
+	if base != "" {
+		local = base
+	}
+	return strings.HasPrefix(path, local)
+}
+`,
+	})
+	assertHas(t, ds, contracts.RulePrefixSegmentBoundary)
+	if got := rules(ds)[contracts.RulePrefixSegmentBoundary]; got != 2 {
+		t.Errorf("expected the parameter-conditioned and mixed-assignment locals to be dynamic (got %d findings)", got)
+	}
+}
+
+// Review 5, the key/prefix heuristic: key and prefix are dropped from
+// the pathish-name regex entirely. API keys and token types are value
+// spaces where matching every longer sibling is the intent; adding "/"
+// there would break the check.
+func TestPrefixBoundaryAPIKeyPrefixChecksAreNotPaths(t *testing.T) {
+	ds := fixture(t, map[string]string{
+		"keyed.go": `package main
+
+import "strings"
+
+func hasExpectedKeyPrefix(apiKey, expectedKeyPrefix string) bool {
+	return strings.HasPrefix(apiKey, expectedKeyPrefix)
+}
+
+func tokenType(token, tokenPrefix string) bool {
+	return strings.HasPrefix(token, tokenPrefix)
+}
+`,
+	})
+	assertNot(t, ds, contracts.RulePrefixSegmentBoundary,
+		"key- and prefix-named haystacks are value spaces, not slash trees — the rule keys on path-named haystacks only")
+}
+
+// Review 5, concatenation: a binary + chain is silent only when its
+// RIGHTMOST operand is a string literal (or resolves to one) ending in
+// "/", or the platform separator spelled string(os.PathSeparator) /
+// string(filepath.Separator) — directly or through a local whose every
+// assignment is exactly that (the whole-repo containment idiom
+// absBase+string(os.PathSeparator), which a hardcoded "/" would break
+// on Windows). root+"/" keeps its silence; root+leaf and a sep PARAM
+// carry no proven boundary and report.
+func TestPrefixBoundaryConcatenationNeedsRightmostBoundary(t *testing.T) {
+	ds := fixture(t, map[string]string{
+		"concat.go": `package main
+
+import (
+	"os"
+	"path/filepath"
+	"strings"
+)
+
+const slash = "/"
+
+func unboundedConcat(path, root, leaf string) bool {
+	return strings.HasPrefix(path, root+leaf)
+}
+
+func sepConcat(path, root, sep string) bool {
+	return strings.HasPrefix(path, root+sep)
+}
+
+func boundedConcat(rel string, root string) bool {
+	return strings.HasPrefix(rel, root+"/")
+}
+
+func constConcat(rel string, root string) bool {
+	return strings.HasPrefix(rel, root+slash)
+}
+
+func osSepConcat(path, base string) bool {
+	return strings.HasPrefix(path, base+string(os.PathSeparator))
+}
+
+func sepLocalConcat(rel, root string) bool {
+	sep := string(filepath.Separator)
+	return strings.HasPrefix(rel, root+sep)
+}
+`,
+	})
+	assertHas(t, ds, contracts.RulePrefixSegmentBoundary)
+	if got := rules(ds)[contracts.RulePrefixSegmentBoundary]; got != 2 {
+		t.Errorf("expected root+leaf and the sep parameter to fire; the /-terminated chains and both separator spellings must stay quiet (got %d findings)", got)
+	}
+}
+
+// Review 5, fixture C: a path held in neutrally named variables is out
+// of reach for a parse-only pass. The rule keys on path-named haystacks
+// (path/route/url/uri/dir, exactly rel, or a .URL selection); s and p
+// carry no path semantics it can see, so this is a declared silence,
+// not a gap it can close.
+func TestPrefixBoundaryNeutrallyNamedVariablesAreOutOfReach(t *testing.T) {
+	ds := fixture(t, map[string]string{
+		"neutral.go": `package main
+
+import "strings"
+
+func under(s, p string) bool {
+	return strings.HasPrefix(s, p)
+}
+`,
+	})
+	assertNot(t, ds, contracts.RulePrefixSegmentBoundary,
+		"a path held in a neutrally named variable is out of reach for a parse-only pass")
+}

@@ -32,18 +32,56 @@ import (
 
 // jsSource is one JavaScript file prepared for linting in two views of
 // the same length (so byte offsets and line numbers agree across all
-// three fields):
+// fields):
 //
 //   - Src   the raw source, for line numbers only;
 //   - Code  comments blanked, string literals preserved verbatim — for
 //     rules that need literal contents (selector strings, URL literals);
 //   - Blank comments AND string literals blanked — for rules that match
-//     code tokens only and must not fire on prose in a comment.
+//     code tokens only and must not fire on prose in a comment, a string
+//     literal, or a template's text (a template's ${…} bodies are code
+//     and survive). Regex literals are blanked here too, so a delimiter
+//     inside a pattern can never shift span matching.
+//
+// Call-shaped tokens are matched on Blank and their argument text is
+// recovered from Code by offset (the views are position-aligned), so
+// code-shaped text inside a string literal is never reported as a call
+// (review 5's documentation-string fixture).
 type jsSource struct {
 	Path  string
 	Src   string
 	Code  string
 	Blank string
+	// lineStarts holds the byte offset of every '\n' in Src, computed
+	// once per file; lineOf binary-searches it instead of rescanning
+	// the prefix per diagnostic. Re-measured on the reviewer's
+	// generated selector-stress files (40,000 findings / 2,080,000
+	// bytes and 80,000 findings / 4,160,000 bytes) after this index and
+	// the safeIdentEvents scope index: 0.94s and 3.23s wall, against
+	// 22.9s and 97.4s for the two backward-scan implementations on the
+	// same machine (the residual super-linearity is safeAt's per-lookup
+	// sweep of same-name events, in line with the reviewer's own
+	// baseline of 1.07s/3.90s).
+	lineStarts []int
+}
+
+// lineOf returns the 1-based line number of byte offset off. The
+// stripped views preserve offsets and newlines.
+func (f jsSource) lineOf(off int) int {
+	if off > len(f.Src) {
+		off = len(f.Src)
+	}
+	return 1 + sort.Search(len(f.lineStarts), func(i int) bool { return f.lineStarts[i] >= off })
+}
+
+func newlineOffsets(s string) []int {
+	var out []int
+	for i := range s {
+		if s[i] == '\n' {
+			out = append(out, i)
+		}
+	}
+	return out
 }
 
 // loadJSSources loads the JavaScript sources under the given roots for
@@ -112,22 +150,14 @@ func loadJSSources(roots ...string) ([]jsSource, error) {
 			return nil, fmt.Errorf("runtime-shape lint: %w", err)
 		}
 		out = append(out, jsSource{
-			Path:  f,
-			Src:   string(raw),
-			Code:  stripJSCommentsKeepStrings(string(raw)),
-			Blank: stripJSCommentsAndStrings(string(raw)),
+			Path:       f,
+			Src:        string(raw),
+			Code:       stripJSCommentsKeepStrings(string(raw)),
+			Blank:      stripJSCommentsAndStrings(string(raw)),
+			lineStarts: newlineOffsets(string(raw)),
 		})
 	}
 	return out, nil
-}
-
-// lineOf returns the 1-based line number of byte offset off, counted on
-// the raw source. The stripped views preserve offsets and newlines.
-func lineOf(src string, off int) int {
-	if off > len(src) {
-		off = len(src)
-	}
-	return 1 + strings.Count(src[:off], "\n")
 }
 
 // stripJSCommentsKeepStrings blanks the contents of JS line and block
@@ -246,19 +276,26 @@ func stripJSCommentsKeepStrings(src string) string {
 
 // matchDelimForward returns the index of the delimiter in s that pairs
 // with the opener at open ('(', '[', or '{'), skipping string and
-// template-literal contents, or -1. Callers use it on comment-stripped
-// views; regex literals are not tokenized, so a regex carrying an
-// unbalanced delimiter shifts the match (none is known in the runtime;
-// the lints that need exact spans do not cross one).
+// template-literal contents, or -1. Each delimiter kind carries its own
+// depth (review 5: one shared depth let a `[}]` inside a regex literal
+// close the enclosing call early), and a closer with no open pair of
+// its kind is skipped rather than trusted — regex literals survive
+// verbatim in the Code view, and this must still match across them.
 func matchDelimForward(s string, open int) int {
-	depth := 0
-	for i := open; i < len(s); i++ {
+	kind := delimKind(s[open])
+	var depth [3]int
+	depth[kind] = 1
+	for i := open + 1; i < len(s); i++ {
 		switch c := s[i]; c {
 		case '(', '[', '{':
-			depth++
+			depth[delimKind(c)]++
 		case ')', ']', '}':
-			depth--
-			if depth == 0 {
+			k := delimKind(c)
+			if depth[k] == 0 {
+				continue // unmatched: debris from a regex literal
+			}
+			depth[k]--
+			if k == kind && depth[k] == 0 {
 				return i
 			}
 		case '\'', '"', '`':
@@ -296,16 +333,23 @@ func matchDelimForward(s string, open int) int {
 }
 
 // matchDelimBack returns the index of the opener pairing with the ')'
-// (or ']' or '}') at i, or -1.
+// (or ']' or '}') at i, or -1. Depths are per delimiter kind, matching
+// matchDelimForward.
 func matchDelimBack(s string, i int) int {
-	depth := 0
-	for j := i; j >= 0; j-- {
+	kind := delimKind(s[i])
+	var depth [3]int
+	depth[kind] = 1
+	for j := i - 1; j >= 0; j-- {
 		switch s[j] {
 		case ')', ']', '}':
-			depth++
+			depth[delimKind(s[j])]++
 		case '(', '[', '{':
-			depth--
-			if depth == 0 {
+			k := delimKind(s[j])
+			if depth[k] == 0 {
+				continue
+			}
+			depth[k]--
+			if k == kind && depth[k] == 0 {
 				return j
 			}
 		}
@@ -313,20 +357,38 @@ func matchDelimBack(s string, i int) int {
 	return -1
 }
 
+// delimKind maps a delimiter byte to its depth slot.
+func delimKind(c byte) int {
+	switch c {
+	case '(', ')':
+		return 0
+	case '[', ']':
+		return 1
+	default:
+		return 2
+	}
+}
+
 // splitTopLevel splits s on sep (a single byte, '+' or ',') at bracket
-// depth zero and outside string/template literals. Returns the trimmed
-// operands in order.
+// depth zero and outside string/template literals. Depths are kept per
+// delimiter kind and an unmatched closer is skipped, so a `[}]` inside
+// a regex literal (verbatim in the Code view) cannot eat the depth the
+// way one shared counter did (review 5). Returns the trimmed operands
+// in order.
 func splitTopLevel(s string, sep byte) []string {
 	var parts []string
-	depth := 0
+	var depth [3]int
 	start := 0
 	i := 0
 	for i < len(s) {
 		switch c := s[i]; c {
 		case '(', '[', '{':
-			depth++
+			depth[delimKind(c)]++
 		case ')', ']', '}':
-			depth--
+			k := delimKind(c)
+			if depth[k] > 0 {
+				depth[k]--
+			}
 		case '\'', '"', '`':
 			q := c
 			i++
@@ -357,7 +419,7 @@ func splitTopLevel(s string, sep byte) []string {
 				i++
 			}
 		case sep:
-			if depth == 0 {
+			if depth[0] == 0 && depth[1] == 0 && depth[2] == 0 {
 				parts = append(parts, strings.TrimSpace(s[start:i]))
 				start = i + 1
 			}
@@ -451,6 +513,10 @@ func isJSIdent(s string) bool {
 //     like window.CSS.escape(…), the defensive spelling for browsers
 //     where the bare global is not bound — or a module-local
 //     cssEscape(…) shim;
+//   - arithmetic on a numeric literal (`index + 1` in an nth-child):
+//     every operand is an identifier, member access, or number and at
+//     least one is a number, so the value cannot carry selector
+//     metacharacters (review 5);
 //   - identifiers whose LAST assignment before the use, within the
 //     enclosing function, is from one string literal (dropdown.js's
 //     IS_OPEN, reveal.js's REVEAL_ATTR) or an escape call
@@ -458,11 +524,16 @@ func isJSIdent(s string) bool {
 //     loop variables iterating an array of string literals (boot.js's
 //     eventType): those provably hold a literal at the lookup point.
 //     A later reassignment from anything else (an attribute read, a
-//     concatenation, a compound append) revokes the status, and a
-//     same-named identifier in a different function never shares it —
-//     the safe set is per function scope, ordered by assignment
-//     position;
+//     concatenation, a compound append — review 5's
+//     `id = CSS.escape('fixed'); id = el.dataset.target`) revokes the
+//     status, and a same-named identifier in a different function
+//     never shares it — the safe set is per function scope, ordered by
+//     assignment position;
 //   - getElementById (never scanned).
+//
+// Call tokens are matched on the Blank view and the argument text is
+// recovered from Code by offset, so selector-shaped text inside a
+// string or template literal is prose and never reported (review 5).
 func LintSelectorInterpolation(roots ...string) (*Result, error) {
 	res := &Result{}
 	files, err := loadJSSources(roots...)
@@ -471,12 +542,12 @@ func LintSelectorInterpolation(roots ...string) (*Result, error) {
 	}
 	for _, f := range files {
 		events := safeIdentEvents(f.Code)
-		for _, loc := range reSelectorCall.FindAllStringIndex(f.Code, -1) {
-			if loc[0] > 0 && isJSIdentChar(f.Code[loc[0]-1]) {
+		for _, loc := range reSelectorCall.FindAllStringIndex(f.Blank, -1) {
+			if loc[0] > 0 && isJSIdentChar(f.Blank[loc[0]-1]) {
 				continue // part of a longer identifier (prefetch(, myMatches()
 			}
 			open := loc[1] - 1
-			close := matchDelimForward(f.Code, open)
+			close := matchDelimForward(f.Blank, open)
 			if close < 0 {
 				continue
 			}
@@ -485,7 +556,7 @@ func LintSelectorInterpolation(roots ...string) (*Result, error) {
 			if !ok {
 				continue
 			}
-			res.add(f.Path, lineOf(f.Src, loc[0]),
+			res.add(f.Path, f.lineOf(loc[0]),
 				fmt.Sprintf("[selector-interpolation] selector interpolates %q unescaped — a value carrying '\"]' re-targets the lookup or throws and silently drops the module's wiring; wrap it in CSS.escape() (a module-local cssEscape() shim counts)", bad))
 		}
 	}
@@ -526,11 +597,16 @@ var (
 // each tagged with its enclosing function scope. The safe set is per
 // function (plus the file's top level as one scope), so an identifier
 // escaped in one function never launders a same-named attribute read in
-// another.
+// another. Function scopes are indexed ONCE per file and resolved by
+// binary search plus a parent walk: calling enclosingFunction per event
+// walked the source backward to the file start for top-level code,
+// which made a many-assignment file quadratic (measured 22.9s user on
+// the reviewer's 40k-line generated file before this index).
 func safeIdentEvents(code string) []safeEvent {
+	scopes, parents := functionScopes(code)
 	var events []safeEvent
 	record := func(name string, pos int, safe bool) {
-		s, e := enclosingFunction(code, pos)
+		s, e := scopeOf(code, scopes, parents, pos)
 		events = append(events, safeEvent{name: name, scopeStart: s, scopeEnd: e, pos: pos, safe: safe})
 	}
 	for _, m := range reSafeAssign.FindAllStringSubmatchIndex(code, -1) {
@@ -553,6 +629,76 @@ func safeIdentEvents(code string) []safeEvent {
 		record(code[m[2]:m[3]], m[0], true)
 	}
 	return events
+}
+
+// functionScopes returns the [start, end) span of every function body
+// in code, sorted by start, and, in parallel, each scope's parent (the
+// innermost function scope containing it; -1 at the top level). One
+// left-to-right pass; non-function braces do not open scopes, exactly
+// as isFunctionOpener defines them.
+func functionScopes(code string) ([][2]int, []int) {
+	var spans [][2]int
+	var parents []int
+	var stack []int // indices of currently open function scopes
+	for i := 0; i < len(code); i++ {
+		for len(stack) > 0 && spans[stack[len(stack)-1]][1] <= i {
+			stack = stack[:len(stack)-1]
+		}
+		switch code[i] {
+		case '\'', '"', '`':
+			q := code[i]
+			i++
+			for i < len(code) {
+				if code[i] == '\\' {
+					i += 2
+					continue
+				}
+				if code[i] == q {
+					break
+				}
+				i++
+			}
+		case '{':
+			if !isFunctionOpener(code, i) {
+				continue
+			}
+			end := matchDelimForward(code, i)
+			if end < 0 {
+				end = len(code) - 1
+			}
+			parent := -1
+			if len(stack) > 0 {
+				parent = stack[len(stack)-1]
+			}
+			stack = append(stack, len(spans))
+			spans = append(spans, [2]int{i, end + 1})
+			parents = append(parents, parent)
+		}
+	}
+	return spans, parents
+}
+
+// scopeOf returns the span of the innermost function scope containing
+// pos (binary search for the rightmost scope starting at or before pos,
+// then a parent walk past scopes that closed before pos — the walk is
+// bounded by nesting depth), or the whole file at the top level. Same
+// answer as enclosingFunction, without the backward source walk.
+func scopeOf(code string, scopes [][2]int, parents []int, pos int) (int, int) {
+	lo, hi := 0, len(scopes)
+	for lo < hi {
+		mid := int(uint(lo+hi) >> 1)
+		if scopes[mid][0] <= pos {
+			lo = mid + 1
+		} else {
+			hi = mid
+		}
+	}
+	for i := lo - 1; i >= 0; i = parents[i] {
+		if scopes[i][1] > pos {
+			return scopes[i][0], scopes[i][1]
+		}
+	}
+	return 0, len(code)
 }
 
 // rhsSafeForm reports whether an assignment RHS provably cannot carry a
@@ -642,7 +788,51 @@ func selectorOperandSafe(op string, safe func(string) bool) bool {
 	if isJSStringLiteral(op) || isJSNumericLiteral(op) {
 		return true
 	}
+	if isNumericArithExpr(op) {
+		return true // `index + 1` in an nth-child: digits only, no metacharacters
+	}
 	return isJSIdent(op) && safe(op)
+}
+
+// isNumericArithExpr reports whether s is arithmetic over a numeric
+// literal (`index + 1`, `i * 2`): every +-*/%-separated token is a
+// plain identifier or a number, and at least one operand is a number.
+// Such a value is a number at runtime and cannot carry a selector
+// metacharacter (review 5's li:nth-child(${index + 1})). Dots,
+// parentheses, quotes, and calls disqualify the token: a member access
+// or call result is not provably numeric.
+func isNumericArithExpr(s string) bool {
+	if !strings.ContainsAny(s, "+-*/%") {
+		return false
+	}
+	hasNumber := false
+	for _, tok := range strings.FieldsFunc(s, func(r rune) bool {
+		return strings.ContainsRune("+-*/% \t", r)
+	}) {
+		switch {
+		case isNumericDotToken(tok):
+			hasNumber = true
+		case isJSIdent(tok):
+			// an identifier: numeric only in combination with the literal
+		default:
+			return false
+		}
+	}
+	return hasNumber
+}
+
+// isNumericDotToken reports whether tok is a numeric literal (digits
+// and at most the decimal point).
+func isNumericDotToken(tok string) bool {
+	if tok == "" {
+		return false
+	}
+	for i := range tok {
+		if (tok[i] < '0' || tok[i] > '9') && tok[i] != '.' {
+			return false
+		}
+	}
+	return true
 }
 
 // ── lint 2: {} registry read as plain bracket access ───────────────────
@@ -674,6 +864,12 @@ func selectorOperandSafe(op string, safe func(string) bool) bool {
 //     brace-matched loop span (however long the body): enumeration
 //     keys of an in-code registry (boot.js's module-scanner loop), not
 //     attribute input;
+//   - member-chain indices other than attribute reads: cfg.name and
+//     marker.name are catalog/marker-table-borne config values, out of
+//     scope exactly as the probe's surface list scopes them. A
+//     `.dataset.` member chain (el.dataset.name, el.dataset['name'])
+//     or a getAttribute( call IS attribute-borne and is checked
+//     (review 5);
 //   - guarded reads. The guard is the own-property idiom
 //     (Object.prototype.hasOwnProperty.call(REG, … / Object.hasOwn(REG,
 //     …, optionally qualified NS.REG), including the module-local
@@ -681,12 +877,21 @@ func selectorOperandSafe(op string, safe func(string) bool) bool {
 //     it counts wherever it actually guards the read: on the read's
 //     own line or the previous non-blank line (the fixed spellings wrap
 //     onto two lines), in the condition of the if or ternary lexically
-//     enclosing the read, or through a boolean assigned exactly once in
-//     the enclosing function from that guard idiom and branched on
-//     (the compute-once spelling that avoids calling hasOwnProperty
-//     twice). A guard on a DIFFERENT registry does not count;
+//     enclosing the read (however many lines the formatter spread it
+//     over — review 5's multiline spelling), or through a boolean
+//     assigned exactly once in the enclosing function from that guard
+//     idiom and branched on (the compute-once spelling that avoids
+//     calling hasOwnProperty twice). A guard on a DIFFERENT registry
+//     does not count, and neither does `name in REG`: `in` walks the
+//     prototype chain, so with name == "constructor" it passes and the
+//     read still returns the inherited member — the operator is the
+//     bug, not a guard, and it is not recognized (review 5);
 //   - registries created with Object.create(null) (never collected:
 //     only {} initializers are).
+//
+// Registry declarations are recognized anywhere on a line, not only at
+// line start (review 5): a one-line function or minified source
+// declares `const REGISTRY={}` mid-line like any other spelling.
 //
 // The pass is linear in corpus bytes: each file is prescanned once for
 // candidate bracket reads (one regex, one pass), indexed by identifier,
@@ -732,13 +937,20 @@ func LintRegistryOwnProps(roots ...string) (*Result, error) {
 					continue
 				}
 				idx := strings.TrimSpace(f.Blank[open+1 : close])
-				// Identifier indices only: the attribute-borne name
-				// variables of the audited sites. Member-chain indices
+				// Identifier indices are the attribute-borne name
+				// variables of the audited sites. A non-identifier
+				// index is checked only when it is itself
+				// attribute-borne (el.dataset.name,
+				// REG[el.getAttribute('data-x')]); other member chains
 				// (cfg.name, marker.name) are catalog/marker-table-borne
 				// config values, out of scope exactly as the probe's
-				// surface list scopes them; numeric and template indices
-				// carry no dynamic name.
-				if !isJSIdent(idx) || isJSNumericLiteral(idx) {
+				// surface list scopes them, and numeric and template
+				// indices carry no dynamic name.
+				if !isJSIdent(idx) {
+					if isJSNumericLiteral(idx) || !attrBorneIndex(idx) {
+						continue
+					}
+				} else if isJSNumericLiteral(idx) {
 					continue
 				}
 				if isCompositeIndex(idx, composite) {
@@ -753,10 +965,10 @@ func LintRegistryOwnProps(roots ...string) (*Result, error) {
 				if registryAccessIsDelete(f.Blank, start) {
 					continue
 				}
-				if registryGuardNearby(f.Blank, f.Src, name, start, guards) {
+				if registryGuardNearby(f, name, start, guards) {
 					continue
 				}
-				res.add(f.Path, lineOf(f.Src, start),
+				res.add(f.Path, f.lineOf(start),
 					fmt.Sprintf("[registry-own-prop] %s[...] reads a {} registry through the prototype chain — an attribute-borne name like \"constructor\" resolves to an Object.prototype member and passes the truthiness gate; read it as an own property (Object.prototype.hasOwnProperty.call(%s, name), the idiom computed.js uses)", name, name))
 			}
 		}
@@ -781,13 +993,30 @@ func bracketReads(blank string) map[string][]int {
 }
 
 // Registry-declaration shapes, matched on the blank view so a '{}' in
-// a string literal cannot declare anything.
+// a string literal cannot declare anything. Each shape is recognized
+// anywhere on a line, not only at line start (review 5): a one-line
+// function or minified source declares its registry mid-line like any
+// other spelling.
 var (
-	reRegistryTopDecl  = regexp.MustCompile(`(?m)^\s*(?:const|let|var)\s+(\w+)\s*=\s*(?:\w+(?:\.\w+)*\s*\|\|\s*)?\{\}\s*[;,)]`)
-	reRegistryNSDecl   = regexp.MustCompile(`(?m)^\s*(?:\w+\s*\.\s*)*(\w+)\s*\.\s*(\w+)\s*=\s*(?:\w+(?:\.\w+)*\s*\|\|\s*)?\{\}\s*[;,]`)
+	reRegistryTopDecl  = regexp.MustCompile(`\b(?:const|let|var)\s+(\w+)\s*=\s*(?:\w+(?:\.\w+)*\s*\|\|\s*)?\{\}\s*[;,)]`)
+	reRegistryNSDecl   = regexp.MustCompile(`(?:\w+\s*\.\s*)*(\w+)\s*\.\s*(\w+)\s*=\s*(?:\w+(?:\.\w+)*\s*\|\|\s*)?\{\}\s*[;,]`)
 	reRegistryOrAssign = regexp.MustCompile(`\(\s*(?:\w+\s*\.\s*)*(\w+)\s*\.\s*(\w+)\s*\|\|=\s*\{\}\s*\)`)
-	reRegistryPropDecl = regexp.MustCompile(`(?m)^\s*(\w+)\s*:\s*\{\}\s*,?\s*$`)
+	reRegistryPropDecl = regexp.MustCompile(`\b(\w+)\s*:\s*\{\}\s*[,}]`)
 )
+
+// reAttrIndex matches an attribute-borne index expression: a .dataset
+// member chain (dot or bracket spelling — the bracket's string literal
+// is blank in this view, so only the shape is matched) or a
+// getAttribute( call.
+var reAttrIndex = regexp.MustCompile(`\.\s*dataset\s*(?:\.|\[)|getAttribute\s*\(`)
+
+// attrBorneIndex reports whether a non-identifier bracket index is
+// itself attribute-borne (review 5's REGISTRY[el.dataset.name]): such
+// an index is checked exactly like an identifier index; every other
+// member chain (cfg.name) stays the declared silence.
+func attrBorneIndex(idx string) bool {
+	return reAttrIndex.MatchString(idx)
+}
 
 // collectRegistryNames gathers every identifier declared as a plain {}
 // across the corpus. Registries are cross-file in this runtime (kernel
@@ -1010,9 +1239,12 @@ func ownHelpers(blank string) []string {
 // patterns, compiled once per lint run, whose captured receiver is then
 // compared against the registry name — no per-name regex compilation,
 // so a corpus of R registry names per file costs zero extra compiles.
+// The `in` operator is deliberately absent (review 5): it walks the
+// prototype chain, so `name in REG` passes for name == "constructor"
+// and the read still returns the inherited member — the operator is
+// the bug this lint exists for, not a guard against it.
 type guardMatcher struct {
 	call   *regexp.Regexp // hasOwnProperty.call(RECV, / Object.hasOwn(RECV,
-	in     *regexp.Regexp // k in RECV
 	init   *regexp.Regexp // BOOL = <call idiom>(RECV,
 	helper []*regexp.Regexp
 }
@@ -1023,7 +1255,6 @@ const receiverPattern = `(?:\w+\s*\.\s*)*\w+`
 func newGuardMatcher(helpers []string) *guardMatcher {
 	g := &guardMatcher{
 		call: regexp.MustCompile(`(?:hasOwnProperty\s*\.\s*call|Object\s*\.\s*hasOwn)\s*\(\s*(` + receiverPattern + `)\s*,`),
-		in:   regexp.MustCompile(`\bin\s+(` + receiverPattern + `)\b`),
 	}
 	callee := `(?:hasOwnProperty\s*\.\s*call|Object\s*\.\s*hasOwn`
 	for _, h := range helpers {
@@ -1050,8 +1281,7 @@ func receiverIs(recv, name string) bool {
 }
 
 // guarded reports whether text carries the own-property guard for the
-// registry name: the call idiom, a module-local own() helper, or the
-// `k in REG` membership check.
+// registry name: the call idiom or a module-local own() helper.
 func (g *guardMatcher) guarded(text, name string) bool {
 	for _, m := range g.call.FindAllStringSubmatch(text, -1) {
 		if receiverIs(m[1], name) {
@@ -1063,11 +1293,6 @@ func (g *guardMatcher) guarded(text, name string) bool {
 			if receiverIs(m[1], name) {
 				return true
 			}
-		}
-	}
-	for _, m := range g.in.FindAllStringSubmatch(text, -1) {
-		if receiverIs(m[1], name) {
-			return true
 		}
 	}
 	return false
@@ -1084,19 +1309,20 @@ var reIfLine = regexp.MustCompile(`\bif\s*\(`)
 //     fixed spellings wrap onto two lines) — including that line's if
 //     condition referencing a guard boolean;
 //   - in the condition of the if or ternary that lexically encloses
-//     the read;
+//     the read (however many lines the formatter spread that condition
+//     over — review 5's multiline spelling);
 //   - through a boolean assigned exactly once in the enclosing
 //     function from the guard idiom (const known =
 //     hasOwnProperty.call(REG, x)) and referenced in one of those
 //     conditions: the compute-once spelling. A boolean initialized
 //     from a guard on a DIFFERENT registry is not a guard for this
 //     one, and a boolean from another function never applies.
-func registryGuardNearby(blank, src, name string, pos int, g *guardMatcher) bool {
-	if cond := enclosingCondition(blank, pos); g.guarded(cond, name) || g.guardBooleanIn(blank, pos, cond, name) {
+func registryGuardNearby(f jsSource, name string, pos int, g *guardMatcher) bool {
+	if cond := enclosingCondition(f.Blank, pos); g.guarded(cond, name) || g.guardBooleanIn(f.Blank, pos, cond, name) {
 		return true
 	}
-	line := lineOf(src, pos)
-	lines := strings.Split(blank, "\n")
+	line := f.lineOf(pos)
+	lines := strings.Split(f.Blank, "\n")
 	check := func(n int) bool {
 		if n < 1 || n > len(lines) {
 			return false
@@ -1114,7 +1340,7 @@ func registryGuardNearby(blank, src, name string, pos int, g *guardMatcher) bool
 			// The previous non-blank line's if condition referencing a
 			// compute-once guard boolean (`if (!known) return null;`
 			// above the read).
-			return reIfLine.MatchString(lines[n-1]) && g.guardBooleanIn(blank, pos, lines[n-1], name)
+			return reIfLine.MatchString(lines[n-1]) && g.guardBooleanIn(f.Blank, pos, lines[n-1], name)
 		}
 	}
 	return false
@@ -1257,17 +1483,28 @@ func skipSpaceBack(s string, i int) int {
 // response body and mounts it as markup with no .ok/.status check
 // anywhere in the chain.
 //
-// Bug class: within one promise chain (the fetch( call plus its .then(
-// continuations up to the statement boundary), a .text()/.json()
-// result reaches innerHTML/outerHTML/insertAdjacentHTML or a
-// mount/swap-named helper while no .ok (or .status) gate appears. An
-// error body routinely reflects the request URL and attacker-influenced
-// path segments; mounting it replaces live page markup with reflected
+// Bug class: within one promise chain (the fetch( call plus its
+// .then( / ?.then( / .catch( / ?.catch( / .finally( continuations up
+// to the statement boundary — optional chaining is a chain step like
+// any other, review 5), a .text()/.json() result reaches a DOM-markup
+// mount while no .ok (or .status) gate appears. An error body
+// routinely reflects the request URL and attacker-influenced path
+// segments; mounting it replaces live page markup with reflected
 // output. Probe: TestResponseHTMLMountedOnlyAfterOK, whose control
 // group (rpc.js, intercept.js, infinitescroll.js, poll.js) documents
 // the convention "an HTTP error must reach .catch, never the mount".
 // The audited fix (e936f791) gated sortablelist's conflict-recovery
 // refresh with `if (!r.ok) throw`.
+//
+// A mount is: an innerHTML/outerHTML assignment — simple or compound
+// (`=`, `+=`, every compound operator; review 5's innerHTML +=), an
+// insertAdjacentHTML( call, a helper named exactly `mount`, a helper
+// whose name starts with `mount` followed by an upper-case letter
+// (mountWidget), or one of the runtime's own swap helpers, grepped
+// from core-ui/runtime/src and frag: swapPane (panehost.js),
+// swapAtSlot, swapShell (nav.js). An explicit list, because
+// "any identifier containing mount or swap" reported string transforms
+// like swapCase( (review 5) — a name is not a markup sink.
 //
 // Silent on:
 //   - chains gated on the response: a whole-token .ok or .status read
@@ -1312,7 +1549,7 @@ func LintResponseMountedAfterOK(roots ...string) (*Result, error) {
 			if !reHTMLMount.MatchString(scan) {
 				continue
 			}
-			res.add(f.Path, lineOf(f.Src, loc[0]),
+			res.add(f.Path, f.lineOf(loc[0]),
 				"[response-mounted-unchecked] fetch chain reads the body (.text()/.json()) and mounts it via innerHTML/mount with no .ok/.status check in the chain — an error body reflects the request and replaces live markup; gate it like rpc.js/poll.js (if (!r.ok) throw …)")
 		}
 	}
@@ -1322,8 +1559,20 @@ func LintResponseMountedAfterOK(roots ...string) (*Result, error) {
 var (
 	reFetchCall = regexp.MustCompile(`\bfetch\s*\(`)
 	reBodyRead  = regexp.MustCompile(`\.(?:text|json)\s*\(\s*\)`)
-	reHTMLMount = regexp.MustCompile(`(?:innerHTML|outerHTML)\s*=[^=]|insertAdjacentHTML\s*\(` +
-		`|\b\w*(?:mount|swap)\w*\s*\(`)
+	// reHTMLMount matches a DOM-markup mount: any assignment operator
+	// (simple or compound) to innerHTML/outerHTML, insertAdjacentHTML(,
+	// a helper named exactly `mount`, a helper whose name starts with
+	// `mount` + an upper-case letter, or one of the runtime's own swap
+	// helpers (swapPane in panehost.js; swapAtSlot, swapShell in
+	// nav.js). An explicit list — `swapCase(` and friends are string
+	// transforms, not markup sinks (review 5).
+	reHTMLMount = regexp.MustCompile(`(?:innerHTML|outerHTML)\s*(?:\?\?=|\*\*=|>>>=|<<=|>>=|&&=|\|\|=|\+=|-=|\*=|/=|%=|&=|\|=|\^=|=[^=])` +
+		`|insertAdjacentHTML\s*\(` +
+		`|\bmount\s*\(` +
+		`|\bmount[A-Z]\w*\s*\(` +
+		`|\bswapPane\s*\(` +
+		`|\bswapAtSlot\s*\(` +
+		`|\bswapShell\s*\(`)
 )
 
 var reThenIdent = regexp.MustCompile(`\.\s*then\s*\(\s*(\w+)\s*\)`)
@@ -1448,10 +1697,16 @@ func insideIfCondition(s string, pos int) bool {
 
 // chainEnd extends a fetch call's closing paren through its .then(…)
 // (and ?.then(…), .catch(…), .finally(…)) continuations and returns the
-// index of the last closing paren of the chain.
+// index of the last closing paren of the chain. A continuation may
+// start with either '.' or '?.' — review 5's fetch(…)?.then(…)
+// spelled the first link with the optional-chaining token, and the
+// chain must not end before it.
 func chainEnd(blank string, close int) int {
 	for {
 		i := skipSpace(blank, close+1)
+		if i+1 < len(blank) && blank[i] == '?' && blank[i+1] == '.' {
+			i++ // past the '?'; the '.' handling below takes it from here
+		}
 		if i >= len(blank) || blank[i] != '.' {
 			return close
 		}
@@ -1535,9 +1790,10 @@ func templateOperands(tpl string) []string {
 // name-shape gate.
 //
 // Bug class: a fetch( URL, an XMLHttpRequest .open( URL, or an
-// assignment to src/href, built by concatenating a literal that ends
-// in "/" with el.getAttribute('data-*'), el.dataset.*, or a variable
-// assigned from one of those, while no gate of that value appears in
+// assignment to src/href, built by concatenating or interpolating a
+// literal that ends in "/" with el.getAttribute('data-*'),
+// el.dataset.name, el.dataset['name'], or a variable assigned from one
+// of those, while no gate of that value precedes the construction in
 // the enclosing function. The browser normalizes "../" segments and
 // re-targets the request onto any same-origin route, past the handler
 // that owns the prefix — with the page's CSRF token attached on POSTs.
@@ -1546,13 +1802,27 @@ func templateOperands(tpl string) []string {
 // audited fix (e936f791) gated _kilnPost with
 // /^[A-Za-z0-9_-]+$/.test(tool).
 //
+// Call tokens are matched on the Blank view and the URL expression
+// text is recovered from Code by offset, so fetch-shaped text inside a
+// string or template literal is prose and never reported (review 5).
+//
 // Silent on:
-//   - gates in the enclosing function: an anchored regex test
+//   - gates that PRECEDE the URL construction in source order within
+//     the enclosing function (review 5: a validating regex after the
+//     fetch does not un-send the request): an anchored regex test
 //     (/^[A-Za-z0-9_-]+$/.test(v)), a SAFE_NAME-style constant
 //     assigned a regex literal then .test(v), or an allowlist
 //     membership (X[v] inside an if condition, X.has(v)) — a
 //     server-emitted manifest or Set stops re-targeting exactly like a
-//     name-shape class;
+//     name-shape class. A regex gate counts only when the literal is
+//     anchored (^…$) and its body carries no ".", "\s", "\S", "\W", or
+//     negated class "[^" (review 5: /./ accepts "../admin", and a dot
+//     anywhere admits path separators);
+//   - numeric coercion of the value (Number(v), parseInt(v),
+//     parseFloat(v)): the result is a number or NaN and can never
+//     spell a traversal segment (review 5);
+//   - a literal beginning with "#": it builds a fragment, not a
+//     request path, and no same-origin route is re-targeted (review 5);
 //   - values used only as query parameters (the adjacent literal does
 //     not end in "/") or wrapped in encodeURIComponent(…);
 //   - whole-URL uses (fetch(attr)) with no path-literal concatenation.
@@ -1565,11 +1835,14 @@ func LintAttributePathSegments(roots ...string) (*Result, error) {
 	for _, f := range files {
 		attrVars := attributeBorneIdents(f.Code)
 		regexConsts := regexConstNames(f.Code)
-		for _, site := range pathBuildSites(f.Code) {
+		for _, site := range pathBuildSites(f.Blank, f.Code) {
 			for _, pair := range concatPathPairs(site.expr) {
 				lit, val := pair[0], pair[1]
 				if !pathLiteralEndsInSlash(lit) {
 					continue
+				}
+				if fragmentLiteral(lit) {
+					continue // '#…' sets a fragment; no request path is built
 				}
 				v := attributeBorneValue(val, attrVars)
 				if v == "" {
@@ -1578,7 +1851,7 @@ func LintAttributePathSegments(roots ...string) (*Result, error) {
 				if attrPathGated(f.Code, v, regexConsts, site.start) {
 					continue
 				}
-				res.add(f.Path, lineOf(f.Src, site.start),
+				res.add(f.Path, f.lineOf(site.start),
 					fmt.Sprintf("[attr-path-segment] %s is attribute-borne and joined into a request URL path after %q with no name-shape gate — \"../\" re-targets the request onto any same-origin route; gate it like loadModule (/^[A-Za-z0-9_-]+$/.test(%s)) or an allowlist check", v, lit, v))
 			}
 		}
@@ -1595,42 +1868,54 @@ type pathSite struct {
 
 var (
 	reFetchOpen     = regexp.MustCompile(`\bfetch\s*\(`)
-	reXHROpen       = regexp.MustCompile(`\bopen\s*\(\s*['"][A-Z]+['"]\s*,`)
+	reOpenCall      = regexp.MustCompile(`\bopen\s*\(`)
+	reHTTPMethod    = regexp.MustCompile(`^['"][A-Z]+['"]$`)
 	reSrcHrefAssign = regexp.MustCompile(`\.(?:src|href)\s*=[^=\n]`)
 )
 
 // pathBuildSites finds the URL expressions of fetch calls, XHR .open(
-// calls, and src/href assignments.
-func pathBuildSites(code string) []pathSite {
+// calls, and src/href assignments. Call tokens are matched on the
+// blank view (strings and comments cannot spell a call); delimiter
+// spans are computed there too, and the argument text is recovered
+// from the code view by offset so literals stay visible. The XHR
+// method literal is verified in the code text — the blank view cannot
+// see 'GET'.
+func pathBuildSites(blank, code string) []pathSite {
 	var sites []pathSite
-	for _, loc := range reFetchOpen.FindAllStringIndex(code, -1) {
-		if loc[0] > 0 && isJSIdentChar(code[loc[0]-1]) {
+	for _, loc := range reFetchOpen.FindAllStringIndex(blank, -1) {
+		if loc[0] > 0 && isJSIdentChar(blank[loc[0]-1]) {
 			continue // prefetch(, myFetch(
 		}
 		open := loc[1] - 1
-		close := matchDelimForward(code, open)
+		close := matchDelimForward(blank, open)
 		if close < 0 {
 			continue
 		}
-		if first := firstArgument(code, open, close); first != "" {
+		if first := firstArgument(code, blank, open, close); first != "" {
 			sites = append(sites, pathSite{start: open + 1, expr: first})
 		}
 	}
-	for _, loc := range reXHROpen.FindAllStringIndex(code, -1) {
-		open := strings.LastIndexByte(code[loc[0]:loc[1]], '(') + loc[0]
-		close := matchDelimForward(code, open)
+	for _, loc := range reOpenCall.FindAllStringIndex(blank, -1) {
+		if loc[0] > 0 && isJSIdentChar(blank[loc[0]-1]) {
+			continue // reopen(, myOpen(
+		}
+		open := loc[1] - 1
+		close := matchDelimForward(blank, open)
 		if close < 0 {
 			continue
 		}
-		comma := topLevelComma(code, open+1, close)
+		comma := topLevelComma(blank, open+1, close)
 		if comma < 0 {
 			continue
 		}
-		if second := firstArgument(code, comma, close); second != "" {
+		if !reHTTPMethod.MatchString(strings.TrimSpace(code[open+1 : comma])) {
+			continue // not an XHR open('GET', url)
+		}
+		if second := firstArgument(code, blank, comma, close); second != "" {
 			sites = append(sites, pathSite{start: comma + 1, expr: second})
 		}
 	}
-	for _, loc := range reSrcHrefAssign.FindAllStringIndex(code, -1) {
+	for _, loc := range reSrcHrefAssign.FindAllStringIndex(blank, -1) {
 		rhsStart := loc[1] - 1 // include the char [^=] consumed (the value's first byte)
 		if end := statementEnd(code, rhsStart); end > rhsStart {
 			sites = append(sites, pathSite{start: rhsStart, expr: strings.TrimSpace(code[rhsStart:end])})
@@ -1640,10 +1925,12 @@ func pathBuildSites(code string) []pathSite {
 }
 
 // firstArgument returns the text of the first call argument between
-// open (a '(' or ',') and close (its matching closer), or "" when the
-// argument region is empty.
-func firstArgument(code string, open, close int) string {
-	comma := topLevelComma(code, open+1, close)
+// open (a '(' or ',') and close (its matching closer): the argument
+// boundary is found on the blank view (a comma inside a string literal
+// is not a separator), the text is read from the code view. Returns ""
+// when the argument region is empty.
+func firstArgument(code, blank string, open, close int) string {
+	comma := topLevelComma(blank, open+1, close)
 	end := close
 	if comma >= 0 {
 		end = comma
@@ -1719,6 +2006,8 @@ func statementEnd(code string, from int) int {
 	return len(code)
 }
 
+// pathLiteralEndsInSlash reports whether lit is a string literal whose
+// value ends in "/" — the path-prefix position.
 func pathLiteralEndsInSlash(lit string) bool {
 	if !isJSStringLiteral(lit) {
 		return false
@@ -1726,14 +2015,27 @@ func pathLiteralEndsInSlash(lit string) bool {
 	return strings.HasSuffix(lit[1:len(lit)-1], "/")
 }
 
+// fragmentLiteral reports whether lit is a string literal beginning
+// with "#": everything after it is a fragment, and no request path is
+// built (review 5's '#/settings/' href).
+func fragmentLiteral(lit string) bool {
+	return isJSStringLiteral(lit) && strings.HasPrefix(lit[1:len(lit)-1], "#")
+}
+
 // reAttrRead matches the attribute-borne sources: getAttribute('data-…')
-// and .dataset.member.
-var reAttrRead = regexp.MustCompile(`getAttribute\s*\(\s*['"]data-[A-Za-z0-9_-]+['"]\s*\)|\.\s*dataset\s*\.\s*\w+`)
+// and .dataset.member, in both the dot and the bracket spelling
+// (el.dataset['tool'] — review 5).
+var reAttrRead = regexp.MustCompile(`getAttribute\s*\(\s*['"]data-[A-Za-z0-9_-]+['"]\s*\)` +
+	`|\.\s*dataset\s*\.\s*\w+` +
+	`|\.\s*dataset\s*\[\s*['"][A-Za-z0-9_-]+['"]\s*\]`)
 
 // reAttrVarAssign matches an identifier assigned from an attribute read
 // on the same line (const tool = el.getAttribute('data-kiln-tool') || ”).
 // The (>?) capture rejects arrow parameters (k => el.getAttribute(…)).
-var reAttrVarAssign = regexp.MustCompile(`(\w+)\s*=(>?)\s*([^;\n=]*)(?:getAttribute\s*\(\s*['"]data-[A-Za-z0-9_-]+['"]\s*\)|\.\s*dataset\s*\.\s*\w+)`)
+var reAttrVarAssign = regexp.MustCompile(`(\w+)\s*=(>?)\s*([^;\n=]*)(?:` +
+	`getAttribute\s*\(\s*['"]data-[A-Za-z0-9_-]+['"]\s*\)` +
+	`|\.\s*dataset\s*\.\s*\w+` +
+	`|\.\s*dataset\s*\[\s*['"][A-Za-z0-9_-]+['"]\s*\])`)
 
 // attributeBorneIdents returns identifiers assigned (same line) from a
 // data-* attribute read.
@@ -1748,14 +2050,24 @@ func attributeBorneIdents(code string) map[string]bool {
 	return set
 }
 
+// reNumericCoerce matches the numeric coercions: Number(v),
+// parseInt(v), parseFloat(v).
+var reNumericCoerce = regexp.MustCompile(`^(?:Number|parseInt|parseFloat)\s*\(`)
+
 // attributeBorneValue returns the value text when val is an
 // attribute-borne identifier or contains an attribute read directly;
-// "" when the value is neither (or is encodeURIComponent-wrapped).
+// "" when the value is neither — or is sanitized: wrapped in
+// encodeURIComponent(…), or numerically coerced (Number/parseInt/
+// parseFloat of the read yields a number or NaN, never a traversal
+// segment — review 5).
 func attributeBorneValue(val string, attrVars map[string]bool) string {
 	if strings.Contains(val, "encodeURIComponent(") {
 		return ""
 	}
 	v := strings.TrimSpace(val)
+	if reNumericCoerce.MatchString(v) {
+		return ""
+	}
 	if reAttrRead.MatchString(v) {
 		return v
 	}
@@ -1766,35 +2078,41 @@ func attributeBorneValue(val string, attrVars map[string]bool) string {
 }
 
 // reRegexConst matches const/let/var declarations initialized from a
-// regex literal (SAFE_NAME-style gate constants).
-var reRegexConst = regexp.MustCompile(`(?:const|let|var)\s+(\w+)\s*=\s*/`)
+// regex literal (SAFE_NAME-style gate constants) and captures the
+// literal, so the gate can be validated like an inline one.
+var reRegexConst = regexp.MustCompile(`(?:const|let|var)\s+(\w+)\s*=\s*(/[^\n]+?/[a-z]*)`)
 
-func regexConstNames(code string) map[string]bool {
-	set := map[string]bool{}
+func regexConstNames(code string) map[string]string {
+	set := map[string]string{}
 	for _, m := range reRegexConst.FindAllStringSubmatch(code, -1) {
-		set[m[1]] = true
+		set[m[1]] = m[2]
 	}
 	return set
 }
 
 // attrPathGated reports whether a name-shape or allowlist gate on
-// value v appears in the enclosing function of the site at pos. For an
-// inline attribute read (not a bare variable) any regex .test( in the
-// function counts: there is no variable to match.
-func attrPathGated(code, v string, regexConsts map[string]bool, pos int) bool {
-	start, end := enclosingFunction(code, pos)
-	body := code[start:end]
+// value v appears in the enclosing function of the site at pos BEFORE
+// pos in source order — the URL is built at pos, and a gate that runs
+// later cannot un-send the request (review 5). For an inline attribute
+// read (not a bare variable) any regex .test( counts: there is no
+// variable to match.
+func attrPathGated(code, v string, regexConsts map[string]string, pos int) bool {
+	start, _ := enclosingFunction(code, pos)
+	body := code[start:pos]
 	ident := `\w+`
 	if isJSIdent(v) {
 		ident = regexp.QuoteMeta(v)
 	}
-	// Regex-literal gate: /^[A-Za-z0-9_-]+$/.test(v)
-	if regexp.MustCompile(`/[^\n/]+/[a-z]*\s*\.\s*test\s*\(\s*` + ident + `\b`).MatchString(body) {
-		return true
+	// Regex-literal gate: /^[A-Za-z0-9_-]+$/.test(v) — anchored and
+	// metacharacter-free only; /./ accepts "../admin".
+	for _, m := range regexp.MustCompile(`(/[^/\n]+/[a-z]*)\s*\.\s*test\s*\(\s*`+ident+`\b`).FindAllStringSubmatch(body, -1) {
+		if regexGateAnchored(m[1]) {
+			return true
+		}
 	}
 	// SAFE_NAME-style constant holding a regex literal.
 	for _, m := range regexp.MustCompile(`(\w+)\s*\.\s*test\s*\(\s*`+ident+`\b`).FindAllStringSubmatch(body, -1) {
-		if regexConsts[m[1]] {
+		if lit, ok := regexConsts[m[1]]; ok && regexGateAnchored(lit) {
 			return true
 		}
 	}
@@ -1803,6 +2121,31 @@ func attrPathGated(code, v string, regexConsts map[string]bool, pos int) bool {
 		return true
 	}
 	return regexp.MustCompile(`\w+\.has\s*\(\s*` + ident + `\b`).MatchString(body)
+}
+
+// regexGateAnchored reports whether a regex literal (with its slashes,
+// optionally flagged) accepts a bounded name shape only: anchored at
+// both ends (^…$) and carrying no ".", "\s", "\S", "\W", or negated
+// class "[^" — each of those admits path separators or arbitrary
+// characters (review 5: /./ accepts "../admin").
+func regexGateAnchored(lit string) bool {
+	if len(lit) < 3 || lit[0] != '/' {
+		return false
+	}
+	end := strings.LastIndexByte(lit, '/')
+	if end <= 0 {
+		return false
+	}
+	body := lit[1:end]
+	if !strings.HasPrefix(body, "^") || !strings.HasSuffix(body, "$") {
+		return false
+	}
+	for _, forbidden := range []string{".", `\s`, `\S`, `\W`, "[^"} {
+		if strings.Contains(body, forbidden) {
+			return false
+		}
+	}
+	return true
 }
 
 // enclosingFunction returns the [start, end) span of the innermost

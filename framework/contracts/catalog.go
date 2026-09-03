@@ -319,11 +319,12 @@ func routingRules() []Rule {
 			"named inherited a sibling's tier, so the add-it-to-the-manifest gate stayed quiet), and the " +
 			"same shape matched a document-script scope past its `/`-terminated prefix in framework/uihost " +
 			"earlier in v0.80. Whatever the match decides — a tier, a scope, an exemption — it decides it " +
-			"for trees nobody named. A literal (or resolved constant) whose value contains no `/` at all " +
-			"fires only when the haystack is strongly path-named (an identifier matching " +
-			"path/route/url/uri/dir, or exactly rel): `HasPrefix(importPath, \"cmd\")` is the original bug " +
-			"with the manifest entry spelled as a literal, while key/prefix-named haystacks are namespace " +
-			"value spaces where every longer sibling is the intent.",
+			"for trees nobody named. The rule keys on path-NAMED haystacks: an identifier matching " +
+			"path/route/url/uri/dir, exactly rel, or a .URL field. A literal with no `/` at all fires on " +
+			"those haystacks (`HasPrefix(importPath, \"cmd\")` is the original bug with the manifest entry " +
+			"spelled as a literal); key- and prefix-named haystacks (API keys, token types, versions) are " +
+			"value spaces where every longer sibling is the intent, and a path held in a neutrally named " +
+			"variable is out of reach for a parse-only pass.",
 		Fix: `Compare equality for the exact match, then the boundary: rel == root || strings.HasPrefix(rel, root+"/").`,
 		Doc: "project-structure",
 		Examples: []Example{{
