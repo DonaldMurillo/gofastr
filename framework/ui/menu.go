@@ -608,8 +608,12 @@ func menuCSS(_ style.Theme) string {
    author display:grid above would override it — the panel would render
    visibly while details.open is false, and AT/role engines prune the
    whole menu (the trigger's own activation state lies). Hide explicitly;
-   the open state is the UA default. */
-[data-fui-comp="ui-menu"]:not([open]) .ui-menu__panel { display: none; }
+   the open state is the UA default. The details type selector is
+   load-bearing: on the TriggerElement path the root carrying
+   data-fui-comp is a plain div, which never carries [open] — an
+   untyped rule matches unconditionally and hides the panel even while
+   the summary-less details child is open (#386). */
+details[data-fui-comp="ui-menu"]:not([open]) .ui-menu__panel { display: none; }
 /* Trigger-element path (MenuConfig.TriggerElement): the root is a div,
    so the rule above cannot key [open] on it — the closed panel is
    hidden through the summary-less <details data-fui-menu> child for
