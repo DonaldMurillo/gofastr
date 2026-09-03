@@ -1061,3 +1061,300 @@ func TestLintAttributePathSegments_Review5GatesAndSanitizers(t *testing.T) {
 		}
 	}
 }
+
+// ── review 6 findings: status truthiness gates, non-dominating path
+// gates, partial escape operands, unproven numeric identifiers,
+// separator-matching regex escapes, member assignments and parameter
+// shadowing in safe-identifier tracking, regex delimiters closing
+// function scopes early ─────────────────────────────────────────────
+
+const responseReview6Fixture = `// Review 6: a bare .status truthiness gate passes for 404 and 500,
+// and < 400 admits every redirect — only .ok or a comparison that
+// requires a 2xx response is a gate. A bound of 399 is the same leak
+// in <= clothing, alone, mirrored, or conjoined with a >= 200 lower
+// bound.
+function mountStatusTruthy(target, src) {
+  return fetch(src).then(r => { if (r.status) return r.text(); }).then(html => { target.innerHTML = html; });
+}
+function mountStatusWeakLt400(target, src) {
+  return fetch(src).then(r => { if (r.status < 400) return r.text(); }).then(html => { target.innerHTML = html; });
+}
+function mountStatusLe399(target, src) {
+  return fetch(src).then(r => { if (r.status <= 399) return r.text(); }).then(html => { target.innerHTML = html; });
+}
+function mountStatusMirror399(target, src) {
+  return fetch(src).then(r => { if (399 >= r.status) return r.text(); }).then(html => { target.innerHTML = html; });
+}
+function mountStatusWeakRangeLt400(target, src) {
+  return fetch(src).then(r => { if (r.status >= 200 && r.status < 400) return r.text(); }).then(html => { target.innerHTML = html; });
+}
+function mountStatusWeakRangeLe399(target, src) {
+  return fetch(src).then(r => { if (r.status >= 200 && r.status <= 399) return r.text(); }).then(html => { target.innerHTML = html; });
+}
+// Valid gates stay quiet: .ok truthiness (negated or not) and 2xx-only
+// status comparisons.
+function mountOkChecked(target, src) {
+  return fetch(src).then(r => { if (r.ok) return r.text(); }).then(html => { target.innerHTML = html; });
+}
+function mountStatusEq200(target, src) {
+  return fetch(src).then(r => { if (r.status === 200) return r.text(); }).then(html => { target.innerHTML = html; });
+}
+function mountStatusLt300(target, src) {
+  return fetch(src).then(r => { if (r.status < 300) return r.text(); }).then(html => { target.innerHTML = html; });
+}
+function mountStatus2xxRange(target, src) {
+  return fetch(src).then(r => { if (r.status >= 200 && r.status < 300) return r.text(); }).then(html => { target.innerHTML = html; });
+}
+`
+
+func TestLintResponseMountedAfterOK_Review6StatusGates(t *testing.T) {
+	dir := writeRuntimeFixture(t, "review6resp.js", responseReview6Fixture)
+	res, err := LintResponseMountedAfterOK(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Violations) != 6 {
+		t.Fatalf("expected exactly 6 findings (truthiness, < 400, <= 399, mirrored 399 >=, range < 400, range <= 399), got %d:\n%s",
+			len(res.Violations), res.Error())
+	}
+	for _, v := range res.Violations {
+		if !strings.HasPrefix(v.Message, "[response-mounted-unchecked]") {
+			t.Errorf("unexpected message: %s", v.Message)
+		}
+	}
+}
+
+const attrReview6Fixture = `// Review 6: a matching validation in an unrelated earlier branch
+// constrains nothing — the branch can be skipped and the URL still
+// built — and a gate branch that does not reject (return/throw) only
+// sets a flag.
+function loadUnrelatedBranch(el, other) {
+  const tool = el.getAttribute('data-tool');
+  if (other) {
+    if (!/^[A-Za-z0-9_-]+$/.test(tool)) { skipTool(tool); }
+  }
+  return fetch('/kiln/tool/' + tool);
+}
+function skipTool(t) {}
+function loadFlagOnly(el) {
+  const tool = el.getAttribute('data-tool');
+  if (/^[A-Za-z0-9_-]+$/.test(tool)) { flagTool(); }
+  return fetch('/kiln/tool/' + tool);
+}
+function flagTool() {}
+// Dominating gates stay quiet: reject on failure, or enclose the
+// construction in the branch where the gate held.
+function loadRejectReturn(el) {
+  const tool = el.getAttribute('data-tool');
+  if (!/^[A-Za-z0-9_-]+$/.test(tool)) return;
+  return fetch('/kiln/tool/' + tool);
+}
+function loadRejectThrow(el) {
+  const tool = el.getAttribute('data-tool');
+  if (!/^[A-Za-z0-9_-]+$/.test(tool)) throw new Error('bad tool');
+  return fetch('/kiln/tool/' + tool);
+}
+function loadEnclosingBranch(el) {
+  const tool = el.getAttribute('data-tool');
+  if (/^[A-Za-z0-9_-]+$/.test(tool)) {
+    return fetch('/kiln/tool/' + tool);
+  }
+}
+`
+
+func TestLintAttributePathSegments_Review6GateDominance(t *testing.T) {
+	dir := writeRuntimeFixture(t, "review6attr.js", attrReview6Fixture)
+	res, err := LintAttributePathSegments(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Violations) != 2 {
+		t.Fatalf("expected exactly 2 findings (unrelated branch, flag-only gate), got %d:\n%s",
+			len(res.Violations), res.Error())
+	}
+}
+
+const selReview6FixtureRaw = `// Review 6: an escape call with a trailing || or ?: operand still
+// carries the raw attribute value whenever the escape result is falsy
+// (the empty string) — the operand must be the WHOLE escape call.
+function escapeOrTrailing(el) {
+  return document.querySelector('[data-or="' + CSS.escape(el.dataset.v) || el.dataset.v + '"]');
+}
+function escapeTernaryTrailing(el) {
+  return document.querySelector('[data-q="' + CSS.escape(el.dataset.q) ? 'x' : el.dataset.q + '"]');
+}
+`
+
+var selReview6Fixture = strings.ReplaceAll(selReview6FixtureRaw, "~", "\x60")
+
+func TestLintSelectorInterpolation_Review6PartialEscapeOperands(t *testing.T) {
+	dir := writeRuntimeFixture(t, "review6sel.js", selReview6Fixture)
+	res, err := LintSelectorInterpolation(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Violations) != 2 {
+		t.Fatalf("expected exactly 2 findings (trailing ||, trailing ?:), got %d:\n%s",
+			len(res.Violations), res.Error())
+	}
+}
+
+// numericReview6FixtureRaw uses ~ for JS backticks; untailed below.
+const numericReview6FixtureRaw = `// Review 6: an identifier plus a number is numeric arithmetic only
+// when the identifier is PROVEN numeric — from a DOM attribute it is a
+// string, and idx + 1 is string concatenation into an nth-child.
+function rowFromAttr(el) {
+  const idx = el.dataset.rowIndex;
+  return document.querySelector(~ul li:nth-child(${idx + 1})~);
+}
+function rowRevoked(el) {
+  let n = 0;
+  n = el.dataset.rowIndex;
+  return document.querySelector(~ul li:nth-child(${n + 1})~);
+}
+// Proven numeric: a numeric-literal init and a for-loop counter stay
+// quiet.
+function rowFromCounter(list) {
+  const found = [];
+  for (let i = 0; i < 10; i++) {
+    found.push(list.querySelector(~li:nth-child(${i + 1})~));
+  }
+  return found;
+}
+function rowFromInit() {
+  const base = 3;
+  return document.querySelector(~li:nth-child(${base + 1})~);
+}
+`
+
+var numericReview6Fixture = strings.ReplaceAll(numericReview6FixtureRaw, "~", "\x60")
+
+func TestLintSelectorInterpolation_Review6NumericIdentifiersMustBeProven(t *testing.T) {
+	dir := writeRuntimeFixture(t, "review6num.js", numericReview6Fixture)
+	res, err := LintSelectorInterpolation(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Violations) != 2 {
+		t.Fatalf("expected exactly 2 findings (attribute-borne idx, revoked n), got %d:\n%s",
+			len(res.Violations), res.Error())
+	}
+}
+
+const regexEscapeReview6Fixture = `// Review 6: \x2f, \u002f, \/ and \\ in a "name-safe" gate match a
+// path separator or an arbitrary character — the gate accepts foo/bar.
+// The m flag is the same leak by other means: ^ and $ go line-bound,
+// so "ok\n../admin" passes the gate.
+function loadHexSlash(el) {
+  const tool = el.getAttribute('data-tool');
+  if (/^[A-Za-z0-9_\x2f-]+$/.test(tool)) {
+    return fetch('/kiln/tool/' + tool);
+  }
+}
+function loadUniSlash(el) {
+  const tool = el.getAttribute('data-tool');
+  if (/^[A-Za-z0-9_\u002f-]+$/.test(tool)) {
+    return fetch('/kiln/tool/' + tool);
+  }
+}
+function loadEscSlash(el) {
+  const tool = el.getAttribute('data-tool');
+  if (/^[A-Za-z0-9_\/]+$/.test(tool)) {
+    return fetch('/kiln/tool/' + tool);
+  }
+}
+function loadBackslash(el) {
+  const tool = el.getAttribute('data-tool');
+  if (/^[A-Za-z0-9\\-]+$/.test(tool)) {
+    return fetch('/kiln/tool/' + tool);
+  }
+}
+function loadMultiline(el) {
+  const tool = el.getAttribute('data-tool');
+  if (/^[A-Za-z0-9_-]+$/m.test(tool)) {
+    return fetch('/kiln/tool/' + tool);
+  }
+}
+`
+
+func TestLintAttributePathSegments_Review6SeparatorMatchingEscapes(t *testing.T) {
+	dir := writeRuntimeFixture(t, "review6re.js", regexEscapeReview6Fixture)
+	res, err := LintAttributePathSegments(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Violations) != 5 {
+		t.Fatalf("expected exactly 5 findings (\\x2f, \\u002f, \\/, \\\\, m flag), got %d:\n%s",
+			len(res.Violations), res.Error())
+	}
+}
+
+const safeIdentReview6Fixture = `// Review 6: a member assignment is not an identifier assignment, and
+// a function parameter shadows a file-scope safe name inside that
+// function. memberOnly's bare id sits in a scope that binds no id and
+// precedes the const, so it fires today; were holder.id = 'fixed'
+// recorded as a file-scope safe event (the guard this pins), it would
+// launder that use instead.
+const holder = {};
+holder.id = 'fixed';
+function memberOnly() {
+  return document.querySelector('[data-member="' + id + '"]');
+}
+function usePlain(id) {
+  return document.querySelector('[data-plain="' + id + '"]');
+}
+const id = 'fixed';
+function useParam(id) {
+  return document.querySelector('[data-param="' + id + '"]');
+}
+// The file-scope safe name still covers unshadowed uses, and a local
+// literal init still counts.
+function usesGlobal() {
+  return document.querySelector('[data-global="' + id + '"]');
+}
+function localLiteral() {
+  const kind = 'note';
+  return document.querySelector('[data-kind="' + kind + '"]');
+}
+`
+
+func TestLintSelectorInterpolation_Review6MemberAssignAndParamShadowing(t *testing.T) {
+	dir := writeRuntimeFixture(t, "review6safe.js", safeIdentReview6Fixture)
+	res, err := LintSelectorInterpolation(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Violations) != 3 {
+		t.Fatalf("expected exactly 3 findings (unbound id before the const, plain parameter id, shadowed parameter id), got %d:\n%s",
+			len(res.Violations), res.Error())
+	}
+}
+
+const regexScopeReview6Fixture = `// Review 6: a '}' inside a regex literal must not close the function
+// scope — after /[}]/, a parameter named like a file-scope safe
+// identifier still shadows it.
+const id = 'fixed';
+function afterRegex(id) {
+  const open = /[}]/;
+  return document.querySelector('[data-after="' + id + '"]');
+}
+function plainAfterRegex() {
+  const open = /[}]/;
+  return document.querySelector('[data-plain2="' + id + '"]');
+}
+`
+
+func TestLintSelectorInterpolation_Review6RegexLiteralMustNotCloseScopes(t *testing.T) {
+	dir := writeRuntimeFixture(t, "review6scope.js", regexScopeReview6Fixture)
+	res, err := LintSelectorInterpolation(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Violations) != 1 {
+		t.Fatalf("expected exactly 1 finding (the shadowed parameter after the regex), got %d:\n%s",
+			len(res.Violations), res.Error())
+	}
+	if !strings.Contains(res.Violations[0].Message, `"id"`) {
+		t.Errorf("expected the finding on the shadowed id: %s", res.Error())
+	}
+}

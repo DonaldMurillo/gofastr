@@ -13,7 +13,10 @@
 // holds node always ran by the time node executes, and the cond held.
 package dominance
 
-import "go/ast"
+import (
+	"go/ast"
+	"go/token"
+)
 
 // Parents maps every node in body to its parent node.
 func Parents(body ast.Node) map[ast.Node]ast.Node {
@@ -200,6 +203,73 @@ func Spine(n ast.Node) []ast.Node {
 		expr(n)
 	}
 	return out
+}
+
+// IfStmtOf returns the if statement st carries: st itself when it is
+// an *ast.IfStmt, or the statement a LabeledStmt chain ends in. The
+// divlimit and intwrap branch-aware guards ask for it: only a real if
+// statement has a condition whose failure branch can leave the guard's
+// values behind.
+func IfStmtOf(st ast.Stmt) *ast.IfStmt {
+	switch v := st.(type) {
+	case *ast.IfStmt:
+		return v
+	case *ast.LabeledStmt:
+		return IfStmtOf(v.Stmt)
+	}
+	return nil
+}
+
+// Diverges reports whether every path through st leaves the enclosing
+// statement list without falling through: it ends in a return, a
+// panic, a continue, or an os.Exit call, or is an if/else or block
+// whose arms all diverge. A statement that merely breaks, or a body
+// that can complete normally, does not diverge — the code after the
+// statement stays reachable with the condition's true values, which is
+// exactly what the branch-aware guards refuse to credit (review 6).
+func Diverges(st ast.Stmt) bool {
+	switch v := st.(type) {
+	case *ast.ReturnStmt:
+		return true
+	case *ast.BranchStmt:
+		// continue skips the rest of the loop body on every path; break
+		// is deliberately absent — it leaves the loop and reaches code
+		// after it, goto can jump backward past the use.
+		return v.Tok == token.CONTINUE
+	case *ast.ExprStmt:
+		return exitsCall(v.X)
+	case *ast.BlockStmt:
+		return stmtListDiverges(v)
+	case *ast.LabeledStmt:
+		return Diverges(v.Stmt)
+	case *ast.IfStmt:
+		return v.Else != nil && Diverges(v.Body) && Diverges(v.Else)
+	}
+	return false
+}
+
+// stmtListDiverges reports whether a block never completes normally:
+// every path either diverges in an earlier statement or reaches the
+// last one, so the last statement deciding is sound.
+func stmtListDiverges(b *ast.BlockStmt) bool {
+	return b != nil && len(b.List) > 0 && Diverges(b.List[len(b.List)-1])
+}
+
+// exitsCall reports whether e is a panic(...) or os.Exit(...) call —
+// the expressions through which a guard branch refuses to continue.
+func exitsCall(e ast.Expr) bool {
+	call, ok := e.(*ast.CallExpr)
+	if !ok {
+		return false
+	}
+	switch fn := call.Fun.(type) {
+	case *ast.Ident:
+		return fn.Name == "panic"
+	case *ast.SelectorExpr:
+		pkg, ok := fn.X.(*ast.Ident)
+		return ok && pkg.Name == "os" && fn.Sel.Name == "Exit"
+	}
+	return false
 }
 
 // containsPath reports whether node sits inside st per the parent map,

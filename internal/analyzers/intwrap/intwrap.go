@@ -15,15 +15,20 @@
 // kiln/expr env.go builtinAbs (fixed in f06f4412), where the saturated
 // fix also errs away from every threshold guard consuming abs().
 //
-// A bound counts only when it DOMINATES the conversion: it must sit in
-// the same block, or an enclosing block, before the statement holding
-// the conversion — inspected only over the parts of that statement
-// that always execute — or be the condition of an enclosing if whose
-// then-branch holds the conversion. A check in a sibling case arm of
-// the same type switch guards nothing — that is exactly how the uint
-// arm shipped without the check its uint64 sibling had — and neither
-// does a check inside a flag-gated nested body of an earlier
-// statement.
+// A bound counts only when it proves the subject inside the safe range
+// on the REACHING path (review 6): a diverging guard — an earlier if
+// whose condition, when false, leaves the subject in range (`u >
+// math.MaxInt64`, `v == math.MinInt64`) and whose then-branch never
+// completes normally (return, panic, continue, os.Exit) — or the
+// condition of an enclosing if whose then-branch holds the node, where
+// the condition HELD and must establish the range (`u <=
+// math.MaxInt64`). A check in a sibling case arm of the same type
+// switch guards nothing — that is exactly how the uint arm shipped
+// without the check its uint64 sibling had — and neither does a check
+// inside a flag-gated nested body of an earlier statement, a branch
+// that merely flags the out-of-range values, or `if u <=
+// math.MaxInt64 { return }`, which leaves exactly the wrapping values
+// on the continuing path.
 //
 // Silent postures, deliberately:
 //   - uint8/uint16 sources: they fit every signed target this rule
@@ -53,6 +58,7 @@ import (
 	"go/constant"
 	"go/token"
 	"go/types"
+	"math"
 	"strings"
 
 	"golang.org/x/tools/go/analysis"
@@ -212,84 +218,179 @@ const (
 )
 
 // dominatingBound reports whether node is dominated by a comparison of
-// obj against a bound: the comparison must sit in the same block as the
-// node, or an enclosing block, in a statement before the one holding
-// the node — inspected only over the parts of that statement that
-// always execute — or be the condition of an enclosing if whose
-// then-branch holds the node. Sibling branches (other case arms) and
-// flag-gated nested bodies guard nothing.
+// the subject against a bound (review 6 made the guard branch-aware):
+//
+//   - a diverging guard: an earlier if whose condition, when FALSE,
+//
+// leaves the subject inside the family's safe range —
+// `if u > math.MaxInt64 { return }`, `if v == math.MinInt64 {
+// return }` — and whose then-branch never completes normally
+// (return, panic, continue, os.Exit): only in-range values
+// continue past it;
+//   - an enclosing condition: an if whose then-branch holds the node
+//
+// and whose condition, held TRUE there, establishes the safe
+// range — `if u <= math.MaxInt64 { return int64(u), true }`.
+//
+// Polarity is the whole point: `if u <= math.MaxInt64 { return }`
+// leaves exactly the out-of-range values on the continuing path, a
+// branch that merely flags (or returns on the in-range values) leaves
+// the wrapping values behind, and a comparison inside a nested
+// conditional body of an earlier statement (a flag-gated check) or a
+// sibling case arm guards nothing — that is exactly how the uint arm
+// shipped without the check its uint64 sibling had.
 func dominatingBound(pass *analysis.Pass, node ast.Node, parents map[ast.Node]ast.Node, body *ast.BlockStmt, subj subject, family string) bool {
 	for _, stmts := range dominance.Prefix(node, parents, body) {
 		for _, st := range stmts {
-			if spineBounds(pass, dominance.Spine(st), subj, family, false) {
+			iff := dominance.IfStmtOf(st)
+			if iff == nil || !dominance.Diverges(iff.Body) {
+				continue
+			}
+			if condBounds(pass, iff.Cond, subj, family, false) {
 				return true
 			}
 		}
 	}
 	for _, cond := range dominance.EnclosingIfConds(node, parents, body) {
-		if spineBounds(pass, dominance.Spine(cond), subj, family, true) {
+		if condBounds(pass, cond, subj, family, true) {
 			return true
 		}
 	}
 	return false
 }
 
-// spineBounds reports whether nodes compare obj against the bound
-// family: math.MaxInt/MaxInt32/MaxInt64 or math.MinInt/MinInt64
-// (resolved by import path, not spelling), or an integer literal of
-// bound size. thenBranch selects the comparison direction a condition
-// must have when the node sits in the if's THEN-branch: the condition
-// HELD there, so only operators that establish the safe range dominate
-// — u > math.MaxInt64 in the branch that converts selects exactly the
-// values that wrap. Statement positions (thenBranch false) keep the
-// early-return reading: `if u > math.MaxInt64 { return }` before the
-// node leaves only in-range values behind, whatever the operator.
-func spineBounds(pass *analysis.Pass, nodes []ast.Node, subj subject, family string, thenBranch bool) bool {
-	for _, n := range nodes {
-		bin, ok := n.(*ast.BinaryExpr)
-		if !ok || !isComparison(bin.Op) {
-			continue
+// condBounds walks a condition's operator tree and reports whether it
+// proves the subject inside the safe range: when holds, the condition
+// itself held on the reaching path; when !holds, it failed and the
+// other side of the branch is what runs. For && held, any one operand
+// suffices (A && B held means both held); failed, ¬(A && B) is ¬A ∨
+// ¬B — which operand failed is unknown, so EVERY operand's failure
+// must prove it (`if u > math.MaxInt64 && strict { return }` with
+// strict false still converts the out-of-range u). For || held, which
+// operand is unknown, so every operand must prove it; failed, ¬(A ∨ B)
+// is ¬A ∧ ¬B — both failed, so any one operand's failure proves it.
+func condBounds(pass *analysis.Pass, cond ast.Expr, subj subject, family string, holds bool) bool {
+	switch x := cond.(type) {
+	case *ast.ParenExpr:
+		return condBounds(pass, x.X, subj, family, holds)
+	case *ast.UnaryExpr:
+		if x.Op == token.NOT {
+			return condBounds(pass, x.X, subj, family, !holds)
 		}
-		var other ast.Expr
-		subjectOnLeft := matchesSubject(pass, bin.X, subj)
-		switch {
-		case subjectOnLeft:
-			other = bin.Y
-		case matchesSubject(pass, bin.Y, subj):
-			other = bin.X
-		default:
-			continue
+	case *ast.BinaryExpr:
+		switch x.Op {
+		case token.LAND:
+			if holds {
+				return condBounds(pass, x.X, subj, family, true) || condBounds(pass, x.Y, subj, family, true)
+			}
+			return condBounds(pass, x.X, subj, family, false) && condBounds(pass, x.Y, subj, family, false)
+		case token.LOR:
+			if holds {
+				return condBounds(pass, x.X, subj, family, true) && condBounds(pass, x.Y, subj, family, true)
+			}
+			return condBounds(pass, x.X, subj, family, false) || condBounds(pass, x.Y, subj, family, false)
 		}
-		if thenBranch && !establishesSafeRange(bin.Op, subjectOnLeft, family) {
-			continue
-		}
-		if isMathBound(pass, other, family) || isBoundLiteral(pass, other, family) {
-			return true
-		}
+		return comparisonBounds(pass, x, subj, family, holds)
 	}
 	return false
 }
 
-// establishesSafeRange reports whether the comparison, held TRUE in an
-// enclosing if's then-branch, puts the subject inside the safe range
-// for the family: at most the max bound (equality fits exactly), or
-// strictly above the min bound (equality is MinInt, which still wraps
-// under negation).
-func establishesSafeRange(op token.Token, subjectOnLeft bool, family string) bool {
-	if family == boundMax {
-		switch {
-		case subjectOnLeft:
-			return op == token.LSS || op == token.LEQ || op == token.EQL
-		default:
-			return op == token.GTR || op == token.GEQ || op == token.EQL
-		}
+// comparisonBounds reports whether `subj op bound` proves the subject
+// inside the family's safe range on the given truth value. The bound
+// operand is a math constant of the family or a bound-sized literal,
+// exactly as before.
+func comparisonBounds(pass *analysis.Pass, bin *ast.BinaryExpr, subj subject, family string, holds bool) bool {
+	if !isComparison(bin.Op) {
+		return false
 	}
+	var other ast.Expr
+	subjectOnLeft := matchesSubject(pass, bin.X, subj)
 	switch {
 	case subjectOnLeft:
-		return op == token.GTR
+		other = bin.Y
+	case matchesSubject(pass, bin.Y, subj):
+		other = bin.X
 	default:
-		return op == token.LSS
+		return false
 	}
+	if !isMathBound(pass, other, family) && !isBoundLiteral(pass, other, family) {
+		return false
+	}
+	op := bin.Op
+	if !subjectOnLeft {
+		op = flipComparison(op)
+	}
+	whenTrue, whenFalse := boundSide(pass, op, other, family)
+	if holds {
+		return whenTrue
+	}
+	return whenFalse
+}
+
+// boundSide reports for `subj op bound` (subject on the left, op
+// normalized) which truth value of the comparison proves the subject
+// inside the safe range. For boundMax (conversion safety: subj ≤ Max,
+// and every recognized bound is ≤ MaxInt64): holding, the subject is
+// below or at the bound (<, <=, ==); failing, the subject is at most
+// the bound (> , >= fail to ≤/<, != fails to ==). For boundMin
+// (negation safety: subj > Min, a signed subject is always ≥ Min):
+// holding, strictly above the bound (>); failing, above it (<=), or —
+// only when the bound IS the exact minimum — not equal to it (==),
+// since a signed value that is not MinInt64 is above it.
+func boundSide(pass *analysis.Pass, op token.Token, bound ast.Expr, family string) (whenTrue, whenFalse bool) {
+	if family == boundMax {
+		switch op {
+		case token.LSS, token.LEQ, token.EQL:
+			return true, false
+		case token.GTR, token.GEQ, token.NEQ:
+			return false, true
+		}
+		return false, false
+	}
+	switch op {
+	case token.GTR:
+		return true, false
+	case token.LEQ:
+		return false, true
+	case token.EQL:
+		// ¬(v == MinInt64) proves v > MinInt64 only for the exact
+		// minimum: a signed v is always ≥ it. A larger literal bound
+		// (isBoundLiteral accepts any ≤ MinInt32) still admits MinInt64
+		// on the continuing path.
+		return false, isExactMinBound(pass, bound)
+	}
+	return false, false
+}
+
+// isExactMinBound reports whether e is exactly the 64-bit minimum:
+// the math.MinInt/MinInt64 constants (on the 64-bit platforms this
+// repo targets), or that value spelled as a literal.
+func isExactMinBound(pass *analysis.Pass, e ast.Expr) bool {
+	if isMathBound(pass, e, boundMin) {
+		return true
+	}
+	tv, ok := pass.TypesInfo.Types[e]
+	if !ok || tv.Value == nil {
+		return false
+	}
+	i, ok := constant.Int64Val(tv.Value)
+	return ok && i == math.MinInt64
+}
+
+// flipComparison mirrors an operator so the subject can be treated as
+// the left operand.
+func flipComparison(op token.Token) token.Token {
+	switch op {
+	case token.LSS:
+		return token.GTR
+	case token.LEQ:
+		return token.GEQ
+	case token.GTR:
+		return token.LSS
+	case token.GEQ:
+		return token.LEQ
+	}
+	return op
 }
 
 func isMathBound(pass *analysis.Pass, e ast.Expr, family string) bool {

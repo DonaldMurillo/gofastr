@@ -107,3 +107,30 @@ func postBoundBreaks(box any, flags map[bool]uint64) int64 {
 	}
 	return int64(u) // want `conversion uint64 → int64 without a dominating bound check`
 }
+
+// conjDiverging: the failure of `u > math.MaxInt64 && strict` can be
+// strict alone — ¬(A && B) is ¬A ∨ ¬B, and which operand failed is
+// unknown — so BOTH operands' failure must bound the subject for the
+// diverging guard to count. strict's failure bounds nothing, and the
+// out-of-range u still reaches the conversion.
+func conjDiverging(box any, strict bool) int64 {
+	if u, ok := box.(uint64); ok {
+		if u > math.MaxInt64 && strict {
+			return 0
+		}
+		return int64(u) // want `conversion uint64 → int64 without a dominating bound check`
+	}
+	return 0
+}
+
+// conjHeld: the conjoined enclosing condition held means every operand
+// held, so any one operand establishing the safe range suffices.
+func conjHeld(box any, strict bool) int64 {
+	if u, ok := box.(uint64); ok {
+		if u <= math.MaxInt64 && strict {
+			return int64(u)
+		}
+		return 0
+	}
+	return 0
+}

@@ -1,10 +1,12 @@
 package mcp
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"slices"
 	"strings"
 	"sync/atomic"
@@ -654,5 +656,45 @@ func TestServerGateClosesResourcesSurface(t *testing.T) {
 		if resp.Error == nil {
 			t.Errorf("SECURITY: [authz] %s answered a server-gate-refused caller: %+v", c.method, resp)
 		}
+	}
+}
+
+// Property: a recovered gate panic is not silently swallowed. The
+// fail-closed contract turns the panic into an internal error, but an
+// operator who cannot see the panic cannot tell a gate bug from a
+// refusal storm — runCallGate and checkServerGate log the recovered
+// value (operation, tool name where available) before answering.
+func TestPanickingGatesAreLoggedNotSwallowed(t *testing.T) {
+	var buf bytes.Buffer
+	old := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, nil)))
+	t.Cleanup(func() { slog.SetDefault(old) })
+
+	if err := runCallGate(func(string) error { panic("call gate boom") }, "kiln_probe"); err == nil || err.Error() != "internal tool error" {
+		t.Fatalf("runCallGate: panicking gate must still answer the internal tool error, got %v", err)
+	}
+	logged := buf.String()
+	if !strings.Contains(logged, "call gate boom") {
+		t.Errorf("runCallGate: recovered panic not logged: %q", logged)
+	}
+	if !strings.Contains(logged, "kiln_probe") {
+		t.Errorf("runCallGate: log must carry the tool name: %q", logged)
+	}
+	if !strings.Contains(logged, `operation="call gate"`) {
+		t.Errorf("runCallGate: log must carry the structured operation field: %q", logged)
+	}
+
+	buf.Reset()
+	s := NewServer()
+	s.SetGate(func(context.Context) error { panic("server gate boom") })
+	if err := s.checkServerGate(context.Background()); err == nil || err.Error() != "internal tool error" {
+		t.Fatalf("checkServerGate: panicking gate must still answer the internal tool error, got %v", err)
+	}
+	logged = buf.String()
+	if !strings.Contains(logged, "server gate boom") {
+		t.Errorf("checkServerGate: recovered panic not logged: %q", logged)
+	}
+	if !strings.Contains(logged, `operation="server gate"`) {
+		t.Errorf("checkServerGate: log must carry the structured operation field: %q", logged)
 	}
 }

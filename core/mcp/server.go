@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"slices"
 	"strings"
 	"sync"
@@ -431,10 +432,16 @@ func (s *Server) checkToolGate(ctx context.Context, t Tool) (err error) {
 // runCallGate evaluates the registry-wide call gate with the same net
 // checkToolGate gives the per-tool gate: a panicking gate refuses the
 // call instead of unwinding the transport loop it runs on
-// (recovercallback pins this).
+// (recovercallback pins this). The recovered value is logged before
+// the error is returned — a swallowed panic is indistinguishable from
+// a refusal storm in the logs (review 6).
 func runCallGate(gate func(toolName string) error, name string) (err error) {
 	defer func() {
 		if rec := recover(); rec != nil {
+			slog.Error("panic in MCP call gate recovered",
+				slog.String("operation", "call gate"),
+				slog.String("tool", name),
+				slog.Any("panic", rec))
 			err = errors.New("internal tool error")
 		}
 	}()
@@ -483,7 +490,8 @@ func (s *Server) SetGate(gate func(ctx context.Context) error) {
 // checkServerGate evaluates the server-wide gate, if any, with the
 // same fail-closed net checkToolGate gives the per-tool gate: a
 // panicking gate answers as an error, not an unwound transport
-// (recovercallback pins this).
+// (recovercallback pins this), and the recovered value is logged
+// before that answer (review 6).
 func (s *Server) checkServerGate(ctx context.Context) (err error) {
 	s.mu.RLock()
 	gate := s.serverGate
@@ -493,6 +501,9 @@ func (s *Server) checkServerGate(ctx context.Context) (err error) {
 	}
 	defer func() {
 		if rec := recover(); rec != nil {
+			slog.Error("panic in MCP server gate recovered",
+				slog.String("operation", "server gate"),
+				slog.Any("panic", rec))
 			err = errors.New("internal tool error")
 		}
 	}()
