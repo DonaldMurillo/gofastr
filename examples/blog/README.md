@@ -7,8 +7,8 @@ OpenAPI, and entity MCP tools.
 ## Quick start
 
 ```bash
-# From the repository root:
-go run ./examples/blog
+cd examples/blog && gofastr dev     # rebuild on save + dev MCP tools
+# or, from the repository root: go run ./examples/blog
 ```
 
 The server starts on **http://localhost:8080**.

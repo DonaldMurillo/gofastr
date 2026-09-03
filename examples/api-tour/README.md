@@ -6,8 +6,8 @@ A graph of users → profiles, users → posts → comments.
 ## Run
 
 ```bash
-go run ./examples/api-tour
-# listening on :8080
+cd examples/api-tour && gofastr dev   # or: go run ./examples/api-tour
+# listening on :8080 (set PORT to change it)
 ```
 
 The first run creates `./api-tour.db` (SQLite) and seeds two users + two

@@ -24,6 +24,15 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   added now log the panic instead of swallowing it.
 
 ### Added
+- **`isolation.ListenAddr(projectDir, fallback)`** is the one call a
+  hand-written `main` needs to bind where `gofastr dev`, a PaaS, or
+  worktree isolation says: it reads `$PORT` as a bare port or a
+  host:port, falls back to the given address, and applies the port
+  remap. Every server example binds through it, so `go run .` and
+  `gofastr dev` agree on the address, and the site's examples page and
+  the READMEs now lead with `gofastr dev`. `TestE2E_DevLoop_Examples`
+  boots each example under `gofastr dev` and checks it answers on the
+  banner address.
 - **The site renders the gofastr-plugins registry.** `/plugins` lists
   every plugin in the vendored `plugins.json` and `/plugins/<name>`
   shows its manifest, isolation posture, and the `go get` plus
@@ -47,6 +56,10 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   before.
 
 ### Fixed
+- **Examples answered on the wrong port under `gofastr dev`**: six
+  hardcoded their address and three prefixed `$PORT` with a colon, so
+  the `localhost:<port>` value `gofastr dev` injects became
+  `:localhost:8080`. All bind through `isolation.ListenAddr` now.
 - **Analyzers, contract rules, and runtime lints**: five reviewers
   executed fixtures against the nineteen rules and proved around
   seventy-five gaps; every one is pinned red-then-green. Highlights:

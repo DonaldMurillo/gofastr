@@ -18,7 +18,7 @@ together:
 ## Run it
 
 ```bash
-go run ./examples/webmcp-remote-assist
+cd examples/webmcp-remote-assist && gofastr dev   # or: go run .
 ```
 
 Open <http://localhost:8090> (the framework's dev isolation may remap
