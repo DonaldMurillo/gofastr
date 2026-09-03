@@ -11,7 +11,8 @@ cd examples/blog && gofastr dev     # rebuild on save + dev MCP tools
 # or, from the repository root: go run ./examples/blog
 ```
 
-The server starts on **http://localhost:8080**.
+The server binds :8080 unless `PORT` is set or a linked worktree remaps
+it; the startup banner prints the address to open.
 
 The example uses SQLite at `./blog.db` and auto-migrates on startup.
 

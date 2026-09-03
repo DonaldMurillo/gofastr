@@ -414,8 +414,9 @@ jobs:
             # isn't starved by parallel package load. TestE2E_DevLoop_Examples
             # (builds and boots every example under `gofastr dev`) rides
             # here too: it needs no Chrome, but its eleven builds would
-            # push the deterministic job past its 20m budget.
-            run: go test -count=1 -timeout=15m -run 'TestBlueprintCLIGeneratesEntireWorkingAppE2E|TestE2E_HotReload_BrowserAutoRefreshes|TestLivereloadSameBuildIDDoesNotReload|TestE2E_DevLoop_Examples' ./cmd/gofastr/
+            # push the deterministic job past its 20m budget. 25m covers its
+            # worst case: eleven examples at the 90s per-example wait.
+            run: go test -count=1 -timeout=25m -run 'TestBlueprintCLIGeneratesEntireWorkingAppE2E|TestE2E_HotReload_BrowserAutoRefreshes|TestLivereloadSameBuildIDDoesNotReload|TestE2E_DevLoop_Examples' ./cmd/gofastr/
           - suite: core-ui-runtime
             # The runtime hydration suite launches a real Chrome per test
             # binary; under the deterministic job's -p 2 package

@@ -1,8 +1,8 @@
 package main
 
 // Boots every server example under `gofastr dev`, the command the site's
-// examples page and the READMEs lead with, and checks each answers on the
-// address the dev banner prints. The examples used to hardcode their port
+// examples page and the READMEs lead with, reads the address the dev
+// banner prints, and checks each answers there. The examples used to hardcode their port
 // or prefix $PORT with a colon, so the banner said one address and the
 // child bound another; isolation.ListenAddr is the fix and this is its
 // gate. The process module is a stdio child, not a server, so it is not
@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"testing"
 	"time"
 )
@@ -76,7 +77,11 @@ func TestE2E_DevLoop_Examples(t *testing.T) {
 				_ = dev.Wait()
 				removeDevServerBinary(dev)
 			})
-			url := "http://localhost:" + port + ex.path
+			base := waitForBanner(t, &out, 30*time.Second)
+			if want := "http://localhost:" + port; base != want {
+				t.Fatalf("banner advertises %s, the requested address was %s; dev output:\n%s", base, want, clip(out.String()))
+			}
+			url := base + ex.path
 			status := waitForStatus(t, url, 90*time.Second, &out)
 			if status != ex.wantStatus {
 				t.Fatalf("GET %s under gofastr dev: status %d, want %d; dev output:\n%s", url, status, ex.wantStatus, clip(out.String()))
@@ -84,6 +89,24 @@ func TestE2E_DevLoop_Examples(t *testing.T) {
 		})
 	}
 }
+
+// waitForBanner waits for the dev banner's "Server at http://…" line and
+// returns that address, so the probe hits what the user was told to open
+// rather than the port the test asked for.
+func waitForBanner(t *testing.T, devOut *syncBuffer, timeout time.Duration) string {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if m := bannerAddr.FindStringSubmatch(devOut.String()); m != nil {
+			return m[1]
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	t.Fatalf("no \"Server at http://…\" banner within %s; dev output:\n%s", timeout, clip(devOut.String()))
+	return ""
+}
+
+var bannerAddr = regexp.MustCompile(`Server at (http://[^\s]+)`)
 
 // waitForStatus polls url until any HTTP response arrives and returns its
 // status; a connection that never opens fails with the dev output.

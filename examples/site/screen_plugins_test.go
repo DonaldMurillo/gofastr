@@ -80,6 +80,16 @@ func TestPluginRegistryGuardsEachFail(t *testing.T) {
 		"trusted row without trusted:true": func(_ map[string]any, rows []map[string]any) { delete(trusted(rows), "trusted") },
 		"trusted row with sandbox tokens":  func(_ map[string]any, rows []map[string]any) { trusted(rows)["sandbox"] = []any{"allow-scripts"} },
 		"row in a different module":        func(_ map[string]any, rows []map[string]any) { rows[1]["modulePath"] = "github.com/someone/else/x" },
+		"release stamp without tag":        func(raw map[string]any, _ []map[string]any) { raw["release"].(map[string]any)["tag"] = "" },
+		"release stamp without published":  func(raw map[string]any, _ []map[string]any) { delete(raw["release"].(map[string]any), "published") },
+		"release source over http": func(raw map[string]any, _ []map[string]any) {
+			raw["release"].(map[string]any)["source"] = "http://github.com/x/y"
+		},
+		"empty name":            func(_ map[string]any, rows []map[string]any) { rows[0]["name"] = "" },
+		"empty modulePath":      func(_ map[string]any, rows []map[string]any) { rows[0]["modulePath"] = "" },
+		"empty description":     func(_ map[string]any, rows []map[string]any) { rows[0]["description"] = "" },
+		"empty frameworkCompat": func(_ map[string]any, rows []map[string]any) { rows[0]["frameworkCompat"] = "" },
+		"empty routePrefix":     func(_ map[string]any, rows []map[string]any) { rows[0]["routePrefix"] = "" },
 	}
 	for name, edit := range cases {
 		t.Run(name, func(t *testing.T) {
