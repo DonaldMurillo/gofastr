@@ -120,6 +120,44 @@ func update(req *http.Request) error {
 	}
 }
 
+// Pass-through reader constructors keep the body's bytes: a decoder
+// over a buffered, NopCloser-wrapped, or tee'd body is still decoding
+// the raw request. Constructors that return their own output
+// (peer.CallWithID) stay excluded — that is the distinction the
+// allow-list encodes.
+func TestRawJSONBodyDecodeThroughReaderConstructorsIsReported(t *testing.T) {
+	ds := fixture(t, map[string]string{
+		"wrapped.go": `package wrapped
+
+import (
+	"bufio"
+	"encoding/json"
+	"io"
+	"net/http"
+)
+
+func decodeBuffered(r *http.Request) error {
+	var v map[string]any
+	return json.NewDecoder(bufio.NewReader(r.Body)).Decode(&v)
+}
+
+func decodeNopCloser(r *http.Request) error {
+	var v map[string]any
+	return json.NewDecoder(io.NopCloser(r.Body)).Decode(&v)
+}
+
+func decodeTee(r *http.Request, w io.Writer) error {
+	var v map[string]any
+	return json.NewDecoder(io.TeeReader(r.Body, w)).Decode(&v)
+}
+`,
+	})
+	assertHas(t, ds, contracts.RuleRawJSONBodyDecode)
+	if got := rules(ds)[contracts.RuleRawJSONBodyDecode]; got != 3 {
+		t.Errorf("expected the buffered, NopCloser, and TeeReader spellings to fire, got %d findings", got)
+	}
+}
+
 // The body ferried through a helper: io.ReadAll wrapped in a one-line
 // local function is the same stdlib decode of raw request bytes — the
 // pass parses this file, so the helper's return is visible. One bounded

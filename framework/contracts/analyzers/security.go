@@ -1020,10 +1020,17 @@ func helperCallTainted(call *ast.CallExpr, tainted map[string]bool, reqs map[str
 
 // readerWrapper names the calls whose RESULT is the request body's
 // bytes: the reader constructors and readers of the wrapped spellings.
+// NopCloser/TeeReader/NewReader return a reader over the SAME bytes —
+// bufio.NewReader(r.Body), bytes.NewReader(raw), io.NopCloser(r.Body) —
+// which is what distinguishes them from a call that returns its own
+// output (peer.CallWithID).
 var readerWrapper = map[string]bool{
 	"ReadAll":        true,
 	"MaxBytesReader": true,
 	"LimitReader":    true,
+	"NopCloser":      true,
+	"TeeReader":      true,
+	"NewReader":      true,
 }
 
 // exprFromRequestBody reports whether e is, contains, or was assigned

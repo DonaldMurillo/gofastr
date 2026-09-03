@@ -32,6 +32,7 @@ func (s *S) Handle(line []byte) {
 	}
 	s.CallGuarded(t)
 	s.CallGuardedMethod(t)
+	s.CallNestedDeferGuard(t)
 	s.CallUnguarded(t)
 }
 
@@ -45,6 +46,15 @@ func (s *S) CallGuarded(t Tool) {
 func (s *S) CallGuardedMethod(t Tool) {
 	defer s.guard()
 	_ = t.Gate(context.Background())
+}
+
+// CallNestedDeferGuard defers a named guard whose OWN body defers its
+// recover: recover must be called directly by the deferred function to
+// catch the CALLER's panic, and the nested one runs on the guard's own
+// frame. Fires.
+func (s *S) CallNestedDeferGuard(t Tool) {
+	defer nestedDeferGuard()
+	_ = t.Gate(context.Background()) // want `recovercallback: t\.Gate is invoked with no recover in scope`
 }
 
 // CallUnguarded is the control: same path, no guard anywhere.
@@ -62,4 +72,13 @@ func (s *S) guard() {
 	if r := recover(); r != nil {
 		_ = r
 	}
+}
+
+// nestedDeferGuard recovers only ITS OWN panics: the recover call is
+// one defer deeper than the guard, so a panic in the deferring caller
+// escapes it.
+func nestedDeferGuard() {
+	defer func() {
+		_ = recover()
+	}()
 }

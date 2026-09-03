@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"go/ast"
 	"go/token"
+	"path"
 	"regexp"
 	"sort"
 	"strings"
@@ -378,9 +379,11 @@ func replaceLiteralFix(p *contracts.Pass, rel string, line int, oldText, newText
 //     scheme);
 //   - a prefix identifier that resolves to a package-level CONSTANT
 //     (const prefix = "/__gofastr/runtime/"), in this file or any
-//     sibling file of the same package (consts.go / scope.go layout),
-//     or to a function local that is not a parameter and whose EVERY
-//     assignment in the function is a string literal (the same
+//     sibling file of the same directory (consts.go / scope.go layout;
+//     a same-named package in another directory is a different
+//     package and never resolves), or to a function local that is not
+//     a parameter and whose EVERY assignment in the function is a
+//     string literal (the same
 //     literal): both provably hold that one value at the call. A
 //     parameter conditionally defaulted to a bounded literal stays
 //     dynamic — the caller's value is what runs (review 5: "/api"
@@ -408,17 +411,22 @@ func checkPrefixBoundary(p *contracts.Pass) []contracts.Diagnostic {
 	// Package-level literals are resolved across every file of the
 	// package: consts.go/scope.go layout is standard, and a bounded
 	// constant must not turn "dynamic" by living in a sibling file.
+	// The key is the DIRECTORY: the pass walks every directory under
+	// the root, two directories can share a package name while being
+	// separate packages, and one directory's constant must never
+	// resolve (or overwrite) for another's identifiers.
 	pkgLits := map[string]map[string]string{}
 	for _, f := range p.AppFiles() {
 		file, ok := p.AST(f.Rel)
 		if !ok {
 			continue
 		}
-		if pkgLits[file.Name.Name] == nil {
-			pkgLits[file.Name.Name] = map[string]string{}
+		dir := path.Dir(f.Rel)
+		if pkgLits[dir] == nil {
+			pkgLits[dir] = map[string]string{}
 		}
 		for name, val := range fileScopedLits(file) {
-			pkgLits[file.Name.Name][name] = val
+			pkgLits[dir][name] = val
 		}
 	}
 	for _, f := range p.AppFiles() {
@@ -427,7 +435,7 @@ func checkPrefixBoundary(p *contracts.Pass) []contracts.Diagnostic {
 			continue
 		}
 		aliases := importAliases(file)
-		fileLits := pkgLits[file.Name.Name]
+		fileLits := pkgLits[path.Dir(f.Rel)]
 		for _, fn := range functionsIn(file) {
 			localLits := bodyScopedLits(fn, aliases)
 			ast.Inspect(fn.body, func(n ast.Node) bool {
@@ -674,17 +682,25 @@ func bodyScopedLits(fn *funcScope, aliases map[string]string) localLits {
 		res.vals[name] = val
 	}
 	sepEvery := map[string]bool{} // every assignment so far is a separator call
+	sepNever := map[string]bool{} // one assignment was not a separator: sticky
 	setSep := func(name string, rhs ast.Expr) {
 		// A parameter never becomes a separator: its caller-supplied
 		// value can survive a conditional reassignment. A local that is
 		// merely dyn (its assignment is a call, not a literal) still
 		// counts — that is exactly the separator spelling. A nil rhs is
-		// any non one-to-one assignment and disqualifies.
+		// any non one-to-one assignment and disqualifies. Disqualification
+		// is sticky, like the literal rule's: sep := cfgSep with a later
+		// conditional sep = string(filepath.Separator) must not re-qualify
+		// the name, because cfgSep is what runs when the caller sent one.
 		if isParam[name] {
 			return
 		}
 		if rhs == nil || !separatorExpr(rhs, aliases) {
+			sepNever[name] = true
 			delete(sepEvery, name)
+			return
+		}
+		if sepNever[name] {
 			return
 		}
 		sepEvery[name] = true

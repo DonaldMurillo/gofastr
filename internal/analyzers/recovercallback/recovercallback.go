@@ -198,18 +198,20 @@ func (g *graph) link(pass *analysis.Pass, n *node) {
 		g.markAsync(goStmt.Call.Fun, n)
 		return true
 	})
-	// R5: a deferred package-local guard whose body recovers (a direct
-	// recover() call, or its own deferred recover) protects this node
-	// exactly like the inline literal — recover works when called
-	// directly by the deferred function, and the guard IS the deferred
-	// function.
+	// R5: a deferred package-local guard whose body calls recover()
+	// DIRECTLY protects this node exactly like the inline literal —
+	// recover works when called directly by the deferred function, and
+	// the guard IS the deferred function. A guard whose OWN body defers
+	// its recover does not: that nested recover runs on the guard's
+	// frame and cannot catch a panic from this node, so only
+	// directRecover counts here.
 	ast.Inspect(n.body, func(x ast.Node) bool {
 		def, ok := x.(*ast.DeferStmt)
 		if !ok {
 			return true
 		}
 		if target, ok := g.byObj[g.callTarget(def.Call.Fun)]; ok {
-			if target.hasRecover || directRecover(target.body) {
+			if directRecover(target.body) {
 				n.hasRecover = true
 			}
 		}

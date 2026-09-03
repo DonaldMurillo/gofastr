@@ -162,6 +162,25 @@ func e8(d decl) string {
 	return fmt.Sprintf("func %s(ctx context.Context) error {\n", d.HandlerType) // want `identifier slot "func %s"`
 }
 
+// e9: a suffix on the emitted identifier — "func %sHandler(ctx
+// context.Context) error {" — is the same declaration slot; the
+// parenthesis follows the identifier RUN, not the verb.
+func e9(hook string) string {
+	return fmt.Sprintf("func %sHandler(ctx context.Context) error {\n", hook) // want `identifier slot "func %s"`
+}
+
+// e10: continue only skips the current iteration. The post-loop emit
+func e10(names []string, sb *strings.Builder) {
+	var n string
+	for _, n = range names {
+		if !isGoIdentifier(n) {
+			continue
+		}
+		fmt.Fprintf(sb, "func %s(ctx context.Context) error {\n", n)
+	}
+	fmt.Sprintf("func %s(ctx context.Context) error {\n", n) // want `identifier slot "func %s"`
+}
+
 // emitType/emitVar: format-initial declarations WITH code evidence
 // after the verb still fire.
 func emitType(name string) string {

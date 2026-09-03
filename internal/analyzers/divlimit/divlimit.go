@@ -92,6 +92,11 @@ func checkFunc(pass *analysis.Pass, fnType *ast.FuncType, body *ast.BlockStmt) {
 	parents := dominance.Parents(body)
 
 	ast.Inspect(body, func(n ast.Node) bool {
+		if _, isLit := n.(*ast.FuncLit); isLit {
+			// Closures are judged by their own checkFunc call from
+			// run; descending here reports their divisions twice.
+			return false
+		}
 		bin, ok := n.(*ast.BinaryExpr)
 		if !ok {
 			return true

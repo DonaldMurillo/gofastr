@@ -65,3 +65,36 @@ func condGuardFixed(total, limit int, strict bool) int {
 	}
 	return total
 }
+
+// nestedClosureDivision: the closure is judged by its own checkFunc
+// pass; the enclosing function's walk must cut at the FuncLit or the
+// selector-shaped division reports twice (identical diagnostics go
+// deduped by vet and analysistest — a no-dedupe driver shows the pair).
+func nestedClosureDivision(r *http.Request) int {
+	q := decode(r)
+	apply := func(v int) int {
+		return v / q.Limit // want `integer division by q.Limit`
+	}
+	return apply(q.Total)
+}
+
+// postGuardBreaks: the guard comparison sits in the loop's Post, which
+// runs only after a NORMAL iteration — the immediate break skips it,
+// and the division after the loop sees the unvetted limit.
+func postGuardBreaks(total, limit int, clamps map[bool]int) int {
+	for i := 0; i < 3; i, limit = i+1, clamps[limit == 0] {
+		if i == 0 {
+			break
+		}
+	}
+	return total / limit // want `integer division by limit`
+}
+
+// keyGuardEmptyRange: the guard comparison sits in the range's KEY
+// expression, evaluated only when the range yields an element — an
+// empty range never vets the divisor.
+func keyGuardEmptyRange(total, limit int, xs []int, clamps map[bool]int) int {
+	for clamps[limit == 0] = range xs {
+	}
+	return total / limit // want `integer division by limit`
+}

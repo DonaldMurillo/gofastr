@@ -23,8 +23,9 @@
 // sqlType...), a strconv/strings result, a constant, a local that an
 // isXIdent/token.IsIdentifier check in the same function guards —
 // guarding means the emit site is inside the check's success arm or
-// after a failure arm that diverges (return/panic/continue/os.Exit);
-// a warn-and-continue check gates nothing — or a derivation rooted at
+// after a failure arm that diverges (return/panic/os.Exit, or a
+// continue confined to emits inside the same loop body); a
+// warn-and-continue check gates nothing — or a derivation rooted at
 // a struct field the SAME PACKAGE identifier-checks somewhere
 // (validate-side gates count: the check may live in the validator
 // while the emitter only renders), or at a field whose own name states
@@ -243,7 +244,8 @@ func run(pass *analysis.Pass) (any, error) {
 // function-local guard is computed per emit site: a check-named call
 // gates its arguments only where it dominates the emit — the emit
 // inside the check's success arm, or after a failure arm that diverges
-// (return/panic/continue/os.Exit). A check that only warns and falls
+// (return/panic/os.Exit, or a continue guarding emits inside the same
+// loop body only). A check that only warns and falls
 // through gates nothing: the hostile name still reaches the format.
 func checkFile(pass *analysis.Pass, f *ast.File, helperDecls map[*types.Func]*ast.FuncDecl, memo map[string]bool, paramGate map[*types.Var]bool) {
 	bound := boundExprs(pass, f)
@@ -256,6 +258,7 @@ func checkFile(pass *analysis.Pass, f *ast.File, helperDecls map[*types.Func]*as
 	var processBody func(body *ast.BlockStmt)
 	processBody = func(body *ast.BlockStmt) {
 		var ifs []*ast.IfStmt
+		var loops []ast.Node
 		var emits []*ast.CallExpr
 		ast.Inspect(body, func(n ast.Node) bool {
 			switch e := n.(type) {
@@ -264,6 +267,8 @@ func checkFile(pass *analysis.Pass, f *ast.File, helperDecls map[*types.Func]*as
 				return false
 			case *ast.IfStmt:
 				ifs = append(ifs, e)
+			case *ast.ForStmt, *ast.RangeStmt:
+				loops = append(loops, e)
 			case *ast.CallExpr:
 				if _, ok := fmtCalls[qualifiedCallee(pass, e.Fun)]; ok {
 					emits = append(emits, e)
@@ -308,8 +313,18 @@ func checkFile(pass *analysis.Pass, f *ast.File, helperDecls map[*types.Func]*as
 						guarded[g.obj] = true
 						continue
 					}
-					if emit.Pos() > g.st.End() && bodyDiverges(pass, g.st.Body) {
-						guarded[g.obj] = true
+					if emit.Pos() > g.st.End() {
+						if bodyDiverges(pass, g.st.Body) {
+							guarded[g.obj] = true
+						} else if bodyContinues(g.st.Body) && sameLoopBody(loops, g.st, emit) {
+							// A continue only skips the current
+							// iteration: it guards emits inside the
+							// same loop body, never an emit after the
+							// loop — the value that hit the continue
+							// is exactly the unchecked one a post-loop
+							// emit can format.
+							guarded[g.obj] = true
+						}
 					}
 					continue
 				}
@@ -350,18 +365,15 @@ func collectCondChecks(pass *analysis.Pass, x ast.Expr, neg int, add func(call *
 }
 
 // bodyDiverges reports whether the block's control flow unconditionally
-// leaves the function or loop: a top-level return, panic, continue, or
-// os.Exit. Statements nested in inner conditionals do not count — their
-// other paths fall through.
+// leaves the FUNCTION: a top-level return, panic, or os.Exit. Statements
+// nested in inner conditionals do not count — their other paths fall
+// through. A continue does not count either: it only skips to the next
+// iteration (see bodyContinues).
 func bodyDiverges(pass *analysis.Pass, body *ast.BlockStmt) bool {
 	for _, st := range body.List {
 		switch s := st.(type) {
 		case *ast.ReturnStmt:
 			return true
-		case *ast.BranchStmt:
-			if s.Tok == token.CONTINUE {
-				return true
-			}
 		case *ast.ExprStmt:
 			if call, ok := s.X.(*ast.CallExpr); ok {
 				if id, ok := call.Fun.(*ast.Ident); ok && id.Name == "panic" {
@@ -374,6 +386,41 @@ func bodyDiverges(pass *analysis.Pass, body *ast.BlockStmt) bool {
 		}
 	}
 	return false
+}
+
+// bodyContinues reports whether the block's top level is a continue.
+func bodyContinues(body *ast.BlockStmt) bool {
+	for _, st := range body.List {
+		if s, ok := st.(*ast.BranchStmt); ok && s.Tok == token.CONTINUE {
+			return true
+		}
+	}
+	return false
+}
+
+// sameLoopBody reports whether st and emit sit inside the same loop's
+// BODY: the innermost loop enclosing st, with emit lexically inside
+// that loop's body. A continue divergence guards only there.
+func sameLoopBody(loops []ast.Node, st *ast.IfStmt, emit *ast.CallExpr) bool {
+	var innermost ast.Node
+	for _, lp := range loops {
+		if st.Pos() >= lp.Pos() && st.End() <= lp.End() {
+			if innermost == nil || lp.End()-lp.Pos() < innermost.End()-innermost.Pos() {
+				innermost = lp
+			}
+		}
+	}
+	if innermost == nil {
+		return false
+	}
+	var body *ast.BlockStmt
+	switch l := innermost.(type) {
+	case *ast.ForStmt:
+		body = l.Body
+	case *ast.RangeStmt:
+		body = l.Body
+	}
+	return body != nil && emit.Pos() >= body.Pos() && emit.End() <= body.End()
 }
 
 // checkEmit scans one Sprintf-family call's format for identifier slots
@@ -587,6 +634,11 @@ func declFollows(format string, after int, kw string) bool {
 	rest = rest[spaces:]
 	switch kw {
 	case "func":
+		// The parenthesis follows the identifier RUN, not the verb:
+		// "func %sHandler(ctx context.Context) error {".
+		for len(rest) > 0 && isIdentByte(rest[0]) {
+			rest = rest[1:]
+		}
 		return strings.HasPrefix(rest, "(") &&
 			(strings.IndexByte(rest, '{') >= 0 || strings.IndexByte(rest, '\n') >= 0)
 	case "type", "var":

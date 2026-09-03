@@ -926,6 +926,7 @@ func LintRegistryOwnProps(roots ...string) (*Result, error) {
 		composite := compositeIndexIdents(f.Blank)
 		spans := forInSpans(f.Blank)
 		reads := bracketReads(f.Blank)
+		lines := strings.Split(f.Blank, "\n")
 		for _, name := range sortedKeys(reads) {
 			if !names[name] {
 				continue
@@ -965,7 +966,7 @@ func LintRegistryOwnProps(roots ...string) (*Result, error) {
 				if registryAccessIsDelete(f.Blank, start) {
 					continue
 				}
-				if registryGuardNearby(f, name, start, guards) {
+				if registryGuardNearby(f, lines, name, start, guards) {
 					continue
 				}
 				res.add(f.Path, f.lineOf(start),
@@ -1317,12 +1318,15 @@ var reIfLine = regexp.MustCompile(`\bif\s*\(`)
 //     conditions: the compute-once spelling. A boolean initialized
 //     from a guard on a DIFFERENT registry is not a guard for this
 //     one, and a boolean from another function never applies.
-func registryGuardNearby(f jsSource, name string, pos int, g *guardMatcher) bool {
+//
+// lines is the file's line index, computed once per file by the caller:
+// this runs per candidate read, and splitting the whole Blank view
+// here cost O(bytes·reads).
+func registryGuardNearby(f jsSource, lines []string, name string, pos int, g *guardMatcher) bool {
 	if cond := enclosingCondition(f.Blank, pos); g.guarded(cond, name) || g.guardBooleanIn(f.Blank, pos, cond, name) {
 		return true
 	}
 	line := f.lineOf(pos)
-	lines := strings.Split(f.Blank, "\n")
 	check := func(n int) bool {
 		if n < 1 || n > len(lines) {
 			return false

@@ -66,8 +66,17 @@ var Analyzer = &analysis.Analyzer{
 }
 
 // validatorRe matches sanitizer/validator callee names: only their
-// RESULT replacing a path component shields a write.
-var validatorRe = regexp.MustCompile(`(?i)sanit|valid|clean|safe`)
+// RESULT replacing a path component shields a write. "clean" is NOT
+// here: path.Clean normalizes separators and dots and passes every
+// symlinked component through, so a clean-named callee shields only
+// when it resolves to a same-package declaration (cleanNamedRe below)
+// and never when it is a stdlib normalizer.
+var validatorRe = regexp.MustCompile(`(?i)sanit|valid|safe`)
+
+// cleanNamedRe matches the clean-shaped helper names that still shield
+// when the callee is a declaration of this package (cleanName), never
+// the stdlib Clean.
+var cleanNamedRe = regexp.MustCompile(`(?i)clean`)
 
 func run(pass *analysis.Pass) (any, error) {
 	pkgFuncs := map[string]*ast.FuncDecl{}
@@ -210,17 +219,37 @@ func argTouchesPath(pass *analysis.Pass, arg ast.Expr, bound map[types.Object]as
 // replaces a component of the built path: that is the only validator
 // posture that touches what reaches the disk. A validator consulted
 // for its boolean (validName(name) in a guard) cannot see symlinks
-// and shields nothing.
 func validatorShields(pass *analysis.Pass, pathArg ast.Expr, bound map[types.Object]ast.Expr) bool {
 	isValidator := func(c *ast.CallExpr) bool {
-		var name string
 		switch fun := c.Fun.(type) {
 		case *ast.Ident:
-			name = fun.Name
+			if validatorRe.MatchString(fun.Name) {
+				return true
+			}
+			// A clean-named bare callee shields only when it
+			// resolves to a declaration of this package: a local
+			// cleanName helper, not an import or a func variable.
+			if cleanNamedRe.MatchString(fun.Name) {
+				if fn, ok := pass.TypesInfo.ObjectOf(fun).(*types.Func); ok {
+					return fn.Pkg() == pass.Pkg
+				}
+			}
+			return false
 		case *ast.SelectorExpr:
-			name = fun.Sel.Name
+			if q := qualifiedFunc(pass, c.Fun); q == "path.Clean" || q == "path/filepath.Clean" {
+				return false // stdlib normalizer: passes symlinks through
+			}
+			if validatorRe.MatchString(fun.Sel.Name) {
+				return true
+			}
+			if cleanNamedRe.MatchString(fun.Sel.Name) {
+				if fn, ok := pass.TypesInfo.ObjectOf(fun.Sel).(*types.Func); ok {
+					return fn.Pkg() == pass.Pkg
+				}
+			}
+			return false
 		}
-		return name != "" && validatorRe.MatchString(name)
+		return false
 	}
 	r := resolve(pass, pathArg, bound, 0)
 	for _, comp := range pathComponents(r) {

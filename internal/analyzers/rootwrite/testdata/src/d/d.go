@@ -101,6 +101,24 @@ func validResultFixed(baseDir, name string) error {
 	return os.MkdirAll(filepath.Join(baseDir, "plugins", safe), 0o755)
 }
 
+// cleanShield: filepath.Clean normalizes separators and dot segments;
+// it resolves no symlink, so the symlinked-directory escape this rule
+// reports survives it untouched.
+func cleanShield(root, name string, data []byte) error {
+	return os.WriteFile(filepath.Join(root, filepath.Clean(name)), data, 0o600) // want `write under a root with lexical containment only`
+}
+
+// cleanNameKeep is a same-package helper whose RESULT replaces the
+// joined component — the local clean-named spelling that keeps
+// shielding (a stdlib Clean never does).
+func cleanNameKeep(s string) string {
+	return strings.TrimSuffix(s, "/")
+}
+
+func cleanLocalShield(root, name string, data []byte) error {
+	return os.WriteFile(filepath.Join(root, cleanNameKeep(name)), data, 0o600)
+}
+
 func sanitizeName(s string) string {
 	var b strings.Builder
 	for _, r := range s {

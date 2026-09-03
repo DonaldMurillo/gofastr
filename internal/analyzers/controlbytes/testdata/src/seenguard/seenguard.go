@@ -90,3 +90,15 @@ func negatedNoDenial(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Access-Control-Allow-Origin", origin) // want `controlbytes: request-derived value reaches http.Header.Set/Add unscrubbed`
 }
+
+// elseArmEcho: the else arm runs for NON-members — exactly the
+// unvetted values the allowlist never covered. The membership guard
+// covers only the arm the condition selects.
+func elseArmEcho(w http.ResponseWriter, r *http.Request) {
+	origin := r.Header.Get("Origin")
+	if allowed[origin] {
+		w.Header().Set("Access-Control-Allow-Origin", origin)
+	} else {
+		w.Header().Set("X-Rejected-Origin", origin) // want `controlbytes: request-derived value reaches http.Header.Set/Add unscrubbed`
+	}
+}

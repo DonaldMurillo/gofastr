@@ -345,7 +345,11 @@ func tokenType(token, tokenPrefix string) bool {
 // assignment is exactly that (the whole-repo containment idiom
 // absBase+string(os.PathSeparator), which a hardcoded "/" would break
 // on Windows). root+"/" keeps its silence; root+leaf and a sep PARAM
-// carry no proven boundary and report.
+// carry no proven boundary and report. A sep local conditionally
+// defaulted from a caller value is the stale-default shape the literal
+// path already rejects: one non-separator assignment disqualifies the
+// name for good, so the re-assignment to string(filepath.Separator)
+// cannot launder it back.
 func TestPrefixBoundaryConcatenationNeedsRightmostBoundary(t *testing.T) {
 	ds := fixture(t, map[string]string{
 		"concat.go": `package main
@@ -382,11 +386,19 @@ func sepLocalConcat(rel, root string) bool {
 	sep := string(filepath.Separator)
 	return strings.HasPrefix(rel, root+sep)
 }
+
+func conditionalSepConcat(rel, root, cfgSep string) bool {
+	sep := cfgSep
+	if sep == "" {
+		sep = string(filepath.Separator)
+	}
+	return strings.HasPrefix(rel, root+sep)
+}
 `,
 	})
 	assertHas(t, ds, contracts.RulePrefixSegmentBoundary)
-	if got := rules(ds)[contracts.RulePrefixSegmentBoundary]; got != 2 {
-		t.Errorf("expected root+leaf and the sep parameter to fire; the /-terminated chains and both separator spellings must stay quiet (got %d findings)", got)
+	if got := rules(ds)[contracts.RulePrefixSegmentBoundary]; got != 3 {
+		t.Errorf("expected root+leaf, the sep parameter, and the conditionally-defaulted sep to fire; the /-terminated chains and both separator spellings must stay quiet (got %d findings)", got)
 	}
 }
 
@@ -408,4 +420,43 @@ func under(s, p string) bool {
 	})
 	assertNot(t, ds, contracts.RulePrefixSegmentBoundary,
 		"a path held in a neutrally named variable is out of reach for a parse-only pass")
+}
+
+// Same-package resolution is same-DIRECTORY resolution: the pass
+// walks every directory under the root, and two directories can both
+// declare `package main` (or any shared name) while being separate
+// packages. Keying package constants by package NAME let one
+// directory's constant overwrite or resolve for the other's
+// identifiers — beta's bounded "/v1/" could silence alpha's
+// unbounded "/api/users", or the reverse by file order.
+func TestPrefixBoundaryPackageConstantsDoNotCrossDirectories(t *testing.T) {
+	ds := fixture(t, map[string]string{
+		"alpha/alpha.go": `package main
+
+import "strings"
+
+const base = "/api/users"
+
+func underAlpha(routePath string) bool {
+	return strings.HasPrefix(routePath, base)
+}
+`,
+		"beta/beta.go": `package main
+
+import "strings"
+
+const base = "/v1/"
+
+func underBeta(assetPath string) bool {
+	return strings.HasPrefix(assetPath, base)
+}
+`,
+	})
+	d := assertHas(t, ds, contracts.RulePrefixSegmentBoundary)
+	if !strings.Contains(d.Message, `HasPrefix(routePath, base)`) {
+		t.Errorf("expected the unbounded alpha constant to fire, got %q", d.Message)
+	}
+	if got := rules(ds)[contracts.RulePrefixSegmentBoundary]; got != 1 {
+		t.Errorf("beta's %q is bounded by its own trailing slash; the same package NAME in another directory is a different package and must not cross-resolve (got %d findings)", "/v1/", got)
+	}
 }

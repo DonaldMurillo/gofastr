@@ -221,13 +221,13 @@ const (
 func dominatingBound(pass *analysis.Pass, node ast.Node, parents map[ast.Node]ast.Node, body *ast.BlockStmt, subj subject, family string) bool {
 	for _, stmts := range dominance.Prefix(node, parents, body) {
 		for _, st := range stmts {
-			if spineBounds(pass, dominance.Spine(st), subj, family) {
+			if spineBounds(pass, dominance.Spine(st), subj, family, false) {
 				return true
 			}
 		}
 	}
 	for _, cond := range dominance.EnclosingIfConds(node, parents, body) {
-		if spineBounds(pass, dominance.Spine(cond), subj, family) {
+		if spineBounds(pass, dominance.Spine(cond), subj, family, true) {
 			return true
 		}
 	}
@@ -237,20 +237,30 @@ func dominatingBound(pass *analysis.Pass, node ast.Node, parents map[ast.Node]as
 // spineBounds reports whether nodes compare obj against the bound
 // family: math.MaxInt/MaxInt32/MaxInt64 or math.MinInt/MinInt64
 // (resolved by import path, not spelling), or an integer literal of
-// bound size.
-func spineBounds(pass *analysis.Pass, nodes []ast.Node, subj subject, family string) bool {
+// bound size. thenBranch selects the comparison direction a condition
+// must have when the node sits in the if's THEN-branch: the condition
+// HELD there, so only operators that establish the safe range dominate
+// — u > math.MaxInt64 in the branch that converts selects exactly the
+// values that wrap. Statement positions (thenBranch false) keep the
+// early-return reading: `if u > math.MaxInt64 { return }` before the
+// node leaves only in-range values behind, whatever the operator.
+func spineBounds(pass *analysis.Pass, nodes []ast.Node, subj subject, family string, thenBranch bool) bool {
 	for _, n := range nodes {
 		bin, ok := n.(*ast.BinaryExpr)
 		if !ok || !isComparison(bin.Op) {
 			continue
 		}
 		var other ast.Expr
+		subjectOnLeft := matchesSubject(pass, bin.X, subj)
 		switch {
-		case matchesSubject(pass, bin.X, subj):
+		case subjectOnLeft:
 			other = bin.Y
 		case matchesSubject(pass, bin.Y, subj):
 			other = bin.X
 		default:
+			continue
+		}
+		if thenBranch && !establishesSafeRange(bin.Op, subjectOnLeft, family) {
 			continue
 		}
 		if isMathBound(pass, other, family) || isBoundLiteral(pass, other, family) {
@@ -258,6 +268,28 @@ func spineBounds(pass *analysis.Pass, nodes []ast.Node, subj subject, family str
 		}
 	}
 	return false
+}
+
+// establishesSafeRange reports whether the comparison, held TRUE in an
+// enclosing if's then-branch, puts the subject inside the safe range
+// for the family: at most the max bound (equality fits exactly), or
+// strictly above the min bound (equality is MinInt, which still wraps
+// under negation).
+func establishesSafeRange(op token.Token, subjectOnLeft bool, family string) bool {
+	if family == boundMax {
+		switch {
+		case subjectOnLeft:
+			return op == token.LSS || op == token.LEQ || op == token.EQL
+		default:
+			return op == token.GTR || op == token.GEQ || op == token.EQL
+		}
+	}
+	switch {
+	case subjectOnLeft:
+		return op == token.GTR
+	default:
+		return op == token.LSS
+	}
 }
 
 func isMathBound(pass *analysis.Pass, e ast.Expr, family string) bool {

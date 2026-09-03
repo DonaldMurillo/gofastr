@@ -39,12 +39,20 @@ func build(kind string) *gadget {
 }
 
 // equalFoldGrant is the EqualFold arm: an ASCII constant guards a
-// registry lookup, so a homoglyph passes the guard.
-func equalFoldGrant(action string) *gadget {
+// registry lookup, so a homoglyph passes the guard. The folded map
+// write inside the arm and the trailing human-text comparison pin the
+// visitor's ifStack exit tracking: the write cuts the walk, and a
+// stale enclosing if must not leak onto the EqualFold after it.
+func equalFoldGrant(action string, seen map[string]bool) *gadget {
 	if strings.EqualFold(action, "slider") { // want `EqualFold against an ASCII constant`
 		if g, ok := gadgets[action]; ok {
 			return g
 		}
+		seen[strings.ToLower(action)] = true // population, not a lookup
+	}
+	grid := strings.EqualFold(action, "grid") // human text: never keyed on a registry
+	if grid {
+		return nil
 	}
 	return nil
 }

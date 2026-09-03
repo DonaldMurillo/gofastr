@@ -110,8 +110,9 @@ func joinHelpers(pass *analysis.Pass) map[*types.Func]ast.Expr {
 }
 
 // rebindsOnly reports whether every statement only rebinds parameters
-// of fn: assignments to the parameters, and ifs whose branches contain
-// nothing but such assignments.
+// of fn: `=` assignments to the parameters, and ifs whose branches
+// contain nothing but such assignments. A `:=` declares a NEW binding
+// (never a parameter of fn) and disqualifies the helper.
 func rebindsOnly(pass *analysis.Pass, stmts []ast.Stmt, fn *types.Func) bool {
 	sig, ok := fn.Type().(*types.Signature)
 	if !ok {
@@ -130,7 +131,9 @@ func rebindsOnly(pass *analysis.Pass, stmts []ast.Stmt, fn *types.Func) bool {
 	for _, st := range stmts {
 		switch s := st.(type) {
 		case *ast.AssignStmt:
-			if s.Tok != token.ASSIGN && s.Tok != token.DEFINE {
+			// token.ASSIGN only: a := declares a new binding, whose
+			// object is never one of fn's parameters.
+			if s.Tok != token.ASSIGN {
 				return false
 			}
 			for _, lhs := range s.Lhs {

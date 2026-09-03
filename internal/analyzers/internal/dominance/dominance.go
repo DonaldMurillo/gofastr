@@ -132,12 +132,15 @@ func Spine(n ast.Node) []ast.Node {
 			out = append(out, x)
 			stmt(x.Init)
 			expr(x.Cond)
-			stmt(x.Post)
+			// x.Post is excluded: it runs only after a NORMAL
+			// iteration, so an immediate break reaches later
+			// statements without it.
 		case *ast.RangeStmt:
 			out = append(out, x)
 			expr(x.X)
-			expr(x.Key)
-			expr(x.Value)
+			// x.Key and x.Value are excluded: they are assigned (and
+			// their expressions evaluated) only when the range yields,
+			// so an empty range reaches later statements without them.
 		case *ast.SwitchStmt:
 			out = append(out, x)
 			stmt(x.Init)

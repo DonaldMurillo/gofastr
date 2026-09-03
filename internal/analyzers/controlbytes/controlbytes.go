@@ -273,10 +273,14 @@ func testedValues(pass *analysis.Pass, body *ast.BlockStmt) map[types.Object][]g
 				}
 			}
 		case *ast.IfStmt:
-			markMembership(out, pass, n.Cond, n.End())
+			// Only the THEN arm runs for members; the else arm runs
+			// for NON-members and is not vetted.
+			markMembership(out, pass, n.Cond, n.Body.End())
 			markNegatedDenial(out, pass, n)
 		case *ast.SwitchStmt:
-			markMembership(out, pass, n.Tag, n.End())
+			// A tag lookup gates each non-default case body; the
+			// default clause runs for non-members. Credit is taken
+			// per CaseClause below.
 		case *ast.CaseClause:
 			// A case expression gates only that case's own body.
 			for _, e := range n.List {

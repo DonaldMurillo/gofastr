@@ -99,12 +99,23 @@ func run(pass *analysis.Pass) (any, error) {
 				return true
 			}
 			nodeStack = append(nodeStack, n)
+			pop := func() { nodeStack = nodeStack[:len(nodeStack)-1] }
 			switch e := n.(type) {
 			case *ast.IfStmt:
 				ifStack = append(ifStack, e)
 			case *ast.AssignStmt:
 				// A folded WRITE into a map is population, not lookup.
-				return e.Tok.String() != "=" || !isFoldWrite(pass, e, bound, helpers, foldVars)
+				// Inspect calls f(nil) only after a visit that returned
+				// true, so the children of this assignment will never
+				// produce their "children done" visits: pop the node here
+				// or the stack stays misaligned for the rest of the file
+				// and a later close pops a stale node instead of the one
+				// that actually ended — an IfStmt miss leaves ifStack
+				// pointing at an if that no longer encloses the call.
+				if e.Tok.String() == "=" && isFoldWrite(pass, e, bound, helpers, foldVars) {
+					pop()
+					return false
+				}
 			case *ast.IndexExpr:
 				if !isRegistry(pass, e.X) || discards[e.Pos()] {
 					return true

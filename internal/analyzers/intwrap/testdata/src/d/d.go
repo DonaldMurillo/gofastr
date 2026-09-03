@@ -79,3 +79,31 @@ func nestedGuardFixed(box any, strict bool) (int64, bool) {
 	}
 	return 0, false
 }
+
+// wrongDirectionBound: the then-branch holds exactly the values that
+// WRAP — u > math.MaxInt64 selects them — so a comparison that does
+// not establish the safe range dominates nothing. Only u < / u <= /
+// u == the bound (mirrored when the subject is on the right) count in
+// a branch the conversion sits in.
+func wrongDirectionBound(box any) int64 {
+	if u, ok := box.(uint64); ok && u > math.MaxInt64 {
+		return int64(u) // want `conversion uint64 → int64 without a dominating bound check`
+	}
+	return 0
+}
+
+// postBoundBreaks: the bound comparison sits in the loop's Post — it
+// runs only after a normal iteration, and the immediate break skips
+// it, so the conversion after the loop sees the unbounded value.
+func postBoundBreaks(box any, flags map[bool]uint64) int64 {
+	u, ok := box.(uint64)
+	if !ok {
+		return 0
+	}
+	for i := 0; i < 3; i, u = i+1, flags[u <= math.MaxInt64] {
+		if i == 0 {
+			break
+		}
+	}
+	return int64(u) // want `conversion uint64 → int64 without a dominating bound check`
+}

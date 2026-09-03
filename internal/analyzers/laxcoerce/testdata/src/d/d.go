@@ -6,6 +6,8 @@
 // another.
 package d
 
+import "errors"
+
 // fallThrough: with no else, the statements after `if ok` ARE the
 // not-ok path; a wrong-typed value lands in the nil-error return and
 // reads as "not supplied".
@@ -104,4 +106,46 @@ func presentSameKey(m map[string]any) (string, error) {
 		return "", nil // wrong type surfaces as absence-by-design here
 	}
 	return region, nil
+}
+
+// ---- silent counterparts of the not-ok forms ----------------------------
+
+// fallThroughFixed: the same fall-through shape, but the not-ok path
+// returns an error — the wrong type is surfaced, not swallowed.
+func fallThroughFixed(m map[string]any, k string) (string, bool, error) {
+	s, ok := m[k].(string)
+	if ok {
+		return s, true, nil
+	}
+	return "", false, errors.New("entry has wrong type")
+}
+
+// zeroAssignFixed: the zero-rebind still ends in an error return.
+func zeroAssignFixed(m map[string]any, k string) (string, error) {
+	s, ok := m[k].(string)
+	if !ok {
+		s = ""
+		return process(s), errors.New("entry has wrong type")
+	}
+	return process(s), nil
+}
+
+// switchCaseFixed: `case !ok:` returning an error.
+func switchCaseFixed(m map[string]any, k string) (string, bool, error) {
+	s, ok := m[k].(string)
+	switch {
+	case !ok:
+		return "", false, errors.New("entry has wrong type")
+	}
+	return s, true, nil
+}
+
+// switchTagFalseFixed: `case false:` returning an error.
+func switchTagFalseFixed(m map[string]any, k string) (string, bool, error) {
+	s, ok := m[k].(string)
+	switch ok {
+	case false:
+		return "", false, errors.New("entry has wrong type")
+	}
+	return s, true, nil
 }

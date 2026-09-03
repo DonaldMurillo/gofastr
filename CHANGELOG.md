@@ -9,8 +9,8 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ### Security
 - **Static rules hardened by an adversarial review round**, and the
-  siblings their widened shapes found, all fixed: `uihost` interpolated
-  a registered style name into the `/__gofastr/comp/<name>.css` path
+  sibling bugs the widened rules then found, all fixed: `uihost`
+  interpolated a registered style name into the `/__gofastr/comp/<name>.css` path
   with no check (a slash rewrote the served path); the MCP call and
   server gates, the cron job gate, the queue type gates, and the notify
   router ran app callbacks on dispatch loops with no recover net (each
@@ -18,9 +18,10 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   ran an app-supplied step while holding its mutex (it runs outside the
   lock now, exactly-once kept by an in-flight flag); three runtime
   registries guarded attribute-borne keys with the `in` operator, which
-  walks the prototype chain; `gofastr new` resolved the scaffold
-  directory lexically only. The five recover guards v0.81.0 added now
-  log the panic instead of swallowing it.
+  walks the prototype chain; `gofastr new` resolves the scaffold
+  directory through symlinks before any write, where it previously
+  compared a lexically cleaned path. The five recover guards v0.81.0
+  added now log the panic instead of swallowing it.
 
 ### Fixed
 - **Analyzers, contract rules, and runtime lints**: five reviewers
@@ -30,8 +31,9 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   message, range variables, and `Referer`/`UserAgent`/`Cookie` sources
   as in scope, stays quiet on outbound request headers, and never lets
   `path.Clean` clear taint; `recovercallback` follows interface dispatch
-  and named deferred guards and stops counting a nested literal's
-  recover; `emitident` no longer flags error messages that start with
+  and named deferred guards and stops counting a nested literal's or a
+  nested defer's recover; `emitident` no longer flags error messages
+  that start with
   `type` or `func`; `asciifold` pops its if stack; `discardederr` fires
   on two-result methods outside `database/sql`; GOFASTR1006 drops the
   `key`/`prefix` name heuristic that flagged API-key prefix checks and
