@@ -545,9 +545,10 @@ func exRowItems() []render.HTML {
 }
 
 // exBlueprints is row 13: the declarative examples that are blueprints
-// only, no Go until `gofastr generate` runs. It sits on the same row grid
-// as the runnable apps but stays out of exRowItems, whose length is the
-// "runs in one command" count.
+// only, no Go until `gofastr generate` runs. It shares exRowShell with
+// the runnable rows but stays out of exRowItems, whose length is the
+// "runs in one command" count. Each point is one whole-item link, so the
+// link is the block rather than a color-only span inside prose.
 func exBlueprints() render.HTML {
 	items := []struct{ slug, domain string }{
 		{"lms", "courses, lessons, enrollments"},
@@ -561,29 +562,19 @@ func exBlueprints() render.HTML {
 			html.LinkHTML(html.LinkHTMLConfig{
 				Href:       "https://github.com/DonaldMurillo/gofastr/tree/main/examples/" + it.slug,
 				ExtraAttrs: html.Attrs{"rel": "external"},
-				Content:    render.Text("examples/" + it.slug),
+				Content:    render.Text("examples/" + it.slug + ": " + it.domain),
 			}),
-			render.Text(": "+it.domain),
 		))
 	}
-	body := html.Div(html.DivConfig{Class: "ex-row__body"},
-		html.Div(html.DivConfig{Class: "ex-row__meta"},
-			tagAccent("gofastr.yml only"),
-			html.Span(html.TextConfig{Class: "lc"}, render.Text("0 LoC until you generate")),
-		),
-		html.Heading(html.HeadingConfig{Level: 2, Class: "ex-row__title"},
-			render.Text("examples/… — "),
-			html.Span(html.TextConfig{Class: "amber"}, render.Text("Four more blueprints")),
-		),
-		html.Paragraph(html.TextConfig{Class: "ex-row__desc"},
-			render.Text("Each is one gofastr.yml with no Go beside it. Generate in the directory to get a runnable app you own; every one is validated by the CLI's blueprint test suite."),
-		),
-		html.UnorderedList(html.ListConfig{Class: "ex-row__points"}, lis...),
-		html.Div(html.DivConfig{Class: "ex-row__cli"},
-			html.Span(html.TextConfig{Class: "p"}, render.Text("$")),
-			render.Text("cd examples/lms && gofastr generate --from=gofastr.yml"),
-		),
-	)
+	body := exRowBody(exRowBodyConfig{
+		Tag:     "gofastr.yml only",
+		LoC:     "0 LoC until you generate",
+		Path:    "examples/…",
+		Title:   "Four more blueprints",
+		Desc:    "Each is one gofastr.yml with no Go beside it. Generate in the directory to get a runnable app you own; every one is validated by the CLI's blueprint test suite.",
+		Points:  lis,
+		Command: "cd examples/lms && gofastr generate --from=gofastr.yml",
+	})
 	right := html.Div(html.DivConfig{Class: "ex-row__right"},
 		codeBlock("examples/lms/gofastr.yml", []render.HTML{
 			ln(com("# entities, screens, nav, endpoints, seed: one YAML")),
@@ -591,26 +582,69 @@ func exBlueprints() render.HTML {
 			ln(render.Text("$ go run .")),
 		}),
 	)
-	grid := html.Div(html.DivConfig{Class: "ex-row__grid"},
-		html.Span(html.TextConfig{Class: "ex-row__num"}, render.Text("13")),
-		body,
-		right,
-	)
-	return html.Section(html.SectionConfig{ID: "blueprints", Class: "ex-row", Label: "Blueprint examples"}, grid)
+	return exRowShell("13", "blueprints", "Blueprint examples", body, right)
 }
 
 func exRows() render.HTML {
 	return container(render.Join(exRowItems()...), exBlueprints())
 }
 
-// exRow renders one example. code is the pre-built code sample (a snippet for
-// most rows; the full embedded blueprint for Meridian); path names the
-// directory for the "View source" link.
+// exRowBodyConfig is the left column of one example row. Points are
+// pre-built <li>s so a row can decide whether a point is text or a link.
+type exRowBodyConfig struct {
+	Tag, LoC, Path, Title, Desc, Command string
+	Points                               []render.HTML
+	Source                               string // "View source" href; empty hides the link
+}
+
+// exRowBody renders the left column: meta pills, title, description,
+// points, the run command, and the optional source link.
+func exRowBody(c exRowBodyConfig) render.HTML {
+	parts := []render.HTML{
+		html.Div(html.DivConfig{Class: "ex-row__meta"},
+			tagAccent(c.Tag),
+			html.Span(html.TextConfig{Class: "lc"}, render.Text(c.LoC)),
+		),
+		html.Heading(html.HeadingConfig{Level: 2, Class: "ex-row__title"},
+			render.Text(c.Path+" — "),
+			html.Span(html.TextConfig{Class: "amber"}, render.Text(c.Title)),
+		),
+		html.Paragraph(html.TextConfig{Class: "ex-row__desc"}, render.Text(c.Desc)),
+		html.UnorderedList(html.ListConfig{Class: "ex-row__points"}, c.Points...),
+		html.Div(html.DivConfig{Class: "ex-row__cli"},
+			html.Span(html.TextConfig{Class: "p"}, render.Text("$")),
+			render.Text(c.Command),
+		),
+	}
+	if c.Source != "" {
+		parts = append(parts, html.Div(html.DivConfig{Class: "ex-row__src"},
+			html.LinkHTML(html.LinkHTMLConfig{
+				Href:       c.Source,
+				ExtraAttrs: html.Attrs{"rel": "external"},
+				Content:    render.Text("View source ↗"),
+			}),
+		))
+	}
+	return html.Div(html.DivConfig{Class: "ex-row__body"}, parts...)
+}
+
+// exRowShell is the row grid every example row sits on: the number, the
+// body column, and the right column (code sample + placeholder shot).
+func exRowShell(num, id, label string, body, right render.HTML) render.HTML {
+	grid := html.Div(html.DivConfig{Class: "ex-row__grid"},
+		html.Span(html.TextConfig{Class: "ex-row__num"}, render.Text(num)),
+		body,
+		right,
+	)
+	return html.Section(html.SectionConfig{ID: id, Class: "ex-row", Label: label}, grid)
+}
+
+// exRow renders one runnable example. code is the pre-built code sample (a
+// snippet for most rows; the full embedded blueprint for Meridian); path
+// names the directory for the "View source" link.
 func exRow(num, path, title, tag, loc, desc string, points []string, cmd string, code render.HTML) render.HTML {
 	slug := strings.TrimPrefix(path, "examples/")
-	srcURL := "https://github.com/DonaldMurillo/gofastr/tree/main/" + path
-
-	pointLis := []render.HTML{}
+	pointLis := make([]render.HTML, 0, len(points))
 	for _, p := range points {
 		pointLis = append(pointLis, html.ListItem(html.ListItemConfig{}, render.Text(p)))
 	}
@@ -625,37 +659,14 @@ func exRow(num, path, title, tag, loc, desc string, points []string, cmd string,
 		),
 		html.Div(html.DivConfig{Class: "bar"}),
 	)
-	miniCode := code
-	body := html.Div(html.DivConfig{Class: "ex-row__body"},
-		html.Div(html.DivConfig{Class: "ex-row__meta"},
-			tagAccent(tag),
-			html.Span(html.TextConfig{Class: "lc"}, render.Text(loc)),
-		),
-		html.Heading(html.HeadingConfig{Level: 2, Class: "ex-row__title"},
-			render.Text(path+" — "),
-			html.Span(html.TextConfig{Class: "amber"}, render.Text(title)),
-		),
-		html.Paragraph(html.TextConfig{Class: "ex-row__desc"}, render.Text(desc)),
-		html.UnorderedList(html.ListConfig{Class: "ex-row__points"}, pointLis...),
-		html.Div(html.DivConfig{Class: "ex-row__cli"},
-			html.Span(html.TextConfig{Class: "p"}, render.Text("$")),
-			render.Text(cmd),
-		),
-		html.Div(html.DivConfig{Class: "ex-row__src"},
-			html.LinkHTML(html.LinkHTMLConfig{
-				Href:       srcURL,
-				ExtraAttrs: html.Attrs{"rel": "external"},
-				Content:    render.Text("View source ↗"),
-			}),
-		),
-	)
-	right := html.Div(html.DivConfig{Class: "ex-row__right"}, miniCode, shot)
-	grid := html.Div(html.DivConfig{Class: "ex-row__grid"},
-		html.Span(html.TextConfig{Class: "ex-row__num"}, render.Text(num)),
-		body,
-		right,
-	)
-	return html.Section(html.SectionConfig{ID: slug, Class: "ex-row", Label: path}, grid)
+	body := exRowBody(exRowBodyConfig{
+		Tag: tag, LoC: loc, Path: path, Title: title, Desc: desc,
+		Points:  pointLis,
+		Command: cmd,
+		Source:  "https://github.com/DonaldMurillo/gofastr/tree/main/" + path,
+	})
+	right := html.Div(html.DivConfig{Class: "ex-row__right"}, code, shot)
+	return exRowShell(num, slug, path, body, right)
 }
 
 // =============================================================================

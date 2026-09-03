@@ -43,6 +43,40 @@ func measureExampleLoC(t *testing.T, slug string) int {
 	return total
 }
 
+// locBadgeDrift reports how far a badge is from the measured count as a
+// percentage of the measurement, and whether that is within the 20%
+// tolerance. A zero measurement is never ok: the badge names a directory
+// with no non-test Go.
+func locBadgeDrift(badge, got int) (pct float64, ok bool) {
+	if got == 0 {
+		return 100, false
+	}
+	pct = float64(badge-got) / float64(got) * 100
+	if pct < 0 {
+		pct = -pct
+	}
+	return pct, pct <= 20
+}
+
+func TestLoCBadgeDriftBoundary(t *testing.T) {
+	cases := []struct {
+		badge, got int
+		ok         bool
+	}{
+		{100, 0, false},  // nothing measured
+		{120, 100, true}, // exactly 20% over
+		{80, 100, true},  // exactly 20% under
+		{121, 100, false},
+		{79, 100, false},
+		{100, 100, true},
+	}
+	for _, c := range cases {
+		if _, ok := locBadgeDrift(c.badge, c.got); ok != c.ok {
+			t.Errorf("locBadgeDrift(%d, %d) ok = %v, want %v", c.badge, c.got, ok, c.ok)
+		}
+	}
+}
+
 func TestExampleLoCBadgesMatchTree(t *testing.T) {
 	page := body(t, "/examples")
 	for slug, badge := range exampleLoC {
@@ -51,12 +85,8 @@ func TestExampleLoCBadgesMatchTree(t *testing.T) {
 			t.Errorf("%s: no non-test Go under examples/%s", slug, slug)
 			continue
 		}
-		diff := float64(badge-got) / float64(got)
-		if diff < 0 {
-			diff = -diff
-		}
-		if diff > 0.20 {
-			t.Errorf("%s: badge says ~%d LoC, tree has %d (%.0f%% off) — update exampleLoC", slug, badge, got, diff*100)
+		if pct, ok := locBadgeDrift(badge, got); !ok {
+			t.Errorf("%s: badge says ~%d LoC, tree has %d (%.0f%% off) — update exampleLoC", slug, badge, got, pct)
 		}
 		if !strings.Contains(page, `id="`+slug+`"`) {
 			t.Errorf("%s: has a LoC badge but no row on /examples", slug)
