@@ -18,7 +18,7 @@ Self-contained Go programs, run with `go run ./examples/<name>`:
 | `embed-demo` | Embeddable surfaces: an app and a customer's site on two origins. |
 | `processmodule-demo` | A process-isolated third-party module speaking the `moduleproto` protocol over stdio. The canonical [process-module](../framework/docs/content/process-modules.md) example and the child the go/no-go gate suite drives end to end. |
 | `webmcp-remote-assist` | Authenticated WebMCP + WebRTC remote support: support-only tool discovery, one typed command behind the manual button and the AI tools, role-filtered realtime state, peer-to-peer camera with server-side signaling only. |
-| `site` | The framework's live component gallery and reference docs site: every UI component rendered one per page, plus the hosted examples. Run with `go run ./examples/site` (or `./scripts/dev-watch.sh` for livereload). |
+| `site` | The framework's live component gallery and reference docs site: every UI component rendered one per page, the hosted examples, and the gofastr-plugins registry rendered from a vendored `plugins.json` (`scripts/vendor-plugins-json.sh` refreshes it). Run with `go run ./examples/site` (or `./scripts/dev-watch.sh` for livereload). |
 
 ## Blueprint examples (declarative)
 

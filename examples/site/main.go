@@ -747,7 +747,8 @@ var paletteCatalog = []paletteRoute{
 	{"Get started", "/get-started"},
 	{"Docs index", "/docs/"},
 	{"Entity declarations: modeling the domain", "/docs/entity-declarations"},
-	{"Examples: six reference apps", "/examples"},
+	{"Examples: the reference apps", "/examples"},
+	{"Plugins: the gofastr-plugins registry", "/plugins"},
 	{"Workspace: master-detail pane-host example", "/examples/workspace"},
 	{"Live dashboard: SSE + signals reference", "/examples/live-dashboard?presence=live-dashboard-demo"},
 	{"Live presence: viewer roster demo", "/examples/presence?presence=presence-demo"},
@@ -839,6 +840,11 @@ func registerScreens(site *app.App) {
 	// dashboard fed by SSE island push. The ticker that advances the
 	// demo state is wired in setupServer; see screen_livedash.go.
 	site.Register("/examples/live-dashboard", &LiveDashboardScreen{}, nil)
+	// The gofastr-plugins registry: one index plus one page per row of the
+	// vendored plugins.json (see screen_plugins.go). PluginScreen 404s an
+	// unknown name (Load) and enumerates every row via StaticPaths.
+	site.Register("/plugins", &PluginsScreen{}, nil)
+	site.Register("/plugins/:name", &PluginScreen{}, nil)
 	site.Register("/kiln", &KilnScreen{}, nil)
 	site.Register("/philosophy", &PhilosophyScreen{}, nil)
 	// /reader: a reader-ready article, the simple way. This is a normal
