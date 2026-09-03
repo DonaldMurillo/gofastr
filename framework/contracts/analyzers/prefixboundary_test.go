@@ -460,3 +460,72 @@ func underBeta(assetPath string) bool {
 		t.Errorf("beta's %q is bounded by its own trailing slash; the same package NAME in another directory is a different package and must not cross-resolve (got %d findings)", "/v1/", got)
 	}
 }
+
+// Review 6, build-tag variants: two files of ONE directory declaring
+// the same constant under mutually exclusive build tags. Which value
+// compiles in is a build decision a parse-only pass cannot make, and
+// the merge used to let the later file overwrite the earlier one, so
+// resolveLit answered with an arbitrary variant — the bounded "/assets/"
+// could silence the unbounded "/assets/img" use, or the reverse, by
+// file order. A conflicting name is unresolved and dynamic: BOTH uses
+// report. Two variants carrying the SAME literal still resolve.
+func TestPrefixBoundaryConflictingBuildTagVariantsAreDynamic(t *testing.T) {
+	ds := fixture(t, map[string]string{
+		"tags/asset_unix.go": `//go:build !windows
+
+package tags
+
+import "strings"
+
+const assetBase = "/assets/img"
+
+func underUnix(routePath string) bool {
+	return strings.HasPrefix(routePath, assetBase)
+}
+`,
+		"tags/asset_windows.go": `//go:build windows
+
+package tags
+
+import "strings"
+
+const assetBase = "/assets/"
+
+func underWindows(assetPath string) bool {
+	return strings.HasPrefix(assetPath, assetBase)
+}
+`,
+	})
+	if got := rules(ds)[contracts.RulePrefixSegmentBoundary]; got != 2 {
+		t.Errorf("assetBase carries two different values across mutually exclusive build tags: the name is dynamic and both uses must report (got %d findings)", got)
+	}
+
+	same := fixture(t, map[string]string{
+		"agree/prefix_unix.go": `//go:build !windows
+
+package agree
+
+import "strings"
+
+const assetBase = "/assets/"
+
+func underUnix(assetPath string) bool {
+	return strings.HasPrefix(assetPath, assetBase)
+}
+`,
+		"agree/prefix_windows.go": `//go:build windows
+
+package agree
+
+import "strings"
+
+const assetBase = "/assets/"
+
+func underWindows(assetPath string) bool {
+	return strings.HasPrefix(assetPath, assetBase)
+}
+`,
+	})
+	assertNot(t, same, contracts.RulePrefixSegmentBoundary,
+		`both variants carry the same bounded "/assets/" literal — no conflict, still resolved`)
+}

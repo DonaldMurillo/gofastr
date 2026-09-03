@@ -378,21 +378,25 @@ func replaceLiteralFix(p *contracts.Pass, rel string, line int, oldText, newText
 //     terminates the scheme token, so every match has that exact
 //     scheme);
 //   - a prefix identifier that resolves to a package-level CONSTANT
-//     (const prefix = "/__gofastr/runtime/"), in this file or any
-//     sibling file of the same directory (consts.go / scope.go layout;
-//     a same-named package in another directory is a different
-//     package and never resolves), or to a function local that is not
-//     a parameter and whose EVERY assignment in the function is a
-//     string literal (the same
-//     literal): both provably hold that one value at the call. A
-//     parameter conditionally defaulted to a bounded literal stays
-//     dynamic — the caller's value is what runs (review 5: "/api"
-//     claiming /apiary through a defaulted "/api/"), and so does any
-//     local with one non-literal or differently-valued assignment
-//     anywhere in the function. Cross-package constants stay dynamic
-//     (their value is not visible without loading another package's
-//     files), and package-level vars too (a var is assignable from any
-//     function of the package, which a one-file pass cannot see);
+//
+// (const prefix = "/__gofastr/runtime/"), in this file or any
+// sibling file of the same directory (consts.go / scope.go layout;
+// a same-named package in another directory is a different
+// package and never resolves) — unless the directory declares the
+// name twice with DIFFERENT values, the mutually-exclusive
+// build-tag variant layout: which value compiles in is a build
+// decision, so the name stays dynamic (review 6) — or to a
+// function local that is not a parameter and whose EVERY
+// assignment in the function is a string literal (the same
+// literal): both provably hold that one value at the call. A
+// parameter conditionally defaulted to a bounded literal stays
+// dynamic — the caller's value is what runs (review 5: "/api"
+// claiming /apiary through a defaulted "/api/"), and so does any
+// local with one non-literal or differently-valued assignment
+// anywhere in the function. Cross-package constants stay dynamic
+// (their value is not visible without loading another package's
+// files), and package-level vars too (a var is assignable from any
+// function of the package, which a one-file pass cannot see);
 //   - a binary + chain whose RIGHTMOST operand is a string literal (or
 //     resolves to one) ending in "/" (`root+"/"`): the final value
 //     provably stops at a segment boundary. Every other concatenation
@@ -416,6 +420,15 @@ func checkPrefixBoundary(p *contracts.Pass) []contracts.Diagnostic {
 	// separate packages, and one directory's constant must never
 	// resolve (or overwrite) for another's identifiers.
 	pkgLits := map[string]map[string]string{}
+	// conflicted records same-directory names whose declarations
+	// disagree (the build-tag variant layout: two files of one
+	// directory, mutually exclusive //go:build lines, different
+	// values). Which variant compiles in is a build decision a
+	// parse-only pass cannot make, and overwriting by file order let
+	// the bounded variant silence the unbounded one's finding (or the
+	// reverse, by order): the name is unresolved and stays dynamic
+	// (review 6).
+	conflicted := map[string]map[string]bool{}
 	for _, f := range p.AppFiles() {
 		file, ok := p.AST(f.Rel)
 		if !ok {
@@ -425,7 +438,18 @@ func checkPrefixBoundary(p *contracts.Pass) []contracts.Diagnostic {
 		if pkgLits[dir] == nil {
 			pkgLits[dir] = map[string]string{}
 		}
+		if conflicted[dir] == nil {
+			conflicted[dir] = map[string]bool{}
+		}
 		for name, val := range fileScopedLits(file) {
+			if conflicted[dir][name] {
+				continue // a third declaration cannot resurrect the name
+			}
+			if old, ok := pkgLits[dir][name]; ok && old != val {
+				conflicted[dir][name] = true
+				delete(pkgLits[dir], name)
+				continue
+			}
 			pkgLits[dir][name] = val
 		}
 	}

@@ -25,6 +25,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -510,25 +511,36 @@ func isJSIdent(s string) bool {
 //   - a bare variable argument (querySelector(sel)) — provenance is
 //     not traceable line-locally, and the repo has no such site;
 //   - values wrapped in CSS.escape(…) — including dotted references
-//     like window.CSS.escape(…), the defensive spelling for browsers
-//     where the bare global is not bound — or a module-local
-//     cssEscape(…) shim;
-//   - arithmetic on a numeric literal (`index + 1` in an nth-child):
-//     every operand is an identifier, member access, or number and at
-//     least one is a number, so the value cannot carry selector
-//     metacharacters (review 5);
+//
+// like window.CSS.escape(…), the defensive spelling for browsers
+// where the bare global is not bound — or a module-local
+// cssEscape(…) shim: the escape call must be the WHOLE operand;
+// a trailing || or ?: operand (`CSS.escape(v) || el.dataset.t`)
+// still carries the raw value when the escape result is the
+// empty string (review 6);
+//   - arithmetic over numbers and identifiers PROVEN numeric at the
+//
+// use (`index + 1` in an nth-child): every operand is a number or
+// an identifier whose deciding assignment is one numeric literal
+// (a for-loop counter included), and at least one operand is a
+// number. An identifier from a DOM attribute is a string —
+// `idx + 1` is concatenation — so it reports (review 5 pinned
+// the numeric form, review 6 the provenance);
 //   - identifiers whose LAST assignment before the use, within the
-//     enclosing function, is from one string literal (dropdown.js's
-//     IS_OPEN, reveal.js's REVEAL_ATTR) or an escape call
-//     (rangeslider.js's `const sel = CSS.escape(id)`), and for-of
-//     loop variables iterating an array of string literals (boot.js's
-//     eventType): those provably hold a literal at the lookup point.
-//     A later reassignment from anything else (an attribute read, a
-//     concatenation, a compound append — review 5's
-//     `id = CSS.escape('fixed'); id = el.dataset.target`) revokes the
-//     status, and a same-named identifier in a different function
-//     never shares it — the safe set is per function scope, ordered by
-//     assignment position;
+//
+// enclosing function, is from one string literal (dropdown.js's
+// IS_OPEN, reveal.js's REVEAL_ATTR) or an escape call
+// (rangeslider.js's `const sel = CSS.escape(id)`), and for-of
+// loop variables iterating an array of string literals (boot.js's
+// eventType): those provably hold a literal at the lookup point.
+// A later reassignment from anything else (an attribute read, a
+// concatenation, a compound append — review 5's
+// `id = CSS.escape('fixed'); id = el.dataset.target`) revokes the
+// status, a same-named identifier in a different function never
+// shares it, a MEMBER assignment (obj.id = 'fixed') records
+// nothing for the bare name, and a function parameter shadows a
+// file-scope safe name inside that function — the safe set is per
+// function scope, ordered by assignment position (review 6);
 //   - getElementById (never scanned).
 //
 // Call tokens are matched on the Blank view and the argument text is
@@ -541,7 +553,7 @@ func LintSelectorInterpolation(roots ...string) (*Result, error) {
 		return nil, err
 	}
 	for _, f := range files {
-		events := safeIdentEvents(f.Code)
+		events := safeIdentEvents(f.Code, f.Blank)
 		for _, loc := range reSelectorCall.FindAllStringIndex(f.Blank, -1) {
 			if loc[0] > 0 && isJSIdentChar(f.Blank[loc[0]-1]) {
 				continue // part of a longer identifier (prefetch(, myMatches()
@@ -552,7 +564,8 @@ func LintSelectorInterpolation(roots ...string) (*Result, error) {
 				continue
 			}
 			safe := func(name string) bool { return safeAt(events, name, loc[0]) }
-			bad, ok := selectorUnsafeOperand(f.Code[open+1:close], safe)
+			numeric := func(name string) bool { return numericAt(events, name, loc[0]) }
+			bad, ok := selectorUnsafeOperand(f.Code[open+1:close], safe, numeric)
 			if !ok {
 				continue
 			}
@@ -569,12 +582,15 @@ var reSelectorCall = regexp.MustCompile(`(?:querySelectorAll|querySelector|close
 // function scope it happened in: an init from a string literal or an
 // escape call forms the safe set at that point; any later assignment
 // from something else (an attribute read, a concatenation, a compound
-// append) revokes it.
+// append) revokes it. numeric records the same event's numeric
+// provenance (an init from one numeric literal), the fact
+// isNumericArithExpr asks about arithmetic operands (review 6).
 type safeEvent struct {
 	name                 string
 	scopeStart, scopeEnd int
 	pos                  int
 	safe                 bool
+	numeric              bool
 }
 
 var (
@@ -594,77 +610,199 @@ var (
 )
 
 // safeIdentEvents collects the ordered assignment events of the file,
-// each tagged with its enclosing function scope. The safe set is per
-// function (plus the file's top level as one scope), so an identifier
-// escaped in one function never launders a same-named attribute read in
-// another. Function scopes are indexed ONCE per file and resolved by
-// binary search plus a parent walk: calling enclosingFunction per event
-// walked the source backward to the file start for top-level code,
-// which made a many-assignment file quadratic (measured 22.9s user on
-// the reviewer's 40k-line generated file before this index).
-func safeIdentEvents(code string) []safeEvent {
-	scopes, parents := functionScopes(code)
+// each tagged with its enclosing function scope, plus one
+// unsafe/non-numeric event per function PARAMETER at the function's
+// scope start: the safe set is per function (plus the file's top level
+// as one scope), so an identifier escaped in one function never
+// launders a same-named attribute read in another, and a file-scope
+// safe name never launders a same-named parameter inside a function
+// that shadows it (review 6). Member assignments (obj.id = …) are not
+// identifier assignments and record nothing (review 6). Function
+// scopes are indexed ONCE per file and resolved by binary search plus
+// a parent walk: calling enclosingFunction per event walked the source
+// backward to the file start for top-level code, which made a
+// many-assignment file quadratic (measured 22.9s user on the
+// reviewer's 40k-line generated file before this index).
+func safeIdentEvents(code, blank string) []safeEvent {
+	scopes, parents := functionScopes(blank)
 	var events []safeEvent
-	record := func(name string, pos int, safe bool) {
-		s, e := scopeOf(code, scopes, parents, pos)
-		events = append(events, safeEvent{name: name, scopeStart: s, scopeEnd: e, pos: pos, safe: safe})
+	record := func(name string, pos int, safe, numeric bool) {
+		s, e := scopeOf(blank, scopes, parents, pos)
+		events = append(events, safeEvent{name: name, scopeStart: s, scopeEnd: e, pos: pos, safe: safe, numeric: numeric})
 	}
 	for _, m := range reSafeAssign.FindAllStringSubmatchIndex(code, -1) {
 		name := code[m[2]:m[3]]
 		if jsKeywords[name] || m[4] != m[5] { // arrow parameter, not an assignment
 			continue
 		}
+		if m[2] > 0 && code[m[2]-1] == '.' {
+			continue // obj.id = … assigns the member, not a binding named id
+		}
 		rhs := strings.TrimSpace(code[m[6]:m[7]])
 		if strings.HasPrefix(rhs, "=") { // == / === read through the '='
 			continue
 		}
-		record(name, m[2], rhsSafeForm(rhs))
+		record(name, m[2], rhsSafeForm(rhs), isJSNumericLiteral(rhs))
 	}
 	for _, m := range reSafeCompound.FindAllStringSubmatchIndex(code, -1) {
+		if m[2] > 0 && code[m[2]-1] == '.' {
+			continue // obj.id += … compounds the member, not a binding named id
+		}
 		if name := code[m[2]:m[3]]; !jsKeywords[name] {
-			record(name, m[0], false)
+			record(name, m[0], false, false)
 		}
 	}
 	for _, m := range reSafeForOf.FindAllStringSubmatchIndex(code, -1) {
-		record(code[m[2]:m[3]], m[0], true)
+		record(code[m[2]:m[3]], m[0], true, false)
+	}
+	for _, span := range scopes {
+		for _, name := range paramNames(blank, span[0]) {
+			record(name, span[0], false, false)
+		}
 	}
 	return events
 }
 
+// paramNames extracts the parameter names of the function whose body
+// '{' sits at bodyOpen in view: the single identifier of a one-param
+// arrow (`x => {`) or, when a ')' precedes the '{', the comma-separated
+// parts of the parenthesized list — plain identifiers, rest params,
+// defaults, and destructuring bindings ({a, b: c} binds a and c). The
+// blank view carries the same offsets as the code view, so the offsets
+// recorded for these names line up with assignment events.
+func paramNames(view string, bodyOpen int) []string {
+	j := skipSpaceBack(view, bodyOpen-1)
+	if j < 0 {
+		return nil
+	}
+	if view[j] == '>' && j >= 1 && view[j-1] == '=' { // x => {
+		k := skipSpaceBack(view, j-2)
+		if k < 0 {
+			return nil
+		}
+		end := k + 1
+		for k >= 0 && isJSIdentChar(view[k]) {
+			k--
+		}
+		if name := view[k+1 : end]; name != "" && !jsKeywords[name] {
+			return []string{name}
+		}
+		return nil
+	}
+	if view[j] != ')' {
+		return nil // every other function form's header ends in a parameter list
+	}
+	p := matchDelimBack(view, j)
+	if p < 0 {
+		return nil
+	}
+	var out []string
+	for _, part := range splitTopLevel(view[p+1:j], ',') {
+		out = append(out, bindingNames(part)...)
+	}
+	return out
+}
+
+// bindingNames extracts the identifier(s) one parameter part binds:
+// `id`, `...rest`, `id = dflt`, and — recursively through one level of
+// destructuring braces — shorthand members and renamed members after
+// the colon ({a, b: c} binds a and c, not b).
+func bindingNames(part string) []string {
+	s := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(part), "..."))
+	if i := topLevelAssignIndex(s); i >= 0 {
+		s = strings.TrimSpace(s[:i]) // strip a default value
+	}
+	if s == "" {
+		return nil
+	}
+	if isJSIdent(s) {
+		if !jsKeywords[s] {
+			return []string{s}
+		}
+		return nil
+	}
+	var out []string
+	for _, m := range splitTopLevel(strings.Trim(s, "{}[]()"), ',') {
+		t := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(m), "..."))
+		if i := topLevelAssignIndex(t); i >= 0 {
+			t = strings.TrimSpace(t[:i])
+		}
+		if k := strings.Index(t, ":"); k >= 0 { // {id: renamed} binds renamed
+			t = strings.TrimSpace(t[k+1:])
+		}
+		if isJSIdent(t) && !jsKeywords[t] {
+			out = append(out, t)
+		}
+	}
+	return out
+}
+
+// topLevelAssignIndex returns the offset of a top-level '=' in s that
+// separates a parameter from its default value, or -1: comparisons
+// (==, ===, !=, <=, >=) and the arrow (=>) are not defaults.
+func topLevelAssignIndex(s string) int {
+	depth := 0
+	for i := 0; i < len(s); i++ {
+		switch s[i] {
+		case '(', '[', '{':
+			depth++
+		case ')', ']', '}':
+			depth--
+		case '=':
+			if depth != 0 {
+				continue
+			}
+			if i+1 < len(s) && (s[i+1] == '=' || s[i+1] == '>') {
+				i++
+				continue
+			}
+			if i > 0 && strings.IndexByte("=!<>", s[i-1]) >= 0 {
+				continue
+			}
+			return i
+		}
+	}
+	return -1
+}
+
 // functionScopes returns the [start, end) span of every function body
-// in code, sorted by start, and, in parallel, each scope's parent (the
-// innermost function scope containing it; -1 at the top level). One
-// left-to-right pass; non-function braces do not open scopes, exactly
-// as isFunctionOpener defines them.
-func functionScopes(code string) ([][2]int, []int) {
+// in the given view, sorted by start, and, in parallel, each scope's
+// parent (the innermost function scope containing it; -1 at the top
+// level). One left-to-right pass; non-function braces do not open
+// scopes, exactly as isFunctionOpener defines them. The caller passes
+// the BLANK view (review 6): regex literals are blanked there, so a
+// '}' inside a pattern (/[}]/) cannot close the function early and
+// leave later statements out of their scope — the code view carries
+// regex bodies verbatim and matchDelimForward must match across them.
+func functionScopes(view string) ([][2]int, []int) {
 	var spans [][2]int
 	var parents []int
 	var stack []int // indices of currently open function scopes
-	for i := 0; i < len(code); i++ {
+	for i := 0; i < len(view); i++ {
 		for len(stack) > 0 && spans[stack[len(stack)-1]][1] <= i {
 			stack = stack[:len(stack)-1]
 		}
-		switch code[i] {
+		switch view[i] {
 		case '\'', '"', '`':
-			q := code[i]
+			q := view[i]
 			i++
-			for i < len(code) {
-				if code[i] == '\\' {
+			for i < len(view) {
+				if view[i] == '\\' {
 					i += 2
 					continue
 				}
-				if code[i] == q {
+				if view[i] == q {
 					break
 				}
 				i++
 			}
 		case '{':
-			if !isFunctionOpener(code, i) {
+			if !isFunctionOpener(view, i) {
 				continue
 			}
-			end := matchDelimForward(code, i)
+			end := matchDelimForward(view, i)
 			if end < 0 {
-				end = len(code) - 1
+				end = len(view) - 1
 			}
 			parent := -1
 			if len(stack) > 0 {
@@ -702,7 +840,8 @@ func scopeOf(code string, scopes [][2]int, parents []int, pos int) (int, int) {
 }
 
 // rhsSafeForm reports whether an assignment RHS provably cannot carry a
-// selector metacharacter: exactly one string literal, or an escape call.
+// selector metacharacter: exactly one string literal, or one whole
+// escape call (isEscapeCall).
 func rhsSafeForm(rhs string) bool {
 	if rhs == "" {
 		return false
@@ -710,36 +849,53 @@ func rhsSafeForm(rhs string) bool {
 	if isJSStringLiteral(rhs) {
 		return true
 	}
-	return reEscapeCall.MatchString(rhs)
+	return isEscapeCall(rhs)
 }
 
-// safeAt reports whether identifier name provably holds a literal or an
-// escape result at pos: among the events for name before pos whose
-// scope CONTAINS pos, the one from the innermost scope wins, and within
-// it the latest position wins. A module-level constant therefore covers
-// every function in the file, a same-named local in a sibling function
-// covers nothing outside itself, and a reassignment inside the scope
-// revokes the status from that point on. No event at all (a parameter,
-// an import) is not provable and stays unsafe.
-func safeAt(events []safeEvent, name string, pos int) bool {
+// latestEvent returns the event that decides name's provenance at pos:
+// among the events before pos whose scope CONTAINS pos, the one from
+// the innermost scope wins, and within it the latest position wins. A
+// module-level constant therefore covers every function in the file, a
+// same-named local in a sibling function covers nothing outside
+// itself, and a reassignment or parameter inside the scope decides from
+// that point on. No event at all (an import) is not provable.
+func latestEvent(events []safeEvent, name string, pos int) (safeEvent, bool) {
 	bestScope, bestPos := -1, -1
-	res := false
+	var best safeEvent
+	found := false
 	for _, e := range events {
 		if e.name != name || e.pos >= pos || e.scopeStart > pos || e.scopeEnd <= pos {
 			continue
 		}
 		if e.scopeStart > bestScope || (e.scopeStart == bestScope && e.pos > bestPos) {
-			bestScope, bestPos = e.scopeStart, e.pos
-			res = e.safe
+			bestScope, bestPos, best, found = e.scopeStart, e.pos, e, true
 		}
 	}
-	return res
+	return best, found
+}
+
+// safeAt reports whether identifier name provably holds a literal or an
+// escape result at pos (see latestEvent). A parameter shadows the
+// file-scope fact inside its function (review 6).
+func safeAt(events []safeEvent, name string, pos int) bool {
+	e, ok := latestEvent(events, name, pos)
+	return ok && e.safe
+}
+
+// numericAt reports whether identifier name provably holds a number at
+// pos: its deciding event (see latestEvent) is an init from one
+// numeric literal — the fact isNumericArithExpr needs about arithmetic
+// operands, since an attribute-borne identifier plus a number is
+// string concatenation (review 6).
+func numericAt(events []safeEvent, name string, pos int) bool {
+	e, ok := latestEvent(events, name, pos)
+	return ok && e.numeric
 }
 
 // selectorUnsafeOperand inspects one selector argument and reports an
 // unescaped interpolated value, if the argument is a composite selector
 // expression (concatenation or template interpolation) carrying one.
-func selectorUnsafeOperand(arg string, safe func(string) bool) (string, bool) {
+func selectorUnsafeOperand(arg string, safe, numeric func(string) bool) (string, bool) {
 	ops := splitTopLevel(arg, '+')
 	hasTemplate := false
 	for _, op := range ops {
@@ -753,7 +909,7 @@ func selectorUnsafeOperand(arg string, safe func(string) bool) (string, bool) {
 			if tpl[j] == '$' && tpl[j+1] == '{' {
 				body, close := templateExprEnd(tpl, j+2)
 				b := strings.TrimSpace(body)
-				if !selectorOperandSafe(b, safe) {
+				if !selectorOperandSafe(b, safe, numeric) {
 					return b, true
 				}
 				j = close
@@ -768,7 +924,7 @@ func selectorUnsafeOperand(arg string, safe func(string) bool) (string, bool) {
 		if strings.HasPrefix(t, "`") {
 			continue // template operands handled above
 		}
-		if !selectorOperandSafe(t, safe) {
+		if !selectorOperandSafe(t, safe, numeric) {
 			return t, true
 		}
 	}
@@ -777,31 +933,51 @@ func selectorUnsafeOperand(arg string, safe func(string) bool) (string, bool) {
 
 // selectorOperandSafe reports whether one concatenation operand or
 // interpolation body cannot carry a selector metacharacter.
-func selectorOperandSafe(op string, safe func(string) bool) bool {
+func selectorOperandSafe(op string, safe, numeric func(string) bool) bool {
 	op = strings.TrimSpace(op)
 	if op == "" {
 		return true
 	}
-	if reEscapeCall.MatchString(op) {
+	if isEscapeCall(op) {
 		return true // CSS.escape(…), window.CSS.escape(…), cssEscape(…)
 	}
 	if isJSStringLiteral(op) || isJSNumericLiteral(op) {
 		return true
 	}
-	if isNumericArithExpr(op) {
-		return true // `index + 1` in an nth-child: digits only, no metacharacters
+	if isNumericArithExpr(op, numeric) {
+		return true // `index + 1` on a proven-numeric index: digits only, no metacharacters
 	}
 	return isJSIdent(op) && safe(op)
 }
 
-// isNumericArithExpr reports whether s is arithmetic over a numeric
-// literal (`index + 1`, `i * 2`): every +-*/%-separated token is a
-// plain identifier or a number, and at least one operand is a number.
-// Such a value is a number at runtime and cannot carry a selector
-// metacharacter (review 5's li:nth-child(${index + 1})). Dots,
-// parentheses, quotes, and calls disqualify the token: a member access
-// or call result is not provably numeric.
-func isNumericArithExpr(s string) bool {
+// isEscapeCall reports whether op is EXACTLY one escape call —
+// CSS.escape(v), window.CSS.escape(v), a module-local cssEscape(v)
+// shim — with nothing after the closing paren but space. A trailing
+// logical or conditional operand (`CSS.escape(v) ||
+// el.dataset.target`) still carries the raw value whenever the escape
+// result is falsy (the empty string), so it is not an escape (review
+// 6).
+func isEscapeCall(op string) bool {
+	loc := reEscapeCall.FindStringIndex(op)
+	if loc == nil {
+		return false
+	}
+	close := matchDelimForward(op, loc[1]-1)
+	return close >= 0 && strings.TrimSpace(op[close+1:]) == ""
+}
+
+// isNumericArithExpr reports whether s is arithmetic that provably
+// yields a number: every +-*/%-separated token is a number, or an
+// identifier PROVEN numeric at the use (its deciding assignment event
+// is an init from one numeric literal — a for-loop counter included),
+// and at least one operand is a number (`index + 1`, `i * 2` on
+// so-bound index/i). An identifier from a DOM attribute is a string:
+// `idx + 1` is string concatenation, and the result carries selector
+// metacharacters into an nth-child (review 6; review 5 pinned the
+// numeric-literal form). Dots, parentheses, quotes, and calls
+// disqualify the token: a member access or call result is not provably
+// numeric.
+func isNumericArithExpr(s string, numeric func(string) bool) bool {
 	if !strings.ContainsAny(s, "+-*/%") {
 		return false
 	}
@@ -813,7 +989,9 @@ func isNumericArithExpr(s string) bool {
 		case isNumericDotToken(tok):
 			hasNumber = true
 		case isJSIdent(tok):
-			// an identifier: numeric only in combination with the literal
+			if !numeric(tok) {
+				return false // unproven identifier: string concatenation
+			}
 		default:
 			return false
 		}
@@ -1511,10 +1689,15 @@ func skipSpaceBack(s string, i int) int {
 // like swapCase( (review 5) — a name is not a markup sink.
 //
 // Silent on:
-//   - chains gated on the response: a whole-token .ok or .status read
-//     (word boundary — displaying r.statusText or r.okButton is not a
-//     check) used as a condition — negated, compared, inside an
-//     if/while condition, or feeding a ternary / && / ||;
+//   - chains gated on the response (review 6 split the forms): a
+//
+// whole-token .ok read used as a condition — negated (!r.ok),
+// compared, inside an if/while condition, or feeding a ternary /
+// && / || — or a .status COMPARISON that admits only a 2xx
+// response: === 2xx, an upper bound under 400 (< 300, <= 299),
+// or >= 200 conjoined with such an upper bound. Bare .status
+// truthiness passes for 404 and 500 and is not a gate, and
+// neither is < 400 (every redirect) nor a bare >= 200;
 //   - await/multi-statement flows (const r = await fetch(…); …) — the
 //     chain ends at the statement boundary and the mount lives in
 //     later statements; those sites are pinned individually by the
@@ -1611,14 +1794,33 @@ func namedThenBodies(blank, span string) string {
 // .statusText and .okButton do not match (\b after the property).
 var reResponseToken = regexp.MustCompile(`\.\s*(?:ok|status)\b`)
 
+// reStatusToken matches the .status member read alone, so .ok and
+// .status gates can be judged by different rules (review 6).
+var reStatusToken = regexp.MustCompile(`\.\s*status\b`)
+
 // responseGateIn reports whether the chain text actually gates on the
-// response: a whole-token .ok/.status read used as a condition —
-// negated (!r.ok), compared on either side (r.status !== 200,
-// 200 === r.status), inside an if/while condition (if (resp.ok)), or
-// feeding a ternary / && / ||. Displaying the value (r.statusText,
-// r.okButton) or passing it to a function is not a gate.
+// response. A whole-token .ok read used as a condition counts as
+// before — negated (!r.ok), compared, inside an if/while condition (if
+// (resp.ok)), or feeding a ternary / && / ||. A .status read counts
+// only as a comparison that admits ONLY a successful response (review
+// 6): equality to a 2xx literal (r.status === 200), an upper bound
+// under the client errors (r.status < 300, r.status <= 299), or a
+// lower bound of 200 conjoined with such an upper bound (r.status >=
+// 200 && r.status < 300). Bare .status truthiness (if (r.status)) is
+// true for 404 and 500 and is not a gate; r.status < 400 still admits
+// every redirect, and a bare r.status >= 200 admits the whole error
+// half of the range. Displaying the value (r.statusText, r.okButton)
+// or passing it to a function is not a gate.
 func responseGateIn(span string) bool {
 	for _, m := range reResponseToken.FindAllStringIndex(span, -1) {
+		if reStatusToken.MatchString(span[m[0]:m[1]]) {
+			// A .status token (the match is ".status", not ".ok").
+			if statusCompAdmitsOnly2xx(span, m[0], m[1]) {
+				return true
+			}
+			continue
+		}
+		// A .ok token: any condition use counts.
 		if i := skipSpace(span, m[1]); i < len(span) && gateOpRight(span, i) {
 			return true
 		}
@@ -1631,6 +1833,105 @@ func responseGateIn(span string) bool {
 		}
 	}
 	return false
+}
+
+// reCmpOpAt matches a comparison operator at the start of s.
+var reCmpOpAt = regexp.MustCompile(`^(===|!==|==|!=|<=|>=|<|>)`)
+
+// reNumAt matches a decimal number at the start of s.
+var reNumAt = regexp.MustCompile(`^(\d+)`)
+
+// reCmpNumBefore matches a number and comparison operator ending at
+// the end of s: "200 ===" of `200 === r.status`.
+var reCmpNumBefore = regexp.MustCompile(`(\d+)\s*(===|==|!==|!=|<=|>=|<|>)\s*$`)
+
+// statusCompAdmitsOnly2xx reports whether the .status member read at
+// span[start:end] is compared in a way only a 2xx response satisfies:
+// an exact 2xx equality (either polarity — `if (r.status !== 200)
+// throw` leaves exactly 200 on the continuing path), an upper bound
+// below 400, or a >= 200 lower bound conjoined (&&) with such an upper
+// bound later in the same statement. Everything else — truthiness,
+// weak bounds, inequalities against non-2xx literals — still admits a
+// response the mount must not see.
+func statusCompAdmitsOnly2xx(span string, start, end int) bool {
+	// Comparison to the right: r.status < 300 / === 200 / !== 200 / >= 200.
+	if i := skipSpace(span, end); i < len(span) {
+		if op := reCmpOpAt.FindStringSubmatch(span[i:]); op != nil {
+			j := skipSpace(span, i+len(op[1]))
+			if num := reNumAt.FindStringSubmatch(span[j:]); num != nil {
+				lit, _ := strconv.Atoi(num[1])
+				switch {
+				case op[1] == "===" || op[1] == "==" || op[1] == "!==" || op[1] == "!=":
+					if lit >= 200 && lit <= 299 {
+						return true
+					}
+				case op[1] == "<" || op[1] == "<=":
+					if lit <= 399 {
+						return true
+					}
+				case op[1] == ">" || op[1] == ">=":
+					return lowerBoundConjoined(span, j+len(num[1]), lit)
+				}
+			}
+		}
+	}
+	// Mirrored: 200 === r.status, 300 > r.status.
+	j := memberExprStart(span, start)
+	if m := reCmpNumBefore.FindStringSubmatch(span[:j]); m != nil {
+		lit, _ := strconv.Atoi(m[1])
+		switch mirror := mirrorCmp(m[2]); mirror {
+		case "===", "==", "!==", "!=":
+			return lit >= 200 && lit <= 299
+		case "<", "<=":
+			return lit <= 399
+		}
+	}
+	return false
+}
+
+// reStatusUpperBound matches a .status upper-bound comparison
+// (< 300, <= 299) — the partner a >= 200 lower bound needs to admit
+// only 2xx. Static and run-once, like every gate pattern here.
+var reStatusUpperBound = regexp.MustCompile(`\.\s*status\s*(?:<=|<)\s*(\d+)`)
+
+// lowerBoundConjoined reports whether a >= 200-style lower bound is
+// conjoined (&&) with an upper bound below 400 on the status in the
+// same statement: r.status >= 200 && r.status < 300 admits only 2xx,
+// while the bare lower bound admits every error status.
+func lowerBoundConjoined(span string, from, lit int) bool {
+	if lit < 200 {
+		return false
+	}
+	rest := span[from:]
+	if i := strings.IndexAny(rest, ";{}"); i >= 0 {
+		rest = rest[:i]
+	}
+	and := strings.Index(rest, "&&")
+	if and < 0 {
+		return false
+	}
+	for _, m := range reStatusUpperBound.FindAllStringSubmatch(rest[and:], -1) {
+		if n, err := strconv.Atoi(m[1]); err == nil && n <= 399 {
+			return true
+		}
+	}
+	return false
+}
+
+// mirrorCmp flips a comparison operator so the subject can be treated
+// as the left operand: 300 > r.status reads r.status < 300.
+func mirrorCmp(op string) string {
+	switch op {
+	case "<":
+		return ">"
+	case "<=":
+		return ">="
+	case ">":
+		return "<"
+	case ">=":
+		return "<="
+	}
+	return op
 }
 
 // gateOpRight reports whether a comparison, ternary, or logical
@@ -1811,17 +2112,25 @@ func templateOperands(tpl string) []string {
 // string or template literal is prose and never reported (review 5).
 //
 // Silent on:
-//   - gates that PRECEDE the URL construction in source order within
-//     the enclosing function (review 5: a validating regex after the
-//     fetch does not un-send the request): an anchored regex test
-//     (/^[A-Za-z0-9_-]+$/.test(v)), a SAFE_NAME-style constant
-//     assigned a regex literal then .test(v), or an allowlist
-//     membership (X[v] inside an if condition, X.has(v)) — a
-//     server-emitted manifest or Set stops re-targeting exactly like a
-//     name-shape class. A regex gate counts only when the literal is
-//     anchored (^…$) and its body carries no ".", "\s", "\S", "\W", or
-//     negated class "[^" (review 5: /./ accepts "../admin", and a dot
-//     anywhere admits path separators);
+//   - gates that DOMINATE the URL construction (review 6 tightened
+//
+// review 5's source-order rule): the gate sits in the condition
+// of an if whose branch contains the construction, or in an
+// earlier if of a block enclosing it whose failure branch
+// rejects execution via return or throw — only validated values
+// continue to the fetch. A matching check in an unrelated
+// earlier branch constrains nothing, a gate that only sets a flag
+// constrains nothing, and a validating regex after the fetch does
+// not un-send the request. The gate shapes: an anchored regex
+// test (/^[A-Za-z0-9_-]+$/.test(v)), a SAFE_NAME-style constant
+// assigned a regex literal then .test(v), or an allowlist
+// membership (X[v] inside an if condition, X.has(v)) — a
+// server-emitted manifest or Set stops re-targeting exactly like
+// a name-shape class. A regex gate counts only when the literal
+// is anchored (^…$) and built exclusively from name-safe
+// characters and classes — an explicit allowlist, so every
+// backslash escape is out: \x2f, \u002f, \/ and \\ can match a
+// path separator (reviews 5 and 6);
 //   - numeric coercion of the value (Number(v), parseInt(v),
 //     parseFloat(v)): the result is a number or NaN and can never
 //     spell a traversal segment (review 5);
@@ -2094,44 +2403,162 @@ func regexConstNames(code string) map[string]string {
 	return set
 }
 
+// reIfOpen matches an if-condition opener: the '(' of `if (`.
+var reIfOpen = regexp.MustCompile(`\bif\s*\(`)
+
 // attrPathGated reports whether a name-shape or allowlist gate on
-// value v appears in the enclosing function of the site at pos BEFORE
-// pos in source order — the URL is built at pos, and a gate that runs
-// later cannot un-send the request (review 5). For an inline attribute
-// read (not a bare variable) any regex .test( counts: there is no
-// variable to match.
+// value v DOMINATES the URL construction at pos (review 6): the gate
+// sits in the condition of an if whose branch CONTAINS the
+// construction — the check necessarily ran and passed on the path that
+// builds the URL — or in an earlier if of a block enclosing the
+// construction whose failure branch REJECTS execution (return /
+// throw), so only validated values continue. A matching check in an
+// unrelated earlier branch constrains nothing (that branch can be
+// skipped), a gate that only sets a flag constrains nothing, and a
+// gate after pos cannot un-send the request (review 5). For an inline
+// attribute read (not a bare variable) any regex .test( counts: there
+// is no variable to match.
 func attrPathGated(code, v string, regexConsts map[string]string, pos int) bool {
 	start, _ := enclosingFunction(code, pos)
-	body := code[start:pos]
+	body := code[start:]
+	pos0 := pos - start
 	ident := `\w+`
 	if isJSIdent(v) {
 		ident = regexp.QuoteMeta(v)
 	}
-	// Regex-literal gate: /^[A-Za-z0-9_-]+$/.test(v) — anchored and
-	// metacharacter-free only; /./ accepts "../admin".
-	for _, m := range regexp.MustCompile(`(/[^/\n]+/[a-z]*)\s*\.\s*test\s*\(\s*`+ident+`\b`).FindAllStringSubmatch(body, -1) {
-		if regexGateAnchored(m[1]) {
-			return true
+	// One matcher over a condition text: an anchored inline regex test
+	// (/^[A-Za-z0-9_-]+$/.test(v)), a SAFE_NAME-style constant test, an
+	// allowlist membership (manifest[v], seen.has(v)) — the same gate
+	// shapes as before, now judged only where they dominate.
+	reTest := regexp.MustCompile(`(?:(/[^/\n]+/[a-z]*)|(\w+))\s*\.\s*test\s*\(\s*` + ident + `\b`)
+	reAllow := regexp.MustCompile(`\w+\s*\[\s*` + ident + `\s*\]`)
+	reHas := regexp.MustCompile(`\w+\s*\.\s*has\s*\(\s*` + ident + `\b`)
+	gateIn := func(cond string) bool {
+		for _, m := range reTest.FindAllStringSubmatch(cond, -1) {
+			if m[1] != "" {
+				if regexGateAnchored(m[1]) {
+					return true
+				}
+				continue
+			}
+			if lit, ok := regexConsts[m[2]]; ok && regexGateAnchored(lit) {
+				return true
+			}
+		}
+		return reAllow.MatchString(cond) || reHas.MatchString(cond)
+	}
+	for _, loc := range reIfOpen.FindAllStringIndex(body, -1) {
+		if loc[0] >= pos0 {
+			break // every later if is past the construction
+		}
+		open := loc[1] - 1
+		close := matchDelimForward(body, open)
+		if close < 0 || close >= pos0 {
+			continue
+		}
+		if !gateIn(body[open+1 : close]) {
+			continue
+		}
+		b := skipSpace(body, close+1)
+		if b >= len(body) {
+			continue
+		}
+		tEnd := b
+		if body[b] == '{' {
+			if e := matchDelimForward(body, b); e >= 0 {
+				tEnd = e
+			}
+		} else if e := statementEnd(body, b); e < len(body) {
+			tEnd = e
+		}
+		if b <= pos0 && pos0 <= tEnd {
+			return true // the branch that builds the URL ran the gate
+		}
+		if tEnd < pos0 && branchRejects(body[b:tEnd+1]) && ifStillOpenAt(body, tEnd+1, pos0) {
+			return true // the gate's failures left; only validated values continue
 		}
 	}
-	// SAFE_NAME-style constant holding a regex literal.
-	for _, m := range regexp.MustCompile(`(\w+)\s*\.\s*test\s*\(\s*`+ident+`\b`).FindAllStringSubmatch(body, -1) {
-		if lit, ok := regexConsts[m[1]]; ok && regexGateAnchored(lit) {
-			return true
-		}
-	}
-	// Allowlist membership: X[v] inside an if condition, or X.has(v).
-	if regexp.MustCompile(`if\s*\([^)\n]*\w+\s*\[\s*` + ident + `\s*\]`).MatchString(body) {
-		return true
-	}
-	return regexp.MustCompile(`\w+\.has\s*\(\s*` + ident + `\b`).MatchString(body)
+	return false
 }
+
+// branchRejects reports whether an if branch refuses to continue when
+// its condition fails: its (optionally braced) body ends in a return,
+// throw, or continue statement — `if (!RE.test(v)) return;`,
+// `if (!RE.test(v)) { log(); throw new Error(…) }`, and the corpus's
+// own loop spelling `if (!manifest[id]) continue;` all reject.
+func branchRejects(branch string) bool {
+	s := strings.TrimSpace(branch)
+	if strings.HasPrefix(s, "{") {
+		e := matchDelimForward(s, 0)
+		if e < 0 {
+			return false
+		}
+		s = s[1:e]
+	}
+	last := ""
+	for i := len(s) - 1; i >= 0; i-- { // the last statement decides; earlier ones may log
+		if s[i] != ';' {
+			continue
+		}
+		if t := strings.TrimSpace(s[i+1:]); t != "" {
+			last = t
+			break
+		}
+	}
+	if last == "" {
+		last = strings.TrimSpace(s)
+	}
+	return strings.HasPrefix(last, "return") || strings.HasPrefix(last, "throw") ||
+		strings.HasPrefix(last, "continue")
+}
+
+// ifStillOpenAt reports whether the if ending just before from still
+// dominates pos: no '}' closes the if's enclosing block between them.
+// One brace walk over the code view, skipping string and template
+// contents; a depth dip below zero means the if's own block chain
+// closed before the site (the if lives in a branch the site left).
+func ifStillOpenAt(body string, from, pos int) bool {
+	depth := 0
+	for i := from; i < pos; i++ {
+		switch body[i] {
+		case '\'', '"', '`':
+			q := body[i]
+			i++
+			for i < pos && body[i] != q {
+				if body[i] == '\\' {
+					i++
+				}
+				i++
+			}
+		case '{':
+			depth++
+		case '}':
+			depth--
+			if depth < 0 {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// regexSafeClassChars is the explicit allowlist a gate literal's body
+// may draw from: word characters, the hyphen, and the class, group,
+// alternation, and repetition syntax that combines them. Everything
+// else — every backslash escape (\x2f, \u002f, \/ and \\ can match a
+// path separator; \w \s are ambiguous shorthands), the dot, negated
+// classes, and control characters — is out (review 6; review 5 pinned
+// the dot).
+const regexSafeClassChars = "abcdefghijklmnopqrstuvwxyz" +
+	"ABCDEFGHIJKLMNOPQRSTUVWXYZ" + "0123456789_-[]()|+*{},"
 
 // regexGateAnchored reports whether a regex literal (with its slashes,
 // optionally flagged) accepts a bounded name shape only: anchored at
-// both ends (^…$) and carrying no ".", "\s", "\S", "\W", or negated
-// class "[^" — each of those admits path separators or arbitrary
-// characters (review 5: /./ accepts "../admin").
+// both ends (^…$) and built exclusively from name-safe characters and
+// classes. An explicit allowlist, so a separator-producing escape
+// disqualifies the gate wherever it sits in the body — review 5's
+// /./ accepts "../admin", review 6's /^[A-Za-z0-9_\x2f-]+$/ accepts
+// "foo/bar" even though no "/" appears in the literal.
 func regexGateAnchored(lit string) bool {
 	if len(lit) < 3 || lit[0] != '/' {
 		return false
@@ -2144,8 +2571,11 @@ func regexGateAnchored(lit string) bool {
 	if !strings.HasPrefix(body, "^") || !strings.HasSuffix(body, "$") {
 		return false
 	}
-	for _, forbidden := range []string{".", `\s`, `\S`, `\W`, "[^"} {
-		if strings.Contains(body, forbidden) {
+	for _, r := range body[1 : len(body)-1] {
+		if r < 0x20 || r == 0x7f {
+			return false // control characters
+		}
+		if !strings.ContainsRune(regexSafeClassChars, r) {
 			return false
 		}
 	}

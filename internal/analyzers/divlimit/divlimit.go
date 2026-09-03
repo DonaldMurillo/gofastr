@@ -11,13 +11,21 @@
 // OffsetForPage already guarded its own division.
 //
 // Silent postures, deliberately:
-//   - a comparison of the divisor against 0 or 1 that DOMINATES the
-//     division: it sits in the same block before it, in an enclosing
-//     block before the statement holding it, or is the condition of an
-//     enclosing if whose then-branch holds it (the fix posture,
-//     including `limit <= 0 { return }`). A guard inside a nested
-//     conditional body of an earlier statement (a flag-gated check)
-//     executes only when the flag is set and dominates nothing;
+//   - a guard that proves the divisor NONZERO on the reaching path
+//
+// (review 6): a diverging guard — an earlier if whose condition,
+// when false, proves it (`limit == 0`, `limit < 1`, `limit <= 0`)
+// and whose then-branch never completes normally (return, panic,
+// continue, os.Exit), like `limit <= 0 { return }` — or the
+// condition of an enclosing if whose then-branch holds the
+// division, where the condition HELD (`limit != 0`, `limit > 0`,
+// `limit >= 1`). The polarity matters: `if limit == 0 { return
+// total / limit }` divides exactly when the divisor is zero, a
+// branch that merely logs or returns on the safe values leaves
+// the zero values on the continuing path, and a guard inside a
+// nested conditional body of an earlier statement (a flag-gated
+// check) executes only when the flag is set and dominates
+// nothing;
 //   - divisors not named in the limit/perPage/pageSize/size/count/n
 //     family (parameters, or struct fields of that family — a limit
 //     decoded into a request struct is the standard handler spelling):
@@ -118,71 +126,241 @@ func checkFunc(pass *analysis.Pass, fnType *ast.FuncType, body *ast.BlockStmt) {
 	})
 }
 
-// guardedBefore reports whether the divisor was compared against 0 or
-// 1 in a statement or condition that dominates the division: the same
-// block before it, an enclosing block before it, or the condition of
-// an enclosing if whose then-branch holds it. A comparison inside the
-// body of a nested conditional of an earlier statement runs only when
-// that branch is taken and is not a guard.
+// guardedBefore reports whether the divisor is proven nonzero on every
+// path reaching the division (review 6 made the guard branch-aware):
+//
+//   - a diverging guard: an earlier if whose condition, when FALSE,
+//
+// proves the divisor nonzero — `limit == 0`, `limit < 1`,
+// `limit <= 0` — and whose then-branch never completes normally
+// (return, panic, continue, os.Exit): only in-range values
+// continue past it;
+//   - an enclosing condition: an if whose then-branch holds the
+//
+// division and whose condition, held TRUE there, proves the
+// divisor nonzero — `limit != 0`, `limit > 0`, `limit >= 1`.
+//
+// Polarity is the whole point: `if limit == 0 { return total/limit }`
+// reaches the division exactly when the divisor IS zero, a guard whose
+// branch merely logs (or returns on the SAFE values) leaves the zero
+// values on the continuing path, and a comparison in an unrelated
+// earlier branch of the walk (a flag-gated check) executes only when
+// that branch is taken and dominates nothing.
 func guardedBefore(pass *analysis.Pass, body *ast.BlockStmt, parents map[ast.Node]ast.Node, divisor ast.Expr, div *ast.BinaryExpr) bool {
-	if spineComparesDivisor(pass, dominance.Spine(divisor), divisor) {
-		return true
-	}
 	for _, stmts := range dominance.Prefix(div, parents, body) {
 		for _, st := range stmts {
-			if spineComparesDivisor(pass, dominance.Spine(st), divisor) {
+			iff := dominance.IfStmtOf(st)
+			if iff == nil || !dominance.Diverges(iff.Body) {
+				continue
+			}
+			if condProvesNonzero(pass, iff.Cond, divisor, false) {
 				return true
 			}
 		}
 	}
 	for _, cond := range dominance.EnclosingIfConds(div, parents, body) {
-		if spineComparesDivisor(pass, dominance.Spine(cond), divisor) {
+		if condProvesNonzero(pass, cond, divisor, true) {
 			return true
 		}
 	}
 	return false
 }
 
-// spineComparesDivisor reports whether any comparison in nodes matches
-// the divisor expression against a constant 0 or 1.
-func spineComparesDivisor(pass *analysis.Pass, nodes []ast.Node, divisor ast.Expr) bool {
-	for _, n := range nodes {
-		bin, ok := n.(*ast.BinaryExpr)
-		if !ok {
-			continue
+// condProvesNonzero walks a condition's operator tree and reports
+// whether it proves the divisor nonzero: when holds, the condition
+// itself held on the reaching path; when !holds, it failed and the
+// other side of the branch is what runs. For && the held side proves
+// any one operand (A && B held means both held; ¬(A && B) is ¬A ∨ ¬B,
+// so any operand's failure proves it). For || held, WHICH operand is
+// unknown, so every operand must prove it; failed, ¬(A ∨ B) is
+// ¬A ∧ ¬B and any operand's failure still proves it.
+func condProvesNonzero(pass *analysis.Pass, cond ast.Expr, divisor ast.Expr, holds bool) bool {
+	switch x := cond.(type) {
+	case *ast.ParenExpr:
+		return condProvesNonzero(pass, x.X, divisor, holds)
+	case *ast.UnaryExpr:
+		if x.Op == token.NOT {
+			return condProvesNonzero(pass, x.X, divisor, !holds)
 		}
-		switch bin.Op {
-		case token.EQL, token.NEQ, token.LSS, token.LEQ, token.GTR, token.GEQ:
-		default:
-			continue
+	case *ast.BinaryExpr:
+		switch x.Op {
+		case token.LAND:
+			return condProvesNonzero(pass, x.X, divisor, holds) || condProvesNonzero(pass, x.Y, divisor, holds)
+		case token.LOR:
+			if holds {
+				return condProvesNonzero(pass, x.X, divisor, true) && condProvesNonzero(pass, x.Y, divisor, true)
+			}
+			return condProvesNonzero(pass, x.X, divisor, false) || condProvesNonzero(pass, x.Y, divisor, false)
 		}
-		var other ast.Expr
-		switch {
-		case isDivisorExpr(pass, bin.X, divisor):
-			other = bin.Y
-		case isDivisorExpr(pass, bin.Y, divisor):
-			other = bin.X
-		default:
-			continue
-		}
-		if isZeroOrOne(pass, other) {
-			return true
-		}
+		return comparisonProvesNonzero(pass, x, divisor, holds)
 	}
 	return false
 }
 
-// isDivisorExpr reports whether e spells the divisor expression: the
-// same identifier object, or the same printed selector (`q.Limit`).
+// comparisonProvesNonzero reports whether `divisor op constant` with
+// c ∈ {0, 1} proves the divisor nonzero on the given truth value.
+func comparisonProvesNonzero(pass *analysis.Pass, bin *ast.BinaryExpr, divisor ast.Expr, holds bool) bool {
+	if !isComparison(bin.Op) {
+		return false
+	}
+	var other ast.Expr
+	divisorOnLeft := isDivisorExpr(pass, bin.X, divisor)
+	switch {
+	case divisorOnLeft:
+		other = bin.Y
+	case isDivisorExpr(pass, bin.Y, divisor):
+		other = bin.X
+	default:
+		return false
+	}
+	if !isZeroOrOne(pass, other) {
+		return false
+	}
+	c := constValue(pass, other)
+	op := bin.Op
+	if !divisorOnLeft {
+		op = flipComparison(op)
+	}
+	whenTrue, whenFalse := nonzeroSide(op, c)
+	if holds {
+		return whenTrue
+	}
+	return whenFalse
+}
+
+// nonzeroSide reports for `divisor op c` (divisor on the left, c ∈
+// {0, 1}) which truth value of the comparison proves the divisor
+// nonzero: whenTrue for `limit != 0`, `limit > 0`, `limit > 1`,
+// `limit >= 1`, `limit == 1`, `limit < 0`; whenFalse for `limit == 0`,
+// `limit < 1`, `limit <= 0`, `limit <= 1`, `limit != 1`, `limit >= 0`.
+// Every other combination proves neither side (e.g. `limit >= 0` held
+// still contains 0, and its failure proves < 0).
+func nonzeroSide(op token.Token, c int64) (whenTrue, whenFalse bool) {
+	switch op {
+	case token.EQL:
+		return c != 0, c == 0
+	case token.NEQ:
+		return c == 0, c != 0
+	case token.LSS:
+		return c == 0, c == 1 // D < 0 / ¬(D < 1) ⟹ D ≥ 1
+	case token.LEQ:
+		return false, true // ¬(D ≤ c) ⟹ D ≥ 1 for c ∈ {0, 1}
+	case token.GTR:
+		return true, false // D > c ⟹ D ≥ 1; ¬(D > c) ⟹ D ≤ c ∋ 0
+	case token.GEQ:
+		return c == 1, c == 0 // D ≥ 1 / ¬(D ≥ 0) ⟹ D < 0
+	}
+	return false, false
+}
+
+// flipComparison mirrors an operator so the subject can be treated as
+// the left operand.
+func flipComparison(op token.Token) token.Token {
+	switch op {
+	case token.LSS:
+		return token.GTR
+	case token.LEQ:
+		return token.GEQ
+	case token.GTR:
+		return token.LSS
+	case token.GEQ:
+		return token.LEQ
+	}
+	return op
+}
+
+// constValue returns the int64 constant value of e, or ok=false —
+// isZeroOrOne's value, split out for nonzeroSide.
+func constValue(pass *analysis.Pass, e ast.Expr) int64 {
+	tv, ok := pass.TypesInfo.Types[e]
+	if !ok || tv.Value == nil {
+		return -1
+	}
+	i, ok := constant.Int64Val(tv.Value)
+	if !ok {
+		return -1
+	}
+	return i
+}
+
+// isDivisorExpr reports whether e is the divisor expression: the same
+// identifier object, or a selector with the same receiver ROOT BINDING
+// and the same selected field object. Printed-spelling comparison
+// (types.ExprString) let a block-shadowed `q.Limit` match an outer
+// `q.Limit` comparison and suppress the finding (review 6); binding
+// identity cannot.
 func isDivisorExpr(pass *analysis.Pass, e ast.Expr, divisor ast.Expr) bool {
 	switch d := divisor.(type) {
 	case *ast.Ident:
 		return isIdentObj(pass, e, pass.TypesInfo.ObjectOf(d))
 	case *ast.SelectorExpr:
 		ds, ok := e.(*ast.SelectorExpr)
-		return ok && types.ExprString(ds) == types.ExprString(d)
+		if !ok {
+			return false
+		}
+		dObj, dOk := selectorFieldObj(pass, d)
+		eObj, eOk := selectorFieldObj(pass, ds)
+		if !dOk || !eOk || dObj != eObj {
+			return false
+		}
+		dRoot, dHasRoot := selectorRootObj(pass, d)
+		eRoot, eHasRoot := selectorRootObj(pass, ds)
+		if dHasRoot != eHasRoot {
+			return false
+		}
+		if !dHasRoot {
+			// Neither receiver roots in a plain identifier (a call
+			// chain): fall back to the printed receiver, which cannot
+			// shadow.
+			return types.ExprString(ds.X) == types.ExprString(d.X)
+		}
+		return dRoot == eRoot
 	}
 	return false
+}
+
+// isComparison reports whether op is a comparison operator.
+func isComparison(op token.Token) bool {
+	switch op {
+	case token.EQL, token.NEQ, token.LSS, token.LEQ, token.GTR, token.GEQ:
+		return true
+	}
+	return false
+}
+
+// selectorFieldObj resolves the selected field of a struct selector to
+// its *types.Var. Two selectors over the same struct type share the
+// field object, so the receiver binding below is what distinguishes
+// them.
+func selectorFieldObj(pass *analysis.Pass, sel *ast.SelectorExpr) (types.Object, bool) {
+	obj := pass.TypesInfo.ObjectOf(sel.Sel)
+	if obj == nil {
+		return nil, false
+	}
+	return obj, true
+}
+
+// selectorRootObj resolves the receiver's root binding: the object of
+// the identifier the member chain starts from (`q` of q.Limit,
+// `cfg` of cfg.Q.Limit). A shadowing declaration in an inner scope is
+// a different object, so the same printed selector over it is a
+// different value. ok=false when the chain does not root in an
+// identifier.
+func selectorRootObj(pass *analysis.Pass, sel *ast.SelectorExpr) (types.Object, bool) {
+	x := sel.X
+	for {
+		switch v := x.(type) {
+		case *ast.Ident:
+			obj := pass.TypesInfo.ObjectOf(v)
+			return obj, obj != nil
+		case *ast.SelectorExpr:
+			x = v.X
+		case *ast.IndexExpr:
+			x = v.X
+		default:
+			return nil, false
+		}
+	}
 }
 
 // divisorCandidate resolves the divisor to a limit-named function
