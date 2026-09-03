@@ -547,8 +547,9 @@ func exRowItems() []render.HTML {
 // exBlueprints is row 13: the declarative examples that are blueprints
 // only, no Go until `gofastr generate` runs. It shares exRowShell with
 // the runnable rows but stays out of exRowItems, whose length is the
-// "runs in one command" count. Each point is one whole-item link, so the
-// link is the block rather than a color-only span inside prose.
+// "runs in one command" count. The source links sit in their own blocks
+// below the points, never inline in prose, so axe's link-in-text-block
+// rule has nothing to flag.
 func exBlueprints() render.HTML {
 	items := []struct{ slug, domain string }{
 		{"lms", "courses, lessons, enrollments"},
@@ -556,13 +557,15 @@ func exBlueprints() render.HTML {
 		{"project-manager", "projects, tasks, teams"},
 		{"real-estate", "listings, agents, inquiries"},
 	}
-	lis := make([]render.HTML, 0, len(items))
+	points := make([]render.HTML, 0, len(items))
+	links := make([]render.HTML, 0, len(items))
 	for _, it := range items {
-		lis = append(lis, html.ListItem(html.ListItemConfig{},
+		points = append(points, html.ListItem(html.ListItemConfig{}, render.Text(it.slug+": "+it.domain)))
+		links = append(links, html.Div(html.DivConfig{Class: "ex-row__src"},
 			html.LinkHTML(html.LinkHTMLConfig{
 				Href:       "https://github.com/DonaldMurillo/gofastr/tree/main/examples/" + it.slug,
 				ExtraAttrs: html.Attrs{"rel": "external"},
-				Content:    render.Text("examples/" + it.slug + ": " + it.domain),
+				Content:    render.Text("examples/" + it.slug + " ↗"),
 			}),
 		))
 	}
@@ -572,8 +575,9 @@ func exBlueprints() render.HTML {
 		Path:    "examples/…",
 		Title:   "Four more blueprints",
 		Desc:    "Each is one gofastr.yml with no Go beside it. Generate in the directory to get a runnable app you own; every one is validated by the CLI's blueprint test suite.",
-		Points:  lis,
+		Points:  points,
 		Command: "cd examples/lms && gofastr generate --from=gofastr.yml",
+		Extra:   ui.Cluster(ui.ClusterConfig{Gap: ui.GapMD}, links...),
 	})
 	right := html.Div(html.DivConfig{Class: "ex-row__right"},
 		codeBlock("examples/lms/gofastr.yml", []render.HTML{
@@ -594,7 +598,8 @@ func exRows() render.HTML {
 type exRowBodyConfig struct {
 	Tag, LoC, Path, Title, Desc, Command string
 	Points                               []render.HTML
-	Source                               string // "View source" href; empty hides the link
+	Source                               string      // "View source" href; empty hides the link
+	Extra                                render.HTML // optional trailing block (the blueprint row's source links)
 }
 
 // exRowBody renders the left column: meta pills, title, description,
@@ -615,6 +620,9 @@ func exRowBody(c exRowBodyConfig) render.HTML {
 			html.Span(html.TextConfig{Class: "p"}, render.Text("$")),
 			render.Text(c.Command),
 		),
+	}
+	if c.Extra != "" {
+		parts = append(parts, c.Extra)
 	}
 	if c.Source != "" {
 		parts = append(parts, html.Div(html.DivConfig{Class: "ex-row__src"},
