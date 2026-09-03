@@ -462,6 +462,15 @@ and mounts it with `app.RegisterPlugin(...)`; the registry file is the
 human/tooling index, updated in the same change as a plugin's version
 or capability set.
 
+The docs site (`examples/site`) is the first consumer. It vendors the
+copy published with each gofastr-plugins release, which carries a
+`release` stamp the file in git does not, and renders `/plugins` plus
+one page per row from it. `scripts/vendor-plugins-json.sh [vX.Y.Z]`
+refreshes the copy; the site's `TestPluginRegistryVendoredCopy` refuses
+an unstamped copy, an unknown field, or a sandboxed row that grants
+`allow-same-origin`. Nothing imports a Go API for the file: that would
+make gofastr depend on a repo that depends on gofastr.
+
 ## Common mistakes
 
 - **Adding `allow-same-origin` to "fix" a frame that can't load its

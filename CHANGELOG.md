@@ -24,6 +24,14 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   added now log the panic instead of swallowing it.
 
 ### Added
+- **The site renders the gofastr-plugins registry.** `/plugins` lists
+  every plugin in the vendored `plugins.json` and `/plugins/<name>`
+  shows its manifest, isolation posture, and the `go get` plus
+  `RegisterPlugin` lines to mount it. The copy comes from a
+  gofastr-plugins release asset via `scripts/vendor-plugins-json.sh`,
+  so it carries the release stamp the page shows; a test refuses an
+  unstamped copy, an unknown field, or a sandboxed row granting
+  `allow-same-origin`. Consumed by copy, never by import.
 - **`MenuConfig.LazyPanel` keeps a closed menu's rows out of the
   document tree.** The rows ship inside an inert
   `<template data-fui-menu-lazy>` as the panel's only child, and the
