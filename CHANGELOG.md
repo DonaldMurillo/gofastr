@@ -23,6 +23,21 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   compared a lexically cleaned path. The five recover guards v0.81.0
   added now log the panic instead of swallowing it.
 
+### Added
+- **`MenuConfig.LazyPanel` keeps a closed menu's rows out of the
+  document tree.** The rows ship inside an inert
+  `<template data-fui-menu-lazy>` as the panel's only child, and the
+  runtime moves them into the panel on first open, ahead of its
+  focus-on-open, or at scan time for a details that was already open.
+  The panel `<div>` stays, so `aria-controls` resolves while closed.
+  Use it when live-DOM queries must not see closed-menu rows: a host
+  Playwright contract that pins `getByText` to the first visible match
+  or `getByLabel` to exactly one element. The rows are still in the
+  HTML source, so nothing is hidden from a crawler. Host JS that binds rows by id at page load
+  needs delegated listeners instead, and with JavaScript disabled the
+  menu opens empty. The zero value renders the exact bytes it did
+  before.
+
 ### Fixed
 - **Analyzers, contract rules, and runtime lints**: five reviewers
   executed fixtures against the nineteen rules and proved around
@@ -46,6 +61,13 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   A2A, process-module, and OpenAPI envelope fields are errors instead
   of silent skips, and dropped refusals in the admin, resource, and
   harness surfaces are logged or returned.
+- **`TriggerElement` menus show their panel**: the closed-panel CSS rule
+  keyed `[open]` on the element carrying `data-fui-comp`, which on the
+  trigger path is a `<div>` that never carries it, so the rule matched
+  unconditionally and the panel stayed `display: none` while the
+  summary-less `<details>` was open. The rule now keys a `<details>`
+  root, and a chromedp test pins the computed display of live-rendered
+  menus on both paths.
 
 ## [0.81.0] - 2026-09-02
 
