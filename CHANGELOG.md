@@ -68,6 +68,14 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   summary-less `<details>` was open. The rule now keys a `<details>`
   root, and a chromedp test pins the computed display of live-rendered
   menus on both paths.
+- **The site's examples page lists every runnable example**: the entity
+  admin (`backoffice`), the process-isolated module
+  (`processmodule-demo`), and the WebMCP remote-assist console were
+  missing, the four blueprint-only examples had no link, and the
+  line-count badges had drifted by up to half (the site badge said
+  6,000 lines for a 9,300-line app). The badges are now pinned by a
+  test that measures the tree, and the home page's example card derives
+  its count from the row list.
 
 ## [0.81.0] - 2026-09-02
 
