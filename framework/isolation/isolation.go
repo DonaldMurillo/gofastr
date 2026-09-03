@@ -183,6 +183,25 @@ func (r *Runtime) Addr(addr string) (string, error) {
 	return joinAddr(host, next, shape), nil
 }
 
+// ListenAddr is the one call a hand-written main needs to bind where
+// `gofastr dev`, a PaaS, or worktree isolation says: it resolves isolation
+// for projectDir, reads $PORT (a bare port "8088" or a host:port
+// "localhost:8088", both of which `gofastr dev` and PaaS runtimes inject),
+// falls back to fallback when $PORT is empty, and returns the address
+// with isolation's port remap applied. Pass the result to App.Start or
+// http.ListenAndServe.
+func ListenAddr(projectDir, fallback string) (string, error) {
+	rt, err := Resolve(projectDir)
+	if err != nil {
+		return "", err
+	}
+	addr := os.Getenv("PORT")
+	if addr == "" {
+		addr = fallback
+	}
+	return rt.Addr(addr)
+}
+
 // Env returns env with configured local resources isolated.
 func (r *Runtime) Env(env []string) []string {
 	if !r.Active() {
