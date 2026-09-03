@@ -1,13 +1,14 @@
 # GoFastr blog example
 
-A minimal blog application demonstrating JSON entity declarations, CRUD routes,
-soft delete, custom endpoints, generated OpenAPI, and entity MCP tools.
+A minimal blog application: three entities declared in Go, auto-mounted
+CRUD routes, RBAC-gated writes, soft delete, custom endpoints, generated
+OpenAPI, and entity MCP tools.
 
 ## Quick start
 
 ```bash
 # From the repository root:
-go run examples/blog/main.go
+go run ./examples/blog
 ```
 
 The server starts on **http://localhost:8080**.
@@ -16,53 +17,65 @@ The example uses SQLite at `./blog.db` and auto-migrates on startup.
 
 ## Endpoints
 
+The Auth column names the role scope a request needs. A request with no
+matching scope gets 403; there is no anonymous write anywhere.
+
 ### Users
 
-| Method   | Path             | Auth | Description        |
-| -------- | ---------------- | ---- | ------------------ |
-| GET      | `/users`         | No   | List users         |
-| GET      | `/users/{id}`    | No   | Get user by ID     |
-| POST     | `/users`         | Yes  | Create user        |
-| PUT      | `/users/{id}`    | Yes  | Update user        |
-| PATCH    | `/users/{id}`    | Yes  | Sparse-update user |
-| DELETE   | `/users/{id}`    | Yes  | Delete user        |
+Email is PII, so every operation on users is gated, reads included.
+
+| Method   | Path             | Auth          | Description        |
+| -------- | ---------------- | ------------- | ------------------ |
+| GET      | `/users`         | `users:read`  | List users         |
+| GET      | `/users/{id}`    | `users:read`  | Get user by ID     |
+| POST     | `/users`         | `users:write` | Create user        |
+| PUT      | `/users/{id}`    | `users:write` | Update user        |
+| PATCH    | `/users/{id}`    | `users:write` | Sparse-update user |
+| DELETE   | `/users/{id}`    | `users:admin` | Delete user        |
 
 ### Posts
 
-| Method   | Path                  | Auth | Description                  |
-| -------- | --------------------- | ---- | ---------------------------- |
-| GET      | `/posts`              | No   | List posts (paginated)       |
-| GET      | `/posts/{id}`         | No   | Get post by ID               |
-| GET      | `/posts/published`    | No   | List published posts only    |
-| GET      | `/posts/search?q=...` | No   | Search indexed posts         |
-| POST     | `/posts`              | Yes  | Create post                  |
-| PUT      | `/posts/{id}`         | Yes  | Update post                  |
-| PATCH    | `/posts/{id}`         | Yes  | Sparse-update post           |
-| DELETE   | `/posts/{id}`         | Yes  | Soft-delete post             |
+| Method   | Path                  | Auth          | Description                  |
+| -------- | --------------------- | ------------- | ---------------------------- |
+| GET      | `/posts`              | public        | List posts (paginated)       |
+| GET      | `/posts/{id}`         | public        | Get post by ID               |
+| GET      | `/posts/published`    | public        | List published posts only    |
+| GET      | `/posts/search?q=...` | public        | Search indexed posts         |
+| POST     | `/posts`              | `posts:write` | Create post                  |
+| PUT      | `/posts/{id}`         | `posts:write` | Update post                  |
+| PATCH    | `/posts/{id}`         | `posts:write` | Sparse-update post           |
+| DELETE   | `/posts/{id}`         | `posts:admin` | Soft-delete post             |
 
 ### Comments
 
-| Method   | Path                | Auth | Description          |
-| -------- | ------------------- | ---- | -------------------- |
-| GET      | `/comments`         | No   | List comments        |
-| GET      | `/comments/{id}`    | No   | Get comment by ID    |
-| POST     | `/comments`         | Yes  | Create comment       |
-| PUT      | `/comments/{id}`    | Yes  | Update comment       |
-| PATCH    | `/comments/{id}`    | Yes  | Sparse-update comment |
-| DELETE   | `/comments/{id}`    | Yes  | Delete comment       |
+| Method   | Path                | Auth             | Description           |
+| -------- | ------------------- | ---------------- | --------------------- |
+| GET      | `/comments`         | public           | List comments         |
+| GET      | `/comments/{id}`    | public           | Get comment by ID     |
+| POST     | `/comments`         | `comments:write` | Create comment        |
+| PUT      | `/comments/{id}`    | `comments:write` | Update comment        |
+| PATCH    | `/comments/{id}`    | `comments:write` | Sparse-update comment |
+| DELETE   | `/comments/{id}`    | `comments:admin` | Delete comment        |
 
 ### Auth
 
-This example does not enforce auth. Production apps should add auth middleware
-or per-entity access control before exposing write endpoints.
+The scopes come from each entity's `Exposure.Access` block in `main.go`
+and mirror the `access:` block in `gofastr.yml`. The example wires no
+login, so every gated route answers 403 until you add `battery/auth` (or
+any middleware that puts roles on the request context). `blog_test.go`
+pins the fail-closed behaviour, and the comment above `registerEntities`
+explains why the two declarations must agree on exposure.
 
 Create, get, PUT, and PATCH return `{"data": {...}}`; list responses return
 `{"data": [...]}` with pagination metadata.
 
 ```bash
+# Public read:
+curl http://localhost:8080/posts
+# Gated write: 403 until a role with posts:write is on the request
 curl -H "Content-Type: application/json" \
-     -d '{"name":"Ada","email":"ada@example.com"}' \
-     http://localhost:8080/users
+     -d '{"title":"Hello","author_id":"u1"}' \
+     http://localhost:8080/posts
 ```
 
 ### Filtering & pagination
@@ -79,7 +92,8 @@ GET /posts?page=2&limit=10&sort=-created_at&status=published
 | `limit`    | `limit=10`       | Items per page (max 100)        |
 | `sort`     | `sort=-title`    | Sort field (`-` for descending) |
 | `{field}`  | `status=draft`   | Exact-match filter              |
-| `{field}_like` | `title_like=go` | Contains filter             |
+| `{field}_like` | `title_like=go` | Contains filter (wildcards escaped) |
+| `{field}_in` | `status_in=draft,published` | Any-of filter    |
 
 ## Entities & relationships
 

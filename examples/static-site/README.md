@@ -25,7 +25,7 @@ examples/static-site/
 
 ```bash
 cd examples/static-site
-go run main.go
+go run .
 # Open http://localhost:3070
 ```
 
