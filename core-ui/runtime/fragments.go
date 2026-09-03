@@ -272,6 +272,10 @@ var moduleAttrs = map[string][]string{
 		"data-fui-disclosure",
 		"data-fui-disclosure-trap",
 		"data-fui-disclosure-persist",
+		// Lazy menu panel inflation (framework/ui MenuConfig.LazyPanel)
+		// lives in this module's toggle listener and scan pass, ahead of
+		// the menu focus-on-open it already owns.
+		"data-fui-menu-lazy",
 	},
 	"dragdismiss": {
 		"data-fui-drag-dismiss",

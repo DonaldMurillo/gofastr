@@ -208,6 +208,23 @@ type MenuConfig struct {
 	// Position anchors the panel relative to the trigger.
 	Position MenuPosition
 
+	// LazyPanel keeps the panel's rows out of the document tree until
+	// the menu is first opened: SSR wraps them in an inert
+	// <template data-fui-menu-lazy> as the panel's only child, and the
+	// runtime's disclosure module moves them into the panel on first
+	// open (the panel <div> itself always renders, so aria-controls
+	// still resolves while closed). Use it when page-scoped consumers
+	// must not see closed-menu rows: host test contracts that pin
+	// getByText('Theme') to a visible element or getByLabel to exactly
+	// one, and SEO crawlers that would otherwise index hidden row
+	// text. The cost: rows are not in the DOM until first open, so
+	// host JS that binds rows by id at page load must use delegated
+	// listeners instead. The zero value (false) renders rows inline
+	// exactly as before — byte-identical output. Applies to the
+	// summary path and TriggerElement alike; nested submenus live
+	// inside the template and mount with the rest.
+	LazyPanel bool
+
 	// TriggerClass / PanelClass append to the rendered element class
 	// lists (rare).
 	TriggerClass string
@@ -286,7 +303,7 @@ func Menu(cfg MenuConfig) render.HTML {
 		b.WriteString(`</div>`)
 		b.WriteString(`<details data-fui-disclosure data-fui-menu="` + render.Escape(id) + `">`)
 		b.WriteString(`<div class="ui-menu__panel" id="` + render.Escape(panelID) + `" role="menu" data-fui-menu-panel>`)
-		writeMenuItems(&b, cfg.Items, panelID)
+		writeMenuRows(&b, cfg.Items, panelID, cfg.LazyPanel)
 		b.WriteString(`</div></details></div>`)
 		return menuStyle.WrapHTML(render.HTML(b.String()))
 	}
@@ -318,7 +335,7 @@ func Menu(cfg MenuConfig) render.HTML {
 	b.WriteString(`</summary>`)
 
 	b.WriteString(`<div class="ui-menu__panel" id="` + render.Escape(panelID) + `" role="menu" data-fui-menu-panel>`)
-	writeMenuItems(&b, cfg.Items, panelID)
+	writeMenuRows(&b, cfg.Items, panelID, cfg.LazyPanel)
 	b.WriteString(`</div></details>`)
 
 	return menuStyle.WrapHTML(render.HTML(b.String()))
@@ -331,6 +348,26 @@ func Menu(cfg MenuConfig) render.HTML {
 func writeMenuItems(b *strings.Builder, items []MenuItem, parentPanelID string) {
 	for i, it := range items {
 		writeMenuItem(b, it, parentPanelID, i)
+	}
+}
+
+// writeMenuRows renders a top-level panel's rows, wrapping them in the
+// inert <template data-fui-menu-lazy> a LazyPanel menu ships instead of
+// inline rows. The panel <div> itself always renders — aria-controls
+// must resolve while the menu is closed — and the template is its only
+// child. Template contents parse into an inert DocumentFragment that is
+// NOT part of the document tree, so row text, labels, and roles are
+// invisible to page-scoped queries until the disclosure module's
+// inflate moves them into the panel on first open (see
+// runtime/src/disclosure.js). Nested submenus render inside the
+// template and mount with the rest; only the top panel is lazy.
+func writeMenuRows(b *strings.Builder, items []MenuItem, parentPanelID string, lazy bool) {
+	if lazy {
+		b.WriteString(`<template data-fui-menu-lazy>`)
+	}
+	writeMenuItems(b, items, parentPanelID)
+	if lazy {
+		b.WriteString(`</template>`)
 	}
 }
 

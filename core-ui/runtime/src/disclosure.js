@@ -15,6 +15,13 @@
 //   - menu disclosures (data-fui-menu) move focus to the first
 //     menuitem (menuitemradio rows included) on open, so keyboard
 //     users land inside the panel without a Tab
+//   - lazy menu panels (framework/ui MenuConfig.LazyPanel) ship their
+//     rows inside an inert <template data-fui-menu-lazy> as the
+//     panel's only child; this module inflates them — moves
+//     template.content into the panel, removes the template — BEFORE
+//     the focus-on-open lookup, and at scan time for a menu whose
+//     details was already open when the module arrived (a click that
+//     beat the idle load, SPA-swapped markup)
 //   - an opt-in focus trap (data-fui-disclosure-trap) for mobile drawers
 //     and full-sheet popovers, released when the drawer closes, when it
 //     is detached from the DOM, or on SPA navigation
@@ -116,6 +123,28 @@
     }
   };
 
+  // Lazy menu panels (framework/ui MenuConfig.LazyPanel) ship their
+  // rows inside an inert <template data-fui-menu-lazy> as the panel's
+  // only child: template contents are a DocumentFragment, not in the
+  // document tree, so page-scoped text/label/role queries cannot see
+  // closed-menu rows. Inflate = move the fragment's children into the
+  // panel and drop the template. Idempotent by construction (moving
+  // empties the fragment; no template left → no-op), so the two entry
+  // points — the toggle listener below, BEFORE the focus-on-open
+  // lookup (the first open must land focus on a row that just
+  // mounted), and the scan() pass for a details that was ALREADY open
+  // when this module loaded (a click that beat the idle load,
+  // SPA-swapped markup) — can never double-mount. Nested submenus
+  // render inside the template and mount with the rest; their own
+  // panels are never lazy.
+  const inflateLazyMenu = (d) => {
+    const panel = d.querySelector(':scope > [role="menu"]');
+    const tpl = panel && panel.querySelector(':scope > template[data-fui-menu-lazy]');
+    if (!tpl) return;
+    panel.insertBefore(tpl.content, tpl);
+    tpl.remove();
+  };
+
   // Interactive descendants of the summary (TriggerHTML buttons,
   // icon-only triggers) swallow the UA's summary activation: Chrome
   // does not toggle details.open when the click target is itself an
@@ -168,6 +197,10 @@
       // parent row of a nested disclosure lives outside that
       // disclosure's panel and cannot yank focus back.
       if (d.open && d.hasAttribute('data-fui-menu')) {
+        // A lazy panel's rows are still inside their template: mount
+        // them BEFORE the focus lookup below, or the first open lands
+        // focus nowhere.
+        inflateLazyMenu(d);
         const panel = d.querySelector(':scope > [role="menu"]');
         if (panel) {
           const first = Array.from(
@@ -214,7 +247,13 @@
   // disclosure. Re-run after SPA navigation, which swaps in markup this
   // module never saw a toggle for.
   const scan = (root) => {
-    for (const d of (root || document).querySelectorAll('details[data-fui-disclosure]')) mirror(d);
+    for (const d of (root || document).querySelectorAll('details[data-fui-disclosure]')) {
+      mirror(d);
+      // A menu that was ALREADY open when this module loaded — a
+      // click that beat the idle load, or SPA-swapped markup — must
+      // have its lazy rows mounted here; no toggle will fire for it.
+      if (d.open && d.hasAttribute('data-fui-menu')) inflateLazyMenu(d);
+    }
   };
   scan(document);
   (NS._moduleScanners ||= {}).disclosure = scan;
