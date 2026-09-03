@@ -475,7 +475,7 @@ func exploreSection() render.HTML {
 			render.Text("Scaffold a Go app from a declaration when you want a head start. It writes plain Go you own and edit."),
 		),
 		card("/examples", "examples/", "The example apps",
-			render.Text("Runnable reference apps include a blog, a SaaS console, an API tour, semantic search, and this site. Each starts with one command."),
+			render.Text(fmt.Sprintf("%d runnable reference apps, including a blog, a SaaS console, a storefront, an API tour, an entity admin, a process-isolated module, a WebMCP support console, and this site. Each starts with one command.", len(exRowItems()))),
 		),
 	)
 

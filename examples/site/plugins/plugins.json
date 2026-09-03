@@ -1,0 +1,357 @@
+{
+  "registryVersion": "1",
+  "$comment": "Curated registry index for gofastr-plugins. This is a CONVENTION, not a service: a JSON manifest + the docs/plugin-platform.md page. There is no runtime discovery server. Apps import a plugin package directly via its modulePath and mount it with framework.RegisterPlugin. Each row mirrors the plugin's own identity/route constants and its pluginhost.Manifest (see <pkg>/plugin.go). Update a plugin's row in the same change that bumps its Version or capabilities. This file is consumed by COPY, not import: a host fetches it from a release asset and vendors it, so nothing imports a Go API for it. In THIS repo it is parsed by internal/registry (test-only, not importable by consumers) -- keep it valid JSON, and add new keys to the Go structs in internal/registry/registry.go at the same time (the parser rejects unknown fields).",
+  "description": "Officially-maintained heavy-JavaScript plugins for the GoFastr framework. Most run isolated in an opaque-origin sandboxed iframe and talk to the host only over a versioned postMessage capability bridge (isolation \"sandbox-iframe-opaque\"). A plugin that must reach the host DOM (the guided-tour plugin) instead runs as a vouched-for trusted host-page script (isolation \"trusted-host-page\", trusted:true) — never sandboxed and never same-origin-in-a-frame. See docs/plugin-platform.md for the platform contract.",
+  "framework": {
+    "name": "gofastr",
+    "modulePath": "github.com/DonaldMurillo/gofastr",
+    "note": "gofastr uses calendar-ish semver (YYYY-MM-DD releases until the API stabilises). These plugins are built and tested against the published gofastr pinned in go.mod; frameworkCompat is a best-effort floor, not a tested matrix. The gofastr-plugins ROOT module is versioned by this repo's own vX.Y.Z tags; there is no separately-versioned registry submodule."
+  },
+  "plugins": [
+    {
+      "name": "richtext",
+      "modulePath": "github.com/DonaldMurillo/gofastr-plugins/richtext",
+      "version": "0.1.0-phase0",
+      "description": "Full Rich Text block editor built on ProseMirror. Block-JSON canonical, markdown export + a pure-Go SSR read view (richtext/ssr). The first heavy-JS plugin and the forcing function that proved the third-party isolation contract.",
+      "isolation": "sandbox-iframe-opaque",
+      "sandbox": [
+        "allow-scripts"
+      ],
+      "capabilities": [
+        "document:read",
+        "document:write",
+        "upload:images",
+        "theme:read"
+      ],
+      "frameworkCompat": ">=0.28.0",
+      "routePrefix": "/__gofastr/plugin/richtext",
+      "entry": "/__gofastr/plugin/richtext/editor.html",
+      "schema": "richtext-v1",
+      "minHeight": "240px",
+      "docs": "docs/richtext-editor.md"
+    },
+    {
+      "name": "mermaid",
+      "modulePath": "github.com/DonaldMurillo/gofastr-plugins/mermaid",
+      "version": "0.1.0-phase0",
+      "description": "Isolated Mermaid diagram editor/renderer. The second heavy-JS plugin — the completeness canary proving the extracted pluginhost platform generalizes beyond the editor. Canonical doc is {source:\"...\"}; no upload path.",
+      "isolation": "sandbox-iframe-opaque",
+      "sandbox": [
+        "allow-scripts"
+      ],
+      "capabilities": [
+        "document:read",
+        "document:write",
+        "theme:read"
+      ],
+      "frameworkCompat": ">=0.28.0",
+      "routePrefix": "/__gofastr/plugin/mermaid",
+      "entry": "/__gofastr/plugin/mermaid/diagram.html",
+      "schema": "mermaid-v1",
+      "minHeight": "320px",
+      "docs": "docs/mermaid.md"
+    },
+    {
+      "name": "monaco",
+      "modulePath": "github.com/DonaldMurillo/gofastr-plugins/monaco",
+      "version": "0.1.0-phase0",
+      "description": "Configurable Monaco (VS Code) code editor. The third sandboxed heavy-JS plugin. Canonical doc is {code, language}; syntax highlighting runs worker-free on the main thread (opaque-origin safe), with an opt-in real-worker path. Supports a diff-editor mode and per-instance language/theme/read-only/minimap/word-wrap config.",
+      "isolation": "sandbox-iframe-opaque",
+      "sandbox": [
+        "allow-scripts"
+      ],
+      "capabilities": [
+        "document:read",
+        "document:write",
+        "theme:read"
+      ],
+      "frameworkCompat": ">=0.28.0",
+      "routePrefix": "/__gofastr/plugin/monaco",
+      "entry": "/__gofastr/plugin/monaco/editor.html",
+      "schema": "monaco-v1",
+      "minHeight": "320px",
+      "docs": "docs/monaco.md"
+    },
+    {
+      "name": "pdf",
+      "modulePath": "github.com/DonaldMurillo/gofastr-plugins/pdf",
+      "version": "0.1.0",
+      "description": "PDF viewer / editor / redactor built on pdf.js (render) + pdf-lib (write). The fourth sandboxed heavy-JS plugin. pdf.js runs WORKER-FREE on the main thread and the frame fetches nothing: under the framed CSP's connect-src 'none' the document bytes arrive over the postMessage bridge, which means the frame holding a confidential PDF structurally cannot exfiltrate it. Canonical doc is an annotation OVERLAY ({src, annotations[], formFields{}, redactions[], pageOps[]}) in PDF user space, never the file bytes. Host-selected mode (view/annotate/redact) is enforced on both sides. Redaction rasterizes affected pages and rebuilds a fresh document, then verifies the output before releasing it; download and print are host capabilities because the CSP sandbox token forbids them in-frame.",
+      "isolation": "sandbox-iframe-opaque",
+      "sandbox": [
+        "allow-scripts"
+      ],
+      "capabilities": [
+        "document:read",
+        "document:write",
+        "theme:read"
+      ],
+      "optionalCapabilities": [
+        "pdf:export"
+      ],
+      "frameworkCompat": ">=0.28.0",
+      "routePrefix": "/__gofastr/plugin/pdf",
+      "entry": "/__gofastr/plugin/pdf/viewer.html",
+      "schema": "pdf-v1",
+      "minHeight": "480px",
+      "docs": "docs/pdf.md"
+    },
+    {
+      "name": "datagrid",
+      "modulePath": "github.com/DonaldMurillo/gofastr-plugins/datagrid",
+      "version": "0.1.0",
+      "description": "Data grid over AG Grid Community's infinite row model — the fifth sandboxed heavy-JS plugin, and the first whose traffic is pages rather than one document. The framed CSP's connect-src 'none' means the frame can never fetch its own rows: every page crosses the postMessage bridge as a correlated requestRows/rowsResult event pair (the richtext requestUpload pattern), and sorting, filtering and paging all run in the host's Go rows source behind POST /rows. Canonical doc is VIEW STATE ONLY ({columns[], sort, filter, pageSize}, schema datagrid-v1) — rows are never part of it. Cell editing (requestCellWrite → POST /cell) and view-state saves gate on optional data:write; host-side CSV export (requestExport → POST /export, the download starts in the host page) gates on optional data:export — each granted exactly when the host wires the matching handler option, like pdf:export.",
+      "isolation": "sandbox-iframe-opaque",
+      "sandbox": [
+        "allow-scripts"
+      ],
+      "capabilities": [
+        "data:read",
+        "theme:read"
+      ],
+      "optionalCapabilities": [
+        "data:write",
+        "data:export"
+      ],
+      "frameworkCompat": ">=0.28.0",
+      "routePrefix": "/__gofastr/plugin/datagrid",
+      "entry": "/__gofastr/plugin/datagrid/grid.html",
+      "schema": "datagrid-v1",
+      "minHeight": "480px",
+      "docs": "docs/datagrid.md"
+    },
+    {
+      "name": "tour",
+      "modulePath": "github.com/DonaldMurillo/gofastr-plugins/tour",
+      "version": "0.1.0",
+      "description": "Guided product-tour (\"app cues\") plugin: spotlights host-page elements with stepped tooltip bubbles, progress, and don't-show-again persistence. The FIRST trusted host-page plugin — it runs in the host page with full DOM access (it must, to highlight real elements), so it is NOT sandboxed. Runtime is a same-origin script + stylesheet; tours are registered server-side and completion is persisted client-side and via a seen endpoint.",
+      "isolation": "trusted-host-page",
+      "trusted": true,
+      "capabilities": [
+        "tour:read",
+        "tour:write"
+      ],
+      "frameworkCompat": ">=0.28.0",
+      "routePrefix": "/__gofastr/plugin/tour",
+      "docs": "docs/tour.md"
+    },
+    {
+      "name": "map",
+      "modulePath": "github.com/DonaldMurillo/gofastr-plugins/geomap",
+      "version": "0.3.0",
+      "description": "Interactive vector map (MapLibre GL + OpenFreeMap). A TRUSTED host-page plugin (like tour) — it runs in the host page with fetch/worker access so it can render OpenFreeMap vector tiles (free for commercial use, no API key). Canonical doc is {lat,lng,zoom,markers[]}; click-to-add draggable pins whose popup is a live label editor with per-pin delete, a style switcher (layers), geolocate + scale controls, optional marker clustering, an optional place-search box backed by the plugin's own same-origin geocode proxy, and a fly-to side panel. The host page CSP MUST allow connect-src/img-src https://tiles.openfreemap.org and worker-src blob: (see docs/geomap.md); search needs no extra CSP host because it is proxied through the plugin's own origin. Place search is opt-in (geomap.WithSearch): enabling it registers /__gofastr/plugin/map/geocode and adds the optionalCapability geocode:search.",
+      "isolation": "trusted-host-page",
+      "trusted": true,
+      "capabilities": [
+        "document:read",
+        "document:write",
+        "theme:read"
+      ],
+      "optionalCapabilities": [
+        "geocode:search"
+      ],
+      "frameworkCompat": ">=0.28.0",
+      "routePrefix": "/__gofastr/plugin/map",
+      "schema": "map-v1",
+      "minHeight": "360px",
+      "docs": "docs/geomap.md"
+    },
+    {
+      "name": "chart",
+      "modulePath": "github.com/DonaldMurillo/gofastr-plugins/chart",
+      "version": "0.1.0",
+      "description": "One chart spec, two agreeing renderers: a pure-Go SSR SVG (chart/ssr — the page works with JavaScript off) and a sandboxed Observable Plot frame that hydrates it into an interactive chart. The Go tick algorithm is a line-for-line port of d3-array's ticks, so server and client axis labels agree exactly; an e2e agreement test compares both SVGs on awkward ranges. Canonical doc is {type, series[], axes, options} (chart-v1) covering line/bar/area/scatter with axes, legend and title; the data lives in the doc, capped at 10,000 total points across at most 12 series.",
+      "isolation": "sandbox-iframe-opaque",
+      "sandbox": [
+        "allow-scripts"
+      ],
+      "capabilities": [
+        "document:read",
+        "document:write",
+        "theme:read"
+      ],
+      "frameworkCompat": ">=0.28.0",
+      "routePrefix": "/__gofastr/plugin/chart",
+      "entry": "/__gofastr/plugin/chart/chart.html",
+      "schema": "chart-v1",
+      "minHeight": "360px",
+      "docs": "docs/chart.md"
+    },
+    {
+      "name": "logstream",
+      "modulePath": "github.com/DonaldMurillo/gofastr-plugins/logstream",
+      "version": "0.1.0",
+      "description": "Live log tail in an opaque-origin sandboxed iframe (xterm.js). The only plugin whose traffic is not turn-based: the host PUSHES NDJSON lines from GET /stream and delivers unsolicited streamBatch events over the postMessage bridge; the frame renders one batch per ~16ms tick and acks with streamAck carrying the last rendered sequence number. Backpressure is explicit — a 4-batch ack window and a bounded host buffer that drops from the OLDEST end when the producer outruns the frame, with the dropped count riding the next batch and rendering as a visible 'N lines dropped' marker. Scrollback is bounded at 10,000 lines. Read-only: stream:read + theme:read only, no PTY, no shell, no command input, no writes.",
+      "isolation": "sandbox-iframe-opaque",
+      "sandbox": [
+        "allow-scripts"
+      ],
+      "capabilities": [
+        "stream:read",
+        "theme:read"
+      ],
+      "frameworkCompat": ">=0.28.0",
+      "routePrefix": "/__gofastr/plugin/logstream",
+      "entry": "/__gofastr/plugin/logstream/term.html",
+      "schema": "logstream-v1",
+      "minHeight": "560px",
+      "docs": "docs/logstream.md"
+    },
+    {
+      "name": "imageedit",
+      "modulePath": "github.com/DonaldMurillo/gofastr-plugins/imageedit",
+      "version": "0.1.0",
+      "description": "Crop / annotate / redact image editor, and the proof that the pdf plugin's bytes-over-the-bridge design generalizes: the frame has connect-src 'none' and receives the image as an ArrayBuffer over postMessage, the canonical doc is an OPERATION LIST (imageedit-v1: src, crop, rotate, annotations[], redactions[] in image coordinates — never pixels), and every export is re-rendered by Go from that list using only the standard library. EXIF is stripped by full re-encode, 16 MiB / 24 MP / 8192px caps are enforced at the header stage before decode, and redactions are verified against the produced bytes — a region must be gone, not painted over, or the export fails closed.",
+      "isolation": "sandbox-iframe-opaque",
+      "sandbox": [
+        "allow-scripts"
+      ],
+      "capabilities": [
+        "document:read",
+        "document:write",
+        "theme:read"
+      ],
+      "optionalCapabilities": [
+        "upload:images"
+      ],
+      "frameworkCompat": ">=0.28.0",
+      "routePrefix": "/__gofastr/plugin/imageedit",
+      "entry": "/__gofastr/plugin/imageedit/editor.html",
+      "schema": "imageedit-v1",
+      "minHeight": "520px",
+      "docs": "docs/imageedit.md"
+    },
+    {
+      "name": "formbuilder",
+      "modulePath": "github.com/DonaldMurillo/gofastr-plugins/formbuilder",
+      "version": "0.1.0",
+      "description": "Form-schema authoring tool — the first plugin whose output the framework itself consumes and enforces. A drag-to-reorder field list plus a property panel in an opaque-origin sandboxed iframe (no vendor library) edits a canonical doc that is DATA ONLY: {version, fields[]} per formbuilder-v1, never markup — Go validates every save and refuses bad schemas with specific 400 codes (unknown type, duplicate/empty/invalid name, malformed rule, unknown version, markup). The demo closes the loop: a second route renders the SAVED schema as a real working form through GoFastr's own ui.Form and re-validates every rule server-side on POST, with zero client trust in the path.",
+      "isolation": "sandbox-iframe-opaque",
+      "sandbox": [
+        "allow-scripts"
+      ],
+      "capabilities": [
+        "document:read",
+        "document:write",
+        "theme:read"
+      ],
+      "frameworkCompat": ">=0.28.0",
+      "routePrefix": "/__gofastr/plugin/formbuilder",
+      "entry": "/__gofastr/plugin/formbuilder/builder.html",
+      "schema": "formbuilder-v1",
+      "minHeight": "560px",
+      "docs": "docs/formbuilder.md"
+    },
+    {
+      "name": "calendar",
+      "modulePath": "github.com/DonaldMurillo/gofastr-plugins/calendar",
+      "version": "0.1.0",
+      "description": "Month/week/day calendar written from scratch — no FullCalendar, no upstream JS library at all (~24 KB bundle, 0 npm dependencies). The parts everyone gets wrong run in Go: RRULE expansion (DAILY/WEEKLY/MONTHLY with COUNT/UNTIL/BYDAY, wall-clock anchored, everything else rejected loudly), timezone resolution with an explicit gap/fold policy (spring-forward times carried past the gap, ambiguous hours resolved to the first occurrence — table-tested against America/New_York and Lord Howe's 30-minute step), and conflict detection over resolved instants. The frame renders server-resolved occurrences only and sends move INTENTS — a wall-clock delta — which the host re-resolves: a drag onto a DST boundary can come back with a different wall-clock delta than was dragged, and the demo's live readout shows requested vs wall vs elapsed.",
+      "isolation": "sandbox-iframe-opaque",
+      "sandbox": [
+        "allow-scripts"
+      ],
+      "capabilities": [
+        "document:read",
+        "document:write",
+        "theme:read"
+      ],
+      "frameworkCompat": ">=0.28.0",
+      "routePrefix": "/__gofastr/plugin/calendar",
+      "entry": "/__gofastr/plugin/calendar/app.html",
+      "schema": "calendar-v1",
+      "minHeight": "620px",
+      "docs": "docs/calendar.md"
+    },
+    {
+      "name": "whiteboard",
+      "modulePath": "github.com/DonaldMurillo/gofastr-plugins/whiteboard",
+      "version": "0.1.0",
+      "description": "Collaborative whiteboard, and the proof that collaboration does not need a socket in the cage. The frame (Yjs CRDT + a small canvas controller, ~28 KB gzip) runs under connect-src 'none': strokes are order-insensitive binary update blobs that cross the postMessage bridge as ArrayBuffers, and the HOST relays them between browsers — SSE fan-out, replay-on-join, and presence cursors carrying an opaque pid and a colour, never a name, because identity is the host's to decide and the frame is untrusted. The optional sync:room capability is granted exactly when the host wires a room hub; the routes fail closed without one, and a reconnect publishes the frame's full CRDT state so offline edits on both sides converge instead of last-writer-winning.",
+      "isolation": "sandbox-iframe-opaque",
+      "sandbox": [
+        "allow-scripts"
+      ],
+      "capabilities": [
+        "theme:read"
+      ],
+      "optionalCapabilities": [
+        "sync:room"
+      ],
+      "frameworkCompat": ">=0.28.0",
+      "routePrefix": "/__gofastr/plugin/whiteboard",
+      "entry": "/__gofastr/plugin/whiteboard/board.html",
+      "schema": "whiteboard-v1",
+      "minHeight": "480px",
+      "docs": "docs/whiteboard.md"
+    },
+    {
+      "name": "scanner",
+      "modulePath": "github.com/DonaldMurillo/gofastr-plugins/scanner",
+      "version": "0.1.0",
+      "description": "Barcode and QR scanning where the camera is UNREACHABLE from the plugin: an opaque-origin frame is refused getUserMedia outright (SecurityError: Invalid security origin, and an allow=\"camera\" attribute does not change it — measured), so the HOST page owns the MediaStream and pushes grayscale luminance frames over the postMessage bridge, one in flight at a time, released by the frame's frameDone ack. The frame decodes and returns text plus format; pixels never come back and the cage still has connect-src 'none'. Two decoders: the platform's BarcodeDetector where the engine has one, and a bundled pure-JS zxing (no wasm) for Safari, Firefox and Chromium on Linux. Native is preferred for correctness, not speed — zxing's JS port fails to read some valid QR codes its own encoder produces. No document store, no upload path, no save route: a decoded string goes to the host page and nowhere else.",
+      "isolation": "sandbox-iframe-opaque",
+      "sandbox": [
+        "allow-scripts"
+      ],
+      "capabilities": [
+        "scan:decode",
+        "theme:read"
+      ],
+      "frameworkCompat": ">=0.28.0",
+      "routePrefix": "/__gofastr/plugin/scanner",
+      "entry": "/__gofastr/plugin/scanner/scan.html",
+      "schema": "scanner-v1",
+      "minHeight": "460px",
+      "docs": "docs/scanner.md"
+    },
+    {
+      "name": "genui",
+      "modulePath": "github.com/DonaldMurillo/gofastr-plugins/genui",
+      "version": "0.1.0",
+      "description": "Generative UI: a model composes a view out of a FIXED registry of React components, naming component ids and typed props — never markup, never CSS, never code. The bounded registry IS the containment story: eight components, each declaring a closed set of props, so there is no style, className or dangerouslySetInnerHTML for generated output to travel through. Compositions are validated twice on purpose — in Go before they are stored and served, and again in the frame before they are rendered, because \"the host already checked it\" is the assumption that turns one bug into a rendered payload. The model runs HOST-side in Go: the frame receives a finished tree over the postMessage bridge, holds no credentials, and keeps connect-src 'none', so a composer that could call a model could never also send it the document. Generated controls may only fire actions the host explicitly allow-listed. Async by design: a placeholder, then the finished view; no tokens streamed into the DOM.",
+      "isolation": "sandbox-iframe-opaque",
+      "sandbox": [
+        "allow-scripts"
+      ],
+      "capabilities": [
+        "genui:compose",
+        "theme:read"
+      ],
+      "frameworkCompat": ">=0.28.0",
+      "routePrefix": "/__gofastr/plugin/genui",
+      "entry": "/__gofastr/plugin/genui/genui.html",
+      "schema": "genui-v1",
+      "minHeight": "360px",
+      "docs": "docs/genui.md"
+    },
+    {
+      "name": "sqlnotebook",
+      "modulePath": "github.com/DonaldMurillo/gofastr-plugins/sqlnotebook",
+      "version": "0.1.0",
+      "description": "A SQL notebook running a real SQLite engine (sql.js, WebAssembly) inside the opaque-origin frame. Query a database in the browser that has no way to reach the network: connect-src 'none' means the frame cannot even fetch its own engine, so the host hands the .wasm across the bridge as bytes. This is the only plugin here that opts into the 'wasm-unsafe-eval' tier, and the tier grants exactly that: eval() and new Function() stay refused, storage and cookies stay unreachable, the origin stays opaque.",
+      "isolation": "sandbox-iframe-opaque",
+      "sandbox": [
+        "allow-scripts"
+      ],
+      "capabilities": [
+        "theme:read"
+      ],
+      "csp": [
+        "'wasm-unsafe-eval'"
+      ],
+      "frameworkCompat": ">=0.74.0",
+      "routePrefix": "/__gofastr/plugin/sqlnotebook",
+      "entry": "/__gofastr/plugin/sqlnotebook/frame.html",
+      "schema": "sqlnotebook.v1",
+      "minHeight": "360px",
+      "docs": "docs/sqlnotebook.md"
+    }
+  ],
+  "release": {
+    "tag": "v0.5.0",
+    "commit": "e2f5e043c5f3c5e5e709a4a2c00d9b33ee45959f",
+    "published": "2026-09-01T21:30:14Z",
+    "source": "https://github.com/DonaldMurillo/gofastr-plugins"
+  }
+}

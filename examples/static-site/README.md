@@ -25,8 +25,8 @@ examples/static-site/
 
 ```bash
 cd examples/static-site
-go run main.go
-# Open http://localhost:3070
+gofastr dev          # or: go run .
+# Open http://localhost:3070 (or the address the banner prints)
 ```
 
 ## Adding pages

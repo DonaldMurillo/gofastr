@@ -5,15 +5,15 @@
 //
 //	gofastr generate --from=gofastr.yml
 //
-// The generated app lives under gen/ (gitignored, regenerate with the command
-// above; flagship_test.go regenerates it on every run) and is the proof of the
-// framework's thesis: one blueprint produces a SQL schema,
-// REST CRUD, an OpenAPI spec, a typed MCP tool surface, and a server-rendered
-// UI, none of it hand-written. See flagship_test.go for the end-to-end
-// surface check.
+// The generated app is committed under app/ (output_dir: app in the
+// blueprint) and is the proof of the framework's thesis: one blueprint
+// produces a SQL schema, REST CRUD, an OpenAPI spec, a typed MCP tool
+// surface, and a server-rendered UI, none of it hand-written.
+// flagship_test.go regenerates app/ with --force on every run and
+// blueprint_gate_test.go fails when the committed files differ from what
+// the in-tree generator emits, so app/ can never drift from the CLI.
 //
-// The scaffolded, owned app lives in the app/ subpackage (output_dir: app);
-// run it directly:
+// Run it directly:
 //
 //	go run ./examples/ecommerce/app
 package ecommerce

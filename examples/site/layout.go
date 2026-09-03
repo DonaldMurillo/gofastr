@@ -150,6 +150,7 @@ func (h *HeaderComponent) Render() render.HTML {
 			{Label: "Interactivity", Href: "/interactivity", MatchPrefix: true},
 			{Label: "Generator", Href: "/generator", MatchPrefix: true},
 			{Label: "Examples", Href: "/examples", MatchPrefix: true},
+			{Label: "Plugins", Href: "/plugins", MatchPrefix: true},
 		},
 		MobileExtraLinks: []ui.SiteHeaderLink{
 			{Label: "Home", Href: "/"},
@@ -190,6 +191,7 @@ func (f *FooterComponent) Render() render.HTML {
 			}},
 			{Title: "Use", Links: []ui.SiteFooterLink{
 				{Label: "Examples", Href: "/examples"},
+				{Label: "Plugins", Href: "/plugins"},
 				{Label: "Kiln (experimental)", Href: "/kiln"},
 				{Label: "CLI", Href: "https://pkg.go.dev/github.com/DonaldMurillo/gofastr/cmd/gofastr", External: true},
 			}},

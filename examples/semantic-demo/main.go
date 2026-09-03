@@ -42,9 +42,11 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 
 	"github.com/DonaldMurillo/gofastr/battery/semantic"
 	"github.com/DonaldMurillo/gofastr/framework"
+	"github.com/DonaldMurillo/gofastr/framework/isolation"
 )
 
 func main() {
@@ -76,10 +78,17 @@ func main() {
 		log.Fatalf("InitPlugins: %v", err)
 	}
 
-	addr := ":8086"
-	fmt.Printf("semantic-demo listening on http://localhost%s\n", addr)
+	addr, err := isolation.ListenAddr(".", ":8086")
+	if err != nil {
+		log.Fatal(err)
+	}
+	base := "http://" + addr
+	if strings.HasPrefix(addr, ":") {
+		base = "http://localhost" + addr
+	}
+	fmt.Printf("semantic-demo listening on %s\n", base)
 	fmt.Printf("auth token: %q (set SEMANTIC_DEMO_TOKEN to change it)\n", token)
-	fmt.Printf("try: curl -H 'Authorization: Bearer %s' 'http://localhost%s/semantic/stats'\n", token, addr)
+	fmt.Printf("try: curl -H 'Authorization: Bearer %s' '%s/semantic/stats'\n", token, base)
 	if err := http.ListenAndServe(addr, app.Router()); err != nil {
 		log.Fatal(err)
 	}

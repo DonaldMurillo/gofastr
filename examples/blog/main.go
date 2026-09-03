@@ -6,12 +6,11 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
-	"os"
-	"strings"
 
 	"github.com/DonaldMurillo/gofastr/battery/search"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework"
+	"github.com/DonaldMurillo/gofastr/framework/isolation"
 	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 )
 
@@ -60,7 +59,11 @@ func main() {
 
 	// --- Start (auto-migrates, auto-routes CRUD, auto-serves OpenAPI + Swagger) ---
 
-	if err := app.Start(listenAddr()); err != nil {
+	addr, err := isolation.ListenAddr(".", ":8080")
+	if err != nil {
+		log.Fatal(err)
+	}
+	if err := app.Start(addr); err != nil {
 		log.Fatal(err)
 	}
 }
@@ -119,19 +122,6 @@ func registerEntities(app *framework.App) {
 			framework.BelongsTo("author", "users", "author_id"),
 		},
 	})
-}
-
-// listenAddr resolves the bind address, normalizing a bare numeric PORT
-// (e.g. "8088" as injected by most PaaS providers) to ":8088".
-func listenAddr() string {
-	port := os.Getenv("PORT")
-	if port == "" {
-		return ":8080"
-	}
-	if !strings.Contains(port, ":") {
-		return ":" + port
-	}
-	return port
 }
 
 //go:fix inline

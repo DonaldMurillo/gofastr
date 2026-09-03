@@ -79,6 +79,24 @@ if err != nil {
 db, err := sql.Open(driver, dsn)
 ```
 
+For the listen address, `isolation.ListenAddr` is the whole recipe: it
+reads `$PORT` (a bare `8088` from a PaaS or a `localhost:8088` from
+`gofastr dev`), falls back to the address you pass when it is unset, and
+applies the port remap. Every example app binds this way, so `go run .`
+and `gofastr dev` agree on where the server is:
+
+<!-- gofastr:compile
+import "github.com/DonaldMurillo/gofastr/framework/isolation"
+import "log"
+stmt: _ = addr
+-->
+```go
+addr, err := isolation.ListenAddr(".", ":8080")
+if err != nil {
+    log.Fatal(err)
+}
+```
+
 Hand-written apps still get automatic port isolation through `App.Start`.
 Database isolation is automatic when the app either runs through `gofastr dev`
 and reads env, or opens the database through `Runtime.Database`.

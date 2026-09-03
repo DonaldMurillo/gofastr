@@ -30,8 +30,8 @@ Entity CRUD routes are mounted under `/api/` so they don't conflict with Vue Rou
 
 ```bash
 cd examples/spa
-go run main.go
-# Open http://localhost:3090
+gofastr dev          # or: go run .
+# Open http://localhost:3090 (or the address the banner prints)
 ```
 
 ## Tech

@@ -11,6 +11,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/core/static"
 	"github.com/DonaldMurillo/gofastr/framework"
+	"github.com/DonaldMurillo/gofastr/framework/isolation"
 	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 )
 
@@ -81,9 +82,12 @@ func main() {
 
 	// --- Start ---
 
-	log.Println("SPA example starting on :3090")
-	log.Println("Open http://localhost:3090 in your browser")
-	if err := app.Start(":3090"); err != nil {
+	addr, err := isolation.ListenAddr(".", ":3090")
+	if err != nil {
+		log.Fatal(err)
+	}
+	log.Printf("SPA example starting on %s", addr)
+	if err := app.Start(addr); err != nil {
 		log.Fatal(err)
 	}
 }

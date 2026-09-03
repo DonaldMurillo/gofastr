@@ -24,6 +24,23 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   added now log the panic instead of swallowing it.
 
 ### Added
+- **`isolation.ListenAddr(projectDir, fallback)`** is the one call a
+  hand-written `main` needs to bind where `gofastr dev`, a PaaS, or
+  worktree isolation says: it reads `$PORT` as a bare port or a
+  host:port, falls back to the given address, and applies the port
+  remap. Every server example binds through it, so `go run .` and
+  `gofastr dev` agree on the address, and the site's examples page and
+  the READMEs now lead with `gofastr dev`. `TestE2E_DevLoop_Examples`
+  boots each example under `gofastr dev` and checks it answers on the
+  banner address.
+- **The site renders the gofastr-plugins registry.** `/plugins` lists
+  every plugin in the vendored `plugins.json` and `/plugins/<name>`
+  shows its manifest, isolation posture, and the `go get` plus
+  `RegisterPlugin` lines to mount it. The copy comes from a
+  gofastr-plugins release asset via `scripts/vendor-plugins-json.sh`,
+  so it carries the release stamp the page shows; a test refuses an
+  unstamped copy, an unknown field, or a sandboxed row granting
+  `allow-same-origin`. Consumed by copy, never by import.
 - **`MenuConfig.LazyPanel` keeps a closed menu's rows out of the
   document tree.** The rows ship inside an inert
   `<template data-fui-menu-lazy>` as the panel's only child, and the
@@ -39,6 +56,10 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   before.
 
 ### Fixed
+- **Examples answered on the wrong port under `gofastr dev`**: six
+  hardcoded their address and three prefixed `$PORT` with a colon, so
+  the `localhost:<port>` value `gofastr dev` injects became
+  `:localhost:8080`. All bind through `isolation.ListenAddr` now.
 - **Analyzers, contract rules, and runtime lints**: five reviewers
   executed fixtures against the nineteen rules and proved around
   seventy-five gaps; every one is pinned red-then-green. Highlights:
@@ -68,6 +89,14 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   summary-less `<details>` was open. The rule now keys a `<details>`
   root, and a chromedp test pins the computed display of live-rendered
   menus on both paths.
+- **The site's examples page lists every runnable example**: the entity
+  admin (`backoffice`), the process-isolated module
+  (`processmodule-demo`), and the WebMCP remote-assist console were
+  missing, the four blueprint-only examples had no link, and the
+  line-count badges had drifted by up to half (the site badge said
+  6,000 lines for a 9,300-line app). The badges are now pinned by a
+  test that measures the tree, and the home page's example card derives
+  its count from the row list.
 
 ## [0.81.0] - 2026-09-02
 
