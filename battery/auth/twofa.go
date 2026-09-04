@@ -14,6 +14,7 @@ import (
 	"math/big"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -46,10 +47,11 @@ type TwoFAConfig struct {
 	// store is used (dev/test only).
 	Store TwoFAStore
 
-	// RateLimit, when non-nil, applies a per-IP rate limit to
-	// /2fa/challenge and /2fa/verify. Without this, an attacker who has
-	// stolen a session can brute-force the 6-digit TOTP (~333k expected
-	// attempts at skew=1).
+	// RateLimit applies a per-IP rate limit to /2fa/challenge and
+	// /2fa/verify. It defaults to 10 attempts/min with a 15-minute block
+	// (the register floor): without any, an attacker who has stolen a
+	// session can brute-force the 6-digit TOTP (~333k expected attempts
+	// at skew=1). Loosen by passing a config with a large MaxAttempts.
 	RateLimit *RateLimiterConfig
 }
 
@@ -68,6 +70,18 @@ func (c *TwoFAConfig) defaults() {
 	}
 	if c.BackupCodeCount == 0 {
 		c.BackupCodeCount = 10
+	}
+	// Default per-IP throttle on the code-guessing surfaces, like the
+	// login/register floors: a stolen session brute-forcing the 6-digit
+	// code needs ~333k expected attempts at skew=1, and 10/min makes that
+	// a multi-week project instead of an afternoon. Opt out by passing a
+	// config with a huge MaxAttempts, not by leaving it nil.
+	if c.RateLimit == nil {
+		c.RateLimit = &RateLimiterConfig{
+			MaxAttempts:   10,
+			Window:        time.Minute,
+			BlockDuration: 15 * time.Minute,
+		}
 	}
 }
 
@@ -101,6 +115,28 @@ type TwoFACompareAndSetter interface {
 	// CompareAndSetTwoFA stores next only if the user still has an
 	// enabled 2FA row, reporting whether the write happened.
 	CompareAndSetTwoFA(ctx context.Context, userID string, next *TwoFAState) (bool, error)
+}
+
+// TwoFAStateSwapper is the optional TwoFAStore extension that writes next
+// only while the stored row still EQUALS the state the caller read (a nil
+// expect means the row must be absent). It is the atomic read-modify-write
+// primitive for every handler transition:
+//
+//   - challenge's step consume: two sessions presenting the same TOTP code
+//     both read LastUsedStep=0; the first swap wins, the second's expect no
+//     longer matches, so one code authenticates exactly one session
+//     (RFC 6238 §5.2) — and a disable that committed between read and
+//     write deletes the row, failing the swap instead of resurrecting it.
+//   - verify's enable: the write lands only over the pending row it read;
+//     a racing disable (row gone) or re-enroll (row changed) refuses with
+//     409 instead of silently re-enabling a factor the user removed.
+//   - enroll's fresh pending row: inserted only while the row is still in
+//     the state the guard checked.
+//
+// A store that cannot offer this keeps the blind Set and the lost-update
+// window it comes with.
+type TwoFAStateSwapper interface {
+	CompareAndSwapTwoFA(ctx context.Context, userID string, expect, next *TwoFAState) (bool, error)
 }
 
 type TwoFAStore interface {
@@ -198,6 +234,7 @@ func (m *MemoryTwoFAStore) ConsumeBackupCode(_ context.Context, userID string, c
 	m.mu.RUnlock()
 
 	// Bcrypt comparisons happen WITHOUT holding any lock.
+
 	matchedHash := ""
 	for _, hashed := range hashes {
 		if bcrypt.CompareHashAndPassword([]byte(hashed), []byte(code)) == nil {
@@ -248,6 +285,38 @@ func NewTwoFAPlugin(config TwoFAConfig) *TwoFAPlugin {
 		p.challengeLimit = newScopedRateLimiter(*config.RateLimit, "twofa")
 	}
 	return p
+}
+
+// twoFAStateEqual reports deep equality of two states (nil-aware): the
+// field set a swap predicate needs, including the backup-code slice.
+func twoFAStateEqual(a, b *TwoFAState) bool {
+	if a == nil || b == nil {
+		return a == nil && b == nil
+	}
+	return a.Enabled == b.Enabled &&
+		subtle.ConstantTimeCompare([]byte(a.Secret), []byte(b.Secret)) == 1 &&
+		a.Verified == b.Verified &&
+		a.LastUsedStep == b.LastUsedStep &&
+		slices.Equal(a.BackupCodes, b.BackupCodes)
+}
+
+// CompareAndSwapTwoFA writes next only while the stored row still equals
+// expect (nil expect = row absent), under the same mutex every other
+// mutation takes. Implements [TwoFAStateSwapper].
+func (m *MemoryTwoFAStore) CompareAndSwapTwoFA(_ context.Context, userID string, expect, next *TwoFAState) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if !twoFAStateEqual(m.states[userID], expect) {
+		return false, nil
+	}
+	switch {
+	case next == nil:
+		delete(m.states, userID)
+	default:
+		cp := *next
+		m.states[userID] = &cp
+	}
+	return true, nil
 }
 
 // Name returns the plugin identifier.
@@ -317,6 +386,34 @@ func (p *TwoFAPlugin) getSessionUser(r *http.Request) (userID string, pending bo
 		return "", false, err
 	}
 	return sess.UserID, sess.PendingTwoFactor, nil
+}
+
+// swapTwoFAState performs a handler's read-modify-write through the
+// TwoFAStateSwapper seam when the store offers it: the write lands only
+// over the state the handler read, so a racing disable (or a competing
+// presentation of the same TOTP step) loses cleanly to the caller with a
+// 409 instead of a blind write resurrecting or double-spending state.
+// Stores without the seam keep the blind Set and its documented window.
+// Writes the error response and returns false when the caller must abort.
+func (p *TwoFAPlugin) swapTwoFAState(w http.ResponseWriter, r *http.Request, userID string, expect, next *TwoFAState) bool {
+	swapper, ok := p.store.(TwoFAStateSwapper)
+	if !ok {
+		if err := p.store.SetTwoFA(r.Context(), userID, next); err != nil {
+			writeAuthError(w, http.StatusInternalServerError, "failed to save 2FA state")
+			return false
+		}
+		return true
+	}
+	wrote, err := swapper.CompareAndSwapTwoFA(r.Context(), userID, expect, next)
+	if err != nil {
+		writeAuthError(w, http.StatusInternalServerError, "failed to save 2FA state")
+		return false
+	}
+	if !wrote {
+		writeAuthError(w, http.StatusConflict, "2FA state changed concurrently; retry")
+		return false
+	}
+	return true
 }
 
 // sessionFrom resolves the session behind the request's cookie.
@@ -401,15 +498,17 @@ func (p *TwoFAPlugin) enrollHandler(w http.ResponseWriter, r *http.Request) {
 
 	secret := GenerateSecret()
 
-	// Persist a pending state (Enabled=false until verified).
+	// Persist a pending state (Enabled=false until verified), only over
+	// the state the guard above read: a /2fa/disable committing between
+	// the Get and this write deletes the row, and a blind Set would
+	// re-create it — the user's disable would not stick.
 	state := &TwoFAState{
 		Enabled:     false,
 		Secret:      secret,
 		BackupCodes: nil,
 		Verified:    false,
 	}
-	if err := p.store.SetTwoFA(r.Context(), userID, state); err != nil {
-		writeAuthError(w, http.StatusInternalServerError, "failed to save 2FA state")
+	if !p.swapTwoFAState(w, r, userID, existing, state) {
 		return
 	}
 
@@ -445,7 +544,7 @@ func (p *TwoFAPlugin) verifyHandler(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Code string `json:"code"`
 	}
-	if !decodeJSONLimitedStrict(w, r, &body, "code") {
+	if !decodeJSONLimited(w, r, &body) {
 		return
 	}
 	if body.Code == "" {
@@ -481,12 +580,16 @@ func (p *TwoFAPlugin) verifyHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	state.Enabled = true
-	state.Verified = true
-	state.BackupCodes = hashedCodes
-
-	if err := p.store.SetTwoFA(r.Context(), userID, state); err != nil {
-		writeAuthError(w, http.StatusInternalServerError, "failed to save 2FA state")
+	// The enable write lands only over the pending row this handler
+	// read: a /2fa/disable committing between the read and the write
+	// deletes the row, and a blind Set would write Enabled=true straight
+	// back over the delete — 2FA silently ON again after the user
+	// turned it off.
+	enabled := cloneTwoFAState(state)
+	enabled.Enabled = true
+	enabled.Verified = true
+	enabled.BackupCodes = hashedCodes
+	if !p.swapTwoFAState(w, r, userID, state, enabled) {
 		return
 	}
 
@@ -537,7 +640,7 @@ func (p *TwoFAPlugin) challengeHandler(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Code string `json:"code"`
 	}
-	if !decodeJSONLimitedStrict(w, r, &body, "code") {
+	if !decodeJSONLimited(w, r, &body) {
 		return
 	}
 	if body.Code == "" {
@@ -554,12 +657,16 @@ func (p *TwoFAPlugin) challengeHandler(w http.ResponseWriter, r *http.Request) {
 	// Try TOTP code first. A code is valid across the whole ±skew window,
 	// so accepting the same step twice lets anyone who observed one code
 	// open a second session inside that window (RFC 6238 §5.2 forbids it).
+	// The consume rides the compare-and-swap: the write lands only over
+	// the state this handler read, so the second concurrent presentation
+	// of the same step fails the swap (one code, one session) and a
+	// racing disable finds the row already gone instead of resurrected.
 	// Recording the step BEFORE marking the session means a store failure
 	// leaves the code spent rather than replayable.
 	if step, ok := ValidateTOTPStep(state.Secret, body.Code, p.config.Period, p.config.Skew); ok && step > state.LastUsedStep {
-		state.LastUsedStep = step
-		if err := p.store.SetTwoFA(r.Context(), userID, state); err != nil {
-			writeAuthError(w, http.StatusInternalServerError, "could not record the code")
+		consumed := cloneTwoFAState(state)
+		consumed.LastUsedStep = step
+		if !p.swapTwoFAState(w, r, userID, state, consumed) {
 			return
 		}
 		if err := p.markSessionTwoFA(r); err != nil {

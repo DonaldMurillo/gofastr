@@ -44,8 +44,12 @@ func TestAuthErasersRegistered(t *testing.T) {
 // App.EraseUserData. A table left unregistered survives an erasure,
 // 2FA secrets and OAuth links are credential material, not metadata.
 func TestAuthErasersCoverCredentialTables(t *testing.T) {
+	// The registry is process-global and last-writer-wins per Name: a
+	// manager Init'd with differently-named stores (any test that wires
+	// EntityUserStore(db, "users")) re-registers the erasers against its
+	// live tables. Reset and re-pin the canonical shape before asserting.
+	registerCanonicalErasers()
 	want := map[string]string{
-		"auth_sessions":     "user_id",
 		"auth_users":        "id",
 		"auth_twofa":        "user_id",
 		"users_oauth_links": "user_id",
@@ -70,6 +74,8 @@ func TestAuthErasersCoverCredentialTables(t *testing.T) {
 // erase time and deletes the user's outstanding tokens, so a pre-erasure magic
 // link can no longer re-create the erased account.
 func TestAuthErasersCoverMagicLinkTokens(t *testing.T) {
+	// Same global-registry discipline as the sibling above.
+	registerCanonicalErasers()
 	// The email identity resolver is registered against the user table.
 	r, ok := datexport.ResolveIdentity(datexport.IdentityEmail)
 	if !ok {
@@ -132,7 +138,10 @@ func newEraseE2EDB(t *testing.T) (*sql.DB, string, string) {
 	if err := sessions.EnsureSchema(ctx); err != nil {
 		t.Fatalf("sessions EnsureSchema: %v", err)
 	}
-	twofa := NewEntityTwoFAStore(db, "auth_twofa")
+	twofa, err := NewEntityTwoFAStore(db, "auth_twofa", testTwoFAStoreConfig())
+	if err != nil {
+		t.Fatalf("NewEntityTwoFAStore: %v", err)
+	}
 	if err := twofa.EnsureSchema(ctx); err != nil {
 		t.Fatalf("twofa EnsureSchema: %v", err)
 	}
@@ -203,6 +212,10 @@ func countRows(t *testing.T, db *sql.DB, where string, args ...any) int {
 }
 
 func TestAuthEraseEndToEndDeletesLinkedRows(t *testing.T) {
+	// This DB provisions the canonical auth_* tables; pin the registry to
+	// the canonical registrations in case an earlier test re-registered
+	// them against differently-named stores (resolveEraseTables).
+	registerCanonicalErasers()
 	db, victim, keeper := newEraseE2EDB(t)
 	app := framework.NewApp(framework.WithDB(db))
 
@@ -250,6 +263,7 @@ func TestAuthEraseEndToEndDeletesLinkedRows(t *testing.T) {
 // resolve, the magic-link eraser is SKIPPED (not failed), and the second
 // erasure completes without error and without touching the keeper.
 func TestAuthEraseIdempotentSecondRun(t *testing.T) {
+	registerCanonicalErasers()
 	db, victim, keeper := newEraseE2EDB(t)
 	app := framework.NewApp(framework.WithDB(db))
 	ctx := context.Background()
@@ -265,5 +279,115 @@ func TestAuthEraseIdempotentSecondRun(t *testing.T) {
 	}
 	if n := countRows(t, db, "magic_link_tokens WHERE email = $1", "keeper@keep.example"); n != 1 {
 		t.Errorf("second erasure disturbed the keeper's magic links: %d, want 1", n)
+	}
+}
+
+// Property: an erasure under the battery's documented default wiring
+// (NewEntityUserStore(db,"users") + NewEntitySessionStore(db,"sessions")
+// + NewEntityTwoFAStore(db,"auth_twofa") + NewSQLMagicLinkTokenStore)
+// reaches every table. AuthManager.Init re-registers the erasers (and
+// the IdentityEmail resolver) against the CONFIGURED stores' table
+// names, so the init()-time auth_* spellings don't leave the user row,
+// sessions, or magic-link tokens behind as absent-table skips.
+func TestEraseCoversConfiguredStoreTables(t *testing.T) {
+	db, err := sql.Open("sqlite3", ":memory:")
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	ctx := context.Background()
+
+	users := NewEntityUserStore(db, "users")
+	sessions := NewEntitySessionStore(db, "sessions")
+	twofaRows, err := NewEntityTwoFAStore(db, "auth_twofa", testTwoFAStoreConfig())
+	if err != nil {
+		t.Fatalf("NewEntityTwoFAStore: %v", err)
+	}
+	if err := users.EnsureSchema(ctx); err != nil { // also creates users_oauth_links
+		t.Fatalf("users EnsureSchema: %v", err)
+	}
+	if err := sessions.EnsureSchema(ctx); err != nil {
+		t.Fatalf("sessions EnsureSchema: %v", err)
+	}
+	if err := twofaRows.EnsureSchema(ctx); err != nil {
+		t.Fatalf("auth_twofa EnsureSchema: %v", err)
+	}
+	magicLinks, err := NewSQLMagicLinkTokenStore(db)
+	if err != nil {
+		t.Fatalf("NewSQLMagicLinkTokenStore: %v", err)
+	}
+
+	// The manager Init is what binds the erasure registrations to the
+	// configured stores' live table names (resolveEraseTables).
+	mgr := New(AuthConfig{
+		JWTSecret:           "erase-wiring",
+		AllowInMemoryStores: false,
+		SessionCookie:       "session_id",
+		SessionTTL:          time.Hour,
+		UserStore:           users,
+		SessionStore:        sessions,
+	})
+	mgr.Use(NewCorePlugin())
+	mgr.Use(NewTwoFAPlugin(TwoFAConfig{Store: twofaRows}))
+	mgr.Use(NewMagicLinkPlugin(MagicLinkConfig{TokenStore: magicLinks, DevMode: true}))
+	if err := mgr.Init(nil); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+
+	// One user's worth of rows in every table.
+	email := "erase-wiring@example.com"
+	hash, err := HashPassword("password123")
+	if err != nil {
+		t.Fatalf("HashPassword: %v", err)
+	}
+	u, err := users.CreateUser(ctx, email, hash, []string{"user"})
+	if err != nil {
+		t.Fatalf("CreateUser: %v", err)
+	}
+	userID := u.GetID()
+	if _, err := sessions.Create(ctx, userID, time.Hour); err != nil {
+		t.Fatalf("session Create: %v", err)
+	}
+	if err := users.LinkOAuth(ctx, userID, "google", "ew-1"); err != nil {
+		t.Fatalf("LinkOAuth: %v", err)
+	}
+	if err := twofaRows.SetTwoFA(ctx, userID, &TwoFAState{Enabled: true, Secret: GenerateSecret(), Verified: true}); err != nil {
+		t.Fatalf("SetTwoFA: %v", err)
+	}
+	if _, err := magicLinks.CreateToken(ctx, email, time.Hour); err != nil {
+		t.Fatalf("CreateToken: %v", err)
+	}
+
+	rowsFor := func(table, col, val string) int {
+		t.Helper()
+		var n int
+		if err := db.QueryRow(`SELECT COUNT(*) FROM "`+table+`" WHERE "`+col+`" = ?`, val).Scan(&n); err != nil {
+			t.Fatalf("count %s.%s: %v", table, col, err)
+		}
+		return n
+	}
+	tables := map[string]struct{ col, val string }{
+		"users":             {"id", userID},
+		"sessions":          {"user_id", userID},
+		"auth_twofa":        {"user_id", userID},
+		"users_oauth_links": {"user_id", userID},
+		"magic_link_tokens": {"email", email},
+	}
+	for table, m := range tables {
+		if n := rowsFor(table, m.col, m.val); n == 0 {
+			t.Fatalf("setup bug: %s holds no row for the user before erasure", table)
+		}
+	}
+
+	// The erasure entry point battery/auth's registrations target.
+	app := framework.NewApp(framework.WithDB(db))
+	if _, err := app.EraseUserData(ctx, userID); err != nil {
+		t.Fatalf("EraseUserData: %v", err)
+	}
+
+	for table, m := range tables {
+		if n := rowsFor(table, m.col, m.val); n != 0 {
+			t.Errorf("%s still holds %d row(s) for the erased user under the battery's documented default wiring; the erasure must follow the configured stores' tables", table, n)
+		}
 	}
 }

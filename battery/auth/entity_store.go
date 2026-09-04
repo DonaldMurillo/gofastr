@@ -291,9 +291,11 @@ func (s *EntityUserStore) CreateUserNoPassword(ctx context.Context, email string
 }
 
 func (s *EntityUserStore) create(ctx context.Context, email, hashedPassword string, roles []string, passwordSet bool) (User, error) {
-	id := generateUserID()
+	id, err := generateUserID()
+	if err != nil {
+		return nil, err
+	}
 	rolesJSON := formatRoles(roles)
-
 	q := fmt.Sprintf(
 		"INSERT INTO %s (%s, %s, %s, %s, %s) VALUES ($1, $2, $3, $4, $5)",
 		query.QuoteIdent(s.table),
@@ -303,7 +305,7 @@ func (s *EntityUserStore) create(ctx context.Context, email, hashedPassword stri
 		query.QuoteIdent(s.fieldMap.Roles),
 		query.QuoteIdent(s.fieldMap.PasswordSet),
 	)
-	_, err := s.db.ExecContext(ctx, q, id, email, hashedPassword, rolesJSON, passwordSet)
+	_, err = s.db.ExecContext(ctx, q, id, email, hashedPassword, rolesJSON, passwordSet)
 	if err != nil {
 		if isUniqueViolation(err) {
 			return nil, ErrEmailTaken
@@ -511,7 +513,10 @@ func (s *EntitySessionStore) Create(ctx context.Context, userID string, ttl time
 	// PostgreSQL requires us to supply a value here even though the
 	// session is keyed by token, not id. SQLite happens to accept NULL
 	// for INTEGER-PK-like columns, masking this in dev.
-	sessionID := generateUserID()
+	sessionID, err := generateUserID()
+	if err != nil {
+		return nil, err
+	}
 	q := s.qTable("INSERT INTO %s (id, token, user_id, created_at, expires_at) VALUES ($1, $2, $3, $4, $5)")
 	_, err = s.db.ExecContext(ctx, q, sessionID, tok, userID, now, expiresAt)
 	if err != nil {
@@ -612,14 +617,16 @@ func SessionEntityFields() []schema.Field {
 
 // ─── Helpers ────────────────────────────────────────────────────────────
 
-// generateUserID creates a random user ID using crypto/rand.
-func generateUserID() string {
+// generateUserID creates a random 32-hex-char user ID from crypto/rand.
+// Entropy failure is an error, never a clock fallback: a timestamp id is
+// enumerable across accounts, and a rand failure means the host's
+// entropy source is broken — callers refuse the write.
+func generateUserID() (string, error) {
 	b := make([]byte, 16)
 	if _, err := rand.Read(b); err != nil {
-		// Fallback to timestamp-based ID if crypto/rand fails
-		return fmt.Sprintf("user-%d", time.Now().UnixNano())
+		return "", fmt.Errorf("auth: generate user id entropy: %w", err)
 	}
-	return fmt.Sprintf("%x", b)
+	return fmt.Sprintf("%x", b), nil
 }
 
 // parseRoles parses a roles value from DB (JSON array or comma-separated).

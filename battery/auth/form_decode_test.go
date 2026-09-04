@@ -41,7 +41,7 @@ func TestSuccessRedirect_RejectsBackslashBypass(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			req := httptest.NewRequest(http.MethodPost, "/auth/login?next="+url.QueryEscape(tc.next),
 				strings.NewReader(""))
-			got := successRedirect(req, "/safe")
+			got := successRedirect(httptest.NewRecorder(), req, "/safe")
 			if got != "/safe" {
 				t.Errorf("attacker-controlled next=%q produced redirect=%q (want /safe)", tc.next, got)
 			}
@@ -53,7 +53,7 @@ func TestSuccessRedirect_RejectsBackslashBypass(t *testing.T) {
 // still works.
 func TestSuccessRedirect_AllowsLegitimatePath(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/auth/login?next=/dashboard", nil)
-	got := successRedirect(req, "/")
+	got := successRedirect(httptest.NewRecorder(), req, "/")
 	if got != "/dashboard" {
 		t.Errorf("legit next was rejected: got %q want /dashboard", got)
 	}

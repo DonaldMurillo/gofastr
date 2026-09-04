@@ -98,6 +98,28 @@ func (s *linkingStore) UnlinkOAuth(_ context.Context, userID, provider string) e
 	return nil
 }
 
+// UnlinkOAuthGuarded decides and deletes under the same mutex, so the
+// refuse-the-last invariant holds for concurrent unlinks. The battery's
+// own stores implement the same seam on real SQL.
+func (s *linkingStore) UnlinkOAuthGuarded(_ context.Context, userID, provider string) (UnlinkOutcome, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	m := s.links[userID]
+	if m == nil {
+		return UnlinkNotLinked, nil
+	}
+	if _, linked := m[provider]; !linked {
+		return UnlinkNotLinked, nil
+	}
+	if len(m) <= 1 {
+		// The linkingStore has no password signal; one link left is
+		// the last login method.
+		return UnlinkRefusedLast, nil
+	}
+	delete(m, provider)
+	return UnlinkRemoved, nil
+}
+
 func setupAccountsTest(t *testing.T) (*AuthManager, *linkingStore, *router.Router, string) {
 	t.Helper()
 	store := newLinkingStore()
@@ -181,6 +203,23 @@ func (s *linkingStoreWithPassword) HasPassword(_ context.Context, userID string)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.hasPassword[userID], nil
+}
+
+// UnlinkOAuthGuarded consults the password map like the entity store's
+// password_set column: a user with a real password may unlink the last
+// link.
+func (s *linkingStoreWithPassword) UnlinkOAuthGuarded(ctx context.Context, userID, provider string) (UnlinkOutcome, error) {
+	outcome, err := s.linkingStore.UnlinkOAuthGuarded(ctx, userID, provider)
+	if outcome != UnlinkRefusedLast {
+		return outcome, err
+	}
+	if !s.hasPassword[userID] {
+		return UnlinkRefusedLast, nil
+	}
+	if err := s.linkingStore.UnlinkOAuth(ctx, userID, provider); err != nil {
+		return UnlinkNotLinked, err
+	}
+	return UnlinkRemoved, nil
 }
 
 func setupAccountsTestWithPassword(t *testing.T, hasPassword bool, providers ...string) (*linkingStoreWithPassword, *router.Router, string) {

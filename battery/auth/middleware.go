@@ -8,6 +8,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/middleware"
+	"github.com/DonaldMurillo/gofastr/framework/access"
 	"github.com/DonaldMurillo/gofastr/framework/embed"
 )
 
@@ -55,7 +56,11 @@ func RequireAuth(jwt *JWTAuth) middleware.Middleware {
 }
 
 // RequireRole returns middleware that checks if the authenticated user
-// has at least one of the required roles.
+// has at least one of the required roles. A Decider installed in the
+// request context (access.WithDecider / DeciderMiddleware) binds this
+// gate too: DecisionDeny refuses the caller before the role check,
+// DecisionAbstain falls through to it, the same precedence CanResource
+// gives resource-scoped gates.
 func RequireRole(roles ...string) middleware.Middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -76,6 +81,11 @@ func RequireRole(roles ...string) middleware.Middleware {
 			// interactive callers.
 			if _, embedded := embed.GrantFromContext(r.Context()); embedded {
 				http.Error(w, `{"error":{"code":403,"message":"role-gated routes are not reachable from an embedded surface"}}`, http.StatusForbidden)
+				return
+			}
+
+			if roleGateDenied(r.Context(), user) {
+				http.Error(w, `{"error":{"code":403,"message":"forbidden"}}`, http.StatusForbidden)
 				return
 			}
 
@@ -101,6 +111,25 @@ func GetCurrentUser(ctx context.Context) User {
 		return nil
 	}
 	return u
+}
+
+// RoleGateCapability is the fixed capability name role-scoped gates pass
+// to the access.Decider. A role gate holds no resource, so the Decider
+// is consulted with the zero Ref and can only speak on the caller's
+// roles; resource-aware deciders should abstain on it.
+const RoleGateCapability access.Permission = "auth:role-gate"
+
+// roleGateDenied consults the Decider installed in ctx (access.WithDecider
+// / DeciderMiddleware) with the caller's roles and the zero Ref — a role
+// gate holds no resource. DecisionDeny refuses (fail closed before the
+// role check, the precedence CanResource gives resource gates);
+// DecisionAbstain and a missing decider fall through to the role policy.
+func roleGateDenied(ctx context.Context, user User) bool {
+	d := access.GetDecider(ctx)
+	if d == nil {
+		return false
+	}
+	return d(ctx, user.GetRoles(), RoleGateCapability, access.Ref{}) == access.DecisionDeny
 }
 
 // extractBearerToken extracts the token from the Authorization header.

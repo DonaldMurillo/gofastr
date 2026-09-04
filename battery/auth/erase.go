@@ -48,7 +48,16 @@ import "github.com/DonaldMurillo/gofastr/framework/datexport"
 // the canonical entry is skipped with a note at erase time and that table is
 // excluded from the erasure.
 
-func init() {
+func init() { registerCanonicalErasers() }
+
+// registerCanonicalErasers is the init()-time registration under the
+// canonical table spellings (auth_users / auth_sessions / auth_twofa /
+// users_oauth_links / magic_link_tokens), the erase-plane mirror of
+// export.go's registrations. A manager Init'd with the battery's own SQL
+// stores under other names re-registers the same Names against the live
+// tables (see resolveEraseTables); tests that assert the registry reset
+// it and call this to pin the canonical shape.
+func registerCanonicalErasers() {
 	datexport.RegisterEraser(datexport.DataEraser{
 		Name: "auth_sessions", Source: "auth", Table: "auth_sessions",
 		Column: "user_id", Mode: datexport.EraseDelete,
@@ -81,4 +90,57 @@ func init() {
 		Column: "email", Mode: datexport.EraseDelete,
 		Identity: datexport.IdentityEmail,
 	})
+}
+
+// resolveEraseTables re-registers the erasers (and the IdentityEmail
+// resolver) against the table names the CONFIGURED stores actually use.
+// The init() registrations above target the canonical auth_* spellings;
+// the battery's documented wiring (auth.md, agents.md) names the tables
+// users/sessions, and a host may pick any name. AuthManager.Init calls
+// this after plugins, and the registry is last-writer-wins per Name, so
+// the live wiring wins: an erasure under NewEntityUserStore(db, "users")
+// reaches "users"/"users_oauth_links"/the resolved IdentityEmail, not the
+// skipped auth_* entries. Stores that are not the battery's own SQL
+// implementations leave the canonical registrations in place.
+func resolveEraseTables(mgr *AuthManager) {
+	if us, ok := mgr.UserStore().(*EntityUserStore); ok {
+		datexport.RegisterEraser(datexport.DataEraser{
+			Name: "auth_users", Source: "auth", Table: us.table,
+			Column: us.fieldMap.ID, Mode: datexport.EraseDelete,
+		})
+		datexport.RegisterEraser(datexport.DataEraser{
+			Name: "users_oauth_links", Source: "auth", Table: us.oauthLinksTable(),
+			Column: "user_id", Mode: datexport.EraseDelete,
+		})
+		datexport.RegisterIdentityResolver(datexport.IdentityEmail, datexport.DataIdentityResolver{
+			Table: us.table, IDColumn: us.fieldMap.ID, ValueColumn: us.fieldMap.Email,
+		})
+	}
+	if ss, ok := mgr.SessionStore().(*EntitySessionStore); ok {
+		datexport.RegisterEraser(datexport.DataEraser{
+			Name: "auth_sessions", Source: "auth", Table: ss.table,
+			Column: "user_id", Mode: datexport.EraseDelete,
+		})
+	}
+	if p, ok := mgr.Plugin("twofa"); ok {
+		if tp, ok := p.(*TwoFAPlugin); ok {
+			if es, ok := tp.store.(*EntityTwoFAStore); ok {
+				datexport.RegisterEraser(datexport.DataEraser{
+					Name: "auth_twofa", Source: "auth", Table: es.table,
+					Column: "user_id", Mode: datexport.EraseDelete,
+				})
+			}
+		}
+	}
+	if p, ok := mgr.Plugin("magic-link"); ok {
+		if mp, ok := p.(*MagicLinkPlugin); ok {
+			if ms, ok := mp.tokenStore.(*SQLMagicLinkTokenStore); ok {
+				datexport.RegisterEraser(datexport.DataEraser{
+					Name: "magic_link_tokens", Source: "auth", Table: ms.table,
+					Column: "email", Mode: datexport.EraseDelete,
+					Identity: datexport.IdentityEmail,
+				})
+			}
+		}
+	}
 }

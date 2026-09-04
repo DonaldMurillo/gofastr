@@ -175,8 +175,12 @@ func IssueToken(ctx context.Context, store APITokenStore, spec TokenSpec) (strin
 		return "", APIToken{}, err
 	}
 	now := time.Now().UTC()
+	id, err := generateAPITokenID()
+	if err != nil {
+		return "", APIToken{}, err
+	}
 	rec := APIToken{
-		ID:        generateAPITokenID(),
+		ID:        id,
 		Name:      spec.Name,
 		OwnerKind: spec.OwnerKind,
 		OwnerID:   spec.OwnerID,
@@ -197,9 +201,17 @@ func IssueToken(ctx context.Context, store APITokenStore, spec TokenSpec) (strin
 // NewServiceAccount builds a ServiceAccount with a fresh ID and CreatedAt,
 // ready for ServiceAccountStore.Create. Service-account management is
 // programmatic-only in v1 (no HTTP surface), hosts call this then Create.
+//
+// Panics if crypto/rand fails, the same posture as GenerateSecret:
+// entropy starvation makes the rest of the auth system unsound, and a
+// clock-fallback id would be enumerable across accounts.
 func NewServiceAccount(name string, roles []string) ServiceAccount {
+	id, err := generateAPITokenID()
+	if err != nil {
+		panic(fmt.Sprintf("auth: NewServiceAccount: %v", err))
+	}
 	return ServiceAccount{
-		ID:        generateAPITokenID(),
+		ID:        id,
 		Name:      name,
 		Roles:     roles,
 		CreatedAt: time.Now().UTC(),
@@ -232,13 +244,15 @@ func generateAPITokenPlaintext(prefix string) (string, error) {
 }
 
 // generateAPITokenID returns a 32-char hex record id from crypto/rand.
-func generateAPITokenID() string {
+// Entropy failure is an error, never a clock fallback: a timestamp id is
+// enumerable across accounts and a rand failure means the host's entropy
+// source is broken, which the caller must refuse, not paper over.
+func generateAPITokenID() (string, error) {
 	b := make([]byte, 16)
 	if _, err := rand.Read(b); err != nil {
-		// Fallback keeps callers usable; crypto/rand failure is extraordinary.
-		return fmt.Sprintf("tok-%d", time.Now().UnixNano())
+		return "", fmt.Errorf("auth: generate api token id entropy: %w", err)
 	}
-	return hex.EncodeToString(b)
+	return hex.EncodeToString(b), nil
 }
 
 // sha256hex returns the lowercase hex sha256 of s. This is the ONLY form

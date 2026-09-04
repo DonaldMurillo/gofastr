@@ -146,8 +146,8 @@ safe-but-reduced path.
 | `PasswordChecker` | `AccountsPlugin` | Refuse unlink-of-last-credential correctly. Without this, the unlink check falls back to "must leave at least one linked OAuth account remaining"; fine when the user has linked accounts, less accurate when they only have a password. |
 | `EmailVerifier` | `EmailVerificationPlugin` | Set the `email_verified` flag. Required. |
 | `PasswordSetter` | `PasswordResetPlugin` | Persist the new bcrypt hash. Required. |
-| `SessionTwoFAMarker` | `TwoFAPlugin` | Mark a session as having completed the second factor. Required for `RequireTwoFA` to ever pass; stores that omit it fail closed. |
-| `SessionPendingMarker` | `CorePlugin` | Set `Session.PendingTwoFactor` after login for users who have 2FA enabled. **Fail-closed:** if any registered `TwoFactorChecker` reports a user enrolled and the store omits this interface (or the mark call errors), login is rejected and the session destroyed. A custom store cannot silently downgrade 2FA accounts to password-only auth. |
+| `PasswordChecker` | `AccountsPlugin` | Refuse unlink-of-last-credential correctly. Without this, the unlink check falls back to "must leave at least one linked OAuth account remaining"; fine when the user has linked accounts, less accurate when they only have a password. |
+| `AtomicUnlinker` | `AccountsPlugin` | Decide and apply the last-credential guard in ONE store operation, so the refuse-the-last invariant holds when two unlinks race (two concurrent DELETEs of a two-method OAuth-only account cannot both win). `EntityUserStore` implements it (FOR UPDATE transaction on Postgres, single conditional DELETE on SQLite); stores without it keep the check-then-act fallback, which holds per request but not across concurrent ones. |
 | `TwoFactorChecker` | `CorePlugin` | Plugin-side signal: this user has 2FA enabled. `TwoFAPlugin` implements it. Custom plugins (WebAuthn, SMS) can implement it too. |
 | `UserLister` | Host code (`AuthManager.ListUsers`) | Enumerate accounts for a back-office. Returns `ErrListUsersUnsupported` when absent, so a missing implementation fails loudly instead of returning an empty list. See [Listing users](#listing-users). |
 
@@ -164,8 +164,15 @@ Init: **both** the in-memory session store and the in-memory 2FA store
 Wire the durable store:
 
 ```go
+store, err := auth.NewEntityTwoFAStore(db, "auth_twofa", auth.EntityTwoFAStoreConfig{
+    // Seals the TOTP secret at rest (AES-GCM, same sealer as the OAuth
+    // token store). Rows written before the key was added still verify;
+    // new writes are sealed. Without a key the column stays plaintext.
+    EncryptionKey: keyFromYourSecretManager,
+})
+if err != nil { return err }
 mgr.Use(auth.NewTwoFAPlugin(auth.TwoFAConfig{
-    Store: auth.NewEntityTwoFAStore(db, "auth_twofa"), // plugin creates the table
+    Store: store, // plugin creates the table
 }))
 ```
 
@@ -214,8 +221,12 @@ Both surfaces decode credentials strictly. A body that names `email` or
 `PASSword`), is a `400` on the JSON and the form surface alike: the two
 parsers used to resolve such a body to different identities (`net/url`
 keeps the first value, `encoding/json` the last), so the ambiguity is
-refused rather than resolved by parser accident. Extra JSON keys that
-match no credential name stay ignored.
+refused rather than resolved by parser accident. The same strictness
+(`handler.UnmarshalStrict`, the rule `Bind` applies) covers every JSON
+auth endpoint — a duplicate or case-folded key, or an unknown top-level
+key, is a `400` before the handler acts. Extra keys that match no field
+are refused, not ignored: a body a reviewer reads differently from the
+handler is the attack, whichever key caused it.
 
 Open-redirect protection: the `?next=` (query or form) override is
 honored only for same-origin paths starting with `/`. `//evil.example`
@@ -272,6 +283,14 @@ flows) on any route that needs a logged-in user.
 
 `RequireAuth` is the JWT-Bearer-only equivalent and is unchanged.
 
+JWTs are stateless: `GenerateToken` bakes the user's roles into the
+claims at mint, and validation checks signature and expiry only. **Role
+changes therefore take effect at token expiry** (default 1h), not at
+demotion time — the cookie lane re-hydrates the user per request, the
+JWT lane does not. Where immediate demotion matters, use sessions or a
+short `JWTExpiry`; rotating `JWTSecret` drains all tokens over the same
+window but is not a targeted remedy.
+
 ## Service accounts & scoped API tokens
 
 The self-service token endpoints require an **interactive session**. An API
@@ -285,6 +304,13 @@ The same rule covers `battery/admin`, the framework's MCP tools, and
 `RequireRole`. If an embedded surface legitimately needs one of those, the
 answer is a scope on the surface plus `embeds.RequireScope`, not a wider
 credential.
+
+The `access.Decider` seam binds every gate, resource-scoped and
+role-scoped: a decider installed via `access.DeciderMiddleware` /
+`access.WithDecider` is consulted by `CanResource` (auto-CRUD permission
+gates) and by `RequireRole`, `MCPUser`, and `MCPRole` (with the zero Ref
+and the caller's roles), and a `DecisionDeny` refuses before the role
+policy runs. `DecisionAbstain` falls through to the role check.
 
 
 Non-human identities such as CI runners, background workers, and internal scripts
@@ -326,6 +352,15 @@ _ = rec // {ID, Name, Prefix, Scopes, ExpiresAt, …}
 
 Validation: Name/OwnerKind/OwnerID required; OwnerKind ∈ {user, service};
 scopes match `^[a-z0-9_-]+:[a-z0-9_*-]+$`; max 32 scopes.
+
+**A user-minted token has no default expiry.** An omitted `ttl_seconds`
+mints a token that never expires — the strongest credential the endpoint
+can hand out, by design (`TTL: 0` means "no expiry" in `TokenSpec` too).
+Every other credential in this battery carries a bounded default
+(sessions 7d, JWTs 1h, magic links 15m, reset tokens 1h, verification
+tokens 24h). To bound user tokens, set an explicit TTL at mint time, or
+layer a sweep of your own over `ExpiresAt`. A leak with no expiry has no
+natural remediation horizon; revocation depends on an operator noticing.
 
 ### Middleware wiring
 
@@ -578,7 +613,18 @@ The auth stores also convert legacy PostgreSQL `INTEGER` boolean columns
 (`0`/`1`) to `BOOLEAN` during `EnsureSchema`, preserving the value and
 setting a boolean `FALSE` default. This self-heals tables created by
 older GoFastr versions. Back up production data before the first boot
-after upgrading.
+after upgrading. The 2FA table likewise self-heals two columns added
+since its first release — `version` (optimistic concurrency) and
+`last_used_step` (the durable TOTP single-use counter: one code
+authenticates one session even across restarts and replicas).
+
+`AuthManager.Init` also re-registers the right-to-be-forgotten erasers
+against the table names the CONFIGURED stores actually use (the
+`datexport` registry is last-writer-wins per name), so an app wired as
+`NewEntityUserStore(db, "users")` + `NewEntitySessionStore(db,
+"sessions")` gets its `users` row, `sessions` rows, resolved
+`IdentityEmail`, and magic-link tokens erased — not just the canonical
+`auth_*` spellings the package registers at import time.
 
 ## Email identity is canonical (lowercased + trimmed)
 
@@ -769,41 +815,39 @@ client's expectations), set `AppConfig.JSONCase = "snake_case"`.
 
 ## Rate limiting
 
-Three independent rate limits:
-
 ```go
 auth.AuthConfig{
     LoginRateLimit:           &auth.RateLimiterConfig{...}, // per-IP on /auth/login
     LoginRateLimitPerAccount: &auth.RateLimiterConfig{...}, // per-email on /auth/login
     RegisterRateLimit:        &auth.RateLimiterConfig{...}, // per-IP on /auth/register
 }
-auth.MagicLinkConfig{ RateLimit: &auth.RateLimiterConfig{...} } // per-IP on /auth/magic-link/send
-auth.TwoFAConfig{ RateLimit: &auth.RateLimiterConfig{...} }     // per-IP on /auth/2fa/{verify,challenge}
+auth.MagicLinkConfig{
+    RateLimit:       &auth.RateLimiterConfig{...}, // per-IP on /auth/magic-link/send
+    VerifyRateLimit: &auth.RateLimiterConfig{...}, // per-IP on /auth/magic-link/verify
+}
+auth.TwoFAConfig{ RateLimit: &auth.RateLimiterConfig{...} }     // per-IP on /2fa/{verify,challenge}
 auth.PasswordResetConfig{ RateLimit: &auth.RateLimiterConfig{...} } // per-IP on forgot/reset
 auth.EmailVerificationConfig{ RateLimit: &auth.RateLimiterConfig{...} } // per-IP on send-verification
 ```
-
-Per-IP + per-account on login is the recommended posture in production:
-per-IP alone is bypassed by an attacker rotating through a botnet;
-per-account alone is bypassed by spreading load across many target
-accounts.
 
 Login (per-IP + per-account) **and** register (per-IP) carry defaults
 even when you set nothing: credential stuffing and account-table
 flooding are network attacks, not config-mode ones. Pass a config with a
 large `MaxAttempts` to loosen, not to leave them off.
 
-**DevMode relaxes the per-IP login limiter.** Local screenshot /
-verification tooling that hammers `/auth/login` from one IP (localhost)
-would otherwise trip the per-IP flood throttle and get locked out. When
-`DevMode: true`, the framework sets `RateLimiterConfig.DevMode` on the
-per-IP login limiter, which short-circuits it (every attempt admitted).
-This is a dev-only affordance; production (`DevMode: false`) is
-unchanged and fail-closed. The **per-account** login limiter is
-deliberately NOT relaxed in dev: it guards brute-force even there, so an
-attacker who pivots IPs is still throttled on the email key. Set
-`RateLimiterConfig.DevMode` explicitly on any other limiter you want
-relaxed in dev.
+The same is true of the plugin endpoints — every one of these ships a
+default per-IP floor when its `RateLimit` is left nil:
+
+| Endpoint | Default floor |
+|---|---|
+| `POST /auth/forgot-password`, `POST /auth/reset-password` | 10/min, 15-min block (register floor; token minting + mail dispatch) |
+| `POST /auth/magic-link/send` | 10/min, 15-min block (register floor; mail dispatch) |
+| `POST /auth/magic-link/verify` | 30/min, 5-min block (login per-IP floor; secret redemption) — knob: `MagicLinkConfig.VerifyRateLimit` |
+| `POST /auth/send-verification` | 10/min, 15-min block (register floor) |
+| `POST /auth/2fa/challenge`, `POST /auth/2fa/verify` | 10/min, 15-min block (6-digit code guessing needs ~333k expected attempts at skew=1) |
+
+Loosening any of them is explicit: pass the plugin's `RateLimit` (or
+`VerifyRateLimit`) with a large `MaxAttempts`.
 
 **X-Forwarded-For is not trusted by default.** Set
 `RateLimiterConfig.TrustForwardedFor = true` only when your service
@@ -846,9 +890,16 @@ mgr := auth.New(auth.AuthConfig{ AuditSink: sink, … })
 ```
 
 Events use a closed vocabulary (e.g. `login.succeeded`, `2fa.enrolled`,
-password.reset_requested`) and never carry credentials; see the
+`password.reset_requested`) and never carry credentials; see the
 [audit log](audit-log.md#auth-security-events) page for the full taxonomy
 and the redaction posture. A nil sink disables auditing entirely.
+
+The identity mutations are covered too: a successful `GET
+/auth/verify-email` emits `email.verified`, an unlink emits
+`oauth.unlinked` (Meta: provider, mirroring `oauth.linked`), and
+`AuthManager.SetUserRoles` emits `roles.updated` (Meta: the new roles) —
+so a role change driven from a script or future surface leaves the same
+trail the admin back-office writes.
 
 ## The 2FA flow
 

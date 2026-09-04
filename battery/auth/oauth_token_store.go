@@ -16,6 +16,71 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/query"
 )
 
+// aeadSealer is the auth battery's shared at-rest sealing: AES-GCM under a
+// SHA-256-folded key, base64(nonce || ciphertext) on the wire. It exists so
+// every password-equivalent secret a SQL column carries (OAuth refresh
+// tokens, TOTP seeds) is sealed by ONE implementation rather than a family
+// of copy-pasted ciphers drifting apart.
+type aeadSealer struct {
+	gcm cipher.AEAD
+}
+
+// newAEADSealer folds key material to 32 bytes and builds the AEAD. A key
+// is chosen by the operator (secret manager), never defaulted: sealing
+// with a built-in key is reversible obfuscation, not encryption.
+func newAEADSealer(key []byte) (*aeadSealer, error) {
+	if len(key) == 0 {
+		return nil, fmt.Errorf("auth: at-rest sealing requires a non-empty encryption key")
+	}
+	sum := sha256.Sum256(key)
+	block, err := aes.NewCipher(sum[:])
+	if err != nil {
+		return nil, fmt.Errorf("auth: at-rest cipher: %w", err)
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return nil, fmt.Errorf("auth: at-rest gcm: %w", err)
+	}
+	return &aeadSealer{gcm: gcm}, nil
+}
+
+// seal encrypts plaintext with AES-GCM and base64-encodes it. The nonce is
+// prepended to the ciphertext. An empty plaintext seals to the empty string
+// so callers can distinguish "no value" cheaply.
+func (s *aeadSealer) seal(plaintext string) (string, error) {
+	if plaintext == "" {
+		return "", nil
+	}
+	nonce := make([]byte, s.gcm.NonceSize())
+	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
+		return "", err
+	}
+	ct := s.gcm.Seal(nonce, nonce, []byte(plaintext), nil)
+	return base64.RawStdEncoding.EncodeToString(ct), nil
+}
+
+// open reverses seal. The second return is false when the value is not a
+// value this sealer produced (not base64, too short, failed authentication),
+// which is the legacy-plaintext signal for read-both migrations.
+func (s *aeadSealer) open(sealed string) (string, bool) {
+	if sealed == "" {
+		return "", true
+	}
+	raw, err := base64.RawStdEncoding.DecodeString(sealed)
+	if err != nil {
+		return "", false
+	}
+	ns := s.gcm.NonceSize()
+	if len(raw) < ns {
+		return "", false
+	}
+	pt, err := s.gcm.Open(nil, raw[:ns], raw[ns:], nil)
+	if err != nil {
+		return "", false
+	}
+	return string(pt), true
+}
+
 // ─── Token store ────────────────────────────────────────────────────────────
 
 // OAuthTokenRecord is one provider token tied to a local user. The store
@@ -78,9 +143,9 @@ type SQLOAuthTokenStoreConfig struct {
 // key, sealed access/refresh token columns, and an expiry stored as a unix
 // timestamp (portable across SQLite and Postgres).
 type SQLOAuthTokenStore struct {
-	db    *sql.DB
-	table string
-	gcm   cipher.AEAD
+	db     *sql.DB
+	table  string
+	sealer *aeadSealer
 }
 
 // NewSQLOAuthTokenStore creates the token table (IF NOT EXISTS) and returns
@@ -102,20 +167,13 @@ func NewSQLOAuthTokenStore(db *sql.DB, cfg ...SQLOAuthTokenStoreConfig) (*SQLOAu
 
 	// Fail closed: never seal password-equivalent refresh tokens with a key
 	// the deployer didn't choose. An empty EncryptionKey is a config error.
-	if len(c.EncryptionKey) == 0 {
-		return nil, fmt.Errorf("auth: oauth token store requires a non-empty EncryptionKey")
-	}
-	sum := sha256.Sum256(c.EncryptionKey)
-	block, err := aes.NewCipher(sum[:])
+	sealer, err := newAEADSealer(c.EncryptionKey)
 	if err != nil {
-		return nil, fmt.Errorf("auth: oauth token cipher: %w", err)
-	}
-	gcm, err := cipher.NewGCM(block)
-	if err != nil {
-		return nil, fmt.Errorf("auth: oauth token gcm: %w", err)
+		return nil, fmt.Errorf("auth: oauth token store: %w", err)
 	}
 
-	s := &SQLOAuthTokenStore{db: db, table: t, gcm: gcm}
+	s := &SQLOAuthTokenStore{db: db, table: t, sealer: sealer}
+
 	if err := s.ensureTable(context.Background()); err != nil {
 		return nil, fmt.Errorf("auth: create oauth token table: %w", err)
 	}
@@ -138,48 +196,13 @@ func (s *SQLOAuthTokenStore) ensureTable(ctx context.Context) error {
 	return err
 }
 
-// seal encrypts a plaintext token with AES-GCM and base64-encodes it. The
-// nonce is prepended to the ciphertext. An empty plaintext seals to the
-// empty string so callers can distinguish "no refresh token" cheaply.
-func (s *SQLOAuthTokenStore) seal(plaintext string) (string, error) {
-	if plaintext == "" {
-		return "", nil
-	}
-	nonce := make([]byte, s.gcm.NonceSize())
-	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
-		return "", err
-	}
-	ct := s.gcm.Seal(nonce, nonce, []byte(plaintext), nil)
-	return base64.RawStdEncoding.EncodeToString(ct), nil
-}
-
-// open reverses seal.
-func (s *SQLOAuthTokenStore) open(sealed string) (string, error) {
-	if sealed == "" {
-		return "", nil
-	}
-	raw, err := base64.RawStdEncoding.DecodeString(sealed)
-	if err != nil {
-		return "", err
-	}
-	ns := s.gcm.NonceSize()
-	if len(raw) < ns {
-		return "", errors.New("auth: oauth token ciphertext too short")
-	}
-	pt, err := s.gcm.Open(nil, raw[:ns], raw[ns:], nil)
-	if err != nil {
-		return "", err
-	}
-	return string(pt), nil
-}
-
 // Save upserts the token row for (UserID, Provider).
 func (s *SQLOAuthTokenStore) Save(ctx context.Context, rec OAuthTokenRecord) error {
-	access, err := s.seal(rec.AccessToken)
+	access, err := s.sealer.seal(rec.AccessToken)
 	if err != nil {
 		return err
 	}
-	refresh, err := s.seal(rec.RefreshToken)
+	refresh, err := s.sealer.seal(rec.RefreshToken)
 	if err != nil {
 		return err
 	}
@@ -211,13 +234,13 @@ func (s *SQLOAuthTokenStore) Get(ctx context.Context, userID, provider string) (
 	if err != nil {
 		return OAuthTokenRecord{}, err
 	}
-	at, err := s.open(access)
-	if err != nil {
-		return OAuthTokenRecord{}, err
+	at, ok := s.sealer.open(access)
+	if !ok {
+		return OAuthTokenRecord{}, errors.New("auth: oauth token ciphertext failed to open (wrong EncryptionKey?)")
 	}
-	rt, err := s.open(refresh)
-	if err != nil {
-		return OAuthTokenRecord{}, err
+	rt, ok := s.sealer.open(refresh)
+	if !ok {
+		return OAuthTokenRecord{}, errors.New("auth: oauth token ciphertext failed to open (wrong EncryptionKey?)")
 	}
 	return OAuthTokenRecord{
 		UserID:       userID,

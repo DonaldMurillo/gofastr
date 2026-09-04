@@ -1,27 +1,15 @@
-//go:build red
-
 package auth
 
-// RED TEST — open finding, 2026-09-03 adversarial pass round 3 (tests-only; no fix applied).
-// Property: the last-credential guard on /auth/unlink is atomic under
+// Atomicity of the unlink last-credential guard.
+//
+// Property: the last-credential guard on /auth/unlink holds under
 // concurrency — two concurrent unlinks of a 2-method OAuth-only account
 // cannot strip it to zero login methods. The single-request half of the
-// invariant is already pinned (accounts_test.go:
-// TestAccounts_Unlink_OAuthOnlyUserCannotUnlinkLast,
-// TestAccounts_Unlink_RefusesLast, and the reduce-to-one halfway case);
-// this red extends it to concurrent presentation, the same way
-// twofa_red_test.go extends the single-use TOTP step to two racing POSTs.
-// Surfaces: battery/auth/accounts.go unlinkHandler:165-201 — ListAccounts →
-// per-provider count → remaining/HasPassword guard → UnlinkOAuth, four
-// separate store round-trips with no atomicity between check and delete.
-// Severity: P3 — the attacker is the account owner racing their own two
-// requests (self-lockout, availability only); the email password-reset
-// flow can restore access, which bounds the impact.
-// Fix direction: make guard+delete one atomic store operation — a
-// conditional delete that only removes the link when a second link (or a
-// password) remains, checked by rows-affected in the same statement, the
-// compare-and-swap discipline ConsumeBackupCode already demonstrates in
-// this package (entity_twofa_store.go).
+// invariant is pinned in accounts_test.go (RefusesLast,
+// OAuthOnlyUserCannotUnlink); this file extends it to concurrent
+// presentation. The guard rides the AtomicUnlinker store seam
+// (UnlinkOAuthGuarded), which decides and deletes in one operation, so
+// exactly one of two racing unlinks can win.
 
 import (
 	"context"
@@ -35,10 +23,11 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/router"
 )
 
-// rendezvousUnlinkStore pins the list→delete race window in unlinkHandler
-// open deterministically, mirroring rendezvousTwoFAStore in
-// twofa_red_test.go: when armed, the FIRST ListAccounts call blocks until
-// the SECOND arrives. Both handlers therefore hold the 2-link snapshot
+// rendezvousUnlinkStore pins the old list→delete race window open
+// deterministically: when armed, the FIRST ListAccounts call blocks until
+// the SECOND arrives. Under the atomic path the handler never consults
+// ListAccounts for the guard, so the rendezvous simply never fires; under
+// a regression to check-then-act, both handlers hold the 2-link snapshot
 // before either UnlinkOAuth can run — no scheduling luck involved.
 type rendezvousUnlinkStore struct {
 	*linkingStore
@@ -70,7 +59,7 @@ func (s *rendezvousUnlinkStore) ListAccounts(ctx context.Context, userID string)
 	return accts, nil
 }
 
-func TestUnlinkRedAtomicMethodCount(t *testing.T) {
+func TestUnlinkAtomicMethodCount(t *testing.T) {
 	ctx := context.Background()
 	store := newLinkingStore()
 	user, err := store.CreateUser(ctx, "race@example.com", "", []string{"user"})
@@ -117,8 +106,7 @@ func TestUnlinkRedAtomicMethodCount(t *testing.T) {
 		t.Fatalf("setup: single unlink of a 3-method account got %d (body=%s), want 200 — harness broken, not the seam", w.Code, w.Body.String())
 	}
 
-	// The race: both remaining unlinks pass the count check before either
-	// delete lands.
+	// The race: both remaining unlinks fire concurrently.
 	rendezvous.armed.Store(true)
 	outcomes := make(chan int, 2)
 	for _, provider := range []string{"google", "github"} {
@@ -144,8 +132,8 @@ func TestUnlinkRedAtomicMethodCount(t *testing.T) {
 	}
 	if succeeded == 2 && len(remaining) == 0 {
 		t.Errorf("SECURITY: [unlink-race] both concurrent unlinks of a 2-method OAuth-only account "+
-			"succeeded (statuses %v) and the account retains 0 login methods — the last-credential guard "+
-			"(accounts.go:192) is check-then-act across ListAccounts→UnlinkOAuth, so the pinned "+
-			"refuse-the-last invariant does not survive concurrent presentation", codes)
+			"succeeded (statuses %v) and the account retains 0 login methods — the refuse-the-last "+
+			"invariant must be decided inside the store operation, not by a check-then-act "+
+			"ListAccounts→UnlinkOAuth pair", codes)
 	}
 }

@@ -55,8 +55,9 @@ type PasswordResetConfig struct {
 	// but the URL itself is the secret.
 	DevMode bool
 
-	// RateLimit, when non-nil, applies a per-IP limit to both endpoints.
-	// Strongly recommended in production.
+	// RateLimit applies a per-IP limit to both endpoints. It defaults to
+	// 10 attempts/min with a 15-minute block (the register floor);
+	// loosen by passing a config with a large MaxAttempts.
 	RateLimit *RateLimiterConfig
 }
 
@@ -82,12 +83,22 @@ func NewPasswordResetPlugin(cfg PasswordResetConfig) *PasswordResetPlugin {
 	if store == nil {
 		store = NewMemoryMagicLinkTokenStore()
 	}
+	// Default per-IP throttle shared by both endpoints, the register
+	// floor: forgot-password is an unauthenticated email-dispatch
+	// primitive (every known-email request mints a token and sends mail)
+	// and reset-password is a secret-checking surface. Opt out by passing
+	// a config with a large MaxAttempts.
+	if cfg.RateLimit == nil {
+		cfg.RateLimit = &RateLimiterConfig{
+			MaxAttempts:   10,
+			Window:        time.Minute,
+			BlockDuration: 15 * time.Minute,
+		}
+	}
 	p := &PasswordResetPlugin{
 		cfg:   cfg,
 		store: store,
-	}
-	if cfg.RateLimit != nil {
-		p.limit = newScopedRateLimiter(*cfg.RateLimit, "password_reset")
+		limit: newScopedRateLimiter(*cfg.RateLimit, "password_reset"),
 	}
 	return p
 }
@@ -127,7 +138,7 @@ func (p *PasswordResetPlugin) forgotHandler(w http.ResponseWriter, r *http.Reque
 	var body struct {
 		Email string `json:"email"`
 	}
-	if !decodeJSONLimitedStrict(w, r, &body, "email") {
+	if !decodeJSONLimited(w, r, &body) {
 		return
 	}
 
@@ -239,7 +250,7 @@ func (p *PasswordResetPlugin) resetHandler(w http.ResponseWriter, r *http.Reques
 		Token    string `json:"token"`
 		Password string `json:"password"`
 	}
-	if !decodeJSONLimitedStrict(w, r, &body, "token", "password") {
+	if !decodeJSONLimited(w, r, &body) {
 		return
 	}
 	if body.Token == "" || body.Password == "" {

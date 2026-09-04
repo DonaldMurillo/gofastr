@@ -226,7 +226,11 @@ func TestEntitySessionStore_Postgres_ExpiryAndCleanup(t *testing.T) {
 	// Mirror EntitySessionStore.Create. Postgres requires the id PK to
 	// be supplied since AutoUUID columns are NOT NULL with no DEFAULT.
 	q := store.qTable("INSERT INTO %s (id, token, user_id, created_at, expires_at) VALUES ($1, $2, $3, $4, $5)")
-	if _, err := db.ExecContext(ctx, q, generateUserID(), tok, "user-expired", now, expired); err != nil {
+	sid, err := generateUserID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, q, sid, tok, "user-expired", now, expired); err != nil {
 		t.Fatalf("insert expired: %v", err)
 	}
 

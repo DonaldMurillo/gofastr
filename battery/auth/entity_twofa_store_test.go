@@ -17,7 +17,10 @@ func newTwoFAStore(t *testing.T) *EntityTwoFAStore {
 		t.Fatalf("open sqlite: %v", err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
-	s := NewEntityTwoFAStore(db, "auth_twofa")
+	s, err := NewEntityTwoFAStore(db, "auth_twofa", testTwoFAStoreConfig())
+	if err != nil {
+		t.Fatalf("NewEntityTwoFAStore: %v", err)
+	}
 	if err := s.EnsureSchema(context.Background()); err != nil {
 		t.Fatalf("EnsureSchema: %v", err)
 	}
@@ -263,7 +266,10 @@ func TestEntityTwoFA_EnsureSchemaAddsVersionToOldTable(t *testing.T) {
 		t.Fatalf("seed old table: %v", err)
 	}
 
-	s := NewEntityTwoFAStore(db, "auth_twofa")
+	s, err := NewEntityTwoFAStore(db, "auth_twofa", testTwoFAStoreConfig())
+	if err != nil {
+		t.Fatalf("NewEntityTwoFAStore: %v", err)
+	}
 	if err := s.EnsureSchema(context.Background()); err != nil {
 		t.Fatalf("EnsureSchema must add the missing column: %v", err)
 	}
@@ -297,7 +303,7 @@ func TestEntityTwoFA_RejectsBadTableName(t *testing.T) {
 			t.Fatal("NewEntityTwoFAStore must panic on an unsafe table name")
 		}
 	}()
-	NewEntityTwoFAStore(nil, "auth_twofa; DROP TABLE users --")
+	NewEntityTwoFAStore(nil, "auth_twofa; DROP TABLE users --", testTwoFAStoreConfig())
 }
 
 // TestEntityTwoFA_PluginEnsuresSchema pins the self-migration contract:
@@ -311,7 +317,11 @@ func TestEntityTwoFA_PluginEnsuresSchema(t *testing.T) {
 
 	mgr := New(AuthConfig{JWTSecret: "k", AllowInMemoryStores: true}) // durable 2FA store; sessions opt into memory for this schema test
 	mgr.Use(NewCorePlugin())
-	mgr.Use(NewTwoFAPlugin(TwoFAConfig{Store: NewEntityTwoFAStore(db, "auth_twofa")}))
+	store, err := NewEntityTwoFAStore(db, "auth_twofa", testTwoFAStoreConfig())
+	if err != nil {
+		t.Fatalf("NewEntityTwoFAStore: %v", err)
+	}
+	mgr.Use(NewTwoFAPlugin(TwoFAConfig{Store: store}))
 	if err := mgr.Init(nil); err != nil {
 		t.Fatalf("Init: %v", err)
 	}

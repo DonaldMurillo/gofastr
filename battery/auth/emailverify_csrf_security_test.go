@@ -1,29 +1,15 @@
-//go:build red
-
 package auth
 
-// RED TESTS — open finding, 2026-09-03 adversarial pass round 6 (tests-only; no fix applied).
-// Property: a cookie-authenticated mutating route must refuse cross-site
-// requests (rejectCrossSiteForm) — the same-origin/CSRF posture every
-// sibling form-mutable auth handler already enforces (login, register,
-// logout, magic-link verify, 2FA, password reset all call it first).
-// Surface: email_verification.go sendHandler:99-170 — cookie-authenticated
-// POST /auth/send-verification that parses NO body, so there is no JSON
-// content-type structural guard keeping it fetch-only: a bodyless POST is
-// CORS-simple (isForgeableRequest treats the absent Content-Type as
-// forgeable, form_decode.go:49-55), exactly the shape an attacker page
-// auto-submits. The handler never calls rejectCrossSiteForm.
-// Finding: a cross-site POST with the victim's session cookie riding along
-// (Sec-Fetch-Site: cross-site, Origin: evil.example) dispatches a fresh
-// verification email to the victim's address — 200 {"sent":true}. No
-// privilege is gained directly, but the attacker gets a free mail-spam
-// primitive on the victim (each forged POST mints and mails a live
-// takeover-credential URL) and can burn the per-user send budget.
-// Severity: P3 — session-gated nuisance/DoS-shaped gap, not takeover.
-// Fix direction: rejectCrossSiteForm(w, r) as the first statement of
-// sendHandler, mirroring logoutHandler (core.go:339-341) and the 2FA
-// handlers. verifyHandler needs no equivalent: it is token-authenticated,
-// not cookie-authenticated, so no ambient credential rides a forged POST.
+// CSRF posture of the send-verification route.
+//
+// Property: a cookie-authenticated mutating route refuses cross-site
+// requests — the same rejectCrossSiteForm gate every sibling
+// form-mutable auth handler applies (login, register, logout,
+// magic-link verify, 2FA, password reset). sendHandler parses no body,
+// so without the gate a bodyless POST is CORS-simple and an attacker
+// page can auto-submit it with the victim's session cookie riding
+// along, driving verification-email sends (and burning the send budget)
+// on a signed-in user's session.
 
 import (
 	"net/http"
@@ -32,7 +18,7 @@ import (
 	"time"
 )
 
-func TestSendVerificationRedRejectsCrossSite(t *testing.T) {
+func TestSendVerificationRejectsCrossSite(t *testing.T) {
 	store := newUserStoreWithPassword()
 	mgr := New(AuthConfig{
 		JWTSecret:           "test-secret",
@@ -97,8 +83,7 @@ func TestSendVerificationRedRejectsCrossSite(t *testing.T) {
 	refused := rr.Code >= 400 && rr.Code < 500
 	if mailed := sent2 != sent1; !refused || mailed {
 		t.Errorf("SECURITY: [emailverify-csrf] cross-site POST /auth/send-verification (Sec-Fetch-Site: cross-site, Origin: evil.example, session cookie attached) returned %d and dispatched a fresh email (mailed=%v) — "+
-			"sendHandler authenticates by cookie and parses no body, so nothing structural keeps it fetch-only, yet it never calls rejectCrossSiteForm "+
-			"(every sibling form-mutable auth handler does, core.go:161/339/466 et al.): an attacker page can drive verification-mail sends on a signed-in user's session",
+			"the route is cookie-authenticated and parses no body, so without rejectCrossSiteForm an attacker page can drive verification-mail sends on a signed-in user's session",
 			rr.Code, mailed)
 	}
 }

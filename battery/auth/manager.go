@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -431,8 +432,22 @@ func (m *AuthManager) SetSessionStore(store SessionStore) {
 // call it from trusted server code. The roles are OPERATOR input, never
 // request data: the caller is responsible for sourcing them from an
 // admin-gated screen, not from a client-supplied body.
+//
+// A successful change emits a roles.updated security event through the
+// audit funnel (the roles themselves are operator input, so they are the
+// one Meta value beside fixed-vocabulary tokens), so privilege changes
+// driven from scripts or future surfaces leave the same trail the admin
+// back-office writes today.
 func (m *AuthManager) SetUserRoles(ctx context.Context, userID string, roles []string) error {
-	return m.userStore.UpdateRoles(ctx, userID, roles)
+	if err := m.userStore.UpdateRoles(ctx, userID, roles); err != nil {
+		return err
+	}
+	m.emitSecurity(ctx, SecurityEvent{
+		Kind:   "roles.updated",
+		UserID: userID,
+		Meta:   map[string]string{"roles": strings.Join(roles, ",")},
+	})
+	return nil
 }
 
 // refuseInMemorySessionStore is the production gate on single-node session
@@ -527,6 +542,10 @@ func (m *AuthManager) Init(app *framework.App) error {
 		return err
 	}
 
+	// Bind the erasure plane to the stores the app actually runs with
+	// (after plugins, since plugin Init can swap them in).
+	resolveEraseTables(m)
+
 	if app != nil {
 		m.RegisterRoutes(app.Router())
 	}
@@ -543,7 +562,7 @@ func (m *AuthManager) OnStart(ctx context.Context) error {
 	for _, name := range m.order {
 		if sp, ok := m.plugins[name].(AuthPluginOnStart); ok {
 			if err := sp.OnStart(ctx); err != nil {
-				return fmt.Errorf("auth plugin %q start failed: %w", name, err)
+				return err
 			}
 		}
 	}

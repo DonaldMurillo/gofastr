@@ -18,8 +18,15 @@ import (
 // CRUD hooks already cover user/session row writes, so this struct carries
 // only the events those hooks can't see.
 type SecurityEvent struct {
-	// Kind is the fixed taxonomy identifier (e.g. "login.succeeded",
-	// "2fa.enrolled"). Callers MUST use one of the documented kinds so
+	// Kind is the fixed taxonomy identifier. The vocabulary: login.succeeded,
+	// login.failed, login.pending_2fa, register.succeeded,
+	// password.reset_requested, password.reset_completed,
+	// reset_tokens.purged, magiclink.requested, magiclink.consumed,
+	// oauth.linked, oauth.login, oauth.refused, oauth.unlinked,
+	// email.verified, 2fa.enrolled, 2fa.challenge_succeeded,
+	// 2fa.challenge_failed, 2fa.disabled, 2fa.backup_codes_regenerated,
+	// session.revoked, roles.updated, token.created, token.revoked,
+	// token.auth_failed. Callers MUST use one of the documented kinds so
 	// downstream consumers can match on a closed vocabulary.
 	Kind string
 

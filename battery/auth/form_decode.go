@@ -85,7 +85,7 @@ func decodeAuthCredentials(w http.ResponseWriter, r *http.Request) (email, passw
 		// email (or password) twice would authenticate a different
 		// account depending on Content-Type. Reject the ambiguity at
 		// decode instead of letting the parser pick, mirroring the
-		// strict top-level key rule decodeJSONLimitedStrict enforces
+		// strict top-level key rule decodeJSONLimited enforces
 		// for the JSON surface and core/handler.Bind enforces for every
 		// bound handler.
 		for _, field := range []string{"email", "password"} {
@@ -106,7 +106,7 @@ func decodeAuthCredentials(w http.ResponseWriter, r *http.Request) (email, passw
 		Email    string `json:"email"`
 		Password string `json:"password"`
 	}
-	if !decodeJSONLimitedStrict(w, r, &body, "email", "password") {
+	if !decodeJSONLimited(w, r, &body) {
 		return "", "", false, false
 	}
 	email = CanonicalEmail(body.Email)
@@ -156,9 +156,17 @@ func emailWithinLimit(w http.ResponseWriter, email string) bool {
 //   - control chars / CRLF (header injection)
 //
 // Anything not matching the safe-relative shape falls back to `fallback`.
-func successRedirect(r *http.Request, fallback string) string {
+//
+// The POST-body next lookup parses the form, so the body is capped first:
+// an uncapped ParseForm reads up to the stdlib's 10 MiB floor into
+// memory. A body that fails the cap (or any parse error) just yields the
+// fallback — next is an optional convenience field the handler never
+// depends on, and the routes that DO consume the form cap and reject it
+// themselves at decode time.
+func successRedirect(w http.ResponseWriter, r *http.Request, fallback string) string {
 	next := r.URL.Query().Get("next")
 	if next == "" {
+		r.Body = http.MaxBytesReader(w, r.Body, maxAuthBodyBytes)
 		if err := r.ParseForm(); err == nil {
 			next = r.PostFormValue("next")
 		}

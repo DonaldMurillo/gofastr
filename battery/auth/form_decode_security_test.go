@@ -155,7 +155,7 @@ func TestDecodeDuplicateResolvesDifferentlyPerSurface(t *testing.T) {
 
 // The same property on the sibling endpoints that shared login's
 // decoder: password reset (token + password), magic-link send, and the
-// rest migrated to decodeJSONLimitedStrict with the probe that found
+// rest migrated to decodeJSONLimited with the probe that found
 // login/register. This pin keeps them from drifting back — each of them
 // decodes a credential-bearing field, so a smuggled duplicate on any of
 // them is the same parser-accident identity swap.
