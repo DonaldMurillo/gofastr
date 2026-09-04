@@ -22,6 +22,7 @@
 package allow
 
 import (
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/names"
 	"go/token"
 	"os"
 	"regexp"
@@ -71,7 +72,7 @@ func collect(pass *analysis.Pass, name string) map[lineKey]bool {
 		for _, cg := range f.Comments {
 			for _, c := range cg.List {
 				m := marker.FindStringSubmatch(c.Text)
-				if m == nil || !names(m[1], name) || strings.TrimSpace(m[2]) == "" {
+				if m == nil || !listNames(m[1], name) || strings.TrimSpace(m[2]) == "" {
 					continue
 				}
 				pos := pass.Fset.Position(c.Pos())
@@ -111,8 +112,8 @@ func standsAlone(src []byte, pos token.Position) bool {
 	return strings.TrimSpace(string(src[start:pos.Offset])) == ""
 }
 
-// names reports whether the comma-separated marker list names name.
-func names(list, name string) bool {
+// listNames reports whether the comma-separated marker list names name.
+func listNames(list, name string) bool {
 	for n := range strings.SplitSeq(list, ",") {
 		if strings.TrimSpace(n) == name {
 			return true
@@ -120,3 +121,10 @@ func names(list, name string) bool {
 	}
 	return false
 }
+
+// Names and Known re-export the marker vocabulary from internal/analyzers/
+// names, the dependency-free package contracts consults.
+var Names = names.Analyzers
+
+// Known reports whether name is a registered repo analyzer.
+func Known(name string) bool { return names.Known(name) }
