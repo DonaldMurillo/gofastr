@@ -54,7 +54,8 @@
 // NewStyleSheet(theme) returns the global-style builder used by
 // theme.go and app-level CSS. Rule/Set/Pseudo/Child/Media/Container/
 // Keyframes; token references like {colors.primary} resolve to
-// var(--color-primary). Odd-count Set args, Set-before-Rule, and
+// var(--color-primary). Odd-count Set args, Set-before-Rule, property
+// names that are not CSS identifiers (or --custom properties), and
 // most other foot-guns panic with a useful message.
 //
 // # Section-level overrides, fui-theme-<hash>

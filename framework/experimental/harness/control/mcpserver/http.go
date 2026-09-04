@@ -43,7 +43,10 @@ type httpMCPSession struct {
 	closed    bool
 }
 
-// NewHTTPHandler returns an HTTP handler wrapping Server.
+// NewHTTPHandler returns an HTTP handler wrapping Server. enc is not
+// optional at serve time: a nil Encoder has ServeHTTP refuse every request
+// with 503, because an unauthenticated network transport has no process
+// boundary to lean on (stdio does). Mount with auth.NewEncoder(secret).
 func NewHTTPHandler(s *Server, enc *auth.Encoder, rl *auth.RevocationList) *HTTPHandler {
 	return &HTTPHandler{
 		Server:      s,
@@ -58,16 +61,24 @@ func NewHTTPHandler(s *Server, enc *auth.Encoder, rl *auth.RevocationList) *HTTP
 //	POST /mcp  → JSON-RPC request, returns immediate JSON response
 //	GET  /mcp  → SSE stream of server-initiated events / notifications
 func (h *HTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	var claims *auth.Claims
-	if h.Encoder != nil {
-		tok := r.Header.Get("Authorization")
-		c, ok := verifyBearer(h.Encoder, h.Revocations, tok)
-		if !ok {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
-			return
-		}
-		claims = &c
+	// Fail closed. A nil Encoder means "no authentication configured",
+	// and over a network transport that is not a posture, it is an open
+	// door: stdio leans on the process boundary as the check
+	// (Server.authorize's nil-claims posture), but any client that
+	// reaches this listener could drive the agent session — tools/call
+	// included — with no credential at all. Refuse every request instead
+	// of degrading to stdio trust semantics on TCP.
+	if h.Encoder == nil {
+		http.Error(w, "mcp http handler: no auth encoder configured; refusing to serve unauthenticated", http.StatusServiceUnavailable)
+		return
 	}
+	tok := r.Header.Get("Authorization")
+	c, ok := verifyBearer(h.Encoder, h.Revocations, tok)
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	claims := &c
 	sessID := sanitizeSessionID(r.Header.Get("Mcp-Session-Id"))
 	if sessID == "" {
 		sessID = string(ids.NewSessionID())

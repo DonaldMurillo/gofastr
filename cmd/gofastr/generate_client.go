@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"net/url"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/framework"
@@ -44,6 +45,14 @@ import (
 	"strings"
 )
 
+// maxBodyBytes caps the bytes buffered from any one response body: the
+// 2xx JSON decode and the non-2xx error snapshot alike. A response bigger
+// than 1 MiB is a misbehaving or hostile endpoint, not a payload to read
+// to EOF; the decode fails on truncation instead. 1 MiB matches the cap
+// the framework's own outbound provider fetches use. The SSE watch path
+// is a stream, not a buffer: it stays line-bounded via scanner.Buffer.
+const maxBodyBytes = 1 << 20
+
 // Client is a typed HTTP client targeting the gofastr server's CRUD routes.
 // Pass any *http.Client (httptest, retryable wrapper, etc.): Client never
 // closes it.
@@ -59,17 +68,25 @@ type Client struct {
 }
 
 // NewClient constructs a Client with the default http.Client when one is
-// not supplied. BaseURL should NOT include a trailing slash.
+// not supplied. BaseURL should NOT include a trailing slash. The default
+// refuses redirects: requests carry the bearer token when Token is set,
+// and a 3xx would re-send it to whatever origin the response names. Pass
+// your own *http.Client to keep a redirect policy.
 func NewClient(baseURL string, httpClient *http.Client) *Client {
 	if httpClient == nil {
-		httpClient = http.DefaultClient
+		//gofastr:allow(clienttimeout) requests carry the caller's context (http.NewRequestWithContext); a Client.Timeout would kill Watch's long-lived SSE stream mid-subscription
+		httpClient = &http.Client{
+			CheckRedirect: func(*http.Request, []*http.Request) error {
+				return http.ErrUseLastResponse
+			},
+		}
 	}
 	return &Client{BaseURL: baseURL, HTTP: httpClient}
 }
 
 // APIError is returned for non-2xx responses. Status is the HTTP code;
-// Body holds the raw response so callers can decode application-level error
-// fields if they want.
+// Body holds the raw response (capped at maxBodyBytes) so callers can
+// decode application-level error fields if they want.
 type APIError struct {
 	Status int
 	Body   []byte
@@ -110,13 +127,13 @@ func (c *Client) doJSON(ctx context.Context, method, path string, body, out any)
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		bodyBytes, _ := io.ReadAll(resp.Body)
+		bodyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, maxBodyBytes))
 		return &APIError{Status: resp.StatusCode, Body: bodyBytes}
 	}
 	if out == nil || resp.StatusCode == http.StatusNoContent {
 		return nil
 	}
-	return json.NewDecoder(resp.Body).Decode(out)
+	return json.NewDecoder(io.LimitReader(resp.Body, maxBodyBytes)).Decode(out)
 }
 
 // doSingleJSON decodes the {"data": {...}} envelope used by single-record
@@ -196,7 +213,7 @@ func (c *Client) watchSSE(ctx context.Context, path string, fn func(event string
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		bodyBytes, _ := io.ReadAll(resp.Body)
+		bodyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, maxBodyBytes))
 		return &APIError{Status: resp.StatusCode, Body: bodyBytes}
 	}
 
@@ -255,6 +272,13 @@ func renderClientEntity(decl framework.EntityDeclaration) string {
 	if table == "" {
 		table = decl.Name
 	}
+	// route is the table reduced to one inert path segment for the
+	// request-path literals below. url.PathEscape is identity for every
+	// legitimate table byte and defuses path-shaping bytes (?, #, spaces,
+	// traversal) that pass the literal gate (which only refuses quote,
+	// backslash and control bytes) — same treatment the id slots already
+	// get. Comment slots keep the raw table: they are prose.
+	route := url.PathEscape(table)
 	pluralStruct := struct_
 
 	var sb strings.Builder
@@ -330,7 +354,7 @@ func (c *Client) List%s(ctx context.Context, params url.Values) (%sListResponse,
 	return out, nil
 }
 
-`, pluralStruct, table, pluralStruct, struct_, struct_, table, struct_))
+`, pluralStruct, table, pluralStruct, struct_, struct_, route, struct_))
 
 	// Get
 	sb.WriteString(fmt.Sprintf(`// Get%s fetches a single record by id. Returns *APIError with 404 when missing.
@@ -342,7 +366,7 @@ func (c *Client) Get%s(ctx context.Context, id string) (%s, error) {
 	return out, nil
 }
 
-`, struct_, struct_, struct_, struct_, table, struct_))
+`, struct_, struct_, struct_, struct_, route, struct_))
 
 	// Create
 	sb.WriteString(fmt.Sprintf(`// Create%s posts a new record and returns the server-canonical row.
@@ -354,7 +378,7 @@ func (c *Client) Create%s(ctx context.Context, body %sInput) (%s, error) {
 	return out, nil
 }
 
-`, struct_, struct_, struct_, struct_, struct_, table, struct_))
+`, struct_, struct_, struct_, struct_, struct_, route, struct_))
 
 	// Update
 	sb.WriteString(fmt.Sprintf(`// Update%s updates the record at id with the partial body.
@@ -366,7 +390,7 @@ func (c *Client) Update%s(ctx context.Context, id string, body %sInput) (%s, err
 	return out, nil
 }
 
-`, struct_, struct_, struct_, struct_, struct_, table, struct_))
+`, struct_, struct_, struct_, struct_, struct_, route, struct_))
 
 	// Patch
 	sb.WriteString(fmt.Sprintf(`// Patch%s updates exactly the fields whose pointers in body are non-nil.
@@ -381,7 +405,7 @@ func (c *Client) Patch%s(ctx context.Context, id string, body %sPatch) (%s, erro
 	return out, nil
 }
 
-`, struct_, struct_, struct_, struct_, struct_, struct_, table, struct_))
+`, struct_, struct_, struct_, struct_, struct_, struct_, route, struct_))
 
 	// Delete
 	sb.WriteString(fmt.Sprintf(`// Delete%s removes the record at id.
@@ -389,7 +413,7 @@ func (c *Client) Delete%s(ctx context.Context, id string) error {
 	return c.doJSON(ctx, http.MethodDelete, "/%s/"+url.PathEscape(id), nil, nil)
 }
 
-`, struct_, struct_, table))
+`, struct_, struct_, route))
 
 	// BatchPatch struct (<Entity>BatchPatch), one _batch update item: the
 	// target id plus the same presence-aware pointer fields as <Entity>Patch.
@@ -425,7 +449,7 @@ func (c *Client) BatchDelete%s(ctx context.Context, ids []string) (BatchResponse
 	return c.doBatch(ctx, http.MethodDelete, "/%s/_batch", map[string]any{"ids": ids})
 }
 
-`, struct_, struct_, struct_, table, struct_, struct_, struct_, table, struct_, struct_, table))
+`, struct_, struct_, struct_, route, struct_, struct_, struct_, route, struct_, struct_, route))
 
 	// Watch (SSE)
 	sb.WriteString(fmt.Sprintf(`// Watch%s subscribes to the entity's live event feed (entity.created /
@@ -436,7 +460,7 @@ func (c *Client) Watch%s(ctx context.Context, fn func(event string, data []byte)
 	return c.watchSSE(ctx, "/%s/_events", fn)
 }
 
-`, struct_, struct_, table))
+`, struct_, struct_, route))
 
 	return sb.String()
 }

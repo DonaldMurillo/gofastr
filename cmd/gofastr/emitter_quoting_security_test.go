@@ -656,3 +656,45 @@ func TestSDKDerivedNamesMustNotCollide(t *testing.T) {
 		}
 	})
 }
+
+// Pins the endpoint-stub identifier gap the extended emitident sweep
+// found (2026-09-04 round 3 extension): blueprintEndpointHandlerName
+// falls back to the endpoint Name when Handler is empty, and
+// renderBlueprintStubs emitted `func %s` from that fallback root with no
+// identifier check of its own — toCamelCase transforms, it does not
+// validate. Fixed by gating the stub and the app.go registration on
+// isGoIdentifier, mirroring the hook stubs (validateBlueprint refuses the
+// Handler root; the Name fallback root had no validator).
+// Property: no emitted `func %s` / `http.HandlerFunc(%s)` ever carries a
+// non-identifier, whatever root derived it.
+// Surfaces: blueprint.go::renderBlueprintStubs (the stub),
+// ::renderBlueprintApp (the registration), ::validateBlueprint (Handler
+// root refusal), versus the hook stubs' isGoIdentifier gate.
+func TestBlueprintEndpointStubRefusesNonIdentifiers(t *testing.T) {
+	bp := Blueprint{Endpoints: []BlueprintEndpoint{
+		{Name: "hostile-handler", Handler: "x =(pwn)(); y", Path: "/a", Method: "get"}, // hostile Handler root
+		{Name: "x =(pwn)(); y", Path: "/b", Method: "get"},                             // hostile Name fallback root
+		{Name: "benign", Handler: "RealHandler", Path: "/c", Method: "get"},            // benign control
+	}}
+	stubs := renderBlueprintStubs(bp)
+	if strings.Contains(stubs, "pwn") {
+		t.Fatalf("SECURITY: [blueprint-endpoint-ident] stubs.go carries a non-identifier handler at `func` position:\n%s", stubs)
+	}
+	if !strings.Contains(stubs, "func RealHandler(w http.ResponseWriter, r *http.Request) {") {
+		t.Fatalf("benign handler stub missing — the gate must skip junk, not drop endpoints:\n%s", stubs)
+	}
+	app := renderBlueprintApp(bp)
+	if strings.Contains(app, "pwn") {
+		t.Fatalf("SECURITY: [blueprint-endpoint-ident] app.go registers a non-identifier handler:\n%s", app)
+	}
+	if !strings.Contains(app, "http.HandlerFunc(RealHandler)") {
+		t.Fatalf("benign handler registration missing:\n%s", app)
+	}
+	// And the parse backstop still holds over the full set.
+	if err := assertBlueprintGoParses([]generatedFile{
+		{name: "stubs.go", content: stubs},
+		{name: "app.go", content: app},
+	}); err != nil {
+		t.Fatalf("emitted files do not parse: %v", err)
+	}
+}

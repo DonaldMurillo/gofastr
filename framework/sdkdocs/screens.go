@@ -254,18 +254,21 @@ curl -H "Authorization: Bearer $API_TOKEN" %s/<entity>`, s.exampleOrigin())
 }
 
 // goModuleHint/goDirHint read the manifest when present so the install
-// snippet matches the generated module path exactly.
+// snippet matches the generated module path exactly. Both pass through
+// fenceWord: the manifest is a file in dist/, and its strings land inside
+// the copyable ```sh block, where a newline would put attacker text on
+// its own operator-copyable line (pinned in docs_output_security_test.go).
 func (s *site) goModuleHint() string {
 	if m, _, _ := s.resolved(); m != nil {
 		if a, ok := m.Artifacts["go"]; ok && a.Module != "" {
-			return a.Module
+			return fenceWord(a.Module)
 		}
 	}
 	return "local/<app>-sdk"
 }
 func (s *site) goDirHint() string {
 	if m, _, _ := s.resolved(); m != nil && m.App != "" {
-		return m.App + "-sdk"
+		return fenceWord(m.App) + "-sdk"
 	}
 	return "<app>-sdk"
 }

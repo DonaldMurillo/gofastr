@@ -190,15 +190,16 @@ func TestMCPCommandScopeEnforced(t *testing.T) {
 // The envelope and every params/args decode go through
 // handler.UnmarshalStrict and answer -32700/-32602 instead of executing.
 
-// postRawMCP POSTs a raw JSON-RPC body (attacker-controlled byte
-// order) and returns status + body.
-func postRawMCP(t *testing.T, srv *httptest.Server, body string) (int, string) {
+// postRawMCP POSTs a raw JSON-RPC body (attacker-controlled bytes) with
+// the given bearer.
+func postRawMCP(t *testing.T, srv *httptest.Server, tok, body string) (int, string) {
 	t.Helper()
 	req, err := http.NewRequest(http.MethodPost, srv.URL+"/mcp", strings.NewReader(body))
 	if err != nil {
 		t.Fatalf("new request: %v", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+tok)
 	resp, err := srv.Client().Do(req)
 	if err != nil {
 		t.Fatalf("POST /mcp: %v", err)
@@ -223,22 +224,25 @@ func mcpRawRefused(code int, body string) bool {
 // wire-level last-wins on the JSON-RPC envelope.
 func TestMcpPostRejectsDuplicateKeys(t *testing.T) {
 	s, _, _ := newTestServer(t)
-	// No encoder: bearer is orthogonal to the decode gap and
-	// an unauthenticated 200 result is the cleanest proof the
-	// smuggled body reached the JSON-RPC dispatcher.
-	h := NewHTTPHandler(s, nil, nil)
+	// Bearer is orthogonal to the decode gap; the requests carry one
+	// only because the transport now refuses to serve without an
+	// encoder. A strict-decode refusal with the bearer present is the
+	// cleanest proof the smuggled body reached the JSON-RPC dispatcher.
+	enc := auth.NewEncoder(mustTestSecret(t))
+	h := NewHTTPHandler(s, enc, auth.NewRevocationList())
 	srv := httptest.NewServer(h)
 	defer srv.Close()
+	tok := mintHTTPScopeToken(t, enc, nil)
 
 	// Happy guard: the well-formed shape of the same request succeeds,
 	// so the refusal demanded below can only come from key strictness,
 	// not plumbing.
-	code, raw := postRawMCP(t, srv, `{"jsonrpc":"2.0","id":1,"method":"tools/list"}`)
+	code, raw := postRawMCP(t, srv, tok, `{"jsonrpc":"2.0","id":1,"method":"tools/list"}`)
 	if code != http.StatusOK || strings.Contains(raw, `"error"`) {
 		t.Fatalf("happy path: well-formed request must return a result (status=%d body=%s)", code, raw)
 	}
 
-	code, raw = postRawMCP(t, srv, `{"jsonrpc":"1.0","jsonrpc":"2.0","id":1,"method":"tools/list"}`)
+	code, raw = postRawMCP(t, srv, tok, `{"jsonrpc":"1.0","jsonrpc":"2.0","id":1,"method":"tools/list"}`)
 	if !mcpRawRefused(code, raw) {
 		t.Errorf("SECURITY: [mcp-strict-keys] POST /mcp executed a JSON-RPC request with a "+
 			"duplicate jsonrpc key: status=%d body=%.200s — duplicate top-level keys resolve "+
@@ -252,20 +256,52 @@ func TestMcpPostRejectsDuplicateKeys(t *testing.T) {
 // request still executes; survives a dedup-only fix.
 func TestMcpPostRejectsCaseFoldedKeys(t *testing.T) {
 	s, _, _ := newTestServer(t)
-	h := NewHTTPHandler(s, nil, nil)
+	enc := auth.NewEncoder(mustTestSecret(t))
+	h := NewHTTPHandler(s, enc, auth.NewRevocationList())
 	srv := httptest.NewServer(h)
 	defer srv.Close()
+	tok := mintHTTPScopeToken(t, enc, nil)
 
-	code, raw := postRawMCP(t, srv, `{"jsonrpc":"2.0","id":1,"method":"tools/list"}`)
+	code, raw := postRawMCP(t, srv, tok, `{"jsonrpc":"2.0","id":1,"method":"tools/list"}`)
 	if code != http.StatusOK || strings.Contains(raw, `"error"`) {
 		t.Fatalf("happy path: well-formed request must return a result (status=%d body=%s)", code, raw)
 	}
 
-	code, raw = postRawMCP(t, srv, `{"JSONRPC":"2.0","ID":1,"METHOD":"tools/list"}`)
+	code, raw = postRawMCP(t, srv, tok, `{"JSONRPC":"2.0","ID":1,"METHOD":"tools/list"}`)
 	if !mcpRawRefused(code, raw) {
 		t.Errorf("SECURITY: [mcp-strict-keys] POST /mcp executed a JSON-RPC request with "+
 			"case-folded top-level keys: status=%d body=%.200s — case-folded keys still match their "+
 			"tags, so the method runs under a request any first-read intermediary parsed differently; "+
 			"decode each line via handler.UnmarshalStrict and answer -32700", code, raw)
+	}
+}
+
+// Pins [mcp-nil-encoder-fail-open], found by the 2026-09-04 red-probe
+// round; fixed in http.go ServeHTTP answering 503 on every request when
+// no auth encoder is configured.
+// Property: an HTTP-mounted agent-tool surface must fail closed when no
+// auth encoder is configured — refuse requests, never silently fall back
+// to stdio's "the process boundary is the check" trust model over TCP.
+// Surfaces: mcpserver/http.go::ServeHTTP (the refusal), ::NewHTTPHandler
+// (still constructible with nil for tests/local wiring; it just cannot
+// serve), ::handlePOST (never reached without verified claims).
+func TestHTTPHandlerNilEncoderRefuses(t *testing.T) {
+	s, _, _ := newTestServer(t)
+	h := NewHTTPHandler(s, nil, nil)
+	srv := httptest.NewServer(h)
+	defer srv.Close()
+
+	// One unauthenticated JSON-RPC call against the mounted surface.
+	body := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`
+	resp, err := http.Post(srv.URL+"/mcp", "application/json", strings.NewReader(body))
+	if err != nil {
+		t.Fatalf("POST /mcp: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusUnauthorized && resp.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("SECURITY: [mcp-nil-encoder-fail-open] HTTP MCP surface built with a nil encoder answered an unauthenticated JSON-RPC call with %d instead of refusing; tools/call (incl. run_agent_with_shell_access) is reachable with no auth over TCP", resp.StatusCode)
+	}
+	if resp.StatusCode == http.StatusOK {
+		t.Fatalf("SECURITY: [mcp-nil-encoder-fail-open] got 200: the initialize call executed unauthenticated")
 	}
 }

@@ -85,18 +85,18 @@ func ScreenLLMMD(screen *Screen) string {
 // pattern for the former, the concrete URL for the latter (with the
 // pattern shown alongside when they differ).
 func writeScreenLLMMDHead(b *strings.Builder, screen *Screen, title, path string) {
-	fmt.Fprintf(b, "# %s\n\n", title)
+	fmt.Fprintf(b, "# %s\n\n", mdHeadField(title))
 
 	// Route info (compact summary)
 	b.WriteString("## Route\n\n")
-	fmt.Fprintf(b, "- **Path:** `%s`\n", path)
+	fmt.Fprintf(b, "- **Path:** `%s`\n", mdCodeSpan(path))
 	if path != screen.Path {
-		fmt.Fprintf(b, "- **Pattern:** `%s`\n", screen.Path)
+		fmt.Fprintf(b, "- **Pattern:** `%s`\n", mdCodeSpan(screen.Path))
 	}
 	fmt.Fprintf(b, "- **Type:** %s\n", screen.Type.String())
 
 	if screen.Description != "" {
-		fmt.Fprintf(b, "- **Description:** %s\n", screen.Description)
+		fmt.Fprintf(b, "- **Description:** %s\n", mdHeadField(screen.Description))
 	}
 
 	// Dynamic params
@@ -141,9 +141,9 @@ func writeScreenLLMMDHead(b *strings.Builder, screen *Screen, title, path string
 // documentation; everything else is not.
 func ScreenLLMMDWithheld(screen *Screen) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "# %s\n\n", screen.Path)
+	fmt.Fprintf(&b, "# %s\n\n", mdHeadField(screen.Path))
 	b.WriteString("## Route\n\n")
-	fmt.Fprintf(&b, "- **Path:** `%s`\n", screen.Path)
+	fmt.Fprintf(&b, "- **Path:** `%s`\n", mdCodeSpan(screen.Path))
 	fmt.Fprintf(&b, "- **Type:** %s\n", screen.Type.String())
 	b.WriteString("\n---\n\n")
 	b.WriteString("## Page Content\n\n")
@@ -273,7 +273,7 @@ func AppLLMMDCtx(ctx context.Context, a *App) string {
 	if title == "" {
 		title = "Application"
 	}
-	fmt.Fprintf(&b, "# %s: Page Reference\n\n", title)
+	fmt.Fprintf(&b, "# %s: Page Reference\n\n", mdHeadField(title))
 	b.WriteString("Auto-generated LLM-friendly documentation for all registered pages and screens.\n\n")
 	b.WriteString("For API endpoints (CRUD resources), see [/api/llm.md](/api/llm.md).\n\n")
 
@@ -324,9 +324,9 @@ func AppLLMMDCtx(ctx context.Context, a *App) string {
 			}
 			link := pageLLMMDLink(r.Path)
 			if link != "" {
-				fmt.Fprintf(&b, "| [%s](%s) | %s | %s |\n", r.Path, link, r.Title, desc)
+				fmt.Fprintf(&b, "| [%s](%s) | %s | %s |\n", mdLinkText(r.Path), mdLinkDest(link), mdTableCell(r.Title), mdTableCell(desc))
 			} else {
-				fmt.Fprintf(&b, "| %s | %s | %s |\n", r.Path, r.Title, desc)
+				fmt.Fprintf(&b, "| %s | %s | %s |\n", mdTableCell(r.Path), mdTableCell(r.Title), mdTableCell(desc))
 			}
 		}
 		b.WriteString("\n")
@@ -345,9 +345,9 @@ func AppLLMMDCtx(ctx context.Context, a *App) string {
 			}
 			link := pageLLMMDLink(r.Path)
 			if link != "" {
-				fmt.Fprintf(&b, "| [%s](%s) | %s | `%s` | %s |\n", r.Path, link, r.Title, paramStr, desc)
+				fmt.Fprintf(&b, "| [%s](%s) | %s | `%s` | %s |\n", mdLinkText(r.Path), mdLinkDest(link), mdTableCell(r.Title), mdCodeSpan(paramStr), mdTableCell(desc))
 			} else {
-				fmt.Fprintf(&b, "| %s | %s | `%s` | %s |\n", r.Path, r.Title, paramStr, desc)
+				fmt.Fprintf(&b, "| %s | %s | `%s` | %s |\n", mdTableCell(r.Path), mdTableCell(r.Title), mdCodeSpan(paramStr), mdTableCell(desc))
 			}
 		}
 		b.WriteString("\n")
@@ -366,7 +366,7 @@ func AppLLMMDCtx(ctx context.Context, a *App) string {
 			if desc == "" {
 				desc = "—"
 			}
-			fmt.Fprintf(&b, "| [%s](%s/llm.md) | %s | %s | %s |\n", r.Path, r.Path, r.Title, screen.Type.String(), desc)
+			fmt.Fprintf(&b, "| [%s](%s) | %s | %s | %s |\n", mdLinkText(r.Path), mdLinkDest(r.Path+"/llm.md"), mdTableCell(r.Title), screen.Type.String(), mdTableCell(desc))
 		}
 		b.WriteString("\n")
 	}

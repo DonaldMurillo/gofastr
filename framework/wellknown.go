@@ -212,10 +212,13 @@ func WithAgentSkills(skills []AgentSkillEntry) AppOption {
 }
 
 func (a *App) handleAgentSkillsIndex(w http.ResponseWriter, r *http.Request) {
-	skills := a.agentSkills
-	if skills == nil {
-		skills = []AgentSkillEntry{}
-	}
+	// Default onto a per-request copy, never into a.agentSkills: the
+	// slice WithAgentSkills installed is wiring-time configuration
+	// shared by every request, and writing it here is an unsynchronized
+	// mutation of process-global state (a data race under -race and a
+	// leak of one request's normalization into every other's).
+	skills := make([]AgentSkillEntry, len(a.agentSkills))
+	copy(skills, a.agentSkills)
 	for i := range skills {
 		if skills[i].Type == "" {
 			skills[i].Type = "skill-md"

@@ -24,7 +24,7 @@ import (
 type Client struct {
 	BaseURL string            // e.g. "https://openrouter.ai/api/v1"
 	APIKey  string            // bearer token
-	HTTP    *http.Client      // nil → http.DefaultClient with a 5-min timeout
+	HTTP    *http.Client      // nil → redirect-refusing client with a 5-min timeout
 	Headers map[string]string // additional static headers (e.g. HTTP-Referer)
 	Name    string            // provider name for events ("openrouter", "zai")
 }
@@ -48,7 +48,17 @@ func (c *Client) Chat(ctx context.Context, req *provider.Request) (<-chan provid
 
 	client := c.HTTP
 	if client == nil {
-		client = &http.Client{Timeout: 5 * time.Minute}
+		// Redirects are refused (the oidcNoRedirect spelling from
+		// battery/auth/oidc.go): this request carries the API key as a
+		// bearer header, and net/http re-sends Authorization on
+		// same-host and subdomain redirects — a 3xx from the provider
+		// would deliver the key to whatever origin it names.
+		client = &http.Client{
+			Timeout: 5 * time.Minute,
+			CheckRedirect: func(*http.Request, []*http.Request) error {
+				return http.ErrUseLastResponse
+			},
+		}
 	}
 	resp, err := client.Do(httpReq)
 	if err != nil {
