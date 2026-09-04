@@ -41,7 +41,7 @@ func runJudgePanel(ctx context.Context, suite *Suite, mapping CandidateMapping, 
 			issues = append(issues, fmt.Sprintf("%s judge %d reset artifact dir: %v", lens, judgeRun, err))
 			continue
 		}
-		if err := os.MkdirAll(judgeDir, 0o755); err != nil {
+		if err := os.MkdirAll(judgeDir, 0o700); err != nil {
 			issues = append(issues, fmt.Sprintf("%s judge %d artifact dir: %v", lens, judgeRun, err))
 			continue
 		}
@@ -81,7 +81,7 @@ func runJudgePanel(ctx context.Context, suite *Suite, mapping CandidateMapping, 
 			break
 		}
 		if len(rejections) > 0 {
-			_ = os.WriteFile(rejectionLog, []byte(strings.Join(rejections, "\n")+"\n"), 0o644)
+			_ = os.WriteFile(rejectionLog, []byte(strings.Join(rejections, "\n")+"\n"), 0o600)
 		}
 		if !accepted {
 			issues = append(issues, fmt.Sprintf("%s judge %d rejected after %d attempts: %s", lens, judgeRun, maxJudgeAttempts, strings.Join(rejections, "; ")))
@@ -114,10 +114,10 @@ func prepareJudgeWorkspace(workspace, schemaSource string, sourceImages []string
 	if err := os.RemoveAll(workspace); err != nil {
 		return nil, fmt.Errorf("reset workspace: %w", err)
 	}
-	if err := os.MkdirAll(workspace, 0o755); err != nil {
+	if err := os.MkdirAll(workspace, 0o700); err != nil {
 		return nil, err
 	}
-	if err := os.WriteFile(filepath.Join(workspace, "AGENTS.md"), []byte("# Isolated blind judge\nJudge only the images attached to the prompt. Do not inspect parent directories, candidate source, manifests, or other judge artifacts.\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(workspace, "AGENTS.md"), []byte("# Isolated blind judge\nJudge only the images attached to the prompt. Do not inspect parent directories, candidate source, manifests, or other judge artifacts.\n"), 0o600); err != nil {
 		return nil, err
 	}
 	if err := copyFile(schemaSource, filepath.Join(workspace, "judge.schema.json")); err != nil {

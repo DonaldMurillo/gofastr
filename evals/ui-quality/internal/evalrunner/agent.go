@@ -111,15 +111,15 @@ func claudeCompatibleSchema(schema []byte) ([]byte, error) {
 }
 
 func runCapturedAgent(ctx context.Context, cfg AgentConfig, args []string, dir string, env []string, logPath string) error {
-	if err := os.MkdirAll(filepath.Dir(logPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(logPath), 0o700); err != nil {
 		return err
 	}
-	stdout, err := os.Create(logPath)
+	stdout, err := os.OpenFile(logPath, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0o600)
 	if err != nil {
 		return err
 	}
 	stderrPath := logPath + ".stderr"
-	stderr, err := os.Create(stderrPath)
+	stderr, err := os.OpenFile(stderrPath, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0o600)
 	if err != nil {
 		_ = stdout.Close()
 		return err
@@ -315,7 +315,7 @@ func extractOMPFinal(logPath, outputPath string) error {
 	if strings.TrimSpace(final) == "" {
 		return fmt.Errorf("omp produced no final assistant message (log: %s)", logPath)
 	}
-	return os.WriteFile(outputPath, []byte(final), 0o644)
+	return os.WriteFile(outputPath, []byte(final), 0o600)
 }
 
 func extractClaudeFinal(logPath, outputPath string) error {
@@ -341,7 +341,7 @@ func extractClaudeFinal(logPath, outputPath string) error {
 	if strings.TrimSpace(string(output)) == "" {
 		return fmt.Errorf("claude produced no final output (log: %s)", logPath)
 	}
-	return os.WriteFile(outputPath, output, 0o644)
+	return os.WriteFile(outputPath, output, 0o600)
 }
 
 func agentVersion(ctx context.Context, cfg AgentConfig) (string, error) {

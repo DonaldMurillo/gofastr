@@ -344,7 +344,7 @@ const hydrateFullPageAssetsJS = `(async () => {
 })()`
 
 func captureCandidate(ctx context.Context, baseURL, blindDir string, scenario Scenario, viewports []Viewport) ([]ScreenshotResult, []string) {
-	if err := os.MkdirAll(blindDir, 0o755); err != nil {
+	if err := os.MkdirAll(blindDir, 0o700); err != nil {
 		return nil, []string{err.Error()}
 	}
 	opts := append(chromedp.DefaultExecAllocatorOptions[:],
@@ -536,7 +536,7 @@ func captureCandidate(ctx context.Context, baseURL, blindDir string, scenario Sc
 						issues = append(issues, fmt.Sprintf("%s %s: full-page capture height is %d, want about %d", page.Name, vp.ID, height, expectedFullHeight))
 					}
 				}
-				if writeErr := os.WriteFile(imagePath, capture.png, 0o644); writeErr != nil {
+				if writeErr := os.WriteFile(imagePath, capture.png, 0o600); writeErr != nil {
 					issues = append(issues, fmt.Sprintf("%s %s %s: save screenshot: %v", page.Name, vp.ID, capture.kind, writeErr))
 					continue
 				}

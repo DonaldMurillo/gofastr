@@ -20,14 +20,14 @@ import (
 // guidance alone. Transcript grepping cannot provide this signal, an agent
 // merely READING the guidance echoes the command into its transcript.
 func installCLIShim(dir, realBin, logPath string) error {
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
 	if runtime.GOOS == "windows" {
 		shim := "@echo off\r\n" +
 			">> \"" + logPath + "\" echo %*\r\n" +
 			"\"" + realBin + "\" %*\r\n"
-		return os.WriteFile(filepath.Join(dir, "gofastr.cmd"), []byte(shim), 0o755)
+		return os.WriteFile(filepath.Join(dir, "gofastr.cmd"), []byte(shim), 0o700)
 	}
 	// ONE invocation must yield exactly ONE log line: the log is parsed
 	// line-wise into the adoption-funnel metrics (CLI calls, docs
@@ -38,7 +38,7 @@ func installCLIShim(dir, realBin, logPath string) error {
 	shim := "#!/bin/sh\n" +
 		"printf '%s\\n' \"$(printf '%s' \"$*\" | tr '\\n\\r' '  ')\" >> \"" + logPath + "\"\n" +
 		"exec \"" + realBin + "\" \"$@\"\n"
-	return os.WriteFile(filepath.Join(dir, "gofastr"), []byte(shim), 0o755)
+	return os.WriteFile(filepath.Join(dir, "gofastr"), []byte(shim), 0o700)
 }
 
 // cliInvocationStats reads a shim log and reports how many times the builder

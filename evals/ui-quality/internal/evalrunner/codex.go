@@ -67,10 +67,10 @@ func judgeArgs(cfg AgentConfig, workspace, outputPath, schemaPath, model string,
 }
 
 func runCodex(ctx context.Context, inv codexInvocation) error {
-	if err := os.MkdirAll(filepath.Dir(inv.LogPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(inv.LogPath), 0o700); err != nil {
 		return err
 	}
-	logFile, err := os.Create(inv.LogPath)
+	logFile, err := os.OpenFile(inv.LogPath, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0o600)
 	if err != nil {
 		return fmt.Errorf("create Codex log: %w", err)
 	}
