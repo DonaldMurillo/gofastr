@@ -12,9 +12,11 @@ import (
 // have again: kiln-<UnixNano digits>-<counter digits>.
 var kilnMintShape = regexp.MustCompile(`^kiln-[0-9]+-[0-9]+$`)
 
-// nanoRun matches any run of digits long enough to be a nanosecond
-// timestamp embedded in an id, whatever prefix decorates it.
-var nanoRun = regexp.MustCompile(`[0-9]{15,}`)
+// randShape is the shape kid.Hex(16) mints: 32 lowercase hex characters,
+// 128 bits of crypto/rand. A positive shape check is the honest pin: a
+// "no long digit run" heuristic fails on random hex itself about one
+// time in a hundred, since ten of the sixteen hex characters are digits.
+var randShape = regexp.MustCompile(`^kiln-[0-9a-f]{32}$`)
 
 // Property: the ACP session id is a capability (session/load replays the
 // whole journaled conversation on the bare id), so it is minted from
@@ -40,8 +42,8 @@ func TestAcpSessionIDUnpredictable(t *testing.T) {
 		if kilnMintShape.MatchString(id) {
 			t.Errorf("ACP session id %q is the exact kiln-<UnixNano>-<counter> shape — zero unpredictable bits; session/load treats the bare id as the replay capability, so it must be minted from crypto/rand", id)
 		}
-		if run := nanoRun.FindString(id); run != "" {
-			t.Errorf("ACP session id %q embeds a %d-digit numeric run — nanosecond timestamps collapse the id space to a guessable wall-clock window regardless of what surrounds them", id, len(run))
+		if !randShape.MatchString(id) {
+			t.Errorf("ACP session id %q is not kiln-<32 hex> (16 bytes of crypto/rand): a timestamp or counter cannot produce that shape, anything else is a weaker mint", id)
 		}
 	}
 }
