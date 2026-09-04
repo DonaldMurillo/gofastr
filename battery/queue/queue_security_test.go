@@ -2,8 +2,10 @@ package queue
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -471,6 +473,26 @@ func sqliteBusyClass(msg string) bool {
 	return strings.Contains(s, "locked") || strings.Contains(s, "busy")
 }
 
+// openClaimRaceDB is openDurableSchedulerDB with a busy_timeout the test
+// runner cannot starve: the property under test is that SQLite serialises
+// the eight claimants and every one of them eventually claims (a
+// SQLITE_BUSY is a contract violation), not that the chain completes in
+// the 5s production default. Under -race on a loaded CI runner the eighth
+// claimant waited 5.08s and reported busy while the contract held; with
+// 60s a busy error can only mean the claim path stopped serialising.
+func openClaimRaceDB(t *testing.T) *sql.DB {
+	t.Helper()
+	dsn := "file:" + filepath.ToSlash(filepath.Join(t.TempDir(), "claims.db")) +
+		"?_busy_timeout=60000&_journal_mode=WAL"
+	db, err := sql.Open("sqlite3", dsn)
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	db.SetMaxOpenConns(8)
+	t.Cleanup(func() { _ = db.Close() })
+	return db
+}
+
 // TestSQLiteDequeueConcurrentNoBusy drives the SQLite claim path with 8
 // concurrent claimants released by a barrier, the shape WithWorkers(n>1)
 // produces in production (file DB, WAL, busy_timeout, pool of 8 — the
@@ -479,7 +501,7 @@ func sqliteBusyClass(msg string) bool {
 // level ... race-free"); this asserts that contract plus exactly-once
 // claims. All claimants race the same start line rather than sleeping.
 func TestSQLiteDequeueConcurrentNoBusy(t *testing.T) {
-	db := openDurableSchedulerDB(t)
+	db := openClaimRaceDB(t)
 	q, err := NewDBQueue(db)
 	if err != nil {
 		t.Fatalf("new db queue: %v", err)
