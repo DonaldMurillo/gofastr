@@ -26,6 +26,7 @@ package admin
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -230,6 +231,12 @@ func (b *Battery) logger() *slog.Logger {
 // default (no Authorize configured) requires an authenticated user that holds
 // the configured AdminRole, secure by default. A custom Authorize overrides
 // the role check entirely.
+//
+// The access Decider (access.DeciderMiddleware / WithDecider) is the OUTER
+// boundary: a DecisionDeny refuses the back office before any other decision
+// runs, the same fail-closed order the embed refusal uses. A Decider can
+// veto the admin, never admit it — DecisionAllow / Abstain fall through to
+// the normal checks, so wiring a decider cannot weaken the role gate.
 func (b *Battery) authorized(ctx context.Context) bool {
 	// BEFORE the custom hook, not after. A host that supplies its own
 	// Authorize, which is exactly what the comment below recommends for a
@@ -238,6 +245,15 @@ func (b *Battery) authorized(ctx context.Context) bool {
 	// an embed may drive the back office is not the host's call to make.
 	if _, embedded := embed.GrantFromContext(ctx); embedded {
 		return false
+	}
+	// The Decider is asked with the roles the host's access middleware
+	// resolved and the zero Ref, mirroring the CanResource routing crud's
+	// requirePermission uses for collection-level checks. Only the deny arm
+	// binds: the gate below still decides admission on roles.
+	if d := access.GetDecider(ctx); d != nil {
+		if d(ctx, access.GetRoles(ctx), access.Wildcard, access.Ref{}) == access.DecisionDeny {
+			return false
+		}
 	}
 	if b.cfg.Authorize != nil {
 		return b.cfg.Authorize(ctx)
@@ -375,8 +391,18 @@ func (b *Battery) gateMiddleware() router.Middleware {
 // gate wraps a route handler so it refuses unauthorized callers (401). The
 // framework auth chain sets the user; b.authorized decides. Used for the
 // standalone ops pages and the entity RPC/form routes.
+//
+// State-changing requests are additionally refused cross-site here: this is
+// the battery's own CSRF posture, applied at the one choke point every
+// mutating route (RBAC grant/revoke/assign, module lifecycle, queue replay,
+// entity save/delete) passes through. The optional middleware.CSRF adds
+// token verification on top when the host mounts it; the battery must not
+// rely on it, its screens render an empty _csrf input without it.
 func (b *Battery) gate(next http.HandlerFunc) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !isSafeAdminMethod(r.Method) && rejectCrossSiteForm(w, r) {
+			return
+		}
 		if !b.authorized(r.Context()) {
 			status := b.authzStatus(r.Context())
 			// Unauthenticated GET → bounce to the login page (if configured)
@@ -396,9 +422,51 @@ func (b *Battery) gate(next http.HandlerFunc) http.Handler {
 	})
 }
 
+// isSafeAdminMethod reports whether the method cannot mutate state and so is
+// exempt from the cross-site refusal: cross-site LINK navigation to the admin
+// screens (Sec-Fetch-Site: cross-site on a GET) is legitimate and must not
+// be broken by a CSRF gate that only form posts need.
+func isSafeAdminMethod(method string) bool {
+	switch method {
+	case http.MethodGet, http.MethodHead, http.MethodOptions:
+		return true
+	}
+	return false
+}
+
+// maxAdminBodyBytes caps the battery's urlencoded form bodies. Matches the
+// repo's form convention (battery/auth form_decode.go, the CSRF middleware's
+// defaultCSRFMaxFormBytes, crud's Bind — all 1 MiB) instead of the stdlib's
+// 10 MiB urlencoded floor: without a cap an oversized edit form is parsed in
+// full and its megabyte values parked in the in-memory flash store until
+// flashTTL.
+const maxAdminBodyBytes int64 = 1 << 20
+
+// parseCappedForm caps the request body then parses the form, mapping an
+// over-cap body to 413 (the auth battery's decodeAuthCredentials spelling).
+// It reports whether the parse succeeded; every admin form handler starts
+// with `if !parseCappedForm(w, r) { return }`.
+func parseCappedForm(w http.ResponseWriter, r *http.Request) bool {
+	r.Body = http.MaxBytesReader(w, r.Body, maxAdminBodyBytes)
+	if err := r.ParseForm(); err != nil {
+		if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
+			http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
+			return false
+		}
+		http.Error(w, "bad form data", http.StatusBadRequest)
+		return false
+	}
+	return true
+}
+
 // adminSuperuserCtx installs an access policy granting the Wildcard permission,
-// so every EntityConfig.Access gate the admin's CRUD hits passes. Safe because
-// the request already cleared the admin Authorize gate.
+// so every EntityConfig.Access gate the admin's CRUD hits passes. The Authorize
+// gate is the inner boundary; the access Decider is the OUTER one: authorized()
+// consults it (resolved roles, zero Ref) and a DecisionDeny refuses the back
+// office BEFORE this context is minted. A host that wires DeciderMiddleware
+// per the framework/access recipe therefore gets its per-resource denials
+// honoured at the back office too, rather than being overridden by the
+// Wildcard policy installed here.
 func adminSuperuserCtx(ctx context.Context) context.Context {
 	p := access.NewRolePolicy()
 	p.Grant("__admin", access.Wildcard)

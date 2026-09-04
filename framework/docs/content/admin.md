@@ -90,7 +90,12 @@ understands. The battery ships zero JS:
   success the handler 303-redirects to the list; on a validation error it
   redirects back to the form with a one-shot flash token (`?e=…`) so the
   re-render is a full host page with field errors + the submitted values
-  retained.
+  retained. Submitted bodies are capped at 1 MiB (over-cap is a `413`),
+  matching every other form surface in the stack, and a save whose
+  masked-field set cannot be recomputed (the read that diffed the
+  write-only columns failed) is **refused** with an error flash rather
+  than guessed at — a blank write-only checkbox must never flip a stored
+  `is_admin`-shaped column by accident.
 
 Because every write goes through the entity's **own `CrudHandler`** with the
 request context forwarded, validation, `OwnerField`/tenant scoping, hooks,
@@ -138,8 +143,9 @@ app.RegisterBattery(admin.New(admin.Config{
 On the `?status=failed` view, each row gets a **Replay** button when the
 wired queue supports it (`DBQueue` does; in-memory / Redis don't yet). The
 replay route mutates state, so it runs behind the same admin gate as every
-other route and carries a CSRF token, so there is no unauthenticated way to
-re-fire jobs.
+other route and is covered by the battery's cross-site refusal (see
+[CSRF](#csrf)), so there is no unauthenticated or forged way to re-fire
+jobs.
 
 When `Queue` is nil, the overview section and Queue navigation item are hidden;
 the direct route retains a "not wired" diagnostic. The audit page uses
@@ -187,7 +193,16 @@ Free-text entry for new permission strings is allowed.
 Every mutation (grant, revoke, assign-roles) writes an **audit row** via
 `framework.AppendAuditEvent` with entity `"access"` and op in
 `{"grant","revoke","assign-roles"}`, so changes appear at `/admin/audit`.
-The actor ID is the authenticated admin's user ID.
+The actor ID is the authenticated admin's user ID. A **refused**
+role assignment gets its own row (`assign-roles-refused`) naming the role
+that was rejected.
+
+`_assign` enforces caller tiering: a caller may only write roles it already
+holds, or roles whose granted permissions its own tier already implies (a
+caller holding a wildcard-granted role may assign anything; with no
+`Policy` wired, only held roles are assignable). Anything else is refused
+with `403` — a designated sub-admin role (via `Config.AdminRole`) cannot
+mint a role above its own tier through this RPC.
 
 ## Process-module lifecycle
 
@@ -220,7 +235,10 @@ authenticated users who lack the role get `403`, on both the SSR screens
 > custom `Config.Authorize`.
 
 Change the required role with `Config.AdminRole`, or replace the check
-entirely with `Config.Authorize`:
+entirely with `Config.Authorize`. An `access.Decider` installed on the
+request context (via `access.DeciderMiddleware`) is the **outer** boundary:
+a `DecisionDeny` refuses the back office before the admin's internal
+wildcard policy is minted, so per-resource host denials bind here too.
 
 ```go
 admin.New(admin.Config{
@@ -238,9 +256,20 @@ admin.New(admin.Config{
 
 ## CSRF
 
-Forms embed the framework's `_csrf` hidden field automatically (`ui.Form`
-reads the token from context). The delete RPC carries the token via the
-`X-CSRF-Token` header, which the runtime reads from
+The battery enforces its own cross-site refusal on **every state-changing
+request** (POST/PUT/PATCH/DELETE on all admin routes): a browser form post
+whose `Sec-Fetch-Site` is `cross-site`, or — the sibling-subdomain shape a
+`SameSite` cookie does not stop — whose `Origin` host differs from the
+request host, is refused with `403` before the auth gate runs. Non-browser
+clients (curl, scripts, native apps) send neither header and pass. This
+holds whether or not you mount the optional CSRF middleware, because the
+battery's screens cannot rely on a token: without `middleware.CSRF` the
+rendered `_csrf` input is empty.
+
+For token-based defense in depth on top, mount the framework's CSRF
+middleware app-wide: forms embed the `_csrf` hidden field automatically
+(`ui.Form` reads the token from context), and the delete RPC carries the
+token via the `X-CSRF-Token` header, which the runtime reads from
 `<meta name="csrf-token">`. Make sure your layout emits that tag when CSRF
 is enforced.
 

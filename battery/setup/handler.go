@@ -2,10 +2,18 @@ package setup
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
 )
+
+// maxSetupBodyBytes caps the wizard's urlencoded form bodies. Matches the
+// repo's form convention (battery/auth form_decode.go and the CSRF
+// middleware's defaultCSRFMaxFormBytes, both 1 MiB) instead of the stdlib's
+// 10 MiB urlencoded floor: /setup can be fully unauthenticated (DisableToken),
+// so one request must not be able to park megabytes in process memory.
+const maxSetupBodyBytes int64 = 1 << 20
 
 // Handler implements framework.SetupRunner.Handler. It returns the
 // interactive setup surface: the wizard + /healthz + /readyz; every other
@@ -161,7 +169,15 @@ func (r *Runner) handleSetup(w http.ResponseWriter, req *http.Request) {
 // handleSubmit validates the current step's fields, runs it, and either
 // advances or re-renders with errors.
 func (r *Runner) handleSubmit(w http.ResponseWriter, req *http.Request) {
+	// Cap the body BEFORE the parse (the auth battery's form_decode
+	// spelling): without it the only bound is the stdlib's 10 MiB
+	// urlencoded floor, and /setup can be an unauthenticated surface.
+	req.Body = http.MaxBytesReader(w, req.Body, maxSetupBodyBytes)
 	if err := req.ParseForm(); err != nil {
+		if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
+			http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
+			return
+		}
 		http.Error(w, "bad form data", http.StatusBadRequest)
 		return
 	}
@@ -254,18 +270,23 @@ func (r *Runner) handleSubmit(w http.ResponseWriter, req *http.Request) {
 // clears the flag and leaves currentStep where it was, so the retry
 // path is unchanged.
 func (r *Runner) runStepSerialized(ctx context.Context, stepIdx int, step Step, values map[string]string) error {
-	// Re-check Complete before taking the mutex.
+	// Re-check Complete before taking the mutex. GOFASTR_SETUP=force is
+	// the operator's explicit opt-in to re-run steps on a completed
+	// install (first-run.md): a completed step is skipped only when NOT
+	// in force mode, so the wizard's "re-running setup steps" banner
+	// never promises a re-run the engine silently refuses.
 	//
 	// A probe ERROR is not "not done", it is "unknown", and this guard is
 	// the only thing standing between a second caller and a re-run of a
 	// step that typically creates the admin account. Refuse rather than
-	// proceed: a failed setup step is recoverable, a silently re-run one
-	// is not.
+	// proceed — under force too: the operator opted into re-running
+	// steps, not into running them against a state that cannot be read.
+	// A failed setup step is recoverable, a silently re-run one is not.
 	done, err := r.cfg.Complete(ctx)
 	if err != nil {
 		return fmt.Errorf("setup: completion check failed, refusing to run step: %w", err)
 	}
-	if done {
+	if done && !isForceMode() {
 		return nil
 	}
 

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"sync/atomic"
 	"testing"
 )
@@ -152,4 +153,97 @@ func TestRunStepsRefusesWhenComplete(t *testing.T) {
 	if got := atomic.LoadInt32(&runs); got != 0 {
 		t.Fatalf("SECURITY: [setup] RunSteps executed %d bootstrap step(s) while Complete reported true — the headless skin lacks the re-run guard the interactive skin enforces (runStepSerialized); under GOFASTR_SETUP=force this re-runs AdminStep and mints a second admin-role user on a configured install", got)
 	}
+}
+
+// ─── the wizard's form body must be capped like every sibling surface ──
+
+// Property: request bodies on the (possibly unauthenticated) setup surface
+// are size-capped by the app before parsing, at the repo's 1 MiB form
+// convention rather than the stdlib's 10 MiB urlencoded floor. The step's
+// Run must never execute for an over-cap body.
+func TestSetupFormCapsBody(t *testing.T) {
+	var runs atomic.Int32
+	r := New(Config{
+		DisableToken: true,
+		Complete:     func(context.Context) (bool, error) { return false, nil },
+		Steps: []Step{{
+			Name: "probe",
+			Run: func(context.Context, map[string]string) error {
+				runs.Add(1)
+				return nil
+			},
+		}},
+	})
+	h := r.Handler(func() {}, nil, nil)
+
+	// 4 MiB urlencoded body — 4x the auth sibling's cap, comfortably under
+	// the stdlib's 10 MiB floor so the only thing that could refuse it is
+	// an app-level cap. No Origin/Sec-Fetch headers: a plain non-browser
+	// client, the shape rejectCrossSiteForm deliberately lets through.
+	body := "pad=" + strings.Repeat("a", 4<<20)
+	req := httptest.NewRequest(http.MethodPost, "/setup", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusRequestEntityTooLarge || runs.Load() != 0 {
+		t.Errorf("SECURITY: [setup-body-cap] POST /setup with a 4 MiB urlencoded body returned %d with the step's Run invoked %d time(s); want 413 with the step never invoked",
+			rec.Code, runs.Load())
+	}
+}
+
+// ─── GOFASTR_SETUP=force is the explicit re-run opt-in ──────────────────
+
+// Property: force mode re-runs completed steps on BOTH skins — the wizard
+// banner says "Re-running setup steps" and first-run.md tells operators to
+// use force to re-enter the wizard, so the engine must honour it or the
+// rescue mode is a silent no-op that leaves operators believing bootstrap
+// ran. The NO-force refusal stays pinned by TestRunStepsRefusesWhenComplete.
+func TestSetupForceReRunsCompletedSteps(t *testing.T) {
+	newRunner := func(runs *atomic.Int32) *Runner {
+		return New(Config{
+			DisableToken: true,
+			Complete:     func(context.Context) (bool, error) { return true, nil },
+			Steps: []Step{{
+				Name: "probe",
+				Run: func(context.Context, map[string]string) error {
+					runs.Add(1)
+					return nil
+				},
+			}},
+		})
+	}
+
+	// Interactive skin: the wizard with the "Re-running setup steps"
+	// banner accepts the operator's POST and executes the step.
+	t.Run("wizard submit", func(t *testing.T) {
+		t.Setenv("GOFASTR_SETUP", "force")
+		var runs atomic.Int32
+		h := newRunner(&runs).Handler(func() {}, nil, nil)
+
+		req := httptest.NewRequest(http.MethodPost, "/setup", strings.NewReader("probe=1"))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+
+		if runs.Load() == 0 {
+			t.Errorf("CONTRACT: [setup-force] POST /setup under GOFASTR_SETUP=force on a completed install returned %d with the step's Run never invoked: the \"Re-running setup steps\" banner promises a re-run the engine must deliver (or refuse out loud — never a silent success)",
+				rec.Code)
+		}
+	})
+
+	// Headless skin: RunSteps re-executes instead of returning nil having
+	// run nothing.
+	t.Run("headless RunSteps", func(t *testing.T) {
+		t.Setenv("GOFASTR_SETUP", "force")
+		var runs atomic.Int32
+		r := newRunner(&runs)
+
+		if err := r.RunSteps(context.Background()); err != nil {
+			t.Fatalf("RunSteps under force: %v", err)
+		}
+		if runs.Load() == 0 {
+			t.Errorf("CONTRACT: [setup-force] RunSteps under GOFASTR_SETUP=force on a completed install ran zero steps: the documented rescue mode either re-executes the steps or reports its refusal — a silent no-op leaves an operator believing bootstrap was re-run.")
+		}
+	})
 }
