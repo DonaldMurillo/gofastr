@@ -3,6 +3,7 @@ package handler
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"io"
 	"reflect"
 	"strings"
@@ -44,10 +45,11 @@ func UnmarshalStrict(data []byte, dst any) error {
 	if err := validateBodyKeys(data, dst); err != nil {
 		return err
 	}
-	if !isStructPointer(dst) {
-		if err := CheckTopLevelKeys(data, strings.ToLower); err != nil {
-			return err
-		}
+	// Every nesting level: a duplicate or case-folded key pair inside a
+	// nested object reads two ways just like one at the top (the a2a
+	// params object was the surface that showed it).
+	if err := CheckObjectKeys(data, strings.ToLower); err != nil {
+		return err
 	}
 	dec := json.NewDecoder(bytes.NewReader(data))
 	if isStructPointer(dst) {
@@ -99,6 +101,72 @@ func CheckTopLevelKeys(data []byte, fold func(string) string) error {
 		var skip json.RawMessage
 		if err := dec.Decode(&skip); err != nil {
 			return nil
+		}
+	}
+	return nil
+}
+
+// CheckObjectKeys is CheckTopLevelKeys applied to every object at every
+// nesting depth: no object anywhere in the value may repeat a key or
+// hold two keys that fold to the same name. Non-object values and
+// tokenisation failures return nil so the caller's decoder reports
+// them under its own error contract.
+func CheckObjectKeys(data []byte, fold func(string) string) error {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	err := walkObjectKeys(dec, fold)
+	if _, tokenErr := err.(*Error); err != nil && !tokenErr {
+		return nil
+	}
+	return err
+}
+
+// walkObjectKeys consumes one JSON value from dec, checking every object
+// it contains. Only *Error values are findings; any other error is a
+// tokenisation failure the caller ignores.
+func walkObjectKeys(dec *json.Decoder, fold func(string) string) error {
+	tok, err := dec.Token()
+	if err != nil {
+		return err
+	}
+	switch d := tok.(type) {
+	case json.Delim:
+		switch d {
+		case '{':
+			seen := map[string]string{}
+			for dec.More() {
+				kt, err := dec.Token()
+				if err != nil {
+					return err
+				}
+				key, ok := kt.(string)
+				if !ok {
+					return errors.New("malformed object key")
+				}
+				norm := key
+				if fold != nil {
+					norm = fold(key)
+				}
+				if prev, dup := seen[norm]; dup {
+					if prev == key {
+						return Errorf(400, "invalid JSON: duplicate key %q", key)
+					}
+					return Errorf(400, "invalid JSON: keys %q and %q name the same field", prev, key)
+				}
+				seen[norm] = key
+				if err := walkObjectKeys(dec, fold); err != nil {
+					return err
+				}
+			}
+			_, err := dec.Token() // the closing '}'
+			return err
+		case '[':
+			for dec.More() {
+				if err := walkObjectKeys(dec, fold); err != nil {
+					return err
+				}
+			}
+			_, err := dec.Token() // the closing ']'
+			return err
 		}
 	}
 	return nil

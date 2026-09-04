@@ -489,6 +489,9 @@ func TestRbacGrantRefusesCrossSitePost(t *testing.T) {
 		t.Fatalf("EnsureAuditTable: %v", err)
 	}
 	policy := access.NewRolePolicy()
+	// The gate's admin role holds the wildcard: a grant is only accepted
+	// from a caller that holds what it grants (TestGrantRevokeRequireCallerTier).
+	policy.Grant("admin", access.Wildcard)
 	store := access.NewGrantStore(db, policy)
 	if err := store.EnsureSchema(ctx); err != nil {
 		t.Fatalf("grant EnsureSchema: %v", err)
@@ -888,5 +891,68 @@ func TestRoleAssignRequiresCallerTier(t *testing.T) {
 	if slices.Contains(after.GetRoles(), "superadmin") {
 		t.Errorf("SECURITY: [rbac-assign] /admin/rbac/_assign persisted roles %v for a caller whose own "+
 			"role set is [support] — a sub-admin tier must not mint the top role", after.GetRoles())
+	}
+}
+
+// TestGrantRevokeRequireCallerTier: /rbac/_grant and /rbac/_revoke are the
+// sibling RPCs of _assign; a support-tier operator must not be able to
+// grant Wildcard (or any permission it does not hold) to a role it holds
+// and become superuser live, nor revoke what it cannot grant.
+func TestGrantRevokeRequireCallerTier(t *testing.T) {
+	ctx := context.Background()
+	db := newDB(t)
+	if err := framework.EnsureAuditTable(db, ""); err != nil {
+		t.Fatalf("EnsureAuditTable: %v", err)
+	}
+	policy := access.NewRolePolicy()
+	policy.Grant("superadmin", access.Wildcard)
+	policy.Grant("support", "queue:read")
+	store := access.NewGrantStore(db, policy)
+	if err := store.EnsureSchema(ctx); err != nil {
+		t.Fatalf("grant EnsureSchema: %v", err)
+	}
+	if err := store.LoadInto(ctx, policy); err != nil {
+		t.Fatalf("LoadInto: %v", err)
+	}
+	b := New(Config{DB: db, Policy: policy, GrantStore: store, AdminRole: "support"})
+	post := func(path, perm string, roles []string) *httptest.ResponseRecorder {
+		t.Helper()
+		form := url.Values{"role": {"support"}, "permission": {perm}}
+		req := httptest.NewRequest(http.MethodPost, "/admin/rbac/"+path, strings.NewReader(form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req = req.WithContext(handler.SetUser(req.Context(), roleUser{roles: roles}))
+		rr := httptest.NewRecorder()
+		h := b.handleRBACGrant
+		if path == "_revoke" {
+			h = b.handleRBACRevoke
+		}
+		b.gate(h).ServeHTTP(rr, req)
+		return rr
+	}
+	// Positive control: a permission the caller holds can be granted.
+	if rr := post("_grant", "queue:read", []string{"support"}); rr.Code != http.StatusSeeOther {
+		t.Fatalf("setup: granting a held permission got %d (body=%s), want 303", rr.Code, rr.Body.String())
+	}
+	// The escalation: support grants Wildcard to its own role.
+	rr := post("_grant", string(access.Wildcard), []string{"support"})
+	if rr.Code != http.StatusForbidden || slices.Contains(policy.PermissionsOf("support"), access.Wildcard) {
+		t.Fatalf("SECURITY: [rbac-grant] support-tier caller granted %q to its own role: status %d, perms %v", access.Wildcard, rr.Code, policy.PermissionsOf("support"))
+	}
+	if rr := post("_grant", "users:delete", []string{"support"}); rr.Code != http.StatusForbidden {
+		t.Fatalf("SECURITY: [rbac-grant] a permission the caller does not hold was granted: %d", rr.Code)
+	}
+	// Revoke follows the same tier: support cannot strip what it cannot grant.
+	policy.Grant("support", "users:delete")
+	if rr := post("_revoke", "users:delete", []string{"support"}); rr.Code != http.StatusForbidden {
+		// support now HOLDS users:delete via the direct grant above, so a
+		// revoke of it is within tier; the refusal case is a permission
+		// outside the tier.
+		if rr := post("_revoke", "billing:admin", []string{"support"}); rr.Code != http.StatusForbidden {
+			t.Fatalf("SECURITY: [rbac-revoke] a permission outside the caller's tier was revoked: %d", rr.Code)
+		}
+	}
+	// A wildcard caller is unrestricted.
+	if rr := post("_grant", "users:delete", []string{"superadmin", "support"}); rr.Code != http.StatusSeeOther {
+		t.Fatalf("superadmin grant got %d, want 303", rr.Code)
 	}
 }

@@ -556,7 +556,7 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 		// explicit ?offset= beyond maxListOffset is a per-request
 		// deep-skip scan, refused here before any filter or count work
 		// runs.
-		if !ch.requireBoundedOffset(w, q) {
+		if !ch.requireBoundedOffset(w, q, page, perPage) {
 			return
 		}
 
@@ -1326,19 +1326,18 @@ func (ch *CrudHandler) maxListOffset() int {
 	return listLimitCap(ch.Entity.Config.Pagination.MaxListLimit) * 1000
 }
 
-// requireBoundedOffset refuses a list request whose explicit ?offset=
-// exceeds maxListOffset. LIMIT is clamped to the page cap on every path;
-// without this guard the skip side accepted any non-negative int (up to
-// MaxInt64), handing the raw value to OFFSET: a per-request deep-skip scan
-// (CPU amplification) a client could trigger with one query param. Refused
-// with 400, never silently clamped: a clamped offset would serve a window
-// near the cap and label it with the requested one. Page-derived offsets
-// keep their own pinned contract (TestPagination_HugePage: a huge ?page=
-// serves the empty window, 200), and the int-overflow guard in
-// pagination.OffsetForPage covers their arithmetic.
-func (ch *CrudHandler) requireBoundedOffset(w http.ResponseWriter, q url.Values) bool {
+// requireBoundedOffset refuses a list request whose skip, explicit
+// (?offset=) or page-derived (?page= × ?limit=), exceeds maxListOffset:
+// both spellings reach the same OFFSET clause and the same deep skip
+// scan, so both are refused with 400 rather than served as an empty
+// window at full cost. A page within the cap past the last row still
+// returns 200 with no data.
+func (ch *CrudHandler) requireBoundedOffset(w http.ResponseWriter, q url.Values, page, perPage int) bool {
 	offset, ok := explicitOffsetValues(q)
-	if !ok || offset <= ch.maxListOffset() {
+	if !ok {
+		offset = pagination.OffsetForPage(page, perPage)
+	}
+	if offset <= ch.maxListOffset() {
 		return true
 	}
 	writeJSONError(w, http.StatusBadRequest,

@@ -28,9 +28,9 @@ fi
 
 RUNFLAG=()
 if [ -n "$RUN" ]; then RUNFLAG=(-run "$RUN"); fi
-echo "==> go test -tags $TAG -count=1 ${RUNFLAG[*]} in:"
+echo "==> go test -tags $TAG -count=1 ${RUNFLAG[@]+"${RUNFLAG[@]}"} in:"
 echo "$PKGS" | sed 's/^/      /'
-go test -tags "$TAG" -count=1 -p 2 -timeout 25m "${RUNFLAG[@]}" $PKGS >"$OUT" 2>&1
+go test -tags "$TAG" -count=1 -p 2 -timeout 25m ${RUNFLAG[@]+"${RUNFLAG[@]}"} $PKGS >"$OUT" 2>&1
 STATUS=$?
 echo "    (raw output kept at $OUT)"
 

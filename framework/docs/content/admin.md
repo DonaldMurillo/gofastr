@@ -195,7 +195,7 @@ Every mutation (grant, revoke, assign-roles) writes an **audit row** via
 `{"grant","revoke","assign-roles"}`, so changes appear at `/admin/audit`.
 The actor ID is the authenticated admin's user ID. A **refused**
 role assignment gets its own row (`assign-roles-refused`) naming the role
-that was rejected.
+that was rejected. The same tier binds `/rbac/_grant` and `/rbac/_revoke`: a caller may grant or revoke only a permission its own roles hold (or the wildcard); anything else is a 403 with a `grant-refused` / `revoke-refused` audit row, so a narrower admin tier cannot write the wildcard onto a role it holds.
 
 `_assign` enforces caller tiering: a caller may only write roles it already
 holds, or roles whose granted permissions its own tier already implies (a

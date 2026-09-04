@@ -491,3 +491,12 @@ hand it directly to `storage.Save`).
   store rotated sensors with an orientation tag, not rotated pixels.
   Saving the JPEG verbatim leaves the rotation only correct in viewers
   that honour EXIF, and most thumbnail renderers don't.
+
+## Metadata on stored originals
+
+Uploads keep their EXIF block (GPS and camera tags included) on the
+stored original, and every later download serves it. Stripping metadata
+at upload is planned for the upload pipeline and is tracked by the open
+red probe `framework/file/exif_red_test.go` (`make red-tests`); until it
+lands, strip on the client or in a BeforeCreate hook when the images are
+user-supplied.

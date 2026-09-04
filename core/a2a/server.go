@@ -376,6 +376,14 @@ func decodeParams(raw json.RawMessage, v any) *Error {
 	if len(raw) == 0 || string(raw) == "null" {
 		raw = []byte("{}")
 	}
+	// The envelope was decoded strictly; params are the second level
+	// of the same body and get the same no-ambiguity rule (a nested
+	// duplicate or case-folded key pair resolves by parser accident).
+	// Unknown fields stay tolerated: the protocol reserves the right to
+	// add them.
+	if err := handler.CheckObjectKeys(raw, strings.ToLower); err != nil {
+		return Errorf(CodeInvalidParams, "invalid params: %v", err)
+	}
 	if err := json.Unmarshal(raw, v); err != nil {
 		return Errorf(CodeInvalidParams, "invalid params: %v", err)
 	}

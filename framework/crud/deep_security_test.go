@@ -78,22 +78,35 @@ func TestPagination_HugePage(t *testing.T) {
 		{"id": "p1", "user_id": "alice", "title": "first"},
 	})
 
+	// A page past the last row but within the offset cap: 200 with no
+	// data, never a 500.
 	req := makeRequest(t, RequestOpts{
 		Method: http.MethodGet,
-		Path:   "/posts?page=999999",
+		Path:   "/posts?page=50",
 		UserID: "alice",
 	})
 	rr := httptest.NewRecorder()
 	ch.List()(rr, req)
-
-	// Huge page must be a 200 with empty results, anything else
-	// (especially a 500) is a server-error regression.
 	if rr.Code != http.StatusOK {
-		t.Fatalf("SECURITY: [pagination] page=999999 returned %d, want 200 with empty data. Attack: huge page number causes server error", rr.Code)
+		t.Fatalf("SECURITY: [pagination] page=50 returned %d, want 200 with empty data. Attack: high page number causes server error", rr.Code)
 	}
 	resp := decodeListResponse(t, rr.Body.String())
 	if len(resp.Data) != 0 {
-		t.Errorf("SECURITY: [pagination] page=999999 returned %d rows, want 0. Attack: huge page returned unexpected data", len(resp.Data))
+		t.Errorf("SECURITY: [pagination] page=50 returned %d rows, want 0", len(resp.Data))
+	}
+
+	// A page whose derived offset exceeds the cap is the same deep skip
+	// an explicit ?offset= is refused for: 400, not a full-table scan
+	// that returns nothing.
+	req = makeRequest(t, RequestOpts{
+		Method: http.MethodGet,
+		Path:   "/posts?page=999999",
+		UserID: "alice",
+	})
+	rr = httptest.NewRecorder()
+	ch.List()(rr, req)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("SECURITY: [pagination] page=999999 returned %d, want 400: the page-derived offset must be bounded like ?offset= (deep-skip scan)", rr.Code)
 	}
 }
 

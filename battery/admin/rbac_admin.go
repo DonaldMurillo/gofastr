@@ -387,6 +387,12 @@ func (b *Battery) handleRBACGrant(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "role and permission required", http.StatusBadRequest)
 		return
 	}
+	if !b.callerHoldsPermission(r.Context(), access.Permission(perm)) {
+		b.appendAudit(r.Context(), "access", "grant-refused", role, adminActorID(r.Context()),
+			map[string]any{"permission": perm})
+		http.Error(w, "forbidden: you can only grant a permission you hold", http.StatusForbidden)
+		return
+	}
 	if err := b.cfg.GrantStore.Grant(r.Context(), role, access.Permission(perm)); err != nil {
 		// A strict-mode unknown capability is the admin's typo, not a
 		// server fault, surface the reason instead of a generic 500.
@@ -419,6 +425,12 @@ func (b *Battery) handleRBACRevoke(w http.ResponseWriter, r *http.Request) {
 	perm := strings.TrimSpace(r.FormValue("permission"))
 	if role == "" || perm == "" {
 		http.Error(w, "role and permission required", http.StatusBadRequest)
+		return
+	}
+	if !b.callerHoldsPermission(r.Context(), access.Permission(perm)) {
+		b.appendAudit(r.Context(), "access", "revoke-refused", role, adminActorID(r.Context()),
+			map[string]any{"permission": perm})
+		http.Error(w, "forbidden: you can only revoke a permission you hold", http.StatusForbidden)
 		return
 	}
 	if err := b.cfg.GrantStore.Revoke(r.Context(), role, access.Permission(perm)); err != nil {
@@ -528,6 +540,27 @@ func (b *Battery) nonAssignableRole(ctx context.Context, requested []string) str
 
 // callerHeldRoles resolves the caller's own roles from the authenticated
 // user via the structural GetRoles interface authorized() uses.
+// callerHoldsPermission reports whether the caller's own roles grant
+// perm (or the wildcard). A grant or revoke of a permission the caller
+// does not hold is an escalation through the sibling RPC of _assign: a
+// weaker tier the host admitted at the gate would otherwise write
+// Wildcard onto a role it already holds and become superuser live.
+// With no Policy wired nothing can be proven held, so every grant is
+// refused (fail closed).
+func (b *Battery) callerHoldsPermission(ctx context.Context, perm access.Permission) bool {
+	if b.cfg.Policy == nil {
+		return false
+	}
+	for _, role := range callerHeldRoles(ctx) {
+		for _, p := range b.cfg.Policy.PermissionsOf(role) {
+			if p == access.Wildcard || p == perm {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func callerHeldRoles(ctx context.Context) []string {
 	u, ok := handler.GetUser(ctx)
 	if !ok || u == nil {

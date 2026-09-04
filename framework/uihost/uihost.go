@@ -1286,7 +1286,7 @@ func (ds *UIHost) handlePage(w http.ResponseWriter, r *http.Request) {
 	}
 	switch res.Kind {
 	case app.DecisionRedirect:
-		http.Redirect(w, r, res.URL, http.StatusSeeOther)
+		http.Redirect(w, r, scrubCtl(res.URL), http.StatusSeeOther)
 		return
 	case app.DecisionBlock:
 		msg := res.Message
@@ -2171,7 +2171,7 @@ func (ds *UIHost) handlePartialPage(w http.ResponseWriter, r *http.Request, path
 			w.WriteHeader(http.StatusOK)
 			return
 		}
-		http.Redirect(w, r, res.URL, http.StatusSeeOther)
+		http.Redirect(w, r, scrubCtl(res.URL), http.StatusSeeOther)
 		return
 	case app.DecisionBlock:
 		msg := res.Message

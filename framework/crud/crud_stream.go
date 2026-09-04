@@ -65,7 +65,8 @@ func (ch *CrudHandler) ServeStreamingList(ctx context.Context, w http.ResponseWr
 	// maintains for the owner/tenant and AfterList gates holds for the
 	// skip side too. When chained from List() the guard has already run
 	// and passes again cheaply.
-	if !ch.requireBoundedOffset(w, q) {
+	streamPage, streamPerPage := parsePaginationValues(q, ch.Entity.Config.Pagination.MaxListLimit)
+	if !ch.requireBoundedOffset(w, q, streamPage, streamPerPage) {
 		return
 	}
 	// COUNT first so the envelope has the totals up front.

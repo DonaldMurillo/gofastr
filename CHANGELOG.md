@@ -25,6 +25,14 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   runtime lints join `core-ui/check`: an unguarded `querySelector` of a
   `data-fui-*` value, a raw `document.cookie` concatenation, and a
   module URL built from an unchecked id.
+- **Review-round closures on the same branch**: strict JSON decoding
+  refuses duplicate and case-folded key pairs at every nesting depth,
+  not only the top level (a2a `params` was the open surface); the crud
+  offset cap bounds a page-derived skip (`?page=` × `?limit=`) exactly
+  like `?offset=` (400 beyond `MaxOffset`); battery/admin's `_grant` and
+  `_revoke` require the caller to hold the permission (or the wildcard),
+  closing the escalation the `_assign` tiering left open through its
+  sibling RPC; policy-decision redirects scrub C0/DEL like the others.
 - **One exception mechanism for every analyzer**:
   `//gofastr:allow(<analyzer>) <why>` on the reported line (or the line
   above) drops that diagnostic, the same marker the contracts pipeline

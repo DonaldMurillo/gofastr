@@ -75,3 +75,37 @@ func TestDecodeStrictNonObjectPassesThrough(t *testing.T) {
 		t.Fatalf("scalar body must decode unchanged, got err=%v n=%d", err, n)
 	}
 }
+
+type strictOuter struct {
+	Params strictEnvelope `json:"params"`
+}
+
+func TestUnmarshalStrictRefusesNestedAmbiguity(t *testing.T) {
+	var v strictOuter
+	if err := UnmarshalStrict([]byte(`{"params":{"method":"safe","method":"danger","id":1}}`), &v); err == nil {
+		t.Fatalf("nested duplicate key must be refused, got method=%q", v.Params.Method)
+	}
+	v = strictOuter{}
+	if err := UnmarshalStrict([]byte(`{"params":{"method":"safe","Method":"danger","id":1}}`), &v); err == nil {
+		t.Fatalf("nested case-folded key pair must be refused, got method=%q", v.Params.Method)
+	}
+	v = strictOuter{}
+	if err := UnmarshalStrict([]byte(`{"params":{"method":"x","id":2}}`), &v); err != nil || v.Params.Method != "x" {
+		t.Fatalf("clean nested body must decode, got err=%v v=%+v", err, v)
+	}
+}
+
+func TestCheckObjectKeysWalksArraysAndDepth(t *testing.T) {
+	if err := CheckObjectKeys([]byte(`{"a":[{"k":1,"k":2}]}`), nil); err == nil {
+		t.Fatal("duplicate inside an array element must be refused")
+	}
+	if err := CheckObjectKeys([]byte(`{"a":{"b":{"c":{"K":1,"k":2}}}}`), strings.ToLower); err == nil {
+		t.Fatal("fold collision three levels down must be refused")
+	}
+	if err := CheckObjectKeys([]byte(`{"a":[{"k":1},{"k":2}],"b":{"k":3}}`), strings.ToLower); err != nil {
+		t.Fatalf("the same key in sibling objects is fine, got %v", err)
+	}
+	if err := CheckObjectKeys([]byte(`{"a":`), nil); err != nil {
+		t.Fatalf("a truncated body is the decoder's business, got %v", err)
+	}
+}
