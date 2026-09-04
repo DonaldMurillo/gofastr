@@ -11,6 +11,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
+	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
 func TestPartialTitleHeaderIsEncoded(t *testing.T) {
@@ -238,4 +239,48 @@ func TestSSEStreamIDMustMatchCookie(t *testing.T) {
 	if rec2.Code == http.StatusUnauthorized {
 		t.Fatalf("a valid cookie against its own stream id was rejected (status %d); the mismatch check must key on id equality, not reject everything", rec2.Code)
 	}
+}
+
+// panicScreen is a screen component whose Render always panics.
+type panicScreen struct{}
+
+func (panicScreen) Render() render.HTML { panic("test: screen render boom") }
+
+// serveExpectNoPanic drives GET path against ds and fails when a screen
+// component panic escapes ServeHTTP.
+func serveExpectNoPanic(t *testing.T, ds *UIHost, path string) {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodGet, path, nil)
+	rec := httptest.NewRecorder()
+	escaped := any(nil)
+	func() {
+		defer func() { escaped = recover() }()
+		ds.ServeHTTP(rec, req)
+	}()
+	if escaped != nil {
+		t.Errorf("SECURITY: [uihost] screen component panic %v escaped ServeHTTP for GET %s — "+
+			"the configured screen must render through the SafeRenderCtx containment every "+
+			"other render path applies; a standalone host wires no recovery middleware, so "+
+			"the request would die with no response", escaped, path)
+	}
+}
+
+// TestNotFoundScreenPanicContained: the custom 404 screen renders behind
+// panic containment; a panicking screen falls back to the default 404
+// page instead of killing the request.
+func TestNotFoundScreenPanicContained(t *testing.T) {
+	a := app.NewApp("nf-panic")
+	a.Register("/", &testHomeComp{}, nil)
+	ds := New(a, WithNotFoundScreen(panicScreen{}))
+	serveExpectNoPanic(t, ds, "/definitely-not-a-route")
+}
+
+// TestPWAOfflineScreenPanicContained: the PWA offline screen renders
+// behind the same containment (it renders at service-worker install
+// time, where a panic would take the harness down).
+func TestPWAOfflineScreenPanicContained(t *testing.T) {
+	a := app.NewApp("pwa-panic")
+	a.Register("/", &testHomeComp{}, nil)
+	ds := New(a, WithPWA(PWAConfig{Name: "P", OfflineScreen: panicScreen{}}))
+	serveExpectNoPanic(t, ds, "/__gofastr/pwa/offline")
 }

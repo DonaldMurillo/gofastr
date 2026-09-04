@@ -296,7 +296,10 @@ on client-side navigation the runtime follows the redirect. Chains
 target must be a relative same-app path (an absolute URL panics;
 open-redirect guard), and every parameter referenced in `to` must be
 declared in `from`. The `from` pattern obeys the same grammar as a route
-(constraints, trailing catch-all).
+(constraints, trailing catch-all). Substituted parameters arrive
+percent-decoded, so C0/DEL control bytes in the request path are
+percent-encoded back into the `Location` header — a redirect target never
+carries raw control bytes.
 
 Because redirects are consulted **before** screen resolution, a redirect
 whose `from` **overlaps** a registered screen, dynamic or exact, panics

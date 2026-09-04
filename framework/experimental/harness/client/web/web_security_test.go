@@ -125,3 +125,61 @@ func TestEventsPinsLoopbackHost(t *testing.T) {
 		t.Errorf("loopback Host /events status = %d, want 200", code)
 	}
 }
+
+// POST /input decodes its body under strict top-level key rules:
+// duplicate and case-folded keys resolve last-wins under stdlib json,
+// so a smuggled body shape would POST a prompt at model authority while
+// a first-read intermediary parsed a different request
+// (handler.DecodeStrict parity with core/handler Bind surfaces).
+
+// TestWebInputRejectsDuplicateKeys: exact duplicate top-level "text"
+// keys — wire-level last-wins.
+func TestWebInputRejectsDuplicateKeys(t *testing.T) {
+	// Happy guard on its own stack (multiplex allows one originator per
+	// session): the well-formed body is accepted (202), so the 400
+	// demanded below can only come from key strictness, not plumbing.
+	hs := newWiredServer(t)
+	req := httptest.NewRequest(http.MethodPost, "/input", strings.NewReader(`{"text":"hello"}`))
+	req.Host = "127.0.0.1:8901"
+	rec := httptest.NewRecorder()
+	hs.handleInput(rec, req)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("happy path: well-formed body must reach the engine (status %d: %.200s)", rec.Code, rec.Body.String())
+	}
+
+	s := newWiredServer(t)
+	req = httptest.NewRequest(http.MethodPost, "/input", strings.NewReader(`{"text":"first","text":"second"}`))
+	req.Host = "127.0.0.1:8901"
+	rec = httptest.NewRecorder()
+	s.handleInput(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("SECURITY: [web-strict-keys] POST /input accepted a body with a duplicate "+
+			"top-level text key: status %d, want 400 — duplicate top-level keys resolve last-wins, "+
+			"so the prompt enters the session at model authority; decode via handler.DecodeStrict", rec.Code)
+	}
+}
+
+// TestWebInputRejectsCaseFoldedKeys: "TEXT" case-folds onto the tagged
+// "text" field via stdlib json's tag-insensitive match — a duplicate
+// modulo folding; survives a dedup-only fix.
+func TestWebInputRejectsCaseFoldedKeys(t *testing.T) {
+	hs := newWiredServer(t)
+	req := httptest.NewRequest(http.MethodPost, "/input", strings.NewReader(`{"text":"hello"}`))
+	req.Host = "127.0.0.1:8901"
+	rec := httptest.NewRecorder()
+	hs.handleInput(rec, req)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("happy path: well-formed body must reach the engine (status %d: %.200s)", rec.Code, rec.Body.String())
+	}
+
+	s := newWiredServer(t)
+	req = httptest.NewRequest(http.MethodPost, "/input", strings.NewReader(`{"TEXT":"hello"}`))
+	req.Host = "127.0.0.1:8901"
+	rec = httptest.NewRecorder()
+	s.handleInput(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("SECURITY: [web-strict-keys] POST /input accepted a body with a case-folded "+
+			"top-level key: status %d, want 400 — case-folded keys still match the tag, "+
+			"so the prompt enters the session at model authority; decode via handler.DecodeStrict", rec.Code)
+	}
+}

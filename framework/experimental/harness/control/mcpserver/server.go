@@ -11,6 +11,7 @@ package mcpserver
 import (
 	"bufio"
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -20,6 +21,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/core/handler"
 
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/control"
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/control/auth"
@@ -80,10 +83,12 @@ func (s *Server) WithIO(in io.Reader, out io.Writer) *Server {
 	return s
 }
 
-// Serve runs until the input closes.
 func (s *Server) Serve(ctx context.Context) error {
 	if s.RequiredToken != "" {
-		if os.Getenv("GOFASTR_HARNESS_TOKEN") != s.RequiredToken {
+		// Constant-time: a byte-at-a-time == on a credential leaks how
+		// many leading bytes matched through response timing.
+		got := os.Getenv("GOFASTR_HARNESS_TOKEN")
+		if subtle.ConstantTimeCompare([]byte(got), []byte(s.RequiredToken)) != 1 {
 			return errors.New("mcpserver: GOFASTR_HARNESS_TOKEN missing or wrong")
 		}
 	}
@@ -123,9 +128,28 @@ type rpcError struct {
 	Message string `json:"message"`
 }
 
+// unmarshalMCPObject decodes a client-supplied JSON object (a JSON-RPC
+// envelope line, params, or tool arguments) under the strict top-level
+// key rule — duplicate and case-folded keys are refused, because stdlib
+// json resolves them last-wins and the request must not execute under a
+// body any first-read intermediary parsed differently — while keeping
+// the MCP tolerance for unknown fields (§ Unknown-field policy:
+// additive evolution). handler.CheckTopLevelKeys is the walk; the value
+// decode itself stays plain stdlib.
+func unmarshalMCPObject(data []byte, dst any) error {
+	if err := handler.CheckTopLevelKeys(data, strings.ToLower); err != nil {
+		return err
+	}
+	return json.Unmarshal(data, dst)
+}
+
 func (s *Server) handle(ctx context.Context, line []byte) {
 	var req rpcRequest
-	if err := json.Unmarshal(line, &req); err != nil {
+	// The envelope is framing, not an evolution surface: every key must
+	// exactly match a json tag and no key may repeat (UnmarshalStrict).
+	// Params/args inside it go through unmarshalMCPObject, which keeps
+	// the MCP tolerance for unknown fields.
+	if err := handler.UnmarshalStrict(line, &req); err != nil {
 		s.write(rpcResponse{
 			JSONRPC: "2.0",
 			Error:   &rpcError{Code: -32700, Message: "parse error"},
@@ -228,7 +252,7 @@ func (s *Server) handleToolsCall(ctx context.Context, req rpcRequest) {
 		Name      string          `json:"name"`
 		Arguments json.RawMessage `json:"arguments"`
 	}
-	if err := json.Unmarshal(req.Params, &params); err != nil {
+	if err := unmarshalMCPObject(req.Params, &params); err != nil {
 		s.writeErr(req.ID, -32602, "bad params: "+err.Error())
 		return
 	}
@@ -263,7 +287,7 @@ func (s *Server) runAgentWithShellAccess(ctx context.Context, reqID json.RawMess
 		Prompt    string `json:"prompt"`
 		Wait      string `json:"wait"`
 	}
-	if err := json.Unmarshal(args, &inArgs); err != nil {
+	if err := unmarshalMCPObject(args, &inArgs); err != nil {
 		s.writeErr(reqID, -32602, err.Error())
 		return
 	}
@@ -417,7 +441,7 @@ func decodeCommandFromMCPArgs(verb string, args json.RawMessage) (control.Comman
 		var v struct {
 			SessionID string `json:"sessionId"`
 		}
-		if err := json.Unmarshal(args, &v); err != nil {
+		if err := unmarshalMCPObject(args, &v); err != nil {
 			return nil, err
 		}
 		s, err := ids.ParseSession(v.SessionID)
@@ -432,7 +456,7 @@ func decodeCommandFromMCPArgs(verb string, args json.RawMessage) (control.Comman
 			Decision  string `json:"decision"`
 			Scope     string `json:"scope"`
 		}
-		if err := json.Unmarshal(args, &v); err != nil {
+		if err := unmarshalMCPObject(args, &v); err != nil {
 			return nil, err
 		}
 		s, _ := ids.ParseSession(v.SessionID)
@@ -447,7 +471,7 @@ func decodeCommandFromMCPArgs(verb string, args json.RawMessage) (control.Comman
 			SessionID string `json:"sessionId"`
 			Model     string `json:"model"`
 		}
-		if err := json.Unmarshal(args, &v); err != nil {
+		if err := unmarshalMCPObject(args, &v); err != nil {
 			return nil, err
 		}
 		s, _ := ids.ParseSession(v.SessionID)
@@ -456,7 +480,7 @@ func decodeCommandFromMCPArgs(verb string, args json.RawMessage) (control.Comman
 		var v struct {
 			SessionID string `json:"sessionId"`
 		}
-		if err := json.Unmarshal(args, &v); err != nil {
+		if err := unmarshalMCPObject(args, &v); err != nil {
 			return nil, err
 		}
 		s, _ := ids.ParseSession(v.SessionID)
@@ -466,7 +490,7 @@ func decodeCommandFromMCPArgs(verb string, args json.RawMessage) (control.Comman
 			SessionID string `json:"sessionId"`
 			Approve   bool   `json:"approve"`
 		}
-		if err := json.Unmarshal(args, &v); err != nil {
+		if err := unmarshalMCPObject(args, &v); err != nil {
 			return nil, err
 		}
 		s, _ := ids.ParseSession(v.SessionID)
@@ -491,7 +515,7 @@ func (s *Server) handleResourcesRead(req rpcRequest) {
 	var params struct {
 		URI string `json:"uri"`
 	}
-	if err := json.Unmarshal(req.Params, &params); err != nil {
+	if err := unmarshalMCPObject(req.Params, &params); err != nil {
 		s.writeErr(req.ID, -32602, err.Error())
 		return
 	}

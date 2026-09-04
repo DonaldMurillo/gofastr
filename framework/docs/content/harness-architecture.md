@@ -1305,7 +1305,11 @@ silently approves.
 #### Revocation
 
 Revoked `jti`s are stored in `~/.local/state/gofastr/harness/revocations.db`
-and checked on every request. Revocation API:
+and checked on every request. Revocation reaches held streams too, not
+just new handshakes: an open SSE events stream re-verifies the token
+between events and on a 10s ticker, and a live WebSocket re-verifies on
+every inbound command frame and on the same ticker — both close when the
+credential is refused. Revocation API:
 `DELETE /v1/auth/tokens/{jti}`.
 
 #### Per-transport rules

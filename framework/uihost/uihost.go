@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	stdhtml "html"
+	"io"
 	"io/fs"
 	"log/slog"
 	"maps"
@@ -41,6 +42,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
 	"github.com/DonaldMurillo/gofastr/core-ui/widget"
 	"github.com/DonaldMurillo/gofastr/core/fanout"
+	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/middleware"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/router"
@@ -1232,8 +1234,13 @@ func (ds *UIHost) handlePage(w http.ResponseWriter, r *http.Request) {
 	}
 	// Declarative redirects (Redirect / RedirectPattern): short-circuit
 	// before screen resolution with a permanent redirect to the target.
+	// scrubCtl: the substituted target carries percent-decoded request-path
+	// params, and net/http's http.Redirect hex-escapes only non-ASCII —
+	// raw C0/DEL bytes pass through into the Location header verbatim,
+	// where they forge log lines and header values downstream. Percent-
+	// encode them, the same contract sanitizeHeaderValue pins elsewhere.
 	if target, ok := ds.App.ResolveRedirect(path); ok {
-		http.Redirect(w, r, target, http.StatusPermanentRedirect)
+		http.Redirect(w, r, scrubCtl(target), http.StatusPermanentRedirect)
 		return
 	}
 	// Agent content negotiation: when WithMarkdownNegotiation (or the
@@ -1946,6 +1953,27 @@ type NotFoundRenderer interface {
 	RenderNotFound(path string) render.HTML
 }
 
+// renderNotFoundBody renders the configured not-found screen behind the
+// same panic containment every other render path applies. A raw Render()/
+// RenderNotFound() call here would let a panicking custom 404 screen kill
+// the request with no response: standalone hosts wire no recovery
+// middleware, so the containment has to live at the render call itself.
+// The plain-Render arm goes through component.SafeRenderCtx; the
+// NotFoundRenderer arm has no SafeRenderCtx equivalent, so the recover
+// here is its guard. Both arms return the error; the caller falls back
+// to the default 404 page.
+func (ds *UIHost) renderNotFoundBody(r *http.Request, path string) (body render.HTML, err error) {
+	defer func() {
+		if rec := recover(); rec != nil {
+			body, err = "", fmt.Errorf("not-found screen panic: %v", rec)
+		}
+	}()
+	if nf, ok := ds.notFoundScreen.(NotFoundRenderer); ok {
+		return nf.RenderNotFound(path), nil
+	}
+	return component.SafeRenderCtx(r.Context(), ds.notFoundScreen)
+}
+
 // serveNotFound writes a 404, content-negotiated when the request's
 // Accept header names a machine representation: JSON (application/json
 // or application/problem+json) gets an RFC 9457 problem document, and
@@ -1995,27 +2023,24 @@ func (ds *UIHost) serveNotFound(w http.ResponseWriter, r *http.Request, path str
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 
 	if ds.notFoundScreen != nil && ds.App != nil {
-		// If the screen implements NotFoundRenderer, hand it the unmatched
-		// path so it can echo the real URL instead of a placeholder. The
-		// path is passed as an argument (not stored on the shared screen
-		// instance) so concurrent 404s don't race.
-		var body render.HTML
-		if nf, ok := ds.notFoundScreen.(NotFoundRenderer); ok {
-			body = nf.RenderNotFound(path)
-		} else {
-			body = ds.notFoundScreen.Render()
+		body, err := ds.renderNotFoundBody(r, path)
+		if err == nil {
+			if layout := ds.App.Router.GetDefaultLayout(); layout != nil {
+				body = layout.Wrap(body)
+			}
+			appName := "GoFastr"
+			if ds.App.Name != "" {
+				appName = ds.App.Name
+			}
+			page := ds.injectChrome(ds.documentShell("404: "+appName, string(body)), path, "", "")
+			w.WriteHeader(http.StatusNotFound)
+			fmt.Fprint(w, page)
+			return
 		}
-		if layout := ds.App.Router.GetDefaultLayout(); layout != nil {
-			body = layout.Wrap(body)
-		}
-		appName := "GoFastr"
-		if ds.App.Name != "" {
-			appName = ds.App.Name
-		}
-		page := ds.injectChrome(ds.documentShell("404: "+appName, string(body)), path, "", "")
-		w.WriteHeader(http.StatusNotFound)
-		fmt.Fprint(w, page)
-		return
+		// A panicking custom 404 screen falls through to the default page
+		// below: the containment must not change the status semantics, and
+		// a standalone host has no recovery middleware to catch it for us.
+		slog.Warn("uihost: not-found screen render panicked; serving default 404", "err", err)
 	}
 
 	w.WriteHeader(http.StatusNotFound)
@@ -2033,6 +2058,17 @@ func (ds *UIHost) serveNotFound(w http.ResponseWriter, r *http.Request, path str
 // handlePartialPage returns just the screen content for client-side navigation.
 // The runtime.js router swaps the <main> content without a full page reload.
 func (ds *UIHost) handlePartialPage(w http.ResponseWriter, r *http.Request, path string) {
+	// no-store before ANY branch can return: every partial-shaped
+	// response — the prefetch 204 below, a policy DecisionRedirect's
+	// 200/303, a DecisionBlock, and the success body — is per-user
+	// rendered content, and the re-mint arm additionally carries
+	// Set-Cookie (a signed session token) + X-Gofastr-Session, which a
+	// shared cache replaying would hand one visitor to another. RFC 7234
+	// does not exempt 200+Set-Cookie from caching on its own, and the
+	// early exits used to return before the unconditional Set at the
+	// bottom, shipping uncacheable-flagged. The success path re-asserts
+	// it for its own documentation value.
+	w.Header().Set("Cache-Control", "no-store")
 	// Stateless-session rollover on the SPA path (#112): a partial
 	// navigation must re-mint an invalid/expired token exactly like a
 	// full render does; otherwise a restart, key rotation, or expiry
@@ -2053,12 +2089,6 @@ func (ds *UIHost) handlePartialPage(w http.ResponseWriter, r *http.Request, path
 		if sess := ds.CreateSession(); sess.Token != "" {
 			setSessionCookie(w, r, sess.Token)
 			w.Header().Set("X-Gofastr-Session", sess.ID)
-			// no-store the MOMENT we re-mint, before any Decision branch
-			// below can return: the redirect/block/not-found partials
-			// also carry this Set-Cookie + X-Gofastr-Session pair, and a
-			// shared cache replaying any of them would hand one visitor
-			// another's session. The success path re-asserts this header.
-			w.Header().Set("Cache-Control", "no-store")
 		}
 	}
 	// Declarative redirect on the SPA path: hand the runtime the target
@@ -2181,11 +2211,8 @@ func (ds *UIHost) handlePartialPage(w http.ResponseWriter, r *http.Request, path
 		// The client mounts overlay chrome only when the SERVER says so.
 		w.Header().Set("X-Gofastr-Overlay", overlay.As.String())
 	}
-	// no-store, unconditionally: a partial is per-user rendered HTML, and
-	// on the re-mint path this response carries Set-Cookie (a signed
-	// session token) + X-Gofastr-Session. A shared cache replaying that
-	// pair would hand one visitor another's live session/stream. RFC
-	// 7234 does not exempt 200+Set-Cookie from caching on its own.
+	// Re-assert no-store (set at the top of the function so every early
+	// exit carries it too; see that comment for the threat model).
 	w.Header().Set("Cache-Control", "no-store")
 	fmt.Fprint(w, partialSeedIsland(ctx, string(res.HTML))+string(res.HTML))
 }
@@ -2412,11 +2439,23 @@ func rejectCrossOrigin(w http.ResponseWriter, r *http.Request) bool {
 // returns false. Used by mutating /__gofastr/* endpoints.
 func decodeBounded(w http.ResponseWriter, r *http.Request, dst any) bool {
 	r.Body = http.MaxBytesReader(w, r.Body, maxMutatingBodyBytes)
-	if err := json.NewDecoder(r.Body).Decode(dst); err != nil { //gofastr:allow(GOFASTR1407) island RPC action payloads behind session auth and the CSRF middleware: no credential resolution
+	// Read the body out first so an oversize read still surfaces as
+	// *http.MaxBytesError (io.ReadAll propagates it raw; DecodeStrict
+	// wraps decode errors in its own 400 type).
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
 		if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
 			http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
 			return false
 		}
+		http.Error(w, "invalid JSON body", http.StatusBadRequest)
+		return false
+	}
+	// handler.UnmarshalStrict: duplicate and case-folded top-level keys
+	// decode last-wins under stdlib json, so {"action":"safe",
+	// "Action":"danger"} would execute the second action while any
+	// first-read intermediary saw the first. Refuse the ambiguity.
+	if err := handler.UnmarshalStrict(body, dst); err != nil {
 		http.Error(w, "invalid JSON body", http.StatusBadRequest)
 		return false
 	}
@@ -3055,7 +3094,10 @@ func (ds *UIHost) serveOrRender(w http.ResponseWriter, r *http.Request) {
 				if r.URL.RawQuery != "" {
 					target += "?" + r.URL.RawQuery
 				}
-				http.Redirect(w, r, target, http.StatusMovedPermanently)
+				// The path and query are request input; scrubCtl keeps raw
+				// C0/DEL out of the Location header (same contract as the
+				// 308 pattern-redirect above).
+				http.Redirect(w, r, scrubCtl(target), http.StatusMovedPermanently)
 				return
 			}
 		}

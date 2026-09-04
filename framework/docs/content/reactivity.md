@@ -42,6 +42,9 @@ region or writes the value into a signal.
   the runtime reconciles against it.
 - Covers every user-initiated data change: paginate, filter, create, update,
   delete, optimistic toggles with rollback.
+- JSON POST bodies are decoded under strict top-level key rules: the
+  compiled server-action endpoint (`/__gofastr/action`) refuses a body
+  with duplicate or case-folded keys rather than decoding it last-wins.
 
 A mutation can also stale screens the user is *not* on: a create stales
 every cached page of the list, an admin action stales `/pricing`. Name

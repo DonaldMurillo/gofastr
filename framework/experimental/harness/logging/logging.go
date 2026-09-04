@@ -210,7 +210,7 @@ type DailyFileWriter struct {
 // NewDailyFileWriter returns a writer that opens
 // `<dir>/harness-YYYYMMDD.log` and rotates on day change.
 func NewDailyFileWriter(dir string) (*DailyFileWriter, error) {
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, err
 	}
 	return &DailyFileWriter{dir: dir}, nil

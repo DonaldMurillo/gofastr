@@ -147,7 +147,9 @@ Useful options:
   `app.Router().NotFound(...)`: screens dispatch through the router's
   NotFound fall-through, so replacing it disables every page (the
   router now warns when a NotFound handler is replaced; compose with
-  `Router.WrapNotFound` when both must run).
+  `Router.WrapNotFound` when both must run). The custom screen renders
+  behind the same panic containment as every other screen; if its
+  render panics, the default 404 page is served instead.
 
 **`fwApp.Start`** runs migrations, binds the port, serves. Nothing
 UI-specific.
@@ -236,7 +238,10 @@ get the same status and the same `Cache-Control: private, no-store`
 arm carries bare content — the runtime surfaces a non-2xx partial as a
 navigation error and stays on the current page, a full load renders
 the branded page. See [security](security.md) → "Recovery screens and
-cache policy" for why the no-store default is not optional.
+cache policy" for why the no-store default is not optional. Every
+partial-shaped response carries it, including the early exits: the
+dead-session prefetch 204 and a policy redirect's 303 leave the server
+marked no-store before any branch can return.
 
 
 ## Common mistakes

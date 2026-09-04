@@ -52,7 +52,7 @@ type Store struct {
 // New returns a Store rooted at the given directory. The directory is
 // created if it doesn't exist.
 func New(root string) (*Store, error) {
-	if err := os.MkdirAll(root, 0o755); err != nil {
+	if err := os.MkdirAll(root, 0o700); err != nil {
 		return nil, err
 	}
 	s := &Store{root: root, by: make(map[string]*Entry)}
@@ -105,7 +105,7 @@ func (s *Store) Save(e Entry) error {
 	defer s.mu.Unlock()
 	e.Path = filepath.Join(s.root, e.Name+".md")
 	content := serialize(&e)
-	if err := os.WriteFile(e.Path, []byte(content), 0o644); err != nil {
+	if err := os.WriteFile(e.Path, []byte(content), 0o600); err != nil {
 		return err
 	}
 	s.by[e.Name] = &e
@@ -231,7 +231,7 @@ func (s *Store) writeIndexLocked() error {
 	for _, e := range entries {
 		fmt.Fprintf(&b, "- [%s](%s.md): %s\n", e.Name, e.Name, e.Description)
 	}
-	return os.WriteFile(filepath.Join(s.root, "MEMORY.md"), []byte(b.String()), 0o644)
+	return os.WriteFile(filepath.Join(s.root, "MEMORY.md"), []byte(b.String()), 0o600)
 }
 
 func validate(e *Entry) error {

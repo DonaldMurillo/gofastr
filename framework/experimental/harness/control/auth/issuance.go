@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"crypto/rand"
+	"crypto/subtle"
 	"errors"
 	"fmt"
 	"math/big"
@@ -121,7 +122,12 @@ func (i *Issuer) Confirm(mintID, code string) (string, error) {
 	if i.now().After(p.expires) {
 		return "", ErrCodeExpired
 	}
-	if code != p.code {
+	// Constant-time compare, the family standard (battery/setup token,
+	// battery/auth TOTP): both sides are fixed-width %06d strings, so
+	// subtle.ConstantTimeCompare applies directly. The delete-above
+	// already burns the mint on a wrong attempt — that burn IS the
+	// rate limit; do not add one.
+	if subtle.ConstantTimeCompare([]byte(code), []byte(p.code)) != 1 {
 		return "", ErrCodeMismatch
 	}
 	return i.enc.Encode(p.claims)

@@ -1,5 +1,3 @@
-//go:build red
-
 package ws
 
 import (
@@ -12,26 +10,14 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/engine"
 )
 
-// Property: inbound JSON on operator-reachable control-plane surfaces
-// is decoded under strict top-level key rules (duplicate keys rejected,
-// keys must exact-match the envelope's json tags) — the repo standard
-// core/handler/bind.go validateBodyKeys enforces on production Bind
-// surfaces.
-// Surfaces: ws.go handleText text-frame envelope {"frame","body"} —
-// loopback bearer-token operator transport, dev harness surface.
-// Finding: ws.go:267 json.Unmarshal(payload, &f) is fully non-strict:
-// a duplicate top-level key is resolved last-wins and a case-folded
-// key ("FRAME" vs "frame") matches its tag case-insensitively. A frame
-// like {"frame":"event","frame":"command",...} is dispatched as a
-// command even though any first-read intermediary (proxy, logger,
-// audit trail) parsed it as an event frame, and the body is re-decoded
-// non-strictly by control.UnmarshalCommand afterwards.
-// Fix direction: strict-decode the envelope (DisallowUnknownFields +
-// validateBodyKeys-equivalent duplicate/case-fold rejection over the
-// raw payload) and answer with the existing controlError("bad frame:")
-// path instead of dispatching.
-// Round-6 mechanism split: exact duplicates and case-folded keys are
-// separate top-level tests below (independently fixable mechanisms).
+// Inbound text frames are decoded under strict top-level key rules:
+// duplicate and case-folded keys resolve last-wins under stdlib json, so
+// {"frame":"event","frame":"command",...} would dispatch as a command
+// while any first-read intermediary (proxy, logger, audit trail) parsed
+// an event frame. The envelope is strict-decoded (handler.UnmarshalStrict)
+// and a smuggled shape is answered through the controlError("bad frame:")
+// path instead of dispatching (handler.DecodeStrict parity with
+// core/handler Bind surfaces).
 
 // sendRawFrame writes one masked client text frame with raw JSON bytes.
 func sendRawFrame(t *testing.T, conn net.Conn, raw []byte) {
@@ -78,12 +64,12 @@ func wsStrictRefusal(payload string) bool {
 	return false
 }
 
-// TestHarnessWsRedRejectsDuplicateKeys: exact duplicate top-level "frame"
+// TestWsFrameRejectsDuplicateKeys: exact duplicate top-level "frame"
 // keys — wire-level last-wins.
-func TestHarnessWsRedRejectsDuplicateKeys(t *testing.T) {
-	// Happy guard on its own stack: the well-formed envelope
-	// dispatches and streams the turn, so the refusal demanded
-	// below can only come from key strictness, not plumbing.
+func TestWsFrameRejectsDuplicateKeys(t *testing.T) {
+	// Happy guard on its own stack: the well-formed envelope dispatches
+	// and streams the turn, so the refusal demanded below can only come
+	// from key strictness, not plumbing.
 	u, sess, tok, cleanup := setupServer(t)
 	host := strings.TrimPrefix(u, "http://")
 	defer cleanup()
@@ -117,22 +103,18 @@ func TestHarnessWsRedRejectsDuplicateKeys(t *testing.T) {
 	sendRawFrame(t, conn2, []byte(`{"frame":"event","frame":"command","body":`+string(body2)+`}`))
 	got := readAllFrames(t, conn2, 1500*time.Millisecond)
 	if !wsStrictRefusal(got) {
-		t.Errorf("SECURITY: [ws-strict-keys] a text frame with a smuggled key shape (duplicate top-level frame key) was "+
-			"decoded and dispatched (received %.200q). ws.go:267 json.Unmarshal is non-strict: "+
-			"duplicate top-level keys resolve last-wins, so "+
-			"{\"frame\":\"event\",\"frame\":\"command\",...} runs as a command while any "+
-			"first-read intermediary saw an event frame. Strict-decode the envelope and answer "+
-			"via controlError(\"bad frame:\") instead of dispatching.", got)
+		t.Errorf("SECURITY: [ws-strict-keys] a text frame with a duplicate top-level frame key was "+
+			"decoded and dispatched (received %.200q) — duplicate top-level keys resolve last-wins, "+
+			"so the frame runs as a command while any first-read intermediary saw an event frame; "+
+			"strict-decode the envelope via handler.UnmarshalStrict and answer controlError(\"bad frame:\")",
+			got)
 	}
 }
 
-// TestHarnessWsRedRejectsCaseFoldedKeys: "FRAME"/"BODY" case-fold onto
-// the tagged fields via stdlib json's tag-insensitive match — the frame
+// TestWsFrameRejectsCaseFoldedKeys: "FRAME"/"BODY" case-fold onto the
+// tagged fields via stdlib json's tag-insensitive match — the frame
 // still dispatches as a command; survives a dedup-only fix.
-func TestHarnessWsRedRejectsCaseFoldedKeys(t *testing.T) {
-	// Happy guard on its own stack: the well-formed envelope
-	// dispatches and streams the turn, so the refusal demanded
-	// below can only come from key strictness, not plumbing.
+func TestWsFrameRejectsCaseFoldedKeys(t *testing.T) {
 	u, sess, tok, cleanup := setupServer(t)
 	host := strings.TrimPrefix(u, "http://")
 	defer cleanup()
@@ -166,11 +148,10 @@ func TestHarnessWsRedRejectsCaseFoldedKeys(t *testing.T) {
 	sendRawFrame(t, conn2, []byte(`{"FRAME":"command","BODY":`+string(body2)+`}`))
 	got := readAllFrames(t, conn2, 1500*time.Millisecond)
 	if !wsStrictRefusal(got) {
-		t.Errorf("SECURITY: [ws-strict-keys] a text frame with a smuggled key shape (case-folded top-level keys) was "+
-			"decoded and dispatched (received %.200q). ws.go:267 json.Unmarshal is non-strict: "+
-			"case-folded keys still match their tags, so "+
-			"{\"FRAME\":\"command\",...} runs as a command while any "+
-			"first-read intermediary parsed a different frame. Strict-decode the envelope and answer "+
-			"via controlError(\"bad frame:\") instead of dispatching.", got)
+		t.Errorf("SECURITY: [ws-strict-keys] a text frame with case-folded top-level keys was "+
+			"decoded and dispatched (received %.200q) — case-folded keys still match their tags, "+
+			"so the frame runs as a command while any first-read intermediary parsed a different "+
+			"frame; strict-decode the envelope via handler.UnmarshalStrict and answer "+
+			"controlError(\"bad frame:\")", got)
 	}
 }
