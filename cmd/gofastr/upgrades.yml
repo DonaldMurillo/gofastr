@@ -19,7 +19,7 @@
 # The registry is complete through this release: releases ≤ through
 # with no entry below genuinely had no migration-relevant changes.
 # Targets beyond it make the CLI warn that it may be out of date.
-through: v0.81.0
+through: v0.82.0
 
 releases:
   - version: v0.3.0
@@ -955,3 +955,32 @@ releases:
       - change: "custom endpoint MCP tool names keep hyphens and mark path parameters, and entity and path spelling is no longer case-folded"
         breaking: false
         guidance: "Names for endpoints without hyphens, parameters or upper case are unchanged. An agent that pinned a folded name for one that has them re-lists tools; every entity tool keeps its name."
+  - version: v0.82.0
+    title: Red-probe round 2, five analyzers, one exception marker
+    notes:
+      - change: "auth.NewEntityTwoFAStore takes an EntityTwoFAStoreConfig whose EncryptionKey is required and returns an error; the TOTP seed is sealed at rest with the sealer the OAuth token store already uses"
+        breaking: true
+        detect: 'NewEntityTwoFAStore\('
+        guidance: "Pass EntityTwoFAStoreConfig{EncryptionKey: <32 random bytes from your secret manager>} and handle the returned error. Rows written as plaintext by an older build still verify and are re-sealed on their next write, so no data migration is needed; an empty key is a config error at construction."
+      - change: "battery/auth JSON endpoints refuse unknown top-level keys with 400, the rule handler.Bind already applies everywhere else"
+        breaking: true
+        detect: 'battery/auth"'
+        guidance: "A client that sent extra fields to login, register, forgot or reset password, magic-link, 2FA or API-token bodies must stop; the SDKs and the framework's own forms never did. Form-encoded bodies are unaffected."
+      - change: "brute-force- and flood-sensitive auth endpoints ship opt-out per-IP throttles: forgot/reset password, magic-link send and verify (new MagicLinkConfig.VerifyRateLimit), send-verification, 2FA challenge and verify"
+        breaking: false
+        guidance: "Set the RateLimit field on the plugin config to change a floor; the defaults match the login and register floors AuthConfig.defaults already installed."
+      - change: "battery/admin refuses cross-site form posts on every mutating route itself, caps form bodies at 1 MiB, tiers _assign, _grant and _revoke to the caller's own permissions, and honours an installed access Decider before the superuser context"
+        breaking: false
+        guidance: "A host that relied on middleware.CSRF alone keeps it as depth; a narrower admin tier that could previously grant the wildcard now gets a 403 and an audit row. Same-site sibling subdomains are refused by the Origin host check."
+      - change: "crud refuses duplicate and case-folded wire keys (400), caps an explicit ?offset= and a page-derived skip at MaxOffset (default page cap x 1000, WithMaxOffset), and the CRUD EventStream re-checks authorization per delivery and every EventStreamReauth (default 30s)"
+        breaking: false
+        guidance: "A client paging past 100,000 rows now gets a 400 instead of an empty window; raise WithMaxOffset if that is a real use. An SSE consumer whose permission is revoked sees the stream close within the interval."
+      - change: "the access Decider binds every gate: RequirePermission, RequireRole, MCPUser and MCPRole, admin authorized(), and crud's CrossOwnerRead and read-scope lifts fail closed on DecisionDeny"
+        breaking: false
+        guidance: "A host whose Decider returned Deny for a role-gated route previously passed; it is refused now, which is what DeciderMiddleware's doc promised. Abstain still falls through to the role policy."
+      - change: "App.Start contains a panicking OnStart, OnReady or WithSeed hook and battery OnStart (attributed error, boot aborts through teardown); App.Shutdown keeps stopping the remaining batteries after one panics and joins the errors"
+        breaking: false
+        guidance: "A hook bug that used to crash the process now surfaces as the error App.Start returns; nothing changes for hooks that do not panic."
+      - change: "five repo analyzers (worldreadable, fixedtmp, secretcompare, timestampid, discardeddecode) and three widened ones run in make analyze; GOFASTR1407 follows client bytes through helpers and websocket frames; handler.DecodeStrict / UnmarshalStrict / CheckTopLevelKeys are the one strict decoder"
+        breaking: false
+        guidance: "A strict verify or vet run that was green can report new sites; each message names the fix. A site that is the shape on purpose carries //gofastr:allow(<analyzer>) <why> on its line, the same marker spelling contracts rules use; the reason is mandatory."

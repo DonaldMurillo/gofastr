@@ -7,6 +7,8 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+## [0.82.0] - 2026-09-04
+
 ### Security
 - **Five more repo analyzers and three widened ones, one per bug shape
   the 2026-09-03 red-probe round kept finding**: `worldreadable` (state
