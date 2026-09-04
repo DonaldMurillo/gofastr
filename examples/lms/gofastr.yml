@@ -351,6 +351,14 @@ entities:
   - name: enrollments
     crud: true
     mcp: true
+    # Enrollment rows are student records: they expose who studies what
+    # and how far along they are. Same posture as the roster itself —
+    # RBAC-gated, staff-managed, never world-open.
+    access:
+      read: enrollments:read
+      create: enrollments:write
+      update: enrollments:write
+      delete: enrollments:admin
     indices:
       - name: idx_enrollments_student_course
         columns: [student_id, course_id]
@@ -397,6 +405,13 @@ entities:
 
   - name: progress
     crud: true
+    # Progress carries scores and instructor notes per student — the most
+    # sensitive academic record in the app. Registrar/staff flows only.
+    access:
+      read: progress:read
+      create: progress:write
+      update: progress:write
+      delete: progress:admin
     indices:
       - name: idx_progress_student_lesson
         columns: [student_id, lesson_id]
@@ -438,6 +453,13 @@ entities:
 
   - name: certificates
     crud: true
+    # Certificate codes are bearer-shaped credentials proving completion;
+    # harvesting them mints fake credentials. RBAC-gate like the roster.
+    access:
+      read: certificates:read
+      create: certificates:write
+      update: certificates:write
+      delete: certificates:admin
     indices:
       - name: idx_certificates_code
         columns: [code]

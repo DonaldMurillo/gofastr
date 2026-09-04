@@ -140,10 +140,13 @@ func runDev(args []string) {
 			fmt.Println()
 			info("Shutting down...")
 			killServer(&mu, &server)
-			_ = os.Remove(devServerBinaryPath(runtimeIsolation))
+			// Remove the whole minted dir: the binary inside plus the dir
+			// itself, so restarts don't accumulate either.
+			if dir := devServerBinDir(); dir != "" {
+				_ = os.RemoveAll(dir)
+			}
 			close(stop)
 			return
-
 		case <-reload:
 			fmt.Println()
 			info("Change detected; rebuilding...")
@@ -231,19 +234,36 @@ func resolveDevIsolation(dir, addr string) (*isolation.Runtime, string, error) {
 	return runtimeIsolation, resolvedAddr, nil
 }
 
+// devServerBinDir is the per-process 0700 directory under the temp root
+// that holds the rebuilt server binary. Minted once per process with
+// os.MkdirTemp so every caller (each rebuild's build -o and exec, the
+// shutdown cleanup) agrees on one unguessable path: a predictable name
+// in the shared temp root let a local co-user pre-plant a symlink and
+// swap the dev server binary between build and exec (CWE-377).
+var devServerBinDir = sync.OnceValue(func() string {
+	dir, err := os.MkdirTemp("", "gofastr-dev-server-")
+	if err != nil {
+		return ""
+	}
+	return dir
+})
+
 // devServerBinaryPath is the per-process temp path the rebuilt server is
-// compiled to. The pid suffix lets concurrent dev instances coexist; the
-// shutdown path removes the file so restarts don't accumulate binaries in
-// the temp dir.
+// compiled to, inside the private 0700 dir above. The isolation ID keeps
+// concurrent isolated dev instances distinct inside the same dir.
 func devServerBinaryPath(runtimeIsolation *isolation.Runtime) string {
-	tmpName := fmt.Sprintf("gofastr-dev-server-%d", os.Getpid())
+	dir := devServerBinDir()
+	if dir == "" {
+		return "" // MkdirTemp failed; buildAndServe refuses on empty
+	}
+	name := "server"
 	if runtimeIsolation.Active() {
-		tmpName += "-" + runtimeIsolation.ID()
+		name += "-" + runtimeIsolation.ID()
 	}
 	if runtime.GOOS == "windows" {
-		tmpName += ".exe"
+		name += ".exe"
 	}
-	return filepath.Join(os.TempDir(), tmpName)
+	return filepath.Join(dir, name)
 }
 
 // devA11yGate runs the same static accessibility lint `gofastr build`
@@ -260,7 +280,6 @@ func devA11yGate(dir string, noA11y bool) bool {
 	return true
 }
 
-// buildAndServe builds and starts the server process.
 func buildAndServe(dir, pkg, addr string, runtimeIsolation *isolation.Runtime, mu *sync.Mutex, cmd **exec.Cmd, noA11y bool) bool {
 	// Same posture as `gofastr build`: the static a11y lint gates the
 	// rebuild by default. Failing here is a build failure: the watch
@@ -275,10 +294,11 @@ func buildAndServe(dir, pkg, addr string, runtimeIsolation *isolation.Runtime, m
 		return false
 	}
 
-	// Build binary to temp file. pkg is relative to dir ("." unless --pkg moved
-	// the build target to a command under cmd/), so the build resolves against
-	// the project module while the watch root and cwd below stay at dir.
 	tmpBin := devServerBinaryPath(runtimeIsolation)
+	if tmpBin == "" {
+		fail("Could not create a private temp dir for the dev server binary")
+		return false
+	}
 	buildCmd := exec.Command("go", "build", "-o", tmpBin, pkg)
 	buildCmd.Dir = dir // Run from the project dir so go build resolves the local module.
 	buildCmd.Stdout = os.Stdout

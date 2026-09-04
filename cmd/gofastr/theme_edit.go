@@ -24,6 +24,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
+	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/gallery"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
@@ -460,10 +461,11 @@ func (s *themeEditServer) handleApply(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Key, Value string
+		Key   string `json:"key"`
+		Value string `json:"value"`
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, maxThemeEditBody)
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil { //gofastr:allow(GOFASTR1407) dev-only theme editor endpoint on the local build tool; body is editor options, not identity
+	if err := handler.DecodeStrict(r.Body, &req); err != nil {
 		writeJSONError(w, http.StatusBadRequest, "malformed JSON body")
 		return
 	}

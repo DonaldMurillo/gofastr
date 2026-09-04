@@ -19,11 +19,10 @@ import (
 	"fmt"
 	"strings"
 	"sync"
-	"sync/atomic"
-	"time"
 
 	acpcore "github.com/DonaldMurillo/gofastr/core/acp"
 	"github.com/DonaldMurillo/gofastr/kiln/agent"
+	"github.com/DonaldMurillo/gofastr/kiln/internal/kid"
 	"github.com/DonaldMurillo/gofastr/kiln/journal"
 	"github.com/DonaldMurillo/gofastr/kiln/protocol"
 )
@@ -44,7 +43,6 @@ type Agent struct {
 
 	mu       sync.Mutex
 	sessions map[string]*session
-	counter  atomic.Int64
 }
 
 // Option customizes an Agent.
@@ -88,7 +86,7 @@ func (a *Agent) NewSession(ctx context.Context, cwd string) (acpcore.Session, er
 	if a.tools == nil {
 		return nil, errors.New("kiln/acp: nil tools")
 	}
-	id := fmt.Sprintf("kiln-%d-%d", time.Now().UnixNano(), a.counter.Add(1))
+	id := "kiln-" + kid.Hex(16)
 	s := &session{agent: a, id: id}
 	a.mu.Lock()
 	a.sessions[id] = s
@@ -155,7 +153,7 @@ func (s *session) Prompt(ctx context.Context, prompt []acpcore.ContentBlock, out
 }
 
 func (s *session) messageID() string {
-	return fmt.Sprintf("msg_%s_%d", s.id, time.Now().UnixNano())
+	return "msg_" + kid.Hex(16)
 }
 
 // runTurns mirrors agent.Loop.Run with ACP streaming: each provider

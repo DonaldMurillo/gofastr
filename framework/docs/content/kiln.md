@@ -209,6 +209,11 @@ Freeze writes exactly:
   one-shot generator;
 - `build/world.json`: lossless authoring snapshot.
 
+A database URL with an embedded password never lands in either file:
+freeze writes a `${DATABASE_URL}` reference instead, and the generated
+app refuses to boot until the variable is supplied (credential-free DSNs,
+like SQLite file paths, stay verbatim).
+
 Declarative Kiln hook/route actions remain exact in `world.json`. Where the
 current blueprint requires a Go function, freeze emits an owned-Go handler
 stub with a description naming the declarative action; implement that behavior
@@ -235,6 +240,16 @@ browser requests are rejected; non-browser clients without an `Origin` header
 and same-origin requests are allowed. Binding `--addr 0.0.0.0:8765` is an
 explicit decision to expose those endpoints and should only be done behind an
 appropriate network/auth boundary.
+
+Three further postures hold on every surface. JSON request bodies decode
+strictly: a body that fails to parse, or carries duplicate or case-folded
+keys, is refused with `400` rather than resolved last-wins. Every response
+Kiln serves carries the framework's security headers (`nosniff`, frame and
+CSP policy included). And `.kiln.session.jsonl` is created owner-only
+(`0600` in a `0700` directory), because its entries embed the same secrets
+freeze writes owner-only. Built-in agent adapters run each turn in a fresh
+`0700` working directory under their registered temp path; a directory Kiln
+does not own is refused, not adopted.
 
 ## Verification
 

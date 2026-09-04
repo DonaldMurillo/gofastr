@@ -1,40 +1,10 @@
-//go:build red
-
 package main
 
-// RED TEST — open finding, 2026-09-03 adversarial pass round 8 (tests-only; no fix applied).
-// TIER: EXAMPLE-APP POSTURE — this pins the blueprint examples/lms/gofastr.yml
-// (a generated-from-blueprint reference app), not framework code. The
-// framework's default-auth posture is separately pinned
-// (framework/crud/default_auth_security_test.go,
-// framework/exposure_default_test.go); those pins are respected, not
-// re-derived. What is red here is the example's own declaration set.
-// Property: student academic records are per-person data and must not be
-// readable or writable by an unrelated account (CWE-862 missing
-// authorization / CWE-284 improper access control).
-// Surface: examples/lms/gofastr.yml declares enrollments (l.351), progress
-// (l.398), and certificates (l.439) with crud+mcp and NO access block, while
-// the SAME file RBAC-gates students (l.314-320, comment: "The student roster
-// holds PII ... RBAC-gate every operation") and instructors (l.33-37). The
-// ungated trio sits at the framework default posture: authenticated-but-
-// unauthorized (any session passes). Generated apps ship open
-// /auth/register (pinned by the portfolio boot test's register flow), so any
-// visitor can mint an account and then:
-//   - GET /api/enrollments      → every student's enrollment rows;
-//   - PATCH /api/progress/{id}  → rewrite any student's score/notes;
-//   - GET /api/certificates     → harvest certificate codes.
-// The same file's own convention (PII ⇒ access block) names this a defect:
-// student progress notes and certificate codes got nothing while the student
-// email beside them is gated. The blueprint is dev_mode:true by design; that
-// flag is filter-tagged and NOT the red — the missing access blocks are.
-// Severity: MEDIUM — reference-example tier (a shipped blueprint users copy
-// for student-data apps), full student-record read/write for any registered
-// account, MCP inherits the same gate (mcp:true on all three).
-// Fix direction: add access blocks to enrollments/progress/certificates in
-// examples/lms/gofastr.yml mirroring students (read: <entity>:read,
-// create/update: <entity>:write, delete: <entity>:admin); staff roles for
-// the registrar flows the screens imply.
-
+// Property: the lms example blueprint gates every student-record entity
+// (enrollments, progress, certificates) the way it gates the student
+// roster itself: RBAC on every operation, so an unrelated registered
+// account is refused on read and write — the generated app must not
+// ship world-open student data.
 import (
 	"database/sql"
 	"encoding/json"
@@ -49,12 +19,12 @@ import (
 	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 )
 
-// TestLmsRedGatesStudentRecords boots the real lms blueprint, seeds one of
+// TestLmsGatesStudentRecords boots the real lms blueprint, seeds one of
 // each student record through the API a staff registrar would use, then
 // registers a SECOND, unrelated account and asserts that stranger is refused
 // on read and write of all three record families. RED today: the default
 // posture lets every session through.
-func TestLmsRedGatesStudentRecords(t *testing.T) {
+func TestLmsGatesStudentRecords(t *testing.T) {
 	if testing.Short() {
 		t.Skip("generates, builds, and boots an app")
 	}

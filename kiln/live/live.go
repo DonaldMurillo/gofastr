@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"sync"
 
+	"github.com/DonaldMurillo/gofastr/core/middleware"
 	"github.com/DonaldMurillo/gofastr/core/openapi"
 	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/framework"
@@ -368,10 +369,25 @@ func (l *Live) Subscribe() (<-chan Event, func()) {
 	return l.bus.Subscribe()
 }
 
+// securityHeaders is the framework default chain's header set with one
+// kiln-specific allowance: the fallback host page ships an inline
+// <style> block (every value a theme token), so style-src allows
+// 'unsafe-inline'. Scripts stay external-only under default-src 'self'.
+// Without this wrapper every kiln-served response (panel widget, JSON
+// state, the fallback document) skips the nosniff/XFO/CSP discipline
+// every framework page rides by default.
+var securityHeaders = middleware.SecurityHeaders(middleware.SecurityHeadersConfig{
+	ContentSecurityPolicy: "default-src 'self'; style-src 'self' 'unsafe-inline'; " +
+		"img-src 'self' data:; object-src 'none'; form-action 'self'; " +
+		"frame-ancestors 'none'; base-uri 'self'",
+})
+
 // ServeHTTP first tries the auxiliary router (kiln-internal paths),
-// falling through to the current app's router on 404.
+// falling through to the current app's router on 404. The whole tree is
+// wrapped in the security-header middleware so aux routes and the HTML
+// fallback carry the same headers the framework default chain sets.
 func (l *Live) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	l.aux.ServeHTTP(w, r)
+	securityHeaders(http.Handler(l.aux)).ServeHTTP(w, r)
 }
 
 // serveApp delegates to the rebuilt app. Used as the aux router's NotFound.

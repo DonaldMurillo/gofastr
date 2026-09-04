@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -208,10 +209,32 @@ func runOneAgentTurn(ctx context.Context, logger *log.Logger, tools *protocol.To
 	c.Stderr = os.Stderr // surface diagnostic output to the kiln operator
 	// Adapters that ask for a clean working directory (e.g. pi, which
 	// will cat any Go file in cwd and report on it as if it were the
-	// kiln world) get their isolated dir created on demand.
+	// kiln world) get one. The registry name is a fixed path in the
+	// shared temp root, so it is created owner-only and a name we
+	// cannot tighten to 0700 (chmod requires ownership) is refused
+	// rather than trusted — a pre-planted dir would otherwise hand the
+	// agent someone else's files as its context. The actual cwd is a
+	// unique per-turn MkdirTemp child, so two kiln users (or two turns)
+	// never collide and planted files never sit in the agent's cwd.
 	if adapter.Dir != "" {
-		_ = os.MkdirAll(adapter.Dir, 0o755)
-		c.Dir = adapter.Dir
+		if err := os.Mkdir(adapter.Dir, 0o700); err != nil && !errors.Is(err, os.ErrExist) {
+			logger.Printf("agent: adapter %q work dir %s: %v", adapter.Name, adapter.Dir, err)
+			return
+		}
+		if err := os.Chmod(adapter.Dir, 0o700); err != nil {
+			// Fail closed: chmod only succeeds for the owner, so a
+			// co-user's pre-created dir (or a symlink to a target we
+			// do not own) is refused, not adopted.
+			logger.Printf("agent: adapter %q work dir %s is not owned by this user (chmod 0700: %v); refusing to run in it", adapter.Name, adapter.Dir, err)
+			return
+		}
+		turnDir, err := os.MkdirTemp(adapter.Dir, "turn-")
+		if err != nil {
+			logger.Printf("agent: adapter %q work dir %s: %v", adapter.Name, adapter.Dir, err)
+			return
+		}
+		c.Dir = turnDir
+		defer os.RemoveAll(turnDir)
 	}
 	out, err := c.Output()
 	resp := strings.TrimSpace(string(out))

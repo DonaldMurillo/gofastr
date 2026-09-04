@@ -44,10 +44,14 @@ var validHook = BlueprintHook{
 	Handler: "validateTaskTitle", Description: "reject empty titles",
 }
 
-// TestBlueprintHooksReachGeneratedApp: a blueprint hook must surface in the
-// generated tree — a handler stub like the endpoints get, registry wiring, or
-// a refusal. Vanishing silently is the one disallowed outcome, because the
-// operator tested against the enforced behavior in the kiln preview.
+// TestBlueprintHooksReachGeneratedApp: a blueprint hook must surface in
+// the generated tree — a handler stub like the endpoints get, registry
+// wiring, or a refusal. Vanishing silently is the one disallowed
+// outcome, because the operator tested against the enforced behavior in
+// the kiln preview. (The 2026-09-03 probe that drove the full
+// load-validate-render path confirmed this contract green; it was
+// deleted as a duplicate of this family, which also pins handler
+// identifier and entity/when validation below.)
 func TestBlueprintHooksReachGeneratedApp(t *testing.T) {
 	bp := hookBp(validHook)
 	if err := validateBlueprint(bp); err != nil {

@@ -105,10 +105,13 @@ func OpenJSONL(path string) (*JSONL, error) {
 	if path == "" {
 		return nil, errors.New("journal: empty path")
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	// 0700 dir / 0600 file: journal lines embed app-config verbatim
+	// (Auth.JWTSecret, Admin.SeedPassword), the same data freeze writes
+	// owner-only. Every create site below keeps the same modes.
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return nil, fmt.Errorf("journal: ensure dir: %w", err)
 	}
-	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0o644)
+	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0o600)
 	if err != nil {
 		return nil, fmt.Errorf("journal: open %s: %w", path, err)
 	}
@@ -256,7 +259,7 @@ func (j *JSONL) TruncateAfter(n int) error {
 		return fmt.Errorf("journal: seek start: %w", err)
 	}
 	tmpPath := j.path + ".tmp"
-	tmp, err := os.OpenFile(tmpPath, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0o644)
+	tmp, err := os.OpenFile(tmpPath, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0o600)
 	if err != nil {
 		return fmt.Errorf("journal: open tmp: %w", err)
 	}
@@ -304,7 +307,7 @@ func (j *JSONL) TruncateAfter(n int) error {
 	if err := os.Rename(tmpPath, j.path); err != nil {
 		return fmt.Errorf("journal: rename: %w", err)
 	}
-	f, err := os.OpenFile(j.path, os.O_RDWR|os.O_APPEND, 0o644)
+	f, err := os.OpenFile(j.path, os.O_RDWR|os.O_APPEND, 0o600)
 	if err != nil {
 		return fmt.Errorf("journal: reopen: %w", err)
 	}

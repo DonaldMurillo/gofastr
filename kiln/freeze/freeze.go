@@ -56,6 +56,9 @@ func writeWorldSnapshot(w *world.World, dir string) error {
 	snapshot := *w
 	snapshot.App.Auth.JWTSecret = envRef(w.App.Auth.JWTSecret, "JWT_SECRET")
 	snapshot.App.Admin.SeedPassword = envRef(w.App.Admin.SeedPassword, "ADMIN_SEED_PASSWORD")
+	// A credentialed DSN is credential material too (dbURLRef); a plain
+	// SQLite path stays verbatim so the snapshot keeps booting.
+	snapshot.App.DBURL = dbURLRef(w.App.DBURL)
 	w = &snapshot
 	buf, err := json.MarshalIndent(w, "", "  ")
 	if err != nil {

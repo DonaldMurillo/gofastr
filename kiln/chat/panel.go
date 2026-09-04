@@ -12,6 +12,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core-ui/widget"
 	"github.com/DonaldMurillo/gofastr/core-ui/widget/preset"
+	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/kiln/journal"
@@ -1030,7 +1031,10 @@ func (pe *panelEnv) serveSend(w http.ResponseWriter, r *http.Request) {
 		Text string `json:"text"`
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, maxPanelBody)
-	_ = json.NewDecoder(r.Body).Decode(&body) //gofastr:allow(GOFASTR1407) kiln chat panel transport envelope on the build-mode dev server
+	if err := handler.DecodeStrict(r.Body, &body); err != nil {
+		http.Error(w, "invalid JSON", http.StatusBadRequest)
+		return
+	}
 	if strings.TrimSpace(body.Text) == "" {
 		// Don't 4xx on empty, that would surface as an RPC failure
 		// in the runtime. Silent ack: nothing to do, no journal write.
@@ -1051,7 +1055,10 @@ func (pe *panelEnv) serveApprove(w http.ResponseWriter, r *http.Request) {
 		PlanID string `json:"plan_id"`
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, maxPanelBody)
-	_ = json.NewDecoder(r.Body).Decode(&body) //gofastr:allow(GOFASTR1407) kiln chat panel transport envelope on the build-mode dev server
+	if err := handler.DecodeStrict(r.Body, &body); err != nil {
+		http.Error(w, "invalid JSON", http.StatusBadRequest)
+		return
+	}
 	pe.tools.ApprovePlan(r.Context(), protocol.ApprovePlanArgs{PlanID: body.PlanID})
 	ack(w)
 }
@@ -1062,7 +1069,10 @@ func (pe *panelEnv) serveReject(w http.ResponseWriter, r *http.Request) {
 		Reason string `json:"reason"`
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, maxPanelBody)
-	_ = json.NewDecoder(r.Body).Decode(&body) //gofastr:allow(GOFASTR1407) kiln chat panel transport envelope on the build-mode dev server
+	if err := handler.DecodeStrict(r.Body, &body); err != nil {
+		http.Error(w, "invalid JSON", http.StatusBadRequest)
+		return
+	}
 	pe.tools.RejectPlan(r.Context(), protocol.RejectPlanArgs{PlanID: body.PlanID, Reason: body.Reason})
 	ack(w)
 }
