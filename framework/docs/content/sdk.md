@@ -165,6 +165,13 @@ SDK beats none), and re-running `gofastr generate sdk` clears it. A
 manifest from a different gofastr version downgrades the check to an
 "unknown provenance" note instead of a false stale warning.
 
+The manifest must list the entities it covers: `ReadManifest` refuses an
+empty (or omitted) `entities` list the same way it refuses a missing
+artifact, because a zero-entity manifest makes this check vacuous — the
+recomputed hash would be a constant no matter what the live registry
+holds, and a generation run that lost its entity list would report
+"current" forever after.
+
 ### Static export
 
 Docs pages export through `App.ExportStatic` like any screens (entity

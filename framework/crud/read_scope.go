@@ -97,8 +97,13 @@ func readScopeFilters(ctx context.Context, ent *entity.Entity) []filter.ParsedFi
 // despite its ReadScope.
 //
 // Unrestricted non-empty names a permission: a caller holding it is
-// unrestricted (checked through access.Can, fail-closed with no policy in
-// context, exactly like crossOwnerReadGranted).
+// unrestricted. The check routes through access.CanResource with the
+// entity-shaped Ref (ID "", like every collection-level gate) so a
+// resource-aware Decider installed in ctx can keep a caller scoped even
+// when the role policy still grants the capability — lifting a declared
+// row filter is a resource-scoped decision, the same seam
+// requirePermission and crossOwnerReadGranted consult. Fail-closed with
+// no policy in context, exactly like those gates.
 //
 // Unrestricted EMPTY is the weaker, deliberate lift the issue names: ANY
 // caller with a session reads every row, and an anonymous caller gets the
@@ -112,7 +117,8 @@ func readScopeUnrestricted(ctx context.Context, ent *entity.Entity) bool {
 		return true
 	}
 	if rs.Unrestricted != "" {
-		return access.Can(ctx, access.Permission(rs.Unrestricted))
+		return access.CanResource(ctx, access.Permission(rs.Unrestricted),
+			access.Ref{Type: ent.GetName(), ID: ""})
 	}
 	_, signedIn := handler.GetUser(ctx)
 	return signedIn

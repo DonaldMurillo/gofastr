@@ -142,3 +142,39 @@ func TestDeciderConsult_NoDeciderUnchanged(t *testing.T) {
 		t.Fatalf("List without docs:read and no decider = %d, want 403 (unchanged)", recNo.Code)
 	}
 }
+
+// TestCrossOwnerReadHonorsDecider: the CrossOwnerRead lift is a
+// resource-scoped decision, so it routes through access.CanResource like
+// every sibling gate — a DecisionDeny for the entity keeps a
+// policy-granted caller inside their owner scope even though the role
+// policy alone would grant the lift.
+func TestCrossOwnerReadHonorsDecider(t *testing.T) {
+	installOwnerExtractor(t)
+	ch, _ := setupCrossOwnerReadHandler(t) // alice t-a, bob t-b; CrossOwnerRead "tickets:read:all"
+
+	deny := func(_ context.Context, _ []string, capability access.Permission, resource access.Ref) access.Decision {
+		if capability == access.Permission("tickets:read:all") && resource.Type == "ctickets" {
+			return access.DecisionDeny
+		}
+		return access.DecisionAbstain
+	}
+	ctx := access.WithDecider(ctxWithGrant(signedIn("alice"), "tickets:read:all"), deny)
+
+	t.Run("list", func(t *testing.T) {
+		rows, err := ch.ListAll(ctx, ListOptions{})
+		if err != nil {
+			t.Fatalf("ListAll: %v", err)
+		}
+		for _, row := range rows {
+			if row["user_id"] == "bob" {
+				t.Errorf("SECURITY: [cross-owner-decider] ListAll with a DecisionDeny decider for ctickets returned bob's row (%v): the CrossOwnerRead lift must consult access.CanResource, not access.Can alone", row)
+			}
+		}
+	})
+	t.Run("get", func(t *testing.T) {
+		row, err := ch.GetOne(ctx, "t-b", nil)
+		if err == nil {
+			t.Errorf("SECURITY: [cross-owner-decider] GetOne of bob's row with a DecisionDeny decider for ctickets succeeded (%v): the CrossOwnerRead lift must consult access.CanResource, not access.Can alone", row)
+		}
+	})
+}

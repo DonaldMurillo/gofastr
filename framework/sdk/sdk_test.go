@@ -116,7 +116,7 @@ func TestPackZipRejectsUnsafePaths(t *testing.T) {
 }
 
 func TestReadManifestValidates(t *testing.T) {
-	good := `{"schemaVersion":1,"app":"x","artifacts":{"go":{"file":"sdk-go.zip","sha256":"ab","bytes":2}}}`
+	good := `{"schemaVersion":1,"app":"x","entities":["posts"],"artifacts":{"go":{"file":"sdk-go.zip","sha256":"ab","bytes":2}}}`
 	m, err := ReadManifest(fstest.MapFS{ManifestFile: {Data: []byte(good)}})
 	if err != nil {
 		t.Fatal(err)

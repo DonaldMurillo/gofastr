@@ -67,8 +67,11 @@ func InvalidateScreens(w http.ResponseWriter, paths ...string) {
 	var list []string
 	if existing := w.Header().Get("X-Gofastr-Invalidate"); existing != "" {
 		// Malformed manual values are replaced, not preserved: a bad
-		// prefix must not poison the whole header.
-		_ = json.Unmarshal([]byte(existing), &list)
+		// prefix must not poison the whole header. The parse failure is
+		// explicit so a half-decoded slice never marches on either.
+		if err := json.Unmarshal([]byte(existing), &list); err != nil {
+			list = nil
+		}
 	}
 	list = append(list, valid...)
 	enc, err := json.Marshal(list)

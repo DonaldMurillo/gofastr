@@ -87,6 +87,24 @@ func TestStreamingListHugePageNotWrappedWindow(t *testing.T) {
 	}
 }
 
+// TestExplicitOffsetBeyondCapRejected: an explicit ?offset= beyond the
+// handler's ceiling (MaxOffset, default the page cap × 1000 = 100,000)
+// is refused with 400. LIMIT is clamped on every path; the skip side
+// must be bounded too or one query param buys a per-request deep-skip
+// scan on a populated table.
+func TestExplicitOffsetBeyondCapRejected(t *testing.T) {
+	ch, db := setupCamelDocsHandler(t)
+	if _, err := db.Exec(`INSERT INTO reddocs (id, body_text) VALUES ('r1', 'x'), ('r2', 'y')`); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	req := withTestUser(httptest.NewRequest(http.MethodGet, "/api/reddocs?offset=9223372036854775807&limit=1", nil), "alice")
+	rec := httptest.NewRecorder()
+	ch.List()(rec, req)
+	if rec.Code == http.StatusOK {
+		t.Errorf("SECURITY: [offset-bound] ?offset=9223372036854775807 was accepted with %d (limit is clamped to MaxPageSize, offset is not): a client can force a per-request full-table skip scan (requireBoundedOffset)", rec.Code)
+	}
+}
+
 func contains(s, sub string) bool {
 	return len(s) >= len(sub) && (func() bool {
 		for i := 0; i+len(sub) <= len(s); i++ {

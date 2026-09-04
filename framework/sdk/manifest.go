@@ -66,6 +66,15 @@ func ReadManifest(fsys fs.FS) (*Manifest, error) {
 	if m.SchemaVersion == 0 {
 		return nil, fmt.Errorf("sdk: %s: missing schemaVersion", ManifestFile)
 	}
+	// A manifest covering zero entities is structurally empty too: the
+	// drift check hashes the registry restricted to this list, so an empty
+	// one compares a constant against the recorded hash and reports
+	// "current" no matter what the live schema holds — a generation run
+	// that lost its entity list (an --only typo, an empty registry at
+	// generate time) must fail loudly here, not pass silently downstream.
+	if len(m.Entities) == 0 {
+		return nil, fmt.Errorf("sdk: %s: no entities listed", ManifestFile)
+	}
 	if len(m.Artifacts) == 0 {
 		return nil, fmt.Errorf("sdk: %s: no artifacts listed", ManifestFile)
 	}

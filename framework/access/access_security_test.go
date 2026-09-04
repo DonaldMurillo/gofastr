@@ -171,3 +171,47 @@ func TestCanWildcardGrantsOnlyGlobalStar(t *testing.T) {
 		t.Fatal("global \"*\" must pass any permission check")
 	}
 }
+
+// TestRequirePermissionHonorsDecider: a resource-scoped Decider's Deny is
+// honoured at every permission gate, not only at CanResource call sites.
+// RequirePermission offers the zero Ref (a route gate holds no record)
+// and a DecisionDeny on it fails closed with 403 even when the role
+// policy grants the permission.
+func TestRequirePermissionHonorsDecider(t *testing.T) {
+	policy := access.NewRolePolicy()
+	policy.Register("projects:update")
+	if err := policy.Grant("editor", "projects:update"); err != nil {
+		t.Fatalf("Grant: %v", err)
+	}
+
+	// Deny on the projects resource and on the zero Ref: a route-level gate
+	// like RequirePermission has no record in hand, so it can only ever
+	// offer the collection-level (zero) Ref, which a decider must not
+	// silently wave through when its rule for that resource says deny.
+	denier := func(_ context.Context, _ []string, _ access.Permission, res access.Ref) access.Decision {
+		if res.Type == "projects" || res.Type == "" {
+			return access.DecisionDeny
+		}
+		return access.DecisionAbstain
+	}
+
+	ok := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	// Chain exactly as DeciderMiddleware's doc comment prescribes: policy
+	// and roles outermost, decider alongside, RequirePermission gating the
+	// route.
+	h := access.Middleware(policy, func(context.Context) []string { return []string{"editor"} })(
+		access.DeciderMiddleware(denier)(
+			access.RequirePermission("projects:update")(ok),
+		),
+	)
+
+	req := httptest.NewRequest(http.MethodGet, "/projects/7", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("SECURITY: [decider-deny] RequirePermission returned %d with a DecisionDeny decider installed via DeciderMiddleware, want 403 — the decider seam must be consulted by this gate", rec.Code)
+	}
+}

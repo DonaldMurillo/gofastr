@@ -20,6 +20,7 @@
 package datexport
 
 import (
+	"fmt"
 	"maps"
 	"sort"
 	"sync"
@@ -29,9 +30,11 @@ import (
 // DataExporter describes one physical table owned by a battery or app that the
 // entity registry does not cover.
 //
-//   - Name is the unique archive key and the .ndjson filename stem. It must be
-//     a safe SQL identifier (it doubles as a lookup key) and unique across all
-//     registered exporters and entity names.
+//   - Name is the unique archive key and the .ndjson filename stem. It must
+//     be one path segment of [A-Za-z0-9_-] (Register panics otherwise: the
+//     name reaches filepath.Join at export and import, and it doubles as a
+//     lookup key) and unique across all registered exporters and entity
+//     names.
 //   - Source is the owning module ("auth", "queue", …) recorded in the manifest
 //     for provenance; it is never used to build SQL.
 //   - Table is the physical SQL table name.
@@ -151,7 +154,20 @@ var (
 // Register adds a data exporter. Safe to call from init(). An exporter whose
 // Name matches an existing entry replaces it (last-writer-wins) so a battery
 // that registers a runtime-renamed table updates cleanly.
+//
+// Name is validated here, once, at registration: it becomes the
+// <name>.ndjson path stem through filepath.Join at export AND import
+// (framework/export_data.go), so a name carrying path separators or dots
+// reads/writes outside the export dir. It is developer input registered from
+// init(), so the refusal is a panic at construction — the query.MustIdent
+// precedent — never a silent skip that would quietly exclude the table from
+// every export.
 func Register(e DataExporter) {
+	if !validExporterName(e.Name) {
+		panic(fmt.Sprintf("datexport: Register: unsafe exporter Name %q: "+
+			"must be one path segment of [A-Za-z0-9_-] (it becomes the "+
+			"<name>.ndjson path stem at export and import)", e.Name))
+	}
 	mu.Lock()
 	defer mu.Unlock()
 	for i, ex := range entries {
@@ -171,6 +187,27 @@ func Register(e DataExporter) {
 		Name: e.Name, Source: e.Source, Table: e.Table,
 		PrimaryKey: e.PrimaryKey, Columns: cols,
 	})
+}
+
+// validExporterName reports whether n is a safe archive key: one path
+// segment of [A-Za-z0-9_-], non-empty. Separators and dots are refused so
+// the name can never traverse out of the export dir once it is joined into
+// a filename.
+func validExporterName(n string) bool {
+	if n == "" {
+		return false
+	}
+	for _, r := range n {
+		switch {
+		case r >= 'a' && r <= 'z',
+			r >= 'A' && r <= 'Z',
+			r >= '0' && r <= '9',
+			r == '_', r == '-':
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 // Unregister removes an exporter by Name. Returns true if an entry was removed.

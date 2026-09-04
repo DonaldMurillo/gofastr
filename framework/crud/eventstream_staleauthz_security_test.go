@@ -1,5 +1,3 @@
-//go:build red
-
 package crud
 
 import (
@@ -15,43 +13,21 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/event"
 )
 
-// ---------------------------------------------------------------------------
-// Property: a stream stops delivering events the caller's CURRENT
-// authorization forbids. Authorization is a property of the caller NOW, not
-// of the moment they connected.
-// Surfaces: CrudHandler.EventStream (framework/crud/crud_events.go) — the
-// app-facing SSE feed mounted on every crud entity.
-// Finding: EventStream resolves every gate ONCE at connect (RequireOwner,
-// baseline GetUser, RequireTenant, requirePermission(opRead) via
-// access.CanResource, crud_events.go:161-190) and the delivery loop
-// (crud_events.go:250-272) then filters events against the connect-time
-// snapshot forever: `select { <-r.Context().Done() | <-buf }` — no
-// re-validation, no heartbeat, no write deadline, no lifetime bound. The
-// one authority seam that answers from a LIVE store per call (the access
-// Decider, the issue #80 per-resource surface requirePermission already
-// consults at connect) is never consulted again: flip it to deny after the
-// stream opens and a fresh GET 403s while the established stream keeps
-// delivering every write. Session revoked, role dropped, or membership
-// ended — whatever the host's decider reads — the stream outlives it
-// indefinitely (core-ui's island bus bounds this window at 5 minutes;
-// crud's EventStream has no equivalent).
-// Severity: production-facing (the crud SSE feed is a host-mounted surface;
-// the leak persists for the life of the connection, which nothing bounds).
-// Fix direction: re-validate per delivery — the loop already holds r, so
-// access.CanResource(r.Context(), perm, Ref{Type: entity}) at each event
-// (deciders read live stores, so the frozen ctx still answers "now") — or
-// bound the stream lifetime like core-ui island's DefaultSSEStreamBound so
-// clients cycle back through the full connect-time gate.
-// ---------------------------------------------------------------------------
-
-func TestEventStreamRedRevokesMidStream(t *testing.T) {
+// Authorization is a property of the caller NOW, not of the moment they
+// connected: the EventStream re-runs its read-permission gate on every
+// delivery and on a ticker (CrudHandler.EventStreamReauth, default 30s),
+// and re-evaluates the read-scope lift per event, so a caller whose
+// current authorization forbids reads has the stream closed instead of
+// receiving every subsequent write.
+func TestEventStreamRevokesMidStream(t *testing.T) {
 	ch, _ := setupPermissionedHandler(t) // "docs" entity, Access.Read = docs:read
 	ch.Events = event.NewEventBus()
 
 	// The live authority: a Decider that reads a mutable flag, the shape a
-	// host's per-resource authority takes (issue #80 seam — the exact surface
-	// requirePermission consults at connect). Flipping it to deny models any
-	// live-store revocation: session deleted, role dropped, membership ended.
+	// host's per-resource authority takes (issue #80 seam — the exact
+	// surface requirePermission consults). Flipping it to deny models any
+	// live-store revocation: session deleted, role dropped, membership
+	// ended.
 	var denied atomic.Bool
 	decider := func(_ context.Context, _ []string, capability access.Permission, resource access.Ref) access.Decision {
 		if denied.Load() && capability == access.Permission("docs:read") && resource.Type == "docs" {
@@ -82,8 +58,8 @@ func TestEventStreamRedRevokesMidStream(t *testing.T) {
 	ch.EmitEvent(context.Background(), event.EntityCreated, map[string]any{"id": "d-before", "body": "before-revoke"})
 	time.Sleep(300 * time.Millisecond)
 
-	// Revoke: the caller's CURRENT authorization now forbids reads. Prove it
-	// on the static surface with the same credentials — a fresh GET 403s.
+	// Revoke: the caller's CURRENT authorization now forbids reads. Prove
+	// it on the static surface with the same credentials — a fresh GET 403s.
 	denied.Store(true)
 	listRec := httptest.NewRecorder()
 	listReq := grantReq(withTestUser(httptest.NewRequest(http.MethodGet, "/api/docs", nil), "u1"), "docs:read")
@@ -107,9 +83,8 @@ func TestEventStreamRedRevokesMidStream(t *testing.T) {
 	if strings.Contains(body, "d-after") {
 		t.Errorf("SECURITY: [sse-stale-authz] the EventStream delivered an event (d-after) after the "+
 			"caller's authorization was revoked: a fresh GET /docs with the same credentials 403s, but the "+
-			"established stream kept streaming every write. EventStream resolves requirePermission once at "+
-			"connect (crud_events.go:188) and the delivery loop (crud_events.go:250) never re-validates and "+
-			"has no lifetime bound. Re-validate per delivery via access.CanResource(r.Context(), ...) or "+
-			"bound the stream like core-ui island's DefaultSSEStreamBound. body=%s", body)
+			"established stream kept streaming every write. The delivery loop and the idle ticker must "+
+			"re-run the permission gate (access.CanResource on the live decider) and close the stream on "+
+			"refusal. body=%s", body)
 	}
 }

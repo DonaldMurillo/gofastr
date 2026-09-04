@@ -12,6 +12,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/framework/event"
 )
 
@@ -45,7 +46,10 @@ func decodeBatchEnvelope(r *http.Request, v any, allowed ...string) error {
 	if err := checkEnvelopeKeys(raw, allowed); err != nil {
 		return err
 	}
-	if err := json.Unmarshal(raw, v); err != nil { //gofastr:allow(GOFASTR1407) checkEnvelopeKeys above already refused duplicate and case-folded top-level keys; this Unmarshal decodes a vetted body
+	// handler.UnmarshalStrict keeps the same refusal posture on the decode
+	// itself (exact-tag match, duplicates and unknown keys refused), so
+	// the vetted body needs no analyzer marker.
+	if err := handler.UnmarshalStrict(raw, v); err != nil {
 		return fmt.Errorf("invalid JSON: %w", err)
 	}
 	return nil
@@ -212,6 +216,16 @@ func (ch *CrudHandler) BatchCreate() http.HandlerFunc {
 			writeJSONError(w, http.StatusBadRequest, fmt.Sprintf("batch size %d exceeds max %d", len(req.Items), MaxBatchSize))
 			return
 		}
+		// The same fold refusal the single-record path applies pre-decode:
+		// two distinct item keys folding onto one column must be rejected
+		// deterministically, not resolved by map iteration order in
+		// unconvertMapKeys.
+		for i, item := range req.Items {
+			if err := ch.itemKeyFoldsUnambiguous(item); err != nil {
+				writeJSONError(w, http.StatusBadRequest, fmt.Sprintf("items[%d]: %v", i, err))
+				return
+			}
+		}
 
 		results := initSkipped(len(req.Items))
 		txErr := ch.inTx(r.Context(), func(ctx context.Context, ch *CrudHandler) error {
@@ -308,6 +322,14 @@ func (ch *CrudHandler) BatchUpdate() http.HandlerFunc {
 		if len(req.Items) > MaxBatchSize {
 			writeJSONError(w, http.StatusBadRequest, fmt.Sprintf("batch size %d exceeds max %d", len(req.Items), MaxBatchSize))
 			return
+		}
+		// Fold refusal, same as BatchCreate: two distinct item keys folding
+		// onto one column are rejected before the transaction opens.
+		for i, item := range req.Items {
+			if err := ch.itemKeyFoldsUnambiguous(item); err != nil {
+				writeJSONError(w, http.StatusBadRequest, fmt.Sprintf("items[%d]: %v", i, err))
+				return
+			}
 		}
 
 		results := initSkipped(len(req.Items))

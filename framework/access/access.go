@@ -419,12 +419,18 @@ func GetPermissions(ctx context.Context) []Permission {
 
 // RequirePermission returns HTTP middleware that checks if the current user
 // has the specified permission. Returns 403 if denied.
+//
+// The check consults the Decider seam (requireResource with the zero Ref —
+// a route-level gate holds no record, so the check is collection-level):
+// a DecisionDeny fails closed even when the role policy still grants the
+// permission, the deny DeciderMiddleware's doc comment promises. With no
+// decider installed the answer is exactly the role policy's, byte-identical
+// to the previous policy-only check.
 func RequirePermission(permission Permission) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			ctx := r.Context()
-			policy, _ := ctx.Value(policyKey{}).(*RolePolicy)
-			granted := policy != nil && policy.Can(ctx, permission)
+			granted := requireResource(ctx, permission, Ref{})
 			if !observe(ctx, permission, granted, "require-permission") {
 				herr := handler.Errorf(http.StatusForbidden, "access denied: missing permission %s", permission)
 				handler.WriteError(w, herr)

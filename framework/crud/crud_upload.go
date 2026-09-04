@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"mime"
 	"mime/multipart"
 	"net/http"
@@ -12,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
+	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/file"
@@ -106,24 +108,37 @@ func limitJSONBody(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, MaxJSONBodyBytes)
 }
 
-// decodeJSONBody decodes r.Body into v with the request's body already
-// wrapped by limitJSONBody. Returns errBodyTooLarge if the limit fired,
-// or a generic JSON error otherwise. The caller must have applied
-// limitJSONBody first.
-func decodeJSONBody(r *http.Request, v any) error {
-	if err := json.NewDecoder(r.Body).Decode(v); err != nil { //gofastr:allow(GOFASTR1407) upload options metadata: no identity-bearing field; content-type and size policy enforced by the caller
+// readBodyBytes drains r.Body (already wrapped by limitRequestBody) into
+// memory, mapping the body-limit error to errBodyTooLarge. Strict key
+// validation needs the raw bytes; the 1 MiB JSON cap bounds the buffer.
+func readBodyBytes(r *http.Request) ([]byte, error) {
+	data, err := io.ReadAll(r.Body)
+	if err != nil {
 		if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
-			return errBodyTooLarge
+			return nil, errBodyTooLarge
 		}
 		// http.MaxBytesReader may also report a generic
 		// "http: request body too large" error string on some Go
 		// versions / paths, match by substring as a fallback.
 		if strings.Contains(err.Error(), "request body too large") {
-			return errBodyTooLarge
+			return nil, errBodyTooLarge
 		}
-		return fmt.Errorf("invalid JSON: %w", err)
+		return nil, fmt.Errorf("invalid JSON: %w", err)
 	}
-	return nil
+	return data, nil
+}
+
+// decodeJSONBody decodes r.Body into v with the request's body already
+// wrapped by limitJSONBody, through handler.UnmarshalStrict so duplicate
+// and case-folded top-level keys are refused instead of silently resolved.
+// Returns errBodyTooLarge if the limit fired, or a 400 *handler.Error
+// otherwise. The caller must have applied limitJSONBody first.
+func decodeJSONBody(r *http.Request, v any) error {
+	data, err := readBodyBytes(r)
+	if err != nil {
+		return err
+	}
+	return handler.UnmarshalStrict(data, v)
 }
 
 // readRequestBody decodes the incoming request into a snake_cased body map.
@@ -132,14 +147,28 @@ func decodeJSONBody(r *http.Request, v any) error {
 // requests are decoded and reverse-cased back to snake_case so they match the
 // schema's field names regardless of the wire casing.
 //
+// JSON bodies are checked with crud's own key fold BEFORE the decode: two
+// distinct wire keys that resolve to one column (CaseCamel's "bodyText" and
+// "body_text", or a case-folded pair) are refused with 400 rather than
+// resolved by map iteration order, which made the stored value
+// nondeterministic per request. Unknown keys that collide with nothing still
+// pass through; that contract is pinned by TestWireName_RoundTripsBothCasings.
+//
 // Pre-condition: the caller has already validated Content-Type via
 // enforceJSONContentType and wrapped r.Body with limitRequestBody.
 func (ch *CrudHandler) readRequestBody(r *http.Request) (map[string]any, error) {
 	if isMultipart(r) {
 		return ch.parseMultipartBody(r)
 	}
+	data, err := readBodyBytes(r)
+	if err != nil {
+		return nil, err
+	}
+	if err := handler.CheckTopLevelKeys(data, ch.wireKeyColumn); err != nil {
+		return nil, err
+	}
 	var body map[string]any
-	if err := decodeJSONBody(r, &body); err != nil {
+	if err := handler.UnmarshalStrict(data, &body); err != nil {
 		return nil, err
 	}
 	return ch.unconvertMapKeys(body), nil

@@ -339,10 +339,14 @@ func RenderMigrationFile(version uint64, name, up, down string) string {
 }
 
 // RenderMigrationFileChecked is [RenderMigrationFile] plus the guard: it
-// returns [ErrDirectiveInSQL] when a line of up or down would be read as
-// a directive by the runner.
+// returns [ErrDirectiveInSQL] when a line of up, down, OR name would be
+// read as a directive by the runner. Name is rendered verbatim onto its
+// own directive line, so a name containing a newline can carry a whole
+// synthesized directive block ("x\n-- +migrate Down\nDROP TABLE victims;-- ")
+// — same refusal as the SQL bodies, never a silent rewrite, because
+// rewriting a migration's Name changes its identity.
 func RenderMigrationFileChecked(version uint64, name, up, down string) (string, error) {
-	for label, sql := range map[string]string{"up": up, "down": down} {
+	for label, sql := range map[string]string{"up": up, "down": down, "name": name} {
 		if containsDirectiveLine(sql) {
 			return "", fmt.Errorf("%w (in the %s section); a column DEFAULT or other literal spans a line starting with \"-- +migrate\"", ErrDirectiveInSQL, label)
 		}

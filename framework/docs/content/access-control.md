@@ -619,6 +619,12 @@ type Decider func(ctx context.Context, roles []string, capability Permission, re
 logic in the hot path. The resource-aware path is a separate entrypoint you opt
 into; with no decider installed, `CanResource` answers byte-identically to `Can`.
 
+The seam binds **every** permission gate, not only resource-scoped ones:
+`access.RequirePermission` consults it too, passing the zero `Ref` (a
+route gate holds no record), so `DecisionDeny` fails the route closed
+with 403 even when the role policy grants the permission. battery/auth's
+role gates route through the same seam.
+
 ### Wiring it: DeciderMiddleware
 
 `access.DeciderMiddleware(d)` installs a decider into request context. Mount it

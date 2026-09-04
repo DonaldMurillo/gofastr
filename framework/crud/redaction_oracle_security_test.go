@@ -362,6 +362,9 @@ func TestWriteResponseIsRedacted(t *testing.T) {
 // from the write's RETURNING, so a subscriber would otherwise read past every
 // mask. Redaction happens at delivery, which keeps the hook out of the write
 // transaction and runs it once per subscriber rather than twice per write.
+// The DURABLE outbox lane is deliberately exempt from this pin: consumers
+// receive the raw staged row and own their masking (deleted red probe
+// TestOutboxRedDeliversRedacted; see the EventOutbox contract and events.md).
 func TestEventDeliveryIsRedacted(t *testing.T) {
 	ch, _ := setupRedactedHandler(t)
 	ch.Hooks.RegisterHook(hook.AfterGet, func(ctx context.Context, data any) error {
