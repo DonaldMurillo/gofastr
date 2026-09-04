@@ -3043,6 +3043,7 @@ func (ds *UIHost) resolvesStaticOrScreen(r *http.Request) bool {
 		if ds.staticFS != nil {
 			cleanPath := strings.TrimPrefix(path, "/")
 			if cleanPath != "" {
+				//gofastr:allow(rootread) caller-supplied fs.FS: embed.FS carries no symlinks and os.DirFS is re-rooted through os.OpenRoot at install time; the *os.File branch above already goes through os.Root
 				if f, err := ds.staticFS.Open(cleanPath); err == nil {
 					f.Close()
 					return true
@@ -3191,6 +3192,7 @@ func (ds *UIHost) serveOrRender(w http.ResponseWriter, r *http.Request) {
 		if ds.staticFS != nil {
 			cleanPath := strings.TrimPrefix(path, "/")
 			if cleanPath != "" {
+				//gofastr:allow(rootread) caller-supplied fs.FS: embed.FS carries no symlinks and os.DirFS is re-rooted through os.OpenRoot at install time; the *os.File branch above already goes through os.Root
 				if f, err := ds.staticFS.Open(cleanPath); err == nil {
 					f.Close()
 					devStaticNoStore(w)

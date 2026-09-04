@@ -190,3 +190,50 @@ func emitType(name string) string {
 func emitVar(name string) string {
 	return fmt.Sprintf("var %s = 1\n", name) // want `identifier slot "var %s"`
 }
+
+// ---- JS/TS declaration slots (sdkjsident probe, 2026-09-04) ---------
+
+type shelf struct {
+	Slab string
+}
+
+// j1/j2 reduce generate_sdkjs.go pre-fix: the slab-derived camelCase
+// name lands in `export const %sFields =` of client.js and
+// `readonly %s:` of client.d.ts with only a casing transform in front
+// (TestSDKJSIdentSlotRefusesTables). The .js fix spelling is the quoted
+// this[%q]; these are the raw ones.
+func j1(sb *strings.Builder, s shelf) {
+	fmt.Fprintf(sb, "/** query-param names for %s */\nexport const %sFields = Object.freeze({\n", s.Slab, toCamelCase(s.Slab)) // want `identifier slot "export const %s"`
+}
+
+func j2(sb *strings.Builder, s shelf) {
+	fmt.Fprintf(sb, "  readonly %s: Resource<%s>;\n", toCamelCase(s.Slab), s.Slab) // want `identifier slot "readonly %s:"`
+}
+
+// j3: the unquoted member key of the .d.ts constant.
+func j3(sb *strings.Builder, wire string) {
+	fmt.Fprintf(sb, "  %s: %q;\n", wire, "snake_name") // want `identifier slot "%s:"`
+}
+
+// j4: interface/type/const declarations, with and without modifiers.
+func j4(sb *strings.Builder, s shelf) {
+	fmt.Fprintf(sb, "export interface %s {\n  id: string;\n", s.Slab)                   // want `identifier slot "export interface %s"`
+	fmt.Fprintf(sb, "interface %sInput extends Base {\n", s.Slab)                       // want `identifier slot "interface %s"`
+	fmt.Fprintf(sb, "export type %sPatch = Partial<%s>;\n", s.Slab, s.Slab)             // want `identifier slot "export type %s"`
+	fmt.Fprintf(sb, "export declare const %sFields: Readonly<{\n", toCamelCase(s.Slab)) // want `identifier slot "export declare const %s"`
+}
+
+// j5: function/class/let spellings.
+func j5(sb *strings.Builder, s shelf) {
+	fmt.Fprintf(sb, "async function %s(ctx) {\n", s.Slab)      // want `identifier slot "async function %s\("`
+	fmt.Fprintf(sb, "class %sClient extends Base {\n", s.Slab) // want `identifier slot "class %s"`
+	fmt.Fprintf(sb, "let %s: number = 0;\n", s.Slab)           // want `identifier slot "let %s"`
+	fmt.Fprintf(sb, "// header\nconst %s = {\n", s.Slab)       // want `identifier slot "const %s"`
+}
+
+// j6: optional (?) and glued-verb member keys — the Input interface's
+// `%s%s: type;` spelling.
+func j6(sb *strings.Builder, wire string) {
+	fmt.Fprintf(sb, "  %s?: string;\n", wire)       // want `identifier slot "%s:"`
+	fmt.Fprintf(sb, "  %s%s: string;\n", wire, "?") // want `identifier slot "%s:"`
+}

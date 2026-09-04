@@ -36,6 +36,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/callbackunderlock"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/compositekey"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/controlbytes"
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/credfetch"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/discardeddecode"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/discardederr"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/discardmutator"
@@ -48,9 +49,11 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/intwrap"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/laxcoerce"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/mapwriter"
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/negdur"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/recovercallback"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/reflectset"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/reqparamlimit"
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/rootread"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/rootwrite"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/secretcompare"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/timestampid"
@@ -92,6 +95,9 @@ var repoAnalyzers = []*analysis.Analyzer{
 	allow.Guard(secretcompare.Analyzer),
 	allow.Guard(timestampid.Analyzer),
 	allow.Guard(discardeddecode.Analyzer),
+	allow.Guard(rootread.Analyzer),
+	allow.Guard(negdur.Analyzer),
+	allow.Guard(credfetch.Analyzer),
 
 	// Checks that currently find nothing. They cost no cleanup and
 	// hold classes this repo already drove to zero. A hit here means

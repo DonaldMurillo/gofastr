@@ -176,6 +176,7 @@ func serveFile(w http.ResponseWriter, r *http.Request, config Config, name strin
 		// check for the swap to slip through.
 		f, err = config.root.Open(filepath.FromSlash(name))
 	} else {
+		//gofastr:allow(rootread) caller-supplied fs.FS: embed.FS carries no symlinks and os.DirFS is re-rooted through os.OpenRoot at install time; the *os.File branch above already goes through os.Root
 		f, err = config.FS.Open(name)
 	}
 	if err != nil {
@@ -284,6 +285,7 @@ func serveFile(w http.ResponseWriter, r *http.Request, config Config, name strin
 			// stays symmetrical.
 			reopened, err = config.root.Open(filepath.FromSlash(name))
 		} else {
+			//gofastr:allow(rootread) caller-supplied fs.FS: embed.FS carries no symlinks and os.DirFS is re-rooted through os.OpenRoot at install time; the *os.File branch above already goes through os.Root
 			reopened, err = config.FS.Open(name)
 		}
 		if err != nil {

@@ -1791,3 +1791,113 @@ func TestModuleURLShapeGateBreakTurnsRed(t *testing.T) {
 		t.Fatalf("expected 1 finding without the gate, got %d:\n%s", len(res.Violations), res.Error())
 	}
 }
+
+const storageKeyFixtureRaw = `// Reduced from the live pre-fix src/sidebar.js (real attribute and
+// function names kept) plus the repo's own fixed spelling, banner.js's
+// dismissKey.
+const SIDEBAR_PREFIX = 'gofastr.sidebar.';
+const DISMISS_PREFIX = 'gofastr.banner-dismiss.';
+
+const setCollapsed = (root, collapsed, persist) => { // sidebar.js, pre-fix: FIRES on key
+  if (!persist) return;
+  const key = root.getAttribute('data-fui-sidebar-storage');
+  if (!key) return;
+  try { localStorage.setItem(key, collapsed ? 'true' : 'false'); } catch (_) {}
+};
+const setup = (root) => { // sidebar.js, pre-fix: FIRES on key
+  const key = root.getAttribute('data-fui-sidebar-storage');
+  let collapsed = false;
+  if (key) {
+    try { collapsed = localStorage.getItem(key) === 'true'; } catch (_) {}
+  }
+  setCollapsed(root, collapsed, false);
+};
+
+// Fixed spelling (the red test's fix direction): namespace AND encode,
+// spelled at the sink. Quiet — the read side too.
+const setupFixed = (root) => {
+  const key = root.getAttribute('data-fui-sidebar-storage');
+  let collapsed = false;
+  if (key) {
+    try { collapsed = localStorage.getItem(SIDEBAR_PREFIX + encodeURIComponent(key)) === 'true'; } catch (_) {}
+    try { localStorage.setItem(SIDEBAR_PREFIX + encodeURIComponent(key), collapsed ? 'true' : 'false'); } catch (_) {}
+  }
+};
+
+// Encoded but NOT namespaced: still fires. encodeURIComponent leaves
+// dots and hyphens alone, so the probe's 'gofastr.planted-by-attr'
+// survives encoding verbatim — the prefix is load-bearing.
+function paneState(pane) {
+  const k = pane.dataset.fuiPaneKey;
+  sessionStorage.setItem(encodeURIComponent(k), '1');
+}
+
+// Synthetic positives (never in this repo): a dataset-borne template
+// key with a literal chunk (the chunk does not save it — the value is
+// still unwrapped), a getAttribute-borne cookie key, and an inline
+// dataset read as the whole key.
+function saveChord(el) {
+  const chordKey = el.dataset.chordSlot;
+  sessionStorage.setItem(~chord:${chordKey}~, 'on');
+}
+function stampCard(card) {
+  const stampId = card.getAttribute('data-fui-stamp-id');
+  document.cookie = 'app.stamp.' + stampId + '=1; path=/';
+}
+function quickTag(el) {
+  localStorage.setItem(el.dataset.tagId, '1');
+}
+
+// Silent postures: banner.js's actual shape — the key arrives through a
+// helper call at the sink, provenance is a parameter there; literal and
+// provably-literal keys; a non-fui attribute; parameter provenance; a
+// cookie READ.
+function isDismissedLocal(id) {
+  try { return localStorage.getItem(dismissKeyLocal(id)) === '1'; } catch (_) { return false; }
+}
+function dismissKeyLocal(id) { return DISMISS_PREFIX + encodeURIComponent(id); }
+localStorage.setItem('gofastr.colorScheme', 'dark');
+const SCROLL_KEY = 'gofastr:scroll';
+sessionStorage.setItem(SCROLL_KEY, JSON.stringify({}));
+document.cookie = 'gofastr.seen=1; path=/';
+function anchorNote(a) {
+  const name = a.getAttribute('name');
+  localStorage.setItem(name, '1');
+}
+function storePref(pref) { localStorage.setItem(pref, '1'); }
+const session = document.cookie.match(/gofastr-session=([^;]+)/);
+
+window.__probe = { setCollapsed: setCollapsed, setup: setup, setupFixed: setupFixed,
+  paneState: paneState, saveChord: saveChord, stampCard: stampCard, quickTag: quickTag,
+  isDismissedLocal: isDismissedLocal, dismissKeyLocal: dismissKeyLocal,
+  anchorNote: anchorNote, storePref: storePref, session: session };
+`
+
+var storageKeyFixture = strings.ReplaceAll(storageKeyFixtureRaw, "~", "\x60")
+
+func TestStorageKeyRawFiresOnAttrKey(t *testing.T) {
+	dir := writeRuntimeFixture(t, "storagekey.js", storageKeyFixture)
+	res, err := LintStorageKeyRaw(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// setCollapsed (key), setup (key), paneState (k, encoded but
+	// unnamed), saveChord (chordKey), stampCard (stampId),
+	// quickTag (el.dataset.tagId).
+	if len(res.Violations) != 6 {
+		t.Fatalf("expected 6 findings, got %d:\n%s", len(res.Violations), res.Error())
+	}
+	for _, v := range res.Violations {
+		if !strings.HasPrefix(v.Message, "[storage-key-raw]") {
+			t.Errorf("unexpected message: %s", v.Message)
+		}
+	}
+	for _, op := range []string{`"key"`, `"k"`, `"chordKey"`, `"stampId"`, `"el.dataset.tagId"`} {
+		if !strings.Contains(res.Error(), op) {
+			t.Errorf("expected a finding on operand %s (full result:\n%s)", op, res.Error())
+		}
+	}
+	if !strings.Contains(res.Violations[2].Message, "names no namespace") {
+		t.Errorf("paneState's finding must name the missing prefix: %s", res.Violations[2].Message)
+	}
+}
