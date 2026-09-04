@@ -25,7 +25,6 @@ import (
 	"database/sql"
 	"log"
 	"os"
-	"path/filepath"
 
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/core/upload"
@@ -46,19 +45,43 @@ func main() {
 		log.Fatal(err)
 	}
 
-	// Keep upload artifacts out of the working tree (this is a demo).
-	uploadDir := filepath.Join(os.TempDir(), "gofastr-api-tour-uploads")
-	_ = os.MkdirAll(uploadDir, 0o755)
+	// Keep upload artifacts out of the working tree (this is a demo). A
+	// fixed name under the shared temp root is a pre-create/symlink
+	// target for any local co-user (CWE-377), so mint a private dir
+	// (0700) instead.
+	uploadDir, err := os.MkdirTemp("", "gofastr-api-tour-")
+	if err != nil {
+		log.Fatal(err)
+	}
 
+	app := buildApp(db, uploadDir)
+
+	// Demo seed: a couple of users + one post + comments. Idempotent, only
+	// inserts if the table is empty.
+	seedDemoData(db)
+
+	addr := ":8080"
+	addr, err = isolation.ListenAddr(".", addr)
+	if err != nil {
+		log.Fatal(err)
+	}
+	log.Printf("api-tour listening on %s", addr)
+	if err := app.Start(addr); err != nil {
+		log.Fatal(err)
+	}
+}
+
+// buildApp declares the tour's entities exactly as main serves them.
+// Split from main so tests drive the real route table (the declarations,
+// not a copy) in-process.
+func buildApp(db *sql.DB, uploadDir string) *framework.App {
 	app := framework.NewApp(
 		framework.WithDB(db),
 		framework.WithConfig(framework.AppConfig{Name: "api-tour"}),
 		framework.WithFileStorage(upload.NewLocalStorage(uploadDir)),
 	)
 
-	app.Entity("users", framework.EntityConfig{Scope:
-	// public demo content. See "Default CRUD authentication" in the security docs.
-	&framework.ScopeConfig{}, Exposure: &framework.ExposureConfig{Public: true}, Table: "users",
+	app.Entity("users", framework.EntityConfig{Table: "users",
 		Fields: []schema.Field{
 			{Name: "id", Type: schema.UUID, AutoGenerate: schema.AutoUUID},
 			{Name: "name", Type: schema.String, Required: true},
@@ -67,7 +90,17 @@ func main() {
 		Relations: []framework.Relation{
 			framework.HasOne("profile", "profiles", "user_id"),
 			framework.HasMany("posts", "posts", "author_id"),
-		},
+		}, Exposure:
+		// Public read (the ?include=author and /users list stay anonymous),
+		// gated writes: users ARE the account graph (with avatar uploads),
+		// per-user data that must never be world-writable. With no RBAC
+		// policy installed in this demo, the write permissions simply fail
+		// closed for everyone — the same posture profiles below carries.
+		&framework.ExposureConfig{Access: framework.AccessControl{
+			Create: "users:write",
+			Update: "users:write",
+			Delete: "users:write",
+		}},
 	})
 
 	app.Entity("profiles", framework.EntityConfig{Table: "profiles",
@@ -119,20 +152,7 @@ func main() {
 			framework.BelongsTo("post", "posts", "post_id"),
 		},
 	})
-
-	// Demo seed: a couple of users + one post + comments. Idempotent, only
-	// inserts if the table is empty.
-	seedDemoData(db)
-
-	addr := ":8080"
-	addr, err = isolation.ListenAddr(".", addr)
-	if err != nil {
-		log.Fatal(err)
-	}
-	log.Printf("api-tour listening on %s", addr)
-	if err := app.Start(addr); err != nil {
-		log.Fatal(err)
-	}
+	return app
 }
 
 // seedDemoData inserts a tiny graph so curling the endpoints returns

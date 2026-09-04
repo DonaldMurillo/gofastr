@@ -14,6 +14,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -29,6 +30,7 @@ import (
 	patternsSortablelist "github.com/DonaldMurillo/gofastr/core-ui/patterns/sortablelist"
 	"github.com/DonaldMurillo/gofastr/core-ui/widget"
 	"github.com/DonaldMurillo/gofastr/core-ui/widget/preset"
+	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/docs"
@@ -416,8 +418,13 @@ func setupServer() *framework.App {
 		var body struct {
 			Message string `json:"message"`
 		}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil { //gofastr:allow(GOFASTR1407) demo echo endpoint: decodes one display message, no credential surface
-			body.Message = ""
+		if err := handler.DecodeStrict(r.Body, &body); err != nil {
+			if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
+				http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
+				return
+			}
+			http.Error(w, "invalid JSON body", http.StatusBadRequest)
+			return
 		}
 		w.Header().Set("Content-Type", "application/json")
 		msg := "✓ Received: " + body.Message
@@ -778,7 +785,18 @@ func paletteCommands() []ui.PaletteCommand {
 // servePaletteSearch returns matching options as <li role="option">
 // fragments, the format ui.CommandPalette's combobox expects.
 func servePaletteSearch(w http.ResponseWriter, r *http.Request) {
-	_ = r.ParseForm()
+	// Cap + check, the sibling /__site handlers' shape: an uncapped POST is
+	// a memory lever on a public origin, and a discarded parse error would
+	// march on with a zero-value form.
+	r.Body = http.MaxBytesReader(w, r.Body, 4<<10)
+	if err := r.ParseForm(); err != nil {
+		if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
+			http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
+			return
+		}
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
 	q := strings.ToLower(strings.TrimSpace(r.FormValue("q")))
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)

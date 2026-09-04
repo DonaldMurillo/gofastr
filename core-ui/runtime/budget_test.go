@@ -81,13 +81,21 @@ const (
 	// reported more headroom than exists. The value below was re-measured
 	// on the merged bundle, which is the only measurement that means
 	// anything. Re-measure after a merge, not before.
-	// 15076, raised 92 bytes from 14984 on 2026-09-02 under the same
-	// exception recorded on coreGoalGZ above, for the same change (the
-	// prototype-chain registry guards; see that comment). The real
-	// merged bundle measures 15073 at level 1; the line carries 3 bytes
-	// of clearance, and the move was verified against the cliff test by
-	// running it, not by arithmetic.
-	coreCongestionWindowGZ = 14*1024 + 740
+	// 15071, lowered 5 bytes from 15076 on 2026-09-04, a SOURCE change in
+	// the downward direction: the scroll-bottom selector guard added to
+	// frag/signals.js (the data-fui-scroll-bottom-on-update lookup must
+	// degrade, not throw, out of setSignal's fanout) carries a repeated
+	// attribute literal the level-1 encoder dictionaries better than the
+	// sortablelist filler the cliff fixture pads with, so the real core
+	// got SMALLER at level 1 (15073 → 15067) while a bundle padded onto
+	// the level-6 goal no longer crossed the old window (fixture 15072 ≤
+	// 15076 — the anti-vacuity bracket had gone vacuous). The line moved
+	// to the largest value below the fixture's crossing, restoring the
+	// bracket [real 15067, fixture 15072]; verified by running
+	// TestCoreBudgetRejectsCliffOverflow, not by arithmetic. The real
+	// bundle measures 15067 at level 1; the line carries 4 bytes of
+	// clearance.
+	coreCongestionWindowGZ = 14*1024 + 735
 )
 
 func coreBudgetViolation(t *testing.T, src string, budget int) (level, got, limit int) {

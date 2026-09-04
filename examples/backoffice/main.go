@@ -14,6 +14,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -204,11 +205,19 @@ func demoSession(next http.Handler) http.Handler {
 }
 
 func loginSubmit(w http.ResponseWriter, r *http.Request) {
-	_ = r.ParseForm()
-	email := r.PostFormValue("email")
-	if email == "" {
-		email = "admin@example.com"
+	// Cap the form (email + password; an uncapped POST is a memory lever)
+	// and refuse the parse failure rather than marching on with a
+	// zero-value form.
+	r.Body = http.MaxBytesReader(w, r.Body, 4<<10)
+	if err := r.ParseForm(); err != nil {
+		if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
+			http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
+			return
+		}
+		http.Error(w, "invalid form", http.StatusBadRequest)
+		return
 	}
+	email := r.PostFormValue("email")
 	//gofastr:allow(GOFASTR1404) demo signs in over plain http://localhost, where a Secure cookie is dropped by the browser and nobody could log in. A real deployment serves over TLS and sets it. See gofastr docs security.
 	http.SetCookie(w, &http.Cookie{
 		Name: sessionCookie, Value: email, Path: "/", HttpOnly: true, SameSite: http.SameSiteLaxMode,

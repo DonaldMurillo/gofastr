@@ -14,6 +14,7 @@ package main
 // =============================================================================
 
 import (
+	"errors"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -79,7 +80,15 @@ func WizardDemoHandler(w http.ResponseWriter, r *http.Request) {
 	submittedStep := 0
 
 	if r.Method == http.MethodPost {
+		// Cap the body: a sitemap-listed public form must not buffer an
+		// attacker-chosen body (the stdlib only refuses at its own 10 MiB
+		// urlencoded floor). 4 KiB covers three short fields.
+		r.Body = http.MaxBytesReader(w, r.Body, 4<<10)
 		if err := r.ParseForm(); err != nil {
+			if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
+				http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
+				return
+			}
 			http.Error(w, "parse form: "+err.Error(), http.StatusBadRequest)
 			return
 		}

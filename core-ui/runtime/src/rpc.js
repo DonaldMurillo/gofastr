@@ -268,11 +268,18 @@
       }
       const scrollSel = node.getAttribute('data-fui-rpc-scroll-to');
       if (scrollSel) {
-        const target = document.querySelector(scrollSel);
-        if (target) Promise.resolve().then(() => {
-          try { target.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }
-          catch (_) {}
-        });
+        // The hint must never corrupt the result: this lookup runs after
+        // the response signal is set, in its own try, so a malformed
+        // selector degrades to a no-op instead of landing in the outer
+        // catch that would overwrite the signal with the network-error
+        // object.
+        try {
+          const target = document.querySelector(scrollSel);
+          if (target) Promise.resolve().then(() => {
+            try { target.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }
+            catch (_) {}
+          });
+        } catch (_) {}
       }
 
       const refreshName = node.getAttribute('data-fui-rpc-refresh') || widgetName;

@@ -27,9 +27,12 @@
     if (!btn) return;
     const sel = btn.getAttribute('data-fui-copy-text-from');
     if (!sel) return;
-    const target = document.querySelector(sel);
+    // The attribute value is a selector by design; a malformed one
+    // degrades to a no-op instead of throwing out of the delegated
+    // click handler before its preventDefault.
+    let target = null;
+    try { target = document.querySelector(sel); } catch (_) { return; }
     if (!target) return;
-    e.preventDefault();
     const text = (target.innerText || target.textContent || '').trim();
 
     const flash = () => {

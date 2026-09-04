@@ -14,7 +14,10 @@
   function buildList(navEl) {
     const target = navEl.getAttribute('data-fui-toc');
     if (!target) return;
-    const root = document.querySelector(target);
+    // The attribute value is a selector by design; a malformed one
+    // degrades to a no-op instead of throwing out of the wire pass.
+    let root = null;
+    try { root = document.querySelector(target); } catch (_) { return; }
     if (!root) return;
     const wanted = levelsFor(navEl);
     const selector = wanted.map(function (l) { return 'h' + l + '[id]'; }).join(',');

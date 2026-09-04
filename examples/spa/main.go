@@ -22,33 +22,7 @@ func main() {
 	}
 	defer db.Close()
 
-	app := framework.NewApp(
-		framework.WithDB(db),
-		// Auto-CRUD mounts under /api (GET /api/articles, …) so Vue Router
-		// owns the bare paths (/articles, /projects) for client-side routes.
-		framework.WithConfig(framework.AppConfig{Name: "spa-example", APIPrefix: "/api"}),
-	)
-
-	// --- Entities, auto-CRUD is on (DB set); APIPrefix puts the routes under /api. ---
-
-	app.Entity("articles", framework.EntityConfig{Scope:
-	// public demo content. See "Default CRUD authentication" in the security docs.
-	&framework.ScopeConfig{}, Exposure: &framework.ExposureConfig{Public: true}, Fields: []schema.Field{
-		{Name: "title", Type: schema.String, Required: true},
-		{Name: "summary", Type: schema.Text},
-		{Name: "body", Type: schema.Text},
-		{Name: "category", Type: schema.String},
-	},
-	})
-
-	app.Entity("projects", framework.EntityConfig{Scope:
-	// public demo content. See "Default CRUD authentication" in the security docs.
-	&framework.ScopeConfig{}, Exposure: &framework.ExposureConfig{Public: true}, Fields: []schema.Field{
-		{Name: "name", Type: schema.String, Required: true},
-		{Name: "description", Type: schema.Text},
-		{Name: "url", Type: schema.String},
-	},
-	})
+	app := buildApp(db)
 
 	// --- Seed data (must run after tables exist) ---
 	framework.AutoMigrate(db, app.Registry)
@@ -90,6 +64,45 @@ func main() {
 	if err := app.Start(addr); err != nil {
 		log.Fatal(err)
 	}
+}
+
+// buildApp declares the entities exactly as main serves them. Split from
+// main so tests drive the real declarations (not a copy) in-process.
+func buildApp(db *sql.DB) *framework.App {
+	app := framework.NewApp(
+		framework.WithDB(db),
+		// Auto-CRUD mounts under /api (GET /api/articles, …) so Vue Router
+		// owns the bare paths (/articles, /projects) for client-side routes.
+		framework.WithConfig(framework.AppConfig{Name: "spa-example", APIPrefix: "/api"}),
+	)
+
+	// --- Entities, auto-CRUD is on (DB set); APIPrefix puts the routes under /api. ---
+
+	app.Entity("articles", framework.EntityConfig{Scope:
+	// public demo content. See "Default CRUD authentication" in the security docs.
+	&framework.ScopeConfig{}, Exposure: &framework.ExposureConfig{Public: true}, Fields: []schema.Field{
+		{Name: "title", Type: schema.String, Required: true},
+		{Name: "summary", Type: schema.Text},
+		{Name: "body", Type: schema.Text},
+		{Name: "category", Type: schema.String},
+	},
+	})
+
+	// projects.url is rendered client-side into an <a :href> (app.js), so a
+	// stored "javascript:" URL is stored XSS on the projects page. The
+	// Pattern allow-list admits http(s) and protocol-relative absolute URLs
+	// plus any colon-free relative href; every other scheme (javascript:,
+	// data:, vbscript:, mailto:) is refused at the write on create AND
+	// partial update.
+	app.Entity("projects", framework.EntityConfig{Scope:
+	// public demo content. See "Default CRUD authentication" in the security docs.
+	&framework.ScopeConfig{}, Exposure: &framework.ExposureConfig{Public: true}, Fields: []schema.Field{
+		{Name: "name", Type: schema.String, Required: true},
+		{Name: "description", Type: schema.Text},
+		{Name: "url", Type: schema.String, Pattern: `^(?:https?://.*|//.*|[^:]*)$`},
+	},
+	})
+	return app
 }
 
 func resolveStaticDir() string {

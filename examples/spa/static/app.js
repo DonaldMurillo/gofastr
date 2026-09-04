@@ -1,6 +1,14 @@
 const { createApp, ref, onMounted, defineComponent } = Vue
 const { createRouter, createWebHistory } = VueRouter
 
+// Only http(s), protocol-relative, and colon-free relative URLs are safe to
+// bind into href; anything else (javascript:, data:, …) renders as an inert
+// '#' so a poisoned project row cannot execute on click.
+function safeUrl(u) {
+  if (!u) return '#'
+  return /^(?:https?:)?\/\//.test(u) || !u.includes(':') ? u : '#'
+}
+
 // ── API helpers ─────────────────────────────────────────
 
 async function api(url) {
@@ -118,8 +126,7 @@ const ProjectList = defineComponent({
         loading.value = false
       }
     })
-
-    return { projects, loading }
+    return { projects, loading, safeUrl }
   },
   template: `
     <div>
@@ -129,7 +136,7 @@ const ProjectList = defineComponent({
       <div v-for="p in projects" :key="p.id" class="card" style="cursor:default">
         <h3>{{ p.name }}</h3>
         <p class="meta">{{ p.description }}</p>
-        <a v-if="p.url" :href="p.url" target="_blank" class="project-link">{{ p.url }}</a>
+        <a v-if="p.url" :href="safeUrl(p.url)" target="_blank" rel="noopener" class="project-link">{{ p.url }}</a>
       </div>
     </div>
   `

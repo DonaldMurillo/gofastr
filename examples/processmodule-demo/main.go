@@ -121,7 +121,12 @@ func registerHandlers(peer *moduleproto.Peer) error {
 	// terminal integrity fault on the host side.
 	if err := peer.Handle(moduleproto.MethodHandshake, func(_ context.Context, params json.RawMessage) (any, error) {
 		var hp moduleproto.HandshakeParams
-		_ = json.Unmarshal(params, &hp)
+		if err := json.Unmarshal(params, &hp); err != nil {
+			// Refuse malformed params rather than echoing zero values back
+			// as a handshake result: a divergence here is a terminal
+			// integrity fault on the host side either way.
+			return nil, err
+		}
 		return moduleproto.HandshakeResult{
 			Proto: moduleproto.ProtoRange{Min: 1, Max: 1},
 			Identity: moduleproto.Identity{
@@ -160,7 +165,9 @@ func registerHandlers(peer *moduleproto.Peer) error {
 	// buffered-503 guarantee, design §8).
 	if err := peer.Handle(moduleproto.MethodHTTP, func(ctx context.Context, params json.RawMessage) (any, error) {
 		var p moduleproto.HTTPRequestParams
-		_ = json.Unmarshal(params, &p)
+		if err := json.Unmarshal(params, &p); err != nil {
+			return nil, err
+		}
 
 		if cfg.crashOn != "" && (cfg.crashOn == p.RouteID || cfg.crashOn == p.RequestID) {
 			// Sleep briefly so the host's Call is genuinely in-flight when
@@ -249,7 +256,9 @@ func registerHandlers(peer *moduleproto.Peer) error {
 	// count as its result.
 	if err := peer.Handle(moduleproto.MethodToolCall, func(ctx context.Context, params json.RawMessage) (any, error) {
 		var p moduleproto.ToolCallParams
-		_ = json.Unmarshal(params, &p)
+		if err := json.Unmarshal(params, &p); err != nil {
+			return nil, err
+		}
 		if p.ToolID != "ping" {
 			return nil, fmt.Errorf("unknown tool %q", p.ToolID)
 		}

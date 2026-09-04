@@ -24,15 +24,24 @@
 
   const STORAGE_PREFIX = 'gofastr.banner-dismiss.';
 
+  // Storage keys component-encode the dismiss id at the boundary: a
+  // DOM-sourced id can never contribute cookie delimiters ('; '='), so
+  // the only cookie planted in this namespace is the one this module
+  // meant to plant, and the localStorage key the read side looks up is
+  // always the key the write side set.
+  function dismissKey(id) {
+    return STORAGE_PREFIX + encodeURIComponent(id);
+  }
+
   function isDismissed(id) {
     if (!id) return false;
-    try { return localStorage.getItem(STORAGE_PREFIX + id) === '1'; }
+    try { return localStorage.getItem(dismissKey(id)) === '1'; }
     catch (_) { return false; }
   }
 
   function recordDismiss(id) {
     if (!id) return;
-    try { localStorage.setItem(STORAGE_PREFIX + id, '1'); }
+    try { localStorage.setItem(dismissKey(id), '1'); }
     catch (_) { /* best-effort */ }
     // Mirror the dismissal into a cookie so the SERVER can skip rendering
     // the banner on the next request (ui.Banner checks it when its Ctx
@@ -40,7 +49,7 @@
     // for a moment before this module's hide pass runs. A UI-preference
     // cookie is strictly-necessary category; one year.
     try {
-      document.cookie = STORAGE_PREFIX + id + '=1; path=/; max-age=31536000; SameSite=Lax';
+      document.cookie = dismissKey(id) + '=1; path=/; max-age=31536000; SameSite=Lax';
     } catch (_) { /* best-effort */ }
   }
 

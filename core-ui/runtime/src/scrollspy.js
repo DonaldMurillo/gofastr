@@ -19,7 +19,10 @@
     if (observers.has(wrap)) return; // idempotent
     const observeSel = wrap.getAttribute('data-fui-scrollspy');
     if (!observeSel) return;
-    const root = document.querySelector(observeSel);
+    // Both attribute values are selectors by design; a malformed one
+    // degrades to a no-op instead of throwing out of the wire pass.
+    let root = null;
+    try { root = document.querySelector(observeSel); } catch (_) { return; }
     if (!root) return;
     const targetSel = wrap.getAttribute('data-fui-scrollspy-target') || 'h2[id], h3[id]';
 
@@ -37,11 +40,10 @@
       anchorByID[id] = a;
       targets.push(t);
     }
-    if (targets.length === 0) return;
-    // Filter: also accept caller-supplied targetSel as an additional
-    // source so non-heading sections work.
     if (targetSel !== 'h2[id], h3[id]') {
-      for (const t of root.querySelectorAll(targetSel)) {
+      let extra = [];
+      try { extra = Array.from(root.querySelectorAll(targetSel)); } catch (_) { extra = []; }
+      for (const t of extra) {
         if (!t.id) continue;
         if (!anchorByID[t.id]) continue;
         if (targets.indexOf(t) === -1) targets.push(t);

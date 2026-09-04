@@ -37,7 +37,10 @@
       if (!path) return;
       const itemsSel = wrap.getAttribute('data-fui-infinite-items') ||
         '[data-fui-infinite-items]';
-      const items = wrap.querySelector(itemsSel) || wrap;
+      // The attribute value is a selector by design; a malformed one
+      // degrades to the wrapper instead of throwing out of the wire pass.
+      let items = wrap;
+      try { items = wrap.querySelector(itemsSel) || wrap; } catch (_) {}
       const rootMargin = wrap.getAttribute('data-fui-infinite-root-margin') || '200px';
       let cursor = wrap.getAttribute('data-fui-infinite-cursor') || '';
       let inFlight = false;
