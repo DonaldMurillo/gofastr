@@ -20,6 +20,20 @@ accessors (`SetUser`, `GetUser`, `SetTenant`, `SetRequestID`) the
 middleware chain populates. Author-facing: you write handlers against
 this. Start at `core/handler/handler.go`: `HandlerAdapter`.
 
+Every decode of client-controlled JSON outside `Bind` goes through the
+same strict rule: `DecodeStrict(r, &dst)` for a reader,
+`UnmarshalStrict(data, &dst)` for bytes already in memory (a websocket
+frame, a buffered body), and `CheckTopLevelKeys(data, fold)` when the
+caller normalises keys itself. Struct destinations refuse duplicate,
+case-folded, and unknown top-level keys; map destinations refuse
+duplicate and case-folded ones. Stdlib `encoding/json` keeps the last
+duplicate and matches tags case-insensitively, so the same body can
+mean two things to two readers; refusing it is the only resolution that
+privileges neither. Cap the size first (`http.MaxBytesReader`). The
+contracts rule GOFASTR1407 reports any raw `json.NewDecoder`/`Unmarshal`
+of request or frame bytes, so a site that does not use these helpers
+needs a `//gofastr:allow(GOFASTR1407) <why>` marker and a reason.
+
 ### router
 
 A method-based HTTP router over Go 1.22's `http.ServeMux`: `METHOD
