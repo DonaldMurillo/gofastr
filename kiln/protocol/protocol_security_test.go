@@ -9,9 +9,15 @@ import (
 	"github.com/DonaldMurillo/gofastr/kiln/live"
 )
 
-// nanoRun matches any run of digits long enough to be a nanosecond
-// timestamp embedded in an id.
-var nanoRun = regexp.MustCompile(`[0-9]{15,}`)
+// randShape is the shape kid.Hex(16) mints: 32 lowercase hex characters,
+// 128 bits of crypto/rand. A positive shape check is the honest pin: a
+// "no long digit run" heuristic fails on random hex itself about one
+// time in a hundred, since ten of the sixteen hex characters are digits.
+var randShape = regexp.MustCompile(`^e[0-9a-f]{32}$`)
+
+// allDigits is a zero-padded decimal timestamp wearing the hex shape;
+// 16 random bytes are all digits with probability (10/16)^32, never.
+var allDigits = regexp.MustCompile(`^e[0-9]{32}$`)
 
 // Property: journal entry ids are minted from crypto/rand, never from a
 // wall-clock timestamp or counter — the ids surface in panel state and
@@ -27,8 +33,11 @@ func TestNextEntryIDUnpredictable(t *testing.T) {
 		if id == "" {
 			t.Fatal("nextEntryID returned an empty id")
 		}
-		if run := nanoRun.FindString(id); run != "" {
-			t.Errorf("entry id %q embeds a %d-digit numeric run — nanosecond timestamps collapse the id space to a guessable wall-clock window; mint from crypto/rand", id, len(run))
+		if allDigits.MatchString(id) {
+			t.Errorf("entry id %q is all digits: a padded timestamp, not 16 bytes of crypto/rand", id)
+		}
+		if !randShape.MatchString(id) {
+			t.Errorf("entry id %q is not e<32 hex> (16 bytes of crypto/rand): a timestamp or counter cannot produce that shape, anything else is a weaker mint", id)
 		}
 	}
 }
