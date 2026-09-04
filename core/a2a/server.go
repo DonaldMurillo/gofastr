@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/mcp"
 )
 
@@ -269,7 +270,11 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req rpcRequest
-	if err := json.Unmarshal(raw, &req); err != nil { //gofastr:allow(GOFASTR1407) A2A JSON-RPC envelope (jsonrpc/method/params/id): the whole object is the protocol unit, no field is an identity
+	// handler.UnmarshalStrict refuses duplicate and case-folded
+	// top-level keys (stdlib json keeps the last duplicate and folds
+	// key case), so no first-occurrence parser — proxy, WAF, audit
+	// logger — can disagree with the executor's decode.
+	if err := handler.UnmarshalStrict(raw, &req); err != nil {
 		s.writeTransport(w, http.StatusBadRequest, Errorf(CodeParseError, "parse request: %v", err))
 		return
 	}
@@ -1156,8 +1161,16 @@ func (s *Server) pollEvents(st *sseStream, owner string, rec *TaskRecord, ctx co
 				return
 			}
 		case <-poll.C:
-			cur, err := s.store.GetTask(context.Background(), owner, rec.Task.ID)
+			cur, err := s.pollGetTask(context.Background(), owner, rec.Task.ID)
 			if errors.Is(err, ErrNotFound) {
+				return
+			}
+			if errors.Is(err, errStorePanicked) {
+				// A panicking store cannot serve this stream again;
+				// end it here rather than re-panicking once per poll
+				// interval. The response is already streaming, so the
+				// attributed log is the refusal.
+				s.log.Error("a2a: poll read panicked", "taskId", rec.Task.ID, "err", err)
 				return
 			}
 			if err != nil {
@@ -1177,6 +1190,26 @@ func (s *Server) pollEvents(st *sseStream, owner string, rec *TaskRecord, ctx co
 			}
 		}
 	}
+}
+
+// errStorePanicked is what pollGetTask returns in place of a panic.
+// The recovered value is not surfaced: it can be anything, including
+// driver detail the counterparty must not see.
+var errStorePanicked = errors.New("a2a: store GetTask panicked")
+
+// pollGetTask reads one task snapshot for the polling fallback stream
+// under a recover guard. The Store is host-supplied code running on a
+// long-lived goroutine with no per-request net, so a panicking
+// implementation must become an error this stream ends on — never an
+// unrecovered panic that takes down the process.
+func (s *Server) pollGetTask(ctx context.Context, owner, taskID string) (rec *TaskRecord, err error) {
+	defer func() {
+		if recover() != nil {
+			rec = nil
+			err = errStorePanicked
+		}
+	}()
+	return s.store.GetTask(ctx, owner, taskID)
 }
 
 // ---- push config methods ----------------------------------------------

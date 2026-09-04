@@ -151,8 +151,12 @@ HTML-construction API for pages and islands. Start at
 A small, dependency-free Markdown renderer. It parses a constrained
 subset (headings, fenced code, lists, tables, blockquotes, frontmatter;
 inline bold/italic/code/links/images) and emits `render.HTML` with all
-source HTML escaped, no raw-HTML passthrough. Direct; no framework
-auto-wiring. Start at `core/markdown/markdown.go`: `Render`.
+source HTML escaped, no raw-HTML passthrough. Link and image URLs go
+through the canonical `core-ui/urlsafe` allow-list (`Anchor` for hrefs,
+`ImageSource` for image sources), so schemes outside it — `file:`,
+`ftp:`, `blob:`, `ws:`, protocol-relative references — render as `#`.
+Direct; no framework auto-wiring. Start at `core/markdown/markdown.go`:
+`Render`.
 
 ### static
 

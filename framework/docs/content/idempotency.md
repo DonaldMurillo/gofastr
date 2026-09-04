@@ -126,6 +126,7 @@ yourself before returning.
 | Body larger than `MaxBodyBytes`                   | Pass through with `Idempotent-Bypass: body-too-large`; handler still sees full body |
 | Store backend failure (FailOpen=false, default)   | `503 Service Unavailable`, fail closed         |
 | Store backend failure (FailOpen=true)             | Pass through, fail open (legacy availability) |
+| Cached row is corrupt (unparseable stored headers)| `503 Service Unavailable`, fail closed — a corrupt cached response is never replayed with silently-dropped headers |
 
 The cache is keyed by `(principal, Idempotency-Key)`. The
 **fingerprint** that guards against accidental key reuse is

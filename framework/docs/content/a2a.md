@@ -82,7 +82,10 @@ names; timestamps are RFC 3339 UTC; a `Part` is a flat object whose set
 field (`text`, `raw`, `url`, `data`) is the discriminator. The v0.x
 slash-form methods (`message/send`, `tasks/get`, …) are
 wire-incompatible, not merely outdated — a v0.x client gets
-`-32601` method not found and that is correct.
+`-32601` method not found and that is correct. The JSON-RPC envelope is
+decoded with strict top-level keys: a body repeating a key, or spelling
+one in two cases (`"method"` and `"Method"`), is refused with a parse
+error rather than silently resolved last-key-wins.
 
 ## Entity skills
 

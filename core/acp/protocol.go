@@ -228,6 +228,15 @@ const (
 // RequestPermissionOutcome is the user's decision on a
 // session/request_permission call: either OutcomeCancelled, or
 // OutcomeSelected with the chosen OptionID.
+//
+// The zero value is not a legal decision, and Client.RequestPermission
+// never returns it as one: a client answer that carries neither a
+// valid selection (OutcomeSelected plus a non-empty OptionID) nor a
+// cancellation — a null or empty result, an unknown outcome, a
+// selection with no optionId — is coerced to OutcomeCancelled. The
+// client is the untrusted peer on this wire, and the outcome is the
+// agent-side authorization for the tool call being approved, so a
+// malformed answer must read as "no approval", never as no objection.
 type RequestPermissionOutcome struct {
 	Outcome  string `json:"outcome"`
 	OptionID string `json:"optionId,omitempty"`

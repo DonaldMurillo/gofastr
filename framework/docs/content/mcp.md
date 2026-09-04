@@ -532,7 +532,10 @@ What a client sees at the edges:
 
 - `ServeHTTP` answers POST with one JSON-RPC request per call. It enforces an
   `application/json` content type (parameters allowed, plus the `+json`
-  structured-suffix family) and caps the body at 1 MiB.
+  structured-suffix family), caps the body at 1 MiB, and decodes the
+  envelope with strict top-level keys: a body repeating a key, or spelling
+  one in two cases (`"method"` and `"Method"`), is refused as invalid JSON
+  rather than silently resolved last-key-wins.
 - `ServeSSE(path)` returns an http.Handler where POST handles JSON-RPC and GET
   with `Accept: text/event-stream` opens a stream the server holds open for
   the connection's life, carrying server-initiated notifications (see

@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"sync"
 	"sync/atomic"
+
+	"github.com/DonaldMurillo/gofastr/core/handler"
 )
 
 // ErrSessionNotFound reports a session/load (or session/prompt) for a
@@ -201,9 +203,21 @@ func (c *Client) RequestPermission(ctx context.Context, toolCall ToolCallUpdate,
 			Outcome RequestPermissionOutcome `json:"outcome"`
 		}
 		if len(resp.Result) > 0 {
-			if err := json.Unmarshal(resp.Result, &out); err != nil {
+			if err := handler.UnmarshalStrict(resp.Result, &out); err != nil {
 				return zero, fmt.Errorf("acp: session/request_permission: decode outcome: %w", err)
 			}
+		}
+		// Fail closed: RequestPermissionOutcome is a two-value protocol
+		// type (protocol.go), and the client is the untrusted peer on
+		// this wire. A result that carries neither a selection nor a
+		// cancellation — null, {}, an unknown outcome — is coerced to
+		// OutcomeCancelled so a malformed or hostile answer can never
+		// read as "no objection" downstream.
+		if out.Outcome.Outcome != OutcomeSelected && out.Outcome.Outcome != OutcomeCancelled {
+			out.Outcome = RequestPermissionOutcome{Outcome: OutcomeCancelled}
+		}
+		if out.Outcome.Outcome == OutcomeSelected && out.Outcome.OptionID == "" {
+			out.Outcome = RequestPermissionOutcome{Outcome: OutcomeCancelled}
 		}
 		return out.Outcome, nil
 	case <-ctx.Done():
@@ -326,7 +340,12 @@ func (s *Server) Serve(ctx context.Context, in io.Reader, out io.Writer) error {
 			continue
 		}
 		var frame wireRequest
-		if err := json.Unmarshal(line, &frame); err != nil {
+		// UnmarshalStrict refuses duplicate and case-folded top-level
+		// keys (stdlib json keeps the last duplicate and folds key
+		// case), so no first-occurrence parser — proxy, logger, audit
+		// trail — can disagree with the dispatcher's decode. The 4 MiB
+		// scanner buffer above is the size cap.
+		if err := handler.UnmarshalStrict(line, &frame); err != nil {
 			st.respond(frame.ID, wireResponse{
 				JSONRPC: "2.0",
 				Error:   &wireRespError{Code: ErrParseError, Message: err.Error()},
@@ -395,7 +414,14 @@ func (st *serverState) handleNotification(frame wireRequest) {
 	var p struct {
 		SessionID string `json:"sessionId"`
 	}
-	_ = json.Unmarshal(frame.Params, &p)
+	// Notifications get no response, so a malformed body cannot be
+	// refused on the wire — but it must not march on as zero-value
+	// data either: an unparseable session/cancel is dropped here,
+	// explicitly, rather than cancelling (or not) by accident of the
+	// zero sessionId.
+	if err := json.Unmarshal(frame.Params, &p); err != nil {
+		return
+	}
 	st.mu.Lock()
 	sess := st.sessions[p.SessionID]
 	st.mu.Unlock()
@@ -473,7 +499,51 @@ func (st *serverState) runAuthenticate(ctx context.Context, methodID string) (er
 	return st.srv.opts.Authenticate(ctx, methodID)
 }
 
+// runNewSession, runLoadSession and runPrompt invoke the embedder's
+// Agent, SessionLoader and Session implementations under the same
+// recover guard runAuthenticate gives the auth callback: Serve is a
+// bare read loop with no per-request net (and the prompt goroutine has
+// none at all), so a panic in embedder code must become a protocol
+// error answered to that one request — never a process crash. The
+// recovered value is not echoed to the client.
+func (st *serverState) runNewSession(ctx context.Context, cwd string) (impl Session, err error) {
+	defer func() {
+		if recover() != nil {
+			impl = nil
+			err = errors.New("agent NewSession panicked")
+		}
+	}()
+	return st.srv.agent.NewSession(ctx, cwd)
+}
+
+func (st *serverState) runLoadSession(ctx context.Context, sessionID, cwd string, client *Client) (impl Session, err error) {
+	defer func() {
+		if recover() != nil {
+			impl = nil
+			err = errors.New("agent LoadSession panicked")
+		}
+	}()
+	return st.srv.loader.LoadSession(ctx, sessionID, cwd, client)
+}
+
+func runPrompt(sess *session, ctx context.Context, prompt []ContentBlock, client *Client) (reason string, err error) {
+	defer func() {
+		if recover() != nil {
+			reason = ""
+			err = errors.New("session Prompt panicked")
+		}
+	}()
+	return sess.impl.Prompt(ctx, prompt, client)
+}
+
 func (st *serverState) handleAuthenticate(ctx context.Context, frame wireRequest) wireResponse {
+	// authenticate establishes credentials, which makes it exactly as
+	// session-scoped as session/new: a connection that never sent
+	// initialize has agreed to no protocol version and no capabilities,
+	// and must not reach the embedder's auth callback.
+	if !st.requireReady() {
+		return st.errResp(ErrInvalidRequest, "authenticate before initialize: initialize the connection first")
+	}
 	var p struct {
 		MethodID string `json:"methodId"`
 	}
@@ -546,7 +616,7 @@ func (st *serverState) handleNewSession(ctx context.Context, frame wireRequest) 
 	if e != nil {
 		return wireResponse{Error: e}
 	}
-	impl, err := st.srv.agent.NewSession(ctx, p.CWD)
+	impl, err := st.runNewSession(ctx, p.CWD)
 	if err != nil {
 		return st.errResp(ErrInternalError, "session/new: %v", err)
 	}
@@ -573,7 +643,7 @@ func (st *serverState) handleLoadSession(ctx context.Context, frame wireRequest)
 		return wireResponse{Error: e}
 	}
 	client := &Client{conn: st.conn, sessionID: p.SessionID}
-	impl, err := st.srv.loader.LoadSession(ctx, p.SessionID, p.CWD, client)
+	impl, err := st.runLoadSession(ctx, p.SessionID, p.CWD, client)
 	if err != nil {
 		if errors.Is(err, ErrSessionNotFound) {
 			return st.errResp(ErrResourceNotFound, "session/load: %v", err)
@@ -636,28 +706,32 @@ func (st *serverState) startPrompt(ctx context.Context, frame wireRequest) {
 	sess.mu.Unlock()
 
 	go func() {
-		defer func() {
-			sess.mu.Lock()
-			sess.busy = false
-			sess.cancel = nil
-			sess.mu.Unlock()
-			cancel()
-		}()
+		defer cancel()
 		client := &Client{conn: st.conn, sessionID: p.SessionID}
-		reason, err := sess.impl.Prompt(promptCtx, p.Prompt, client)
-		switch {
-		case promptCtx.Err() != nil:
-			// session/cancel fired: the spec requires the cancelled
-			// stop reason even if the implementation errored out.
-			st.respond(frame.ID, wireResponse{Result: promptResult{StopReason: StopCancelled}})
-		case err != nil:
-			st.respond(frame.ID, st.errResp(ErrInternalError, "session/prompt: %v", err))
-		default:
-			if reason == "" {
-				reason = StopEndTurn
+		reason, err := runPrompt(sess, promptCtx, p.Prompt, client)
+		resp := func() wireResponse {
+			switch {
+			case promptCtx.Err() != nil:
+				// session/cancel fired: the spec requires the cancelled
+				// stop reason even if the implementation errored out.
+				return wireResponse{Result: promptResult{StopReason: StopCancelled}}
+			case err != nil:
+				return st.errResp(ErrInternalError, "session/prompt: %v", err)
+			default:
+				if reason == "" {
+					reason = StopEndTurn
+				}
+				return wireResponse{Result: promptResult{StopReason: reason}}
 			}
-			st.respond(frame.ID, wireResponse{Result: promptResult{StopReason: reason}})
-		}
+		}()
+		// Release the turn BEFORE the response goes out: a client may
+		// send its next session/prompt the moment it reads this
+		// response, and a still-set busy flag refuses it spuriously.
+		sess.mu.Lock()
+		sess.busy = false
+		sess.cancel = nil
+		sess.mu.Unlock()
+		st.respond(frame.ID, resp)
 	}()
 }
 

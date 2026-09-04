@@ -510,6 +510,12 @@ func TestCallGateNeverBlocksRegistry(t *testing.T) {
 // never a transport crash"; gateAllows: same for delivery time).
 // prompts/get is already pinned by TestPromptsGetPanicBecomesError's
 // boom_gate case; these are the surfaces it does not reach.
+// (Deliberate shape, pinned here: a panicking gate on a LIST surface —
+// tools/list / prompts/list filtering via gateRefused — fails closed
+// as a filtered listing, not an internal-error response, and the
+// server-wide gate's recovered panic answers as checkServerGate's
+// generic refusal; the 2026-09 round-3 probes that demanded an
+// ErrInternalError response there were deleted as over-specified.)
 func TestPanickingGateFailsClosedEverywhere(t *testing.T) {
 	t.Run("tools/call", func(t *testing.T) {
 		s := NewServer()
@@ -566,6 +572,48 @@ func TestPanickingGateFailsClosedEverywhere(t *testing.T) {
 			t.Error("a panicking gate must fail closed: the notification must be refused")
 		}
 	})
+}
+
+// Property: a panicking WithToolGate on tools/call is recovered by
+// checkToolGate into a well-formed internal-error response (code
+// ErrInternalError, generic message), the handler never runs, and the
+// panic value is not echoed — the listing-side twin of the subtest
+// above, which pins only that no panic escapes.
+func TestToolGatePanicBecomesInternalError(t *testing.T) {
+	const panicSecret = "super-secret-gate-detail"
+	s := NewServer()
+	ran := false
+	if err := s.RegisterTool("t", "d", nil,
+		func(_ context.Context, _ map[string]any) (any, error) { ran = true; return "ok", nil },
+		WithToolGate(func(context.Context) error { panic(panicSecret) }),
+	); err != nil {
+		t.Fatalf("RegisterTool: %v", err)
+	}
+
+	var rec any
+	resp := func() Response {
+		defer func() { rec = recover() }()
+		params, _ := json.Marshal(map[string]any{"name": "t"})
+		return s.HandleRequest(context.Background(), Request{
+			JSONRPC: "2.0", ID: 1, Method: "tools/call",
+			Params: params,
+		})
+	}()
+	if rec != nil {
+		t.Fatalf("SECURITY: [gate-panic] panic escaped HandleRequest (%v): on stdio this kills the process; checkToolGate must recover it", rec)
+	}
+	if resp.Error == nil {
+		t.Fatalf("SECURITY: [gate-panic] panicking tool gate came back as a success response: %+v", resp.Result)
+	}
+	if resp.Error.Code != ErrInternalError {
+		t.Fatalf("SECURITY: [gate-panic] error code = %d, want %d (internal error, mirroring checkPromptGate)", resp.Error.Code, ErrInternalError)
+	}
+	if strings.Contains(resp.Error.Message, panicSecret) {
+		t.Fatalf("SECURITY: [gate-panic] panic value leaked to the caller: %q", resp.Error.Message)
+	}
+	if ran {
+		t.Fatal("SECURITY: [gate-panic] tool handler ran behind a panicking gate")
+	}
 }
 
 // Property: subscriber gates are re-evaluated at DELIVERY time against
