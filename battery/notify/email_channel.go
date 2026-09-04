@@ -57,7 +57,16 @@ func (c *EmailChannel) Name() string { return c.channel }
 // a legitimate address. The downstream SMTP sender re-checks at the
 // transport boundary, but rejecting early surfaces the bug nearer the
 // data source.
-func (c *EmailChannel) Send(ctx context.Context, n Notification, r Rendered) error {
+func (c *EmailChannel) Send(ctx context.Context, n Notification, r Rendered) (err error) {
+	// The wrapped email.Sender is host-supplied code invoked from
+	// Notifier.Send's fan-out goroutines, which have no per-request
+	// recover net — a panicking sender must surface as an attributed
+	// error, not kill the process.
+	defer func() {
+		if v := recover(); v != nil {
+			err = fmt.Errorf("notify: email channel: sender panicked: %v", v)
+		}
+	}()
 	if n.To.Email == "" {
 		return nil // router shouldn't have selected us, but guard anyway
 	}

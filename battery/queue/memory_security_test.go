@@ -3,7 +3,11 @@ package queue
 import (
 	"context"
 	"errors"
+	"os"
+	"os/exec"
+	"strings"
 	"testing"
+	"time"
 )
 
 // ============================================================================
@@ -65,4 +69,86 @@ func TestReplayKeepsJobWhenEnqueueFails(t *testing.T) {
 		}
 		assertRetained(t, q, "dead-2", err)
 	})
+}
+
+// Property: a panic in the SetGate gate function is isolated to the job;
+// the worker pool (and the process) survives it and keeps processing.
+// Handlers are panic-isolated via safeHandle; the gate gets the same net
+// through gateAllows (recover → log + fail closed → defer), pinned here
+// process-level by re-exec because an unrecovered panic in the worker
+// goroutine kills the whole process.
+const queueGatePanicChildEnv = "GOFASTR_TEST_QUEUE_GATE_PANIC_CHILD"
+
+func TestMemoryQueueGatePanicIsolated(t *testing.T) {
+	if os.Getenv(queueGatePanicChildEnv) == "1" {
+		queueGatePanicChild()
+		return // unreachable; queueGatePanicChild exits
+	}
+
+	cmd := exec.Command(os.Args[0],
+		"-test.run", "^TestMemoryQueueGatePanicIsolated$",
+		"-test.count=1")
+	cmd.Env = append(os.Environ(), queueGatePanicChildEnv+"=1")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) && exitErr.ExitCode() >= 10 {
+			t.Fatalf("gate-panic child scenario contract broken (exit %d):\n%s", exitErr.ExitCode(), out)
+		}
+		t.Errorf("SECURITY: [gate-panic-isolation] a panicking SetGate callback killed the process: the worker did not survive it (memory.go processJob must route the gate through gateAllows like DBQueue): %v\n--- child output ---\n%s", err, out)
+		return
+	}
+	if strings.Contains(string(out), "panic:") {
+		t.Errorf("SECURITY: [gate-panic-isolation] child survived but reported a panic:\n%s", out)
+	}
+}
+
+// queueGatePanicChild is the child-side scenario. It never returns.
+// Exit codes: 0 = gate panic contained and the follow-up job processed by
+// the surviving worker; >=10 = scenario contract broken; runtime crash
+// (exit 2) = the gate panic escaped the worker goroutine and killed the
+// process.
+func queueGatePanicChild() {
+	q := NewMemoryQueue(1)
+
+	healthy := make(chan struct{})
+	q.RegisterHandler("gatepanics.healthy", func(context.Context, Job) error {
+		close(healthy)
+		return nil
+	})
+	// The gate must run for the poison type, so a handler has to exist
+	// (processJob dead-letters unknown types before reaching the gate).
+	q.RegisterHandler("gatepanics.poison", func(context.Context, Job) error {
+		return nil
+	})
+	q.SetGate(func(jobType string) bool {
+		if jobType == "gatepanics.poison" {
+			panic("gate boom")
+		}
+		return true
+	})
+	q.Start()
+
+	ctx := context.Background()
+	// Poison first: equal priority is FIFO by enqueue order, so the single
+	// worker hits the panicking gate before the healthy job.
+	if err := q.Enqueue(ctx, Job{Type: "gatepanics.poison"}); err != nil {
+		os.Exit(12)
+	}
+	if err := q.Enqueue(ctx, Job{Type: "gatepanics.healthy"}); err != nil {
+		os.Exit(13)
+	}
+
+	// Secondary assertion: if the process lives but the only worker died
+	// on the panic, the follow-up job never runs.
+	select {
+	case <-healthy:
+		// worker survived the panicking gate and processed the next job
+	case <-time.After(3 * time.Second):
+		os.Exit(14) // silent worker death: follow-up job never ran
+	}
+
+	// Alive AND working past the poison job: the gate panic was contained.
+	_ = q.Close()
+	os.Exit(0)
 }

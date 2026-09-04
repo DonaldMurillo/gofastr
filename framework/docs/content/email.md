@@ -68,11 +68,23 @@ err := sender.Send(ctx, email.Email{
 
 The sender refuses to serialize an `Email` whose header fields (`From`,
 `To`, `Cc`, `Bcc`, `Subject`, custom headers, attachment filename and
-content type) contain CR, LF, or NUL. Without that check, a value like
-`"foo\r\nBcc: victim@e.com"` would smuggle an extra recipient onto the
-outgoing message. MIME boundaries are cryptographically random and
-checked against the body, so template output cannot inject or terminate
+content type) contain any C0 control byte (including CR, LF, NUL) or DEL.
+Without that check, a value like `"foo\r\nBcc: victim@e.com"` would smuggle
+an extra recipient onto the outgoing message, and other control bytes reach
+MUAs and spam filters verbatim. MIME boundaries are cryptographically random
+and checked against the body, so template output cannot inject or terminate
 a MIME part.
+
+The SMTP envelope is built separately from the headers: every `From` / `To`
+/ `Cc` / `Bcc` entry is parsed with `net/mail` and reaches the wire as
+exactly one bare addr-spec (`MAIL FROM:<addr-spec>`, one `RCPT TO` per
+recipient). A display-name form like `"Bob <bob@x>"` or a comma-joined
+entry is expanded the same way the header side reads it, so the envelope
+recipient set can never diverge from the parsed header set; entries that
+fail to parse, parse to zero addresses, or carry control bytes are refused.
+`Send` also never writes into the caller's slices — the recipient list is
+an explicit-length copy, so a reused `To` backing array cannot observe a
+BCC address.
 
 ## Log sender (development)
 

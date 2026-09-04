@@ -70,6 +70,15 @@ The pipeline is composed inside `Index.Query`. Every stage is opt-in via the `Qu
 
 The snapshot's header records the embedder's `Name()` and `Dim()`. Reopening with a different embedder is refused with `*ModelMismatchError` because mixing vectors from different models is silently catastrophic for retrieval quality. To migrate models: drop the snapshot, re-index from source.
 
+Snapshots, the WAL, and the directory that holds them are owner-only
+(0600 / 0700 plus `fileperm.Restrict`): they carry the full indexed
+document corpus, which is app data, not a shared artifact.
+
+Pluggable backends (chunker, embedder, store, keyword index) run under
+recover guards on the indexing and watcher paths: a panicking
+implementation surfaces as an attributed error from `Add` / `Remove` /
+`scan` instead of killing the process.
+
 ## Hybrid retrieval
 
 `Options.Keyword` injects a `KeywordBackend`. Two implementations ship:
@@ -189,6 +198,11 @@ Or wire the bare `http.Handler` onto a `core/router.Router` or stdlib `http.Serv
 mux.Handle("/semantic/", http.StripPrefix("/semantic",
     semantic.Handler(idx, semantic.WithAuthToken(os.Getenv("SEMANTIC_TOKEN")))))
 ```
+
+`POST /index` and `POST /query` decode their bodies strictly: duplicate or
+case-folded top-level JSON keys are refused with 400 rather than silently
+resolved last-wins, so a body-mangling middlebox cannot index or query a
+different value than an audit log recorded.
 
 ## Agent inventory
 

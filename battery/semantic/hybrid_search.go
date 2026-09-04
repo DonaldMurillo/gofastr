@@ -2,6 +2,7 @@ package semantic
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/DonaldMurillo/gofastr/battery/search"
 )
@@ -18,11 +19,24 @@ type searchAdapter struct {
 	b search.Backend
 }
 
-func (a *searchAdapter) Index(ctx context.Context, id, text string) error {
+func (a *searchAdapter) Index(ctx context.Context, id, text string) (err error) {
+	// b is a host-supplied search.Backend reached from Index.Add/Remove on
+	// dispatch paths with no per-request recover; a panic becomes an
+	// attributed error instead of a process kill.
+	defer func() {
+		if v := recover(); v != nil {
+			err = fmt.Errorf("semantic: keyword backend panicked: %v", v)
+		}
+	}()
 	return a.b.Index(ctx, search.Document{ID: id, Type: "embed.chunk", Text: text})
 }
 
-func (a *searchAdapter) Delete(ctx context.Context, id string) error {
+func (a *searchAdapter) Delete(ctx context.Context, id string) (err error) {
+	defer func() {
+		if v := recover(); v != nil {
+			err = fmt.Errorf("semantic: keyword backend panicked: %v", v)
+		}
+	}()
 	return a.b.Delete(ctx, id)
 }
 

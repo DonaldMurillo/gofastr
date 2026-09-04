@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/internal/fileperm"
 )
 
 // snapshotVersion is bumped when the on-disk format changes in a way
@@ -33,8 +35,13 @@ func (s *FlatStore) Snapshot(path string) error {
 	if path == "" {
 		return errors.New("semantic: Snapshot path is required")
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	// Owner-only dir: the snapshot carries the full document corpus
+	// (and its vectors), which is app data, not a shared artifact.
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return fmt.Errorf("semantic: mkdir snapshot dir: %w", err)
+	}
+	if err := fileperm.Restrict(filepath.Dir(path), true); err != nil {
+		return fmt.Errorf("semantic: restrict snapshot dir: %w", err)
 	}
 
 	s.mu.RLock()
@@ -50,9 +57,14 @@ func (s *FlatStore) Snapshot(path string) error {
 	s.mu.RUnlock()
 
 	tmp := path + ".tmp"
-	f, err := os.Create(tmp)
+	f, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
 	if err != nil {
 		return fmt.Errorf("semantic: create snapshot tmp: %w", err)
+	}
+	if err := fileperm.Restrict(tmp, false); err != nil {
+		_ = f.Close()
+		_ = os.Remove(tmp)
+		return fmt.Errorf("semantic: restrict snapshot tmp: %w", err)
 	}
 	enc := gob.NewEncoder(f)
 	if err := enc.Encode(header); err != nil {
@@ -188,12 +200,16 @@ type wal struct {
 }
 
 func openWAL(path string) (*wal, error) {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return nil, fmt.Errorf("semantic: mkdir wal dir: %w", err)
 	}
-	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0o644)
+	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0o600)
 	if err != nil {
 		return nil, fmt.Errorf("semantic: open wal: %w", err)
+	}
+	if err := fileperm.Restrict(path, false); err != nil {
+		_ = f.Close()
+		return nil, fmt.Errorf("semantic: restrict wal: %w", err)
 	}
 	return &wal{path: path, f: f, enc: gob.NewEncoder(f)}, nil
 }
@@ -259,11 +275,11 @@ func (w *wal) truncate() error {
 		return fmt.Errorf("semantic: wal close before truncate: %w", err)
 	}
 	w.f = nil
-	f, err := os.OpenFile(w.path, os.O_RDWR|os.O_CREATE|os.O_TRUNC|os.O_APPEND, 0o644)
+	f, err := os.OpenFile(w.path, os.O_RDWR|os.O_CREATE|os.O_TRUNC|os.O_APPEND, 0o600)
 	if err != nil {
 		// Best-effort recovery keeps the WAL object usable even though the
 		// snapshot caller still receives the reset failure.
-		w.f, _ = os.OpenFile(w.path, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0o644)
+		w.f, _ = os.OpenFile(w.path, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0o600)
 		if w.f != nil {
 			w.enc = gob.NewEncoder(w.f)
 		}

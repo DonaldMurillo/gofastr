@@ -465,6 +465,16 @@ func (m *Manager) runWorker() {
 // same SQL store don't double-deliver. Stores without that interface
 // fall back to plain DueDeliveries, fine for single-instance setups.
 func (m *Manager) tick(ctx context.Context) {
+	// The store is host-supplied code on the worker's ticker loop,
+	// which has no per-request recover net — a panicking store call
+	// must degrade to an attributed log line (claimed rows stay
+	// pending and retry next tick; at-least-once), not kill the
+	// worker goroutine and the process with it.
+	defer func() {
+		if v := recover(); v != nil {
+			m.logf("webhook: store panic in tick (due deliveries stay pending): %v", v)
+		}
+	}()
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -488,6 +498,16 @@ func (m *Manager) tick(ctx context.Context) {
 }
 
 func (m *Manager) attempt(ctx context.Context, d Delivery) {
+	// Same recover net as tick: the store (and the HTTP client's
+	// rounds) run on the worker loop with no per-request net. A panic
+	// mid-attempt leaves the row at its pre-attempt status, so the
+	// next tick re-delivers (at-least-once) — the recovery posture the
+	// error branches below already document.
+	defer func() {
+		if v := recover(); v != nil {
+			m.logf("webhook: delivery %s: attempt panicked (row stays pending → duplicate delivery): %v", d.ID, v)
+		}
+	}()
 	// One delivery attempt is being processed: count it now. Every
 	// non-success branch below bumps failuresTotal exactly once, so
 	// failuresTotal stays <= deliveriesTotal. Success bumps nothing else.
@@ -580,6 +600,16 @@ func (m *Manager) attempt(ctx context.Context, d Delivery) {
 // reason the attempt is winding down, not a reason to lose the terminal
 // state write.
 func (m *Manager) saveDelivery(d Delivery) {
+	// The recover net mirrors tick/attempt: UpdateDelivery is
+	// host-supplied store code on the worker loop. A panic here loses
+	// the state write exactly like the logged error path (row stays
+	// stale → duplicate delivery), so it is attributed via the
+	// configured Logger and the worker keeps running.
+	defer func() {
+		if v := recover(); v != nil {
+			m.logf("webhook: delivery %s: persist %s state panicked (row may be stale → duplicate delivery): %v", d.ID, d.Status, v)
+		}
+	}()
 	if err := m.store.UpdateDelivery(context.Background(), d); err != nil {
 		m.logf("webhook: delivery %s: persist %s state failed (row may be stale → duplicate delivery): %v", d.ID, d.Status, err)
 	}

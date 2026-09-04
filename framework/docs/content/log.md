@@ -172,6 +172,14 @@ logp.Reporter().Report(log.ErrorReport{
 The reporter is closed on app shutdown when it implements `io.Closer`
 (`HTTPErrorReporter` does, so pending reports flush before exit).
 
+Every request-derived field in a report (`error`/`panic`, `path`, `method`,
+`route`, `request_id`) is scrubbed before it reaches a sink — control bytes
+(the C0 range and DEL) are percent-encoded, the same treatment the access
+log applies — both in the recovery middleware and in the default reporter
+itself, so reports forwarded by app code through `Plugin.Reporter` are
+scrubbed too. A panic value that embeds a terminal-title escape or a CRLF
+in the path cannot forge log lines or repaint an operator's tail.
+
 ## Configuration
 
 `log.Config` fields (all optional):

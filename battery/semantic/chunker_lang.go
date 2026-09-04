@@ -1,6 +1,7 @@
 package semantic
 
 import (
+	"fmt"
 	"go/parser"
 	"go/token"
 	"strings"
@@ -30,7 +31,11 @@ func NewLangAware() *LangAware {
 	}
 }
 
-// Chunk implements [Chunker].
+// Chunk implements [Chunker]. The Fallback call runs under a recover
+// net: a Fallback chunker is host-supplied pluggable code, and Chunk is
+// reached from Index.Add and the watcher loop, which have no
+// per-request recover — a panic becomes an attributed error instead of
+// killing the process.
 func (l *LangAware) Chunk(doc Document) ([]Chunk, error) {
 	if l.MaxRunes == 0 {
 		l.MaxRunes = 1024
@@ -48,7 +53,20 @@ func (l *LangAware) Chunk(doc Document) ([]Chunk, error) {
 			return l.flatten(cs), nil
 		}
 	}
-	return l.Fallback.Chunk(doc)
+	return chunkSafely(l.Fallback, doc)
+}
+
+// chunkSafely invokes one host-supplied Chunker under a recover net:
+// chunkers are pluggable (Options.Chunker, LangAware.Fallback) and run
+// on dispatch paths with no per-request recover, so a panicking chunker
+// surfaces as an attributed error rather than a process kill.
+func chunkSafely(c Chunker, doc Document) (chunks []Chunk, err error) {
+	defer func() {
+		if v := recover(); v != nil {
+			chunks, err = nil, fmt.Errorf("semantic: chunker panicked: %v", v)
+		}
+	}()
+	return c.Chunk(doc)
 }
 
 func (l *LangAware) detectKind(doc Document) string {
@@ -153,7 +171,7 @@ func (l *LangAware) flatten(in []Chunk) []Chunk {
 			out = append(out, c)
 			continue
 		}
-		sub, err := l.Fallback.Chunk(Document{
+		sub, err := chunkSafely(l.Fallback, Document{
 			ID:       c.DocID,
 			Source:   c.Source,
 			Text:     c.Text,

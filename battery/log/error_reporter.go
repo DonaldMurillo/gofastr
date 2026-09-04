@@ -54,7 +54,12 @@ type SlogErrorReporter struct {
 
 // Report logs the report at ERROR. The panic value is emitted under the
 // "panic" attr key (kept for backward compatibility); route and stack are
-// included when present.
+// included when present. Every request-derived attr is scrubbed
+// (percent-encoded C0/DEL) here, not only in recoveryMiddleware: Report is
+// a public seam (Plugin.Reporter) and app code can forward reports without
+// the recovery middleware in play, so the reporter must scrub what it is
+// handed — a panic value that embeds a terminal-title escape or a CRLF in
+// the path would otherwise forge log lines in every configured sink.
 func (s SlogErrorReporter) Report(r ErrorReport) {
 	if s.Logger == nil {
 		return
@@ -64,13 +69,13 @@ func (s SlogErrorReporter) Report(r ErrorReport) {
 		ctx = context.Background()
 	}
 	attrs := []slog.Attr{
-		slog.String("panic", r.Error),
-		slog.String("method", r.Method),
-		slog.String("path", r.Path),
-		slog.String("request_id", r.RequestID),
+		slog.String("panic", scrubControlBytes(r.Error)),
+		slog.String("method", scrubControlBytes(r.Method)),
+		slog.String("path", scrubControlBytes(r.Path)),
+		slog.String("request_id", scrubControlBytes(r.RequestID)),
 	}
 	if r.Route != "" {
-		attrs = append(attrs, slog.String("route", r.Route))
+		attrs = append(attrs, slog.String("route", scrubControlBytes(r.Route)))
 	}
 	if r.Stack != "" {
 		attrs = append(attrs, slog.String("stack", r.Stack))

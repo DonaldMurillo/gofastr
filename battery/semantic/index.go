@@ -96,7 +96,16 @@ func (i *index) loadAndReplay() error {
 	return nil
 }
 
-func (i *index) Add(ctx context.Context, docs ...Document) error {
+func (i *index) Add(ctx context.Context, docs ...Document) (err error) {
+	// The chunker and embedder are host-supplied (Options.Chunker /
+	// Options.Embedder) and Add runs from handlers and the watcher loop
+	// with no per-request recover net — a panicking backend becomes an
+	// attributed error instead of a process kill.
+	defer func() {
+		if v := recover(); v != nil {
+			err = fmt.Errorf("semantic: add panicked: %v", v)
+		}
+	}()
 	if len(docs) == 0 {
 		return nil
 	}
@@ -149,7 +158,16 @@ func (i *index) Remove(ctx context.Context, docIDs ...string) error {
 	return nil
 }
 
-func (i *index) logAndApplyAdd(ctx context.Context, chunks []Chunk) error {
+func (i *index) logAndApplyAdd(ctx context.Context, chunks []Chunk) (err error) {
+	// Store and keyword backend are host-supplied code on the same
+	// dispatch paths; a panic mid-apply leaves the WAL entry unapplied
+	// and replay heals it on restart, so an attributed error is the
+	// safe degradation.
+	defer func() {
+		if v := recover(); v != nil {
+			err = fmt.Errorf("semantic: apply add panicked: %v", v)
+		}
+	}()
 	i.mu.Lock()
 	defer i.mu.Unlock()
 	if i.wal != nil {
@@ -170,7 +188,13 @@ func (i *index) logAndApplyAdd(ctx context.Context, chunks []Chunk) error {
 	return nil
 }
 
-func (i *index) logAndApplyRemove(ctx context.Context, docID string) error {
+func (i *index) logAndApplyRemove(ctx context.Context, docID string) (err error) {
+	// Same net as logAndApplyAdd.
+	defer func() {
+		if v := recover(); v != nil {
+			err = fmt.Errorf("semantic: apply remove panicked: %v", v)
+		}
+	}()
 	i.mu.Lock()
 	defer i.mu.Unlock()
 	// Collect prior chunk IDs under the same lock as the mutation so the
@@ -205,7 +229,13 @@ func (i *index) collectChunkIDs(docID string) []string {
 	return cl.ChunkIDsForDoc(docID)
 }
 
-func (i *index) keywordIndexChunks(ctx context.Context, chunks []Chunk) error {
+func (i *index) keywordIndexChunks(ctx context.Context, chunks []Chunk) (err error) {
+	// keyword is a host-supplied KeywordBackend on dispatch paths.
+	defer func() {
+		if v := recover(); v != nil {
+			err = fmt.Errorf("semantic: keyword index panicked: %v", v)
+		}
+	}()
 	if i.keyword == nil {
 		return nil
 	}
@@ -217,7 +247,12 @@ func (i *index) keywordIndexChunks(ctx context.Context, chunks []Chunk) error {
 	return nil
 }
 
-func (i *index) keywordRemoveDoc(ctx context.Context, _ string, priorChunkIDs []string) error {
+func (i *index) keywordRemoveDoc(ctx context.Context, _ string, priorChunkIDs []string) (err error) {
+	defer func() {
+		if v := recover(); v != nil {
+			err = fmt.Errorf("semantic: keyword delete panicked: %v", v)
+		}
+	}()
 	if i.keyword == nil {
 		return nil
 	}

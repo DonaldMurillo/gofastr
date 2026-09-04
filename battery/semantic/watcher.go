@@ -132,7 +132,17 @@ func (w *Watcher) ScanOnce(ctx context.Context, roots ...string) error {
 	return w.scan(ctx, roots)
 }
 
-func (w *Watcher) scan(ctx context.Context, roots []string) error {
+func (w *Watcher) scan(ctx context.Context, roots []string) (err error) {
+	// w.idx is a host-supplied Index reached from Run's polling loop,
+	// which has no per-request recover net. A panic in the index (or
+	// anywhere in the walk) degrades to the same attributed error a
+	// failing Add/Remove already produces — Run reports it and stops,
+	// the process survives.
+	defer func() {
+		if v := recover(); v != nil {
+			err = fmt.Errorf("semantic: watcher scan panicked: %v", v)
+		}
+	}()
 	seen := make(map[string]struct{}, 256)
 	for _, root := range roots {
 		abs, err := filepath.Abs(root)
@@ -189,7 +199,14 @@ func (w *Watcher) scan(ctx context.Context, roots []string) error {
 	return nil
 }
 
-func (w *Watcher) upsert(ctx context.Context, path string, info os.FileInfo) error {
+func (w *Watcher) upsert(ctx context.Context, path string, info os.FileInfo) (err error) {
+	// Same recover net as scan: idx.Add is host-supplied code on the
+	// watcher loop.
+	defer func() {
+		if v := recover(); v != nil {
+			err = fmt.Errorf("semantic: watcher upsert %q panicked: %v", path, v)
+		}
+	}()
 	w.mu.Lock()
 	prior, ok := w.known[path]
 	unchanged := ok && prior.modTime.Equal(info.ModTime()) && prior.size == info.Size()
