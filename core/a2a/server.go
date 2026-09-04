@@ -913,15 +913,17 @@ func (s *Server) streamSend(w http.ResponseWriter, r *http.Request, id json.RawM
 	if h == nil {
 		return // routing reject: the snapshot is already terminal
 	}
+	// Subscribe before the run starts so its first events cannot slip
+	// past an attach that happens after the goroutine is already running.
+	ch := rn.bus.subscribe()
+	defer rn.bus.unsubscribe(ch)
 	s.startRun(r, t, rn, h)
-	s.forwardEvents(st, rn, r.Context())
+	s.forwardEvents(st, rn, ch, r.Context())
 }
 
 // forwardEvents relays bus events to the stream until the task settles,
 // the client goes away, or the run ends.
-func (s *Server) forwardEvents(st *sseStream, rn *run, ctx context.Context) {
-	ch := rn.bus.subscribe()
-	defer rn.bus.unsubscribe(ch)
+func (s *Server) forwardEvents(st *sseStream, rn *run, ch chan StreamResponse, ctx context.Context) {
 	keepAlive := time.NewTicker(s.keepAlive)
 	defer keepAlive.Stop()
 	for {
@@ -1116,6 +1118,22 @@ func (s *Server) handleSubscribe(w http.ResponseWriter, r *http.Request, req *rp
 		s.writeResult(w, req.ID, nil, Errorf(CodeInvalidParams, "id is required"))
 		return
 	}
+	// Attach to the in-process run BEFORE reading the snapshot. The bus
+	// channel is buffered, so an event the handler publishes between this
+	// subscribe and the snapshot send is queued and forwarded after the
+	// snapshot. Subscribing after the snapshot (the previous order) lost
+	// every event published in that gap: a client that released the
+	// handler on seeing the snapshot saw the stream end with no artifact
+	// or completion at all on a slow runner. An event the snapshot already
+	// reflects may be forwarded once more; updates are idempotent.
+	var (
+		rn *run
+		ch chan StreamResponse
+	)
+	if rn = s.runFor(p.ID); rn != nil {
+		ch = rn.bus.subscribe()
+		defer rn.bus.unsubscribe(ch)
+	}
 	rec, err := s.store.GetTask(context.Background(), owner, p.ID)
 	if errors.Is(err, ErrNotFound) {
 		s.writeResult(w, req.ID, nil, ErrTaskNotFound(p.ID))
@@ -1140,8 +1158,8 @@ func (s *Server) handleSubscribe(w http.ResponseWriter, r *http.Request, req *rp
 	if state.Terminal() || state.Interrupted() {
 		return
 	}
-	if rn := s.runFor(p.ID); rn != nil {
-		s.forwardEvents(st, rn, r.Context())
+	if rn != nil {
+		s.forwardEvents(st, rn, ch, r.Context())
 		return
 	}
 	// Multi-replica fallback: the task is non-terminal and has no run
