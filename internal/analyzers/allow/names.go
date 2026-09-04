@@ -14,6 +14,7 @@ var Names = []string{
 	"clienttimeout",
 	"compositekey",
 	"controlbytes",
+	"discardeddecode",
 	"discardederr",
 	"discardmutator",
 	"divlimit",
@@ -21,6 +22,7 @@ var Names = []string{
 	"emptyerrbranch",
 	"errleak",
 	"fieldtypeswitch",
+	"fixedtmp",
 	"intwrap",
 	"laxcoerce",
 	"mapwriter",
@@ -28,7 +30,10 @@ var Names = []string{
 	"reflectset",
 	"reqparamlimit",
 	"rootwrite",
+	"secretcompare",
+	"timestampid",
 	"unboundedbody",
+	"worldreadable",
 }
 
 // Known reports whether name is a registered repo analyzer.

@@ -1517,3 +1517,96 @@ func TestModuleURLsGateAttrNames(t *testing.T) {
 		t.Error("VACUITY: the module-url scan no longer fires on the pre-fix ungated src build — the property above cannot detect a regression")
 	}
 }
+
+// TestSelectorBareArgGuarded: a querySelector whose argument is a bare
+// identifier read from a data-fui-* attribute runs inside a try, so a
+// malformed value degrades instead of throwing out of the delegated
+// handler. Property over the whole runtime; vacuity control on the
+// pre-fix copy.js spelling.
+func TestSelectorBareArgGuarded(t *testing.T) {
+	res, err := check.LintSelectorBareArgGuarded(".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.HasErrors() {
+		t.Errorf("SECURITY: [selector-bare-arg] unguarded attribute-borne selector lookup(s) in the shipped runtime:\n%s",
+			strings.TrimSpace(res.Error()))
+	}
+	vdir := t.TempDir()
+	vsrc := "function onClick(el) {\n" +
+		"  const sel = el.getAttribute('data-fui-copy-text-from');\n" +
+		"  const src = document.querySelector(sel);\n" +
+		"  return src;\n}\n"
+	if err := os.WriteFile(filepath.Join(vdir, "vacuity.js"), []byte(vsrc), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	vres, err := check.LintSelectorBareArgGuarded(vdir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !vres.HasErrors() {
+		t.Error("VACUITY: LintSelectorBareArgGuarded no longer fires on the pre-fix bare querySelector(sel) spelling")
+	}
+}
+
+// TestCookieWritesEncodeOperands: document.cookie writes never splice a
+// raw non-literal operand (the banner dismiss id used to). Vacuity
+// control on the pre-fix banner.js spelling.
+func TestCookieWritesEncodeOperands(t *testing.T) {
+	res, err := check.LintCookieConcat(".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.HasErrors() {
+		t.Errorf("SECURITY: [cookie-concat] raw operand in a document.cookie write in the shipped runtime:\n%s",
+			strings.TrimSpace(res.Error()))
+	}
+	vdir := t.TempDir()
+	vsrc := "const STORAGE_PREFIX = 'gofastr.banner-dismiss.';\n" +
+		"function recordDismiss(id) {\n" +
+		"  document.cookie = STORAGE_PREFIX + id + '=1; Path=/; Max-Age=31536000; SameSite=Lax';\n" +
+		"}\n"
+	if err := os.WriteFile(filepath.Join(vdir, "vacuity.js"), []byte(vsrc), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	vres, err := check.LintCookieConcat(vdir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !vres.HasErrors() {
+		t.Error("VACUITY: LintCookieConcat no longer fires on the pre-fix STORAGE_PREFIX + id spelling")
+	}
+}
+
+// TestModuleURLsGateTheirId: a script src or dynamic import built from a
+// DOM-sourced id is dominated by a regex shape test (runtime.js
+// loadModule is the pattern). Vacuity control on the pre-fix
+// actionloader.js spelling.
+func TestModuleURLsGateTheirId(t *testing.T) {
+	res, err := check.LintModuleURLShape(".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.HasErrors() {
+		t.Errorf("SECURITY: [module-url-shape] ungated module URL build in the shipped runtime:\n%s",
+			strings.TrimSpace(res.Error()))
+	}
+	vdir := t.TempDir()
+	vsrc := "function scan(root, manifest) {\n" +
+		"  root.querySelectorAll('[data-widget]').forEach(function (el) {\n" +
+		"    const id = el.getAttribute('data-widget');\n" +
+		"    const s = document.createElement('script');\n" +
+		"    s.src = '/__gofastr/widget/' + id + '.js?v=' + manifest[id];\n" +
+		"    document.head.appendChild(s);\n" +
+		"  });\n}\n"
+	if err := os.WriteFile(filepath.Join(vdir, "vacuity.js"), []byte(vsrc), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	vres, err := check.LintModuleURLShape(vdir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !vres.HasErrors() {
+		t.Error("VACUITY: LintModuleURLShape no longer fires on the pre-fix '/__gofastr/widget/' + id spelling")
+	}
+}

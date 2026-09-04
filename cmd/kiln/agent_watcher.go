@@ -217,7 +217,7 @@ func runOneAgentTurn(ctx context.Context, logger *log.Logger, tools *protocol.To
 	// unique per-turn MkdirTemp child, so two kiln users (or two turns)
 	// never collide and planted files never sit in the agent's cwd.
 	if adapter.Dir != "" {
-		if err := os.Mkdir(adapter.Dir, 0o700); err != nil && !errors.Is(err, os.ErrExist) {
+		if err := os.Mkdir(adapter.Dir, 0o700); err != nil && !errors.Is(err, os.ErrExist) { //gofastr:allow(fixedtmp) the fixed parent is the adapter registry's documented contract (a converted test pins /tmp/kiln-omp exists at 0700); it is created owner-only, a dir we cannot chmod 0700 (i.e. do not own) is refused below, and the agent's actual cwd is the per-turn MkdirTemp child
 			logger.Printf("agent: adapter %q work dir %s: %v", adapter.Name, adapter.Dir, err)
 			return
 		}

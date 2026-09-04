@@ -173,9 +173,44 @@ MCP tools `framework_docs_list` / `framework_docs_get` /
   bound check), `reflectset` (reflect `Set*` on a `Field`-derived value
   with no `CanSet`), and `discardederr` (an error dropped from a
   three-plus-result method call while the kept results march on).
+  Five more came from the 2026-09-03 red-probe round, again one per
+  repeated bug shape: `worldreadable` (state or secret files and dirs
+  created with group/other bits — 0644/0755/os.Create — where the
+  repo's discipline is 0600/0700; public artifacts prove it by path
+  provenance, never by content guessing), `fixedtmp` (a constant or
+  pid-named path under the shared temp root reaching mkdir/create/
+  exec; a pid is not entropy, use MkdirTemp/CreateTemp), `secretcompare`
+  (a credential-named string compared with ==/!= against another
+  credential or an input read; use subtle.ConstantTimeCompare or
+  hmac.Equal), `timestampid` (an id/token/session/key minted from
+  time.Now() formatted into a string, rand-failure fallbacks included;
+  mint from crypto/rand), and `discardeddecode` (`_ = json.Unmarshal`,
+  `_ = Decode`, `_ = ParseForm`: the zero value marches on as data).
+  The same round widened `unboundedbody` (ParseForm/FormValue with no
+  MaxBytesReader on the request), `controlbytes` (SMTP envelope and
+  header-line writes, slog attrs built in battery/log, child-stderr
+  detail strings, http.Redirect Location; a helper counts as a scrub
+  only when its body walks the C0 range), and `recovercallback`
+  (interface-method callbacks on host-installed fields and the func
+  results they return, on dispatch paths).
+  Every registration is wrapped in `allow.Guard`
+  (`internal/analyzers/allow`): a site that is the shape ON PURPOSE
+  carries `//gofastr:allow(<analyzer>) <why>` on its line or the line
+  above, the same marker spelling the contracts pipeline uses; the
+  reason is mandatory and a bare marker silences nothing. That is the
+  only exception mechanism — never add a per-site silent posture to a
+  rule for one caller.
   An analyzer package that is written but not registered must say why
   in `cmd/vettool/main.go` — `TestEveryAnalyzerIsWiredOrExplained`
   fails on one that is neither registered nor explained.
+- **Run the adversarial red probes**: `make red-tests` (or
+  `scripts/red-tests.sh Red` to run only the probes). Red probes are
+  `*_red_test.go` files tagged `//go:build red` that assert the SECURE
+  behaviour and fail while the finding is open; `go test ./...` never
+  sees them. A fix converts its probe into a permanent
+  `*_security_test.go`; a probe that is deleted says why in the commit
+  message and beside the sibling test that carries the contract. The raw
+  `go test` output is kept at `.gofastr/red-tests.log`.
 - **Run the FULL repo suite (build + vet + test, no cache, generous timeout)**: `./scripts/test-all.sh`. Use this before/after large refactors: it covers the slow chromedp suite (`examples/site`) and `kiln/integration`. `RACE=1`, `SHORT=1`, and a trailing package path are all supported.
 - **Test the site end-to-end (chromedp)**: `go test ./examples/site/ -run TestE2E`.
 - **Clean build artifacts**: `make clean` (wipes `dist/`, `bin/`, `gen/`, `.gofastr/`).

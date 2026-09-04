@@ -36,12 +36,14 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/callbackunderlock"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/compositekey"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/controlbytes"
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/discardeddecode"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/discardederr"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/discardmutator"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/divlimit"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/emitident"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/errleak"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/fieldtypeswitch"
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/fixedtmp"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/hygiene"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/intwrap"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/laxcoerce"
@@ -50,7 +52,10 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/reflectset"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/reqparamlimit"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/rootwrite"
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/secretcompare"
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/timestampid"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/unboundedbody"
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/worldreadable"
 )
 
 // repoAnalyzers are the repo invariants, each born from a bug that
@@ -82,6 +87,11 @@ var repoAnalyzers = []*analysis.Analyzer{
 	allow.Guard(compositekey.Analyzer),
 	allow.Guard(emitident.Analyzer),
 	allow.Guard(asciifold.Analyzer),
+	allow.Guard(worldreadable.Analyzer),
+	allow.Guard(fixedtmp.Analyzer),
+	allow.Guard(secretcompare.Analyzer),
+	allow.Guard(timestampid.Analyzer),
+	allow.Guard(discardeddecode.Analyzer),
 
 	// Checks that currently find nothing. They cost no cleanup and
 	// hold classes this repo already drove to zero. A hit here means

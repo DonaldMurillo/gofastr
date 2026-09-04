@@ -138,6 +138,7 @@ func runProbeChildBody(id ProbeID) int {
 		home := os.Getenv("GOFASTR_PROBE_HOME")
 		// A write outside scratch = breach.
 		outOfBounds := filepath.Join(os.TempDir(), "gofastr-probe-escape-"+pidStr())
+		//gofastr:allow(fixedtmp) the predictable shared-temp path is the point: this write IS the probe; it must attempt exactly that path to prove the sandbox refuses it
 		if err := os.WriteFile(outOfBounds, []byte("x"), 0o644); err == nil {
 			_ = os.Remove(outOfBounds)
 			breach(fmt.Sprintf("wrote outside scratch: %s", outOfBounds))

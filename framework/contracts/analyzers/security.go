@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"go/ast"
 	"go/token"
+	"path"
 	"regexp"
 	"strings"
 
@@ -772,35 +773,57 @@ func exprTouches(e ast.Expr, call *ast.CallExpr, holders map[string]bool) bool {
 // GOFASTR1407: raw JSON decoding of a request body outside the binder.
 // ----------------------------------------------------------------------
 
-// Bug class: a request body decoded with encoding/json's default
-// semantics anywhere other than core/handler, which owns the strict
-// binder. battery/auth decoded login and register bodies with
-// json.NewDecoder (probe TestLoginJSONStrictTopLevelKeys, fixed 4b7a25d2):
-// stdlib keeps the LAST duplicate key and folds key case, while form
-// parsing keeps the FIRST, so {"email":A,"EMAIL":B} authenticated a
-// different identity depending on Content-Type. The smuggled body
-// resolves by parser accident, which is the whole attack.
+// Bug class: client-controlled JSON decoded with encoding/json's
+// default semantics anywhere other than core/handler, which owns the
+// strict binder. battery/auth decoded login and register bodies with
+// json.NewDecoder (probe TestLoginJSONStrictTopLevelKeys, fixed
+// 4b7a25d2): stdlib keeps the LAST duplicate key and folds key case,
+// while form parsing keeps the FIRST, so {"email":A,"EMAIL":B}
+// authenticated a different identity depending on Content-Type. The
+// smuggled body resolves by parser accident, which is the whole
+// attack. A websocket frame decoded the same way (control/ws
+// handleText, probes TestHarnessWsRedRejectsDuplicateKeys /
+// TestHarnessMcpRedRejectsDuplicateKeys) dispatches a frame a
+// first-read intermediary parsed differently.
 //
-// The rule tracks r.Body through local assignments (io.ReadAll(r.Body),
-// http.MaxBytesReader(w, r.Body, n), one more hop for ReadAll of the
-// wrapped reader) so the wrapped spellings are the same finding, plus
-// ONE bounded level of same-file helpers: raw, err := readBody(r), where
-// readBody is declared in this file and its return expressions are
-// body-derived, taints raw exactly as io.ReadAll(r.Body) would. Taint
-// reaches a call's RESULT only through those reader wrappers and the
-// helper ferry: an arbitrary call that merely receives tainted arguments
-// (the module proxy's peer.CallWithID(ctx, params)) returns its own
-// output, not the body. Helpers in other files are not loaded by this
-// pass, and helper-calling-helper chains are not followed — one level
-// keeps the walk terminating.
+// Taint is computed package-wide (one directory), because both real
+// sites ferry the bytes across files: the harness mcpserver buffers
+// r.Body in http.go handlePOST, hands the reader to Server.WithIO in
+// server.go, which stores it in a field Server.Serve scans line by
+// line into Server.handle's json.Unmarshal; control/ws Conn.run reads
+// a frame and passes the payload to Conn.handleText's json.Unmarshal.
+// A fixpoint over every function in the package propagates: a request
+// body read (io.ReadAll(r.Body), http.MaxBytesReader chains), a
+// websocket frame read (wsFrameReads), a body-derived argument at a
+// call to a same-package function or method (tainting that callee's
+// parameter), a body-derived value stored into a struct field
+// (tainting that field name), and bare-name helper FUNCTIONS whose
+// return expressions are body-derived (readBody(r) taints its result
+// at every call in the package). Taint reaches a call's RESULT only
+// through readerWrapper calls and that helper ferry: an arbitrary call
+// that merely receives tainted arguments (the module proxy's
+// peer.CallWithID) returns its own output, not the body. A helper
+// whose return calls another helper is not followed further.
 //
 // Deliberately silent on:
 //   - core/handler/**, which owns handler.Bind and its duplicate-key
 //     walk — the strict binder itself decodes raw bytes by design;
-//   - decodes whose bytes never came from a request body: resp.Body of
-//     an outbound call, queue and pub-sub payloads, files, JWT segments;
-//   - functions with no *http.Request parameter, and _test.go /
-//     generated files (AppFiles already excludes both);
+//   - decodes whose bytes never came from a request body or client
+//     frame: resp.Body of an outbound call, queue and pub-sub
+//     payloads, files, JWT segments;
+//   - a decoder used only as a strict top-level key walk: Token/More
+//     iteration whose only Decode targets a json.RawMessage skip
+//     value (battery/auth rejectAmbiguousTopLevelKeys, crud
+//     checkEnvelopeKeys). The walk IS the fix posture, not the bug;
+//     the Unmarshal of the vetted bytes that follows it carries an
+//     allow directive naming why, the repo's recorded convention for
+//     that decision;
+//   - other packages: taint stops at the directory edge, and methods
+//     are matched by name only within it;
+//   - frame sources beyond wsFrameReads: the list holds the reader
+//     spellings this repo actually uses, not a guess at every
+//     websocket library;
+//   - _test.go and generated files (AppFiles already excludes both);
 //   - any site annotated //gofastr:allow(GOFASTR1407) <why>, which is
 //     how a transport that accepts a JSON-RPC envelope object as-is
 //     records that decision.
@@ -808,23 +831,26 @@ func ruleRawJSONBody(p *contracts.Pass, rel string, file *ast.File) []contracts.
 	if rel == "core/handler" || strings.HasPrefix(rel, "core/handler/") {
 		return nil
 	}
-	var out []contracts.Diagnostic
+	pkg := rawJSONPackageTaint(p, rel)
 	aliases := importAliases(file)
-	helpers := sameFileBodyReaders(file, aliases)
+	var out []contracts.Diagnostic
 	for _, fn := range functionsIn(file) {
 		reqs := httpRequestParamNames(fn.node, aliases)
-		if len(reqs) == 0 {
-			continue
+		var seeds map[string]taintKind
+		if decl, ok := fn.node.(*ast.FuncDecl); ok {
+			seeds = pkg.paramTaint[decl]
 		}
-		tainted := taintFromBody(fn.body, reqs, helpers)
+		tainted := taintFromBody(fn.body, reqs, pkg.helpers, seeds, pkg.fields)
 		ast.Inspect(fn.body, func(n ast.Node) bool {
-			if call, ok := qualifiedCall(n, aliases, "encoding/json", "NewDecoder"); ok && len(call.Args) == 1 &&
-				exprFromRequestBody(call.Args[0], tainted, reqs) {
-				out = append(out, rawJSONDiag(p, rel, call))
+			if call, ok := qualifiedCall(n, aliases, "encoding/json", "NewDecoder"); ok && len(call.Args) == 1 {
+				if k := exprFromRequestBody(call.Args[0], tainted, reqs, pkg.fields); k != 0 && !isKeyWalk(fn.body, call, aliases) {
+					out = append(out, rawJSONDiag(p, rel, call, k))
+				}
 			}
-			if call, ok := qualifiedCall(n, aliases, "encoding/json", "Unmarshal"); ok && len(call.Args) > 0 &&
-				exprFromRequestBody(call.Args[0], tainted, reqs) {
-				out = append(out, rawJSONDiag(p, rel, call))
+			if call, ok := qualifiedCall(n, aliases, "encoding/json", "Unmarshal"); ok && len(call.Args) > 0 {
+				if k := exprFromRequestBody(call.Args[0], tainted, reqs, pkg.fields); k != 0 {
+					out = append(out, rawJSONDiag(p, rel, call, k))
+				}
 			}
 			return true
 		})
@@ -832,10 +858,20 @@ func ruleRawJSONBody(p *contracts.Pass, rel string, file *ast.File) []contracts.
 	return out
 }
 
-func rawJSONDiag(p *contracts.Pass, rel string, call *ast.CallExpr) contracts.Diagnostic {
-	d := diag(p, contracts.RuleRawJSONBodyDecode, rel, call.Pos(),
-		"request body decoded with encoding/json outside core/handler: stdlib keeps the last duplicate key and matches key case-insensitively, so a smuggled body can resolve by parser accident — decode via handler.Bind or a strict top-level key walk (battery/auth decodeJSONLimitedStrict is the model)")
-	d.Evidence = map[string]string{"source": "request body"}
+func rawJSONDiag(p *contracts.Pass, rel string, call *ast.CallExpr, k taintKind) contracts.Diagnostic {
+	const fix = "decode via handler.Bind or a strict top-level key walk (battery/auth decodeJSONLimitedStrict is the model)"
+	source, msg := "request body",
+		"request body decoded with encoding/json outside core/handler: stdlib keeps the last duplicate key and matches key case-insensitively, so a smuggled body can resolve by parser accident — "+fix
+	switch {
+	case k == taintFrame:
+		source = "websocket frame"
+		msg = "websocket frame decoded with encoding/json outside core/handler: stdlib keeps the last duplicate key and matches key case-insensitively, so a frame a first-read intermediary parsed one way dispatches another — " + fix
+	case k&taintBody != 0 && k&taintFrame != 0:
+		source = "request body or websocket frame"
+		msg = "client-controlled JSON decoded with encoding/json outside core/handler: stdlib keeps the last duplicate key and matches key case-insensitively, so a smuggled body or frame can resolve by parser accident — " + fix
+	}
+	d := diag(p, contracts.RuleRawJSONBodyDecode, rel, call.Pos(), msg)
+	d.Evidence = map[string]string{"source": source}
 	return d
 }
 
@@ -907,15 +943,183 @@ func httpRequestParamNames(fn ast.Node, aliases map[string]string) map[string]bo
 	return names
 }
 
-// taintFromBody computes which local identifiers hold bytes read from a
-// request body, to a fixpoint: body := MaxBytesReader(w, r.Body, n) then
+// taintKind says which client-controlled source bytes carry: a request
+// body, an inbound websocket frame, or both.
+type taintKind uint8
+
+const (
+	taintBody taintKind = 1 << iota
+	taintFrame
+)
+
+// rawJSONPkg is the package-wide taint context for one Go package (one
+// directory of app files): the parsed files, their import aliases, the
+// bare-name body-reading helpers, and the fixpoint-derived taint of
+// function parameters and struct field names. Computed once per pass,
+// shared by every file of the package.
+type rawJSONPkg struct {
+	files      map[string]*ast.File
+	aliases    map[string]map[string]string
+	helpers    map[string]bool
+	paramTaint map[*ast.FuncDecl]map[string]taintKind
+	fields     map[string]taintKind
+}
+
+// rawJSONPackageTaint returns the package context for rel's directory,
+// computing it once per pass. The fixpoint: taint originates at
+// request-body reads, frame reads, tainted parameters, and tainted
+// fields; it flows through local assignments (taintFromBody), into the
+// parameters of same-package callees when a tainted value is passed at
+// a call site, and into struct field names when a tainted value is
+// stored in a field. Methods are matched by method name within the
+// package; two types sharing one method name is rare, and the sink (a
+// stdlib json decode of the parameter) keeps a coincidence cheap.
+func rawJSONPackageTaint(p *contracts.Pass, rel string) *rawJSONPkg {
+	dir := path.Dir(rel)
+	v := p.Memo("rawjsonbody.package:"+dir, func() any {
+		pkg := &rawJSONPkg{
+			files:      map[string]*ast.File{},
+			aliases:    map[string]map[string]string{},
+			paramTaint: map[*ast.FuncDecl]map[string]taintKind{},
+			fields:     map[string]taintKind{},
+		}
+		for _, f := range p.AppFiles() {
+			if path.Dir(f.Rel) != dir {
+				continue
+			}
+			af, ok := p.AST(f.Rel)
+			if !ok {
+				continue
+			}
+			pkg.files[f.Rel] = af
+			pkg.aliases[f.Rel] = importAliases(af)
+		}
+		pkg.helpers = packageBodyReaders(pkg)
+		targets := packageCallTargets(pkg)
+		for changed := true; changed; {
+			changed = false
+			for fileRel, af := range pkg.files {
+				aliases := pkg.aliases[fileRel]
+				for _, fn := range functionsIn(af) {
+					reqs := httpRequestParamNames(fn.node, aliases)
+					var seeds map[string]taintKind
+					if decl, ok := fn.node.(*ast.FuncDecl); ok {
+						seeds = pkg.paramTaint[decl]
+					}
+					tainted := taintFromBody(fn.body, reqs, pkg.helpers, seeds, pkg.fields)
+					// A tainted argument at a call site taints the
+					// same-package callee's parameter: s.WithIO(in)
+					// with body-derived in, c.handleText(payload)
+					// with frame-derived payload.
+					ast.Inspect(fn.body, func(n ast.Node) bool {
+						call, ok := n.(*ast.CallExpr)
+						if !ok {
+							return true
+						}
+						var name string
+						isMethod := false
+						switch fun := call.Fun.(type) {
+						case *ast.Ident:
+							name = fun.Name
+						case *ast.SelectorExpr:
+							if fun.Sel != nil {
+								name, isMethod = fun.Sel.Name, true
+							}
+						}
+						if name == "" {
+							return true
+						}
+						for _, decl := range targets[name] {
+							if (decl.Recv != nil) != isMethod || decl.Type == nil || decl.Type.Params == nil {
+								continue
+							}
+							for i, arg := range call.Args {
+								if i >= len(decl.Type.Params.List) {
+									break
+								}
+								k := exprFromRequestBody(arg, tainted, reqs, pkg.fields)
+								if k == 0 {
+									continue
+								}
+								if pkg.paramTaint[decl] == nil {
+									pkg.paramTaint[decl] = map[string]taintKind{}
+								}
+								for _, param := range decl.Type.Params.List[i].Names {
+									if pkg.paramTaint[decl][param.Name]&k != k {
+										pkg.paramTaint[decl][param.Name] |= k
+										changed = true
+									}
+								}
+							}
+						}
+						return true
+					})
+					// A tainted value stored in a field taints that
+					// field name for the whole package: s.in = in is
+					// how the buffered body reaches another file. The
+					// request's OWN Body swap (r.Body = MaxBytesReader)
+					// is not a byte-holding field: recording it would
+					// taint every X.Body read in the package, and an
+					// outbound resp.Body is not a request body.
+					ast.Inspect(fn.body, func(n ast.Node) bool {
+						a, ok := n.(*ast.AssignStmt)
+						if !ok || len(a.Lhs) != len(a.Rhs) {
+							return true
+						}
+						for i, lhs := range a.Lhs {
+							sel, ok := lhs.(*ast.SelectorExpr)
+							if !ok || sel.Sel == nil {
+								continue
+							}
+							if id, ok := sel.X.(*ast.Ident); ok && reqs[id.Name] && sel.Sel.Name == "Body" {
+								continue
+							}
+							k := exprFromRequestBody(a.Rhs[i], tainted, reqs, pkg.fields)
+							if k == 0 {
+								continue
+							}
+							if pkg.fields[sel.Sel.Name]&k != k {
+								pkg.fields[sel.Sel.Name] |= k
+								changed = true
+							}
+						}
+						return true
+					})
+				}
+			}
+		}
+		return pkg
+	})
+	pkg, _ := v.(*rawJSONPkg)
+	return pkg
+}
+
+// packageCallTargets indexes the package's function declarations by
+// name. Bare functions and methods share the index; a call site picks
+// the side its shape can reach.
+func packageCallTargets(pkg *rawJSONPkg) map[string][]*ast.FuncDecl {
+	targets := map[string][]*ast.FuncDecl{}
+	for _, af := range pkg.files {
+		for _, fn := range functionsIn(af) {
+			decl, ok := fn.node.(*ast.FuncDecl)
+			if !ok || decl.Name == nil {
+				continue
+			}
+			targets[decl.Name.Name] = append(targets[decl.Name.Name], decl)
+		}
+	}
+	return targets
+}
+
+// taintFromBody computes which local identifiers hold client-controlled
+// bytes, to a fixpoint: body := MaxBytesReader(w, r.Body, n) then
 // raw, err := io.ReadAll(body) leaves both body and raw tainted. Plain
-// assignments are tracked, plus one bounded level of same-file helpers
-// (helpers, from sameFileBodyReaders): raw, err := readBody(r) taints
-// raw when readBody's returns are body-derived. A body ferried through
-// a helper in ANOTHER file stays invisible — this pass never loads
-// another file's bodies — and stays unreported.
-func taintFromBody(body ast.Node, reqs map[string]bool, helpers map[string]bool) map[string]bool {
+// assignments are tracked, plus package-wide helper ferries (helpers,
+// from packageBodyReaders): raw, err := readBody(r) taints raw when
+// readBody's returns are body-derived. seeds carries parameters that
+// arrived tainted at a call site in this package; fields carries
+// struct field names holding tainted bytes somewhere in the package.
+func taintFromBody(body ast.Node, reqs map[string]bool, helpers map[string]bool, seeds map[string]taintKind, fields map[string]taintKind) map[string]taintKind {
 	var assigns []*ast.AssignStmt
 	ast.Inspect(body, func(n ast.Node) bool {
 		if a, ok := n.(*ast.AssignStmt); ok {
@@ -923,27 +1127,29 @@ func taintFromBody(body ast.Node, reqs map[string]bool, helpers map[string]bool)
 		}
 		return true
 	})
-	tainted := map[string]bool{}
+	tainted := make(map[string]taintKind, len(seeds))
+	for name, k := range seeds {
+		tainted[name] = k
+	}
 	for changed := true; changed; {
 		changed = false
 		for _, a := range assigns {
-			touched := false
+			var k taintKind
 			for _, rhs := range a.Rhs {
-				if exprFromRequestBody(rhs, tainted, reqs) {
-					touched = true
-					break
-				}
-				if call, ok := rhs.(*ast.CallExpr); ok && len(helpers) > 0 && helperCallTainted(call, tainted, reqs, helpers) {
-					touched = true
-					break
+				k |= exprFromRequestBody(rhs, tainted, reqs, fields)
+				if call, ok := rhs.(*ast.CallExpr); ok {
+					if len(helpers) > 0 {
+						k |= helperCallTainted(call, tainted, reqs, fields, helpers)
+					}
+					k |= frameReadKind(call)
 				}
 			}
-			if !touched {
+			if k == 0 {
 				continue
 			}
 			for _, lhs := range a.Lhs {
-				if id, ok := lhs.(*ast.Ident); ok && !tainted[id.Name] {
-					tainted[id.Name] = true
+				if id, ok := lhs.(*ast.Ident); ok && tainted[id.Name]&k != k {
+					tainted[id.Name] |= k
 					changed = true
 				}
 			}
@@ -952,57 +1158,61 @@ func taintFromBody(body ast.Node, reqs map[string]bool, helpers map[string]bool)
 	return tainted
 }
 
-// sameFileBodyReaders returns the same-file FUNCTIONS (bare-name calls
-// only; a method's receiver expression cannot be matched by name) whose
-// return expressions are request-body-derived given their own
+// packageBodyReaders returns the package's FUNCTIONS (bare-name calls
+// only; a method's receiver expression cannot be matched by name)
+// whose return expressions are body-derived given their own
 // *http.Request parameters: readBody(r) { return io.ReadAll(r.Body) }.
-// This is the one level of interprocedural tracking — a helper whose own
-// return calls another helper is not followed further.
-func sameFileBodyReaders(file *ast.File, aliases map[string]string) map[string]bool {
+// Functions in every file of the package qualify — the pass parses
+// them all — and a helper whose own return calls another helper is not
+// followed further.
+func packageBodyReaders(pkg *rawJSONPkg) map[string]bool {
 	out := map[string]bool{}
-	for _, fn := range functionsIn(file) {
-		decl, ok := fn.node.(*ast.FuncDecl)
-		if !ok || decl.Name == nil || decl.Recv != nil {
-			continue // methods are not bare-name callable
-		}
-		reqs := httpRequestParamNames(fn.node, aliases)
-		if len(reqs) == 0 {
-			continue
-		}
-		tainted := taintFromBody(fn.body, reqs, nil)
-		derived := false
-		ast.Inspect(fn.body, func(n ast.Node) bool {
-			ret, ok := n.(*ast.ReturnStmt)
-			if !ok {
-				return true
+	for rel, af := range pkg.files {
+		aliases := pkg.aliases[rel]
+		for _, fn := range functionsIn(af) {
+			decl, ok := fn.node.(*ast.FuncDecl)
+			if !ok || decl.Name == nil || decl.Recv != nil {
+				continue // methods are not bare-name callable
 			}
-			for _, r := range ret.Results {
-				if exprFromRequestBody(r, tainted, reqs) {
-					derived = true
-					return false
+			reqs := httpRequestParamNames(fn.node, aliases)
+			if len(reqs) == 0 {
+				continue
+			}
+			tainted := taintFromBody(fn.body, reqs, nil, nil, nil)
+			derived := false
+			ast.Inspect(fn.body, func(n ast.Node) bool {
+				ret, ok := n.(*ast.ReturnStmt)
+				if !ok {
+					return true
 				}
+				for _, r := range ret.Results {
+					if exprFromRequestBody(r, tainted, reqs, nil) != 0 {
+						derived = true
+						return false
+					}
+				}
+				return true
+			})
+			if derived {
+				out[decl.Name.Name] = true
 			}
-			return true
-		})
-		if derived {
-			out[decl.Name.Name] = true
 		}
 	}
 	return out
 }
 
-// helperCallTainted reports whether call is a call to a known same-file
-// body-reading helper whose arguments actually carry this request (the
-// request itself, its body, or an already-tainted value): the ferry must
-// carry bytes, not a coincidental name.
-func helperCallTainted(call *ast.CallExpr, tainted map[string]bool, reqs map[string]bool, helpers map[string]bool) bool {
+// helperCallTainted reports the taint of a call to a known package
+// helper whose arguments actually carry this request (the request
+// itself, its body, or an already-tainted value): the ferry must carry
+// bytes, not a coincidental name.
+func helperCallTainted(call *ast.CallExpr, tainted map[string]taintKind, reqs map[string]bool, fields map[string]taintKind, helpers map[string]bool) taintKind {
 	id, ok := call.Fun.(*ast.Ident)
 	if !ok || !helpers[id.Name] {
-		return false
+		return 0
 	}
 	for _, a := range call.Args {
-		if exprFromRequestBody(a, tainted, reqs) {
-			return true
+		if k := exprFromRequestBody(a, tainted, reqs, fields); k != 0 {
+			return k
 		}
 		touches := false
 		ast.Inspect(a, func(n ast.Node) bool {
@@ -1012,18 +1222,20 @@ func helperCallTainted(call *ast.CallExpr, tainted map[string]bool, reqs map[str
 			return !touches
 		})
 		if touches {
-			return true
+			return taintBody
 		}
 	}
-	return false
+	return 0
 }
 
-// readerWrapper names the calls whose RESULT is the request body's
-// bytes: the reader constructors and readers of the wrapped spellings.
-// NopCloser/TeeReader/NewReader return a reader over the SAME bytes —
-// bufio.NewReader(r.Body), bytes.NewReader(raw), io.NopCloser(r.Body) —
-// which is what distinguishes them from a call that returns its own
-// output (peer.CallWithID).
+// readerWrapper names the calls whose RESULT is the same client bytes:
+// the reader constructors and readers of the wrapped spellings
+// (NopCloser/TeeReader/NewReader/NewScanner return a reader over the
+// SAME bytes — bufio.NewReader(r.Body), bytes.NewReader(raw),
+// bufio.NewScanner(src)), the byte-preserving transforms (append,
+// TrimSpace), and the receiver-preserving reads (buf.Bytes(),
+// scanner.Bytes()). That is what distinguishes them from a call that
+// returns its own output (peer.CallWithID).
 var readerWrapper = map[string]bool{
 	"ReadAll":        true,
 	"MaxBytesReader": true,
@@ -1031,68 +1243,189 @@ var readerWrapper = map[string]bool{
 	"NopCloser":      true,
 	"TeeReader":      true,
 	"NewReader":      true,
+	"NewScanner":     true,
+	"append":         true,
+	"TrimSpace":      true,
+	"Bytes":          true,
 }
 
-// exprFromRequestBody reports whether e is, contains, or was assigned
-// from a request body: the <req>.Body selector itself, or a tainted
-// identifier in plain identifier position.
-func exprFromRequestBody(e ast.Expr, tainted map[string]bool, reqs map[string]bool) bool {
+// wsFrameReads names the calls whose RESULT bytes are one inbound
+// client frame. The list holds the reader spellings this repo actually
+// uses: control/ws Conn.readFrame, which this package writes itself.
+// No websocket library appears anywhere else in the tree, and a list
+// of guessed library names would taint by coincidence.
+var wsFrameReads = map[string]bool{"readFrame": true}
+
+// frameReadKind reports the taint a call carries as an inbound frame
+// read: a websocket/frame reader call on any receiver.
+func frameReadKind(call *ast.CallExpr) taintKind {
+	var name string
+	switch fn := call.Fun.(type) {
+	case *ast.Ident:
+		name = fn.Name
+	case *ast.SelectorExpr:
+		if fn.Sel != nil {
+			name = fn.Sel.Name
+		}
+	}
+	if name != "" && wsFrameReads[name] {
+		return taintFrame
+	}
+	return 0
+}
+
+// isKeyWalk reports whether this json.NewDecoder call is a strict
+// top-level KEY walk rather than a value decode: the decoder is held
+// in a local, every use of it is Token/More iteration or a Decode into
+// a json.RawMessage skip value, and nothing else touches it. That is
+// the shape of battery/auth rejectAmbiguousTopLevelKeys and crud
+// checkEnvelopeKeys — the fix posture this rule points at — so it
+// stays quiet even when the walked bytes are tainted.
+func isKeyWalk(body ast.Node, call *ast.CallExpr, aliases map[string]string) bool {
+	decoders := map[string]bool{}
+	ast.Inspect(body, func(n ast.Node) bool {
+		switch v := n.(type) {
+		case *ast.AssignStmt:
+			for i, rhs := range v.Rhs {
+				if rhs == call && i < len(v.Lhs) {
+					if id, ok := v.Lhs[i].(*ast.Ident); ok {
+						decoders[id.Name] = true
+					}
+				}
+			}
+		case *ast.ValueSpec:
+			for i, val := range v.Values {
+				if val == call && i < len(v.Names) {
+					decoders[v.Names[i].Name] = true
+				}
+			}
+		}
+		return true
+	})
+	if len(decoders) == 0 {
+		return false
+	}
+	// Skip values: locals declared json.RawMessage, the only thing a
+	// walk decodes into (capturing one value's raw bytes to step past
+	// it never binds attacker keys onto fields).
+	skips := map[string]bool{}
+	ast.Inspect(body, func(n ast.Node) bool {
+		spec, ok := n.(*ast.ValueSpec)
+		if !ok || len(spec.Values) > 0 || len(spec.Names) == 0 {
+			return true
+		}
+		sel, ok := spec.Type.(*ast.SelectorExpr)
+		if !ok || sel.Sel == nil || sel.Sel.Name != "RawMessage" {
+			return true
+		}
+		if id, ok := sel.X.(*ast.Ident); ok && aliases[id.Name] == "encoding/json" {
+			skips[spec.Names[0].Name] = true
+		}
+		return true
+	})
+	walked, clean := false, true
+	ast.Inspect(body, func(n ast.Node) bool {
+		use, ok := n.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		sel, ok := use.Fun.(*ast.SelectorExpr)
+		if !ok || sel.Sel == nil {
+			return true
+		}
+		id, ok := sel.X.(*ast.Ident)
+		if !ok || !decoders[id.Name] {
+			return true
+		}
+		switch sel.Sel.Name {
+		case "Token", "More":
+			walked = true
+		case "Decode":
+			if len(use.Args) != 1 {
+				clean = false
+				return true
+			}
+			arg := use.Args[0]
+			if u, ok := arg.(*ast.UnaryExpr); ok && u.Op == token.AND {
+				arg = u.X
+			}
+			if skip, ok := arg.(*ast.Ident); ok && skips[skip.Name] {
+				walked = true
+				return true
+			}
+			clean = false
+		default:
+			clean = false
+		}
+		return true
+	})
+	return clean && walked
+}
+
+// exprFromRequestBody reports which client-controlled taint e carries:
+// a request <req>.Body selector, a tainted identifier (in plain
+// identifier position), a read of a tainted field name, or any of
+// those under a readerWrapper call (whose receiver counts too:
+// scanner.Bytes()).
+func exprFromRequestBody(e ast.Expr, tainted map[string]taintKind, reqs map[string]bool, fields map[string]taintKind) taintKind {
 	switch v := e.(type) {
 	case *ast.Ident:
 		return tainted[v.Name]
 	case *ast.CallExpr:
 		// Only reader-wrapping calls propagate taint to their RESULT
-		// (io.ReadAll, MaxBytesReader, LimitReader, and aliases): the
+		// (io.ReadAll, MaxBytesReader, LimitReader, and kin): the
 		// result of an arbitrary call that merely receives tainted
 		// arguments is not the body (the module proxy's
 		// peer.CallWithID(ctx, params) returns the child's response).
+		var k taintKind
 		switch fn := v.Fun.(type) {
 		case *ast.SelectorExpr:
 			if fn.Sel != nil && readerWrapper[fn.Sel.Name] {
+				k = exprFromRequestBody(fn.X, tainted, reqs, fields)
 				for _, a := range v.Args {
-					if exprFromRequestBody(a, tainted, reqs) {
-						return true
-					}
+					k |= exprFromRequestBody(a, tainted, reqs, fields)
 				}
 			}
 		case *ast.Ident:
 			if readerWrapper[fn.Name] {
 				for _, a := range v.Args {
-					if exprFromRequestBody(a, tainted, reqs) {
-						return true
-					}
+					k |= exprFromRequestBody(a, tainted, reqs, fields)
 				}
 			}
 		}
+		return k
 	case *ast.SelectorExpr:
 		if id, ok := v.X.(*ast.Ident); ok && reqs[id.Name] && v.Sel != nil && v.Sel.Name == "Body" {
-			return true
+			return taintBody
 		}
-		return exprFromRequestBody(v.X, tainted, reqs)
+		if v.Sel != nil {
+			if k := fields[v.Sel.Name]; k != 0 {
+				return k
+			}
+		}
+		return exprFromRequestBody(v.X, tainted, reqs, fields)
 	case *ast.BinaryExpr:
-		return exprFromRequestBody(v.X, tainted, reqs) || exprFromRequestBody(v.Y, tainted, reqs)
+		return exprFromRequestBody(v.X, tainted, reqs, fields) | exprFromRequestBody(v.Y, tainted, reqs, fields)
 	case *ast.ParenExpr:
-		return exprFromRequestBody(v.X, tainted, reqs)
+		return exprFromRequestBody(v.X, tainted, reqs, fields)
 	case *ast.UnaryExpr:
-		return exprFromRequestBody(v.X, tainted, reqs)
+		return exprFromRequestBody(v.X, tainted, reqs, fields)
 	case *ast.StarExpr:
-		return exprFromRequestBody(v.X, tainted, reqs)
+		return exprFromRequestBody(v.X, tainted, reqs, fields)
 	case *ast.IndexExpr:
-		return exprFromRequestBody(v.X, tainted, reqs)
+		return exprFromRequestBody(v.X, tainted, reqs, fields)
 	case *ast.CompositeLit:
+		var k taintKind
 		for _, elt := range v.Elts {
 			if kv, ok := elt.(*ast.KeyValueExpr); ok {
-				if exprFromRequestBody(kv.Value, tainted, reqs) {
-					return true
-				}
+				k |= exprFromRequestBody(kv.Value, tainted, reqs, fields)
 				continue
 			}
-			if exprFromRequestBody(elt, tainted, reqs) {
-				return true
-			}
+			k |= exprFromRequestBody(elt, tainted, reqs, fields)
 		}
+		return k
 	}
-	return false
+	return 0
 }
 
 // ----------------------------------------------------------------------

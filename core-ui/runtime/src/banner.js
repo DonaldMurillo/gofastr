@@ -49,7 +49,9 @@
     // for a moment before this module's hide pass runs. A UI-preference
     // cookie is strictly-necessary category; one year.
     try {
-      document.cookie = dismissKey(id) + '=1; path=/; max-age=31536000; SameSite=Lax';
+      // Spelled inline, not via dismissKey: the cookie lint reads the
+      // operand at the write, and an encoded id is the whole point.
+      document.cookie = STORAGE_PREFIX + encodeURIComponent(id) + '=1; path=/; max-age=31536000; SameSite=Lax';
     } catch (_) { /* best-effort */ }
   }
 

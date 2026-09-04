@@ -23,7 +23,10 @@ func (p *Peer) Serve() error {
 		if err != nil {
 			return err
 		}
-		p.d.Dispatch(f)
+		// ReadFrame stays quiet (input plumbing, the Read name family);
+		// Dispatch through the package interface FIELD is the extension
+		// point itself — the cron runTick shape.
+		p.d.Dispatch(f) // want `recovercallback: p\.d\.Dispatch is invoked with no recover in scope`
 	}
 }
 

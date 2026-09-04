@@ -16,7 +16,14 @@
 // fixed by runHandler's recover guard), and core/mcp's callTool
 // evaluated a tool's Gate callback with no guard, so a panicking gate
 // unwound the transport (probe TestPanickingGateFailsClosedEverywhere,
-// fixed by checkToolGate's recover guard).
+// fixed by checkToolGate's recover guard). The 2026-09-02 round found
+// the interface twin (cron runTick, event bridge, both still open):
+// a method called through a module-declared interface — a LeaderElection
+// installed via WithLeaderElection, a fanout.Fanout backend passed to
+// AttachFanout — is host-supplied code exactly like a map handler, and
+// so is a func value the host call RETURNS (Acquire's release func,
+// invoked later on a bare goroutine; probes TestCronRedAcquirePanicIsolated,
+// TestCronRedReleasePanicIsolated, bridge_red_test.go).
 //
 // "Dispatch path" is condition (a) of the shape, computed across the
 // package rather than lexically: a function is on a dispatch path if
@@ -44,6 +51,45 @@
 // nested function literal does NOT count: it runs on that literal's
 // own stack (a goroutine's recover cannot catch the parent's panic).
 //
+// Interface-method callbacks: a call `recv.M(...)` counts when the
+// method belongs to an interface DECLARED IN THIS MODULE (the
+// extension points this repo hands to hosts: cron.LeaderElection,
+// fanout.Fanout, queue and storage backends) and the receiver is a
+// value held AS the extension point itself — a struct field the host
+// installs, a registry map entry, a parameter the host passes, or a
+// local one hop from one of those. The declaring package is judged by
+// module path (the pass's module; a -module flag override exists for
+// hermetic analysistest runs, where the driver reports none), so
+// stdlib and third-party interfaces are not app callbacks no matter
+// where they sit: io.Reader.Read is data plumbing, and a vendored
+// driver's panic is that dependency's bug. A receiver obtained by
+// TYPE ASSERTION (BatteryManager's `b.(BatteryLifecycle)` narrowing)
+// stays quiet: that is an optional-capability probe of a value already
+// held, and the boot/shutdown paths that use it (App.Start/Shutdown,
+// battery OnStart/OnStop) are the coordinator's direct fix, not this
+// rule's. A receiver the package CONSTRUCTED itself (a call result)
+// stays quiet too: the package picked that implementation, and its
+// panic is reached through the package-local edge flood like any other
+// local call. The loop's own input calls — the Read/Scan/Recv/Decode/
+// Next/Accept name family, the same set the read-loop detector uses —
+// are the transport, not a registry callback (peerish's p.r.ReadFrame
+// stays quiet however module-declared Reader is). The stdlib-backend
+// spellings wrapper interfaces inherit — database/sql's QueryContext/
+// QueryRowContext/ExecContext trio (framework/db.Executor exists so
+// *sql.DB and *sql.Tx satisfy it) and the os/exec + io.Closer teardown
+// family (RunningChild, schedulerStartStop) — are data access and
+// resource teardown, not events: a panic there is a bug in one repo
+// wrapper, the sql.DB.Query posture one hop removed. Accessor-shaped
+// methods — zero parameters, one result (c.ID, agent.Info) — are value
+// queries, not event callbacks.
+//
+// Returned funcs: a func-typed result of a callback call — `held,
+// release, err := s.leader.Acquire(ctx)` then `release()` in a spawned
+// goroutine — is host-supplied code by construction (the host's
+// Acquire built it), so invoking it under the same dispatch/no-recover
+// test fires. The release runs on its own goroutine with no recover,
+// which is exactly the cron probe.
+//
 // Postures it deliberately stays silent on, because they are not this
 // bug: http.Handler-shaped callbacks — a value whose type is
 // http.HandlerFunc or whose signature is func(http.ResponseWriter,
@@ -56,17 +102,23 @@
 // context.WithCancelCause cancels kiln's AdapterStore stores) and
 // locals copied from them; clock and printf-shaped fields (test seams
 // and logging plumbing, not app callbacks) — including locals copied
-// from them; named function calls (their guards are their own
-// business); callbacks reached only from ordinary synchronous call
-// sites, goroutine or no goroutine elsewhere in the package —
-// reachability, not adjacency, is the test; and everything in
-// _test.go, where a panic failing the test is the intended outcome.
+// from them; interface methods on stdlib or third-party-declared
+// interfaces, on assertion-narrowed or self-constructed receivers,
+// input-name-family, data-access/teardown-spelling, and accessor-
+// shaped methods (the paragraphs above); interface calls already under
+// a recover on the frame (same test as every other callback); named
+// function calls (their guards are their own business); callbacks
+// reached only from ordinary synchronous call sites, goroutine or no
+// goroutine elsewhere in the package — reachability, not adjacency, is
+// the test; and everything in _test.go, where a panic failing the test
+// is the intended outcome.
 package recovercallback
 
 import (
 	"go/ast"
 	"go/types"
 	"regexp"
+	"strings"
 
 	"golang.org/x/tools/go/analysis"
 )
@@ -77,7 +129,29 @@ var Analyzer = &analysis.Analyzer{
 	Run:  run,
 }
 
+// moduleFlag overrides the module an interface must be declared in to
+// count as an extension point. go vet populates pass.Module;
+// analysistest's fixture loader reports an empty module path, so
+// hermetic runs set this flag explicitly.
+var moduleFlag *string
+
+func init() {
+	// Registered in init to keep the var dependency graph acyclic.
+	moduleFlag = Analyzer.Flags.String("module", "", "module path override when the driver reports no module (test fixtures)")
+}
+
 var readMethodName = regexp.MustCompile(`^(Read|Scan|Recv|Decode|Next|Accept)`)
+
+// plumbingName matches the method spellings the repo's wrapper
+// interfaces inherit from stdlib backends: database/sql's
+// QueryContext/QueryRowContext/ExecContext trio (framework/db.Executor
+// exists so *sql.DB and *sql.Tx both satisfy it; crud's eager loader,
+// migrate, and the durable queue all take it as a parameter), and the
+// os/exec + io.Closer teardown family (RunningChild wraps an exec.Cmd;
+// schedulerStartStop narrows the queues' Close). A panic there is a
+// bug in one repo wrapper, not host callback code — the sql.DB.Query
+// posture one hop removed.
+var plumbingName = regexp.MustCompile(`^(QueryContext|QueryRowContext|ExecContext|Wait|Kill|CloseStdin|Signal|Close)$`)
 
 func run(pass *analysis.Pass) (any, error) {
 	g := buildGraph(pass)
@@ -89,16 +163,18 @@ func run(pass *analysis.Pass) (any, error) {
 // node is one function-ish unit: a declared function/method or a
 // function literal.
 type node struct {
-	body        *ast.BlockStmt
-	typ         types.Type // signature, when known
-	owner       *node      // enclosing function for literals
-	goLaunched  bool       // dispatched asynchronously: only its own recover counts
-	hasRecover  bool
-	readLoop    bool
-	handlerShpd bool
-	derived     map[types.Object]bool // locals whose value came out of a map or a func-typed field
-	calls       []callbackCall
-	edges       []*node
+	body         *ast.BlockStmt
+	typ          types.Type // signature, when known
+	owner        *node      // enclosing function for literals
+	goLaunched   bool       // dispatched asynchronously: only its own recover counts
+	hasRecover   bool
+	readLoop     bool
+	handlerShpd  bool
+	params       map[types.Object]bool // signature params (+ receiver), for host-supplied receiver tests
+	derived      map[types.Object]bool // locals whose value came out of a map, a func-typed field, or a callback call's func result
+	derivedIface map[types.Object]bool // locals one hop from an interface slot (field/param/map entry)
+	calls        []callbackCall
+	edges        []*node
 }
 
 type callbackCall struct {
@@ -107,16 +183,20 @@ type callbackCall struct {
 }
 
 type graph struct {
-	pass  *analysis.Pass
-	nodes []*node // declared functions/methods
-	all   []*node // every node, literals included
-	byObj map[types.Object]*node
-	seeds []*node
-	hot   map[*node]bool
+	pass    *analysis.Pass
+	modPath string  // module an interface must live in to be an extension point ("" = unknown)
+	nodes   []*node // declared functions/methods
+	all     []*node // every node, literals included
+	byObj   map[types.Object]*node
+	seeds   []*node
+	hot     map[*node]bool
 }
 
 func buildGraph(pass *analysis.Pass) *graph {
-	g := &graph{pass: pass, byObj: map[types.Object]*node{}}
+	g := &graph{pass: pass, byObj: map[types.Object]*node{}, modPath: *moduleFlag}
+	if g.modPath == "" && pass.Module != nil {
+		g.modPath = pass.Module.Path
+	}
 	for _, f := range pass.Files {
 		if isTestFile(pass, f) {
 			continue
@@ -160,8 +240,10 @@ func (g *graph) makeNode(body *ast.BlockStmt, typ types.Type, owner *node) *node
 		owner:      owner,
 		hasRecover: hasRecover(body),
 		readLoop:   containsReadLoop(g.pass, body),
-		derived:    derivedVars(g.pass, body),
+		params:     paramObjects(typ),
 	}
+	n.derived = g.derivedVars(body, n)
+	n.derivedIface = g.derivedIfaceVars(body, n)
 	if sig, ok := typ.(*types.Signature); ok {
 		n.handlerShpd = isHandlerShape(sig)
 	}
@@ -179,6 +261,23 @@ func (g *graph) makeNode(body *ast.BlockStmt, typ types.Type, owner *node) *node
 		return true
 	})
 	return n
+}
+
+// paramObjects collects a signature's parameter variables (and method
+// receiver): the values the HOST or the caller hands this function.
+func paramObjects(typ types.Type) map[types.Object]bool {
+	out := map[types.Object]bool{}
+	sig, ok := typ.(*types.Signature)
+	if !ok {
+		return out
+	}
+	for i := range sig.Params().Len() {
+		out[sig.Params().At(i)] = true
+	}
+	if sig.Recv() != nil {
+		out[sig.Recv()] = true
+	}
+	return out
 }
 
 // link resolves named calls to package-local functions and marks
@@ -326,22 +425,22 @@ func (g *graph) callTarget(fun ast.Expr) types.Object {
 }
 
 // callbackCallee reports whether call invokes a registry callback —
-// through a func-typed struct field, a map element, or a local whose
+// through a func-typed struct field, a map element, a local whose
 // value came out of a map or was copied from a func-typed field (the
-// nil-check-and-call spelling any careful author writes) — and its
-// printed description.
+// nil-check-and-call spelling any careful author writes), a method on
+// a module-declared interface held in a slot the host fills, or a func
+// result of one of those host calls — and its printed description.
 func (g *graph) callbackCallee(call *ast.CallExpr, n *node) (string, bool) {
 	pass := g.pass
 	switch fun := unparen(call.Fun).(type) {
 	case *ast.SelectorExpr:
-		s, ok := pass.TypesInfo.Selections[fun]
-		if !ok || s.Kind() != types.FieldVal {
+		if s, ok := pass.TypesInfo.Selections[fun]; ok && s.Kind() == types.FieldVal {
+			if isCallbackType(s.Type()) && !isCancelNamed(s.Obj().Name()) {
+				return types.ExprString(fun), true
+			}
 			return "", false
 		}
-		if !isCallbackType(s.Type()) || isCancelNamed(s.Obj().Name()) {
-			return "", false
-		}
-		return types.ExprString(fun), true
+		return g.ifaceMethodCallee(fun, n)
 	case *ast.IndexExpr:
 		// Only a map element counts; an IndexExpr over a function is
 		// a generic instantiation (errors.AsType[T](err)), not a
@@ -355,11 +454,123 @@ func (g *graph) callbackCallee(call *ast.CallExpr, n *node) (string, bool) {
 		}
 	case *ast.Ident:
 		obj := pass.TypesInfo.ObjectOf(fun)
-		if obj != nil && n.derived[obj] {
+		if obj != nil && g.derivedIn(obj, n, func(m *node) map[types.Object]bool { return m.derived }) {
 			return fun.Name, true
 		}
 	}
 	return "", false
+}
+
+// ifaceMethodCallee handles the extension-point leg: recv.M(...) where
+// M is a method of an interface declared in this module (cron's
+// LeaderElection, fanout.Fanout — the interfaces whose implementations
+// are host code) and recv is a value held AS the extension point: a
+// field the host installs, a registry map entry, a parameter the host
+// passes, or a local one hop from one of those.
+func (g *graph) ifaceMethodCallee(sel *ast.SelectorExpr, n *node) (string, bool) {
+	s, ok := g.pass.TypesInfo.Selections[sel]
+	if !ok {
+		return "", false
+	}
+	fn, ok := s.Obj().(*types.Func)
+	if !ok {
+		return "", false
+	}
+	sig, ok := fn.Type().(*types.Signature)
+	if !ok || sig.Recv() == nil {
+		return "", false
+	}
+	recv := sig.Recv().Type()
+	if ptr, ok := recv.(*types.Pointer); ok {
+		recv = ptr.Elem()
+	}
+	named, ok := recv.(*types.Named)
+	if !ok {
+		return "", false // an unnamed inline interface has no declaring package to judge
+	}
+	if _, ok := named.Underlying().(*types.Interface); !ok {
+		return "", false // concrete method: package-local code, reached through the edge flood
+	}
+	if !g.isModulePkg(named.Obj().Pkg()) {
+		return "", false // stdlib or third-party interface: data plumbing, not an app callback
+	}
+	if readMethodName.MatchString(fn.Name()) {
+		return "", false // the loop's own input plumbing (Read/Scan/Recv/...), not a registry callback
+	}
+	if plumbingName.MatchString(fn.Name()) {
+		return "", false // the data-access/teardown spellings inherited from stdlib backends
+	}
+	if sig.Params().Len() == 0 && sig.Results().Len() == 1 {
+		return "", false // accessor-shaped (c.ID, agent.Info): a value query, not an event callback
+	}
+	if !g.hostSuppliedIface(sel.X, n) {
+		return "", false
+	}
+	return types.ExprString(sel), true
+}
+
+// hostSuppliedIface: the receiver expression holds the interface as a
+// host-filled slot — a struct field, a registry map entry, a parameter
+// (of this function or one it closes over), or a local one hop from
+// those. A type-assertion local (BatteryManager's optional-lifecycle
+// narrowing) and a self-constructed value (a call result) are not: the
+// first is the boot/shutdown path the coordinator fixes directly, the
+// second is a package-chosen implementation whose panic the edge flood
+// already reaches.
+func (g *graph) hostSuppliedIface(x ast.Expr, n *node) bool {
+	switch v := unparen(x).(type) {
+	case *ast.SelectorExpr:
+		if s, ok := g.pass.TypesInfo.Selections[v]; ok && s.Kind() == types.FieldVal {
+			_, isField := s.Obj().(*types.Var)
+			return isField
+		}
+	case *ast.Ident:
+		obj := g.pass.TypesInfo.ObjectOf(v)
+		if obj == nil {
+			return false
+		}
+		for m := n; m != nil; m = m.owner {
+			if m.params[obj] {
+				return true
+			}
+		}
+		return g.derivedIn(obj, n, func(m *node) map[types.Object]bool { return m.derivedIface })
+	case *ast.IndexExpr:
+		_, isMap := underlyingMap(g.pass.TypesInfo.TypeOf(v.X))
+		return isMap
+	}
+	return false
+}
+
+// derivedIn walks the owner chain: a local marked derived in an
+// ancestor function is still that value when a closure captures it —
+// Acquire's release func is defined in runTick and invoked in a
+// goroutine literal two levels down.
+func (g *graph) derivedIn(obj types.Object, n *node, set func(*node) map[types.Object]bool) bool {
+	for m := n; m != nil; m = m.owner {
+		if set(m)[obj] {
+			return true
+		}
+	}
+	return false
+}
+
+// isModulePkg: pkg is the analyzed package or lives in its module —
+// the repo whose extension points this rule polices. Stdlib ("io"),
+// vendored, and third-party packages fail this test. With no module
+// resolvable (a driver that reports none) only same-package interfaces
+// qualify.
+func (g *graph) isModulePkg(pkg *types.Package) bool {
+	if pkg == nil {
+		return false
+	}
+	if pkg.Path() == g.pass.Pkg.Path() {
+		return true
+	}
+	if g.modPath == "" {
+		return false
+	}
+	return pkg.Path() == g.modPath || strings.HasPrefix(pkg.Path(), g.modPath+"/")
 }
 
 var cancelFieldName = regexp.MustCompile(`(?i)^cancel`)
@@ -375,12 +586,16 @@ func isCancelNamed(name string) bool {
 }
 
 // derivedVars records the variables whose value comes out of a map
-// (`v, ok := m[k]`, the value variable of `for _, v := range m`) or is
-// copied from a callback-typed struct field (`gate := t.Gate`). Those
-// are registry callbacks even when called through the local's name;
-// infrastructure-shaped fields (printf loggers, handlers, clocks,
-// CancelFuncs) copied to a local stay plumbing.
-func derivedVars(pass *analysis.Pass, body *ast.BlockStmt) map[types.Object]bool {
+// (`v, ok := m[k]`, the value variable of `for _, v := range m`), is
+// copied from a callback-typed struct field (`gate := t.Gate`), or is a
+// func-typed result of a callback call (`held, release, err :=
+// leader.Acquire(ctx)` — the host built that func, so calling it is
+// calling host code). Those are registry callbacks even when called
+// through the local's name; infrastructure-shaped fields (printf
+// loggers, handlers, clocks, CancelFuncs) copied to a local stay
+// plumbing.
+func (g *graph) derivedVars(body *ast.BlockStmt, n *node) map[types.Object]bool {
+	pass := g.pass
 	out := map[types.Object]bool{}
 	ast.Inspect(body, func(x ast.Node) bool {
 		switch x := x.(type) {
@@ -415,6 +630,70 @@ func derivedVars(pass *analysis.Pass, body *ast.BlockStmt) map[types.Object]bool
 								out[obj] = true
 							}
 						}
+					}
+					continue
+				}
+				if call, ok := unparen(rhs).(*ast.CallExpr); ok {
+					// A func result of a host call: `release` out of
+					// Acquire. Multi-value assigns map every func-typed
+					// left side to the one call on the right.
+					if _, ok := g.callbackCallee(call, n); ok {
+						for _, lhs := range x.Lhs {
+							if id, ok := lhs.(*ast.Ident); ok {
+								if obj := pass.TypesInfo.Defs[id]; obj != nil && isCallbackType(obj.Type()) {
+									out[obj] = true
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+		return true
+	})
+	return out
+}
+
+// derivedIfaceVars records locals one hop from an interface slot the
+// host fills: `be := f` (a parameter), `le := s.leader` (a field), or
+// `b := s.backends[name]` (a registry entry). Type assertions and call
+// results are deliberately absent — see hostSuppliedIface.
+func (g *graph) derivedIfaceVars(body *ast.BlockStmt, n *node) map[types.Object]bool {
+	pass := g.pass
+	out := map[types.Object]bool{}
+	ast.Inspect(body, func(x ast.Node) bool {
+		if x, ok := x.(*ast.AssignStmt); ok {
+			for i, rhs := range x.Rhs {
+				if i >= len(x.Lhs) {
+					continue
+				}
+				id, ok := x.Lhs[i].(*ast.Ident)
+				if !ok {
+					continue
+				}
+				obj := pass.TypesInfo.Defs[id]
+				if obj == nil {
+					continue
+				}
+				switch unparen(rhs).(type) {
+				case *ast.SelectorExpr:
+					sel := unparen(rhs).(*ast.SelectorExpr)
+					if s, ok := pass.TypesInfo.Selections[sel]; ok && s.Kind() == types.FieldVal {
+						out[obj] = true
+					}
+				case *ast.Ident:
+					other := pass.TypesInfo.ObjectOf(unparen(rhs).(*ast.Ident))
+					if other != nil {
+						for m := n; m != nil; m = m.owner {
+							if m.params[other] {
+								out[obj] = true
+							}
+						}
+					}
+				case *ast.IndexExpr:
+					idx := unparen(rhs).(*ast.IndexExpr)
+					if _, isMap := underlyingMap(pass.TypesInfo.TypeOf(idx.X)); isMap {
+						out[obj] = true
 					}
 				}
 			}

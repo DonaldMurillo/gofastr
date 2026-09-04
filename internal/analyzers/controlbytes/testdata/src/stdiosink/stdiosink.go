@@ -11,7 +11,9 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
+	"strings"
 )
 
 func badStdout(r *http.Request) {
@@ -41,9 +43,35 @@ func escapeClearance(r *http.Request) {
 	fmt.Fprintf(os.Stdout, "escaped=%s\n", escapeQuery(r.URL.RawQuery))
 }
 
-func escapeQuery(q string) string { return q }
+func escapeQuery(q string) string { return url.QueryEscape(q) }
 
-func quoteCtl(s string) string { return "\"" + s + "\"" }
+// quoteCtl keeps the quote-named clearance with the body that earns it
+// since the email round-2 probe: a byte walk naming the control range.
+func quoteCtl(s string) string {
+	for i := range s {
+		if c := s[i]; c < 0x20 || c == 0x7f {
+			return strings.ReplaceAll(s, "\n", "\\n")
+		}
+	}
+	return s
+}
+
+// quoteOnlyName is quoteParamValue's lesson on this arm: the strong
+// "quote" name with a body that compares only '"' and '\\' — never the
+// control range — clears nothing.
+func quoteOnlyName(s string) string {
+	var b strings.Builder
+	b.WriteByte('"')
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c == '"' || c == '\\' {
+			b.WriteByte('\\')
+		}
+		b.WriteByte(c)
+	}
+	b.WriteByte('"')
+	return b.String()
+}
 
 // badBarePrint: fmt.Print/Printf/Println write to os.Stdout with no
 // writer argument to inspect — they are the terminal sink outright.
@@ -56,6 +84,12 @@ func badBarePrint(r *http.Request) {
 func goodBarePrint(r *http.Request) {
 	fmt.Printf("serving %q\n", quoteCtl(r.URL.Path))
 	fmt.Println("static line")
+}
+
+// bareQuotePass pins the classification fix: a quote-named local helper
+// without control-range body evidence does not clear.
+func bareQuotePass(r *http.Request) {
+	fmt.Printf("quoted=%s\n", quoteOnlyName(r.URL.Path)) // want `controlbytes: request-derived value reaches stdout/stderr print unscrubbed`
 }
 
 // badLogPrint: log.Print/Printf/Println write to the default logger
