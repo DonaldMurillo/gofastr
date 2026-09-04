@@ -3,8 +3,11 @@ package cron_test
 import (
 	"context"
 	"errors"
+	"os"
+	"os/exec"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -284,4 +287,95 @@ func TestCron_NextUnsatisfiableReturnsZero(t *testing.T) {
 	if got := sc.Next(time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)); !got.IsZero() {
 		t.Errorf("Next for Feb-30 spec = %v, want zero Time (no minute can ever match)", got)
 	}
+}
+
+// ---------------------------------------------------------------------------
+// Property: OnError is host-supplied callback code; a panic while it
+// routes a job error must not be re-entered unguarded from the job
+// goroutine's recover handler, where the chained second panic is
+// process-fatal (reportError's own recover guard is the fix this pins).
+// The gate/OnError containment contract for the scheduler loop is pinned
+// by gate_test.go TestGatePanicLoggedWithoutOnError and
+// TestScheduler_JobPanicRecovered above.
+// ---------------------------------------------------------------------------
+
+const cronOnErrorChildEnv = "GOFASTR_TEST_CRON_ONERROR_PANIC_CHILD"
+
+// TestOnErrorPanicNotReentered: a job error + panicking OnError must
+// leave the process alive with the sibling job still run, proven by
+// re-exec: the child drives the chained-panic scenario and must exit 0.
+func TestOnErrorPanicNotReentered(t *testing.T) {
+	if os.Getenv(cronOnErrorChildEnv) == "1" {
+		cronOnErrorChild()
+		return // unreachable; cronOnErrorChild exits
+	}
+
+	cmd := exec.Command(os.Args[0],
+		"-test.run", "^TestOnErrorPanicNotReentered$",
+		"-test.count=1")
+	cmd.Env = append(os.Environ(), cronOnErrorChildEnv+"=1")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Errorf("SECURITY: [cron-onerror] OnError re-entry panic escaped the job goroutine and killed the process: %v\n--- child output ---\n%s", err, out)
+		return
+	}
+	if strings.Contains(string(out), "panic:") {
+		t.Errorf("SECURITY: [cron-onerror] child survived but reported a panic:\n%s", out)
+	}
+}
+
+// cronOnErrorChild is the child-side scenario. It never returns.
+// Exit codes: 0 = chained panic contained, sibling job survived; >=10 =
+// scenario contract broken; runtime crash (exit 2) = the chained OnError
+// panic escaped the job goroutine (the finding).
+func cronOnErrorChild() {
+	now := time.Date(2026, 9, 2, 0, 0, 0, 0, time.UTC)
+
+	s := cron.NewScheduler()
+	var onErrCalls atomic.Int32
+	s.OnError = func(string, error) {
+		onErrCalls.Add(1)
+		panic("onerror boom")
+	}
+	if err := s.Register(cron.CronJob{
+		Name: "fails",
+		Spec: "* * * * *",
+		Run:  func(context.Context) error { return errors.New("job failed") },
+	}); err != nil {
+		os.Exit(10)
+	}
+	healthy := make(chan struct{})
+	if err := s.Register(cron.CronJob{
+		Name: "healthy",
+		Spec: "* * * * *",
+		Run:  func(context.Context) error { close(healthy); return nil },
+	}); err != nil {
+		os.Exit(11)
+	}
+
+	// Fires the job goroutine whose recover handler chains the fatal.
+	s.RunOnce(context.Background(), now)
+
+	// Join the job goroutines. inflight.Done is deferred ahead of the
+	// recover handler, so it runs even while a chained panic unwinds;
+	// StopContext returns with the fatal already in flight.
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	if err := s.StopContext(ctx); err != nil {
+		os.Exit(12)
+	}
+
+	// Give the chained fatal time to land; alive past this point means the
+	// re-entry panic was contained.
+	time.Sleep(300 * time.Millisecond)
+
+	select {
+	case <-healthy:
+	default:
+		os.Exit(13) // sibling job never ran
+	}
+	if n := onErrCalls.Load(); n < 1 {
+		os.Exit(14) // error path never exercised
+	}
+	os.Exit(0)
 }

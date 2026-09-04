@@ -41,6 +41,11 @@ CREATE TABLE audit_log (
 );
 ```
 
+The `id` is minted from `crypto/rand` (16 bytes, `aud_`-prefixed hex): it
+is opaque and non-enumerable — there is no timestamp component to walk —
+and a rand failure refuses the audit row rather than falling back to a
+weaker id.
+
 `EnsureAuditTable(db, table)` creates this table; `WithAuditLog` calls
 it for you and panics on failure (this is initialisation-time work, and
 loud failure is preferable to silent log loss).

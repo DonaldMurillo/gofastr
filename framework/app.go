@@ -2656,11 +2656,26 @@ func (a *App) runStartHooks() error {
 
 	// Then app-level start hooks (cron, queues, custom)
 	for _, fn := range a.startHooks {
-		if err := fn(a.appCtx); err != nil {
+		if err := a.runStartHookSafe(fn); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// runStartHookSafe fires one OnStart hook under the same
+// recover-to-attributed-error isolation initPluginSafe gives Init:
+// OnStart hooks are host/plugin callback code, and a panic in one must
+// abort Start with an error instead of unwinding through it.
+func (a *App) runStartHookSafe(fn func(ctx context.Context) error) (err error) {
+	defer func() {
+		if v := recover(); v != nil {
+			// %T not %v: a panic(config) value must not leak a secret
+			// into the error chain (initPluginSafe precedent).
+			err = fmt.Errorf("start hook panicked (panic type %T): set GOTRACEBACK=all for details", v)
+		}
+	}()
+	return fn(a.appCtx)
 }
 
 // Worker-scoped: under RoleServe this is a no-op. Neither the start hook
@@ -3377,11 +3392,30 @@ func (a *App) Start(addr string) error {
 	}
 	a.printStartupBanner(ln.Addr().String(), name, hasAPI, hasLLMMD, setupURL)
 	for _, fn := range a.readyHooks {
-		fn(ln.Addr().String())
+		if rerr := a.runReadyHookSafe(fn, ln.Addr().String()); rerr != nil {
+			return abort(rerr)
+		}
 	}
 	if err := srv.Serve(ln); err != nil && err != http.ErrServerClosed {
 		return abort(fmt.Errorf("listen and serve: %w", err))
 	}
+	return nil
+}
+
+// runReadyHookSafe fires one OnReady hook under the recover-to-error
+// isolation the Init and OnStart phases already get: OnReady hooks are
+// host callback code that runs after the listener is bound, and a panic
+// in one must surface as Start's abort error (draining the bound
+// listener through the normal teardown) rather than crashing the boot.
+func (a *App) runReadyHookSafe(fn func(addr string), addr string) (err error) {
+	defer func() {
+		if v := recover(); v != nil {
+			// %T not %v: a panic(config) value must not leak a secret
+			// into the error chain (initPluginSafe precedent).
+			err = fmt.Errorf("ready hook panicked (panic type %T): set GOTRACEBACK=all for details", v)
+		}
+	}()
+	fn(addr)
 	return nil
 }
 

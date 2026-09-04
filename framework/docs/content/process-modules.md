@@ -117,6 +117,13 @@ be unrunnable on stock macOS/Windows/some-Linux until the operator installs
 a conforming backend or provisions the missing rule.** Fail-closed refusal
 is the correct, honest enforcement, not a gap to paper over.
 
+Probe output replayed to the operator (a `ProbeResult.Detail`, e.g.
+inside the conformance report `NewSandboxRunner` embeds in
+`ErrSandboxUnavailable`) is scrubbed of terminal control bytes — C0
+except newline and tab, plus DEL — the same contract the codegen
+extension path applies to child stderr, so a sandbox wrapper's or child's
+output cannot drive the operator's terminal from inside an error string.
+
 ## Migrations (per-module schema + role)
 
 The host runs all DDL under a restricted **per-module Postgres schema +

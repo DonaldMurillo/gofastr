@@ -784,9 +784,22 @@ func (sl *moduleSlot) heartbeat() {
 			continue
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		_ = sl.sup.store.RecordHeartbeat(ctx, sl.name, sl.sup.cfg.ReplicaID, gen, state.String())
+		sl.recordHeartbeatSafely(ctx, gen, state)
 		cancel()
 	}
+}
+
+// recordHeartbeatSafely writes one store heartbeat under a recover guard:
+// the store is a swappable implementation running on the heartbeat
+// goroutine, which has no per-request net — a panicking store surfaces in
+// the supervisor log instead of killing the process.
+func (sl *moduleSlot) recordHeartbeatSafely(ctx context.Context, gen uint64, state ProcessState) {
+	defer func() {
+		if r := recover(); r != nil {
+			sl.sup.logf("processmodule: %s heartbeat panic: %v\n%s", sl.name, r, debug.Stack())
+		}
+	}()
+	_ = sl.sup.store.RecordHeartbeat(ctx, sl.name, sl.sup.cfg.ReplicaID, gen, state.String())
 }
 
 // reconcile drives one pass of the state machine. It is the only place
@@ -883,7 +896,7 @@ func (sl *moduleSlot) reconcile() {
 func (sl *moduleSlot) refreshDesired() (DesiredState, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	d, err := sl.sup.store.GetDesired(ctx, sl.name)
+	d, err := sl.getDesiredSafely(ctx)
 	if err == nil {
 		sl.sup.leaseMu.Lock()
 		sl.sup.lease[sl.name] = sl.sup.now()
@@ -903,6 +916,20 @@ func (sl *moduleSlot) refreshDesired() (DesiredState, error) {
 		return DesiredState{}, errLeaseExpired
 	}
 	return DesiredState{}, err
+}
+
+// getDesiredSafely reads desired state under a recover guard: the store
+// is a swappable implementation on the reconcile path, and a panic is
+// reported as a store error so refreshDesired's existing lease logic
+// decides fail-closed drain versus retry — the same decision a plain
+// store error gets.
+func (sl *moduleSlot) getDesiredSafely(ctx context.Context) (d DesiredState, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			d, err = DesiredState{}, fmt.Errorf("store GetDesired panic: %v\n%s", r, debug.Stack())
+		}
+	}()
+	return sl.sup.store.GetDesired(ctx, sl.name)
 }
 
 // errLeaseExpired is the sentinel refreshDesired returns to drive the
@@ -1092,7 +1119,7 @@ func (sl *moduleSlot) spawnOnce(desired DesiredState) error {
 	spawnCtx, cancel := context.WithTimeout(context.Background(), sl.sup.cfg.SpawnDeadline)
 	defer cancel()
 
-	child, err := sl.runner.Start(spawnCtx, spec)
+	child, err := sl.startChildSafely(spawnCtx, spec)
 	if err != nil {
 		return fmt.Errorf("spawn: %w", err)
 	}
@@ -1124,7 +1151,10 @@ func (sl *moduleSlot) spawnOnce(desired DesiredState) error {
 		Grants:     desired.EffectiveGrants,
 		Generation: desired.DesiredGeneration,
 	}
-	sl.sup.broker.InstallHandlers(hostPeer, view)
+	if err := sl.installHandlersSafely(hostPeer, view); err != nil {
+		teardownChild(child, hostPeer, sl.sup.cfg.BackoffMin)
+		return fmt.Errorf("install handlers: %w", err)
+	}
 	hostPeer.Start()
 
 	// Stash the peer so the proxy can reach it.
@@ -1289,11 +1319,53 @@ func (sl *moduleSlot) verifyToolSurface(ctx context.Context, peer *moduleproto.P
 		}
 	}
 	if sl.sup.tools != nil {
-		if err := sl.sup.tools.RegisterTools(sl.name, res.Tools); err != nil {
+		if err := sl.registerToolsSafely(sl.name, res.Tools); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// startChildSafely spawns through the configured Runner under a recover
+// guard: the Runner is swappable backend code (trusted vs sandboxed), and
+// a panic routes to spawnOnce's error path so the module is marked
+// crashed and backed off instead of the spawn goroutine's escape killing
+// the process.
+func (sl *moduleSlot) startChildSafely(ctx context.Context, spec ChildSpec) (child RunningChild, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			child = nil
+			err = fmt.Errorf("runner Start panic: %v\n%s", r, debug.Stack())
+		}
+	}()
+	return sl.runner.Start(ctx, spec)
+}
+
+// installHandlersSafely installs the broker's reverse-call handlers under
+// a recover guard: the broker is host-side code on the spawn path, and a
+// panic routes to spawnOnce's error path (child torn down, module marked
+// crashed) instead of escaping the spawn goroutine.
+func (sl *moduleSlot) installHandlersSafely(peer *moduleproto.Peer, view ModuleGrantView) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("broker InstallHandlers panic: %v\n%s", r, debug.Stack())
+		}
+	}()
+	sl.sup.broker.InstallHandlers(peer, view)
+	return nil
+}
+
+// registerToolsSafely installs the verified module tools under a recover
+// guard: the registrar is host-side code on the spawn path, and a panic
+// surfaces as a tool-surface spawn error instead of escaping the spawn
+// goroutine.
+func (sl *moduleSlot) registerToolsSafely(name string, tools []moduleproto.Tool) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("tools RegisterTools panic: %v\n%s", r, debug.Stack())
+		}
+	}()
+	return sl.sup.tools.RegisterTools(name, tools)
 }
 
 // migrationsPending reports whether a module that declared a migration

@@ -112,6 +112,10 @@ func (a *App) handleMCPServerCard(w http.ResponseWriter, r *http.Request) {
 	// (spec-reserved) and /.well-known/mcp/server-card.json (the path
 	// isitagentready probes, which the live spec discourages) so both the
 	// spec and the scanner are satisfied.
+	// Same Vary discipline as every sibling well-known document: the
+	// card body embeds remotes[].url built from r.Host and
+	// X-Forwarded-Proto, so a shared cache must key on those inputs.
+	varyWellKnown(w)
 	w.Header().Set("Content-Type", "application/mcp-server-card+json; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-cache")
 	enc := json.NewEncoder(w)

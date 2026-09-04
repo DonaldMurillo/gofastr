@@ -6,8 +6,10 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/url"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
@@ -587,11 +589,21 @@ func (b *Broker) eventHandler(view ModuleGrantView) moduleproto.Handler {
 // ----- helpers -----
 
 // lookupEntity resolves an entity name through the host registry. Returns nil
-// for an unknown name or a nil registry, both deny (fail-closed).
-func (b *Broker) lookupEntity(name string) *entity.Entity {
+// for an unknown name or a nil registry, both deny (fail-closed). The Get
+// call runs under a recover guard: the registry is host-supplied code on
+// the module dispatch path (every reverse host.entity.* call), which has
+// no per-request net — a panic denies the lookup (fail-closed) and is
+// logged instead of killing the read loop.
+func (b *Broker) lookupEntity(name string) (ent *entity.Entity) {
 	if b.entities == nil || name == "" {
 		return nil
 	}
+	defer func() {
+		if r := recover(); r != nil {
+			slog.Default().Error("processmodule: entity registry Get panicked; denying lookup (fail-closed)",
+				"entity", name, "panic", r, "stack", string(debug.Stack()))
+		}
+	}()
 	ent, err := b.entities.Get(name)
 	if err != nil {
 		return nil

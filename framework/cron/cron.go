@@ -153,7 +153,7 @@ func (s *Scheduler) runTick(ctx context.Context, now time.Time) bool {
 		s.RunOnce(ctx, now)
 		return true
 	}
-	held, release, err := s.leader.Acquire(ctx)
+	held, release, err := s.acquireSafely(ctx)
 	if err != nil {
 		s.reportError("(leader-election)", err)
 		return false
@@ -171,11 +171,40 @@ func (s *Scheduler) runTick(ctx context.Context, now time.Time) bool {
 	defer func() {
 		go func() {
 			s.inflight.Wait()
-			release()
+			s.releaseSafely(release)
 		}()
 	}()
 	s.RunOnce(ctx, now)
 	return true
+}
+
+// acquireSafely runs the leader-election Acquire under the same recover
+// net the per-job path gives j.Run: Acquire is driver-supplied callback
+// code (custom Redis/etcd leases are a documented extension point)
+// running on the loop goroutine, which has no per-request net — its
+// panic is routed to OnError like every other scheduler fault and the
+// tick is skipped, instead of killing the process.
+func (s *Scheduler) acquireSafely(ctx context.Context) (held bool, release func(), err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			held, release = false, nil
+			err = fmt.Errorf("panic in leader-election acquire: %v\n%s", r, debug.Stack())
+		}
+	}()
+	return s.leader.Acquire(ctx)
+}
+
+// releaseSafely runs the per-tick lease release under a recover guard
+// and routes the wrapped panic to OnError: release wraps driver teardown
+// (e.g. closing a pinned conn) and runs on an untracked goroutine,
+// where an escape is process-fatal.
+func (s *Scheduler) releaseSafely(release func()) {
+	defer func() {
+		if r := recover(); r != nil {
+			s.reportError("(leader-election)", fmt.Errorf("panic in leader-election release: %v\n%s", r, debug.Stack()))
+		}
+	}()
+	release()
 }
 
 // Start begins the tick loop in a goroutine. Returns immediately. Idempotent:

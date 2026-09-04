@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"maps"
 	"net/http"
-	"strconv"
+
 	"strings"
 	"time"
 
@@ -505,14 +505,15 @@ func stringifyPK(row map[string]any, pk string) string {
 }
 
 func writeAuditRow(ctx context.Context, db *sql.DB, table, ent string, op auditOp, recordID, actor string, diff []byte) error {
-	// 8 bytes of crypto/rand suffix to defeat the "two concurrent
-	// hooks land in the same nanosecond" PK collision that took the
-	// session-ID code down before it was fixed in core-ui/uihost.
-	// A collision here rolls back the user's transaction along with
-	// the audit row.
-	var rb [8]byte
-	_, _ = cryptorand.Read(rb[:])
-	id := "aud_" + strconv.FormatInt(time.Now().UnixNano(), 10) + "_" + hex.EncodeToString(rb[:])
+	// 16 bytes of crypto/rand: opaque and non-enumerable. A wall-clock
+	// prefix would make the audit namespace guessable by time, and a
+	// rand failure is fatal (the audit row is refused) rather than
+	// falling back to a weaker id.
+	var rb [16]byte
+	if _, err := cryptorand.Read(rb[:]); err != nil {
+		return fmt.Errorf("audit: mint row id: %w", err)
+	}
+	id := "aud_" + hex.EncodeToString(rb[:])
 	var diffArg any
 	if diff != nil {
 		diffArg = string(diff)

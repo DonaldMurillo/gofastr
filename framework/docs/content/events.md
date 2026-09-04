@@ -193,8 +193,11 @@ Two rules for handlers under fanout:
   authenticated; don't share the channel with less-trusted systems.
 
 The lane stays lossy under fanout: a message published while a
-replica's listener is reconnecting is gone. Nothing about the durable
-lane changes.
+replica's listener is reconnecting is gone. A fanout backend whose
+`Publish` panics is treated the same way: the bridge's publisher
+goroutine recovers, logs the panic, and keeps draining — the lossy lane
+degrades, the process does not die. Nothing about the durable lane
+changes.
 
 ## Transactional outbox
 

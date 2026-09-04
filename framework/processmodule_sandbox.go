@@ -5,7 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os/exec"
 	"path/filepath"
+	"runtime/debug"
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/moduleproto"
@@ -114,12 +116,28 @@ func (r *SandboxRunner) Start(ctx context.Context, spec ChildSpec) (RunningChild
 		opts.PackageDir = filepath.Dir(prep.Spec.Descriptor.ArtifactPath)
 	}
 	// Apply OS-enforced denials on top of baseline hygiene. A Wrap error
-	// is fail-closed: we do NOT exec the child unconfined.
-	if err := r.backend.Wrap(prep.Cmd, opts); err != nil {
+	// is fail-closed: we do NOT exec the child unconfined. Wrap runs
+	// under a recover guard for the same reason: the backend is swappable
+	// host-side code on the spawn path, and its panic must surface as a
+	// fail-closed spawn error (module quarantined/restarted) rather than
+	// escaping the spawn goroutine.
+	if err := r.wrapSafely(prep.Cmd, opts); err != nil {
 		cleanupPrepPipes(prep)
 		return nil, fmt.Errorf("processmodule: sandbox %s wrap: %w", r.backend.Name(), err)
 	}
 	return startPreparedChild(ctx, prep, r.NewCodec)
+}
+
+// wrapSafely applies the backend's OS-enforced denials under a recover
+// guard, converting a panicking backend into the same fail-closed error
+// a returned one gets: the child is never exec'd unconfined.
+func (r *SandboxRunner) wrapSafely(cmd *exec.Cmd, opts SandboxOpts) (err error) {
+	defer func() {
+		if p := recover(); p != nil {
+			err = fmt.Errorf("panic: %v\n%s", p, debug.Stack())
+		}
+	}()
+	return r.backend.Wrap(cmd, opts)
 }
 
 // Conforms reports whether the backend passed every probe P1–P7 at

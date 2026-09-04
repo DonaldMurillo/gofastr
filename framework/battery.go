@@ -2,6 +2,7 @@ package framework
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"sort"
@@ -247,31 +248,70 @@ func initBatterySafe(name string, b Battery, app *App) (err error) {
 }
 
 // StartAll calls OnStart on batteries that implement BatteryLifecycle,
-// in dependency order (dependencies first).
+// in dependency order (dependencies first). Each call runs under the
+// initBatterySafe recover isolation, so a panicking start hook aborts
+// App.Start with an attributed error instead of unwinding through it.
 func (bm *BatteryManager) StartAll(ctx context.Context) error {
 	for _, name := range bm.sorted {
 		if lc, ok := bm.entries[name].battery.(BatteryLifecycle); ok {
-			if err := lc.OnStart(ctx); err != nil {
-				return fmt.Errorf("battery %q start failed: %w", name, err)
+			if err := startBatterySafe(name, lc, ctx); err != nil {
+				return err
 			}
 		}
 	}
 	return nil
 }
 
+// startBatterySafe is the OnStart twin of initBatterySafe: battery start
+// hooks are third-party code the framework drives, so their panics
+// surface as attributed errors, not crashes.
+func startBatterySafe(name string, lc BatteryLifecycle, ctx context.Context) (err error) {
+	defer func() {
+		if v := recover(); v != nil {
+			// %T not %v so a panic(config) value cannot leak a secret
+			// into the error chain (initBatterySafe precedent).
+			err = fmt.Errorf("battery %q start panicked (panic type %T): set GOTRACEBACK=all for details", name, v)
+		}
+	}()
+	if e := lc.OnStart(ctx); e != nil {
+		return fmt.Errorf("battery %q start failed: %w", name, e)
+	}
+	return nil
+}
+
 // StopAll calls OnStop on batteries that implement BatteryLifecycle,
 // in reverse dependency order (dependents first, then dependencies).
+// A battery whose stop hook returns an error OR panics does not stop the
+// drain: the remaining batteries are still stopped and every failure is
+// joined into the returned error — a SIGTERM shutdown must not crash on
+// one battery's bug.
 func (bm *BatteryManager) StopAll(ctx context.Context) error {
-	var firstErr error
+	var errs []error
 	for _, name := range slices.Backward(bm.sorted) {
-
 		if lc, ok := bm.entries[name].battery.(BatteryLifecycle); ok {
-			if err := lc.OnStop(ctx); err != nil && firstErr == nil {
-				firstErr = fmt.Errorf("battery %q stop failed: %w", name, err)
+			if err := stopBatterySafe(name, lc, ctx); err != nil {
+				errs = append(errs, err)
 			}
 		}
 	}
-	return firstErr
+	return errors.Join(errs...)
+}
+
+// stopBatterySafe is the OnStop twin of initBatterySafe: a panicking
+// stop hook is recorded as an attributed error while StopAll keeps
+// draining the remaining batteries.
+func stopBatterySafe(name string, lc BatteryLifecycle, ctx context.Context) (err error) {
+	defer func() {
+		if v := recover(); v != nil {
+			// %T not %v so a panic(config) value cannot leak a secret
+			// into the error chain (initBatterySafe precedent).
+			err = fmt.Errorf("battery %q stop panicked (panic type %T): set GOTRACEBACK=all for details", name, v)
+		}
+	}()
+	if e := lc.OnStop(ctx); e != nil {
+		return fmt.Errorf("battery %q stop failed: %w", name, e)
+	}
+	return nil
 }
 
 // All returns all registered batteries in dependency-resolved order.
