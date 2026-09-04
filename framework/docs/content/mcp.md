@@ -535,7 +535,11 @@ What a client sees at the edges:
   structured-suffix family), caps the body at 1 MiB, and decodes the
   envelope with strict top-level keys: a body repeating a key, or spelling
   one in two cases (`"method"` and `"Method"`), is refused as invalid JSON
-  rather than silently resolved last-key-wins.
+  rather than silently resolved last-key-wins. The `params` object gets the
+  same rule at dispatch, for every method: any object inside `params` that
+  repeats a key, or carries two keys that case-fold onto each other
+  (`"name"` and `"Name"`), is refused with invalid-params before any
+  handler runs.
 - `ServeSSE(path)` returns an http.Handler where POST handles JSON-RPC and GET
   with `Accept: text/event-stream` opens a stream the server holds open for
   the connection's life, carrying server-initiated notifications (see

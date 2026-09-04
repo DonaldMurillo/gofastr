@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"mime"
 	"net/http"
+	"net/url"
 	"slices"
 	"strconv"
 	"strings"
@@ -60,6 +61,13 @@ type Config struct {
 	// Logger for handler failures, drops, and push errors. Nil →
 	// slog.Default().
 	Logger *slog.Logger
+	// AllowedOrigins permits browser Origins that are not same-origin
+	// with the request: tunnels (ngrok, Codespaces) and split-origin
+	// web clients. The default posture refuses a present Origin naming
+	// any authority other than the request's own Host, mirroring the
+	// MCP transport's cross-origin gate; native A2A clients send no
+	// Origin and always pass.
+	AllowedOrigins []string
 	// MaxBodyBytes caps one request body. Default 1 MiB.
 	MaxBodyBytes int64
 	// TaskTimeout is the ceiling on one skill-handler run. Default
@@ -92,6 +100,11 @@ type Server struct {
 	maxPage   int
 	keepAlive time.Duration
 	pollEvery time.Duration
+
+	// allowedOrigins mirrors core/mcp's allow list: Origins that name a
+	// foreign authority yet may still reach the dispatcher. Guarded by
+	// mu (the same mutex the run registry uses; both are cold paths).
+	allowedOrigins []string
 
 	// now and newID are indirections for tests: a fixed clock and a
 	// counter make golden frames byte-stable.
@@ -169,24 +182,25 @@ func NewServer(cfg Config) (*Server, error) {
 		return nil, fmt.Errorf("a2a: Config.DefaultPageSize %d exceeds MaxPageSize %d", defPage, maxPage)
 	}
 	return &Server{
-		skills:    slices.Clone(cfg.Skills),
-		byID:      byID,
-		store:     store,
-		router:    router,
-		owner:     cfg.Owner,
-		extended:  cfg.ExtendedCard,
-		push:      newPusher(cfg.Push, log),
-		log:       log,
-		maxBody:   maxBody,
-		timeout:   timeout,
-		maxHist:   maxHist,
-		defPage:   defPage,
-		maxPage:   maxPage,
-		keepAlive: keepAliveEvery,
-		pollEvery: pollEvery,
-		now:       time.Now,
-		newID:     newUUID,
-		runs:      map[string]*run{},
+		skills:         slices.Clone(cfg.Skills),
+		byID:           byID,
+		store:          store,
+		router:         router,
+		owner:          cfg.Owner,
+		extended:       cfg.ExtendedCard,
+		push:           newPusher(cfg.Push, log),
+		log:            log,
+		maxBody:        maxBody,
+		timeout:        timeout,
+		maxHist:        maxHist,
+		defPage:        defPage,
+		maxPage:        maxPage,
+		keepAlive:      keepAliveEvery,
+		pollEvery:      pollEvery,
+		allowedOrigins: slices.Clone(cfg.AllowedOrigins),
+		now:            time.Now,
+		newID:          newUUID,
+		runs:           map[string]*run{},
 	}, nil
 }
 
@@ -231,14 +245,20 @@ type rpcResponse struct {
 	Error   *Error          `json:"error,omitempty"`
 }
 
-// ServeHTTP answers one JSON-RPC request. POST only; the body is
-// capped, the content type must be JSON, and the caller must resolve to
-// an owner before any method runs.
+// ServeHTTP answers one JSON-RPC request. POST only; the caller's
+// Origin must be absent or name the request's own authority, the body
+// is capped, the content type must be JSON, and the caller must resolve
+// to an owner before any method runs.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		w.Header().Set("Allow", http.MethodPost)
 		s.writeTransport(w, http.StatusMethodNotAllowed,
 			Errorf(CodeInvalidRequest, "POST required"))
+		return
+	}
+	if !s.originOK(r) {
+		s.writeTransport(w, http.StatusForbidden,
+			Errorf(CodeUnauthorized, "cross-origin request refused"))
 		return
 	}
 	if !isJSONContentType(r.Header.Get("Content-Type")) {
@@ -362,6 +382,48 @@ func (s *Server) writeStatus(w http.ResponseWriter, status int, id json.RawMessa
 // request could not be addressed, so there is no id to echo.
 func (s *Server) writeTransport(w http.ResponseWriter, status int, aerr *Error) {
 	s.writeStatus(w, status, nil, nil, aerr)
+}
+
+// originOK reports whether r may reach the JSON-RPC dispatcher.
+//
+// A browser sets Origin on every cross-site fetch. If it is present and
+// names a different authority than the request itself (Origin vs Host),
+// this is a cross-site call and is refused before the body is read:
+// the endpoint resolves an owner from the caller's session credential
+// and returns the caller's task data, exactly the shape the four
+// 2025-26 MCP transport CVEs made a MUST-grade gate. Absent Origin
+// passes: curl and native A2A clients never send one, and its absence
+// cannot prove an attack. Mirrors core/mcp's transport posture.
+func (s *Server) originOK(r *http.Request) bool {
+	origin := r.Header.Get("Origin")
+	if origin == "" {
+		return true
+	}
+	u, err := url.Parse(origin)
+	if err != nil || u.Host == "" || !strings.EqualFold(u.Host, r.Host) {
+		return s.originAllowListed(origin)
+	}
+	return true
+}
+
+// originAllowListed reports whether origin was explicitly permitted via
+// Config.AllowedOrigins or SetAllowedOrigins: the escape hatch for
+// tunnels (ngrok, Codespaces) and split-origin web clients.
+func (s *Server) originAllowListed(origin string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return slices.ContainsFunc(s.allowedOrigins, func(o string) bool {
+		return strings.EqualFold(origin, o)
+	})
+}
+
+// SetAllowedOrigins permits browser Origins that are not same-origin
+// with the request, for servers constructed without going through
+// Config.AllowedOrigins. Mirrors core/mcp's SetAllowedOrigins.
+func (s *Server) SetAllowedOrigins(origins []string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.allowedOrigins = slices.Clone(origins)
 }
 
 // internalErr logs err and answers the generic JSON-RPC internal error:

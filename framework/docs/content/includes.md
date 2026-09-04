@@ -150,6 +150,11 @@ the buffered path so includes still resolve. Only the explicit
   exceeded the depth cap.
 - `include exceeds the maximum number of related rows`: the assembled
   response would carry more than 20,000 related-row references.
+- `too many include paths: N (max 32)`: the request named more
+  comma-separated include paths than one response may eager-load.
+  Every mention carrying a distinct scoped-filter set is its own
+  eager-load node and its own SELECT, so breadth is capped like depth
+  and total rows are.
 - `scoped field "x" not on target entity`: the filter referenced a
   field that does not exist on the target's schema.
 
