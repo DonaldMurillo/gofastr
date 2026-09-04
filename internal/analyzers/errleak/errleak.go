@@ -27,7 +27,7 @@ import (
 )
 
 var Analyzer = &analysis.Analyzer{
-	Name: "gofastrerrleak",
+	Name: "errleak",
 	Doc:  "forbids sending an error's text on a 5xx response; log it and write a fixed message instead",
 	Run:  run,
 }

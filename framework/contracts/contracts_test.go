@@ -365,6 +365,22 @@ func TestSuppressionRejectsUnknownRule(t *testing.T) {
 	}
 }
 
+// TestSuppressionAcceptsAnalyzerName: a marker naming a repo analyzer
+// (//gofastr:allow(mapwriter) …) belongs to the vettool's allow
+// filter, so the contracts pipeline neither reports it unknown nor
+// counts it stale when no contracts rule matches it.
+func TestSuppressionAcceptsAnalyzerName(t *testing.T) {
+	p, sup := probePass(t, map[string]string{
+		"a.go": "package a\n\n//gofastr:allow(mapwriter) one-entry map, order is fixed\nfunc f() {}\n",
+	})
+	if len(sup.issues) != 0 {
+		t.Fatalf("analyzer marker reported as a suppression issue: %+v", sup.issues)
+	}
+	if st := sup.stale(p); len(st) != 0 {
+		t.Fatalf("analyzer marker reported stale: %+v", st)
+	}
+}
+
 func TestFileScopedSuppression(t *testing.T) {
 	_, sup := probePass(t, map[string]string{
 		"a.go": "//gofastr:allow-file(GOFASTR1403) whole file is a fixture\npackage a\n\nfunc f() {}\nfunc g() {}\n",

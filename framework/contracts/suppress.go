@@ -2,6 +2,7 @@ package contracts
 
 import (
 	"fmt"
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/allow"
 	"regexp"
 	"sort"
 	"strings"
@@ -220,6 +221,13 @@ func (s *suppressionSet) add(p *Pass, file string, line, scope int, isFile bool,
 
 	var known []string
 	for _, r := range rules {
+		if allow.Known(r) {
+			// An analyzer marker (//gofastr:allow(worldreadable) …) is
+			// the vettool's business: internal/analyzers/allow drops the
+			// diagnostic, so it is neither unknown here nor stale when
+			// no contracts rule ever matches it.
+			continue
+		}
 		if _, ok := LookupRule(r); !ok {
 			d := Diagnostic{
 				RuleID: RuleSuppressionUnknownRule, File: file, Line: line,

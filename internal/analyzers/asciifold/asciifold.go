@@ -58,7 +58,7 @@ import (
 )
 
 var Analyzer = &analysis.Analyzer{
-	Name: "gofastrasciifold",
+	Name: "asciifold",
 	Doc:  "forbids registry lookups keyed by strings.ToLower/ToUpper or guarded by EqualFold with an ASCII constant: Unicode case folding maps homoglyphs onto ASCII (ſ → S), so fold ASCII only or refuse non-ASCII keys first",
 	Run:  run,
 }

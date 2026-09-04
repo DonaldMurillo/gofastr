@@ -29,7 +29,7 @@ import (
 )
 
 var Analyzer = &analysis.Analyzer{
-	Name: "gofastrunboundedbody",
+	Name: "unboundedbody",
 	Doc:  "forbids reading or decoding an inbound *http.Request body with no size cap; wrap it in http.MaxBytesReader first",
 	Run:  run,
 }

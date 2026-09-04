@@ -32,7 +32,7 @@ import (
 
 // EmptyErrBranchAnalyzer forbids `if err != nil {}` with an empty body.
 var EmptyErrBranchAnalyzer = &analysis.Analyzer{
-	Name: "gofastremptyerrbranch",
+	Name: "emptyerrbranch",
 	Doc:  "forbids an error branch with an empty body; handle it, or say why ignoring is right",
 	Run:  runEmptyErrBranch,
 }
@@ -63,7 +63,7 @@ func runEmptyErrBranch(pass *analysis.Pass) (any, error) {
 // redundant field. Same file-scoped convention as unboundedbody's cap
 // check — the deadline is conventionally set beside the client it governs.
 var ClientTimeoutAnalyzer = &analysis.Analyzer{
-	Name: "gofastrclienttimeout",
+	Name: "clienttimeout",
 	Doc:  "forbids constructing an http.Client without a Timeout",
 	Run:  runClientTimeout,
 }

@@ -83,7 +83,7 @@ import (
 )
 
 var Analyzer = &analysis.Analyzer{
-	Name: "gofastremitident",
+	Name: "emitident",
 	Doc:  "forbids fmt.Sprintf/Fprintf/Appendf formats that substitute an ungated name into an identifier slot of emitted code (Go declarations, SQL DDL, CSS string slots, route paths); validate with an ident check or quote for the grammar",
 	Run:  run,
 }

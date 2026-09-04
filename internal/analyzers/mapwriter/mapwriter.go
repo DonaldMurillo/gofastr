@@ -16,7 +16,7 @@ import (
 )
 
 var Analyzer = &analysis.Analyzer{
-	Name: "gofastrmapwriter",
+	Name: "mapwriter",
 	Doc:  "forbids ranging over a map while writing to a Builder/Buffer/Writer (nondeterministic SSR output); iterate slices.Sorted(maps.Keys(m)) instead",
 	Run:  run,
 }

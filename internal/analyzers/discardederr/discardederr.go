@@ -45,7 +45,7 @@ import (
 )
 
 var Analyzer = &analysis.Analyzer{
-	Name: "gofastrdiscardederr",
+	Name: "discardederr",
 	Doc:  "forbids discarding an error in a multi-value assignment while keeping the other results; the refusal it signals is silently swallowed",
 	Run:  run,
 }
