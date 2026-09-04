@@ -400,6 +400,15 @@ func (b *Battery) gateMiddleware() router.Middleware {
 // rely on it, its screens render an empty _csrf input without it.
 func (b *Battery) gate(next http.HandlerFunc) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Every admin-owned response is uncacheable, stamped here at the one
+		// choke point all admin routes pass through so no surface can forget
+		// it: row fragments carry tenant/owner-scoped data, and
+		// cookie-authenticated GETs are not covered by RFC 9111's
+		// Authorization-only storage rules, so a shared cache or the
+		// back/forward cache must never retain one. writePage and the uihost
+		// pin the same posture for the screens; the deliberately ungated
+		// admin.css keeps its own public max-age (it carries no data).
+		w.Header().Set("Cache-Control", "no-store")
 		if !isSafeAdminMethod(r.Method) && rejectCrossSiteForm(w, r) {
 			return
 		}

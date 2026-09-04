@@ -36,6 +36,8 @@ import (
 	"maps"
 	"strings"
 	"sync"
+
+	"github.com/DonaldMurillo/gofastr/battery/email"
 )
 
 // Notification is one event-shaped message bound for a single
@@ -511,9 +513,15 @@ func NewLoggerChannel(l *log.Logger) *LoggerChannel {
 // Name returns "log".
 func (c *LoggerChannel) Name() string { return c.name }
 
-// Send writes a one-line record to the logger.
+// Send writes a one-line record to the logger. Subject and text body pass
+// through email.RedactBody first: this is a development log surface, and a
+// rendered body carrying a credential URL (password.reset, magic-link, the
+// standard Data["url"] shape) must not land token-first in the log — the
+// same contract battery/email's LogSender holds, sharing its redaction
+// helper rather than forking the patterns. Pinned by
+// TestLoggerChannelRedactsCredentialURLs.
 func (c *LoggerChannel) Send(_ context.Context, n Notification, r Rendered) error {
 	c.log.Printf("[notify] type=%s to_user=%q to_email=%q subject=%q text=%q",
-		n.Type, n.To.UserID, n.To.Email, r.Subject, r.TextBody)
+		n.Type, n.To.UserID, n.To.Email, email.RedactBody(r.Subject), email.RedactBody(r.TextBody))
 	return nil
 }

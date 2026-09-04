@@ -184,7 +184,11 @@ resource wildcard such as `"teams:*"` is different: with a non-empty
 registry, `Grant` expands it immediately to every registered capability with
 the `"teams:"` prefix, and `Can` continues to perform exact matching. The
 wildcard itself is not retained. `GrantStore.Grant` persists those expanded
-rows, and `LoadInto` expands old wildcard rows while loading them.
+rows, and `LoadInto` expands old wildcard rows while loading them. `Revoke`
+expands `"teams:*"` with the same rule, so revoking a wildcard removes at
+least the set granting it installed; the raw literal is revoked alongside
+its expansion, which keeps a wildcard granted before its capabilities were
+registered revocable too.
 
 With an empty registry, ordinary grants keep the previous behavior and emit
 no warning. A non-global grant containing `*` cannot expand, so it emits the
@@ -260,6 +264,15 @@ misses for one user share one lookup. `Resolve` returns defensive copies;
 call `Invalidate(userID)` after changing one user's role inputs or
 `InvalidateAll()` after a global role-policy change. A zero or negative TTL
 keeps same-key single-flight behavior but does not retain results.
+
+The map is bounded, not just expired-on-read: a later `Resolve` sweeps
+entries whose TTL has lapsed at most once per TTL, and once 100,000
+distinct user ids are cached it sheds entries to a low-water mark
+(soonest-expiring first), so a registration flood of never-returning ids
+cannot grow the cache without bound. A resolution whose context was already
+canceled is never cached: the resolver seam has no error return, so a
+canceled DB lookup would otherwise read as "no roles" and one aborted
+request would strip that user's permissions for a full TTL.
 
 Or via middleware on a specific route:
 
@@ -459,9 +472,11 @@ store.Revoke(ctx, "editor", "posts:write") // DB DELETE + policy.Revoke
 The store **holds a reference** to the live `*RolePolicy` (store-holds-policy).
 `NewGrantStore(db, policy)` binds the policy; `LoadInto(ctx, policy)` loads
 persisted rows into it (call once at boot). Subsequent `Grant`/`Revoke` calls
-mutate both the DB and the policy in one call. The policy's RWMutex covers
-concurrent `Can` checks, so a grant/revoke is "atomic enough": a reader sees
-the state before or after, never a torn map.
+mutate both the DB and the policy in one call, and both expand resource
+wildcards identically: a `Revoke` of `"teams:*"` deletes and tombstones the
+same rows a `Grant` of `"teams:*"` persisted (plus the raw literal). The
+policy's RWMutex covers concurrent `Can` checks, so a grant/revoke is
+"atomic enough": a reader sees the state before or after, never a torn map.
 
 ### Cross-replica grant propagation
 

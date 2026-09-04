@@ -155,6 +155,14 @@ The `EntityUserStore`, `EntitySessionStore`, and `EntityTwoFAStore`
 provided in this package implement every relevant interface; if you
 start from `EntityUserStore` you get the full feature matrix.
 
+Both built-in session stores fail closed on a negative TTL:
+`EntitySessionStore.Create` rejects `ttl <= 0`, and
+`MemorySessionStore.Create` rejects `ttl < 0` while keeping `ttl == 0`
+as its documented one-week default. A sign or unit error in
+`SessionTTL` therefore breaks login loudly instead of minting a
+session — on the memory store it used to silently substitute the
+7-day default, the exact inversion of the caller's intent.
+
 The default stores are **in-memory**: fine for dev and tests, a trap
 in production: sessions vanish on restart and never resolve on a
 second replica, and in-memory 2FA enrollment reverts accounts to
@@ -1250,6 +1258,13 @@ provider's token endpoint. Providers commonly omit the refresh token on a
 refresh grant (Google does), so the stored refresh token is retained.
 `GoogleProvider.AuthURL` now requests `access_type=offline` so Google
 actually issues a refresh token.
+
+Every built-in provider fetch — token exchange, refresh, userinfo,
+`/user/emails` — refuses redirects and caps the response body at
+1 MiB, the same egress posture as the OIDC provider: a compromised or
+misconfigured endpoint can neither re-point the credential-bearing
+request at another origin (a 307 re-sends the POST body verbatim) nor
+stream an unbounded body into the callback goroutine.
 
 `RefreshOAuthToken` errors when no refresh token is stored; the user must
 re-authenticate. **Security-sensitive code:** route changes here through

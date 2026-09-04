@@ -134,7 +134,12 @@ still delivered to `WithErrorCallback`) instead of crashing the process.
   Rendered.TextBody / HTMLBody gets pushed across every channel; for
   attachments use channel-specific Extra entries or pre-render.
 - **Don't rely on the LoggerChannel in production.** It writes to a
-  *log.Logger, meant for development, CI, and as a sanity sink.
+  *log.Logger, meant for development, CI, and as a sanity sink. Like
+  `email.LogSender`, it redacts credential-bearing URLs (`?token=…`,
+  `?code=…`, and the other secret query params) and `Bearer` values
+  from the rendered subject and text body before writing, via
+  `email.RedactBody`, so a reset-link notification never lands
+  token-first in the log.
 - **Don't forget the templater.** Without one, every `Send` returns
   `ErrNoTemplater` unless you supply `Data["_rendered_*"]` per
   channel.

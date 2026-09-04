@@ -30,9 +30,14 @@ var urlWithSecretPattern = regexp.MustCompile(`(?i)https?://[^\s"'<>]*[?&](?:tok
 // bearerPattern catches `Bearer <token>` substrings anywhere in the body.
 var bearerPattern = regexp.MustCompile(`(?i)Bearer\s+\S+`)
 
-// redactBody scrubs anything resembling a live credential out of a
-// rendered email body before it is written to a development log.
-func redactBody(s string) string {
+// RedactBody scrubs anything resembling a live credential out of a rendered
+// body before it is written to a development log: URLs whose query carries
+// a token / code / key / secret / password parameter, and any Bearer token
+// substring. Exported so sibling dev-log surfaces (notify.LoggerChannel)
+// redact the same shapes instead of forking the patterns; pinned by
+// TestLogSender_DoesNotExposeLiveResetLinksInTextBody and
+// TestLoggerChannelRedactsCredentialURLs.
+func RedactBody(s string) string {
 	s = urlWithSecretPattern.ReplaceAllString(s, "[REDACTED-URL]")
 	s = bearerPattern.ReplaceAllString(s, "Bearer [REDACTED]")
 	return s
@@ -72,13 +77,13 @@ func (l *LogSender) Send(_ context.Context, email Email) error {
 
 	if email.TextBody != "" {
 		sb.WriteString("--- Text Body ---\n")
-		sb.WriteString(redactBody(email.TextBody))
+		sb.WriteString(RedactBody(email.TextBody))
 		sb.WriteString("\n")
 	}
 
 	if email.HTMLBody != "" {
 		sb.WriteString("--- HTML Body ---\n")
-		sb.WriteString(redactBody(email.HTMLBody))
+		sb.WriteString(RedactBody(email.HTMLBody))
 		sb.WriteString("\n")
 	}
 

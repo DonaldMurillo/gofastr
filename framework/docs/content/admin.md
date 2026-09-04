@@ -254,6 +254,19 @@ admin.New(admin.Config{
 })
 ```
 
+## Response caching
+
+Every admin-owned response carries `Cache-Control: no-store`, stamped once
+at the gate before the auth decision, so screens, row fragments, RPC
+redirects, and even the `401`/`403` refusals are uncacheable by a shared
+proxy or the back/forward cache. The entity list fragment
+(`GET /admin/e/<t>/_rows`) and the refreshed table a delete returns carry
+tenant/owner-scoped row data, and cookie-authenticated GETs are not covered
+by HTTP's Authorization-only storage rules, so nothing on an admin URL may
+be retained. The one exception is `<PathPrefix>/admin.css`: it is
+deliberately ungated and served `public, max-age=3600` (it carries no data
+and lets the 401 page degrade gracefully).
+
 ## CSRF
 
 The battery enforces its own cross-site refusal on **every state-changing
