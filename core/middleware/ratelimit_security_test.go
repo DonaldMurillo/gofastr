@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -220,5 +221,67 @@ func TestRateLimit_NoProxyXFFSpoofing(t *testing.T) {
 	// creates separate buckets, the rate limiter is defeated.
 	if got > 2 {
 		t.Errorf("SECURITY: [ratelimit] XFF spoofing bypassed rate limit: %d allowed (cap=2). Attack: direct requests spoof X-Forwarded-For for unlimited buckets.", got)
+	}
+}
+
+// TestRateLimit_RetryAfterCoversTick pins the 429 Retry-After
+// under-wait, found by the 2026-09-04 red-probe round; fixed in
+// bucketStore.take, which now prices the deny path at refill-tick
+// granularity (next token at lastSeen+rate, the model timeToFull uses)
+// and RateLimit, which ceils the header instead of truncating it.
+//
+// Property: the Retry-After a 429 advertises must never be SHORTER
+// than the time at which the bucket will actually grant the next
+// token — a backoff header that under-waits turns every well-behaved
+// client into a retry hammer against the exact endpoint being
+// protected.
+// Surfaces: core/middleware/ratelimit.go::bucketStore.take (deny path)
+// and ::RateLimit (writes Retry-After out).
+func TestRateLimit_RetryAfterCoversTick(t *testing.T) {
+	// Both configs deliver tokens in ticks larger than one token:
+	// 5-per-10s (perToken 2s vs tick 10s) and the package default
+	// shape 60-per-60s (perToken 1s vs tick 60s).
+	cases := []struct {
+		name        string
+		capacity    int
+		refillEvery time.Duration
+		refillBy    int
+		minHonest   int // a retry CANNOT succeed before this many seconds
+	}{
+		{"bulk tick 5/10s", 5, 10 * time.Second, 5, 8},
+		{"default shape 60/60s", 60, 60 * time.Second, 60, 55},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			h := RateLimit(RateLimitConfig{
+				Capacity:    tc.capacity,
+				RefillEvery: tc.refillEvery,
+				RefillBy:    tc.refillBy,
+			})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusOK)
+			}))
+
+			for range tc.capacity {
+				h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/", nil))
+			}
+
+			rr := httptest.NewRecorder()
+			h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/", nil))
+			if rr.Code != http.StatusTooManyRequests {
+				t.Fatalf("drained bucket answered %d, want 429 (setup)", rr.Code)
+			}
+			got, err := strconv.Atoi(rr.Header().Get("Retry-After"))
+			if err != nil {
+				t.Fatalf("Retry-After missing/unparsable: %q", rr.Header().Get("Retry-After"))
+			}
+			if got < tc.minHonest {
+				t.Errorf("SECURITY: [ratelimit-retryafter] Retry-After=%ds but the bucket's next "+
+					"token cannot arrive for at least %ds (tokens refill %d per %s tick, not 1 "+
+					"per %s): the header under-waits by nearly a whole refill window, so every "+
+					"client that honors it re-hammers the denied endpoint.",
+					got, tc.minHonest, tc.refillBy, tc.refillEvery, tc.refillEvery/time.Duration(tc.refillBy))
+			}
+		})
 	}
 }

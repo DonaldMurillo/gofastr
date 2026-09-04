@@ -393,7 +393,16 @@ type Storage interface {
 Built-in implementations:
 
 - `upload.NewLocalStorage(dir)` (`core/upload`): writes files under a
-  local directory. It only *stores*; it does not serve. Wire downloads
+  local directory. Saves are atomic — data lands in a temp file beside
+  the target and renames into place, so a reader never sees a torn
+  object — and containment is enforced on the symlink-resolved path at
+  every operation, with the syscalls performed through an `os.Root`
+  over the resolved root so a symlink planted *after* resolution is
+  refused by the kernel, not just one present when the key was checked:
+  a key that reaches through a symlinked directory or leaf to a file
+  outside the storage root is refused with a 400-class key error, not
+  followed. Errors never carry the absolute storage path.
+  It only *stores*; it does not serve. Wire downloads
   with `upload.ServeHandler`, which sniffs the content type, blocks
   traversal (delegated to the backend's key sanitization), and
   neutralizes HTML/SVG to a forced download so an uploaded document
@@ -454,7 +463,11 @@ handler serves whole bodies exactly as before; declining is legal.
 Implement it on your own backend only if seeking is genuinely cheap there,
 and route key validation through the same code path as `Get`; a capability
 that skipped the traversal check would be a path-traversal hole with a
-performance justification.
+performance justification. For filesystem-backed backends,
+`upload.ResolveUnderRoot`, `upload.ScrubPath`, and
+`upload.CreateTempInRoot` are the shared primitives both local backends
+use for symlink-resolved containment, path-scrubbed errors, and the
+`os.Root`-contained staging file for atomic writes.
 
 ## Content checksums
 

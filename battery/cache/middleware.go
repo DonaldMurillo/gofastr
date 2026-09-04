@@ -38,8 +38,12 @@ type cachedResponse struct {
 //   - Responses with Set-Cookie or with Cache-Control containing
 //     private, no-store, or no-cache are never stored.
 //   - Responses with non-2xx/3xx status (i.e. 4xx and 5xx) are never
-//     stored. Partial-content (206) responses, or any response carrying
-//     a Content-Range header, are likewise never stored.
+//     stored, and so are 304 responses: a 304 is a conditional-reply
+//     artifact, not a representation, and the key encodes no conditional
+//     headers — a stored 304 would be replayed to every unconditional
+//     GET as an empty-body HIT (RFC 9111 §4.3.1). Partial-content (206)
+//     responses, or any response carrying a Content-Range header, are
+//     likewise never stored.
 //   - Responses carrying a Vary header are stored under a key that
 //     includes the values of every listed request header so different
 //     variants do not collide. A Vary: * response is treated as
@@ -107,7 +111,11 @@ func CacheMiddlewareWithLimit(cache Cache, ttl time.Duration, maxBodyBytes int) 
 			if !hasCreds && !reqNoCache && !reqNoStore {
 				var cached cachedResponse
 				if err := cache.Get(r.Context(), baseKey, &cached); err == nil {
-					if variantMatches(r, cached.Vary) {
+					// The replay side of the 304 refusal: an entry primed by
+					// a pre-fix process on a shared backend (Redis) must
+					// not be served either — fall through to the origin
+					// and re-store a real representation.
+					if cached.StatusCode != http.StatusNotModified && variantMatches(r, cached.Vary) {
 						writeCached(w, &cached, "HIT")
 						return
 					}
@@ -178,8 +186,17 @@ func isStoreable(rec *responseRecorder, hasCreds, reqNoStore bool) bool {
 	if reqNoStore || hasCreds {
 		return false
 	}
-	// Only 2xx and 3xx responses are stored; never 4xx/5xx.
-	if rec.statusCode < 200 || rec.statusCode >= 400 {
+	// Only 2xx and 3xx responses are stored; never 4xx/5xx. A 304 is
+	// refused even though it sits inside that range: it is a
+	// conditional-reply artifact, not a representation (RFC 9111
+	// §4.3.1 — a cache MUST NOT generate a 304 unless the request is
+	// conditional and its validators match), and the key encodes no
+	// conditional headers. Storing one let a single conditional GET
+	// prime the shared variant with {304, ""} and serve the empty
+	// non-representation to every subsequent unconditional GET as a
+	// HIT.
+	if rec.statusCode == http.StatusNotModified ||
+		rec.statusCode < 200 || rec.statusCode >= 400 {
 		return false
 	}
 	// Partial-content responses are not full representations and would

@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"maps"
@@ -127,8 +128,16 @@ var headersStrippedFromReplay = map[string]struct{}{
 // On a replay the middleware writes the cached status, headers, and
 // body verbatim and adds Idempotent-Replay: true so the client can
 // distinguish a replay from a fresh result.
+//
+// A negative TTL panics at construction (this constructor returns no
+// error): a negative lifetime can only be a sign or unit error, and
+// substituting the default would turn the caller's most restrictive
+// input into the longest retention the middleware offers.
 func Idempotency(cfg IdempotencyConfig) Middleware {
-	if cfg.TTL <= 0 {
+	if cfg.TTL < 0 {
+		panic(fmt.Sprintf("idempotency: Idempotency: TTL must be >= 0 (got %v)", cfg.TTL))
+	}
+	if cfg.TTL == 0 {
 		cfg.TTL = 24 * time.Hour
 	}
 	if cfg.MaxBodyBytes <= 0 {
@@ -455,8 +464,16 @@ func WithMemoryStoreMaxEntries(n int) MemoryIdempotencyOption {
 // NewMemoryIdempotencyStore returns an in-process IdempotencyStore.
 // Suitable for single-instance deployments and tests. Use a Redis- or
 // DB-backed implementation behind the same interface for clusters.
+//
+// ttl 0 keeps the 24h default. A negative ttl panics: it can only be a
+// sign or unit error, and substituting the default would turn the
+// caller's most restrictive input into the longest retention the store
+// offers (mirroring MemorySessionStore.Create's fail-closed posture).
 func NewMemoryIdempotencyStore(ttl time.Duration, opts ...MemoryIdempotencyOption) IdempotencyStore {
-	if ttl <= 0 {
+	if ttl < 0 {
+		panic(fmt.Sprintf("idempotency: NewMemoryIdempotencyStore: ttl must be >= 0 (got %v)", ttl))
+	}
+	if ttl == 0 {
 		ttl = 24 * time.Hour
 	}
 	s := &memoryIdempotencyStore{
