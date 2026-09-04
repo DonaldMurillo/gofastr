@@ -211,7 +211,9 @@ The exchange is POST-only and idempotent within the grant's lifetime: a repeat
 returns the same grant. A browser has several ways to fire it twice: the
 customer's page prefetches the iframe, a dev double-mounts the loader, a user
 refreshes, and without idempotency the feature surfaces as "the embed randomly
-doesn't load".
+doesn't load". The POST body is decoded under strict top-level key rules: a
+body with duplicate or case-folded keys is refused with the same
+indistinguishable 400 as any other malformed body.
 
 | Window | Default | Config |
 |---|---|---|

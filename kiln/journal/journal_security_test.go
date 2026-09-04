@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/kiln/world"
 )
 
 // Property: the journal write side must refuse any entry its own readers
@@ -272,5 +274,58 @@ func TestTruncatePreservesPrefix(t *testing.T) {
 	}
 	if off != 3 {
 		t.Errorf("Append after truncate returned offset %d, want 3 (count carried across compaction + reopen)", off)
+	}
+}
+
+// Property: the journal file is owner-only (0600 in a 0700 dir). Its
+// lines embed app-config verbatim — Auth.JWTSecret and
+// Admin.SeedPassword, the same data freeze writes owner-only — so the
+// file must not be group/world-readable wherever it lands.
+func TestJournalRestrictsSecretFile(t *testing.T) {
+	const jwtSecret = "pin-jwt-secret-0123456789abcdef"
+	const seedPassword = "pin-seed-password-ghijkl" // not-a-secret: test fixture value asserted to land in the journal
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "session.jsonl")
+	j, err := OpenJSONL(path)
+	if err != nil {
+		t.Fatalf("OpenJSONL: %v", err)
+	}
+	e, err := NewEntry("cfg-pin", time.Now().UTC(), KindWorldEdit, OpSetAppConfig, SetAppConfigPayload{
+		Config: world.AppConfig{
+			Name:  "pinapp",
+			Auth:  world.AuthConfig{Enabled: true, JWTSecret: jwtSecret},
+			Admin: world.AdminConfig{Enabled: true, SeedEmail: "ops@pin.test", SeedPassword: seedPassword},
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewEntry: %v", err)
+	}
+	if _, err := j.Append(e); err != nil {
+		t.Fatalf("Append: %v", err)
+	}
+	if err := j.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	// Ground the severity: the credential values land in the file
+	// verbatim. If this ever fails because the journal substitutes env
+	// refs (as freeze does), this pin must be revisited, not kept.
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read journal: %v", err)
+	}
+	if !strings.Contains(string(data), jwtSecret) || !strings.Contains(string(data), seedPassword) {
+		t.Fatalf("journal no longer stores app-config secrets verbatim; revisit this pin (payload=%s)", data)
+	}
+
+	fi, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat journal: %v", err)
+	}
+	if fi.Mode().Perm()&0o077 != 0 {
+		t.Errorf("journal holding Auth.JWTSecret / Admin.SeedPassword is mode %o — group/world readable; "+
+			"the journal is the replay source for the exact data freeze writes owner-only, so it must be 0600",
+			fi.Mode().Perm())
 	}
 }

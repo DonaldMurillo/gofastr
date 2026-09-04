@@ -6,8 +6,10 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"regexp"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -104,6 +106,59 @@ func TestBadParamsShapesRefused(t *testing.T) {
 	if e.Error != nil {
 		t.Errorf("valid statusTimestampAfter refused: %+v", e.Error)
 	}
+}
+
+// echoSendParams is valid SendMessage params routed to the echo skill —
+// what a smuggled last-wins method needs to actually dispatch.
+const echoSendParams = `{"message":{"role":"ROLE_USER","parts":[{"text":"hi"}],"metadata":{"skill":"echo"}}}`
+
+// envelopeRejected drives one raw JSON-RPC envelope body and fails
+// unless the server refuses it before dispatch: ServeHTTP decodes the
+// envelope through handler.UnmarshalStrict, which refuses duplicate
+// and case-folded top-level keys (stdlib json keeps the LAST duplicate
+// and matches struct tags case-insensitively, so an intermediary
+// validating the first occurrence sees a benign read while the
+// executor dispatches the smuggled method).
+func envelopeRejected(t *testing.T, name, body string) {
+	t.Helper()
+	h := newHarness(t, nil)
+	var ran atomic.Bool
+	h.setHandler(func(_ context.Context, task TaskContext) error {
+		ran.Store(true)
+		return task.Complete(TextPart("smuggled"))
+	})
+
+	req := httptest.NewRequest(http.MethodPost, h.ts.URL, strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Owner", "alice")
+	rec := httptest.NewRecorder()
+	h.srv.ServeHTTP(rec, req)
+
+	var e env
+	_ = json.Unmarshal(rec.Body.Bytes(), &e)
+	rejected := rec.Code == http.StatusBadRequest || e.Error != nil
+	if !rejected {
+		t.Fatalf("SECURITY: [strict-json] %s: duplicated top-level key body was accepted and dispatched (status=%d body=%s) — stdlib json's silent last-key-wins lets the second method run while a first-occurrence validator saw %q; want the parse rejected like every Bind consumer", name, rec.Code, rec.Body.String(), MethodGetTask)
+	}
+	if ran.Load() {
+		t.Fatalf("SECURITY: [strict-json] %s: the skill handler ran behind a duplicated/case-folded method key — the smuggled method was dispatched", name)
+	}
+}
+
+// Property: the JSON-RPC envelope refuses exact-duplicate top-level
+// keys, so no first-occurrence parser (proxy, WAF, audit logger) can
+// disagree with the executor's last-key-wins decode.
+func TestRejectsDuplicateEnvelopeKeys(t *testing.T) {
+	envelopeRejected(t, "duplicate method key",
+		`{"jsonrpc":"2.0","id":"dup-1","method":"`+MethodGetTask+`","method":"`+MethodSendMessage+`","params":`+echoSendParams+`}`)
+}
+
+// "Method"/"method" case-fold onto the same struct field via stdlib
+// json's tag-insensitive match — a duplicate modulo folding. Survives a
+// dedup-only fix.
+func TestRejectsCaseFoldedEnvelopeKeys(t *testing.T) {
+	envelopeRejected(t, "case-folded method key",
+		`{"jsonrpc":"2.0","id":"fold-1","Method":"`+MethodGetTask+`","method":"`+MethodSendMessage+`","params":`+echoSendParams+`}`)
 }
 
 // TestPageTokenTamperRefused pins that a pageToken is refused unless it

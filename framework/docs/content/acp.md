@@ -17,7 +17,7 @@ Methods the server accepts from the client:
 | Method | Behavior |
 |---|---|
 | `initialize` | Version + capability negotiation. Responds with the agent's info, `loadSession` (true only if the agent implements `SessionLoader`), explicit `promptCapabilities` and `mcpCapabilities` (all false), and the configured `authMethods`. |
-| `authenticate` | Runs the configured `Options.Authenticate` hook for an advertised method ID. With no methods advertised (the default), every `methodId` is rejected with `-32602`. |
+| `authenticate` | Runs the configured `Options.Authenticate` hook for an advertised method ID. Requires `initialize` first, exactly like the session methods. With no methods advertised (the default), every `methodId` is rejected with `-32602`. |
 | `session/new` | Creates a session via `Agent.NewSession(cwd)`. Returns `{sessionId}`. |
 | `session/load` | Only when `loadSession` was advertised. Replays the conversation as `user_message_chunk` / `agent_message_chunk` updates, then returns. Unknown IDs answer `-32002`. |
 | `session/prompt` | Runs one turn via `Session.Prompt`. The response carries the stop reason (`end_turn`, `refusal`, `cancelled`, …). |
@@ -32,7 +32,7 @@ What the server sends to the client during a turn:
 | `session/update` (`plan`) | notify | Replaces the session's execution plan (complete entry list every time). |
 | `session/update` (`tool_call`) | notify | Reports a tool invocation starting (`pending`). |
 | `session/update` (`tool_call_update`) | notify | Patches a tool call: `in_progress`, then `completed`/`failed` with content. |
-| `session/request_permission` | request | Asks the user to approve an operation (allow once / reject once …). |
+| `session/request_permission` | request | Asks the user to approve an operation (allow once / reject once …). An answer that carries neither a valid selection nor a cancellation is treated as cancelled — a malformed approval never reads as approval. |
 
 ## What is deliberately not implemented
 
@@ -98,13 +98,19 @@ func main() {
   produce the spec-shaped frames.
 - Gate an operation on the human with `out.RequestPermission(ctx, toolCall,
   options)`; it blocks until the client answers and returns the selected
-  option.
+  option. A client answer that is neither a valid selection nor a
+  cancellation comes back as `OutcomeCancelled`, so a malformed or
+  hostile answer never reads as approval.
 - Honor `ctx`: it is cancelled when the client sends `session/cancel`, and
   the server can only answer the client once `Prompt` returns.
 
 `Options` has two fields: `AuthMethods` (advertised in `initialize`) and
-`Authenticate` (the hook run for `authenticate`). The zero value advertises
-no auth, which is right for local, unauthenticated agents like Kiln.
+`Authenticate` (the hook run for `authenticate`; the connection must have
+sent `initialize` first). The zero value advertises no auth, which is right
+for local, unauthenticated agents like Kiln. A panic in any embedder hook —
+`Authenticate`, `NewSession`, `LoadSession`, `Prompt` — is recovered into
+an internal-error response for that one request; it never kills the
+process.
 
 ## Kiln's adapter (`kiln/acp`)
 

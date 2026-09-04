@@ -49,8 +49,13 @@
   function resolveTarget(el) {
     const sel = el.getAttribute('data-fui-shortcut-target');
     if (sel) {
-      const t = el.querySelector(sel) || document.querySelector(sel);
-      if (t) return t;
+      // data-fui-shortcut-target is a selector by design: a malformed
+      // value degrades to the wrapper instead of throwing out of the
+      // document keydown listener.
+      try {
+        const t = el.querySelector(sel) || document.querySelector(sel);
+        if (t) return t;
+      } catch (_) {}
     }
     return el;
   }

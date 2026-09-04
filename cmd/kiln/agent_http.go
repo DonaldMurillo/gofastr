@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"sort"
 
+	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/router"
 )
 
@@ -35,7 +36,7 @@ func mountAgentRoutes(r *router.Router, store *AdapterStore, notify func(kind, s
 			Custom string `json:"custom,omitempty"` // freeform command if name == "custom"
 		}
 		req.Body = http.MaxBytesReader(w, req.Body, maxAgentBody)
-		if err := json.NewDecoder(req.Body).Decode(&args); err != nil { //gofastr:allow(GOFASTR1407) kiln build-mode agent transport: JSON tool-call envelope, localhost build tool, no credential resolution
+		if err := handler.DecodeStrict(req.Body, &args); err != nil {
 			http.Error(w, "invalid JSON", http.StatusBadRequest)
 			return
 		}

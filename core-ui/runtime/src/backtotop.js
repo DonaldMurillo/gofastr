@@ -84,7 +84,10 @@
       const onDone = () => { _scrolling = false; };
 
       if (scrollTarget) {
-        const el = document.querySelector(scrollTarget);
+        // data-fui-btt-target is a selector by design; a malformed value
+        // degrades to a no-op instead of throwing out of the click.
+        let el = null;
+        try { el = document.querySelector(scrollTarget); } catch (_) { el = null; }
         if (el) {
           el.scrollIntoView({ behavior: scrollBehavior, block: 'start' });
         }

@@ -58,6 +58,14 @@ $(DIST_DIR):
 test:
 	go test -count=1 -short ./...
 
+# Adversarial red-test suite: open security findings expressed as tests
+# that assert the SECURE behaviour and fail until the finding is fixed.
+# Files are tagged //go:build red, so `test` above never runs them.
+# The script lists every failing test (one open finding each) and exits
+# non-zero only on compile errors or unexpectedly-green red tests.
+red-tests:
+	@./scripts/red-tests.sh
+
 # Repo-local go/analysis analyzers (internal/analyzers): CLAUDE.md hard
 # rules as vet checks. Runs in CI's vet step and the pre-commit hook.
 analyze: $(DIST_DIR)

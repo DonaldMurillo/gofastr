@@ -545,11 +545,14 @@ func (b *SSEBroker) SubscriberCount() int {
 
 // generateSubscriberID returns 16 random bytes hex-encoded (32 chars).
 // Unguessable, collision-resistant, no global counter contention.
+// crypto/rand.Read cannot fail on a supported platform, and there is no
+// safe fallback: a time-derived id is enumerable, which is exactly what
+// the id exists to prevent — so a failure is fatal rather than
+// downgraded into the worst moment to mint an enumerable id.
 func generateSubscriberID() string {
 	var buf [16]byte
 	if _, err := rand.Read(buf[:]); err != nil {
-		// Extremely unlikely; fall back to time-based id rather than panic.
-		return strconv.FormatInt(time.Now().UnixNano(), 16)
+		panic("stream: crypto/rand failed: " + err.Error())
 	}
 	return hex.EncodeToString(buf[:])
 }

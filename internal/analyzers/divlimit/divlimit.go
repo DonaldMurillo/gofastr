@@ -54,7 +54,7 @@ import (
 )
 
 var Analyzer = &analysis.Analyzer{
-	Name: "gofastrdivlimit",
+	Name: "divlimit",
 	Doc:  "forbids integer division by a caller-supplied limit/pageSize without a zero-or-one guard; it panics on 0",
 	Run:  run,
 }

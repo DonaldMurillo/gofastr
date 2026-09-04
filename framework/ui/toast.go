@@ -68,7 +68,12 @@ func AddToast(w http.ResponseWriter, t ToastTrigger) {
 		// Tolerate either an array (the canonical form we emit) or a
 		// single object (a previous caller may have set it manually).
 		if existing[0] == '[' {
-			_ = json.Unmarshal([]byte(existing), &list)
+			// Malformed manual values are dropped, not preserved (and a
+			// half-decoded slice never marches on): the canonical array
+			// form is what this function emits.
+			if err := json.Unmarshal([]byte(existing), &list); err != nil {
+				list = nil
+			}
 		} else {
 			var single ToastTrigger
 			if json.Unmarshal([]byte(existing), &single) == nil {

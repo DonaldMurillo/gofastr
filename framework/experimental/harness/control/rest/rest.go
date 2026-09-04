@@ -29,11 +29,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/core/handler"
 
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/control"
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/control/auth"
@@ -265,14 +268,21 @@ func (s *Server) handlePOST(w http.ResponseWriter, r *http.Request, sessID ids.S
 		return
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, maxRESTBody)
-	dec := json.NewDecoder(r.Body) //gofastr:allow(GOFASTR1407) harness control-protocol envelope on a dev tool, not an app surface
-	dec.DisallowUnknownFields()
+	// Buffered strict decode (handler.UnmarshalStrict): DisallowUnknownFields
+	// alone rejects only keys matching NO field; duplicates resolve
+	// last-wins and case-folded keys still match their tags, so both
+	// smuggle shapes dispatched. Reject the ambiguity before decode.
+	raw, err := io.ReadAll(r.Body)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "InvalidBody", err.Error())
+		return
+	}
 
 	var cmd control.Command
 	switch cmdSeed.(type) {
 	case control.SendInput:
 		var c control.SendInput
-		if err := dec.Decode(&c); err != nil {
+		if err := handler.UnmarshalStrict(raw, &c); err != nil {
 			writeError(w, http.StatusBadRequest, "InvalidBody", err.Error())
 			return
 		}
@@ -282,7 +292,7 @@ func (s *Server) handlePOST(w http.ResponseWriter, r *http.Request, sessID ids.S
 		cmd = control.CancelTurn{SessionID: sessID}
 	case control.AnswerPermission:
 		var c control.AnswerPermission
-		if err := dec.Decode(&c); err != nil {
+		if err := handler.UnmarshalStrict(raw, &c); err != nil {
 			writeError(w, http.StatusBadRequest, "InvalidBody", err.Error())
 			return
 		}
@@ -290,7 +300,7 @@ func (s *Server) handlePOST(w http.ResponseWriter, r *http.Request, sessID ids.S
 		cmd = c
 	case control.SetModel:
 		var c control.SetModel
-		if err := dec.Decode(&c); err != nil {
+		if err := handler.UnmarshalStrict(raw, &c); err != nil {
 			writeError(w, http.StatusBadRequest, "InvalidBody", err.Error())
 			return
 		}
@@ -345,16 +355,31 @@ func (s *Server) handleSSE(w http.ResponseWriter, r *http.Request, sessID ids.Se
 	w.Header().Set("Connection", "keep-alive")
 	w.WriteHeader(http.StatusOK)
 	flusher.Flush()
-
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
 	ch := eng.Bus.Subscribe(ctx)
+	// Re-verify the token for the life of the stream. handle() verified
+	// it once at request time, but the loop below holds the stream open
+	// long after; Revoke(jti) must reach an open stream, not just fresh
+	// requests. Checked before every event write and on a ticker so an
+	// idle stream also cycles back through the gate.
+	recheck := time.NewTicker(10 * time.Second)
+	defer recheck.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return
+		case <-recheck.C:
+			if _, err := s.verifyToken(r); err != nil {
+				return
+			}
 		case env, ok := <-ch:
 			if !ok {
+				return
+			}
+			if _, err := s.verifyToken(r); err != nil {
+				// Credential refused mid-stream (revoked/expired):
+				// stop delivering and drop the stream.
 				return
 			}
 			body, err := json.Marshal(env)
@@ -389,8 +414,6 @@ func (s *Server) handleSkills(w http.ResponseWriter, _ *http.Request) {
 func (s *Server) handleSlashCommands(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, s.Catalog.ListSlashCommands())
 }
-
-// ---------- helpers ----------
 
 func writeJSON(w http.ResponseWriter, code int, body any) {
 	w.Header().Set("Content-Type", "application/json")

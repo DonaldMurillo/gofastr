@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/mcp"
 )
 
@@ -269,7 +270,11 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req rpcRequest
-	if err := json.Unmarshal(raw, &req); err != nil { //gofastr:allow(GOFASTR1407) A2A JSON-RPC envelope (jsonrpc/method/params/id): the whole object is the protocol unit, no field is an identity
+	// handler.UnmarshalStrict refuses duplicate and case-folded
+	// top-level keys (stdlib json keeps the last duplicate and folds
+	// key case), so no first-occurrence parser — proxy, WAF, audit
+	// logger — can disagree with the executor's decode.
+	if err := handler.UnmarshalStrict(raw, &req); err != nil {
 		s.writeTransport(w, http.StatusBadRequest, Errorf(CodeParseError, "parse request: %v", err))
 		return
 	}
@@ -370,6 +375,14 @@ func (s *Server) internalErr(w http.ResponseWriter, id json.RawMessage, what str
 func decodeParams(raw json.RawMessage, v any) *Error {
 	if len(raw) == 0 || string(raw) == "null" {
 		raw = []byte("{}")
+	}
+	// The envelope was decoded strictly; params are the second level
+	// of the same body and get the same no-ambiguity rule (a nested
+	// duplicate or case-folded key pair resolves by parser accident).
+	// Unknown fields stay tolerated: the protocol reserves the right to
+	// add them.
+	if err := handler.CheckObjectKeys(raw, strings.ToLower); err != nil {
+		return Errorf(CodeInvalidParams, "invalid params: %v", err)
 	}
 	if err := json.Unmarshal(raw, v); err != nil {
 		return Errorf(CodeInvalidParams, "invalid params: %v", err)
@@ -900,15 +913,17 @@ func (s *Server) streamSend(w http.ResponseWriter, r *http.Request, id json.RawM
 	if h == nil {
 		return // routing reject: the snapshot is already terminal
 	}
+	// Subscribe before the run starts so its first events cannot slip
+	// past an attach that happens after the goroutine is already running.
+	ch := rn.bus.subscribe()
+	defer rn.bus.unsubscribe(ch)
 	s.startRun(r, t, rn, h)
-	s.forwardEvents(st, rn, r.Context())
+	s.forwardEvents(st, rn, ch, r.Context())
 }
 
 // forwardEvents relays bus events to the stream until the task settles,
 // the client goes away, or the run ends.
-func (s *Server) forwardEvents(st *sseStream, rn *run, ctx context.Context) {
-	ch := rn.bus.subscribe()
-	defer rn.bus.unsubscribe(ch)
+func (s *Server) forwardEvents(st *sseStream, rn *run, ch chan StreamResponse, ctx context.Context) {
 	keepAlive := time.NewTicker(s.keepAlive)
 	defer keepAlive.Stop()
 	for {
@@ -1103,6 +1118,22 @@ func (s *Server) handleSubscribe(w http.ResponseWriter, r *http.Request, req *rp
 		s.writeResult(w, req.ID, nil, Errorf(CodeInvalidParams, "id is required"))
 		return
 	}
+	// Attach to the in-process run BEFORE reading the snapshot. The bus
+	// channel is buffered, so an event the handler publishes between this
+	// subscribe and the snapshot send is queued and forwarded after the
+	// snapshot. Subscribing after the snapshot (the previous order) lost
+	// every event published in that gap: a client that released the
+	// handler on seeing the snapshot saw the stream end with no artifact
+	// or completion at all on a slow runner. An event the snapshot already
+	// reflects may be forwarded once more; updates are idempotent.
+	var (
+		rn *run
+		ch chan StreamResponse
+	)
+	if rn = s.runFor(p.ID); rn != nil {
+		ch = rn.bus.subscribe()
+		defer rn.bus.unsubscribe(ch)
+	}
 	rec, err := s.store.GetTask(context.Background(), owner, p.ID)
 	if errors.Is(err, ErrNotFound) {
 		s.writeResult(w, req.ID, nil, ErrTaskNotFound(p.ID))
@@ -1127,8 +1158,8 @@ func (s *Server) handleSubscribe(w http.ResponseWriter, r *http.Request, req *rp
 	if state.Terminal() || state.Interrupted() {
 		return
 	}
-	if rn := s.runFor(p.ID); rn != nil {
-		s.forwardEvents(st, rn, r.Context())
+	if rn != nil {
+		s.forwardEvents(st, rn, ch, r.Context())
 		return
 	}
 	// Multi-replica fallback: the task is non-terminal and has no run
@@ -1156,8 +1187,16 @@ func (s *Server) pollEvents(st *sseStream, owner string, rec *TaskRecord, ctx co
 				return
 			}
 		case <-poll.C:
-			cur, err := s.store.GetTask(context.Background(), owner, rec.Task.ID)
+			cur, err := s.pollGetTask(context.Background(), owner, rec.Task.ID)
 			if errors.Is(err, ErrNotFound) {
+				return
+			}
+			if errors.Is(err, errStorePanicked) {
+				// A panicking store cannot serve this stream again;
+				// end it here rather than re-panicking once per poll
+				// interval. The response is already streaming, so the
+				// attributed log is the refusal.
+				s.log.Error("a2a: poll read panicked", "taskId", rec.Task.ID, "err", err)
 				return
 			}
 			if err != nil {
@@ -1177,6 +1216,26 @@ func (s *Server) pollEvents(st *sseStream, owner string, rec *TaskRecord, ctx co
 			}
 		}
 	}
+}
+
+// errStorePanicked is what pollGetTask returns in place of a panic.
+// The recovered value is not surfaced: it can be anything, including
+// driver detail the counterparty must not see.
+var errStorePanicked = errors.New("a2a: store GetTask panicked")
+
+// pollGetTask reads one task snapshot for the polling fallback stream
+// under a recover guard. The Store is host-supplied code running on a
+// long-lived goroutine with no per-request net, so a panicking
+// implementation must become an error this stream ends on — never an
+// unrecovered panic that takes down the process.
+func (s *Server) pollGetTask(ctx context.Context, owner, taskID string) (rec *TaskRecord, err error) {
+	defer func() {
+		if recover() != nil {
+			rec = nil
+			err = errStorePanicked
+		}
+	}()
+	return s.store.GetTask(ctx, owner, taskID)
 }
 
 // ---- push config methods ----------------------------------------------

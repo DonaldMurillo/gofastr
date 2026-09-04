@@ -182,3 +182,90 @@ func TestMCPCommandScopeEnforced(t *testing.T) {
 			"POST /mcp harness.set_model (status=%d body=%s).", code, raw)
 	}
 }
+
+// POST /mcp decodes each JSON-RPC line under strict top-level key
+// rules: duplicate and case-folded keys resolve last-wins under stdlib
+// json, so the request would execute under a body any first-read
+// intermediary (first-wins proxy, audit logger) parsed differently.
+// The envelope and every params/args decode go through
+// handler.UnmarshalStrict and answer -32700/-32602 instead of executing.
+
+// postRawMCP POSTs a raw JSON-RPC body (attacker-controlled byte
+// order) and returns status + body.
+func postRawMCP(t *testing.T, srv *httptest.Server, body string) (int, string) {
+	t.Helper()
+	req, err := http.NewRequest(http.MethodPost, srv.URL+"/mcp", strings.NewReader(body))
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := srv.Client().Do(req)
+	if err != nil {
+		t.Fatalf("POST /mcp: %v", err)
+	}
+	defer resp.Body.Close()
+	raw, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("read response: %v", err)
+	}
+	return resp.StatusCode, string(raw)
+}
+
+// mcpRawRefused: HTTP-level refusal or a JSON-RPC error object.
+func mcpRawRefused(code int, body string) bool {
+	if code == http.StatusBadRequest || code == http.StatusUnauthorized || code == http.StatusForbidden {
+		return true
+	}
+	return strings.Contains(body, `"error"`)
+}
+
+// TestMcpPostRejectsDuplicateKeys: exact duplicate "jsonrpc" keys —
+// wire-level last-wins on the JSON-RPC envelope.
+func TestMcpPostRejectsDuplicateKeys(t *testing.T) {
+	s, _, _ := newTestServer(t)
+	// No encoder: bearer is orthogonal to the decode gap and
+	// an unauthenticated 200 result is the cleanest proof the
+	// smuggled body reached the JSON-RPC dispatcher.
+	h := NewHTTPHandler(s, nil, nil)
+	srv := httptest.NewServer(h)
+	defer srv.Close()
+
+	// Happy guard: the well-formed shape of the same request succeeds,
+	// so the refusal demanded below can only come from key strictness,
+	// not plumbing.
+	code, raw := postRawMCP(t, srv, `{"jsonrpc":"2.0","id":1,"method":"tools/list"}`)
+	if code != http.StatusOK || strings.Contains(raw, `"error"`) {
+		t.Fatalf("happy path: well-formed request must return a result (status=%d body=%s)", code, raw)
+	}
+
+	code, raw = postRawMCP(t, srv, `{"jsonrpc":"1.0","jsonrpc":"2.0","id":1,"method":"tools/list"}`)
+	if !mcpRawRefused(code, raw) {
+		t.Errorf("SECURITY: [mcp-strict-keys] POST /mcp executed a JSON-RPC request with a "+
+			"duplicate jsonrpc key: status=%d body=%.200s — duplicate top-level keys resolve "+
+			"last-wins, so the method runs under a request any first-read intermediary parsed "+
+			"differently; decode each line via handler.UnmarshalStrict and answer -32700", code, raw)
+	}
+}
+
+// TestMcpPostRejectsCaseFoldedKeys: "JSONRPC"/"ID"/"METHOD" case-fold
+// onto the tagged fields via stdlib json's tag-insensitive match — the
+// request still executes; survives a dedup-only fix.
+func TestMcpPostRejectsCaseFoldedKeys(t *testing.T) {
+	s, _, _ := newTestServer(t)
+	h := NewHTTPHandler(s, nil, nil)
+	srv := httptest.NewServer(h)
+	defer srv.Close()
+
+	code, raw := postRawMCP(t, srv, `{"jsonrpc":"2.0","id":1,"method":"tools/list"}`)
+	if code != http.StatusOK || strings.Contains(raw, `"error"`) {
+		t.Fatalf("happy path: well-formed request must return a result (status=%d body=%s)", code, raw)
+	}
+
+	code, raw = postRawMCP(t, srv, `{"JSONRPC":"2.0","ID":1,"METHOD":"tools/list"}`)
+	if !mcpRawRefused(code, raw) {
+		t.Errorf("SECURITY: [mcp-strict-keys] POST /mcp executed a JSON-RPC request with "+
+			"case-folded top-level keys: status=%d body=%.200s — case-folded keys still match their "+
+			"tags, so the method runs under a request any first-read intermediary parsed differently; "+
+			"decode each line via handler.UnmarshalStrict and answer -32700", code, raw)
+	}
+}

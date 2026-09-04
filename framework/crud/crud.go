@@ -87,6 +87,18 @@ type CrudHandler struct {
 	ChildHooks   func(entityName string) *hook.HookRegistry
 	BasePath     string // optional; URL prefix where this entity's routes are mounted (e.g. "/api/v1"). Used by MCP tools to dispatch against the same path the HTTP routes live at; empty = bare "/table".
 	MCPNamespace string // optional; when set (e.g. "admin"), MCP tools are named "<ns>.<entity>.<action>" instead of the flat "<entity>_<action>". Empty preserves the historical flat tool names.
+	// MaxOffset caps the row skip a list request may ask for, via ?offset=
+	// or a deep ?page=. Zero (the default) resolves to the page cap × 1000
+	// — 100,000 at the default Pagination.MaxListLimit, scaling with the
+	// entity's page cap — so a client cannot force a per-request
+	// full-table skip scan. See requireBoundedOffset.
+	MaxOffset int
+	// EventStreamReauth is how often an established SSE feed re-runs its
+	// read-permission gate when idle (the gate also runs on every
+	// delivery). Zero resolves to the default, 30s. The re-check cannot
+	// be switched off: a stream must not outlive the authority that
+	// opened it. See EventStream / WithEventStreamReauth.
+	EventStreamReauth time.Duration
 
 	visibleFieldsCache []string
 	visibleJSONKeys    []string
@@ -116,7 +128,26 @@ func NewCrudHandler(ent *entity.Entity, db DBExecutor) *CrudHandler {
 	return ch
 }
 
-// WithJSONCase sets the JSON casing strategy for the handler.
+// WithMaxOffset raises or lowers the list-offset ceiling. Zero keeps the
+// default: the page cap × 1000 (100,000 at the default page cap). Values
+// below 1 are ignored, the ceiling cannot be removed, only moved.
+func (ch *CrudHandler) WithMaxOffset(n int) *CrudHandler {
+	if n > 0 {
+		ch.MaxOffset = n
+	}
+	return ch
+}
+
+// WithEventStreamReauth sets how often an established SSE feed re-runs its
+// read-permission gate when idle. Values below one second are ignored (the
+// default is 30s); the re-check itself cannot be disabled, only rescheduled.
+func (ch *CrudHandler) WithEventStreamReauth(d time.Duration) *CrudHandler {
+	if d >= time.Second {
+		ch.EventStreamReauth = d
+	}
+	return ch
+}
+
 func (ch *CrudHandler) WithJSONCase(c JSONCase) *CrudHandler {
 	ch.JSONCase = c
 	ch.refreshFieldCache()
@@ -428,6 +459,43 @@ func (ch *CrudHandler) convertMapKeys(m map[string]any) map[string]any {
 	return out
 }
 
+// itemKeyFoldsUnambiguous reports whether every distinct wire key in a
+// batch item resolves to a distinct column under the handler's fold.
+// The envelope decode refuses duplicate top-level keys, but items are
+// free-form maps: two DISTINCT keys ("bodyText" and "body_text") can
+// still fold onto one column, and unconvertMapKeys would then resolve
+// the collision by map iteration order. Batch items never pass through
+// CheckTopLevelKeys (it walks raw bytes), so the fold check runs on the
+// decoded map instead — exact duplicates cannot survive a decode, the
+// fold collision is the detectable shape.
+func (ch *CrudHandler) itemKeyFoldsUnambiguous(item map[string]any) error {
+	seen := make(map[string]struct{}, len(item))
+	for k := range item {
+		col := ch.wireKeyColumn(k)
+		if _, dup := seen[col]; dup {
+			return fmt.Errorf("keys folding onto the same field %q (sent %q and another spelling)", col, k)
+		}
+		seen[col] = struct{}{}
+	}
+	return nil
+}
+
+// wireKeyColumn folds one JSON wire key onto the DB column the request
+// decode will land it on: the wire-key map first (WireName overrides and
+// standard case-derived keys), then the raw case conversion fallback. It
+// is the per-key form of unconvertMapKeys, and the fold handed to
+// handler.CheckTopLevelKeys so two distinct wire keys that resolve to one
+// column are refused before the decode instead of racing in map order.
+func (ch *CrudHandler) wireKeyColumn(key string) string {
+	if ch.columnOfWire == nil {
+		ch.refreshFieldCache()
+	}
+	if col, ok := ch.columnOfWire[key]; ok {
+		return col
+	}
+	return ch.unconvertKeyRaw(key)
+}
+
 // unconvertMapKeys reverses JSON wire keys back to DB column names. Each
 // input key is matched against the wire-key map first (so WireName overrides
 // and the standard case-derived keys both resolve); keys that don't match
@@ -439,13 +507,7 @@ func (ch *CrudHandler) unconvertMapKeys(m map[string]any) map[string]any {
 	}
 	out := make(map[string]any, len(m))
 	for k, v := range m {
-		if col, ok := ch.columnOfWire[k]; ok {
-			out[col] = v
-		} else {
-			// Fall back to raw case conversion for keys not in the wire map
-			// (e.g. relation params, future fields).
-			out[ch.unconvertKeyRaw(k)] = v
-		}
+		out[ch.wireKeyColumn(k)] = v
 	}
 	return out
 }
@@ -489,6 +551,14 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 		// helper eliminates the re-parse without changing any semantics.
 		q := r.URL.Query()
 		page, perPage := parsePaginationValues(q, ch.Entity.Config.Pagination.MaxListLimit)
+
+		// The skip side of pagination is bounded like the limit side: an
+		// explicit ?offset= beyond maxListOffset is a per-request
+		// deep-skip scan, refused here before any filter or count work
+		// runs.
+		if !ch.requireBoundedOffset(w, q, page, perPage) {
+			return
+		}
 
 		includes, err := parseIncludeTreeQ(q, ch.Entity, ch.Registry)
 		if err != nil {
@@ -1226,8 +1296,8 @@ func parsePaginationValues(q url.Values, entityMax int) (page, perPage int) {
 // explicitOffset reads a raw ?offset= row skip. Returns (n, true) only for a
 // well-formed non-negative integer; a missing, malformed, or negative value
 // yields (0, false) so the caller keeps the page-derived offset. LIMIT still
-// caps the row count, so an oversized offset just returns an empty window,
-// no need to clamp it here.
+// caps the row count, and requireBoundedOffset refuses the skip side beyond
+// maxListOffset, so an oversized offset never reaches the query.
 func explicitOffset(r *http.Request) (int, bool) {
 	return explicitOffsetValues(r.URL.Query())
 }
@@ -1242,6 +1312,37 @@ func explicitOffsetValues(q url.Values) (int, bool) {
 		return 0, false
 	}
 	return n, true
+}
+
+// maxListOffset is the effective offset ceiling for this handler:
+// MaxOffset when set, otherwise the page cap × 1000. The limit side of
+// pagination is clamped to listLimitCap; the skip side gets 1000× that
+// headroom so every legitimate deep page fits while a single request
+// cannot force a full-table skip scan on a populated table.
+func (ch *CrudHandler) maxListOffset() int {
+	if ch.MaxOffset > 0 {
+		return ch.MaxOffset
+	}
+	return listLimitCap(ch.Entity.Config.Pagination.MaxListLimit) * 1000
+}
+
+// requireBoundedOffset refuses a list request whose skip, explicit
+// (?offset=) or page-derived (?page= × ?limit=), exceeds maxListOffset:
+// both spellings reach the same OFFSET clause and the same deep skip
+// scan, so both are refused with 400 rather than served as an empty
+// window at full cost. A page within the cap past the last row still
+// returns 200 with no data.
+func (ch *CrudHandler) requireBoundedOffset(w http.ResponseWriter, q url.Values, page, perPage int) bool {
+	offset, ok := explicitOffsetValues(q)
+	if !ok {
+		offset = pagination.OffsetForPage(page, perPage)
+	}
+	if offset <= ch.maxListOffset() {
+		return true
+	}
+	writeJSONError(w, http.StatusBadRequest,
+		fmt.Sprintf("offset %d exceeds the maximum %d", offset, ch.maxListOffset()))
+	return false
 }
 
 // listLimitCap is the effective per-request row cap for an entity:

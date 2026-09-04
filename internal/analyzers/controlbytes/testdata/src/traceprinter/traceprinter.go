@@ -58,6 +58,23 @@ func cleanValues(q url.Values) {
 	fmt.Fprintln(os.Stdout, quoteForLog(q.Get("token")))
 }
 
-func redactCtl(s string) string { return s }
+// redactCtl and quoteForLog keep their names and carry the byte-level
+// bodies that earn them.
+func redactCtl(s string) string {
+	out := make([]byte, 0, len(s))
+	for i := range s {
+		if c := s[i]; c >= 0x20 && c != 0x7f {
+			out = append(out, c)
+		}
+	}
+	return string(out)
+}
 
-func quoteForLog(s string) string { return "'" + s + "'" }
+func quoteForLog(s string) string {
+	for i := range s {
+		if c := s[i]; c < 0x20 || c == 0x7f {
+			return "'['" + redactCtl(s) + "]'"
+		}
+	}
+	return "'" + s + "'"
+}

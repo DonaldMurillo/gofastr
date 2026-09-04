@@ -471,6 +471,44 @@ func TestReadScope_UpsertFallbackCarriesScope(t *testing.T) {
 	}
 }
 
+// TestReadScopeHonorsDecider: lifting the declared row filter via the
+// Unrestricted permission is a resource-scoped decision, so it routes
+// through access.CanResource — a DecisionDeny for the entity keeps a
+// policy-granted caller inside the read scope even though the role
+// policy alone would lift it.
+func TestReadScopeHonorsDecider(t *testing.T) {
+	postCh, _, _, _ := setupReadScopeWorld(t, true, "posts:review")
+
+	deny := func(_ context.Context, _ []string, capability access.Permission, resource access.Ref) access.Decision {
+		if capability == access.Permission("posts:review") && resource.Type == "posts" {
+			return access.DecisionDeny
+		}
+		return access.DecisionAbstain
+	}
+	req := grantRequest(httptest.NewRequest(http.MethodGet, "/posts", nil), "u1", "posts:review")
+	req = req.WithContext(access.WithDecider(req.Context(), deny))
+
+	t.Run("list", func(t *testing.T) {
+		ids, total := listPostIDs(t, postCh, req)
+		for _, id := range ids {
+			if id == "p2" || id == "p4" {
+				t.Errorf("SECURITY: [read-scope-decider] list with a DecisionDeny decider for posts:review returned draft %q: the Unrestricted lift must consult access.CanResource, not access.Can alone; ids=%v total=%d", id, ids, total)
+			}
+		}
+	})
+	t.Run("get", func(t *testing.T) {
+		getReq := httptest.NewRequest(http.MethodGet, "/posts/p2", nil)
+		getReq.SetPathValue("id", "p2")
+		getReq = grantRequest(getReq, "u1", "posts:review")
+		getReq = getReq.WithContext(access.WithDecider(getReq.Context(), deny))
+		rec := httptest.NewRecorder()
+		postCh.Get()(rec, getReq)
+		if rec.Code != http.StatusNotFound {
+			t.Errorf("SECURITY: [read-scope-decider] GET of a draft row with a DecisionDeny decider for posts:review returned %d, want 404 (the decider must keep the caller scoped); body=%s", rec.Code, rec.Body.String())
+		}
+	})
+}
+
 // TestRenderReadScopeOps pins the renderer's SQL for every operator: a
 // degraded op (neq rendered as eq) silently serves the complement of the
 // declared rows, which is worse than no scope at all.

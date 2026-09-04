@@ -1,6 +1,9 @@
 package framework
 
-import "context"
+import (
+	"context"
+	"fmt"
+)
 
 // WithSeed registers a seed function to run during App.Start AFTER
 // auto-migration completes (so every entity table exists) and BEFORE the
@@ -39,9 +42,24 @@ func (a *App) WithSeed(fn func(ctx context.Context) error) *App {
 func (a *App) runSeedHooks() error {
 	a.ensureLifecycleContext()
 	for _, fn := range a.seedHooks {
-		if err := fn(a.appCtx); err != nil {
+		if err := a.runSeedHookSafe(fn); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// runSeedHookSafe fires one WithSeed func under the recover-to-error
+// isolation Init already gets (initPluginSafe): seed hooks are host app
+// code holding the same trust position, so a panic aborts Start with an
+// attributed error instead of unwinding through it.
+func (a *App) runSeedHookSafe(fn func(ctx context.Context) error) (err error) {
+	defer func() {
+		if v := recover(); v != nil {
+			// %T not %v: a panic(config) value must not leak a secret
+			// into the error chain (initPluginSafe precedent).
+			err = fmt.Errorf("seed hook panicked (panic type %T): set GOTRACEBACK=all for details", v)
+		}
+	}()
+	return fn(a.appCtx)
 }

@@ -526,20 +526,26 @@ func (b *Battery) maskedFields(ctx context.Context, ent *entity.Entity, id strin
 
 // maskedFieldsForID recomputes the masked set on the SAVE path, where there is
 // no already-loaded row to diff against.
-func (b *Battery) maskedFieldsForID(ctx context.Context, ent *entity.Entity, id string) map[string]bool {
+//
+// A failure here refuses the save (entitySave flashes and redirects back)
+// rather than degrading the way the read path's maskedFields does: on a read,
+// "treat every editable column as masked" only hides prefill, but a save that
+// guesses the masked set wrong emits blank booleans over stored columns — the
+// is_admin-shaped write that cannot be taken back.
+func (b *Battery) maskedFieldsForID(ctx context.Context, ent *entity.Entity, id string) (map[string]bool, error) {
 	if id == "" {
-		return nil // create: nothing is stored yet, so nothing is masked
+		return nil, nil // create: nothing is stored yet, so nothing is masked
 	}
 	ch, err := b.crudFor(ent)
 	if err != nil {
-		return nil
+		return nil, err
 	}
 	raw, err := ch.GetOne(adminSuperuserCtx(ctx), id, nil)
 	if err != nil {
-		return nil
+		return nil, err
 	}
 	keys := adminResponseKeys(ent, ch)
-	return b.maskedFields(ctx, ent, id, adminResponseRow(raw, keys), keys)
+	return b.maskedFields(ctx, ent, id, adminResponseRow(raw, keys), keys), nil
 }
 
 // sameStoredValue compares two reads of the same column. It is a value
@@ -557,8 +563,7 @@ func sameStoredValue(a, b any) bool {
 // so the re-render is a full host-rendered page (chrome + runtime).
 func (b *Battery) entitySave(ent *entity.Entity, edit bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if err := r.ParseForm(); err != nil {
-			http.Error(w, "bad form", http.StatusBadRequest)
+		if !parseCappedForm(w, r) {
 			return
 		}
 		id := ""
@@ -567,8 +572,28 @@ func (b *Battery) entitySave(ent *entity.Entity, edit bool) http.HandlerFunc {
 		}
 		// Recompute server-side rather than trusting a hidden input: the form
 		// omits masked columns, so the handler must know which blanks mean
-		// "unchanged".
-		body, formErrs := formToJSON(ent, r, b.maskedFieldsForID(r.Context(), ent, id))
+		// "unchanged". A recompute that cannot decide refuses the save outright:
+		// guessing the masked set wrong writes blank booleans over stored
+		// columns, and a refused save is retryable while a flipped is_admin is
+		// not.
+		masked, err := b.maskedFieldsForID(r.Context(), ent, id)
+		if err != nil {
+			b.logger().Error("admin: masked-field recompute failed, refusing save",
+				"entity", ent.GetName(), "id", url.PathEscape(id), "error", err)
+			vals := map[string]string{}
+			for _, f := range editableFields(ent) {
+				vals[f.Name] = r.PostForm.Get(f.Name)
+			}
+			token := b.flash.put(&formFlash{values: vals,
+				general: "Could not re-verify which fields are write-only, so nothing was saved. Try the save again."})
+			dest := b.entityBase(ent) + "/new"
+			if edit {
+				dest = b.entityBase(ent) + "/edit/" + url.PathEscape(id)
+			}
+			http.Redirect(w, r, dest+"?e="+token, http.StatusSeeOther)
+			return
+		}
+		body, formErrs := formToJSON(ent, r, masked)
 		if len(formErrs) > 0 {
 			// A field-level coercion failure (e.g. "abc" in an Int field) used
 			// to be silently dropped by formToJSON, creating the row with the
@@ -582,7 +607,7 @@ func (b *Battery) entitySave(ent *entity.Entity, edit bool) http.HandlerFunc {
 			token := b.flash.put(&formFlash{values: vals, fieldErrs: formErrs, general: "Please correct the highlighted fields."})
 			dest := b.entityBase(ent) + "/new"
 			if edit {
-				dest = b.entityBase(ent) + "/edit/" + id
+				dest = b.entityBase(ent) + "/edit/" + url.PathEscape(id)
 			}
 			http.Redirect(w, r, dest+"?e="+token, http.StatusSeeOther)
 			return
@@ -611,7 +636,7 @@ func (b *Battery) entitySave(ent *entity.Entity, edit bool) http.HandlerFunc {
 		token := b.flash.put(&formFlash{values: vals, fieldErrs: crudFieldErrors(raw), general: crudErrorMessage(raw)})
 		dest := b.entityBase(ent) + "/new"
 		if edit {
-			dest = b.entityBase(ent) + "/edit/" + id
+			dest = b.entityBase(ent) + "/edit/" + url.PathEscape(id)
 		}
 		http.Redirect(w, r, dest+"?e="+token, http.StatusSeeOther)
 	}

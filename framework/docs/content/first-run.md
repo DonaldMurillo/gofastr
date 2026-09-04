@@ -96,7 +96,11 @@ values prefilled (secrets excepted, never echoed into HTML).
   with `Complete` false. Sharp edge, deliberate: you are declaring
   bootstrap is handled elsewhere.
 - `GOFASTR_SETUP=force`: enter setup even when complete (rescue). The
-  wizard warns that setup already completed.
+  wizard warns that setup already completed and **re-runs the steps**:
+  every wizard submit executes that step's `Run`, and the headless skin's
+  `RunSteps` executes too, instead of silently skipping. Without `force`,
+  a completed install refuses step execution on both skins — force is the
+  explicit opt-in that unlocks it.
 - An invalid value fails `Start`, mirroring `GOFASTR_ROLE`.
 
 Worker-role processes (`GOFASTR_ROLE=worker`) refuse to start while

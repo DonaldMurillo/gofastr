@@ -306,7 +306,7 @@ func mergeManifests(a, b *Manifest) *Manifest {
 
 func writeTo(root string, m *Manifest) error {
 	file := filepath.Join(root, FileName)
-	if err := os.MkdirAll(filepath.Dir(file), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(file), 0o700); err != nil {
 		return fmt.Errorf("semcov: create %s: %w", filepath.Dir(file), err)
 	}
 	data, err := json.MarshalIndent(m, "", "  ")
@@ -318,7 +318,7 @@ func writeTo(root string, m *Manifest) error {
 	// in parallel processes, and a shared "manifest.tmp" would let two of
 	// them rename each other's half-written file into place.
 	tmp := fmt.Sprintf("%s.%d.tmp", file, os.Getpid())
-	if err := os.WriteFile(tmp, append(data, '\n'), 0o644); err != nil {
+	if err := os.WriteFile(tmp, append(data, '\n'), 0o600); err != nil {
 		return fmt.Errorf("semcov: write manifest: %w", err)
 	}
 	if err := os.Rename(tmp, file); err != nil {

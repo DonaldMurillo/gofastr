@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/DonaldMurillo/gofastr/core/query"
@@ -28,13 +29,16 @@ import (
 // Usage:
 //
 //	mgr.Use(auth.NewTwoFAPlugin(auth.TwoFAConfig{
-//	    Store: auth.NewEntityTwoFAStore(db, "auth_twofa"),
+//	    Store: auth.NewEntityTwoFAStore(db, "auth_twofa", auth.EntityTwoFAStoreConfig{
+//	        EncryptionKey: keyFromSecretManager, // seals the TOTP seed at rest
+//	    }),
 //	}))
 //
 // The plugin calls EnsureSchema at Init, so hosts never hand-roll the DDL.
 type EntityTwoFAStore struct {
-	db    *sql.DB
-	table string
+	db     *sql.DB
+	table  string
+	sealer *aeadSealer
 
 	// casTestHook, when set, fires inside ConsumeBackupCode between the read
 	// and the compare-and-swap UPDATE. It is nil in production; tests use it
@@ -43,11 +47,53 @@ type EntityTwoFAStore struct {
 	casTestHook func()
 }
 
+// EntityTwoFAStoreConfig tunes the SQL-backed 2FA store.
+type EntityTwoFAStoreConfig struct {
+	// EncryptionKey seals the TOTP secret at rest with AES-GCM (the same
+	// sealer the SQL OAuth token store uses). Required: an empty key is a
+	// config error. Sealing is read-both: rows written as plaintext before
+	// the key existed still verify, and every new write is sealed.
+	EncryptionKey []byte
+}
+
 // NewEntityTwoFAStore creates a TwoFAStore backed by a database table.
-// Panics if the table name contains unsafe characters.
-func NewEntityTwoFAStore(db *sql.DB, table string) *EntityTwoFAStore {
+// Panics if the table name contains unsafe characters. EncryptionKey is
+// required: the TOTP seed is a credential, and the SQL OAuth token store
+// already refuses to run unsealed, so this store does too. Rows written
+// as plaintext by an older build still verify (read-both) and are
+// re-sealed on their next write.
+func NewEntityTwoFAStore(db *sql.DB, table string, cfg EntityTwoFAStoreConfig) (*EntityTwoFAStore, error) {
 	query.MustIdent(table)
-	return &EntityTwoFAStore{db: db, table: table}
+	if len(cfg.EncryptionKey) == 0 {
+		return nil, errors.New("auth: entity 2FA store: EncryptionKey is required (32 random bytes from a secret manager); the TOTP seed is stored sealed, never plaintext")
+	}
+	sealer, err := newAEADSealer(cfg.EncryptionKey)
+	if err != nil {
+		return nil, fmt.Errorf("auth: entity 2FA store: %w", err)
+	}
+	return &EntityTwoFAStore{db: db, table: table, sealer: sealer}, nil
+}
+
+// sealSecret seals a TOTP secret for storage when a sealer is configured;
+// plaintext passes through unchanged otherwise.
+func (s *EntityTwoFAStore) sealSecret(secret string) (string, error) {
+	if s.sealer == nil || secret == "" {
+		return secret, nil
+	}
+	return s.sealer.seal(secret)
+}
+
+// openSecret reads the secret column in both forms: a value this sealer
+// produced (opens), or a legacy plaintext row written before sealing was
+// enabled (returns as-is, so existing enrollments keep verifying).
+func (s *EntityTwoFAStore) openSecret(stored string) string {
+	if s.sealer == nil || stored == "" {
+		return stored
+	}
+	if pt, ok := s.sealer.open(stored); ok {
+		return pt
+	}
+	return stored
 }
 
 // EnsureSchema creates the 2FA table if it does not already exist. Called
@@ -60,7 +106,7 @@ func (s *EntityTwoFAStore) EnsureSchema(ctx context.Context) error {
 		boolType, boolFalse = "BOOLEAN", "FALSE"
 	}
 	stmt := fmt.Sprintf(
-		"CREATE TABLE IF NOT EXISTS %s (user_id TEXT PRIMARY KEY, enabled %s NOT NULL DEFAULT %s, secret TEXT NOT NULL DEFAULT '', backup_codes TEXT NOT NULL DEFAULT '[]', verified %s NOT NULL DEFAULT %s, version BIGINT NOT NULL DEFAULT 0)",
+		"CREATE TABLE IF NOT EXISTS %s (user_id TEXT PRIMARY KEY, enabled %s NOT NULL DEFAULT %s, secret TEXT NOT NULL DEFAULT '', backup_codes TEXT NOT NULL DEFAULT '[]', verified %s NOT NULL DEFAULT %s, last_used_step BIGINT NOT NULL DEFAULT 0, version BIGINT NOT NULL DEFAULT 0)",
 		query.QuoteIdent(s.table), boolType, boolFalse, boolType, boolFalse,
 	)
 	if _, err := s.db.ExecContext(ctx, stmt); err != nil {
@@ -69,35 +115,40 @@ func (s *EntityTwoFAStore) EnsureSchema(ctx context.Context) error {
 	if err := ensurePostgresBoolColumns(ctx, s.db, s.table, "enabled", "verified"); err != nil {
 		return err
 	}
-	// Self-heal a table created before the version column existed (or by a
-	// host that auto-migrated an older field set): CREATE TABLE IF NOT
-	// EXISTS is a no-op on an existing table, so the column would be missing
-	// and every optimistic-CAS query would error. Add it if absent.
-	return s.ensureVersionColumn(ctx)
-}
-
-// ensureVersionColumn adds the version column to a pre-existing table that
-// lacks it. On Postgres it uses ADD COLUMN IF NOT EXISTS, which is both
-// schema-correct (resolved via search_path, so it can't be fooled by a
-// same-named table in another schema) and race-safe (concurrent boots on a
-// shared DB don't collide). SQLite has no ADD COLUMN IF NOT EXISTS, so it
-// checks PRAGMA table_info first; a SQLite file is process-local so the
-// check-then-add is not a multi-replica concern.
-func (s *EntityTwoFAStore) ensureVersionColumn(ctx context.Context) error {
-	if migrate.DetectDialect(s.db) == migrate.DialectPostgres {
-		_, err := s.db.ExecContext(ctx, fmt.Sprintf(
-			"ALTER TABLE %s ADD COLUMN IF NOT EXISTS version BIGINT NOT NULL DEFAULT 0",
-			query.QuoteIdent(s.table)))
+	// Self-heal a table created before the version and last_used_step
+	// columns existed (or by a host that auto-migrated an older field
+	// set): CREATE TABLE IF NOT EXISTS is a no-op on an existing table,
+	// so the column would be missing and every query touching it would
+	// error. Add them if absent.
+	if err := s.ensureBigIntColumn(ctx, "version"); err != nil {
 		return err
 	}
-	has, err := s.sqliteHasColumn(ctx, "version")
+	return s.ensureBigIntColumn(ctx, "last_used_step")
+}
+
+// ensureBigIntColumn adds a BIGINT NOT NULL DEFAULT 0 column to a
+// pre-existing table that lacks it. On Postgres it uses ADD COLUMN IF NOT
+// EXISTS, which is both schema-correct (resolved via search_path, so it
+// can't be fooled by a same-named table in another schema) and race-safe
+// (concurrent boots on a shared DB don't collide). SQLite has no ADD
+// COLUMN IF NOT EXISTS, so it checks PRAGMA table_info first; a SQLite
+// file is process-local so the check-then-add is not a multi-replica
+// concern.
+func (s *EntityTwoFAStore) ensureBigIntColumn(ctx context.Context, col string) error {
+	if migrate.DetectDialect(s.db) == migrate.DialectPostgres {
+		_, err := s.db.ExecContext(ctx, fmt.Sprintf(
+			"ALTER TABLE %s ADD COLUMN IF NOT EXISTS %s BIGINT NOT NULL DEFAULT 0",
+			query.QuoteIdent(s.table), query.QuoteIdent(col)))
+		return err
+	}
+	has, err := s.sqliteHasColumn(ctx, col)
 	if err != nil {
 		return err
 	}
 	if !has {
 		if _, err := s.db.ExecContext(ctx, fmt.Sprintf(
-			"ALTER TABLE %s ADD COLUMN version BIGINT NOT NULL DEFAULT 0",
-			query.QuoteIdent(s.table))); err != nil {
+			"ALTER TABLE %s ADD COLUMN %s BIGINT NOT NULL DEFAULT 0",
+			query.QuoteIdent(s.table), query.QuoteIdent(col))); err != nil {
 			return err
 		}
 	}
@@ -132,46 +183,63 @@ func (s *EntityTwoFAStore) qTable(stmt string) string {
 }
 
 // GetTwoFA retrieves the 2FA state for a user. Returns nil (not an error)
-// when the user is not enrolled, matching MemoryTwoFAStore.
+// when the user is not enrolled, matching MemoryTwoFAStore. The secret is
+// unsealed when the store was built with an EncryptionKey; a row written
+// as plaintext before sealing was enabled still reads back usable.
 func (s *EntityTwoFAStore) GetTwoFA(ctx context.Context, userID string) (*TwoFAState, error) {
-	q := s.qTable("SELECT enabled, secret, backup_codes, verified FROM %s WHERE user_id = $1")
-	var enabled, verified bool
-	var secret, codesJSON string
-	err := s.db.QueryRowContext(ctx, q, userID).Scan(&enabled, &secret, &codesJSON, &verified)
-	if err == sql.ErrNoRows {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	var codes []string
-	if err := json.Unmarshal([]byte(codesJSON), &codes); err != nil {
-		return nil, fmt.Errorf("auth: EntityTwoFAStore: corrupt backup_codes row for user %s: %w", userID, err)
-	}
-	return &TwoFAState{Enabled: enabled, Secret: secret, BackupCodes: codes, Verified: verified}, nil
+	return s.getWithVersion(ctx, userID, nil, nil)
 }
 
-// getWithVersion is GetTwoFA plus the optimistic-concurrency version and the
-// raw backup_codes bytes scanned this round, used by ConsumeBackupCode's
-// compare-and-swap. Returns nil state (and leaves *version and *codesRaw
-// untouched) when the user is not enrolled.
+// getWithVersion is GetTwoFA plus the optimistic-concurrency version and
+// the raw backup_codes bytes scanned this round, used by the
+// compare-and-swap paths (ConsumeBackupCode, CompareAndSwapTwoFA).
+// Returns nil state (and leaves *version and *codesRaw untouched) when
+// the user is not enrolled.
 func (s *EntityTwoFAStore) getWithVersion(ctx context.Context, userID string, version *int64, codesRaw *string) (*TwoFAState, error) {
-	q := s.qTable("SELECT enabled, secret, backup_codes, verified, version FROM %s WHERE user_id = $1")
+	q := s.qTable("SELECT enabled, secret, backup_codes, verified, last_used_step, version FROM %s WHERE user_id = $1")
 	var enabled, verified bool
 	var secret, codesJSON string
-	err := s.db.QueryRowContext(ctx, q, userID).Scan(&enabled, &secret, &codesJSON, &verified, version)
+	var lastUsedStep int64
+	var ver int64
+	err := s.db.QueryRowContext(ctx, q, userID).Scan(&enabled, &secret, &codesJSON, &verified, &lastUsedStep, &ver)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, err
 	}
-	*codesRaw = codesJSON
+	if version != nil {
+		*version = ver
+	}
+	if codesRaw != nil {
+		*codesRaw = codesJSON
+	}
 	var codes []string
 	if err := json.Unmarshal([]byte(codesJSON), &codes); err != nil {
 		return nil, fmt.Errorf("auth: EntityTwoFAStore: corrupt backup_codes row for user %s: %w", userID, err)
 	}
-	return &TwoFAState{Enabled: enabled, Secret: secret, BackupCodes: codes, Verified: verified}, nil
+	return &TwoFAState{
+		Enabled:      enabled,
+		Secret:       s.openSecret(secret),
+		BackupCodes:  codes,
+		Verified:     verified,
+		LastUsedStep: uint64(lastUsedStep),
+	}, nil
+}
+
+// marshalBackupCodes canonicalises the codes column value: GetTwoFA and
+// getWithVersion unmarshal through this same shape, so a state read from
+// the store re-marshals byte-identical and the CAS predicate on the raw
+// column is formatting-proof for store-written rows.
+func marshalBackupCodes(codes []string) (string, error) {
+	if codes == nil {
+		codes = []string{}
+	}
+	b, err := json.Marshal(codes)
+	if err != nil {
+		return "", err
+	}
+	return string(b), nil
 }
 
 // SetTwoFA upserts the 2FA state for a user. A nil state deletes the row,
@@ -180,23 +248,96 @@ func (s *EntityTwoFAStore) SetTwoFA(ctx context.Context, userID string, state *T
 	if state == nil {
 		return s.DeleteTwoFA(ctx, userID)
 	}
-	codes := state.BackupCodes
-	if codes == nil {
-		codes = []string{}
+	codesJSON, err := marshalBackupCodes(state.BackupCodes)
+	if err != nil {
+		return err
 	}
-	codesJSON, err := json.Marshal(codes)
+	secret, err := s.sealSecret(state.Secret)
 	if err != nil {
 		return err
 	}
 	// ON CONFLICT ... DO UPDATE is supported by both PostgreSQL and
 	// SQLite (3.24+), so one statement covers both dialects. Bump version
-	// on every write so a ConsumeBackupCode CAS in flight against the old
-	// state misses and re-reads (a full state replace must invalidate a
-	// concurrent per-code mutation).
+	// on every write so a ConsumeBackupCode or CompareAndSwapTwoFA CAS in
+	// flight against the old state misses and re-reads (a full state
+	// replace must invalidate a concurrent per-code mutation).
 	tbl := query.QuoteIdent(s.table)
-	q := fmt.Sprintf("INSERT INTO %s (user_id, enabled, secret, backup_codes, verified, version) VALUES ($1, $2, $3, $4, $5, 0) ON CONFLICT (user_id) DO UPDATE SET enabled = excluded.enabled, secret = excluded.secret, backup_codes = excluded.backup_codes, verified = excluded.verified, version = %s.version + 1", tbl, tbl)
-	_, err = s.db.ExecContext(ctx, q, userID, state.Enabled, state.Secret, string(codesJSON), state.Verified)
+	q := fmt.Sprintf("INSERT INTO %s (user_id, enabled, secret, backup_codes, verified, last_used_step, version) VALUES ($1, $2, $3, $4, $5, $6, 0) ON CONFLICT (user_id) DO UPDATE SET enabled = excluded.enabled, secret = excluded.secret, backup_codes = excluded.backup_codes, verified = excluded.verified, last_used_step = excluded.last_used_step, version = %s.version + 1", tbl, tbl)
+	_, err = s.db.ExecContext(ctx, q, userID, state.Enabled, secret, codesJSON, state.Verified, int64(state.LastUsedStep))
 	return err
+}
+
+// CompareAndSwapTwoFA writes next only while the stored row still equals
+// expect (nil expect = the row must be absent), the atomic
+// read-modify-write primitive the handlers use so a racing DeleteTwoFA (a
+// committed disable) wins over a stale write and one TOTP step is consumed
+// exactly once. Implements TwoFAStateSwapper.
+//
+// The SQL predicate is the row's version, backup_codes bytes, enabled,
+// verified, and last_used_step — everything except the secret, whose
+// sealed column cannot be recomputed for comparison (the AEAD nonce is
+// fresh per write). Every secret change rides a SetTwoFA, which bumps
+// version, so the predicate still pins the full observable state.
+func (s *EntityTwoFAStore) CompareAndSwapTwoFA(ctx context.Context, userID string, expect, next *TwoFAState) (bool, error) {
+	if expect == nil {
+		if next == nil {
+			return true, nil
+		}
+		codesJSON, err := marshalBackupCodes(next.BackupCodes)
+		if err != nil {
+			return false, err
+		}
+		secret, err := s.sealSecret(next.Secret)
+		if err != nil {
+			return false, err
+		}
+		// INSERT-only-if-absent: rows-affected 0 means a row exists (a
+		// concurrent enroll or a disable racing a re-enroll), so the
+		// caller's absent-row assumption is stale.
+		tbl := query.QuoteIdent(s.table)
+		q := fmt.Sprintf("INSERT INTO %s (user_id, enabled, secret, backup_codes, verified, last_used_step, version) SELECT $1, $2, $3, $4, $5, $6, 0 WHERE NOT EXISTS (SELECT 1 FROM %s WHERE user_id = $1)", tbl, tbl)
+		res, err := s.db.ExecContext(ctx, q, userID, next.Enabled, secret, codesJSON, next.Verified, int64(next.LastUsedStep))
+		if err != nil {
+			return false, err
+		}
+		n, _ := res.RowsAffected()
+		return n == 1, nil
+	}
+
+	var version int64
+	var rawCodes string
+	cur, err := s.getWithVersion(ctx, userID, &version, &rawCodes)
+	if err != nil {
+		return false, err
+	}
+	if cur == nil || !twoFAStateEqual(cur, expect) {
+		return false, nil
+	}
+	if next == nil {
+		// Swap-to-absent: delete, still guarded by the same predicate.
+		q := s.qTable("DELETE FROM %s WHERE user_id = $1 AND version = $2 AND backup_codes = $3 AND enabled = $4 AND verified = $5 AND last_used_step = $6")
+		res, err := s.db.ExecContext(ctx, q, userID, version, rawCodes, expect.Enabled, expect.Verified, int64(expect.LastUsedStep))
+		if err != nil {
+			return false, err
+		}
+		n, _ := res.RowsAffected()
+		return n == 1, nil
+	}
+	codesJSON, err := marshalBackupCodes(next.BackupCodes)
+	if err != nil {
+		return false, err
+	}
+	secret, err := s.sealSecret(next.Secret)
+	if err != nil {
+		return false, err
+	}
+	q := s.qTable("UPDATE %s SET enabled = $1, secret = $2, backup_codes = $3, verified = $4, last_used_step = $5, version = version + 1 WHERE user_id = $6 AND version = $7 AND backup_codes = $8 AND enabled = $9 AND verified = $10 AND last_used_step = $11")
+	res, err := s.db.ExecContext(ctx, q, next.Enabled, secret, codesJSON, next.Verified, int64(next.LastUsedStep), userID, version, rawCodes, expect.Enabled, expect.Verified, int64(expect.LastUsedStep))
+	if err != nil {
+		return false, err
+	}
+	n, _ := res.RowsAffected()
+	return n == 1, nil
 }
 
 // DeleteTwoFA removes the 2FA state for a user. Deleting an absent row is

@@ -126,7 +126,13 @@ func SchemaHash(named []NamedConfig) string {
 				// vs float64 5 from a decoded declaration) hash the same.
 				if raw, err := json.Marshal(f.Default); err == nil {
 					var v any
-					_ = json.Unmarshal(raw, &v)
+					if err := json.Unmarshal(raw, &v); err != nil {
+						// Marshal's own output failing to decode back is
+						// an impossible-state violation, and silently
+						// hashing a zero default would flip the drift
+						// verdict the wrong way. Refuse loudly instead.
+						panic(fmt.Sprintf("sdk: schema hash: default %T failed its own JSON round-trip: %v", f.Default, err))
+					}
 					hf.Default = v
 				}
 			}

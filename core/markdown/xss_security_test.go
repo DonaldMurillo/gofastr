@@ -4,6 +4,8 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
 )
 
 // TestMarkdown_XSSInLinkTarget verifies that malicious JavaScript URLs in
@@ -385,5 +387,58 @@ func TestFrontmatterDupKeysNotLastWins(t *testing.T) {
 	doc = Render("---\ntitle: Only\nauthor: Don\n---\n\nNo heading here.\n")
 	if doc.Title != "Only" {
 		t.Errorf("single title key mis-parsed: %q", doc.Title)
+	}
+}
+
+var hrefAttrRe = regexp.MustCompile(`<a href="([^"]*)"`)
+var srcAttrRe = regexp.MustCompile(`<img src="([^"]*)"`)
+
+// firstAttrVal extracts the first match's captured value, failing the
+// test when the tag is absent.
+func firstAttrVal(t *testing.T, re *regexp.Regexp, html string) string {
+	t.Helper()
+	m := re.FindStringSubmatch(html)
+	if m == nil {
+		t.Fatalf("no match in rendered output: %q", html)
+	}
+	return m[1]
+}
+
+// Property: every href emitted from a markdown link satisfies the
+// canonical urlsafe Anchor allow-list — not a per-surface deny-list,
+// which admits file:, ftp:, blob:, ws: and protocol-relative
+// references that the allow-list every other URL sink applies refuses.
+func TestMarkdownAnchorSchemeAllowlist(t *testing.T) {
+	for _, url := range []string{
+		"//evil.example",
+		"file:///etc/passwd",
+		"ftp://evil.example/x",
+		"blob:https://evil.example/1",
+		"ws://evil.example/ws",
+	} {
+		html := string(RenderHTML("[x](" + url + ")"))
+		href := firstAttrVal(t, hrefAttrRe, html)
+		if href != "#" && !urlsafe.OK(href, urlsafe.Anchor) {
+			t.Errorf("href %q (from link %q) fails the urlsafe Anchor policy; markdown must use the canonical allow-list, not a parallel deny-list", href, url)
+		}
+	}
+}
+
+// Property: every src emitted from a markdown image satisfies the
+// urlsafe ImageSource allow-list (http(s), relative, inline raster
+// data: images) — the same canonical policy every other URL sink
+// applies, with "#" as the rejection output.
+func TestMarkdownImageSchemeAllowlist(t *testing.T) {
+	for _, url := range []string{
+		"//evil.example/a.png",
+		"file:///etc/passwd.png",
+		"blob:https://evil.example/1",
+		"ws://evil.example/a.png",
+	} {
+		html := string(RenderHTML("![x](" + url + ")"))
+		src := firstAttrVal(t, srcAttrRe, html)
+		if src != "#" && !urlsafe.OK(src, urlsafe.ImageSource) {
+			t.Errorf("src %q (from image %q) fails the urlsafe ImageSource policy; markdown must use the canonical allow-list, not a parallel deny-list", src, url)
+		}
 	}
 }

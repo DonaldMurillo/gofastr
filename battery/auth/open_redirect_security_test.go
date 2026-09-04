@@ -68,7 +68,7 @@ func TestOpenRedirect_SuccessRedirectValidatesNext(t *testing.T) {
 			url := "/auth/login?next=" + tc.nextURL
 			req := httptest.NewRequest(http.MethodPost, url, nil)
 
-			got := successRedirect(req, tc.fallback)
+			got := successRedirect(httptest.NewRecorder(), req, tc.fallback)
 
 			if tc.wantSafe {
 				if got == tc.nextURL && !tc.wantSafe {

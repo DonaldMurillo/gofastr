@@ -30,6 +30,7 @@ package main
 import (
 	_ "embed"
 	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
 	"os"
@@ -275,7 +276,18 @@ func (a *assistApp) guard(host *uihost.UIHost) router.Middleware {
 // rather than answering with a distinguishable error.
 func (a *assistApp) handleLogin() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if err := r.ParseForm(); err != nil || !a.checkSupportKey(r.PostFormValue("key")) {
+		// Cap the form: one short key field, and an uncapped POST is a
+		// memory lever on a public origin.
+		r.Body = http.MaxBytesReader(w, r.Body, 4<<10)
+		if err := r.ParseForm(); err != nil {
+			if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
+				http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
+				return
+			}
+			http.Redirect(w, r, "/support/login", http.StatusSeeOther)
+			return
+		}
+		if !a.checkSupportKey(r.PostFormValue("key")) {
 			http.Redirect(w, r, "/support/login", http.StatusSeeOther)
 			return
 		}
@@ -307,7 +319,14 @@ func (a *assistApp) handleCreateSession() http.Handler {
 func (a *assistApp) handleManualForm(kind string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		sid := router.Param(r, "id")
+		// Cap the form: one instruction field; an uncapped POST is a memory
+		// lever on a public origin.
+		r.Body = http.MaxBytesReader(w, r.Body, 4<<10)
 		if err := r.ParseForm(); err != nil {
+			if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
+				http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
+				return
+			}
 			http.Error(w, "invalid form", http.StatusBadRequest)
 			return
 		}

@@ -122,6 +122,11 @@ func TestConcurrent_ResetPasswordTokenIsSingleUse(t *testing.T) {
 	plug := NewPasswordResetPlugin(PasswordResetConfig{
 		BaseURL: "http://test",
 		DevMode: true,
+		// Isolate the token-atomicity property from the default per-IP
+		// throttle (10/min): 16 concurrent same-IP POSTs would otherwise
+		// be 429-refused, which the throttle's own test pins. This is the
+		// documented opt-out, not a weakening.
+		RateLimit: &RateLimiterConfig{MaxAttempts: 100000},
 	})
 	_, r, _, userID := concurrentSetup(t, plug)
 

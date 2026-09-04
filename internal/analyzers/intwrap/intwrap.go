@@ -67,7 +67,7 @@ import (
 )
 
 var Analyzer = &analysis.Analyzer{
-	Name: "gofastrintwrap",
+	Name: "intwrap",
 	Doc:  "forbids unsigned→signed conversion and MinInt negation without a dominating bound check; wrapped values read negative and slip past Max-only guards",
 	Run:  run,
 }

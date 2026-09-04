@@ -67,7 +67,7 @@ func Record(dir, path, scheme string) error {
 	}
 
 	file := filepath.Join(dir, FileName)
-	if err := os.MkdirAll(filepath.Dir(file), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(file), 0o700); err != nil {
 		return fmt.Errorf("axecov: create %s: %w", filepath.Dir(file), err)
 	}
 	data, err := json.MarshalIndent(m, "", "  ")
@@ -76,7 +76,7 @@ func Record(dir, path, scheme string) error {
 	}
 	// Write-then-rename so a reader never sees a torn manifest.
 	tmp := file + ".tmp"
-	if err := os.WriteFile(tmp, append(data, '\n'), 0o644); err != nil {
+	if err := os.WriteFile(tmp, append(data, '\n'), 0o600); err != nil {
 		return fmt.Errorf("axecov: write manifest: %w", err)
 	}
 	if err := os.Rename(tmp, file); err != nil {

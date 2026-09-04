@@ -56,7 +56,7 @@ import (
 )
 
 var Analyzer = &analysis.Analyzer{
-	Name: "gofastrcompositekey",
+	Name: "compositekey",
 	Doc:  "forbids delimiter-joined concatenations (a + \"\\x00\" + b, single-char SEP) used as map keys, prefix scans, or keyed-store arguments; use a struct key or length-prefix the first field",
 	Run:  run,
 }

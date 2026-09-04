@@ -546,11 +546,17 @@ func parseProbeOutput(p ProbeID, stdout string, timedOut bool, stderr string) Pr
 	}
 	switch {
 	case strings.HasPrefix(first, probeOutPass):
-		return ProbeResult{ID: p, Status: ProbeStatusPass, Detail: denialDetail(p, stderr)}
+		// denialDetail inlined so the stderr tail passes the same
+		// tailForDetail scrub every other arm gets (see below).
+		detail := ""
+		if stderr != "" {
+			detail = "denial observed; stderr tail: " + tailForDetail(stderr)
+		}
+		return ProbeResult{ID: p, Status: ProbeStatusPass, Detail: detail}
 	case strings.HasPrefix(first, probeOutBreach):
-		return ProbeResult{ID: p, Status: ProbeStatusFail, Detail: strings.TrimSpace(strings.TrimPrefix(first, probeOutBreach))}
+		return ProbeResult{ID: p, Status: ProbeStatusFail, Detail: scrubTerminalBytes(strings.TrimSpace(strings.TrimPrefix(first, probeOutBreach)))}
 	case strings.HasPrefix(first, probeOutUnreachable):
-		return ProbeResult{ID: p, Status: ProbeStatusUnreachable, Detail: strings.TrimSpace(strings.TrimPrefix(first, probeOutUnreachable))}
+		return ProbeResult{ID: p, Status: ProbeStatusUnreachable, Detail: scrubTerminalBytes(strings.TrimSpace(strings.TrimPrefix(first, probeOutUnreachable)))}
 	default:
 		// No sentinel line at all: the child exited without finishing its
 		// protocol (killed by the sandbox mid-attempt, or crashed). The
@@ -574,26 +580,56 @@ func parseProbeOutput(p ProbeID, stdout string, timedOut bool, stderr string) Pr
 	}
 }
 
-// denialDetail extracts the diagnostic the child emitted alongside its
-// PASS, usually the errno/string the sandbox returned, which is useful
-// for the operator wondering "did this pass because of enforcement or by
-// accident?". Best-effort; empty is fine.
-func denialDetail(p ProbeID, stderr string) string {
-	if stderr == "" {
-		return ""
-	}
-	return "denial observed; stderr tail: " + tailForDetail(stderr)
-}
-
 // tailForDetail returns the last ~200 bytes of s for inclusion in a probe
 // Detail string. Keeps report lines bounded while preserving the most
-// recent (most relevant) diagnostic output.
+// recent (most relevant) diagnostic output. Child output is scrubbed of
+// terminal control bytes here, the single choke point every Detail arm
+// routes through: an OSC sequence in wrapper/child stderr must not reach
+// the operator-facing report (NewSandboxRunner embeds the Summary whole
+// into ErrSandboxUnavailable).
 func tailForDetail(s string) string {
 	s = strings.TrimSpace(s)
-	if len(s) <= 200 {
+	if len(s) > 200 {
+		s = "…" + s[len(s)-200:]
+	}
+	return scrubTerminalBytes(s)
+}
+
+// scrubTerminalBytes strips the control bytes that let a subprocess
+// *drive* the operator's terminal rather than merely write to it. Copied
+// (string-typed) from codegen/extension_command.go scrubTerminalBytes /
+// cmd/gofastr/generate.go scrubTerminalOutput — same contract: C0 except
+// \n and \t, plus DEL, so newlines and tabs survive as layout while ESC/
+// BEL/CR and kin cannot rewrite the window title or clipboard from
+// inside an error string.
+func scrubTerminalBytes(s string) string {
+	clean := true
+	for i := range len(s) {
+		if terminalCtrlByte(s[i]) {
+			clean = false
+			break
+		}
+	}
+	if clean { // fast path: ordinary output is the common case
 		return s
 	}
-	return "…" + s[len(s)-200:]
+	var b strings.Builder
+	b.Grow(len(s))
+	for i := range len(s) {
+		if !terminalCtrlByte(s[i]) {
+			b.WriteByte(s[i])
+		}
+	}
+	return b.String()
+}
+
+// terminalCtrlByte mirrors codegen's terminalCtrlByte: LF and TAB are
+// layout, everything else in C0 plus DEL drives the terminal.
+func terminalCtrlByte(c byte) bool {
+	if c == '\n' || c == '\t' {
+		return false
+	}
+	return c < 0x20 || c == 0x7f
 }
 
 // buildProbeChildEnv assembles the probe child's environment: the minimal

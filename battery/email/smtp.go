@@ -9,6 +9,7 @@ import (
 	"maps"
 	"mime"
 	"net"
+	"net/mail"
 	"net/smtp"
 	"slices"
 	"strings"
@@ -83,9 +84,32 @@ func (s *SMTPSender) Send(ctx context.Context, email Email) error {
 	if err := s.config.Validate(); err != nil {
 		return fmt.Errorf("%w: %v", ErrSendFailed, err)
 	}
-
 	if len(email.To) == 0 {
 		return fmt.Errorf("%w: at least one recipient is required", ErrSendFailed)
+	}
+
+	// Envelope, not headers. The message HEADERS keep the raw fields
+	// (display names and comma lists are legal header syntax); the
+	// ENVELOPE is normalized separately because net/smtp writes its
+	// argument as MAIL FROM:<%s> with no quoting of its own: a
+	// display-name or comma-joined entry emitted verbatim makes the
+	// envelope recipient set diverge from the parsed header set
+	// (strict MTAs 501 the whole send; a lenient relay that splits on
+	// the comma delivers to an address the application never
+	// confirmed). Every entry is parsed with net/mail and reaches the
+	// wire as exactly one bare addr-spec; entries that fail to parse,
+	// parse to zero addresses, or carry C0/DEL bytes are refused —
+	// fail closed.
+	fromSpecs, ferr := scrubEnvelopeAddrs("From", email.From)
+	if ferr != nil {
+		return fmt.Errorf("%w: %v", ErrSendFailed, ferr)
+	}
+	if len(fromSpecs) != 1 {
+		return fmt.Errorf("%w: From must be exactly one address, got %d", ErrSendFailed, len(fromSpecs))
+	}
+	recipients, rerr := envelopeRecipients(email)
+	if rerr != nil {
+		return fmt.Errorf("%w: %v", ErrSendFailed, rerr)
 	}
 
 	addr := s.config.addr()
@@ -95,9 +119,6 @@ func (s *SMTPSender) Send(ctx context.Context, email Email) error {
 	if err != nil {
 		return fmt.Errorf("%w: %v", ErrSendFailed, err)
 	}
-
-	// Collect all recipients (To + CC + BCC).
-	recipients := append(append(email.To, email.CC...), email.BCC...)
 
 	// Connect to the server with a bounded dial. smtp.Dial / tls.Dial
 	// ignore ctx and never time out on their own, a black-holed host
@@ -173,8 +194,9 @@ func (s *SMTPSender) Send(ctx context.Context, email Email) error {
 		}
 	}
 
-	// Set the sender.
-	if err := client.Mail(email.From); err != nil {
+	// Set the sender. The envelope carries the parsed bare addr-spec,
+	// never the raw From string.
+	if err := client.Mail(fromSpecs[0]); err != nil {
 		return fmt.Errorf("%w: mail from failed: %v", ErrSendFailed, err)
 	}
 
@@ -246,17 +268,20 @@ func buildMessage(email Email) ([]byte, error) {
 
 	var buf strings.Builder
 
-	// Headers
-	buf.WriteString("From: " + email.From + "\r\n")
-	buf.WriteString("To: " + strings.Join(email.To, ", ") + "\r\n")
+	// Headers. Every caller-derived value passes scrubHeaderValue so
+	// no C0/DEL byte can reach a header line even if a future code
+	// path skips assertNoHeaderInjection (defense in depth; the assert
+	// is the fail-closed gate, the scrub is the wire guarantee).
+	buf.WriteString("From: " + scrubHeaderValue(email.From) + "\r\n")
+	buf.WriteString("To: " + scrubHeaderValue(strings.Join(email.To, ", ")) + "\r\n")
 	if len(email.CC) > 0 {
-		buf.WriteString("Cc: " + strings.Join(email.CC, ", ") + "\r\n")
+		buf.WriteString("Cc: " + scrubHeaderValue(strings.Join(email.CC, ", ")) + "\r\n")
 	}
-	buf.WriteString("Subject: " + email.Subject + "\r\n")
+	buf.WriteString("Subject: " + scrubHeaderValue(email.Subject) + "\r\n")
 
 	// Custom headers, sorted so the wire message is byte-stable per send.
 	for _, k := range slices.Sorted(maps.Keys(email.Headers)) {
-		buf.WriteString(k + ": " + email.Headers[k] + "\r\n")
+		buf.WriteString(scrubHeaderValue(k) + ": " + scrubHeaderValue(email.Headers[k]) + "\r\n")
 	}
 
 	// Determine if we need MIME multipart.
@@ -319,7 +344,7 @@ func buildMessage(email Email) ([]byte, error) {
 			}
 			name := quoteParamValue(att.Filename)
 			buf.WriteString("--" + boundary + "\r\n")
-			buf.WriteString("Content-Type: " + baseCT + "; name=" + name + "\r\n")
+			buf.WriteString("Content-Type: " + scrubHeaderValue(baseCT) + "; name=" + name + "\r\n")
 			buf.WriteString("Content-Transfer-Encoding: base64\r\n")
 			buf.WriteString("Content-Disposition: attachment; filename=" + name + "\r\n")
 			buf.WriteString("\r\n")
@@ -395,14 +420,20 @@ func safeMediaType(ct string) (string, error) {
 // quoteParamValue renders s as an RFC 2045 quoted-string, backslash-
 // escaping embedded double-quotes and backslashes so the value cannot
 // break out of the surrounding `"..."` and append extra MIME
-// parameters. CR/LF/NUL are already rejected upstream by
-// assertNoHeaderInjection; they are stripped here defensively.
+// parameters. The full C0 range and DEL are stripped: control bytes
+// are never legitimate in a display filename, and percent-encoding
+// them would surface literal %xx garbage in every MUA. C0/DEL are
+// already refused upstream by assertNoHeaderInjection; the strip here
+// is the defensive wire-side guarantee.
 func quoteParamValue(s string) string {
-	s = strings.NewReplacer("\r", "", "\n", "", "\x00", "").Replace(s)
 	var b strings.Builder
+	b.Grow(len(s))
 	b.WriteByte('"')
-	for i := 0; i < len(s); i++ {
+	for i := range len(s) {
 		c := s[i]
+		if c < 0x20 || c == 0x7f {
+			continue
+		}
 		if c == '"' || c == '\\' {
 			b.WriteByte('\\')
 		}
@@ -412,15 +443,100 @@ func quoteParamValue(s string) string {
 	return b.String()
 }
 
-// assertNoHeaderInjection returns an error if value contains CR, LF, or
-// NUL, the only bytes that can terminate a header line in SMTP's
-// "Field: value\r\n" framing and let following bytes appear as a new
-// header. The field name is included in the error so the caller can
-// log which input was rejected.
+// scrubHeaderValue percent-encodes any C0 control byte or DEL in a
+// header value before it is written into the message, so a value that
+// slips past assertNoHeaderInjection still cannot terminate a header
+// line or smuggle a terminal-control payload into a MUA. Same
+// double posture as quoteParamValue: the assert refuses, the scrub
+// guarantees the wire.
+func scrubHeaderValue(s string) string {
+	var b strings.Builder
+	b.Grow(len(s))
+	for i := range len(s) {
+		c := s[i]
+		if c < 0x20 || c == 0x7f {
+			fmt.Fprintf(&b, "%%%02x", c)
+			continue
+		}
+		b.WriteByte(c)
+	}
+	return b.String()
+}
+
+// assertNoHeaderInjection returns an error if value contains any C0
+// control byte (0x00–0x1F, including the CR/LF/NUL that can terminate
+// a header line and let following bytes appear as a new header) or DEL.
+// The rest of the C0 range and DEL are refused too, not just the line
+// terminators: MUAs, spam filters and archive tooling render header
+// bytes verbatim, so an ESC…BEL terminal-title sequence in a Subject
+// is smuggled onto the wire exactly like a CRLF injection. The field
+// name is included in the error so the caller can log which input was
+// rejected.
 func assertNoHeaderInjection(field, value string) error {
-	if strings.ContainsAny(value, "\r\n\x00") {
-		return fmt.Errorf("%w: header %q contains illegal control character (CR/LF/NUL): refusing to send to prevent SMTP header injection",
-			ErrSendFailed, field)
+	for i := range len(value) {
+		if b := value[i]; b < 0x20 || b == 0x7f {
+			return fmt.Errorf("%w: header %q contains illegal control byte 0x%02X (C0/DEL): refusing to send to prevent SMTP header injection",
+				ErrSendFailed, field, b)
+		}
 	}
 	return nil
+}
+
+// scrubEnvelopeAddrs normalises one envelope address entry for the
+// wire: the raw value must carry no C0 control byte or DEL (refused
+// outright, not encoded — an encoded address would never route) and
+// must parse under net/mail; the bare addr-spec of every address the
+// entry expands to is returned. A comma-joined entry expands exactly
+// the way the header side (net/mail) reads it, so the envelope
+// recipient set can never diverge from the parsed header set. Entries
+// that fail to parse or parse to zero addresses are refused — the
+// guard cannot decide, so it refuses.
+func scrubEnvelopeAddrs(field, raw string) ([]string, error) {
+	for i := range len(raw) {
+		if b := raw[i]; b < 0x20 || b == 0x7f {
+			return nil, fmt.Errorf("%s contains illegal control byte 0x%02X: refusing envelope address", field, b)
+		}
+	}
+	addrs, err := mail.ParseAddressList(raw)
+	if err != nil {
+		return nil, fmt.Errorf("%s %q is not a valid address: %v", field, raw, err)
+	}
+	if len(addrs) == 0 {
+		return nil, fmt.Errorf("%s %q parses to zero addresses", field, raw)
+	}
+	specs := make([]string, 0, len(addrs))
+	for _, a := range addrs {
+		specs = append(specs, a.Address)
+	}
+	return specs, nil
+}
+
+// envelopeRecipients builds the RCPT TO list from To + CC + BCC. The
+// list is an explicit-length copy: appending straight onto email.To
+// (append(append(email.To, CC...), BCC...)) would write the CC/BCC
+// strings into To's spare capacity, and any longer-lived alias over
+// that backing array — a mail-merge buffer, a sibling slice — would
+// observe the BCC address as a To entry.
+func envelopeRecipients(email Email) ([]string, error) {
+	recipients := make([]string, 0, len(email.To)+len(email.CC)+len(email.BCC))
+	// Deterministic To → Cc → Bcc order (never range a map: the RCPT
+	// sequence is wire output).
+	fields := []struct {
+		name string
+		list []string
+	}{
+		{"To", email.To},
+		{"Cc", email.CC},
+		{"Bcc", email.BCC},
+	}
+	for _, f := range fields {
+		for _, a := range f.list {
+			specs, err := scrubEnvelopeAddrs(f.name, a)
+			if err != nil {
+				return nil, err
+			}
+			recipients = append(recipients, specs...)
+		}
+	}
+	return recipients, nil
 }

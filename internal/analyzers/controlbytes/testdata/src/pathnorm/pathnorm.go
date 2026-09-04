@@ -42,7 +42,10 @@ func cleanedHelpers(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Location", cleanBytes(r.URL.Path))       // quiet: byte-indexed body
 	w.Header().Set("Location", cleanPassthrough(r.URL.Path)) // want `controlbytes: request-derived value reaches http.Header.Set/Add unscrubbed`
 	w.Header().Set("Location", cleanViaStdlib(r.URL.Path))   // want `controlbytes: request-derived value reaches http.Header.Set/Add unscrubbed`
-	w.Header().Set("Location", sanitizeIt(r.URL.Path))       // quiet: strong scrub name
+	w.Header().Set("Location", sanitizeIt(r.URL.Path))       // want `controlbytes: request-derived value reaches http.Header.Set/Add unscrubbed`
 }
 
+// sanitizeIt keeps the strong scrub name and the pass-through body:
+// since the email round-2 probe (quoteParamValue), a same-package name
+// buys nothing without the byte-level evidence, so this fires.
 func sanitizeIt(s string) string { return s }

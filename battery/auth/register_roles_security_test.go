@@ -29,8 +29,21 @@ func TestRegister_IgnoresClientSuppliedRoles_JSON(t *testing.T) {
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 
+	// Since the strict decode migration, an unknown top-level key
+	// ("roles" is not a field the register body decodes) is refused at
+	// the decode layer with 400 — the client roles key cannot reach the
+	// handler at all, the strongest form of "never honored". The
+	// fallback arm keeps the original contract visible: should the
+	// decode ever ignore unknown keys again, an accepted registration
+	// must still land on server-assigned default roles only.
+	if w.Code == http.StatusBadRequest {
+		if _, _, err := store.FindByEmail(req.Context(), "attacker@example.com"); err == nil {
+			t.Fatalf("refused body still created the account")
+		}
+		return
+	}
 	if w.Code != http.StatusCreated {
-		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
+		t.Fatalf("expected 201 or 400, got %d: %s", w.Code, w.Body.String())
 	}
 	u, _, err := store.FindByEmail(req.Context(), "attacker@example.com")
 	if err != nil {
@@ -141,8 +154,18 @@ func TestDefaultRolesIgnoreClientInput(t *testing.T) {
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 
+	// Same strict-decode posture as the sibling pin above: a roles key
+	// in the body is refused at decode (400, no account created); the
+	// fallback arm keeps the "configured roles win" contract for the
+	// case where unknown keys are ever ignored again.
+	if w.Code == http.StatusBadRequest {
+		if _, _, err := store.FindByEmail(req.Context(), "attacker@example.com"); err == nil {
+			t.Fatalf("refused body still created the account")
+		}
+		return
+	}
 	if w.Code != http.StatusCreated {
-		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
+		t.Fatalf("expected 201 or 400, got %d: %s", w.Code, w.Body.String())
 	}
 	u, _, err := store.FindByEmail(req.Context(), "attacker@example.com")
 	if err != nil {

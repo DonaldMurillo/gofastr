@@ -4976,9 +4976,13 @@ func renderBlueprintMain(bp Blueprint) string {
 	} else {
 		sb.WriteString(fmt.Sprintf("\tdriver := getEnv(\"DB_DRIVER\", %q)\n", driver))
 		// A credentialed DSN never appears as a committed fallback literal;
-		// the generated .env supplies DATABASE_URL instead.
+		// the generated .env supplies DATABASE_URL instead. A ${DATABASE_URL}
+		// reference (what kiln freeze emits for a credentialed DSN) is not a
+		// DSN either: as a fallback it would hand the driver the literal
+		// ref string when the variable is unset, so it fails closed the
+		// same way with a message naming the variable.
 		fallbackDSN := dbURL
-		if dsnHasSecret(dbURL) {
+		if dsnHasSecret(dbURL) || isSelfEnvRef("DATABASE_URL", dbURL) {
 			fallbackDSN = ""
 		}
 		sb.WriteString(fmt.Sprintf("\tdsn := getEnv(\"DATABASE_URL\", %q)\n", fallbackDSN))

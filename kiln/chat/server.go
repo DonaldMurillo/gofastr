@@ -11,12 +11,13 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"sync/atomic"
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/widget"
+	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/router"
+	"github.com/DonaldMurillo/gofastr/kiln/internal/kid"
 	"github.com/DonaldMurillo/gofastr/kiln/journal"
 	"github.com/DonaldMurillo/gofastr/kiln/live"
 	"github.com/DonaldMurillo/gofastr/kiln/protocol"
@@ -41,11 +42,6 @@ func WidgetTag() string { return widget.RuntimeTag() }
 type Server struct {
 	live  *live.Live
 	tools *protocol.Tools
-
-	// callCounter is a monotonic ID source for tool_call envelopes
-	// journaled by the HTTP dispatcher. Atomic so concurrent HTTP
-	// requests can each get a unique id without locking.
-	callCounter atomic.Int64
 }
 
 // New constructs a chat Server.
@@ -391,7 +387,7 @@ func (s *Server) serveWorld(w http.ResponseWriter, r *http.Request) {
 func (s *Server) serveChatMessage(w http.ResponseWriter, r *http.Request) {
 	var args protocol.ChatArgs
 	r.Body = http.MaxBytesReader(w, r.Body, maxChatBody)
-	if err := json.NewDecoder(r.Body).Decode(&args); err != nil { //gofastr:allow(GOFASTR1407) kiln chat panel transport envelope on the build-mode dev server
+	if err := handler.DecodeStrict(r.Body, &args); err != nil {
 		http.Error(w, "invalid JSON", http.StatusBadRequest)
 		return
 	}
@@ -418,11 +414,18 @@ func (s *Server) serveToolDispatch(w http.ResponseWriter, r *http.Request) {
 	// pair them.
 	var callID string
 	if journaledTools[name] {
-		callID = s.nextCallID()
+		// The envelope is journaled only for a body that parses: garbage
+		// must not mint journal history. UnmarshalStrict (map shape)
+		// refuses duplicate and case-folded top-level keys the same way
+		// the typed decode below does.
 		var args map[string]any
 		if len(body) > 0 {
-			_ = json.Unmarshal(body, &args) //gofastr:allow(GOFASTR1407) kiln chat tool-call journaling: best-effort render of the same envelope decoded above
+			if err := handler.UnmarshalStrict(body, &args); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
 		}
+		callID = s.nextCallID()
 		_ = s.applyEntry(journal.KindToolCall, journal.ToolCallPayload{
 			CallID: callID,
 			Name:   name,
@@ -430,7 +433,7 @@ func (s *Server) serveToolDispatch(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	res, err := s.dispatch(r.Context(), name, bytes.NewReader(body))
+	res, err := s.dispatch(r.Context(), name, body)
 	if err != nil {
 		// Journal a synthetic tool_result with the parse error so the
 		// agent's failed call still appears in the timeline.
@@ -460,8 +463,7 @@ func (s *Server) serveToolDispatch(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) nextCallID() string {
-	n := s.callCounter.Add(1)
-	return fmt.Sprintf("c%d-%d", time.Now().UnixNano(), n)
+	return "c" + kid.Hex(16)
 }
 
 // applyEntry builds a journal Entry for the given kind/payload and feeds
@@ -469,7 +471,7 @@ func (s *Server) nextCallID() string {
 // envelope kinds (KindToolCall, KindToolResult), the underlying tool
 // dispatch journals world_edit / plan_* entries through protocol.Tools.
 func (s *Server) applyEntry(kind journal.Kind, payload any) error {
-	id := fmt.Sprintf("%d-%d", time.Now().UnixNano(), s.callCounter.Add(1))
+	id := kid.Hex(16)
 	entry, err := journal.NewEntry(id, time.Now().UTC(), kind, "", payload)
 	if err != nil {
 		return err
@@ -483,122 +485,125 @@ func writeResult(w http.ResponseWriter, res protocol.Result) {
 }
 
 // dispatch is the bridge from JSON tool calls to typed Tools methods.
-func (s *Server) dispatch(ctx context.Context, name string, body interface {
-	Read(p []byte) (n int, err error)
-}) (protocol.Result, error) {
-	dec := json.NewDecoder(body)
+// dispatch is the bridge from JSON tool calls to typed Tools methods. The
+// buffered body decodes through handler.UnmarshalStrict (duplicate and
+// case-folded keys are ambiguity, not data), with the size cap applied by
+// the caller that buffered it.
+func (s *Server) dispatch(ctx context.Context, name string, body []byte) (protocol.Result, error) {
 	switch name {
 	case "world_get":
 		var args protocol.WorldGetArgs
-		if err := dec.Decode(&args); err != nil && err.Error() != "EOF" {
-			return protocol.Result{}, err
+		if len(body) > 0 {
+			if err := handler.UnmarshalStrict(body, &args); err != nil {
+				return protocol.Result{}, err
+			}
 		}
 		return s.tools.WorldGet(ctx, args), nil
 	case "set_app_config":
 		var args protocol.SetAppConfigArgs
-		if err := dec.Decode(&args); err != nil {
+		if err := handler.UnmarshalStrict(body, &args); err != nil {
 			return protocol.Result{}, err
 		}
 		return s.tools.SetAppConfig(ctx, args), nil
 	case "set_scaffold":
 		var args protocol.SetScaffoldArgs
-		if err := dec.Decode(&args); err != nil {
+		if err := handler.UnmarshalStrict(body, &args); err != nil {
 			return protocol.Result{}, err
 		}
 		return s.tools.SetScaffold(ctx, args), nil
 	case "add_entity":
 		var args protocol.AddEntityArgs
-		if err := dec.Decode(&args); err != nil {
+		if err := handler.UnmarshalStrict(body, &args); err != nil {
 			return protocol.Result{}, err
 		}
 		return s.tools.AddEntity(ctx, args), nil
 	case "update_entity":
 		var args protocol.UpdateEntityArgs
-		if err := dec.Decode(&args); err != nil {
+		if err := handler.UnmarshalStrict(body, &args); err != nil {
 			return protocol.Result{}, err
 		}
 		return s.tools.UpdateEntity(ctx, args), nil
 	case "delete_entity":
 		var args protocol.DeleteEntityArgs
-		if err := dec.Decode(&args); err != nil {
+		if err := handler.UnmarshalStrict(body, &args); err != nil {
 			return protocol.Result{}, err
 		}
 		return s.tools.DeleteEntity(ctx, args), nil
 	case "add_field":
 		var args protocol.AddFieldArgs
-		if err := dec.Decode(&args); err != nil {
+		if err := handler.UnmarshalStrict(body, &args); err != nil {
 			return protocol.Result{}, err
 		}
 		return s.tools.AddField(ctx, args), nil
 	case "delete_field":
 		var args protocol.DeleteFieldArgs
-		if err := dec.Decode(&args); err != nil {
+		if err := handler.UnmarshalStrict(body, &args); err != nil {
 			return protocol.Result{}, err
 		}
 		return s.tools.DeleteField(ctx, args), nil
 	case "add_page":
 		var args protocol.AddPageArgs
-		if err := dec.Decode(&args); err != nil {
+		if err := handler.UnmarshalStrict(body, &args); err != nil {
 			return protocol.Result{}, err
 		}
 		return s.tools.AddPage(ctx, args), nil
 	case "delete_page":
 		var args protocol.DeletePageArgs
-		if err := dec.Decode(&args); err != nil {
+		if err := handler.UnmarshalStrict(body, &args); err != nil {
 			return protocol.Result{}, err
 		}
 		return s.tools.DeletePage(ctx, args), nil
 	case "update_page_element":
 		var args protocol.UpdatePageElementArgs
-		if err := dec.Decode(&args); err != nil {
+		if err := handler.UnmarshalStrict(body, &args); err != nil {
 			return protocol.Result{}, err
 		}
 		return s.tools.UpdatePageElement(ctx, args), nil
 	case "add_hook":
 		var args protocol.AddHookArgs
-		if err := dec.Decode(&args); err != nil {
+		if err := handler.UnmarshalStrict(body, &args); err != nil {
 			return protocol.Result{}, err
 		}
 		return s.tools.AddHook(ctx, args), nil
 	case "delete_hook":
 		var args protocol.DeleteHookArgs
-		if err := dec.Decode(&args); err != nil {
+		if err := handler.UnmarshalStrict(body, &args); err != nil {
 			return protocol.Result{}, err
 		}
 		return s.tools.DeleteHook(ctx, args), nil
 	case "add_route":
 		var args protocol.AddRouteArgs
-		if err := dec.Decode(&args); err != nil {
+		if err := handler.UnmarshalStrict(body, &args); err != nil {
 			return protocol.Result{}, err
 		}
 		return s.tools.AddRoute(ctx, args), nil
 	case "delete_route":
 		var args protocol.DeleteRouteArgs
-		if err := dec.Decode(&args); err != nil {
+		if err := handler.UnmarshalStrict(body, &args); err != nil {
 			return protocol.Result{}, err
 		}
 		return s.tools.DeleteRoute(ctx, args), nil
 	case "add_seed":
 		var args protocol.AddSeedArgs
-		if err := dec.Decode(&args); err != nil {
+		if err := handler.UnmarshalStrict(body, &args); err != nil {
 			return protocol.Result{}, err
 		}
 		return s.tools.AddSeed(ctx, args), nil
 	case "propose_plan":
 		var args protocol.ProposePlanArgs
-		if err := dec.Decode(&args); err != nil {
+		if err := handler.UnmarshalStrict(body, &args); err != nil {
 			return protocol.Result{}, err
 		}
 		return s.tools.ProposePlan(ctx, args), nil
 	case "approve_plan":
 		var args protocol.ApprovePlanArgs
-		if err := dec.Decode(&args); err != nil {
+		if err := handler.UnmarshalStrict(body, &args); err != nil {
 			return protocol.Result{}, err
 		}
 		return s.tools.ApprovePlan(ctx, args), nil
 	case "reject_plan":
 		var args protocol.RejectPlanArgs
-		if err := dec.Decode(&args); err != nil {
+		if err := handler.UnmarshalStrict(body, &args); err != nil {
 			return protocol.Result{}, err
 		}
 		return s.tools.RejectPlan(ctx, args), nil
@@ -608,13 +613,13 @@ func (s *Server) dispatch(ctx context.Context, name string, body interface {
 		return s.tools.ResetSession(ctx, protocol.ResetSessionArgs{}), nil
 	case "set_theme":
 		var args protocol.SetThemeArgs
-		if err := dec.Decode(&args); err != nil {
+		if err := handler.UnmarshalStrict(body, &args); err != nil {
 			return protocol.Result{}, err
 		}
 		return s.tools.SetTheme(ctx, args), nil
 	case "chat":
 		var args protocol.ChatArgs
-		if err := dec.Decode(&args); err != nil {
+		if err := handler.UnmarshalStrict(body, &args); err != nil {
 			return protocol.Result{}, err
 		}
 		return s.tools.Chat(ctx, args), nil

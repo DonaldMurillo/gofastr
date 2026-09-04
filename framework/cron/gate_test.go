@@ -72,7 +72,10 @@ func TestSetGateNilIsNoop(t *testing.T) {
 }
 
 // TestGatePanicLoggedWithoutOnError: a recovered gate panic must reach
-// an observable sink even when no OnError callback is configured.
+// an observable sink even when no OnError callback is configured. This
+// test carries the gate-panic containment contract (with OnError set,
+// the panic routes there instead — see leader_security_test.go and
+// TestScheduler_JobPanicRecovered).
 // reportError used to return early on a nil OnError, so the panic
 // value and stack were dropped on the floor while the job silently
 // skipped.

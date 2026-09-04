@@ -160,3 +160,92 @@ func TestUIHost_CreateSessionRejectsCrossOriginRequest(t *testing.T) {
 		t.Fatalf("SECURITY: [uihost-session] cross-origin session minting returned %d. Attack: CSRF can mint sessions from attacker origins.", rec.Code)
 	}
 }
+
+// actionRanFlags records which of the two compiled actions ran, for the
+// strict-key tests below.
+type actionRanFlags struct{ safe, danger bool }
+
+// strictActionHarness compiles a two-action screen ("safe"/"danger"),
+// proves the single-key form executes (so a later failure is about the
+// key shape, not the harness), and returns a raw-body POST func, the
+// compiled action id, and the ran flags.
+func strictActionHarness(t *testing.T) (post func(string) *httptest.ResponseRecorder, id string, ran *actionRanFlags) {
+	t.Helper()
+	ran = &actionRanFlags{}
+	comp := &actionTestComp{html: "<p>dup</p>", actions: func() {
+		component.On("safe", func(*component.ComponentContext) { ran.safe = true })
+		component.On("danger", func(*component.ComponentContext) { ran.danger = true })
+	}}
+	a := app.NewApp("dup-action-keys")
+	a.RegisterScreen(app.NewScreen("/dup", comp).WithTitle("Dup"), nil)
+	ds := New(a)
+	ds.AutoCompileActions()
+
+	id = ""
+	ds.mu.RLock()
+	for k := range ds.actionHandlers {
+		if id == "" || k == "dup" {
+			id = k
+		}
+	}
+	ds.mu.RUnlock()
+	if id == "" {
+		t.Fatal("setup: no server actions compiled for the screen")
+	}
+
+	sess := ds.CreateSession()
+	post = func(body string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPost, "/__gofastr/action", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.AddCookie(&http.Cookie{Name: sessionCookieSecureName, Value: sess.Token})
+		rec := httptest.NewRecorder()
+		ds.ServeHTTP(rec, req)
+		return rec
+	}
+
+	// Sanity: the endpoint accepts and executes the single-key form, so
+	// any later failure is about the duplicate keys, not the harness.
+	if rec := post(`{"action":"safe","params":{},"componentId":"` + id + `"}`); rec.Code != http.StatusOK {
+		t.Fatalf("setup: single-key action POST = %d (body %.200s)", rec.Code, rec.Body.String())
+	}
+	if !ran.safe {
+		t.Fatal("setup: single-key POST did not invoke the safe action")
+	}
+	return post, id, ran
+}
+
+// TestServerActionRejectsDuplicateKeys: the action endpoint refuses a
+// body with an exact duplicate top-level key. encoding/json resolves
+// duplicates last-wins, so a proxy or log that de-duplicates differently
+// would see a different request than the server executes.
+func TestServerActionRejectsDuplicateKeys(t *testing.T) {
+	post, id, ran := strictActionHarness(t)
+	body := `{"action":"safe","action":"danger","params":{},"componentId":"` + id + `"}`
+	if rec := post(body); rec.Code != http.StatusBadRequest {
+		t.Errorf("SECURITY: [uihost] POST /__gofastr/action accepted a body with a duplicate "+
+			"top-level key with status %d — last-wins decoding executes the second value while "+
+			"any first-read intermediary saw the first; the body must be refused (handler.UnmarshalStrict)",
+			rec.Code)
+	}
+	if ran.danger {
+		t.Error("SECURITY: [uihost] the last-wins decode EXECUTED the second \"action\" value — " +
+			"a body with duplicate top-level keys must be rejected before decode")
+	}
+}
+
+// TestServerActionRejectsCaseFoldedKeys: "action"/"Action" fold onto the
+// same struct field via stdlib json's tag-insensitive match — a duplicate
+// modulo folding; survives a dedup-only fix.
+func TestServerActionRejectsCaseFoldedKeys(t *testing.T) {
+	post, id, ran := strictActionHarness(t)
+	body := `{"action":"safe","Action":"danger","params":{},"componentId":"` + id + `"}`
+	if rec := post(body); rec.Code != http.StatusBadRequest {
+		t.Errorf("SECURITY: [uihost] POST /__gofastr/action accepted a body with case-folded "+
+			"top-level keys with status %d — the folded key matches the same field last-wins; "+
+			"the body must be refused (handler.UnmarshalStrict)", rec.Code)
+	}
+	if ran.danger {
+		t.Error("SECURITY: [uihost] the case-folded decode EXECUTED the second \"action\" value — " +
+			"a body with case-folded top-level keys must be rejected before decode")
+	}
+}

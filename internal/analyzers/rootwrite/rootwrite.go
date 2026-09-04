@@ -60,7 +60,7 @@ import (
 )
 
 var Analyzer = &analysis.Analyzer{
-	Name: "gofastrrootwrite",
+	Name: "rootwrite",
 	Doc:  "forbids writes under a root whose containment is lexical only: resolve with filepath.EvalSymlinks, and path.Clean zip entry names",
 	Run:  run,
 }

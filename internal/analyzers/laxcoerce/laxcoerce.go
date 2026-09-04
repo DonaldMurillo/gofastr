@@ -50,7 +50,7 @@ import (
 )
 
 var Analyzer = &analysis.Analyzer{
-	Name: "gofastrlaxcoerce",
+	Name: "laxcoerce",
 	Doc:  "forbids treating a failed type assertion on a map[string]any entry as absence; check presence separately or return an error",
 	Run:  run,
 }

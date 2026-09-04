@@ -180,6 +180,136 @@ func (s *EntityUserStore) UnlinkOAuth(ctx context.Context, userID, provider stri
 	return err
 }
 
+// UnlinkOAuthGuarded removes the provider link unless that would leave the
+// user with no login method, deciding and deleting in one atomic operation
+// so the refuse-the-last invariant holds under concurrent unlinks.
+// Implements AtomicUnlinker.
+//
+// On PostgreSQL the count, the password check, and the delete run in one
+// transaction whose first statement locks the user's link rows (SELECT …
+// FOR UPDATE): a concurrent unlink of the sibling provider blocks there,
+// then re-reads the post-commit state and refuses. On SQLite (and any
+// other dialect) the whole decision is one conditional DELETE — a single
+// statement is atomic in SQLite, and the writers-serialize lock model
+// makes the subquery and the delete one indivisible step — followed by a
+// read-back that only distinguishes NotLinked from RefusedLast for the
+// response code; the guard itself never depends on it.
+func (s *EntityUserStore) UnlinkOAuthGuarded(ctx context.Context, userID, provider string) (UnlinkOutcome, error) {
+	links := query.QuoteIdent(s.oauthLinksTable())
+	users := query.QuoteIdent(s.table)
+	if migrate.DetectDialect(s.db) == migrate.DialectPostgres {
+		return s.unlinkGuardedPostgres(ctx, userID, provider, links, users)
+	}
+	return s.unlinkGuardedSingleStatement(ctx, userID, provider, links, users)
+}
+
+func (s *EntityUserStore) unlinkGuardedPostgres(ctx context.Context, userID, provider, links, users string) (UnlinkOutcome, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return UnlinkNotLinked, err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	rows, err := tx.QueryContext(ctx, fmt.Sprintf(
+		"SELECT provider FROM %s WHERE user_id = $1 FOR UPDATE", links,
+	), userID)
+	if err != nil {
+		return UnlinkNotLinked, err
+	}
+	var providers []string
+	for rows.Next() {
+		var p string
+		if err := rows.Scan(&p); err != nil {
+			rows.Close()
+			return UnlinkNotLinked, err
+		}
+		providers = append(providers, p)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return UnlinkNotLinked, err
+	}
+	rows.Close()
+
+	linked := false
+	otherRemains := false
+	for _, p := range providers {
+		if p == provider {
+			linked = true
+		} else {
+			otherRemains = true
+		}
+	}
+	if !linked {
+		return UnlinkNotLinked, nil
+	}
+	if !otherRemains {
+		hasPW, err := s.txHasPassword(ctx, tx, users, userID)
+		if err != nil {
+			return UnlinkNotLinked, err
+		}
+		if !hasPW {
+			return UnlinkRefusedLast, nil
+		}
+	}
+	if _, err := tx.ExecContext(ctx, fmt.Sprintf(
+		"DELETE FROM %s WHERE user_id = $1 AND provider = $2", links,
+	), userID, provider); err != nil {
+		return UnlinkNotLinked, err
+	}
+	if err := tx.Commit(); err != nil {
+		return UnlinkNotLinked, err
+	}
+	return UnlinkRemoved, nil
+}
+
+func (s *EntityUserStore) unlinkGuardedSingleStatement(ctx context.Context, userID, provider, links, users string) (UnlinkOutcome, error) {
+	// The guard rides inside the DELETE: the row is removed only when
+	// another link for the user remains, or the user's row reports a
+	// real password. RowsAffected decides.
+	res, err := s.db.ExecContext(ctx, fmt.Sprintf(
+		"DELETE FROM %s WHERE user_id = $1 AND provider = $2 AND (EXISTS (SELECT 1 FROM %s l WHERE l.user_id = $1 AND l.provider <> $2) OR EXISTS (SELECT 1 FROM %s u WHERE u.%s = $1 AND u.%s = 1))",
+		links, links, users,
+		query.QuoteIdent(s.fieldMap.ID),
+		query.QuoteIdent(s.fieldMap.PasswordSet),
+	), userID, provider)
+	if err != nil {
+		return UnlinkNotLinked, err
+	}
+	if n, _ := res.RowsAffected(); n > 0 {
+		return UnlinkRemoved, nil
+	}
+	// Zero rows: either the link was never there (404) or the guard
+	// refused it (409). Read-back is for the status code only — the
+	// guard above is already decided and atomic.
+	var linked bool
+	err = s.db.QueryRowContext(ctx, fmt.Sprintf(
+		"SELECT EXISTS (SELECT 1 FROM %s WHERE user_id = $1 AND provider = $2)", links,
+	), userID, provider).Scan(&linked)
+	if err != nil {
+		return UnlinkNotLinked, err
+	}
+	if linked {
+		return UnlinkRefusedLast, nil
+	}
+	return UnlinkNotLinked, nil
+}
+
+// txHasPassword reads the password_set flag on the given transaction so
+// the PG guarded unlink decides on the same locked state it deletes in.
+func (s *EntityUserStore) txHasPassword(ctx context.Context, tx *sql.Tx, users, userID string) (bool, error) {
+	var hasPW bool
+	err := tx.QueryRowContext(ctx, fmt.Sprintf(
+		"SELECT %s FROM %s WHERE %s = $1",
+		query.QuoteIdent(s.fieldMap.PasswordSet), users,
+		query.QuoteIdent(s.fieldMap.ID),
+	), userID).Scan(&hasPW)
+	if err == sql.ErrNoRows {
+		return false, nil
+	}
+	return hasPW, err
+}
+
 // nullable wraps a string for SQL NULL semantics: empty → NULL, else the
 // string. Keeps the table free of empty-string profile columns and lets
 // ListAccounts distinguish "no avatar" from "empty avatar".

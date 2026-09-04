@@ -12,7 +12,10 @@ package control
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/core/handler"
 
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/ids"
 )
@@ -526,44 +529,58 @@ func MarshalCommand(c Command) ([]byte, error) {
 	return json.Marshal(commandEnvelope{Kind: c.CommandKind(), Body: body})
 }
 
+// unmarshalCommandBody decodes a wire object under the strict top-level
+// key rule — duplicate and case-folded keys are refused, because stdlib
+// json resolves them last-wins and a frame whose first spelling an
+// intermediary read differs from the value the engine executes must be
+// rejected, not silently normalized — while keeping the documented
+// ignore-unknown posture for body fields (§ Unknown-field policy:
+// additive evolution). handler.CheckTopLevelKeys is the walk.
+func unmarshalCommandBody(data []byte, dst any) error {
+	if err := handler.CheckTopLevelKeys(data, strings.ToLower); err != nil {
+		return err
+	}
+	return json.Unmarshal(data, dst)
+}
+
 // UnmarshalCommand decodes a wire JSON envelope back into a typed Command.
 // Unknown command kinds return an error (closed-union enforcement).
 func UnmarshalCommand(data []byte) (Command, error) {
 	var env commandEnvelope
-	if err := json.Unmarshal(data, &env); err != nil {
+	if err := unmarshalCommandBody(data, &env); err != nil {
 		return nil, err
 	}
 	switch env.Kind {
 	case "SendInput":
 		var c SendInput
-		return c, json.Unmarshal(env.Body, &c)
+		return c, unmarshalCommandBody(env.Body, &c)
 	case "CancelTurn":
 		var c CancelTurn
-		return c, json.Unmarshal(env.Body, &c)
+		return c, unmarshalCommandBody(env.Body, &c)
 	case "AnswerPermission":
 		var c AnswerPermission
-		return c, json.Unmarshal(env.Body, &c)
+		return c, unmarshalCommandBody(env.Body, &c)
 	case "CreateSession":
 		var c CreateSession
-		return c, json.Unmarshal(env.Body, &c)
+		return c, unmarshalCommandBody(env.Body, &c)
 	case "AttachSession":
 		var c AttachSession
-		return c, json.Unmarshal(env.Body, &c)
+		return c, unmarshalCommandBody(env.Body, &c)
 	case "DetachSession":
 		var c DetachSession
-		return c, json.Unmarshal(env.Body, &c)
+		return c, unmarshalCommandBody(env.Body, &c)
 	case "SetModel":
 		var c SetModel
-		return c, json.Unmarshal(env.Body, &c)
+		return c, unmarshalCommandBody(env.Body, &c)
 	case "EnterPlanMode":
 		var c EnterPlanMode
-		return c, json.Unmarshal(env.Body, &c)
+		return c, unmarshalCommandBody(env.Body, &c)
 	case "ExitPlanMode":
 		var c ExitPlanMode
-		return c, json.Unmarshal(env.Body, &c)
+		return c, unmarshalCommandBody(env.Body, &c)
 	case "CustomCommand":
 		var c CustomCommand
-		return c, json.Unmarshal(env.Body, &c)
+		return c, unmarshalCommandBody(env.Body, &c)
 	default:
 		return nil, fmt.Errorf("control: unknown command kind %q", env.Kind)
 	}

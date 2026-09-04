@@ -52,7 +52,10 @@ func (e *ExportBundle) Write(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("export: OutPath required")
 	}
 	tmp := e.OutPath + ".tmp"
-	f, err := os.Create(tmp)
+	// 0600: the bundle is the session event log carried off-box, and the
+	// operator may point OutPath at a shared dir; the sibling sqlite store
+	// already writes this data owner-only (0700 dir / 0600 files).
+	f, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
 	if err != nil {
 		return "", err
 	}

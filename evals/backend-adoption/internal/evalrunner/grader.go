@@ -342,7 +342,7 @@ func startServer(ctx context.Context, binary, workspace, dbPath, logPath string)
 	addr := listener.Addr().String()
 	_ = listener.Close()
 
-	logFile, err := os.Create(logPath)
+	logFile, err := os.OpenFile(logPath, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0o600)
 	if err != nil {
 		return nil, err
 	}

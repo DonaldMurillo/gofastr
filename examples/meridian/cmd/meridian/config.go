@@ -34,7 +34,12 @@ func loadConfig() storedConfig {
 	if err != nil {
 		return cfg
 	}
-	_ = json.Unmarshal(data, &cfg)
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		// A malformed file is refused, not half-applied: fall through to
+		// flags/env exactly like a missing file, instead of marching on
+		// with whatever partial fields the decoder did populate.
+		return storedConfig{}
+	}
 	return cfg
 }
 

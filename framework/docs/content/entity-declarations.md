@@ -87,6 +87,16 @@ with (`Pagination.MaxListLimit`, never above 1000, 100 when unset). A doc
 that advertises routes or limits the server refuses sends agents into
 404s; the generators read the mount, not the declaration.
 
+The skip side of pagination is bounded the same way the limit side is:
+an explicit `?offset=` beyond the handler's ceiling is refused with
+`400` instead of being handed raw to `OFFSET` (a per-request deep-skip
+scan). The ceiling is `CrudHandler.MaxOffset` when set, otherwise the
+page cap × 1000 — 100,000 at the default `Pagination.MaxListLimit` —
+and it can be moved per handler with `WithMaxOffset`, never removed.
+Page-derived offsets keep their own pinned behaviour: a huge `?page=`
+serves the empty window (200), with the arithmetic overflow guarded in
+`pagination.OffsetForPage`.
+
 MCP tools are the opposite. They are **off by default** and need
 `Exposure: &framework.ExposureConfig{MCP: true}`. The one exception is the dev
 loop: under `gofastr dev`, every CRUD-enabled entity also serves its data
@@ -670,6 +680,12 @@ owner scoping stays **on**: the widening never happens implicitly. This
 is the secure-by-default answer: opt in explicitly, and only when the
 policy says yes.
 
+**The Decider is consulted.** The lift routes through
+`access.CanResource` with `Ref{Type: <entity>, ID: ""}`, like every
+sibling gate: a resource-aware `Decider` returning `DecisionDeny` for
+the entity keeps a policy-granted caller inside their owner scope. The
+widening reads the role policy AND the per-resource authority.
+
 **Read-only.** `CrossOwnerRead` never touches Create/Update/Delete:
 those stay owner-scoped. A staff member can *see* every ticket but
 cannot PUT/PATCH/DELETE another user's row through auto-CRUD.
@@ -788,7 +804,10 @@ values" with `in`, not with multiple declarations.
 
 - **Non-empty**: it names an RBAC permission. A caller holding it reads
   every row; everyone else gets the filter. Like every permission check
-  this is fail-closed: no policy in context means no widening.
+  this is fail-closed: no policy in context means no widening. The check
+  routes through `access.CanResource` with `Ref{Type: <entity>, ID: ""}`,
+  so a resource-aware `Decider` returning `DecisionDeny` keeps a
+  policy-granted caller inside the filter.
 - **Empty**: any caller **with a session** reads every row, and an
   anonymous caller gets the filter. That is the posture above, and it is
   a weak one on purpose: "any signed-in user" means exactly that, not an

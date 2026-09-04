@@ -61,6 +61,14 @@ func (ch *CrudHandler) ServeStreamingList(ctx context.Context, w http.ResponseWr
 	// single-parse to keep the soft-delete gate and ?offset= read off the
 	// same url.Values instead of re-parsing per call.
 	q := r.URL.Query()
+	// Offset bound, same as List(): the direct-call contract this method
+	// maintains for the owner/tenant and AfterList gates holds for the
+	// skip side too. When chained from List() the guard has already run
+	// and passes again cheaply.
+	streamPage, streamPerPage := parsePaginationValues(q, ch.Entity.Config.Pagination.MaxListLimit)
+	if !ch.requireBoundedOffset(w, q, streamPage, streamPerPage) {
+		return
+	}
 	// COUNT first so the envelope has the totals up front.
 	countQb := query.Count(ch.Entity.GetTable())
 	filter.ApplyToCountQuery(countQb, filters)

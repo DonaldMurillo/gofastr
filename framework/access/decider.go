@@ -31,14 +31,22 @@ const (
 	DecisionDeny
 )
 
-// Decider is consulted before the role policy when a resource-aware check
-// (CanResource) runs. roles is the caller's resolved roles, the same slice
+// Decider is consulted before the role policy on every gated capability
+// check. roles is the caller's resolved roles, the same slice
 // access.Middleware / WithRoles install. The decider receives the capability
 // and the Ref under check so it can express rules the coarse role policy
 // cannot ("a team maintainer may edit their team's projects").
 //
-// Return DecisionAbstain to fall through to Can. A nil/missing decider also
-// falls through, so wiring a decider is strictly opt-in.
+// The seam binds EVERY gate, not only resource-scoped ones: CanResource
+// call sites (crud's requirePermission, the CrossOwnerRead and read-scope
+// lifts, the SSE feed's per-delivery re-check) AND the role-scoped
+// RequirePermission middleware, which offers the zero Ref because a route
+// gate holds no record. A decider that ignores empty-Type Refs opts out of
+// the route gates only; returning DecisionDeny on them fails the route
+// closed. battery/auth's role gates route through the same seam.
+//
+// Return DecisionAbstain to fall through to the role policy. A nil/missing
+// decider also falls through, so wiring a decider is strictly opt-in.
 type Decider func(ctx context.Context, roles []string, capability Permission, resource Ref) Decision
 
 // deciderKey is the context key for a Decider. It lives here, beside the
@@ -97,9 +105,30 @@ func CanResource(ctx context.Context, capability Permission, resource Ref) bool 
 	return Can(ctx, capability)
 }
 
-// DeciderMiddleware installs a Decider into the request context so downstream
-// CanResource calls (auto-CRUD permission gates, RequirePermission-style
-// handlers) consult it. Mount it alongside access.Middleware:
+// requireResource resolves a capability exactly as CanResource does —
+// decider first, then the role policy — without recording an evaluation.
+// RequirePermission observes its one check under its own
+// "require-permission" path (TestRequirePermissionObservesItsCheck pins
+// one evaluation per request), so it consults the seam through this
+// unobserved twin instead of calling CanResource and double-reporting.
+func requireResource(ctx context.Context, capability Permission, resource Ref) bool {
+	if d := GetDecider(ctx); d != nil {
+		switch d(ctx, GetRoles(ctx), capability, resource) {
+		case DecisionAllow:
+			return true
+		case DecisionDeny:
+			return false
+		}
+	}
+	policy, _ := ctx.Value(policyKey{}).(*RolePolicy)
+	return policy != nil && policy.Can(ctx, capability)
+}
+
+// DeciderMiddleware installs a Decider into the request context so every
+// downstream permission gate consults it: resource-scoped checks
+// (CanResource — auto-CRUD permission gates, the SSE feed's per-delivery
+// re-check) and role-scoped ones (RequirePermission, which passes the zero
+// Ref). Mount it alongside access.Middleware:
 //
 //	app.Use(access.Middleware(policy, roles.Resolve))
 //	app.Use(access.DeciderMiddleware(teamMaintainerDecider))

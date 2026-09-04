@@ -255,3 +255,72 @@ func TestExecuteEscapesHTMLBodyVars(t *testing.T) {
 		t.Error("SECURITY: [email] buildMessage accepted a subject whose CR/LF arrived via template data (Bcc smuggling)")
 	}
 }
+
+// assertLineNoCtrl fails when a header line carries any C0 control byte or
+// DEL. Callers pass lines with the trailing CR/LF already trimmed, so any
+// control byte found is message content, not framing.
+func assertLineNoCtrl(t *testing.T, line string) {
+	t.Helper()
+	for i := range len(line) {
+		if b := line[i]; b < 0x20 || b == 0x7f {
+			t.Errorf("SECURITY: [email-ctrl] header line %q carries control byte 0x%02X at offset %d — C0/DEL outside the CRLF framing is smuggled into the outgoing SMTP message", line, b, i)
+			return
+		}
+	}
+}
+
+// Property: header lines of the outgoing message never carry a C0 control
+// byte or DEL. MUAs, spam filters and archive tooling render header bytes
+// verbatim, so an ESC…BEL terminal-title sequence in a Subject or a DEL in
+// a custom header is an injection exactly like CRLF; the test passes when
+// buildMessage refuses the message OR emits clean lines (the assert refuses,
+// scrubHeaderValue percent-encodes as the wire-side guarantee).
+func TestHeaderLinesCarryNoControlBytes(t *testing.T) {
+	msg, err := buildMessage(Email{
+		From:     "from\x0b@example.com",
+		To:       []string{"to\x0c@example.com"},
+		Subject:  "a\x1b]0;pwn\x07b",
+		Headers:  map[string]string{"X-Custom": "v\x7fal"},
+		TextBody: "body",
+	})
+	if err != nil {
+		return // refused outright: property satisfied by rejection
+	}
+
+	// Scan the top header block: everything before the first blank line.
+	for _, ln := range strings.Split(string(msg), "\n") {
+		ln = strings.TrimSuffix(ln, "\r")
+		if ln == "" {
+			break // end of headers
+		}
+		assertLineNoCtrl(t, ln)
+	}
+}
+
+// Property: attachment filename parameters (Content-Type name= /
+// Content-Disposition filename=) never carry C0/DEL; quoteParamValue strips
+// the full range as the defensive wire-side guarantee behind
+// assertNoHeaderInjection's refusal.
+func TestMIMEParamsCarryNoControlBytes(t *testing.T) {
+	msg, err := buildMessage(Email{
+		From:     "f@example.com",
+		To:       []string{"t@example.com"},
+		Subject:  "s",
+		TextBody: "b",
+		Attachments: []Attachment{{
+			Filename: "re\x01port\x1b[2K\x7f.csv",
+			Content:  []byte("data"),
+		}},
+	})
+	if err != nil {
+		return // refused outright: property satisfied by rejection
+	}
+
+	// Part headers live after the top block, so scan every line that is one.
+	for _, ln := range strings.Split(string(msg), "\n") {
+		ln = strings.TrimSuffix(ln, "\r")
+		if strings.HasPrefix(ln, "Content-Type:") || strings.HasPrefix(ln, "Content-Disposition:") {
+			assertLineNoCtrl(t, ln)
+		}
+	}
+}

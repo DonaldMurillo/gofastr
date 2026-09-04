@@ -287,6 +287,9 @@ func moduleRevokeForm(prefix, csrf, name string) render.HTML {
 // leak (generated-app rule).
 
 func (b *Battery) handleModuleEnable(w http.ResponseWriter, r *http.Request) {
+	if !parseCappedForm(w, r) {
+		return
+	}
 	name := strings.TrimSpace(r.FormValue("module"))
 	if name == "" {
 		moduleBounce(w, r, b.cfg.PathPrefix, "module name required")
@@ -302,6 +305,9 @@ func (b *Battery) handleModuleEnable(w http.ResponseWriter, r *http.Request) {
 }
 
 func (b *Battery) handleModuleDisable(w http.ResponseWriter, r *http.Request) {
+	if !parseCappedForm(w, r) {
+		return
+	}
 	name := strings.TrimSpace(r.FormValue("module"))
 	if name == "" {
 		moduleBounce(w, r, b.cfg.PathPrefix, "module name required")
@@ -317,6 +323,9 @@ func (b *Battery) handleModuleDisable(w http.ResponseWriter, r *http.Request) {
 }
 
 func (b *Battery) handleModuleBump(w http.ResponseWriter, r *http.Request) {
+	if !parseCappedForm(w, r) {
+		return
+	}
 	name := strings.TrimSpace(r.FormValue("module"))
 	if name == "" {
 		moduleBounce(w, r, b.cfg.PathPrefix, "module name required")
@@ -334,6 +343,9 @@ func (b *Battery) handleModuleBump(w http.ResponseWriter, r *http.Request) {
 }
 
 func (b *Battery) handleModuleRevoke(w http.ResponseWriter, r *http.Request) {
+	if !parseCappedForm(w, r) {
+		return
+	}
 	name := strings.TrimSpace(r.FormValue("module"))
 	grant := strings.TrimSpace(r.FormValue("grant"))
 	if name == "" || grant == "" {

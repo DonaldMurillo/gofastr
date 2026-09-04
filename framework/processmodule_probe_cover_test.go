@@ -109,13 +109,13 @@ func TestConformanceReport_SummaryShapes(t *testing.T) {
 		t.Errorf("passing summary missing detail line: %q", passing)
 	}
 }
-func TestDenialDetail_emptyAndNonEmpty(t *testing.T) {
-	if got := denialDetail(ProbeNoNetworkEgress, ""); got != "" {
-		t.Errorf("denialDetail('') = %q, want empty", got)
+func TestParseProbeOutput_PassDenialDetail(t *testing.T) {
+	if got := parseProbeOutput(ProbeNoNetworkEgress, probeOutPass, false, ""); got.Detail != "" {
+		t.Errorf("PASS with empty stderr: Detail = %q, want empty", got.Detail)
 	}
-	got := denialDetail(ProbeNoNetworkEgress, "permission denied")
-	if !strings.Contains(got, "denial observed") || !strings.Contains(got, "permission denied") {
-		t.Errorf("denialDetail = %q", got)
+	got := parseProbeOutput(ProbeNoNetworkEgress, probeOutPass, false, "permission denied")
+	if !strings.Contains(got.Detail, "denial observed") || !strings.Contains(got.Detail, "permission denied") {
+		t.Errorf("PASS denial detail = %q", got.Detail)
 	}
 }
 

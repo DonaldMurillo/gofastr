@@ -221,7 +221,13 @@ func (s *SQLIdempotencyStore) Begin(ctx context.Context, key, fingerprint string
 	}
 	hdr := http.Header{}
 	if headers.Valid && headers.String != "" {
-		_ = json.Unmarshal([]byte(headers.String), &hdr)
+		// A stored response whose headers no longer parse is corrupt;
+		// replaying it with silently-dropped headers would answer a
+		// cached request without the content-type/security headers it
+		// was originally served under, so refuse the replay instead.
+		if err := json.Unmarshal([]byte(headers.String), &hdr); err != nil {
+			return nil, false, fmt.Errorf("idempotency: stored response headers for %q are corrupt: %w", key, err)
+		}
 	}
 	return &IdempotentResponse{
 		Status: int(status.Int64),

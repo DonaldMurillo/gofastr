@@ -3,6 +3,7 @@ package queue
 import (
 	"context"
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -142,7 +143,16 @@ func (q *RedisQueue) SetVisibilityTimeout(d time.Duration) {
 
 // Enqueue pushes a job onto the Redis list, applying defaults for ID,
 // CreatedAt, and MaxAttempts when not set.
-func (q *RedisQueue) Enqueue(ctx context.Context, job Job) error {
+func (q *RedisQueue) Enqueue(ctx context.Context, job Job) (err error) {
+	// q.client is host-pluggable (any RedisClient implementation), and
+	// Enqueue runs on scheduler/dispatch loops with no per-request
+	// recover net — a panicking client must surface as an error, not
+	// kill the process.
+	defer func() {
+		if v := recover(); v != nil {
+			err = fmt.Errorf("redis queue: enqueue panicked: %v", v)
+		}
+	}()
 	if job.ID == "" {
 		job.ID = redisRandomID()
 	}
@@ -390,7 +400,11 @@ func (q *RedisQueue) ownsClaim(job, current Job, found bool) bool {
 	if !found {
 		return false
 	}
-	if current.ClaimToken == job.ClaimToken {
+	// Constant-time compare: ClaimToken is a credential fencing stale
+	// completions, and a short-circuit == leaks match status through
+	// timing. The tokens are fixed-length crypto/rand hex, so the
+	// length precheck inside ConstantTimeCompare leaks nothing.
+	if subtle.ConstantTimeCompare([]byte(current.ClaimToken), []byte(job.ClaimToken)) == 1 {
 		return true
 	}
 	q.staleClaims.Add(1)

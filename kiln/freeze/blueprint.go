@@ -2,6 +2,7 @@ package freeze
 
 import (
 	"fmt"
+	"net/url"
 	"reflect"
 	"sort"
 	"strconv"
@@ -137,7 +138,7 @@ func appMap(a world.AppConfig) map[string]any {
 	if a.DBDriver != "" || a.DBURL != "" {
 		db := map[string]any{}
 		putString(db, "driver", a.DBDriver)
-		putString(db, "url", a.DBURL)
+		putString(db, "url", dbURLRef(a.DBURL))
 		m["db"] = db
 	}
 	putString(m, "static_dir", a.StaticDir)
@@ -947,4 +948,39 @@ func envRef(value, name string) string {
 		return ""
 	}
 	return "${" + name + "}"
+}
+
+// dbURLRef routes a credential-bearing DSN through envRef. A DSN with an
+// embedded password (postgres://user:pw@host/db, a key/value password=
+// pair) is live credential material: freeze writes into a directory that
+// is about to be committed, so the password must not ride along verbatim.
+// A DSN that carries no credentials (a SQLite file path, a URL with no
+// userinfo) stays verbatim so local frozen apps keep booting. Mirrors
+// cmd/gofastr's dsnHasSecret (same fail-closed rule; main-package twin,
+// kept in lockstep by freeze_security_test.go).
+func dbURLRef(dsn string) string {
+	if dsn == "" || !dsnHasSecret(dsn) {
+		return dsn
+	}
+	return envRef(dsn, "DATABASE_URL")
+}
+
+// dsnHasSecret reports whether a DSN embeds credentials: a URL-form
+// password or a key/value `password=` pair. Fails CLOSED on URL-form
+// DSNs url.Parse rejects but that carry an '@' authority: userinfo we
+// cannot prove clean is treated as credential-bearing.
+func dsnHasSecret(dsn string) bool {
+	if strings.Contains(dsn, "password=") {
+		return true
+	}
+	if u, err := url.Parse(dsn); err == nil {
+		if u.User != nil {
+			if _, has := u.User.Password(); has {
+				return true
+			}
+		}
+	} else if i := strings.Index(dsn, "://"); i >= 0 && strings.Contains(dsn[i+3:], "@") {
+		return true
+	}
+	return false
 }

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"runtime/debug"
 	"sync"
 	"time"
 
@@ -110,9 +111,7 @@ func AttachFanout(bus *EventBus, f fanout.Fanout) (stop func(), err error) {
 				return
 			case data := <-queue:
 				ctx, cancel := context.WithTimeout(context.Background(), bridgePublishTimeout)
-				if perr := f.Publish(ctx, fanoutTopic, data); perr != nil {
-					slog.Default().Debug("event: fanout publish failed (best-effort)", "topic", fanoutTopic, "err", perr)
-				}
+				publishSafely(ctx, f, data)
 				cancel()
 			}
 		}
@@ -186,4 +185,22 @@ func AttachFanout(bus *EventBus, f fanout.Fanout) (stop func(), err error) {
 			bus.mu.Unlock()
 		})
 	}, nil
+}
+
+// publishSafely runs one backend Publish under a recover guard: the
+// fanout backend is host-supplied code running on the bridge's publisher
+// goroutine, where a panic is process-fatal for every replica serving
+// the bridged bus. The lane is documented lossy best-effort, so the
+// panic is logged like the marshal-failure path and the goroutine keeps
+// draining the queue.
+func publishSafely(ctx context.Context, f fanout.Fanout, data []byte) {
+	defer func() {
+		if r := recover(); r != nil {
+			slog.Default().Error("event: fanout publish panicked (best-effort lane; continuing)",
+				"topic", fanoutTopic, "panic", r, "stack", string(debug.Stack()))
+		}
+	}()
+	if perr := f.Publish(ctx, fanoutTopic, data); perr != nil {
+		slog.Default().Debug("event: fanout publish failed (best-effort)", "topic", fanoutTopic, "err", perr)
+	}
 }

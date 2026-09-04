@@ -94,6 +94,13 @@ func (MyPlugin) Init(app *framework.App) error {
 }
 ```
 
+Every app-level lifecycle phase — `OnStart`, `OnReady`, `WithSeed`, and
+battery `OnStart`/`OnStop` — runs host-supplied callback code under the
+same panic isolation `Init` gets: a hook that panics aborts that phase
+with an attributed error (`Start` returns it and runs its teardown;
+`Shutdown` keeps stopping the remaining batteries and joins the errors)
+instead of crashing the process.
+
 For shutdown hooks that must run AFTER every other plugin's OnStop,
 e.g. the logging plugin's "close every sink" hook, use `OnStopFirst`:
 it prepends to the hook list, so the reverse-order Shutdown iteration

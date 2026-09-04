@@ -55,12 +55,31 @@ func decodeMCPRequest(w http.ResponseWriter, r *http.Request, req *Request) bool
 	}
 	body := http.MaxBytesReader(w, r.Body, maxMCPBodyBytes)
 	defer body.Close()
-	if err := json.NewDecoder(body).Decode(req); err != nil { //gofastr:allow(GOFASTR1407) MCP JSON-RPC envelope transport: content-type and size policy enforced above; no credential field resolves here
+	raw, err := io.ReadAll(body)
+	if err != nil {
 		var maxErr *http.MaxBytesError
 		if errorAsMaxBytes(err, &maxErr) {
 			http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
 			return false
 		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(Response{
+			JSONRPC: "2.0",
+			ID:      nil,
+			Error: &RPCError{
+				Code:    ErrInvalidParams,
+				Message: "invalid JSON: " + err.Error(),
+			},
+		})
+		return false
+	}
+	// handler.UnmarshalStrict (DecodeStrict over the capped body)
+	// refuses duplicate and case-folded top-level envelope keys —
+	// stdlib json keeps the last duplicate and folds key case — so no
+	// first-occurrence parser (proxy, WAF, audit logger) can disagree
+	// with the dispatcher's decode.
+	if err := handler.UnmarshalStrict(raw, req); err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(Response{

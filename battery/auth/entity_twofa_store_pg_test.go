@@ -116,7 +116,10 @@ func TestEntityTwoFA_Postgres_SelfHealIgnoresOtherSchema(t *testing.T) {
 		t.Fatalf("create old-shape table: %v", err)
 	}
 
-	s := NewEntityTwoFAStore(db, "auth_twofa")
+	s, err := NewEntityTwoFAStore(db, "auth_twofa", testTwoFAStoreConfig())
+	if err != nil {
+		t.Fatalf("NewEntityTwoFAStore: %v", err)
+	}
 	if err := s.EnsureSchema(ctx); err != nil {
 		t.Fatalf("EnsureSchema must add version despite the sibling schema: %v", err)
 	}
@@ -141,7 +144,10 @@ func TestTwoFAPGLegacyBools(t *testing.T) {
 	)`); err != nil {
 		t.Fatalf("create legacy 2FA table: %v", err)
 	}
-	store := NewEntityTwoFAStore(db, "auth_twofa")
+	store, err := NewEntityTwoFAStore(db, "auth_twofa", testTwoFAStoreConfig())
+	if err != nil {
+		t.Fatalf("NewEntityTwoFAStore: %v", err)
+	}
 	if err := store.EnsureSchema(ctx); err != nil {
 		t.Fatalf("EnsureSchema legacy: %v", err)
 	}
@@ -163,7 +169,10 @@ func TestTwoFAPGLegacyBools(t *testing.T) {
 func TestEntityTwoFA_Postgres_EnsureSchemaIdempotent(t *testing.T) {
 	db := openPGMultiConn(t)
 	ctx := context.Background()
-	s := NewEntityTwoFAStore(db, "auth_twofa")
+	s, err := NewEntityTwoFAStore(db, "auth_twofa", testTwoFAStoreConfig())
+	if err != nil {
+		t.Fatalf("NewEntityTwoFAStore: %v", err)
+	}
 	for i := range 3 {
 		if err := s.EnsureSchema(ctx); err != nil {
 			t.Fatalf("EnsureSchema call %d must be idempotent: %v", i+1, err)
@@ -174,7 +183,10 @@ func TestEntityTwoFA_Postgres_EnsureSchemaIdempotent(t *testing.T) {
 func TestEntityTwoFA_Postgres_RoundTripAndConsume(t *testing.T) {
 	db := openPGForBattery(t)
 	ctx := context.Background()
-	s := NewEntityTwoFAStore(db, "auth_twofa")
+	s, err := NewEntityTwoFAStore(db, "auth_twofa", testTwoFAStoreConfig())
+	if err != nil {
+		t.Fatalf("NewEntityTwoFAStore: %v", err)
+	}
 	if err := s.EnsureSchema(ctx); err != nil {
 		t.Fatalf("EnsureSchema: %v", err)
 	}
@@ -233,7 +245,10 @@ func TestEntityTwoFA_Postgres_RoundTripAndConsume(t *testing.T) {
 func TestEntityTwoFA_Postgres_ReenrolKeepsNewCodes(t *testing.T) {
 	db := openPGForBattery(t)
 	ctx := context.Background()
-	s := NewEntityTwoFAStore(db, "auth_twofa")
+	s, err := NewEntityTwoFAStore(db, "auth_twofa", testTwoFAStoreConfig())
+	if err != nil {
+		t.Fatalf("NewEntityTwoFAStore: %v", err)
+	}
 	if err := s.EnsureSchema(ctx); err != nil {
 		t.Fatalf("EnsureSchema: %v", err)
 	}
@@ -298,7 +313,10 @@ func TestEntityTwoFA_Postgres_ConcurrentConsumeSingleUse(t *testing.T) {
 	// connection, so it can't drive true cross-connection contention).
 	db := openPGMultiConn(t)
 	ctx := context.Background()
-	s := NewEntityTwoFAStore(db, "auth_twofa")
+	s, err := NewEntityTwoFAStore(db, "auth_twofa", testTwoFAStoreConfig())
+	if err != nil {
+		t.Fatalf("NewEntityTwoFAStore: %v", err)
+	}
 	if err := s.EnsureSchema(ctx); err != nil {
 		t.Fatalf("EnsureSchema: %v", err)
 	}
@@ -367,7 +385,10 @@ func TestEntityTwoFA_Postgres_ConcurrentConsumeSingleUse(t *testing.T) {
 func TestEntityTwoFA_Postgres_ConcurrentDistinctCodesAllSucceed(t *testing.T) {
 	db := openPGMultiConn(t)
 	ctx := context.Background()
-	s := NewEntityTwoFAStore(db, "auth_twofa")
+	s, err := NewEntityTwoFAStore(db, "auth_twofa", testTwoFAStoreConfig())
+	if err != nil {
+		t.Fatalf("NewEntityTwoFAStore: %v", err)
+	}
 	if err := s.EnsureSchema(ctx); err != nil {
 		t.Fatalf("EnsureSchema: %v", err)
 	}

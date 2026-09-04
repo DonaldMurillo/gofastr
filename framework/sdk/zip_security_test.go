@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"strings"
 	"testing"
+	"testing/fstest"
 )
 
 // Property: every entry name PackZip emits stays inside the extraction
@@ -64,4 +65,25 @@ func escapingZipEntries(t *testing.T, raw []byte) []string {
 		}
 	}
 	return out
+}
+
+// TestReadManifestRejectsEmptyEntities: a manifest that passes
+// ReadManifest must describe an SDK whose drift check can see the live
+// schema. An entities:[] manifest validates structurally but makes the
+// drift check vacuous — the live hash is computed over the empty set, a
+// constant — so a generation run that lost its entity list (an --only
+// typo, an empty registry at generate time) must fail here rather than
+// report "current" forever after.
+func TestReadManifestRejectsEmptyEntities(t *testing.T) {
+	for name, mf := range map[string]string{
+		"empty entities":   `{"schemaVersion":2,"app":"x","entities":[],"schemaHash":"sha256:ab","artifacts":{"go":{"file":"sdk-go.zip","sha256":"ab","bytes":2}}}`,
+		"omitted entities": `{"schemaVersion":2,"app":"x","schemaHash":"sha256:ab","artifacts":{"go":{"file":"sdk-go.zip","sha256":"ab","bytes":2}}}`,
+	} {
+		if _, err := ReadManifest(fstest.MapFS{ManifestFile: {Data: []byte(mf)}}); err == nil {
+			t.Errorf("CONTRACT: [sdk-manifest] %s manifest passed ReadManifest: Entities is not validated (manifest.go). "+
+				"A zero-entity manifest makes the drift check vacuous — sdkdocs hashes the registry restricted to an "+
+				"empty set, a constant, so the SDK docs page serves downloads as \"current\" no matter what the live "+
+				"schema holds.", name)
+		}
+	}
 }

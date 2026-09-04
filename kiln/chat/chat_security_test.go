@@ -6,6 +6,7 @@ import (
 	"html"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -639,4 +640,292 @@ func TestReadRoutesRefuseCrossSiteSub(t *testing.T) {
 			t.Errorf("same-origin GET /kiln/world (operator panel) got %d, want 200", rec.Code)
 		}
 	})
+}
+
+// --- Strict body decoding on the panel + tool surfaces -----------------
+//
+// Property family: a JSON-body RPC surface must either decode its body
+// or refuse the request (400) — never ack an operation whose arguments
+// it never read, and never resolve a duplicate or case-folded key
+// last-wins.
+
+// localJSONPost drives a loopback RPC the way the agent transport does:
+// same host, no Origin header (sameOriginOnly passes those). The body
+// is sent verbatim.
+func localJSONPost(t *testing.T, l *live.Live, path, body string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPost, "http://localhost:8765"+path, strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	l.ServeHTTP(rec, req)
+	return rec
+}
+
+// panelStrictRefusals runs the two refusal shapes (a body that fails to
+// parse, and a duplicate key that must not last-wins) against one panel
+// surface.
+func panelStrictRefusals(t *testing.T, l *live.Live, cases []struct {
+	name string
+	path string
+	body string
+}) {
+	t.Helper()
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			rec := localJSONPost(t, l, c.path, c.body)
+			if rec.Code != http.StatusBadRequest {
+				t.Errorf("POST %s with body %.60q was acked %d %q — the handler proceeded without a decoded body; want 400", c.path, c.body, rec.Code, rec.Body.String())
+			}
+		})
+	}
+}
+
+// planApproved reads one plan's state under the session read lock.
+func planApproved(l *live.Live, id string) bool {
+	var approved bool
+	l.ReadSession(func(sess *journal.Session) {
+		if p, ok := sess.Plans[id]; ok {
+			approved = p.Approved
+		}
+	})
+	return approved
+}
+
+func TestPanelSendRejectsMalformed(t *testing.T) {
+	l, _ := newCSRFTestServer(t)
+	panelStrictRefusals(t, l, []struct {
+		name string
+		path string
+		body string
+	}{
+		{"send malformed", "/kiln/panel/send", `{"text":"drop the posts`},
+	})
+}
+
+func TestPanelSendRejectsDuplicateKeys(t *testing.T) {
+	l, _ := newCSRFTestServer(t)
+	panelStrictRefusals(t, l, []struct {
+		name string
+		path string
+		body string
+	}{
+		{"send duplicate key", "/kiln/panel/send", `{"text":"visible","text":"hidden"}`},
+	})
+}
+
+func TestPanelApproveRejectsMalformed(t *testing.T) {
+	l, tools := newCSRFTestServer(t)
+	ctx := context.Background()
+	if res := tools.ProposePlan(ctx, protocol.ProposePlanArgs{
+		PlanID:  "strict-a",
+		Steps:   []string{"drop posts"},
+		Targets: []journal.PlanTarget{{Op: "delete_entity", Name: "posts"}},
+	}); !res.OK {
+		t.Fatalf("propose_plan strict-a: %+v", res)
+	}
+	panelStrictRefusals(t, l, []struct {
+		name string
+		path string
+		body string
+	}{
+		{"approve malformed", "/kiln/panel/approve_plan", `{"plan_id":"strict-a`},
+	})
+}
+
+// TestPanelApproveRejectsDuplicateKeys carries the damage pin: under
+// last-wins, a duplicate-key body approved plan strict-b while the
+// first occurrence named strict-a. The plan gate is a human-approval
+// control; strict-b must stay pending.
+func TestPanelApproveRejectsDuplicateKeys(t *testing.T) {
+	l, tools := newCSRFTestServer(t)
+	ctx := context.Background()
+	for _, id := range []string{"strict-a", "strict-b"} {
+		if res := tools.ProposePlan(ctx, protocol.ProposePlanArgs{
+			PlanID:  id,
+			Steps:   []string{"drop posts"},
+			Targets: []journal.PlanTarget{{Op: "delete_entity", Name: "posts"}},
+		}); !res.OK {
+			t.Fatalf("propose_plan %s: %+v", id, res)
+		}
+	}
+	panelStrictRefusals(t, l, []struct {
+		name string
+		path string
+		body string
+	}{
+		{"approve duplicate key", "/kiln/panel/approve_plan", `{"plan_id":"strict-a","plan_id":"strict-b"}`},
+	})
+
+	if planApproved(l, "strict-b") {
+		t.Errorf("duplicate-key approve_plan approved plan strict-b (last-wins); the human gate read strict-a")
+	}
+}
+
+func TestPanelRejectPlanRejectsMalformed(t *testing.T) {
+	l, tools := newCSRFTestServer(t)
+	ctx := context.Background()
+	if res := tools.ProposePlan(ctx, protocol.ProposePlanArgs{
+		PlanID:  "strict-a",
+		Steps:   []string{"drop posts"},
+		Targets: []journal.PlanTarget{{Op: "delete_entity", Name: "posts"}},
+	}); !res.OK {
+		t.Fatalf("propose_plan strict-a: %+v", res)
+	}
+	panelStrictRefusals(t, l, []struct {
+		name string
+		path string
+		body string
+	}{
+		{"reject malformed", "/kiln/panel/reject_plan", `{"plan_id":"strict-a","reason":"x`},
+	})
+}
+
+func TestPanelRejectPlanRejectsDuplicateKeys(t *testing.T) {
+	l, tools := newCSRFTestServer(t)
+	ctx := context.Background()
+	if res := tools.ProposePlan(ctx, protocol.ProposePlanArgs{
+		PlanID:  "strict-a",
+		Steps:   []string{"drop posts"},
+		Targets: []journal.PlanTarget{{Op: "delete_entity", Name: "posts"}},
+	}); !res.OK {
+		t.Fatalf("propose_plan strict-a: %+v", res)
+	}
+	panelStrictRefusals(t, l, []struct {
+		name string
+		path string
+		body string
+	}{
+		{"reject duplicate reason", "/kiln/panel/reject_plan", `{"plan_id":"strict-a","reason":"first","reason":"second"}`},
+	})
+}
+
+func TestChatMessageRejectsDuplicateKeys(t *testing.T) {
+	l, _ := newCSRFTestServer(t)
+	rec := localJSONPost(t, l, "/kiln/chat/message", `{"role":"user","text":"first","text":"second"}`)
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("/kiln/chat/message accepted duplicate-key body (encoding/json resolves it last-wins): status %d, body %.200s — want 400", rec.Code, rec.Body.String())
+	}
+}
+
+// TestChatMessageRejectsCaseFoldedKeys: "Text"/"text" fold onto the
+// same field via stdlib json's tag-insensitive match — a duplicate
+// modulo folding; survives a dedup-only fix.
+func TestChatMessageRejectsCaseFoldedKeys(t *testing.T) {
+	l, _ := newCSRFTestServer(t)
+	rec := localJSONPost(t, l, "/kiln/chat/message", `{"role":"user","Text":"first","text":"second"}`)
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("/kiln/chat/message accepted case-folded-key body (encoding/json resolves it last-wins): status %d, body %.200s — want 400", rec.Code, rec.Body.String())
+	}
+}
+
+func TestToolDispatchRejectsDuplicateKeys(t *testing.T) {
+	l, _ := newCSRFTestServer(t)
+	rec := localJSONPost(t, l, "/kiln/tool/add_entity", `{"entity":{"name":"dupSafe","fields":[]},"entity":{"name":"dupEvil","fields":[]}}`)
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("/kiln/tool/add_entity accepted duplicate-key body (encoding/json resolves it last-wins and the tool runs on the second value): status %d, body %.200s — want 400", rec.Code, rec.Body.String())
+	}
+}
+
+func TestToolDispatchRejectsCaseFoldedKeys(t *testing.T) {
+	l, _ := newCSRFTestServer(t)
+	rec := localJSONPost(t, l, "/kiln/tool/add_entity", `{"Entity":{"name":"foldSafe","fields":[]},"entity":{"name":"foldEvil","fields":[]}}`)
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("/kiln/tool/add_entity accepted case-folded-key body (encoding/json resolves it last-wins and the tool runs on the second value): status %d, body %.200s — want 400", rec.Code, rec.Body.String())
+	}
+}
+
+// TestToolDispatchRejectsMalformed is a different mechanism from the
+// duplicate-key family: a body that fails to parse must not mint a
+// tool_call envelope into the journal either — the envelope is written
+// only after the body proves parseable.
+func TestToolDispatchRejectsMalformed(t *testing.T) {
+	l, _ := newCSRFTestServer(t)
+	before := countToolCalls(t, l)
+	rec := localJSONPost(t, l, "/kiln/tool/add_entity", `{"entity":{"name":`)
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("/kiln/tool/add_entity accepted malformed JSON: status %d, body %.200s — want 400", rec.Code, rec.Body.String())
+	}
+	if after := countToolCalls(t, l); after != before {
+		t.Errorf("malformed JSON body minted %d tool_call journal envelope(s) before parse validation; the envelope must only be journaled after the body proves parseable", after-before)
+	}
+}
+
+func countToolCalls(t *testing.T, l *live.Live) int {
+	t.Helper()
+	entries, err := l.Journal().Read()
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := 0
+	for _, e := range entries {
+		if e.Kind == journal.KindToolCall {
+			n++
+		}
+	}
+	return n
+}
+
+// Property: every browser-facing response the kiln server produces
+// carries X-Content-Type-Options: nosniff (the framework default
+// chain's discipline). The panel surfaces render live session/world
+// state into the operator's page, so the aux router they ride is
+// wrapped in the same security-header middleware.
+func TestPanelSurfacesCarryNoSniff(t *testing.T) {
+	l, _ := newCSRFTestServer(t)
+
+	for _, path := range []string{
+		"/core-ui/widget/kiln-panel/chrome", // HTML fragment from live session state
+		"/core-ui/widget/kiln-panel/state",  // JSON the panel re-renders from
+		"/core-ui/widget/kiln-panel/style.css",
+	} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.Header.Set("Accept", "text/html,*/*")
+		rec := httptest.NewRecorder()
+		l.ServeHTTP(rec, req)
+		res := rec.Result()
+		if res.StatusCode != http.StatusOK {
+			t.Fatalf("%s: status %d — surface moved, revisit this pin", path, res.StatusCode)
+		}
+		if ct := res.Header.Get("Content-Type"); ct == "" {
+			t.Fatalf("%s: no Content-Type at all — wrong surface", path)
+		}
+		if got := res.Header.Get("X-Content-Type-Options"); got != "nosniff" {
+			t.Errorf("%s (Content-Type %q) served without X-Content-Type-Options (got %q): the aux router must carry the default chain's security headers", path, res.Header.Get("Content-Type"), got)
+		}
+	}
+}
+
+// nanoRun matches any run of digits long enough to be a nanosecond
+// timestamp embedded in an id.
+var nanoRun = regexp.MustCompile(`[0-9]{15,}`)
+
+// Property: tool-call envelope ids (CallID and the journal entry id)
+// are minted from crypto/rand, never from a wall-clock timestamp or
+// counter — they pair calls with results in panel state and would be
+// enumerable otherwise.
+func TestToolCallIDsUnpredictable(t *testing.T) {
+	l, tools := newCSRFTestServer(t)
+	srv := New(l, tools)
+	if run := nanoRun.FindString(srv.nextCallID()); run != "" {
+		t.Errorf("nextCallID minted a timestamp-shaped id (numeric run %q)", run)
+	}
+	before := countToolCalls(t, l)
+	if rec := localJSONPost(t, l, "/kiln/tool/add_entity", `{"entity":{"name":"ids","fields":[]}}`); rec.Code != http.StatusOK {
+		t.Fatalf("add_entity: %d %s", rec.Code, rec.Body.String())
+	}
+	entries, err := l.Journal().Read()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries[before:] {
+		if run := nanoRun.FindString(e.ID); run != "" {
+			t.Errorf("journal entry id %q embeds a %d-digit numeric run — mint envelope ids from crypto/rand, not the clock", e.ID, len(run))
+		}
+		var p journal.ToolCallPayload
+		if e.Kind == journal.KindToolCall && e.Decode(&p) == nil {
+			if run := nanoRun.FindString(p.CallID); run != "" {
+				t.Errorf("tool_call CallID %q embeds a nanosecond-scale numeric run — mint call ids from crypto/rand, not the clock", p.CallID)
+			}
+		}
+	}
 }

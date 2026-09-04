@@ -157,7 +157,7 @@ func (r *Recorder) Done() (string, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	dir := filepath.Join(r.dir, string(r.session))
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", err
 	}
 	path := filepath.Join(dir, r.traceID.String()+".json")
@@ -172,7 +172,7 @@ func (r *Recorder) Done() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return path, os.WriteFile(path, data, 0o644)
+	return path, os.WriteFile(path, data, 0o600)
 }
 
 // TraceContextHeader returns the W3C `traceparent` header value for

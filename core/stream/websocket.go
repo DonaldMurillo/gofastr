@@ -297,13 +297,14 @@ func Upgrade(w http.ResponseWriter, r *http.Request, cfg WSConfig) (*WebSocketCo
 // randomConnectionID mints a per-connection id: 8 random bytes, hex.
 // Random (not monotonic) so the id carries no ordering information
 // across users; distinctness per reconnect is what correlates a
-// browser generation with a server-side connection.
+// browser generation with a server-side connection. crypto/rand.Read
+// cannot fail on a supported platform, and a time-derived fallback
+// would be enumerable precisely when randomness is gone — so a failure
+// is fatal instead.
 func randomConnectionID() string {
 	var b [8]byte
 	if _, err := rand.Read(b[:]); err != nil {
-		// crypto/rand failing is a broken runtime; fall back to a
-		// time-derived id rather than refusing the connection.
-		return fmt.Sprintf("t%016x", time.Now().UnixNano())
+		panic("stream: crypto/rand failed: " + err.Error())
 	}
 	return fmt.Sprintf("%x", b[:])
 }

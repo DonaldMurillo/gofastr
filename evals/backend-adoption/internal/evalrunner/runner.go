@@ -60,12 +60,12 @@ func Run(ctx context.Context, cfg Config) (*Aggregate, error) {
 	}
 	runID := time.Now().UTC().Format("20060102T150405Z")
 	runDir := filepath.Join(cfg.ArtifactDir, runID)
-	if err := os.MkdirAll(runDir, 0o755); err != nil {
+	if err := os.MkdirAll(runDir, 0o700); err != nil {
 		return nil, err
 	}
 	cliPath := filepath.Join(runDir, "tools", executableName("gofastr"))
 	if contains(cfg.Frameworks, "gofastr") {
-		if err := os.MkdirAll(filepath.Dir(cliPath), 0o755); err != nil {
+		if err := os.MkdirAll(filepath.Dir(cliPath), 0o700); err != nil {
 			return nil, err
 		}
 		if output, buildErr := commandOutput(ctx, cfg.RepoRoot, "go", "build", "-o", cliPath, "./cmd/gofastr"); buildErr != nil {
@@ -128,7 +128,7 @@ func Run(ctx context.Context, cfg Config) (*Aggregate, error) {
 	if err := writeJSON(filepath.Join(runDir, "results.json"), aggregate); err != nil {
 		return nil, err
 	}
-	if err := os.WriteFile(filepath.Join(runDir, "RESULTS.md"), []byte(RenderMarkdown(aggregate)), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(runDir, "RESULTS.md"), []byte(RenderMarkdown(aggregate)), 0o600); err != nil {
 		return nil, err
 	}
 	if len(runErrors) > 0 {
@@ -174,7 +174,7 @@ func RegradeMaintenance(ctx context.Context, runDir string) (*Aggregate, error) 
 	if err := writeJSON(filepath.Join(runDir, "results.json"), &aggregate); err != nil {
 		return nil, err
 	}
-	if err := os.WriteFile(filepath.Join(runDir, "RESULTS.md"), []byte(RenderMarkdown(&aggregate)), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(runDir, "RESULTS.md"), []byte(RenderMarkdown(&aggregate)), 0o600); err != nil {
 		return nil, err
 	}
 	return &aggregate, nil
@@ -184,7 +184,7 @@ func runTrial(ctx context.Context, cfg Config, runDir, cliPath, codexVersion, fr
 	id := fmt.Sprintf("%s-run-%d", framework, repetition)
 	cellDir := filepath.Join(runDir, "trials", id)
 	workspace := filepath.Join(cellDir, "workspace")
-	if err := os.MkdirAll(workspace, 0o755); err != nil {
+	if err := os.MkdirAll(workspace, 0o700); err != nil {
 		return TrialResult{}, err
 	}
 	if err := setupWorkspace(ctx, cfg, framework, workspace, cliPath); err != nil {
@@ -276,7 +276,7 @@ CLI, embedded docs, framework declarations, auth battery, entity CRUD, OpenAPI,
 MCP, and UI packages are all available. You may edit or replace scaffolded app
 files as needed, but do not replace GoFastr with another web framework.
 `
-		return os.WriteFile(filepath.Join(workspace, "FRAMEWORK.md"), []byte(frameworkText), 0o644)
+		return os.WriteFile(filepath.Join(workspace, "FRAMEWORK.md"), []byte(frameworkText), 0o600)
 	case "gin":
 		if output, err := commandOutput(ctx, workspace, "go", "mod", "init", module); err != nil {
 			return fmt.Errorf("go mod init: %w\n%s", err, output)
@@ -295,7 +295,7 @@ files as needed, but do not replace GoFastr with another web framework.
 Use Gin (`+"`github.com/gin-gonic/gin`"+`) as the HTTP router. You may use Go
 standard-library packages and focused libraries for SQLite and password
 hashing. Do not replace Gin with another web framework.
-`), 0o644)
+`), 0o600)
 	case "stdlib":
 		if output, err := commandOutput(ctx, workspace, "go", "mod", "init", module); err != nil {
 			return fmt.Errorf("go mod init: %w\n%s", err, output)
@@ -313,7 +313,7 @@ hashing. Do not replace Gin with another web framework.
 Use the Go standard library's `+"`net/http`"+` router and handlers. Focused
 libraries for SQLite and password hashing are allowed. Do not add a Go web
 framework.
-`), 0o644)
+`), 0o600)
 	default:
 		return fmt.Errorf("unsupported framework %q", framework)
 	}
@@ -327,14 +327,14 @@ Keep the app local and self-contained. Do not inspect parent directories,
 sibling workspaces, grader files, or other candidates. Use idiomatic Go,
 parameterized SQL, and focused tests. Run gofmt, go test ./..., and go build
 ./... before finishing.
-`), 0o644)
+`), 0o600)
 }
 
 func runCodex(ctx context.Context, cfg Config, workspace, logPath, finalPath, framework string, maintenance bool) error {
-	if err := os.MkdirAll(filepath.Dir(logPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(logPath), 0o700); err != nil {
 		return err
 	}
-	logFile, err := os.Create(logPath)
+	logFile, err := os.OpenFile(logPath, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0o600)
 	if err != nil {
 		return err
 	}
@@ -575,7 +575,7 @@ func writeJSON(path string, value any) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, append(data, '\n'), 0o644)
+	return os.WriteFile(path, append(data, '\n'), 0o600)
 }
 
 func copyFile(source, destination string) error {
@@ -584,7 +584,7 @@ func copyFile(source, destination string) error {
 		return err
 	}
 	defer input.Close()
-	output, err := os.Create(destination)
+	output, err := os.OpenFile(destination, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0o600)
 	if err != nil {
 		return err
 	}

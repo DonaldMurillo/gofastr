@@ -5,8 +5,10 @@
 package gateway
 
 import (
+	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 
 	"attribute"
 )
@@ -36,5 +38,21 @@ func (e *EdgeFilter) observeScrubbed(r *http.Request) {
 	_ = attribute.String("edge.host", sanitizeHeader(r.Host))
 }
 
-// sanitizeHeader matches the scrub-name clearance.
-func sanitizeHeader(s string) string { return s }
+// sanitizeHeader percent-encodes C0/DEL: the name says scrub and the
+// body shows the byte walk that earns it.
+func sanitizeHeader(s string) string {
+	for i := range s {
+		if c := s[i]; c < 0x20 || c == 0x7f {
+			var b strings.Builder
+			for j := range s {
+				if d := s[j]; d < 0x20 || d == 0x7f {
+					fmt.Fprintf(&b, "%%%02x", s[j])
+					continue
+				}
+				b.WriteByte(s[j])
+			}
+			return b.String()
+		}
+	}
+	return s
+}

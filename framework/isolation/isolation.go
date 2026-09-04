@@ -685,7 +685,11 @@ func (r *Runtime) sqliteDSN(dsn string) (string, error) {
 		name = "app.db"
 	}
 	dir := filepath.Join(r.projectDir, ".gofastr", "isolation", r.id)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	// 0700: the isolated app's sqlite (user rows, sessions, password
+	// hashes once the auth battery migrates) lands here at the driver
+	// default; the parent dir is the part this package owns, and it
+	// gets the repo's owner-only discipline (MkdirTemp's 0700 shape).
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", err
 	}
 	return prefix + filepath.Join(dir, name) + query, nil

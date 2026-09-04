@@ -2,10 +2,12 @@ package live_test
 
 import (
 	"database/sql"
+	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
-
-	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 
 	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/kiln/journal"
@@ -330,4 +332,33 @@ func TestNewSurvivesCollisionJournal(t *testing.T) {
 			t.Fatalf("Apply after booting colliding journal: %v", err)
 		}
 	}()
+}
+
+// Property: the fallback HTML document (served for any unclaimed URL
+// once a host page is installed) carries the security-header set the
+// framework default chain applies to every HTML page — at minimum
+// X-Content-Type-Options: nosniff.
+func TestFallbackHTMLCarriesNoSniff(t *testing.T) {
+	l, err := live.New(journal.NewMemory(), func() *framework.App { return framework.NewApp() })
+	if err != nil {
+		t.Fatalf("live.New: %v", err)
+	}
+	l.SetFallbackHTML("<!DOCTYPE html><html><body>host page</body></html>")
+
+	// Unclaimed URL + browser Accept → the fallback document.
+	req := httptest.NewRequest(http.MethodGet, "/nothing-here", nil)
+	req.Header.Set("Accept", "text/html")
+	rec := httptest.NewRecorder()
+	l.ServeHTTP(rec, req)
+	res := rec.Result()
+
+	if res.StatusCode != http.StatusOK || !strings.Contains(rec.Body.String(), "host page") {
+		t.Fatalf("fallback page not served (code=%d body=%.120s); surface moved, revisit this pin", res.StatusCode, rec.Body.String())
+	}
+	if ct := res.Header.Get("Content-Type"); ct != "text/html; charset=utf-8" {
+		t.Fatalf("unexpected Content-Type %q; wrong surface", ct)
+	}
+	if got := res.Header.Get("X-Content-Type-Options"); got != "nosniff" {
+		t.Errorf("fallback HTML document served without X-Content-Type-Options (got %q): the one full HTML document kiln writes itself must not skip the framework's always-on security headers", got)
+	}
 }

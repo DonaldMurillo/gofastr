@@ -47,6 +47,12 @@
     for (const el of root.querySelectorAll('[data-component],[data-widget]')) {
       const id = el.getAttribute('data-component') || el.getAttribute('data-widget');
       if (!id || !manifest[id] || loaded.has(id)) continue;
+      // Parity with loadModule's name gate (frag/boot.js): the id is
+      // DOM-sourced and lands in a script src path, so an id failing the
+      // anchored name shape (dots allowed — component ids carry them) is
+      // refused before the URL is built; the browser must never be asked
+      // to normalize a traversal-carrying src.
+      if (!/^[\w.-]+$/.test(id)) continue;
       loaded.add(id);
       const s = document.createElement('script');
       s.src = '/__gofastr/widget/' + id + '.js?v=' + manifest[id];

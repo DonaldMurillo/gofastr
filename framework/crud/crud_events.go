@@ -18,6 +18,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/core/stream"
+	"github.com/DonaldMurillo/gofastr/framework/access"
 	"github.com/DonaldMurillo/gofastr/framework/db"
 	"github.com/DonaldMurillo/gofastr/framework/event"
 	"github.com/DonaldMurillo/gofastr/framework/hook"
@@ -44,6 +45,13 @@ const (
 // EventOutbox is the transactional-outbox surface CRUD needs, satisfied by
 // *outbox.Outbox (framework/outbox). An interface rather than the concrete
 // type so crud carries no outbox import and tests can record staging calls.
+//
+// CONTRACT: durable consumers registered via the outbox's Consume receive
+// the RAW staged row — the post-write RETURNING record, with no AfterGet
+// pass at stage or delivery time. Durable consumers are trusted machinery
+// and own their masking; the SSE lane is the one that redacts at delivery
+// (redactEventRecord). See the "Durable consumers receive the raw row"
+// bullet in framework/docs/content/events.md.
 type EventOutbox interface {
 	// Append writes an event row using the passed executor, inside a CRUD
 	// transaction that is the *sql.Tx, so the row commits or rolls back
@@ -137,6 +145,14 @@ func (ch *CrudHandler) EmitEvent(ctx context.Context, eventType string, record a
 // this entity. When the entity is multi-tenant, events are further filtered
 // to the tenant ID extracted from the request context.
 //
+// Authorization is re-validated for the life of the stream, not only at
+// connect: the entity's read permission is re-checked on every delivery and
+// on a ticker (EventStreamReauth, 30s by default), and the read-scope lift
+// is re-evaluated per event. A caller whose CURRENT authorization forbids
+// reads (session revoked, role dropped, a resource decider flipped to deny)
+// has the stream closed at the next check, so an established feed never
+// outlives the authority that opened it.
+//
 // Each accepted event is written as:
 //
 //	event: entity.created (or entity.updated / entity.deleted)
@@ -145,6 +161,18 @@ func (ch *CrudHandler) EmitEvent(ctx context.Context, eventType string, record a
 // Disconnects from the client unsubscribe automatically. A backpressure
 // buffer of 32 is enforced, if the client cannot keep up, events are
 // dropped rather than blocking emitters.
+
+// eventStreamReauthInterval resolves EventStreamReauth: the configured
+// interval when it is at least a second, otherwise the 30s default. The
+// floor keeps a misconfigured handler from turning the idle re-check into
+// a busy loop; there is no "off" value.
+func (ch *CrudHandler) eventStreamReauthInterval() time.Duration {
+	if ch.EventStreamReauth >= time.Second {
+		return ch.EventStreamReauth
+	}
+	return 30 * time.Second
+}
+
 func (ch *CrudHandler) EventStream() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if ch.Events == nil {
@@ -196,18 +224,44 @@ func (ch *CrudHandler) EventStream() http.HandlerFunc {
 		tenantScope := ch.Entity.Config.Scope.MultiTenant
 		tenantID := tenant.GetTenantID(r.Context())
 		ownerScope := ch.Entity.Config.Scope.OwnerField != ""
-		// The read scope is a property of THIS subscriber, decided once from
-		// the subscribing request rather than per event: the emitter's context
-		// belongs to whoever wrote the row, not to whoever is listening.
+		// The read scope is a property of THIS subscriber, decided from
+		// the subscribing request rather than per event: the emitter's
+		// context belongs to whoever wrote the row, not to whoever is
+		// listening.
 		//
-		// Without this the feed was a second door to rows every other surface
-		// hides. A caller who gets 404 from GET /<entity>/<id> and an empty
-		// list from GET /<entity> received the full draft record here the
-		// moment an editor saved it, which is the existence disclosure the
-		// 404 exists to prevent. The comment above about a real-time read of
-		// all writes is the same argument one level down: entity-level
-		// posture was enforced, row-level was not.
-		readScoped := !readScopeUnrestricted(r.Context(), ch.Entity)
+		// Without this the feed was a second door to rows every other
+		// surface hides. A caller who gets 404 from GET /<entity>/<id>
+		// and an empty list from GET /<entity> received the full draft
+		// record here the moment an editor saved it, which is the
+		// existence disclosure the 404 exists to prevent. The comment
+		// above about a real-time read of all writes is the same argument
+		// one level down: entity-level posture was enforced, row-level
+		// was not.
+		//
+		// The unrestricted LIFT is re-evaluated per event (below, in the
+		// filter) rather than captured here: it consults the access
+		// decider, which answers from a live store, so a caller whose
+		// lift is revoked mid-stream stops seeing hidden rows without
+		// reconnecting.
+
+		// authzHeld re-runs the connect-time permission gate. It is the
+		// live seam: access.CanResource consults the decider, which reads
+		// whatever store backs it NOW, so the frozen request context still
+		// answers "may this caller read, as of this call". The owner and
+		// tenant resolutions above read immutable context values and
+		// cannot flip on a held context; the decider-backed gates can, and
+		// this is the re-run of them.
+		readPerm := ch.permissionForOp(opRead)
+		authzHeld := func() bool {
+			if readPerm == "" {
+				return true
+			}
+			return access.CanResource(r.Context(), access.Permission(readPerm),
+				access.Ref{Type: ch.Entity.GetName(), ID: ""})
+		}
+
+		reauth := time.NewTicker(ch.eventStreamReauthInterval())
+		defer reauth.Stop()
 
 		buf := make(chan event.Event, 32)
 
@@ -225,7 +279,7 @@ func (ch *CrudHandler) EventStream() http.HandlerFunc {
 			if ownerScope && ownerID != nil && fmt.Sprint(data[eventKeyOwnerID]) != fmt.Sprint(ownerID) {
 				return nil
 			}
-			if readScoped && !ch.readScopeAllowsRecord(data[eventKeyRecord]) {
+			if !readScopeUnrestricted(r.Context(), ch.Entity) && !ch.readScopeAllowsRecord(data[eventKeyRecord]) {
 				return nil
 			}
 			select {
@@ -251,7 +305,22 @@ func (ch *CrudHandler) EventStream() http.HandlerFunc {
 			select {
 			case <-r.Context().Done():
 				return
+			case <-reauth.C:
+				// Idle streams re-validate on a ticker so a revocation
+				// closes the feed even when no event arrives to carry the
+				// per-delivery check. The client's EventSource reconnects
+				// and meets the full connect-time gate, which now refuses.
+				if !authzHeld() {
+					return
+				}
 			case ev := <-buf:
+				// Authorization is a property of the caller NOW, not of the
+				// moment they connected: re-run the permission gate per
+				// delivery, cheaply, against the live decider. Refusal
+				// closes the stream; the buffered event is dropped with it.
+				if !authzHeld() {
+					return
+				}
 				// Redact at DELIVERY, not when the event is built. The record
 				// is captured from the write's RETURNING, so it holds stored
 				// values and a subscriber would otherwise read past every mask

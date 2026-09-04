@@ -49,7 +49,9 @@ type EmailVerificationConfig struct {
 	// enable in production, anyone with log read access then takes
 	// over arbitrary accounts.
 	DevMode bool
-	// RateLimit, when non-nil, applies a per-IP limit to send-verification.
+	// RateLimit applies a per-IP limit to send-verification. It defaults
+	// to 10 attempts/min with a 15-minute block (the register floor);
+	// loosen by passing a config with a large MaxAttempts.
 	RateLimit *RateLimiterConfig
 }
 
@@ -74,12 +76,22 @@ func NewEmailVerificationPlugin(cfg EmailVerificationConfig) *EmailVerificationP
 	if store == nil {
 		store = NewMemoryMagicLinkTokenStore()
 	}
+	// Default per-IP throttle, the register floor. The endpoint is
+	// session-gated, but each request mints a 24h takeover-credential
+	// URL and dispatches mail, so one compromised session must not be an
+	// unbounded mail primitive. Opt out by passing a config with a large
+	// MaxAttempts.
+	if cfg.RateLimit == nil {
+		cfg.RateLimit = &RateLimiterConfig{
+			MaxAttempts:   10,
+			Window:        time.Minute,
+			BlockDuration: 15 * time.Minute,
+		}
+	}
 	p := &EmailVerificationPlugin{
 		cfg:   cfg,
 		store: store,
-	}
-	if cfg.RateLimit != nil {
-		p.limit = newScopedRateLimiter(*cfg.RateLimit, "email_verification")
+		limit: newScopedRateLimiter(*cfg.RateLimit, "email_verification"),
 	}
 	return p
 }
@@ -97,6 +109,14 @@ func (p *EmailVerificationPlugin) RegisterRoutes(r *router.Router, basePath stri
 }
 
 func (p *EmailVerificationPlugin) sendHandler(w http.ResponseWriter, r *http.Request) {
+	// A bodyless POST is CORS-simple, so a cross-site page can auto-submit
+	// it with the victim's session cookie riding along — the same
+	// Fetch-Metadata gate every sibling form-mutable handler applies. Each
+	// forged POST mints and mails a live 24h takeover-credential URL, so
+	// the mail-spam primitive is worth refusing even session-gated.
+	if rejectCrossSiteForm(w, r) {
+		return
+	}
 	if p.limit != nil && !p.limit.guard(w, r) {
 		return
 	}
@@ -192,6 +212,14 @@ func (p *EmailVerificationPlugin) verifyHandler(w http.ResponseWriter, r *http.R
 		writeAuthError(w, http.StatusInternalServerError, "mark verified failed")
 		return
 	}
+	// The trust-bit flip gates OAuth account binding (an unverified email
+	// never links), so the trail must answer "who verified this address,
+	// when" — the same reason oauth.linked is recorded.
+	p.mgr.emitSecurity(r.Context(), SecurityEvent{
+		Kind:   "email.verified",
+		UserID: userID,
+		Remote: remoteHost(r),
+	})
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{"verified": true})
 }

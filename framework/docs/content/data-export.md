@@ -86,6 +86,12 @@ walk; the framework dedups by table name, so it is never exported twice.
 └── queue_jobs.ndjson
 ```
 
+The export directory is created `0700` and every file in it is written
+`0600`: an archive is a raw dump of every physical column — including
+`password_hash`, token hashes, and sessions on a real app — so it gets
+owner-only file permissions like every other secret-bearing artifact the
+framework writes.
+
 ### Manifest
 
 ```json

@@ -54,10 +54,20 @@ type MagicLinkConfig struct {
 	// OnSuccessURL is the URL to redirect to after successful login (default: "/").
 	OnSuccessURL string
 
-	// RateLimit, when non-nil, applies a per-IP rate limit to
-	// /auth/magic-link/send. Without this, an attacker can spam any
-	// recipient address. nil disables (not recommended).
+	// RateLimit applies a per-IP rate limit to /auth/magic-link/send. It
+	// defaults to 10 attempts/min with a 15-minute block (the register
+	// floor): send is an unauthenticated email-dispatch primitive, every
+	// request mints a token and mails a link. Loosen by passing a config
+	// with a large MaxAttempts.
 	RateLimit *RateLimiterConfig
+
+	// VerifyRateLimit applies a per-IP rate limit to
+	// /auth/magic-link/verify. It defaults to 30 attempts/min with a
+	// 5-minute block (the login per-IP floor): verify redeems a secret
+	// credential and mints a session. The token is 256-bit random, so
+	// this shapes redemption traffic rather than blocking a practical
+	// brute force. Same loosening rule as RateLimit.
+	VerifyRateLimit *RateLimiterConfig
 
 	// ConfirmPage renders the confirmation screen shown when a user
 	// follows a magic link. Return the full HTML document; the plugin
@@ -223,10 +233,11 @@ func (m *MemoryMagicLinkTokenStore) Cleanup(_ context.Context) (int, error) {
 // MagicLinkPlugin implements AuthPlugin and AuthPluginRoutes for passwordless
 // magic-link authentication.
 type MagicLinkPlugin struct {
-	config     MagicLinkConfig
-	mgr        *AuthManager
-	tokenStore MagicLinkTokenStore
-	sendLimit  *RateLimiter
+	config      MagicLinkConfig
+	mgr         *AuthManager
+	tokenStore  MagicLinkTokenStore
+	sendLimit   *RateLimiter
+	verifyLimit *RateLimiter
 	// basePath is captured at RegisterRoutes so the confirmation page's
 	// form can post back to the same path the link was mounted under.
 	basePath string
@@ -239,12 +250,29 @@ func NewMagicLinkPlugin(config MagicLinkConfig) *MagicLinkPlugin {
 	if store == nil {
 		store = NewMemoryMagicLinkTokenStore()
 	}
-	p := &MagicLinkPlugin{
-		config:     config,
-		tokenStore: store,
+	// Both endpoints carry default per-IP floors (opt-out like the
+	// login/register ones): send is an unauthenticated mail primitive
+	// (10/min, the register floor) and verify redeems a secret and mints
+	// a session (30/min, the login per-IP floor).
+	if config.RateLimit == nil {
+		config.RateLimit = &RateLimiterConfig{
+			MaxAttempts:   10,
+			Window:        time.Minute,
+			BlockDuration: 15 * time.Minute,
+		}
 	}
-	if config.RateLimit != nil {
-		p.sendLimit = newScopedRateLimiter(*config.RateLimit, "magiclink")
+	if config.VerifyRateLimit == nil {
+		config.VerifyRateLimit = &RateLimiterConfig{
+			MaxAttempts:   30,
+			Window:        time.Minute,
+			BlockDuration: 5 * time.Minute,
+		}
+	}
+	p := &MagicLinkPlugin{
+		config:      config,
+		tokenStore:  store,
+		sendLimit:   newScopedRateLimiter(*config.RateLimit, "magiclink_send"),
+		verifyLimit: newScopedRateLimiter(*config.VerifyRateLimit, "magiclink_verify"),
 	}
 	return p
 }
@@ -278,7 +306,7 @@ func (p *MagicLinkPlugin) sendHandler(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Email string `json:"email"`
 	}
-	if !decodeJSONLimitedStrict(w, r, &body, "email") {
+	if !decodeJSONLimited(w, r, &body) {
 		return
 	}
 	// Canonicalize at ingestion (#270): the email rides inside the
@@ -487,13 +515,27 @@ func defaultConfirmPage(d ConfirmPageData) []byte {
 // the session cookie, and redirects to OnSuccessURL. Reached only from
 // the confirmation page confirmHandler renders.
 func (p *MagicLinkPlugin) verifyHandler(w http.ResponseWriter, r *http.Request) {
+	if p.verifyLimit != nil && !p.verifyLimit.guard(w, r) {
+		return
+	}
 	// The attacker holds the token, so they could auto-submit this form
 	// from their own page and skip the confirmation entirely. Same
 	// Fetch-Metadata gate the password form uses.
 	if rejectCrossSiteForm(w, r) {
 		return
 	}
-	token := r.FormValue("token")
+	// Cap the body before any form parse: FormValue/ParseForm would
+	// otherwise read up to the stdlib's 10 MiB floor into memory.
+	r.Body = http.MaxBytesReader(w, r.Body, maxAuthBodyBytes)
+	if err := r.ParseForm(); err != nil {
+		if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
+			writeAuthError(w, http.StatusRequestEntityTooLarge, "request body too large")
+			return
+		}
+		writeAuthError(w, http.StatusBadRequest, "invalid form body")
+		return
+	}
+	token := r.PostFormValue("token")
 	if token == "" {
 		token = r.URL.Query().Get("token")
 	}

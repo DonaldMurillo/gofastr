@@ -4,6 +4,8 @@ import (
 	"sort"
 	"strings"
 	"unicode"
+
+	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
 )
 
 // maxInlineDepth bounds inline nesting (link text, emphasis inner content).
@@ -341,33 +343,29 @@ func escapeHTML(s string) string { return htmlEscaper.Replace(s) }
 // characters needs to be neutralised in either spot.
 func escapeAttr(s string) string { return htmlEscaper.Replace(s) }
 
-// safeLinkURL refuses script-y schemes inside a markdown link href.
-// `javascript:`, `vbscript:` and the small set of `data:` types that
-// render executable content (text/html, application/xhtml+xml,
-// image/svg+xml, which can carry inline JS) get replaced with `#` so a
-// click can't navigate to an active payload. Other schemes, http(s),
-// mailto, tel, fragment-only, relative paths, pass through unchanged.
+// safeLinkURL enforces the canonical urlsafe allow-list
+// (core-ui/urlsafe) on a markdown link href: http(s), mailto, tel and
+// relative/fragment references pass; every other scheme — javascript:,
+// vbscript:, data:, but also file:, ftp:, blob:, ws: and
+// protocol-relative //host references — is replaced with `#`. The
+// allow-list is the point: a per-surface deny-list drifts from the
+// policy every other URL sink in the repo applies.
 func safeLinkURL(url string) string {
 	url = stripURLControlBytes(url)
-	if isDangerousURLScheme(url) {
+	if urlsafe.Clean(url, urlsafe.Anchor) == "" {
 		return "#"
 	}
 	return url
 }
 
-// safeImageURL is the image counterpart of safeLinkURL: an `<img src>`
-// can't navigate, but a same-origin `data:text/html` could still be
-// piped into JS that loads the resource into a same-origin frame, and
-// `javascript:` URLs render nothing useful anyway. We allow data:
-// image/* (the legitimate use case for embedded images) and reject
-// the rest of the dangerous set.
+// safeImageURL is the image counterpart of safeLinkURL, under the
+// urlsafe ImageSource policy: http(s) and relative references plus
+// inline raster data: images pass; everything else — script-y schemes,
+// data:text/html, data:image/svg, file:, blob:, protocol-relative — is
+// replaced with `#`.
 func safeImageURL(url string) string {
 	url = stripURLControlBytes(url)
-	lower := strings.ToLower(strings.TrimLeft(url, " \t\r\n"))
-	if strings.HasPrefix(lower, "data:image/") && !strings.HasPrefix(lower, "data:image/svg") {
-		return url
-	}
-	if isDangerousURLScheme(url) {
+	if urlsafe.Clean(url, urlsafe.ImageSource) == "" {
 		return "#"
 	}
 	return url
@@ -395,32 +393,4 @@ func stripURLControlBytes(url string) string {
 		}
 	}
 	return sb.String()
-}
-
-// isDangerousURLScheme reports whether url begins with a URL scheme
-// known to execute script or render HTML in a navigation context.
-// Leading ASCII whitespace and control chars are ignored. They're
-// stripped from the scheme by the HTML parser anyway, so we match the
-// parser's view. Callers should run stripURLControlBytes first so that
-// control bytes embedded INSIDE the scheme (java\tscript:) are also
-// neutralised.
-func isDangerousURLScheme(url string) bool {
-	trimmed := stripURLControlBytes(url)
-	for len(trimmed) > 0 && (trimmed[0] == ' ' || trimmed[0] == '\t' || trimmed[0] == '\r' || trimmed[0] == '\n' || trimmed[0] < 0x20) {
-		trimmed = trimmed[1:]
-	}
-	lower := strings.ToLower(trimmed)
-	switch {
-	case strings.HasPrefix(lower, "javascript:"):
-		return true
-	case strings.HasPrefix(lower, "vbscript:"):
-		return true
-	case strings.HasPrefix(lower, "data:text/html"):
-		return true
-	case strings.HasPrefix(lower, "data:application/xhtml"):
-		return true
-	case strings.HasPrefix(lower, "data:image/svg"):
-		return true
-	}
-	return false
 }

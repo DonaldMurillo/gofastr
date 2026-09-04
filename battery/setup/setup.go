@@ -163,10 +163,13 @@ func (r *Runner) CanRunHeadless(_ context.Context) (bool, error) {
 // It refuses to run anything on an install the Complete predicate says
 // is already configured. The interactive skin has enforced that since
 // runStepSerialized was written; the headless skin did not, and
-// GOFASTR_SETUP=force reaches this path on a completed install, where a
-// bootstrap step typically INSERTs an admin-role user. A redeploy with
-// force still set and rotated env credentials silently minted a second
-// admin, or aborted boot on a duplicate email.
+// GOFASTR_SETUP=force used to reach this path on a completed install
+// with no decision made, where a bootstrap step typically INSERTs an
+// admin-role user — a redeploy with force still set and rotated env
+// credentials silently minted a second admin, or aborted boot on a
+// duplicate email. Force is now the explicit opt-in on BOTH skins: with
+// it set, a completed install re-runs its steps (the operator asked,
+// per first-run.md); without it the refusal stands.
 //
 // A probe ERROR is "unknown", not "not done", and is refused for the
 // same reason it is there: a setup step that did not run is
@@ -180,7 +183,7 @@ func (r *Runner) RunSteps(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("setup: completion check failed, refusing to run steps: %w", err)
 		}
-		if done {
+		if done && !isForceMode() {
 			return nil
 		}
 	}

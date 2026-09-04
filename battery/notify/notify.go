@@ -191,6 +191,13 @@ func (n *Notifier) Send(ctx context.Context, msg Notification) error {
 	// keyed under Data["_rendered_<channel>"] short-circuits the
 	// templater for that channel; useful for tests and for callers
 	// that already know the body.
+	//
+	// Channels, templaters and the error callback are host-supplied
+	// code running on these fan-out goroutines, where net/http's
+	// per-request recover net does not exist — every invocation goes
+	// through a recover guard (renderFor / channelSendSafely /
+	// notifyOnErrorSafely) so a panicking component surfaces as an
+	// attributed error instead of killing the process.
 	type result struct {
 		channel string
 		err     error
@@ -206,16 +213,15 @@ func (n *Notifier) Send(ctx context.Context, msg Notification) error {
 		go func(name string, ch Channel) {
 			defer wg.Done()
 			rendered, err := n.renderFor(ctx, templater, msg, name)
-			if err != nil {
-				if onError != nil {
-					onError(name, msg, err)
-				}
-				out <- result{channel: name, err: err}
-				return
+			if err == nil {
+				err = channelSendSafely(ctx, ch, msg, rendered)
 			}
-			if err := ch.Send(ctx, msg, rendered); err != nil {
-				if onError != nil {
-					onError(name, msg, err)
+			if err != nil {
+				if cbErr := notifyOnErrorSafely(onError, name, msg, err); cbErr != nil {
+					// The error callback itself panicked; that is the
+					// more severe event, so it becomes the channel's
+					// reported error (still attributed, never a crash).
+					err = cbErr
 				}
 				out <- result{channel: name, err: err}
 				return
@@ -248,7 +254,17 @@ func routeSafe(router Router, msg Notification, chanNames []string) (selected []
 	return router(msg.Type, msg.To, chanNames), nil
 }
 
-func (n *Notifier) renderFor(ctx context.Context, t Templater, msg Notification, channel string) (Rendered, error) {
+// renderFor resolves the rendered payload for one channel. The templater
+// call runs under a recover guard: templaters are host-supplied
+// (WithTemplater) and Send invokes them from its fan-out goroutines, which
+// have no per-request recover net — a panicking Render must become an
+// attributed error, not a process kill.
+func (n *Notifier) renderFor(ctx context.Context, t Templater, msg Notification, channel string) (r Rendered, err error) {
+	defer func() {
+		if v := recover(); v != nil {
+			r, err = Rendered{}, fmt.Errorf("notify: templater panicked: %v", v)
+		}
+	}()
 	if msg.Data != nil {
 		// Per-channel pre-rendered payload short-circuit.
 		if pre, ok := msg.Data["_rendered_"+channel].(Rendered); ok {
@@ -262,6 +278,38 @@ func (n *Notifier) renderFor(ctx context.Context, t Templater, msg Notification,
 		return Rendered{}, ErrNoTemplater
 	}
 	return t.Render(ctx, msg.Type, channel, msg.Data)
+}
+
+// channelSendSafely invokes one registered Channel's Send under a recover
+// guard: channels are host-supplied adapters (WithChannel) fanned out from
+// Send's goroutines with no per-request recover net, so a panicking channel
+// becomes an attributed error for that channel instead of killing the
+// process.
+func channelSendSafely(ctx context.Context, ch Channel, msg Notification, r Rendered) (err error) {
+	defer func() {
+		if v := recover(); v != nil {
+			err = fmt.Errorf("notify: channel send panicked: %v", v)
+		}
+	}()
+	return ch.Send(ctx, msg, r)
+}
+
+// notifyOnErrorSafely invokes the WithErrorCallback hook under a recover
+// guard. The callback runs on Send's fan-out goroutines with no recover
+// net; if it panics, the panic is returned as an attributed error (the
+// caller promotes it to the channel's result) rather than swallowed or
+// allowed to kill the process.
+func notifyOnErrorSafely(onError func(channel string, n Notification, err error), name string, msg Notification, err error) (cbErr error) {
+	if onError == nil {
+		return nil
+	}
+	defer func() {
+		if v := recover(); v != nil {
+			cbErr = fmt.Errorf("notify: error callback for channel %q panicked: %v", name, v)
+		}
+	}()
+	onError(name, msg, err)
+	return nil
 }
 
 // Channels returns the registered channel names in registration order.

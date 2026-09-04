@@ -233,3 +233,62 @@ func TestAccessLogOmitsQueryString(t *testing.T) {
 		t.Errorf("SECURITY: [secret-leak] query-string secret reached the log entry: %s", blob)
 	}
 }
+
+// Property: the ErrorReport a recovered panic produces carries no raw C0/DEL
+// in its request-derived strings. A handler panicking with a terminal-title
+// escape and a path with percent-encoded CRLF hand both to the reporter;
+// unscrubbed they forge log lines and repaint operator tails in every
+// configured sink.
+func TestRecoveryReportScrubbedOfCtrlBytes(t *testing.T) {
+	rep := &recordingReporter{}
+	h := recoveryMiddleware(rep)(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
+		panic("boom \x1b]0;pwn\x07 \x01")
+	}))
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/p%0d%0aq", nil))
+
+	rep.mu.Lock()
+	defer rep.mu.Unlock()
+	if len(rep.reports) != 1 {
+		t.Fatalf("got %d reports, want 1", len(rep.reports))
+	}
+	rp := rep.reports[0]
+	for attr, s := range map[string]string{"ErrorReport.Error": rp.Error, "ErrorReport.Path": rp.Path} {
+		for i := range len(s) {
+			if b := s[i]; b < 0x20 || b == 0x7f {
+				t.Errorf("SECURITY: [log-ctrl] %s carries control byte 0x%02X at offset %d: %q — forged log lines / terminal-control payloads reach every operator sink", attr, b, i, s)
+				break
+			}
+		}
+	}
+}
+
+// Property: the DEFAULT reporter scrubs what it is handed. It is a public
+// seam (Plugin.Reporter) — app code forwards reports without the recovery
+// middleware in play — so a report whose Error/Path carry control bytes
+// must not reach the logger verbatim.
+func TestSlogReporterScrubbedOfCtrlBytes(t *testing.T) {
+	var buf bytes.Buffer
+	s := SlogErrorReporter{Logger: slog.New(slog.NewJSONHandler(&buf, nil))}
+	s.Report(ErrorReport{
+		Message: "http.panic",
+		Error:   "err \x1b]0;pwn\x07 \x0b\x0c end",
+		Method:  http.MethodGet,
+		Path:    "/x\r\ninjected",
+	})
+	var entry map[string]any
+	if err := json.Unmarshal(bytes.TrimSpace(buf.Bytes()), &entry); err != nil {
+		t.Fatalf("decode log entry: %v (%q)", err, buf.String())
+	}
+	for _, key := range []string{"panic", "path"} {
+		v, ok := entry[key].(string)
+		if !ok {
+			t.Fatalf("log entry missing string attr %q: %v", key, entry)
+		}
+		for i := range len(v) {
+			if b := v[i]; b < 0x20 || b == 0x7f {
+				t.Errorf("SECURITY: [log-ctrl] http.panic.%s carries control byte 0x%02X at offset %d: %q — forged log lines / terminal-control payloads reach every operator sink", key, b, i, v)
+				break
+			}
+		}
+	}
+}

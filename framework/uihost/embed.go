@@ -532,9 +532,13 @@ func (ds *UIHost) handleEmbedExchange(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Cap the body: this endpoint is reachable by anything that can send a
-	// POST, and a token is a few hundred bytes.
+	// POST, and a token is a few hundred bytes. Strict decode: duplicate or
+	// case-folded top-level keys decode last-wins under stdlib json, which
+	// would silently normalize a two-nonce body to the last spelling before
+	// Exchange ever HMAC-verifies; refuse the ambiguity like every other
+	// client-body decode in the framework.
 	var req embedExchangeRequest
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8<<10)).Decode(&req); err != nil { //gofastr:allow(GOFASTR1407) single-use embed token exchange: ambient credentials are stripped above and Exchange validates the token, so ambiguity is self-inflicted
+	if err := handler.DecodeStrict(http.MaxBytesReader(w, r.Body, 8<<10), &req); err != nil {
 		embedError(w, http.StatusBadRequest, "malformed body", err)
 		return
 	}

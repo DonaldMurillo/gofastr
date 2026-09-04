@@ -1,22 +1,28 @@
 package check
 
-// Four source lints over the browser runtime's JavaScript, one per
-// recurring bug SHAPE the adversarial-probe audit (branch audit/red-tests,
-// fixed in commit e936f791) kept finding. They lint the fragment and
-// module sources (core-ui/runtime/frag + core-ui/runtime/src), never the
-// generated runtime.js bundle: the bundle is composed from the fragments
-// and pinned byte-identical by fragment_composition_test.go, so a finding
-// belongs at the source that produced it.
+// Seven source lints over the browser runtime's JavaScript: four per
+// recurring bug SHAPE the adversarial-probe audit (branch
+// audit/red-tests, fixed in commit e936f791) kept finding, and three
+// more from the 2026-09-03 round-3 red tests
+// (core-ui/runtime/runtime_red_test.go), whose sites are still OPEN —
+// those three fire on today's sources and stay quiet on the fix
+// spellings the red tests name. They lint the fragment and module
+// sources (core-ui/runtime/frag + core-ui/runtime/src), never the
+// generated runtime.js bundle: the bundle is composed from the
+// fragments and pinned byte-identical by fragment_composition_test.go,
+// so a finding belongs at the source that produced it.
 //
-// Each rule catches the SHAPE, not a site: an instance of the shape with
-// entirely different names must fire, and the fixed spelling of every
-// audited site must stay quiet. The oracle fixtures in
-// runtimeshapes_test.go are derived from the pre-fix sources at commit
-// 7bd789e9 (positive cases) and their fixed spellings at e936f791
-// (negative cases), plus synthetic positives that never existed in this
-// repo. The security probes in core-ui/runtime/runtime_security_test.go
-// call these same lints over the live tree, so the implementation lives
-// once.
+// Each rule catches the SHAPE, not a site: an instance of the shape
+// with entirely different names must fire, and the fixed spelling of
+// every audited site must stay quiet. The four e936f791-era fixtures
+// in runtimeshapes_test.go are derived from the pre-fix sources at
+// commit 7bd789e9 (positive cases) and their fixed spellings at
+// e936f791 (negative cases); the three round-3 fixtures reduce from
+// the live pre-fix tree (those sites are open today) plus the fix
+// spellings the red tests name, plus synthetic positives that never
+// existed in this repo. The security probes in
+// core-ui/runtime/runtime_security_test.go call these same lints over
+// the live tree, so the implementation lives once.
 
 import (
 	"fmt"
@@ -508,8 +514,10 @@ func isJSIdent(s string) bool {
 //
 // Silent on:
 //   - literal-only selectors (no non-literal operand, no ${…});
-//   - a bare variable argument (querySelector(sel)) — provenance is
-//     not traceable line-locally, and the repo has no such site;
+//   - a bare variable argument (querySelector(sel)) — that shape is
+//     LintSelectorBareArgGuarded's, below: it traces the argument's
+//     deciding assignment and fires when the value is attribute-borne
+//     and the lookup sits in no try block;
 //   - values wrapped in CSS.escape(…) — including dotted references
 //
 // like window.CSS.escape(…), the defensive spelling for browsers
@@ -584,13 +592,19 @@ var reSelectorCall = regexp.MustCompile(`(?:querySelectorAll|querySelector|close
 // from something else (an attribute read, a concatenation, a compound
 // append) revokes it. numeric records the same event's numeric
 // provenance (an init from one numeric literal), the fact
-// isNumericArithExpr asks about arithmetic operands (review 6).
+// isNumericArithExpr asks about arithmetic operands (review 6). attr
+// records that the event's RHS reads a DOM attribute (any
+// getAttribute( call, or a .dataset member) — the provenance
+// LintSelectorBareArgGuarded fires on — and rhs keeps the RHS text for
+// the one-level build trace LintModuleURLShape walks.
 type safeEvent struct {
 	name                 string
 	scopeStart, scopeEnd int
 	pos                  int
 	safe                 bool
 	numeric              bool
+	attr                 bool
+	rhs                  string
 }
 
 var (
@@ -607,6 +621,12 @@ var (
 	// reEscapeCall matches an escape call at the start of an operand:
 	// CSS.escape(, window.CSS.escape(, this.CSS.escape(, cssEscape(.
 	reEscapeCall = regexp.MustCompile(`^(?:(?:\w+\.)*CSS\.escape|cssEscape)\s*\(`)
+	// reAnyAttrRead matches ANY DOM-attribute read: a getAttribute(
+	// call (any attribute name — data-fui-*, data-component, …) or a
+	// .dataset member in either spelling. The provenance the
+	// round-3 lints fire on is broader than lint 4's reAttrRead, which
+	// requires the data- prefix.
+	reAnyAttrRead = regexp.MustCompile(`\bgetAttribute\s*\(|\.\s*dataset\s*[.\[]`)
 )
 
 // safeIdentEvents collects the ordered assignment events of the file,
@@ -626,9 +646,14 @@ var (
 func safeIdentEvents(code, blank string) []safeEvent {
 	scopes, parents := functionScopes(blank)
 	var events []safeEvent
-	record := func(name string, pos int, safe, numeric bool) {
+	record := func(name string, pos int, safe, numeric bool, rhs string) {
 		s, e := scopeOf(blank, scopes, parents, pos)
-		events = append(events, safeEvent{name: name, scopeStart: s, scopeEnd: e, pos: pos, safe: safe, numeric: numeric})
+		events = append(events, safeEvent{
+			name: name, scopeStart: s, scopeEnd: e, pos: pos,
+			safe: safe, numeric: numeric,
+			attr: rhs != "" && reAnyAttrRead.MatchString(rhs),
+			rhs:  rhs,
+		})
 	}
 	for _, m := range reSafeAssign.FindAllStringSubmatchIndex(code, -1) {
 		name := code[m[2]:m[3]]
@@ -642,22 +667,22 @@ func safeIdentEvents(code, blank string) []safeEvent {
 		if strings.HasPrefix(rhs, "=") { // == / === read through the '='
 			continue
 		}
-		record(name, m[2], rhsSafeForm(rhs), isJSNumericLiteral(rhs))
+		record(name, m[2], rhsSafeForm(rhs), isJSNumericLiteral(rhs), rhs)
 	}
 	for _, m := range reSafeCompound.FindAllStringSubmatchIndex(code, -1) {
 		if m[2] > 0 && code[m[2]-1] == '.' {
 			continue // obj.id += … compounds the member, not a binding named id
 		}
 		if name := code[m[2]:m[3]]; !jsKeywords[name] {
-			record(name, m[0], false, false)
+			record(name, m[0], false, false, "")
 		}
 	}
 	for _, m := range reSafeForOf.FindAllStringSubmatchIndex(code, -1) {
-		record(code[m[2]:m[3]], m[0], true, false)
+		record(code[m[2]:m[3]], m[0], true, false, "")
 	}
 	for _, span := range scopes {
 		for _, name := range paramNames(blank, span[0]) {
-			record(name, span[0], false, false)
+			record(name, span[0], false, false, "")
 		}
 	}
 	return events
@@ -2674,4 +2699,508 @@ func isFunctionOpener(code string, i int) bool {
 		k2--
 	}
 	return code[k2+1:end2+1] == "function"
+}
+
+// ── lint 5: bare attribute-borne selector argument, unguarded ────────
+
+// LintSelectorBareArgGuarded fires when a querySelector/
+// querySelectorAll/closest/matches call takes a BARE identifier whose
+// deciding assignment (the same last-assignment-before-the-use rule
+// the safe/numeric facts use) reads a DOM attribute, and the call sits
+// in no try block.
+//
+// Bug class: attributes whose value is a selector BY DESIGN
+// (data-fui-copy-text-from, data-fui-fill-input,
+// data-fui-charcount-source, data-fui-shortcut-target) feed
+// querySelector directly; escaping is wrong for them (the whole value
+// is the selector), so the contract is containment — a malformed
+// selector must degrade to a no-op, not throw out of the delegated
+// click/keydown listener and kill the module's wiring before its
+// preventDefault. Probes: TestCopyRedEscapesSelector,
+// TestWidgetHelpersRedEscapesSelector, TestShortcutRedEscapesSelector
+// (core-ui/runtime/runtime_red_test.go, 2026-09-03 round-3; fix
+// pending — this lint fires on today's tree). The fixed spelling is a
+// try/catch around the lookup, exactly the containment copy.js's own
+// fireToast already practices around JSON.parse; rpc.js's scroll-to
+// lookup shows the in-try posture this lint accepts.
+//
+// Silent on:
+//   - composite arguments (any concatenation or template): lint 1's
+//     shape, escaped or judged there;
+//   - the call inside a try block: the throw is contained and the
+//     handler survives (rpc.js's scroll-to lookup today, and the fix
+//     direction the red tests name for every pinned site);
+//   - a bare identifier whose deciding assignment is a string literal
+//     (menu.js's ITEM/TRIGGER_WRAP, animate.js's ANIMATE_SEL), an
+//     escape call, or a concatenation with no attribute read in it
+//     (dropdown.js's selector constants): not attribute-borne, so a
+//     malformed attribute value cannot reach the lookup through it;
+//   - identifiers with no deciding assignment in scope (kernel.js's
+//     selector PARAMETERS, boot.js's destructured marker selectors):
+//     provenance is not traceable there and the lint stays quiet —
+//     same posture lint 1 held for all bare arguments before the
+//     round-3 sites existed;
+//   - provenance follows the LAST assignment before the use:
+//     `sel = CSS.escape(id)` then `sel = el.dataset.x` is
+//     attribute-borne and reports (the escape was revoked), while the
+//     reverse order — an attribute init rehabilitated by a literal
+//     reassignment — is not, and neither is a same-named identifier
+//     in a different function.
+//
+// Call tokens are matched on the Blank view and the argument text is
+// recovered from Code by offset, exactly like lint 1.
+func LintSelectorBareArgGuarded(roots ...string) (*Result, error) {
+	res := &Result{}
+	files, err := loadJSSources(roots...)
+	if err != nil {
+		return nil, err
+	}
+	for _, f := range files {
+		events := safeIdentEvents(f.Code, f.Blank)
+		tries := trySpans(f.Blank)
+		for _, loc := range reSelectorCall.FindAllStringIndex(f.Blank, -1) {
+			if loc[0] > 0 && isJSIdentChar(f.Blank[loc[0]-1]) {
+				continue // part of a longer identifier (prefetch(, myMatches())
+			}
+			open := loc[1] - 1
+			close := matchDelimForward(f.Blank, open)
+			if close < 0 {
+				continue
+			}
+			arg := strings.TrimSpace(f.Code[open+1 : close])
+			if !isJSIdent(arg) || jsKeywords[arg] {
+				continue // composite argument, or not an identifier at all
+			}
+			if insideAnySpan(tries, loc[0]) {
+				continue // the throw is contained; the red-test fix direction
+			}
+			e, ok := latestEvent(events, arg, loc[0])
+			if !ok || !e.attr {
+				continue
+			}
+			res.add(f.Path, f.lineOf(loc[0]),
+				fmt.Sprintf("[selector-bare-arg] selector argument %q is attribute-borne and the lookup is unguarded — a malformed attribute value throws out of the delegated handler and kills the module's wiring; when the attribute is a selector by design, wrap the lookup in try/catch so it degrades to a no-op (or CSS.escape the value before it becomes the selector)", arg))
+		}
+	}
+	return res, nil
+}
+
+// reTryBlock matches a try keyword opening its block. Matched on the
+// Blank view, so a "try {" inside a string literal or comment is not
+// a block.
+var reTryBlock = regexp.MustCompile(`\btry\s*\{`)
+
+// trySpans returns the brace-matched [start, end) span of every try
+// block in the blank view. catch and finally clauses open no span of
+// their own: a throw inside them still propagates, so only the try
+// body counts as containment.
+func trySpans(blank string) [][2]int {
+	var out [][2]int
+	for _, loc := range reTryBlock.FindAllStringIndex(blank, -1) {
+		open := strings.LastIndexByte(blank[loc[0]:loc[1]], '{') + loc[0]
+		end := matchDelimForward(blank, open)
+		if end < 0 {
+			continue
+		}
+		out = append(out, [2]int{open, end + 1})
+	}
+	return out
+}
+
+// insideAnySpan reports whether pos lies inside any of the spans.
+func insideAnySpan(spans [][2]int, pos int) bool {
+	for _, s := range spans {
+		if s[0] <= pos && pos < s[1] {
+			return true
+		}
+	}
+	return false
+}
+
+// ── lint 6: document.cookie built from an unsanitized operand ────────
+
+// LintCookieConcat fires when a document.cookie write (plain = or +=)
+// concatenates or interpolates an operand that is not a string
+// literal, not provably literal at the write (the safe-identifier
+// rule: an identifier whose deciding assignment is one string literal
+// or an escape call), and not wrapped WHOLE in encodeURIComponent(…).
+//
+// Bug class: a cookie name or value built from a DOM-sourced id
+// carries the cookie grammar into the write. A crafted
+// data-fui-banner-dismiss-id like 'probe=x; Path=/' parses as cookie
+// name gofastr.banner-dismiss.probe with attacker-chosen attributes
+// (Path/Max-Age/Secure/Domain are all injectable the same way): the
+// dismissal the module meant to record is never stored under its key,
+// and an attacker-chosen pair IS planted inside the module's cookie
+// namespace, which the server reads back. Probe:
+// TestBannerRedEscapesDismissCookieId (core-ui/runtime/
+// runtime_red_test.go, 2026-09-03 round-3; fix pending — this lint
+// fires on today's tree). The fixed spelling is encodeURIComponent(id)
+// at the concatenation, so the id cannot carry ';' or '='.
+//
+// Silent on:
+//   - writes whose every operand is a string literal, a numeric
+//     literal, an encodeURIComponent(…) whole operand, or an
+//     identifier provably holding a literal at the write (banner.js's
+//     own STORAGE_PREFIX: a file-scope const from one string literal);
+//   - document.cookie READS (kernel.js's session-cookie match) and
+//     comparisons (== / === never match the write form);
+//   - single non-composite operands and writes with no unsanitized
+//     operand.
+//
+// The write is matched on the Blank view (code-shaped text inside a
+// string literal is prose) and the assigned expression is recovered
+// from Code by offset, so the literal '; path=/' chunks stay visible
+// and are judged as literals, not as grammar.
+func LintCookieConcat(roots ...string) (*Result, error) {
+	res := &Result{}
+	files, err := loadJSSources(roots...)
+	if err != nil {
+		return nil, err
+	}
+	for _, f := range files {
+		var events []safeEvent
+		for _, m := range reCookieWrite.FindAllStringSubmatchIndex(f.Blank, -1) {
+			if m[4] < 0 || f.Blank[m[4]] == '=' || f.Blank[m[4]] == '>' {
+				continue // == / === comparison or => arrow, not a write
+			}
+			rhs := strings.TrimSpace(f.Code[m[3]:statementEnd(f.Code, m[3])])
+			if rhs == "" {
+				continue
+			}
+			if events == nil {
+				events = safeIdentEvents(f.Code, f.Blank)
+			}
+			safe := func(name string) bool { return safeAt(events, name, m[3]) }
+			bad, ok := cookieUnsafeOperand(rhs, safe)
+			if !ok {
+				continue
+			}
+			res.add(f.Path, f.lineOf(m[0]),
+				fmt.Sprintf("[cookie-concat] document.cookie concatenates %q raw — a value carrying ';' or '=' plants an attacker-chosen cookie name and attributes in the module's namespace and the module's own write is lost; wrap the operand in encodeURIComponent()", bad))
+		}
+	}
+	return res, nil
+}
+
+// reCookieWrite matches a document.cookie write, plain or compound.
+// Group 2 captures the character after the '=' so comparisons (==,
+// ===) and arrow bodies can be rejected in code — RE2 has no
+// lookahead.
+var reCookieWrite = regexp.MustCompile(`document\s*\.\s*cookie\s*(\+?=)(.)`)
+
+// cookieUnsafeOperand inspects one cookie-write expression and reports
+// the first operand that can carry cookie grammar, if any: a
+// concatenation operand or template-interpolation body that is not a
+// literal, not an encodeURIComponent(…) whole operand, and not an
+// identifier provably holding a literal at the write.
+func cookieUnsafeOperand(rhs string, safe func(string) bool) (string, bool) {
+	for _, op := range splitTopLevel(rhs, '+') {
+		t := strings.TrimSpace(op)
+		if t == "" {
+			continue
+		}
+		if strings.HasPrefix(t, "`") {
+			tpl := t[:templateEnd(t, 0)+1]
+			for j := 0; j+1 < len(tpl); j++ {
+				if tpl[j] == '$' && tpl[j+1] == '{' {
+					body, close := templateExprEnd(tpl, j+2)
+					b := strings.TrimSpace(body)
+					if !cookieOperandSafe(b, safe) {
+						return b, true
+					}
+					j = close
+				}
+			}
+			continue
+		}
+		if !cookieOperandSafe(t, safe) {
+			return t, true
+		}
+	}
+	return "", false
+}
+
+// cookieOperandSafe reports whether one concatenation operand or
+// interpolation body provably cannot carry cookie delimiters.
+func cookieOperandSafe(op string, safe func(string) bool) bool {
+	if op == "" {
+		return true
+	}
+	if isJSStringLiteral(op) || isJSNumericLiteral(op) {
+		return true
+	}
+	if isEncodedCall(op) {
+		return true // encodeURIComponent(…) as the WHOLE operand
+	}
+	return isJSIdent(op) && safe(op)
+}
+
+// reEncodeCall matches a component-encoding call at the start of an
+// operand: encodeURIComponent(, window.encodeURIComponent(.
+var reEncodeCall = regexp.MustCompile(`^(?:\w+\.)*encodeURIComponent\s*\(`)
+
+// isEncodedCall reports whether op is EXACTLY one encodeURIComponent
+// call, nothing after the closing paren but space — the same
+// whole-operand rule isEscapeCall applies to CSS.escape.
+func isEncodedCall(op string) bool {
+	loc := reEncodeCall.FindStringIndex(op)
+	if loc == nil {
+		return false
+	}
+	close := matchDelimForward(op, loc[1]-1)
+	return close >= 0 && strings.TrimSpace(op[close+1:]) == ""
+}
+
+// ── lint 7: module URL built from an ungated identifier ──────────────
+
+// LintModuleURLShape fires when a script src (or a dynamic import
+// URL) is built by concatenating or interpolating a value that is not
+// provably a literal and not encoded, while no regex .test( on that
+// identifier dominates the build.
+//
+// Bug class: a module id read from data-component / data-widget (or
+// any other attribute read, a dataset member, or an unproven
+// identifier — a script sink does not trust provenance analysis) is
+// joined into '/__gofastr/widget/' + id + '.js' with no shape check
+// of its own. The browser normalizes '../' segments out of the module
+// route
+// onto an arbitrary same-origin script, which then runs with the
+// page's full privileges. The repo's own loader, loadModule
+// (frag/boot.js), already carries the parity bar: it rejects names
+// failing /^[\w-]+$/ BEFORE building the URL. Probe:
+// TestActionLoaderRedChecksModuleShape (core-ui/runtime/
+// runtime_red_test.go, 2026-09-03 round-3; fix pending — this lint
+// fires on today's tree). The fixed spelling rejects ids failing
+// /^[\w.-]+$/ before building the src (the dot is required: component
+// ids legitimately contain dots; '/' must stay impossible).
+//
+// The gate is deliberately simple and honest: ANY regex .test( on the
+// same identifier, in a dominating position, counts. The lint does
+// NOT judge whether the regex actually bounds the name shape (an
+// unanchored /./.test(id) counts as a gate), and — unlike lint 4's
+// gate — an allowlist membership (manifest[id]) does NOT count: the
+// actionloader finding is precisely the parity gap, a manifest gate
+// is not a shape test, and loadModule's regex is the bar.
+//
+// Silent on:
+//   - builds whose every operand is a literal, a numeric literal, an
+//     encodeURIComponent(…) whole operand, or an identifier provably
+//     holding a literal at the build;
+//   - gated identifiers: a regex .test(ident) sitting in the
+//     condition of an if whose branch contains the build, or in an
+//     earlier rejecting if of the enclosing block (return/throw/
+//     continue), loadModule's own spelling — a named regex constant
+//     (MODULE_NAME.test(id)) counts like an inline literal;
+//   - src assignments whose RHS is not a build: no top-level '+' and
+//     no template (a data: URL from a FileReader result, a bare
+//     attribute read like boot.js's data-behavior scriptSrc, which is
+//     gated by a full-URL regex of its own);
+//   - member chains, calls, and parenthesized sub-expressions as
+//     operands (manifest[id], (v ? '?v=' + v : ”)): their provenance
+//     is invisible, so they are out of scope;
+//   - a URL built through ONE variable only: `const url = …; s.src =
+//     url` traces that one assignment (loadModule's spelling); a
+//     chain of two or more variables is out of scope.
+//
+// Assignment tokens are matched on the Blank view; the assigned
+// expression is recovered from Code by offset.
+func LintModuleURLShape(roots ...string) (*Result, error) {
+	res := &Result{}
+	files, err := loadJSSources(roots...)
+	if err != nil {
+		return nil, err
+	}
+	for _, f := range files {
+		events := safeIdentEvents(f.Code, f.Blank)
+		for _, site := range moduleURLSites(f.Blank, f.Code) {
+			expr, buildPos := site.expr, site.pos
+			if isJSIdent(expr) {
+				expr, buildPos = tracedBuild(events, expr, site.pos)
+				if expr == "" {
+					continue // a bare variable holding no traceable build
+				}
+			}
+			if !compositeBuild(expr) {
+				continue
+			}
+			bad, ok := moduleURLUnsafeOperand(expr, events, f.Code, buildPos)
+			if !ok {
+				continue
+			}
+			res.add(f.Path, f.lineOf(site.pos),
+				fmt.Sprintf("[module-url-shape] %s builds a module URL from %q with no shape gate — a crafted id normalizes out of the module route and loads an arbitrary same-origin script; reject ids failing a name-shape regex (loadModule gates /^[\\w-]+$/, dotted component ids want [\\w.-]) before building the URL", site.kind, bad))
+		}
+	}
+	return res, nil
+}
+
+// moduleURLSite is one URL-building expression: the RHS of a .src
+// assignment (kind "script src") or the first argument of a dynamic
+// import( (kind "import()").
+type moduleURLSite struct {
+	kind string
+	expr string
+	pos  int
+}
+
+var (
+	reSrcAssign = regexp.MustCompile(`\.\s*src\s*(=)(.)`)
+	reImportArg = regexp.MustCompile(`\bimport\s*\(`)
+)
+
+// moduleURLSites finds the src assignments and dynamic import calls of
+// the file. Tokens are matched on the blank view (strings and comments
+// cannot spell an assignment); the expression text is read from the
+// code view by offset so literals stay visible. For each write, group
+// 2 captures the character after the '=' so comparisons (==, ===) and
+// arrow bodies can be rejected in code.
+func moduleURLSites(blank, code string) []moduleURLSite {
+	var out []moduleURLSite
+	for _, m := range reSrcAssign.FindAllStringSubmatchIndex(blank, -1) {
+		if m[4] < 0 || blank[m[4]] == '=' || blank[m[4]] == '>' {
+			continue // == / === comparison or => arrow, not an assignment
+		}
+		expr := strings.TrimSpace(code[m[3]:statementEnd(code, m[3])])
+		if expr == "" {
+			continue
+		}
+		out = append(out, moduleURLSite{kind: "script src", expr: expr, pos: m[3]})
+	}
+	for _, loc := range reImportArg.FindAllStringIndex(blank, -1) {
+		open := loc[1] - 1
+		close := matchDelimForward(blank, open)
+		if close < 0 {
+			continue
+		}
+		expr := strings.TrimSpace(firstArgument(code, blank, open, close))
+		if expr == "" {
+			continue
+		}
+		out = append(out, moduleURLSite{kind: "import()", expr: expr, pos: loc[0]})
+	}
+	return out
+}
+
+// tracedBuild resolves one level of indirection: when the src RHS is
+// a bare identifier, the build is the expression of its deciding
+// assignment, judged at that assignment's position (loadModule builds
+// `url` in one statement and assigns `s.src = url` in the next). A
+// chain of two variables, an unassigned name, or a deciding RHS that
+// is not an assignment is out of scope.
+func tracedBuild(events []safeEvent, name string, pos int) (string, int) {
+	e, ok := latestEvent(events, name, pos)
+	if !ok || e.rhs == "" {
+		return "", pos
+	}
+	return e.rhs, e.pos
+}
+
+// compositeBuild reports whether expr builds a string: a top-level '+'
+// concatenation or a template literal.
+func compositeBuild(expr string) bool {
+	if strings.HasPrefix(strings.TrimSpace(expr), "`") {
+		return true
+	}
+	return len(splitTopLevel(expr, '+')) > 1
+}
+
+// moduleURLUnsafeOperand inspects one module-URL build and reports the
+// first operand the shape gate is missing for.
+func moduleURLUnsafeOperand(expr string, events []safeEvent, code string, buildPos int) (string, bool) {
+	for _, op := range moduleBuildOperands(expr) {
+		t := strings.TrimSpace(op)
+		if t == "" {
+			continue
+		}
+		if isJSStringLiteral(t) || isJSNumericLiteral(t) {
+			continue
+		}
+		if isEncodedCall(t) {
+			continue
+		}
+		if isJSIdent(t) {
+			if safeAt(events, t, buildPos) {
+				continue
+			}
+			if regexTestDominates(code, t, buildPos) {
+				continue
+			}
+			return t, true
+		}
+		if reAnyAttrRead.MatchString(t) {
+			return t, true // an inline attribute read: no identifier to gate
+		}
+		// member chains, calls, parenthesized sub-expressions: out of scope
+	}
+	return "", false
+}
+
+// moduleBuildOperands splits a build expression into its template
+// chunks and interpolation bodies (a template decomposes; its literal
+// chunks read as quoted string literals downstream) and its top-level
+// '+' operands.
+func moduleBuildOperands(expr string) []string {
+	var out []string
+	for _, op := range splitTopLevel(expr, '+') {
+		t := strings.TrimSpace(op)
+		if strings.HasPrefix(t, "`") {
+			out = append(out, templateOperands(t[:templateEnd(t, 0)+1])...)
+			continue
+		}
+		out = append(out, t)
+	}
+	return out
+}
+
+// regexTestDominates reports whether a regex .test( on identifier v
+// DOMINATES the module-URL build at pos, under the same two shapes
+// lint 4's gate uses: the gate sits in the condition of an if whose
+// branch CONTAINS the build, or in an earlier if of a block enclosing
+// the build whose failure branch REJECTS execution (return / throw /
+// continue), loadModule's `if (!/^[\w-]+$/.test(name)) return
+// reject(…)` spelling. ANY receiver counts — an inline regex literal
+// (the char before .test is '/'), or a named constant — because this
+// lint asks only for the gate's PRESENCE (parity with loadModule),
+// not its bounding power; that simplicity is the documented limit.
+func regexTestDominates(code, v string, pos int) bool {
+	if !isJSIdent(v) {
+		return false
+	}
+	start, _ := enclosingFunction(code, pos)
+	body := code[start:]
+	pos0 := pos - start
+	reGate := regexp.MustCompile(`[/\w]\s*\.\s*test\s*\(\s*` + regexp.QuoteMeta(v) + `\s*\)`)
+	for _, loc := range reIfOpen.FindAllStringIndex(body, -1) {
+		if loc[0] >= pos0 {
+			break // every later if is past the build
+		}
+		open := loc[1] - 1
+		close := matchDelimForward(body, open)
+		if close < 0 || close >= pos0 {
+			continue
+		}
+		if !reGate.MatchString(body[open+1 : close]) {
+			continue
+		}
+		b := skipSpace(body, close+1)
+		if b >= len(body) {
+			continue
+		}
+		tEnd := b
+		if body[b] == '{' {
+			if e := matchDelimForward(body, b); e >= 0 {
+				tEnd = e
+			}
+		} else if e := statementEnd(body, b); e < len(body) {
+			tEnd = e
+		}
+		if b <= pos0 && pos0 <= tEnd {
+			return true // the branch that builds the URL ran the gate
+		}
+		if tEnd < pos0 && branchRejects(body[b:tEnd+1]) && ifStillOpenAt(body, tEnd+1, pos0) {
+			return true // the gate's failures left; only shape-valid ids continue
+		}
+	}
+	return false
 }

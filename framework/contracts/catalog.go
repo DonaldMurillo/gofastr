@@ -676,7 +676,7 @@ func securityRules() []Rule {
 		ID: RuleRawJSONBodyDecode, Slug: "security/raw-json-body-decode",
 		Title:      "Request body decoded with `encoding/json` outside the strict binder",
 		Capability: CapSecurity, Severity: SeverityError,
-		Summary: "`json.NewDecoder(r.Body)` or `json.Unmarshal` on bytes read from `r.Body`, in a function that takes an `*http.Request`, outside `core/handler`.",
+		Summary: "`json.NewDecoder`/`json.Unmarshal` on client-controlled bytes — a request body, a websocket frame, or bytes a same-package helper read from either and handed on — outside `core/handler`.",
 		Why: "stdlib `encoding/json` keeps the LAST duplicate key and matches key names " +
 			"case-insensitively, while form parsing keeps the FIRST duplicate — so one smuggled body " +
 			"resolves to a different identity depending on Content-Type (probe " +
@@ -684,11 +684,11 @@ func securityRules() []Rule {
 			"surface and A on the form surface of the same endpoint). The ambiguity itself is the " +
 			"attack; which parser wins is an accident. `core/handler.Bind` refuses ambiguous bodies, " +
 			"which is why everything else should go through it.",
-		Fix: "Decode with `handler.Bind` (core/handler), or run a strict top-level key walk before `json.Unmarshal` — `battery/auth`'s decodeJSONLimitedStrict is the model. JSON-RPC envelope transports that accept the whole object as-is annotate `//gofastr:allow(GOFASTR1407) <why>`.",
+		Fix: "Decode with `handler.Bind`, or `handler.DecodeStrict` / `handler.UnmarshalStrict` for envelopes, frames, and buffered bodies (`handler.CheckTopLevelKeys` when the caller normalises keys itself). A site that must decode raw carries `//gofastr:allow(GOFASTR1407) <why>` with a real reason.",
 		Doc: "security",
 		Examples: []Example{{
 			Bad:  "creds := struct {\n\tEmail    string `json:\"email\"`\n\tPassword string `json:\"password\"`\n}{}\njson.NewDecoder(req.Body).Decode(&creds)",
-			Good: "creds := Credentials{}\nhandler.Bind(req, &creds) // refuses duplicate and case-folded top-level keys",
+			Good: "creds := Credentials{}\nhandler.Bind(req, &creds) // refuses duplicate and case-folded top-level keys\n\nvar env rpcEnvelope\nhandler.DecodeStrict(http.MaxBytesReader(w, req.Body, 1<<20), &env)",
 		}},
 	}}
 }

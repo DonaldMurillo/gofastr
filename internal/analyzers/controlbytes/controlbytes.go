@@ -58,6 +58,57 @@
 // return }`) is lexically indistinguishable from an allowlist and is
 // granted the same credit — the names differ, the shape does not.
 //
+// Beyond the request, three more values count as untrusted at the
+// seams the 2026-09-02 email round and the probe/log round of the audit
+// drove probes into:
+//
+//   - the recover() value, but only to mark where it lands: a handler
+//     that panicked on request data hands request bytes to recover(),
+//     and the reporter seam cannot tell which panic did, so a struct
+//     whose field some in-package literal filled from recover() (or
+//     from any request-derived value) is CARRYING, and exactly its
+//     carrying fields are sources wherever a parameter of that type
+//     reaches a sink (battery/log's ErrorReport, read by
+//     SlogErrorReporter.Report — probe TestErrorReporterRedScrubsAttrs).
+//     An in-function recover-and-log (mcp gates, websocket hooks) is
+//     NOT this rule's bug and stays quiet;
+//   - string-bearing fields of a struct type declared in THIS package,
+//     reached from a function parameter, at the MESSAGE sinks below:
+//     battery/email cannot see who built the Email it serialises, so
+//     every field is untrusted exactly where it hits the wire (probes
+//     TestEmailRedStripsHeaderControlBytes / ...ParamControlBytes on
+//     buildMessage). Elsewhere only carrying fields count, and receiver
+//     fields never do: a receiver's config is operator data;
+//   - a parameter named stderr or stdout: child-process output replayed
+//     to an operator (probe TestProbeRedScrubsStderrControlBytes on
+//     framework's tailForDetail into ProbeResult.Detail, against the
+//     scrubTerminalBytes/scrubTerminalOutput standard).
+//
+// A same-package scrub-named helper clears only with body evidence now:
+// a byte-indexed walk of the parameter whose comparisons name the
+// control range (a literal in 0x09..0x20 or 0x7f — c < 0x20, c == '\t',
+// c != 0x7f), in its own body or one same-package callee hop
+// (scrubTerminalBytes delegates to terminalCtrlByte). The name alone
+// stopped being enough when battery/email's quoteParamValue ("quote",
+// strong scrub name) turned out to strip CR/LF/NUL and pass every other
+// C0 byte and DEL verbatim into quoted MIME parameters, while a
+// pass-through named escape/quote/redact never re-encoded anything at
+// all. Foreign callees stay name-trusted: their bodies are not
+// inspectable here, and url.QueryEscape really does re-encode.
+//
+// Sinks added with those seams: net/smtp Client.Mail/.Rcpt (command
+// arguments on the wire); the SMTP/MIME header-line writer —
+// WriteString/Write on a strings.Builder or bytes.Buffer whose
+// argument is a concatenation carrying both a CRLF literal and a
+// colon-bearing literal, the shape of "From: " + v + "\r\n" (body-only
+// writes and pure framing lines do not match); the Detail diagnostic
+// field — a composite-literal Detail: or .Detail = — where child
+// stderr/stdout is replayed to the operator inside error text; and
+// http.Redirect's URL argument (the 308 Location, probe
+// TestUihostRedRedirect308StripsControlBytes on framework/uihost
+// handlePage; the partial branch of the same value is guarded by the
+// isSafePartialRedirect validator and stays quiet).
+//
 // Postures it deliberately stays silent on, because they are not this
 // bug: JSON and HTML encoders escape structurally (encoding/json,
 // html/template), so encoder arguments are left alone; the response
@@ -79,7 +130,15 @@
 // selectors are (Method/Host/RemoteAddr/RequestURI/URL.Path/
 // URL.RawQuery, the Header.Get/FormValue/PathValue/PostFormValue/
 // Referer/UserAgent/BasicAuth accessors, url.Values.Get, and the
-// Value field of a cookie bound from r.Cookie).
+// Value field of a cookie bound from r.Cookie);
+//   - a whole same-package struct handed to a helper is a payload, not
+//     a derivation: flash.put(&formFlash{...}) returns a random token
+//     whatever the record's fields carried, so the call's result stays
+//     clean (the argument itself is the helper's business, per the
+//     boundary posture above);
+//   - fields a same-package struct only ever holds enums in
+//     (SecurityEvent.Kind) stay quiet even when another field of the
+//     same struct carries: carrying is per field, not per type.
 package controlbytes
 
 import (
@@ -87,7 +146,9 @@ import (
 	"go/token"
 	"go/types"
 	"regexp"
+	"strconv"
 	"strings"
+	"sync"
 
 	"golang.org/x/tools/go/analysis"
 )
@@ -142,6 +203,7 @@ func run(pass *analysis.Pass) (any, error) {
 		}
 	}
 
+	carrying := carryingStructs(pass, decls)
 	for _, f := range pass.Files {
 		if isTestFile(pass, f) {
 			// Tests are not production sinks; a control byte in a
@@ -152,7 +214,7 @@ func run(pass *analysis.Pass) (any, error) {
 			switch d := d.(type) {
 			case *ast.FuncDecl:
 				if d.Body != nil {
-					checkBody(pass, decls, d.Body, nil)
+					checkBody(pass, decls, carrying, d.Body, nil)
 				}
 			case *ast.GenDecl:
 				// Top-level func literals (var h = func() {...}).
@@ -163,7 +225,7 @@ func run(pass *analysis.Pass) (any, error) {
 					}
 					for _, val := range vs.Values {
 						if lit, ok := val.(*ast.FuncLit); ok {
-							checkBody(pass, decls, lit.Body, nil)
+							checkBody(pass, decls, carrying, lit.Body, nil)
 						}
 					}
 				}
@@ -180,20 +242,36 @@ func run(pass *analysis.Pass) (any, error) {
 // inside the literal (that defer is exactly the access-log shape).
 // Descending from the outside as well would report every sink twice,
 // so the walk below stops at literals.
-func checkBody(pass *analysis.Pass, decls map[types.Object]*ast.FuncDecl, body *ast.BlockStmt, parent *taint) {
-	t := newTaint(pass, decls, body, parent)
+func checkBody(pass *analysis.Pass, decls map[types.Object]*ast.FuncDecl, carrying map[*types.Named]map[string]bool, body *ast.BlockStmt, parent *taint) {
+	t := newTaint(pass, decls, carrying, body, parent)
 	guards := testedValues(pass, body)
 	for _, stmt := range body.List {
-		walkStmt(pass, decls, t, guards, stmt)
+		walkStmt(pass, decls, carrying, t, guards, stmt)
 	}
 }
 
-func walkStmt(pass *analysis.Pass, decls map[types.Object]*ast.FuncDecl, t *taint, guards map[types.Object][]guard, stmt ast.Stmt) {
+func walkStmt(pass *analysis.Pass, decls map[types.Object]*ast.FuncDecl, carrying map[*types.Named]map[string]bool, t *taint, guards map[types.Object][]guard, stmt ast.Stmt) {
 	ast.Inspect(stmt, func(n ast.Node) bool {
 		switch n := n.(type) {
 		case *ast.FuncLit:
-			checkBody(pass, decls, n.Body, t)
+			checkBody(pass, decls, carrying, n.Body, t)
 			return false
+		case *ast.KeyValueExpr:
+			// The Detail diagnostic field: where child stderr/stdout is
+			// replayed to the operator inside error text (the probe
+			// path's ProbeResult.Detail). The field IS the operator
+			// surface; there is no call to hang the check on.
+			if id, ok := n.Key.(*ast.Ident); ok && id.Name == "Detail" {
+				checkDetailValue(pass, t, guards, n.Value, n.Pos())
+			}
+			return true
+		case *ast.AssignStmt:
+			for _, lhs := range n.Lhs {
+				if sel, ok := unparen(lhs).(*ast.SelectorExpr); ok && sel.Sel.Name == "Detail" {
+					checkDetailValue(pass, t, guards, unparen(n.Rhs[0]), n.Pos())
+				}
+			}
+			return true
 		case *ast.CallExpr:
 			for _, s := range sinks {
 				if !s.matches(t, n) {
@@ -209,7 +287,11 @@ func walkStmt(pass *analysis.Pass, decls map[types.Object]*ast.FuncDecl, t *tain
 							continue
 						}
 					}
-					if t.source(arg) {
+					tainted := t.source(arg)
+					if !tainted && s.seam {
+						tainted = t.sourceSeam(arg)
+					}
+					if tainted {
 						pass.Reportf(n.Pos(),
 							"controlbytes: request-derived value reaches %s unscrubbed; C0/DEL bytes forge log lines and header values (scrub or escape at the sink)",
 							s.name)
@@ -392,12 +474,98 @@ func diverges(body *ast.BlockStmt) bool {
 	return found
 }
 
+// carryingStructs returns the package's struct types that an in-package
+// composite literal filled with a tainted value: the literal is where
+// request-derived or recover-derived bytes entered the type, so the
+// type's fields are sources wherever a parameter of that type reaches a
+// sink (ErrorReport, filled by recoveryMiddleware, read by the
+// reporter).
+func carryingStructs(pass *analysis.Pass, decls map[types.Object]*ast.FuncDecl) map[*types.Named]map[string]bool {
+	carrying := map[*types.Named]map[string]bool{}
+	empty := map[*types.Named]map[string]bool{}
+	for _, f := range pass.Files {
+		if isTestFile(pass, f) {
+			continue
+		}
+		for _, fn := range funcsOf(pass, f) {
+			t := newTaint(pass, decls, empty, body(fn), nil)
+			t.carryingPass = true
+			ast.Inspect(body(fn), func(n ast.Node) bool {
+				lit, ok := n.(*ast.CompositeLit)
+				if !ok {
+					return true
+				}
+				named, ok := pass.TypesInfo.TypeOf(lit).(*types.Named)
+				if !ok {
+					return true
+				}
+				if obj := named.Obj(); obj == nil || obj.Pkg() != pass.Pkg {
+					return true
+				}
+				if _, isStruct := named.Underlying().(*types.Struct); !isStruct {
+					return true
+				}
+				for _, elt := range lit.Elts {
+					kv, ok := elt.(*ast.KeyValueExpr)
+					if !ok {
+						continue
+					}
+					key, ok := kv.Key.(*ast.Ident)
+					if !ok {
+						continue
+					}
+					if t.source(kv.Value) {
+						if carrying[named] == nil {
+							carrying[named] = map[string]bool{}
+						}
+						carrying[named][key.Name] = true
+					}
+				}
+				return true
+			})
+		}
+	}
+	return carrying
+}
+
+// funcsOf yields the file's function declarations and literals.
+func funcsOf(pass *analysis.Pass, f *ast.File) []ast.Node {
+	var out []ast.Node
+	for _, d := range f.Decls {
+		if fn, ok := d.(*ast.FuncDecl); ok && fn.Body != nil {
+			out = append(out, fn)
+		}
+	}
+	ast.Inspect(f, func(n ast.Node) bool {
+		if lit, ok := n.(*ast.FuncLit); ok && lit.Body != nil {
+			out = append(out, lit)
+		}
+		return true
+	})
+	return out
+}
+
+// body returns the node's body (FuncDecl or FuncLit).
+func body(fn ast.Node) *ast.BlockStmt {
+	switch fn := fn.(type) {
+	case *ast.FuncDecl:
+		return fn.Body
+	case *ast.FuncLit:
+		return fn.Body
+	}
+	return nil
+}
+
 // ---- sinks -------------------------------------------------------------
 
 type sink struct {
 	name    string
 	args    func(t *taint, call *ast.CallExpr) []ast.Expr
 	matches func(t *taint, call *ast.CallExpr) bool
+	// seam: the sink cannot see who built the struct it was handed, so
+	// every same-package struct-parameter field counts as untrusted
+	// here (the message sinks).
+	seam bool
 }
 
 var sinks = []sink{
@@ -562,6 +730,73 @@ var sinks = []sink{
 		args: func(t *taint, call *ast.CallExpr) []ast.Expr { return call.Args },
 	},
 	{
+		// net/smtp writes the envelope arguments onto the wire verbatim;
+		// a C0 byte in MAIL FROM:/RCPT TO: is between the client and
+		// the server's parser, with no framing of ours in between.
+		name: "smtp.Client.Mail/Rcpt",
+		seam: true,
+		matches: func(t *taint, call *ast.CallExpr) bool {
+			sel, ok := unparen(call.Fun).(*ast.SelectorExpr)
+			if !ok || (sel.Sel.Name != "Mail" && sel.Sel.Name != "Rcpt") {
+				return false
+			}
+			s, ok := t.pass.TypesInfo.Selections[sel]
+			if !ok {
+				return false
+			}
+			return isNamed(deref(s.Recv()), "net/smtp", "Client")
+		},
+		args: func(t *taint, call *ast.CallExpr) []ast.Expr {
+			if len(call.Args) >= 1 {
+				return call.Args[:1]
+			}
+			return nil
+		},
+	},
+	{
+		// The message header-line writer: WriteString/Write on a
+		// builder/buffer whose argument is a header-shaped line — a
+		// concatenation carrying both the CRLF terminator and a
+		// colon-bearing literal ("From: " + v + "\r\n"). Body writes
+		// and pure framing lines do not match the shape.
+		name: "message header-line write",
+		seam: true,
+		matches: func(t *taint, call *ast.CallExpr) bool {
+			sel, ok := unparen(call.Fun).(*ast.SelectorExpr)
+			if !ok || (sel.Sel.Name != "WriteString" && sel.Sel.Name != "Write") {
+				return false
+			}
+			s, ok := t.pass.TypesInfo.Selections[sel]
+			if !ok {
+				return false
+			}
+			recv := deref(s.Recv())
+			if !isNamed(recv, "strings", "Builder") && !isNamed(recv, "bytes", "Buffer") {
+				return false
+			}
+			return len(call.Args) > 0 && headerShaped(call.Args[0])
+		},
+		args: func(t *taint, call *ast.CallExpr) []ast.Expr { return call.Args[:1] },
+	},
+	{
+		// http.Redirect sets the Location header from its URL argument;
+		// net/http hex-escapes non-ASCII but passes C0 and DEL raw.
+		name: "http.Redirect Location",
+		matches: func(t *taint, call *ast.CallExpr) bool {
+			sel, ok := unparen(call.Fun).(*ast.SelectorExpr)
+			if !ok || sel.Sel.Name != "Redirect" {
+				return false
+			}
+			return pkgPathOf(t.pass, sel) == "net/http"
+		},
+		args: func(t *taint, call *ast.CallExpr) []ast.Expr {
+			if len(call.Args) >= 3 {
+				return call.Args[2:3]
+			}
+			return nil
+		},
+	},
+	{
 		name: "stdout/stderr print",
 		matches: func(t *taint, call *ast.CallExpr) bool {
 			sel, ok := unparen(call.Fun).(*ast.SelectorExpr)
@@ -603,6 +838,47 @@ var sinks = []sink{
 	},
 }
 
+// checkDetailValue reports a tainted value committed to a Detail
+// diagnostic field, honouring the tested-value guards like any sink.
+func checkDetailValue(pass *analysis.Pass, t *taint, guards map[types.Object][]guard, val ast.Expr, pos token.Pos) {
+	if id, ok := unparen(val).(*ast.Ident); ok {
+		if testedAt(guards[pass.TypesInfo.ObjectOf(id)], pos) {
+			return
+		}
+	}
+	if t.source(val) {
+		pass.Reportf(val.Pos(),
+			"controlbytes: request-derived value reaches the Detail diagnostic field unscrubbed; C0/DEL bytes forge log lines and header values (scrub or escape at the sink)")
+	}
+}
+
+// headerShaped: the argument is a concatenation that carries both a
+// CRLF literal and a colon-bearing literal — "From: " + v + "\r\n" and
+// kin. A body write (email.TextBody + "\r\n") and a framing line
+// ("--" + boundary + "\r\n") lack the colon and stay quiet.
+func headerShaped(e ast.Expr) bool {
+	crlf, colon := false, false
+	var walk func(e ast.Expr)
+	walk = func(e ast.Expr) {
+		be, ok := unparen(e).(*ast.BinaryExpr)
+		if !ok || be.Op != token.ADD {
+			if lit, ok := unparen(e).(*ast.BasicLit); ok && lit.Kind == token.STRING {
+				if strings.Contains(lit.Value, "\\r\\n") || strings.Contains(lit.Value, "\r\n") {
+					crlf = true
+				}
+				if strings.Contains(lit.Value, ":") {
+					colon = true
+				}
+			}
+			return
+		}
+		walk(be.X)
+		walk(be.Y)
+	}
+	walk(e)
+	return crlf && colon
+}
+
 func valueArg1(t *taint, call *ast.CallExpr) []ast.Expr {
 	if len(call.Args) >= 2 {
 		return call.Args[1:2]
@@ -615,6 +891,25 @@ func valueArg1(t *taint, call *ast.CallExpr) []ast.Expr {
 type taint struct {
 	pass  *analysis.Pass
 	decls map[types.Object]*ast.FuncDecl
+	// carrying holds, per same-package struct type, the FIELD NAMES that
+	// some in-package composite literal filled with a tainted value:
+	// ErrorReport gets its Error from recover() and its Path from
+	// r.URL.Path, so those fields are sources at every sink. Fields the
+	// package only ever fills with its own enums (SecurityEvent.Kind)
+	// stay quiet.
+	carrying map[*types.Named]map[string]bool
+	// seamWide widens the same-package struct seam to every field of a
+	// struct parameter: set only while checking the message sinks
+	// (smtp envelope, header lines), where the package cannot see who
+	// built the struct it was handed.
+	seamWide bool
+	// carryingPass: this taint feeds the carrying-struct pre-pass,
+	// where a recover() result DOES count — the panic value is what
+	// marks ErrorReport as carrying request bytes into the reporter
+	// seam. At the sinks themselves recover() is not a source: the
+	// in-function recover-and-log spelling (mcp gates, websocket
+	// hooks) is not this rule's bug and stays silent.
+	carryingPass bool
 	// bind maps each variable assigned in this function to the
 	// expression(s) assigned to it. A variable rewritten mid-function
 	// keeps every binding: which write precedes a given sink is not
@@ -638,8 +933,8 @@ func bindable(t types.Type) bool {
 	return isNamed(n, "net/http", "Request") || isNamed(n, "net/http", "Cookie")
 }
 
-func newTaint(pass *analysis.Pass, decls map[types.Object]*ast.FuncDecl, body *ast.BlockStmt, parent *taint) *taint {
-	t := &taint{pass: pass, decls: decls, bind: map[types.Object][]ast.Expr{}}
+func newTaint(pass *analysis.Pass, decls map[types.Object]*ast.FuncDecl, carrying map[*types.Named]map[string]bool, body *ast.BlockStmt, parent *taint) *taint {
+	t := &taint{pass: pass, decls: decls, carrying: carrying, bind: map[types.Object][]ast.Expr{}}
 	if parent != nil {
 		// A closure inherits the enclosing function's bindings for
 		// the variables it captures; its own assignments are added on
@@ -664,7 +959,10 @@ func newTaint(pass *analysis.Pass, decls map[types.Object]*ast.FuncDecl, body *a
 					continue
 				}
 				obj, ok := pass.TypesInfo.ObjectOf(id).(*types.Var)
-				if !ok || !carriesStrings(obj.Type()) {
+				if !ok || !carriesStrings(obj.Type()) && !t.samePackageStruct(obj.Type()) {
+					// A same-package struct element (for _, att := range
+					// email.Attachments) carries the seam onward: its
+					// fields are the input struct's fields.
 					continue
 				}
 				t.bind[obj] = append(t.bind[obj], n.X)
@@ -687,12 +985,21 @@ func bindAssign(t *taint, pass *analysis.Pass, assign *ast.AssignStmt) {
 			if !ok {
 				continue
 			}
+			// The recover() value is `any`, not a string carrier, but
+			// its bytes are exactly what the reporter seam must
+			// scrub, so the binding is kept for the provenance walk.
+			if i < len(assign.Rhs) && isRecoverCallExpr(pass, assign.Rhs[i]) {
+				if obj, ok := pass.TypesInfo.ObjectOf(id).(*types.Var); ok {
+					t.bind[obj] = append(t.bind[obj], assign.Rhs[i])
+				}
+				continue
+			}
 			// ObjectOf, not Defs: a plain `x = rhs` assignment
 			// has no Defs entry — the lhs is a use of the object
 			// declared elsewhere, and those rebindings are
 			// exactly the append/join chains this rule follows.
 			obj, ok := pass.TypesInfo.ObjectOf(id).(*types.Var)
-			if !ok || !bindable(obj.Type()) {
+			if !ok || !bindable(obj.Type()) && !t.samePackageStruct(obj.Type()) {
 				// Control bytes live in string data. A
 				// non-string variable — most importantly err,
 				// but also a fetch response struct that merely
@@ -744,6 +1051,14 @@ func (t *taint) source(e ast.Expr) bool {
 	return t.orig(e, map[types.Object]bool{}, 0)
 }
 
+// sourceSeam is source with the struct seam widened (message sinks).
+func (t *taint) sourceSeam(e ast.Expr) bool {
+	saved := t.seamWide
+	t.seamWide = true
+	defer func() { t.seamWide = saved }()
+	return t.orig(e, map[types.Object]bool{}, 0)
+}
+
 func (t *taint) orig(e ast.Expr, seen map[types.Object]bool, depth int) bool {
 	if depth > 24 {
 		return false
@@ -754,6 +1069,13 @@ func (t *taint) orig(e ast.Expr, seen map[types.Object]bool, depth int) bool {
 		if obj == nil || seen[obj] {
 			return false
 		}
+		// Child-process output by convention: a stderr/stdout
+		// parameter is the seam where a parent replays what a child
+		// wrote, and the probe path (tailForDetail) proved those bytes
+		// reach operator detail unscrubbed.
+		if isChildOutputParam(obj) {
+			return true
+		}
 		seen[obj] = true
 		for _, b := range t.bind[obj] {
 			if t.orig(b, seen, depth+1) {
@@ -762,6 +1084,13 @@ func (t *taint) orig(e ast.Expr, seen map[types.Object]bool, depth int) bool {
 		}
 		return false
 	case *ast.CallExpr:
+		if t.carryingPass && t.isRecoverCall(e) {
+			// A handler that panicked on request data hands request
+			// bytes to recover(); the seam catching it cannot tell
+			// which panic did, so the value marks the struct it lands
+			// in as carrying.
+			return true
+		}
 		if isRequestSourceCall(t.pass, e) {
 			return true
 		}
@@ -769,6 +1098,14 @@ func (t *taint) orig(e ast.Expr, seen map[types.Object]bool, depth int) bool {
 			return false
 		}
 		for _, arg := range e.Args {
+			if t.structPayload(arg) {
+				// A whole same-package struct handed to a helper is a
+				// payload, not a derivation: flash.put(&formFlash{...})
+				// returns a random token whatever the fields carried
+				// (and the helper's handling of them is the helper's
+				// business, the posture this rule already documents).
+				continue
+			}
 			if t.orig(arg, seen, depth+1) {
 				return true
 			}
@@ -783,6 +1120,13 @@ func (t *taint) orig(e ast.Expr, seen map[types.Object]bool, depth int) bool {
 		if e.Sel.Name == "Value" && t.boundToCookie(e.X) {
 			// c.Value where c was assigned from r.Cookie(...): the
 			// cookie's Value is request bytes.
+			return true
+		}
+		if t.seamField(e) {
+			// A string-bearing field of a same-package input struct
+			// reached from a parameter: the package's own seam
+			// (Email, ErrorReport). Receiver config is operator data
+			// and is not a source.
 			return true
 		}
 		return t.orig(e.X, seen, depth+1)
@@ -800,6 +1144,11 @@ func (t *taint) orig(e ast.Expr, seen map[types.Object]bool, depth int) bool {
 		return t.orig(e.Value, seen, depth+1)
 	case *ast.IndexExpr:
 		return t.orig(e.X, seen, depth+1)
+	case *ast.UnaryExpr:
+		// &x (chiefly &SomeStruct{...}): what x carries, the pointer
+		// carries — the structPayload skip at call arguments is what
+		// keeps a record handoff from tainting the helper's result.
+		return t.orig(e.X, seen, depth+1)
 	default:
 		return false
 	}
@@ -811,6 +1160,14 @@ func (t *taint) orig(e ast.Expr, seen map[types.Object]bool, depth int) bool {
 // that walks the value as bytes is doing byte-level filtering, and a
 // pass-through helper never indexes).
 func (t *taint) callCleared(call *ast.CallExpr, seen map[types.Object]bool, depth int) bool {
+	// The caller keeps walking the call's arguments when the callee is
+	// not a scrub; probing them here must not mark them visited for
+	// that walk, so this exploration works on its own copy.
+	local := make(map[types.Object]bool, len(seen))
+	for obj := range seen {
+		local[obj] = true
+	}
+	seen = local
 	var fn types.Object
 	switch fun := unparen(call.Fun).(type) {
 	case *ast.Ident:
@@ -824,7 +1181,12 @@ func (t *taint) callCleared(call *ast.CallExpr, seen map[types.Object]bool, dept
 	default:
 		return false
 	}
-	trusted := fn != nil && scrubTrusted(fn.Name())
+	// A same-package callee is inspectable, so its scrub name buys
+	// nothing without the body evidence: quoteParamValue is named
+	// "quote" and strips only CR/LF/NUL, passing the rest of C0 and
+	// DEL through (the email round-2 probe). Foreign callees keep the
+	// name trust; their bodies are beyond a one-pass analyzer.
+	trusted := fn != nil && scrubTrusted(fn.Name()) && t.decls[fn] == nil
 	if fn == nil || trusted {
 		return trusted
 	}
@@ -848,7 +1210,7 @@ func (t *taint) callCleared(call *ast.CallExpr, seen map[types.Object]bool, dept
 			break
 		}
 		p := params.At(i)
-		if !isString(p.Type()) || !(indexesBytes(decl, t.pass, p) || returnsScrubOf(decl, t.pass, p)) {
+		if !isString(p.Type()) || !(c0FilterBody(decl, t.pass, p) || returnsScrubOf(decl, t.pass, p)) {
 			cleared = false
 			break
 		}
@@ -889,6 +1251,30 @@ func returnsScrubOf(fn *ast.FuncDecl, pass *analysis.Pass, p *types.Var) bool {
 			if !scrubTrusted(name) {
 				continue
 			}
+			// safeLogPath/safeLogMethod wrap scrubControlBytes: the
+			// returned callee must itself carry the scrub, by body
+			// evidence when it is a same-package declaration (the
+			// one-line wrapper around quoteParamValue carries none).
+			var calleeObj types.Object
+			switch inner := unparen(call.Fun).(type) {
+			case *ast.Ident:
+				calleeObj = pass.TypesInfo.ObjectOf(inner)
+			case *ast.SelectorExpr:
+				if isel, ok := pass.TypesInfo.Selections[inner]; ok {
+					calleeObj = isel.Obj()
+				}
+			}
+			if calleeObj != nil {
+				if calleeDecl, ok := declsOf(pass)[calleeObj]; ok {
+					var vp *types.Var
+					if sig, ok := calleeObj.Type().(*types.Signature); ok && sig.Params().Len() > 0 {
+						vp = sig.Params().At(0)
+					}
+					if vp == nil || !c0FilterBody(calleeDecl, pass, vp) {
+						continue
+					}
+				}
+			}
 			for _, a := range call.Args {
 				if id, ok := unparen(a).(*ast.Ident); ok && pass.TypesInfo.ObjectOf(id) == p {
 					found++
@@ -919,6 +1305,147 @@ func indexesBytes(fn *ast.FuncDecl, pass *analysis.Pass, p *types.Var) bool {
 		return !found
 	})
 	return found
+}
+
+// c0FilterBody reports whether fn visibly filters the parameter p at
+// the byte level against the control range: it reads p's individual
+// bytes (p[i] or a range over p) AND some comparison in the body (or in
+// one same-package callee, like scrubTerminalBytes delegating to
+// terminalCtrlByte) names the range with a literal in 0x09..0x20 or the
+// 0x7f DEL. Byte-indexing alone stopped being enough with
+// quoteParamValue: it walks s[i] comparing only '"' and '\\', and
+// passes every other C0 byte and DEL through.
+func c0FilterBody(fn *ast.FuncDecl, pass *analysis.Pass, p *types.Var) bool {
+	if !indexesBytes(fn, pass, p) {
+		return false
+	}
+	return c0ComparisonIn(fn.Body, pass, 0)
+}
+
+// c0ComparisonIn: a comparison against a control-range literal appears
+// anywhere in the body, descending one same-package callee hop.
+func c0ComparisonIn(body ast.Node, pass *analysis.Pass, depth int) bool {
+	found := false
+	ast.Inspect(body, func(n ast.Node) bool {
+		if found {
+			return false
+		}
+		switch n := n.(type) {
+		case *ast.BinaryExpr:
+			if !comparisonOp(n.Op) {
+				return true
+			}
+			if ctlLiteral(n.X) || ctlLiteral(n.Y) {
+				found = true
+			}
+		case *ast.CallExpr:
+			if depth >= 1 {
+				return true
+			}
+			var callee types.Object
+			switch fun := unparen(n.Fun).(type) {
+			case *ast.Ident:
+				callee = pass.TypesInfo.ObjectOf(fun)
+			case *ast.SelectorExpr:
+				if sel, ok := pass.TypesInfo.Selections[fun]; ok {
+					callee = sel.Obj()
+				}
+			}
+			if callee == nil {
+				return true
+			}
+			for _, d := range pass.Files {
+				for _, decl := range d.Decls {
+					fd, ok := decl.(*ast.FuncDecl)
+					if !ok || pass.TypesInfo.Defs[fd.Name] != callee || fd.Body == nil {
+						continue
+					}
+					if c0ComparisonIn(fd.Body, pass, depth+1) {
+						found = true
+					}
+				}
+			}
+		}
+		return !found
+	})
+	return found
+}
+
+func comparisonOp(op token.Token) bool {
+	switch op {
+	case token.EQL, token.NEQ, token.LSS, token.LEQ, token.GTR, token.GEQ:
+		return true
+	}
+	return false
+}
+
+// ctlLiteral: a numeric or rune literal whose value sits in the
+// control range this rule means: 0x09 (TAB) through 0x20 (SP), or 0x7f
+// (DEL). 0 is excluded on purpose: `i >= 0` on an index is not byte
+// evidence.
+func ctlLiteral(e ast.Expr) bool {
+	lit, ok := e.(*ast.BasicLit)
+	if !ok {
+		return false
+	}
+	var v uint64
+	switch lit.Kind {
+	case token.INT:
+		val := lit.Value
+		if len(val) > 1 && val[0] == '0' && val[1] != '.' {
+			u, err := strconv.ParseUint(strings.TrimPrefix(strings.TrimPrefix(val, "0x"), "0X"), 16, 32)
+			if err != nil {
+				return false
+			}
+			v = u
+		} else {
+			u, err := strconv.ParseUint(val, 10, 32)
+			if err != nil {
+				return false
+			}
+			v = u
+		}
+	case token.CHAR:
+		u, err := strconv.ParseUint(lit.Value[1:len(lit.Value)-1], 10, 32)
+		if err != nil {
+			// Escapes: '\t' etc. Map the common control ones.
+			switch lit.Value {
+			case "'\\t'", "'\\n'", "'\\r'", "'\\v'", "'\\f'", "'\\a'", "'\\b'":
+				return true
+			}
+			return false
+		}
+		v = u
+	default:
+		return false
+	}
+	return (v >= 0x09 && v <= 0x20) || v == 0x7f
+}
+
+// declsOf memoizes the package's object-to-declaration map.
+var declsOfMemo = struct {
+	byPass map[*analysis.Pass]map[types.Object]*ast.FuncDecl
+	sync.Mutex
+}{byPass: map[*analysis.Pass]map[types.Object]*ast.FuncDecl{}}
+
+func declsOf(pass *analysis.Pass) map[types.Object]*ast.FuncDecl {
+	declsOfMemo.Lock()
+	defer declsOfMemo.Unlock()
+	if m, ok := declsOfMemo.byPass[pass]; ok {
+		return m
+	}
+	m := map[types.Object]*ast.FuncDecl{}
+	for _, f := range pass.Files {
+		for _, d := range f.Decls {
+			if fn, ok := d.(*ast.FuncDecl); ok && fn.Body != nil {
+				if obj := pass.TypesInfo.Defs[fn.Name]; obj != nil {
+					m[obj] = fn
+				}
+			}
+		}
+	}
+	declsOfMemo.byPass[pass] = m
+	return m
 }
 
 // ---- source expressions ------------------------------------------------
@@ -1010,6 +1537,138 @@ func (t *taint) boundToCookie(e ast.Expr) bool {
 		}
 	}
 	return false
+}
+
+// isChildOutputParam: a parameter named stderr/stdout — the child
+// process output convention. The producer is out of sight; the name is
+// the seam this rule can see.
+func isChildOutputParam(obj types.Object) bool {
+	v, ok := obj.(*types.Var)
+	if !ok || v.Kind() != types.ParamVar {
+		return false
+	}
+	switch v.Name() {
+	case "stderr", "stdout":
+	default:
+		return false
+	}
+	if isString(v.Type()) {
+		return true
+	}
+	if sl, ok := deref(v.Type()).(*types.Slice); ok {
+		b, ok := sl.Elem().Underlying().(*types.Basic)
+		return ok && b.Kind() == types.Byte
+	}
+	return false
+}
+
+// isRecoverCallExpr: e is a recover() call, for the binding pass.
+func isRecoverCallExpr(pass *analysis.Pass, e ast.Expr) bool {
+	call, ok := unparen(e).(*ast.CallExpr)
+	if !ok {
+		return false
+	}
+	id, ok := unparen(call.Fun).(*ast.Ident)
+	if !ok || id.Name != "recover" {
+		return false
+	}
+	_, ok = pass.TypesInfo.ObjectOf(id).(*types.Builtin)
+	return ok
+}
+
+// isRecoverCall: the builtin recover().
+func (t *taint) isRecoverCall(call *ast.CallExpr) bool {
+	return isRecoverCallExpr(t.pass, call)
+}
+
+// structPayload: e is a value of a same-package struct type (a record
+// handed across a seam), optionally addressed or composite-literal.
+func (t *taint) structPayload(e ast.Expr) bool {
+	typ := t.pass.TypesInfo.TypeOf(e)
+	if typ == nil {
+		return false
+	}
+	return t.samePackageStruct(typ)
+}
+
+// seamField: e selects a string-bearing field of a value that chains
+// back to a same-package struct PARAMETER — the package's input types.
+// The field counts as a source when the struct is CARRYING (an
+// in-package literal put tainted bytes into one of its fields) at any
+// sink, or at the message sinks outright (seamWide): battery/email
+// cannot see who built the Email it serialises, so every field is
+// untrusted exactly where it hits the wire.
+func (t *taint) seamField(e *ast.SelectorExpr) bool {
+	sel, ok := t.pass.TypesInfo.Selections[e]
+	if !ok || sel.Kind() != types.FieldVal {
+		return false
+	}
+	if !carriesStrings(sel.Type()) {
+		return false
+	}
+	if !t.seamRooted(e.X, 0) {
+		return false
+	}
+	if t.seamWide {
+		return true
+	}
+	if n, ok := deref(sel.Recv()).(*types.Named); ok {
+		return t.carrying[n][e.Sel.Name]
+	}
+	return false
+}
+
+// seamRooted: e is a parameter of this package's own struct type (the
+// untrusted seam), or chains to one through this function's locals,
+// range elements, nested fields, and indexing.
+func (t *taint) seamRooted(e ast.Expr, depth int) bool {
+	if depth > 8 {
+		return false
+	}
+	switch x := unparen(e).(type) {
+	case *ast.Ident:
+		obj, ok := t.pass.TypesInfo.ObjectOf(x).(*types.Var)
+		if !ok {
+			return false
+		}
+		if obj.Kind() == types.ParamVar && t.samePackageStruct(obj.Type()) {
+			return true
+		}
+		for _, b := range t.bind[obj] {
+			if t.seamRooted(b, depth+1) {
+				return true
+			}
+		}
+		return false
+	case *ast.SelectorExpr:
+		return t.seamRooted(x.X, depth+1)
+	case *ast.IndexExpr:
+		return t.seamRooted(x.X, depth+1)
+	case *ast.StarExpr:
+		return t.seamRooted(x.X, depth+1)
+	}
+	return false
+}
+
+// samePackageStruct: t (or a slice/map of it, or a pointer to it) is a
+// struct type declared in the package under analysis.
+func (t *taint) samePackageStruct(typ types.Type) bool {
+	typ = deref(typ)
+	if sl, ok := typ.(*types.Slice); ok {
+		typ = sl.Elem()
+	} else if m, ok := typ.(*types.Map); ok {
+		typ = m.Elem()
+	}
+	n, ok := deref(typ).(*types.Named)
+	if !ok {
+		return false
+	}
+	obj := n.Obj()
+	if obj == nil || obj.Pkg() != t.pass.Pkg {
+		return false
+	}
+	_, isStruct := n.Underlying().(*types.Struct)
+	return isStruct
 }
 
 // outboundHeaderMap reports whether e provenance-traces to the header

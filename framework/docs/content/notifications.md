@@ -120,6 +120,11 @@ channel breaks, but want metrics / alerts when something does.
 Channels are fired concurrently; a slow channel doesn't block the
 others, and the call returns only after every channel has finished.
 
+Channels, templaters, and the error callback are host-supplied code, so
+every invocation runs under a recover guard: a panicking `Send`, `Render`,
+or error callback surfaces as an attributed error for that channel (and is
+still delivered to `WithErrorCallback`) instead of crashing the process.
+
 ## Common mistakes
 
 - **Don't conflate Type with a free-form subject.** Type is the

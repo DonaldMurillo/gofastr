@@ -1,12 +1,14 @@
 package uihost
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	stdhtml "html"
 	"io/fs"
+	"log/slog"
 	"net/http"
 	"os"
 	"path"
@@ -369,15 +371,17 @@ func (ds *UIHost) PWAOfflineHTML() string {
 	cfg := ds.resolvedPWA()
 	var body render.HTML
 	if cfg.OfflineScreen != nil {
-		body = cfg.OfflineScreen.Render()
+		// Same containment as every other screen: this renders at
+		// service-worker install/precache time, and a panicking offline
+		// screen must not take the harness down with it.
+		var err error
+		body, err = component.SafeRenderCtx(context.Background(), cfg.OfflineScreen)
+		if err != nil {
+			slog.Warn("uihost: PWA offline screen render panicked; serving default offline page", "err", err)
+			body = defaultPWAOfflineBody()
+		}
 	} else {
-		// Minimal semantic HTML, same treatment as the bare 404
-		// fallback: typography comes from app.css, no component CSS.
-		// (uihost deliberately does not import framework/ui; linking
-		// it would force its LoadAlways styles into every host's CSS
-		// bundle. Apps that want a richer screen pass OfflineScreen.)
-		body = html.Heading(html.HeadingConfig{Level: 1}, render.Text("You're offline")) +
-			html.Paragraph(html.TextConfig{}, render.Text("This page isn't available without a connection. Reconnect and try again."))
+		body = defaultPWAOfflineBody()
 	}
 	shell := ds.documentShell("Offline — "+cfg.Name, `<main role="main">`+string(body)+`</main>`)
 	// bundle=false (same as RenderStaticPage): component CSS must be
@@ -386,6 +390,16 @@ func (ds *UIHost) PWAOfflineHTML() string {
 	// bundle request with the offline page's set, and static exports
 	// don't emit the bundle endpoint at all.
 	return ds.injectChromeMode(shell, pwaOfflinePath, "", "", false)
+}
+
+// defaultPWAOfflineBody is the built-in offline screen. Minimal semantic
+// HTML, same treatment as the bare 404 fallback: typography comes from
+// app.css, no component CSS. (uihost deliberately does not import
+// framework/ui; linking it would force its LoadAlways styles into every
+// host's CSS bundle. Apps that want a richer screen pass OfflineScreen.)
+func defaultPWAOfflineBody() render.HTML {
+	return html.Heading(html.HeadingConfig{Level: 1}, render.Text("You're offline")) +
+		html.Paragraph(html.TextConfig{}, render.Text("This page isn't available without a connection. Reconnect and try again."))
 }
 
 // pwaVersion fingerprints the deployment: the manifest, the precache

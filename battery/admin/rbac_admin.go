@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"sort"
 	"strings"
 
@@ -377,10 +378,19 @@ func (b *Battery) handleRBACGrant(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "grant store not wired", http.StatusNotImplemented)
 		return
 	}
+	if !parseCappedForm(w, r) {
+		return
+	}
 	role := strings.TrimSpace(r.FormValue("role"))
 	perm := strings.TrimSpace(r.FormValue("permission"))
 	if role == "" || perm == "" {
 		http.Error(w, "role and permission required", http.StatusBadRequest)
+		return
+	}
+	if !b.callerHoldsPermission(r.Context(), access.Permission(perm)) {
+		b.appendAudit(r.Context(), "access", "grant-refused", role, adminActorID(r.Context()),
+			map[string]any{"permission": perm})
+		http.Error(w, "forbidden: you can only grant a permission you hold", http.StatusForbidden)
 		return
 	}
 	if err := b.cfg.GrantStore.Grant(r.Context(), role, access.Permission(perm)); err != nil {
@@ -408,10 +418,19 @@ func (b *Battery) handleRBACRevoke(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "grant store not wired", http.StatusNotImplemented)
 		return
 	}
+	if !parseCappedForm(w, r) {
+		return
+	}
 	role := strings.TrimSpace(r.FormValue("role"))
 	perm := strings.TrimSpace(r.FormValue("permission"))
 	if role == "" || perm == "" {
 		http.Error(w, "role and permission required", http.StatusBadRequest)
+		return
+	}
+	if !b.callerHoldsPermission(r.Context(), access.Permission(perm)) {
+		b.appendAudit(r.Context(), "access", "revoke-refused", role, adminActorID(r.Context()),
+			map[string]any{"permission": perm})
+		http.Error(w, "forbidden: you can only revoke a permission you hold", http.StatusForbidden)
 		return
 	}
 	if err := b.cfg.GrantStore.Revoke(r.Context(), role, access.Permission(perm)); err != nil {
@@ -427,9 +446,18 @@ func (b *Battery) handleRBACRevoke(w http.ResponseWriter, r *http.Request) {
 // handleRBACAssign replaces a user's roles via AuthManager.SetUserRoles.
 // The roles are OPERATOR input from the admin screen, never request data
 // sourced from the user being edited. Writes an audit row.
+//
+// A caller may only write roles its own tier already covers: a role it
+// holds, or a role whose every granted permission its own permissions
+// imply (a Wildcard caller may assign anything). Anything else is refused
+// with 403 and its own audit row — a designated sub-admin tier must not be
+// able to mint the top role through the sanctioned RPC.
 func (b *Battery) handleRBACAssign(w http.ResponseWriter, r *http.Request) {
 	if b.cfg.Auth == nil {
 		http.Error(w, "auth manager not wired", http.StatusNotImplemented)
+		return
+	}
+	if !parseCappedForm(w, r) {
 		return
 	}
 	userID := strings.TrimSpace(r.FormValue("user_id"))
@@ -446,6 +474,15 @@ func (b *Battery) handleRBACAssign(w http.ResponseWriter, r *http.Request) {
 			roles = append(roles, r)
 		}
 	}
+	if offending := b.nonAssignableRole(r.Context(), roles); offending != "" {
+		// An attempted escalation is a security event even when refused;
+		// audit it on its own row, out of the success path.
+		actor := adminActorID(r.Context())
+		b.appendAudit(r.Context(), "access", "assign-roles-refused", userID, actor,
+			map[string]any{"roles": roles, "refused_role": offending})
+		http.Error(w, "cannot assign a role above your own tier: "+offending, http.StatusForbidden)
+		return
+	}
 	if err := b.cfg.Auth.SetUserRoles(r.Context(), userID, roles); err != nil {
 		http.Error(w, "assign failed; check server logs", http.StatusInternalServerError)
 		return
@@ -454,6 +491,86 @@ func (b *Battery) handleRBACAssign(w http.ResponseWriter, r *http.Request) {
 	b.appendAudit(r.Context(), "access", "assign-roles", userID, actor,
 		map[string]any{"roles": roles})
 	http.Redirect(w, r, b.cfg.PathPrefix+"/rbac/users", http.StatusSeeOther)
+}
+
+// nonAssignableRole returns the first requested role the caller may not
+// write onto an account, or "" when the whole set is assignable. A role is
+// assignable when the caller already holds it, or when every permission the
+// configured policy grants that role is covered by the caller's own
+// permissions (a Wildcard covers everything; a role with no grants confers
+// nothing and is always assignable). With no policy wired, only held roles
+// are assignable — the fail-closed default.
+func (b *Battery) nonAssignableRole(ctx context.Context, requested []string) string {
+	// The caller's real roles come from the user object, not ctx: the gate's
+	// adminSuperuserCtx has already overwritten ctx roles with the synthetic
+	// __admin wildcard, which would make every caller a top-tier one here.
+	held := callerHeldRoles(ctx)
+	callerPerms := map[access.Permission]bool{}
+	if b.cfg.Policy != nil {
+		for _, role := range held {
+			for _, p := range b.cfg.Policy.PermissionsOf(role) {
+				callerPerms[p] = true
+			}
+		}
+	}
+	for _, want := range requested {
+		if slices.Contains(held, want) {
+			continue
+		}
+		if callerPerms[access.Wildcard] {
+			continue
+		}
+		assignable := true
+		if b.cfg.Policy != nil {
+			for _, p := range b.cfg.Policy.PermissionsOf(want) {
+				if !callerPerms[p] {
+					assignable = false
+					break
+				}
+			}
+		} else {
+			assignable = false
+		}
+		if !assignable {
+			return want
+		}
+	}
+	return ""
+}
+
+// callerHeldRoles resolves the caller's own roles from the authenticated
+// user via the structural GetRoles interface authorized() uses.
+// callerHoldsPermission reports whether the caller's own roles grant
+// perm (or the wildcard). A grant or revoke of a permission the caller
+// does not hold is an escalation through the sibling RPC of _assign: a
+// weaker tier the host admitted at the gate would otherwise write
+// Wildcard onto a role it already holds and become superuser live.
+// With no Policy wired nothing can be proven held, so every grant is
+// refused (fail closed).
+func (b *Battery) callerHoldsPermission(ctx context.Context, perm access.Permission) bool {
+	if b.cfg.Policy == nil {
+		return false
+	}
+	for _, role := range callerHeldRoles(ctx) {
+		for _, p := range b.cfg.Policy.PermissionsOf(role) {
+			if p == access.Wildcard || p == perm {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func callerHeldRoles(ctx context.Context) []string {
+	u, ok := handler.GetUser(ctx)
+	if !ok || u == nil {
+		return nil
+	}
+	rh, ok := u.(interface{ GetRoles() []string })
+	if !ok {
+		return nil
+	}
+	return rh.GetRoles()
 }
 
 // effectiveDB returns the DB for audit writes: cfg.DB when set, else b.db

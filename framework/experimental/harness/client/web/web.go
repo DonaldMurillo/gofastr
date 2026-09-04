@@ -26,6 +26,8 @@ import (
 	"net/http"
 	"sync"
 
+	"github.com/DonaldMurillo/gofastr/core/handler"
+
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/control"
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/control/inproc"
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/engine"
@@ -149,7 +151,11 @@ func (s *Server) handleInput(w http.ResponseWriter, r *http.Request) {
 		Text string `json:"text"`
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, maxWebSendBody)
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil { //gofastr:allow(GOFASTR1407) harness control-protocol envelope on a dev sidecar, not an app surface
+	// Strict decode (handler.DecodeStrict): duplicate and case-folded
+	// top-level keys resolve last-wins under stdlib json, so a smuggled
+	// body shape would POST a prompt at model authority while a
+	// first-read intermediary parsed a different request.
+	if err := handler.DecodeStrict(r.Body, &body); err != nil {
 		http.Error(w, "bad JSON", http.StatusBadRequest)
 		return
 	}

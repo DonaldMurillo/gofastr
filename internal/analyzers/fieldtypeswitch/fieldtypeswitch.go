@@ -30,7 +30,7 @@ import (
 )
 
 var Analyzer = &analysis.Analyzer{
-	Name: "gofastrfieldtypeswitch",
+	Name: "fieldtypeswitch",
 	Doc:  "requires a switch on schema.FieldType to cover every constant or carry an explicit default",
 	Run:  run,
 }

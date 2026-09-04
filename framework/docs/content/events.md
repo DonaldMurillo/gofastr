@@ -57,6 +57,14 @@ data: {"type":"entity.updated","data":{"entity":"posts","table":"posts","record"
   rationale.
 - The stream returns `503 Service Unavailable` if the entity has no
   event bus configured (the default `framework.NewApp` wires one).
+- The stream re-validates authorization for its whole life, not just at
+  connect. The entity's read permission is re-checked on every delivery
+  and on a 30-second ticker (`CrudHandler.EventStreamReauth`, settable
+  via `WithEventStreamReauth`), and the read-scope lift is re-evaluated
+  per event. A caller whose current authorization forbids reads —
+  session revoked, role dropped, a resource decider flipped to deny —
+  has the stream closed at the next check; the EventSource reconnects
+  and meets the full connect-time gate, which now refuses.
 
 ## Tenant scoping
 
@@ -193,8 +201,11 @@ Two rules for handlers under fanout:
   authenticated; don't share the channel with less-trusted systems.
 
 The lane stays lossy under fanout: a message published while a
-replica's listener is reconnecting is gone. Nothing about the durable
-lane changes.
+replica's listener is reconnecting is gone. A fanout backend whose
+`Publish` panics is treated the same way: the bridge's publisher
+goroutine recovers, logs the panic, and keeps draining — the lossy lane
+degrades, the process does not die. Nothing about the durable lane
+changes.
 
 ## Transactional outbox
 
@@ -274,6 +285,14 @@ handler)` + `ob.StartRelay(ctx)`.
 
 ### Semantics
 
+- **Durable consumers receive the raw row.** The outbox stages the
+  post-write `RETURNING` row verbatim, and the relay delivers that staged
+  record with no AfterGet pass: durable consumers are trusted machinery
+  and own their masking. The real-time lane is the opposite — SSE
+  delivery runs the record through the entity's AfterGet hooks, so a
+  field hidden by a read hook never reaches a subscriber in the clear.
+  A webhook bridge, audit sink, or search indexer that forwards outbox
+  records on to a less-trusted surface must apply its own masking.
 - **At-least-once, per consumer.** The relay invokes each consumer's
   handler, then marks that consumer's delivery dispatched only after it
   returns nil. A crash between the two re-delivers, so consumers **must be

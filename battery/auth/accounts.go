@@ -54,12 +54,43 @@ type AccountUnlinker interface {
 	UnlinkOAuth(ctx context.Context, userID, provider string) error
 }
 
+// UnlinkOutcome reports what one guarded unlink decided.
+type UnlinkOutcome int
+
+const (
+	// UnlinkNotLinked: the user has no link for the provider.
+	UnlinkNotLinked UnlinkOutcome = iota
+	// UnlinkRefusedLast: removing the link would leave the user with no
+	// way to log in (no other link, no password).
+	UnlinkRefusedLast
+	// UnlinkRemoved: the link was deleted.
+	UnlinkRemoved
+)
+
+// AtomicUnlinker is the optional UserStore extension that decides and
+// applies the last-credential guard in ONE store operation, so the
+// refuse-the-last invariant holds when two unlinks race: each call
+// re-counts the remaining login methods inside the same lock or
+// statement that performs the delete, and exactly one of two concurrent
+// unlinks of a two-method account can win.
+//
+// Stores that cannot offer this keep the handler's check-then-act
+// fallback (ListAccounts → HasPassword → UnlinkOAuth), which pins the
+// invariant per request but not across concurrent requests.
+type AtomicUnlinker interface {
+	// UnlinkOAuthGuarded removes the provider link for userID unless
+	// that would leave the user with no login method (no remaining
+	// links, no password). The password signal is the store's own
+	// (EntityUserStore reads its password_set column), so the guard and
+	// the delete observe the same state.
+	UnlinkOAuthGuarded(ctx context.Context, userID, provider string) (UnlinkOutcome, error)
+}
+
 // PasswordChecker is the optional UserStore extension that reports whether
 // a user has a real password set (vs the placeholder hash used by OAuth /
-// magic-link auto-created accounts). AccountsPlugin.unlinkHandler uses it
-// to refuse an unlink that would leave the user with no way to log in.
-// Stores that do not implement it fall back to the conservative
-// links-only check.
+// magic-link auto-created accounts). The unlink guard uses it to refuse an
+// unlink that would leave the user with no way to log in. Stores that do
+// not implement it fall back to the conservative links-only check.
 type PasswordChecker interface {
 	HasPassword(ctx context.Context, userID string) (bool, error)
 }
@@ -157,11 +188,41 @@ func (p *AccountsPlugin) unlinkHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Refuse to remove the user's last login method. Two signals feed
-	// this: linked OAuth accounts AND whether the user has set a real
-	// password. If the store implements PasswordChecker we use the
-	// precise check; otherwise we fall back to the conservative
-	// "at least one link must remain" rule.
+	// Atomic path: when the store can decide and delete in one
+	// operation, use it — the check-then-act shape below cannot hold
+	// the refuse-the-last invariant under concurrent unlinks (two
+	// racing DELETEs of a two-method OAuth-only account both counted
+	// two links, so both succeeded and stripped the account to zero
+	// login methods).
+	if atomicUnlinker, ok := p.mgr.UserStore().(AtomicUnlinker); ok {
+		outcome, err := atomicUnlinker.UnlinkOAuthGuarded(r.Context(), userID, provider)
+		if err != nil {
+			writeAuthError(w, http.StatusInternalServerError, "unlink failed")
+			return
+		}
+		switch outcome {
+		case UnlinkNotLinked:
+			writeAuthError(w, http.StatusNotFound, "account not linked")
+			return
+		case UnlinkRefusedLast:
+			writeAuthError(w, http.StatusConflict,
+				"cannot unlink the last login method: set a password first or link another provider")
+			return
+		}
+		p.mgr.emitSecurity(r.Context(), SecurityEvent{
+			Kind:   "oauth.unlinked",
+			UserID: userID,
+			Remote: remoteHost(r),
+			Meta:   map[string]string{"provider": provider},
+		})
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"unlinked": provider})
+		return
+	}
+
+	// Legacy fallback (store without AtomicUnlinker): the same last-
+	// credential guard as above, but as separate store round-trips, so
+	// the invariant holds per request, not across concurrent ones.
 	accts, err := lister.ListAccounts(r.Context(), userID)
 	if err != nil {
 		writeAuthError(w, http.StatusInternalServerError, "list accounts failed")
@@ -199,6 +260,12 @@ func (p *AccountsPlugin) unlinkHandler(w http.ResponseWriter, r *http.Request) {
 		writeAuthError(w, http.StatusInternalServerError, "unlink failed")
 		return
 	}
+	p.mgr.emitSecurity(r.Context(), SecurityEvent{
+		Kind:   "oauth.unlinked",
+		UserID: userID,
+		Remote: remoteHost(r),
+		Meta:   map[string]string{"provider": provider},
+	})
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{"unlinked": provider})

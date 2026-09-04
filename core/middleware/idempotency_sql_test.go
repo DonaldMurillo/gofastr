@@ -133,3 +133,27 @@ func TestSQLIdempotency_DoubleInsertIsErrInFlightNotRawError(t *testing.T) {
 		t.Fatalf("expected ErrInFlight, got %v", err)
 	}
 }
+
+// A stored response whose headers column no longer parses is corrupt:
+// replaying it would answer a cached request with silently-dropped
+// headers (content-type, security headers), so Begin must refuse the
+// replay with an error instead of marching on with a zero http.Header.
+func TestSQLIdempotency_CorruptStoredHeadersRefuseReplay(t *testing.T) {
+	db, s := openSQLIdemStore(t)
+	ctx := context.Background()
+	if _, ok, err := s.Begin(ctx, "k-corrupt", "fp1"); err != nil || ok {
+		t.Fatalf("claim: ok=%v err=%v", ok, err)
+	}
+	now := time.Now()
+	if _, err := db.Exec(
+		"UPDATE idempotency_keys SET status = 200, headers = ?, body = ?, expires_at = ? WHERE key = ?",
+		`{not json`, []byte("ok"), now.Add(time.Minute), "k-corrupt",
+	); err != nil {
+		t.Fatalf("corrupt row: %v", err)
+	}
+	got, ok, err := s.Begin(ctx, "k-corrupt", "fp1")
+	if err == nil {
+		t.Fatalf("SECURITY: [idempotency] corrupt stored response replayed (ok=%v resp=%+v): "+
+			"a broken headers column must refuse the replay, not answer with silently-dropped headers", ok, got)
+	}
+}

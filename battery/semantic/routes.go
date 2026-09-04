@@ -5,8 +5,11 @@ import (
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"strings"
+
+	"github.com/DonaldMurillo/gofastr/core/handler"
 )
 
 // maxRequestBody caps the JSON body size for /index and /query so a
@@ -174,11 +177,20 @@ type queryResponse struct {
 func indexHandler(idx Index) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var body indexRequest
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil { //gofastr:allow(GOFASTR1407) semantic index/query API envelope: no identity-bearing field, size-capped and content-type-gated above
+		raw, err := io.ReadAll(r.Body)
+		if err != nil {
 			if isBodyTooLarge(err) {
 				writeErr(w, http.StatusRequestEntityTooLarge, "request body too large")
 				return
 			}
+			writeErr(w, http.StatusBadRequest, "invalid JSON body")
+			return
+		}
+		// Strict decode: stdlib json keeps the LAST duplicate key and
+		// matches struct tags case-insensitively, so
+		// {"documents":[A],"documents":[B]} indexes batch B while any
+		// audit log records A. Refuse the ambiguity.
+		if err := handler.UnmarshalStrict(raw, &body); err != nil {
 			writeErr(w, http.StatusBadRequest, "invalid JSON body")
 			return
 		}
@@ -197,11 +209,18 @@ func indexHandler(idx Index) http.Handler {
 func queryHandler(idx Index) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var q Query
-		if err := json.NewDecoder(r.Body).Decode(&q); err != nil { //gofastr:allow(GOFASTR1407) semantic index/query API envelope: no identity-bearing field, size-capped and content-type-gated above
+		raw, err := io.ReadAll(r.Body)
+		if err != nil {
 			if isBodyTooLarge(err) {
 				writeErr(w, http.StatusRequestEntityTooLarge, "request body too large")
 				return
 			}
+			writeErr(w, http.StatusBadRequest, "invalid JSON body")
+			return
+		}
+		// Same strict rule as /index: a duplicated or case-folded "text"
+		// key must not silently swap the query.
+		if err := handler.UnmarshalStrict(raw, &q); err != nil {
 			writeErr(w, http.StatusBadRequest, "invalid JSON body")
 			return
 		}

@@ -7,9 +7,9 @@ import (
 	"slices"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/kiln/internal/kid"
 	"github.com/DonaldMurillo/gofastr/kiln/journal"
 	"github.com/DonaldMurillo/gofastr/kiln/live"
 	"github.com/DonaldMurillo/gofastr/kiln/world"
@@ -29,8 +29,7 @@ type Result struct {
 type Tools struct {
 	live *live.Live
 
-	mu      sync.Mutex
-	counter atomic.Int64
+	mu sync.Mutex
 }
 
 // New constructs Tools bound to a Live runtime.
@@ -42,10 +41,12 @@ func New(l *live.Live) *Tools {
 // current session, journal, or SSE bus.
 func (t *Tools) Live() *live.Live { return t.live }
 
-// nextEntryID returns a monotonic ID with a per-process random suffix.
+// nextEntryID mints an unpredictable entry id. Journal order is the file
+// order, nothing sorts or compares entry ids, so the id only has to be
+// unique — and unguessable, because the journal is shared state whose ids
+// surface in panel URLs and ACP frames.
 func (t *Tools) nextEntryID() string {
-	n := t.counter.Add(1)
-	return fmt.Sprintf("%d-%d", time.Now().UnixNano(), n)
+	return "e" + kid.Hex(16)
 }
 
 // --- Args types -------------------------------------------------------

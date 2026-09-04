@@ -143,12 +143,12 @@ func recoveryMiddleware(reporter ErrorReporter) middleware.Middleware {
 				if v := recover(); v != nil {
 					reporter.Report(ErrorReport{
 						Message:   "http.panic",
-						Error:     truncateString(fmt.Sprint(v), maxPanicValueLen),
+						Error:     truncateString(scrubControlBytes(fmt.Sprint(v)), maxPanicValueLen),
 						Stack:     truncateString(string(debug.Stack()), maxStackLen),
-						Method:    r.Method,
-						Path:      truncateString(r.URL.Path, maxPathLen),
-						Route:     r.Pattern,
-						RequestID: middleware.GetRequestID(r.Context()),
+						Method:    scrubControlBytes(r.Method),
+						Path:      truncateString(scrubControlBytes(r.URL.Path), maxPathLen),
+						Route:     scrubControlBytes(r.Pattern),
+						RequestID: scrubControlBytes(middleware.GetRequestID(r.Context())),
 						ctx:       r.Context(),
 					})
 					http.Error(w, "Internal Server Error", http.StatusInternalServerError)

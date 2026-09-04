@@ -1358,3 +1358,436 @@ func TestLintSelectorInterpolation_Review6RegexLiteralMustNotCloseScopes(t *test
 		t.Errorf("expected the finding on the shadowed id: %s", res.Error())
 	}
 }
+
+// ── round-3 lints: bare attribute-borne selector arg, cookie concat,
+// module URL shape ─────────────────────────────────────────────────────
+//
+// The three fixtures below reduce from the LIVE pre-fix tree (the
+// 2026-09-03 round-3 red tests pinned the sites; the fixes are still
+// pending), so each Fires test doubles as the vacuity control: it
+// fails the moment a lint stops recognizing its pre-fix spelling.
+
+const bareArgFixture = `// Reduced from the live pre-fix sites the round-3 red tests pinned
+// (real attribute names kept): copy.js, widgethelpers.js (fill-input
+// and wireCount), shortcut.js.
+(function () {
+  'use strict';
+
+  // copy.js, pre-fix: data-fui-copy-text-from is a selector by design.
+  document.addEventListener('click', function (e) {
+    const btn = e.target && e.target.closest && e.target.closest('[data-fui-copy-text-from]');
+    if (!btn) return;
+    const sel = btn.getAttribute('data-fui-copy-text-from');
+    if (!sel) return;
+    const target = document.querySelector(sel); // FIRES: sel
+    if (!target) return;
+    e.preventDefault();
+  });
+
+  // widgethelpers.js fill-input, pre-fix: two lookups on one line.
+  document.addEventListener('click', function (e) {
+    const btn = e.target.closest && e.target.closest('[data-fui-fill-input]');
+    if (!btn) return;
+    const sel = btn.getAttribute('data-fui-fill-input');
+    const widget = btn.closest('[data-fui-widget]');
+    const target = sel && ((widget && widget.querySelector(sel)) || document.querySelector(sel)); // FIRES x2: sel
+    if (!target) return;
+    e.preventDefault();
+  });
+
+  // widgethelpers.js wireCount, pre-fix.
+  function wireCount(el) {
+    const sel = el.getAttribute('data-fui-charcount-source');
+    const src = sel && document.querySelector(sel); // FIRES: sel
+    if (!src) return;
+    src.addEventListener('input', function () { el.textContent = src.value.length; });
+  }
+
+  // shortcut.js resolveTarget, pre-fix: two lookups on one line.
+  function resolveTarget(el) {
+    const sel = el.getAttribute('data-fui-shortcut-target');
+    if (sel) {
+      const t = el.querySelector(sel) || document.querySelector(sel); // FIRES x2: sel
+      if (t) return t;
+    }
+    return el;
+  }
+
+  // Fixed spelling (the red tests' fix direction): try/catch around
+  // the lookup, the containment copy.js's own fireToast practices
+  // around JSON.parse. Quiet.
+  function resolveTargetFixed(el) {
+    const sel = el.getAttribute('data-fui-shortcut-target');
+    if (sel) {
+      try {
+        const t = el.querySelector(sel) || document.querySelector(sel);
+        if (t) return t;
+      } catch (_) { /* malformed selector: degrade to a no-op */ }
+    }
+    return el;
+  }
+
+  // Silent postures. rpc.js's scroll-to lookup: attribute-borne but
+  // inside the main try, so the throw is contained.
+  function scrollAfter(r) {
+    try {
+      const scrollSel = r.node.getAttribute('data-fui-rpc-scroll-to');
+      if (scrollSel) {
+        const target = document.querySelector(scrollSel); // quiet: in try
+        if (target) target.scrollIntoView();
+      }
+    } catch (_) { /* the whole success path sits in the dispatch try */ }
+  }
+  // menu.js / animate.js style: the deciding assignment is one string
+  // literal, not an attribute read.
+  const ITEM = '[role="menuitem"]';
+  const TRIGGER_WRAP = '[data-fui-menu-trigger]';
+  function menuRows(panel) {
+    return Array.from(panel.querySelectorAll(ITEM)).filter(function (n) {
+      return n.closest(TRIGGER_WRAP);
+    });
+  }
+  // rangeslider style: the deciding assignment is an escape call, so
+  // the bare argument provably holds an escaped value.
+  function pairFor(id) {
+    const sel = CSS.escape(id);
+    return document.querySelector(sel); // quiet: escape result
+  }
+  // dropdown.js style: a literal concatenation, no attribute read.
+  const IS_OPEN = 'data-fui-dropdown-open';
+  const openSel = '[data-fui-dropdown-wrap][' + IS_OPEN + ']';
+  document.querySelectorAll(openSel); // quiet: literal-built constant
+  // kernel.js style: a selector PARAMETER; provenance is invisible.
+  function updateText(selector, text) {
+    const el = document.querySelector(selector); // quiet: parameter
+    if (el) el.textContent = text;
+  }
+  // sse.js style: composite argument with CSS.escape — lint 1's shape.
+  function islandEl(island) {
+    return document.querySelector('[data-island="' + CSS.escape(String(island)) + '"]'); // quiet
+  }
+  // Provenance follows the LAST assignment: an escape init revoked by
+  // an attribute reassignment reports again.
+  function revoked(el) {
+    let sel = CSS.escape('fixed');
+    sel = el.dataset.target;
+    return document.querySelector(sel); // FIRES: sel
+  }
+  // And the reverse of revoked: an attribute init rehabilitated by a
+  // literal reassignment before the use. Quiet — the LAST assignment
+  // decides.
+  function rehabilitated(el) {
+    let sel = el.dataset.target;
+    sel = 'fixed-selector';
+    return document.querySelector(sel); // quiet: latest assignment is a literal
+  }
+
+  // Synthetic positive (never in this repo): different domain, same shape.
+  function glossaryPick(card) {
+    const sel = card.getAttribute('data-gloss-pick');
+    return document.querySelector(sel); // FIRES: sel
+  }
+
+  window.__probe = { wireCount: wireCount, resolveTarget: resolveTarget, resolveTargetFixed: resolveTargetFixed,
+    scrollAfter: scrollAfter, menuRows: menuRows, pairFor: pairFor, updateText: updateText, islandEl: islandEl,
+    revoked: revoked, glossaryPick: glossaryPick };
+})();
+`
+
+func TestBareAttrSelectorFiresOnPreFixSites(t *testing.T) {
+	dir := writeRuntimeFixture(t, "barearg.js", bareArgFixture)
+	res, err := LintSelectorBareArgGuarded(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Eight findings: copy (sel), fill-input (sel x2), wireCount (sel),
+	// resolveTarget (sel x2), the revoked sel, glossaryPick (sel).
+	if len(res.Violations) != 8 {
+		t.Fatalf("expected 8 findings, got %d:\n%s", len(res.Violations), res.Error())
+	}
+	for _, v := range res.Violations {
+		if !strings.HasPrefix(v.Message, "[selector-bare-arg]") {
+			t.Errorf("unexpected message: %s", v.Message)
+		}
+		if !strings.Contains(v.Message, `"sel"`) {
+			t.Errorf("finding on a fixed/silent spelling: %s:%d: %s", v.File, v.Line, v.Message)
+		}
+	}
+	// The vacuity half: the pre-fix spellings must all be in the
+	// result — copy, fill-input, wireCount, resolveTarget, and the
+	// revoked reassignment, one line each.
+	for _, line := range []int{13, 24, 32, 41, 105} {
+		found := false
+		for _, v := range res.Violations {
+			if v.Line == line {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("expected a finding on fixture line %d (full result:\n%s)", line, res.Error())
+		}
+	}
+}
+
+func TestBareAttrSelectorShapeOnlyPositive(t *testing.T) {
+	// Never-existed names in a never-existed module: same shape, fires.
+	dir := writeRuntimeFixture(t, "glyphpick.js", `(function () {
+  function pick(g) {
+    const s = g.owner.getAttribute('data-glyph-node');
+    return s && g.owner.closest(s);
+  }
+  window.__glyph = { pick: pick };
+})();
+`)
+	res, err := LintSelectorBareArgGuarded(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Violations) != 1 {
+		t.Fatalf("expected exactly 1 finding, got %d:\n%s", len(res.Violations), res.Error())
+	}
+	if !strings.Contains(res.Violations[0].Message, `"s"`) {
+		t.Errorf("expected the finding on s: %s", res.Violations[0].Message)
+	}
+}
+
+const cookieFixture = `// Reduced from the live pre-fix recordDismiss in src/banner.js
+// (real attribute and prefix names kept), plus the fixed spelling,
+// silent postures, and synthetic positives.
+const STORAGE_PREFIX = 'gofastr.banner-dismiss.';
+
+function recordDismiss(id) { // banner.js, pre-fix: FIRES on id
+  try { localStorage.setItem(STORAGE_PREFIX + id, '1'); }
+  catch (_) { /* best-effort */ }
+  try {
+    document.cookie = STORAGE_PREFIX + id + '=1; path=/; max-age=31536000; SameSite=Lax';
+  } catch (_) { /* best-effort */ }
+}
+
+// Fixed spelling (the red test's fix direction): quiet.
+function recordDismissFixed(id) {
+  document.cookie = STORAGE_PREFIX + encodeURIComponent(id) + '=1; path=/; max-age=31536000; SameSite=Lax';
+}
+
+// Silent postures: all-literal write; literal-built const prefix;
+// numeric literal; a cookie READ (kernel.js's session match).
+document.cookie = 'gofastr.seen=1; path=/; SameSite=Lax';
+const THEME_PREFIX = 'gofastr.theme.';
+document.cookie = THEME_PREFIX + 'light; path=/';
+document.cookie = 'gofastr.count=0';
+const sessionCookie = document.cookie.match(/gofastr-session=([^;]+)/);
+if (document.cookie === 'x') {}
+
+// Synthetic positives (never in this repo): compound write from a
+// parameter, dataset-sourced name, and a template write.
+function bumpCounter(name) {
+  document.cookie += name + '=1';
+}
+function dismissViaDataset(el) {
+  document.cookie = STORAGE_PREFIX + el.dataset.bannerId + '=1; path=/';
+}
+function tplDismiss(id) {
+  document.cookie = STORAGE_PREFIX + id + '=1; Max-Age=31536000';
+}
+
+window.__probe = { recordDismiss: recordDismiss, recordDismissFixed: recordDismissFixed,
+  bumpCounter: bumpCounter, dismissViaDataset: dismissViaDataset, tplDismiss: tplDismiss, sessionCookie: sessionCookie };
+`
+
+func TestCookieConcatFiresOnRawOperand(t *testing.T) {
+	dir := writeRuntimeFixture(t, "cookie.js", cookieFixture)
+	res, err := LintCookieConcat(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// recordDismiss (id), bumpCounter (name), dismissViaDataset
+	// (el.dataset.bannerId), tplDismiss (id).
+	if len(res.Violations) != 4 {
+		t.Fatalf("expected 4 findings, got %d:\n%s", len(res.Violations), res.Error())
+	}
+	for _, v := range res.Violations {
+		if !strings.HasPrefix(v.Message, "[cookie-concat]") {
+			t.Errorf("unexpected message: %s", v.Message)
+		}
+		if strings.Contains(v.Message, "STORAGE_PREFIX") || strings.Contains(v.Message, "THEME_PREFIX") {
+			t.Errorf("finding on a provably-literal operand: %s", v.Message)
+		}
+	}
+	for _, op := range []string{`"id"`, `"name"`, `"el.dataset.bannerId"`} {
+		if !strings.Contains(res.Error(), op) {
+			t.Errorf("expected a finding on operand %s (full result:\n%s)", op, res.Error())
+		}
+	}
+}
+
+// cookieTplFixtureRaw uses ~ for JS backticks; untailed below.
+const cookieTplFixtureRaw = `// The template spelling of the raw cookie write.
+const P = 'gofastr.banner-dismiss.';
+function tplDismiss(id) {
+  document.cookie = ~${P}${id}=1; path=/~;
+}
+// Fixed: encoded interpolation body. Quiet.
+function tplDismissFixed(id) {
+  document.cookie = ~${P}${encodeURIComponent(id)}=1; path=/~;
+}
+`
+
+var cookieTplFixture = strings.ReplaceAll(cookieTplFixtureRaw, "~", "\x60")
+
+func TestCookieConcatTemplateWrites(t *testing.T) {
+	dir := writeRuntimeFixture(t, "cookietpl.js", cookieTplFixture)
+	res, err := LintCookieConcat(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Violations) != 1 {
+		t.Fatalf("expected exactly 1 finding (the raw ${id} body), got %d:\n%s", len(res.Violations), res.Error())
+	}
+	if !strings.Contains(res.Violations[0].Message, `"id"`) {
+		t.Errorf("expected the finding on id: %s", res.Violations[0].Message)
+	}
+}
+
+// moduleURLFixtureRaw uses ~ for JS backticks; untailed below.
+const moduleURLFixtureRaw = `// Reduced from the live pre-fix scan in src/actionloader.js (real
+// route and attribute names kept) and the repo's own gated loader,
+// loadModule in frag/boot.js.
+const loaded = new Set();
+
+const scan = (root) => { // actionloader.js, pre-fix: FIRES on id
+  const manifest = window.__gofastr_actions;
+  for (const el of root.querySelectorAll('[data-component],[data-widget]')) {
+    const id = el.getAttribute('data-component') || el.getAttribute('data-widget');
+    if (!id || !manifest[id] || loaded.has(id)) continue;
+    const s = document.createElement('script');
+    s.src = '/__gofastr/widget/' + id + '.js?v=' + manifest[id];
+    document.head.appendChild(s);
+  }
+};
+
+// loadModule (frag/boot.js), the parity bar: the regex gate on name
+// dominates the build, and the src site assigns a bare variable.
+// Quiet.
+function loadModule(name) {
+  return new Promise((resolve, reject) => {
+    if (!/^[\w-]+$/.test(name)) return reject(new Error('module failed'));
+    const url = '/__gofastr/runtime/' + name + '.js';
+    const s = document.createElement('script');
+    s.src = url;
+    s.onload = () => resolve();
+    document.head.appendChild(s);
+  });
+}
+
+// Fixed spelling (the red test's fix direction): reject ids failing
+// the shape before building the src (dots are legitimate in component
+// ids). Quiet.
+const scanFixed = (root) => {
+  const manifest = window.__gofastr_actions;
+  for (const el of root.querySelectorAll('[data-component],[data-widget]')) {
+    const id = el.getAttribute('data-component') || el.getAttribute('data-widget');
+    if (!id || !/^[\w.-]+$/.test(id) || !manifest[id]) continue;
+    const s = document.createElement('script');
+    s.src = '/__gofastr/widget/' + id + '.js';
+    document.head.appendChild(s);
+  }
+};
+
+// Silent postures: boot.js's data-behavior site (a bare attribute
+// read, no build — its full-URL regex gate is pinned by the module-src
+// probes); a literal-only src; an encoded operand; a named-constant
+// gate; a data: URL from a call result.
+function hydrate(el) {
+  const scriptSrc = el.getAttribute('data-behavior');
+  if (scriptSrc && /^\/__gofastr\/widget\/[A-Za-z0-9_-]+\.js$/.test(scriptSrc)) {
+    const script = document.createElement('script');
+    script.src = scriptSrc;
+    document.head.appendChild(script);
+  }
+}
+document.createElement('script').src = '/static/known.js';
+function encModule(el) {
+  const id = el.getAttribute('data-component');
+  const s = document.createElement('script');
+  s.src = '/mods/' + encodeURIComponent(id) + '.js';
+  document.head.appendChild(s);
+}
+const MODULE_NAME = /^[A-Za-z0-9.-]+$/;
+function gatedNamed(id) {
+  if (!MODULE_NAME.test(id)) return;
+  const s = document.createElement('script');
+  s.src = '/mods/' + id + '.js';
+  document.head.appendChild(s);
+}
+function preload(a) {
+  const u = srcOf(a);
+  const img = new Image();
+  img.src = u;
+}
+function srcOf(anchor) { return anchor.getAttribute('data-src') || ''; }
+
+// Synthetic positives (never in this repo): a dataset-sourced template
+// build and an unproven import() argument.
+function tplModule(el) {
+  const id = el.dataset.component;
+  const s = document.createElement('script');
+  s.src = ~/__gofastr/widget/${id}.js~;
+  document.head.appendChild(s);
+}
+function loadGlyph(id) {
+  return import('/glyph/' + id + '.js');
+}
+
+window.__probe = { scan: scan, loadModule: loadModule, scanFixed: scanFixed, hydrate: hydrate,
+  encModule: encModule, gatedNamed: gatedNamed, preload: preload, tplModule: tplModule, loadGlyph: loadGlyph };
+`
+
+var moduleURLFixture = strings.ReplaceAll(moduleURLFixtureRaw, "~", "\x60")
+
+func TestModuleURLShapeFiresUngatedId(t *testing.T) {
+	dir := writeRuntimeFixture(t, "modurl.js", moduleURLFixture)
+	res, err := LintModuleURLShape(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// scan (id), tplModule (id), loadGlyph (id). The gated loadModule,
+	// scanFixed, hydrate, encModule and named-constant spellings stay
+	// quiet.
+	if len(res.Violations) != 3 {
+		t.Fatalf("expected 3 findings, got %d:\n%s", len(res.Violations), res.Error())
+	}
+	for _, v := range res.Violations {
+		if !strings.HasPrefix(v.Message, "[module-url-shape]") {
+			t.Errorf("unexpected message: %s", v.Message)
+		}
+		if !strings.Contains(v.Message, `"id"`) {
+			t.Errorf("finding on a gated or out-of-scope spelling: %s:%d: %s", v.File, v.Line, v.Message)
+		}
+	}
+}
+
+func TestModuleURLShapeGateBreakTurnsRed(t *testing.T) {
+	// The dominance posture, pinned from the other side: without the
+	// gate line, the same loadModule build reports. Breaking the gate
+	// recognition in the lint shows up here as the fixed-spelling test
+	// above going red; this test pins that the SITE is reachable at
+	// all, so a silent gate recognizer cannot hide behind an
+	// unreachable fixture.
+	dir := writeRuntimeFixture(t, "modurl2.js", `function loadModule(name) {
+  return new Promise((resolve, reject) => {
+    const url = '/__gofastr/runtime/' + name + '.js';
+    const s = document.createElement('script');
+    s.src = url;
+    s.onload = () => resolve();
+    document.head.appendChild(s);
+  });
+}
+`)
+	res, err := LintModuleURLShape(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Violations) != 1 {
+		t.Fatalf("expected 1 finding without the gate, got %d:\n%s", len(res.Violations), res.Error())
+	}
+}

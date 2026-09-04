@@ -45,7 +45,9 @@ use most, so a boot that "hangs" from a worktree is almost always this.
   isolated child env values.
 - Generated apps from `gofastr init` and blueprint output use
   `framework/isolation` to resolve `PORT` and database DSNs.
-- SQLite DSNs move under `.gofastr/isolation/{id}/`.
+- SQLite DSNs move under `.gofastr/isolation/{id}/` (the directory is
+  created owner-only, `0700`, so the isolated app's database state is not
+  readable by local co-users of a shared checkout).
 - Postgres URL database names get a stable `_{id}` suffix while query params
   are preserved.
 - Env templates support `{id}`, `{project_dir}`, `{port}`, and

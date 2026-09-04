@@ -16,7 +16,13 @@
     if (!btn) return;
     const sel = btn.getAttribute('data-fui-fill-input');
     const widget = btn.closest('[data-fui-widget]');
-    const target = sel && ((widget && widget.querySelector(sel)) || document.querySelector(sel));
+    // data-fui-fill-input is a selector by design: a malformed value
+    // degrades to a no-op instead of throwing out of the delegated click
+    // handler before its preventDefault.
+    let target = null;
+    try {
+      target = sel && ((widget && widget.querySelector(sel)) || document.querySelector(sel));
+    } catch (_) { target = null; }
     if (!target) return;
     e.preventDefault();
     const explicit = btn.getAttribute('data-fui-fill-text');
@@ -64,7 +70,9 @@
     if (countWired.has(el)) return;
     countWired.add(el);
     const sel = el.getAttribute('data-fui-charcount-source');
-    const src = sel && document.querySelector(sel);
+    // Selector by design (see fill-input): malformed degrades to a no-op.
+    let src = null;
+    try { src = sel && document.querySelector(sel); } catch (_) { src = null; }
     if (!src) return;
     const sync = function () { el.textContent = src.value.length + ' chars'; };
     src.addEventListener('input', sync);

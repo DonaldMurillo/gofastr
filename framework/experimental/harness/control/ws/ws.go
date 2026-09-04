@@ -29,6 +29,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core/handler"
+
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/control"
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/control/auth"
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/control/multiplex"
@@ -123,16 +125,18 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		_ = conn.Close()
 		return
 	}
-
 	wsConn := &Conn{
-		netConn:  conn,
-		reader:   rw.Reader,
-		writer:   rw.Writer,
-		identity: claims.IdentityClass,
-		clientID: ids.NewClientID(),
-		mux:      h.Mux,
-		session:  sess,
-		claims:   claims,
+		netConn:     conn,
+		reader:      rw.Reader,
+		writer:      rw.Writer,
+		identity:    claims.IdentityClass,
+		clientID:    ids.NewClientID(),
+		mux:         h.Mux,
+		session:     sess,
+		claims:      claims,
+		token:       tok,
+		encoder:     h.Encoder,
+		revocations: h.Revocations,
 	}
 	// Use a fresh background context for the goroutine, the
 	// handler returns immediately after Hijack, which would cancel
@@ -198,6 +202,15 @@ type Conn struct {
 	// handshake: see handleText.
 	claims auth.Claims
 
+	// The live credential behind those claims: auth.Verify ran in
+	// ServeHTTP before the 101, and both the per-frame gate in
+	// handleText and the periodic revocationWatch re-run it against
+	// these so a Revoke(jti) reaches an ESTABLISHED socket, not just
+	// new handshakes.
+	token       string
+	encoder     *auth.Encoder
+	revocations *auth.RevocationList
+
 	mu sync.Mutex // guards writes
 }
 
@@ -231,6 +244,10 @@ func (c *Conn) run(parentCtx context.Context) {
 	}
 	// Engine→client pump.
 	go c.eventPump(ctx, events)
+	// Revocation watch: auth.Verify ran once in ServeHTTP; without a
+	// periodic re-check, Revoke(jti) would terminate nothing until the
+	// client happened to speak (the read loop blocks on input).
+	go c.revocationWatch(ctx)
 
 	// Client→engine read loop.
 	for {
@@ -256,6 +273,25 @@ func (c *Conn) run(parentCtx context.Context) {
 	}
 }
 
+// revocationWatch closes the socket when the token that opened it stops
+// verifying (revoked or expired): the read loop blocks on input, so an
+// idle socket would otherwise outlive its credential indefinitely.
+func (c *Conn) revocationWatch(ctx context.Context) {
+	t := time.NewTicker(10 * time.Second)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			if _, err := auth.Verify(c.encoder, c.revocations, c.token, time.Now()); err != nil {
+				_ = c.netConn.Close()
+				return
+			}
+		}
+	}
+}
+
 // frame envelopes used over the wire.
 type frame struct {
 	Frame string          `json:"frame"`
@@ -264,12 +300,28 @@ type frame struct {
 
 func (c *Conn) handleText(ctx context.Context, payload []byte) {
 	var f frame
-	if err := json.Unmarshal(payload, &f); err != nil {
+	// Strict decode: duplicate and case-folded top-level keys resolve
+	// last-wins under stdlib json, so {"frame":"event","frame":"command"}
+	// would dispatch as a command while any first-read intermediary saw
+	// an event frame. Refuse the ambiguity (handler.UnmarshalStrict) and
+	// answer through the existing bad-frame arm.
+	if err := handler.UnmarshalStrict(payload, &f); err != nil {
 		c.writeText(controlError("bad frame: " + err.Error()))
 		return
 	}
 	if f.Frame != "command" {
 		c.writeText(controlError("expected frame=command, got " + f.Frame))
+		return
+	}
+	// Live credential re-check on every command frame: the handshake's
+	// Verify is long past, and revocation's whole point on this plane
+	// is to cut off a compromised operator session immediately — an
+	// established socket must not keep riding claims the gate would now
+	// refuse. Refuse the frame and drop the socket.
+	if _, err := auth.Verify(c.encoder, c.revocations, c.token, time.Now()); err != nil {
+		c.writeText(controlError("token rejected: " + err.Error()))
+		c.writeClose()
+		_ = c.netConn.Close()
 		return
 	}
 	cmd, err := control.UnmarshalCommand(f.Body)

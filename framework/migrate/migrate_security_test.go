@@ -531,6 +531,43 @@ func TestNoLedgerTableWithoutRoutines(t *testing.T) {
 	}
 }
 
+// TestSnapshotValidatesNameLine: nothing RenderMigrationFileChecked
+// renders may synthesize a line the runner's line-based, quote-blind
+// parser reads as a "-- +migrate" directive — including the Name, which
+// is rendered verbatim onto its own directive line. A name carrying a
+// newline plus a directive block would land attacker statements in the
+// Down section (executing verbatim on rollback), the exact synthesis
+// ErrDirectiveInSQL exists to refuse.
+func TestSnapshotValidatesNameLine(t *testing.T) {
+	for _, name := range []string{
+		"fine\n-- +migrate Down\nDROP TABLE victims;-- ",
+		"x\n-- +migrate Up\nSELECT 1;-- ",
+	} {
+		content, err := RenderMigrationFileChecked(7, name,
+			"CREATE TABLE t (id TEXT);", "DROP TABLE t;")
+		if err == nil {
+			t.Errorf("SECURITY: [migrate] RenderMigrationFileChecked accepted Name %q: "+
+				"the Name line is rendered verbatim, so the runner's line-based, "+
+				"quote-blind parser reads a synthesized directive inside it and the "+
+				"attacker's statements land in a section that executes verbatim.\n"+
+				"rendered file:\n%s", name, content)
+			continue
+		}
+		if !errors.Is(err, ErrDirectiveInSQL) {
+			t.Errorf("[migrate] unexpected rejection for Name %q: %v (want ErrDirectiveInSQL)", name, err)
+		}
+	}
+
+	// Control: an ordinary name must keep rendering — the guard cannot be
+	// "reject every name".
+	content, err := RenderMigrationFileChecked(7, "add_email", "SELECT 1;", "")
+	if err != nil {
+		t.Errorf("[migrate] RenderMigrationFileChecked regressed on the benign name add_email: %v", err)
+	} else if !strings.Contains(content, "-- +migrate Name add_email\n") {
+		t.Errorf("[migrate] benign Name line no longer rendered:\n%s", content)
+	}
+}
+
 // sqliteHasObject reports whether name exists in sqlite_master (table, view,
 // index, or trigger).
 func sqliteHasObject(t *testing.T, db *sql.DB, name string) bool {

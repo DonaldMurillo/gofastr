@@ -131,7 +131,11 @@ func (a *App) ExportData(ctx context.Context, dir string, opts ...ExportOption) 
 	if cfg.createdAt.IsZero() {
 		cfg.createdAt = time.Now().UTC()
 	}
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	// 0700: the archive is a raw dump of every physical column
+	// (password hashes, token hashes, sessions on a real app), so it
+	// gets the repo's owner-only discipline like every other
+	// secret-bearing artifact.
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("framework: export mkdir %q: %w", dir, err)
 	}
 
@@ -187,7 +191,7 @@ func (a *App) ExportData(ctx context.Context, dir string, opts ...ExportOption) 
 
 	// MarshalIndent of the manifest struct cannot fail (no unencodable fields).
 	mb, _ := json.MarshalIndent(manifest, "", "  ")
-	if err := os.WriteFile(filepath.Join(dir, "manifest.json"), mb, 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "manifest.json"), mb, 0o600); err != nil {
 		return fmt.Errorf("framework: export manifest: %w", err)
 	}
 	return nil
@@ -570,7 +574,7 @@ func writeNDJSON(path string, rows []map[string]any) (string, error) {
 	}
 	data := []byte(buf.String())
 	h.Write(data) // hash.Hash.Write never returns an error (documented)
-	if err := os.WriteFile(path, data, 0o644); err != nil {
+	if err := os.WriteFile(path, data, 0o600); err != nil {
 		return "", err
 	}
 	return hex.EncodeToString(h.Sum(nil)), nil

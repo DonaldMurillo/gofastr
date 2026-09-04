@@ -165,6 +165,12 @@ dead-letters, and survival across restarts, use the DB-backed queue
 (`battery/queue`) instead. A custom lease (Redis, etcd, …) only needs to
 satisfy the `LeaderElection` interface.
 
+A custom lease's `Acquire` and the per-tick `release` it returns are
+treated like every other scheduler callback: a panic in either is
+recovered and routed to `OnError` (as the pseudo-job
+`"(leader-election)"`) instead of killing the process, and the affected
+tick is skipped.
+
 ## Stopping cleanly
 
 ```go

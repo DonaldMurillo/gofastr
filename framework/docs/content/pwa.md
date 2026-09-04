@@ -149,7 +149,10 @@ uihost.WithPWA(uihost.PWAConfig{OfflineScreen: myOfflineScreen{}})
 
 The page is precached at service-worker install time, so it must not
 render personalized content; for that reason it is deliberately **not**
-wrapped in the app layout (a layout may embed per-user chrome).
+wrapped in the app layout (a layout may embed per-user chrome). A
+custom offline screen renders behind the same panic containment as every
+other screen; if its render panics, the default offline page is
+precached instead.
 
 ## Update behavior
 

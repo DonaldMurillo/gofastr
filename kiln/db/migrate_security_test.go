@@ -10,6 +10,7 @@ import (
 	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 
 	"github.com/DonaldMurillo/gofastr/core/schema"
+	"github.com/DonaldMurillo/gofastr/framework"
 )
 
 // Property: a schema.Field.Default of ANY Go type must render as ONE
@@ -203,5 +204,74 @@ func TestAlterTableQuotesHostileIdentifiers(t *testing.T) {
 	// The witness table must survive every attempt above.
 	if _, err := d.Query(`SELECT id FROM posts LIMIT 1`); err != nil {
 		t.Fatalf("posts table did not survive the hostile identifiers: %v", err)
+	}
+}
+
+// Property: identifiers spliced into kiln's schema-sync SQL pass the
+// same SafeIdent validation the framework applies everywhere an
+// identifier reaches SQLite — a hostile table or field name must be
+// refused, not quoted through.
+func TestMigrateValidatesIdentifiers(t *testing.T) {
+	d, cleanup, err := EphemeralSQLite("kiln-ident")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanup()
+	if _, err := d.Exec(`CREATE TABLE posts (id TEXT PRIMARY KEY, title TEXT)`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.Exec(`CREATE TABLE kiln_pragma_secrets (token TEXT)`); err != nil {
+		t.Fatal(err)
+	}
+
+	tableExists := func(name string) bool {
+		var one int
+		return d.QueryRow(`SELECT 1 FROM sqlite_master WHERE type='table' AND name=?`, name).Scan(&one) == nil
+	}
+
+	// tableColumns: a hostile table name must be refused before the
+	// PRAGMA splice, not executed through it.
+	for _, bad := range []string{
+		`victims); DROP TABLE kiln_pragma_secrets; --`,
+		"victims\nAND 1=1",
+	} {
+		_, err := tableColumns(d, bad)
+		if err == nil {
+			t.Errorf("tableColumns accepted table name %q (decoy table dropped by the injected tail: %v)", bad, !tableExists("kiln_pragma_secrets"))
+			continue
+		}
+		if !strings.Contains(err.Error(), "unsafe") && !strings.Contains(err.Error(), "invalid") {
+			t.Errorf("tableColumns rejected %q only incidentally (%v): no identifier validation before the splice", bad, err)
+		}
+	}
+
+	// alignColumns: a hostile FIELD name tableColumns cannot see must
+	// be refused before the ALTER TABLE ... ADD COLUMN splice.
+	hostile := &framework.Entity{Config: framework.EntityConfig{
+		Name:  "posts",
+		Table: "posts",
+		Fields: []schema.Field{
+			{Name: `evil; DROP TABLE kiln_alter_secrets; --`, Type: schema.String},
+		},
+	}}
+	if _, err := d.Exec(`CREATE TABLE kiln_alter_secrets (token TEXT)`); err != nil {
+		t.Fatal(err)
+	}
+	if err := alignColumns(d, hostile); err == nil {
+		t.Errorf("alignColumns accepted field name %q (decoy table dropped by the injected tail: %v)",
+			hostile.Config.Fields[0].Name, !tableExists("kiln_alter_secrets"))
+	} else if !strings.Contains(err.Error(), "unsafe") && !strings.Contains(err.Error(), "invalid") {
+		t.Errorf("alignColumns rejected the hostile field only incidentally (%v): no identifier validation before the ALTER splice", err)
+	}
+
+	// Control: plain identifiers must keep syncing.
+	if err := alignColumns(d, &framework.Entity{Config: framework.EntityConfig{
+		Name:  "posts",
+		Table: "posts",
+		Fields: []schema.Field{
+			{Name: "body", Type: schema.String},
+		},
+	}}); err != nil {
+		t.Errorf("alignColumns regressed on benign identifiers: %v", err)
 	}
 }

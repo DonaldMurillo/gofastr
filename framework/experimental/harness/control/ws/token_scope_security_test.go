@@ -270,3 +270,77 @@ func TestWSTokenSessionScopeOnCommandBody(t *testing.T) {
 		// Clean: nothing arrived on B.
 	}
 }
+
+// setupRevocableServer is setupServer with the RevocationList and the
+// token's JTI exposed so a test can revoke after the 101.
+func setupRevocableServer(t *testing.T) (url string, sess ids.SessionID, tok string, jti ids.JTI, rl *auth.RevocationList, cleanup func()) {
+	t.Helper()
+	session := ids.NewSessionID()
+	bus := engine.NewBus(session)
+	reg := tool.NewRegistry()
+	d := engine.NewDispatcher(bus, reg)
+	eng := engine.NewEngine(session, bus, fakeProvider{}, "fake", d)
+	mux := multiplex.New()
+	mux.RegisterEngine(eng)
+
+	secret, err := auth.GenerateSecret()
+	if err != nil {
+		t.Fatalf("secret: %v", err)
+	}
+	enc := auth.NewEncoder(secret)
+	rl = auth.NewRevocationList()
+	jti = ids.NewJTI()
+	tok, err = enc.Encode(auth.Claims{
+		Ver:           auth.VerCurrent,
+		JTI:           jti,
+		Sessions:      []ids.SessionID{session},
+		IdentityClass: control.IdentityHuman,
+		ExpiresAt:     time.Now().Add(time.Hour).Unix(),
+	})
+	if err != nil {
+		t.Fatalf("encode token: %v", err)
+	}
+	h := &Handler{Mux: mux, Encoder: enc, Revocations: rl}
+	srv := httptest.NewServer(h)
+	return srv.URL, session, tok, jti, rl, func() { srv.Close(); bus.Close() }
+}
+
+// TestWsSocketStopsOnRevocation: a connection authenticated by a
+// credential that is later revoked stops executing commands —
+// revocation must reach established sockets, not just new handshakes
+// (handleText re-verifies every command frame; revocationWatch closes
+// the socket on its ticker).
+func TestWsSocketStopsOnRevocation(t *testing.T) {
+	// Happy guard on its own stack: the same server + token dispatches a
+	// command frame when the jti is NOT revoked, so the refusal demanded
+	// below can only come from the revocation, not plumbing.
+	u1, sess1, tok1, _, _, cleanup1 := setupRevocableServer(t)
+	defer cleanup1()
+	conn1 := dialWS(t, strings.TrimPrefix(u1, "http://"), sess1, tok1)
+	defer conn1.Close()
+	sendCommandFrame(t, conn1, control.SendInput{
+		SessionID: sess1,
+		Content:   engine.SimpleInput("hello"),
+	})
+	if got := readUntilTextDelta(t, conn1); !strings.Contains(got, "ws-hello") {
+		t.Fatalf("happy path: well-formed frame must stream the turn (got %.200q)", got)
+	}
+
+	// Attack: socket upgraded (101 answered), THEN the jti is revoked,
+	// THEN a command frame arrives on the established socket.
+	u2, sess2, tok2, jti2, rl2, cleanup2 := setupRevocableServer(t)
+	defer cleanup2()
+	conn2 := dialWS(t, strings.TrimPrefix(u2, "http://"), sess2, tok2)
+	defer conn2.Close()
+	rl2.Revoke(jti2)
+	sendCommandFrame(t, conn2, control.SendInput{
+		SessionID: sess2,
+		Content:   engine.SimpleInput("after-revoke"),
+	})
+	got := readAllFrames(t, conn2, 1500*time.Millisecond)
+	if strings.Contains(got, "ws-hello") {
+		t.Errorf("SECURITY: [ws-stale-revocation] a command frame dispatched on a socket whose "+
+			"token jti was revoked after the 101 (received the full turn %.200q) — auth.Verify must "+
+			"re-run per inbound frame and on a periodic watch, closing the socket on refusal", got)
+	}
+}

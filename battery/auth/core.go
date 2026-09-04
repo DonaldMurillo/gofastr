@@ -297,7 +297,7 @@ func (c *CorePlugin) loginHandler() http.HandlerFunc {
 		})
 
 		if isForm {
-			http.Redirect(w, r, successRedirect(r, "/"), http.StatusSeeOther)
+			http.Redirect(w, r, successRedirect(w, r, "/"), http.StatusSeeOther)
 			return
 		}
 
@@ -387,7 +387,7 @@ func (c *CorePlugin) logoutHandler() http.HandlerFunc {
 			MaxAge:   -1,
 		})
 		if isFormRequest(r) {
-			http.Redirect(w, r, successRedirect(r, "/"), http.StatusSeeOther)
+			http.Redirect(w, r, successRedirect(w, r, "/"), http.StatusSeeOther)
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
@@ -553,7 +553,7 @@ func (c *CorePlugin) registerHandler() http.HandlerFunc {
 				SameSite: http.SameSiteStrictMode,
 				Expires:  sess.ExpiresAt,
 			})
-			http.Redirect(w, r, successRedirect(r, "/"), http.StatusSeeOther)
+			http.Redirect(w, r, successRedirect(w, r, "/"), http.StatusSeeOther)
 			return
 		}
 

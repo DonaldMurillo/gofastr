@@ -7,8 +7,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/url"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -319,9 +321,11 @@ func (s *ProcessModuleSupervisor) dispatchToolCall(ctx context.Context, moduleNa
 	// note on requestFromToolCtx.
 	callID := moduleToolCallID.Add(1)
 	mintReq := requestFromToolCtx(withDelegationModule(ctx, moduleName))
-	handle, release := s.broker.MintDelegation(mintReq, callID)
-	defer release()
-
+	handle, release, err := s.mintDelegationSafely(mintReq, callID)
+	if err != nil {
+		return nil, err
+	}
+	defer s.releaseDelegationSafely(release)
 	args, err := json.Marshal(params)
 	if err != nil {
 		args = nil
@@ -344,6 +348,34 @@ func (s *ProcessModuleSupervisor) dispatchToolCall(ctx context.Context, moduleNa
 		return nil, fmt.Errorf("processmodule: decode tool.call result: %w", jErr)
 	}
 	return res.Result, nil
+}
+
+// mintDelegationSafely mints the per-call delegation handle under a
+// recover guard: the broker is host-side code on the tool dispatch path
+// (an MCP request goroutine with no per-request net), and a panic
+// surfaces as a tool-call error instead of killing the request.
+func (s *ProcessModuleSupervisor) mintDelegationSafely(r *http.Request, callID uint64) (handle string, release func(), err error) {
+	defer func() {
+		if p := recover(); p != nil {
+			handle, release = "", func() {}
+			err = fmt.Errorf("processmodule: broker MintDelegation panic: %v\n%s", p, debug.Stack())
+		}
+	}()
+	handle, release = s.broker.MintDelegation(r, callID)
+	return handle, release, nil
+}
+
+// releaseDelegationSafely runs the broker's release callback under a
+// recover guard: release is broker-side teardown deferred on the tool
+// dispatch path, and its panic is logged rather than replacing the tool
+// call's own return path.
+func (s *ProcessModuleSupervisor) releaseDelegationSafely(release func()) {
+	defer func() {
+		if p := recover(); p != nil {
+			slog.Default().Error("processmodule: delegation release panicked", "panic", p, "stack", string(debug.Stack()))
+		}
+	}()
+	release()
 }
 
 // requestFromToolCtx builds a minimal *http.Request carrying the calling

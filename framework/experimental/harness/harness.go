@@ -22,6 +22,7 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sync"
@@ -317,8 +318,23 @@ func (h *Harness) buildRequestMiddleware(_ ids.SessionID) []engine.RequestMiddle
 
 func (h *Harness) persistLoop(ctx context.Context, ch <-chan control.EventEnvelope) {
 	for env := range ch {
-		_ = h.Sessions.AppendEvent(ctx, env)
+		h.appendEventGuarded(ctx, env)
 	}
+}
+
+// appendEventGuarded isolates a panicking session store from the persist
+// loop. AppendEvent is host-supplied code behind the session.Store
+// interface, and the loop runs on its own goroutine with no per-request
+// recover net; one panicking store implementation would take the whole
+// harness process down. The event is dropped and the failure logged.
+func (h *Harness) appendEventGuarded(ctx context.Context, env control.EventEnvelope) {
+	defer func() {
+		if r := recover(); r != nil {
+			slog.Error("harness: session store AppendEvent panicked; event dropped",
+				"session", env.Session, "kind", env.Kind, "panic", r)
+		}
+	}()
+	_ = h.Sessions.AppendEvent(ctx, env)
 }
 
 // Shutdown releases resources held by the Harness. It tears down every

@@ -86,10 +86,10 @@ func Run(ctx context.Context, suite *Suite, opts Options) (Summary, string, erro
 	if err := os.RemoveAll(protocolDir); err != nil {
 		return Summary{}, runDir, fmt.Errorf("reset protocol snapshot: %w", err)
 	}
-	if err := os.MkdirAll(protocolDir, 0o755); err != nil {
+	if err := os.MkdirAll(protocolDir, 0o700); err != nil {
 		return Summary{}, runDir, err
 	}
-	if err := os.WriteFile(filepath.Join(protocolDir, "effective-suite.json"), append(protocolSnapshotBytes, '\n'), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(protocolDir, "effective-suite.json"), append(protocolSnapshotBytes, '\n'), 0o600); err != nil {
 		return Summary{}, runDir, err
 	}
 	if err := copyFile(suite.Judge.Rubric, filepath.Join(protocolDir, "rubric.md")); err != nil {
@@ -169,7 +169,7 @@ func Run(ctx context.Context, suite *Suite, opts Options) (Summary, string, erro
 	mobileJudgeEnv := agentEnvironment(suite.Agents.MobileJudge, codexHome)
 
 	toolsDir := filepath.Join(runDir, "tools")
-	if err := os.MkdirAll(toolsDir, 0o755); err != nil {
+	if err := os.MkdirAll(toolsDir, 0o700); err != nil {
 		return Summary{}, runDir, err
 	}
 	type frameworkTool struct {
@@ -179,7 +179,7 @@ func Run(ctx context.Context, suite *Suite, opts Options) (Summary, string, erro
 	frameworkTools := make(map[string]frameworkTool, len(variants))
 	for i, variant := range variants {
 		variantToolsDir := filepath.Join(toolsDir, variant.ID)
-		if err := os.MkdirAll(variantToolsDir, 0o755); err != nil {
+		if err := os.MkdirAll(variantToolsDir, 0o700); err != nil {
 			return Summary{}, runDir, err
 		}
 		gofastrBin := filepath.Join(variantToolsDir, executableName("gofastr"))
@@ -249,7 +249,7 @@ func Run(ctx context.Context, suite *Suite, opts Options) (Summary, string, erro
 	if err := writeJSON(filepath.Join(runDir, "summary.json"), summary); err != nil {
 		return Summary{}, runDir, err
 	}
-	if err := os.WriteFile(filepath.Join(runDir, "leaderboard.md"), []byte(leaderboardMarkdown(summary)), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(runDir, "leaderboard.md"), []byte(leaderboardMarkdown(summary)), 0o600); err != nil {
 		return Summary{}, runDir, err
 	}
 	return summary, runDir, nil
@@ -288,10 +288,10 @@ func prepareRunDirectory(runDir string, reuse bool) error {
 		if reuse {
 			return fmt.Errorf("reuse run directory does not exist: %s", runDir)
 		}
-		if err := os.MkdirAll(filepath.Dir(runDir), 0o755); err != nil {
+		if err := os.MkdirAll(filepath.Dir(runDir), 0o700); err != nil {
 			return err
 		}
-		if err := os.Mkdir(runDir, 0o755); err != nil {
+		if err := os.Mkdir(runDir, 0o700); err != nil {
 			if os.IsExist(err) {
 				return fmt.Errorf("run directory already exists: %s (choose a new run-id or use --reuse-workspaces)", runDir)
 			}
@@ -428,11 +428,11 @@ func executeCandidate(ctx context.Context, suite *Suite, opts Options, gofastrBi
 			}
 		}
 	}
-	if err := os.MkdirAll(filepath.Dir(mapping.Workspace), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(mapping.Workspace), 0o700); err != nil {
 		result.TechnicalIssues = append(result.TechnicalIssues, err.Error())
 		return result
 	}
-	if err := os.MkdirAll(mapping.ResultDir, 0o755); err != nil {
+	if err := os.MkdirAll(mapping.ResultDir, 0o700); err != nil {
 		result.TechnicalIssues = append(result.TechnicalIssues, err.Error())
 		return result
 	}
@@ -467,7 +467,7 @@ func executeCandidate(ctx context.Context, suite *Suite, opts Options, gofastrBi
 			result.TechnicalIssues = append(result.TechnicalIssues, "scaffold: "+err.Error())
 			return result
 		}
-		if err := os.WriteFile(filepath.Join(mapping.Workspace, "EVAL_TASK.md"), []byte(taskMarkdown(scenario)), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(mapping.Workspace, "EVAL_TASK.md"), []byte(taskMarkdown(scenario)), 0o600); err != nil {
 			result.TechnicalIssues = append(result.TechnicalIssues, "task: "+err.Error())
 			return result
 		}
@@ -596,7 +596,7 @@ func executeCandidate(ctx context.Context, suite *Suite, opts Options, gofastrBi
 		result.TechnicalIssues = append(result.TechnicalIssues, "allocate port: "+err.Error())
 		return result
 	}
-	serverLog, err := os.Create(filepath.Join(mapping.ResultDir, "server.log"))
+	serverLog, err := os.OpenFile(filepath.Join(mapping.ResultDir, "server.log"), os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0o600)
 	if err != nil {
 		result.TechnicalIssues = append(result.TechnicalIssues, "server log: "+err.Error())
 		return result
@@ -638,12 +638,12 @@ func executeCandidate(ctx context.Context, suite *Suite, opts Options, gofastrBi
 	// tools stay off outside the dev loop?
 	result.CandidateMCPTools, result.CandidateMCPIntrospection, result.CandidateMCPLogToolsProd = probeCandidateMCP(ctx, baseURL)
 
-	if err := os.MkdirAll(blindDir, 0o755); err != nil {
+	if err := os.MkdirAll(blindDir, 0o700); err != nil {
 		result.TechnicalIssues = append(result.TechnicalIssues, "blind dir: "+err.Error())
 		return result
 	}
 	_ = runCommand(ctx, blindDir, "", nil, "git", "init", "-q")
-	_ = os.WriteFile(filepath.Join(blindDir, "AGENTS.md"), []byte("# Blind visual judge workspace\nJudge only the supplied screenshots. Do not inspect parent directories or source workspaces.\n"), 0o644)
+	_ = os.WriteFile(filepath.Join(blindDir, "AGENTS.md"), []byte("# Blind visual judge workspace\nJudge only the supplied screenshots. Do not inspect parent directories or source workspaces.\n"), 0o600)
 	_ = copyFile(suite.Judge.Schema, filepath.Join(blindDir, "judge.schema.json"))
 	shots, captureIssues := captureCandidate(ctx, baseURL, blindDir, scenario, suite.Viewports)
 	result.Screenshots = shots
@@ -744,7 +744,7 @@ func writeJSON(path string, value any) error {
 	if err != nil {
 		return err
 	}
-	return writeFileAtomic(path, append(b, '\n'), 0o644)
+	return writeFileAtomic(path, append(b, '\n'), 0o600)
 }
 
 func readJSON(path string, value any) error {
@@ -764,10 +764,10 @@ func copyFile(src, dst string) error {
 		return err
 	}
 	defer in.Close()
-	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(dst), 0o700); err != nil {
 		return err
 	}
-	out, err := os.Create(dst)
+	out, err := os.OpenFile(dst, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0o600)
 	if err != nil {
 		return err
 	}

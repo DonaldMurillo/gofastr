@@ -1,13 +1,12 @@
 package auth
 
 import (
-	"bytes"
-	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"strings"
+
+	"github.com/DonaldMurillo/gofastr/core/handler"
 )
 
 // maxAuthBodyBytes caps every JSON body decoded by an auth handler.
@@ -40,12 +39,11 @@ func isJSONContentType(ct string) bool {
 	return false
 }
 
-// decodeJSONLimitedStrict is the auth battery's single JSON body decode:
-// a hard size cap, content-type strictness, and the strict top-level key
-// rule the framework enforces for every handler.Bind consumer
-// (core/handler/bind.go validateBodyKeys). A top-level object key that
-// duplicates an earlier key, or that is a case-folded variant of one of
-// the allowed names without matching it exactly, is a 400.
+// decodeJSONLimited is the auth battery's single JSON body decode: a hard
+// size cap, content-type strictness, and handler.UnmarshalStrict for the
+// key walk + decode — the same top-level strictness core/handler.Bind
+// enforces for every bound handler. A duplicated key, a case-folded
+// variant of a field name, or an unknown top-level key is a 400.
 //
 // SECURITY: stdlib encoding/json keeps the LAST duplicate and matches
 // key names case-insensitively, while net/url form parsing keeps the
@@ -53,17 +51,13 @@ func isJSONContentType(ct string) bool {
 // by parser accident, and the same smuggled credential body
 // authenticates a different identity depending on Content-Type. The
 // ambiguity itself is the attack; rejecting it at decode is the only
-// resolution that does not privilege one parser's pick. Unknown keys
-// that fold to no allowed name are ignored so legitimate callers sending
-// extra fields are not broken by this rule. Bodies that are not a
-// top-level object flow through to the decoder unchanged.
-//
-// The per-handler allowed names are the credential-bearing fields of the
-// body each endpoint decodes; everything routes through here since the
-// probe that found login/register accepting smuggled bodies
-// (TestLoginJSONStrictTopLevelKeys) — the siblings decoded the same
-// shapes and owed the same refusal.
-func decodeJSONLimitedStrict(w http.ResponseWriter, r *http.Request, dst any, allowed ...string) bool {
+// resolution that does not privilege one parser's pick. The key walk
+// and decode live in core/handler (DecodeStrict/UnmarshalStrict) so the
+// auth battery and the framework cannot drift apart on what "strict"
+// means; this wrapper owns the two things the shared helper
+// deliberately leaves to callers (the content-type gate and the 1 MiB
+// cap with its 413 mapping).
+func decodeJSONLimited(w http.ResponseWriter, r *http.Request, dst any) bool {
 	if !isJSONContentType(r.Header.Get("Content-Type")) {
 		writeAuthError(w, http.StatusUnsupportedMediaType, "expected application/json")
 		return false
@@ -78,56 +72,9 @@ func decodeJSONLimitedStrict(w http.ResponseWriter, r *http.Request, dst any, al
 		writeAuthError(w, http.StatusBadRequest, "invalid JSON")
 		return false
 	}
-	if err := rejectAmbiguousTopLevelKeys(body, allowed); err != nil {
-		writeAuthError(w, http.StatusBadRequest, "invalid JSON")
-		return false
-	}
-	//gofastr:allow(GOFASTR1407) rejectAmbiguousTopLevelKeys above already refused duplicate and case-folded keys; this Unmarshal only decodes a vetted body
-	if err := json.Unmarshal(body, dst); err != nil {
+	if err := handler.UnmarshalStrict(body, dst); err != nil {
 		writeAuthError(w, http.StatusBadRequest, "invalid JSON")
 		return false
 	}
 	return true
-}
-
-// rejectAmbiguousTopLevelKeys walks the top level of a JSON object and
-// errors on any duplicated key (compared on DECODED bytes, so a raw key
-// and its \u-escaped spelling of the same name still collide) and on
-// any case-folded variant of an allowed name that does not match it
-// exactly. Non-object bodies and tokenization failures return nil so
-// the decoder reports them under the shared error contract.
-func rejectAmbiguousTopLevelKeys(body []byte, allowed []string) error {
-	dec := json.NewDecoder(bytes.NewReader(body))
-	first, err := dec.Token()
-	if err != nil {
-		return nil
-	}
-	if d, ok := first.(json.Delim); !ok || d != '{' {
-		return nil
-	}
-	seen := make(map[string]struct{}, len(allowed))
-	for dec.More() {
-		tok, err := dec.Token()
-		if err != nil {
-			return nil
-		}
-		key, ok := tok.(string)
-		if !ok {
-			return nil
-		}
-		if _, dup := seen[key]; dup {
-			return fmt.Errorf("duplicate key %q", key)
-		}
-		seen[key] = struct{}{}
-		for _, name := range allowed {
-			if key != name && strings.EqualFold(key, name) {
-				return fmt.Errorf("case-folded key %q for field %q", key, name)
-			}
-		}
-		var skip json.RawMessage
-		if err := dec.Decode(&skip); err != nil {
-			return nil
-		}
-	}
-	return nil
 }

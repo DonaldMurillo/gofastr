@@ -66,23 +66,41 @@ func deferDanglingRelations(registry *framework.Registry) {
 }
 
 func alignColumns(d *sql.DB, entity *framework.Entity) error {
-	existing, err := tableColumns(d, entity.GetTable())
+	table, err := query.SafeIdent(entity.GetTable())
+	if err != nil {
+		return fmt.Errorf("align %s: %w", entity.GetName(), err)
+	}
+	existing, err := tableColumns(d, table)
 	if err != nil {
 		return err
 	}
 	for _, f := range entity.GetFields() {
+		// Field names reach ALTER TABLE the same way table names reach
+		// PRAGMA below; tableColumns' check cannot see them, so each
+		// one is validated here before the splice.
+		if _, err := query.SafeIdent(f.Name); err != nil {
+			return fmt.Errorf("align %s: %w", entity.GetName(), err)
+		}
 		if _, ok := existing[f.Name]; ok {
 			continue
 		}
-		stmt := alterAddColumn(entity.GetTable(), f)
+		stmt := alterAddColumn(table, f)
 		if _, err := d.Exec(stmt); err != nil {
-			return fmt.Errorf("alter table %s add %s: %w", entity.GetTable(), f.Name, err)
+			return fmt.Errorf("alter table %s add %s: %w", table, f.Name, err)
 		}
 	}
 	return nil
 }
 
 func tableColumns(d *sql.DB, table string) (map[string]struct{}, error) {
+	// Same rule the framework's twin read applies (ReadLiveColumnsSQLite):
+	// identifiers are validated, not just quoted. Table names here derive
+	// from agent-authored world IR (an entity name or table override that
+	// reached this far unchecked), and quoting alone would splice a hostile
+	// name through as one weird identifier where the twin refuses it.
+	if _, err := query.SafeIdent(table); err != nil {
+		return nil, err
+	}
 	rows, err := d.Query(`PRAGMA table_info(` + query.QuoteIdent(table) + `)`)
 	if err != nil {
 		return nil, err

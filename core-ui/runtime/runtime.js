@@ -762,7 +762,11 @@
         // the signal node itself or the resolved selector target.
         if (node.hasAttribute('data-fui-scroll-bottom-on-update')) {
           const sel = node.getAttribute('data-fui-scroll-bottom-on-update');
-          const target = sel ? node.querySelector(sel) || document.querySelector(sel) || node : node;
+          // The attribute value is a selector by design; a malformed one
+          // degrades to the node itself instead of throwing out of the
+          // signal fanout pass.
+          let target = node;
+          if (sel) { try { target = node.querySelector(sel) || document.querySelector(sel) || node; } catch (_) {} }
           // Defer to end of microtask so the new innerHTML lays out first.
           Promise.resolve().then(() => { try { target.scrollTop = target.scrollHeight; } catch (_) {} });
         }

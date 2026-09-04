@@ -33,10 +33,17 @@ func embedGrantRefused(ctx context.Context) error {
 //	    mcp.Gated(auth.MCPUser(), rebuildHandler))
 func MCPUser() func(ctx context.Context) error {
 	return func(ctx context.Context) error {
-		if GetCurrentUser(ctx) == nil {
+		user := GetCurrentUser(ctx)
+		if user == nil {
 			return errors.New("auth: this tool requires an authenticated caller: send the session cookie or Authorization header on the /mcp request")
 		}
-		return embedGrantRefused(ctx)
+		if err := embedGrantRefused(ctx); err != nil {
+			return err
+		}
+		if roleGateDenied(ctx, user) {
+			return errors.New("auth: this tool call was refused by the access decider for the caller's roles")
+		}
+		return nil
 	}
 }
 
@@ -46,6 +53,10 @@ func MCPUser() func(ctx context.Context) error {
 //
 //	app.MCP.RegisterTool("cache_flush", desc, schema,
 //	    mcp.Gated(auth.MCPRole("admin"), flushHandler))
+//
+// Like RequireRole, the gate consults a Decider installed in the tool
+// call's context (access.WithDecider / DeciderMiddleware) before the
+// role check: DecisionDeny refuses, DecisionAbstain falls through.
 func MCPRole(roles ...string) func(ctx context.Context) error {
 	if len(roles) == 0 {
 		panic("auth.MCPRole: no roles given: use auth.MCPUser() to require just authentication")
@@ -57,6 +68,9 @@ func MCPRole(roles ...string) func(ctx context.Context) error {
 		}
 		if err := embedGrantRefused(ctx); err != nil {
 			return err
+		}
+		if roleGateDenied(ctx, user) {
+			return errors.New("auth: this tool call was refused by the access decider for the caller's roles")
 		}
 		if !hasAnyRole(user, roles) {
 			return fmt.Errorf("auth: this tool requires role %v", roles)

@@ -8,6 +8,36 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 ## [Unreleased]
 
 ### Security
+- **Five more repo analyzers and three widened ones, one per bug shape
+  the 2026-09-03 red-probe round kept finding**: `worldreadable` (state
+  and secret files created 0644/0755 or with `os.Create` where the repo
+  writes 0600/0700), `fixedtmp` (a constant or pid-named path under the
+  shared temp root reaching mkdir/create/exec), `secretcompare` (a
+  credential compared with `==`), `timestampid` (an id minted from
+  `time.Now()`, rand-failure fallbacks included), `discardeddecode`
+  (`_ = json.Unmarshal` and friends); `unboundedbody` now covers
+  `ParseForm`/`FormValue` with no `MaxBytesReader`, `controlbytes` the
+  SMTP envelope and header writes, battery/log attrs, child-stderr
+  detail strings and `http.Redirect`, `recovercallback` the interface
+  callbacks a host installs (cron leader election, fanout backends) and
+  the funcs they return. Contracts rule GOFASTR1407 follows client
+  bytes through same-package helpers and websocket frames. Three
+  runtime lints join `core-ui/check`: an unguarded `querySelector` of a
+  `data-fui-*` value, a raw `document.cookie` concatenation, and a
+  module URL built from an unchecked id.
+- **Review-round closures on the same branch**: strict JSON decoding
+  refuses duplicate and case-folded key pairs at every nesting depth,
+  not only the top level (a2a `params` was the open surface); the crud
+  offset cap bounds a page-derived skip (`?page=` × `?limit=`) exactly
+  like `?offset=` (400 beyond `MaxOffset`); battery/admin's `_grant` and
+  `_revoke` require the caller to hold the permission (or the wildcard),
+  closing the escalation the `_assign` tiering left open through its
+  sibling RPC; policy-decision redirects scrub C0/DEL like the others.
+- **One exception mechanism for every analyzer**:
+  `//gofastr:allow(<analyzer>) <why>` on the reported line (or the line
+  above) drops that diagnostic, the same marker the contracts pipeline
+  uses; the reason is mandatory. `internal/analyzers/allow` wraps every
+  registration in `cmd/vettool`.
 - **Static rules hardened by an adversarial review round**, and the
   sibling bugs the widened rules then found, all fixed: `uihost`
   interpolated a registered style name into the `/__gofastr/comp/<name>.css` path
@@ -23,7 +53,74 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   compared a lexically cleaned path. The five recover guards v0.81.0
   added now log the panic instead of swallowing it.
 
+- **135 open findings from the 2026-09-02/03 red-probe rounds closed**,
+  each pinned by a `*_security_test.go` that fails when its fix is
+  reverted. The ones a host app can observe: battery/admin refuses
+  cross-site form posts on every mutating route itself (Sec-Fetch-Site,
+  then Origin host) instead of relying on the optional CSRF middleware,
+  lets a caller assign only roles it holds or its permissions imply, caps
+  form bodies at 1 MiB, honours an installed access Decider before the
+  superuser context, and refuses an entity save whose masked-field set
+  cannot be recomputed. battery/auth ships opt-out per-IP throttles on
+  forgot/reset-password, magic-link send and verify, send-verification
+  and both 2FA endpoints; 2FA enroll/verify/challenge write through a
+  compare-and-swap so a concurrent disable is never resurrected and one
+  TOTP code verifies one session; the TOTP seed is sealed at rest;
+  unlinking the last OAuth method is atomic; email.verified,
+  oauth.unlinked and roles.updated are audited; send-verification
+  refuses cross-site posts; erasure covers the configured stores' real
+  table names. The access Decider binds every gate: RequirePermission,
+  RequireRole, MCPUser/MCPRole, admin authorized(), and crud's
+  CrossOwnerRead and read-scope lifts. crud refuses duplicate and
+  case-folded wire keys, caps an explicit `?offset=` (MaxOffset), and
+  the CRUD EventStream re-checks authorization per delivery and on a
+  ticker; harness SSE streams and sockets close on token revocation.
+  App.Start/Shutdown contain panicking OnStart/OnReady/WithSeed and
+  battery hooks; cron leader election, the fanout bridge, notify,
+  webhook, queue, semantic, acp, a2a and process-module backends run
+  under recover on their dispatch loops. ExportData, semantic
+  snapshots, isolation state, kiln's journal, harness exports, cost
+  ledger, logs, memory and traces are owner-only (0600/0700). SMTP
+  envelopes carry net/mail-parsed bare addresses and headers refuse
+  C0/DEL; battery/log, the probe detail string and uihost redirects are
+  control-byte scrubbed. markdown links use the canonical urlsafe
+  allow-list. kiln validates identifiers before schema-sync splices,
+  freezes credentialed DSNs as `${DATABASE_URL}`, serves security
+  headers on every response, and runs agents in per-turn 0700 dirs; the
+  dev server binary and agent cwd are no longer fixed /tmp names. ACP
+  authenticate requires initialize and a malformed permission answer is
+  cancelled. Every JSON-RPC envelope, websocket frame and dev-tool
+  endpoint decodes strictly; the GOFASTR1407 waivers are gone.
+### Changed
+- **BREAKING: `auth.NewEntityTwoFAStore(db, table, cfg)`** takes an
+  `EntityTwoFAStoreConfig` whose `EncryptionKey` is required and returns
+  an error; the TOTP seed is sealed at rest with the sealer the OAuth
+  token store already uses. Rows written as plaintext by older builds
+  still verify and re-seal on their next write.
+- **BREAKING: auth JSON endpoints refuse unknown top-level keys** (400),
+  the rule `handler.Bind` applies everywhere else; a client that sent
+  extra fields to login, register, reset, magic-link or 2FA bodies must
+  stop.
+- Lifecycle: a panicking OnStart/OnReady/WithSeed hook or battery
+  OnStart aborts `App.Start` with an attributed error instead of a
+  crash; `App.Shutdown` keeps stopping the remaining batteries and joins
+  the errors. `PaginationConfig`-style `MaxOffset` (default page cap
+  × 1000, `WithMaxOffset`) bounds an explicit `?offset=`.
+  `EventStreamReauth` (default 30s) re-checks stream authorization.
+  Auth throttle floors are opt-out; set the RateLimit fields to change
+  them.
+
 ### Added
+- **`handler.DecodeStrict` / `handler.UnmarshalStrict` /
+  `handler.CheckTopLevelKeys`** (core/handler): the strict top-level
+  key rule `Bind` applies, exported for every other JSON decode of
+  client bytes — JSON-RPC envelopes, websocket frames, buffered bodies,
+  map destinations. Duplicate, case-folded, and (for structs) unknown
+  keys are refused before the decode.
+- **`make red-tests`** runs the adversarial probes (`*_red_test.go`,
+  tagged `//go:build red`) that assert secure behaviour and fail while
+  a finding is open; `scripts/red-tests.sh Red` runs only the probes and
+  keeps the raw output at `.gofastr/red-tests.log`.
 - **`isolation.ListenAddr(projectDir, fallback)`** is the one call a
   hand-written `main` needs to bind where `gofastr dev`, a PaaS, or
   worktree isolation says: it reads `$PORT` as a bare port or a

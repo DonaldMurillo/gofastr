@@ -40,7 +40,7 @@ import (
 )
 
 var Analyzer = &analysis.Analyzer{
-	Name: "gofastrreflectset",
+	Name: "reflectset",
 	Doc:  "forbids reflect Set/SetString/… on an indexed Field value without a CanSet check; an unexported field panics at Set",
 	Run:  run,
 }

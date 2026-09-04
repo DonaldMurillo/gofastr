@@ -451,7 +451,13 @@ func scanSubscriber(r rowScanner) (*Subscriber, error) {
 	}
 	sub.Active = active != 0
 	if events != "" {
-		_ = json.Unmarshal([]byte(events), &sub.Events)
+		// A corrupt events column is an error, not "all events": the
+		// zero-value sub.Events would silently make the subscriber
+		// match nothing (or everything the caller defaults to), and the
+		// parse failure marches on as zero-value data no longer.
+		if err := json.Unmarshal([]byte(events), &sub.Events); err != nil {
+			return nil, fmt.Errorf("webhook: subscriber %s: corrupt events column: %w", sub.ID, err)
+		}
 	}
 	return &sub, nil
 }

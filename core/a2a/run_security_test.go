@@ -1,9 +1,11 @@
 package a2a
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -327,5 +329,64 @@ func TestFailedPushConfigLeavesNoOrphan(t *testing.T) {
 	if len(recs) != 0 {
 		t.Fatalf("refused send left %d orphaned task(s): %s in state %s has no run and will never settle",
 			len(recs), recs[0].Task.ID, recs[0].Task.Status.State)
+	}
+}
+
+// armingStore arms a GetTask panic only after the caller says so, so a
+// subscribe that read the task cleanly still panics on the next poll
+// read — inside pollEvents' ticker loop, the goroutine no per-request
+// recover net reaches.
+type armingStore struct {
+	Store
+	armed atomic.Bool
+}
+
+func (a *armingStore) GetTask(ctx context.Context, owner, id string) (*TaskRecord, error) {
+	if a.armed.Load() {
+		panic("super-secret-store-detail")
+	}
+	return a.Store.GetTask(ctx, owner, id)
+}
+
+// Property: a panicking Store read in pollEvents — the multi-replica
+// subscribe fallback's ticker loop, host-supplied code on a goroutine
+// with no per-request net — ends that one stream with an attributed
+// log instead of unwinding the process. The snapshot read on the
+// request path must still succeed first, so the panic lands exactly in
+// the loop pollGetTask guards.
+func TestPollStorePanicEndsStreamCleanly(t *testing.T) {
+	inner := NewMemoryStore()
+	st := &armingStore{Store: inner}
+	if err := st.CreateTask(context.Background(), rec("alice", "t1", "TASK_STATE_WORKING", t0)); err != nil {
+		t.Fatalf("seed task: %v", err)
+	}
+	var logBuf bytes.Buffer
+	h := newHarness(t, func(c *Config) {
+		c.Store = st
+		c.Logger = slog.New(slog.NewTextHandler(&logBuf, nil))
+	})
+
+	r := h.openStream("alice", MethodSubscribeToTask, map[string]any{"id": "t1"})
+	_, sr := r.nextResult(2 * time.Second) // snapshot: request-path GetTask done
+	if sr.Task == nil {
+		t.Fatalf("snapshot event carried no task")
+	}
+
+	// The next poll read panics; the stream must close (recovered,
+	// logged, ended) rather than hang or take the process down.
+	st.armed.Store(true)
+	r.eof(3 * time.Second)
+	if logged := logBuf.String(); !strings.Contains(logged, "poll read panicked") {
+		t.Errorf("SECURITY: [panic-isolation] the recovered poll panic was not attributed in the server log " +
+			"(want a \"poll read panicked\" line): a swallowed panic is indistinguishable from a healthy stream end")
+	}
+
+	// The server survives and keeps serving: the same subscribe on a
+	// disarmed store works again.
+	st.armed.Store(false)
+	r2 := h.openStream("alice", MethodSubscribeToTask, map[string]any{"id": "t1"})
+	_, sr2 := r2.nextResult(2 * time.Second)
+	if sr2.Task == nil || sr2.Task.ID != "t1" {
+		t.Fatalf("post-panic subscribe = %+v, want task t1 back", sr2.Task)
 	}
 }

@@ -31,10 +31,10 @@ func runCommand(ctx context.Context, dir, logPath string, env []string, program 
 	cmd.Stderr = &out
 	err := runOwnedCommand(cmd)
 	if logPath != "" {
-		if mkErr := os.MkdirAll(filepath.Dir(logPath), 0o755); mkErr != nil {
+		if mkErr := os.MkdirAll(filepath.Dir(logPath), 0o700); mkErr != nil {
 			return mkErr
 		}
-		if writeErr := os.WriteFile(logPath, out.Bytes(), 0o644); writeErr != nil && err == nil {
+		if writeErr := os.WriteFile(logPath, out.Bytes(), 0o600); writeErr != nil && err == nil {
 			return writeErr
 		}
 	}

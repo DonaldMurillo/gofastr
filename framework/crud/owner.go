@@ -236,17 +236,23 @@ func IsBrokeredCall(ctx context.Context) bool {
 // crossOwnerReadGranted reports whether the request context holds the
 // entity's declared CrossOwnerRead permission. Returns false when the
 // entity does not opt in (empty permission), when access.Can denies
-// (including the fail-closed "no policy in context" case), and, the F3
-// root-cause fix, unconditionally when the call was brokered through a
-// process module, so a delegated caller who holds CrossOwnerRead cannot
-// exercise it through a module. READ-ONLY by construction: only
-// ApplyOwnerScope / ApplyOwnerScopeCount consult it.
+// (including the fail-closed "no policy in context" case), when a
+// resource-aware Decider denies (the check routes through access.CanResource,
+// so the per-resource authority surface is consulted, not just the role
+// policy — the same seam requirePermission uses), and, the F3 root-cause
+// fix, unconditionally when the call was brokered through a process
+// module, so a delegated caller who holds CrossOwnerRead cannot exercise
+// it through a module. READ-ONLY by construction: only ApplyOwnerScope /
+// ApplyOwnerScopeCount consult it. The Ref carries ID "" because the lift
+// is collection-shaped: it answers "may this caller read across owners at
+// all", never "may they read this one row" — the per-row gates own that.
 func (ch *CrudHandler) crossOwnerReadGranted(ctx context.Context) bool {
 	if IsBrokeredCall(ctx) {
 		return false
 	}
 	perm := ch.Entity.Config.Scope.CrossOwnerRead
-	return perm != "" && access.Can(ctx, access.Permission(perm))
+	return perm != "" && access.CanResource(ctx, access.Permission(perm),
+		access.Ref{Type: ch.Entity.GetName(), ID: ""})
 }
 
 // ApplyOwnerScope adds an `<owner_field> = ?` predicate to a SELECT query

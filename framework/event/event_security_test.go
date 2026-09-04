@@ -5,6 +5,8 @@ import (
 	"errors"
 	"os"
 	"os/exec"
+	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -187,4 +189,85 @@ func TestEventBus_CancelRemovesOnlyOwnSubscription(t *testing.T) {
 		t.Errorf("sibling B received %d events, want 1 (cancel must not touch siblings)", bGots)
 	}
 	cancelB()
+}
+
+// ---------------------------------------------------------------------------
+// Property: panic isolation at the fanout bridge's publisher goroutine —
+// AttachFanout hands a framework-owned goroutine to host-supplied backend
+// code (fanout.Fanout.Publish); a panic there is recovered and logged
+// like the marshal-failure path, and the goroutine keeps draining the
+// documented lossy best-effort lane instead of killing the process.
+// ---------------------------------------------------------------------------
+
+const bridgePanicChildEnv = "GOFASTR_TEST_EVENT_BRIDGE_PANIC_CHILD"
+
+// TestBridgePublishPanicContained: a panicking fanout backend must not
+// kill the process from the bridge's publisher goroutine, and the
+// goroutine must survive to publish later events. Proven by re-exec.
+func TestBridgePublishPanicContained(t *testing.T) {
+	if os.Getenv(bridgePanicChildEnv) == "1" {
+		bridgePublishPanicChild()
+		return // unreachable; the child exits
+	}
+
+	cmd := exec.Command(os.Args[0],
+		"-test.run", "^TestBridgePublishPanicContained$",
+		"-test.count=1")
+	cmd.Env = append(os.Environ(), bridgePanicChildEnv+"=1")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("SECURITY: [bridge-publish-panic] a panicking fanout backend killed the whole process from the bridge's publisher goroutine: %v\n--- child output ---\n%s", err, out)
+	}
+	if strings.Contains(string(out), "panic:") {
+		t.Fatalf("SECURITY: [bridge-publish-panic] child reported a panic:\n%s", out)
+	}
+}
+
+// panicFanout panics on its first Publish (a backend bug) and succeeds
+// afterwards, so survival is observable: the second emit must still be
+// published by a living publisher goroutine.
+type panicFanout struct {
+	calls atomic.Int32
+}
+
+func (f *panicFanout) Publish(_ context.Context, _ string, _ []byte) error {
+	if f.calls.Add(1) == 1 {
+		panic("fanout backend bug on first publish")
+	}
+	return nil
+}
+
+func (f *panicFanout) Subscribe(_ string, _ func([]byte)) (func(), error) {
+	return func() {}, nil
+}
+
+// bridgePublishPanicChild is the child-side scenario. It never returns.
+func bridgePublishPanicChild() {
+	eb := event.NewEventBus()
+	f := &panicFanout{}
+	stop, err := event.AttachFanout(eb, f)
+	if err != nil {
+		os.Exit(10)
+	}
+	defer stop()
+
+	// First emit: the tap enqueues synchronously; the publisher goroutine
+	// calls f.Publish, which panics. Without the recover guard this
+	// terminates the process (exit status 2).
+	if err := eb.Emit(context.Background(), event.Event{Type: "bridge.ping", Data: map[string]any{"n": 1}}); err != nil {
+		os.Exit(11)
+	}
+	// Second emit: proves the publisher goroutine (and the process)
+	// survived the first panic and kept draining the bridge queue.
+	if err := eb.Emit(context.Background(), event.Event{Type: "bridge.ping", Data: map[string]any{"n": 2}}); err != nil {
+		os.Exit(12)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for f.calls.Load() < 2 && time.Now().Before(deadline) {
+		time.Sleep(2 * time.Millisecond)
+	}
+	if f.calls.Load() < 2 {
+		os.Exit(13) // publisher goroutine died or stalled: second publish never happened
+	}
+	os.Exit(0)
 }
