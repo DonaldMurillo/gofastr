@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 )
 
 // SQLInboundStore is a SQL-backed InboundStore. It mirrors SQLStore's
@@ -142,15 +143,36 @@ func (s *SQLInboundStore) GetEnvelope(ctx context.Context, id string) (*InboundE
 	return &e, nil
 }
 
-// UpdateEnvelope overwrites the mutable columns (status, attempts, last_error,
-// headers, updated_at) for e.ID. Source/payload/received_at are immutable.
+// UpdateEnvelope overwrites the mutable columns (status, last_error,
+// headers, updated_at) for e.ID. Source/payload/received_at are immutable,
+// and so is attempts: the counter is owned by the processing transition
+// ([SQLInboundStore.MarkEnvelopeProcessing] increments it in the store), so
+// e.Attempts is ignored here. Persisting a caller snapshot absolutely let
+// two overlapping processing passes both write the same snapshot+1 and
+// record two invocations as one.
 func (s *SQLInboundStore) UpdateEnvelope(ctx context.Context, e InboundEnvelope) error {
 	headers, err := encodeHeaders(e.Headers)
 	if err != nil {
 		return err
 	}
 	_, err = s.db.ExecContext(ctx, s.update(),
-		e.DedupeKey, headers, e.Status, e.Attempts, e.LastError, e.UpdatedAt, e.ID)
+		e.DedupeKey, headers, e.Status, e.LastError, e.UpdatedAt, e.ID)
+	return err
+}
+
+// MarkEnvelopeProcessing transitions an envelope to "processing" and
+// consumes one attempt, incrementing the counter IN THE STORE
+// (attempts = attempts + 1) rather than persisting a Go-side snapshot:
+// the queue's lease expiry can re-run the same envelope's job while a
+// slow first handler is still running, and two absolute snapshot writes
+// would under-count the invocations the attempts column exists to bound.
+// A missing id matches no row and is a no-op (the caller loaded the
+// envelope just before this).
+func (s *SQLInboundStore) MarkEnvelopeProcessing(ctx context.Context, id string) error {
+	_, err := s.db.ExecContext(ctx, fmt.Sprintf(
+		"UPDATE %s SET status = %s, attempts = attempts + 1, last_error = '', updated_at = %s WHERE id = %s",
+		s.table, s.placeholder(1), s.placeholder(2), s.placeholder(3)),
+		InboundStatusProcessing, time.Now().UTC(), id)
 	return err
 }
 
@@ -239,13 +261,16 @@ func (s *SQLInboundStore) selectOne() string {
 func (s *SQLInboundStore) update() string {
 	// dedupe_key is updatable: on the queue path the ingest handler writes
 	// it only AFTER a successful enqueue (see IngestHandler), so the durably-
-	// queued event can dedupe-ack the sender's redeliveries.
+	// queued event can dedupe-ack the sender's redeliveries. attempts is
+	// deliberately absent: the processing transition owns the counter
+	// (MarkEnvelopeProcessing), and an absolute settle write is the
+	// lost-update that under-counted overlapping processing passes.
 	return fmt.Sprintf(`UPDATE %s SET
-		dedupe_key = %s, headers = %s, status = %s, attempts = %s, last_error = %s, updated_at = %s
+		dedupe_key = %s, headers = %s, status = %s, last_error = %s, updated_at = %s
 		WHERE id = %s`,
 		s.table,
 		s.placeholder(1), s.placeholder(2), s.placeholder(3), s.placeholder(4), s.placeholder(5),
-		s.placeholder(6), s.placeholder(7))
+		s.placeholder(6))
 }
 
 func (s *SQLInboundStore) placeholder(n int) string {

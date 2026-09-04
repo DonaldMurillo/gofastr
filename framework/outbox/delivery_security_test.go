@@ -449,3 +449,77 @@ func TestCorruptPayloadNeverReachesHandler(t *testing.T) {
 		t.Errorf("last_error = %q, want it to name the unmarshal failure", d.LastError)
 	}
 }
+
+// ============================================================================
+// Pins a failure settle writing the attempts counter absolutely from the
+// claim-time snapshot, found by the 2026-09-04 red-probe round; fixed in
+// markDeliveryFailure by incrementing relatively (attempts = attempts + 1)
+// in both arms instead of persisting d.Attempts+1.
+// Property: the attempts column must count every handler invocation the
+// relay settled — a failure settle may never lower it below the number of
+// attempts that actually ran.
+// Surfaces: delivery.go markDeliveryFailure (both arms: the dead-letter
+// arm and the requeue-with-backoff arm), reached from relay.go
+// processDelivery for every claimed delivery whose handler fails.
+// ============================================================================
+
+// TestFailureSettleAttemptsMonotonic: two runners claim the same delivery
+// (lease expiry mid-handler) and both handler invocations fail; the
+// recorded attempts must equal the number of settled failures.
+func TestFailureSettleAttemptsMonotonic(t *testing.T) {
+	db, o := openOutbox(t, WithMaxAttempts(10), WithHandlerGrace(time.Hour))
+	ctx := context.Background()
+
+	o.Consume("c", "t", func(context.Context, event.Event) error {
+		return errors.New("handler failing under both runners")
+	})
+
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatalf("begin: %v", err)
+	}
+	id, err := o.Append(ctx, tx, "t", map[string]any{"k": 1})
+	if err != nil {
+		t.Fatalf("append: %v", err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("commit: %v", err)
+	}
+	if _, err := o.expandDeliveries(ctx); err != nil {
+		t.Fatalf("expand: %v", err)
+	}
+
+	// Runner 1 claims (attempts snapshot 0) and its handler is still
+	// running when the lease expires.
+	w1, err := o.claimDeliveries(ctx)
+	if err != nil || len(w1) != 1 {
+		t.Fatalf("W1 claim: %v (len %d)", err, len(w1))
+	}
+	// Lease expiry: a second relay re-claims the still-pending delivery
+	// and reads the same attempts snapshot (no settle has landed yet).
+	if _, err := db.Exec(fmt.Sprintf(
+		"UPDATE %s SET claimed_until = ? WHERE row_id = ? AND consumer = 'c'", o.qd()),
+		o.now().UTC().Add(-time.Hour), id); err != nil {
+		t.Fatalf("age W1 lease: %v", err)
+	}
+	w2, err := o.claimDeliveries(ctx)
+	if err != nil || len(w2) != 1 {
+		t.Fatalf("W2 re-claim: %v (len %d)", err, len(w2))
+	}
+	if w1[0].Attempts != 0 || w2[0].Attempts != 0 {
+		t.Fatalf("setup: claim snapshots were %d and %d, both want 0 (pre-settle)",
+			w1[0].Attempts, w2[0].Attempts)
+	}
+
+	// Both handlers fail; both settles run (the two-runner shape).
+	const settledFailures = 2
+	o.markDeliveryFailure(ctx, w1[0], errors.New("w1 failure"))
+	o.markDeliveryFailure(ctx, w2[0], errors.New("w2 failure"))
+
+	d := findDelivery(t, mustDeliveries(t, o, id), "c")
+	if d.Attempts != settledFailures {
+		t.Fatalf("SECURITY: [outbox] %d handler failures settled but the delivery records attempts=%d: "+
+			"the second settle overwrote the first with the same stale claim-time snapshot, so MaxAttempts "+
+			"bounds claim/settle cycles, not the handler invocations it exists to bound", settledFailures, d.Attempts)
+	}
+}

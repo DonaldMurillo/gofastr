@@ -485,6 +485,14 @@ func (m *Manager) tick(ctx context.Context) {
 		due, err = ls.ClaimDueDeliveries(ctx, now, 32, m.opts.LeasePeriod)
 	} else {
 		due, err = m.store.DueDeliveries(ctx, now, 32)
+		// The claim path consumes one attempt per claim (the stores bump
+		// the row); this plain-dequeue fallback has no claim, so the
+		// attempt is consumed here instead — the same one-bump-per-
+		// dequeue rule, keeping MaxAttempts reachable for non-leased
+		// stores. The settle still never writes the counter.
+		for i := range due {
+			due[i].Attempts++
+		}
 	}
 	if err != nil {
 		return
@@ -538,7 +546,12 @@ func (m *Manager) attempt(ctx context.Context, d Delivery) {
 		m.saveDelivery(d)
 		return
 	}
-	d.Attempts++
+	// d.Attempts already counts this attempt: the claim consumed it
+	// (ClaimDueDeliveries bumps the row and the snapshot; the
+	// non-leased fallback bumps it in tick). Bumping here again and
+	// persisting it absolutely is exactly the write that let a stale
+	// claimant's settle rewind the counter a re-claimant's claim had
+	// consumed, so the settle never writes attempts.
 	d.UpdatedAt = m.nowFn()
 	body := bytes.NewReader(d.Payload)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, sub.URL, body)

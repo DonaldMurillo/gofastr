@@ -318,7 +318,9 @@ handler)` + `ob.StartRelay(ctx)`.
   parent's `dispatched` bookkeeping (and retention/GC) lags by the grace.
 - **Dead-letter & replay.** A delivery that returns an error **or
   panics** (the relay reports a panicking consumer as a delivery error
-  rather than swallowing it) increments its `attempts` and schedules an
+  rather than swallowing it) increments its `attempts` — relatively, in
+  the settle itself, never from the claim-time snapshot, so two
+  overlapping runners under lease overrun both count — and schedules an
   exponential backoff. After `MaxAttempts` (default 10) it is marked
   `dead`. `Replay(rowID)` resets all dead/abandoned deliveries of a row;
   `ReplayConsumer(rowID, name)` resets one.

@@ -731,3 +731,64 @@ func TestDBStaleNackCannotTouchReclaimant(t *testing.T) {
 func nilIntMap() map[string]int { return nil }
 
 func nilIntSlice() []int { return nil }
+
+// ============================================================================
+// Pins a stale claimant's gate-release flipping the re-claimant's live row,
+// found by the 2026-09-04 red-probe round; fixed in DBQueue.release by
+// fencing the UPDATE on status='claimed' AND claim_token like Ack/Nack.
+// Property: a completion presented for a claim that is no longer current
+// must not mutate the current claimant's live row. This is the third
+// completion arm beside Ack and Nack (both pinned above): the gate-race
+// branch of workerLoop.
+// Surfaces: db.go DBQueue.release, reached from workerLoop's gate-race
+// window (claim → gate re-check) where an expired lease legitimately
+// re-claims the row under the stalled worker.
+// ============================================================================
+
+// TestDBReleaseCannotTouchReclaimant: W1 claims, stalls past its lease
+// inside the gate-race window, W2 re-claims; W1's late gate-release must
+// not settle, reschedule, or attempt-decrement W2's live claim.
+func TestDBReleaseCannotTouchReclaimant(t *testing.T) {
+	db, q := openDBQueue(t, 0)
+	ctx := context.Background()
+	q.RegisterHandler("gated", func(_ context.Context, _ Job) error { return nil })
+
+	if err := q.Enqueue(ctx, Job{ID: "j1", Type: "gated", MaxAttempts: 5}); err != nil {
+		t.Fatalf("enqueue: %v", err)
+	}
+	w1, err := q.Dequeue(ctx, "gated")
+	if err != nil {
+		t.Fatalf("W1 dequeue: %v", err)
+	}
+	// Expire W1's lease (the visibility timeout passing while it is still
+	// inside the claim→gate-check window), so W2 legitimately re-claims.
+	if _, err := db.Exec("UPDATE "+q.qt()+" SET claimed_at = $1 WHERE id = $2",
+		time.Now().UTC().Add(-time.Hour), w1.ID); err != nil {
+		t.Fatalf("age W1 claim: %v", err)
+	}
+	w2, err := q.Dequeue(ctx, "gated")
+	if err != nil {
+		t.Fatalf("W2 re-claim: %v", err)
+	}
+	if w2.ID != w1.ID || w2.ClaimToken == w1.ClaimToken {
+		t.Fatalf("setup: W2 did not re-claim W1's row under a fresh token")
+	}
+
+	// W1's stale gate-release arrives late (workerLoop's gate-race branch).
+	if err := q.release(ctx, w1); err != nil {
+		t.Fatalf("W1 release: %v", err)
+	}
+
+	var status, token string
+	var attempts int
+	if err := db.QueryRow("SELECT status, claim_token, attempts FROM "+q.qt()+" WHERE id = $1", w1.ID).
+		Scan(&status, &token, &attempts); err != nil {
+		t.Fatalf("read row: %v", err)
+	}
+	if status != "claimed" || token != w2.ClaimToken || attempts != 2 {
+		t.Fatalf("SECURITY: [queue] stale gate-release mutated the re-claimant's live claim: "+
+			"status=%q claim_token=%q(W2=%q) attempts=%d; want status=claimed, W2's token, attempts=2 "+
+			"(the stale release re-queued a job a live worker is executing and rewound its attempt count)",
+			status, token, w2.ClaimToken, attempts)
+	}
+}

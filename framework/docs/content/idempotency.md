@@ -38,7 +38,7 @@ import "github.com/DonaldMurillo/gofastr/core/middleware"
 app.Use(router.Middleware(middleware.Idempotency(middleware.IdempotencyConfig{
     // All fields optional; defaults shown except Principal (set it!).
     // Store:            middleware.NewMemoryIdempotencyStore(24 * time.Hour),
-    // TTL:              24 * time.Hour,
+    // TTL:              24 * time.Hour, // 0 keeps default; negative panics
     // MaxBodyBytes:     1 << 20,
     // MaxResponseBytes: 1 << 20,
     // Methods:          []string{POST, PUT, PATCH, DELETE},
@@ -162,7 +162,8 @@ both scope their `UPDATE`/`DELETE` by `key AND fingerprint`.
 
 Two stores are bundled:
 
-- `NewMemoryIdempotencyStore(ttl)`: single-process map.
+- `NewMemoryIdempotencyStore(ttl)`: single-process map. `ttl` 0 keeps
+  the 24 h default; negative panics at construction.
 - `NewSQLIdempotencyStore(db, opts...)`: SQL-backed (sqlite + postgres),
   creates `idempotency_keys` on first use. Options:
   - `WithSQLIdempotencyTable(name)`: override the default table name.

@@ -108,14 +108,35 @@ func TestSQLStore_DeliveryDueQuery(t *testing.T) {
 	}
 }
 
+// TestSQLStore_DeliveryUpdateRoundTrip pins the settle write's column
+// contract: status/last_error/next_attempt_at/updated_at round-trip, while
+// the attempts column is owned by the claim (ClaimDueDeliveries consumes
+// one per claim) and a settle must neither change nor rewind it.
 func TestSQLStore_DeliveryUpdateRoundTrip(t *testing.T) {
 	_, s := openSQLStore(t)
 	ctx := context.Background()
 	now := time.Now().Truncate(time.Second)
 	d := Delivery{ID: "d1", SubscriberID: "s", Event: "e", Payload: []byte("p"), Status: StatusPending, NextAttemptAt: now, CreatedAt: now, UpdatedAt: now}
-	_ = s.AddDelivery(ctx, d)
+	if err := s.AddDelivery(ctx, d); err != nil {
+		t.Fatalf("add: %v", err)
+	}
 
-	d.Attempts = 3
+	// Two claims consume two attempts (the crash-recovery shape: the
+	// first claim's lease expires, a second worker re-claims).
+	first, err := s.ClaimDueDeliveries(ctx, now, 1, time.Minute)
+	if err != nil || len(first) != 1 {
+		t.Fatalf("first claim: %v (n=%d)", err, len(first))
+	}
+	second, err := s.ClaimDueDeliveries(ctx, now.Add(2*time.Minute), 1, time.Minute)
+	if err != nil || len(second) != 1 {
+		t.Fatalf("recovery claim: %v (n=%d)", err, len(second))
+	}
+	if first[0].Attempts != 1 || second[0].Attempts != 2 {
+		t.Fatalf("claim snapshots = %d, %d; want 1 then 2 (one attempt consumed per claim)",
+			first[0].Attempts, second[0].Attempts)
+	}
+	// The settle carries a stale snapshot's Attempts; the store must ignore it.
+	d.Attempts = 99
 	d.Status = StatusDead
 	d.LastError = "boom"
 	d.UpdatedAt = now.Add(time.Minute)
@@ -128,8 +149,8 @@ func TestSQLStore_DeliveryUpdateRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}
-	if len(list) != 1 || list[0].Attempts != 3 || list[0].Status != StatusDead || list[0].LastError != "boom" || !list[0].NextAttemptAt.IsZero() {
-		t.Fatalf("update roundtrip: %+v", list)
+	if len(list) != 1 || list[0].Attempts != 2 || list[0].Status != StatusDead || list[0].LastError != "boom" || !list[0].NextAttemptAt.IsZero() {
+		t.Fatalf("update roundtrip: %+v (want attempts=2 from the two claims, dead, boom, no next attempt)", list)
 	}
 }
 

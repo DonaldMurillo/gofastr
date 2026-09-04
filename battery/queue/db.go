@@ -371,13 +371,24 @@ func (q *DBQueue) SetGate(gate func(jobType string) bool) {
 // attempt (attempts is decremented to undo the Dequeue bump). The job's
 // scheduled_at is pushed forward by gateDeferDelay so the worker doesn't
 // immediately re-claim it in a tight loop.
-func (q *DBQueue) release(ctx context.Context, jobID string) error {
+//
+// Like Ack and Nack, the UPDATE is fenced on status='claimed' AND the
+// claim_token Dequeue minted for THIS claim. The gate-race window this
+// closes from sits between the claim and the gate re-check: a worker whose
+// lease expired there has its row re-claimed under it, and an unfenced
+// release by bare job ID would flip the re-claimant's LIVE 'claimed' row
+// to 'pending' (a third worker then runs the handler concurrently with
+// the re-claimant) and rewind its attempts count — the same stale-claimant
+// hazard Ack/Nack fence against. A stale release matches no row and is a
+// no-op. Rows claimed before the claim_token column existed carry ” and
+// stay completable by a caller presenting no token.
+func (q *DBQueue) release(ctx context.Context, job Job) error {
 	_, err := q.db.ExecContext(ctx,
 		fmt.Sprintf(`UPDATE %s SET status='pending',
 			attempts = CASE WHEN attempts > 0 THEN attempts - 1 ELSE 0 END,
 			scheduled_at = $1
-			WHERE id = $2`, q.qt()),
-		q.now().UTC().Add(gateDeferDelay), jobID)
+			WHERE id = $2 AND status='claimed' AND claim_token = $3`, q.qt()),
+		q.now().UTC().Add(gateDeferDelay), job.ID, job.ClaimToken)
 	return err
 }
 
@@ -1043,7 +1054,7 @@ func (q *DBQueue) workerLoop(ctx context.Context, lane string) {
 		gate := q.gate
 		q.mu.RUnlock()
 		if gate != nil && !gateAllows(q.logger, gate, job.Type, job.ID) {
-			_ = q.release(ctx, job.ID)
+			_ = q.release(ctx, job)
 			continue
 		}
 		if err := q.runHandler(ctx, h, job); err != nil {

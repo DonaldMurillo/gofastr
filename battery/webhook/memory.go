@@ -2,6 +2,7 @@ package webhook
 
 import (
 	"context"
+	"fmt"
 	"sort"
 	"sync"
 	"time"
@@ -68,15 +69,23 @@ func (m *MemoryStore) AddDelivery(_ context.Context, d Delivery) error {
 	return nil
 }
 
+// UpdateDelivery persists a delivery's post-attempt state. The attempts
+// counter is owned by the claim (ClaimDueDeliveries consumes one attempt
+// per claim), so an existing row's attempts survive this write: d.Attempts
+// is a claim-time snapshot, and overwriting it absolutely let a stale
+// claimant's settle rewind the attempts a re-claimant's claim had consumed.
 func (m *MemoryStore) UpdateDelivery(_ context.Context, d Delivery) error {
 	m.mu.Lock()
-	if cur, ok := m.deliveries[d.ID]; ok && isTerminalStatus(cur.Status) && !isTerminalStatus(d.Status) {
-		// Fenced no-op: a stale claimant's non-terminal settle must
-		// not regress a terminal row (isTerminalStatus). No error:
-		// the write is stale, not failed — the same fenced no-op the
-		// queue's completions report for an outrun claim.
-		m.mu.Unlock()
-		return nil
+	if cur, ok := m.deliveries[d.ID]; ok {
+		d.Attempts = cur.Attempts
+		if isTerminalStatus(cur.Status) && !isTerminalStatus(d.Status) {
+			// Fenced no-op: a stale claimant's non-terminal settle must
+			// not regress a terminal row (isTerminalStatus). No error:
+			// the write is stale, not failed — the same fenced no-op the
+			// queue's completions report for an outrun claim.
+			m.mu.Unlock()
+			return nil
+		}
 	}
 	m.deliveries[d.ID] = d
 	m.mu.Unlock()
@@ -161,9 +170,20 @@ func (m *MemoryStore) DueDeliveries(_ context.Context, now time.Time, limit int)
 // pushes their NextAttemptAt to now+leasePeriod so a concurrent
 // claimer sees them as not-yet-due. Single-process by design, the
 // memory store can't span instances, but exposing the same interface
-// keeps Manager wiring uniform across store backends.
+// keeps Manager wiring uniform across store backends. A leasePeriod of
+// 0 keeps the 30s default; a negative one is rejected — a negative
+// lease can only be a sign or unit error, and folding it onto the
+// default would hand the caller a longer lease than they asked for.
+//
+// Each claim consumes one attempt (Attempts++ under the same lock), the
+// memory twin of SQLStore's `attempts = attempts + 1` claim UPDATE: a
+// worker that dies between claim and settle has still consumed a
+// delivery, so MaxAttempts bounds claims, not just landed settles.
 func (m *MemoryStore) ClaimDueDeliveries(_ context.Context, now time.Time, limit int, leasePeriod time.Duration) ([]Delivery, error) {
-	if leasePeriod <= 0 {
+	if leasePeriod < 0 {
+		return nil, fmt.Errorf("webhook: MemoryStore.ClaimDueDeliveries: leasePeriod must be >= 0 (got %v)", leasePeriod)
+	}
+	if leasePeriod == 0 {
 		leasePeriod = 30 * time.Second
 	}
 	if limit <= 0 {
@@ -187,12 +207,14 @@ func (m *MemoryStore) ClaimDueDeliveries(_ context.Context, now time.Time, limit
 	}
 	leaseUntil := now.Add(leasePeriod)
 	for _, d := range candidates {
+		d.Attempts++
 		d.NextAttemptAt = leaseUntil
 		d.UpdatedAt = leaseUntil
 		m.deliveries[d.ID] = d
 	}
-	// Reflect the lease in the returned snapshot.
+	// Reflect the lease and the consumed attempt in the returned snapshot.
 	for i := range candidates {
+		candidates[i].Attempts++
 		candidates[i].NextAttemptAt = leaseUntil
 		candidates[i].UpdatedAt = leaseUntil
 	}
