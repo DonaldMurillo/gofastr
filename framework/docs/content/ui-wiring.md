@@ -133,6 +133,20 @@ without a reload) is built from islands; the cookbook is
 Useful options:
 
 - `uihost.WithStaticDir("static")`: serve a static asset directory.
+  Reads are contained by an `os.Root` over the directory: a symlinked
+  file or subdirectory pointing outside it is refused (the request
+  falls through to page rendering) rather than served. Symlinks that
+  stay inside the directory keep working.
+- `uihost.SetStaticFS(fsys)`: serve static files from an `fs.FS`
+  instead of a directory (the embed route). A value that came from
+  `os.DirFS(dir)` is re-rooted through `os.OpenRoot(dir).FS()` at
+  installation, so reads are kernel-contained exactly like
+  `WithStaticDir`'s: a symlink inside `dir` pointing outside it is
+  refused (the request falls through to page rendering) rather than
+  served. `embed.FS` values pass through unchanged. A custom `fs.FS`
+  you write yourself must not follow symlinks out of its tree —
+  `os.Root.FS()` is the spelling for a disk-backed one; `embed.FS`
+  cannot carry symlinks at all.
 - `uihost.WithCustomCSS(css)`: append site CSS (e.g. `@font-face`
   rules) to `app.css`; combine with
   `uihost.ReadCustomCSSFile("static/app.css")` for a file you edit

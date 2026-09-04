@@ -21,7 +21,9 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"slices"
 	"sort"
@@ -108,6 +110,8 @@ type UIHost struct {
 	servingStarted      atomic.Bool                          // latched on the first full-shell render; RegisterExternalScript refuses after it
 	staticDir           string                               // directory to serve static files from
 	staticFS            fs.FS                                // embedded filesystem for static files
+	staticRootOnce      sync.Once                            // guards staticRoot init; staticDir reads are kernel-contained
+	staticRoot          *os.Root                             // os.Root over staticDir: static reads refuse symlinked escapes out of the static tree
 	llmMDPublic         bool                                 // when true, mount per-screen /llm.md + /llm-pages.md; default disabled (schema disclosure)
 	headHTML            string                               // raw HTML to inject into <head> (escape hatch)
 	lang                string                               // WithLang document language for host-built shells; EffectiveLang resolves it
@@ -576,9 +580,49 @@ func (ds *UIHost) StaticDir() string {
 }
 
 // SetStaticFS sets an embedded filesystem for serving static files.
+//
+// A disk-backed os.DirFS value is re-rooted through os.OpenRoot before
+// installation, so every later read (the two serve sites and the PWA
+// manifest lookup) is kernel-contained exactly like WithStaticDir's: a
+// symlink inside the directory pointing outside it is refused rather
+// than followed. If the directory cannot be opened as a root, the FS
+// is replaced by one whose every open fails closed with that error —
+// serving symlink-following reads from a directory that was not
+// verifiable at installation time is the worse failure. embed.FS and
+// every other fs.FS pass through unchanged; a custom FS must not
+// follow symlinks (os.Root.FS() is the spelling).
 func (ds *UIHost) SetStaticFS(fsys fs.FS) {
-	ds.staticFS = fsys
+	ds.staticFS = reRootDirFS(fsys)
 }
+
+// dirFSType is the dynamic type os.DirFS returns (the unexported
+// os.dirFS, a string type holding the directory), captured by
+// constructing one so reflect can recognize the shape without naming
+// the unexported type.
+var dirFSType = reflect.TypeOf(os.DirFS(""))
+
+// reRootDirFS returns fsys unchanged unless it is an os.DirFS value, in
+// which case it returns the kernel-contained os.Root.FS() view over the
+// same directory (or a fail-closed FS when the root cannot be opened).
+func reRootDirFS(fsys fs.FS) fs.FS {
+	if fsys == nil || reflect.TypeOf(fsys) != dirFSType {
+		return fsys
+	}
+	dir := reflect.ValueOf(fsys).String()
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		return failClosedFS{err: fmt.Errorf("static FS rooted at an unopenable directory: %w", err)}
+	}
+	return root.FS()
+}
+
+// failClosedFS is what SetStaticFS installs when an os.DirFS-backed
+// filesystem's directory cannot be opened as a root: every open fails
+// with the reason rather than following symlinks out of a directory
+// that was not verifiable at installation time.
+type failClosedFS struct{ err error }
+
+func (m failClosedFS) Open(string) (fs.File, error) { return nil, m.err }
 
 // HasStaticFS reports whether an embedded static FS is configured.
 func (ds *UIHost) HasStaticFS() bool {
@@ -2943,6 +2987,38 @@ func (ds *UIHost) mountPageLLMMD(r *router.Router) {
 	}
 }
 
+// staticRootOf returns the os.Root over staticDir, opening it on first
+// use. All staticDir reads go through it: os.Root refuses symlinked path
+// components that escape the static tree in the kernel, with no window
+// between the containment check and the open, where the previous
+// filepath.Abs + HasPrefix check was lexical only and served files from
+// outside the tree through a symlinked directory or file (2026-09-04
+// red-probe round). A staticDir that fails to open roots nothing and
+// static serving falls through to page rendering, matching the previous
+// behavior of an os.Stat miss on a missing directory.
+func (ds *UIHost) staticRootOf() *os.Root {
+	ds.staticRootOnce.Do(func() {
+		if ds.staticDir == "" {
+			return
+		}
+		root, err := os.OpenRoot(ds.staticDir)
+		if err != nil {
+			return
+		}
+		ds.staticRoot = root
+	})
+	return ds.staticRoot
+}
+
+// staticRel cleans a request path into its root-relative form for os.Root
+// calls: cleaning "/"+path collapses traversal segments against the leading
+// slash, so the result is either "" (the root itself) or a clean relative
+// path. os.Root then contains the rest (symlinked components, interior
+// "..").
+func staticRel(urlPath string) string {
+	return strings.TrimPrefix(path.Clean("/"+urlPath), "/")
+}
+
 // resolvesStaticOrScreen reports whether serveOrRender would produce
 // content for this request's path rather than a 404: a static file
 // (filesystem or embedded FS), a registered screen, or the favicon
@@ -2957,12 +3033,9 @@ func (ds *UIHost) resolvesStaticOrScreen(r *http.Request) bool {
 		return true
 	}
 	if path != "/" {
-		if ds.staticDir != "" {
-			filePath := filepath.Join(ds.staticDir, filepath.Clean(path))
-			absPath, _ := filepath.Abs(filePath)
-			absStatic, _ := filepath.Abs(ds.staticDir)
-			if strings.HasPrefix(absPath, absStatic+string(filepath.Separator)) || absPath == absStatic {
-				if info, err := os.Stat(filePath); err == nil && !info.IsDir() {
+		if root := ds.staticRootOf(); root != nil {
+			if rel := staticRel(path); rel != "" {
+				if info, err := root.Stat(filepath.FromSlash(rel)); err == nil && !info.IsDir() {
 					return true
 				}
 			}
@@ -3103,15 +3176,15 @@ func (ds *UIHost) serveOrRender(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if path != "/" {
-		if ds.staticDir != "" {
-			filePath := filepath.Join(ds.staticDir, filepath.Clean(path))
-			absPath, _ := filepath.Abs(filePath)
-			absStatic, _ := filepath.Abs(ds.staticDir)
-			if strings.HasPrefix(absPath, absStatic+string(filepath.Separator)) || absPath == absStatic {
-				if info, err := os.Stat(filePath); err == nil && !info.IsDir() {
-					devStaticNoStore(w)
-					http.ServeFile(w, r, filePath)
-					return
+		if root := ds.staticRootOf(); root != nil {
+			if rel := staticRel(path); rel != "" {
+				if info, statErr := root.Stat(filepath.FromSlash(rel)); statErr == nil && !info.IsDir() {
+					if f, openErr := root.Open(filepath.FromSlash(rel)); openErr == nil {
+						devStaticNoStore(w)
+						http.ServeContent(w, r, path, info.ModTime(), f)
+						_ = f.Close()
+						return
+					}
 				}
 			}
 		}

@@ -16,11 +16,12 @@ import (
 //
 // DiffSchema compares each registered entity's declared fields against the
 // live DB schema and emits the ALTER TABLE statements that would bring the
-// DB in line. Today the diff covers ADD COLUMN (entity has a field the DB
-// doesn't) and DROP COLUMN (DB has a column the entity no longer declares).
-// Type changes are intentionally out of scope: SQLite's ALTER COLUMN
-// support is too limited to do safely in-place, and Postgres type changes
-// often need data conversion which the diff can't infer.
+// DB in line. The diff covers ADD COLUMN, DROP COLUMN, RENAME COLUMN (with an
+// explicit Renames hint), and column type changes. Type changes are flagged
+// destructive: Postgres gets an in-place ALTER COLUMN TYPE, SQLite gets a
+// full table rebuild (see sqliteRebuildChange), and both are refused unless
+// the caller opts in — a type change can need data conversion the diff
+// cannot infer.
 
 // SchemaChange is one DDL fragment plus a human-friendly summary. Callers
 // can apply directly via db.Exec or stitch them into a migration file.
@@ -259,6 +260,12 @@ func diffEntityFromLive(ent *entity.Entity, all map[string]*entity.Entity, diale
 	// default, surfaced for review, never silently applied. Types are
 	// normalized per dialect (see canonicalType) so PG information_schema
 	// names ("character varying", "timestamp with time zone") don't
+	// false-positive. Postgres gets a per-column in-place ALTER; SQLite has
+	// no in-place ALTER COLUMN TYPE at all, so its retypes are collected and
+	// rendered as ONE table-rebuild change after the DROP loop (the rebuild
+	// must run last: it recreates the table from the entity, so it has to
+	// see the post-rename/post-add/post-drop column set).
+	var sqliteRetypes []retypeCol
 	for _, f := range ent.GetFields() {
 		if f.RawType != "" {
 			continue // operator-supplied raw type (domains, arrays, custom types), not reliably diffable against the live DB type, which reports the underlying type
@@ -282,10 +289,14 @@ func diffEntityFromLive(ent *entity.Entity, all map[string]*entity.Entity, diale
 		if err != nil {
 			return nil, fmt.Errorf("invalid column name %q: %w", f.Name, err)
 		}
+		if dialect == DialectSQLite {
+			sqliteRetypes = append(sqliteRetypes, retypeCol{name: f.Name, liveType: liveType, declaredType: declaredType})
+			continue
+		}
 		changes = append(changes, SchemaChange{
 			Summary:     fmt.Sprintf("%s: change column %s type %s → %s (destructive: data conversion may be required)", ent.GetName(), f.Name, liveType, declaredType),
-			SQL:         alterColumnTypeSQL(qtable, qcol, declaredType, dialect),
-			Down:        alterColumnTypeSQL(qtable, qcol, liveType, dialect),
+			SQL:         alterColumnTypeSQL(qtable, qcol, declaredType),
+			Down:        alterColumnTypeSQL(qtable, qcol, liveType),
 			Destructive: true,
 		})
 	}
@@ -324,6 +335,18 @@ func diffEntityFromLive(ent *entity.Entity, all map[string]*entity.Entity, diale
 			Down:        fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s", qtable, qcol, downType),
 			Destructive: true,
 		})
+	}
+
+	// The SQLite retype rebuild goes LAST: it recreates the table from the
+	// entity, so it must see the column set the renames/adds/drops above
+	// already converged. One change per table, no matter how many columns
+	// retyped — the rebuild converges every declared type at once.
+	if len(sqliteRetypes) > 0 {
+		rebuild, err := sqliteRebuildChange(ent, all, dialect, live, renameOldByNew, sqliteRetypes)
+		if err != nil {
+			return nil, err
+		}
+		changes = append(changes, rebuild)
 	}
 
 	return changes, nil
@@ -392,16 +415,145 @@ func typesEquivalent(declared, live string, dialect Dialect) bool {
 	return canonicalType(declared, dialect) == canonicalType(live, dialect)
 }
 
-// alterColumnTypeSQL renders the dialect-appropriate DDL for a column type
-// change. Postgres supports an in-place ALTER COLUMN TYPE (a data-specific
-// USING clause may be required and is left for the reviewer); SQLite has no
-// in-place ALTER COLUMN TYPE, so a comment flags the rebuild need rather than
-// emitting DDL that would silently no-op or fail.
-func alterColumnTypeSQL(qtable, qcol, newType string, dialect Dialect) string {
-	if dialect == DialectPostgres {
-		return fmt.Sprintf("ALTER TABLE %s ALTER COLUMN %s TYPE %s", qtable, qcol, newType)
+// alterColumnTypeSQL renders the Postgres DDL for a column type change: an
+// in-place ALTER COLUMN TYPE (a data-specific USING clause may be required
+// and is left for the reviewer). SQLite never reaches this function — its
+// retypes are rendered by sqliteRebuildChange, because SQLite has no
+// in-place ALTER COLUMN TYPE and a rendered comment would execute as a
+// no-op while being counted as applied.
+func alterColumnTypeSQL(qtable, qcol, newType string) string {
+	return fmt.Sprintf("ALTER TABLE %s ALTER COLUMN %s TYPE %s", qtable, qcol, newType)
+}
+
+// retypeCol is one column whose declared type drifted from the live/snapshot
+// type; SQLite retypes are collected into a single table rebuild.
+type retypeCol struct {
+	name         string
+	liveType     string
+	declaredType string
+}
+
+// sqliteRebuildChange renders the SQLite table rebuild that performs the
+// collected column type changes: create the new table, copy the shared
+// columns across, drop the old table, rename, then recreate the entity's
+// declared indices (DROP TABLE destroys them with the old table). This is
+// SQLite's own documented procedure for the ALTER COLUMN TYPE it does not
+// support; anything less either no-ops (a comment is not DDL) or loses data
+// (drop + re-add the column).
+//
+// Fidelity, stated plainly:
+//   - The new table is rendered from the ENTITY (columnDefs: types, PK,
+//     NOT NULL, defaults, FK clauses), the same single column-rendering
+//     path AutoMigrate uses, so the rebuild converges to exactly what a
+//     fresh deploy would create. Columns SQLite constraints that only
+//     existed on the old table (hand-added CHECKs, non-declared unique
+//     indices) are not carried over.
+//   - Live framework-managed columns the entity does not declare
+//     (created_at with timestamps off, etc.) are preserved, matching the
+//     DROP guard's posture, and copied across.
+//   - Row data is carried over by INSERT ... SELECT; values convert by
+//     SQLite column affinity. A value that cannot convert losslessly
+//     keeps its old storage class (SQLite's rule), so review the copy
+//     for exactly the columns named in the summary.
+//   - Down is empty: the only faithful inverse needs the pre-migration
+//     DDL with its full constraints, which neither the live column map
+//     nor the snapshot's column→type form carries. A column-map
+//     reconstruction would also double-apply the sibling ADD/DROP Downs
+//     that run around it in reverse order. The change is forward-only;
+//     SchemaChange.Down documents "empty when no safe inverse is known".
+//   - With foreign_keys on (GoFastr's driver default), DROP TABLE fails
+//     loudly when other rows still reference this table — re-export the
+//     referencing rows or settle them first.
+func sqliteRebuildChange(ent *entity.Entity, all map[string]*entity.Entity, dialect Dialect, live map[string]string, renameOldByNew map[string]string, retypes []retypeCol) (SchemaChange, error) {
+	qtable, err := query.SafeIdent(ent.GetTable())
+	if err != nil {
+		return SchemaChange{}, fmt.Errorf("invalid table name %q: %w", ent.GetTable(), err)
 	}
-	return fmt.Sprintf("-- SQLite has no in-place ALTER COLUMN TYPE; rebuild the table to set %s to %s", qcol, newType)
+	liveLower := make(map[string]string, len(live))
+	for k, v := range live {
+		liveLower[strings.ToLower(k)] = v
+	}
+
+	defs, err := columnDefs(ent, nil, dialect)
+	if err != nil {
+		return SchemaChange{}, err
+	}
+
+	// Copy list: declared columns that exist live (a rename target counts —
+	// the RENAME change above already ran, so the column carries its new
+	// name by the time the rebuild executes). Managed live columns are
+	// appended to both the new table and the copy list.
+	copyCols := make([]string, 0, len(live))
+	declaredLower := make(map[string]bool, len(ent.GetFields()))
+	for _, f := range ent.GetFields() {
+		low := strings.ToLower(f.Name)
+		declaredLower[low] = true
+		present := low
+		if old, renamed := renameOldByNew[low]; renamed {
+			present = old
+		}
+		if _, ok := liveLower[present]; !ok {
+			continue // being added by a sibling ADD change; its default covers it
+		}
+		q, err := query.SafeIdent(f.Name)
+		if err != nil {
+			return SchemaChange{}, fmt.Errorf("invalid column name %q: %w", f.Name, err)
+		}
+		copyCols = append(copyCols, q)
+	}
+	managed := make([]string, 0)
+	for name, typ := range live {
+		low := strings.ToLower(name)
+		if declaredLower[low] || !isFrameworkManagedColumn(low, ent) {
+			continue // undeclared non-managed columns were dropped by the DROP loop
+		}
+		managed = append(managed, name)
+		_ = typ
+	}
+	sort.Strings(managed)
+	for _, name := range managed {
+		q, err := query.SafeIdent(name)
+		if err != nil {
+			return SchemaChange{}, fmt.Errorf("invalid column name %q: %w", name, err)
+		}
+		defs = append(defs, fmt.Sprintf("%s %s", q, liveLower[strings.ToLower(name)]))
+		copyCols = append(copyCols, q)
+	}
+	if all != nil {
+		fks, err := foreignKeyClauses(ent, all)
+		if err != nil {
+			return SchemaChange{}, err
+		}
+		defs = append(defs, fks...)
+	}
+
+	summaryParts := make([]string, 0, len(retypes))
+	for _, r := range retypes {
+		summaryParts = append(summaryParts, fmt.Sprintf("%s type %s → %s", r.name, r.liveType, r.declaredType))
+	}
+
+	newTable := qtable + "__rebuild"
+	var b strings.Builder
+	fmt.Fprintf(&b, "CREATE TABLE %s (\n\t%s\n)", newTable, strings.Join(defs, ",\n\t"))
+	if len(copyCols) > 0 {
+		joined := strings.Join(copyCols, ", ")
+		fmt.Fprintf(&b, ";\nINSERT INTO %s (%s) SELECT %s FROM %s", newTable, joined, joined, qtable)
+	}
+	fmt.Fprintf(&b, ";\nDROP TABLE %s", qtable)
+	fmt.Fprintf(&b, ";\nALTER TABLE %s RENAME TO %s", newTable, qtable)
+	for _, idx := range ent.Config.Indices {
+		if len(idx.Columns) == 0 && idx.Expression == "" {
+			continue // same no-op rule as migrateEntity's index loop
+		}
+		b.WriteString(";\n")
+		b.WriteString(indexDDL(qtable, idx))
+	}
+	return SchemaChange{
+		Summary: fmt.Sprintf("%s: change column %s (destructive: SQLite cannot alter column types in place; table is rebuilt and rows are copied with affinity conversion)",
+			ent.GetName(), strings.Join(summaryParts, ", ")),
+		SQL:         b.String(),
+		Destructive: true,
+	}, nil
 }
 
 // queryer is the read-only subset of *sql.DB / *sql.Tx the live-schema

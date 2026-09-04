@@ -237,7 +237,7 @@ func TestRunMigrationDownNoTx_Protocol(t *testing.T) {
 func TestRunMigrationDownNoTx_FailureLeavesDirty(t *testing.T) {
 	// mark-dirty error.
 	m, mock := newTestMigrator(t)
-	m.Register(Migration{Version: 1, Name: "x", Down: "D", NoTransaction: true})
+	m.Register(Migration{Version: 1, Name: "x", Up: "SELECT 1", Down: "D", NoTransaction: true})
 	expectLock(mock)
 	expectCreateTable(mock)
 	expectSelectApplied(mock, []uint64{1})
@@ -249,7 +249,7 @@ func TestRunMigrationDownNoTx_FailureLeavesDirty(t *testing.T) {
 
 	// Down-exec error leaves the dirty row (no delete).
 	m2, mock2 := newTestMigrator(t)
-	m2.Register(Migration{Version: 1, Name: "x", Down: "BAD", NoTransaction: true})
+	m2.Register(Migration{Version: 1, Name: "x", Up: "SELECT 1", Down: "BAD", NoTransaction: true})
 	expectLock(mock2)
 	expectCreateTable(mock2)
 	expectSelectApplied(mock2, []uint64{1})
@@ -262,7 +262,7 @@ func TestRunMigrationDownNoTx_FailureLeavesDirty(t *testing.T) {
 
 	// Delete error after a successful Down.
 	m3, mock3 := newTestMigrator(t)
-	m3.Register(Migration{Version: 1, Name: "x", Down: "OK", NoTransaction: true})
+	m3.Register(Migration{Version: 1, Name: "x", Up: "SELECT 1", Down: "OK", NoTransaction: true})
 	expectLock(mock3)
 	expectCreateTable(mock3)
 	expectSelectApplied(mock3, []uint64{1})
