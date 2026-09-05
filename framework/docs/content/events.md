@@ -308,6 +308,15 @@ handler)` + `ob.StartRelay(ctx)`.
   `dispatched`/`dead`/`abandoned`) **and** it is older than the handler
   grace. It may complete with some deliveries dead; `Replay` /
   `ReplayConsumer` resurrects them.
+- **Handler budget (30s default).** Each handler invocation gets a
+  wall-clock budget (`outbox.WithHandlerTimeout`, 30s by default, the
+  same posture as both queue backends). At the deadline the handler's
+  context is cancelled; a handler that respects its context returns and
+  the delivery retries as usual, while one that blocks past it has its
+  delivery settled as failed — retries, siblings, and the rest of the
+  batch proceed, so a hung dependency cannot wedge the durable lane.
+  A handler that ignores its cancelled context cannot be killed; its
+  late side effects are the duplicate idempotency already covers.
 - **Completion is age-gated.** A parent is not marked `dispatched` until it
   is older than `WithHandlerGrace` (default 15m), even once every current
   delivery is terminal. This is what makes a rolling deploy that *adds* a

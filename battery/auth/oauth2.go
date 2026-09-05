@@ -380,8 +380,16 @@ func (p *OAuth2Plugin) callbackHandler() http.HandlerFunc {
 		}
 		// Canonicalize at the single consumer of every provider (#270):
 		// a provider reporting Bob@example.com must match an existing
-		// bob@example.com account instead of creating a duplicate.
-		info.Email = CanonicalEmail(info.Email)
+		// bob@example.com account instead of creating a duplicate. A
+		// provider asserting a DECOMPOSED (non-NFC) address fails the
+		// login outright: fail-closed beats creating an unmatchable
+		// twin identity for the same mailbox (round 3 unicode decision).
+		if info.Email, err = p.mgr.canonicalizeEmail(info.Email); err != nil {
+			slog.Warn("oauth email refused: not in composed Unicode form",
+				"plugin", "oauth2", "email_hash", hashedIdentifier(info.Email), "err", err)
+			writeAuthError(w, http.StatusBadRequest, errComposedEmailMessage)
+			return
+		}
 
 		// Bind the durable (provider, provider_id) link namespace to the
 		// STATE-VALIDATED registry key, NOT the provider-returned Name().

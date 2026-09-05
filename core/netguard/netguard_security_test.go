@@ -88,31 +88,40 @@ func TestRangeBoundariesExact(t *testing.T) {
 	families := []struct {
 		name          string
 		first, last   net.IP // inside the guarded block
-		before, after net.IP // one address outside each edge
+		before, after net.IP
+		// Expected verdict of the immediate neighbours. Every block but
+		// fec0::/10 sits next to public space on both sides, so those
+		// stay false; site-local's neighbours (fe80::/10 below, ff00::/8
+		// above) are themselves guarded ranges, so the neighbour verdict
+		// there is true and the public probe for mask width is fe00::,
+		// the first address a too-wide /8 mask would swallow.
+		beforeInternal, afterInternal bool
 	}{
 		{"loopback v4 127.0.0.0/8", net.ParseIP("127.0.0.0"), net.ParseIP("127.255.255.255"),
-			net.ParseIP("126.255.255.255"), net.ParseIP("128.0.0.0")},
+			net.ParseIP("126.255.255.255"), net.ParseIP("128.0.0.0"), false, false},
 		{"private v4 10.0.0.0/8", net.ParseIP("10.0.0.0"), net.ParseIP("10.255.255.255"),
-			net.ParseIP("9.255.255.255"), net.ParseIP("11.0.0.0")},
+			net.ParseIP("9.255.255.255"), net.ParseIP("11.0.0.0"), false, false},
 		{"private v4 172.16.0.0/12", net.ParseIP("172.16.0.0"), net.ParseIP("172.31.255.255"),
-			net.ParseIP("172.15.255.255"), net.ParseIP("172.32.0.0")},
+			net.ParseIP("172.15.255.255"), net.ParseIP("172.32.0.0"), false, false},
 		{"private v4 192.168.0.0/16", net.ParseIP("192.168.0.0"), net.ParseIP("192.168.255.255"),
-			net.ParseIP("192.167.255.255"), net.ParseIP("192.169.0.0")},
+			net.ParseIP("192.167.255.255"), net.ParseIP("192.169.0.0"), false, false},
 		{"link-local v4 169.254.0.0/16", net.ParseIP("169.254.0.0"), net.ParseIP("169.254.255.255"),
-			net.ParseIP("169.253.255.255"), net.ParseIP("169.255.0.0")},
+			net.ParseIP("169.253.255.255"), net.ParseIP("169.255.0.0"), false, false},
 		{"CGNAT 100.64.0.0/10", net.ParseIP("100.64.0.0"), net.ParseIP("100.127.255.255"),
-			net.ParseIP("100.63.255.255"), net.ParseIP("100.128.0.0")},
+			net.ParseIP("100.63.255.255"), net.ParseIP("100.128.0.0"), false, false},
 		{"unique-local fc00::/7", net.ParseIP("fc00::"), net.ParseIP("fdff:ffff:ffff:ffff:ffff:ffff:ffff:ffff"),
-			net.ParseIP("fbff:ffff:ffff:ffff:ffff:ffff:ffff:ffff"), net.ParseIP("fe00::")},
+			net.ParseIP("fbff:ffff:ffff:ffff:ffff:ffff:ffff:ffff"), net.ParseIP("fe00::"), false, false},
 		{"link-local v6 fe80::/10", net.ParseIP("fe80::"), net.ParseIP("febf:ffff:ffff:ffff:ffff:ffff:ffff:ffff"),
-			net.ParseIP("fe7f:ffff:ffff:ffff:ffff:ffff:ffff:ffff"), net.ParseIP("fec0::")},
+			net.ParseIP("fe7f:ffff:ffff:ffff:ffff:ffff:ffff:ffff"), net.ParseIP("fec0::"), false, true},
+		{"site-local v6 fec0::/10", net.ParseIP("fec0::"), net.ParseIP("feff:ffff:ffff:ffff:ffff:ffff:ffff:ffff"),
+			net.ParseIP("fe00::"), net.ParseIP("ff00::"), false, true},
 	}
 	for _, f := range families {
 		t.Run(f.name, func(t *testing.T) {
 			for _, c := range []struct {
 				ip       net.IP
 				internal bool
-			}{{f.first, true}, {f.last, true}, {f.before, false}, {f.after, false}} {
+			}{{f.first, true}, {f.last, true}, {f.before, f.beforeInternal}, {f.after, f.afterInternal}} {
 				if got := IsInternal(c.ip); got != c.internal {
 					t.Errorf("SECURITY: [netguard] IsInternal(%v) = %v at a %s boundary, want %v. "+
 						"Attack: an off-by-one mask is a public↔internal misclassification at the SSRF guard.", c.ip, got, f.name, c.internal)
@@ -122,6 +131,41 @@ func TestRangeBoundariesExact(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// Pins that deprecated IPv6 site-local unicast (fec0::/10, RFC 3879)
+// classifies as internal, found by the 2026-09-04 red-probe round; fixed
+// by adding the block to internalRange and rangeReason next to the
+// ULA/link-local checks.
+// Property: IsInternal classifies every address that cannot originate from
+// or route to the public internet as internal; site-local IPv6 (fec0::/10)
+// is reserved non-public space in that class, the same defense-in-depth
+// family as the 6to4 / IPv4-compatible prefixes the package already folds
+// in, so the predicate must not depend on current OS defaults refusing
+// the dial.
+// Surfaces: core/netguard/netguard.go::internalRange + rangeReason (the
+// ladder shared by IsInternal and Reason), which every outbound sink
+// (battery/webhook, framework/experimental/harness) gates on.
+func TestIsInternalSiteLocalV6(t *testing.T) {
+	for _, s := range []string{
+		"fec0::1",           // site-local unicast, first address of fec0::/10
+		"feff:ffff:ffff::1", // last /10 block address before ff00::/8 multicast
+		"fed0::dead:beef",   // interior of the range
+	} {
+		ip := net.ParseIP(s)
+		if ip == nil {
+			t.Fatalf("unparsable probe %q", s)
+		}
+		if !IsInternal(ip) {
+			t.Errorf("SECURITY: [netguard-sitelocal] IsInternal(%s) = false: fec0::/10 is "+
+				"RFC-3879 site-local space, non-routable from the public internet, and every "+
+				"outbound sink gates on this predicate — the same defense-in-depth class as "+
+				"the 6to4 / IPv4-compatible prefixes the package already folds in.", s)
+		}
+		if Reason(ip) == "" {
+			t.Errorf("SECURITY: [netguard-sitelocal] Reason(%s) = \"\": battery/webhook rejects via Reason, so an address IsInternal flags but Reason cannot name is a half-fix.", s)
+		}
 	}
 }
 

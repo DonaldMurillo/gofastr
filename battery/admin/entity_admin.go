@@ -10,19 +10,25 @@ package admin
 
 import (
 	"context"
+	"crypto/hkdf"
+	"crypto/hmac"
 	"crypto/rand"
+	"crypto/sha256"
+	"crypto/subtle"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"reflect"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
+	"unicode/utf8"
 
 	appui "github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/app/decide"
@@ -584,8 +590,8 @@ func (b *Battery) entitySave(ent *entity.Entity, edit bool) http.HandlerFunc {
 			for _, f := range editableFields(ent) {
 				vals[f.Name] = r.PostForm.Get(f.Name)
 			}
-			token := b.flash.put(&formFlash{values: vals,
-				general: "Could not re-verify which fields are write-only, so nothing was saved. Try the save again."})
+			token := b.setFlash(w, r, &formFlash{Values: vals,
+				General: "Could not re-verify which fields are write-only, so nothing was saved. Try the save again."})
 			dest := b.entityBase(ent) + "/new"
 			if edit {
 				dest = b.entityBase(ent) + "/edit/" + url.PathEscape(id)
@@ -604,7 +610,7 @@ func (b *Battery) entitySave(ent *entity.Entity, edit bool) http.HandlerFunc {
 			for _, f := range editableFields(ent) {
 				vals[f.Name] = r.PostForm.Get(f.Name)
 			}
-			token := b.flash.put(&formFlash{values: vals, fieldErrs: formErrs, general: "Please correct the highlighted fields."})
+			token := b.setFlash(w, r, &formFlash{Values: vals, FieldErrs: formErrs, General: "Please correct the highlighted fields."})
 			dest := b.entityBase(ent) + "/new"
 			if edit {
 				dest = b.entityBase(ent) + "/edit/" + url.PathEscape(id)
@@ -633,7 +639,7 @@ func (b *Battery) entitySave(ent *entity.Entity, edit bool) http.HandlerFunc {
 		for _, f := range editableFields(ent) {
 			vals[f.Name] = r.PostForm.Get(f.Name)
 		}
-		token := b.flash.put(&formFlash{values: vals, fieldErrs: crudFieldErrors(raw), general: crudErrorMessage(raw)})
+		token := b.setFlash(w, r, &formFlash{Values: vals, FieldErrs: crudFieldErrors(raw), General: crudErrorMessage(raw)})
 		dest := b.entityBase(ent) + "/new"
 		if edit {
 			dest = b.entityBase(ent) + "/edit/" + url.PathEscape(id)
@@ -784,55 +790,188 @@ func titleCase(s string) string {
 	return strings.ToUpper(s[:1]) + s[1:]
 }
 
-// ----- flash store ----------------------------------------------------------
+// ----- flash cookie ----------------------------------------------------------
 
-// formFlash carries a failed submission back to the re-rendered form.
+// formFlash carries a failed submission back to the re-rendered form. It
+// travels in a short-lived HMAC-signed cookie (the sessions pattern: signed
+// with a key derived from the app secret), so ANY replica holding the secret
+// renders a redirect issued by any other and no server RAM is involved.
 type formFlash struct {
-	values    map[string]string
-	fieldErrs map[string]string
-	general   string
-	created   time.Time
+	Values    map[string]string `json:"v"`
+	FieldErrs map[string]string `json:"f"`
+	General   string            `json:"g"`
+	Created   int64             `json:"c"` // unix seconds; TTL-checked on read
+	Token     string            `json:"t"` // must match the ?e= query token on read
 }
 
-// flashStore holds short-lived form re-render payloads keyed by an opaque
-// token carried in the redirect URL. Entries are one-shot (popped on read) and
-// expire after flashTTL.
-type flashStore struct {
-	mu   sync.Mutex
-	data map[string]*formFlash
+const (
+	// flashTTL bounds the flash cookie's life (Max-Age on write, age check
+	// on read; the signed timestamp wins over a doctored Max-Age).
+	flashTTL = 2 * time.Minute
+
+	// flashCookieName is the signed cookie carrying the form flash across
+	// the PRG redirect.
+	flashCookieName = "gofastr_admin_flash"
+
+	// maxFlashBytes caps the signed flash payload. A larger flash drops
+	// the submitted values first, then the field errors, keeping the
+	// general error (truncated as the last resort) so the re-rendered
+	// form always names WHY the save was refused.
+	maxFlashBytes = 4 << 10 // 4 KiB
+
+	// flashMACContext domain-separates the flash MAC (and its HKDF info
+	// string) from any other use of the same app secret.
+	flashMACContext = "gofastr-admin-flash-v1"
+
+	// minFlashSecretLen is the floor below which Config.Secret is treated
+	// as unset (self-minted per-boot key + one Warn): a too-short secret
+	// weakens nothing else but would give the flash a false sense of
+	// cross-replica support.
+	minFlashSecretLen = 16
+)
+
+// flashSigningKey returns the HMAC key for the flash cookie, derived from
+// Config.Secret (the same value as framework.WithSecret / GOFASTR_SECRET)
+// via HKDF-SHA256. With no usable secret it self-mints a per-boot key — the
+// single-replica fallback, the same posture as the uihost session key — and
+// says so once: a multi-replica deployment that forgot the secret loses the
+// flash exactly where it would also lose sessions, the failure the scaling
+// docs already describe.
+func (b *Battery) flashSigningKey() []byte {
+	b.flashKeyOnce.Do(func() {
+		if len(b.cfg.Secret) >= minFlashSecretLen {
+			if k, err := hkdf.Key(sha256.New, []byte(b.cfg.Secret), nil, flashMACContext, 32); err == nil {
+				b.flashKey = k
+				return
+			}
+		}
+		var k [32]byte
+		if _, err := rand.Read(k[:]); err != nil {
+			panic(fmt.Sprintf("admin: crypto/rand failed while minting the flash signing key: %v", err))
+		}
+		b.flashKey = k[:]
+		b.logger().Warn("admin: Config.Secret is not set; the form-flash cookie signs with a per-boot key, so a redirect issued by one replica renders WITHOUT its flash on another. Set admin.Config.Secret to the same value as framework.WithSecret / GOFASTR_SECRET on every replica.")
+	})
+	return b.flashKey
 }
 
-const flashTTL = 2 * time.Minute
+func (b *Battery) setFlash(w http.ResponseWriter, r *http.Request, f *formFlash) string {
+	f.Created = time.Now().Unix()
+	f.Token = randToken()
+	payload := marshalFlashCapped(f)
+	mac := hmac.New(sha256.New, b.flashSigningKey())
+	mac.Write([]byte(flashMACContext))
+	mac.Write(payload)
+	http.SetCookie(w, &http.Cookie{
+		Name:     flashCookieName,
+		Value:    base64.RawURLEncoding.EncodeToString(payload) + "." + base64.RawURLEncoding.EncodeToString(mac.Sum(nil)),
+		Path:     b.cfg.PathPrefix,
+		MaxAge:   int(flashTTL.Seconds()),
+		HttpOnly: true,
+		// Secure everywhere except a plaintext loopback dev origin, the
+		// uihost session-cookie posture: the flash carries the operator's
+		// submitted values, so it must never ride a plaintext non-loopback
+		// origin where a network observer could read it.
+		Secure:   flashCookieSecure(r),
+		SameSite: http.SameSiteLaxMode,
+	})
+	return f.Token
+}
 
-func newFlashStore() *flashStore { return &flashStore{data: map[string]*formFlash{}} }
+// flashCookieSecure mirrors the uihost's useSecureSessionCookie: Secure on
+// for TLS (directly or via X-Forwarded-Proto) and for every non-loopback
+// origin, off only for plaintext loopback dev, where a Secure cookie can't
+// round-trip.
+func flashCookieSecure(r *http.Request) bool {
+	if r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https") {
+		return true
+	}
+	host := r.Host
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	host = strings.TrimPrefix(strings.TrimSuffix(host, "]"), "[")
+	switch strings.ToLower(host) {
+	case "localhost", "127.0.0.1", "::1":
+		return false
+	}
+	return true
+}
 
-func (s *flashStore) put(f *formFlash) string {
-	f.created = time.Now()
-	tok := randToken()
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	// Opportunistic GC so the map can't grow unbounded under abandoned flashes.
-	for k, v := range s.data {
-		if time.Since(v.created) > flashTTL {
-			delete(s.data, k)
+// readFlash verifies and decodes the flash cookie for the given ?e= token.
+// Fail-closed on every anomaly (absent, oversized, malformed, bad MAC,
+// expired, token mismatch): an unverifiable flash renders an empty form,
+// never an attacker-chosen one.
+func (b *Battery) readFlash(r *http.Request, token string) *formFlash {
+	if token == "" {
+		return nil
+	}
+	c, err := r.Cookie(flashCookieName)
+	if err != nil || c.Value == "" {
+		return nil
+	}
+	payloadB64, macB64, ok := strings.Cut(c.Value, ".")
+	if !ok {
+		return nil
+	}
+	// DecodeString with a length check BEFORE parsing anything: a giant
+	// cookie is refused without allocating a buffer for it.
+	if len(payloadB64) > base64.RawURLEncoding.EncodedLen(maxFlashBytes) {
+		return nil
+	}
+	payload, err := base64.RawURLEncoding.DecodeString(payloadB64)
+	if err != nil || len(payload) > maxFlashBytes {
+		return nil
+	}
+	mac, err := base64.RawURLEncoding.DecodeString(macB64)
+	if err != nil {
+		return nil
+	}
+	h := hmac.New(sha256.New, b.flashSigningKey())
+	h.Write([]byte(flashMACContext))
+	h.Write(payload)
+	if !hmac.Equal(mac, h.Sum(nil)) {
+		return nil
+	}
+	var f formFlash
+	if json.Unmarshal(payload, &f) != nil {
+		return nil
+	}
+	if subtle.ConstantTimeCompare([]byte(f.Token), []byte(token)) != 1 {
+		return nil
+	}
+	if time.Since(time.Unix(f.Created, 0)) > flashTTL {
+		return nil
+	}
+	return &f
+}
+
+// marshalFlashCapped serialises f within maxFlashBytes, degrading in the
+// documented order: submitted values first, then field errors, keeping the
+// general error (halved on a rune boundary until it fits) so the re-render
+// always names the failure. The empty flash always fits, so the loop
+// terminates.
+func marshalFlashCapped(f *formFlash) []byte {
+	for {
+		b, err := json.Marshal(f)
+		if err == nil && len(b) <= maxFlashBytes {
+			return b
+		}
+		switch {
+		case f.Values != nil:
+			f.Values = nil
+		case f.FieldErrs != nil:
+			f.FieldErrs = nil
+		case len(f.General) > 0:
+			cut := len(f.General) / 2
+			for cut > 0 && !utf8.ValidString(f.General[:cut]) {
+				cut--
+			}
+			f.General = f.General[:cut]
+		default:
+			return []byte("{}")
 		}
 	}
-	s.data[tok] = f
-	return tok
-}
-
-func (s *flashStore) pop(tok string) *formFlash {
-	if tok == "" {
-		return nil
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	f := s.data[tok]
-	delete(s.data, tok)
-	if f == nil || time.Since(f.created) > flashTTL {
-		return nil
-	}
-	return f
 }
 
 func randToken() string {

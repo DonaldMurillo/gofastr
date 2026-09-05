@@ -127,6 +127,36 @@ type AuthConfig struct {
 	// nil disables auditing entirely, emit calls are no-ops. Wire it
 	// with auth.NewSQLAuditSink(db, "") for the one-line default.
 	AuditSink AuditSink
+
+	// RegisterEmailSender, when non-nil, receives the duplicate-
+	// registration notice mailed to the EXISTING holder when an
+	// anonymous caller registers with an address that already has an
+	// account. It is the register twin of forgot-password's uniform
+	// response: the caller gets the same 202 either way, so account
+	// existence stays unreadable, while the holder learns someone
+	// tried. Delivery runs off the timed path, after the response is
+	// decided. nil (the default) skips the notice — the response is
+	// uniform either way.
+	RegisterEmailSender EmailSender
+
+	// CanonicalizeEmail, when set, replaces the battery's default email
+	// canonicalization at EVERY ingestion point (register, login,
+	// password reset, magic link, OAuth email matching, the per-account
+	// login limiter key). The default (auth.CanonicalEmail) trims,
+	// lowercases, and REFUSES decomposed Unicode input — see its doc
+	// for coverage. x/text/unicode/norm is deliberately not a framework
+	// dependency, so deployments needing full NFC folding install it
+	// here:
+	//
+	//	import "golang.org/x/text/unicode/norm"
+	//
+	//	CanonicalizeEmail: func(e string) (string, error) {
+	//	    return norm.NFC.String(strings.ToLower(strings.TrimSpace(e))), nil
+	//	},
+	//
+	// The function must be safe for concurrent use. An error from it
+	// fails the request with 400 at every email-ingesting endpoint.
+	CanonicalizeEmail func(email string) (string, error)
 }
 
 // defaults fills in zero values with sensible defaults.
@@ -376,6 +406,17 @@ func PluginAs[T AuthPlugin](m *AuthManager, name string) (T, error) {
 		return zero, fmt.Errorf("auth: plugin %q is not %T", name, zero)
 	}
 	return typed, nil
+}
+
+// canonicalizeEmail applies AuthConfig.CanonicalizeEmail when set and
+// the package default (CanonicalEmail) otherwise, so the override is
+// total: every email ingestion point in the battery funnels through
+// here.
+func (m *AuthManager) canonicalizeEmail(email string) (string, error) {
+	if m.config.CanonicalizeEmail != nil {
+		return m.config.CanonicalizeEmail(email)
+	}
+	return CanonicalEmail(email)
 }
 
 // Config returns the auth configuration (read-only copy).

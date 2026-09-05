@@ -941,7 +941,9 @@ func TestOAuth_RefusesEmailCollisionWithExistingAccount(t *testing.T) {
 	if store.createCalls != 0 {
 		t.Fatalf("must not create a new user when email already taken; got %d create calls", store.createCalls)
 	}
-	// 409 is the conventional response for "email already in use, link from settings".
+	// 409 here is the OAuth-flow-specific refusal (the caller has a
+	// verified IdP identity, so this is not an anonymous oracle — unlike
+	// /auth/register, which now answers both branches identically).
 	if w.Code != http.StatusConflict {
 		t.Fatalf("expected 409 conflict, got %d (body=%s)", w.Code, w.Body.String())
 	}

@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"maps"
 	"net/http"
+	"sort"
 	"strconv"
 	"sync"
 	"time"
@@ -109,6 +110,17 @@ type IdempotencyConfig struct {
 	Principal        func(r *http.Request) string
 	FailOpen         bool
 	Logger           *slog.Logger
+	// MaxStoreEntries caps how many entries the DEFAULT in-memory store
+	// (Store == nil) retains; at the cap the store sheds idle entries
+	// first (least recently used), in-flight claims last. 0 keeps the
+	// default, 100_000 (the framework/ratelimit maxKeys precedent).
+	// Ignored when Store is set — a custom store owns its own bounds.
+	MaxStoreEntries int
+	// MaxStoreEntryBytes caps the retained footprint of one cached
+	// response (body + headers) in the default store; a larger response
+	// is dropped at Finish and the key re-executes instead of replaying.
+	// 0 keeps the default, 1 MiB. Ignored when Store is set.
+	MaxStoreEntryBytes int64
 }
 
 // headersStrippedFromReplay are response headers the middleware never
@@ -150,7 +162,11 @@ func Idempotency(cfg IdempotencyConfig) Middleware {
 		cfg.Methods = []string{http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete}
 	}
 	if cfg.Store == nil {
-		cfg.Store = NewMemoryIdempotencyStore(cfg.TTL)
+		opts := []MemoryIdempotencyOption{
+			WithMemoryStoreMaxEntries(cfg.MaxStoreEntries),
+			WithMemoryStoreMaxEntryBytes(cfg.MaxStoreEntryBytes),
+		}
+		cfg.Store = NewMemoryIdempotencyStore(cfg.TTL, opts...)
 	}
 	if cfg.Logger == nil {
 		cfg.Logger = slog.Default()
@@ -425,34 +441,52 @@ func (r *idempotencyRecorder) handlerHeaders() http.Header {
 	return out
 }
 
+// defaultMaxIdemEntries caps how many entries the in-process store retains
+// at once. The store key is client-chosen (the Idempotency-Key header, no
+// auth required), so without a cap a flood of unique keys grows the map
+// until OOM — the same shape framework/ratelimit's maxKeys guards. The cap
+// is far above any legitimate concurrent-key count and eviction is
+// idle-first, so a flood can only evict flood.
+const defaultMaxIdemEntries = 100_000
+
+// defaultMaxIdemEntryBytes caps the retained footprint of ONE cached
+// response (body + headers). It re-bounds the store even when a host
+// raises the middleware-level MaxResponseBytes, and matches that default.
+const defaultMaxIdemEntryBytes = 1 << 20
+
 // memoryIdempotencyStore is the default in-process IdempotencyStore.
 // Entries expire after TTL; in-flight claims expire faster (30s) so a
-// crashed handler doesn't lock out retries forever. An optional
-// maxEntries cap evicts the oldest entries when full so a flood of
-// unique keys cannot exhaust process memory.
+// crashed handler doesn't lock out retries forever. The store is bounded
+// by default: at most maxEntries entries (idle-first eviction when the
+// cap is hit) and at most maxEntryBytes retained per entry (an oversized
+// response is dropped rather than cached), so a flood of unique keys
+// cannot exhaust process memory.
 type memoryIdempotencyStore struct {
-	ttl         time.Duration
-	inFlightTTL time.Duration
-	maxEntries  int // 0 = unlimited
-	mu          sync.Mutex
-	entries     map[string]*idemEntry
-	lastReap    time.Time
+	ttl           time.Duration
+	inFlightTTL   time.Duration
+	maxEntries    int
+	maxEntryBytes int
+	mu            sync.Mutex
+	entries       map[string]*idemEntry
+	lastReap      time.Time
 }
 
 type idemEntry struct {
 	fingerprint string
 	resp        *IdempotentResponse // nil while in-flight
 	expires     time.Time
-	createdAt   time.Time // for LRU-by-creation eviction when maxEntries is set
+	lastAccess  time.Time // idle-first eviction rank: touched by Begin hits and Finish
 }
 
 // MemoryIdempotencyOption configures the in-process store.
 type MemoryIdempotencyOption func(*memoryIdempotencyStore)
 
-// WithMemoryStoreMaxEntries caps the number of resident entries. When
-// the cap is hit, the oldest entry (by creation time) is evicted to
-// make room. Default is unlimited; set this when accepting traffic
-// from anywhere a single attacker could submit unique keys forever.
+// WithMemoryStoreMaxEntries caps the number of resident entries. When the
+// cap is hit the store sheds idle entries first (least recently used),
+// down to a low-water mark so the shed runs at most once per ~10% of the
+// cap rather than on every insert; in-flight claims are evicted only when
+// every entry is in-flight. Defaults to 100_000 (the framework/ratelimit
+// maxKeys precedent); n <= 0 keeps the default.
 func WithMemoryStoreMaxEntries(n int) MemoryIdempotencyOption {
 	return func(s *memoryIdempotencyStore) {
 		if n > 0 {
@@ -461,9 +495,25 @@ func WithMemoryStoreMaxEntries(n int) MemoryIdempotencyOption {
 	}
 }
 
+// WithMemoryStoreMaxEntryBytes caps the retained footprint of one cached
+// response (body + headers). A response larger than the cap is not
+// retained: the entry is dropped at Finish, the client still received the
+// live response, and the next request with the same key re-executes
+// rather than replays. Defaults to 1 MiB (matching MaxResponseBytes);
+// n <= 0 keeps the default.
+func WithMemoryStoreMaxEntryBytes(n int64) MemoryIdempotencyOption {
+	return func(s *memoryIdempotencyStore) {
+		if n > 0 {
+			s.maxEntryBytes = int(n)
+		}
+	}
+}
+
 // NewMemoryIdempotencyStore returns an in-process IdempotencyStore.
 // Suitable for single-instance deployments and tests. Use a Redis- or
 // DB-backed implementation behind the same interface for clusters.
+// The store is bounded by default (defaultMaxIdemEntries entries,
+// defaultMaxIdemEntryBytes per entry); see the options to change either.
 //
 // ttl 0 keeps the 24h default. A negative ttl panics: it can only be a
 // sign or unit error, and substituting the default would turn the
@@ -477,9 +527,11 @@ func NewMemoryIdempotencyStore(ttl time.Duration, opts ...MemoryIdempotencyOptio
 		ttl = 24 * time.Hour
 	}
 	s := &memoryIdempotencyStore{
-		ttl:         ttl,
-		inFlightTTL: 30 * time.Second,
-		entries:     map[string]*idemEntry{},
+		ttl:           ttl,
+		inFlightTTL:   30 * time.Second,
+		maxEntries:    defaultMaxIdemEntries,
+		maxEntryBytes: defaultMaxIdemEntryBytes,
+		entries:       map[string]*idemEntry{},
 	}
 	for _, opt := range opts {
 		opt(s)
@@ -492,11 +544,6 @@ func (s *memoryIdempotencyStore) Begin(_ context.Context, key, fingerprint strin
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if now.Sub(s.lastReap) > time.Minute {
-		s.reapLocked(now)
-		s.lastReap = now
-	}
-
 	if e, ok := s.entries[key]; ok && now.Before(e.expires) {
 		if e.fingerprint != fingerprint {
 			return nil, false, ErrFingerprintMismatch
@@ -504,31 +551,59 @@ func (s *memoryIdempotencyStore) Begin(_ context.Context, key, fingerprint strin
 		if e.resp == nil {
 			return nil, false, ErrInFlight
 		}
+		e.lastAccess = now
 		return e.resp, true, nil
 	}
 
-	// Evict oldest when at capacity. Comparing createdAt across the
-	// map is O(n) but n is bounded by maxEntries and this only fires
-	// when at the cap.
+	// Shed idle entries when at capacity, BEFORE inserting the new claim,
+	// so the map is bounded under a unique-key flood. maxEntries == 0
+	// (a hand-built store literal, never the New constructor) means
+	// unlimited and skips the shed.
 	if s.maxEntries > 0 && len(s.entries) >= s.maxEntries {
-		var oldestKey string
-		var oldestAt time.Time
-		for k, e := range s.entries {
-			if oldestKey == "" || e.createdAt.Before(oldestAt) {
-				oldestKey = k
-				oldestAt = e.createdAt
-			}
-		}
-		if oldestKey != "" {
-			delete(s.entries, oldestKey)
-		}
+		s.evictLocked()
 	}
 	s.entries[key] = &idemEntry{
 		fingerprint: fingerprint,
 		expires:     now.Add(s.inFlightTTL),
-		createdAt:   now,
+		lastAccess:  now,
 	}
 	return nil, false, nil
+}
+
+// evictLocked sheds entries down to a low-water mark (90% of the cap) so
+// the O(n) scan runs at most once per ~10% of the cap rather than on every
+// insert under sustained flood — the framework/ratelimit evictLocked
+// precedent. The victim order is idle-first:
+//
+//   - completed entries (resp != nil) are shed before in-flight claims;
+//     dropping an in-flight claim opens a concurrent-execution window for
+//     that key, so claims are only shed when EVERY entry is in-flight;
+//   - within each class, the least recently accessed entry goes first, so
+//     a flood of fresh keys can only evict flood — a key that is being
+//     replayed stays warm.
+func (s *memoryIdempotencyStore) evictLocked() {
+	lowWater := s.maxEntries * 9 / 10
+	type victim struct {
+		key        string
+		inFlight   bool
+		lastAccess time.Time
+	}
+	ranked := make([]victim, 0, len(s.entries))
+	for k, e := range s.entries {
+		ranked = append(ranked, victim{key: k, inFlight: e.resp == nil, lastAccess: e.lastAccess})
+	}
+	sort.Slice(ranked, func(i, j int) bool {
+		if ranked[i].inFlight != ranked[j].inFlight {
+			return !ranked[i].inFlight
+		}
+		if !ranked[i].lastAccess.Equal(ranked[j].lastAccess) {
+			return ranked[i].lastAccess.Before(ranked[j].lastAccess)
+		}
+		return ranked[i].key < ranked[j].key // deterministic tie-break under one clock tick
+	})
+	for i := 0; i < len(ranked) && len(s.entries) > lowWater; i++ {
+		delete(s.entries, ranked[i].key)
+	}
 }
 
 func (s *memoryIdempotencyStore) Finish(_ context.Context, key, fingerprint string, resp *IdempotentResponse) error {
@@ -552,9 +627,32 @@ func (s *memoryIdempotencyStore) Finish(_ context.Context, key, fingerprint stri
 		delete(s.entries, key)
 		return nil
 	}
+	// Per-entry byte cap: an oversized response is dropped, not retained.
+	// The client already received the live response; the cost of dropping
+	// is that the next request with this key re-executes instead of
+	// replaying — availability over memory, the same posture as the
+	// middleware-level MaxResponseBytes bypass.
+	if responseBytes(resp) > s.maxEntryBytes {
+		delete(s.entries, key)
+		return nil
+	}
 	e.resp = resp
 	e.expires = now.Add(s.ttl)
+	e.lastAccess = now
 	return nil
+}
+
+// responseBytes returns the retained footprint of a cached response:
+// body plus header keys and values.
+func responseBytes(resp *IdempotentResponse) int {
+	n := len(resp.Body)
+	for k, vs := range resp.Header {
+		n += len(k)
+		for _, v := range vs {
+			n += len(v)
+		}
+	}
+	return n
 }
 
 func (s *memoryIdempotencyStore) reapLocked(now time.Time) {

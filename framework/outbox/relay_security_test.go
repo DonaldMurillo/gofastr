@@ -1,9 +1,8 @@
-//go:build red
-
 package outbox
 
 import (
 	"context"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -12,33 +11,30 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/event"
 )
 
-// CONTRACT-QUESTION red: must the relay bound or isolate a consumer
-// handler invocation, or is the "MUST be side-effecting but prompt"
-// sentence in Consume's doc (consumer.go) the whole contract? Both queue
-// backends give host handlers a wall-clock budget (DBQueue
-// WithDBHandlerTimeout, MemoryQueue's default 30s timeout); the outbox
-// relay invokes handlers on its single pump goroutine with no timeout and
-// no concurrency, so ONE consumer handler that blocks (a dependency that
-// hangs, a handler that ignores ctx) wedges EVERY consumer's durable
-// delivery on the replica — including consumers of entirely unrelated
-// event types — with no log line. The maintainer must either accept and
-// document "a hung consumer stalls the durable lane" as the contract, add
-// a per-delivery handler timeout option (queue parity), or settle
-// deliveries concurrently.
+// Pins a hung consumer handler wedging every consumer's durable lane on the
+// replica, found by the 2026-09-04 red-probe round; fixed by bounding each
+// handler invocation with a per-delivery wall-clock budget (WithHandlerTimeout,
+// default 30s, queue parity) that cancels the handler's context at the
+// deadline and settles the delivery as failed so retries and sibling
+// consumers proceed.
 // Family: F7 delivery semantics under crash and retry (poison/slow message stalls the lane)
 // Property: sibling isolation as documented ("one consumer failing never blocks another", doc.go) must survive a handler that HANGS, not just one that errors.
-// Surfaces: relay.go:relayLoop+pump (sequential processDelivery on one goroutine), relay.go:processDelivery (invokeHandler with no per-delivery deadline), delivery.go:invokeHandler (runs h synchronously, recovers panics only).
-// Finding: with consumer "stuck" blocked inside its handler, a delivery for an unrelated consumer on a different event type is claimed in the same batch (or any later pump) and never reaches its handler; the relay goroutine is stuck inside the hung handler. Observed: sibling handler not invoked within 5s of the stuck handler entering.
-// Severity: high — the durable event lane for every consumer on the replica is wedged by one unbounded handler; nothing is logged and each cycle only recovers after the 5-minute lease expiry re-runs the same stuck handler.
-// Fix direction: give the relay a per-delivery handler timeout default (queue parity) or run claimed deliveries on bounded per-delivery goroutines so a hung consumer cannot starve its siblings.
+// Surfaces: relay.go::relayLoop+pump (sequential processDelivery on one goroutine),
+//           relay.go::processDelivery+runHandler (per-delivery deadline, settle-as-failed on expiry),
+//           delivery.go::invokeHandler (runs h on the bounded goroutine, recovers panics only).
 
 // TestHungConsumerCannotStallSibling: while consumer "stuck" blocks inside
-// its handler, an unrelated consumer's delivery must still be invoked.
+// its handler past its cancelled context, an unrelated consumer's delivery
+// must still be invoked, and the stuck delivery must settle as failed so its
+// retry cycle proceeds.
 func TestHungConsumerCannotStallSibling(t *testing.T) {
 	db, o := openOutbox(t,
 		WithHandlerGrace(time.Hour),
 		WithPollInterval(20*time.Millisecond),
 		WithBatchSize(10),
+		// The per-delivery budget the fix introduces (default 30s); short
+		// here so the test observes the timeout, not the default.
+		WithHandlerTimeout(100*time.Millisecond),
 	)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -71,7 +67,8 @@ func TestHungConsumerCannotStallSibling(t *testing.T) {
 	if err != nil {
 		t.Fatalf("begin tx1: %v", err)
 	}
-	if _, err := o.Append(ctx, tx, "t.stuck", map[string]any{"n": 1}); err != nil {
+	stuckRow, err := o.Append(ctx, tx, "t.stuck", map[string]any{"n": 1})
+	if err != nil {
 		t.Fatalf("append stuck: %v", err)
 	}
 	if err := tx.Commit(); err != nil {
@@ -102,8 +99,23 @@ func TestHungConsumerCannotStallSibling(t *testing.T) {
 		select {
 		case <-deadline:
 			t.Fatal("SECURITY: [outbox] sibling consumer's delivery starved while an unrelated consumer's handler hung: " +
-				"the single relay goroutine is blocked inside processDelivery, so one unbounded handler wedges every " +
-				"consumer's durable lane on this replica (both queue backends give handlers a wall-clock budget; the relay does not)")
+				"a handler that blocks past its cancelled context must settle as failed, not wedge the relay goroutine")
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+
+	// The stuck delivery must settle as FAILED (retry scheduled), never hang
+	// the lane or wait for the handler to return.
+	deadline = time.After(5 * time.Second)
+	for {
+		stuck := findDelivery(t, mustDeliveries(t, o, stuckRow), "stuck")
+		if stuck.Attempts >= 1 && strings.Contains(stuck.LastError, "budget") && stuck.Status == "pending" {
+			return
+		}
+		select {
+		case <-deadline:
+			t.Fatalf("SECURITY: [outbox] hung consumer's delivery never settled as failed (attempts=%d status=%q last_error=%q): "+
+				"the retry cycle cannot proceed while the handler ignores its context", stuck.Attempts, stuck.Status, stuck.LastError)
 		case <-time.After(10 * time.Millisecond):
 		}
 	}

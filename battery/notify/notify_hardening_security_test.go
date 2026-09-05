@@ -3,6 +3,7 @@ package notify_test
 import (
 	"context"
 	"errors"
+	"html/template"
 	"strings"
 	"testing"
 
@@ -253,5 +254,90 @@ func TestEmailChannel_RejectsReservedReplyToHeaderOverride(t *testing.T) {
 	}
 	if len(sender.last.To) != 0 || sender.last.Subject != "" || len(sender.last.Headers) != 0 {
 		t.Fatalf("SECURITY: [notify-email] sender invoked despite reserved Reply-To header override: %#v", sender.last)
+	}
+}
+
+// Pins HTML-body escaping at the interpolation sink, found by the
+// 2026-09-04 red-probe round (html_body_red_test.go); fixed by rendering
+// MapTemplater's HTMLBody through html/template's escaper (the
+// battery/email.Execute posture), with html/template.HTML as the
+// explicit per-value trust marker.
+//
+// Property: a user-controlled value interpolated into an HTML email
+// body is escaped before the body reaches the sender — no layer in the
+// pipeline may hand raw attacker bytes to the HTML body sink.
+// Surfaces: notify.go::MapTemplater.Render (interpolate on HTMLBody)
+// feeding notify.go::EmailChannel.Send (Rendered.HTMLBody →
+// email.Email.HTMLBody). The package's own doc example interpolates
+// {{name}}, and Data values are routinely user-controlled.
+func TestMapTemplaterEscapesHTMLBody(t *testing.T) {
+	tmpl := notify.NewMapTemplater()
+	tmpl.Set("welcome", "email", notify.Template{
+		Subject:  "Welcome",
+		TextBody: "Hi {{name}}",
+		HTMLBody: "<p>Welcome, {{name}}!</p>",
+	})
+
+	r, err := tmpl.Render(context.Background(), "welcome", "email",
+		map[string]any{"name": `<script>alert("pwned")</script>`})
+	if err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	if strings.Contains(r.HTMLBody, "<script>") {
+		t.Errorf("SECURITY: [notify-html] MapTemplater interpolated a user-controlled value into "+
+			"HTMLBody unescaped (rendered %q): EmailChannel hands this straight to the SMTP HTML part, "+
+			"and battery/email.Execute autoescapes the same shape — the escaping obligation fell "+
+			"between the two batteries.", r.HTMLBody)
+	}
+	// The escaped body must still CARRY the value (escaped, not dropped).
+	if !strings.Contains(r.HTMLBody, "alert(") {
+		t.Errorf("escaped HTMLBody lost the value entirely: %q", r.HTMLBody)
+	}
+	// TextBody is plain text: unchanged, raw bytes are fine there.
+	if r.TextBody != "Hi <script>alert(\"pwned\")</script>" {
+		t.Errorf("TextBody should stay payload bytes, got %q", r.TextBody)
+	}
+
+	// End to end through the channel: the email that reaches the SMTP
+	// layer must not contain live markup from the value.
+	sender := &captureSender{}
+	ch := notify.NewEmailChannel(sender, "no-reply@example.com")
+	if err := ch.Send(context.Background(),
+		notify.Notification{To: notify.Recipient{Email: "alice@example.com"}}, r); err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+	if strings.Contains(sender.last.HTMLBody, "<script>") {
+		t.Errorf("SECURITY: [notify-html] live <script> markup reached the SMTP HTML body: %q",
+			sender.last.HTMLBody)
+	}
+}
+
+// TestMapTemplaterTrustedHTMLMarker pins the escape hatch: a value the
+// HOST generated (markup, not user input) is passed through verbatim
+// when typed html/template.HTML — the documented opt-out.
+func TestMapTemplaterTrustedHTMLMarker(t *testing.T) {
+	tmpl := notify.NewMapTemplater()
+	tmpl.Set("order", "email", notify.Template{
+		HTMLBody: `<p>{{badge}}</p>`,
+	})
+
+	r, err := tmpl.Render(context.Background(), "order", "email",
+		map[string]any{"badge": template.HTML(`<strong>shipped</strong>`)})
+	if err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	if !strings.Contains(r.HTMLBody, "<strong>shipped</strong>") {
+		t.Errorf("template.HTML marker did not opt out of escaping: %q", r.HTMLBody)
+	}
+
+	// The same markup as a plain string IS escaped — only the explicit
+	// type is trusted.
+	r2, err := tmpl.Render(context.Background(), "order", "email",
+		map[string]any{"badge": `<strong>shipped</strong>`})
+	if err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	if strings.Contains(r2.HTMLBody, "<strong>") {
+		t.Errorf("plain-string markup was not escaped: %q", r2.HTMLBody)
 	}
 }

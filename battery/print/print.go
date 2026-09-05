@@ -65,6 +65,16 @@ type Config struct {
 	// chromedp.
 	PDFRenderer PDFRenderer
 
+	// MaxConcurrentRenders bounds how many RenderPDF calls the battery
+	// drives at once, battery-wide across every document's /pdf route.
+	// The shipped chromepdf backend runs one headless-Chromium process
+	// per render, so an unbounded route turns a handful of concurrent
+	// requests into process and memory exhaustion. Requests past the
+	// cap are answered 503 with Retry-After instead of spawning another
+	// renderer. Defaults to 4; values below 1 are clamped to the
+	// default.
+	MaxConcurrentRenders int
+
 	// PrintBaseCSS overrides the built-in readable print base stylesheet.
 	// Empty = use the battery default.
 	PrintBaseCSS string
@@ -76,7 +86,21 @@ type Battery struct {
 	docs    []*Document
 	byName  map[string]*Document
 	mounted bool
+
+	// renderSem bounds concurrent RenderPDF calls at
+	// cfg.MaxConcurrentRenders; see servePDF.
+	renderSem chan struct{}
 }
+
+// defaultMaxConcurrentRenders is the render cap hosts get when they do
+// not set MaxConcurrentRenders: enough parallelism to keep a small
+// dashboard snappy, few enough headless Chromiums that a burst of
+// requests cannot exhaust the node.
+const defaultMaxConcurrentRenders = 4
+
+// renderBusyRetryAfter is the Retry-After (seconds) served with the 503
+// the battery answers while all render slots are busy.
+const renderBusyRetryAfter = "1"
 
 // New constructs the print battery. Pass the result to
 // framework.App.RegisterBattery after declaring documents with Document.
@@ -92,10 +116,17 @@ func New(cfg Config) *Battery {
 	if cfg.DefaultPage.Orientation == "" {
 		cfg.DefaultPage.Orientation = Portrait
 	}
+	if cfg.MaxConcurrentRenders < 1 {
+		cfg.MaxConcurrentRenders = defaultMaxConcurrentRenders
+	}
 	if cfg.DefaultAccess == nil {
 		cfg.DefaultAccess = RequireAuth
 	}
-	return &Battery{cfg: cfg, byName: map[string]*Document{}}
+	return &Battery{
+		cfg:       cfg,
+		byName:    map[string]*Document{},
+		renderSem: make(chan struct{}, cfg.MaxConcurrentRenders),
+	}
 }
 
 // Document declares a printable document. Returns the battery for

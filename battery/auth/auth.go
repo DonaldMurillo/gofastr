@@ -75,6 +75,11 @@ var (
 
 	// ErrEmailTaken is returned by UserStore.CreateUser when the email
 	// is already registered. Distinct from generic DB errors so the
-	// register handler can return 409 instead of 500.
+	// register handler can tell the collision (uniform 202 + notify the
+	// existing holder, see registerHandler) apart from transport
+	// failures (500). The handler deliberately does NOT answer account
+	// existence to the anonymous caller: /auth/register returns the
+	// same response for a taken and a free address (2026-09-04 round 3
+	// decision; TestRegisterNoEmailTakenOracle pins it).
 	ErrEmailTaken = errors.New("auth: email already taken")
 )

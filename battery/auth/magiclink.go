@@ -311,8 +311,15 @@ func (p *MagicLinkPlugin) sendHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	// Canonicalize at ingestion (#270): the email rides inside the
 	// token and comes back out at consume time, so canonical-in means
-	// the eventual FindByEmail/CreateUser see canonical too.
-	body.Email = CanonicalEmail(body.Email)
+	// the eventual FindByEmail/CreateUser see canonical too. A
+	// decomposed (non-NFC) spelling is refused: it could otherwise
+	// mint a token for a twin identity of the same mailbox.
+	var cerr error
+	body.Email, cerr = p.mgr.canonicalizeEmail(body.Email)
+	if cerr != nil {
+		writeAuthError(w, http.StatusBadRequest, errComposedEmailMessage)
+		return
+	}
 	if body.Email == "" {
 		writeAuthError(w, http.StatusBadRequest, "email is required")
 		return

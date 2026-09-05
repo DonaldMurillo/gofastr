@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -215,10 +216,111 @@ func lexicallyUnder(path, root string) bool {
 	return path == root || strings.HasPrefix(path, root+string(os.PathSeparator))
 }
 
+// refuseFoldedKey rejects a Save whose key would land on an object stored
+// under a byte-different key on a case-insensitive or normalization-
+// insensitive filesystem (macOS's default APFS, most CIFS mounts): there,
+// "tenanta/report.txt" and "TenantA/report.txt" resolve to ONE file, so
+// saving the second silently overwrites the first and each key's Get
+// returns the other writer's bytes.
+//
+// Detection walks every path component of the resolved destination: Lstat
+// the component as spelled; when it exists, enumerate the parent's actual
+// directory entries and os.SameFile-match the Lstat result against them.
+// The entry that matches IS the on-disk spelling the filesystem folded
+// the request onto; a byte-different name means this Save aliases an
+// existing key, so the write is refused (wrapped in [upload.ErrInvalidKey],
+// which the serve layer maps to 400) instead of clobbering. When a
+// component does not exist the rest of the chain is fresh and cannot
+// alias anything. The walk goes through the pinned *os.Root when one is
+// available and the resolved absolute paths otherwise, the same posture
+// as the write it guards.
+func (ls *LocalStorage) refuseFoldedKey(key, dstPath, root string, rt *os.Root) error {
+	var parts []string
+	var parentBase string
+	if rt != nil {
+		parts = strings.Split(rootRel(dstPath, root), string(os.PathSeparator))
+		parentBase = "."
+	} else {
+		parts = strings.Split(dstPath, string(os.PathSeparator))
+		parentBase = string(os.PathSeparator)
+	}
+
+	for i, part := range parts {
+		partial := filepath.Join(parts[:i+1]...)
+		var fi os.FileInfo
+		var err error
+		if rt != nil {
+			fi, err = rt.Lstat(partial)
+		} else {
+			fi, err = os.Lstat(partial)
+		}
+		if err != nil {
+			if errors.Is(err, fs.ErrNotExist) {
+				return nil
+			}
+			return fmt.Errorf("storage: collision check %q: %w", key, scrubPathError(err))
+		}
+		// Find the on-disk entry the request resolved to. A byte-equal
+		// name means the key as spelled is what Lstat hit (the kernel
+		// tries the exact name first): intended overwrite, not a fold.
+		parent := filepath.Join(append([]string{parentBase}, parts[:i]...)...)
+		exact, onDisk := foldedEntryName(fi, part, parent, rt)
+		if !exact && onDisk != "" {
+			return fmt.Errorf("%w: key %q collides with existing object stored under a "+
+				"different spelling (%q) on this case- or normalization-insensitive "+
+				"filesystem; delete that object or save under the exact stored key",
+				upload.ErrInvalidKey, key, onDisk)
+		}
+	}
+	return nil
+}
+
+// foldedEntryName reports whether the parent directory holds a byte-equal
+// entry for part, and if not, the differently spelled entry that fi (the
+// Lstat result for part) identifies via os.SameFile — the filesystem's own
+// answer to "what name did this request actually hit". Unreadable
+// directories return no fold: containment is not this check's job.
+func foldedEntryName(fi os.FileInfo, part, parent string, rt *os.Root) (exact bool, onDisk string) {
+	var entries []os.DirEntry
+	if rt != nil {
+		f, err := rt.Open(parent)
+		if err != nil {
+			return false, ""
+		}
+		defer f.Close()
+		entries, err = f.ReadDir(-1)
+		if err != nil {
+			return false, ""
+		}
+	} else {
+		var err error
+		entries, err = os.ReadDir(parent)
+		if err != nil {
+			return false, ""
+		}
+	}
+	for _, e := range entries {
+		if e.Name() == part {
+			return true, ""
+		}
+		if onDisk == "" {
+			if ei, err := e.Info(); err == nil && os.SameFile(fi, ei) {
+				onDisk = e.Name()
+			}
+		}
+	}
+	return false, onDisk
+}
+
 // Save writes the contents of r to a file under BaseDir identified by key.
 // The write is atomic: data is first written to a temporary file in the same
 // directory, then renamed to the final path. Intermediate directories are
 // created as needed.
+//
+// On a case-insensitive or normalization-insensitive filesystem the key
+// is refused (see refuseFoldedKey) when an existing object is stored
+// under a byte-different spelling that folds onto the same file; the
+// exact stored key keeps ordinary overwrite semantics.
 func (ls *LocalStorage) Save(ctx context.Context, key string, r io.Reader) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -236,6 +338,15 @@ func (ls *LocalStorage) Save(ctx context.Context, key string, r io.Reader) error
 	// planted symlink.
 	dstPath, root, err := ls.resolvePath(key)
 	if err != nil {
+		return err
+	}
+
+	// Refuse a key that folds onto an object stored under a
+	// byte-different spelling BEFORE anything is created or written:
+	// on a case-insensitive or normalization-insensitive filesystem
+	// the MkdirAll below would otherwise plant directories inside the
+	// other key's namespace and the rename would clobber its object.
+	if err := ls.refuseFoldedKey(key, dstPath, root, ls.rootFor(root)); err != nil {
 		return err
 	}
 

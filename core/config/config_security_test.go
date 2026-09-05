@@ -144,3 +144,74 @@ func TestRedactLongestSecretFirst(t *testing.T) {
 		t.Errorf("[config] redaction lost the placeholder or the non-sensitive context: %s", msg)
 	}
 }
+
+type ptrDBConfig struct {
+	Host string `config:"HOST"`
+	Port int    `config:"PORT"`
+}
+
+type ptrValueCfg struct {
+	Name string       `config:"NAME" default:"app"`
+	DB   ptrDBConfig  `config:"db"`
+	Opts *ptrDBConfig `config:"opts"` // same shape, pointer spelling
+}
+
+type ptrNestedCfg struct {
+	Outer *ptrValueCfg `config:"outer"`
+}
+
+// Pins that a nested struct behind a POINTER binds like the value form,
+// found by the 2026-09-04 red-probe round; fixed by recursing into
+// pointer-to-struct fields in bindStruct, allocating when any nested key
+// is present and leaving the field nil otherwise.
+// Property: every field of a config struct either binds from a source,
+// takes its default, or makes Load fail — a struct field whose nested
+// keys are silently unread is the "apps roll their own os.Getenv and
+// misconfigure" bug class this package exists to remove.
+// Surfaces: core/config/config.go::bindStruct (pointer-to-struct branch)
+// and srcHasKey (the presence probe deciding nil vs allocate), reached
+// from Load/LoadWith/MustLoad.
+func TestPointerNestedStructBindsOrErrors(t *testing.T) {
+	src := config.MapSource{
+		"NAME":      "svc",
+		"DB_HOST":   "db.internal",
+		"DB_PORT":   "5432",
+		"OPTS_HOST": "opts.internal",
+	}
+
+	// Control: the value-struct spelling binds the nested keys.
+	var val ptrValueCfg
+	if err := config.Load(&val, src); err != nil {
+		t.Fatalf("value-struct Load: %v", err)
+	}
+	if val.DB.Host != "db.internal" || val.DB.Port != 5432 {
+		t.Fatalf("control: value struct did not bind nested keys: %+v", val.DB)
+	}
+
+	// The pointer spelling must behave the same for the same keys.
+	if val.Opts == nil || val.Opts.Host != "opts.internal" {
+		t.Fatalf("CONTRACT [config] Load(&cfg{OPTS *DBConfig}) with OPTS_HOST set: got %+v — "+
+			"a nested struct behind a pointer is neither bound nor rejected; the one-character "+
+			"divergence from the value-struct spelling turns into a nil config with no error, "+
+			"the silent-misconfiguration class this package exists to prevent", val.Opts)
+	}
+
+	// No nested key present anywhere: the pointer stays nil (decided by
+	// the same presence probe at every nesting depth).
+	var nested ptrNestedCfg
+	if err := config.Load(&nested, config.MapSource{"NAME": "svc"}); err != nil {
+		t.Fatalf("absent-keys Load: %v", err)
+	}
+	if nested.Outer != nil {
+		t.Fatalf("pointer allocated with no nested key present: %+v", nested.Outer)
+	}
+
+	// A key two levels down allocates the whole chain.
+	nested = ptrNestedCfg{}
+	if err := config.Load(&nested, config.MapSource{"OUTER_DB_HOST": "deep"}); err != nil {
+		t.Fatalf("deep-key Load: %v", err)
+	}
+	if nested.Outer == nil || nested.Outer.DB.Host != "deep" {
+		t.Fatalf("deep nested key did not allocate and bind the chain: %+v", nested.Outer)
+	}
+}

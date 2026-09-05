@@ -284,22 +284,24 @@ func TestE2E_HappyPath_FullAuthLifecycle(t *testing.T) {
 		"email":    "alice@e2e.test",
 		"password": "starting-password",
 	})
-	if code != http.StatusCreated {
+	if code != http.StatusAccepted {
 		t.Fatalf("register: %d %v", code, body)
-	}
-	userObj, _ := body["user"].(map[string]any)
-	userID, _ := userObj["id"].(string)
-	if userID == "" {
-		t.Fatalf("register: missing user.id in %v", body)
 	}
 
 	// 2. Login
-	code, _ = do(http.MethodPost, "/auth/login", map[string]string{
+	code, loginBody := do(http.MethodPost, "/auth/login", map[string]string{
 		"email":    "alice@e2e.test",
 		"password": "starting-password",
 	})
 	if code != http.StatusOK {
 		t.Fatalf("login: %d", code)
+	}
+	// Register no longer returns the created user (uniform 202); the
+	// user id comes from the login response.
+	userObj, _ := loginBody["user"].(map[string]any)
+	userID, _ := userObj["id"].(string)
+	if userID == "" {
+		t.Fatalf("login: missing user.id in %v", loginBody)
 	}
 
 	// 3. Send-verification (dev mode via fake EmailSender)

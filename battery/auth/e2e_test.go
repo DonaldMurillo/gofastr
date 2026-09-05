@@ -195,15 +195,14 @@ func TestE2E_RegisterLoginLogout(t *testing.T) {
 		"email":    "alice@test.com",
 		"password": "securepass123",
 	}, nil)
-	if resp.StatusCode != http.StatusCreated {
+	// 202 uniform: register answers identically for taken and free
+	// addresses since the 2026-09-04 anti-enumeration change and no
+	// longer returns the created user (no auto-login either).
+	if resp.StatusCode != http.StatusAccepted {
 		b, _ := json.Marshal(body)
-		t.Fatalf("register: expected 201, got %d: %s", resp.StatusCode, b)
+		t.Fatalf("register: expected 202, got %d: %s", resp.StatusCode, b)
 	}
-	userID, _ := body["user"].(map[string]any)["id"].(string)
-	if userID == "" {
-		t.Fatal("expected userId in register response")
-	}
-	t.Logf("✓ Register: user %s created", userID)
+	t.Log("✓ Register: accepted")
 
 	// 2. Login
 	resp, body, cookies := app.doRequest("POST", "/auth/login", map[string]string{
@@ -254,15 +253,23 @@ func TestE2E_RegisterLoginLogout(t *testing.T) {
 	}
 	t.Log("✓ Bad password rejected with 401")
 
-	// 6. Duplicate registration (should still fail)
+	// 6. Duplicate registration: the response is the SAME 202 (no
+	// oracle), so the observable contract is "no second account".
 	resp, _, _ = app.doRequest("POST", "/auth/register", map[string]string{
 		"email":    "alice@test.com",
 		"password": "anotherpass",
 	}, nil)
-	if resp.StatusCode == http.StatusCreated {
-		t.Fatal("duplicate registration should fail")
+	if resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("duplicate register: expected uniform 202, got %d", resp.StatusCode)
 	}
-	t.Log("✓ Duplicate email rejected")
+	var n int
+	if err := app.db.QueryRow("SELECT COUNT(*) FROM users WHERE email = ?", "alice@test.com").Scan(&n); err != nil {
+		t.Fatalf("db: %v", err)
+	}
+	if n != 1 {
+		t.Fatalf("duplicate register created a second account; count=%d", n)
+	}
+	t.Log("✓ Duplicate email: no second account, uniform response")
 }
 
 func TestE2E_SessionPersistence(t *testing.T) {

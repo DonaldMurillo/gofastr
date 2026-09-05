@@ -178,15 +178,17 @@ uses it for its own assets too. Start at `core/static/static.go`:
 A typed config loader. `Load` reflects `config:` / `default:` /
 `required:` / `sensitive:` / `validate:` struct tags and binds from
 pluggable `Source`s (default `EnvSource`; `MapSource` for tests),
-recursing into nested structs with a `SCREAMING_SNAKE` prefix and
-redacting `sensitive` values from errors. Direct: call
-`config.Load(&cfg)` at startup. Start at `core/config/config.go`:
-`Load`.
+recursing into nested structs with a `SCREAMING_SNAKE` prefix (value or
+pointer form: a pointer is allocated and bound when any nested key is
+present, left nil otherwise) and redacting `sensitive` values from
+errors. Direct: call `config.Load(&cfg)` at startup. Start at
+`core/config/config.go`: `Load`.
 
 ### netguard
 
 The single "is this IP internal" predicate (loopback, private,
-link-local, CGNAT, cloud-metadata), normalizing IPv4-mapped IPv6 first,
+link-local, site-local IPv6, CGNAT, cloud-metadata), normalizing
+IPv4-mapped IPv6 first,
 with a `Reason` helper. Tiny: two exported funcs. Indirect:
 outbound-fetch surfaces (webhooks, the harness) enforce it at dial time;
 app authors do not call it. Start at `core/netguard/netguard.go`:
