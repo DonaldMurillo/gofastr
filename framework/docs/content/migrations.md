@@ -76,7 +76,12 @@ DROP TABLE posts;
 
 Required directives: `Version` (positive integer) and `Up`. `Name`
 and `Down` are optional but `Down` is strongly recommended. Without
-it, `migrate down` fails for that version.
+it, `migrate down` fails for that version. The `Up` section is truly
+required, not defaulted: directives are case-sensitive, and a file whose
+`-- +migrate Up` line is missing or misspelled (lower-case `up`) is
+rejected at parse time instead of registering a migration whose SQL was
+silently discarded while the tracking table records it applied.
+Programmatic `Register` refuses an empty `Up` for the same reason.
 
 ### Non-transactional migrations
 
@@ -277,9 +282,17 @@ rows fails on a populated table, so the constraint is deferred (the
 change summary notes this); backfill the rows and tighten it in a later
 migration. A required field that has a default keeps `NOT NULL`, since
 every existing row gets the default. Type changes are DETECTED and surfaced
-as destructive changes (refused unless `AllowDestructive` is set). They
-often need a data-specific `USING` conversion on Postgres or a table rebuild
-on SQLite, so review and hand-tighten the generated SQL. Renames: declare
+as destructive changes (refused unless `AllowDestructive` is set). On
+Postgres they render as an in-place `ALTER COLUMN TYPE`, which often still
+needs a data-specific `USING` clause, so review and hand-tighten. On SQLite,
+which has no in-place column retyping, the generator emits the real table
+rebuild: create the new table from the entity, `INSERT … SELECT` the shared
+columns across (values convert by SQLite column affinity), drop the old
+table, rename, and recreate the entity's declared indices. Rows are carried
+over, not regenerated; a required-but-undefaulted column added in the same
+change still fails loud on a populated table until you backfill it, and the
+change ships no `Down` (the pre-migration constraints are not recoverable),
+so a SQLite retype is forward-only. Renames: declare
 `EntityConfig.Renames: {"old": "new"}` and the diff emits a non-destructive
 `RENAME COLUMN` instead of a data-losing drop+add. A rename is otherwise
 indistinguishable from a drop plus an add, so it has to be declared.
@@ -855,15 +868,22 @@ status` shows what's pending. Entity seeds still run at Start (idempotent data, 
 schema); a seeded entity whose table is missing fails Start fast instead
 of the app serving against an unmigrated database. Seeds acquire a DISTINCT
 Postgres advisory lock from migrations, so N replicas booting at once
-serialize their seed phase too. The `_gofastr_seeded` ledger then makes
-each entity's Seed run once globally. (Exception: a `MaxOpenConns(1)`
-Postgres pool can't hold the lock without deadlocking the seed body, so it
-skips the lock with a WARN and is not coordinated across replicas, so keep
-the pool above 1 connection.)
+serialize their seed phase too. SQLite has no advisory locks, so its seed
+phase takes a twin instead: a leased lock row in `_gofastr_seed_lock`
+(acquired by one atomic upsert, renewed by a heartbeat, released on
+completion, expired by the next boot if the holder crashed) plus a
+process-level mutex, held across the ledger read → seed body → ledger
+record. The `_gofastr_seeded` ledger then makes
+each entity's Seed run once globally on both dialects. (Exception: a
+`MaxOpenConns(1)` Postgres pool can't hold the lock without deadlocking
+the seed body, so it skips the lock with a WARN and is not coordinated
+across replicas, so keep the pool above 1 connection.)
 
 `WithoutAutoMigrate` suppresses **entity** DDL. A few framework-owned
 bookkeeping tables are still created on demand regardless: the seed
-ledger (`_gofastr_seeded`), and, when you enable `WithOutbox`, the outbox
+ledger (`_gofastr_seeded`) and, on SQLite, the seed lock row
+(`_gofastr_seed_lock`, one row, created only when an entity declares a
+Seed), and, when you enable `WithOutbox`, the outbox
 table (`event_outbox`), which is ensured when the outbox is constructed
 at `NewApp` time. These aren't entity schema and aren't emitted by
 `migrate generate`; if your policy needs every table to originate from a

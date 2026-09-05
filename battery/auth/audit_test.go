@@ -298,7 +298,7 @@ func TestAudit_RegisterSucceeded(t *testing.T) {
 	jar := &cookieJar{}
 	rec := jar.do(f.router, http.MethodPost, "/auth/register",
 		map[string]string{"email": "new@example.com", "password": "newpassword1"}, "")
-	mustStatus(t, rec, http.StatusCreated)
+	mustStatus(t, rec, http.StatusAccepted)
 
 	ev := f.rec.findByKind("register.succeeded")
 	if ev == nil {

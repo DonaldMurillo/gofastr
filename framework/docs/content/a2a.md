@@ -63,7 +63,12 @@ side of the wire) decides *what* to ask for; this server decides exactly
 ## The wire surface
 
 One endpoint, `A2AConfig.Path` (default `/a2a`), POST only, content type
-`application/json` (or `application/a2a+json`). JSON-RPC 2.0 methods,
+`application/json` (or `application/a2a+json`). A browser `Origin` naming any
+authority other than the request's own Host is refused 403 before the body is
+read, the same cross-origin gate the MCP transport enforces; an absent Origin
+passes, because curl and native A2A clients send none. (`A2AConfig.AllowedOrigins` permits tunnel or split-origin browser
+Origins; embedders using `core/a2a` directly have `Config.AllowedOrigins` or
+`Server.SetAllowedOrigins`.) JSON-RPC 2.0 methods,
 PascalCase per the v1.0 binding:
 
 | Method | Serves |

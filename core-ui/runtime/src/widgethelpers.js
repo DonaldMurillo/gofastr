@@ -8,8 +8,16 @@
   const countWired = new WeakSet();
   const clearWired = new WeakSet();
   const enterWired = new WeakSet();
-  const validityWired = new WeakSet();
   let ticking = false;
+
+  const validityWired = new WeakSet();
+  // Persist keys are namespaced and component-encoded (the banner.js
+  // dismissKey shape): "gofastr.persist." + encodeURIComponent(key). An
+  // attribute-borne data-fui-persist-storage value can therefore only ever
+  // name an entry inside this module's own namespace, never another
+  // feature's localStorage key; a value stored under the pre-namespace raw
+  // spelling is not read.
+  const PERSIST_PREFIX = 'gofastr.persist.';
 
   document.addEventListener('click', function (e) {
     const btn = e.target.closest && e.target.closest('[data-fui-fill-input]');
@@ -52,17 +60,20 @@
     const key = el.getAttribute('data-fui-persist-storage');
     if (!key) return;
     try {
-      const saved = localStorage.getItem(key);
+      // Namespaced and component-encoded at every sink; a draft stored
+      // under the pre-namespace raw spelling is not read.
+      const saved = localStorage.getItem(PERSIST_PREFIX + encodeURIComponent(key));
       if (saved && !el.value) {
         el.value = saved;
         el.dispatchEvent(new Event('input', { bubbles: true }));
       }
     } catch (_) {}
     el.addEventListener('input', function () {
-      try { localStorage.setItem(key, el.value); } catch (_) {}
+      // Guard spelled at the sink (see PERSIST_PREFIX above).
+      try { localStorage.setItem(PERSIST_PREFIX + encodeURIComponent(key), el.value); } catch (_) {}
     });
     if (el.form) el.form.addEventListener('reset', function () {
-      try { localStorage.removeItem(key); } catch (_) {}
+      try { localStorage.removeItem(PERSIST_PREFIX + encodeURIComponent(key)); } catch (_) {}
     });
   }
 

@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -95,6 +96,61 @@ func TestLocalStorage_GetMissingScrubsPath(t *testing.T) {
 	}
 	if strings.Contains(err.Error(), dir) {
 		t.Errorf("SECURITY: [storage] error message leaks absolute path %q: %v", dir, err)
+	}
+}
+
+// Pins the absolute-path leak in Delete/Exists errors, found by the
+// 2026-09-04 red-probe round; fixed by routing both through resolveKey
+// and scrubbing every wrap with ScrubPath.
+// Property: an error returned by any LocalStorage method must not disclose the
+// absolute filesystem path of the storage root or its contents. Save and
+// open scrub every wrap; the same must hold for Delete and Exists, whose
+// messages framework/erase_data.go and file.DeleteFileField embed verbatim
+// into errors reported to operators and hosts.
+// Surfaces: core/upload/local.go:Delete, core/upload/local.go:Exists.
+func TestDeleteExistsLeakNoAbsPath(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX permission bits are required to force the failing syscall deterministically")
+	}
+	requirePOSIXFileModes(t)
+	t.Parallel()
+
+	base := t.TempDir()
+	store := upload.NewLocalStorage(base)
+	ctx := context.Background()
+
+	sub := filepath.Join(base, "sub")
+	if err := os.MkdirAll(sub, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sub, "f.txt"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// r-x: traversal and stat succeed, unlink is denied.
+	if err := os.Chmod(sub, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Chmod(sub, 0o700) }() // let t.TempDir cleanup remove it
+
+	// Surface 1: Delete failure must not carry the absolute path.
+	err := store.Delete(ctx, "sub/f.txt")
+	if err == nil {
+		t.Fatal("Delete unexpectedly succeeded in a non-writable directory; test setup is wrong")
+	}
+	if strings.Contains(err.Error(), base) {
+		t.Errorf("SECURITY: [upload-path-leak] Delete error discloses the absolute storage path: %q. Save and open scrub this exact class; erase_data.go and DeleteFileField embed this message in operator-facing errors.", err.Error())
+	}
+
+	// Surface 2: Exists failure must not carry the absolute path.
+	if err := os.Chmod(sub, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	_, err = store.Exists(ctx, "sub/f.txt")
+	if err == nil {
+		t.Fatal("Exists unexpectedly succeeded under an untraversable directory; test setup is wrong")
+	}
+	if strings.Contains(err.Error(), base) {
+		t.Errorf("SECURITY: [upload-path-leak] Exists error discloses the absolute storage path: %q, unlike Save/open.", err.Error())
 	}
 }
 

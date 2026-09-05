@@ -332,7 +332,10 @@ func (s *GrantStore) Grant(ctx context.Context, role string, perms ...Permission
 // Revoke deletes (role, permission) rows from the database, records a
 // revocation tombstone for each, and then calls policy.Revoke on the live
 // policy. Idempotent: revoking a permission the role doesn't hold is a
-// no-op in both layers.
+// no-op in both layers. Wildcard-shaped permissions ("teams:*") expand
+// against the capability registry exactly like Grant, so a revoke removes
+// at least what Granting the same input persisted (the raw literal is
+// revoked and tombstoned alongside its expansion).
 //
 // Role and permission are bound as $n parameters, never interpolated.
 func (s *GrantStore) Revoke(ctx context.Context, role string, perms ...Permission) error {
@@ -345,12 +348,19 @@ func (s *GrantStore) Revoke(ctx context.Context, role string, perms ...Permissio
 	if len(perms) == 0 {
 		return nil
 	}
+	// Expand wildcard-shaped revokes with the same pass Grant uses
+	// (prepareGrants' expansion rule), so revoking "teams:*" deletes and
+	// tombstones the exact rows Grant("teams:*") persisted. The raw literal
+	// is included too: a grant made against an empty registry persists the
+	// wildcard literally, and its code-baseline seed must stay revocable —
+	// tombstoning an unheld permission is a no-op, never an over-revoke.
+	prepared := s.policy.prepareRevokes(perms)
 	// Hold the transition lock across the DB writes and the policy mutation
 	// so a concurrent reload cannot land its ReplaceRole after this revoke
 	// and undo it.
 	s.transitionMu.Lock()
 	defer s.transitionMu.Unlock()
-	for _, p := range perms {
+	for _, p := range prepared {
 		q := fmt.Sprintf(
 			"DELETE FROM %s WHERE role = $1 AND permission = $2",
 			query.QuoteIdent(s.table),
@@ -364,7 +374,7 @@ func (s *GrantStore) Revoke(ctx context.Context, role string, perms ...Permissio
 	// every fresh boot's LoadInto subtracts it, a code-SEEDED grant revoked
 	// here stays revoked on peers and on replicas that boot later. ON CONFLICT
 	// DO NOTHING mirrors Grant's duplicate posture.
-	for _, p := range perms {
+	for _, p := range prepared {
 		q := fmt.Sprintf(
 			"INSERT INTO %s (role, permission) VALUES ($1, $2) ON CONFLICT DO NOTHING",
 			query.QuoteIdent(s.revokedTable()),
@@ -402,7 +412,7 @@ func (s *GrantStore) Revoke(ctx context.Context, role string, perms ...Permissio
 	// it, until Grant() is called. DB intent outlives code declarations,
 	// the same precedence the store already gives DB grants over the
 	// baseline.
-	s.policy.Revoke(role, perms...)
+	s.policy.Revoke(role, prepared...)
 	// Signal other replicas to re-read (non-blocking).
 	s.publish(role)
 	return nil

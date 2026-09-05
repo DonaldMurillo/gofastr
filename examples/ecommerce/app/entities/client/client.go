@@ -13,6 +13,14 @@ import (
 	"strings"
 )
 
+// maxBodyBytes caps the bytes buffered from any one response body: the
+// 2xx JSON decode and the non-2xx error snapshot alike. A response bigger
+// than 1 MiB is a misbehaving or hostile endpoint, not a payload to read
+// to EOF; the decode fails on truncation instead. 1 MiB matches the cap
+// the framework's own outbound provider fetches use. The SSE watch path
+// is a stream, not a buffer: it stays line-bounded via scanner.Buffer.
+const maxBodyBytes = 1 << 20
+
 // Client is a typed HTTP client targeting the gofastr server's CRUD routes.
 // Pass any *http.Client (httptest, retryable wrapper, etc.): Client never
 // closes it.
@@ -28,17 +36,25 @@ type Client struct {
 }
 
 // NewClient constructs a Client with the default http.Client when one is
-// not supplied. BaseURL should NOT include a trailing slash.
+// not supplied. BaseURL should NOT include a trailing slash. The default
+// refuses redirects: requests carry the bearer token when Token is set,
+// and a 3xx would re-send it to whatever origin the response names. Pass
+// your own *http.Client to keep a redirect policy.
 func NewClient(baseURL string, httpClient *http.Client) *Client {
 	if httpClient == nil {
-		httpClient = http.DefaultClient
+		//gofastr:allow(clienttimeout) requests carry the caller's context (http.NewRequestWithContext); a Client.Timeout would kill Watch's long-lived SSE stream mid-subscription
+		httpClient = &http.Client{
+			CheckRedirect: func(*http.Request, []*http.Request) error {
+				return http.ErrUseLastResponse
+			},
+		}
 	}
 	return &Client{BaseURL: baseURL, HTTP: httpClient}
 }
 
 // APIError is returned for non-2xx responses. Status is the HTTP code;
-// Body holds the raw response so callers can decode application-level error
-// fields if they want.
+// Body holds the raw response (capped at maxBodyBytes) so callers can
+// decode application-level error fields if they want.
 type APIError struct {
 	Status int
 	Body   []byte
@@ -79,13 +95,13 @@ func (c *Client) doJSON(ctx context.Context, method, path string, body, out any)
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		bodyBytes, _ := io.ReadAll(resp.Body)
+		bodyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, maxBodyBytes))
 		return &APIError{Status: resp.StatusCode, Body: bodyBytes}
 	}
 	if out == nil || resp.StatusCode == http.StatusNoContent {
 		return nil
 	}
-	return json.NewDecoder(resp.Body).Decode(out)
+	return json.NewDecoder(io.LimitReader(resp.Body, maxBodyBytes)).Decode(out)
 }
 
 // doSingleJSON decodes the {"data": {...}} envelope used by single-record
@@ -165,7 +181,7 @@ func (c *Client) watchSSE(ctx context.Context, path string, fn func(event string
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		bodyBytes, _ := io.ReadAll(resp.Body)
+		bodyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, maxBodyBytes))
 		return &APIError{Status: resp.StatusCode, Body: bodyBytes}
 	}
 

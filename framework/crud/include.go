@@ -27,6 +27,16 @@ const (
 	// show and every one the blueprint emits.
 	maxIncludeDepth = 4
 
+	// maxIncludePaths bounds how many comma-separated ?include= paths
+	// one request may carry. Depth and the row budget do not bound
+	// BREADTH of the node set: every mention carrying a DISTINCT
+	// scoped-filter set gets its own IncludeNode and its own SELECT,
+	// and a zero-row node still costs a query (a network round trip on
+	// Postgres), so 512 such mentions answered 200 after ~514 queries
+	// with the 20k-row budget never tripping. Real usage is a handful
+	// of relations; 32 paths × 4 hops still leaves generous room.
+	maxIncludePaths = 32
+
 	// maxIncludeRows bounds the total number of rows an eager-load may scan
 	// across every node of one request's include forest, and, separately,
 	// the number of row references the assembled response tree may carry.
@@ -166,7 +176,12 @@ func parseIncludeTreeQ(q url.Values, ent *entity.Entity, registry entity.Registr
 	var roots []*IncludeNode
 	rootMap := map[string]*IncludeNode{}
 
-	for _, path := range splitIncludeList(raw) {
+	paths := splitIncludeList(raw)
+	if len(paths) > maxIncludePaths {
+		return nil, fmt.Errorf("too many include paths: %d (max %d)", len(paths), maxIncludePaths)
+	}
+
+	for _, path := range paths {
 		segments := splitIncludePath(path)
 		if len(segments) == 0 {
 			continue

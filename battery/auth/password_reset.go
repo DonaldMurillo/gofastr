@@ -141,6 +141,20 @@ func (p *PasswordResetPlugin) forgotHandler(w http.ResponseWriter, r *http.Reque
 	if !decodeJSONLimited(w, r, &body) {
 		return
 	}
+	// Canonicalize BEFORE the uniform-response defer is armed: the 400
+	// for a decomposed (non-NFC) spelling depends only on the input's
+	// form, never on whether the account exists, so it opens no oracle —
+	// but it must not fall through the deferred uniform write below,
+	// which would double-write the response. #270: lookups and token
+	// payloads use canonical identity.
+	{
+		ce, cerr := p.mgr.canonicalizeEmail(body.Email)
+		if cerr != nil {
+			writeAuthError(w, http.StatusBadRequest, errComposedEmailMessage)
+			return
+		}
+		body.Email = ce
+	}
 
 	// ALWAYS return 200, even when email is empty or unknown, so the
 	// response can't be used to enumerate registered accounts.
@@ -153,11 +167,7 @@ func (p *PasswordResetPlugin) forgotHandler(w http.ResponseWriter, r *http.Reque
 		_ = json.NewEncoder(w).Encode(map[string]any{"sent": true})
 	}()
 
-	body.Email = CanonicalEmail(body.Email) // #270: lookups and token payloads use canonical identity
 	if !emailWithinLimit(w, body.Email) {
-		return
-	}
-	if body.Email == "" {
 		return
 	}
 	store := p.mgr.UserStore()

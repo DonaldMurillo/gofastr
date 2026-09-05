@@ -74,8 +74,11 @@ func runCodex(ctx context.Context, inv codexInvocation) error {
 	if err != nil {
 		return fmt.Errorf("create Codex log: %w", err)
 	}
+	if inv.Timeout < 0 {
+		return fmt.Errorf("codex: Timeout must be >= 0 (got %v)", inv.Timeout)
+	}
 	timeout := inv.Timeout
-	if timeout <= 0 {
+	if timeout == 0 {
 		timeout = 30 * time.Minute
 	}
 	runCtx, cancel := context.WithTimeout(ctx, timeout)

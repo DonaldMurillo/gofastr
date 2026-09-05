@@ -73,23 +73,34 @@ func TestSQLInbound_GetMissing(t *testing.T) {
 	}
 }
 
+// TestSQLInbound_UpdateLifecycle pins the settle write's column contract:
+// status/last_error round-trip through UpdateEnvelope, while the attempts
+// counter is owned by the processing transition (MarkEnvelopeProcessing
+// consumes one per pass) and a settle must neither change nor rewind it.
 func TestSQLInbound_UpdateLifecycle(t *testing.T) {
 	_, s := openInboundSQLStore(t)
 	ctx := context.Background()
 	_ = s.AddEnvelope(ctx, sampleEnvelope("e-2"))
 
-	// Simulate the ProcessInbound transitions.
+	// Two processing passes consume two attempts (the queue-lease
+	// re-run shape), each marking the envelope in-flight first.
+	for range 2 {
+		if err := s.MarkEnvelopeProcessing(ctx, "e-2"); err != nil {
+			t.Fatalf("mark processing: %v", err)
+		}
+	}
+	// The settle carries a stale snapshot's Attempts; the store must ignore it.
 	up, _ := s.GetEnvelope(ctx, "e-2")
 	up.Status = InboundStatusFailed
-	up.Attempts = 3
+	up.Attempts = 99
 	up.LastError = "boom"
 	up.UpdatedAt = time.Now().UTC().Truncate(time.Second)
 	if err := s.UpdateEnvelope(ctx, *up); err != nil {
 		t.Fatalf("update: %v", err)
 	}
 	got, _ := s.GetEnvelope(ctx, "e-2")
-	if got.Status != InboundStatusFailed || got.Attempts != 3 || got.LastError != "boom" {
-		t.Errorf("update not applied: %+v", got)
+	if got.Status != InboundStatusFailed || got.Attempts != 2 || got.LastError != "boom" {
+		t.Errorf("update not applied: %+v (want failed/2/boom — attempts from the two processing passes)", got)
 	}
 }
 

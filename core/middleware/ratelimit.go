@@ -23,8 +23,9 @@ import (
 // every minute (i.e., 1 req/sec sustained with a 60-req burst).
 //
 // When a request is rate-limited the handler responds 429 with a
-// Retry-After header indicating seconds until the bucket would have one
-// free token.
+// Retry-After header (whole seconds, rounded up) covering the next
+// refill tick — the earliest instant a retry can actually succeed,
+// since tokens arrive RefillBy at a time, not one by one.
 type RateLimitConfig struct {
 	KeyFunc      func(*http.Request) string
 	Capacity     int
@@ -119,7 +120,10 @@ func RateLimit(cfg RateLimitConfig) Middleware {
 			}
 			if !allowed {
 				if retryAfter > 0 {
-					w.Header().Set("Retry-After", strconv.Itoa(int(retryAfter.Seconds())))
+					// ceilSeconds, not truncation: 9.999s of real wait
+					// advertised as 9 sends every honouring client back
+					// one sub-second too early, into another 429.
+					w.Header().Set("Retry-After", strconv.Itoa(ceilSeconds(retryAfter)))
 				}
 				http.Error(w, cfg.ErrorMessage, cfg.StatusCode)
 				return
@@ -158,8 +162,9 @@ func newBucketStore(capacity int, rate time.Duration, refill int) *bucketStore {
 
 // take attempts to consume one token from the bucket for key. Returns
 // (allowed, retryAfter, remaining, resetAfter), all computed under the store
-// lock so a request never takes it twice. retryAfter is the duration until the
-// bucket would have at least one token (0 on success); remaining is the token
+// lock so a request never takes it twice. retryAfter is the duration
+// until the next refill tick lands, i.e. the earliest moment a token can
+// exist again (0 on success); remaining is the token
 // count AFTER this request consumed its token (0 on the deny path); resetAfter
 // is the duration until the bucket is back at full capacity (0 when already
 // full).
@@ -193,11 +198,15 @@ func (s *bucketStore) take(key string) (bool, time.Duration, int, time.Duration)
 	}
 
 	if b.tokens <= 0 {
-		// No token available. How long until the next one? rate / refill per
-		// token, minus the time already elapsed into the current tick, rounded
-		// up to at least a second.
-		perToken := s.rate / time.Duration(s.refill)
-		retry := max(perToken-now.Sub(b.lastSeen), time.Second)
+		// No token available. Tokens arrive in whole ticks of s.refill
+		// every s.rate, the next one landing at lastSeen+s.rate — the
+		// same model timeToFull prices below. Quote THAT instant minus
+		// the time already elapsed into the tick, never a per-token
+		// rate/refill slice: with refill > 1 (the default 60/60s
+		// included) the per-token price under-waits by up to nearly a
+		// whole refill window, and every client that honours
+		// Retry-After re-hammers the exact endpoint being protected.
+		retry := max(s.rate-now.Sub(b.lastSeen), time.Second)
 		return false, retry, 0, s.timeToFull(0, b.lastSeen, now)
 	}
 	b.tokens--

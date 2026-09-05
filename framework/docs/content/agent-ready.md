@@ -317,6 +317,19 @@ path and type only: no title, description, SEO front matter, or content),
 and the `/llm-pages.md` index lists policy-gated screens path-only. An
 authenticated agent whose request passes the policy sees the full docs.
 
+### Rendered values cannot inject markdown structure
+
+Every value that goes into a served markdown document — page content
+converted from HTML, screen titles and descriptions (including the
+per-instance titles dynamic routes load), index table cells — is decoded
+and escaped per slot on the way in: code blocks are fenced one backtick
+longer than any run inside them, link text and destinations escape
+brackets and parentheses, table cells escape pipes and line breaks, and
+one-line header fields keep their first line only. Entity content that
+carries ` ``` `, `](https://…)`, `&#124;`, or a newline stays data in the
+document instead of becoming a live fence, link, column, or heading.
+Headers in the raw bytes (`\]`, `\|`) render as the plain characters.
+
 ### MCP auto-mount  (`framework.WithMCP`)
 
 `framework.WithMCP()` exposes `app.MCP` at `/mcp` over Streamable HTTP (POST

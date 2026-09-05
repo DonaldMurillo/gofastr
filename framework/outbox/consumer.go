@@ -19,10 +19,15 @@ import (
 // pump, so it catches up on still-pending rows immediately and misses only
 // rows already dispatched before it was declared).
 //
-// The handler runs on the relay goroutine: it MUST be side-effecting but
-// prompt, and idempotent (at-least-once delivery means a duplicate is
-// always possible after a crash or lease expiry). A handler that returns
-// an error or panics is retried with exponential backoff and eventually
+// The handler is invoked by the relay with a wall-clock budget
+// ([WithHandlerTimeout], 30s by default): it should be side-effecting and
+// idempotent (at-least-once delivery means a duplicate is always possible
+// after a crash, lease expiry, or a handler that outran its budget). The
+// handler's context is cancelled at the deadline; a handler that respects
+// its context simply returns and the delivery is retried as usual, while
+// one that blocks past the deadline has its delivery settled as failed so
+// retries and sibling consumers proceed. A handler that returns an error
+// or panics is retried with exponential backoff and eventually
 // dead-lettered, independently of its sibling consumers for the same
 // event (sibling isolation).
 //

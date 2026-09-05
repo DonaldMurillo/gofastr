@@ -38,7 +38,10 @@ curl 'http://localhost:8080/posts?cursor=<opaque>&direction=backward'
   the entity's cap is clamped to it, same as the offset and streaming
   list paths. (An oversized `limit` is clamped, never reset to the
   default.)
-- `limit < 1` falls back to `DefaultPageSize`
+- A `cursor` longer than 16 KiB, or a multi-field cursor carrying more
+  than 64 fields, is rejected as invalid (400 on the list routes).
+  Cursors are client-echoed input, so decode work is bounded by these
+  fixed caps, never by the payload size the client chose.
 - `direction` defaults to `"forward"`; only `"forward"` and
   `"backward"` are accepted.
 

@@ -43,8 +43,14 @@ packaged as its own module (`module local/<app>-sdk` by default,
 `--module` to override). Per entity: `List/Get/Create/Update/Patch/Delete`,
 the three `_batch` verbs, and `Watch` (SSE), plus the `Do` escape hatch,
 bearer-token auth (`c.Token = "gfsk_…"`), presence-aware pointer `Patch`
-structs, and `*APIError` whose body carries the error envelope. Consumers
-unzip and wire it locally:
+structs, and `*APIError` whose body carries the error envelope. Every
+response body the client buffers — the JSON decode and the `*APIError`
+snapshot — is capped at 1 MiB (`maxBodyBytes`): a bigger body is a
+misbehaving endpoint, and the decode fails on truncation instead of
+buffering it. The built-in `http.Client` refuses redirects (requests
+carry the bearer token when `Token` is set, and a 3xx would re-send it
+to whatever origin the response names); pass your own `*http.Client` to
+keep a redirect policy. Consumers
 
 ```bash
 curl -LO https://your-app.example.com/docs/api/sdk/go.zip
@@ -107,6 +113,16 @@ codegen:
         name: myapp
         base_url: "https://api.example.com"
 ```
+
+Config-provenance strings are treated as hostile at emission: the app
+name (flag or `gofastr.codegen.yml`) is scrubbed before it reaches the
+generated READMEs — control bytes and fence characters are stripped, and
+in the copyable install fence the `-sdk` directory hint is reduced to the
+module-path alphabet — so a cloned config cannot add lines or shell
+content to the README that ships inside the artifacts. Entity tables
+must also derive a plain JavaScript identifier for the `<entity>Fields`
+constants in `client.js` (the docs site serves that file to browsers);
+the build refuses a table that does not.
 
 ## Serving: the SDK docs site
 

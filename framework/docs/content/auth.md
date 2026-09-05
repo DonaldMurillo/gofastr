@@ -155,6 +155,14 @@ The `EntityUserStore`, `EntitySessionStore`, and `EntityTwoFAStore`
 provided in this package implement every relevant interface; if you
 start from `EntityUserStore` you get the full feature matrix.
 
+Both built-in session stores fail closed on a negative TTL:
+`EntitySessionStore.Create` rejects `ttl <= 0`, and
+`MemorySessionStore.Create` rejects `ttl < 0` while keeping `ttl == 0`
+as its documented one-week default. A sign or unit error in
+`SessionTTL` therefore breaks login loudly instead of minting a
+session — on the memory store it used to silently substitute the
+7-day default, the exact inversion of the caller's intent.
+
 The default stores are **in-memory**: fine for dev and tests, a trap
 in production: sessions vanish on restart and never resolve on a
 second replica, and in-memory 2FA enrollment reverts accounts to
@@ -167,8 +175,15 @@ Wire the durable store:
 store, err := auth.NewEntityTwoFAStore(db, "auth_twofa", auth.EntityTwoFAStoreConfig{
     // Seals the TOTP secret at rest (AES-GCM, same sealer as the OAuth
     // token store). Rows written before the key was added still verify;
-    // new writes are sealed. Without a key the column stays plaintext.
+    // new writes are sealed.
     EncryptionKey: keyFromYourSecretManager,
+    // Optional rotation drain window (the JWT PreviousSecrets idiom):
+    // rows sealed under a retired key still open, are re-sealed under
+    // the CURRENT key on that read, and stop needing the old key — so
+    // drop old keys after one pass over the enrolled rows. Without a
+    // matching key a sealed row FAILS CLOSED with an explicit error
+    // naming the rotation instead of silently serving ciphertext.
+    PreviousEncryptionKeys: [][]byte{keyRetiredLastQuarter},
 })
 if err != nil { return err }
 mgr.Use(auth.NewTwoFAPlugin(auth.TwoFAConfig{
@@ -208,12 +223,28 @@ and HTML-form bodies. The handler branches on `Content-Type`:
 
 | Request                                       | Response                                              |
 |-----------------------------------------------|--------------------------------------------------------|
-| `Content-Type: application/json`              | `200 OK` JSON body with `{user, token}`                |
+| `Content-Type: application/json`              | `200 OK` JSON body with `{user, token}` (login)        |
 | `application/x-www-form-urlencoded` (HTML)    | `303 See Other` with `Location` to `?next=` or `/`     |
 | `multipart/form-data`                         | Same as form-urlencoded                                |
 
-Form-flow responses set the session cookie before redirecting, so the
-runtime's [form interceptor](runtime-contract.md#forms)
+**`/auth/register` answers one uniform response for a free and a taken
+address**: `202 Accepted` with `{"accepted":true}` on the JSON surface,
+a `303` redirect on the form surface, and **no session cookie on either
+branch** — one unauthenticated request per address must not tell an
+attacker whether an account exists (the same policy forgot-password and
+login already pin). Consequences:
+
+- Register no longer auto-logs-in; clients follow up with `/auth/login`.
+- The JSON body no longer echoes the created user.
+- A registration attempt on an existing address creates nothing and,
+  when `AuthConfig.RegisterEmailSender` is wired, emails the existing
+  *holder* ("someone tried to register with your address") off the
+  timed path.
+- Both branches burn the same bcrypt work (the hash is computed before
+  the branch), so a clock cannot tell them apart either.
+
+Form-flow login responses set the session cookie before redirecting, so
+the runtime's [form interceptor](runtime-contract.md#forms)
 follows the `Location` header and lands the user on the next page.
 
 Both surfaces decode credentials strictly. A body that names `email` or
@@ -626,15 +657,45 @@ against the table names the CONFIGURED stores actually use (the
 `IdentityEmail`, and magic-link tokens erased — not just the canonical
 `auth_*` spellings the package registers at import time.
 
-## Email identity is canonical (lowercased + trimmed)
+## Email identity is canonical (NFC-normalized + trimmed + lowercased)
 
 Every flow that reads or stores an email — login, registration, magic
 links, OAuth account matching, password reset, and the login
-rate-limiter key — canonicalizes it with `auth.CanonicalEmail`
-(trim + lowercase) at its ingestion point. Custom `UserStore`
-implementations therefore always receive canonical input; a host that
-accepts emails on its own surfaces should call `auth.CanonicalEmail`
-too so its lookups agree with the battery's.
+rate-limiter key — canonicalizes it with `auth.CanonicalEmail` at its
+ingestion point: Unicode NFC normalization, then trim, then lowercase.
+Custom `UserStore` implementations therefore always receive canonical
+input; a host that accepts emails on its own surfaces should call
+`auth.CanonicalEmail` too so its lookups agree with the battery's.
+
+**Unicode normalization (NFC/NFD)**: the same mailbox can be spelled in
+composed (`é`) or decomposed (`e` + combining acute) form — macOS and
+iOS clipboards famously decompose copied text. Both spellings
+canonicalize to the composed form, so one mailbox is one identity and
+OIDC auto-linking never splits on the spelling. A deployment with
+different rules (a provider that ignores dots or plus tags, a legacy
+store keyed on raw bytes) installs `AuthConfig.CanonicalizeEmail`; it
+replaces the default at every ingestion point, and may return
+`auth.ErrEmailNotComposed` (or any error) to refuse an address, which
+the handlers surface as `400`:
+
+```go
+mgr := auth.New(auth.AuthConfig{
+    // ...
+    // A host whose provider ignores dots in the local part folds them
+    // too, on top of the default NFC + trim + lowercase.
+    CanonicalizeEmail: func(e string) (string, error) {
+        c, err := auth.CanonicalEmail(e)
+        if err != nil {
+            return "", err
+        }
+        local, domain, ok := strings.Cut(c, "@")
+        if !ok {
+            return "", auth.ErrEmailNotComposed
+        }
+        return strings.ReplaceAll(local, ".", "") + "@" + domain, nil
+    },
+})
+```
 
 **Upgrading a store with mixed-case rows**: rows written by older
 versions keep their original casing and will no longer match. Before
@@ -933,7 +994,7 @@ gated.
 
 `AuthManager.MintSession(ctx, userID, ttl)` creates the session **and**
 applies the pending-2FA mark. Every built-in login path, whether password,
-magic link, OAuth callback, or the form-register auto-login, goes
+magic link, or OAuth callback, goes
 through it, and a host-added plugin that mints its own sessions must
 too. Calling `SessionStore().Create` directly produces a session the
 2FA enforcement never learns about: `PendingTwoFactor` stays false, so
@@ -1250,6 +1311,13 @@ provider's token endpoint. Providers commonly omit the refresh token on a
 refresh grant (Google does), so the stored refresh token is retained.
 `GoogleProvider.AuthURL` now requests `access_type=offline` so Google
 actually issues a refresh token.
+
+Every built-in provider fetch — token exchange, refresh, userinfo,
+`/user/emails` — refuses redirects and caps the response body at
+1 MiB, the same egress posture as the OIDC provider: a compromised or
+misconfigured endpoint can neither re-point the credential-bearing
+request at another origin (a 307 re-sends the POST body verbatim) nor
+stream an unbounded body into the callback goroutine.
 
 `RefreshOAuthToken` errors when no refresh token is stored; the user must
 re-authenticate. **Security-sensitive code:** route changes here through

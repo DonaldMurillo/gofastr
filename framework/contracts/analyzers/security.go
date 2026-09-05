@@ -14,7 +14,7 @@ import (
 func init() {
 	contracts.Register(&contracts.Analyzer{
 		Name: "security",
-		Doc:  "Injection, CSRF, cookie attributes, committed secrets, reflected proxy headers, and raw body decodes.",
+		Doc:  "Injection, CSRF, cookie attributes, committed secrets, reflected proxy headers, raw body decodes, and queue SQL safety.",
 		Rules: []string{
 			contracts.RuleSQLStringConcat,
 			contracts.RuleFormWithoutCSRF,
@@ -23,6 +23,8 @@ func init() {
 			contracts.RuleHardcodedSecret,
 			contracts.RuleForwardedProtoEnum,
 			contracts.RuleRawJSONBodyDecode,
+			contracts.RuleAbsoluteAttempts,
+			contracts.RuleUnfencedClaim,
 		},
 		Run: runSecurity,
 	})
@@ -50,6 +52,8 @@ func runSecurity(p *contracts.Pass) ([]contracts.Diagnostic, error) {
 			out = append(out, ruleHardcodedSecret(p, f.Rel, file, lines)...)
 			out = append(out, ruleForwardedProto(p, f.Rel, file)...)
 			out = append(out, ruleRawJSONBody(p, f.Rel, file)...)
+			out = append(out, ruleAbsoluteAttempts(p, f.Rel, file)...)
+			out = append(out, ruleUnfencedClaim(p, f.Rel, file)...)
 		}
 	}
 	return out, nil

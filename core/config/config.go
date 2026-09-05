@@ -89,7 +89,12 @@ type ConfigValidator interface {
 // `required:"true"` for mandatory fields.
 //
 // Nested struct fields recurse with a SCREAMING_SNAKE prefix derived from
-// the parent field name (e.g. `DB DBConfig` reads keys like DB_HOST).
+// the parent field name (e.g. `DB DBConfig` reads keys like DB_HOST). A
+// nested struct behind a pointer (`DB *DBConfig`) recurses the same way:
+// it is allocated and bound when any of its nested keys is present in a
+// source, and left nil when none is. A `required` leaf inside a struct
+// that stayed nil is therefore not enforced — use the value spelling
+// when absence must fail the boot.
 //
 // `required:"true"` demands a non-empty value: a key that is present
 // but set to the empty string ("SECRET=" in a .env, a ConfigMap key
@@ -103,7 +108,7 @@ type ConfigValidator interface {
 // Validate is called after binding and its error is returned.
 //
 // Supported field types: string, int, int64, float64, bool, Duration,
-// and nested structs.
+// and nested structs (value or pointer form).
 func Load(cfg any, sources ...Source) error {
 	return LoadWith(cfg, sources...)
 }
@@ -159,6 +164,40 @@ func redactSecrets(msg string, secrets []string) string {
 	return msg
 }
 
+// srcHasKey reports whether src holds any key the fields of t would read
+// at prefix — leaves at prefix+key (tag or uppercased name), nested
+// structs at prefix+NAME_… — mirroring bindStruct's key derivation
+// exactly. It is the presence probe that decides whether a nil
+// pointer-to-struct field is allocated or left nil.
+func srcHasKey(t reflect.Type, prefix string, src Source) bool {
+	for i := 0; i < t.NumField(); i++ {
+		f := t.Field(i)
+		if !f.IsExported() {
+			continue
+		}
+		if f.Type.Kind() == reflect.Struct && f.Type != reflect.TypeFor[time.Duration]() {
+			if srcHasKey(f.Type, prefix+strings.ToUpper(f.Name)+"_", src) {
+				return true
+			}
+			continue
+		}
+		if f.Type.Kind() == reflect.Pointer && f.Type.Elem().Kind() == reflect.Struct {
+			if srcHasKey(f.Type.Elem(), prefix+strings.ToUpper(f.Name)+"_", src) {
+				return true
+			}
+			continue
+		}
+		key := f.Tag.Get("config")
+		if key == "" {
+			key = strings.ToUpper(f.Name)
+		}
+		if _, ok := src.Get(prefix + key); ok {
+			return true
+		}
+	}
+	return false
+}
+
 // bindStruct walks the fields of elem, reading from src under the given
 // prefix. Nested struct fields recurse with prefix+FieldName+"_".
 //
@@ -176,7 +215,26 @@ func bindStruct(elem reflect.Value, prefix string, src Source, secrets *[]string
 			continue
 		}
 
-		// Recurse into nested structs (but not time.Duration, which is an int64).
+		// A nested struct behind a POINTER recurses like the value form:
+		// allocated and bound when any of its nested keys is present,
+		// left nil otherwise. It used to fall through to the leaf path,
+		// whose uppercase-name key is almost never set, so `DB
+		// *DBConfig` silently ignored DB_HOST/DB_PORT while Load
+		// returned nil (2026-09-04 red-probe round).
+		if fieldVal.Kind() == reflect.Pointer && fieldVal.Type().Elem().Kind() == reflect.Struct {
+			nestedPrefix := prefix + strings.ToUpper(field.Name) + "_"
+			if fieldVal.IsNil() {
+				if !srcHasKey(fieldVal.Type().Elem(), nestedPrefix, src) {
+					continue // no nested key present: leave the pointer nil
+				}
+				fieldVal.Set(reflect.New(fieldVal.Type().Elem()))
+			}
+			if err := bindStruct(fieldVal.Elem(), nestedPrefix, src, secrets); err != nil {
+				return err
+			}
+			continue
+		}
+		// Recurse into value structs (but not time.Duration, which is an int64).
 		if fieldVal.Kind() == reflect.Struct && fieldVal.Type() != reflect.TypeFor[time.Duration]() {
 			nestedPrefix := prefix + strings.ToUpper(field.Name) + "_"
 			if err := bindStruct(fieldVal, nestedPrefix, src, secrets); err != nil {

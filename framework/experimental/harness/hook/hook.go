@@ -54,7 +54,7 @@ func DefaultTimeout(e Event) time.Duration {
 type Hook struct {
 	Event   Event
 	Command string        // shell command, run via /bin/sh -c
-	Timeout time.Duration // 0 = use DefaultTimeout(Event)
+	Timeout time.Duration // 0 = use DefaultTimeout(Event); negative is rejected by Register
 	SHA256  string        // populated by the TOFU loader
 
 	// Source tells the runner where the hook came from for the
@@ -85,12 +85,20 @@ func New() *Runner {
 	return &Runner{byEvent: make(map[Event][]Hook)}
 }
 
-// Register adds a hook. Returns an error if the hook's Source is
-// "project" and AllowProjectHooks is false, the hook is silently
-// skipped (no error returned to keep callers simple).
+// Register adds a hook. Returns an error if Event/Command are empty or
+// Timeout is negative; if the hook's Source is "project" and
+// AllowProjectHooks is false, the hook is silently skipped (no error
+// returned to keep callers simple).
 func (r *Runner) Register(h Hook) error {
 	if h.Event == "" || h.Command == "" {
 		return errors.New("hook: Event and Command are required")
+	}
+	if h.Timeout < 0 {
+		// A negative timeout can only be a sign or unit error (e.g. a
+		// computed timeout_ms that went negative); folding it onto the
+		// per-event default would hand the hook the longest deadline
+		// instead of the shortest one the caller asked for.
+		return fmt.Errorf("hook: Timeout must be >= 0 (got %v)", h.Timeout)
 	}
 	if h.Source == "project" && !r.AllowProjectHooks {
 		return nil
@@ -125,7 +133,8 @@ func (r *Runner) Run(ctx context.Context, e Event, env []string) []Result {
 
 func runOne(ctx context.Context, h Hook, env []string) Result {
 	timeout := h.Timeout
-	if timeout <= 0 {
+	if timeout == 0 {
+		// Register rejects negatives, so 0 is the only default arm.
 		timeout = DefaultTimeout(h.Event)
 	}
 	deadline := time.Now().Add(timeout)

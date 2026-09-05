@@ -7,6 +7,140 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+### Security
+- **Round-3 contract decisions, all fifteen implemented** (the probes held
+  red in the previous change set are now permanent tests): registration
+  answers one uniform response for known and unknown addresses; email
+  identity is NFC-normalized by default with `AuthConfig.CanonicalizeEmail`
+  as the override; the 2FA store fails closed on ciphertext it cannot open
+  and drains `PreviousEncryptionKeys` on read; notify's `MapTemplater`
+  renders HTML bodies through `html/template`; the admin form flash travels
+  in a signed, size-capped cookie instead of process RAM; the default
+  idempotency store is bounded (`MaxStoreEntries` 100,000,
+  `MaxStoreEntryBytes`); `LocalStorage.Save` refuses a key that folds onto
+  an existing object on case- or normalization-insensitive filesystems;
+  the print battery caps concurrent PDF renders (`MaxConcurrentRenders`,
+  default 4, 503 past it); `gofastr harness` and its subcommands refuse to
+  run without `GOFASTR_HARNESS_PASSPHRASE` or a machine key (the built-in
+  passphrase is gone); the harness engine caps one provider turn at 8 MiB
+  (`Engine.MaxStreamBytesPerTurn`); `config.Load` binds pointer-nested
+  structs; MCP `tools/call` validates arguments against the declared
+  `inputSchema` (types, required, enum, items, `additionalProperties` as
+  declared) with `WithLaxArgs()` to opt a tool out; the outbox relay gives
+  each consumer handler a timeout (`WithHandlerTimeout`, default 30s);
+  `netguard.IsInternal` counts IPv6 site-local `fec0::/10`; and image
+  originals keep their metadata by default with `file.StripMetadata()`,
+  `framework.WithStripUploadMetadata()` or `CrudHandler.StripUploadMetadata`
+  to strip EXIF/XMP/text segments (orientation applied first).
+- Dependency: `golang.org/x/text` is now a direct requirement (NFC), which
+  moves `golang.org/x/tools` to 0.48, `x/sync` to 0.22 and `x/mod` to 0.38.
+
+- **Red-probe round 3: 61 adversarial probes over sixteen property
+  families the earlier rounds never opened, 46 fixed, 15 kept red as
+  open contract questions.** Every fix ships with the probe promoted to
+  a permanent `*_security_test.go` and a sibling sweep by invariant:
+  - Outbound fetches: the built-in Google/GitHub OAuth providers, the
+    harness OpenAI/OpenRouter clients, and the generated Go SDK client
+    refuse redirects (a 3xx no longer re-sends the credential to the
+    target it names) and cap every response body at 1 MiB. A dead
+    redirect-following client in the zai provider is gone.
+  - Filesystem roots: `core/static`, `core/upload`, `battery/storage`,
+    the uihost static directory and PWA precache reader, the skill
+    registry, the generator's project-root reads, the migration file
+    writer and the bench tool all go through `os.Root`, so a symlink
+    planted inside a root is refused by the kernel instead of followed;
+    `SetStaticFS(os.DirFS(dir))` is re-rooted the same way. Both local
+    storage backends strip the absolute path from every error and
+    `upload.LocalStorage.Save` is atomic (temp file + rename).
+  - Authorization: revoking a wildcard grant (`teams:*`) now removes the
+    capabilities the grant expanded to, in both `RolePolicy` and
+    `GrantStore`; `access.CachedResolver` sweeps expired entries, caps
+    at 100,000 users, and never caches a resolution made under a
+    canceled context; the A2A endpoint refuses cross-origin browser
+    POSTs like the MCP transport (`Config.AllowedOrigins` for tunnels);
+    the harness MCP HTTP handler refuses to serve with no encoder.
+  - Delivery: `DBQueue`'s gate release is fenced on `claim_token` like
+    Ack/Nack; `MemoryQueue.Nack` dead-letters a job whose re-enqueue
+    fails; a corrupt scheduler row no longer aborts the pass and
+    `DurableScheduler.Start` survives evaluation errors; outbox and
+    webhook attempts are incremented in SQL (claim-owned), so
+    overlapping runners and crash loops all count toward `MaxAttempts`.
+  - Cache and HTTP: `cache.CacheMiddleware` never stores or replays a
+    304; every admin-battery response carries `Cache-Control: no-store`;
+    `RateLimit`'s `Retry-After` covers the next refill tick.
+  - Decoding bounds: `?include=` is capped at 32 paths, cursors at 16 KiB
+    and 64 fields; MCP JSON-RPC params refuse duplicate and case-folded
+    keys at dispatch.
+  - Emitters: llm.md surfaces decode entities once and escape per
+    markdown slot; the generated JS SDK refuses tables that are not JS
+    identifiers; generated CLIs escape the table into every route
+    literal, refuse terminal-control summaries, and refuse a corrupt
+    config file; the SDK README and docs install fence scrub the
+    manifest app name; `gofastr init --db=postgres` keeps the DSN in
+    `.env` only; `StyleSheet` builders reject non-identifier property
+    names; `/.well-known/agent-skills/index.json` no longer mutates the
+    configured slice per request.
+  - Durations: a negative TTL, lease, interval or timeout is refused at
+    `MemorySessionStore.Create`, `MemoryCache.Set`, webhook claims,
+    `RedisQueue.Start`, the idempotency stores, `WaitForReady`,
+    `static.Watch`, harness hooks and the permission middleware,
+    instead of silently becoming the default or "forever".
+  - Schema: SQLite column type changes emit a real table rebuild; seeds
+    hold a lock on SQLite (`_gofastr_seed_lock`); a migration with no
+    Up section is refused; entity versions with different tenant
+    columns fail registration.
+  - Runtime: sidebar and widget persist keys are prefixed and encoded
+    before reaching Web storage, so injected markup cannot name an
+    arbitrary origin key.
+- **Six new repo rules and four widened ones, one per bug shape the
+  round repeated**: `rootread` (a read under a caller-supplied root with
+  lexical containment only, the twin of `rootwrite`, which now also
+  follows helper-returned paths, `Rename`/`Link`/`Remove` sinks, and no
+  longer lets a sanitizer result shield a write; both recognize
+  `os.Root`), `negdur` (a caller-supplied duration folded onto a default
+  or an expiry decision with no negative rejection), `credfetch` (an
+  `http.Client` with no `CheckRedirect`, or an unbounded body decode, on
+  a credential-bearing fetch), contracts rules GOFASTR1408
+  (`attempts = $n` instead of `attempts + 1`) and GOFASTR1409 (the
+  catalog now holds 58 rules) (an
+  UPDATE/DELETE on claimed rows with no token fence where a sibling has
+  one), `emitident` extended to JS/TS declaration slots, a runtime lint
+  for an attribute value used raw as a storage key, and a gate that vets
+  the generated customer CLI with the repo vettool.
+
+### BREAKING
+- `POST /auth/register` no longer answers 409 for a taken address.
+- `gofastr harness*` exits 1 with no passphrase and no machine key.
+- MCP calls whose arguments violate the tool's declared schema get
+  invalid-params instead of reaching the handler; `WithLaxArgs()` restores
+  verbatim arguments per tool.
+- `LocalStorage.Save` returns `ErrInvalidKey` for a folded-key collision;
+  PDF requests past `MaxConcurrentRenders` get 503.
+- `MemorySessionStore.Create` returns an error for `ttl < 0`; `0` still
+  means the 7-day default.
+- `webhook.SQLStore.UpdateDelivery` / `SQLInboundStore.UpdateEnvelope`
+  no longer persist `Attempts`; attempts are claim-owned. Webhook
+  attempts now count claims, so crash loops dead-letter at `MaxAttempts`.
+- `DurableScheduler.Start` no longer returns evaluation errors; it logs
+  and retries, returning nil only on context cancel.
+- `StyleSheet.Set/Pseudo/Child/Keyframes` panic on a property name that
+  is not a CSS identifier. Emitted llm.md may carry visible escapes.
+- `cmd/kiln` `AdapterStore.SetTurnCancel` returns a token that
+  `ClearTurnCancel` requires. `mcpserver.NewHTTPHandler(s, nil, nil)`
+  answers 503 on every request.
+- `migrate.Register` refuses an empty `Up` (`SELECT 1` for a deliberate
+  no-op); a SQLite retype's `Down` is empty (forward-only); divergent
+  tenant columns across entity versions fail registration; SQLite apps
+  with a Seed gain a `_gofastr_seed_lock` table.
+- Generated Go SDK clients (`NewClient(base, nil)`) refuse redirects and
+  fail decode over 1 MiB; regenerate to pick both up.
+- Negative durations at the sites above return an error or panic at
+  construction instead of applying the default; `0` still selects it.
+- A static file reachable only through a symlink leaving its root now
+  falls through (was 200).
+- Sidebar collapse state and widget persist drafts stored under the raw
+  attribute key are not read; the namespaced key starts empty once.
+
 ## [0.82.0] - 2026-09-04
 
 ### Security

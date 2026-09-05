@@ -137,13 +137,13 @@ func TestDecodeDuplicateResolvesDifferentlyPerSurface(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/auth/login", strings.NewReader(formBody))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	formW := httptest.NewRecorder()
-	_, _, _, okForm := decodeAuthCredentials(formW, req)
+	_, _, _, okForm := decodeAuthCredentials(formW, req, CanonicalEmail)
 
 	jsonBody := `{"email":"` + victim + `","email":"` + mallory + `"}`
 	jreq := httptest.NewRequest(http.MethodPost, "/auth/login", bytes.NewReader([]byte(jsonBody)))
 	jreq.Header.Set("Content-Type", "application/json")
 	jsonW := httptest.NewRecorder()
-	_, _, _, okJSON := decodeAuthCredentials(jsonW, jreq)
+	_, _, _, okJSON := decodeAuthCredentials(jsonW, jreq, CanonicalEmail)
 
 	if okForm || okJSON {
 		t.Fatalf("ambiguous credential body resolved after the strict fix: form=%v json=%v — both surfaces must reject, not pick", okForm, okJSON)

@@ -193,6 +193,96 @@ MCP tools `framework_docs_list` / `framework_docs_get` /
   only when its body walks the C0 range), and `recovercallback`
   (interface-method callbacks on host-installed fields and the func
   results they return, on dispatch paths).
+  The 2026-09-04 round split the filesystem-root shape in two.
+  `rootwrite` widened to the sinks the storage symlink probe slipped
+  past (battery/storage Save/Delete): a same-package helper that
+  RETURNS the root-joined path counts as root-derived at the caller,
+  os.Rename/Link/Symlink DESTINATIONS, os.Remove, and MkdirAll of
+  filepath.Dir(<such path>). New `rootread` is the read twin:
+  os.Open/ReadFile/Stat/Remove and read-only OpenFile under a
+  root-joined path, plus caller-supplied fs.FS reads (.Open,
+  fs.ReadFile, fs.Stat) in HTTP-serving functions. The same round's
+  reviewer mutation (core/upload Save with both EvalSymlinks removed
+  stayed silent behind sanitizeKey) stripped the sanitizer shield from
+  `rootwrite` too: in EITHER twin only resolution postures gate —
+  EvalSymlinks on the chain or its Dir, symlink-named guards, an
+  O_NOFOLLOW flag, or an Lstat+ModeSymlink leaf check — and a
+  sanitized join is never one (the upload probes escaped through
+  exactly one). `os.Root` is the fix spelling of first resort on
+  Go 1.27: os.OpenRoot plus root.Open/ReadFile/Stat/Create/OpenFile/
+  Mkdir(All)/Remove/Rename confines reads and writes in the kernel —
+  no symlink escape, no TOCTOU — and both rules are quiet on it.
+  The 2026-09-04 round widened `emitident` with the JS/TS declaration
+  slots (`export const %s`, `readonly %s:`, `interface %s`,
+  `type %s`, `function %s(`, `class %s`, and unquoted object keys at
+  line start, each demanding code evidence after the name so prose
+  stays quiet): the generated client.d.ts emitted camelCased table
+  names with only toCamelCase — a transform, not a gate — in front,
+  while the .js had already moved to the quoted `this[%q]` spelling;
+  the package field memo is now type-qualified (a check on one
+  struct's Table field no longer silences a different struct's Table),
+  and a composite of constants gates like the constants it holds. The
+  same round added `negdur` (`d <= 0` substituting a default, or a
+  `d > 0`/`d != 0` decision arming expiry — an ExpiresAt/expiry/
+  deadline assignment or a time.After/.Add(d) call — on a
+  caller-supplied time.Duration, with or without an accompanying
+  "0 means default" arm: an unrejected negative silently becomes the
+  strongest setting, default-or-forever; reject `d < 0` or clamp to
+  zero/expired first). "Caller-supplied" means parameter-rooted:
+  receiver fields and config/options-named struct fields are
+  developer configuration (a host footgun, not an attacker-reachable
+  inversion) and stay quiet, as do a diverging refusal, a dominating
+  negative check — including one inside a package-local validator the
+  function calls with the same value (IssueToken →
+  validateTokenSpec) — a max(d, 0) clamp, a zero/disabled-sentinel
+  substitution, and an override-only-when-positive option setter
+  whose skipped arm keeps the pre-set default.
+  Three more came from the 2026-09-04 red-probe round, two of them in
+  the contracts pipeline because they read SQL strings, not types:
+  `GOFASTR1408 absattempts` (never write a retry counter from a
+  host-side value — `attempts = $1` in an UPDATE SET; overlapping
+  claimants both read N and both write N+1, so the attempt budget
+  under-counts. Increment in SQL at claim, `attempts = attempts + 1`,
+  the battery/queue spelling, and let settle write state, not
+  arithmetic) and `GOFASTR1409 unfencedclaim` (on a table whose
+  completion paths match `claim_token = $n`, every claim-state
+  UPDATE/DELETE needs its own fence — a token predicate, a
+  `claimed_at <= $n` staleness bound, or a terminal status guard; the
+  v0.66 fencing reached Ack/Nack and missed `release`). The third is
+  the vet analyzer `credfetch`: an http.Client with no CheckRedirect
+  carrying a credential-bearing request (a client_secret/token/code
+  form, an Authorization header, or a token-endpoint URL) re-sends the
+  credential to whatever host a redirect names — refuse redirects the
+  way battery/auth oidcNoRedirect does. The same analyzer reports the
+  unbounded decode of such a fetch's response
+  (`json.NewDecoder(resp.Body)` / `io.ReadAll(resp.Body)` with no
+  `io.LimitReader`), which is exactly where `unboundedbody`
+  deliberately stays silent. Both postures skip `_test.go` files
+  outright (2026-09-04 posture): a test client POSTing a fixture
+  code to an httptest.Server is not a credential flow, and a client
+  assignment in a test file must not decide a production field's
+  verdict — battery/auth/oauth2_test.go:657/:679 kept firing after
+  the oidcNoRedirect fix because the test's bare-client field note
+  won the merge and the report node pointed into the test file.
+  The 2026-09-04 red-probe round grew the browser-runtime lint family
+  in `core-ui/check/runtimeshapes.go` to eight: `storagekeyraw` fires
+  when a Web-storage key (`localStorage`/`sessionStorage`
+  setItem/getItem/removeItem, or a `document.cookie` write) uses a
+  data-fui-* attribute value raw — injected markup then writes or
+  clobbers any key on the origin; the fix is namespace AND component-
+  encode spelled at the sink (`PREFIX + encodeURIComponent(v)`,
+  banner.js's dismissKey shape; encoding alone leaves dots and hyphens
+  alive, so the prefix is load-bearing). Its live-tree probe is
+  `TestStorageKeysEncodeAttrValues` in `core-ui/runtime/
+  runtime_security_test.go`. The same round added the generated-code
+  gate `TestGeneratedCLIPassesRepoVettool` (`cmd/gofastr`): it
+  regenerates a CLI from a fixture spec into a temp module and runs the
+  repo vettool over the EMITTED code, plus a direct check that
+  terminal-control summaries never ship live — that round's
+  control-bytes sink exists only inside the Go source template in
+  `generate_cli.go` (printUsage prints `command.summary` raw), so no
+  analyzer over this repo can see it.
+
   Every registration is wrapped in `allow.Guard`
   (`internal/analyzers/allow`): a site that is the shape ON PURPOSE
   carries `//gofastr:allow(<analyzer>) <why>` on its line or the line

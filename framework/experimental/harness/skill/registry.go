@@ -9,6 +9,8 @@
 package skill
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -69,7 +71,7 @@ func (r *Registry) Load() error {
 			if filepath.Base(path) != "SKILL.md" {
 				return nil
 			}
-			s, err := skillmd.Parse(path)
+			s, err := parseSkillRooted(path)
 			if err != nil {
 				errs = append(errs, fmt.Errorf("%s: %w", path, err))
 				return nil
@@ -84,10 +86,37 @@ func (r *Registry) Load() error {
 			return nil
 		})
 	}
+
 	if len(errs) > 0 {
 		return errors.Join(errs...)
 	}
 	return nil
+}
+
+// parseSkillRooted parses the SKILL.md at path through an *os.Root over
+// its containing directory, so a SKILL.md that is a symlink pointing
+// outside the skill tree is refused instead of read: neither the tier-1
+// Load scan nor a tier-2 Activate reads file bytes from outside the
+// tree (2026-09-04 red-probe round). Dir and SHA256 are derived exactly
+// as skillmd.Parse derives them.
+func parseSkillRooted(path string) (*skillmd.Skill, error) {
+	root, err := os.OpenRoot(filepath.Dir(path))
+	if err != nil {
+		return nil, fmt.Errorf("skillmd: %s: %w", path, err)
+	}
+	defer root.Close()
+	data, err := root.ReadFile(filepath.Base(path))
+	if err != nil {
+		return nil, fmt.Errorf("skillmd: %s: %w", path, err)
+	}
+	s, err := skillmd.ParseBytes(data)
+	if err != nil {
+		return nil, fmt.Errorf("skillmd: %s: %w", path, err)
+	}
+	s.Dir = filepath.Dir(path)
+	sum := sha256.Sum256(data)
+	s.SHA256 = hex.EncodeToString(sum[:])
+	return s, nil
 }
 
 // Tier1Catalog returns the lightweight metadata for all loaded skills,
@@ -115,7 +144,7 @@ func (r *Registry) Activate(name string) (string, error) {
 	if e.bodyLoaded {
 		return e.body, nil
 	}
-	parsed, err := skillmd.Parse(e.path)
+	parsed, err := parseSkillRooted(e.path)
 	if err != nil {
 		return "", err
 	}
@@ -126,7 +155,9 @@ func (r *Registry) Activate(name string) (string, error) {
 
 // SupportingFile reads a tier-3 file (under scripts/, references/, or
 // assets/) for the named skill. Refuses paths that escape the skill
-// directory.
+// directory — lexically (.., absolute paths) and physically (symlinked
+// directory or file components): the read goes through an *os.Root over
+// the skill directory, which refuses symlink escapes in the kernel.
 func (r *Registry) SupportingFile(name, rel string) ([]byte, error) {
 	r.mu.RLock()
 	e, ok := r.skills[name]
@@ -138,7 +169,12 @@ func (r *Registry) SupportingFile(name, rel string) ([]byte, error) {
 	if strings.HasPrefix(clean, "..") || filepath.IsAbs(clean) {
 		return nil, fmt.Errorf("supporting file path %q escapes skill directory", rel)
 	}
-	return os.ReadFile(filepath.Join(e.dir, clean))
+	root, err := os.OpenRoot(e.dir)
+	if err != nil {
+		return nil, fmt.Errorf("skill %q: open dir %q: %w", name, e.dir, err)
+	}
+	defer root.Close()
+	return root.ReadFile(clean)
 }
 
 // SHA256 returns the hash of the named skill's SKILL.md, for TOFU comparison.

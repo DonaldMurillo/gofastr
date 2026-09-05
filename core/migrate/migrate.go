@@ -184,15 +184,23 @@ func (m *Migrator) validateGroupSelection(groups []string, mustBeRegistered bool
 	return nil
 }
 
-// Register adds a migration, rejecting an invalid group name or a duplicate
-// (Group, Version) pair. Migrations are kept sorted by (Version, Group) so the
-// pending list is already in apply order: within a group versions ascend, and
-// when multiple groups run together the tiebreak is group name, deterministic
-// and byte-identical to the pre-group sort when everything is in the default
-// group. A returned error does not mutate the migrator.
+// Register adds a migration, rejecting an invalid group name, an empty Up, or
+// a duplicate (Group, Version) pair. Migrations are kept sorted by (Version,
+// Group) so the pending list is already in apply order: within a group
+// versions ascend, and when multiple groups run together the tiebreak is group
+// name, deterministic and byte-identical to the pre-group sort when everything
+// is in the default group. A returned error does not mutate the migrator.
 func (m *Migrator) Register(mig Migration) error {
 	if err := validateGroupName(mig.Group); err != nil {
 		return err
+	}
+	// An empty Up applies nothing yet would still be recorded applied, so
+	// the tracking table would assert schema state that was never created.
+	// Refuse it the same way an invalid group name is refused: the author
+	// almost certainly mis-spelled a directive (parseMigration reports that
+	// with a sharper message; this guard covers programmatic registration).
+	if strings.TrimSpace(mig.Up) == "" {
+		return fmt.Errorf("migrate: migration %q (version %d in group %q) has no Up SQL; a migration that applies nothing must not be recorded applied", mig.Name, mig.Version, groupDisplayName(mig.Group))
 	}
 	for _, e := range m.migrations {
 		if e.Group == mig.Group && e.Version == mig.Version {
@@ -235,6 +243,8 @@ func parseMigration(r io.Reader) (*Migration, error) {
 	var group string
 	var upSQL, downSQL strings.Builder
 	var section string // "up" or "down"
+	upOpened := false
+	orphanedSQL := false // a real SQL line arrived while no section was open, so it is being discarded
 
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -259,6 +269,7 @@ func parseMigration(r io.Reader) (*Migration, error) {
 				}
 			} else if directive == "Up" {
 				section = "up"
+				upOpened = true
 			} else if directive == "Down" {
 				section = "down"
 			} else if directive == "NoTransaction" {
@@ -278,6 +289,16 @@ func parseMigration(r io.Reader) (*Migration, error) {
 				downSQL.WriteString("\n")
 			}
 			downSQL.WriteString(line)
+		default:
+			// Directives are case-sensitive ("-- +migrate up" is not an Up
+			// directive), and SQL that arrives before any section opens has
+			// nowhere to go. Either shape silently discarded the file's DDL
+			// while the runner still recorded the version as applied, so the
+			// tracking table asserted schema state that was never created.
+			// Track it and refuse below instead of dropping it.
+			if trimmed != "" && !strings.HasPrefix(trimmed, "--") {
+				orphanedSQL = true
+			}
 		}
 	}
 
@@ -287,6 +308,18 @@ func parseMigration(r io.Reader) (*Migration, error) {
 
 	if version == 0 {
 		return nil, fmt.Errorf("migration version is required (-- +migrate Version <n>)")
+	}
+
+	// A file whose Up section never opened applies nothing: a missing or
+	// misspelled directive ("-- +migrate Up" is case-sensitive) means the
+	// parsed Up is empty while the runner would still record the version
+	// applied. Fail loud at parse time, the same posture as RoutinesFS
+	// rejecting a routine with no Up body.
+	if !upOpened {
+		return nil, fmt.Errorf("migration %q (version %d) has no Up section: the -- +migrate Up directive is missing or misspelled (directives are case-sensitive); refusing a migration whose SQL would be silently discarded", name, version)
+	}
+	if strings.TrimSpace(upSQL.String()) == "" && orphanedSQL {
+		return nil, fmt.Errorf("migration %q (version %d) has an empty Up section but carries SQL lines outside any section (they would be silently discarded); move them below the -- +migrate Up directive", name, version)
 	}
 
 	return &Migration{

@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"go/token"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -572,8 +573,11 @@ func buildEntityModel(decl framework.EntityDeclaration, verbs []string) cliEntit
 func buildCLIEntity(decl framework.EntityDeclaration, verbs []string) (cliEntity, error) {
 	ent := buildEntityModel(decl, verbs)
 	// The CLI re-emits declaration strings into Go source: ent.Struct in
-	// identifier position (run%sList, %sCommands) and ent.Table raw inside
-	// "/%s/" string literals. The blueprint path into entities/ is guarded
+	// identifier position (run%sList, %sCommands) and ent.Table inside
+	// "/%s/" route literals — table slots go through url.PathEscape at
+	// the emitter, so path-shaping bytes (?, #, spaces) survive as data
+	// even past the literal gate below. The blueprint path into
+	// entities/ is guarded
 	// upstream (validateBlueprint: isGoIdentifier + query.SafeIdent), but
 	// packReadEntities also reads hand-written entity files, so the guard
 	// belongs at this emitter too: refuse what would break out of the
@@ -850,6 +854,7 @@ func renderCLIConfig(spec cliSpec) string {
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 )
@@ -871,7 +876,10 @@ func configPath() (string, error) {
 
 // loadConfig returns the stored config, or the zero value when there is
 // none: a missing or unreadable file is not an error, it just means the
-// caller falls through to flags/env.
+// caller falls through to flags/env. A CORRUPT file is refused loudly
+// instead: the zero value would march on as data, silently dropping the
+// stored token so every call runs unauthenticated against the
+// operator's assumption.
 func loadConfig() storedConfig {
 	var cfg storedConfig
 	path, err := configPath()
@@ -882,7 +890,10 @@ func loadConfig() storedConfig {
 	if err != nil {
 		return cfg
 	}
-	_ = json.Unmarshal(data, &cfg)
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		fmt.Fprintf(os.Stderr, "%s: config file %s is corrupt (%v); delete it or run '%s login' again\n", binaryName, path, err, binaryName)
+		os.Exit(1)
+	}
 	return cfg
 }
 
@@ -1386,7 +1397,7 @@ func renderCLIEntityFile(spec cliSpec, ent cliEntity) string {
 	return printJSON(out.Data)
 }
 
-`, ent.Struct, ent.Command+" get", ent.Command+" get", ent.Table)
+`, ent.Struct, ent.Command+" get", ent.Command+" get", url.PathEscape(ent.Table))
 	}
 	if has("create") {
 		renderCLIMutationVerb(&sb, ent, "create")
@@ -1415,7 +1426,7 @@ func renderCLIEntityFile(spec cliSpec, ent cliEntity) string {
 	return 0
 }
 
-`, ent.Struct, ent.Command+" delete", ent.Command+" delete", ent.Table)
+`, ent.Struct, ent.Command+" delete", ent.Command+" delete", url.PathEscape(ent.Table))
 	}
 	if has("batch-create") {
 		renderCLIBatchJSONVerb(&sb, ent, "batch-create", "BatchCreate", "items", "POST")
@@ -1456,7 +1467,7 @@ func run%sBatchDelete(args []string) int {
 	return printBatch(resp)
 }
 
-`, ent.Struct, ent.Struct, ent.Command+" batch-delete", ent.Command+" batch-delete", ent.Command+" batch-delete", ent.Table)
+`, ent.Struct, ent.Struct, ent.Command+" batch-delete", ent.Command+" batch-delete", ent.Command+" batch-delete", url.PathEscape(ent.Table))
 	}
 	if has("watch") {
 		fmt.Fprintf(&sb, `// run%sWatch streams the live event feed until interrupted; each event is
@@ -1578,7 +1589,7 @@ func renderCLIListVerb(sb *strings.Builder, ent cliEntity) {
 		q.Set(kv[0], kv[1])
 	}
 `)
-	fmt.Fprintf(sb, "\tpath := \"/%s\"\n", ent.Table)
+	fmt.Fprintf(sb, "\tpath := \"/%s\"\n", url.PathEscape(ent.Table))
 	sb.WriteString(`	if len(q) > 0 {
 		path += "?" + q.Encode()
 	}
@@ -1672,9 +1683,9 @@ func renderCLIMutationVerb(sb *strings.Builder, ent cliEntity, verb string) {
 		return code
 	}
 `)
-	path := fmt.Sprintf("%q", "/"+ent.Table)
+	path := fmt.Sprintf("%q", "/"+url.PathEscape(ent.Table))
 	if withID {
-		path = fmt.Sprintf("\"/%s/\"+url.PathEscape(id)", ent.Table)
+		path = fmt.Sprintf("\"/%s/\"+url.PathEscape(id)", url.PathEscape(ent.Table))
 	}
 	fmt.Fprintf(sb, `	var out singleResponse
 	if err := g.client.Do(g.ctx, %s, %s, body, &out); err != nil {
@@ -1710,7 +1721,7 @@ func run%s%s(args []string) int {
 	return printBatch(resp)
 }
 
-`, ent.Struct, funcSuffix, ent.Struct, funcSuffix, ent.Command+" "+verb, methods[httpMethod], ent.Table, key)
+`, ent.Struct, funcSuffix, ent.Struct, funcSuffix, ent.Command+" "+verb, methods[httpMethod], url.PathEscape(ent.Table), key)
 }
 
 func quoteList(items []string) string {

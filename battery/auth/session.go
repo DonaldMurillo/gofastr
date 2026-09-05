@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 )
@@ -105,9 +106,16 @@ func NewMemorySessionStore() *MemorySessionStore {
 
 // Create generates a random token, persists a new Session keyed on it, and
 // returns the result. ttl is the session lifetime; consumers passing 0 get
-// a sensible default (one week).
+// a sensible default (one week). A negative ttl is rejected outright,
+// mirroring EntitySessionStore.Create's fail-closed posture: a negative
+// lifetime can only be a sign or unit error, and substituting the default
+// would turn the caller's most restrictive input into the longest session
+// the store issues.
 func (m *MemorySessionStore) Create(_ context.Context, userID string, ttl time.Duration) (*Session, error) {
-	if ttl <= 0 {
+	if ttl < 0 {
+		return nil, fmt.Errorf("auth: MemorySessionStore.Create: ttl must be >= 0 (got %v)", ttl)
+	}
+	if ttl == 0 {
 		ttl = 7 * 24 * time.Hour
 	}
 	tok, err := newSessionToken()

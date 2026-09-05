@@ -75,6 +75,14 @@ contracts:
     GOFASTR1403: # security/html-concat
       exempt:
         - framework/contracts/**
+    # Same class for the two queue-SQL rules: their bad examples quote
+    # the absolute counter write and the unfenced claim UPDATE verbatim.
+    GOFASTR1408: # security/absolute-attempts-counter
+      exempt:
+        - framework/contracts/**
+    GOFASTR1409: # security/unfenced-claim-write
+      exempt:
+        - framework/contracts/**
 
     # The semantic-coverage rules read .gofastr/semantic-coverage.json,
     # which records WHICH TESTS RAN — and that differs by environment.

@@ -57,6 +57,13 @@ func (c *EmailChannel) Name() string { return c.channel }
 // a legitimate address. The downstream SMTP sender re-checks at the
 // transport boundary, but rejecting early surfaces the bug nearer the
 // data source.
+//
+// HTMLBody is passed through verbatim: the channel does not escape it.
+// The bundled MapTemplater already escapes interpolated values at its
+// sink (see its Render doc); a CUSTOM Templater owns the same
+// obligation — hand the channel a body whose user-controlled parts are
+// escaped, webmail is an HTML application and an unescaped value is a
+// session-theft-class XSS.
 func (c *EmailChannel) Send(ctx context.Context, n Notification, r Rendered) (err error) {
 	// The wrapped email.Sender is host-supplied code invoked from
 	// Notifier.Send's fan-out goroutines, which have no per-request

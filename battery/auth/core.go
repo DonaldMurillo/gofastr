@@ -1,10 +1,12 @@
 package auth
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
@@ -164,7 +166,7 @@ func (c *CorePlugin) loginHandler() http.HandlerFunc {
 		if !guardAuthLimit(c.loginLimit, w, r) {
 			return
 		}
-		email, password, isForm, ok := decodeAuthCredentials(w, r)
+		email, password, isForm, ok := decodeAuthCredentials(w, r, c.mgr.canonicalizeEmail)
 		if !ok {
 			return
 		}
@@ -177,13 +179,16 @@ func (c *CorePlugin) loginHandler() http.HandlerFunc {
 			return
 		}
 
-		// Per-account limit, keyed on the lower-cased email. Independent
-		// of the per-IP limit so an attacker pivoting IPs cannot bypass.
-		// Apply BEFORE the user-store lookup so an attacker can't probe
-		// account existence by measuring per-account 429s either,
-		// every non-empty email gets the same treatment.
+		// Per-account limit, keyed on the canonical email (decode already
+		// canonicalized and composed-checked it; the literal reuse keeps
+		// the limiter key and the lookup key the same string by
+		// construction). Independent of the per-IP limit so an attacker
+		// pivoting IPs cannot bypass. Apply BEFORE the user-store lookup
+		// so an attacker can't probe account existence by measuring
+		// per-account 429s either, every non-empty email gets the same
+		// treatment.
 		if c.loginLimitAccount != nil {
-			key := "account:" + CanonicalEmail(email)
+			key := "account:" + email
 			allowed, retry := c.loginLimitAccount.AllowContext(r.Context(), key)
 			if !allowed {
 				w.Header().Set("Retry-After", fmt.Sprintf("%.0f", retry.Seconds()))
@@ -454,22 +459,40 @@ func (c *CorePlugin) meHandler() http.HandlerFunc {
 }
 
 // registerHandler handles POST /auth/register, creates a new user.
-// Accepts JSON or form-encoded bodies. Form requests get a 303 redirect
-// to the post-register destination (?next= override or "/") with the
-// session cookie set after auto-login.
+// Accepts JSON or form-encoded bodies.
+//
+// ANTI-ENUMERATION (2026-09-04 red-probe round 3): the known-address
+// and unknown-address answers are indistinguishable — 202
+// {"accepted":true} on the JSON surface, a 303 to the post-register
+// destination on the form surface, and no session cookie on either
+// branch. Register used to answer 409 "email already registered" for a
+// taken address, the one unauthenticated account-existence oracle left
+// in the battery (forgot-password, login, and magic-link send all pin
+// the opposite policy, and forgotHandler documents the uniform-response
+// + equal-work contract this handler now mirrors). A known address
+// creates nothing; instead the EXISTING holder is notified via
+// AuthConfig.RegisterEmailSender, off the timed path. The password hash
+// is computed BEFORE the branch, so both sides burn the same bcrypt
+// work — the register analogue of forgot-password's
+// burnUnknownBranchWork (CWE-208).
+//
+// BREAKING (round 3 decision): registration no longer auto-logs-in.
+// The form path no longer sets the session cookie (a cookie minted on
+// only one branch re-opens the oracle) and the JSON path returns 202
+// without the created user object. Clients follow up with /auth/login.
 func (c *CorePlugin) registerHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// Cross-site rejection first, a 403'd request must not burn the
 		// victim's per-IP budget (see loginHandler). Then the per-IP
 		// throttle: unthrottled registration is account-table flooding +
-		// email bombing once verification mail is wired.
+		// email bombing once the duplicate-notice sender is wired.
 		if rejectCrossSiteForm(w, r) {
 			return
 		}
 		if !guardAuthLimit(c.registerLimit, w, r) {
 			return
 		}
-		email, password, isForm, ok := decodeAuthCredentials(w, r)
+		email, password, isForm, ok := decodeAuthCredentials(w, r, c.mgr.canonicalizeEmail)
 		if !ok {
 			return
 		}
@@ -505,6 +528,8 @@ func (c *CorePlugin) registerHandler() http.HandlerFunc {
 			return
 		}
 
+		// Hash BEFORE the taken/unknown branch: bcrypt is the dominant
+		// per-request cost, so neither branch is cheap to clock.
 		hash, err := HashPassword(password)
 		if err != nil {
 			writeAuthError(w, http.StatusInternalServerError, "password hashing failed")
@@ -512,62 +537,95 @@ func (c *CorePlugin) registerHandler() http.HandlerFunc {
 		}
 
 		user, err := store.CreateUser(r.Context(), email, hash, roles)
-		if err != nil {
-			if isForm {
-				writeFormAuthError(w, r, http.StatusConflict, "email_taken")
-			} else {
-				writeAuthError(w, http.StatusConflict, "email already registered")
-			}
+		taken := errors.Is(err, ErrEmailTaken)
+		if err != nil && !taken {
+			// A store/transport failure is not the collision sentinel.
+			// The old handler answered 409 "email already registered"
+			// here, reporting an account that may not exist; a real
+			// failure stays a 500 and stays visible.
+			writeAuthError(w, http.StatusInternalServerError, "registration failed")
 			return
 		}
 
-		// Registration succeeded, record before the form/JSON branch so
-		// both paths produce the event.
-		c.mgr.emitSecurity(r.Context(), SecurityEvent{
-			Kind:   "register.succeeded",
-			UserID: user.GetID(),
-			Email:  email,
-			Remote: remoteHost(r),
-		})
-
-		// Form path: auto-login + cookie + 303 redirect.
-		if isForm {
-			// Same rule as every other minting path: go through
-			// MintSession so the second-factor pending mark is applied.
-			// A freshly-registered user has no factor today, but the
-			// invariant is "no path creates a session the enforcement
-			// layer never sees", the exceptions are what this audit
-			// found.
-			sess, _, err := c.mgr.MintSession(r.Context(), user.GetID(), c.mgr.Config().SessionTTL)
-			if err != nil {
-				writeAuthError(w, http.StatusInternalServerError, "session create failed")
-				return
+		if taken {
+			// Known address: create nothing, tell the holder, and
+			// leave the operator a trail. The audit event carries the
+			// HOLDER's id (never echoed to the caller); the notice is
+			// delivered off the timed path.
+			ev := SecurityEvent{
+				Kind:   "register.duplicate",
+				Email:  email,
+				Remote: remoteHost(r),
 			}
-			cfg := c.mgr.Config()
-			http.SetCookie(w, &http.Cookie{
-				Name:     cfg.SessionCookie,
-				Value:    sess.Token,
-				Path:     "/",
-				HttpOnly: true,
-				Secure:   cfg.SessionSecure,
-				SameSite: http.SameSiteStrictMode,
-				Expires:  sess.ExpiresAt,
+			if holder, _, ferr := store.FindByEmail(r.Context(), email); ferr == nil && holder != nil {
+				ev.UserID = holder.GetID()
+				c.deliverRegisterDuplicateNotice(r, holder.GetEmail())
+			}
+			c.mgr.emitSecurity(r.Context(), ev)
+		} else {
+			// Registration succeeded, record before the form/JSON
+			// branch so both paths produce the event.
+			c.mgr.emitSecurity(r.Context(), SecurityEvent{
+				Kind:   "register.succeeded",
+				UserID: user.GetID(),
+				Email:  email,
+				Remote: remoteHost(r),
 			})
+		}
+
+		// ONE uniform answer for both branches.
+		if isForm {
+			// No session cookie: minting one here would re-open the
+			// oracle the uniform response just closed (and on the
+			// taken branch there is no user to mint for). The caller
+			// lands on the destination logged-out and signs in.
 			http.Redirect(w, r, successRedirect(w, r, "/"), http.StatusSeeOther)
 			return
 		}
-
-		writeCredentialHeaders(w)
 		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusCreated)
-		json.NewEncoder(w).Encode(map[string]any{
-			"user": map[string]any{
-				"id":    user.GetID(),
-				"email": user.GetEmail(),
-				"roles": user.GetRoles(),
-			},
-		})
+		w.WriteHeader(http.StatusAccepted)
+		_ = json.NewEncoder(w).Encode(map[string]any{"accepted": true})
 	}
+}
+
+// duplicateRegisterNoticeBody is mailed to the existing holder when an
+// anonymous caller registers with their address. It deliberately
+// carries no URL and no token: the recipient needs no credential, and
+// the notice must not be usable as a phish vector.
+const duplicateRegisterNoticeBody = "Someone tried to create an account with this email address. " +
+	"An account already exists. If this was you, sign in or reset your password; " +
+	"if not, you can ignore this message."
+
+// deliverRegisterDuplicateNotice mails the existing account holder off
+// the timed path: the goroutine is started once the uniform response is
+// already decided, so the client cannot clock the known/unknown
+// branches apart — the same posture forgotHandler documents for its
+// delivery. context.WithoutCancel keeps the send alive after the
+// request context is torn down. The sender is a host-supplied
+// interface called from our goroutine, so the call runs under a
+// recover guard: a panicking Send becomes a WARN, not a process kill
+// (the recovercallback contract).
+func (c *CorePlugin) deliverRegisterDuplicateNotice(r *http.Request, holderEmail string) {
+	if holderEmail == "" {
+		return
+	}
+	sender := c.mgr.Config().RegisterEmailSender
+	if sender == nil {
+		return
+	}
+	ctx := context.WithoutCancel(r.Context())
+	go func() {
+		defer func() {
+			if p := recover(); p != nil {
+				slog.Warn("register duplicate-notice sender panicked",
+					"plugin", "core", "email_hash", hashedIdentifier(holderEmail), "panic", fmt.Sprint(p))
+			}
+		}()
+		if err := sender.Send(ctx, holderEmail, duplicateRegisterNoticeBody); err != nil {
+			slog.Warn("register duplicate-notice send failed",
+				"plugin", "core", "email_hash", hashedIdentifier(holderEmail), "err", err)
+		}
+	}()
 }
 
 // writeAuthError is the shared error helper: it emits the canonical flat

@@ -24,6 +24,7 @@ pb := print.New(print.Config{
     DefaultAccess: print.RequireAuth,        // per-user docs aren't public
     AppCSSURL:     "/__gofastr/app.css",     // inherit host design tokens
     // PDFRenderer: nil,                      // nil → /pdf routes return 501
+    // MaxConcurrentRenders: 4,               // render cap; see PDF output
 })
 
 app.RegisterBattery(pb)
@@ -174,6 +175,14 @@ per-user invoices. It prints with `WithPreferCSSPageSize`, so the shell's
 `@page` size and margins win. Without a renderer, `/pdf` returns
 `501 Not Implemented` (the route exists, the capability is unwired) rather
 than a misleading 404.
+
+Every render is a whole headless-Chromium process, so the battery caps
+how many run at once: `Config.MaxConcurrentRenders` (default `4`,
+battery-wide across all documents' `/pdf` routes). A request that finds
+all slots busy is answered `503` with `Retry-After: 1` — before the
+document's `Build` runs — instead of queueing another browser the node
+has to find room for. Raise it only on hardware that can actually run
+that many Chromiums concurrently.
 
 **`Config.BaseURL` and PDF tokens.** A `data:` document has no origin, so
 it can't resolve a relative `/__gofastr/app.css` link; design tokens would

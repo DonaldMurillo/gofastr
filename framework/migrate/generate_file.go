@@ -88,6 +88,9 @@ func GenerateMigrationFile(plan Plan, name string, opts MigrationFileOptions) (s
 	if err != nil {
 		return "", err
 	}
+	if afterVersionScan != nil {
+		afterVersionScan(opts.MigrationsDir, filename)
+	}
 	if opts.Group != "" {
 		// Stamp the -- +migrate Group directive just before the Up section so
 		// the runner scopes this migration into the named group. Fail loudly
@@ -99,14 +102,43 @@ func GenerateMigrationFile(plan Plan, name string, opts MigrationFileOptions) (s
 		}
 		content = stamped
 	}
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-		return "", fmt.Errorf("write %s: %w", path, err)
+	// Kernel-contained create: the file is written through an *os.Root
+	// over MigrationsDir with O_EXCL, so a symlink planted at the chosen
+	// filename after the version scan is refused by the kernel instead
+	// of followed outside the directory — and a pre-existing entry at
+	// the name is refused rather than clobbered. The numbering makes a
+	// collision impossible for honest writers (the scan counts every
+	// NNNN_*.sql entry), so O_EXCL only ever fires on a plant or a race.
+	root, oerr := os.OpenRoot(opts.MigrationsDir)
+	if oerr != nil {
+		return "", fmt.Errorf("open %s: %w", opts.MigrationsDir, oerr)
+	}
+	defer root.Close()
+	w, werr := root.OpenFile(filename, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
+	if werr != nil {
+		return "", fmt.Errorf("write %s: %w", path, werr)
+	}
+	if _, werr = w.Write([]byte(content)); werr != nil {
+		w.Close()
+		return "", fmt.Errorf("write %s: %w", path, werr)
+	}
+	if werr = w.Close(); werr != nil {
+		return "", fmt.Errorf("write %s: %w", path, werr)
 	}
 	if err := SaveSnapshot(snapPath, next); err != nil {
 		return "", fmt.Errorf("snapshot update failed (migration written): %w", err)
 	}
 	return path, nil
 }
+
+// afterVersionScan is a test seam: when non-nil it runs after the next
+// migration version has been scanned and the filename chosen, and
+// immediately before the file is created. The scan has already committed
+// to the name, so a symlink planted here is invisible to the numbering
+// and is followed by a plain os.WriteFile. Nothing installs it outside
+// the security tests (same pattern as core/router's serveHook); tests
+// using it must not run in parallel.
+var afterVersionScan func(dir, filename string)
 
 // nextMigrationVersion returns one past the highest NNNN_ prefix among the
 // existing .sql files, or 1 when the directory is empty. Matches the blueprint

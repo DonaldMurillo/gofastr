@@ -463,8 +463,10 @@ func TestRunSeeds_CancelledLoopAndSeedNilSkip(t *testing.T) {
 	// exercising the "honour cancellation between seeds" branch deterministically.
 	db, m := mock(t)
 	expectSQLiteDialect(m)
+	expectSQLiteSeedLockAcquire(m)
 	m.ExpectExec("CREATE TABLE IF NOT EXISTS").WillReturnResult(sqlmock.NewResult(0, 0))
 	m.ExpectQuery("SELECT entity_name").WillReturnRows(sqlmock.NewRows([]string{"entity_name"}))
+	m.ExpectExec("DELETE FROM \"_gofastr_seed_lock\"").WillReturnResult(sqlmock.NewResult(0, 1))
 	if err := RunSeeds(errOnlyCtx{context.Background()}, db, testReg{"e": seededEntity("e", okSeed)}); err == nil {
 		t.Error("expected cancelled-context error in the seed loop")
 	}
@@ -473,9 +475,11 @@ func TestRunSeeds_CancelledLoopAndSeedNilSkip(t *testing.T) {
 	// seeded one runs and records.
 	db2, m2 := mock(t)
 	expectSQLiteDialect(m2)
+	expectSQLiteSeedLockAcquire(m2)
 	m2.ExpectExec("CREATE TABLE IF NOT EXISTS").WillReturnResult(sqlmock.NewResult(0, 0))
 	m2.ExpectQuery("SELECT entity_name").WillReturnRows(sqlmock.NewRows([]string{"entity_name"}))
 	m2.ExpectExec("INSERT INTO").WillReturnResult(sqlmock.NewResult(0, 1))
+	m2.ExpectExec("DELETE FROM \"_gofastr_seed_lock\"").WillReturnResult(sqlmock.NewResult(0, 1))
 	reg := testReg{
 		"aaa": rawEnt("aaa", "aaa", nil, nil, ""), // no Seed, sorts first → skipped
 		"zzz": seededEntity("zzz", okSeed),
@@ -483,6 +487,14 @@ func TestRunSeeds_CancelledLoopAndSeedNilSkip(t *testing.T) {
 	if err := RunSeeds(context.Background(), db2, reg); err != nil {
 		t.Fatalf("seed-nil-skip path: %v", err)
 	}
+}
+
+// expectSQLiteSeedLockAcquire stubs the acquire half of the SQLite seed lock
+// (create the lock table, win the lease upsert); the caller queues the
+// release DELETE after whatever it expects from the seed body itself.
+func expectSQLiteSeedLockAcquire(m sqlmock.Sqlmock) {
+	m.ExpectExec("CREATE TABLE IF NOT EXISTS \"_gofastr_seed_lock\"").WillReturnResult(sqlmock.NewResult(0, 0))
+	m.ExpectExec("INSERT INTO \"_gofastr_seed_lock\"").WillReturnResult(sqlmock.NewResult(0, 1))
 }
 
 // errOnlyCtx reports a non-nil Err() while never closing Done(), so DB calls

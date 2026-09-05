@@ -1,8 +1,12 @@
 package static
 
 import (
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -158,4 +162,188 @@ func TestStatic_ETagNotLeakHashState(t *testing.T) {
 	if etag != etag2 {
 		t.Errorf("ETag inconsistent for same content: %q vs %q", etag, etag2)
 	}
+}
+
+// TestStatic_SymlinkEscapeRefused pins the symlink read escape, found
+// by the 2026-09-04 red-probe round; fixed in Handler (resolves the
+// FS root once) and serveFile (refuses with 404 unless the opened
+// target still resolves under that root, on every open).
+//
+// Property: a static file handler configured with a root filesystem
+// must never serve, at request time, a path that resolves through a
+// symlink to content outside that root — the read sink is contained
+// by the configured root, exactly as the write sinks are (the repo's
+// rootwrite analyzer polices this shape on writes; this proves the
+// read side).
+// Surfaces: core/static/static.go::Handler, ::serveFile (both opens),
+// and core/static/cache.go::fileETag (hashes only post-containment
+// content). embed.FS cannot carry symlinks and is unaffected.
+func TestStatic_SymlinkEscapeRefused(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("os.Symlink needs developer mode on windows; shape covered by review")
+	}
+
+	root := t.TempDir()
+	outside := t.TempDir()
+	secretFile := filepath.Join(outside, "secret.txt")
+	if err := os.WriteFile(secretFile, []byte("OUTSIDE-SECRET"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	outsideSub := filepath.Join(outside, "subdir")
+	if err := os.MkdirAll(outsideSub, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(outsideSub, "k.txt"), []byte("SUBDIR-SECRET"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// A legitimate in-root file, to prove the handler still serves the
+	// tree it was given.
+	if err := os.WriteFile(filepath.Join(root, "ok.txt"), []byte("OK"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Attack shapes: direct file symlink, directory symlink walked with
+	// a subpath, and a two-hop chain whose intermediate hop is in-root.
+	links := []struct {
+		name string // symlink created inside root
+		dest string
+	}{
+		{"leak", secretFile},
+		{"dlink", outside},
+		{"hop1", filepath.Join(root, "hop2")},
+	}
+	for _, l := range links {
+		if err := os.Symlink(l.dest, filepath.Join(root, l.name)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Symlink(outside, filepath.Join(root, "hop2")); err != nil {
+		t.Fatal(err)
+	}
+
+	h := Handler(Config{FS: os.DirFS(root)})
+
+	// Sanity: the in-root file is served normally.
+	if rr := doGet(h, "/ok.txt"); rr.Code != http.StatusOK || rr.Body.String() != "OK" {
+		t.Fatalf("in-root file: status=%d body=%q, want 200 OK", rr.Code, rr.Body.String())
+	}
+
+	// Every escape shape must be refused.
+	cases := []struct {
+		path string
+		want string // substring of the escaped content that must NOT reach the client
+	}{
+		{"/leak", "OUTSIDE-SECRET"},
+		{"/dlink/subdir/k.txt", "SUBDIR-SECRET"},
+		{"/hop1/secret.txt", "OUTSIDE-SECRET"},
+	}
+	for _, tc := range cases {
+		rr := doGet(h, tc.path)
+		if rr.Code == http.StatusOK || rr.Body.String() == tc.want {
+			t.Errorf("SECURITY: [static-symlink] GET %s served status=%d body=%q: "+
+				"the handler followed a symlink out of its configured root and "+
+				"streamed content the root does not contain. The request path "+
+				"passed every spelling check (no '..', no dotfile, no forbidden "+
+				"config name), so only target resolution can contain it.",
+				tc.path, rr.Code, rr.Body.String())
+		}
+	}
+}
+
+// swappingFS wraps a disk FS and fires onOpen after the inner Open has
+// returned the handle — after the kernel resolved the name, before any
+// caller-side containment check runs. That gap is the swap window the
+// test below drives deterministically.
+type swappingFS struct {
+	inner  fs.FS
+	onOpen func(name string, f fs.File)
+}
+
+func (s swappingFS) Open(name string) (fs.File, error) {
+	f, err := s.inner.Open(name)
+	if err == nil && s.onOpen != nil {
+		s.onOpen(name, f)
+	}
+	return f, err
+}
+
+// TestStatic_SymlinkSwapWindowRefused pins the check-then-open window the
+// first symlink fix left, found by the 2026-09-04 red-probe round; fixed
+// by opening disk-backed requests through an *os.Root (kernel-enforced
+// containment, no post-open check to race) instead of opening through
+// the FS and verifying the target afterwards.
+//
+// Property: the handler must never stream content from outside its
+// configured root — and the guarantee may not depend on re-resolving
+// the name AFTER the file was already opened, because the tree can
+// change between the two.
+// Surfaces: core/static/static.go::serveFile (both opens: the primary
+// and the non-seekable reopen, both now routed through *os.Root for
+// disk-backed roots) and core/static/cache.go::fileETag (hashes only
+// content the contained open produced).
+func TestStatic_SymlinkSwapWindowRefused(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("os.Symlink needs developer mode on windows; shape covered by review")
+	}
+
+	root := t.TempDir()
+	outside := t.TempDir()
+	secret := filepath.Join(outside, "secret.txt")
+	if err := os.WriteFile(secret, []byte("OUTSIDE-SECRET"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "ok.txt"), []byte("OK"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(secret, filepath.Join(root, "leak")); err != nil {
+		t.Fatal(err)
+	}
+
+	// The attack: while serveFile holds the fd that Open resolved
+	// through the symlink, replace the symlink with a real in-root file
+	// so a post-open EvalSymlinks check would see a contained path. The
+	// kernel-contained open never consults the swapped tree: the fd and
+	// the refusal are decided by the same syscall.
+	swapped := false
+	fsys := swappingFS{
+		inner: os.DirFS(root),
+		onOpen: func(name string, _ fs.File) {
+			if name != "leak" || swapped {
+				return
+			}
+			swapped = true
+			link := filepath.Join(root, "leak")
+			if err := os.Remove(link); err != nil {
+				t.Fatalf("swap: remove symlink: %v", err)
+			}
+			if err := os.WriteFile(link, []byte("decoy-in-root"), 0o644); err != nil {
+				t.Fatalf("swap: plant real file: %v", err)
+			}
+		},
+	}
+
+	h := Handler(Config{FS: fsys})
+
+	// Sanity: the wrapped FS serves in-root files normally (and
+	// resolveFSRoot still detects the disk backing through the wrapper).
+	rr := doGet(h, "/ok.txt")
+	if rr.Code != http.StatusOK || rr.Body.String() != "OK" {
+		t.Fatalf("in-root file: status=%d body=%q, want 200 OK", rr.Code, rr.Body.String())
+	}
+
+	rr = doGet(h, "/leak")
+	if rr.Code == http.StatusOK && rr.Body.String() == "OUTSIDE-SECRET" {
+		t.Fatalf("SECURITY: [static-symlink-swap] GET /leak streamed OUTSIDE-SECRET through "+
+			"the swap window: Open resolved the symlink (fd -> %s), the attacker replaced "+
+			"the symlink with a real in-root file, and only THEN did a containment check "+
+			"run on the name — which now resolves inside the root. A post-open check "+
+			"certifies a tree state the handle does not reflect; containment must be "+
+			"enforced by the open itself. (swap fired: %v)", secret, swapped)
+	}
+}
+
+func doGet(h http.Handler, path string) *httptest.ResponseRecorder {
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, path, nil))
+	return rr
 }

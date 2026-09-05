@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"go/parser"
 	"go/token"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -376,4 +377,182 @@ func TestCLIFileCollisionsFailGeneration(t *testing.T) {
 			t.Errorf("traversal error must say so: %v", err)
 		}
 	})
+}
+
+// Pins [cli-summary-c0], found by the 2026-09-04 red-probe round; fixed
+// in oaBuildOp refusing summaries that carry terminal-control bytes at
+// spec build, next to the identifier grammar checks.
+// Property: a spec-derived string carrying terminal-control bytes never
+// reaches the operator's terminal raw through the generated CLI's help
+// output — --from-openapi is "the real boundary: the spec can be a URL",
+// and printUsage/groupUsage fmt.Printf the summary verbatim, so ESC/OSC/C0
+// bytes in a hostile spec rewrite the help text the operator reads to
+// decide what to run. Newlines and tabs stay accepted (quoted data, not
+// terminal rewrites) — the sibling pin above requires that.
+// Surfaces: cmd/gofastr/generate_cli_openapi.go::oaBuildOp (the refusal,
+// applied to both the spec summary and the method+path fallback),
+// versus buildCLISpec's Selection guard (the established refusal pattern
+// for this sink class).
+func TestCLISummaryControlBytesRefused(t *testing.T) {
+	for _, hostileSummary := range []string{
+		"list things\x1b]0;pwned\x07\r  EVIL", // OSC title-set + CR line rewrite
+		"sum\x1bmary",                         // bare ESC
+		"line\x00nul",                         // NUL
+		"del\x7fete",                          // DEL
+	} {
+		docObj := map[string]any{
+			"openapi": "3.0.3",
+			"paths": map[string]any{
+				"/things": map[string]any{
+					"get": map[string]any{
+						"operationId": "listThings",
+						"summary":     hostileSummary,
+					},
+				},
+			},
+		}
+		raw, err := json.Marshal(docObj)
+		if err != nil {
+			t.Fatalf("marshal fixture: %v", err)
+		}
+		m := decodeJSONMap(t, string(raw))
+		if _, err := buildOpenAPICLISpec(m, defaultCLIOptions(), "example.com/app/internal/client"); err == nil {
+			t.Errorf("summary %q: buildOpenAPICLISpec accepted terminal-control bytes that printUsage would write verbatim to the operator's terminal", hostileSummary)
+		}
+	}
+
+	// False-positive guard: printable summaries — including newlines and
+	// the quote/backslash/backtick soup the sibling pin keeps ACCEPTED —
+	// still build and stay quoted data in operations.go.
+	printable := "sum`mary \" \\ \n end"
+	docObj := map[string]any{
+		"openapi": "3.0.3",
+		"paths": map[string]any{
+			"/things": map[string]any{
+				"get": map[string]any{
+					"operationId": "listThings",
+					"summary":     printable,
+				},
+			},
+		},
+	}
+	raw, _ := json.Marshal(docObj)
+	spec, err := buildOpenAPICLISpec(decodeJSONMap(t, string(raw)), defaultCLIOptions(), "example.com/app/internal/client")
+	if err != nil {
+		t.Fatalf("printable summary refused: %v", err)
+	}
+	ops := renderCLIOpsFile(spec)
+	if !strings.Contains(ops, fmt.Sprintf("%q", printable)) {
+		t.Errorf("printable summary not stored as its exact quoted literal:\n%s", ops)
+	}
+}
+
+// TestCLIRouteLiteralsEscapeTable: every route literal the entity CLI and
+// the typed client emit is fed by cliEntity.Table, which the literal gate
+// only clears of quote/backslash/control bytes — path-shaping bytes
+// (?, #, spaces, traversal) survive it raw into "/%s/" request paths.
+// All table slots now go through url.PathEscape at the emitter (the
+// treatment the id slots already had), which is identity for every
+// legitimate table byte: the generated output for a plain table is
+// byte-identical, and a hostile one stays a single inert segment.
+// Surfaces: generate_cli.go (get/delete/batch-delete route literals, list
+// path, mutation with-ID and no-ID paths, batch-json _batch path),
+// generate_client.go (List/Get/Create/Update/Patch/Delete/Batch*/Watch
+// paths).
+func TestCLIRouteLiteralsEscapeTable(t *testing.T) {
+	const table = "a b?c#d/e" // passes the literal gate; URL-shaping bytes
+	escaped := url.PathEscape(table)
+	decls := []framework.EntityDeclaration{{
+		Name:  "events",
+		Table: table,
+		Fields: []framework.FieldDeclaration{
+			{Name: "title", Type: "string"},
+		},
+	}}
+	spec, err := buildCLISpec(decls, defaultCLIOptions(), "example.com/app/entities/client")
+	if err != nil {
+		t.Fatalf("spec build: %v", err)
+	}
+	files := renderCLIFiles(spec)
+	var cliJoined string
+	for _, f := range files {
+		cliJoined += f.content
+		if strings.HasSuffix(f.name, ".go") {
+			fset := token.NewFileSet()
+			if _, err := parser.ParseFile(fset, f.name, f.content, 0); err != nil {
+				t.Fatalf("%s does not parse after the escape sweep: %v\n%s", f.name, err, f.content)
+			}
+		}
+	}
+	for _, want := range []string{
+		`"/` + escaped + `/"`,        // get / delete (with id)
+		`"/` + escaped + `/_batch"`,  // batch-delete / batch-create / batch-update
+		`path := "/` + escaped + `"`, // list
+	} {
+		if !strings.Contains(cliJoined, want) {
+			t.Errorf("emitted CLI route literal missing escaped table %q:\n%s", want, cliJoined)
+		}
+	}
+	if strings.Contains(cliJoined, `"/`+table+`/"`) {
+		t.Errorf("raw table survived into an emitted route literal")
+	}
+
+	clientSrc := renderClient(decls)
+	if !strings.Contains(clientSrc, `"/`+escaped+`/"`) {
+		t.Errorf("typed client route literal missing escaped table:\n%s", clientSrc)
+	}
+	if strings.Contains(clientSrc, `"/`+table+`/"`) {
+		t.Errorf("raw table survived into the typed client's route literal")
+	}
+
+	// False-positive guard: a legitimate table is byte-identical —
+	// PathEscape is the identity on the plain alphabet.
+	plain := []framework.EntityDeclaration{{
+		Name:  "events",
+		Table: "blog-posts",
+		Fields: []framework.FieldDeclaration{
+			{Name: "title", Type: "string"},
+		},
+	}}
+	plainSpec, err := buildCLISpec(plain, defaultCLIOptions(), "example.com/app/entities/client")
+	if err != nil {
+		t.Fatalf("plain table refused: %v", err)
+	}
+	var plainJoined string
+	for _, f := range renderCLIFiles(plainSpec) {
+		plainJoined += f.content
+	}
+	if !strings.Contains(plainJoined, `"/blog-posts/"`) {
+		t.Errorf("plain dashed table no longer emitted verbatim")
+	}
+}
+
+// TestGeneratedCLIChecksConfigDecode: the emitted config.go used to
+// discard json.Unmarshal's error, so a corrupt ~/.config/<cli>/config.json
+// silently degraded to the zero config — every call ran unauthenticated
+// against the operator's assumption. The emitted code must check the
+// error and refuse. Both CLI modes share renderCLIConfig.
+func TestGeneratedCLIChecksConfigDecode(t *testing.T) {
+	spec, err := buildCLISpec(cliFixtureDecls(), defaultCLIOptions(), "example.com/app/entities/client")
+	if err != nil {
+		t.Fatalf("buildCLISpec: %v", err)
+	}
+	src := renderCLIConfig(spec)
+	fset := token.NewFileSet()
+	if _, err := parser.ParseFile(fset, "config.go", src, parser.AllErrors); err != nil {
+		t.Fatalf("emitted config.go does not parse: %v\n%s", err, src)
+	}
+	if strings.Contains(src, "_ = json.Unmarshal") {
+		t.Fatalf("SECURITY: [cli-config-decode] emitted config.go discards the json.Unmarshal error — a corrupt config file marches on as the zero value (stored token silently dropped, every call unauthenticated):\n%s", src)
+	}
+	if !strings.Contains(src, "if err := json.Unmarshal(data, &cfg); err != nil") {
+		t.Fatalf("emitted loadConfig does not check the decode error:\n%s", src)
+	}
+	// The refusal must be reachable: stderr message naming the file and
+	// a non-zero exit, with the fmt import the branch needs.
+	for _, want := range []string{`"fmt"`, "config file", "os.Exit(1)"} {
+		if !strings.Contains(src, want) {
+			t.Fatalf("emitted config.go corrupt-file refusal missing %q:\n%s", want, src)
+		}
+	}
 }

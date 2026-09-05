@@ -19,7 +19,10 @@ type Cache interface {
 	Get(ctx context.Context, key string, dest any) error
 
 	// Set stores a value in the cache with the given TTL.
-	// A TTL of 0 means the entry uses the default TTL.
+	// A TTL of 0 means the entry uses the default TTL. A negative TTL
+	// is "already expired": nothing is stored and any existing entry
+	// under the key is dropped (or refused, on backends that cannot
+	// express it) — never widened into retention.
 	Set(ctx context.Context, key string, value any, ttl time.Duration) error
 
 	// Delete removes a key from the cache.
@@ -54,6 +57,8 @@ var getOrSetGroup singleflight.Group
 //
 // dest must be a non-nil pointer. The loader's returned value is round-tripped
 // through the cache (JSON) so the value written into dest is the cached form.
+// A negative ttl follows the Cache.Set contract: the loader still runs, but
+// nothing is stored and GetOrSet surfaces the miss (ErrCacheMiss).
 func GetOrSet(ctx context.Context, c Cache, key string, ttl time.Duration, dest any, loader Loader) error {
 	// Fast path: already cached.
 	if err := c.Get(ctx, key, dest); err == nil {

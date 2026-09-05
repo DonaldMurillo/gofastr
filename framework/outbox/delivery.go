@@ -535,14 +535,23 @@ func (o *Outbox) markDeliveryDispatched(ctx context.Context, d claimedDelivery) 
 // flapping consumer can't burn through every attempt in a tight loop.
 // Only pending deliveries may record a handler failure; every other state is
 // terminal until an explicit Replay.
+//
+// Both arms increment attempts RELATIVELY (attempts = attempts + 1), never
+// from the claim-time snapshot: when a handler outruns its lease a second
+// relay re-claims the still-pending delivery off the same pre-settle
+// snapshot, and two absolute snapshot+1 writes record two handler
+// invocations as one — MaxAttempts then bounds claim/settle cycles instead
+// of the handler invocations it exists to bound. The dead-letter decision
+// still uses the snapshot (it decides what THIS settle does); the counter
+// write itself must be monotonic.
 func (o *Outbox) markDeliveryFailure(ctx context.Context, d claimedDelivery, cause error) {
 	newAttempts := d.Attempts + 1
 	if newAttempts >= o.maxAttempts {
 		if _, err := o.db.ExecContext(ctx,
 			fmt.Sprintf(`UPDATE %s
-				SET status='dead', attempts=$1, last_error=$2, claimed_until=NULL, next_attempt_at=NULL
-				WHERE row_id=$3 AND consumer=$4 AND status='pending'`, o.qd()),
-			newAttempts, truncateError(cause), d.RowID, d.Consumer); err != nil {
+				SET status='dead', attempts = attempts + 1, last_error=$1, claimed_until=NULL, next_attempt_at=NULL
+				WHERE row_id=$2 AND consumer=$3 AND status='pending'`, o.qd()),
+			truncateError(cause), d.RowID, d.Consumer); err != nil {
 			slog.Default().Error("outbox: mark delivery dead failed; lease recovery will retry",
 				"row_id", d.RowID, "consumer", d.Consumer, "error", err)
 		}
@@ -551,9 +560,9 @@ func (o *Outbox) markDeliveryFailure(ctx context.Context, d claimedDelivery, cau
 	next := o.now().UTC().Add(backoff.Exponential(o.backoffBase, o.backoffMax, newAttempts))
 	if _, err := o.db.ExecContext(ctx,
 		fmt.Sprintf(`UPDATE %s
-			SET status='pending', attempts=$1, last_error=$2, next_attempt_at=$3, claimed_until=NULL
-			WHERE row_id=$4 AND consumer=$5 AND status='pending'`, o.qd()),
-		newAttempts, truncateError(cause), next, d.RowID, d.Consumer); err != nil {
+				SET status='pending', attempts = attempts + 1, last_error=$1, next_attempt_at=$2, claimed_until=NULL
+				WHERE row_id=$3 AND consumer=$4 AND status='pending'`, o.qd()),
+		truncateError(cause), next, d.RowID, d.Consumer); err != nil {
 		slog.Default().Error("outbox: requeue failed delivery failed; lease recovery will retry",
 			"row_id", d.RowID, "consumer", d.Consumer, "error", err)
 	}

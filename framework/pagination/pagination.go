@@ -3,10 +3,31 @@ package pagination
 import (
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"math"
 	"net/http"
 	"strconv"
 	"strings"
+)
+
+const (
+	// maxCursorEncodedSize caps the base64 text a cursor decoder will
+	// look at, mirroring dsl.maxDSLInputSize. The cursor is
+	// client-borne (?cursor= rides the query string, capped only by
+	// net/http's ~1 MB header limit), and decode cost used to be
+	// proportional to whatever the client chose: a megabyte-class
+	// cursor allocated its full field set on every list route before
+	// any validation refused it. A server-minted cursor for any real
+	// keyset is a few hundred bytes.
+	maxCursorEncodedSize = 16 * 1024
+
+	// maxCursorFields caps how many keyset columns one cursor may
+	// carry. CursorFields is developer-declared (typically 1-3
+	// columns, the PK appended automatically), so 64 is two orders
+	// past any legitimate composite while bounding the per-element
+	// allocation (struct + two strings + control scrub per name) to a
+	// fixed cost.
+	maxCursorFields = 64
 )
 
 // stripControls removes bytes / codepoints that have caused cursor /
@@ -180,6 +201,9 @@ func EncodeCursor(field string, value any) string {
 // sort key containing e.g. U+200B must round-trip losslessly or paging
 // resumes before that row and re-serves it.
 func DecodeCursor(cursor string) (field string, value string, err error) {
+	if len(cursor) > maxCursorEncodedSize {
+		return "", "", fmt.Errorf("pagination: cursor exceeds %d bytes", maxCursorEncodedSize)
+	}
 	b, err := base64.StdEncoding.DecodeString(cursor)
 	if err != nil {
 		return "", "", err
@@ -224,6 +248,9 @@ func EncodeMultiCursor(fields []string, row map[string]any) string {
 // cursor encoded. Returns the empty slice + an error if the cursor doesn't
 // match the expected shape.
 func DecodeMultiCursor(cursor string) ([]multiCursorField, error) {
+	if len(cursor) > maxCursorEncodedSize {
+		return nil, fmt.Errorf("pagination: cursor exceeds %d bytes", maxCursorEncodedSize)
+	}
 	b, err := base64.StdEncoding.DecodeString(cursor)
 	if err != nil {
 		return nil, err
@@ -231,6 +258,9 @@ func DecodeMultiCursor(cursor string) ([]multiCursorField, error) {
 	var tok multiCursorToken
 	if err := json.Unmarshal(b, &tok); err != nil {
 		return nil, err
+	}
+	if len(tok.Fields) > maxCursorFields {
+		return nil, fmt.Errorf("pagination: cursor carries %d fields (max %d)", len(tok.Fields), maxCursorFields)
 	}
 	// Names reach ORDER BY / allow-lists, so they get the same
 	// control-byte scrub as DecodeCursor. Values are bound SQL args,

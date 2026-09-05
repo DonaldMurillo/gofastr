@@ -55,9 +55,26 @@ store := storage.NewLocalStorage("./uploads",
 
 `NewLocalStorage(baseDir, opts...)` roots storage at `baseDir` (created
 if missing). Writes are atomic: data lands in a temp file in the same
-directory, then renames into place. `WithPermissions` sets the saved
-file mode; `WithTempDir` overrides the temp directory used for the
-atomic write.
+directory, then renames into place. Containment is enforced on the
+symlink-resolved path at every operation, with the syscalls performed
+through an `os.Root` over the resolved root so a symlink planted *after*
+resolution is refused by the kernel too: a key that reaches through a
+symlinked directory or leaf to a file outside `baseDir` is refused with
+a key error instead of read, written, or deleted; errors never carry
+the absolute storage path. `WithPermissions` sets the saved file mode;
+`WithTempDir` overrides the temp directory used for the atomic write
+(a temp dir outside `baseDir` keeps the older resolve-then-open staging
+there, because the atomic rename cannot be expressed through the root).
+
+On a case-insensitive or Unicode-normalization-insensitive filesystem
+(macOS's default APFS, most CIFS mounts), two spellings of a key resolve
+to one file, so `Save` refuses a key that folds onto an existing object
+stored under a byte-different spelling — including through a directory
+component (`tenanta/new.txt` is refused when `TenantA/` exists) — with
+an `ErrInvalidKey` error (HTTP 400 through the upload serve layer)
+naming the stored spelling. Re-saving the exact stored key stays an
+ordinary overwrite. Objects planted straight onto disk by other tools
+with folded spellings follow the filesystem's folding, not the store's.
 
 `LocalStorage` implements `RangeGetter`, so HTTP range requests
 (`Range:` bytes) are answered with a `206` from the seekable file

