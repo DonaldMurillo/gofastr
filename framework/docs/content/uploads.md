@@ -373,6 +373,56 @@ bounds the *input* it inspects to `SanitizeFilenameInputBound`
 (`4 × MaxFilenameBytes`) so a multi-megabyte attacker-supplied
 filename can't force unbounded pre-truncation work (DoS).
 
+## Metadata in stored originals
+
+By default the stored original is byte-for-byte what was uploaded,
+image metadata included: a phone photo keeps its EXIF block, GPS
+coordinates and all, and every later download serves it. That is
+deliberate, not an oversight — the framework does not silently rewrite
+originals — but some uploads (avatars, user-generated galleries) should
+not carry the uploader's location. For those, pass `file.StripMetadata`:
+
+```go
+ff, err := file.ProcessFileField(ctx, store, part, filename, "products", "cover",
+    file.StripMetadata(), file.WithImageDeriver(deriver))
+```
+
+Auto-CRUD multipart uploads opt in app-wide with
+`framework.WithStripUploadMetadata()` (every entity's file and image
+fields), or per handler with `CrudHandler.StripUploadMetadata = true`:
+
+```go
+app := framework.NewApp(
+    framework.WithStripUploadMetadata(), // strip EXIF/XMP from every stored original
+)
+```
+
+What it removes:
+
+| Format | Removed | How |
+|--------|---------|-----|
+| JPEG | every APPn segment (EXIF, XMP, ICC, Photoshop data) and COM comments; anything after EOI | segments spliced out; no re-encode unless a rotation is needed |
+| PNG | `tEXt`, `zTXt`, `iTXt`, `eXIf` chunks | re-encoded (PNG is lossless, pixels unchanged) |
+| WebP | `EXIF` and `XMP ` chunks | container rewritten, image bytes untouched |
+
+An EXIF orientation of 2–8 is applied first so the stripped photo still
+displays upright: JPEG and PNG bake the rotation into the pixels (the
+only path that re-compresses a JPEG, at quality 95), while WebP keeps an
+orientation-only EXIF chunk, because the WebP encoder lives above this
+layer and the container is all that can be rewritten here.
+
+Behaviour worth knowing:
+
+- Stripping is gated on the sniffed content, never the filename. A file
+  named `photo.jpg` whose bytes are not a JPEG passes through
+  unchanged, as does every non-JPEG/PNG/WebP upload (GIF included).
+- It runs before the image pipeline, so renditions and the BlurHash are
+  derived from the stripped bytes, and `FileField.Size` reflects them.
+- It fails closed: a JPEG, PNG, or WebP whose structure cannot be
+  walked fails the upload rather than being stored unstripped.
+- The auto-CRUD multipart path does not expose a strip knob yet;
+  `StripMetadata` applies when you drive `ProcessFileField` yourself.
+
 ## Storage backends
 
 `upload.Storage` is the interface:
@@ -500,6 +550,10 @@ read, and a clear validation error if the expected digest isn't 64 hex
 characters.
 
 ## Common mistakes
+
+- **Expecting uploads to be scrubbed by default.** Originals keep
+  EXIF/GPS metadata unless you pass `file.StripMetadata` on a direct
+  `ProcessFileField` call; the default is preservation.
 
 - **Forgetting `WithFileStorage`.** Multipart requests on an `Image`/
   `File` entity will error. JSON requests still work; they just can't

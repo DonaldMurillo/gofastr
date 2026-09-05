@@ -508,7 +508,14 @@ it "150 lines of pure orchestration" was overstated. The honest list:
    schemas, cache hints. The loop never assembles content directly;
    that's how middleware stays the place to extend.
 3. **Send to the provider** and parse the stream into typed events.
-   Emit each event onto the bus.
+   Emit each event onto the bus. The collector caps what one turn may
+   buffer — text, thinking, and tool-call argument bytes combined — at
+   8 MiB (`DefaultMaxStreamBytesPerTurn`, per-engine override
+   `Engine.MaxStreamBytesPerTurn`); past the cap the turn fails loudly
+   with `ErrStreamCapExceeded` and the partial output is kept for the
+   transcript. This is the stream-side twin of the 64 KiB per-block
+   tool-result cap: a hostile or buggy endpoint cannot grow harness
+   memory without bound for the length of the HTTP timeout.
 4. **Dispatch tool calls** through the tool middleware chain.
    Results feed back as input.
 5. **Decide whether to loop or yield.** This is the one piece of
@@ -1860,8 +1867,12 @@ gofastr harness creds delete openrouter default
 2. `GOFASTR_HARNESS_PASSPHRASE` env var: derives a key via
    PBKDF2-SHA256 with a per-install salt at
    `~/.config/gofastr/harness/salt`.
-3. A built-in dev passphrase (warns loudly; suitable for local
-   experimentation only).
+
+With neither set, the store refuses to open and `gofastr harness`
+(including `harness mcp`) refuses to boot: there is no default
+passphrase, since one shipped in the repository would make "encrypted
+at rest" indistinguishable from plaintext. Set one of the two
+variables before storing any credential.
 
 The credstore file is at `~/.config/gofastr/harness/creds.enc`.
 `XDG_CONFIG_HOME` overrides the `~/.config` base when set.

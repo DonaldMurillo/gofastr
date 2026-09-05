@@ -2,6 +2,7 @@ package main
 
 import (
 	"crypto/rand"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -50,7 +51,8 @@ func runHarnessCreds(args []string) {
 // Key resolution order (first wins):
 //  1. GOFASTR_HARNESS_MACHINE_KEY env var (32-byte hex/base64/raw key).
 //  2. GOFASTR_HARNESS_PASSPHRASE env var.
-//  3. Default passphrase (suitable for dev only; warns loudly).
+//
+// With neither set the store refuses to open (no default passphrase).
 func runHarnessCredsAdd(args []string) {
 	if len(args) < 3 {
 		fail("Usage: gofastr harness creds add <provider> <account> <secret>")
@@ -136,7 +138,9 @@ func runHarnessCredsDelete(args []string) {
 // key using the same priority order as runHarness:
 //  1. GOFASTR_HARNESS_MACHINE_KEY (CI / headless path)
 //  2. GOFASTR_HARNESS_PASSPHRASE
-//  3. default passphrase (warns)
+//
+// With neither set it fails closed (noCredstoreKeyHelp); there is no
+// default passphrase.
 func openCredstore() (*credstore.EncryptedFileStore, error) {
 	xdgConfig, err := resolveHarnessXDGConfig()
 	if err != nil {
@@ -166,11 +170,22 @@ func resolveHarnessXDGConfig() (string, error) {
 	return filepath.Join(home, ".config", "gofastr", "harness"), nil
 }
 
+// noCredstoreKeyHelp is the single fail-closed refusal shared by every
+// CLI path that opens the credential store (harness, harness mcp,
+// harness creds). The repo shipped a hard-coded default passphrase
+// here until the 2026-09-04 red-probe round; a constant published in
+// the source tree is not encryption, so with neither a passphrase nor
+// a machine key configured the store refuses to open and the harness
+// refuses to boot. The message names the two ways to provide a key.
+const noCredstoreKeyHelp = "no credential-store key configured: set GOFASTR_HARNESS_PASSPHRASE, or provide a 32-byte key via GOFASTR_HARNESS_MACHINE_KEY"
+
 // deriveCredstoreKeyFromEnv picks the key using the same policy as the
 // main runHarness boot path:
 //  1. GOFASTR_HARNESS_MACHINE_KEY
 //  2. GOFASTR_HARNESS_PASSPHRASE
-//  3. hard-coded dev default (warns)
+//
+// With neither set it fails closed (see noCredstoreKeyHelp): there is
+// deliberately no default passphrase.
 func deriveCredstoreKeyFromEnv(xdgConfig string) ([]byte, error) {
 	if mk, err := machineKeyFromEnv(); err != nil {
 		return nil, fmt.Errorf("GOFASTR_HARNESS_MACHINE_KEY: %w", err)
@@ -180,8 +195,7 @@ func deriveCredstoreKeyFromEnv(xdgConfig string) ([]byte, error) {
 
 	pass := os.Getenv("GOFASTR_HARNESS_PASSPHRASE")
 	if pass == "" {
-		warn("Using default credstore passphrase. Set GOFASTR_HARNESS_PASSPHRASE to silence this warning.")
-		pass = "harness-default-passphrase-change-me"
+		return nil, errors.New(noCredstoreKeyHelp)
 	}
 
 	saltPath := filepath.Join(xdgConfig, "salt")

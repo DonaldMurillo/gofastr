@@ -63,6 +63,12 @@ func runHarnessMCP(args []string) {
 	// stays clean.
 	logger := logging.New(os.Stderr, logging.LevelWarn)
 
+	machineKey, err := machineKeyFromEnv()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		osExit(1)
+		return
+	}
 	cfg := xharness.Config{
 		Profile:       prof,
 		WorkingDir:    mustGetwd(),
@@ -70,9 +76,17 @@ func runHarnessMCP(args []string) {
 		XDGState:      xdgState,
 		Logger:        logger,
 		CredstorePass: os.Getenv("GOFASTR_HARNESS_PASSPHRASE"),
+		MachineKey:    machineKey,
 	}
-	if cfg.CredstorePass == "" {
-		cfg.CredstorePass = "harness-default-passphrase-change-me"
+	if cfg.CredstorePass == "" && len(cfg.MachineKey) == 0 {
+		// Fail closed: no default passphrase. This is the wiring its
+		// own doc comment advertises to Claude Code / Codex, where
+		// real provider keys get stored; booting it keyed by a
+		// repo-public constant was protection in name only
+		// (2026-09-04 red-probe round).
+		fmt.Fprintf(os.Stderr, "gofastr harness mcp: %s\n", noCredstoreKeyHelp)
+		osExit(1)
+		return
 	}
 	h, err := xharness.New(cfg)
 	if err != nil {

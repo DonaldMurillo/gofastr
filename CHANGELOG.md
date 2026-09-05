@@ -8,6 +8,33 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 ## [Unreleased]
 
 ### Security
+- **Round-3 contract decisions, all fifteen implemented** (the probes held
+  red in the previous change set are now permanent tests): registration
+  answers one uniform response for known and unknown addresses; email
+  identity is NFC-normalized by default with `AuthConfig.CanonicalizeEmail`
+  as the override; the 2FA store fails closed on ciphertext it cannot open
+  and drains `PreviousEncryptionKeys` on read; notify's `MapTemplater`
+  renders HTML bodies through `html/template`; the admin form flash travels
+  in a signed, size-capped cookie instead of process RAM; the default
+  idempotency store is bounded (`MaxStoreEntries` 100,000,
+  `MaxStoreEntryBytes`); `LocalStorage.Save` refuses a key that folds onto
+  an existing object on case- or normalization-insensitive filesystems;
+  the print battery caps concurrent PDF renders (`MaxConcurrentRenders`,
+  default 4, 503 past it); `gofastr harness` and its subcommands refuse to
+  run without `GOFASTR_HARNESS_PASSPHRASE` or a machine key (the built-in
+  passphrase is gone); the harness engine caps one provider turn at 8 MiB
+  (`Engine.MaxStreamBytesPerTurn`); `config.Load` binds pointer-nested
+  structs; MCP `tools/call` validates arguments against the declared
+  `inputSchema` (types, required, enum, items, `additionalProperties` as
+  declared) with `WithLaxArgs()` to opt a tool out; the outbox relay gives
+  each consumer handler a timeout (`WithHandlerTimeout`, default 30s);
+  `netguard.IsInternal` counts IPv6 site-local `fec0::/10`; and image
+  originals keep their metadata by default with `file.StripMetadata()`,
+  `framework.WithStripUploadMetadata()` or `CrudHandler.StripUploadMetadata`
+  to strip EXIF/XMP/text segments (orientation applied first).
+- Dependency: `golang.org/x/text` is now a direct requirement (NFC), which
+  moves `golang.org/x/tools` to 0.48, `x/sync` to 0.22 and `x/mod` to 0.38.
+
 - **Red-probe round 3: 61 adversarial probes over sixteen property
   families the earlier rounds never opened, 46 fixed, 15 kept red as
   open contract questions.** Every fix ships with the probe promoted to
@@ -82,6 +109,13 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   the generated customer CLI with the repo vettool.
 
 ### BREAKING
+- `POST /auth/register` no longer answers 409 for a taken address.
+- `gofastr harness*` exits 1 with no passphrase and no machine key.
+- MCP calls whose arguments violate the tool's declared schema get
+  invalid-params instead of reaching the handler; `WithLaxArgs()` restores
+  verbatim arguments per tool.
+- `LocalStorage.Save` returns `ErrInvalidKey` for a folded-key collision;
+  PDF requests past `MaxConcurrentRenders` get 503.
 - `MemorySessionStore.Create` returns an error for `ttl < 0`; `0` still
   means the 7-day default.
 - `webhook.SQLStore.UpdateDelivery` / `SQLInboundStore.UpdateEnvelope`

@@ -206,15 +206,16 @@ const (
 // App is the top-level application container.
 // It wires together the entity registry, router, MCP server, and database.
 type App struct {
-	Registry           *Registry
-	router             *router.Router // access via App.Router() method
-	MCP                *mcp.Server
-	DB                 *sql.DB
-	Config             AppConfig
-	Plugins            *PluginManager
-	Storage            upload.Storage                          // optional; enables multipart on Image/File fields
-	imageDeriver       file.ImageDeriver                       // optional; derives renditions + BlurHash for Image fields
-	fieldImageDerivers map[string]map[string]file.ImageDeriver // entity -> field -> override
+	Registry            *Registry
+	router              *router.Router // access via App.Router() method
+	MCP                 *mcp.Server
+	DB                  *sql.DB
+	Config              AppConfig
+	Plugins             *PluginManager
+	Storage             upload.Storage                          // optional; enables multipart on Image/File fields
+	imageDeriver        file.ImageDeriver                       // optional; derives renditions + BlurHash for Image fields
+	fieldImageDerivers  map[string]map[string]file.ImageDeriver // entity -> field -> override
+	stripUploadMetadata bool                                    // WithStripUploadMetadata: strip EXIF/XMP from stored originals
 
 	migrationRoutines []migrate.Routine // stored procedures/functions/triggers run on boot
 	migrationViews    []migrate.View    // views (virtual tables built from entities) run on boot
@@ -726,6 +727,18 @@ func WithFileStorage(s upload.Storage) AppOption {
 // Requires WithFileStorage; the renditions are written through the same
 // backend as the original. A source that cannot be decoded fails the
 // upload rather than storing a file with no renditions.
+// WithStripUploadMetadata opts every auto-CRUD multipart upload into
+// file.StripMetadata: EXIF, XMP and text segments are removed from the
+// stored original (JPEG, PNG, WebP; other bytes pass through), with EXIF
+// orientation applied first so photos still display upright. Off by
+// default: originals are stored verbatim. Per-handler: CrudHandler.
+// StripUploadMetadata.
+func WithStripUploadMetadata() AppOption {
+	return func(a *App) {
+		a.stripUploadMetadata = true
+	}
+}
+
 func WithImagePipeline(d file.ImageDeriver) AppOption {
 	return func(a *App) {
 		a.imageDeriver = d
@@ -1380,6 +1393,7 @@ func (a *App) GroupEntity(g *routegroup.RouteGroup, name string, config entity.E
 		crudHandler.Storage = a.Storage
 		crudHandler.ImageDeriver = a.imageDeriver
 		crudHandler.FieldImageDerivers = a.fieldImageDerivers[name]
+		crudHandler.StripUploadMetadata = a.stripUploadMetadata
 		crudHandler.Events = a.Events()
 		// Guarded assignment: a bare `= a.outbox` would wrap a typed nil
 		// in the EventOutbox interface and silently swallow every event.
@@ -1881,6 +1895,7 @@ func (a *App) TryEntity(name string, config entity.EntityConfig) (err error) {
 		crudHandler.Storage = a.Storage
 		crudHandler.ImageDeriver = a.imageDeriver
 		crudHandler.FieldImageDerivers = a.fieldImageDerivers[name]
+		crudHandler.StripUploadMetadata = a.stripUploadMetadata
 		crudHandler.Events = a.Events()
 		// Guarded assignment: a bare `= a.outbox` would wrap a typed nil
 		// in the EventOutbox interface and silently swallow every event.
@@ -1933,6 +1948,7 @@ func (a *App) CrudHandler(name string) (*crud.CrudHandler, error) {
 	ch.Storage = a.Storage
 	ch.ImageDeriver = a.imageDeriver
 	ch.FieldImageDerivers = a.fieldImageDerivers[name]
+	ch.StripUploadMetadata = a.stripUploadMetadata
 	ch.Events = a.Events()
 	if a.outbox != nil {
 		ch.Outbox = a.outbox

@@ -103,6 +103,16 @@ srv.RegisterTool(
 on an empty name, a nil handler, or a duplicate name. The `inputSchema` is a
 JSON Schema as `map[string]any`, serialized verbatim in `tools/list`.
 
+The declared `inputSchema` is **enforced** at dispatch: `tools/call` (and the
+in-process `CallTool`) validates `arguments` against it before the handler
+runs and answers `invalid-params` on a mismatch — JSON types, `required`,
+`enum`, `items`, and `additionalProperties` as declared (`false` closes the
+object; absent allows extras, the JSON Schema default). The schema
+`tools/list` advertises is the contract the caller is held to, so a handler
+never receives type-confused arguments it must defend against itself. A tool
+that must see its arguments verbatim opts out with `WithLaxArgs()` (see
+below) and validates on its own.
+
 `UnregisterTool(name)` removes a tool and reports whether it was there. It
 exists for an opt-in that can only be withdrawn *after* registration: the
 dev MCP registers its mutating control tools during `InitPlugins`, but
@@ -134,6 +144,7 @@ Options:
 | `WithOutputSchema(schema)` | Declares the JSON Schema of the tool's `structuredContent`; served as `outputSchema` in `tools/list`. |
 | `WithToolMeta(meta)` | Attaches a `_meta` object, serialized verbatim in `tools/list`. MCP Apps use it to link a tool to its UI resource, e.g. `{"ui": {"resourceUri": "ui://app/widget.html"}}`. |
 | `WithToolGate(gate)` | Per-caller precondition; see [gating](#gating). A nil gate panics. |
+| `WithLaxArgs()` | Skips dispatch-time `inputSchema` validation; the tool receives its arguments verbatim and validates them itself. |
 
 Three more calls matter when you hold the server in-process:
 

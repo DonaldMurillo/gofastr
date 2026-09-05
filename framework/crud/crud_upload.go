@@ -249,6 +249,9 @@ func saveFilePart(ctx context.Context, ch *CrudHandler, key string, fieldType sc
 	defer f.Close()
 
 	var opts []file.ProcessOption
+	if ch.StripUploadMetadata {
+		opts = append(opts, file.StripMetadata())
+	}
 	// Only Image fields get the pipeline. A File field is any binary, a
 	// PDF, a CSV, and decoding it as an image would fail every upload.
 	if fieldType == schema.Image {
