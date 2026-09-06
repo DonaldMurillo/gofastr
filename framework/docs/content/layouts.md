@@ -21,6 +21,14 @@ A screen with its own layout renders in that layout alone. Only screens
 without one fall back to `SetDefaultLayout`, and only screens in a
 `ScreenGroup` nest under it.
 
+Two chrome-less layouts ship ready-made. `app.EmbedLayout()` is for a
+screen rendered inside someone else's page (`gofastr docs embed`): no
+header, no footer, sized to its content. `app.WidgetLayout()` is for a
+floating desktop widget window (`gofastr docs desktop`): no chrome, a
+transparent page behind the screen's own surface, and
+`--ui-layout-widget-padding` (default 8px) between the window edge and
+that surface.
+
 ## Nesting with ScreenGroup
 
 `ScreenGroup` is the nesting API: a URL prefix plus a layout that wraps

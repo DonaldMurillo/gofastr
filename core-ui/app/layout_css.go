@@ -21,6 +21,17 @@ func LayoutBaseCSS() string {
    empty space under the content. Caught in a screenshot; invisible to any DOM
    assertion, because every element is present and correct. */
 .layout-embed .layout-body { min-height: 0; }
+
+/* Widget layout (WidgetLayout): a floating desktop window, borderless and
+   transparent. The page must paint NOTHING behind the screen's own surface
+   (the host CSS gives html and body the theme background, which would show
+   as an opaque slab behind a ui.Card in a window the OS made transparent),
+   and the body must not be viewport-tall or padded: a 320-point window has
+   no room for a column gutter. --ui-layout-widget-padding is the gap between
+   the window edge and the surface. */
+html:has(.layout-widget), body:has(.layout-widget) { background-color: transparent; }
+.layout-widget .layout-body { min-height: 0; }
+.layout-widget main, .layout-widget .layout-content { padding: var(--ui-layout-widget-padding, 8px); }
 @media (max-width: 47.99rem) {
   .layout-body { display: block; }
   .layout-body > nav { border-right: none; border-bottom: 1px solid var(--color-border, #e4e4e7); }
