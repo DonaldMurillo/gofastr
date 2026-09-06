@@ -86,12 +86,15 @@ func enrichCodeBlocks(body string) string {
 			out.WriteString(body[idx:])
 			break
 		}
-		lang := langFromCodeAttrs(rest[:gt])
+		lang := codeAttr(rest[:gt], `class="language-`)
+		meta := parseFenceMeta(codeAttr(rest[:gt], `data-meta="`))
 		raw := stdhtml.UnescapeString(rest[gt+1 : gt+1+end])
 		block := CodeBlock(CodeBlockConfig{
-			Lines:    HighlightLines(raw, lang),
-			Language: lang,
-			ShowCopy: true,
+			Lines:       HighlightLines(raw, lang),
+			Language:    lang,
+			Filename:    meta.filename,
+			LineNumbers: meta.lineNumbers,
+			ShowCopy:    true,
 		})
 		out.WriteString(string(block))
 		i = idx + len(openPre) + gt + 1 + end + len(closer)
@@ -99,19 +102,82 @@ func enrichCodeBlocks(body string) string {
 	return out.String()
 }
 
-// langFromCodeAttrs extracts the language from a `<code>` tag's attribute
-// string, e.g. ` class="language-go"` → "go". Returns "" when absent.
-func langFromCodeAttrs(attrs string) string {
-	const marker = `class="language-`
+// codeAttr extracts one value from a `<code>` tag's attribute string, given
+// everything up to and including its opening quote: ` class="language-go"`
+// with marker `class="language-` → "go". Returns "" when absent.
+func codeAttr(attrs, marker string) string {
 	_, after, ok := strings.Cut(attrs, marker)
 	if !ok {
 		return ""
 	}
-	v := after
-	if before, _, ok := strings.Cut(v, "\""); ok {
+	if before, _, ok := strings.Cut(after, "\""); ok {
 		return before
 	}
 	return ""
+}
+
+// fenceMeta is what this renderer understands of a fence's options, which
+// core/markdown parses off the info string and passes through verbatim in
+// data-meta. Two of them, both mapping onto CodeBlock:
+//
+//	```go title="main.go" showLineNumbers
+//
+// title (quoted or bare) names the block's chrome header; showLineNumbers turns
+// on the gutter. Anything else is ignored rather than rejected, so a fence
+// carrying options for some other tool still renders.
+type fenceMeta struct {
+	filename    string
+	lineNumbers bool
+}
+
+func parseFenceMeta(meta string) fenceMeta {
+	var out fenceMeta
+	for _, tok := range splitFenceMeta(stdhtml.UnescapeString(meta)) {
+		key, val, hasVal := strings.Cut(tok, "=")
+		switch strings.ToLower(key) {
+		case "title", "filename":
+			if hasVal {
+				out.filename = strings.Trim(val, `"'`)
+			}
+		case "showlinenumbers":
+			// Bare flag, or an explicit showLineNumbers=false to turn it off.
+			out.lineNumbers = !hasVal || strings.Trim(val, `"'`) != "false"
+		}
+	}
+	return out
+}
+
+// splitFenceMeta splits on whitespace, except inside quotes: a title with a
+// space in it is one token.
+func splitFenceMeta(meta string) []string {
+	var toks []string
+	var cur strings.Builder
+	var quote byte
+	flush := func() {
+		if cur.Len() > 0 {
+			toks = append(toks, cur.String())
+			cur.Reset()
+		}
+	}
+	for i := 0; i < len(meta); i++ {
+		c := meta[i]
+		switch {
+		case quote != 0:
+			if c == quote {
+				quote = 0
+			}
+			cur.WriteByte(c)
+		case c == '"' || c == '\'':
+			quote = c
+			cur.WriteByte(c)
+		case c == ' ' || c == '\t':
+			flush()
+		default:
+			cur.WriteByte(c)
+		}
+	}
+	flush()
+	return toks
 }
 
 var markdownStyle = registry.RegisterStyle("ui-markdown", markdownCSS)

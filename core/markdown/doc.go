@@ -8,7 +8,8 @@
 // Supported block elements:
 //   - ATX headings (#, ##, … up to ######)
 //   - Paragraphs
-//   - Fenced code blocks (``` with optional language tag)
+//   - Fenced code blocks (three or more ` or ~, with an optional info string:
+//     a language, then options this package passes through in data-meta)
 //   - Unordered lists (-, *, +)
 //   - Ordered lists (1., 2., …)
 //   - Blockquotes (>)

@@ -127,6 +127,22 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   Empty keeps those exact strings. The arrow is part of the value, so a
   translation can move it to the other side of the word.
 
+### Fixed
+- **A fence option no longer costs a code block its syntax highlighting.**
+  `core/markdown` took the whole info string as the language, so
+  ` ```go title="main.go" ` emitted
+  `class="language-go title=&quot;main.go&quot;"`, which matches no language.
+  The first token is the language; the rest lands in `data-meta` on the
+  `<code>` tag, and `ui.Markdown` maps `title=` to the block's filename
+  header and `showLineNumbers` to its gutter. `markdown.ParseFenceInfo`
+  exposes the split.
+- **Fences longer than three characters work, per CommonMark.** The parser
+  read exactly three, so ` ````md ` opened a three-backtick block with the
+  language `` `md `` and the first inner ` ``` ` closed it, tearing a
+  markdown example that contains a fenced block into three pieces. A fence
+  is now closed only by a run of the same character at least as long as the
+  opener, with nothing after it.
+
 ### BREAKING
 - `POST /auth/register` no longer answers 409 for a taken address.
 - `gofastr harness*` exits 1 with no passphrase and no machine key.
