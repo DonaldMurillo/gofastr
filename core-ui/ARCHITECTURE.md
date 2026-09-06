@@ -104,7 +104,7 @@ server side and the runtime does the work.
 
 | Attribute | Purpose |
 |---|---|
-| `data-fui-rpc="<path>"` | Click on the element (or submit of a `<form data-fui-rpc>`) fires a request to `<path>`. Body precedence: an explicit `data-fui-rpc-body` JSON wins; otherwise a `<form>` node serializes itself, and any other form control (radio/select/input/textarea) serializes its ENCLOSING form via `node.form` so the control's own `name=value` round-trips (`framework/ui.SegmentedControl` `RPCPath` relies on this, so place the control inside a `<form>`); a control with no enclosing form and no explicit body posts an empty body. GET folds the serialized form into the query string; a multipart form (or one with a file input) posts `FormData`, everything else posts JSON. |
+| `data-fui-rpc="<path>"` | Click on the element (or submit of a `<form data-fui-rpc>`) fires a request to `<path>`. Body precedence: an explicit `data-fui-rpc-body` JSON wins; otherwise a `<form>` node serializes itself, and any other form control (radio/select/input/textarea) serializes its ENCLOSING form via `node.form` so the control's own `name=value` round-trips (`framework/ui.SegmentedControl` `RPCPath` relies on this, so place the control inside a `<form>`); a control with no enclosing form and no explicit body posts an empty body. GET folds the serialized form into the query string; a multipart form (or one with a file input) posts `FormData`, everything else posts JSON. A non-2xx answer to a form submission is never silent: the server's validation envelope (`{error, fields: {name: [messages]}}`) fills each named field's `ui-form-field` error slot (the wrapper gets `is-error`, the control `aria-invalid` and `aria-describedby`, and a `role="alert"` paragraph carries the message), and when no field matched, the `error` text is toasted (module or fallback). In the JSON body a repeated name becomes an array (checkbox group, multi-select) with one exception, the HTML checkbox idiom: a hidden input followed by a checkbox of the same name (hidden `false`, checkbox `true`) serializes as one scalar, the last value, so a bool field submits `"true"` or `"false"` and never `["false","true"]`. |
 | `data-fui-rpc-method="GET\|POST\|…"` | HTTP method (default POST) |
 | `data-fui-rpc-signal="<name>"` | The response body is treated as a signal value and broadcast to bound nodes |
 | `data-fui-rpc-close` | Containing widget closes on 2xx |
@@ -301,6 +301,7 @@ server side and the runtime does the work.
 | `data-fui-z-tier="<tier>"` | Emitted by `framework/ui.Sticky` with the layering tier from `StickyConfig.ZIndexTier` (`sticky` default, or `dropdown`/`modal`/`popover`/`toast` matching the theme's `ZIndexSet` tokens). CSS-only consumer: the `ui-sticky` stylesheet keys `z-index: var(--z-<tier>)` off this attribute so a sticky toolbar can layer above/below other surfaces without bespoke CSS. |
 | `data-fui-poll="<duration>"` | Marks an element for the demand-loaded `poll` runtime module. On the interval (Go-duration syntax: `"5s"`, `"30s"`, `"1m"`, compound `"1m30s"`) the module GETs `data-fui-poll-src` and swaps the response HTML into the element's `innerHTML` through the same `innerHTML + scanAndLoadCSS` path `html`-mode signal regions use: one region-swap pipeline, not a second one. Clamp: intervals below 5s are raised to 5s so a typo can't DoS the server. ±10% jitter per tick desynchronises a page full of polls; pauses while `document.hidden` and fetches immediately on regain; doubles the interval (capped at 5× base) on fetch failure and resets to base on the next success. The marker is idempotent (`__fuiPollWired` guard); timers self-teardown when the element leaves the DOM and are reclaimed on SPA navigation via the `_moduleScanners.poll` hook. Terminal state (#192): a handler that wants the poll to stop after this tick sets the `X-Gofastr-Poll-Stop: 1` response header. The runtime applies the response body (so the terminal state renders) and then tears down the timer, so no further fetches land. A swapped-in replacement that omits `data-fui-poll` (or carries `data-fui-poll="off"`/`"0"`) is not (re)wired, since those values parse to NaN, so an island swap that replaces the whole region element also ends the poll. Pair with `data-fui-poll-src`. |
 | `data-fui-poll-src="<url>"` | The GET endpoint the `poll` runtime module fetches on each `data-fui-poll` tick. The response body replaces the parent element's `innerHTML`. Same-origin by default (`credentials: 'same-origin'`); the endpoint should return an HTML fragment, not a full document. Every successful applied tick (page-level here, widget-level `Builder.Poll` alike) increments the shared liveness observable `window.__gofastr.pollStatus` (`{ ticks, lastTickAt }`, one object mutated in place, the poll analog of `sseStatus`); an HTTP-error response counts as a failure and triggers the back-off. Terminal state (#192): the response may carry `X-Gofastr-Poll-Stop` (truthy: `1`/`true`/`yes`/`on`) to end the poll after applying this tick. The runtime honors it on both the page-level and widget (`Builder.Poll`) paths; for widgets the `/state` handler emits it when `Builder.PollTerminal` reports terminal. |
+| `data-fui-window-drag` | On any element inside a desktop-host window: marks the drag surface of a borderless (ChromeNone) window, the widget drag-handle pattern. The demand-loaded `desktop` module's delegated `mousedown` listener matches the click target (or an ancestor) against this attribute and calls `__gofastr.desktop.window.startDrag()`, which posts `{"type":"drag"}` through the WebView's `window.webkit.messageHandlers.gofastr` message channel rather than the HTTP bridge, because the native `performWindowDragWithEvent:` needs the still-current mouse-down event. In a plain browser (no message handler) the call is a no-op, so screens carrying the attribute render unchanged in `--serve` mode. |
 
 
 For the authoritative list, grep `data-fui-` in `core-ui/runtime/runtime.js`.
@@ -795,6 +796,35 @@ Signals are addressed and transient, so they bypass
 `createSequencedReducer`; snapshot, join, leave, status, and
 iceServers go through it. Like `ws`, the module never logs: no SDP, candidate, credential, or
 close reason reaches the console or a status object.
+### Desktop bridge (`__gofastr.desktop`)
+
+The `desktop` demand module (`runtime/src/desktop.js`) is the browser
+half of `battery/desktop`'s typed bridge. Like `ws` it has no DOM
+marker and no new `data-fui-*` attribute: the desktop host injects
+`window.__gofastr_desktop` at document start, and the host-served
+generated `bridge.js` layer loads the module explicitly and installs
+one bracket-keyed namespace per registered capability
+(`__gofastr.desktop.clipboard.writeText({text})`). The transport is a
+single POST to the `/__gofastr/desktop/call/{cap}/{method}` chokepoint
+owned by the battery (never the SSE bus, never a bespoke
+EventSource); `sse.js` only ever carries island frames. Native events
+flow the other way through `__gofastr.desktop._dispatch(name,
+payload)` (the battery evaluates that call in the window), with
+`on`/`off` listeners on top; island refreshes after a native event
+stay server-driven through `island.Manager.PushUpdate` as today. In a
+plain browser `__gofastr_desktop` is absent, `available` is false, and
+every `call` rejects `{code:"unsupported"}` without a network request.
+See `framework/docs/content/desktop.md`.
+
+The `formerrors` demand module (`runtime/src/formerrors.js`) is the
+failure half of a `data-fui-rpc` form submission. `rpc.js` loads it the
+first time a form's request answers non-2xx and hands it the form, the
+status, and the body; the module renders the server's validation
+envelope (`{error, fields: {name: [messages]}}`) into each named
+field's `ui-form-field` error slot, the same markup
+`framework/ui.FormField` renders for a server-side error, and toasts
+the `error` text when no field matched. It has no DOM marker and owns
+no attribute; the happy path never loads it.
 
 ### Cross-replica presence (`gofastr.presence` fanout lane)
 

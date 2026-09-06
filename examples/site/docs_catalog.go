@@ -120,6 +120,7 @@ var docIntents = []docIntent{
 			{"dev-livereload", "Dev livereload", "SSE-driven reload while you edit. Zero config."},
 			{"static-export", "Static-site export", "Render the whole app to static HTML + assets for apex or project-path hosting."},
 			{"pwa", "PWA", "uihost.WithPWA: installable manifest, versioned offline shell, and a safe service worker."},
+			{"desktop", "Desktop host", "Experimental: run the app in the OS WebView from a CGO_ENABLED=0 binary, with a typed JS bridge to native capabilities (macOS today)."},
 			{"seo", "SEO", "Meta tags, Open Graph, JSON-LD, sitemap, robots, and the one-image icon surface."},
 			{"accessibility", "Accessibility", "Built-in ARIA guarantees, the guided audit command, and the build gate."},
 			{"porting", "Porting an existing frontend", "The escape hatch for a foreign DOM contract: html/template screens + static.Mount, deliberately unsupported."},
