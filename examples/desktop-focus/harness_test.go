@@ -31,21 +31,14 @@ func newHarness(t *testing.T) (*desktoptest.Harness, *Engine) {
 	return desktoptest.Run(t, app, d), eng
 }
 
-// saveHarnessSettings PUTs the settings row the way the settings form
-// does (string bools), through the window's session.
-func saveHarnessSettings(t *testing.T, h *desktoptest.Harness, work, breakMin int, notify, trayCountdown bool) string {
+// saveHarnessSettings sets the app's preferences through the page
+// capability, the way the settings screen's script would.
+func saveHarnessSettings(t *testing.T, h *desktoptest.Harness, work, breakMin int, notify, trayCountdown bool) {
 	t.Helper()
-	h.Get("/settings").AssertStatus(t, http.StatusOK) // creates the row
-	list := h.Get("/api/settings").AssertStatus(t, http.StatusOK).Body
-	id := between(list, `"id":"`, `"`)
-	if id == "" {
-		t.Fatalf("settings id not found: %s", list)
-	}
-	h.Put("/api/settings/"+id, map[string]any{
+	h.Call("preferences", "set", map[string]any{"values": map[string]any{
 		"work_minutes": work, "break_minutes": breakMin,
-		"notify": boolStr(notify), "tray_countdown": boolStr(trayCountdown),
-	}).AssertStatus(t, http.StatusOK)
-	return id
+		"notify_on_done": notify, "tray_countdown": trayCountdown,
+	}}).AssertOK(t)
 }
 
 // between slices s between the first after and the next stop.
@@ -174,6 +167,20 @@ func TestNotifyOffSilencesTheNotification(t *testing.T) {
 	h.WaitEvent("focus_done") // the page still hears it
 	if n := len(h.Shell.Notifications()); n != 0 {
 		t.Fatalf("notifications with notify off = %d", n)
+	}
+}
+
+// TestSettingsMinutesFlowIntoSessions: preferences changed through the
+// page capability drive the engine's next session (work and break
+// minutes), the coverage the old settings-row tests carried.
+func TestSettingsMinutesFlowIntoSessions(t *testing.T) {
+	h, _ := newHarness(t)
+	saveHarnessSettings(t, h, 30, 7, true, true)
+
+	h.Call("focus", "start", nil).AssertOK(t)
+	body := h.Get("/api/sessions").AssertStatus(t, http.StatusOK).Body
+	if !strings.Contains(body, `"minutes":30`) {
+		t.Fatalf("work session minutes after preferences.set: %s", body)
 	}
 }
 

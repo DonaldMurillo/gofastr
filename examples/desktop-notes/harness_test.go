@@ -156,11 +156,8 @@ func TestSettingsWindowFromMenuTrayAndPage(t *testing.T) {
 	if spec := calls[0].Spec; spec.Title != "Settings" || spec.Width != 520 || spec.Height != 460 {
 		t.Fatalf("settings spec = %+v", spec)
 	}
-	// The window's page is the engine form, and the first visit creates
-	// the owner's row.
+	// The window's page is the battery's preferences form.
 	h.Get("/settings").AssertStatus(t, http.StatusOK).AssertContains(t, "Notify on save")
-	list := h.Get("/api/settings").AssertStatus(t, http.StatusOK)
-	list.AssertContains(t, "notifyOnSave")
 
 	// The File menu row and the tray row focus the same window.
 	h.ClickMenu("File", "Settings…")
@@ -184,29 +181,26 @@ func TestSettingsWindowFromMenuTrayAndPage(t *testing.T) {
 
 func TestSettingsSaveThroughTheWindowSession(t *testing.T) {
 	h := newHarness(t)
-	h.Get("/settings").AssertStatus(t, http.StatusOK)
-	var rows struct {
-		Data []map[string]any `json:"data"`
-	}
-	if err := h.Get("/api/settings").AssertStatus(t, http.StatusOK).JSON(&rows); err != nil || len(rows.Data) != 1 {
-		t.Fatalf("settings rows: %v %+v", err, rows.Data)
-	}
-	id, _ := rows.Data[0]["id"].(string)
+	d := h.Battery
 
-	// The form's hidden/checkbox pair submits the STRING "false"; the
-	// re-rendered form reflects it.
-	h.Put("/api/settings/"+id, map[string]any{"notify_on_save": "false", "export_folder": "/tmp/x"}).AssertStatus(t, http.StatusOK)
-	form := h.Get("/settings/"+id).AssertStatus(t, http.StatusOK).Body
-	box := form[strings.Index(form, `type="checkbox"`):]
+	// Off through the page capability: a save no longer notifies, and
+	// the re-rendered form reflects it.
+	h.Call("preferences", "set", map[string]any{"values": map[string]any{"notify_on_save": false}}).AssertOK(t)
+	if d.Preferences().Bool("notify_on_save") {
+		t.Fatal("notify_on_save did not save false")
+	}
+	form := h.Get("/settings").AssertStatus(t, http.StatusOK).Body
+	box := form[strings.Index(form, `id="f-notify_on_save"`):]
 	if strings.Contains(box[:strings.Index(box, ">")], "checked") {
 		t.Fatal("the form still renders the box checked after saving false")
 	}
-	// And the preference is honoured: a save no longer notifies.
 	createNote(t, h, "Quiet", "")
 	if n := len(h.Shell.Notifications()); n != 0 {
 		t.Fatalf("notifications with notify_on_save off = %d", n)
 	}
-	h.Put("/api/settings/"+id, map[string]any{"notify_on_save": "true", "export_folder": "/tmp/x"}).AssertStatus(t, http.StatusOK)
+
+	// On again: a save notifies through the shell.
+	h.Call("preferences", "set", map[string]any{"values": map[string]any{"notify_on_save": true}}).AssertOK(t)
 	createNote(t, h, "Loud", "")
 	got := h.Shell.Notifications()
 	if len(got) != 1 || got[0].Title != "Saved" || got[0].Body != "Loud" {

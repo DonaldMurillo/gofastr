@@ -48,21 +48,21 @@ func jsLit(s string) string {
 	return string(b)
 }
 
-// notifyOnSave reads the owner's row through the window's own session
-// (the page's fetch, not a hand-shaped request).
+// settingsNotifyOnSave reads the preference through the page's own
+// bridge, the way the settings screen's script would.
 func settingsNotifyOnSave(t *testing.T, h *desktoptest.NativeHarness) (bool, bool) {
 	t.Helper()
-	resp := h.Get("/api/settings")
-	if resp.Status != http.StatusOK {
+	res := h.Call("preferences", "get", nil)
+	if !res.OK {
 		return false, false
 	}
-	var rows struct {
-		Data []map[string]any `json:"data"`
+	var out struct {
+		Values map[string]any `json:"values"`
 	}
-	if err := json.Unmarshal([]byte(resp.Body), &rows); err != nil || len(rows.Data) != 1 {
+	if err := json.Unmarshal(res.Result, &out); err != nil {
 		return false, false
 	}
-	v, ok := rows.Data[0]["notifyOnSave"].(bool)
+	v, ok := out.Values["notify_on_save"].(bool)
 	return v, ok
 }
 
@@ -91,10 +91,11 @@ func readBox(t *testing.T, h *desktoptest.NativeHarness) bool {
 	return b
 }
 
-// TestSettingsCheckboxSavesBothWays is the exact flow of the deleted
-// browser test, now in the WKWebView: the real checkbox, the real
-// Save button, the runtime's real form intercept, both saves persist,
-// and with notifications back on a save reaches the shell.
+// TestSettingsCheckboxSavesBothWays: the battery's preferences form in
+// the real WKWebView: the real checkbox, the real Save button, the
+// runtime's real form intercept against the battery's route, both
+// saves persist, and with notifications back on a save reaches the
+// shell.
 func TestSettingsCheckboxSavesBothWays(t *testing.T) {
 	h := desktoptest.Native(t)
 
@@ -104,14 +105,14 @@ func TestSettingsCheckboxSavesBothWays(t *testing.T) {
 	h.Navigate("/settings")
 	h.Wait("the checkbox to render", func() bool { return h.ExistsQuiet("#f-notify_on_save") })
 	if readBox(t, h) {
-		t.Log("a fresh settings row renders the box checked (default true)")
+		t.Log("a fresh preference renders the box checked (default true)")
 	} else {
-		// The row may exist from an earlier phase under the same data
-		// dir; the flow below still exercises both directions.
-		t.Log("the box renders unchecked (an existing row)")
+		// The preference may hold false from an earlier phase under the
+		// same data dir; the flow below still exercises both directions.
+		t.Log("the box renders unchecked (a stored preference)")
 	}
 
-	// Off: uncheck, save, the row reads false.
+	// Off: uncheck, save, the preference reads false.
 	h.Click("#f-notify_on_save")
 	h.Click(`form button[type="submit"]`)
 	h.Wait("notify_on_save to persist as false", func() bool {
@@ -121,8 +122,8 @@ func TestSettingsCheckboxSavesBothWays(t *testing.T) {
 
 	// On again: this is the save the user could not make before the
 	// browser test existed. Reload the form for real (a client-side
-	// navigate serves the cached DOM), check the box, save, the row
-	// reads true and the form renders it checked.
+	// navigate serves the cached DOM), check the box, save, the
+	// preference reads true and the form renders it checked.
 	reloadForm(t, h)
 	if readBox(t, h) {
 		t.Fatal("the form renders the box checked after saving false")

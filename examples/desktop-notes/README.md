@@ -22,12 +22,12 @@ The `battery/desktop` dogfood app: a local-first notes app whose one
   link (clipboard), a saved note fires a notification (gated by the
   owner's `notify_on_save` preference), and the window title follows
   the open note.
-- A settings window: the `settings` entity (one owner-scoped row per
-  installation: `notify_on_save`, `export_folder`) behind a
-  `/settings` screen rendered by the resource engine's form.
-  `Config.Settings` gives it three entry points: the app menu's own
-  Settings item (cmd+,), the File menu's `Settings…` row, and the
-  page's `windows.openSettings()`.
+- A settings window: `desktop.PreferencesScreen`, the battery's form
+  over the declared preferences (`notify_on_save`, `export_folder`,
+  stored in the app state; no settings entity). `Config.Settings`
+  gives it three entry points: the app menu's own Settings item
+  (cmd+,), the File menu's `Settings…` row, and the page's
+  `windows.openSettings()`.
 - A tray icon: `Config.Tray` puts the app in the menu bar with the
   app icon as a template image, a menu (Show Notes, New note,
   Settings, Quit) sharing the main menu's item model, and

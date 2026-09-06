@@ -9,7 +9,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework"
 )
 
-// The three entities. All owner-scoped (hard rule 6): every row belongs
+// The two entities. All owner-scoped (hard rule 6): every row belongs
 // to the local identity (or, under --serve with a harness user, that
 // user), and the same entities run in the desktop window and behind
 // --serve. The timer's state is the sessions table; no server RAM.
@@ -56,46 +56,9 @@ func registerSessionsEntity(app *framework.App) {
 	})
 }
 
-// registerSettingsEntity declares the per-owner settings row: one row
-// per local user, created on the first /settings visit.
-func registerSettingsEntity(app *framework.App) {
-	// The desktop battery installs the local identity middleware (its Init); owner-scoped CRUD answers the window's own requests without battery/auth
-	app.Entity("settings", framework.EntityConfig{
-		Scope: &framework.ScopeConfig{OwnerField: "user_id"},
-		Fields: []schema.Field{
-			{Name: "user_id", Type: schema.String},
-			{Name: "work_minutes", Type: schema.Int, Default: defaultWorkMinutes},
-			{Name: "break_minutes", Type: schema.Int, Default: defaultBreakMinutes},
-			{Name: "notify", Type: schema.Bool, Default: true},
-			{Name: "tray_countdown", Type: schema.Bool, Default: true},
-		},
-	})
-}
-
-// Settings defaults, shared by the entity declaration, the settings
-// screen's first-visit row creation, and the engine's no-row fallback.
-const (
-	defaultWorkMinutes  = 25
-	defaultBreakMinutes = 5
-)
-
-// focusSettings is the owner's preferences as the engine reads them.
-type focusSettings struct {
-	WorkMinutes   int
-	BreakMinutes  int
-	Notify        bool
-	TrayCountdown bool
-}
-
-// defaultFocusSettings is the fallback when the owner has no row yet.
-func defaultFocusSettings() focusSettings {
-	return focusSettings{
-		WorkMinutes:   defaultWorkMinutes,
-		BreakMinutes:  defaultBreakMinutes,
-		Notify:        true,
-		TrayCountdown: true,
-	}
-}
+// The app's settings are not an entity: they are preferences declared
+// on desktop.Config (see buildApp), stored in the app state under
+// "settings", and read through d.Preferences().
 
 // localUser is the out-of-request stand-in for the request identity: a
 // value whose GetID feeds the owner extractor battery/desktop installs

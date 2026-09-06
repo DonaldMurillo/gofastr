@@ -57,27 +57,9 @@ func asOwner(id string) context.Context {
 	return handler.SetUser(context.Background(), harnessUser{id: id})
 }
 
-// saveSettings writes the owner's settings row through the REST route
-// the settings form uses (string bools, the runtime's serialization).
-func saveSettings(t *testing.T, app *framework.App, owner string, work, breakMin int, notify bool) {
-	t.Helper()
-	ta := framework.TestHarness(t, app).AsUser(harnessUser{id: owner})
-	created := ta.Post("/api/settings", map[string]any{
-		"work_minutes": work, "break_minutes": breakMin,
-		"notify": boolStr(notify), "tray_countdown": "true",
-	}).AssertStatus(t, http.StatusCreated)
-	var row map[string]any
-	if err := decodeData(created.Body(), &row); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func boolStr(b bool) string {
-	if b {
-		return "true"
-	}
-	return "false"
-}
+// The engine's preference reads answer the DECLARED defaults in this
+// no-Run shape (no app state store exists to change them); the harness
+// suite covers custom values through preferences.set.
 
 // createTask saves a task through the REST route and returns its id.
 func createTask(t *testing.T, app *framework.App, owner, title string) string {
@@ -109,9 +91,8 @@ func sessionRows(t *testing.T, app *framework.App, owner string) []map[string]an
 	return listed.Data
 }
 
-func TestStartCreatesWorkSessionWithSettingsMinutes(t *testing.T) {
+func TestStartCreatesWorkSessionWithDeclaredMinutes(t *testing.T) {
 	app, _, _, eng, clock := newEngineApp(t)
-	saveSettings(t, app, "u1", 30, 7, true)
 	taskID := createTask(t, app, "u1", "Write the brief")
 
 	if err := eng.Start(asOwner("u1"), taskID); err != nil {
@@ -125,21 +106,21 @@ func TestStartCreatesWorkSessionWithSettingsMinutes(t *testing.T) {
 	if kind, _ := row["kind"].(string); kind != "work" {
 		t.Fatalf("kind = %v, want work", row["kind"])
 	}
-	if minutes := asInt(row["minutes"]); minutes != 30 {
-		t.Fatalf("minutes = %v, want 30 (the settings row)", row["minutes"])
+	if minutes := asInt(row["minutes"]); minutes != 25 {
+		t.Fatalf("minutes = %v, want 25 (the declared default)", row["minutes"])
 	}
 	if completed, _ := row["completed"].(bool); completed {
 		t.Fatal("a fresh session must not be completed")
 	}
 	ends, _ := row["endsAt"].(string)
-	want := clock.now().Add(30 * time.Minute).UTC().Format(time.RFC3339Nano)
+	want := clock.now().Add(25 * time.Minute).UTC().Format(time.RFC3339Nano)
 	if ends != want {
 		t.Fatalf("endsAt = %q, want %q", ends, want)
 	}
 
 	st := eng.State(asOwner("u1"))
-	if st.Phase != phaseWork || st.Remaining != 30*60 {
-		t.Fatalf("state = %+v, want work/1800s", st)
+	if st.Phase != phaseWork || st.Remaining != 25*60 {
+		t.Fatalf("state = %+v, want work/1500s", st)
 	}
 	if st.TaskID != taskID || st.TaskTitle != "Write the brief" || st.SessionID == "" {
 		t.Fatalf("state = %+v", st)
@@ -213,14 +194,15 @@ func TestPauseStoresRemainingAndResumeMovesEndsAt(t *testing.T) {
 
 func TestTickCompletesWorkIncrementsTaskAndStartsBreak(t *testing.T) {
 	app, _, shell, eng, clock := newEngineApp(t)
-	saveSettings(t, app, "u1", 1, 2, true)
 	taskID := createTask(t, app, "u1", "Ship the timer")
 	ctx := asOwner("u1")
 	if err := eng.Start(ctx, taskID); err != nil {
 		t.Fatal(err)
 	}
 
-	clock.advance(61 * time.Second)
+	// The declared defaults are 25 minutes of work and 5 of break;
+	// the clock is injected, so waiting them out costs nothing.
+	clock.advance(25*time.Minute + time.Second)
 	eng.Tick(ctx)
 
 	rows := sessionRows(t, app, "u1")
@@ -245,8 +227,8 @@ func TestTickCompletesWorkIncrementsTaskAndStartsBreak(t *testing.T) {
 	if kind, _ := brk["kind"].(string); kind != "break" {
 		t.Fatalf("the auto-started session kind = %v, want break", brk["kind"])
 	}
-	if minutes := asInt(brk["minutes"]); minutes != 2 {
-		t.Fatalf("break minutes = %v, want 2", brk["minutes"])
+	if minutes := asInt(brk["minutes"]); minutes != 5 {
+		t.Fatalf("break minutes = %v, want 5 (the declared default)", brk["minutes"])
 	}
 	// The task counted one pomodoro.
 	taskBody := framework.TestHarness(t, app).AsUser(harnessUser{id: "u1"}).
@@ -264,7 +246,7 @@ func TestTickCompletesWorkIncrementsTaskAndStartsBreak(t *testing.T) {
 
 	// The break runs out: idle, tray back to the app name, and the
 	// task is NOT incremented again.
-	clock.advance(3 * time.Minute)
+	clock.advance(5*time.Minute + time.Second)
 	eng.Tick(ctx)
 	rows = sessionRows(t, app, "u1")
 	if completed, _ := rows[0]["completed"].(bool); !completed {
@@ -281,7 +263,6 @@ func TestTickCompletesWorkIncrementsTaskAndStartsBreak(t *testing.T) {
 func TestSkipEndsTheSessionWithoutNotifying(t *testing.T) {
 	app, _, shell, eng, clock := newEngineApp(t)
 	ctx := asOwner("u1")
-	saveSettings(t, app, "u1", 25, 5, true)
 	if err := eng.Start(ctx, ""); err != nil {
 		t.Fatal(err)
 	}

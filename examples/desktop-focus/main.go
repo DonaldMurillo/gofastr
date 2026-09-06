@@ -102,28 +102,14 @@ func buildApp(shell desktop.Shell) (*framework.App, *desktop.Battery, *Engine, e
 	// The data half: the owner-scoped entities.
 	registerTasksEntity(app)
 	registerSessionsEntity(app)
-	registerSettingsEntity(app)
 
 	// The engine's clock. Tests replace it before any call.
 	eng := &Engine{app: app, now: time.Now}
 
-	// The screens half: framework/ui only, mounted before the battery
-	// (its Init looks for the UIHost among the mountables).
-	site, err := buildSite(app, eng)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	// Same-origin external script (never inline): the page-side
-	// behaviour for the countdown, the timer buttons, and the widget,
-	// served from the embedded bytes with the hash-versioned URL.
-	app.Router().Get("/desktop-focus.js", uihost.ScriptHandler(pageJS))
-	app.Mount(uihost.New(site,
-		uihost.WithExtraScripts(uihost.ScriptURL("/desktop-focus.js", pageJS)),
-		uihost.WithAppIcon(appIconPNG()),
-	))
-
-	// The desktop half. d is captured by the menu and tray handlers
-	// below before any item can fire; eng gets it right after.
+	// The desktop half comes before the screens: the settings screen
+	// is PreferencesScreen(d), so the battery must exist when
+	// buildSite mounts it. The menu and tray handlers capture d and
+	// eng; both only run after Run.
 	var d *desktop.Battery
 	d = desktop.New(desktop.Config{
 		ID:    appID,
@@ -135,8 +121,21 @@ func buildApp(shell desktop.Shell) (*framework.App, *desktop.Battery, *Engine, e
 		Style: desktop.WindowStyle{Chrome: desktop.ChromeHiddenTitle},
 		// The settings window: the app menu's own item (cmd+,), the
 		// File menu's row, the tray's row, and the page's
-		// windows.openSettings all reach it.
+		// windows.openSettings all reach it. The screen it opens is
+		// the battery's own preferences form (see buildSite).
 		Settings: &desktop.WindowSpec{Path: "/settings", Title: "Settings", Width: 480, Height: 600},
+		// The app's settings, declared once: stored in the app state
+		// under "settings", read by the engine through
+		// d.Preferences(), and rendered by desktop.PreferencesScreen
+		// at /settings. The sound preference is the choice-kind demo;
+		// nothing plays it.
+		Preferences: []desktop.Preference{
+			{Key: "work_minutes", Label: "Work minutes", Help: "Length of one work session.", Kind: desktop.PreferenceInt, Default: 25, Min: intPtr(1), Max: intPtr(180)},
+			{Key: "break_minutes", Label: "Break minutes", Kind: desktop.PreferenceInt, Default: 5, Min: intPtr(1), Max: intPtr(60)},
+			{Key: "notify_on_done", Label: "Notify when a session ends", Kind: desktop.PreferenceBool, Default: true},
+			{Key: "tray_countdown", Label: "Countdown in the menu bar", Kind: desktop.PreferenceBool, Default: true},
+			{Key: "sound", Label: "Session sound", Kind: desktop.PreferenceChoice, Default: "chime", Choices: []string{"none", "chime", "bell"}},
+		},
 		// gofastr-focus://start?task=<id> starts that task; anything
 		// else maps like the default (host+path, query kept).
 		DeepLink: &desktop.DeepLinkConfig{
@@ -208,6 +207,21 @@ func buildApp(shell desktop.Shell) (*framework.App, *desktop.Battery, *Engine, e
 		RememberWindows: true,
 	})
 	eng.d = d
+
+	// The screens half: framework/ui only, mounted before the battery
+	// (its Init looks for the UIHost among the mountables).
+	site, err := buildSite(app, eng, d)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	// Same-origin external script (never inline): the page-side
+	// behaviour for the countdown, the timer buttons, and the widget,
+	// served from the embedded bytes with the hash-versioned URL.
+	app.Router().Get("/desktop-focus.js", uihost.ScriptHandler(pageJS))
+	app.Mount(uihost.New(site,
+		uihost.WithExtraScripts(uihost.ScriptURL("/desktop-focus.js", pageJS)),
+		uihost.WithAppIcon(appIconPNG()),
+	))
 	app.RegisterBattery(d)
 	app.RegisterPlugin(focusPlugin{eng: eng})
 
@@ -220,6 +234,9 @@ func buildApp(shell desktop.Shell) (*framework.App, *desktop.Battery, *Engine, e
 
 	return app, d, eng, nil
 }
+
+// intPtr hands a preference declaration a bound by value.
+func intPtr(n int) *int { return &n }
 
 // onDeepLink routes a gofastr-focus:// link. start?task=<id> starts
 // that task and lands on the dashboard; anything else maps through the

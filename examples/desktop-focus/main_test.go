@@ -95,16 +95,6 @@ func TestEveryScreenRendersDesignSystemMarkup(t *testing.T) {
 	}
 	id, _ := row["id"].(string)
 
-	// The settings row is created by the first visit.
-	ta.Get("/settings").AssertStatus(t, http.StatusOK)
-	var listed struct {
-		Data []map[string]any `json:"data"`
-	}
-	if err := json.Unmarshal([]byte(ta.Get("/api/settings").AssertStatus(t, http.StatusOK).Body()), &listed); err != nil || len(listed.Data) != 1 {
-		t.Fatalf("settings rows: %v %s", err, ta.Get("/api/settings").Body())
-	}
-	settingsID, _ := listed.Data[0]["id"].(string)
-
 	screens := []struct{ path, want string }{
 		{"/", "data-fui-comp"},
 		{"/tasks", "Markup probe"},
@@ -113,7 +103,6 @@ func TestEveryScreenRendersDesignSystemMarkup(t *testing.T) {
 		{"/tasks/" + id + "/edit", "Markup probe"},
 		{"/history", "No sessions yet"},
 		{"/settings", "Work minutes"},
-		{"/settings/" + settingsID, "Work minutes"},
 		{"/widget", "data-fui-window-drag"},
 	}
 	for _, s := range screens {
@@ -159,22 +148,29 @@ func TestEveryScreenRendersDesignSystemMarkup(t *testing.T) {
 	}
 }
 
-// TestSettingsFirstVisitCreatesRowWithDefaults: the first /settings
-// visit creates the owner's row; a second owner gets their own.
-func TestSettingsFirstVisitCreatesRowWithDefaults(t *testing.T) {
+// TestSettingsScreenRendersDeclaredPreferences: /settings is the
+// battery's preferences form, one field per declaration, prefilled
+// with the declared defaults (this is the --serve shape: no Run, no
+// app state store, so the defaults are the answer).
+func TestSettingsScreenRendersDeclaredPreferences(t *testing.T) {
 	app, _, _, _ := newTestApp(t)
 	ta := framework.TestHarness(t, app).AsUser(harnessUser{id: "u1"})
 
-	ta.Get("/settings").AssertStatus(t, http.StatusOK)
-	body := ta.Get("/api/settings").AssertStatus(t, http.StatusOK).Body()
-	for _, want := range []string{`"workMinutes":25`, `"breakMinutes":5`, `"notify":true`, `"trayCountdown":true`} {
+	body := ta.Get("/settings").AssertStatus(t, http.StatusOK).Body()
+	for _, want := range []string{
+		`id="f-work_minutes"`, `value="25"`, `min="1"`, `max="180"`,
+		`id="f-break_minutes"`, `value="5"`,
+		`id="f-notify_on_done"`, `id="f-tray_countdown"`,
+		`id="f-sound"`, `<option selected="selected" value="chime"`,
+		`data-fui-rpc="/__gofastr/desktop/preferences"`,
+		"Work minutes", "Notify when a session ends", "Session sound",
+	} {
 		if !strings.Contains(body, want) {
-			t.Fatalf("settings defaults: missing %s in %s", want, body)
+			t.Fatalf("/settings missing %q", want)
 		}
 	}
-	u2 := framework.TestHarness(t, app).AsUser(harnessUser{id: "u2"})
-	if body := u2.Get("/api/settings").AssertStatus(t, http.StatusOK).Body(); strings.Contains(body, "workMinutes") {
-		t.Fatal("u2 sees u1's settings row")
+	if strings.Contains(body, "<style") || strings.Contains(body, `style="`) {
+		t.Fatal("the settings screen ships CSS")
 	}
 }
 

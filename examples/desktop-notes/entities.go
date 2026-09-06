@@ -36,20 +36,9 @@ func registerNotesEntity(app *framework.App) {
 	})
 }
 
-// registerSettingsEntity declares the per-owner settings row: one row
-// per local user, created on the first /settings visit. Owner-scoped
-// like notes (hard rule 6).
-func registerSettingsEntity(app *framework.App) {
-	// the desktop battery installs the local identity middleware (its Init); owner-scoped CRUD answers the window's own requests without battery/auth
-	app.Entity("settings", framework.EntityConfig{
-		Scope: &framework.ScopeConfig{OwnerField: "user_id"},
-		Fields: []schema.Field{
-			{Name: "user_id", Type: schema.String},
-			{Name: "notify_on_save", Type: schema.Bool, Default: true},
-			{Name: "export_folder", Type: schema.String},
-		},
-	})
-}
+// The app's settings are not an entity: notify_on_save and
+// export_folder are preferences declared on desktop.Config (see
+// buildApp), stored in the app state under "settings".
 
 // noteRow is the typed hook payload. The framework hands hooks a
 // snake_cased map; the typed wrappers translate through these json
@@ -60,18 +49,16 @@ type noteRow struct {
 
 // registerNotesHooks fires a native notification after a save.
 // created_at and updated_at come from the entity's default
-// Timestamps=true and are auto-stamped; declaring updated_at by hand as
-// a plain timestamp shadowed the automatic one and left it empty.
-// ErrUnsupported is the unbundled run (`go run` outside a signed .app,
-// or a host without a native shell): the notification is skipped, not
-// an error. Anything else is logged at Warn; a failed toast must never
-// fail the save.
+// Timestamps=true and are auto-stamped. ErrUnsupported is the
+// unbundled run (`go run` outside a signed .app, or a host without a
+// native shell): the notification is skipped, not an error. Anything
+// else is logged at Warn; a failed toast must never fail the save.
 func registerNotesHooks(app *framework.App, d *desktop.Battery) {
 	framework.OnAfterCreate[noteRow](app, "notes", func(ctx context.Context, n *noteRow) error {
 		if d == nil {
 			return nil
 		}
-		if !notifyOnSave(ctx, app) {
+		if !notifyOnSave(d) {
 			return nil
 		}
 		err := d.Notify(ctx, desktop.Notification{Title: "Saved", Subtitle: "Notes", Body: n.Title})
@@ -87,24 +74,15 @@ func registerNotesHooks(app *framework.App, d *desktop.Battery) {
 	})
 }
 
-// notifyOnSave reads the owner's settings row (creating nothing): the
-// notify_on_save preference, defaulting to true when no row exists
-// yet. A read failure also falls back to true, matching the
-// notification's history of never failing the save.
-func notifyOnSave(ctx context.Context, app *framework.App) bool {
-	rows, err := app.MustCrudHandler("settings").ListAll(ctx, crud.ListOptions{Limit: 1})
-	if err != nil || len(rows) == 0 {
+// notifyOnSave reads the notify_on_save preference (default true).
+// Before Run opens the app state store (the --serve shape) that is
+// the default, matching the notification's history of never failing
+// the save.
+func notifyOnSave(d *desktop.Battery) bool {
+	if d == nil {
 		return true
 	}
-	v, present := rows[0]["notifyOnSave"]
-	if !present {
-		return true
-	}
-	b, ok := v.(bool)
-	if !ok {
-		return true
-	}
-	return b
+	return d.Preferences().Bool("notify_on_save")
 }
 
 // searchAcrossFields adapts the CrudHandler to resource.Config's

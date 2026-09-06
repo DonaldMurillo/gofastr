@@ -5,13 +5,13 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/DonaldMurillo/gofastr/battery/desktop"
 	appui "github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/interactive"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework"
-	"github.com/DonaldMurillo/gofastr/framework/crud"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 	"github.com/DonaldMurillo/gofastr/framework/ui/resource"
 )
@@ -163,73 +163,10 @@ func (s *noteEditorScreen) RenderCtx(ctx context.Context) render.HTML {
 	return render.Join(form, ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM, Align: ui.AlignCenter}, copyLink))
 }
 
-// settingsResource is the settings form's config. BasePath is
-// /settings; the engine's post-save target /settings/{id} is also a
-// registered screen (the same landing trick as the notes editor).
-func settingsResource(app *framework.App) resource.Config {
-	return resource.Config{
-		Entity:   "settings",
-		Title:    "Settings",
-		Singular: "Settings",
-		BasePath: "/settings",
-		APIPath:  "/api/settings",
-		Crud:     app.MustCrudHandler("settings"),
-		Fields: []resource.Field{
-			{Key: "notify_on_save", Label: "Notify on save", Type: "bool"},
-			{Key: "export_folder", Label: "Export folder", Type: "string"},
-		},
-	}
-}
-
-// settingsScreen is "/settings" (and "/settings/{id}", the form's
-// post-save target): the owner's one settings row as the resource
-// engine's form. The first visit creates the row with the declared
-// defaults.
-type settingsScreen struct {
-	component.ContextOnly
-	res  resource.Config
-	crud *crud.CrudHandler
-	id   string
-}
-
-func (s *settingsScreen) SetParams(p map[string]string) { s.id = p["id"] }
-
-func (s *settingsScreen) Load(ctx context.Context) error {
-	if s.id != "" {
-		return nil
-	}
-	rows, err := s.res.Crud.ListAll(ctx, crud.ListOptions{Limit: 1})
-	if err != nil {
-		return err
-	}
-	if len(rows) > 0 {
-		if v, present := rows[0]["id"]; present {
-			s.id, _ = v.(string)
-		}
-		return nil
-	}
-	created, err := s.crud.CreateOne(ctx, map[string]any{
-		"notify_on_save": true,
-		"export_folder":  "",
-	})
-	if err != nil {
-		return err
-	}
-	if v, present := created["id"]; present {
-		s.id, _ = v.(string)
-	}
-	return nil
-}
-
-func (s *settingsScreen) ScreenTitle() string       { return "Settings" }
-func (s *settingsScreen) ScreenDescription() string { return "Preferences for this installation" }
-
-func (s *settingsScreen) RenderCtx(ctx context.Context) render.HTML {
-	if s.id == "" {
-		return render.Tag("p", nil, render.Text("Settings row unavailable."))
-	}
-	return s.res.Form(ctx, s.id)
-}
+// The settings screen is not hand-built here: the battery's
+// desktop.PreferencesScreen renders the form from the declared
+// preferences (buildSite mounts it at /settings), and its POST
+// /__gofastr/desktop/preferences route saves them.
 
 // quickNoteScreen is "/widget": the floating Quick note panel's page.
 // The window is borderless, transparent, and non-activating
@@ -288,7 +225,7 @@ func (s *quickNoteScreen) RenderCtx(ctx context.Context) render.HTML {
 // the same table HTML the screen painted, fetched by RPC and swapped
 // in place. IslandPolicy stays nil (signed-in callers only), which the
 // desktop local identity (or a harness user) satisfies.
-func buildSite(app *framework.App) (*appui.App, error) {
+func buildSite(app *framework.App, d *desktop.Battery) (*appui.App, error) {
 	site := appui.NewApp("desktop-notes")
 	layout := appui.NewLayout("app").WithContainer()
 
@@ -304,9 +241,10 @@ func buildSite(app *framework.App) (*appui.App, error) {
 	// renders in the chrome-less, transparent widget layout, never in
 	// the app layout with its header and padded column.
 	site.Register("/widget", &quickNoteScreen{}, appui.WidgetLayout())
-	settings := settingsResource(app)
-	site.Register("/settings", &settingsScreen{res: settings, crud: app.MustCrudHandler("settings")}, layout)
-	site.Register("/settings/{id}", &settingsScreen{res: settings, crud: app.MustCrudHandler("settings")}, layout)
+	// The settings screen is the battery's: one form per declared
+	// preference, saved through the battery's own route. There is no
+	// /settings/{id}; the post-save landing is /settings itself.
+	site.Register("/settings", desktop.PreferencesScreen(d, desktop.PreferencesScreenPath("/settings")), layout)
 
 	app.Router().HandleFunc("GET", "/api/tables/notes", func(w http.ResponseWriter, r *http.Request) {
 		list.TableHandler()(w, r)

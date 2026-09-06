@@ -41,7 +41,11 @@ or over plain HTTP.
 - A tray menu (Show, Start / Pause, Timer widget, Settings, quit) and
   a native menu bar (File, View) sharing the same item model; the
   settings window has four entry points (app menu, File menu, tray,
-  `windows.openSettings`).
+  `windows.openSettings`). Its screen is `desktop.PreferencesScreen`:
+  the battery renders the declared preferences (`work_minutes`,
+  `break_minutes`, `notify_on_done`, `tray_countdown`, and `sound`,
+  the choice-kind demo) as one form saved through the battery's own
+  route, with no settings entity behind it.
 - The updater wired from `FOCUS_UPDATE_FEED` / `FOCUS_UPDATE_KEY`
   (`gofastr desktop keygen` / `feed`), with the File menu's
   "Check for updates…" item.
@@ -59,8 +63,10 @@ gofastr desktop build --id dev.gofastr.desktop-focus \
 `--serve` mode is also what `gofastr dev` drives (it sets `$PORT`), so
 rebuild-on-save and livereload work on this example. In that mode
 there is no window, so every native call in the engine is skipped and
-the timer buttons explain themselves with a toast; the screens,
-entities, and settings form all run.
+the timer buttons explain themselves with a toast; the screens and
+entities all run, and the settings screen renders the declared
+defaults (saving preferences needs the desktop host's app state
+store, which only Run opens).
 
 ## Where the data lives
 
