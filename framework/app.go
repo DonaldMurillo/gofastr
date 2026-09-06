@@ -257,8 +257,16 @@ type App struct {
 	// single-threaded through Start.
 	processDrainRegistered bool
 
-	serverMu   sync.Mutex // guards server + appCtx/appCancel. Start writes, Shutdown reads/nils
-	server     *http.Server
+	serverMu sync.Mutex // guards server + appCtx/appCancel. Start writes, Shutdown reads/nils
+	server   *http.Server
+	// newConns holds connections the server accepted that have not sent
+	// a request yet (net/http's StateNew): a browser's speculative
+	// preconnect, a Transport's spare dial. Server.Shutdown spares such a
+	// connection for five seconds (go.dev/issue/22682), which turns a
+	// bounded drain into a five-second stall, so Shutdown closes them
+	// itself first. The ConnState hook keeps the set exact.
+	newConnsMu sync.Mutex
+	newConns   map[net.Conn]struct{}
 	events     *event.EventBus
 	hooksMu    sync.RWMutex // guards hooks: kiln's build-mode runtime registers while the app serves
 	hooks      map[string]*hook.HookRegistry
@@ -2747,6 +2755,38 @@ func drainQueueClose(ctx context.Context, q schedulerStartStop) error {
 	}
 }
 
+// trackConnState is the server's ConnState hook: it records a
+// connection while it sits in StateNew and forgets it the moment it
+// does anything else (a request, an idle keep-alive, a hijack, a
+// close). Shutdown closes what is still recorded.
+func (a *App) trackConnState(c net.Conn, st http.ConnState) {
+	a.newConnsMu.Lock()
+	defer a.newConnsMu.Unlock()
+	if st == http.StateNew {
+		if a.newConns == nil {
+			a.newConns = make(map[net.Conn]struct{})
+		}
+		a.newConns[c] = struct{}{}
+		return
+	}
+	delete(a.newConns, c)
+}
+
+// closeNewConns closes every connection still in StateNew. The set is
+// copied under the lock and closed outside it: Close runs the
+// ConnState hook (StateClosed), which takes the same lock.
+func (a *App) closeNewConns() {
+	a.newConnsMu.Lock()
+	conns := make([]net.Conn, 0, len(a.newConns))
+	for c := range a.newConns {
+		conns = append(conns, c)
+	}
+	a.newConnsMu.Unlock()
+	for _, c := range conns {
+		_ = c.Close()
+	}
+}
+
 // Shutdown gracefully stops the HTTP server, stops every registered
 // battery in reverse dependency order, then runs each OnStop hook in
 // reverse registration order. Matches net/http.Server.Shutdown's
@@ -2769,6 +2809,9 @@ func (a *App) Shutdown(ctx context.Context) error {
 		cancel()
 	}
 	if srv != nil {
+		// A connection that never sent a request would hold the drain
+		// for five seconds; it carries no work, so it goes first.
+		a.closeNewConns()
 		if err := srv.Shutdown(ctx); err != nil {
 			// Bounded drain: the deadline expired with connections still
 			// open (an SSE stream never goes idle, so Server.Shutdown
@@ -3293,6 +3336,7 @@ func (a *App) Start(addr string) error {
 	srv := &http.Server{
 		Addr:              addr,
 		Handler:           serveHandler,
+		ConnState:         a.trackConnState,
 		ReadHeaderTimeout: defaultServerReadHeaderTimeout,
 		ReadTimeout:       defaultServerReadTimeout,
 		WriteTimeout:      defaultServerWriteTimeout,

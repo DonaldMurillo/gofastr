@@ -148,7 +148,9 @@ rolling deploys don't cut active requests.
 The drain is **bounded**: `AppConfig.ShutdownTimeout` (default 15s) caps
 it, and anything still open at the deadline, say an SSE stream that
 never goes idle, is force-closed so the process exits well inside Kubernetes'
-30s SIGTERM→SIGKILL window. In-flight cron jobs are joined under the
+30s SIGTERM→SIGKILL window. A connection that was accepted but never sent
+a request (a browser's speculative preconnect) is closed at the start of
+the drain, so it cannot hold the drain to its deadline. In-flight cron jobs are joined under the
 same deadline (their contexts are cancelled when the drain starts).
 If your process owns signal handling itself, set
 `AppConfig.DisableSignalHandling` and call `App.Shutdown` (or
