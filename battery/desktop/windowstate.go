@@ -7,23 +7,25 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
-	"time"
+
+	"github.com/DonaldMurillo/gofastr/battery/desktop/appstate"
 )
 
 // Window state that survives a relaunch (Config.RememberWindows). The
-// battery owns the file: windows.json in the data dir, 0600, holding
-// every window's last frame and the main window's last path. Writes are
-// debounced (the shell reports every move tick) and the last write
-// happens on quit, so a drag never hammers the disk and a clean exit
-// never loses the final position.
+// remembered windows are one entry in the app state store: key
+// "windows", holding a map from window id to that window's last frame
+// and, for the main window, its last path. The store owns the file
+// (state.json in the data dir, 0600), the debounced write, and the
+// quit-time flush; this file is a thin typed client over it.
 
-// windowsFileName is the store's file under the battery's data dir.
-const windowsFileName = "windows.json"
+// stateFileName is the app state store's file under the battery's data
+// dir.
+const stateFileName = "state.json"
 
-// windowWriteDelay is the debounce window for store writes. Every
-// windowDidMove: tick reschedules; one write lands this long after the
-// user stops dragging.
-const windowWriteDelay = 500 * time.Millisecond
+// windowsStateKey is the app state key holding the remembered windows.
+// The state capability confines page keys to the "page." prefix, so
+// this key is never reachable from the page.
+const windowsStateKey = "windows"
 
 // storedWindow is one window's remembered state. Frame is a pointer so
 // a window whose frame was never reported still carries its path (and
@@ -33,55 +35,47 @@ type storedWindow struct {
 	Path  string `json:"path,omitempty"`
 }
 
-// windowStateFile is the on-disk shape.
+// windowStateFile is the shape of the windows entry.
 type windowStateFile struct {
 	Windows map[string]storedWindow `json:"windows"`
 }
 
-// windowStore loads, updates, and persists windows.json. Safe for
-// concurrent use: the shell reports frames from goroutines, setPath
-// arrives on HTTP goroutines, and flush runs on the quit path.
+// windowStore reads and updates the remembered windows in the battery's
+// app state store. Safe for concurrent use: the shell reports frames
+// from goroutines and setPath arrives on HTTP goroutines, and mu
+// serializes the read-modify-write of the one entry (the store
+// underneath is itself safe for concurrent use).
 type windowStore struct {
+	state  *appstate.Store
 	logger *slog.Logger
 
-	// mu guards windows and dirty. The timer and the writers also take
-	// it, so a flush always sees the latest state.
-	mu      sync.Mutex
-	path    string
-	windows map[string]storedWindow
-	dirty   bool
-	timer   *time.Timer
-
-	// writeMu serializes file writes so a debounced write racing the
-	// quit flush cannot interleave partial files.
-	writeMu sync.Mutex
+	// mu serializes the read-modify-write of the windows entry.
+	mu sync.Mutex
 }
 
-// loadWindowStore reads dir/windows.json. A missing file is an empty
-// store; a corrupt one is ignored with a Warn (a truncated quit-time
-// write must not brick the next launch).
-func loadWindowStore(dir string, logger *slog.Logger) *windowStore {
-	s := &windowStore{
-		logger:  logger,
-		path:    filepath.Join(dir, windowsFileName),
-		windows: make(map[string]storedWindow),
-	}
-	data, err := os.ReadFile(s.path)
+// newWindowStore wraps the battery's app state store.
+func newWindowStore(s *appstate.Store, logger *slog.Logger) *windowStore {
+	return &windowStore{state: s, logger: logger}
+}
+
+// windows returns the remembered windows: nil when nothing is stored
+// or the stored value does not fit the shape (both mean "start from
+// defaults", the same posture as a corrupt file).
+func (s *windowStore) windows() map[string]storedWindow {
+	m, _, err := appstate.Get[map[string]storedWindow](s.state, windowsStateKey)
 	if err != nil {
-		if !os.IsNotExist(err) {
-			s.logger.Warn("desktop: reading the window state file failed; starting from defaults",
-				"file", windowsFileName, "error", err.Error())
-		}
-		return s
+		s.logger.Warn("desktop: the stored window state does not decode; ignoring it and starting from defaults",
+			"key", windowsStateKey, "error", err.Error())
+		return nil
 	}
-	var f windowStateFile
-	if err := json.Unmarshal(data, &f); err != nil || f.Windows == nil {
-		s.logger.Warn("desktop: the window state file is unreadable; ignoring it and starting from defaults",
-			"file", windowsFileName)
-		return s
+	return m
+}
+
+// save stores the remembered windows; the store debounces the write.
+func (s *windowStore) save(w map[string]storedWindow) {
+	if err := s.state.Set(windowsStateKey, w); err != nil {
+		s.logger.Warn("desktop: storing the window state failed", "error", err.Error())
 	}
-	s.windows = f.Windows
-	return s
 }
 
 // frameFor returns the remembered frame for a window id, nil when there
@@ -89,7 +83,7 @@ func loadWindowStore(dir string, logger *slog.Logger) *windowStore {
 func (s *windowStore) frameFor(id string) *Frame {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if e, ok := s.windows[id]; ok && e.Frame != nil {
+	if e, ok := s.windows()[id]; ok && e.Frame != nil {
 		f := *e.Frame
 		return &f
 	}
@@ -102,108 +96,60 @@ func (s *windowStore) frameFor(id string) *Frame {
 func (s *windowStore) mainPath() string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.windows[mainWindowID].Path
+	return s.windows()[mainWindowID].Path
 }
 
-// setFrame remembers a window's frame and schedules the debounced
-// write.
+// setFrame remembers a window's frame; the store schedules the
+// debounced write.
 func (s *windowStore) setFrame(id string, f Frame) {
 	if id == "" {
 		return
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	e := s.windows[id]
+	w := s.windows()
+	if w == nil {
+		w = make(map[string]storedWindow)
+	}
+	e := w[id]
 	e.Frame = &f
-	s.windows[id] = e
-	s.schedule()
+	w[id] = e
+	s.save(w)
 }
 
-// setMainPath remembers the main window's path and schedules the
-// debounced write.
+// setMainPath remembers the main window's path; the store schedules
+// the debounced write.
 func (s *windowStore) setMainPath(p string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	e := s.windows[mainWindowID]
+	w := s.windows()
+	if w == nil {
+		w = make(map[string]storedWindow)
+	}
+	e := w[mainWindowID]
 	e.Path = p
-	s.windows[mainWindowID] = e
-	s.schedule()
+	w[mainWindowID] = e
+	s.save(w)
 }
 
-// schedule arms the debounced write; the caller holds mu.
-func (s *windowStore) schedule() {
-	s.dirty = true
-	if s.timer != nil {
-		s.timer.Stop()
-	}
-	s.timer = time.AfterFunc(windowWriteDelay, s.write)
-}
-
-// write persists the current state (the timer callback).
-func (s *windowStore) write() {
-	s.mu.Lock()
-	if !s.dirty {
-		s.mu.Unlock()
-		return
-	}
-	snapshot := s.snapshotLocked()
-	s.mu.Unlock()
-	s.persist(snapshot)
-}
-
-// flush persists any pending change immediately (the quit path).
-func (s *windowStore) flush() {
-	s.mu.Lock()
-	if s.timer != nil {
-		s.timer.Stop()
-	}
-	if !s.dirty {
-		s.mu.Unlock()
-		return
-	}
-	snapshot := s.snapshotLocked()
-	s.mu.Unlock()
-	s.persist(snapshot)
-}
-
-// snapshotLocked copies the state for a write; the caller holds mu.
-func (s *windowStore) snapshotLocked() windowStateFile {
-	out := windowStateFile{Windows: make(map[string]storedWindow, len(s.windows))}
-	for id, e := range s.windows {
-		if e.Frame != nil {
-			f := *e.Frame
-			e.Frame = &f
-		}
-		out.Windows[id] = e
-	}
-	s.dirty = false
-	return out
-}
-
-// persist writes the snapshot. A failed write is a Warn, never a
-// launch-killer: the window opens where it did last time instead.
-func (s *windowStore) persist(f windowStateFile) {
-	s.writeMu.Lock()
-	defer s.writeMu.Unlock()
-	data, err := json.MarshalIndent(f, "", "  ")
-	if err != nil {
-		s.logger.Warn("desktop: encoding the window state failed", "error", err.Error())
-		return
-	}
-	if err := os.WriteFile(s.path, data, 0o600); err != nil {
-		s.logger.Warn("desktop: writing the window state file failed", "error", err.Error())
-	}
-}
-
-// readWindowsFile is the test reader: the stored state of a data dir.
+// readWindowsFile is the test reader: the remembered windows in a data
+// dir's state file.
 func readWindowsFile(dir string) (windowStateFile, error) {
-	data, err := os.ReadFile(filepath.Join(dir, windowsFileName))
+	data, err := os.ReadFile(filepath.Join(dir, stateFileName))
 	if err != nil {
 		return windowStateFile{}, err
 	}
-	var f windowStateFile
-	if err := json.Unmarshal(data, &f); err != nil {
-		return windowStateFile{}, fmt.Errorf("windows.json: %w", err)
+	var f struct {
+		Entries map[string]json.RawMessage `json:"entries"`
 	}
-	return f, nil
+	if err := json.Unmarshal(data, &f); err != nil {
+		return windowStateFile{}, fmt.Errorf("state.json: %w", err)
+	}
+	var w windowStateFile
+	if raw, ok := f.Entries[windowsStateKey]; ok {
+		if err := json.Unmarshal(raw, &w); err != nil {
+			return windowStateFile{}, fmt.Errorf("state.json %s entry: %w", windowsStateKey, err)
+		}
+	}
+	return w, nil
 }

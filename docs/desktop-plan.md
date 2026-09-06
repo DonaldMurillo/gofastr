@@ -1038,6 +1038,12 @@ bug fixes only; anything new lives under `battery/desktop`.
   `get`/`set`/`delete` to the page for app-owned keys (validated key
   grammar, a size cap per value, ungated like `window.setPath`: the
   page is the app).
+  - Built (2026-09-06): `battery/desktop/appstate/` (the store and its
+    suite), `battery/desktop/cap_state.go` (the capability, plus
+    `keys`), `battery/desktop/windowstate.go` (the window store now
+    one client of the app state), `battery/desktop/desktop.go` (the
+    `Run` open, the quit flush, `Battery.State()`). The file answer
+    shipped; the DB-table variant did not.
 - **Settings**: a declared list of preferences (`desktop.Preference{
   Key, Label, Kind, Default}`, kinds bool, int, string, choice) on
   `Config.Preferences`. The battery stores them in the app state under
@@ -1046,12 +1052,26 @@ bug fixes only; anything new lives under `battery/desktop`.
   components (the battery cannot reach the render pipeline, so the
   helper is a screen builder the host mounts on `Config.Settings.Path`).
   Both examples drop their hand-built settings entity and screen.
+  - Built (2026-09-06): `battery/desktop/preferences.go` (declaration
+    validation, the typed reader/writer),
+    `battery/desktop/cap_preferences.go` (the capability),
+    `battery/desktop/preferences_screen.go`
+    (`PreferencesScreen` + the `POST /__gofastr/desktop/preferences`
+    route). Both examples migrated
+    (`examples/desktop-focus/main.go`, `examples/desktop-notes/main.go`).
 - **Single-user mode** stays what `localuser.go` is today: the
   battery's local identity on top of `battery/auth`. It is documented
   as the offering it already is; no change to auth.
+  - Built as documentation only (2026-09-06): the "Single-user mode"
+    section in `framework/docs/content/desktop.md` (it extends the old
+    "The local identity" section). `localuser.go` and `battery/auth`
+    are unchanged.
 - Order: land the phase 0 to 11 branch first (split into review-sized
   PRs), then app state with the window store migrated onto it, then
   preferences with both examples migrated, then the doc section.
+  - Done (2026-09-06): this branch. The doc section is
+    `framework/docs/content/desktop.md` ("App state", "Preferences",
+    "Single-user mode").
 
 ## Deliberately out of scope
 

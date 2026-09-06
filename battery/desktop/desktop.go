@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"path/filepath"
 	"regexp"
 	"runtime"
 	"runtime/debug"
@@ -19,6 +20,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/battery/desktop/appstate"
 	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/uihost"
 )
@@ -102,14 +104,24 @@ type Config struct {
 	DeepLink *DeepLinkConfig
 
 	// RememberWindows persists every window's frame (position and
-	// size, screen points) and the main window's last path in
-	// windows.json under the data dir (0600), and restores them on the
-	// next launch: the main window and each secondary window reopen
-	// where the user left them, and the boot handshake redirects to
-	// the main window's last path instead of "/". A remembered frame
-	// that no longer intersects any screen (the monitor was unplugged)
-	// is dropped and the window centers.
+	// size, screen points) and the main window's last path under the
+	// "windows" key of the app state store (state.json in the data dir,
+	// 0600), and restores them on the next launch: the main window and
+	// each secondary window reopen where the user left them, and the
+	// boot handshake redirects to the main window's last path instead
+	// of "/". A remembered frame that no longer intersects any screen
+	// (the monitor was unplugged) is dropped and the window centers.
 	RememberWindows bool
+
+	// Preferences declares the app's settings screen: typed values
+	// (bool, int, string, choice) stored in the app state under
+	// "settings", read through (*Battery).Preferences, and rendered by
+	// desktop.PreferencesScreen (the screen builder the host mounts,
+	// typically at the path Config.Settings names). New panics on a
+	// declaration whose Default does not match its Kind, whose key is
+	// off the grammar or duplicated, whose Choice carries no Choices,
+	// or whose Int carries Min > Max.
+	Preferences []Preference
 
 	// Update, when set, enables the auto-updater (see UpdateConfig).
 	Update *UpdateConfig
@@ -208,14 +220,29 @@ type Battery struct {
 	updater     *updater
 	updaterOnce sync.Once
 
-	// winStore is the remembered window state (windowstate.go), loaded
-	// by Run when Config.RememberWindows is set, BEFORE the app's
-	// listener opens (any request that passes the gate sees it). nil
+	// state is the app state store (battery/desktop/appstate), opened
+	// by Run after the app reports ready: Init, which resolves the data
+	// dir, runs inside app.Start. Run assigns it while the app's
+	// listener is already answering, and handler goroutines read it
+	// through stateStore(), so the field is an atomic pointer: the
+	// handoff is synchronized by construction. Nil before Run; State()
+	// documents that.
+	state atomic.Pointer[appstate.Store]
+
+	// prefs is the validated preference list (Config.Preferences),
+	// built at New; Preferences() hands it out. Its reads consult
+	// state, so before Run they answer the declared defaults.
+	prefs *Preferences
+
+	// winStore is the remembered window state (windowstate.go), a thin
+	// client over the app state store, set by Run when
+	// Config.RememberWindows is on, after the app's listener is
+	// answering (same handoff shape as state, so same atomic). nil
 	// when the app does not remember windows.
-	winStore *windowStore
+	winStore atomic.Pointer[windowStore]
 }
 
-// New validates cfg and constructs the Battery, registering the seven
+// New validates cfg and constructs the Battery, registering the eight
 // core capabilities. It panics on invalid configuration with a message
 // prefixed "desktop:", the same construction-time posture as
 // framework.NewApp's registration panics.
@@ -262,6 +289,10 @@ func New(cfg Config) *Battery {
 			panic(err.Error())
 		}
 	}
+	prefs, err := newPreferences(nil, cfg.Preferences)
+	if err != nil {
+		panic(err.Error())
+	}
 	if cfg.Settings != nil && !validNavigatePath(cfg.Settings.Path) {
 		panic(fmt.Sprintf("desktop: Config.Settings.Path %q must be a same-origin absolute path (leading /, no scheme, no //, no control characters, no .. segments)", cfg.Settings.Path))
 	}
@@ -304,6 +335,8 @@ func New(cfg Config) *Battery {
 		winPaths:     make(map[string]string),
 		allowPaths:   make(map[string]struct{}),
 	}
+	prefs.b = b
+	b.prefs = prefs
 	// Register the core capabilities; a plugin adding a colliding name
 	// gets an error naming both sites.
 	for _, cap := range []Capability{
@@ -314,7 +347,9 @@ func New(cfg Config) *Battery {
 		b.notificationsCapability(),
 		b.fsCapability(),
 		b.trayCapability(),
+		b.preferencesCapability(),
 		b.updatesCapability(),
+		b.stateCapability(),
 	} {
 		if cap.Name == "" {
 			continue
@@ -334,6 +369,21 @@ func (b *Battery) Name() string { return "desktop" }
 func FromApp(app *framework.App) (*Battery, error) {
 	return framework.GetAs[*Battery](app.Batteries, "desktop")
 }
+
+// State returns the app state store Run opened in the data dir
+// (state.json, one store for the battery and the page). nil BEFORE
+// Run: the data dir is resolved by Init inside app.Start, so no store
+// exists to hand out yet. Call it from menu handlers, capability
+// handlers, or goroutines that outlive Run's start.
+func (b *Battery) State() *appstate.Store { return b.state.Load() }
+
+// Preferences returns the declared preferences (Config.Preferences):
+// typed reads of the stored-or-default values plus Set. Usable from
+// New on; before Run opens the app state store the reads answer the
+// declared defaults and Set answers unsupported (the --serve shape:
+// no desktop host, no store). Bool/Int/String panic on an undeclared
+// key or a kind mismatch, a programming error.
+func (b *Battery) Preferences() *Preferences { return b.prefs }
 
 // Init wires the battery into the App: routes, gate + local-identity
 // middleware, the bridge script rail entry, the owner extractor
@@ -508,9 +558,8 @@ func (b *Battery) OpenWindow(spec WindowSpec) (Window, error) {
 
 	// A remembered frame for this window id replaces a nil Frame, so a
 	// secondary window ("settings", a widget) reopens where the user
-	// left it. An explicit Frame wins over the store.
-	if b.winStore != nil && spec.Frame == nil {
-		spec.Frame = b.winStore.frameFor(id)
+	if s := b.winStore.Load(); s != nil && spec.Frame == nil {
+		spec.Frame = s.frameFor(id)
 	}
 	if spec.Title == "" {
 		spec.Title = b.windowTitle()
@@ -572,27 +621,24 @@ func (b *Battery) handleWindowClosed(id string) {
 // user move or resize. It runs on a goroutine (the delegate hands it
 // off), and the store debounces the write.
 func (b *Battery) handleWindowFrame(id string, f Frame) {
-	if s := b.winStore; s != nil {
+	if s := b.winStore.Load(); s != nil {
 		s.setFrame(id, f)
 	}
 }
 
-// onWindowFrame is nil unless the app remembers windows: a shell that
-// sees nil skips the report entirely.
 func (b *Battery) onWindowFrame() func(id string, f Frame) {
-	if b.winStore == nil {
+	if b.winStore.Load() == nil {
 		return nil
 	}
 	return b.handleWindowFrame
 }
 
-// rememberedFrame is the remembered frame for a window id, nil when
-// window remembering is off or nothing was stored.
 func (b *Battery) rememberedFrame(id string) *Frame {
-	if b.winStore == nil {
+	s := b.winStore.Load()
+	if s == nil {
 		return nil
 	}
-	return b.winStore.frameFor(id)
+	return s.frameFor(id)
 }
 
 // OpenSettings opens (or focuses) the window Config.Settings
@@ -786,13 +832,12 @@ func (b *Battery) Run(app *framework.App) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	b.startUpdater(ctx)
-	// The remembered window state loads after the app reports ready
-	// (Init, which resolves the data dir, runs inside app.Start) and
-	// before the shell opens: the WindowConfig's Frame and the enter
-	// redirect both read it. A /enter request that slips in before this
-	// point sees no store and redirects to "/".
+	// The app state store opens after the app reports ready (Init,
+	// which resolves the data dir, runs inside app.Start) and before
+	// the shell opens: the remembered windows, the state capability,
+	b.state.Store(appstate.Open(filepath.Join(b.dataDir, stateFileName), b.logger))
 	if b.cfg.RememberWindows {
-		b.winStore = loadWindowStore(b.dataDir, b.logger)
+		b.winStore.Store(newWindowStore(b.state.Load(), b.logger))
 	}
 
 	shellErr := b.shell.Run(ctx, WindowConfig{
@@ -841,11 +886,9 @@ func (b *Battery) Run(app *framework.App) error {
 		}
 	})
 
-	// The last window-state write happens here, after the shell
-	// returned and before the app drains: the quit flush carries
-	// whatever the debounced writer had not landed yet.
-	if b.winStore != nil {
-		b.winStore.flush()
+	// The last state write happens here, after the shell returned and
+	if s := b.state.Load(); s != nil {
+		_ = s.Flush() // a failed write was already Warned inside
 	}
 
 	// Drain the app: Start returns once Shutdown completes.

@@ -85,7 +85,7 @@ func (b *Battery) windowCapability() Capability {
 					// window id is the page's own claim
 					// (callerWindowID), and the relaunch redirect
 					// concerns the main window only.
-					if s := b.winStore; s != nil && callerWindowID(ctx) == mainWindowID {
+					if s := b.winStore.Load(); s != nil && callerWindowID(ctx) == mainWindowID {
 						s.setMainPath(req.Path)
 					}
 					return nil, nil

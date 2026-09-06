@@ -105,10 +105,11 @@ results, the harness contract) are exempt. The exemption list lives in
   data-part contract, the task lifecycle, streaming, push notifications,
   and the boundary between task state and the queue.
 - [Desktop host (experimental)](desktop.md): `battery/desktop`: run
-  the app in the OS WebView from a CGO_ENABLED=0 binary — boot-token
+  the app in the OS WebView from a CGO_ENABLED=0 binary: boot-token
   loopback handshake, typed JS bridge with permission-gated
-  chokepoint, menus, and the fs allow-list. Experimental: pin a
-  version.
+  chokepoint, menus, tray, deep links, remembered window state, app
+  state, declared preferences with a settings screen, single-user
+  mode, and the fs allow-list. Experimental: pin a version.
 
 ## Building UI
 

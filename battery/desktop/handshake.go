@@ -62,7 +62,7 @@ func (b *Battery) enterHandler() http.Handler {
 // still passes the navigate grammar, else "/". The stored path is data
 // at rest; it is validated again here, on the way out.
 func (b *Battery) bootPath() string {
-	if s := b.winStore; s != nil {
+	if s := b.winStore.Load(); s != nil {
 		if p := s.mainPath(); validNavigatePath(p) {
 			return p
 		}
