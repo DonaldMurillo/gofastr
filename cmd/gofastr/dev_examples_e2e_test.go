@@ -31,6 +31,8 @@ var devExamples = []devExample{
 	{"api-tour", "/posts", http.StatusOK},
 	{"backoffice", "/login", http.StatusOK},
 	{"blog", "/posts", http.StatusOK},
+	{"desktop-notes", "/", http.StatusOK},
+	{"desktop-focus", "/", http.StatusOK},
 	{"embed-demo", "/", http.StatusNotFound}, // the app serves embed surfaces only; the customer site is the demo
 	{"semantic-demo", "/semantic/stats", http.StatusUnauthorized},
 	{"spa", "/", http.StatusOK},
