@@ -122,6 +122,10 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   (404, 405, embed frame), and `uihost.LangForPath` falls back to the app's
   `LangFunc` so a site declares its languages once. Every fallback ends at
   `EffectiveLang`, so an app that configures none renders byte-identically.
+- **`ui.DocPager.PrevDirLabel` / `NextDirLabel`** translate the prev/next
+  pager's direction lines, which were hardcoded `← Previous` and `Next →`.
+  Empty keeps those exact strings. The arrow is part of the value, so a
+  translation can move it to the other side of the word.
 
 ### BREAKING
 - `POST /auth/register` no longer answers 409 for a taken address.

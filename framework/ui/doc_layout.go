@@ -35,7 +35,26 @@ type DocCrumb struct {
 type DocPager struct {
 	PrevHref, PrevLabel string
 	NextHref, NextLabel string
+
+	// PrevDirLabel and NextDirLabel are the small direction lines above each
+	// card's title. Empty falls back to "← Previous" and "Next →", so an
+	// English site sets neither.
+	//
+	// The arrow is part of the value rather than something the component adds,
+	// because a translation may want it on the other side of the word, or want
+	// a different glyph. Set both to the full string:
+	//
+	//	DocPager{PrevDirLabel: "← Anterior", NextDirLabel: "Siguiente →"}
+	PrevDirLabel string
+	NextDirLabel string
 }
+
+// Default direction labels for DocPager. The strings the pager shipped with,
+// kept as the fallback so an untranslated caller renders exactly as before.
+const (
+	defaultPrevDirLabel = "← Previous"
+	defaultNextDirLabel = "Next →"
+)
 
 // DocLayoutConfig configures a DocLayout.
 type DocLayoutConfig struct {
@@ -124,7 +143,8 @@ func docCrumbs(crumbs []DocCrumb, label string) render.HTML {
 
 // DocPrevNext renders the prev/next pager. The previous card is always shown
 // (callers point it at an index fallback); the next card is omitted when
-// NextHref is empty.
+// NextHref is empty. Direction labels come from PrevDirLabel / NextDirLabel and
+// fall back to English.
 func DocPrevNext(p DocPager) render.HTML {
 	// Pager hrefs can be data-driven. Drop unsafe schemes; degrade to "#".
 	safeHref := func(u string) string {
@@ -133,12 +153,20 @@ func DocPrevNext(p DocPager) render.HTML {
 		}
 		return "#"
 	}
+	prevDir := p.PrevDirLabel
+	if prevDir == "" {
+		prevDir = defaultPrevDirLabel
+	}
+	nextDir := p.NextDirLabel
+	if nextDir == "" {
+		nextDir = defaultNextDirLabel
+	}
 	cards := []render.HTML{
 		html.LinkHTML(html.LinkHTMLConfig{
 			Href:  safeHref(p.PrevHref),
 			Class: "ui-doc-layout__prev",
 			Content: render.Join(
-				html.Span(html.TextConfig{Class: "ui-doc-layout__pager-dir"}, render.Text("← Previous")),
+				html.Span(html.TextConfig{Class: "ui-doc-layout__pager-dir"}, render.Text(prevDir)),
 				html.Span(html.TextConfig{Class: "ui-doc-layout__pager-ttl"}, render.Text(p.PrevLabel)),
 			),
 		}),
@@ -148,7 +176,7 @@ func DocPrevNext(p DocPager) render.HTML {
 			Href:  safeHref(p.NextHref),
 			Class: "ui-doc-layout__next",
 			Content: render.Join(
-				html.Span(html.TextConfig{Class: "ui-doc-layout__pager-dir"}, render.Text("Next →")),
+				html.Span(html.TextConfig{Class: "ui-doc-layout__pager-dir"}, render.Text(nextDir)),
 				html.Span(html.TextConfig{Class: "ui-doc-layout__pager-ttl"}, render.Text(p.NextLabel)),
 			),
 		}))
