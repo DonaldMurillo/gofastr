@@ -74,6 +74,15 @@ type WebSocketConn struct {
 	// (1005 = no status). Stored as a *[]byte so we can distinguish "no
 	// Close seen yet" (nil) from "Close with empty payload" (non-nil).
 	peerClosePayload atomic.Pointer[[]byte]
+	// ownClosePayload is the status code and reason CloseWithStatus
+	// asked for; used only when the peer did not close first.
+	ownClosePayload atomic.Pointer[[]byte]
+	// closing is set by the first detached closer a StateChannel
+	// spawns for this connection, so a stalled socket costs one
+	// goroutine however many events pile up behind it (closed is only
+	// closed once Close acquires the write mutex the stalled pump
+	// holds, so it cannot be the guard).
+	closing atomic.Bool
 
 	// readMsgs delivers decoded data messages from the internal read
 	// pump to Read(). Buffered (cap 8): beyond that, TCP backpressure
@@ -430,6 +439,8 @@ func (c *WebSocketConn) Close() error {
 		var payload []byte
 		if echo != nil {
 			payload = *echo
+		} else if own := c.ownClosePayload.Load(); own != nil {
+			payload = *own
 		}
 		// Send close frame. Ignore the error: if writing fails the peer
 		// is likely already gone, but we still want to drop the TCP conn.
@@ -465,6 +476,25 @@ func (c *WebSocketConn) Close() error {
 		}
 	})
 	return err
+}
+
+// CloseWithStatus is Close with a status code and reason in the close
+// frame, for a server that accepted the handshake only to refuse the
+// connection: a browser cannot read an HTTP status off a failed
+// handshake (the WHATWG spec withholds it so a page cannot probe the
+// network), but it can read a close code. The reason is kept to
+// printable ASCII and at most 123 bytes, the frame's limit. A close
+// the peer initiated first still echoes the peer's own code.
+func (c *WebSocketConn) CloseWithStatus(code uint16, reason string) error {
+	buf := make([]byte, 2, 2+len(reason))
+	binary.BigEndian.PutUint16(buf, code)
+	for i := 0; i < len(reason) && len(buf) < 125; i++ {
+		if b := reason[i]; b >= 0x20 && b <= 0x7e {
+			buf = append(buf, b)
+		}
+	}
+	c.ownClosePayload.Store(&buf)
+	return c.Close()
 }
 
 // awaitPeerClose waits for the read pump to signal that it parsed the
