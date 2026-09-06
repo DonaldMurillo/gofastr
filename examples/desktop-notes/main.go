@@ -93,27 +93,13 @@ func buildApp(shell desktop.Shell) (*framework.App, *desktop.Battery, error) {
 		framework.WithConfig(framework.AppConfig{Name: "desktop-notes", APIPrefix: "api"}),
 	)...)
 
-	// The data half: the owner-scoped entities + their hooks.
+	// The data half: the owner-scoped entity + its hooks.
 	registerNotesEntity(app)
-	registerSettingsEntity(app)
 
-	// The screens half: framework/ui only, mounted before the battery
-	// (its Init looks for the UIHost among the mountables).
-	site, err := buildSite(app)
-	if err != nil {
-		return nil, nil, err
-	}
-	// Same-origin external script (never inline): the page-side
-	// behaviour for copy-link, export, and the window title, served
-	// from the embedded bytes with the hash-versioned URL.
-	app.Router().Get("/desktop-notes.js", uihost.ScriptHandler(pageJS))
-	app.Mount(uihost.New(site,
-		uihost.WithExtraScripts(uihost.ScriptURL("/desktop-notes.js", pageJS)),
-		uihost.WithAppIcon(appIconPNG()),
-	))
-
-	// The desktop half. d is captured by the menu handler below before
-	// any menu item can fire.
+	// The desktop half comes before the screens: the settings screen is
+	// PreferencesScreen(d), so the battery must exist when buildSite
+	// mounts it. The menu handlers below capture d; they only run
+	// after Run.
 	var d *desktop.Battery
 	d = desktop.New(desktop.Config{
 		ID:     appID,
@@ -123,8 +109,17 @@ func buildApp(shell desktop.Shell) (*framework.App, *desktop.Battery, error) {
 		Shell:  shell,
 		// Settings gets three entry points: the app menu's own
 		// Settings item (synthesized by the shell, cmd+,), this File
-		// menu row, and the tray's Settings row below.
+		// menu row, and the tray's Settings row below. The screen it
+		// opens is the battery's own preferences form (see buildSite).
 		Settings: &desktop.WindowSpec{Path: "/settings", Title: "Settings", Width: 520, Height: 460},
+		// The app's settings, declared once: stored in the app state
+		// under "settings", read by the save hook through
+		// d.Preferences(), and rendered by desktop.PreferencesScreen at
+		// /settings.
+		Preferences: []desktop.Preference{
+			{Key: "notify_on_save", Label: "Notify on save", Kind: desktop.PreferenceBool, Default: true},
+			{Key: "export_folder", Label: "Export folder", Kind: desktop.PreferenceString, Default: ""},
+		},
 		// gofastr-notes://notes/<id> opens the app on that note; the bundle
 		// registers the scheme with --scheme gofastr-notes.
 		DeepLink: &desktop.DeepLinkConfig{Scheme: "gofastr-notes"},
@@ -174,6 +169,22 @@ func buildApp(shell desktop.Shell) (*framework.App, *desktop.Battery, error) {
 		// (gofastr desktop keygen / feed).
 		Update: updateConfigFromEnv(),
 	})
+
+	// The screens half: framework/ui only, mounted before the battery
+	// (its Init looks for the UIHost among the mountables).
+	site, err := buildSite(app, d)
+	if err != nil {
+		return nil, nil, err
+	}
+	// Same-origin external script (never inline): the page-side
+	// behaviour for copy-link, export, and the window title, served
+	// from the embedded bytes with the hash-versioned URL.
+	app.Router().Get("/desktop-notes.js", uihost.ScriptHandler(pageJS))
+	app.Mount(uihost.New(site,
+		uihost.WithExtraScripts(uihost.ScriptURL("/desktop-notes.js", pageJS)),
+		uihost.WithAppIcon(appIconPNG()),
+	))
+
 	app.RegisterBattery(d)
 	app.RegisterPlugin(systemInfoPlugin{})
 	registerNotesHooks(app, d)

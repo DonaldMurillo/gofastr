@@ -81,16 +81,16 @@ func (e *Engine) Start(ctx context.Context, taskID string) error {
 	if current != nil {
 		return &desktop.Error{Code: desktop.CodeInvalidInput, Message: "a session is already running"}
 	}
-	set := e.settings(ctx)
+	work := e.d.Preferences().Int("work_minutes")
 	n := e.now()
 	created, err := e.app.MustCrudHandler("sessions").CreateOne(ctx, map[string]any{
 		"task_id":     taskID,
 		"kind":        "work",
 		"started_at":  stamp(n),
-		"ends_at":     stamp(n.Add(time.Duration(set.WorkMinutes) * time.Minute)),
+		"ends_at":     stamp(n.Add(time.Duration(work) * time.Minute)),
 		"paused_left": 0,
 		"completed":   false,
-		"minutes":     set.WorkMinutes,
+		"minutes":     work,
 	})
 	if err != nil {
 		return fmt.Errorf("start session: %w", err)
@@ -275,7 +275,7 @@ func (e *Engine) tickGuarded(ctx context.Context) {
 // tickRunning updates the tray title (when the owner wants the
 // countdown there) and pushes focus_tick with the live state.
 func (e *Engine) tickRunning(ctx context.Context, s *sessionRow) {
-	if _, ok := e.d.Window(); ok && e.settings(ctx).TrayCountdown {
+	if _, ok := e.d.Window(); ok && e.d.Preferences().Bool("tray_countdown") {
 		if err := e.d.SetTrayTitle(trayClock(remainingSeconds(s.EndsAt, e.now()))); err != nil {
 			slog.Warn("desktop-focus: tray title", "error", err)
 		}
@@ -288,7 +288,6 @@ func (e *Engine) tickRunning(ctx context.Context, s *sessionRow) {
 // owner allows), emit focus_done, then start the break after work or
 // go idle after a break.
 func (e *Engine) completeSession(ctx context.Context, s *sessionRow, notify bool) error {
-	set := e.settings(ctx)
 	if _, err := e.app.MustCrudHandler("sessions").UpdateOne(ctx, s.ID, map[string]any{
 		"completed": true,
 	}); err != nil {
@@ -302,10 +301,11 @@ func (e *Engine) completeSession(ctx context.Context, s *sessionRow, notify bool
 
 	var message string
 	var nextMinutes int
+	prefs := e.d.Preferences()
 	switch s.Kind {
 	case "work":
-		message = fmt.Sprintf("Work session done. Break for %d minutes.", set.BreakMinutes)
-		nextMinutes = set.BreakMinutes
+		message = fmt.Sprintf("Work session done. Break for %d minutes.", prefs.Int("break_minutes"))
+		nextMinutes = prefs.Int("break_minutes")
 	default:
 		message = "Break over. Back to work."
 	}
@@ -313,7 +313,7 @@ func (e *Engine) completeSession(ctx context.Context, s *sessionRow, notify bool
 	// The OS notification is the host's to refuse (an unsigned bundle,
 	// a declined permission): unsupported is silence, anything else is
 	// a Warn, and no notification failure ever fails the transition.
-	if _, ok := e.d.Window(); ok && notify && set.Notify {
+	if _, ok := e.d.Window(); ok && notify && prefs.Bool("notify_on_done") {
 		if err := e.d.Notify(ctx, desktop.Notification{Title: "Focus", Body: message}); err != nil {
 			var de *desktop.Error
 			if !errors.As(err, &de) || de.Code != desktop.CodeUnsupported {
@@ -369,7 +369,7 @@ func (e *Engine) countPomodoro(ctx context.Context, taskID string) error {
 // went idle, or to the next session's clock when a break just started
 // (both only for owners who asked for the countdown).
 func (e *Engine) restoreTray(ctx context.Context, next *sessionRow) {
-	if _, ok := e.d.Window(); !ok || !e.settings(ctx).TrayCountdown {
+	if _, ok := e.d.Window(); !ok || !e.d.Preferences().Bool("tray_countdown") {
 		return
 	}
 	title := "Focus"
@@ -428,31 +428,6 @@ func (e *Engine) currentSession(ctx context.Context) (*sessionRow, error) {
 	}
 	s := parseSession(rows[0])
 	return &s, nil
-}
-
-// settings reads the owner's row (creating nothing): absent row means
-// the defaults, and so does a read failure (the timer keeps running on
-// defaults rather than dying on a settings hiccup).
-func (e *Engine) settings(ctx context.Context) focusSettings {
-	set := defaultFocusSettings()
-	rows, err := e.app.MustCrudHandler("settings").ListAll(ctx, crud.ListOptions{Limit: 1})
-	if err != nil || len(rows) == 0 {
-		return set
-	}
-	row := rows[0]
-	if v := asInt(row["workMinutes"]); v > 0 {
-		set.WorkMinutes = v
-	}
-	if v := asInt(row["breakMinutes"]); v > 0 {
-		set.BreakMinutes = v
-	}
-	if v, present := row["notify"].(bool); present {
-		set.Notify = v
-	}
-	if v, present := row["trayCountdown"].(bool); present {
-		set.TrayCountdown = v
-	}
-	return set
 }
 
 // taskTitle resolves a task's title through the owner-scoped handler;

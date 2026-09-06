@@ -201,73 +201,49 @@ func TestSaveRoundTripThroughFormEndpoint(t *testing.T) {
 	}
 }
 
-// TestSettingsScreenRendersAndCreatesRow: the first /settings visit
-// creates the owner's row with defaults and renders the engine's form;
-// the post-save target /settings/{id} is a registered screen.
-func TestSettingsScreenRendersAndCreatesRow(t *testing.T) {
-	app, _, _ := newTestApp(t)
+// TestSettingsScreenRendersDeclaredPreferences: /settings is the
+// battery's preferences form, one field per declaration, prefilled
+// with the declared defaults (this is the --serve shape: no Run, no
+// app state store, so the defaults are the answer and there is no row
+// and no /settings/{id}).
+func TestSettingsScreenRendersDeclaredPreferences(t *testing.T) {
+	app, d, _ := newTestApp(t)
 	ta := framework.TestHarness(t, app).AsUser(harnessUser{id: "u1"})
 
 	screen := ta.Get("/settings").AssertStatus(t, http.StatusOK)
-	for _, want := range []string{"Settings", "Notify on save", "Export folder", "form"} {
+	for _, want := range []string{
+		"Settings", `id="f-notify_on_save"`, `id="f-export_folder"`,
+		"Notify on save", "Export folder", `data-fui-rpc="/__gofastr/desktop/preferences"`,
+	} {
 		if !strings.Contains(screen.Body(), want) {
 			t.Fatalf("/settings missing %q: %.300s", want, screen.Body())
 		}
 	}
-
-	// The row was created for THIS owner; a second owner gets their own.
-	list := ta.Get("/api/settings").AssertStatus(t, http.StatusOK)
-	if !strings.Contains(list.Body(), "notifyOnSave") {
-		t.Fatalf("settings api after first visit: %s", list.Body())
+	// The default renders the box checked (the renderer emits the
+	// attributes in sorted order, checked before id).
+	if !strings.Contains(screen.Body(), `<input checked="checked" id="f-notify_on_save"`) {
+		t.Fatal("the default notify_on_save does not render checked")
 	}
-	u2 := framework.TestHarness(t, app).AsUser(harnessUser{id: "u2"})
-	u2List := u2.Get("/api/settings").AssertStatus(t, http.StatusOK)
-	if strings.Contains(u2List.Body(), "notifyOnSave") {
-		t.Fatal("u2 sees u1's settings row")
+	// The typed read answers the default before any store exists.
+	if !d.Preferences().Bool("notify_on_save") {
+		t.Fatal("notify_on_save default is not true")
 	}
-
-	// The post-save target renders the form for the row's id.
-	var listed struct {
-		Data []map[string]any `json:"data"`
-	}
-	if err := json.Unmarshal([]byte(list.Body()), &listed); err != nil || len(listed.Data) != 1 {
-		t.Fatalf("settings list decode: %v (%s)", err, list.Body())
-	}
-	id, _ := listed.Data[0]["id"].(string)
-	if id == "" {
-		t.Fatalf("settings row id missing: %s", list.Body())
-	}
-	detail := ta.Get("/settings/"+id).AssertStatus(t, http.StatusOK)
-	if !strings.Contains(detail.Body(), "Notify on save") {
-		t.Fatal("/settings/{id} does not render the form")
-	}
+	// The old settings entity and its routes are gone.
+	ta.Get("/api/settings").AssertStatus(t, http.StatusNotFound)
 }
 
-// TestSaveHonoursNotifyOnSaveOff: with the owner's notify_on_save set
-// to false, saving a note records no notification (the preference is
-// read before notifying; an absent row still notifies).
-func TestSaveHonoursNotifyOnSaveOff(t *testing.T) {
+// TestSaveNotifiesOnTheDeclaredDefault: in the --serve shape there is
+// no app state store, so notify_on_save reads its declared default and
+// every save notifies. Turning it off needs the desktop host; the
+// harness suite covers that direction through preferences.set.
+func TestSaveNotifiesOnTheDeclaredDefault(t *testing.T) {
 	app, _, shell := newTestApp(t)
 	ta := framework.TestHarness(t, app).AsUser(harnessUser{id: "u1"})
 
-	// No settings row yet: a save notifies (the default).
-	ta.Post("/api/notes", map[string]any{"title": "Before opt-out", "body": ""}).AssertStatus(t, http.StatusCreated)
-	if n := len(shell.Notifications()); n != 1 {
-		t.Fatalf("notifications before opt-out = %d, want 1", n)
-	}
-
-	// Turn notify_on_save off through the settings API, then save.
-	created := ta.Post("/api/settings", map[string]any{"notify_on_save": false, "export_folder": ""}).AssertStatus(t, http.StatusCreated)
-	var row map[string]any
-	if err := decodeData(created.Body(), &row); err != nil {
-		t.Fatal(err)
-	}
-	id, _ := row["id"].(string)
-	ta.Put("/api/settings/"+id, map[string]any{"notify_on_save": false, "export_folder": ""}).AssertStatus(t, http.StatusOK)
-
-	ta.Post("/api/notes", map[string]any{"title": "After opt-out", "body": ""}).AssertStatus(t, http.StatusCreated)
-	if n := len(shell.Notifications()); n != 1 {
-		t.Fatalf("notifications after opt-out = %d, want still 1 (none added)", n)
+	ta.Post("/api/notes", map[string]any{"title": "Default on", "body": ""}).AssertStatus(t, http.StatusCreated)
+	ta.Post("/api/notes", map[string]any{"title": "Still on", "body": ""}).AssertStatus(t, http.StatusCreated)
+	if n := len(shell.Notifications()); n != 2 {
+		t.Fatalf("notifications on the declared default = %d, want 2", n)
 	}
 }
 

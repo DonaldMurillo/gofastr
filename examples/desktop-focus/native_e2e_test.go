@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -238,7 +239,9 @@ func TestWidgetOpenTaskPostReachesMain(t *testing.T) {
 }
 
 // TestSettingsWindowSavesBothCheckboxes: the settings WINDOW (the app
-// menu's item), its real form, both bools off then on.
+// menu's item), the battery's preferences form in the real WebView:
+// flip both checkboxes, change work minutes, Save, reload, and the
+// form shows what d.Preferences() answers.
 func TestSettingsWindowSavesBothCheckboxes(t *testing.T) {
 	h := desktoptest.Native(t)
 	h.OpenSettings()
@@ -247,61 +250,131 @@ func TestSettingsWindowSavesBothCheckboxes(t *testing.T) {
 	// The form AND the runtime: a click on Save before the intercept
 	// attached would be a plain browser POST, not the app's save.
 	formReady := func() bool {
-		r, err := sw.EvalQuiet(`return !!document.getElementById("f-notify") && !!document.getElementById("f-tray_countdown") && !!(window.__gofastr && window.__gofastr.desktop)`)
+		r, err := sw.EvalQuiet(`return !!document.getElementById("f-notify_on_done") && !!document.getElementById("f-tray_countdown") && !!document.getElementById("f-work_minutes") && !!(window.__gofastr && window.__gofastr.desktop)`)
 		var b bool
 		return err == nil && json.Unmarshal(r, &b) == nil && b
 	}
-	h.Wait("the settings form", formReady)
+	h.Wait("the preferences form", formReady)
 	savePNG(t, "focus-settings.png", func() []byte { return encodePNG(t, sw) })
 
-	readSettings := func() (notify, tray bool, ok bool) {
-		r := h.Get("/api/settings")
-		if r.Status != http.StatusOK {
-			return false, false, false
-		}
-		var rows struct {
-			Data []map[string]any `json:"data"`
-		}
-		if err := json.Unmarshal([]byte(r.Body), &rows); err != nil || len(rows.Data) != 1 {
-			return false, false, false
-		}
-		n, ok1 := rows.Data[0]["notify"].(bool)
-		tr, ok2 := rows.Data[0]["trayCountdown"].(bool)
-		return n, tr, ok1 && ok2
-	}
 	checked := func(id string) bool {
 		r, err := sw.EvalQuiet(`return document.getElementById(` + jsQuote(id) + `).checked`)
 		var b bool
 		return err == nil && json.Unmarshal(r, &b) == nil && b
 	}
-	// Whatever the row holds now, drive both boxes to off, save, then
-	// both to on, save; each save must persist exactly what the boxes
-	// showed.
-	setBoth := func(want bool) {
-		for _, id := range []string{"f-notify", "f-tray_countdown"} {
-			if checked(id) != want {
-				sw.Click(t, "#"+id)
-			}
+	setWorkMinutes := func(n int) {
+		r, err := sw.EvalQuiet(`var el = document.getElementById("f-work_minutes"); el.value = ` + jsQuote(strconv.Itoa(n)) + `; el.dispatchEvent(new Event("input", {bubbles: true})); return el.value`)
+		var got string
+		if err != nil || json.Unmarshal(r, &got) != nil || got != strconv.Itoa(n) {
+			t.Fatalf("set work minutes to %d: %v %s", n, err, r)
 		}
-		sw.Click(t, `form button[type="submit"]`)
-		h.Wait("both preferences to persist as "+map[bool]string{true: "on", false: "off"}[want], func() bool {
-			n, tr, ok := readSettings()
-			return ok && n == want && tr == want
-		})
-		// The post-save screen is /settings/{id}: reload it so the
-		// boxes reflect the saved row, not the cached DOM.
+	}
+	reloadForm := func() {
 		_, _ = sw.EvalQuiet("window.__preReload = true; location.reload(); return true")
 		h.Wait("the reloaded form", func() bool {
 			r, err := sw.EvalQuiet(`return !window.__preReload`)
 			var b bool
 			return err == nil && json.Unmarshal(r, &b) == nil && b && formReady()
 		})
-		if checked("f-notify") != want || checked("f-tray_countdown") != want {
-			t.Fatalf("after saving %v the form renders notify=%v tray=%v", want, checked("f-notify"), checked("f-tray_countdown"))
+	}
+	readWorkMinutes := func() string {
+		r, err := sw.EvalQuiet(`return document.getElementById("f-work_minutes").value`)
+		var got string
+		if err != nil || json.Unmarshal(r, &got) != nil {
+			return ""
+		}
+		return got
+	}
+
+	// Whatever the preferences hold now, drive both boxes to off and
+	// the minutes to 45, save: the values persist exactly.
+	setBoth := func(want bool, minutes int) {
+		for _, id := range []string{"f-notify_on_done", "f-tray_countdown"} {
+			if checked(id) != want {
+				sw.Click(t, "#"+id)
+			}
+		}
+		setWorkMinutes(minutes)
+		sw.Click(t, `form button[type="submit"]`)
+		wantState := map[bool]string{true: "on", false: "off"}[want]
+		h.Wait("the preferences to persist as "+wantState+" / "+strconv.Itoa(minutes), func() bool {
+			p := h.Battery.Preferences()
+			return p.Bool("notify_on_done") == want && p.Bool("tray_countdown") == want && p.Int("work_minutes") == minutes
+		})
+		// The post-save landing is /settings again: reload it so the
+		// form reflects the stored values, not the cached DOM.
+		reloadForm()
+		if checked("f-notify_on_done") != want || checked("f-tray_countdown") != want {
+			t.Fatalf("after saving %v the form renders notify=%v tray=%v", want, checked("f-notify_on_done"), checked("f-tray_countdown"))
+		}
+		if got := readWorkMinutes(); got != strconv.Itoa(minutes) {
+			t.Fatalf("after saving %d the form renders work minutes %q", minutes, got)
 		}
 	}
-	setBoth(false)
-	setBoth(true)
+	setBoth(false, 45)
+	setBoth(true, 25)
+	h.CloseWindow("settings")
+	h.Wait("the settings window to close", func() bool { return h.Window("settings") == nil })
+}
+
+// TestSettingsRefusedSaveShowsFieldError: the failure half of the
+// settings form in the real WebView. The number input's native min/max
+// already block a plain out-of-range number before any submit, but
+// "1e2" passes native validation (it is the number 100, in range)
+// while the route refuses it as not a whole number: that is the
+// refusal a real user can still produce, and the runtime's formerrors
+// module must paint the route's envelope into the field the user is
+// looking at (a role=alert paragraph beside the input, aria-invalid on
+// it, nothing applied). Fixing the value and saving again clears the
+// error. If the envelope's field key ever stopped matching the form
+// control name, this is the test that fails.
+func TestSettingsRefusedSaveShowsFieldError(t *testing.T) {
+	h := desktoptest.Native(t)
+	h.OpenSettings()
+	h.Wait("the settings window", func() bool { return h.Window("settings") != nil })
+	sw := h.Window("settings")
+	h.Wait("the preferences form", func() bool {
+		r, err := sw.EvalQuiet(`return !!document.getElementById("f-work_minutes") && !!(window.__gofastr && window.__gofastr.desktop)`)
+		var b bool
+		return err == nil && json.Unmarshal(r, &b) == nil && b
+	})
+
+	setWork := func(n string) {
+		r, err := sw.EvalQuiet(`var el = document.getElementById("f-work_minutes"); el.value = ` + jsQuote(n) + `; el.dispatchEvent(new Event("input", {bubbles: true})); return el.value`)
+		var got string
+		if err != nil || json.Unmarshal(r, &got) != nil || got != n {
+			t.Fatalf("set work minutes to %s: %v %s", n, err, r)
+		}
+	}
+
+	// The refused save: "1e2" is native-valid, not a whole number to
+	// the route.
+	before := h.Battery.Preferences().Int("work_minutes")
+	setWork("1e2")
+	sw.Click(t, `form button[type="submit"]`)
+	h.Wait("the field error to render", func() bool {
+		r, err := sw.EvalQuiet(`var p = document.getElementById("f-work_minutes-error");
+			return !!p && p.getAttribute("role") === "alert" && p.textContent.indexOf("whole number") !== -1
+				&& p.offsetParent !== null
+				&& document.getElementById("f-work_minutes").getAttribute("aria-invalid") === "true"`)
+		var b bool
+		return err == nil && json.Unmarshal(r, &b) == nil && b
+	})
+	if got := h.Battery.Preferences().Int("work_minutes"); got != before {
+		t.Fatalf("a refused save applied work_minutes %d, want the stored %d", got, before)
+	}
+
+	// The retry: a valid value saves and the error is gone.
+	setWork("30")
+	sw.Click(t, `form button[type="submit"]`)
+	h.Wait("work_minutes to persist as 30", func() bool {
+		return h.Battery.Preferences().Int("work_minutes") == 30
+	})
+	h.Wait("the field error to clear", func() bool {
+		r, err := sw.EvalQuiet(`return !document.getElementById("f-work_minutes-error") && document.getElementById("f-work_minutes").getAttribute("aria-invalid") !== "true"`)
+		var b bool
+		return err == nil && json.Unmarshal(r, &b) == nil && b
+	})
 	h.CloseWindow("settings")
 	h.Wait("the settings window to close", func() bool { return h.Window("settings") == nil })
 }
@@ -387,8 +460,8 @@ func TestNewTaskFormLandsOnTheTimer(t *testing.T) {
 
 // TestRememberedWindowFrameAndPath: the page reports its path on
 // navigation (the desktop runtime module's setPath) and a real window
-// move lands in windows.json under the data dir, the state a relaunch
-// restores from.
+// move lands in state.json's windows entry under the data dir, the
+// state a relaunch restores from.
 func TestRememberedWindowFrameAndPath(t *testing.T) {
 	h := desktoptest.Native(t)
 	ensureIdle(t, h)
@@ -412,8 +485,8 @@ func TestRememberedWindowFrameAndPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("data dir: %v", err)
 	}
-	h.Wait("windows.json to hold the frame and the path", func() bool {
-		data, err := os.ReadFile(filepath.Join(dir, "windows.json"))
+	h.Wait("state.json to hold the frame and the path", func() bool {
+		data, err := os.ReadFile(filepath.Join(dir, "state.json"))
 		if err != nil {
 			return false
 		}
@@ -421,12 +494,12 @@ func TestRememberedWindowFrameAndPath(t *testing.T) {
 			strings.Contains(string(data), `"Width": 950`) &&
 			strings.Contains(string(data), `"path": "/tasks"`)
 	})
-	fi, err := os.Stat(filepath.Join(dir, "windows.json"))
+	fi, err := os.Stat(filepath.Join(dir, "state.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if fi.Mode().Perm() != 0o600 {
-		t.Fatalf("windows.json mode = %v, want 0600", fi.Mode().Perm())
+		t.Fatalf("state.json mode = %v, want 0600", fi.Mode().Perm())
 	}
-	t.Logf("windows.json at %s holds frame %+v and path /tasks", dir, frame)
+	t.Logf("state.json at %s holds frame %+v and path /tasks", dir, frame)
 }

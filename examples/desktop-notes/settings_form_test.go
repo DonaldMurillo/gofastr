@@ -5,50 +5,69 @@ import (
 	"net/http"
 	"strings"
 	"testing"
-
-	"github.com/DonaldMurillo/gofastr/framework"
 )
 
-// TestSettingsFormShapedSaveRoundTrips drives the settings row the way
-// the rendered form does: the runtime serializes the hidden/checkbox
-// pair as the STRING "true" or "false" (never a JSON bool, never "on").
-// Both must persist, and the re-rendered form must reflect the value.
+// TestSettingsFormShapedSaveRoundTrips drives the preferences route the
+// way the rendered form does: the runtime serializes the
+// hidden/checkbox pair and the number inputs as STRINGS ("true",
+// "false", ""), and the route accepts exactly those spellings. Both
+// bool directions persist, the re-rendered form reflects the value,
+// and a blank string field is a real empty value.
 func TestSettingsFormShapedSaveRoundTrips(t *testing.T) {
-	app, _, _ := newTestApp(t)
-	ta := framework.TestHarness(t, app).AsUser(harnessUser{id: "u1"})
-	ta.Get("/settings").AssertStatus(t, http.StatusOK)
-	list := ta.Get("/api/settings").AssertStatus(t, http.StatusOK)
-	var rows struct {
-		Data []map[string]any `json:"data"`
-	}
-	if err := json.Unmarshal([]byte(list.Body()), &rows); err != nil || len(rows.Data) == 0 {
-		t.Fatalf("settings list: %v %s", err, list.Body())
-	}
-	id, _ := rows.Data[0]["id"].(string)
+	h := newHarness(t)
 
-	off := ta.Put("/api/settings/"+id, map[string]any{"notify_on_save": "false", "export_folder": "/tmp/exports"}).AssertStatus(t, http.StatusOK)
-	var row map[string]any
-	if err := decodeData(off.Body(), &row); err != nil {
-		t.Fatal(err)
+	// Off: the string "false" persists and the form reflects it.
+	res := h.Post("/__gofastr/desktop/preferences", map[string]any{
+		"notify_on_save": "false",
+		"export_folder":  "/tmp/exports",
+	})
+	if res.Status != http.StatusOK {
+		t.Fatalf("form save off = %d %s", res.Status, res.Body)
 	}
-	if v, _ := row["notifyOnSave"].(bool); v {
-		t.Fatalf("notify_on_save=\"false\" did not persist: %s", off.Body())
+	if h.Battery.Preferences().Bool("notify_on_save") {
+		t.Fatal(`notify_on_save="false" did not persist`)
 	}
-	form := ta.Get("/settings/"+id).AssertStatus(t, http.StatusOK).Body()
-	box := form[strings.Index(form, `type="checkbox"`):]
+	if got := h.Battery.Preferences().String("export_folder"); got != "/tmp/exports" {
+		t.Fatalf("export_folder = %q, want /tmp/exports", got)
+	}
+	form := h.Get("/settings").AssertStatus(t, http.StatusOK).Body
+	box := form[strings.Index(form, `id="f-notify_on_save"`):]
 	if strings.Contains(box[:strings.Index(box, ">")], "checked") {
 		t.Fatal("form still renders the box checked after saving false")
 	}
 
-	on := ta.Put("/api/settings/"+id, map[string]any{"notify_on_save": "true", "export_folder": "/tmp/exports"}).AssertStatus(t, http.StatusOK)
-	if err := decodeData(on.Body(), &row); err != nil {
-		t.Fatal(err)
+	// On again: the string "true".
+	res = h.Post("/__gofastr/desktop/preferences", map[string]any{
+		"notify_on_save": "true",
+		"export_folder":  "",
+	})
+	if res.Status != http.StatusOK {
+		t.Fatalf("form save on = %d %s", res.Status, res.Body)
 	}
-	if v, _ := row["notifyOnSave"].(bool); !v {
-		t.Fatalf("notify_on_save=\"true\" did not persist: %s", on.Body())
+	if !h.Battery.Preferences().Bool("notify_on_save") {
+		t.Fatal(`notify_on_save="true" did not persist`)
+	}
+	if got := h.Battery.Preferences().String("export_folder"); got != "" {
+		t.Fatalf("export_folder = %q, want empty", got)
+	}
+	form = h.Get("/settings").AssertStatus(t, http.StatusOK).Body
+	if !strings.Contains(form, `<input checked="checked" id="f-notify_on_save"`) {
+		t.Fatal("form does not render the box checked after saving true")
 	}
 
-	// The shape a bare checkbox used to send is still refused, so this
-	// test cannot pass by accident of a laxer validator.
-	ta.Put("/api/settings/"+id, map[string]any{"notify_on_save": "on"}).AssertStatus(t, http.StatusBadRequest)
+	// A value the form could not have produced is a field error, so
+	// this test cannot pass by accident of a laxer validator.
+	res = h.Post("/__gofastr/desktop/preferences", map[string]any{"notify_on_save": "on"})
+	if res.Status != http.StatusBadRequest {
+		t.Fatalf(`notify_on_save="on" = %d, want 400`, res.Status)
+	}
+	var env struct {
+		Fields map[string][]string `json:"fields"`
+	}
+	if err := json.Unmarshal([]byte(res.Body), &env); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := env.Fields["notify_on_save"]; !ok {
+		t.Fatalf("envelope fields = %v, want notify_on_save", env.Fields)
+	}
 }

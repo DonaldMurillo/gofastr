@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/battery/desktop"
 	appui "github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
@@ -381,76 +382,10 @@ func (s *historyScreen) RenderCtx(ctx context.Context) render.HTML {
 	)
 }
 
-// settingsResource is the settings form's config. BasePath is
-// /settings; the engine's post-save target /settings/{id} is also a
-// registered screen (the notes example's landing trick).
-func settingsResource(app *framework.App) resource.Config {
-	return resource.Config{
-		Entity:   "settings",
-		Title:    "Settings",
-		Singular: "Settings",
-		BasePath: "/settings",
-		APIPath:  "/api/settings",
-		Crud:     app.MustCrudHandler("settings"),
-		Fields: []resource.Field{
-			{Key: "work_minutes", Label: "Work minutes", Type: "int"},
-			{Key: "break_minutes", Label: "Break minutes", Type: "int"},
-			{Key: "notify", Label: "Notify when a session ends", Type: "bool"},
-			{Key: "tray_countdown", Label: "Countdown in the menu bar", Type: "bool"},
-		},
-	}
-}
-
-// settingsScreen is "/settings" (and "/settings/{id}"): the owner's
-// one settings row as the resource engine's form. The first visit
-// creates the row with the declared defaults.
-type settingsScreen struct {
-	component.ContextOnly
-	res  resource.Config
-	crud *crud.CrudHandler
-	id   string
-}
-
-func (s *settingsScreen) SetParams(p map[string]string) { s.id = p["id"] }
-
-func (s *settingsScreen) Load(ctx context.Context) error {
-	if s.id != "" {
-		return nil
-	}
-	rows, err := s.res.Crud.ListAll(ctx, crud.ListOptions{Limit: 1})
-	if err != nil {
-		return err
-	}
-	if len(rows) > 0 {
-		if v, present := rows[0]["id"]; present {
-			s.id, _ = v.(string)
-		}
-		return nil
-	}
-	created, err := s.crud.CreateOne(ctx, map[string]any{
-		"work_minutes":   defaultWorkMinutes,
-		"break_minutes":  defaultBreakMinutes,
-		"notify":         true,
-		"tray_countdown": true,
-	})
-	if err != nil {
-		return err
-	}
-	if v, present := created["id"]; present {
-		s.id, _ = v.(string)
-	}
-	return nil
-}
-
-func (s *settingsScreen) ScreenTitle() string       { return "Settings" }
-func (s *settingsScreen) ScreenDescription() string { return "Preferences for this installation" }
-
-func (s *settingsScreen) RenderCtx(ctx context.Context) render.HTML {
-	if s.id == "" {
-		return render.Tag("p", nil, render.Text("Settings row unavailable."))
-	}
-	return s.res.Form(ctx, s.id)
-}
+// The settings screen is not hand-built here: the battery's
+// desktop.PreferencesScreen renders the form from the declared
+// preferences (buildSite mounts it at /settings), and its POST
+// /__gofastr/desktop/preferences route saves them.
 
 // widgetScreen is "/widget": the floating timer's page. The window is
 // borderless, transparent, and non-activating (desktop.Widget), so
@@ -520,7 +455,7 @@ func (s *widgetScreen) RenderCtx(ctx context.Context) render.HTML {
 // buildSite assembles the UI app and its screens. The island endpoint
 // behind the tasks list's sort/pagination is registered on the app
 // router, the notes example's shape.
-func buildSite(app *framework.App, eng *Engine) (*appui.App, error) {
+func buildSite(app *framework.App, eng *Engine, d *desktop.Battery) (*appui.App, error) {
 	site := appui.NewApp("desktop-focus")
 	layout := appui.NewLayout("app").WithContainer()
 
@@ -542,9 +477,10 @@ func buildSite(app *framework.App, eng *Engine) (*appui.App, error) {
 	// renders in the chrome-less widget layout, never the app layout
 	// with its header and padded column.
 	site.Register("/widget", &widgetScreen{eng: eng}, appui.WidgetLayout())
-	settings := settingsResource(app)
-	site.Register("/settings", &settingsScreen{res: settings, crud: app.MustCrudHandler("settings")}, layout)
-	site.Register("/settings/{id}", &settingsScreen{res: settings, crud: app.MustCrudHandler("settings")}, layout)
+	// The settings screen is the battery's: one form per declared
+	// preference, saved through the battery's own route. There is no
+	// /settings/{id}; the post-save landing is /settings itself.
+	site.Register("/settings", desktop.PreferencesScreen(d, desktop.PreferencesScreenPath("/settings")), layout)
 	return site, nil
 }
 
