@@ -145,7 +145,7 @@ server side and the runtime does the work.
 | `data-fui-action="<name>"` | Marks an element as a server-action trigger. Used together with `data-fui-rpc` to dispatch a named action. |
 | `data-fui-widget="<name>"` | Marks a registered widget instance: the runtime mounts behavior on it after first paint. |
 | `data-fui-backdrop` | Marks an element as a click-to-dismiss overlay backdrop. Pairs with `data-fui-open` to make the floating surface dismissible. |
-| `data-fui-style="<name>"` | Set on the runtime-injected `<link rel="stylesheet">` so duplicates are dedup'd by component name. |
+| `data-fui-style="<name>"` | The dedup key for a component's stylesheet `<link>`. `loadComponentCSS` appends a link only when no `link[data-fui-style="<name>"]` exists, so every per-component link carries it, whether the runtime injected it or the host SSR-emitted it (a single-component page, and every page of a static export, where the bundle is not used). The host's link also carries `id="fui-css-<name>"`, the id the runtime would have given it. An SSR link without the marker is invisible to the dedup and gets loaded a second time, after `app.css`, which reverses the cascade against the host's overrides. |
 | `data-fui-shortcut-click="<chord>"` / `data-fui-shortcut-focus="<chord>"` | Global keyboard shortcut: e.g. `Meta+K` or `/` focuses or clicks the target element. |
 | `data-fui-submit-on-enter` | On a `<form>`, Enter inside any child textarea submits the form. |
 | `data-fui-clear-on-esc` | On an `<input>`/`<textarea>`, Escape clears the value. |
@@ -1265,6 +1265,16 @@ All three converge on `loadComponentCSS(name)`. The function is
 `appendChild`, plus a `_pendingLinks` guard, so promoting a
 component across modes or having two scans race never produces a
 duplicate request.
+
+The existence check is `link[data-fui-style="<name>"]`, so an
+SSR-emitted per-component link must carry the same marker (and the
+`fui-css-<name>` id) as the link the runtime would have written.
+The host emits per-component links on a single-component page and
+on every page of a static export, where the bundle endpoint does
+not exist; without the marker the boot scan appended a second copy
+of each after `app.css` and the host's overrides lost the cascade.
+`core-ui/runtime/static_comp_css_e2e_test.go` pins both halves: a
+marked SSR link is loaded once, an unmarked one twice.
 
 ### The bundle endpoint
 
