@@ -2,6 +2,7 @@ package uihost
 
 import (
 	"context"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -67,4 +68,33 @@ func excerpt(page, marker string) string {
 		end = len(page)
 	}
 	return page[i:end]
+}
+
+// A caller that already supplies a request and a route match keeps them: the
+// static render only fills in what is missing. Without these guards a host
+// rendering a page under another page's request, as a preview does, would
+// have its context replaced.
+func TestRenderStaticPageKeepsASuppliedRequestAndMatch(t *testing.T) {
+	application := app.NewApp("StaticContextSupplied")
+	application.SetDefaultLayout(app.NewLayout("main").WithHeader(pathAwareChrome{}))
+	application.RegisterScreen(app.NewScreen("/docs/{slug}", &slugScreen{}).WithTitle("Doc"), nil)
+
+	req := httptest.NewRequest("GET", "/somewhere/else", nil)
+	ctx := app.WithRequest(context.Background(), req)
+	supplied, ok := application.Router.MatchFor("/docs/other")
+	if !ok {
+		t.Fatal("no match for /docs/other")
+	}
+	ctx = app.WithMatch(ctx, supplied)
+
+	page, err := New(application).RenderStaticPage(ctx, "/docs/guide")
+	if err != nil {
+		t.Fatalf("RenderStaticPage: %v", err)
+	}
+	if !strings.Contains(page, "request:/somewhere/else") {
+		t.Fatalf("the supplied request was replaced: %s", excerpt(page, "request:"))
+	}
+	if !strings.Contains(page, "match:/docs/:slug slug=other") {
+		t.Fatalf("the supplied route match was replaced: %s", excerpt(page, "match:"))
+	}
 }
