@@ -7,6 +7,8 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+## [0.84.0] - 2026-09-06
+
 ### Fixed
 - **A static export renders layout chrome for the page being exported.**
   `uihost.RenderStaticPage` rendered with neither a request nor a route

@@ -19,7 +19,7 @@
 # The registry is complete through this release: releases ≤ through
 # with no entry below genuinely had no migration-relevant changes.
 # Targets beyond it make the CLI warn that it may be out of date.
-through: v0.83.0
+through: v0.84.0
 
 releases:
   - version: v0.3.0
@@ -1052,3 +1052,9 @@ releases:
       - change: "<html lang> resolves per page: app.WithLangFunc(func(path string) string), the app.ScreenLanger interface for a screen's own page, and uihost.WithLangFunc for host-built shells; ui.DocPager gains PrevDirLabel and NextDirLabel; a fence info string's first token is the language and the rest lands in data-meta"
         breaking: false
         guidance: "Additive. An app that configures none of it renders byte-identically; a bilingual site declares its languages once with WithLangFunc so screen readers and full-text indexers stop reading every page as the site language. A fence such as go title=main.go keeps its syntax highlighting now, and ui.Markdown maps title= to the block's filename header."
+  - version: v0.84.0
+    title: Static export renders chrome for the page being exported
+    notes:
+      - change: "uihost.RenderStaticPage carries a request for the path and the route match, as a live request does, so layout components that read the path render for the page being exported"
+        breaking: false
+        guidance: "A static export whose sidebar or header follows the page now writes the right chrome on every page; an export whose chrome ignored the path is byte-identical. Nothing to change."
