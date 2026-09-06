@@ -5,9 +5,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core/mcp"
@@ -45,20 +47,36 @@ func RegisterEntityMCPTools(server *mcp.Server, crud *CrudHandler, router http.H
 		}
 		return crud.MCPNamespace + "." + ent + "." + action
 	}
+	// devImplied: the entity did not opt into MCP exposure itself
+	// (Exposure.MCP unset), so this registration exists only because the
+	// dev loop implied it (the app registers tools under
+	// Exposure.MCP || (CRUD && dev.DevMCPEnabled())). The WRITE tools of
+	// a dev-implied entity register UNGATED, which is only safe on a
+	// loopback listener — mark them WithDevImplied so the framework's
+	// bind guard withdraws exactly those on an exposed bind. An explicit
+	// Exposure.MCP is a production choice and is never marked or
+	// withdrawn. list/get stay: they are reads behind the same
+	// row-scoping the HTTP routes apply.
+	devImplied := crud.Entity.Config.Exposure == nil || !crud.Entity.Config.Exposure.MCP
 	defs := []struct {
 		name        string
 		description string
 		schema      map[string]any
 		handler     mcp.ToolHandler
+		write       bool // dev-implied entities mark their write tools
 	}{
-		{toolName("list"), "List " + ent + " records", listToolSchema(crud.Entity), crud.listTool(router)},
-		{toolName("get"), "Get one " + ent + " record by id", idToolSchema(), crud.getTool(router)},
-		{toolName("create"), "Create a " + ent + " record", writeToolSchema(crud.Entity), crud.createTool(router)},
-		{toolName("update"), "Update a " + ent + " record", updateToolSchema(crud.Entity), crud.updateTool(router)},
-		{toolName("delete"), "Delete a " + ent + " record by id", idToolSchema(), crud.deleteTool(router)},
+		{toolName("list"), "List " + ent + " records", listToolSchema(crud.Entity), crud.listTool(router), false},
+		{toolName("get"), "Get one " + ent + " record by id", idToolSchema(), crud.getTool(router), false},
+		{toolName("create"), "Create a " + ent + " record", writeToolSchema(crud.Entity), crud.createTool(router), true},
+		{toolName("update"), "Update a " + ent + " record", updateToolSchema(crud.Entity), crud.updateTool(router), true},
+		{toolName("delete"), "Delete a " + ent + " record by id", idToolSchema(), crud.deleteTool(router), true},
 	}
 	for _, def := range defs {
-		if err := server.RegisterTool(def.name, def.description, def.schema, def.handler); err != nil {
+		var opts []mcp.ToolOption
+		if devImplied && def.write {
+			opts = append(opts, mcp.WithDevImplied())
+		}
+		if err := server.RegisterTool(def.name, def.description, def.schema, def.handler, opts...); err != nil {
 			return err
 		}
 	}
@@ -81,7 +99,7 @@ func (ch *CrudHandler) listTool(router http.Handler) mcp.ToolHandler {
 				values[key] = toolParamValues(v)
 			}
 		}
-		for _, field := range ch.Entity.GetFields() {
+		for _, field := range ch.snapshotFields() {
 			// Never build a filter predicate on a Hidden field. Its value
 			// is omitted from output, but a filter turns row presence /
 			// absence into a value-disclosure oracle over a secret column.
@@ -127,16 +145,36 @@ func (ch *CrudHandler) listTool(router http.Handler) mcp.ToolHandler {
 // _in filter) becomes one query entry per element: fmt.Sprint stringifies
 // []any{"draft","archived"} into "[draft archived]", a single literal that
 // matches nothing, so the agent gets a silent empty page where the HTTP
-// surface returns the union. Scalars keep the fmt.Sprint spelling.
+// surface returns the union.
+//
+// Numbers render as their exact decimal: an integral float64 prints via
+// FormatFloat('f', -1) — fmt.Sprint's %g gives "1e+06" for 1000000, which
+// the filter surface cannot address on Postgres — and a json.Number (a
+// transport that decoded with UseNumber) prints verbatim so a literal
+// above 2^53 keeps every digit on its way into the query string.
 func toolParamValues(v any) []string {
 	if arr, ok := v.([]any); ok {
 		out := make([]string, 0, len(arr))
 		for _, e := range arr {
-			out = append(out, fmt.Sprint(e))
+			out = append(out, toolParamString(e))
 		}
 		return out
 	}
-	return []string{fmt.Sprint(v)}
+	return []string{toolParamString(v)}
+}
+
+// toolParamString renders one scalar tool parameter for a query-string
+// filter value.
+func toolParamString(v any) string {
+	switch x := v.(type) {
+	case json.Number:
+		return x.String()
+	case float64:
+		if x == math.Trunc(x) && !math.IsInf(x, 0) && math.Abs(x) < 1e21 {
+			return strconv.FormatFloat(x, 'f', -1, 64)
+		}
+	}
+	return fmt.Sprint(v)
 }
 
 func (ch *CrudHandler) getTool(router http.Handler) mcp.ToolHandler {
@@ -252,7 +290,16 @@ func runToolRequest(ctx context.Context, router http.Handler, method, path strin
 
 	status := rec.Code
 	if status >= 400 {
-		return nil, fmt.Errorf("entity mcp request failed: status %d: %s", status, strings.TrimSpace(rec.Body.String()))
+		// An *RPCError, not a plain error: the re-dispatched handler's
+		// refusals (401 anonymous, 403 scope, 404 miss) are
+		// caller-actionable and must stay visible through the MCP
+		// boundary; a plain error is internal detail the server redacts
+		// to "internal tool error", which would tell an agent the tool
+		// is broken when the truth is the CALL lacks authority.
+		return nil, &mcp.RPCError{
+			Code:    mcp.ErrInternalError,
+			Message: fmt.Sprintf("entity mcp request failed: status %d: %s", status, strings.TrimSpace(rec.Body.String())),
+		}
 	}
 	if status == http.StatusNoContent || rec.Body.Len() == 0 {
 		return nil, nil

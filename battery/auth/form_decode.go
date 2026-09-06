@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync/atomic"
 
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"golang.org/x/text/unicode/norm"
 )
 
@@ -152,18 +153,24 @@ const errComposedEmailMessage = "email must be in composed Unicode form (NFC)"
 // UserStore should use it too when they accept emails from their own
 // surfaces.
 //
-// Identity is: NFC-normalized, then trimmed, then lowercased (maintainer
-// decision, 2026-09-04 red-probe round 3): the composed and decomposed
-// spellings of one mailbox (macOS and iOS clipboards decompose copied
-// text) canonicalize to the same string, so they can never become two
-// accounts or split OIDC auto-linking. golang.org/x/text/unicode/norm
-// is a Go-team module already in the dependency graph.
+// Identity is: invisible/bidi codepoints and C1 controls stripped, then
+// NFC-normalized, then trimmed, then lowercased (maintainer decision,
+// 2026-09-04 red-probe round 3): the composed and decomposed spellings
+// of one mailbox (macOS and iOS clipboards decompose copied text)
+// canonicalize to the same string, and a zero-width or bidi twin
+// (ow\u200Bner@example.com, owner@example.com\uFEFF) folds to the base
+// address instead of becoming a second, visually identical account —
+// NFC cannot fold those codepoints, only stripping can.
+// golang.org/x/text/unicode/norm is a Go-team module already in the
+// dependency graph.
 //
 // Deployments with other rules (a provider that treats dots or plus
 // tags as insignificant, a legacy store keyed on the raw bytes) install
 // AuthConfig.CanonicalizeEmail; it replaces this default at every
-// ingestion point. An override that wants to refuse an address returns
-// [ErrEmailNotComposed] (or any error); the handlers surface it as 400.
+// ingestion point, and the strip lives in THIS default — an override
+// owns its own invisible-character policy. An override that wants to
+// refuse an address returns [ErrEmailNotComposed] (or any error); the
+// handlers surface it as 400.
 func CanonicalEmail(email string) (string, error) {
 	return canonicalizeEmailWith(nil, email)
 }
@@ -175,7 +182,26 @@ func canonicalizeEmailWith(canonicalize func(string) (string, error), email stri
 	if canonicalize != nil {
 		return canonicalize(email)
 	}
-	return norm.NFC.String(strings.ToLower(strings.TrimSpace(email))), nil
+	return norm.NFC.String(strings.ToLower(strings.TrimSpace(stripInvisibleEmailRunes(email)))), nil
+}
+
+// stripInvisibleEmailRunes removes the zero-width/bidi set and the C1
+// control block from an address before identity folding. core/textsafe
+// owns the predicate; this is the one strip every email ingestion point
+// shares. Stripping (not refusing) means an address pasted with a
+// trailing BOM or a buried zero-width space still logs in as the base
+// account, and the register flow folds the twin onto the existing row
+// instead of minting a visually identical second identity.
+func stripInvisibleEmailRunes(email string) string {
+	if !strings.ContainsFunc(email, func(r rune) bool { return textsafe.IsInvisible(r) || textsafe.IsC1(r) }) {
+		return email
+	}
+	return strings.Map(func(r rune) rune {
+		if textsafe.IsInvisible(r) || textsafe.IsC1(r) {
+			return -1
+		}
+		return r
+	}, email)
 }
 
 // maxEmailLen is RFC 5321's 254-octet ceiling on a forward-path address.

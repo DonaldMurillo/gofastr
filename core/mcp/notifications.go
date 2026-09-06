@@ -61,35 +61,65 @@ type sseSubscriber struct {
 	// path enriches it, with the inbound *http.Request stashed via
 	// WithRequest. Gates are evaluated against it at delivery time.
 	ctx context.Context
+	// seatKey is the per-caller identity the seat cap (seats.go)
+	// applies to, fixed at admission.
+	seatKey string
 }
 
-// addSSESubscriber registers a stream for notification delivery and
-// returns it. Called from sseGetHandler after the origin/Host gate.
-func (s *Server) addSSESubscriber(ctx context.Context) *sseSubscriber {
-	sub := &sseSubscriber{
-		ch:  make(chan sseNotification, sseSubBufferSize),
-		ctx: ctx,
-	}
+// addSSESubscriber applies the seat policy and, when the stream may
+// register, records it for notification delivery. Called from
+// sseGetHandler after the origin/Host and server-gate checks. ok=false
+// means the caller's seat table is full and the policy is Refuse: the
+// handler must answer 429 and hold nothing. Under EvictOldest the
+// caller's oldest stream is deregistered and closed here so the new
+// stream fits.
+func (s *Server) addSSESubscriber(ctx context.Context, seatKey string) (sub *sseSubscriber, ok bool) {
 	s.sseMu.Lock()
+	defer s.sseMu.Unlock()
 	if s.sseSubs == nil {
 		s.sseSubs = make(map[*sseSubscriber]struct{})
 	}
+	if s.sseSeatOrder == nil {
+		s.sseSeatOrder = make(map[string][]*sseSubscriber)
+	}
+	if max := s.seatCapLocked(); max > 0 && len(s.sseSeatOrder[seatKey]) >= max {
+		if s.sseSeatOverflow != SeatOverflowEvictOldest || len(s.sseSeatOrder[seatKey]) == 0 {
+			return nil, false
+		}
+		oldest := s.sseSeatOrder[seatKey][0]
+		s.spliceSeatLocked(oldest)
+		delete(s.sseSubs, oldest)
+		// Same teardown shape as notifySubscribers' backpressure drop:
+		// the closed channel makes the oldest stream's write loop
+		// return, and its deferred removeSSESubscriber is then a
+		// no-op on the registry.
+		close(oldest.ch)
+		s.expireResourceSubsIfIdleLocked()
+	}
+	sub = &sseSubscriber{
+		ch:      make(chan sseNotification, sseSubBufferSize),
+		ctx:     ctx,
+		seatKey: seatKey,
+	}
 	s.sseSubs[sub] = struct{}{}
-	s.sseMu.Unlock()
-	return sub
+	s.sseSeatOrder[seatKey] = append(s.sseSeatOrder[seatKey], sub)
+	return sub, true
 }
 
 // removeSSESubscriber unregisters a stream. Called from sseGetHandler's
-// exit path (client disconnect, blocked write, or dropped-for-
-// backpressure). It does not close sub.ch: only notifySubscribers
-// closes channels, and only under sseMu, so a fan-out holding the
-// registry can never race a send onto a closed channel. An
-// unregistered, unclosed channel is simply garbage. If this was the
-// last stream, the idle expiry drops the retained resource
+// exit path (client disconnect, blocked write, dropped-for-backpressure,
+// or seat eviction). It does not close sub.ch: only the drop paths close
+// channels, and only under sseMu, so a fan-out holding the registry can
+// never race a send onto a closed channel. An unregistered, unclosed
+// channel is simply garbage. A stream already dropped (eviction,
+// backpressure) finds nothing to remove and only releases its seat —
+// spliceSeatLocked and the registry delete are both idempotent here. If
+// this was the last stream, the idle expiry drops the retained resource
 // subscriptions (see expireResourceSubsIfIdleLocked).
 func (s *Server) removeSSESubscriber(sub *sseSubscriber) {
 	s.sseMu.Lock()
 	delete(s.sseSubs, sub)
+	s.spliceSeatLocked(sub)
 	s.expireResourceSubsIfIdleLocked()
 	s.sseMu.Unlock()
 }
@@ -131,8 +161,10 @@ func (s *Server) notifySubscribers(n sseNotification) {
 			// idempotent and resources/updated sends the client back to
 			// resources/read for current state, so a client that
 			// reconnects is correct again after re-listing. A dropped
-			// stream is also a departure: if it was the last one, the
-			// idle expiry applies here too.
+			// stream is also a departure: splice its seat (or the cap
+			// would count a dead stream forever) and, if it was the
+			// last one, the idle expiry applies here too.
+			s.spliceSeatLocked(sub)
 			delete(s.sseSubs, sub)
 			close(sub.ch)
 			s.expireResourceSubsIfIdleLocked()

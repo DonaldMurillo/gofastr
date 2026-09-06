@@ -118,7 +118,12 @@ paths, schemas, and security schemes and `Build()` emits the doc;
 `Handler` serves it (auth-gated by default) and `DocsHandler` serves a
 landing page whose `public` flag gates both the page and its nested
 spec route (the framework passes its `PublicOpenAPI` setting, so a
-public spec gets a public browse page). Mostly indirect: the framework generates the
+public spec gets a public browse page). A `Spec` may carry a
+`RequestView` — a per-request spec builder the auth-gated `Handler`
+consults, so the document can drop what THIS caller may not read; the
+framework's entity spec uses it to hide entities with no read grant,
+and `PublicHandler` (the full-disclosure opt-in) ignores it. Mostly
+indirect: the framework generates the
 spec from your routes and entities. Reach for it directly to add custom
 operations or mount the docs endpoint. Start at `core/openapi/spec.go`:
 `Spec`.

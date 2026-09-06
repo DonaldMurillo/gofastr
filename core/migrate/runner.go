@@ -384,12 +384,59 @@ func (m *Migrator) up(ctx context.Context, x connish, tbl string, ga bool, group
 	return nil
 }
 
+// migrationRecorded reports whether the tracking table already holds a row
+// for (Group, Version), and whether that row is dirty. It is the immediate
+// pre-apply re-check behind runMigrationUp's convergence guard.
+func (m *Migrator) migrationRecorded(ctx context.Context, x connish, tbl string, mig Migration, ga bool) (recorded, dirty bool, err error) {
+	var q string
+	var args []any
+	if ga {
+		q = fmt.Sprintf("SELECT dirty FROM %s WHERE group_name = %s AND version = %s",
+			tbl, m.placeholder(1), m.placeholder(2))
+		args = []any{mig.Group, mig.Version}
+	} else {
+		q = fmt.Sprintf("SELECT dirty FROM %s WHERE version = %s", tbl, m.placeholder(1))
+		args = []any{mig.Version}
+	}
+	err = x.QueryRowContext(ctx, q, args...).Scan(&dirty)
+	if err == sql.ErrNoRows {
+		return false, false, nil
+	}
+	if err != nil {
+		return false, false, err
+	}
+	return true, dirty, nil
+}
+
 // runMigrationUp executes a single migration's Up SQL and records it in the
 // tracking table. Transactional migrations run the DDL and the bookkeeping
 // insert in one atomic transaction. No-transaction migrations record a dirty
 // row first, run the DDL outside any transaction, then clear the dirty flag,
 // so a failure leaves a dirty marker that blocks subsequent runs.
 func (m *Migrator) runMigrationUp(ctx context.Context, x connish, tbl string, mig Migration, ga bool) error {
+	// Convergence guard (SQLite): the pending list this loop applies was
+	// computed from an applied-versions read that can go stale before it is
+	// applied — SQLite's file-level locking serializes statements, not the
+	// read → apply → record sequence, and even the _gofastr_migrate_lock
+	// lease only narrows the window (an expired lease, a stale read that
+	// slipped past it). A runner holding a stale pending set must converge
+	// on the state its peer already wrote — skip — not fail the replica's
+	// boot on DDL that already exists. The per-migration transaction plus
+	// the tracking-row PK keeps a true double-apply impossible. On Postgres
+	// the advisory lock already spans read → apply, so the re-query is
+	// skipped there.
+	if m.dialect == DialectSQLite {
+		recorded, dirty, err := m.migrationRecorded(ctx, x, tbl, mig, ga)
+		if err != nil {
+			return fmt.Errorf("recheck applied: %w", err)
+		}
+		if recorded {
+			if dirty {
+				return dirtyError(MigrationRecord{Version: mig.Version, Name: mig.Name, Group: mig.Group}, ga)
+			}
+			return nil
+		}
+	}
 	if mig.NoTransaction {
 		return m.runMigrationUpNoTx(ctx, x, tbl, mig, ga)
 	}

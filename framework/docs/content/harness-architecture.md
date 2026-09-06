@@ -918,6 +918,12 @@ Skill search paths (in order, last wins):
 2. `~/.config/gofastr/harness/skills/` (user-global)
 3. `<repo>/.gofastr/harness/skills/` (project-local)
 
+A later path replacing a same-named skill from an earlier path is a
+shadow: precedence stays, but `Load` prints a warning to stderr naming
+the skill and both files. The project directory is untrusted input in a
+cloned repo, and a name-squat would otherwise put repo-authored content
+into the system prompt under a name the operator chose to trust.
+
 ---
 
 ## Control plane: engine as a service
@@ -1882,6 +1888,14 @@ from `OPENROUTER_API_KEY` and `ZAI_API_KEY` environment variables
 (and from `.harness-secrets/env`). Use whichever is more convenient.
 The credstore is the recommended path for long-lived developer
 machines; env vars suit ephemeral CI environments.
+
+`.harness-secrets/env` is repo-local, so a cloned repo's copy is
+attacker-authored: the loader delivers **provider credentials only**
+(keys ending `_API_KEY` or `_TOKEN`, never `GOFASTR_*`). Proxy,
+`PATH`, loader, and `HOME` settings in that file are ignored — the
+operator's shell stays the only source for anything that shapes the
+process. Variables already set in the environment always win over the
+file.
 
 ### Config
 

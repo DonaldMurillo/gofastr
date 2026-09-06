@@ -1,6 +1,9 @@
 package mcp
 
-import "context"
+import (
+	"context"
+	"errors"
+)
 
 // Gated wraps a ToolHandler with a precondition that runs before the
 // handler on every call. Use it to auth-gate custom tools: the gate
@@ -26,7 +29,18 @@ func Gated(gate func(ctx context.Context) error, h ToolHandler) ToolHandler {
 	}
 	return func(ctx context.Context, params map[string]any) (any, error) {
 		if err := gate(ctx); err != nil {
-			return nil, err
+			// A gate refusal is caller-facing policy: the caller must
+			// learn it was denied, unlike an internal handler error
+			// (paths, driver text), which tools/call genericises to
+			// "internal tool error". Surface the gate's message as a
+			// deliberate *RPCError so the dispatch passes it through
+			// verbatim instead of scrubbing it — the same treatment
+			// checkToolGate gives a WithToolGate refusal. A gate that
+			// already returns an *RPCError keeps its own code.
+			if _, ok := errors.AsType[*RPCError](err); ok {
+				return nil, err
+			}
+			return nil, &RPCError{Code: ErrInvalidParams, Message: err.Error()}
 		}
 		return h(ctx, params)
 	}

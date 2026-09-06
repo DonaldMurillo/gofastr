@@ -278,8 +278,16 @@ func (s *Server) ServeStdio(ctx context.Context, in io.Reader, out io.Writer) er
 			continue
 		}
 
+		// Same envelope rule as the HTTP transports (decodeMCPRequest):
+		// handler.UnmarshalStrict refuses duplicate and case-folded
+		// top-level keys — stdlib json keeps the last duplicate and
+		// folds key case — so the executor can never resolve an
+		// envelope a first-occurrence parser (audit logger, WAF,
+		// stdio wrapper) read differently. The ambiguity itself is
+		// the bug; refusing it is the only resolution that does not
+		// privilege one parser's pick.
 		var req Request
-		if err := json.Unmarshal(line, &req); err != nil {
+		if err := handler.UnmarshalStrict(line, &req); err != nil {
 			encoder.Encode(Response{
 				JSONRPC: "2.0",
 				ID:      nil,
@@ -365,14 +373,6 @@ func (s *Server) ssePostHandler(w http.ResponseWriter, r *http.Request) {
 // it: the connection stays open for the life of the client, carrying
 // the server-initiated MCP notifications (notifications/*) fanned out
 // to the per-subscriber registry in notifications.go.
-//
-// Hard rule 3 note: SSE here is the MCP transport's own mandated
-// server-push stream (the GET half of the protocol's HTTP transport),
-// not an app surface and not the app's /__gofastr/sse bus. Rule 3
-// ("SSE is push-only, never for responses to user actions") governs
-// app surfaces; this stream carries only protocol notifications the
-// MCP spec requires the server to be able to push. It is not a
-// precedent for app-surface SSE.
 func (s *Server) sseGetHandler(w http.ResponseWriter, r *http.Request) {
 	// Same gate as ssePostHandler. This handler used to discard the
 	// request entirely, so the origin/Host check simply did not run on
@@ -383,6 +383,38 @@ func (s *Server) sseGetHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "forbidden: cross-origin or unexpected Host", http.StatusForbidden)
 		return
 	}
+
+	// The caller identity the gate, the delivery-time filters, and the
+	// seat cap all evaluate against: the request context, enriched like
+	// the POST path enriches it, with the inbound *http.Request stashed
+	// via WithRequest.
+	ctx := context.WithValue(r.Context(), contextKey{}, r)
+	ctx = enrichContext(ctx)
+
+	// Server-wide gate at CONNECT time too. The per-notification
+	// evaluation in the write loop below stays (a gate can depend on
+	// state that changes mid-connection, and a revoked stream must stop
+	// receiving immediately); this front check closes the other half: a
+	// caller the gate refuses outright never takes a seat, instead of
+	// holding one goroutine and one buffered channel per connection for
+	// the stream's whole life — the DoS shape the seat cap exists for.
+	if err := s.checkServerGate(ctx); err != nil {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+
+	// Seat admission: the per-caller cap on concurrent streams
+	// (SetSSESeatCap / SetSSESeatOverflow). Refusal happens before any
+	// byte of the stream is written, so a refused caller is answered,
+	// not left holding an empty one.
+	key := sseSeatKey(ctx, r)
+	sub, ok := s.addSSESubscriber(ctx, key)
+	if !ok {
+		http.Error(w, "too many streams for this caller", http.StatusTooManyRequests)
+		return
+	}
+	defer s.removeSSESubscriber(sub)
+
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Connection", "keep-alive")
@@ -428,17 +460,6 @@ func (s *Server) sseGetHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Register a subscriber carrying this caller's identity (the
-	// request context, enriched like the POST path enriches it, with
-	// the inbound request stashed via WithRequest) so per-subscriber
-	// gates can be evaluated against it at delivery time — a
-	// long-lived stream must reflect gate decisions that change
-	// mid-connection, not a snapshot taken now.
-	ctx := context.WithValue(r.Context(), contextKey{}, r)
-	ctx = enrichContext(ctx)
-	sub := s.addSSESubscriber(ctx)
-	defer s.removeSSESubscriber(sub)
-
 	// Hold the connection until the client goes away. Each notification
 	// is filtered per subscriber (server-wide gate + the item's gate,
 	// both evaluated HERE at send time — see subscriberMayReceive) and
@@ -452,7 +473,8 @@ func (s *Server) sseGetHandler(w http.ResponseWriter, r *http.Request) {
 		case n, ok := <-sub.ch:
 			if !ok {
 				// The publisher dropped this subscriber for
-				// backpressure (buffer full: a stalled stream loop).
+				// backpressure (buffer full: a stalled stream loop),
+				// or the seat policy evicted it for a newer stream.
 				// Returning closes the stream — the client's recovery
 				// is to reconnect and re-list. See notifySubscribers.
 				return

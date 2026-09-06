@@ -48,6 +48,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/middleware"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/router"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"github.com/DonaldMurillo/gofastr/framework/dev"
 	fembed "github.com/DonaldMurillo/gofastr/framework/embed"
 	"github.com/DonaldMurillo/gofastr/framework/uihost/internal/sessiontoken"
@@ -1233,6 +1234,35 @@ func scrubCtl(s string) string {
 	return s
 }
 
+// scrubTitleInvisibles strips the invisible/bidi codepoints (the
+// core/textsafe set: RLO/LRI isolates, zero-widths, BOM) from the text
+// inside the first <title>…</title> element of a rendered page. The page
+// renderer escapes markup but not invisible characters, and dynamic-route
+// titles re-read ScreenTitle() AFTER Load so the tab title is
+// user-data-bearing by design; a title computed from loaded data (a doc
+// title, a display name) would otherwise reorder or salt the browser's
+// tab-title readout. Only the element's text is touched: the surrounding
+// document is byte-identical, and the invisible set has no HTML-escaped
+// form (render.Text escapes markup only), so the raw runes in the slice
+// ARE the characters the browser would show.
+func scrubTitleInvisibles(page string) string {
+	const openTag = "<title>"
+	start := strings.Index(page, openTag)
+	if start < 0 {
+		return page
+	}
+	rest := page[start+len(openTag):]
+	end := strings.Index(rest, "</title>")
+	if end < 0 {
+		return page
+	}
+	inner := rest[:end]
+	if !textsafe.ContainsInvisible(inner) {
+		return page
+	}
+	return page[:start+len(openTag)] + textsafe.StripInvisible(inner) + rest[end:]
+}
+
 // readSessionCookie returns the session id from the cookie that matches
 // this request's security mode. An origin's mode is stable (loopback
 // http is always dev, TLS/remote is always hardened), so reading only
@@ -1340,7 +1370,11 @@ func (ds *UIHost) handlePage(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, msg, res.Status)
 		return
 	}
-	html := res.HTML
+	// The <title> element is user-data-bearing on dynamic routes (the
+	// post-Load ScreenTitle) and escapes markup, not invisibles: strip the
+	// textsafe invisible set before the document ships. See
+	// scrubTitleInvisibles.
+	html := render.HTML(scrubTitleInvisibles(string(res.HTML)))
 
 	// Get or create session. The cookie name + Secure flag depend on the
 	// request origin (see setSessionCookie): a plaintext loopback dev
@@ -1428,11 +1462,21 @@ func injectWidgetSSR(page string, r *http.Request) string {
 		if !open {
 			continue
 		}
+		// Respect the widget's session gate here too. /state and /chrome
+		// are gated at Mount, but SSR inlining is a third chrome surface:
+		// baking a gated widget's chrome into the anonymous page would
+		// hand out exactly the HTML its /chrome endpoint refuses. The
+		// any-session level still inlines for every visitor (a page load
+		// mints the session that satisfies it); the authenticated level
+		// inlines only when the request resolved a signed-in user.
+		if !widget.GateSatisfied(d, r) {
+			continue
+		}
 		// Render with the REQUEST context so context-aware slots (role-aware
 		// nav drawer, tenant-scoped chrome) see the signed-in user on FIRST
 		// paint. The lazy /chrome endpoint already threaded r.Context(); the
 		// SSR inline path must match, or the same slot renders anonymous here
-		// and personalized only after the user reopens it.
+		// and personalized when the user reopens it.
 		b.WriteString(widget.RenderChromeCtx(r.Context(), d))
 	}
 	if b.Len() == 0 {
@@ -2096,7 +2140,7 @@ func (ds *UIHost) serveNotFound(w http.ResponseWriter, r *http.Request, path str
 		`<!DOCTYPE html><html lang="%s"><head><meta charset="UTF-8"><title>Not found: %s</title></head>`+
 			`<body><main role="main"><h1>404: Page not found</h1><p>No route matched <code>%s</code>.</p>`+
 			`<p><a href="/">Back to home</a></p></main></body></html>`,
-		stdhtml.EscapeString(ds.EffectiveLang()), stdhtml.EscapeString(appName), stdhtml.EscapeString(path))
+		stdhtml.EscapeString(ds.EffectiveLang()), stdhtml.EscapeString(appName), stdhtml.EscapeString(textsafe.StripInvisible(path)))
 }
 
 // handlePartialPage returns just the screen content for client-side navigation.
@@ -2239,6 +2283,10 @@ func (ds *UIHost) handlePartialPage(w http.ResponseWriter, r *http.Request, path
 			title = scr.Title
 		}
 	}
+	// Same invisible-character posture as the full page's <title> element:
+	// nav.js writes decodeURIComponent(header) straight into document.title,
+	// so the header is the tab title. Strip before the suffix is appended.
+	title = textsafe.StripInvisible(title)
 	if title != "" {
 		w.Header().Set("X-Gofastr-Title", url.PathEscape(title+" — "+ds.App.Name))
 	}
@@ -2831,6 +2879,36 @@ func (ds *UIHost) Mount(r *router.Router) {
 		}
 		_, ok := ds.verifySessionToken(readSessionCookie(req))
 		return ok
+	})
+
+	// The stricter predicate Definition.RequireAuthenticated consults.
+	// Where the any-session check above accepts the session handlePage
+	// mints for every visitor, this one is satisfied only when the
+	// request resolves to an authenticated principal: the user the app's
+	// session middleware (battery/auth SessionMiddleware or RequireAuth,
+	// installed app-wide via fwApp.Use) loaded onto the request context.
+	// The anonymous auto-minted session never produces one, so a
+	// RequireAuthenticated widget fails closed for anonymous visitors —
+	// which is the level's entire reason to exist ("not safe to expose
+	// anonymously" must not be satisfied by anyone who loaded a page
+	// once). Apps that wire no session middleware get a gate that can
+	// only say no: fail closed, same contract as the widget-level
+	// default.
+	//
+	// An embed grant never satisfies it. A grant is delegated, scoped
+	// authority sitting in a third party's page; the same reasoning that
+	// makes battery/auth's RequireRole refuse a grant (the subject's
+	// roles are the subject's, not the frame's) makes an authentication
+	// gate refuse one: the viewer did not sign in, the embed author
+	// vouched. Grant-bearing requests are refused outright rather than
+	// falling through to an ambient cookie, mirroring the catalog and
+	// any-session rules above.
+	widget.SetAuthenticatedCheck(func(req *http.Request) bool {
+		if req.Header.Get(embedGrantHeader) != "" {
+			return false
+		}
+		u, ok := handler.GetUser(req.Context())
+		return ok && u != nil
 	})
 
 	// Split runtime modules: /__gofastr/runtime/<name>.js. core.js's

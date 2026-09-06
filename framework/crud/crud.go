@@ -17,6 +17,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/core/schema"
+	"github.com/DonaldMurillo/gofastr/core/stream"
 	"github.com/DonaldMurillo/gofastr/core/upload"
 	"github.com/DonaldMurillo/gofastr/framework/db"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
@@ -105,32 +106,38 @@ type CrudHandler struct {
 	// be switched off: a stream must not outlive the authority that
 	// opened it. See EventStream / WithEventStreamReauth.
 	EventStreamReauth time.Duration
-
-	visibleFieldsCache []string
-	visibleJSONKeys    []string
-	visibleFieldSig    uint64
-
-	// jsonColumns holds the DB column names declared schema.JSON;
-	// jsonWireKeys holds the same fields by wire key. The write path
-	// needs the column form (it binds by column), the read path the wire
-	// form (scanned rows are already key-converted). Both cover hidden
-	// fields too, a server-writes create can set one. Rebuilt by
-	// refreshFieldCache.
-	jsonColumns  map[string]struct{}
-	jsonWireKeys map[string]struct{}
-
-	// wireKeyOf maps DB column name → JSON wire key (WireName if set, else
-	// case-converted Name). columnOfWire is the reverse. Both cover ALL fields
-	// (not just visible ones) so input deserialization can resolve WireNames
-	// for write-only fields too. Rebuilt by refreshFieldCache.
-	wireKeyOf    map[string]string
-	columnOfWire map[string]string
+	// EventStreamSeats caps how many concurrent EventStream connections
+	// ONE principal holds on this entity's feed. Each stream pins a
+	// goroutine, a 32-entry buffer, and three bus subscriptions until it
+	// disconnects, so without a cap a single authenticated caller can
+	// exhaust the process's goroutines/FDs/memory for everyone else.
+	// 0 = 16 (the same default core/stream and core/mcp use); negative
+	// lifts the cap. See WithEventStreamSeats.
+	EventStreamSeats int
+	// EventStreamSeatOverflow selects what a principal at EventStreamSeats
+	// does with its next stream: stream.SeatOverflowRefuse (the default)
+	// answers 429 with Retry-After at connect,
+	// stream.SeatOverflowEvictOldest closes that principal's oldest
+	// stream and seats the new one. See WithEventStreamSeatOverflow.
+	EventStreamSeatOverflow stream.SeatOverflowPolicy
+	// seats is the live per-principal EventStream seat registry. A
+	// pointer so the tx-bound copies inTx makes share it; see
+	// eventstream_seats.go for the concurrency contract.
+	seats *streamSeatRegistry
+	// fcache holds the derived field caches (visible projection, wire-key
+	// maps, JSON-column sets) behind an immutable copy-on-write snapshot.
+	// A pointer so the tx-bound copies inTx makes share it; see
+	// fieldcache.go for the concurrency contract.
+	fcache *fieldCache
 }
 
 // NewCrudHandler creates a new CrudHandler for the given entity and database.
+// The derived field caches are built here, single-threaded, so the request
+// path never has to fill them (see fieldcache.go).
 func NewCrudHandler(ent *entity.Entity, db DBExecutor) *CrudHandler {
 	ch := &CrudHandler{Entity: ent, DB: db, PrimaryKey: "id", JSONCase: CaseCamel, Hooks: nil}
-	ch.refreshFieldCache()
+	ch.fcache = newFieldCache(ch)
+	ch.seats = newStreamSeatRegistry()
 	return ch
 }
 
@@ -156,7 +163,12 @@ func (ch *CrudHandler) WithEventStreamReauth(d time.Duration) *CrudHandler {
 
 func (ch *CrudHandler) WithJSONCase(c JSONCase) *CrudHandler {
 	ch.JSONCase = c
-	ch.refreshFieldCache()
+	// Host-side, single-threaded: republish the derived caches under the
+	// new case. The old code rebuilt lazily from the request path, which
+	// was the unguarded-map-write race.
+	if ch.fcache != nil {
+		ch.fcache.publish(buildFieldSnapshot(ch))
+	}
 	return ch
 }
 
@@ -297,62 +309,19 @@ func (ch *CrudHandler) entityFields() []string {
 }
 
 // VisibleFields returns field names that are not Hidden.
+//
+// This is the single-threaded schema-read surface: it re-checks the
+// entity's live declarations and republishes the snapshot when they
+// changed, which is how a host's mid-flight field mutation reaches the
+// request path (see fieldcache.go for why the request path itself does
+// not re-read them).
 func (ch *CrudHandler) VisibleFields() []string {
-	return append([]string(nil), ch.visibleFields()...)
+	ch.refreshFieldCacheIfStale()
+	return append([]string(nil), ch.snapshot().visible...)
 }
 
 func (ch *CrudHandler) visibleFields() []string {
-	sig := ch.fieldCacheSignature()
-	if len(ch.visibleFieldsCache) == 0 || ch.visibleFieldSig != sig {
-		ch.refreshFieldCache()
-	}
-	return ch.visibleFieldsCache
-}
-
-func (ch *CrudHandler) refreshFieldCache() {
-	if ch.Entity == nil {
-		ch.visibleFieldsCache = nil
-		ch.visibleJSONKeys = nil
-		ch.visibleFieldSig = 0
-		ch.wireKeyOf = nil
-		ch.columnOfWire = nil
-		ch.jsonColumns = map[string]struct{}{}
-		ch.jsonWireKeys = map[string]struct{}{}
-		return
-	}
-	fields := ch.Entity.GetFields()
-	names := make([]string, 0, len(fields))
-	ch.wireKeyOf = make(map[string]string, len(fields))
-	ch.columnOfWire = make(map[string]string, len(fields))
-	ch.jsonColumns = map[string]struct{}{}
-	ch.jsonWireKeys = map[string]struct{}{}
-	for _, f := range fields {
-		// Build the wire-key maps for ALL fields (visible or not) so input
-		// deserialization can resolve a WireName on a write-only field.
-		wk := ch.wireKeyOfField(f)
-		ch.wireKeyOf[f.Name] = wk
-		// First field wins on collision, but a collision cannot reach here:
-		// entity.Validate rejects two fields resolving to one wire key at
-		// registration, because the write path (this map) and the filter path
-		// (filter.ParseFiltersValues, which builds its own alias map) would
-		// otherwise disagree about which column the key means.
-		//
-		// The keep-first branch stays as a belt-and-braces guard for any
-		// caller constructing a CrudHandler without going through Validate.
-		if _, exists := ch.columnOfWire[wk]; !exists {
-			ch.columnOfWire[wk] = f.Name
-		}
-		if f.Type == schema.JSON {
-			ch.jsonColumns[f.Name] = struct{}{}
-			ch.jsonWireKeys[wk] = struct{}{}
-		}
-		if !f.Hidden {
-			names = append(names, f.Name)
-		}
-	}
-	ch.visibleFieldsCache = names
-	ch.visibleJSONKeys = convertedKeys(names, ch.convertKey)
-	ch.visibleFieldSig = ch.fieldCacheSignature()
+	return ch.snapshot().visible
 }
 
 // wireKeyOfField returns the JSON wire key for a single field: WireName
@@ -365,19 +334,17 @@ func (ch *CrudHandler) wireKeyOfField(f schema.Field) string {
 }
 
 func (ch *CrudHandler) jsonKeysFor(cols []string) []string {
-	if ch.visibleFieldSig != ch.fieldCacheSignature() {
-		ch.refreshFieldCache()
-	}
-	if len(cols) == len(ch.visibleFieldsCache) {
+	s := ch.snapshot()
+	if len(cols) == len(s.visible) {
 		match := true
 		for i := range cols {
-			if cols[i] != ch.visibleFieldsCache[i] {
+			if cols[i] != s.visible[i] {
 				match = false
 				break
 			}
 		}
 		if match {
-			return ch.visibleJSONKeys
+			return s.visibleJSONs
 		}
 	}
 	return convertedKeys(cols, ch.convertKey)
@@ -427,10 +394,8 @@ func (ch *CrudHandler) fieldCacheSignature() uint64 {
 // otherwise the configured JSONCase is applied. Callers that only want the
 // raw case conversion with no WireName lookup should use convertKeyRaw.
 func (ch *CrudHandler) convertKey(col string) string {
-	if ch.wireKeyOf != nil {
-		if wk, ok := ch.wireKeyOf[col]; ok {
-			return wk
-		}
+	if wk, ok := ch.snapshot().wireKeyOf[col]; ok {
+		return wk
 	}
 	return ch.convertKeyRaw(col)
 }
@@ -451,12 +416,10 @@ func (ch *CrudHandler) convertKeyRaw(col string) string {
 // convertMapKeys applies the configured JSON casing to all keys in a map,
 // honouring WireName overrides.
 func (ch *CrudHandler) convertMapKeys(m map[string]any) map[string]any {
-	if ch.wireKeyOf == nil {
-		ch.refreshFieldCache()
-	}
+	s := ch.snapshot()
 	out := make(map[string]any, len(m))
 	for k, v := range m {
-		if wk, ok := ch.wireKeyOf[k]; ok {
+		if wk, ok := s.wireKeyOf[k]; ok {
 			out[wk] = v
 		} else {
 			out[ch.convertKeyRaw(k)] = v
@@ -493,10 +456,7 @@ func (ch *CrudHandler) itemKeyFoldsUnambiguous(item map[string]any) error {
 // handler.CheckTopLevelKeys so two distinct wire keys that resolve to one
 // column are refused before the decode instead of racing in map order.
 func (ch *CrudHandler) wireKeyColumn(key string) string {
-	if ch.columnOfWire == nil {
-		ch.refreshFieldCache()
-	}
-	if col, ok := ch.columnOfWire[key]; ok {
+	if col, ok := ch.snapshot().columnOfWire[key]; ok {
 		return col
 	}
 	return ch.unconvertKeyRaw(key)
@@ -508,9 +468,6 @@ func (ch *CrudHandler) wireKeyColumn(key string) string {
 // any known wire key fall back to the raw case conversion for backward
 // compatibility with callers that send arbitrary keys.
 func (ch *CrudHandler) unconvertMapKeys(m map[string]any) map[string]any {
-	if ch.columnOfWire == nil {
-		ch.refreshFieldCache()
-	}
 	out := make(map[string]any, len(m))
 	for k, v := range m {
 		out[ch.wireKeyColumn(k)] = v
@@ -529,9 +486,11 @@ func (ch *CrudHandler) unconvertKeyRaw(key string) string {
 	}
 }
 
-// entitySchema returns the schema for validation.
+// entitySchema returns the schema for validation. It hands out the
+// snapshot's stable field copy, not the live declarations, so validation
+// never races a host mutating Entity.Config.Fields mid-traffic.
 func (ch *CrudHandler) entitySchema() schema.Schema {
-	return schema.Schema{Fields: ch.Entity.GetFields()}
+	return schema.Schema{Fields: ch.snapshot().fields}
 }
 
 // List returns an http.HandlerFunc that lists entity records with filtering,
@@ -579,7 +538,7 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 		if extra := ch.Entity.Config.AllowedFilterParams; len(extra) > 0 {
 			filterOpts = append(filterOpts, filter.Allow(extra...))
 		}
-		filters, err := filter.ParseFiltersValues(q, ch.Entity.GetFields(), filterOpts...)
+		filters, err := filter.ParseFiltersValues(q, ch.snapshotFields(), filterOpts...)
 		if err != nil {
 			writeJSONError(w, http.StatusBadRequest, "invalid filters: "+err.Error())
 			return
@@ -653,7 +612,7 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 			// answer 200 where ?sort=<NoQuery> answers 400, so "every query
 			// surface refuses it" had an exception reachable by appending one
 			// empty parameter.
-			if _, err := filter.ParseSortValues(q, ch.Entity.GetFields()); err != nil {
+			if _, err := filter.ParseSortValues(q, ch.snapshotFields()); err != nil {
 				writeJSONError(w, http.StatusBadRequest, err.Error())
 				return
 			}
@@ -661,7 +620,7 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 			return
 		}
 
-		sorts, err := filter.ParseSortValues(q, ch.Entity.GetFields())
+		sorts, err := filter.ParseSortValues(q, ch.snapshotFields())
 		if err != nil {
 			writeJSONError(w, http.StatusBadRequest, err.Error())
 			return
@@ -773,13 +732,13 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 			pooledEncode bool
 		)
 		if len(includes) == 0 && ch.Hooks == nil {
-			pooledRows, err = scanRowsPooledWithKeysForEntity(rows, cols, keys, ch.Entity)
+			pooledRows, err = scanRowsPooledWithKeysForEntity(rows, cols, keys, ch.snapshotFields())
 			if err == nil {
 				results = *pooledRows
 				pooledEncode = true
 			}
 		} else {
-			results, err = scanRowsWithKeysForEntity(rows, cols, keys, ch.Entity)
+			results, err = scanRowsWithKeysForEntity(rows, cols, keys, ch.snapshotFields())
 		}
 		if err != nil {
 			log.Printf("crud: list scan failed: %v", err)
@@ -873,7 +832,7 @@ func (ch *CrudHandler) whereTreeClausesQ(q url.Values) ([]hook.WhereClause, erro
 	if strings.TrimSpace(raw) == "" {
 		return nil, nil
 	}
-	p, err := filter.ParseWhere(raw, ch.Entity.GetFields())
+	p, err := filter.ParseWhere(raw, ch.snapshotFields())
 	if err != nil {
 		return nil, err
 	}
@@ -1010,8 +969,14 @@ func (ch *CrudHandler) Create() http.HandlerFunc {
 			return
 		}
 		limitRequestBody(w, r)
-		body, err := ch.readRequestBody(r)
+		body, savedFiles, err := ch.readRequestBody(r)
 		if err != nil {
+			// A multipart parse saves file parts BEFORE any later
+			// step runs; a parse that fails partway (a second file
+			// part rejected, a duplicate form key) has already
+			// written the earlier ones. No row will ever reference
+			// them, so compensate now rather than orphan them.
+			ch.deleteSavedUploads(r.Context(), savedFiles)
 			if errors.Is(err, errBodyTooLarge) {
 				writeJSONError(w, http.StatusRequestEntityTooLarge, "request body too large")
 				return
@@ -1030,6 +995,13 @@ func (ch *CrudHandler) Create() http.HandlerFunc {
 			return nil
 		})
 		if err != nil {
+			// Validation, a hook rejection, or the INSERT itself
+			// failed: the transaction rolled back, no row references
+			// the files the multipart parse saved, delete them or
+			// they are orphaned storage (an unbounded disk-fill for
+			// a caller who can repeat the failure). A successful
+			// write keeps every key.
+			ch.deleteSavedUploads(r.Context(), savedFiles)
 			writeCRUDError(w, err)
 			return
 		}
@@ -1076,8 +1048,9 @@ func (ch *CrudHandler) Update() http.HandlerFunc {
 		}
 
 		limitRequestBody(w, r)
-		body, err := ch.readRequestBody(r)
+		body, savedFiles, err := ch.readRequestBody(r)
 		if err != nil {
+			ch.deleteSavedUploads(r.Context(), savedFiles)
 			if errors.Is(err, errBodyTooLarge) {
 				writeJSONError(w, http.StatusRequestEntityTooLarge, "request body too large")
 				return
@@ -1096,6 +1069,12 @@ func (ch *CrudHandler) Update() http.HandlerFunc {
 			return nil
 		})
 		if err != nil {
+			// The same compensation as Create, plus the 404 shape
+			// Update owns: the body was parsed (and its file parts
+			// saved) BEFORE the row lookup, so an update targeting a
+			// missing id strands the files unless they are deleted
+			// here.
+			ch.deleteSavedUploads(r.Context(), savedFiles)
 			writeCRUDError(w, err)
 			return
 		}
@@ -1373,12 +1352,12 @@ func scanRowsWithKeys(rows *sql.Rows, cols, keys []string) ([]map[string]any, er
 	return scanRowsWithKeysForEntity(rows, cols, keys, nil)
 }
 
-func scanRowsForEntity(rows *sql.Rows, cols []string, keyFunc func(string) string, ent *entity.Entity) ([]map[string]any, error) {
-	return scanRowsWithKeysForEntity(rows, cols, convertedKeys(cols, keyFunc), ent)
+func scanRowsForEntity(rows *sql.Rows, cols []string, keyFunc func(string) string, fields []schema.Field) ([]map[string]any, error) {
+	return scanRowsWithKeysForEntity(rows, cols, convertedKeys(cols, keyFunc), fields)
 }
 
-func scanRowsWithKeysForEntity(rows *sql.Rows, cols, keys []string, ent *entity.Entity) ([]map[string]any, error) {
-	boolCols := databaseBoolColumnsForEntity(rows, len(cols), ent, cols)
+func scanRowsWithKeysForEntity(rows *sql.Rows, cols, keys []string, fields []schema.Field) ([]map[string]any, error) {
+	boolCols := databaseBoolColumnsForEntity(rows, len(cols), fields, cols)
 	var results []map[string]any
 	for rows.Next() {
 		values := make([]any, len(cols))
@@ -1432,14 +1411,7 @@ func (ch *CrudHandler) boolColumns(cols []string) []bool {
 	if ch == nil || ch.Entity == nil {
 		return out
 	}
-	types := make(map[string]schema.FieldType, len(ch.Entity.GetFields()))
-	for _, field := range ch.Entity.GetFields() {
-		types[field.Name] = field.Type
-	}
-	for i, col := range cols {
-		out[i] = types[col] == schema.Bool
-	}
-	return out
+	return entityBoolColumns(ch.snapshotFields(), cols)
 }
 
 // convertValue normalizes database driver values into JSON-friendly types.
@@ -1469,9 +1441,19 @@ func databaseBoolColumns(rows *sql.Rows, n int) []bool {
 	return out
 }
 
-func databaseBoolColumnsForEntity(rows *sql.Rows, n int, ent *entity.Entity, cols []string) []bool {
+// entityFieldsOf is the nil-tolerant GetFields for call sites that may
+// hold a nil *entity.Entity (the eager loaders do); a nil entity has no
+// fields, which entityBoolColumns already treats as "no bool columns".
+func entityFieldsOf(ent *entity.Entity) []schema.Field {
+	if ent == nil {
+		return nil
+	}
+	return ent.GetFields()
+}
+
+func databaseBoolColumnsForEntity(rows *sql.Rows, n int, fields []schema.Field, cols []string) []bool {
 	out := databaseBoolColumns(rows, n)
-	for i, isBool := range entityBoolColumns(ent, cols) {
+	for i, isBool := range entityBoolColumns(fields, cols) {
 		if i < len(out) && isBool {
 			out[i] = true
 		}
@@ -1479,13 +1461,13 @@ func databaseBoolColumnsForEntity(rows *sql.Rows, n int, ent *entity.Entity, col
 	return out
 }
 
-func entityBoolColumns(ent *entity.Entity, cols []string) []bool {
+func entityBoolColumns(fields []schema.Field, cols []string) []bool {
 	out := make([]bool, len(cols))
-	if ent == nil {
+	if fields == nil {
 		return out
 	}
-	types := make(map[string]schema.FieldType, len(ent.GetFields()))
-	for _, field := range ent.GetFields() {
+	types := make(map[string]schema.FieldType, len(fields))
+	for _, field := range fields {
 		types[field.Name] = field.Type
 	}
 	for i, col := range cols {

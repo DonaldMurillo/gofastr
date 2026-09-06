@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"encoding/json"
 	"fmt"
 	"math"
 	"reflect"
@@ -91,6 +92,19 @@ func jsonTypeOf(v any) string {
 		return "boolean"
 	case nil:
 		return "null"
+	case json.Number:
+		// The wire decode uses UseNumber (tools.go), so a numeric
+		// argument arrives as json.Number to keep its exact decimal
+		// above 2^53. A value with no fractional part or exponent is an
+		// integer; otherwise a number.
+		s := n.String()
+		if !strings.ContainsAny(s, ".eE") {
+			return "integer"
+		}
+		if _, err := n.Int64(); err == nil {
+			return "integer"
+		}
+		return "number"
 	case float64:
 		// JSON integers decode as float64; a value with no fractional
 		// part satisfies both "number" and "integer" (draft-06+).

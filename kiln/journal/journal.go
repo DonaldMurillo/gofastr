@@ -100,7 +100,11 @@ type JSONL struct {
 
 // OpenJSONL opens or creates a JSONL journal at path. The parent directory
 // must exist. The file is opened append-only; counts are initialized by
-// scanning the existing file.
+// scanning the existing file. A symlink at path is refused: the journal
+// path is checkout-controlled input (kiln's default is
+// .kiln.session.jsonl in the CURRENT directory), so an untrusted
+// checkout must not be able to aim the journal's truncating heal and
+// appends at a file outside it.
 func OpenJSONL(path string) (*JSONL, error) {
 	if path == "" {
 		return nil, errors.New("journal: empty path")
@@ -111,7 +115,7 @@ func OpenJSONL(path string) (*JSONL, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return nil, fmt.Errorf("journal: ensure dir: %w", err)
 	}
-	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0o600)
+	f, err := openJournalFile(path, os.O_RDWR|os.O_CREATE)
 	if err != nil {
 		return nil, fmt.Errorf("journal: open %s: %w", path, err)
 	}
@@ -259,7 +263,7 @@ func (j *JSONL) TruncateAfter(n int) error {
 		return fmt.Errorf("journal: seek start: %w", err)
 	}
 	tmpPath := j.path + ".tmp"
-	tmp, err := os.OpenFile(tmpPath, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0o600)
+	tmp, err := openJournalFile(tmpPath, os.O_RDWR|os.O_CREATE|os.O_TRUNC)
 	if err != nil {
 		return fmt.Errorf("journal: open tmp: %w", err)
 	}
@@ -307,7 +311,7 @@ func (j *JSONL) TruncateAfter(n int) error {
 	if err := os.Rename(tmpPath, j.path); err != nil {
 		return fmt.Errorf("journal: rename: %w", err)
 	}
-	f, err := os.OpenFile(j.path, os.O_RDWR|os.O_APPEND, 0o600)
+	f, err := openJournalFile(j.path, os.O_RDWR|os.O_APPEND)
 	if err != nil {
 		return fmt.Errorf("journal: reopen: %w", err)
 	}
@@ -331,4 +335,22 @@ func (j *JSONL) Close() error {
 	err := j.file.Close()
 	j.file = nil
 	return err
+}
+
+// openJournalFile is os.OpenFile with a symlinked-leaf refusal, in the
+// mode every journal file uses (0600: journal lines embed app-config
+// verbatim, the same data freeze writes owner-only). The journal path
+// names untrusted checkout content, and the leaf is the one component a
+// checkout chooses freely: following a symlink there would let the
+// torn-tail heal at open, every Append, and the TruncateAfter rewrite
+// corrupt whatever user-writable file the checkout points at. Lstat is
+// the refusal spelling (portable, unlike O_NOFOLLOW); every caller path
+// is either inside the checkout or a developer-supplied path whose
+// parent chain is not attacker-written. Pinned by
+// TestOpenJournalRefusesSymlinkLeaf.
+func openJournalFile(path string, flag int) (*os.File, error) {
+	if fi, err := os.Lstat(path); err == nil && fi.Mode()&os.ModeSymlink != 0 {
+		return nil, fmt.Errorf("journal: %s is a symlink; refusing to write the journal through it", path)
+	}
+	return os.OpenFile(path, flag, 0o600)
 }

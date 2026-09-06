@@ -118,6 +118,23 @@ func (m *MemoryInboundStore) SeenDedupeKey(_ context.Context, source, key string
 	return false, nil
 }
 
+// ReapTerminalBefore implements [RetentionSweeper]: it deletes processed
+// envelopes whose UpdatedAt is older than cutoff, the memory twin of
+// SQLInboundStore.ReapTerminalBefore. Failed envelopes are retained as
+// forensic records.
+func (m *MemoryInboundStore) ReapTerminalBefore(_ context.Context, cutoff time.Time) (int64, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var n int64
+	for id, e := range m.envelopes {
+		if e.Status == InboundStatusProcessed && e.UpdatedAt.Before(cutoff) {
+			delete(m.envelopes, id)
+			n++
+		}
+	}
+	return n, nil
+}
+
 // cloneEnvelope deep-copies Payload and Headers so callers can't mutate the
 // stored envelope through aliased slices/maps (same defensive copy
 // discipline as the outbound store).

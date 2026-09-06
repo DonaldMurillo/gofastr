@@ -28,6 +28,11 @@ const (
 	defaultMaxHistory      = 200
 	defaultDefaultPageSize = 50
 	defaultMaxPageSize     = 200
+	// defaultTerminalTaskRetention and defaultMaxPushConfigsPerTask
+	// bound the rows one owner's cheap writes retain (Config.
+	// TerminalTaskRetention / Config.MaxPushConfigsPerTask; 0 = these).
+	defaultTerminalTaskRetention = 64
+	defaultMaxPushConfigsPerTask = 8
 	// keepAliveEvery paces the SSE comment line while a stream waits
 	// for the task's next event, so proxies do not idle the connection
 	// out from under a long-running skill.
@@ -79,27 +84,48 @@ type Config struct {
 	// DefaultPageSize and MaxPageSize bound ListTasks paging.
 	// Defaults 50 / 200.
 	DefaultPageSize, MaxPageSize int
+
+	// TerminalTaskRetention bounds how many TERMINAL task rows
+	// (completed / failed / canceled / rejected) one owner retains:
+	// past the bound the OLDEST terminal rows are deleted after each
+	// settle. 0 = 64 (every row carries the caller's message body, and
+	// the default store is in-RAM, so cheap authenticated writes must
+	// not grow it without end); negative disables trimming for hosts
+	// that own retention themselves. Applies to stores implementing
+	// RetentionTrimmer — both built-ins do.
+	TerminalTaskRetention int
+
+	// MaxPushConfigsPerTask bounds push-notification configs per task
+	// (each one fans a delivery goroutine out per event): past the
+	// bound the OLDEST configs are deleted. 0 = 8; negative disables.
+	MaxPushConfigsPerTask int
 }
 
 // Server is the A2A task-exchange HTTP handler. Construct with
 // NewServer and mount behind the middleware that establishes the
 // principal Config.Owner resolves.
 type Server struct {
-	skills    []Skill
-	byID      map[string]Skill
-	store     Store
-	router    Router
-	owner     func(*http.Request) (string, bool)
-	extended  func(context.Context, string) (map[string]any, error)
-	push      *pusher
-	log       *slog.Logger
-	maxBody   int64
-	timeout   time.Duration
-	maxHist   int
-	defPage   int
-	maxPage   int
-	keepAlive time.Duration
-	pollEvery time.Duration
+	skills   []Skill
+	byID     map[string]Skill
+	store    Store
+	router   Router
+	owner    func(*http.Request) (string, bool)
+	extended func(context.Context, string) (map[string]any, error)
+	push     *pusher
+	log      *slog.Logger
+	maxBody  int64
+	timeout  time.Duration
+	maxHist  int
+	defPage  int
+	maxPage  int
+
+	// maxTerminalTasks / maxPushConfigs mirror Config.
+	// TerminalTaskRetention / MaxPushConfigsPerTask (0 resolved to the
+	// defaults in NewServer; negative kept as "disabled").
+	maxTerminalTasks int
+	maxPushConfigs   int
+	keepAlive        time.Duration
+	pollEvery        time.Duration
 
 	// allowedOrigins mirrors core/mcp's allow list: Origins that name a
 	// foreign authority yet may still reach the dispatcher. Guarded by
@@ -166,6 +192,14 @@ func NewServer(cfg Config) (*Server, error) {
 	if timeout <= 0 {
 		timeout = defaultTaskTimeout
 	}
+	maxTerminal := cfg.TerminalTaskRetention
+	if maxTerminal == 0 {
+		maxTerminal = defaultTerminalTaskRetention
+	}
+	maxPush := cfg.MaxPushConfigsPerTask
+	if maxPush == 0 {
+		maxPush = defaultMaxPushConfigsPerTask
+	}
 	maxHist := cfg.MaxHistory
 	if maxHist <= 0 {
 		maxHist = defaultMaxHistory
@@ -182,25 +216,27 @@ func NewServer(cfg Config) (*Server, error) {
 		return nil, fmt.Errorf("a2a: Config.DefaultPageSize %d exceeds MaxPageSize %d", defPage, maxPage)
 	}
 	return &Server{
-		skills:         slices.Clone(cfg.Skills),
-		byID:           byID,
-		store:          store,
-		router:         router,
-		owner:          cfg.Owner,
-		extended:       cfg.ExtendedCard,
-		push:           newPusher(cfg.Push, log),
-		log:            log,
-		maxBody:        maxBody,
-		timeout:        timeout,
-		maxHist:        maxHist,
-		defPage:        defPage,
-		maxPage:        maxPage,
-		keepAlive:      keepAliveEvery,
-		pollEvery:      pollEvery,
-		allowedOrigins: slices.Clone(cfg.AllowedOrigins),
-		now:            time.Now,
-		newID:          newUUID,
-		runs:           map[string]*run{},
+		skills:           slices.Clone(cfg.Skills),
+		byID:             byID,
+		store:            store,
+		router:           router,
+		owner:            cfg.Owner,
+		extended:         cfg.ExtendedCard,
+		push:             newPusher(cfg.Push, log),
+		log:              log,
+		maxBody:          maxBody,
+		timeout:          timeout,
+		maxHist:          maxHist,
+		defPage:          defPage,
+		maxPage:          maxPage,
+		maxTerminalTasks: maxTerminal,
+		maxPushConfigs:   maxPush,
+		keepAlive:        keepAliveEvery,
+		pollEvery:        pollEvery,
+		allowedOrigins:   slices.Clone(cfg.AllowedOrigins),
+		now:              time.Now,
+		newID:            newUUID,
+		runs:             map[string]*run{},
 	}, nil
 }
 
@@ -848,7 +884,50 @@ func (s *Server) storePushConfig(ctx context.Context, owner string, cfg *PushNot
 		s.log.Error("a2a: create push config", "taskId", cfg.TaskID, "err", err)
 		return Errorf(CodeInternalError, "internal error")
 	}
+	// Bound the configs this task retains: every event fans a delivery
+	// out per config, so the set is capped (Config.MaxPushConfigsPerTask)
+	// by deleting the OLDEST past the bound. The create itself always
+	// succeeds — the caller never has to learn about the bound.
+	s.trimPushConfigs(ctx, owner, cfg.TaskID)
 	return nil
+}
+
+// trimTerminalTasks bounds the owner's retained TERMINAL task rows
+// (Config.TerminalTaskRetention). Called after every persist that
+// leaves a task terminal. A store that does not implement
+// RetentionTrimmer keeps its own policy. Failure is a log line, never
+// a task-write failure: retention is an internal bound behind the
+// write it follows.
+func (s *Server) trimTerminalTasks(owner string) {
+	if s.maxTerminalTasks < 0 {
+		return
+	}
+	rt, ok := s.store.(RetentionTrimmer)
+	if !ok {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), storeOpTimeout)
+	defer cancel()
+	if err := rt.TrimTerminalTasks(ctx, owner, s.maxTerminalTasks); err != nil {
+		s.log.Error("a2a: trim terminal tasks", "owner", owner, "err", err)
+	}
+}
+
+// trimPushConfigs bounds the push-notification configs retained for
+// (owner, taskID) (Config.MaxPushConfigsPerTask), after each create.
+func (s *Server) trimPushConfigs(ctx context.Context, owner, taskID string) {
+	if s.maxPushConfigs < 0 {
+		return
+	}
+	rt, ok := s.store.(RetentionTrimmer)
+	if !ok {
+		return
+	}
+	c, cancel := context.WithTimeout(ctx, storeOpTimeout)
+	defer cancel()
+	if err := rt.TrimPushConfigs(c, owner, taskID, s.maxPushConfigs); err != nil {
+		s.log.Error("a2a: trim push configs", "taskId", taskID, "err", err)
+	}
 }
 
 func (s *Server) skillIDs() []string {
@@ -871,6 +950,7 @@ func (t *taskRun) snapshot() *Task {
 // spec-correct multi-line data and so can never be split into two
 // events by one; each write is flushed immediately and carries a
 // per-write deadline so a client that stops reading cannot pin this
+
 // goroutine.
 type sseStream struct {
 	w    *errWriter
@@ -1113,10 +1193,6 @@ func (s *Server) handleCancelTask(w http.ResponseWriter, req *rpcRequest, owner 
 		s.writeResult(w, req.ID, nil, Errorf(CodeInvalidParams, "id is required"))
 		return
 	}
-	// The read-modify-write loop is bounded; each attempt re-reads, so
-	// a handler writing concurrently cannot wedge cancellation. The
-	// run's own finalize also writes CANCELED after our cancel() lands
-	// (a safety net for a canceled context nobody else persists), so a
 	// re-read that finds CANCELED after WE canceled the run means the
 	// cancellation happened — answer it, do not report -32002 for the
 	// state we asked for.
@@ -1165,6 +1241,9 @@ func (s *Server) handleCancelTask(w http.ResponseWriter, req *rpcRequest, owner 
 		s.publish(owner, cand, ev)
 		task := cloneTask(cand.Task)
 		s.writeResult(w, req.ID, SendMessageResponse{Task: &task}, nil)
+		// The cancel write left the task terminal: same retention hook
+		// as the run's own finalize.
+		s.trimTerminalTasks(owner)
 		return
 	}
 	s.writeResult(w, req.ID, nil, Errorf(CodeInternalError, "internal error"))

@@ -238,6 +238,62 @@ func (m *MemoryStore) DeletePushConfig(_ context.Context, owner, taskID, id stri
 	return nil
 }
 
+// TrimTerminalTasks implements RetentionTrimmer: it keeps the newest
+// `keep` terminal rows for owner and deletes the older ones.
+// Non-terminal rows (a task in flight, or paused on input) are never
+// retention's to touch.
+func (m *MemoryStore) TrimTerminalTasks(_ context.Context, owner string, keep int) error {
+	if keep < 0 {
+		return nil
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var terminal []*TaskRecord
+	for key, rec := range m.tasks {
+		if key.owner == owner && rec.Task.Status.State.Terminal() {
+			terminal = append(terminal, rec)
+		}
+	}
+	if len(terminal) <= keep {
+		return nil
+	}
+	sortRecsNewestFirst(terminal)
+	for _, rec := range terminal[keep:] {
+		delete(m.tasks, taskKey{owner, rec.Task.ID})
+	}
+	return nil
+}
+
+// TrimPushConfigs implements RetentionTrimmer: it keeps the newest
+// `keep` configs for (owner, taskID) — the same order ListPushConfigs
+// serves — and deletes the older ones.
+func (m *MemoryStore) TrimPushConfigs(_ context.Context, owner, taskID string, keep int) error {
+	if keep < 0 {
+		return nil
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var recs []*PushConfigRecord
+	for key, rec := range m.push {
+		if key.owner == owner && key.taskID == taskID {
+			recs = append(recs, rec)
+		}
+	}
+	if len(recs) <= keep {
+		return nil
+	}
+	sort.Slice(recs, func(i, j int) bool {
+		if !recs[i].CreatedAt.Equal(recs[j].CreatedAt) {
+			return recs[i].CreatedAt.Before(recs[j].CreatedAt)
+		}
+		return recs[i].Config.ID < recs[j].Config.ID
+	})
+	for _, rec := range recs[:len(recs)-keep] {
+		delete(m.push, pushKey{owner, taskID, rec.Config.ID})
+	}
+	return nil
+}
+
 // clonePushConfig copies the config's AuthenticationInfo pointer so two
 // callers of GetPushConfig cannot share it.
 func clonePushConfig(c PushNotificationConfig) PushNotificationConfig {
@@ -251,6 +307,8 @@ func clonePushConfig(c PushNotificationConfig) PushNotificationConfig {
 
 // compile-time interface checks.
 var (
-	_ Store = (*MemoryStore)(nil)
-	_ Store = (*SQLStore)(nil)
+	_ Store            = (*MemoryStore)(nil)
+	_ Store            = (*SQLStore)(nil)
+	_ RetentionTrimmer = (*MemoryStore)(nil)
+	_ RetentionTrimmer = (*SQLStore)(nil)
 )

@@ -301,20 +301,38 @@ func TestGatedResourceUpdatedRespectsGate(t *testing.T) {
 	expectNoSSE(t, anonEvents, "gated resource update on a gate-refusing stream")
 }
 
-// A caller the server-wide gate refuses learns nothing at all — not
-// even a payload-free list_changed, which is otherwise safe to
-// broadcast. The stream may exist; it must stay silent.
-func TestServerGateRefusedGetsNoNotifications(t *testing.T) {
+// A caller the server-wide gate refuses is refused at CONNECT: no 200,
+// no SSE stream, and no seat held (one goroutine + buffered channel per
+// connection an unauthenticated peer could otherwise park on a private
+// endpoint). A stream that connected while the gate passed still goes
+// silent on revocation — that half is TestGateRevokedMidStreamStopsDelivery.
+func TestServerGateRefusedAtConnectHoldsNoSeat(t *testing.T) {
 	s := NewServer()
 	s.SetGate(requireUser)
 	ts := newNotificationServer(t, s)
-	events := openStream(t, ts, false) // anonymous: the gate refuses it
-	waitForSubscribers(t, s, 1)
 
+	req, err := http.NewRequest(http.MethodGet, ts.URL+"/mcp", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Accept", "text/event-stream")
+	resp, err := ts.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("gate-refused GET stream answered %d, want 403 (refused at connect)", resp.StatusCode)
+	}
+	if got := sseRegistryCount(s); got != 0 {
+		t.Errorf("SECURITY: [sse-seats] a gate-refused caller holds %d subscriber seats; admission must precede registration", got)
+	}
+
+	// The stream it never got stays silent by construction; the
+	// registry assertion above is what makes that true here.
 	mustRegisterOpen(t, s, "public_tool") // fires NotifyToolsListChanged
 	s.NotifyToolsListChanged()            // and again, explicitly
-
-	expectNoSSE(t, events, "any notification for a server-gate-refused caller")
+	io.Copy(io.Discard, resp.Body)        // drain whatever (nothing) came
 }
 
 // A subscriber whose buffer stays full is dropped and its stream
@@ -322,8 +340,8 @@ func TestServerGateRefusedGetsNoNotifications(t *testing.T) {
 // receives everything.
 func TestStalledSubscriberDroppedNotBlocking(t *testing.T) {
 	s := NewServer()
-	stalled := s.addSSESubscriber(context.Background()) // never drained
-	live := s.addSSESubscriber(context.Background())
+	stalled, _ := s.addSSESubscriber(context.Background(), "test") // never drained
+	live, _ := s.addSSESubscriber(context.Background(), "test2")
 
 	const sends = sseSubBufferSize + 5
 	received := 0

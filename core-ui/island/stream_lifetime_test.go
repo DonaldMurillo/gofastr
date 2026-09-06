@@ -43,7 +43,7 @@ func readSSE(t *testing.T, body io.Reader, stop func(buf string) bool) (string, 
 // the middleware (which would risk a cycle and couple the unit test to the
 // middleware's goroutine plumbing).
 func TestSSEStreamOutlivesRequestDeadline(t *testing.T) {
-	mgr := NewManager(WithSSEStreamBound(1 * time.Second)) // bound past the 300ms push, short enough for prompt cleanup
+	mgr := NewManager(WithSSEHeartbeat(100*time.Millisecond), WithSSEStreamBound(1*time.Second)) // bound past the 300ms push, short enough for prompt cleanup; heartbeat kept below it so NewManager's pair clamp leaves both verbatim
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(r.Context(), 100*time.Millisecond)
 		defer cancel()

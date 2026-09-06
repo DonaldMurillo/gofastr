@@ -190,7 +190,7 @@ func eagerLoadHasMany(ctx context.Context, db DBExecutor, safeEntity, safeFK str
 	if err != nil {
 		return err
 	}
-	boolCols := databaseBoolColumnsForEntity(rows, len(cols), target, cols)
+	boolCols := databaseBoolColumnsForEntity(rows, len(cols), entityFieldsOf(target), cols)
 
 	for rows.Next() {
 		vals := make([]any, len(cols))
@@ -315,7 +315,7 @@ func eagerLoadBelongsTo(ctx context.Context, db DBExecutor, table, safeEntity, s
 	if err != nil {
 		return err
 	}
-	boolCols := databaseBoolColumnsForEntity(tgtRows, len(cols), target, cols)
+	boolCols := databaseBoolColumnsForEntity(tgtRows, len(cols), entityFieldsOf(target), cols)
 
 	targetByID := make(map[string]map[string]any)
 	for tgtRows.Next() {
@@ -411,7 +411,7 @@ func eagerLoadManyToMany(ctx context.Context, db DBExecutor, safeEntity, safeFK 
 	if err != nil {
 		return err
 	}
-	boolCols := databaseBoolColumnsForEntity(rows, len(cols), target, cols)
+	boolCols := databaseBoolColumnsForEntity(rows, len(cols), entityFieldsOf(target), cols)
 
 	for rows.Next() {
 		vals := make([]any, len(cols))

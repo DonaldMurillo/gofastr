@@ -3,12 +3,14 @@ package log
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"golang.org/x/term"
 )
 
@@ -259,10 +261,15 @@ func padLevel(level string) string {
 
 // formatValue renders a JSON RawMessage for the key=value display.
 // Strings are shown bare when simple (no spaces, '=', quotes, control
-// chars) and JSON-quoted otherwise; numbers/bools/null/objects/arrays
+// chars) and quoted otherwise; numbers/bools/null/objects/arrays
 // are passed through as compact JSON. Multi-line values (e.g. panic
 // stacks) keep their newlines escaped so each entry stays one line,
 // the full unescaped value is always available in the file sink.
+//
+// The quoted form goes through quoteTerminalSafe, NOT json.Marshal:
+// Go's encoder escapes only C0 and U+2028/9, so a C1 control or bidi
+// rune survives a round trip raw (the round-4 console probe) and the
+// "quoted" value still writes a live 0x9B/0x85/U+202E to the terminal.
 func formatValue(raw json.RawMessage) string {
 	if len(raw) == 0 {
 		return ""
@@ -273,20 +280,59 @@ func formatValue(raw json.RawMessage) string {
 			return string(raw)
 		}
 		if needsQuoting(s) {
-			out, _ := json.Marshal(s)
-			return string(out)
+			return quoteTerminalSafe(s)
 		}
 		return s
 	}
 	return string(raw)
 }
 
+// quoteTerminalSafe renders s as a JSON-style double-quoted literal in
+// which every C0/DEL/C1 control and zero-width/bidi rune lands as a
+// \uXXXX escape instead of a raw byte sequence the terminal would
+// execute or reorder. Readable short escapes (\n, \r, \t) keep panic
+// stacks greppable.
+func quoteTerminalSafe(s string) string {
+	var b strings.Builder
+	b.Grow(len(s) + 2)
+	b.WriteByte('"')
+	for _, r := range s {
+		switch r {
+		case '"':
+			b.WriteString(`\"`)
+		case '\\':
+			b.WriteString(`\\`)
+		case '\n':
+			b.WriteString(`\n`)
+		case '\r':
+			b.WriteString(`\r`)
+		case '\t':
+			b.WriteString(`\t`)
+		default:
+			if textsafe.IsUnsafe(r) {
+				fmt.Fprintf(&b, `\u%04x`, r)
+				continue
+			}
+			b.WriteRune(r)
+		}
+	}
+	b.WriteByte('"')
+	return b.String()
+}
+
+// needsQuoting reports whether a string attr value must render as a
+// JSON-quoted literal instead of bare text: anything with a space, the
+// key=value metacharacters, or — via core/textsafe, the round-4
+// widening — any C0/DEL/C1 control or zero-width/bidi rune. A bare
+// U+009B/U+009D is executed as an escape by 8-bit terminals, U+0085
+// breaks the line, and RLO reorders the rendered line, so those values
+// must land in the terminal as \uXXXX escapes, not raw runes.
 func needsQuoting(s string) bool {
 	if s == "" {
 		return true
 	}
 	for _, r := range s {
-		if r <= ' ' || r == '=' || r == '"' || r == '\\' || r == '\x1b' {
+		if r <= ' ' || r == '=' || r == '"' || r == '\\' || textsafe.IsUnsafe(r) {
 			return true
 		}
 	}

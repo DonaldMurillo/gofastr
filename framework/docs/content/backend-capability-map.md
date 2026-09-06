@@ -57,7 +57,10 @@ Under either setting, a documented path is the path you request.
 
 **`/openapi.json` and `/api/llm.md` answer `401` by default.** The schema is
 a disclosure, so both are behind the auth gate until you pass
-`framework.WithPublicOpenAPI()`. That is not a bug to debug; the startup
+`framework.WithPublicOpenAPI()`. Behind that gate the spec is also filtered
+per request to the entities the caller can read (`access:` grants, owner and
+tenant context) — an entity you would get 403 on is absent from your spec,
+not just marked. That is not a bug to debug; the startup
 banner says so next to each URL. `/metrics` is likewise **not mounted** until
 `framework.WithMetrics()`, and returns `404` otherwise.
 

@@ -81,6 +81,12 @@ var (
 // when full, a single randomly-chosen entry is evicted (Go map iteration
 // is randomised, so the first key returned by `range` is effectively
 // random, this is not LRU).
+//
+// The returned DSLQuery is caller-isolated: the cache stores the canonical
+// copy and every call (hit or miss) returns a shallow copy with fresh
+// Filters/Includes/Orders slices, the HooksFor posture. A value-typed
+// result invites callers to adjust it in place; sharing the cached backing
+// arrays would turn one caller's edit into every later caller's answer.
 func ParseDSL(input string) (DSLQuery, error) {
 	if len(input) > maxDSLInputSize {
 		return DSLQuery{}, fmt.Errorf("dsl: input exceeds %d bytes", maxDSLInputSize)
@@ -94,7 +100,7 @@ func ParseDSL(input string) (DSLQuery, error) {
 	parseCacheMu.RLock()
 	if cached, ok := parseCache[input]; ok {
 		parseCacheMu.RUnlock()
-		return cached, nil
+		return cloneDSLQuery(cached), nil
 	}
 	parseCacheMu.RUnlock()
 
@@ -117,7 +123,16 @@ func ParseDSL(input string) (DSLQuery, error) {
 	parseCache[input] = result
 	parseCacheMu.Unlock()
 
-	return result, nil
+	return cloneDSLQuery(result), nil
+}
+
+// cloneDSLQuery copies the slice-bearing fields of a DSLQuery so the
+// caller's copy never aliases the cache's backing arrays.
+func cloneDSLQuery(q DSLQuery) DSLQuery {
+	q.Filters = append([]DSLFilter(nil), q.Filters...)
+	q.Includes = append([]string(nil), q.Includes...)
+	q.Orders = append([]DSLOrder(nil), q.Orders...)
+	return q
 }
 
 // parseDSLUncached does the actual parsing without caching.
@@ -465,6 +480,7 @@ func dslTypedValue(field schema.Field, value string) any {
 			return n
 		}
 	case schema.Float, schema.Decimal:
+		//gofastr:allow(nonfinite) a DSL filter value flows to a SQL comparison, not a range guard; a non-finite value matches no rows.
 		if n, err := strconv.ParseFloat(value, 64); err == nil {
 			return n
 		}

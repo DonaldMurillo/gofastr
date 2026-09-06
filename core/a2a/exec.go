@@ -324,6 +324,11 @@ func (t *taskRun) mutate(build func(task *Task) (*StreamResponse, error)) error 
 	if ev != nil {
 		t.srv.publish(t.owner, t.rec, *ev)
 	}
+	// A persist that left the task terminal is the retention hook: the
+	// oldest terminal rows past Config.TerminalTaskRetention go now.
+	if cand.Task.Status.State.Terminal() {
+		t.srv.trimTerminalTasks(t.owner)
+	}
 	return nil
 }
 
@@ -427,6 +432,9 @@ func (t *taskRun) setFinalAgainstStore(state TaskState, msgText string) {
 		t.rec = cand
 		t.mu.Unlock()
 		t.srv.publish(t.owner, cand, *ev)
+		// The finalize write left the task terminal: same retention
+		// hook as mutate.
+		t.srv.trimTerminalTasks(t.owner)
 		return true
 	}
 	for range attempts {

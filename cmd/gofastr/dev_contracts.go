@@ -147,7 +147,11 @@ func (w *devContractWatch) printErrOnce(err error) {
 // summarise renders the compact dev-loop form: one line per finding, with
 // the rule ID so `gofastr verify --explain` is one copy-paste away. The
 // full report, with reasons, examples, fixes, is what `gofastr verify` is
-// for; repeating it on every save would bury the loop.
+// for; repeating it on every save would bury the loop. Location and
+// Message are repo-derived (file names, snippets) and pass through
+// scrubTerminalOutput before printing: the dev loop must not become the
+// one print boundary without the control-byte scrub `gofastr verify`
+// has (2026-09-05 red-probe round).
 func (w *devContractWatch) summarise(r *contracts.Report) string {
 	var b strings.Builder
 	shown := 0
@@ -157,7 +161,7 @@ func (w *devContractWatch) summarise(r *contracts.Report) string {
 				len(r.Diagnostics)-shown)
 			break
 		}
-		fmt.Fprintf(&b, "    %s  %s  %s\n", d.RuleID, d.Location(), d.Message)
+		fmt.Fprintf(&b, "    %s  %s  %s\n", d.RuleID, scrubTerminalOutput(d.Location()), scrubTerminalOutput(d.Message))
 		shown++
 	}
 	fmt.Fprintf(&b, "    %s", "explain any of these: gofastr verify --explain <rule>")

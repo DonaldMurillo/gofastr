@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"go/ast"
 	"go/format"
+	"go/parser"
+	"go/token"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -13,6 +15,7 @@ import (
 	"syscall"
 
 	"github.com/DonaldMurillo/gofastr/codegen"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"github.com/DonaldMurillo/gofastr/framework"
 	fwentity "github.com/DonaldMurillo/gofastr/framework/entity"
 )
@@ -561,7 +564,8 @@ func generateBlueprint(bp Blueprint, options generateOptions) {
 		// calls inline and has no registrar seam: a per-entity file dropped
 		// next to it references types that don't exist and the project stops
 		// compiling. Refuse rather than emit broken output.
-		if legacy, lerr := packReadLegacyRegister(filepath.Join(writeRoot, "entities", "register.go")); lerr == nil && len(legacy) > 0 {
+		legacy, lerr := readLegacyRegisterUnder(writeRoot)
+		if lerr == nil && len(legacy) > 0 {
 			lerr = fmt.Errorf("entities/ uses the pre-0.15 aggregated layout, which --add cannot extend. Recover your blueprint with `gofastr pack`, merge the new pieces into it, and regenerate with `gofastr generate --from=<blueprint> --force`")
 			if options.dryRun && options.json {
 				printGeneratedErrorsJSON(lerr)
@@ -979,14 +983,18 @@ func reportCodegenDiagnostics(diags []codegen.Diagnostic) bool {
 	return failed
 }
 
-// scrubTerminalOutput strips the control bytes that let a subprocess drive the
-// operator's terminal rather than write to it. Mirrors codegen's stderr scrub
-// (codegen/extension_command.go scrubTerminalBytes) for the diagnostic path,
-// which arrives as JSON rather than as raw stderr bytes.
+// scrubTerminalOutput strips the control bytes that let a subprocess drive
+// the operator's terminal rather than write to it, plus the display-spoofing
+// set: the 8-bit C1 spellings (U+009B CSI arrives without an ESC prefix),
+// bidi overrides, and zero-width runes (core/textsafe, 2026-09-05
+// red-probe round). Mirrors codegen's stderr scrub
+// (codegen/extension_command.go scrubTerminalBytes) for the diagnostic
+// path, which arrives as JSON rather than as raw stderr bytes. \n and \t
+// stay: ordinary formatting.
 func scrubTerminalOutput(s string) string {
 	clean := true
 	for _, r := range s {
-		if (r < 0x20 && r != '\n' && r != '\t') || r == 0x7f {
+		if r != '\n' && r != '\t' && textsafe.IsUnsafe(r) {
 			clean = false
 			break
 		}
@@ -997,7 +1005,7 @@ func scrubTerminalOutput(s string) string {
 	var b strings.Builder
 	b.Grow(len(s))
 	for _, r := range s {
-		if (r < 0x20 && r != '\n' && r != '\t') || r == 0x7f {
+		if r != '\n' && r != '\t' && textsafe.IsUnsafe(r) {
 			continue
 		}
 		b.WriteRune(r)
@@ -1841,6 +1849,18 @@ func readFileUnder(writeRoot, rel string) ([]byte, error) {
 	return root.ReadFile(rel)
 }
 
+// readLegacyRegisterUnder reads entities/register.go under writeRoot for
+// the aggregated-layout guard, through the same *os.Root confinement as
+// readFileUnder: an unopenable root counts as no legacy layout.
+func readLegacyRegisterUnder(writeRoot string) ([]framework.EntityDeclaration, error) {
+	root, err := os.OpenRoot(writeRoot)
+	if err != nil {
+		return nil, nil
+	}
+	defer root.Close()
+	return packReadLegacyRegister(root, "entities/register.go")
+}
+
 // registeredScreenRoutes returns the set of routes actually mounted by the
 // generated app under writeRoot, scanned from every `site.Register(route, …)`
 // and `app.NewScreen(route, …)` (the arg to site.RegisterScreen) call in its
@@ -1848,9 +1868,17 @@ func readFileUnder(writeRoot, rel string) ([]byte, error) {
 // screens and deliberately drops synthesized CRUD form screens, this sees the
 // full mounted set, including the /new and /{id}/edit routes those forms add,
 // so the --add collision guard can't be fooled into double-registering one.
+// The walk and leaf reads go through an *os.Root, so a symlinked *.go
+// pointing outside writeRoot is skipped, never parsed (2026-09-05
+// red-probe round).
 func registeredScreenRoutes(writeRoot string) map[string]bool {
 	routes := map[string]bool{}
-	entries, err := os.ReadDir(writeRoot)
+	root, err := os.OpenRoot(writeRoot)
+	if err != nil {
+		return routes
+	}
+	defer root.Close()
+	entries, err := rootReadDirEntries(root, ".")
 	if err != nil {
 		return routes
 	}
@@ -1860,7 +1888,11 @@ func registeredScreenRoutes(writeRoot string) map[string]bool {
 		if e.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
 			continue
 		}
-		file, perr := packParseFile(filepath.Join(writeRoot, name))
+		src, rerr := root.ReadFile(name)
+		if rerr != nil {
+			continue // unreadable leaf (symlink outside the root): skip
+		}
+		file, perr := parser.ParseFile(token.NewFileSet(), name, src, 0)
 		if perr != nil {
 			continue
 		}
@@ -1907,8 +1939,12 @@ func missingCallSite(writeRoot, rel, call string) bool {
 // (packParseFile + packFindEntityCall + packEntityOrder) so declaration order
 // stays coherent between additive generation and `gofastr pack`.
 func maxExistingEntityOrder(writeRoot string) int {
-	entDir := filepath.Join(writeRoot, "entities")
-	entries, err := os.ReadDir(entDir)
+	root, err := os.OpenRoot(writeRoot)
+	if err != nil {
+		return 0 // no output dir yet
+	}
+	defer root.Close()
+	entries, err := rootReadDirEntries(root, "entities")
 	if err != nil {
 		return 0 // no entities dir yet
 	}
@@ -1918,9 +1954,12 @@ func maxExistingEntityOrder(writeRoot string) int {
 		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".go") || skip[entry.Name()] {
 			continue
 		}
-		path := filepath.Join(entDir, entry.Name())
-		file, err := packParseFile(path)
-		if err != nil {
+		src, rerr := root.ReadFile("entities/" + entry.Name())
+		if rerr != nil {
+			continue // unreadable leaf (symlink outside the root): skip
+		}
+		file, perr := parser.ParseFile(token.NewFileSet(), entry.Name(), src, 0)
+		if perr != nil {
 			continue
 		}
 		if _, ok := packFindEntityCall(file); !ok {
@@ -1936,13 +1975,13 @@ func maxExistingEntityOrder(writeRoot string) int {
 	return maxOrder + 1
 }
 
-// maxExistingScreenOrder reads the existing screen_*.go files under writeRoot
-// and returns the order the NEXT screen should use (max existing screen
-// registrar order + 1, or 0 when there are none). It reuses the pack
-// machinery (packParseFile + packScreenFileOrders) so screen declaration
-// order stays coherent between additive generation and `gofastr pack`.
 func maxExistingScreenOrder(writeRoot string) int {
-	entries, err := os.ReadDir(writeRoot)
+	root, err := os.OpenRoot(writeRoot)
+	if err != nil {
+		return 0 // no output dir yet
+	}
+	defer root.Close()
+	entries, err := rootReadDirEntries(root, ".")
 	if err != nil {
 		return 0 // no output dir yet
 	}
@@ -1955,9 +1994,12 @@ func maxExistingScreenOrder(writeRoot string) int {
 		if name == "screen_shared.go" || name == "screens_register.go" || !strings.HasPrefix(name, "screen_") {
 			continue
 		}
-		path := filepath.Join(writeRoot, name)
-		file, err := packParseFile(path)
-		if err != nil {
+		src, rerr := root.ReadFile(name)
+		if rerr != nil {
+			continue // unreadable leaf (symlink outside the root): skip
+		}
+		file, perr := parser.ParseFile(token.NewFileSet(), name, src, 0)
+		if perr != nil {
 			continue
 		}
 		for _, o := range packScreenFileOrders(file) {

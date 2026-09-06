@@ -14,6 +14,15 @@ import (
 
 // RequireAuth returns middleware that validates a Bearer JWT token
 // and stores the authenticated user in the request context.
+//
+// When the JWTAuth carries a user store (every manager-built one does;
+// AuthManager.Init wires it, see JWTAuth.SetUserStore), the token's
+// subject is re-resolved on EVERY request and identity AND roles come
+// from the fresh row — deletion, erasure, and role downgrades take
+// effect on the next request, not at token TTL. A missing owner row
+// answers 401. A bare NewJWTAuth with no store keeps the stateless
+// claims-derived principal (service-to-server deployments with no user
+// table).
 func RequireAuth(jwt *JWTAuth) middleware.Middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -48,7 +57,17 @@ func RequireAuth(jwt *JWTAuth) middleware.Middleware {
 				return
 			}
 
-			user := claimsToUser(claims)
+			// A valid signature is necessary, not sufficient: the
+			// principal comes from the user store's fresh row (resolveOwner),
+			// so a deleted owner or a downgraded role set fails closed on
+			// the very next request instead of outliving the token TTL.
+			// Same 401 body as an invalid token: which of the two failed
+			// is not an observable distinction worth an oracle for.
+			user, ok := jwt.resolveOwner(r.Context(), claims)
+			if !ok {
+				http.Error(w, `{"error":{"code":401,"message":"invalid or expired token"}}`, http.StatusUnauthorized)
+				return
+			}
 			ctx := handler.SetUser(r.Context(), user)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})

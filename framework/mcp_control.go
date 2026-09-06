@@ -246,7 +246,11 @@ func (a *App) toolModuleDisable(ctx context.Context, params map[string]any) (any
 func (a *App) toggleModule(ctx context.Context, params map[string]any, enable bool) (any, error) {
 	name, _ := params["name"].(string)
 	if name == "" {
-		return nil, fmt.Errorf("mcp control: `name` is required: call app_modules to list module names")
+		// Caller-facing domain errors are returned as *RPCError so the
+		// tools/call dispatch surfaces them verbatim; a bare error()
+		// there is treated as internal detail and genericised to
+		// "internal tool error" (TestPlainHandlerErrorNotEchoed).
+		return nil, &mcp.RPCError{Code: mcp.ErrInvalidParams, Message: "mcp control: `name` is required: call app_modules to list module names"}
 	}
 	var err error
 	if enable {
@@ -255,7 +259,9 @@ func (a *App) toggleModule(ctx context.Context, params map[string]any, enable bo
 		err = a.Modules().Disable(ctx, name)
 	}
 	if err != nil {
-		return nil, err
+		// A module toggle failure names the unknown module — a domain
+		// error the caller must see, not an internal leak.
+		return nil, &mcp.RPCError{Code: mcp.ErrInvalidParams, Message: err.Error()}
 	}
 	return map[string]any{
 		"name":    name,

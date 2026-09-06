@@ -20,13 +20,13 @@ const defaultHandlerTimeout = 30 * time.Second
 type MemoryQueueOption func(*MemoryQueue)
 
 // WithHandlerTimeout sets the per-job execution timeout for the automatic
-// worker pool. Jobs that run longer than the timeout have their context
-// cancelled, which the handler should respect (the job is then retried or
-// dead-lettered as usual). Defaults to 30 s.
+// worker pool. The job's context is cancelled at the deadline and the
+// worker stops waiting there: a handler that ignores its context cannot
+// wedge its worker forever (one stuck job would otherwise stall the whole
+// queue); the job is retried as a failure and a late side effect counts
+// as the at-least-once duplicate. Defaults to 30 s.
 func WithHandlerTimeout(d time.Duration) MemoryQueueOption {
-	return func(q *MemoryQueue) {
-		q.handlerTimeout = d
-	}
+	return func(q *MemoryQueue) { q.handlerTimeout = d }
 }
 
 // WithLogger sets the logger used for handler-failure (WARN) and
@@ -320,8 +320,7 @@ func (q *MemoryQueue) processJob(job Job) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), q.handlerTimeout)
 	defer cancel()
-
-	err := safeHandle(ctx, handler, job)
+	err := q.awaitHandler(ctx, handler, job)
 	if err != nil {
 		job.Attempts++
 		q.logger.Warn("queue: handler failed",
@@ -358,9 +357,38 @@ func (q *MemoryQueue) processJob(job Job) {
 	}
 }
 
+// awaitHandler runs the handler with the per-job budget and returns its
+// error. The invocation runs on its OWN goroutine, mirroring
+// DBQueue.runHandler and the outbox relay's runHandler: a handler that
+// ignores its cancelled context cannot be made to return (Go has no
+// goroutine termination), and the inline call let one such handler wedge
+// its worker forever — one stuck job stalled the whole queue, every later
+// job (emails, exports, erasures) waited indefinitely. The worker instead
+// stops WAITING at the deadline, treats the job as failed (a duplicate
+// side effect on a late completion is the at-least-once duplicate the
+// retry path already documents), and keeps draining. The result channel
+// is buffered so a late return never leaks the goroutine on the send; a
+// handler that never returns holds one goroutine per retry cycle, bounded
+func (q *MemoryQueue) awaitHandler(ctx context.Context, handler Handler, job Job) error {
+	type outcome struct{ err error }
+	done := make(chan outcome, 1)
+	go func() { done <- outcome{safeHandle(ctx, handler, job)} }()
+	timer := time.NewTimer(q.handlerTimeout)
+	defer timer.Stop()
+	select {
+	case r := <-done:
+		return r.err
+	case <-timer.C:
+		return fmt.Errorf("queue: handler for %q exceeded its %s budget (context cancelled; job retried)",
+			job.Type, q.handlerTimeout)
+	}
+}
+
 // safeHandle invokes a handler, converting a panic into an error so a
 // poison-message job cannot unwind the worker goroutine and crash the whole
-// process. The panicked job follows the normal retry path.
+// process. The panicked job follows the normal retry path. It runs on the
+// handler goroutine awaitHandler starts, which is where the recover must
+// sit once the invocation is no longer inline on the worker.
 func safeHandle(ctx context.Context, handler Handler, job Job) (err error) {
 	defer func() {
 		if r := recover(); r != nil {

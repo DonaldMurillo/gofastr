@@ -1,6 +1,7 @@
 package crud
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -269,8 +270,16 @@ func marshalStructToRow(src any) (map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
+	// UseNumber + normalize so an int64 field above 2^53 (a snowflake id
+	// on a typed entity) survives the round trip; a float64 decode here
+	// is the same silent-rounding bug the HTTP body path refuses.
+	dec := json.NewDecoder(bytes.NewReader(b))
+	dec.UseNumber()
 	var m map[string]any
-	if err := json.Unmarshal(b, &m); err != nil {
+	if err := dec.Decode(&m); err != nil {
+		return nil, err
+	}
+	if _, err := normalizeJSONNumbers(m); err != nil {
 		return nil, err
 	}
 	return casing.MapToSnake(m), nil
@@ -301,6 +310,12 @@ func (q *TypedQuery[T]) UpdateAll(ctx context.Context, fields map[string]any) (i
 	}
 	if len(fields) == 0 {
 		return 0, fmt.Errorf("UpdateAll: no fields to set")
+	}
+	// Same integer-exactness gate as the HTTP update path: a host map
+	// carrying a float64 (decoded elsewhere from JSON) must not silently
+	// round an Int column above 2^53.
+	if err := q.handler.coerceIntColumnValues(fields); err != nil {
+		return 0, err
 	}
 	ub := query.Update(q.handler.Entity.GetTable())
 	for k, v := range fields {

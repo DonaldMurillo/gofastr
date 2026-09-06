@@ -957,6 +957,20 @@ func packParseFile(path string) (*ast.File, error) {
 	return parser.ParseFile(fset, path, nil, 0)
 }
 
+// rootReadDirEntries lists the entries of rel (a slash path relative to
+// root, or ".") through the root's own directory handle: unlike
+// os.ReadDir on a joined path, the walk cannot leave root (2026-09-05
+// red-probe round; the walks used to enumerate names and then parse
+// filepath.Join-ed leaves, which follows a symlink out of the project).
+func rootReadDirEntries(root *os.Root, rel string) ([]os.DirEntry, error) {
+	dir, err := root.Open(rel)
+	if err != nil {
+		return nil, err
+	}
+	defer dir.Close()
+	return dir.ReadDir(-1)
+}
+
 // funcBody returns the statements of the named top-level func, or nil.
 func funcBody(file *ast.File, name string) []ast.Stmt {
 	for _, d := range file.Decls {
@@ -1166,11 +1180,15 @@ func relationTypeFromConstName(name string) framework.RelationType {
 //
 // Returns nil (not an error) when there is no entities package.
 func packReadEntities(dir string) ([]framework.EntityDeclaration, error) {
-	entDir := filepath.Join(dir, "entities")
-	if _, err := os.Stat(entDir); err != nil {
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		return nil, nil // no project dir
+	}
+	defer root.Close()
+	if _, err := root.Stat("entities"); err != nil {
 		return nil, nil // no entities package
 	}
-	decls, err := packReadPerEntityFiles(entDir)
+	decls, err := packReadPerEntityFiles(root, "entities")
 	if err != nil {
 		return nil, err
 	}
@@ -1178,15 +1196,18 @@ func packReadEntities(dir string) ([]framework.EntityDeclaration, error) {
 		return decls, nil
 	}
 	// Legacy aggregated layout: inline RegisterAll in register.go.
-	return packReadLegacyRegister(filepath.Join(entDir, "register.go"))
+	return packReadLegacyRegister(root, "entities/register.go")
 }
 
-// packReadPerEntityFiles reads the per-entity generated files and returns the
-// declarations in declaration order. Returns (nil, nil) when the package uses
-// the legacy aggregated layout (no per-entity register funcs found), so the
-// caller falls back to register.go.
-func packReadPerEntityFiles(entDir string) ([]framework.EntityDeclaration, error) {
-	entries, err := os.ReadDir(entDir)
+// packReadPerEntityFiles reads the per-entity generated files under the
+// project root and returns the declarations in declaration order. The
+// walk and every leaf read go through the *os.Root, so a symlinked leaf
+// pointing outside the project is skipped, never parsed (2026-09-05
+// red-probe round). Returns (nil, nil) when the package uses the legacy
+// aggregated layout (no per-entity register funcs found), so the caller
+// falls back to register.go.
+func packReadPerEntityFiles(root *os.Root, entRel string) ([]framework.EntityDeclaration, error) {
+	entries, err := rootReadDirEntries(root, entRel)
 	if err != nil {
 		return nil, err
 	}
@@ -1201,10 +1222,14 @@ func packReadPerEntityFiles(entDir string) ([]framework.EntityDeclaration, error
 		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".go") || skip[entry.Name()] {
 			continue
 		}
-		path := filepath.Join(entDir, entry.Name())
-		file, err := packParseFile(path)
-		if err != nil {
-			return nil, fmt.Errorf("parse %s: %w", path, err)
+		rel := entRel + "/" + entry.Name()
+		src, rerr := root.ReadFile(rel)
+		if rerr != nil {
+			continue // unreadable leaf (e.g. symlink outside the root): skip
+		}
+		file, perr := parser.ParseFile(token.NewFileSet(), rel, src, 0)
+		if perr != nil {
+			return nil, fmt.Errorf("parse %s: %w", rel, perr)
 		}
 		call, ok := packFindEntityCall(file)
 		if !ok {
@@ -1388,15 +1413,18 @@ func packEntityDeclFromCall(call *ast.CallExpr) framework.EntityDeclaration {
 }
 
 // packReadLegacyRegister reads the legacy aggregated register.go whose
-// RegisterAll body is the app.Entity calls in declaration order. Returns
-// (nil, nil) when register.go is absent.
-func packReadLegacyRegister(path string) ([]framework.EntityDeclaration, error) {
-	if _, err := os.Stat(path); err != nil {
-		return nil, nil // no entities package
-	}
-	file, err := packParseFile(path)
+// RegisterAll body is the app.Entity calls in declaration order. Reads
+// go through the project *os.Root; a register.go reachable only via a
+// symlink outside the root counts as absent. Returns (nil, nil) when
+// register.go is absent.
+func packReadLegacyRegister(root *os.Root, rel string) ([]framework.EntityDeclaration, error) {
+	src, err := root.ReadFile(rel)
 	if err != nil {
-		return nil, fmt.Errorf("parse %s: %w", path, err)
+		return nil, nil // no register.go (or unreachable through the root)
+	}
+	file, err := parser.ParseFile(token.NewFileSet(), rel, src, 0)
+	if err != nil {
+		return nil, fmt.Errorf("parse %s: %w", rel, err)
 	}
 	var out []framework.EntityDeclaration
 	for _, stmt := range funcBody(file, "RegisterAll") {
@@ -1890,15 +1918,30 @@ func packReadScreens(dir string) ([]BlueprintScreen, error) {
 }
 
 // packReadPerScreenFiles reads the per-screen generated files (screen_*.go)
-// and returns the authored screens in declaration order. Returns (nil, nil)
-// when the project uses the legacy aggregated layout (no screen_*.go files),
-// so the caller falls back to packReadLegacyScreens.
+// and returns the authored screens in declaration order. The walk and every
+// leaf read go through an *os.Root over dir, so a symlinked leaf pointing
+// outside the project is skipped, never parsed (2026-09-05 red-probe round;
+// same walk shape as packReadPerEntityFiles). Returns (nil, nil) when the
+// project uses the legacy aggregated layout (no screen_*.go files), so the
+// caller falls back to packReadLegacyScreens.
 func packReadPerScreenFiles(dir string) ([]BlueprintScreen, error) {
-	entries, err := os.ReadDir(dir)
+	root, err := os.OpenRoot(dir)
 	if err != nil {
 		return nil, nil // no output dir yet
 	}
-	var screenPaths []string
+	defer root.Close()
+	entries, err := rootReadDirEntries(root, ".")
+	if err != nil {
+		return nil, nil // no output dir yet
+	}
+	parseRoot := func(rel string) (*ast.File, error) {
+		src, rerr := root.ReadFile(rel)
+		if rerr != nil {
+			return nil, rerr
+		}
+		return parser.ParseFile(token.NewFileSet(), rel, src, 0)
+	}
+	var screenNames []string
 	for _, e := range entries {
 		name := e.Name()
 		if e.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
@@ -1910,26 +1953,26 @@ func packReadPerScreenFiles(dir string) ([]BlueprintScreen, error) {
 		if name == "screen_shared.go" || !strings.HasPrefix(name, "screen_") {
 			continue
 		}
-		screenPaths = append(screenPaths, filepath.Join(dir, name))
+		screenNames = append(screenNames, name)
 	}
-	if len(screenPaths) == 0 {
+	if len(screenNames) == 0 {
 		return nil, nil
 	}
 	// Helpers (package-local zero-arg fns returning one expr) may live in
 	// app.go or any screen file; index them all so reverseEntityResource can
 	// follow one hop when a screen body calls a shared helper.
 	helperFiles := []*ast.File{}
-	if appFile, err := packParseFile(filepath.Join(dir, "app.go")); err == nil {
+	if appFile, aerr := parseRoot("app.go"); aerr == nil {
 		helperFiles = append(helperFiles, appFile)
 	}
 	titles := map[string]string{}
 	descs := map[string]string{}
 	bodies := map[string][]BlueprintBlock{}
 	var orderedRegs []screenOrderReg
-	for _, path := range screenPaths {
-		file, err := packParseFile(path)
-		if err != nil {
-			return nil, fmt.Errorf("parse %s: %w", path, err)
+	for _, name := range screenNames {
+		file, perr := parseRoot(name)
+		if perr != nil {
+			continue // unreadable leaf (symlink outside the root) or unparsable: skip
 		}
 		helperFiles = append(helperFiles, file)
 		fnDecls := map[string]*ast.FuncDecl{}
@@ -1955,8 +1998,8 @@ func packReadPerScreenFiles(dir string) ([]BlueprintScreen, error) {
 	}
 	helpers := packHelperReturns(helperFiles...)
 	// Render bodies need the helpers map; rescan now that helpers are known.
-	for _, path := range screenPaths {
-		file, _ := packParseFile(path)
+	for _, name := range screenNames {
+		file, _ := parseRoot(name)
 		if file == nil {
 			continue
 		}

@@ -8,12 +8,15 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
 // ----- Set-Cookie / Authorization stripped from cache -----------------------
@@ -716,6 +719,41 @@ func TestIdemShardAmbiguousUnderNULPrincipal(t *testing.T) {
 	}
 }
 
+// ----- fingerprint injectivity under NUL -----------------------------------
+//
+// Property (gofastrcompositekey, the field-tuple twin of the shard fix
+// above): the fingerprint's field stream must be injective — two
+// DIFFERENT field tuples must never hash to the same digest. The
+// pre-fix shape NUL-joined the fields, so a NUL carried in one field
+// (the path from %00, the raw body, a NUL-bearing principal) shifted
+// the field boundary and collided two different requests:
+// ("a\x00b","c") and ("a","b\x00c") both folded to "a\x00b\x00c", and
+// under one Idempotency-Key the second request replayed the first's
+// cached response.
+func TestIdemFingerprintInjectiveUnderNUL(t *testing.T) {
+	// A NUL method cannot travel through httptest.NewRequest (the
+	// constructor rejects it), so the forged requests are built by
+	// hand; requestFingerprint only reads Method, URL, and Header.
+	req := func(method string) *http.Request {
+		u, err := url.Parse("/pay")
+		if err != nil {
+			t.Fatalf("parse target: %v", err)
+		}
+		return &http.Request{Method: method, URL: u, Header: http.Header{}}
+	}
+	r1 := req("c")
+	r2 := req("b\x00c")
+	if requestFingerprint(r1, nil, "a\x00b") == requestFingerprint(r2, nil, "a") {
+		t.Fatalf("SECURITY: [idem-fingerprint] distinct (principal, method) tuples (\"a\\x00b\",\"c\") and (\"a\",\"b\\x00c\") hash to the same fingerprint: a NUL in one field shifts the pre-fix NUL-join's field boundary, so the second request replays the first's cached response under the same Idempotency-Key")
+	}
+	// Stability: identical tuples must keep hashing equal, or every
+	// in-flight claim would 422 its own retry.
+	r3 := req("c")
+	if requestFingerprint(r1, nil, "a\x00b") != requestFingerprint(r3, nil, "a\x00b") {
+		t.Fatal("identical field tuples produced different fingerprints")
+	}
+}
+
 // ----- Finish-failure log sink ----------------------------------------------
 //
 // Property (same family as TestLogSinksScrubAndBound): a request-derived
@@ -749,7 +787,7 @@ func TestIdempotencyFinishLogKeyScrubbed(t *testing.T) {
 		req.Header.Set("X-Caller", "u1")
 		req.Header.Set(IdempotencyKeyHeader, key)
 		srv.ServeHTTP(httptest.NewRecorder(), req)
-		if got := sink.get("key"); strings.ContainsAny(got, c0AndDelSet) {
+		if got := sink.get("key"); textsafe.ContainsUnsafe(got) {
 			t.Errorf("raw Idempotency-Key logged on Finish failure: %q", got)
 		}
 	}

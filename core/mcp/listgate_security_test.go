@@ -555,7 +555,7 @@ func TestPanickingGateFailsClosedEverywhere(t *testing.T) {
 	t.Run("notification delivery", func(t *testing.T) {
 		s := NewServer()
 		s.SetGate(func(context.Context) error { panic("gate boom") })
-		sub := s.addSSESubscriber(context.Background())
+		sub, _ := s.addSSESubscriber(context.Background(), "test")
 		defer s.removeSSESubscriber(sub)
 		panicked, ok := func() (panicked, ok bool) {
 			defer func() {

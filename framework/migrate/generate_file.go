@@ -46,7 +46,9 @@ type MigrationFileOptions struct {
 // SaveSnapshot primitives.
 //
 // Returns the written file path. An empty path (nil error) means the schema is
-// already current. Nothing was written.
+// already current — or, after a crash between the file write and the snapshot
+// save, that the last committed migration already carries this delta: the
+// re-run recognizes it by content, repairs the snapshot, and writes nothing.
 func GenerateMigrationFile(plan Plan, name string, opts MigrationFileOptions) (string, error) {
 	// Validate the group before writing anything: an invalid name would be
 	// stamped into a directive the runner then refuses, leaving a committed
@@ -79,11 +81,28 @@ func GenerateMigrationFile(plan Plan, name string, opts MigrationFileOptions) (s
 	if err := os.MkdirAll(opts.MigrationsDir, 0o755); err != nil {
 		return "", fmt.Errorf("create %s: %w", opts.MigrationsDir, err)
 	}
+
+	// Crash reconcile: writing the migration file and saving the snapshot are
+	// two steps, and a crash (or a failed SaveSnapshot — the same on-disk
+	// state) between them leaves the delta committed as migration N next to a
+	// stale snapshot. A re-run regenerates the SAME delta from the stale
+	// snapshot and would mint it again as N+1 — a duplicate whose Up can
+	// never apply cleanly (its CREATE TABLE hits the table N just made) and
+	// marks the database dirty mid-deploy. Detect the state by content: when
+	// the LAST committed migration's Up and Down sections match this delta,
+	if lastUp, lastDown, ok := lastCommittedSections(opts.MigrationsDir); ok &&
+		strings.TrimSpace(lastUp) == strings.TrimSpace(up) &&
+		strings.TrimSpace(lastDown) == strings.TrimSpace(down) {
+		if err := SaveSnapshot(snapPath, next); err != nil {
+			return "", fmt.Errorf("snapshot repair failed (migration already committed): %w", err)
+		}
+		return "", nil
+	}
+
 	version := nextMigrationVersion(opts.MigrationsDir)
 	slug := sanitizeMigrationName(name)
 	filename := fmt.Sprintf("%04d_%s.sql", version, slug)
 	path := filepath.Join(opts.MigrationsDir, filename)
-
 	content, err := RenderMigrationFileChecked(version, slug, up, down)
 	if err != nil {
 		return "", err
@@ -162,6 +181,72 @@ func nextMigrationVersion(dir string) uint64 {
 		}
 	}
 	return max + 1
+}
+
+// lastCommittedSections parses the highest-versioned NNNN_*.sql file in dir —
+// the last committed migration — and returns its Up and Down section bodies.
+// ok is false when the directory holds no migration file or the file has no
+// Up directive; reconcile then simply does not fire and generation proceeds.
+func lastCommittedSections(dir string) (up, down string, ok bool) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return "", "", false
+	}
+	var best uint64
+	var bestName string
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".sql") {
+			continue
+		}
+		prefix := e.Name()
+		if i := strings.IndexByte(prefix, '_'); i > 0 {
+			prefix = prefix[:i]
+		}
+		v, err := strconv.ParseUint(prefix, 10, 64)
+		if err != nil || v < best || (v == best && e.Name() <= bestName && bestName != "") {
+			continue
+		}
+		best, bestName = v, e.Name()
+	}
+	if bestName == "" {
+		return "", "", false
+	}
+	data, err := os.ReadFile(filepath.Join(dir, bestName))
+	if err != nil {
+		return "", "", false
+	}
+	return parseMigrationSections(string(data))
+}
+
+// parseMigrationSections extracts the Up and Down bodies from a rendered
+// `-- +migrate` file: everything after the "-- +migrate Up" line up to the
+// next "-- +migrate" directive or EOF. A Group directive stamped above Up is
+// skipped; the Version/Name header directives never open a section. ok is
+// false when the content has no Up directive at all.
+func parseMigrationSections(content string) (up, down string, ok bool) {
+	if !strings.Contains(content, "-- +migrate Up") {
+		return "", "", false
+	}
+	var cur *string
+	for _, ln := range strings.Split(content, "\n") {
+		trimmed := strings.TrimSpace(ln)
+		if strings.HasPrefix(trimmed, "-- +migrate") {
+			switch trimmed {
+			case "-- +migrate Up":
+				cur = &up
+			case "-- +migrate Down":
+				cur = &down
+			default:
+				cur = nil
+			}
+			continue
+		}
+		if cur != nil {
+			*cur += ln
+			*cur += "\n"
+		}
+	}
+	return up, down, true
 }
 
 // sanitizeMigrationName lower-cases and replaces non-alphanumeric runs with a

@@ -75,6 +75,18 @@ func (d *ImageDerivatives) Validate() error {
 			return fmt.Errorf("%w: variant %d storage_ref contains %#x at offset %d",
 				ErrFileFieldControlBytes, i, v.StorageRef[idx], idx)
 		}
+		// Same seam as FileField.Validate's forged-rune gate: the C1
+		// controls and the zero-width/bidi set are multi-byte runes a
+		// C0 byte scan cannot see, and a variant ref is rendered in
+		// <img src>/srcset just like the primary URL.
+		if r, off := indexForgedRune(v.StorageRef); off >= 0 {
+			return fmt.Errorf("%w: variant %d storage_ref contains invisible or bidi rune U+%04X at offset %d",
+				ErrFileFieldControlBytes, i, r, off)
+		}
+		if r, off := indexForgedRune(v.MIME); off >= 0 {
+			return fmt.Errorf("%w: variant %d mime contains invisible or bidi rune U+%04X at offset %d",
+				ErrFileFieldControlBytes, i, r, off)
+		}
 		if idx := indexControlByte(v.MIME); idx >= 0 {
 			return fmt.Errorf("%w: variant %d mime contains %#x at offset %d",
 				ErrFileFieldControlBytes, i, v.MIME[idx], idx)

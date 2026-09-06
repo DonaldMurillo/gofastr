@@ -392,6 +392,7 @@ func parseScalar(raw string, line, column, depth int) (*Node, error) {
 	if i, err := strconv.ParseInt(raw, 10, 64); err == nil {
 		return &Node{Kind: Scalar, Value: i, Line: line, Column: column}, nil
 	}
+	//gofastr:allow(nonfinite) YAML permits .inf/.nan scalar literals; the parser preserves the float and consumers validate it, this is not a bound check.
 	if f, err := strconv.ParseFloat(raw, 64); err == nil && strings.ContainsAny(raw, ".eE") {
 		return &Node{Kind: Scalar, Value: f, Line: line, Column: column}, nil
 	}

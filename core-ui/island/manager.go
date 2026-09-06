@@ -102,12 +102,16 @@ func WithSSEHeartbeat(d time.Duration) ManagerOption {
 
 // WithSSEStreamBound sets the maximum lifetime of a single SSE stream
 // (default DefaultSSEStreamBound = 5m). A stream is closed after this
-// duration even when its heartbeat writes keep succeeding into the kernel
-// buffer, the safety net that reclaims a stream stranded by a peer the
-// server cannot observe as gone (which otherwise exhausts the browser's
-// per-origin connection pool). EventSource reconnects automatically on a live
-// stream. The bound must exceed the heartbeat interval; a non-positive or
-// sub-heartbeat value restores the default. See issue #159.
+// duration even when its heartbeat writes keep succeeding into the
+// kernel buffer, the safety net that reclaims a stream stranded by a
+// peer the server cannot observe as gone (which otherwise exhausts the
+// browser's per-origin connection pool). EventSource reconnects automatically on a
+// live stream. The bound must exceed the heartbeat interval; a non-positive or
+// sub-heartbeat value restores the default (NewManager enforces the pair
+// invariant regardless of option order — a heartbeat raised above the
+// effective bound lifts the bound to heartbeat+DefaultSSEStreamBound, so
+// every stream still gets its keepalive writes before the bound reclaims
+// it). See issue #159.
 func WithSSEStreamBound(d time.Duration) ManagerOption {
 	return func(m *Manager) {
 		if d > 0 {
@@ -253,8 +257,9 @@ func (m *Manager) topicAuthorizer() func(context.Context, string) bool {
 }
 
 // NewManager creates a new island manager. Options override the default
-// concurrent-SSE-stream caps (see WithStreamCaps); the defaults already bound
-// one replica, so most callers pass nothing.
+// concurrent-SSE-stream caps (see WithStreamCaps) and the SSE
+// keepalive/lifetime pair (see WithSSEHeartbeat / WithSSEStreamBound);
+// the defaults already bound one replica, so most callers pass nothing.
 func NewManager(opts ...ManagerOption) *Manager {
 	m := &Manager{
 		streams: make(map[string]*streamEntry),
@@ -267,6 +272,20 @@ func NewManager(opts ...ManagerOption) *Manager {
 	}
 	for _, o := range opts {
 		o(m)
+	}
+	// Order the pair the doc comments promise: the bound must exceed the
+	// heartbeat, or the bound timer reclaims every stream before the
+	// first keepalive write (#159's safety net becomes a stream killer
+	// and each EventSource reconnects once per bound per tab). Options
+	// apply in caller order, so the invariant is enforced once, at the
+	// end of construction: a bound at or below the effective heartbeat
+	// restores the default, and a heartbeat raised above even the
+	// default bound lifts the bound to heartbeat + DefaultSSEStreamBound.
+	if m.sseStreamBound <= m.sseHeartbeat {
+		m.sseStreamBound = DefaultSSEStreamBound
+	}
+	if m.sseStreamBound <= m.sseHeartbeat {
+		m.sseStreamBound = m.sseHeartbeat + DefaultSSEStreamBound
 	}
 	return m
 }

@@ -17,23 +17,25 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/backoff"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
 // MaxPayloadBytes caps webhook payload size. Larger payloads are
 // rejected at Publish time to prevent unbounded queue/memory growth.
 const MaxPayloadBytes = 1 << 20 // 1 MiB
 
-// validateEventName rejects event names that would smuggle CR/LF/NUL
-// or other control characters into outbound headers / persisted rows.
+// validateEventName rejects event names that would smuggle control
+// characters into outbound headers / persisted rows: the full
+// core/textsafe unsafe set — C0, DEL, the C1 block (U+0080–U+009F, whose
+// 8-bit CSI/OSC forms drive terminal escapes exactly like ESC-[, and
+// which Go's header writer happily carries as obs-text), and the
+// zero-width/bidi invisible set.
 func validateEventName(name string) error {
 	if name == "" {
 		return errors.New("webhook: event name required")
 	}
 	for _, r := range name {
-		if r == '\r' || r == '\n' || r == 0 {
-			return fmt.Errorf("webhook: event name contains forbidden control character")
-		}
-		if r < 0x20 || r == 0x7f {
+		if textsafe.IsUnsafe(r) {
 			return fmt.Errorf("webhook: event name contains forbidden control character")
 		}
 	}
@@ -122,6 +124,18 @@ type LeasedStore interface {
 	ClaimDueDeliveries(ctx context.Context, now time.Time, limit int, leasePeriod time.Duration) ([]Delivery, error)
 }
 
+// RetentionSweeper is the optional Store/InboundStore capability the
+// Manager's retention pass (Options.Retention) probes for: implementations
+// delete their own terminal, fully-settled rows older than cutoff and
+// report how many went. Terminal means unambiguous success only —
+// StatusSuccess deliveries and processed envelopes. Dead deliveries and
+// failed envelopes are deliberately out of scope: Replay and post-mortems
+// need the body, so retention is not a dead-letter TTL (the same boundary
+// framework/outbox documents for WithRetention).
+type RetentionSweeper interface {
+	ReapTerminalBefore(ctx context.Context, cutoff time.Time) (int64, error)
+}
+
 // ReplayableStore is the optional Store capability for dead-letter inspection
 // and replay. Both shipped stores (SQLStore, MemoryStore) implement it;
 // Manager.DeadDeliveries / Manager.Replay probe for it so admin tooling can
@@ -206,6 +220,23 @@ type Options struct {
 	SignatureTolerance   time.Duration
 	LeasePeriod          time.Duration
 
+	// Retention, when positive, turns on the manager's terminal-row
+	// sweep: every tick reaps successful deliveries — and processed
+	// inbound envelopes, when InboundStore below is also set — whose
+	// updated_at is older than the window. Zero (the default) keeps
+	// every row forever; this is the outbox-style opt-in, not the queue
+	// battery's default-on. Dead deliveries and failed envelopes are
+	// never reaped (Replay/forensics need the body): retention is not a
+	// dead-letter TTL. A negative value is clamped to zero (off) at
+	// construction.
+	Retention time.Duration
+
+	// InboundStore, when set, is swept by the same retention pass:
+	// processed envelopes older than Options.Retention are reaped from
+	// it on every tick. The Manager reads it for nothing else; wire it
+	// only together with Retention.
+	InboundStore InboundStore
+
 	// Logger receives operational warnings the worker can't surface to a
 	// caller, chiefly a delivery-state UPDATE failing after an attempt. A DB
 	// blip there leaves the row with its pre-attempt status, so the next tick
@@ -269,6 +300,12 @@ func New(s Store, opts Options) *Manager {
 	}
 	if opts.LeasePeriod <= 0 {
 		opts.LeasePeriod = 30 * time.Second
+	}
+	if opts.Retention < 0 {
+		// A negative window can only be a sign or unit error; folding
+		// it on would arm a FUTURE cutoff and silently retain
+		// everything while looking configured. Clamp to off.
+		opts.Retention = 0
 	}
 	if opts.Logger == nil {
 		opts.Logger = log.Printf
@@ -502,6 +539,31 @@ func (m *Manager) tick(ctx context.Context) {
 			return
 		}
 		m.attempt(ctx, d)
+	}
+	m.sweepTerminal(ctx)
+}
+
+// sweepTerminal reaps terminal, fully-settled rows older than the
+// retention window when one is configured. It probes the optional
+// [RetentionSweeper] capability on both the delivery store and the
+// configured inbound store, so stores without reaping (a custom Store
+// from a host) simply keep every row, exactly as before the option
+// existed. Only unambiguous terminal-success rows are ever deleted; see
+// RetentionSweeper for why dead rows stay.
+func (m *Manager) sweepTerminal(ctx context.Context) {
+	if m.opts.Retention <= 0 {
+		return
+	}
+	cutoff := m.nowFn().Add(-m.opts.Retention)
+	if s, ok := m.store.(RetentionSweeper); ok {
+		if _, err := s.ReapTerminalBefore(ctx, cutoff); err != nil {
+			m.logf("webhook: retention sweep of terminal deliveries failed (rows retained): %v", err)
+		}
+	}
+	if s, ok := m.opts.InboundStore.(RetentionSweeper); ok {
+		if _, err := s.ReapTerminalBefore(ctx, cutoff); err != nil {
+			m.logf("webhook: retention sweep of processed envelopes failed (rows retained): %v", err)
+		}
 	}
 }
 

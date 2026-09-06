@@ -325,14 +325,20 @@ handler)` + `ob.StartRelay(ctx)`.
   would let the relay skip it forever (expand only touches `pending`
   parents). **Delivery to consumers is unaffected and prompt**: only the
   parent's `dispatched` bookkeeping (and retention/GC) lags by the grace.
-- **Dead-letter & replay.** A delivery that returns an error **or
-  panics** (the relay reports a panicking consumer as a delivery error
-  rather than swallowing it) increments its `attempts` — relatively, in
-  the settle itself, never from the claim-time snapshot, so two
-  overlapping runners under lease overrun both count — and schedules an
-  exponential backoff. After `MaxAttempts` (default 10) it is marked
-  `dead`. `Replay(rowID)` resets all dead/abandoned deliveries of a row;
-  `ReplayConsumer(rowID, name)` resets one.
+- **Dead-letter & replay.** Every **claim consumes one attempt** in SQL
+  (`attempts = attempts + 1` in the claim UPDATE, the battery/queue and
+  battery/webhook spelling), so a relay that crashes between claim and
+  settle (kill -9, OOM, mid-handler deploy) still burns budget and a
+  claim/crash loop terminates at `MaxAttempts` instead of re-delivering
+  forever; a delivery whose lease expired at an already-spent budget is
+  dead-lettered by the pre-claim sweep, visible and replayable. A
+  delivery that returns an error **or panics** (the relay reports a
+  panicking consumer as a delivery error rather than swallowing it)
+  schedules an exponential backoff; the settle writes state only, never
+  the counter — two overlapping runners under lease overrun both count
+  because both claims counted. After `MaxAttempts` (default 10) the
+  delivery is marked `dead`. `Replay(rowID)` resets all dead/abandoned
+  deliveries of a row; `ReplayConsumer(rowID, name)` resets one.
 - **Removed consumers are abandoned (time-based, not snapshot-based).** A
   delivery whose consumer has no handler on *any* replica is
   `abandoned`, settled terminal so it can't orphan the parent, but only
@@ -366,11 +372,13 @@ handler)` + `ob.StartRelay(ctx)`.
   table under `WithoutEnsureTable`, a renamed table, or a DB outage) it
   keeps polling rather than crashing, and logs once at Error on onset and
   once at Info on recovery.
-- **Data shape.** `Data` is stored as JSON and unmarshalled into a
-  `map[string]any` before delivery, so **`Data` must marshal to a JSON
-  object**, a struct or map. A scalar/array fails to unmarshal and the
-  delivery is retried then marked `dead`; wrap such values in a map.
-  Numbers arrive as `float64` (JSON has no separate integer type).
+- **Data shape.** `Data` is stored as JSON and unmarshalled into `any`
+  before delivery — whatever `Append` accepts and stages inside the
+  business transaction reaches the consumer (objects arrive as
+  `map[string]any`, arrays as `[]any`, scalars as their JSON types),
+  matching the live bus contract; a staged payload can never be an
+  undeliverable poison row. Numbers arrive as `float64` (JSON has no
+  separate integer type).
 - **Table creation.** `WithOutbox` creates its tables on demand at
   `NewApp` time (framework-owned bookkeeping tables;
   `WithoutAutoMigrate` does not suppress them). If your policy forbids
@@ -406,7 +414,9 @@ handler)` + `ob.StartRelay(ctx)`.
   -- separate row_id index is needed.
   CREATE INDEX event_outbox_delivery_claim_idx ON event_outbox_delivery (status, next_attempt_at);
   ```
-- **Multi-replica safe.** The claim takes a lease (`claimed_until`) at
-  the delivery grain, so a relay that dies mid-batch releases only its
-  claimed deliveries after the lease expires and another relay reclaims
-  them. There is no double-processing beyond the at-least-once caveat.
+- **Multi-replica safe.** The claim takes a lease (`claimed_until`) and
+  consumes one attempt (`attempts = attempts + 1`) at the delivery
+  grain, so a relay that dies mid-batch releases only its claimed
+  deliveries after the lease expires and another relay reclaims them,
+  and every claim spent budget toward `MaxAttempts`. There is no
+  double-processing beyond the at-least-once caveat.

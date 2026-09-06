@@ -37,7 +37,11 @@ and the 2FA store still leaves a WARN trace.
 ## What is already replica-safe
 
 - **Migrations**: auto-migrate takes a Postgres advisory lock, so N
-  replicas booting simultaneously run the migration once.
+  replicas booting simultaneously run the migration once. On SQLite the
+  same serialization comes from a leased lock row (`_gofastr_migrate_lock`),
+  the twin of the seed lease below; the versioned runner additionally
+  re-checks the tracking table before applying each migration, so a
+  replica whose read raced a peer converges instead of failing its boot.
 - **Startup seeds**: `RunSeeds` and `WithSeed` hooks acquire a
   DISTINCT Postgres advisory lock (separate from migrations) so N
   booting replicas never race a seed func. Combined with the

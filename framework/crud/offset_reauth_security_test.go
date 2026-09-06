@@ -126,7 +126,6 @@ func TestDecodeJSONBodyReadErrors(t *testing.T) {
 // request has warmed the field cache.
 func TestWireKeyColumnBuildsCacheLazily(t *testing.T) {
 	ch, _ := setupCamelDocsHandler(t)
-	ch.columnOfWire = nil
 	if got := ch.wireKeyColumn("bodyText"); got != "body_text" {
 		t.Fatalf("wireKeyColumn(bodyText) = %q, want body_text", got)
 	}

@@ -44,7 +44,11 @@ type entry struct {
 // NewRegistry returns a Registry that scans the given search paths
 // when Load is called. Paths are searched in order; later paths
 // override earlier ones (project-local overrides global which
-// overrides built-in).
+// overrides built-in). A later path replacing an earlier same-named
+// skill is a SHADOW: precedence is kept, but Load prints a warning to
+// stderr naming both files, because the project directory is untrusted
+// input in a cloned repo and a name-squat puts repo-authored content
+// under a name the operator chose to trust.
 func NewRegistry(searchPaths ...string) *Registry {
 	return &Registry{
 		skills:      make(map[string]*entry),
@@ -75,6 +79,18 @@ func (r *Registry) Load() error {
 			if err != nil {
 				errs = append(errs, fmt.Errorf("%s: %w", path, err))
 				return nil
+			}
+			// Later paths overriding earlier ones is the documented
+			// precedence (project overrides global), and it stays — but a
+			// shadow is no longer SILENT. A cloned checkout can name-squat
+			// an operator-global skill, putting repo-authored name and
+			// description into the system prompt wearing a name the
+			// operator chose to trust; the warning names both files so the
+			// operator can see the swap (Q11: keep precedence, disclose it).
+			if prev, exists := r.skills[s.Name]; exists && prev.path != path {
+				fmt.Fprintf(os.Stderr,
+					"skill: warning: %q from %s shadows the same-named skill from %s; the later path wins — verify both before trusting it\n",
+					s.Name, path, prev.path)
 			}
 			r.skills[s.Name] = &entry{
 				tier1:    s.Tier1(),

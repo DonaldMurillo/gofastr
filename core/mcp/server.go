@@ -59,6 +59,15 @@ type Tool struct {
 	// contract the tool author owns: the declared schema stops being
 	// enforced, not merely described.
 	LaxArgs bool `json:"-"`
+
+	// devImplied records that the tool exists only because a dev-mode
+	// implication turned it on (a dev loop enabling entity write tools or
+	// a battery's mutation surface), not because the host opted in. Set
+	// with WithDevImplied; read by UnregisterDevImpliedTools, which the
+	// framework's bind guard calls when the listener is not loopback.
+	// Deliberately unexported: it is wiring metadata between registrar
+	// and withdrawer, never a property clients see or set.
+	devImplied bool
 }
 
 // ToolOption customizes a tool at registration time.
@@ -85,6 +94,18 @@ func WithToolMeta(meta map[string]any) ToolOption {
 // Tool.LaxArgs.
 func WithLaxArgs() ToolOption {
 	return func(t *Tool) { t.LaxArgs = true }
+}
+
+// WithDevImplied marks a tool as existing only because a dev-mode
+// implication turned it on — the dev loop enabling an entity's write tools,
+// or a battery's mutation surface implied by GOFASTR_DEV — rather than an
+// explicit host opt-in. Such tools are UNGATED by design (the dev loop has
+// no auth to satisfy) and are therefore only safe on a loopback listener;
+// the framework's bind guard withdraws exactly the marked set via
+// UnregisterDevImpliedTools once the listen address is known. An explicit
+// opt-in never marks its tools, so it is never withdrawn by that path.
+func WithDevImplied() ToolOption {
+	return func(t *Tool) { t.devImplied = true }
 }
 
 // WithToolGate attaches a per-caller precondition to a tool. The gate runs on
@@ -146,6 +167,12 @@ type Server struct {
 	// registered them. Nil = no-op.
 	registerHook func(toolName string)
 
+	// devImpliedBarred, once set by UnregisterDevImpliedTools, makes every
+	// LATER RegisterTool carrying WithDevImplied a no-op (logged). The
+	// bind guard runs before Start's InitPlugins, so batteries register
+	// their dev-implied tools after the withdrawal; without the bar they
+	// would reintroduce the exposed-bind surface post-guard.
+	devImpliedBarred bool
 	// callGate, when set, is checked in callTool right after getTool.
 	// A non-nil error blocks the handler and returns a JSON-RPC error
 	// result without invoking the tool. Framework code uses it to gate
@@ -193,6 +220,14 @@ type Server struct {
 	// positive. Connection-agnostic by transport necessity: there is no
 	// session id linking a POST to a GET stream.
 	resourceSubs map[string]int
+	// SSE subscriber seat policy (seats.go): how many concurrent
+	// notification streams one caller may hold, and what happens past
+	// the cap. sseSeatOrder is the per-caller FIFO the EvictOldest
+	// policy pops and removeSSESubscriber splices; it shadows sseSubs
+	// and is guarded by the same sseMu.
+	sseSeatCap      int
+	sseSeatOverflow SeatOverflowPolicy
+	sseSeatOrder    map[string][]*sseSubscriber
 }
 
 // NewServer creates a new MCP server with an empty tool registry.
@@ -203,6 +238,7 @@ func NewServer() *Server {
 		version:      "1.0.0",
 		listPageSize: defaultListPageSize,
 		sseSubs:      make(map[*sseSubscriber]struct{}),
+		sseSeatOrder: make(map[string][]*sseSubscriber),
 		resourceSubs: make(map[string]int),
 	}
 }
@@ -252,9 +288,6 @@ func (s *Server) SetCallGate(fn func(toolName string) error) {
 	defer s.mu.Unlock()
 	s.callGate = fn
 }
-
-// RegisterTool adds a tool to the server's registry.
-// Returns an error if a tool with the same name already exists.
 func (s *Server) RegisterTool(name, description string, inputSchema map[string]any, fn ToolHandler, opts ...ToolOption) error {
 	if name == "" {
 		return fmt.Errorf("mcp: tool name must not be empty")
@@ -274,6 +307,20 @@ func (s *Server) RegisterTool(name, description string, inputSchema map[string]a
 	}
 
 	s.mu.Lock()
+
+	if tool.devImplied && s.devImpliedBarred {
+		// A bind guard already withdrew the dev-implied set BEFORE this
+		// registrar ran (Start guards the bind before it inits
+		// plugins). Registering now would reintroduce, post-guard,
+		// exactly the exposed-bind surface the guard removed — so the
+		// registration is dropped instead. Not an error: a dev app on a
+		// non-loopback bind must still boot, minus its ungated
+		// dev-implied tools.
+		s.mu.Unlock()
+		slog.Warn("mcp: dev-implied tool not registered: listener is not loopback",
+			slog.String("tool", name))
+		return nil
+	}
 
 	if _, exists := s.tools[name]; exists {
 		s.mu.Unlock()
@@ -329,6 +376,54 @@ func (s *Server) UnregisterTool(name string) bool {
 		itemGate: tool.Gate,
 	})
 	return true
+}
+
+// UnregisterDevImpliedTools removes every tool registered with
+// WithDevImplied and returns the withdrawn names in name order (empty
+// when nothing was marked — the common case for apps that never ran the
+// dev implication). It is the set-shaped twin of UnregisterTool: dev-implied
+// tools (entity write tools, a battery's implied mutation, the contract
+// dev tools that write to disk) register ungated across InitPlugins and
+// entity registration, but whether they may be SERVED depends on the
+// listen address, which is not known until Start — after every registrar
+// has already run. The bind guard therefore withdraws the whole marked set
+// at once instead of each feature re-deriving its own list, which is how
+// the exposed-bind hole this closes was born: one feature remembered to
+// withdraw, the others did not.
+func (s *Server) UnregisterDevImpliedTools() []string {
+	type withdrawn struct {
+		name string
+		gate func(ctx context.Context) error
+	}
+	s.mu.Lock()
+	// Bar future registrations too: the bind guard runs before Start's
+	// InitPlugins, so battery-registered dev-implied tools arrive after
+	// this sweep and must not reintroduce what it removed.
+	s.devImpliedBarred = true
+	var out []withdrawn
+	for name, tool := range s.tools {
+		if tool.devImplied {
+			delete(s.tools, name)
+			out = append(out, withdrawn{name: name, gate: tool.Gate})
+		}
+	}
+	s.mu.Unlock()
+	if len(out) == 0 {
+		return nil
+	}
+	slices.SortFunc(out, func(a, b withdrawn) int { return strings.Compare(a.name, b.name) })
+	names := make([]string, len(out))
+	for i, w := range out {
+		names[i] = w.name
+		// Same re-list notification a registration (or UnregisterTool)
+		// sends, carrying the same gate: a caller who could never see
+		// the tool must not be told it went away either.
+		s.notifySubscribers(sseNotification{
+			method:   "notifications/tools/list_changed",
+			itemGate: w.gate,
+		})
+	}
+	return names
 }
 
 // getTool returns a tool by name. The bool indicates whether it was found.
@@ -598,9 +693,18 @@ func (s *Server) callTool(ctx context.Context, name string, params map[string]an
 		if rpcErr, ok := errors.AsType[*RPCError](err); ok {
 			return nil, rpcErr
 		}
+		// A plain error is internal detail (filesystem paths, driver
+		// and DSN text, internal hostnames) and must not cross the
+		// transport — the same posture invokeHandler's panic path
+		// takes. Log it server-side and answer the generic message.
+		// The caller-visible failure channel a handler owns is
+		// mcp.ToolResult{IsError: true} or a deliberate *RPCError.
+		slog.Error("mcp: tool handler failed",
+			slog.String("tool", name),
+			slog.String("err", err.Error()))
 		return nil, &RPCError{
 			Code:    ErrInternalError,
-			Message: err.Error(),
+			Message: "internal tool error",
 		}
 	}
 	return result, nil

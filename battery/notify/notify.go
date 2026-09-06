@@ -39,6 +39,7 @@ import (
 	"sync"
 
 	"github.com/DonaldMurillo/gofastr/battery/email"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
 // Notification is one event-shaped message bound for a single
@@ -393,11 +394,11 @@ func (m *MapTemplater) Set(notifType, channel string, t Template) {
 	m.mu.Unlock()
 }
 
-// Render implements Templater.
-//
-// The rendered Subject is stripped of CR / LF / NUL so a user-controlled
-// {{placeholder}} can't inject header continuations when downstream
-// transports (SMTP, push providers) treat Subject as a header value.
+// The rendered Subject is stripped of the codepoints that break a header
+// (C0 controls, DEL) and the ones that spoof its display (C1 controls,
+// zero-width/bidi) — see stripHeaderUnsafe — so a user-controlled
+// {{placeholder}} can neither inject header continuations nor reorder
+// what downstream transports (SMTP, push providers) render.
 //
 // HTMLBody is HTML-escaped at the interpolation sink (2026-09-04
 // red-probe round 3): every placeholder VALUE is passed through
@@ -426,23 +427,24 @@ func (m *MapTemplater) Render(_ context.Context, notifType, channel string, data
 	}, nil
 }
 
-// stripHeaderUnsafe drops the three bytes that turn a single-line
-// header value into a multi-line injection vector (CR, LF, NUL).
+// stripHeaderUnsafe drops every codepoint that can break or spoof a
+// header value: C0 controls (the CR/LF/NUL line-injection set and the
+// rest of the range), DEL, the C1 control block, and the zero-width /
+// bidi invisible set. The invisible half is display spoofing, not line
+// breaking: a U+202E in a rendered subject reverses its tail in every
+// MUA and push title, inside a trusted first-party notification.
+// core/textsafe owns the predicate; the fast path returns s unchanged
+// when it is already clean.
 func stripHeaderUnsafe(s string) string {
-	if !strings.ContainsAny(s, "\r\n\x00") {
+	if !strings.ContainsFunc(s, textsafe.IsUnsafe) {
 		return s
 	}
-	var b strings.Builder
-	b.Grow(len(s))
-	for i := range len(s) {
-		switch s[i] {
-		case '\r', '\n', 0x00:
-			continue
-		default:
-			b.WriteByte(s[i])
+	return strings.Map(func(r rune) rune {
+		if textsafe.IsUnsafe(r) {
+			return -1
 		}
-	}
-	return b.String()
+		return r
+	}, s)
 }
 
 // MaxInterpolatedOutputBytes is the hard cap on the output of a single

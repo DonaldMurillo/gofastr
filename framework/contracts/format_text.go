@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
 // TextOptions tunes the human report.
@@ -304,15 +306,18 @@ func FormatExplain(r Rule, color bool) string {
 }
 
 // sanitizeText strips the raw control bytes repo content can carry (a
-// rule reference, a source snippet, a file name) out of report text. An
-// ESC reaching the terminal is escape-injection into the operator running
-// `gofastr verify` on a hostile PR; NUL and VT corrupt framing the same
-// way. Newline and tab stay: they are ordinary formatting. Applied at the
-// FormatText print boundary so repo-derived strings cannot reach the
-// terminal raw.
+// rule reference, a source snippet, a file name) out of report text: the
+// C0/DEL range plus the 8-bit C1 block (U+009B drives CSI with no ESC
+// prefix) and the invisible/bidi set (RLO, isolators, zero-width, BOM),
+// per core/textsafe (2026-09-05 red-probe round). An ESC or override
+// reaching the terminal is escape-injection or display reordering into
+// the operator running `gofastr verify` on a hostile PR; NUL and VT
+// corrupt framing the same way. Newline and tab stay: they are ordinary
+// formatting. Applied at the FormatText print boundary so repo-derived
+// strings cannot reach the terminal raw.
 func sanitizeText(s string) string {
 	return strings.Map(func(r rune) rune {
-		if (r < 0x20 && r != '\n' && r != '\t') || r == 0x7f {
+		if r != '\n' && r != '\t' && textsafe.IsUnsafe(r) {
 			return -1
 		}
 		return r

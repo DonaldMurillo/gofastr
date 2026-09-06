@@ -40,6 +40,9 @@ func (ch *CrudHandler) doCreate(ctx context.Context, r *http.Request, body map[s
 	if err := ch.validateMediaURLs(body); err != nil {
 		return nil, err
 	}
+	if err := ch.coerceIntColumnValues(body); err != nil {
+		return nil, err
+	}
 
 	vr := schema.ValidateAll(ch.entitySchema(), body)
 	if !vr.Valid {
@@ -150,6 +153,9 @@ func (ch *CrudHandler) doUpdate(ctx context.Context, r *http.Request, id string,
 	// Missing fields aren't treated as "required" violations because the
 	// existing row already satisfies them; the UPDATE only touches the
 	// columns present in the body.
+	if err := ch.coerceIntColumnValues(body); err != nil {
+		return nil, err
+	}
 	vr := schema.ValidatePartial(ch.entitySchema(), body)
 	if !vr.Valid {
 		return nil, &ValidationError{fields: vr.Errors}

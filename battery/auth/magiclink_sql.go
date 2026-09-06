@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/query"
@@ -19,10 +20,29 @@ import (
 // Schema (created on construction): a table with a TEXT primary-key token, the
 // associated email, and an expiry stored as a unix timestamp (portable across
 // SQLite and Postgres without time-format ambiguity).
+//
+// Anonymous writes mint rows: every POST /auth/magic-link/send,
+// /auth/forgot-password or /auth/verify-email request stores a token whether
+// or not it is ever redeemed, so the mint path reaps expired rows itself
+// (amortized, magicLinkSweepInterval) instead of relying on a host-run
+// Cleanup that nothing schedules — the SQLRateLimitStore.Allow posture.
 type SQLMagicLinkTokenStore struct {
 	db    *sql.DB
 	table string
+
+	// sweepMu + lastSweep amortize the expired-row sweep on the mint
+	// path: at most one DELETE per magicLinkSweepInterval, shared by
+	// every replica that talks to the same database only in the sense
+	// that each keeps its own timer (the DELETE is idempotent, an
+	// over-eager sweep costs one extra statement, never a lost token).
+	sweepMu   sync.Mutex
+	lastSweep time.Time
 }
+
+// magicLinkSweepInterval is how often the mint path reaps expired rows.
+// It matches the default TokenTTL (15 minutes): the longest an abandoned
+// row lingers after any later mint is one TTL window.
+const magicLinkSweepInterval = 15 * time.Minute
 
 // NewSQLMagicLinkTokenStore creates the token table (IF NOT EXISTS) and returns
 // the store. Pass an optional table name; defaults to "magic_link_tokens".
@@ -64,7 +84,21 @@ func (s *SQLMagicLinkTokenStore) DeleteTokensForPayload(ctx context.Context, pay
 
 // CreateToken generates a cryptographically random token, persists it with the
 // email and TTL, and returns it.
+//
+// Every mint also reaps expired rows, at most once per
+// magicLinkSweepInterval: this table's growth surface is anonymous
+// requests (magic-link send, password reset, email verification), so the
+// write path owns its own garbage collection. The sweep runs AFTER the
+// insert, so an already-expired row (ttl <= 0, the shape tests use to
+// mint staleness) is swept by its own mint too.
 func (s *SQLMagicLinkTokenStore) CreateToken(ctx context.Context, email string, ttl time.Duration) (string, error) {
+	s.sweepMu.Lock()
+	sweep := time.Since(s.lastSweep) >= magicLinkSweepInterval
+	if sweep {
+		s.lastSweep = time.Now()
+	}
+	s.sweepMu.Unlock()
+
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
 		return "", fmt.Errorf("generate token: %w", err)
@@ -73,6 +107,13 @@ func (s *SQLMagicLinkTokenStore) CreateToken(ctx context.Context, email string, 
 	q := fmt.Sprintf(`INSERT INTO %s (token, email, expires_at) VALUES ($1, $2, $3)`, query.QuoteIdent(s.table))
 	if _, err := s.db.ExecContext(ctx, q, token, email, time.Now().Add(ttl).Unix()); err != nil {
 		return "", err
+	}
+	if sweep {
+		if _, err := s.db.ExecContext(ctx,
+			fmt.Sprintf(`DELETE FROM %s WHERE expires_at < $1`, query.QuoteIdent(s.table)),
+			time.Now().Unix()); err != nil {
+			return "", fmt.Errorf("sweep expired tokens: %w", err)
+		}
 	}
 	return token, nil
 }

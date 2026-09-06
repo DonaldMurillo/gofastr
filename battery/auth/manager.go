@@ -558,6 +558,10 @@ func (m *AuthManager) Init(app *framework.App) error {
 		// Verify-only previous secrets for graceful JWTSecret rotation
 		// (sign with current; verify accepts current OR any previous).
 		m.jwtAuth.PreviousSecrets = m.config.JWTPreviousSecrets
+		// RequireAuth re-resolves every token subject against the fresh
+		// user row, so deletion and role downgrades fail closed at
+		// request time instead of at token TTL.
+		m.jwtAuth.SetUserStore(m.userStore)
 	}
 	ctx := context.Background()
 	for _, st := range []any{m.userStore, m.sessionStore} {
@@ -581,6 +585,13 @@ func (m *AuthManager) Init(app *framework.App) error {
 	// and still return a nil error.
 	if err := m.refuseInMemorySessionStore(); err != nil {
 		return err
+	}
+
+	// Same re-check for the JWT owner store: a plugin's Init may have
+	// swapped the UserStore after the JWT wiring above, and RequireAuth
+	// must resolve owners against the store the app actually runs with.
+	if m.jwtAuth != nil {
+		m.jwtAuth.SetUserStore(m.userStore)
 	}
 
 	// Bind the erasure plane to the stores the app actually runs with

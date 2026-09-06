@@ -19,9 +19,14 @@ func TestGatedBlocksWhenGateRefuses(t *testing.T) {
 			return "secret", nil
 		},
 	)
+	// A gate refusal surfaces as a caller-facing *RPCError carrying the
+	// gate's message, so tools/call passes it through verbatim instead of
+	// genericising it to "internal tool error" (the treatment a bare
+	// handler error gets). Same contract as checkToolGate for WithToolGate.
 	_, err := h(context.Background(), nil)
-	if err == nil || err.Error() != "auth: sign in required" {
-		t.Fatalf("want gate error, got %v", err)
+	var rpcErr *RPCError
+	if !errors.As(err, &rpcErr) || rpcErr.Message != "auth: sign in required" {
+		t.Fatalf("want gate error surfaced as *RPCError, got %v", err)
 	}
 	if ran {
 		t.Fatal("handler ran despite gate refusal")

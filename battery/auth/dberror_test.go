@@ -102,7 +102,7 @@ func TestOAuth2Callback_DBErrorDoesNotAutoCreate(t *testing.T) {
 				userInfo: &OAuth2UserInfo{ID: "ext-1", Email: "victim@example.com", Provider: "stub"},
 			},
 		},
-		StateSecret: "test-secret",
+		StateSecret: "test-secret-state-01",
 	})
 	mgr.Use(plugin)
 	if err := mgr.Init(nil); err != nil {

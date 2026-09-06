@@ -3,6 +3,7 @@ package middleware
 import (
 	"net"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -65,6 +66,18 @@ type RateLimitConfig struct {
 	// budget. Retry-After on the 429 path is unaffected. Default is
 	// false (headers on) so well-behaved API clients can self-pace.
 	OmitBudgetHeaders bool
+
+	// MaxKeys caps how many distinct keys the in-memory bucket store
+	// tracks at once. The default key is the client address, and an
+	// IPv6 peer rotates source addresses without limit (a single host
+	// owns a /64), so an attacker can mint a fresh bucket per request;
+	// the idle reap only drops buckets idle > 5 minutes and never
+	// catches a flood whose keys are all younger than that. Past the
+	// cap the store evicts idle-first (oldest lastSeen first) down to
+	// a low-water mark. 0 keeps the default, 100_000 — the
+	// framework/ratelimit maxKeys convention, far above any legitimate
+	// concurrent client count.
+	MaxKeys int
 }
 
 // RateLimit returns Middleware that enforces a token-bucket rate limit per
@@ -107,7 +120,7 @@ func RateLimit(cfg RateLimitConfig) Middleware {
 		cfg.ErrorMessage = "rate limit exceeded"
 	}
 
-	buckets := newBucketStore(cfg.Capacity, cfg.RefillEvery, cfg.RefillBy)
+	buckets := newBucketStoreCapped(cfg.Capacity, cfg.RefillEvery, cfg.RefillBy, cfg.MaxKeys)
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -141,6 +154,7 @@ type bucketStore struct {
 	capacity int
 	rate     time.Duration
 	refill   int
+	maxKeys  int
 
 	mu      sync.Mutex
 	buckets map[string]*bucket
@@ -151,11 +165,27 @@ type bucket struct {
 	lastSeen time.Time
 }
 
+// defaultRateLimitMaxKeys caps the resident bucket count of the
+// in-memory store: an attacker-mintable keyed map gets an absolute cap
+// (the framework/ratelimit maxKeys convention, mirrored by the
+// idempotency store's defaultMaxIdemEntries), because memory use must
+// be bounded by configuration, not by how many distinct keys an
+// anonymous client can churn out over a 5-minute reap window.
+const defaultRateLimitMaxKeys = 100_000
+
 func newBucketStore(capacity int, rate time.Duration, refill int) *bucketStore {
+	return newBucketStoreCapped(capacity, rate, refill, 0)
+}
+
+func newBucketStoreCapped(capacity int, rate time.Duration, refill int, maxKeys int) *bucketStore {
+	if maxKeys <= 0 {
+		maxKeys = defaultRateLimitMaxKeys
+	}
 	return &bucketStore{
 		capacity: capacity,
 		rate:     rate,
 		refill:   refill,
+		maxKeys:  maxKeys,
 		buckets:  map[string]*bucket{},
 	}
 }
@@ -178,9 +208,15 @@ func (s *bucketStore) take(key string) (bool, time.Duration, int, time.Duration)
 		// Fresh bucket starts full; this request consumes its token.
 		remaining := s.capacity - 1
 		s.buckets[key] = &bucket{tokens: remaining, lastSeen: now}
-		// Opportunistic reap of stale buckets so the map doesn't grow.
+		// Opportunistic reclaim: stale buckets on every 64th insert,
+		// and an absolute cap evicting idle-first, so neither idle
+		// age (a sustained flood of fresh keys never ages past the
+		// 5-minute cutoff) nor key churn alone grows the map.
 		if len(s.buckets)%64 == 0 {
 			s.reapLocked(now)
+		}
+		if len(s.buckets) > s.maxKeys {
+			s.evictIdleLocked()
 		}
 		return true, 0, remaining, s.timeToFull(remaining, now, now)
 	}
@@ -258,6 +294,33 @@ func (s *bucketStore) reapLocked(now time.Time) {
 		if b.lastSeen.Before(cutoff) {
 			delete(s.buckets, k)
 		}
+	}
+}
+
+// evictIdleLocked sheds buckets idle-first (oldest lastSeen first) down
+// to a low-water mark of the cap, so the shed runs at most once per
+// ~10% of new-key inserts under a sustained flood instead of on every
+// insert. Idle-first keeps pre-flood legitimate clients (older
+// lastSeen) resident while the flood evicts the flood. Caller must
+// hold mu.
+func (s *bucketStore) evictIdleLocked() {
+	lowWater := s.maxKeys * 9 / 10
+	if len(s.buckets) <= lowWater {
+		return
+	}
+	type idleBucket struct {
+		key  string
+		seen time.Time
+	}
+	pending := make([]idleBucket, 0, len(s.buckets))
+	for k, b := range s.buckets {
+		pending = append(pending, idleBucket{key: k, seen: b.lastSeen})
+	}
+	slices.SortFunc(pending, func(a, b idleBucket) int {
+		return a.seen.Compare(b.seen)
+	})
+	for i := 0; i < len(pending) && len(s.buckets) > lowWater; i++ {
+		delete(s.buckets, pending[i].key)
 	}
 }
 

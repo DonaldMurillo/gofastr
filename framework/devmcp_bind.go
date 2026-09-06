@@ -72,32 +72,53 @@ func devMCPExposureWarning(addr string) string {
 		addr, devMCPExposeEnv)
 }
 
-// guardDevMCPBind drops the dev-implied MCP control tools when the
-// listener is not loopback. Called from Start once the real bind address
-// is known. NewApp cannot know it.
+// guardDevMCPBind withdraws the DEV-IMPLIED MCP surfaces when the listener
+// is not loopback. Called from Start once the real bind address is known.
+// NewApp cannot know it.
 //
-// Only the DEV-IMPLIED opt-in is withdrawn. A host that asked for the
+// Only the DEV-IMPLIED opt-ins are withdrawn. A host that asked for the
 // control tools itself (WithMCPControl) keeps them: that is a deliberate
 // production choice with its own gating, not the dev loop's convenience
-// default.
+// default. The dev-implied ENTITY write tools, the battery/log dev-implied
+// mutation and disclosing reads, and the contract dev tool that writes to
+// disk are registered WithDevImplied across InitPlugins and entity
+// registration; they are withdrawn as ONE set here, not per feature — the
+// per-feature spelling is exactly how notes_create/_update/_delete and
+// log_set_level stayed live on an exposed bind while the control tools
+// were dropped.
 func (a *App) guardDevMCPBind(addr string) {
-	if !a.mcpControlDevImplied || !a.mcpControl {
-		return
-	}
 	if bindIsLoopback(addr) || devMCPExposeAllowed() {
 		return
 	}
-	a.mcpControl = false
-	// Clearing the flag is only half the withdrawal. InitPlugins is where
-	// the control tools actually register, and a host may call it ITSELF
-	// before Start (the documented pre-Start hook order) — at which point
-	// they are already in the MCP registry, already named by tools/list,
-	// and already reachable by tools/call. The flag then guards a
-	// registration that has been and gone. Remove the tools too.
-	if a.MCP != nil {
-		for _, name := range a.controlToolNames() {
-			a.MCP.UnregisterTool(name)
+	withdrew := false
+	if a.mcpControlDevImplied && a.mcpControl {
+		a.mcpControl = false
+		// Clearing the flag is only half the withdrawal. InitPlugins is
+		// where the control tools actually register, and a host may call
+		// it ITSELF before Start (the documented pre-Start hook order) —
+		// at which point they are already in the MCP registry, already
+		// named by tools/list, and already reachable by tools/call. The
+		// flag then guards a registration that has been and gone. Remove
+		// the tools too.
+		if a.MCP != nil {
+			for _, name := range a.controlToolNames() {
+				a.MCP.UnregisterTool(name)
+			}
 		}
+		withdrew = true
+	}
+	// The rest of the dev-implied mutating set. This runs even when the
+	// control tools themselves were an explicit opt-in: dev still implied
+	// the entity write tools, so an exposed bind must not keep them. For
+	// an app that never ran the dev implication nothing is marked and
+	// this is a no-op map walk. The sweep also arms core/mcp's bar: Start
+	// inits plugins AFTER this guard, and battery-registered dev-implied
+	// tools must not reintroduce the surface post-guard.
+	if a.MCP != nil && len(a.MCP.UnregisterDevImpliedTools()) > 0 {
+		withdrew = true
+	}
+	if !withdrew {
+		return
 	}
 	a.Logger().Warn(devMCPExposureWarning(addr), "addr", addr)
 }

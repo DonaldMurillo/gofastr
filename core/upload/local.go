@@ -189,6 +189,12 @@ func CreateTempInRoot(root *os.Root, relDir, pattern string) (*os.File, string, 
 // Save writes the file to the local filesystem under baseDir/key.
 // It creates subdirectories as needed.
 //
+// On a case-insensitive or normalization-insensitive filesystem (macOS
+// default APFS) the key is refused (see [RefuseFoldedKey]) when an
+// existing object is stored under a byte-different spelling that folds
+// onto the same file; the exact stored key keeps ordinary overwrite
+// semantics.
+//
 // The write is atomic: data lands in a temp file beside the target and
 // is renamed into place, so a reader racing the writer (the ServeHandler
 // + LocalStorage pairing) sees the previous whole object or the new
@@ -208,6 +214,17 @@ func (s *LocalStorage) Save(_ context.Context, key string, r io.Reader) error {
 	// write side is the one an unauthenticated multipart POST can reach.
 	scrub := func(what, path string, err error) error {
 		return fmt.Errorf("%s: %s", what, ScrubPath(err.Error(), rk.absBase, path))
+	}
+
+	// Refuse a key that folds onto an object stored under a byte-
+	// different spelling BEFORE anything is created or written: on a
+	// case-insensitive or normalization-insensitive filesystem the
+	// MkdirAll below would otherwise plant directories inside the other
+	// key's namespace and the rename would clobber its object. Pinned by
+	// TestFoldedKeysDoNotAlias; battery/storage's local backend holds
+	// the same line through the same shared helper.
+	if err := RefuseFoldedKey(key, rk.path, rk.root, s.rootFor(rk)); err != nil {
+		return err
 	}
 
 	// Create parent directories. Mode 0o700 keeps tenant upload trees

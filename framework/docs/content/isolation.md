@@ -53,9 +53,14 @@ use most, so a boot that "hangs" from a worktree is almost always this.
 - Env templates support `{id}`, `{project_dir}`, `{port}`, and
   `{port:name}` for named services.
 
-Explicit `PORT`, `DATABASE_URL`, and configured env values are rewritten by
-default inside an isolated worktree. Set `GOFASTR_ISOLATION_REWRITE=0` to keep
-explicit env overrides untouched.
+`isolation.env` is read from the project directory, which for a cloned
+repo is untrusted input, so it is constrained three ways: entries may
+only carry template values (a static value is refused — it is never an
+isolated resource), process-shaping names (proxies, `PATH`, loader
+variables, `HOME`, `GOFASTR_ISOLATION*`) are refused outright, and an
+environment variable the operator already exported always wins over a
+file entry. Export anything static yourself; `GOFASTR_ISOLATION_REWRITE`
+now governs only the `PORT` and `DATABASE_URL` remaps.
 
 ## Public API
 

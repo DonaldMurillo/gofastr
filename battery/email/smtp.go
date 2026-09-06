@@ -14,6 +14,9 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode/utf8"
+
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
 // defaultSMTPDialTimeout bounds the TCP+TLS connect, and, as the
@@ -420,12 +423,23 @@ func safeMediaType(ct string) (string, error) {
 // quoteParamValue renders s as an RFC 2045 quoted-string, backslash-
 // escaping embedded double-quotes and backslashes so the value cannot
 // break out of the surrounding `"..."` and append extra MIME
-// parameters. The full C0 range and DEL are stripped: control bytes
-// are never legitimate in a display filename, and percent-encoding
-// them would surface literal %xx garbage in every MUA. C0/DEL are
-// already refused upstream by assertNoHeaderInjection; the strip here
-// is the defensive wire-side guarantee.
+// parameters. The full C0 range, DEL, the C1 control block, and the
+// zero-width/bidi invisible set (core/textsafe) are stripped: control
+// bytes are never legitimate in a display filename, and a bidi override
+// in a filename spoofs what the MUA renders; percent-encoding them
+// would surface literal %xx garbage in every MUA. All of it is already
+// refused upstream by assertNoHeaderInjection; the strip here is the
+// defensive wire-side guarantee.
 func quoteParamValue(s string) string {
+	s = textsafe.StripInvisible(s)
+	if strings.ContainsFunc(s, textsafe.IsC1) {
+		s = strings.Map(func(r rune) rune {
+			if textsafe.IsC1(r) {
+				return -1
+			}
+			return r
+		}, s)
+	}
 	var b strings.Builder
 	b.Grow(len(s))
 	b.WriteByte('"')
@@ -443,13 +457,25 @@ func quoteParamValue(s string) string {
 	return b.String()
 }
 
-// scrubHeaderValue percent-encodes any C0 control byte or DEL in a
-// header value before it is written into the message, so a value that
-// slips past assertNoHeaderInjection still cannot terminate a header
-// line or smuggle a terminal-control payload into a MUA. Same
-// double posture as quoteParamValue: the assert refuses, the scrub
-// guarantees the wire.
+// scrubHeaderValue guarantees the wire: it strips the C1 control block
+// and the zero-width/bidi invisible set (core/textsafe) and
+// percent-encodes any C0 control byte or DEL left in a header value, so
+// a value that slips past assertNoHeaderInjection still cannot
+// terminate a header line, smuggle a terminal-control payload into an
+// MUA, or reorder what the header renders as. The invisible half is
+// dropped rather than encoded: an encoded zero-width space would
+// surface as literal %xx garbage. Same double posture as
+// quoteParamValue: the assert refuses, the scrub guarantees the wire.
 func scrubHeaderValue(s string) string {
+	s = textsafe.StripInvisible(s)
+	if strings.ContainsFunc(s, textsafe.IsC1) {
+		s = strings.Map(func(r rune) rune {
+			if textsafe.IsC1(r) {
+				return -1
+			}
+			return r
+		}, s)
+	}
 	var b strings.Builder
 	b.Grow(len(s))
 	for i := range len(s) {
@@ -463,21 +489,38 @@ func scrubHeaderValue(s string) string {
 	return b.String()
 }
 
-// assertNoHeaderInjection returns an error if value contains any C0
-// control byte (0x00–0x1F, including the CR/LF/NUL that can terminate
-// a header line and let following bytes appear as a new header) or DEL.
-// The rest of the C0 range and DEL are refused too, not just the line
-// terminators: MUAs, spam filters and archive tooling render header
-// bytes verbatim, so an ESC…BEL terminal-title sequence in a Subject
-// is smuggled onto the wire exactly like a CRLF injection. The field
-// name is included in the error so the caller can log which input was
-// rejected.
+// assertNoHeaderInjection returns an error if value contains any codepoint
+// that can break a header line or spoof its display:
+//
+//   - C0 control bytes (0x00–0x1F, including the CR/LF/NUL that can
+//     terminate a header line and let following bytes appear as a new
+//     header) and DEL. MUAs, spam filters and archive tooling render
+//     header bytes verbatim, so an ESC…BEL terminal-title sequence in a
+//     Subject is smuggled onto the wire exactly like a CRLF injection.
+//   - The C1 control block (U+0080–U+009F, both the UTF-8 and the
+//     raw-byte spellings — the raw form fails the UTF-8 validity check)
+//     and the zero-width/bidi invisible set (core/textsafe). These do
+//     not break the line, they forge what it renders as: a U+202E
+//     reverses the tail of a Subject in every MUA.
+//
+// The field name is included in the error so the caller can log which
+// input was rejected.
 func assertNoHeaderInjection(field, value string) error {
 	for i := range len(value) {
 		if b := value[i]; b < 0x20 || b == 0x7f {
 			return fmt.Errorf("%w: header %q contains illegal control byte 0x%02X (C0/DEL): refusing to send to prevent SMTP header injection",
 				ErrSendFailed, field, b)
 		}
+	}
+	for _, r := range value {
+		if textsafe.IsC1(r) || textsafe.IsInvisible(r) {
+			return fmt.Errorf("%w: header %q contains invisible or C1 control codepoint U+%04X: refusing to send to prevent display spoofing",
+				ErrSendFailed, field, r)
+		}
+	}
+	if !utf8.ValidString(value) {
+		return fmt.Errorf("%w: header %q is not valid UTF-8 (raw C1 control bytes?): refusing to send",
+			ErrSendFailed, field)
 	}
 	return nil
 }

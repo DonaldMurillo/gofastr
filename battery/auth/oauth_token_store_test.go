@@ -259,7 +259,7 @@ func TestLogin_PersistsRefreshToken(t *testing.T) {
 	mgr := New(AuthConfig{JWTSecret: "test-secret", SessionTTL: 24 * time.Hour, SessionCookie: "session_id", UserStore: userStore, AllowInMemoryStores: true})
 	plugin := NewOAuth2Plugin(OAuth2Config{
 		Providers:   map[string]OAuth2Provider{"mock": mock},
-		StateSecret: "test-secret-key",
+		StateSecret: "test-secret-key-state",
 		TokenStore:  tokStore,
 	})
 	mgr.Use(plugin)

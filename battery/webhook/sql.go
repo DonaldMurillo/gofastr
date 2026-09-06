@@ -377,6 +377,22 @@ func (s *SQLStore) ClaimDueDeliveries(ctx context.Context, now time.Time, limit 
 	return s.claimSqlite(ctx, now, limit, leasePeriod)
 }
 
+// ReapTerminalBefore implements [RetentionSweeper]: it deletes successful
+// deliveries whose updated_at is older than cutoff. Dead rows are
+// deliberately retained — Replay needs the body and its last_error, so
+// retention is not a dead-letter TTL (the same boundary framework/outbox
+// documents for WithRetention).
+func (s *SQLStore) ReapTerminalBefore(ctx context.Context, cutoff time.Time) (int64, error) {
+	q := fmt.Sprintf(`DELETE FROM %s WHERE status = %s AND updated_at < %s`,
+		s.delTable, s.placeholder(1), s.placeholder(2))
+	res, err := s.db.ExecContext(ctx, q, string(StatusSuccess), cutoff)
+	if err != nil {
+		return 0, err
+	}
+	n, _ := res.RowsAffected()
+	return n, nil
+}
+
 func (s *SQLStore) claimPostgres(ctx context.Context, now time.Time, limit int, leasePeriod time.Duration) ([]Delivery, error) {
 	// attempts = attempts + 1 at claim, matching the queue batteries
 	// (DBQueue's claim UPDATE, RedisQueue's canonical-record bump): a

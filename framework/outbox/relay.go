@@ -167,7 +167,13 @@ func (o *Outbox) processDelivery(ctx context.Context, d claimedDelivery) {
 		o.requeueNoHandler(settleCtx, d)
 		return
 	}
-	var payload map[string]any
+	// Event.Data is `any` and the live bus delivers arrays, scalars and
+	// strings untouched, so the durable lane unmarshals into `any` too:
+	// whatever Append accepted and staged inside the business transaction
+	// must be deliverable, a payload that stages cleanly can't be an
+	// undeliverable poison row (objects arrive as map[string]any, numbers
+	// as float64, arrays as []any — the encoding/json shapes).
+	var payload any
 	if len(d.Payload) > 0 {
 		if err := json.Unmarshal(d.Payload, &payload); err != nil {
 			o.markDeliveryFailure(settleCtx, d, fmt.Errorf("unmarshal payload: %w", err))

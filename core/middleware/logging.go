@@ -11,6 +11,9 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
+
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
 // LoggingFn returns middleware that logs each request via the *slog.Logger
@@ -132,47 +135,76 @@ func SampledLoggingFn(sampleN int, slowThreshold time.Duration, getLogger func()
 	}
 }
 
-// c0AndDelSet is the complete set of bytes scrubControlBytes percent-encodes:
-// every C0 control byte (0x00–0x1F) plus DEL (0x7F). It MUST cover exactly
-// the range the encoder loop encodes (c < 0x20 || c == 0x7f): the fast-path
-// ContainsAny returns its input unchanged when none of these are present, so
-// a single missing byte means a string carrying ONLY that byte bypasses the
-// encoder and is logged raw. The earlier hand-written probe omitted most of
-// the C0 range (SOH, EOT, FS, …) and those leaked.
-var c0AndDelSet = func() string {
-	var b [33]byte
-	for i := range 32 {
-		b[i] = byte(i)
-	}
-	b[32] = 0x7f
-	return string(b[:])
-}()
+// needsControlScrub is the fast-path probe for scrubControlBytes. It
+// must flag a SUPERSET of what the encoder rewrites: the C0 controls
+// and DEL, plus every non-ASCII byte (which may open an unsafe rune or
+// itself be a stray 8-bit C1 control). A clean ASCII string returns
+// unchanged without entering the encoder; a shape the probe misses
+// would be logged raw, so the superset rule is load-bearing — the
+// earlier hand-written probe omitted most of the C0 range (SOH, EOT,
+// FS, …) and those leaked.
+func needsControlScrub(s string) bool {
+	return strings.ContainsFunc(s, func(r rune) bool {
+		return r < 0x20 || r == 0x7f || r >= utf8.RuneSelf
+	})
+}
 
-// scrubControlBytes percent-encodes ASCII control bytes (the C0 range) and
-// DEL in a request-derived value, URL path, method, or a panic that embeds
-// a request string, so an attacker can't forge a fake log entry or smuggle
-// a terminal-control payload into an operator's tail/less session. slog's
-// JSON handler escapes these for valid JSON, but a JSON-escaped \r\n is still
-// visible to text grep, and naive log shippers render the injected payload on
-// its own line.
+// scrubControlBytes percent-encodes every character that can forge,
+// break, or reorder a rendered log line in a request-derived value, URL
+// path, method, or a panic that embeds a request string: the C0
+// controls and DEL, the C1 controls (U+0080–U+009F — the 8-bit CSI
+// 0x9B and OSC 0x9D drive terminal escapes exactly as ESC-[ does, NEL
+// 0x85 breaks the line), and the zero-width/bidi set from core/textsafe
+// (RLO and friends visually rewrite the logged path). An attacker then
+// can't forge a fake log entry, reorder one, or smuggle a
+// terminal-control payload into an operator's tail/less session.
+// slog's JSON handler escapes C0 for valid JSON but leaves C1/bidi
+// runes raw (verified 2026-09-05: a raw C2 9B lands in the encoded
+// line), and a JSON-escaped \r\n is still visible to text grep, with
+// naive log shippers rendering the injected payload on its own line.
 //
-// r.URL.Path is percent-DECODED, so a %0d%0a in the raw request is a real
-// CRLF by the time it reaches any sink here. The fast-path probe (c0AndDelSet)
-// covers the whole C0 range plus DEL: without the full set, a path carrying
-// only an uncovered byte (e.g. a lone SOH) bypassed the encoder.
+// r.URL.Path is percent-DECODED, so %0d%0a / %c2%9b / %e2%80%ae in the
+// raw request are a real CRLF / U+009B / U+202E by the time they reach
+// any sink here. Stray non-UTF-8 bytes in 0x80..0x9F are the 8-bit C1
+// forms on the wire (a bare 0x9B from %9B) and are encoded like their
+// rune counterparts; other invalid bytes pass through untouched.
 func scrubControlBytes(s string) string {
-	if !strings.ContainsAny(s, c0AndDelSet) {
+	if !needsControlScrub(s) {
 		return s
 	}
 	var b strings.Builder
 	b.Grow(len(s))
-	for i := range s {
+	for i := 0; i < len(s); {
 		c := s[i]
-		if c < 0x20 || c == 0x7f {
-			fmt.Fprintf(&b, "%%%02x", c)
+		if c < utf8.RuneSelf {
+			if c < 0x20 || c == 0x7f {
+				fmt.Fprintf(&b, "%%%02x", c)
+			} else {
+				b.WriteByte(c)
+			}
+			i++
 			continue
 		}
-		b.WriteByte(c)
+		r, size := utf8.DecodeRuneInString(s[i:])
+		if size == 1 {
+			// Stray invalid byte: in 0x80..0x9F it is an 8-bit
+			// C1 control on the wire, encode it.
+			if c <= 0x9f {
+				fmt.Fprintf(&b, "%%%02x", c)
+			} else {
+				b.WriteByte(c)
+			}
+			i++
+			continue
+		}
+		if textsafe.IsUnsafe(r) {
+			for j := i; j < i+size; j++ {
+				fmt.Fprintf(&b, "%%%02x", s[j])
+			}
+		} else {
+			b.WriteString(s[i : i+size])
+		}
+		i += size
 	}
 	return b.String()
 }

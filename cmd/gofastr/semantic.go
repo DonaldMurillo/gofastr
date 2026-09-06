@@ -217,6 +217,7 @@ func embedQuery(args []string) {
 				fail("missing value for --mmr")
 				osExit(1)
 			}
+			//gofastr:allow(nonfinite) CLI flag value is operator input; a non-finite --mmr fails downstream, not a request-borne bound check.
 			f, err := strconv.ParseFloat(args[i+1], 64)
 			if err != nil {
 				fail("invalid mmr: %v", err)

@@ -8,8 +8,8 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/core/mcp"
 	"github.com/DonaldMurillo/gofastr/framework/contracts"
-	// The analyzers self-register from an init(). Without this import the
 	// registry is empty and contracts_verify would report every tree
 	// clean. See the guard in contracts.Run.
 	_ "github.com/DonaldMurillo/gofastr/framework/contracts/analyzers"
@@ -94,7 +94,18 @@ func (a *App) registerContractDevTools() error {
 		},
 	}
 	for _, t := range tools {
-		if err := a.MCP.RegisterTool(t.name, t.description, t.schema, t.handler); err != nil {
+		var opts []mcp.ToolOption
+		if t.name == "contracts_fix" {
+			// WRITES TO DISK, and this whole pair registers only under
+			// the dev-implied introspection flag with no gate (there is
+			// no auth to satisfy in the dev loop). Mark the mutating
+			// half dev-implied so the bind guard withdraws it on a
+			// non-loopback listener, the same set the entity write
+			// tools and log_set_level belong to. contracts_verify only
+			// reads and stays.
+			opts = append(opts, mcp.WithDevImplied())
+		}
+		if err := a.MCP.RegisterTool(t.name, t.description, t.schema, t.handler, opts...); err != nil {
 			return fmt.Errorf("framework: register MCP contract dev tool %q: %w", t.name, err)
 		}
 	}

@@ -202,7 +202,7 @@ func TestOIDCSec_UnverifiedEmailCannotTakeoverPasswordAccount(t *testing.T) {
 	})
 	plugin := NewOAuth2Plugin(OAuth2Config{
 		Providers:   map[string]OAuth2Provider{"oidc": oidcProv},
-		StateSecret: "test-secret",
+		StateSecret: "test-secret-state-01",
 	})
 	mgr.Use(plugin)
 	if err := mgr.Init(nil); err != nil {

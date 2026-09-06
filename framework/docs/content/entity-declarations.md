@@ -1198,6 +1198,21 @@ omitted from the body (left untouched), while a non-nil pointer sets the
 field even when it points at a zero value. `Update<Entity>` and
 `Create<Entity>` keep the value-typed `<Entity>Input`.
 
+**Integer precision on the wire.** JSON request bodies are decoded with
+exact number handling, so an integer literal sent to an `Int` column
+persists exactly as written — including values above 2^53
+(`9007199254740993`), which a plain `encoding/json` decode would
+silently round before validation ever saw it. A number that reaches an
+`Int` column as a float at or beyond ±2^53 (only possible through an
+in-process caller that decoded its own JSON into `float64` first) is
+refused with `400` rather than rounded: crud cannot tell a
+legitimately-round value from one that lost a digit, and silently
+storing a different number than was sent is the one unrecoverable
+outcome. Send large integers as JSON integer literals or strings; both
+spellings round-trip exactly. The same rule covers `_batch` items,
+`UpsertOne` caller-supplied increment primary keys, and the typed query
+update paths.
+
 Every successful single-record response has one stable envelope:
 
 ```json

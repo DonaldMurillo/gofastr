@@ -236,6 +236,7 @@ middleware.RateLimit(middleware.RateLimitConfig{
     Capacity:    100,         // peak burst
     RefillEvery: time.Minute, // +RefillBy tokens per interval
     RefillBy:    100,
+    MaxKeys:     100_000,     // resident-bucket cap (default)
 })
 ```
 
@@ -243,6 +244,12 @@ Token-bucket per key. `KeyFunc` defaults to `RemoteAddr` (X-Forwarded-For
 is ignored unless `TrustProxyHeaders` + `TrustedProxies` are set). Tune
 `Capacity`/`RefillEvery`/`RefillBy` per route by composing two `RateLimit`
 middlewares in different `middleware.Chain` calls.
+
+The in-memory bucket store caps its resident entry count at `MaxKeys`
+(default 100_000, the `framework/ratelimit` convention): an IPv6 peer
+rotates source addresses without limit, and the 5-minute idle reap never
+catches a flood of fresh keys, so past the cap the store evicts
+idle-first (oldest `lastSeen` first) down to a low-water mark.
 
 On every response that passes through it (both allowed and 429) the
 middleware also emits the IETF-draft budget headers so well-behaved API
@@ -386,10 +393,20 @@ process-global, identical for every caller, and cannot be scoped per
 user. Treat every signal as world-readable: counts, statuses, and other
 non-sensitive display data.
 
-Widgets whose signals should not be public set
-`Definition.RequireSession`, which gates `/state` and `/chrome`. The
-gate fails closed: if the host installed no session check, a widget
-that asked for one serves nothing rather than serving everyone.
+Widgets whose signals should not be public set a session gate on the
+Definition. There are two levels. `Definition.RequireSession` gates
+`/state`, `/chrome`, and the RPC routes behind **any valid browser
+session** — under `framework/uihost` every page render auto-mints one,
+so this level scopes a widget per-session (anti-recon), it does not ask
+for a login. `Definition.RequireAuthenticated` is the authentication
+gate: the request must resolve to a signed-in user (under uihost, the
+user `battery/auth`'s `SessionMiddleware`/`RequireAuth` loaded onto the
+request context), which the anonymous session a first page load mints
+never satisfies. Both gates fail closed: if the host installed no
+predicate for the level, a widget that asked for one serves nothing
+rather than serving everyone, and SSR-inlined widget chrome applies the
+same verdict (`widget.GateSatisfied`) so a gated widget's chrome is not
+baked into a page its endpoints would refuse.
 
 ## Owner isolation and `CrossOwnerRead`
 

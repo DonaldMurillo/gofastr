@@ -40,11 +40,11 @@ func TestEntityFields(t *testing.T) {
 	}
 }
 
-func TestRefreshFieldCache_NilEntity(t *testing.T) {
+func TestFieldSnapshot_NilEntity(t *testing.T) {
 	ch := &CrudHandler{PrimaryKey: "id", JSONCase: CaseCamel}
-	ch.refreshFieldCache()
-	if ch.visibleFieldsCache != nil {
-		t.Error("nil entity should clear cache")
+	s := ch.snapshot()
+	if len(s.visible) != 0 {
+		t.Error("nil entity should yield an empty visible set")
 	}
 	if ch.fieldCacheSignature() != 0 {
 		t.Error("nil entity signature should be 0")

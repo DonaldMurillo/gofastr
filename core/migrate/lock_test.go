@@ -11,8 +11,28 @@ import (
 	"github.com/DATA-DOG/go-sqlmock"
 )
 
+// expectSQLiteLease registers the two statements acquireSQLiteMigrateLease
+// issues before WithAdvisoryLockKey pins its connection: the idempotent
+// lease-table create and the winning upsert (60s lease, 1 row affected).
+func expectSQLiteLease(mock sqlmock.Sqlmock) {
+	mock.ExpectExec(`CREATE TABLE IF NOT EXISTS "_gofastr_migrate_lock"`).
+		WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectExec(`INSERT INTO "_gofastr_migrate_lock"`).
+		WithArgs(int64(60)).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+}
+
+// expectSQLiteLeaseRelease registers the DELETE the deferred release runs
+// after fn has returned and the pinned connection was closed.
+func expectSQLiteLeaseRelease(mock sqlmock.Sqlmock) {
+	mock.ExpectExec(`DELETE FROM "_gofastr_migrate_lock"`).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+}
+
 func TestWithAdvisoryLock_SQLiteRunsFn(t *testing.T) {
-	db, _, _ := sqlmock.New()
+	db, mock, _ := sqlmock.New()
+	expectSQLiteLease(mock)
+	expectSQLiteLeaseRelease(mock)
 	ran := false
 	err := WithAdvisoryLock(context.Background(), db, DialectSQLite, func(_ *sql.Conn) error {
 		ran = true
@@ -22,7 +42,10 @@ func TestWithAdvisoryLock_SQLiteRunsFn(t *testing.T) {
 		t.Fatalf("WithAdvisoryLock: %v", err)
 	}
 	if !ran {
-		t.Fatal("fn did not run on the SQLite no-op path")
+		t.Fatal("fn did not run between the SQLite lease acquire and release")
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("unmet: %v", err)
 	}
 }
 
@@ -41,7 +64,9 @@ func TestWithAdvisoryLock_NilDBStillRunsFn(t *testing.T) {
 }
 
 func TestWithAdvisoryLock_PropagatesFnError(t *testing.T) {
-	db, _, _ := sqlmock.New()
+	db, mock, _ := sqlmock.New()
+	expectSQLiteLease(mock)
+	expectSQLiteLeaseRelease(mock)
 	sentinel := errors.New("boom")
 	err := WithAdvisoryLock(context.Background(), db, DialectSQLite, func(_ *sql.Conn) error {
 		return sentinel

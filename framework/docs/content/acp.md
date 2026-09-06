@@ -104,13 +104,21 @@ func main() {
 - Honor `ctx`: it is cancelled when the client sends `session/cancel`, and
   the server can only answer the client once `Prompt` returns.
 
-`Options` has two fields: `AuthMethods` (advertised in `initialize`) and
+`Options` has four fields: `AuthMethods` (advertised in `initialize`) and
 `Authenticate` (the hook run for `authenticate`; the connection must have
-sent `initialize` first). The zero value advertises no auth, which is right
-for local, unauthenticated agents like Kiln. A panic in any embedder hook —
-`Authenticate`, `NewSession`, `LoadSession`, `Prompt` — is recovered into
-an internal-error response for that one request; it never kills the
-process.
+sent `initialize` first) — the zero value advertises no auth, which is right
+for local, unauthenticated agents like Kiln — plus the session bounds
+`MaxSessions` (live sessions one connection may hold; 0 = 1024, negative =
+unlimited) and `SessionOverflow`
+(`acp.SessionOverflowRefuse`, the default: `session/new` past the cap is
+answered `-32602` before the embedder mints anything, mirroring the 4 MiB
+frame cap; `acp.SessionOverflowEvictOldest`: the connection's oldest
+session is dropped, its in-flight prompt turn canceled, and the new one
+seated). Without the bound, `session/new` is a frame-cheap unbounded write
+into per-connection state that lives until the connection closes. A panic
+in any embedder hook — `Authenticate`, `NewSession`, `LoadSession`,
+`Prompt` — is recovered into an internal-error response for that one
+request; it never kills the process.
 
 ## Kiln's adapter (`kiln/acp`)
 

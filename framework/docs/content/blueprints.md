@@ -1148,6 +1148,11 @@ The generator rejects:
   generated typed client emits it into Go string literals, and the runtime
   interpolates it into DDL as a bare SQL identifier. The entity `name:` is
   already constrained to a Go identifier; `table:` was the way around that.
+- enum `values:` entries carrying a quote, backtick, backslash, or newline
+  (they break the generated Go), or carrying a terminal-invisible character —
+  a C1 control (U+0080–U+009F), a bidi override, or a zero-width/BOM rune:
+  the value reaches `llm.md` and `/openapi.json` verbatim, where it would
+  reorder or hide text from the human reviewing what the agent authored
 - relation-typed fields (`type: relation`) without a `to:` target, or whose
   `to:` names an entity the blueprint does not declare; without this check
   the built app would crash at startup with "auto-migrate: entity has

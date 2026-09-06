@@ -489,14 +489,16 @@ func TestFailureSettleAttemptsMonotonic(t *testing.T) {
 		t.Fatalf("expand: %v", err)
 	}
 
-	// Runner 1 claims (attempts snapshot 0) and its handler is still
-	// running when the lease expires.
+	// Runner 1 claims (attempts 0 → 1, the claim consumed one in SQL) and
+	// its handler is still running when the lease expires.
 	w1, err := o.claimDeliveries(ctx)
 	if err != nil || len(w1) != 1 {
 		t.Fatalf("W1 claim: %v (len %d)", err, len(w1))
 	}
-	// Lease expiry: a second relay re-claims the still-pending delivery
-	// and reads the same attempts snapshot (no settle has landed yet).
+	// Lease expiry: a second relay re-claims the still-pending delivery.
+	// Each claim consumes an attempt in SQL, so the snapshots count 1 and 2
+	// handler invocations even though NO settle has landed yet — that is
+	// the crash-loop bound the claim-time bump exists for.
 	if _, err := db.Exec(fmt.Sprintf(
 		"UPDATE %s SET claimed_until = ? WHERE row_id = ? AND consumer = 'c'", o.qd()),
 		o.now().UTC().Add(-time.Hour), id); err != nil {
@@ -506,20 +508,23 @@ func TestFailureSettleAttemptsMonotonic(t *testing.T) {
 	if err != nil || len(w2) != 1 {
 		t.Fatalf("W2 re-claim: %v (len %d)", err, len(w2))
 	}
-	if w1[0].Attempts != 0 || w2[0].Attempts != 0 {
-		t.Fatalf("setup: claim snapshots were %d and %d, both want 0 (pre-settle)",
+	if w1[0].Attempts != 1 || w2[0].Attempts != 2 {
+		t.Fatalf("setup: claim snapshots were %d and %d, want 1 and 2 (each claim consumes an attempt)",
 			w1[0].Attempts, w2[0].Attempts)
 	}
 
-	// Both handlers fail; both settles run (the two-runner shape).
+	// Both handlers fail; both settles run (the two-runner shape). The
+	// settles write state only — the counter was already advanced by the
+	// two claims — so the row must still record exactly two attempts.
 	const settledFailures = 2
 	o.markDeliveryFailure(ctx, w1[0], errors.New("w1 failure"))
 	o.markDeliveryFailure(ctx, w2[0], errors.New("w2 failure"))
 
 	d := findDelivery(t, mustDeliveries(t, o, id), "c")
 	if d.Attempts != settledFailures {
-		t.Fatalf("SECURITY: [outbox] %d handler failures settled but the delivery records attempts=%d: "+
-			"the second settle overwrote the first with the same stale claim-time snapshot, so MaxAttempts "+
-			"bounds claim/settle cycles, not the handler invocations it exists to bound", settledFailures, d.Attempts)
+		t.Fatalf("SECURITY: [outbox] %d handler invocations ran but the delivery records attempts=%d: "+
+			"the counter must bound handler invocations (one per claim), not claim/settle cycles, "+
+			"or a stale claimant's settle can rewind what the claims already consumed",
+			settledFailures, d.Attempts)
 	}
 }
