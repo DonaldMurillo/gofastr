@@ -152,3 +152,60 @@ func queueGatePanicChild() {
 	_ = q.Close()
 	os.Exit(0)
 }
+
+// ============================================================================
+// Pins Nack consuming the in-flight job when its re-enqueue fails, found by
+// the 2026-09-04 red-probe round; fixed in MemoryQueue.Nack by retaining the
+// job in the dead-letter set (and logging) before returning the error.
+// Property: a failed re-enqueue must leave the job recoverable — never
+// consumed into nowhere. The same write-to-next-home-before-drop rule
+// TestReplayKeepsJobWhenEnqueueFails pins above, applied to the
+// manual-consumption completion arm.
+// Surfaces: memory.go MemoryQueue.Nack; siblings already correct:
+// MemoryQueue.Replay (pinned above), RedisQueue.Nack
+// (TestRedisNackKeepsJobWhenPushFails), MemoryQueue.processJob's own retry
+// path ("queue: job dead-lettered" on enqErr).
+// ============================================================================
+
+// TestMemoryNackKeepsJobWhenEnqueueFails: a Nack whose re-enqueue fails
+// (cancelled caller context) must leave the job inspectable in the
+// dead-letter set, the same lossless rule Replay and the Redis backend
+// already follow.
+func TestMemoryNackKeepsJobWhenEnqueueFails(t *testing.T) {
+	q := NewMemoryQueue(0)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	if err := q.Enqueue(ctx, Job{ID: "n1", Type: "work", MaxAttempts: 3}); err != nil {
+		t.Fatalf("enqueue: %v", err)
+	}
+	job, err := q.Dequeue(ctx)
+	if err != nil {
+		t.Fatalf("dequeue: %v", err)
+	}
+	if job.ID != "n1" {
+		t.Fatalf("setup: dequeued %q", job.ID)
+	}
+
+	// The caller's context dies between Dequeue and Nack (request
+	// disconnect, deadline). Nack must not destroy the job with it.
+	cancel()
+	nackErr := q.Nack(ctx, job)
+
+	dead, err := q.ListJobs(context.Background(), "failed", 10)
+	if err != nil {
+		t.Fatalf("list failed: %v", err)
+	}
+	found := false
+	for _, d := range dead {
+		if d.ID == "n1" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("SECURITY: [queue] Nack consumed the in-flight job and lost it when its re-enqueue failed "+
+			"(nack err=%v): the job is in no store — not pending, not dead, not in-flight — and a retried Nack is "+
+			"the documented no-op; the same lossless ordering Replay, RedisQueue.Nack, and processJob's own retry "+
+			"path already implement was skipped here", nackErr)
+	}
+}

@@ -492,6 +492,16 @@ func (q *MemoryQueue) Ack(_ context.Context, job Job) error {
 // The job must have been handed out by Dequeue (the in-flight set is consulted
 // by ID). Jobs processed by the automatic worker pool retry internally and are
 // never in the in-flight set; calling Nack for one is a harmless no-op.
+//
+// The re-enqueue is lossless, the same write-to-next-home-before-drop rule
+// Replay, RedisQueue.Nack, and processJob's own retry path follow: when
+// Enqueue fails (typically because the CALLER's context is dead — a request
+// disconnect fires r.Context(), which battery/admin passes through here),
+// the job has already left the in-flight set, so it is retained in the
+// dead-letter set (ListJobs("failed")/Replay can recover it) and the failure
+// is logged before the error is returned. Without this, a cancelled request
+// context destroyed the job outright: not pending, not dead, not in-flight,
+// and a retried Nack is the documented no-op against a vanished job.
 func (q *MemoryQueue) Nack(ctx context.Context, job Job) error {
 	stored, ok := q.takeInflight(job.ID)
 	if !ok {
@@ -505,7 +515,17 @@ func (q *MemoryQueue) Nack(ctx context.Context, job Job) error {
 		q.retainDead(stored)
 		return nil
 	}
-	return q.Enqueue(ctx, stored)
+	if err := q.Enqueue(ctx, stored); err != nil {
+		q.logger.Error("queue: job dead-lettered",
+			"job_id", stored.ID,
+			"job_type", stored.Type,
+			"attempt", stored.Attempts,
+			"max_attempts", stored.MaxAttempts,
+			"err", err)
+		q.retainDead(stored)
+		return err
+	}
+	return nil
 }
 
 // retainDead stores a terminally-failed job in the bounded dead-letter set.

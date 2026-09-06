@@ -508,7 +508,14 @@ it "150 lines of pure orchestration" was overstated. The honest list:
    schemas, cache hints. The loop never assembles content directly;
    that's how middleware stays the place to extend.
 3. **Send to the provider** and parse the stream into typed events.
-   Emit each event onto the bus.
+   Emit each event onto the bus. The collector caps what one turn may
+   buffer — text, thinking, and tool-call argument bytes combined — at
+   8 MiB (`DefaultMaxStreamBytesPerTurn`, per-engine override
+   `Engine.MaxStreamBytesPerTurn`); past the cap the turn fails loudly
+   with `ErrStreamCapExceeded` and the partial output is kept for the
+   transcript. This is the stream-side twin of the 64 KiB per-block
+   tool-result cap: a hostile or buggy endpoint cannot grow harness
+   memory without bound for the length of the HTTP timeout.
 4. **Dispatch tool calls** through the tool middleware chain.
    Results feed back as input.
 5. **Decide whether to loop or yield.** This is the one piece of
@@ -754,6 +761,17 @@ pricing metadata feeds the cost dashboard). Endpoint:
 `HTTP-Referer` and `X-Title` for analytics; some upstream models
 require them.
 
+**Provider egress is fail-closed.** Every provider fetch carries the
+API key as a bearer header, so the clients the providers build for
+themselves refuse redirects (`CheckRedirect` returning
+`http.ErrUseLastResponse`, the OIDC spelling): a provider 3xx surfaces
+as an HTTP error instead of re-sending the key to whatever origin the
+response names. The OpenRouter `/models` decode is likewise capped at
+1 MiB (`modelsMaxBody`) — a bigger catalog is a misbehaving endpoint,
+and the truncated decode errors rather than buffering it. Both are
+pinned per package (`redirect_security_test.go`,
+`models_security_test.go`).
+
 ### v0.2: GitHub Copilot (deferred for reason)
 
 Copilot's chat API is **reverse-engineered**, not a documented public
@@ -887,6 +905,12 @@ The three-tier progressive disclosure:
 Activation triggers are declared in frontmatter (`triggers:`;
 filename globs, keyword patterns) or invoked explicitly by the user
 via `/skill-name`.
+
+All tree reads — the tier-1 scan, tier-2 activation, and tier-3 file
+fetches — go through an `os.Root` pinned to the skill directory, so a
+symlinked `SKILL.md`, `scripts/`, or tier-3 file that points outside
+the tree is refused rather than read. A symlink whose target stays
+inside the tree still resolves.
 
 Skill search paths (in order, last wins):
 
@@ -1036,7 +1060,10 @@ HTTP in v0.3.
   `~/.config/gofastr/harness/mcp-parents.lock`.
 - **streamable HTTP** (v0.3): exposed at `/mcp` on the same
   listener as `rest`/`ws`. Bearer token in `Authorization`; auth
-  and TLS rules identical to `ws`.
+  and TLS rules identical to `ws`. A handler mounted without an
+  auth encoder refuses every request with 503: over TCP there is
+  no process boundary to lean on, so unauthenticated is not a
+  posture the transport will serve.
 
 #### Tools exposed
 
@@ -1128,7 +1155,8 @@ client is attached. The harness handles this proactively:
   parent? [Y/n]."* Persists in `mcp-parents.lock`.
 - **Permission denial on timeout.** If a `PermissionRequested`
   has no `human` client attached and no answer arrives within
-  `permission_timeout` (default 60 s), the prompt is denied
+  `permission_timeout` (default 60 s; `0` keeps it, negative is
+  rejected at construction), the prompt is denied
   rather than hanging. The inner agent receives a structured
   `Error{Reason: PermissionTimeout}` it can plan around.
 - **Cost-in-return-payload.** Synchronous
@@ -1839,8 +1867,12 @@ gofastr harness creds delete openrouter default
 2. `GOFASTR_HARNESS_PASSPHRASE` env var: derives a key via
    PBKDF2-SHA256 with a per-install salt at
    `~/.config/gofastr/harness/salt`.
-3. A built-in dev passphrase (warns loudly; suitable for local
-   experimentation only).
+
+With neither set, the store refuses to open and `gofastr harness`
+(including `harness mcp`) refuses to boot: there is no default
+passphrase, since one shipped in the repository would make "encrypted
+at rest" indistinguishable from plaintext. Set one of the two
+variables before storing any credential.
 
 The credstore file is at `~/.config/gofastr/harness/creds.enc`.
 `XDG_CONFIG_HOME` overrides the `~/.config` base when set.
@@ -2121,8 +2153,10 @@ Hooks are shell commands with explicit deadlines:
 | `Stop` | 5 s |
 
 Override per-hook in the TOML: `{ event = "PreToolUse", cmd =
-"…", timeout_ms = 60000 }`. At deadline: SIGTERM, then SIGKILL
-at deadline+5 s. Hook stdout/stderr capped at 64 KB; truncated
+"…", timeout_ms = 60000 }`. `timeout_ms = 0` keeps the per-event
+default; a negative value is rejected at registration. At deadline:
+SIGTERM, then SIGKILL at deadline+5 s. Hook stdout/stderr capped at
+64 KB; truncated
 output is logged with a marker. A hook exiting non-zero emits
 `HookTimeout` (when killed) or `HookError{exit_code}` (when it
 exited on its own).

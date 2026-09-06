@@ -129,7 +129,8 @@ func TestInitGeneratedMainUsesIsolationHelpers(t *testing.T) {
 	for _, want := range []string{
 		`"github.com/DonaldMurillo/gofastr/framework/isolation"`,
 		`runtimeIsolation, err := isolation.Resolve(".")`,
-		`runtimeIsolation.Database("sqlite3", getEnv("DATABASE_URL", "file:demo.db"))`,
+		`dsn := getEnv("DATABASE_URL", "file:demo.db")`,
+		`runtimeIsolation.Database("sqlite3", dsn)`,
 		`runtimeIsolation.Addr(getEnv("PORT", "localhost:8080"))`,
 	} {
 		if !strings.Contains(got, want) {

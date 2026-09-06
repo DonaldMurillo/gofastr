@@ -1,26 +1,28 @@
 package check
 
-// Seven source lints over the browser runtime's JavaScript: four per
+// Eight source lints over the browser runtime's JavaScript: four per
 // recurring bug SHAPE the adversarial-probe audit (branch
-// audit/red-tests, fixed in commit e936f791) kept finding, and three
-// more from the 2026-09-03 round-3 red tests
-// (core-ui/runtime/runtime_red_test.go), whose sites are still OPEN —
-// those three fire on today's sources and stay quiet on the fix
-// spellings the red tests name. They lint the fragment and module
-// sources (core-ui/runtime/frag + core-ui/runtime/src), never the
-// generated runtime.js bundle: the bundle is composed from the
-// fragments and pinned byte-identical by fragment_composition_test.go,
-// so a finding belongs at the source that produced it.
+// audit/red-tests, fixed in commit e936f791) kept finding, three more
+// from the 2026-09-03 round-3 red tests
+// (core-ui/runtime/runtime_red_test.go), and one from the 2026-09-04
+// round-3 red probes (core-ui/runtime/sidebar_storage_red_test.go) —
+// the last four's sites are still OPEN — those four fire on today's
+// sources and stay quiet on the fix spellings the red tests name. They
+// lint the fragment and module sources (core-ui/runtime/frag +
+// core-ui/runtime/src), never the generated runtime.js bundle: the
+// bundle is composed from the fragments and pinned byte-identical by
+// fragment_composition_test.go, so a finding belongs at the source that
+// produced it.
 //
 // Each rule catches the SHAPE, not a site: an instance of the shape
 // with entirely different names must fire, and the fixed spelling of
 // every audited site must stay quiet. The four e936f791-era fixtures
 // in runtimeshapes_test.go are derived from the pre-fix sources at
 // commit 7bd789e9 (positive cases) and their fixed spellings at
-// e936f791 (negative cases); the three round-3 fixtures reduce from
-// the live pre-fix tree (those sites are open today) plus the fix
-// spellings the red tests name, plus synthetic positives that never
-// existed in this repo. The security probes in
+// e936f791 (negative cases); the round-3 fixtures reduce from the live
+// pre-fix tree (those sites are open today) plus the fix spellings the
+// red tests name, plus synthetic positives that never existed in this
+// repo. The security probes in
 // core-ui/runtime/runtime_security_test.go call these same lints over
 // the live tree, so the implementation lives once.
 
@@ -3203,4 +3205,220 @@ func regexTestDominates(code, v string, pos int) bool {
 		}
 	}
 	return false
+}
+
+// ── lint 8: attribute value used raw as a storage key ─────────────────
+
+// LintStorageKeyRaw fires when a Web-storage key — the first argument of
+// a localStorage/sessionStorage setItem/getItem/removeItem call, or the
+// name side of a document.cookie write — is built from a data-fui-*
+// attribute value without BOTH the namespace prefix and the component
+// encoding.
+//
+// Bug class: a key read from a data-fui-* attribute (or any dataset
+// member) and used verbatim lets markup injected after boot (island
+// swap, RPC innerHTML, SPA merge — the shape every runtime pin uses)
+// name ANY key on the origin: sidebar.js writes
+// localStorage[<data-fui-sidebar-storage>] verbatim, so a planted
+// data-fui-sidebar-storage="gofastr.planted-by-attr" plus a collapse
+// click clobbers any localStorage-backed preference the app reads back.
+// Probe: TestSidebarStorageKeyIsEncoded (core-ui/runtime/
+// sidebar_storage_red_test.go, 2026-09-04 round-3; fix pending — this
+// lint fires on today's tree). The fixed spelling is banner.js's
+// dismissKey shape spelled AT THE SINK: a literal (or provably-literal)
+// prefix operand plus encodeURIComponent(value). Encoding alone is NOT
+// enough — encodeURIComponent leaves dots and hyphens alone, so the
+// probe's dotted key survives it verbatim — and neither is the prefix
+// alone.
+//
+// Silent on:
+//   - key expressions whose every operand is a literal, a numeric
+//     literal, or an identifier provably holding a literal at the sink
+//     (nav.js's SCROLL_KEY, themeswitch.js's KEY);
+//   - identifiers whose deciding assignment (the last-assignment rule
+//     lints 1/5 use, per function scope) is not a data-fui read: a
+//     function parameter (banner.js passes its attribute-borne id into
+//     its helpers as a parameter — provenance stops at the seam), a
+//     non-fui attribute (getAttribute('href') is outside the runtime's
+//     data-fui trust boundary), or no assignment at all;
+//   - call and member-chain operands (localStorage.getItem(
+//     dismissKey(id))): a helper is never CREDITED as the guard — its
+//     provenance is invisible line-locally, the same out-of-scope
+//     posture lints 1/5 hold for untraceable provenance. The guard
+//     counts only spelled at the sink;
+//   - document.cookie READS and comparisons (kernel.js's session
+//     match);
+//   - the VALUE argument of a storage write (only the key names the
+//     namespace) and storage objects reached through an alias
+//     (const s = localStorage; s.setItem(…)) — the shape is line-local.
+//
+// Sinks are matched on the Blank view; the key expression is recovered
+// from Code by offset, exactly like lints 1 and 5.
+func LintStorageKeyRaw(roots ...string) (*Result, error) {
+	res := &Result{}
+	files, err := loadJSSources(roots...)
+	if err != nil {
+		return nil, err
+	}
+	for _, f := range files {
+		sites := storageKeySites(f.Blank, f.Code)
+		if len(sites) == 0 {
+			continue
+		}
+		events := safeIdentEvents(f.Code, f.Blank)
+		for _, site := range sites {
+			culprit, unnamed := storageKeyUnsafe(site.expr, events, site.pos)
+			if culprit == "" {
+				continue
+			}
+			if unnamed {
+				res.add(f.Path, f.lineOf(site.pos),
+					fmt.Sprintf("[storage-key-raw] %s encodes %q but names no namespace — encodeURIComponent leaves dots and hyphens alone, so an attribute value still names any key on the origin; prefix a literal (PREFIX + encodeURIComponent(%s), banner.js's dismissKey spelling)", site.kind, culprit, culprit))
+				continue
+			}
+			res.add(f.Path, f.lineOf(site.pos),
+				fmt.Sprintf("[storage-key-raw] %s uses %q raw — markup injected after boot writes or clobbers any key the attribute names on the origin; namespace AND component-encode it at the sink (PREFIX + encodeURIComponent(%s), banner.js's dismissKey spelling)", site.kind, culprit, culprit))
+		}
+	}
+	return res, nil
+}
+
+// reStorageCall matches the Web-storage key sinks on the blank view.
+var reStorageCall = regexp.MustCompile(`\b(?:localStorage|sessionStorage)\s*\.\s*(?:setItem|getItem|removeItem)\s*\(`)
+
+// storageKeySite is one keyed sink: the first argument of a storage
+// call (kind "localStorage.setItem" & kin) or the assigned expression
+// of a document.cookie write (kind "document.cookie").
+type storageKeySite struct {
+	kind string
+	expr string
+	pos  int
+}
+
+// storageKeySites finds the keyed sinks of the file. Call tokens are
+// matched on the blank view (strings and comments cannot spell a call);
+// the key text is read from the code view by offset so literals stay
+// visible. Cookie writes reject the == / === and => shapes in code,
+// exactly like lint 6.
+func storageKeySites(blank, code string) []storageKeySite {
+	var out []storageKeySite
+	for _, loc := range reStorageCall.FindAllStringIndex(blank, -1) {
+		if loc[0] > 0 && isJSIdentChar(blank[loc[0]-1]) {
+			continue // myLocalStorage.setItem(: an alias, out of the shape
+		}
+		open := strings.LastIndexByte(blank[loc[0]:loc[1]], '(') + loc[0]
+		close := matchDelimForward(blank, open)
+		if close < 0 {
+			continue
+		}
+		key := firstArgument(code, blank, open, close)
+		if key == "" {
+			continue
+		}
+		kind := strings.NewReplacer(" ", "", "\t", "").Replace(blank[loc[0] : loc[1]-1])
+		out = append(out, storageKeySite{kind: kind, expr: key, pos: open + 1})
+	}
+	for _, m := range reCookieWrite.FindAllStringSubmatchIndex(blank, -1) {
+		if m[4] < 0 || blank[m[4]] == '=' || blank[m[4]] == '>' {
+			continue // == / === comparison or => arrow, not a write
+		}
+		rhs := strings.TrimSpace(code[m[3]:statementEnd(code, m[3])])
+		if rhs == "" {
+			continue
+		}
+		out = append(out, storageKeySite{kind: "document.cookie", expr: rhs, pos: m[3]})
+	}
+	return out
+}
+
+// reFuiAttrKey matches the runtime's trust boundary at a key: a
+// getAttribute('data-fui-…') call or any dataset member, either
+// spelling. Non-fui attributes are deliberately absent.
+var reFuiAttrKey = regexp.MustCompile(`getAttribute\s*\(\s*['"]data-fui-|\.\s*dataset\s*[.\[]`)
+
+// storageKeyUnsafe inspects one key expression and reports the
+// attribute-borne value that reaches it raw (unnamed false), or the one
+// that is component-encoded with no literal prefix beside it (unnamed
+// true). Operands split like lint 7's builds: top-level '+' operands,
+// with templates decomposed into their literal chunks and interpolation
+// bodies.
+func storageKeyUnsafe(expr string, events []safeEvent, pos int) (culprit string, unnamed bool) {
+	unwrapped, wrapped := "", ""
+	hasLiteral := false
+	for _, op := range storageKeyOperands(expr) {
+		t := strings.TrimSpace(op)
+		if t == "" {
+			continue
+		}
+		if isJSStringLiteral(t) || isJSNumericLiteral(t) {
+			hasLiteral = true
+			continue
+		}
+		if isEncodedCall(t) {
+			if arg := encodedCallArg(t); attrFuiAt(events, arg, pos) || reFuiAttrKey.MatchString(arg) {
+				wrapped = arg
+			}
+			continue
+		}
+		if isJSIdent(t) && !jsKeywords[t] {
+			switch {
+			case safeAt(events, t, pos):
+				hasLiteral = true // banner.js's STORAGE_PREFIX: provably literal
+			case attrFuiAt(events, t, pos):
+				unwrapped = t
+			}
+			continue // any other identifier: provenance not traceable, out of scope
+		}
+		if reFuiAttrKey.MatchString(t) {
+			unwrapped = t // an inline dataset/getAttribute read is the key itself
+		}
+		// every other operand (calls, member chains): out of scope
+	}
+	if unwrapped != "" {
+		return unwrapped, false
+	}
+	if wrapped != "" && !hasLiteral {
+		return wrapped, true
+	}
+	return "", false
+}
+
+// storageKeyOperands splits a key expression into its concatenation
+// operands, decomposing template literals into literal chunks and
+// interpolation bodies (the chunks read as quoted literals downstream).
+func storageKeyOperands(expr string) []string {
+	var out []string
+	for _, op := range splitTopLevel(expr, '+') {
+		t := strings.TrimSpace(op)
+		if strings.HasPrefix(t, "`") {
+			out = append(out, templateOperands(t[:templateEnd(t, 0)+1])...)
+			continue
+		}
+		out = append(out, t)
+	}
+	return out
+}
+
+// attrFuiAt reports whether identifier name provably holds a data-fui
+// attribute value at pos: its deciding assignment event reads one.
+func attrFuiAt(events []safeEvent, name string, pos int) bool {
+	if !isJSIdent(name) {
+		return false
+	}
+	e, ok := latestEvent(events, name, pos)
+	return ok && e.attr && reFuiAttrKey.MatchString(e.rhs)
+}
+
+// encodedCallArg returns the argument text of the whole-operand
+// encodeURIComponent(…) call op ("" when malformed).
+func encodedCallArg(op string) string {
+	loc := reEncodeCall.FindStringIndex(op)
+	if loc == nil {
+		return ""
+	}
+	close := matchDelimForward(op, loc[1]-1)
+	if close < 0 {
+		return ""
+	}
+	return strings.TrimSpace(op[loc[1]:close])
 }

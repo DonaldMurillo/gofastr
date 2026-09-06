@@ -123,8 +123,8 @@ func runOne(app appSpec, outDir string, loadReqs int) result {
 	r.BuildPeakRSS = peakRSSFromState(cmd.ProcessState)
 
 	// 2. Binary size.
-	if fi, err := os.Stat(binPath); err == nil {
-		r.BinSizeBytes = fi.Size()
+	if fi, err := statUnder(outDir, app.Name); err {
+		r.BinSizeBytes = fi
 	}
 
 	// 3. Runtime RAM (only for apps that have a server).
@@ -133,6 +133,22 @@ func runOne(app appSpec, outDir string, loadReqs int) result {
 	}
 	runtimeRAM(&r, binPath, app, loadReqs)
 	return r
+}
+
+// statUnder stats name under dir without following a symlinked name or
+// component out of it: containment is the os.Root kernel check, not a
+// lexical prefix (2026-09-04 red-probe round).
+func statUnder(dir, name string) (int64, bool) {
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		return 0, false
+	}
+	defer root.Close()
+	fi, err := root.Stat(name)
+	if err != nil {
+		return 0, false
+	}
+	return fi.Size(), true
 }
 
 func runtimeRAM(r *result, binPath string, app appSpec, loadReqs int) {

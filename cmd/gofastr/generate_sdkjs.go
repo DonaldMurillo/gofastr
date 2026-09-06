@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/framework"
@@ -86,6 +87,19 @@ func renderSDKJSFiles(spec sdkSpec) []generatedFile {
 func jsResourceProp(ent cliEntity) string {
 	return toCamelJSON(ent.Table)
 }
+
+// jsIdentRe is the identifier grammar of the UNQUOTED slots this emitter
+// has: `export const %sFields` in executable client.js (the artifact
+// sdkdocs serves to browsers) and `export declare const %sFields` plus
+// `readonly %s: Resource<…>` in client.d.ts. A declaration name cannot be
+// quoted the way the object-literal keys and this[…] bindings are, so the
+// derived property must BE a plain identifier before it reaches the slot;
+// buildSDKSpec refuses the table otherwise, mirroring the isGoIdentifier
+// gate it already applies to ent.Struct (whose ASCII grammar is a subset
+// of this one).
+var jsIdentRe = regexp.MustCompile(`^[A-Za-z_$][A-Za-z0-9_$]*$`)
+
+func isJSIdentifier(s string) bool { return jsIdentRe.MatchString(s) }
 
 // writeJSEntity emits one entity's typed surface into both builders: the
 // d.ts interfaces (walking the declaration exactly like renderClientEntity,

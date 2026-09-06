@@ -502,6 +502,9 @@ func (r *Registry) checkVersionCompat(newKey entityKey, newEnt *entity.Entity) e
 // None of these are cosmetic per-version options. MultiTenant, OwnerField and
 // SoftDelete are the predicates CRUD adds to every SELECT/UPDATE/DELETE;
 // Access, Public and CrossOwnerRead are the gates it runs before issuing one.
+// The tenant column (TenantField, resolved by TenantColumn) picks WHICH column
+// those MultiTenant predicates scope by, so a divergence partitions the shared
+// table's rows per version even when both versions agree multi-tenancy is on.
 // Letting any of them differ makes the weaker version a bypass of the stronger
 // one, read another tenant's rows through /api/v2, read another user's rows
 // through the version without OwnerField, hard-delete rows the soft-delete
@@ -530,6 +533,19 @@ func checkRowIsolationCompat(existing, newEnt *entity.Entity) error {
 		return mismatch("tenant scoping",
 			multiTenantLabel(existing.Config.Scope.MultiTenant),
 			multiTenantLabel(newEnt.Config.Scope.MultiTenant))
+	}
+	// The tenant COLUMN is the same class of setting as the flag: crud builds
+	// every scoped query as WHERE <TenantColumn()> = ? per version, so two
+	// versions scoping through different columns silently partition the ONE
+	// shared table's rows (v1 writes tenant_id, v2 writes account_id, and
+	// neither version can see the other's rows). Compare the RESOLVED column
+	// (TenantColumn defaults an empty TenantField to tenant_id) so an explicit
+	// "tenant_id" beside an implicit default is accepted as the same column.
+	if existing.Config.Scope.MultiTenant &&
+		existing.Config.TenantColumn() != newEnt.Config.TenantColumn() {
+		return mismatch("tenant column",
+			existing.Config.TenantColumn(),
+			newEnt.Config.TenantColumn())
 	}
 	if existing.Config.Scope.OwnerField != newEnt.Config.Scope.OwnerField {
 		return mismatch("owner scoping",

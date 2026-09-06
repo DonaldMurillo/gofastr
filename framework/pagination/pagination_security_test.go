@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 )
 
@@ -163,5 +164,60 @@ func TestDecodeMultiCursor_ValueIsBoundDataNotSanitized(t *testing.T) {
 	}
 	if fields[0].Value != "42\nadmin" {
 		t.Fatalf("DecodeMultiCursor mutated the value %q — keyset values are bound args and must round-trip verbatim", fields[0].Value)
+	}
+}
+
+// Pins that cursor decoding bounded its work by the payload size, not
+// by a fixed cap, found by the 2026-09-04 red-probe round; fixed in
+// pagination.go by capping the encoded input length in both decoders
+// and the decoded field count in DecodeMultiCursor.
+// Property: cursor decoding must bound its work by a fixed cap, not by
+// the payload size — a cursor whose encoded length or decoded field
+// count exceeds a small constant is rejected before the field slice is
+// materialized.
+// Surfaces: pagination.DecodeMultiCursor (primary),
+// pagination.DecodeCursor (same client-borne input, length half), and
+// crud.decodeCursorAny downstream (its shape-mismatch check used to run
+// only after the full decode had already allocated).
+func TestDecodeMultiCursorCapsFieldCount(t *testing.T) {
+	t.Parallel()
+	// 5,000 fields is two orders of magnitude past any conceivable
+	// composite cursor (CursorFields is developer-declared, typically
+	// 1-3 columns) and still cheap to build, so the test measures the
+	// decode posture, not the machine.
+	const flood = 5_000
+	tok := multiCursorToken{Fields: make([]multiCursorField, 0, flood)}
+	for i := range flood {
+		tok.Fields = append(tok.Fields, multiCursorField{
+			Name:  "f" + strconv.Itoa(i),
+			Value: "v",
+		})
+	}
+	b, err := json.Marshal(tok)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cursor := base64.StdEncoding.EncodeToString(b)
+
+	if _, err := DecodeMultiCursor(cursor); err == nil {
+		t.Errorf("SECURITY: [dos] DecodeMultiCursor accepted a cursor carrying %d fields with no error — "+
+			"decode work must be bounded by a fixed cap on field count (any cap far below %d), not by the "+
+			"payload the client chose; every element allocates before the crud consumer's shape check runs",
+			flood, flood)
+	}
+
+	// Sibling surface, same property: the single-field decoder bounds
+	// the same client-borne input by encoded length.
+	if _, _, err := DecodeCursor(cursor); err == nil {
+		t.Errorf("SECURITY: [dos] DecodeCursor accepted a %d-byte cursor with no error — decode work must be bounded by a fixed cap on encoded length, not by the payload the client chose", len(cursor))
+	}
+
+	// Controls: legitimately sized cursors still round-trip.
+	legit := EncodeMultiCursor([]string{"id"}, map[string]any{"id": 42})
+	if _, err := DecodeMultiCursor(legit); err != nil {
+		t.Errorf("legitimate composite cursor refused: %v", err)
+	}
+	if _, _, err := DecodeCursor(EncodeCursor("id", 42)); err != nil {
+		t.Errorf("legitimate single-field cursor refused: %v", err)
 	}
 }

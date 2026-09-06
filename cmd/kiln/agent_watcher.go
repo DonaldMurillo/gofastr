@@ -124,22 +124,25 @@ func runAgentWatcher(ctx context.Context, logger *log.Logger, l *live.Live, tool
 			turnCtx, cancel := context.WithCancelCause(ctx)
 			// Register cancel with the store. If a prior turn was still
 			// running, the store cancels it with errSupersededByNewMessage.
-			store.SetTurnCancel(cancel)
+			// The returned token is this turn's ownership proof: when THIS
+			// turn drains, its clear only takes effect if no newer turn (or
+			// agent switch) has since taken the slot.
+			reg := store.SetTurnCancel(cancel)
 
-			go func(turnCtx context.Context, cancel context.CancelCauseFunc, text string, adapter Adapter) {
+			go func(turnCtx context.Context, cancel context.CancelCauseFunc, reg *turnCancel, text string, adapter Adapter) {
 				defer cancel(nil)
 				l.Notify("agent_turn_started", adapter.Name)
 				start := time.Now()
 				preToolCount, preErrCount := countToolsAndErrors(l)
 				runOneAgentTurn(turnCtx, logger, tools, adapter, kilnURL, text)
-				store.ClearTurnCancel()
+				store.ClearTurnCancel(reg)
 				postToolCount, postErrCount := countToolsAndErrors(l)
 				_ = tools.Chat(context.Background(), protocol.ChatArgs{
 					Role: "assistant",
 					Text: turnSummary(postToolCount-preToolCount, postErrCount-preErrCount, time.Since(start)),
 				})
 				l.Notify("agent_turn_ended", adapter.Name)
-			}(turnCtx, cancel, text, adapter)
+			}(turnCtx, cancel, reg, text, adapter)
 		}
 	}
 }

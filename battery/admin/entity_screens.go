@@ -736,12 +736,16 @@ func (s *entityFormScreen) Load(ctx context.Context) error {
 		}
 	}
 
-	// A failed submit redirected here with a one-shot flash token: overlay the
-	// submitted values + field errors so the user keeps their input + context.
-	if fl := s.b.flash.pop(q.Get("e")); fl != nil {
-		maps.Copy(values, fl.values)
-		s.fieldErrs = fl.fieldErrs
-		s.general = fl.general
+	// A failed submit redirected here with a flash cookie: overlay the
+	// submitted values + field errors so the user keeps their input +
+	// context. The cookie is signed with a key derived from the app
+	// secret, so any replica renders a redirect issued by any other.
+	if req := appui.RequestFromContext(ctx); req != nil {
+		if fl := s.b.readFlash(req, q.Get("e")); fl != nil {
+			maps.Copy(values, fl.Values)
+			s.fieldErrs = fl.FieldErrs
+			s.general = fl.General
+		}
 	}
 	s.values = values
 	// Load relationship-picker options (BelongsTo FK columns) scoped to the

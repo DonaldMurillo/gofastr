@@ -22,6 +22,13 @@ import (
 
 const (
 	defaultBase = "https://openrouter.ai/api/v1"
+
+	// modelsMaxBody caps the bytes decoded from the /models catalog
+	// response. The fetch carries the API key as a bearer header; a
+	// bigger body is a misbehaving endpoint, not a catalog to buffer
+	// to EOF. 1 MiB matches the OIDC/provider fetch convention
+	// (battery/auth oauthProviderMaxBody).
+	modelsMaxBody = 1 << 20
 )
 
 // Provider is the OpenRouter Provider.
@@ -85,7 +92,16 @@ func (p *Provider) Models(ctx context.Context) ([]provider.Model, error) {
 	req.Header.Set("Authorization", "Bearer "+p.APIKey)
 	client := p.HTTP
 	if client == nil {
-		client = &http.Client{Timeout: 30 * time.Second}
+		// Redirects are refused (the oidcNoRedirect spelling from
+		// battery/auth/oidc.go): this fetch carries the API key as a
+		// bearer header, and a 3xx answer would re-send it to whatever
+		// origin the provider names.
+		client = &http.Client{
+			Timeout: 30 * time.Second,
+			CheckRedirect: func(*http.Request, []*http.Request) error {
+				return http.ErrUseLastResponse
+			},
+		}
 	}
 	resp, err := client.Do(req)
 	if err != nil {
@@ -111,7 +127,7 @@ func (p *Provider) Models(ctx context.Context) ([]provider.Model, error) {
 			} `json:"top_provider"`
 		} `json:"data"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, modelsMaxBody)).Decode(&parsed); err != nil {
 		return nil, fmt.Errorf("openrouter /models: parse: %w", err)
 	}
 	out := make([]provider.Model, 0, len(parsed.Data))

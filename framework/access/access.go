@@ -202,6 +202,51 @@ func (rp *RolePolicy) grantPrepared(role string, permissions []Permission) {
 	rp.rolePermissions[role] = existing
 }
 
+// prepareRevokes expands wildcard-shaped permissions against the capability
+// registry with the same rule prepareGrants uses for grants, so a revoke of
+// "teams:*" removes at least the set a grant of "teams:*" installed. Two
+// deliberate differences from the grant pass: the RAW permission always
+// stays in the set too (a grant issued while the registry was empty — or
+// against a different registry — persists the wildcard literally, and
+// revoking a permission the role does not hold is a documented no-op, so the
+// extra literal can never over-revoke), and unknown capabilities pass
+// through silently instead of strict-failing (Revoke has no error return,
+// and refusing a revoke is the fail-open direction).
+func (rp *RolePolicy) prepareRevokes(permissions []Permission) []Permission {
+	rp.mu.RLock()
+	registered := make([]Permission, 0, len(rp.capabilities))
+	for capability := range rp.capabilities {
+		registered = append(registered, capability)
+	}
+	rp.mu.RUnlock()
+	slices.Sort(registered)
+
+	prepared := make([]Permission, 0, len(permissions))
+	seen := make(map[Permission]struct{}, len(permissions))
+	appendPrepared := func(permission Permission) {
+		if _, ok := seen[permission]; ok {
+			return
+		}
+		seen[permission] = struct{}{}
+		prepared = append(prepared, permission)
+	}
+	for _, permission := range permissions {
+		appendPrepared(permission)
+		if permission == Wildcard {
+			continue
+		}
+		if raw := string(permission); strings.HasSuffix(raw, ":*") {
+			prefix := strings.TrimSuffix(raw, "*")
+			for _, capability := range registered {
+				if strings.HasPrefix(string(capability), prefix) {
+					appendPrepared(capability)
+				}
+			}
+		}
+	}
+	return prepared
+}
+
 // UnknownCapabilityError reports a strict-mode grant of a capability that is
 // not in the policy's registry. Handlers can errors.As on it to present the
 // message as a caller mistake (e.g. HTTP 400) rather than a server fault.
@@ -272,16 +317,22 @@ func stringDistance(a, b string) int {
 	return previous[len(b)]
 }
 
-// Revoke removes specific permissions from a role.
+// Revoke removes specific permissions from a role. Wildcard-shaped
+// permissions ("teams:*") expand against the capability registry exactly
+// like Grant, so revoking a wildcard removes at least what Granting the
+// same input installed; the raw literal is revoked alongside its expansion
+// (a grant made while the registry was empty persists the wildcard
+// literally, and revoking an unheld permission is a no-op).
 func (rp *RolePolicy) Revoke(role string, permissions ...Permission) {
+	prepared := rp.prepareRevokes(permissions)
 	rp.mu.Lock()
 	defer rp.mu.Unlock()
 	existing, ok := rp.rolePermissions[role]
 	if !ok {
 		return
 	}
-	revokeSet := make(map[Permission]bool, len(permissions))
-	for _, p := range permissions {
+	revokeSet := make(map[Permission]bool, len(prepared))
+	for _, p := range prepared {
 		revokeSet[p] = true
 	}
 	filtered := existing[:0]

@@ -32,10 +32,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"html/template"
 	"log"
 	"maps"
 	"strings"
 	"sync"
+
+	"github.com/DonaldMurillo/gofastr/battery/email"
 )
 
 // Notification is one event-shaped message bound for a single
@@ -395,8 +398,19 @@ func (m *MapTemplater) Set(notifType, channel string, t Template) {
 // The rendered Subject is stripped of CR / LF / NUL so a user-controlled
 // {{placeholder}} can't inject header continuations when downstream
 // transports (SMTP, push providers) treat Subject as a header value.
-// TextBody / HTMLBody are not modified, those are payload bytes and
-// any HTML safety is the rendering layer's job.
+//
+// HTMLBody is HTML-escaped at the interpolation sink (2026-09-04
+// red-probe round 3): every placeholder VALUE is passed through
+// html/template's escaper before insertion, so user-controlled data
+// (names, addresses, user-entered content in the notification payload)
+// cannot arrive at the HTML email body as live markup — the same
+// posture battery/email.Execute gives its HTMLBody. The template bytes
+// themselves are host-authored and trusted. To opt ONE value out (it is
+// markup you generated), type it as html/template.HTML:
+//
+//	data := map[string]any{"name": user.Name, "badge": template.HTML(badgeMarkup)}
+//
+// TextBody is payload bytes and is not modified.
 func (m *MapTemplater) Render(_ context.Context, notifType, channel string, data map[string]any) (Rendered, error) {
 	m.mu.RLock()
 	t, ok := m.templates[notifType][channel]
@@ -407,7 +421,7 @@ func (m *MapTemplater) Render(_ context.Context, notifType, channel string, data
 	return Rendered{
 		Subject:  stripHeaderUnsafe(interpolate(t.Subject, data)),
 		TextBody: interpolate(t.TextBody, data),
-		HTMLBody: interpolate(t.HTMLBody, data),
+		HTMLBody: interpolateValues(t.HTMLBody, data, escapeHTMLValue),
 		Extra:    t.Extra,
 	}, nil
 }
@@ -420,7 +434,7 @@ func stripHeaderUnsafe(s string) string {
 	}
 	var b strings.Builder
 	b.Grow(len(s))
-	for i := 0; i < len(s); i++ {
+	for i := range len(s) {
 		switch s[i] {
 		case '\r', '\n', 0x00:
 			continue
@@ -437,15 +451,18 @@ func stripHeaderUnsafe(s string) string {
 // 1 MiB is well above any legitimate notification payload.
 const MaxInterpolatedOutputBytes = 1 << 20
 
-// interpolate is a local copy of the i18n placeholder expander (kept
-// inline so this package has no dependency on core/i18n). Unknown
-// placeholders are left intact for visibility during development.
-//
-// Output is hard-capped at MaxInterpolatedOutputBytes, a giant
-// placeholder value would otherwise produce an unbounded string and
-// pin the rendering goroutine. The cap is far above any legitimate
-// notification size, so triggering it indicates abuse.
+// interpolate is the Subject / TextBody expansion: plain fmt.Sprint
+// values. See interpolateValues for the shared machinery.
 func interpolate(s string, params map[string]any) string {
+	return interpolateValues(s, params, nil)
+}
+
+// interpolateValues expands {{placeholder}}s, rendering each value
+// through format (nil = fmt.Sprint, the Subject/TextBody behaviour).
+// It is the same expander as interpolate with a value formatter
+// injected, so the output cap and the unknown-placeholder pass-through
+// behave identically on every field.
+func interpolateValues(s string, params map[string]any, format func(any) string) string {
 	if s == "" || len(params) == 0 || !strings.Contains(s, "{{") {
 		return s
 	}
@@ -476,7 +493,11 @@ func interpolate(s string, params map[string]any) string {
 		}
 		name := strings.TrimSpace(s[i+j+2 : i+j+2+k])
 		if v, ok := params[name]; ok {
-			if !write(fmt.Sprint(v)) {
+			if format != nil {
+				if !write(format(v)) {
+					break
+				}
+			} else if !write(fmt.Sprint(v)) {
 				break
 			}
 		} else {
@@ -487,6 +508,19 @@ func interpolate(s string, params map[string]any) string {
 		i = i + j + 2 + k + 2
 	}
 	return b.String()
+}
+
+// escapeHTMLValue renders one placeholder value for an HTML body: the
+// value is escaped with html/template's escaper (the same text-context
+// escaping battery/email.Execute applies), so user-controlled data can
+// never arrive at the HTML sink as live markup. A value typed as
+// html/template.HTML passes through verbatim — that type is the
+// documented "this value is markup I generated" marker.
+func escapeHTMLValue(v any) string {
+	if h, ok := v.(template.HTML); ok {
+		return string(h)
+	}
+	return template.HTMLEscapeString(fmt.Sprint(v))
 }
 
 // ----- bundled LoggerChannel -----------------------------------------------
@@ -511,9 +545,15 @@ func NewLoggerChannel(l *log.Logger) *LoggerChannel {
 // Name returns "log".
 func (c *LoggerChannel) Name() string { return c.name }
 
-// Send writes a one-line record to the logger.
+// Send writes a one-line record to the logger. Subject and text body pass
+// through email.RedactBody first: this is a development log surface, and a
+// rendered body carrying a credential URL (password.reset, magic-link, the
+// standard Data["url"] shape) must not land token-first in the log — the
+// same contract battery/email's LogSender holds, sharing its redaction
+// helper rather than forking the patterns. Pinned by
+// TestLoggerChannelRedactsCredentialURLs.
 func (c *LoggerChannel) Send(_ context.Context, n Notification, r Rendered) error {
 	c.log.Printf("[notify] type=%s to_user=%q to_email=%q subject=%q text=%q",
-		n.Type, n.To.UserID, n.To.Email, r.Subject, r.TextBody)
+		n.Type, n.To.UserID, n.To.Email, email.RedactBody(r.Subject), email.RedactBody(r.TextBody))
 	return nil
 }

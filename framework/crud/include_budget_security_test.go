@@ -1,11 +1,14 @@
 package crud
 
 import (
+	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/core/schema"
@@ -218,5 +221,108 @@ func TestDeepConvertMapShapes(t *testing.T) {
 	}
 	if n < 3 {
 		t.Errorf("node count %d does not include the repeated reference", n)
+	}
+}
+
+// countingExecutor wraps a DBExecutor and counts every query
+// statement, so a test can observe how much DB work one request
+// triggered.
+type countingExecutor struct {
+	DBExecutor
+	queries atomic.Int64
+}
+
+func (c *countingExecutor) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
+	c.queries.Add(1)
+	return c.DBExecutor.QueryContext(ctx, query, args...)
+}
+
+func (c *countingExecutor) QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row {
+	c.queries.Add(1)
+	return c.DBExecutor.QueryRowContext(ctx, query, args...)
+}
+
+// Pins that ?include= breadth was unbounded, found by the 2026-09-04
+// red-probe round; fixed in include.go by capping the number of
+// comma-separated include paths parseIncludeTreeQ accepts
+// (maxIncludePaths), refused as a 400 on every surface.
+// Property: the number of eager-load nodes (and therefore eager-load
+// queries) one ?include= request can produce is bounded by a fixed cap
+// — breadth, not just depth and rows.
+// Surfaces: crud.parseIncludeTreeQ/parseIncludeTree (the mention-count
+// cap), and every dispatcher behind it: crud.List, crud.Get,
+// crud.serveCursorList, and the typed-query include path (crud_api.go),
+// all of which dispatch one loadIncludeNode per node.
+func TestIncludeMentionCountBounded(t *testing.T) {
+	installSecurityOwnerExtractor(t)
+	ch := budgetHandler(t, 2)
+	counter := &countingExecutor{DBExecutor: ch.DB}
+	ch.DB = counter
+
+	// 512 mentions of the SAME relation, each with a distinct scoped
+	// filter so each gets its own node. Distinctness is what defeats
+	// the sibling dedupe; any cap at or below 512 keeps this test
+	// meaningful.
+	const flood = 512
+	var b strings.Builder
+	for i := range flood {
+		if i > 0 {
+			b.WriteByte(',')
+		}
+		fmt.Fprintf(&b, "up(label_gt=%d)", i+1)
+	}
+	include := b.String()
+
+	surfaces := []struct {
+		name string
+		run  func() int
+	}{
+		{"list", func() int {
+			rec := httptest.NewRecorder()
+			ch.List()(rec, makeRequest(t, RequestOpts{
+				Method: http.MethodGet, Path: "/bg_nodes?include=" + include, UserID: "u1",
+			}))
+			return rec.Code
+		}},
+		{"get", func() int {
+			rec := httptest.NewRecorder()
+			req := makeRequest(t, RequestOpts{
+				Method: http.MethodGet, Path: "/bg_nodes/root?include=" + include, UserID: "u1",
+			})
+			req.SetPathValue("id", "root")
+			ch.Get()(rec, req)
+			return rec.Code
+		}},
+		{"cursor_list", func() int {
+			rec := httptest.NewRecorder()
+			ch.List()(rec, makeRequest(t, RequestOpts{
+				Method: http.MethodGet, Path: "/bg_nodes?cursor=&include=" + include, UserID: "u1",
+			}))
+			return rec.Code
+		}},
+	}
+
+	for _, s := range surfaces {
+		t.Run(s.name, func(t *testing.T) {
+			before := counter.queries.Load()
+			code := s.run()
+			ran := counter.queries.Load() - before
+			if code != http.StatusBadRequest {
+				t.Errorf("SECURITY: [dos] ?include= with %d distinct-filter mentions answered %d after %d queries — "+
+					"the include list must be breadth-bounded: every distinct scoped-filter mention spawns its own "+
+					"eager-load node and its own SELECT, and the %d-row budget never trips because each node scans "+
+					"almost nothing", flood, code, ran, maxIncludeRows)
+			}
+		})
+	}
+
+	// Control: a within-cap include still loads (two mentions, distinct
+	// filters, both served).
+	rec := httptest.NewRecorder()
+	ch.List()(rec, makeRequest(t, RequestOpts{
+		Method: http.MethodGet, Path: "/bg_nodes?include=up(label_gt=0),up(label_gt=1)", UserID: "u1",
+	}))
+	if rec.Code != http.StatusOK {
+		t.Errorf("within-cap include refused: %d (%s)", rec.Code, rec.Body.String())
 	}
 }

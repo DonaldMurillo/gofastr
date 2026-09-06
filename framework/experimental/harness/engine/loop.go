@@ -53,6 +53,13 @@ type Engine struct {
 	// turn-busy slot so subscribers reacting to TurnEnded can
 	// immediately send the next input without hitting TurnInProgress.
 	OnTurnEnd func()
+
+	// MaxStreamBytesPerTurn caps the total bytes one provider turn may
+	// buffer (text + thinking + tool-call argument deltas) before the
+	// turn fails with ErrStreamCapExceeded. Zero means
+	// DefaultMaxStreamBytesPerTurn (8 MiB). The per-block twin of this
+	// bound is maxToolResultBytesPerBlock.
+	MaxStreamBytesPerTurn int
 }
 
 // NewEngine constructs an Engine. Caller is responsible for wiring
@@ -147,7 +154,7 @@ func (e *Engine) RunTurn(ctx context.Context, originator ids.ClientID, input []c
 			return err
 		}
 
-		summary, err := CollectStream(ctx, e.Bus, originator, stream)
+		summary, err := CollectStreamWithCap(ctx, e.Bus, originator, stream, e.MaxStreamBytesPerTurn)
 		componentTimings["provider.chat"] += time.Since(providerStart)
 		if err != nil {
 			e.publishTurnEnd(turnNo, "error", originator, componentTimings, toolTimings)

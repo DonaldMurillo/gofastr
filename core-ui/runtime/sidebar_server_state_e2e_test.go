@@ -207,7 +207,7 @@ func TestSidebarGroupToggleAndAutoLabelRestore(t *testing.T) {
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(srv.URL+"/seed"),
 		chromedp.WaitVisible(`#seeded`, chromedp.ByID),
-		chromedp.Evaluate(`localStorage.setItem('test.sidebar.key', 'true'); 'ok'`, nil),
+		chromedp.Evaluate(`localStorage.setItem('gofastr.sidebar-collapse.' + encodeURIComponent('test.sidebar.key'), 'true'); 'ok'`, nil),
 
 		// Auto mode: the stored value is restored after hydration, and
 		// the button name flips to the CUSTOM expand label.
@@ -223,9 +223,9 @@ func TestSidebarGroupToggleAndAutoLabelRestore(t *testing.T) {
 		// Auto mode still persists: toggling the rail writes the key.
 		chromedp.Click(`#auto [data-fui-sidebar-collapse]`),
 		// The toggle persists synchronously; poll the key flip.
-		chromedp.Poll(`localStorage.getItem('test.sidebar.key') === 'false'`, nil,
+		chromedp.Poll(`localStorage.getItem('gofastr.sidebar-collapse.' + encodeURIComponent('test.sidebar.key')) === 'false'`, nil,
 			chromedp.WithPollingTimeout(5*time.Second), chromedp.WithPollingInterval(25*time.Millisecond)),
-		chromedp.Evaluate(`String(localStorage.getItem('test.sidebar.key'))`, &storageAfterToggle),
+		chromedp.Evaluate(`String(localStorage.getItem('gofastr.sidebar-collapse.' + encodeURIComponent('test.sidebar.key')))`, &storageAfterToggle),
 
 		// A fresh document whose ONLY sidebar marker is the group
 		// toggle: the module must load from that marker alone and wire

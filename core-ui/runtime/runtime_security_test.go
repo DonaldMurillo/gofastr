@@ -1610,3 +1610,37 @@ func TestModuleURLsGateTheirId(t *testing.T) {
 		t.Error("VACUITY: LintModuleURLShape no longer fires on the pre-fix '/__gofastr/widget/' + id spelling")
 	}
 }
+
+// TestStorageKeysEncodeAttrValues: a storage key the runtime reads from
+// a data-fui-* attribute (sidebar collapse persistence, the
+// persist-storage widget helper) is namespaced AND component-encoded at
+// the sink — banner.js's dismissKey spelling, held for the cookie by
+// TestCookieWritesEncodeOperands above. Raw keys let markup injected
+// after boot (island swap, RPC innerHTML, SPA merge) write or clobber
+// any localStorage key on the origin. Vacuity control on the pre-fix
+// sidebar.js spelling.
+func TestStorageKeysEncodeAttrValues(t *testing.T) {
+	res, err := check.LintStorageKeyRaw(".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.HasErrors() {
+		t.Errorf("SECURITY: [storage-key-raw] attribute-borne storage key(s) used raw in the shipped runtime:\n%s",
+			strings.TrimSpace(res.Error()))
+	}
+	vdir := t.TempDir()
+	vsrc := "const setCollapsed = (root, collapsed) => {\n" +
+		"  const key = root.getAttribute('data-fui-sidebar-storage');\n" +
+		"  try { localStorage.setItem(key, collapsed ? 'true' : 'false'); } catch (_) {}\n" +
+		"};\n"
+	if err := os.WriteFile(filepath.Join(vdir, "vacuity.js"), []byte(vsrc), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	vres, err := check.LintStorageKeyRaw(vdir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !vres.HasErrors() {
+		t.Error("VACUITY: LintStorageKeyRaw no longer fires on the pre-fix raw localStorage.setItem(key) spelling")
+	}
+}

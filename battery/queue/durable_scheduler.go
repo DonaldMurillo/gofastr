@@ -338,6 +338,13 @@ func (s *DurableScheduler) runOnce(ctx context.Context, now time.Time) (bool, er
 // Start runs durable evaluation until ctx is cancelled. Registration wakes the
 // loop immediately. The lease heartbeat is the maximum sleep; the earliest
 // persisted next-run timestamp wakes it sooner.
+//
+// An evaluation error no longer ends the loop: one poisoned schedule row or a
+// transient DB blip returning from runOnce/nextWakeDelay is logged and the
+// loop retries at the next heartbeat, so every healthy schedule on the replica
+// keeps firing (the same skip-and-continue rule runOnce applies per row).
+// Returning here permanently stopped all durable scheduling until process
+// restart, silently once the boot log scrolled past.
 func (s *DurableScheduler) Start(ctx context.Context) error {
 	heartbeat := s.leaseDuration / 3
 	if heartbeat <= 0 {
@@ -355,13 +362,16 @@ func (s *DurableScheduler) Start(ctx context.Context) error {
 		now := time.Now()
 		owned, err := s.runOnce(ctx, now)
 		if err != nil {
-			return err
+			slog.Default().Error("queue: durable scheduler evaluation failed; retrying next heartbeat",
+				"err", err.Error())
 		}
 		delay := heartbeat
 		if owned {
 			delay, err = s.nextWakeDelay(ctx, now, heartbeat)
 			if err != nil {
-				return err
+				slog.Default().Error("queue: durable scheduler wake computation failed; using heartbeat",
+					"err", err.Error())
+				delay = heartbeat
 			}
 		}
 		if !timer.Stop() {
@@ -473,23 +483,35 @@ func (s *DurableScheduler) loadDue(ctx context.Context, now time.Time) ([]durabl
 		var payload string
 		var intervalNS int64
 		var nextRun, updatedAt any
+		// Decoding is per row, never fatal to the pass: a single corrupted
+		// row (a partially-written next_run, a driver-skew artifact, a
+		// manual repair gone wrong) must not abort evaluation of the
+		// remaining due schedules — the same rule runOnce already applies
+		// one layer down for dueTicks errors. Surface it via the logger so
+		// operators notice, then continue.
 		if err := rows.Scan(&row.id, &row.jobType, &payload, &intervalNS,
 			&row.cronSpec, &row.tz, &row.lane, &row.priority, &row.maxAttempts,
 			&nextRun, &updatedAt, &row.version); err != nil {
-			return nil, err
+			slog.Default().Error("queue: durable scheduler skipping schedule",
+				"schedule_id", row.id, "err", err.Error())
+			continue
 		}
 		row.payload = json.RawMessage(payload)
 		row.interval = time.Duration(intervalNS)
-		row.nextRun, err = queueTime(nextRun)
+		next, err := queueTime(nextRun)
 		if err != nil {
-			return nil, fmt.Errorf("queue: decode schedule %q next_run: %w", row.id, err)
+			slog.Default().Error("queue: durable scheduler skipping schedule",
+				"schedule_id", row.id, "err", fmt.Errorf("decode next_run: %w", err).Error())
+			continue
 		}
-		row.updatedAt, err = queueTime(updatedAt)
+		updated, err := queueTime(updatedAt)
 		if err != nil {
-			return nil, fmt.Errorf("queue: decode schedule %q updated_at: %w", row.id, err)
+			slog.Default().Error("queue: durable scheduler skipping schedule",
+				"schedule_id", row.id, "err", fmt.Errorf("decode updated_at: %w", err).Error())
+			continue
 		}
-		row.nextRun = row.nextRun.UTC()
-		row.updatedAt = row.updatedAt.UTC()
+		row.nextRun = next.UTC()
+		row.updatedAt = updated.UTC()
 		out = append(out, row)
 	}
 	return out, rows.Err()

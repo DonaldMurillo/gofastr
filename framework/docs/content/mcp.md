@@ -103,6 +103,16 @@ srv.RegisterTool(
 on an empty name, a nil handler, or a duplicate name. The `inputSchema` is a
 JSON Schema as `map[string]any`, serialized verbatim in `tools/list`.
 
+The declared `inputSchema` is **enforced** at dispatch: `tools/call` (and the
+in-process `CallTool`) validates `arguments` against it before the handler
+runs and answers `invalid-params` on a mismatch — JSON types, `required`,
+`enum`, `items`, and `additionalProperties` as declared (`false` closes the
+object; absent allows extras, the JSON Schema default). The schema
+`tools/list` advertises is the contract the caller is held to, so a handler
+never receives type-confused arguments it must defend against itself. A tool
+that must see its arguments verbatim opts out with `WithLaxArgs()` (see
+below) and validates on its own.
+
 `UnregisterTool(name)` removes a tool and reports whether it was there. It
 exists for an opt-in that can only be withdrawn *after* registration: the
 dev MCP registers its mutating control tools during `InitPlugins`, but
@@ -134,6 +144,7 @@ Options:
 | `WithOutputSchema(schema)` | Declares the JSON Schema of the tool's `structuredContent`; served as `outputSchema` in `tools/list`. |
 | `WithToolMeta(meta)` | Attaches a `_meta` object, serialized verbatim in `tools/list`. MCP Apps use it to link a tool to its UI resource, e.g. `{"ui": {"resourceUri": "ui://app/widget.html"}}`. |
 | `WithToolGate(gate)` | Per-caller precondition; see [gating](#gating). A nil gate panics. |
+| `WithLaxArgs()` | Skips dispatch-time `inputSchema` validation; the tool receives its arguments verbatim and validates them itself. |
 
 Three more calls matter when you hold the server in-process:
 
@@ -535,7 +546,11 @@ What a client sees at the edges:
   structured-suffix family), caps the body at 1 MiB, and decodes the
   envelope with strict top-level keys: a body repeating a key, or spelling
   one in two cases (`"method"` and `"Method"`), is refused as invalid JSON
-  rather than silently resolved last-key-wins.
+  rather than silently resolved last-key-wins. The `params` object gets the
+  same rule at dispatch, for every method: any object inside `params` that
+  repeats a key, or carries two keys that case-fold onto each other
+  (`"name"` and `"Name"`), is refused with invalid-params before any
+  handler runs.
 - `ServeSSE(path)` returns an http.Handler where POST handles JSON-RPC and GET
   with `Accept: text/event-stream` opens a stream the server holds open for
   the connection's life, carrying server-initiated notifications (see

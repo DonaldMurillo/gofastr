@@ -150,7 +150,14 @@ attempt using `Options.Backoff`, and the worker picks it up at the
 scheduled time.
 
 After `Options.MaxAttempts` attempts the delivery transitions to
-`dead`. A transient error looking the subscriber up (a store blip, a
+`dead`. Every **claim** consumes one attempt: the store bumps the row's
+counter when `ClaimDueDeliveries` reserves it, so a worker that crashes
+between claim and settle (deploy kill, OOM) still burns budget and a
+crash loop terminates at `MaxAttempts` instead of redelivering forever.
+Settles never rewrite the counter — two overlapping runners (a worker
+whose lease expired mid-POST, the designed recovery re-claim) each count
+their own POST, so the recorded attempts always equal the deliveries
+that ran. A transient error looking the subscriber up (a store blip, a
 cancelled worker context) is not one of those: it records `failed` and
 schedules the next attempt, since `dead` is reserved for an exhausted
 attempt budget or a subscriber that is definitively gone or inactive. A
@@ -221,13 +228,18 @@ type LeasedStore interface {
 }
 ```
 
-`ClaimDueDeliveries` atomically reserves rows for the calling worker
-and pushes their `NextAttemptAt` forward by `leasePeriod`, so a
-concurrent Manager sees them as not-yet-due and skips them. The
-Manager auto-detects the interface and uses the claim path, which makes
-multi-instance deployments safe against double delivery. Set
-`Options.LeasePeriod` (default 30s) above your worst-case handler
-latency.
+`ClaimDueDeliveries` atomically reserves rows for the calling worker,
+pushes their `NextAttemptAt` forward by `leasePeriod`, and consumes one
+attempt per claimed row, so a concurrent Manager sees them as
+not-yet-due and skips them. The Manager auto-detects the interface and
+uses the claim path, which makes multi-instance deployments safe
+against double delivery. Set `Options.LeasePeriod` (default 30s) above
+your worst-case handler latency.
+
+A `leasePeriod` of `0` selects the 30 s default; a negative one is
+rejected by both bundled stores — a negative lease can only be a sign
+or unit error, and folding it onto the default would hand the caller a
+longer lease than they asked for.
 
 ## Secret encryption at rest
 
@@ -374,10 +386,12 @@ received → processing → processed
 ```
 
 It loads the envelope by `envelope_id` from the job payload, marks it
-`processing` (incrementing `Attempts`) before calling your function, then
-`processed` on success or `failed` (with `LastError` set) on error. It
-returns your function's error so the queue's own retry/backoff can
-reschedule it.
+`processing` — consuming one attempt store-side (`attempts = attempts + 1`
+when the store implements the claim; both bundled stores do), so two
+overlapping runs under the queue's lease expiry each count — before
+calling your function, then `processed` on success or `failed` (with
+`LastError` set) on error. It returns your function's error so the
+queue's own retry/backoff can reschedule it.
 
 ### Stores
 

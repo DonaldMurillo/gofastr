@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/control"
@@ -30,20 +31,58 @@ type StreamSummary struct {
 	FinishReason string            // raw provider finish_reason
 }
 
+// DefaultMaxStreamBytesPerTurn is the engine-level defensive cap on the
+// total bytes one provider turn may buffer: text deltas, thinking
+// blocks, and tool-call argument deltas combined. Tool results are
+// already capped per block (maxToolResultBytesPerBlock); this is the
+// same shape of bound for the provider-directed half of the
+// conversation. A hostile, compromised, or buggy endpoint (BaseURL is
+// profile-configurable) can otherwise stream a multi-gigabyte turn for
+// the full HTTP timeout and OOM the harness process. Past the cap the
+// turn fails loudly and the partial text is kept for the transcript.
+const DefaultMaxStreamBytesPerTurn = 8 << 20 // 8 MiB
+
+// ErrStreamCapExceeded is returned by CollectStream when one provider
+// turn buffered more than the configured cap. The partial summary is
+// still returned alongside it so the transcript keeps what arrived.
+var ErrStreamCapExceeded = errors.New("engine: provider turn exceeded the stream buffer cap")
+
 // CollectStream pumps events from a Provider stream channel into the
 // per-session Bus and returns the summary when the channel closes (or
-// ctx is done).
+// ctx is done). The turn is capped at DefaultMaxStreamBytesPerTurn of
+// buffered text + thinking + tool-argument bytes; use
+// [CollectStreamWithCap] for a per-engine override.
 func CollectStream(
 	ctx context.Context,
 	bus *Bus,
 	originator ids.ClientID,
 	stream <-chan provider.StreamEvent,
 ) (StreamSummary, error) {
+	return CollectStreamWithCap(ctx, bus, originator, stream, DefaultMaxStreamBytesPerTurn)
+}
+
+// CollectStreamWithCap is CollectStream with an explicit per-turn byte
+// cap. maxBytes <= 0 means DefaultMaxStreamBytesPerTurn.
+func CollectStreamWithCap(
+	ctx context.Context,
+	bus *Bus,
+	originator ids.ClientID,
+	stream <-chan provider.StreamEvent,
+	maxBytes int,
+) (StreamSummary, error) {
+	if maxBytes <= 0 {
+		maxBytes = DefaultMaxStreamBytesPerTurn
+	}
 	var (
 		summary     StreamSummary
 		textBuf     strings.Builder
 		curTool     *control.ToolUse
 		curToolJSON strings.Builder
+		// buffered counts the bytes this turn has accumulated across
+		// textBuf, summary.Thinking, and curToolJSON. All three grow
+		// without bound otherwise: they are fed by whatever the
+		// provider endpoint chooses to send.
+		buffered int
 		// sawTerminal records that the provider actually ended the turn
 		// (a KindStop; KindError returns from inside the loop). Without
 		// it, a channel that simply closed -- a dropped connection, a
@@ -88,6 +127,20 @@ func CollectStream(
 			curToolJSON.Reset()
 		}
 	}
+	// capExceeded fails the turn: publish a terminal error event, keep
+	// the partial text for the transcript, and return a loud error. The
+	// crossing delta is dropped, not partially appended -- the caller
+	// must see a bounded summary, not a capped-but-growing one.
+	capExceeded := func() (StreamSummary, error) {
+		msg := fmt.Sprintf("provider turn exceeded the per-turn stream buffer cap of %d bytes; failing the turn to bound memory (partial output kept)", maxBytes)
+		_, _ = bus.Publish(control.Error{
+			Reason:  control.ReasonInvalidCommand,
+			Message: msg,
+		}, originator)
+		flushTool()
+		summary.Text = textBuf.String()
+		return summary, fmt.Errorf("%w: %d bytes cap", ErrStreamCapExceeded, maxBytes)
+	}
 	for {
 		select {
 		case <-ctx.Done():
@@ -107,12 +160,20 @@ func CollectStream(
 				if ev.Text == "" {
 					continue
 				}
+				if buffered+len(ev.Text) > maxBytes {
+					return capExceeded()
+				}
+				buffered += len(ev.Text)
 				textBuf.WriteString(ev.Text)
 				_, _ = bus.Publish(control.TextDelta{Text: ev.Text}, originator)
 			case provider.KindThinkingDelta:
 				if len(ev.Thinking) == 0 {
 					continue
 				}
+				if buffered+len(ev.Thinking) > maxBytes {
+					return capExceeded()
+				}
+				buffered += len(ev.Thinking)
 				summary.Thinking = append(summary.Thinking, json.RawMessage(ev.Thinking))
 				_, _ = bus.Publish(control.ThinkingDelta{Block: json.RawMessage(ev.Thinking)}, originator)
 			case provider.KindToolUseStart:
@@ -126,6 +187,10 @@ func CollectStream(
 				if curTool == nil {
 					continue
 				}
+				if buffered+len(ev.InputDelta) > maxBytes {
+					return capExceeded()
+				}
+				buffered += len(ev.InputDelta)
 				curToolJSON.WriteString(ev.InputDelta)
 			case provider.KindToolUseStop:
 				flushTool()

@@ -62,8 +62,21 @@ type InboundStore interface {
 	SeenDedupeKey(ctx context.Context, source, key string) (bool, error)
 }
 
-// InboundVerifier authenticates a request. Return a non-nil error to reject
-// with 401. Implementations MUST be constant-time on secrets, the built-in
+// envelopeProcessingClaimer is the optional InboundStore capability that
+// marks an envelope "processing" while consuming one attempt IN THE STORE
+// (a relative counter bump). ProcessInbound probes for it exactly like the
+// outbound Manager probes LeasedStore: stores that implement it get
+// monotonic attempt counting under overlapping runners (the queue's lease
+// expiry re-runs an envelope's job while a slow first handler may still be
+// running); stores that don't keep the legacy caller-side bump.
+type envelopeProcessingClaimer interface {
+	// MarkEnvelopeProcessing transitions the envelope to "processing",
+	// increments its attempts counter store-side, and clears LastError.
+	// A missing id is a no-op.
+	MarkEnvelopeProcessing(ctx context.Context, id string) error
+}
+
+// InboundVerifier verifies an inbound request's authenticity. The shipped
 // TimestampedVerifier and HMACSHA256Verifier use hmac.Equal.
 type InboundVerifier func(r *http.Request, body []byte) error
 
@@ -304,7 +317,7 @@ type inboundJobPayload struct {
 // ProcessInbound adapts a business handler into a queue.Handler that loads
 // the envelope referenced by the job payload and drives its lifecycle:
 //
-//   - received → processing (Attempts++), then the handler runs
+//   - received → processing (the store consumes one attempt), then the handler runs
 //   - success  → processed
 //   - failure  → failed (LastError set), and fn's error is returned so the
 //     queue's retry/backoff machinery can reschedule it
@@ -342,13 +355,26 @@ func ProcessInbound(store InboundStore, fn func(ctx context.Context, e InboundEn
 
 		// Transition to processing and record the attempt before invoking
 		// the business handler, so a crash mid-handler leaves the envelope
-		// visibly in-flight.
+		// visibly in-flight. The attempts counter is consumed by the STORE
+		// when it implements envelopeProcessingClaimer (both shipped stores
+		// do, via a relative `attempts = attempts + 1` write): the queue's
+		// lease expiry can re-run this envelope's job while a slow first
+		// handler is still running, and two Go-side snapshot bumps would
+		// both write the same value and count two invocations as one. The
+		// legacy path keeps the caller-side bump for host stores that
+		// predate the capability.
 		env.Status = InboundStatusProcessing
-		env.Attempts++
 		env.LastError = ""
 		env.UpdatedAt = time.Now().UTC()
-		if err := store.UpdateEnvelope(ctx, *env); err != nil {
-			return fmt.Errorf("webhook: mark envelope processing: %w", err)
+		if claimer, ok := store.(envelopeProcessingClaimer); ok {
+			if err := claimer.MarkEnvelopeProcessing(ctx, env.ID); err != nil {
+				return fmt.Errorf("webhook: mark envelope processing: %w", err)
+			}
+		} else {
+			env.Attempts++
+			if err := store.UpdateEnvelope(ctx, *env); err != nil {
+				return fmt.Errorf("webhook: mark envelope processing: %w", err)
+			}
 		}
 
 		if err := fn(ctx, *env); err != nil {

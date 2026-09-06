@@ -388,6 +388,28 @@ func sanitizeFilename(name string) string {
 	return b.String()
 }
 
+// fenceWord reduces a manifest-derived value to the bytes that are inert
+// inside the copyable ```sh install snippet: the module-path alphabet the
+// SDK generator's own validateSDKModulePath allows (letters, digits, dot,
+// dash, underscore, tilde, slash). Everything else — a newline that would
+// start its own shell line, spaces, pipes, backticks, quotes — is
+// dropped, so manifest junk can only mangle the hint, never restructure
+// the snippet the copy button pastes into an operator's shell. The
+// body-side twin of sanitizeFilename (which holds the same provenance to
+// a safe charset for Content-Disposition).
+func fenceWord(v string) string {
+	var b strings.Builder
+	b.Grow(len(v))
+	for _, r := range v {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9',
+			r == '-', r == '_', r == '.', r == '~', r == '/':
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
 // sortedNames returns the included entities' display names (for tests/log).
 func (s *site) sortedNames() []string {
 	var out []string

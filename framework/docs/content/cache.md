@@ -42,6 +42,14 @@ type Cache interface {
 All call sites depend only on this interface. Swap `MemoryCache` for
 `RedisCache` (or a future backend) without touching business logic.
 
+`Set`'s `ttl` of `0` uses the configured default. A negative `ttl` is
+honoured as "already expired": nothing is stored and any existing
+entry under the key is dropped (`MemoryCache`), or refused by the
+backend (`RedisCache`, whose SET rejects a non-positive expiry) — a
+mis-computed lifetime can never widen into retention. Via `GetOrSet`
+a negative `ttl` still runs the loader, stores nothing, and surfaces
+the miss.
+
 ## `MemoryCache`
 
 `NewMemoryCache(opts...)` returns a goroutine-safe in-process store.
@@ -161,7 +169,11 @@ The middleware is RFC 9111-compliant by default:
   tokens saw a per-subject response as anonymous and served it to the next
   grant holder.
 - `Cache-Control: no-cache` / `no-store` directives are honoured.
-- `Set-Cookie` responses and non-2xx/3xx responses are never stored.
+- `Set-Cookie` responses and non-2xx/3xx responses are never stored,
+  and neither are `304` responses: a 304 is a conditional-reply
+  artifact, not a representation, and the key encodes no conditional
+  headers — a stored 304 would be replayed to every unconditional GET
+  as an empty-body `HIT` (RFC 9111 §4.3.1).
 - `Vary` headers are respected; `Vary: *` disables caching.
 - Responses larger than `maxBodyBytes` (default 8 MiB) are streamed
   without caching.

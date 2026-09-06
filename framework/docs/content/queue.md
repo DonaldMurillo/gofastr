@@ -285,7 +285,7 @@ sits in a processing hash with an expiry timestamp. Call
 `RedisQueue.Start(ctx, interval)` to run an auto-reclaim ticker:
 
 ```go
-q.Start(ctx, 30*time.Second) // checks every 30 s; 0 defaults to 30 s
+q.Start(ctx, 30*time.Second) // checks every 30 s; 0 defaults to 30 s, negative panics
 ```
 
 The ticker calls `q.Reclaim(ctx)` on each tick, which scans the
@@ -423,6 +423,13 @@ go func() {
     }
 }()
 ```
+
+`Start` survives evaluation errors: a corrupted schedule row (a bad
+`next_run`, a half-applied manual repair) is skipped with an ERROR log and
+the remaining due schedules still fire, and a transient database failure is
+logged and retried at the next heartbeat instead of ending the loop. The
+loop only exits when `ctx` is cancelled, so one poison row cannot stop
+every schedule on the replica.
 
 The same `Lane` / `Priority` / `MaxAttempts` options exist on the durable
 builder. They PERSIST alongside the schedule definition: re-registering

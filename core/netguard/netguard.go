@@ -36,6 +36,15 @@ var thisNetworkV4 = net.IPNet{IP: net.IPv4(0, 0, 0, 0), Mask: net.CIDRMask(8, 32
 // reaches every host on the local segment.
 var reservedV4 = net.IPNet{IP: net.IPv4(240, 0, 0, 0), Mask: net.CIDRMask(4, 32)}
 
+// siteLocalV6 is the deprecated IPv6 site-local unicast block fec0::/10
+// (RFC 3513 §2.5.7, deprecated by RFC 3879). Deprecated does not mean
+// gone: it is reserved non-routable space in the same defense-in-depth
+// class as 6to4 and the IPv4-compatible prefix — no internet path
+// delivers to it, and an enterprise or host network that still routes
+// it can reach internal services, so the predicate must not depend on
+// current OS defaults refusing the dial.
+var siteLocalV6 = net.IPNet{IP: net.ParseIP("fec0::"), Mask: net.CIDRMask(10, 128)}
+
 // metadataIPv4 is the cloud instance-metadata address. It already falls
 // inside the link-local range; naming it separately means a deployment
 // that ever loosens the link-local rule still cannot reach it.
@@ -43,8 +52,8 @@ var metadataIPv4 = net.IPv4(169, 254, 169, 254)
 
 // IsInternal reports whether ip is loopback, link-local (which covers
 // cloud instance metadata), private (RFC1918 + IPv6 unique-local),
-// unspecified, multicast, CGNAT, or reserved/non-routable IPv4 space
-// (0.0.0.0/8, 240.0.0.0/4).
+// unspecified, multicast, site-local IPv6 (deprecated fec0::/10), CGNAT,
+// or reserved/non-routable IPv4 space (0.0.0.0/8, 240.0.0.0/4).
 //
 // IPv4-mapped IPv6 addresses (`::ffff:a.b.c.d`) are normalized to their
 // 4-byte form first, so a mapped internal literal cannot slip past the
@@ -87,7 +96,8 @@ func internalRange(ip net.IP) bool {
 		ip.IsInterfaceLocalMulticast():
 		return true
 	}
-	if cgnatRange.Contains(ip) || thisNetworkV4.Contains(ip) || reservedV4.Contains(ip) {
+	if cgnatRange.Contains(ip) || thisNetworkV4.Contains(ip) || reservedV4.Contains(ip) ||
+		siteLocalV6.Contains(ip) {
 		return true
 	}
 	return ip.Equal(metadataIPv4)
@@ -192,6 +202,8 @@ func rangeReason(ip net.IP) string {
 		return "carrier-grade NAT address (RFC 6598)"
 	case reservedV4.Contains(ip):
 		return "reserved address (240.0.0.0/4; includes limited broadcast)"
+	case siteLocalV6.Contains(ip):
+		return "site-local address (fec0::/10; deprecated by RFC 3879)"
 	case ip.Equal(metadataIPv4):
 		return "cloud instance-metadata address"
 	}

@@ -181,15 +181,54 @@ func (o *Outbox) processDelivery(ctx context.Context, d claimedDelivery) {
 		Data:      payload,
 		Timestamp: d.CreatedAt,
 	}
-	// invokeHandler recovers a panic into a delivery error, so a panicking
-	// consumer is retried/dead-lettered, never silently marked dispatched.
-	if err := invokeHandler(ctx, handler, ev, d.Consumer); err != nil {
+	// The handler runs with a per-delivery wall-clock budget
+	// (WithHandlerTimeout, queue parity) on its own goroutine, and the
+	// relay waits at most that budget: a handler that blocks past its
+	// cancelled context settles the delivery as FAILED here, so retries
+	// and the rest of the batch — including sibling consumers of
+	// unrelated event types — proceed. invokeHandler itself recovers a
+	// panic into a delivery error, so a panicking consumer is
+	// retried/dead-lettered, never silently marked dispatched.
+	if err := o.runHandler(ctx, handler, ev, d); err != nil {
 		o.markDeliveryFailure(settleCtx, d, err)
 		o.completeParent(settleCtx, d.RowID)
 		return
 	}
 	o.markDeliveryDispatched(settleCtx, d)
 	o.completeParent(settleCtx, d.RowID)
+}
+
+// runHandler invokes one consumer handler with a wall-clock budget
+// (handlerTimeout, default 30s) and returns its error. The invocation runs
+// on its own goroutine because a handler that ignores its context cannot be
+// made to return (Go has no goroutine termination): the relay instead stops
+// WAITING at the deadline, settles the delivery as failed (so retries and
+// sibling consumers proceed), and leaves the abandoned invocation to finish
+// on its own — a completion that lands after a timed-out settle is exactly
+// the duplicate the at-least-once contract already requires handlers to
+// tolerate. The result channel is buffered so a late return never leaks the
+// goroutine on the send; a handler that never returns holds one goroutine
+// per retry cycle, bounded by MaxAttempts.
+//
+// The deadline is armed with a timer rather than selected off the handler
+// context, so a relay SHUTDOWN (parent ctx cancelled) is never mislabelled
+// as a handler timeout: a cooperative handler still returns promptly under
+// the cancelled context and its outcome is settled as usual.
+func (o *Outbox) runHandler(ctx context.Context, h event.EventHandler, ev event.Event, d claimedDelivery) error {
+	hctx, hcancel := context.WithTimeout(ctx, o.handlerTimeout)
+	defer hcancel()
+	type outcome struct{ err error }
+	done := make(chan outcome, 1)
+	go func() { done <- outcome{invokeHandler(hctx, h, ev, d.Consumer)} }()
+	timer := time.NewTimer(o.handlerTimeout)
+	defer timer.Stop()
+	select {
+	case r := <-done:
+		return r.err
+	case <-timer.C:
+		return fmt.Errorf("outbox: consumer %q for %q handler exceeded its %s budget (context cancelled; delivery retried)",
+			d.Consumer, d.Type, o.handlerTimeout)
+	}
 }
 
 // logClaimErr records a claim/reconcile failure once on onset. pump runs

@@ -98,6 +98,46 @@ func sdkCommentSafe(value string) string {
 	return strings.ReplaceAll(out, "*/", "* /")
 }
 
+// sdkMarkdownSafe makes a config-provenance value inert in the MARKDOWN
+// contexts the READMEs interpolate it into (H1 heading, prose line): the
+// sdkCommentSafe strip of C0/DEL (a newline moves the rest of the value
+// to body/fence-line position) plus the fence openers ``` and ~~~, so the
+// value can neither start its own line nor open its own code block. The
+// install FENCE slot is stricter still: see sdkFenceWord.
+func sdkMarkdownSafe(value string) string {
+	var b strings.Builder
+	b.Grow(len(value))
+	for _, r := range value {
+		if r < 0x20 || r == 0x7f || r == '`' || r == '~' {
+			continue
+		}
+		b.WriteRune(r)
+	}
+	out := b.String()
+	out = strings.ReplaceAll(out, "-->", "- ->")
+	return strings.ReplaceAll(out, "*/", "* /")
+}
+
+// sdkFenceWord reduces the app name to the bytes that are inert inside
+// the README's ```sh install fence (`go mod edit -replace <module>=./<dir>`),
+// which an operator copies and pastes into a shell: the module-path
+// alphabet only. A newline would become its own shell line, and spaces,
+// pipes, backticks and quotes all change how the pasted line parses, so
+// they are dropped rather than escaped — hostile junk can only mangle the
+// directory hint, never restructure the command.
+func sdkFenceWord(value string) string {
+	var b strings.Builder
+	b.Grow(len(value))
+	for _, r := range value {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9',
+			r == '-', r == '_', r == '.', r == '~':
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
 // sdkModulePathRe is the subset of Go module paths this generator will emit
 // into the SDK's go.mod. Deliberately narrower than the spec allows: the value
 // is interpolated into `module %s` with nothing between it and the next
@@ -395,8 +435,13 @@ func buildSDKSpec(decls []framework.EntityDeclaration, opts *sdkOptions) (sdkSpe
 		apiPrefix = "/" + apiPrefix
 	}
 
+	// App is config-provenance (--name / gofastr.codegen.yml, the same
+	// provenance the exec gate and sdkCommentSafe treat as hostile) and
+	// lands raw in both READMEs' H1/prose and (as the -sdk directory) in
+	// the install fence. Scrub it once here; renderSDKGoReadme applies
+	// the stricter fence reduction at the fence slot itself.
 	spec := sdkSpec{
-		App:            opts.name,
+		App:            sdkMarkdownSafe(opts.name),
 		SDKVersion:     opts.sdkVersion,
 		GofastrVersion: gofastrVersion,
 		Module:         opts.module,
@@ -435,6 +480,21 @@ func buildSDKSpec(decls []framework.EntityDeclaration, opts *sdkOptions) (sdkSpe
 		}
 		if strings.ContainsFunc(ent.Table, func(r rune) bool { return r == '"' || r == '\\' || r < 0x20 || r == 0x7f }) {
 			return sdkSpec{}, fmt.Errorf("entity %q table %q contains a character that cannot survive the Go string literals the SDK emits it into. Rename the table", decl.Name, ent.Table)
+		}
+		// jsResourceProp(ent) is toCamelJSON(ent.Table), and toCamelCase
+		// only splits on "_", "-" and space: every other byte survives
+		// into the UNQUOTED `export const %sFields` declaration in the
+		// executable client.js that sdkdocs serves to browsers. A table
+		// like "x =(console.log)(49414), y" passes the literal gate above
+		// (no quote, backslash or control byte) and its derived property
+		// lands at statement position the moment the artifact is
+		// imported. A declaration name cannot be quoted the way the
+		// object-literal keys are, so the property must BE an identifier.
+		// The d.ts twin (`export declare const %sFields`, `readonly %s:`)
+		// shares the gate; ent.Struct slots are covered by isGoIdentifier
+		// (an ASCII subset of this grammar).
+		if !isJSIdentifier(jsResourceProp(ent)) {
+			return sdkSpec{}, fmt.Errorf("entity %q table %q does not produce a valid JavaScript identifier (%q); the SDK emits it as the unquoted `export const %sFields` declaration in client.js, which the docs site serves to browsers. Rename the table to letters, digits, dashes and underscores", decl.Name, ent.Table, jsResourceProp(ent), jsResourceProp(ent))
 		}
 		// Derived names must be unique per target. jsResourceProp is
 		// toCamelJSON(table), which collapses blog_posts / blog-posts /
@@ -600,7 +660,10 @@ func renderSDKGoReadme(spec sdkSpec) string {
 	fmt.Fprintf(&sb, "# %s Go SDK\n\n<!-- %s -->\n\n", spec.App, spec.Header())
 	fmt.Fprintf(&sb, "A standalone, stdlib-only Go client for the %s HTTP API.\n\n", spec.App)
 	sb.WriteString("## Install\n\nUnzip next to your project (or anywhere), then wire the module locally:\n\n")
-	fmt.Fprintf(&sb, "```sh\ngo mod edit -replace %s=./%s-sdk\ngo get %s\n```\n\n", spec.Module, spec.App, spec.Module)
+	// sdkFenceWord, not the markdown scrub: this line is pasted into a
+	// shell, so the directory hint is held to the module-path alphabet
+	// (spec.Module itself is already regex-gated by validateSDKModulePath).
+	fmt.Fprintf(&sb, "```sh\ngo mod edit -replace %s=./%s-sdk\ngo get %s\n```\n\n", spec.Module, sdkFenceWord(spec.App), spec.Module)
 	sb.WriteString("## Use\n\n")
 	fmt.Fprintf(&sb, "```go\nimport client %q\n\n", spec.Module)
 	fmt.Fprintf(&sb, "c := client.NewClient(%q, nil)\nc.Token = os.Getenv(\"API_TOKEN\") // Bearer token minted via POST /auth/tokens\n\n", sdkExampleBaseURL(spec))

@@ -60,7 +60,7 @@ Override with `notify.WithRouter(...)` for app-specific logic
 ## Templates
 
 `MapTemplater` is the bundled in-memory templater: an explicit
-`(notifType, channel)` lookup table. Both fields are interpolated
+(notifType, channel) lookup table. Both fields are interpolated
 with the same `{{placeholder}}` form used by `core/i18n`; unknown
 placeholders are left intact so they're visible during development.
 
@@ -71,6 +71,26 @@ tmpl.Set("password.reset", "email", notify.Template{
     HTMLBody: `<a href="{{link}}">Reset password</a>`,
 })
 ```
+
+**`HTMLBody` values are HTML-escaped at the interpolation sink.** Data
+values are routinely user-controlled (display names, addresses,
+user-entered content), and the bundled `EmailChannel` hands
+`Rendered.HTMLBody` straight to the SMTP HTML part — webmail is an HTML
+application, so an unescaped value is a session-theft-class XSS. The
+template bytes themselves are yours and pass through untouched; to opt
+ONE value out (markup you generated), type it `html/template.HTML`:
+
+```go
+data := map[string]any{
+    "name":  user.Name, // escaped
+    "badge": template.HTML(badgeMarkup), // trusted markup, verbatim
+}
+```
+
+`Subject` and `TextBody` are payload bytes and are not HTML-escaped
+(Subject still has CR/LF/NUL stripped so a placeholder can't inject
+header continuations). A custom `Templater` owns the same obligation:
+`EmailChannel` passes `Rendered.HTMLBody` through verbatim.
 
 `Template.Extra` is passed through to the channel as `Rendered.Extra`:
 the bundled `EmailChannel` honours `Extra["headers"]` (custom headers,
@@ -134,7 +154,12 @@ still delivered to `WithErrorCallback`) instead of crashing the process.
   Rendered.TextBody / HTMLBody gets pushed across every channel; for
   attachments use channel-specific Extra entries or pre-render.
 - **Don't rely on the LoggerChannel in production.** It writes to a
-  *log.Logger, meant for development, CI, and as a sanity sink.
+  *log.Logger, meant for development, CI, and as a sanity sink. Like
+  `email.LogSender`, it redacts credential-bearing URLs (`?token=…`,
+  `?code=…`, and the other secret query params) and `Bearer` values
+  from the rendered subject and text body before writing, via
+  `email.RedactBody`, so a reset-link notification never lands
+  token-first in the log.
 - **Don't forget the templater.** Without one, every `Send` returns
   `ErrNoTemplater` unless you supply `Data["_rendered_*"]` per
   channel.

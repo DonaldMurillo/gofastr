@@ -56,6 +56,12 @@ type A2AConfig struct {
 	// deployments only: a caller-registered URL the server POSTs to is
 	// an SSRF vector otherwise.
 	AllowPrivatePush bool
+	// AllowedOrigins permits browser Origins that are not same-origin with
+	// the request (tunnels, split-origin web clients). The default refuses
+	// a present Origin naming any authority other than the request's own
+	// Host, mirroring the MCP transport; native A2A clients send no Origin
+	// and always pass. Forwarded to a2a.Config.AllowedOrigins.
+	AllowedOrigins []string
 	// TaskTimeout is the ceiling on one skill-handler run. Default
 	// 5 minutes.
 	TaskTimeout time.Duration
@@ -134,13 +140,14 @@ func (a *App) mountA2A() error {
 		}
 	}
 	srv, err := a2a.NewServer(a2a.Config{
-		Skills:       a.a2aSkills(),
-		Store:        store,
-		Owner:        a2aOwnerPrincipal,
-		ExtendedCard: cfg.ExtendedCard,
-		Push:         a2a.PushOptions{AllowPrivate: cfg.AllowPrivatePush},
-		Logger:       a.Logger(),
-		TaskTimeout:  cfg.TaskTimeout,
+		Skills:         a.a2aSkills(),
+		Store:          store,
+		Owner:          a2aOwnerPrincipal,
+		ExtendedCard:   cfg.ExtendedCard,
+		Push:           a2a.PushOptions{AllowPrivate: cfg.AllowPrivatePush},
+		Logger:         a.Logger(),
+		TaskTimeout:    cfg.TaskTimeout,
+		AllowedOrigins: cfg.AllowedOrigins,
 	})
 	if err != nil {
 		return fmt.Errorf("framework: WithA2A: %w", err)

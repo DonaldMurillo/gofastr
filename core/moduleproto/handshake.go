@@ -159,13 +159,18 @@ func crossCheck(want HandshakeExpected, got HandshakeResult) error {
 
 // WaitForReady polls module.ready until the child reports ready:true or until
 // ctx is cancelled (design §4.7 step 4). It is the warmup gate. The poll
-// interval defaults to 50ms if <= 0; callers should derive ctx from the 5s
+// interval defaults to 50ms when 0; a negative interval is rejected — it can
+// only be a sign or unit error, and folding it onto the default silently
+// grants the fastest poll cadence. Callers should derive ctx from the 5s
 // spawn deadline.
 //
 // WaitForReady returns nil on ready:true, ctx.Err() on deadline, or the
 // underlying Call error on protocol fault.
 func WaitForReady(ctx context.Context, p *Peer, pollInterval time.Duration) error {
-	if pollInterval <= 0 {
+	if pollInterval < 0 {
+		return fmt.Errorf("moduleproto: WaitForReady: pollInterval must be >= 0 (got %v)", pollInterval)
+	}
+	if pollInterval == 0 {
 		pollInterval = 50 * time.Millisecond
 	}
 	t := time.NewTicker(pollInterval)

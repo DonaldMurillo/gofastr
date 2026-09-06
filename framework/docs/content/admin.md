@@ -88,9 +88,19 @@ understands. The battery ships zero JS:
   because that would hit the SPA cache and show a stale row.)
 - **Forms** are plain SSR `ui.Form`s (CSRF auto-stamped from context). On
   success the handler 303-redirects to the list; on a validation error it
-  redirects back to the form with a one-shot flash token (`?e=…`) so the
-  re-render is a full host page with field errors + the submitted values
-  retained. Submitted bodies are capped at 1 MiB (over-cap is a `413`),
+  redirects back to the form with a flash token (`?e=…`) and a
+  short-lived **signed flash cookie** carrying the field errors + the
+  submitted values, so the re-render is a full host page with them
+  retained — and any replica renders it, not just the one that handled
+  the POST. The cookie is HMAC-signed with a key derived from
+  `admin.Config.Secret` (set it to the same value as
+  `framework.WithSecret` / `GOFASTR_SECRET` on every replica); a replica
+  that cannot verify it renders the empty form, never an unverified one.
+  The signed payload is capped at 4 KiB: a larger flash drops the
+  submitted values but keeps the error. Without `Config.Secret` the
+  battery self-mints a per-boot key (single-replica only, logged once) —
+  the same posture as unconfigured session signing. Submitted bodies are
+  capped at 1 MiB (over-cap is a `413`),
   matching every other form surface in the stack, and a save whose
   masked-field set cannot be recomputed (the read that diffed the
   write-only columns failed) is **refused** with an error flash rather
@@ -253,6 +263,19 @@ admin.New(admin.Config{
     },
 })
 ```
+
+## Response caching
+
+Every admin-owned response carries `Cache-Control: no-store`, stamped once
+at the gate before the auth decision, so screens, row fragments, RPC
+redirects, and even the `401`/`403` refusals are uncacheable by a shared
+proxy or the back/forward cache. The entity list fragment
+(`GET /admin/e/<t>/_rows`) and the refreshed table a delete returns carry
+tenant/owner-scoped row data, and cookie-authenticated GETs are not covered
+by HTTP's Authorization-only storage rules, so nothing on an admin URL may
+be retained. The one exception is `<PathPrefix>/admin.css`: it is
+deliberately ungated and served `public, max-age=3600` (it carries no data
+and lets the 401 page degrade gracefully).
 
 ## CSRF
 

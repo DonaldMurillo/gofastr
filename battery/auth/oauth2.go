@@ -380,8 +380,16 @@ func (p *OAuth2Plugin) callbackHandler() http.HandlerFunc {
 		}
 		// Canonicalize at the single consumer of every provider (#270):
 		// a provider reporting Bob@example.com must match an existing
-		// bob@example.com account instead of creating a duplicate.
-		info.Email = CanonicalEmail(info.Email)
+		// bob@example.com account instead of creating a duplicate. A
+		// provider asserting a DECOMPOSED (non-NFC) address fails the
+		// login outright: fail-closed beats creating an unmatchable
+		// twin identity for the same mailbox (round 3 unicode decision).
+		if info.Email, err = p.mgr.canonicalizeEmail(info.Email); err != nil {
+			slog.Warn("oauth email refused: not in composed Unicode form",
+				"plugin", "oauth2", "email_hash", hashedIdentifier(info.Email), "err", err)
+			writeAuthError(w, http.StatusBadRequest, errComposedEmailMessage)
+			return
+		}
 
 		// Bind the durable (provider, provider_id) link namespace to the
 		// STATE-VALIDATED registry key, NOT the provider-returned Name().
@@ -854,10 +862,24 @@ func randomPassword(n int) string {
 // ─── Built-in providers ────────────────────────────────────────────────────
 
 // defaultOAuthHTTPClient is the http.Client used by built-in OAuth providers
-// when no override is supplied. The 10s deadline matches framework/auth/oauth.go.
-// Without it, an IdP that hangs the connection pins one goroutine + two TCP
-// fds per inflight callback for the full kernel socket timeout.
-var defaultOAuthHTTPClient = &http.Client{Timeout: 10 * time.Second}
+// (Google, GitHub, and the OIDC provider's default) when no override is
+// supplied. The 10s deadline matches framework/auth/oauth.go: without it, an
+// IdP that hangs the connection pins one goroutine + two TCP fds per inflight
+// callback for the full kernel socket timeout.
+//
+// Redirects are refused via oidcNoRedirect: these fetches carry credentials
+// (client_secret, authorization code, refresh token, bearer header), and a
+// 3xx answer would deliver that request to an origin the host never
+// configured — the POST body verbatim on 307/308. Pinned by
+// TestProviderFetchRefusesRedirect and TestOIDCSec_TokenRedirectKeepsSecret.
+var defaultOAuthHTTPClient = oidcNoRedirect(&http.Client{Timeout: 10 * time.Second})
+
+// oauthProviderMaxBody caps the bytes decoded from any built-in provider
+// response (token exchange, refresh, userinfo, /user/emails). 1 MiB matches
+// the OIDC fetch convention (jwksMaxBody, fetchDiscovery, ExchangeCode,
+// fetchUserinfo); a bigger body is a misbehaving endpoint, not a payload to
+// buffer to EOF.
+const oauthProviderMaxBody = 1 << 20
 
 // GoogleProvider implements OAuth2Provider for Google's OAuth2 endpoints.
 type GoogleProvider struct {
@@ -931,7 +953,7 @@ func (g *GoogleProvider) ExchangeCode(ctx context.Context, code string) (*OAuth2
 		RefreshToken string `json:"refresh_token"`
 		ExpiresIn    int64  `json:"expires_in"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, oauthProviderMaxBody)).Decode(&body); err != nil {
 		return nil, err
 	}
 
@@ -975,7 +997,7 @@ func (g *GoogleProvider) RefreshToken(ctx context.Context, refreshToken string) 
 		RefreshToken string `json:"refresh_token"`
 		ExpiresIn    int64  `json:"expires_in"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, oauthProviderMaxBody)).Decode(&body); err != nil {
 		return nil, err
 	}
 
@@ -1012,7 +1034,7 @@ func (g *GoogleProvider) FetchUserInfo(ctx context.Context, token string) (*OAut
 		EmailVerified any    `json:"email_verified"`
 		VerifiedEmail any    `json:"verified_email"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, oauthProviderMaxBody)).Decode(&body); err != nil {
 		return nil, err
 	}
 
@@ -1100,7 +1122,7 @@ func (g *GitHubProvider) ExchangeCode(ctx context.Context, code string) (*OAuth2
 		RefreshToken string `json:"refresh_token"`
 		ExpiresIn    int64  `json:"expires_in"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, oauthProviderMaxBody)).Decode(&body); err != nil {
 		return nil, err
 	}
 
@@ -1149,7 +1171,7 @@ func (g *GitHubProvider) RefreshToken(ctx context.Context, refreshToken string) 
 		RefreshToken string `json:"refresh_token"`
 		ExpiresIn    int64  `json:"expires_in"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, oauthProviderMaxBody)).Decode(&body); err != nil {
 		return nil, err
 	}
 
@@ -1186,7 +1208,7 @@ func (g *GitHubProvider) FetchUserInfo(ctx context.Context, token string) (*OAut
 		Name      string `json:"name"`
 		AvatarURL string `json:"avatar_url"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, oauthProviderMaxBody)).Decode(&body); err != nil {
 		return nil, err
 	}
 
@@ -1245,7 +1267,7 @@ func (g *GitHubProvider) fetchPrimaryEmail(ctx context.Context, token string) (s
 		Primary  bool   `json:"primary"`
 		Verified bool   `json:"verified"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&emails); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, oauthProviderMaxBody)).Decode(&emails); err != nil {
 		return "", false, err
 	}
 	for _, e := range emails {

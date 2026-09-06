@@ -15,8 +15,9 @@ func TestCanonicalEmail(t *testing.T) {
 		"\tTabbed@Example.com": "tabbed@example.com",
 	}
 	for in, want := range cases {
-		if got := CanonicalEmail(in); got != want {
-			t.Errorf("CanonicalEmail(%q) = %q, want %q", in, got, want)
+		got, err := CanonicalEmail(in)
+		if err != nil || got != want {
+			t.Errorf("CanonicalEmail(%q) = (%q, %v), want (%q, nil)", in, got, err, want)
 		}
 	}
 }
@@ -43,7 +44,7 @@ func TestRegisterStoresCanonicalEmail(t *testing.T) {
 	jar := &cookieJar{}
 	rec := jar.do(f.router, http.MethodPost, "/auth/register",
 		map[string]string{"email": "Bob@Example.COM", "password": "supersecret1"}, "203.0.113.9:5555")
-	if rec.Code != http.StatusOK && rec.Code != http.StatusCreated {
+	if rec.Code != http.StatusAccepted {
 		t.Fatalf("register: %d %s", rec.Code, rec.Body.String())
 	}
 	if _, ok := f.store.users["bob@example.com"]; !ok {

@@ -66,6 +66,23 @@ func (b *Battery) servePDF(doc *Document) http.Handler {
 			return
 		}
 
+		// Bound the renders before spending anything else on the
+		// request: each RenderPDF call in the shipped chromepdf
+		// backend is a whole headless-Chromium process, so an
+		// uncapped route behind RequireAuth is a process-exhaustion
+		// primitive. Past the battery-wide cap, answer 503 with
+		// Retry-After instead of queueing another renderer — and
+		// before Build, so a request that cannot render now does not
+		// run the document's data load either.
+		select {
+		case b.renderSem <- struct{}{}:
+			defer func() { <-b.renderSem }()
+		default:
+			w.Header().Set("Retry-After", renderBusyRetryAfter)
+			http.Error(w, "PDF rendering is busy; retry shortly", http.StatusServiceUnavailable)
+			return
+		}
+
 		// Reuse the exact same access gate + Build + shell as the HTML
 		// route, in PDF mode (absolute app.css href, no auto-print).
 		html, page, ok := b.build(w, r, doc, true)

@@ -621,11 +621,16 @@ func (q *RedisQueue) Stats(ctx context.Context) (JobStats, error) {
 // silently stranded.
 //
 // The goroutine exits when ctx is cancelled. interval controls how often
-// Reclaim is called; a value <= 0 defaults to 30 seconds. Typical use:
+// Reclaim is called; 0 keeps the 30 second default. A negative interval
+// panics — Start returns no error, and a sign/unit error must not
+// silently become the slowest reclaim cadence. Typical use:
 //
 //	q.Start(ctx, 30*time.Second)
 func (q *RedisQueue) Start(ctx context.Context, interval time.Duration) {
-	if interval <= 0 {
+	if interval < 0 {
+		panic(fmt.Sprintf("queue: RedisQueue.Start: interval must be >= 0 (got %v)", interval))
+	}
+	if interval == 0 {
 		interval = 30 * time.Second
 	}
 	go func() {

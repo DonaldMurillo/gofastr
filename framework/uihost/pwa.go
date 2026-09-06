@@ -10,7 +10,6 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/http"
-	"os"
 	"path"
 	"path/filepath"
 	"regexp"
@@ -435,7 +434,10 @@ func (ds *UIHost) pwaVersion(manifest []byte, precache []string, offlineHTML str
 // storage (embedded FS first, then the static dir) and returns its
 // bytes, or nil when the path isn't served from static storage. The
 // path is cleaned to its root-relative form, so traversal segments
-// can't escape the static root.
+// can't escape the static root, and the static-dir read goes through
+// the host's *os.Root, so symlinked components pointing outside the
+// root are refused rather than fingerprinted (2026-09-04 red-probe
+// round).
 func (ds *UIHost) pwaStaticBytes(p string) []byte {
 	if i := strings.IndexAny(p, "?#"); i >= 0 {
 		p = p[:i]
@@ -449,8 +451,8 @@ func (ds *UIHost) pwaStaticBytes(p string) []byte {
 			return b
 		}
 	}
-	if ds.staticDir != "" {
-		if b, err := os.ReadFile(filepath.Join(ds.staticDir, filepath.FromSlash(rel))); err == nil {
+	if root := ds.staticRootOf(); root != nil {
+		if b, err := root.ReadFile(filepath.FromSlash(rel)); err == nil {
 			return b
 		}
 	}

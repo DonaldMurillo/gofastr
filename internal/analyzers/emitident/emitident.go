@@ -4,9 +4,10 @@
 // Bug class: a generator or template renders a caller-supplied name into
 // a slot where the emitted text is CODE — a func/type/variable
 // declaration, a SQL DDL identifier, a CSS string slot, a URL path
-// segment. Unless the value was validated as an identifier or quoted for
-// that grammar, a name carrying quotes, operators, or keywords changes
-// what the emitted code DOES. Found by the 2026-09-01 adversarial probes:
+// segment, a JS/TS declaration or object key. Unless the value was
+// validated as an identifier or quoted for that grammar, a name carrying
+// quotes, operators, or keywords changes what the emitted code DOES.
+// Found by the 2026-09-01 adversarial probes:
 // TestHookHandlerMustDeriveIdentifier (blueprint hook handlers accepted
 // `x"); PWN() //` straight into `func %s(...)`), TestCLIFieldPayloadBecomesStatements
 // (CLI flag names flowed through toCamelCase into `fld%s :=` declarations
@@ -16,6 +17,12 @@
 // table/column names into `ALTER TABLE %s ADD COLUMN %s`), TestFontFaceCSSRejectsDeclarationBreakers
 // (font families into `font-family: '%s'`), TestWidgetBehaviorURLMatchesRuntimeGate
 // (widget ids into behavior URLs). Fixes: 29219c04, f06f4412, e936f791.
+// The 2026-09-04 red-probe round added the JS/TS side:
+// TestSDKJSIdentSlotRefusesTables (cmd/gofastr/generate_sdkjs.go wrote
+// entity-table-derived camelCase names into `export const %sFields =`
+// and `readonly %s:` of the generated client.d.ts with only toCamelCase
+// — a transform, not a gate — in front; the .js got the quoted
+// this[%q] spelling, the fix posture, and only the .d.ts was left raw).
 //
 // A slot's argument is gated when it is, resolves to, or is built only
 // from: a call whose name says identifier/quote/slug/sanitize/safe/escape
@@ -69,6 +76,16 @@
 //     slots cover the PATH portion only. A query parameter is a
 //     different grammar with a different escaper (url.QueryEscape),
 //     not an identifier slot.
+//   - JS/TS spellings without their code evidence, deliberately: every
+//     declaration keyword (export const/const/let/function/class/
+//     interface/type, readonly) demands '=' / ':' / '('+brace / '{' or
+//     an extends clause after the name — "let %s go", "type %s is not
+//     a struct", and "interface %s for plugins" are prose. A bare
+//     object key must be the FIRST token of its line AND the emitted
+//     line must end in ';' or ',' — `  %s: %d items` is a two-column
+//     listing, not a member — and must not be quoted: %q and the
+//     this[%q] bracket spelling ARE the fix posture for JS grammars,
+//     where a quoted key cannot leave its object literal.
 package emitident
 
 import (
@@ -84,7 +101,7 @@ import (
 
 var Analyzer = &analysis.Analyzer{
 	Name: "emitident",
-	Doc:  "forbids fmt.Sprintf/Fprintf/Appendf formats that substitute an ungated name into an identifier slot of emitted code (Go declarations, SQL DDL, CSS string slots, route paths); validate with an ident check or quote for the grammar",
+	Doc:  "forbids fmt.Sprintf/Fprintf/Appendf formats that substitute an ungated name into an identifier slot of emitted code (Go declarations, SQL DDL, CSS string slots, route paths, JS/TS declarations and object keys); validate with an ident check or quote for the grammar",
 	Run:  run,
 }
 
@@ -608,14 +625,226 @@ func identSlotText(format string, i int, quoted bool) (string, bool) {
 	if !quoted && b == i {
 		if q := strings.LastIndexByte(format[:i], '"'); q >= 0 && format[q+1] == '/' {
 			// The PATH portion only: a verb after '?' or '#' sits in
-			// the query string or fragment, a different grammar with a
-			// different escaper.
+			// the query string or fragment, a different grammar with
+			// a different escaper.
 			if frag := format[q:i]; !strings.ContainsAny(frag, "?#") {
 				return frag + "%s", true
 			}
 		}
 	}
+
+	// JS/TS declaration spellings: export const/const/let declarations,
+	// function/class/interface/type declarations, readonly properties,
+	// and unquoted object keys at line start. %q never lands here: a
+	// quoted key or this["name"] spelling IS the fix posture.
+	if !quoted {
+		if text, ok := jsIdentSlotText(format, i); ok {
+			return text, true
+		}
+	}
 	return "", false
+}
+
+// jsModifiers are the words that may precede a JS/TS declaration keyword
+// at the start of a line. readonly is pointedly NOT here: it is its own
+// slot spelling (readonly %s:), not a modifier of another keyword.
+var jsModifiers = map[string]bool{
+	"export": true, "declare": true, "default": true, "async": true,
+	"abstract": true, "public": true, "private": true, "protected": true,
+	"static": true,
+}
+
+// jsIdentSlotText reports whether the unquoted verb at offset i sits in
+// a JS/TS identifier slot of the emitted code. The grammars are
+// line-oriented: a declaration or object key must start its line, so
+// prose mid-sentence never matches, and every spelling demands positive
+// code evidence after the name (=, :, (, or {) — the same defense the
+// Go side's declFollows mounts against lowercase messages.
+func jsIdentSlotText(format string, i int) (string, bool) {
+	lower := strings.ToLower(format)
+	// w is the first non-blank byte of the verb's line.
+	w := strings.LastIndexByte(format[:i], '\n') + 1
+	for w < i && (format[w] == ' ' || format[w] == '\t') {
+		w++
+	}
+
+	// Declaration keywords, each optionally preceded by modifiers.
+	mw := w
+	var mods []string
+	for {
+		e := mw
+		for e < len(format) && isIdentByte(format[e]) {
+			e++
+		}
+		word := lower[mw:e]
+		if !jsModifiers[word] {
+			break
+		}
+		mods = append(mods, word)
+		mw = e
+		for mw < len(format) && (format[mw] == ' ' || format[mw] == '\t') {
+			mw++
+		}
+	}
+	if kw := jsKeywordAt(lower, mw); kw != "" {
+		// b is the start of the identifier run containing the verb
+		// (computed by the caller too; re-derived here for locality).
+		b := i
+		for b > 0 && isIdentByte(format[b-1]) {
+			b--
+		}
+		if onlyBlank(format[mw+len(kw) : b]) {
+			if r := i + verbLen(format, i); r < len(format) {
+				r = skipIdent(format, r)
+				if jsDeclEvidence(format, r, kw) {
+					spelling := strings.Join(append(mods, kw), " ") + " %s"
+					if kw == "readonly" {
+						spelling += ":"
+					}
+					if kw == "function" {
+						spelling += "("
+					}
+					return spelling, true
+				}
+			}
+		}
+		// A declaration spelling that does not carry its keyword's
+		// evidence is prose ("let %s go", "type %s is not a struct");
+		// fall through to the bare-key check, which has its own.
+	}
+
+	// Bare object key: the verb sits inside the line's FIRST token, a
+	// run of identifier bytes and verbs closed by an optional '?' then
+	// ':', with a member terminator (';' or ',') at the end of the
+	// emitted line — that terminator is what separates `  %s: %q;` from
+	// a two-column listing like `  %s: %d items`.
+	k, sawVerb := w, false
+	for k < len(format) {
+		if k == i {
+			sawVerb = true
+			k += verbLen(format, i)
+			continue
+		}
+		if isIdentByte(format[k]) {
+			k++
+			continue
+		}
+		if format[k] == '%' {
+			if l := verbLen(format, k); l > 0 {
+				k += l
+				continue
+			}
+		}
+		break
+	}
+	if !sawVerb {
+		return "", false
+	}
+	if k < len(format) && format[k] == '?' {
+		k++
+	}
+	if k >= len(format) || format[k] != ':' {
+		return "", false
+	}
+	e := k
+	for e < len(format) && format[e] != '\n' {
+		e++
+	}
+	for e > k && (format[e-1] == ' ' || format[e-1] == '\t' || format[e-1] == '\r') {
+		e--
+	}
+	if e > k && (format[e-1] == ';' || format[e-1] == ',') {
+		return "%s:", true
+	}
+	return "", false
+}
+
+// jsKeywordAt reports which JS/TS declaration keyword starts at w.
+func jsKeywordAt(lower string, w int) string {
+	for _, kw := range []string{"function", "interface", "readonly", "const", "class", "let", "type"} {
+		if strings.HasPrefix(lower[w:], kw) {
+			if n := w + len(kw); n >= len(lower) || !isIdentByte(lower[n]) {
+				return kw
+			}
+		}
+	}
+	return ""
+}
+
+// jsDeclEvidence reports whether the text at r (right after the declared
+// name) is the positive code evidence the keyword requires: '=' or ':'
+// for const/let/readonly, a parameter list plus a brace or newline for
+// function, and a '{' (directly or after one extends clause) for
+// class/interface; type takes '=' after an optional generic clause.
+func jsDeclEvidence(format string, r int, kw string) bool {
+	s := r
+	for s < len(format) && (format[s] == ' ' || format[s] == '\t') {
+		s++
+	}
+	if s >= len(format) {
+		return false
+	}
+	switch kw {
+	case "const", "let", "readonly":
+		return format[s] == '=' || format[s] == ':' || (kw == "readonly" && format[s] == '?')
+	case "function":
+		if format[s] != '(' {
+			return false
+		}
+		return strings.IndexByte(format[s:], '{') >= 0 || strings.IndexByte(format[s:], '\n') >= 0
+	case "class", "interface":
+		if format[s] == '{' {
+			return true
+		}
+		// One extends clause: `extends Base` (dots allowed), then '{'.
+		if strings.HasPrefix(format[s:], "extends") && !isIdentByte(format[s+7]) {
+			s += 7
+			for s < len(format) && (format[s] == ' ' || format[s] == '\t') {
+				s++
+			}
+			for s < len(format) && (isIdentByte(format[s]) || format[s] == '.') {
+				s++
+			}
+			for s < len(format) && (format[s] == ' ' || format[s] == '\t') {
+				s++
+			}
+			return s < len(format) && format[s] == '{'
+		}
+		return false
+	case "type":
+		// Optional generic clause `<T extends X = D>`: scan to the
+		// matching '>' allowing only identifier-ish bytes inside.
+		if format[s] == '<' {
+			d := s + 1
+			for d < len(format) && format[d] != '>' && (isIdentByte(format[d]) || strings.IndexByte(", \t", format[d]) >= 0) {
+				d++
+			}
+			if d < len(format) && format[d] == '>' {
+				s = d + 1
+				for s < len(format) && (format[s] == ' ' || format[s] == '\t') {
+					s++
+				}
+			}
+		}
+		return s < len(format) && format[s] == '='
+	}
+	return false
+}
+
+func skipIdent(s string, i int) int {
+	for i < len(s) && isIdentByte(s[i]) {
+		i++
+	}
+	return i
+}
+
+func onlyBlank(s string) bool {
+	for i := range s {
+		if s[i] != ' ' && s[i] != '\t' {
+			return false
+		}
+	}
+	return true
 }
 
 // declFollows reports whether the text after a format-initial
@@ -763,7 +992,7 @@ func resolveArg(pass *analysis.Pass, x ast.Expr, bound map[types.Object]ast.Expr
 	case *ast.SelectorExpr:
 		_, sub := resolveArg(pass, e.X, bound, helperDecls, guarded, memo, paramGate, depth+1)
 		collect(sub)
-		fields[e.Sel.Name] = true
+		fields[fieldKey(pass, e)] = true
 		if treatedFieldRe.MatchString(e.Sel.Name) {
 			return true, fields // quotedTable, sanitizedSlot: the name states the VALUE'S TREATMENT
 		}
@@ -805,7 +1034,7 @@ func resolveArg(pass *analysis.Pass, x ast.Expr, bound map[types.Object]ast.Expr
 						// Only struct-field selectors: a package qualifier
 						// (strings.ToUpper) is not a derivation root.
 						if !isPkgIdent(pass, sel.X) {
-							fields[sel.Sel.Name] = true
+							fields[fieldKey(pass, sel)] = true
 						}
 					}
 					return true
@@ -830,12 +1059,19 @@ func resolveArg(pass *analysis.Pass, x ast.Expr, bound map[types.Object]ast.Expr
 		}
 		return allGated, fields
 	case *ast.CompositeLit:
+		allGated := len(e.Elts) > 0
 		for _, elt := range e.Elts {
 			if kv, ok := elt.(*ast.KeyValueExpr); ok {
 				elt = kv.Value
 			}
-			_, sub := resolveArg(pass, elt, bound, helperDecls, guarded, memo, paramGate, depth+1)
+			g, sub := resolveArg(pass, elt, bound, helperDecls, guarded, memo, paramGate, depth+1)
 			collect(sub)
+			if !g && (len(sub) == 0 || !allInMemo(sub, memo)) {
+				allGated = false
+			}
+		}
+		if allGated {
+			return true, fields // a composite of constants carries no caller input
 		}
 		return false, fields
 	}
@@ -866,13 +1102,18 @@ func numericOnlyVerbs(f string) bool {
 }
 
 // helperReturnsGated reports whether every return expression of a local
-// helper is itself gated.
+// helper is itself gated. The returns are resolved against the HELPER'S
+// own local bindings, not the caller's: a helper whose source local is
+// bound to a strings result (blueprintEndpointHandlerName's
+// strings.TrimSpace(endpoint.Handler)) is gated even though the caller
+// has never heard of that local.
 func helperReturnsGated(pass *analysis.Pass, decl *ast.FuncDecl, bound map[types.Object]ast.Expr, helperDecls map[*types.Func]*ast.FuncDecl, guarded map[types.Object]bool, memo map[string]bool, paramGate map[*types.Var]bool, depth int) bool {
+	hb := bodyBindings(pass, decl)
 	gated := true
 	ast.Inspect(decl.Body, func(n ast.Node) bool {
 		if ret, ok := n.(*ast.ReturnStmt); ok {
 			for _, r := range ret.Results {
-				g, sub := resolveArg(pass, r, bound, helperDecls, guarded, memo, paramGate, depth+1)
+				g, sub := resolveArg(pass, r, hb, helperDecls, guarded, memo, paramGate, depth+1)
 				if !g && (len(sub) == 0 || !allInMemo(sub, memo)) {
 					gated = false
 				}
@@ -940,27 +1181,41 @@ func allInMemo(fields map[string]bool, memo map[string]bool) bool {
 	return true
 }
 
-// fieldRoots collects the struct field names a derivation is rooted at,
-// for the package memo.
+// fieldKey names a derivation root for the package memo as
+// TypeName.Field: a check on one struct's Table field says nothing
+// about a DIFFERENT struct's Table field (the sdkjsident probe slipped
+// through exactly that conflation: blueprint's query.SafeIdent on
+// EntityDeclaration.Table silenced cliEntity.Table in the SDK emitter).
+// Unnamed struct types fall back to the bare field name.
+func fieldKey(pass *analysis.Pass, sel *ast.SelectorExpr) string {
+	t := pass.TypesInfo.TypeOf(sel.X)
+	if p, ok := t.(*types.Pointer); ok {
+		t = p.Elem()
+	}
+	if named, ok := t.(*types.Named); ok {
+		return named.Obj().Name() + "." + sel.Sel.Name
+	}
+	return sel.Sel.Name
+}
+
+// fieldRoots collects the struct-field derivation roots (type-qualified
+// by fieldKey) for the package memo.
 func fieldRoots(pass *analysis.Pass, x ast.Expr, bound map[types.Object]ast.Expr, helperDecls map[*types.Func]*ast.FuncDecl) map[string]bool {
 	_, fields := resolveArg(pass, x, bound, helperDecls, nil, map[string]bool{}, nil, 0)
 	return fields
 }
 
-// ---- shared helpers ------------------------------------------------------
-
-func stringLiteralValue(pass *analysis.Pass, e ast.Expr) (string, bool) {
-	tv, ok := pass.TypesInfo.Types[e]
-	if !ok || tv.Value == nil || tv.Value.Kind() != constant.String {
-		return "", false
-	}
-	return constant.StringVal(tv.Value), true
+func boundExprs(pass *analysis.Pass, f *ast.File) map[types.Object]ast.Expr {
+	return bodyBindings(pass, f)
 }
 
-func boundExprs(pass *analysis.Pass, f *ast.File) map[types.Object]ast.Expr {
+// bodyBindings maps each local defined inside n to the expression it was
+// last bound to: single and tuple assignments, := declarations, and
+// range value variables.
+func bodyBindings(pass *analysis.Pass, n ast.Node) map[types.Object]ast.Expr {
 	m := map[types.Object]ast.Expr{}
-	ast.Inspect(f, func(n ast.Node) bool {
-		switch st := n.(type) {
+	ast.Inspect(n, func(node ast.Node) bool {
+		switch st := node.(type) {
 		case *ast.AssignStmt:
 			if st.Tok.String() != ":=" && st.Tok.String() != "=" {
 				return true
@@ -1000,6 +1255,15 @@ func boundExprs(pass *analysis.Pass, f *ast.File) map[types.Object]ast.Expr {
 		return true
 	})
 	return m
+}
+
+// stringLiteralValue returns the constant string value of e.
+func stringLiteralValue(pass *analysis.Pass, e ast.Expr) (string, bool) {
+	tv, ok := pass.TypesInfo.Types[e]
+	if !ok || tv.Value == nil || tv.Value.Kind() != constant.String {
+		return "", false
+	}
+	return constant.StringVal(tv.Value), true
 }
 
 // isPkgIdent reports whether x is an identifier that resolves to an

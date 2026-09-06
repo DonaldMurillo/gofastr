@@ -39,7 +39,9 @@ pass "go build ./..."
 
 # ---- 2. Format check (tracked files only, gen/ and scratch dirs are
 #          not ours to police) ----
-gofmt_output=$(git ls-files '*.go' | xargs gofmt -l)
+# Skip files deleted in the working tree but still in the index: a split
+# commit stages a deletion for the NEXT commit, and gofmt fails on the stat.
+gofmt_output=$(for f in $(git ls-files '*.go'); do [ -f "$f" ] && printf '%s\n' "$f"; done | xargs gofmt -l)
 if [ -n "$gofmt_output" ]; then
   fail "Files not formatted:"
   echo "$gofmt_output"

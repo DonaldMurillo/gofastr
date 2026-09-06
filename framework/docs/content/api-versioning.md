@@ -201,13 +201,17 @@ stale the moment it is written.
   the column check by design.)
 - **Same row reachability.** Two versions must agree on which rows a
   request can see: `MultiTenant`, `OwnerField`, and `SoftDelete` must
-  match across versions of one name. The versions share one physical
+  match across versions of one name, and when multi-tenancy is on, the
+  tenant column must match too (`TenantField`, where an empty value means
+  the default `tenant_id`). The versions share one physical
   table and therefore one row set, so a tenant-scoped v1 beside an
   unscoped v2 meant v2 read what v1 hid, an `OwnerField`-free version
-  read other users' rows, and a non-soft-delete version hard-deleted
-  rows the other version expects to restore. The weaker version is a
-  bypass of the stronger one; the registry rejects the mismatch at
-  registration.
+  read other users' rows, a non-soft-delete version hard-deleted
+  rows the other version expects to restore, and a v2 scoping by
+  `account_id` beside a v1 scoping by `tenant_id` partitioned the table's
+  rows per version — neither version could see the other's. The weaker
+  version is a bypass of the stronger one; the registry rejects the
+  mismatch at registration.
 - **Same reachability gate.** For the same reason, two versions must
   agree on `Access`, `Public`, and `CrossOwnerRead`. These decide
   whether a request is allowed to ask at all, and they are enforced

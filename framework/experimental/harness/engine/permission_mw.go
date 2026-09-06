@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/control"
@@ -28,7 +29,9 @@ import (
 // middleware. This middleware does not re-check identity.
 //
 // PermissionTimeout is the maximum time to wait for a human ack
-// before denying. The doc commits to 60s as default.
+// before denying. The doc commits to 60s as default; timeout 0 keeps
+// it, and a negative timeout panics at construction — a sign/unit
+// error must not silently become the longest wait for an ack.
 type PermissionAnswer struct {
 	CallID ids.CallID
 	Allow  bool
@@ -60,7 +63,10 @@ func PermissionMiddleware(
 	session ids.SessionID,
 	timeout time.Duration,
 ) tool.Middleware {
-	if timeout <= 0 {
+	if timeout < 0 {
+		panic(fmt.Sprintf("engine: PermissionMiddleware: timeout must be >= 0 (got %v)", timeout))
+	}
+	if timeout == 0 {
 		timeout = 60 * time.Second
 	}
 	return func(ctx context.Context, call tool.ToolCall, sink tool.EventSink, next tool.Handler) (*tool.ToolResult, error) {

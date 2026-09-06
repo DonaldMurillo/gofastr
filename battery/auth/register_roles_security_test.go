@@ -42,8 +42,8 @@ func TestRegister_IgnoresClientSuppliedRoles_JSON(t *testing.T) {
 		}
 		return
 	}
-	if w.Code != http.StatusCreated {
-		t.Fatalf("expected 201 or 400, got %d: %s", w.Code, w.Body.String())
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("expected 202 or 400, got %d: %s", w.Code, w.Body.String())
 	}
 	u, _, err := store.FindByEmail(req.Context(), "attacker@example.com")
 	if err != nil {
@@ -73,8 +73,8 @@ func TestRegister_IgnoresClientSuppliedRoles_Form(t *testing.T) {
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 
-	if w.Code != http.StatusSeeOther && w.Code != http.StatusCreated {
-		t.Fatalf("expected 303 or 201, got %d: %s", w.Code, w.Body.String())
+	if w.Code != http.StatusSeeOther {
+		t.Fatalf("expected 303, got %d: %s", w.Code, w.Body.String())
 	}
 	u, _, err := store.FindByEmail(req.Context(), "csrf-victim@example.com")
 	if err != nil {
@@ -124,8 +124,8 @@ func TestRegisterUsesConfiguredRoles(t *testing.T) {
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 
-	if w.Code != http.StatusCreated {
-		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("expected 202, got %d: %s", w.Code, w.Body.String())
 	}
 	u, _, err := store.FindByEmail(req.Context(), "alice@example.com")
 	if err != nil {

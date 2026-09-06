@@ -132,9 +132,13 @@ func runHarness(args []string) {
 		MachineKey:        machineKey,
 	}
 	if cfg.CredstorePass == "" && len(cfg.MachineKey) == 0 {
-		// Best-effort default for first-run dev convenience.
-		cfg.CredstorePass = "harness-default-passphrase-change-me"
-		logger.Warn("using default credstore passphrase; set GOFASTR_HARNESS_PASSPHRASE")
+		// Fail closed: no default passphrase. A constant shipped in
+		// the public repo is not encryption (2026-09-04 red-probe
+		// round); the store refuses to open until the operator
+		// provides a key one of the two documented ways.
+		fmt.Fprintf(os.Stderr, "gofastr harness: %s\n", noCredstoreKeyHelp)
+		osExit(1)
+		return
 	}
 	h, err := xharness.New(cfg)
 	if err != nil {

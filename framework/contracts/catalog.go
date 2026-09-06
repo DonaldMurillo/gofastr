@@ -114,6 +114,8 @@ const (
 	RuleHardcodedSecret    = "GOFASTR1405"
 	RuleForwardedProtoEnum = "GOFASTR1406"
 	RuleRawJSONBodyDecode  = "GOFASTR1407"
+	RuleAbsoluteAttempts   = "GOFASTR1408"
+	RuleUnfencedClaim      = "GOFASTR1409"
 )
 
 // Performance rules.
@@ -689,6 +691,39 @@ func securityRules() []Rule {
 		Examples: []Example{{
 			Bad:  "creds := struct {\n\tEmail    string `json:\"email\"`\n\tPassword string `json:\"password\"`\n}{}\njson.NewDecoder(req.Body).Decode(&creds)",
 			Good: "creds := Credentials{}\nhandler.Bind(req, &creds) // refuses duplicate and case-folded top-level keys\n\nvar env rpcEnvelope\nhandler.DecodeStrict(http.MaxBytesReader(w, req.Body, 1<<20), &env)",
+		}},
+	}, {
+		ID: RuleAbsoluteAttempts, Slug: "security/absolute-attempts-counter",
+		Title:      "Retry counter written from a host value, not `attempts = attempts + 1`",
+		Capability: CapSecurity, Severity: SeverityError,
+		Summary: "An UPDATE's SET assigns the attempts/retries/tries/failures counter from a placeholder (`$n`, `?`, `%s`) instead of the column's relative form.",
+		Why: "The host value is a count computed in Go from a row read before the write, and the write is not the only writer: a lease-expiry " +
+			"re-claimant and the stale worker it replaced both read N and both write N+1, and a crash between claim and settle writes nothing " +
+			"at all — so the row's attempt budget under-counts and a poison delivery re-runs past it (2026-09-04 red probes " +
+			"TestFailureSettleAttemptsMonotonic in framework/outbox, TestSettleAttemptsCountEveryPost and " +
+			"TestClaimConsumesAttemptCrashLoop in battery/webhook). The database is the only arbiter of how many claims happened; " +
+			"arithmetic done beside it is a stale snapshot.",
+		Fix: "Move the increment into the claim UPDATE as `attempts = attempts + 1` (the battery/queue Dequeue spelling), so each claim itself consumes the attempt, and let settle write state only (status, error, next_attempt_at) — never the count. A reset to a literal `attempts = 0` guarded by a terminal status is fine.",
+		Doc: "security",
+		Examples: []Example{{
+			Bad:  "db.Exec(`UPDATE webhook_deliveries SET attempts = $1, status = $2 WHERE id = $3`, d.Attempts+1, status, d.ID)",
+			Good: "db.Exec(`UPDATE webhook_deliveries SET attempts = attempts + 1 WHERE id IN (SELECT id FROM webhook_deliveries WHERE status='pending' AND next_attempt_at <= $1 LIMIT $2)`, now, limit)",
+		}},
+	}, {
+		ID: RuleUnfencedClaim, Slug: "security/unfenced-claim-write",
+		Title:      "Claim-state write on a token-fenced queue table with no fence of its own",
+		Capability: CapSecurity, Severity: SeverityError,
+		Summary: "In a file whose other UPDATE/DELETE on the same table matches `claim_token = $n`, another UPDATE/DELETE touching claim state (claimed_at, a token column, attempts, or `status='claimed'`) carries no token predicate, no claimed_at staleness bound, and no terminal status guard.",
+		Why: "The claim's lease-expiry clause deliberately re-claims rows whose worker may still be running, so a stale claimant is a designed " +
+			"state — and its unfenced write by bare row id mutates the re-claimant's live row (probe TestDBReleaseCannotTouchReclaimant, " +
+			"2026-09-04 red round: battery/queue's v0.66 Ack/Nack fencing never reached release, so a stale worker released the " +
+			"re-claimant's claimed job back to pending and a third worker ran the handler concurrently). The token the claim mints is " +
+			"the only thing that distinguishes my claim from a claim on this row.",
+		Fix: "Fence the write the way Ack and Nack do: `WHERE id = $1 AND claim_token = $2`. The claim UPDATE itself needs no fence (its SET mints the token); a `claimed_at <= $n` staleness bound or a terminal `status='failed'` guard also proves the write cannot touch a live claim.",
+		Doc: "security",
+		Examples: []Example{{
+			Bad:  "db.Exec(`DELETE FROM jobs WHERE id = $1 AND status='claimed' AND claim_token = $2`, id, tok)\ndb.Exec(`UPDATE jobs SET status='pending', attempts = attempts - 1 WHERE id = $1`, id)",
+			Good: "db.Exec(`DELETE FROM jobs WHERE id = $1 AND status='claimed' AND claim_token = $2`, id, tok)\ndb.Exec(`UPDATE jobs SET status='pending', attempts = attempts - 1 WHERE id = $1 AND claim_token = $2`, id, tok)",
 		}},
 	}}
 }

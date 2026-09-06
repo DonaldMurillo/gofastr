@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -244,4 +245,150 @@ func TestTruncatedToolInputKeepsHistoryValid(t *testing.T) {
 	if eerr != nil {
 		t.Errorf("SECURITY: ToolCallStarted with truncated args fails EncodeEvent, so the tool-intent row is dropped instead of persisted: %v", eerr)
 	}
+}
+
+// Pins CollectStream's unbounded per-turn buffering, found by the
+// 2026-09-04 red-probe round; fixed in CollectStreamWithCap capping
+// text + thinking + tool-argument bytes per turn.
+//
+// Property: the engine bounds the total bytes it buffers from one
+// provider turn (text + thinking + tool-call argument deltas); past
+// the cap the turn fails loudly (ErrStreamCapExceeded) instead of
+// accumulating without limit, and the partial output already received
+// is kept for the transcript.
+// Surfaces: engine/stream.go::CollectStream / CollectStreamWithCap
+// (textBuf, summary.Thinking, curToolJSON — all three fed by whatever
+// the endpoint sends), engine/loop.go::RunTurn via
+// Engine.MaxStreamBytesPerTurn (0 = DefaultMaxStreamBytesPerTurn).
+// The adapters' own bound (internal/openai parseSSEStream caps one
+// SSE line at 4 MiB) never bounded the NUMBER of events; this is the
+// total-turn bound, the stream-side twin of
+// maxToolResultBytesPerBlock.
+func TestCollectStreamCapsTurnBytes(t *testing.T) {
+	if DefaultMaxStreamBytesPerTurn != 8<<20 {
+		t.Fatalf("DefaultMaxStreamBytesPerTurn = %d, want 8 MiB", DefaultMaxStreamBytesPerTurn)
+	}
+
+	// One megabyte per turn keeps the test fast while proving the
+	// bound is enforced at a size a hostile endpoint blows through in
+	// milliseconds.
+	const cap = 1 << 20
+	cases := []struct {
+		name    string
+		payload []provider.StreamEvent // events to stream, in order
+	}{
+		{
+			name: "text deltas",
+			payload: func() []provider.StreamEvent {
+				chunk := strings.Repeat("a", 8192)
+				out := make([]provider.StreamEvent, 0, 300)
+				for range 300 { // 300 * 8 KiB ≈ 2.4 MiB > 1 MiB cap
+					out = append(out, provider.StreamEvent{Kind: provider.KindTextDelta, Text: chunk})
+				}
+				return out
+			}(),
+		},
+		{
+			name: "thinking deltas",
+			payload: func() []provider.StreamEvent {
+				block := []byte(strings.Repeat("t", 8192))
+				out := make([]provider.StreamEvent, 0, 300)
+				for range 300 {
+					out = append(out, provider.StreamEvent{Kind: provider.KindThinkingDelta, Thinking: block})
+				}
+				return out
+			}(),
+		},
+		{
+			name: "tool-call argument deltas",
+			payload: func() []provider.StreamEvent {
+				out := []provider.StreamEvent{{
+					Kind:    provider.KindToolUseStart,
+					ToolUse: &control.ToolUse{ID: "call_cap", Name: "Echo"},
+				}}
+				chunk := strings.Repeat("x", 8192)
+				for range 300 {
+					out = append(out, provider.StreamEvent{Kind: provider.KindToolUseDelta, InputDelta: chunk})
+				}
+				return out
+			}(),
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			bus := NewBus(ids.NewSessionID())
+			defer bus.Close()
+
+			ch := make(chan provider.StreamEvent, 64)
+			go func() {
+				defer close(ch)
+				for _, ev := range tc.payload {
+					ch <- ev
+				}
+				// A well-formed terminal event: the turn "succeeds" from
+				// the stream's point of view, the cap must be what stops
+				// it.
+				ch <- provider.StreamEvent{Kind: provider.KindStop, FinishReason: "stop"}
+			}()
+
+			summary, err := CollectStreamWithCap(context.Background(), bus, ids.NewClientID(), ch, cap)
+			// Drain the leftovers so the sender goroutine can exit.
+			go func() {
+				for range ch {
+				}
+			}()
+			if !errors.Is(err, ErrStreamCapExceeded) {
+				t.Fatalf("SECURITY: [stream-unbounded-buffer] %s past the per-turn cap returned err=%v; want ErrStreamCapExceeded — a hostile endpoint can drive the harness process OOM (tool results are capped at 64 KiB/block, the stream needs the same shape of bound)", tc.name, err)
+			}
+
+			// The partial output is kept for the transcript, bounded by the cap.
+			switch tc.name {
+			case "text deltas":
+				if len(summary.Text) == 0 || len(summary.Text) > cap {
+					t.Fatalf("partial text = %d bytes; want (0, %d]", len(summary.Text), cap)
+				}
+			case "thinking deltas":
+				total := 0
+				for _, b := range summary.Thinking {
+					total += len(b)
+				}
+				if total == 0 || total > cap {
+					t.Fatalf("partial thinking = %d bytes; want (0, %d]", total, cap)
+				}
+			case "tool-call argument deltas":
+				if len(summary.ToolUses) != 1 || len(summary.ToolUses[0].Input) == 0 {
+					t.Fatalf("partial tool use not kept for the transcript: %+v", summary.ToolUses)
+				}
+			}
+		})
+	}
+
+	// The default path caps too: CollectStream must apply
+	// DefaultMaxStreamBytesPerTurn (8 MiB), not "whatever arrives". A
+	// turn of 9 MiB crosses it.
+	t.Run("default cap enforced", func(t *testing.T) {
+		bus := NewBus(ids.NewSessionID())
+		defer bus.Close()
+		ch := make(chan provider.StreamEvent, 64)
+		go func() {
+			defer close(ch)
+			chunk := strings.Repeat("a", 64*1024)
+			for range 144 { // 9 MiB > 8 MiB default
+				ch <- provider.StreamEvent{Kind: provider.KindTextDelta, Text: chunk}
+			}
+			ch <- provider.StreamEvent{Kind: provider.KindStop, FinishReason: "stop"}
+		}()
+		summary, err := CollectStream(context.Background(), bus, ids.NewClientID(), ch)
+		go func() {
+			for range ch {
+			}
+		}()
+		if !errors.Is(err, ErrStreamCapExceeded) {
+			t.Fatalf("SECURITY: [stream-unbounded-buffer] CollectStream buffered a turn past the 8 MiB default (err=%v, text=%d); the default cap must be enforced, not just the explicit one", err, len(summary.Text))
+		}
+		if len(summary.Text) > DefaultMaxStreamBytesPerTurn {
+			t.Fatalf("partial text %d exceeds the cap %d", len(summary.Text), DefaultMaxStreamBytesPerTurn)
+		}
+	})
 }

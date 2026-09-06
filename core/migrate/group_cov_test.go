@@ -94,7 +94,7 @@ func TestGroupAware_GroupArgAndRegistered(t *testing.T) {
 	}
 	// A registered non-default group forces ga even with no args.
 	m2, _ := newTestMigrator(t)
-	m2.Register(Migration{Version: 1, Name: "k", Group: "knowledge"})
+	m2.Register(Migration{Version: 1, Name: "k", Group: "knowledge", Up: "SELECT 1"})
 	if !m2.groupAware(nil) {
 		t.Error("groupAware(nil) with a registered group = want true")
 	}

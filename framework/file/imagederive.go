@@ -145,6 +145,9 @@ type ProcessOption func(*processConfig)
 
 type processConfig struct {
 	deriver ImageDeriver
+	// stripMetadata opts the upload into StripMetadata's metadata
+	// removal; see strip.go.
+	stripMetadata bool
 }
 
 // WithImageDeriver runs deriver over the uploaded bytes and attaches the

@@ -7314,6 +7314,16 @@ func renderBlueprintStubs(bp Blueprint) string {
 			// from. Skip emitting a stub; registration skips it too.
 			continue
 		}
+		if !isGoIdentifier(handler) {
+			// validateBlueprint refuses a Handler that does not derive
+			// an identifier, but the Name FALLBACK root has no validator
+			// of its own (toCamelCase transforms, it does not validate),
+			// and renderBlueprintStubs also serves unvalidated renders
+			// (tests, --add fragments). Never emit a non-identifier:
+			// mirroring the hook stubs below. assertBlueprintGoParses is
+			// the backstop, not the guard.
+			continue
+		}
 		label := strings.TrimSpace(endpoint.Handler)
 		if label == "" {
 			label = strings.TrimSpace(endpoint.Name)
@@ -7998,6 +8008,9 @@ func renderBlueprintApp(bp Blueprint) string {
 		handler := blueprintEndpointHandlerName(endpoint)
 		if handler == "" {
 			continue
+		}
+		if !isGoIdentifier(handler) {
+			continue // same gate as the stub emitter: never reference a non-identifier
 		}
 		sb.WriteString(fmt.Sprintf("\tfwApp.Router().Handle(%q, %q, http.HandlerFunc(%s))\n", strings.ToUpper(endpoint.Method), blueprintEndpointPath(endpoint), handler))
 	}

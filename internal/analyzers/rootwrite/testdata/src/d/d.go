@@ -2,7 +2,9 @@
 // review showed were missing or mis-scoped: a rooty field copied into
 // a local, a helper called with literal-only components, validator /
 // EvalSymlinks / Clean gates that never touch the write path, and
-// concatenation-built paths.
+// concatenation-built paths. The sanitizer-result and clean-helper
+// spellings were negatives then; the 2026-09-04 posture change (no
+// sanitizer shield) made them the positives they are now.
 package d
 
 import (
@@ -91,32 +93,39 @@ func validGate(baseDir, name string) error {
 	return os.MkdirAll(filepath.Join(baseDir, "plugins", name), 0o755) // want `write under a root with lexical containment only`
 }
 
-// validResultFixed: the sanitizer's RESULT replaces the joined
-// component — that is the dataflow the silence is declared on.
-func validResultFixed(baseDir, name string) error {
+// sanitizerResultStillFires: the sanitizer's RESULT replaces the joined
+// component and the write STILL fires. Until the 2026-09-04 posture
+// change this was a declared silent posture; the reviewer's mutation
+// proof (core/upload Save minus both EvalSymlinks) showed the shield
+// hiding exactly the escape it cannot see — a symlinked directory,
+// which no name sanitizer strips.
+func sanitizerResultStillFires(baseDir, name string) error {
 	safe := sanitizeName(name)
 	if safe == "" {
 		return errors.New("bad name")
 	}
-	return os.MkdirAll(filepath.Join(baseDir, "plugins", safe), 0o755)
+	return os.MkdirAll(filepath.Join(baseDir, "plugins", safe), 0o755) // want `write under a root with lexical containment only`
 }
 
 // cleanShield: filepath.Clean normalizes separators and dot segments;
 // it resolves no symlink, so the symlinked-directory escape this rule
-// reports survives it untouched.
+// reports survives it untouched. A stdlib Clean never shielded.
 func cleanShield(root, name string, data []byte) error {
 	return os.WriteFile(filepath.Join(root, filepath.Clean(name)), data, 0o600) // want `write under a root with lexical containment only`
 }
 
 // cleanNameKeep is a same-package helper whose RESULT replaces the
-// joined component — the local clean-named spelling that keeps
-// shielding (a stdlib Clean never does).
+// joined component. It normalizes separators and suffixes, resolves no
+// symlink — so since the 2026-09-04 posture change it shields nothing
+// (a stdlib Clean never did).
 func cleanNameKeep(s string) string {
 	return strings.TrimSuffix(s, "/")
 }
 
-func cleanLocalShield(root, name string, data []byte) error {
-	return os.WriteFile(filepath.Join(root, cleanNameKeep(name)), data, 0o600)
+// cleanHelperStillFires: the clean-named helper's result feeding the
+// Join keeps the write loud for the same reason a sanitizer's does.
+func cleanHelperStillFires(root, name string, data []byte) error {
+	return os.WriteFile(filepath.Join(root, cleanNameKeep(name)), data, 0o600) // want `write under a root with lexical containment only`
 }
 
 func sanitizeName(s string) string {

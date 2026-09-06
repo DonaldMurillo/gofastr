@@ -101,7 +101,9 @@ sending it. Before logging, it redacts URL query strings carrying
 `token` / `code` / `key` / `secret` / `password` and any
 `Bearer <token>` substring. Password-reset and magic-link emails render
 with their secrets stripped, so a dev log never captures a live
-credential.
+credential. The redaction is exported as `email.RedactBody`, so sibling
+dev-log surfaces (notify's `LoggerChannel`) scrub the same shapes
+instead of forging their own patterns.
 
 ## Templates
 

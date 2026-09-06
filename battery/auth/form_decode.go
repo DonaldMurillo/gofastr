@@ -6,6 +6,8 @@ import (
 	"net/url"
 	"strings"
 	"sync/atomic"
+
+	"golang.org/x/text/unicode/norm"
 )
 
 // bareContentType returns the Content-Type with any parameters stripped,
@@ -67,7 +69,7 @@ func isForgeableRequest(r *http.Request) bool {
 // roles would let any visitor self-promote to admin via a single POST
 // (or a CSRF-style cross-origin form submission). Roles are assigned
 // server-side in the handler from a configured default.
-func decodeAuthCredentials(w http.ResponseWriter, r *http.Request) (email, password string, form bool, ok bool) {
+func decodeAuthCredentials(w http.ResponseWriter, r *http.Request, canonicalize func(string) (string, error)) (email, password string, form bool, ok bool) {
 	if isFormRequest(r) {
 		// http.Request.ParseForm respects MaxBytesReader if we set the
 		// body wrapper first.
@@ -94,11 +96,11 @@ func decodeAuthCredentials(w http.ResponseWriter, r *http.Request) (email, passw
 				return "", "", true, false
 			}
 		}
-		email = CanonicalEmail(r.PostFormValue("email"))
-		password = r.PostFormValue("password")
-		if !emailWithinLimit(w, email) {
+		email, ok = canonicalizeDecodedEmail(w, canonicalize, r.PostFormValue("email"))
+		if !ok {
 			return "", "", true, false
 		}
+		password = r.PostFormValue("password")
 		return email, password, true, true
 	}
 
@@ -109,23 +111,71 @@ func decodeAuthCredentials(w http.ResponseWriter, r *http.Request) (email, passw
 	if !decodeJSONLimited(w, r, &body) {
 		return "", "", false, false
 	}
-	email = CanonicalEmail(body.Email)
-	if !emailWithinLimit(w, email) {
+	email, ok = canonicalizeDecodedEmail(w, canonicalize, body.Email)
+	if !ok {
 		return "", "", false, false
 	}
 	return email, body.Password, false, true
 }
 
-// CanonicalEmail is the battery's single definition of email identity:
-// trimmed and lowercased. Every flow that looks an email up or stores
-// one (login, registration, magic links, OAuth matching, password
-// reset, the login rate-limiter key) canonicalizes at its ingestion
-// point, so custom UserStore implementations always receive canonical
-// input and the limiter key and the lookup key agree by construction
-// (#270). Hosts wrapping UserStore should use it too when they accept
-// emails from their own surfaces.
-func CanonicalEmail(email string) string {
-	return strings.ToLower(strings.TrimSpace(email))
+// canonicalizeDecodedEmail is the shared tail of both decode branches:
+// canonicalize (refusing decomposed Unicode), then bound the length so
+// the limiter key / user-table value stays finite.
+func canonicalizeDecodedEmail(w http.ResponseWriter, canonicalize func(string) (string, error), raw string) (string, bool) {
+	email, err := canonicalizeEmailWith(canonicalize, raw)
+	if err != nil {
+		writeAuthError(w, http.StatusBadRequest, errComposedEmailMessage)
+		return "", false
+	}
+	if !emailWithinLimit(w, email) {
+		return "", false
+	}
+	return email, true
+}
+
+// ErrEmailNotComposed is the error an AuthConfig.CanonicalizeEmail
+// override returns to refuse an address it will not fold (the default
+// canonicalizer normalizes to NFC and never returns it); every email-
+// ingesting handler surfaces it as 400.
+var ErrEmailNotComposed = errors.New("auth: email address is not in composed Unicode form (NFC)")
+
+// errComposedEmailMessage is the client-facing wording for the same
+// refusal; it names the fix without echoing the input.
+const errComposedEmailMessage = "email must be in composed Unicode form (NFC)"
+
+// CanonicalEmail is the battery's single definition of email identity.
+// Every flow that looks an email up or stores one (login, registration,
+// magic links, OAuth matching, password reset, the login rate-limiter
+// key) canonicalizes at its ingestion point, so custom UserStore
+// implementations always receive canonical input and the limiter key
+// and the lookup key agree by construction (#270). Hosts wrapping
+// UserStore should use it too when they accept emails from their own
+// surfaces.
+//
+// Identity is: NFC-normalized, then trimmed, then lowercased (maintainer
+// decision, 2026-09-04 red-probe round 3): the composed and decomposed
+// spellings of one mailbox (macOS and iOS clipboards decompose copied
+// text) canonicalize to the same string, so they can never become two
+// accounts or split OIDC auto-linking. golang.org/x/text/unicode/norm
+// is a Go-team module already in the dependency graph.
+//
+// Deployments with other rules (a provider that treats dots or plus
+// tags as insignificant, a legacy store keyed on the raw bytes) install
+// AuthConfig.CanonicalizeEmail; it replaces this default at every
+// ingestion point. An override that wants to refuse an address returns
+// [ErrEmailNotComposed] (or any error); the handlers surface it as 400.
+func CanonicalEmail(email string) (string, error) {
+	return canonicalizeEmailWith(nil, email)
+}
+
+// canonicalizeEmailWith applies canonicalize when non-nil (the
+// AuthConfig.CanonicalizeEmail override) and the package default
+// otherwise, so the override is total.
+func canonicalizeEmailWith(canonicalize func(string) (string, error), email string) (string, error) {
+	if canonicalize != nil {
+		return canonicalize(email)
+	}
+	return norm.NFC.String(strings.ToLower(strings.TrimSpace(email))), nil
 }
 
 // maxEmailLen is RFC 5321's 254-octet ceiling on a forward-path address.

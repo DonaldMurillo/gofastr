@@ -2,6 +2,7 @@ package static
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
@@ -14,12 +15,17 @@ import (
 //
 // The loop ignores errors so a transient compile-time mistake in user code
 // (e.g. a half-saved file) does not stop watching; the most recent error is
-// passed to onError if non-nil. If interval is <= 0 it defaults to 500ms.
+// passed to onError if non-nil. interval 0 keeps the 500ms default; a
+// negative interval is rejected — a sign/unit error must not silently
+// become a fast poll loop.
 //
 // Polling avoids a third-party fsnotify dependency. For projects with a
 // large source tree this is fine: we only stat files we already know about.
 func (b *Builder) Watch(ctx context.Context, watchDirs []string, interval time.Duration, onError func(error)) error {
-	if interval <= 0 {
+	if interval < 0 {
+		return fmt.Errorf("static: Watch: interval must be >= 0 (got %v)", interval)
+	}
+	if interval == 0 {
 		interval = 500 * time.Millisecond
 	}
 	if _, err := b.Build(ctx); err != nil {

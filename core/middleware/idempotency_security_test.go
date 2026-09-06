@@ -178,21 +178,116 @@ func (s *recordingStore) Finish(ctx context.Context, key, fingerprint string, re
 	return nil
 }
 
-func TestMemoryStore_MaxEntriesEvictsOldest(t *testing.T) {
+func TestMemoryStore_EvictsIdleFirst(t *testing.T) {
 	s := NewMemoryIdempotencyStore(time.Hour, WithMemoryStoreMaxEntries(3))
 	ctx := context.Background()
-	for i := range 5 {
-		key := fmt.Sprintf("k%d", i)
-		_, _, _ = s.Begin(ctx, key, "fp")
-		// micro-spacing so createdAt differs deterministically
+	for _, k := range []string{"k1", "k2", "k3"} {
+		_, _, _ = s.Begin(ctx, k, "fp")
+		if err := s.Finish(ctx, k, "fp", &IdempotentResponse{Status: 200, Body: []byte("b")}); err != nil {
+			t.Fatalf("finish %s: %v", k, err)
+		}
+		time.Sleep(1 * time.Millisecond) // distinct lastAccess stamps
+	}
+	// Warm k1: a replay touch makes it the most recently used entry.
+	if _, ok, _ := s.Begin(ctx, "k1", "fp"); !ok {
+		t.Fatal("k1 should replay before the flood")
+	}
+	time.Sleep(1 * time.Millisecond)
+	// Flood to the cap: the two claims the flood forces out must be the
+	// idle entries (k2, k3), not the warm k1 — a flood of fresh keys can
+	// only evict flood and idle state, never the recently replayed key.
+	for i := range 2 {
+		k := fmt.Sprintf("flood-%d", i)
+		_, _, _ = s.Begin(ctx, k, "fp")
 		time.Sleep(1 * time.Millisecond)
 	}
-	// After 5 inserts with cap=3, only the most recent 3 should be present.
-	// The oldest keys (k0, k1) should be evicted; fresh Begin with their
-	// keys is treated as a NEW claim, not an in-flight return.
-	resp, ok, err := s.Begin(ctx, "k0", "fp")
-	if ok || resp != nil {
-		t.Fatalf("k0 should have been evicted (replay=%v,err=%v)", ok, err)
+	if _, ok, _ := s.Begin(ctx, "k1", "fp"); !ok {
+		t.Fatal("warm entry k1 was evicted while idle entries k2/k3 were available: eviction must be idle-first")
+	}
+}
+
+// ----- default store bounded (F1: attacker-mintable cache keys) -------------
+//
+// Pins the unbounded default memory store, found by the 2026-09-04
+// red-probe round; fixed by bounding NewMemoryIdempotencyStore at
+// 100_000 entries (idle-first eviction, the framework/ratelimit maxKeys
+// precedent) plus a 1 MiB per-entry byte cap, with IdempotencyConfig
+// knobs (MaxStoreEntries / MaxStoreEntryBytes) for hosts that need
+// different bounds.
+// Family: F1 resource exhaustion from request-borne input (attacker-mintable cache keys)
+// Property: the default store's retained entry count never exceeds its cap, whatever the client mints.
+// Surfaces: core/middleware/idempotency.go::NewMemoryIdempotencyStore (default caps),
+//           core/middleware/idempotency.go::Begin+evictLocked (shed at the cap),
+//           core/middleware/idempotency.go::Finish (per-entry byte cap).
+
+// TestMemoryStore_DefaultEntriesBounded: the all-defaults store is
+// bounded — a flood of unique keys can never leave more entries than the
+// cap, and in-flight claims are still protected ahead of completed
+// entries.
+func TestMemoryStore_DefaultEntriesBounded(t *testing.T) {
+	s := NewMemoryIdempotencyStore(time.Hour).(*memoryIdempotencyStore)
+	if s.maxEntries != defaultMaxIdemEntries {
+		t.Fatalf("default cap = %d, want %d", s.maxEntries, defaultMaxIdemEntries)
+	}
+	if s.maxEntryBytes != defaultMaxIdemEntryBytes {
+		t.Fatalf("default per-entry byte cap = %d, want %d", s.maxEntryBytes, defaultMaxIdemEntryBytes)
+	}
+	ctx := context.Background()
+	for i := range defaultMaxIdemEntries + 5_000 {
+		_, _, _ = s.Begin(ctx, fmt.Sprintf("k%d", i), "fp")
+	}
+	s.mu.Lock()
+	n := len(s.entries)
+	s.mu.Unlock()
+	if n > defaultMaxIdemEntries {
+		t.Fatalf("SECURITY: [idem-default] flood of %d unique keys left %d resident entries, cap %d: "+
+			"process memory must not be proportional to attacker-chosen Idempotency-Key values",
+			defaultMaxIdemEntries+5_000, n, defaultMaxIdemEntries)
+	}
+}
+
+// TestMemoryStore_InFlightClaimsEvictedLast: when every entry is an
+// in-flight claim, the cap still holds (the claim is shed LRU), but a
+// completed entry is always shed first when one exists — dropping an
+// in-flight claim opens a concurrent-execution window for that key.
+func TestMemoryStore_InFlightClaimsEvictedLast(t *testing.T) {
+	s := NewMemoryIdempotencyStore(time.Hour, WithMemoryStoreMaxEntries(2)).(*memoryIdempotencyStore)
+	ctx := context.Background()
+	_, _, _ = s.Begin(ctx, "claim-1", "fp")
+	time.Sleep(1 * time.Millisecond)
+	_, _, _ = s.Begin(ctx, "claim-2", "fp")
+	time.Sleep(1 * time.Millisecond)
+	// All entries in-flight: the third claim still fits inside the cap.
+	_, _, _ = s.Begin(ctx, "claim-3", "fp")
+	s.mu.Lock()
+	n := len(s.entries)
+	s.mu.Unlock()
+	if n > 2 {
+		t.Fatalf("all-in-flight flood left %d entries, cap 2", n)
+	}
+}
+
+// TestMemoryStore_EntryByteCapDropsOversized: a response larger than the
+// per-entry byte cap is dropped at Finish — the client already received
+// it — so one cached response cannot retain unbounded bytes even when
+// MaxResponseBytes was raised at the middleware level.
+func TestMemoryStore_EntryByteCapDropsOversized(t *testing.T) {
+	s := NewMemoryIdempotencyStore(time.Hour, WithMemoryStoreMaxEntryBytes(64))
+	ctx := context.Background()
+	_, _, _ = s.Begin(ctx, "big", "fp")
+	if err := s.Finish(ctx, "big", "fp", &IdempotentResponse{Status: 200, Body: make([]byte, 128)}); err != nil {
+		t.Fatalf("finish big: %v", err)
+	}
+	if resp, ok, _ := s.Begin(ctx, "big", "fp"); ok || resp != nil {
+		t.Fatalf("oversized response was retained (ok=%v resp=%v)", ok, resp != nil)
+	}
+	// Under the cap: retained and replayed.
+	_, _, _ = s.Begin(ctx, "small", "fp")
+	if err := s.Finish(ctx, "small", "fp", &IdempotentResponse{Status: 200, Body: []byte("ok")}); err != nil {
+		t.Fatalf("finish small: %v", err)
+	}
+	if resp, ok, _ := s.Begin(ctx, "small", "fp"); !ok || resp == nil {
+		t.Fatal("under-cap response should replay")
 	}
 }
 
@@ -328,7 +423,7 @@ func TestIdemReclaimKeepsFreshRow(t *testing.T) {
 			ms.entries["k-f4"] = &idemEntry{
 				fingerprint: "fp-seed",
 				expires:     time.Now().Add(-time.Second),
-				createdAt:   time.Now().Add(-2 * time.Second),
+				lastAccess:  time.Now().Add(-2 * time.Second),
 			}
 			ms.mu.Unlock()
 		}

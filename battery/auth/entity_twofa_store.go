@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 
 	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/core/schema"
@@ -39,6 +40,9 @@ type EntityTwoFAStore struct {
 	db     *sql.DB
 	table  string
 	sealer *aeadSealer
+	// previousSealers open rows sealed under rotated-away keys (the
+	// drain window); they never seal.
+	previousSealers []*aeadSealer
 
 	// casTestHook, when set, fires inside ConsumeBackupCode between the read
 	// and the compare-and-swap UPDATE. It is nil in production; tests use it
@@ -54,6 +58,23 @@ type EntityTwoFAStoreConfig struct {
 	// config error. Sealing is read-both: rows written as plaintext before
 	// the key existed still verify, and every new write is sealed.
 	EncryptionKey []byte
+
+	// PreviousEncryptionKeys are decrypt-only keys retained for a drain
+	// window after an EncryptionKey rotation, mirroring JWTAuth.
+	// PreviousSecrets and the CSRF AdditionalKeys idiom. A row sealed
+	// under a key here still opens; the read re-seals it under the
+	// CURRENT key in the same transaction-free predicate update, so the
+	// next read no longer needs the old key and the operator can drop
+	// it after one pass over the enrolled rows. New writes always seal
+	// with EncryptionKey.
+	//
+	// Without a matching current-or-previous key, a sealed row FAILS
+	// CLOSED with an explicit error naming the rotation — never the
+	// OAuth token store's "ciphertext failed to open (wrong
+	// EncryptionKey?)" silence, and never the pre-2026-09-04 behaviour
+	// of serving the base64 ciphertext as the TOTP seed (every code
+	// computed from garbage, a silent deployment-wide 2FA outage).
+	PreviousEncryptionKeys [][]byte
 }
 
 // NewEntityTwoFAStore creates a TwoFAStore backed by a database table.
@@ -61,7 +82,8 @@ type EntityTwoFAStoreConfig struct {
 // required: the TOTP seed is a credential, and the SQL OAuth token store
 // already refuses to run unsealed, so this store does too. Rows written
 // as plaintext by an older build still verify (read-both) and are
-// re-sealed on their next write.
+// re-sealed on their next write. PreviousEncryptionKeys configures the
+// rotation drain window (see its doc).
 func NewEntityTwoFAStore(db *sql.DB, table string, cfg EntityTwoFAStoreConfig) (*EntityTwoFAStore, error) {
 	query.MustIdent(table)
 	if len(cfg.EncryptionKey) == 0 {
@@ -71,7 +93,18 @@ func NewEntityTwoFAStore(db *sql.DB, table string, cfg EntityTwoFAStoreConfig) (
 	if err != nil {
 		return nil, fmt.Errorf("auth: entity 2FA store: %w", err)
 	}
-	return &EntityTwoFAStore{db: db, table: table, sealer: sealer}, nil
+	prev := make([]*aeadSealer, 0, len(cfg.PreviousEncryptionKeys))
+	for i, k := range cfg.PreviousEncryptionKeys {
+		if len(k) == 0 {
+			return nil, fmt.Errorf("auth: entity 2FA store: PreviousEncryptionKeys[%d] is empty", i)
+		}
+		ps, err := newAEADSealer(k)
+		if err != nil {
+			return nil, fmt.Errorf("auth: entity 2FA store: PreviousEncryptionKeys[%d]: %w", i, err)
+		}
+		prev = append(prev, ps)
+	}
+	return &EntityTwoFAStore{db: db, table: table, sealer: sealer, previousSealers: prev}, nil
 }
 
 // sealSecret seals a TOTP secret for storage when a sealer is configured;
@@ -83,17 +116,60 @@ func (s *EntityTwoFAStore) sealSecret(secret string) (string, error) {
 	return s.sealer.seal(secret)
 }
 
-// openSecret reads the secret column in both forms: a value this sealer
-// produced (opens), or a legacy plaintext row written before sealing was
-// enabled (returns as-is, so existing enrollments keep verifying).
-func (s *EntityTwoFAStore) openSecret(stored string) string {
-	if s.sealer == nil || stored == "" {
-		return stored
+// openSecret opens the stored secret column value. Read order:
+//
+//  1. the current key;
+//  2. each previous (rotation-drain) key — reported via viaPrevious so
+//     the caller can re-seal the row under the current key;
+//  3. legacy plaintext — a row written before sealing existed.
+//
+// A value NONE of those explain is a sealed row this store cannot open:
+// a rotated-away or wrong EncryptionKey. It fails closed with an
+// explicit error (the oauth_token_store contract on the same sealer)
+// instead of the pre-2026-09-04 fallback, which returned the stored
+// bytes verbatim and silently served the base64 ciphertext as the TOTP
+// seed — every code rejected, no error anywhere (round 3 finding,
+// pinned by TestTwoFARekeyNotServedAsSeed).
+//
+// Legacy plaintext is recognized as the RFC 4648 base32 TOTP alphabet
+// (A-Z, 2-7) only. A sealed value is base64 over nonce+AEAD(tag), so it
+// contains lowercase / '+' / '/' characters with overwhelming
+// probability; an 80-char all-uppercase sealed value has odds below
+// 2^-80. The corollary, deliberate and documented: a legacy plaintext
+// seed in some OTHER encoding (lowercase base32, hex) reads as
+// unopenable and fails closed rather than verifying. Fail closed beats
+// serving ciphertext.
+func (s *EntityTwoFAStore) openSecret(stored string) (plain string, viaPrevious bool, err error) {
+	if stored == "" {
+		return stored, false, nil
 	}
 	if pt, ok := s.sealer.open(stored); ok {
-		return pt
+		return pt, false, nil
 	}
-	return stored
+	for _, prev := range s.previousSealers {
+		if pt, ok := prev.open(stored); ok {
+			return pt, true, nil
+		}
+	}
+	if isLegacyPlaintextSeed(stored) {
+		return stored, false, nil
+	}
+	return "", false, fmt.Errorf("auth: entity 2FA store: secret ciphertext failed to open (wrong EncryptionKey?)")
+}
+
+// isLegacyPlaintextSeed reports whether s is shaped like a plaintext
+// TOTP seed: the RFC 4648 base32 alphabet only. See openSecret for why
+// that distinction is safe and what it refuses.
+func isLegacyPlaintextSeed(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		if !((r >= 'A' && r <= 'Z') || (r >= '2' && r <= '7')) {
+			return false
+		}
+	}
+	return true
 }
 
 // EnsureSchema creates the 2FA table if it does not already exist. Called
@@ -185,7 +261,11 @@ func (s *EntityTwoFAStore) qTable(stmt string) string {
 // GetTwoFA retrieves the 2FA state for a user. Returns nil (not an error)
 // when the user is not enrolled, matching MemoryTwoFAStore. The secret is
 // unsealed when the store was built with an EncryptionKey; a row written
-// as plaintext before sealing was enabled still reads back usable.
+// as plaintext before sealing was enabled still reads back usable. A row
+// sealed under a rotated-away key opens through PreviousEncryptionKeys
+// and is re-sealed under the current key on that read; a row no
+// configured key can open fails closed with an explicit error instead of
+// serving the ciphertext as the seed.
 func (s *EntityTwoFAStore) GetTwoFA(ctx context.Context, userID string) (*TwoFAState, error) {
 	return s.getWithVersion(ctx, userID, nil, nil)
 }
@@ -218,13 +298,54 @@ func (s *EntityTwoFAStore) getWithVersion(ctx context.Context, userID string, ve
 	if err := json.Unmarshal([]byte(codesJSON), &codes); err != nil {
 		return nil, fmt.Errorf("auth: EntityTwoFAStore: corrupt backup_codes row for user %s: %w", userID, err)
 	}
+	plain, viaPrevious, err := s.openSecret(secret)
+	if err != nil {
+		return nil, err
+	}
+	if viaPrevious {
+		// Drain window: the row opened under a rotated-away key. Re-seal
+		// under the current key NOW so the next read does not need the
+		// old key. Best-effort and predicate-guarded (the same column
+		// set every CAS path predicates on — the secret is deliberately
+		// excluded there): a concurrent writer wins, its own write
+		// already sealed under the current key, and the read still
+		// succeeds with the plaintext we hold.
+		s.resealUnderCurrentKey(ctx, userID, plain, ver, codesJSON, enabled, verified, lastUsedStep)
+	}
 	return &TwoFAState{
 		Enabled:      enabled,
-		Secret:       s.openSecret(secret),
+		Secret:       plain,
 		BackupCodes:  codes,
 		Verified:     verified,
 		LastUsedStep: uint64(lastUsedStep),
 	}, nil
+}
+
+// resealUnderCurrentKey rewrites a drain-window row's secret under the
+// current key without bumping version: the CAS predicate excludes the
+// secret column on purpose, so this stay transparent to concurrent
+// CompareAndSwapTwoFA / ConsumeBackupCode loops.
+func (s *EntityTwoFAStore) resealUnderCurrentKey(ctx context.Context, userID, plain string, ver int64, codesJSON string, enabled, verified bool, lastUsedStep int64) {
+	sealed, err := s.sealSecret(plain)
+	if err != nil {
+		slog.Warn("2FA rotation drain: re-seal failed",
+			"store", "entity_twofa", "user_hash", hashedIdentifier(userID), "err", err)
+		return
+	}
+	q := s.qTable("UPDATE %s SET secret = $1 WHERE user_id = $2 AND version = $3 AND backup_codes = $4 AND enabled = $5 AND verified = $6 AND last_used_step = $7")
+	res, err := s.db.ExecContext(ctx, q, sealed, userID, ver, codesJSON, enabled, verified, lastUsedStep)
+	if err != nil {
+		slog.Warn("2FA rotation drain: re-seal write failed",
+			"store", "entity_twofa", "user_hash", hashedIdentifier(userID), "err", err)
+		return
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		// Lost the race to a concurrent write; that write sealed under
+		// the current key. Nothing to do.
+		return
+	}
+	slog.Info("2FA rotation drain: row re-sealed under current key",
+		"store", "entity_twofa", "user_hash", hashedIdentifier(userID))
 }
 
 // marshalBackupCodes canonicalises the codes column value: GetTwoFA and

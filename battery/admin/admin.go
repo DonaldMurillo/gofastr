@@ -28,14 +28,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"log/slog"
-	"net/http"
-	"net/url"
-	"slices"
-	"strconv"
-	"strings"
-	"time"
-
 	"github.com/DonaldMurillo/gofastr/battery/auth"
 	"github.com/DonaldMurillo/gofastr/battery/queue"
 	appui "github.com/DonaldMurillo/gofastr/core-ui/app"
@@ -51,6 +43,14 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/embed"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 	"github.com/DonaldMurillo/gofastr/framework/uihost"
+	"log/slog"
+	"net/http"
+	"net/url"
+	"slices"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
 )
 
 // Config configures the Admin battery.
@@ -176,18 +176,30 @@ type Config struct {
 	// Default: slog.Default(). Inject a *slog.Logger (e.g. the app's) so the
 	// line lands wherever the host's structured logs go.
 	Logger *slog.Logger
+
+	// Secret is the app-wide secret used to HMAC-sign the form-flash
+	// cookie that carries a failed submission (values + field errors)
+	// across the PRG redirect. Set it to the SAME value as
+	// framework.WithSecret / GOFASTR_SECRET on every replica: any replica
+	// must render a redirect issued by any other (the repo's statelessness
+	// contract). Without it the battery self-mints a per-boot key — the
+	// flash still works on a single replica, and a redirect that lands on
+	// another replica renders an empty form, exactly like a session token
+	// signed by an unconfigured secret.
+	Secret string
 }
 
 // Battery is the framework Battery implementation.
 type Battery struct {
-	cfg      Config
-	app      *framework.App      // source of fully wired entity CRUD handlers
-	registry *framework.Registry // set at Init; enables the entity CRUD screens
-	db       *sql.DB             // effective DB for entity CRUD (cfg.DB or app.DB)
-	host     *uihost.UIHost      // the app's mounted UI host (entity screens render through it)
-	screens  *appui.App          // host.App, where entity CRUD screens register
-	router   *router.Router      // the framework router (entity RPC/form/delete routes)
-	flash    *flashStore         // short-lived form re-render payloads (validation errors + values)
+	cfg          Config
+	app          *framework.App      // source of fully wired entity CRUD handlers
+	registry     *framework.Registry // set at Init; enables the entity CRUD screens
+	db           *sql.DB             // effective DB for entity CRUD (cfg.DB or app.DB)
+	host         *uihost.UIHost      // the app's mounted UI host (entity screens render through it)
+	screens      *appui.App          // host.App, where entity CRUD screens register
+	router       *router.Router      // the framework router (entity RPC/form/delete routes)
+	flashKey     []byte              // HMAC key for the flash cookie (lazy; see flashSigningKey)
+	flashKeyOnce sync.Once
 }
 
 // New constructs the Admin battery with the supplied config. Pass the
@@ -215,7 +227,7 @@ func New(cfg Config) *Battery {
 	if cfg.Logger == nil {
 		cfg.Logger = slog.Default()
 	}
-	return &Battery{cfg: cfg, db: cfg.DB, flash: newFlashStore()}
+	return &Battery{cfg: cfg, db: cfg.DB}
 }
 
 // logger returns the configured *slog.Logger, falling back to slog.Default()
@@ -400,6 +412,15 @@ func (b *Battery) gateMiddleware() router.Middleware {
 // rely on it, its screens render an empty _csrf input without it.
 func (b *Battery) gate(next http.HandlerFunc) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Every admin-owned response is uncacheable, stamped here at the one
+		// choke point all admin routes pass through so no surface can forget
+		// it: row fragments carry tenant/owner-scoped data, and
+		// cookie-authenticated GETs are not covered by RFC 9111's
+		// Authorization-only storage rules, so a shared cache or the
+		// back/forward cache must never retain one. writePage and the uihost
+		// pin the same posture for the screens; the deliberately ungated
+		// admin.css keeps its own public max-age (it carries no data).
+		w.Header().Set("Cache-Control", "no-store")
 		if !isSafeAdminMethod(r.Method) && rejectCrossSiteForm(w, r) {
 			return
 		}

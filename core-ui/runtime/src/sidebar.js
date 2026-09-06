@@ -9,10 +9,19 @@
 // storage-carrying roots, so hydration never overwrites the server's state
 // from localStorage, and setCollapsed() skips its write when no key exists,
 // so a stale local value can never be written back either.
+//
+// Storage keys are namespaced and component-encoded (the banner.js dismissKey
+// shape): "gofastr.sidebar-collapse." + encodeURIComponent(key). Injected
+// markup carrying a data-fui-sidebar-storage value that names another
+// feature's key can therefore only ever touch this module's own namespace.
+// A legacy raw-key entry (the pre-namespace spelling) is migrated once on
+// the read side: value copied to the encoded key, raw entry removed.
 (() => {
   'use strict';
   const G = window.__gofastr;
   const wired = new WeakSet();
+
+  const STORAGE_PREFIX = 'gofastr.sidebar-collapse.';
 
   const labelFor = (button, collapsed) => {
     const custom = button.getAttribute(collapsed
@@ -32,7 +41,10 @@
     if (!persist) return;
     const key = root.getAttribute('data-fui-sidebar-storage');
     if (!key) return;
-    try { localStorage.setItem(key, collapsed ? 'true' : 'false'); } catch (_) {}
+    // Guard spelled at the sink: literal prefix + whole-operand
+    // encodeURIComponent, so an attribute-borne key can only name an entry
+    // inside this module's namespace.
+    try { localStorage.setItem(STORAGE_PREFIX + encodeURIComponent(key), collapsed ? 'true' : 'false'); } catch (_) {}
   };
 
   const setup = (root) => {
@@ -41,7 +53,13 @@
     const key = root.getAttribute('data-fui-sidebar-storage');
     let collapsed = false;
     if (key) {
-      try { collapsed = localStorage.getItem(key) === 'true'; } catch (_) {}
+      try {
+        // The key is namespaced and component-encoded at every sink so
+        // markup injected after boot cannot name an arbitrary origin key;
+        // state stored under the pre-namespace raw spelling is not read.
+        const stored = localStorage.getItem(STORAGE_PREFIX + encodeURIComponent(key));
+        collapsed = stored === 'true';
+      } catch (_) {}
     }
     setCollapsed(root, collapsed, false);
   };

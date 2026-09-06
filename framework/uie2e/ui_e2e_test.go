@@ -317,6 +317,15 @@ func TestUIE2E_OwnerScope_CrossUserIsolation(t *testing.T) {
 		chromedp.SendKeys(`#email`, "alice@example.com", chromedp.ByID),
 		chromedp.SendKeys(`#password`, "hunter22", chromedp.ByID),
 		chromedp.Click(`#submit`, chromedp.ByID),
+		// Register no longer auto-logs in (uniform anti-enumeration answer,
+		// 2026-09-04): the 303 lands on /dashboard, which bounces to /login
+		// without a next; sign in with the destination carried explicitly.
+		chromedp.WaitVisible(`#login-page`, chromedp.ByID),
+		chromedp.Navigate(fx.URL()+"/login?next=/dashboard"),
+		chromedp.WaitVisible(`#login-page`, chromedp.ByID),
+		chromedp.SendKeys(`#email`, "alice@example.com", chromedp.ByID),
+		chromedp.SendKeys(`#password`, "hunter22", chromedp.ByID),
+		chromedp.Click(`#submit`, chromedp.ByID),
 		chromedp.WaitVisible(`#dashboard`, chromedp.ByID),
 		chromedp.Text(`#user-email`, &aliceDashboard, chromedp.ByID),
 		chromedp.SendKeys(`#notes`, "alice-secret-log", chromedp.ByID),
@@ -343,6 +352,15 @@ func TestUIE2E_OwnerScope_CrossUserIsolation(t *testing.T) {
 	if err := chromedp.Run(bob,
 		chromedp.Navigate(fx.URL()+"/register?next=/dashboard"),
 		chromedp.WaitVisible(`#register-page`, chromedp.ByID),
+		chromedp.SendKeys(`#email`, "bob@example.com", chromedp.ByID),
+		chromedp.SendKeys(`#password`, "hunter22", chromedp.ByID),
+		chromedp.Click(`#submit`, chromedp.ByID),
+		// Register no longer auto-logs in (uniform anti-enumeration answer,
+		// 2026-09-04): the 303 lands on /dashboard, which bounces to /login
+		// without a next; sign in with the destination carried explicitly.
+		chromedp.WaitVisible(`#login-page`, chromedp.ByID),
+		chromedp.Navigate(fx.URL()+"/login?next=/dashboard"),
+		chromedp.WaitVisible(`#login-page`, chromedp.ByID),
 		chromedp.SendKeys(`#email`, "bob@example.com", chromedp.ByID),
 		chromedp.SendKeys(`#password`, "hunter22", chromedp.ByID),
 		chromedp.Click(`#submit`, chromedp.ByID),

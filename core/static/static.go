@@ -8,7 +8,9 @@ import (
 	"io"
 	"io/fs"
 	"net/http"
+	"os"
 	"path"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -20,8 +22,12 @@ import (
 // Config holds the configuration for serving static files.
 type Config struct {
 	// FS is the filesystem to serve files from (e.g. an embed.FS).
+	// When the backing store is disk-based (os.DirFS), requests are
+	// opened through an *os.Root over the resolved root, so a symlink
+	// pointing outside the root — including one swapped in mid-request —
+	// is refused by the kernel at Open time. embed.FS cannot carry
+	// symlinks and is unaffected.
 	FS fs.FS
-
 	// Prefix is the URL path prefix to strip when mapping to filesystem paths.
 	// For example, with Prefix="/static", a request for "/static/app.js"
 	// serves "app.js" from FS.
@@ -51,6 +57,23 @@ type Config struct {
 	// Copying a Config shares the same cache, which is correct. The FS
 	// travels with it.
 	digests *sync.Map
+
+	// resolvedRoot is the FS root's on-disk path with every symlink
+	// resolved, computed once by Handler. Empty when the FS is not
+	// disk-backed (embed.FS, fstest.MapFS), which disables the
+	// read-containment check in serveFile — those filesystems cannot
+	// carry symlinks, so there is nothing to contain.
+	resolvedRoot string
+
+	// root, when non-nil, is an *os.Root opened once on resolvedRoot.
+	// Every request-time open then goes through root.Open and is
+	// contained by the KERNEL: a symlink pointing outside the root is
+	// refused by the open itself, so there is no window between an
+	// open and a later containment check for a symlink swap to slip
+	// through. Nil for non-disk filesystems (embed.FS, MapFS — no
+	// symlinks to follow) and for a disk FS whose root could not be
+	// opened; those keep the plain FS.Open path.
+	root *os.Root
 }
 
 // defaults fills in zero-value fields with sensible defaults.
@@ -70,7 +93,16 @@ func (c Config) defaults() Config {
 func Handler(config Config) http.Handler {
 	config = config.defaults()
 	config.digests = &sync.Map{}
-
+	config.resolvedRoot = resolveFSRoot(config.FS)
+	if config.resolvedRoot != "" {
+		// Kernel-enforced containment for the disk-backed branch (see
+		// Config.root). An OpenRoot failure here — the root vanished
+		// between the resolve and this call — leaves resolvedRoot set,
+		// so serveFile falls back to the post-open containment check.
+		if root, rerr := os.OpenRoot(config.resolvedRoot); rerr == nil {
+			config.root = root
+		}
+	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Only serve GET and HEAD.
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {
@@ -134,7 +166,19 @@ func Handler(config Config) http.Handler {
 // serveFile attempts to serve a file from the filesystem. Returns true if
 // the file was successfully served.
 func serveFile(w http.ResponseWriter, r *http.Request, config Config, name string) bool {
-	f, err := config.FS.Open(name)
+	var f fs.File
+	var err error
+	if config.root != nil {
+		// Disk-backed root: open through *os.Root so the KERNEL contains
+		// the resolution. A symlink pointing outside the root — planted
+		// long ago or swapped in mid-request — is refused here, at the
+		// open itself; there is no window between this open and a later
+		// check for the swap to slip through.
+		f, err = config.root.Open(filepath.FromSlash(name))
+	} else {
+		//gofastr:allow(rootread) caller-supplied fs.FS: embed.FS carries no symlinks and os.DirFS is re-rooted through os.OpenRoot at install time; the *os.File branch above already goes through os.Root
+		f, err = config.FS.Open(name)
+	}
 	if err != nil {
 		// A genuinely missing file is a 404 (let the handler fall
 		// through). Any other open error, permission denied, I/O
@@ -154,6 +198,19 @@ func serveFile(w http.ResponseWriter, r *http.Request, config Config, name strin
 		return true
 	}
 	defer f.Close()
+
+	// Contain the read at the sink, not the spelling — for the branch
+	// that did NOT open through *os.Root (embed.FS and other fs.FS
+	// values cannot carry symlinks; a disk FS whose root failed to open
+	// can): Open already followed any symlink on the chain, so verify
+	// the target that was actually opened still resolves under the root
+	// and 404 otherwise, consistent with the other hidden-content
+	// refusals above. The *os.Root branch needs no post-open check: the
+	// kernel already refused every escape shape at Open time.
+	if config.root == nil && !config.fileInRoot(f) {
+		http.NotFound(w, r)
+		return true
+	}
 
 	stat, err := f.Stat()
 	if err != nil {
@@ -220,9 +277,28 @@ func serveFile(w http.ResponseWriter, r *http.Request, config Config, name strin
 			return true
 		}
 	} else if consumed {
-		reopened, err := config.FS.Open(name)
+		var reopened fs.File
+		if config.root != nil {
+			// Same kernel containment as the first open; *os.Root
+			// handles are always seekable, so this branch is
+			// unreachable for a disk-backed root, but the posture
+			// stays symmetrical.
+			reopened, err = config.root.Open(filepath.FromSlash(name))
+		} else {
+			//gofastr:allow(rootread) caller-supplied fs.FS: embed.FS carries no symlinks and os.DirFS is re-rooted through os.OpenRoot at install time; the *os.File branch above already goes through os.Root
+			reopened, err = config.FS.Open(name)
+		}
 		if err != nil {
 			http.Error(w, "internal server error", http.StatusInternalServerError)
+			return true
+		}
+		if config.root == nil && !config.fileInRoot(reopened) {
+			// Same containment as the first open; only reachable if the
+			// tree was swapped mid-request. Drop Content-Length before
+			// the 404 so the reframed answer is not corrupt.
+			reopened.Close()
+			w.Header().Del("Content-Length")
+			http.NotFound(w, r)
 			return true
 		}
 		defer reopened.Close()
@@ -236,6 +312,58 @@ func serveFile(w http.ResponseWriter, r *http.Request, config Config, name strin
 		return true
 	}
 	return true
+}
+
+// resolveFSRoot returns the on-disk path of fsys's root with every
+// symlink resolved, or "" when the filesystem is not disk-backed.
+// os.DirFS opens root+"/"+name and hands the *os.File back verbatim, so
+// the handle's Name() carries the real path the kernel will resolve —
+// that is what makes the containment check in serveFile possible
+// without knowing the DirFS argument here. embed.FS and fstest.MapFS
+// return their own file types, cannot carry symlinks, and land on "".
+func resolveFSRoot(fsys fs.FS) string {
+	f, err := fsys.Open(".")
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+	of, ok := f.(*os.File)
+	if !ok {
+		return ""
+	}
+	resolved, err := filepath.EvalSymlinks(of.Name())
+	if err != nil {
+		return ""
+	}
+	return resolved
+}
+
+// fileInRoot reports whether an already-opened file still resolves
+// inside the configured root once symlinks are followed. It is the
+// FALLBACK posture, consulted only when the handler could not open
+// through *os.Root (see Config.root): a check that runs after the open
+// can be defeated by swapping the symlink for an in-root file between
+// the two, which is exactly why the *os.Root branch refuses escapes at
+// open time instead. Non-disk handles (embed.FS, MapFS, wrappers) have
+// no symlinks to follow and pass trivially; so does a disk FS whose
+// root could not be resolved at Handler construction.
+func (c Config) fileInRoot(f fs.File) bool {
+	of, ok := f.(*os.File)
+	if !ok || c.resolvedRoot == "" {
+		return true
+	}
+	resolved, err := filepath.EvalSymlinks(of.Name())
+	if err != nil {
+		// The file opened, but its chain can no longer be resolved: the
+		// tree changed under us. Refuse rather than stream whatever the
+		// handle happens to point at.
+		return false
+	}
+	rel, err := filepath.Rel(c.resolvedRoot, resolved)
+	if err != nil {
+		return false
+	}
+	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
 // Mount registers the static file handler on the given router using the

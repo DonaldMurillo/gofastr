@@ -29,8 +29,8 @@ func WithSessionLogger(l *slog.Logger) SessionMiddlewareOption {
 }
 
 // SessionMiddleware returns middleware that loads the user identified by
-// the session cookie (set by /auth/login or /auth/register) into the
-// request context.
+// the session cookie (set by /auth/login; register no longer auto-logs-in
+// since the 2026-09-04 anti-enumeration change) into the request context.
 //
 // Behaviour:
 //   - No cookie → request proceeds anonymously (user not set in ctx).

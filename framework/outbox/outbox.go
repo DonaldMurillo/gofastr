@@ -98,6 +98,14 @@ type Outbox struct {
 	// first. MUST exceed the rolling-deploy overlap window. Default 15m.
 	handlerGrace time.Duration
 
+	// handlerTimeout is the wall-clock budget for ONE consumer handler
+	// invocation. When it expires the handler's context is cancelled and
+	// the delivery is settled as failed, so retries and sibling consumers
+	// proceed even when the handler ignores its context. Queue parity:
+	// MemoryQueue's defaultHandlerTimeout / DBQueue's WithDBHandlerTimeout
+	// both bound handler invocations the same way. Default 30s.
+	handlerTimeout time.Duration
+
 	// retention, when > 0, enables automatic purge of fully-settled
 	// (dispatched) parent rows and their deliveries older than this from the
 	// relay loop. 0 (default) keeps every row forever.
@@ -161,6 +169,26 @@ func WithHandlerGrace(d time.Duration) Option {
 	return func(o *Outbox) { o.handlerGrace = d }
 }
 
+// WithHandlerTimeout sets the wall-clock budget for a single consumer
+// handler invocation. At the deadline the handler's context is cancelled
+// (a cooperative handler returns and the delivery is retried as usual),
+// and the relay stops waiting: the delivery settles as failed and the
+// next delivery in the batch — possibly a sibling consumer of an entirely
+// unrelated event type — proceeds, so one hung handler cannot wedge the
+// durable lane for every consumer on the replica. A handler that ignores
+// its cancelled context cannot be killed (Go has no goroutine
+// termination) and its late side effects count as the duplicate the
+// documented at-least-once contract already allows. d <= 0 keeps the
+// default (30s). Mirrors battery/queue's WithHandlerTimeout
+// (MemoryQueue) and WithDBHandlerTimeout (DBQueue).
+func WithHandlerTimeout(d time.Duration) Option {
+	return func(o *Outbox) {
+		if d > 0 {
+			o.handlerTimeout = d
+		}
+	}
+}
+
 // WithRetention enables automatic purge of fully-settled (dispatched) parent
 // rows and their deliveries once they are older than d. The relay runs the
 // purge as part of its poll cycle. Zero (the default) disables purging,
@@ -178,18 +206,19 @@ func WithRetention(d time.Duration) Option {
 // and its (status, created_at) index exist.
 func New(db *sql.DB, opts ...Option) (*Outbox, error) {
 	o := &Outbox{
-		db:           db,
-		table:        "event_outbox",
-		maxAttempts:  10,
-		pollInterval: time.Second,
-		batchSize:    100,
-		lease:        5 * time.Minute,
-		backoffBase:  time.Second,
-		backoffMax:   time.Minute,
-		now:          time.Now,
-		nudge:        make(chan struct{}, 1),
-		consumers:    map[string]map[string]event.EventHandler{},
-		handlerGrace: 15 * time.Minute,
+		db:             db,
+		table:          "event_outbox",
+		maxAttempts:    10,
+		pollInterval:   time.Second,
+		batchSize:      100,
+		lease:          5 * time.Minute,
+		backoffBase:    time.Second,
+		backoffMax:     time.Minute,
+		now:            time.Now,
+		nudge:          make(chan struct{}, 1),
+		consumers:      map[string]map[string]event.EventHandler{},
+		handlerGrace:   15 * time.Minute,
+		handlerTimeout: 30 * time.Second,
 	}
 	for _, opt := range opts {
 		opt(o)

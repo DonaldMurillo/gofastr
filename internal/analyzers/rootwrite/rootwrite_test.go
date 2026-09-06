@@ -9,5 +9,5 @@ import (
 )
 
 func TestRootWrite(t *testing.T) {
-	analysistest.Run(t, analysistest.TestData(), rootwrite.Analyzer, "a", "b", "c", "d")
+	analysistest.Run(t, analysistest.TestData(), rootwrite.Analyzer, "a", "b", "c", "d", "e", "f")
 }

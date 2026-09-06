@@ -249,13 +249,20 @@ func (s *SQLStore) AddDelivery(ctx context.Context, d Delivery) error {
 	return err
 }
 
+// UpdateDelivery persists a delivery's post-attempt state. The attempts
+// column is OWNED BY THE CLAIM: ClaimDueDeliveries consumes one attempt per
+// claim (attempts = attempts + 1, see claimPostgres), and this write never
+// touches the counter — d.Attempts is a claim-time snapshot, and persisting
+// it absolutely let a stale claimant's settle rewind the attempts a
+// re-claimant's claim had consumed (two overlapping runners recorded one
+// attempt instead of two, silently doubling the MaxAttempts budget).
 func (s *SQLStore) UpdateDelivery(ctx context.Context, d Delivery) error {
 	var nextAt any
 	if !d.NextAttemptAt.IsZero() {
 		nextAt = d.NextAttemptAt
 	}
 	q := s.deliveryUpdate()
-	args := []any{d.Attempts, string(d.Status), d.LastError, nextAt, d.UpdatedAt, d.ID}
+	args := []any{string(d.Status), d.LastError, nextAt, d.UpdatedAt, d.ID}
 	if !isTerminalStatus(d.Status) {
 		// Fence: a non-terminal settle must not overwrite a terminal
 		// row (isTerminalStatus) — a worker that overran its lease
@@ -265,7 +272,7 @@ func (s *SQLStore) UpdateDelivery(ctx context.Context, d Delivery) error {
 		// nil: the stale write is a no-op, not a failure, mirroring
 		// the fenced completions in battery/queue.
 		if s.dialect == "postgres" {
-			q += ` AND status NOT IN ($7,$8)`
+			q += ` AND status NOT IN ($6,$7)`
 			args = append(args, string(StatusSuccess), string(StatusDead))
 		} else {
 			q += ` AND status NOT IN (?,?)`
@@ -345,14 +352,20 @@ func (s *SQLStore) DueDeliveries(ctx context.Context, now time.Time, limit int) 
 
 // ClaimDueDeliveries atomically reserves up to `limit` pending rows
 // whose next_attempt_at <= now, pushing them to now+leasePeriod so
-// concurrent workers skip them.
+// concurrent workers skip them. A leasePeriod of 0 keeps the 30s
+// default; a negative one is rejected — a negative lease can only be a
+// sign or unit error, and folding it onto the default would hand the
+// caller a longer lease than they asked for.
 //
 // Postgres uses FOR UPDATE SKIP LOCKED inside a CTE so the inner
 // SELECT only sees uncontested rows; SQLite serializes writers via
 // BEGIN IMMEDIATE so the SELECT-then-UPDATE sequence inside one tx
 // is safely exclusive.
 func (s *SQLStore) ClaimDueDeliveries(ctx context.Context, now time.Time, limit int, leasePeriod time.Duration) ([]Delivery, error) {
-	if leasePeriod <= 0 {
+	if leasePeriod < 0 {
+		return nil, fmt.Errorf("webhook: SQLStore.ClaimDueDeliveries: leasePeriod must be >= 0 (got %v)", leasePeriod)
+	}
+	if leasePeriod == 0 {
 		leasePeriod = 30 * time.Second
 	}
 	if limit <= 0 {
@@ -365,7 +378,16 @@ func (s *SQLStore) ClaimDueDeliveries(ctx context.Context, now time.Time, limit 
 }
 
 func (s *SQLStore) claimPostgres(ctx context.Context, now time.Time, limit int, leasePeriod time.Duration) ([]Delivery, error) {
-	q := fmt.Sprintf(`UPDATE %s SET next_attempt_at = $1, updated_at = $1
+	// attempts = attempts + 1 at claim, matching the queue batteries
+	// (DBQueue's claim UPDATE, RedisQueue's canonical-record bump): a
+	// worker that dies between claim and settle has still consumed one
+	// delivery, so a crash-looping worker trips MaxAttempts instead of
+	// re-delivering forever with attempts pinned at 0. The RETURNING list
+	// carries the post-bump value, so the claimed snapshot already counts
+	// the attempt it is about to make, and the settle paths never need to
+	// write the counter (an absolute settle write from a stale snapshot is
+	// the lost-update that under-counted overlapping runners).
+	q := fmt.Sprintf(`UPDATE %s SET next_attempt_at = $1, updated_at = $1, attempts = attempts + 1
 		WHERE id IN (
 			SELECT id FROM %s
 			WHERE status = $2 AND next_attempt_at <= $3
@@ -410,22 +432,26 @@ func (s *SQLStore) claimSqlite(ctx context.Context, now time.Time, limit int, le
 	if len(claimed) == 0 {
 		return nil, tx.Commit()
 	}
-	// Push next_attempt_at forward for every claimed row.
+	// Push next_attempt_at forward for every claimed row and consume one
+	// attempt per claim (see claimPostgres for the contract).
 	placeholders := make([]string, len(claimed))
 	args := []any{now.Add(leasePeriod)}
 	for i, d := range claimed {
 		placeholders[i] = "?"
 		args = append(args, d.ID)
 	}
-	updQ := fmt.Sprintf("UPDATE %s SET next_attempt_at = ?, updated_at = ? WHERE id IN (%s)",
+	updQ := fmt.Sprintf("UPDATE %s SET next_attempt_at = ?, updated_at = ?, attempts = attempts + 1 WHERE id IN (%s)",
 		s.delTable, strings.Join(placeholders, ","))
 	// Insert the second timestamp arg after the first.
 	args = append([]any{args[0], now.Add(leasePeriod)}, args[1:]...)
 	if _, err := tx.ExecContext(ctx, updQ, args...); err != nil {
 		return nil, err
 	}
-	// Reflect the new lease in the in-memory copies we return.
+	// Reflect the new lease and the consumed attempt in the in-memory
+	// copies we return, so the snapshot matches the row (the UPDATE bumps
+	// each claimed row exactly once inside this tx).
 	for i := range claimed {
+		claimed[i].Attempts++
 		claimed[i].NextAttemptAt = now.Add(leasePeriod)
 		claimed[i].UpdatedAt = now.Add(leasePeriod)
 	}
@@ -513,13 +539,16 @@ func (s *SQLStore) deliveryInsert() string {
 }
 
 func (s *SQLStore) deliveryUpdate() string {
+	// No attempts column on purpose: the claim consumes attempts (see
+	// UpdateDelivery), a settle writing its claim-time snapshot absolutely
+	// is the lost-update that under-counted overlapping runners.
 	if s.dialect == "postgres" {
 		return fmt.Sprintf(`UPDATE %s SET
-			attempts = $1, status = $2, last_error = $3, next_attempt_at = $4, updated_at = $5
-			WHERE id = $6`, s.delTable)
+			status = $1, last_error = $2, next_attempt_at = $3, updated_at = $4
+			WHERE id = $5`, s.delTable)
 	}
 	return fmt.Sprintf(`UPDATE %s SET
-		attempts = ?, status = ?, last_error = ?, next_attempt_at = ?, updated_at = ?
+		status = ?, last_error = ?, next_attempt_at = ?, updated_at = ?
 		WHERE id = ?`, s.delTable)
 }
 
@@ -529,7 +558,6 @@ func (s *SQLStore) placeholder(n int) string {
 	}
 	return "?"
 }
-
 func safeIdent(name string) bool {
 	if name == "" || len(name) > 64 {
 		return false

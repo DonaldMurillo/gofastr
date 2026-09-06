@@ -177,15 +177,26 @@ func TestCorePlugin_Register(t *testing.T) {
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 
-	if w.Code != http.StatusCreated {
-		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("expected 202, got %d: %s", w.Code, w.Body.String())
 	}
 
+	// The uniform 202 body is deliberately non-committal (no user echo:
+	// an account-existence oracle); verify the account via the store.
 	var resp map[string]any
-	json.Unmarshal(w.Body.Bytes(), &resp)
-	userMap := resp["user"].(map[string]any)
-	if userMap["email"] != "new@example.com" {
-		t.Fatalf("expected email new@example.com, got %v", userMap["email"])
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode body: %v (%s)", err, w.Body.String())
+	}
+	if accepted, _ := resp["accepted"].(bool); !accepted {
+		t.Fatalf("expected {\"accepted\":true}, got %v", resp)
+	}
+	mgrStore := mgr.UserStore()
+	u, _, err := mgrStore.FindByEmail(context.Background(), "new@example.com")
+	if err != nil || u == nil {
+		t.Fatalf("created user not found: %v", err)
+	}
+	if u.GetEmail() != "new@example.com" {
+		t.Fatalf("expected email new@example.com, got %v", u.GetEmail())
 	}
 }
 
@@ -313,8 +324,12 @@ func TestCorePlugin_RegisterDuplicateEmail(t *testing.T) {
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 
-	if w.Code != http.StatusConflict {
-		t.Fatalf("expected 409, got %d", w.Code)
+	// Anti-enumeration (2026-09-04 round 3): the taken address answers
+	// EXACTLY what a fresh one answers — 202 {"accepted":true} — instead
+	// of the old 409 oracle. TestRegisterNoEmailTakenOracle pins the
+	// shape parity; this pin keeps the duplicate branch from crashing.
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("expected uniform 202, got %d (%s)", w.Code, w.Body.String())
 	}
 }
 

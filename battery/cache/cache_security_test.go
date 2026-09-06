@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"sort"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -707,5 +708,191 @@ func TestRedisCache_ClearScopedToPrefix(t *testing.T) {
 			"key other-service:lock owned by neither cache (present=%v). The wipe "+
 			"must be scoped to the keys prefixedKey() can produce, not the whole "+
 			"database.", ok)
+	}
+}
+
+// TestCacheMiddleware_DoesNotCache304 pins the stored-304 poison,
+// found by the 2026-09-04 red-probe round; fixed in isStoreable, which
+// now refuses 304 outright, and in the HIT path, which declines to
+// replay a stored 304 (entries primed by a pre-fix process on a shared
+// backend).
+//
+// Property: a cache must never answer a request that is not itself
+// conditional with a stored 304 (Not Modified); a 304 is not a
+// representation, it is a conditional-reply artifact (RFC 9111 §4.3.1:
+// a cache MUST NOT generate a 304 reply to a request unless that
+// request is conditional and its validators match the stored response).
+// Surfaces: battery/cache/middleware.go::isStoreable, ::CacheMiddlewareWithLimit
+// (forwards conditional GETs to the origin and stores what comes back),
+// and ::writeCached (replays the stored status verbatim to every caller).
+func TestCacheMiddleware_DoesNotCache304(t *testing.T) {
+	const fullBody = "FULL-REPRESENTATION"
+	origin := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("ETag", `"v1"`)
+		w.Header().Set("Cache-Control", "max-age=60")
+		switch r.Header.Get("If-None-Match") {
+		case `"v1"`, "*":
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
+		if r.Header.Get("If-Modified-Since") != "" {
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(fullBody))
+	})
+
+	// Attack shapes: the three ways a client can make an origin answer
+	// 304 with an empty body. All three must leave the shared variant
+	// storing a servable representation, never the bare 304.
+	primes := []struct {
+		name string
+		hdr  map[string]string
+	}{
+		{"if-none-match exact", map[string]string{"If-None-Match": `"v1"`}},
+		{"if-none-match wildcard", map[string]string{"If-None-Match": "*"}},
+		{"if-modified-since", map[string]string{"If-Modified-Since": "Wed, 21 Oct 2099 07:28:00 GMT"}},
+	}
+
+	for _, p := range primes {
+		t.Run(p.name, func(t *testing.T) {
+			c := NewMemoryCache()
+			defer c.Close()
+			h := CacheMiddleware(c, time.Minute)(origin)
+
+			prime := httptest.NewRequest(http.MethodGet, "/page", nil)
+			for k, v := range p.hdr {
+				prime.Header.Set(k, v)
+			}
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, prime)
+			if rec.Code != http.StatusNotModified {
+				t.Fatalf("prime: status = %d, want 304 (setup)", rec.Code)
+			}
+
+			// The victim sends no conditional headers at all.
+			victim := httptest.NewRecorder()
+			h.ServeHTTP(victim, httptest.NewRequest(http.MethodGet, "/page", nil))
+			if victim.Code != http.StatusOK {
+				t.Errorf("SECURITY: [cache-304] unconditional GET received status %d "+
+					"(X-Cache=%q, body=%q) after a conditional 304 primed the key: "+
+					"a stored 304 was replayed to a request that is not conditional, "+
+					"poisoning the shared variant with an empty non-representation "+
+					"(RFC 9111 §4.3.1). Every anonymous client now gets a bare 304 "+
+					"until the entry expires.", victim.Code, victim.Header().Get("X-Cache"),
+					victim.Body.String())
+			}
+			if victim.Body.String() != fullBody {
+				t.Errorf("SECURITY: [cache-304] victim body = %q, want the full representation %q",
+					victim.Body.String(), fullBody)
+			}
+		})
+	}
+}
+
+// TestCacheMiddleware_StoreableStatuses sweeps every status isStoreable
+// accepts: 304 must be refused (conditional artifact), 206 must be
+// refused (partial representation), and the remaining 2xx/3xx
+// representation statuses stay cacheable. The store-side twin of
+// TestCacheMiddleware_DoesNotCache304, looping the invariant across the
+// whole status range instead of one prime shape.
+func TestCacheMiddleware_StoreableStatuses(t *testing.T) {
+	cases := []struct {
+		status    int
+		storeable bool
+	}{
+		{http.StatusOK, true},
+		{http.StatusCreated, true},
+		{http.StatusNoContent, true},
+		{http.StatusPartialContent, false},
+		{http.StatusMultiStatus, true},
+		{http.StatusMultipleChoices, true},
+		{http.StatusMovedPermanently, true},
+		{http.StatusFound, true},
+		{http.StatusSeeOther, true},
+		{http.StatusNotModified, false},
+		{http.StatusTemporaryRedirect, true},
+		{http.StatusPermanentRedirect, true},
+		{http.StatusBadRequest, false},
+		{http.StatusNotFound, false},
+		{http.StatusInternalServerError, false},
+	}
+	for _, tc := range cases {
+		t.Run(strconv.Itoa(tc.status), func(t *testing.T) {
+			rec := &responseRecorder{header: make(http.Header), statusCode: tc.status}
+			if got := isStoreable(rec, false, false); got != tc.storeable {
+				t.Errorf("SECURITY: [cache-304] isStoreable(status=%d) = %v, want %v",
+					tc.status, got, tc.storeable)
+			}
+		})
+	}
+}
+
+// TestMemoryCache_NegativeTTLNotImmortal pins the negative-TTL
+// inversion, found by the 2026-09-04 red-probe round; fixed in
+// MemoryCache.Set, which now treats a negative TTL as already expired
+// (stores nothing, drops any existing entry) instead of mapping it to
+// hasExpiry=false, i.e. never-expiring retention.
+//
+// Property: a negative TTL must never widen into maximal retention — a
+// caller that computes a lifetime and gets a negative number (deadline
+// already passed, clock skew across replicas, a unit mix-up) must see
+// the entry absent, never an immortal one; only ttl exactly == 0 is
+// documented as "fall back to the default".
+// Surfaces: battery/cache/memory.go::Set, battery/cache/cache.go::GetOrSet
+// (forwards its ttl into Set after the loader ran), and
+// battery/cache/redis.go::Set (the Redis twin already fails closed:
+// the server refuses a non-positive expiry).
+func TestMemoryCache_NegativeTTLNotImmortal(t *testing.T) {
+	ctx := context.Background()
+	c := NewMemoryCache()
+	defer c.Close()
+
+	// Control: a positive TTL expires and the entry reads as a miss.
+	if err := c.Set(ctx, "pos", "v", 50*time.Millisecond); err != nil {
+		t.Fatalf("Set(pos): %v", err)
+	}
+	time.Sleep(60 * time.Millisecond)
+	if err := c.Get(ctx, "pos", new(string)); err == nil {
+		t.Errorf("positive-TTL entry outlived its expiry (control failed)")
+	}
+
+	// The finding: a negative TTL used to mint an immortal entry.
+	if err := c.Set(ctx, "neg", "v", -time.Second); err != nil {
+		t.Fatalf("Set(neg): %v", err)
+	}
+	time.Sleep(20 * time.Millisecond)
+	var got string
+	if err := c.Get(ctx, "neg", &got); err == nil {
+		t.Errorf("SECURITY: [cache-negttl] MemoryCache.Set(ttl=-1s) minted a NEVER-EXPIRING "+
+			"entry (Get succeeded with %q after the negative lifetime elapsed): a negative TTL "+
+			"is the caller saying \"already gone\", but hasExpiry=ttl>0 silently maps it to "+
+			"immortal retention — the maximal inversion of the caller's intent, and the "+
+			"opposite of the Redis twin, which refuses non-positive expiries.", got)
+	}
+
+	// Sweep, same invariant: a negative Set over an existing entry must
+	// drop it (the caller just said the key is already gone), and
+	// GetOrSet forwarding a negative ttl must leave the key absent
+	// (loader runs, nothing stored, miss surfaced).
+	if err := c.Set(ctx, "overwrite", "old", time.Hour); err != nil {
+		t.Fatalf("Set(overwrite): %v", err)
+	}
+	if err := c.Set(ctx, "overwrite", "new", -time.Second); err != nil {
+		t.Fatalf("Set(overwrite, neg): %v", err)
+	}
+	if err := c.Get(ctx, "overwrite", new(string)); err == nil {
+		t.Errorf("SECURITY: [cache-negttl] Set(ttl<0) left the previous long-TTL entry " +
+			"live under the key: the negative lifetime must retire it, not keep it.")
+	}
+
+	if err := GetOrSet(ctx, c, "gos", -time.Second, new(string), func(context.Context) (any, error) {
+		return "loaded", nil
+	}); err == nil {
+		t.Errorf("SECURITY: [cache-negttl] GetOrSet(ttl<0) reported success; the miss must be surfaced")
+	}
+	if err := c.Get(ctx, "gos", new(string)); err == nil {
+		t.Errorf("SECURITY: [cache-negttl] GetOrSet(ttl<0) stored a live entry; nothing may be stored")
 	}
 }

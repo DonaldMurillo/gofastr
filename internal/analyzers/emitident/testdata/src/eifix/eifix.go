@@ -195,3 +195,58 @@ type quotedTableFixture struct {
 func emitDDL(q quotedTableFixture) string {
 	return fmt.Sprintf(`DELETE FROM %s WHERE id = ?`, q.quotedTable)
 }
+
+// ---- JS/TS postures (sdkjsident fix spellings, 2026-09-04) ----------
+
+// jsq1: the .js fix posture from generate_sdkjs.go — bracket plus %q.
+// A quoted key cannot leave its object literal, and this["name"]
+// admits no name that is not a string.
+func jsq1(prop, table string) string {
+	return fmt.Sprintf("    this[%q] = new Resource(this, %q);", prop, table)
+}
+
+// jsq2: quoted member keys in the .js constant.
+func jsq2(wire, snake string) string {
+	return fmt.Sprintf("  %q: %q,\n", wire, snake)
+}
+
+// jsq3: prose spellings without code evidence — let/type/interface in
+// English sentences.
+func jsq3(kind, slug string) string {
+	return fmt.Sprintf("let %s go; type %s is not a struct; interface %s for plugins", slug, kind, slug)
+}
+
+// jsq4: a two-column listing — the line ends in a word, not a member
+// terminator.
+func jsq4(name string, n int) string {
+	return fmt.Sprintf("  %s: %d items\n", name, n)
+}
+
+// jsq5: the verb after the colon is the VALUE side; mid-line keys never
+// start the line's first token.
+func jsq5(name string) string {
+	return fmt.Sprintf("error in %s: not found; retry: %s\n", name, name)
+}
+
+// jsq6: const in prose, no '=' evidence.
+func jsq6(flag string) string {
+	return fmt.Sprintf("the const %s name is fine", flag)
+}
+
+// jsq7: %q in a declaration-name position never matches — quoting is
+// the gate.
+func jsq7(name string) string {
+	return fmt.Sprintf("const %q = 1;\n", name)
+}
+
+// jsq8: function prose — the paren is there but no brace or newline
+// follows it.
+func jsq8(fn string) string {
+	return fmt.Sprintf("function %s(ctx) was replaced by newer", fn)
+}
+
+// jsq9: an import listing in a doc block — `{ %sFields }` is not a
+// scanned spelling.
+func jsq9(prop string) string {
+	return fmt.Sprintf("import { %sFields } from \"./client.js\";\n", prop)
+}

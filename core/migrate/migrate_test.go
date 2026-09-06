@@ -104,9 +104,9 @@ func expectMigrationDown(mock sqlmock.Sqlmock, downSQL string, version uint64) {
 func TestRegisterSortsMigrations(t *testing.T) {
 	m, _ := newTestMigrator(t)
 
-	m.Register(Migration{Version: 3, Name: "third"})
-	m.Register(Migration{Version: 1, Name: "first"})
-	m.Register(Migration{Version: 2, Name: "second"})
+	m.Register(Migration{Version: 3, Name: "third", Up: "SELECT 3"})
+	m.Register(Migration{Version: 1, Name: "first", Up: "SELECT 1"})
+	m.Register(Migration{Version: 2, Name: "second", Up: "SELECT 2"})
 
 	if len(m.migrations) != 3 {
 		t.Fatalf("expected 3 migrations, got %d", len(m.migrations))

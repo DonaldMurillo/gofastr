@@ -101,15 +101,14 @@ func TestRegisterAcceptsFormEncoded(t *testing.T) {
 	if loc := resp.Header.Get("Location"); loc != "/" {
 		t.Errorf("Location = %q, want /", loc)
 	}
-	// Session cookie should be set.
-	gotCookie := false
+	// Anti-enumeration (2026-09-04 round 3): form register must NOT
+	// set the session cookie — a cookie minted on only the success
+	// branch is an account-existence oracle, and on the taken branch
+	// there is no user to mint for. Registration no longer auto-logs-in.
 	for _, c := range resp.Cookies() {
-		if c.Name == "test_session" && c.Value != "" {
-			gotCookie = true
+		if c.Name == "test_session" {
+			t.Errorf("form-register set a session cookie; register must not auto-login: %+v", c)
 		}
-	}
-	if !gotCookie {
-		t.Errorf("expected test_session cookie on form-register response")
 	}
 }
 

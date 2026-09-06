@@ -90,7 +90,7 @@ func TestEntitySave_BadNumericInputIsFieldError(t *testing.T) {
 		t.Fatalf("bad numeric input got %d → %q, want 303 back to the form with a field error", rr.Code, loc)
 	}
 	// The flash token's re-rendered form must name the offending field.
-	getRR := get(h, loc)
+	getRR := followFlashRedirect(h, rr, loc)
 	if !strings.Contains(getRR.Body.String(), "count") {
 		t.Fatalf("field error did not name the bad field; body=%s", getRR.Body.String())
 	}

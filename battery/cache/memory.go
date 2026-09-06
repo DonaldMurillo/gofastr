@@ -162,7 +162,11 @@ func (mc *MemoryCache) Get(_ context.Context, key string, dest any) error {
 	return json.Unmarshal(entry.data, dest)
 }
 
-// Set stores a value in the cache with the given TTL.
+// Set stores a value in the cache with the given TTL. A ttl of 0 falls
+// back to the configured default (WithTTL; no expiry when unset). A
+// NEGATIVE ttl is honoured as "already expired": nothing is stored and
+// any existing entry under the key is dropped, so a caller that computed
+// a lifetime in the past can never mint a never-expiring entry.
 func (mc *MemoryCache) Set(_ context.Context, key string, value any, ttl time.Duration) error {
 	k := mc.prefixedKey(key)
 	data, err := json.Marshal(value)
@@ -173,6 +177,23 @@ func (mc *MemoryCache) Set(_ context.Context, key string, value any, ttl time.Du
 	effectiveTTL := ttl
 	if effectiveTTL == 0 {
 		effectiveTTL = mc.cfg.defaultTTL
+	}
+
+	// A negative TTL is the caller asserting the entry is ALREADY GONE
+	// (deadline passed, clock skew across replicas, a unit mix-up).
+	// Fail closed on it: drop whatever is stored under the key and
+	// store nothing. The old hasExpiry = ttl > 0 mapping filed it as
+	// never-expiring — the maximal inversion of the caller's intent,
+	// and the silent opposite of the Redis twin, whose SET refuses a
+	// non-positive expiry outright. Only ttl == 0 is the documented
+	// "use the default" sentinel.
+	if effectiveTTL < 0 {
+		mc.mu.Lock()
+		if existing, ok := mc.items[k]; ok {
+			mc.removeLocked(k, existing)
+		}
+		mc.mu.Unlock()
+		return nil
 	}
 
 	entry := &memoryEntry{

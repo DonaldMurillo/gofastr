@@ -5,6 +5,7 @@ import (
 	"maps"
 	"sort"
 	"sync"
+	"time"
 )
 
 // MemoryInboundStore is the in-process InboundStore. Envelopes live in a
@@ -42,11 +43,37 @@ func (m *MemoryInboundStore) GetEnvelope(_ context.Context, id string) (*Inbound
 	return &cp, nil
 }
 
-// UpdateEnvelope overwrites the stored envelope for e.ID.
+// UpdateEnvelope overwrites the stored envelope for e.ID, except attempts:
+// the counter is owned by the processing transition (MarkEnvelopeProcessing),
+// so an existing row's count survives the write. Persisting a caller
+// snapshot absolutely let two overlapping processing passes both write the
+// same snapshot+1 and record two invocations as one.
 func (m *MemoryInboundStore) UpdateEnvelope(_ context.Context, e InboundEnvelope) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if cur, ok := m.envelopes[e.ID]; ok {
+		e.Attempts = cur.Attempts
+	}
 	m.envelopes[e.ID] = cloneEnvelope(e)
+	return nil
+}
+
+// MarkEnvelopeProcessing transitions an envelope to "processing" and
+// consumes one attempt under the store's lock — the memory twin of
+// SQLInboundStore's `attempts = attempts + 1` processing UPDATE. A missing
+// id is a no-op (the caller loaded the envelope just before this).
+func (m *MemoryInboundStore) MarkEnvelopeProcessing(_ context.Context, id string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	e, ok := m.envelopes[id]
+	if !ok {
+		return nil
+	}
+	e.Status = InboundStatusProcessing
+	e.Attempts++
+	e.LastError = ""
+	e.UpdatedAt = time.Now().UTC()
+	m.envelopes[id] = e
 	return nil
 }
 

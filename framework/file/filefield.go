@@ -244,6 +244,11 @@ func isSafeMIMEString(s string) bool {
 //
 // The ctx parameter should come from the HTTP request so cancellation and
 // deadlines are respected during slow uploads.
+//
+// The uploaded original is stored byte-for-byte by default, image
+// metadata (EXIF, XMP) included; that is deliberate, not an oversight.
+// Pass [StripMetadata] to have JPEG, PNG, and WebP originals stripped
+// of their metadata segments before they are stored.
 func ProcessFileField(ctx context.Context, store upload.Storage, file interface {
 	Read([]byte) (int, error)
 }, filename string, entityName, fieldName string, opts ...ProcessOption) (*FileField, error) {
@@ -273,6 +278,25 @@ func ProcessFileField(ctx context.Context, store upload.Storage, file interface 
 	// or any supplied Content-Type.
 	if err := rejectUnsafeContent(data); err != nil {
 		return nil, err
+	}
+	// Opt-in metadata stripping (see [StripMetadata]). Runs before the
+	// MIME detection and the deriver so every downstream consumer sees
+	// the bytes that were actually stored.
+	if cfg.stripMetadata {
+		stripped, err := stripImageMetadata(data)
+		if err != nil {
+			// Fail closed: the caller asked that this object not keep
+			// its metadata, so storing it unstripped is not an option.
+			return nil, fmt.Errorf("filefield: stripping image metadata: %w", err)
+		}
+		if stripped != nil {
+			data = stripped
+			size = int64(len(data))
+			if size > MaxProcessFileSize {
+				return nil, fmt.Errorf("%w: %d bytes after metadata strip (max %d)",
+					ErrFileFieldTooLarge, size, MaxProcessFileSize)
+			}
+		}
 	}
 
 	// Detect MIME type from content

@@ -4,6 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
+
+	"github.com/DonaldMurillo/gofastr/core/handler"
 )
 
 // JSON-RPC 2.0 standard error codes.
@@ -56,6 +59,22 @@ func (s *Server) HandleRequest(ctx context.Context, req Request) Response {
 	}
 
 	ctx = enrichContext(ctx)
+
+	// Params get the same no-ambiguity rule the ENVELOPE level already
+	// enforces (transport decode runs handler.UnmarshalStrict) and a2a's
+	// decodeParams enforces: no object at any depth in req.Params may
+	// repeat a key or carry two keys that case-fold onto each other.
+	// Stdlib json keeps the LAST duplicate and matches struct tags
+	// case-insensitively, so without this a validator reading the first
+	// occurrence (proxy, WAF, audit logger) and the executor can
+	// disagree about which tool ran, which resource was read, or which
+	// uri was armed. One check at the dispatch chokepoint covers every
+	// method that decodes params.
+	if len(req.Params) > 0 {
+		if err := handler.CheckObjectKeys(req.Params, strings.ToLower); err != nil {
+			return newErrorResponse(req.ID, ErrInvalidParams, "invalid params: "+err.Error())
+		}
+	}
 
 	switch req.Method {
 	case "tools/list", "tools/call", "resources/list", "resources/read",

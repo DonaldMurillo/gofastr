@@ -47,7 +47,7 @@ func TestLmsGatesStudentRecords(t *testing.T) {
 			}
 			out, _ := io.ReadAll(resp.Body)
 			resp.Body.Close()
-			if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+			if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusAccepted {
 				t.Fatalf("%s %s = %d: %s", path, email, resp.StatusCode, out)
 			}
 		}

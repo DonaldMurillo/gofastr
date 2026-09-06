@@ -80,7 +80,10 @@ Per verb:
 
 Connection resolution, in order: `--url`/`--token` flags →
 `<BINARY>_URL`/`<BINARY>_TOKEN` env vars → the config file written by
-`login` (`<user-config-dir>/<binary>/config.json`, 0600). Exit codes:
+`login` (`<user-config-dir>/<binary>/config.json`, 0600). A config file
+that exists but does not parse is refused with an error naming the file
+(delete it or `login` again) rather than silently treated as "not logged
+in", which would send every request unauthenticated. Exit codes:
 `0` success, `1` API/transport error (including a rolled-back batch),
 `2` usage, `4` authentication failure (401/403).
 
@@ -141,6 +144,10 @@ gofastr generate cli --from-openapi https://barc.example.com/openapi.json
 
 One subcommand per operation, named from `operationId` — a missing,
 duplicate, or non-identifier id fails generation, no auto-naming.
+Operation summaries carrying terminal-control bytes (ESC, CR, BEL, DEL —
+the bytes that rewrite terminal output) are refused too, since the
+generated help prints them verbatim; printable summaries, including
+multi-line ones, stay quoted data.
 Path, query, and header parameters become typed flags (arrays of
 strings repeat the flag; typed arrays are rejected rather than left
 unvalidated);

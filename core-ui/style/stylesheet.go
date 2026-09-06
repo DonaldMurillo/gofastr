@@ -61,7 +61,11 @@ func (ss *StyleSheet) Rule(selector string) *StyleSheet {
 // Values can reference theme tokens like {spacing.md} or {colors.primary}.
 // Args alternate prop, value, prop, value …; an odd-count slice
 // panics so a typo like Set("color","red","padding") fails loud
-// instead of silently dropping the trailing argument.
+// instead of silently dropping the trailing argument. Property names
+// are validated against the CSS identifier grammar (mustBePropName):
+// Set writes them into an identifier slot of the emitted stylesheet,
+// so a name like "color; } * { color:red" must fail here, not escape
+// into the CSS.
 func (ss *StyleSheet) Set(props ...string) *StyleSheet {
 	if ss.during == nil {
 		panic("stylesheet: Set called before any Rule(); call .Rule(\"…\") first")
@@ -72,6 +76,7 @@ func (ss *StyleSheet) Set(props ...string) *StyleSheet {
 	}
 	for i := 0; i < len(props); i += 2 {
 		val := ss.theme.ResolveAll(props[i+1])
+		mustBePropName("Set on "+ss.during.selector, props[i])
 		ss.during.props = append(ss.during.props, cssProp{prop: props[i], value: val})
 	}
 	return ss
@@ -102,6 +107,7 @@ func (ss *StyleSheet) Pseudo(pseudo string, props ...string) *StyleSheet {
 	child := cssRule{selector: ss.during.selector + pseudo}
 	for i := 0; i < len(props); i += 2 {
 		val := ss.theme.ResolveAll(props[i+1])
+		mustBePropName("Pseudo("+pseudo+")", props[i])
 		child.props = append(child.props, cssProp{prop: props[i], value: val})
 	}
 	ss.during.children = append(ss.during.children, child)
@@ -121,6 +127,7 @@ func (ss *StyleSheet) Child(descendant string, props ...string) *StyleSheet {
 	child := cssRule{selector: ss.during.selector + " " + descendant}
 	for i := 0; i < len(props); i += 2 {
 		val := ss.theme.ResolveAll(props[i+1])
+		mustBePropName("Child("+descendant+")", props[i])
 		child.props = append(child.props, cssProp{prop: props[i], value: val})
 	}
 	ss.during.children = append(ss.during.children, child)
@@ -189,6 +196,7 @@ func (ss *StyleSheet) Keyframes(name string, steps ...KeyframeStep) *StyleSheet 
 		stepRule := cssRule{selector: step.Selector}
 		for i := 0; i+1 < len(step.Props); i += 2 {
 			val := ss.theme.ResolveAll(step.Props[i+1])
+			mustBePropName("Keyframes("+name+")", step.Props[i])
 			stepRule.props = append(stepRule.props, cssProp{prop: step.Props[i], value: val})
 		}
 		r.children = append(r.children, stepRule)
@@ -278,7 +286,7 @@ func (ss *StyleSheet) writeRuleInner(b *strings.Builder, r cssRule, start int) {
 	if len(r.props) > 0 {
 		fmt.Fprintf(b, "%s {\n", r.selector)
 		for _, p := range r.props {
-			fmt.Fprintf(b, "  %s: %s;\n", p.prop, p.value)
+			fmt.Fprintf(b, "  %s: %s;\n", sanitizedPropName(p.prop), p.value)
 		}
 		b.WriteString("}\n")
 	}
@@ -315,3 +323,63 @@ func (ss *StyleSheet) writeRuleInner(b *strings.Builder, r cssRule, start int) {
 		b.WriteString("}\n")
 	}
 }
+
+// mustBePropName panics unless name is a valid CSS property name: a
+// CSS identifier, or a custom property (--name). The emitter writes
+// "  %s: %s;" with no further quoting, so the name is an identifier
+// slot of the emitted CSS — a name carrying ; } or a url( payload
+// would break out of the declaration. Failing here (at registration,
+// like the odd-count Set panic) keeps the emitter dumb.
+// sanitizedPropName is the emitter-side twin of mustBePropName: the
+// entry points refuse a bad name at registration, and the slot that
+// writes the name re-checks it so the emitted grammar is gated on the
+// value's own dataflow, not on a check somewhere upstream.
+func sanitizedPropName(name string) string {
+	mustBePropName("emit", name)
+	return name
+}
+
+func mustBePropName(where, name string) {
+	if !validCSSPropName(name) {
+		panic(fmt.Sprintf("stylesheet: %s: %q is not a valid CSS property name (letters, digits, '-', '_' — optionally a --custom-property); it would be written verbatim into the stylesheet",
+			where, name))
+	}
+}
+
+// validCSSPropName reports whether name fits the CSS identifier
+// grammar restricted to the ASCII subset this builder emits:
+// letters, digits, '-' and '_' after the first character, non-ASCII
+// allowed, no leading digit, no leading hyphen-digit, and a --custom-
+// property must name something.
+func validCSSPropName(name string) bool {
+	if name == "" {
+		return false
+	}
+	rest := name
+	switch {
+	case strings.HasPrefix(rest, "--"):
+		rest = rest[2:]
+		if rest == "" {
+			return false
+		}
+		if isDigit(rest[0]) {
+			return false
+		}
+	case rest[0] == '-':
+		rest = rest[1:]
+		if rest == "" || isDigit(rest[0]) {
+			return false
+		}
+	case isDigit(rest[0]):
+		return false
+	}
+	for i := range len(rest) {
+		c := rest[i]
+		if !isDigit(c) && c != '-' && c != '_' && (c < 'a' || c > 'z') && (c < 'A' || c > 'Z') && c < 0x80 {
+			return false
+		}
+	}
+	return true
+}
+
+func isDigit(c byte) bool { return c >= '0' && c <= '9' }

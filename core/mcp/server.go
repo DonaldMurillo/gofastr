@@ -48,6 +48,17 @@ type Tool struct {
 	// handler on tools/call, and again in tools/list to decide whether this
 	// tool is visible to the caller at all. See WithToolGate.
 	Gate func(ctx context.Context) error `json:"-"`
+
+	// LaxArgs opts the tool out of dispatch-time inputSchema
+	// validation. tools/call validates `arguments` against the declared
+	// InputSchema (types, required, additionalProperties as declared)
+	// and answers invalid-params BEFORE the handler runs; a tool that
+	// must receive its arguments verbatim -- a pass-through proxy, a
+	// schema that deliberately under-describes -- registers with
+	// WithLaxArgs and keeps validating on its own. Opting out is a
+	// contract the tool author owns: the declared schema stops being
+	// enforced, not merely described.
+	LaxArgs bool `json:"-"`
 }
 
 // ToolOption customizes a tool at registration time.
@@ -63,6 +74,17 @@ func WithOutputSchema(schema map[string]any) ToolOption {
 // WithResourceMeta on the resource side.
 func WithToolMeta(meta map[string]any) ToolOption {
 	return func(t *Tool) { t.Meta = meta }
+}
+
+// WithLaxArgs registers a tool whose `arguments` are NOT validated
+// against its declared inputSchema at dispatch time. The default (no
+// option) enforces the schema: JSON types, required keys, and
+// additionalProperties as declared, refusing non-conforming calls with
+// invalid-params before the handler runs. Reach for this only when the
+// tool must see its arguments verbatim and validates them itself; see
+// Tool.LaxArgs.
+func WithLaxArgs() ToolOption {
+	return func(t *Tool) { t.LaxArgs = true }
 }
 
 // WithToolGate attaches a per-caller precondition to a tool. The gate runs on
@@ -554,6 +576,21 @@ func (s *Server) callTool(ctx context.Context, name string, params map[string]an
 	// same predicate decided whether this tool appeared in tools/list.
 	if err := s.checkToolGate(ctx, t); err != nil {
 		return nil, err
+	}
+
+	// Arguments must conform to the tool's declared inputSchema before
+	// the handler runs. The schema tools/list advertises is the
+	// contract the caller is held to: type confusion, missing required
+	// keys, and unknown keys under additionalProperties:false are
+	// refused here, so no handler has to re-implement JSON typing.
+	// LaxArgs opts a tool out (Tool.LaxArgs / WithLaxArgs).
+	if !t.LaxArgs {
+		if err := validateToolArgs(t.InputSchema, params); err != nil {
+			return nil, &RPCError{
+				Code:    ErrInvalidParams,
+				Message: err.Error(),
+			}
+		}
 	}
 
 	result, err := s.invokeHandler(ctx, t, params)

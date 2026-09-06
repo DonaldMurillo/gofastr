@@ -133,6 +133,21 @@ func get(h http.Handler, path string) *httptest.ResponseRecorder {
 	return rr
 }
 
+// followFlashRedirect issues the GET a browser would after a PRG redirect:
+// the flash cookie set by the POST travels along (httptest has no cookie
+// jar), so the re-rendered form overlays the submitted values + errors.
+// h may be a DIFFERENT handler than the POST target — that is the
+// multi-replica shape.
+func followFlashRedirect(h http.Handler, rr *httptest.ResponseRecorder, loc string) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(http.MethodGet, loc, nil)
+	for _, c := range rr.Result().Cookies() {
+		req.AddCookie(c)
+	}
+	out := httptest.NewRecorder()
+	h.ServeHTTP(out, req)
+	return out
+}
+
 func del(h http.Handler, path string) *httptest.ResponseRecorder {
 	req := httptest.NewRequest(http.MethodDelete, path, nil)
 	rr := httptest.NewRecorder()
@@ -319,7 +334,7 @@ func TestEntity_CreateValidationErrorReRenders(t *testing.T) {
 	}
 	// Following the redirect re-renders the form with the error + the
 	// submitted value retained.
-	body := get(h, loc).Body.String()
+	body := followFlashRedirect(h, rr, loc).Body.String()
 	if !strings.Contains(strings.ToLower(body), "title") {
 		t.Fatalf("error page should mention the failing field; got %q", body)
 	}

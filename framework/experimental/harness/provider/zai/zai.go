@@ -9,7 +9,6 @@ package zai
 import (
 	"context"
 	"net/http"
-	"time"
 
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/provider"
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/provider/internal/openai"
@@ -123,9 +122,4 @@ func (p *Provider) baseURL() string {
 		return defaultCodingBase
 	}
 	return defaultBase
-}
-
-// Default HTTP client with a generous timeout for slow GLM responses.
-func defaultClient() *http.Client {
-	return &http.Client{Timeout: 5 * time.Minute}
 }

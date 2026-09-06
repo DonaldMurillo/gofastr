@@ -75,9 +75,15 @@ type CrudHandler struct {
 	// sources rejected; a hero cover wants wide renditions, one app-wide
 	// config cannot express both.
 	FieldImageDerivers map[string]file.ImageDeriver
-	Events             *event.EventBus // optional; receives entity.created/updated/deleted on commit
-	Outbox             EventOutbox     // optional; when set, lifecycle events are staged in-tx (transactional outbox) and delivered to declared consumers by the relay. EmitEvent still notifies Events (real-time lane); the relay does not, so there is no double delivery.
-	Registry           entity.Registry // optional; required for nested ?include=author.profile resolution
+	// StripUploadMetadata opts every multipart upload on this handler into
+	// file.StripMetadata: EXIF, XMP and text segments are removed from the
+	// stored original (JPEG, PNG, WebP; other bytes pass through). Off by
+	// default: originals are stored verbatim (maintainer decision,
+	// 2026-09-04). Set app-wide with framework.WithStripUploadMetadata.
+	StripUploadMetadata bool
+	Events              *event.EventBus // optional; receives entity.created/updated/deleted on commit
+	Outbox              EventOutbox     // optional; when set, lifecycle events are staged in-tx (transactional outbox) and delivered to declared consumers by the relay. EmitEvent still notifies Events (real-time lane); the relay does not, so there is no double delivery.
+	Registry            entity.Registry // optional; required for nested ?include=author.profile resolution
 	// ChildHooks resolves ANOTHER entity's hook registry by name, so rows
 	// eager-loaded through ?include= run the read hooks of the entity they
 	// belong to rather than this one's. Without it a redaction on the child
