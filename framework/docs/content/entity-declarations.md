@@ -156,6 +156,18 @@ app.RegisterEntities(map[string]entity.EntityConfig{
 })
 ```
 
+## Blank form values
+
+An HTML form posts every control it has, so a number, date, or relation
+the user left blank arrives as `""`. Create and update treat that as
+"not provided" for every field type except `String` and `Text`: a blank
+optional field takes its declared `Default` on create and leaves the
+column alone on update, and a blank required field fails with
+`is required` rather than `must be an integer`. Empty text stays an
+empty string, since that is a value a user can mean. The
+resource-engine forms (`framework/ui/resource`) rely on this; a JSON
+client gets the same treatment.
+
 ## `Entity` vs `TryEntity`
 
 `app.Entity(name, config)` **panics** on a misconfiguration: fail-fast,
