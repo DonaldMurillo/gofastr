@@ -415,6 +415,7 @@ var exampleLoC = map[string]int{
 	"backoffice":           310,
 	"processmodule-demo":   330,
 	"webmcp-remote-assist": 1600,
+	"rtc-call":             540,
 }
 
 // locBadge renders the "~N LoC" badge for one example row; suffix adds a
@@ -541,10 +542,18 @@ func exRowItems() []render.HTML {
 				ln(render.Text("  webmcp."), fn_("WithHTTPMiddleware"), pn("("), render.Text("requireSupport"), pn("))")),
 				ln(render.Text("webmcp."), fn_("WithDocumentScope"), pn("("), render.Text("supportScope"), pn(")")),
 			})),
+		exRow("13", "examples/rtc-call", "WebRTC call rooms", "battery/rtc", locBadge("rtc-call", ""),
+			"Anonymous users, rooms by name: the dogfood app for the rtc signaling battery. The lobby trades a display name for a cookie; the room page runs one peer connection per peer with chat on a negotiated data channel, and the Go process relays handshakes only, never media.",
+			[]string{"rtc.New + RegisterPlugin: zero hand-rolled signaling", "Identity server-derived through Config.Authorize", "Peer-to-peer camera and chat; the server sees neither"},
+			"cd examples/rtc-call && gofastr dev",
+			codeBlock("examples/rtc-call/main.go", []render.HTML{
+				ln(render.Text("sig "), pn(":="), render.Text(" rtc."), fn_("New"), pn("("), render.Text("rtc."), ty("Config"), pn("{ … }")),
+				ln(render.Text("app."), fn_("RegisterPlugin"), pn("("), render.Text("sig"), pn(")")),
+			})),
 	}
 }
 
-// exBlueprints is row 13: the declarative examples that are blueprints
+// exBlueprints is row 14: the declarative examples that are blueprints
 // only, no Go until `gofastr generate` runs. It shares exRowShell with
 // the runnable rows but stays out of exRowItems, whose length is the
 // "runs in one command" count. The source links sit in their own blocks
@@ -586,7 +595,7 @@ func exBlueprints() render.HTML {
 			ln(render.Text("$ go run .")),
 		}),
 	)
-	return exRowShell("13", "blueprints", "Blueprint examples", body, right)
+	return exRowShell("14", "blueprints", "Blueprint examples", body, right)
 }
 
 func exRows() render.HTML {
