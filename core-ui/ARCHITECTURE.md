@@ -724,13 +724,54 @@ reconnect and a distinct generation per reconnect:
 `{ generation, phase, reasonClass, attempts, lastSequence }`, with
 phase `connecting → open → hydrated → resynced` (via
 `handle.resyncComplete()`) and `closed`/`stopped` at the ends.
-`reasonClass` is one of `closed`, `error`, `stop` — the module never
-logs and never surfaces raw close reasons, payloads, or credentials.
+`reasonClass` is one of `closed`, `error`, `refused`, `stop` — the
+module never logs and never surfaces raw close reasons, payloads, or
+credentials. `refused` is a server that accepted the handshake only to
+close with a code in 4400–4499 (4000 + a 4xx status, kept on
+`status.refused`); it is not retried, because a browser cannot read
+the status of a failed handshake and a refusal is not a blip. A
+4500–4599 close (4000 + a 5xx) is `error` and retried.
 
 A new generation invalidates only generation-bound work; which state
 survives a reconnect is the application's decision. WebSocket recovery
 proves nothing about media protocols layered on top (WebRTC and
 friends); those resynchronize through these hooks.
+
+### WebRTC rooms (`__gofastr.connectRoom`)
+
+The `rtc` demand module (`runtime/src/rtc.js`) is the WebRTC half of a
+`core/stream.StateChannel` signaling server (`battery/rtc`,
+see `framework/docs/content/rtc.md`). Like the `ws` module it has no DOM
+marker: an application loads it with `__gofastr.loadModule('rtc')` (it
+loads `ws` itself) and calls `__gofastr.connectRoom(url, opts)`, which
+owns one `RTCPeerConnection` per remote peer with perfect negotiation,
+trickle ICE, and negotiated data channels. The hooks are `onPeer`,
+`onPeerLeave`, `onTrack`, `onChannel`, `onMessage`, `onPeerState`,
+`onStatus`, `onSnapshot`, and `onPhase` (the `ws` generation phases
+collapsed to one bounded string; `closed:refused` is final and carries
+the status on `room.status.refused`). `room.replaceTrack` swaps a
+sender's track without renegotiation and keeps the list new
+connections are built from current; `room.send` passes binary through. The newer peer of any pair is the
+polite one and waits for the older peer's first offer, so the initial
+negotiation rarely collides; when two first offers still cross, the
+polite side rebuilds its never-negotiated connection instead of rolling
+back, and rollback is reserved for mid-call collisions. Offers are
+burst-limited per connection. The generation rule on reconnect: peers
+absent from the new snapshot close; peers still `connected`/`connecting`
+keep their peer connection (no renegotiation storm), and the negotiated
+data channels the remote's rebuild closes are recreated on it; anything
+else is rebuilt with tracks and channels re-added, and the remembered
+status is resent. A reconnect that lands under a new self id (the
+battery mints one per socket when `Join.PeerID` is empty) rebuilds
+every peer connection: each remote saw the old id leave. A status carried by a snapshot or join fires
+`onStatus` like a live one. The ICE list a snapshot or the server's
+half-TTL `iceServers` push carries is applied to every live connection
+(`setConfiguration`), so a kept connection can restart ICE after its
+first TURN credential expired.
+Signals are addressed and transient, so they bypass
+`createSequencedReducer`; snapshot, join, leave, status, and
+iceServers go through it. Like `ws`, the module never logs: no SDP, candidate, credential, or
+close reason reaches the console or a status object.
 
 ### Cross-replica presence (`gofastr.presence` fanout lane)
 

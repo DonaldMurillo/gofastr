@@ -3,6 +3,9 @@ package stream
 import (
 	"bytes"
 	"encoding/json"
+	"io"
+	"runtime"
+	"strings"
 	"sync"
 	"testing"
 	"testing/synctest"
@@ -476,4 +479,159 @@ func TestStateChannelPublishAfterStop(t *testing.T) {
 
 		c.Publish("banner", bannerEvent{Action: "tick"}) // must not block or panic
 	})
+}
+
+// TestStateChannelOverflowClosesWhenAsked: with CloseOnOverflow the
+// connection that cannot take an event is closed instead of losing it,
+// so it reconnects and re-hydrates; the healthy one is untouched.
+func TestStateChannelOverflowClosesWhenAsked(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		src := newBannerSource()
+		c := startChannel(t, src)
+		c.CloseOnOverflow(true)
+
+		slow := newChannelConn(1) // fills after one message, never drained
+		healthy := newChannelConn(64)
+		c.Connect("admin", slow)
+		c.Connect("admin", healthy)
+		recvRaw(t, slow) // snapshot fills the buffer exactly
+		recvEnvelope(t, healthy)
+
+		c.Publish("banner", bannerEvent{Action: "tick"}) // queued: buffer has one slot
+		c.Publish("banner", bannerEvent{Action: "tick"}) // overflow
+		synctest.Wait()
+
+		select {
+		case <-slow.Closed():
+		default:
+			t.Fatal("overflowed connection was left open with an event dropped for it")
+		}
+		select {
+		case <-healthy.Closed():
+			t.Fatal("healthy connection was closed")
+		default:
+		}
+		for range 2 {
+			recvEnvelope(t, healthy)
+		}
+	})
+}
+
+// TestCloseWithStatusWritesCodeAndReason: the close frame carries the
+// code and a reason bounded to 123 bytes with control bytes stripped.
+func TestCloseWithStatusWritesCodeAndReason(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		out := &bytes.Buffer{}
+		conn := &WebSocketConn{
+			conn:       &nopConn{r: bytes.NewReader(nil), w: out},
+			sendBuffer: make(chan []byte, 1),
+			closed:     make(chan struct{}),
+			peerClosed: make(chan struct{}),
+			config:     WSConfig{ReadLimit: 1 << 20},
+		}
+		long := strings.Repeat("r", 200)
+		if err := conn.CloseWithStatus(4409, "room\x00 full\x7f"+long); err != nil {
+			t.Fatalf("CloseWithStatus: %v", err)
+		}
+		reason := "room full" + long
+		reason = reason[:123]
+		want := append([]byte{0x88, byte(2 + len(reason)), 0x11, 0x39}, reason...)
+		if !bytes.Equal(out.Bytes(), want) {
+			t.Fatalf("close frame = %x, want %x", out.Bytes(), want)
+		}
+	})
+}
+
+// blockedConn's Write blocks until release is closed: a peer whose TCP
+// send buffer is full, so the writePump sits inside the kernel write
+// holding c.mu for up to WriteTimeout.
+type blockedConn struct {
+	release chan struct{}
+	mu      sync.Mutex
+	writes  int
+}
+
+func (b *blockedConn) Read(p []byte) (int, error) { <-b.release; return 0, io.EOF }
+func (b *blockedConn) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	b.writes++
+	b.mu.Unlock()
+	<-b.release
+	return len(p), nil
+}
+func (b *blockedConn) Close() error { return nil }
+
+// TestStateChannelOverflowClosesOncePerConn: with CloseOnOverflow, a
+// stalled socket costs one closing goroutine however many events pile
+// up behind it. c.closed is closed only once Close acquires c.mu, which
+// the stalled writePump holds for up to WriteTimeout, so the Closed()
+// guard alone let every further event spawn another blocked Close.
+func TestStateChannelOverflowClosesOncePerConn(t *testing.T) {
+	bc := &blockedConn{release: make(chan struct{})}
+	conn := &WebSocketConn{
+		conn:       bc,
+		sendBuffer: make(chan []byte, 1),
+		closed:     make(chan struct{}),
+		peerClosed: make(chan struct{}),
+		readMsgs:   make(chan []byte, 8),
+		readDone:   make(chan struct{}),
+		config:     WSConfig{ReadLimit: 1 << 20, WriteTimeout: 10 * time.Second, CloseTimeout: time.Second},
+	}
+	go conn.writePump()
+	src := newBannerSource()
+	c := NewStateChannel[string, bannerState, bannerEvent](src)
+	c.CloseOnOverflow(true)
+	go c.Run()
+	t.Cleanup(func() { close(bc.release); c.Stop() })
+
+	c.Connect("admin", conn)
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		bc.mu.Lock()
+		stalled := bc.writes > 0
+		bc.mu.Unlock()
+		if stalled {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the write never stalled")
+		}
+		time.Sleep(time.Millisecond)
+	}
+
+	before := runtime.NumGoroutine()
+	const events = 500
+	for range events {
+		c.Publish("banner", bannerEvent{Action: "tick"})
+		time.Sleep(50 * time.Microsecond)
+	}
+	time.Sleep(200 * time.Millisecond)
+	if peak := runtime.NumGoroutine(); peak-before > 4 {
+		t.Fatalf("%d undeliverable events on one stalled socket grew goroutines by %d, want one closer", events, peak-before)
+	}
+}
+
+// TestCloseWithStatusRefusesReservedCodes: a code RFC 6455 reserves or
+// that is out of range never reaches the wire; the frame carries 1002
+// and the caller learns it asked for something illegal.
+func TestCloseWithStatusRefusesReservedCodes(t *testing.T) {
+	for _, code := range []uint16{0, 999, 1004, 1005, 1006, 1015, 5000} {
+		synctest.Test(t, func(t *testing.T) {
+			out := &bytes.Buffer{}
+			conn := &WebSocketConn{
+				conn:       &nopConn{r: bytes.NewReader(nil), w: out},
+				sendBuffer: make(chan []byte, 1),
+				closed:     make(chan struct{}),
+				peerClosed: make(chan struct{}),
+				config:     WSConfig{ReadLimit: 1 << 20},
+			}
+			err := conn.CloseWithStatus(code, "x")
+			if err == nil {
+				t.Fatalf("code %d: want an error", code)
+			}
+			if got := out.Bytes(); len(got) < 4 || got[2] != 0x03 || got[3] != 0xEA {
+				t.Fatalf("code %d: frame %x, want close code 1002", code, got)
+			}
+		})
+	}
 }

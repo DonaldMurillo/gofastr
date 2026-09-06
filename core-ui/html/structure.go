@@ -139,6 +139,23 @@ func Div(cfg DivConfig, children ...render.HTML) render.HTML {
 	return render.Tag("div", attrs, children...)
 }
 
+// TemplateConfig configures a <template> element. No required fields.
+type TemplateConfig struct {
+	Class      string
+	ID         string
+	ExtraAttrs Attrs
+}
+
+// Template produces a <template> element: inert, server-rendered
+// content the page's script instantiates with
+// template.content.cloneNode(true) instead of building DOM by hand.
+// The browser neither renders nor exposes template content in the
+// layout tree, so a hidden state needs no hidden attribute here.
+func Template(cfg TemplateConfig, children ...render.HTML) render.HTML {
+	attrs := buildAttrs(cfg.ExtraAttrs, cfg.ID, cfg.Class)
+	return render.Tag("template", attrs, children...)
+}
+
 // Article produces an <article> element representing a self-contained
 // composition in a page.
 func Article(cfg ArticleConfig, children ...render.HTML) render.HTML {

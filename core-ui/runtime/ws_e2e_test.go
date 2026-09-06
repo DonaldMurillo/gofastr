@@ -523,3 +523,93 @@ func TestWSLifecycleBoundToGeneration(t *testing.T) {
 		t.Fatalf("lifecycle binding: %s, want [false,false,\"open\",true,false,false,true,\"resynced\"]", raw)
 	}
 }
+
+// A server that accepts the handshake and closes with a code in the
+// 4400-4599 band refused the connection (the rtc battery sends
+// 4000+HTTP status): the class is 'refused', status.refused carries
+// the status, and there is no retry. A refusal is not a blip: without
+// this, a signed-out or over-cap tab re-dialed every 30 s for ever.
+func TestWSRefusedStopsReconnect(t *testing.T) {
+	var dials atomic.Int32
+	mux := http.NewServeMux()
+	mux.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
+		dials.Add(1)
+		conn, err := wsHandshake(w, r)
+		if err != nil {
+			return
+		}
+		_, _ = conn.Write(wsCloseReason(4409, "room full"))
+		_ = conn.Close()
+	})
+	script := wsConsoleTap + `
+    __gofastr.loadModule('ws').then(() => {
+      window.__ws = __gofastr.connectWebSocket('ws://' + location.host + '/ws', {});
+      window.__ready = true;
+    });
+  `
+	base := wsTestPage(t, mux, script)
+	ctx := newSeedBrowserCtx(t)
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/"),
+		chromedp.WaitVisible(`#ready`, chromedp.ByID),
+		chromedp.Poll(`window.__ready === true`, nil, chromedp.WithPollingTimeout(10*time.Second)),
+		chromedp.Poll(`window.__ws.status.reasonClass === 'refused'`, nil, chromedp.WithPollingTimeout(10*time.Second), chromedp.WithPollingInterval(100*time.Millisecond)),
+		chromedp.Sleep(3*time.Second),
+	); err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	var got string
+	if err := chromedp.Run(ctx, chromedp.Evaluate(`JSON.stringify({refused: window.__ws.status.refused, gen: window.__ws.status.generation, attempts: window.__ws.status.attempts})`, &got)); err != nil {
+		t.Fatalf("probe: %v", err)
+	}
+	if got != `{"refused":409,"gen":1,"attempts":0}` {
+		t.Fatalf("status after a refusal = %s, want refused 409, one generation, no attempts", got)
+	}
+	if n := dials.Load(); n != 1 {
+		t.Fatalf("server saw %d dials, want 1 (a refusal must not be retried)", n)
+	}
+}
+
+// The refused band is split by meaning: 44xx (4000 + a 4xx status) is
+// a final refusal, 45xx (4000 + a 5xx) is the server saying "not now"
+// and is retried with the normal backoff. The battery's own 503 reads
+// "try again"; a client coded never to try again was wrong for it.
+func TestWS5xxRefusalRetries(t *testing.T) {
+	var dials atomic.Int32
+	mux := http.NewServeMux()
+	mux.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
+		dials.Add(1)
+		conn, err := wsHandshake(w, r)
+		if err != nil {
+			return
+		}
+		_, _ = conn.Write(wsCloseReason(4503, "try again"))
+		_ = conn.Close()
+	})
+	script := wsConsoleTap + `
+    __gofastr.loadModule('ws').then(() => {
+      window.__ws = __gofastr.connectWebSocket('ws://' + location.host + '/ws', {});
+      window.__ready = true;
+    });
+  `
+	base := wsTestPage(t, mux, script)
+	ctx := newSeedBrowserCtx(t)
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/"),
+		chromedp.WaitVisible(`#ready`, chromedp.ByID),
+		chromedp.Poll(`window.__ready === true`, nil, chromedp.WithPollingTimeout(10*time.Second)),
+		chromedp.Poll(`window.__ws.status.generation >= 2`, nil, chromedp.WithPollingTimeout(10*time.Second), chromedp.WithPollingInterval(100*time.Millisecond)),
+	); err != nil {
+		t.Fatalf("chromedp: a 5xx close was not retried: %v", err)
+	}
+	var got string
+	if err := chromedp.Run(ctx, chromedp.Evaluate(`String(window.__ws.status.refused)`, &got)); err != nil {
+		t.Fatalf("probe: %v", err)
+	}
+	if got != "0" {
+		t.Fatalf("status.refused = %s after a 5xx close, want 0 (not a refusal)", got)
+	}
+	if n := dials.Load(); n < 2 {
+		t.Fatalf("server saw %d dials, want a retry", n)
+	}
+}

@@ -62,8 +62,13 @@
   // handle.resyncComplete() only act once per generation.
   //
   // reasonClass is one of 'closed' (clean close), 'error' (transport
-  // failure or refused connect), 'stop' (handle.close()). The raw
-  // close reason and code are never exposed or recorded.
+  // failure, refused connect, or a 4500-4599 close: 4000 + a 5xx
+  // status, the server saying not now, retried like any error),
+  // 'refused' (the server accepted the handshake only to close with a
+  // code in 4400-4499: 4000 + a 4xx status, which status.refused
+  // carries; a refusal is final and not retried), 'stop'
+  // (handle.close()). The raw close reason is never exposed or
+  // recorded, and no code outside the 44xx band is.
   //
   // Transport connected, state hydrated, protocol resynchronized, and
   // application ready are DISTINCT states: phase moves
@@ -75,7 +80,7 @@
   // a live socket means a live session.
   NS.connectWebSocket = (url, opts) => {
     const o = opts || {};
-    const status = { generation: 0, phase: 'connecting', reasonClass: '', attempts: 0, lastSequence: 0 };
+    const status = { generation: 0, phase: 'connecting', reasonClass: '', attempts: 0, lastSequence: 0, refused: 0 };
     let generation = 0;
     let socket = null;
     let retryTimer = 0;
@@ -94,7 +99,7 @@
       status.phase = 'closed';
       status.reasonClass = reasonClass;
       hook('onGenerationEnd', { generation, reasonClass });
-      if (!userClosed && o.reconnect !== false) {
+      if (!userClosed && o.reconnect !== false && reasonClass !== 'refused') {
         status.attempts += 1;
         retryTimer = setTimeout(open, Math.min(1000 * 2 ** (status.attempts - 1), 30000));
       }
@@ -125,6 +130,8 @@
       ws.onclose = (ev) => {
         if (socket !== ws) return;
         socket = null;
+        const code = ev ? Number(ev.code) : 0;
+        if (code >= 4400 && code <= 4499) { status.refused = code - 4000; endGeneration('refused'); return; }
         endGeneration(ev && ev.wasClean ? 'closed' : 'error');
       };
     };
