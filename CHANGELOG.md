@@ -8,6 +8,11 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 ## [Unreleased]
 
 ### Fixed
+- **Client-side navigation works on a static export below a base path.**
+  The export rewrote every href for the base and left the embedded route
+  graph root-relative, and the runtime takes the client-side path only for
+  a link it finds in the graph, so on a GitHub project page every click was
+  a full page load. The graph's paths carry the base too.
 - **A static page no longer loads every component stylesheet twice.** The
   export emitted one `<link>` per component without the `data-fui-style`
   marker the runtime dedupes on, so on load the runtime appended a second
@@ -15,6 +20,7 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   cascade: a sidebar title stretched to fill its column, a doc layout
   collapsed. The exported links carry the marker and id the runtime would
   have written.
+
 
 ## [0.84.0] - 2026-09-06
 
