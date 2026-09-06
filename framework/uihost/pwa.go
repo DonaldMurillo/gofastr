@@ -382,7 +382,7 @@ func (ds *UIHost) PWAOfflineHTML() string {
 	} else {
 		body = defaultPWAOfflineBody()
 	}
-	shell := ds.documentShell("Offline — "+cfg.Name, `<main role="main">`+string(body)+`</main>`)
+	shell := ds.documentShell("", "Offline — "+cfg.Name, `<main role="main">`+string(body)+`</main>`)
 	// bundle=false (same as RenderStaticPage): component CSS must be
 	// direct per-component links. The bundle URL depends on the page's
 	// component set: precaching it would answer every OTHER page's

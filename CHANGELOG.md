@@ -129,6 +129,41 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   for an attribute value used raw as a storage key, and a gate that vets
   the generated customer CLI with the repo vettool.
 
+### Added
+- **A per-page document language.** `<html lang>` came from one site-wide
+  value, so every page of a bilingual site claimed the site language: a
+  screen reader read the Spanish pages with English pronunciation rules
+  (WCAG 3.1.1) and a full-text indexer that reads `<html lang>` filed and
+  stemmed them as English. `app.App.WithLangFunc(func(path string) string)`
+  resolves the tag per route, and a screen can override it for its own page
+  with the new `app.ScreenLanger` interface (`ScreenLang() string`), read
+  after `Load` so a dynamic route can take the tag off the content it
+  fetched. `app.App.LangForPath` exposes the route-level answer.
+  `uihost.WithLangFunc` does the same for the shells the host builds itself
+  (404, 405, embed frame), and `uihost.LangForPath` falls back to the app's
+  `LangFunc` so a site declares its languages once. Every fallback ends at
+  `EffectiveLang`, so an app that configures none renders byte-identically.
+- **`ui.DocPager.PrevDirLabel` / `NextDirLabel`** translate the prev/next
+  pager's direction lines, which were hardcoded `← Previous` and `Next →`.
+  Empty keeps those exact strings. The arrow is part of the value, so a
+  translation can move it to the other side of the word.
+
+### Fixed
+- **A fence option no longer costs a code block its syntax highlighting.**
+  `core/markdown` took the whole info string as the language, so
+  ` ```go title="main.go" ` emitted
+  `class="language-go title=&quot;main.go&quot;"`, which matches no language.
+  The first token is the language; the rest lands in `data-meta` on the
+  `<code>` tag, and `ui.Markdown` maps `title=` to the block's filename
+  header and `showLineNumbers` to its gutter. `markdown.ParseFenceInfo`
+  exposes the split.
+- **Fences longer than three characters work, per CommonMark.** The parser
+  read exactly three, so ` ````md ` opened a three-backtick block with the
+  language `` `md `` and the first inner ` ``` ` closed it, tearing a
+  markdown example that contains a fenced block into three pieces. A fence
+  is now closed only by a run of the same character at least as long as the
+  opener, with nothing after it.
+
 ### BREAKING
 - `POST /auth/register` no longer answers 409 for a taken address.
 - `gofastr harness*` exits 1 with no passphrase and no machine key.
