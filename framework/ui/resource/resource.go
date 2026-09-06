@@ -872,11 +872,25 @@ func (c Config) formInput(ctx context.Context, f Field, cur string, rel map[stri
 	case "text":
 		return html.TextArea(html.TextAreaConfig{Name: f.Key, ID: id, Content: cur, Rows: 4})
 	case "bool", "boolean":
+		// A bare checkbox cannot round-trip a bool through the form
+		// intercept: the browser submits the string "on" for a checked
+		// box (which core/schema's validator refuses) and nothing at all
+		// for an unchecked one (so false can never be saved). The hidden
+		// "false" comes first in document order and the checkbox, when
+		// checked, follows it with "true". The runtime's form serializer
+		// recognizes exactly this pair (one hidden input then one
+		// checkbox of the same name) and submits the LAST value as a
+		// scalar; any other repeated name is still an array, which is
+		// what turned a checked box into ["false","true"] and a 400
+		// before the pair rule existed (core-ui/runtime/src/rpc.js).
 		attrs := html.Attrs{}
 		if truthy(cur) {
 			attrs["checked"] = "checked"
 		}
-		return html.Input(html.InputConfig{Type: "checkbox", Name: f.Key, ID: id, ExtraAttrs: attrs})
+		return render.Join(
+			html.Input(html.InputConfig{Type: "hidden", Name: f.Key, Value: "false"}),
+			html.Input(html.InputConfig{Type: "checkbox", Name: f.Key, ID: id, Value: "true", ExtraAttrs: attrs}),
+		)
 	default:
 		return html.Input(html.InputConfig{Type: inputType(f.Type), Name: f.Key, ID: id, Value: cur})
 	}
