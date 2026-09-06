@@ -297,6 +297,15 @@ framework/
 Out-of-contract (NOT part of the layering rules below):
   experimental/apiversions   API versioning (URL prefix, deprecation
                              headers, projections). Experimental surface.
+  battery/desktop            Desktop host (experimental, lives under
+                             battery/ but classified Experimental by the
+                             stability manifest): the app inside the OS
+                             WebView from a CGO_ENABLED=0 binary. Its
+                             internal/ffi, internal/objc, and
+                             internal/fakecgo packages are the pure-Go
+                             native layer (darwin/arm64 today); see
+                             docs/desktop-plan.md for the runtime hooks
+                             it stands on.
   experimental/webmcp        WebMCP bridge: registers server-declared
                              tools on the page's modelContext (the
                              Chrome origin-trial API on Document, with

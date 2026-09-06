@@ -18,6 +18,7 @@ import (
 	_ "github.com/DonaldMurillo/gofastr/battery/admin"
 	_ "github.com/DonaldMurillo/gofastr/battery/auth"
 	_ "github.com/DonaldMurillo/gofastr/battery/cache"
+	_ "github.com/DonaldMurillo/gofastr/battery/desktop"
 	_ "github.com/DonaldMurillo/gofastr/battery/email"
 	_ "github.com/DonaldMurillo/gofastr/battery/log"
 	_ "github.com/DonaldMurillo/gofastr/battery/notify"

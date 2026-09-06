@@ -219,9 +219,15 @@ var fragmentAttrs = map[string][]string{
 // `widgethelpers`, which is a genuine independently-loadable module (it
 // self-registers a scanner and widgets.js demand-loads it), NOT by widgets.
 var moduleAttrs = map[string][]string{
+	"desktop": {
+		// battery/desktop's module. The mousedown delegator that calls
+		// startDrag lives in src/desktop.js; the drag itself is native
+		// (performWindowDragWithEvent: through the script message
+		// channel), which is why the listener is here and not in the
+		// widget/dismiss modules.
+		"data-fui-window-drag",
+	},
 	"activelink": {
-		// Carved out of the nav fragment (level-1 budget): the idle-loaded
-		// module owns prefix-matched aria-current highlighting and the
 		// data-fui-activelink-skip opt-out from it.
 		"data-fui-match-prefix",
 		"data-fui-activelink-skip",
