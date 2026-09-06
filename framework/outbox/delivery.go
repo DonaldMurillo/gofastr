@@ -411,6 +411,7 @@ func (o *Outbox) claimDeliveriesPostgres(ctx context.Context) ([]claimedDelivery
 			SELECT d.row_id, d.consumer FROM %s d
 			JOIN %s p ON p.id = d.row_id
 			WHERE d.status = 'pending'
+			  AND (d.claimed_until IS NULL OR d.claimed_until <= $2)
 			  AND (d.attempts < $4 OR d.claimed_until IS NULL)
 			  AND (d.next_attempt_at IS NULL OR d.next_attempt_at <= $2)
 			ORDER BY p.created_at ASC
