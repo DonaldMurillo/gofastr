@@ -139,6 +139,9 @@ func printHelp() {
     mcp                 Launch harness as a stdio MCP server for IDE integration
     creds [add|list|delete]  Manage encrypted API-key credentials
   agents [init|sync|skill]  Generate/refresh AGENTS.md and per-battery detail files
+  desktop run|build|types  Build/run a GoFastr app as a desktop window (experimental):
+                        run  build + launch with dev tools; build  dist/<Name>.app
+                        (darwin/arm64, ad-hoc signed by default); types  desktop.d.ts from the app manifest
   docs (doc) [topic]    Browse framework docs (auto-versioned with this binary)
                         --list  list every topic; --grep <term> search across docs
   verify [capability]   Check the app against the GoFastr contract: routing, permissions,
@@ -178,6 +181,7 @@ func printHelp() {
   gofastr harness creds list
   gofastr agents init
   gofastr agents sync
+  gofastr desktop run --pkg ./examples/desktop-notes
   gofastr verify
   gofastr verify security --json
   gofastr verify --explain GOFASTR1002
@@ -216,6 +220,7 @@ var ownsHelp = map[string]bool{
 	"t":        true,
 	"harness":  true,
 	"agents":   true,
+	"desktop":  true,
 }
 
 func hasHelpFlag(args []string) bool {
@@ -296,12 +301,14 @@ func dispatch(args []string) {
 		runVerify(cmdArgs)
 	case "upgrade":
 		runUpgrade(cmdArgs)
+	case "desktop":
+		runDesktop(cmdArgs)
 	case "version":
 		fmt.Printf("GoFastr %s (commit: %s, built: %s)\n", version, commit, buildDate)
 	default:
 		fmt.Printf("%s Unknown command: %s\n\n", red("✗"), cmd)
 		// Fuzzy suggestion: check if it's close to a known command
-		suggestions := []string{"init", "new", "generate", "pack", "validate", "build", "dev", "migrate", "test", "semantic", "harness", "docs", "agents", "audit", "verify", "upgrade", "theme", "version"}
+		suggestions := []string{"init", "new", "generate", "pack", "validate", "build", "dev", "migrate", "test", "semantic", "harness", "docs", "agents", "desktop", "audit", "verify", "upgrade", "theme", "version"}
 		for _, s := range suggestions {
 			if strings.HasPrefix(s, cmd) || fuzzy.Levenshtein(cmd, s) <= 2 {
 				fmt.Printf("  Did you mean: %s?\n", bold("gofastr "+s))
