@@ -110,6 +110,23 @@ type StateChannel[Role comparable, Snapshot any, Event any] struct {
 	// needs no lock; it is reconciled to every snapshot sequence sent,
 	// which is what keeps post-snapshot events above it.
 	nextSeq uint64
+
+	// closeOnOverflow selects the disposition of an event that finds
+	// a connection's send buffer full; see CloseOnOverflow.
+	closeOnOverflow atomic.Bool
+}
+
+// CloseOnOverflow selects what happens when an event cannot be queued
+// on a connection because its send buffer is full. Off (the default)
+// the event is dropped for that connection alone, the Hub.Run posture,
+// which is right for presence-shaped sources: the next snapshot or
+// event corrects the view. On, the connection is closed instead, so
+// the client reconnects and re-hydrates. That is right for a source
+// whose events are not recoverable from a snapshot (addressed
+// signaling: a dropped SDP answer leaves the far side waiting for ever,
+// and nothing tells either side). Call before Run.
+func (c *StateChannel[Role, Snapshot, Event]) CloseOnOverflow(on bool) {
+	c.closeOnOverflow.Store(on)
 }
 
 // connRole pairs a connection with the role it connected as, snapped
@@ -398,7 +415,11 @@ func (c *StateChannel[Role, Snapshot, Event]) deliver(conns []*WebSocketConn, ro
 		case <-conn.Closed():
 		case conn.sendBuffer <- data:
 		default:
-			// Buffer full: drop for this connection, as Hub.Run does.
+			// Buffer full: drop for this connection, as Hub.Run does,
+			// or close it when the source asked (CloseOnOverflow).
+			if c.closeOnOverflow.Load() && conn.closing.CompareAndSwap(false, true) {
+				go conn.Close()
+			}
 		}
 	}
 }

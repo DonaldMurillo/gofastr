@@ -167,7 +167,9 @@ The four rungs cover pages. Some surfaces need bidirectional frames the
 page model does not shape: WebRTC signaling, multiplayer protocols,
 anything where the client talks back on the same connection the server
 pushes on. Those use `core/stream` WebSockets directly, and they carry
-two obligations the framework does not assume for you.
+two obligations the framework does not assume for you. For WebRTC
+signaling specifically, `battery/rtc` packages the
+server side and the `rtc` runtime module ([WebRTC rooms](rtc.md)).
 
 **Ordering across reconnects.** When a client reconnects, it needs a
 snapshot of current state plus the events that follow it, and the two
@@ -191,8 +193,11 @@ each reconnect a distinct generation and the hooks to resynchronize:
 `onGenerationStart` (socket open), `onHydrated` (the application
 applied the snapshot, via `handle.hydrated(sequence)`), and
 `onGenerationEnd` with a bounded reason class (`closed`, `error`,
-`stop`) — never the raw close reason, and never a payload or
-credential in any log. Hooks are idempotent per generation. A new
+`refused`, `stop`) — never the raw close reason, and never a payload or
+credential in any log. `refused` is a server that accepted the
+handshake only to close with 4000 + a 4xx status (kept on
+`status.refused`); it is final and not retried, where a 4000 + 5xx
+close is an `error` and retried. Hooks are idempotent per generation. A new
 generation invalidates only generation-bound work; which state survives
 (a healthy peer, the session) is the application's call, and so is
 marking the protocol caught-up with `handle.resyncComplete()`.

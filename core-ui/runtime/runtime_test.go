@@ -375,6 +375,39 @@ func TestRuntimeModule_WS(t *testing.T) {
 	}
 }
 
+func TestRuntimeModule_RTC(t *testing.T) {
+	src, ok := Module("rtc")
+	if !ok {
+		t.Fatal("rtc module not embedded")
+	}
+	for _, want := range []string{
+		"NS.connectRoom",         // rooms over the rtc signaling protocol
+		"NS.loadModule('ws')",    // one-time init pulls the ws module
+		"createSequencedReducer", // snapshot/join/leave/status are sequenced
+		"onnegotiationneeded",    // perfect negotiation offer path
+		"onicecandidate",         // trickle ICE
+		"setRemoteDescription",   // polite-side implicit rollback (mid-call collisions)
+		"remoteDescription",      // the polite side waits for the first offer
+		"addIceCandidate",        // candidate path with swallowed errors
+		"negotiated",             // data channels use negotiated:true, id i
+		"onconnectionstatechange",
+		"loadedModules",
+	} {
+		if !strings.Contains(src, want) {
+			t.Errorf("rtc module missing %q", want)
+		}
+	}
+	// Ceiling near the current size, same shape as the modules above.
+	if size := ModuleSize("rtc"); size > 9000 {
+		t.Errorf("rtc module is %d bytes — budget is 9000", size)
+	}
+	// The module must never log: SDP, candidates, credentials, and
+	// close reasons stay out of the console by construction.
+	if strings.Contains(src, "console.") {
+		t.Error("rtc module calls console.* — it must not log SDP, candidates, credentials, or close reasons")
+	}
+}
+
 func TestRuntimeModule_NetworkRetryBanner(t *testing.T) {
 	src, ok := Module("networkretrybanner")
 	if !ok {

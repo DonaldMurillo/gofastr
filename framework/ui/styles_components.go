@@ -495,6 +495,12 @@ func calloutCSS(t style.Theme) string {
   border-radius: var(--radii-md, 8px);
   background: var(--color-surface-soft, var(--color-surface, #FFFFFF));
 }
+/* display:grid above outranks the UA's [hidden] { display: none }, so
+   a server-rendered notice that starts hidden showed as an empty bar;
+   same fix as the sidebar sublist and the combobox listbox. */
+[data-fui-comp="ui-callout"][hidden] {
+  display: none;
+}
 [data-fui-comp="ui-callout"]::before {
   content: var(--ui-callout-icon, "i");
   grid-row: 1 / span 2;

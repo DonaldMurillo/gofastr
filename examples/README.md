@@ -31,6 +31,7 @@ server, so `go run` it.
 | `embed-demo` | Embeddable surfaces: an app and a customer's site on two origins. |
 | `processmodule-demo` | A process-isolated third-party module speaking the `moduleproto` protocol over stdio. The canonical [process-module](../framework/docs/content/process-modules.md) example and the child the go/no-go gate suite drives end to end. |
 | `webmcp-remote-assist` | Authenticated WebMCP + WebRTC remote support: support-only tool discovery, one typed command behind the manual button and the AI tools, role-filtered realtime state, peer-to-peer camera with server-side signaling only. |
+| `rtc-call` | WebRTC rooms the packaged way: `battery/rtc` signaling (zero hand-rolled relay), anonymous cookie identity through `Authorize`, the `rtc` runtime module with one peer connection per peer, peer-to-peer camera plus chat on a negotiated data channel. |
 | `site` | The framework's live component gallery and reference docs site: every UI component rendered one per page, the hosted examples, and the gofastr-plugins registry rendered from a vendored `plugins.json` (`scripts/vendor-plugins-json.sh` refreshes it). Run with `cd examples/site && gofastr dev`. |
 
 ## Blueprint examples (declarative)
