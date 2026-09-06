@@ -158,6 +158,23 @@ through the canonical `core-ui/urlsafe` allow-list (`Anchor` for hrefs,
 Direct; no framework auto-wiring. Start at `core/markdown/markdown.go`:
 `Render`.
 
+Fenced blocks follow CommonMark on two points that matter for
+documentation. A fence is three **or more** of the same character and
+closes only on a run at least as long, so a ` ```` ` block can hold a
+` ``` ` example — the only way to document fenced syntax. And the info
+string is a language followed by options, not one opaque name:
+`ParseFenceInfo` splits it into `FenceInfo{Lang, Meta}`. `Lang` becomes
+`class="language-X"` as before; `Meta` is everything after it,
+verbatim, carried on the `<code>` tag's `data-meta` attribute for a
+renderer to interpret. `core/markdown` assigns it no meaning:
+`framework/ui.Markdown` is what maps `title=` and `showLineNumbers`
+onto `CodeBlockConfig`.
+
+Before this, the whole info string became the language, so
+` ```go title="main.go" ` emitted
+`class="language-go title=&quot;main.go&quot;"`, matched no language,
+and silently cost the block its syntax highlighting.
+
 ### static
 
 A hardened file server for `embed.FS` / `fs.FS`: ETag caching,

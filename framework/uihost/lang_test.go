@@ -55,13 +55,28 @@ func TestLangForPathPrecedence(t *testing.T) {
 	if got := ds.LangForPath("/docs"); got != "en" {
 		t.Errorf("an empty answer must fall back to EffectiveLang = %q, want en", got)
 	}
-	if got := ds.LangForPath(""); got != "en" {
-		t.Errorf("a pathless shell must use EffectiveLang = %q, want en", got)
+
+	// A resolver that answers every path, so the pathless case proves the guard
+	// rather than the resolver happening to return "" for "".
+	always := New(app.NewApp("x").WithLang("en"), WithLangFunc(func(string) string { return "fr" }))
+	if got := always.LangForPath(""); got != "en" {
+		t.Errorf("a pathless shell must skip LangFunc entirely = %q, want en", got)
+	}
+	if got := always.LangForPath("/x"); got != "fr" {
+		t.Errorf("the same resolver must answer for a real path = %q, want fr", got)
 	}
 
 	fromApp := New(app.NewApp("x").WithLang("en").WithLangFunc(esPrefix))
 	if got := fromApp.LangForPath("/es/docs"); got != "es" {
 		t.Errorf("the app's LangFunc must reach host shells = %q, want es", got)
+	}
+
+	// The host resolver declining is what hands over to the app's, so the host
+	// one has to be present and return "" for this to prove anything.
+	hostDeclines := New(app.NewApp("x").WithLang("en").WithLangFunc(func(string) string { return "pt" }),
+		WithLangFunc(func(string) string { return "" }))
+	if got := hostDeclines.LangForPath("/x"); got != "pt" {
+		t.Errorf("an empty host answer must fall through to the app's LangFunc = %q, want pt", got)
 	}
 
 	hostWins := New(app.NewApp("x").WithLangFunc(func(string) string { return "de" }),

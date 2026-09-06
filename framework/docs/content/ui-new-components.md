@@ -112,7 +112,7 @@ raw (enumerated in `framework/ui/extraattrs_contract_test.go`). See
 - **siteheader**: `framework/ui.SiteHeader`, top bar with brand + nav + actions + mobile drawer; `MobileBrand` swaps in a concise phone identity; `PersistentActions` keeps one journey-critical control in the bar at every width (no drawer copy)
 - **sitefooter**: `framework/ui.SiteFooter`, multi-column footer grid + bottom strip
 - **anchoredrail**: `framework/ui.AnchoredRail`, sticky in-page nav rail with scrollspy-tracked active state
-- **doclayout**: `framework/ui.DocLayout` / `DocPrevNext`, documentation page skeleton (nav rail + article + prev/next pager)
+- **doclayout**: `framework/ui.DocLayout` / `DocPrevNext`, documentation page skeleton (nav rail + article + prev/next pager). The pager's direction lines come from `DocPager.PrevDirLabel` / `NextDirLabel`; empty keeps `← Previous` / `Next →`. The arrow is part of the value, so a translation can move it to the other side of the word
 - **tabs-signal**: `framework/ui.Tabs`, signal-driven tab strip (click sets the signal; CSS shows the panel); `StateAttrs` adds `data-state=active/inactive` to the buttons, `ID` wires `aria-controls`/`id` pairs, `VacateHidden` ships hidden panels empty with their content in a JSON stash (restored on show by the demand-loaded `tabs` module) so page-scoped test locators cannot match hidden text — the contract knobs a port needs, each off by default
 - **breadcrumbs**: `core-ui/patterns/breadcrumbs`, `<nav aria-label=Breadcrumb>` trail
 - **pagination**: `core-ui/patterns/pagination`, numeric page navigation
@@ -182,7 +182,7 @@ raw (enumerated in `framework/ui/extraattrs_contract_test.go`). See
 - **counter**: `framework/ui.Counter`, numeric counter with +/− buttons mutating a client-side signal
 - **jsonviewer**: `framework/ui.JSONViewer`, collapsible tree of arbitrary values
 - **diffviewer**: `framework/ui.DiffViewer`, unified or split diff renderer
-- **markdown**: `framework/ui.Markdown`, themed wrapper over `core/markdown`
+- **markdown**: `framework/ui.Markdown`, themed wrapper over `core/markdown`. Fence options reach it through the `data-meta` attribute `core/markdown` emits: `title="main.go"` (or `filename=`) becomes `CodeBlockConfig.Filename` and `showLineNumbers` becomes `LineNumbers`. Unknown options are ignored, so an option added later degrades to a plain block rather than breaking one
 - **detaillist**: `framework/ui.DetailList`, label/value description list for record detail views
 - **factbox**: `framework/ui.FactBox`, single labelled fact (compact label + value pair; label-first or value-first)
 - **terminalblock**: `framework/ui.TerminalBlock`, terminal transcript with a labelled header and `TerminalOut` / `TerminalOK` lines

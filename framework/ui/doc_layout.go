@@ -142,9 +142,9 @@ func docCrumbs(crumbs []DocCrumb, label string) render.HTML {
 }
 
 // DocPrevNext renders the prev/next pager. The previous card is always shown
-// (callers point it at an index fallback); the next card is omitted when
-// NextHref is empty. Direction labels come from PrevDirLabel / NextDirLabel and
-// fall back to English.
+// (callers point it at an index fallback). When NextHref is empty the next card
+// is omitted entirely. Direction labels come from PrevDirLabel / NextDirLabel
+// and fall back to English.
 func DocPrevNext(p DocPager) render.HTML {
 	// Pager hrefs can be data-driven. Drop unsafe schemes; degrade to "#".
 	safeHref := func(u string) string {

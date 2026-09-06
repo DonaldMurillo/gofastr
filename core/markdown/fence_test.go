@@ -119,3 +119,35 @@ func TestFenceMetaAttrEscaped(t *testing.T) {
 		}
 	}
 }
+
+// The n < 3 guard in openFence: one and two characters are not a fence, so the
+// line stays prose. Without a case that makes the guard fail it is untested.
+func TestShortRunsAreNotFences(t *testing.T) {
+	for name, line := range map[string]string{
+		"one backtick":  "`not a fence",
+		"two backticks": "``not a fence",
+		"one tilde":     "~not a fence",
+		"two tildes":    "~~not a fence",
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, ok := openFence(line); ok {
+				t.Fatalf("openFence(%q) opened a fence on a run shorter than three", line)
+			}
+		})
+	}
+	// Three is the boundary, and it does open one.
+	for _, line := range []string{"```", "~~~", "```go"} {
+		if _, ok := openFence(line); !ok {
+			t.Fatalf("openFence(%q) did not open a fence", line)
+		}
+	}
+}
+
+// A two-backtick run is an inline code span, not a block, so it must survive as
+// prose rather than swallowing the rest of the document.
+func TestTwoBackticksStayInline(t *testing.T) {
+	out := string(Render("``code`` in a sentence\n").HTML)
+	if strings.Contains(out, "<pre") {
+		t.Fatalf("a two-backtick run opened a code block: %s", out)
+	}
+}
