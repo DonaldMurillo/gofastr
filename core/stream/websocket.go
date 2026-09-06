@@ -486,6 +486,14 @@ func (c *WebSocketConn) Close() error {
 // printable ASCII and at most 123 bytes, the frame's limit. A close
 // the peer initiated first still echoes the peer's own code.
 func (c *WebSocketConn) CloseWithStatus(code uint16, reason string) error {
+	var codeErr error
+	if !wsEchoableCloseCode(code) {
+		// A code RFC 6455 reserves (1004-1006, 1015) or that is out of
+		// range never reaches the wire: the frame says 1002 and the
+		// caller learns it asked for something illegal.
+		codeErr = fmt.Errorf("stream: close code %d is reserved or out of range", code)
+		code = 1002
+	}
 	buf := make([]byte, 2, 2+len(reason))
 	binary.BigEndian.PutUint16(buf, code)
 	for i := 0; i < len(reason) && len(buf) < 125; i++ {
@@ -494,7 +502,10 @@ func (c *WebSocketConn) CloseWithStatus(code uint16, reason string) error {
 		}
 	}
 	c.ownClosePayload.Store(&buf)
-	return c.Close()
+	if err := c.Close(); err != nil {
+		return err
+	}
+	return codeErr
 }
 
 // awaitPeerClose waits for the read pump to signal that it parsed the

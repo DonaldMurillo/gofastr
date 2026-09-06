@@ -610,3 +610,28 @@ func TestStateChannelOverflowClosesOncePerConn(t *testing.T) {
 		t.Fatalf("%d undeliverable events on one stalled socket grew goroutines by %d, want one closer", events, peak-before)
 	}
 }
+
+// TestCloseWithStatusRefusesReservedCodes: a code RFC 6455 reserves or
+// that is out of range never reaches the wire; the frame carries 1002
+// and the caller learns it asked for something illegal.
+func TestCloseWithStatusRefusesReservedCodes(t *testing.T) {
+	for _, code := range []uint16{0, 999, 1004, 1005, 1006, 1015, 5000} {
+		synctest.Test(t, func(t *testing.T) {
+			out := &bytes.Buffer{}
+			conn := &WebSocketConn{
+				conn:       &nopConn{r: bytes.NewReader(nil), w: out},
+				sendBuffer: make(chan []byte, 1),
+				closed:     make(chan struct{}),
+				peerClosed: make(chan struct{}),
+				config:     WSConfig{ReadLimit: 1 << 20},
+			}
+			err := conn.CloseWithStatus(code, "x")
+			if err == nil {
+				t.Fatalf("code %d: want an error", code)
+			}
+			if got := out.Bytes(); len(got) < 4 || got[2] != 0x03 || got[3] != 0xEA {
+				t.Fatalf("code %d: frame %x, want close code 1002", code, got)
+			}
+		})
+	}
+}

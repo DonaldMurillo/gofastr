@@ -154,6 +154,11 @@
       },
       onPhase(phase) {
         dbg.phase = phase;
+        // The controls come alive with the room: until then a share
+        // has nothing to publish to and a chat submit nothing to ride.
+        if (phase === 'hydrated') {
+          ['call-share', 'call-chat-input', 'call-chat-send'].forEach((id) => { const el = byId(id); if (el) el.disabled = false; });
+        }
         // A refusal is final: the module does not retry it, so say why.
         if (phase === 'closed:refused') {
           notice(room && room.status.refused === 409 ? 'This room is full.' : 'You cannot join this room.');
@@ -168,6 +173,13 @@
     if (localStream) return;
     navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 }, audio: true })
       .then((stream) => {
+        if (!room) {
+          // The module failed after the button was enabled: release
+          // the devices rather than hold a camera nobody can see.
+          stream.getTracks().forEach((t) => t.stop());
+          notice('The call is not connected; camera released.');
+          return;
+        }
         localStream = stream;
         audioTrack = stream.getAudioTracks()[0] || null;
         const local = byId('call-local');

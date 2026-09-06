@@ -6,62 +6,20 @@ package rtc
 // the newcomer.
 
 import (
-	"bufio"
-	"crypto/rand"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"net"
-	"strings"
 	"sync"
 	"testing"
 	"time"
 )
 
-// wsTryDial is wsDial without the fatal paths: it reports ok=false on
-// a non-101 answer so concurrent dials can be counted from goroutines.
+// wsTryDial is wsDial without the fatal path: ok=false on any
+// handshake failure, so concurrent dials can be counted from
+// goroutines.
 func wsTryDial(url string) (*wsClient, bool) {
-	host, p, found := strings.Cut(url, "/ws/")
-	if !found {
-		return nil, false
-	}
-	conn, err := net.Dial("tcp", strings.TrimPrefix(host, "http://"))
-	if err != nil {
-		return nil, false
-	}
-	var keyBytes [16]byte
-	if _, err := rand.Read(keyBytes[:]); err != nil {
-		conn.Close()
-		return nil, false
-	}
-	req := "GET /ws/" + p + " HTTP/1.1\r\n" +
-		"Host: " + strings.TrimPrefix(host, "http://") + "\r\n" +
-		"Upgrade: websocket\r\nConnection: Upgrade\r\n" +
-		"Sec-WebSocket-Key: " + base64.StdEncoding.EncodeToString(keyBytes[:]) + "\r\n" +
-		"Sec-WebSocket-Version: 13\r\n\r\n"
-	if _, err := conn.Write([]byte(req)); err != nil {
-		conn.Close()
-		return nil, false
-	}
-	c := &wsClient{conn: conn, br: bufio.NewReader(conn)}
-	c.conn.SetReadDeadline(time.Now().Add(5 * time.Second))
-	status, err := c.br.ReadString('\n')
-	if err != nil || !strings.Contains(status, "101") {
-		conn.Close()
-		return nil, false
-	}
-	for {
-		line, err := c.br.ReadString('\n')
-		if err != nil {
-			conn.Close()
-			return nil, false
-		}
-		if line == "\r\n" {
-			break
-		}
-	}
-	c.conn.SetReadDeadline(time.Time{})
-	return c, true
+	c, err := wsConnect(url)
+	return c, err == nil
 }
 
 // alive reports whether the server still holds the socket open: a

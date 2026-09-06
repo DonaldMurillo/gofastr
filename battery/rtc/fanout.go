@@ -263,20 +263,12 @@ func (s *Signaler) announceAll() {
 // announceRoom publishes this replica's full local roster for one
 // room. No-op with no fanout attached.
 func (s *Signaler) announceRoom(roomName string) {
+	// Enqueued under s.mu like every roster a mutation publishes, so a
+	// heartbeat snapshot cannot be queued behind a newer roster and
+	// overtake it on the FIFO lane. The queue send is non-blocking.
 	s.mu.Lock()
-	send, nodeID := s.fanoutSend, s.nodeID
-	if send == nil {
-		s.mu.Unlock()
-		return
-	}
-	members := []PeerInfo{}
-	if rm, ok := s.rooms[roomName]; ok {
-		for _, id := range slices.Sorted(maps.Keys(rm.peers)) {
-			members = append(members, rm.peers[id].info)
-		}
-	}
-	s.mu.Unlock()
-	publishFanout(send, nodeID, fanoutMsg{Kind: evRoster, Room: roomName, Members: members})
+	defer s.mu.Unlock()
+	s.broadcastRosterLocked(roomName)
 }
 
 // broadcastRosterLocked announces one room after a local mutation.
@@ -388,6 +380,21 @@ func (s *Signaler) tableForLocked(roomName string) map[string]*remoteEntry {
 // CloseTimeout, which must not happen under s.mu.
 func (s *Signaler) remoteJoinLocked(origin string, msg *fanoutMsg, kick *[]*stream.WebSocketConn) {
 	if msg.Peer == nil || !s.validRemotePeer(*msg.Peer) {
+		return
+	}
+	// MaxPeers caps the room local plus remote here as on the roster
+	// beat: a new id past the cap is dropped, before the displacement
+	// below can remove a local peer for it. A known id (an update, or
+	// a peer of this replica moving away) is never refused.
+	now := time.Now()
+	known := false
+	for _, p := range s.mergedPeersLocked(msg.Room, now) {
+		if p.ID == msg.Peer.ID {
+			known = true
+			break
+		}
+	}
+	if !known && len(s.mergedPeersLocked(msg.Room, now)) >= s.cfg.MaxPeers {
 		return
 	}
 	if rm := s.rooms[msg.Room]; rm != nil {

@@ -200,3 +200,46 @@ func TestFailedUpgradeHasStatus(t *testing.T) {
 		t.Fatalf("plain GET of the signaling endpoint: %d, want 400", res.StatusCode)
 	}
 }
+
+// TestRemoteJoinRespectsCap: the single-join lane mirror grows a room
+// one member at a time and must stop at MaxPeers like the roster beat
+// does; a known id (an update, or a peer migrating from this replica)
+// is never refused.
+func TestRemoteJoinRespectsCap(t *testing.T) {
+	f := fanout.NewInProcess()
+	s := newTestSignaler(t, Config{MaxPeers: 2})
+	s.heartbeatEvery = time.Hour
+	s.remoteTTL = time.Hour
+	if _, err := s.SetFanout(f); err != nil {
+		t.Fatalf("SetFanout: %v", err)
+	}
+	base := startSignaler(t, s)
+	a, _ := join(t, base, "room1", "pA")
+	defer a.close()
+
+	node := fanout.NewNodeID()
+	remoteJoin := func(id string, order int64) {
+		t.Helper()
+		body, err := json.Marshal(fanoutMsg{Node: node, Kind: evJoin, Room: "room1", Peer: &PeerInfo{ID: id, Order: order}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := f.Publish(context.Background(), rtcFanoutTopic, fanout.Wrap(node, body)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	remoteJoin("r1", 1)
+	a.expectEnv(t, "join")
+	remoteJoin("r2", 2) // the room is full: pA + r1
+	a.expectSilence(t, 300*time.Millisecond)
+	if got := len(s.Peers("room1")); got != 2 {
+		t.Fatalf("room capped at 2 holds %d after an over-cap lane join", got)
+	}
+	remoteJoin("r1", 3) // a known id updates freely (and re-announces)
+	a.expectEnv(t, "join")
+	for _, p := range s.Peers("room1") {
+		if p.ID == "r1" && p.Order != 3 {
+			t.Fatalf("known remote id was not updated: order %d", p.Order)
+		}
+	}
+}

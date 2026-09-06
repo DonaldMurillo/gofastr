@@ -339,6 +339,10 @@ func TestInvalidICESchemeRefused(t *testing.T) {
 		{"ftp://turn.example.com"},
 		{"turn.example.com"},
 		{"stun://bad scheme"},
+		{"turn:"},                              // no endpoint (RFC 7065: host is mandatory)
+		{"stun:"},                              // no endpoint (RFC 7064)
+		{"turn:t.example:3478?transport=sctp"}, // transport is udp or tcp
+		{"stun:s.example:3478?transport=udp"},  // STUN URIs take no query
 	} {
 		mustPanic(t, "ICEServer", func() {
 			New(Config{ICEServers: []ICEServer{{URLs: urls}}})

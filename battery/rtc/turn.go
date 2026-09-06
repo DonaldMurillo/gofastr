@@ -19,12 +19,35 @@ var iceSchemes = map[string]bool{
 	"stun": true, "stuns": true, "turn": true, "turns": true,
 }
 
-// validICEURLs reports whether every URL uses an ICE scheme and parses
-// as an absolute URL.
+// validICEURLs reports whether every URL is an ICE URI a browser will
+// accept: an ICE scheme, a host (RFC 7064 and 7065 make it mandatory),
+// and for turn/turns at most a ?transport=udp|tcp query; stun URIs
+// take no query. A scheme with no endpoint parsed fine and reached the
+// browser as a SyntaxError.
 func validICEURLs(urls []string) bool {
 	for _, raw := range urls {
 		u, err := url.Parse(raw)
-		if err != nil || u.Scheme == "" || !iceSchemes[strings.ToLower(u.Scheme)] {
+		if err != nil || u.Scheme == "" {
+			return false
+		}
+		scheme := strings.ToLower(u.Scheme)
+		if !iceSchemes[scheme] {
+			return false
+		}
+		endpoint := u.Opaque
+		if endpoint == "" {
+			endpoint = u.Host
+		}
+		if endpoint == "" || strings.HasPrefix(endpoint, ":") {
+			return false
+		}
+		switch {
+		case u.RawQuery == "":
+		case scheme == "turn" || scheme == "turns":
+			if u.RawQuery != "transport=udp" && u.RawQuery != "transport=tcp" {
+				return false
+			}
+		default:
 			return false
 		}
 	}

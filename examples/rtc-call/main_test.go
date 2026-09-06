@@ -344,3 +344,35 @@ func openingTag(t *testing.T, page, id string) string {
 	}
 	return page[start : start+end+1]
 }
+
+// TestControlsStartDisabled: chat has no server endpoint, so the form
+// must not be submittable before app.js owns it (a native GET would
+// put the message in the URL and the access log), and Share must not
+// be clickable before the room exists.
+func TestControlsStartDisabled(t *testing.T) {
+	srv := newTestApp(t)
+	cookie := joinAs(t, srv, "Ann", "ctl")
+	req, _ := http.NewRequest("GET", srv.URL+"/room/ctl", nil)
+	req.AddCookie(cookie)
+	resp, err := srv.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	page := string(body)
+	if strings.Contains(page, `method="GET"`) || strings.Contains(page, `method="get"`) {
+		t.Fatal("the room page still has a GET form")
+	}
+	for _, id := range []string{"call-share", "call-chat-input", "call-chat-send"} {
+		i := strings.Index(page, `id="`+id+`"`)
+		if i < 0 {
+			t.Fatalf("no element %s", id)
+		}
+		start := strings.LastIndex(page[:i], "<")
+		end := strings.Index(page[i:], ">") + i
+		if !strings.Contains(page[start:end], "disabled") {
+			t.Fatalf("%s is not disabled at render: %s", id, page[start:end])
+		}
+	}
+}

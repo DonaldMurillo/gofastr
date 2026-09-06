@@ -46,49 +46,58 @@ type wsClient struct {
 // wsDial performs a real WebSocket handshake against url (host/path).
 func wsDial(t *testing.T, url string) *wsClient {
 	t.Helper()
-	var conn net.Conn
-	var path string
-	if host, p, ok := strings.Cut(url, "/ws/"); ok {
-		var err error
-		conn, err = net.Dial("tcp", strings.TrimPrefix(host, "http://"))
-		if err != nil {
-			t.Fatalf("ws dial %s: %v", url, err)
-		}
-		path = "/ws/" + p
-	} else {
-		t.Fatalf("ws dial: url %s must contain /ws/", url)
+	c, err := wsConnect(url)
+	if err != nil {
+		t.Fatalf("ws dial %s: %v", url, err)
 	}
+	c.t = t
+	return c
+}
+
+// wsConnect performs the client half of the RFC 6455 handshake against
+// a test server URL containing /ws/. The connection is closed on every
+// failure, so neither dialer can leak a socket.
+func wsConnect(url string) (*wsClient, error) {
+	host, p, ok := strings.Cut(url, "/ws/")
+	if !ok {
+		return nil, fmt.Errorf("url %s must contain /ws/", url)
+	}
+	addr := strings.TrimPrefix(host, "http://")
+	conn, err := net.Dial("tcp", addr)
+	if err != nil {
+		return nil, err
+	}
+	fail := func(err error) (*wsClient, error) { conn.Close(); return nil, err }
 	var keyBytes [16]byte
 	if _, err := rand.Read(keyBytes[:]); err != nil {
-		t.Fatalf("ws dial: key: %v", err)
+		return fail(fmt.Errorf("key: %w", err))
 	}
-	key := base64.StdEncoding.EncodeToString(keyBytes[:])
-	req := "GET " + path + " HTTP/1.1\r\n" +
-		"Host: " + strings.TrimPrefix(strings.Split(url, "/ws/")[0], "http://") + "\r\n" +
+	req := "GET /ws/" + p + " HTTP/1.1\r\n" +
+		"Host: " + addr + "\r\n" +
 		"Upgrade: websocket\r\n" +
 		"Connection: Upgrade\r\n" +
-		"Sec-WebSocket-Key: " + key + "\r\n" +
+		"Sec-WebSocket-Key: " + base64.StdEncoding.EncodeToString(keyBytes[:]) + "\r\n" +
 		"Sec-WebSocket-Version: 13\r\n\r\n"
 	if _, err := conn.Write([]byte(req)); err != nil {
-		t.Fatalf("ws dial: write: %v", err)
+		return fail(fmt.Errorf("write: %w", err))
 	}
-	c := &wsClient{t: t, conn: conn, br: bufio.NewReader(conn)}
+	c := &wsClient{conn: conn, br: bufio.NewReader(conn)}
 	c.conn.SetReadDeadline(time.Now().Add(5 * time.Second))
 	status, err := c.br.ReadString('\n')
 	if err != nil || !strings.Contains(status, "101") {
-		t.Fatalf("ws dial: expected 101, got %q err %v", status, err)
+		return fail(fmt.Errorf("expected 101, got %q err %v", status, err))
 	}
 	for {
 		line, err := c.br.ReadString('\n')
 		if err != nil {
-			t.Fatalf("ws dial: headers: %v", err)
+			return fail(fmt.Errorf("headers: %w", err))
 		}
 		if line == "\r\n" {
 			break
 		}
 	}
 	c.conn.SetReadDeadline(time.Time{})
-	return c
+	return c, nil
 }
 
 // writeFrame writes one masked client frame (clients must mask).

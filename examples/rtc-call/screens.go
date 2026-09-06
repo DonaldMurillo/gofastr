@@ -145,7 +145,11 @@ func (s *RoomScreen) RenderCtx(ctx context.Context) render.HTML {
 				Subtitle: "Share your camera to talk. Media flows peer to peer; the server only relays the handshake.",
 			}),
 			ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM},
-				ui.Button(ui.ButtonConfig{Label: "Share camera", ID: "call-share", Type: "button"}),
+				// Share and the chat controls start disabled: app.js
+				// enables them once the room is hydrated, so nothing can
+				// acquire a camera with no room to publish to.
+				ui.Button(ui.ButtonConfig{Label: "Share camera", ID: "call-share", Type: "button",
+					ExtraAttrs: html.Attrs{"disabled": ""}}),
 				// Mute needs an audio track to toggle, so it waits for
 				// the share; app.js enables it.
 				ui.Button(ui.ButtonConfig{Label: "Mute", ID: "call-mute", Type: "button",
@@ -208,25 +212,30 @@ func localTile(name string) render.HTML {
 	)
 }
 
-// chatSection renders the message list and the send form. The form's
-// GET action only exists as the no-script fallback: chat travels peer
-// to peer over a negotiated data channel and has no server endpoint.
-// app.js intercepts the submit and sends on the channel.
+// chatSection renders the message list and the send form. Chat has
+// no server endpoint: it travels peer to peer over a negotiated data
+// channel, and app.js intercepts the submit. The controls render
+// disabled so nothing can submit natively before app.js owns the form
+// (a native submit would put the message in the URL and the access
+// log); the form is POST so even a stray submit never serializes into a
+// query string.
 func chatSection(ctx context.Context, room string) render.HTML {
 	return ui.Section(ui.SectionConfig{Heading: "Chat", Ctx: ctx,
 		Description: "Messages travel on a negotiated data channel, peer to peer. The server relays neither chat nor media."},
 		html.UnorderedList(html.ListConfig{ID: "call-chat"}),
 		ui.Form(ui.FormConfig{
-			Action:      "/room/" + room,
-			Method:      "GET",
-			ID:          "call-chat-form",
-			SubmitLabel: "Send",
-			Ctx:         ctx,
+			Action:     "/room/" + room, // required by ui.Form; the room route takes no POST, so a stray submit is a 405, never a query string
+			Method:     "POST",
+			ID:         "call-chat-form",
+			HideSubmit: true,
+			Ctx:        ctx,
 		},
 			ui.TextField(ui.TextFieldConfig{
 				Name: "message", Label: "Message", ID: "call-chat-input",
-				Required: true, MaxLength: 500, Placeholder: "Hello",
+				Required: true, MaxLength: 500, Placeholder: "Hello", Disabled: true,
 			}),
+			ui.Button(ui.ButtonConfig{Label: "Send", ID: "call-chat-send", Type: "submit",
+				ExtraAttrs: html.Attrs{"disabled": ""}}),
 		),
 	)
 }
