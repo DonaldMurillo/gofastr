@@ -508,8 +508,22 @@ func (b *Builder) rewriteBaseURLs(page string) string {
 	// <code> to &quot;, so the literal "/__gofastr/ (real double-quote
 	// + path) only occurs in real JSON, never in rendered code text.
 	page = strings.ReplaceAll(page, `"/__gofastr/`, `"`+b.BasePath+`/__gofastr/`)
+	// 3. The route graph. The runtime takes the client-side path only for
+	// a link it finds in the graph, looking the link's pathname up by
+	// route path. Step 1 rewrote every href for the base while the graph
+	// kept root-relative paths, so on a project page no link was ever
+	// recognised and every click was a full page load.
+	page = baseRouteGraph.ReplaceAllStringFunc(page, func(block string) string {
+		m := baseRouteGraph.FindStringSubmatch(block)
+		return m[1] + strings.ReplaceAll(m[2], `"path":"/`, `"path":"`+b.BasePath+`/`) + m[3]
+	})
 	return page
 }
+
+// baseRouteGraph matches the route graph the host embeds in every page,
+// whose "path" values are the keys the runtime's navigation looks links
+// up by.
+var baseRouteGraph = regexp.MustCompile(`(?s)(<script type="application/json" id="gofastr-routes">)(.*?)(</script>)`)
 
 // dumpWidgetAssets writes the widget catalog JSON and each widget's chrome
 // HTML + CSS as query-free static files. Hidden click-to-open widgets
