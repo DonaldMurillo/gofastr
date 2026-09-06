@@ -75,6 +75,15 @@ returns an `*mcp.RPCError` or an `mcp.ToolResult{IsError: true}`, the form
 form key is refused for a scalar field and collected into a list for a
 `schema.JSON` field, matching the JSON body path.
 
+### Fixed
+- **A static page no longer loads every component stylesheet twice.** The
+  export emitted one `<link>` per component without the `data-fui-style`
+  marker the runtime dedupes on, so on load the runtime appended a second
+  copy of each after `app.css`, and a host's own overrides lost the
+  cascade: a sidebar title stretched to fill its column, a doc layout
+  collapsed. The exported links carry the marker and id the runtime would
+  have written.
+
 ## [0.84.0] - 2026-09-06
 
 ### Fixed

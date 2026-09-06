@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
+	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
@@ -96,5 +97,26 @@ func TestRenderStaticPageKeepsASuppliedRequestAndMatch(t *testing.T) {
 	}
 	if !strings.Contains(page, "match:/docs/:slug slug=other") {
 		t.Fatalf("the supplied route match was replaced: %s", excerpt(page, "match:"))
+	}
+}
+
+// The runtime loads a component's CSS when no link carries its marker, so
+// the links the static export writes must carry it, or every static page
+// loads each component stylesheet twice, the second copy after app.css.
+func TestRenderStaticPageMarksComponentStylesheets(t *testing.T) {
+	registry.IsolateForTest(t)
+	st := registerTestStyle(t, "static")
+	ds := newTestUIHostFor(st)
+
+	page, err := ds.RenderStaticPage(context.Background(), "/")
+	if err != nil {
+		t.Fatalf("RenderStaticPage: %v", err)
+	}
+	want := `href="/__gofastr/comp/` + st.Name() + `.css?v=`
+	if !strings.Contains(page, want) {
+		t.Fatalf("no component stylesheet link in the static page: %s", excerpt(page, "<link"))
+	}
+	if !strings.Contains(page, `data-fui-style="`+st.Name()+`" id="fui-css-`+st.Name()+`"`) {
+		t.Fatalf("the component stylesheet link lacks the runtime's marker: %s", excerpt(page, "/__gofastr/comp/"))
 	}
 }
