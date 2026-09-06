@@ -7,6 +7,8 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+## [0.84.1] - 2026-09-06
+
 ### Fixed
 - **Client-side navigation works on a static export below a base path.**
   The export rewrote every href for the base and left the embedded route

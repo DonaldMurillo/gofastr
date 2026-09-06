@@ -19,7 +19,7 @@
 # The registry is complete through this release: releases ≤ through
 # with no entry below genuinely had no migration-relevant changes.
 # Targets beyond it make the CLI warn that it may be out of date.
-through: v0.84.0
+through: v0.84.1
 
 releases:
   - version: v0.3.0
@@ -1058,3 +1058,9 @@ releases:
       - change: "uihost.RenderStaticPage carries a request for the path and the route match, as a live request does, so layout components that read the path render for the page being exported"
         breaking: false
         guidance: "A static export whose sidebar or header follows the page now writes the right chrome on every page; an export whose chrome ignored the path is byte-identical. Nothing to change."
+  - version: v0.84.1
+    title: Static exports work below a base path and load each stylesheet once
+    notes:
+      - change: "a static export below a base path carries the base in its embedded route graph, so client-side navigation works on a GitHub project page; exported per-component stylesheet links carry the data-fui-style marker so the runtime does not load them a second time after app.css"
+        breaking: false
+        guidance: "Re-export. A site that patched either in its own export step can drop the patch; nothing else changes."
