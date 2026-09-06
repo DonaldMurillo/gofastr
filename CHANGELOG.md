@@ -73,7 +73,11 @@ logged server-side); a handler that means its message to reach the caller
 returns an `*mcp.RPCError` or an `mcp.ToolResult{IsError: true}`, the form
 `mcp.Gated` and the framework's own tools now use. A duplicate multipart
 form key is refused for a scalar field and collected into a list for a
-`schema.JSON` field, matching the JSON body path.
+`schema.JSON` field, matching the JSON body path. `/openapi.json`
+and `/api/docs/openapi.json` now filter entities by the caller's
+read scope (an entity the caller cannot read is omitted, matching
+`/api/llm.md`); `WithPublicOpenAPI` opts into the full, unfiltered
+document.
 
 ### Fixed
 - **Client-side navigation works on a static export below a base path.**
