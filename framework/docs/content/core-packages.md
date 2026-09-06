@@ -77,6 +77,10 @@ channel spans replicas only through `fanout`. Each accepted connection
 carries a `ConnectionID()` (set `WSConfig.ConnectionID` to mint your
 own) for correlating a client's reconnects in server-side logs.
 
+`battery/rtc`, the WebRTC signaling package, is the
+packaged StateChannel consumer for rooms of peers (see
+[WebRTC rooms](rtc.md)).
+
 ### fanout
 
 The lossy, best-effort cross-replica transport behind real-time

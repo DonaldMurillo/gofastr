@@ -167,7 +167,9 @@ The four rungs cover pages. Some surfaces need bidirectional frames the
 page model does not shape: WebRTC signaling, multiplayer protocols,
 anything where the client talks back on the same connection the server
 pushes on. Those use `core/stream` WebSockets directly, and they carry
-two obligations the framework does not assume for you.
+two obligations the framework does not assume for you. For WebRTC
+signaling specifically, `battery/rtc` packages the
+server side and the `rtc` runtime module ([WebRTC rooms](rtc.md)).
 
 **Ordering across reconnects.** When a client reconnects, it needs a
 snapshot of current state plus the events that follow it, and the two
