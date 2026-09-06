@@ -27,16 +27,20 @@ persisted grant store + OS prompt.
 
 **Rules that will bite you if ignored:**
 - `New` PANICS on a bad Config (invalid app id, invalid menu, invalid
-  `Settings.Path`). The seven core capabilities are registered by
-  `New`; plugins add theirs
-  from `Init` via `desktop.FromApp(app).Register(...)` before `Run`
-  freezes the registry.
+  `Settings.Path`, invalid `Preferences` entry). The core capabilities
+  (`window`, `windows`, `dialogs`, `clipboard`, `notifications`, `fs`,
+  `tray`, `state`, `preferences`, `updates`) are registered by `New`;
+  plugins add theirs from `Init` via `desktop.FromApp(app).Register(...)`
+  before `Run` freezes the registry.
 - `Run` requires a mounted `*uihost.UIHost` and forces
   `GOFASTR_ISOLATION=off` process-wide (opt out: `Config.KeepIsolation`).
 - The boot token/cookie and Host pin refuse every non-window request;
   do not relax them, and never log the token or session value.
 - `fs` only touches paths a `dialogs` call returned this process
   (`AllowPath`); writes are temp-file + rename, 0600.
+- `state` page keys live under `page.` only (the battery's own
+  `windows`/`settings` entries are never page-reachable); every
+  `set`/`delete` broadcasts `state_changed`.
 - Everything goes through the chokepoint's closed error codes
   (`denied`, `unsupported`, `invalid_input`, `cancelled`, `not_found`,
   `internal`); 5xx bodies never carry internal error text.

@@ -203,6 +203,12 @@ func phaseShellScenario(t desktoptest.TB, h *desktoptest.NativeHarness) {
 	h.SavePNG(t, filepath.Join(outDir, "shell.png"))
 	t.Logf("step6: shell.png written at %s", filepath.Join(outDir, "shell.png"))
 	h.OpenSettings() // the app menu's own item focuses the open window
+	// settingsAction: dispatches OnSettings on a goroutine (the UI
+	// thread never waits on a window open), so the window lands a
+	// moment later; close it only once it is registered.
+	h.Wait("step8: the settings window to open", func() bool {
+		return h.Window("settings") != nil
+	})
 	wantCallOK(t, h.Call("windows", "close", map[string]any{"id": "settings"}), "windows.close(settings)")
 	h.Wait("step8: windows.close to drop the settings window", func() bool {
 		return h.Window("settings") == nil

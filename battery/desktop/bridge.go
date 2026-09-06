@@ -39,6 +39,7 @@ func (b *Battery) registerBridgeRoutes(r *router.Router) {
 	r.Get(manifestPath, b.serveManifest())
 	r.Get(bridgeScriptFn, b.serveBridgeScript())
 	r.Post(callPattern, http.HandlerFunc(b.handleCall))
+	r.Post(preferencesFormPath, b.handlePreferencesForm())
 }
 
 // windowHeader carries the calling window's id from the page to the

@@ -184,7 +184,7 @@ func buildNativeApp() (*framework.App, *desktop.Battery, error) {
 		}},
 		DeepLink: &desktop.DeepLinkConfig{Scheme: e2eScheme},
 		// RememberWindows: the phase step moves the real main window,
-		// asserts windows.json picked it up, and opens a framed
+		// asserts state.json picked it up, and opens a framed
 		// secondary window.
 		RememberWindows: true,
 	})
@@ -223,6 +223,7 @@ func runNativePhase(h *desktoptest.NativeHarness) bool {
 		{"TwoWindowsTalkThroughBridge", phaseTwoWindows},
 		{"WidgetSpecOpensAPanel", phaseWidgetSpec},
 		{"DeepLinkNavigatesRealPage", phaseDeepLink},
+		{"PageStateRoundTrips", phasePageState},
 		{"RemembersWindowFrames", phaseWindowState},
 		{"SnapshotDecodesAtWindowScale", phaseSnapshot},
 		{"ShellScenario", phaseShellScenario},
@@ -568,13 +569,56 @@ func phaseDeepLink(t desktoptest.TB, h *desktoptest.NativeHarness) {
 	}
 }
 
+// phasePageState: the real page's bridge round-trips a state key
+// (state.set then state.get through the typed namespace, driven by
+// EvalAsync), the state_changed event reaches the page listener, and
+// the value lands on disk in state.json.
+func phasePageState(t desktoptest.TB, h *desktoptest.NativeHarness) {
+	w, ok := h.Battery.Window()
+	if !ok {
+		t.Fatalf("no main window")
+	}
+	pe, ok := w.(desktop.PageEvaluator)
+	if !ok {
+		t.Fatalf("the window %T implements no desktop.PageEvaluator", w)
+	}
+	h.RecordEvents(t, "state_changed")
+	// The typed namespace arrives with the bridge script; wait for it
+	// rather than racing its loadModule handshake.
+	h.Wait("the state namespace on the bridge", func() bool {
+		raw, err := h.EvalQuiet(`return !!(window.__gofastr && window.__gofastr.desktop && window.__gofastr.desktop.state)`)
+		var b bool
+		return err == nil && json.Unmarshal(raw, &b) == nil && b
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	raw, err := pe.EvalAsync(ctx, `const D = window.__gofastr.desktop;`+
+		` await D.state.set({key: "page.demo", value: {n: 1}});`+
+		` const got = await D.state.get({key: "page.demo"});`+
+		` return got.value;`)
+	if err != nil || string(raw) != `{"n":1}` {
+		t.Fatalf("state round trip through the page: r=%s err=%v, want {\"n\":1}", raw, err)
+	}
+	ev := h.WaitEvent("state_changed")
+	var p struct {
+		Key string `json:"key"`
+	}
+	if err := ev.Unmarshal(&p); err != nil || p.Key != "page.demo" {
+		t.Fatalf("state_changed payload = %s (err %v)", ev.Payload, err)
+	}
+	h.Wait("state.json to hold the value", func() bool {
+		data, err := os.ReadFile(filepath.Join(e2eDataDir(), "state.json"))
+		return err == nil && strings.Contains(string(data), `"page.demo"`)
+	})
+}
+
 // phaseWindowState: SetFrame on the real main window, the windowDidMove
-// delegate reports through OnWindowFrame, windows.json holds the frame
+// delegate reports through OnWindowFrame, state.json holds the frame
 // after the debounce, and a secondary window opened with a Frame lands
 // exactly there per the OS's own WindowState.
 func phaseWindowState(t desktoptest.TB, h *desktoptest.NativeHarness) {
 	// A frame that fits any real display (the screen check would drop
-	// one that does not, which is the unit suite's case).
+	// one that is not, which is the unit suite's case).
 	main := desktop.Frame{X: 60, Y: 80, Width: 900, Height: 640}
 	h.MoveWindow("main", main)
 	// The delegate reported and the read path round-trips the flip.
@@ -583,14 +627,14 @@ func phaseWindowState(t desktoptest.TB, h *desktoptest.NativeHarness) {
 		return err == nil && f == main
 	})
 	// The store's debounced write landed in the data dir.
-	h.Wait("windows.json to hold the main frame", func() bool {
-		data, err := os.ReadFile(filepath.Join(e2eDataDir(), "windows.json"))
+	h.Wait("state.json to hold the main frame", func() bool {
+		data, err := os.ReadFile(filepath.Join(e2eDataDir(), "state.json"))
 		if err != nil {
 			return false
 		}
 		return strings.Contains(string(data), `"X": 60`) && strings.Contains(string(data), `"Height": 640`)
 	})
-	t.Logf("main window moved to %+v, windows.json holds it", main)
+	t.Logf("main window moved to %+v, state.json holds it", main)
 
 	// A secondary window opened with a Frame lands there.
 	framed := desktop.Frame{X: 200, Y: 300, Width: 500, Height: 350}

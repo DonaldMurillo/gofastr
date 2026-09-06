@@ -78,26 +78,29 @@ func wsApp(t *testing.T, cfg desktop.Config, dir string, logger *slog.Logger) (*
 	return app, d
 }
 
-// windowsJSON reads the data dir's windows.json.
+// windowsJSON reads the data dir's state file (state.json) and returns
+// its windows entry.
 func windowsJSON(t *testing.T, dir, id string) map[string]struct {
 	Frame *desktop.Frame `json:"frame"`
 	Path  string         `json:"path"`
 } {
 	t.Helper()
-	data, err := os.ReadFile(filepath.Join(dir, id, "windows.json"))
+	data, err := os.ReadFile(filepath.Join(dir, id, "state.json"))
 	if err != nil {
 		return nil
 	}
 	var f struct {
-		Windows map[string]struct {
-			Frame *desktop.Frame `json:"frame"`
-			Path  string         `json:"path"`
-		} `json:"windows"`
+		Entries struct {
+			Windows map[string]struct {
+				Frame *desktop.Frame `json:"frame"`
+				Path  string         `json:"path"`
+			} `json:"windows"`
+		} `json:"entries"`
 	}
 	if err := json.Unmarshal(data, &f); err != nil {
-		t.Fatalf("windows.json does not decode: %v", err)
+		t.Fatalf("state.json does not decode: %v", err)
 	}
-	return f.Windows
+	return f.Entries.Windows
 }
 
 // TestRememberedFramesRestoreAcrossRuns is the headline behavior: the
@@ -120,8 +123,8 @@ func TestRememberedFramesRestoreAcrossRuns(t *testing.T) {
 	h.OpenSettings()
 	h.Wait("the settings window", func() bool { return h.Window("settings") != nil })
 	h.MoveWindow("settings", settingsFrame)
-	// The debounced write lands within windowWriteDelay plus slack.
-	h.Wait("windows.json to hold both frames", func() bool {
+	// The debounced write lands within the 500 ms debounce plus slack.
+	h.Wait("the state file to hold both frames", func() bool {
 		wins := windowsJSON(t, dir, "windowstate.test")
 		return wins["main"].Frame != nil && *wins["main"].Frame == main &&
 			wins["settings"].Frame != nil && *wins["settings"].Frame == settingsFrame
@@ -215,8 +218,8 @@ func TestRememberWindowsOffWritesNothing(t *testing.T) {
 	if err := h.Quit(); err != nil {
 		t.Fatalf("run: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(dir, "windowstate.test", "windows.json")); !os.IsNotExist(err) {
-		t.Fatalf("windows.json exists with RememberWindows off (stat err = %v)", err)
+	if _, err := os.Stat(filepath.Join(dir, "windowstate.test", "state.json")); !os.IsNotExist(err) {
+		t.Fatalf("state.json exists with RememberWindows off (stat err = %v)", err)
 	}
 	cfg, _ := h.Shell.Config()
 	if cfg.Frame != nil || cfg.OnWindowFrame != nil {
@@ -230,27 +233,27 @@ func TestWindowStateFileIsOwnerOnly(t *testing.T) {
 	app, d := wsApp(t, desktop.Config{Title: "WS", RememberWindows: true}, dir, nil)
 	h := desktoptest.Run(t, app, d)
 	h.MoveWindow("main", desktop.Frame{X: 5, Y: 5, Width: 400, Height: 300})
-	h.Wait("windows.json", func() bool { return windowsJSON(t, dir, "windowstate.test") != nil })
+	h.Wait("state.json", func() bool { return windowsJSON(t, dir, "windowstate.test") != nil })
 	if err := h.Quit(); err != nil {
 		t.Fatalf("run: %v", err)
 	}
-	fi, err := os.Stat(filepath.Join(dir, "windowstate.test", "windows.json"))
+	fi, err := os.Stat(filepath.Join(dir, "windowstate.test", "state.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if fi.Mode().Perm() != 0o600 {
-		t.Fatalf("windows.json mode = %v, want 0600", fi.Mode().Perm())
+		t.Fatalf("state.json mode = %v, want 0600", fi.Mode().Perm())
 	}
 }
 
-// TestCorruptWindowStateFileIgnored: garbage in windows.json is a Warn
+// TestCorruptWindowStateFileIgnored: garbage in state.json is a Warn
 // and a clean default launch, not a crash and not a restore.
 func TestCorruptWindowStateFileIgnored(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(dir, "windowstate.test"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "windowstate.test", "windows.json"), []byte(`{"windows": {"main": {"fr`), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "windowstate.test", "state.json"), []byte(`{"windows": {"main": {"fr`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -268,7 +271,7 @@ func TestCorruptWindowStateFileIgnored(t *testing.T) {
 	if got := h.BootRedirect(); got != "/" {
 		t.Fatalf("boot redirect after a corrupt file = %q, want /", got)
 	}
-	if msg := buf.String(); !strings.Contains(msg, "window state") {
+	if msg := buf.String(); !strings.Contains(msg, "state file") {
 		t.Fatalf("no Warn about the corrupt file; logs were:\n%s", msg)
 	}
 }

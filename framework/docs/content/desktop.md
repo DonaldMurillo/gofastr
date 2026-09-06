@@ -69,28 +69,72 @@ if err := d.Run(app); err != nil {
 ## The data dir
 
 `os.UserConfigDir()/<id>` (`~/Library/Application Support/<id>` on
-macOS), created 0700. Three files live there:
+macOS), created 0700. Four files live there:
 
 | File | What it is |
 |---|---|
 | `app.db` | The app's SQLite database, opened by `AppOptions`. |
 | `secret` | The 32-byte session secret (`WithSecret`), 0600. |
 | `identity` | The per-installation local user id (see below). |
+| `state.json` | The app state store (see "App state"), 0600. |
 
 `GOFASTR_DESKTOP_DATA_DIR` overrides the base directory (absolute
 paths only); tests and CI use it to avoid touching a real profile.
 `Config.DataDir` overrides the whole path per battery.
 
-## The local identity
+## Single-user mode
 
-A desktop app ships without `battery/auth`, but owner-scoped CRUD
-still needs an owner (hard rule 6). The battery's `LocalUser`
-middleware sets a stable per-installation identity (the `identity`
-file) into every request context, and installs the process-wide owner
-extractor only when nothing else has. Both are fallbacks: an app that
-also imports `battery/auth` keeps auth's user and auth's extractor.
+A desktop app is one user on one machine: every request the window
+makes maps to a single per-installation identity, and that identity is
+the owner for every owner-scoped row. The battery ships this by
+itself; `battery/auth` is not part of the picture.
+
+The identity is the `identity` file in the data dir: 16 bytes of
+crypto/rand as hex, minted on first run, 0600, stable across
+relaunches. A value read back off disk is revalidated against the
+grammar that minted it before it becomes a security principal: a
+trailing newline or a truncated file would silently be a different
+owner and hide every row the app had written, so a corrupt file is a
+named error at `Init`: the battery will not guess. Restore the file to
+keep the rows, or delete it to mint a new identity (the old rows stay
+with the old id).
+
+The `LocalUser` middleware sets that identity into the request
+context, and the battery installs the process-wide owner extractor
+only when nothing else has. The middleware applies only while the boot
+gate is armed ("How the window authenticates" below), which `Run` does
+before the listener opens: a request that reached a handler then came
+from the desktop window and carries the boot cookie, so it is the
+local user. The identity's roles are `["admin"]` and its email is
+`local@<id>`, satisfying `battery/auth`'s `User` interface
+structurally without this package importing it.
+
+What `Scope.OwnerField` means here: the same as anywhere else (hard
+rule 6). Create stamps the owner column with the local user's id and
+every query scopes to it. There is one user, so no cross-user read can
+happen, but keep the field: it is what keeps the CRUD layer closed the
+day the same binary also serves over `$PORT`, where requests are
+anonymous.
+
+What a host must NOT do:
+
+- Wire `battery/auth` on top to give the window an owner. The desktop
+  battery installs its own extractor. When auth's package `init()` has
+  installed one, the local identity never applies: auth owns identity
+  end to end, a signed-out desktop window stays anonymous, and the
+  local identity's admin roles are exactly what must not shadow that
+  decision.
+- Expect an identity in `--serve` mode. The gate stays unarmed there,
+  so `LocalUser` never applies: every anonymous browser would
+  otherwise become the local admin. Such an app brings `battery/auth`
+  or stays anonymous.
+- Mint or edit the `identity` file by hand.
+
 `Battery.LocalUserID()` returns the id for code outside a request, such
-as a menu handler scoping its own query.
+as a menu handler scoping its own query. A second desktop battery in
+one process (a test binary with two apps) recognizes the first one's
+extractor as its own and keeps its local identity
+(`localuser_second_battery_test.go`).
 
 ## How the window authenticates
 
@@ -137,6 +181,8 @@ The core capabilities:
 | `notifications` | `show` | `notifications:show` |
 | `fs` | `readText`, `writeText`, `stat` | `fs:read`, `fs:write` |
 | `tray` | `setTitle` | none (the tray label is the app's own) |
+| `state` | `get`, `set`, `delete`, `keys` | none (page keys live under the `page.` prefix only; see "App state") |
+| `preferences` | `get`, `set` | none (only declared keys; the values live in the battery's own `settings` entry; see "Preferences") |
 
 `fs` only touches paths a `dialogs` call returned during this process
 (`Battery.AllowPath` for in-process grants): the cleaned absolute path
@@ -1001,24 +1047,29 @@ d := desktop.New(desktop.Config{
 
 ### What is stored
 
-One file, `windows.json` (0600), in the app's data dir next to
-`app.db`:
+One entry in the app state store (the next section): the `windows`
+key of `state.json` (0600) in the app's data dir, next to `app.db`:
 
 ```json
 {
-  "windows": {
-    "main":     {"frame": {"X": 140, "Y": 90,  "Width": 800, "Height": 600}, "path": "/notes/42"},
-    "settings": {"frame": {"X": 40,  "Y": 300, "Width": 500, "Height": 400}}
+  "entries": {
+    "windows": {
+      "main":     {"frame": {"X": 140, "Y": 90,  "Width": 800, "Height": 600}, "path": "/notes/42"},
+      "settings": {"frame": {"X": 40,  "Y": 300, "Width": 500, "Height": 400}}
+    }
   }
 }
 ```
 
-The file is the battery's, never the OS's autosave (`NSWindow`
-frame autosave does not follow the data dir and cannot store the
-path). Frames are screen points, top-left based, the same convention
-`WindowStyle.X/Y` uses. Writes are debounced 500 ms, so a drag does
-not hammer the disk, and the last write happens on quit. A corrupt or
-unreadable file is a Warn and a default launch, never a crash.
+The window state is a typed client over that one entry, so the
+remembered frames and every other state key land in one debounced
+write and one quit flush. There is no separate `windows.json` anymore:
+the feature was unreleased, so there is no migration. The state is the
+battery's, never the OS's autosave (`NSWindow` frame autosave does not
+follow the data dir and cannot store the path). Frames are screen
+points, top-left based, the same convention `WindowStyle.X/Y` uses.
+A corrupt or unreadable file is a Warn and a default launch, never a
+crash.
 
 ### What happens on relaunch
 
@@ -1084,17 +1135,361 @@ Hosts without a native layer ignore `Frame` and never fire
   `examples/desktop-focus`, tag `desktop_e2e`) prove the delegate, the
   file, and the page's own `setPath` report on the real window.
 
-## The desktop-focus example
+## App state
 
+A desktop app needs small durable state that is not worth a table:
+which theme the page picked, the sidebar width, a value two windows
+want to agree on. The battery ships one store for that,
+`battery/desktop/appstate`, and serves a slice of it to the page.
+
+### The store
+
+`appstate.Store` is a durable key/value store backed by one JSON file,
+`state.json` in the app's data dir:
+
+```json
+{
+  "entries": {
+    "page.theme": "\"dark\"",
+    "windows": {"main": {"frame": {"X": 140, "Y": 90, "Width": 800, "Height": 600}, "path": "/notes/42"}},
+    "settings": {"work_minutes": 50, "sound": "bell"}
+  }
+}
+```
+
+Values are stored as raw JSON: a value written through one Go type
+reads back through another without ever being re-encoded through
+`any`. Keys match `^[a-z][a-z0-9_.-]{0,63}$` (at most 64 characters);
+the leading dotted segments are namespaces. The battery owns `windows`
+(the remembered window state) and `settings` (the preferences); the
+page owns `page.`. One value is capped at 64 KiB of encoded JSON
+(`appstate.MaxValueBytes`).
+
+Writes are debounced 500 ms (one timer, rescheduled per write, so a
+burst lands once), the file is written whole with sorted keys at mode
+0600, and `Flush` forces a write now and waits for any in-flight one,
+so a clean exit never loses the last change (`Run` flushes on quit).
+Each write lands through a fresh temp file renamed onto `state.json`:
+a crash mid-write leaves the previous whole file, never a torn one,
+and a symlink planted at the path is replaced, not followed. A
+missing file is an empty store; a corrupt or unreadable one is a Warn
+and an empty store, and the next write replaces it.
+
+`Watch(fn)` calls `fn` with the key of every `Set` and `Delete`, on
+`fn`'s own goroutine and never under the store's lock. The returned
+`stop` removes the watcher.
+
+### The battery accessor
+
+`Run` opens the store after the app reports ready (`Init` resolves the
+data dir inside `app.Start`) and before the shell opens the window,
+always, not only when `RememberWindows` is set. The same store serves
+the battery, the remembered windows, the preferences, and the page, so
+one flush on quit carries all of it. `Battery.State()` returns it:
+
+<!-- gofastr:compile
+import (
+	"log"
+
+	"github.com/DonaldMurillo/gofastr/battery/desktop"
+	"github.com/DonaldMurillo/gofastr/battery/desktop/appstate"
+)
+
+var d = desktop.New(desktop.Config{ID: "dev.gofastr.notes", Title: "Notes"})
+
+func applyZoom(z float64) {}
+-->
+```go
+// A menu handler, a capability of your own, a goroutine:
+if s := d.State(); s != nil {
+    if err := s.Set("ui.zoom", 1.25); err != nil {
+        log.Fatal(err)
+    }
+    z, ok, _ := appstate.Get[float64](s, "ui.zoom")
+    if ok {
+        applyZoom(z)
+    }
+}
+```
+
+`State()` is nil before `Run`: the data dir is not resolved until
+`Init` runs, so there is no store to hand out yet.
+
+### The state capability
+
+The page gets the same store through the `state` capability, ungated
+like `window.setPath`: the page is the app, and the window id is a
+claim.
+
+```js
+await __gofastr.desktop.state.set({key: "page.theme", value: "dark"})
+const {value} = await __gofastr.desktop.state.get({key: "page.theme"})
+// value === "dark"; an absent key answers null
+const {keys} = await __gofastr.desktop.state.keys({prefix: "theme"})
+await __gofastr.desktop.state.delete({key: "page.theme"})
+```
+
+- `get {key}` answers `{value}`: the stored JSON, or `null` when the
+  key is absent.
+- `set {key, value}` stores any JSON value (a missing `value` stores
+  `null`), capped at 64 KiB of compact JSON, measured on the compact
+  form so whitespace cannot smuggle the difference.
+- `delete {key}` removes the key.
+- `keys {prefix}` answers the stored page keys that start with
+  `page.` + `prefix`, sorted.
+
+Page keys are confined to the `page.` prefix: every method refuses any
+other key with `invalid_input`, so the battery's own entries
+(`windows`, `settings`) are never reachable from the page. The store's
+key grammar and its length cap apply on top.
+
+### The state_changed event
+
+After every successful `set` or `delete` the battery emits
+`state_changed` with `{key}` to every open window. That is the
+cross-window sync a settings widget wants: one window changes the
+theme, every window hears it.
+
+```js
+__gofastr.desktop.on("state_changed", async ({key}) => {
+    if (key !== "page.theme") return
+    const {value} = await __gofastr.desktop.state.get({key: "page.theme"})
+    applyTheme(value)
+})
+```
+
+- `battery/desktop/appstate/appstate_test.go` overrides the package's
+  unexported debounce delay, so the debounce, the flush, the key
+  grammar, the size cap, the 0600 mode, the corrupt-file posture, and
+  a flush racing the timer under `-race` are all tested without
+  waiting real half-seconds.
+- `battery/desktop/appstate/flushrace_test.go` pins the quit-time
+  ordering (a flush waits for an in-flight write; the debounce write
+  snapshots under the write lock), and
+  `persist_security_test.go` pins the atomic replace, the
+  symlink-not-followed rule, and readers never seeing a partial file.
+- `battery/desktop/cap_state_test.go` drives the capability from the
+  page side through `desktoptest.Run`: the round trip
+  (`TestStateRoundTripThroughPage`), the `page.` rule
+  (`TestStateKeysConfinedToPagePrefix`), the size cap
+  (`TestStateCapsValueSize`), a stranger's 403
+  (`TestStateStrangerRefused`), the event reaching a second window
+  (`TestStateChangedReachesSecondWindow`), and a value surviving a
+  second battery on the same data dir
+  (`TestStateSurvivesSecondBattery`).
+- The quit flush is observable the way the window store's was: set a
+  value, `h.Quit()` before the debounce elapses, and read `state.json`
+  (0600) in the data dir.
+- The native e2e phase step `PageStateRoundTrips`
+  (`battery/desktop/native_e2e_test.go`, tag `desktop_e2e`) runs the
+  round trip inside the real WKWebView through `EvalAsync` and reads
+  `state.json` from the data dir.
+
+## Preferences
+
+A desktop app needs a handful of settings that are not worth a table
+and not worth hand-building a screen for: the work and break minutes,
+whether a save notifies, where exports go. The battery takes those as
+declarations on `Config.Preferences`, stores them in the app state,
+reads them back typed, and renders them as a form.
+
+### The declaration
+
+`examples/desktop-focus` declares its five preferences on `Config`:
+
+<!-- gofastr:compile
+import "github.com/DonaldMurillo/gofastr/battery/desktop"
+
+func intPtr(n int) *int { return &n }
+stmt: _ = d
+-->
+```go
+d := desktop.New(desktop.Config{
+    ID:    "dev.gofastr.focus",
+    Title: "Focus",
+    Preferences: []desktop.Preference{
+        {Key: "work_minutes", Label: "Work minutes", Help: "Length of one work session.", Kind: desktop.PreferenceInt, Default: 25, Min: intPtr(1), Max: intPtr(180)},
+        {Key: "break_minutes", Label: "Break minutes", Kind: desktop.PreferenceInt, Default: 5, Min: intPtr(1), Max: intPtr(60)},
+        {Key: "notify_on_done", Label: "Notify when a session ends", Kind: desktop.PreferenceBool, Default: true},
+        {Key: "tray_countdown", Label: "Countdown in the menu bar", Kind: desktop.PreferenceBool, Default: true},
+        {Key: "sound", Label: "Session sound", Kind: desktop.PreferenceChoice, Default: "chime", Choices: []string{"none", "chime", "bell"}},
+    },
+})
+```
+
+`Key` matches `^[a-z][a-z0-9_]{0,63}$` and is unique (dots are
+refused: they would collide with the app state's namespace
+separators). `Label` is required. `Default` must match `Kind`: bool,
+int, string, or (choice) a string listed in `Choices`. `Min` and `Max`
+bound an int (both optional, but `Min` must not exceed `Max`) and are
+refused on every other kind; `Choices` belongs to choice and is
+refused everywhere else. `New` panics on a declaration that breaks any
+of that, naming the key: it is a wiring error, the same posture as a
+bad menu. `New` also takes a defensive copy of the list (`Choices`,
+`Min`, `Max` included), so mutating the Config afterwards changes
+nothing.
+
+Storage is one entry in the app state store: key `settings`, value one
+JSON object mapping preference keys to typed values
+(`{"work_minutes":50,"sound":"bell"}`). The state capability confines
+page keys to `page.`, so this entry is never reachable from the page.
+A stored key the app no longer declares is left in the file and simply
+never read; a stored value that fails its own declaration (a
+hand-edited `state.json`) falls back to the default with a Warn.
+
+### The typed reads
+
+<!-- gofastr:compile
+import "github.com/DonaldMurillo/gofastr/battery/desktop"
+
+var d = desktop.New(desktop.Config{ID: "dev.gofastr.focus"})
+-->
+```go
+p := d.Preferences()
+p.Int("work_minutes")    // 25
+p.Bool("notify_on_done") // true
+p.String("sound")        // "chime"
+p.All()                  // every declared key, stored-or-default
+p.Declared()             // the validated declarations, in order
+```
+
+`Preferences()` is usable from `New` on. Reads consult the store `Run`
+opened; before `Run` there is no store, so they answer the declared
+defaults. That is also the whole behavior in `--serve` mode (no `Run`,
+no window, no store): the app reads its defaults and cannot save new
+ones. `Bool`, `Int`, and `String` panic on an undeclared key or a kind
+mismatch: like a bad Config, a programming error you want loudly.
+`Set(key, value)` validates the kind, range, and choice, stores, and
+returns an error naming the key on refusal; before `Run` it answers
+`unsupported`. It accepts the JSON forms of the kind's Go type (bool,
+whole number, string) plus the string spellings the runtime's form
+serializer produces (`"true"`, `"30"`): app code passes the typed
+value, the form path passes the string. JSON `null` is refused on
+every kind: no rendered control produces it, and silently storing the
+zero value is exactly what the validation exists to stop.
+
+### The preferences capability
+
+The page gets the same surface through the `preferences` capability,
+ungated like `state` (the page is the app, and only declared keys
+exist):
+
+```js
+const {values, declared} = await __gofastr.desktop.preferences.get()
+const out = await __gofastr.desktop.preferences.set({values: {work_minutes: 50, sound: "bell"}})
+```
+
+- `get {}` answers `{values, declared}`: every declared key's
+  stored-or-default value, plus the declarations (key, label, help,
+  kind, default, choices, min, max).
+- `set {values}` applies every entry through the same validation as
+  `Preferences.Set`. The whole call is all-or-nothing: every entry is
+  validated first, the first invalid one refuses the call with
+  `invalid_input` naming the key, and nothing is stored. A success
+  answers `{values}`: every declared key with its value after the
+  call.
+
+After every successful set the battery emits `preferences_changed`
+with `{keys}` (sorted) to every open window, the same cross-window
+sync `state_changed` gives page keys:
+
+```js
+__gofastr.desktop.on("preferences_changed", ({keys}) => {
+    if (keys.includes("work_minutes")) rerender()
+})
+```
+
+### The screen
+
+The battery cannot reach the render pipeline, so the screen is a
+builder the host mounts:
+
+```go
+site.Register("/settings",
+    desktop.PreferencesScreen(d, desktop.PreferencesScreenPath("/settings")),
+    layout)
+```
+
+The screen's title is "Settings". It renders one `framework/ui` form
+with one field per declared preference: bool as the hidden+checkbox
+pair the resource engine uses (the runtime's serializer collapses the
+pair to one scalar), int as a number input carrying Min and Max (the
+range hint joins the field's help), string as a text input, choice as
+a select. Field ids follow the resource engine's `f-<key>` convention.
+Zero CSS, zero hand-rolled structural markup; a missing primitive
+would be a gap to fix upstream, never a local div. Mount it where
+`Config.Settings.Path` points (the settings window opens that path) or
+anywhere else; `PreferencesScreenPath` names the mount path and
+panics on one that is not a same-origin absolute path, the grammar
+`Config.Settings.Path` is held to.
+
+Saving goes through the runtime's form intercept (`data-fui-rpc`, the
+resource engine's shape) to the battery's own route,
+`POST /__gofastr/desktop/preferences`, which sits behind the same
+session gate as every other `/__gofastr/desktop/*` route. The route
+reads the serializer's JSON body (bools and numbers arrive as the
+strings the controls carry; a blank int means "not provided", so it is
+skipped and the stored value stands; the CSRF token `ui.Form` stamps
+is skipped too), applies every entry through the same all-or-nothing
+path the capability uses, and answers the shapes the runtime
+understands:
+
+- a refusal is status 400 with the validation envelope
+  `{"error": ..., "fields": {key: [msg]}}`, which the `formerrors`
+  module renders into the named fields;
+- a success is a plain 2xx, and the form's `data-fui-rpc-navigate`
+  back to the mount path re-renders the page with the saved values,
+  the same landing a saved resource form gives.
+
+In `--serve` mode the route answers 503 naming what is missing (the
+desktop host's app state store); the screen still renders the declared
+defaults.
+
+### The examples
+
+`examples/desktop-focus` declares the five preferences above, mounts
+the screen at `/settings`, and reads them through `d.Preferences()`
+(`Engine.Start` sizes a session from `work_minutes`,
+`completeSession` gates the notification on `notify_on_done`, the tray
+countdown on `tray_countdown`). `examples/desktop-notes` declares
+`notify_on_save` and `export_folder` the same way. Both dropped the
+hand-built settings entity, resource config, screen, and
+`/settings/{id}` route they carried before.
+
+### Testing seams
+
+- `battery/desktop/preferences_test.go` covers the declaration
+  validation panics, the defensive copy, the typed reads before and
+  after a store exists, the reader panics, `Set`'s coercion and
+  refusal table, the all-or-nothing batch, the undeclared-key and
+  corrupt-value fallbacks, and persistence across a second battery on
+  the same data dir.
+- `battery/desktop/cap_preferences_test.go` drives `get`/`set` through
+  `desktoptest.Run`: the values, the declarations, the event's keys,
+  and the refusals naming the key.
+- `battery/desktop/preferences_screen_test.go` mounts the screen on a
+  harness app and walks the form: the rendered fields, the form-shaped
+  POST, the 400 envelope on a bad int, the blank-int rule, and a
+  stranger's 403 on the form route.
+- The examples' suites walk the user's flow end to end; their
+  `desktop_e2e` tests (tag `desktop_e2e`) flip the real checkboxes,
+  change the work minutes, click Save in the real WKWebView, reload,
+  and assert the form shows what `d.Preferences()` answers.
+  The focus suite also submits a value over the declared Max and
+  asserts the route's validation envelope renders into the field (a
+  visible role=alert message), not just a status code.
+
+## The desktop-focus example
 `examples/desktop-focus` is the second dogfood app of
 `battery/desktop`. Where `desktop-notes` proves the host (one window,
 one entity, the bridge), desktop-focus uses every app-quality feature
 the battery ships: window styles, secondary windows, the tray, deep
 links, notifications, cross-window messages, a plugin capability, and
-the updater. It is a pomodoro timer because a timer exercises all of
-them at once: a countdown wants the menu bar, an ending session wants
-a notification, a floating widget wants window styles, and "start on
-this task" wants a deep link.
+the updater. It is a
+pomodoro timer because a timer exercises all of them at once: a
+countdown wants the menu bar, an ending session wants a notification,
+a floating widget wants window styles, and "start on this task" wants
+a deep link.
 
 ### The shape worth copying
 
@@ -1138,8 +1533,9 @@ through the bridge.
 | Hidden-title main window | `Config.Style{Chrome: ChromeHiddenTitle}` in `main.go` |
 | Floating widget | `desktop.Widget("/widget", 320, 300)` + `Style.AllSpaces`, opened by `Engine.Start` and the View menu |
 | Settings window | `Config.Settings` (app menu, File menu, tray row, `windows.openSettings`) |
+| Preferences | `Config.Preferences` (five keys) rendered by `desktop.PreferencesScreen` at `/settings`, read by the engine through `d.Preferences()` |
 | Tray countdown | `Engine.Tick` calls `SetTrayTitle` with `mm:ss` while a session runs, back to the app name when idle (the `tray_countdown` preference) |
-| Notifications | `Engine.completeSession` through `d.Notify`, gated by the `notify` preference |
+| Notifications | `Engine.completeSession` through `d.Notify`, gated by the `notify_on_done` preference |
 | Deep links | `DeepLinkConfig{Scheme: "gofastr-focus", OnDeepLink: ...}`: `start?task=<id>` starts the task, everything else maps through the default rule |
 | Cross-window | the widget's Open task button (`windows.post`) and the main page's `show_task` listener |
 | Plugin capability | `focusPlugin.Init` registers `focus` v1, ungated |
