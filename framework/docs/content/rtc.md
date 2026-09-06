@@ -368,8 +368,10 @@ pathOf(peer.pc).then((p) => p && room.setStatus({ path: p }));
 
 Server side, `sig.Peers(room)` returns each member's current status,
 so an MCP tool or a support console can answer "is the operator on a
-relay" from backend state without the browser being asked. Keep the
-document to allow-listed values; it is a status, not a log.
+relay" from backend state without the browser being asked. It is the
+browser's own report, not something the server verified: fine for a
+support view, never an input to an authorization or billing decision.
+Keep the document to allow-listed values; it is a status, not a log.
 
 ## See also
 

@@ -193,8 +193,11 @@ each reconnect a distinct generation and the hooks to resynchronize:
 `onGenerationStart` (socket open), `onHydrated` (the application
 applied the snapshot, via `handle.hydrated(sequence)`), and
 `onGenerationEnd` with a bounded reason class (`closed`, `error`,
-`stop`) — never the raw close reason, and never a payload or
-credential in any log. Hooks are idempotent per generation. A new
+`refused`, `stop`) — never the raw close reason, and never a payload or
+credential in any log. `refused` is a server that accepted the
+handshake only to close with 4000 + a 4xx status (kept on
+`status.refused`); it is final and not retried, where a 4000 + 5xx
+close is an `error` and retried. Hooks are idempotent per generation. A new
 generation invalidates only generation-bound work; which state survives
 (a healthy peer, the session) is the application's call, and so is
 marking the protocol caught-up with `handle.resyncComplete()`.

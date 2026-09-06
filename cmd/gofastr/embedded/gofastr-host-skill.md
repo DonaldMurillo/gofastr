@@ -117,7 +117,7 @@ generated guidance.
 | realtime WebSocket state, snapshot plus events, reconnect that cannot resurrect stale state | `stream.NewStateChannel(source)` (per-role snapshots and sequenced events above `Hub`) with `__gofastr.loadModule('ws')` → `connectWebSocket` (reconnect generations) and `createSequencedReducer` (applies only newer sequences); `gofastr docs reactivity` |
 | dropdown menu with my own styled trigger button | `ui.Menu(ui.MenuConfig{TriggerElement: ui.Button(...), Items: ...})`: the caller's element becomes the disclosure controller, no `<summary>` nesting |
 | reference for authenticated WebMCP plus WebRTC (support console, one-time operator link, peer-to-peer camera) | `examples/webmcp-remote-assist`; `go run ./examples/webmcp-remote-assist` |
-| video call, screen share, camera, WebRTC, peer to peer, data channel, TURN, STUN, signaling | `battery/rtc`: `app.RegisterPlugin(rtc.New(rtc.Config{Authorize: …}))` for signaling rooms with per-peer TURN credentials; browser side `__gofastr.loadModule('rtc')` → `connectRoom` (perfect negotiation, reconnect generations); media flows peer to peer, never through Go; `gofastr docs rtc` |
+| video call, screen share, camera, WebRTC, peer to peer, data channel, TURN, STUN, signaling | `battery/rtc`: `app.RegisterPlugin(rtc.New(rtc.Config{Authorize: …}))` for signaling rooms with per-peer TURN credentials; browser side `__gofastr.loadModule('rtc')` → `connectRoom` (perfect negotiation, reconnect generations); media flows peer to peer or through your TURN relay, never through the Go process; `gofastr docs rtc` |
 
 ## First-party analytics and experiments
 

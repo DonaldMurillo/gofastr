@@ -340,7 +340,7 @@ Start with:
 - [Agent-ready](framework/docs/content/agent-ready.md): llms.txt, the agent card, and MCP discovery
 - [Agent host](framework/docs/content/agent-host.md): the chat-host surface: RoleAgent, MCP App widgets, host theme
 - [WebMCP bridge (experimental)](framework/docs/content/webmcp.md): expose server-declared tools to in-browser agents via the page's `modelContext`
-- [WebRTC rooms](framework/docs/content/rtc.md): signaling-only rooms plus the `__gofastr.connectRoom` browser module; media flows peer to peer
+- [WebRTC rooms](framework/docs/content/rtc.md): signaling-only rooms plus the `__gofastr.connectRoom` browser module; media flows peer to peer or through your TURN relay, never through the Go process
 
 ## Project status
 
