@@ -377,6 +377,42 @@ func TestRenderStaticPageHasNoStaticMarker(t *testing.T) {
 	}
 }
 
+// The runtime's navigation looks a link up in the embedded route graph by
+// its pathname. A base-path export rewrote the hrefs and left the graph
+// root-relative, so nothing matched and every click was a full page load.
+func TestBuildBasePathRewritesRouteGraph(t *testing.T) {
+	a := coreapp.NewApp("SSGTest")
+	a.Register("/", &renderScreen{Body: `<a href="/about">about</a>`}, nil)
+	a.Register("/about", &renderScreen{Body: `<a href="/">home</a>`}, nil)
+	host := uihost.New(a)
+
+	out := t.TempDir()
+	if _, err := (&Builder{Host: host, OutDir: out, BasePath: "/gofastr"}).Build(context.Background()); err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	data, err := os.ReadFile(filepath.Join(out, "index.html"))
+	if err != nil {
+		t.Fatalf("read index: %v", err)
+	}
+	s := string(data)
+	start := strings.Index(s, `id="gofastr-routes"`)
+	if start < 0 {
+		t.Fatalf("no route graph in the page: %s", s)
+	}
+	graph := s[start:]
+	if end := strings.Index(graph, "</script>"); end >= 0 {
+		graph = graph[:end]
+	}
+	for _, want := range []string{`"path":"/gofastr/about"`, `"path":"/gofastr/"`} {
+		if !strings.Contains(graph, want) {
+			t.Errorf("route graph lacks %s: %s", want, graph)
+		}
+	}
+	if strings.Contains(graph, `"path":"/about"`) {
+		t.Errorf("route graph kept a root-relative path the links no longer use: %s", graph)
+	}
+}
+
 func TestBuildBasePathRewritesURLs(t *testing.T) {
 	// Screen carrying a mix of link/asset URLs to prove the rewrite
 	// prefixes root-absolute internal URLs and leaves others alone.
