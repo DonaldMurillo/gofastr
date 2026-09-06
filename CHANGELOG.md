@@ -461,15 +461,45 @@ from `$PREFIX_TOKEN`, the stored config, or `login --with-token`
   after 30 s), `gofastr desktop keygen` and `gofastr desktop feed` for
   the release side. darwin only; unbundled runs never update.
 - `battery/desktop`: `Config.RememberWindows` persists every window's
-  frame and the main window's last path in `windows.json` (0600, data
-  dir) and restores them on relaunch: windows reopen where the user
-  left them, on whichever monitor, the boot redirect returns to the
-  last screen, and a frame from an unplugged monitor is dropped in
-  favor of centered. New contracts `Frame`, `WindowConfig.Frame` and
-  `OnWindowFrame`, `WindowSpec.Frame`, `Window.Frame` and `SetFrame`,
-  the ungated `window.setPath` bridge method, and the
-  `Harness.MoveWindow` / `NativeHarness.MoveWindow` test seams.
+  frame and the main window's last path in the app state store's
+  `windows` entry (`state.json`, 0600, data dir) and restores them on
+  relaunch: windows reopen where the user left them, on whichever
+  monitor, the boot redirect returns to the last screen, and a frame
+  from an unplugged monitor is dropped in favor of centered. New
+  contracts `Frame`, `WindowConfig.Frame` and `OnWindowFrame`,
+  `WindowSpec.Frame`, `Window.Frame` and `SetFrame`, the ungated
+  `window.setPath` bridge method, and the `Harness.MoveWindow` /
+  `NativeHarness.MoveWindow` test seams.
   `examples/desktop-focus` turns it on.
+- `battery/desktop`: app state. `battery/desktop/appstate` is a durable
+  key/value store over one JSON file in the data dir (`state.json`,
+  0600, debounced 500 ms writes, flush on quit, raw-JSON values capped
+  at 64 KiB, namespaced keys, a `Watch` change hook); `Run` opens it
+  and `Battery.State()` hands it to Go code. The remembered windows,
+  the preferences, and a new ungated `state` capability share it: the
+  page's keys are confined to the `page.` prefix
+  (`get`/`set`/`delete`/`keys`), and every successful `set`/`delete`
+  broadcasts `state_changed` with `{key}` to every open window.
+- `battery/desktop`: declared preferences. `Config.Preferences` takes
+  a `desktop.Preference` list (kinds bool, int, string, choice;
+  validated at `New` with a defensive copy), stores the values typed
+  in the app state under `settings`, serves them to Go through
+  `d.Preferences()` (`Bool`/`Int`/`String`/`All`/`Declared`/`Set`) and
+  to the page through an ungated `preferences` capability
+  (all-or-nothing `set`, `preferences_changed` with `{keys}`), and
+  renders them as a form through `desktop.PreferencesScreen`, a screen
+  builder the host mounts; the form saves through
+  `POST /__gofastr/desktop/preferences` with the runtime's validation
+  envelope on refusal. Both desktop examples dropped their hand-built
+  settings entity and screen for it.
+- `battery/desktop`: single-user mode documented. The local identity
+  (the `identity` file, minted 0600, revalidated on read) is the
+  offering a desktop app uses instead of `battery/auth`:
+  `LocalUser` middleware maps every gated request to that one user
+  while the boot gate is armed, and the battery installs its own owner
+  extractor only when nothing else has (linked `battery/auth` owns
+  identity end to end instead). Documented in
+  `framework/docs/content/desktop.md`.
 - **Desktop: the app-shell test harness.** Desktop tests no longer run
   against a browser stand-in: `desktoptest.NativeMain` boots the app
   once per test binary inside the real shell (WKWebView), and
