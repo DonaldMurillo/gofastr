@@ -7,6 +7,16 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+### Fixed
+- **A static export renders layout chrome for the page being exported.**
+  `uihost.RenderStaticPage` rendered with neither a request nor a route
+  match in the context, so a layout component that reads the path, such as
+  a sidebar for the section being read or a header whose language follows
+  the page, rendered for no page at all: every exported page carried the
+  chrome of the site root, and a translated page shipped with the original's
+  sidebar. The static render now carries a request for the path and the
+  route match, exactly as `handlePage` installs them for a live request.
+
 ## [0.83.0] - 2026-09-06
 
 ### Security
