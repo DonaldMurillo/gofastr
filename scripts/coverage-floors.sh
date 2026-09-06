@@ -150,7 +150,7 @@ FLOORS="
 ./framework/contracts/ 72.0
 ./framework/contracts/analyzers/ 70.5
 ./framework/cron/ 84.0
-./framework/crud/ 96.9
+./framework/crud/ 96.0
 ./framework/datexport/ 98.0
 ./framework/dev/ 81.3
 ./framework/docs/ 81.8

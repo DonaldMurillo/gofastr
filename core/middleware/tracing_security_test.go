@@ -3,13 +3,14 @@ package middleware
 import (
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/propagation"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
 // TestTracingPreservesHijacker asserts the tracing writer keeps the
@@ -130,7 +131,7 @@ func TestTracing_InjectedHeadersNoCtrlBytes(t *testing.T) {
 
 			for k, vs := range rec.Header() {
 				for _, v := range vs {
-					if strings.ContainsAny(v, c0AndDelSet) {
+					if textsafe.ContainsUnsafe(v) {
 						t.Fatalf("response header %q carries raw control bytes: %q", k, v)
 					}
 				}
@@ -163,11 +164,11 @@ func TestTracing_SpanAttrsScrubControlBytes(t *testing.T) {
 	if len(spans) != 1 {
 		t.Fatalf("expected exactly 1 span, got %d", len(spans))
 	}
-	if strings.ContainsAny(spans[0].Name(), c0AndDelSet) {
+	if textsafe.ContainsUnsafe(spans[0].Name()) {
 		t.Errorf("span name carries raw control bytes: %q", spans[0].Name())
 	}
 	for _, kv := range spans[0].Attributes() {
-		if s := kv.Value.Emit(); strings.ContainsAny(s, c0AndDelSet) {
+		if s := kv.Value.Emit(); textsafe.ContainsUnsafe(s) {
 			t.Errorf("span attribute %q carries raw control bytes: %q", string(kv.Key), s)
 		}
 	}

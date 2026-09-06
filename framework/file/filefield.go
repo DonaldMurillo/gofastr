@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"github.com/DonaldMurillo/gofastr/core/upload"
 )
 
@@ -79,6 +80,13 @@ type FileField struct {
 //     are persisted and later echoed into a response header, an HTML
 //     attribute, or a log line, each of which a CR/LF splits. MimeType
 //     is covered by its charset filter, which admits no control byte.
+//   - Any C1 control or invisible/bidi codepoint in URL, Filename, or
+//     StorageRef (see indexForgedRune). Each is a multi-byte rune that
+//     rides through a C0 byte scan, and each forges rather than
+//     decorates the text a header, attribute, or list display renders:
+//     an RLO flips the visible filename, a zero-width space
+//     manufactures visually identical twin refs, and the 8-bit CSI/OSC
+//     forms drive terminal escapes exactly as ESC-[ does.
 //   - MimeType containing characters outside the MIME-safe set,
 //     normal MIME types are `type/subtype` with letters, digits,
 //     `+`, `-`, `.`; angle brackets / quotes indicate an XSS attempt.
@@ -123,6 +131,23 @@ func (f *FileField) Validate() error {
 	} {
 		if i := indexControlByte(v); i >= 0 {
 			return fmt.Errorf("%w: %s contains %#x at offset %d", ErrFileFieldControlBytes, name, v[i], i)
+		}
+	}
+
+	// The C1 controls and the zero-width/bidi set ride through the C0
+	// byte scan above (each is a multi-byte rune): an RLO in Filename
+	// flips the name Content-Disposition and the file lists render, a
+	// zero-width space manufactures visually identical twin refs, and
+	// the 8-bit CSI/OSC forms drive terminal escapes like ESC-[ does.
+	// They forge text rather than decorate it; same error class.
+	for name, v := range map[string]string{
+		"url":         f.URL,
+		"filename":    f.Filename,
+		"storage_ref": f.StorageRef,
+	} {
+		if r, off := indexForgedRune(v); off >= 0 {
+			return fmt.Errorf("%w: %s contains invisible or bidi rune U+%04X at offset %d",
+				ErrFileFieldControlBytes, name, r, off)
 		}
 	}
 	if !isSafeMIMEString(f.MimeType) {
@@ -177,22 +202,21 @@ func indexControlByte(s string) int {
 	return -1
 }
 
-// stripControlBytes removes every C0 control byte and DEL from s. Used on
-// the multipart filename before it becomes FileField.Filename, so the
-// constructor keeps the invariant its doc claims: a FileField that
-// ProcessFileField returns always passes Validate.
-func stripControlBytes(s string) string {
-	if indexControlByte(s) < 0 {
-		return s
-	}
-	b := make([]byte, 0, len(s))
-	for i := 0; i < len(s); i++ {
-		if s[i] < 0x20 || s[i] == 0x7f {
-			continue
+// indexForgedRune returns the first C1 control or invisible/bidi
+// codepoint in s with its byte offset, or (0, -1) when s is clean.
+// Rune-wise on purpose: every codepoint in this set is a multi-byte
+// UTF-8 sequence, so the byte-wise indexControlByte above cannot see
+// it. The predicate lives in core/textsafe so every gate in the tree
+// names the same set; the constructor side of this seam is
+// upload.SanitizeFilename, which strips the same codepoints before a
+// client filename can become FileField.Filename or a storage key.
+func indexForgedRune(s string) (rune, int) {
+	for i, r := range s {
+		if textsafe.IsC1(r) || textsafe.IsInvisible(r) {
+			return r, i
 		}
-		b = append(b, s[i])
 	}
-	return string(b)
+	return 0, -1
 }
 
 // hasTraversal reports whether s contains a `..` segment. We're
@@ -390,8 +414,12 @@ func cleanupOrphans(ctx context.Context, store upload.Storage, primary string, d
 // through it, so a caller can undo a failed multi-write operation whose
 // keys it never chose.
 //
-// Deletes unrecord: a deriver that cleans up after itself must not have
-// its own cleanup counted as an outstanding write.
+// Deletes unrecord — but only a delete that actually removed the object
+// (returned nil, or os.ErrNotExist, which means it was never there): a
+// failed delete leaves the bytes in storage, and unrecording the key
+// anyway would hide exactly the rendition whose deriver-issued undo
+// failed transiently, so ProcessFileField's cleanupOrphans would never
+// retry it and the rejected upload orphans the object.
 type recordingStore struct {
 	upload.Storage
 	mu   sync.Mutex
@@ -410,6 +438,11 @@ func (r *recordingStore) Save(ctx context.Context, key string, src io.Reader) er
 
 func (r *recordingStore) Delete(ctx context.Context, key string) error {
 	err := r.Storage.Delete(ctx, key)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		// The object's fate is unknown or it is still stored; keep the
+		// key on the ledger so the rollback retries the delete.
+		return err
+	}
 	r.mu.Lock()
 	r.keys = slices.DeleteFunc(r.keys, func(k string) bool { return k == key })
 	r.mu.Unlock()

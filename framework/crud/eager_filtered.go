@@ -143,7 +143,7 @@ func loadHasManyFiltered(ctx context.Context, db DBExecutor, safeEntity, safeFK 
 	if err != nil {
 		return err
 	}
-	boolCols := databaseBoolColumnsForEntity(rows, len(cols), target, cols)
+	boolCols := databaseBoolColumnsForEntity(rows, len(cols), entityFieldsOf(target), cols)
 	for rows.Next() {
 		if err := budget.spend(1); err != nil {
 			return err
@@ -261,7 +261,7 @@ func loadBelongsToFiltered(ctx context.Context, db DBExecutor, safeParentTable, 
 	if err != nil {
 		return err
 	}
-	boolCols := databaseBoolColumnsForEntity(tgtRows, len(cols), target, cols)
+	boolCols := databaseBoolColumnsForEntity(tgtRows, len(cols), entityFieldsOf(target), cols)
 	targetByID := map[string]map[string]any{}
 	for tgtRows.Next() {
 		if err := budget.spend(1); err != nil {
@@ -352,7 +352,7 @@ func loadManyToManyFiltered(ctx context.Context, db DBExecutor, safeEntity strin
 	if err != nil {
 		return err
 	}
-	boolCols := databaseBoolColumnsForEntity(rows, len(cols), target, cols)
+	boolCols := databaseBoolColumnsForEntity(rows, len(cols), entityFieldsOf(target), cols)
 	for rows.Next() {
 		if err := budget.spend(1); err != nil {
 			return err

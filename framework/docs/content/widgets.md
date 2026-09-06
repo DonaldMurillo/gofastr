@@ -354,6 +354,28 @@ them after `Mount` returns. Mounting is idempotent on `def.Name`. The
 process-wide runtime routes (`/__gofastr/runtime.js`, `/__gofastr/widgets`)
 come from `widget.MountRuntime(r)`, once per host, not per widget.
 
+### Gating `/state`, `/chrome`, and RPCs
+
+By default every widget surface above is unauthenticated. Two levels
+tighten it, both installed by the host:
+
+- `Definition.RequireSession` — any valid browser session. Under
+  `framework/uihost` every page render auto-mints a session cookie, so
+  this level is per-session scoping / anti-recon, **not** a login gate.
+- `Definition.RequireAuthenticated` — the request must resolve to a
+  signed-in user. Under `framework/uihost` the check is satisfied only
+  when the app's session middleware (`battery/auth`
+  `SessionMiddleware`/`RequireAuth`, wired app-wide with `fwApp.Use`)
+  loaded a user onto the request context; the anonymous session a page
+  load mints never does. This is the level for signals "not safe to
+  expose anonymously".
+
+Both fail closed when the host installed no predicate, and both gate the
+RPC routes too. SSR-inlined chrome honors the same verdict
+(`widget.GateSatisfied`), so a gated widget's chrome is not baked into a
+page its endpoints would refuse. See
+[Security](security.md) → "Widget signal exposure".
+
 ## Chrome context (`data-fui-ctx`)
 
 One widget definition is one chrome. Before #321 a per-entity dialog — a

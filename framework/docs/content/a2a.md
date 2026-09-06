@@ -210,6 +210,18 @@ completion cannot resurrect a task the client was told was canceled.
 One handler run is bounded by `A2AConfig.TaskTimeout` (default 5
 minutes); a run that exceeds it fails with `task timed out`.
 
+Terminal rows do not accumulate without end: each owner retains at most
+64 settled (completed / failed / canceled / rejected) tasks — the oldest
+terminal rows are deleted after each settle, in-flight and paused tasks
+never — and each task carries at most 8 push-notification configs, the
+oldest deleted past the bound. Every row holds the caller's message
+body (up to the 1 MiB cap) and the default store is in-RAM, so cheap
+authenticated writes must not grow either table unbounded. Both bounds
+are `a2a.Config` knobs (`TerminalTaskRetention`, `MaxPushConfigsPerTask`;
+0 = the default, negative = the host owns retention) enforced through
+the optional `a2a.RetentionTrimmer` Store interface both built-in
+stores implement.
+
 ### Streaming
 
 `SendStreamingMessage` and `SubscribeToTask` answer

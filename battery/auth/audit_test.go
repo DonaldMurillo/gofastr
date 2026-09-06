@@ -671,7 +671,7 @@ func TestAudit_OAuthLinkedLoginRefused(t *testing.T) {
 	}
 	mgr.Use(NewOAuth2Plugin(OAuth2Config{
 		Providers:   map[string]OAuth2Provider{"stub": prov},
-		StateSecret: "test-secret",
+		StateSecret: "test-secret-state-01",
 	}))
 	if err := mgr.Init(nil); err != nil {
 		t.Fatalf("Init: %v", err)
@@ -717,7 +717,7 @@ func TestAudit_OAuthLinkedLoginRefused(t *testing.T) {
 				EmailVerified: true,
 			},
 		}},
-		StateSecret: "test-secret",
+		StateSecret: "test-secret-state-01",
 	}))
 	if err := mgr2.Init(nil); err != nil {
 		t.Fatalf("Init: %v", err)

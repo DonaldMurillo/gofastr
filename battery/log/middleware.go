@@ -9,8 +9,10 @@ import (
 	"runtime/debug"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/DonaldMurillo/gofastr/core/middleware"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
 // Caps on the size of pieces that flow into a log entry. Without these,
@@ -81,45 +83,75 @@ func accessMiddleware(logger *slog.Logger, trustXFF bool) middleware.Middleware 
 	}
 }
 
-// c0AndDelSet is the full C0 control range plus DEL, the probe set for
-// scrubControlBytes. Mirrors core/middleware's set (logging.go): the
-// fast path must cover every byte the encoder handles, or a string
-// carrying only an uncovered byte bypasses the encoder and is logged
-// raw.
-var c0AndDelSet = func() string {
-	var b [33]byte
-	for i := range 32 {
-		b[i] = byte(i)
-	}
-	b[32] = 0x7f
-	return string(b[:])
-}()
+// needsControlScrub is the fast-path probe for scrubControlBytes. It
+// must flag a SUPERSET of what the encoder rewrites: the C0 controls
+// and DEL, plus every non-ASCII byte (which may open an unsafe rune or
+// itself be a stray 8-bit C1 control). A clean ASCII string returns
+// unchanged without entering the encoder. Mirrors core/middleware's
+// probe (logging.go) so the twins cannot drift.
+func needsControlScrub(s string) bool {
+	return strings.ContainsFunc(s, func(r rune) bool {
+		return r < 0x20 || r == 0x7f || r >= utf8.RuneSelf
+	})
+}
 
-// scrubControlBytes percent-encodes ASCII control bytes (the C0 range)
-// and DEL in a request-derived log field. battery/log is the production
-// access path: r.URL.Path is percent-DECODED, so %1b/%0d%0a/%00 in a
-// request URL are real ESC/CRLF/NUL by the time accessMiddleware
+// scrubControlBytes percent-encodes every character that can forge,
+// break, or reorder a rendered log line in a request-derived log field:
+// the C0 controls and DEL, the C1 controls (U+0080–U+009F — the 8-bit
+// CSI 0x9B and OSC 0x9D drive terminal escapes exactly as ESC-[ does,
+// NEL 0x85 breaks the line), and the zero-width/bidi set from
+// core/textsafe (RLO and friends visually rewrite the logged path).
+// battery/log is the production access path: r.URL.Path is
+// percent-DECODED, so %1b/%0d%0a/%00/%c2%9b/%e2%80%ae in a request URL
+// are real ESC/CRLF/NUL/U+009B/U+202E by the time accessMiddleware
 // snapshots them, and entries fan out to the file sink, the webhook
-// sink, the console sink and the MCP ring. A raw ESC is terminal-escape
-// injection into every operator tail; a CRLF forges entries in any
-// downstream line-oriented consumer. slog's JSON handler escapes these
-// for valid JSON, but a JSON-escaped \r\n is still visible to text
-// grep, and naive log shippers render the injected payload on its own
-// line. Parity with core/middleware's scrubControlBytes, which guards
-// the framework's own logging sinks the same way.
+// sink, the console sink and the MCP ring. A raw ESC is
+// terminal-escape injection into every operator tail; a CRLF forges
+// entries in any downstream line-oriented consumer. slog's JSON
+// handler escapes C0 for valid JSON but leaves C1/bidi runes raw, and
+// a JSON-escaped \r\n is still visible to text grep, with naive log
+// shippers rendering the injected payload on its own line. Parity with
+// core/middleware's scrubControlBytes, which guards the framework's
+// own logging sinks the same way. Stray non-UTF-8 bytes in 0x80..0x9F
+// are the 8-bit C1 forms on the wire and are encoded like their rune
+// counterparts; other invalid bytes pass through untouched.
 func scrubControlBytes(s string) string {
-	if !strings.ContainsAny(s, c0AndDelSet) {
+	if !needsControlScrub(s) {
 		return s
 	}
 	var b strings.Builder
 	b.Grow(len(s))
-	for i := range s {
+	for i := 0; i < len(s); {
 		c := s[i]
-		if c < 0x20 || c == 0x7f {
-			fmt.Fprintf(&b, "%%%02x", c)
+		if c < utf8.RuneSelf {
+			if c < 0x20 || c == 0x7f {
+				fmt.Fprintf(&b, "%%%02x", c)
+			} else {
+				b.WriteByte(c)
+			}
+			i++
 			continue
 		}
-		b.WriteByte(c)
+		r, size := utf8.DecodeRuneInString(s[i:])
+		if size == 1 {
+			// Stray invalid byte: in 0x80..0x9F it is an 8-bit
+			// C1 control on the wire, encode it.
+			if c <= 0x9f {
+				fmt.Fprintf(&b, "%%%02x", c)
+			} else {
+				b.WriteByte(c)
+			}
+			i++
+			continue
+		}
+		if textsafe.IsUnsafe(r) {
+			for j := i; j < i+size; j++ {
+				fmt.Fprintf(&b, "%%%02x", s[j])
+			}
+		} else {
+			b.WriteString(s[i : i+size])
+		}
+		i += size
 	}
 	return b.String()
 }

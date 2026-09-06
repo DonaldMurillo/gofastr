@@ -99,6 +99,20 @@ func (p *Plugin) registerMCPTools(app *framework.App) error {
 		if t.gate != nil {
 			opts = append(opts, mcp.WithToolGate(t.gate))
 		}
+		// Under the dev implication these tools exist only because
+		// GOFASTR_DEV turned them on, and their gates are nil — there
+		// is no auth to satisfy in the dev loop. That is only safe on a
+		// loopback listener: mark the mutating tool (log_set_level)
+		// and the two disclosing read tools (log_recent / log_filter
+		// hand out every caller's request paths, remote IPs, and
+		// request IDs) so the framework's bind guard withdraws them on
+		// an exposed bind. log_metrics is counters only and stays.
+		if p.mutationDevImplied {
+			switch t.name {
+			case "log_recent", "log_filter", "log_set_level":
+				opts = append(opts, mcp.WithDevImplied())
+			}
+		}
 		if err := app.MCP.RegisterTool(t.name, t.description, t.schema, t.handler, opts...); err != nil {
 			return fmt.Errorf("register %s: %w", t.name, err)
 		}

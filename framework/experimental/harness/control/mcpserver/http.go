@@ -41,6 +41,13 @@ type httpMCPSession struct {
 	mu        sync.Mutex
 	pendingEv [][]byte // event payloads queued for the GET stream
 	closed    bool
+	// streams counts GET streams currently parked on this session.
+	// Guarded by HTTPHandler.mu: it is only touched in acquire/release
+	// under the handler lock, and release reaps the record when it hits
+	// zero with a drained backlog. A client that loops connect-and-
+	// abandon on fresh Mcp-Session-Ids otherwise grows h.sessions
+	// monotonically for the process lifetime.
+	streams int
 }
 
 // NewHTTPHandler returns an HTTP handler wrapping Server. enc is not
@@ -264,17 +271,42 @@ func (h *HTTPHandler) handleGET(w http.ResponseWriter, r *http.Request, sessID s
 func (h *HTTPHandler) acquireSession(sessID string) *httpMCPSession {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	if s, ok := h.sessions[sessID]; ok {
-		return s
+	s, ok := h.sessions[sessID]
+	if !ok {
+		s = &httpMCPSession{id: sessID}
+		h.sessions[sessID] = s
 	}
-	s := &httpMCPSession{id: sessID}
-	h.sessions[sessID] = s
+	s.streams++
 	return s
 }
 
-func (h *HTTPHandler) releaseSession(_ string) {
-	// v0.1 keeps the session record so subsequent POSTs see the
-	// same backlog; a TTL job would prune dead sessions.
+// releaseSession retires one GET stream and reaps the session record
+// when no stream is parked on it anymore and its backlog is drained:
+// the record's only purpose is to carry the backlog between GETs, and
+// mcpserver does not yet publish server-initiated events between
+// connections, so a record with neither stream nor backlog is garbage.
+// Reaping here bounds h.sessions to live connections; before it, every
+// GET with a fresh client-supplied Mcp-Session-Id left a permanent
+// record behind (an explicit DELETE was the only removal).
+func (h *HTTPHandler) releaseSession(sessID string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	s, ok := h.sessions[sessID]
+	if !ok {
+		return
+	}
+	if s.streams > 0 {
+		s.streams--
+	}
+	if s.streams > 0 || s.closed {
+		return
+	}
+	s.mu.Lock()
+	idle := len(s.pendingEv) == 0
+	s.mu.Unlock()
+	if idle {
+		delete(h.sessions, sessID)
+	}
 }
 
 func (h *HTTPHandler) dropSession(sessID string) {

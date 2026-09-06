@@ -56,8 +56,22 @@ func TestIncrementBindValueCoercion(t *testing.T) {
 		{"7", "7"},
 	}
 	for _, c := range cases {
-		if got := incrementBindValue(c.in); !reflect.DeepEqual(got, c.want) {
+		got, err := incrementBindValue(c.in)
+		if err != nil {
+			t.Errorf("incrementBindValue(%#v) unexpected error: %v", c.in, err)
+			continue
+		}
+		if !reflect.DeepEqual(got, c.want) {
 			t.Errorf("incrementBindValue(%#v) = %#v, want %#v", c.in, got, c.want)
+		}
+	}
+
+	// A float64 that cannot round-trip exactly (2^53+1 decoded through a
+	// float64 JSON path) must be refused, not truncated: truncation
+	// silently renumbers the caller-supplied primary key.
+	for _, in := range []any{float64(9007199254740993), json.Number("9007199254740993.0")} {
+		if got, err := incrementBindValue(in); err == nil {
+			t.Errorf("incrementBindValue(%#v) = %#v, want a precision-loss refusal", in, got)
 		}
 	}
 }
@@ -73,5 +87,16 @@ func TestToolParamValuesShapes(t *testing.T) {
 	}
 	if got := toolParamValues(3.5); !reflect.DeepEqual(got, []string{"3.5"}) {
 		t.Errorf("number: %v", got)
+	}
+	// Integral floats render as their full decimal, not %g e-notation:
+	// fmt.Sprint(1000000.0) is "1e+06", a literal the filter surface
+	// cannot address (Postgres refuses it as an integer literal).
+	if got := toolParamValues(1000000.0); !reflect.DeepEqual(got, []string{"1000000"}) {
+		t.Errorf("integral float: %v", got)
+	}
+	// A json.Number (UseNumber transport) renders verbatim so a literal
+	// above 2^53 keeps every digit.
+	if got := toolParamValues(json.Number("9007199254740993")); !reflect.DeepEqual(got, []string{"9007199254740993"}) {
+		t.Errorf("json.Number: %v", got)
 	}
 }

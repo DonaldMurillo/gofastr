@@ -55,20 +55,18 @@ func marshalJSONColumn(v any) any {
 	return string(raw)
 }
 
-// ensureFieldCache rebuilds the derived field caches when they are absent
-// or stale. CrudHandler is an exported struct, so a caller can construct
-// one directly and never run NewCrudHandler's build, every lookup goes
-// through here rather than reading the maps straight.
-func (ch *CrudHandler) ensureFieldCache() {
-	if ch.jsonColumns == nil || ch.jsonWireKeys == nil || ch.visibleFieldSig != ch.fieldCacheSignature() {
-		ch.refreshFieldCache()
-	}
+// ensureFieldCache loads the derived field caches. CrudHandler is an
+// exported struct, so a caller can construct one directly and never run
+// NewCrudHandler's build; snapshot() fills lazily (once) for those. The
+// returned snapshot is immutable, so unlike the old in-place refresh this
+// cannot race concurrent readers.
+func (ch *CrudHandler) ensureFieldCache() *fieldCacheData {
+	return ch.snapshot()
 }
 
 // isJSONColumn reports whether the named DB column is declared schema.JSON.
 func (ch *CrudHandler) isJSONColumn(col string) bool {
-	ch.ensureFieldCache()
-	_, ok := ch.jsonColumns[col]
+	_, ok := ch.snapshot().jsonColumns[col]
 	return ok
 }
 
@@ -79,8 +77,7 @@ func (ch *CrudHandler) decodeJSONFields(row map[string]any) {
 	if row == nil {
 		return
 	}
-	ch.ensureFieldCache()
-	for key := range ch.jsonWireKeys {
+	for key := range ch.snapshot().jsonWireKeys {
 		if v, ok := row[key]; ok {
 			row[key] = decodeJSONColumn(v)
 		}
@@ -92,8 +89,7 @@ func (ch *CrudHandler) decodeJSONRows(rows []map[string]any) {
 	if len(rows) == 0 {
 		return
 	}
-	ch.ensureFieldCache()
-	if len(ch.jsonWireKeys) == 0 {
+	if len(ch.snapshot().jsonWireKeys) == 0 {
 		return
 	}
 	for _, row := range rows {
@@ -120,11 +116,11 @@ func (ch *CrudHandler) scanOne(row *sql.Row, cols []string) (map[string]any, err
 }
 
 func (ch *CrudHandler) scanMany(rows *sql.Rows, cols []string) ([]map[string]any, error) {
-	var ent *entity.Entity
-	if ch != nil {
-		ent = ch.Entity
+	var fields []schema.Field
+	if ch != nil && ch.Entity != nil {
+		fields = ch.snapshotFields()
 	}
-	results, err := scanRowsForEntity(rows, cols, ch.convertKey, ent)
+	results, err := scanRowsForEntity(rows, cols, ch.convertKey, fields)
 	if err != nil {
 		return nil, err
 	}

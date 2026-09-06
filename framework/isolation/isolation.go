@@ -5,10 +5,12 @@ import (
 	"crypto/sha1"
 	"encoding/hex"
 	"fmt"
+	"maps"
 	"net"
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -202,7 +204,13 @@ func ListenAddr(projectDir, fallback string) (string, error) {
 	return rt.Addr(addr)
 }
 
-// Env returns env with configured local resources isolated.
+// Env returns env with configured local resources isolated. Entries from
+// the project's isolation.env are limited to template values (ports, id,
+// project dir) for variables the operator has NOT set: an operator
+// export always wins, and process-shaping names never come from the
+// file (loadConfig already dropped both, this is the second half of the
+// same rule). GOFASTR_ISOLATION_REWRITE governs only the PORT and
+// DATABASE_URL remaps.
 func (r *Runtime) Env(env []string) []string {
 	if !r.Active() {
 		return env
@@ -227,8 +235,22 @@ func (r *Runtime) Env(env []string) []string {
 			values["DATABASE_URL"] = rewritten
 		}
 	}
+	// isolation.env entries may only INTRODUCE isolated-resource
+	// variables the operator did not set themselves. Never override an
+	// operator export: the env block comes from the project directory,
+	// which for a cloned checkout is attacker-authored, and with the old
+	// rewriteExplicit=true default a file value REPLACED the operator's
+	// own HTTPS_PROXY/PATH in the dev-server child. GOFASTR_
+	// ISOLATION_REWRITE still governs the listen PORT and DATABASE_URL
+	// remaps; it no longer licenses env-block overrides.
+	operatorSet := make(map[string]bool, len(env))
+	for _, pair := range env {
+		if key, _, ok := strings.Cut(pair, "="); ok {
+			operatorSet[key] = true
+		}
+	}
 	for key, tmpl := range r.cfg.Env {
-		if values[key] != "" && !rewriteExplicit {
+		if operatorSet[key] {
 			continue
 		}
 		values[key] = r.expandTemplate(tmpl, basePort)
@@ -392,11 +414,76 @@ func loadConfig(path string, base Config) (Config, error) {
 			return Config{}, err
 		}
 		cfg.Env = map[string]string{}
-		for key, n := range env {
-			cfg.Env[key] = scalarString(n)
+		// Sorted so the "ignoring env" warnings print in a stable order
+		// regardless of map iteration (mapwriter).
+		for _, key := range slices.Sorted(maps.Keys(env)) {
+			n := env[key]
+			val := scalarString(n)
+			// The config file is discovered from the project directory,
+			// which for a cloned checkout is attacker-authored. Its env
+			// block exists to template ISOLATED RESOURCE LOCATORS (ports,
+			// ids, dirs) into service URLs; it is not a channel for
+			// anything else. Process-shaping names are refused outright
+			// (proxy selection, PATH, loader, HOME decide where the dev
+			// server's requests and execs go), and a value without a
+			// template marker is refused too — a static value is never
+			// an isolated resource. The operator's own exports stay the
+			// only source of those (Env never overrides a variable the
+			// operator set, whatever GOFASTR_ISOLATION_REWRITE says).
+			if isEnvShapingName(key) || !isTemplateValue(val) {
+				fmt.Fprintf(os.Stderr,
+					"isolation: ignoring env %q from %s: only port/id/dir template values may come from the project isolation file\n",
+					key, path)
+				continue
+			}
+			cfg.Env[key] = val
 		}
 	}
 	return cfg, nil
+}
+
+// envShapingNames are the environment names that shape where a process's
+// traffic, binaries, libraries, and writes go. A project-dir isolation
+// file must never set them (case-insensitively: Go's proxy handling
+// honors both HTTPS_PROXY and https_proxy). The operator's shell is the
+// only source for these.
+var envShapingNames = map[string]bool{
+	// proxy selection (upper + lower forms via ToUpper in the predicate)
+	"HTTP_PROXY": true, "HTTPS_PROXY": true, "ALL_PROXY": true,
+	"NO_PROXY": true, "FTP_PROXY": true, "WS_PROXY": true, "WSS_PROXY": true,
+	// executable + loader resolution
+	"PATH": true, "LD_PRELOAD": true, "LD_LIBRARY_PATH": true,
+	"LD_AUDIT": true, "DYLD_INSERT_LIBRARIES": true,
+	"DYLD_LIBRARY_PATH": true, "DYLD_FORCE_FLAT_NAMESPACE": true,
+	// identity + writable scratch, relocate config/credential stores
+	"HOME": true, "SHELL": true, "USER": true, "LOGNAME": true,
+	"TMPDIR": true, "TMP": true, "TEMP": true, "XDG_CONFIG_HOME": true,
+	"XDG_STATE_HOME": true, "XDG_DATA_HOME": true, "XDG_CACHE_HOME": true,
+	// shell execution shaping
+	"IFS": true, "ENV": true, "BASH_ENV": true, "ZDOTDIR": true,
+	"SHELLOPTS": true, "PROMPT_COMMAND": true,
+}
+
+// isEnvShapingName reports whether key (in any case) selects where the
+// process's traffic or exec resolution goes.
+func isEnvShapingName(key string) bool {
+	// The isolation markers themselves are also refused: a project file
+	// planting GOFASTR_ISOLATION_REWRITE=0 or GOFASTR_ISOLATION=off would
+	// shape the child's own isolation posture.
+	return envShapingNames[strings.ToUpper(key)] ||
+		strings.HasPrefix(strings.ToUpper(key), "GOFASTR_ISOLATION")
+}
+
+// isTemplateValue reports whether val carries at least one isolation
+// template marker ({port}, {port:name}, {id}, {project_dir}). Static
+// values are not isolated resources and never come from the file.
+func isTemplateValue(val string) bool {
+	for _, marker := range []string{"{port}", "{port:", "{id}", "{project_dir}"} {
+		if strings.Contains(val, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 func findGitRoot(start string) (string, bool) {

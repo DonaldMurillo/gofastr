@@ -141,7 +141,7 @@ func (ch *CrudHandler) ServeStreamingList(ctx context.Context, w http.ResponseWr
 	}
 
 	first := true
-	boolCols := databaseBoolColumnsForEntity(rows, len(cols), ch.Entity, cols)
+	boolCols := databaseBoolColumnsForEntity(rows, len(cols), ch.snapshotFields(), cols)
 	for rows.Next() {
 		row, err := scanRowsOne(rows, cols, ch.convertKey, boolCols)
 		if err != nil {

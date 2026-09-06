@@ -30,6 +30,14 @@ type JWTAuth struct {
 	PreviousSecrets []string
 	Expiry          time.Duration
 	Issuer          string
+
+	// users, when set, is the store RequireAuth re-resolves every token
+	// subject against, so deletion, erasure, and role downgrades reach
+	// outstanding JWTs at request time instead of at token TTL. Set by
+	// AuthManager.Init; a bare NewJWTAuth (service-to-server deployments
+	// with no user table) leaves it nil and RequireAuth falls back to the
+	// historical claims-derived principal.
+	users UserStore
 }
 
 // NewJWTAuth creates a new JWTAuth with the given secret and token expiry duration.
@@ -39,6 +47,14 @@ func NewJWTAuth(secret string, expiry time.Duration) *JWTAuth {
 		Expiry: expiry,
 		Issuer: "gofastr",
 	}
+}
+
+// SetUserStore wires the user store whose fresh row becomes the request
+// principal. Identity AND roles are taken from the row; the token's copy is
+// trusted for nothing but the subject. Call before serving requests;
+// AuthManager.Init does it for manager-built JWTAuths.
+func (j *JWTAuth) SetUserStore(users UserStore) {
+	j.users = users
 }
 
 // GenerateToken creates a signed JWT token for the given user.
@@ -107,6 +123,26 @@ func (j *JWTAuth) ValidateToken(tokenString string) (Claims, error) {
 	}
 
 	return claims, nil
+}
+
+// resolveOwner loads the principal for a valid token. With a user store
+// wired (SetUserStore / AuthManager.Init) the subject is re-resolved via
+// FindByID on EVERY request, and identity AND roles come from the fresh
+// row — a deleted/erased owner, or one whose roles were downgraded, fails
+// closed immediately instead of at token TTL, mirroring resolveTokenOwner
+// (API tokens) and resolveSessionUser (sessions). A lookup error is
+// treated as owner-missing (fail closed), the same posture both siblings
+// hold. A JWTAuth with no store — bare NewJWTAuth, service-to-server
+// deployments with no user table — keeps the claims-derived principal.
+func (j *JWTAuth) resolveOwner(ctx context.Context, c Claims) (User, bool) {
+	if j.users == nil {
+		return claimsToUser(c), true
+	}
+	u, err := j.users.FindByID(ctx, c.UserID)
+	if err != nil || u == nil {
+		return nil, false
+	}
+	return u, true
 }
 
 // claimsToUser converts Claims into a User.

@@ -522,10 +522,17 @@ audit or reconciliation process.
 **Handler timeout.** By default a DBQueue handler runs unbounded: a
 black-holed dependency (an SMTP host that never answers, a hung HTTP
 call) wedges the worker forever, and with the default single worker
-that stalls the whole queue. Pass `WithDBHandlerTimeout(d)` to cancel
-the handler's context at the deadline. The bundled SMTP sender
-(`battery/email`) also bounds its own dial at 10s (`SMTPConfig.
-DialTimeout`), so it can't hang even without a handler timeout.
+that stalls the whole queue. Pass `WithDBHandlerTimeout(d)`
+(`WithHandlerTimeout(d)` on MemoryQueue, 30s default there) and the
+worker stops *waiting* at the deadline even if the handler ignores its
+cancelled context: the invocation runs on its own goroutine, the job is
+nacked at the deadline (retried/dead-lettered), and the worker keeps
+draining — so one non-cooperative handler costs one retry cycle, not
+the whole queue. A side effect landing after the deadline is the
+duplicate the at-least-once contract already requires handlers to
+tolerate. The bundled SMTP sender (`battery/email`) also bounds its own
+dial at 10s (`SMTPConfig.DialTimeout`), so it can't hang even without
+a handler timeout.
 
 Multiple queues can be passed to `NewScheduler`; the job is enqueued
 onto all of them. Enqueue errors are logged via `slog.Default()`.

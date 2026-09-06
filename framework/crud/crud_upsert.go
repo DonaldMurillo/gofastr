@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"strings"
 
@@ -107,6 +108,9 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 				return &beforeHookError{err: err}
 			}
 		}
+		if err := ch.coerceIntColumnValues(body); err != nil {
+			return err
+		}
 		vr := schema.ValidateAll(ch.entitySchema(), body)
 		if !vr.Valid {
 			return &ValidationError{fields: vr.Errors}
@@ -134,8 +138,14 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 				if !callerSuppliedIncrement(body[f.Name]) {
 					continue
 				}
+				bind, bindErr := incrementBindValue(body[f.Name])
+				if bindErr != nil {
+					return &ValidationError{fields: map[string][]string{f.Name: {
+						"primary key number is not exactly representable; send it as a JSON integer literal or a string",
+					}}}
+				}
 				cols = append(cols, f.Name)
-				vals = append(vals, incrementBindValue(body[f.Name]))
+				vals = append(vals, bind)
 				continue
 			}
 			if f.AutoGenerate != schema.AutoNone {
@@ -371,18 +381,29 @@ func callerSuppliedIncrement(v any) bool {
 // every dialect binds an integer (a JSON-decoded float64 into a Postgres
 // SERIAL column would be a type error). Non-numeric values pass through and
 // surface the driver's own error.
-func incrementBindValue(v any) any {
+func incrementBindValue(v any) (any, error) {
 	switch x := v.(type) {
 	case int:
-		return int64(x)
+		return int64(x), nil
 	case int32:
-		return int64(x)
+		return int64(x), nil
 	case float64:
-		return int64(x)
+		if i, ok := exactFloatInt64(x); ok {
+			return i, nil
+		}
+		return nil, fmt.Errorf("primary key %v: float64 beyond exact integer precision; send it as a JSON integer literal or a string", x)
 	case json.Number:
 		if i, err := x.Int64(); err == nil {
-			return i
+			return i, nil
+		}
+		if fl, err := x.Float64(); err == nil {
+			if i, ok := exactFloatInt64(fl); ok {
+				return i, nil
+			}
+			if fl == math.Trunc(fl) {
+				return nil, fmt.Errorf("primary key %s: beyond exact float64 precision; send it as a JSON integer literal or a string", x.String())
+			}
 		}
 	}
-	return v
+	return v, nil
 }

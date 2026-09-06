@@ -61,7 +61,7 @@ func prodOAuth2Manager(store auth.UserStore) *auth.AuthManager {
 		SessionStore: stubDurableSessions{},
 		UserStore:    store,
 	})
-	mgr.Use(auth.NewOAuth2Plugin(auth.OAuth2Config{StateSecret: "test"}))
+	mgr.Use(auth.NewOAuth2Plugin(auth.OAuth2Config{StateSecret: "test-state-secret-1"}))
 	return mgr
 }
 
@@ -95,7 +95,7 @@ func TestOAuth2Plugin_Init_AllowedInDevMode(t *testing.T) {
 		DevMode:   true,
 		UserStore: minimumNonLinkerStore{},
 	})
-	mgr.Use(auth.NewOAuth2Plugin(auth.OAuth2Config{StateSecret: "test"}))
+	mgr.Use(auth.NewOAuth2Plugin(auth.OAuth2Config{StateSecret: "test-state-secret-1"}))
 	if err := mgr.Init(nil); err != nil {
 		t.Fatalf("DevMode must allow a non-linker store (legacy path reachable for testing); got %v", err)
 	}
@@ -110,7 +110,7 @@ func TestOAuth2Plugin_Init_AllowedWithInMemoryAck(t *testing.T) {
 		AllowInMemoryStores: true,
 		UserStore:           minimumNonLinkerStore{},
 	})
-	mgr.Use(auth.NewOAuth2Plugin(auth.OAuth2Config{StateSecret: "test"}))
+	mgr.Use(auth.NewOAuth2Plugin(auth.OAuth2Config{StateSecret: "test-state-secret-1"}))
 	if err := mgr.Init(nil); err != nil {
 		t.Fatalf("AllowInMemoryStores must allow a non-linker store (acknowledged single-node); got %v", err)
 	}

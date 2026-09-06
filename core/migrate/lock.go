@@ -4,7 +4,11 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"log/slog"
+	"sync"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/core/query"
 )
 
 // lockPollInterval is how often WithAdvisoryLock retries pg_try_advisory_lock
@@ -56,11 +60,18 @@ const SeedAdvisoryLockKey int64 = 7583194026157293042
 //     pg_advisory_lock on context cancellation. A stuck holder would
 //     otherwise hang boot forever.) This is the guard that makes
 //     auto-migrate-on-boot safe across N replicas.
-//   - SQLite: no lock is taken (SQLite serializes writers at the file level),
-//     but fn still gets a pinned connection so callers have one uniform code
-//     path. The PK upgrade (rebuildTableSQLite) is NOT idempotent against a
-//     table that already has group_name values. That is why only Up/Down/
-//     Force call ensureCompositeKey, never Status (which is unlocked).
+//   - SQLite: a leased lock row in _gofastr_migrate_lock, the twin of the
+//     seed lease (framework/migrate/seed.go). SQLite's file-level locking
+//     serializes individual statements, not the applied-versions read →
+//     apply → record sequence, so two replicas booting against one file
+//     could both compute the same pending set and the loser failed its boot
+//     on DDL the winner had already applied. The lease (plus the
+//     per-migration tracking-row re-check in runMigrationUp) closes that:
+//     the second instance waits for the holder, then no-ops. A crashed
+//     holder's lease expires and the next boot proceeds. The PK upgrade
+//     (rebuildTableSQLite) is NOT idempotent against a table that already
+//     has group_name values. That is why only Up/Down/Force call
+//     ensureCompositeKey, never Status (which is unlocked).
 //
 // db == nil runs fn(nil). Callers already treat a nil db as a no-op.
 func WithAdvisoryLock(ctx context.Context, db *sql.DB, dialect Dialect, fn func(conn *sql.Conn) error) error {
@@ -69,10 +80,27 @@ func WithAdvisoryLock(ctx context.Context, db *sql.DB, dialect Dialect, fn func(
 
 // WithAdvisoryLockKey is WithAdvisoryLock with an explicit lock key, for hosts
 // that need to namespace the lock away from other migration tooling sharing
-// the database.
+// the database. The key names the Postgres advisory lock; the SQLite arm uses
+// its own fixed lease table and ignores it.
 func WithAdvisoryLockKey(ctx context.Context, db *sql.DB, dialect Dialect, key int64, fn func(conn *sql.Conn) error) error {
 	if db == nil {
 		return fn(nil)
+	}
+
+	// SQLite arm: take the leased lock row BEFORE pinning the connection, so
+	// the lease statements (and its heartbeat) run on the pool while fn owns
+	// the pinned conn. A process-level mutex orders same-process callers
+	// first: two goroutines whose pool connections may not even share a
+	// database (an in-memory SQLite pool is per-connection) could not be
+	// ordered by any row.
+	if dialect == DialectSQLite {
+		sqliteMigrateMu.Lock()
+		defer sqliteMigrateMu.Unlock()
+		release, err := acquireSQLiteMigrateLease(ctx, db)
+		if err != nil {
+			return fmt.Errorf("migrate lock: sqlite lease: %w", err)
+		}
+		defer release()
 	}
 
 	// Pin a single connection for the whole lock lifetime. The lock (Postgres)
@@ -115,4 +143,96 @@ func WithAdvisoryLockKey(ctx context.Context, db *sql.DB, dialect Dialect, key i
 	}()
 
 	return fn(conn)
+}
+
+// sqliteMigrateMu serializes WithAdvisoryLock callers within one process on
+// SQLite. The leased lock row orders processes against a shared file, but two
+// goroutines in one process may hold pool connections that do not even share
+// a database (an in-memory SQLite pool is per-connection), which no row could
+// order. Same rationale as framework/migrate's sqliteSeedMu.
+var sqliteMigrateMu sync.Mutex
+
+// migrateLease is how long a _gofastr_migrate_lock row counts as held before
+// another process may steal it. A holder renews at lease/3, so a live process
+// never loses the lock; a crashed one blocks other boots for at most one
+// lease. If a slow migration still outruns the lease, the runMigrationUp
+// tracking-row re-check makes the over-stepping runner converge instead of
+// corrupting or failing its boot.
+const migrateLease = 60 * time.Second
+
+// acquireSQLiteMigrateLease takes the cross-process migration lock on SQLite:
+// one row in _gofastr_migrate_lock, acquired by a single atomic upsert whose
+// DO UPDATE fires only when the previous lease has expired (SQLite's own
+// clock via strftime('%s','now'), so processes disagreeing about wall time
+// don't stretch or shrink the lease). While held, a heartbeat renews it; the
+// returned release func deletes the row. Waiting respects ctx: cancel it to
+// stop waiting for the current holder. Mirrors acquireSQLiteSeedLease in
+// framework/migrate/seed.go; the table is distinct so a boot holding both
+// locks (migrate then seed) never self-deadlocks.
+func acquireSQLiteMigrateLease(ctx context.Context, db *sql.DB) (release func(), err error) {
+	lockTable := query.QuoteIdent(query.MustIdent("_gofastr_migrate_lock"))
+	if _, err := db.ExecContext(ctx, fmt.Sprintf(
+		"CREATE TABLE IF NOT EXISTS %s (id INTEGER PRIMARY KEY CHECK (id = 1), expires_at INTEGER NOT NULL)", lockTable)); err != nil {
+		return nil, err
+	}
+	acquire := fmt.Sprintf(`INSERT INTO %s (id, expires_at)
+VALUES (1, CAST(strftime('%%s','now') AS INTEGER) + ?)
+ON CONFLICT (id) DO UPDATE SET expires_at = excluded.expires_at
+WHERE %s.expires_at <= CAST(strftime('%%s','now') AS INTEGER)`, lockTable, lockTable)
+	leaseSeconds := int64(migrateLease / time.Second)
+	for {
+		res, err := db.ExecContext(ctx, acquire, leaseSeconds)
+		if err != nil {
+			return nil, err
+		}
+		if n, _ := res.RowsAffected(); n > 0 {
+			break
+		}
+		// Held by another process. Wait and retry; the holder either
+		// releases (row deleted), its lease expires (steal succeeds), or
+		// ctx is cancelled (fail closed, nothing migrated by us).
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(100 * time.Millisecond):
+		}
+	}
+	// Heartbeat: a migration run can take arbitrarily long, far past the
+	// lease, so renew at lease/3 while the run is alive. If this process
+	// dies the heartbeats stop and the lease expires, which is the
+	// crash-release path — there is no SQLite session cleanup to do it for
+	// us, unlike a Postgres session advisory lock.
+	hbCtx, stopHB := context.WithCancel(context.WithoutCancel(ctx))
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		ticker := time.NewTicker(migrateLease / 3)
+		defer ticker.Stop()
+		renew := fmt.Sprintf(
+			"UPDATE %s SET expires_at = CAST(strftime('%%s','now') AS INTEGER) + ? WHERE id = 1", lockTable)
+		for {
+			select {
+			case <-hbCtx.Done():
+				return
+			case <-ticker.C:
+				// A failed renewal is survivable but not silent: if it keeps
+				// failing the lease expires and another process may steal the
+				// migration run, so surface it.
+				if _, err := db.ExecContext(hbCtx, renew, leaseSeconds); err != nil {
+					slog.Warn("migrate lock lease renewal failed; the lease expires if this keeps failing",
+						"err", err)
+				}
+			}
+		}
+	}()
+	return func() {
+		stopHB() // stops the goroutine before the DELETE races a renewal
+		<-done
+		if _, err := db.ExecContext(context.WithoutCancel(ctx), fmt.Sprintf("DELETE FROM %s WHERE id = 1", lockTable)); err != nil {
+			// The lock still opens: the lease expires on its own after
+			// migrateLease. Other boots wait that long instead of running
+			// immediately, which deserves a log line, not silence.
+			slog.Warn("migrate lock release failed; the lease expires instead", "err", err)
+		}
+	}, nil
 }

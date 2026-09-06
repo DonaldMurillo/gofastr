@@ -220,7 +220,15 @@ entities:
       - name: title
         type: string
 `)
-	cmd := exec.Command(os.Args[0], "-test.run=TestBlueprintGenerateRejectsSymlinkOutput")
+	// os.Executable resolves the test binary absolutely: os.Args[0] can
+	// be a bare/relative name, and cmd.Dir points the re-exec at a temp
+	// dir, so a relative arg[0] would fail to exec (empty output) under
+	// the full package run where a sibling test has moved the cwd.
+	self, err := os.Executable()
+	if err != nil {
+		self = os.Args[0]
+	}
+	cmd := exec.Command(self, "-test.run=^TestBlueprintGenerateRejectsSymlinkOutput$")
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(), "GOFASTR_BLUEPRINT_SYMLINK_HELPER=1")
 	output, err := cmd.CombinedOutput()
@@ -228,7 +236,7 @@ entities:
 		t.Fatalf("expected symlink output to fail\n%s", output)
 	}
 	if !strings.Contains(string(output), "refusing to write through symlink") {
-		t.Fatalf("unexpected output:\n%s", output)
+		t.Fatalf("unexpected output (err=%v):\n%s", err, output)
 	}
 	if entries, err := os.ReadDir(outside); err != nil {
 		t.Fatal(err)

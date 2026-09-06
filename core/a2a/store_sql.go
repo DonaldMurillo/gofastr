@@ -399,6 +399,118 @@ func (s *SQLStore) DeletePushConfig(ctx context.Context, owner, taskID, id strin
 	return nil
 }
 
+// TrimTerminalTasks implements RetentionTrimmer: it keeps the newest
+// `keep` terminal rows for owner and deletes the older ones. The id
+// walk then delete (instead of one DELETE ... LIMIT statement) keeps
+// both dialects happy; ids are deleted in bounded batches.
+func (s *SQLStore) TrimTerminalTasks(ctx context.Context, owner string, keep int) error {
+	if keep < 0 {
+		return nil
+	}
+	stmt := fmt.Sprintf(`SELECT id FROM %s WHERE owner = %s AND state IN (%s,%s,%s,%s) ORDER BY status_ts DESC, id`,
+		query.QuoteIdent(s.taskTable), s.ph(1), s.ph(2), s.ph(3), s.ph(4), s.ph(5))
+	rows, err := s.db.QueryContext(ctx, stmt,
+		owner, TaskStateCompleted, TaskStateFailed, TaskStateCanceled, TaskStateRejected)
+	if err != nil {
+		return err
+	}
+	var pastKeep []string
+	for i := 0; rows.Next(); i++ {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return err
+		}
+		if i >= keep {
+			pastKeep = append(pastKeep, id)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return err
+	}
+	rows.Close()
+	return s.deleteTasksByID(ctx, owner, pastKeep)
+}
+
+// deleteTasksByID removes owner-scoped rows by id in bounded batches.
+func (s *SQLStore) deleteTasksByID(ctx context.Context, owner string, ids []string) error {
+	for len(ids) > 0 {
+		n := min(len(ids), 100)
+		batch := ids[:n]
+		ph := make([]string, len(batch))
+		args := make([]any, 0, len(batch)+1)
+		args = append(args, owner)
+		for i, id := range batch {
+			ph[i] = s.ph(i + 2)
+			args = append(args, id)
+		}
+		stmt := fmt.Sprintf(`DELETE FROM %s WHERE owner = %s AND id IN (%s)`,
+			query.QuoteIdent(s.taskTable), s.ph(1), strings.Join(ph, ","))
+		if _, err := s.db.ExecContext(ctx, stmt, args...); err != nil {
+			return err
+		}
+		ids = ids[n:]
+	}
+	return nil
+}
+
+// TrimPushConfigs implements RetentionTrimmer: it keeps the newest
+// `keep` configs for (owner, taskID) — the order ListPushConfigs
+// serves — and deletes the older ones.
+func (s *SQLStore) TrimPushConfigs(ctx context.Context, owner, taskID string, keep int) error {
+	if keep < 0 {
+		return nil
+	}
+	stmt := fmt.Sprintf(`SELECT id FROM %s WHERE task_id = %s AND owner = %s ORDER BY created_at, id`,
+		query.QuoteIdent(s.pushTable), s.ph(1), s.ph(2))
+	rows, err := s.db.QueryContext(ctx, stmt, taskID, owner)
+	if err != nil {
+		return err
+	}
+	var ids []string // oldest first, the order the query serves
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return err
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return err
+	}
+	rows.Close()
+	if len(ids) <= keep {
+		return nil
+	}
+	return s.deletePushConfigsByID(ctx, owner, taskID, ids[:len(ids)-keep])
+}
+
+// deletePushConfigsByID removes (owner, taskID)-scoped config rows by
+// id in bounded batches.
+func (s *SQLStore) deletePushConfigsByID(ctx context.Context, owner, taskID string, ids []string) error {
+	for len(ids) > 0 {
+		n := min(len(ids), 100)
+		batch := ids[:n]
+		ph := make([]string, len(batch))
+		args := make([]any, 0, len(batch)+2)
+		args = append(args, taskID, owner)
+		for i, id := range batch {
+			ph[i] = s.ph(i + 3)
+			args = append(args, id)
+		}
+		stmt := fmt.Sprintf(`DELETE FROM %s WHERE task_id = %s AND owner = %s AND id IN (%s)`,
+			query.QuoteIdent(s.pushTable), s.ph(1), s.ph(2), strings.Join(ph, ","))
+		if _, err := s.db.ExecContext(ctx, stmt, args...); err != nil {
+			return err
+		}
+		ids = ids[n:]
+	}
+	return nil
+}
+
 // isDuplicateRowErr reports whether err is a unique-constraint failure
 // from INSERT, for the SQLite ("UNIQUE constraint failed") and Postgres
 // ("duplicate key value") drivers.

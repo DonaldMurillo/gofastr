@@ -40,6 +40,7 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"github.com/DonaldMurillo/gofastr/core/yaml"
 )
 
@@ -583,9 +584,13 @@ func oaBuildOp(root, opNode map[string]any, baseParams []any, method, path strin
 	// and buildCLISpec's Selection guard. Newlines and tabs stay
 	// allowed — a multi-line summary is quoted data, not a terminal
 	// rewrite (TestGenerateCLI_OpenAPIHostileStringsStayQuoted pins it
-	// accepted).
-	if strings.ContainsFunc(summary, func(r rune) bool { return (r < 0x20 && r != '\n' && r != '\t') || r == 0x7f }) {
-		return op, fmt.Errorf("operation %q has a summary carrying terminal-control bytes (ESC, CR, BEL or another C0/DEL): summaries are printed verbatim in the generated CLI's help output. Remove them from the spec", id)
+	// accepted). The 8-bit C1 spellings (U+0080–U+009F: CSI as U+009B,
+	// OSC as U+009D) drive the same escapes without an ESC prefix, so
+	// they are refused too (2026-09-05 red-probe round).
+	if strings.ContainsFunc(summary, func(r rune) bool {
+		return (r < 0x20 && r != '\n' && r != '\t') || r == 0x7f || textsafe.IsC1(r)
+	}) {
+		return op, fmt.Errorf("operation %q has a summary carrying terminal-control bytes (ESC, CR, BEL or another C0/DEL, or the 8-bit C1 forms U+0080–U+009F): summaries are printed verbatim in the generated CLI's help output. Remove them from the spec", id)
 	}
 	op.Summary = summary
 

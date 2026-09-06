@@ -296,11 +296,10 @@ func TestJSONDecodeNoOpsOnEmptyInput(t *testing.T) {
 	ch.decodeJSONRows(nil)
 	ch.decodeJSONRows([]map[string]any{})
 
-	// Second call must hit the fresh-cache branch, not rebuild.
-	ch.ensureFieldCache()
-	sig := ch.visibleFieldSig
-	ch.ensureFieldCache()
-	if ch.visibleFieldSig != sig {
+	// A fresh snapshot must be reused, not rebuilt per call.
+	s1 := ch.ensureFieldCache()
+	s2 := ch.ensureFieldCache()
+	if s1 != s2 {
 		t.Errorf("ensureFieldCache rebuilt a fresh cache")
 	}
 

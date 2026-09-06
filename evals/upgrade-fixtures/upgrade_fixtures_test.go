@@ -193,13 +193,21 @@ func assertRuntimeContract(t *testing.T, fx fixture, base string, want manifestE
 		t.Fatalf("alice's create leaked into bob's scope: bob has %d, want %d", got, want.BobTasks)
 	}
 
-	// OpenAPI reachable with a session and names every entity's CRUD surface.
+	// OpenAPI reachable with a session and names every CRUD surface the
+	// caller can read. Since the round-4 change the spec is filtered by
+	// per-request read scope (WithPublicOpenAPI opts into the full
+	// document), so alice sees the entities she can read — tasks
+	// (owner-scoped) and tags (public) — and NOT the admin-gated users
+	// entity, whose Access.Read is "users:read", a grant alice lacks.
 	assertStatusCode(t, "GET /openapi.json authed", base+"/openapi.json", "GET", "", alice, 200)
 	spec := mustOpenAPI(t, base+"/openapi.json", alice)
-	for _, table := range []string{"tasks", "tags", "users"} {
+	for _, table := range []string{"tasks", "tags"} {
 		if !spec.hasPath(table) {
-			t.Fatalf("OpenAPI spec missing the %q CRUD surface after upgrade", table)
+			t.Fatalf("OpenAPI spec missing the %q CRUD surface alice can read after upgrade", table)
 		}
+	}
+	if spec.hasPath("users") {
+		t.Fatalf("OpenAPI spec disclosed the users entity (Access.Read \"users:read\") to alice, who lacks that grant; the round-4 per-request scope filter must hide it")
 	}
 
 	// Island interaction round-trip via HTTP (no browser): the entity_list sort

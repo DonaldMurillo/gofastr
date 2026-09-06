@@ -116,6 +116,14 @@ type OAuth2Plugin struct {
 	usedNonces map[string]time.Time
 }
 
+// minStateSecretLen is the floor for OAuth2Config.StateSecret, the HMAC
+// key signing OAuth2 state tokens. Anything shorter is a misconfiguration
+// worth failing loudly on (sessiontoken's minKeyLen=16 is the precedent:
+// 16 bytes is the smallest value whose brute-force cost exceeds the
+// token's useful lifetime); state tokens are captured from redirect URLs
+// and attacked offline.
+const minStateSecretLen = 16
+
 // NewOAuth2Plugin creates an OAuth2 plugin with the given configuration.
 func NewOAuth2Plugin(cfg OAuth2Config) *OAuth2Plugin {
 	p := &OAuth2Plugin{
@@ -127,8 +135,17 @@ func NewOAuth2Plugin(cfg OAuth2Config) *OAuth2Plugin {
 	// Copy providers from config
 	maps.Copy(p.providers, cfg.Providers)
 
-	// State signing key
+	// State signing key. A state token travels in the browser's address
+	// bar (provider redirect URL, logs, referers), so a short HMAC key is
+	// brute-forceable offline against any captured token — refuse it at
+	// construction the way framework/secret.go and sessiontoken's
+	// minKeyLen=16 do. Empty still means "mint a random 32-byte key".
 	if cfg.StateSecret != "" {
+		if len(cfg.StateSecret) < minStateSecretLen {
+			panic(fmt.Sprintf(
+				"oauth2: StateSecret must be at least %d bytes: state tokens are offline-brute-forceable from any redirect URL. Pass a real secret (openssl rand -base64 24) or leave it empty to mint a random per-process key",
+				minStateSecretLen))
+		}
 		p.stateKey = []byte(cfg.StateSecret)
 	} else {
 		key := make([]byte, 32)
@@ -143,6 +160,14 @@ func NewOAuth2Plugin(cfg OAuth2Config) *OAuth2Plugin {
 
 // Name returns the plugin identifier.
 func (p *OAuth2Plugin) Name() string { return "oauth2" }
+
+// TokenStore returns the configured OAuthTokenStore, or nil when the
+// host did not set OAuth2Config.TokenStore. The accounts plugin's
+// unlink route uses it to drop the stored provider credentials when a
+// user removes a provider link — unlink is the user-facing "this app no
+// longer acts as me at {provider}" action, so the password-equivalent
+// refresh token must not outlive it.
+func (p *OAuth2Plugin) TokenStore() OAuthTokenStore { return p.tokenStore }
 
 // Init stores a reference to the AuthManager and fails closed when the
 // configured UserStore is not a durable OAuth link store.

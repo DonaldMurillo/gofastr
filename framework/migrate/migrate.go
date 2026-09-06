@@ -210,8 +210,11 @@ func AutoMigrate(db *sql.DB, registry entity.Registry) error {
 //
 //   - Advisory lock. The whole run is serialized by a database advisory lock
 //     (coremig.WithAdvisoryLock), so booting N replicas at once cannot race
-//     two concurrent streams of DDL against the same database. No-op on
-//     SQLite, which serializes writers itself.
+//     two concurrent streams of DDL against the same database. On SQLite the
+//     lock is the _gofastr_migrate_lock leased lock row (the twin of the seed
+//     lease): SQLite's file-level locking serializes individual statements,
+//     not the read → DDL → commit sequence, so without it two replicas
+//     booting against one file raced their DDL streams.
 //   - Atomicity. All DDL runs inside one transaction; a failure on entity K
 //     rolls back entities 1..K-1 too, so a botched migration never leaves a
 //     half-created schema behind. Both Postgres and SQLite support

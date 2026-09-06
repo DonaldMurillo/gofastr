@@ -240,6 +240,22 @@ func (s *SQLInboundStore) SeenDedupeKey(ctx context.Context, source, key string)
 	return true, nil
 }
 
+// ReapTerminalBefore implements [RetentionSweeper]: it deletes processed
+// envelopes whose updated_at is older than cutoff. Failed envelopes are
+// deliberately retained as forensic records (the sender's retry and your
+// post-mortem both want the payload), so only unambiguous terminal
+// success is reaped.
+func (s *SQLInboundStore) ReapTerminalBefore(ctx context.Context, cutoff time.Time) (int64, error) {
+	q := fmt.Sprintf(`DELETE FROM %s WHERE status = %s AND updated_at < %s`,
+		s.table, s.placeholder(1), s.placeholder(2))
+	res, err := s.db.ExecContext(ctx, q, string(InboundStatusProcessed), cutoff)
+	if err != nil {
+		return 0, err
+	}
+	n, _ := res.RowsAffected()
+	return n, nil
+}
+
 // ----- statements -----------------------------------------------------------
 
 // columns lists the persisted column order, shared by insert/select so the

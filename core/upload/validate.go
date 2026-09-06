@@ -9,6 +9,8 @@ import (
 	"slices"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
 // ValidateMIME reads the first 512 bytes from file to detect MIME type,
@@ -132,8 +134,11 @@ func boundFilenameInput(name string) string {
 //
 // Control bytes (CR, LF, TAB, anything < 0x20) are dropped so a logged
 // filename can't escape its log line via injected newlines or terminal
-// control sequences. The final result is truncated to MaxFilenameBytes
-// (preserving the extension) so an attacker can't ship a 10 MB filename.
+// control sequences; the C1 controls and the zero-width/bidi set ride
+// along (see isStrippableControl) so the storage key a filename becomes
+// can't flip the extension a user sees. The final result is truncated to
+// MaxFilenameBytes (preserving the extension) so an attacker can't ship
+// a 10 MB filename.
 func SanitizeFilename(name string) string {
 	// Bound the input length BEFORE any O(n) memory-heavy pass. The
 	// multipart filename is attacker-controlled MIME-header metadata not
@@ -243,15 +248,20 @@ func truncateRunes(s string, maxBytes int) string {
 	return s[:cut]
 }
 
-// stripControlBytes drops every ASCII control byte (< 0x20, plus DEL
-// 0x7f) and every Unicode control / line-terminator rune. The latter
-// closes a gap that a byte-only filter leaves open: U+0085 (NEL),
-// U+2028 (LINE SEPARATOR), and U+2029 (PARAGRAPH SEPARATOR) are all
-// encoded entirely with bytes >= 0x80, so they survive a byte-only
-// scan yet are treated as line breaks by terminals, log processors,
-// and JavaScript/JSON tooling, the same newline-injection hazard the
-// ASCII filter defends against.
+// stripControlBytes drops every C0 control byte, DEL, every C1 control,
+// every invisible/bidi codepoint, and every Unicode control /
+// line-terminator rune. The multibyte runes close gaps a byte-only
+// filter leaves open: U+0085 (NEL), U+2028/U+2029 (LINE/PARAGRAPH
+// SEPARATOR), the C1 block, and the zero-width/bidi set are all encoded
+// entirely with bytes >= 0x80, so they survive a byte-only scan yet are
+// treated as line breaks, terminal escapes, or text-reordering controls
+// by terminals, log processors, browsers, and JavaScript/JSON tooling.
+// The set is named once in core/textsafe; this is the shared strip for
+// anything on its way to becoming a stored filename or storage key.
 func stripControlBytes(s string) string {
+	if !strings.ContainsFunc(s, isStrippableControl) {
+		return s
+	}
 	var b strings.Builder
 	b.Grow(len(s))
 	for _, r := range s {
@@ -263,22 +273,27 @@ func stripControlBytes(s string) string {
 	return b.String()
 }
 
-// isStrippableControl reports whether r is a control character or a
-// Unicode line/paragraph separator that must never survive into a
-// stored filename.
+// isStrippableControl reports whether r is a control character, a
+// Unicode line/paragraph separator, a C1 control, or an invisible/bidi
+// codepoint that must never survive into a stored filename or the
+// storage key built from one.
 func isStrippableControl(r rune) bool {
 	switch r {
-	case ' ', // LINE SEPARATOR
-		' ', // PARAGRAPH SEPARATOR
-		'': // NEXT LINE (NEL)
+	case '\u2028', // LINE SEPARATOR
+		'\u2029', // PARAGRAPH SEPARATOR
+		'\u0085': // NEXT LINE (NEL)
 		return true
 	}
-	// C0 controls, DEL, and C1 controls (0x80–0x9f, which includes NEL
-	// above but also other invisible control runes).
-	if r < 0x20 || r == 0x7f || (r >= 0x80 && r <= 0x9f) {
+	// C0 controls, DEL, and the C1 block (0x80–0x9f, which includes NEL
+	// above but also the other invisible control runes).
+	if r < 0x20 || r == 0x7f || textsafe.IsC1(r) {
 		return true
 	}
-	return false
+	// The zero-width/bidi set: a filename and the key built from it are
+	// rendered to humans in served URL paths, Content-Disposition, storage
+	// listings, and logs, where an RLO flips the visible extension and a
+	// zero-width space manufactures visually identical twin names.
+	return textsafe.IsInvisible(r)
 }
 
 // isBlankOrDottyOnly reports whether s is empty or made up of nothing

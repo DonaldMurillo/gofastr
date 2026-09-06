@@ -1,7 +1,9 @@
 package openapi
 
 import (
+	"context"
 	"maps"
+	"net/http"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core/openapi"
@@ -39,6 +41,38 @@ import (
 // nil falls back to the Exposure-only check. Declared custom Endpoints
 // are documented either way; App mounts those outside its CRUD branch.
 func EntityOpenAPI(registry entity.Registry, title, version string, crudMounted func(*entity.Entity) bool, basePath ...string) *openapi.Spec {
+	s := entityOpenAPI(registry, title, version, crudMounted, nil, basePath...)
+	// The auth-gated serving path (core/openapi Handler) rebuilds the
+	// document per request through RequestView, keeping only the
+	// entities THIS caller can read — llm.md parity: the spec is the
+	// same disclosure class as the llm.md index, and an authenticated
+	// caller with no read grant for a gated entity gets 403 on its rows,
+	// so its name, paths, and columns must not reach them via
+	// /openapi.json either (2026-09-05 red-probe round). The public
+	// opt-in (WithPublicOpenAPI → PublicHandler) ignores RequestView
+	// and keeps serving the full spec.
+	s.RequestView = func(r *http.Request) *openapi.Spec {
+		ctx := r.Context()
+		return entityOpenAPI(registry, title, version, crudMounted, func(ent *entity.Entity) bool {
+			return canReadSpecEntity(ctx, ent)
+		}, basePath...)
+	}
+	return s
+}
+
+// canReadSpecEntity reports whether ctx passes the read-scope gates the
+// entity's own List route runs, as a boolean: the crud predicate
+// CanReadScoped (baseline session requirement, owner scoping, tenant
+// scoping, RBAC — the same bundle llm.md's canListEntity assembles
+// in-process). An entity this caller would only ever see 401/403 on is
+// omitted from their spec document entirely; the spec is the disclosure.
+func canReadSpecEntity(ctx context.Context, ent *entity.Entity) bool {
+	return (&crud.CrudHandler{Entity: ent}).CanReadScoped(ctx)
+}
+
+// entityOpenAPI is EntityOpenAPI's builder: keep, when non-nil, filters
+// which registered entities reach the document.
+func entityOpenAPI(registry entity.Registry, title, version string, crudMounted func(*entity.Entity) bool, keep func(*entity.Entity) bool, basePath ...string) *openapi.Spec {
 	s := openapi.NewSpec(title, version)
 	apiPrefix := ""
 	if len(basePath) > 0 && basePath[0] != "" && basePath[0] != "/" {
@@ -109,6 +143,9 @@ func EntityOpenAPI(registry entity.Registry, title, version string, crudMounted 
 	// otherwise the tag array order tracks Go's randomised map
 	// iteration, breaking ETag caching and golden-file diffs.
 	for _, ent := range registry.AllSorted() {
+		if keep != nil && !keep(ent) {
+			continue // unreadable for this caller: name, paths, and columns stay out of the document
+		}
 		entityName := ent.GetName()
 		tableName := ent.GetTable()
 		fields := ent.GetFields()

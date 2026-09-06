@@ -337,7 +337,11 @@ func runSingle(h *xharness.Harness, c *inproc.Client, sess ids.SessionID, prompt
 		if env.Kind == "TextDelta" {
 			td, _ := control.DecodeEvent(env)
 			if t, ok := td.(control.TextDelta); ok {
-				fmt.Print(t.Text)
+				// Provider/tool text is attacker-influenced (model output,
+				// tool results over a hostile repo, provider error bodies):
+				// scrub before it reaches the terminal (2026-09-05
+				// red-probe round; the TUI strips the same class at ingest).
+				fmt.Print(scrubTerminalOutput(t.Text))
 			}
 		}
 		if env.Kind == "TurnEnded" {
@@ -391,7 +395,9 @@ func streamOneTurn(sub <-chan control.EventEnvelope) {
 		case "TextDelta":
 			td, _ := control.DecodeEvent(env)
 			if t, ok := td.(control.TextDelta); ok {
-				fmt.Print(t.Text)
+				// Same scrub as runSingle: the REPL and piped-stdin paths
+				// print provider text raw otherwise.
+				fmt.Print(scrubTerminalOutput(t.Text))
 			}
 		case "TurnEnded":
 			fmt.Println()

@@ -80,22 +80,44 @@ type Definition struct {
 
 	// Signals are served by the widget's /state endpoint.
 	//
-	// SECURITY: /state is UNAUTHENTICATED unless RequireSession is set,
-	// and SignalSource.Read takes no context, so a signal value is
-	// process-global, identical for every caller, and cannot be scoped
-	// per user. Treat every signal as world-readable: put counts,
-	// statuses and other non-sensitive display data here, never
-	// per-user or secret values. Set RequireSession to restrict /state
-	// and /chrome to callers holding a valid framework session.
+	// SECURITY: /state is UNAUTHENTICATED unless RequireSession or
+	// RequireAuthenticated is set, and SignalSource.Read takes no
+	// context, so a signal value is process-global, identical for every
+	// caller, and cannot be scoped per user. Treat every signal as
+	// world-readable: put counts, statuses and other non-sensitive
+	// display data here, never per-user or secret values. Set
+	// RequireSession or RequireAuthenticated to restrict /state and
+	// /chrome; see those fields for what each level actually gates.
 	Signals map[string]SignalSource
 	RPCs    []RPCEndpoint
 
-	// RequireSession gates the /state and /chrome endpoints behind a
-	// valid session, for widgets whose signals are not safe to expose
-	// anonymously. The host supplies the check via SetSessionCheck;
-	// when no check is installed, a widget that asks for one fails
-	// closed (the endpoints 403 rather than serving).
+	// RequireSession gates the /state, /chrome, and RPC endpoints behind
+	// a valid browser session, for widgets whose signals may be shown to
+	// any visitor the site has seen (per-session scoping, anti-recon).
+	// NOTE: this is NOT an authentication gate. Hosts like
+	// framework/uihost auto-mint an anonymous session on the first page
+	// render, so under such a host every visitor — logged in or not —
+	// holds a valid session and passes. When the caller must be a
+	// signed-in user, set RequireAuthenticated instead.
+	// The host supplies the check via SetSessionCheck; when no check is
+	// installed, a widget that asks for one fails closed (the endpoints
+	// 403 rather than serving).
 	RequireSession bool
+
+	// RequireAuthenticated gates the /state, /chrome, and RPC endpoints
+	// behind an authenticated principal: the request must resolve to a
+	// signed-in user, not merely hold a browser session. This is the
+	// level to use for widgets whose signals are not safe to expose
+	// anonymously. The host supplies the check via
+	// SetAuthenticatedCheck — under framework/uihost it is satisfied
+	// only when the app's session middleware (battery/auth
+	// SessionMiddleware or RequireAuth) resolved a user onto the request
+	// context, which the anonymous session a page load auto-mints never
+	// does. When no check is installed, a widget that asks for one fails
+	// closed (the endpoints 403 rather than serving). Setting both
+	// RequireSession and RequireAuthenticated means the stricter level
+	// wins.
+	RequireAuthenticated bool
 
 	// Skeleton is the host's chrome wrapper. If nil, the framework
 	// uses a sensible default for the chosen Position (FloatingPanel
@@ -522,19 +544,24 @@ func (b *Builder) Build() Definition { return b.def }
 // --- Mount ------------------------------------------------------------
 
 // sessionCheck is the host-installed predicate used by widgets that set
-// Definition.RequireSession. nil means no host installed one, in which
-// case a widget asking for a session fails closed.
+// Definition.RequireSession. authenticatedCheck is the stricter one behind
+// Definition.RequireAuthenticated. nil means no host installed one, in
+// which case a widget asking for that level fails closed.
 //
-// Backed by atomic.Pointer so a host installing it (SetSessionCheck) at wire
-// time races nothing with the per-request read in gateSession, a plain var
-// here was a data race under -race, and the predicate is read on every gated
-// request. Set once before serving; hot-swapping on a live host is not advised
-// but is at least race-free.
-var sessionCheck atomic.Pointer[func(*http.Request) bool]
+// Backed by atomic.Pointer so a host installing them (SetSessionCheck /
+// SetAuthenticatedCheck) at wire time races nothing with the per-request
+// read in gateSession, a plain var here was a data race under -race, and
+// the predicates are read on every gated request. Set once before serving;
+// hot-swapping on a live host is not advised but is at least race-free.
+var (
+	sessionCheck       atomic.Pointer[func(*http.Request) bool]
+	authenticatedCheck atomic.Pointer[func(*http.Request) bool]
+)
 
 // SetSessionCheck installs the predicate that Definition.RequireSession
-// consults. Hosts (framework/uihost) call this once at wiring time. A nil
-// predicate clears the check (widgets then fail closed).
+// consults — "the caller holds a valid browser session", whatever the host
+// counts as one. Hosts (framework/uihost) call this once at wiring time. A
+// nil predicate clears the check (widgets then fail closed).
 func SetSessionCheck(fn func(*http.Request) bool) {
 	if fn == nil {
 		sessionCheck.Store(nil)
@@ -552,16 +579,88 @@ func SessionCheck() func(*http.Request) bool {
 	return nil
 }
 
-// gateSession wraps h so it only runs for callers with a valid session
-// when required. Fails closed: a widget that asked for a session but
-// runs in a host that installed no check serves nothing.
-func gateSession(required bool, h http.Handler) http.Handler {
-	if !required {
+// SetAuthenticatedCheck installs the stricter predicate that
+// Definition.RequireAuthenticated consults — "the request resolves to an
+// authenticated principal", not merely a valid session cookie. Hosts
+// (framework/uihost) call this once at wiring time; under uihost it is
+// satisfied only when the app's session middleware resolved a signed-in
+// user onto the request context. A nil predicate clears the check (widgets
+// then fail closed).
+func SetAuthenticatedCheck(fn func(*http.Request) bool) {
+	if fn == nil {
+		authenticatedCheck.Store(nil)
+		return
+	}
+	authenticatedCheck.Store(&fn)
+}
+
+// AuthenticatedCheck returns the installed authenticated predicate, or nil
+// when no host installed one. Lets a host assert its own wiring.
+func AuthenticatedCheck() func(*http.Request) bool {
+	if p := authenticatedCheck.Load(); p != nil {
+		return *p
+	}
+	return nil
+}
+
+// gateLevel is the strength of the session gate a Definition asked for.
+type gateLevel int
+
+const (
+	gateOff           gateLevel = iota // no gate (the default)
+	gateAnySession                     // any valid browser session
+	gateAuthenticated                  // request resolves to an authenticated principal
+)
+
+// gateLevelOf returns the strongest level the Definition asked for.
+// RequireAuthenticated subsumes RequireSession, so a Definition carrying
+// both is gated at the authenticated level.
+func (d *Definition) gateLevelOf() gateLevel {
+	switch {
+	case d.RequireAuthenticated:
+		return gateAuthenticated
+	case d.RequireSession:
+		return gateAnySession
+	}
+	return gateOff
+}
+
+// gateSatisfied reports whether the request passes the gate the level
+// names. Fails closed: a level whose host predicate is missing says no.
+func gateSatisfied(level gateLevel, r *http.Request) bool {
+	var p *atomic.Pointer[func(*http.Request) bool]
+	switch level {
+	case gateAnySession:
+		p = &sessionCheck
+	case gateAuthenticated:
+		p = &authenticatedCheck
+	default:
+		return true
+	}
+	fn := p.Load()
+	return fn != nil && (*fn)(r)
+}
+
+// GateSatisfied reports whether this request passes def's session gate
+// (RequireSession → any session, RequireAuthenticated → authenticated
+// principal; no gate → always true; a level with no installed predicate →
+// false). Exported so SSR hosts can apply the same verdict where they
+// inline widget chrome at page-render time, one hop away from the gated
+// /chrome endpoint: a def whose endpoints 403 must not have its chrome
+// baked into the anonymous page.
+func GateSatisfied(def *Definition, r *http.Request) bool {
+	return gateSatisfied(def.gateLevelOf(), r)
+}
+
+// gateSession wraps h so it only runs for callers passing the level's
+// predicate. Fails closed: a widget that asked for a gate but runs in a
+// host that installed no check serves nothing.
+func gateSession(level gateLevel, h http.Handler) http.Handler {
+	if level == gateOff {
 		return h
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		p := sessionCheck.Load()
-		if p == nil || !(*p)(r) {
+		if !gateSatisfied(level, r) {
 			http.Error(w, "forbidden: widget requires a session", http.StatusForbidden)
 			return
 		}
@@ -593,11 +692,11 @@ func Mount(r *router.Router, def *Definition) {
 
 	srv := &server{def: *def}
 	r.Get(def.StylePath, http.HandlerFunc(srv.serveStyle))
-	r.Get(def.StatePath, gateSession(def.RequireSession, http.HandlerFunc(srv.serveState)))
+	r.Get(def.StatePath, gateSession(def.gateLevelOf(), http.HandlerFunc(srv.serveState)))
 	// Chrome endpoint: runtime fetches HTML lazily on first open
 	// instead of receiving it inline in the /widgets catalog. Keeps
 	// the registry small and lets browsers cache by URL.
-	r.Get(chromePathFor(def), gateSession(def.RequireSession, http.HandlerFunc(srv.serveChrome)))
+	r.Get(chromePathFor(def), gateSession(def.gateLevelOf(), http.HandlerFunc(srv.serveChrome)))
 
 	for _, rpc := range def.RPCs {
 		// Same gate the widget's own /state and chrome endpoints carry.
@@ -606,7 +705,7 @@ func Mount(r *router.Router, def *Definition) {
 		// caller its RPCs in the same process -- and the RPCs are the
 		// mutating half. A gate that covers the read and not the write is
 		// not a gate.
-		h := gateSession(def.RequireSession, rpc.Handler)
+		h := gateSession(def.gateLevelOf(), rpc.Handler)
 		switch rpc.Method {
 		case "GET":
 			r.Get(rpc.Path, h)

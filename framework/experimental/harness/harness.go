@@ -11,7 +11,9 @@
 // What New() does NOT do (owned by the CLI subcommand or a later
 // phase): it runs no TOFU ack gate on context or skill files, their
 // SHA-256 hashes are computed and stored but never compared against an
-// approval store; it does not spawn MCP servers (the mcpclient package
+// approval store (a project skill shadowing a same-named operator
+// global is disclosed with a stderr warning by skill.Registry.Load,
+// not refused); it does not spawn MCP servers (the mcpclient package
 // exists but is not wired into New); and it does not start the control
 // plane transports or the bundled TUI/web clients, which the
 // `gofastr harness` subcommand owns.

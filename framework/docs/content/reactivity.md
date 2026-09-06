@@ -149,7 +149,12 @@ sensibly reflect (sub-second internal dashboards).
   balancers don't idle-kill a live stream, and a bounded stream lifetime
   (default 5m, `island.WithSSEStreamBound`) reclaims a stream stranded by a
   peer the server can't observe as gone, even when its heartbeat writes
-  keep succeeding into the kernel buffer. The connection's read/write
+  keep succeeding into the kernel buffer. The pair is order-safe:
+  `NewManager` enforces bound > heartbeat at the end of construction, so
+  a bound at or below the heartbeat restores the 5m default, and a
+  heartbeat raised above that lifts the bound to heartbeat + 5m — a
+  sub-heartbeat bound would otherwise reclaim every stream before its
+  first keepalive write. The connection's read/write
   deadlines are NOT cleared (the reverted 217e8d06 did, which broke
   net/http's close-notify and stranded streams instead). See issue #159.
 - Concurrent streams are capped (default 16 per session, 4096 per replica;

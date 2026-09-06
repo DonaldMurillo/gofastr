@@ -222,10 +222,27 @@ stream.NewSSEBroker(stream.SSEBrokerConfig{
     Topic:               "dashboard",
     AllowClientSlowMode: true,          // else ?slow=block is ignored
     BlockTimeout:        2 * time.Second, // bound on one blocked send (default 5s)
-    MaxSubscribers:      500,             // reject past the cap (default unlimited)
+    MaxSubscribers:      500,             // reject past the global cap (default unlimited)
+    MaxSeatsPerPrincipal: 16,             // per-caller seat cap (default 16; -1 lifts it)
+    SeatOverflow:         stream.SeatOverflowEvictOldest, // or Refuse (default)
     Principal:           principalFromRequest, // nil = no eviction (see below)
 })
 ```
+
+**`MaxSeatsPerPrincipal` bounds one caller's concurrent streams** (16 by
+default, and the zero-value config gets it): each seat is a goroutine
+plus a buffered channel, and without the bound a single low-privilege
+user can exhaust the process's goroutines and file descriptors for
+everyone. The caller is whatever `Principal` resolves; with no
+`Principal`, every anonymous stream shares ONE seat bucket, so raise the
+cap (or set `Principal`) on a public stream that legitimately serves
+more than 16 anonymous viewers. Past the cap, `SeatOverflowRefuse`
+(the default) answers 429 at connect, and `SeatOverflowEvictOldest`
+closes that caller's oldest stream and seats the new one — the
+multi-tab-friendly policy for clients that reconnect faster than a
+half-open connection's seat is reclaimed. The same shape bounds
+core/mcp's SSE notification stream (`SetSSESeatCap` /
+`SetSSESeatOverflow` there).
 
 **`Principal` decides who may evict a subscriber id.** A `?subscriber_id`
 is a label a client chooses; it is not an identity. With no `Principal`,

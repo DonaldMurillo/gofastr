@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -350,24 +351,40 @@ func readBodyLimit(r *http.Request, limit int64) ([]byte, bool, error) {
 // requestFingerprint hashes the parts of the request that define
 // "sameness" for idempotency: principal, method, path, query, content-
 // type, and the body. Headers other than Content-Type are excluded;
-// they vary with auth tokens, request IDs, etc., and aren't part of the
-// client's intent.
+// they vary with auth tokens, request IDs, etc., and aren't part of
+// the client's intent.
 //
 // Including principal in the fingerprint closes the cross-tenant replay
 // hole: two principals submitting the same body with the same key now
 // hash differently, so each gets its own cached response.
+//
+// Every field is length-prefixed (uint32 big-endian), never
+// separator-joined: a bare "\x00" separator is ambiguous when a field
+// carries NUL — the path from %00, the raw body, a NUL-bearing
+// principal — and two DIFFERENT field tuples fold onto the same
+// digest (("a\x00b","c") and ("a","b\x00c" both hash
+// "a\x00b\x00c")), so the second request replays the first's cached
+// response under the same key. The length prefix keeps the field
+// stream injective (gofastrcompositekey, the same shape the storage
+// shard in Idempotency above already carries).
 func requestFingerprint(r *http.Request, body []byte, principal string) string {
 	h := sha256.New()
-	h.Write([]byte(principal))
-	h.Write([]byte{0})
-	h.Write([]byte(r.Method))
-	h.Write([]byte{0})
-	h.Write([]byte(r.URL.Path))
-	h.Write([]byte{0})
-	h.Write([]byte(r.URL.RawQuery))
-	h.Write([]byte{0})
-	h.Write([]byte(r.Header.Get("Content-Type")))
-	h.Write([]byte{0})
+	writeField := func(field string) {
+		var lenPrefix [4]byte
+		binary.BigEndian.PutUint32(lenPrefix[:], uint32(len(field)))
+		h.Write(lenPrefix[:])
+		h.Write([]byte(field))
+	}
+	writeField(principal)
+	writeField(r.Method)
+	writeField(r.URL.Path)
+	writeField(r.URL.RawQuery)
+	writeField(r.Header.Get("Content-Type"))
+	// The body is last and already bytes: prefix it without the
+	// string() copy of what can be a MaxBodyBytes-sized slice.
+	var bodyLen [4]byte
+	binary.BigEndian.PutUint32(bodyLen[:], uint32(len(body)))
+	h.Write(bodyLen[:])
 	h.Write(body)
 	return hex.EncodeToString(h.Sum(nil))
 }

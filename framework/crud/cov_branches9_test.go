@@ -121,7 +121,7 @@ func TestMultipart_EmptyFieldValue(t *testing.T) {
 	req := httptest.NewRequest("POST", "/media", nil)
 	req.Header.Set("Content-Type", "multipart/form-data; boundary=b")
 	req.Body = io.NopCloser(strings.NewReader(body))
-	out, err := ch.parseMultipartBody(req)
+	out, _, err := ch.parseMultipartBody(req)
 	if err != nil {
 		t.Fatalf("parseMultipartBody: %v", err)
 	}
@@ -135,7 +135,7 @@ func TestParseMultipartBody_BadBody(t *testing.T) {
 	ch, _ := covUploadHandler(t)
 	req := httptest.NewRequest("POST", "/media", io.NopCloser(strings.NewReader("not multipart")))
 	req.Header.Set("Content-Type", "multipart/form-data; boundary=b")
-	if _, err := ch.parseMultipartBody(req); err == nil {
+	if _, _, err := ch.parseMultipartBody(req); err == nil {
 		t.Error("malformed multipart body should error")
 	}
 }

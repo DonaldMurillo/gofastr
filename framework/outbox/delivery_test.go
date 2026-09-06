@@ -229,8 +229,8 @@ func TestStaleSuccessKeepsTerminal(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Per-delivery attempts are independent: a failing consumer accrues
-// attempts while a succeeding sibling stays at zero.
+// Per-delivery attempts are independent: a failing consumer accrues attempts
+// (one per claim) while a succeeding sibling consumes exactly one.
 // ---------------------------------------------------------------------------
 
 func TestPerDelivery_AttemptsIndependent(t *testing.T) {
@@ -252,8 +252,8 @@ func TestPerDelivery_AttemptsIndependent(t *testing.T) {
 	defer stop()
 
 	db1 := waitForDelivery(t, o, id, "b", "dispatched")
-	if db1.Attempts != 0 {
-		t.Errorf("delivery b attempts = %d, want 0 (succeeded first try)", db1.Attempts)
+	if db1.Attempts != 1 {
+		t.Errorf("delivery b attempts = %d, want 1 (succeeded first try; the claim consumed its one attempt)", db1.Attempts)
 	}
 	da := findDelivery(t, mustDeliveries(t, o, id), "a")
 	if da.Attempts < 1 {

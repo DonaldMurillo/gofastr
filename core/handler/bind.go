@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
+	"math"
 	"mime"
 	"net/http"
 	"reflect"
@@ -376,6 +378,13 @@ func setField(fv reflect.Value, s string) error {
 		n, err := strconv.ParseFloat(s, fv.Type().Bits())
 		if err != nil {
 			return err
+		}
+		// Reject NaN/±Inf: "NaN" and "Inf" parse cleanly, and every
+		// `if v < min || v > max` guard downstream is false for NaN, so a
+		// bound check the handler wrote would silently pass. A finite
+		// float is the only value a bound can reason about.
+		if math.IsNaN(n) || math.IsInf(n, 0) {
+			return fmt.Errorf("%q is not a finite number", s)
 		}
 		fv.SetFloat(n)
 	case reflect.Bool:

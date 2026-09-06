@@ -316,7 +316,22 @@ func NewMemoryStore() *MemoryStore {
 	return &MemoryStore{flags: map[string]Flag{}}
 }
 
-// Get returns the stored flag, or (nil, nil) when absent.
+// cloneFlag returns f with its Users/Tenants/Envs slice fields deep-copied, so
+// the copy shares no backing array with the original. Those slices ARE the
+// allow-lists evaluate() consults; aliasing them across the store boundary
+// makes All's "The result is a copy" promise false for exactly the fields an
+// admin render scrubs in place (and makes them a data race between evaluate()
+// readers and any writer holding the "copy"). slices.Clone(nil) is nil, so
+// absent lists stay absent.
+func cloneFlag(f Flag) Flag {
+	f.Users = slices.Clone(f.Users)
+	f.Tenants = slices.Clone(f.Tenants)
+	f.Envs = slices.Clone(f.Envs)
+	return f
+}
+
+// Get returns the stored flag, or (nil, nil) when absent. The returned Flag
+// owns its slices: mutating them does not affect the store.
 func (m *MemoryStore) Get(_ context.Context, key string) (*Flag, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -324,10 +339,13 @@ func (m *MemoryStore) Get(_ context.Context, key string) (*Flag, error) {
 	if !ok {
 		return nil, nil
 	}
+	f = cloneFlag(f)
 	return &f, nil
 }
 
-// Set creates or updates a flag definition. Empty Key returns an error.
+// Set creates or updates a flag definition. Empty Key returns an error. The
+// store keeps its own copy of the allow-list slices: mutating the caller's
+// Flag (or its slices) after Set does not change what evaluate() consults.
 func (m *MemoryStore) Set(f Flag) error {
 	if f.Key == "" {
 		return errors.New("flag: empty key")
@@ -339,7 +357,7 @@ func (m *MemoryStore) Set(f Flag) error {
 		f.Rollout = 100
 	}
 	m.mu.Lock()
-	m.flags[f.Key] = f
+	m.flags[f.Key] = cloneFlag(f)
 	m.mu.Unlock()
 	return nil
 }
@@ -353,7 +371,8 @@ func (m *MemoryStore) Delete(key string) error {
 }
 
 // All returns a snapshot of every defined flag, suitable for /admin
-// listings. The result is a copy. Mutations don't affect the store.
+// listings. The result is a copy, including the Users/Tenants/Envs slices:
+// mutations (e.g. scrubbing PII before a render) don't affect the store.
 //
 // SECURITY: the snapshot includes each flag's full definition; the
 // Users and Tenants allow-lists carry raw subject ids / emails. That is
@@ -366,7 +385,7 @@ func (m *MemoryStore) All() []Flag {
 	defer m.mu.RUnlock()
 	out := make([]Flag, 0, len(m.flags))
 	for _, f := range m.flags {
-		out = append(out, f)
+		out = append(out, cloneFlag(f))
 	}
 	return out
 }

@@ -17,7 +17,7 @@ import (
 func TestOAuth2State_RoundTripsBoundUserID(t *testing.T) {
 	p := NewOAuth2Plugin(OAuth2Config{
 		Providers:   map[string]OAuth2Provider{"mock": &stubOAuthProvider{name: "mock"}},
-		StateSecret: "k",
+		StateSecret: "k123456789abcdefg",
 	})
 
 	loginState, err := p.generateState("mock", "")
@@ -51,7 +51,7 @@ func linkFixture(t *testing.T, info *OAuth2UserInfo) (*OAuth2Plugin, *router.Rou
 	})
 	plugin := NewOAuth2Plugin(OAuth2Config{
 		Providers:   map[string]OAuth2Provider{"stub": &stubOAuthProvider{name: "stub", userInfo: info}},
-		StateSecret: "test-secret",
+		StateSecret: "test-secret-state-01",
 	})
 	mgr.Use(plugin)
 	if err := mgr.Init(nil); err != nil {
@@ -170,7 +170,7 @@ func TestOAuthLinkRefusesBoundIdentity(t *testing.T) {
 			name:     "stub",
 			userInfo: &OAuth2UserInfo{ID: "prov-taken", Email: "mallory@example.com", EmailVerified: true},
 		}},
-		StateSecret: "test-secret",
+		StateSecret: "test-secret-state-01",
 	})
 	mgr.Use(plugin)
 	if err := mgr.Init(nil); err != nil {

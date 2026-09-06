@@ -51,6 +51,23 @@ func expectSQLiteDialect(m sqlmock.Sqlmock) {
 	m.ExpectQuery("SELECT version").WillReturnError(errors.New("no such function"))
 }
 
+// The SQLite arm of coremig.WithAdvisoryLock takes the _gofastr_migrate_lock
+// lease around the plan apply (acquire before pinning, DELETE after). Bracket
+// AutoMigratePlanContext expectations with it so the tests still exercise the
+// apply branches rather than failing on the lock statements.
+func expectSQLiteMigrateLease(m sqlmock.Sqlmock) {
+	m.ExpectExec(`CREATE TABLE IF NOT EXISTS "_gofastr_migrate_lock"`).
+		WillReturnResult(sqlmock.NewResult(0, 0))
+	m.ExpectExec(`INSERT INTO "_gofastr_migrate_lock"`).
+		WithArgs(int64(60)).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+}
+
+func expectSQLiteMigrateLeaseRelease(m sqlmock.Sqlmock) {
+	m.ExpectExec(`DELETE FROM "_gofastr_migrate_lock"`).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+}
+
 // expectNoLiveColumns satisfies AutoMigrate's pre-lock bulk column read with
 // an empty result ("table doesn't exist") for the SQLite dialect.
 func expectNoLiveColumns(m sqlmock.Sqlmock) {
@@ -154,7 +171,9 @@ func TestAutoMigratePlan_NilDB(t *testing.T) {
 func TestAutoMigratePlan_BeginError(t *testing.T) {
 	db, m := mock(t)
 	expectSQLiteDialect(m)
+	expectSQLiteMigrateLease(m)
 	m.ExpectBegin().WillReturnError(errors.New("no tx"))
+	expectSQLiteMigrateLeaseRelease(m)
 	if err := AutoMigratePlanContext(ctxB(), db, Plan{}); err == nil {
 		t.Error("expected begin error")
 	}
@@ -163,8 +182,10 @@ func TestAutoMigratePlan_BeginError(t *testing.T) {
 func TestAutoMigratePlan_CommitError(t *testing.T) {
 	db, m := mock(t)
 	expectSQLiteDialect(m)
+	expectSQLiteMigrateLease(m)
 	m.ExpectBegin()
 	m.ExpectCommit().WillReturnError(errors.New("commit fail"))
+	expectSQLiteMigrateLeaseRelease(m)
 	if err := AutoMigratePlanContext(ctxB(), db, Plan{}); err == nil {
 		t.Error("expected commit error")
 	}
@@ -173,9 +194,11 @@ func TestAutoMigratePlan_CommitError(t *testing.T) {
 func TestAutoMigratePlan_ViewError(t *testing.T) {
 	db, m := mock(t)
 	expectSQLiteDialect(m)
+	expectSQLiteMigrateLease(m)
 	m.ExpectBegin()
 	m.ExpectExec("CREATE VIEW badv").WillReturnError(errors.New("bad view"))
 	m.ExpectRollback()
+	expectSQLiteMigrateLeaseRelease(m)
 	plan := Plan{Views: []View{{Name: "badv", Select: "SELECT bad"}}}
 	if err := AutoMigratePlanContext(ctxB(), db, plan); err == nil {
 		t.Error("expected view DDL error")
@@ -185,9 +208,11 @@ func TestAutoMigratePlan_ViewError(t *testing.T) {
 func TestAutoMigratePlan_RoutineError(t *testing.T) {
 	db, m := mock(t)
 	expectSQLiteDialect(m)
+	expectSQLiteMigrateLease(m)
 	m.ExpectBegin()
 	m.ExpectExec("CREATE VIEW v").WillReturnError(errors.New("bad routine"))
 	m.ExpectRollback()
+	expectSQLiteMigrateLeaseRelease(m)
 	plan := Plan{Routines: []Routine{{Name: "v", Up: "CREATE VIEW v AS SELECT 1"}}}
 	if err := AutoMigratePlanContext(ctxB(), db, plan); err == nil {
 		t.Error("expected routine error")
@@ -198,8 +223,10 @@ func TestAutoMigratePlan_MigrateEntityBranches(t *testing.T) {
 	// No-fields entity → skipped.
 	db, m := mock(t)
 	expectSQLiteDialect(m)
+	expectSQLiteMigrateLease(m)
 	m.ExpectBegin()
 	m.ExpectCommit()
+	expectSQLiteMigrateLeaseRelease(m)
 	reg := testReg{"e": rawEnt("e", "e", nil, nil, "")}
 	if err := AutoMigratePlanContext(ctxB(), db, Plan{Registry: reg}); err != nil {
 		t.Fatalf("no-fields entity: %v", err)
@@ -209,8 +236,10 @@ func TestAutoMigratePlan_MigrateEntityBranches(t *testing.T) {
 	db2, m2 := mock(t)
 	expectSQLiteDialect(m2)
 	expectNoLiveColumns(m2)
+	expectSQLiteMigrateLease(m2)
 	m2.ExpectBegin()
 	m2.ExpectRollback()
+	expectSQLiteMigrateLeaseRelease(m2)
 	reg2 := testReg{"e": rawEnt("e", "bad table", []schema.Field{{Name: "x", Type: schema.String}}, nil, "")}
 	if err := AutoMigratePlanContext(ctxB(), db2, Plan{Registry: reg2}); err == nil {
 		t.Error("expected invalid-table-name error")
@@ -220,9 +249,11 @@ func TestAutoMigratePlan_MigrateEntityBranches(t *testing.T) {
 	db3, m3 := mock(t)
 	expectSQLiteDialect(m3)
 	expectNoLiveColumns(m3)
+	expectSQLiteMigrateLease(m3)
 	m3.ExpectBegin()
 	m3.ExpectExec("CREATE TABLE IF NOT EXISTS").WillReturnResult(sqlmock.NewResult(0, 0))
 	m3.ExpectCommit()
+	expectSQLiteMigrateLeaseRelease(m3)
 	e3 := rawEnt("e", "e", []schema.Field{{Name: "x", Type: schema.String}}, nil, "")
 	e3.Config.Indices = []Index{{}} // empty → skipped
 	if err := AutoMigratePlanContext(ctxB(), db3, Plan{Registry: testReg{"e": e3}}); err != nil {
@@ -233,10 +264,12 @@ func TestAutoMigratePlan_MigrateEntityBranches(t *testing.T) {
 	db4, m4 := mock(t)
 	expectSQLiteDialect(m4)
 	expectNoLiveColumns(m4)
+	expectSQLiteMigrateLease(m4)
 	m4.ExpectBegin()
 	m4.ExpectExec("CREATE TABLE IF NOT EXISTS").WillReturnResult(sqlmock.NewResult(0, 0))
 	m4.ExpectExec("CREATE INDEX").WillReturnError(errors.New("idx fail"))
 	m4.ExpectRollback()
+	expectSQLiteMigrateLeaseRelease(m4)
 	e4 := rawEnt("e", "e", []schema.Field{{Name: "x", Type: schema.String}}, nil, "")
 	e4.Config.Indices = []Index{{Name: "ix", Columns: []string{"x"}}}
 	if err := AutoMigratePlanContext(ctxB(), db4, Plan{Registry: testReg{"e": e4}}); err == nil {

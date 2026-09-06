@@ -15,16 +15,41 @@ import (
 // requires an authenticated context (the framework's auth chain must
 // have called [handler.SetUser]). Apps that want a public OpenAPI spec
 // can wrap [PublicHandler] around the same spec.
+//
+// When the spec carries a RequestView (the framework's entity spec
+// does), the document is built per request and omits every entity the
+// caller holds no read grant for — the same filter /api/llm.md runs.
 func Handler(spec *Spec) http.Handler {
-	inner := PublicHandler(spec)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		if _, ok := handler.GetUser(r.Context()); !ok {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
-		inner.ServeHTTP(w, r)
+		serveSpec(w, r, spec)
 	})
+}
+
+// serveSpec writes the spec's JSON document for THIS request, applying
+// RequestView when the spec carries one so a caller without a read
+// grant for an entity never sees it in the document. PublicHandler
+// deliberately does not route through here: the public opt-in
+// (WithPublicOpenAPI) is full disclosure, and its document is identical
+// for every caller, so it stays construction-time prebuilt.
+func serveSpec(w http.ResponseWriter, r *http.Request, spec *Spec) {
+	s := spec
+	if spec.RequestView != nil {
+		if v := spec.RequestView(r); v != nil {
+			s = v
+		}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	data, err := json.MarshalIndent(s.Build(), "", "  ")
+	if err != nil {
+		data = []byte(`{"error":"failed to marshal spec"}`)
+	}
+	w.Write(data)
 }
 
 // PublicHandler serves the spec without an auth check. Use only when

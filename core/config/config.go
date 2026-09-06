@@ -316,6 +316,12 @@ func setField(v reflect.Value, s string, fieldName string) error {
 		if err != nil {
 			return fmt.Errorf("config: field %s: %q is not a valid float: %w", fieldName, s, err)
 		}
+		// NaN/Inf defeat every comparison guard a host can write (IEEE-754:
+		// every comparison with NaN is false, Inf compares true on one side),
+		// so `if r < 0 || r > 1 { error }` in a Validate() hook passes NaN
+		if math.IsNaN(f) || math.IsInf(f, 0) {
+			return fmt.Errorf("config: field %s: %q is not a valid float: non-finite values are rejected because they bypass numeric range guards", fieldName, s)
+		}
 		v.SetFloat(f)
 	case reflect.Bool:
 		b, err := strconv.ParseBool(s)

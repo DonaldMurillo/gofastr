@@ -58,6 +58,15 @@ type SSEBroker struct {
 	// principal resolves a request to a caller identity for
 	// subscriber-id eviction scoping. nil disables eviction.
 	principal func(*http.Request) string
+
+	// seatCap / seatOverflow mirror SSEBrokerConfig's seat policy;
+	// seatOrder is the per-principal FIFO of live seats (map key =
+	// Config.Principal's value, "" for every unidentifiable caller)
+	// the EvictOldest policy pops and the unregister path splices.
+	// Guarded by mu like the subscribers map it shadows.
+	seatCap      int
+	seatOverflow SeatOverflowPolicy
+	seatOrder    map[string][]*subscriber
 }
 
 type subscriber struct {
@@ -68,10 +77,15 @@ type subscriber struct {
 	// so a client-supplied subscriber_id can only evict an entry the
 	// same caller created. See Subscribe.
 	principal string
-	ch        chan sseEvent
-	filter    string // optional event name filter
-	done      chan struct{}
-	slowMode  sseSlowMode
+	// regID is the subscribers-map key this entry was stored under; it
+	// lets the seat policy evict this subscriber in O(1) instead of
+	// scanning the map by pointer. Valid only while the entry is live:
+	// every path that removes the map entry splices the seat first.
+	regID    string
+	ch       chan sseEvent
+	filter   string // optional event name filter
+	done     chan struct{}
+	slowMode sseSlowMode
 }
 
 type sseEvent struct {
@@ -138,6 +152,29 @@ type SSEBrokerConfig struct {
 	// connection already unregisters itself.
 	Principal func(*http.Request) string
 
+	// MaxSeatsPerPrincipal caps how many concurrent streams ONE
+	// principal holds. 0 = 16 (the same default core/mcp's SSE stream
+	// uses); a negative value lifts the cap for deployments that bound
+	// seats elsewhere. The zero-value config gets the default: a single
+	// low-privilege user must not be able to exhaust the process's
+	// goroutines/FDs/memory for everyone else, and MaxSubscribers (the
+	// all-users cap) is opt-in unlimited by design.
+	//
+	// When Principal is nil (or returns ""), callers cannot be told
+	// apart, so every anonymous stream shares ONE seat bucket: the cap
+	// then bounds all unidentifiable subscribers collectively. Raise it
+	// (or set Principal) on a public stream that legitimately serves
+	// more than 16 anonymous viewers.
+	MaxSeatsPerPrincipal int
+
+	// SeatOverflow selects what a principal at MaxSeatsPerPrincipal does
+	// with its next stream: SeatOverflowRefuse answers 429 at connect
+	// (the default), SeatOverflowEvictOldest closes that principal's
+	// oldest stream and seats the new one — the multi-tab-friendly
+	// policy for apps whose clients reconnect faster than a half-open
+	// connection's seat is reclaimed.
+	SeatOverflow SeatOverflowPolicy
+
 	// MaxSubscribers caps concurrent subscribers; 0 = unlimited. Subscribe
 	// rejects past the cap rather than evicting, and the cap is exact.
 	//
@@ -182,6 +219,9 @@ func NewSSEBroker(cfg SSEBrokerConfig) *SSEBroker {
 		allowClientSlowMode: cfg.AllowClientSlowMode,
 		blockTO:             cfg.BlockTimeout,
 		maxSubs:             cfg.MaxSubscribers,
+		seatCap:             cfg.MaxSeatsPerPrincipal,
+		seatOverflow:        cfg.SeatOverflow,
+		seatOrder:           make(map[string][]*subscriber),
 	}
 	b.attachFanout(cfg.Fanout)
 	return b
@@ -324,15 +364,45 @@ func (b *SSEBroker) Subscribe(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "too many subscribers", http.StatusServiceUnavailable)
 		return
 	}
+	// Per-principal seat cap: the same caller cannot hold unbounded
+	// concurrent streams. A replacement keeps its seat (the incumbent
+	// departs in the same critical section below). Refusal answers 429
+	// at connect — the per-caller limit, distinguishable from the
+	// global 503 above; EvictOldest closes this principal's oldest
+	// stream instead, with the same done/map ownership the replacement
+	// path uses (close, delete, and the evicted loop's defer skips).
+	if !replacing {
+		if seats := seatsFor(b.seatCap); seats > 0 && len(b.seatOrder[sub.principal]) >= seats {
+			if b.seatOverflow != SeatOverflowEvictOldest || len(b.seatOrder[sub.principal]) == 0 {
+				b.mu.Unlock()
+				http.Error(w, "too many concurrent streams for this caller", http.StatusTooManyRequests)
+				return
+			}
+			oldest := b.seatOrder[sub.principal][0]
+			b.spliceSeatLocked(oldest)
+			delete(b.subscribers, oldest.regID)
+			close(oldest.done)
+		}
+	}
 	if replacing {
+		// The incumbent's seat transfers to its replacement.
+		b.spliceSeatLocked(prev)
 		close(prev.done)
 	}
+	sub.regID = registrationID
 	b.subscribers[registrationID] = sub
+	b.seatOrder[sub.principal] = append(b.seatOrder[sub.principal], sub)
 	b.mu.Unlock()
 	subID = registrationID
 
 	defer func() {
 		b.mu.Lock()
+		// Release the seat FIRST, unconditionally: unlike the map
+		// delete below, a stream evicted or replaced by a newer
+		// Subscribe must not keep its seat counted (the new entry
+		// already took it in the same critical section that removed
+		// this one).
+		b.spliceSeatLocked(sub)
 		// Only delete if the map still points to *this* subscriber. If a
 		// later Subscribe with the same ID has already overwritten us,
 		// our done channel was closed by that path; do not clobber the
@@ -345,12 +415,13 @@ func (b *SSEBroker) Subscribe(w http.ResponseWriter, r *http.Request) {
 			// deliverLocal wedged forever on the channel send, which in
 			// turn wedges fanout receive for every OTHER subscriber.
 			//
-			// Double-close is impossible: the eviction path (same subID
-			// re-Subscribe above) closes prev.done AND overwrites the map
-			// entry in the same critical section, so by the time this
-			// defer observes cur==sub no eviction occurred; and if an
-			// eviction DID occur cur!=sub and we skip. The two paths are
-			// thus mutually exclusive on done ownership.
+			// Double-close is impossible: the eviction paths (same
+			// subID re-Subscribe, seat EvictOldest) close done AND
+			// remove the map entry in the same critical section, so by
+			// the time this defer observes cur==sub no eviction
+			// occurred; and if an eviction DID occur cur!=sub and we
+			// skip. The paths are thus mutually exclusive on done
+			// ownership.
 			close(sub.done)
 		}
 		b.mu.Unlock()

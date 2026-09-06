@@ -380,7 +380,7 @@ func TestParseMultipartBody_EmptySlices(t *testing.T) {
 		Value: map[string][]string{"caption": {}},               // empty value slice → line 143
 		File:  map[string][]*multipart.FileHeader{"photo": nil}, // empty headers → line 154
 	}
-	body, err := ch.parseMultipartBody(req)
+	body, _, err := ch.parseMultipartBody(req)
 	if err != nil {
 		t.Fatalf("parseMultipartBody empty slices: %v", err)
 	}

@@ -264,6 +264,27 @@ MCP tools `framework_docs_list` / `framework_docs_get` /
   verdict — battery/auth/oauth2_test.go:657/:679 kept firing after
   the oidcNoRedirect fix because the test's bare-client field note
   won the merge and the report node pointed into the test file.
+  Three shapes shipped from the 2026-09-05 red-probe round (ten were
+  prototyped; the seven that fired on correct-by-design sinks were
+  dropped, their target bugs covered by the fixes): the vet analyzer
+  `laxenvelope` (within one package a type decoded through
+  `handler.UnmarshalStrict` at one transport and `json.Unmarshal` /
+  `Decoder.Decode` at another — the lax site executes the
+  duplicate/case-folded/duplicate-id envelope the strict transport
+  refuses; decode both strictly), the vet analyzer `nonfinite` (a
+  `strconv.ParseFloat` result stored or returned with no
+  `math.IsNaN`/`math.IsInf` gate — `"NaN"`/`"Inf"` parse cleanly and
+  every `v < min || v > max` bound is false for NaN, so a handler's
+  range check silently passes; reject non-finite first, the way
+  core/schema validateFloat does. Parameter-rooted like negdur;
+  YAML-spec `.inf`/`.nan` scalar literals and a DSL value bound for a
+  SQL comparison rather than a range guard carry the allow marker),
+  and the contracts rule `GOFASTR1410 keyfold` (a local-filesystem
+  `Save`/`Put`/`Write` naming its stored object on a type with a
+  `BaseDir`/`Root`/`Dir` field reaches `os.OpenFile`/`os.Create`/
+  `os.Rename` with no fold-refusal call in the file — `TenantA/x` and
+  `tenanta/x` alias on a case-insensitive filesystem; share the
+  `battery/storage` refuseFoldedKey walk).
   The 2026-09-04 red-probe round grew the browser-runtime lint family
   in `core-ui/check/runtimeshapes.go` to eight: `storagekeyraw` fires
   when a Web-storage key (`localStorage`/`sessionStorage`

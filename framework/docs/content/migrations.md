@@ -345,6 +345,13 @@ snapshot. It is the same loop the blueprint CLI runs, byte-for-byte (same
 `schema.snapshot.json`), because both paths share `GeneratePlan` +
 `RenderMigrationFile` + `SaveSnapshot`.
 
+The call is safe to re-run after a crash (or a failed snapshot write) between
+the migration file landing and the snapshot updating: the re-run compares the
+generated delta against the last committed migration's Up/Down sections by
+content, recognizes it was already committed, repairs the snapshot, and
+returns an empty path — it never mints the same delta twice as N+1 (a
+duplicate whose Up could not apply and would mark the database dirty).
+
 A host app binary has no built-in subcommand dispatcher (it is a flat
 `main()` that wires the app and calls `Start()`), so the supported surface is
 this one call plus a thin `main()` guard. Wire a `migrate generate` verb
@@ -948,8 +955,15 @@ development convenience. What it guarantees:
   replicas at once and only one migrates at a time; the others wait.
   The lock is acquired by polling `pg_try_advisory_lock` so a cancelled
   context (shutdown) returns promptly instead of hanging on a stuck
-  holder. SQLite takes no lock, since it serializes writers at the file
-  level, but the same code path runs so behavior is uniform.
+  holder. SQLite gets the same cross-process serialization from a twin:
+  a leased lock row in `_gofastr_migrate_lock` (one atomic upsert,
+  heartbeat-renewed, released on completion, expired by the next boot if
+  the holder crashed) — SQLite's file-level locking serializes
+  statements, not the read → apply → record sequence. As a second line
+  of defense the versioned runner re-checks the tracking row immediately
+  before applying each migration, so a runner whose applied-versions
+  read still went stale converges (skips) instead of failing its boot
+  on DDL a peer already applied.
 - **Atomicity.** Auto-migrate runs all of its DDL in a single
   transaction; if entity *K* fails, entities *1..K-1* roll back too, so
   a botched boot never leaves a half-created schema. Versioned

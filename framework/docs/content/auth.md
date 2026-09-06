@@ -312,15 +312,19 @@ Pair with `auth.RequireSession()` (or
 `auth.RequireSession(auth.WithRedirectOnFail("/login"))` for browser
 flows) on any route that needs a logged-in user.
 
-`RequireAuth` is the JWT-Bearer-only equivalent and is unchanged.
+`RequireAuth` is the JWT-Bearer-only equivalent.
 
-JWTs are stateless: `GenerateToken` bakes the user's roles into the
-claims at mint, and validation checks signature and expiry only. **Role
-changes therefore take effect at token expiry** (default 1h), not at
-demotion time — the cookie lane re-hydrates the user per request, the
-JWT lane does not. Where immediate demotion matters, use sessions or a
-short `JWTExpiry`; rotating `JWTSecret` drains all tokens over the same
-window but is not a targeted remedy.
+JWTs validate the signature and expiry, then **re-resolve the subject on
+every request** through the manager's `UserStore` (`JWTAuth.SetUserStore`,
+wired by `AuthManager.Init`): the principal's identity AND roles come
+from the fresh user row, and the claims are trusted for nothing but the
+subject. Deletion, erasure, and role downgrades therefore take effect on
+the next request, not at token TTL — a deleted owner answers the same
+`401` as an invalid token, and a downgraded admin's pre-downgrade JWT
+loses the admin routes immediately. A bare `NewJWTAuth` with no store
+(service-to-server deployments with no user table) keeps the stateless
+claims-derived principal; `JWTSecret` rotation still drains old tokens
+over a TTL window via `PreviousSecrets`.
 
 ## Service accounts & scoped API tokens
 
@@ -657,15 +661,23 @@ against the table names the CONFIGURED stores actually use (the
 `IdentityEmail`, and magic-link tokens erased — not just the canonical
 `auth_*` spellings the package registers at import time.
 
-## Email identity is canonical (NFC-normalized + trimmed + lowercased)
+## Email identity is canonical (invisible-stripped + NFC-normalized + trimmed + lowercased)
 
 Every flow that reads or stores an email — login, registration, magic
 links, OAuth account matching, password reset, and the login
 rate-limiter key — canonicalizes it with `auth.CanonicalEmail` at its
-ingestion point: Unicode NFC normalization, then trim, then lowercase.
-Custom `UserStore` implementations therefore always receive canonical
-input; a host that accepts emails on its own surfaces should call
-`auth.CanonicalEmail` too so its lookups agree with the battery's.
+ingestion point: invisible/bidi codepoints and C1 controls stripped
+(`core/textsafe`), then Unicode NFC normalization, then trim, then
+lowercase. Custom `UserStore` implementations therefore always receive
+canonical input; a host that accepts emails on its own surfaces should
+call `auth.CanonicalEmail` too so its lookups agree with the battery's.
+
+**Invisible characters**: NFC cannot fold zero-width and bidi codepoints,
+so `ow\u200Bner@example.com` (zero-width space), a trailing BOM, or a
+right-to-left override inside the local part would otherwise register as
+a second account that renders identically to the first in every list,
+log, and mail template. The default canonicalizer strips them before
+folding, so the twin lands on the base account.
 
 **Unicode normalization (NFC/NFD)**: the same mailbox can be spelled in
 composed (`é`) or decomposed (`e` + combining acute) form — macOS and
@@ -674,9 +686,10 @@ canonicalize to the composed form, so one mailbox is one identity and
 OIDC auto-linking never splits on the spelling. A deployment with
 different rules (a provider that ignores dots or plus tags, a legacy
 store keyed on raw bytes) installs `AuthConfig.CanonicalizeEmail`; it
-replaces the default at every ingestion point, and may return
-`auth.ErrEmailNotComposed` (or any error) to refuse an address, which
-the handlers surface as `400`:
+replaces the default at every ingestion point — including the invisible
+strip, an override owns its own invisible-character policy — and may
+return `auth.ErrEmailNotComposed` (or any error) to refuse an address,
+which the handlers surface as `400`:
 
 ```go
 mgr := auth.New(auth.AuthConfig{
@@ -910,6 +923,14 @@ default per-IP floor when its `RateLimit` is left nil:
 Loosening any of them is explicit: pass the plugin's `RateLimit` (or
 `VerifyRateLimit`) with a large `MaxAttempts`.
 
+**Minted tokens are reaped automatically.** Rate limits bound the rate
+of anonymous mints, not the total; unredeemed magic-link, password-reset,
+and email-verification rows would otherwise accumulate forever. The
+SQL token store (`NewSQLMagicLinkTokenStore`) sweeps expired rows on its
+own mint path (at most once per 15 minutes), and the magic-link plugin
+runs a cleanup ticker from `OnStart` — no operator cron, no scheduled
+`Cleanup` calls to wire.
+
 **X-Forwarded-For is not trusted by default.** Set
 `RateLimiterConfig.TrustForwardedFor = true` only when your service
 runs behind a reverse proxy that strips client-supplied XFF headers
@@ -1031,6 +1052,15 @@ GET    /auth/oauth/{provider}/callback  → callback, binds (provider, providerI
 Unlink refuses (`409`) when the requested unlink would leave the user
 with no remaining login method. The check considers both linked OAuth
 accounts and whether the user has set a real password.
+
+Unlink also **drops the stored provider tokens**: when the OAuth2 plugin
+has a `TokenStore` (`OAuth2Config.TokenStore`), a successful
+`DELETE /auth/unlink/{provider}` deletes the `(user, provider)` row, so
+`RefreshOAuthToken` / `ValidOAuthToken` stop serving a provider the user
+revoked — the stored refresh token is a password-equivalent for the
+provider API and must not outlive the link. If the row cannot be
+deleted, the response is `500` ("unlink succeeded but the stored
+provider token could not be revoked") rather than a silent half-revocation.
 
 ### Linking a provider to a logged-in account (the recovery path)
 
@@ -1267,7 +1297,14 @@ durable store, the provider's refresh token is discarded at login and
 any call made on the user's behalf fails once the access token expires,
 with no recovery. The `OAuthTokenStore` makes that recoverable. It is
 **opt-in**: OAuth login behaves exactly as before when no store is
-configured.
+configured. A stored row is dropped automatically when the user unlinks
+the provider (see [Account linking](#account-linking)).
+
+`OAuth2Config.StateSecret` signs the HMAC state token. It must be at
+least **16 bytes** — `NewOAuth2Plugin` panics on a shorter non-empty
+value, because state tokens travel in redirect URLs and are
+brute-forceable offline under a short key. Empty keeps the
+mint-a-random-per-process-key behaviour (single-instance deployments).
 
 ```go
 tokStore, _ := auth.NewSQLOAuthTokenStore(db, auth.SQLOAuthTokenStoreConfig{

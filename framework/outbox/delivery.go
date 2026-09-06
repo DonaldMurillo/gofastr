@@ -345,18 +345,56 @@ type claimedDelivery struct {
 }
 
 // claimDeliveries claims up to batchSize eligible deliveries. A delivery
-// is eligible when pending, its backoff window has elapsed, and it is not
-// currently leased (or its lease has expired). Claiming sets
+// is eligible when pending, its backoff window has elapsed, it is not
+// currently leased (or its lease has expired), and it still has attempt
+// budget left (attempts < maxAttempts — each claim CONSUMES one attempt in
+// SQL, `attempts = attempts + 1`, so a relay that dies between claim and
+// settle still spends one; a crash loop terminates at MaxAttempts instead
+// of re-delivering forever). A never-leased row stays claimable at any
+// attempt count: that is the no-handler requeue shape, which refunds the
+// claim and must never be frozen out mid rolling-deploy. Claiming also sets
 // claimed_until = now+lease at the delivery grain so a relay crash
 // mid-batch releases only the unsettled deliveries (sibling isolation
 // survives a crash too). Ordered by parent created_at for FIFO fairness.
+// The returned snapshot's Attempts is the POST-claim count.
 func (o *Outbox) claimDeliveries(ctx context.Context) ([]claimedDelivery, error) {
+	// Budget sweep first, the same "before every claim" placement as
+	// battery/queue's deadLetterExpiredFinalClaims: a delivery whose lease
+	// expired with the attempt budget already spent is a relay that died
+	// between claim and settle on its final claim. Left alone it is
+	// pending-but-unclaimable forever (a silent black hole the parent
+	// sweep can never complete); dead-lettered it is visible to
+	// ListDeliveries and resurrectable via Replay.
+	if err := o.deadLetterExpiredExhaustedClaims(ctx); err != nil {
+		return nil, err
+	}
 	switch o.dialect {
 	case dialectPostgres:
 		return o.claimDeliveriesPostgres(ctx)
 	default:
 		return o.claimDeliveriesSQLite(ctx)
 	}
+}
+
+// deadLetterExpiredExhaustedClaims marks 'pending' deliveries whose lease
+// has expired at an already-spent attempt budget (attempts >= maxAttempts)
+// as dead. Those rows are exactly the claim-crash loop: each claim consumed
+// an attempt in SQL, the relay died before settling, and the budget ran out.
+// The expired-lease fence keeps a LIVE claim out of the sweep (its
+// claimed_until is in the future), and the claimed_until IS NOT NULL arm
+// keeps never-leased rows out: an exhausted row that was never claimed is
+// the no-handler requeue shape (requeueNoHandler refunds the claim and
+// never dead-letters on attempts, a lagging replica may still hold the
+// handler).
+func (o *Outbox) deadLetterExpiredExhaustedClaims(ctx context.Context) error {
+	_, err := o.db.ExecContext(ctx,
+		fmt.Sprintf(`UPDATE %s
+			SET status='dead', last_error=$1, claimed_until=NULL, next_attempt_at=NULL
+			WHERE status='pending' AND attempts >= $2 AND claimed_until IS NOT NULL AND claimed_until <= $3`,
+			o.qd()),
+		"claim budget exhausted without a settle (relay died between claim and settle)",
+		o.maxAttempts, o.now().UTC())
+	return err
 }
 
 // claimDeliveriesPostgres claims in one atomic step. FOR UPDATE SKIP
@@ -368,12 +406,13 @@ func (o *Outbox) claimDeliveriesPostgres(ctx context.Context) ([]claimedDelivery
 	now := o.now().UTC()
 	claimUntil := now.Add(o.lease)
 	q := fmt.Sprintf(`WITH claimed AS (
-		UPDATE %s SET claimed_until = $1
+		UPDATE %s SET claimed_until = $1, attempts = attempts + 1
 		WHERE (row_id, consumer) IN (
 			SELECT d.row_id, d.consumer FROM %s d
 			JOIN %s p ON p.id = d.row_id
 			WHERE d.status = 'pending'
 			  AND (d.claimed_until IS NULL OR d.claimed_until <= $2)
+			  AND (d.attempts < $4 OR d.claimed_until IS NULL)
 			  AND (d.next_attempt_at IS NULL OR d.next_attempt_at <= $2)
 			ORDER BY p.created_at ASC
 			LIMIT $3
@@ -386,7 +425,7 @@ func (o *Outbox) claimDeliveriesPostgres(ctx context.Context) ([]claimedDelivery
 	JOIN %s p ON p.id = c.row_id
 	ORDER BY p.created_at ASC`,
 		o.qd(), o.qd(), o.qt(), o.qt())
-	rows, err := o.db.QueryContext(ctx, q, claimUntil, now, o.batchSize)
+	rows, err := o.db.QueryContext(ctx, q, claimUntil, now, o.batchSize, o.maxAttempts)
 	if err != nil {
 		return nil, err
 	}
@@ -437,13 +476,13 @@ func (o *Outbox) claimDeliveriesSQLite(ctx context.Context) ([]claimedDelivery, 
 	}()
 	tx := sqliteConnTx{conn: conn}
 
-	pick := fmt.Sprintf(`SELECT d.row_id, d.consumer, d.attempts, p.type, p.payload, p.created_at
+	pick := fmt.Sprintf(`SELECT d.row_id, d.consumer, d.attempts + 1, p.type, p.payload, p.created_at
 		FROM %s d JOIN %s p ON p.id = d.row_id
 		WHERE d.status = 'pending'
 		  AND (d.claimed_until IS NULL OR d.claimed_until <= $1)
-		  AND (d.next_attempt_at IS NULL OR d.next_attempt_at <= $1)
-		ORDER BY p.created_at ASC LIMIT $2`, o.qd(), o.qt())
-	rows, err := tx.QueryContext(ctx, pick, now, o.batchSize)
+		  AND (d.attempts < $2 OR d.claimed_until IS NULL)
+		ORDER BY p.created_at ASC LIMIT $3`, o.qd(), o.qt())
+	rows, err := tx.QueryContext(ctx, pick, now, o.maxAttempts, o.batchSize)
 	if err != nil {
 		return nil, err
 	}
@@ -474,7 +513,7 @@ func (o *Outbox) claimDeliveriesSQLite(ctx context.Context) ([]claimedDelivery, 
 		clauses = append(clauses, fmt.Sprintf("(row_id=$%d AND consumer=$%d)", len(args)+1, len(args)+2))
 		args = append(args, pr[0], pr[1])
 	}
-	upd := fmt.Sprintf(`UPDATE %s SET claimed_until = $1 WHERE %s`,
+	upd := fmt.Sprintf(`UPDATE %s SET claimed_until = $1, attempts = attempts + 1 WHERE %s`,
 		o.qd(), strings.Join(clauses, " OR "))
 	if _, err := tx.ExecContext(ctx, upd, args...); err != nil {
 		return nil, err
@@ -536,20 +575,21 @@ func (o *Outbox) markDeliveryDispatched(ctx context.Context, d claimedDelivery) 
 // Only pending deliveries may record a handler failure; every other state is
 // terminal until an explicit Replay.
 //
-// Both arms increment attempts RELATIVELY (attempts = attempts + 1), never
-// from the claim-time snapshot: when a handler outruns its lease a second
-// relay re-claims the still-pending delivery off the same pre-settle
-// snapshot, and two absolute snapshot+1 writes record two handler
-// invocations as one — MaxAttempts then bounds claim/settle cycles instead
-// of the handler invocations it exists to bound. The dead-letter decision
-// still uses the snapshot (it decides what THIS settle does); the counter
-// write itself must be monotonic.
+// The attempts counter is OWNED BY THE CLAIM: claimDeliveries consumes one
+// attempt per claim (`attempts = attempts + 1` in the claim UPDATE, the
+// battery/queue and battery/webhook spelling), and d.Attempts is the
+// post-claim count, so THIS settle never writes the counter — it writes
+// state only. That is also what keeps the count monotonic under lease
+// overrun: two overlapping claims both bumped in SQL at claim time, and a
+// stale claimant's settle (which matches no live 'pending' row by then, or
+// a re-claimed one) can neither rewind nor double-count what claims
+// already recorded. The dead-letter decision uses the claim snapshot
+// because it decides what THIS settle does.
 func (o *Outbox) markDeliveryFailure(ctx context.Context, d claimedDelivery, cause error) {
-	newAttempts := d.Attempts + 1
-	if newAttempts >= o.maxAttempts {
+	if d.Attempts >= o.maxAttempts {
 		if _, err := o.db.ExecContext(ctx,
 			fmt.Sprintf(`UPDATE %s
-				SET status='dead', attempts = attempts + 1, last_error=$1, claimed_until=NULL, next_attempt_at=NULL
+				SET status='dead', last_error=$1, claimed_until=NULL, next_attempt_at=NULL
 				WHERE row_id=$2 AND consumer=$3 AND status='pending'`, o.qd()),
 			truncateError(cause), d.RowID, d.Consumer); err != nil {
 			slog.Default().Error("outbox: mark delivery dead failed; lease recovery will retry",
@@ -557,10 +597,10 @@ func (o *Outbox) markDeliveryFailure(ctx context.Context, d claimedDelivery, cau
 		}
 		return
 	}
-	next := o.now().UTC().Add(backoff.Exponential(o.backoffBase, o.backoffMax, newAttempts))
+	next := o.now().UTC().Add(backoff.Exponential(o.backoffBase, o.backoffMax, d.Attempts))
 	if _, err := o.db.ExecContext(ctx,
 		fmt.Sprintf(`UPDATE %s
-				SET status='pending', attempts = attempts + 1, last_error=$1, next_attempt_at=$2, claimed_until=NULL
+				SET status='pending', last_error=$1, next_attempt_at=$2, claimed_until=NULL
 				WHERE row_id=$3 AND consumer=$4 AND status='pending'`, o.qd()),
 		truncateError(cause), next, d.RowID, d.Consumer); err != nil {
 		slog.Default().Error("outbox: requeue failed delivery failed; lease recovery will retry",
@@ -574,10 +614,13 @@ func (o *Outbox) markDeliveryFailure(ctx context.Context, d claimedDelivery, cau
 // removed consumer), so it is abandoned, settled terminal, and its parent
 // completed. Otherwise it is requeued with a short backoff for an up-to-date
 // replica to claim; it is never dead-lettered on attempts, because a replica
-// mid-deploy may still hold the handler. Measuring the grace from the
-// delivery's own created_at (not the event's) is what makes a freshly-added
-// consumer's deliveries safe: they are young, so a lagging replica requeues
-// rather than abandons them.
+// mid-deploy may still hold the handler. The requeue also REFUNDS the claim
+// (attempts = attempts - 1, the battery/queue release() spelling): no
+// handler invocation happened anywhere, so a lagging replica's claim must
+// not burn the budget of a consumer that is merely not declared here yet.
+// Measuring the grace from the delivery's own created_at (not the event's)
+// is what makes a freshly-added consumer's deliveries safe: they are young,
+// so a lagging replica requeues rather than abandons them.
 func (o *Outbox) requeueNoHandler(ctx context.Context, d claimedDelivery) {
 	now := o.now().UTC()
 	res, err := o.db.ExecContext(ctx,
@@ -599,8 +642,10 @@ func (o *Outbox) requeueNoHandler(ctx context.Context, d claimedDelivery) {
 	next := now.Add(o.backoffMax)
 	if _, err := o.db.ExecContext(ctx,
 		fmt.Sprintf(`UPDATE %s
-			SET status='pending', next_attempt_at=$1, claimed_until=NULL
-			WHERE row_id=$2 AND consumer=$3 AND status='pending'`, o.qd()),
+				SET status='pending',
+				    attempts = CASE WHEN attempts > 0 THEN attempts - 1 ELSE 0 END,
+				    next_attempt_at=$1, claimed_until=NULL
+				WHERE row_id=$2 AND consumer=$3 AND status='pending'`, o.qd()),
 		next, d.RowID, d.Consumer); err != nil {
 		slog.Default().Error("outbox: requeue unhandled delivery failed; lease recovery will retry",
 			"row_id", d.RowID, "consumer", d.Consumer, "error", err)

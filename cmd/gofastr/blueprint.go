@@ -26,6 +26,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
 	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/core/schema"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	coreyaml "github.com/DonaldMurillo/gofastr/core/yaml"
 	"github.com/DonaldMurillo/gofastr/framework"
 	fwentity "github.com/DonaldMurillo/gofastr/framework/entity"
@@ -2392,6 +2393,15 @@ func validateBlueprint(bp Blueprint) error {
 			for _, v := range f.Values {
 				if strings.ContainsAny(v, "`\"\\\n\r") {
 					errs.add(fmt.Errorf("blueprint: entity %q field %q enum value %q contains a quote, backtick, backslash or newline: these break the generated Go source", decl.Name, f.Name, v))
+				}
+				// The value is served verbatim in llm.md field notes and
+				// the OpenAPI enum array; a C1 control or invisible/bidi
+				// codepoint there forges or hides text for the agent/human
+				// reviewing it (2026-09-05 red-probe round). The generated
+				// Go itself is inert (%q escapes the rune) — the served
+				// docs are the sink.
+				if strings.ContainsFunc(v, textsafe.IsC1) || textsafe.ContainsInvisible(v) {
+					errs.add(fmt.Errorf("blueprint: entity %q field %q enum value %q contains a C1 control or invisible character (bidi overrides, zero-width, BOM, U+0080–U+009F): it would reach llm.md and the OpenAPI enum verbatim", decl.Name, f.Name, v))
 				}
 			}
 		}

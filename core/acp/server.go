@@ -72,6 +72,21 @@ type Options struct {
 	// AuthMethods is non-empty; an error fails the call with the
 	// auth-required code (-32000).
 	Authenticate func(ctx context.Context, methodID string) error
+
+	// MaxSessions caps the live sessions ONE connection may hold;
+	// session/new and session/load past the cap follow
+	// SessionOverflow. 0 = 1024 (the documented default; an ACP client
+	// legitimately mints one session per task over a long-lived
+	// connection, so the bound is generous — but it exists, because
+	// session/new is otherwise a frame-cheap unbounded write into
+	// per-connection state). Negative lifts the cap.
+	MaxSessions int
+
+	// SessionOverflow selects what a connection at MaxSessions does
+	// with its next session: refuse with an invalid-params error (the
+	// default), or evict the connection's oldest session (canceling
+	// its in-flight prompt turn, if any).
+	SessionOverflow SessionOverflowPolicy
 }
 
 // Server speaks ACP v1 over newline-delimited JSON-RPC 2.0 for one
@@ -306,11 +321,15 @@ type session struct {
 // serverState is per-Serve state; a Server may serve sequential
 // connections, each with fresh sessions.
 type serverState struct {
-	srv      *Server
-	conn     *conn
-	mu       sync.Mutex
+	srv  *Server
+	conn *conn
+	mu   sync.Mutex
+	// sessions maps this connection's live session ids to their state.
 	sessions map[string]*session
-	ready    bool
+	// sessionOrder is the same set as a FIFO of ids (mint order) the
+	// EvictOldest session policy pops; guarded by mu like sessions.
+	sessionOrder []string
+	ready        bool
 }
 
 // Serve reads newline-delimited JSON-RPC 2.0 frames from in and writes
@@ -616,6 +635,11 @@ func (st *serverState) handleNewSession(ctx context.Context, frame wireRequest) 
 	if e != nil {
 		return wireResponse{Error: e}
 	}
+	// Refuse a frame that cannot be seated BEFORE the embedder mints a
+	// session for it (the per-connection session cap; see Options).
+	if e := st.refuseFullSessions(""); e != nil {
+		return wireResponse{Error: e}
+	}
 	impl, err := st.runNewSession(ctx, p.CWD)
 	if err != nil {
 		return st.errResp(ErrInternalError, "session/new: %v", err)
@@ -623,9 +647,9 @@ func (st *serverState) handleNewSession(ctx context.Context, frame wireRequest) 
 	if impl == nil || impl.ID() == "" {
 		return st.errResp(ErrInternalError, "session/new: agent returned an empty session ID")
 	}
-	st.mu.Lock()
-	st.sessions[impl.ID()] = &session{impl: impl}
-	st.mu.Unlock()
+	if e := st.recordSession(&session{impl: impl}, impl.ID()); e != nil {
+		return wireResponse{Error: e}
+	}
 	return wireResponse{Result: struct {
 		SessionID string `json:"sessionId"`
 	}{impl.ID()}}
@@ -642,6 +666,12 @@ func (st *serverState) handleLoadSession(ctx context.Context, frame wireRequest)
 	if e != nil {
 		return wireResponse{Error: e}
 	}
+	// Same pre-check as session/new: never make the embedder load a
+	// session this connection cannot seat. Reloading an id this
+	// connection already holds replaces it and stays seated.
+	if e := st.refuseFullSessions(p.SessionID); e != nil {
+		return wireResponse{Error: e}
+	}
 	client := &Client{conn: st.conn, sessionID: p.SessionID}
 	impl, err := st.runLoadSession(ctx, p.SessionID, p.CWD, client)
 	if err != nil {
@@ -653,9 +683,9 @@ func (st *serverState) handleLoadSession(ctx context.Context, frame wireRequest)
 	if impl == nil || impl.ID() == "" {
 		return st.errResp(ErrInternalError, "session/load: agent returned an empty session ID")
 	}
-	st.mu.Lock()
-	st.sessions[impl.ID()] = &session{impl: impl}
-	st.mu.Unlock()
+	if e := st.recordSession(&session{impl: impl}, impl.ID()); e != nil {
+		return wireResponse{Error: e}
+	}
 	return wireResponse{Result: map[string]any{}}
 }
 

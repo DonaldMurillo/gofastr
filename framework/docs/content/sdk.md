@@ -77,7 +77,11 @@ await api.posts.watch((event, data) => console.log(event), { signal });
 
 `watch` uses fetch streaming (not `EventSource`: it can't send the
 Authorization header). Batch rollbacks (HTTP 400 with a decodable
-envelope) resolve normally with `committed: false`. The exported
+envelope) resolve normally with `committed: false`. Every response body
+the client buffers — the `JSON.parse` in `do()` and the `ApiError`
+snapshot on the error path — goes through a capped read (`_readBody`,
+1 MiB, the same `maxBodyBytes` the Go client enforces): a bigger body
+throws instead of buffering. The exported
 `<entity>Fields` constants map camelCase names to the snake_case column
 names query params require.
 

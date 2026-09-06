@@ -403,9 +403,11 @@ func TestPrimaryKeyColumns_PGErrors(t *testing.T) {
 }
 
 // ---- rebuildTableSQLite error branches (SQLite dialect via sqlmock) ----
-// SQLite is the dialect-neutral-ish path: WithAdvisoryLock takes no lock, and
-// ensureCompositeKey dispatches to rebuildTableSQLite. Each sub-case fails one
-// step of the create/copy/drop/rename/commit rebuild and asserts Up errors.
+// SQLite's WithAdvisoryLock arm takes the _gofastr_migrate_lock lease before
+// pinning its connection, and ensureCompositeKey dispatches to
+// rebuildTableSQLite. Each sub-case fails one step of the create/copy/drop/
+// rename/commit rebuild and asserts Up errors; the lease bracket keeps the
+// sub-cases reaching the rebuild instead of failing on the lock statements.
 
 func expectCreateTableGASQLite(mock sqlmock.Sqlmock) {
 	mock.ExpectExec("CREATE TABLE IF NOT EXISTS").WillReturnResult(sqlmock.NewResult(0, 0))
@@ -495,7 +497,9 @@ func TestRebuildTableSQLite_ErrorBranches(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			m, mock := newTestMigratorWithDialect(t, DialectSQLite)
 			mustReg(t, m, Migration{Version: 1, Name: "k1", Group: "knowledge", Up: "U", Down: "D"})
+			expectSQLiteLease(mock)
 			c.setUp(mock)
+			expectSQLiteLeaseRelease(mock)
 			if err := m.Up(ctx); err == nil {
 				t.Fatal("expected rebuildTableSQLite error")
 			}

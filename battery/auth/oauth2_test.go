@@ -78,7 +78,7 @@ func newOAuth2Manager(t *testing.T, provider OAuth2Provider) (*AuthManager, *mem
 		Providers: map[string]OAuth2Provider{
 			provider.Name(): provider,
 		},
-		StateSecret: "test-secret-key",
+		StateSecret: "test-secret-key-state",
 	})
 	mgr.Use(plugin)
 
@@ -108,14 +108,14 @@ func oauthCallbackReq(target, state string) *http.Request {
 // ─── Tests ──────────────────────────────────────────────────────────────────
 
 func TestOAuth2Plugin_Name(t *testing.T) {
-	p := NewOAuth2Plugin(OAuth2Config{StateSecret: "test"})
+	p := NewOAuth2Plugin(OAuth2Config{StateSecret: "test-state-secret-1"})
 	if p.Name() != "oauth2" {
 		t.Fatalf("expected name 'oauth2', got %q", p.Name())
 	}
 }
 
 func TestOAuth2Plugin_Init(t *testing.T) {
-	p := NewOAuth2Plugin(OAuth2Config{StateSecret: "test"})
+	p := NewOAuth2Plugin(OAuth2Config{StateSecret: "test-state-secret-1"})
 	mgr := New(AuthConfig{})
 	if err := p.Init(mgr); err != nil {
 		t.Fatalf("Init: %v", err)
@@ -126,7 +126,7 @@ func TestOAuth2Plugin_Init(t *testing.T) {
 }
 
 func TestOAuth2Plugin_RegisterProvider(t *testing.T) {
-	p := NewOAuth2Plugin(OAuth2Config{StateSecret: "test"})
+	p := NewOAuth2Plugin(OAuth2Config{StateSecret: "test-state-secret-1"})
 	mock := &mockProvider{name: "custom"}
 	p.RegisterProvider("custom", mock)
 	if _, ok := p.providers["custom"]; !ok {
@@ -170,7 +170,7 @@ func TestOAuth2Plugin_Redirect_Success(t *testing.T) {
 }
 
 func TestOAuth2Plugin_StateGenerationAndValidation(t *testing.T) {
-	p := NewOAuth2Plugin(OAuth2Config{StateSecret: "test-secret"})
+	p := NewOAuth2Plugin(OAuth2Config{StateSecret: "test-secret-state-01"})
 
 	state, err := p.generateState("mock", "")
 	if err != nil {
@@ -188,7 +188,7 @@ func TestOAuth2Plugin_StateGenerationAndValidation(t *testing.T) {
 }
 
 func TestOAuth2Plugin_StateWrongProvider(t *testing.T) {
-	p := NewOAuth2Plugin(OAuth2Config{StateSecret: "test-secret"})
+	p := NewOAuth2Plugin(OAuth2Config{StateSecret: "test-secret-state-01"})
 
 	state, err := p.generateState("mock", "")
 	if err != nil {
@@ -201,7 +201,7 @@ func TestOAuth2Plugin_StateWrongProvider(t *testing.T) {
 }
 
 func TestOAuth2Plugin_StateExpiry(t *testing.T) {
-	p := NewOAuth2Plugin(OAuth2Config{StateSecret: "test-secret"})
+	p := NewOAuth2Plugin(OAuth2Config{StateSecret: "test-secret-state-01"})
 
 	// The stateless token now carries the expiry, so simulate expiry
 	// by minting a token with an explicit past expiry and the same
@@ -239,8 +239,8 @@ func mintBackdatedState(t *testing.T, p *OAuth2Plugin, providerName string, expi
 // invalidating the in-flight OAuth flow. Pre-stateless, the per-process
 // stateStore made this impossible.
 func TestOAuth2Plugin_StateSurvivesRestart_Stateless(t *testing.T) {
-	p1 := NewOAuth2Plugin(OAuth2Config{StateSecret: "shared-key"})
-	p2 := NewOAuth2Plugin(OAuth2Config{StateSecret: "shared-key"})
+	p1 := NewOAuth2Plugin(OAuth2Config{StateSecret: "shared-state-key-01"})
+	p2 := NewOAuth2Plugin(OAuth2Config{StateSecret: "shared-state-key-01"})
 
 	state, err := p1.generateState("mock", "")
 	if err != nil {
@@ -257,7 +257,7 @@ func TestOAuth2Plugin_StateSurvivesRestart_Stateless(t *testing.T) {
 // trivially because the token contains everything it needs to
 // re-verify. The usedNonces LRU is what catches it.
 func TestOAuth2Plugin_StateReplayRejected(t *testing.T) {
-	p := NewOAuth2Plugin(OAuth2Config{StateSecret: "replay-test-key"})
+	p := NewOAuth2Plugin(OAuth2Config{StateSecret: "replay-test-key-01"})
 
 	state, err := p.generateState("mock", "")
 	if err != nil {
@@ -272,7 +272,7 @@ func TestOAuth2Plugin_StateReplayRejected(t *testing.T) {
 }
 
 func TestOAuth2Plugin_StateTampered(t *testing.T) {
-	p := NewOAuth2Plugin(OAuth2Config{StateSecret: "test-secret"})
+	p := NewOAuth2Plugin(OAuth2Config{StateSecret: "test-secret-state-01"})
 
 	state, err := p.generateState("mock", "")
 	if err != nil {
@@ -451,7 +451,7 @@ func TestOAuth2Plugin_Callback_InvalidState(t *testing.T) {
 func TestOAuth2Plugin_Callback_MissingCode(t *testing.T) {
 	p := NewOAuth2Plugin(OAuth2Config{
 		Providers:   map[string]OAuth2Provider{"mock": &mockProvider{name: "mock"}},
-		StateSecret: "test",
+		StateSecret: "test-state-secret-1",
 	})
 	mgr := New(AuthConfig{})
 	p.Init(mgr)
@@ -550,7 +550,7 @@ func TestOAuth2Plugin_Callback_NoUserStore(t *testing.T) {
 	mgr := New(AuthConfig{JWTSecret: "test-secret", AllowInMemoryStores: true}) // prod-mode Init fails closed without one; opt into the memory session store for this unit test
 	plugin := NewOAuth2Plugin(OAuth2Config{
 		Providers:   map[string]OAuth2Provider{"mock": mock},
-		StateSecret: "test",
+		StateSecret: "test-state-secret-1",
 	})
 	mgr.Use(plugin)
 	mgr.Init(nil)
@@ -865,7 +865,7 @@ func TestOAuth_StableUserAcrossEmailChange(t *testing.T) {
 	}
 	plugin := NewOAuth2Plugin(OAuth2Config{
 		Providers:   map[string]OAuth2Provider{"stub": prov},
-		StateSecret: "test-secret",
+		StateSecret: "test-secret-state-01",
 	})
 	mgr.Use(plugin)
 	if err := mgr.Init(nil); err != nil {
@@ -920,7 +920,7 @@ func TestOAuth_RefusesEmailCollisionWithExistingAccount(t *testing.T) {
 	}
 	plugin := NewOAuth2Plugin(OAuth2Config{
 		Providers:   map[string]OAuth2Provider{"stub": prov},
-		StateSecret: "test-secret",
+		StateSecret: "test-secret-state-01",
 	})
 	mgr.Use(plugin)
 	if err := mgr.Init(nil); err != nil {

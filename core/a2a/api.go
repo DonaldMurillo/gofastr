@@ -133,6 +133,22 @@ type Store interface {
 	DeletePushConfig(ctx context.Context, owner, taskID, id string) error
 }
 
+// RetentionTrimmer is the optional Store capability that bounds the
+// rows cheap authenticated writes mint. The server asks the store to
+// trim after every persist that leaves a task terminal and after every
+// push-config create; a store that does not implement it keeps its own
+// retention policy. Both built-in stores implement it.
+type RetentionTrimmer interface {
+	// TrimTerminalTasks deletes the owner's OLDEST terminal task rows
+	// until at most keep remain. Non-terminal rows are never touched.
+	// keep < 0 means unlimited (no-op).
+	TrimTerminalTasks(ctx context.Context, owner string, keep int) error
+	// TrimPushConfigs deletes the OLDEST push-notification configs
+	// registered for (owner, taskID) until at most keep remain.
+	// keep < 0 means unlimited (no-op).
+	TrimPushConfigs(ctx context.Context, owner, taskID string, keep int) error
+}
+
 // Store errors. Implementations return these (or wrap them) so the server
 // can map them to JSON-RPC codes without knowing the backend.
 var (

@@ -45,7 +45,14 @@ The framework:
    temp files). The two limits are different things: the first caps the
    wire body, the second is only the in-RAM spill threshold.
 2. Coerces non-file values to the schema field's Go type
-   (`Int` → `int64`, `Bool` → `bool`, etc.).
+   (`Int` → `int64`, `Bool` → `bool`, etc.). A form key repeated across
+   parts is refused with `400` — the JSON body path refuses duplicate
+   keys for the same reason: a proxy inspecting one of the two parts
+   would see a payload the server never executes. The one carve-out: a
+   `schema.JSON` column is the list-valued shape (an HTML multi-select
+   submits one part per selected value), so repeats collect into a JSON
+   array. Two file parts under one `Image`/`File` key are refused too;
+   those columns hold a single URL.
 3. Streams each file part matching an `Image`/`File` field through
    `Storage`, scoped by entity name and field name.
 4. Stores the returned URL string on the record.
@@ -371,7 +378,10 @@ separators and control characters stripped, length capped at
 `MaxFilenameBytes` on a UTF-8 rune boundary). `SanitizeFilename`
 bounds the *input* it inspects to `SanitizeFilenameInputBound`
 (`4 × MaxFilenameBytes`) so a multi-megabyte attacker-supplied
-filename can't force unbounded pre-truncation work (DoS).
+filename can't force unbounded pre-truncation work (DoS). The stripped
+set also covers the C1 controls and the zero-width/bidi codepoints
+(`core/textsafe`), so a served key can't flip the extension a user
+sees or manufacture visually identical twin names.
 
 ## Metadata in stored originals
 
@@ -451,7 +461,11 @@ Built-in implementations:
   refused by the kernel, not just one present when the key was checked:
   a key that reaches through a symlinked directory or leaf to a file
   outside the storage root is refused with a 400-class key error, not
-  followed. Errors never carry the absolute storage path.
+  followed. On a case- or normalization-insensitive filesystem (macOS
+  default APFS), a save under a key that folds onto an existing object
+  stored under a byte-different spelling (`TenantA/x` vs `tenanta/x`,
+  NFC vs NFD) is refused with the same key error instead of silently
+  overwriting it. Errors never carry the absolute storage path.
   It only *stores*; it does not serve. Wire downloads
   with `upload.ServeHandler`, which sniffs the content type, blocks
   traversal (delegated to the backend's key sanitization), and
@@ -514,10 +528,13 @@ Implement it on your own backend only if seeking is genuinely cheap there,
 and route key validation through the same code path as `Get`; a capability
 that skipped the traversal check would be a path-traversal hole with a
 performance justification. For filesystem-backed backends,
-`upload.ResolveUnderRoot`, `upload.ScrubPath`, and
-`upload.CreateTempInRoot` are the shared primitives both local backends
-use for symlink-resolved containment, path-scrubbed errors, and the
-`os.Root`-contained staging file for atomic writes.
+`upload.ResolveUnderRoot`, `upload.ScrubPath`,
+`upload.CreateTempInRoot`, and `upload.RefuseFoldedKey` are the shared
+primitives for symlink-resolved containment, path-scrubbed errors, the
+`os.Root`-contained staging file for atomic writes, and the
+case/normalization-fold refusal; both local backends route containment
+through them, and `RefuseFoldedKey` is the one spelling of the fold
+walk for any backend that saves under caller-composed keys.
 
 ## Content checksums
 

@@ -6,15 +6,20 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
+	"math"
 	"mime"
 	"mime/multipart"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/schema"
+	"github.com/DonaldMurillo/gofastr/core/upload"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/file"
 )
@@ -147,6 +152,12 @@ func decodeJSONBody(r *http.Request, v any) error {
 // requests are decoded and reverse-cased back to snake_case so they match the
 // schema's field names regardless of the wire casing.
 //
+// The second return value lists the storage keys a multipart parse already
+// saved (nil for JSON bodies). The write handlers pass them to
+// deleteSavedUploads on every failure path after the parse, so a request
+// whose row never lands leaves no orphaned file in storage; a successful
+// write keeps every key.
+//
 // JSON bodies are checked with crud's own key fold BEFORE the decode: two
 // distinct wire keys that resolve to one column (CaseCamel's "bodyText" and
 // "body_text", or a case-folded pair) are refused with 400 rather than
@@ -154,51 +165,65 @@ func decodeJSONBody(r *http.Request, v any) error {
 // nondeterministic per request. Unknown keys that collide with nothing still
 // pass through; that contract is pinned by TestWireName_RoundTripsBothCasings.
 //
+// Numbers are decoded with UseNumber and normalized to exact int64/float64:
+// a float64 decode silently rounds integer literals above 2^53 before any
+// layer sees them (see numberexact.go).
+//
 // Pre-condition: the caller has already validated Content-Type via
 // enforceJSONContentType and wrapped r.Body with limitRequestBody.
-func (ch *CrudHandler) readRequestBody(r *http.Request) (map[string]any, error) {
+func (ch *CrudHandler) readRequestBody(r *http.Request) (map[string]any, []string, error) {
 	if isMultipart(r) {
 		return ch.parseMultipartBody(r)
 	}
 	data, err := readBodyBytes(r)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if err := handler.CheckTopLevelKeys(data, ch.wireKeyColumn); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	var body map[string]any
 	if err := handler.UnmarshalStrict(data, &body); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return ch.unconvertMapKeys(body), nil
+	return ch.unconvertMapKeys(body), nil, nil
 }
 
 // parseMultipartBody reads a multipart request and returns a body map suitable
-// for the do* CRUD primitives. File parts whose name matches an Image/File
-// field on the entity are saved through the handler's Storage and replaced
-// with the resulting URL string. All other form values are mapped onto fields
-// by name with type coercion driven by the schema (Int/Float/Bool).
+// for the do* CRUD primitives, plus the storage keys it saved along the way.
+// File parts whose name matches an Image/File field on the entity are saved
+// through the handler's Storage and replaced with the resulting URL string.
+// All other form values are mapped onto fields by name with type coercion
+// driven by the schema (Int/Float/Bool).
+//
+// The saves happen at parse time, BEFORE validation, hooks, or the INSERT
+// run — a write that fails any later step must compensate-delete them or the
+// objects are orphaned in storage with no row referencing them (an
+// unbounded disk-fill for an authenticated caller who can repeat the
+// failure). The second return value is the ledger of everything written;
+// the caller passes it to deleteSavedUploads on every failure path. A parse
+// that itself fails mid-way returns the keys saved so far for the same
+// compensation.
 //
 // The handler must have Storage set; otherwise the function errors. Callers
 // should validate Content-Type with isMultipart first and wrap r.Body with
 // limitRequestBody so the multipart wire cap applies.
-func (ch *CrudHandler) parseMultipartBody(r *http.Request) (map[string]any, error) {
+func (ch *CrudHandler) parseMultipartBody(r *http.Request) (map[string]any, []string, error) {
 	if err := r.ParseMultipartForm(MaxMultipartMemory); err != nil {
 		// An over-cap body is a size problem, not a malformed request:
 		// map it to errBodyTooLarge so callers answer 413 (matching the
 		// JSON path) instead of a 400 the client would retry verbatim.
 		var mbe *http.MaxBytesError
 		if errors.As(err, &mbe) || strings.Contains(err.Error(), "request body too large") {
-			return nil, errBodyTooLarge
+			return nil, nil, errBodyTooLarge
 		}
-		return nil, fmt.Errorf("parse multipart: %w", err)
+		return nil, nil, fmt.Errorf("parse multipart: %w", err)
 	}
 
 	body := make(map[string]any)
 
-	fileFieldNames := make(map[string]schema.FieldType, len(ch.Entity.GetFields()))
-	for _, f := range ch.Entity.GetFields() {
+	fileFieldNames := make(map[string]schema.FieldType, len(ch.snapshotFields()))
+	for _, f := range ch.snapshotFields() {
 		switch f.Type {
 		case schema.Image, schema.File:
 			fileFieldNames[f.Name] = f.Type
@@ -207,16 +232,47 @@ func (ch *CrudHandler) parseMultipartBody(r *http.Request) (map[string]any, erro
 		}
 	}
 
+	// rec watches every write the parse makes (the primary object per file
+	// part plus any renditions a deriver produces). It wraps ch.Storage
+	// only for the duration of the parse; a successful write keeps every
+	// key, so the ledger is simply dropped on the success path.
+	var rec *savedKeyLedger
 	if r.MultipartForm != nil {
-		// Plain form values first
+		// Plain form values first. A repeated form key is either a
+		// multi-select (HTML submits one part per selected value) or a
+		// smuggling attempt: the JSON body path REFUSES duplicate keys
+		// outright (pinned by TestMapBodyRejectsDuplicateKeys), because
+		// a duplicate lets a proxy or WAF see a different payload than
+		// the server executes. One logical write surface must not have a
+		// weaker duplicate-key posture just because the Content-Type
+		// differs. The carve-out: a schema.JSON column is the list-valued
+		// shape (an entity's tags/multi-select), so repeats COLLECT into
+		// one array, mirroring ?field_in= multi-value semantics. Every
+		// scalar field keeps the strict refusal: silently keeping
+		// vals[0] dropped the rest of what a legitimate client sent.
 		for key, vals := range r.MultipartForm.Value {
 			if len(vals) == 0 {
 				continue
 			}
-			body[key] = coerceFormValue(ch.Entity, key, vals[0])
+			if len(vals) == 1 {
+				body[key] = coerceFormValue(ch.Entity, key, vals[0])
+				continue
+			}
+			if ch.isJSONColumn(key) {
+				list := make([]any, len(vals))
+				for i, v := range vals {
+					list[i] = v
+				}
+				body[key] = list
+				continue
+			}
+			return nil, rec.saved(), fmt.Errorf("duplicate form key %q for a single-valued field", key)
 		}
 
-		// File parts override values when the same key is present
+		// File parts override values when the same key is present. Two
+		// file parts under one key are the file-side smuggling shape:
+		// the column holds ONE URL, so keep-first silently drops the
+		// second part a proxy may have inspected. Refuse.
 		for key, headers := range r.MultipartForm.File {
 			if _, isFileField := fileFieldNames[key]; !isFileField {
 				continue
@@ -224,24 +280,31 @@ func (ch *CrudHandler) parseMultipartBody(r *http.Request) (map[string]any, erro
 			if len(headers) == 0 {
 				continue
 			}
+			if len(headers) > 1 {
+				return nil, rec.saved(), fmt.Errorf("duplicate file part %q: an Image/File field holds one upload", key)
+			}
 			if ch.Storage == nil {
-				return nil, errStorageNotConfigured
+				return nil, rec.saved(), errStorageNotConfigured
+			}
+			if rec == nil {
+				rec = &savedKeyLedger{Storage: ch.Storage}
 			}
 			fh := headers[0]
-			if err := saveFilePart(r.Context(), ch, key, fileFieldNames[key], fh, body); err != nil {
-				return nil, err
+			if err := saveFilePart(r.Context(), ch, rec, key, fileFieldNames[key], fh, body); err != nil {
+				return nil, rec.saved(), err
 			}
 		}
 	}
 
-	return body, nil
+	return body, rec.saved(), nil
 }
 
 // saveFilePart opens one multipart file header, runs ProcessFileField, and
 // stores the resulting URL on body[key]. For a schema.Image field with an
 // ImageDeriver configured, renditions and placeholder metadata are derived
 // too and spread across whichever sibling columns the entity declares.
-func saveFilePart(ctx context.Context, ch *CrudHandler, key string, fieldType schema.FieldType, fh *multipart.FileHeader, body map[string]any) error {
+// store is the (possibly recording) storage view the parse writes through.
+func saveFilePart(ctx context.Context, ch *CrudHandler, store upload.Storage, key string, fieldType schema.FieldType, fh *multipart.FileHeader, body map[string]any) error {
 	f, err := fh.Open()
 	if err != nil {
 		return fmt.Errorf("open file part %q: %w", key, err)
@@ -260,7 +323,7 @@ func saveFilePart(ctx context.Context, ch *CrudHandler, key string, fieldType sc
 		}
 	}
 
-	ff, err := file.ProcessFileField(ctx, ch.Storage, f, fh.Filename, ch.Entity.GetName(), key, opts...)
+	ff, err := file.ProcessFileField(ctx, store, f, fh.Filename, ch.Entity.GetName(), key, opts...)
 	if err != nil {
 		return fmt.Errorf("upload %q: %w", key, err)
 	}
@@ -345,7 +408,9 @@ func coerceFormValue(ent *entity.Entity, name, raw string) any {
 				return n
 			}
 		case schema.Float, schema.Decimal:
-			if n, err := strconv.ParseFloat(raw, 64); err == nil {
+			// Reject NaN/Inf so a form value like "NaN" cannot land in a
+			// numeric column; the raw string then fails schema validation.
+			if n, err := strconv.ParseFloat(raw, 64); err == nil && !math.IsNaN(n) && !math.IsInf(n, 0) {
 				return n
 			}
 		case schema.Bool:
@@ -410,4 +475,84 @@ func isSafeMediaURL(s string) bool {
 		return false
 	}
 	return urlsafe.OK(s, urlsafe.Resource)
+}
+
+// savedKeyLedger is an upload.Storage view that records every key written
+// through it, so a request whose row never lands can compensate-delete the
+// files its multipart parse already saved. It is the request-parse twin of
+// file/filefield.go's recordingStore: ProcessFileField saves the primary
+// object (and any renditions a deriver produces) at parse time, before
+// validation, hooks, or the INSERT run — keys the caller never chose and
+// cannot name afterwards. Watching the writes is the only seam that works
+// for every deriver, third-party ones included.
+//
+// Delete unrecords only a delete that actually removed the object (nil, or
+// os.ErrNotExist, meaning it was never there): a failed delete leaves the
+// bytes in storage, and dropping the key anyway would hide exactly the
+// object whose compensation failed.
+type savedKeyLedger struct {
+	upload.Storage
+	mu   sync.Mutex
+	keys []string
+}
+
+func (l *savedKeyLedger) Save(ctx context.Context, key string, src io.Reader) error {
+	if err := l.Storage.Save(ctx, key, src); err != nil {
+		return err
+	}
+	l.mu.Lock()
+	l.keys = append(l.keys, key)
+	l.mu.Unlock()
+	return nil
+}
+
+func (l *savedKeyLedger) Delete(ctx context.Context, key string) error {
+	err := l.Storage.Delete(ctx, key)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	l.mu.Lock()
+	l.keys = deleteKey(l.keys, key)
+	l.mu.Unlock()
+	return err
+}
+
+// saved returns a snapshot of the keys written through the ledger and not
+// since deleted.
+func (l *savedKeyLedger) saved() []string {
+	if l == nil {
+		return nil
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	out := make([]string, len(l.keys))
+	copy(out, l.keys)
+	return out
+}
+
+// deleteKey removes the first occurrence of key from keys.
+func deleteKey(keys []string, key string) []string {
+	for i, k := range keys {
+		if k == key {
+			return append(keys[:i], keys[i+1:]...)
+		}
+	}
+	return keys
+}
+
+// deleteSavedUploads compensates for files saved while parsing a multipart
+// write whose row never landed: validation failure, a hook rejection, a
+// missing id on update, a rolled-back insert. Best-effort by design — the
+// caller is already returning the real error, and a failed cleanup must not
+// replace it. A nil ledger or a failed Save mid-parse leaves the keys that
+// WERE saved; only a successful write keeps them all.
+func (ch *CrudHandler) deleteSavedUploads(ctx context.Context, keys []string) {
+	if len(keys) == 0 || ch.Storage == nil {
+		return
+	}
+	for _, key := range keys {
+		if err := ch.Storage.Delete(ctx, key); err != nil {
+			log.Printf("crud: compensating delete of orphaned upload %q failed: %v", key, err)
+		}
+	}
 }

@@ -43,7 +43,7 @@ func newResolveManager(t *testing.T, store UserStore) (*OAuth2Plugin, *AuthManag
 		AllowInMemoryStores: true, // unit tests run on the memory session store
 	})
 	plugin := NewOAuth2Plugin(OAuth2Config{
-		StateSecret: "test-secret",
+		StateSecret: "test-secret-state-01",
 	})
 	mgr.Use(plugin)
 	if err := mgr.Init(nil); err != nil {
@@ -275,7 +275,7 @@ func TestResolveOAuth_NoLinker_FailsClosed(t *testing.T) {
 	store := &staticUserStore{
 		byID: map[string]User{"u-1": &BasicUser{ID: "u-1", Email: "x@x.com", Roles: []string{"user"}}},
 	}
-	plugin := NewOAuth2Plugin(OAuth2Config{StateSecret: "test"})
+	plugin := NewOAuth2Plugin(OAuth2Config{StateSecret: "test-state-secret-1"})
 	// No Init, we are testing the runtime contract directly.
 
 	info := &OAuth2UserInfo{ID: "g-1", Email: "x@x.com", Provider: "google", EmailVerified: true}
@@ -490,7 +490,7 @@ func TestOAuthLinksKeyedToRegistryName(t *testing.T) {
 				ID: "sub-123", Email: "bob@b.example", EmailVerified: true,
 			}},
 		},
-		StateSecret: "test-secret",
+		StateSecret: "test-secret-state-01",
 	})
 	mgr.Use(plugin)
 	if err := mgr.Init(nil); err != nil {

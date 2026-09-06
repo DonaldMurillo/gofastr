@@ -241,6 +241,12 @@ type MagicLinkPlugin struct {
 	// basePath is captured at RegisterRoutes so the confirmation page's
 	// form can post back to the same path the link was mounted under.
 	basePath string
+
+	// stopCh is closed by OnStop to end the token-reaping goroutine
+	// OnStart launched. stopOnce makes a double OnStop (or OnStop without
+	// OnStart) safe.
+	stopCh   chan struct{}
+	stopOnce sync.Once
 }
 
 // NewMagicLinkPlugin creates a new magic-link plugin with the given config.
@@ -295,6 +301,63 @@ func (p *MagicLinkPlugin) RegisterRoutes(r *router.Router, basePath string) {
 	// from signing a victim into the attacker's account on click.
 	r.Get(basePath+"/magic-link/verify", http.HandlerFunc(p.confirmHandler))
 	r.Post(basePath+"/magic-link/verify", http.HandlerFunc(p.verifyHandler))
+}
+
+// OnStart launches the token-store reaper: a ticker calling Cleanup so
+// unredeemed rows (anonymous-minted by /magic-link/send and the sibling
+// password-reset / email-verification flows sharing the store) do not
+// accumulate until the disk fills. The SQL store also sweeps lazily on
+// its mint path; this ticker is the belt to that braces and the ONLY
+// reaper a memory-backed store gets.
+func (p *MagicLinkPlugin) OnStart(_ context.Context) error {
+	interval := p.config.TokenTTL
+	if interval < time.Minute {
+		interval = time.Minute
+	}
+	p.stopCh = make(chan struct{})
+	ticker := time.NewTicker(interval)
+	go func() {
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				p.reapExpiredTokens()
+			case <-p.stopCh:
+				return
+			}
+		}
+	}()
+	return nil
+}
+
+// reapExpiredTokens runs one Cleanup pass under a recover guard: tokenStore
+// is a host-installable interface, so a panic in a custom implementation
+// would otherwise unwind the reaper goroutine and crash the process
+// (recovercallback).
+func (p *MagicLinkPlugin) reapExpiredTokens() {
+	defer func() {
+		if rec := recover(); rec != nil {
+			slog.Error("magic-link: token store cleanup panicked",
+				"plugin", "magic-link", "panic", rec)
+		}
+	}()
+	if n, err := p.tokenStore.Cleanup(context.Background()); err != nil {
+		slog.Warn("magic-link: token store cleanup failed",
+			"plugin", "magic-link", "err", err.Error())
+	} else if n > 0 {
+		slog.Debug("magic-link: reaped expired tokens",
+			"plugin", "magic-link", "count", n)
+	}
+}
+
+// OnStop ends the reaper goroutine.
+func (p *MagicLinkPlugin) OnStop() error {
+	p.stopOnce.Do(func() {
+		if p.stopCh != nil {
+			close(p.stopCh)
+		}
+	})
+	return nil
 }
 
 // sendHandler handles POST {basePath}/magic-link/send.

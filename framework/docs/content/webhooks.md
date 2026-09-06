@@ -19,6 +19,7 @@ mgr := webhook.New(store, webhook.Options{
     // PollInterval:         1 * time.Second,
     // MaxResponseBodyBytes: 64 << 10,   // 64 KiB; protects against malicious receivers
     // AllowPrivateNetworks: false,      // SSRF guard; flip true for dev/tests only
+    // Retention:            0,          // terminal-row reaping; see "Retention" below
 })
 mgr.Start()
 defer mgr.Stop(ctx)
@@ -42,6 +43,14 @@ queued, err := mgr.Publish(ctx, "orders.created", []byte(`{"id":42}`))
 
 `Publish` returns the number of subscribers the event was queued for.
 The actual HTTP POST happens on the manager's worker goroutine.
+
+Event names (and the glob patterns `Subscribe` accepts) are validated:
+empty names are refused, and so is any character from the unsafe
+control set — C0, DEL, the C1 block (U+0080–U+009F, whose 8-bit CSI/OSC
+forms drive terminal escapes and which Go's header writer would
+otherwise carry raw in `X-GoFastr-Event`), and the zero-width/bidi
+invisible set. No control character reaches an outbound header or a
+persisted row through an event name.
 
 ## SSRF guard
 
@@ -169,6 +178,30 @@ inspection / replay via your own admin tooling.
 If a subscriber is removed while a delivery for it is pending, the
 delivery transitions straight to `dead` with `LastError =
 "subscriber gone or inactive"`.
+
+### Retention (optional)
+
+Successful delivery rows and processed inbound envelopes are terminal —
+they can never become deliverable again — and by default they live
+forever. Every `Publish` writes one row per matching subscriber and
+every verified inbound POST writes an envelope (payload up to 1 MiB),
+so routine traffic grows the tables until the disk fills unless
+something reaps them.
+
+Set `Options.Retention` (a `time.Duration`, zero = off, the outbox-style
+opt-in) and the manager's worker tick reaps successful deliveries —
+and, when you also wire `Options.InboundStore`, processed envelopes —
+whose `updated_at` is older than the window. Dead deliveries and failed
+envelopes are deliberately never reaped: replay and post-mortems need
+the body, so retention is not a dead-letter TTL. A negative value is
+clamped to zero (off).
+
+```go
+mgr := webhook.New(store, webhook.Options{
+    Retention:    30 * 24 * time.Hour,
+    InboundStore: inboundStore, // swept by the same pass; optional
+})
+```
 
 The worker survives a panicking store: every store call on the delivery
 loop runs under a recover guard that logs through `Options.Logger`, so a

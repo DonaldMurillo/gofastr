@@ -217,6 +217,26 @@ func (ch *CrudHandler) EventStream() http.HandlerFunc {
 			return
 		}
 
+		// Seat admission: the per-principal cap on concurrent streams
+		// (EventStreamSeats / EventStreamSeatOverflow). Each accepted
+		// stream pins a goroutine, a 32-entry buffer, and three bus
+		// subscriptions until it disconnects, so one authenticated
+		// caller must not be able to hold an unbounded number. Refusal
+		// happens before any byte of the stream is written — the caller
+		// is answered 429 with Retry-After (EventSource backs off), not
+		// left holding an empty stream. The seat is released on every
+		// exit below: disconnect, write error, re-auth refusal, or an
+		// EvictOldest admission closing this stream's done channel.
+		seat, admitted := ch.seatRegistry().admit(
+			ch.streamSeatPrincipal(r, ownerID),
+			ch.EventStreamSeats, ch.EventStreamSeatOverflow)
+		if !admitted {
+			w.Header().Set("Retry-After", "1")
+			writeJSONError(w, http.StatusTooManyRequests, "too many concurrent event streams for this caller")
+			return
+		}
+		defer ch.seatRegistry().release(seat)
+
 		sse := stream.NewSSEWriter(w)
 		sse.WriteComment("subscribed " + ch.Entity.GetName())
 
@@ -304,6 +324,13 @@ func (ch *CrudHandler) EventStream() http.HandlerFunc {
 		for {
 			select {
 			case <-r.Context().Done():
+				return
+			case <-seat.done:
+				// An EvictOldest admission (this principal's next stream
+				// took the seat) closed this stream: depart exactly as a
+				// disconnect would, releasing the bus subscriptions through
+				// the deferred cancels and the seat through the deferred
+				// release (a no-op splice: the eviction already removed it).
 				return
 			case <-reauth.C:
 				// Idle streams re-validate on a ticker so a revocation

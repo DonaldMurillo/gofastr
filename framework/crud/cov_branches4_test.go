@@ -117,7 +117,7 @@ func TestParseMultipartBody_Direct_EmptyValue(t *testing.T) {
 	mw.Close()
 	req := httptest.NewRequest("POST", "/media", &buf)
 	req.Header.Set("Content-Type", mw.FormDataContentType())
-	body, err := ch.parseMultipartBody(req)
+	body, _, err := ch.parseMultipartBody(req)
 	if err != nil {
 		t.Fatalf("parseMultipartBody: %v", err)
 	}

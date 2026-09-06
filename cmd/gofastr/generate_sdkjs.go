@@ -381,7 +381,7 @@ const jsClientMethods = `  async do(method, path, body) {
       init.body = JSON.stringify(body);
     }
     const resp = await this._fetch(this.baseURL + path, init);
-    const text = await resp.text();
+    const text = await this._readBody(resp);
     if (resp.status < 200 || resp.status >= 300) {
       throw new ApiError(resp.status, text);
     }
@@ -389,12 +389,43 @@ const jsClientMethods = `  async do(method, path, body) {
     return JSON.parse(text);
   }
 
+  /**
+   * Reads the response body as text, buffering at most maxBodyBytes
+   * (1 MiB, the same cap the Go client enforces via io.LimitReader).
+   * A larger body is a hostile or misbehaving endpoint, not a payload
+   * to buffer to EOF: the read is aborted and throws instead.
+   */
+  async _readBody(resp) {
+    const cap = 1 << 20;
+    if (!resp.body) return "";
+    const reader = resp.body.getReader();
+    const parts = [];
+    let size = 0;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > cap) {
+        try { await reader.cancel(); } catch { /* stream already closed */ }
+        throw new ApiError(resp.status, "response body exceeded " + cap + " bytes");
+      }
+      parts.push(value);
+    }
+    const bytes = new Uint8Array(size);
+    let at = 0;
+    for (const part of parts) {
+      bytes.set(part, at);
+      at += part.byteLength;
+    }
+    return new TextDecoder().decode(bytes);
+  }
+
   async _sse(path, onEvent, { signal } = {}) {
     const headers = { Accept: "text/event-stream" };
     if (this.token) headers.Authorization = "Bearer " + this.token;
     const resp = await this._fetch(this.baseURL + path, { headers, signal });
     if (resp.status < 200 || resp.status >= 300) {
-      throw new ApiError(resp.status, await resp.text());
+      throw new ApiError(resp.status, await this._readBody(resp));
     }
     const reader = resp.body.getReader();
     const decoder = new TextDecoder();

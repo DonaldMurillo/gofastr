@@ -131,11 +131,12 @@ A `ToolHandler` returns `any`, normalized by type:
 | `string` | One text block |
 | anything else | JSON-marshaled into one text block |
 
-A non-nil error becomes a JSON-RPC error. For a failure the caller should see
-as tool output rather than a transport error, return
-`mcp.ToolResult{IsError: true}`. The canonical rich-result examples (images,
-structured output mirroring a text block) live in
-[agent-readiness](agent-ready.md).
+A non-nil error becomes a JSON-RPC error, but only a deliberate
+`*RPCError` keeps its message verbatim — a plain error is logged
+server-side and answered with the generic "internal tool error", so
+handler text (filesystem paths, driver messages) never crosses the
+transport. For a failure the caller should see as tool output rather
+than a transport error, return `mcp.ToolResult{IsError: true}`.
 
 Options:
 
@@ -452,6 +453,16 @@ idempotent and `resources/updated` sends the client back to
 `resources/read` for current state, so a dropped client that reconnects
 and re-lists is correct again.
 
+Each held stream costs a goroutine and that buffer, so one caller may
+not hold an unbounded number of them: at most 16 concurrent streams per
+caller (the resolved user when middleware put one in the request
+context, else the TCP peer), configurable with
+`SetSSESeatCap(n)` — `n < 0` lifts the cap for deployments that bound
+seats elsewhere. A caller past the cap is answered `429` at connect by
+default; `SetSSESeatOverflow(mcp.SeatOverflowEvictOldest)` instead
+closes that caller's oldest stream and seats the new one, the
+reconnect-friendly policy for hosts whose clients churn streams.
+
 Two transport limits, both inherited from the stream being per process:
 
 - The HTTP transport has no session id linking a POST to a GET stream,
@@ -550,14 +561,19 @@ What a client sees at the edges:
   same rule at dispatch, for every method: any object inside `params` that
   repeats a key, or carries two keys that case-fold onto each other
   (`"name"` and `"Name"`), is refused with invalid-params before any
-  handler runs.
 - `ServeSSE(path)` returns an http.Handler where POST handles JSON-RPC and GET
   with `Accept: text/event-stream` opens a stream the server holds open for
   the connection's life, carrying server-initiated notifications (see
   [notifications](#server-initiated-notifications)). The origin/Host gate
-  runs on the GET half too: the stream it protects is a read.
+  runs on the GET half too: the stream it protects is a read. The
+  server-wide gate (`SetGate`) is also checked at connect: a caller it
+  refuses outright gets a 403 and holds no stream, instead of holding
+  one open silently for its whole life.
 - `ServeStdio(ctx, in, out)` reads line-delimited JSON-RPC from `in` and writes
-  responses to `out`, blocking until EOF or context cancellation. The recover
+  responses to `out`, blocking until EOF or context cancellation. The
+  envelope is decoded with the same strict top-level-key rule as the HTTP
+  transports: a line repeating a key or spelling one in two cases is
+  refused as invalid JSON, never resolved last-key-wins. The recover
   guard around handler code matters most here: stdio has no net/http
   per-request net, so a panic would otherwise crash the process.
 

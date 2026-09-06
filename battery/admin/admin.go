@@ -41,6 +41,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/access"
 	"github.com/DonaldMurillo/gofastr/framework/embed"
+	"github.com/DonaldMurillo/gofastr/framework/tenant"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 	"github.com/DonaldMurillo/gofastr/framework/uihost"
 	"log/slog"
@@ -516,9 +517,20 @@ func (b *Battery) handleIndex(w http.ResponseWriter, r *http.Request) {
 	var auditCount int
 	db := b.effectiveDB()
 	if db != nil {
-		_ = db.QueryRowContext(r.Context(),
-			fmt.Sprintf("SELECT COUNT(*) FROM %s", b.cfg.AuditTable),
-		).Scan(&auditCount)
+		// Tenant scope, same predicate queryAudit applies: the overview
+		// tile is a write-volume oracle when it counts every tenant's
+		// rows. A tenant-scoped admin sees only their own tenant's rows
+		// (NULL-tenant system rows included in NOBODY's tenant scope are
+		// not visible to a tenant admin either — strict equality, no
+		// IS NULL fallback; platform operators read them with no tenant
+		// in the context).
+		q := fmt.Sprintf("SELECT COUNT(*) FROM %s", b.cfg.AuditTable)
+		var args []any
+		if tid := tenant.GetTenantID(r.Context()); tid != "" {
+			q += " WHERE tenant_id = $1"
+			args = append(args, tid)
+		}
+		_ = db.QueryRowContext(r.Context(), q, args...).Scan(&auditCount)
 	}
 	var sections []render.HTML
 	if b.cfg.Queue != nil {
@@ -622,9 +634,22 @@ type auditRow struct {
 }
 
 func (b *Battery) queryAudit(ctx context.Context, limit int) ([]auditRow, error) {
+	// Tenant scope: the audit read must honour the caller's tenant the
+	// same way the entity screens do (audit-log.md: "scope the read to
+	// the caller's tenant so one tenant can't see another's audit
+	// trail"). writeAuditRow stamps tenant_id, so the predicate is exact.
+	// NULL-tenant system rows are NOT shown to a tenant-scoped admin
+	// (strict equality); an admin context with no tenant sees everything,
+	// which is the platform-operator posture.
 	q := fmt.Sprintf(`SELECT id, entity, op, record_id, actor_id, created_at, diff
-		FROM %s ORDER BY created_at DESC LIMIT %d`, b.cfg.AuditTable, limit)
-	rows, err := b.effectiveDB().QueryContext(ctx, q)
+		FROM %s`, b.cfg.AuditTable)
+	var args []any
+	if tid := tenant.GetTenantID(ctx); tid != "" {
+		q += " WHERE tenant_id = $1"
+		args = append(args, tid)
+	}
+	q += fmt.Sprintf(" ORDER BY created_at DESC LIMIT %d", limit)
+	rows, err := b.effectiveDB().QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, err
 	}

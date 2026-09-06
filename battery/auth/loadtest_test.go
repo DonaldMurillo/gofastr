@@ -141,7 +141,7 @@ func TestLoad_LoginEndpoint_RateLimiterHoldsUnderConcurrency(t *testing.T) {
 func TestLoad_OAuthStateNonces_BoundedUnderRedirectStorm(t *testing.T) {
 	p := NewOAuth2Plugin(OAuth2Config{
 		Providers:   map[string]OAuth2Provider{"mock": &mockProvider{name: "mock"}},
-		StateSecret: "load-test-key",
+		StateSecret: "load-test-key-001",
 	})
 
 	const N = 5000
@@ -166,7 +166,7 @@ func TestLoad_OAuthStateNonces_BoundedUnderRedirectStorm(t *testing.T) {
 func TestLoad_OAuthStateNonces_GarbageCollectsExpired(t *testing.T) {
 	p := NewOAuth2Plugin(OAuth2Config{
 		Providers:   map[string]OAuth2Provider{"mock": &mockProvider{name: "mock"}},
-		StateSecret: "gc-test-key",
+		StateSecret: "gc-test-key-00001",
 	})
 
 	// Plant > threshold expired entries.

@@ -209,6 +209,11 @@ func (p *AccountsPlugin) unlinkHandler(w http.ResponseWriter, r *http.Request) {
 				"cannot unlink the last login method: set a password first or link another provider")
 			return
 		}
+		if err := p.revokeProviderTokens(r.Context(), userID, provider); err != nil {
+			writeAuthError(w, http.StatusInternalServerError,
+				"unlink succeeded but the stored provider token could not be revoked")
+			return
+		}
 		p.mgr.emitSecurity(r.Context(), SecurityEvent{
 			Kind:   "oauth.unlinked",
 			UserID: userID,
@@ -260,6 +265,11 @@ func (p *AccountsPlugin) unlinkHandler(w http.ResponseWriter, r *http.Request) {
 		writeAuthError(w, http.StatusInternalServerError, "unlink failed")
 		return
 	}
+	if err := p.revokeProviderTokens(r.Context(), userID, provider); err != nil {
+		writeAuthError(w, http.StatusInternalServerError,
+			"unlink succeeded but the stored provider token could not be revoked")
+		return
+	}
 	p.mgr.emitSecurity(r.Context(), SecurityEvent{
 		Kind:   "oauth.unlinked",
 		UserID: userID,
@@ -269,4 +279,24 @@ func (p *AccountsPlugin) unlinkHandler(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{"unlinked": provider})
+}
+
+// revokeProviderTokens drops the OAuthTokenStore row for (userID,
+// provider) after a successful unlink. The stored access/refresh token is
+// a password-equivalent for the provider API; unlink is the user's "this
+// app no longer acts as me at {provider}" action, so leaving the row
+// behind keeps a revoked delegation's credential alive. The store is the
+// OAuth2 plugin's (OAuth2Config.TokenStore) — a wiring without the
+// OAuth2 plugin, or with no TokenStore configured, never persisted
+// provider tokens, so there is nothing to revoke and this is a no-op.
+func (p *AccountsPlugin) revokeProviderTokens(ctx context.Context, userID, provider string) error {
+	op, err := PluginAs[*OAuth2Plugin](p.mgr, "oauth2")
+	if err != nil {
+		return nil
+	}
+	ts := op.TokenStore()
+	if ts == nil {
+		return nil
+	}
+	return ts.Delete(ctx, userID, provider)
 }

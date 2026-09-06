@@ -117,10 +117,13 @@ func WithWorkers(n int) DBQueueOption {
 }
 
 // WithDBHandlerTimeout caps a single handler invocation's wall-clock
-// budget. The job's context is cancelled at the deadline, so a
-// black-holed dependency (an SMTP host that never responds, a hung HTTP
-// call) can't wedge a worker forever, critical with the default single
-// worker, where one stuck job stalls the entire queue. Zero (default)
+// budget. The job's context is cancelled at the deadline and the worker
+// stops waiting there: a black-holed dependency (an SMTP host that never
+// responds, a hung HTTP call, a handler that ignores its context) can't
+// wedge a worker forever, critical with the default single worker, where
+// one stuck job stalls the entire queue — the job is nacked at the
+// deadline and retried/dead-lettered, so a late side effect is the
+// duplicate the at-least-once contract already allows. Zero (default)
 // means no timeout; set it whenever handlers touch the network. (Named
 // distinctly from the MemoryQueue's WithHandlerTimeout because both live
 // in this package.)
@@ -1090,20 +1093,54 @@ func (q *DBQueue) workerLoop(ctx context.Context, lane string) {
 // runHandler invokes a job handler, converting a panic into an error so a
 // poison-message job is nacked (retried/dead-lettered) instead of unwinding
 // the worker goroutine and draining the pool / crashing the process.
+//
+// When a handler timeout is configured ([WithDBHandlerTimeout]) the
+// invocation runs on its OWN goroutine, mirroring the outbox relay's
+// runHandler: a handler that ignores its cancelled context cannot be made
+// to return (Go has no goroutine termination), and invoking it inline let
+// one such handler wedge its worker goroutine forever — with the default
+// single worker that stalled the entire queue. The worker instead stops
+// WAITING at the deadline, returns a timeout error so the job is nacked
+// (a duplicate side effect on a late completion is the documented
+// at-least-once cost) and keeps draining. The result channel is buffered
+// so a late return never leaks the goroutine on the send; a handler that
+// never returns holds one goroutine per retry cycle, bounded by the job's
+// MaxAttempts.
+//
+// The deadline is armed with a timer rather than selected off the worker
+// context, so a queue SHUTDOWN is never mislabelled as a handler timeout:
+// a cooperative handler still returns promptly under the cancelled
+// context and its outcome settles as usual.
 func (q *DBQueue) runHandler(ctx context.Context, h Handler, job Job) (err error) {
+	q.mu.RLock()
+	timeout := q.handlerTimeout
+	q.mu.RUnlock()
+	if timeout <= 0 {
+		return invokeRecovering(ctx, h, job)
+	}
+	hctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	type outcome struct{ err error }
+	done := make(chan outcome, 1)
+	go func() { done <- outcome{invokeRecovering(hctx, h, job)} }()
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	select {
+	case r := <-done:
+		return r.err
+	case <-timer.C:
+		return fmt.Errorf("queue: handler for %q exceeded its %s budget (context cancelled; job nacked and retried)",
+			job.Type, timeout)
+	}
+}
+
+// handler goroutine rather than around the select.
+func invokeRecovering(ctx context.Context, h Handler, job Job) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			err = fmt.Errorf("queue: handler for %q panicked: %v", job.Type, r)
 		}
 	}()
-	q.mu.RLock()
-	timeout := q.handlerTimeout
-	q.mu.RUnlock()
-	if timeout > 0 {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, timeout)
-		defer cancel()
-	}
 	return h(ctx, job)
 }
 

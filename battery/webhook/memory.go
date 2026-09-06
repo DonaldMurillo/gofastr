@@ -220,3 +220,20 @@ func (m *MemoryStore) ClaimDueDeliveries(_ context.Context, now time.Time, limit
 	}
 	return candidates, nil
 }
+
+// ReapTerminalBefore implements [RetentionSweeper]: it deletes successful
+// deliveries whose UpdatedAt is older than cutoff, the memory twin of
+// SQLStore.ReapTerminalBefore. Dead rows are deliberately retained —
+// Replay needs the body, retention is not a dead-letter TTL.
+func (m *MemoryStore) ReapTerminalBefore(_ context.Context, cutoff time.Time) (int64, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var n int64
+	for id, d := range m.deliveries {
+		if d.Status == StatusSuccess && d.UpdatedAt.Before(cutoff) {
+			delete(m.deliveries, id)
+			n++
+		}
+	}
+	return n, nil
+}
