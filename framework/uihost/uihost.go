@@ -3472,8 +3472,13 @@ func (ds *UIHost) componentCSSTags(page string, bundle bool) string {
 			if i > 0 {
 				b.WriteByte('\n')
 			}
-			fmt.Fprintf(b, `<link rel="stylesheet" href="/__gofastr/comp/%s.css?v=%s">`,
-				n, e.VersionFor(theme))
+			// The marker the runtime dedupes on (loadComponentCSS checks
+			// link[data-fui-style=name]). Without it, a static page got a
+			// second copy of every component stylesheet appended after
+			// app.css on load, which reversed the cascade against the
+			// host's own overrides.
+			fmt.Fprintf(b, `<link rel="stylesheet" href="/__gofastr/comp/%s.css?v=%s" data-fui-style="%s" id="fui-css-%s">`,
+				n, e.VersionFor(theme), n, n)
 		}
 		return b.String()
 	}
