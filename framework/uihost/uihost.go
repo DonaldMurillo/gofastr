@@ -3325,6 +3325,23 @@ func (e *PolicyBlockedError) Error() string {
 // graph, but skips the SSE meta tag because there is no live session.
 // The result is safe to write to disk and serve from any static host.
 func (ds *UIHost) RenderStaticPage(ctx context.Context, path string) (string, error) {
+	// The chrome renders with the same context a live request gets. A
+	// layout component that reads the path from the request, such as a
+	// sidebar for the section being read or a header whose language follows
+	// the page, rendered for no page at all in an export, so every exported
+	// page carried the chrome of the site root. An SSG build passes no
+	// request, so one is made for the path, and the route match is
+	// installed the way handlePage does it.
+	if app.RequestFromContext(ctx) == nil {
+		if req, err := http.NewRequestWithContext(ctx, http.MethodGet, path, nil); err == nil {
+			ctx = app.WithRequest(ctx, req)
+		}
+	}
+	if _, ok := app.MatchFromContext(ctx); !ok {
+		if m, ok := ds.App.Router.MatchFor(path); ok {
+			ctx = app.WithMatch(ctx, m)
+		}
+	}
 	// Install the value bag so producer-seeded slice values are captured
 	// during the static render (matches the live handlePage path).
 	ctx = store.WithValues(ctx)
