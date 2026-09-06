@@ -123,3 +123,48 @@ func TestShutdownForceClosesHangingConns(t *testing.T) {
 	}
 	<-done
 }
+
+// A connection the server accepted but that never sent a request (a
+// browser's speculative preconnect, a Transport's spare dial) sits in
+// net/http's StateNew, and Server.Shutdown spares such a connection
+// for five seconds (go.dev/issue/22682). Shutdown must close those
+// itself so the drain ends when the real work does, not at the
+// deadline.
+func TestShutdownClosesConnsThatNeverSentARequest(t *testing.T) {
+	app := NewApp(WithoutDefaultMiddleware())
+	app.Config.DisableSignalHandling = true
+	ready := make(chan string, 1)
+	app.OnReady(func(addr string) { ready <- addr })
+	done := make(chan error, 1)
+	go func() { done <- app.Start("127.0.0.1:0") }()
+	var addr string
+	select {
+	case addr = <-ready:
+	case err := <-done:
+		t.Fatalf("Start returned before ready: %v", err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("server never became ready")
+	}
+
+	c, err := net.Dial("tcp", addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	// Let Serve accept it: a connection still in the listen backlog is
+	// never tracked and proves nothing.
+	time.Sleep(100 * time.Millisecond)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	started := time.Now()
+	if err := app.Shutdown(ctx); err != nil {
+		t.Fatalf("Shutdown with an idle new connection open: %v", err)
+	}
+	if took := time.Since(started); took > 2*time.Second {
+		t.Fatalf("Shutdown took %v with an idle new connection open; the drain waited on it", took)
+	}
+	if _, err := c.Read(make([]byte, 1)); err == nil {
+		t.Fatal("the idle connection is still open after Shutdown")
+	}
+}
