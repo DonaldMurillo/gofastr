@@ -79,6 +79,8 @@ read scope (an entity the caller cannot read is omitted, matching
 `/api/llm.md`); `WithPublicOpenAPI` opts into the full, unfiltered
 document.
 
+## [0.84.1] - 2026-09-06
+
 ### Fixed
 - **Client-side navigation works on a static export below a base path.**
   The export rewrote every href for the base and left the embedded route
