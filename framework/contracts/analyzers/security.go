@@ -25,6 +25,7 @@ func init() {
 			contracts.RuleRawJSONBodyDecode,
 			contracts.RuleAbsoluteAttempts,
 			contracts.RuleUnfencedClaim,
+			contracts.RuleFoldedKey,
 		},
 		Run: runSecurity,
 	})
@@ -54,6 +55,7 @@ func runSecurity(p *contracts.Pass) ([]contracts.Diagnostic, error) {
 			out = append(out, ruleRawJSONBody(p, f.Rel, file)...)
 			out = append(out, ruleAbsoluteAttempts(p, f.Rel, file)...)
 			out = append(out, ruleUnfencedClaim(p, f.Rel, file)...)
+			out = append(out, ruleFoldedKey(p, f.Rel, file)...)
 		}
 	}
 	return out, nil

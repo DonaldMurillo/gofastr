@@ -8,6 +8,73 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 ## [Unreleased]
 
 ### Security
+- **Round-4 adversarial probes: 54 over twelve property families the
+  earlier rounds never opened (authorization at derived surfaces,
+  layer-mismatch parsing, cheap-write state growth, transaction ordering,
+  account lifecycle, dev surfaces in production, signed-payload confusion,
+  untrusted project directories, invisible/bidi characters,
+  interactive-layer caps, data at rest, config time-of-use), all fixed
+  and promoted to permanent security tests.** The changes worth naming:
+  - **Bearer JWTs fail closed on lifecycle change.** `RequireAuth`
+    re-resolves the subject via the user store on every request, so a
+    deleted or role-downgraded account loses access at once instead of at
+    token expiry, matching the session and API-token planes.
+  - **Delivery counts every attempt.** The outbox relay increments
+    `attempts` at claim (matching the queue and webhook batteries), so a
+    relay that dies between claim and settle no longer redelivers forever;
+    a non-cooperative queue handler runs on its own goroutine and stops at
+    the deadline instead of wedging the worker.
+  - **Uploads and journals refuse symlinked leaves.** `core/upload`
+    LocalStorage refuses a key that folds onto an existing object (the
+    `battery/storage` posture, now shared); the kiln journal opens its
+    session file `O_NOFOLLOW`; a failed multipart create deletes the file
+    parts it saved instead of orphaning them.
+  - **Numbers survive the wire.** MCP `tools/call` decodes arguments with
+    `UseNumber`, so an integer filter above 2^53 keeps every digit and
+    addresses its row (small numbers still arrive as float64); the HTTP
+    binder rejects `NaN`/`Inf` floats, which slip every range guard.
+  - **Derived reads stay in scope.** The admin audit listing and its
+    overview count filter by the caller's tenant; `/openapi.json` and
+    `/api/docs/openapi.json` apply llm.md's per-request read-scope filter,
+    with `WithPublicOpenAPI` the documented full-disclosure opt-in.
+  - **Subscriber seats are bounded.** The SSE bus, MCP notification stream,
+    ACP sessions, and CRUD event streams cap concurrent seats per principal
+    (default 16) with a configurable overflow policy (refuse, the default,
+    or evict-oldest); A2A task rows and push-notification configs are
+    bounded per owner.
+  - **Dev and build inputs are contained.** An exposed (non-loopback) dev
+    MCP bind withdraws its mutating tools; the harness `.env` loader and
+    the project isolation file refuse `HTTPS_PROXY`, `PATH`, `LD_PRELOAD`
+    and other process-shaping names from an untrusted checkout; the config
+    loader rejects non-finite floats.
+  - **Widget gating gains a level.** `RequireSession` keeps its meaning (a
+    browser session, anonymous allowed, per-session scoping) with its doc
+    corrected; a new `RequireAuthenticated` fails closed for the anonymous
+    session the first page load mints.
+  - Invisible and bidi characters (C1 controls, zero-width, Trojan-Source
+    overrides) are stripped or refused at the sinks where they forge or
+    hide identity: email canonicalization, notify and email headers,
+    upload keys and filenames, page titles, log and trace lines, generated
+    blueprint enum values, the verify report, and the harness terminal.
+    The shared predicate lives in the new `core/textsafe` package.
+- **Three static-analysis rules** from the round-4 bug shapes, taking the
+  contract catalog to **59 rules**: `GOFASTR1410` (a local-filesystem
+  `Save`/`Put`/`Write` reaching an open/create/rename with no folded-key
+  refusal), plus the `laxenvelope` vet analyzer (one transport decodes an
+  RPC envelope strictly while a sibling decodes it lax) and `nonfinite`
+  (a `ParseFloat` result stored with no `IsNaN`/`IsInf` gate). Ten rule
+  shapes were prototyped; the seven that fired too broadly on
+  correct-by-design sinks were dropped, their target bugs covered by the
+  fixes above.
+
+**BREAKING (round 4):** an MCP tool handler's plain `error` is now
+answered to the caller as a generic "internal tool error" (its text is
+logged server-side); a handler that means its message to reach the caller
+returns an `*mcp.RPCError` or an `mcp.ToolResult{IsError: true}`, the form
+`mcp.Gated` and the framework's own tools now use. A duplicate multipart
+form key is refused for a scalar field and collected into a list for a
+`schema.JSON` field, matching the JSON body path.
+
 - **Round-3 contract decisions, all fifteen implemented** (the probes held
   red in the previous change set are now permanent tests): registration
   answers one uniform response for known and unknown addresses; email

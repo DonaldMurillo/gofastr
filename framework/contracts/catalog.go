@@ -116,6 +116,7 @@ const (
 	RuleRawJSONBodyDecode  = "GOFASTR1407"
 	RuleAbsoluteAttempts   = "GOFASTR1408"
 	RuleUnfencedClaim      = "GOFASTR1409"
+	RuleFoldedKey          = "GOFASTR1410"
 )
 
 // Performance rules.
@@ -724,6 +725,18 @@ func securityRules() []Rule {
 		Examples: []Example{{
 			Bad:  "db.Exec(`DELETE FROM jobs WHERE id = $1 AND status='claimed' AND claim_token = $2`, id, tok)\ndb.Exec(`UPDATE jobs SET status='pending', attempts = attempts - 1 WHERE id = $1`, id)",
 			Good: "db.Exec(`DELETE FROM jobs WHERE id = $1 AND status='claimed' AND claim_token = $2`, id, tok)\ndb.Exec(`UPDATE jobs SET status='pending', attempts = attempts - 1 WHERE id = $1 AND claim_token = $2`, id, tok)",
+		}},
+	}, {
+		ID: RuleFoldedKey, Slug: "security/folded-key-save",
+		Title:      "Local-filesystem Save with no folded-key refusal",
+		Capability: CapSecurity, Severity: SeverityError,
+		Summary: "A Save/Put/Write naming its stored object (a key/name parameter) on a type with a BaseDir/Root/Dir field reaches os.OpenFile/os.Create/os.Rename with no call whose name carries Fold in the file.",
+		Why:     "On a case-insensitive or Unicode-normalization-insensitive filesystem (macOS APFS, most CIFS mounts), `tenanta/report.txt` and `TenantA/report.txt` are one file: the second save silently overwrites the first and each key's read returns the other writer's bytes (2026-09-05 red probe TestFoldedKeysDoNotAlias: battery/storage's local backend refuses the fold, core/upload's Save does not). A lexical key check cannot see the fold — only the filesystem's own resolution can.",
+		Fix:     "Refuse the folded key before anything is created or written, the battery/storage spelling: walk every path component, Lstat it as spelled, and os.SameFile-match the entry the parent directory actually holds; a byte-different name that matches is a fold, refuse it with ErrInvalidKey.",
+		Doc:     "security",
+		Examples: []Example{{
+			Bad:  "type LocalStorage struct{ baseDir string }\n\nfunc (s *LocalStorage) Save(key string, r io.Reader) error {\n\tdst := filepath.Join(s.baseDir, key)\n\ttmp, _ := os.CreateTemp(filepath.Dir(dst), \".tmp-*\")\n\treturn os.Rename(tmp.Name(), dst)\n}",
+			Good: "func (ls *LocalStorage) Save(key string, r io.Reader) error {\n\tif err := ls.refuseFoldedKey(key, dstPath, root, ls.rootFor(root)); err != nil {\n\t\treturn err // key collides with an object stored under a different spelling\n\t}\n\treturn ls.finishSave(key, r)\n}",
 		}},
 	}}
 }

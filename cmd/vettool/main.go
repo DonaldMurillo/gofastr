@@ -48,8 +48,10 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/hygiene"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/intwrap"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/laxcoerce"
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/laxenvelope"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/mapwriter"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/negdur"
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/nonfinite"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/recovercallback"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/reflectset"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/reqparamlimit"
@@ -98,6 +100,10 @@ var repoAnalyzers = []*analysis.Analyzer{
 	allow.Guard(rootread.Analyzer),
 	allow.Guard(negdur.Analyzer),
 	allow.Guard(credfetch.Analyzer),
+
+	// Round-4 red-probe rules (2026-09-05): one per repeated bug shape.
+	allow.Guard(laxenvelope.Analyzer),
+	allow.Guard(nonfinite.Analyzer),
 
 	// Checks that currently find nothing. They cost no cleanup and
 	// hold classes this repo already drove to zero. A hit here means
