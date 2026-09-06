@@ -7,26 +7,7 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
-### Added
-- **WebRTC signaling (`battery/rtc`)**:
-  rooms and addressed SDP/ICE relay over `core/stream.StateChannel`,
-  pure stdlib, media never crosses the Go process. Identity is
-  server-derived through `Config.Authorize`; `Config.TURN` mints
-  per-peer time-limited credentials in the coturn static-auth-secret
-  convention (the secret never leaves the server) and re-mints them on
-  the wire every half TTL; sockets are bounded (room cap, frame size,
-  frame rate, send buffer); a refused join on a WebSocket request is
-  an accepted handshake closed with code 4000+status, which the `ws`
-  runtime module classes as `refused` and never retries; rooms span
-  replicas over the
-  `gofastr.rtc` fanout lane under `WithFanout`. Browser side: the `rtc`
-  runtime module (`__gofastr.connectRoom`) runs one
-  `RTCPeerConnection` per peer with perfect negotiation, trickle ICE,
-  negotiated data channels, `replaceTrack`, binary `send`, and
-  reconnect generations that keep a connected peer connection.
-  `rtc.PermissionsPolicy` writes every feature closed unless named.
-  Reference:
-  `framework/docs/content/rtc.md`.
+## [0.83.0] - 2026-09-06
 
 ### Security
 - **Round-3 contract decisions, all fifteen implemented** (the probes held
@@ -130,6 +111,26 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   the generated customer CLI with the repo vettool.
 
 ### Added
+- **WebRTC signaling (`battery/rtc`)**:
+  rooms and addressed SDP/ICE relay over `core/stream.StateChannel`,
+  pure stdlib, media never crosses the Go process. Identity is
+  server-derived through `Config.Authorize`; `Config.TURN` mints
+  per-peer time-limited credentials in the coturn static-auth-secret
+  convention (the secret never leaves the server) and re-mints them on
+  the wire every half TTL; sockets are bounded (room cap, frame size,
+  frame rate, send buffer); a refused join on a WebSocket request is
+  an accepted handshake closed with code 4000+status, which the `ws`
+  runtime module classes as `refused` and never retries; rooms span
+  replicas over the
+  `gofastr.rtc` fanout lane under `WithFanout`. Browser side: the `rtc`
+  runtime module (`__gofastr.connectRoom`) runs one
+  `RTCPeerConnection` per peer with perfect negotiation, trickle ICE,
+  negotiated data channels, `replaceTrack`, binary `send`, and
+  reconnect generations that keep a connected peer connection.
+  `rtc.PermissionsPolicy` writes every feature closed unless named.
+  Reference:
+  `framework/docs/content/rtc.md`.
+
 - **A per-page document language.** `<html lang>` came from one site-wide
   value, so every page of a bilingual site claimed the site language: a
   screen reader read the Spanish pages with English pronunciation rules

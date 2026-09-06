@@ -895,9 +895,17 @@ func TestPanelSurfacesCarryNoSniff(t *testing.T) {
 	}
 }
 
-// nanoRun matches any run of digits long enough to be a nanosecond
-// timestamp embedded in an id.
-var nanoRun = regexp.MustCompile(`[0-9]{15,}`)
+// callIDShape and entryIDShape are what kid.Hex(16) mints behind a
+// one-letter prefix: 32 lowercase hex characters, 128 bits of crypto/rand.
+// The chat server mints its envelope entries bare; the tool dispatch under
+// it journals through protocol.Tools, which prefixes e, so both appear here.
+// A positive shape check is the honest pin: a "no long digit run"
+// heuristic fails on random hex itself about one time in a hundred, since
+// ten of the sixteen hex characters are digits, and CI hit exactly that.
+var (
+	callIDShape  = regexp.MustCompile(`^c[0-9a-f]{32}$`)
+	entryIDShape = regexp.MustCompile(`^e?[0-9a-f]{32}$`)
+)
 
 // Property: tool-call envelope ids (CallID and the journal entry id)
 // are minted from crypto/rand, never from a wall-clock timestamp or
@@ -906,8 +914,8 @@ var nanoRun = regexp.MustCompile(`[0-9]{15,}`)
 func TestToolCallIDsUnpredictable(t *testing.T) {
 	l, tools := newCSRFTestServer(t)
 	srv := New(l, tools)
-	if run := nanoRun.FindString(srv.nextCallID()); run != "" {
-		t.Errorf("nextCallID minted a timestamp-shaped id (numeric run %q)", run)
+	if id := srv.nextCallID(); !callIDShape.MatchString(id) {
+		t.Errorf("nextCallID minted %q, not c<32 hex> (16 bytes of crypto/rand): a timestamp or counter cannot produce that shape, anything else is a weaker mint", id)
 	}
 	before := countToolCalls(t, l)
 	if rec := localJSONPost(t, l, "/kiln/tool/add_entity", `{"entity":{"name":"ids","fields":[]}}`); rec.Code != http.StatusOK {
@@ -918,13 +926,13 @@ func TestToolCallIDsUnpredictable(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, e := range entries[before:] {
-		if run := nanoRun.FindString(e.ID); run != "" {
-			t.Errorf("journal entry id %q embeds a %d-digit numeric run — mint envelope ids from crypto/rand, not the clock", e.ID, len(run))
+		if !entryIDShape.MatchString(e.ID) {
+			t.Errorf("journal entry id %q is not e<32 hex> (16 bytes of crypto/rand): mint envelope ids from crypto/rand, not the clock", e.ID)
 		}
 		var p journal.ToolCallPayload
 		if e.Kind == journal.KindToolCall && e.Decode(&p) == nil {
-			if run := nanoRun.FindString(p.CallID); run != "" {
-				t.Errorf("tool_call CallID %q embeds a nanosecond-scale numeric run — mint call ids from crypto/rand, not the clock", p.CallID)
+			if !callIDShape.MatchString(p.CallID) {
+				t.Errorf("tool_call CallID %q is not c<32 hex> (16 bytes of crypto/rand): mint call ids from crypto/rand, not the clock", p.CallID)
 			}
 		}
 	}
