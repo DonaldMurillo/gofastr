@@ -40,6 +40,20 @@ type ScreenDescriber interface {
 	ScreenDescription() string
 }
 
+// ScreenLanger is an optional interface for components that declare the
+// document language of their own page as a BCP-47 tag ("es", "pt-BR"). It is
+// read AFTER Load, so a dynamic route can take the tag from the content it
+// fetched, and it beats App.LangFunc for that page. Returning "" falls through
+// to App.LangFunc, then App.Lang, then "en".
+//
+// Implement it on any page whose language differs from the rest of the site.
+// Without it the page claims the site language, which mispronounces the text in
+// a screen reader (WCAG 3.1.1) and misfiles it in any indexer that reads
+// <html lang>.
+type ScreenLanger interface {
+	ScreenLang() string
+}
+
 // ScreenTyper is an optional interface for components that declare their
 // screen type. If not implemented, the screen defaults to ScreenPage.
 // Most screens can omit this, only implement it for drawers, sheets, or dialogs.

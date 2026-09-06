@@ -108,6 +108,21 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   for an attribute value used raw as a storage key, and a gate that vets
   the generated customer CLI with the repo vettool.
 
+### Added
+- **A per-page document language.** `<html lang>` came from one site-wide
+  value, so every page of a bilingual site claimed the site language: a
+  screen reader read the Spanish pages with English pronunciation rules
+  (WCAG 3.1.1) and a full-text indexer that reads `<html lang>` filed and
+  stemmed them as English. `app.App.WithLangFunc(func(path string) string)`
+  resolves the tag per route, and a screen can override it for its own page
+  with the new `app.ScreenLanger` interface (`ScreenLang() string`), read
+  after `Load` so a dynamic route can take the tag off the content it
+  fetched. `app.App.LangForPath` exposes the route-level answer.
+  `uihost.WithLangFunc` does the same for the shells the host builds itself
+  (404, 405, embed frame), and `uihost.LangForPath` falls back to the app's
+  `LangFunc` so a site declares its languages once. Every fallback ends at
+  `EffectiveLang`, so an app that configures none renders byte-identically.
+
 ### BREAKING
 - `POST /auth/register` no longer answers 409 for a taken address.
 - `gofastr harness*` exits 1 with no passphrase and no machine key.
