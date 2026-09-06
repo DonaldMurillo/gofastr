@@ -55,6 +55,49 @@ func TestDocPrevNextOmitsNextWhenEmpty(t *testing.T) {
 	mustContain(t, render.HTML(last), "ui-doc-layout__prev")
 }
 
+// The direction lines were hardcoded English, so a translated docs site was
+// stuck with "← Previous" / "Next →" under Spanish titles.
+
+func TestDocPrevNextDefaultDirLabels(t *testing.T) {
+	h := string(DocPrevNext(DocPager{PrevHref: "/p", PrevLabel: "Prev", NextHref: "/n", NextLabel: "Next"}))
+	for _, want := range []string{"← Previous", "Next →"} {
+		if !strings.Contains(h, want) {
+			t.Errorf("unset direction labels must keep %q:\n%s", want, h)
+		}
+	}
+}
+
+func TestDocPrevNextTranslatedDirLabels(t *testing.T) {
+	h := string(DocPrevNext(DocPager{
+		PrevHref: "/p", PrevLabel: "Anterior página", PrevDirLabel: "← Anterior",
+		NextHref: "/n", NextLabel: "Siguiente página", NextDirLabel: "Siguiente →",
+	}))
+	for _, want := range []string{"← Anterior", "Siguiente →"} {
+		if !strings.Contains(h, want) {
+			t.Errorf("missing translated direction label %q:\n%s", want, h)
+		}
+	}
+	for _, unwanted := range []string{"Previous", "Next →"} {
+		if strings.Contains(h, unwanted) {
+			t.Errorf("English default %q leaked into a translated pager:\n%s", unwanted, h)
+		}
+	}
+}
+
+// One side translated must not drag the other along: the empty field still
+// falls back on its own.
+func TestDocPrevNextDirLabelsFallBackIndependently(t *testing.T) {
+	h := string(DocPrevNext(DocPager{
+		PrevHref: "/p", PrevLabel: "Prev",
+		NextHref: "/n", NextLabel: "Next", NextDirLabel: "Weiter →",
+	}))
+	for _, want := range []string{"← Previous", "Weiter →"} {
+		if !strings.Contains(h, want) {
+			t.Errorf("missing %q:\n%s", want, h)
+		}
+	}
+}
+
 func TestDocLayoutPagerAfterBody(t *testing.T) {
 	h := string(DocLayout(DocLayoutConfig{
 		Pager: &DocPager{PrevHref: "/p", PrevLabel: "Prev"},

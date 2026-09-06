@@ -36,6 +36,7 @@ var devExamples = []devExample{
 	{"spa", "/", http.StatusOK},
 	{"static-site", "/", http.StatusOK},
 	{"webmcp-remote-assist", "/", http.StatusOK},
+	{"rtc-call", "/", http.StatusOK},
 	{"meridian", "/", http.StatusOK},
 	{"ecommerce/app", "/", http.StatusOK},
 	{"site", "/examples", http.StatusOK},

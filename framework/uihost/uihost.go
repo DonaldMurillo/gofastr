@@ -116,6 +116,7 @@ type UIHost struct {
 	llmMDPublic         bool                                 // when true, mount per-screen /llm.md + /llm-pages.md; default disabled (schema disclosure)
 	headHTML            string                               // raw HTML to inject into <head> (escape hatch)
 	lang                string                               // WithLang document language for host-built shells; EffectiveLang resolves it
+	langFunc            func(path string) string             // WithLangFunc per-route language for host-built shells; LangForPath resolves it
 	headTags            []string                             // typed head tags built from convenience options
 	faviconURL          string                               // configured WithFavicon URL: serveOrRender 204s it when no static file matches
 	noLiveChannel       bool                                 // WithNoLiveChannel: omit the gofastr-sse meta (no EventSource)
@@ -415,6 +416,16 @@ func WithHeadHTML(html string) Option {
 // overrides the app's own Lang ([app.App.WithLang]); both default to "en".
 func WithLang(lang string) Option {
 	return func(ds *UIHost) { ds.lang = lang }
+}
+
+// WithLangFunc sets a per-route document language for the host-emitted shells,
+// so a 404 under /es/ is tagged Spanish instead of inheriting the site
+// language. It is the host-shell counterpart of [app.App.WithLangFunc], which
+// is what tags the app's own pages; a host that only sets one should set that
+// one. Returning "" for a path falls back to the app's LangFunc, then to
+// WithLang / [app.App.Lang] / "en", so an unconfigured host is unchanged.
+func WithLangFunc(fn func(path string) string) Option {
+	return func(ds *UIHost) { ds.langFunc = fn }
 }
 
 // WithNotFoundScreen overrides the default bare 404 fallback. When a
@@ -2120,7 +2131,7 @@ func (ds *UIHost) serveNotFound(w http.ResponseWriter, r *http.Request, path str
 			if ds.App.Name != "" {
 				appName = ds.App.Name
 			}
-			page := ds.injectChrome(ds.documentShell("404: "+appName, string(body)), path, "", "")
+			page := ds.injectChrome(ds.documentShell(path, "404: "+appName, string(body)), path, "", "")
 			w.WriteHeader(http.StatusNotFound)
 			fmt.Fprint(w, page)
 			return
@@ -2140,7 +2151,7 @@ func (ds *UIHost) serveNotFound(w http.ResponseWriter, r *http.Request, path str
 		`<!DOCTYPE html><html lang="%s"><head><meta charset="UTF-8"><title>Not found: %s</title></head>`+
 			`<body><main role="main"><h1>404: Page not found</h1><p>No route matched <code>%s</code>.</p>`+
 			`<p><a href="/">Back to home</a></p></main></body></html>`,
-		stdhtml.EscapeString(ds.EffectiveLang()), stdhtml.EscapeString(appName), stdhtml.EscapeString(textsafe.StripInvisible(path)))
+		stdhtml.EscapeString(ds.LangForPath(path)), stdhtml.EscapeString(appName), stdhtml.EscapeString(textsafe.StripInvisible(path)))
 }
 
 // handlePartialPage returns just the screen content for client-side navigation.
@@ -3206,7 +3217,7 @@ func (ds *UIHost) serveMethodNotAllowedPage(w http.ResponseWriter, r *http.Reque
 	if ds.App != nil && ds.App.Name != "" {
 		appName = ds.App.Name
 	}
-	page := ds.injectChrome(ds.documentShell("405: "+appName, string(body)), path, "", "")
+	page := ds.injectChrome(ds.documentShell(path, "405: "+appName, string(body)), path, "", "")
 	w.WriteHeader(http.StatusMethodNotAllowed)
 	fmt.Fprint(w, page)
 }
@@ -3392,6 +3403,23 @@ func (e *PolicyBlockedError) Error() string {
 // graph, but skips the SSE meta tag because there is no live session.
 // The result is safe to write to disk and serve from any static host.
 func (ds *UIHost) RenderStaticPage(ctx context.Context, path string) (string, error) {
+	// The chrome renders with the same context a live request gets. A
+	// layout component that reads the path from the request, such as a
+	// sidebar for the section being read or a header whose language follows
+	// the page, rendered for no page at all in an export, so every exported
+	// page carried the chrome of the site root. An SSG build passes no
+	// request, so one is made for the path, and the route match is
+	// installed the way handlePage does it.
+	if app.RequestFromContext(ctx) == nil {
+		if req, err := http.NewRequestWithContext(ctx, http.MethodGet, path, nil); err == nil {
+			ctx = app.WithRequest(ctx, req)
+		}
+	}
+	if _, ok := app.MatchFromContext(ctx); !ok {
+		if m, ok := ds.App.Router.MatchFor(path); ok {
+			ctx = app.WithMatch(ctx, m)
+		}
+	}
 	// Install the value bag so producer-seeded slice values are captured
 	// during the static render (matches the live handlePage path).
 	ctx = store.WithValues(ctx)
@@ -4040,6 +4068,28 @@ func (ds *UIHost) EffectiveLang() string {
 	return "en"
 }
 
+// LangForPath returns the document language for a host-built shell standing in
+// for path: WithLangFunc ([WithLangFunc]) first, then the app's own LangFunc
+// ([app.App.WithLangFunc]) so a site that configured its languages once on the
+// app gets them here too, then EffectiveLang. An empty path (a shell that
+// belongs to no route, such as the PWA offline page) skips straight to
+// EffectiveLang.
+func (ds *UIHost) LangForPath(path string) string {
+	if path != "" {
+		if ds.langFunc != nil {
+			if lang := strings.TrimSpace(ds.langFunc(path)); lang != "" {
+				return lang
+			}
+		}
+		if ds.App != nil && ds.App.LangFunc != nil {
+			if lang := strings.TrimSpace(ds.App.LangFunc(path)); lang != "" {
+				return lang
+			}
+		}
+	}
+	return ds.EffectiveLang()
+}
+
 func loadModeString(m registry.LoadMode) string {
 	switch m {
 	case registry.LoadAlways:
@@ -4078,8 +4128,11 @@ func ReadCustomCSSFile(path string) string {
 // runtime, theme, and colour-scheme bootstrap attach exactly as they
 // do on a registered screen. Title and lang are escaped here; body is
 // already-rendered HTML.
-func (ds *UIHost) documentShell(title, body string) string {
+//
+// path is the route the shell stands in for, and only decides the document
+// language (see LangForPath). Pass "" for a shell that belongs to no route.
+func (ds *UIHost) documentShell(path, title, body string) string {
 	return fmt.Sprintf(
 		`<!DOCTYPE html><html lang="%s"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>%s</title></head><body>%s</body></html>`,
-		stdhtml.EscapeString(ds.EffectiveLang()), stdhtml.EscapeString(title), body)
+		stdhtml.EscapeString(ds.LangForPath(path)), stdhtml.EscapeString(title), body)
 }

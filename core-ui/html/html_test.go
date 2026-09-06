@@ -348,6 +348,13 @@ func TestDiv(t *testing.T) {
 	assertContains(t, d, "content")
 }
 
+func TestTemplate(t *testing.T) {
+	tpl := Template(TemplateConfig{ID: "row-tpl"}, render.Text("row"))
+	assertContains(t, tpl, `<template id="row-tpl">`)
+	assertContains(t, tpl, "row")
+	assertContains(t, tpl, "</template>")
+}
+
 func TestArticle(t *testing.T) {
 	a := Article(ArticleConfig{}, render.Text("post"))
 	assertContains(t, a, "<article>")
@@ -886,6 +893,7 @@ func TestZeroConfigNoPanic(t *testing.T) {
 		html render.HTML
 	}{
 		{"Div", Div(DivConfig{})},
+		{"Template", Template(TemplateConfig{})},
 		{"Article", Article(ArticleConfig{})},
 		{"Paragraph", Paragraph(TextConfig{})},
 		{"Span", Span(TextConfig{})},

@@ -77,6 +77,23 @@ channel spans replicas only through `fanout`. Each accepted connection
 carries a `ConnectionID()` (set `WSConfig.ConnectionID` to mint your
 own) for correlating a client's reconnects in server-side logs.
 
+Two knobs exist for sources whose events are not recoverable from a
+snapshot. `StateChannel.CloseOnOverflow(true)`, called before `Run`,
+closes a connection whose send buffer cannot take an event (the
+default drops the event for that connection alone, the right posture
+for presence), so the client reconnects and re-hydrates. And
+`WebSocketConn.CloseWithStatus(code, reason)` closes with a status
+code and a reason in the close frame, for a server that accepted the
+handshake only to refuse the connection: a browser cannot read an
+HTTP status off a failed handshake but can read a close code. The
+reason is kept to printable ASCII and 123 bytes; a reserved or
+out-of-range code goes out as 1002 and is returned as an error; a
+close the peer began first still echoes the peer's own code.
+
+`battery/rtc`, the WebRTC signaling package, is the
+packaged StateChannel consumer for rooms of peers (see
+[WebRTC rooms](rtc.md)).
+
 ### fanout
 
 The lossy, best-effort cross-replica transport behind real-time
@@ -162,6 +179,23 @@ through the canonical `core-ui/urlsafe` allow-list (`Anchor` for hrefs,
 `ftp:`, `blob:`, `ws:`, protocol-relative references — render as `#`.
 Direct; no framework auto-wiring. Start at `core/markdown/markdown.go`:
 `Render`.
+
+Fenced blocks follow CommonMark on two points that matter for
+documentation. A fence is three **or more** of the same character and
+closes only on a run at least as long, so a ` ```` ` block can hold a
+` ``` ` example — the only way to document fenced syntax. And the info
+string is a language followed by options, not one opaque name:
+`ParseFenceInfo` splits it into `FenceInfo{Lang, Meta}`. `Lang` becomes
+`class="language-X"` as before; `Meta` is everything after it,
+verbatim, carried on the `<code>` tag's `data-meta` attribute for a
+renderer to interpret. `core/markdown` assigns it no meaning:
+`framework/ui.Markdown` is what maps `title=` and `showLineNumbers`
+onto `CodeBlockConfig`.
+
+Before this, the whole info string became the language, so
+` ```go title="main.go" ` emitted
+`class="language-go title=&quot;main.go&quot;"`, matched no language,
+and silently cost the block its syntax highlighting.
 
 ### static
 

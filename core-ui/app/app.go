@@ -33,6 +33,13 @@ type App struct {
 	// renders, so screen readers announce the right language (WCAG 3.1.1).
 	// Empty defaults to "en" via EffectiveLang. Set with WithLang.
 	Lang string
+
+	// LangFunc resolves the document language per route. It is called with the
+	// page path on every full-page render and returns a BCP-47 tag, or "" to
+	// fall back to Lang. A multilingual site that serves /es/… in Spanish sets
+	// this once instead of tagging every screen. Nil (the default) keeps Lang
+	// on every page. Set with WithLangFunc.
+	LangFunc func(path string) string
 }
 
 // NewApp creates a new application with the given name.
@@ -68,12 +75,52 @@ func (a *App) WithLang(lang string) *App {
 	return a
 }
 
+// WithLangFunc sets a per-route document-language resolver and returns the app
+// for chaining. One Lang for the whole app is wrong the moment the app serves
+// two languages: every translated page then claims the site language, so a
+// screen reader reads Spanish with English pronunciation rules (WCAG 3.1.1) and
+// a full-text indexer that reads <html lang> files the page under the wrong
+// language and stems it with the wrong rules.
+//
+// The func is called with the page path on every full-page render. Returning ""
+// falls back to Lang, so an app that never sets it renders exactly as before.
+// A prefix test is usually all a bilingual site needs:
+//
+//	application.WithLangFunc(func(path string) string {
+//		if strings.HasPrefix(path, "/es/") {
+//			return "es"
+//		}
+//		return ""
+//	})
+//
+// A screen that implements ScreenLanger overrides this for its own page.
+func (a *App) WithLangFunc(fn func(path string) string) *App {
+	a.LangFunc = fn
+	return a
+}
+
 // EffectiveLang returns the document language, defaulting to "en" when unset.
+// It is the site-wide fallback; LangForPath is what page rendering asks.
 func (a *App) EffectiveLang() string {
 	if a.Lang != "" {
 		return a.Lang
 	}
 	return "en"
+}
+
+// LangForPath returns the document language for a route: LangFunc's answer when
+// it gives one, else EffectiveLang. It deliberately does not consult
+// ScreenLanger, which needs the loaded component; RenderPageResult layers that
+// on top. Hosts that build their own document shells (a 404, an offline page)
+// call this so those shells land in the same language as the route they stand
+// in for.
+func (a *App) LangForPath(path string) string {
+	if a.LangFunc != nil {
+		if lang := strings.TrimSpace(a.LangFunc(path)); lang != "" {
+			return lang
+		}
+	}
+	return a.EffectiveLang()
 }
 
 // Provide registers a service in the DI container.
@@ -403,6 +450,15 @@ func (a *App) RenderPageResult(ctx context.Context, path string) (RenderResult, 
 	if effectiveTitle != "" {
 		titleText = effectiveTitle + " — " + a.Name
 	}
+	// Document language, resolved like the title: the route rule first, then
+	// the component's own ScreenLang() read AFTER Load so a dynamic route can
+	// take the tag from the content it fetched.
+	lang := a.LangForPath(path)
+	if langer, ok := comp.(ScreenLanger); ok {
+		if l := strings.TrimSpace(langer.ScreenLang()); l != "" {
+			lang = l
+		}
+	}
 	headChildren = append(headChildren,
 		render.Tag("title", nil, render.Text(titleText)),
 	)
@@ -437,7 +493,7 @@ func (a *App) RenderPageResult(ctx context.Context, path string) (RenderResult, 
 
 	// Assemble full document.
 	doctype := render.Raw("<!DOCTYPE html>")
-	htmlDoc := render.Tag("html", map[string]string{"lang": a.EffectiveLang()}, head, body)
+	htmlDoc := render.Tag("html", map[string]string{"lang": lang}, head, body)
 
 	out := RenderResult{HTML: render.Join(doctype, htmlDoc), Title: effectiveTitle, Component: comp}
 	if decision.Kind == DecisionRenderAlt {

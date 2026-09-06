@@ -68,6 +68,15 @@ JSON.parse(await mc.executeTool(t, JSON.stringify({ session: "..." })));
 | Media bypasses the server | `static/app.js` does `getUserMedia({video, audio: false})` and WebRTC with empty `iceServers`; the Go server relays SDP/ICE JSON only. |
 | No microphone, enforced by the browser | The app's `Permissions-Policy` opens `camera=(self)` and keeps the framework's default `microphone=()`, so even a page script that asked for audio would be refused. |
 
+The signaling relay here (`relaySignal` in `session.go`) is hand-rolled
+on `core/stream.StateChannel` on purpose: one channel carries both the
+session state and the SDP/ICE signals for a fixed two-role session, and
+the example is the reference for writing your own. Apps that want rooms
+of peers without writing the relay should use
+`battery/rtc` (`gofastr docs rtc`), the packaged form:
+rooms, addressed signaling, per-peer TURN credentials, and the
+`rtc` browser module that runs the peer connections.
+
 ## What is demo-grade on purpose
 
 - **The support login is a shared key.** `ASSIST_SUPPORT_KEY` from the

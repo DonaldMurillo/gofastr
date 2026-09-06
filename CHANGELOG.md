@@ -75,6 +75,21 @@ returns an `*mcp.RPCError` or an `mcp.ToolResult{IsError: true}`, the form
 form key is refused for a scalar field and collected into a list for a
 `schema.JSON` field, matching the JSON body path.
 
+## [0.84.0] - 2026-09-06
+
+### Fixed
+- **A static export renders layout chrome for the page being exported.**
+  `uihost.RenderStaticPage` rendered with neither a request nor a route
+  match in the context, so a layout component that reads the path, such as
+  a sidebar for the section being read or a header whose language follows
+  the page, rendered for no page at all: every exported page carried the
+  chrome of the site root, and a translated page shipped with the original's
+  sidebar. The static render now carries a request for the path and the
+  route match, exactly as `handlePage` installs them for a live request.
+
+## [0.83.0] - 2026-09-06
+
+### Security
 - **Round-3 contract decisions, all fifteen implemented** (the probes held
   red in the previous change set are now permanent tests): registration
   answers one uniform response for known and unknown addresses; email
@@ -174,6 +189,61 @@ form key is refused for a scalar field and collected into a list for a
   one), `emitident` extended to JS/TS declaration slots, a runtime lint
   for an attribute value used raw as a storage key, and a gate that vets
   the generated customer CLI with the repo vettool.
+
+### Added
+- **WebRTC signaling (`battery/rtc`)**:
+  rooms and addressed SDP/ICE relay over `core/stream.StateChannel`,
+  pure stdlib, media never crosses the Go process. Identity is
+  server-derived through `Config.Authorize`; `Config.TURN` mints
+  per-peer time-limited credentials in the coturn static-auth-secret
+  convention (the secret never leaves the server) and re-mints them on
+  the wire every half TTL; sockets are bounded (room cap, frame size,
+  frame rate, send buffer); a refused join on a WebSocket request is
+  an accepted handshake closed with code 4000+status, which the `ws`
+  runtime module classes as `refused` and never retries; rooms span
+  replicas over the
+  `gofastr.rtc` fanout lane under `WithFanout`. Browser side: the `rtc`
+  runtime module (`__gofastr.connectRoom`) runs one
+  `RTCPeerConnection` per peer with perfect negotiation, trickle ICE,
+  negotiated data channels, `replaceTrack`, binary `send`, and
+  reconnect generations that keep a connected peer connection.
+  `rtc.PermissionsPolicy` writes every feature closed unless named.
+  Reference:
+  `framework/docs/content/rtc.md`.
+
+- **A per-page document language.** `<html lang>` came from one site-wide
+  value, so every page of a bilingual site claimed the site language: a
+  screen reader read the Spanish pages with English pronunciation rules
+  (WCAG 3.1.1) and a full-text indexer that reads `<html lang>` filed and
+  stemmed them as English. `app.App.WithLangFunc(func(path string) string)`
+  resolves the tag per route, and a screen can override it for its own page
+  with the new `app.ScreenLanger` interface (`ScreenLang() string`), read
+  after `Load` so a dynamic route can take the tag off the content it
+  fetched. `app.App.LangForPath` exposes the route-level answer.
+  `uihost.WithLangFunc` does the same for the shells the host builds itself
+  (404, 405, embed frame), and `uihost.LangForPath` falls back to the app's
+  `LangFunc` so a site declares its languages once. Every fallback ends at
+  `EffectiveLang`, so an app that configures none renders byte-identically.
+- **`ui.DocPager.PrevDirLabel` / `NextDirLabel`** translate the prev/next
+  pager's direction lines, which were hardcoded `← Previous` and `Next →`.
+  Empty keeps those exact strings. The arrow is part of the value, so a
+  translation can move it to the other side of the word.
+
+### Fixed
+- **A fence option no longer costs a code block its syntax highlighting.**
+  `core/markdown` took the whole info string as the language, so
+  ` ```go title="main.go" ` emitted
+  `class="language-go title=&quot;main.go&quot;"`, which matches no language.
+  The first token is the language; the rest lands in `data-meta` on the
+  `<code>` tag, and `ui.Markdown` maps `title=` to the block's filename
+  header and `showLineNumbers` to its gutter. `markdown.ParseFenceInfo`
+  exposes the split.
+- **Fences longer than three characters work, per CommonMark.** The parser
+  read exactly three, so ` ````md ` opened a three-backtick block with the
+  language `` `md `` and the first inner ` ``` ` closed it, tearing a
+  markdown example that contains a fenced block into three pieces. A fence
+  is now closed only by a run of the same character at least as long as the
+  opener, with nothing after it.
 
 ### BREAKING
 - `POST /auth/register` no longer answers 409 for a taken address.

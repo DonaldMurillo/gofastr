@@ -120,7 +120,7 @@ func (ds *UIHost) RenderScreen(w http.ResponseWriter, r *http.Request, comp comp
 			title = name + " — " + appName
 		}
 	}
-	page := ds.injectChrome(ds.documentShell(title, string(body)), r.URL.Path, "", "")
+	page := ds.injectChrome(ds.documentShell(r.URL.Path, title, string(body)), r.URL.Path, "", "")
 	w.WriteHeader(status)
 	fmt.Fprint(w, page)
 }

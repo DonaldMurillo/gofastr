@@ -168,6 +168,10 @@ results, the harness contract) are exempt. The exemption list lives in
   proxy for third-party services (analytics, widgets, trackers) with
   fixed upstreams, stripped credentials both ways, and the strict CSP
   kept intact.
+- [WebRTC rooms](rtc.md): `battery/rtc`: signaling rooms over
+  StateChannel with server-derived identity and per-peer TURN
+  credentials, plus the `__gofastr.connectRoom` browser module; media
+  flows peer to peer and never touches Go.
 - [Analytics recipes](analytics-recipes.md): PostHog and Statsig
   first-party through `battery/relay`: bootstrap script, pageviews on
   `gofastr:navigate`, same-origin identity, and a `featureflag.Store`

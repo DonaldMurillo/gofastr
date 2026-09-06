@@ -63,3 +63,23 @@ func TestAutoHideVariantShipsRevealCSS(t *testing.T) {
 		t.Fatal("auto-hide must ship a :focus-within reveal rule — hover-only hides every link from keyboard users")
 	}
 }
+
+// TestCalloutHiddenAttributeWins: the callout rule sets display:grid,
+// which outranks the UA's [hidden] { display: none }. Without an
+// explicit [hidden] win a server-rendered, initially hidden notice
+// (the rtc-call example's) shows as an empty warning bar on every
+// page load.
+func TestCalloutHiddenAttributeWins(t *testing.T) {
+	css := calloutCSS(style.Theme{})
+	start := strings.Index(css, `[data-fui-comp="ui-callout"][hidden]`)
+	if start == -1 {
+		t.Fatal(`no [data-fui-comp="ui-callout"][hidden] rule found: a hidden callout renders`)
+	}
+	block := css[start:]
+	if end := strings.Index(block, "}"); end != -1 {
+		block = block[:end]
+	}
+	if !strings.Contains(block, "display: none") {
+		t.Fatalf("callout[hidden] rule must set display:none:\n%s", block)
+	}
+}

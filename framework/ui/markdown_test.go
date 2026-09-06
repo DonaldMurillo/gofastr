@@ -45,6 +45,60 @@ func TestMarkdownDataFuiComp(t *testing.T) {
 	}
 }
 
+// A fence option used to be swallowed into the language name, so a block
+// written ```go title="main.go" lost its highlighting. core/markdown now passes
+// the options through in data-meta and the two this renderer understands land
+// on the CodeBlock.
+
+func TestMarkdownFenceOptionsReachTheCodeBlock(t *testing.T) {
+	h := string(Markdown(MarkdownConfig{
+		Source: "```go title=\"main.go\" showLineNumbers\nfunc main() {}\n```\n",
+	}))
+	if !strings.Contains(h, `class="ui-code-block__file">main.go<`) {
+		t.Errorf("title= should become the code block's filename header:\n%s", h)
+	}
+	if !strings.Contains(h, "ui-code-block--numbered") {
+		t.Errorf("showLineNumbers should turn on the gutter:\n%s", h)
+	}
+	// The point of the fix: highlighting survives the options.
+	if !strings.Contains(h, `class="tk-kw"`) {
+		t.Errorf("Go keywords should still be highlighted with options present:\n%s", h)
+	}
+}
+
+func TestMarkdownPlainFenceUnaffected(t *testing.T) {
+	h := string(Markdown(MarkdownConfig{Source: "```go\nfunc main() {}\n```\n"}))
+	if !strings.Contains(h, `class="tk-kw"`) {
+		t.Errorf("a plain fence should still highlight:\n%s", h)
+	}
+	if strings.Contains(h, "data-meta") {
+		t.Errorf("a plain fence should emit no data-meta:\n%s", h)
+	}
+}
+
+func TestParseFenceMeta(t *testing.T) {
+	cases := []struct {
+		in       string
+		filename string
+		lines    bool
+	}{
+		{"", "", false},
+		{`title="main.go"`, "main.go", false},
+		{`title=main.go`, "main.go", false},
+		{`title="cmd/api/main.go" showLineNumbers`, "cmd/api/main.go", true},
+		{`showLineNumbers title="a b.go"`, "a b.go", true},
+		{`showLineNumbers=false`, "", false},
+		{`{1,3-5} highlight=2`, "", false}, // options meant for someone else
+	}
+	for _, c := range cases {
+		got := parseFenceMeta(c.in)
+		if got.filename != c.filename || got.lineNumbers != c.lines {
+			t.Errorf("parseFenceMeta(%q) = {%q, %v}, want {%q, %v}",
+				c.in, got.filename, got.lineNumbers, c.filename, c.lines)
+		}
+	}
+}
+
 func TestMarkdownExtraAttrsCannotOverrideOwned(t *testing.T) {
 	h := Markdown(MarkdownConfig{Source: "hi", ID: "real", ExtraAttrs: map[string]string{
 		"data-test": "hook", "id": "evil", "Class": "evil",

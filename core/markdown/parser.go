@@ -36,8 +36,8 @@ func (p *parser) peek(n int) string {
 // ---------------------------------------------------------------------------
 
 func (p *parser) atFence() bool {
-	t := strings.TrimLeft(p.line(), " ")
-	return strings.HasPrefix(t, "```") || strings.HasPrefix(t, "~~~")
+	_, ok := openFence(p.line())
+	return ok
 }
 
 func (p *parser) atHR() bool {
@@ -157,18 +157,20 @@ func headingHTML(level int, text, id string) string {
 }
 
 func renderFence(p *parser, sb *strings.Builder) {
-	open := strings.TrimLeft(p.line(), " ")
-	fence := "```"
-	if strings.HasPrefix(open, "~~~") {
-		fence = "~~~"
+	d, ok := openFence(p.line())
+	if !ok {
+		// atFence gates this call; advance anyway so a classifier/handler
+		// disagreement can never spin the block loop.
+		p.advance()
+		return
 	}
-	lang := strings.TrimSpace(strings.TrimPrefix(open, fence))
+	info := ParseFenceInfo(d.info)
 	p.advance()
 
 	var body strings.Builder
 	for !p.eof() {
 		line := p.line()
-		if strings.HasPrefix(strings.TrimSpace(line), fence) {
+		if d.closes(line) {
 			p.advance()
 			break
 		}
@@ -178,12 +180,18 @@ func renderFence(p *parser, sb *strings.Builder) {
 	}
 
 	sb.WriteString(`<pre tabindex="0"><code`)
-	if lang != "" {
+	if info.Lang != "" {
 		// %q is NOT HTML-attribute-safe: it escapes " as \" (a literal
 		// backslash + quote in HTML, so the quote terminates the value)
 		// and leaves > untouched, letting an attacker-controlled info
 		// string break out into element context. HTML-escape instead.
-		fmt.Fprintf(sb, " class=\"%s\"", escapeAttr("language-"+lang))
+		fmt.Fprintf(sb, " class=\"%s\"", escapeAttr("language-"+info.Lang))
+	}
+	if info.Meta != "" {
+		// Fence options ride in their own attribute. Folding them into the
+		// class is what used to emit class="language-go title=&quot;x&quot;",
+		// a class no highlighter matches.
+		fmt.Fprintf(sb, " data-meta=\"%s\"", escapeAttr(info.Meta))
 	}
 	sb.WriteString(">")
 	sb.WriteString(escapeHTML(body.String()))

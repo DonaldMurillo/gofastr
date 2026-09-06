@@ -19,7 +19,7 @@
 # The registry is complete through this release: releases ≤ through
 # with no entry below genuinely had no migration-relevant changes.
 # Targets beyond it make the CLI warn that it may be out of date.
-through: v0.82.0
+through: v0.84.0
 
 releases:
   - version: v0.3.0
@@ -984,3 +984,77 @@ releases:
       - change: "five repo analyzers (worldreadable, fixedtmp, secretcompare, timestampid, discardeddecode) and three widened ones run in make analyze; GOFASTR1407 follows client bytes through helpers and websocket frames; handler.DecodeStrict / UnmarshalStrict / CheckTopLevelKeys are the one strict decoder"
         breaking: false
         guidance: "A strict verify or vet run that was green can report new sites; each message names the fix. A site that is the shape on purpose carries //gofastr:allow(<analyzer>) <why> on its line, the same marker spelling contracts rules use; the reason is mandatory."
+  - version: v0.83.0
+    title: Red-probe round 3, WebRTC signaling, per-page document language
+    notes:
+      - change: "POST /auth/register answers the same response for a taken and a free address (a taken one notifies the existing holder) instead of 409"
+        breaking: true
+        detect: 'battery/auth"'
+        guidance: "A client that branched on 409 to show 'email already registered' cannot any more; show the 'check your inbox' outcome for every submit. The framework's own forms already did."
+      - change: "MCP tools/call validates arguments against the tool's declared inputSchema (types, required, enum, items, additionalProperties) and answers invalid-params instead of reaching the handler; mcp.WithLaxArgs() opts one tool out"
+        breaking: true
+        detect: 'RegisterTool\('
+        guidance: "A handler that tolerated loose arguments (a number sent as a string, an undeclared extra key) now never sees them. Fix the schema to say what the tool accepts, or register the tool with mcp.WithLaxArgs() and keep validating in the handler."
+      - change: "battery/storage LocalStorage.Save returns ErrInvalidKey for a key that folds onto an existing object on a case- or normalization-insensitive filesystem, and the store is atomic (temp file plus rename)"
+        breaking: true
+        detect: 'NewLocalStorage\('
+        guidance: "Handle ErrInvalidKey where Save errors are switched on; a second object whose key differs only by case or Unicode form was silently overwriting the first on macOS and Windows."
+      - change: "battery/print caps concurrent PDF renders (Config.MaxConcurrentRenders, default 4) and answers 503 past the cap"
+        breaking: true
+        detect: 'battery/print"'
+        guidance: "A burst of PDF requests that used to queue in Chrome now gets 503 with Retry-After; raise MaxConcurrentRenders to the number of renders the host can actually run, and retry on 503 in the client."
+      - change: "auth.MemorySessionStore.Create returns an error for a negative TTL; 0 still means the 7-day default"
+        breaking: true
+        detect: 'NewMemorySessionStore\('
+        guidance: "Only a caller passing a computed TTL that can go negative is affected; clamp it before the call."
+      - change: "webhook.SQLStore.UpdateDelivery and SQLInboundStore.UpdateEnvelope no longer persist Attempts; attempts are counted in SQL when a runner claims the row, and outbound attempts count claims"
+        breaking: true
+        detect: 'UpdateDelivery\(|UpdateEnvelope\('
+        guidance: "A host that reset or bumped Attempts through Update* to control retries must stop; MaxAttempts is the lever. A crash-looping runner now dead-letters at MaxAttempts instead of retrying forever."
+      - change: "queue.DurableScheduler.Start no longer returns evaluation errors; it logs, retries, and returns nil only when its context is canceled"
+        breaking: true
+        detect: 'NewDurableScheduler\('
+        guidance: "Code that treated a non-nil return as the scheduler having stopped on an error should watch the logs or the context instead; a corrupt row no longer aborts the pass."
+      - change: "style.StyleSheet Set, Pseudo, Child and Keyframes panic on a property name that is not a CSS identifier; the emitted llm.md may carry visible escapes where content used markdown syntax"
+        breaking: true
+        detect: 'NewStyleSheet\('
+        guidance: "A property name built from user input, or a typo such as a trailing semicolon, panics at construction now instead of emitting a CSS injection; every literal identifier is unchanged."
+      - change: "cmd/kiln AdapterStore.SetTurnCancel returns a token that ClearTurnCancel requires, and mcpserver.NewHTTPHandler with a nil encoder answers 503 on every request"
+        breaking: true
+        detect: 'SetTurnCancel\(|mcpserver\.NewHTTPHandler\('
+        guidance: "Pass the token back so a late Clear cannot drop a newer turn's cancel; pass a real encoder and revocation list to NewHTTPHandler, the nil form was an unauthenticated control server."
+      - change: "migrate.Register refuses a migration with no Up section; a SQLite column retype emits a table rebuild whose Down is empty; entity versions with different tenant columns fail registration; SQLite apps with a Seed gain a _gofastr_seed_lock table"
+        breaking: true
+        detect: '\.Register\(migrate\.|migrate\.Migration\{'
+        guidance: "Write SELECT 1 for a deliberate no-op migration. A retype on SQLite is forward-only, so take a backup before running it. The seed lock table is created on first boot and needs no migration."
+      - change: "generated Go SDK clients refuse redirects and fail a decode over 1 MiB"
+        breaking: true
+        detect: 'Code generated by gofastr .*\(sdk '
+        guidance: "Run gofastr generate sdk again to pick both up in the client you ship; a 3xx from the API no longer re-sends the token to the host it names."
+      - change: "a negative TTL, lease, interval or timeout is refused at MemorySessionStore.Create, MemoryCache.Set, webhook claims, RedisQueue.Start, the idempotency stores, WaitForReady, static.Watch, harness hooks and the permission middleware (error or construction panic) instead of applying the default"
+        breaking: true
+        detect: 'NewMemoryIdempotencyStore\(|NewSQLIdempotencyStore\(|NewMemoryCache\(|NewRedisCache\(|NewRedisQueue\(|WaitForReady\(|static\.Watch\('
+        guidance: "0 still selects the default everywhere. A config field that reached one of these sites negative used to mean the default, or forever, by accident; validate it at load instead."
+      - change: "a static file reachable only through a symlink that leaves its root falls through to the next handler (was 200); core/static, core/upload, battery/storage, the uihost static directory and PWA precache, the skill registry and the migration writer all go through os.Root"
+        breaking: true
+        detect: 'SetStaticFS\(|os\.DirFS\('
+        guidance: "A deploy that symlinked assets from outside the static directory into it must copy or bind-mount them instead; a symlink whose target stays inside the root still works."
+      - change: "gofastr harness and its subcommands refuse to run without GOFASTR_HARNESS_PASSPHRASE or a machine key, and the harness engine caps one provider turn at 8 MiB (Engine.MaxStreamBytesPerTurn)"
+        breaking: true
+        detect: 'experimental/harness'
+        guidance: "Set GOFASTR_HARNESS_PASSPHRASE in the harness environment; the built-in passphrase is gone. Raise MaxStreamBytesPerTurn only for a provider that legitimately streams more than 8 MiB in one turn."
+      - change: "sidebar collapse state and widget persist drafts move to a prefixed, encoded Web storage key; the old raw-attribute key is not read"
+        breaking: false
+        guidance: "Every reader sees the default collapse state and an empty draft once after upgrading; nothing to migrate."
+      - change: "six new repo rules and four widened ones run in make analyze and gofastr verify (rootread, negdur, credfetch, GOFASTR1408, GOFASTR1409, emitident on JS/TS declaration slots, a runtime lint for a raw attribute value used as a storage key, and a vet gate over the generated customer CLI)"
+        breaking: false
+        guidance: "A strict verify or vet run that was green can report new sites; each message names the fix. A site that is the shape on purpose carries //gofastr:allow(<rule>) <why> on its line."
+      - change: "<html lang> resolves per page: app.WithLangFunc(func(path string) string), the app.ScreenLanger interface for a screen's own page, and uihost.WithLangFunc for host-built shells; ui.DocPager gains PrevDirLabel and NextDirLabel; a fence info string's first token is the language and the rest lands in data-meta"
+        breaking: false
+        guidance: "Additive. An app that configures none of it renders byte-identically; a bilingual site declares its languages once with WithLangFunc so screen readers and full-text indexers stop reading every page as the site language. A fence such as go title=main.go keeps its syntax highlighting now, and ui.Markdown maps title= to the block's filename header."
+  - version: v0.84.0
+    title: Static export renders chrome for the page being exported
+    notes:
+      - change: "uihost.RenderStaticPage carries a request for the path and the route match, as a live request does, so layout components that read the path render for the page being exported"
+        breaking: false
+        guidance: "A static export whose sidebar or header follows the page now writes the right chrome on every page; an export whose chrome ignored the path is byte-identical. Nothing to change."
