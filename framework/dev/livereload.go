@@ -128,7 +128,7 @@ func RegisterLiveReload(r *router.Router) {
 
 	buildID := strconv.FormatInt(time.Now().UnixNano(), 10)
 	r.Get(LiveReloadStreamURL, http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		w.Header().Set("Content-Type", "text/event-stream")
+		w.Header().Set("Content-Type", "text/event-stream") //gofastr:allow(unseated) dev-mode livereload, single operator watching one dev server; no principal to seat
 		w.Header().Set("Cache-Control", "no-cache")
 		w.Header().Set("Connection", "keep-alive")
 		w.Header().Set("X-Accel-Buffering", "no")

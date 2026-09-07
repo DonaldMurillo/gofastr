@@ -529,15 +529,18 @@ func MarshalCommand(c Command) ([]byte, error) {
 	return json.Marshal(commandEnvelope{Kind: c.CommandKind(), Body: body})
 }
 
-// unmarshalCommandBody decodes a wire object under the strict top-level
-// key rule — duplicate and case-folded keys are refused, because stdlib
-// json resolves them last-wins and a frame whose first spelling an
-// intermediary read differs from the value the engine executes must be
-// rejected, not silently normalized — while keeping the documented
-// ignore-unknown posture for body fields (§ Unknown-field policy:
-// additive evolution). handler.CheckTopLevelKeys is the walk.
+// unmarshalCommandBody decodes a wire object under the no-ambiguity
+// key rule at EVERY nesting depth — duplicate and case-folded keys
+// are refused, because stdlib json resolves them last-wins and a
+// frame whose first spelling an intermediary read differs from the
+// value the engine executes must be rejected, not silently
+// normalized — while keeping the documented ignore-unknown posture
+// for body fields (§ Unknown-field policy: additive evolution).
+// handler.CheckObjectKeys is the walk, the same any-depth rule the
+// harness MCP server's unmarshalMCPObject and core/mcp's HandleRequest
+// chokepoint run; the value decode itself stays plain stdlib.
 func unmarshalCommandBody(data []byte, dst any) error {
-	if err := handler.CheckTopLevelKeys(data, strings.ToLower); err != nil {
+	if err := handler.CheckObjectKeys(data, strings.ToLower); err != nil {
 		return err
 	}
 	return json.Unmarshal(data, dst)

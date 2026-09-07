@@ -35,6 +35,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/app/decide"
 	"github.com/DonaldMurillo/gofastr/core-ui/widget"
 	"github.com/DonaldMurillo/gofastr/core/router"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/sdk"
 )
@@ -321,7 +322,14 @@ func (s *site) artifactHandler(key, file string) http.Handler {
 			switch d.Kind {
 			case app.DecisionAllow:
 			case app.DecisionRedirect:
-				http.Redirect(w, r, d.URL, http.StatusSeeOther)
+				// The DecisionRedirect URL reaches the Location header;
+				// uihost scrubs the identical app.Decision value at all
+				// four of its emit sites (scrubCtl). This is the one
+				// divergent consumer: strip C0/DEL so a policy URL
+				// carrying raw CR/LF cannot forge headers and DEL cannot
+				// break HTTP/2 writes. Clean URLs pass byte-identical
+				// (StripUnsafe's fast path).
+				http.Redirect(w, r, textsafe.StripUnsafe(d.URL), http.StatusSeeOther)
 				return
 			default:
 				status := d.Status

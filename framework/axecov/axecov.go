@@ -25,6 +25,8 @@ import (
 	"path/filepath"
 	"slices"
 	"sync"
+
+	"github.com/DonaldMurillo/gofastr/internal/fileperm"
 )
 
 // FileName is the manifest location relative to the app/test working
@@ -76,7 +78,7 @@ func Record(dir, path, scheme string) error {
 	}
 	// Write-then-rename so a reader never sees a torn manifest.
 	tmp := file + ".tmp"
-	if err := os.WriteFile(tmp, append(data, '\n'), 0o600); err != nil {
+	if err := fileperm.WriteOwnerOnly(tmp, append(data, '\n')); err != nil {
 		return fmt.Errorf("axecov: write manifest: %w", err)
 	}
 	if err := os.Rename(tmp, file); err != nil {

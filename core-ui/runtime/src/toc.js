@@ -47,7 +47,13 @@
     // the viewport, mark its TOC link active.
     const links = {};
     navEl.querySelectorAll('.ui-toc__link[data-fui-toc-for]').forEach(function (a) {
-      links[a.dataset.fuiTocFor] = a;
+      const id = a.dataset.fuiTocFor;
+      // Reserved keys never key the link registry: a heading id of
+      // "__proto__" would re-parent it via the setter and the
+      // active-link lookup below would mis-enumerate. The kernel's
+      // isReservedSignalKey guard, spelled inline (demand module).
+      if (id === '__proto__' || id === 'constructor' || id === 'prototype') return;
+      links[id] = a;
     });
     const observer = new IntersectionObserver(function (entries) {
       entries.forEach(function (e) {

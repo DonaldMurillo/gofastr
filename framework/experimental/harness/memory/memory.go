@@ -21,6 +21,8 @@ import (
 	"sort"
 	"strings"
 	"sync"
+
+	"github.com/DonaldMurillo/gofastr/internal/fileperm"
 )
 
 // Type is the kind of memory.
@@ -105,7 +107,11 @@ func (s *Store) Save(e Entry) error {
 	defer s.mu.Unlock()
 	e.Path = filepath.Join(s.root, e.Name+".md")
 	content := serialize(&e)
-	if err := os.WriteFile(e.Path, []byte(content), 0o600); err != nil {
+	// Owner-only on CREATE and on OVERWRITE (internal/fileperm): the
+	// per-entry file carries the same memory set as the index, and
+	// os.WriteFile's mode only applies at create — a pre-existing 0644
+	// entry keeps every memory group/world-readable.
+	if err := fileperm.WriteOwnerOnly(e.Path, []byte(content)); err != nil {
 		return err
 	}
 	s.by[e.Name] = &e
@@ -231,7 +237,10 @@ func (s *Store) writeIndexLocked() error {
 	for _, e := range entries {
 		fmt.Fprintf(&b, "- [%s](%s.md): %s\n", e.Name, e.Name, e.Description)
 	}
-	return os.WriteFile(filepath.Join(s.root, "MEMORY.md"), []byte(b.String()), 0o600)
+	// WriteOwnerOnly, not os.WriteFile: the fixed-name MEMORY.md index
+	// is rewritten by every Save, and the mode must tighten a
+	// pre-existing weaker file, not just apply at create.
+	return fileperm.WriteOwnerOnly(filepath.Join(s.root, "MEMORY.md"), []byte(b.String()))
 }
 
 func validate(e *Entry) error {

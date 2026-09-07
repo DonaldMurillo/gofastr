@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"log/slog"
 	"maps"
 	"net/http"
 	"slices"
@@ -19,6 +20,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/runtime"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
 // runtimeHash is the SHA256 of the embedded runtime.js, computed once
@@ -415,14 +417,33 @@ func (s *server) serveChrome(w http.ResponseWriter, r *http.Request) {
 // positioning (corner/center/edge) + chrome (panel, modal, toast,
 // backdrop). Hosts that need additional rules, typically content
 // styling for slot innards, supply def.ExtraCSS, which is appended
-// verbatim after the framework rules.
+// verbatim after the framework rules (under the chrome containment, see
+// safeExtraCSS).
 func (s *server) serveStyle(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "text/css; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	fmt.Fprint(w, widgetCSS(s.def))
-	if s.def.ExtraCSS != nil {
-		fmt.Fprint(w, "\n", s.def.ExtraCSS())
+	if extra := safeExtraCSS(s.def); extra != "" {
+		fmt.Fprint(w, "\n", extra)
 	}
+}
+
+// safeExtraCSS invokes the host ExtraCSS hook under the chrome containment
+// the Skeleton hook gets: a panic degrades to no extra rules and is logged
+// through textsafe.Recovered. Shared by the live style endpoint and the
+// static builder's RenderCSS dump so neither can abort on a host hook.
+func safeExtraCSS(def Definition) (css string) {
+	if def.ExtraCSS == nil {
+		return ""
+	}
+	defer func() {
+		if rec := recover(); rec != nil {
+			slog.Default().Error("widget: ExtraCSS hook panicked; appending no extra rules",
+				"widget", def.Name, "panic", textsafe.Recovered(rec))
+			css = ""
+		}
+	}()
+	return def.ExtraCSS()
 }
 
 // serveState returns the current value of every named signal as JSON.
@@ -465,15 +486,37 @@ func (s *server) renderSkeleton() render.HTML {
 // renderSkeletonCtx is renderSkeleton with an explicit request context, threaded
 // into each slot so context-aware slots render per-request (role-aware nav,
 // tenant-scoped chrome, …). Slots that aren't context-aware are unaffected.
+//
+// Slot Components and the host Skeleton hook are host-pluggable render
+// hooks of exactly the class layout chrome slots are, so they get the same
+// containment (app/layout.go: an errored hook renders its fallback rather
+// than killing the page; a panicking Skeleton degrades to empty chrome).
+// uihost inline-injects this chrome on every full-page render a host with
+// non-hidden widgets serves, so an unnetted hook would take the page down
+// with no response.
 func (s *server) renderSkeletonCtx(ctx context.Context) render.HTML {
 	slots := map[string]render.HTML{}
 	for _, sl := range s.def.Slots {
-		slots[sl.Name] = component.RenderComponentCtx(ctx, sl.Component)
+		slots[sl.Name], _ = component.SafeRenderCtx(ctx, sl.Component)
 	}
 	if s.def.Skeleton != nil {
-		return s.def.Skeleton(slots)
+		return s.safeSkeleton(slots)
 	}
 	return defaultSkeleton(s.def, slots)
+}
+
+// safeSkeleton invokes the host Skeleton hook under the chrome containment:
+// a panic degrades to empty chrome and is logged through textsafe.Recovered
+// (the panicked-on bytes are host state, they must not forge log lines).
+func (s *server) safeSkeleton(slots map[string]render.HTML) (out render.HTML) {
+	defer func() {
+		if rec := recover(); rec != nil {
+			slog.Default().Error("widget: Skeleton hook panicked; rendering empty chrome",
+				"widget", s.def.Name, "panic", textsafe.Recovered(rec))
+			out = ""
+		}
+	}()
+	return s.def.Skeleton(slots)
 }
 
 // defaultSkeleton is the framework-built chrome for each Position.
@@ -482,7 +525,7 @@ func (s *server) renderSkeletonCtx(ctx context.Context) render.HTML {
 // their own Skeleton func.
 func defaultSkeleton(def Definition, slots map[string]render.HTML) render.HTML {
 	var b strings.Builder
-	b.WriteString(`<div class="fui-widget fui-pos-` + string(def.Position) + `" data-fui-widget="` + render.Escape(def.Name) + `"`)
+	b.WriteString(`<div class="fui-widget fui-pos-` + render.Escape(string(def.Position)) + `" data-fui-widget="` + render.Escape(def.Name) + `"`)
 	if def.Role != "" {
 		b.WriteString(` role="` + render.Escape(def.Role) + `"`)
 	}

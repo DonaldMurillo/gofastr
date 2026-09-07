@@ -20,4 +20,10 @@ var (
 	// has FrameCount > 1. Callers wanting to flatten or split frames
 	// instead must do that explicitly before the variant pipeline.
 	ErrAnimatedSource = errors.New("image: animated source rejected (set VariantSet.RejectAnimated=false to flatten to first frame)")
+
+	// ErrSourceTooLarge is returned when the source reader delivers
+	// more bytes than the configured MaxSourceBytes cap before the
+	// pixel guard ever runs (DecodeWithConfig buffers through
+	// io.LimitReader).
+	ErrSourceTooLarge = errors.New("image: source exceeds MaxSourceBytes")
 )

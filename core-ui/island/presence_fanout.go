@@ -61,6 +61,18 @@ const (
 	// the legitimate replica's next heartbeat reclaims its slot only when a
 	// stale forged id expires).
 	maxRemoteReplicasPerTopic = 512
+	// maxRemoteRosterTopics bounds the remote-roster table's DISTINCT topic
+	// count. A misbehaving peer can forge unlimited one-member topics, and
+	// sustained heartbeats refresh every entry past any TTL, so the
+	// allocation is durable. Once the cap is reached, announcements for NEW
+	// topics are dropped (lossy), the same forged-peer bound as
+	// maxRemoteReplicasPerTopic.
+	maxRemoteRosterTopics = 1024
+	// maxRemoteMembersPerReplica bounds one announcement's member count per
+	// (topic, replica) entry: a legitimate replica cannot announce more
+	// members on one topic than it holds streams (DefaultGlobalStreams).
+	// Past the cap the entry is truncated, first deduped members win.
+	maxRemoteMembersPerReplica = 4096
 	// presenceGraceTimeout bounds the synchronous graceful-leave Publish
 	// issued on stop() so a rolling restart converges promptly. Lossy lane:
 	// a timeout here just falls back to TTL-based expiry.
@@ -187,6 +199,20 @@ func (m *Manager) mergeRemotePresence(origin string, msg presenceFanoutMsg) {
 		return
 	}
 	reps := m.remoteRosters[msg.Topic]
+	evicted := ""
+	if reps == nil && len(m.remoteRosters) >= maxRemoteRosterTopics {
+		// Table full and this topic is NEW: evict the least-recently-
+		// refreshed topic (lossy) and admit the newcomer. A live legit
+		// topic is refreshed by every heartbeat, so it is never the
+		// stalest; a forging peer's flood cannot grow the table past the
+		// cap no matter how sustained it is.
+		evicted = m.evictStalestRemoteTopicLocked(now)
+		if evicted == "" && len(m.remoteRosters) >= maxRemoteRosterTopics {
+			m.mu.Unlock()
+			return
+		}
+	}
+	m.remoteRosterTouch[msg.Topic] = now
 	if reps == nil {
 		reps = make(map[string]remoteRosterEntry)
 		m.remoteRosters[msg.Topic] = reps
@@ -198,17 +224,52 @@ func (m *Manager) mergeRemotePresence(origin string, msg presenceFanoutMsg) {
 		// Cap reached for a NEW replica: drop the announcement (lossy). The
 		// legitimate replica reconverges once a stale forged id is swept.
 	} else {
-		reps[origin] = remoteRosterEntry{members: dedupMembers(msg.Members), expiresAt: now.Add(m.presenceTTL)}
+		members := dedupMembers(msg.Members)
+		if len(members) > maxRemoteMembersPerReplica {
+			members = members[:maxRemoteMembersPerReplica]
+		}
+		reps[origin] = remoteRosterEntry{members: members, expiresAt: now.Add(m.presenceTTL)}
 	}
 	if len(reps) == 0 {
 		delete(m.remoteRosters, msg.Topic)
+		delete(m.remoteRosterTouch, msg.Topic)
 	}
 	after := mergedRosterLocked(m, msg.Topic, now)
 	cb := m.presenceCallback()
 	m.mu.Unlock()
+	if evicted != "" && cb != nil {
+		cb(evicted)
+	}
 	if !membersEqual(before, after) && cb != nil {
 		cb(msg.Topic)
 	}
+}
+
+// evictStalestRemoteTopicLocked drops the remote-roster topic whose last
+// refresh is oldest (LRU-by-heartbeat) to make room under
+// maxRemoteRosterTopics. Returns the evicted topic when its merged roster
+// shrank ("" when it held nothing worth reporting), so the caller can fire
+// OnPresenceChange for it OUTSIDE the lock. Caller holds mu.
+func (m *Manager) evictStalestRemoteTopicLocked(now time.Time) string {
+	stalest := ""
+	var stalestAt time.Time
+	for topic, touched := range m.remoteRosterTouch {
+		if stalest == "" || touched.Before(stalestAt) {
+			stalest, stalestAt = topic, touched
+		}
+	}
+	if stalest == "" {
+		return ""
+	}
+	before := mergedRosterLocked(m, stalest, now)
+	delete(m.remoteRosters, stalest)
+	delete(m.remoteRosterTouch, stalest)
+	// No entry remains, so the merged roster after is empty by definition;
+	// report the eviction only if local viewers actually lost someone.
+	if len(before) == 0 {
+		return ""
+	}
+	return stalest
 }
 
 // sweepExpiredRemote drops remote-roster entries past their TTL and returns
@@ -228,6 +289,7 @@ func (m *Manager) sweepExpiredRemote() []string {
 		}
 		if len(reps) == 0 {
 			delete(m.remoteRosters, topic)
+			delete(m.remoteRosterTouch, topic)
 		}
 		after := mergedRosterLocked(m, topic, now)
 		if !membersEqual(before, after) {

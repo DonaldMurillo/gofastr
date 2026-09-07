@@ -18,7 +18,7 @@
   window.__gofastr = window.__gofastr || {};
   const NS = window.__gofastr;
 
-  NS._toastTimers = NS._toastTimers || {};
+  NS._toastTimers = NS._toastTimers || new Map();
   NS._toastSeq = NS._toastSeq || 0;
 
   /** Wire freshly-swapped toast items inside `root`: schedule auto
@@ -30,18 +30,18 @@
     const items = root.querySelectorAll('[data-fui-toast-id]');
     // Track which ids are present in the current DOM. Anything in
     // _toastTimers but absent here was dismissed, cancel its timer.
-    const present = {};
+    const present = new Set();
     items.forEach((item) => {
       const id = item.getAttribute('data-fui-toast-id');
-      present[id] = true;
-      // Own-prop read: ids are attribute-borne (data-fui-toast-id), an
-      // inherited member like "constructor" would read as already
-      // wired and the toast would never arm its dismiss timer.
-      if (Object.prototype.hasOwnProperty.call(NS._toastTimers, id) && NS._toastTimers[id]) return; // already wired
+      present.add(id);
+      // Already wired? Ids are attribute-borne (data-fui-toast-id), so
+      // the registry is a Map: plain string keys, no prototype
+      // re-parenting and no inherited-member false positives.
+      if (NS._toastTimers.get(id)) return; // already wired
       const ttl = parseInt(item.getAttribute('data-fui-toast-ttl-ms') || '0', 10);
       if (ttl > 0) {
         const rec = { remaining: ttl, startedAt: Date.now(), timer: 0 };
-        NS._toastTimers[id] = rec;
+        NS._toastTimers.set(id, rec);
         const arm = () => {
           rec.startedAt = Date.now();
           rec.timer = setTimeout(() => NS._dismissToast(item, id), rec.remaining);
@@ -68,10 +68,10 @@
     });
     // Cancel timers for toasts that are no longer in the DOM
     // (server-side dismissal / replacement).
-    for (const id in NS._toastTimers) {
-      if (!present[id]) {
-        clearTimeout(NS._toastTimers[id].timer);
-        delete NS._toastTimers[id];
+    for (const [id, rec] of NS._toastTimers) {
+      if (!present.has(id)) {
+        clearTimeout(rec.timer);
+        NS._toastTimers.delete(id);
       }
     }
   };
@@ -82,8 +82,8 @@
   NS._dismissToast = function (item, id) {
     if (!item || item.classList.contains('is-leaving')) return;
     item.classList.add('is-leaving');
-    const rec = Object.prototype.hasOwnProperty.call(NS._toastTimers, id) ? NS._toastTimers[id] : undefined;
-    if (rec) { clearTimeout(rec.timer); delete NS._toastTimers[id]; }
+    const rec = NS._toastTimers.get(id);
+    if (rec) { clearTimeout(rec.timer); NS._toastTimers.delete(id); }
     const cs = getComputedStyle(item);
     const ms = parseFloat(cs.animationDuration) * 1000 || 200;
     setTimeout(() => { if (item.parentNode) item.parentNode.removeChild(item); }, ms);

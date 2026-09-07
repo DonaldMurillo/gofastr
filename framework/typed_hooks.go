@@ -35,7 +35,7 @@ func OnBeforeCreate[T any](app *App, name string, fn func(ctx context.Context, v
 		if err := unmarshalHookPayload(data, &v); err != nil {
 			return err
 		}
-		before := v
+		before := snapshotDeepCopy(v)
 		if err := fn(ctx, &v); err != nil {
 			return err
 		}
@@ -58,7 +58,7 @@ func OnAfterCreate[T any](app *App, name string, fn func(ctx context.Context, va
 		if err := unmarshalHookPayload(data, &v); err != nil {
 			return err
 		}
-		before := v
+		before := snapshotDeepCopy(v)
 		if err := fn(ctx, &v); err != nil {
 			return err
 		}
@@ -77,7 +77,7 @@ func OnBeforeUpdate[T any](app *App, name string, fn func(ctx context.Context, v
 		if err := unmarshalHookPayload(data, &v); err != nil {
 			return err
 		}
-		before := v
+		before := snapshotDeepCopy(v)
 		if err := fn(ctx, &v); err != nil {
 			return err
 		}
@@ -99,7 +99,7 @@ func OnAfterUpdate[T any](app *App, name string, fn func(ctx context.Context, va
 		if err := unmarshalHookPayload(data, &v); err != nil {
 			return err
 		}
-		before := v
+		before := snapshotDeepCopy(v)
 		if err := fn(ctx, &v); err != nil {
 			return err
 		}
@@ -114,7 +114,10 @@ func OnAfterUpdate[T any](app *App, name string, fn func(ctx context.Context, va
 // record id; no generic parameter needed.
 func OnBeforeDelete(app *App, name string, fn func(ctx context.Context, id string) error) {
 	app.HookRegistry(name).RegisterHook(hook.BeforeDelete, func(ctx context.Context, data any) error {
-		id, _ := data.(string)
+		id, ok := data.(string)
+		if !ok {
+			return fmt.Errorf("typed BeforeDelete hook: payload type = %T, want string (framework contract drift?)", data)
+		}
 		return fn(ctx, id)
 	})
 }
@@ -123,7 +126,10 @@ func OnBeforeDelete(app *App, name string, fn func(ctx context.Context, id strin
 // OnBeforeDelete.
 func OnAfterDelete(app *App, name string, fn func(ctx context.Context, id string) error) {
 	app.HookRegistry(name).RegisterHook(hook.AfterDelete, func(ctx context.Context, data any) error {
-		id, _ := data.(string)
+		id, ok := data.(string)
+		if !ok {
+			return fmt.Errorf("typed AfterDelete hook: payload type = %T, want string (framework contract drift?)", data)
+		}
 		return fn(ctx, id)
 	})
 }
@@ -201,6 +207,29 @@ func unmarshalHookPayload(data any, dest any) error {
 		return err
 	}
 	return json.Unmarshal(b, dest)
+}
+
+// snapshotDeepCopy returns a deep copy of v via a JSON round-trip, so the
+// map, slice, and pointer fields of the snapshot stop aliasing v's. A
+// shallow struct copy (`before := v`) shares those backing stores, so an
+// in-place mutation by the hook callback (delete v.Meta[k], v.Tags[0]=…,
+// v.Profile.Secret="") leaves before and v DeepEqual at merge time and the
+// changed field is skipped: the client's original nested value survives
+// into the persisted row / response while the host believes its hook
+// redacted it. Round-tripping through JSON is the same translation
+// unmarshalHookPayload already performs, so any *T this wrapper can
+// unmarshal can also be snapshotted. On any marshal failure it degrades to
+// the shallow copy (the previous behaviour) rather than refusing the hook.
+func snapshotDeepCopy[T any](v T) T {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return v
+	}
+	var out T
+	if err := json.Unmarshal(b, &out); err != nil {
+		return v
+	}
+	return out
 }
 
 // mergeStructIntoMap reflects struct mutations from the typed Before-hook

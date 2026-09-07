@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/control"
@@ -129,10 +130,17 @@ func PermissionMiddleware(
 				if persist {
 					// Failure to persist is logged (Error event) but
 					// doesn't block the call, user already approved.
+					// The event carries a generic message only:
+					// savePersistent wraps the operator's absolute
+					// persistence path, and this bus feeds every
+					// ws/SSE/MCP client on the session — rest.go:196
+					// answers the same failure class server-side.
+					// The detail goes to the server log instead.
 					if err := eng.AddPersistentRule(rule); err != nil {
+						log.Printf("engine: persist permission rule: %v", err)
 						_, _ = bus.Publish(control.Error{
 							Reason:  "PermissionPersistFailed",
-							Message: err.Error(),
+							Message: "persisting permission rule failed",
 						}, origin)
 					}
 				} else {

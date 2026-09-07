@@ -49,10 +49,17 @@ func (e *CSSExtractor) ExtractFromHTML(html string) []string {
 	return result
 }
 
-// GenerateCSS generates utility CSS for the given class list.
+// GenerateCSS generates utility CSS for the given class list. Class names
+// that are not CSS identifiers are skipped: the name is interpolated
+// unquoted into the ".%s { … }" selector slot, so anything carrying
+// braces, semicolons, or a url( payload would become live CSS (the same
+// identifier-slot contract StyleSheet property names carry).
 func (e *CSSExtractor) GenerateCSS(classes []string) string {
 	var b strings.Builder
 	for _, class := range classes {
+		if !isCSSIdent(class) {
+			continue
+		}
 		props := resolveUtilityClass(class, e.Theme)
 		if props != "" {
 			fmt.Fprintf(&b, ".%s { %s }\n", class, props)

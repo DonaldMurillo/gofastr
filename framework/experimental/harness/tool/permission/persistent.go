@@ -19,6 +19,7 @@ import (
 	"path/filepath"
 
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/control"
+	"github.com/DonaldMurillo/gofastr/internal/fileperm"
 )
 
 // persistentFile is the on-disk shape. Keep it forward-compatible:
@@ -90,7 +91,7 @@ func savePersistent(path string, rules []Rule) error {
 		return err
 	}
 	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o600); err != nil {
+	if err := fileperm.WriteOwnerOnly(tmp, data); err != nil {
 		return fmt.Errorf("write tmp: %w", err)
 	}
 	if err := os.Rename(tmp, path); err != nil {

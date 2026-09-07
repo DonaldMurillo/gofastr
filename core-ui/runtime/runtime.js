@@ -1807,6 +1807,8 @@
   // handler awaits loadModule('widgets') (via the openWidget stub on
   // __gofastr) so it works regardless of whether the catalog has
   // resolved. Idempotent via document.__fuiOpenDispatch.
+
+
   function _installEagerWidgetDelegators() {
     if (document.__fuiOpenDispatch) return;
     document.__fuiOpenDispatch = true;
@@ -1833,12 +1835,17 @@
       const raw = btn.getAttribute('data-fui-deeplink') || '';
       const overrides = {};
       if (raw) {
+        // Degrade-don't-throw: a malformed percent escape throws URIError
+        // AFTER preventDefault, which would consume the open click; a bad
+        // pair is skipped (the selector-guard family's containment).
         for (const pair of raw.split('&')) {
           if (!pair) continue;
           const eq = pair.indexOf('=');
           if (eq < 0) continue;
-          overrides[decodeURIComponent(pair.slice(0, eq))] =
-            decodeURIComponent(pair.slice(eq + 1));
+          try {
+            overrides[decodeURIComponent(pair.slice(0, eq))] =
+              decodeURIComponent(pair.slice(eq + 1));
+          } catch (_) {}
         }
       }
       const anchorPref = btn.getAttribute('data-fui-popover-anchor');
@@ -2035,15 +2042,18 @@
       return JSON.parse(el.textContent || '{}');
     } catch (_) { return {}; }
   })();
-  const _modulePromises = {};
+  // Map-keyed, not {}: module names arrive through DOM attributes
+  // (data-fui-prefetch, data-behavior) and a plain-object cache keyed by
+  // "__proto__" re-parents through the setter while "constructor" reads
+  // as a truthy inherited entry. Map keys are plain strings.
+  const _modulePromises = new Map();
   function loadModule(name) {
     const lm = window.__gofastr.loadedModules;
     if (lm && own(lm, name) && lm[name]) {
       return Promise.resolve();
     }
-    if (own(_modulePromises, name) && _modulePromises[name]) {
-      return _modulePromises[name];
-    }
+    const cached = _modulePromises.get(name);
+    if (cached) return cached;
     const modPromise = new Promise((resolve, reject) => {
       // Module names come from DOM attributes (data-fui-prefetch,
       // data-behavior), so they are caller input. Without a shape check
@@ -2062,12 +2072,12 @@
       s.onload = () => resolve();
       s.onerror = () => {
         // Drop the cached promise so a retry fires a fresh request.
-        delete _modulePromises[name];
+        _modulePromises.delete(name);
         reject(new Error('module failed'));
       };
       document.head.appendChild(s);
     });
-    _modulePromises[name] = modPromise;
+    _modulePromises.set(name, modPromise);
     return modPromise;
   }
 

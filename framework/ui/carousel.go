@@ -77,11 +77,15 @@ type CarouselConfig struct {
 	// the rest are placeholders.
 	VirtualWindow int
 	// VirtualPlaceholderHeight is an optional CSS length applied to
-	// each unhydrated placeholder slide. Required when slides have
-	// no intrinsic flex height (e.g. raw <img> with no fixed aspect),
-	// otherwise placeholders collapse to 0 and IntersectionObserver
-	// fires every placeholder at once. Image-only carousels typically
-	// pick "240px" or whatever matches the typical slide aspect.
+	// each unhydrated placeholder slide. One plain length (number +
+	// unit, e.g. "240px", or a var(--token) reference): anything else
+	// drops the inline style and the placeholder falls back to its CSS
+	// default, the same degrade every URL sink gives a rejected href.
+	// Required when slides have no intrinsic flex height (e.g. raw
+	// <img> with no fixed aspect), otherwise placeholders collapse to 0
+	// and IntersectionObserver fires every placeholder at once.
+	// Image-only carousels typically pick "240px" or whatever matches
+	// the typical slide aspect.
 	VirtualPlaceholderHeight string
 	ID                       string
 	Class                    string
@@ -189,8 +193,11 @@ func Carousel(cfg CarouselConfig) render.HTML {
 			// Placeholder slide: content is deferred to the JSON
 			// manifest and hydrated lazily via IntersectionObserver.
 			slideAttrs["data-fui-carousel-defer"] = strconv.Itoa(i)
-			if cfg.VirtualPlaceholderHeight != "" {
-				slideAttrs["style"] = "min-block-size:" + cfg.VirtualPlaceholderHeight + ";"
+			if h := cssLengthOr(cfg.VirtualPlaceholderHeight, ""); h != "" {
+				// One plain CSS length only (cssLengthOr above): a
+				// declaration list in request-derived config would
+				// otherwise ship verbatim as live page CSS.
+				slideAttrs["style"] = "min-block-size:" + h + ";"
 			}
 			deferred[strconv.Itoa(i)] = string(s.Content)
 			slideEls = append(slideEls, render.Tag("div", slideAttrs))

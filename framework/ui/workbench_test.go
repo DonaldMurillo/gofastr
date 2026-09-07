@@ -135,3 +135,36 @@ func TestWorkbenchExtraAttrsCannotOverrideOwned(t *testing.T) {
 		}
 	}
 }
+
+// TestWorkbenchRailWidthIsOneCSSLength pins the sibling of the carousel
+// placeholder-height finding: RailWidth lands inside the root's inline
+// style attribute (as the --ui-workbench-rail custom property), so a
+// declaration list in the config value must not ship as live page CSS —
+// the same cssLengthOr gate carousel's VirtualPlaceholderHeight uses.
+// A rejected value drops the style attribute and the CSS default (320px)
+// applies.
+func TestWorkbenchRailWidthIsOneCSSLength(t *testing.T) {
+	malicious := "320px;background:url(//evil.example/x);position:fixed"
+	for _, v := range []string{malicious, "var(--rail", "480px;color:red"} {
+		h := string(Workbench(WorkbenchConfig{
+			RailWidth: v,
+			Rail:      render.Text("rail"), Pane: render.Text("pane"),
+		}))
+		root := h[:strings.Index(h, ">")+1]
+		if strings.Contains(root, "background:url(") || strings.Contains(root, "color:red") ||
+			strings.Contains(root, "style=") {
+			t.Errorf("SECURITY: [workbench-rail-injection] RailWidth %q reached the page as inline CSS: %s", v, root)
+		}
+	}
+	// Happy path: a plain length and a bare var() token still render.
+	for _, ok := range []string{"480px", "32rem", "var(--app-rail)"} {
+		h := string(Workbench(WorkbenchConfig{
+			RailWidth: ok,
+			Rail:      render.Text("rail"), Pane: render.Text("pane"),
+		}))
+		root := h[:strings.Index(h, ">")+1]
+		if !strings.Contains(root, `style="--ui-workbench-rail: `+ok+`"`) {
+			t.Errorf("plain CSS length %q must keep the custom property:\n%s", ok, root)
+		}
+	}
+}

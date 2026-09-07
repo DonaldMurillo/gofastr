@@ -176,7 +176,7 @@ func TestHTTPGETReplayStripsInjectedSecondEvent(t *testing.T) {
 	rec := httptest.NewRecorder()
 	done := make(chan struct{})
 	go func() {
-		h.handleGET(rec, req, "replay-test")
+		h.handleGET(rec, req, "replay-test", nil)
 		close(done)
 	}()
 
@@ -201,7 +201,7 @@ func TestHTTPGETReplayStripsInjectedIDDirective(t *testing.T) {
 	rec := httptest.NewRecorder()
 	done := make(chan struct{})
 	go func() {
-		h.handleGET(rec, req, "replay-id")
+		h.handleGET(rec, req, "replay-id", nil)
 		close(done)
 	}()
 
@@ -237,7 +237,7 @@ func TestHTTPGETSetsNoStore(t *testing.T) {
 	rec := httptest.NewRecorder()
 	done := make(chan struct{})
 	go func() {
-		h.handleGET(rec, req, "cache-test")
+		h.handleGET(rec, req, "cache-test", nil)
 		close(done)
 	}()
 

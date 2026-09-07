@@ -9,6 +9,8 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+
+	"github.com/DonaldMurillo/gofastr/internal/fileperm"
 )
 
 // EncryptionMode controls how the session log file is protected.
@@ -113,12 +115,15 @@ func encryptFile(inPath, outPath string, key []byte) error {
 		return err
 	}
 	ct := gcm.Seal(nonce, nonce, plain, nil)
-	// Atomic write via .tmp + rename.
+	// Atomic write via .tmp + rename; WriteOwnerOnly so the tmp (and
+	// therefore the renamed ciphertext) is 0600 on create AND
+	// overwrite — a pre-existing weaker tmp keeps its mode under bare
+	// os.WriteFile.
 	tmp := outPath + ".tmp"
 	if err := os.MkdirAll(filepath.Dir(outPath), 0o700); err != nil {
 		return err
 	}
-	if err := os.WriteFile(tmp, ct, 0o600); err != nil {
+	if err := fileperm.WriteOwnerOnly(tmp, ct); err != nil {
 		return err
 	}
 	return os.Rename(tmp, outPath)
@@ -148,5 +153,15 @@ func decryptFile(encPath, outPath string, key []byte) error {
 	if err := os.MkdirAll(filepath.Dir(outPath), 0o700); err != nil {
 		return err
 	}
-	return os.WriteFile(outPath, plain, 0o600)
+	// Mirror encryptFile's tmp+rename, with the handle tightened to
+	// 0600 BEFORE plaintext lands: the recurring outPath is the full
+	// decrypted session DB, and OpenEncrypted's own doc promises mode
+	// 0600 — a leftover/restored 0644 plaintext path must not stay
+	// group/world-readable for the session lifetime, and a reader of
+	// the recurring path must never see a half-written plaintext.
+	tmp := outPath + ".tmp"
+	if err := fileperm.WriteOwnerOnly(tmp, plain); err != nil {
+		return err
+	}
+	return os.Rename(tmp, outPath)
 }

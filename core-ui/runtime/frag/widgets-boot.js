@@ -89,6 +89,8 @@
   // handler awaits loadModule('widgets') (via the openWidget stub on
   // __gofastr) so it works regardless of whether the catalog has
   // resolved. Idempotent via document.__fuiOpenDispatch.
+
+
   function _installEagerWidgetDelegators() {
     if (document.__fuiOpenDispatch) return;
     document.__fuiOpenDispatch = true;
@@ -115,12 +117,17 @@
       const raw = btn.getAttribute('data-fui-deeplink') || '';
       const overrides = {};
       if (raw) {
+        // Degrade-don't-throw: a malformed percent escape throws URIError
+        // AFTER preventDefault, which would consume the open click; a bad
+        // pair is skipped (the selector-guard family's containment).
         for (const pair of raw.split('&')) {
           if (!pair) continue;
           const eq = pair.indexOf('=');
           if (eq < 0) continue;
-          overrides[decodeURIComponent(pair.slice(0, eq))] =
-            decodeURIComponent(pair.slice(eq + 1));
+          try {
+            overrides[decodeURIComponent(pair.slice(0, eq))] =
+              decodeURIComponent(pair.slice(eq + 1));
+          } catch (_) {}
         }
       }
       const anchorPref = btn.getAttribute('data-fui-popover-anchor');

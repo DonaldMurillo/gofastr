@@ -27,6 +27,7 @@ import (
 	"sync"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
+	"github.com/DonaldMurillo/gofastr/core/stream"
 
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/control"
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/control/inproc"
@@ -43,6 +44,13 @@ type Server struct {
 	Client  *inproc.Client
 	Session ids.SessionID
 
+	// seats bounds concurrent /events SSE streams (core/stream's seat
+	// policy). The sidecar is loopback-only with no per-caller
+	// credential, so every dial shares one anonymous principal — the
+	// posture framework/crud takes for Public streams — and the cap
+	// bounds them collectively.
+	seats *control.SeatTable
+
 	listener net.Listener
 	srv      *http.Server
 
@@ -57,7 +65,17 @@ type Server struct {
 // Subscribe is one-channel-per-client, and we want N browsers to
 // share one engine.
 func New(c *inproc.Client, session ids.SessionID, bus *engine.Bus) *Server {
-	return &Server{Client: c, Session: session, bus: bus}
+	return &Server{Client: c, Session: session, bus: bus, seats: control.DefaultSeatTable()}
+}
+
+// seatTable resolves the seat table: the one wired at construction
+// (the process-wide control-plane table, whose anonymous-principal
+// bucket is this sidecar's — no other surface seats the "" principal).
+func (s *Server) seatTable() *control.SeatTable {
+	if s.seats != nil {
+		return s.seats
+	}
+	return control.DefaultSeatTable()
 }
 
 // Start binds a TCP listener on 127.0.0.1:0 (random port) and serves
@@ -110,6 +128,17 @@ func (s *Server) handleSSE(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "no flusher", http.StatusInternalServerError)
 		return
 	}
+	// Seat the stream BEFORE any bytes go out, so a refusal can still
+	// answer 429 at connect (core/stream's seat policy; the REST /events
+	// twin seats the same way). Each admitted stream parks a handler
+	// goroutine and a bus subscription for the life of the request.
+	seat, seated := s.seatTable().AcquireSeat("", 0, stream.SeatOverflowRefuse)
+	if !seated {
+		w.Header().Set("Retry-After", "1")
+		http.Error(w, "too many concurrent event streams", http.StatusTooManyRequests)
+		return
+	}
+	defer s.seatTable().ReleaseSeat(seat)
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
@@ -123,6 +152,9 @@ func (s *Server) handleSSE(w http.ResponseWriter, r *http.Request) {
 	for {
 		select {
 		case <-ctx.Done():
+			return
+		case <-seat.Done:
+			// Displaced by an EvictOldest admission: stop streaming.
 			return
 		case env, ok := <-ch:
 			if !ok {

@@ -869,7 +869,13 @@ func (ds *UIHost) resolveEmbedTheme(s *fembed.ResolvedSurface, encoded string) (
 		return "", false
 	}
 	var tokens map[string]string
-	if err := json.Unmarshal(raw, &tokens); err != nil || len(tokens) == 0 {
+	// Strict decode, the family rule the embed exchange POST already
+	// applies (DecodeStrict): stdlib map decode keeps the LAST spelling
+	// of a repeated or case-folded key pair, so a two-spelling payload
+	// would register a variant one reader of the parameter never saw.
+	// The refusal rides the existing degrade path: ok=false, the frame
+	// renders under the app theme.
+	if err := handler.UnmarshalStrict(raw, &tokens); err != nil || len(tokens) == 0 {
 		return "", false
 	}
 	allowed := make(map[string]struct{}, len(s.Theme.AllowTokens))

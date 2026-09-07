@@ -41,6 +41,29 @@ func StripMetadata() ProcessOption {
 // of one re-encode generation stays small.
 const stripJPEGQuality = 95
 
+// stripMaxPixels caps the decoded raster the strip path may materialise,
+// matching framework/image.DefaultMaxPixels (64 MP). This package cannot
+// import that one (the layering rule that keeps image codecs out of every
+// CRUD binary), so the value is local and pinned to the pipeline's by
+// TestStripMetadataBomb* (which computes the bomb against
+// fwimage.DefaultMaxPixels). Without it, a metadata-carrying PNG or an
+// orientation-baked JPEG decoded here with no DecodeConfig guard let a
+// ~300 KB upload force a ~256 MiB raster per request.
+const stripMaxPixels int64 = 64 * 1024 * 1024
+
+// checkStripPixelCap refuses header dimensions whose decoded raster would
+// exceed stripMaxPixels, before any pixel decode runs. Overflow-safe by
+// division (a multiply of two near-uint32 dimensions wraps int64).
+func checkStripPixelCap(w, h int) error {
+	if w <= 0 || h <= 0 {
+		return errors.New("strip: invalid image dimensions in header")
+	}
+	if int64(w) > stripMaxPixels/int64(h) {
+		return fmt.Errorf("strip: %dx%d header exceeds the %d-pixel decode cap", w, h, stripMaxPixels)
+	}
+	return nil
+}
+
 // stripImageMetadata strips metadata segments from data when it is a
 // JPEG, PNG, or WebP, returning the replacement bytes. A nil result
 // with a nil error means "not a supported image type / nothing changed":
@@ -155,6 +178,13 @@ func stripJPEG(data []byte) ([]byte, error) {
 		i = segLenAt + segLen
 	}
 	if orient >= 2 && orient <= 8 {
+		cfg, err := jpeg.DecodeConfig(bytes.NewReader(out))
+		if err != nil {
+			return nil, fmt.Errorf("jpeg: decoding header for orientation bake: %w", err)
+		}
+		if err := checkStripPixelCap(cfg.Width, cfg.Height); err != nil {
+			return nil, err
+		}
 		img, err := jpeg.Decode(bytes.NewReader(out))
 		if err != nil {
 			return nil, fmt.Errorf("jpeg: decoding for orientation: %w", err)
@@ -174,6 +204,10 @@ func stripJPEG(data []byte) ([]byte, error) {
 // PNG is lossless so the re-encode costs nothing but CPU. A PNG with no
 // metadata chunk is returned unchanged, byte-for-byte. An eXIf
 // orientation of 2..8 is baked into the pixels before re-encoding.
+//
+// The re-encode decode is pixel-capped (checkStripPixelCap) on the
+// header alone: the strip path must not materialise a raster the image
+// pipeline's DefaultMaxPixels guard would refuse.
 func stripPNG(data []byte) ([]byte, error) {
 	if len(data) < 8 || !bytes.Equal(data[:8], []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1A, '\n'}) {
 		return nil, errors.New("png: bad signature")
@@ -206,6 +240,13 @@ func stripPNG(data []byte) ([]byte, error) {
 	}
 	if !hasMeta {
 		return data, nil
+	}
+	cfg, err := png.DecodeConfig(bytes.NewReader(data))
+	if err != nil {
+		return nil, fmt.Errorf("png: decoding header for metadata strip: %w", err)
+	}
+	if err := checkStripPixelCap(cfg.Width, cfg.Height); err != nil {
+		return nil, err
 	}
 	img, err := png.Decode(bytes.NewReader(data))
 	if err != nil {

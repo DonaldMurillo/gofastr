@@ -7,6 +7,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
 // Island is a server-driven widget that receives HTML updates via SSE.
@@ -39,7 +40,7 @@ func (is *Island) Render() (out render.HTML) {
 	}
 	defer func() {
 		if r := recover(); r != nil {
-			log.Printf("island: render panic for %q: %v\n%s", is.ID, r, debug.Stack())
+			log.Printf("island: render panic for %q: %s\n%s", is.ID, textsafe.Recovered(r), debug.Stack())
 			out = render.Raw(fmt.Sprintf(`<div data-island="%s"></div>`, render.Escape(is.ID)))
 		}
 	}()

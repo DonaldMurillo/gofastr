@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/fanout"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
 // fanoutTopic is the single channel every event-bus bridge publishes on and
@@ -197,7 +198,7 @@ func publishSafely(ctx context.Context, f fanout.Fanout, data []byte) {
 	defer func() {
 		if r := recover(); r != nil {
 			slog.Default().Error("event: fanout publish panicked (best-effort lane; continuing)",
-				"topic", fanoutTopic, "panic", r, "stack", string(debug.Stack()))
+				"topic", fanoutTopic, "panic", textsafe.Recovered(r), "stack", string(debug.Stack()))
 		}
 	}()
 	if perr := f.Publish(ctx, fanoutTopic, data); perr != nil {

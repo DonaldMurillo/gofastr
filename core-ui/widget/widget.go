@@ -350,8 +350,8 @@ func RenderChromeCtx(ctx context.Context, d *Definition) string {
 // chrome HTML. Mirrors what serveStyle writes to the live style endpoint.
 func RenderCSS(d *Definition) string {
 	css := widgetCSS(*d)
-	if d.ExtraCSS != nil {
-		css += "\n" + d.ExtraCSS()
+	if extra := safeExtraCSS(*d); extra != "" {
+		css += "\n" + extra
 	}
 	return css
 }

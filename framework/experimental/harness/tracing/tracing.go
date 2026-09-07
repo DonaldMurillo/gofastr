@@ -30,6 +30,7 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/ids"
+	"github.com/DonaldMurillo/gofastr/internal/fileperm"
 )
 
 // TraceID and SpanID are W3C trace-context-compliant: TraceID is 16
@@ -172,7 +173,13 @@ func (r *Recorder) Done() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return path, os.WriteFile(path, data, 0o600)
+	// WriteOwnerOnly: trace spans carry request-derived attribute text,
+	// and the mode must tighten a pre-existing weaker file, not just
+	// apply at create.
+	if err := fileperm.WriteOwnerOnly(path, data); err != nil {
+		return "", err
+	}
+	return path, nil
 }
 
 // TraceContextHeader returns the W3C `traceparent` header value for

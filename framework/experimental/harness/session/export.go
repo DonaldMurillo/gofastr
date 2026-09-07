@@ -59,6 +59,14 @@ func (e *ExportBundle) Write(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	// Tighten the HANDLE, not just the create mode: a pre-existing
+	// 0644 tmp (operator re-export, restored backup, umask drift)
+	// otherwise keeps the bundle world-readable while the zip streams
+	// into it (writeSecretFile's grammar).
+	if err := f.Chmod(0o600); err != nil {
+		_ = f.Close()
+		return "", err
+	}
 	zw := zip.NewWriter(f)
 	defer func() {
 		_ = zw.Close()

@@ -171,15 +171,18 @@
       return JSON.parse(el.textContent || '{}');
     } catch (_) { return {}; }
   })();
-  const _modulePromises = {};
+  // Map-keyed, not {}: module names arrive through DOM attributes
+  // (data-fui-prefetch, data-behavior) and a plain-object cache keyed by
+  // "__proto__" re-parents through the setter while "constructor" reads
+  // as a truthy inherited entry. Map keys are plain strings.
+  const _modulePromises = new Map();
   function loadModule(name) {
     const lm = window.__gofastr.loadedModules;
     if (lm && own(lm, name) && lm[name]) {
       return Promise.resolve();
     }
-    if (own(_modulePromises, name) && _modulePromises[name]) {
-      return _modulePromises[name];
-    }
+    const cached = _modulePromises.get(name);
+    if (cached) return cached;
     const modPromise = new Promise((resolve, reject) => {
       // Module names come from DOM attributes (data-fui-prefetch,
       // data-behavior), so they are caller input. Without a shape check
@@ -198,12 +201,12 @@
       s.onload = () => resolve();
       s.onerror = () => {
         // Drop the cached promise so a retry fires a fresh request.
-        delete _modulePromises[name];
+        _modulePromises.delete(name);
         reject(new Error('module failed'));
       };
       document.head.appendChild(s);
     });
-    _modulePromises[name] = modPromise;
+    _modulePromises.set(name, modPromise);
     return modPromise;
   }
 

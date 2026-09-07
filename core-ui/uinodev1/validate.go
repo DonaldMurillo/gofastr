@@ -335,9 +335,15 @@ func walkDupCheck(dec *json.Decoder) error {
 }
 
 // walkObjectDupCheck reads an object body (after the opening '{') and
-// rejects duplicate keys.
+// rejects duplicate keys and keys that collide under ASCII case folding
+// (the handler.CheckObjectKeys family rule: Go's struct-tag matching folds
+// ASCII case, so {"Component":...,"component":...} would land on one field,
+// last wins — refuse the ambiguity before any structural decode).
 func walkObjectDupCheck(dec *json.Decoder) error {
-	seen := make(map[string]struct{})
+	// folded form → first spelling seen, mirroring handler's strict-key
+	// walk: the prev==key arm distinguishes an exact duplicate from a
+	// folded pair in the error message.
+	seen := make(map[string]string)
 	for dec.More() {
 		t, err := dec.Token()
 		if err != nil {
@@ -347,10 +353,14 @@ func walkObjectDupCheck(dec *json.Decoder) error {
 		if !ok {
 			return errors.New("uinodev1: decode: object key is not a string")
 		}
-		if _, dup := seen[key]; dup {
-			return errDupKey(key)
+		norm := foldASCIIKey(key)
+		if prev, dup := seen[norm]; dup {
+			if prev == key {
+				return errDupKey(key)
+			}
+			return errFoldedKey(prev, key)
 		}
-		seen[key] = struct{}{}
+		seen[norm] = key
 		if err := walkDupCheck(dec); err != nil {
 			return err
 		}
@@ -359,4 +369,18 @@ func walkObjectDupCheck(dec *json.Decoder) error {
 		return err
 	}
 	return nil
+}
+
+// foldASCIIKey lowercases ASCII letters only. Unicode case folding
+// (strings.ToLower) maps homoglyphs onto ASCII (ſ → s), which would refuse
+// keys Go's json decoder treats as distinct; ASCII folding is exactly the
+// collision stdlib's case-insensitive struct-tag matching can produce.
+func foldASCIIKey(k string) string {
+	b := []byte(k)
+	for i, c := range b {
+		if c >= 'A' && c <= 'Z' {
+			b[i] = c + ('a' - 'A')
+		}
+	}
+	return string(b)
 }

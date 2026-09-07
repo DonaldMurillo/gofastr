@@ -52,6 +52,13 @@
       ? G._signals[name]
       : undefined;
     if (!slot) {
+      // Reserved keys (__proto__/constructor/prototype) never reach the
+      // shared registry: the bracket write would re-parent the store via
+      // the __proto__ setter, and the kernel's seed-merge would then
+      // write into the planted prototype. The kernel guards setSignal
+      // and both seed loops with isReservedSignalKey; this module is
+      // demand-loaded, so the same check is spelled inline.
+      if (name === '__proto__' || name === 'constructor' || name === 'prototype') return;
       slot = { value: undefined, listeners: [] };
       G._signals[name] = slot;
     }

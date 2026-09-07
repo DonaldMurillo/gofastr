@@ -37,6 +37,7 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
+	"github.com/DonaldMurillo/gofastr/core/stream"
 
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/control"
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/control/auth"
@@ -60,6 +61,12 @@ type Server struct {
 	Features       []string
 	AllowedHosts   []string // exact-match Host headers permitted (e.g., "127.0.0.1:8421")
 	AllowedOrigins []string // exact-match Origin headers permitted
+
+	// Seats bounds the concurrent /events SSE streams one token
+	// principal may hold (core/stream's seat policy). Nil shares the
+	// process-wide DefaultSeatTable with the ws and MCP-HTTP
+	// transports, so the cap counts per credential across all three.
+	Seats *control.SeatTable
 
 	// SessionStore, when non-nil, backs the ?past=true query on
 	// /v1/sessions to surface historical sessions from disk.
@@ -86,6 +93,15 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/slash-commands", s.handle(s.handleSlashCommands, true))
 	s.handler = mux
 	return mux
+}
+
+// seatTable resolves the seat table: the wired Seats field, else the
+// process-wide table shared with the ws and MCP-HTTP transports.
+func (s *Server) seatTable() *control.SeatTable {
+	if s.Seats != nil {
+		return s.Seats
+	}
+	return control.DefaultSeatTable()
 }
 
 // handle is the request wrapper: Host/Origin checks + optional token verification.
@@ -350,6 +366,21 @@ func (s *Server) handleSSE(w http.ResponseWriter, r *http.Request, sessID ids.Se
 		writeError(w, http.StatusInternalServerError, "NoFlusher", "")
 		return
 	}
+	// Seat the stream per token principal BEFORE any bytes go out, so
+	// a refusal can still answer 429 at connect (core/stream's seat
+	// policy; the ws twin seats its upgrade the same way). Each
+	// admitted stream parks a handler goroutine, a bus subscription,
+	// and a revocation ticker for the life of the request, so the
+	// 17th same-token GET must not be as cheap as the 1st.
+	claims, _ := claimsFrom(r)
+	seat, ok := s.seatTable().AcquireSeat(string(claims.JTI), 0, stream.SeatOverflowRefuse)
+	if !ok {
+		w.Header().Set("Retry-After", "1")
+		writeError(w, http.StatusTooManyRequests, "TooManyStreams",
+			"token already holds the maximum number of concurrent event streams")
+		return
+	}
+	defer s.seatTable().ReleaseSeat(seat)
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
@@ -368,6 +399,9 @@ func (s *Server) handleSSE(w http.ResponseWriter, r *http.Request, sessID ids.Se
 	for {
 		select {
 		case <-ctx.Done():
+			return
+		case <-seat.Done:
+			// Displaced by an EvictOldest admission: stop delivering.
 			return
 		case <-recheck.C:
 			if _, err := s.verifyToken(r); err != nil {
@@ -416,6 +450,12 @@ func (s *Server) handleSlashCommands(w http.ResponseWriter, _ *http.Request) {
 }
 
 func writeJSON(w http.ResponseWriter, code int, body any) {
+	// Cache-Control: no-store on every JSON body, the mcpserver twin's
+	// shape: these are session-bound bodies behind a bearer header, and
+	// RFC 9111's storage restriction covers Authorization requests, not
+	// every cookie/token shape a shared cache or the back/forward cache
+	// would otherwise replay at another caller's URL.
+	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
 	_ = json.NewEncoder(w).Encode(body)

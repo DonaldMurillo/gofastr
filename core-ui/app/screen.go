@@ -3,12 +3,14 @@ package app
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"reflect"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
 // ScreenType classifies the kind of screen.
@@ -320,13 +322,15 @@ func (s *Screen) Render() render.HTML {
 }
 
 // RenderCtx renders the screen's component with ARIA landmarks, passing
-// ctx through to ContextComponent implementations.
+// ctx through to ContextComponent implementations. The render runs under
+// the SSR containment (SafeRenderCtx): a panicking screen renders its
+// fallback rather than escaping — the same net every other host-supplied
+// render hook on the pipeline gets.
 func (s *Screen) RenderCtx(ctx context.Context) render.HTML {
-	var content render.HTML
-	if cc, ok := s.Component.(component.ContextComponent); ok {
-		content = cc.RenderCtx(ctx)
-	} else {
-		content = s.Component.Render()
+	content, renderErr := component.SafeRenderCtx(ctx, s.Component)
+	if renderErr != nil {
+		slog.Default().Error("app: screen render panicked; rendering fallback",
+			"panic", textsafe.Recovered(renderErr))
 	}
 	return wrapByScreenType(s.Type, s.Title, content)
 }

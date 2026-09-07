@@ -172,14 +172,22 @@ func (a *App) WithAuditLog(cfg AuditConfig) *App {
 		hr := a.HookRegistry(name)
 
 		hr.RegisterHook(hook.AfterCreate, func(ctx context.Context, data any) error {
-			row, _ := data.(map[string]any)
+			row, ok := data.(map[string]any)
+			if !ok {
+				// Fail closed on a drifted payload rather than writing an
+				// audit row keyed on a zero row (silent forensics gap).
+				return fmt.Errorf("audit: AfterCreate payload type = %T, want map[string]any (framework contract drift?)", data)
+			}
 			id := stringifyPK(row, pk)
 			redacted := cfg.applyRedact(ent.GetName(), row)
 			diff := buildAuditCreateDiff(redacted, row, auditMeta(ctx))
 			return writeAuditRow(ctx, a.DB, table, ent.GetName(), auditOpCreate, id, cfg.actor(ctx), diff)
 		})
 		hr.RegisterHook(hook.AfterUpdate, func(ctx context.Context, data any) error {
-			row, _ := data.(map[string]any)
+			row, ok := data.(map[string]any)
+			if !ok {
+				return fmt.Errorf("audit: AfterUpdate payload type = %T, want map[string]any (framework contract drift?)", data)
+			}
 			id := stringifyPK(row, pk)
 			redactedNew := cfg.applyRedact(ent.GetName(), row)
 			var redactedOld map[string]any
@@ -192,7 +200,10 @@ func (a *App) WithAuditLog(cfg AuditConfig) *App {
 			return writeAuditRow(ctx, a.DB, table, ent.GetName(), auditOpUpdate, id, cfg.actor(ctx), diff)
 		})
 		hr.RegisterHook(hook.AfterDelete, func(ctx context.Context, data any) error {
-			originalID, _ := data.(string)
+			originalID, ok := data.(string)
+			if !ok {
+				return fmt.Errorf("audit: AfterDelete payload type = %T, want string (framework contract drift?)", data)
+			}
 			recordID := originalID
 			// Let Redact substitute the natural-key record_id for
 			// PHI-bearing tables. Input shape mirrors what the doc

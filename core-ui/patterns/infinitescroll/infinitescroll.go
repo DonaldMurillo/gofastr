@@ -2,6 +2,7 @@ package infinitescroll
 
 import (
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
+	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
@@ -71,8 +72,18 @@ func Render(cfg Config) render.HTML {
 	// one-handler contract still holds: the handler reads
 	// r.FormValue("cursor"), which covers the GET query param and the
 	// JS path's form-encoded POST body alike.
+	//
+	// The action is scheme-allow-listed like every other form-action
+	// sink in the family (html.Form's setURLAttr guard): render.Escape is
+	// HTML-escaping and scheme-blind, so a hostile RPCPath must be
+	// refused before it lands in the attribute; a rejected value
+	// degrades to the inert "#" ui.Form uses.
+	action := urlsafe.CleanAnchor(cfg.RPCPath)
+	if action == "" {
+		action = "#"
+	}
 	noJS := render.Raw(`<noscript><form class="infinitescroll__noscript" action="` +
-		render.Escape(cfg.RPCPath) + `" method="get">` +
+		render.Escape(action) + `" method="get">` +
 		`<input type="hidden" name="cursor" value="` + render.Escape(cfg.Cursor) + `">` +
 		`<button type="submit" class="infinitescroll__loadmore">` + render.Escape(loadMore) + `</button>` +
 		`</form></noscript>`)

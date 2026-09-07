@@ -26,6 +26,7 @@ import (
 	"time"
 
 	coreoa "github.com/DonaldMurillo/gofastr/core/openapi"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 
 	"github.com/DonaldMurillo/gofastr/core/a2a"
 	"github.com/DonaldMurillo/gofastr/core/dotenv"
@@ -1826,7 +1827,7 @@ func (a *App) Entity(name string, config entity.EntityConfig) *App {
 func (a *App) TryEntity(name string, config entity.EntityConfig) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			err = fmt.Errorf("entity %q: %v", name, r)
+			err = fmt.Errorf("entity %q: %v", name, textsafe.Recovered(r))
 		}
 	}()
 

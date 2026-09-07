@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/internal/fileperm"
 )
 
 // DropMetadata removes event rows entirely (not just their content)
@@ -160,12 +162,13 @@ func OpenCostLedger(path string) (*CostLedger, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return nil, err
 	}
-	if _, err := os.Stat(path); os.IsNotExist(err) {
-		seed, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
-		if err != nil {
-			return nil, err
-		}
-		_ = seed.Close()
+	// Owner-only, matching the sibling event store: the ledger records
+	// per-session spend (session ids, providers, models, token counts).
+	// The WAL sidecars inherit the main db's mode on creation, and
+	// SeedOwnerOnly also tightens a pre-existing weaker file (the
+	// event store's Open does the same through the shared helper).
+	if err := fileperm.SeedOwnerOnly(path); err != nil {
+		return nil, err
 	}
 	db, err := sql.Open("sqlite3", path+"?_journal=WAL&_busy_timeout=5000")
 	if err != nil {

@@ -36,6 +36,7 @@ boot	4	G
 boot	4	G
 boot	4	G
 boot	4	action
+boot	4	cached
 boot	4	el
 boot	4	idleQueue
 boot	4	init

@@ -13,8 +13,12 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/core/handler"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/provider"
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/provider/internal/openai"
@@ -109,8 +113,14 @@ func (p *Provider) Models(ctx context.Context) ([]provider.Model, error) {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
+		// The preview is PEER-RESPONSE bytes and this error reaches
+		// slog live (resources.ListProviders logs it): scrub the
+		// terminal-forgery set (C0/DEL/C1/bidi) at the
+		// error-construction site so a hostile or MITM'd endpoint
+		// cannot forge lines in the operator's log tail, keeping the
+		// HTTP status and a bounded preview for diagnosis.
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
-		return nil, fmt.Errorf("openrouter /models: HTTP %d: %s", resp.StatusCode, body)
+		return nil, fmt.Errorf("openrouter /models: HTTP %d: %s", resp.StatusCode, textsafe.StripUnsafe(string(body)))
 	}
 
 	var parsed struct {
@@ -127,7 +137,18 @@ func (p *Provider) Models(ctx context.Context) ([]provider.Model, error) {
 			} `json:"top_provider"`
 		} `json:"data"`
 	}
-	if err := json.NewDecoder(io.LimitReader(resp.Body, modelsMaxBody)).Decode(&parsed); err != nil {
+	rawModels, err := io.ReadAll(io.LimitReader(resp.Body, modelsMaxBody))
+	if err != nil {
+		return nil, fmt.Errorf("openrouter /models: read: %w", err)
+	}
+	// Strict-key walk before decode: a catalog carrying duplicate or
+	// case-folded keys resolves last-wins under stdlib json, so the
+	// harness would register model ids a first-read intermediary parsed
+	// differently (the SSE chunk rule; unknown fields stay tolerated).
+	if err := handler.CheckObjectKeys(rawModels, strings.ToLower); err != nil {
+		return nil, fmt.Errorf("openrouter /models: parse: %w", err)
+	}
+	if err := json.Unmarshal(rawModels, &parsed); err != nil {
 		return nil, fmt.Errorf("openrouter /models: parse: %w", err)
 	}
 	out := make([]provider.Model, 0, len(parsed.Data))

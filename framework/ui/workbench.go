@@ -27,8 +27,11 @@ import (
 
 // WorkbenchConfig configures a Workbench.
 type WorkbenchConfig struct {
-	// RailWidth overrides the rail's fixed inline size (a CSS length).
-	// Defaults to 320px, which fits a label above a control comfortably.
+	// RailWidth overrides the rail's fixed inline size. One plain CSS
+	// length (number + unit, e.g. "480px", or a var(--token)
+	// reference); anything else drops the custom property and the CSS
+	// default applies. Defaults to 320px, which fits a label above a
+	// control comfortably.
 	RailWidth string
 	// Rail is the left column. It scrolls independently of the pane, so a
 	// long control list never pushes the pane off screen.
@@ -57,12 +60,15 @@ func Workbench(cfg WorkbenchConfig) render.HTML {
 	if cfg.ID != "" {
 		attrs["id"] = cfg.ID
 	}
-	if cfg.RailWidth != "" {
+	if w := cssLengthOr(cfg.RailWidth, ""); w != "" {
 		// Set the rail width as a scoped custom property rather than an
-		// inline width, so the CSS keeps ownership of how the value is used
-		// and a strict-CSP host still gets no inline style attribute it has
-		// to allow. See core-ui/check/noinlinescripts.go.
-		attrs["style"] = "--ui-workbench-rail: " + cfg.RailWidth
+		// inline width, so the CSS keeps ownership of how the value is
+		// used and a strict-CSP host still gets no inline style
+		// attribute it has to allow. One plain CSS length only
+		// (cssLengthOr): a declaration list in request-derived config
+		// would otherwise ship verbatim as live page CSS. See
+		// core-ui/check/noinlinescripts.go.
+		attrs["style"] = "--ui-workbench-rail: " + w
 	}
 	maps.Copy(attrs, html.SafeExtraAttrs(cfg.ExtraAttrs, "style"))
 	return workbenchStyle.WrapHTML(render.Tag("div", attrs,

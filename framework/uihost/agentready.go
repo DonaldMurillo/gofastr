@@ -585,6 +585,17 @@ func (ds *UIHost) handleAgentCard(w http.ResponseWriter, req *http.Request) {
 		}
 		doc["signatures"] = sigs
 	}
+	// Same Vary discipline as framework/wellknown.go's varyWellKnown
+	// (the pinned sibling contract): with no BaseURL configured the
+	// card body embeds supportedInterfaces[].url built from r.Host and
+	// the enum-gated X-Forwarded-Proto (resolveBaseURL), so a shared
+	// cache must key on those inputs or the first caller's origin is
+	// pinned into every later agent's card. A pinned BaseURL makes the
+	// output request-independent, so no Vary is needed there.
+	if !ds.baseURLPinned() {
+		w.Header().Add("Vary", "Host")
+		w.Header().Add("Vary", "X-Forwarded-Proto")
+	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-cache")
 	enc := json.NewEncoder(w)
@@ -713,6 +724,17 @@ func (ds *UIHost) resolveBaseURL(req *http.Request) string {
 	return scheme + "://" + req.Host
 }
 
+// baseURLPinned reports whether resolveBaseURL returns a configured
+// constant rather than request-derived inputs. Surfaces that reflect
+// the base into response bodies or headers declare Vary on the request
+// inputs only while they actually vary.
+func (ds *UIHost) baseURLPinned() bool {
+	if ds.agentReady != nil && ds.agentReady.baseURL != "" {
+		return true
+	}
+	return ds.sitemapConfig != nil && ds.sitemapConfig.BaseURL != ""
+}
+
 // acceptRangeMatches reports whether any member of the request's Accept
 // header names one of wanted with a non-zero quality. RFC 9110 §12.4.2:
 // q=0 means "not acceptable", so `text/markdown;q=0` must NOT select the
@@ -794,6 +816,16 @@ func (ds *UIHost) writeAgentLinkHeaders(w http.ResponseWriter, req *http.Request
 	}
 	if len(links) == 0 {
 		return
+	}
+	// The links above embed resolveBaseURL(req) output (r.Host +
+	// enum-gated X-Forwarded-Proto when unpinned), so the page response
+	// varies on those inputs: declare Vary exactly like the card route
+	// and framework/wellknown.go's varyWellKnown, or a shared cache can
+	// pin the attacker-named https://<host>/mcp endpoint into every
+	// later visitor's page. Pinned base → request-independent → no Vary.
+	if !ds.baseURLPinned() {
+		w.Header().Add("Vary", "Host")
+		w.Header().Add("Vary", "X-Forwarded-Proto")
 	}
 	// Append so a host/middleware that set Link headers already keeps them.
 	prev := w.Header().Get("Link")

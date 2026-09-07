@@ -94,9 +94,18 @@ func (c *Container) Resolve(target any) error {
 		result = provider
 	}
 
+	// A provider returning a nil interface yields an untyped nil any:
+	// reflect.ValueOf(nil) is an invalid Value and Set panics on it. Report
+	// the wiring error BEFORE the singleton/resolved writes so a corrected
+	// Provide stays usable (a typed nil pointer is fine — Set accepts it).
+	sv := reflect.ValueOf(result)
+	if !sv.IsValid() {
+		return fmt.Errorf("di: provider for %v returned a nil interface, cannot resolve %v", pv.Type(), targetType)
+	}
+
 	c.singletons[targetType] = result
 	c.resolved[targetType] = true
-	tv.Elem().Set(reflect.ValueOf(result))
+	tv.Elem().Set(sv)
 	return nil
 }
 
@@ -138,7 +147,11 @@ func (c *Container) Inject(target any) error {
 			return fmt.Errorf("di: injected field %s of type %v is not settable — inject-tagged fields must be exported", field.Name, fieldType)
 		}
 		if c.resolved[fieldType] {
-			ev.Field(i).Set(reflect.ValueOf(c.singletons[fieldType]))
+			cached := reflect.ValueOf(c.singletons[fieldType])
+			if !cached.IsValid() {
+				return fmt.Errorf("di: cached singleton for injected field %s of type %v is a nil interface, cannot inject", field.Name, fieldType)
+			}
+			ev.Field(i).Set(cached)
 		} else if provider, ok := c.providers[fieldType]; ok {
 			pv := reflect.ValueOf(provider)
 			var result any
@@ -148,9 +161,18 @@ func (c *Container) Inject(target any) error {
 			} else {
 				result = provider
 			}
+			// Same nil-interface guard as Resolve: an invalid ValueOf(result)
+			// panics in Set, and the singleton/resolved writes below it would
+			// poison the cache for a corrected provider. Inject runs before
+			// the render pipeline's recover, so a wiring error must be an
+			// error, never a panic.
+			sv := reflect.ValueOf(result)
+			if !sv.IsValid() {
+				return fmt.Errorf("di: provider for injected field %s of type %v returned a nil interface, cannot inject", field.Name, fieldType)
+			}
 			c.singletons[fieldType] = result
 			c.resolved[fieldType] = true
-			ev.Field(i).Set(reflect.ValueOf(result))
+			ev.Field(i).Set(sv)
 		} else {
 			return fmt.Errorf("di: no provider registered for injected field %s of type %v", field.Name, fieldType)
 		}

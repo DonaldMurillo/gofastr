@@ -201,8 +201,16 @@ type Manager struct {
 	// set in SetFanout; test-tunable via reconfigurePresence). presenceDone
 	// closes to stop the heartbeat goroutine; presenceWG tracks it so stop
 	// waits and no goroutine leaks. All guarded by mu except presenceWG.
-	presenceSend      func([]byte)
+	presenceSend func([]byte)
+	// remoteRosterTouch records each remote-roster topic's last refresh
+	// (every merge into a topic bumps it). It drives the
+	// maxRemoteRosterTopics eviction: when the table is full, the
+	// least-recently-refreshed topic is dropped first, so a forging
+	// peer's flood cannot grow the table while live legit topics
+	// (refreshed by every heartbeat) survive. Guarded by mu alongside
+	// remoteRosters.
 	remoteRosters     map[string]map[string]remoteRosterEntry
+	remoteRosterTouch map[string]time.Time
 	presenceHeartbeat time.Duration
 	presenceTTL       time.Duration
 	presenceDone      chan struct{}
@@ -472,7 +480,7 @@ func (m *Manager) SetFanout(f fanout.Fanout) (stop func(), err error) {
 	// Presence lane state.
 	m.presenceSend = presenceSend
 	m.remoteRosters = make(map[string]map[string]remoteRosterEntry)
-	m.presenceHeartbeat = defaultPresenceHeartbeat
+	m.remoteRosterTouch = make(map[string]time.Time)
 	m.presenceTTL = defaultPresenceTTL
 	m.presenceDone = make(chan struct{})
 	m.mu.Unlock()
@@ -580,7 +588,7 @@ func (m *Manager) SetFanout(f fanout.Fanout) (stop func(), err error) {
 func (m *Manager) clearPresenceFanoutLocked() {
 	m.presenceSend = nil
 	m.remoteRosters = nil
-	m.presenceHeartbeat = 0
+	m.remoteRosterTouch = nil
 	m.presenceTTL = 0
 	m.presenceDone = nil
 }

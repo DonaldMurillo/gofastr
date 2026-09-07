@@ -12,6 +12,9 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/DonaldMurillo/gofastr/core/stream"
+
+	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/control"
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/control/auth"
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/ids"
 )
@@ -28,10 +31,20 @@ import (
 // (full historical replay against the session log is on the agenda
 // once mcpserver formally subscribes to engine buses).
 type HTTPHandler struct {
-	Server      *Server
+	Server *Server
+
+	// Encoder verifies bearer tokens; nil refuses every request (see
+	// ServeHTTP).
 	Encoder     *auth.Encoder
 	Revocations *auth.RevocationList
 
+	// Seats bounds the concurrent GET /mcp event streams one token
+	// principal may hold (core/stream's seat policy). Nil shares the
+	// process-wide control.DefaultSeatTable with the REST and ws
+	// transports, so the cap counts per credential across all three.
+	Seats *control.SeatTable
+
+	// sessions maps Mcp-Session-Id → live GET stream state.
 	mu       sync.Mutex
 	sessions map[string]*httpMCPSession
 }
@@ -61,6 +74,15 @@ func NewHTTPHandler(s *Server, enc *auth.Encoder, rl *auth.RevocationList) *HTTP
 		Revocations: rl,
 		sessions:    make(map[string]*httpMCPSession),
 	}
+}
+
+// seatTable resolves the seat table: the wired Seats field, else the
+// process-wide table shared with the REST and ws transports.
+func (h *HTTPHandler) seatTable() *control.SeatTable {
+	if h.Seats != nil {
+		return h.Seats
+	}
+	return control.DefaultSeatTable()
 }
 
 // ServeHTTP dispatches the MCP streamable-HTTP protocol.
@@ -97,7 +119,7 @@ func (h *HTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case http.MethodPost:
 		h.handlePOST(w, r, sessID, claims)
 	case http.MethodGet:
-		h.handleGET(w, r, sessID)
+		h.handleGET(w, r, sessID, claims)
 	case http.MethodDelete:
 		h.dropSession(sessID)
 		w.WriteHeader(http.StatusNoContent)
@@ -228,12 +250,28 @@ func (h *HTTPHandler) handlePOST(w http.ResponseWriter, r *http.Request, sessID 
 	_, _ = w.Write(resp)
 }
 
-func (h *HTTPHandler) handleGET(w http.ResponseWriter, r *http.Request, sessID string) {
+func (h *HTTPHandler) handleGET(w http.ResponseWriter, r *http.Request, sessID string, claims *auth.Claims) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		http.Error(w, "no flusher", http.StatusInternalServerError)
 		return
 	}
+	// Seat the stream per token principal BEFORE any bytes go out, so
+	// a refusal can still answer 429 at connect (core/stream's seat
+	// policy; the REST twin seats its SSE stream the same way). Each
+	// admitted stream parks a handler goroutine and a keepalive ticker
+	// for the life of the request.
+	var principal string
+	if claims != nil {
+		principal = string(claims.JTI)
+	}
+	seat, seated := h.seatTable().AcquireSeat(principal, 0, stream.SeatOverflowRefuse)
+	if !seated {
+		w.Header().Set("Retry-After", "1")
+		http.Error(w, "too many concurrent event streams for this token", http.StatusTooManyRequests)
+		return
+	}
+	defer h.seatTable().ReleaseSeat(seat)
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Connection", "keep-alive")
@@ -253,13 +291,16 @@ func (h *HTTPHandler) handleGET(w http.ResponseWriter, r *http.Request, sessID s
 	}
 	// Park until ctx done; mcpserver currently doesn't publish
 	// notifications to the HTTP GET stream itself, the resource
-	// subscriptions land that way in a follow-up. For v0.1 we keep
-	// the stream open as a keep-alive heartbeat every 15s.
+	// subscriptions land that way in a follow-up. For v0.1 we keep the
+	// stream open as a keep-alive heartbeat every 15s.
 	ticker := keepaliveTicker()
 	defer ticker.Stop()
 	for {
 		select {
 		case <-r.Context().Done():
+			return
+		case <-seat.Done:
+			// Displaced by an EvictOldest admission: stop streaming.
 			return
 		case <-ticker.C:
 			_, _ = fmt.Fprint(w, ": ping\n\n")

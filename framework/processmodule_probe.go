@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/internal/fileperm"
 )
 
 // This file implements design §6's sandbox conformance contract: the seven
@@ -719,7 +721,7 @@ func setupProbeContext(p ProbeID, scratch string) (probeSetup, error) {
 		_ = os.Setenv(canary, secretVal)
 		secretPath := filepath.Join(scratch, "..", "host-secret-"+pid)
 		secretPath = filepath.Clean(secretPath)
-		if err := os.WriteFile(secretPath, []byte("file-secret"), 0o600); err != nil {
+		if err := fileperm.WriteOwnerOnly(secretPath, []byte("file-secret")); err != nil {
 			_ = os.Unsetenv(canary)
 			return probeSetup{}, fmt.Errorf("plant secret file: %w", err)
 		}
@@ -746,7 +748,7 @@ func setupProbeContext(p ProbeID, scratch string) (probeSetup, error) {
 		// We open the fd in the probe RUNNER process; the child must NOT
 		// see it.
 		secretPath := filepath.Join(scratch, "fd-secret")
-		if err := os.WriteFile(secretPath, []byte("fd-secret"), 0o600); err != nil {
+		if err := fileperm.WriteOwnerOnly(secretPath, []byte("fd-secret")); err != nil {
 			return probeSetup{}, fmt.Errorf("plant fd secret: %w", err)
 		}
 		f, err := os.Open(secretPath)

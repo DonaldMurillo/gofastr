@@ -22,6 +22,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/control"
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/ids"
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/session"
+	"github.com/DonaldMurillo/gofastr/internal/fileperm"
 
 	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 )
@@ -53,6 +54,15 @@ type Redactor interface {
 // the parent directory and applies the v1 schema on first use.
 func Open(path string) (*Store, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return nil, err
+	}
+	// Seed the file 0600 BEFORE the driver opens it: the event log
+	// carries full plaintext session transcripts, the SQLite driver
+	// creates a missing database (and its -wal sidecar, which inherits
+	// the main db's mode) 0666&~umask, and a pre-existing weaker file
+	// must be tightened too. OpenCostLedger seeds its ledger the same
+	// way.
+	if err := fileperm.SeedOwnerOnly(path); err != nil {
 		return nil, err
 	}
 	db, err := sql.Open("sqlite3", path+"?_journal=WAL&_foreign_keys=on&_busy_timeout=5000")

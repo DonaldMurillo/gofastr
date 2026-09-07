@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
 // ─── Presence ───────────────────────────────────────────────────────
@@ -315,7 +316,7 @@ func firePresenceChange(cb func(string), topics []string) {
 		func() {
 			defer func() {
 				if r := recover(); r != nil {
-					log.Printf("island: OnPresenceChange panic for topic %q: %v\n%s", t, r, debug.Stack())
+					log.Printf("island: OnPresenceChange panic for topic %q: %s\n%s", t, textsafe.Recovered(r), debug.Stack())
 				}
 			}()
 			cb(t)

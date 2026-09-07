@@ -502,6 +502,13 @@ func (ch *CrudHandler) entitySchema() schema.Schema {
 // AfterList receives the fetched results and may mutate them in place.
 func (ch *CrudHandler) List() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		// Per-caller data (owner/tenant/read-scope rows, or the row a write
+		// just accepted) must never be stored by a shared cache or the
+		// bfcache: RFC 9111's storage restriction covers Authorization
+		// headers, not this framework's default cookie sessions. Stamped
+		// BEFORE the scope checks so 401/403 arms carry it too (the admin
+		// battery's gate posture; llmmd.go's handlers pin the same shape).
+		w.Header().Set("Cache-Control", "no-store")
 		if !ch.requireScope(w, r, opRead) {
 			return
 		}
@@ -874,6 +881,13 @@ func stripQColumnEqFilter(filters []filter.ParsedFilter, hasSearchFields, qPrese
 // (redact, transform).
 func (ch *CrudHandler) Get() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		// Per-caller data (owner/tenant/read-scope rows, or the row a write
+		// just accepted) must never be stored by a shared cache or the
+		// bfcache: RFC 9111's storage restriction covers Authorization
+		// headers, not this framework's default cookie sessions. Stamped
+		// BEFORE the scope checks so 401/403 arms carry it too (the admin
+		// battery's gate posture; llmmd.go's handlers pin the same shape).
+		w.Header().Set("Cache-Control", "no-store")
 		if !ch.requireScope(w, r, opRead) {
 			return
 		}
@@ -961,6 +975,13 @@ func (ch *CrudHandler) Get() http.HandlerFunc {
 // through the handler's Storage backend and persisted as a URL string.
 func (ch *CrudHandler) Create() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		// Per-caller data (owner/tenant/read-scope rows, or the row a write
+		// just accepted) must never be stored by a shared cache or the
+		// bfcache: RFC 9111's storage restriction covers Authorization
+		// headers, not this framework's default cookie sessions. Stamped
+		// BEFORE the scope checks so 401/403 arms carry it too (the admin
+		// battery's gate posture; llmmd.go's handlers pin the same shape).
+		w.Header().Set("Cache-Control", "no-store")
 		if err := enforceJSONContentType(r); err != nil {
 			writeJSONError(w, http.StatusUnsupportedMediaType, "unsupported media type")
 			return
@@ -1034,6 +1055,13 @@ func (ch *CrudHandler) Create() http.HandlerFunc {
 // Accepts application/json or multipart/form-data (same rules as Create).
 func (ch *CrudHandler) Update() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		// Per-caller data (owner/tenant/read-scope rows, or the row a write
+		// just accepted) must never be stored by a shared cache or the
+		// bfcache: RFC 9111's storage restriction covers Authorization
+		// headers, not this framework's default cookie sessions. Stamped
+		// BEFORE the scope checks so 401/403 arms carry it too (the admin
+		// battery's gate posture; llmmd.go's handlers pin the same shape).
+		w.Header().Set("Cache-Control", "no-store")
 		if err := enforceJSONContentType(r); err != nil {
 			writeJSONError(w, http.StatusUnsupportedMediaType, "unsupported media type")
 			return
@@ -1102,6 +1130,13 @@ func (ch *CrudHandler) Update() http.HandlerFunc {
 // (BeforeDelete → DELETE/UPDATE → AfterDelete) runs inside a transaction.
 func (ch *CrudHandler) Delete() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		// Per-caller data (owner/tenant/read-scope rows, or the row a write
+		// just accepted) must never be stored by a shared cache or the
+		// bfcache: RFC 9111's storage restriction covers Authorization
+		// headers, not this framework's default cookie sessions. Stamped
+		// BEFORE the scope checks so 401/403 arms carry it too (the admin
+		// battery's gate posture; llmmd.go's handlers pin the same shape).
+		w.Header().Set("Cache-Control", "no-store")
 		if !ch.requireScope(w, r, opDelete) {
 			return
 		}
@@ -1515,6 +1550,11 @@ func textIsTrue(s string) bool {
 
 // writeJSONError writes a structured JSON error response.
 func writeJSONError(w http.ResponseWriter, code int, message string) {
+	// Every crud JSON error shares this choke point; the error arms of
+	// scoped data surfaces are no-store exactly like their 2xx arms
+	// (the handler-top stamp covers them when reached through a handler;
+	// this covers direct callers).
+	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
 	json.NewEncoder(w).Encode(map[string]any{

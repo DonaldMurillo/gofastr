@@ -415,7 +415,16 @@ func writeMenuItem(b *strings.Builder, it MenuItem, parentPanelID string, idx in
 		}
 		extra := serializeExtraAttrs(html.SafeExtraAttrs(it.ExtraAttrs,
 			"type", "href", "tabindex", "role", "aria-disabled", "disabled", "aria-checked"))
-		b.WriteString(`<form class="ui-menu__form" method="` + render.Escape(method) + `" action="` + render.Escape(it.Action.Path) + `">`)
+		// Same urlsafe.CleanAnchor allow-list as every other form-action
+		// sink (ui.Form, SearchInput, SignOut): render.Escape only
+		// HTML-escapes and is scheme-blind, so a javascript:/data:
+		// Path would render as a live form action. A rejected value
+		// degrades to the inert "#" ui.Form uses.
+		action := urlsafe.CleanAnchor(it.Action.Path)
+		if action == "" {
+			action = "#"
+		}
+		b.WriteString(`<form class="ui-menu__form" method="` + render.Escape(method) + `" action="` + render.Escape(action) + `">`)
 		for _, k := range slices.Sorted(maps.Keys(it.Action.Fields)) {
 			b.WriteString(`<input type="hidden" name="` + render.Escape(k) + `" value="` + render.Escape(it.Action.Fields[k]) + `">`)
 		}
@@ -423,7 +432,14 @@ func writeMenuItem(b *strings.Builder, it MenuItem, parentPanelID string, idx in
 		if it.Disabled {
 			disabledAttr = ` disabled aria-disabled="true"`
 		}
-		b.WriteString(`<button type="submit" class="` + render.Escape(cls) + `" role="menuitem" tabindex="-1"` + disabledAttr + extra + `>`)
+		// Confirm maps to data-fui-confirm here too: the runtime honors
+		// it on any form submit, so a destructive form row asks before
+		// it POSTs instead of silently dropping the field.
+		confirmAttr := ""
+		if it.Confirm != "" {
+			confirmAttr = ` data-fui-confirm="` + render.Escape(it.Confirm) + `"`
+		}
+		b.WriteString(`<button type="submit" class="` + render.Escape(cls) + `" role="menuitem" tabindex="-1"` + disabledAttr + confirmAttr + extra + `>`)
 		if it.Icon != "" {
 			b.WriteString(`<span class="ui-menu__icon" aria-hidden="true">` + string(it.Icon) + `</span>`)
 		}

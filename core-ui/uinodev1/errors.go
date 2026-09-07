@@ -115,6 +115,10 @@ func errDupKey(key string) error {
 	return errf("input", "duplicate JSON key %q", truncateErrInput(key))
 }
 
+func errFoldedKey(first, second string) error {
+	return errf("input", "JSON keys %q and %q collide under ASCII case folding", truncateErrInput(first), truncateErrInput(second))
+}
+
 func errDecode(underlying error) error {
 	if underlying == nil {
 		return nil

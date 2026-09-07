@@ -20,6 +20,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/internal/dsnredact"
 	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 	_ "github.com/lib/pq"
 
@@ -347,15 +348,12 @@ func WaitPGReady(db *sql.DB) error {
 	return fmt.Errorf("Postgres did not become ready within ~5s")
 }
 
-// RedactDSN strips the password from a Postgres URL for log output.
+// RedactDSN strips credentials from a DSN for log output. Delegates to
+// internal/dsnredact — the one canonical redactor (URL userinfo cut at
+// the LAST '@' before the path, key=value password pairs dropped
+// quote-aware) — so this twin cannot drift from cmd/gofastr's rules
+// again: it cut at the first '@', leaking the tail of a password that
+// itself contained '@' into t.Logf output.
 func RedactDSN(dsn string) string {
-	at := strings.Index(dsn, "@")
-	if at < 0 {
-		return dsn
-	}
-	user, _, ok := strings.CutLast(dsn[:at], ":")
-	if !ok {
-		return dsn
-	}
-	return user + ":****" + dsn[at:]
+	return dsnredact.Redact(dsn)
 }

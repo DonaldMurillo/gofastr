@@ -607,6 +607,15 @@ func (c Config) TableHandler() http.HandlerFunc {
 			return
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		// The fragment is scoped to the caller: sign-in, the screen's
+		// policy and the entity's read permission all passed, so the
+		// rows are per-user data. An intermediary or the back/forward
+		// cache must never be able to retain one viewer's fragment and
+		// replay it at another's URL — the same pin the admin battery
+		// holds for its twin fragment, and the fragment is the
+		// data-fui-poll/rpc freshness source, so stale reuse would also
+		// defeat the refresh contract.
+		w.Header().Set("Cache-Control", "no-store")
 		_, _ = io.WriteString(w, string(c.Table(appui.WithRequest(r.Context(), r))))
 	}
 }

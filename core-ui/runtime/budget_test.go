@@ -7,33 +7,31 @@ import (
 )
 
 const (
-	// 13063, raised 79 bytes from 12984 on 2026-09-02 for the
-	// prototype-chain registry guards (branch w/rules-E), under the
-	// same documented RULE EXCEPTION as every raise below: the shrink
-	// was measured, not skipped.
+	// 13077, raised 18 bytes from 13059 on 2026-09-07 (round-5 security
+	// fixes), under the same documented RULE EXCEPTION as every raise
+	// below: the shrink was measured, not skipped.
 	//
-	// What bought the bytes: own-property reads on the {} registries
-	// keyed by attribute-borne names — loadModule's loadedModules /
-	// _modulePromises gates, _scanForModules' skip, and the kernel
-	// signal store's getSignal/setSignal/signal/getState/syncBindings
-	// reads, all via one shared `own()` helper in the kernel fragment.
-	// A module name like "constructor" (attribute-borne through
-	// data-fui-prefetch, and legal under the loader's /^[\w-]+$/ shape
-	// gate) resolves through Object.prototype as a truthy entry: the
-	// module reads as loaded and never loads, the cached "promise" is
-	// the inherited Object, and a signal slot that should have been
-	// created is treated as existing. The same class the audit's
-	// e936f791 fixes pinned for the widget catalog; these are the
-	// sites the runtime-shape lints (core-ui/check) found beyond it.
+	// What bought the bytes, two SOURCE changes that cannot be carved
+	// into demand modules:
+	//   - frag/widgets-boot.js's data-fui-deeplink decode (the eager
+	//     open delegator is boot-class: it must exist before the
+	//     /__gofastr/widgets catalog resolves, so a module load is the
+	//     failure it exists to prevent) gained the degrade-don't-throw
+	//     try/catch the round-5 probes pinned
+	//     (TestDeeplinkRedDecodeThrows): a malformed percent escape
+	//     throws URIError AFTER preventDefault, consuming the open click.
+	//   - frag/boot.js's _modulePromises cache was re-keyed from {} to a
+	//     Map (the round-5 proto-key-write finding, LintProtoKeyWrite): a
+	//     "__proto__" module name re-parented the cache through the
+	//     setter. The Map spelling REPLACED the own()-gate bytes, so this
+	//     half is roughly byte-neutral raw; it costs a little at gzip
+	//     because the repeated bracket reads compressed better than
+	//     .get/.set/.delete do.
 	//
-	// It cannot be carved into a demand module: the loader IS the
-	// choke point that loads demand modules, and the signal store is
-	// kernel core read by every fragment.
-	//
-	// The merged bundle measures 13055 at level 6; the line carries 8
-	// bytes of clearance, the same margin the 12984 raise used.
+	// The merged bundle measures 13069 at level 6; the line carries 8
+	// bytes of clearance, the same margin every raise here uses.
 	// Re-measure after a merge, not before.
-	coreGoalGZ = 12*1024 + 771
+	coreGoalGZ = 12*1024 + 789
 	// 14.7 KB, not the 14 KB initial congestion window it started as.
 	//
 	// The window is still the constraint that matters, and the artifact still
@@ -95,7 +93,18 @@ const (
 	// TestCoreBudgetRejectsCliffOverflow, not by arithmetic. The real
 	// bundle measures 15067 at level 1; the line carries 4 bytes of
 	// clearance.
-	coreCongestionWindowGZ = 14*1024 + 735
+	//
+	// 15086, raised 15 bytes from 15071 on 2026-09-07 (round-5 security
+	// fixes), a SOURCE change in the upward direction under the same
+	// concession policy as the goal line above: the widgets-boot
+	// deeplink try/catch (boot-class, un-carvable — the eager open
+	// delegator must exist before the widget catalog resolves) and
+	// boot's Map re-key of _modulePromises cost ~15 bytes at level 1
+	// (real 15067 → 15082). The line keeps its 4 bytes of clearance.
+	// The anti-vacuity bracket was re-verified by running
+	// TestCoreBudgetRejectsCliffOverflow against the padded fixture,
+	// not by arithmetic.
+	coreCongestionWindowGZ = 14*1024 + 750
 )
 
 func coreBudgetViolation(t *testing.T, src string, budget int) (level, got, limit int) {

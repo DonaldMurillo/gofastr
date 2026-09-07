@@ -50,7 +50,13 @@
         : undefined;
       if (typeof fn !== 'function') return; // missing reducer → no-op
       const vals = {};
-      for (const d of deps) vals[d] = G.getSignal(d);
+      for (const d of deps) {
+        // Reserved keys never key the vals object handed to the reducer:
+        // "__proto__" re-parents it via the setter. The kernel's
+        // isReservedSignalKey guard, spelled inline (demand module).
+        if (d === '__proto__' || d === 'constructor' || d === 'prototype') continue;
+        vals[d] = G.getSignal(d);
+      }
       let out;
       try { out = fn(vals); } catch (_) { return; } // a throwing reducer never breaks the page
       G.setSignal(ownName, out);
@@ -59,6 +65,9 @@
     // Subscribe to every dependency. Ensure the slot exists so a
     // dependency that hasn't been seeded/set yet still wires up.
     for (const d of deps) {
+      // Same reserved-key skip: the slot-creation write below re-parents
+      // the shared signal store exactly like animate's does.
+      if (d === '__proto__' || d === 'constructor' || d === 'prototype') continue;
       if (!Object.prototype.hasOwnProperty.call(G._signals, d) || !G._signals[d]) G._signals[d] = { value: undefined, listeners: [] };
       G._signals[d].listeners.push(recompute);
     }

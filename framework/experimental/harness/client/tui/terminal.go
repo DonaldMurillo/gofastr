@@ -323,7 +323,10 @@ func (t *TUI) renderEvent(env control.EventEnvelope) {
 		// Claude Code-style: `● Tool(args)`, filled circle bullet
 		// followed by the function-call notation so args read like
 		// code rather than a JSON dump.
-		t.appendMultiline("● ", fmt.Sprintf("%s(%s)", v.Tool, sanitizeAgentText(summarizeArgs(v.Args))))
+		// The tool NAME is as external as its args: MCP-bridged and
+		// plugin tools surface remote-chosen names, and the envelope
+		// codec round-trips raw control bytes in string fields intact.
+		t.appendMultiline("● ", fmt.Sprintf("%s(%s)", sanitizeAgentText(v.Tool), sanitizeAgentText(summarizeArgs(v.Args))))
 		t.assistantOpen = false
 	case control.ToolCallProgress:
 		// Partial output is tool stdout: text this process did not
@@ -388,7 +391,7 @@ func (t *TUI) renderEvent(env control.EventEnvelope) {
 	case control.PermissionRequested:
 		t.ensureBlankBefore()
 		t.appendMultiline(
-			fmt.Sprintf("[permission] %s requested — ", v.Tool),
+			fmt.Sprintf("[permission] %s requested — ", sanitizeAgentText(v.Tool)),
 			sanitizeAgentText(summarizeArgs(v.Args)))
 		// Help line: indent under the start of the label content
 		// (column-aligned with "B" of "Bash requested..."). `[permission] `
