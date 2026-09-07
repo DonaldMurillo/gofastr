@@ -67,7 +67,7 @@ func windowIDFromRequest(r *http.Request) string {
 	if id := r.Header.Get(windowHeader); reWindowID.MatchString(id) {
 		return id
 	}
-	return mainWindowID
+	return MainWindowID
 }
 
 // httpStatusFor maps an error code to its HTTP status.
@@ -130,7 +130,7 @@ func (b *Battery) bridgeError(capName, method string, err error) (code, message 
 	default:
 		b.logger.Error("desktop: bridge handler failed",
 			"capability", capName, "method", method, "error", err)
-		return CodeInternal, internalErrorMsg
+		return CodeInternal, InternalErrorMsg
 	}
 }
 
@@ -309,7 +309,7 @@ func bridgeDenyMessage(code string) string {
 	if code == CodeDenied {
 		return "permission denied"
 	}
-	return internalErrorMsg
+	return InternalErrorMsg
 }
 
 // grantWriteTimeout bounds the detached write that persists a decision.
@@ -422,7 +422,7 @@ func (b *Battery) serveManifest() http.Handler {
 		}
 		body, merr := json.Marshal(m)
 		if merr != nil {
-			writeBridgeError(w, CodeInternal, internalErrorMsg)
+			writeBridgeError(w, CodeInternal, InternalErrorMsg)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")

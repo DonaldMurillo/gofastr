@@ -72,8 +72,8 @@ func (f *fakeShell) Run(ctx context.Context, w WindowConfig, ready func(Window))
 	if f.openWindows == nil {
 		f.openWindows = make(map[string]*fakeWindow)
 	}
-	win := &fakeWindow{shell: f, id: mainWindowID, title: w.Title}
-	f.openWindows[mainWindowID] = win
+	win := &fakeWindow{shell: f, id: MainWindowID, title: w.Title}
+	f.openWindows[MainWindowID] = win
 	f.mu.Unlock()
 
 	go ready(win)

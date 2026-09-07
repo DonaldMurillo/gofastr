@@ -14,6 +14,28 @@ WKWebView through a pure-Go Objective-C bridge); Windows and Linux are
 designed but not built, and every other platform gets a named
 `unsupported` error from `Run`.
 
+## Package layout
+
+The battery is split by platform: `battery/desktop` is the contract plus
+everything OS-neutral; the native layer is one package per platform, each
+compiling on every GOOS so a host cross-compiles with no build tags of
+its own.
+
+| Package | What it is |
+|---|---|
+| `battery/desktop` | The contract (`Shell`, `Window`, `NativeDriver`) and the OS-neutral half: capabilities, grants, handshake, app state, preferences, deep links, updates, and the unsupported shell. |
+| `battery/desktop/macos` | The real shell on darwin/arm64 (AppKit + WKWebView through `internal/objc`); the unsupported shell elsewhere. |
+| `battery/desktop/windows` | The unsupported shell today; WebView2 plus DWM Mica/Acrylic when its phase lands. |
+| `battery/desktop/linux` | The unsupported shell today; WebKitGTK when its phase lands. |
+| `battery/desktop/native` | `Shell()` picks the platform package by GOOS; `New(cfg)` is `desktop.New` with that shell as the nil-`Shell` default. |
+| `battery/desktop/desktoptest` | The fake shell and the app-shell test harness. |
+| `battery/desktop/internal/*` | `objc`, `ffi`, `fakecgo`, `gtk`, `update`: one package per OS seam. |
+
+`desktop.New` with a nil `Config.Shell` answers the unsupported shell on
+every platform: the platform-aware default lives in `native`, so the
+contract package never imports the platform packages and nothing
+registers itself through `init`.
+
 ## What a desktop app is
 
 The same App. Nothing about the SSR, hydration, island, poll, or SSE
@@ -31,6 +53,7 @@ import (
 
 	uiapp "github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/battery/desktop"
+	"github.com/DonaldMurillo/gofastr/battery/desktop/native"
 	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/uihost"
 )
@@ -45,12 +68,16 @@ if err != nil {
 app := framework.NewApp(append(opts,
     framework.WithConfig(framework.AppConfig{Name: "notes"}))...)
 app.Mount(uihost.New(site)) // BEFORE RegisterBattery
-d := desktop.New(desktop.Config{ID: "dev.gofastr.notes", Title: "Notes"})
+d := native.New(desktop.Config{ID: "dev.gofastr.notes", Title: "Notes"})
 app.RegisterBattery(d)
 if err := d.Run(app); err != nil {
     log.Fatal(err)
 }
 ```
+- `native.New(cfg)` is `desktop.New(cfg)` with the platform shell as
+  the nil-`Shell` default; a host may keep `desktop.New` and pass
+  `Shell: native.Shell()` itself, or hand a `Shell` of its own (the
+  test double). See the package layout below.
 - `Run` forces `GOFASTR_ISOLATION=off` process-wide (opt out with
   `Config.KeepIsolation`): a desktop app never runs from a linked git
   worktree, and the isolation remap would move the loopback port the
@@ -330,7 +357,7 @@ menu := &desktop.Menu{Items: []desktop.MenuItem{
 app's own screens:
 
 ```go
-d := desktop.New(desktop.Config{
+d := native.New(desktop.Config{
     ID:       "dev.gofastr.notes",
     Title:    "Notes",
     Settings: &desktop.WindowSpec{Path: "/settings", Title: "Settings", Width: 520, Height: 460},
@@ -402,7 +429,7 @@ float above the app, and want to let the page paint its own surface.
 that chrome; `desktop.Widget` builds the common shape.
 
 ```go
-d := desktop.New(desktop.Config{
+d := native.New(desktop.Config{
     ID:    "dev.gofastr.notes",
     Title: "Notes",
     Widgets: []desktop.WindowSpec{
@@ -503,8 +530,9 @@ window it lives in.
 
 ### Host support
 
-The style contracts are OS-neutral; today only the darwin/arm64 shell
-implements them. The mask bits, the floating level (3), the
+The style contracts are OS-neutral; today the only implementing shell
+is darwin/arm64's, in battery/desktop/macos (see the package layout).
+The mask bits, the floating
 non-activating panel bit, and the canJoinAllSpaces behavior were
 verified against the SDK headers (`NSWindow.h`, `CGWindowLevel.h`)
 and the live window is proven by the native e2e step
@@ -633,7 +661,7 @@ app runs, and the battery turns it into the same client-side
 navigation a menu item performs.
 
 ```go
-d := desktop.New(desktop.Config{
+d := native.New(desktop.Config{
     ID:       "dev.gofastr.notes",
     Title:    "Notes",
     DeepLink: &desktop.DeepLinkConfig{Scheme: "gofastr-notes"},
@@ -919,7 +947,7 @@ manifest bytes, base64-encoded in the `.sig` file.
 ### Configuring the app
 
 ```go
-d := desktop.New(desktop.Config{
+d := native.New(desktop.Config{
     ID:    "dev.gofastr.notes",
     Title: "Notes",
     Update: &desktop.UpdateConfig{
@@ -1036,7 +1064,7 @@ who drags a window to another monitor, resizes it, navigates to a
 screen, and quits finds all of it back on the next launch.
 
 ```go
-d := desktop.New(desktop.Config{
+d := native.New(desktop.Config{
     ID:               "dev.gofastr.notes",
     Title:            "Notes",
     RememberWindows:  true,
@@ -1193,9 +1221,10 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/battery/desktop"
 	"github.com/DonaldMurillo/gofastr/battery/desktop/appstate"
+	"github.com/DonaldMurillo/gofastr/battery/desktop/native"
 )
 
-var d = desktop.New(desktop.Config{ID: "dev.gofastr.notes", Title: "Notes"})
+var d = native.New(desktop.Config{ID: "dev.gofastr.notes", Title: "Notes"})
 
 func applyZoom(z float64) {}
 -->
@@ -1298,13 +1327,16 @@ reads them back typed, and renders them as a form.
 `examples/desktop-focus` declares its five preferences on `Config`:
 
 <!-- gofastr:compile
-import "github.com/DonaldMurillo/gofastr/battery/desktop"
+import (
+	"github.com/DonaldMurillo/gofastr/battery/desktop"
+	"github.com/DonaldMurillo/gofastr/battery/desktop/native"
+)
 
 func intPtr(n int) *int { return &n }
 stmt: _ = d
 -->
 ```go
-d := desktop.New(desktop.Config{
+d := native.New(desktop.Config{
     ID:    "dev.gofastr.focus",
     Title: "Focus",
     Preferences: []desktop.Preference{
@@ -1340,9 +1372,12 @@ hand-edited `state.json`) falls back to the default with a Warn.
 ### The typed reads
 
 <!-- gofastr:compile
-import "github.com/DonaldMurillo/gofastr/battery/desktop"
+import (
+	"github.com/DonaldMurillo/gofastr/battery/desktop"
+	"github.com/DonaldMurillo/gofastr/battery/desktop/native"
+)
 
-var d = desktop.New(desktop.Config{ID: "dev.gofastr.focus"})
+var d = native.New(desktop.Config{ID: "dev.gofastr.focus"})
 -->
 ```go
 p := d.Preferences()
@@ -1558,6 +1593,9 @@ WKWebView through `desktoptest.NativeMain`.
 
 - `Config.Shell` accepts any `Shell` implementation: the test double
   (`battery/desktop/desktoptest`), or a sidecar process of your own.
+  `native.Shell()` is the platform default a host passes (nil selects
+  the unsupported shell in `desktop.New`); `native.New(cfg)` passes it
+  for you.
 - `Window.Native()` returns the raw native web view handle
   (`WKWebView*`) for the one platform tweak the model does not cover.
 - `Window.Eval(js)` runs a one-off script in the page.

@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/battery/desktop"
+	"github.com/DonaldMurillo/gofastr/battery/desktop/native"
 	"github.com/DonaldMurillo/gofastr/framework"
 	fwimage "github.com/DonaldMurillo/gofastr/framework/image"
 	"github.com/DonaldMurillo/gofastr/framework/isolation"
@@ -86,10 +87,10 @@ func main() {
 	}
 }
 
-// buildApp assembles the app. shell is nil in production (the OS
-// shell); tests pass battery/desktop/desktoptest's double. The error
-// path covers AppOptions, which opens the data dir and database before
-// NewApp runs.
+// buildApp assembles the app. shell is nil in production (native.New
+// fills the OS shell for the platform); tests pass battery/desktop/
+// desktoptest's double. The error path covers AppOptions, which opens
+// the data dir and database before NewApp runs.
 func buildApp(shell desktop.Shell) (*framework.App, *desktop.Battery, *Engine, error) {
 	opts, err := desktop.AppOptions(appID)
 	if err != nil {
@@ -111,7 +112,7 @@ func buildApp(shell desktop.Shell) (*framework.App, *desktop.Battery, *Engine, e
 	// buildSite mounts it. The menu and tray handlers capture d and
 	// eng; both only run after Run.
 	var d *desktop.Battery
-	d = desktop.New(desktop.Config{
+	d = native.New(desktop.Config{
 		ID:    appID,
 		Title: "Focus",
 		Width: 1000,

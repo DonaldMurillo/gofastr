@@ -96,7 +96,7 @@ func (s *windowStore) frameFor(id string) *Frame {
 func (s *windowStore) mainPath() string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.windows()[mainWindowID].Path
+	return s.windows()[MainWindowID].Path
 }
 
 // setFrame remembers a window's frame; the store schedules the
@@ -126,9 +126,9 @@ func (s *windowStore) setMainPath(p string) {
 	if w == nil {
 		w = make(map[string]storedWindow)
 	}
-	e := w[mainWindowID]
+	e := w[MainWindowID]
 	e.Path = p
-	w[mainWindowID] = e
+	w[MainWindowID] = e
 	s.save(w)
 }
 

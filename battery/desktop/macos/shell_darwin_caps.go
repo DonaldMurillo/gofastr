@@ -1,12 +1,15 @@
 //go:build darwin && arm64
 
-package desktop
+package macos
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/base64"
 	"sync"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/battery/desktop"
 	"github.com/DonaldMurillo/gofastr/battery/desktop/internal/ffi"
 	"github.com/DonaldMurillo/gofastr/battery/desktop/internal/objc"
 )
@@ -27,9 +30,9 @@ const modalTimeout = 10 * time.Minute
 // Prompt shows the OS permission alert: "<Capability>.<Method> wants
 // permission <Permission>" with Allow / Allow once / Deny, in that
 // order (runModal returns 1000/1001/1002).
-func (s *darwinShell) Prompt(ctx context.Context, req PermissionRequest) (Decision, error) {
+func (s *darwinShell) Prompt(ctx context.Context, req desktop.PermissionRequest) (desktop.Decision, error) {
 	if err := ctx.Err(); err != nil {
-		return DecisionDeny, ErrCancelled
+		return desktop.DecisionDeny, desktop.ErrCancelled
 	}
 	decision, queued := s.popPromptDecision()
 	if queued {
@@ -52,14 +55,14 @@ func (s *darwinShell) Prompt(ctx context.Context, req PermissionRequest) (Decisi
 		objc.Send(alert, objc.Sel("addButtonWithTitle:"), uintptr(objc.NSString("Deny")))
 		switch objc.Send(alert, objc.Sel("runModal")) {
 		case 1000:
-			res.set(DecisionAllow)
+			res.set(desktop.DecisionAllow)
 		case 1001:
-			res.set(DecisionAllowOnce)
+			res.set(desktop.DecisionAllowOnce)
 		default:
-			res.set(DecisionDeny)
+			res.set(desktop.DecisionDeny)
 		}
 	}); err != nil {
-		return DecisionDeny, &Error{Code: CodeInternal, Message: "permission alert timed out"}
+		return desktop.DecisionDeny, &desktop.Error{Code: desktop.CodeInternal, Message: "permission alert timed out"}
 	}
 	return res.get(), nil
 }
@@ -68,16 +71,16 @@ func (s *darwinShell) Prompt(ctx context.Context, req PermissionRequest) (Decisi
 // Prompt for why it is not a captured local.
 type promptResult struct {
 	mu sync.Mutex
-	d  Decision
+	d  desktop.Decision
 }
 
-func (p *promptResult) set(d Decision) {
+func (p *promptResult) set(d desktop.Decision) {
 	p.mu.Lock()
 	p.d = d
 	p.mu.Unlock()
 }
 
-func (p *promptResult) get() Decision {
+func (p *promptResult) get() desktop.Decision {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.d
@@ -85,14 +88,14 @@ func (p *promptResult) get() Decision {
 
 // setPromptOverride queues one scripted decision (the e2e seam; see
 // ScriptPrompts, which queues any number).
-func (s *darwinShell) setPromptOverride(d Decision) {
+func (s *darwinShell) setPromptOverride(d desktop.Decision) {
 	s.mu.Lock()
 	s.promptQueue = append(s.promptQueue, d)
 	s.mu.Unlock()
 }
 
 // popPromptDecision takes the next scripted decision in order.
-func (s *darwinShell) popPromptDecision() (Decision, bool) {
+func (s *darwinShell) popPromptDecision() (desktop.Decision, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if len(s.promptQueue) == 0 {
@@ -103,8 +106,8 @@ func (s *darwinShell) popPromptDecision() (Decision, bool) {
 	return d, true
 }
 
-// Clipboard returns the pasteboard surface.
-func (s *darwinShell) Clipboard() Clipboard { return s }
+// desktop.Clipboard returns the pasteboard surface.
+func (s *darwinShell) Clipboard() desktop.Clipboard { return s }
 
 // generalPasteboard returns [NSPasteboard generalPasteboard].
 func generalPasteboard() objc.ID {
@@ -114,7 +117,7 @@ func generalPasteboard() objc.ID {
 // ReadText returns the pasteboard's plain-text content.
 func (s *darwinShell) ReadText(ctx context.Context) (string, error) {
 	if err := ctx.Err(); err != nil {
-		return "", ErrCancelled
+		return "", desktop.ErrCancelled
 	}
 	var text string
 	if err := s.onMain(func() {
@@ -126,7 +129,7 @@ func (s *darwinShell) ReadText(ctx context.Context) (string, error) {
 			text = objc.GoString(objc.ID(str))
 		}
 	}); err != nil {
-		return "", &Error{Code: CodeInternal, Message: internalErrorMsg}
+		return "", &desktop.Error{Code: desktop.CodeInternal, Message: desktop.InternalErrorMsg}
 	}
 	return text, nil
 }
@@ -134,7 +137,7 @@ func (s *darwinShell) ReadText(ctx context.Context) (string, error) {
 // WriteText replaces the pasteboard's plain-text content.
 func (s *darwinShell) WriteText(ctx context.Context, text string) error {
 	if err := ctx.Err(); err != nil {
-		return ErrCancelled
+		return desktop.ErrCancelled
 	}
 	if err := s.onMain(func() {
 		pb := generalPasteboard()
@@ -144,13 +147,13 @@ func (s *darwinShell) WriteText(ctx context.Context, text string) error {
 		objc.Send(pb, objc.Sel("clearContents"))
 		objc.Send(pb, objc.Sel("setString:forType:"), uintptr(objc.NSString(text)), uintptr(objc.NSString(nsPasteboardTypeString)))
 	}); err != nil {
-		return &Error{Code: CodeInternal, Message: internalErrorMsg}
+		return &desktop.Error{Code: desktop.CodeInternal, Message: desktop.InternalErrorMsg}
 	}
 	return nil
 }
 
-// Dialogs returns the file/folder panel surface.
-func (s *darwinShell) Dialogs() Dialogs { return s }
+// desktop.Dialogs returns the file/folder panel surface.
+func (s *darwinShell) Dialogs() desktop.Dialogs { return s }
 
 // NSModalResponseOK.
 const nsModalOK = 1
@@ -164,9 +167,9 @@ func urlPath(u objc.ID) string {
 }
 
 // OpenFile shows NSOpenPanel (runModal); a non-OK response cancels.
-func (s *darwinShell) OpenFile(ctx context.Context, opts OpenOptions) ([]string, error) {
+func (s *darwinShell) OpenFile(ctx context.Context, opts desktop.OpenOptions) ([]string, error) {
 	if err := ctx.Err(); err != nil {
-		return nil, ErrCancelled
+		return nil, desktop.ErrCancelled
 	}
 	var paths []string
 	if err := s.onMain(func() {
@@ -190,18 +193,18 @@ func (s *darwinShell) OpenFile(ctx context.Context, opts OpenOptions) ([]string,
 			}
 		}
 	}); err != nil {
-		return nil, &Error{Code: CodeInternal, Message: internalErrorMsg}
+		return nil, &desktop.Error{Code: desktop.CodeInternal, Message: desktop.InternalErrorMsg}
 	}
 	if paths == nil {
-		return nil, ErrCancelled
+		return nil, desktop.ErrCancelled
 	}
 	return paths, nil
 }
 
 // SaveFile shows NSSavePanel (runModal); a non-OK response cancels.
-func (s *darwinShell) SaveFile(ctx context.Context, opts SaveOptions) (string, error) {
+func (s *darwinShell) SaveFile(ctx context.Context, opts desktop.SaveOptions) (string, error) {
 	if err := ctx.Err(); err != nil {
-		return "", ErrCancelled
+		return "", desktop.ErrCancelled
 	}
 	var path string
 	ok := false
@@ -218,10 +221,10 @@ func (s *darwinShell) SaveFile(ctx context.Context, opts SaveOptions) (string, e
 			ok = true
 		}
 	}); err != nil {
-		return "", &Error{Code: CodeInternal, Message: internalErrorMsg}
+		return "", &desktop.Error{Code: desktop.CodeInternal, Message: desktop.InternalErrorMsg}
 	}
 	if !ok {
-		return "", ErrCancelled
+		return "", desktop.ErrCancelled
 	}
 	return path, nil
 }
@@ -229,7 +232,7 @@ func (s *darwinShell) SaveFile(ctx context.Context, opts SaveOptions) (string, e
 // OpenFolder shows a directory-only NSOpenPanel.
 func (s *darwinShell) OpenFolder(ctx context.Context) (string, error) {
 	if err := ctx.Err(); err != nil {
-		return "", ErrCancelled
+		return "", desktop.ErrCancelled
 	}
 	var path string
 	ok := false
@@ -245,10 +248,10 @@ func (s *darwinShell) OpenFolder(ctx context.Context) (string, error) {
 			ok = true
 		}
 	}); err != nil {
-		return "", &Error{Code: CodeInternal, Message: internalErrorMsg}
+		return "", &desktop.Error{Code: desktop.CodeInternal, Message: desktop.InternalErrorMsg}
 	}
 	if !ok {
-		return "", ErrCancelled
+		return "", desktop.ErrCancelled
 	}
 	return path, nil
 }
@@ -274,7 +277,7 @@ func loadUTIs() bool {
 // which case the panel is left unfiltered. Filter display names have
 // no allowedContentTypes equivalent; macOS shows the resolved type
 // names.
-func allowedContentTypes(filters []FileFilter) uintptr {
+func allowedContentTypes(filters []desktop.FileFilter) uintptr {
 	if len(filters) == 0 || !loadUTIs() {
 		return 0
 	}
@@ -300,7 +303,20 @@ func allowedContentTypes(filters []FileFilter) uintptr {
 }
 
 // Notifier returns the notification surface.
-func (s *darwinShell) Notifier() Notifier { return s }
+func (s *darwinShell) Notifier() desktop.Notifier { return s }
+
+// notificationID mints the identifier of one UNNotificationRequest: 16
+// bytes of crypto/rand, base64url-encoded. The one thing the id must
+// never be is guessable from another request's (a time-based id
+// collides across rapid fires), so it comes from the CSPRNG like every
+// other id this battery mints.
+func notificationID() (string, error) {
+	var b [16]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(b[:]), nil
+}
 
 // UNAuthorizationOptionBadge|Sound|Alert.
 const unAuthOptions = 1 | 2 | 4
@@ -309,8 +325,8 @@ const unAuthOptions = 1 | 2 | 4
 const notifTimeout = 10 * time.Second
 
 // errNeedsBundle is the fixed unbundled refusal.
-var errNeedsBundle = &Error{
-	Code:    CodeUnsupported,
+var errNeedsBundle = &desktop.Error{
+	Code:    desktop.CodeUnsupported,
 	Message: "notifications need an app bundle; run from gofastr desktop build output",
 }
 
@@ -318,10 +334,10 @@ var errNeedsBundle = &Error{
 // outside a signed bundle, so the bundle check ( mainBundle
 // bundleIdentifier ) comes first and never touches the center when it
 // fails.
-func (s *darwinShell) Show(ctx context.Context, n Notification) error {
+func (s *darwinShell) Show(ctx context.Context, n desktop.Notification) error {
 	s.recordNotification(n)
 	if err := ctx.Err(); err != nil {
-		return ErrCancelled
+		return desktop.ErrCancelled
 	}
 	bundled := false
 	if err := s.onMain(func() {
@@ -333,7 +349,7 @@ func (s *darwinShell) Show(ctx context.Context, n Notification) error {
 			bundled = true
 		}
 	}); err != nil {
-		return &Error{Code: CodeInternal, Message: internalErrorMsg}
+		return &desktop.Error{Code: desktop.CodeInternal, Message: desktop.InternalErrorMsg}
 	}
 	if !bundled {
 		return errNeedsBundle
@@ -341,7 +357,7 @@ func (s *darwinShell) Show(ctx context.Context, n Notification) error {
 
 	center := objc.ID(objc.Send(objc.Class("UNUserNotificationCenter"), objc.Sel("currentNotificationCenter")))
 	if center == 0 {
-		return &Error{Code: CodeInternal, Message: internalErrorMsg}
+		return &desktop.Error{Code: desktop.CodeInternal, Message: desktop.InternalErrorMsg}
 	}
 	// The bridge is the centre's delegate so foreground notifications
 	// are presented (bridgeWillPresentNotification). Set once, on the
@@ -394,20 +410,20 @@ func (s *darwinShell) Show(ctx context.Context, n Notification) error {
 	if err := s.onMain(func() {
 		objc.Send(center, objc.Sel("requestAuthorizationWithOptions:completionHandler:"), unAuthOptions, authBlock)
 	}); err != nil {
-		return &Error{Code: CodeInternal, Message: internalErrorMsg}
+		return &desktop.Error{Code: desktop.CodeInternal, Message: desktop.InternalErrorMsg}
 	}
 	var auth notifyResult
 	select {
 	case auth = <-authRes:
 	case <-time.After(notifTimeout):
-		return &Error{Code: CodeInternal, Message: "notification authorization timed out"}
+		return &desktop.Error{Code: desktop.CodeInternal, Message: "notification authorization timed out"}
 	}
 	if auth.notAllowed {
 		return errNotAllowed
 	}
 	if auth.errText != "" {
 		s.logger.Error("desktop: notification authorization failed", "error", auth.errText)
-		return &Error{Code: CodeInternal, Message: internalErrorMsg}
+		return &desktop.Error{Code: desktop.CodeInternal, Message: desktop.InternalErrorMsg}
 	}
 	if !auth.granted {
 		// The user declined in System Settings; a denial is a denial,
@@ -423,16 +439,16 @@ func (s *darwinShell) Show(ctx context.Context, n Notification) error {
 	if n.Body != "" {
 		objc.Send(content, objc.Sel("setBody:"), uintptr(objc.NSString(n.Body)))
 	}
-	id, err := randomToken()
+	id, err := notificationID()
 	if err != nil {
-		return &Error{Code: CodeInternal, Message: internalErrorMsg}
+		return &desktop.Error{Code: desktop.CodeInternal, Message: desktop.InternalErrorMsg}
 	}
 	request := objc.ID(objc.Send(objc.Class("UNNotificationRequest"),
 		objc.Sel("requestWithIdentifier:content:trigger:"), uintptr(objc.NSString(id)), uintptr(content), 0))
 	if err := s.onMain(func() {
 		objc.Send(center, objc.Sel("addNotificationRequest:withCompletionHandler:"), uintptr(request), addBlock)
 	}); err != nil {
-		return &Error{Code: CodeInternal, Message: internalErrorMsg}
+		return &desktop.Error{Code: desktop.CodeInternal, Message: desktop.InternalErrorMsg}
 	}
 	select {
 	case e := <-addRes:
@@ -441,11 +457,11 @@ func (s *darwinShell) Show(ctx context.Context, n Notification) error {
 		}
 		if e.errText != "" {
 			s.logger.Error("desktop: notification delivery failed", "error", e.errText)
-			return &Error{Code: CodeInternal, Message: internalErrorMsg}
+			return &desktop.Error{Code: desktop.CodeInternal, Message: desktop.InternalErrorMsg}
 		}
 		return nil
 	case <-time.After(notifTimeout):
-		return &Error{Code: CodeInternal, Message: "notification delivery timed out"}
+		return &desktop.Error{Code: desktop.CodeInternal, Message: "notification delivery timed out"}
 	}
 }
 
@@ -472,8 +488,8 @@ type notifyResult struct {
 // unsigned bundle gets this on every launch; `gofastr desktop build`
 // ad-hoc signs the bundle when codesign is available, and a
 // distributed app needs a real signature.
-var errNotAllowed = &Error{
-	Code:    CodeUnsupported,
+var errNotAllowed = &desktop.Error{
+	Code:    desktop.CodeUnsupported,
 	Message: "notifications are not allowed for this app: the bundle is unsigned or the user declined them in System Settings",
 }
 

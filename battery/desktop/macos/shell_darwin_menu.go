@@ -1,6 +1,6 @@
 //go:build darwin && arm64
 
-package desktop
+package macos
 
 import (
 	"encoding/binary"
@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/battery/desktop"
 	"github.com/DonaldMurillo/gofastr/battery/desktop/internal/ffi"
 	"github.com/DonaldMurillo/gofastr/battery/desktop/internal/objc"
 )
@@ -47,7 +48,7 @@ func ensureBridgeClass() objc.ID {
 				Fn:    ffi.NewCallback(bridgeWindowShouldClose),
 			},
 			{
-				// Window-delegate frame notifications: the user moved
+				// desktop.Window-delegate frame notifications: the user moved
 				// or resized a window. The IMP reads the frame on the
 				// main thread (notifications arrive there) and hands
 				// the report to a goroutine, so the UI thread never
@@ -79,7 +80,7 @@ func ensureBridgeClass() objc.ID {
 				Fn:    ffi.NewCallback(bridgeDrainGoQueue),
 			},
 			{
-				// RoleSettings (app menu + tray): routed to the
+				// desktop.RoleSettings (app menu + tray): routed to the
 				// battery's OnSettings, which opens the settings
 				// window. Dispatched on a goroutine like menuAction:.
 				Sel:   "settingsAction:",
@@ -87,7 +88,7 @@ func ensureBridgeClass() objc.ID {
 				Fn:    ffi.NewCallback(bridgeSettingsAction),
 			},
 			{
-				// RoleShow (tray): order the main window front and
+				// desktop.RoleShow (tray): order the main window front and
 				// activate the app.
 				Sel:   "showAction:",
 				Types: "v@:@",
@@ -246,7 +247,7 @@ func bridgeWindowShouldClose(a *ffi.Args) uintptr {
 	if !ok {
 		return 1 // not ours (should not happen): allow the close
 	}
-	if w.id == mainWindowID {
+	if w.id == desktop.MainWindowID {
 		s.mu.Lock()
 		closeHides := s.closeHides
 		s.mu.Unlock()
@@ -322,7 +323,7 @@ func bridgeTerminateAfterLastWindow(a *ffi.Args) uintptr {
 }
 
 // bridgeSettingsAction: the app-menu Settings item and the tray's
-// RoleSettings item. OnSettings runs on a goroutine (it opens a
+// desktop.RoleSettings item. OnSettings runs on a goroutine (it opens a
 // window, which the UI thread must not wait on).
 func bridgeSettingsAction(a *ffi.Args) uintptr {
 	if s := activeShell.Load(); s != nil {
@@ -336,7 +337,7 @@ func bridgeSettingsAction(a *ffi.Args) uintptr {
 	return 0
 }
 
-// bridgeShowAction: the tray's RoleShow item. Runs on the main thread
+// bridgeShowAction: the tray's desktop.RoleShow item. Runs on the main thread
 // (a menu action), orders the main window front, activates the app.
 func bridgeShowAction(a *ffi.Args) uintptr {
 	if s := activeShell.Load(); s != nil {
@@ -382,7 +383,7 @@ func bridgeShouldTerminate(a *ffi.Args) uintptr {
 }
 
 // unPresentBannerListSound is UNNotificationPresentationOptionBanner |
-// List | Sound (16 | 8 | 2): show the banner, keep it in Notification
+// List | Sound (16 | 8 | 2): show the banner, keep it in desktop.Notification
 // Center, play the sound, even while the app is frontmost.
 const unPresentBannerListSound = 16 | 8 | 2
 
@@ -421,7 +422,7 @@ func bridgeQuitAction(a *ffi.Args) uintptr {
 // buildMenuBar renders the plan as the NSApp main menu and installs
 // the bridge as the application delegate. Call on the main thread
 // before the run loop starts.
-func (s *darwinShell) buildMenuBar(plans []menuPlan) {
+func (s *darwinShell) buildMenuBar(plans []desktop.MenuPlan) {
 	mainMenu := objc.ID(objc.Send(objc.ID(objc.Send(objc.Class("NSMenu"), objc.Sel("alloc"))), objc.Sel("init")))
 	for _, mp := range plans {
 		top := objc.ID(objc.Send(objc.ID(objc.Send(objc.Class("NSMenuItem"), objc.Sel("alloc"))), objc.Sel("init")))
@@ -436,7 +437,7 @@ func (s *darwinShell) buildMenuBar(plans []menuPlan) {
 // buildMenu renders planned rows as an NSMenu. First-responder rows
 // (the Edit menu) get an action and no target; role rows target the
 // bridge or NSApp; action rows target the bridge with their tag.
-func (s *darwinShell) buildMenu(rows []menuItemPlan) objc.ID {
+func (s *darwinShell) buildMenu(rows []desktop.MenuItemPlan) objc.ID {
 	menu := objc.ID(objc.Send(objc.ID(objc.Send(objc.Class("NSMenu"), objc.Sel("alloc"))), objc.Sel("init")))
 	for _, r := range rows {
 		var item objc.ID
@@ -457,16 +458,16 @@ func (s *darwinShell) buildMenu(rows []menuItemPlan) objc.ID {
 				// responder (the WebView's editor) through the
 				// responder chain.
 				objc.Send(item, objc.Sel("setAction:"), objc.Sel(r.FirstResponder))
-			case r.Role == RoleSettings:
+			case r.Role == desktop.RoleSettings:
 				objc.Send(item, objc.Sel("setTarget:"), uintptr(s.bridge))
 				objc.Send(item, objc.Sel("setAction:"), objc.Sel("settingsAction:"))
-			case r.Role == RoleShow:
+			case r.Role == desktop.RoleShow:
 				objc.Send(item, objc.Sel("setTarget:"), uintptr(s.bridge))
 				objc.Send(item, objc.Sel("setAction:"), objc.Sel("showAction:"))
-			case r.Role == RoleQuit:
+			case r.Role == desktop.RoleQuit:
 				objc.Send(item, objc.Sel("setTarget:"), uintptr(s.bridge))
 				objc.Send(item, objc.Sel("setAction:"), objc.Sel("quitAction:"))
-			case r.Role == RoleAbout:
+			case r.Role == desktop.RoleAbout:
 				objc.Send(item, objc.Sel("setTarget:"), uintptr(s.nsApp))
 				objc.Send(item, objc.Sel("setAction:"), objc.Sel("orderFrontStandardAboutPanel:"))
 			case r.Action:

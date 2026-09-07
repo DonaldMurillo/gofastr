@@ -37,7 +37,7 @@ func TestKeyEquivalentSplitting(t *testing.T) {
 }
 
 func TestPlanMenuBarSynthesizesAppAndEditMenus(t *testing.T) {
-	plans, actions := planMenuBar("Notes", nil, false)
+	plans, actions := PlanMenuBar("Notes", nil, false)
 	if len(actions) != 0 {
 		t.Fatalf("nil menu must produce no actions, got %v", actions)
 	}
@@ -48,7 +48,7 @@ func TestPlanMenuBarSynthesizesAppAndEditMenus(t *testing.T) {
 	if app.Title != "Notes" {
 		t.Fatalf("app menu title = %q, want Notes", app.Title)
 	}
-	want := []menuItemPlan{
+	want := []MenuItemPlan{
 		{Title: "About Notes", Role: RoleAbout},
 		{Sep: true},
 		{Title: "Quit Notes", Role: RoleQuit, Key: "q", Mask: nsModifierCommand},
@@ -95,7 +95,7 @@ func TestPlanMenuBarUserMenusAndTags(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	plans, actions := planMenuBar("Notes", validated, false)
+	plans, actions := PlanMenuBar("Notes", validated, false)
 
 	if len(plans) != 4 {
 		t.Fatalf("plans = %d menus, want 4 (app, File, Go, Edit)", len(plans))
@@ -111,7 +111,7 @@ func TestPlanMenuBarUserMenusAndTags(t *testing.T) {
 		t.Fatalf("second menu title = %q", file.Title)
 	}
 	// New (action, cmd+n), Open (action, no key), separator, Bye (quit role).
-	if !reflect.DeepEqual(file.Items, []menuItemPlan{
+	if !reflect.DeepEqual(file.Items, []MenuItemPlan{
 		{Title: "New", Key: "n", Mask: nsModifierCommand, Action: true, Tag: 0},
 		{Title: "Open", Action: true, Tag: 1},
 		{Sep: true},
@@ -139,7 +139,7 @@ func TestPlanMenuBarNestedSubmenus(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	plans, actions := planMenuBar("Notes", validated, false)
+	plans, actions := PlanMenuBar("Notes", validated, false)
 	file := plans[1]
 	if len(file.Items) != 1 || file.Items[0].Title != "Export" || file.Items[0].Action {
 		t.Fatalf("export row = %+v", file.Items)
@@ -161,7 +161,7 @@ func TestPlanMenuBarChildlessTopLevelActionStaysReachable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	plans, actions := planMenuBar("Notes", validated, false)
+	plans, actions := PlanMenuBar("Notes", validated, false)
 	solo := plans[1]
 	if solo.Title != "Standalone" || len(solo.Items) != 1 {
 		t.Fatalf("solo menu = %+v", solo)
@@ -179,7 +179,7 @@ func TestPlanMenuBarRoleTitleDefaults(t *testing.T) {
 	menu := &Menu{Items: []MenuItem{
 		{Title: "File", Children: []MenuItem{{Role: RoleQuit}, {Role: RoleAbout}}},
 	}}
-	plans, _ := planMenuBar("Notes", menu, false)
+	plans, _ := PlanMenuBar("Notes", menu, false)
 	rows := plans[1].Items
 	if rows[0].Title != "Quit Notes" || rows[0].Role != RoleQuit {
 		t.Fatalf("quit default title = %+v", rows[0])
@@ -191,7 +191,7 @@ func TestPlanMenuBarRoleTitleDefaults(t *testing.T) {
 
 func TestPlanMenuBarSettingsRowOnlyWhenConfigured(t *testing.T) {
 	// Without Settings: About, separator, Quit.
-	plans, _ := planMenuBar("Notes", nil, false)
+	plans, _ := PlanMenuBar("Notes", nil, false)
 	app := plans[0]
 	for _, r := range app.Items {
 		if r.Role == RoleSettings {
@@ -199,9 +199,9 @@ func TestPlanMenuBarSettingsRowOnlyWhenConfigured(t *testing.T) {
 		}
 	}
 	// With Settings: About, Settings… (cmd+,), separator, Quit.
-	plans, _ = planMenuBar("Notes", nil, true)
+	plans, _ = PlanMenuBar("Notes", nil, true)
 	app = plans[0]
-	want := []menuItemPlan{
+	want := []MenuItemPlan{
 		{Title: "About Notes", Role: RoleAbout},
 		{Title: "Settings…", Role: RoleSettings, Key: ",", Mask: nsModifierCommand},
 		{Sep: true},
@@ -229,15 +229,15 @@ func TestPlanTrayMenuSharesActionIDTable(t *testing.T) {
 	// the menu bar and the tray (the shell dispatches both through one
 	// action-id table).
 	b := New(Config{ID: "tray.example.app", Menu: menu, Tray: &Tray{Menu: tray}})
-	plans, actionIDs := planMenuBar("Notes", b.runMenu, true)
-	trayRows := planTrayMenu(b.tray, "Notes", &actionIDs)
+	plans, actionIDs := PlanMenuBar("Notes", b.runMenu, true)
+	trayRows := PlanTrayMenu(b.tray, "Notes", &actionIDs)
 
 	if len(plans[1].Items) != 1 || !plans[1].Items[0].Action || plans[1].Items[0].Tag != 0 {
 		t.Fatalf("File menu row lost its tag: %+v", plans[1].Items)
 	}
 	// The tray rows: show (role), new (action, tag 1: the NEXT index in
 	// the shared table), settings (role), separator, quit (role).
-	wantTray := []menuItemPlan{
+	wantTray := []MenuItemPlan{
 		{Title: "Show Notes", Role: RoleShow},
 		{Title: "New", Action: true, Tag: 1},
 		{Title: "Settings…", Role: RoleSettings},

@@ -1,6 +1,6 @@
 //go:build darwin && arm64
 
-package desktop
+package macos
 
 import (
 	"sync/atomic"
@@ -41,7 +41,7 @@ func deepLinkBridgeMethods() []objc.Method {
 }
 
 // deepLinkOpen carries the OnDeepLink callback the shell's Run
-// received in its WindowConfig. The darwin shell does not keep that
+// received in its desktop.WindowConfig. The darwin shell does not keep that
 // field itself (shell_darwin.go belongs to another slice), so
 // installDeepLinkHandler captures it here: one live run per process,
 // replaced only when a new Run hands a new callback.
@@ -51,7 +51,7 @@ var deepLinkOpen atomic.Pointer[func(rawURL string)]
 // the shared NSAppleEventManager. It must run on the main thread
 // BEFORE the run loop starts (at the bridge object's creation point in
 // Run), so a cold-launch URL is not missed; onOpen is the
-// WindowConfig.OnDeepLink that Run received. Until the one-line call
+// desktop.WindowConfig.OnDeepLink that Run received. Until the one-line call
 // site lands in shell_darwin.go, the e2e calls this itself.
 func installDeepLinkHandler(bridge objc.ID, onOpen func(rawURL string)) {
 	if onOpen != nil {
@@ -67,7 +67,7 @@ func installDeepLinkHandler(bridge objc.ID, onOpen func(rawURL string)) {
 // Args: self, _cmd, event, replyEvent. The URL is the event's direct
 // object; the reply event is unused for GetURL. Delivery hops to a
 // goroutine so the main thread returns to the run loop at once (the
-// battery navigates and emits through Window methods that hop back).
+// battery navigates and emits through desktop.Window methods that hop back).
 func bridgeGetURLEvent(a *ffi.Args) uintptr {
 	var raw string
 	if event := objc.ID(a.Int[2]); event != 0 {

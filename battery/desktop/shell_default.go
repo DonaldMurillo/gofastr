@@ -1,5 +1,3 @@
-//go:build !(darwin && arm64)
-
 package desktop
 
 import (
@@ -7,22 +5,27 @@ import (
 	"runtime"
 )
 
-// The unsupported shell: every platform without a native layer. The
-// darwin/arm64 build replaces this file with shell_darwin.go (and its
-// companions) behind //go:build darwin && arm64.
+// The unsupported shell: the answer for every platform without a native
+// layer. It is exported (NewUnsupportedShell) because the platform
+// packages' New() hand it back off their platform: battery/desktop/macos
+// outside darwin/arm64, battery/desktop/windows and battery/desktop/linux
+// everywhere today. desktop.New also picks it when Config.Shell is nil;
+// the real shell for a host is native.Shell()'s to choose
+// (battery/desktop/native).
 
-// unsupportedShell is the default Shell. Every interesting method
-// returns ErrUnsupported naming the platform, so an app that runs on an
-// OS without a native layer fails with a real, named error instead of a
-// nil-pointer panic.
+// unsupportedShell is the no-native-layer Shell. Every interesting
+// method returns ErrUnsupported naming the platform, so an app that runs
+// on an OS without a native layer fails with a real, named error instead
+// of a nil-pointer panic.
 type unsupportedShell struct {
 	goos   string
 	goarch string
 }
 
-// newDefaultShell returns the Shell a Config without Shell gets: the
-// unsupported one everywhere except darwin/arm64.
-func newDefaultShell() Shell {
+// NewUnsupportedShell returns the Shell every platform without a native
+// layer answers with. Platform packages return it from their New()
+// off-platform; desktop.New selects it when Config.Shell is nil.
+func NewUnsupportedShell() Shell {
 	return &unsupportedShell{goos: runtime.GOOS, goarch: runtime.GOARCH}
 }
 

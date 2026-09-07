@@ -138,7 +138,7 @@ func fsError(err error) *Error {
 	if errors.Is(err, fs.ErrPermission) {
 		return &Error{Code: CodeDenied, Message: "path is not accessible"}
 	}
-	return &Error{Code: CodeInternal, Message: internalErrorMsg}
+	return &Error{Code: CodeInternal, Message: InternalErrorMsg}
 }
 
 // AllowPath puts p on the fs allow-list: p must be absolute; the list

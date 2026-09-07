@@ -1,26 +1,27 @@
 //go:build darwin && arm64
 
-package desktop
+package macos
 
 import (
 	"runtime"
 	"unsafe"
 
+	"github.com/DonaldMurillo/gofastr/battery/desktop"
 	"github.com/DonaldMurillo/gofastr/battery/desktop/internal/objc"
 )
 
 // The macOS tray: one NSStatusItem on the system status bar, with the
 // planned menu (shared action-id table with the menu bar) and the
 // shell's own selectors for the roles the battery routes here
-// (RoleShow) and the app menu (RoleSettings, via settingsAction:).
+// (desktop.RoleShow) and the app menu (desktop.RoleSettings, via settingsAction:).
 //
 // Every call here runs on the main thread (installTray from Run,
 // SetTrayTitle through onMain).
 
 // installTray puts the status item in the menu bar. Call on the main
 // thread, before the run loop starts. rows are the planned tray rows
-// (planTrayMenu, sharing the menu bar's action-id table).
-func (s *darwinShell) installTray(t *Tray, rows []menuItemPlan) {
+// (desktop.PlanTrayMenu, sharing the menu bar's action-id table).
+func (s *darwinShell) installTray(t *desktop.Tray, rows []desktop.MenuItemPlan) {
 	bar := objc.ID(objc.Send(objc.Class("NSStatusBar"), objc.Sel("systemStatusBar")))
 	if bar == 0 {
 		s.logger.Warn("desktop: no system status bar; the tray is not installed")
@@ -100,14 +101,14 @@ func (s *darwinShell) SetTrayTitle(title string) error {
 		}
 	})
 	if err != nil {
-		return &Error{Code: CodeInternal, Message: internalErrorMsg}
+		return &desktop.Error{Code: desktop.CodeInternal, Message: desktop.InternalErrorMsg}
 	}
 	return nil
 }
 
 // errNoTray is the fixed answer for tray calls without a tray.
-func errNoTray() *Error {
-	return &Error{Code: CodeUnsupported, Message: "no tray is configured on this host"}
+func errNoTray() *desktop.Error {
+	return &desktop.Error{Code: desktop.CodeUnsupported, Message: "no tray is configured on this host"}
 }
 
 // statusItemButtonTitle reads the tray button's title natively: the
@@ -129,7 +130,7 @@ func (s *darwinShell) statusItemButtonTitle() string {
 	return title
 }
 
-// showMainWindow is RoleShow: order the main window front and
+// showMainWindow is desktop.RoleShow: order the main window front and
 // activate the app. Main thread.
 func (s *darwinShell) showMainWindow() {
 	if win := s.windowID(); win != 0 {
