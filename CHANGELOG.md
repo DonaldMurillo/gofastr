@@ -88,6 +88,16 @@ document.
   with the title in the collapsed rail and the auto-hide rest state
   (#405).
 
+### Fixed
+- **The sortable-list 409 e2e tests no longer read the live region
+  after a fixed sleep.** `TestSortable_409InvariantMessage` and its
+  siblings slept 500ms and then asserted on the announcement; under CI
+  load the conflict round trip landed later and the test read the
+  preceding move announcement. The 409 family now polls the live
+  region for the expected announcement, or the DOM for the refreshed
+  column, with a bounded timeout, proven against a server delayed
+  past the old sleep (#398).
+
 ## [0.84.1] - 2026-09-06
 
 ### Fixed

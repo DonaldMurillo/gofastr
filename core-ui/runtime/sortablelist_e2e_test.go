@@ -303,7 +303,7 @@ func TestSortable_409FiresConflictPath(t *testing.T) {
 		chromedp.WaitVisible(`#ready`, chromedp.ByID),
 		kbCrossMove("k1"),
 		// Wait for the conflict fetch + DOM replacement.
-		chromedp.Sleep(500*time.Millisecond),
+		settled(`(function(){var c=document.querySelector('[data-fui-sortable-container="b"]');var i=c?c.querySelectorAll('[data-fui-sortable-item]'):[];return i.length===1&&i[0].getAttribute('data-fui-sort-key')==='k2'})()`),
 		// The conflict endpoint should have been fetched. Verify by
 		// checking that column B's innerHTML was replaced (the
 		// conflict response has k2 with aria-label "Drag B1", same
@@ -351,7 +351,9 @@ func TestSortable_NoVersionNo409Special(t *testing.T) {
 		chromedp.Navigate(base+"/"),
 		chromedp.WaitVisible(`#ready`, chromedp.ByID),
 		kbCrossMove("k1"),
-		chromedp.Sleep(500*time.Millisecond),
+		// The rollback announcement follows the restore; polling the DOM
+		// for k1-in-A instead would pass before the move even ran.
+		settled(`((document.getElementById('fui-sortable-live')||{}).textContent||'').indexOf('Reverted') !== -1`),
 		chromedp.Evaluate(`document.querySelector('[data-fui-sort-key="k1"]').closest('[data-fui-sortable-container]').getAttribute('data-fui-sortable-container')`, &containerAfter),
 	); err != nil {
 		t.Fatalf("chromedp: %v", err)
@@ -519,7 +521,7 @@ func TestSortable_ConflictRefreshEmptyColumn(t *testing.T) {
 		chromedp.Navigate(base+"/"),
 		chromedp.WaitVisible(`#ready`, chromedp.ByID),
 		kbCrossMove("k1"),
-		chromedp.Sleep(500*time.Millisecond),
+		settled(`document.querySelectorAll('[data-fui-sortable-container="b"] [data-fui-sortable-item]').length === 0`),
 		chromedp.Evaluate(`document.querySelectorAll('[data-fui-sortable-container="b"] [data-fui-sortable-item]').length`, &colBCount),
 		chromedp.Evaluate(`!!document.querySelector('[data-fui-sortable-container="a"] [data-fui-sort-key="k1"]')`, &k1InA),
 	); err != nil {
@@ -677,10 +679,31 @@ func conflict409Server(t *testing.T, contentType, body409 string) string {
 	return startSortableServer(t, sortableVersionPage, rpcHandler, conflictHandler)
 }
 
-// readLive evaluates #fui-sortable-live textContent into dst after
-// the conflict round-trip settles.
+// readLive evaluates #fui-sortable-live textContent into dst.
 func readLive(dst *string) chromedp.Action {
 	return chromedp.Evaluate(`(document.getElementById('fui-sortable-live')||{}).textContent || ''`, dst)
+}
+
+// settled polls a JS predicate until it holds, bounded so a broken
+// flow fails the test instead of hanging it. The 409 round trip (RPC,
+// bounded body read, conflict refetch, DOM swap) has no fixed cost:
+// a 500ms sleep read the preceding "Moved to …" announcement under CI
+// load (#398, run 34013830009).
+func settled(expr string) chromedp.Action {
+	return chromedp.Poll(expr, nil,
+		chromedp.WithPollingTimeout(10*time.Second), chromedp.WithPollingInterval(50*time.Millisecond))
+}
+
+// settledLive waits until the live region contains want, then reads
+// its full text into dst. The runtime announces the conflict outcome
+// only after the refresh has replaced the DOM, so the announcement
+// also proves the refresh landed. A leaked or wrong message never
+// matches, so the poll times out and the test fails.
+func settledLive(want string, dst *string) chromedp.Action {
+	return chromedp.Tasks{
+		settled(`((document.getElementById('fui-sortable-live')||{}).textContent||'').indexOf(` + strconv.Quote(want) + `) !== -1`),
+		readLive(dst),
+	}
 }
 
 // TestSortable_409ConflictMessageAnnounced: a 409 with a valid JSON
@@ -701,8 +724,7 @@ func TestSortable_409ConflictMessageAnnounced(t *testing.T) {
 		chromedp.Navigate(base+"/"),
 		chromedp.WaitVisible(`#ready`, chromedp.ByID),
 		kbCrossMove("k1"),
-		chromedp.Sleep(500*time.Millisecond),
-		readLive(&liveText),
+		settledLive("ORB-12", &liveText),
 		chromedp.Evaluate(`!!document.querySelector('[data-fui-sortable-container="b"] [data-fui-sort-key="k1"]')`, &colBHasK1),
 	); err != nil {
 		t.Fatalf("chromedp: %v", err)
@@ -730,8 +752,7 @@ func TestSortable_409InvariantMessage(t *testing.T) {
 		chromedp.Navigate(base+"/"),
 		chromedp.WaitVisible(`#ready`, chromedp.ByID),
 		kbCrossMove("k1"),
-		chromedp.Sleep(500*time.Millisecond),
-		readLive(&liveText),
+		settledLive("dependents", &liveText),
 	); err != nil {
 		t.Fatalf("chromedp: %v", err)
 	}
@@ -756,8 +777,7 @@ func TestSortable_409MalformedFallback(t *testing.T) {
 		chromedp.Navigate(base+"/"),
 		chromedp.WaitVisible(`#ready`, chromedp.ByID),
 		kbCrossMove("k1"),
-		chromedp.Sleep(500*time.Millisecond),
-		readLive(&liveText),
+		settledLive("Conflict.", &liveText),
 	); err != nil {
 		t.Fatalf("chromedp: %v", err)
 	}
@@ -784,8 +804,7 @@ func TestSortable_409OversizedFallback(t *testing.T) {
 		chromedp.Navigate(base+"/"),
 		chromedp.WaitVisible(`#ready`, chromedp.ByID),
 		kbCrossMove("k1"),
-		chromedp.Sleep(500*time.Millisecond),
-		readLive(&liveText),
+		settledLive("Conflict.", &liveText),
 	); err != nil {
 		t.Fatalf("chromedp: %v", err)
 	}
@@ -810,8 +829,7 @@ func TestSortable_409HTMLFallback(t *testing.T) {
 		chromedp.Navigate(base+"/"),
 		chromedp.WaitVisible(`#ready`, chromedp.ByID),
 		kbCrossMove("k1"),
-		chromedp.Sleep(500*time.Millisecond),
-		readLive(&liveText),
+		settledLive("Conflict.", &liveText),
 	); err != nil {
 		t.Fatalf("chromedp: %v", err)
 	}
@@ -837,8 +855,7 @@ func TestSortable_409EmptyBodyBackwardCompat(t *testing.T) {
 		chromedp.Navigate(base+"/"),
 		chromedp.WaitVisible(`#ready`, chromedp.ByID),
 		kbCrossMove("k1"),
-		chromedp.Sleep(500*time.Millisecond),
-		readLive(&liveText),
+		settledLive("Conflict.", &liveText),
 		chromedp.Evaluate(`document.querySelectorAll('[data-fui-sortable-container="b"] [data-fui-sortable-item]').length`, &colBCount),
 	); err != nil {
 		t.Fatalf("chromedp: %v", err)
