@@ -52,7 +52,7 @@ func (p *IdP) Exchange(code string) (*Token, error) {
 	}
 	defer resp.Body.Close()
 	var tok Token
-	if err := json.NewDecoder(resp.Body).Decode(&tok); err != nil { // want `decoded with no size bound`
+	if err := json.NewDecoder(resp.Body).Decode(&tok); err != nil {
 		return nil, err
 	}
 	return &tok, nil

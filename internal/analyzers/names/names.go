@@ -35,7 +35,10 @@ var Analyzers = []string{
 	"mapwriter",
 	"negdur",
 	"nonfinite",
+	"nowaitdelay",
+	"nostore",
 	"recovercallback",
+	"recoverlog",
 	"reflectset",
 	"reqparamlimit",
 	"rootread",
@@ -43,6 +46,8 @@ var Analyzers = []string{
 	"secretcompare",
 	"timestampid",
 	"unboundedbody",
+	"unboundedresp",
+	"unseated",
 	"worldreadable",
 }
 

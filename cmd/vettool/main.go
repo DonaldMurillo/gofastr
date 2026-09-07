@@ -52,7 +52,10 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/mapwriter"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/negdur"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/nonfinite"
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/nostore"
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/nowaitdelay"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/recovercallback"
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/recoverlog"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/reflectset"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/reqparamlimit"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/rootread"
@@ -60,6 +63,8 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/secretcompare"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/timestampid"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/unboundedbody"
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/unboundedresp"
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/unseated"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/worldreadable"
 )
 
@@ -104,6 +109,15 @@ var repoAnalyzers = []*analysis.Analyzer{
 	// Round-4 red-probe rules (2026-09-05): one per repeated bug shape.
 	allow.Guard(laxenvelope.Analyzer),
 	allow.Guard(nonfinite.Analyzer),
+
+	// Round-5 red-probe rules (2026-09-07): one per repeated bug shape.
+	allow.Guard(recoverlog.Analyzer),
+	allow.Guard(nowaitdelay.Analyzer),
+	allow.Guard(unboundedresp.Analyzer),
+	// Round-5 rules (2026-09-07): stream-seat and cache-suppression
+	// family enumeration over the long-lived/per-user response surfaces.
+	allow.Guard(nostore.Analyzer),
+	allow.Guard(unseated.Analyzer),
 
 	// Checks that currently find nothing. They cost no cleanup and
 	// hold classes this repo already drove to zero. A hit here means

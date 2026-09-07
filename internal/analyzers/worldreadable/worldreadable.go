@@ -24,6 +24,23 @@
 // write's own path expression (provenance and name), never by guessing
 // at content.
 //
+// The 2026-09-07 round added the INVERSE arm: os.WriteFile(path,
+// data, 0o600) with an owner-only constant mode. The mode argument of
+// WriteFile (and OpenFile) applies only when the file is CREATED, so
+// overwriting a pre-existing looser file leaves it group/world-
+// readable with the new secret content (the fileperm.WriteOwnerOnly /
+// writeSecretFile lesson: open O_CREATE|O_TRUNC 0o600, Chmod the
+// HANDLE to 0o600, then write — the mode travels with the write).
+// Only os.WriteFile participates: OpenFile with an owner-only mode is
+// the fix spelling's own first half, and directories/Mkdir are not
+// this shape. Quiet, deliberately: a path minted under a throwaway
+// root in the same function (os.MkdirTemp / t.TempDir, or a
+// os.CreateTemp result's Name() — the file cannot pre-exist), a
+// package that writes through an owner-only helper instead
+// (WriteOwnerOnly / writeSecretFile / SeedOwnerOnly — no os.WriteFile
+// site exists to fire on), and _test.go files. A fileperm.Restrict
+// AFTER the write does NOT quiet it: the content is exposed in the
+// window between write and tighten, which is the finding.
 // Silent postures, deliberately:
 //   - mode expressions that are not constant literals (a variable, a
 //     parameter, a struct field like battery/log's FileMode or the
@@ -225,6 +242,43 @@ func checkFunc(pass *analysis.Pass, fn *ast.FuncDecl, ctx *pkgCtx) {
 			"%s created with mode %s under %s: state and secret artifacts are owner-only in this repo (0600/0700, fileperm.Restrict); pass 0o600/0o700 or name why this artifact is public",
 			kind, mode, types.ExprString(s.path))
 	}
+
+	// ADDITIVE arm (2026-09-07): os.WriteFile with an owner-only
+	// constant mode tightens only at CREATE. A pre-existing looser
+	// file keeps its mode; the new content lands group/world-readable.
+	// The write is the leak window even when a Restrict follows.
+	for _, s := range sites {
+		if s.isDir || s.mode == nil || s.perm&0o077 != 0 {
+			continue
+		}
+		if qualifiedFunc(pass, s.call.Fun) != "os.WriteFile" {
+			continue
+		}
+		if underTempRoot(pass, s.path, bound) || createTempMinted(pass, s.path, bound) {
+			continue // the file cannot pre-exist: the mode applies
+		}
+		pass.Reportf(s.call.Pos(),
+			"os.WriteFile mode 0o%03o applies only at create: a pre-existing group/world-readable file keeps its mode and the new content lands readable by every local co-user; open O_CREATE|O_TRUNC 0o600, Chmod the handle before writing (fileperm.WriteOwnerOnly / writeSecretFile)",
+			s.perm)
+	}
+}
+
+// createTempMinted reports whether the write's path is the Name() of
+// a file this function minted with os.CreateTemp: fresh by
+// construction, so the create-time mode is the only mode the file
+// ever has. The path expression is the CALL f.Name(), its receiver
+// resolving to the mint.
+func createTempMinted(pass *analysis.Pass, path ast.Expr, bound map[types.Object]ast.Expr) bool {
+	call, ok := resolve(pass, path, bound, 0).(*ast.CallExpr)
+	if !ok {
+		return false
+	}
+	sel, ok := call.Fun.(*ast.SelectorExpr)
+	if !ok || sel.Sel.Name != "Name" {
+		return false
+	}
+	mint, ok := resolve(pass, sel.X, bound, 0).(*ast.CallExpr)
+	return ok && qualifiedFunc(pass, mint.Fun) == "os.CreateTemp"
 }
 
 // silent reports whether site s is one of the deliberate postures.

@@ -617,3 +617,212 @@ func handle(w http.ResponseWriter, r *http.Request) {
 	assertNot(t, ds, contracts.RuleRawJSONBodyDecode,
 		"core/handler, outbound bodies, functions without a request, _test.go, and an allowed transport are all documented silences")
 }
+
+// The round-5 frame sources, reduced. battery/rtc Serve and
+// examples/webmcp-remote-assist handleWS read inbound frames with
+// core/stream's zero-argument (*WebSocketConn).Read; the import gate
+// is what keeps every other zero-argument Read in the tree (journal,
+// xcontext, widget signals) out of the rule.
+func TestRawJSONBodyOnStreamFrameReadIsReported(t *testing.T) {
+	ds := fixture(t, map[string]string{
+		"room.go": `package rtc
+
+import (
+	"encoding/json"
+	"net/http"
+
+	stream "example.com/app/core/stream"
+)
+
+type conn struct{}
+
+func (c *conn) Read() ([]byte, error) { return nil, nil }
+
+func (s *Signaler) Serve(w http.ResponseWriter, r *http.Request) {
+	var c conn
+	for {
+		data, rerr := c.Read()
+		if rerr != nil {
+			return
+		}
+		var in inboundMsg
+		if json.Unmarshal(data, &in) != nil {
+			continue
+		}
+	}
+}
+`,
+	})
+	d := assertHas(t, ds, contracts.RuleRawJSONBodyDecode)
+	if !strings.Contains(d.Message, "websocket frame") {
+		t.Errorf("message must name the frame source: %q", d.Message)
+	}
+}
+
+// The same zero-argument Read in a file that does not import
+// core/stream is the journal/context reader shape, not a frame read.
+func TestRawJSONBodyOnUnrelatedReadIsQuiet(t *testing.T) {
+	ds := fixture(t, map[string]string{
+		"panel.go": `package panel
+
+import "encoding/json"
+
+type journal struct{}
+
+func (j *journal) Read() ([]entry, error) { return nil, nil }
+
+func render(pe *panelEnv) {
+	entries, err := pe.live.Journal().Read()
+	if err != nil {
+		return
+	}
+	var args map[string]any
+	if json.Unmarshal(entries[0].payload(), &args) != nil {
+		return
+	}
+}
+`,
+	})
+	assertNot(t, ds, contracts.RuleRawJSONBodyDecode,
+		"a zero-argument Read outside core/stream is not a frame source")
+}
+
+// The harness mcpclient shape, reduced across its two files: the child
+// stdout ferried through the Client composite literal into a field,
+// the read loop scanning that field, and ListTools re-decoding the
+// Call result — a method on the type that holds the source returns
+// bytes from it.
+func TestRawJSONBodyOnChildStdoutIsReported(t *testing.T) {
+	ds := fixture(t, map[string]string{
+		"spawn.go": `package mcpclient
+
+import "os/exec"
+
+type Client struct {
+	stdout io.ReadCloser
+}
+
+func Spawn() *Client {
+	c := exec.Command("mcp-server")
+	stdout, err := c.StdoutPipe()
+	if err != nil {
+		return nil
+	}
+	_ = c.Start()
+	cl := &Client{stdout: stdout}
+	go cl.readLoop()
+	return cl
+}
+`,
+		"client.go": `package mcpclient
+
+import (
+	"bufio"
+	"encoding/json"
+)
+
+func (c *Client) readLoop() {
+	scanner := bufio.NewScanner(c.stdout)
+	for scanner.Scan() {
+		var r response
+		if err := json.Unmarshal(scanner.Bytes(), &r); err != nil {
+			continue
+		}
+	}
+}
+
+func (c *Client) Call(method string) (json.RawMessage, error) {
+	return c.call(method)
+}
+
+func (c *Client) call(method string) (json.RawMessage, error) {
+	return nil, nil
+}
+
+func (c *Client) ListTools() ([]tool, error) {
+	resp, err := c.Call("tools/list")
+	if err != nil {
+		return nil, err
+	}
+	var parsed struct {
+		Tools []tool ` + "`json:\"tools\"`" + `
+	}
+	if err := json.Unmarshal(resp, &parsed); err != nil {
+		return nil, err
+	}
+	return parsed.Tools, nil
+}
+`,
+	})
+	if got := countRule(t, ds, contracts.RuleRawJSONBodyDecode); len(got) != 2 {
+		t.Fatalf("want 2 findings (readLoop scanner + ListTools result), got %d: %v", len(got), got)
+	}
+}
+
+// The moduleproto codec shape, reduced: the scanner built over the
+// transport-neutral io.Reader parameter of the framing constructor and
+// stored in a field is the source the supervisor wires (stdin, a
+// net.Conn, a pipe). A scanner kept LOCAL over the same parameter
+// (core/mcp ServeStdio, core/acp) reads whatever the caller declared
+// and stays quiet.
+func TestRawJSONBodyOnTransportScannerFieldIsReported(t *testing.T) {
+	ds := fixture(t, map[string]string{
+		"codec.go": `package moduleproto
+
+import (
+	"bufio"
+	"encoding/json"
+	"io"
+)
+
+type Codec struct {
+	scan *bufio.Scanner
+}
+
+func NewCodec(r io.Reader) (*Codec, error) {
+	s := bufio.NewScanner(r)
+	return &Codec{scan: s}, nil
+}
+
+func (c *Codec) ReadFrame() (*Frame, error) {
+	c.scan.Scan()
+	data := c.scan.Bytes()
+	var f Frame
+	if err := json.Unmarshal(data, &f); err != nil {
+		return nil, err
+	}
+	return &f, nil
+}
+`,
+	})
+	d := assertHas(t, ds, contracts.RuleRawJSONBodyDecode)
+	if !strings.Contains(d.Message, "frame") {
+		t.Errorf("message must name the frame source: %q", d.Message)
+	}
+}
+
+func TestRawJSONBodyOnLocalScannerOverReaderParamIsQuiet(t *testing.T) {
+	ds := fixture(t, map[string]string{
+		"transport.go": `package mcp
+
+import (
+	"bufio"
+	"encoding/json"
+	"io"
+)
+
+func (s *Server) ServeStdio(in io.Reader) error {
+	scanner := bufio.NewScanner(in)
+	for scanner.Scan() {
+		var req map[string]json.RawMessage
+		if err := json.Unmarshal(scanner.Bytes(), &req); err != nil {
+			continue
+		}
+	}
+	return nil
+}
+`,
+	})
+	assertNot(t, ds, contracts.RuleRawJSONBodyDecode,
+		"a local scanner over an io.Reader parameter reads what the caller declared; only a scanner ferried into a field is a framing source")
+}

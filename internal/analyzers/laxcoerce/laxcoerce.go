@@ -19,6 +19,18 @@
 // variable to its zero value and falls through. Each function literal
 // is judged by its own pass with its own error-result flag.
 //
+// The 2026-09-07 round added the DISCARD spelling: `x, _ := p.(T)` —
+// the comma-ok assertion whose ok is thrown away — on a caller-
+// supplied PARAMETER of type any/interface{}, where x then flows into
+// a call or return. Probe TestHookPayloadTypeConfusion (typed_hooks
+// OnBeforeDelete/OnAfterDelete, open): a non-string delete payload
+// became id "" and the hook ran for it. Quiet, deliberately: non-any
+// receivers (a typed receiver cannot hold a wrong type), receivers
+// that are fields, map values, or outer-function params captured by a
+// closure (the negdur convention: parameters of the checked function
+// only), interface-typed assertion targets (nil, a different
+// failure), and values that die unused (dead code, not a silent
+// coercion).
 // Silent postures, deliberately:
 //   - a !ok branch that returns or assigns a value of error type: the
 //     wrong type is surfaced, not swallowed (the fix posture);
@@ -179,6 +191,126 @@ func checkFunc(pass *analysis.Pass, fnType *ast.FuncType, body *ast.BlockStmt) {
 			}
 		}
 	}
+
+	// ADDITIVE arm (2026-09-07): the DISCARD spelling — `x, _ :=
+	// p.(T)` — on a host-supplied parameter of type any/interface{},
+	// where x then flows into a call or return. The oracle is
+	// framework/typed_hooks.go OnBeforeDelete/OnAfterDelete: a
+	// non-string delete payload asserted with the ok thrown away
+	// ran the hook for record id "" — the deletion proceeded with a
+	// coerced zero that no caller could distinguish from a real empty
+	// id. Params only (the negdur convention: caller data, not
+	// receiver state), empty-interface receivers only (a typed
+	// receiver cannot hold a wrong type), concrete asserted types only
+	// (asserting to an interface yields nil, a different failure), and
+	// x must be USED — a discarded ok whose value also dies is dead
+	// code, not a silent coercion.
+	params := map[types.Object]bool{}
+	if fnType.Params != nil {
+		for _, field := range fnType.Params.List {
+			for _, id := range field.Names {
+				if obj := pass.TypesInfo.Defs[id]; obj != nil {
+					params[obj] = true
+				}
+			}
+		}
+	}
+	ast.Inspect(body, func(n ast.Node) bool {
+		if _, isLit := n.(*ast.FuncLit); isLit {
+			return false // nested closures get their own checkFunc pass
+		}
+		st, ok := n.(*ast.AssignStmt)
+		if !ok || len(st.Lhs) != 2 || len(st.Rhs) != 1 {
+			return true
+		}
+		blank, ok := st.Lhs[1].(*ast.Ident)
+		if !ok || blank.Name != "_" {
+			return true
+		}
+		assert, ok := st.Rhs[0].(*ast.TypeAssertExpr)
+		if !ok || assert.Type == nil {
+			return true
+		}
+		recv, ok := assert.X.(*ast.Ident)
+		if !ok || !params[pass.TypesInfo.ObjectOf(recv)] {
+			return true
+		}
+		if t := pass.TypesInfo.TypeOf(recv); t == nil {
+			return true
+		} else if iface, isIface := t.Underlying().(*types.Interface); !isIface || !iface.Empty() {
+			return true
+		}
+		if at := pass.TypesInfo.TypeOf(assert.Type); at == nil {
+			return true
+		} else if _, isIface := at.Underlying().(*types.Interface); isIface {
+			return true
+		}
+		x, ok := st.Lhs[0].(*ast.Ident)
+		if !ok || x.Name == "_" {
+			return true
+		}
+		if !usedInCallOrReturn(pass, body, st.End(), pass.TypesInfo.ObjectOf(x)) {
+			return true
+		}
+		pass.Reportf(st.Pos(),
+			"comma-ok assertion on %s (a caller-supplied any) discards the ok: a payload of the wrong type becomes %s's zero value and flows on unchecked; handle the failed assertion or surface an error",
+			recv.Name, types.ExprString(assert.Type))
+		return true
+	})
+}
+
+// usedInCallOrReturn reports whether obj is used, at or after from,
+// inside a call or a return statement — directly, through a composite
+// literal element, or via a local copy bound to it: the coerced value
+// leaves the statement and the swallowed failure travels with it.
+func usedInCallOrReturn(pass *analysis.Pass, body *ast.BlockStmt, from token.Pos, obj types.Object) bool {
+	copies := map[types.Object]bool{obj: true}
+	// One hop of local copies (recordID := originalID), in source
+	// order after the assertion.
+	ast.Inspect(body, func(n ast.Node) bool {
+		st, ok := n.(*ast.AssignStmt)
+		if !ok || len(st.Lhs) != 1 || len(st.Rhs) != 1 {
+			return true
+		}
+		if dst, ok := st.Lhs[0].(*ast.Ident); ok && dst.Name != "_" {
+			if src, ok := st.Rhs[0].(*ast.Ident); ok && copies[pass.TypesInfo.ObjectOf(src)] {
+				if o := pass.TypesInfo.ObjectOf(dst); o != nil {
+					copies[o] = true
+				}
+			}
+		}
+		return true
+	})
+	found := false
+	ast.Inspect(body, func(n ast.Node) bool {
+		if found {
+			return false
+		}
+		var region ast.Node
+		switch e := n.(type) {
+		case *ast.CallExpr:
+			if e.Pos() < from {
+				return true
+			}
+			region = e
+		case *ast.ReturnStmt:
+			if e.Pos() < from {
+				return true
+			}
+			region = e
+		}
+		if region == nil {
+			return true
+		}
+		ast.Inspect(region, func(m ast.Node) bool {
+			if id, ok := m.(*ast.Ident); ok && copies[pass.TypesInfo.ObjectOf(id)] {
+				found = true
+			}
+			return !found
+		})
+		return !found
+	})
+	return found
 }
 
 // literalKey returns the value of a string basic literal, or false for

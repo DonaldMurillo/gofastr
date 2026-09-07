@@ -250,3 +250,57 @@ func jsq8(fn string) string {
 func jsq9(prop string) string {
 	return fmt.Sprintf("import { %sFields } from \"./client.js\";\n", prop)
 }
+
+// ---- CSS identifier slots: the fix posture and the prose stays -----
+
+func isCSSIdent(v string) bool {
+	if v == "" || v[0] >= '0' && v[0] <= '9' {
+		return false
+	}
+	for _, r := range v {
+		if !(r == '_' || r == '-' || r >= '0' && r <= '9' || r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z') {
+			return false
+		}
+	}
+	return true
+}
+
+// renderUtilityCSSFixed: the fix posture the classname probe asks for —
+// an identifier gate on the class before it reaches the selector.
+func renderUtilityCSSFixed(class, props string, sb *strings.Builder) {
+	if !isCSSIdent(class) {
+		return
+	}
+	fmt.Fprintf(sb, ".%s { %s }\n", class, props)
+}
+
+// cssq2: a quoted verb in a selector slot contains the payload — an
+// invalid selector, not live CSS.
+func cssq2(name string, sb *strings.Builder) {
+	fmt.Fprintf(sb, ".%q { color: red; }\n", name)
+}
+
+// cssq3: dotted-path prose — the dot follows an identifier byte, not a
+// boundary, and no rule body follows.
+func cssq3(key string) error {
+	return fmt.Errorf("app.theme.dark.%s must be a scalar CSS color value", key)
+}
+
+// cssq4: CLI-flag prose — a colon after --%s with no ';'-terminated
+// declaration on the line.
+func cssq4(a, b string) error {
+	return fmt.Errorf("fields %q and %q both derive flag --%s: rename one", a, b, a)
+}
+
+// cssq5: a var() REFERENCE is a value slot, not a custom-property
+// declaration; the value family is out of this arm's scope.
+func cssq5(category, token string) string {
+	return fmt.Sprintf("var(--%s-%s)", category, token)
+}
+
+// cssq6: a class name whose -- suffix follows an identifier byte
+// (".tp-probe--%s") is not the custom-property spelling; the arm is
+// deliberately the brief's two spellings only.
+func cssq6(slug, fg string) string {
+	return fmt.Sprintf(".tp-probe--%s { color: %s; }\n", slug, fg)
+}

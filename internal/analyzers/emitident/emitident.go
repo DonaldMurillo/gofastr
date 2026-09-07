@@ -45,6 +45,25 @@
 // and why the fix wrapped the derivation in token.IsIdentifier rather
 // than trusting the casing.
 //
+// The 2026-09-06 classname probe added the CSS identifier family:
+// GenerateUtilityCSS/GenerateCSS emit ".%s { %s }" where the class
+// name IS the selector, so "text-lg{position:fixed;...}x" became a
+// live full-viewport rule (TestClassNameRedSelectorBreakout). The
+// slots: an unquoted class selector (".%s {", ".%s{") — the dot must
+// follow a non-identifier boundary, so dotted-path prose
+// ("app.theme.dark.%s must be a scalar") stays quiet — and a
+// custom-property name ("--%s: ...;") — closed by a ';'-terminated
+// declaration, so CLI-flag prose ("--%s: rename one") stays quiet. A
+// var() REFERENCE ("var(--%s-%s)") is a value slot, not a declaration;
+// a quoted selector verb (".%q {") contains its payload as an invalid
+// selector rather than live CSS; and a class name whose "--" follows
+// identifier bytes (".tp-probe--%s {") is not the custom-property
+// spelling. The fix posture is an isCSSIdent-class gate before the
+// interpolation (the same identifier-check credit as every Go slot).
+// The 2026-09-07 stub round added the type/var RUN form: a declared
+// name that continues past the verb ("type %sRepo struct {",
+// "var %sCount =") is the same declaration slot the bare
+// "type %s struct" already was.
 // The rule is deliberately silent on:
 //   - format slots that are not identifier positions: plain %s/%q in
 //     string, argument, or message slots, `List%s(` spellings where the
@@ -615,6 +634,51 @@ func identSlotText(format string, i int, quoted bool) (string, bool) {
 		}
 	}
 
+	// CSS identifier slots: the verb starts the identifier of an
+	// unquoted class selector (`.%s {`, `.%s{`) or a custom-property
+	// name (`--%s: ...;`). A selector is unquoted by grammar: a class
+	// name carrying braces, semicolons, or url( becomes live CSS (the
+	// 2026-09-06 classname probe: "text-lg{position:fixed;...}x" out
+	// of GenerateUtilityCSS). Evidence keeps prose out: the selector
+	// dot must follow a non-identifier boundary (the ".%s" in
+	// "app.theme.dark.%s must be a scalar" is a dotted PATH in a
+	// message, not a selector) and the run must close into a rule
+	// body; a custom property must close into a ';'-terminated
+	// declaration ("--%s: rename one" is CLI prose). A quoted verb
+	// (%q) contains the payload — an invalid selector, not live CSS —
+	// and stays quiet, unlike the string-value slots above where
+	// quoting is the sanctioned spelling.
+	if !quoted {
+		if b > 0 && format[b-1] == '.' && (b == 1 || strings.IndexByte(" \t\n{\"'(:,", format[b-2]) >= 0) {
+			j := after
+			for j < len(format) && isIdentByte(format[j]) {
+				j++
+			}
+			for j < len(format) && (format[j] == ' ' || format[j] == '\t') {
+				j++
+			}
+			if j < len(format) && format[j] == '{' {
+				return ".%s {", true
+			}
+		}
+		if b >= 2 && format[b-1] == '-' && format[b-2] == '-' &&
+			(b == 2 || strings.IndexByte(" \t\n{;\"(", format[b-3]) >= 0) {
+			j := after
+			for j < len(format) && isIdentByte(format[j]) {
+				j++
+			}
+			if j < len(format) && format[j] == ':' {
+				e := j + 1
+				for e < len(format) && format[e] != '\n' {
+					e++
+				}
+				if strings.LastIndexByte(format[j+1:e], ';') >= 0 {
+					return "--%s:", true
+				}
+			}
+		}
+	}
+
 	// The widget behavior URL shape, then route path literals generally:
 	// a verb that starts a path segment anywhere inside a double-quoted
 	// string beginning with "/" — `"/%s"` and `"/api/v1/%s"` alike; a
@@ -871,10 +935,27 @@ func declFollows(format string, after int, kw string) bool {
 		return strings.HasPrefix(rest, "(") &&
 			(strings.IndexByte(rest, '{') >= 0 || strings.IndexByte(rest, '\n') >= 0)
 	case "type", "var":
-		for _, t := range []string{"struct", "interface", "map", "func", "chan"} {
-			if strings.HasPrefix(rest, t) && (len(rest) == len(t) || !isIdentByte(rest[len(t)])) {
-				return true
+		typeKw := func(r string) bool {
+			for _, t := range []string{"struct", "interface", "map", "func", "chan"} {
+				if strings.HasPrefix(r, t) && (len(r) == len(t) || !isIdentByte(r[len(t)])) {
+					return true
+				}
 			}
+			return false
+		}
+		if typeKw(rest) {
+			return true // "type %s struct": the keyword IS the evidence
+		}
+		// Else the evidence follows the identifier RUN — "type %sRepo
+		// struct {" — the same run-skip the func case does; the run is
+		for len(rest) > 0 && isIdentByte(rest[0]) {
+			rest = rest[1:]
+		}
+		for len(rest) > 0 && (rest[0] == ' ' || rest[0] == '\t') {
+			rest = rest[1:]
+		}
+		if typeKw(rest) {
+			return true
 		}
 		return strings.HasPrefix(rest, "=") || strings.HasPrefix(rest, "[") ||
 			strings.HasPrefix(rest, "*") || (kw == "var" && strings.HasPrefix(rest, ":="))
@@ -882,8 +963,6 @@ func declFollows(format string, after int, kw string) bool {
 	return false
 }
 
-// cssStringOpen reports whether the text before a single quote opens a
-// CSS string: a property name then a colon (`content: '`), or an open
 // paren (`url('`).
 func cssStringOpen(before string) bool {
 	j := len(before)

@@ -14,7 +14,7 @@ import (
 func init() {
 	contracts.Register(&contracts.Analyzer{
 		Name: "security",
-		Doc:  "Injection, CSRF, cookie attributes, committed secrets, reflected proxy headers, raw body decodes, and queue SQL safety.",
+		Doc:  "Injection, CSRF, cookie attributes, committed secrets, reflected proxy headers, raw body and frame decodes, cross-site predicate copies, URL-attribute escaping, Vary writes, queue SQL safety, and dialect twin drift.",
 		Rules: []string{
 			contracts.RuleSQLStringConcat,
 			contracts.RuleFormWithoutCSRF,
@@ -26,6 +26,10 @@ func init() {
 			contracts.RuleAbsoluteAttempts,
 			contracts.RuleUnfencedClaim,
 			contracts.RuleFoldedKey,
+			contracts.RuleFetchMetadata,
+			contracts.RuleURLAttrEscape,
+			contracts.RuleVarySet,
+			contracts.RuleDialectDrift,
 		},
 		Run: runSecurity,
 	})
@@ -56,6 +60,10 @@ func runSecurity(p *contracts.Pass) ([]contracts.Diagnostic, error) {
 			out = append(out, ruleAbsoluteAttempts(p, f.Rel, file)...)
 			out = append(out, ruleUnfencedClaim(p, f.Rel, file)...)
 			out = append(out, ruleFoldedKey(p, f.Rel, file)...)
+			out = append(out, ruleFetchMetadata(p, f.Rel, file)...)
+			out = append(out, ruleURLAttrEscape(p, f.Rel, file)...)
+			out = append(out, ruleVarySet(p, f.Rel, file)...)
+			out = append(out, ruleDialectDrift(p, f.Rel, file)...)
 		}
 	}
 	return out, nil
@@ -826,9 +834,25 @@ func exprTouches(e ast.Expr, call *ast.CallExpr, holders map[string]bool) bool {
 //     that decision;
 //   - other packages: taint stops at the directory edge, and methods
 //     are matched by name only within it;
-//   - frame sources beyond wsFrameReads: the list holds the reader
-//     spellings this repo actually uses, not a guess at every
-//     websocket library;
+//   - frame sources beyond the spellings this repo actually uses: the
+//     list is deliberately closed. It now covers, besides control/ws
+//     Conn.readFrame, the three spellings the round-5 probes found: a
+//     zero-argument Read() in a file that imports core/stream (whose
+//     (*WebSocketConn).Read returns one inbound frame — battery/rtc,
+//     examples/webmcp-remote-assist), the child stdout of a spawned
+//     process (cmd.StdoutPipe(), whose result may be ferried through a
+//     struct field — harness mcpclient), os.Stdin, and a bufio.Scanner
+//     built over an io.Reader/net.Conn parameter of a framing
+//     constructor and stored in a field (core/moduleproto Codec.scan,
+//     transport-neutral by contract: the supervisor wires stdin, a
+//     net.Conn, or a pipe into that parameter). A list of guessed
+//     library names would taint by coincidence;
+//   - a call that merely RECEIVES tainted arguments returning its own
+//     output, with one exception: a method whose receiver type holds a
+//     tainted field returns bytes from that source (mcpclient
+//     Client.Call sits on Client.stdout, so its result is the child's
+//     response). The receiver type's OWN fields are the evidence, not
+//     the call's arguments;
 //   - _test.go and generated files (AppFiles already excludes both);
 //   - any site annotated //gofastr:allow(GOFASTR1407) <why>, which is
 //     how a transport that accepts a JSON-RPC envelope object as-is
@@ -846,15 +870,15 @@ func ruleRawJSONBody(p *contracts.Pass, rel string, file *ast.File) []contracts.
 		if decl, ok := fn.node.(*ast.FuncDecl); ok {
 			seeds = pkg.paramTaint[decl]
 		}
-		tainted := taintFromBody(fn.body, reqs, pkg.helpers, seeds, pkg.fields)
+		tainted := taintFromBody(fn.body, reqs, pkg.helpers, seeds, pkg.fields, aliases, pkg)
 		ast.Inspect(fn.body, func(n ast.Node) bool {
 			if call, ok := qualifiedCall(n, aliases, "encoding/json", "NewDecoder"); ok && len(call.Args) == 1 {
-				if k := exprFromRequestBody(call.Args[0], tainted, reqs, pkg.fields); k != 0 && !isKeyWalk(fn.body, call, aliases) {
+				if k := exprFromRequestBody(call.Args[0], tainted, reqs, pkg.fields, aliases); k != 0 && !isKeyWalk(fn.body, call, aliases) {
 					out = append(out, rawJSONDiag(p, rel, call, k))
 				}
 			}
 			if call, ok := qualifiedCall(n, aliases, "encoding/json", "Unmarshal"); ok && len(call.Args) > 0 {
-				if k := exprFromRequestBody(call.Args[0], tainted, reqs, pkg.fields); k != 0 {
+				if k := exprFromRequestBody(call.Args[0], tainted, reqs, pkg.fields, aliases); k != 0 {
 					out = append(out, rawJSONDiag(p, rel, call, k))
 				}
 			}
@@ -960,15 +984,33 @@ const (
 
 // rawJSONPkg is the package-wide taint context for one Go package (one
 // directory of app files): the parsed files, their import aliases, the
-// bare-name body-reading helpers, and the fixpoint-derived taint of
-// function parameters and struct field names. Computed once per pass,
-// shared by every file of the package.
+// bare-name body-reading helpers, the fixpoint-derived taint of
+// function parameters and struct field names, and the type-shape index
+// (struct field names by type, receiver type by method name) the frame
+// ferries need. Computed once per pass, shared by every file of the
+// package.
 type rawJSONPkg struct {
 	files      map[string]*ast.File
 	aliases    map[string]map[string]string
 	helpers    map[string]bool
 	paramTaint map[*ast.FuncDecl]map[string]taintKind
 	fields     map[string]taintKind
+	// structFields maps each declared struct type name to its field
+	// names; methodRecv maps a method name to its receivers' base type
+	// names. Both are name-based (no types here), which suffices
+	// because the sink keeps a coincidence cheap.
+	structFields map[string]map[string]bool
+	methodRecv   map[string][]string
+	// sourceFields names the fields that hold a client-controlled
+	// SOURCE directly (a child's stdout, os.Stdin, a seeded scanner),
+	// populated before the general fixpoint and never fed by it. The
+	// method-result ferry reads only these: letting it read the general
+	// field map made every literal built from a decoded frame taint
+	// error-struct field names (Message, cause, fatal…), which made
+	// every method of every such type return taint — one round of
+	// amplification fanned moduleproto Peer.Call and framework
+	// fanout.Unwrap into findings neither site earned.
+	sourceFields map[string]bool
 }
 
 // rawJSONPackageTaint returns the package context for rel's directory,
@@ -1000,6 +1042,9 @@ func rawJSONPackageTaint(p *contracts.Pass, rel string) *rawJSONPkg {
 			pkg.files[f.Rel] = af
 			pkg.aliases[f.Rel] = importAliases(af)
 		}
+		pkg.indexTypes()
+		seedSourceFields(pkg)
+		seedScannerFields(pkg)
 		pkg.helpers = packageBodyReaders(pkg)
 		targets := packageCallTargets(pkg)
 		for changed := true; changed; {
@@ -1012,7 +1057,7 @@ func rawJSONPackageTaint(p *contracts.Pass, rel string) *rawJSONPkg {
 					if decl, ok := fn.node.(*ast.FuncDecl); ok {
 						seeds = pkg.paramTaint[decl]
 					}
-					tainted := taintFromBody(fn.body, reqs, pkg.helpers, seeds, pkg.fields)
+					tainted := taintFromBody(fn.body, reqs, pkg.helpers, seeds, pkg.fields, aliases, pkg)
 					// A tainted argument at a call site taints the
 					// same-package callee's parameter: s.WithIO(in)
 					// with body-derived in, c.handleText(payload)
@@ -1043,7 +1088,7 @@ func rawJSONPackageTaint(p *contracts.Pass, rel string) *rawJSONPkg {
 								if i >= len(decl.Type.Params.List) {
 									break
 								}
-								k := exprFromRequestBody(arg, tainted, reqs, pkg.fields)
+								k := exprFromRequestBody(arg, tainted, reqs, pkg.fields, aliases)
 								if k == 0 {
 									continue
 								}
@@ -1080,12 +1125,43 @@ func rawJSONPackageTaint(p *contracts.Pass, rel string) *rawJSONPkg {
 							if id, ok := sel.X.(*ast.Ident); ok && reqs[id.Name] && sel.Sel.Name == "Body" {
 								continue
 							}
-							k := exprFromRequestBody(a.Rhs[i], tainted, reqs, pkg.fields)
+							k := exprFromRequestBody(a.Rhs[i], tainted, reqs, pkg.fields, aliases)
 							if k == 0 {
 								continue
 							}
 							if pkg.fields[sel.Sel.Name]&k != k {
 								pkg.fields[sel.Sel.Name] |= k
+								changed = true
+							}
+						}
+						return true
+					})
+					// The composite-literal spelling of the same store:
+					// cl := &Client{stdout: pipe} taints field stdout
+					// exactly like cl.stdout = pipe would. Both real
+					// frame sites (harness mcpclient Client, moduleproto
+					// Codec) ferry the source through a constructor
+					// literal, so the ferry has to see both spellings.
+					ast.Inspect(fn.body, func(n ast.Node) bool {
+						lit, ok := n.(*ast.CompositeLit)
+						if !ok {
+							return true
+						}
+						for _, elt := range lit.Elts {
+							kv, ok := elt.(*ast.KeyValueExpr)
+							if !ok {
+								continue
+							}
+							key, ok := kv.Key.(*ast.Ident)
+							if !ok {
+								continue // a map literal keys by value
+							}
+							k := exprFromRequestBody(kv.Value, tainted, reqs, pkg.fields, aliases)
+							if k == 0 {
+								continue
+							}
+							if pkg.fields[key.Name]&k != k {
+								pkg.fields[key.Name] |= k
 								changed = true
 							}
 						}
@@ -1125,7 +1201,11 @@ func packageCallTargets(pkg *rawJSONPkg) map[string][]*ast.FuncDecl {
 // readBody's returns are body-derived. seeds carries parameters that
 // arrived tainted at a call site in this package; fields carries
 // struct field names holding tainted bytes somewhere in the package.
-func taintFromBody(body ast.Node, reqs map[string]bool, helpers map[string]bool, seeds map[string]taintKind, fields map[string]taintKind) map[string]taintKind {
+// aliases and pkg carry the frame arms: the import gate for the
+// zero-argument Read() spelling, and the receiver-shape index behind
+// methodResultTaint (pkg may be nil while the package context is still
+// being built).
+func taintFromBody(body ast.Node, reqs map[string]bool, helpers map[string]bool, seeds map[string]taintKind, fields map[string]taintKind, aliases map[string]string, pkg *rawJSONPkg) map[string]taintKind {
 	var assigns []*ast.AssignStmt
 	ast.Inspect(body, func(n ast.Node) bool {
 		if a, ok := n.(*ast.AssignStmt); ok {
@@ -1142,12 +1222,15 @@ func taintFromBody(body ast.Node, reqs map[string]bool, helpers map[string]bool,
 		for _, a := range assigns {
 			var k taintKind
 			for _, rhs := range a.Rhs {
-				k |= exprFromRequestBody(rhs, tainted, reqs, fields)
+				k |= exprFromRequestBody(rhs, tainted, reqs, fields, aliases)
 				if call, ok := rhs.(*ast.CallExpr); ok {
 					if len(helpers) > 0 {
-						k |= helperCallTainted(call, tainted, reqs, fields, helpers)
+						k |= helperCallTainted(call, tainted, reqs, fields, helpers, aliases)
 					}
-					k |= frameReadKind(call)
+					k |= frameReadKind(call, aliases)
+					if pkg != nil {
+						k |= pkg.methodResultTaint(call)
+					}
 				}
 			}
 			if k == 0 {
@@ -1162,6 +1245,292 @@ func taintFromBody(body ast.Node, reqs map[string]bool, helpers map[string]bool,
 		}
 	}
 	return tainted
+}
+
+// indexTypes fills the type-shape index: every struct type's field
+// names, and every method's receiver base type name. Name-based on
+// purpose — the sink keeps a coincidence cheap, and this spares the
+// analyzer a type check it cannot do.
+func (pkg *rawJSONPkg) indexTypes() {
+	pkg.structFields = map[string]map[string]bool{}
+	pkg.methodRecv = map[string][]string{}
+	pkg.sourceFields = map[string]bool{}
+	for _, af := range pkg.files {
+		for _, decl := range af.Decls {
+			gen, ok := decl.(*ast.GenDecl)
+			if !ok {
+				continue
+			}
+			for _, spec := range gen.Specs {
+				ts, ok := spec.(*ast.TypeSpec)
+				if !ok || ts.Name == nil {
+					continue
+				}
+				st, ok := ts.Type.(*ast.StructType)
+				if !ok || st.Fields == nil {
+					continue
+				}
+				fields := map[string]bool{}
+				for _, fld := range st.Fields.List {
+					for _, name := range fld.Names {
+						fields[name.Name] = true
+					}
+				}
+				pkg.structFields[ts.Name.Name] = fields
+			}
+		}
+		for _, fn := range functionsIn(af) {
+			d, ok := fn.node.(*ast.FuncDecl)
+			if !ok || d.Recv == nil || d.Name == nil || len(d.Recv.List) == 0 {
+				continue
+			}
+			if base := recvBaseName(d); base != "" {
+				pkg.methodRecv[d.Name.Name] = append(pkg.methodRecv[d.Name.Name], base)
+			}
+		}
+	}
+}
+
+// methodResultTaint reports the taint a call's RESULT carries when the
+// callee is a method of a type that holds a client-controlled SOURCE in
+// a field: mcpclient Client stores the child's stdout, so Client.Call's
+// result is the child's response — bytes as client-controlled as a
+// frame. Only sourceFields (seeded before the fixpoint, never fed by
+// it) qualify: the general field map holds decoded values too, and
+// feeding those back made every literal-built error struct taint its
+// field names and every method of every such type return taint.
+// Methods are matched by name within the package, the existing
+// convention; the receiver type's own fields are the evidence.
+func (pkg *rawJSONPkg) methodResultTaint(call *ast.CallExpr) taintKind {
+	if len(pkg.sourceFields) == 0 || pkg.structFields == nil {
+		return 0
+	}
+	sel, ok := call.Fun.(*ast.SelectorExpr)
+	if !ok || sel.Sel == nil {
+		return 0
+	}
+	for _, recv := range pkg.methodRecv[sel.Sel.Name] {
+		for field := range pkg.structFields[recv] {
+			if pkg.sourceFields[field] {
+				return taintFrame
+			}
+		}
+	}
+	return 0
+}
+
+// seedSourceFields records the struct fields that hold a frame source
+// DIRECTLY, before the general fixpoint runs: pipe, err := c.StdoutPipe()
+// then &Client{stdout: pipe} (or cl.stdout = pipe), and a scanner built
+// over os.Stdin stored the same way. One bounded pass over local
+// assignments per function; nothing from the general field map or the
+// method ferry feeds back in.
+func seedSourceFields(pkg *rawJSONPkg) {
+	var direct func(e ast.Expr, tainted map[string]bool, aliases map[string]string) bool
+	direct = func(e ast.Expr, tainted map[string]bool, aliases map[string]string) bool {
+		switch v := e.(type) {
+		case *ast.Ident:
+			return tainted[v.Name]
+		case *ast.CallExpr:
+			if frameReadKind(v, aliases) != 0 {
+				return true
+			}
+			if sel, ok := v.Fun.(*ast.SelectorExpr); ok && sel.Sel != nil && readerWrapper[sel.Sel.Name] {
+				if direct(sel.X, tainted, aliases) {
+					return true
+				}
+				for _, a := range v.Args {
+					if direct(a, tainted, aliases) {
+						return true
+					}
+				}
+			}
+		case *ast.SelectorExpr:
+			if v.Sel != nil && v.Sel.Name == "Stdin" {
+				if id, ok := v.X.(*ast.Ident); ok {
+					if p := aliases[id.Name]; p == "os" || strings.HasSuffix(p, "/os") || id.Name == "os" {
+						return true
+					}
+				}
+			}
+		case *ast.ParenExpr:
+			return direct(v.X, tainted, aliases)
+		case *ast.UnaryExpr:
+			return direct(v.X, tainted, aliases)
+		}
+		return false
+	}
+	mark := func(fieldName string) {
+		if fieldName != "" {
+			pkg.sourceFields[fieldName] = true
+		}
+	}
+	for rel, af := range pkg.files {
+		aliases := pkg.aliases[rel]
+		for _, fn := range functionsIn(af) {
+			// Locals holding a direct source, to a local fixpoint.
+			tainted := map[string]bool{}
+			for changed := true; changed; {
+				changed = false
+				ast.Inspect(fn.body, func(n ast.Node) bool {
+					a, ok := n.(*ast.AssignStmt)
+					if !ok {
+						return true
+					}
+					for i, rhs := range a.Rhs {
+						if !direct(rhs, tainted, aliases) {
+							continue
+						}
+						if i < len(a.Lhs) {
+							if id, ok := a.Lhs[i].(*ast.Ident); ok && !tainted[id.Name] {
+								tainted[id.Name] = true
+								changed = true
+							}
+						}
+					}
+					return true
+				})
+			}
+			// The source (or a local holding it) escaping into a field.
+			ast.Inspect(fn.body, func(n ast.Node) bool {
+				switch v := n.(type) {
+				case *ast.AssignStmt:
+					for i, lhs := range v.Lhs {
+						if sel, ok := lhs.(*ast.SelectorExpr); ok && sel.Sel != nil && i < len(v.Rhs) {
+							if direct(v.Rhs[i], tainted, aliases) {
+								mark(sel.Sel.Name)
+							}
+						}
+					}
+				case *ast.CompositeLit:
+					for _, elt := range v.Elts {
+						kv, ok := elt.(*ast.KeyValueExpr)
+						if !ok {
+							continue
+						}
+						key, ok := kv.Key.(*ast.Ident)
+						if !ok {
+							continue
+						}
+						if direct(kv.Value, tainted, aliases) {
+							mark(key.Name)
+						}
+					}
+				}
+				return true
+			})
+		}
+	}
+}
+
+// seedScannerFields seeds frame taint into struct fields that hold a
+// bufio.Scanner built over the framing constructor's own transport
+// parameter: NewCodec(r io.Reader, …) does s := bufio.NewScanner(r)
+// and returns &Codec{scan: s}, transport-neutral by contract — the
+// supervisor wires os.Stdin, a net.Conn, or a pipe into r (the module
+// protocol's documented v1/v2 story). The codec cannot see its
+// transport, so the parameter itself is the source, and ONLY when the
+// scanner escapes into a field: a scanner kept local over an io.Reader
+// parameter (core/mcp ServeStdio, core/acp) reads whatever the CALLER
+// declared, which this rule refuses to guess at.
+func seedScannerFields(pkg *rawJSONPkg) {
+	for rel, af := range pkg.files {
+		aliases := pkg.aliases[rel]
+		for _, fn := range functionsIn(af) {
+			fd, ok := fn.node.(*ast.FuncDecl)
+			if !ok || fd.Type == nil || fd.Type.Params == nil {
+				continue
+			}
+			// Transport parameters: io.Reader / io.ReadCloser /
+			// net.Conn, resolved through the file's import aliases.
+			transport := map[string]bool{}
+			for _, param := range fd.Type.Params.List {
+				sel, ok := param.Type.(*ast.SelectorExpr)
+				if !ok || sel.Sel == nil {
+					continue
+				}
+				pkgIdent, ok := sel.X.(*ast.Ident)
+				if !ok {
+					continue
+				}
+				switch aliases[pkgIdent.Name] {
+				case "io", "net", "github.com/DonaldMurio/gofastr/core/stream":
+					switch sel.Sel.Name {
+					case "Reader", "ReadCloser", "Conn", "WebSocketConn":
+						for _, name := range param.Names {
+							transport[name.Name] = true
+						}
+					}
+				}
+			}
+			if len(transport) == 0 {
+				continue
+			}
+			// scanner := bufio.NewScanner(<transport param>)
+			scanners := map[string]bool{}
+			ast.Inspect(fn.body, func(n ast.Node) bool {
+				a, ok := n.(*ast.AssignStmt)
+				if !ok {
+					return true
+				}
+				for i, rhs := range a.Rhs {
+					call, ok := rhs.(*ast.CallExpr)
+					if !ok {
+						continue
+					}
+					if sel, ok := call.Fun.(*ast.SelectorExpr); !ok || sel.Sel == nil || sel.Sel.Name != "NewScanner" || len(call.Args) == 0 {
+						continue
+					}
+					if id, ok := call.Args[0].(*ast.Ident); ok && transport[id.Name] {
+						if i < len(a.Lhs) {
+							if lhs, ok := a.Lhs[i].(*ast.Ident); ok {
+								scanners[lhs.Name] = true
+							}
+						}
+					}
+				}
+				return true
+			})
+			if len(scanners) == 0 {
+				continue
+			}
+			// The scanner escaping into a field is what makes the
+			// parameter a framing source: y.scan = s, or &Codec{scan: s}.
+			mark := func(fieldName string) {
+				if fieldName != "" {
+					pkg.sourceFields[fieldName] = true
+					pkg.fields[fieldName] |= taintFrame
+				}
+			}
+			ast.Inspect(fn.body, func(n ast.Node) bool {
+				switch v := n.(type) {
+				case *ast.AssignStmt:
+					for i, lhs := range v.Lhs {
+						if sel, ok := lhs.(*ast.SelectorExpr); ok && sel.Sel != nil && i < len(v.Rhs) {
+							if id, ok := v.Rhs[i].(*ast.Ident); ok && scanners[id.Name] {
+								mark(sel.Sel.Name)
+							}
+						}
+					}
+				case *ast.CompositeLit:
+					for _, elt := range v.Elts {
+						kv, ok := elt.(*ast.KeyValueExpr)
+						if !ok {
+							continue
+						}
+						key, ok := kv.Key.(*ast.Ident)
+						if !ok {
+							continue
+						}
+						if id, ok := kv.Value.(*ast.Ident); ok && scanners[id.Name] {
+							mark(key.Name)
+						}
+					}
+				}
+				return true
+			})
+		}
+	}
 }
 
 // packageBodyReaders returns the package's FUNCTIONS (bare-name calls
@@ -1184,7 +1553,7 @@ func packageBodyReaders(pkg *rawJSONPkg) map[string]bool {
 			if len(reqs) == 0 {
 				continue
 			}
-			tainted := taintFromBody(fn.body, reqs, nil, nil, nil)
+			tainted := taintFromBody(fn.body, reqs, nil, nil, nil, aliases, pkg)
 			derived := false
 			ast.Inspect(fn.body, func(n ast.Node) bool {
 				ret, ok := n.(*ast.ReturnStmt)
@@ -1192,7 +1561,7 @@ func packageBodyReaders(pkg *rawJSONPkg) map[string]bool {
 					return true
 				}
 				for _, r := range ret.Results {
-					if exprFromRequestBody(r, tainted, reqs, nil) != 0 {
+					if exprFromRequestBody(r, tainted, reqs, nil, aliases) != 0 {
 						derived = true
 						return false
 					}
@@ -1211,13 +1580,13 @@ func packageBodyReaders(pkg *rawJSONPkg) map[string]bool {
 // helper whose arguments actually carry this request (the request
 // itself, its body, or an already-tainted value): the ferry must carry
 // bytes, not a coincidental name.
-func helperCallTainted(call *ast.CallExpr, tainted map[string]taintKind, reqs map[string]bool, fields map[string]taintKind, helpers map[string]bool) taintKind {
+func helperCallTainted(call *ast.CallExpr, tainted map[string]taintKind, reqs map[string]bool, fields map[string]taintKind, helpers map[string]bool, aliases map[string]string) taintKind {
 	id, ok := call.Fun.(*ast.Ident)
 	if !ok || !helpers[id.Name] {
 		return 0
 	}
 	for _, a := range call.Args {
-		if k := exprFromRequestBody(a, tainted, reqs, fields); k != 0 {
+		if k := exprFromRequestBody(a, tainted, reqs, fields, aliases); k != 0 {
 			return k
 		}
 		touches := false
@@ -1258,24 +1627,58 @@ var readerWrapper = map[string]bool{
 // wsFrameReads names the calls whose RESULT bytes are one inbound
 // client frame. The list holds the reader spellings this repo actually
 // uses: control/ws Conn.readFrame, which this package writes itself.
-// No websocket library appears anywhere else in the tree, and a list
-// of guessed library names would taint by coincidence.
+// The other inbound-frame spellings are structured and live in
+// [frameReadKind]: a zero-argument Read() (core/stream's
+// (*WebSocketConn).Read) and a child's StdoutPipe. No websocket library
+// appears anywhere else in the tree, and a list of guessed library
+// names would taint by coincidence.
 var wsFrameReads = map[string]bool{"readFrame": true}
 
+// importsStream reports whether the file's import aliases resolve
+// core/stream. The gate keeps the zero-argument Read() arm honest:
+// `conn.Read()` is the websocket frame read only where the file speaks
+// core/stream; every other zero-argument Read in the tree (journal,
+// xcontext, harness Context, widget signals) returns something else.
+func importsStream(aliases map[string]string) bool {
+	for _, p := range aliases {
+		if p == "core/stream" || strings.HasSuffix(p, "/core/stream") {
+			return true
+		}
+	}
+	return false
+}
+
 // frameReadKind reports the taint a call carries as an inbound frame
-// read: a websocket/frame reader call on any receiver.
-func frameReadKind(call *ast.CallExpr) taintKind {
+// read: a websocket/frame reader call on any receiver — a name in
+// wsFrameReads, or the zero-argument Read()/StdoutPipe() spellings
+// (core/stream's frame read; a spawned child's stdout, which is the
+// peer's side of the wire and just as client-controlled).
+func frameReadKind(call *ast.CallExpr, aliases map[string]string) taintKind {
 	var name string
+	selector := false
 	switch fn := call.Fun.(type) {
 	case *ast.Ident:
 		name = fn.Name
 	case *ast.SelectorExpr:
 		if fn.Sel != nil {
-			name = fn.Sel.Name
+			name, selector = fn.Sel.Name, true
 		}
 	}
-	if name != "" && wsFrameReads[name] {
+	if name == "" {
+		return 0
+	}
+	if wsFrameReads[name] {
 		return taintFrame
+	}
+	if selector && len(call.Args) == 0 {
+		switch name {
+		case "Read":
+			if importsStream(aliases) {
+				return taintFrame
+			}
+		case "StdoutPipe":
+			return taintFrame
+		}
 	}
 	return 0
 }
@@ -1370,10 +1773,10 @@ func isKeyWalk(body ast.Node, call *ast.CallExpr, aliases map[string]string) boo
 
 // exprFromRequestBody reports which client-controlled taint e carries:
 // a request <req>.Body selector, a tainted identifier (in plain
-// identifier position), a read of a tainted field name, or any of
-// those under a readerWrapper call (whose receiver counts too:
-// scanner.Bytes()).
-func exprFromRequestBody(e ast.Expr, tainted map[string]taintKind, reqs map[string]bool, fields map[string]taintKind) taintKind {
+// identifier position), a read of a tainted field name, os.Stdin (the
+// process's own inbound wire), or any of those under a readerWrapper
+// call (whose receiver counts too: scanner.Bytes()).
+func exprFromRequestBody(e ast.Expr, tainted map[string]taintKind, reqs map[string]bool, fields map[string]taintKind, aliases map[string]string) taintKind {
 	switch v := e.(type) {
 	case *ast.Ident:
 		return tainted[v.Name]
@@ -1387,15 +1790,15 @@ func exprFromRequestBody(e ast.Expr, tainted map[string]taintKind, reqs map[stri
 		switch fn := v.Fun.(type) {
 		case *ast.SelectorExpr:
 			if fn.Sel != nil && readerWrapper[fn.Sel.Name] {
-				k = exprFromRequestBody(fn.X, tainted, reqs, fields)
+				k = exprFromRequestBody(fn.X, tainted, reqs, fields, aliases)
 				for _, a := range v.Args {
-					k |= exprFromRequestBody(a, tainted, reqs, fields)
+					k |= exprFromRequestBody(a, tainted, reqs, fields, aliases)
 				}
 			}
 		case *ast.Ident:
 			if readerWrapper[fn.Name] {
 				for _, a := range v.Args {
-					k |= exprFromRequestBody(a, tainted, reqs, fields)
+					k |= exprFromRequestBody(a, tainted, reqs, fields, aliases)
 				}
 			}
 		}
@@ -1404,30 +1807,37 @@ func exprFromRequestBody(e ast.Expr, tainted map[string]taintKind, reqs map[stri
 		if id, ok := v.X.(*ast.Ident); ok && reqs[id.Name] && v.Sel != nil && v.Sel.Name == "Body" {
 			return taintBody
 		}
+		if v.Sel != nil && v.Sel.Name == "Stdin" {
+			if id, ok := v.X.(*ast.Ident); ok {
+				if p := aliases[id.Name]; p == "os" || strings.HasSuffix(p, "/os") || id.Name == "os" {
+					return taintFrame
+				}
+			}
+		}
 		if v.Sel != nil {
 			if k := fields[v.Sel.Name]; k != 0 {
 				return k
 			}
 		}
-		return exprFromRequestBody(v.X, tainted, reqs, fields)
+		return exprFromRequestBody(v.X, tainted, reqs, fields, aliases)
 	case *ast.BinaryExpr:
-		return exprFromRequestBody(v.X, tainted, reqs, fields) | exprFromRequestBody(v.Y, tainted, reqs, fields)
+		return exprFromRequestBody(v.X, tainted, reqs, fields, aliases) | exprFromRequestBody(v.Y, tainted, reqs, fields, aliases)
 	case *ast.ParenExpr:
-		return exprFromRequestBody(v.X, tainted, reqs, fields)
+		return exprFromRequestBody(v.X, tainted, reqs, fields, aliases)
 	case *ast.UnaryExpr:
-		return exprFromRequestBody(v.X, tainted, reqs, fields)
+		return exprFromRequestBody(v.X, tainted, reqs, fields, aliases)
 	case *ast.StarExpr:
-		return exprFromRequestBody(v.X, tainted, reqs, fields)
+		return exprFromRequestBody(v.X, tainted, reqs, fields, aliases)
 	case *ast.IndexExpr:
-		return exprFromRequestBody(v.X, tainted, reqs, fields)
+		return exprFromRequestBody(v.X, tainted, reqs, fields, aliases)
 	case *ast.CompositeLit:
 		var k taintKind
 		for _, elt := range v.Elts {
 			if kv, ok := elt.(*ast.KeyValueExpr); ok {
-				k |= exprFromRequestBody(kv.Value, tainted, reqs, fields)
+				k |= exprFromRequestBody(kv.Value, tainted, reqs, fields, aliases)
 				continue
 			}
-			k |= exprFromRequestBody(elt, tainted, reqs, fields)
+			k |= exprFromRequestBody(elt, tainted, reqs, fields, aliases)
 		}
 		return k
 	}

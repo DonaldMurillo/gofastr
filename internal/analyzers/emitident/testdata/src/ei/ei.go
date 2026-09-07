@@ -237,3 +237,28 @@ func j6(sb *strings.Builder, wire string) {
 	fmt.Fprintf(sb, "  %s?: string;\n", wire)       // want `identifier slot "%s:"`
 	fmt.Fprintf(sb, "  %s%s: string;\n", wire, "?") // want `identifier slot "%s:"`
 }
+
+// ---- CSS identifier slots (classname probe, 2026-09-06) --------------
+
+// c1: the unquoted class selector. The class name IS the selector:
+// "text-lg{position:fixed;...}x" emitted as .NAME { ... } turns the
+// payload into live CSS (GenerateUtilityCSS / GenerateCSS).
+func c1(class, props string, sb *strings.Builder) {
+	fmt.Fprintf(sb, ".%s { %s }\n", class, props) // want `identifier slot "\.%s \{"`
+	fmt.Fprintf(sb, ".%s{color:red}\n", class)    // want `identifier slot "\.%s \{"`
+}
+
+// c2: the custom-property name slot, a ';'-terminated declaration.
+func c2(name string, sb *strings.Builder) {
+	fmt.Fprintf(sb, "--%s: 8px;\n", name) // want `identifier slot "--%s:"`
+}
+
+// e15/e16: type/var declarations whose declared-name run continues
+// after the verb — the renderBlueprintStubs / typed-repo spelling.
+func e15(name string) string {
+	return fmt.Sprintf("type %sRepo struct {\n\tID string\n}\n", name) // want `identifier slot "type %s"`
+}
+
+func e16(name string) string {
+	return fmt.Sprintf("var %sCount = 0\n", name) // want `identifier slot "var %s"`
+}

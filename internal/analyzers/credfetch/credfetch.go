@@ -1,6 +1,8 @@
 // Package credfetch catches an http.Client with no CheckRedirect used
-// for a credential-bearing fetch, and the unbounded decode of such a
-// fetch's response.
+// for a credential-bearing fetch. The unbounded decode of a fetch's
+// response used to be this analyzer's second posture; since 2026-09-07
+// it belongs to unboundedresp, which covers every *http.Response read
+// (credential-bearing or not) — the two no longer double-report.
 //
 // The bug class: Go's default redirect policy re-sends the request —
 // the body verbatim on 307/308, the headers on every 3xx — to whatever
@@ -33,10 +35,11 @@
 //   - a URL read from a field or parameter named tokenURL or
 //     tokenEndpoint.
 //
-// Posture 2 reports the decode: the response of a credential-bearing Do
-// read by json.NewDecoder(resp.Body) or io.ReadAll(resp.Body) with no
-// io.LimitReader on the chain. unboundedbody deliberately ignores
-// *http.Response; this is the credential-fetch half of that contract.
+// Posture 2 (the unbounded decode of a credential fetch's response)
+// was delegated to unboundedresp on 2026-09-07: same fire shape, any
+// client, with the one-hop capped-helper credit. unboundedbody owns
+// request bodies; unboundedresp owns response bodies; this analyzer
+// owns the redirect posture alone.
 //
 // Fields are keyed by (struct type, field name): battery/auth alone has
 // GoogleProvider.httpClient unset and OIDCProvider.httpClient guarded,
@@ -60,7 +63,7 @@
 //   - requests tunnelled through a helper's parameters (client and
 //     credential passed into another function): out of reach for a
 //     one-function dataflow;
-//   - _test.go files, both postures (2026-09-04): a test client
+//   - _test.go files (2026-09-04): a test client
 //     POSTing a code to an httptest.Server carries a fixture, not a
 //     credential, and the pre-commit hook runs the vettool over test
 //     files. They are excluded twice: no function in one is
@@ -92,8 +95,6 @@ var Analyzer = &analysis.Analyzer{
 }
 
 const redirectMsg = "http.Client with no CheckRedirect on a credential-bearing fetch: a 3xx re-sends the credential (the body verbatim on 307/308, the headers always) to whatever host the redirect names — refuse redirects, CheckRedirect returning http.ErrUseLastResponse (battery/auth oidcNoRedirect)"
-
-const capMsg = "response of a credential-bearing fetch decoded with no size bound: the endpoint controls the byte count — read it through io.LimitReader (battery/auth oidc.go reads 1<<20)"
 
 // formCred are credential form keys, compared lowercased with
 // separators stripped.
@@ -409,7 +410,6 @@ func (c *pkgCtx) checkFunc(fd *ast.FuncDecl, reported map[token.Pos]bool) {
 			reported[v.node.Pos()] = true
 			c.pass.Reportf(v.node.Pos(), "%s (%s)", redirectMsg, cred)
 		}
-		f.checkBodyCap(call, cred)
 		return true
 	})
 }
@@ -578,88 +578,6 @@ func (f *fnCtx) formCredential(body ast.Expr) string {
 	return ""
 }
 
-// checkBodyCap reports unbounded document reads of the response of a
-// credential-bearing Do: json.NewDecoder(resp.Body) / io.ReadAll(
-// resp.Body) with no io.LimitReader on the chain.
-func (f *fnCtx) checkBodyCap(do *ast.CallExpr, cred string) {
-	resp := f.responseOf(do)
-	if resp == nil {
-		return
-	}
-	ast.Inspect(f.decl.Body, func(n ast.Node) bool {
-		call, ok := n.(*ast.CallExpr)
-		if !ok || len(call.Args) != 1 {
-			return true
-		}
-		q := f.c.qualifiedFunc(call.Fun)
-		if q != "encoding/json.NewDecoder" && q != "io.ReadAll" {
-			return true
-		}
-		arg := call.Args[0]
-		if !f.mentionsRespBody(arg, resp, 0) || containsLimitReader(arg) {
-			return true
-		}
-		f.c.pass.Reportf(call.Pos(), "%s (%s)", capMsg, cred)
-		return true
-	})
-}
-
-// responseOf returns the variable the Do call's result was bound to.
-func (f *fnCtx) responseOf(do *ast.CallExpr) *types.Var {
-	var obj *types.Var
-	ast.Inspect(f.decl.Body, func(n ast.Node) bool {
-		if obj != nil {
-			return false
-		}
-		a, ok := n.(*ast.AssignStmt)
-		if !ok {
-			return true
-		}
-		for i, rhs := range a.Rhs {
-			if rhs == do && i < len(a.Lhs) {
-				if id, ok := a.Lhs[i].(*ast.Ident); ok {
-					obj, _ = f.c.pass.TypesInfo.ObjectOf(id).(*types.Var)
-				}
-			}
-		}
-		return obj == nil
-	})
-	return obj
-}
-
-// mentionsRespBody reports whether e reads resp.Body, directly or
-// through a local bound to it.
-func (f *fnCtx) mentionsRespBody(e ast.Expr, resp *types.Var, depth int) bool {
-	if depth > 3 {
-		return false
-	}
-	found := false
-	ast.Inspect(e, func(n ast.Node) bool {
-		if found {
-			return false
-		}
-		if sel, ok := n.(*ast.SelectorExpr); ok && sel.Sel.Name == "Body" {
-			if id, ok := sel.X.(*ast.Ident); ok {
-				if o, ok := f.c.pass.TypesInfo.ObjectOf(id).(*types.Var); ok && o == resp {
-					found = true
-				}
-			}
-		}
-		return !found
-	})
-	if found {
-		return true
-	}
-	if id, ok := e.(*ast.Ident); ok {
-		if o, ok := f.c.pass.TypesInfo.ObjectOf(id).(*types.Var); ok {
-			if b, ok := f.bound[o]; ok {
-				return f.mentionsRespBody(b, resp, depth+1)
-			}
-		}
-	}
-	return false
-}
-
 // requestCall resolves a request expression to its NewRequest call.
 func (f *fnCtx) requestCall(e ast.Expr, depth int) *ast.CallExpr {
 	if depth > 3 {
@@ -699,24 +617,6 @@ func unwrapEncode(e ast.Expr) *ast.CallExpr {
 		return call
 	}
 	return nil
-}
-
-// containsLimitReader reports whether the expression tree wraps
-// anything in io.LimitReader.
-func containsLimitReader(e ast.Expr) bool {
-	found := false
-	ast.Inspect(e, func(n ast.Node) bool {
-		if found {
-			return false
-		}
-		if call, ok := n.(*ast.CallExpr); ok {
-			if q := qualified(call.Fun); q == "io.LimitReader" {
-				found = true
-			}
-		}
-		return !found
-	})
-	return found
 }
 
 // isClientExpr reports whether e's type is *http.Client.

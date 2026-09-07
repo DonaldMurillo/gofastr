@@ -13,5 +13,10 @@ func TestEmptyErrBranch(t *testing.T) {
 }
 
 func TestClientTimeout(t *testing.T) {
-	analysistest.Run(t, analysistest.TestData(), hygiene.ClientTimeoutAnalyzer, "clientp", "clientctx")
+	analysistest.Run(t, analysistest.TestData(), hygiene.ClientTimeoutAnalyzer,
+		"clientp",     // literal with no Timeout
+		"clientctx",   // literal under per-call deadlines
+		"clientbare",  // round-5: sugar helpers and DefaultClient, no credit
+		"clientctxok", // round-5: per-call ctx deadline and file convention
+	)
 }

@@ -49,14 +49,28 @@ func ExportDataFixed(dir string) error {
 		return err
 	}
 	mb, _ := json.MarshalIndent(map[string]int{"v": 1}, "", "  ")
-	if err := os.WriteFile(filepath.Join(dir, "manifest.json"), mb, 0o600); err != nil {
+	if err := writeNDJSONFixed(filepath.Join(dir, "manifest.json"), mb); err != nil {
 		return err
 	}
-	return writeNDJSONFixed(filepath.Join(dir, "users.ndjson"))
+	return writeNDJSONFixed(filepath.Join(dir, "users.ndjson"), []byte("row"))
 }
 
-func writeNDJSONFixed(path string) error {
-	return os.WriteFile(path, []byte("row"), 0o600)
+// writeNDJSONFixed is the fix posture under BOTH arms: owner-only at
+// create AND on overwrite — open O_CREATE|O_TRUNC 0o600, Chmod the
+// HANDLE, then write (the writeSecretFile spelling; a pre-existing
+// looser file is tightened before any content lands).
+func writeNDJSONFixed(path string, data []byte) error {
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
+	if err != nil {
+		return err
+	}
+	if err := f.Chmod(0o600); err != nil {
+		f.Close()
+		return err
+	}
+	_, werr := f.Write(data)
+	f.Close()
+	return werr
 }
 
 // ---------- pre-fix: ExportBundle.Write (harness session export.go) ----------
@@ -342,7 +356,7 @@ func writeBlueprint(dir string) error {
 }
 
 func writeWorldSnapshot(dir string) error {
-	return os.WriteFile(filepath.Join(dir, "world.json"), []byte("{}\n"), 0o600)
+	return writeNDJSONFixed(filepath.Join(dir, "world.json"), []byte("{}\n"))
 }
 
 type migrationOpts struct {

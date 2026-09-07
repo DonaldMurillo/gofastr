@@ -16,14 +16,21 @@ import (
 )
 
 // hasCSPIgnoreDirective reports whether a source file opts out of the
-// CSP linters. Both the bare form `//check-csp:ignore-file` and the
-// gofmt-canonical spaced form `// check-csp:ignore-file` count: gofmt
-// inserts a space because hyphenated names don't qualify as Go
-// directives, so any formatted tree carries the spaced form.
+// CSP linters. A live directive is COMMENT-INITIAL: optional leading
+// whitespace, the // token, optional spaces (gofmt inserts one because
+// hyphenated names don't qualify as Go directives, so any formatted
+// tree carries the spaced form), the directive, nothing else on the
+// line — the grammar framework/contracts/suppress.go states for its
+// own directives: "The directive must be the FIRST thing in its
+// comment. That anchor is what separates a live suppression from
+// documentation *about* suppressions." Until 2026-09-07 this was a
+// whole-file strings.Contains, and any file whose prose quoted the
+// directive (rendering.go's own analyzer comment did) silently opted
+// out of both gates.
+var reCSPIgnoreDirective = regexp.MustCompile(`(?m)^[ \t]*//[ \t]*check-csp:ignore-file[ \t]*$`)
+
 func hasCSPIgnoreDirective(raw []byte) bool {
-	s := string(raw)
-	return strings.Contains(s, "//check-csp:ignore-file") ||
-		strings.Contains(s, "// check-csp:ignore-file")
+	return reCSPIgnoreDirective.Match(raw)
 }
 
 // Inline-script ban, compile-rule enforcement of the framework's
@@ -80,11 +87,10 @@ var (
 // an inline <script> block. Returns one Violation per offending
 // site.
 //
-// A file can opt out by including the directive
-// `//check-csp:ignore-file` somewhere in its source (typically near
-// the top). Use only when the file inherently references <script>
-// in non-emitting contexts, the linter itself, regex patterns, or
-// CLI scaffolding.
+// A file can opt out by starting a comment line with the directive
+// `//check-csp:ignore-file` (typically near the top of the file). Use
+// only when the file inherently references <script> in non-emitting
+// contexts, the linter itself, regex patterns, or CLI scaffolding.
 // ScanInlineScriptsIn reports inline <script> bodies in an already-parsed
 // file. It exists for callers that have read and parsed the source
 // already, the contracts pass caches both, so the check does not repeat
