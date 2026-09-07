@@ -125,10 +125,10 @@ pinned.
 - **Data:** `core/upload/`, `framework/{file,image,openapi,sdk,sdkdocs,
   tx.go,hook,typed_hooks}`, `framework/{db,pagination,datexport}`,
   `core/schema` beyond the Pattern note, `crud_batch/stream/events`. The
-  `sqlite/**` engine has ~25 unverified recon candidates on the
-  fileformat/varint readers; robustness bugs only unless the engine is
-  pointed at an untrusted `.db` (kiln/harness session stores), where
-  `-fuzz` is the right tool.
+  `sqlite/**` in-house engine was REMOVED from the tree (2026-09 round-5
+  recon confirmed: only the stdlib driver alias + DSN compat shim remain,
+  sibling-tested); the untrusted-`.db` robustness surface now lives in
+  modernc.org/sqlite — out of repo scope.
 - **Agent surface:** `framework/experimental`,
   `kiln/{expr,effect,render}` CSP, `cmd/gofastr/{pack,skill,docs}`,
   `core/moduleproto/{peer,handshake,methods}.go`, `framework/agentsinv`.
