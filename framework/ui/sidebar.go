@@ -199,6 +199,14 @@ type SidebarConfig struct {
 	// plus a hidden-when-closed container of the child links.
 	GroupMarkup SidebarGroupMarkup
 
+	// Prepend is optional content rendered between the title and the
+	// nav, on every body path: the inline sidebar, SidebarBody, and the
+	// MountSidebar drawer. Use it for a section switcher that the
+	// phone drawer must carry because the header hides it there.
+	// Hidden with the title in the collapsed rail and the auto-hide
+	// rest state. Empty emits no markup.
+	Prepend render.HTML
+
 	// Footer is optional content rendered at the bottom (signed-in
 	// user pill, settings link, etc.).
 	Footer render.HTML
@@ -446,6 +454,9 @@ func sidebarBody(cfg SidebarConfig, idPrefix string) render.HTML {
 	var b strings.Builder
 	if cfg.Title != "" {
 		b.WriteString(`<h2 class="ui-sidebar__title">` + render.Escape(cfg.Title) + `</h2>`)
+	}
+	if cfg.Prepend != "" {
+		b.WriteString(`<div class="ui-sidebar__prepend">` + string(cfg.Prepend) + `</div>`)
 	}
 	label := cfg.NavLabel
 	if label == "" {
@@ -813,6 +824,10 @@ func sidebarCSS(_ style.Theme) string {
   padding-top: var(--spacing-md, 8px);
   border-top: 1px solid var(--color-border, #E4E4E7);
 }
+[data-fui-comp="ui-sidebar"] .ui-sidebar__prepend {
+  padding-bottom: var(--spacing-md, 8px);
+  border-bottom: 1px solid var(--color-border, #E4E4E7);
+}
 [data-fui-comp="ui-sidebar"].ui-sidebar--collapsible[data-collapsed="true"] .ui-sidebar__inline {
   min-width: 64px;
   width: 64px;
@@ -823,6 +838,7 @@ func sidebarCSS(_ style.Theme) string {
   transform: rotate(180deg);
 }
 [data-fui-comp="ui-sidebar"].ui-sidebar--collapsible[data-collapsed="true"] .ui-sidebar__title,
+[data-fui-comp="ui-sidebar"].ui-sidebar--collapsible[data-collapsed="true"] .ui-sidebar__prepend,
 [data-fui-comp="ui-sidebar"].ui-sidebar--collapsible[data-collapsed="true"] .ui-sidebar__footer,
 [data-fui-comp="ui-sidebar"].ui-sidebar--collapsible[data-collapsed="true"] .ui-sidebar__sublist {
   display: none;
@@ -882,6 +898,7 @@ func sidebarCSS(_ style.Theme) string {
    or focus-within they stop matching and the base (expanded) styles
    take over, so the reveal needs no mirrored overrides. */
 [data-fui-comp="ui-sidebar"].ui-sidebar--auto-hide:not(:hover):not(:focus-within) .ui-sidebar__title,
+[data-fui-comp="ui-sidebar"].ui-sidebar--auto-hide:not(:hover):not(:focus-within) .ui-sidebar__prepend,
 [data-fui-comp="ui-sidebar"].ui-sidebar--auto-hide:not(:hover):not(:focus-within) .ui-sidebar__footer,
 [data-fui-comp="ui-sidebar"].ui-sidebar--auto-hide:not(:hover):not(:focus-within) .ui-sidebar__sublist {
   display: none;

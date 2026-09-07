@@ -79,6 +79,15 @@ read scope (an entity the caller cannot read is omitted, matching
 `/api/llm.md`); `WithPublicOpenAPI` opts into the full, unfiltered
 document.
 
+### Added
+- **`SidebarConfig.Prepend` puts content above the nav on every body
+  path.** The field renders between the title and the `<nav>` in the
+  inline column, `SidebarBody`, and the `MountSidebar` drawer, so a
+  docs site whose phone header hides its section tabs can carry a
+  section `<select>` in the drawer without copying the mount. It hides
+  with the title in the collapsed rail and the auto-hide rest state
+  (#405).
+
 ## [0.84.1] - 2026-09-06
 
 ### Fixed

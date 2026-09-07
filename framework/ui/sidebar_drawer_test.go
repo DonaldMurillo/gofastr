@@ -3,6 +3,8 @@ package ui
 import (
 	"strings"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
 // In-package on purpose: sidebarDrawerSlot (the MountSidebar drawer's
@@ -26,5 +28,21 @@ func TestSidebarDrawerSlotGroupIdsUseDrawerPrefix(t *testing.T) {
 	}
 	if !strings.Contains(out, `<ul class="ui-sidebar__sublist" id="workspace-nav-drawer-g1" hidden>`) {
 		t.Errorf("drawer slot group container must carry the -drawer-prefixed id:\n%s", out)
+	}
+}
+
+// The drawer body is the only navigation below the md breakpoint, so
+// Prepend has to reach it too, not only the inline sidebar (#405).
+func TestSidebarDrawerSlotCarriesPrepend(t *testing.T) {
+	cfg := SidebarConfig{
+		DrawerName: "docs-nav",
+		Prepend:    render.HTML(`<select id="section"></select>`),
+		Items:      []SidebarItem{{Label: "Home", Href: "/"}},
+	}
+	out := string(sidebarDrawerSlot{cfg: cfg}.Render())
+	pre := strings.Index(out, `<div class="ui-sidebar__prepend"><select id="section">`)
+	nav := strings.Index(out, `<nav class="ui-sidebar__nav"`)
+	if pre < 0 || nav < 0 || pre > nav {
+		t.Errorf("drawer slot must render Prepend above the nav (prepend=%d nav=%d):\n%s", pre, nav, out)
 	}
 }
