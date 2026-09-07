@@ -106,6 +106,9 @@ func NewPasswordResetPlugin(cfg PasswordResetConfig) *PasswordResetPlugin {
 func (p *PasswordResetPlugin) Name() string { return "password-reset" }
 
 func (p *PasswordResetPlugin) Init(mgr *AuthManager) error {
+	if why := invalidLinkBaseURL(p.cfg.BaseURL); why != "" {
+		return fmt.Errorf("auth: password-reset plugin: BaseURL %q %s", p.cfg.BaseURL, why)
+	}
 	p.mgr = mgr
 	return nil
 }

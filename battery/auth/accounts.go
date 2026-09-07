@@ -165,6 +165,9 @@ func (p *AccountsPlugin) listHandler(w http.ResponseWriter, r *http.Request) {
 		writeAuthError(w, http.StatusInternalServerError, "list accounts failed")
 		return
 	}
+	// Per-caller linked-provider inventory: the same session-scoped,
+	// cache-replayable recon shape as /auth/tokens and /auth/me.
+	writeCredentialHeaders(w)
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{"accounts": accts})
 }

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/router"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/dev"
 )
@@ -468,12 +469,18 @@ func (h *fanoutHandler) Handle(ctx context.Context, r slog.Record) error {
 				// would push out legitimate logs from elsewhere.
 				if h.shouldEmitWriteFailure() {
 					// Truncate the entry to a short preview so even
-					// the throttled path can't write multi-KB lines.
+					// the throttled path can't write multi-KB lines,
+					// then scrub it: this is a terminal sink in live
+					// form, and slog's JSON encoder leaves C1/bidi
+					// runes raw (U+009B CSI executes on 8-bit
+					// terminals, U+202E reorders the line) — the same
+					// StripUnsafe the console renderer applies.
 					preview := entry
 					if len(preview) > 256 {
 						preview = preview[:256]
 					}
-					fmt.Fprintf(os.Stderr, "log: sink write failed: %v (preview: %s …)\n", err, preview)
+					fmt.Fprintf(os.Stderr, "log: sink write failed: %v (preview: %s …)\n",
+						err, textsafe.StripUnsafe(string(preview)))
 				}
 			}
 			errs = append(errs, err)

@@ -59,6 +59,11 @@ var getOrSetGroup singleflight.Group
 // through the cache (JSON) so the value written into dest is the cached form.
 // A negative ttl follows the Cache.Set contract: the loader still runs, but
 // nothing is stored and GetOrSet surfaces the miss (ErrCacheMiss).
+//
+// The loader (and the shared fill's cache writes) runs under a context
+// detached from any single caller: one requester aborting mid-load never
+// fails another waiter's fill. Each caller's own context still governs its
+// fast-path read and its final read-back.
 func GetOrSet(ctx context.Context, c Cache, key string, ttl time.Duration, dest any, loader Loader) error {
 	// Fast path: already cached.
 	if err := c.Get(ctx, key, dest); err == nil {
@@ -68,16 +73,25 @@ func GetOrSet(ctx context.Context, c Cache, key string, ttl time.Duration, dest 
 	// Collapse concurrent misses per cache instance + key.
 	flightKey := fmt.Sprintf("%p:%s", c, key)
 	_, err, _ := getOrSetGroup.Do(flightKey, func() (any, error) {
+		// The flight is detached from any single caller: whichever
+		// goroutine wins the race, its request context must not own
+		// the shared fill. Under the leader's raw context, one caller
+		// disconnecting mid-load handed context.Canceled to every
+		// joined waiter holding a live context of its own — a
+		// request-scoped abort crossing request boundaries. WithoutCancel
+		// keeps the context's values (trace, auth) and drops only its
+		// cancellation and deadline.
+		flightCtx := context.WithoutCancel(ctx)
 		// Re-check: another waiter may have populated the cache while we
 		// queued for the singleflight slot.
-		if err := c.Get(ctx, key, dest); err == nil {
+		if err := c.Get(flightCtx, key, dest); err == nil {
 			return nil, nil
 		}
-		val, lerr := loader(ctx)
+		val, lerr := loader(flightCtx)
 		if lerr != nil {
 			return nil, lerr
 		}
-		if serr := c.Set(ctx, key, val, ttl); serr != nil {
+		if serr := c.Set(flightCtx, key, val, ttl); serr != nil {
 			return nil, serr
 		}
 		return nil, nil

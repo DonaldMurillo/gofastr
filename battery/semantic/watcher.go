@@ -14,6 +14,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
 // WatchOptions configures a [Watcher].
@@ -89,12 +91,16 @@ func NewWatcher(idx Index, opts WatchOptions) *Watcher {
 // indexing error encountered.
 // safeMetadata runs the app-supplied metadata callback under a recover
 // guard: it fires on the watcher loop, which has no per-request net, so
-// a panicking metadata hook must degrade to no metadata, not kill the
 // watcher.
 func (w *Watcher) safeMetadata(absPath string) (m map[string]any) {
 	defer func() {
 		if rec := recover(); rec != nil {
-			slog.Default().Error("semantic: MetadataFunc panicked; indexing without metadata", "path", absPath, "panic", rec)
+			// The recovered value can embed metadata-derived text with
+			// raw control/bidi bytes (terminal injection on the watcher
+			// loop, where no HTTP recover net exists), so it goes to the
+			// sink scrubbed like every pinned recover path.
+			slog.Default().Error("semantic: MetadataFunc panicked; indexing without metadata",
+				"path", absPath, "panic", textsafe.Recovered(rec))
 			m = nil
 		}
 	}()

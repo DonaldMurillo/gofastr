@@ -555,17 +555,13 @@ func (p *OAuth2Plugin) callbackHandler() http.HandlerFunc {
 			writeAuthError(w, http.StatusInternalServerError, "session create failed")
 			return
 		}
-
-		// Set session cookie
-		http.SetCookie(w, &http.Cookie{
-			Name:     cfg.SessionCookie,
-			Value:    sess.Token,
-			Path:     "/",
-			HttpOnly: true,
-			Secure:   cfg.SessionSecure,
-			SameSite: http.SameSiteLaxMode,
-			Expires:  sess.ExpiresAt,
-		})
+		// Set the session cookie through the one mint helper:
+		// SameSite=Strict, the password-login mint's posture. The state
+		// cookie keeps its own Lax (it must ride the provider's
+		// top-level redirect back here); the session cookie has no such
+		// return trip, it is minted by this same-site response and only
+		// needed afterwards.
+		mintSessionCookie(w, cfg, sess.Token, sess.ExpiresAt)
 
 		// Redirect to a sensible landing page
 		http.Redirect(w, r, "/", http.StatusFound)

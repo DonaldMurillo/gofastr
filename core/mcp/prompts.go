@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"slices"
 	"strings"
 )
@@ -216,7 +217,13 @@ func (s *Server) handlePromptsGet(ctx context.Context, req Request) Response {
 		if rpcErr, ok := gErr.(*RPCError); ok {
 			return Response{JSONRPC: "2.0", ID: req.ID, Error: rpcErr}
 		}
-		return newErrorResponse(req.ID, ErrInternalError, gErr.Error())
+		// A plain gate refusal is a deliberate caller-facing channel —
+		// checkToolGate's contract: it crosses verbatim on invalid-params,
+		// never re-classified as an internal error whose text must stay
+		// server-side.
+		return Response{JSONRPC: "2.0", ID: req.ID, Error: &RPCError{
+			Code: ErrInvalidParams, Message: gErr.Error(),
+		}}
 	}
 
 	// Required-argument validation runs before the handler so a
@@ -234,9 +241,16 @@ func (s *Server) handlePromptsGet(ctx context.Context, req Request) Response {
 		if rpcErr, ok := err.(*RPCError); ok {
 			return Response{JSONRPC: "2.0", ID: req.ID, Error: rpcErr}
 		}
-		return newErrorResponse(req.ID, ErrInternalError, err.Error())
+		// A plain error is internal detail (filesystem paths, driver
+		// text) and must not cross the transport — callTool's posture.
+		// Log it server-side and answer the generic message this very
+		// function's panic path already uses. The caller-visible failure
+		// channel a prompt handler owns is a deliberate *RPCError.
+		slog.Error("mcp: prompt handler failed",
+			slog.String("prompt", p.Name),
+			slog.String("err", err.Error()))
+		return newErrorResponse(req.ID, ErrInternalError, "internal prompt error")
 	}
-
 	return newSuccessResponse(req.ID, promptsGetResult{Description: p.Description, Messages: messages})
 }
 

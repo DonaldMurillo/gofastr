@@ -19,6 +19,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/mcp"
+	"github.com/DonaldMurillo/gofastr/core/stream"
 )
 
 // Defaults for Config's zero fields.
@@ -99,6 +100,22 @@ type Config struct {
 	// (each one fans a delivery goroutine out per event): past the
 	// bound the OLDEST configs are deleted. 0 = 8; negative disables.
 	MaxPushConfigsPerTask int
+
+	// MaxStreamSeatsPerOwner bounds the concurrent SSE streams
+	// (SubscribeToTask + SendStreamingMessage) ONE owner may hold: each
+	// pins a relay goroutine, a bus channel, and tickers for the
+	// stream's whole life. 0 = 16 (the default every stream surface in
+	// the tree shares); negative lifts the cap for deployments that
+	// bound streams elsewhere.
+	MaxStreamSeatsPerOwner int
+
+	// StreamSeatOverflow selects what an owner at MaxStreamSeatsPerOwner
+	// does with their next stream: stream.SeatOverflowRefuse (the
+	// default) answers 429 at connect; stream.SeatOverflowEvictOldest
+	// closes that owner's oldest stream and seats the new one — the
+	// multi-tab-friendly policy for clients that reconnect faster than
+	// a half-open connection's seat is reclaimed.
+	StreamSeatOverflow stream.SeatOverflowPolicy
 }
 
 // Server is the A2A task-exchange HTTP handler. Construct with
@@ -126,6 +143,14 @@ type Server struct {
 	maxPushConfigs   int
 	keepAlive        time.Duration
 	pollEvery        time.Duration
+
+	// maxStreamSeats / streamSeatOverflow mirror Config
+	// MaxStreamSeatsPerOwner / StreamSeatOverflow; seats is the registry
+	// both stream families (SubscribeToTask and SendStreamingMessage)
+	// admit through.
+	maxStreamSeats     int
+	streamSeatOverflow stream.SeatOverflowPolicy
+	seats              *streamSeatRegistry
 
 	// allowedOrigins mirrors core/mcp's allow list: Origins that name a
 	// foreign authority yet may still reach the dispatcher. Guarded by
@@ -216,27 +241,30 @@ func NewServer(cfg Config) (*Server, error) {
 		return nil, fmt.Errorf("a2a: Config.DefaultPageSize %d exceeds MaxPageSize %d", defPage, maxPage)
 	}
 	return &Server{
-		skills:           slices.Clone(cfg.Skills),
-		byID:             byID,
-		store:            store,
-		router:           router,
-		owner:            cfg.Owner,
-		extended:         cfg.ExtendedCard,
-		push:             newPusher(cfg.Push, log),
-		log:              log,
-		maxBody:          maxBody,
-		timeout:          timeout,
-		maxHist:          maxHist,
-		defPage:          defPage,
-		maxPage:          maxPage,
-		maxTerminalTasks: maxTerminal,
-		maxPushConfigs:   maxPush,
-		keepAlive:        keepAliveEvery,
-		pollEvery:        pollEvery,
-		allowedOrigins:   slices.Clone(cfg.AllowedOrigins),
-		now:              time.Now,
-		newID:            newUUID,
-		runs:             map[string]*run{},
+		skills:             slices.Clone(cfg.Skills),
+		byID:               byID,
+		store:              store,
+		router:             router,
+		owner:              cfg.Owner,
+		extended:           cfg.ExtendedCard,
+		push:               newPusher(cfg.Push, log),
+		log:                log,
+		maxBody:            maxBody,
+		timeout:            timeout,
+		maxHist:            maxHist,
+		defPage:            defPage,
+		maxPage:            maxPage,
+		maxTerminalTasks:   maxTerminal,
+		maxPushConfigs:     maxPush,
+		keepAlive:          keepAliveEvery,
+		pollEvery:          pollEvery,
+		maxStreamSeats:     cfg.MaxStreamSeatsPerOwner,
+		streamSeatOverflow: cfg.StreamSeatOverflow,
+		seats:              newStreamSeatRegistry(),
+		allowedOrigins:     slices.Clone(cfg.AllowedOrigins),
+		now:                time.Now,
+		newID:              newUUID,
+		runs:               map[string]*run{},
 	}, nil
 }
 
@@ -409,6 +437,11 @@ func (s *Server) writeStatus(w http.ResponseWriter, status int, id json.RawMessa
 		http.Error(w, `{"jsonrpc":"2.0","id":null,"error":{"code":-32603,"message":"internal error"}}`, http.StatusOK)
 		return
 	}
+	// Owner/session-scoped JSON-RPC bodies must not be retained by a
+	// shared cache: a back/forward cache or non-conforming proxy holding
+	// one owner's task body is the leak the SSE arm (newSSEStream) and
+	// core/mcp's transport already pin no-store against.
+	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_, _ = w.Write(b)
@@ -644,7 +677,7 @@ func (s *Server) handleSend(w http.ResponseWriter, r *http.Request, req *rpcRequ
 		return
 	}
 	if streaming {
-		s.streamSend(w, r, req.ID, t, rn, h, historyLengthOf(&p))
+		s.streamSend(w, r, req.ID, owner, t, rn, h, historyLengthOf(&p))
 		return
 	}
 	// Non-streaming: answer with the task. returnImmediately hands the
@@ -1037,7 +1070,7 @@ func (st *sseStream) keepAlive() error {
 
 // streamSend answers SendStreamingMessage: the initial task snapshot,
 // then every event until the task settles.
-func (s *Server) streamSend(w http.ResponseWriter, r *http.Request, id json.RawMessage, t *taskRun, rn *run, h Handler, history *int) {
+func (s *Server) streamSend(w http.ResponseWriter, r *http.Request, id json.RawMessage, owner string, t *taskRun, rn *run, h Handler, history *int) {
 	fl, ok := w.(http.Flusher)
 	if !ok {
 		// Without a flusher the events would buffer unboundedly; answer
@@ -1046,6 +1079,16 @@ func (s *Server) streamSend(w http.ResponseWriter, r *http.Request, id json.RawM
 		return
 	}
 	_ = fl
+	// Seat admission: the per-owner cap on concurrent streams. Refusal
+	// happens before any byte of the stream is written; the seat is
+	// freed when this handler returns (i.e. when forwardEvents returns).
+	seat, ok := s.seats.admitSeat(owner, s.maxStreamSeats, s.streamSeatOverflow)
+	if !ok {
+		s.writeTransport(w, http.StatusTooManyRequests,
+			Errorf(CodeInvalidRequest, "too many concurrent streams for this owner"))
+		return
+	}
+	defer s.seats.releaseSeat(seat)
 	st := s.newSSEStream(w, id)
 	task := t.snapshot()
 	applyHistoryLength(task, history)
@@ -1060,12 +1103,12 @@ func (s *Server) streamSend(w http.ResponseWriter, r *http.Request, id json.RawM
 	ch := rn.bus.subscribe()
 	defer rn.bus.unsubscribe(ch)
 	s.startRun(r, t, rn, h)
-	s.forwardEvents(st, rn, ch, r.Context())
+	s.forwardEvents(st, rn, ch, r.Context(), seat)
 }
 
 // forwardEvents relays bus events to the stream until the task settles,
 // the client goes away, or the run ends.
-func (s *Server) forwardEvents(st *sseStream, rn *run, ch chan StreamResponse, ctx context.Context) {
+func (s *Server) forwardEvents(st *sseStream, rn *run, ch chan StreamResponse, ctx context.Context, seat *streamSeat) {
 	keepAlive := time.NewTicker(s.keepAlive)
 	defer keepAlive.Stop()
 	for {
@@ -1081,6 +1124,10 @@ func (s *Server) forwardEvents(st *sseStream, rn *run, ch chan StreamResponse, c
 			if endsStream(ev) {
 				return
 			}
+		case <-seat.done:
+			// Evicted by a newer stream under SeatOverflowEvictOldest;
+			// end this stream so its seat is released.
+			return
 		case <-ctx.Done():
 			return
 		case <-rn.done:
@@ -1288,6 +1335,17 @@ func (s *Server) handleSubscribe(w http.ResponseWriter, r *http.Request, req *rp
 		s.writeResult(w, req.ID, nil, ErrUnsupportedOperation("streaming requires a flushing ResponseWriter"))
 		return
 	}
+	// Seat admission: the per-owner cap on concurrent streams. Refusal
+	// happens before any byte of the stream is written; the seat is
+	// freed when this handler returns (i.e. when forwardEvents or
+	// pollEvents returns).
+	seat, ok := s.seats.admitSeat(owner, s.maxStreamSeats, s.streamSeatOverflow)
+	if !ok {
+		s.writeTransport(w, http.StatusTooManyRequests,
+			Errorf(CodeInvalidRequest, "too many concurrent streams for this owner"))
+		return
+	}
+	defer s.seats.releaseSeat(seat)
 	st := s.newSSEStream(w, req.ID)
 	// The a2a-go SDK sends the current task as one event and closes
 	// when the task is already settled; do the same.
@@ -1300,7 +1358,7 @@ func (s *Server) handleSubscribe(w http.ResponseWriter, r *http.Request, req *rp
 		return
 	}
 	if rn != nil {
-		s.forwardEvents(st, rn, ch, r.Context())
+		s.forwardEvents(st, rn, ch, r.Context(), seat)
 		return
 	}
 	// Multi-replica fallback: the task is non-terminal and has no run
@@ -1310,10 +1368,10 @@ func (s *Server) handleSubscribe(w http.ResponseWriter, r *http.Request, req *rp
 	// between polls are coalesced into the next snapshot — a replica
 	// boundary is exactly where per-event fidelity would require a
 	// shared bus, which a SQL store cannot give.
-	s.pollEvents(st, owner, rec, r.Context())
+	s.pollEvents(st, owner, rec, r.Context(), seat)
 }
 
-func (s *Server) pollEvents(st *sseStream, owner string, rec *TaskRecord, ctx context.Context) {
+func (s *Server) pollEvents(st *sseStream, owner string, rec *TaskRecord, ctx context.Context, seat *streamSeat) {
 	last := rec.Version
 	poll := time.NewTicker(s.pollEvery)
 	defer poll.Stop()
@@ -1321,6 +1379,10 @@ func (s *Server) pollEvents(st *sseStream, owner string, rec *TaskRecord, ctx co
 	defer keepAlive.Stop()
 	for {
 		select {
+		case <-seat.done:
+			// Evicted by a newer stream under SeatOverflowEvictOldest;
+			// end this stream so its seat is released.
+			return
 		case <-ctx.Done():
 			return
 		case <-keepAlive.C:

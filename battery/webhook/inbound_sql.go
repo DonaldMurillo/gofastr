@@ -155,8 +155,28 @@ func (s *SQLInboundStore) UpdateEnvelope(ctx context.Context, e InboundEnvelope)
 	if err != nil {
 		return err
 	}
-	_, err = s.db.ExecContext(ctx, s.update(),
-		e.DedupeKey, headers, e.Status, e.LastError, e.UpdatedAt, e.ID)
+	q := s.update()
+	args := []any{e.DedupeKey, headers, e.Status, e.LastError, e.UpdatedAt, e.ID}
+	if e.Status != InboundStatusProcessed {
+		// Fence, mirroring the outbound UpdateDelivery fence: a late
+		// settle must not overwrite a terminal row
+		// (isTerminalInboundStatus) — a runner that overran the
+		// queue's lease had the envelope's job re-run under it, and
+		// its failure write must not regress the recovery runner's
+		// processed record into a failed one that escapes retention
+		// forever. Only a processed settle lands on a terminal row
+		// (a runner that really did succeed). The WHERE clause
+		// matches no row and Exec reports nil: the stale write is a
+		// no-op, not a failure, the same fenced no-op the queue's
+		// completions report.
+		if s.dialect == "postgres" {
+			q += ` AND status NOT IN ($7,$8)`
+		} else {
+			q += ` AND status NOT IN (?,?)`
+		}
+		args = append(args, InboundStatusProcessed, InboundStatusFailed)
+	}
+	_, err = s.db.ExecContext(ctx, q, args...)
 	return err
 }
 
@@ -169,10 +189,22 @@ func (s *SQLInboundStore) UpdateEnvelope(ctx context.Context, e InboundEnvelope)
 // A missing id matches no row and is a no-op (the caller loaded the
 // envelope just before this).
 func (s *SQLInboundStore) MarkEnvelopeProcessing(ctx context.Context, id string) error {
-	_, err := s.db.ExecContext(ctx, fmt.Sprintf(
+	q := fmt.Sprintf(
 		"UPDATE %s SET status = %s, attempts = attempts + 1, last_error = '', updated_at = %s WHERE id = %s",
-		s.table, s.placeholder(1), s.placeholder(2), s.placeholder(3)),
-		InboundStatusProcessing, time.Now().UTC(), id)
+		s.table, s.placeholder(1), s.placeholder(2), s.placeholder(3))
+	args := []any{InboundStatusProcessing, time.Now().UTC(), id}
+	// Terminal fence, the same predicate UpdateEnvelope settles with: a
+	// stale runner marking an already-settled envelope processing would
+	// regress the row AND consume an attempt against it. Non-terminal
+	// rows (received, processing) match as before; a missing id is
+	// still a no-op.
+	if s.dialect == "postgres" {
+		q += fmt.Sprintf(" AND status NOT IN (%s,%s)", s.placeholder(4), s.placeholder(5))
+	} else {
+		q += " AND status NOT IN (?,?)"
+	}
+	args = append(args, InboundStatusProcessed, InboundStatusFailed)
+	_, err := s.db.ExecContext(ctx, q, args...)
 	return err
 }
 

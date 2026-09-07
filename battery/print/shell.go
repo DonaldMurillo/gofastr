@@ -7,6 +7,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
+	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
@@ -125,9 +126,19 @@ func componentCSS(body render.HTML) string {
 
 // renderShell assembles the full <!doctype html> print document. It never
 // links runtime.js, a print document is inert. The <style> blocks are
-// server-generated/trusted; the only attacker-influenced value (Title) is
-// escaped, and Body is already escaped by the component layer.
+// server-generated/trusted; the attacker-influenced values (Title, the two
+// head asset URLs) are escaped, the URLs also pass the urlsafe Resource
+// allow-list, and Body is already escaped by the component layer.
 func renderShell(in shellInput) string {
+	// URL-typed head fields pass the head-URL allow-list before
+	// interpolation: render.Escape is HTML-escaping and scheme-blind, so
+	// a hostile config value (javascript:, data:, a protocol-relative
+	// host) would otherwise render verbatim into the served document's
+	// head. Clean drops unsafe values the way ogTags drops unsafe
+	// images; both assets are same-origin app paths in every shipped
+	// config.
+	appCSSHref := urlsafe.Clean(in.AppCSSHref, urlsafe.Resource)
+	autoPrintSrc := urlsafe.Clean(in.AutoPrintSrc, urlsafe.Resource)
 	var b strings.Builder
 	b.WriteString("<!doctype html>\n<html lang=\"en\">\n<head>\n")
 	b.WriteString(`  <meta charset="utf-8">` + "\n")
@@ -140,8 +151,8 @@ func renderShell(in shellInput) string {
 	// is the only place it matters for PDFs.
 	fmt.Fprintf(&b, "  <meta http-equiv=\"Content-Security-Policy\" content=\"%s\">\n", render.Escape(printCSP))
 	fmt.Fprintf(&b, "  <title>%s</title>\n", render.Escape(in.Title))
-	if in.AppCSSHref != "" {
-		fmt.Fprintf(&b, "  <link rel=\"stylesheet\" href=\"%s\">\n", render.Escape(in.AppCSSHref))
+	if appCSSHref != "" {
+		fmt.Fprintf(&b, "  <link rel=\"stylesheet\" href=\"%s\">\n", render.Escape(appCSSHref))
 	}
 	fmt.Fprintf(&b, "  <style>%s</style>\n", in.BaseCSS)
 	if strings.TrimSpace(in.ComponentCSS) != "" {
@@ -151,8 +162,8 @@ func renderShell(in shellInput) string {
 	if strings.TrimSpace(in.DocCSS) != "" {
 		fmt.Fprintf(&b, "  <style>%s</style>\n", in.DocCSS)
 	}
-	if in.AutoPrintSrc != "" {
-		fmt.Fprintf(&b, "  <script src=\"%s\"></script>\n", render.Escape(in.AutoPrintSrc))
+	if autoPrintSrc != "" {
+		fmt.Fprintf(&b, "  <script src=\"%s\"></script>\n", render.Escape(autoPrintSrc))
 	}
 	b.WriteString("</head>\n<body class=\"print-doc\">\n")
 	b.WriteString(string(in.Body))

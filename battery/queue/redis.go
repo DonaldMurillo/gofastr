@@ -500,7 +500,12 @@ func (q *RedisQueue) Reclaim(ctx context.Context) (int, error) {
 			if perr := q.client.LPush(ctx, q.deadLetterQueue, raw); perr != nil {
 				continue
 			}
-			_ = q.client.HDel(ctx, q.processingQueue, jobID)
+			// Fenced like the expiry path below: the snapshot's bytes
+			// are what got quarantined, so only that entry goes. A
+			// newer claim that landed under this ID meanwhile (a
+			// Replay re-fired the job and a worker claimed it) keeps
+			// its processing entry.
+			_ = q.releaseClaim(ctx, jobID, raw)
 			continue
 		}
 		if entry.ExpiresAt > now {
@@ -508,11 +513,16 @@ func (q *RedisQueue) Reclaim(ctx context.Context) (int, error) {
 		}
 		// Re-enqueue the original job, then clear the processing entry. Order
 		// matters: enqueue first so a crash between the two ops re-delivers
-		// (at-least-once) rather than loses the job.
+		// (at-least-once) rather than loses the job. The delete is fenced on
+		// the snapshot's bytes (releaseClaim / CompareAndDeleter): between
+		// this push and the delete another worker can Dequeue the re-pushed
+		// job and record a fresh entry, and an unconditional HDel would
+		// remove the NEW claimant's record — the job then sits on no list,
+		// invisible to the next Reclaim, and is silently lost.
 		if err := q.client.LPush(ctx, q.queueName, entry.Job); err != nil {
 			return reclaimed, fmt.Errorf("reclaim: re-enqueue %s: %w", jobID, err)
 		}
-		_ = q.client.HDel(ctx, q.processingQueue, jobID)
+		_ = q.releaseClaim(ctx, jobID, raw)
 		reclaimed++
 	}
 	return reclaimed, nil

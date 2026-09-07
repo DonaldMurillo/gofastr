@@ -23,6 +23,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/stream"
 )
 
@@ -110,6 +111,9 @@ type roomPeer struct {
 	info    PeerInfo
 	conn    *stream.WebSocketConn
 	limiter frameLimiter
+	// seat is this socket's entry in its principal's seat FIFO
+	// (seats.go); nil only for peers constructed outside Serve.
+	seat *socketSeat
 }
 
 // roomSource adapts the Signaler to stream.SnapshotSource for one
@@ -307,15 +311,23 @@ func (s *Signaler) Serve(w http.ResponseWriter, r *http.Request, join Join) {
 		s.publishLocked(rm, evLeave, roomEvent{kind: evLeave, id: peerID})
 		s.mirrorLocked(join.Room, fanoutMsg{Kind: evLeave, ID: peerID})
 		s.broadcastRosterLocked(join.Room)
+		s.spliceSeatLocked(old.seat)
 		oldConn = old.conn
 	}
 	rm.peers[peerID] = p
 	rm.emptySince = time.Time{}
+	// Seat the socket at the registration that admits it: past the
+	// principal's cap the oldest one is displaced (evict-oldest, the
+	// replace-on-rejoin policy across rooms), and its connection is
+	// closed outside the lock below.
+	displaced := s.admitSeatLocked(join.Room, p, join.User)
 	s.mu.Unlock()
 	if oldConn != nil {
 		oldConn.Close()
 	}
-
+	for _, c := range displaced {
+		c.Close()
+	}
 	// Hydrate BEFORE announcing. The channel registers a socket only
 	// when its snapshot job runs, and delivers an event only to sockets
 	// registered when the event is dequeued. Publishing the join first
@@ -350,7 +362,13 @@ func (s *Signaler) Serve(w http.ResponseWriter, r *http.Request, join Join) {
 			return
 		}
 		var in inboundMsg
-		if json.Unmarshal(data, &in) != nil {
+		// Strict decode, the house rule for every inbound request-body
+		// decode: a frame naming its kind twice (last wins) or spelling
+		// a field with folded case (overwrites the first binding) reads
+		// two ways, so the frame is dropped — malformed, like any other
+		// JSON the envelope cannot carry unambiguously. Drop, not close:
+		// the socket stays usable for well-formed frames.
+		if handler.UnmarshalStrict(data, &in) != nil {
 			continue
 		}
 		switch in.Kind {
@@ -362,10 +380,10 @@ func (s *Signaler) Serve(w http.ResponseWriter, r *http.Request, join Join) {
 	}
 }
 
-// peerGone is the single leave path: remove the peer, publish the
-// leave, and start the idle clock when the room emptied. It no-ops
-// when the peer was already replaced or the room already dropped, so
-// a replacement's inline leave cannot double-fire.
+// peerGone is the single leave path: remove the peer, free its seat,
+// publish the leave, and start the idle clock when the room emptied. It
+// no-ops when the peer was already replaced or the room already dropped,
+// so a replacement's inline leave cannot double-fire.
 func (s *Signaler) peerGone(roomName string, p *roomPeer) {
 	s.mu.Lock()
 	rm, ok := s.rooms[roomName]
@@ -376,6 +394,9 @@ func (s *Signaler) peerGone(roomName string, p *roomPeer) {
 	delete(rm.peers, p.info.ID)
 	s.publishLocked(rm, evLeave, roomEvent{kind: evLeave, id: p.info.ID})
 	s.mirrorLocked(roomName, fanoutMsg{Kind: evLeave, ID: p.info.ID})
+	// The seat frees with the socket: the FIFO never retains a departed
+	// peer, so the cap counts exactly the live ones.
+	s.spliceSeatLocked(p.seat)
 	if len(rm.peers) == 0 {
 		s.markEmptyLocked(rm)
 	}

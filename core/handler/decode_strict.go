@@ -58,6 +58,13 @@ func UnmarshalStrict(data []byte, dst any) error {
 	if err := dec.Decode(dst); err != nil {
 		return Errorf(400, "invalid JSON: %s", err.Error())
 	}
+	// Exactly one value: a second Decode must find nothing. A swallowed
+	// second value is the same two-ways-to-read ambiguity the duplicate
+	// key rules exist to kill (the bind-trailing pin).
+	var trailing json.RawMessage
+	if err := dec.Decode(&trailing); err != io.EOF {
+		return Errorf(400, "invalid JSON: body must contain exactly one JSON value")
+	}
 	return nil
 }
 

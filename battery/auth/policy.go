@@ -119,6 +119,11 @@ func WithBlock(status int, msg string) PolicyOption {
 // valid session and otherwise applies the configured failure outcome.
 // Default failure outcome is Redirect("/login?next=<request-path>").
 //
+// Session-only, like RequireSession: a caller authenticated by a
+// scoped API token (TokenScopes in ctx) fails the policy even though
+// TokenMiddleware sets the ctx user, so a leaked gfsk_ token cannot
+// ride session-gated screens past its scope leash.
+//
 // Attach via NewScreenGroup, ScreenGroup.WithPolicy, or
 // Screen.WithPolicy. Pair with SessionMiddleware upstream so the
 // policy can see the loaded user.
@@ -128,6 +133,15 @@ func SessionPolicy(opts ...PolicyOption) app.Policy {
 		fn(&o)
 	}
 	return app.PolicyFunc(func(ctx context.Context) app.Decision {
+		if _, tokenAuth := TokenScopes(ctx); tokenAuth {
+			// A scoped bearer credential is not a session: TokenMiddleware
+			// installs the token's owner as the ctx user the same way
+			// SessionMiddleware does, so the user check alone cannot tell
+			// them apart. TokenScopes (only TokenMiddleware sets them) is
+			// the discriminator, the same one requireSessionUserID and
+			// RequireSession apply.
+			return failureDecision(ctx, o)
+		}
 		if _, ok := SessionFrom(ctx); ok {
 			return decide.Allow()
 		}
@@ -162,6 +176,13 @@ func Roles(roles ...string) []string {
 // Note that the sibling HTTP middleware auth.RequireRole takes its
 // roles as variadic strings; RolePolicy can't because it accepts
 // PolicyOptions after the role list.
+//
+// Like RequireRole, a Decider installed in the request context
+// (access.WithDecider / DeciderMiddleware) binds this gate:
+// DecisionDeny refuses the caller before the role check,
+// DecisionAbstain falls through to it. And like SessionPolicy, a
+// caller authenticated by a scoped API token is refused: roles gate
+// interactive sessions, not bearer credentials.
 func RolePolicy(roles []string, opts ...PolicyOption) app.Policy {
 	o := policyOpts{block: 403, blockMsg: "forbidden"}
 	for _, fn := range opts {
@@ -170,6 +191,23 @@ func RolePolicy(roles []string, opts ...PolicyOption) app.Policy {
 	return app.PolicyFunc(func(ctx context.Context) app.Decision {
 		u, ok := SessionFrom(ctx)
 		if !ok {
+			return failureDecision(ctx, o)
+		}
+		if _, tokenAuth := TokenScopes(ctx); tokenAuth {
+			// Implies SessionPolicy, so the same session-only contract:
+			// a scoped bearer token must not inherit its owner's roles
+			// on role-gated screens (the screen twin of RequireRole's
+			// grant refusal).
+			return failureDecision(ctx, o)
+		}
+		if roleGateDenied(ctx, u) {
+			// A DecisionDeny decider refuses the caller before the role
+			// check, DecisionAbstain falls through to it — the precedence
+			// RequireRole, MCPUser, and MCPRole already give the seam.
+			// Screens gated by RolePolicy are the fourth role-scoped
+			// surface; without this consult a host wiring
+			// access.DeciderMiddleware per the documented recipe gets no
+			// decider coverage on them.
 			return failureDecision(ctx, o)
 		}
 		if !hasAnyRole(u, roles) {

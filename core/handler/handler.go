@@ -7,6 +7,8 @@ import (
 	"log/slog"
 	"net/http"
 	"runtime/debug"
+
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
 // Handler is a typed function that processes an input of type I and returns
@@ -23,10 +25,12 @@ func HandlerAdapter[I, O any](h Handler[I, O]) http.HandlerFunc {
 				// The raw panic value (driver strings, internal paths,
 				// wrapped DB errors) must stay out of the client body.
 				// Log it server-side and return a fixed generic 500,
-				// mirroring middleware.RecoveryFn. The value/stack are
-				// truncated so a giant panic can't drive a multi-MB log.
+				// mirroring middleware.RecoveryFn. textsafe.Recovered
+				// scrubs C0/DEL/C1/bidi and truncates, so a giant or
+				// control-laden panic can neither forge lines in the
+				// operator's tail nor drive a multi-MB log.
 				slog.Default().Error("panic recovered in handler",
-					"error", truncateLog(fmt.Sprint(rec), maxPanicLogLen),
+					"error", textsafe.Recovered(rec),
 					"stack", truncateLog(string(debug.Stack()), maxStackLogLen),
 				)
 				WriteError(w, &Error{

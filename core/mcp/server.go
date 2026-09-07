@@ -14,6 +14,7 @@ import (
 	"sync"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
 // ToolHandler is the function signature for MCP tool handlers. It receives a
@@ -558,7 +559,7 @@ func runCallGate(gate func(toolName string) error, name string) (err error) {
 			slog.Error("panic in MCP call gate recovered",
 				slog.String("operation", "call gate"),
 				slog.String("tool", name),
-				slog.Any("panic", rec))
+				slog.Any("panic", textsafe.Recovered(rec)))
 			err = errors.New("internal tool error")
 		}
 	}()
@@ -620,7 +621,7 @@ func (s *Server) checkServerGate(ctx context.Context) (err error) {
 		if rec := recover(); rec != nil {
 			slog.Error("panic in MCP server gate recovered",
 				slog.String("operation", "server gate"),
-				slog.Any("panic", rec))
+				slog.Any("panic", textsafe.Recovered(rec)))
 			err = errors.New("internal tool error")
 		}
 	}()

@@ -3,6 +3,8 @@ package fanout
 import (
 	"log/slog"
 	"sync"
+
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
 // deliver runs one subscriber callback with panic isolation, mirroring
@@ -20,7 +22,7 @@ func deliver(fn func([]byte), p []byte) {
 	defer func() {
 		if r := recover(); r != nil {
 			slog.Error("fanout: subscriber panicked — payload dropped",
-				slog.Any("panic", r))
+				slog.Any("panic", textsafe.Recovered(r)))
 		}
 	}()
 	fn(p)

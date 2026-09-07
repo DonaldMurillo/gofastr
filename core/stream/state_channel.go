@@ -2,9 +2,12 @@ package stream
 
 import (
 	"encoding/json"
+	"log/slog"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
 // SequencedEnvelope is the wire shape a StateChannel puts on every
@@ -294,6 +297,16 @@ func (c *StateChannel[Role, Snapshot, Event]) Run() {
 // nothing can pass it on the wire).
 func (c *StateChannel[Role, Snapshot, Event]) runSnapshot(job stateJob[Role, Snapshot, Event]) {
 	defer close(job.done)
+	// Panic net: SnapshotFor is host-supplied code (battery/rtc, remote
+	// assist sessions run app callbacks here). A panic must drop this
+	// one snapshot — closing the conn, which can never hydrate — not
+	// kill the dispatch loop for every other connection.
+	defer func() {
+		if rec := recover(); rec != nil {
+			logHostPanic("snapshot", rec)
+			go job.conn.Close()
+		}
+	}()
 
 	// One read: payload and sequence below come from this call only.
 	snap, seq := c.source.SnapshotFor(job.role)
@@ -348,6 +361,14 @@ func (c *StateChannel[Role, Snapshot, Event]) runSnapshot(job stateJob[Role, Sna
 func (c *StateChannel[Role, Snapshot, Event]) runEvent(job stateJob[Role, Snapshot, Event]) {
 	seq := c.nextSeq
 	c.nextSeq++
+	// Panic net: FilterEvent (via deliver) is host-supplied code. A
+	// panic drops this one event — the sequence still advances, so the
+	// wire stays strictly ordered — and the loop keeps serving.
+	defer func() {
+		if rec := recover(); rec != nil {
+			logHostPanic("event", rec)
+		}
+	}()
 
 	c.mu.RLock()
 	pairs := make([]connRole[Role], 0, len(c.conns))
@@ -395,6 +416,14 @@ func (c *StateChannel[Role, Snapshot, Event]) runEvent(job stateJob[Role, Snapsh
 // of one role. Filtering happens before json.Marshal by construction:
 // the marshaled payload is exactly what FilterEvent returned.
 func (c *StateChannel[Role, Snapshot, Event]) deliver(conns []*WebSocketConn, role Role, job stateJob[Role, Snapshot, Event], seq uint64) {
+	// Panic net at the invocation frame: FilterEvent is host-supplied
+	// code on the dispatch path (runEvent's net is the outer belt; this
+	// one sits on the callback itself, the recovercallback rule).
+	defer func() {
+		if rec := recover(); rec != nil {
+			logHostPanic("event", rec)
+		}
+	}()
 	payload, ok := c.source.FilterEvent(role, job.event)
 	if !ok {
 		return
@@ -422,4 +451,14 @@ func (c *StateChannel[Role, Snapshot, Event]) deliver(conns []*WebSocketConn, ro
 			}
 		}
 	}
+}
+
+// logHostPanic logs a recovered panic from a host-supplied SnapshotSource
+// callback on the dispatch path: scrubbed and truncated through
+// textsafe.Recovered (the value is host/request-derived text), naming the
+// unit that was dropped so the operator can tell a dropped snapshot from a
+// dropped event.
+func logHostPanic(unit string, rec any) {
+	slog.Default().Error("stream: state channel source callback panicked; dropped one "+unit,
+		"panic", textsafe.Recovered(rec))
 }

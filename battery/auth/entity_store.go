@@ -517,8 +517,13 @@ func (s *EntitySessionStore) Create(ctx context.Context, userID string, ttl time
 	if err != nil {
 		return nil, err
 	}
+	// The token column stores sha256hex(tok), never the cookie value
+	// (the APIToken grammar): the session cookie is a bearer
+	// credential, so a read-only dump of the sessions table must not be
+	// a pile of live cookies. Every lookup (Get / Delete / the 2FA
+	// markers) keys on the digest of the presented token.
 	q := s.qTable("INSERT INTO %s (id, token, user_id, created_at, expires_at) VALUES ($1, $2, $3, $4, $5)")
-	_, err = s.db.ExecContext(ctx, q, sessionID, tok, userID, now, expiresAt)
+	_, err = s.db.ExecContext(ctx, q, sessionID, sha256hex(tok), userID, now, expiresAt)
 	if err != nil {
 		return nil, err
 	}
@@ -530,13 +535,15 @@ func (s *EntitySessionStore) Create(ctx context.Context, userID string, ttl time
 	}, nil
 }
 
-// Get returns the session for the given token.
+// Get returns the session for the given token. The presented token is
+// hashed for the lookup; Session.Token carries the PRESENTED value back
+// so callers can treat it as the cookie value.
 func (s *EntitySessionStore) Get(ctx context.Context, token string) (*Session, error) {
-	q := s.qTable("SELECT token, user_id, created_at, expires_at, two_factor_verified, pending_two_factor FROM %s WHERE token = $1")
-	var tok, uid string
+	q := s.qTable("SELECT user_id, created_at, expires_at, two_factor_verified, pending_two_factor FROM %s WHERE token = $1")
+	var uid string
 	var createdAtRaw, expiresAtRaw any
 	var twoFA, pending bool
-	err := s.db.QueryRowContext(ctx, q, token).Scan(&tok, &uid, &createdAtRaw, &expiresAtRaw, &twoFA, &pending)
+	err := s.db.QueryRowContext(ctx, q, sha256hex(token)).Scan(&uid, &createdAtRaw, &expiresAtRaw, &twoFA, &pending)
 	if err == sql.ErrNoRows {
 		return nil, ErrSessionNotFound
 	}
@@ -545,7 +552,7 @@ func (s *EntitySessionStore) Get(ctx context.Context, token string) (*Session, e
 	}
 
 	sess := &Session{
-		Token:             tok,
+		Token:             token,
 		UserID:            uid,
 		CreatedAt:         coerceTime(createdAtRaw),
 		ExpiresAt:         coerceTime(expiresAtRaw),
@@ -563,22 +570,22 @@ func (s *EntitySessionStore) Get(ctx context.Context, token string) (*Session, e
 func (s *EntitySessionStore) MarkTwoFactorVerified(ctx context.Context, token string) error {
 	_, err := s.db.ExecContext(ctx,
 		s.qTable("UPDATE %s SET two_factor_verified = TRUE, pending_two_factor = FALSE WHERE token = $1"),
-		token)
+		sha256hex(token))
 	return err
 }
 
-// MarkPendingTwoFactor flips pending_two_factor=TRUE for the given session.
-// Implements SessionPendingMarker.
+// MarkPendingTwoFactor sets pending_two_factor. Implements
+// SessionPendingMarker.
 func (s *EntitySessionStore) MarkPendingTwoFactor(ctx context.Context, token string) error {
 	_, err := s.db.ExecContext(ctx,
 		s.qTable("UPDATE %s SET pending_two_factor = TRUE WHERE token = $1"),
-		token)
+		sha256hex(token))
 	return err
 }
 
 // Delete removes a session by token. Idempotent.
 func (s *EntitySessionStore) Delete(ctx context.Context, token string) error {
-	_, err := s.db.ExecContext(ctx, s.qTable("DELETE FROM %s WHERE token = $1"), token)
+	_, err := s.db.ExecContext(ctx, s.qTable("DELETE FROM %s WHERE token = $1"), sha256hex(token))
 	return err
 }
 
