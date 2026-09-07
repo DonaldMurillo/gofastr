@@ -897,7 +897,7 @@ func sidebarCSS(_ style.Theme) string {
     padding-inline var(--duration-fast, 150ms) var(--easing-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 [data-fui-comp="ui-sidebar"].ui-sidebar--auto-hide:hover .ui-sidebar__inline,
-[data-fui-comp="ui-sidebar"].ui-sidebar--auto-hide:focus-within .ui-sidebar__inline,
+[data-fui-comp="ui-sidebar"].ui-sidebar--auto-hide:focus-within .ui-sidebar__inline {
   min-width: 220px;
   width: 220px;
   padding-inline: var(--spacing-lg, 16px);

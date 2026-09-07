@@ -101,6 +101,16 @@ document.
   region for the expected announcement, or the DOM for the refreshed
   column, with a bounded timeout, proven against a server delayed
   past the old sleep (#398).
+- **The auto-hide sidebar reveals on hover and focus again, and its
+  rest state hides the title and footer.** The reveal rule's selector
+  list ended in a comma with no opening brace, so the browser dropped
+  it and swallowed the rest-state rule after it: the rail stayed at
+  64px on hover and keyboard focus while the title, footer, and group
+  sublists leaked into it. Three guards land with the fix: a Chrome
+  test measures the rail at rest and on focus, the reveal test asserts
+  the rule block rather than the selector text, and a walk over every
+  registered stylesheet rejects a declaration outside a block or an
+  unbalanced brace, which is the shape this bug takes.
 
 ## [0.84.1] - 2026-09-06
 

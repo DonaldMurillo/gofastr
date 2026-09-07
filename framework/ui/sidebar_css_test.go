@@ -59,8 +59,25 @@ func TestAutoHideVariantShipsRevealCSS(t *testing.T) {
 	if !strings.Contains(css, `.ui-sidebar--auto-hide:hover .ui-sidebar__inline`) {
 		t.Fatal("auto-hide must ship a :hover reveal rule in the component stylesheet")
 	}
-	if !strings.Contains(css, `.ui-sidebar--auto-hide:focus-within .ui-sidebar__inline`) {
+	sel := `.ui-sidebar--auto-hide:focus-within .ui-sidebar__inline`
+	start := strings.Index(css, sel)
+	if start == -1 {
 		t.Fatal("auto-hide must ship a :focus-within reveal rule — hover-only hides every link from keyboard users")
+	}
+	// Selector text is not the rule. The reveal shipped once with its
+	// selector list ending in a comma and no opening brace; the browser
+	// dropped it and the rail never widened while this test stayed
+	// green. The selector must be followed by " {" and a block that
+	// restores the persistent column width.
+	block := css[start+len(sel):]
+	if !strings.HasPrefix(block, " {") {
+		t.Fatalf("reveal selector list must open its declaration block, got: %.40q", block)
+	}
+	if end := strings.Index(block, "}"); end != -1 {
+		block = block[:end]
+	}
+	if !strings.Contains(block, "width: 220px") {
+		t.Fatalf("reveal rule must restore the 220px column:\n%s", block)
 	}
 }
 
