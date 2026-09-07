@@ -232,6 +232,15 @@ current task snapshot first, then every event until the task is terminal
 or interrupted, then closes. A comment line (`: keep-alive`) paces idle
 streams every 15 seconds so proxies do not time the connection out.
 
+Each stream pins a relay goroutine, a bus channel, and tickers for
+its whole life, so one owner's concurrent streams are seated:
+`Config.MaxStreamSeatsPerOwner` (0 = 16, negative = unlimited for
+deployments that bound streams elsewhere) and
+`Config.StreamSeatOverflow` select what an owner at the cap does with
+their next stream — `stream.SeatOverflowRefuse` (the default)
+answers 429 at connect, `SeatOverflowEvictOldest` closes that owner's
+oldest stream and seats the new one.
+
 With the SQL store, `SubscribeToTask` on a task running on another
 replica falls back to polling the store and emitting a snapshot whenever
 the stored version changes — per-event fidelity across a replica

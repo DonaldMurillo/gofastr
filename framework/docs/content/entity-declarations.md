@@ -554,6 +554,23 @@ explicit relation you declare for the same name always wins and is never
 overwritten. Has-many relations (`many: true`) keep their FK on the *other*
 table and must be declared explicitly via `HasMany`/`Relations`.
 
+**A BelongsTo FK is a write-side trust boundary too.** A create or
+update whose body sets a BelongsTo FK (an `order_id`, an
+`author_id`) is refused with **404** when the target row exists but
+the caller cannot read it under the target's own owner, tenant, and
+read scopes — the same status reading that foreign row gives, so the
+refusal leaks no existence. The write resolves the exact predicate
+the read side (`?include=`, `EagerLoad`) resolves. Callers holding
+an explicit cross-scope grant pass unchanged: a
+`owner.AllowCrossOwner(ctx)` marker, the target's `CrossOwnerRead`
+permission, `tenant.AllowCrossTenant`, or a `crud.WithServerWrites`
+context (host-driven writes: jobs, imports, admin tooling, which own
+their references the way they own ReadOnly column writes). A NULL or
+absent FK, an unscoped target, or a target the registry does not
+know is skipped — no registry means no read-side resolver either.
+The FK's existence check (`FOREIGN KEY` on both dialects) still runs
+underneath; the scope gate is what answers "someone else's row".
+
 ### Column naming
 
 The `name` you put in a field declaration is the SQL column name verbatim:

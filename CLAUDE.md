@@ -253,11 +253,11 @@ MCP tools `framework_docs_list` / `framework_docs_get` /
   carrying a credential-bearing request (a client_secret/token/code
   form, an Authorization header, or a token-endpoint URL) re-sends the
   credential to whatever host a redirect names — refuse redirects the
-  way battery/auth oidcNoRedirect does. The same analyzer reports the
-  unbounded decode of such a fetch's response
-  (`json.NewDecoder(resp.Body)` / `io.ReadAll(resp.Body)` with no
-  `io.LimitReader`), which is exactly where `unboundedbody`
-  deliberately stays silent. Both postures skip `_test.go` files
+  way battery/auth oidcNoRedirect does. Its unbounded-decode arm
+  (a `json.NewDecoder(resp.Body)` / `io.ReadAll(resp.Body)` with no
+  `io.LimitReader` on such a fetch's response) was lifted into
+  `unboundedresp` by the 2026-09-07 round-5 rules, which fires on any
+  client; credfetch owns redirects only. Both postures skip `_test.go` files
   outright (2026-09-04 posture): a test client POSTing a fixture
   code to an httptest.Server is not a credential flow, and a client
   assignment in a test file must not decide a production field's
@@ -303,6 +303,70 @@ MCP tools `framework_docs_list` / `framework_docs_get` /
   control-bytes sink exists only inside the Go source template in
   `generate_cli.go` (printUsage prints `command.summary` raw), so no
   analyzer over this repo can see it.
+  The 2026-09-07 round-5 red probes shipped five more vet analyzers
+  and four contracts rules. `recoverlog` (a recover() value, or an
+  fmt.Sprint/%v of it, reaching a log sink unscrubbed — route it
+  through `textsafe.Recovered`, which strips control bytes and
+  truncates), `nowaitdelay` (exec.CommandContext with captured
+  output, Output/CombinedOutput/StdoutPipe, started with no
+  WaitDelay — a child that never closes the pipe wedges Wait),
+  `unboundedresp` (an io.ReadAll or JSON decode of an
+  *http.Response body with no io.LimitReader/MaxBytesReader, on ANY
+  client — credfetch's decode arm lifted to every fetch), `nostore`
+  (a 2xx body written on a path that resolved a principal with no
+  Cache-Control set — RFC 9111's storage restriction covers
+  Authorization headers, not cookie-authenticated requests, so every
+  per-caller response suppresses storage itself; ack bodies built
+  from constants and request scalars, header pass-throughs, and
+  bodyless 2xx stay quiet), and `unseated` (a long-lived stream —
+  text/event-stream, websocket Upgrade, Hijack — with a park loop
+  reachable in the package and no seat acquisition on the path —
+  admit through core/stream's seat policy). The contracts rules:
+  `GOFASTR1411 fetchmetadata` (reading Sec-Fetch-Site outside
+  `handler.IsCrossSiteRequest`, the one shared cross-site form
+  guard), `GOFASTR1412 urlattrescape` (an href/src/action attribute
+  filled by render.Escape, which escapes markup but not schemes —
+  urlsafe.Clean), `GOFASTR1413 varyset` (Header().Set on Vary
+  clobbers what an upstream middleware already wrote — Add), and
+  `GOFASTR1414 dialectdrift` (sibling Postgres/SQLite query pairs on
+  the same table set whose WHERE predicate tokens differ after
+  placeholder normalization — the v0.84.1 outbox lease shape).
+  Widened the same round: `GOFASTR1407 rawjsonbodydecode` names
+  core/stream's zero-arg (*WebSocketConn).Read and line scanners
+  over a child StdoutPipe/os.Stdin as raw-JSON sources; `laxenvelope`
+  exports the "type T is strict-decoded" fact across packages
+  (go/analysis facts), treats a json.RawMessage field of a strict
+  envelope as a strict carrier, and refuses CheckTopLevelKeys as
+  strict evidence when a nested decode of the same bytes follows;
+  `clienttimeout` fires on the bare http.Get/Post/Head/PostForm
+  sugar and http.DefaultClient; `errleak` adds the JSON-RPC arm (a
+  call carrying an Internal-named error-code constant plus an
+  .Error() argument); `worldreadable` adds the os.WriteFile
+  owner-mode arm — the 0600 literal only applies at CREATE, so
+  overwriting an existing 0644 file keeps 0644; the fix spelling is
+  `fileperm.WriteOwnerOnly` (open, chmod the handle, write);
+  `laxcoerce` adds the `x, _ := param.(T)` discarded-assertion arm on
+  an any-typed parameter whose result feeds a callback or return
+  with no error; `emitident` adds the CSS selector and
+  custom-property slots (`.%s {`, `--%s:`) and the identifier run
+  continuing after the verb (`func %sMiddleware(`, `type %sPlugin
+  struct`); and `recovercallback` canonicalizes generic type
+  instantiations (Named.Origin), the blind spot that hid
+  StateChannel's host-callback dispatch. The runtimeshapes JS lint
+  family in core-ui/check grew to ten: `decodeuriraw`
+  (decodeURIComponent of a data-fui-* value outside every try —
+  decodeURIComponent('%E0%A4') throws URIError out of the delegated
+  handler; wrap it, or route through a same-file safeDecode helper)
+  and `protokey` (a bracket write keyed by a data-fui-* value with
+  no reserved-key guard — reject __proto__/constructor/prototype
+  first, or key the store by Map). Two gates landed with them: the
+  docs corpus gate runs the contracts security rules (GOFASTR1404
+  cookie attrs, the referer-redirect shape) over the assembled
+  compile-marked snippets in framework/docs, and the emitted-code
+  gate runs the repo vettool over the --from-openapi CLI render and
+  the blueprint e2e_test.go template. The `//gofastr:allow` marker
+  and the check-csp ignore directive are anchored comment-initial
+  now: prose that merely mentions either no longer silences anything.
 
   Every registration is wrapped in `allow.Guard`
   (`internal/analyzers/allow`): a site that is the shape ON PURPOSE

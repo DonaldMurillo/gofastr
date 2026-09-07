@@ -114,8 +114,12 @@ The `audit` subcommands predate `verify` and remain for the two things it
 does not cover: a runtime browser scan, and the dependency report.
 
 - `gofastr audit a11y --url <base>`: axe-core scan of a running app in
-  both color schemes (`--email`/`--password` log in first). The *static*
-  accessibility rules are part of `gofastr verify accessibility`.
+  both color schemes (`--email`/`--password` log in first). The
+  password takes the `-` marker and is then read from
+  `GOFASTR_AUDIT_PASSWORD` or piped stdin; a literal value still
+  works but warns that argv is visible to every local process via
+  ps. The *static* accessibility rules are part of
+  `gofastr verify accessibility`.
 - `gofastr audit lint`: the original AI-mistake scanner. Superseded by
   `gofastr verify security data`, which covers the same rules with a
   reason and a fix attached to each.
@@ -128,7 +132,9 @@ does not cover: a runtime browser scan, and the dependency report.
   index ([semantic search](semantic-search.md)).
 - `gofastr harness`: the experimental agent harness (`harness mcp`
   runs it as a stdio MCP server; `harness creds` manages encrypted API
-  keys).
+  keys — `creds add <provider> <account> -` reads the secret from
+  `GOFASTR_HARNESS_SECRET` or piped stdin, and a literal argv value
+  warns the same way).
 - `gofastr version`: print version info.
 
 ## Common mistakes

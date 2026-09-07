@@ -123,7 +123,7 @@ yourself before returning.
 | Duplicate key + different body                    | `422 Unprocessable Entity`                     |
 | Duplicate key while first is still running        | `409 Conflict` + `Retry-After: 1`              |
 | First request returned non-2xx                    | Claim released; retry runs the handler again   |
-| Body larger than `MaxBodyBytes`                   | Pass through with `Idempotent-Bypass: body-too-large`; handler still sees full body |
+| Body larger than `MaxBodyBytes`                   | Pass through with `Idempotent-Bypass: body-too-large`; handler still sees full body. The bypass response appends `Vary: Idempotency-Key` (Add, not Set — an upstream middleware such as CORS may already have written `Vary`) so a shared cache cannot serve one caller's bypassed response at another's key |
 | Store backend failure (FailOpen=false, default)   | `503 Service Unavailable`, fail closed         |
 | Store backend failure (FailOpen=true)             | Pass through, fail open (legacy availability) |
 | Cached row is corrupt (unparseable stored headers)| `503 Service Unavailable`, fail closed — a corrupt cached response is never replayed with silently-dropped headers |

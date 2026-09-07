@@ -75,7 +75,13 @@ unique tiebreak, two rows with identical sort keys break paging.
 The cursor is opaque base64 JSON. Clients must not decode or modify
 it, only echo it back on the next request. The exact encoding
 (single-field vs multi-field) is chosen by the server based on the
-entity's `CursorField` / `CursorFields` config.
+entity's `CursorField` / `CursorFields` config. A token the server
+did not mint is decoded under the same no-ambiguity rule as every
+other client-borne JSON: duplicate and case-folded keys, at any
+depth of the token, are rejected as invalid (the 16 KiB / 64-field
+caps above bound the work). Stdlib `encoding/json` resolves such
+keys last-wins; the keyset must not resume paging under a token any
+first-read intermediary parsed differently.
 
 ## Behaviour & guarantees
 

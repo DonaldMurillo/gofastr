@@ -78,14 +78,19 @@ Per verb:
   `{"event":…,"data":…}` line per server event until interrupted.
   No auto-reconnect: wrap it in a shell loop if you need one.
 
-Connection resolution, in order: `--url`/`--token` flags →
+Connection resolution, in order: the `--url` flag →
 `<BINARY>_URL`/`<BINARY>_TOKEN` env vars → the config file written by
-`login` (`<user-config-dir>/<binary>/config.json`, 0600). A config file
-that exists but does not parse is refused with an error naming the file
-(delete it or `login` again) rather than silently treated as "not logged
-in", which would send every request unauthenticated. Exit codes:
-`0` success, `1` API/transport error (including a rolled-back batch),
-`2` usage, `4` authentication failure (401/403).
+`login` (`<user-config-dir>/<binary>/config.json`, written 0600 on
+create and on every overwrite). A config file that exists but does
+not parse is refused with an error naming the file (delete it or
+`login` again) rather than silently treated as "not logged in",
+which would send every request unauthenticated. There is no
+`--token` flag: a bearer credential on the command line sits in
+ps/procfs state every local process can read. Every verb is
+signal-cancellable (Ctrl-C interrupts the request, not just the
+process). Exit codes: `0` success, `1` API/transport error
+(including a rolled-back batch), `2` usage, `4` authentication
+failure (401/403).
 
 ## Auth: scoped API tokens
 
@@ -159,7 +164,7 @@ property plus the `--json` raw escape; binary bodies
 for stdin. JSON responses pretty-print; anything else streams raw to
 stdout so `barc generate-code ... > code.png` works. `servers[0].url`
 seeds the default server URL, and an `http: bearer` or header `apiKey`
-security scheme wires into the same `--token`/env/`login` machinery.
+security scheme wires into the same env/`login` machinery.
 
 The generated tree is fully self-contained (stdlib only, with its own
 `internal/client`), so it runs from any directory inside a Go module —
