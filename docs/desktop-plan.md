@@ -1073,6 +1073,491 @@ bug fixes only; anything new lives under `battery/desktop`.
     `framework/docs/content/desktop.md` ("App state", "Preferences",
     "Single-user mode").
 
+## Phase 13 candidate: a macOS look (researched 2026-09-07, not decided)
+
+The base app looks like a website in a window. Research into how
+Electron, Tauri, and hand-rolled WKWebView apps get a native feel, and
+what macOS 26's Liquid Glass changes, points at two layers that have
+to be built together: the window chrome is native, the page is a
+theme. Neither alone gets there. Every claim below was re-checked
+against primary sources on 2026-09-07 (Apple documentation and WWDC
+session transcripts, WebKit source and bug tracker, the Electron and
+Tauri sources, Microsoft Learn); corrections from that pass are folded
+in and the sources are listed at the end of the section.
+
+### The findings, corrected
+
+**macOS 26 glass**
+
+- `NSGlassEffectView` (macOS 26.0+) has `contentView`, `cornerRadius`,
+  `tintColor`, and `style`, where style is `.regular` (standard glass)
+  or `.clear` (highly translucent); `effectIsInteractive` arrives in
+  macOS 27. Only those two style cases are public; the raw values
+  behind them (dock, sidebar, inspector, control, and so on) are
+  private API, which window-vibrancy documents in its own source.
+- `NSGlassEffectContainerView` (macOS 26.0+) has `contentView` and
+  `spacing` and merges descendant glass views within that proximity
+  into one rendering pass: grouped shapes "fluidly join and separate
+  using a liquid visual effect", share one adaptive appearance, and
+  save a sampling pass (glass samples an area larger than itself and
+  cannot sample another glass view).
+- Apple's placement rule for glass: put the content IN the glass
+  view's `contentView`. "Setting a contentView allows AppKit to apply
+  all of the necessary visual treatments to keep your content legible
+  as the glass adapts to its surroundings. So avoid placing the
+  NSGlassEffectView behind your content as a sibling view" (WWDC25
+  session 310). A WKWebView can be that contentView: no documented
+  restriction exists, and window-vibrancy's `apply_liquid_glass`
+  reparents a WKWebView into it in its shipped Tauri example.
+- Buttons: `NSButton.BezelStyle.glass` (`NSBezelStyleGlass`),
+  macOS 26.0+, "a bezel style with a glass effect", tinted through
+  the existing `bezelColor`.
+- Automatic adoption, corrected: an app rebuilt with the 26 SDK gets
+  glass toolbars (behind every `NSToolbarItem`; `isBordered = false`
+  removes it from an item, the `.prominent` style and
+  `backgroundTintColor` tint it), floating sidebar and inspector glass
+  from `NSSplitViewController` split item behaviors, glass sheets,
+  popovers, and refreshed menus. WWDC: "build your app with Xcode 26.
+  A lot of the new design will start working right away". The menu bar
+  and Dock wear glass as system surfaces on 26 regardless of any app;
+  they are not app APIs and an app gets nothing from them. A
+  hand-placed `NSVisualEffectView` inside a sidebar blocks the new
+  glass and Apple says to remove it.
+- The 26 window: windows with toolbars use a larger corner radius
+  that wraps concentrically around the toolbar glass; titlebar-only
+  windows keep a smaller one; `NSView.LayoutRegion` provides
+  corner-avoiding layout guides. Apple publishes no radius numbers
+  (unverified).
+- Controls: sizes run mini through large plus a new extra large;
+  mini, small, and medium became slightly taller in 26;
+  `prefersCompactControlSizeMetrics` reverts to pre-26 sizing; the
+  guidance is Auto Layout and no hard-coded heights. No pixel tables
+  are published (unverified).
+- Glass under accessibility settings: the two variants' appearance
+  "can differ in response to certain system settings", and those
+  settings "can remove or modify certain effects" (HIG Materials,
+  Adopting Liquid Glass). The inactive-window treatment of glass is
+  not documented and the class has no active-state property
+  (unverified).
+
+**The pre-26 fallback: `NSVisualEffectView` (10.10+)**
+
+- Materials: `sidebar` (Apple: use it "when your view serves as the
+  background of your window's sidebar"), `underWindowBackground`,
+  `windowBackground`, `hudWindow`, `popover`, `menu`, `titlebar`,
+  `sheet`, `contentBackground`, `underPageBackground`, and more.
+  Blending: behind-window (sheets and popovers, reads the desktop) or
+  within-window (toolbars always). `state` is
+  `followsWindowActiveState` by default, so the material dims when the
+  window deactivates, with forced active/inactive and `isEmphasized`
+  as the other levers. AppKit inserts effect views itself for
+  titlebars, popovers, and source lists.
+- Materials' "appearance and behavior can also change based on system
+  settings", so Reduce Transparency flattens the native side on its
+  own; custom elements must still be tested under it.
+
+**WKWebView transparency, the honest recipe**
+
+- The public property is `underPageBackgroundColor` (macOS 12+): the
+  color behind the page, visible when the user scrolls past its
+  bounds, derived by default from the html and body background
+  colors. It colors the overscroll area; it is not a transparency
+  switch.
+- Turning the view's own background off goes through private SPI:
+  `_drawsBackground` (setter `_setDrawsBackground:`) in
+  `WKWebViewPrivate.h`, also present on the configuration's private
+  header (macOS 10.14+). The KVC spelling
+  `setValue:forKey:@"drawsBackground"` reaches the same private
+  property. Wry's source labels it "Private API"; Tauri gates window
+  transparency behind the `macOSPrivateApi` config flag for exactly
+  this reason, and App Review tolerance of the KVC form is empirical,
+  not promised (unverified).
+- The page must paint `html, body { background: transparent }` for
+  any of it to show a native effect underneath. Tauri's example ships
+  that rule.
+
+**The web side in WebKit**
+
+- System color keywords: WebKit implements the CSS Color 4 set
+  (`canvas`, `canvastext`, `linktext`, `visitedtext`, `activetext`,
+  `buttonface`, `buttontext`, `buttonborder`, `field`, `fieldtext`,
+  `highlight`, `highlighttext`, `selecteditem`, `selecteditemtext`,
+  `mark`, `marktext`, `graytext`, `accentcolor`, `accentcolortext`),
+  announced for Safari 16.4 and present in `CSSValueKeywords.in`.
+  Correction to the earlier draft: `AccentColor` and
+  `AccentColorText` ARE in WebKit, Safari 16.5+ (Chrome 150, Firefox
+  103). The theme uses `AccentColor` and keeps
+  `-webkit-focus-ring-color` (still a WebKit keyword, resolved through
+  `RenderTheme::focusRingColor`) as the fallback for older systems.
+- `-apple-system-*` named colors, Cocoa builds only: text styles
+  (`-apple-system-body`, `headline`, `subheadline`, `footnote`,
+  `caption1/2`, the `short-*` and `title*` sets), label and fill
+  levels, separators, backgrounds, the `-apple-system-blue` family,
+  and, behind internal build flags, blur and glass material colors.
+  Non-standard and meaningless outside WebKit; fine inside a desktop
+  theme, kept out of the shared web theme.
+- `color-scheme: light dark` switches the default page colors, form
+  controls, scrollbars, and the named system colors (webkit.org, Dark
+  Mode Support in WebKit). `prefers-color-scheme` since Safari 12.1,
+  `prefers-contrast` since 14.1, `prefers-reduced-motion` since 10.1.
+- Correction with design weight: `prefers-reduced-transparency` is
+  NOT implemented in WebKit (browser-compat-data: Safari false; Chrome
+  118, Firefox 113). A page in WKWebView cannot see Reduce
+  Transparency through CSS. The shell must read
+  `NSWorkspace.accessibilityDisplayShouldReduceTransparency` (10.10+)
+  and push the state to the page; the shell can read increase contrast
+  (10.10+) and reduce motion (10.12+) natively too, though the CSS
+  queries already cover them.
+- `env(safe-area-inset-*)` is supported in WKWebView on macOS and iOS
+  (WebView CG test data); on iOS the values can arrive after page
+  load (WebKit bug 191872).
+- `backdrop-filter`: unprefixed since Safari 18, prefixed since 9.
+  SVG reference filters inside `backdrop-filter` do nothing in WebKit:
+  open bug 245510 ("backdrop-filter: url(#some-svg-filter) doesn't
+  work with SVG filters like feDisplacementMap"), and Firefox does
+  not support them either. Real refraction is Chromium-only, so the
+  honest CSS glass is blur, saturate, a rim highlight, and a sheen.
+
+**SF Pro facts the theme needs**
+
+- Font stack: `-apple-system` and `system-ui` both resolve to the
+  system UI font (SF Pro on macOS); WebKit maps them to
+  `SystemFontKind::SystemUI` in `FontCacheCoreText.cpp`. Theme stack:
+  `-apple-system, system-ui, ui-sans-serif, sans-serif`.
+- Type scale, from the HIG Typography table (macOS built-in text
+  styles, size/line height in points): Large Title 26/32, Title 1
+  22/26, Title 2 17/22, Title 3 15/20, Headline 13/16 bold, Body
+  13/16, Callout 12/15, Subheadline 11/14, Footnote 10/13, Caption 1
+  10/13, Caption 2 10/13 medium. Default body size 13 pt, minimum
+  10 pt, no Dynamic Type on macOS. One CSS px in a WKWebView equals
+  one point, so the theme writes these as px.
+- Control heights and sidebar row heights: no published constants,
+  changed in 26, and Apple's guidance is to never hard-code them. The
+  theme picks its own numbers and the proof plan validates them
+  against native captures (unverified until then).
+- Concentricity, from WWDC25 session 356: "concentric shapes
+  calculate their radius by subtracting padding from the parent's";
+  capsules use a radius of half the container height; fixed shapes
+  keep a constant radius; on the Mac, align nested shapes with the
+  window edge. The plan's rule (inner radius equals outer radius
+  minus the padding between them) is the same statement and stands.
+
+### The same contract on Windows and Linux
+
+The contract is designed once; each platform fulfils it or honestly
+does not. "Unsupported, page falls back to opaque" is an acceptable
+cell.
+
+| Contract field | macOS 26 | macOS 12 to 15 | Windows 11 | Linux |
+|---|---|---|---|---|
+| Material: none | default | default | default | default |
+| Material: sidebar | `NSGlassEffectView` (regular) sized to the sidebar zone | `NSVisualEffectView` material `sidebar` under the zone | no per-zone material; Mica and Acrylic are whole-window only; page paints a translucent sidebar over a whole-window backdrop or falls back to opaque | unsupported, page falls back to opaque (blur belongs to the compositor) |
+| Material: window | glass view, webview as its `contentView` | `NSVisualEffectView` `underWindowBackground` behind the webview | `DWMSBT_MAINWINDOW` (Mica) or `DWMSBT_TABBEDWINDOW` (Mica Alt) via `DwmSetWindowAttribute(DWMWA_SYSTEMBACKDROP_TYPE)`, build 22621+, with WebView2 `DefaultBackgroundColor` transparent | `webkit_web_view_set_background_color` plus an RGBA visual and `app-paintable`; no blur of ours, page falls back to opaque unless the compositor blurs |
+| Material: glass | `NSGlassEffectView` (clear needs a dimming layer over bright content, HIG) | unsupported, nearest is popover or sheet material | unsupported; `DWMSBT_TRANSIENTWINDOW` (Desktop Acrylic) is whole-window and the nearest look | unsupported |
+| Titlebar: default | standard | standard | standard | server decorations or a libadwaita-style headerbar |
+| Titlebar: hidden or inset | `titlebarAppearsTransparent` + `titleVisibility` hidden + `fullSizeContentView`; buttons kept and moved with `standardWindowButton` + `setFrameOrigin` (see the Electron notes) | same, 10.10+ | page-drawn caption through WebView2 non-client regions (Caption, Minimize, Maximize, Close kinds, aligned with `WM_NCHITTEST`) | GTK CSD; the page paints the headerbar |
+| Titlebar: unified | `toolbarStyle` unified plus transparent titlebar; on 26 the merged look is automatic | same, 11.0+ | Mica spans the whole window including behind a page-drawn caption | headerbar is the pattern; opaque |
+| Focus events | window did-become-key / did-resign-key | same | `WM_ACTIVATE` | GTK focus events |
+| Accent color | CSS `AccentColor` (WebKit 16.5+, so any current system), `-webkit-focus-ring-color` fallback, `NSColor.controlAccentColor` natively | same | CSS `AccentColor` only from the Chromium 150 engine; the native read is UISettings or the registry | WebKitGTK carries the same engine support; no OS-wide accent notion |
+
+### How Electron and Tauri do it (from their source)
+
+- Electron `vibrancy`: one `NSVisualEffectView` per window, the full
+  content bounds, behind-window blending, state
+  `followsWindowActiveState` (the `visualEffectState` option can force
+  active or inactive), inserted "underneath all other views" as a
+  sibling BEHIND the web contents. Correction to the earlier draft:
+  Electron's API cannot do per-zone materials; the community demo
+  (steveharrison/vibrancy-demo) switches one window-wide material at
+  runtime. The two-zone sidebar look must be built by the host (our
+  zone views) or painted by the page over one window-wide material.
+- Electron `hiddenInset` and `trafficLightPosition`:
+  `titlebarAppearsTransparent` + `NSWindowTitleHidden` + `setOpaque:NO`
+  for frameless or transparent windows, then the real
+  `standardWindowButton`s are repositioned with `setFrameOrigin:` and
+  the titlebar container view resized. Electron's default hiddenInset
+  margin is (12, 11) and its own comment says it "does not match
+  official macOS apps like Safari or Notes"; a macOS 26-era comment
+  warns that AppKit can re-layout the container when button visibility
+  toggles, so the geometry must be re-applied. Our traffic-light work
+  inherits both facts: nil must mean the system position, and the
+  inset needs re-application after changes.
+- Tauri window-vibrancy `apply_vibrancy`: an `NSVisualEffectView`
+  added as a subview positioned below everything, behind-window
+  blending, follows-window-active-state, tagged for later removal.
+  `apply_liquid_glass` gates on macOS 26 (`NSAppKitVersionNumber` >=
+  2685.0 in their source), builds an `NSGlassEffectView` with style,
+  corner radius, and tint, and optionally reparents the webview into
+  the glass view's `contentView`; without that option the glass sits
+  below as a sibling, the shape Apple tells you to avoid. The README
+  spells the web side: `html, body { background: transparent }`,
+  Tauri `transparent: true`, and `macOSPrivateApi: true`.
+- Wry, Tauri's webview layer, turns the background off with the KVC
+  `drawsBackground` key and marks it private API in a source comment;
+  it uses the public `underPageBackgroundColor` (macOS 12+) for the
+  overscroll color.
+
+### Accessibility and honesty
+
+- Reduce Transparency: the shell reads
+  `accessibilityDisplayShouldReduceTransparency`, lets the native
+  materials flatten as the system already does, and pushes the state
+  into the page through the bridge, because WebKit has no
+  `prefers-reduced-transparency` query. The theme flattens its glass
+  tokens to opaque equivalents when the state arrives.
+- Increase Contrast: `accessibilityDisplayShouldIncreaseContrast` on
+  the Go side; `prefers-contrast` (Safari 14.1+) also reaches the CSS.
+  HIG: prefer system colors with accessible variants and ship a
+  higher-contrast scheme; check contrast in light and dark.
+- Reduce Motion: `prefers-reduced-motion` (Safari 10.1+) reaches the
+  CSS; `accessibilityDisplayShouldReduceMotion` (10.12+) on the Go
+  side. HIG: cut automatic and repetitive animation, replace
+  transitions with fades, avoid animating into and out of blurs.
+- Legibility on glass, from the HIG: regular glass "blurs and adjusts
+  the luminosity of background content to maintain legibility" and is
+  the variant for text-bearing chrome such as alerts, sidebars, and
+  popovers; clear glass over bright content needs a 35 percent dark
+  dimming layer; thicker standard materials give better contrast for
+  fine features; label colors on materials should be the vibrant
+  system ones.
+- What we will not imitate: real refraction on the web (SVG filters
+  in `backdrop-filter` are Chromium-only, WebKit bug 245510); glass on
+  content surfaces (HIG: "Don't use Liquid Glass in the content
+  layer"); per-pixel specular highlights chasing the 26 look in CSS.
+
+### The contract additions the findings imply
+
+1. `WindowStyle.Material` (none, sidebar, window, glass): the shell
+   picks the mechanism per platform (glass contentView on 26, an
+   effect view under the webview on 12 to 15, Mica plus transparent
+   WebView2 on 11, none on Linux). Why: one field lets a host ask for
+   the effect without naming an OS API, and the per-platform table
+   above is its fulfilment matrix.
+2. `WindowStyle.Chrome` gains `ChromeUnified` (toolbarStyle unified
+   plus transparent titlebar). Why: hidden and inset alone still draw
+   a toolbar strip of its own on 15 and below; unified is the shape
+   Notes and Finder use.
+3. `WindowStyle.TrafficLightInset` (x and y points, nil means the
+   system position). Why: the page must reserve space for the lights,
+   Electron's default offset is documented as non-native, and the 26
+   re-layout quirk means the shell re-applies geometry after changes.
+4. Zone geometry: `Config` declares an optional sidebar width in
+   points, and a `window.setChrome` capability lets the page report
+   later changes (a ResizeObserver on the sidebar element). Why: the
+   per-zone effect views need native geometry; declaring it up front
+   places the view before first paint, and the capability covers
+   layout changes and secondary windows.
+5. Events: `WindowConfig.OnWindowFocus` and `OnWindowBlur`, mirrored
+   into the page as `window_focus` and `window_blur` on the existing
+   Emit rail. Why: the native material dims itself on deactivate, and
+   the page theme must dim with it; no CSS signal exists for window
+   activity.
+6. Appearance push: on boot and on change the shell emits
+   `reduce_transparency` into the page. Why: of the four accessibility
+   and appearance signals, only this one is invisible to WebKit's CSS;
+   color-scheme, contrast, and motion queries already work.
+7. Theme tokens (a `macos` theme through the design system's token
+   machinery, registered by the battery in `battery/desktop/ui`, never
+   `framework/`): the SF stack (`-apple-system, system-ui,
+   ui-sans-serif, sans-serif`), the 13/12/11/10 px scale from the HIG
+   table onto `Typography`, radii computed by the concentric rule
+   (inner equals outer minus padding; capsule equals half the height),
+   a `glass` surface token (blur plus saturate plus rim, no
+   displacement), system color keywords where the engine has them
+   (`Canvas`, `CanvasText`, `AccentColor`) with the WebKit fallbacks,
+   and the traffic-light inset as a spacing token. Why: these are the
+   only published numbers; everything else in the theme is measured
+   and marked so.
+8. Components the theme needs and the catalog lacks, registered the
+   same way: a source-list sidebar (translucent, pill selection,
+   section headers), a floating toolbar group, a segmented control, an
+   inspector pane, sheet and popover variants on the thick glass
+   material. Survey `framework/ui` and `core-ui/patterns` first; only
+   the missing ones get built.
+
+### Order of work
+
+1. Contract fields, fake-shell coverage, red first: Material,
+   ChromeUnified, TrafficLightInset, the focus callbacks, the
+   reduce_transparency emit, setChrome validation. Unit tests against
+   the fake shell; each guard broken once to watch it fail.
+2. darwin shell (in `macos` after the split lands): effect view and
+   glass placement, the webview background off plus the transparent
+   page rule, traffic lights with re-application, focus events, the
+   NSWorkspace read. Tagged e2e walks the user flow, not API
+   shortcuts.
+3. The 26 branch behind a runtime check (operating system version 26
+   or the AppKit version number 2685.0 that window-vibrancy gates on):
+   webview into the glass contentView, corner radius, capture proof.
+4. The `macos` theme and the missing components in `battery/desktop/ui`.
+5. The Focus example opts in; proof captures.
+
+Windows and Linux fulfil the same fields in their own phases; the
+table above is the commitment.
+
+### Proof plan
+
+- Side-by-side window captures by CGWindowID, never a web-view
+  snapshot: Focus next to Finder and Notes, in light and dark, active
+  and inactive, default and non-default accent, Reduce Transparency
+  off and on, Increase Contrast off and on, on macOS 26 and on the
+  oldest supported macOS. A DOM assertion proves nothing here.
+- Unit guards, behavioral: the material-to-style mapping, the
+  reduce_transparency emit, setChrome validation, the traffic-light
+  inset re-application. Each guard is broken once, the test watched
+  failing, then restored.
+
+Open decisions: the minimum macOS version (26 glass with a vibrancy
+fallback, or vibrancy only); how much of the theme is macOS-specific
+versus a generic "desktop" theme that Windows and Linux later reuse
+with their own materials (the contract fields above are OS-neutral on
+purpose; the token values are not). The sidebar-zone question is
+settled by the findings: Config declares it, the capability updates
+it.
+
+### Decided 2026-09-07
+
+- Target the newest platform APIs and keep wide reach: on macOS 26
+  the chrome uses `NSGlassEffectView`; below 26 the same contract is
+  fulfilled with `NSVisualEffectView` materials. The page never knows
+  which; it sees one contract.
+- The battery splits by platform. One contract, one package per
+  platform that fulfils it:
+
+  ```
+  battery/desktop            the contract and everything OS-neutral: Shell, Window,
+                             NativeDriver, WindowStyle, Frame, capabilities, grants,
+                             handshake, appstate, preferences, deep links, updates,
+                             the unsupported shell (exported for the platform stubs)
+  battery/desktop/macos      the darwin shell: WKWebView, NSWindow, menus, tray,
+                             notifications, deep links, glass and vibrancy
+  battery/desktop/windows    stub today (unsupported shell); WebView2 plus DWM
+                             Mica/Acrylic when it lands
+  battery/desktop/linux      stub today; WebKitGTK when it lands
+  battery/desktop/native     picks the platform package by GOOS: hosts write
+                             desktop.New(desktop.Config{Shell: native.Shell()})
+  battery/desktop/desktoptest  unchanged: the fake shell and the app-shell harness
+  battery/desktop/internal/* unchanged: objc, ffi, fakecgo, gtk, update
+  ```
+
+  Every platform package compiles on every GOOS (an unconstrained
+  `doc.go` and a `New()` that answers the unsupported shell off its
+  platform), so a host cross-compiles without build tags of its own.
+  `Config.Shell` stays the explicit seam; `native.Shell()` is the
+  default a host passes. Nothing registers itself through `init`.
+- Phase 13's chrome work (materials, title bar, focus events, the
+  `macos` theme) starts after the split lands, inside `macos` and the
+  contract, never in `framework/`.
+
+### Sources
+
+Checked 2026-09-07. Apple symbol pages cite the current documentation
+archive; availability is stated in each page's metadata.
+
+- `NSGlassEffectView` and its `contentView`, `cornerRadius`,
+  `tintColor`, `style`, `effectIsInteractive` properties:
+  https://developer.apple.com/documentation/appkit/nsglasseffectview
+- `NSGlassEffectView.Style` (regular, clear, macOS 26.0+):
+  https://developer.apple.com/documentation/appkit/nsglasseffectview/style-swift.enum
+- `NSGlassEffectContainerView` (contentView, spacing):
+  https://developer.apple.com/documentation/appkit/nsglasseffectcontainerview
+- `NSButton.BezelStyle.glass` (macOS 26.0+):
+  https://developer.apple.com/documentation/appkit/nsbutton/bezelstyle-swift.enum/glass
+- WWDC25 session 310, "Build an AppKit app with the new design"
+  (toolbar glass, sidebar glass, corner radii, control sizes,
+  glass contentView rule, "build with Xcode 26"):
+  https://developer.apple.com/videos/play/wwdc2025/310/
+- WWDC25 session 356, "Get to know the new design system"
+  (concentricity: "subtracting padding from the parent's" radius,
+  capsules, window-edge alignment):
+  https://developer.apple.com/videos/play/wwdc2025/356/
+- Adopting Liquid Glass (automatic adoption with the latest SDK,
+  accessibility settings "can remove or modify certain effects",
+  avoid overuse):
+  https://developer.apple.com/documentation/technologyoverviews/adopting-liquid-glass
+- HIG Materials (glass for the control layer, not content; regular
+  vs clear; 35 percent dimming layer; settings change the variants):
+  https://developer.apple.com/design/human-interface-guidelines/materials
+- HIG Typography (macOS 13 pt default, 10 pt minimum, the built-in
+  text style table, no Dynamic Type on macOS):
+  https://developer.apple.com/design/human-interface-guidelines/typography
+- HIG Accessibility (Increase Contrast, Reduce Motion guidance):
+  https://developer.apple.com/design/human-interface-guidelines/accessibility
+- `NSVisualEffectView` (materials, blending, state, "appearance and
+  behavior of materials can also change based on system settings"):
+  https://developer.apple.com/documentation/appkit/nsvisualeffectview
+- `NSWorkspace` accessibility properties:
+  https://developer.apple.com/documentation/appkit/nsworkspace/accessibilitydisplayshouldreducetransparency
+  https://developer.apple.com/documentation/appkit/nsworkspace/accessibilitydisplayshouldincreasecontrast
+  https://developer.apple.com/documentation/appkit/nsworkspace/accessibilitydisplayshouldreducemotion
+- `NSWindow.fullSizeContentView` (10.10+):
+  https://developer.apple.com/documentation/appkit/nswindow/stylemask-swift.struct/fullsizecontentview
+- `NSWindow.titlebarAppearsTransparent` (10.10+):
+  https://developer.apple.com/documentation/appkit/nswindow/titlebarappearstransparent
+- `NSWindow.toolbarStyle` (11.0+):
+  https://developer.apple.com/documentation/appkit/nswindow/toolbarstyle-swift.property
+- `WKWebView.underPageBackgroundColor` (macOS 12+):
+  https://developer.apple.com/documentation/webkit/wkwebview/underpagebackgroundcolor
+- WebKit `WKWebViewPrivate.h` (`_drawsBackground`, private SPI):
+  https://github.com/WebKit/WebKit/blob/main/Source/WebKit/UIProcess/API/Cocoa/WKWebViewPrivate.h
+- WebKit `CSSValueKeywords.in` (system colors, `-apple-system-*`,
+  `-webkit-focus-ring-color`):
+  https://github.com/WebKit/WebKit/blob/main/Source/WebCore/css/CSSValueKeywords.in
+- WebKit `FontCacheCoreText.cpp` (`-apple-system`, `system-ui` map to
+  the system UI font):
+  https://github.com/WebKit/WebKit/blob/main/Source/WebCore/platform/graphics/cocoa/FontCacheCoreText.cpp
+- WebKit `RenderTheme.cpp` (`focusRingColor`):
+  https://github.com/WebKit/WebKit/blob/main/Source/WebCore/rendering/RenderTheme.cpp
+- webkit.org, "Dark Mode Support in WebKit" (color-scheme effects on
+  controls and scrollbars): https://webkit.org/blog/8840/dark-mode-support-in-webkit/
+- webkit.org, "WebKit Features in Safari 16.4" (the new system color
+  keywords): https://webkit.org/blog/13909/webkit-features-in-safari-16-4/
+- MDN browser-compat-data (fetched 2026-09-07): system colors and
+  AccentColor Safari 16.5 / Chrome 150 / Firefox 103;
+  prefers-reduced-transparency Safari false / Chrome 118 / Firefox
+  113; prefers-contrast Safari 14.1; prefers-reduced-motion 10.1;
+  prefers-color-scheme 12.1; color-scheme 13; backdrop-filter
+  unprefixed Safari 18:
+  https://github.com/mdn/browser-compat-data
+- WebKit bug 245510, SVG filters in backdrop-filter do not work:
+  https://bugs.webkit.org/show_bug.cgi?id=245510
+- WebKit bug 191872, safe-area env() timing in WKWebView:
+  https://bugs.webkit.org/show_bug.cgi?id=191872
+- WebView CG, safe-area-inset support per webview:
+  https://caniwebview.com/features/web-feature-safe-area-inset/
+- Electron `native_window_mac.mm` (vibrancy as one effect view behind
+  everything, hiddenInset setup):
+  https://github.com/electron/electron/blob/main/shell/browser/native_window_mac.mm
+- Electron `window_buttons_proxy.mm` (traffic light repositioning,
+  the (12, 11) default, the macOS 26 re-layout comment):
+  https://github.com/electron/electron/blob/main/shell/browser/ui/cocoa/window_buttons_proxy.mm
+- window-vibrancy source and README (apply_vibrancy, apply_liquid_glass,
+  the AppKit 2685.0 gate, private glass styles, the transparent page
+  recipe, macOSPrivateApi):
+  https://github.com/tauri-apps/window-vibrancy
+- Wry `src/wkwebview/mod.rs` (drawsBackground KVC marked private,
+  underPageBackgroundColor for overscroll):
+  https://github.com/tauri-apps/wry/blob/dev/src/wkwebview/mod.rs
+- Tauri runtime, transparent windows need `macOSPrivateApi`:
+  https://github.com/tauri-apps/tauri/blob/dev/crates/tauri-runtime-wry/src/lib.rs
+- steveharrison/vibrancy-demo (one window-wide vibrancy, switched at
+  runtime): https://github.com/steveharrison/vibrancy-demo
+- Microsoft Learn, `DWMWINDOWATTRIBUTE` (DWMWA_USE_IMMERSIVE_DARK_MODE,
+  DWMWA_WINDOW_CORNER_PREFERENCE, DWMWA_SYSTEMBACKDROP_TYPE):
+  https://learn.microsoft.com/en-us/windows/win32/api/dwmapi/ne-dwmapi-dwmwindowattribute
+- Microsoft Learn, `DWM_SYSTEMBACKDROP_TYPE` (Mica, Mica Alt, Desktop
+  Acrylic; build 22621+):
+  https://learn.microsoft.com/en-us/windows/win32/api/dwmapi/ne-dwmapi-dwm_systembackdrop_type
+- Microsoft Learn, WebView2 `ICoreWebView2Controller2`
+  `DefaultBackgroundColor` (transparent supported, alpha 0 or 255):
+  https://learn.microsoft.com/en-us/microsoft-edge/webview2/reference/win32/icorewebview2controller2
+- Microsoft Learn, `CoreWebView2NonClientRegionKind` (Caption,
+  Minimize, Maximize, Close; WM_NCHITTEST-aligned):
+  https://learn.microsoft.com/en-us/microsoft-edge/webview2/reference/winrt/microsoft_web_webview2_core/corewebview2nonclientregionkind
+- WebKitGTK `webkit_web_view_set_background_color` (RGBA visual and
+  app-paintable required):
+  https://webkitgtk.org/reference/webkit2gtk/2.39.1/method.WebView.set_background_color.html
+
 ## Deliberately out of scope
 
 Windows and Linux implementations (tabled 2026-09-05: contracts only,
