@@ -13,6 +13,8 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+
+	"github.com/DonaldMurillo/gofastr/internal/fileperm"
 )
 
 var (
@@ -31,6 +33,15 @@ func EphemeralSQLite(prefix string) (*sql.DB, func(), error) {
 		return nil, nil, fmt.Errorf("kiln/db: mkdir: %w", err)
 	}
 	path := filepath.Join(dir, "session.db")
+	// Seed the file 0600 before the driver opens it: sql.Open's create
+	// lands 0666&~umask, and this database holds the whole session world
+	// (entities, app config, credentialed DSNs) — the same content the
+	// journal sibling pins owner-only. Seeding also makes the -wal
+	// sidecar inherit the mode.
+	if err := fileperm.SeedOwnerOnly(path); err != nil {
+		os.RemoveAll(dir)
+		return nil, nil, fmt.Errorf("kiln/db: seed: %w", err)
+	}
 	d, err := sql.Open("sqlite3", path)
 	if err != nil {
 		os.RemoveAll(dir)

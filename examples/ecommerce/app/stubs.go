@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"github.com/DonaldMurillo/gofastr/framework"
 	"net/http"
 )
@@ -23,6 +24,41 @@ type AnalyticsPlugin struct{}
 
 func (AnalyticsPlugin) Name() string                  { return "analytics" }
 func (AnalyticsPlugin) Init(app *framework.App) error { return nil }
+
+// recomputeOrderTotalsOnCreateHook implements hook "orders-totals-on-create" (entity orders, after_create): derive subtotal.total from the order's items after create
+// Registered in main.go; returning a non-nil error aborts the operation.
+func recomputeOrderTotalsOnCreateHook(ctx context.Context, data any) error {
+	_, _ = ctx, data // TODO: implement the hook's action here.
+	return nil
+}
+
+// recomputeOrderTotalsOnUpdateHook implements hook "orders-totals-on-update" (entity orders, after_update): derive subtotal.total from the order's items after update
+// Registered in main.go; returning a non-nil error aborts the operation.
+func recomputeOrderTotalsOnUpdateHook(ctx context.Context, data any) error {
+	_, _ = ctx, data // TODO: implement the hook's action here.
+	return nil
+}
+
+// recomputeOrderFromItemCreateHook implements hook "order-items-totals-on-create" (entity order_items, after_create): recompute the parent order's money after an item lands
+// Registered in main.go; returning a non-nil error aborts the operation.
+func recomputeOrderFromItemCreateHook(ctx context.Context, data any) error {
+	_, _ = ctx, data // TODO: implement the hook's action here.
+	return nil
+}
+
+// recomputeOrderFromItemUpdateHook implements hook "order-items-totals-on-update" (entity order_items, after_update): recompute the parent order's money after an item changes (old parent too if moved)
+// Registered in main.go; returning a non-nil error aborts the operation.
+func recomputeOrderFromItemUpdateHook(ctx context.Context, data any) error {
+	_, _ = ctx, data // TODO: implement the hook's action here.
+	return nil
+}
+
+// recomputeOrderFromItemDeleteHook implements hook "order-items-totals-on-delete" (entity order_items, after_delete): recompute the parent order's money after an item is removed
+// Registered in main.go; returning a non-nil error aborts the operation.
+func recomputeOrderFromItemDeleteHook(ctx context.Context, data any) error {
+	_, _ = ctx, data // TODO: implement the hook's action here.
+	return nil
+}
 
 // seedEntity is one entity's ordered seed rows.
 type seedEntity struct {

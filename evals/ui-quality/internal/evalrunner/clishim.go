@@ -1,6 +1,8 @@
 package evalrunner
 
 import (
+	"github.com/DonaldMurillo/gofastr/internal/fileperm"
+
 	"bufio"
 	"io"
 	"os"
@@ -27,7 +29,7 @@ func installCLIShim(dir, realBin, logPath string) error {
 		shim := "@echo off\r\n" +
 			">> \"" + logPath + "\" echo %*\r\n" +
 			"\"" + realBin + "\" %*\r\n"
-		return os.WriteFile(filepath.Join(dir, "gofastr.cmd"), []byte(shim), 0o700)
+		return writeOwnerExecutable(filepath.Join(dir, "gofastr.cmd"), []byte(shim))
 	}
 	// ONE invocation must yield exactly ONE log line: the log is parsed
 	// line-wise into the adoption-funnel metrics (CLI calls, docs
@@ -38,7 +40,7 @@ func installCLIShim(dir, realBin, logPath string) error {
 	shim := "#!/bin/sh\n" +
 		"printf '%s\\n' \"$(printf '%s' \"$*\" | tr '\\n\\r' '  ')\" >> \"" + logPath + "\"\n" +
 		"exec \"" + realBin + "\" \"$@\"\n"
-	return os.WriteFile(filepath.Join(dir, "gofastr"), []byte(shim), 0o700)
+	return writeOwnerExecutable(filepath.Join(dir, "gofastr"), []byte(shim))
 }
 
 // cliInvocationStats reads a shim log and reports how many times the builder
@@ -161,4 +163,14 @@ func cliDocsInvocationStats(logPath string) cliDocumentationStats {
 	sort.Strings(stats.Searches)
 	sort.Strings(stats.Topics)
 	return stats
+}
+
+// writeOwnerExecutable writes an owner-only executable (0700) on create
+// AND overwrite: os.WriteFile's mode applies only at create, so a
+// pre-existing group/world-writable shim would be refilled in place.
+func writeOwnerExecutable(path string, data []byte) error {
+	if err := fileperm.WriteOwnerOnly(path, data); err != nil {
+		return err
+	}
+	return os.Chmod(path, 0o700)
 }

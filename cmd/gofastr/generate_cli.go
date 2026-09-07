@@ -806,7 +806,7 @@ func printUsage(cmds map[string]command) {
 	for _, name := range names {
 		fmt.Printf("  %-28s %s\n", name, cmds[name].summary)
 	}
-	fmt.Printf("\nConnection: --url/--token flags, %s_URL/%s_TOKEN env vars, or ` + "`%s login`" + `.\n", envPrefix, envPrefix, binaryName)
+	fmt.Printf("\nConnection: --url flag, %s_URL/%s_TOKEN env vars, or ` + "`%s login`" + ` (no --token flag: tokens never ride argv).\n", envPrefix, envPrefix, binaryName)
 }
 
 // groupUsage prints one command group's subcommands (the bare entity
@@ -909,11 +909,25 @@ func saveConfig(cfg storedConfig) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	// 0600: the file holds a bearer credential.
-	if err := os.WriteFile(path, data, 0o600); err != nil {
+	// 0600 on CREATE and OVERWRITE alike: os.WriteFile applies its mode
+	// only when creating, so a pre-existing 0644 config.json (operator
+	// chmod, restored backup, dotfiles manager) would be truncated and
+	// refilled with the bearer token while still world-readable. Open,
+	// chmod the handle, then write — the credential bytes land only
+	// after the mode is fixed.
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
+	if err != nil {
 		return "", err
 	}
-	return path, nil
+	if err := f.Chmod(0o600); err != nil {
+		f.Close()
+		return "", err
+	}
+	if _, err := f.Write(data); err != nil {
+		f.Close()
+		return "", err
+	}
+	return path, f.Close()
 }
 `
 }
@@ -1033,6 +1047,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"strings"
 	"text/tabwriter"
 
@@ -1044,6 +1059,7 @@ import (
 type global struct {
 	ctx    context.Context
 	client *client.Client
+	stop   context.CancelFunc
 }
 
 func newFlagSet(name string) *flag.FlagSet {
@@ -1053,11 +1069,13 @@ func newFlagSet(name string) *flag.FlagSet {
 }
 
 // parseGlobals registers the connection flags, parses args, and builds the
-// client. Resolution order: flag > env > stored config. A nil *global means
-// don't proceed: exit 0 for --help, 2 for usage/resolution failures.
+// client. Resolution order: env > stored config (the API token never
+// rides argv: there is deliberately no --token flag, the credential
+// would sit in ps/procfs world-readable state for the whole call;
+// ` + "`login --with-token`" + ` reads it from stdin instead). A nil *global
+// means don't proceed: exit 0 for --help, 2 for usage/resolution failures.
 func parseGlobals(fs *flag.FlagSet, args []string) (*global, int) {
 	urlF := fs.String("url", "", "server URL (default $"+envPrefix+"_URL, then stored config)")
-	tokenF := fs.String("token", "", "API token (default $"+envPrefix+"_TOKEN, then stored config)")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return nil, 0
@@ -1070,11 +1088,16 @@ func parseGlobals(fs *flag.FlagSet, args []string) (*global, int) {
 		fmt.Fprintf(os.Stderr, "no server URL: pass --url, set %s_URL, or run ` + "`%s login`" + `\n", envPrefix, binaryName)
 		return nil, 2
 	}
-	token := firstNonEmpty(*tokenF, os.Getenv(envPrefix+"_TOKEN"), cfg.Token)
+	token := firstNonEmpty(os.Getenv(envPrefix+"_TOKEN"), cfg.Token)
 	c := client.NewClient(strings.TrimRight(base, "/")+apiPrefix, nil)
 	c.Token = token
 	configureClient(c)
-	return &global{ctx: context.Background(), client: c}, 0
+	// Every verb runs under a cancellable ctx: Ctrl-C cancels the
+	// in-flight request instead of raw process death mid-write. stop is
+	// held on the global; the process exits when the verb returns, which
+	// is the signal goroutine's whole lifetime.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	return &global{ctx: ctx, client: c, stop: stop}, 0
 }
 
 func firstNonEmpty(values ...string) string {
@@ -1176,7 +1199,7 @@ func buildBody(fs *flag.FlagSet, jsonArg string, apply func(flagName string, bod
 	var visited []string
 	fs.Visit(func(f *flag.Flag) {
 		switch f.Name {
-		case "url", "token", "json", "o":
+		case "url", "json", "o":
 			return
 		}
 		visited = append(visited, f.Name)
@@ -1331,7 +1354,8 @@ func renderCLIEntityFile(spec cliSpec, ent cliEntity) string {
 	// net/url: list builds query params; every id-addressed verb path-escapes
 	// the positional id.
 	needsURLValues := has("list") || has("get") || has("delete") || has("update") || has("patch")
-	needsSignal := has("watch")
+	// The watch verb rides parseGlobals's NotifyContext ctx (output.go);
+	// the entity file itself needs no os/os-signal imports.
 
 	sb.WriteString("package main\n\nimport (\n")
 	if needsJSONImport {
@@ -1345,9 +1369,6 @@ func renderCLIEntityFile(spec cliSpec, ent cliEntity) string {
 	}
 	if needsURLValues {
 		sb.WriteString("\t\"net/url\"\n")
-	}
-	if needsSignal {
-		sb.WriteString("\t\"os\"\n\t\"os/signal\"\n")
 	}
 	sb.WriteString(")\n\n")
 
@@ -1478,13 +1499,13 @@ func run%sWatch(args []string) int {
 	if g == nil {
 		return code
 	}
-	ctx, stop := signal.NotifyContext(g.ctx, os.Interrupt)
-	defer stop()
-	err := g.client.Watch%s(ctx, func(event string, data []byte) error {
+	// g.ctx is already signal-cancellable: parseGlobals built it with
+	// signal.NotifyContext, so Ctrl-C cancels the stream here too.
+	err := g.client.Watch%s(g.ctx, func(event string, data []byte) error {
 		fmt.Printf("{\"event\":%%q,\"data\":%%s}\n", event, data)
 		return nil
 	})
-	if err != nil && ctx.Err() == nil {
+	if err != nil && g.ctx.Err() == nil {
 		return apiFail(err)
 	}
 	return 0

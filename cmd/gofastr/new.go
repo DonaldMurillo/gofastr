@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
 // validateScaffoldName rejects names that would escape the project root.
@@ -153,6 +155,21 @@ func routeSnippet(method, path, handler string) string {
 func scaffoldHandler(baseDir, rawName, method, path string, overwrite bool) error {
 	if err := validateScaffoldName(rawName); err != nil {
 		return fmt.Errorf("invalid handler name: %w", err)
+	}
+	// The name lands in `func %s(...)` at identifier position and in the
+	// file name + leading comment: it must be a bare Go identifier, the
+	// same guard every generate-side sibling carries
+	// (TestScaffoldNameGuardedByValidate, TestHookHandlerMustDeriveIdentifier).
+	if !isGoIdentifier(rawName) {
+		return fmt.Errorf("invalid handler name %q: must be a Go identifier (letters, digits, underscores, starting with a letter)", rawName)
+	}
+	// method+path ride the `// %s handles %s %s.` comment slot. A newline
+	// or control/bidi byte closes the comment and lands the rest at
+	// declaration position (a smuggled init() compiled and ran in the
+	// round-5 probe): refuse rather than render inert, the file names the
+	// command that supplied the bytes.
+	if textsafe.ContainsUnsafe(method) || textsafe.ContainsUnsafe(path) {
+		return fmt.Errorf("handler method %q or path %q carries control, invisible, or bidi bytes: they ride a // comment slot and cannot be scaffolded safely", method, path)
 	}
 	name := rawName
 	// Resolve the base dir before joining: a symlinked component would

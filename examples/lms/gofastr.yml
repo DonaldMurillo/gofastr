@@ -257,6 +257,7 @@ entities:
           value: published
     access:
       read:
+      create: catalog:write
       update: catalog:write
       delete: catalog:admin
     mcp: true

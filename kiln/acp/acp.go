@@ -169,7 +169,7 @@ func (s *session) runTurns(ctx context.Context, userText string, out *acpcore.Cl
 		if ctx.Err() != nil {
 			return acpcore.StopCancelled, nil
 		}
-		system := agent.BuildPrompt(s.agent.tools.Live().Session(), s.agent.tools.List()).String()
+		system := agent.BuildPromptLive(s.agent.tools.Live(), s.agent.tools.List()).String()
 		msgID := s.messageID()
 		streamed := false
 		req := agent.Request{
@@ -223,36 +223,27 @@ func (s *session) runToolCall(ctx context.Context, call agent.ToolCall, out *acp
 		Status:     acpcore.ToolStatusPending,
 	}))
 
-	// approve_plan is the single human gate over destructive edits:
-	// the model may propose plans freely, but only the user at the ACP
-	// client may approve one.
-	if call.Name == "approve_plan" {
-		allowed := false
-		outcome, err := out.RequestPermission(ctx,
-			acpcore.ToolCallUpdate{ToolCallID: call.CallID, Title: new("Approve plan")},
-			[]acpcore.PermissionOption{
-				{OptionID: "allow-once", Name: "Allow once", Kind: acpcore.PermissionAllowOnce},
-				{OptionID: "reject-once", Name: "Reject", Kind: acpcore.PermissionRejectOnce},
-			})
-		switch {
-		case err != nil:
-			if ctx.Err() != nil {
-				return protocol.Result{}, acpcore.StopCancelled
-			}
-			_ = out.Update(acpcore.ToolCallUpdateFrame(acpcore.ToolCallUpdate{
-				ToolCallID: call.CallID, Status: new(acpcore.ToolStatusFailed),
-				Content: []acpcore.ToolCallContent{acpcore.TextToolContent("permission request failed: " + err.Error())},
-			}))
-			return protocol.Result{OK: false, Kind: "needs_plan", Error: "permission request failed: " + err.Error()}, ""
-		case outcome.Outcome == acpcore.OutcomeSelected && outcome.OptionID == "allow-once":
-			allowed = true
+	// Every destructive-marked tool obtains human consent through
+	// session/request_permission before it dispatches. approve_plan is
+	// the obvious one, but the gate reads the descriptor's Destructive
+	// flag, not a name list: reset_session carries the flag and used to
+	// dispatch ungated, so a prompt-injected turn truncated the journal
+	// — the only durable state — with no frame the user could veto,
+	// while a one-field delete_field needed both a plan and this
+	// round-trip. A rejection is fed back as a failed tool result so
+	// the model sees the refusal.
+	descriptor, known := s.agent.tools.Describe(call.Name)
+	destructive := known && descriptor.Destructive
+	if call.Name == "approve_plan" || destructive {
+		allowed, stop := s.requestToolPermission(ctx, call, out)
+		if stop != "" {
+			return protocol.Result{}, stop
 		}
 		if !allowed {
-			_ = out.Update(acpcore.ToolCallUpdateFrame(acpcore.ToolCallUpdate{
-				ToolCallID: call.CallID, Status: new(acpcore.ToolStatusFailed),
-				Content: []acpcore.ToolCallContent{acpcore.TextToolContent("rejected by user")},
-			}))
-			return protocol.Result{OK: false, Kind: "needs_plan", Error: "user rejected the plan", Hint: "propose a different plan or stop"}, ""
+			if call.Name == "approve_plan" {
+				return protocol.Result{OK: false, Kind: "needs_plan", Error: "user rejected the plan", Hint: "propose a different plan or stop"}, ""
+			}
+			return protocol.Result{OK: false, Kind: "permission", Error: "user rejected " + call.Name, Hint: "ask the user to run " + call.Name + " from the operator panel"}, ""
 		}
 	}
 
@@ -271,6 +262,37 @@ func (s *session) runToolCall(ctx context.Context, call agent.ToolCall, out *acp
 		Content:    []acpcore.ToolCallContent{acpcore.TextToolContent(resultText(res))},
 	}))
 	return res, ""
+}
+
+// requestToolPermission runs the allow/reject round-trip for a gated
+// tool call. It reports whether the user allowed it; the second return
+// is a stop reason (only StopCancelled, when the request dies with the
+// prompt's context).
+func (s *session) requestToolPermission(ctx context.Context, call agent.ToolCall, out *acpcore.Client) (bool, string) {
+	outcome, err := out.RequestPermission(ctx,
+		acpcore.ToolCallUpdate{ToolCallID: call.CallID, Title: new("Approve " + strings.ReplaceAll(call.Name, "_", " "))},
+		[]acpcore.PermissionOption{
+			{OptionID: "allow-once", Name: "Allow once", Kind: acpcore.PermissionAllowOnce},
+			{OptionID: "reject-once", Name: "Reject", Kind: acpcore.PermissionRejectOnce},
+		})
+	switch {
+	case err != nil:
+		if ctx.Err() != nil {
+			return false, acpcore.StopCancelled
+		}
+		_ = out.Update(acpcore.ToolCallUpdateFrame(acpcore.ToolCallUpdate{
+			ToolCallID: call.CallID, Status: new(acpcore.ToolStatusFailed),
+			Content: []acpcore.ToolCallContent{acpcore.TextToolContent("permission request failed: " + err.Error())},
+		}))
+		return false, ""
+	case outcome.Outcome == acpcore.OutcomeSelected && outcome.OptionID == "allow-once":
+		return true, ""
+	}
+	_ = out.Update(acpcore.ToolCallUpdateFrame(acpcore.ToolCallUpdate{
+		ToolCallID: call.CallID, Status: new(acpcore.ToolStatusFailed),
+		Content: []acpcore.ToolCallContent{acpcore.TextToolContent("rejected by user")},
+	}))
+	return false, ""
 }
 
 // resultText renders a tool result for the tool_call_update content:

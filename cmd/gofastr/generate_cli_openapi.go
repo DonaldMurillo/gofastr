@@ -21,8 +21,8 @@ package main
 //     --file with "-" for stdin.
 //   - $ref: local #/components/... only; allOf of objects shallow-merges.
 //   - securitySchemes: http bearer and apiKey-in-header wire into the
-//     existing --token / env / stored-config machinery.
-//   - servers[0].url seeds the default server URL.
+//     env / stored-config token machinery (no argv flag: tokens never
+//     ride argv).
 //
 // Out of scope (fail loudly or fall back to --json rather than guess):
 // external $refs, cookie parameters, parameter serialization styles,

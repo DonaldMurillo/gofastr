@@ -1,6 +1,8 @@
 package evalrunner
 
 import (
+	"github.com/DonaldMurillo/gofastr/internal/fileperm"
+
 	"context"
 	"encoding/json"
 	"errors"
@@ -128,7 +130,7 @@ func Run(ctx context.Context, cfg Config) (*Aggregate, error) {
 	if err := writeJSON(filepath.Join(runDir, "results.json"), aggregate); err != nil {
 		return nil, err
 	}
-	if err := os.WriteFile(filepath.Join(runDir, "RESULTS.md"), []byte(RenderMarkdown(aggregate)), 0o600); err != nil {
+	if err := fileperm.WriteOwnerOnly(filepath.Join(runDir, "RESULTS.md"), []byte(RenderMarkdown(aggregate))); err != nil {
 		return nil, err
 	}
 	if len(runErrors) > 0 {
@@ -174,7 +176,7 @@ func RegradeMaintenance(ctx context.Context, runDir string) (*Aggregate, error) 
 	if err := writeJSON(filepath.Join(runDir, "results.json"), &aggregate); err != nil {
 		return nil, err
 	}
-	if err := os.WriteFile(filepath.Join(runDir, "RESULTS.md"), []byte(RenderMarkdown(&aggregate)), 0o600); err != nil {
+	if err := fileperm.WriteOwnerOnly(filepath.Join(runDir, "RESULTS.md"), []byte(RenderMarkdown(&aggregate))); err != nil {
 		return nil, err
 	}
 	return &aggregate, nil
@@ -276,7 +278,7 @@ CLI, embedded docs, framework declarations, auth battery, entity CRUD, OpenAPI,
 MCP, and UI packages are all available. You may edit or replace scaffolded app
 files as needed, but do not replace GoFastr with another web framework.
 `
-		return os.WriteFile(filepath.Join(workspace, "FRAMEWORK.md"), []byte(frameworkText), 0o600)
+		return fileperm.WriteOwnerOnly(filepath.Join(workspace, "FRAMEWORK.md"), []byte(frameworkText))
 	case "gin":
 		if output, err := commandOutput(ctx, workspace, "go", "mod", "init", module); err != nil {
 			return fmt.Errorf("go mod init: %w\n%s", err, output)
@@ -290,12 +292,12 @@ files as needed, but do not replace GoFastr with another web framework.
 		if err := writeNeutralGuidance(workspace); err != nil {
 			return err
 		}
-		return os.WriteFile(filepath.Join(workspace, "FRAMEWORK.md"), []byte(`# Framework constraint
+		return fileperm.WriteOwnerOnly(filepath.Join(workspace, "FRAMEWORK.md"), []byte(`# Framework constraint
 
 Use Gin (`+"`github.com/gin-gonic/gin`"+`) as the HTTP router. You may use Go
 standard-library packages and focused libraries for SQLite and password
 hashing. Do not replace Gin with another web framework.
-`), 0o600)
+`))
 	case "stdlib":
 		if output, err := commandOutput(ctx, workspace, "go", "mod", "init", module); err != nil {
 			return fmt.Errorf("go mod init: %w\n%s", err, output)
@@ -308,26 +310,26 @@ hashing. Do not replace Gin with another web framework.
 		if err := writeNeutralGuidance(workspace); err != nil {
 			return err
 		}
-		return os.WriteFile(filepath.Join(workspace, "FRAMEWORK.md"), []byte(`# Framework constraint
+		return fileperm.WriteOwnerOnly(filepath.Join(workspace, "FRAMEWORK.md"), []byte(`# Framework constraint
 
 Use the Go standard library's `+"`net/http`"+` router and handlers. Focused
 libraries for SQLite and password hashing are allowed. Do not add a Go web
 framework.
-`), 0o600)
+`))
 	default:
 		return fmt.Errorf("unsupported framework %q", framework)
 	}
 }
 
 func writeNeutralGuidance(workspace string) error {
-	return os.WriteFile(filepath.Join(workspace, "AGENTS.md"), []byte(`# Evaluation workspace
+	return fileperm.WriteOwnerOnly(filepath.Join(workspace, "AGENTS.md"), []byte(`# Evaluation workspace
 
 Read `+"`FRAMEWORK.md`"+` and `+"`EVAL_TASK.md`"+` completely before coding.
 Keep the app local and self-contained. Do not inspect parent directories,
 sibling workspaces, grader files, or other candidates. Use idiomatic Go,
 parameterized SQL, and focused tests. Run gofmt, go test ./..., and go build
 ./... before finishing.
-`), 0o600)
+`))
 }
 
 func runCodex(ctx context.Context, cfg Config, workspace, logPath, finalPath, framework string, maintenance bool) error {
@@ -490,7 +492,9 @@ func normalizeConfig(cfg *Config) error {
 func commandVersion(ctx context.Context, program string) (string, error) {
 	versionCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	output, err := exec.CommandContext(versionCtx, program, "--version").CombinedOutput()
+	versionCmd := exec.CommandContext(versionCtx, program, "--version")
+	versionCmd.WaitDelay = 5 * time.Second // an orphaned descendant must not hold the pipe past the deadline
+	output, err := versionCmd.CombinedOutput()
 	if err != nil {
 		return "", fmt.Errorf("resolve Codex version: %w (%s)", err, strings.TrimSpace(string(output)))
 	}
@@ -575,7 +579,7 @@ func writeJSON(path string, value any) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, append(data, '\n'), 0o600)
+	return fileperm.WriteOwnerOnly(path, append(data, '\n'))
 }
 
 func copyFile(source, destination string) error {

@@ -91,6 +91,11 @@ type AddEntityPayload struct {
 type UpdateEntityPayload struct {
 	Entity *world.Entity `json:"entity"`
 	Prev   *world.Entity `json:"prev,omitempty"`
+	// PlanID names the approved plan that authorized this replacement.
+	// update_entity replaces the entity wholesale — every omitted field
+	// is dropped — so it is a destructive op gated by spendPlan on
+	// replay exactly like delete_entity. See DeleteEntityPayload.PlanID.
+	PlanID string `json:"plan_id,omitempty"`
 }
 
 type DeleteEntityPayload struct {

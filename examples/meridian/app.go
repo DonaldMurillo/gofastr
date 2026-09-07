@@ -21,6 +21,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/framework"
+	"github.com/DonaldMurillo/gofastr/framework/access"
 	fwimage "github.com/DonaldMurillo/gofastr/framework/image"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
@@ -368,6 +369,23 @@ func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
 		// every other /api resource; sessions stay unscoped.
 		fwApp.Use(auth.TokenMiddleware(authCfg.UserStore, serviceAccounts, apiTokens))
 		fwApp.Use(auth.RequireAPIScopes("/api"))
+		// Entities declare `access:` permissions (plans is the shared
+		// cross-tenant catalog: open reads, permission-gated writes); a
+		// RolePolicy resolves the signed-in user's roles to those
+		// permissions on the gated CRUD API and the MCP tools. The
+		// admin role holds the wildcard; a plain signup session
+		// resolves nothing and reads stay open. Add finer per-role
+		// Grants here as the back-office grows.
+		rolePolicy := access.NewRolePolicy()
+		rolePolicy.Grant("admin", access.Wildcard)
+		fwApp.Use(access.Middleware(rolePolicy, func(ctx context.Context) []string {
+			if u, ok := handler.GetUser(ctx); ok && u != nil {
+				if rh, ok := u.(interface{ GetRoles() []string }); ok {
+					return rh.GetRoles()
+				}
+			}
+			return nil
+		}))
 		ui.SetRolesExtractor(func(ctx context.Context) []string {
 			if u, ok := handler.GetUser(ctx); ok && u != nil {
 				if rh, ok := u.(interface{ GetRoles() []string }); ok {

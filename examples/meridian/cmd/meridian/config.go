@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+
+	"github.com/DonaldMurillo/gofastr/internal/fileperm"
 )
 
 // storedConfig is what `meridian login` persists: the server URL and a
@@ -55,8 +57,10 @@ func saveConfig(cfg storedConfig) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	// 0600: the file holds a bearer credential.
-	if err := os.WriteFile(path, data, 0o600); err != nil {
+	// Owner-only on create AND overwrite: the file holds a bearer
+	// credential, and os.WriteFile's 0600 applies only at create, so a
+	// pre-existing 0644 file would be refilled world-readable.
+	if err := fileperm.WriteOwnerOnly(path, data); err != nil {
 		return "", err
 	}
 	return path, nil

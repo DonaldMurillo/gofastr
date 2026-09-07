@@ -30,6 +30,7 @@ import (
 	coreyaml "github.com/DonaldMurillo/gofastr/core/yaml"
 	"github.com/DonaldMurillo/gofastr/framework"
 	fwentity "github.com/DonaldMurillo/gofastr/framework/entity"
+	"github.com/DonaldMurillo/gofastr/internal/dsnredact"
 )
 
 type Blueprint struct {
@@ -624,10 +625,16 @@ func decodeBlueprintAdmin(node *coreyaml.Node) (BlueprintAdmin, error) {
 	if err := rejectUnknownKeys(m, allowed, "app.admin"); err != nil {
 		return BlueprintAdmin{}, err
 	}
+	// admin.role gates the admin console; requireScalarString so a
+	// list/map shape is an error rather than a silent empty role.
+	adminRole, err := requireScalarString(m["role"], "app.admin", "role")
+	if err != nil {
+		return BlueprintAdmin{}, err
+	}
 	return BlueprintAdmin{
 		Enabled:      boolValue(m["enabled"]),
 		Path:         stringValue(m["path"]),
-		Role:         stringValue(m["role"]),
+		Role:         adminRole,
 		LoginPath:    stringValue(m["login_path"]),
 		SeedEmail:    stringValue(m["seed_email"]),
 		SeedPassword: stringValue(m["seed_password"]),
@@ -936,7 +943,14 @@ func mergeEntityScopeDeclaration(
 		"cross_owner_read": &grouped.CrossOwnerRead,
 	} {
 		if node := root[key]; node != nil {
-			flat := stringValue(node)
+			// requireScalarString: owner_field/tenant_field as a list or
+			// map must be an error, not "" — an empty owner field
+			// silently no-ops owner scoping and exposes every row to
+			// every caller.
+			flat, err := requireScalarString(node, context, key)
+			if err != nil {
+				return nil, err
+			}
 			if groupMap[key] != nil && flat != *target {
 				return nil, entityDeclarationConflict(name, key, "scope."+key, flat, *target)
 			}
@@ -1100,10 +1114,22 @@ func decodeEntityScope(node *coreyaml.Node, context string) (*fwentity.ScopeDecl
 	if err != nil {
 		return nil, err
 	}
+	tenantField, err := requireScalarString(m["tenant_field"], context, "tenant_field")
+	if err != nil {
+		return nil, err
+	}
+	ownerField, err := requireScalarString(m["owner_field"], context, "owner_field")
+	if err != nil {
+		return nil, err
+	}
+	crossOwnerRead, err := requireScalarString(m["cross_owner_read"], context, "cross_owner_read")
+	if err != nil {
+		return nil, err
+	}
 	return &fwentity.ScopeDeclaration{
 		SoftDelete: softDelete, MultiTenant: multiTenant,
-		TenantField: stringValue(m["tenant_field"]), OwnerField: stringValue(m["owner_field"]),
-		CrossOwnerRead: stringValue(m["cross_owner_read"]),
+		TenantField: tenantField, OwnerField: ownerField,
+		CrossOwnerRead: crossOwnerRead,
 	}, nil
 }
 
@@ -1330,6 +1356,10 @@ func blueprintHasOwnerScopedEntity(bp Blueprint) bool {
 // decodeEntityAccess decodes an entity's `access:` map: the per-operation
 // RBAC permissions mirroring EntityConfig.Access. nil node = no RBAC gating
 // (the key is optional and additive; existing blueprints are unaffected).
+// Every perm is requireScalarString: stringValue answers "" for a list or a
+// map, and an empty permission is the UNGATED setting (requirePermission
+// treats "" as no gate), so `read: [posts:review]` must be an error, not a
+// silently world-open read.
 func decodeEntityAccess(node *coreyaml.Node, context string) (*fwentity.AccessDeclaration, error) {
 	if node == nil {
 		return nil, nil
@@ -1341,11 +1371,27 @@ func decodeEntityAccess(node *coreyaml.Node, context string) (*fwentity.AccessDe
 	if err := rejectUnknownKeys(m, map[string]bool{"read": true, "create": true, "update": true, "delete": true}, context); err != nil {
 		return nil, err
 	}
+	read, err := requireScalarString(m["read"], context, "read")
+	if err != nil {
+		return nil, err
+	}
+	create, err := requireScalarString(m["create"], context, "create")
+	if err != nil {
+		return nil, err
+	}
+	update, err := requireScalarString(m["update"], context, "update")
+	if err != nil {
+		return nil, err
+	}
+	del, err := requireScalarString(m["delete"], context, "delete")
+	if err != nil {
+		return nil, err
+	}
 	return &fwentity.AccessDeclaration{
-		Read:   stringValue(m["read"]),
-		Create: stringValue(m["create"]),
-		Update: stringValue(m["update"]),
-		Delete: stringValue(m["delete"]),
+		Read:   read,
+		Create: create,
+		Update: update,
+		Delete: del,
 	}, nil
 }
 
@@ -1366,6 +1412,13 @@ func decodeEntityAccess(node *coreyaml.Node, context string) (*fwentity.AccessDe
 // error rather than a default.
 func requireScalarString(node *coreyaml.Node, context, key string) (string, error) {
 	if node == nil {
+		return "", nil
+	}
+	if node.Kind == coreyaml.Map && node.Value == nil && len(node.Map) == 0 {
+		// YAML null (a key with no value): the deliberate blank
+		// spelling, e.g. `read:` = anonymous read. coreyaml hands null
+		// back as an entry-less map node, so the entry count — not the
+		// kind alone — separates it from a real (refusable) map.
 		return "", nil
 	}
 	if node.Kind != coreyaml.Scalar {
@@ -1674,7 +1727,15 @@ func decodeBlueprintScreens(node *coreyaml.Node) ([]BlueprintScreen, error) {
 			if err != nil {
 				return nil, err
 			}
-			screen.Access = BlueprintAccess{Auth: auth, Role: stringValue(accM["role"])}
+			// role names the gate; a map/list role decodes to "" via
+			// stringValue, which leaves Auth=false and mounts the screen via
+			// bare site.Register — world-readable where the author wrote an
+			// access block. requireScalarString refuses the shape.
+			role, err := requireScalarString(accM["role"], fmt.Sprintf("screens[%d].access", i), "role")
+			if err != nil {
+				return nil, err
+			}
+			screen.Access = BlueprintAccess{Auth: auth, Role: role}
 			if screen.Access.Role != "" {
 				screen.Access.Auth = true
 			}
@@ -3229,8 +3290,19 @@ func validateBlueprintBlock(screenName string, entities map[string]framework.Ent
 	case "login_form", "signup_form":
 		// Static HTML auth form posting to the auth battery.
 		if v, ok := block.Props["action"]; ok {
-			if _, isStr := v.(string); !isStr {
+			action, isStr := v.(string)
+			if !isStr {
 				return fmt.Errorf("blueprint: screen %q %s action must be a string", screenName, kind)
+			}
+			// Same predicate the renderer applies (ui.Form runs Action
+			// through the html.Form primitive's setURLAttr guard, which
+			// degrades an unsafe scheme to a form that goes nowhere).
+			// Safe, but silent: the author asked for a form and got one
+			// that does not post. Reject here instead, the way every
+			// sibling problem in this validator does, so validate and
+			// render cannot disagree about what a safe form action is.
+			if !urlsafe.OK(action, urlsafe.Anchor) {
+				return fmt.Errorf("blueprint: screen %q %s action %q is not a safe form action: use an http(s) or root-relative URL", screenName, kind, action)
 			}
 		}
 		// The footer href becomes an anchor on the login/signup screen. The
@@ -3792,84 +3864,12 @@ func dsnHasSecret(dsn string) bool {
 }
 
 // redactDSN strips the password from a DSN so the remainder can appear in
-// committed source (host/db name are configuration, not secrets).
+// committed source (host/db name are configuration, not secrets). The
+// rules live in internal/dsnredact — the one canonical redactor, lifted
+// from here and proven against the round-5 probes — so this is a
+// delegation, not a second spelling that can drift.
 func redactDSN(dsn string) string {
-	if !dsnHasSecret(dsn) {
-		return dsn
-	}
-	if u, err := url.Parse(dsn); err == nil && u.User != nil {
-		if _, has := u.User.Password(); has {
-			u.User = url.User(u.User.Username())
-			return u.String()
-		}
-	}
-	if i := strings.Index(dsn, "://"); i >= 0 {
-		// URL-form DSN that url.Parse rejected (e.g. a bad % escape in
-		// the password): strip the userinfo textually. The password may
-		// itself contain '@', so cut at the last '@' before the path.
-		rest := dsn[i+3:]
-		end := len(rest)
-		for _, sep := range []byte{'/', '?', '#'} {
-			if j := strings.IndexByte(rest, sep); j >= 0 && j < end {
-				end = j
-			}
-		}
-		if at := strings.LastIndex(rest[:end], "@"); at >= 0 {
-			user := rest[:at]
-			if colon := strings.IndexByte(user, ':'); colon >= 0 {
-				user = user[:colon]
-			}
-			return dsn[:i+3] + user + "@" + rest[at+1:]
-		}
-		return dsn
-	}
-	// key=value form: drop the password pair. Values may be libpq
-	// single-quoted and contain spaces (password='a b'), so split
-	// quote-aware; a bare strings.Fields would leak the quoted tail.
-	fields := splitDSNFields(dsn)
-	kept := fields[:0]
-	for _, f := range fields {
-		if strings.HasPrefix(f, "password=") {
-			continue
-		}
-		kept = append(kept, f)
-	}
-	return strings.Join(kept, " ")
-}
-
-// splitDSNFields splits a libpq key/value DSN on whitespace, keeping
-// single-quoted values (with \' escapes) intact so a quoted password is
-// dropped whole rather than leaking its tail.
-func splitDSNFields(dsn string) []string {
-	var fields []string
-	var cur strings.Builder
-	inQuote := false
-	escaped := false
-	for i := 0; i < len(dsn); i++ {
-		c := dsn[i]
-		switch {
-		case escaped:
-			escaped = false
-			cur.WriteByte(c)
-		case c == '\\' && inQuote:
-			escaped = true
-			cur.WriteByte(c)
-		case c == '\'':
-			inQuote = !inQuote
-			cur.WriteByte(c)
-		case (c == ' ' || c == '\t') && !inQuote:
-			if cur.Len() > 0 {
-				fields = append(fields, cur.String())
-				cur.Reset()
-			}
-		default:
-			cur.WriteByte(c)
-		}
-	}
-	if cur.Len() > 0 {
-		fields = append(fields, cur.String())
-	}
-	return fields
+	return dsnredact.Redact(dsn)
 }
 
 // blueprintE2EScreenRoutes splits the blueprint's STATIC screen routes (those
@@ -4081,7 +4081,14 @@ func renderBlueprintAxeTest(bp Blueprint) string {
 	b.WriteString("// Code generated by gofastr. Owned: safe to edit.\n")
 	b.WriteString("package main\n\n")
 	b.WriteString("import (\n")
-	for _, imp := range []string{"context", "io", "net/http", "net/url", "os", "os/exec", "path/filepath", "regexp", "runtime", "strings", "testing", "time"} {
+	// net/http rides the login arm (http.Client for the cookie-jar
+	// login): the sitemap fetch goes through e2eClient (declared in
+	// e2e_test.go), so a login-less axe file has no other http use.
+	imports := []string{"context", "io", "net/url", "os", "os/exec", "path/filepath", "regexp", "runtime", "strings", "testing", "time"}
+	if login {
+		imports = append(imports, "net/http")
+	}
+	for _, imp := range imports {
 		b.WriteString("\t\"" + imp + "\"\n")
 	}
 	if login {
@@ -4248,7 +4255,7 @@ func renderBlueprintAxeTest(bp Blueprint) string {
 	b.WriteString("// screen can never drift out of the gate.\n")
 	b.WriteString("func axePagesFromSitemap(t *testing.T, base string) []string {\n")
 	b.WriteString("\tt.Helper()\n")
-	b.WriteString("\tresp, err := http.Get(base + \"/sitemap.xml\")\n")
+	b.WriteString("\tresp, err := e2eClient.Get(base + \"/sitemap.xml\")\n")
 	b.WriteString("\tif err != nil {\n\t\tt.Fatalf(\"sitemap: %v\", err)\n\t}\n")
 	b.WriteString("\tdefer resp.Body.Close()\n")
 	b.WriteString("\tbody, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))\n")
@@ -4279,7 +4286,7 @@ func renderBlueprintAxeTest(bp Blueprint) string {
 		b.WriteString("func axeLogin(t *testing.T, browser context.Context, base, email, password string) {\n")
 		b.WriteString("\tt.Helper()\n")
 		b.WriteString("\tjar, _ := cookiejar.New(nil)\n")
-		b.WriteString("\tclient := &http.Client{Jar: jar}\n")
+		b.WriteString("\tclient := &http.Client{Jar: jar, Timeout: 10 * time.Second}\n")
 		b.WriteString(fmt.Sprintf("\tresp, err := client.PostForm(base+%q, url.Values{\"email\": {email}, \"password\": {password}})\n", authBase+"/login"))
 		b.WriteString("\tif err != nil {\n\t\tt.Fatalf(\"login: %v\", err)\n\t}\n")
 		b.WriteString("\tresp.Body.Close()\n")
@@ -4437,26 +4444,26 @@ func renderBlueprintE2ETest(bp Blueprint) string {
 	b.WriteString("\tt.Cleanup(func() { _ = srv.Process.Kill(); _, _ = srv.Process.Wait() })\n")
 	b.WriteString("\tbase := \"http://\" + addr\n")
 	b.WriteString("\te2eWaitReady(t, base)\n\n")
-	b.WriteString(fmt.Sprintf("\tif code, body := e2eDo(t, http.DefaultClient, \"GET\", base+\"/\", \"\"); code != http.StatusOK || !strings.Contains(body, %q) {\n\t\tt.Errorf(\"home page = %%d, missing brand? %%v\", code, !strings.Contains(body, %q))\n\t}\n", appName, appName))
+	b.WriteString(fmt.Sprintf("\tif code, body := e2eDo(t, e2eClient, \"GET\", base+\"/\", \"\"); code != http.StatusOK || !strings.Contains(body, %q) {\n\t\tt.Errorf(\"home page = %%d, missing brand? %%v\", code, !strings.Contains(body, %q))\n\t}\n", appName, appName))
 
 	// Every static public screen renders.
 	b.WriteString("\n\t// Public screens render for anonymous visitors.\n")
 	b.WriteString(fmt.Sprintf("\tfor _, p := range %s {\n", goSlice(public)))
-	b.WriteString("\t\tif code, body := e2eDo(t, http.DefaultClient, \"GET\", base+p, \"\"); code != http.StatusOK {\n")
+	b.WriteString("\t\tif code, body := e2eDo(t, e2eClient, \"GET\", base+p, \"\"); code != http.StatusOK {\n")
 	b.WriteString("\t\t\tt.Errorf(\"public screen %s = %d, want 200\", p, code)\n")
 	b.WriteString("\t\t} else if len(body) < 120 { t.Errorf(\"public screen %s body suspiciously short (%d bytes)\", p, len(body)) }\n")
 	b.WriteString("\t}\n")
 
 	if bp.App.PWA.Enabled {
 		b.WriteString("\n\t// Installable-PWA surface (app.pwa).\n")
-		b.WriteString("\tif code, body := e2eDo(t, http.DefaultClient, \"GET\", base+\"/manifest.webmanifest\", \"\"); code != http.StatusOK || !strings.Contains(body, `\"name\"`) {\n")
+		b.WriteString("\tif code, body := e2eDo(t, e2eClient, \"GET\", base+\"/manifest.webmanifest\", \"\"); code != http.StatusOK || !strings.Contains(body, `\"name\"`) {\n")
 		b.WriteString("\t\tt.Errorf(\"manifest.webmanifest = %d, want 200 with a name\", code)\n")
 		b.WriteString("\t}\n")
-		b.WriteString("\tif code, body := e2eDo(t, http.DefaultClient, \"GET\", base+\"/service-worker.js\", \"\"); code != http.StatusOK || !strings.Contains(body, \"gofastr-pwa-\") {\n")
+		b.WriteString("\tif code, body := e2eDo(t, e2eClient, \"GET\", base+\"/service-worker.js\", \"\"); code != http.StatusOK || !strings.Contains(body, \"gofastr-pwa-\") {\n")
 		b.WriteString("\t\tt.Errorf(\"service-worker.js = %d, want 200 with a versioned cache\", code)\n")
 		b.WriteString("\t}\n")
 		b.WriteString("\tfor _, p := range []string{\"/icons/icon-192.png\", \"/icons/icon-512.png\", \"/icons/icon-maskable.png\", \"/__gofastr/pwa/register.js\", \"/__gofastr/pwa/offline\"} {\n")
-		b.WriteString("\t\tif code, _ := e2eDo(t, http.DefaultClient, \"GET\", base+p, \"\"); code != http.StatusOK {\n")
+		b.WriteString("\t\tif code, _ := e2eDo(t, e2eClient, \"GET\", base+p, \"\"); code != http.StatusOK {\n")
 		b.WriteString("\t\t\tt.Errorf(\"pwa asset %s = %d, want 200\", p, code)\n")
 		b.WriteString("\t\t}\n")
 		b.WriteString("\t}\n")
@@ -4464,12 +4471,12 @@ func renderBlueprintE2ETest(bp Blueprint) string {
 
 	if bp.App.LLMMD {
 		b.WriteString("\n\t// Public LLM markdown (app.llm_md): the index and every screen document resolve.\n")
-		b.WriteString("\tif code, body := e2eDo(t, http.DefaultClient, \"GET\", base+\"/llm-pages.md\", \"\"); code != http.StatusOK || body == \"\" {\n")
+		b.WriteString("\tif code, body := e2eDo(t, e2eClient, \"GET\", base+\"/llm-pages.md\", \"\"); code != http.StatusOK || body == \"\" {\n")
 		b.WriteString("\t\tt.Errorf(\"llm-pages.md = %d, want 200\", code)\n")
 		b.WriteString("\t}\n")
 		b.WriteString(fmt.Sprintf("\tfor _, p := range %s {\n", goSlice(public)))
 		b.WriteString("\t\tmd := strings.TrimRight(p, \"/\") + \"/llm.md\"\n")
-		b.WriteString("\t\tif code, _ := e2eDo(t, http.DefaultClient, \"GET\", base+md, \"\"); code != http.StatusOK {\n")
+		b.WriteString("\t\tif code, _ := e2eDo(t, e2eClient, \"GET\", base+md, \"\"); code != http.StatusOK {\n")
 		b.WriteString("\t\t\tt.Errorf(\"llm.md for %s = %d, want 200\", p, code)\n")
 		b.WriteString("\t\t}\n")
 		b.WriteString("\t}\n")
@@ -4477,7 +4484,7 @@ func renderBlueprintE2ETest(bp Blueprint) string {
 
 	if len(gated) > 0 {
 		b.WriteString("\n\t// Gated screens redirect anonymous callers to the login page.\n")
-		b.WriteString("\tnoRedir := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}\n")
+		b.WriteString("\tnoRedir := &http.Client{Timeout: 10 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}\n")
 		b.WriteString(fmt.Sprintf("\tfor _, p := range %s {\n", goSlice(gated)))
 		b.WriteString("\t\tif r, err := noRedir.Get(base + p); err == nil {\n")
 		b.WriteString("\t\t\tr.Body.Close()\n")
@@ -4489,7 +4496,7 @@ func renderBlueprintE2ETest(bp Blueprint) string {
 	if needsAuthClient {
 		b.WriteString("\n\t// Sign in, then every gated screen renders.\n")
 		b.WriteString("\tjar, _ := cookiejar.New(nil)\n")
-		b.WriteString("\tclient := &http.Client{Jar: jar}\n")
+		b.WriteString("\tclient := &http.Client{Jar: jar, Timeout: 10 * time.Second}\n")
 		b.WriteString(fmt.Sprintf("\tif _, err := client.PostForm(base+\"/auth/login\", url.Values{\"email\": {%q}, \"password\": {adminPass}}); err != nil { t.Fatalf(\"login: %%v\", err) }\n", adminEmail))
 		b.WriteString(fmt.Sprintf("\tfor _, p := range %s {\n", goSlice(gated)))
 		b.WriteString("\t\tif code, body := e2eDo(t, client, \"GET\", base+p, \"\"); code != http.StatusOK {\n")
@@ -4532,7 +4539,7 @@ func renderBlueprintE2ETest(bp Blueprint) string {
 		b.WriteString("\t}\n")
 		if target.accessGated {
 			b.WriteString(fmt.Sprintf("\n\t// Scoping: an anonymous write to the access-/owner-scoped %s API is refused.\n", target.entity))
-			b.WriteString(fmt.Sprintf("\tif code, _ := e2eDo(t, http.DefaultClient, \"POST\", base+%q, %q); code != http.StatusUnauthorized && code != http.StatusForbidden {\n", target.apiPath, target.createJSON))
+			b.WriteString(fmt.Sprintf("\tif code, _ := e2eDo(t, e2eClient, \"POST\", base+%q, %q); code != http.StatusUnauthorized && code != http.StatusForbidden {\n", target.apiPath, target.createJSON))
 			b.WriteString(fmt.Sprintf("\t\tt.Errorf(\"anonymous write to %s = %%d, want 401/403\", code)\n", target.entity))
 			b.WriteString("\t}\n")
 		}
@@ -4540,8 +4547,14 @@ func renderBlueprintE2ETest(bp Blueprint) string {
 	b.WriteString("}\n\n")
 
 	// helpers
+	b.WriteString("// e2eClient bounds every probe this suite makes: a generated app that\n")
+	b.WriteString("// accepts the connection but never responds fails the attempt at the\n")
+	b.WriteString("// deadline instead of hanging the suite forever (the bootProbeClient\n")
+	b.WriteString("// shape). e2eWaitReady, the sitemap fetch in axe_test.go, and every\n")
+	b.WriteString("// e2eDo call site share it.\n")
+	b.WriteString("var e2eClient = &http.Client{Timeout: 10 * time.Second}\n\n")
 	b.WriteString("func e2eFreeAddr(t *testing.T) string {\n\tt.Helper()\n\tl, err := net.Listen(\"tcp\", \"127.0.0.1:0\")\n\tif err != nil { t.Fatal(err) }\n\tdefer l.Close()\n\treturn l.Addr().String()\n}\n\n")
-	b.WriteString("func e2eWaitReady(t *testing.T, base string) {\n\tt.Helper()\n\tfor i := 0; i < 100; i++ {\n\t\tif r, err := http.Get(base + \"/\"); err == nil { r.Body.Close(); return }\n\t\ttime.Sleep(100 * time.Millisecond)\n\t}\n\tt.Fatal(\"server did not become ready\")\n}\n\n")
+	b.WriteString("func e2eWaitReady(t *testing.T, base string) {\n\tt.Helper()\n\tfor i := 0; i < 100; i++ {\n\t\tif r, err := e2eClient.Get(base + \"/\"); err == nil { r.Body.Close(); return }\n\t\ttime.Sleep(100 * time.Millisecond)\n\t}\n\tt.Fatal(\"server did not become ready\")\n}\n\n")
 	b.WriteString("// e2eDo runs one request and returns the status code + body. A non-empty\n")
 	b.WriteString("// body is sent as JSON. Network errors fail the test.\n")
 	b.WriteString("func e2eDo(t *testing.T, client *http.Client, method, u, body string) (int, string) {\n")
@@ -5551,6 +5564,14 @@ func blueprintScreenFiles(bp Blueprint, screenOrderOffset int) []generatedFile {
 }
 
 func renderBlueprintStandaloneScreenFile(screen BlueprintScreen, bp Blueprint, entityMap map[string]framework.EntityDeclaration, apiBase string, order int) generatedFile {
+	// Identifier gate: toCamelCase transforms, it does not validate, and
+	// the emitter serves unvalidated renders (tests, --add fragments).
+	// Never emit a type/mount declaration that is not a Go identifier —
+	// same rule as the endpoint/hook stub arms. validateBlueprint is the
+	// loud gate; a screen that fails here vanishes from this file only.
+	if !screenGoIdentifiers(screen.Name) {
+		return generatedFile{name: screenFileName(screen.Name), content: "package main\n"}
+	}
 	var sb strings.Builder
 	sb.WriteString("package main\n\n")
 	needs := blueprintScreensImportNeeds(bp, []BlueprintScreen{screen}, entityMap, apiBase)
@@ -5562,6 +5583,14 @@ func renderBlueprintStandaloneScreenFile(screen BlueprintScreen, bp Blueprint, e
 	return generatedFile{name: screenFileName(screen.Name), content: sb.String()}
 }
 
+// screenGoIdentifiers reports whether the screen's derived type name
+// (<Name>Screen) and mount func name (mount<Name>Screen) are Go
+// identifiers.
+func screenGoIdentifiers(name string) bool {
+	typeName := toCamelCase(name) + "Screen"
+	return isGoIdentifier(typeName) && isGoIdentifier("mount"+typeName)
+}
+
 // renderBlueprintCrudFile emits screen_<entity>_crud.go: the entity's
 // list/detail/form screens (in declaration order), a mount func per screen,
 // the entity's appResources wiring (inside the primary mount func; it needs
@@ -5571,6 +5600,18 @@ func renderBlueprintStandaloneScreenFile(screen BlueprintScreen, bp Blueprint, e
 func renderBlueprintCrudFile(entity string, screens []BlueprintScreen, bp Blueprint, entityMap map[string]framework.EntityDeclaration, base map[string]string, editable map[string]bool, apiBase string, screenOrder map[string]int) generatedFile {
 	var sb strings.Builder
 	sb.WriteString("package main\n\n")
+	// Identifier gate, same rule as the standalone screen file and the
+	// endpoint/hook stub arms: skip screens whose derived type/mount
+	// names are not Go identifiers (validateBlueprint is the loud gate).
+	// Imports are computed over the survivors only, or a skipped screen
+	// would leave unused imports behind.
+	kept := make([]BlueprintScreen, 0, len(screens))
+	for _, s := range screens {
+		if screenGoIdentifiers(s.Name) {
+			kept = append(kept, s)
+		}
+	}
+	screens = kept
 	needs := blueprintScreensImportNeeds(bp, screens, entityMap, apiBase)
 	needs.resource = true // every CRUD file emits a resource.Config assignment
 	// Island endpoints are mounted with an http.HandlerFunc closure.
@@ -7343,18 +7384,30 @@ func renderBlueprintStubs(bp Blueprint) string {
 		sb.WriteString("}\n\n")
 	}
 	for _, item := range bp.Middleware {
+		// Same gate as the endpoint arm above: toCamelCase transforms, it
+		// does not validate, and this emitter serves unvalidated renders.
+		// Never emit a non-identifier; validateBlueprint is the loud gate.
+		if !isGoIdentifier(toCamelCase(item.Name)) {
+			continue
+		}
 		name := toCamelCase(item.Name)
 		sb.WriteString(fmt.Sprintf("func %sMiddleware(next http.Handler) http.Handler {\n", name))
 		sb.WriteString("\treturn http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {\n\t\tnext.ServeHTTP(w, r)\n\t})\n")
 		sb.WriteString("}\n\n")
 	}
 	for _, item := range bp.Plugins {
+		if !isGoIdentifier(toCamelCase(item.Name)) {
+			continue // same gate as the middleware stubs above
+		}
 		name := toCamelCase(item.Name) + "Plugin"
 		sb.WriteString(fmt.Sprintf("type %s struct{}\n\n", name))
 		sb.WriteString(fmt.Sprintf("func (%s) Name() string { return %q }\n", name, item.Name))
 		sb.WriteString(fmt.Sprintf("func (%s) Init(app *framework.App) error { return nil }\n\n", name))
 	}
 	for _, item := range bp.Helpers {
+		if !isGoIdentifier(toCamelCase(item.Name)) {
+			continue // same gate as the middleware stubs above
+		}
 		name := toCamelCase(item.Name)
 		sb.WriteString(fmt.Sprintf("func %s() {\n\t// TODO: implement helper %q.\n}\n\n", name, item.Name))
 	}
@@ -8025,9 +8078,18 @@ func renderBlueprintApp(bp Blueprint) string {
 		sb.WriteString(fmt.Sprintf("\tfwApp.Router().Handle(%q, %q, http.HandlerFunc(%s))\n", strings.ToUpper(endpoint.Method), blueprintEndpointPath(endpoint), handler))
 	}
 	for _, item := range bp.Middleware {
+		// Same gate as the stub emitter: never reference a name that is
+		// not a Go identifier (the stub was skipped, so referencing it
+		// here would not compile).
+		if !isGoIdentifier(toCamelCase(item.Name)) {
+			continue
+		}
 		sb.WriteString(fmt.Sprintf("\tfwApp.Use(%sMiddleware)\n", toCamelCase(item.Name)))
 	}
 	for _, item := range bp.Plugins {
+		if !isGoIdentifier(toCamelCase(item.Name)) {
+			continue // same gate as the middleware registration above
+		}
 		sb.WriteString(fmt.Sprintf("\tfwApp.RegisterPlugin(%sPlugin{})\n", toCamelCase(item.Name)))
 	}
 	if len(bp.Nav) > 0 {

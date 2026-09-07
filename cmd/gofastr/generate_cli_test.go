@@ -587,7 +587,8 @@ func TestGenerateCLI_RoundTripLiveServer(t *testing.T) {
 	bid1, _ := batch.Results[0].Data["id"].(string)
 	bid2, _ := batch.Results[1].Data["id"].(string)
 	// ids straddling a flag: the trailing id must not be silently dropped
-	if out, code = run("posts", "batch-delete", bid1, "--token", plaintext, bid2); code != 0 {
+	// (--url is the value flag; the token rides MYAPP_TOKEN env, never argv)
+	if out, code = run("posts", "batch-delete", bid1, "--url", srv.URL, bid2); code != 0 {
 		t.Fatalf("batch-delete exited %d: %s", code, out)
 	}
 	if out, code = run("posts", "list", "-o", "table"); code != 0 || strings.Contains(out, "batch-row-") {

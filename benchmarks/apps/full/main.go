@@ -169,10 +169,10 @@ func main() {
 	})
 
 	// ----- Health -------------------------------------------------------
-	fwApp.Router().GetFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("ok"))
-	})
+	// No manual /healthz: App.Start auto-mounts GET /healthz
+	// (framework/health.go registerHealthEndpoints), and a second
+	// registration here collides at the router and panics before the
+	// listener binds. The resource runner's readiness probe is covered.
 
 	addr := ":" + getEnv("PORT", "18082")
 	log.Printf("full listening on %s (OpenAPI at /openapi.json, Swagger at /docs/)", addr)

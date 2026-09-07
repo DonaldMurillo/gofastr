@@ -3,8 +3,9 @@ package chat
 import (
 	"net"
 	"net/http"
-	"net/url"
 	"strings"
+
+	"github.com/DonaldMurillo/gofastr/core/handler"
 )
 
 // sameOriginOnly wraps a state-changing kiln handler so a cross-site
@@ -28,6 +29,17 @@ func sameOriginOnly(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if crossSite(r) {
 			http.Error(w, "forbidden: cross-site request", http.StatusForbidden)
+			return
+		}
+		// The write guard's own Host pin, the same one readGuard 25
+		// lines below applies: DNS rebinding arrives same-origin (after
+		// the rebind the attacker's page and the listener agree on the
+		// attacker-named Host), so every Origin↔Host comparison passes
+		// and only a Host pin refuses it — a browser cannot forge Host.
+		// Origin-less callers (the agent transport, curl) pass
+		// untouched, exactly as the read arm's contract states.
+		if r.Header.Get("Origin") != "" && !isLoopbackAuthority(r.Host) {
+			http.Error(w, "forbidden: unexpected Host (DNS-rebinding guard)", http.StatusForbidden)
 			return
 		}
 		h.ServeHTTP(w, r)
@@ -81,26 +93,25 @@ func isLoopbackAuthority(authority string) bool {
 	return false
 }
 
-// crossSite reports whether the request came from another site.
+// crossSite reports whether the request came from another site. The
+// cross-site decision itself is the repo-wide predicate
+// handler.IsCrossSiteRequest — kiln's copy used to trust
+// Sec-Fetch-Site: same-site before any Origin compare, but the site
+// computation drops the port, so a page on ANY sibling port of the
+// kiln host is same-site while its Origin names a different origin;
+// the shared predicate falls through to the Origin↔Host comparison for
+// exactly that value, the convention battery/auth and battery/admin
+// pin.
+//
+// One deliberate divergence, kept for kiln's pinned contract: an
+// opaque Origin ("null") with no Fetch Metadata is refused here. The
+// shared predicate allows it because a legitimate top-level same-origin
+// FORM navigation sends it too, but kiln's surfaces are JSON RPC driven
+// by fetch(), never form navigations, so a null Origin reaching this
+// guard is the sandboxed-frame / cross-origin-redirect shape
+// (TestReadRoutesRefuseCrossSiteSub's "Origin null" leg). Where the
+// browser does send Sec-Fetch-Site, the header vouches and "null" is
+// not second-guessed.
 func crossSite(r *http.Request) bool {
-	switch r.Header.Get("Sec-Fetch-Site") {
-	case "same-origin", "same-site", "none":
-		// "none" is a user-initiated navigation (address bar, bookmark),
-		// which cannot carry an attacker's body.
-		return false
-	case "cross-site":
-		return true
-	}
-	origin := r.Header.Get("Origin")
-	if origin == "" {
-		return false // no Origin at all: not a browser request
-	}
-	u, err := url.Parse(origin)
-	if err != nil || u.Host == "" {
-		// Origin: null, or unparseable. A browser sends null from a
-		// sandboxed iframe or after a cross-origin redirect; treating it
-		// as "not a browser" is how this check gets walked around.
-		return true
-	}
-	return !strings.EqualFold(u.Host, r.Host)
+	return handler.IsCrossSiteRequestStrict(r)
 }

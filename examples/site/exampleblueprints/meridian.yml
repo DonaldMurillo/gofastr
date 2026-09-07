@@ -85,6 +85,16 @@ entities:
   - name: plans
     crud: true
     mcp: true
+    # Shared cross-tenant pricing catalog: owner_field is wrong (every
+    # subscriber reads the same rows), so reads stay open for the pricing
+    # pages and every write sits behind a permission the bootstrap admin
+    # holds (see the rolePolicy in app.go). A plain signup session can
+    # read the catalog and mutate none of it.
+    access:
+      read:
+      create: plans:write
+      update: plans:write
+      delete: plans:admin
     properties:
       label: Plans
     fields:

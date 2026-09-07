@@ -965,11 +965,18 @@ func dbURLRef(dsn string) string {
 	return envRef(dsn, "DATABASE_URL")
 }
 
-// dsnHasSecret reports whether a DSN embeds credentials: a URL-form
+// DSNHasSecret reports whether a DSN embeds credentials: a URL-form
 // password or a key/value `password=` pair. Fails CLOSED on URL-form
 // DSNs url.Parse rejects but that carry an '@' authority: userinfo we
 // cannot prove clean is treated as credential-bearing.
-func dsnHasSecret(dsn string) bool {
+//
+// Exported because it is the ONE credential-shape rule for DSNs in the
+// tree: kiln/chat's world-redaction masks App.DBURL under exactly this
+// predicate so the freeze contract (what must never be written) and the
+// serving contract (what must never be handed out) cannot drift apart.
+// Mirrors cmd/gofastr's dsnHasSecret (main-package twin, kept in
+// lockstep by freeze_security_test.go).
+func DSNHasSecret(dsn string) bool {
 	if strings.Contains(dsn, "password=") {
 		return true
 	}
@@ -984,3 +991,5 @@ func dsnHasSecret(dsn string) bool {
 	}
 	return false
 }
+
+func dsnHasSecret(dsn string) bool { return DSNHasSecret(dsn) }

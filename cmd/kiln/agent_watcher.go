@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -10,23 +11,65 @@ import (
 	"strings"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"github.com/DonaldMurillo/gofastr/kiln/journal"
 	"github.com/DonaldMurillo/gofastr/kiln/live"
 	"github.com/DonaldMurillo/gofastr/kiln/protocol"
 )
 
+// agentTurnWaitDelay bounds cmd.Wait once the adapter child has exited
+// or the turn's context is done but its stdout pipe is still held open
+// by a descendant the adapter forked and did not reap. Same shape and
+// rationale as codegen's extensionWaitDelay and the harness bash tool.
+var agentTurnWaitDelay = 2 * time.Second
+
+// maxAgentStdout caps the captured adapter stdout: an adapter that
+// streams unbounded output must not grow the kiln process without
+// bound. 4 MiB is far above any real turn reply (they render in a chat
+// bubble); past it the capture truncates silently.
+const maxAgentStdout = 4 << 20
+
+// cappedBuffer accumulates at most limit bytes and silently discards
+// the rest, recording that it did. Discarding beats erroring from
+// Write: cmd.Run would kill the child mid-stream and report the write
+// error instead of the turn's reply. Same shape as codegen's
+// cappedBuffer (unexported there, so the twin is local).
+type cappedBuffer struct {
+	buf       bytes.Buffer
+	limit     int
+	truncated bool
+}
+
+func (b *cappedBuffer) Write(p []byte) (int, error) {
+	if room := b.limit - b.buf.Len(); room > 0 {
+		if len(p) <= room {
+			return b.buf.Write(p)
+		}
+		b.buf.Write(p[:room])
+	}
+	b.truncated = true
+	return len(p), nil // report full length so the writer never errors
+}
+
+func (b *cappedBuffer) Bytes() []byte { return b.buf.Bytes() }
+func (b *cappedBuffer) Len() int      { return b.buf.Len() }
+
 // countToolsAndErrors snapshots the journaled tool counts so the
 // per-turn summary at agent_turn_ended is just (post - pre) without
 // needing to track via mutex during the run.
 func countToolsAndErrors(l *live.Live) (calls, errors int) {
-	for _, e := range l.Session().Chat {
-		if e.Kind == journal.KindToolCall {
-			calls++
+	// Read under Live's session lock: the HTTP tool dispatcher Applies
+	// concurrently with the watcher loop.
+	l.ReadSession(func(sess *journal.Session) {
+		for _, e := range sess.Chat {
+			if e.Kind == journal.KindToolCall {
+				calls++
+			}
+			if e.Kind == journal.KindToolResult && e.Result != nil && !e.Result.OK {
+				errors++
+			}
 		}
-		if e.Kind == journal.KindToolResult && e.Result != nil && !e.Result.OK {
-			errors++
-		}
-	}
+	})
 	return
 }
 
@@ -148,13 +191,18 @@ func runAgentWatcher(ctx context.Context, logger *log.Logger, l *live.Live, tool
 }
 
 func chatTextByEntryID(l *live.Live, id string) string {
-	sess := l.Session()
-	for _, e := range sess.Chat {
-		if e.EntryID == id && e.Message != nil {
-			return e.Message.Text
+	// Read under Live's session lock: the watcher goroutine competes
+	// with the HTTP tool dispatcher's Applies for the chat slice.
+	var text string
+	l.ReadSession(func(sess *journal.Session) {
+		for _, e := range sess.Chat {
+			if e.EntryID == id && e.Message != nil {
+				text = e.Message.Text
+				return
+			}
 		}
-	}
-	return ""
+	})
+	return text
 }
 
 // destructiveIntent runs a quick keyword scan on the user message
@@ -193,7 +241,9 @@ func enrichPrompt(text string) string {
 func safeBuildArgs(logger *log.Logger, adapter Adapter, text string) (argv []string) {
 	defer func() {
 		if rec := recover(); rec != nil {
-			logger.Printf("agent: adapter %q panicked building argv: %v", adapter.Name, rec)
+			// Scrubbed per the recoverlog rule: the panicked-on value
+			// is adapter-supplied and must not forge log lines.
+			logger.Printf("agent: adapter %q panicked building argv: %s", adapter.Name, textsafe.Recovered(rec))
 			argv = nil
 		}
 	}()
@@ -210,6 +260,18 @@ func runOneAgentTurn(ctx context.Context, logger *log.Logger, tools *protocol.To
 	c := exec.CommandContext(ctx, argv[0], argv[1:]...)
 	c.Env = append(os.Environ(), "KILN_URL="+kilnURL)
 	c.Stderr = os.Stderr // surface diagnostic output to the kiln operator
+	// The child runs in its own process group (the serve twin's
+	// childProcessGroup) and Wait is bounded: an adapter that
+	// backgrounds a pipe-holding descendant (sleep, tail -f, a server)
+	// leaves the inherited stdout pipe open after the direct child
+	// exits, and an unbounded Output drain would park this turn forever
+	// — cancellation would have nothing left to kill, the superseded
+	// note would never journal, and the goroutine leaks. WaitDelay is
+	// the bound for exactly this shape.
+	c.SysProcAttr = childProcessGroup()
+	c.WaitDelay = agentTurnWaitDelay
+	stdout := &cappedBuffer{limit: maxAgentStdout}
+	c.Stdout = stdout
 	// Adapters that ask for a clean working directory (e.g. pi, which
 	// will cat any Go file in cwd and report on it as if it were the
 	// kiln world) get one. The registry name is a fixed path in the
@@ -239,8 +301,8 @@ func runOneAgentTurn(ctx context.Context, logger *log.Logger, tools *protocol.To
 		c.Dir = turnDir
 		defer os.RemoveAll(turnDir)
 	}
-	out, err := c.Output()
-	resp := strings.TrimSpace(string(out))
+	err := c.Run()
+	resp := strings.TrimSpace(string(stdout.Bytes()))
 
 	// Cancellation path: this turn was superseded. Render the right
 	// reason: a newer message vs. a runtime agent switch. Use a fresh

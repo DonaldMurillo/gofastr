@@ -66,10 +66,15 @@ func writeWorldSnapshot(w *world.World, dir string) error {
 	}
 	// 0600: world.json is the complete IR, which includes whatever the
 	// session configured. gofastr.yml gets env references instead of
-	// values, but the snapshot is the raw world, owner-only.
+	// values, but the snapshot is the raw world, owner-only — on CREATE
+	// and on OVERWRITE alike: os.WriteFile's mode only applies at
+	// create, so a pre-existing 0644 file was refilled with the fresh
+	// raw IR while staying world-readable.
 	path := filepath.Join(dir, "world.json")
-	if err := os.WriteFile(path, append(buf, '\n'), 0o600); err != nil {
+	if err := fileperm.WriteOwnerOnly(path, append(buf, '\n')); err != nil {
 		return err
 	}
+	// WriteOwnerOnly carries the 0600 mode on Unix; Windows ignores
+	// POSIX bits, so the DACL restriction stays.
 	return fileperm.Restrict(path, false)
 }

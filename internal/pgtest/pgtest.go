@@ -35,6 +35,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/internal/dsnredact"
 	_ "github.com/lib/pq"
 )
 
@@ -222,15 +223,12 @@ func UnusedDSN(t *testing.T) (string, func()) {
 	return u.String(), drop
 }
 
-// RedactDSN masks the password in a DSN for safe logging.
+// RedactDSN masks credentials in a DSN for safe logging. Delegates to
+// internal/dsnredact — the one canonical redactor — so this twin cannot
+// drift again: it returned key=value DSNs verbatim, password included,
+// into the log output of DB / FreshDatabaseDSN / UnusedDSN.
 func RedactDSN(dsn string) string {
-	if u, err := url.Parse(dsn); err == nil && u.User != nil {
-		if _, ok := u.User.Password(); ok {
-			u.User = url.UserPassword(u.User.Username(), "xxx")
-			return u.String()
-		}
-	}
-	return dsn
+	return dsnredact.Redact(dsn)
 }
 
 func ping(db *sql.DB) error {

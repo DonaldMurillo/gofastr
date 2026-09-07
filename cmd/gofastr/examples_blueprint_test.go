@@ -352,9 +352,17 @@ func assertScreenServesRows(t *testing.T, name, baseURL, table, restPath string)
 	switch {
 	case resp.StatusCode >= 500:
 		t.Fatalf("%s: GET /%s = %d — a crashing screen is not a passing gate", name, table, resp.StatusCode)
+	case resp.StatusCode == http.StatusNotFound:
+		// No screen at /<table> for this entity (meridian's plans catalog is
+		// read over REST by the pricing page and has no list screen of its
+		// own). Nothing here can be too tight, so the entity does not count
+		// toward the served-rows side of the anti-vacuity check either.
+		return false, false
 	case resp.StatusCode != http.StatusOK:
-		// 404 (no screen for this entity) and a sign-in redirect are both
-		// legitimate shapes this check has no opinion on.
+		// A sign-in redirect on an entity the API serves anonymously is a
+		// legitimate shape this check has no opinion on, but the rows were
+		// served, so the caller's counters still see a screen that showed
+		// nothing.
 		return restHadRows, false
 	}
 	body, _ := io.ReadAll(resp.Body)

@@ -26,6 +26,7 @@ func newTestApp(t *testing.T) (*httptest.Server, *assistApp) {
 	app := buildApp()
 	srv := httptest.NewServer(app.Router())
 	t.Cleanup(srv.Close)
+	t.Cleanup(assist.stopJanitor)
 	return srv, assist
 }
 

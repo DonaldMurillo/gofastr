@@ -3,12 +3,12 @@ package main
 import (
 	_ "embed"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
-	"strings"
 	"syscall"
 	"time"
 )
@@ -56,29 +56,40 @@ func runAgent(args []string) int {
 	serve.Dir = cwd
 	serve.Stdout = os.Stderr // panel banner goes to stderr so stdout stays clean
 	serve.Stderr = os.Stderr
-	serve.SysProcAttr = childProcessGroup()
 	if err := serve.Start(); err != nil {
 		fmt.Fprintf(os.Stderr, "[kiln] start serve: %v\n", err)
 		return 1
 	}
+	// serveDone closes when the serve child exits; readiness races it so
+	// a serve that dies before binding (bad flag, missing journal perms)
+	// fails the run immediately instead of waiting out the 10s poll, and
+	// the deferred cleanup re-uses the one Wait.
+	serveDone := make(chan error, 1)
+	go func() { serveDone <- serve.Wait() }()
 	defer func() {
 		if serve.Process == nil {
 			return
 		}
 		_ = serve.Process.Signal(syscall.SIGTERM)
-		done := make(chan struct{}, 1)
-		go func() { _ = serve.Wait(); done <- struct{}{} }()
 		select {
-		case <-done:
+		case <-serveDone:
 		case <-time.After(3 * time.Second):
 			_ = serve.Process.Kill()
-			<-done
+			<-serveDone
 		}
 	}()
 
 	kilnURL := fmt.Sprintf("http://localhost:%d", port)
-	if err := waitReady(kilnURL+"/kiln/world", 10*time.Second); err != nil {
-		fmt.Fprintf(os.Stderr, "[kiln] serve never came up: %v\n", err)
+	ready := make(chan error, 1)
+	go func() { ready <- waitReady(kilnURL+"/kiln/world", 10*time.Second) }()
+	select {
+	case err := <-ready:
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "[kiln] serve never came up: %v\n", err)
+			return 1
+		}
+	case <-serveDone:
+		fmt.Fprintf(os.Stderr, "[kiln] serve exited before becoming ready\n")
 		return 1
 	}
 
@@ -125,29 +136,39 @@ func pickPort(desired int) int {
 	return 0
 }
 
+// portFree reports whether TCP port p has no listener. The probe is a
+// dial with a deadline, not an HTTP fetch: connection success/refused
+// is the whole occupancy signal, so a wedged listener (accepts, never
+// responds) reads as busy in bounded time instead of hanging pickPort
+// — and every kiln boot behind it — forever.
 func portFree(p int) bool {
-	addr := fmt.Sprintf("localhost:%d", p)
-	conn, err := http.Get("http://" + addr + "/")
+	conn, err := net.DialTimeout("tcp", fmt.Sprintf("localhost:%d", p), 500*time.Millisecond)
 	if err != nil {
-		// connection refused → free
-		if strings.Contains(err.Error(), "refused") || strings.Contains(err.Error(), "connection") {
-			return true
-		}
-		return true
+		return true // refused / unreachable: nothing is listening
 	}
-	conn.Body.Close()
+	conn.Close()
 	return false
 }
 
-// waitReady polls url until it returns any HTTP response or timeout elapses.
+// waitReady polls url until the kiln runtime answers with its identity
+// marker, or timeout elapses. Any HTTP response is NOT readiness:
+// runAgent exports KILN_URL to a spawned agent running with
+// --auto-approve, so "ready" must mean "the kiln we started answered",
+// not "some server answered". kiln's Live.ServeHTTP stamps every
+// response with X-Kiln-Server; a responder without it is an impostor
+// that won the pickPort→bind race and keeps waitReady polling until
+// the timeout refuses it.
 func waitReady(url string, timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
 	client := &http.Client{Timeout: 500 * time.Millisecond}
 	for time.Now().Before(deadline) {
 		resp, err := client.Get(url)
 		if err == nil {
+			kiln := resp.Header.Get("X-Kiln-Server") != ""
 			resp.Body.Close()
-			return nil
+			if kiln {
+				return nil
+			}
 		}
 		time.Sleep(100 * time.Millisecond)
 	}

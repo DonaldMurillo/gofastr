@@ -234,6 +234,12 @@ func runMutant(path string, original []byte, g guardmut.Guard, pkg, run, moduleR
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "go", args...)
 	cmd.Dir = moduleRoot
+	// A `go test` child forks compiler/link/test-binary grandchildren that
+	// inherit the captured stdout; after ctx cancel kills the direct child,
+	// Wait would block on the pipe until every holder closed. WaitDelay
+	// is the Go-team bound for exactly that shape (a hung mutant is a
+	// verdict, not a way to wedge the harness).
+	cmd.WaitDelay = 5 * time.Second
 	out, testErr := cmd.CombinedOutput()
 	if ctx.Err() != nil {
 		// A hung mutant is a result, not a harness fault: the guard mattered
@@ -293,6 +299,12 @@ func checkBaseline(pkg, run, moduleRoot string, timeout time.Duration) error {
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "go", args...)
 	cmd.Dir = moduleRoot
+	// A `go test` child forks compiler/link/test-binary grandchildren that
+	// inherit the captured stdout; after ctx cancel kills the direct child,
+	// Wait would block on the pipe until every holder closed. WaitDelay
+	// is the Go-team bound for exactly that shape (a hung mutant is a
+	// verdict, not a way to wedge the harness).
+	cmd.WaitDelay = 5 * time.Second
 	out, err := cmd.CombinedOutput()
 	if ctx.Err() != nil {
 		return fmt.Errorf("the baseline suite did not finish within %s (build plus -timeout=%s), so no verdict below would mean anything:\n%s",

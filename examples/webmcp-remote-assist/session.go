@@ -16,6 +16,7 @@ package main
 //     the transport.
 
 import (
+	"container/list"
 	"context"
 	"crypto/rand"
 	"crypto/subtle"
@@ -23,13 +24,13 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
-	"net/url"
 	"os"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/core/stream"
 	"github.com/DonaldMurillo/gofastr/framework/experimental/webmcp"
@@ -125,6 +126,7 @@ type assistSession struct {
 	joinUsed  bool
 	created   time.Time
 	expires   time.Time
+	lru       *list.Element // the store's session LRU handle (a.order)
 
 	// seq is the channel-wide version of the state below. It is read
 	// and written under assistApp.mu, and SnapshotFor returns it from
@@ -155,12 +157,23 @@ type assistSession struct {
 // plus the request's cookies. A single-process example keeps it in
 // RAM; a multi-replica deployment moves this map to a database and the
 // channel fanout to a shared broker.
+//
+// The store is BOUNDED, the examples/site/demo_store.go shape: order is
+// the sessions LRU (front = most recently used) and maxSessions the hard
+// cap a flood of session-creating requests evicts against, and a janitor
+// sweeps expired sessions and support credentials in the background so a
+// session nobody revisits is still reclaimed (the 10-minute TTL is not
+// only lazy). wsSeats bounds the live websocket upgrades per role
+// credential.
 type assistApp struct {
-	mu         sync.Mutex
-	sessions   map[string]*assistSession
-	byToken    map[string]string // join token -> session id
-	operators  map[string]string // operator cookie value -> session id
-	supporters map[string]time.Time
+	mu          sync.Mutex
+	sessions    map[string]*assistSession
+	order       *list.List
+	byToken     map[string]string // join token -> session id
+	operators   map[string]string // operator cookie value -> session id
+	supporters  map[string]time.Time
+	wsSeats     map[string][]*wsSeat // role credential -> admitted sockets, oldest first
+	maxSessions int
 
 	// supportKey is the demo sign-in credential: ASSIST_SUPPORT_KEY
 	// from the environment, or a random value printed once at boot. A
@@ -172,6 +185,10 @@ type assistApp struct {
 	// name, status, class). Inputs never enter it — ToolEvent does not
 	// carry them, and the format string below must keep it that way.
 	toolEvents []string
+
+	// janitorStop stops the background sweeper. The process-global app
+	// never closes it; tests that churn apps may.
+	janitorStop chan struct{}
 }
 
 func newAssistApp() *assistApp {
@@ -179,14 +196,30 @@ func newAssistApp() *assistApp {
 	if key == "" {
 		key = randomID()
 	}
-	return &assistApp{
-		sessions:   map[string]*assistSession{},
-		byToken:    map[string]string{},
-		operators:  map[string]string{},
-		supporters: map[string]time.Time{},
-		supportKey: key,
+	a := &assistApp{
+		sessions:    map[string]*assistSession{},
+		order:       list.New(),
+		byToken:     map[string]string{},
+		operators:   map[string]string{},
+		supporters:  map[string]time.Time{},
+		wsSeats:     map[string][]*wsSeat{},
+		maxSessions: maxLiveSessions,
+		supportKey:  key,
+		janitorStop: make(chan struct{}),
 	}
+	go a.janitor(sweepEvery)
+	return a
 }
+
+// maxLiveSessions bounds the resident assist sessions (and with them
+// their join-token entries and channel goroutines). The order of
+// magnitude is the SSE seat cap scaled up for whole assist sessions;
+// the LRU evicts against it on every create.
+const maxLiveSessions = 128
+
+// sweepEvery is the janitor cadence for expired sessions and support
+// credentials.
+const sweepEvery = 30 * time.Second
 
 // checkSupportKey compares the sign-in credential in constant time.
 func (a *assistApp) checkSupportKey(candidate string) bool {
@@ -234,9 +267,81 @@ func (a *assistApp) createSession() *assistSession {
 
 	a.mu.Lock()
 	a.sessions[s.id] = s
+	s.lru = a.order.PushFront(s)
 	a.byToken[s.joinToken] = s.id
+	a.evictOverflowLocked()
 	a.mu.Unlock()
 	return s
+}
+
+// evictOverflowLocked drops least-recently-used sessions until the store
+// is within maxSessions, the demo_store.go hard-cap shape: a flood of
+// session-creating requests evicts the LRU session rather than growing
+// memory (sessions, join tokens, channel goroutines) without bound.
+// Caller holds mu.
+func (a *assistApp) evictOverflowLocked() {
+	if a.maxSessions <= 0 {
+		return
+	}
+	for len(a.sessions) > a.maxSessions {
+		el := a.order.Back()
+		if el == nil {
+			break
+		}
+		a.dropLocked(el.Value.(*assistSession))
+	}
+}
+
+// sweepExpired drops every session past its expiry and every support
+// credential past its TTL. The janitor calls it on a cadence so the TTL
+// is not only lazy (a session nobody revisits is still reclaimed — its
+// channel goroutine, join-token entry, and sockets with it); tests drive
+// it directly for determinism.
+func (a *assistApp) sweepExpired() {
+	a.mu.Lock()
+	now := time.Now()
+	var expired []*assistSession
+	for _, s := range a.sessions {
+		if now.After(s.expires) {
+			expired = append(expired, s)
+		}
+	}
+	for _, s := range expired {
+		a.dropLocked(s)
+	}
+	for v, exp := range a.supporters {
+		if now.After(exp) {
+			delete(a.supporters, v)
+		}
+	}
+	a.mu.Unlock()
+}
+
+// janitor sweeps expired sessions and support credentials in the
+// background until janitorStop closes.
+func (a *assistApp) janitor(every time.Duration) {
+	if every < time.Second {
+		every = time.Second
+	}
+	t := time.NewTicker(every)
+	defer t.Stop()
+	for {
+		select {
+		case <-a.janitorStop:
+			return
+		case <-t.C:
+			a.sweepExpired()
+		}
+	}
+}
+
+// stopJanitor halts the background sweeper (tests that churn apps).
+func (a *assistApp) stopJanitor() {
+	select {
+	case <-a.janitorStop:
+	default:
+		close(a.janitorStop)
+	}
 }
 
 // toolEventLog snapshots the bounded observer log for tests.
@@ -267,7 +372,9 @@ func (a *assistApp) dropRoleSocket(id string, r role) bool {
 }
 
 // lookup returns the live session, or nil. Expired sessions are
-// dropped here (lazy expiry) and their channel stopped.
+// dropped here (lazy expiry) and their channel stopped; a live hit
+// refreshes the session's LRU position so the cap evicts sessions
+// nobody revisits, not the busy ones.
 func (a *assistApp) lookup(id string) *assistSession {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -279,12 +386,19 @@ func (a *assistApp) lookup(id string) *assistSession {
 		a.dropLocked(s)
 		return nil
 	}
+	if s.lru != nil {
+		a.order.MoveToFront(s.lru)
+	}
 	return s
 }
 
 // dropLocked removes a session and stops its channel. Caller holds mu.
 func (a *assistApp) dropLocked(s *assistSession) {
 	delete(a.sessions, s.id)
+	if s.lru != nil {
+		a.order.Remove(s.lru)
+		s.lru = nil
+	}
 	delete(a.byToken, s.joinToken)
 	for tok, sid := range a.operators {
 		if sid == s.id {
@@ -400,41 +514,23 @@ func (a *assistApp) requireOperator() router.Middleware {
 	}
 }
 
-// sameOrigin refuses cross-site mutating requests. It mirrors the
-// convention battery/auth uses for its login forms (unexported there):
-// Sec-Fetch-Site is the authoritative signal and is checked first;
-// "cross-site" is refused outright, "same-origin" and "none" pass. The
-// Origin host comparison is the fallback for clients without Fetch
-// Metadata. A missing or "null" Origin passes: a legitimate top-level
-// same-origin form navigation sends Origin: null (opaque origin), and
-// curl never sends one. The role cookie remains the authorization
-// decision; this only answers WHERE FROM.
+// sameOrigin refuses cross-site mutating requests. The predicate is the
+// ONE repo cross-site form check, handler.IsCrossSiteRequest: Fetch
+// Metadata's Sec-Fetch-Site first ("cross-site" refused, "same-origin"
+// and "none" pass), the Origin-host comparison as the fallback for
+// clients without Fetch Metadata, so this example cannot drift from the
+// framework's spelling. A missing or "null" Origin passes: a legitimate
+// top-level same-origin form navigation sends Origin: null (opaque
+// origin), and curl never sends one. The role cookie remains the
+// authorization decision; this only answers WHERE FROM.
 func sameOrigin(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if crossSite(r) {
+		if handler.IsCrossSiteRequest(r) {
 			http.Error(w, "forbidden", http.StatusForbidden)
 			return
 		}
 		next.ServeHTTP(w, r)
 	})
-}
-
-func crossSite(r *http.Request) bool {
-	switch r.Header.Get("Sec-Fetch-Site") {
-	case "cross-site":
-		return true
-	case "same-origin", "none":
-		return false
-	}
-	origin := r.Header.Get("Origin")
-	if origin == "" || origin == "null" {
-		return false
-	}
-	u, err := url.Parse(origin)
-	if err != nil || u.Host == "" {
-		return true
-	}
-	return !strings.EqualFold(u.Host, r.Host)
 }
 
 // applyCommand is the single mutation path. Manual form posts, WebMCP
@@ -671,9 +767,60 @@ type inboundMsg struct {
 	Up   bool            `json:"up"`
 }
 
+// wsSeatsPerCredential bounds the concurrent live websocket upgrades one
+// role credential may hold, core/stream's defaultSeatsPerPrincipal
+// number: each admitted socket parks a handler in conn.Read plus the
+// StateChannel's registration and its read/write/keepalive pumps, so an
+// admission path without a per-credential cap is a memory/fd
+// exhaustion target for one caller.
+const wsSeatsPerCredential = 16
+
+// wsSeat is one admitted upgrade, held from reservation until its
+// handler returns. The seat is reserved BEFORE the upgrade handshake so
+// a refused caller never reaches the socket at all.
+type wsSeat struct {
+	credential string
+}
+
+// reserveWSSeat takes one seat for credential under
+// wsSeatsPerCredential (SeatOverflowRefuse: the 17th concurrent socket
+// of one credential is answered 429 at the upgrade, before any pump or
+// channel registration exists). A seat freed by the handler's return is
+// immediately reusable by the next reconnect.
+func (a *assistApp) reserveWSSeat(credential string) (*wsSeat, bool) {
+	seat := &wsSeat{credential: credential}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	q := a.wsSeats[credential]
+	if len(q) >= wsSeatsPerCredential {
+		return nil, false
+	}
+	a.wsSeats[credential] = append(q, seat)
+	return seat, true
+}
+
+// unseatWSSeat departs a seat: the handler returned (peer disconnect,
+// read error) or the upgrade failed after the reservation. Splicing is
+// idempotent.
+func (a *assistApp) unseatWSSeat(seat *wsSeat) {
+	a.mu.Lock()
+	q := a.wsSeats[seat.credential]
+	for i, v := range q {
+		if v == seat {
+			a.wsSeats[seat.credential] = append(q[:i], q[i+1:]...)
+			break
+		}
+	}
+	if len(a.wsSeats[seat.credential]) == 0 {
+		delete(a.wsSeats, seat.credential)
+	}
+	a.mu.Unlock()
+}
+
 // handleWS is the per-role WebSocket endpoint: it authorizes the role
-// cookie for THIS endpoint's page tree, upgrades, hydrates via the
-// session's StateChannel, then relays inbound signaling frames.
+// cookie for THIS endpoint's page tree, upgrades, seats the upgrade
+// against the credential's cap, hydrates via the session's
+// StateChannel, then relays inbound signaling frames.
 //
 // role comes from which endpoint the page connected to, never from the
 // wire: /support/session/{id}/ws requires the support cookie and
@@ -687,20 +834,38 @@ type inboundMsg struct {
 func (a *assistApp) handleWS(r role) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		sid := router.Param(req, "id")
+		credential := ""
 		if r == roleSupport {
 			if !a.authorizeSupport(req) {
 				http.Error(w, "support role required", http.StatusForbidden)
 				return
 			}
-		} else if !a.authorizeOperator(operatorCookie(req), sid) {
-			http.Error(w, "operator role required", http.StatusForbidden)
-			return
+			if c, cerr := req.Cookie(supportCookieName); cerr == nil {
+				credential = c.Value
+			}
+		} else {
+			credential = operatorCookie(req)
+			if !a.authorizeOperator(credential, sid) {
+				http.Error(w, "operator role required", http.StatusForbidden)
+				return
+			}
 		}
 		s := a.lookup(sid)
 		if s == nil {
 			http.Error(w, "session has ended", http.StatusGone)
 			return
 		}
+
+		// Seat the upgrade BEFORE the handshake: a credential at its socket
+		// cap is refused here, 429, and never reaches Upgrade, its pumps, or
+		// the channel registration. A failed upgrade releases the seat via
+		// the deferred unseat.
+		seat, ok := a.reserveWSSeat(credential)
+		if !ok {
+			http.Error(w, "too many sockets for this credential", http.StatusTooManyRequests)
+			return
+		}
+		defer a.unseatWSSeat(seat)
 
 		client := req.URL.Query().Get("client")
 		if len(client) > 64 {
@@ -726,8 +891,15 @@ func (a *assistApp) handleWS(r role) http.Handler {
 		if s.conns == nil {
 			s.conns = map[role]*stream.WebSocketConn{}
 		}
+		prev := s.conns[r]
 		s.conns[r] = conn
 		a.mu.Unlock()
+		// A role reconnect supplants the tracked transport; closing the one
+		// it replaces frees its channel registration and its pumps instead
+		// of leaking them until the peer's TCP dies on its own.
+		if prev != nil && prev != conn {
+			go prev.Close()
+		}
 
 		// Hydrate before counting presence so the snapshot the page
 		// applies is followed by a presence event that says "you are
@@ -742,7 +914,12 @@ func (a *assistApp) handleWS(r role) http.Handler {
 				return
 			}
 			var in inboundMsg
-			if json.Unmarshal(data, &in) != nil {
+			// Strict decode, the rtc twin's posture: a frame whose keys
+			// are ambiguous (duplicate, case-folded onto a field tag) is
+			// DROPPED, not executed under a decode two readers disagree
+			// on; the socket stays open for well-formed frames. The
+			// WSConfig ReadLimit already bounded the frame's size.
+			if handler.UnmarshalStrict(data, &in) != nil {
 				continue
 			}
 			switch in.Kind {

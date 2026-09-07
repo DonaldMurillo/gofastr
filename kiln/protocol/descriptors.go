@@ -91,8 +91,12 @@ var descriptors = map[string]Descriptor{
 	},
 	"update_entity": {
 		Name:        "update_entity",
-		Description: "Replace an existing entity in full. Prefer add_field for additive changes.",
-		Schema:      object(map[string]any{"entity": entitySchema()}, []string{"entity"}),
+		Description: "Replace an existing entity in full. Destructive: every field the replacement omits is dropped and owner_field/cross_owner_read flip to the new value, so it requires plan_id of an approved propose_plan whose targets include {op:\"update_entity\",name:\"<entity>\"}. Prefer add_field for additive changes.",
+		Destructive: true,
+		Schema: object(map[string]any{
+			"entity":  entitySchema(),
+			"plan_id": str("approved plan authorizing this replacement"),
+		}, []string{"entity", "plan_id"}),
 	},
 	"delete_entity": {
 		Name:        "delete_entity",

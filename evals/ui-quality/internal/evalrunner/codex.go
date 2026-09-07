@@ -110,7 +110,9 @@ func codexVersion(ctx context.Context, program string, prefixArgs []string) (str
 	versionCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	args := append(append([]string(nil), prefixArgs...), "--version")
-	out, err := exec.CommandContext(versionCtx, program, args...).CombinedOutput()
+	versionCmd := exec.CommandContext(versionCtx, program, args...)
+	versionCmd.WaitDelay = 5 * time.Second // an orphaned descendant must not hold the pipe past the deadline
+	out, err := versionCmd.CombinedOutput()
 	if err != nil {
 		return "", fmt.Errorf("resolve Codex version: %w (%s)", err, strings.TrimSpace(string(out)))
 	}

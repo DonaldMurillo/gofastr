@@ -17,6 +17,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/router"
+	"github.com/DonaldMurillo/gofastr/kiln/freeze"
 	"github.com/DonaldMurillo/gofastr/kiln/internal/kid"
 	"github.com/DonaldMurillo/gofastr/kiln/journal"
 	"github.com/DonaldMurillo/gofastr/kiln/live"
@@ -351,6 +352,11 @@ func (s *Server) serveStatus(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(&buf).Encode(out)
 	})
 
+	// Per-session JSON: a back/forward cache or a non-conforming proxy
+	// must not retain one session's status snapshot (chat, plans, world
+	// state). The static CSS arms in this file already set no-store; the
+	// session-bearing arms carry the same discipline.
+	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write(buf.Bytes())
 }
@@ -380,6 +386,10 @@ func (s *Server) serveWorld(w http.ResponseWriter, r *http.Request) {
 		enc.SetEscapeHTML(false)
 		_ = enc.Encode(resp)
 	})
+	// no-store for the same reason serveStatus sets it: this body is
+	// one session's world and chat timeline, credentials included
+	// before redaction.
+	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write(buf.Bytes())
 }
@@ -429,7 +439,7 @@ func (s *Server) serveToolDispatch(w http.ResponseWriter, r *http.Request) {
 		_ = s.applyEntry(journal.KindToolCall, journal.ToolCallPayload{
 			CallID: callID,
 			Name:   name,
-			Args:   args,
+			Args:   maskCredentialArgs(args),
 		})
 	}
 
@@ -460,6 +470,50 @@ func (s *Server) serveToolDispatch(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	writeResult(w, res)
+}
+
+// maskCredentialArgs returns a copy of a journaled tool-call args map
+// with credential-shaped values masked. The envelope is observability
+// data: it renders in the chat timeline, /kiln/world's session.chat,
+// /kiln/status's chat fields, and the panel rows, all readable by any
+// local process and by a same-Host rebinding page — a credentialed
+// db_url or a jwt_secret that rode in with set_app_config must not
+// park there verbatim. Benign fields (name, api_prefix) stay visible
+// so the timeline remains diagnosable.
+func maskCredentialArgs(args map[string]any) map[string]any {
+	if args == nil {
+		return nil
+	}
+	out := make(map[string]any, len(args))
+	for k, v := range args {
+		out[k] = maskCredentialValue(k, v)
+	}
+	return out
+}
+
+// maskCredentialValue masks v when key names a credential slot.
+// Matching is fold-insensitive on the key name (EqualFold, not a
+// ToLower map key — Unicode folding maps homoglyphs onto ASCII, the
+// asciifold posture). db_url is masked only when the DSN embeds
+// credentials (freeze.DSNHasSecret, the ONE rule), so a plain
+// file:blog.db path stays visible.
+func maskCredentialValue(key string, v any) any {
+	switch {
+	case strings.EqualFold(key, "jwt_secret"), strings.EqualFold(key, "seed_password"):
+		if v == nil {
+			return nil
+		}
+		return redactedSecret
+	case strings.EqualFold(key, "db_url"):
+		if s, ok := v.(string); ok && freeze.DSNHasSecret(s) {
+			return redactedSecret
+		}
+		return v
+	}
+	if m, ok := v.(map[string]any); ok {
+		return maskCredentialArgs(m)
+	}
+	return v
 }
 
 func (s *Server) nextCallID() string {
@@ -617,6 +671,7 @@ func (s *Server) dispatch(ctx context.Context, name string, body []byte) (protoc
 			return protocol.Result{}, err
 		}
 		return s.tools.SetTheme(ctx, args), nil
+
 	case "chat":
 		var args protocol.ChatArgs
 		if err := handler.UnmarshalStrict(body, &args); err != nil {
@@ -632,10 +687,6 @@ func (s *Server) dispatch(ctx context.Context, name string, body []byte) (protoc
 // tell "configured, withheld" from "not set".
 const redactedSecret = "[redacted]"
 
-// redactedWorld returns a shallow copy of w with credential fields
-// masked. The copy is shallow on purpose: only the two scalar fields
-// change, and cloning the entity/page maps would be wasted work on every
-// request to a read-only endpoint.
 func redactedWorld(w *world.World) *world.World {
 	if w == nil {
 		return nil
@@ -646,6 +697,14 @@ func redactedWorld(w *world.World) *world.World {
 	}
 	if out.App.Admin.SeedPassword != "" {
 		out.App.Admin.SeedPassword = redactedSecret
+	}
+	// A credentialed DSN is credential material by the freeze contract
+	// (freeze.DSNHasSecret is that one rule): an embedded password must
+	// not be handed out with the world, while credential-free DSNs
+	// (file:blog.db) are configuration and stay visible so local frozen
+	// apps stay diagnosable.
+	if freeze.DSNHasSecret(out.App.DBURL) {
+		out.App.DBURL = redactedSecret
 	}
 	return &out
 }

@@ -47,6 +47,13 @@ var apps = []appSpec{
 	{Name: "cmd-kiln", Package: "./cmd/kiln", Port: 0},       // build-only (serve subcommand exists but skip to keep this short)
 }
 
+// probeClient bounds every probe and load request: a bare http.Get (zero
+// timeout) would let one wedged app hang waitReady and the load loop past
+// their own deadlines, so each attempt fails fast on its own. The timeout
+// is sized under waitReady's loop budget (a failed attempt must not outlive
+// the deadline it feeds).
+var probeClient = &http.Client{Timeout: 1 * time.Second}
+
 type result struct {
 	App          string
 	BinSizeBytes int64
@@ -179,7 +186,7 @@ func runtimeRAM(r *result, binPath string, app appSpec, loadReqs int) {
 	// Drive load.
 	loadStart := time.Now()
 	for i := range loadReqs {
-		resp, err := http.Get(probeURL)
+		resp, err := probeClient.Get(probeURL)
 		if err != nil {
 			r.RuntimeErr = fmt.Sprintf("load req %d: %v", i, err)
 			return
@@ -217,7 +224,7 @@ func readRSS(pid int) int64 {
 func waitReady(url string, deadline time.Duration) bool {
 	end := time.Now().Add(deadline)
 	for time.Now().Before(end) {
-		resp, err := http.Get(url)
+		resp, err := probeClient.Get(url)
 		if err == nil {
 			resp.Body.Close()
 			if resp.StatusCode < 500 {

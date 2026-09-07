@@ -1093,6 +1093,12 @@ func summarizeArgs(args map[string]any) string {
 	if len(args) == 0 {
 		return "{}"
 	}
+	// The preview renders journaled envelopes AND journaled world-edit
+	// payloads; both can carry credential-shaped values (set_app_config
+	// with a db_url/jwt_secret). Mask before previewing: the row must
+	// stay diagnosable (name, api_prefix visible) without quoting the
+	// credential's first bytes.
+	args = maskCredentialArgs(args)
 	if ent, ok := args["entity"].(map[string]any); ok {
 		name, _ := ent["name"].(string)
 		fields, _ := ent["fields"].([]any)

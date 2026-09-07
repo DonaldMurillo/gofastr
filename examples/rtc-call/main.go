@@ -28,6 +28,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/battery/rtc"
 	uiapp "github.com/DonaldMurillo/gofastr/core-ui/app"
+	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/middleware"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework"
@@ -264,41 +265,23 @@ func validName(name string) bool {
 	return sawPrintable
 }
 
-// sameOrigin refuses cross-site mutating requests. It mirrors the
-// convention battery/auth uses for its login forms (unexported there):
-// Sec-Fetch-Site is the authoritative signal and is checked first;
-// "cross-site" is refused outright, "same-origin" and "none" pass. The
-// Origin host comparison is the fallback for clients without Fetch
-// Metadata. A missing or "null" Origin passes: a legitimate top-level
-// same-origin form navigation sends Origin: null (opaque origin), and
-// curl never sends one. The cookie remains the authorization decision;
-// this only answers WHERE FROM.
+// sameOrigin refuses cross-site mutating requests. The predicate is the
+// ONE repo cross-site form check, handler.IsCrossSiteRequest: Fetch
+// Metadata's Sec-Fetch-Site first ("cross-site" refused, "same-origin"
+// and "none" pass), the Origin-host comparison as the fallback for
+// clients without Fetch Metadata, so this example cannot drift from the
+// framework's spelling. A missing or "null" Origin passes: a legitimate
+// top-level same-origin form navigation sends Origin: null (opaque
+// origin), and curl never sends one. The cookie remains the
+// authorization decision; this only answers WHERE FROM.
 func sameOrigin(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if crossSite(r) {
+		if handler.IsCrossSiteRequest(r) {
 			http.Error(w, "forbidden", http.StatusForbidden)
 			return
 		}
 		next.ServeHTTP(w, r)
 	})
-}
-
-func crossSite(r *http.Request) bool {
-	switch r.Header.Get("Sec-Fetch-Site") {
-	case "cross-site":
-		return true
-	case "same-origin", "none":
-		return false
-	}
-	origin := r.Header.Get("Origin")
-	if origin == "" || origin == "null" {
-		return false
-	}
-	u, err := url.Parse(origin)
-	if err != nil || u.Host == "" {
-		return true
-	}
-	return !strings.EqualFold(u.Host, r.Host)
 }
 
 // secureRequest reports whether the request arrived over TLS, directly

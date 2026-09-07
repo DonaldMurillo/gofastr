@@ -16,6 +16,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/dotenv"
 	coreyaml "github.com/DonaldMurillo/gofastr/core/yaml"
 	"github.com/DonaldMurillo/gofastr/framework"
+	"github.com/DonaldMurillo/gofastr/internal/fileperm"
 )
 
 // decodeBlueprintString parses a gofastr.yml from a string into a Blueprint.
@@ -3088,21 +3089,9 @@ func runPack(args []string) {
 }
 
 // writeSecretFile writes content at owner-only permissions, tightening a
-// pre-existing file's mode before any content lands. Chmod goes through
-// the open handle so it cannot be redirected by a symlink swapped in
-// between the open and the mode change.
+// pre-existing file's mode before any content lands. It is the pack-side
+// spelling of internal/fileperm.WriteOwnerOnly (open, chmod the handle,
+// write): the one canonical owner-only write.
 func writeSecretFile(path, content string) error {
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
-	if err != nil {
-		return err
-	}
-	if err := f.Chmod(0o600); err != nil {
-		f.Close()
-		return err
-	}
-	if _, err := f.WriteString(content); err != nil {
-		f.Close()
-		return err
-	}
-	return f.Close()
+	return fileperm.WriteOwnerOnly(path, []byte(content))
 }

@@ -77,6 +77,11 @@ func main() {
 	// a production /mcp is reachable solely by trusted callers.
 	fwApp.RegisterPlugin(gflog.New(gflog.Config{}))
 	entities.RegisterAll(fwApp)
+	fwApp.HookRegistry("orders").RegisterHook(framework.AfterCreate, recomputeOrderTotalsOnCreateHook)
+	fwApp.HookRegistry("orders").RegisterHook(framework.AfterUpdate, recomputeOrderTotalsOnUpdateHook)
+	fwApp.HookRegistry("order_items").RegisterHook(framework.AfterCreate, recomputeOrderFromItemCreateHook)
+	fwApp.HookRegistry("order_items").RegisterHook(framework.AfterUpdate, recomputeOrderFromItemUpdateHook)
+	fwApp.HookRegistry("order_items").RegisterHook(framework.AfterDelete, recomputeOrderFromItemDeleteHook)
 	site := uiapp.NewApp(appName)
 	RegisterGenerated(fwApp, site, db)
 	fwApp.WithSeed(func(ctx context.Context) error {

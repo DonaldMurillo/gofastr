@@ -185,7 +185,7 @@ func axeScanOne(t *testing.T, browser context.Context, base, page, scheme string
 // screen can never drift out of the gate.
 func axePagesFromSitemap(t *testing.T, base string) []string {
 	t.Helper()
-	resp, err := http.Get(base + "/sitemap.xml")
+	resp, err := e2eClient.Get(base + "/sitemap.xml")
 	if err != nil {
 		t.Fatalf("sitemap: %v", err)
 	}
@@ -228,7 +228,7 @@ func axePagesFromSitemap(t *testing.T, base string) []string {
 func axeLogin(t *testing.T, browser context.Context, base, email, password string) {
 	t.Helper()
 	jar, _ := cookiejar.New(nil)
-	client := &http.Client{Jar: jar}
+	client := &http.Client{Jar: jar, Timeout: 10 * time.Second}
 	resp, err := client.PostForm(base+"/auth/login", url.Values{"email": {email}, "password": {password}})
 	if err != nil {
 		t.Fatalf("login: %v", err)

@@ -326,9 +326,12 @@ func TestOpenAPICLI_RoundTripLiveServer(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	// GET with path + repeated query params, bearer token.
-	out, err := exec.Command(bin, "get-spec", "--url", srv.URL, "--token", "tok",
-		"--symbology", "qr code", "--verbose", "--tag", "a", "--tag", "b").CombinedOutput()
+	// GET with path + repeated query params, bearer token (env, never
+	// argv: the scaffold registers no --token flag).
+	get := exec.Command(bin, "get-spec", "--url", srv.URL,
+		"--symbology", "qr code", "--verbose", "--tag", "a", "--tag", "b")
+	get.Env = append(os.Environ(), "OAPP_TOKEN=tok")
+	out, err := get.CombinedOutput()
 	if err != nil {
 		t.Fatalf("get-spec: %v\n%s", err, out)
 	}

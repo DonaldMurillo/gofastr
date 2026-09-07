@@ -1,6 +1,8 @@
 package evalrunner
 
 import (
+	"github.com/DonaldMurillo/gofastr/internal/fileperm"
+
 	"bytes"
 	"context"
 	"fmt"
@@ -536,7 +538,7 @@ func captureCandidate(ctx context.Context, baseURL, blindDir string, scenario Sc
 						issues = append(issues, fmt.Sprintf("%s %s: full-page capture height is %d, want about %d", page.Name, vp.ID, height, expectedFullHeight))
 					}
 				}
-				if writeErr := os.WriteFile(imagePath, capture.png, 0o600); writeErr != nil {
+				if writeErr := fileperm.WriteOwnerOnly(imagePath, capture.png); writeErr != nil {
 					issues = append(issues, fmt.Sprintf("%s %s %s: save screenshot: %v", page.Name, vp.ID, capture.kind, writeErr))
 					continue
 				}
