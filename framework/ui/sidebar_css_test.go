@@ -86,15 +86,26 @@ func TestCalloutHiddenAttributeWins(t *testing.T) {
 
 // The collapsed rail and the auto-hide rest state hide the title and
 // footer; Prepend is chrome of the same kind and must hide with them,
-// or a section <select> would poke out of a 64px rail (#405).
+// or a section <select> would poke out of a 64px rail (#405). The
+// selector alone is not the guard: the rule it belongs to has to
+// declare display:none, so a malformed or emptied rule fails here.
 func TestSidebarPrependHidesWithTitleAndFooter(t *testing.T) {
 	css := sidebarCSS(style.Theme{})
 	for _, state := range []string{
-		`[data-collapsed="true"] .ui-sidebar__prepend`,
-		`.ui-sidebar--auto-hide:not(:hover):not(:focus-within) .ui-sidebar__prepend`,
+		`[data-collapsed="true"] .ui-sidebar__prepend,`,
+		`.ui-sidebar--auto-hide:not(:hover):not(:focus-within) .ui-sidebar__prepend,`,
 	} {
-		if !strings.Contains(css, state) {
+		start := strings.Index(css, state)
+		if start == -1 {
 			t.Errorf("sidebar CSS must hide .ui-sidebar__prepend in state %q", state)
+			continue
+		}
+		block := css[start:]
+		if end := strings.Index(block, "}"); end != -1 {
+			block = block[:end]
+		}
+		if !strings.Contains(block, "display: none") {
+			t.Errorf("the rule hiding .ui-sidebar__prepend in state %q must set display:none:\n%s", state, block)
 		}
 	}
 }

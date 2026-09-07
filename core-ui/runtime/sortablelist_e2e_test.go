@@ -516,12 +516,16 @@ func TestSortable_ConflictRefreshEmptyColumn(t *testing.T) {
 	base := startSortableServer(t, pageHTML, rpcHandler, conflictHandler)
 	ctx := newSeedBrowserCtx(t)
 	var colBCount int
+	var liveText string
 	var k1InA bool
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/"),
 		chromedp.WaitVisible(`#ready`, chromedp.ByID),
 		kbCrossMove("k1"),
-		settled(`document.querySelectorAll('[data-fui-sortable-container="b"] [data-fui-sortable-item]').length === 0`),
+		// Column B starts empty and a rollback also leaves it empty with
+		// k1 back in A, so the DOM cannot tell reconciliation from a
+		// revert; the refresh-path announcement can.
+		settledLive("List refreshed", &liveText),
 		chromedp.Evaluate(`document.querySelectorAll('[data-fui-sortable-container="b"] [data-fui-sortable-item]').length`, &colBCount),
 		chromedp.Evaluate(`!!document.querySelector('[data-fui-sortable-container="a"] [data-fui-sort-key="k1"]')`, &k1InA),
 	); err != nil {
