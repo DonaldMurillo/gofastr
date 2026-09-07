@@ -153,6 +153,22 @@ func TestSlowPeerClosedNotStarved(t *testing.T) {
 		a.send(map[string]any{"kind": "signal", "to": "pB", "type": "ice", "data": map[string]string{"candidate": blob}})
 	}
 
+	// Barrier: the flood has to be PROCESSED, not merely written, before
+	// pB drains. pA's frames are read in order and published through the
+	// room's one FIFO, so a signal sent after them to a third, reading
+	// peer arrives only once every flood frame was queued for pB or pB
+	// was closed for it. Without this the client's writes return as soon
+	// as the kernel takes them (16 ms for 4.8 MB on Linux loopback), the
+	// server is still decoding them (a strict decode walks the whole
+	// 40 KiB document, ~0.5 ms a frame), and pB, draining at once, keeps
+	// step with the server and never overflows: the flood did not happen,
+	// which is not the property holding. Seen as a 7-in-10 CI failure on
+	// 2026-09-07 when the inbound decode became strict.
+	c, _ := join(t, base, "room1", "pC")
+	defer c.close()
+	a.send(map[string]any{"kind": "signal", "to": "pC", "type": "ice", "data": map[string]string{"candidate": "barrier"}})
+	c.expectEnv(t, "signal")
+
 	// Now pB drains. Its socket must end in a close frame or EOF, not
 	// in a read timeout on a healthy socket that quietly lost frames.
 	var err error
