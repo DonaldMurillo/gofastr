@@ -282,6 +282,18 @@ Three more knobs round out the contract surface:
   64px icon rail at >= md viewports and reveals the full column on
   hover or keyboard focus (`:focus-within`), straight from the
   component's stylesheet — no JavaScript, no host CSS.
+- `Prepend` is a component rendered between the title and the `<nav>`
+  on every body path: the inline column, `SidebarBody`, and the
+  `MountSidebar` drawer. A docs site whose phone header hides its
+  section tabs puts the section `<select>` here, so the drawer (the
+  only navigation at that width) carries it without forking the mount.
+  It takes a `component.Component` rather than HTML because
+  `MountSidebar` runs once at boot while the drawer body renders per
+  request: a Prepend that implements `component.ContextComponent`
+  sees the request on the inline and drawer paths alike, so the select
+  can mark the current section. Wrap static markup in
+  `app.NewStaticComponent`. It hides with the title in the collapsed
+  rail and the auto-hide rest state; `Footer` stays below the nav.
 
 ---
 

@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
@@ -429,5 +430,32 @@ func TestSidebarGroupOpenByDefault(t *testing.T) {
 	// The second group stays closed: exactly one expanded toggle.
 	if got := strings.Count(out, `aria-expanded="true"`); got != 1 {
 		t.Fatalf("want exactly one expanded group, got %d", got)
+	}
+}
+
+// Prepend renders between the title and the nav on every body path
+// (inline sidebar, SidebarBody, and the MountSidebar drawer), so a
+// host can put a section switcher above the nav tree without forking
+// the drawer mount (#405). An empty field emits no wrapper.
+func TestSidebarPrependSitsBetweenTitleAndNav(t *testing.T) {
+	cfg := ui.SidebarConfig{
+		Title:   "Docs",
+		Prepend: app.NewStaticComponent(render.HTML(`<select id="section"><option>Guides</option></select>`)),
+		Items:   []ui.SidebarItem{{Label: "Home", Href: "/"}},
+	}
+	for name, out := range map[string]string{
+		"inline": string(component.RenderComponent(ui.Sidebar(cfg))),
+		"body":   string(ui.SidebarBody(cfg)),
+	} {
+		title := strings.Index(out, `ui-sidebar__title`)
+		pre := strings.Index(out, `<div class="ui-sidebar__prepend"><select id="section">`)
+		nav := strings.Index(out, `<nav class="ui-sidebar__nav"`)
+		if title < 0 || pre < 0 || nav < 0 || !(title < pre && pre < nav) {
+			t.Errorf("%s: prepend must sit between title and nav (title=%d prepend=%d nav=%d):\n%s", name, title, pre, nav, out)
+		}
+	}
+	plain := string(ui.SidebarBody(ui.SidebarConfig{Items: cfg.Items}))
+	if strings.Contains(plain, "ui-sidebar__prepend") {
+		t.Errorf("empty Prepend must emit no wrapper:\n%s", plain)
 	}
 }

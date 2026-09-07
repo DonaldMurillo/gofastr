@@ -199,6 +199,18 @@ type SidebarConfig struct {
 	// plus a hidden-when-closed container of the child links.
 	GroupMarkup SidebarGroupMarkup
 
+	// Prepend is an optional component rendered between the title and
+	// the nav, on every body path: the inline sidebar, SidebarBody, and
+	// the MountSidebar drawer. Use it for a section switcher that the
+	// phone drawer must carry because the header hides it there. It is
+	// a component, not HTML, because MountSidebar runs once at boot and
+	// the drawer body renders per request: a Prepend that implements
+	// component.ContextComponent sees the request (current section,
+	// signed-in user) on the inline and drawer paths alike. Wrap static
+	// markup in app.NewStaticComponent. Hidden with the title in the
+	// collapsed rail and the auto-hide rest state. Nil emits no markup.
+	Prepend component.Component
+
 	// Footer is optional content rendered at the bottom (signed-in
 	// user pill, settings link, etc.).
 	Footer render.HTML
@@ -315,12 +327,12 @@ type sidebarComponent struct{ cfg SidebarConfig }
 // threads the request context here (WrapCtx), so role-gated entries (e.g. an
 // admin-only link) never appear for users who lack the role.
 func (s sidebarComponent) RenderCtx(ctx context.Context) render.HTML {
-	return sidebarComponent{cfg: s.cfg.withFilteredItems(ctx)}.render()
+	return sidebarComponent{cfg: s.cfg.withFilteredItems(ctx)}.render(ctx)
 }
 
-func (s sidebarComponent) Render() render.HTML { return s.render() }
+func (s sidebarComponent) Render() render.HTML { return s.render(context.Background()) }
 
-func (s sidebarComponent) render() render.HTML {
+func (s sidebarComponent) render(ctx context.Context) render.HTML {
 	// Unknown variants panic like every other variant-taking component
 	// (Card, Button, Notification). A typo'd variant used to render
 	// an unstyled ui-sidebar--<anything> class silently. Empty is the
@@ -409,14 +421,16 @@ func (s sidebarComponent) render() render.HTML {
 		}
 		b.WriteString(`><span aria-hidden="true">‹</span></button>`)
 	}
-	b.WriteString(string(sidebarBody(cfg, inlineID)))
+	b.WriteString(string(sidebarBody(ctx, cfg, inlineID)))
 	b.WriteString(`</div></div>`)
 	return sidebarStyle.WrapHTML(render.HTML(b.String()))
 }
 
 // SidebarBody renders the navigation content only: no sidebar shell,
 // no hamburger. Use it as the Slot content of a preset.Drawer widget
-// that mirrors the sidebar at narrow viewports.
+// that mirrors the sidebar at narrow viewports. It has no request
+// context, so a context-aware Prepend renders its Render fallback
+// here; MountSidebar's drawer renders it per request.
 func SidebarBody(cfg SidebarConfig) render.HTML {
 	if cfg.Variant == "" {
 		cfg.Variant = SidebarPersistent
@@ -437,15 +451,18 @@ func SidebarBody(cfg SidebarConfig) render.HTML {
 	// the .ui-sidebar base rule keeps the wrapper box-free.
 	return sidebarStyle.WrapHTML(render.HTML(
 		`<div class="ui-sidebar ui-sidebar__body">` +
-			string(sidebarBody(cfg, cfg.DrawerName+"-body")) +
+			string(sidebarBody(context.Background(), cfg, cfg.DrawerName+"-body")) +
 			`</div>`))
 }
 
-func sidebarBody(cfg SidebarConfig, idPrefix string) render.HTML {
+func sidebarBody(ctx context.Context, cfg SidebarConfig, idPrefix string) render.HTML {
 	checkSidebarGroupMarkup(cfg.GroupMarkup)
 	var b strings.Builder
 	if cfg.Title != "" {
 		b.WriteString(`<h2 class="ui-sidebar__title">` + render.Escape(cfg.Title) + `</h2>`)
+	}
+	if cfg.Prepend != nil {
+		b.WriteString(`<div class="ui-sidebar__prepend">` + string(component.RenderComponentCtx(ctx, cfg.Prepend)) + `</div>`)
 	}
 	label := cfg.NavLabel
 	if label == "" {
@@ -598,15 +615,17 @@ type sidebarDrawerSlot struct{ cfg SidebarConfig }
 // context here, so the mobile drawer hides the same role-gated entries the
 // desktop sidebar does.
 func (s sidebarDrawerSlot) RenderCtx(ctx context.Context) render.HTML {
-	return sidebarDrawerSlot{cfg: s.cfg.withFilteredItems(ctx)}.Render()
+	return sidebarDrawerSlot{cfg: s.cfg.withFilteredItems(ctx)}.render(ctx)
 }
 
-func (s sidebarDrawerSlot) Render() render.HTML {
+func (s sidebarDrawerSlot) Render() render.HTML { return s.render(context.Background()) }
+
+func (s sidebarDrawerSlot) render(ctx context.Context) render.HTML {
 	// "-drawer" prefix keeps button-dialect group ids distinct from
 	// the inline sidebar's when both are in the DOM.
 	return sidebarStyle.WrapHTML(render.HTML(
 		`<div class="ui-sidebar ui-sidebar--drawer-body">` +
-			string(sidebarBody(s.cfg, s.cfg.DrawerName+"-drawer")) +
+			string(sidebarBody(ctx, s.cfg, s.cfg.DrawerName+"-drawer")) +
 			`</div>`,
 	))
 }
@@ -813,6 +832,10 @@ func sidebarCSS(_ style.Theme) string {
   padding-top: var(--spacing-md, 8px);
   border-top: 1px solid var(--color-border, #E4E4E7);
 }
+[data-fui-comp="ui-sidebar"] .ui-sidebar__prepend {
+  padding-bottom: var(--spacing-md, 8px);
+  border-bottom: 1px solid var(--color-border, #E4E4E7);
+}
 [data-fui-comp="ui-sidebar"].ui-sidebar--collapsible[data-collapsed="true"] .ui-sidebar__inline {
   min-width: 64px;
   width: 64px;
@@ -823,6 +846,7 @@ func sidebarCSS(_ style.Theme) string {
   transform: rotate(180deg);
 }
 [data-fui-comp="ui-sidebar"].ui-sidebar--collapsible[data-collapsed="true"] .ui-sidebar__title,
+[data-fui-comp="ui-sidebar"].ui-sidebar--collapsible[data-collapsed="true"] .ui-sidebar__prepend,
 [data-fui-comp="ui-sidebar"].ui-sidebar--collapsible[data-collapsed="true"] .ui-sidebar__footer,
 [data-fui-comp="ui-sidebar"].ui-sidebar--collapsible[data-collapsed="true"] .ui-sidebar__sublist {
   display: none;
@@ -873,7 +897,7 @@ func sidebarCSS(_ style.Theme) string {
     padding-inline var(--duration-fast, 150ms) var(--easing-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 [data-fui-comp="ui-sidebar"].ui-sidebar--auto-hide:hover .ui-sidebar__inline,
-[data-fui-comp="ui-sidebar"].ui-sidebar--auto-hide:focus-within .ui-sidebar__inline,
+[data-fui-comp="ui-sidebar"].ui-sidebar--auto-hide:focus-within .ui-sidebar__inline {
   min-width: 220px;
   width: 220px;
   padding-inline: var(--spacing-lg, 16px);
@@ -882,6 +906,7 @@ func sidebarCSS(_ style.Theme) string {
    or focus-within they stop matching and the base (expanded) styles
    take over, so the reveal needs no mirrored overrides. */
 [data-fui-comp="ui-sidebar"].ui-sidebar--auto-hide:not(:hover):not(:focus-within) .ui-sidebar__title,
+[data-fui-comp="ui-sidebar"].ui-sidebar--auto-hide:not(:hover):not(:focus-within) .ui-sidebar__prepend,
 [data-fui-comp="ui-sidebar"].ui-sidebar--auto-hide:not(:hover):not(:focus-within) .ui-sidebar__footer,
 [data-fui-comp="ui-sidebar"].ui-sidebar--auto-hide:not(:hover):not(:focus-within) .ui-sidebar__sublist {
   display: none;
