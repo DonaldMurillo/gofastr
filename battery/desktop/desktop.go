@@ -79,9 +79,11 @@ type Config struct {
 	// DataDir overrides DataDir(ID). Must be absolute when set.
 	DataDir string
 
-	// Shell is the native layer; nil selects newDefaultShell()
-	// (ErrUnsupported on every platform until the darwin arm lands).
-	// A test double goes here.
+	// Shell is the native layer. nil selects NewUnsupportedShell() on
+	// every platform: the darwin default moved to battery/desktop/native
+	// with the platform split, so a host that wants the real shell
+	// passes native.New(cfg) or Shell: native.Shell(). A test double
+	// goes here.
 	Shell Shell
 
 	// Menu is the optional native menu tree. Validated (and ID-assigned
@@ -243,8 +245,10 @@ type Battery struct {
 }
 
 // New validates cfg and constructs the Battery, registering the eight
-// core capabilities. It panics on invalid configuration with a message
-// prefixed "desktop:", the same construction-time posture as
+// core capabilities. A nil cfg.Shell selects the unsupported shell on
+// every platform; the platform-aware default is native.New
+// (battery/desktop/native). New panics on invalid configuration with a
+// message prefixed "desktop:", the same construction-time posture as
 // framework.NewApp's registration panics.
 func New(cfg Config) *Battery {
 	if err := validateAppID(cfg.ID); err != nil {
@@ -304,7 +308,7 @@ func New(cfg Config) *Battery {
 	}
 	shell := cfg.Shell
 	if shell == nil {
-		shell = newDefaultShell()
+		shell = NewUnsupportedShell()
 	}
 	token, err := randomToken()
 	if err != nil {
@@ -532,7 +536,7 @@ func (b *Battery) OpenWindow(spec WindowSpec) (Window, error) {
 		w := b.windows[id]
 		b.windowMu.Unlock()
 		if w == nil {
-			return nil, &Error{Code: CodeInternal, Message: internalErrorMsg}
+			return nil, &Error{Code: CodeInternal, Message: InternalErrorMsg}
 		}
 		if err := w.Focus(); err != nil {
 			return nil, err
@@ -856,7 +860,7 @@ func (b *Battery) Run(app *framework.App) error {
 		},
 		OnWindowClosed: b.handleWindowClosed,
 		OnDeepLink:     b.handleDeepLink,
-		Frame:          b.rememberedFrame(mainWindowID),
+		Frame:          b.rememberedFrame(MainWindowID),
 		OnWindowFrame:  b.onWindowFrame(),
 	}, func(w Window) {
 		b.windowMu.Lock()

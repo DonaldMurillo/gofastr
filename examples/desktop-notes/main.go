@@ -19,6 +19,7 @@ import (
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/battery/desktop"
+	"github.com/DonaldMurillo/gofastr/battery/desktop/native"
 	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/crud"
 	"github.com/DonaldMurillo/gofastr/framework/filter"
@@ -80,10 +81,10 @@ func main() {
 	}
 }
 
-// buildApp assembles the app. shell is nil in production (the OS
-// shell); tests pass battery/desktop/desktoptest's double. The error
-// path covers AppOptions, which opens the data dir and database before
-// NewApp runs.
+// buildApp assembles the app. shell is nil in production (native.New
+// fills the OS shell for the platform); tests pass battery/desktop/
+// desktoptest's double. The error path covers AppOptions, which opens
+// the data dir and database before NewApp runs.
 func buildApp(shell desktop.Shell) (*framework.App, *desktop.Battery, error) {
 	opts, err := desktop.AppOptions(appID)
 	if err != nil {
@@ -101,7 +102,7 @@ func buildApp(shell desktop.Shell) (*framework.App, *desktop.Battery, error) {
 	// mounts it. The menu handlers below capture d; they only run
 	// after Run.
 	var d *desktop.Battery
-	d = desktop.New(desktop.Config{
+	d = native.New(desktop.Config{
 		ID:     appID,
 		Title:  "Notes",
 		Width:  960,

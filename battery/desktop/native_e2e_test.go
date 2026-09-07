@@ -17,6 +17,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/battery/desktop"
 	"github.com/DonaldMurillo/gofastr/battery/desktop/desktoptest"
+	"github.com/DonaldMurillo/gofastr/battery/desktop/native"
 	uiapp "github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/interactive"
 	"github.com/DonaldMurillo/gofastr/core/render"
@@ -143,7 +144,7 @@ func buildNativeApp() (*framework.App, *desktop.Battery, error) {
 	}))
 
 	e2eHandlerRan = make(chan error, 1)
-	b := desktop.New(desktop.Config{
+	b := native.New(desktop.Config{
 		ID:      e2eAppID,
 		Title:   e2eTitle,
 		DataDir: e2eDataDir(),

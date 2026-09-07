@@ -1,11 +1,12 @@
 //go:build darwin && arm64
 
-package desktop
+package macos
 
 import (
 	"context"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/battery/desktop"
 	"github.com/DonaldMurillo/gofastr/battery/desktop/internal/objc"
 )
 
@@ -27,13 +28,13 @@ func TestShellConstructsLazy(t *testing.T) {
 	if got := objc.DlopenCount(); got != 0 {
 		t.Fatalf("objc.DlopenCount() = %d after package init + shell construction, want 0 (frameworks load on first Run)", got)
 	}
-	s := newDefaultShell()
+	s := New()
 	if _, ok := s.(*darwinShell); !ok {
-		t.Fatalf("newDefaultShell() = %T on darwin/arm64, want *darwinShell", s)
+		t.Fatalf("New() = %T on darwin/arm64, want *darwinShell", s)
 	}
 	// Constructing the shell changed nothing.
 	if got := objc.DlopenCount(); got != 0 {
-		t.Fatalf("objc.DlopenCount() = %d after newDefaultShell(), want 0", got)
+		t.Fatalf("objc.DlopenCount() = %d after New(), want 0", got)
 	}
 	// The surfaces exist and are safe to hold before Run.
 	_ = s.Clipboard()
@@ -52,14 +53,14 @@ func TestShellConstructsLazy(t *testing.T) {
 
 // TestShellPromptCancelledContext skips the alert for a dead context.
 func TestShellPromptCancelledContext(t *testing.T) {
-	s := newDefaultShell().(*darwinShell)
+	s := New().(*darwinShell)
 	ctx := contextWithCancelAlreadyDone()
-	d, err := s.Prompt(ctx, PermissionRequest{Capability: "c", Method: "m", Permission: "p"})
-	if err == nil || err.Error() != ErrCancelled.Error() {
-		t.Fatalf("Prompt with cancelled ctx: err = %v, want ErrCancelled", err)
+	d, err := s.Prompt(ctx, desktop.PermissionRequest{Capability: "c", Method: "m", Permission: "p"})
+	if err == nil || err.Error() != desktop.ErrCancelled.Error() {
+		t.Fatalf("Prompt with cancelled ctx: err = %v, want desktop.ErrCancelled", err)
 	}
-	if d != DecisionDeny {
-		t.Fatalf("decision = %v, want DecisionDeny", d)
+	if d != desktop.DecisionDeny {
+		t.Fatalf("decision = %v, want desktop.DecisionDeny", d)
 	}
 	if objc.DlopenCount() != 0 {
 		t.Fatalf("cancelled prompt loaded frameworks: %d", objc.DlopenCount())
@@ -68,10 +69,10 @@ func TestShellPromptCancelledContext(t *testing.T) {
 
 // TestShellPromptOverrideSeam covers the e2e seam directly.
 func TestShellPromptOverrideSeam(t *testing.T) {
-	s := newDefaultShell().(*darwinShell)
-	s.setPromptOverride(DecisionAllowOnce)
-	d, err := s.Prompt(context.Background(), PermissionRequest{})
-	if err != nil || d != DecisionAllowOnce {
+	s := New().(*darwinShell)
+	s.setPromptOverride(desktop.DecisionAllowOnce)
+	d, err := s.Prompt(context.Background(), desktop.PermissionRequest{})
+	if err != nil || d != desktop.DecisionAllowOnce {
 		t.Fatalf("override prompt: d=%v err=%v, want AllowOnce/nil", d, err)
 	}
 }

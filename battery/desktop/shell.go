@@ -16,7 +16,7 @@ const (
 	CodeCancelled    = "cancelled"
 	CodeNotFound     = "not_found"
 	CodeInternal     = "internal"
-	internalErrorMsg = "internal error"
+	InternalErrorMsg = "internal error"
 )
 
 // Error is the typed error the bridge round-trips to the page. Code is
@@ -385,13 +385,14 @@ type WindowState struct {
 	Height int
 }
 
-// mainWindowID is the id the main window carries; the battery assigns
+// MainWindowID is the id the main window carries; the battery assigns
 // "settings" and "w2", "w3", ... to the secondaries it opens, and
-// windows.close refuses this one. It lives here rather than beside a
-// shell implementation because the portable code and the test double
-// both need it: pinned to darwin/arm64 it left every other GOOS/GOARCH
-// unable to build the package's own tests.
-const mainWindowID = "main"
+// windows.close refuses this one. A platform shell labels the window
+// its Run opens with it (the Window.ID contract); it is exported so
+// the platform packages (battery/desktop/macos, ...) share one source
+// of truth with the battery and the test double instead of pinning the
+// literal again per package.
+const MainWindowID = "main"
 
 // unsupportedErrorf builds an *Error naming the platform.
 func unsupportedErrorf(goos, goarch string) *Error {

@@ -1,6 +1,6 @@
 //go:build darwin && arm64 && !desktop_e2e
 
-package desktop
+package macos
 
 import (
 	"fmt"

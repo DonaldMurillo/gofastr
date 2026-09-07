@@ -1,5 +1,3 @@
-//go:build !(darwin && arm64)
-
 package desktop
 
 import (
@@ -15,7 +13,7 @@ import (
 )
 
 func TestDefaultShellUnsupportedNamesPlatform(t *testing.T) {
-	s := newDefaultShell()
+	s := NewUnsupportedShell()
 	err := s.Run(context.Background(), WindowConfig{}, func(Window) {})
 	if err == nil {
 		t.Fatal("Run on the default shell must fail")
@@ -58,6 +56,22 @@ func TestErrSentinels(t *testing.T) {
 	}
 	if !strings.Contains(ErrUnsupported.Error(), "desktop:") {
 		t.Fatalf("Error() = %q", ErrUnsupported.Error())
+	}
+}
+
+// TestNewWithoutShellPicksUnsupported pins the nil-Shell contract after
+// the platform split: desktop.New answers the unsupported shell on
+// every platform; the real shell is native.Shell()'s to pick
+// (battery/desktop/native), never the default here.
+func TestNewWithoutShellPicksUnsupported(t *testing.T) {
+	b := New(Config{ID: "dev.gofastr.shell-default"})
+	err := b.Shell().SetTrayTitle("x")
+	de, ok := err.(*Error)
+	if !ok || de.Code != CodeUnsupported {
+		t.Fatalf("SetTrayTitle on the default shell: %v, want unsupported", err)
+	}
+	if !strings.Contains(de.Message, "GOOS="+runtime.GOOS) {
+		t.Fatalf("the default shell must be the unsupported one naming the platform, got: %v", err)
 	}
 }
 

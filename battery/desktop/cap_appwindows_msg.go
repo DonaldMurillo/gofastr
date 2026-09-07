@@ -78,7 +78,7 @@ func callerWindowID(ctx context.Context) string {
 	if id, ok := ctx.Value(windowIDCtxKey{}).(string); ok && reWindowID.MatchString(id) {
 		return id
 	}
-	return mainWindowID
+	return MainWindowID
 }
 
 // windowsBroadcastOutput is broadcast's result.

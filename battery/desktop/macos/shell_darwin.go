@@ -1,6 +1,6 @@
 //go:build darwin && arm64
 
-package desktop
+package macos
 
 import (
 	"context"
@@ -12,11 +12,12 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/battery/desktop"
 	"github.com/DonaldMurillo/gofastr/battery/desktop/internal/ffi"
 	"github.com/DonaldMurillo/gofastr/battery/desktop/internal/objc"
 )
 
-// The darwin/arm64 Shell: a real AppKit + WKWebView host on top of
+// The darwin/arm64 desktop.Shell: a real AppKit + WKWebView host on top of
 // internal/objc. Every AppKit/WebKit call happens on the main thread
 // (asserted); every native callback lands there and hands off to Go
 // channels or goroutines immediately so the UI thread never waits on
@@ -32,7 +33,7 @@ const evalTimeout = 15 * time.Second
 // snapTimeout bounds one window snapshot.
 const snapTimeout = 30 * time.Second
 
-// ─── Window styles ───────────────────────────────────────────────────
+// ─── desktop.Window styles ───────────────────────────────────────────────────
 
 // NSWindowStyleMask bits (AppKit/NSWindow.h in the SDK, verified
 // 2026-09-05): titled 1<<0, closable 1<<1, miniaturizable 1<<2,
@@ -47,7 +48,7 @@ const (
 	maskFullSizeContentView uintptr = 1 << 15
 )
 
-// Window levels (CoreGraphics/CGWindowLevel.h): NSNormalWindowLevel is
+// desktop.Window levels (CoreGraphics/CGWindowLevel.h): NSNormalWindowLevel is
 // 0 and NSFloatingWindowLevel is kCGFloatingWindowLevel, which is 3.
 const (
 	normalWindowLevel   = 0
@@ -55,24 +56,24 @@ const (
 )
 
 // behaviorCanJoinAllSpaces is NSWindowCollectionBehaviorCanJoinAllSpaces
-// (NSWindow.h), the only collection-behavior bit WindowStyle sets.
+// (NSWindow.h), the only collection-behavior bit desktop.WindowStyle sets.
 const behaviorCanJoinAllSpaces uintptr = 1 << 0
 
-// windowStyleMask resolves a WindowStyle to the styleMask for
-// initWithContentRect:styleMask:backing:defer:. ChromeNone is
+// windowStyleMask resolves a desktop.WindowStyle to the styleMask for
+// initWithContentRect:styleMask:backing:defer:. desktop.ChromeNone is
 // borderless (0): closable and resizable are meaningless without a
 // title bar, so they drop with it.
-func windowStyleMask(style WindowStyle) uintptr {
+func windowStyleMask(style desktop.WindowStyle) uintptr {
 	var mask uintptr
 	switch style.Chrome {
-	case ChromeNone:
+	case desktop.ChromeNone:
 		// Borderless: no bits of its own.
-	case ChromeHiddenTitle:
+	case desktop.ChromeHiddenTitle:
 		mask = maskTitled | maskClosable | maskFullSizeContentView
 	default:
 		mask = maskTitled | maskClosable
 	}
-	if style.Chrome != ChromeNone {
+	if style.Chrome != desktop.ChromeNone {
 		if style.Resizable == nil || *style.Resizable {
 			mask |= maskResizable
 		}
@@ -85,7 +86,7 @@ func windowStyleMask(style WindowStyle) uintptr {
 
 // windowLevel resolves the window level a style asks for. A panel is
 // floating even without Float set: Panel implies Float.
-func windowLevel(style WindowStyle) int {
+func windowLevel(style desktop.WindowStyle) int {
 	if style.Float || style.Panel {
 		return floatingWindowLevel
 	}
@@ -97,7 +98,7 @@ func windowLevel(style WindowStyle) int {
 // screenHeight points tall and a window height points high. ok is
 // false when the style names no origin (the window centers) or only
 // one of the pair.
-func frameOrigin(style WindowStyle, height int, screenHeight float64) (x, y float64, ok bool) {
+func frameOrigin(style desktop.WindowStyle, height int, screenHeight float64) (x, y float64, ok bool) {
 	if style.X == nil || style.Y == nil {
 		return 0, 0, false
 	}
@@ -107,8 +108,8 @@ func frameOrigin(style WindowStyle, height int, screenHeight float64) (x, y floa
 // applyWindowStyle runs every post-creation style setter. Call on the
 // main thread; the mask half of the style was applied at window
 // creation (windowStyleMask) and the panel class at alloc time.
-func applyWindowStyle(win, webView objc.ID, style WindowStyle, height int) {
-	if style.Chrome == ChromeHiddenTitle {
+func applyWindowStyle(win, webView objc.ID, style desktop.WindowStyle, height int) {
+	if style.Chrome == desktop.ChromeHiddenTitle {
 		objc.Send(win, objc.Sel("setTitlebarAppearsTransparent:"), 1)
 		objc.Send(win, objc.Sel("setTitleVisibility:"), 1) // NSWindowTitleHidden
 	}
@@ -119,9 +120,12 @@ func applyWindowStyle(win, webView objc.ID, style WindowStyle, height int) {
 		objc.Send(win, objc.Sel("setOpaque:"), 0)
 		objc.Send(win, objc.Sel("setBackgroundColor:"), objc.Send(objc.Class("NSColor"), objc.Sel("clearColor")))
 		// The web view must stop painting its own background too.
-		// drawsBackground is not in the public WKWebView header; KVC
-		// through setValue:forKey: with an @NO NSNumber is the
-		// documented spelling that needs no private header.
+		// drawsBackground is private SPI (_drawsBackground in
+		// WKWebKitPrivate's WKWebView header); the KVC spelling reaches
+		// the same property without naming the private selector, the
+		// way Tauri does behind its macOSPrivateApi flag. There is no
+		// public switch. See the phase 13 research in
+		// docs/desktop-plan.md before shipping this wider.
 		objc.Send(webView, objc.Sel("setValue:forKey:"),
 			objc.Send(objc.Class("NSNumber"), objc.Sel("numberWithBool:"), 0),
 			uintptr(objc.NSString("drawsBackground")))
@@ -147,10 +151,10 @@ func mainScreenHeight() float64 {
 	return objc.SendRectRet(objc.ID(screen), objc.Sel("frame")).H
 }
 
-// ─── Window frames ───────────────────────────────────────────────────
+// ─── desktop.Window frames ───────────────────────────────────────────────────
 
 // The Frame contract speaks top-left screen points measured from the
-// PRIMARY screen's top-left corner (the WindowStyle.X/Y convention).
+// PRIMARY screen's top-left corner (the desktop.WindowStyle.X/Y convention).
 // AppKit speaks global bottom-left points measured from the primary
 // screen's bottom-left. The flip between them runs only in this file,
 // against the primary screen's height: [NSScreen screens] index 0 is
@@ -208,7 +212,7 @@ func screenFlipBase(screens []screenInfo) float64 {
 
 // frameToRect converts a top-left Frame to the global bottom-left
 // NSRect setFrame:display: wants.
-func frameToRect(f Frame, screens []screenInfo) objc.Rect {
+func frameToRect(f desktop.Frame, screens []screenInfo) objc.Rect {
 	base := screenFlipBase(screens)
 	return objc.Rect{
 		X: float64(f.X),
@@ -221,9 +225,9 @@ func frameToRect(f Frame, screens []screenInfo) objc.Rect {
 // rectToFrame converts a window's global bottom-left frame rect to the
 // top-left Frame contract. Values round to the nearest point; AppKit
 // frames are integral in practice.
-func rectToFrame(r objc.Rect, screens []screenInfo) Frame {
+func rectToFrame(r objc.Rect, screens []screenInfo) desktop.Frame {
 	base := screenFlipBase(screens)
-	return Frame{
+	return desktop.Frame{
 		X:      int(math.Round(r.X)),
 		Y:      int(math.Round(base - r.Y - r.H)),
 		Width:  int(math.Round(r.W)),
@@ -234,7 +238,7 @@ func rectToFrame(r objc.Rect, screens []screenInfo) Frame {
 // frameVisibleOnScreens reports whether the frame's rectangle overlaps
 // some screen's visible area by at least 100x50 points. This is the
 // "screen that is gone" check a remembered frame must pass.
-func frameVisibleOnScreens(f Frame, screens []screenInfo) bool {
+func frameVisibleOnScreens(f desktop.Frame, screens []screenInfo) bool {
 	if len(screens) == 0 || f.Width <= 0 || f.Height <= 0 {
 		return false
 	}
@@ -252,7 +256,7 @@ func frameVisibleOnScreens(f Frame, screens []screenInfo) bool {
 // applyRememberedFrame applies f to a freshly created window when it
 // still lands on a screen; otherwise the window centers (a remembered
 // frame from an unplugged monitor is dropped). Main thread only.
-func applyRememberedFrame(win objc.ID, f *Frame) {
+func applyRememberedFrame(win objc.ID, f *desktop.Frame) {
 	if f == nil {
 		return
 	}
@@ -270,9 +274,9 @@ func applyRememberedFrame(win objc.ID, f *Frame) {
 // window.
 var activeShell atomic.Pointer[darwinShell]
 
-// darwinShell implements Shell with AppKit + WKWebView.
+// darwinShell implements desktop.Shell with AppKit + WKWebView.
 type darwinShell struct {
-	// Notification state (shell_darwin_caps.go Show): the two completion
+	// desktop.Notification state (shell_darwin_caps.go Show): the two completion
 	// blocks are built once and shared, so Show serializes on notifyMu.
 	notifyMu   sync.Mutex
 	notifyOnce sync.Once
@@ -287,7 +291,7 @@ type darwinShell struct {
 	logger *slog.Logger
 
 	// Native objects, set by Run and read-only afterwards; webView is
-	// published last (Window methods gate on it). window/webView stay
+	// published last (desktop.Window methods gate on it). window/webView stay
 	// the MAIN window's; wkConfig is the WKWebViewConfiguration every
 	// window shares, so a second web view gets the first one's cookie
 	// store (the boot cookie) for free.
@@ -304,7 +308,7 @@ type darwinShell struct {
 	onWindowClosed func(id string)
 	// onWindowFrame reports user moves and resizes (the windowDidMove:
 	// and windowDidEndLiveResize: delegates), on a goroutine.
-	onWindowFrame func(id string, f Frame)
+	onWindowFrame func(id string, f desktop.Frame)
 	running       bool
 
 	// windows maps NSWindow ids to their per-window state, and
@@ -328,7 +332,7 @@ type darwinShell struct {
 	// promptQueue is the e2e/test seam (ScriptPrompts): queued
 	// decisions answer the next prompts without an alert, consumed in
 	// order; an empty queue means the real alert shows.
-	promptQueue []Decision
+	promptQueue []desktop.Decision
 
 	// scriptMsgs is the unexported test seam carrying the bodies of
 	// window.webkit.messageHandlers.gofastr.postMessage calls. The
@@ -348,14 +352,14 @@ type darwinShell struct {
 	snapBlock uintptr
 	snapRes   chan snapOutcome
 
-	// notifyLog records every Notification Show received (bundled or
-	// not) for NativeDriver.NotificationLog, capped, oldest dropped.
+	// notifyLog records every desktop.Notification Show received (bundled or
+	// not) for desktop.NativeDriver.NotificationLog, capped, oldest dropped.
 	notifyLogMu sync.Mutex
-	notifyLog   []Notification
+	notifyLog   []desktop.Notification
 
 	// asyncEval plumbing: callAsyncJavaScript's completion, the same
 	// shape as eval above (one block, one result channel, serialized
-	// by asyncMu) for PageEvaluator.EvalAsync.
+	// by asyncMu) for desktop.PageEvaluator.EvalAsync.
 	asyncMu    sync.Mutex
 	asyncBlock uintptr
 	asyncRes   chan evalOutcome
@@ -373,10 +377,12 @@ type snapOutcome struct {
 	errText string
 }
 
-// newDefaultShell returns the native shell on darwin/arm64. It must
-// stay lazy: no framework is loaded here (TestShellConstructsLazy
-// pins it), because cmd/gofastr blank-imports this package.
-func newDefaultShell() Shell {
+// New returns the darwin/arm64 shell: AppKit + WKWebView on the pure-Go
+// Objective-C bridge. It must stay lazy: no framework is loaded here
+// (TestShellConstructsLazy pins it), because cmd/gofastr blank-imports
+// the battery. On every other GOOS/GOARCH shell_other.go answers the
+// unsupported shell instead.
+func New() desktop.Shell {
 	return &darwinShell{logger: slog.Default()}
 }
 
@@ -406,7 +412,7 @@ func (s *darwinShell) onMainWithTimeout(d time.Duration, fn func()) error {
 }
 
 // Run brings up the window and blocks in [NSApp run].
-func (s *darwinShell) Run(ctx context.Context, cfg WindowConfig, ready func(Window)) error {
+func (s *darwinShell) Run(ctx context.Context, cfg desktop.WindowConfig, ready func(desktop.Window)) error {
 	objc.AssertMainThread("darwinShell.Run")
 	// Frameworks load here and only here, on the main thread (their
 	// +load initializers must run on it).
@@ -427,8 +433,8 @@ func (s *darwinShell) Run(ctx context.Context, cfg WindowConfig, ready func(Wind
 	installDeepLinkHandler(bridge, cfg.OnDeepLink)
 
 	hasSettings := cfg.Settings != nil
-	plans, actionIDs := planMenuBar(cfg.Title, cfg.Menu, hasSettings)
-	trayRows := planTrayMenu(cfg.Tray, cfg.Title, &actionIDs)
+	plans, actionIDs := desktop.PlanMenuBar(cfg.Title, cfg.Menu, hasSettings)
+	trayRows := desktop.PlanTrayMenu(cfg.Tray, cfg.Title, &actionIDs)
 	s.mu.Lock()
 	s.nsApp = nsApp
 	s.bridge = bridge
@@ -458,12 +464,12 @@ func (s *darwinShell) Run(ctx context.Context, cfg WindowConfig, ready func(Wind
 	objc.Send(ucc, objc.Sel("addScriptMessageHandler:name:"), uintptr(bridge), uintptr(objc.NSString(bridgeMessageHandlerName)))
 	userScript := objc.Send(objc.ID(objc.Send(objc.Class("WKUserScript"), objc.Sel("alloc"))),
 		objc.Sel("initWithSource:injectionTime:forMainFrameOnly:"),
-		uintptr(objc.NSString(BootstrapJS(mainWindowID))), 0 /* atDocumentStart */, 0 /* all frames */)
+		uintptr(objc.NSString(desktop.BootstrapJS(desktop.MainWindowID))), 0 /* atDocumentStart */, 0 /* all frames */)
 	objc.Send(ucc, objc.Sel("addUserScript:"), uintptr(userScript))
 
 	webView := objc.ID(objc.SendRect(objc.ID(objc.Send(objc.Class("WKWebView"), objc.Sel("alloc"))),
 		objc.Sel("initWithFrame:configuration:"), objc.Rect{W: float64(cfg.Width), H: float64(cfg.Height)}, uintptr(config)))
-	// Config.Style shapes the main window the same way a WindowSpec's
+	// Config.Style shapes the main window the same way a desktop.WindowSpec's
 	// Style shapes a secondary one: the mask at init, the panel class
 	// at alloc, the setters after.
 	windowClass := "NSWindow"
@@ -478,7 +484,7 @@ func (s *darwinShell) Run(ctx context.Context, cfg WindowConfig, ready func(Wind
 	// The web view IS the window's content, and the bridge is both the
 	// window delegate (windowShouldClose:, the CloseHidesWindow path)
 	// and the navigation delegate. These three lines went missing in a
-	// refactor and every main window opened blank: Window.Snapshot
+	// refactor and every main window opened blank: desktop.Window.Snapshot
 	// renders the WKWebView on its own, so no snapshot test noticed.
 	// WindowState.ContentClass is the assertion that now would.
 	objc.Send(window, objc.Sel("setContentView:"), uintptr(webView))
@@ -503,7 +509,7 @@ func (s *darwinShell) Run(ctx context.Context, cfg WindowConfig, ready func(Wind
 	}
 	objc.Send(nsApp, objc.Sel("activateIgnoringOtherApps:"), 1)
 
-	main := &darwinWindow{shell: s, id: mainWindowID, window: window, webView: webView, ucc: ucc, title: cfg.Title}
+	main := &darwinWindow{shell: s, id: desktop.MainWindowID, window: window, webView: webView, ucc: ucc, title: cfg.Title}
 	s.mu.Lock()
 	s.window = window
 	s.webView = webView
@@ -517,7 +523,7 @@ func (s *darwinShell) Run(ctx context.Context, cfg WindowConfig, ready func(Wind
 		s.installTray(cfg.Tray, trayRows)
 	}
 
-	// ready runs on this (the UI) thread per the Shell contract; the
+	// ready runs on this (the UI) thread per the desktop.Shell contract; the
 	// battery's callback navigates to the boot URL, which onMain runs
 	// inline. [NSApp run] then services every later hop.
 	ready(main)
@@ -721,15 +727,15 @@ func (s *darwinShell) sendSnap(out snapOutcome) {
 // channel exists for the Debug log and the e2e seam.
 const bridgeMessageHandlerName = "gofastr"
 
-// errWindowClosed is the fixed refusal for Window methods before Run.
-func errWindowClosed() *Error {
-	return &Error{Code: CodeUnsupported, Message: "window is not open"}
+// errWindowClosed is the fixed refusal for desktop.Window methods before Run.
+func errWindowClosed() *desktop.Error {
+	return &desktop.Error{Code: desktop.CodeUnsupported, Message: "window is not open"}
 }
 
-// mainWindowID lives in shell.go: the test double and the portable
+// desktop.MainWindowID lives in shell.go: the test double and the portable
 // code need it on every GOOS/GOARCH, not only darwin/arm64.
 
-// darwinWindow implements Window around one NSWindow + WKWebView
+// darwinWindow implements desktop.Window around one NSWindow + WKWebView
 // pair. The main window and every secondary window carry their own
 // ids; the shared eval/snapshot completion blocks on the shell do not
 // care which web view fired them (their mutexes serialize callers).
@@ -760,7 +766,7 @@ func (s *darwinShell) bridgeID() objc.ID {
 	return s.bridge
 }
 
-// ID implements Window.
+// ID implements desktop.Window.
 func (w *darwinWindow) ID() string { return w.id }
 
 // ids snapshots the window's live NSWindow/WKWebView pair.
@@ -789,7 +795,7 @@ func (w *darwinWindow) Navigate(url string) error {
 		objc.Send(wv, objc.Sel("loadRequest:"), req)
 	})
 	if err != nil {
-		return &Error{Code: CodeInternal, Message: internalErrorMsg}
+		return &desktop.Error{Code: desktop.CodeInternal, Message: desktop.InternalErrorMsg}
 	}
 	return callErr
 }
@@ -818,17 +824,17 @@ func (w *darwinWindow) Eval(js string) error {
 		return nil
 	}
 	if err := s.onMain(submit); err != nil {
-		return &Error{Code: CodeInternal, Message: internalErrorMsg}
+		return &desktop.Error{Code: desktop.CodeInternal, Message: desktop.InternalErrorMsg}
 	}
 	select {
 	case out := <-s.evalRes:
 		if out.errText != "" {
 			s.logger.Warn("desktop: JavaScript evaluation failed", "error", out.errText)
-			return &Error{Code: CodeInternal, Message: internalErrorMsg}
+			return &desktop.Error{Code: desktop.CodeInternal, Message: desktop.InternalErrorMsg}
 		}
 		return nil
 	case <-time.After(evalTimeout):
-		return &Error{Code: CodeInternal, Message: "evaluation timed out"}
+		return &desktop.Error{Code: desktop.CodeInternal, Message: "evaluation timed out"}
 	}
 }
 
@@ -845,11 +851,11 @@ func evalAsyncWrap(body string) string {
 		"return JSON.stringify(__r === undefined ? null : __r); } catch (e) { throw e; }"
 }
 
-// EvalAsync implements PageEvaluator through WKWebView's
+// EvalAsync implements desktop.PageEvaluator through WKWebView's
 // callAsyncJavaScript, which awaits promises natively. The caller's
 // ctx bounds the wait (20 s hard cap); a page that never answers is
-// "page evaluation timed out", a throw or rejection is an *Error with
-// CodeInternal carrying the error's message.
+// "page evaluation timed out", a throw or rejection is an *desktop.Error with
+// desktop.CodeInternal carrying the error's message.
 func (w *darwinWindow) EvalAsync(ctx context.Context, body string) (json.RawMessage, error) {
 	s := w.shell
 	s.asyncMu.Lock()
@@ -861,7 +867,7 @@ func (w *darwinWindow) EvalAsync(ctx context.Context, body string) (json.RawMess
 	if objc.PthreadSelf() == objc.MainThreadID() {
 		// The completion block fires on this thread; waiting for it
 		// here would deadlock.
-		return nil, &Error{Code: CodeInternal, Message: "page evaluation cannot run on the UI thread"}
+		return nil, &desktop.Error{Code: desktop.CodeInternal, Message: "page evaluation cannot run on the UI thread"}
 	}
 	// Drop a stale completion from an earlier timed-out eval.
 	select {
@@ -875,7 +881,7 @@ func (w *darwinWindow) EvalAsync(ctx context.Context, body string) (json.RawMess
 		objc.Send(wv, objc.Sel("callAsyncJavaScript:arguments:inFrame:inContentWorld:completionHandler:"),
 			uintptr(src), uintptr(args), 0, uintptr(world), s.asyncBlock)
 	}); err != nil {
-		return nil, &Error{Code: CodeInternal, Message: internalErrorMsg}
+		return nil, &desktop.Error{Code: desktop.CodeInternal, Message: desktop.InternalErrorMsg}
 	}
 	limit := evalAsyncHardCap
 	if d, ok := ctx.Deadline(); ok {
@@ -888,15 +894,15 @@ func (w *darwinWindow) EvalAsync(ctx context.Context, body string) (json.RawMess
 	select {
 	case out := <-s.asyncRes:
 		if out.errText != "" {
-			return nil, &Error{Code: CodeInternal, Message: out.errText}
+			return nil, &desktop.Error{Code: desktop.CodeInternal, Message: out.errText}
 		}
 		return json.RawMessage(out.result), nil
 	case <-ctx.Done():
 		s.drainAsync(hardDeadline)
-		return nil, &Error{Code: CodeInternal, Message: "page evaluation timed out"}
+		return nil, &desktop.Error{Code: desktop.CodeInternal, Message: "page evaluation timed out"}
 	case <-time.After(limit):
 		s.drainAsync(hardDeadline)
-		return nil, &Error{Code: CodeInternal, Message: "page evaluation timed out"}
+		return nil, &desktop.Error{Code: desktop.CodeInternal, Message: "page evaluation timed out"}
 	}
 }
 
@@ -927,24 +933,24 @@ func (w *darwinWindow) Snapshot(ctx context.Context) ([]byte, error) {
 	if objc.PthreadSelf() == objc.MainThreadID() {
 		// The completion block fires on this thread; waiting for it
 		// here would deadlock.
-		return nil, &Error{Code: CodeInternal, Message: "snapshot cannot run on the UI thread"}
+		return nil, &desktop.Error{Code: desktop.CodeInternal, Message: "snapshot cannot run on the UI thread"}
 	}
 	if err := s.onMain(func() {
 		objc.Send(wv, objc.Sel("takeSnapshotWithConfiguration:completionHandler:"), 0, s.snapBlock)
 	}); err != nil {
-		return nil, &Error{Code: CodeInternal, Message: internalErrorMsg}
+		return nil, &desktop.Error{Code: desktop.CodeInternal, Message: desktop.InternalErrorMsg}
 	}
 	select {
 	case out := <-s.snapRes:
 		if out.errText != "" {
 			s.logger.Error("desktop: window snapshot failed", "error", out.errText)
-			return nil, &Error{Code: CodeInternal, Message: internalErrorMsg}
+			return nil, &desktop.Error{Code: desktop.CodeInternal, Message: desktop.InternalErrorMsg}
 		}
 		return out.png, nil
 	case <-ctx.Done():
-		return nil, ErrCancelled
+		return nil, desktop.ErrCancelled
 	case <-time.After(snapTimeout):
-		return nil, &Error{Code: CodeInternal, Message: "snapshot timed out"}
+		return nil, &desktop.Error{Code: desktop.CodeInternal, Message: "snapshot timed out"}
 	}
 }
 
@@ -976,7 +982,7 @@ func (w *darwinWindow) SetTitle(title string) error {
 		}
 	})
 	if err != nil {
-		return &Error{Code: CodeInternal, Message: internalErrorMsg}
+		return &desktop.Error{Code: desktop.CodeInternal, Message: desktop.InternalErrorMsg}
 	}
 	return nil
 }
@@ -993,7 +999,7 @@ func (w *darwinWindow) Focus() error {
 		objc.Send(s.appID(), objc.Sel("activateIgnoringOtherApps:"), 1)
 	})
 	if err != nil {
-		return &Error{Code: CodeInternal, Message: internalErrorMsg}
+		return &desktop.Error{Code: desktop.CodeInternal, Message: desktop.InternalErrorMsg}
 	}
 	return nil
 }
@@ -1004,29 +1010,29 @@ func (w *darwinWindow) Native() uintptr {
 	return uintptr(wv)
 }
 
-// Frame implements Window: the live frame, top-left screen points.
-func (w *darwinWindow) Frame() (Frame, error) {
-	var f Frame
+// Frame implements desktop.Window: the live frame, top-left screen points.
+func (w *darwinWindow) Frame() (desktop.Frame, error) {
+	var f desktop.Frame
 	var ok bool
 	err := w.shell.onMain(func() { f, ok = w.readFrameOnMain() })
 	if err != nil {
-		return Frame{}, &Error{Code: CodeInternal, Message: internalErrorMsg}
+		return desktop.Frame{}, &desktop.Error{Code: desktop.CodeInternal, Message: desktop.InternalErrorMsg}
 	}
 	if !ok {
-		return Frame{}, errWindowClosed()
+		return desktop.Frame{}, errWindowClosed()
 	}
 	return f, nil
 }
 
-// SetFrame implements Window: setFrame:display: with the bottom-left
+// SetFrame implements desktop.Window: setFrame:display: with the bottom-left
 // flip. setFrame:display: does not post windowDidMove: (observed on
 // this host: the delegate hears user drags, not programmatic frames),
 // so the report runs here too, through the same path the delegate
 // uses: the store should hear every frame change, whatever moved the
 // window.
-func (w *darwinWindow) SetFrame(f Frame) error {
+func (w *darwinWindow) SetFrame(f desktop.Frame) error {
 	if f.Width <= 0 || f.Height <= 0 {
-		return &Error{Code: CodeInvalidInput, Message: "frame width and height must be positive"}
+		return &desktop.Error{Code: desktop.CodeInvalidInput, Message: "frame width and height must be positive"}
 	}
 	err := w.shell.onMain(func() {
 		win, _ := w.ids()
@@ -1037,7 +1043,7 @@ func (w *darwinWindow) SetFrame(f Frame) error {
 		w.shell.reportWindowFrame(w)
 	})
 	if err != nil {
-		return &Error{Code: CodeInternal, Message: internalErrorMsg}
+		return &desktop.Error{Code: desktop.CodeInternal, Message: desktop.InternalErrorMsg}
 	}
 	return nil
 }
@@ -1046,10 +1052,10 @@ func (w *darwinWindow) SetFrame(f Frame) error {
 // windowDidMove:/windowDidEndLiveResize: delegates and SetFrame run
 // there). The report to OnWindowFrame crosses to a goroutine so the
 // UI thread never waits on Go.
-func (w *darwinWindow) readFrameOnMain() (Frame, bool) {
+func (w *darwinWindow) readFrameOnMain() (desktop.Frame, bool) {
 	win, _ := w.ids()
 	if win == 0 {
-		return Frame{}, false
+		return desktop.Frame{}, false
 	}
 	return rectToFrame(objc.SendRectRet(win, objc.Sel("frame")), readScreens()), true
 }
@@ -1092,7 +1098,7 @@ func (w *darwinWindow) Close() error {
 		objc.Send(win, objc.Sel("performClose:"), 0)
 	})
 	if err != nil {
-		return &Error{Code: CodeInternal, Message: internalErrorMsg}
+		return &desktop.Error{Code: desktop.CodeInternal, Message: desktop.InternalErrorMsg}
 	}
 	return nil
 }
@@ -1100,11 +1106,11 @@ func (w *darwinWindow) Close() error {
 // OpenWindow opens a secondary window navigated to url. The window
 // gets its OWN WKWebViewConfiguration: same WKWebsiteDataStore as the
 // main window (the boot cookie set by /enter applies), fresh
-// WKUserContentController with its own user script from BootstrapJS(id)
+// WKUserContentController with its own user script from desktop.BootstrapJS(id)
 // and its own message-handler registration, so the page learns which
 // window it lives in. spec.Style shapes the chrome (mask at init,
 // NSPanel class for Panel, setters through applyWindowStyle).
-func (s *darwinShell) OpenWindow(id string, spec WindowSpec, url string) (Window, error) {
+func (s *darwinShell) OpenWindow(id string, spec desktop.WindowSpec, url string) (desktop.Window, error) {
 	s.mu.Lock()
 	mainConfig := s.wkConfig
 	running := s.running
@@ -1140,7 +1146,7 @@ func (s *darwinShell) OpenWindow(id string, spec WindowSpec, url string) (Window
 		objc.Send(ucc, objc.Sel("addScriptMessageHandler:name:"), uintptr(bridge), uintptr(objc.NSString(bridgeMessageHandlerName)))
 		userScript := objc.Send(objc.ID(objc.Send(objc.Class("WKUserScript"), objc.Sel("alloc"))),
 			objc.Sel("initWithSource:injectionTime:forMainFrameOnly:"),
-			uintptr(objc.NSString(BootstrapJS(id))), 0 /* atDocumentStart */, 0 /* all frames */)
+			uintptr(objc.NSString(desktop.BootstrapJS(id))), 0 /* atDocumentStart */, 0 /* all frames */)
 		objc.Send(ucc, objc.Sel("addUserScript:"), uintptr(userScript))
 
 		webView := objc.ID(objc.SendRect(objc.ID(objc.Send(objc.Class("WKWebView"), objc.Sel("alloc"))),
@@ -1178,13 +1184,13 @@ func (s *darwinShell) OpenWindow(id string, spec WindowSpec, url string) (Window
 		}
 	})
 	if err != nil {
-		return nil, &Error{Code: CodeInternal, Message: internalErrorMsg}
+		return nil, &desktop.Error{Code: desktop.CodeInternal, Message: desktop.InternalErrorMsg}
 	}
 	w.mu.Lock()
 	win, ucc := w.window, w.ucc
 	w.mu.Unlock()
 	if win == 0 {
-		return nil, &Error{Code: CodeInternal, Message: internalErrorMsg}
+		return nil, &desktop.Error{Code: desktop.CodeInternal, Message: desktop.InternalErrorMsg}
 	}
 	s.mu.Lock()
 	s.windows[win] = w

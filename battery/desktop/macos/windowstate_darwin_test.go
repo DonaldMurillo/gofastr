@@ -1,11 +1,12 @@
 //go:build darwin && arm64
 
-package desktop
+package macos
 
 import (
 	"math"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/battery/desktop"
 	"github.com/DonaldMurillo/gofastr/battery/desktop/internal/objc"
 )
 
@@ -28,7 +29,7 @@ func twoScreens() []screenInfo {
 
 func TestFrameFlipRoundTrips(t *testing.T) {
 	screens := twoScreens()
-	cases := []Frame{
+	cases := []desktop.Frame{
 		{X: 0, Y: 0, Width: 800, Height: 600},
 		{X: 100, Y: 850, Width: 200, Height: 40},   // bottom edge of the primary
 		{X: 1500, Y: 400, Width: 640, Height: 480}, // on the secondary
@@ -53,7 +54,7 @@ func TestFrameFlipUsesPrimaryNotMainScreen(t *testing.T) {
 	// A window on the SECONDARY screen still flips against the primary
 	// (screens[0]): its global bottom-left Y is computed from the
 	// primary's height, whatever screen holds the key window.
-	f := Frame{X: 1600, Y: 300, Width: 400, Height: 250}
+	f := desktop.Frame{X: 1600, Y: 300, Width: 400, Height: 250}
 	rect := frameToRect(f, screens)
 	if rect.Y != 900-300-250 {
 		t.Fatalf("secondary-screen frame flipped against the wrong base: rect.Y = %v, want %v", rect.Y, 900-300-250)
@@ -65,7 +66,7 @@ func TestFrameFlipUsesPrimaryNotMainScreen(t *testing.T) {
 
 func TestFrameVisibleOnScreens(t *testing.T) {
 	screens := twoScreens()
-	visible := []Frame{
+	visible := []desktop.Frame{
 		{X: 10, Y: 30, Width: 800, Height: 600},    // well inside the primary
 		{X: 1500, Y: 30, Width: 400, Height: 300},  // on the secondary
 		{X: 1400, Y: 400, Width: 260, Height: 100}, // straddling the seam, enough on the secondary
@@ -75,7 +76,7 @@ func TestFrameVisibleOnScreens(t *testing.T) {
 			t.Errorf("frame %+v should be visible", f)
 		}
 	}
-	gone := []Frame{
+	gone := []desktop.Frame{
 		{X: 4000, Y: 100, Width: 800, Height: 600},  // right of every screen
 		{X: -2000, Y: 100, Width: 800, Height: 600}, // left of every screen
 		{X: 1420, Y: 880, Width: 40, Height: 30},    // on a screen but under the 100x50 overlap
@@ -90,11 +91,11 @@ func TestFrameVisibleOnScreens(t *testing.T) {
 	// The menu bar excludes the top 25 points: a frame pushed under it
 	// keeps only 35 of its 60 points visible, under the 50-point
 	// minimum.
-	if frameVisibleOnScreens(Frame{X: 100, Y: 0, Width: 400, Height: 60}, screens) {
+	if frameVisibleOnScreens(desktop.Frame{X: 100, Y: 0, Width: 400, Height: 60}, screens) {
 		t.Error("a frame with 35 visible points under the menu bar was kept")
 	}
 	// No screens: nothing is visible, everything centers.
-	if frameVisibleOnScreens(Frame{X: 0, Y: 0, Width: 800, Height: 600}, nil) {
+	if frameVisibleOnScreens(desktop.Frame{X: 0, Y: 0, Width: 800, Height: 600}, nil) {
 		t.Error("a frame with no screens to land on was kept")
 	}
 }

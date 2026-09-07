@@ -18,9 +18,10 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework"
 )
 
-// The app inside the REAL app shell: buildApp(nil) picks the darwin
-// shell, NativeMain boots it once for the test binary, and every page
-// step runs in the actual WKWebView (the dashboard's Start button, the
+// The app inside the REAL app shell: buildApp(nil) leaves the shell
+// nil so native.New picks the darwin shell, NativeMain boots it once
+// for the test binary, and every page step runs in the actual
+// WKWebView (the dashboard's Start button, the
 // ticked countdown, the widget's post into the main window, the
 // settings checkboxes). Desktop tests never run against a browser
 // stand-in.

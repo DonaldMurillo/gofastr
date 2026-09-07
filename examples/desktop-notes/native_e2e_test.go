@@ -15,10 +15,11 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework"
 )
 
-// The app's pages inside the REAL app shell: buildApp(nil) picks the
-// darwin shell, NativeMain boots it once for the whole test binary,
-// and every step runs in the actual WKWebView (the settings form's
-// real checkbox and Save button, the widget's real form and Close
+// The app's pages inside the REAL app shell: buildApp(nil) leaves the
+// shell nil so native.New picks the darwin shell, NativeMain boots it
+// once for the whole test binary, and every step runs in the actual
+// WKWebView (the settings form's real checkbox and Save button, the
+// widget's real form and Close
 // button). These replace the headless-Chrome pair
 // (browser_e2e_test.go, widget_browser_e2e_test.go, deleted): desktop
 // tests never run against a browser stand-in.

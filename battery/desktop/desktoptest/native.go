@@ -59,7 +59,7 @@ var nativeHarness *NativeHarness
 //
 // It sets GOFASTR_DESKTOP_DATA_DIR to a fresh temp dir (unless set)
 // and GOFASTR_ISOLATION=off, calls build (the app's own buildApp with
-// a nil shell, so desktop.New picks the real one), registers a
+// a nil shell, so the host's native.New fills the real one), registers a
 // watchdog that quits after GOFASTR_NATIVE_TIMEOUT (default 10 min),
 // and waits for readiness: the main window exists and the page reports
 // its desktop manifest. It returns the exit code (non-zero when Run

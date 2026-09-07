@@ -1,22 +1,23 @@
 //go:build darwin && arm64
 
-package desktop
+package macos
 
 import (
 	"errors"
 	"fmt"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/battery/desktop"
 	"github.com/DonaldMurillo/gofastr/battery/desktop/internal/objc"
 )
 
-// The NativeDriver surface (shell.go) for the darwin shell: the user's
+// The desktop.NativeDriver surface (shell.go) for the darwin shell: the user's
 // hands on AppKit and eyes on native state, lifted out of the
 // hand-rolled e2e so a desktop test drives the REAL shell through the
 // same calls. Every method hops to the main thread; the one that waits
 // for a person (ClickPrompt) uses the modal-safe perform hop.
 
-var _ NativeDriver = (*darwinShell)(nil)
+var _ desktop.NativeDriver = (*darwinShell)(nil)
 
 // notifyLogCap bounds the notification log, oldest dropped first.
 const notifyLogCap = 64
@@ -24,7 +25,7 @@ const notifyLogCap = 64
 // recordNotification appends to the log. Show calls it first, before
 // the bundle check, so an unbundled host records every notification it
 // was handed even though none can be delivered.
-func (s *darwinShell) recordNotification(n Notification) {
+func (s *darwinShell) recordNotification(n desktop.Notification) {
 	s.notifyLogMu.Lock()
 	defer s.notifyLogMu.Unlock()
 	s.notifyLog = append(s.notifyLog, n)
@@ -33,20 +34,20 @@ func (s *darwinShell) recordNotification(n Notification) {
 	}
 }
 
-// NotificationLog implements NativeDriver: every Notification Show
+// NotificationLog implements desktop.NativeDriver: every desktop.Notification Show
 // received, bundled or not, in order.
-func (s *darwinShell) NotificationLog() []Notification {
+func (s *darwinShell) NotificationLog() []desktop.Notification {
 	s.notifyLogMu.Lock()
 	defer s.notifyLogMu.Unlock()
-	out := make([]Notification, len(s.notifyLog))
+	out := make([]desktop.Notification, len(s.notifyLog))
 	copy(out, s.notifyLog)
 	return out
 }
 
-// ScriptPrompts implements NativeDriver: the decisions answer the next
+// ScriptPrompts implements desktop.NativeDriver: the decisions answer the next
 // permission prompts without an alert, consumed in order (Prompt pops
 // the queue; an empty queue means the real alert shows).
-func (s *darwinShell) ScriptPrompts(ds ...Decision) {
+func (s *darwinShell) ScriptPrompts(ds ...desktop.Decision) {
 	if len(ds) == 0 {
 		return
 	}
@@ -55,7 +56,7 @@ func (s *darwinShell) ScriptPrompts(ds ...Decision) {
 	s.mu.Unlock()
 }
 
-// ActivateMenu implements NativeDriver: walk the main menu bar by
+// ActivateMenu implements desktop.NativeDriver: walk the main menu bar by
 // title path and fire the item's own action, exactly as a click does.
 func (s *darwinShell) ActivateMenu(titles ...string) error {
 	if len(titles) == 0 {
@@ -91,13 +92,13 @@ func (s *darwinShell) ActivateMenu(titles ...string) error {
 		}
 		actErr = s.fireMenuItem(nsApp, item)
 	}); err != nil {
-		return &Error{Code: CodeInternal, Message: internalErrorMsg}
+		return &desktop.Error{Code: desktop.CodeInternal, Message: desktop.InternalErrorMsg}
 	}
 	return actErr
 }
 
-// OpenSettingsItem implements NativeDriver: the app menu's own
-// Settings item, the one planMenuBar synthesizes for Config.Settings.
+// OpenSettingsItem implements desktop.NativeDriver: the app menu's own
+// Settings item, the one desktop.PlanMenuBar synthesizes for Config.Settings.
 func (s *darwinShell) OpenSettingsItem() error {
 	var actErr error
 	if err := s.Main(func() {
@@ -116,19 +117,19 @@ func (s *darwinShell) OpenSettingsItem() error {
 			actErr = errors.New("desktop: the app menu is missing")
 			return
 		}
-		item := s.matchMenuItem(objc.ID(objc.Send(top, objc.Sel("submenu"))), RoleSettings)
+		item := s.matchMenuItem(objc.ID(objc.Send(top, objc.Sel("submenu"))), desktop.RoleSettings)
 		if item == 0 {
 			actErr = errors.New("desktop: no Settings item; Config.Settings is unset")
 			return
 		}
 		actErr = s.fireMenuItem(nsApp, item)
 	}); err != nil {
-		return &Error{Code: CodeInternal, Message: internalErrorMsg}
+		return &desktop.Error{Code: desktop.CodeInternal, Message: desktop.InternalErrorMsg}
 	}
 	return actErr
 }
 
-// ActivateTray implements NativeDriver: fire a row of the status
+// ActivateTray implements desktop.NativeDriver: fire a row of the status
 // item's menu by title (role name when untitled).
 func (s *darwinShell) ActivateTray(title string) error {
 	s.mu.Lock()
@@ -151,7 +152,7 @@ func (s *darwinShell) ActivateTray(title string) error {
 		}
 		actErr = s.fireMenuItem(s.appID(), row)
 	}); err != nil {
-		return &Error{Code: CodeInternal, Message: internalErrorMsg}
+		return &desktop.Error{Code: desktop.CodeInternal, Message: desktop.InternalErrorMsg}
 	}
 	return actErr
 }
@@ -171,13 +172,13 @@ func (s *darwinShell) matchMenuItem(menu objc.ID, title string) objc.ID {
 	s.mu.Unlock()
 	var alt string
 	switch title {
-	case RoleQuit:
+	case desktop.RoleQuit:
 		alt = "Quit " + appTitle
-	case RoleAbout:
+	case desktop.RoleAbout:
 		alt = "About " + appTitle
-	case RoleSettings:
+	case desktop.RoleSettings:
 		alt = "Settings…"
-	case RoleShow:
+	case desktop.RoleShow:
 		alt = "Show " + appTitle
 	default:
 		return 0
@@ -202,7 +203,7 @@ func (s *darwinShell) fireMenuItem(nsApp, item objc.ID) error {
 // clickPromptWait bounds how long ClickPrompt waits for the alert.
 const clickPromptWait = 20 * time.Second
 
-// ClickPrompt implements NativeDriver: wait for the modal permission
+// ClickPrompt implements desktop.NativeDriver: wait for the modal permission
 // alert and click its button titled button, the REAL alert path. The
 // hop is performSelectorOnMainThread (modal-safe: the dispatch main
 // queue is NOT drained while runModal owns the UI thread, the perform
@@ -264,14 +265,14 @@ func clickButtonTitled(win objc.ID, title string) bool {
 	return found
 }
 
-// PostDeepLink implements NativeDriver: hand the URL to the GetURL
+// PostDeepLink implements desktop.NativeDriver: hand the URL to the GetURL
 // handler exactly as the OS would.
 func (s *darwinShell) PostDeepLink(rawURL string) error {
 	var sendErr error
 	if err := s.Main(func() {
 		sendErr = postGetURLEvent(s.bridgeID(), rawURL)
 	}); err != nil {
-		return &Error{Code: CodeInternal, Message: internalErrorMsg}
+		return &desktop.Error{Code: desktop.CodeInternal, Message: desktop.InternalErrorMsg}
 	}
 	return sendErr
 }
@@ -309,30 +310,30 @@ func postGetURLEvent(bridge objc.ID, raw string) error {
 	return nil
 }
 
-// CloseWindowNative implements NativeDriver: the red button. darwin
-// Window.Close already routes performClose: against the delegate (or
+// CloseWindowNative implements desktop.NativeDriver: the red button. darwin
+// desktop.Window.Close already routes performClose: against the delegate (or
 // drives windowShouldClose: by hand on a borderless window), so this
 // is exactly that.
 func (s *darwinShell) CloseWindowNative(id string) error {
 	w, ok := s.windowByID(id)
 	if !ok {
-		return &Error{Code: CodeNotFound, Message: "no window with id " + id}
+		return &desktop.Error{Code: desktop.CodeNotFound, Message: "no window with id " + id}
 	}
 	return w.Close()
 }
 
-// WindowState implements NativeDriver: the OS facts, read on the main
+// WindowState implements desktop.NativeDriver: the OS facts, read on the main
 // thread.
-func (s *darwinShell) WindowState(id string) (WindowState, error) {
+func (s *darwinShell) WindowState(id string) (desktop.WindowState, error) {
 	w, ok := s.windowByID(id)
 	if !ok {
-		return WindowState{}, &Error{Code: CodeNotFound, Message: "no window with id " + id}
+		return desktop.WindowState{}, &desktop.Error{Code: desktop.CodeNotFound, Message: "no window with id " + id}
 	}
 	win, _ := w.ids()
 	if win == 0 {
-		return WindowState{}, errWindowClosed()
+		return desktop.WindowState{}, errWindowClosed()
 	}
-	var st WindowState
+	var st desktop.WindowState
 	if err := s.Main(func() {
 		st.Title = objc.GoString(objc.ID(objc.Send(win, objc.Sel("title"))))
 		st.Visible = objc.Send(win, objc.Sel("isVisible")) != 0
@@ -348,7 +349,7 @@ func (s *darwinShell) WindowState(id string) (WindowState, error) {
 		st.X, st.Y = f.X, f.Y
 		st.Width, st.Height = int(frame.W), int(frame.H)
 	}); err != nil {
-		return WindowState{}, &Error{Code: CodeInternal, Message: internalErrorMsg}
+		return desktop.WindowState{}, &desktop.Error{Code: desktop.CodeInternal, Message: desktop.InternalErrorMsg}
 	}
 	return st, nil
 }

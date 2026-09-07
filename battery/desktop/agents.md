@@ -9,14 +9,31 @@ WebView, menu bar, menubar app, file dialog, local-first app,
 `__gofastr.desktop`, clipboard/file-dialog/notification capability,
 `gofastr desktop`.
 
-**Import:** `github.com/DonaldMurillo/gofastr/battery/desktop`
+**Import:** `github.com/DonaldMurillo/gofastr/battery/desktop` (the
+contract; `.../desktop/native` for the platform-picking constructor)
+
+**Layout:** the contract plus the OS-neutral half lives here; the native
+layer is one package per platform, each compiling on every GOOS:
+
+| Package | What it is |
+|---|---|
+| `battery/desktop` | Contract (`Shell`, `Window`, `NativeDriver`) + capabilities, grants, handshake, app state, preferences, deep links, updates, the unsupported shell |
+| `battery/desktop/macos` | Real shell on darwin/arm64 (AppKit + WKWebView via `internal/objc`); unsupported elsewhere |
+| `battery/desktop/windows` | Unsupported today; WebView2 + DWM Mica/Acrylic when it lands |
+| `battery/desktop/linux` | Unsupported today; WebKitGTK when it lands |
+| `battery/desktop/native` | `Shell()` picks by GOOS; `New(cfg)` is `desktop.New` with that shell as the nil-`Shell` default |
+| `battery/desktop/desktoptest` | Fake shell + app-shell harness |
+| `battery/desktop/internal/*` | `objc`, `ffi`, `fakecgo`, `gtk`, `update` |
+
+`desktop.New` with a nil `Config.Shell` answers the unsupported shell on
+every platform; nothing registers through `init`.
 
 **Shape:**
 ```go
 opts, _ := desktop.AppOptions("dev.gofastr.notes") // data dir + app.db + secret
 app := framework.NewApp(append(opts, framework.WithConfig(...))...)
 app.Mount(uihost.New(site))                         // BEFORE RegisterBattery
-d := desktop.New(desktop.Config{ID: "dev.gofastr.notes", Title: "Notes"})
+d := native.New(desktop.Config{ID: "dev.gofastr.notes", Title: "Notes"})
 app.RegisterBattery(d)
 err := d.Run(app)                                   // replaces app.Start; blocks
 ```
@@ -44,6 +61,10 @@ persisted grant store + OS prompt.
 - Everything goes through the chokepoint's closed error codes
   (`denied`, `unsupported`, `invalid_input`, `cancelled`, `not_found`,
   `internal`); 5xx bodies never carry internal error text.
+- Never make `battery/desktop` import `macos`/`windows`/`linux`/
+  `native` (cycle: they import the contract). A platform need from the
+  contract gets exported here (`MenuPlan`, `MainWindowID`,
+  `NewUnsupportedShell`), not worked around.
 
 **Testing:** `desktoptest.Run(t, app, d)` (with
 `desktop.Config{Shell: desktoptest.NewShell()}`) runs the real `Run`

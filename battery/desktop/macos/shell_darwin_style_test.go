@@ -1,6 +1,8 @@
 //go:build darwin && arm64
 
-package desktop
+package macos
+
+import "github.com/DonaldMurillo/gofastr/battery/desktop"
 
 import "testing"
 
@@ -14,22 +16,22 @@ func TestStyleMaskBits(t *testing.T) {
 	fixed := false
 	cases := []struct {
 		name  string
-		style WindowStyle
+		style desktop.WindowStyle
 		want  uintptr
 	}{
 		// ChromeDefault keeps the PoC's titled|closable|resizable.
-		{"default", WindowStyle{}, maskTitled | maskClosable | maskResizable},
+		{"default", desktop.WindowStyle{}, maskTitled | maskClosable | maskResizable},
 		// HiddenTitle lets the page paint under the title bar.
-		{"hidden title", WindowStyle{Chrome: ChromeHiddenTitle}, maskTitled | maskClosable | maskResizable | maskFullSizeContentView},
+		{"hidden title", desktop.WindowStyle{Chrome: desktop.ChromeHiddenTitle}, maskTitled | maskClosable | maskResizable | maskFullSizeContentView},
 		// Borderless is 0: no title bar, no close button, no resize.
-		{"none", WindowStyle{Chrome: ChromeNone}, 0},
+		{"none", desktop.WindowStyle{Chrome: desktop.ChromeNone}, 0},
 		// A panel adds nonactivatingPanel to whatever chrome it has.
-		{"panel default", WindowStyle{Panel: true}, maskTitled | maskClosable | maskResizable | maskNonactivatingPanel},
-		{"panel none", WindowStyle{Chrome: ChromeNone, Panel: true}, maskNonactivatingPanel},
+		{"panel default", desktop.WindowStyle{Panel: true}, maskTitled | maskClosable | maskResizable | maskNonactivatingPanel},
+		{"panel none", desktop.WindowStyle{Chrome: desktop.ChromeNone, Panel: true}, maskNonactivatingPanel},
 		// Resizable=false clears only the resizable bit.
-		{"fixed default", WindowStyle{Resizable: &fixed}, maskTitled | maskClosable},
+		{"fixed default", desktop.WindowStyle{Resizable: &fixed}, maskTitled | maskClosable},
 		// A fixed borderless window stays borderless (nothing to clear).
-		{"fixed none", WindowStyle{Chrome: ChromeNone, Resizable: &fixed}, 0},
+		{"fixed none", desktop.WindowStyle{Chrome: desktop.ChromeNone, Resizable: &fixed}, 0},
 	}
 	for _, tc := range cases {
 		if got := windowStyleMask(tc.style); got != tc.want {
@@ -37,21 +39,21 @@ func TestStyleMaskBits(t *testing.T) {
 		}
 	}
 	notResizable := false
-	if got := windowStyleMask(WindowStyle{Resizable: &notResizable}); got&maskResizable != 0 {
+	if got := windowStyleMask(desktop.WindowStyle{Resizable: &notResizable}); got&maskResizable != 0 {
 		t.Errorf("resizable=false kept the resizable bit: %#x", got)
 	}
 }
 
 func TestStyleWindowLevel(t *testing.T) {
-	if got := windowLevel(WindowStyle{}); got != normalWindowLevel {
+	if got := windowLevel(desktop.WindowStyle{}); got != normalWindowLevel {
 		t.Errorf("default level = %d, want %d", got, normalWindowLevel)
 	}
-	if got := windowLevel(WindowStyle{Float: true}); got != floatingWindowLevel {
+	if got := windowLevel(desktop.WindowStyle{Float: true}); got != floatingWindowLevel {
 		t.Errorf("float level = %d, want %d", got, floatingWindowLevel)
 	}
 	// Panel implies Float: the widget stays above normal windows even
 	// though the caller never said Float.
-	if got := windowLevel(WindowStyle{Panel: true}); got != floatingWindowLevel {
+	if got := windowLevel(desktop.WindowStyle{Panel: true}); got != floatingWindowLevel {
 		t.Errorf("panel level = %d, want %d (panel implies float)", got, floatingWindowLevel)
 	}
 }
@@ -62,13 +64,13 @@ func TestStyleFrameOrigin(t *testing.T) {
 	// 800 points tall with a 200-point window.
 	cases := []struct {
 		name   string
-		style  WindowStyle
+		style  desktop.WindowStyle
 		wantX  float64
 		wantY  float64
 		wantOK bool
 	}{
-		{"top left corner", WindowStyle{X: &x, Y: &y}, 40, 500, true},
-		{"flush top", WindowStyle{X: &x, Y: new(int)}, 40, 600, true},
+		{"top left corner", desktop.WindowStyle{X: &x, Y: &y}, 40, 500, true},
+		{"flush top", desktop.WindowStyle{X: &x, Y: new(int)}, 40, 600, true},
 	}
 	for _, tc := range cases {
 		gotX, gotY, ok := frameOrigin(tc.style, 200, 800)
@@ -78,14 +80,14 @@ func TestStyleFrameOrigin(t *testing.T) {
 		}
 	}
 	// No coordinates means centered (the shell's default), not (0,0).
-	if _, _, ok := frameOrigin(WindowStyle{}, 200, 800); ok {
+	if _, _, ok := frameOrigin(desktop.WindowStyle{}, 200, 800); ok {
 		t.Error("frameOrigin reported an origin for a style with no X/Y, want ok=false (centered)")
 	}
 	// One coordinate alone is not a position: honored only as a pair.
-	if _, _, ok := frameOrigin(WindowStyle{X: &x}, 200, 800); ok {
+	if _, _, ok := frameOrigin(desktop.WindowStyle{X: &x}, 200, 800); ok {
 		t.Error("frameOrigin honored X without Y, want ok=false")
 	}
-	if _, _, ok := frameOrigin(WindowStyle{Y: &y}, 200, 800); ok {
+	if _, _, ok := frameOrigin(desktop.WindowStyle{Y: &y}, 200, 800); ok {
 		t.Error("frameOrigin honored Y without X, want ok=false")
 	}
 }

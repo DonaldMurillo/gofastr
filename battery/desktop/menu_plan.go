@@ -8,21 +8,24 @@ package desktop
 // with no AppKit, GTK, or Win32 in the process (the same fake-shell
 // posture as the rest of the battery's tests).
 //
-// The darwin shell renders a menuPlan with NSMenu/NSMenuItem. The
-// masks carry darwin's NSEventModifierFlag values, the one
-// platform-specific datum, spelled out per constant so a future
-// windows/linux renderer reuses everything but the mask bits.
+// The macos package (battery/desktop/macos) renders a MenuPlan with
+// NSMenu/NSMenuItem. The masks carry darwin's NSEventModifierFlag
+// values, the one platform-specific datum, spelled out per constant so
+// a future windows/linux renderer reuses everything but the mask bits.
+// MenuPlan, MenuItemPlan, PlanMenuBar, and PlanTrayMenu are exported
+// for exactly those platform packages; everything else here stays
+// internal to the planning pass.
 
-// menuPlan is one top-level menu resolved for native rendering.
-type menuPlan struct {
+// MenuPlan is one top-level menu resolved for native rendering.
+type MenuPlan struct {
 	// Title is the menu-bar title (the app name, "File", "Edit").
 	Title string
 	// Items are the rows, in order.
-	Items []menuItemPlan
+	Items []MenuItemPlan
 }
 
-// menuItemPlan is one row of one menu.
-type menuItemPlan struct {
+// MenuItemPlan is one row of one menu.
+type MenuItemPlan struct {
 	// Title is the displayed label; empty for separators.
 	Title string
 	// Key is the key-equivalent glyph (the last +-token of the
@@ -47,10 +50,10 @@ type menuItemPlan struct {
 	// answers). Mutually exclusive with Role and Action.
 	FirstResponder string
 	// Submenu holds nested rows; nil for leaf rows.
-	Submenu []menuItemPlan
+	Submenu []MenuItemPlan
 }
 
-// NSEventModifierFlags (AppKit), used as menuItemPlan.Mask values.
+// NSEventModifierFlags (AppKit), used as MenuItemPlan.Mask values.
 const (
 	nsModifierCommand = 1 << 20
 	nsModifierShift   = 1 << 17
@@ -113,7 +116,7 @@ func lowerASCII(s string) string {
 // editMenuRows are the standard text-editing commands every WebView
 // app needs inside the page. They target the first responder (the
 // WKWebView's internal editor), not the bridge.
-var editMenuRows = []menuItemPlan{
+var editMenuRows = []MenuItemPlan{
 	{Title: "Undo", Key: "z", Mask: nsModifierCommand, FirstResponder: "undo:"},
 	{Title: "Redo", Key: "z", Mask: nsModifierCommand | nsModifierShift, FirstResponder: "redo:"},
 	{Sep: true},
@@ -123,10 +126,11 @@ var editMenuRows = []menuItemPlan{
 	{Title: "Select All", Key: "a", Mask: nsModifierCommand, FirstResponder: "selectAll:"},
 }
 
-// planMenuBar resolves a validated Menu plus the shell-owned standard
-// menus into the render plan: the app menu (first, holding the
-// standard Quit item and, when hasSettings, the Settings item), the
-// caller's menus, and the Edit menu (last). actionIDs is the tag
+// PlanMenuBar resolves a validated Menu plus the shell-owned standard
+// menus into the render plan a platform shell renders natively: the
+// app menu (first, holding the standard Quit item and, when
+// hasSettings, the Settings item), the caller's menus, and the Edit
+// menu (last). actionIDs is the tag
 // table: an action row's Tag indexes into it and yields the
 // MenuItem.ID OnMenu receives.
 //
@@ -134,16 +138,16 @@ var editMenuRows = []menuItemPlan{
 // nil Menu still yields a working bar (app + Edit): a macOS app
 // without a menu bar has no keyboard escape and no standard way to
 // quit.
-func planMenuBar(appTitle string, m *Menu, hasSettings bool) (plans []menuPlan, actionIDs []string) {
-	appItems := []menuItemPlan{{Title: "About " + appTitle, Role: RoleAbout}}
+func PlanMenuBar(appTitle string, m *Menu, hasSettings bool) (plans []MenuPlan, actionIDs []string) {
+	appItems := []MenuItemPlan{{Title: "About " + appTitle, Role: RoleAbout}}
 	if hasSettings {
-		appItems = append(appItems, menuItemPlan{Title: "Settings…", Role: RoleSettings, Key: ",", Mask: nsModifierCommand})
+		appItems = append(appItems, MenuItemPlan{Title: "Settings…", Role: RoleSettings, Key: ",", Mask: nsModifierCommand})
 	}
 	appItems = append(appItems,
-		menuItemPlan{Sep: true},
-		menuItemPlan{Title: "Quit " + appTitle, Role: RoleQuit, Key: "q", Mask: nsModifierCommand},
+		MenuItemPlan{Sep: true},
+		MenuItemPlan{Title: "Quit " + appTitle, Role: RoleQuit, Key: "q", Mask: nsModifierCommand},
 	)
-	plans = append(plans, menuPlan{Title: appTitle, Items: appItems})
+	plans = append(plans, MenuPlan{Title: appTitle, Items: appItems})
 
 	if m != nil {
 		for _, it := range m.Items {
@@ -152,7 +156,7 @@ func planMenuBar(appTitle string, m *Menu, hasSettings bool) (plans []menuPlan, 
 				// drop it rather than render an empty untitled menu.
 				continue
 			}
-			mp := menuPlan{Title: defaultRoleTitle(it, appTitle)}
+			mp := MenuPlan{Title: defaultRoleTitle(it, appTitle)}
 			if len(it.Children) > 0 {
 				mp.Items = planRows(it.Children, appTitle, &actionIDs)
 			} else {
@@ -164,20 +168,20 @@ func planMenuBar(appTitle string, m *Menu, hasSettings bool) (plans []menuPlan, 
 		}
 	}
 
-	plans = append(plans, menuPlan{Title: "Edit", Items: editMenuRows})
+	plans = append(plans, MenuPlan{Title: "Edit", Items: editMenuRows})
 	return plans, actionIDs
 }
 
 // planRows maps menu items to planned rows, assigning action tags.
-func planRows(items []MenuItem, appTitle string, actionIDs *[]string) []menuItemPlan {
-	rows := make([]menuItemPlan, 0, len(items))
+func planRows(items []MenuItem, appTitle string, actionIDs *[]string) []MenuItemPlan {
+	rows := make([]MenuItemPlan, 0, len(items))
 	for _, it := range items {
 		if it.Role == RoleSeparator {
-			rows = append(rows, menuItemPlan{Sep: true})
+			rows = append(rows, MenuItemPlan{Sep: true})
 			continue
 		}
 		eq, mask := keyEquivalent(it.Key)
-		row := menuItemPlan{Title: it.Title, Key: eq, Mask: mask, Role: it.Role}
+		row := MenuItemPlan{Title: it.Title, Key: eq, Mask: mask, Role: it.Role}
 		switch {
 		case it.Role == RoleQuit || it.Role == RoleAbout || it.Role == RoleSettings || it.Role == RoleShow:
 			row.Title = defaultRoleTitle(it, appTitle)
@@ -213,10 +217,11 @@ func defaultRoleTitle(it MenuItem, appTitle string) string {
 	return it.Title
 }
 
-// planTrayMenu plans the tray menu's rows. It shares the caller's
-// action-ID table with the menu bar plan, so a tray Navigate/Handler
-// row's Tag resolves through the same table OnMenu dispatches on.
-func planTrayMenu(t *Tray, appTitle string, actionIDs *[]string) []menuItemPlan {
+// PlanTrayMenu plans the tray menu's rows for a platform shell. It
+// shares the caller's action-ID table with the menu bar plan, so a
+// tray Navigate/Handler row's Tag resolves through the same table
+// OnMenu dispatches on.
+func PlanTrayMenu(t *Tray, appTitle string, actionIDs *[]string) []MenuItemPlan {
 	if t == nil || t.Menu == nil {
 		return nil
 	}

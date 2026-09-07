@@ -377,7 +377,12 @@ from `$PREFIX_TOKEN`, the stored config, or `login --with-token`
   The macOS arm ships (WKWebView through a pure-Go Objective-C bridge
   in `internal/objc`, a fake-cgo layer in `internal/fakecgo` so
   `runtime.cgocall` works without cgo, darwin/arm64 only); Windows and
-  Linux return a named `unsupported` error until their phases land.
+  Linux return a named `unsupported` error until their phases land).
+  The battery is split by platform: platform packages under
+  `battery/desktop/{macos,windows,linux}` (each compiling on every
+  GOOS) plus `battery/desktop/native`, whose `New`/`Shell()` pick one
+  by GOOS as `desktop.New`'s nil-`Shell` default (nil now answers the
+  unsupported shell on every platform).
   The OS-independent half: `desktop.AppOptions` (app-data dir, SQLite,
   secret file), the loopback boot handshake (single-use token,
   HttpOnly session cookie, Host pin), a capability registry with a
