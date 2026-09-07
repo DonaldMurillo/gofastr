@@ -59,8 +59,25 @@ func TestAutoHideVariantShipsRevealCSS(t *testing.T) {
 	if !strings.Contains(css, `.ui-sidebar--auto-hide:hover .ui-sidebar__inline`) {
 		t.Fatal("auto-hide must ship a :hover reveal rule in the component stylesheet")
 	}
-	if !strings.Contains(css, `.ui-sidebar--auto-hide:focus-within .ui-sidebar__inline`) {
+	sel := `.ui-sidebar--auto-hide:focus-within .ui-sidebar__inline`
+	start := strings.Index(css, sel)
+	if start == -1 {
 		t.Fatal("auto-hide must ship a :focus-within reveal rule — hover-only hides every link from keyboard users")
+	}
+	// Selector text is not the rule. The reveal shipped once with its
+	// selector list ending in a comma and no opening brace; the browser
+	// dropped it and the rail never widened while this test stayed
+	// green. The selector must be followed by " {" and a block that
+	// restores the persistent column width.
+	block := css[start+len(sel):]
+	if !strings.HasPrefix(block, " {") {
+		t.Fatalf("reveal selector list must open its declaration block, got: %.40q", block)
+	}
+	if end := strings.Index(block, "}"); end != -1 {
+		block = block[:end]
+	}
+	if !strings.Contains(block, "width: 220px") {
+		t.Fatalf("reveal rule must restore the 220px column:\n%s", block)
 	}
 }
 
@@ -81,5 +98,31 @@ func TestCalloutHiddenAttributeWins(t *testing.T) {
 	}
 	if !strings.Contains(block, "display: none") {
 		t.Fatalf("callout[hidden] rule must set display:none:\n%s", block)
+	}
+}
+
+// The collapsed rail and the auto-hide rest state hide the title and
+// footer; Prepend is chrome of the same kind and must hide with them,
+// or a section <select> would poke out of a 64px rail (#405). The
+// selector alone is not the guard: the rule it belongs to has to
+// declare display:none, so a malformed or emptied rule fails here.
+func TestSidebarPrependHidesWithTitleAndFooter(t *testing.T) {
+	css := sidebarCSS(style.Theme{})
+	for _, state := range []string{
+		`[data-collapsed="true"] .ui-sidebar__prepend,`,
+		`.ui-sidebar--auto-hide:not(:hover):not(:focus-within) .ui-sidebar__prepend,`,
+	} {
+		start := strings.Index(css, state)
+		if start == -1 {
+			t.Errorf("sidebar CSS must hide .ui-sidebar__prepend in state %q", state)
+			continue
+		}
+		block := css[start:]
+		if end := strings.Index(block, "}"); end != -1 {
+			block = block[:end]
+		}
+		if !strings.Contains(block, "display: none") {
+			t.Errorf("the rule hiding .ui-sidebar__prepend in state %q must set display:none:\n%s", state, block)
+		}
 	}
 }
