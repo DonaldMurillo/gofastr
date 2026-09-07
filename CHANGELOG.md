@@ -80,13 +80,17 @@ read scope (an entity the caller cannot read is omitted, matching
 document.
 
 ### Added
-- **`SidebarConfig.Prepend` puts content above the nav on every body
-  path.** The field renders between the title and the `<nav>` in the
+- **`SidebarConfig.Prepend` puts a component above the nav on every
+  body path.** It renders between the title and the `<nav>` in the
   inline column, `SidebarBody`, and the `MountSidebar` drawer, so a
   docs site whose phone header hides its section tabs can carry a
-  section `<select>` in the drawer without copying the mount. It hides
-  with the title in the collapsed rail and the auto-hide rest state
-  (#405).
+  section `<select>` in the drawer without copying the mount. It is a
+  `component.Component`: `MountSidebar` runs once at boot but the
+  drawer body renders per request, and a Prepend implementing
+  `component.ContextComponent` sees that request, so the select can
+  mark the current section. Static markup goes through
+  `app.NewStaticComponent`. It hides with the title in the collapsed
+  rail and the auto-hide rest state (#405).
 
 ### Fixed
 - **The sortable-list 409 e2e tests no longer read the live region

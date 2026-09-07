@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"context"
 	"strings"
 	"sync"
 	"testing"
@@ -156,7 +157,7 @@ func TestModal_IDInjection(t *testing.T) {
 // drawer body) containing <script> tags is escaped via render.Escape().
 func TestDrawer_TitleXSS(t *testing.T) {
 	t.Parallel()
-	h := string(sidebarBody(SidebarConfig{
+	h := string(sidebarBody(context.Background(), SidebarConfig{
 		Title: `<script>alert("xss")</script>`,
 		Items: []SidebarItem{{Label: "Home", Href: "/"}},
 	}, "t"))
@@ -170,7 +171,7 @@ func TestDrawer_TitleXSS(t *testing.T) {
 // script tags are escaped. The key protection is < → &lt;.
 func TestDrawer_BodyXSS(t *testing.T) {
 	t.Parallel()
-	h := string(sidebarBody(SidebarConfig{
+	h := string(sidebarBody(context.Background(), SidebarConfig{
 		Items: []SidebarItem{
 			{Label: `<img src=x onerror="alert(1)">`, Href: "/safe"},
 		},
@@ -203,7 +204,7 @@ func TestDrawer_PositionInjection(t *testing.T) {
 // class-injection payloads are rendered safely in text node context.
 func TestDrawer_ClassInjection(t *testing.T) {
 	t.Parallel()
-	h := string(sidebarBody(SidebarConfig{
+	h := string(sidebarBody(context.Background(), SidebarConfig{
 		Items: []SidebarItem{
 			{Label: `" onclick="alert(1)" data-x="`, Href: "/safe"},
 		},

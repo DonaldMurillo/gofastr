@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
@@ -439,7 +440,7 @@ func TestSidebarGroupOpenByDefault(t *testing.T) {
 func TestSidebarPrependSitsBetweenTitleAndNav(t *testing.T) {
 	cfg := ui.SidebarConfig{
 		Title:   "Docs",
-		Prepend: render.HTML(`<select id="section"><option>Guides</option></select>`),
+		Prepend: app.NewStaticComponent(render.HTML(`<select id="section"><option>Guides</option></select>`)),
 		Items:   []ui.SidebarItem{{Label: "Home", Href: "/"}},
 	}
 	for name, out := range map[string]string{
