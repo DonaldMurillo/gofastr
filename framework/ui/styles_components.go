@@ -280,10 +280,11 @@ func codeBlockCSS(_ style.Theme) string {
 /* Per-line highlight, diff bands, and word marks. The line backgrounds
    reach the block's edge: a negative inline margin pulls the band out
    over the body's horizontal padding (--spacing-lg in both the bare and
-   framed variants) and padding-inline pushes the text back. The numbered
-   gutter's ::before sits at left:-36px, outside the band, so line
-   numbers stay readable on the plain surface. Colours derive from the
-   theme's status tokens through overridable knobs. */
+   framed variants) and padding-inline pushes the text back. A numbered
+   block pads its body 52px for the gutter, so there the band reaches
+   under the gutter too and the ::before number is re-anchored to the
+   same visual spot. Colours derive from the theme's status tokens
+   through overridable knobs. */
 [data-fui-comp="ui-code-block"] .ui-code-block__line--highlight {
   background: var(--ui-code-block-highlight-bg, color-mix(in srgb, var(--color-primary, #4F46E5) 14%, transparent));
   margin-inline: calc(-1 * var(--spacing-lg, 16px));
@@ -298,6 +299,17 @@ func codeBlockCSS(_ style.Theme) string {
   background: var(--ui-code-block-removed-bg, color-mix(in srgb, var(--color-danger, #DC2626) 12%, transparent));
   margin-inline: calc(-1 * var(--spacing-lg, 16px));
   padding-inline: var(--spacing-lg, 16px);
+}
+[data-fui-comp="ui-code-block"].ui-code-block--numbered .ui-code-block__line--highlight,
+[data-fui-comp="ui-code-block"].ui-code-block--numbered .ui-code-block__line--added,
+[data-fui-comp="ui-code-block"].ui-code-block--numbered .ui-code-block__line--removed {
+  margin-inline-start: -52px;
+  padding-inline-start: 52px;
+}
+[data-fui-comp="ui-code-block"].ui-code-block--numbered .ui-code-block__line--highlight::before,
+[data-fui-comp="ui-code-block"].ui-code-block--numbered .ui-code-block__line--added::before,
+[data-fui-comp="ui-code-block"].ui-code-block--numbered .ui-code-block__line--removed::before {
+  left: 16px;
 }
 [data-fui-comp="ui-code-block"] .ui-code-block__mark {
   background: var(--ui-code-block-mark-bg, color-mix(in srgb, var(--color-warning, #F59E0B) 28%, transparent));

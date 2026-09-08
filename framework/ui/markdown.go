@@ -144,7 +144,8 @@ func codeAttr(attrs, marker string) string {
 // wrap soft-wraps long lines (nowrap / wrap=false turn it off). Unknown
 // tokens are ignored rather than rejected, so a fence carrying options for
 // some other tool still renders; an invalid highlight or words spec is
-// dropped the same way instead of failing the page.
+// dropped the same way instead of failing the page, and a valid earlier
+// value survives it (an invalid later value has nothing to win with).
 type fenceMeta struct {
 	filename    string
 	lineNumbers bool

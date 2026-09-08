@@ -1312,8 +1312,11 @@
       // doesn't share, including a chained page leaving for a
       // layout-less one, where a partial swap would keep the old chrome
       // around the new content. forceFull is the deploy-skew recovery
-      // path, the server echoed a swap boundary this DOM doesn't have.
-      if ((layouts.length > 0 || domChainKeys().length > 0) && (forceFull || sharedDepth(layouts) === 0)) {
+      // path, the server echoed a swap boundary this DOM doesn't have;
+      // it wins on its own, chains or not: gated behind "either side has
+      // a chain" it re-entered the partial branch for a layout-less
+      // destination and the same missing boundary looped the fetch.
+      if (forceFull || ((layouts.length > 0 || domChainKeys().length > 0) && sharedDepth(layouts) === 0)) {
         const fr = await fetch(path);
       if (myEpoch !== _navEpoch) return;
         if (!fr.ok) throw new Error(`HTTP ${fr.status}`);

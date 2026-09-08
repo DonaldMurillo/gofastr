@@ -152,3 +152,35 @@ func TestBarePartialHasNoDocShellMarkers(t *testing.T) {
 		t.Errorf("bare partial must not carry doc markers:\n%s", s)
 	}
 }
+
+func TestLayoutlessPartialForcesFullOnLangChange(t *testing.T) {
+	a := NewApp("t").WithLangFunc(func(p string) string {
+		if strings.HasPrefix(p, "/es/") {
+			return "es"
+		}
+		return ""
+	})
+	a.Register("/en/x", &stubComponent{html: render.Raw("EN")}, nil)
+	a.Register("/en/y", &stubComponent{html: render.Raw("EN2")}, nil)
+	a.Register("/es/x", &stubComponent{html: render.Raw("ES")}, nil)
+
+	res, err := a.RenderPartialFromResult(context.Background(), "/es/x", "/en/x")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// No layer can carry the markers, so the partial names a layer the
+	// DOM cannot hold and the runtime fetches the full page instead.
+	if res.SwapLayer != "doc:es" {
+		t.Errorf("SwapLayer = %q, want doc:es", res.SwapLayer)
+	}
+	if strings.Contains(string(res.HTML), "data-fui-lang") {
+		t.Errorf("a layout-less partial must stay bare (no nested carrier):\n%s", res.HTML)
+	}
+	same, err := a.RenderPartialFromResult(context.Background(), "/en/y", "/en/x")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if same.SwapLayer != "" {
+		t.Errorf("same-language layout-less nav must stay a bare partial, got SwapLayer %q", same.SwapLayer)
+	}
+}

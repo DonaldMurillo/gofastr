@@ -134,6 +134,19 @@ func (a *App) WithSkipLabelFunc(fn func(path string) string) *App {
 // defaultSkipLabel keeps a host that sets nothing byte-identical.
 const defaultSkipLabel = "Skip to main content"
 
+// docLangFor resolves the document language a render of path carries:
+// the route rule, then the component's own ScreenLang read after Load so
+// a dynamic route can take the tag from the content it fetched.
+func (a *App) docLangFor(path string, comp any) string {
+	lang := a.LangForPath(path)
+	if langer, ok := comp.(ScreenLanger); ok {
+		if l := strings.TrimSpace(safeScreenLang(langer)); l != "" {
+			lang = l
+		}
+	}
+	return lang
+}
+
 // SkipLabelForPath returns the skip-link text for a route: SkipLabelFunc's
 // answer when it gives one, else SkipLabel, else the English default. It
 // mirrors LangForPath, and the value rides the outermost layout layer as
@@ -642,19 +655,29 @@ func (a *App) RenderPartialFromResult(ctx context.Context, path, fromPath string
 		shared++
 	}
 	if shared == 0 {
+		// A layout-less destination has no layer to carry the doc markers,
+		// and the runtime fills the existing <main> with the bare partial,
+		// so a language or skip-label change between two layout-less pages
+		// could never reach the document. Name a swap layer no DOM holds:
+		// the runtime answers a missing layer with a full-page fetch (its
+		// deploy-skew recovery), and the full page's bare <main> carries
+		// the markers. Same cost as a cross-chain navigation, paid only
+		// when the values differ. The origin is resolved by route alone
+		// (its ScreenLang is not re-read), so a route whose language comes
+		// from ScreenLang declares it in LangFunc as well.
+		if len(tChain) == 0 && len(fChain) == 0 {
+			lang, skip := a.docLangFor(path, res.Component), a.SkipLabelForPath(path)
+			if lang != a.LangForPath(fromPath) || skip != a.SkipLabelForPath(fromPath) {
+				res.SwapLayer = docShellSwapPrefix + lang
+			}
+		}
 		return res, nil
 	}
 	// The doc markers must ride the partial's outermost layer, the same
 	// values the full page would carry: without them the document language
 	// and skip link could never change on an in-chain swap. ScreenLang is
 	// layered like the full-page path so both render shapes agree.
-	lang := a.LangForPath(path)
-	if langer, ok := res.Component.(ScreenLanger); ok {
-		if l := strings.TrimSpace(safeScreenLang(langer)); l != "" {
-			lang = l
-		}
-	}
-	ctx = withDocShell(ctx, lang, a.SkipLabelForPath(path))
+	ctx = withDocShell(ctx, a.docLangFor(path, res.Component), a.SkipLabelForPath(path))
 	res.HTML = renderLayoutChainFrom(ctx, tChain, shared, res.HTML)
 	res.SwapLayer = tChain[shared-1].Key()
 	return res, nil

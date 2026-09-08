@@ -23,6 +23,12 @@ import (
 // markers (a bare fully-shared partial, a host-built shell) leaves the
 // document alone; a site whose language varies per route keys its outer
 // layout per language (Layout.WithKey) so the carrier always arrives.
+// docShellSwapPrefix names the swap layer a layout-less partial reports
+// when its document markers differ from the origin's. No DOM carries a
+// layer of that name, so the runtime falls back to a full-page fetch,
+// whose bare <main> carries the markers (RenderPartialFromResult).
+const docShellSwapPrefix = "doc:"
+
 type docShell struct {
 	lang      string
 	skipLabel string

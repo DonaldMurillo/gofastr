@@ -222,3 +222,24 @@ func TestCodeBlockCSSPerLineRules(t *testing.T) {
 		t.Errorf("wrap variant must switch the body to pre-wrap")
 	}
 }
+
+func TestCodeBlockTrailingNewlineNoBlankRow(t *testing.T) {
+	out := string(CodeBlock(CodeBlockConfig{Code: "one\n", Diff: true}))
+	if n := strings.Count(out, `class="ui-code-block__line`); n != 1 {
+		t.Fatalf("line wrappers = %d, want 1 (a trailing newline is not a row):\n%s", n, out)
+	}
+}
+
+func TestCodeBlockNumberedBandsReachGutter(t *testing.T) {
+	css := codeBlockCSS(style.Theme{})
+	for _, want := range []string{
+		`.ui-code-block--numbered .ui-code-block__line--highlight,`,
+		`margin-inline-start: -52px;`,
+		`.ui-code-block--numbered .ui-code-block__line--removed::before`,
+		`left: 16px;`,
+	} {
+		if !strings.Contains(css, want) {
+			t.Errorf("code-block CSS lacks %q", want)
+		}
+	}
+}

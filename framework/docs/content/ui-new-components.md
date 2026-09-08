@@ -429,6 +429,7 @@ added/removed, `--color-warning` for word marks) and are tunable through
 braces are the bare form; `highlight=` takes the bare list. Both
 `{2,5-7}` and `highlight=2,5-7` work, `{2,5-7}` after `highlight=` does
 not.
+
 ---
 
 ## Adding a new component: checklist
