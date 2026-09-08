@@ -54,7 +54,7 @@
   // name still writes (never break the page) but warns so the drift is
   // caught in review / e2e console audits.
   const M = Object.freeze({
-    htmlAttrs: Object.freeze('aria-busy data-color-scheme data-fui-os data-fui-static'.split(' ')),
+    htmlAttrs: Object.freeze('aria-busy data-color-scheme data-fui-os data-fui-static lang'.split(' ')),
     bodyClasses: Object.freeze('fui-sse-down fui-sse-up'.split(' ')),
     singletons: Object.freeze('fui-backtotop-sentinel fui-nav-toast fui-toast-fallback fui-toast-stack-auto'.split(' ')),
   });
@@ -1188,6 +1188,25 @@
     if (m && m.focus) { try { m.focus({ preventScroll: true }); } catch (_) {} }
     return el;
   };
+  // applyDocShell syncs the document-level markers that ride the swapped
+  // payload onto the document itself. <html lang> and the skip link live
+  // OUTSIDE the shell the runtime swaps, so the server carries the
+  // destination's values (data-fui-lang / data-fui-skip-label, from
+  // App.LangForPath + SkipLabelForPath) on the outermost layer it
+  // renders; after any swap this copies them onto documentElement.lang
+  // (doc.setHtmlAttr, manifest-governed) and the skip link's text.
+  // root is the swapped element (the new shell, or the slot that received
+  // the payload); a payload with no markers changes nothing.
+  const applyDocShell = (root) => {
+    const c = root && (root.matches('[data-fui-lang],[data-fui-skip-label]')
+      ? root : root.querySelector('[data-fui-lang],[data-fui-skip-label]'));
+    if (!c) return;
+    const lang = c.getAttribute('data-fui-lang');
+    if (lang) doc.setHtmlAttr('lang', lang);
+    const skip = c.getAttribute('data-fui-skip-label');
+    const link = skip && document.querySelector('[data-skip-link]');
+    if (link) link.textContent = skip;
+  };
 
   // Shared tail of every successful swap. root is the swapped element,
   // exposed on the navigate event so teardown-aware modules can scope
@@ -1199,6 +1218,7 @@
   // back/forward can never leak its position into a later click's
   // finishNav.
   const finishNav = (path, prevPath, cached, root, ps) => {
+    applyDocShell(root);
     if (!ps) scrollToHash();
     window.dispatchEvent(new CustomEvent('gofastr:navigate', { detail: { path, prevPath, cached, root } }));
     if (ps) {
@@ -1292,8 +1312,11 @@
       // doesn't share, including a chained page leaving for a
       // layout-less one, where a partial swap would keep the old chrome
       // around the new content. forceFull is the deploy-skew recovery
-      // path, the server echoed a swap boundary this DOM doesn't have.
-      if ((layouts.length > 0 || domChainKeys().length > 0) && (forceFull || sharedDepth(layouts) === 0)) {
+      // path, the server echoed a swap boundary this DOM doesn't have;
+      // it wins on its own, chains or not: gated behind "either side has
+      // a chain" it re-entered the partial branch for a layout-less
+      // destination and the same missing boundary looped the fetch.
+      if (forceFull || ((layouts.length > 0 || domChainKeys().length > 0) && sharedDepth(layouts) === 0)) {
         const fr = await fetch(path);
       if (myEpoch !== _navEpoch) return;
         if (!fr.ok) throw new Error(`HTTP ${fr.status}`);

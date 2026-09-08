@@ -137,8 +137,10 @@ server side and the runtime does the work.
 | `data-fui-comp="<name>"` | Marks an instance of a registered styled component. The runtime scans for it on every DOM insertion and lazily loads `/<__gofastr/comp/<name>.css>` once per session via a `<link data-fui-style="<name>">` (dedup'd, never re-fetched). See "Component CSS" below. |
 | `data-fui-bundle="<a,b,c>"` | Set on the SSR-emitted bundle `<link>` to list the components it covers. The runtime reads it at boot and seeds `_pendingLinks` so the per-component scan never double-loads anything already in the bundle. |
 | `data-fui-layout="<name>"` | Set by EVERY layout layer on its wrapper `<div>` with the layout's name (e.g. `app`, `marketing`). Emit-only since the layout-chain rewrite: it is the CSS/debug contract (`.layout-<name>` pairing), and the runtime's swap decisions read `data-fui-layout-key` instead. |
-| `data-fui-layout-key="<key>"` | The layer's comparable identity, on the same wrapper `<div>`: `l:<name>` for a plain layout (the app default root, a direct screen's layout), `g:<prefix>:<name>` for a screen-group layer (`g:<prefix>` when the level is marker-only because its layout already renders at an outer level). The route manifest carries each route's chain as the `layouts` array of these keys, outermost → innermost; document order of the marked elements is the chain order. On SPA navigation the runtime compares the DOM's key spine against the destination's chain positionally: it swaps at the deepest shared layer, and when no root is shared it fetches the full page and replaces the whole shell. A group layer's key embeds the layout name so a per-screen layout override inside a group compares as a different layer than its siblings. |
+| `data-fui-layout-key="<key>"` | The layer's comparable identity, on the same wrapper `<div>`: `l:<name>` for a plain layout (the app default root, a direct screen's layout) (`l:<key>` in both forms when the layout declares `Layout.WithKey`, so a shell's identity can vary per language while its name keeps the CSS contract), `g:<prefix>:<name>` for a screen-group layer (`g:<prefix>` when the level is marker-only because its layout already renders at an outer level). The route manifest carries each route's chain as the `layouts` array of these keys, outermost → innermost; document order of the marked elements is the chain order. On SPA navigation the runtime compares the DOM's key spine against the destination's chain positionally: it swaps at the deepest shared layer, and when no root is shared it fetches the full page and replaces the whole shell. A group layer's key embeds the layout name so a per-screen layout override inside a group compares as a different layer than its siblings. |
 | `data-fui-layout-slot="<key>"` | On the layer's content cell: the `<main id="main-content">` for layer 0, the `.layout-content` div (tabindex="-1") for nested layers, the group wrapper itself for marker-only levels. This is the runtime's swap target: a partial response's `X-Gofastr-Swap: <key>` (or a cache entry's recorded layer) selects the cell whose slot key matches, replacing the old `.layout-content ?? [role=main] ?? main` structural guess. After the swap the runtime focuses the cell. |
+| `data-fui-lang="<tag>"` | On the outermost layer the server renders (layer 0 of a full page, the first re-rendered layer of a subtree partial, the bare `<main>` of a layout-less page): the page's resolved document language (`App.LangForPath`, layered with the screen's `ScreenLang`). `<html lang>` lives outside the shell the runtime swaps, so the value must travel with the swap payload; after every SPA swap the runtime copies it onto `document.documentElement.lang` via `doc.setHtmlAttr` (in the DOC_MANIFEST). A payload without the marker leaves the document alone. A site whose language varies per route keys its outer layout per language (`Layout.WithKey`), otherwise no carrier arrives for the other language. |
+| `data-fui-skip-label="<text>"` | Same carrier and same rule as `data-fui-lang`, for the app shell's skip-link text (`App.SkipLabelForPath` / `WithSkipLabelFunc`): after every SPA swap the runtime writes it into the `[data-skip-link]` link, the first string a keyboard user tabs to, so it speaks the destination page's language (#411). |
 | `data-fui-disclosure` | Marks a `<details>` element as a dismissible disclosure (mobile hamburger nav, popover, etc.). The runtime closes it automatically on SPA navigation and on Escape (native `<details>` only handles Escape when the `<summary>` itself has focus). Escape with focus elsewhere on the page closes every open disclosure; when focus is inside an open disclosure, only the deepest one containing focus closes, so Escape walks a nested chain (a menu and its submenus) back one level at a time and returns focus to that disclosure's summary. Add `data-fui-disclosure-persist` only for shell-owned controls whose expanded state must survive in-shell navigation. |
 | `data-fui-disclosure-trap` | Opt-in modifier on a `data-fui-disclosure` `<details>` element: when open, the runtime sets `inert` on every sibling so focus is trapped inside the disclosure body. Use for mobile drawer / full-sheet popover patterns that need modal-style focus containment (vs. the default non-trapping inline disclosure). The `inert` is released when the disclosure closes, when it is **detached** from the DOM, and on `gofastr:navigate`. A detached `<details>` fires no `toggle`, so both SPA swap paths (layout-shell replace, `<main>` innerHTML write) would otherwise strand every other `<body>` child out of the focus order and the accessibility tree. |
 | `data-fui-disclosure-persist` | Opt-out modifier for a shell-owned disclosure that should retain its open state across in-shell SPA navigation. Independent of `data-fui-disclosure-trap`. |
@@ -365,6 +367,26 @@ current path — including a link whose only difference from the current
 URL is the `#fragment`; that click falls through to native hash
 behavior.
 
+**Widget lifecycle events (`fui:widget-open` / `fui:widget-close`).**
+The widgets module dispatches `fui:widget-open` on `document` at the
+end of `mountWidget`, once the root is in the DOM and wired: once per
+mount on both chrome paths (lazily fetched chrome appended to
+`<body>`, SSR-inlined chrome hydrated in place), again on every
+re-open after a close, and again when a swap re-inserts a root (see
+the widget DOM lifetime below). `detail` carries `{ name, root,
+hydrated, reinserted }`: `root` is the `[data-fui-widget]` element
+itself, `hydrated` mirrors the mount path, and `reinserted` is true
+only on the post-swap re-insertion. `fui:widget-close` fires with
+`{ name, root }` from the dismiss path, the single funnel for
+`closeWidget`, the chrome's own close button, backdrop clicks, and
+deep-link stripping, before the root is hidden or removed, so a
+listener can match `detail.root` against what it bound. The `fui:`
+prefix is the widget-UI family on `document`; the `gofastr:` prefix
+stays reserved for the window-level navigation/SSE events. This is
+the supported way to bind into widget chrome when it appears
+(per-language strings, section selects) instead of a whole-document
+MutationObserver.
+
 **Active-link highlighting.** After every navigation (and at module
 load) the idle-loaded `activelink` module walks every `nav a` with an
 `href` and tags the one matching the current path with
@@ -467,6 +489,7 @@ by the SPA cross-chain swap after it replaces the layout shell.
 | `<html>` attr | `data-color-scheme` | `colorscheme.js`, the separate SYNCHRONOUS `<head>` bootstrap (plus the theme toggle via `window.__gofastr_colorScheme.set`). It must stay a separate sync script so dark tokens apply before first paint (FOUC); it runs before `runtime.js` exists, so it writes directly. Enumerated in the manifest as documentation | every `--color-*` token block; `<meta name="color-scheme">` mirrors it for UA controls |
 | `<html>` attr | `data-fui-os` | core runtime at boot (`doc.setHtmlAttr`) | `framework/ui.ShortcutHint` CSS picks ⌘ vs Ctrl glyphs |
 | `<html>` attr | `data-fui-static` | the static exporter (`framework/static.Builder`), server-side only. The runtime never writes it. Enumerated as documentation | runtime static-mode guards read it at boot |
+| `<html>` attr | `lang` | core runtime after an SPA swap (`doc.setHtmlAttr`), copying `data-fui-lang` off the swapped payload's outermost layer; the initial value is server-rendered by the app on `<html lang>` | `documentElement.lang`: screen readers pick pronunciation rules from it (WCAG 3.1.1), indexers pick the language index |
 | `<body>` class | `fui-sse-down` | NOT written by core-ui (the per-widget SSE block that owned it is gone). Kiln's dev-mode reload client (`kiln/live/reload.go`) toggles it on its EventSource `error`; app surfaces should read `window.__gofastr.sseStatus` / `pollStatus` instead | CSS connection-state styling (kiln panel dot) |
 | `<body>` class | `fui-sse-up` | same as `fui-sse-down`: kiln dev-mode reload client only | CSS connection-state styling |
 | `<body>` singleton | `fui-backtotop-sentinel` | backtotop module (`doc.singleton`): one shared scroll sentinel for every BackToTop button | its own IntersectionObserver |
@@ -1395,6 +1418,32 @@ and a registered styled component can never double-load CSS even
 if a future change merges them. Widgets surface through
 `/__gofastr/widgets`; styled components surface through
 the inline `<script id="gofastr-catalog">` JSON block and `/__gofastr/comp/<name>.css`.
+
+**Widget DOM lifetime across SPA swaps.** A registered widget root the
+runtime mounted (either chrome path) survives a full-shell swap. Roots
+the runtime fetched are appended to `<body>`, outside the shell, so
+the swap never touches them; the framework's own layouts inline SSR
+chrome just before `</body>`, also outside the shell. A host layout
+that wraps SSR-inlined chrome INSIDE the shell element used to lose
+it: `swapShell` replaces that element wholesale, tearing the
+registered root out of the document while `_widgets` still listed it,
+which both stranded the widget and wedged the next open
+(`_mountByName`'s "already mounted" early return). Since #409 the
+widgets module rides `doc.reattach()` (nav.js calls it right after
+every shell swap): a registered root that lost its parent is
+re-appended to `<body>` and `fui:widget-open` re-fires with
+`reinserted: true`. If the swapped-in shell SSR-inlines its own copy
+of the widget (hosts that nest chrome in the shell inline it on every
+page), the stale instance is dismissed instead (`fui:widget-close`,
+root lifted out) and the navigate catalog pass hydrates the fresh
+node, so two live roots for one registration never coexist.
+
+Closing is unchanged: the navigate listener closes every open modal
+widget (backdrop'd drawers and modals ride `_modalStack`), a fetched
+root is removed from the DOM, an SSR-hydrated root is re-hidden, the
+chrome cache is cleared, and the next open re-fetches and fires
+`fui:widget-open` again. Consumers that bind into chrome rebind on
+every `fui:widget-open` rather than assuming a root mounts once.
 
 ---
 

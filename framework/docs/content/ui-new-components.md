@@ -177,12 +177,12 @@ raw (enumerated in `framework/ui/extraattrs_contract_test.go`). See
 - **piechart**: `framework/ui.PieChart`, SVG ratio chart (donut variant via InnerRadius)
 - **barchart**: `framework/ui.BarChart`, categorical SVG bar chart. Legible by default: value labels ride above every bar cap (opt out with `HideValues`), the y-scale rounds up to a clean maximum so uniform / near-equal data keeps visible headroom (no wall of full-height slabs), a hairline baseline grounds the bars, and long `ShowLabels` category labels wrap onto two lines (a single over-long word ellipsizes, full text preserved in the bar's `<title>`). `ShowAxis` adds left value-axis ticks + gridlines. Per-bar `Color` accepts a palette token (primary/info/success/warning/danger), a registered status variant name, or a hex/rgb/hsl/oklch/var() CSS color; any other value falls back to the theme primary.
 - **linechart**: `framework/ui.LineChart`, multi-series time-series chart with area + legend. Edge x-axis labels anchor inward so the first/last tick don't clip against the SVG boundary.
-- **codeblock**: `framework/ui.CodeBlock`, styled `<pre><code>` sample block; `HighlightLines` pre-tokenizes lines for syntax highlighting
+- **codeblock**: `framework/ui.CodeBlock`, styled `<pre><code>` sample block; the `HighlightLines` *func* pre-tokenizes lines for syntax highlighting, and the `HighlightLines []LineRange` *field* (fence `{1,3-5}`), `Diff`, `HighlightWords`, and `Wrap` add line bands, diff marking, word marks, and soft wrapping — see [CodeBlock: line highlighting, diffs, wrapping](#codeblock-line-highlighting-diffs-wrapping)
 - **codetabs**: `framework/ui.CodeTabs`, the same snippet in several languages (Go / TypeScript / curl …) behind a zero-JS tab strip; pure composition of `patterns/tabs` + `CodeBlock` with copy buttons. Selection is per-tabset, not a page-wide language preference. The SDK docs site (`framework/sdkdocs`) is the flagship consumer.
 - **counter**: `framework/ui.Counter`, numeric counter with +/− buttons mutating a client-side signal
 - **jsonviewer**: `framework/ui.JSONViewer`, collapsible tree of arbitrary values
 - **diffviewer**: `framework/ui.DiffViewer`, unified or split diff renderer
-- **markdown**: `framework/ui.Markdown`, themed wrapper over `core/markdown`. Fence options reach it through the `data-meta` attribute `core/markdown` emits: `title="main.go"` (or `filename=`) becomes `CodeBlockConfig.Filename` and `showLineNumbers` becomes `LineNumbers`. Unknown options are ignored, so an option added later degrades to a plain block rather than breaking one
+- **markdown**: `framework/ui.Markdown`, themed wrapper over `core/markdown`. Fence options reach it through the `data-meta` attribute `core/markdown` emits and forward onto `CodeBlockConfig`: `title=`, `showLineNumbers`, `scroll`, `{1,3-5}` / `highlight=`, `diff`, `words=`, and `wrap` (see the [CodeBlock section](#codeblock-line-highlighting-diffs-wrapping) for the table). Unknown options are ignored, so an option added later degrades to a plain block rather than breaking one, and the raw info string stays on the block root in `data-meta`
 - **detaillist**: `framework/ui.DetailList`, label/value description list for record detail views
 - **factbox**: `framework/ui.FactBox`, single labelled fact (compact label + value pair; label-first or value-first)
 - **terminalblock**: `framework/ui.TerminalBlock`, terminal transcript with a labelled header and `TerminalOut` / `TerminalOK` lines
@@ -361,6 +361,74 @@ below the toolbar to show the *active* filters as removable chips.
 > the server-side search is automatic. Without `SearchFields`, the
 > `?q=` param is ignored by the CRUD layer and the screen must filter
 > rows itself (the pre-existing "wired manually" behaviour).
+
+
+---
+
+## CodeBlock: line highlighting, diffs, wrapping
+
+`ui.Markdown` forwards every fence option it recognizes onto
+`CodeBlockConfig`, so a documentation fence can highlight lines, mark a
+diff, wrap long lines, and cap its height without leaving Markdown:
+
+| Fence option | Maps to | Effect |
+|---|---|---|
+| `title="main.go"` / `title=main.go` (`filename=` too) | `Filename` | chrome header with the filename |
+| `showLineNumbers` (`showLineNumbers=false` off) | `LineNumbers` | left line-number gutter |
+| `scroll` | `Scroll` | caps body height at `--ui-code-block-scroll-max`, scrolls |
+| `{1,3-5}` or `highlight=1,3-5` | `HighlightLines []LineRange` | background band on those lines (1-based, inclusive) |
+| `diff` | `Diff` | lines starting `+` (and `+++`) get an added band, `-` (and `---`) a removed band; the marker stays in the text |
+| `words="err,nil"` / `words=err,nil` | `HighlightWords []string` | literal matches wrapped in `<mark class="ui-code-block__mark">` |
+| `wrap` (`nowrap` / `wrap=false` off) | `Wrap` | soft-wrap long lines instead of horizontal scrolling |
+
+Unknown options are ignored, and so is an invalid `highlight=` or
+`words=` spec: a fence carrying options for another tool degrades to a
+plain block rather than a broken one. The raw info string stays
+addressable on the rendered block's `data-meta` attribute. A fence whose
+*language* is `diff` gets no diff marking; only the `diff` option does,
+because a highlighter may legitimately know the `diff` grammar.
+
+All of these are also plain `CodeBlockConfig` fields for direct callers:
+`ParseLineRanges("1,3-5")` builds the `HighlightLines` value, and the
+same features work on the `Lines` (pre-highlighted) path, where diff
+classification skips a leading token span and word marks stay inside
+text nodes so they never split a caller's markup.
+
+This exact fence renders live on the docs site:
+
+```go title="checkout.go" showLineNumbers {2,4-5} words="sum,total"
+func total(items []Item) int {
+	sum := 0
+	for _, it := range items {
+		sum += it.Price
+	}
+	return sum
+}
+```
+
+And the diff form, header lines and all:
+
+```diff title="api.go" diff
+--- a/api.go
++++ b/api.go
+@@ handler @@
+ func get(w, r) {
+-	user := load(r)
++	user := mustAuth(r)
+ 	render(w, user)
+ }
+```
+
+Line bands derive from the theme's status colours
+(`--color-primary` for highlight, `--color-success`/`--color-danger` for
+added/removed, `--color-warning` for word marks) and are tunable through
+`--ui-code-block-highlight-bg`, `--ui-code-block-added-bg`,
+`--ui-code-block-removed-bg`, and `--ui-code-block-mark-bg`.
+
+**Common mistake**: writing the line numbers as `highlight={2}`. The
+braces are the bare form; `highlight=` takes the bare list. Both
+`{2,5-7}` and `highlight=2,5-7` work, `{2,5-7}` after `highlight=` does
+not.
 
 ---
 

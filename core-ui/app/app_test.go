@@ -337,9 +337,10 @@ func TestAppRenderPage(t *testing.T) {
 	if !strings.Contains(s, `href="#main-content"`) {
 		t.Errorf("expected skip link href, got: %s", s)
 	}
-	// data-skip-link is the addressable hook. The visible behavior is the
-	// .skip-link CSS; no runtime code reads the attribute, so this
-	// assertion is the only thing keeping it emitted.
+	// data-skip-link is the addressable hook the runtime uses to
+	// re-localize the link after a client-side navigation
+	// (data-fui-skip-label on the swapped payload); the visible behavior
+	// is the .skip-link CSS.
 	if !strings.Contains(s, `data-skip-link=""`) {
 		t.Errorf("expected data-skip-link hook, got: %s", s)
 	}

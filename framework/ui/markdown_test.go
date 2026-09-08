@@ -76,27 +76,122 @@ func TestMarkdownPlainFenceUnaffected(t *testing.T) {
 	}
 }
 
+func TestMarkdownFenceScrollForwards(t *testing.T) {
+	h := string(Markdown(MarkdownConfig{Source: "```go scroll\nx := 1\n```\n"}))
+	if !strings.Contains(h, "ui-code-block--scroll") {
+		t.Errorf("scroll option should reach the block:\n%s", h)
+	}
+}
+
+func TestMarkdownFenceHighlightForwards(t *testing.T) {
+	for _, meta := range []string{"highlight=2", "{2}"} {
+		h := string(Markdown(MarkdownConfig{Source: "```txt " + meta + "\nalpha\nbeta\n```\n"}))
+		if !strings.Contains(h, `class="ui-code-block__line ui-code-block__line--highlight">beta<`) {
+			t.Errorf("option %q should highlight line 2:\n%s", meta, h)
+		}
+		if strings.Contains(h, `--highlight">alpha`) {
+			t.Errorf("option %q highlighted the wrong line:\n%s", meta, h)
+		}
+	}
+}
+
+// The option turns on diff rendering; a fence whose LANGUAGE is diff is
+// still just a language (a highlighter may know it) and implies nothing.
+func TestMarkdownFenceDiffForwards(t *testing.T) {
+	h := string(Markdown(MarkdownConfig{
+		Source: "```diff title=\"p.diff\" diff\n--- a/main.go\n+++ b/main.go\n ctx\n-old\n+new\n```\n",
+	}))
+	for _, want := range []string{
+		`--removed">--- a/main.go`,
+		`--added">+++ b/main.go`,
+		`--removed">-old`,
+		`--added">+new`,
+		`class="ui-code-block__line"> ctx`,
+	} {
+		if !strings.Contains(h, want) {
+			t.Errorf("diff option missing %q:\n%s", want, h)
+		}
+	}
+	langOnly := string(Markdown(MarkdownConfig{Source: "```diff\n-x\n```\n"}))
+	if strings.Contains(langOnly, "ui-code-block__line--") {
+		t.Errorf("lang diff must not imply diff marking:\n%s", langOnly)
+	}
+}
+
+func TestMarkdownFenceWordsForwards(t *testing.T) {
+	h := string(Markdown(MarkdownConfig{Source: "```txt words=\"beta\"\nalpha beta\n```\n"}))
+	if !strings.Contains(h, `<mark class="ui-code-block__mark">beta</mark>`) {
+		t.Errorf("words option should mark matches:\n%s", h)
+	}
+}
+
+func TestMarkdownFenceWrapForwards(t *testing.T) {
+	h := string(Markdown(MarkdownConfig{Source: "```txt wrap\nalpha\n```\n"}))
+	if !strings.Contains(h, "ui-code-block--wrap") {
+		t.Errorf("wrap option should reach the block:\n%s", h)
+	}
+}
+
+// Recognized options are consumed; the raw info string still rides on
+// the block root in data-meta so tooling (and tests) can see it.
+func TestMarkdownUnknownMetaKeptInDataMeta(t *testing.T) {
+	h := string(Markdown(MarkdownConfig{Source: "```txt foo=bar title=\"t.txt\"\nx\n```\n"}))
+	if !strings.Contains(h, `data-meta="foo=bar title=&quot;t.txt&quot;"`) {
+		t.Errorf("unknown tokens must stay in data-meta:\n%s", h)
+	}
+}
+
 func TestParseFenceMeta(t *testing.T) {
 	cases := []struct {
 		in       string
 		filename string
 		lines    bool
+		scroll   bool
+		diff     bool
+		wrap     bool
+		hl       []LineRange
+		words    []string
 	}{
-		{"", "", false},
-		{`title="main.go"`, "main.go", false},
-		{`title=main.go`, "main.go", false},
-		{`title="cmd/api/main.go" showLineNumbers`, "cmd/api/main.go", true},
-		{`showLineNumbers title="a b.go"`, "a b.go", true},
-		{`showLineNumbers=false`, "", false},
-		{`{1,3-5} highlight=2`, "", false}, // options meant for someone else
+		{in: ``},
+		{in: `title="main.go"`, filename: "main.go"},
+		{in: `title=main.go`, filename: "main.go"},
+		{in: `title="cmd/api/main.go" showLineNumbers`, filename: "cmd/api/main.go", lines: true},
+		{in: `showLineNumbers title="a b.go"`, filename: "a b.go", lines: true},
+		{in: `showLineNumbers=false`},
+		{in: `scroll diff wrap`, scroll: true, diff: true, wrap: true},
+		{in: `wrap=false`},
+		{in: `nowrap`},
+		{in: `diff=false`},
+		{in: `{1,3-5}`, hl: []LineRange{{From: 1}, {From: 3, To: 5}}},
+		{in: `highlight=1,3-5`, hl: []LineRange{{From: 1}, {From: 3, To: 5}}},
+		// Later tokens win; an invalid spec degrades to no highlight.
+		{in: `{1,3-5} highlight=2`, hl: []LineRange{{From: 2}}},
+		{in: `highlight=5-3`},
+		{in: `words="a,b"`, words: []string{"a", "b"}},
+		{in: `words=a,b`, words: []string{"a", "b"}},
+		{in: `foo=bar`}, // unknown token: ignored, never fatal
 	}
 	for _, c := range cases {
 		got := parseFenceMeta(c.in)
-		if got.filename != c.filename || got.lineNumbers != c.lines {
-			t.Errorf("parseFenceMeta(%q) = {%q, %v}, want {%q, %v}",
-				c.in, got.filename, got.lineNumbers, c.filename, c.lines)
+		if got.filename != c.filename || got.lineNumbers != c.lines ||
+			got.scroll != c.scroll || got.diff != c.diff || got.wrap != c.wrap ||
+			!rangesEqual(got.highlight, c.hl) || !slicesEqual(got.words, c.words) {
+			t.Errorf("parseFenceMeta(%q) = %+v, want {filename:%q lines:%v scroll:%v diff:%v wrap:%v hl:%v words:%v}",
+				c.in, got, c.filename, c.lines, c.scroll, c.diff, c.wrap, c.hl, c.words)
 		}
 	}
+}
+
+func slicesEqual(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func TestMarkdownExtraAttrsCannotOverrideOwned(t *testing.T) {

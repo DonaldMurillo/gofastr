@@ -87,14 +87,29 @@ func enrichCodeBlocks(body string) string {
 			break
 		}
 		lang := codeAttr(rest[:gt], `class="language-`)
-		meta := parseFenceMeta(codeAttr(rest[:gt], `data-meta="`))
+		metaAttr := codeAttr(rest[:gt], `data-meta="`)
+		meta := parseFenceMeta(metaAttr)
 		raw := stdhtml.UnescapeString(rest[gt+1 : gt+1+end])
+		// The raw info string rides on the block root in data-meta:
+		// recognized options are consumed below, everything else stays
+		// addressable for tooling instead of vanishing with the <code>
+		// tag it arrived on.
+		extra := html.Attrs{}
+		if metaAttr != "" {
+			extra["data-meta"] = stdhtml.UnescapeString(metaAttr)
+		}
 		block := CodeBlock(CodeBlockConfig{
-			Lines:       HighlightLines(raw, lang),
-			Language:    lang,
-			Filename:    meta.filename,
-			LineNumbers: meta.lineNumbers,
-			ShowCopy:    true,
+			Lines:          HighlightLines(raw, lang),
+			Language:       lang,
+			Filename:       meta.filename,
+			LineNumbers:    meta.lineNumbers,
+			Scroll:         meta.scroll,
+			HighlightLines: meta.highlight,
+			Diff:           meta.diff,
+			HighlightWords: meta.words,
+			Wrap:           meta.wrap,
+			ShowCopy:       true,
+			ExtraAttrs:     extra,
 		})
 		out.WriteString(string(block))
 		i = idx + len(openPre) + gt + 1 + end + len(closer)
@@ -118,21 +133,40 @@ func codeAttr(attrs, marker string) string {
 
 // fenceMeta is what this renderer understands of a fence's options, which
 // core/markdown parses off the info string and passes through verbatim in
-// data-meta. Two of them, both mapping onto CodeBlock:
+// data-meta. All of them map onto CodeBlock:
 //
-//	```go title="main.go" showLineNumbers
+//	```go title="main.go" showLineNumbers {2,5-7} diff words="err,nil" wrap scroll
 //
 // title (quoted or bare) names the block's chrome header; showLineNumbers turns
-// on the gutter. Anything else is ignored rather than rejected, so a fence
-// carrying options for some other tool still renders.
+// on the gutter; scroll caps the body height; {1,3-5} (or highlight=1,3-5)
+// highlights lines; diff marks +/- lines as added/removed (the LANGUAGE diff
+// implies nothing, only the option does); words=a,b marks literal matches;
+// wrap soft-wraps long lines (nowrap / wrap=false turn it off). Unknown
+// tokens are ignored rather than rejected, so a fence carrying options for
+// some other tool still renders; an invalid highlight or words spec is
+// dropped the same way instead of failing the page, and a valid earlier
+// value survives it (an invalid later value has nothing to win with).
 type fenceMeta struct {
 	filename    string
 	lineNumbers bool
+	scroll      bool
+	diff        bool
+	wrap        bool
+	highlight   []LineRange
+	words       []string
 }
 
 func parseFenceMeta(meta string) fenceMeta {
 	var out fenceMeta
 	for _, tok := range splitFenceMeta(stdhtml.UnescapeString(meta)) {
+		// Bare brace form: {1,3-5} is the convention several doc tools
+		// use for line highlight; a synonym of highlight=1,3-5.
+		if len(tok) > 1 && tok[0] == '{' && tok[len(tok)-1] == '}' {
+			if r, err := ParseLineRanges(tok[1 : len(tok)-1]); err == nil {
+				out.highlight = r
+			}
+			continue
+		}
 		key, val, hasVal := strings.Cut(tok, "=")
 		switch strings.ToLower(key) {
 		case "title", "filename":
@@ -142,6 +176,28 @@ func parseFenceMeta(meta string) fenceMeta {
 		case "showlinenumbers":
 			// Bare flag, or an explicit showLineNumbers=false to turn it off.
 			out.lineNumbers = !hasVal || strings.Trim(val, `"'`) != "false"
+		case "scroll":
+			out.scroll = !hasVal || strings.Trim(val, `"'`) != "false"
+		case "diff":
+			out.diff = !hasVal || strings.Trim(val, `"'`) != "false"
+		case "wrap":
+			out.wrap = !hasVal || strings.Trim(val, `"'`) != "false"
+		case "nowrap":
+			out.wrap = false
+		case "highlight":
+			if hasVal {
+				if r, err := ParseLineRanges(strings.Trim(val, `"'`)); err == nil {
+					out.highlight = r
+				}
+			}
+		case "words":
+			if hasVal {
+				for _, w := range strings.Split(strings.Trim(val, `"'`), ",") {
+					if w != "" {
+						out.words = append(out.words, w)
+					}
+				}
+			}
 		}
 	}
 	return out
