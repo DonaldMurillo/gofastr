@@ -19,7 +19,7 @@
 # The registry is complete through this release: releases ≤ through
 # with no entry below genuinely had no migration-relevant changes.
 # Targets beyond it make the CLI warn that it may be out of date.
-through: v0.84.1
+through: v0.85.0
 
 releases:
   - version: v0.3.0
@@ -1064,3 +1064,51 @@ releases:
       - change: "a static export below a base path carries the base in its embedded route graph, so client-side navigation works on a GitHub project page; exported per-component stylesheet links carry the data-fui-style marker so the runtime does not load them a second time after app.css"
         breaking: false
         guidance: "Re-export. A site that patched either in its own export step can drop the patch; nothing else changes."
+  - version: v0.85.0
+    title: Red-probe rounds 4 and 5, per-language shells, widget lifecycle, CodeBlock options
+    notes:
+      - change: "an MCP tool handler's plain error is answered to the caller as a generic internal tool error (its text is logged server-side); a message meant for the caller is returned as *mcp.RPCError or mcp.ToolResult{IsError: true}"
+        breaking: true
+        detect: 'RegisterTool\(|mcp\.Tool\{'
+        guidance: "Grep your tool handlers for fmt.Errorf/errors.New returned to the caller as user-facing text and switch those to mcp.ToolResult{IsError: true} or *mcp.RPCError; mcp.Gated and the framework's own tools already did."
+      - change: "a duplicate multipart form key is refused for a scalar field and collected into a list for a schema.JSON field, matching the JSON body path"
+        breaking: true
+        detect: 'schema\.JSON|ParseMultipartForm\(|FormFile\('
+        guidance: "A client that sent a scalar field twice and relied on last-wins now gets 400; send it once. A JSON-typed field receives the list."
+      - change: "/openapi.json and /api/docs/openapi.json filter entities by the caller's read scope; WithPublicOpenAPI opts into the full document"
+        breaking: true
+        detect: 'openapi\.json|WithOpenAPI\(|WithPublicOpenAPI\('
+        guidance: "A tooling flow that fetched the spec anonymously to see every entity now sees only what an anonymous caller can read; authenticate the fetch, or call WithPublicOpenAPI on an app whose whole schema is public."
+      - change: "magic-link, password-reset, and email-verification tokens are stored as sha256 digests, so tokens minted before the upgrade stop redeeming"
+        breaking: true
+        detect: 'battery/auth"'
+        guidance: "They are short-lived: wait out the TTL or re-send. Nothing to change in code; a custom token store must store the digest the battery now looks up."
+      - change: "RequireSession, SessionPolicy, and RolePolicy answer 401 to callers authenticated only by an API token"
+        breaking: true
+        detect: 'RequireSession\(|SessionPolicy|RolePolicy'
+        guidance: "A route meant for API tokens uses RequireAuth or RequireAPIScopes; the session-only policies now mean what their names say."
+      - change: "a CRUD create or update whose BelongsTo foreign key names an owner-, tenant-, or read-scoped row the caller cannot read answers 404"
+        breaking: true
+        detect: 'BelongsTo'
+        guidance: "Exemptions are explicit: owner.AllowCrossOwner, the target's CrossOwnerRead permission, tenant.AllowCrossTenant, or WithServerWrites for server-side writes. A client that pointed a record at another user's parent by guessing ids was the bug."
+      - change: "kiln's update_entity requires an approved plan (PlanID); pre-existing journals with ungated update_entity entries fail replay"
+        breaking: true
+        detect: 'update_entity|kiln/'
+        guidance: "Re-record the affected journals through the plan flow; an entry recorded without a plan cannot be replayed."
+      - change: "generated CLIs drop the --token flag; the token resolves from $PREFIX_TOKEN, the stored config, or login --with-token reading stdin"
+        breaking: true
+        detect: '--token'
+        guidance: "Re-generate the CLI and update scripts that passed --token on the command line (visible to every local process via ps) to export the env var or pipe the token into login --with-token."
+      - change: "the harness mcpserver answers malformed JSON-RPC with -32602 invalid params (was -32700 parse error)"
+        breaking: true
+        detect: 'experimental/harness'
+        guidance: "A client that branched on -32700 for a syntactically valid but malformed request now sees -32602; branch on both, or on the message."
+      - change: "Layout.WithKey keys a layout's layer identity independently of its name, App.WithSkipLabel/WithSkipLabelFunc localize the skip link, the outermost rendered layer carries data-fui-lang / data-fui-skip-label, and the runtime copies them onto the document after every swap"
+        breaking: false
+        guidance: "Additive. A multilingual site gives each language's shell the same Name and a per-language WithKey and sets WithLangFunc/WithSkipLabelFunc once; a host that sets nothing renders byte-identically. A downstream runtime that rewrote <html lang> or the skip link itself can drop that code."
+      - change: "the widgets module dispatches fui:widget-open and fui:widget-close on document, and when a host layout places a widget root inside the shell, the root is re-appended to <body> after a shell swap instead of vanishing with the old shell"
+        breaking: false
+        guidance: "Additive. Replace whole-document MutationObservers that waited for widget chrome with a fui:widget-open listener; rebind on open, unbind on close, never assume a root mounts once."
+      - change: "CodeBlockConfig gains HighlightLines, Diff, HighlightWords, and Wrap, and ui.Markdown forwards the fence options title, showLineNumbers, scroll, {1,3-5}/highlight=, diff, words=, and wrap"
+        breaking: false
+        guidance: "Additive; a zero config renders byte-identical markup. A docs site that lifted option-carrying fences out of Markdown to render them itself can delete that parser. Option-carrying fences now also carry the raw info string on the block's data-meta attribute."
