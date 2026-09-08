@@ -281,6 +281,42 @@ from `$PREFIX_TOKEN`, the stored config, or `login --with-token`
   mark the current section. Static markup goes through
   `app.NewStaticComponent`. It hides with the title in the collapsed
   rail and the auto-hide rest state (#405).
+- **`Layout.WithKey` gives a layout a layer identity independent of its
+  name.** The runtime compares layer keys to decide how much of the page
+  to swap on a client-side navigation, and the key used to be derived
+  from the name alone, so a shell that must re-render per language had
+  to bake the language into its name and its CSS selectors. A layout
+  now declares `NewLayout("docs").WithKey("docs-es")`: the name keeps
+  driving `data-fui-layout` and the wrapper class, the key drives the
+  swap. The document language and the skip-link text travel with the
+  swapped payload too, as `data-fui-doc-lang` / `data-fui-skip-label`
+  on the outermost rendered layer, and the runtime copies them onto
+  `<html lang>` and the skip link after every swap, so a Spanish page
+  reached by client-side navigation no longer keeps English chrome or
+  `lang="en"` (#408).
+- **`App.WithSkipLabel` and `WithSkipLabelFunc` localize the app shell's
+  skip link.** The link was hardcoded to "Skip to main content"; a host
+  sets one label, or one per route the way `WithLangFunc` works, and a
+  host that sets nothing renders byte-identically (#411).
+- **Widget lifecycle events and DOM lifetime.** The runtime dispatches
+  `fui:widget-open` on `document` (detail `{ name, root, hydrated,
+  reinserted }`) whenever a widget's chrome is in the document and
+  wired, on both the fetched and the SSR-inlined path and on every
+  re-open, and `fui:widget-close` before a root is hidden or removed, so
+  code that binds into widget chrome listens instead of running a
+  whole-document MutationObserver. A registered widget root now survives
+  a full-shell swap: a root a host layout wrapped inside the shell is
+  re-appended to `<body>` after the swap and announced again with
+  `reinserted: true` (#409).
+- **CodeBlock highlights lines and words, marks diffs, and can wrap.**
+  `CodeBlockConfig` gains `HighlightLines []LineRange` (with
+  `ParseLineRanges("1,3-5")`), `Diff`, `HighlightWords`, and `Wrap`; the
+  per-line wrapper carries the class the CSS bands read, word marks are
+  `<mark>` elements that never cross a tag, and a zero config renders
+  byte-identical markup. `ui.Markdown` forwards the fence options
+  `title`, `showLineNumbers`, `scroll`, `{1,3-5}` / `highlight=`, `diff`,
+  `words=`, and `wrap` onto it, and keeps the raw info string on the
+  block's `data-meta` (#410).
 
 ### Fixed
 - **The sortable-list 409 e2e tests no longer read the live region
