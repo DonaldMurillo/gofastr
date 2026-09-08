@@ -275,7 +275,42 @@ func codeBlockCSS(_ style.Theme) string {
   color: var(--color-text-subtle, #71717A);
   font-size: var(--text-xs, 0.75rem);
   user-select: none;
-}`
+}
+
+/* Per-line highlight, diff bands, and word marks. The line backgrounds
+   reach the block's edge: a negative inline margin pulls the band out
+   over the body's horizontal padding (--spacing-lg in both the bare and
+   framed variants) and padding-inline pushes the text back. The numbered
+   gutter's ::before sits at left:-36px, outside the band, so line
+   numbers stay readable on the plain surface. Colours derive from the
+   theme's status tokens through overridable knobs. */
+[data-fui-comp="ui-code-block"] .ui-code-block__line--highlight {
+  background: var(--ui-code-block-highlight-bg, color-mix(in srgb, var(--color-primary, #4F46E5) 14%, transparent));
+  margin-inline: calc(-1 * var(--spacing-lg, 16px));
+  padding-inline: var(--spacing-lg, 16px);
+}
+[data-fui-comp="ui-code-block"] .ui-code-block__line--added {
+  background: var(--ui-code-block-added-bg, color-mix(in srgb, var(--color-success, #16A34A) 12%, transparent));
+  margin-inline: calc(-1 * var(--spacing-lg, 16px));
+  padding-inline: var(--spacing-lg, 16px);
+}
+[data-fui-comp="ui-code-block"] .ui-code-block__line--removed {
+  background: var(--ui-code-block-removed-bg, color-mix(in srgb, var(--color-danger, #DC2626) 12%, transparent));
+  margin-inline: calc(-1 * var(--spacing-lg, 16px));
+  padding-inline: var(--spacing-lg, 16px);
+}
+[data-fui-comp="ui-code-block"] .ui-code-block__mark {
+  background: var(--ui-code-block-mark-bg, color-mix(in srgb, var(--color-warning, #F59E0B) 28%, transparent));
+  color: inherit;
+  border-radius: var(--radii-sm, 4px);
+}
+/* Wrap variant: soft-wrap long lines instead of horizontal scrolling.
+   The bare <pre> IS the root; the framed variant's body is the <pre>. */
+[data-fui-comp="ui-code-block"].ui-code-block--wrap,
+[data-fui-comp="ui-code-block"].ui-code-block--wrap .ui-code-block__body {
+  white-space: pre-wrap;
+}
+`
 }
 
 func sectionCSS(_ style.Theme) string {

@@ -2,9 +2,12 @@ package ui
 
 import (
 	"context"
+	"fmt"
+	stdhtml "html"
 	"strconv"
 	"strings"
 	"sync/atomic"
+	"unicode/utf8"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core/render"
@@ -1144,8 +1147,27 @@ type CodeBlockConfig struct {
 	// full without letting it dominate the page. Implies the framed
 	// container.
 	Scroll bool
-	ID     string
-	Class  string
+	// HighlightLines marks the given 1-based source lines with
+	// ui-code-block__line--highlight, a background band that reaches the
+	// block's edge. Ranges past the last line match nothing.
+	HighlightLines []LineRange
+	// Diff classifies lines by their first character: '+' (including the
+	// '+++' file-header form) gets ui-code-block__line--added, '-' (and
+	// '---') gets --removed. The marker stays in the text: a diff's
+	// content IS the diff. On the Lines path a leading token span is
+	// skipped, so the marker behind it still classifies.
+	Diff bool
+	// HighlightWords wraps literal (not regex) matches inside a line in
+	// <mark class="ui-code-block__mark">. Matching runs on the source
+	// text of each line's text nodes: a word never matches across a tag
+	// boundary, and marked text is escaped like the rest of the line.
+	HighlightWords []string
+	// Wrap soft-wraps long lines (white-space: pre-wrap) instead of the
+	// default horizontal scroll. The zero value keeps today's behaviour:
+	// code blocks scroll, they do not wrap.
+	Wrap  bool
+	ID    string
+	Class string
 
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers) to the block's root element, whichever shape
@@ -1154,6 +1176,56 @@ type CodeBlockConfig struct {
 	// the scroll contract (tabindex, aria-label) that lives on the
 	// <pre> body.
 	ExtraAttrs html.Attrs
+}
+
+// LineRange is a 1-based, inclusive range of source lines. To == 0 means
+// a single line (From only).
+type LineRange struct {
+	From int
+	To   int
+}
+
+// ParseLineRanges parses a comma-separated list of 1-based line numbers
+// and ascending inclusive ranges ("2", "1,3-5"), the form the highlight
+// fence option accepts. An empty spec parses to no ranges. Anything that
+// is not a positive line number or an ascending range is an error;
+// callers that degrade instead of failing (ui.Markdown) drop the option.
+func ParseLineRanges(spec string) ([]LineRange, error) {
+	spec = strings.TrimSpace(spec)
+	if spec == "" {
+		return nil, nil
+	}
+	parts := strings.Split(spec, ",")
+	ranges := make([]LineRange, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		lo, hi, isRange := strings.Cut(p, "-")
+		from, err := parseLineNumber(lo)
+		if err != nil {
+			return nil, err
+		}
+		r := LineRange{From: from}
+		if isRange {
+			r.To, err = parseLineNumber(hi)
+			if err != nil {
+				return nil, err
+			}
+			if r.To < r.From {
+				return nil, fmt.Errorf("ui: line range %q ends before it starts", p)
+			}
+		}
+		ranges = append(ranges, r)
+	}
+	return ranges, nil
+}
+
+func parseLineNumber(s string) (int, error) {
+	s = strings.TrimSpace(s)
+	n, err := strconv.Atoi(s)
+	if err != nil || n <= 0 {
+		return 0, fmt.Errorf("ui: %q is not a positive line number", s)
+	}
+	return n, nil
 }
 
 // codeBlockSeq mints a process-unique id for a framed block's body so the
@@ -1182,19 +1254,48 @@ func CodeBlock(cfg CodeBlockConfig) render.HTML {
 	if framed && cfg.ShowCopy && bodyID == "" {
 		bodyID = "ui-code-block-" + strconv.FormatUint(codeBlockSeq.Add(1), 10)
 	}
+	// Any per-line feature (highlight, diff, word marks) forces the
+	// per-line wrapper on the Code path so the classes attach to the same
+	// ui-code-block__line element the Lines path uses; a config with none
+	// keeps today's <code> body.
+	perLine := len(cfg.HighlightLines) > 0 || cfg.Diff || len(cfg.HighlightWords) > 0
 	var body render.HTML
-	if len(cfg.Lines) > 0 {
+	switch {
+	case len(cfg.Lines) > 0:
 		wrapped := make([]render.HTML, len(cfg.Lines))
 		for i, ln := range cfg.Lines {
-			wrapped[i] = html.Span(html.TextConfig{Class: "ui-code-block__line"}, ln)
+			content := string(ln)
+			if len(cfg.HighlightWords) > 0 {
+				content = markWords(content, cfg.HighlightWords)
+			}
+			wrapped[i] = html.Span(html.TextConfig{Class: codeBlockLineClass(cfg, i+1, content)}, render.HTML(content))
 		}
 		body = render.Join(wrapped...)
-	} else {
+	case perLine:
+		src := strings.Split(cfg.Code, "\n")
+		// Mirror HighlightLines: a trailing newline must not render a
+		// blank last row, or line numbers drift from the Lines path.
+		if n := len(src); n > 1 && src[n-1] == "" {
+			src = src[:n-1]
+		}
+		wrapped := make([]render.HTML, len(src))
+		for i, raw := range src {
+			content := render.Escape(raw)
+			if len(cfg.HighlightWords) > 0 {
+				content = markWords(content, cfg.HighlightWords)
+			}
+			wrapped[i] = html.Span(html.TextConfig{Class: codeBlockLineClass(cfg, i+1, content)}, render.HTML(content))
+		}
+		body = render.Join(wrapped...)
+	default:
 		body = render.Tag("code", nil, render.Text(cfg.Code))
 	}
 
 	if !framed {
 		cls := "ui-code-block"
+		if cfg.Wrap {
+			cls += " ui-code-block--wrap"
+		}
 		if cfg.Class != "" {
 			cls += " " + cfg.Class
 		}
@@ -1217,6 +1318,9 @@ func CodeBlock(cfg CodeBlockConfig) render.HTML {
 	}
 	if cfg.Scroll {
 		cls += " ui-code-block--scroll"
+	}
+	if cfg.Wrap {
+		cls += " ui-code-block--wrap"
 	}
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
@@ -1259,6 +1363,155 @@ func CodeBlock(cfg CodeBlockConfig) render.HTML {
 	pre := render.Tag("pre", preAttrs, body)
 	return codeBlockStyle.WrapHTML(
 		html.Div(html.DivConfig{Class: cls, ID: cfg.ID, ExtraAttrs: extra}, head, pre))
+}
+
+// lineHighlighted reports whether the 1-based line n falls inside one of
+// the ranges. To == 0 means "From only".
+func lineHighlighted(ranges []LineRange, n int) bool {
+	for _, r := range ranges {
+		if n < r.From {
+			continue
+		}
+		if r.To == 0 {
+			if n == r.From {
+				return true
+			}
+			continue
+		}
+		if n <= r.To {
+			return true
+		}
+	}
+	return false
+}
+
+// firstTextByte returns the line's first visible character, skipping
+// tags so a diff marker behind a token span
+// ('<span class="tk-pn">-</span>x') still classifies. 0 when the line
+// starts with no text: an entity decodes to one of &<>"', never a
+// marker, and an empty line classifies as neither.
+func firstTextByte(s string) byte {
+	for i := 0; i < len(s); i++ {
+		switch s[i] {
+		case '<':
+			j := strings.IndexByte(s[i:], '>')
+			if j < 0 {
+				return 0
+			}
+			i += j
+		case '&':
+			return 0
+		default:
+			return s[i]
+		}
+	}
+	return 0
+}
+
+// codeBlockLineClass builds the per-line class: the base wrapper plus
+// the highlight band and/or the diff marker class.
+func codeBlockLineClass(cfg CodeBlockConfig, n int, content string) string {
+	cls := "ui-code-block__line"
+	if lineHighlighted(cfg.HighlightLines, n) {
+		cls += " ui-code-block__line--highlight"
+	}
+	if cfg.Diff {
+		switch firstTextByte(content) {
+		case '+':
+			cls += " ui-code-block__line--added"
+		case '-':
+			cls += " ui-code-block__line--removed"
+		}
+	}
+	return cls
+}
+
+// markWords wraps literal matches of any word in
+// <mark class="ui-code-block__mark">, touching text nodes only: tags
+// pass through untouched and a word never matches across a tag boundary,
+// because each text node is matched on its own. Text nodes are decoded
+// to source text for matching and re-escaped on output, so a word like
+// "<b>" matches the source characters, never emitted markup. A text
+// node with no match is copied verbatim (no decode/re-encode roundtrip).
+func markWords(fragment string, words []string) string {
+	if len(words) == 0 {
+		return fragment
+	}
+	var b strings.Builder
+	i := 0
+	for i < len(fragment) {
+		if fragment[i] == '<' {
+			j := strings.IndexByte(fragment[i:], '>')
+			if j < 0 {
+				break // malformed trailing '<': copy verbatim below
+			}
+			end := i + j + 1
+			b.WriteString(fragment[i:end])
+			i = end
+			continue
+		}
+		end := len(fragment)
+		if j := strings.IndexByte(fragment[i:], '<'); j >= 0 {
+			end = i + j
+		}
+		node := fragment[i:end]
+		if text := stdhtml.UnescapeString(node); containsAnyWord(text, words) {
+			b.WriteString(markText(text, words))
+		} else {
+			b.WriteString(node)
+		}
+		i = end
+	}
+	b.WriteString(fragment[i:])
+	return b.String()
+}
+
+func containsAnyWord(text string, words []string) bool {
+	for _, w := range words {
+		if strings.Contains(text, w) {
+			return true
+		}
+	}
+	return false
+}
+
+// markText marks every literal word occurrence in decoded text and
+// returns escaped HTML. The longest word wins at a given position, so
+// overlapping words ("err", "error") mark the full token once.
+func markText(text string, words []string) string {
+	var b strings.Builder
+	start := 0
+	for i := 0; i < len(text); {
+		if w := matchWordAt(text, i, words); w != "" {
+			b.WriteString(render.Escape(text[start:i]))
+			b.WriteString(`<mark class="ui-code-block__mark">`)
+			b.WriteString(render.Escape(w))
+			b.WriteString(`</mark>`)
+			i += len(w)
+			start = i
+			continue
+		}
+		_, size := utf8.DecodeRuneInString(text[i:])
+		if size == 0 {
+			size = 1
+		}
+		i += size
+	}
+	b.WriteString(render.Escape(text[start:]))
+	return b.String()
+}
+
+// matchWordAt returns the longest word that matches text at byte offset
+// at, or "" when none does. Empty words never match (a zero-length match
+// would not advance and must not mark between characters).
+func matchWordAt(text string, at int, words []string) string {
+	best := ""
+	for _, w := range words {
+		if len(w) > len(best) && at+len(w) <= len(text) && text[at:at+len(w)] == w {
+			best = w
+		}
+	}
+	return best
 }
 
 // ─── SkipLink ──────────────────────────────────────────────────────
