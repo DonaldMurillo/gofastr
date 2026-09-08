@@ -225,7 +225,7 @@ func (w *DailyFileWriter) Write(p []byte) (int, error) {
 			_ = w.current.Close()
 		}
 		path := filepath.Join(w.dir, "harness-"+today+".log")
-		f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+		f, err := openDailyFile(path)
 		if err != nil {
 			return 0, err
 		}
@@ -233,6 +233,29 @@ func (w *DailyFileWriter) Write(p []byte) (int, error) {
 		w.day = today
 	}
 	return w.current.Write(p)
+}
+
+// openDailyFile opens the daily log for append with the two rules
+// battery/log's fileSink and the kiln journal already pin: refuse a
+// symlinked leaf (a planted link redirects harness log lines —
+// request paths, panic stacks — into whatever file it names; Lstat is
+// the refusal spelling, openJournalFile's), and chmod the HANDLE to
+// 0600 so a pre-existing weaker mode (operator chmod, restored backup,
+// umask drift) is tightened before another line lands — O_APPEND's
+// mode argument only applies at create.
+func openDailyFile(path string) (*os.File, error) {
+	if fi, err := os.Lstat(path); err == nil && fi.Mode()&os.ModeSymlink != 0 {
+		return nil, fmt.Errorf("logging: %s is a symlink; refusing to write the harness log through it", path)
+	}
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+	if err != nil {
+		return nil, err
+	}
+	if err := f.Chmod(0o600); err != nil {
+		_ = f.Close()
+		return nil, err
+	}
+	return f, nil
 }
 
 // Close closes the underlying file.

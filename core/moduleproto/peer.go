@@ -632,20 +632,25 @@ func (p *Peer) buildResponse(f *Frame) *Frame {
 
 	result, err := runHandler(h, ctx, f.Params)
 	if err != nil {
-		// If the handler returned a *Error, echo its code; else default to
-		// the standard internal-error code.
+		// If the handler returned a *Error, echo its code and message —
+		// that is the deliberate caller-facing channel. A plain error is
+		// host-internal detail (paths, driver text) and must not cross
+		// the wire on the internal-error code; answer the generic
+		// message, the same posture errHandlerPanicked documents.
 		we := AsError(err)
 		if we == nil {
 			we = &Error{
 				Code:    CodeInternalError,
-				Message: err.Error(),
+				Message: "internal handler error",
 			}
 		}
 		return NewErrorResponse(id, we.Code, we.Message, we.Data)
 	}
 	resultRaw, mErr := marshalParams(result)
 	if mErr != nil {
-		return NewErrorResponse(id, CodeInternalError, "marshal result: "+mErr.Error(), nil)
+		// Same posture: the marshal error text can name the result
+		// value's internals, which the counterparty must not see.
+		return NewErrorResponse(id, CodeInternalError, "internal error marshaling result", nil)
 	}
 	return NewSuccessResponse(id, resultRaw)
 }

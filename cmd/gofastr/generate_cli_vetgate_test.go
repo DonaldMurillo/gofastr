@@ -62,11 +62,28 @@ func TestGeneratedCLIPassesRepoVettool(t *testing.T) {
 	}
 
 	// ── leg 2: the vettool over the emitted module ────────────────────
+	//
+	// The --from-openapi module is vetted WHOLE, and that must include
+	// the self-contained client (renderCLISelfClient, emitted as
+	// internal/client/client.go because buildOpenAPICLISpec forces
+	// SelfClient): every operation funnels through its DoRaw, so a
+	// finding there is in the customer's emitted code, exactly the
+	// class this gate exists for. Assert the file is present so the
+	// fixture or generator cannot silently drop the leg.
 	spec, err = buildOpenAPICLISpec(cliGateSpecDoc("list things for the demo"), cliGateOptions(), "example.com/app/cli/internal/client")
 	if err != nil {
 		t.Fatalf("benign fixture spec must build: %v", err)
 	}
 	files := renderCLIFiles(spec)
+	selfClient := false
+	for _, f := range files {
+		if f.name == "internal/client/client.go" {
+			selfClient = true
+		}
+	}
+	if !selfClient {
+		t.Fatalf("generated CLI lost internal/client/client.go (renderCLISelfClient) — the vetgate would silently stop covering the self-contained client; fix the fixture or the emitter, not this gate")
+	}
 	if _, err := fileSetFromGeneratedFiles(files, "cli"); err != nil {
 		t.Fatalf("generated CLI did not parse (the production emit gate): %v", err)
 	}

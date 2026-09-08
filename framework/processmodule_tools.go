@@ -19,6 +19,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/mcp"
 	"github.com/DonaldMurillo/gofastr/core/moduleproto"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
 // Module tool namespacing (design §5.1): every tool a process module
@@ -303,7 +304,7 @@ func (s *ProcessModuleSupervisor) dispatchToolCall(ctx context.Context, moduleNa
 		return nil, ErrModuleToolNotReady
 	}
 	snap := sl.snapshot()
-	if !servingState(snap.state, snap.leaseFailingUnsafe()) {
+	if !servingState(snap.state, snap.leaseFailing) {
 		return nil, ErrModuleToolNotReady
 	}
 	peer := snap.peer
@@ -358,7 +359,7 @@ func (s *ProcessModuleSupervisor) mintDelegationSafely(r *http.Request, callID u
 	defer func() {
 		if p := recover(); p != nil {
 			handle, release = "", func() {}
-			err = fmt.Errorf("processmodule: broker MintDelegation panic: %v\n%s", p, debug.Stack())
+			err = fmt.Errorf("processmodule: broker MintDelegation panic: %v\n%s", textsafe.Recovered(p), debug.Stack())
 		}
 	}()
 	handle, release = s.broker.MintDelegation(r, callID)
@@ -372,7 +373,7 @@ func (s *ProcessModuleSupervisor) mintDelegationSafely(r *http.Request, callID u
 func (s *ProcessModuleSupervisor) releaseDelegationSafely(release func()) {
 	defer func() {
 		if p := recover(); p != nil {
-			slog.Default().Error("processmodule: delegation release panicked", "panic", p, "stack", string(debug.Stack()))
+			slog.Default().Error("processmodule: delegation release panicked", "panic", textsafe.Recovered(p), "stack", string(debug.Stack()))
 		}
 	}()
 	release()

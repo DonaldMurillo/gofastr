@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/query"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"github.com/DonaldMurillo/gofastr/framework/cron"
 )
 
@@ -56,7 +57,8 @@ type DurableScheduler struct {
 func (s *DurableScheduler) hookBeforeOccurrenceCommit() {
 	defer func() {
 		if rec := recover(); rec != nil {
-			slog.Default().Error("queue: durable scheduler hook panicked; occurrence commit continues", "panic", rec)
+			slog.Default().Error("queue: durable scheduler hook panicked; occurrence commit continues",
+				"panic", textsafe.Recovered(rec))
 		}
 	}()
 	s.beforeOccurrenceCommit()

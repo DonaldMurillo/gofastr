@@ -3,6 +3,7 @@ package live
 import (
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"strings"
 	"sync"
@@ -64,9 +65,78 @@ func (b *Broadcaster) Send(e Event) {
 	}
 }
 
+// sseSeatsPerPrincipal is the per-principal cap on concurrent ServeSSE
+// streams: the same number as core/stream's defaultSeatsPerPrincipal and
+// framework/crud's defaultEventStreamSeats, so the three seat policies in
+// the tree read as one number. Each seat is a goroutine plus a buffered
+// channel, so an uncounted stream surface is a memory/fd exhaustion
+// target for a single caller.
+const sseSeatsPerPrincipal = 16
+
+// sseSeatRegistry counts resident ServeSSE streams per principal. This
+// transport is unauthenticated, so the principal is the TCP peer's host
+// (every anonymous connection from one origin shares one bucket — the
+// same posture framework/crud's event stream takes for anonymous
+// callers). The policy is refuse-at-connect: the principal at its cap
+// gets a 429 and holds nothing.
+type sseSeatRegistry struct {
+	mu    sync.Mutex
+	seats map[string]int
+}
+
+// admit seats one stream for principal, reporting whether it was
+// admitted. Over-cap callers are refused, not queued.
+func (r *sseSeatRegistry) admit(principal string) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.seats == nil {
+		r.seats = map[string]int{}
+	}
+	if r.seats[principal] >= sseSeatsPerPrincipal {
+		return false
+	}
+	r.seats[principal]++
+	return true
+}
+
+// release frees a seat when its stream ends; idempotent per admission.
+func (r *sseSeatRegistry) release(principal string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if n := r.seats[principal]; n <= 1 {
+		delete(r.seats, principal)
+	} else {
+		r.seats[principal] = n - 1
+	}
+}
+
+// sseSeatPrincipal derives the seat-bucket identity from the TCP peer.
+// The port is deliberately dropped: one caller's dials all share a host,
+// and counting by full RemoteAddr would make the cap per-connection
+// rather than per-caller.
+func sseSeatPrincipal(r *http.Request) string {
+	host := r.RemoteAddr
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	return strings.Trim(host, "[]")
+}
+
 // ServeSSE is a stand-alone HTTP handler that streams events as
 // Server-Sent Events. Mount at e.g. "/.kiln/events".
 func (l *Live) ServeSSE(w http.ResponseWriter, r *http.Request) {
+	// Seat admission before anything is written: one principal holds at
+	// most sseSeatsPerPrincipal resident streams (a goroutine plus a
+	// buffered channel each), the 17th is answered 429 at connect. The
+	// seat is held until the handler returns.
+	principal := sseSeatPrincipal(r)
+	if !l.sseSeats.admit(principal) {
+		w.Header().Set("Retry-After", "1")
+		http.Error(w, "too many event streams", http.StatusTooManyRequests)
+		return
+	}
+	defer l.sseSeats.release(principal)
+
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		http.Error(w, "streaming unsupported", http.StatusInternalServerError)

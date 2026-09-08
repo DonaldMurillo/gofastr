@@ -108,6 +108,8 @@
   // resolves is queued (via _wready) rather than lost. Idempotent via
   // document.__fuiOpenDispatch, the same flag widgets-boot uses; the
   // two fragments are never composed together so the flag stays honest.
+
+
   function _installEagerWidgetDelegators() {
     if (document.__fuiOpenDispatch) return;
     document.__fuiOpenDispatch = true;
@@ -134,12 +136,16 @@
       const raw = btn.getAttribute('data-fui-deeplink') || '';
       const overrides = {};
       if (raw) {
+        // Degrade-don't-throw, same as widgets-boot: a malformed escape
+        // throws AFTER preventDefault and would consume the click.
         for (const pair of raw.split('&')) {
           if (!pair) continue;
           const eq = pair.indexOf('=');
           if (eq < 0) continue;
-          overrides[decodeURIComponent(pair.slice(0, eq))] =
-            decodeURIComponent(pair.slice(eq + 1));
+          try {
+            overrides[decodeURIComponent(pair.slice(0, eq))] =
+              decodeURIComponent(pair.slice(eq + 1));
+          } catch (_) {}
         }
       }
       const anchorPref = btn.getAttribute('data-fui-popover-anchor');

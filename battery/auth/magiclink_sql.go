@@ -104,8 +104,14 @@ func (s *SQLMagicLinkTokenStore) CreateToken(ctx context.Context, email string, 
 		return "", fmt.Errorf("generate token: %w", err)
 	}
 	token := hex.EncodeToString(b)
+	// The column stores sha256hex(token), never the token (the APIToken
+	// grammar): the minted value is a password-equivalent takeover
+	// credential (magic-link login, password reset, email verification
+	// share this table), so a read-only dump of it must not be a live
+	// redemption kit. Lookup keys on the digest; a presented token is
+	// hashed then matched, uniform timing.
 	q := fmt.Sprintf(`INSERT INTO %s (token, email, expires_at) VALUES ($1, $2, $3)`, query.QuoteIdent(s.table))
-	if _, err := s.db.ExecContext(ctx, q, token, email, time.Now().Add(ttl).Unix()); err != nil {
+	if _, err := s.db.ExecContext(ctx, q, sha256hex(token), email, time.Now().Add(ttl).Unix()); err != nil {
 		return "", err
 	}
 	if sweep {
@@ -119,14 +125,11 @@ func (s *SQLMagicLinkTokenStore) CreateToken(ctx context.Context, email string, 
 }
 
 // RedeemToken atomically consumes a token (single-use) via DELETE … RETURNING,
-// returning the associated email. Returns ErrTokenNotFound when the token is
-// unknown, already redeemed, or expired, the row is removed regardless so a
-// known-but-expired token can never be reused.
 func (s *SQLMagicLinkTokenStore) RedeemToken(ctx context.Context, token string) (string, error) {
 	q := fmt.Sprintf(`DELETE FROM %s WHERE token = $1 RETURNING email, expires_at`, query.QuoteIdent(s.table))
 	var email string
 	var exp int64
-	err := s.db.QueryRowContext(ctx, q, token).Scan(&email, &exp)
+	err := s.db.QueryRowContext(ctx, q, sha256hex(token)).Scan(&email, &exp)
 	if err == sql.ErrNoRows {
 		return "", ErrTokenNotFound
 	}
@@ -145,7 +148,7 @@ func (s *SQLMagicLinkTokenStore) PeekToken(ctx context.Context, token string) (s
 	q := fmt.Sprintf(`SELECT email, expires_at FROM %s WHERE token = $1`, query.QuoteIdent(s.table))
 	var email string
 	var exp int64
-	err := s.db.QueryRowContext(ctx, q, token).Scan(&email, &exp)
+	err := s.db.QueryRowContext(ctx, q, sha256hex(token)).Scan(&email, &exp)
 	if err == sql.ErrNoRows {
 		return "", ErrTokenNotFound
 	}

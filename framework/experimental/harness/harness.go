@@ -29,6 +29,9 @@ import (
 	"path/filepath"
 	"sync"
 
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
+	"github.com/DonaldMurillo/gofastr/internal/fileperm"
+
 	xcontext "github.com/DonaldMurillo/gofastr/framework/experimental/harness/context"
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/control"
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/control/multiplex"
@@ -332,8 +335,11 @@ func (h *Harness) persistLoop(ctx context.Context, ch <-chan control.EventEnvelo
 func (h *Harness) appendEventGuarded(ctx context.Context, env control.EventEnvelope) {
 	defer func() {
 		if r := recover(); r != nil {
+			// textsafe.Recovered: a panic value is arbitrary
+			// runtime data (C0/DEL/C1/bidi included) and this line
+			// reaches the slog sink live.
 			slog.Error("harness: session store AppendEvent panicked; event dropped",
-				"session", env.Session, "kind", env.Kind, "panic", r)
+				"session", env.Session, "kind", env.Kind, "panic", textsafe.Recovered(r))
 		}
 	}()
 	_ = h.Sessions.AppendEvent(ctx, env)
@@ -422,7 +428,10 @@ func readOrCreateSalt(path string) ([]byte, error) {
 	if _, err := readRandom(salt); err != nil {
 		return nil, err
 	}
-	if err := os.WriteFile(path, salt, 0o600); err != nil {
+	// WriteOwnerOnly: the salt derives the credstore key, and the mode
+	// must tighten a pre-existing weaker file, not just apply at
+	// create.
+	if err := fileperm.WriteOwnerOnly(path, salt); err != nil {
 		return nil, err
 	}
 	return salt, nil

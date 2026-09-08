@@ -96,6 +96,21 @@ and the cap is checked again under the lock that registers the peer, so
 two joins racing for the last seat end with one member and one closed
 socket, never an oversize room.
 
+**One principal holds a bounded number of sockets.**
+`MaxSocketsPerUser` (default 16, the seat parity of the SSE broker
+and the CRUD event stream) caps concurrent signaling sockets per
+`Join.User` across every room. A principal's next socket past the
+cap displaces their oldest one, mirroring rtc's own
+replace-on-rejoin behaviour, and a peer's departure frees its seat.
+Callers with no `Join.User` share one bucket. A negative value is
+refused at `New`; set it explicitly when a host legitimately derives
+no per-user identity.
+
+The frame envelopes themselves decode strictly: duplicate or
+case-folded keys in a signaling frame are refused, the same
+no-ambiguity rule every client-borne JSON in the framework follows.
+The `data` payload stays opaque as before.
+
 **Nothing sensitive is logged.** Joins and leaves log at Debug, refusals
 at Warn with a bounded reason class. Never logged: SDP, candidates,
 status bodies, credentials, close reasons.

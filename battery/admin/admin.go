@@ -598,6 +598,13 @@ func (b *Battery) handleQueueReplay(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "replay failed; check server logs", http.StatusInternalServerError)
 		return
 	}
+	// The re-fired job is a mutation like every other admin RPC: record
+	// who replayed which job, the same forensic trace grant/revoke/assign
+	// and the module lifecycle ops carry. A queue dashboard mounted
+	// without a DB has no audit table to write to.
+	if b.effectiveDB() != nil {
+		b.appendAudit(r.Context(), "queue", "replay", id, adminActorID(r.Context()), nil)
+	}
 	http.Redirect(w, r, b.cfg.PathPrefix+"/queue?status=failed", http.StatusSeeOther)
 }
 

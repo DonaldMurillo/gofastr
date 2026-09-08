@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"sync"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
 // ReadinessCheck is a named probe run by GET /readyz. Implementations
@@ -219,7 +221,7 @@ func runReadinessChecks(ctx context.Context, checks []ReadinessCheck, verbose bo
 					out[i] = ReadinessResult{
 						Name:   c.Name,
 						Status: "error",
-						Error:  redactError(fmt.Sprintf("panic: %v", r), verbose),
+						Error:  redactError(fmt.Sprintf("panic: %v", textsafe.Recovered(r)), verbose),
 						DurMS:  0,
 					}
 				}

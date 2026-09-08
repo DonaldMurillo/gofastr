@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/moduleproto"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"github.com/DonaldMurillo/gofastr/framework/access"
 )
 
@@ -298,28 +299,30 @@ type moduleSlot struct {
 // snapshot is an RLock'd read of the slot's mutable state, for proxy /
 // introspection.
 type snapshot struct {
-	state       ProcessState
-	desiredGen  uint64
-	enabled     bool
-	instanceID  string
-	peer        *moduleproto.Peer
-	restartCnt  int
-	circuitOpen bool
-	lastExit    string
+	state        ProcessState
+	desiredGen   uint64
+	enabled      bool
+	instanceID   string
+	peer         *moduleproto.Peer
+	restartCnt   int
+	circuitOpen  bool
+	lastExit     string
+	leaseFailing bool
 }
 
 func (s *moduleSlot) snapshot() snapshot {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return snapshot{
-		state:       s.state,
-		desiredGen:  s.desiredGen,
-		enabled:     s.enabled,
-		instanceID:  s.instanceID,
-		peer:        s.peer,
-		restartCnt:  len(s.restarts),
-		circuitOpen: s.circuitOpen,
-		lastExit:    s.lastExit,
+		state:        s.state,
+		desiredGen:   s.desiredGen,
+		enabled:      s.enabled,
+		instanceID:   s.instanceID,
+		peer:         s.peer,
+		restartCnt:   len(s.restarts),
+		circuitOpen:  s.circuitOpen,
+		lastExit:     s.lastExit,
+		leaseFailing: s.leaseFailing,
 	}
 }
 
@@ -432,7 +435,7 @@ func (s *ProcessModuleSupervisor) Drain(ctx context.Context) error {
 func (s *ProcessModuleSupervisor) drainOneForShutdown(sl *moduleSlot, budget time.Duration) {
 	defer func() {
 		if r := recover(); r != nil {
-			s.logf("processmodule: drain %s panic: %v\n%s", sl.name, r, debug.Stack())
+			s.logf("processmodule: drain %s panic: %v\n%s", sl.name, textsafe.Recovered(r), debug.Stack())
 		}
 	}()
 	sl.mu.Lock()
@@ -796,7 +799,7 @@ func (sl *moduleSlot) heartbeat() {
 func (sl *moduleSlot) recordHeartbeatSafely(ctx context.Context, gen uint64, state ProcessState) {
 	defer func() {
 		if r := recover(); r != nil {
-			sl.sup.logf("processmodule: %s heartbeat panic: %v\n%s", sl.name, r, debug.Stack())
+			sl.sup.logf("processmodule: %s heartbeat panic: %v\n%s", sl.name, textsafe.Recovered(r), debug.Stack())
 		}
 	}()
 	_ = sl.sup.store.RecordHeartbeat(ctx, sl.name, sl.sup.cfg.ReplicaID, gen, state.String())
@@ -807,7 +810,7 @@ func (sl *moduleSlot) recordHeartbeatSafely(ctx context.Context, gen uint64, sta
 func (sl *moduleSlot) reconcile() {
 	defer func() {
 		if r := recover(); r != nil {
-			sl.sup.logf("processmodule: reconcile %s panic: %v\n%s", sl.name, r, debug.Stack())
+			sl.sup.logf("processmodule: reconcile %s panic: %v\n%s", sl.name, textsafe.Recovered(r), debug.Stack())
 		}
 	}()
 	desired, err := sl.refreshDesired()
@@ -833,6 +836,19 @@ func (sl *moduleSlot) reconcile() {
 	sl.desiredGen = desired.DesiredGeneration
 	sl.enabled = desired.Enabled
 	state := sl.state
+	childLive := sl.child != nil
+	if sl.leaseFailing {
+		// The lease is healthy again: refreshDesired succeeded, so the
+		// fail-closed drain is over. Clear the flag so the proxy/tools
+		// gates and Info() stop reporting the module as failing; the
+		// childless-Ready case below re-arms the spawn path. Without
+		// this clear, leaseFailing has no write site besides `= true`
+		// and one GetDesired outage past LeaseTTL 503s the module
+		// forever (the drain is an availability guard, not a one-way
+		// kill).
+		sl.leaseFailing = false
+		sl.sup.logf("processmodule: %s lease recovered: re-arming", sl.name)
+	}
 	sl.mu.Unlock()
 
 	// Generation advanced ⇒ upgrade path (drain old, spawn new). Reset
@@ -874,6 +890,16 @@ func (sl *moduleSlot) reconcile() {
 		(state == StateReady || state == StateStarting || state == StateHandshaking):
 		// Upgrade: drain then spawn.
 		sl.transitionDrain(StateDrainingUpgrade, desired.DesiredGeneration)
+	case desired.Enabled && state == StateReady && !childLive:
+		// Recovery from a lease-expired drain: handleLeaseExpired nils
+		// the child but keeps state=Ready, so the plain Ready arm below
+		// would treat the drained slot as healthy forever. The lease is
+		// healthy again (refreshDesired succeeded and cleared
+		// leaseFailing above): re-arm the spawn path with a fresh
+		// instance. StateReady implies a live child everywhere else
+		// (spawnOnce sets Ready only alongside installing the child),
+		// so a childless Ready slot is uniquely this recovery case.
+		sl.spawnAsync(desired)
 	case desired.Enabled && state == StateCrashed:
 		// Crashed: charge circuit, decide restart vs Failed.
 		sl.handleCrashed(desired)
@@ -926,7 +952,7 @@ func (sl *moduleSlot) refreshDesired() (DesiredState, error) {
 func (sl *moduleSlot) getDesiredSafely(ctx context.Context) (d DesiredState, err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			d, err = DesiredState{}, fmt.Errorf("store GetDesired panic: %v\n%s", r, debug.Stack())
+			d, err = DesiredState{}, fmt.Errorf("store GetDesired panic: %v\n%s", textsafe.Recovered(r), debug.Stack())
 		}
 	}()
 	return sl.sup.store.GetDesired(ctx, sl.name)
@@ -1086,8 +1112,8 @@ func (sl *moduleSlot) spawnAsync(desired DesiredState) {
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
-				sl.sup.logf("processmodule: spawn %s panic: %v\n%s", sl.name, r, debug.Stack())
-				sl.markCrashed("spawn panic: " + fmt.Sprint(r))
+				sl.sup.logf("processmodule: spawn %s panic: %v\n%s", sl.name, textsafe.Recovered(r), debug.Stack())
+				sl.markCrashed("spawn panic: " + textsafe.Recovered(r))
 			}
 		}()
 		err := sl.spawnOnce(desired)
@@ -1335,7 +1361,7 @@ func (sl *moduleSlot) startChildSafely(ctx context.Context, spec ChildSpec) (chi
 	defer func() {
 		if r := recover(); r != nil {
 			child = nil
-			err = fmt.Errorf("runner Start panic: %v\n%s", r, debug.Stack())
+			err = fmt.Errorf("runner Start panic: %v\n%s", textsafe.Recovered(r), debug.Stack())
 		}
 	}()
 	return sl.runner.Start(ctx, spec)
@@ -1348,7 +1374,7 @@ func (sl *moduleSlot) startChildSafely(ctx context.Context, spec ChildSpec) (chi
 func (sl *moduleSlot) installHandlersSafely(peer *moduleproto.Peer, view ModuleGrantView) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			err = fmt.Errorf("broker InstallHandlers panic: %v\n%s", r, debug.Stack())
+			err = fmt.Errorf("broker InstallHandlers panic: %v\n%s", textsafe.Recovered(r), debug.Stack())
 		}
 	}()
 	sl.sup.broker.InstallHandlers(peer, view)
@@ -1362,7 +1388,7 @@ func (sl *moduleSlot) installHandlersSafely(peer *moduleproto.Peer, view ModuleG
 func (sl *moduleSlot) registerToolsSafely(name string, tools []moduleproto.Tool) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			err = fmt.Errorf("tools RegisterTools panic: %v\n%s", r, debug.Stack())
+			err = fmt.Errorf("tools RegisterTools panic: %v\n%s", textsafe.Recovered(r), debug.Stack())
 		}
 	}()
 	return sl.sup.tools.RegisterTools(name, tools)

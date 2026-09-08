@@ -1,6 +1,8 @@
 package evalrunner
 
 import (
+	"github.com/DonaldMurillo/gofastr/internal/fileperm"
+
 	"bufio"
 	"bytes"
 	"context"
@@ -315,7 +317,7 @@ func extractOMPFinal(logPath, outputPath string) error {
 	if strings.TrimSpace(final) == "" {
 		return fmt.Errorf("omp produced no final assistant message (log: %s)", logPath)
 	}
-	return os.WriteFile(outputPath, []byte(final), 0o600)
+	return fileperm.WriteOwnerOnly(outputPath, []byte(final))
 }
 
 func extractClaudeFinal(logPath, outputPath string) error {
@@ -341,14 +343,16 @@ func extractClaudeFinal(logPath, outputPath string) error {
 	if strings.TrimSpace(string(output)) == "" {
 		return fmt.Errorf("claude produced no final output (log: %s)", logPath)
 	}
-	return os.WriteFile(outputPath, output, 0o600)
+	return fileperm.WriteOwnerOnly(outputPath, output)
 }
 
 func agentVersion(ctx context.Context, cfg AgentConfig) (string, error) {
 	versionCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	args := append(append([]string(nil), cfg.PrefixArgs...), "--version")
-	out, err := exec.CommandContext(versionCtx, cfg.Program, args...).CombinedOutput()
+	versionCmd := exec.CommandContext(versionCtx, cfg.Program, args...)
+	versionCmd.WaitDelay = 5 * time.Second // an orphaned descendant must not hold the pipe past the deadline
+	out, err := versionCmd.CombinedOutput()
 	if err != nil {
 		return "", fmt.Errorf("resolve %s version: %w (%s)", cfg.Backend, err, strings.TrimSpace(string(out)))
 	}

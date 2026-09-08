@@ -28,6 +28,7 @@ package ui
 
 import (
 	"strconv"
+	"sync"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
@@ -82,9 +83,22 @@ func Responsive(cfg ResponsiveConfig, desktop, mobile render.HTML) render.HTML {
 // responsiveStyleCache holds one registered Style per breakpoint. The
 // registry dedupes per Name, so registering "ui-responsive-1024" twice
 // returns the same handle and emits one CSS rule in the bundle.
-var responsiveStyleCache = make(map[int]*registry.Style)
+//
+// responsiveStyleMu guards the map: SSR renders run concurrently, and
+// two first calls with different breakpoints take the miss path at the
+// same time. An unguarded check-then-set is a data race under -race and
+// a fatal "concurrent map writes" without the detector, taking the
+// whole host process down. registry.RegisterStyle has its own lock and
+// never calls back into this package, so holding ours across the call
+// cannot deadlock.
+var (
+	responsiveStyleMu    sync.Mutex
+	responsiveStyleCache = make(map[int]*registry.Style)
+)
 
 func getOrRegisterResponsiveStyle(bp int) *registry.Style {
+	responsiveStyleMu.Lock()
+	defer responsiveStyleMu.Unlock()
 	if s, ok := responsiveStyleCache[bp]; ok {
 		return s
 	}

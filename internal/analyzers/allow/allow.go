@@ -31,7 +31,15 @@ import (
 	"golang.org/x/tools/go/analysis"
 )
 
-var marker = regexp.MustCompile(`//gofastr:allow\(([A-Za-z0-9_,\s]+)\)(.*)$`)
+// marker matches a live allow directive AT THE START of a comment
+// token. The anchor is the grammar framework/contracts/suppress.go:35
+// states: a directive must be the first thing in its comment, so prose
+// or documentation that merely MENTIONS the marker ("The
+// //gofastr:allow(worldreadable) marker is documented in allow.go.")
+// disables nothing. Until 2026-09-07 the pattern was unanchored, and a
+// mid-prose mention above a trigger line suppressed the diagnostic
+// (the round-5 red test in prose_security_test.go pinned it).
+var marker = regexp.MustCompile(`^(?://|/\*)\s*gofastr:allow\(([A-Za-z0-9_,\s]+)\)(.*)$`)
 
 // Guard rewrites a's Run so diagnostics on an allowed line are dropped.
 // It mutates a in place and returns it, so a registration list can be

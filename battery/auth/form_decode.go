@@ -26,35 +26,12 @@ func bareContentType(r *http.Request) string {
 // "application/x-www-form-urlencoded" or "multipart/form-data".
 //
 // This answers "how should I decode the body and shape the response",
-// NOT "may a cross-site page have sent this". Use isForgeableRequest for
-// the latter, the two sets differ, and conflating them is what let a
-// text/plain login CSRF through.
+// NOT "may a cross-site page have sent this". Use
+// core/handler.IsForgeableRequest for the latter, the two sets differ,
+// and conflating them is what let a text/plain login CSRF through.
 func isFormRequest(r *http.Request) bool {
 	ct := bareContentType(r)
 	return ct == "application/x-www-form-urlencoded" || ct == "multipart/form-data"
-}
-
-// isForgeableRequest reports whether a cross-site page could have sent
-// this request WITHOUT a CORS preflight, i.e. whether it is a CORS
-// "simple request" and therefore a viable CSRF vehicle.
-//
-// The set is the three simple content types plus the absent header:
-// `fetch(url, {method:'POST'})` with no body sends no Content-Type at
-// all, and a form with enctype="text/plain" sends text/plain. Both are
-// preflight-free and both carry ambient cookies.
-//
-// application/json and every other type are NOT forgeable: a cross-site
-// POST carrying one is preflighted, and the framework answers no
-// preflight for auth routes. That exemption is deliberate and load
-// bearing, a legitimate SPA on another origin talks to these routes
-// with JSON through an explicitly configured CORS middleware, and
-// gating it here would break that.
-func isForgeableRequest(r *http.Request) bool {
-	switch bareContentType(r) {
-	case "", "application/x-www-form-urlencoded", "multipart/form-data", "text/plain":
-		return true
-	}
-	return false
 }
 
 // decodeAuthCredentials reads either a JSON {email, password} body or an

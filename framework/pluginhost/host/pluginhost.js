@@ -24,9 +24,12 @@
  * one contract, both directions: the broker dispatches them to a per-method
  * handler registered via api.onRequest, with the adapter's static
  * registration.onRequest as fallback, and ALWAYS replies — result,
- * E_NO_HANDLER, or E_HANDLER. The pending map is bounded (MAX_INFLIGHT) and
- * teardown rejects stragglers with E_TEARDOWN. The frame-side counterpart is
- * frame/frameclient.js (window.__gofastrPluginFrame).
+ * E_NO_HANDLER, or E_HANDLER. Both directions are bounded: the pending map
+ * by MAX_INFLIGHT (teardown rejects stragglers with E_TEARDOWN), and the
+ * inbound frame → host dispatch by the same MAX_INFLIGHT as an in-flight
+ * counter — a saturated frame request is answered with E_SATURATED, never
+ * dropped. The frame-side counterpart is frame/frameclient.js
+ * (window.__gofastrPluginFrame).
  *
  * Adapter contract (see pluginhost.BrokerRegistration in Go):
  *
@@ -319,9 +322,11 @@
       // uncaught TypeError in the host page, on demand, from a hostile
       // frame. Object.create(null) makes unknown ids uniformly undefined.
       pending: Object.create(null),
+      // Frame → host requests currently being handled (see
+      // handleRequest's saturation bound). Decremented on settle.
+      inflight: 0,
       requestHandlers: Object.create(null), // method -> frame→host handler
       ready: false,
-      tearingDown: false,
       focused: false,
       lastMetric: null,
       theme: null,
@@ -502,6 +507,19 @@
   }
 
   function handleRequest(st, msg) {
+    // Inbound saturation bound: the frame is untrusted by construction
+    // (sandbox docs), and a tight postMessage loop would otherwise drive
+    // unlimited concurrent host-side handler work in this fully
+    // privileged page. Same MAX_INFLIGHT the outbound pending map uses;
+    // a saturated request is ANSWERED (E_SATURATED), never dropped — the
+    // frame holds a pending entry per id and silence would hang it.
+    if (st.inflight >= MAX_INFLIGHT) {
+      reply(st, msg.id, null, {
+        code: "E_SATURATED",
+        message: "host saturated at " + MAX_INFLIGHT + " in-flight frame requests: " + msg.method
+      });
+      return;
+    }
     var handler = st.requestHandlers[msg.method];
     var run;
     if (typeof handler === "function") {
@@ -517,9 +535,11 @@
     }
     // Promise.resolve().then(run): a synchronous throw in the handler
     // becomes a rejection instead of escaping the message dispatch.
+    st.inflight++;
     Promise.resolve().then(run).then(
-      function (result) { reply(st, msg.id, result, null); },
+      function (result) { st.inflight--; reply(st, msg.id, result, null); },
       function (err) {
+        st.inflight--;
         reply(st, msg.id, null, {
           code: "E_HANDLER",
           message: String(err && err.message || err)

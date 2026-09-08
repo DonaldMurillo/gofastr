@@ -16,6 +16,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
 // WebSocketConn wraps a hijacked HTTP connection as a simple WebSocket
@@ -214,14 +216,30 @@ func Upgrade(w http.ResponseWriter, r *http.Request, cfg WSConfig) (*WebSocketCo
 		return nil, errors.New("stream: response writer does not support hijacking")
 	}
 
-	conn, bufrw, err := hijacker.Hijack()
+	hijackConn, bufrw, err := hijacker.Hijack()
 	if err != nil {
 		return nil, fmt.Errorf("stream: hijack failed: %w", err)
 	}
 
-	// Flush any buffered data from bufrw
+	var conn io.ReadWriteCloser = hijackConn
+	// Flush any buffered response data, then drain the request reader:
+	// net/http may have read past the handshake when the client pipelined
+	// its first data frame into the same TCP write. Those bytes belong to
+	// the websocket stream, not the HTTP request; leaving them inside the
+	// hijacked *bufio.Reader orphans them — the read pump is handed the
+	// raw conn and never sees the frame, so an authenticate-first client
+	// silently loses its auth frame and hangs. Serve them in front of the
+	// raw conn instead.
 	if bufrw != nil {
 		bufrw.Flush()
+		if n := bufrw.Reader.Buffered(); n > 0 {
+			prefix := make([]byte, n)
+			if _, err := io.ReadFull(bufrw.Reader, prefix); err != nil {
+				hijackConn.Close()
+				return nil, fmt.Errorf("stream: drain hijacked reader: %w", err)
+			}
+			conn = &prefixConn{conn: hijackConn, prefix: prefix}
+		}
 	}
 
 	// Negotiate subprotocol per RFC 6455 §4.2.2.
@@ -301,6 +319,46 @@ func Upgrade(w http.ResponseWriter, r *http.Request, cfg WSConfig) (*WebSocketCo
 	wsc.startReadPump()
 
 	return wsc, nil
+}
+
+// prefixConn is the read path Upgrade hands the connection when the
+// hijacked request reader had already buffered bytes past the handshake:
+// a client that pipelines its first data frame into the same TCP write
+// as the handshake leaves them there, and the raw conn the pumps get
+// cannot see behind the bufio.Reader. prefix is served first, then
+// every method delegates. Only the read pump reads; writes, deadlines,
+// and Close pass straight through to the underlying conn.
+type prefixConn struct {
+	conn   io.ReadWriteCloser
+	prefix []byte
+}
+
+func (p *prefixConn) Read(b []byte) (int, error) {
+	if len(p.prefix) > 0 {
+		n := copy(b, p.prefix)
+		p.prefix = p.prefix[n:]
+		return n, nil
+	}
+	return p.conn.Read(b)
+}
+
+func (p *prefixConn) Write(b []byte) (int, error) { return p.conn.Write(b) }
+func (p *prefixConn) Close() error                { return p.conn.Close() }
+
+// SetReadDeadline / SetWriteDeadline forward so the deadline probes in
+// readFrame and writeFrame keep working behind the prefix wrapper.
+func (p *prefixConn) SetReadDeadline(t time.Time) error {
+	if nc, ok := p.conn.(interface{ SetReadDeadline(time.Time) error }); ok {
+		return nc.SetReadDeadline(t)
+	}
+	return nil
+}
+
+func (p *prefixConn) SetWriteDeadline(t time.Time) error {
+	if nc, ok := p.conn.(interface{ SetWriteDeadline(time.Time) error }); ok {
+		return nc.SetWriteDeadline(t)
+	}
+	return nil
 }
 
 // randomConnectionID mints a per-connection id: 8 random bytes, hex.
@@ -468,7 +526,7 @@ func (c *WebSocketConn) Close() error {
 			go func(fn func()) {
 				defer func() {
 					if rec := recover(); rec != nil {
-						slog.Default().Error("stream: websocket close hook panicked", "panic", rec)
+						slog.Default().Error("stream: websocket close hook panicked", "panic", textsafe.Recovered(rec))
 					}
 				}()
 				fn()

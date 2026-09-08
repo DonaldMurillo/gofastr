@@ -553,3 +553,35 @@ seed:
         title: Great value
         body: Solid build quality for the price. Wish the case was included.
         verified: true
+
+# Money integrity: subtotal/total are server-derived from the order_items
+# rows on every order and order_items mutation (the handlers live in
+# app/order_totals.go), never trusted from the request body. tax and
+# shipping_cost stay schema-validated inputs; total = subtotal + tax +
+# shipping_cost.
+hooks:
+  - id: orders-totals-on-create
+    entity: orders
+    when: after_create
+    handler: recomputeOrderTotalsOnCreateHook
+    description: derive subtotal/total from the order's items after create
+  - id: orders-totals-on-update
+    entity: orders
+    when: after_update
+    handler: recomputeOrderTotalsOnUpdateHook
+    description: derive subtotal/total from the order's items after update
+  - id: order-items-totals-on-create
+    entity: order_items
+    when: after_create
+    handler: recomputeOrderFromItemCreateHook
+    description: recompute the parent order's money after an item lands
+  - id: order-items-totals-on-update
+    entity: order_items
+    when: after_update
+    handler: recomputeOrderFromItemUpdateHook
+    description: recompute the parent order's money after an item changes (old parent too if moved)
+  - id: order-items-totals-on-delete
+    entity: order_items
+    when: after_delete
+    handler: recomputeOrderFromItemDeleteHook
+    description: recompute the parent order's money after an item is removed

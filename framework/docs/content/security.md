@@ -179,6 +179,28 @@ planned rotation without bouncing in-flight forms, list the previous
 secret(s) in `AdditionalKeys`; drain once the old tokens have
 expired.
 
+## Cross-site form guard (Fetch Metadata)
+
+```go
+if handler.IsCrossSiteRequest(r) {
+    http.Error(w, "cross-site form", http.StatusForbidden)
+}
+```
+
+`handler.IsCrossSiteRequest` is the one shared predicate for refusing
+a cross-site form post: `Sec-Fetch-Site: cross-site` decides when the
+browser sends Fetch Metadata, and an Origin-header host compare
+against the request's own host is the fallback for clients (older
+browsers, tests, native apps) that send neither. `IsForgeableRequest`
+answers whether the request's content type is one a plain HTML form
+can produce, for guards that only need to worry form-shaped posts.
+`IsCrossSiteRequestStrict` is for surfaces only ever called by
+`fetch()`: there an opaque `Origin: null` with no Fetch Metadata to
+vouch for it is the sandboxed-iframe shape, not a legitimate caller,
+and is refused. The auth battery's cross-site guards, setup tokens,
+the admin console, and kiln all route through these helpers; writing
+a fourth copy of the check is what `GOFASTR1411` fires on.
+
 ## Secret rotation
 
 Two app secrets can be rotated without a mass logout: the uihost session
@@ -294,6 +316,18 @@ The partial-navigation arm matters as much as the full page: the
 runtime keeps the response out of the screen cache on a non-2xx, but
 any proxy between client and server obeys the headers, which is what
 `no-store` is for.
+
+The same posture holds wherever a response is per-caller: RFC 9111's
+storage restriction covers requests with an `Authorization` header,
+NOT cookie-authenticated ones — this framework's default session
+auth — so every authenticated 2xx body suppresses storage itself.
+CRUD responses, the auth battery's token and account listings, A2A
+POST responses, uihost pages (`no-store` plus `Vary: Cookie`), the
+resource `TableHandler`, kiln's JSON GETs, and the harness REST
+surface all stamp `Cache-Control: no-store` unless the handler set
+its own Cache-Control. The `nostore` analyzer holds the family: a
+handler that resolves a principal and writes a 2xx body with no
+Cache-Control on the path fires it.
 
 ## OpenAPI coverage for auth endpoints
 
@@ -494,31 +528,29 @@ column stays masked no matter who asks. That is specific to nested filters —
 `TypedQuery.Where` remains deliberately ungated for `NoQuery`, as described
 above.
 
-### Foreign keys on writes are not permission-checked
+### Foreign keys on writes are scope-checked
 
 Read paths carry the target entity's posture: an `?include=` or a nested
 filter is refused when the caller may not read the related entity. Write
-paths do not. A create or update that sets a relation column such as
-`order_id` or `author_id` stores whatever id the body supplies, and nothing asks
-whether the caller may read the row it names or whether that row is theirs.
-A caller can attach their own row to another owner's parent.
+paths now resolve the same predicate. A create or update that sets a
+BelongsTo relation column such as `order_id` or `author_id` is answered
+with **404** when the target row exists but the caller cannot read it
+under the target's own owner, tenant, and read scopes — the exact status
+reading that foreign row gives, so existence is not leaked. The
+existence check underneath it (`FOREIGN KEY` on both dialects;
+`AutoMigrate` emits the clause and the `sqlite3` driver name defaults
+`_pragma=foreign_keys(1)`) still rejects a fabricated id.
 
-Two gaps sat behind that sentence. One is closed:
-
-- **Existence IS checked.** `AutoMigrate` emits a `FOREIGN KEY` clause for
-  every declared relation, and both dialects now enforce it. PostgreSQL
-  always did. SQLite honours the constraint only when `PRAGMA foreign_keys`
-  is on; that pragma is off by default in every driver, so every DSN opened through the
-  `sqlite3` driver name defaults to `_pragma=foreign_keys(1)`. An id naming
-  no row is rejected on both. (`_pragma=foreign_keys(0)` opts out.)
-- **Permission is NOT checked.** Nothing consults the target entity's
-  `Exposure.Access` or `Scope` on the write path. A caller who may not read
-  a row can still point their own row at it, so long as the id exists.
-
-So a fabricated id now fails; a real id belonging to someone else still
-succeeds. An entity whose relation columns must not be retargeted needs a
-`BeforeCreate`/`BeforeUpdate` hook that validates them against the caller;
-see [hooks and transactions](hooks-and-transactions.md).
+The gate mirrors the read side's exemptions exactly: a caller holding
+`owner.AllowCrossOwner`, the target's `CrossOwnerRead` permission,
+`tenant.AllowCrossTenant`, or a `crud.WithServerWrites` context (a
+host-driven write: jobs, imports, admin tooling) writes the reference
+unchanged. A NULL or absent FK, an unscoped target, or a target the
+registry does not know is skipped. The same reasoning a
+`BeforeCreate`/`BeforeUpdate` hook was told to do in earlier versions
+([hooks and transactions](hooks-and-transactions.md)) is framework
+behaviour for BelongsTo now; a hook is only needed for has-many
+retargeting or business rules beyond scope.
 
 Blueprint screens are checked at generate time, because several of them
 reach the database without passing through the HTTP filter parser: an

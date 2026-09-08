@@ -270,7 +270,14 @@ func isBodyTooLarge(err error) bool {
 }
 
 func writeJSON(w http.ResponseWriter, code int, v any) {
+	// Every response on this handler's path sits behind a resolved
+	// principal (the bearer-token gate), so no shared or back/forward
+	// cache may retain one — RFC 9111's storage rules cover the
+	// Authorization request, but the posture is stamped here so no
+	// route can forget it, the same choke-point spelling the admin
+	// battery's gate uses.
 	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(code)
 	_ = json.NewEncoder(w).Encode(v)
 }

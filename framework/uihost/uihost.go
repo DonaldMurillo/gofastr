@@ -1398,6 +1398,18 @@ func (ds *UIHost) handlePage(w http.ResponseWriter, r *http.Request) {
 	// a dead session and 401 until the user manually cleared the cookie.
 	// The cookie stores the signed token; only the bare id goes into the
 	// page chrome (SSE URL), so the credential never appears in URLs.
+	//
+	// no-store + Vary: Cookie BEFORE the live/dead split, exactly like
+	// handlePartialPage: the 200 this arm ships is per-user rendered
+	// content (caller-context SSR HTML, /__gofastr/sse?session=<id>
+	// chrome, gated widget chrome SSR-inlined with request context), and
+	// the re-mint arm additionally carries a Set-Cookie token. A shared
+	// cache that stores no-freshness responses keyed on URL alone would
+	// serve visitor B this session's page. Every sibling arm already
+	// pins this (the partial path, the re-mint block, RenderScreen's
+	// private-screen default, the embed content route).
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Add("Vary", "Cookie")
 	sessionID, live := ds.verifySessionToken(readSessionCookie(r))
 	if !live {
 		sess := ds.CreateSession()
@@ -1405,9 +1417,8 @@ func (ds *UIHost) handlePage(w http.ResponseWriter, r *http.Request) {
 		setSessionCookie(w, r, sess.Token)
 		// Same seam as the partial path: a re-mint response carries a
 		// Set-Cookie session token AND embeds the fresh stream id in the
-		// page chrome. Don't let a shared cache replay that pair to a
-		// second visitor. SSR HTML is per-user anyway; make it explicit.
-		w.Header().Set("Cache-Control", "no-store")
+		// page chrome. The no-store above already covers this arm; the
+		// comment stays for the threat model.
 	}
 
 	page := ds.injectChromeFor(string(html), path, sessionID, boundedPresenceParam(r), res.Component)

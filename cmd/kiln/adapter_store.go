@@ -4,10 +4,10 @@ import (
 	"errors"
 	"log"
 	"sync"
+
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
-// Cancellation causes propagated through context.WithCancelCause so the
-// turn goroutine can render the right (superseded) note.
 var (
 	errSupersededByNewMessage = errors.New("superseded by newer message")
 	errAgentSwitched          = errors.New("agent harness switched mid-turn")
@@ -32,7 +32,10 @@ func invokeCancel(c *turnCancel, cause error) {
 	}
 	defer func() {
 		if r := recover(); r != nil {
-			log.Printf("kiln: agent turn cancel hook panicked: %v", r)
+			// The panicked-on value is adapter-supplied; scrubbed per
+			// the recoverlog rule before it reaches the log, so it
+			// cannot forge log lines.
+			log.Printf("kiln: agent turn cancel hook panicked: %s", textsafe.Recovered(r))
 		}
 	}()
 	c.fn(cause)

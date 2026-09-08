@@ -10,6 +10,8 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+
+	"github.com/DonaldMurillo/gofastr/internal/fileperm"
 )
 
 // DEK/KEK scheme:
@@ -127,7 +129,15 @@ func ExportDEK(dbPath string, kek, recipientKey []byte, outPath string) error {
 	if err := os.MkdirAll(filepath.Dir(outPath), 0o700); err != nil {
 		return err
 	}
-	return os.WriteFile(outPath, data, 0o600)
+	// The exported copy is the same secret material writeDEKHeader
+	// treats as temp(0600)+rename atomic: a pre-existing 0644 export
+	// (re-export over an old copy, restored checkout, umask drift)
+	// must be tightened on the handle, not just created 0600.
+	tmp := outPath + ".tmp"
+	if err := fileperm.WriteOwnerOnly(tmp, data); err != nil {
+		return err
+	}
+	return os.Rename(tmp, outPath)
 }
 
 // ImportDEK reads a previously-exported DEK and installs it as the
@@ -178,7 +188,7 @@ func writeDEKHeader(path string, kek, dek []byte, meta string) error {
 		return err
 	}
 	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o600); err != nil {
+	if err := fileperm.WriteOwnerOnly(tmp, data); err != nil {
 		return err
 	}
 	return os.Rename(tmp, path)

@@ -53,6 +53,17 @@ func (m *MemoryInboundStore) UpdateEnvelope(_ context.Context, e InboundEnvelope
 	defer m.mu.Unlock()
 	if cur, ok := m.envelopes[e.ID]; ok {
 		e.Attempts = cur.Attempts
+		if isTerminalInboundStatus(cur.Status) && e.Status != InboundStatusProcessed {
+			// Fenced no-op: a stale runner's late settle must not
+			// regress a terminal row (isTerminalInboundStatus) — the
+			// memory twin of the outbound UpdateDelivery fence. Only
+			// a processed settle lands on a terminal row (a runner
+			// that really did succeed); the stale runner's failure
+			// write is dropped. No error: the write is stale, not
+			// failed, the same fenced no-op the queue's completions
+			// report.
+			return nil
+		}
 	}
 	m.envelopes[e.ID] = cloneEnvelope(e)
 	return nil
@@ -67,6 +78,13 @@ func (m *MemoryInboundStore) MarkEnvelopeProcessing(_ context.Context, id string
 	defer m.mu.Unlock()
 	e, ok := m.envelopes[id]
 	if !ok {
+		return nil
+	}
+	// Terminal fence, the memory twin of SQLInboundStore's predicate in
+	// MarkEnvelopeProcessing: a stale runner marking an already-settled
+	// envelope processing would regress the row and consume an attempt
+	// against it.
+	if isTerminalInboundStatus(e.Status) {
 		return nil
 	}
 	e.Status = InboundStatusProcessing

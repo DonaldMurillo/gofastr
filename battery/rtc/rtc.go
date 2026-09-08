@@ -154,6 +154,16 @@ type Config struct {
 	// burst = 2× rate); default 128. Over the cap the socket is closed.
 	MaxFramesPerSecond int
 
+	// MaxSocketsPerUser caps concurrent signaling sockets per principal
+	// (Join.User) across every room; default 16, the core/stream seat
+	// parity (SSE broker, CRUD event stream). A principal's next socket
+	// past the cap displaces its oldest one — the replace-on-rejoin
+	// policy, applied across rooms — so a reconnecting client always
+	// wins and one principal can never park unbounded read loops and
+	// per-room channel goroutines. Zero keeps the default; sockets whose
+	// host derived no Join.User share one bucket.
+	MaxSocketsPerUser int
+
 	// RoomIdleTTL is how long an empty room's state survives before it
 	// is dropped; default 1 minute. Rooms are created on first join.
 	RoomIdleTTL time.Duration
@@ -178,6 +188,9 @@ type Signaler struct {
 	// sequence discipline StateChannel snapshots reconcile against).
 	mu    sync.Mutex
 	rooms map[string]*room
+	// seatOrder is the per-principal socket FIFO the seat cap evicts
+	// from; guarded by mu (seats.go).
+	seatOrder map[string][]*socketSeat
 
 	closed bool
 
@@ -218,7 +231,7 @@ func New(cfg Config) *Signaler {
 		panic(err.Error())
 	}
 	if cfg.MaxPeers < 0 || cfg.MaxSignalBytes < 0 || cfg.MaxStatusBytes < 0 ||
-		cfg.MaxFramesPerSecond < 0 || cfg.RoomIdleTTL < 0 {
+		cfg.MaxFramesPerSecond < 0 || cfg.RoomIdleTTL < 0 || cfg.MaxSocketsPerUser < 0 {
 		panic("rtc: Config limits must not be negative")
 	}
 	if cfg.MaxPeers == 0 {
@@ -232,6 +245,9 @@ func New(cfg Config) *Signaler {
 	}
 	if cfg.MaxFramesPerSecond == 0 {
 		cfg.MaxFramesPerSecond = defaultMaxFramesPerSec
+	}
+	if cfg.MaxSocketsPerUser == 0 {
+		cfg.MaxSocketsPerUser = defaultSeatsPerUser
 	}
 	if cfg.RoomIdleTTL == 0 {
 		cfg.RoomIdleTTL = defaultRoomIdleTTL
@@ -270,6 +286,7 @@ func New(cfg Config) *Signaler {
 		cfg:            cfg,
 		logger:         logger,
 		rooms:          make(map[string]*room),
+		seatOrder:      make(map[string][]*socketSeat),
 		remote:         make(map[string]map[string]*remoteEntry),
 		heartbeatEvery: rtcHeartbeat,
 		remoteTTL:      rtcRemoteTTL,

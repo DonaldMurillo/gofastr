@@ -105,6 +105,13 @@ configuration (`JWTPreviousSecrets` set, `JWTSecret` empty) is rejected at
 Each plugin's `RegisterRoutes` mounts under `AuthConfig.BasePath`
 (default `/auth`).
 
+The three link-minting plugins (`MagicLinkPlugin`,
+`EmailVerificationPlugin`, `PasswordResetPlugin`) validate their
+`BaseURL` at `Init`: it must be an absolute `http`/`https` URL (or
+empty, for relative links). A scheme-relative or bare-host value
+fails boot next to the declaration instead of shipping inside an
+emailed reset, verify, or sign-in link.
+
 ## What the host app implements
 
 `auth.UserStore` is the only required interface. It maps email/ID to
@@ -312,6 +319,14 @@ Pair with `auth.RequireSession()` (or
 `auth.RequireSession(auth.WithRedirectOnFail("/login"))` for browser
 flows) on any route that needs a logged-in user.
 
+These gates mean a **browser session**: `RequireSession`,
+`SessionPolicy`, and `RolePolicy` answer `401` to a caller
+authenticated only by an API token (the token middleware's
+`TokenScopes` in the context is the discriminator). A scoped `gfsk_`
+token is a leash for the JSON API, not a key to the SSR screens; a
+screen that should serve token callers says so with `RequireAuth` or
+a scope gate.
+
 `RequireAuth` is the JWT-Bearer-only equivalent.
 
 JWTs validate the signature and expiry, then **re-resolve the subject on
@@ -362,7 +377,11 @@ sessions do, so owner-scoping and `access.Can` work unchanged.
   way `ghp_` / `xoxb-` are.
 - At rest: only `sha256(full-plaintext)` is stored, plus a display
   `Prefix` (first 12 chars) so listings can identify a token without
-  revealing it.
+  revealing it. The same hash-then-lookup grammar now covers every
+  password-equivalent secret the battery persists: magic-link,
+  password-reset, and email-verification tokens, and the session
+  rows of `EntitySessionStore` (a read-only dump of the session
+  table is no longer a pile of live session cookies).
 - The plaintext is returned **exactly once**, from `IssueToken` or
   `POST /auth/tokens`. It is never persisted, logged, or placed in any
   error string or audit event.
@@ -611,6 +630,12 @@ func (s *Header) RenderCtx(ctx context.Context) render.HTML {
 Pair with `SessionMiddleware` upstream so the policy sees the loaded
 user. JSON/API routes still use `RequireSession` middleware as before.
 Policies are for the SSR page layer specifically.
+
+`RolePolicy` consults an installed `access.Decider` before its role
+check (the same seam `RequireRole` and the resource gates use): a
+`DecisionDeny` for the caller refuses the screen even when the role
+list alone would allow it, and `DecisionAbstain` falls through to
+the role check.
 
 ## Auth entities are private by default
 
@@ -886,6 +911,13 @@ client's expectations), set `AppConfig.JSONCase = "snake_case"`.
 - **Dev** (`DevMode: true`): `SessionCookie = "session_id"`,
   `SessionSecure = false`. Use only over plain HTTP in local
   development.
+
+Every mint goes through one helper, and the session cookie carries
+`SameSite=Strict` on all of them: password login, logout, magic-link
+verify, and the OAuth callback. (The OAuth *state* cookie is
+deliberately `SameSite=Lax` — see "The callback is bound to the
+browser that started the flow" under OAuth — because a Lax cookie is
+what still rides the provider's top-level redirect back.)
 
 ## Rate limiting
 
@@ -1474,8 +1506,11 @@ path.
 - Cookies are scoped to a single origin. The `__Host-` prefix
   enforces this on the browser side. Cross-subdomain attacker?
   Blocked by the prefix.
-- The session store is trusted. A compromise of the session table is
-  game over: sessions are bearer tokens by design.
+- The session table stores `sha256(token)`, never the cookie value,
+  so a read-only dump of it is not a pile of live sessions. A
+  write-capable compromise of the session table is still game over:
+  sessions are bearer tokens by design, and an attacker who can
+  insert rows can mint sessions directly.
 - The `EmailSender` is reliable. Plugins that need email return 503
   if no sender is configured and `DevMode` is off: they refuse to
   silently log live tokens to stdout in production.

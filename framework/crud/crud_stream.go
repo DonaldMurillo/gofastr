@@ -34,6 +34,11 @@ const streamListThreshold = 1000
 // page 1 while reporting page 1, silently dropping the offset. An explicit
 // ?offset= overrides the page-derived offset, matching the buffered path.
 func (ch *CrudHandler) ServeStreamingList(ctx context.Context, w http.ResponseWriter, r *http.Request, cols []string, filters []filter.ParsedFilter, nested []nestedFilter, sorts []filter.ParsedSort, page, limit int, extraWhere []hook.WhereClause) {
+	// Same no-store posture as List: the streamed rows are the same
+	// per-caller data, and this entrypoint is exported and callable
+	// without going through List.
+	w.Header().Set("Cache-Control", "no-store")
+
 	// Same owner+tenant gate the public List handler enforces. Direct
 	// callers (in-process or chained from List) must not bypass it,
 	// without this the streaming variant would happily return every row to

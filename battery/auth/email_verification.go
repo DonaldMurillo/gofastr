@@ -99,6 +99,9 @@ func NewEmailVerificationPlugin(cfg EmailVerificationConfig) *EmailVerificationP
 func (p *EmailVerificationPlugin) Name() string { return "email-verification" }
 
 func (p *EmailVerificationPlugin) Init(mgr *AuthManager) error {
+	if why := invalidLinkBaseURL(p.cfg.BaseURL); why != "" {
+		return fmt.Errorf("auth: email-verification plugin: BaseURL %q %s", p.cfg.BaseURL, why)
+	}
 	p.mgr = mgr
 	return nil
 }

@@ -1,6 +1,8 @@
 package evalrunner
 
 import (
+	"github.com/DonaldMurillo/gofastr/internal/fileperm"
+
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -89,7 +91,7 @@ func Run(ctx context.Context, suite *Suite, opts Options) (Summary, string, erro
 	if err := os.MkdirAll(protocolDir, 0o700); err != nil {
 		return Summary{}, runDir, err
 	}
-	if err := os.WriteFile(filepath.Join(protocolDir, "effective-suite.json"), append(protocolSnapshotBytes, '\n'), 0o600); err != nil {
+	if err := fileperm.WriteOwnerOnly(filepath.Join(protocolDir, "effective-suite.json"), append(protocolSnapshotBytes, '\n')); err != nil {
 		return Summary{}, runDir, err
 	}
 	if err := copyFile(suite.Judge.Rubric, filepath.Join(protocolDir, "rubric.md")); err != nil {
@@ -249,7 +251,7 @@ func Run(ctx context.Context, suite *Suite, opts Options) (Summary, string, erro
 	if err := writeJSON(filepath.Join(runDir, "summary.json"), summary); err != nil {
 		return Summary{}, runDir, err
 	}
-	if err := os.WriteFile(filepath.Join(runDir, "leaderboard.md"), []byte(leaderboardMarkdown(summary)), 0o600); err != nil {
+	if err := fileperm.WriteOwnerOnly(filepath.Join(runDir, "leaderboard.md"), []byte(leaderboardMarkdown(summary))); err != nil {
 		return Summary{}, runDir, err
 	}
 	return summary, runDir, nil
@@ -467,7 +469,7 @@ func executeCandidate(ctx context.Context, suite *Suite, opts Options, gofastrBi
 			result.TechnicalIssues = append(result.TechnicalIssues, "scaffold: "+err.Error())
 			return result
 		}
-		if err := os.WriteFile(filepath.Join(mapping.Workspace, "EVAL_TASK.md"), []byte(taskMarkdown(scenario)), 0o600); err != nil {
+		if err := fileperm.WriteOwnerOnly(filepath.Join(mapping.Workspace, "EVAL_TASK.md"), []byte(taskMarkdown(scenario))); err != nil {
 			result.TechnicalIssues = append(result.TechnicalIssues, "task: "+err.Error())
 			return result
 		}
@@ -643,7 +645,7 @@ func executeCandidate(ctx context.Context, suite *Suite, opts Options, gofastrBi
 		return result
 	}
 	_ = runCommand(ctx, blindDir, "", nil, "git", "init", "-q")
-	_ = os.WriteFile(filepath.Join(blindDir, "AGENTS.md"), []byte("# Blind visual judge workspace\nJudge only the supplied screenshots. Do not inspect parent directories or source workspaces.\n"), 0o600)
+	_ = fileperm.WriteOwnerOnly(filepath.Join(blindDir, "AGENTS.md"), []byte("# Blind visual judge workspace\nJudge only the supplied screenshots. Do not inspect parent directories or source workspaces.\n"))
 	_ = copyFile(suite.Judge.Schema, filepath.Join(blindDir, "judge.schema.json"))
 	shots, captureIssues := captureCandidate(ctx, baseURL, blindDir, scenario, suite.Viewports)
 	result.Screenshots = shots

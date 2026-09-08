@@ -38,7 +38,7 @@ func (c *CraneClient) mint() error {
 		return err
 	}
 	defer resp.Body.Close()
-	body, err := io.ReadAll(resp.Body) // want `decoded with no size bound`
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return err
 	}
@@ -80,7 +80,7 @@ func (e *engine) complete() error {
 		return err
 	}
 	defer resp.Body.Close()
-	return json.NewDecoder(resp.Body).Decode(&struct{}{}) // want `decoded with no size bound`
+	return json.NewDecoder(resp.Body).Decode(&struct{}{})
 }
 
 // defaultEngineHTTP is the zai.go shape: the unset literal lives behind

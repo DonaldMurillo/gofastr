@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/core/handler"
+
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/control"
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/tool"
 )
@@ -109,6 +111,17 @@ func (t *mcpTool) Run(ctx context.Context, call tool.ToolCall, _ tool.EventSink)
 		} `json:"content"`
 		IsError bool `json:"isError"`
 	}
+	// The result is third-party server bytes: refuse ambiguity at
+	// every depth (the readLoop envelope rule) before the content
+	// blocks execute as tool output, keeping the MCP tolerance for
+	// unknown fields.
+	if err := handler.CheckObjectKeys(result, strings.ToLower); err != nil {
+		return &tool.ToolResult{
+			IsError: true,
+			Content: []control.ContentBlock{{Type: "text", Text: fmt.Sprintf("mcp result parse error: %v", err)}},
+		}, nil
+	}
+	//gofastr:allow(GOFASTR1407) the CheckObjectKeys walk above already refused duplicate and case-folded keys at every depth; this Unmarshal only decodes a vetted result
 	if err := json.Unmarshal(result, &parsed); err != nil {
 		return &tool.ToolResult{
 			IsError: true,

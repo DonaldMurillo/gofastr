@@ -13,6 +13,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
 // Metrics tracks per-(method, route, status) request counters and per-route
@@ -251,7 +253,7 @@ func runCollectorSafely(name string, fn CollectorFunc) (out []byte) {
 			out = nil
 			slog.Error("metrics collector panic isolated",
 				"collector", name,
-				"error", truncate(fmt.Sprint(r), maxRecoveryPanicLen),
+				"error", textsafe.Recovered(r),
 			)
 		}
 	}()

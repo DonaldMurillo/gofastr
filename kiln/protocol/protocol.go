@@ -2,7 +2,9 @@ package protocol
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"log/slog"
 	"maps"
 	"slices"
 	"strings"
@@ -76,6 +78,10 @@ type AddEntityArgs struct {
 
 type UpdateEntityArgs struct {
 	Entity *world.Entity `json:"entity"`
+	// PlanID names the approved plan authorizing this replacement, the
+	// same gate delete_entity/delete_field carry: update_entity drops
+	// every field the replacement omits.
+	PlanID string `json:"plan_id,omitempty"`
 }
 
 type DeleteEntityArgs struct {
@@ -199,33 +205,89 @@ type ChatArgs struct {
 // --- Tool methods -----------------------------------------------------
 
 func (t *Tools) WorldGet(_ context.Context, args WorldGetArgs) Result {
-	sess := t.live.Session()
-	if args.Path == "" {
-		return ok(sess.World)
-	}
-	switch args.Path {
-	case "_chat":
-		return ok(sess.Chat)
-	case "_plans":
-		return ok(sess.Plans)
-	}
-	if after, ok0 := strings.CutPrefix(args.Path, "entities."); ok0 {
-		name := after
-		ent, ok2 := sess.World.Entities[name]
-		if !ok2 {
-			return notFound("entity %q not found", name)
+	// Reads run under Live's session read lock: the transports serve
+	// each caller on its own goroutine, and a concurrent Apply mutates
+	// the very maps being walked here. Values that escape the lock are
+	// copied (cloneWorld / the entity copy) because add_field and
+	// delete_field mutate an existing entity's Fields slice in place.
+	var res Result
+	t.live.ReadSession(func(sess *journal.Session) {
+		if args.Path == "" {
+			res = ok(cloneWorld(sess.World))
+			return
 		}
-		return ok(ent)
-	}
-	if after, ok0 := strings.CutPrefix(args.Path, "pages."); ok0 {
-		path := after
-		page, ok2 := sess.World.Pages[path]
-		if !ok2 {
-			return notFound("page %q not found", path)
+		switch args.Path {
+		case "_chat":
+			res = ok(sess.Chat)
+			return
+		case "_plans":
+			res = ok(sess.Plans)
+			return
 		}
-		return ok(page)
+		if after, ok0 := strings.CutPrefix(args.Path, "entities."); ok0 {
+			ent, ok2 := sess.World.Entities[after]
+			if !ok2 {
+				res = notFound("entity %q not found", after)
+				return
+			}
+			cp := *ent
+			cp.Fields = slices.Clone(cp.Fields)
+			res = ok(&cp)
+			return
+		}
+		if after, ok0 := strings.CutPrefix(args.Path, "pages."); ok0 {
+			// Pages are never mutated in place (update_page_element
+			// journals a full clone and replay swaps the map entry), so
+			// the pointer is safe to hand out once the map read itself
+			// is under the lock.
+			page, ok2 := sess.World.Pages[after]
+			if !ok2 {
+				res = notFound("page %q not found", after)
+				return
+			}
+			res = ok(page)
+			return
+		}
+		res = invalid("unknown path %q", args.Path)
+	})
+	return res
+}
+
+// cloneWorld copies w deeply enough to be safe to read after Live's
+// read lock is released: containers are cloned (maps and the slices
+// Apply appends to in place), and each entity is copied because
+// add_field/delete_field mutate an existing entity's Fields slice in
+// place. Pointed-to values that Apply only ever replaces wholesale
+// (pages, hooks, routes, seeds) are shared.
+func cloneWorld(w *world.World) *world.World {
+	if w == nil {
+		return nil
 	}
-	return invalid("unknown path %q", args.Path)
+	out := *w
+	if w.Entities != nil {
+		out.Entities = make(map[string]*world.Entity, len(w.Entities))
+		for k, ent := range w.Entities {
+			cp := *ent
+			cp.Fields = slices.Clone(cp.Fields)
+			out.Entities[k] = &cp
+		}
+	}
+	if w.Pages != nil {
+		out.Pages = make(map[string]*world.Page, len(w.Pages))
+		for k, p := range w.Pages {
+			out.Pages[k] = p
+		}
+	}
+	out.Nav = slices.Clone(w.Nav)
+	out.Hooks = slices.Clone(w.Hooks)
+	out.Routes = slices.Clone(w.Routes)
+	out.Endpoints = slices.Clone(w.Endpoints)
+	out.Seeds = slices.Clone(w.Seeds)
+	out.Middleware = slices.Clone(w.Middleware)
+	out.MiddlewareStubs = slices.Clone(w.MiddlewareStubs)
+	out.Plugins = slices.Clone(w.Plugins)
+	out.Helpers = slices.Clone(w.Helpers)
+	return &out
 }
 
 func (t *Tools) SetAppConfig(_ context.Context, args SetAppConfigArgs) Result {
@@ -237,7 +299,8 @@ func (t *Tools) SetAppConfig(_ context.Context, args SetAppConfigArgs) Result {
 	if args.Config.APIPrefix == "" {
 		args.Config.APIPrefix = "api"
 	}
-	prev := t.live.Session().World.App
+	var prev world.AppConfig
+	t.live.ReadSession(func(sess *journal.Session) { prev = sess.World.App })
 	return t.applyEdit(journal.OpSetAppConfig, journal.SetAppConfigPayload{Config: args.Config, Prev: &prev})
 }
 
@@ -262,11 +325,21 @@ func (t *Tools) SetScaffold(_ context.Context, args SetScaffoldArgs) Result {
 			}
 		}
 	}
-	w := t.live.Session().World
-	prev := &journal.ScaffoldSnapshot{
-		Nav: w.Nav, Endpoints: w.Endpoints, Middleware: w.MiddlewareStubs,
-		Plugins: w.Plugins, Helpers: w.Helpers,
-	}
+	// Snapshot the previous scaffold under the read lock, cloning the
+	// slices: Prev rides inside the journal payload, which marshals
+	// outside the lock while a concurrent set_scaffold Apply can append
+	// to those very slices in place.
+	prev := &journal.ScaffoldSnapshot{}
+	t.live.ReadSession(func(sess *journal.Session) {
+		w := sess.World
+		prev = &journal.ScaffoldSnapshot{
+			Nav:        slices.Clone(w.Nav),
+			Endpoints:  slices.Clone(w.Endpoints),
+			Middleware: slices.Clone(w.MiddlewareStubs),
+			Plugins:    slices.Clone(w.Plugins),
+			Helpers:    slices.Clone(w.Helpers),
+		}
+	})
 	return t.applyEdit(journal.OpSetScaffold, journal.SetScaffoldPayload{
 		Nav: args.Nav, Endpoints: args.Endpoints, Middleware: args.Middleware,
 		Plugins: args.Plugins, Helpers: args.Helpers, Prev: prev,
@@ -293,18 +366,25 @@ func (t *Tools) AddEntity(_ context.Context, args AddEntityArgs) Result {
 		return invalid("entity %q sets multi_tenant, but Kiln cannot choose the app-specific tenant resolver", args.Entity.Name).
 			withHint("use owner_field for per-user scoping, or add tenant middleware in owned Go after freeze")
 	}
-	if _, exists := t.live.Session().World.Entities[args.Entity.Name]; exists {
-		return conflict("entity %q already exists", args.Entity.Name).withHint("use update_entity to modify")
-	}
-	// Bare CRUD routes can collide with a page. The current default API
-	// prefix is /api, so this guard is only needed when the app explicitly
-	// opts out of namespacing.
-	if t.live.Session().World.App.APIPrefix == "" {
-		if _, hasPage := t.live.Session().World.Pages["/"+args.Entity.Name]; hasPage {
-			return conflict("entity %q would collide with existing page at /%s",
-				args.Entity.Name, args.Entity.Name).
-				withHint("rename the entity (e.g. add a suffix) or delete the page first")
+	var res Result
+	t.live.ReadSession(func(sess *journal.Session) {
+		if _, exists := sess.World.Entities[args.Entity.Name]; exists {
+			res = conflict("entity %q already exists", args.Entity.Name).withHint("use update_entity to modify")
+			return
 		}
+		// Bare CRUD routes can collide with a page. The current default API
+		// prefix is /api, so this guard is only needed when the app explicitly
+		// opts out of namespacing.
+		if sess.World.App.APIPrefix == "" {
+			if _, hasPage := sess.World.Pages["/"+args.Entity.Name]; hasPage {
+				res = conflict("entity %q would collide with existing page at /%s",
+					args.Entity.Name, args.Entity.Name).
+					withHint("rename the entity (e.g. add a suffix) or delete the page first")
+			}
+		}
+	})
+	if !res.OK && res.Error != "" {
+		return res
 	}
 	return t.applyEdit(journal.OpAddEntity, journal.AddEntityPayload{Entity: args.Entity})
 }
@@ -317,16 +397,38 @@ func (t *Tools) UpdateEntity(_ context.Context, args UpdateEntityArgs) Result {
 		return invalid("entity %q sets multi_tenant, but Kiln cannot choose the app-specific tenant resolver", args.Entity.Name).
 			withHint("use owner_field for per-user scoping, or add tenant middleware in owned Go after freeze")
 	}
-	prev, exists := t.live.Session().World.Entities[args.Entity.Name]
-	if !exists {
+	var prev *world.Entity
+	t.live.ReadSession(func(sess *journal.Session) {
+		if ent, ok := sess.World.Entities[args.Entity.Name]; ok {
+			// Copy: Prev rides in the journal payload, which marshals
+			// outside the lock while add_field/delete_field can mutate
+			// the live entity's Fields slice in place.
+			cp := *ent
+			cp.Fields = slices.Clone(cp.Fields)
+			prev = &cp
+		}
+	})
+	if prev == nil {
 		return notFound("entity %q not found", args.Entity.Name)
 	}
-	return t.applyEdit(journal.OpUpdateEntity, journal.UpdateEntityPayload{Entity: args.Entity, Prev: prev})
+	target := journal.PlanTarget{Op: "update_entity", Name: args.Entity.Name}
+	if r := t.requirePlan(args.PlanID, target); !r.OK {
+		return r
+	}
+	return t.applyEdit(journal.OpUpdateEntity, journal.UpdateEntityPayload{Entity: args.Entity, Prev: prev, PlanID: args.PlanID})
 }
 
 func (t *Tools) DeleteEntity(_ context.Context, args DeleteEntityArgs) Result {
-	prev, exists := t.live.Session().World.Entities[args.Name]
-	if !exists {
+	var prev *world.Entity
+	t.live.ReadSession(func(sess *journal.Session) {
+		if ent, ok := sess.World.Entities[args.Name]; ok {
+			// Copy for the journal payload, same as UpdateEntity.
+			cp := *ent
+			cp.Fields = slices.Clone(cp.Fields)
+			prev = &cp
+		}
+	})
+	if prev == nil {
 		return notFound("entity %q not found", args.Name)
 	}
 	target := journal.PlanTarget{Op: "delete_entity", Name: args.Name}
@@ -340,31 +442,41 @@ func (t *Tools) AddField(_ context.Context, args AddFieldArgs) Result {
 	if args.Field.Name == "" {
 		return invalid("missing field.name")
 	}
-	ent, exists := t.live.Session().World.Entities[args.Entity]
-	if !exists {
-		return notFound("entity %q not found", args.Entity)
-	}
-	for _, f := range ent.Fields {
-		if f.Name == args.Field.Name {
-			return conflict("%s.%s already exists", args.Entity, args.Field.Name)
+	var conflictRes Result
+	t.live.ReadSession(func(sess *journal.Session) {
+		ent, exists := sess.World.Entities[args.Entity]
+		if !exists {
+			conflictRes = notFound("entity %q not found", args.Entity)
+			return
 		}
+		for _, f := range ent.Fields {
+			if f.Name == args.Field.Name {
+				conflictRes = conflict("%s.%s already exists", args.Entity, args.Field.Name)
+				return
+			}
+		}
+	})
+	if !conflictRes.OK && conflictRes.Error != "" {
+		return conflictRes
 	}
 	return t.applyEdit(journal.OpAddField, journal.AddFieldPayload{Entity: args.Entity, Field: args.Field})
 }
 
 func (t *Tools) DeleteField(_ context.Context, args DeleteFieldArgs) Result {
-	ent, exists := t.live.Session().World.Entities[args.Entity]
-	if !exists {
-		return notFound("entity %q not found", args.Entity)
-	}
 	var prev *world.Field
-	for i := range ent.Fields {
-		if ent.Fields[i].Name == args.Field {
-			cp := ent.Fields[i]
-			prev = &cp
-			break
+	t.live.ReadSession(func(sess *journal.Session) {
+		ent, exists := sess.World.Entities[args.Entity]
+		if !exists {
+			return
 		}
-	}
+		for i := range ent.Fields {
+			if ent.Fields[i].Name == args.Field {
+				cp := ent.Fields[i]
+				prev = &cp
+				break
+			}
+		}
+	})
 	if prev == nil {
 		return notFound("field %s.%s not found", args.Entity, args.Field)
 	}
@@ -386,19 +498,27 @@ func (t *Tools) AddPage(_ context.Context, args AddPageArgs) Result {
 	if err := world.ValidatePageTree(args.Page.Tree); err != nil {
 		return invalid("page tree: %v", err).withHint("compose layout with page_header, section, card, stack, cluster, grid, and other design-system kinds; do not supply class or style props")
 	}
-	if _, exists := t.live.Session().World.Pages[args.Page.Path]; exists {
-		return conflict("page %q already exists", args.Page.Path)
-	}
-	// Bare CRUD is an explicit compatibility mode. With the current /api
-	// default, a page and an entity may intentionally share the same name.
-	if t.live.Session().World.App.APIPrefix == "" {
-		for _, ent := range t.live.Session().World.Entities {
-			if "/"+ent.Name == args.Page.Path {
-				return conflict("page path %q collides with entity %q's bare CRUD list endpoint at GET %q",
-					args.Page.Path, ent.Name, args.Page.Path).
-					withHint("set app.api_prefix to api (recommended), or choose a different page path")
+	var conflictRes Result
+	t.live.ReadSession(func(sess *journal.Session) {
+		if _, exists := sess.World.Pages[args.Page.Path]; exists {
+			conflictRes = conflict("page %q already exists", args.Page.Path)
+			return
+		}
+		// Bare CRUD is an explicit compatibility mode. With the current /api
+		// default, a page and an entity may intentionally share the same name.
+		if sess.World.App.APIPrefix == "" {
+			for _, ent := range sess.World.Entities {
+				if "/"+ent.Name == args.Page.Path {
+					conflictRes = conflict("page path %q collides with entity %q's bare CRUD list endpoint at GET %q",
+						args.Page.Path, ent.Name, args.Page.Path).
+						withHint("set app.api_prefix to api (recommended), or choose a different page path")
+					return
+				}
 			}
 		}
+	})
+	if !conflictRes.OK && conflictRes.Error != "" {
+		return conflictRes
 	}
 	// Assign a stable _id to every node lacking one, so update_page_element
 	// can address any subtree without positional paths or selector
@@ -424,16 +544,33 @@ func (t *Tools) UpdatePageElement(_ context.Context, args UpdatePageElementArgs)
 	if args.Patch.Op == "" {
 		return invalid("missing patch.op: one of set_props, replace_props, replace_subtree, remove, insert_before, insert_after, append_child")
 	}
-	current, exists := t.live.Session().World.Pages[args.Path]
-	if !exists {
-		return notFound("page %q not found", args.Path)
+	var current *world.Page
+	var versionRes Result
+	t.live.ReadSession(func(sess *journal.Session) {
+		page, exists := sess.World.Pages[args.Path]
+		if !exists {
+			versionRes = notFound("page %q not found", args.Path)
+			return
+		}
+		// Optimistic concurrency: if the agent provided a baseline version
+		// and the page has moved on, reject so the agent re-reads.
+		if args.IfMatch != nil && *args.IfMatch != page.Version {
+			versionRes = conflict("page %q has version %d, if_match=%d: refetch and retry",
+				args.Path, page.Version, *args.IfMatch).
+				withHint("GET $KILN_URL/kiln/world to read the new tree, then re-emit the patch with the current _id and version")
+			return
+		}
+		// Clone under the read lock: the clone walks the live tree, which
+		// a concurrent Apply replaces wholesale (update_page_element
+		// journals a fresh page), so the walk itself must be serialized
+		// against the map swap.
+		current = page
+	})
+	if !versionRes.OK && versionRes.Error != "" {
+		return versionRes
 	}
-	// Optimistic concurrency: if the agent provided a baseline version
-	// and the page has moved on, reject so the agent re-reads.
-	if args.IfMatch != nil && *args.IfMatch != current.Version {
-		return conflict("page %q has version %d, if_match=%d: refetch and retry",
-			args.Path, current.Version, *args.IfMatch).
-			withHint("GET $KILN_URL/kiln/world to read the new tree, then re-emit the patch with the current _id and version")
+	if current == nil {
+		return notFound("page %q not found", args.Path)
 	}
 	// Work on a deep clone so a mid-patch failure can't leave the
 	// live world in a half-mutated state.
@@ -554,8 +691,11 @@ func insertAt(children []world.Node, idx int, n world.Node) []world.Node {
 }
 
 func (t *Tools) DeletePage(_ context.Context, args DeletePageArgs) Result {
-	prev, exists := t.live.Session().World.Pages[args.Path]
-	if !exists {
+	var prev *world.Page
+	t.live.ReadSession(func(sess *journal.Session) {
+		prev = sess.World.Pages[args.Path]
+	})
+	if prev == nil {
 		return notFound("page %q not found", args.Path)
 	}
 	target := journal.PlanTarget{Op: "delete_page", Name: args.Path}
@@ -569,22 +709,31 @@ func (t *Tools) AddHook(_ context.Context, args AddHookArgs) Result {
 	if args.Hook == nil || args.Hook.ID == "" {
 		return invalid("missing hook or hook.id")
 	}
-	for _, h := range t.live.Session().World.Hooks {
-		if h.ID == args.Hook.ID {
-			return conflict("hook %q already exists", args.Hook.ID)
+	var dup bool
+	t.live.ReadSession(func(sess *journal.Session) {
+		for _, h := range sess.World.Hooks {
+			if h.ID == args.Hook.ID {
+				dup = true
+				return
+			}
 		}
+	})
+	if dup {
+		return conflict("hook %q already exists", args.Hook.ID)
 	}
 	return t.applyEdit(journal.OpAddHook, journal.AddHookPayload{Hook: args.Hook})
 }
 
 func (t *Tools) DeleteHook(_ context.Context, args DeleteHookArgs) Result {
 	var prev *world.Hook
-	for _, h := range t.live.Session().World.Hooks {
-		if h.ID == args.ID {
-			prev = h
-			break
+	t.live.ReadSession(func(sess *journal.Session) {
+		for _, h := range sess.World.Hooks {
+			if h.ID == args.ID {
+				prev = h
+				return
+			}
 		}
-	}
+	})
 	if prev == nil {
 		return notFound("hook %q not found", args.ID)
 	}
@@ -599,22 +748,31 @@ func (t *Tools) AddRoute(_ context.Context, args AddRouteArgs) Result {
 	if args.Route == nil || args.Route.Method == "" || args.Route.Path == "" {
 		return invalid("route.method and route.path required")
 	}
-	for _, r := range t.live.Session().World.Routes {
-		if r.Method == args.Route.Method && r.Path == args.Route.Path {
-			return conflict("route %s %s already exists", args.Route.Method, args.Route.Path)
+	var dup bool
+	t.live.ReadSession(func(sess *journal.Session) {
+		for _, r := range sess.World.Routes {
+			if r.Method == args.Route.Method && r.Path == args.Route.Path {
+				dup = true
+				return
+			}
 		}
+	})
+	if dup {
+		return conflict("route %s %s already exists", args.Route.Method, args.Route.Path)
 	}
 	return t.applyEdit(journal.OpAddRoute, journal.AddRoutePayload{Route: args.Route})
 }
 
 func (t *Tools) DeleteRoute(_ context.Context, args DeleteRouteArgs) Result {
 	var prev *world.Route
-	for _, r := range t.live.Session().World.Routes {
-		if r.Method == args.Method && r.Path == args.Path {
-			prev = r
-			break
+	t.live.ReadSession(func(sess *journal.Session) {
+		for _, r := range sess.World.Routes {
+			if r.Method == args.Method && r.Path == args.Path {
+				prev = r
+				return
+			}
 		}
-	}
+	})
 	if prev == nil {
 		return notFound("route %s %s not found", args.Method, args.Path)
 	}
@@ -634,7 +792,11 @@ func (t *Tools) AddSeed(_ context.Context, args AddSeedArgs) Result {
 	// accepted as well-formed; refusing it at ingestion answers with the
 	// validation kind the other shape errors carry, so the agent sees
 	// a fixable argument problem, not a runtime failure.
-	if _, ok := t.live.Session().World.Entities[args.Seed.Entity]; !ok {
+	var known bool
+	t.live.ReadSession(func(sess *journal.Session) {
+		_, known = sess.World.Entities[args.Seed.Entity]
+	})
+	if !known {
 		return invalid("seed entity %q not found: add_entity first", args.Seed.Entity)
 	}
 	return t.applyEdit(journal.OpAddSeed, journal.AddSeedPayload{Seed: args.Seed})
@@ -644,7 +806,11 @@ func (t *Tools) ProposePlan(_ context.Context, args ProposePlanArgs) Result {
 	if args.PlanID == "" || len(args.Steps) == 0 {
 		return invalid("plan_id and at least one step required")
 	}
-	if _, ok := t.live.Session().Plans[args.PlanID]; ok {
+	var exists bool
+	t.live.ReadSession(func(sess *journal.Session) {
+		_, exists = sess.Plans[args.PlanID]
+	})
+	if exists {
 		return conflict("plan %q already exists", args.PlanID)
 	}
 	return t.applyEntry(journal.KindPlanProposed, "", journal.PlanProposedPayload{
@@ -656,14 +822,24 @@ func (t *Tools) ProposePlan(_ context.Context, args ProposePlanArgs) Result {
 }
 
 func (t *Tools) ApprovePlan(_ context.Context, args ApprovePlanArgs) Result {
-	plan, exists := t.live.Session().Plans[args.PlanID]
-	if !exists {
+	var rejected, approved bool
+	var found bool
+	t.live.ReadSession(func(sess *journal.Session) {
+		plan, ok := sess.Plans[args.PlanID]
+		if !ok {
+			return
+		}
+		found = true
+		rejected = plan.Rejected
+		approved = plan.Approved
+	})
+	if !found {
 		return notFound("plan %q not found", args.PlanID)
 	}
-	if plan.Rejected {
+	if rejected {
 		return conflict("plan %q was rejected: propose a new plan", args.PlanID)
 	}
-	if plan.Approved {
+	if approved {
 		return ok(map[string]any{"plan_id": args.PlanID, "already": true})
 	}
 	return t.applyEntry(journal.KindPlanApproved, "", journal.PlanApprovedPayload{
@@ -673,14 +849,23 @@ func (t *Tools) ApprovePlan(_ context.Context, args ApprovePlanArgs) Result {
 }
 
 func (t *Tools) RejectPlan(_ context.Context, args RejectPlanArgs) Result {
-	plan, exists := t.live.Session().Plans[args.PlanID]
-	if !exists {
+	var approved, rejected, found bool
+	t.live.ReadSession(func(sess *journal.Session) {
+		plan, ok := sess.Plans[args.PlanID]
+		if !ok {
+			return
+		}
+		found = true
+		approved = plan.Approved
+		rejected = plan.Rejected
+	})
+	if !found {
 		return notFound("plan %q not found", args.PlanID)
 	}
-	if plan.Approved {
+	if approved {
 		return conflict("plan %q already approved", args.PlanID)
 	}
-	if plan.Rejected {
+	if rejected {
 		return ok(map[string]any{"plan_id": args.PlanID, "already": true})
 	}
 	return t.applyEntry(journal.KindPlanRejected, "", journal.PlanRejectedPayload{
@@ -693,7 +878,8 @@ func (t *Tools) RejectPlan(_ context.Context, args RejectPlanArgs) Result {
 // pages consume it through UIHost's /__gofastr/app.css; the compatibility
 // /kiln/theme.css endpoint consumes the same palette for legacy embeds.
 func (t *Tools) SetTheme(_ context.Context, args SetThemeArgs) Result {
-	prev := t.live.Session().World.App
+	var prev world.AppConfig
+	t.live.ReadSession(func(sess *journal.Session) { prev = sess.World.App })
 	next := prev
 	if args.Theme == nil {
 		next.Theme = nil
@@ -719,12 +905,12 @@ func (t *Tools) SetTheme(_ context.Context, args SetThemeArgs) Result {
 // too. Used by the panel's "Reset" button when the user wants a clean
 // slate without killing the process.
 func (t *Tools) ResetSession(_ context.Context, _ ResetSessionArgs) Result {
-	j := t.live.Journal()
-	if err := j.TruncateAfter(0); err != nil {
-		return failure("truncate: %v", err)
-	}
-	if err := t.live.Reload(); err != nil {
-		return failure("reload: %v", err)
+	// The truncate+reload pair runs inside Live under its mutex: doing
+	// the journal surgery here left a window where an in-flight Apply
+	// landed its entry after the truncate and the trailing reload
+	// replayed it, so Reset reported success over a non-empty journal.
+	if err := t.live.TruncateAndReload(0); err != nil {
+		return internalFailure("reset session", err)
 	}
 	// Notify so the panel re-fetches chat_html immediately. Without
 	// this the UI shows stale items until something else fires an
@@ -734,19 +920,13 @@ func (t *Tools) ResetSession(_ context.Context, _ ResetSessionArgs) Result {
 }
 
 func (t *Tools) Undo(_ context.Context, _ UndoArgs) Result {
-	j := t.live.Journal()
-	n, err := j.Len()
-	if err != nil {
-		return failure("journal len: %v", err)
-	}
-	if n == 0 {
-		return invalid("nothing to undo")
-	}
-	if err := j.TruncateAfter(n - 1); err != nil {
-		return failure("truncate: %v", err)
-	}
-	if err := t.live.Reload(); err != nil {
-		return failure("reload: %v", err)
+	// Len→truncate→reload runs inside Live under its mutex so the cut
+	// is computed against a log a concurrent Apply cannot rewrite.
+	if err := t.live.UndoLast(); err != nil {
+		if errors.Is(err, live.ErrNothingToUndo) {
+			return invalid("nothing to undo")
+		}
+		return internalFailure("undo", err)
 	}
 	return ok(nil)
 }
@@ -771,12 +951,29 @@ func (t *Tools) applyEdit(op journal.Op, payload any) Result {
 func (t *Tools) applyEntry(kind journal.Kind, op journal.Op, payload any) Result {
 	entry, err := journal.NewEntry(t.nextEntryID(), time.Now().UTC(), kind, op, payload)
 	if err != nil {
-		return failure("build entry: %v", err)
+		return internalFailure("build entry", err)
 	}
 	if err := t.live.Apply(entry); err != nil {
-		return failure("%v", err)
+		return internalFailure("apply entry", err)
 	}
 	return Result{OK: true, Result: map[string]any{"entry_id": entry.ID}}
+}
+
+// internalErr is the generic message every internal failure of the tool
+// funnel returns. The detail (driver SQL text, journal paths, rebuild
+// errors) is operator-environment information — it goes to the server
+// log, never to Result.Error, which the HTTP tool API, the ACP frames,
+// the panel timeline, and the journal's tool_result envelopes all carry
+// to any local process and to a same-Host rebinding page. This is the
+// crud/a2a/mcp convention; the agent still sees ok=false with a stable
+// kind so the failure stays retryable.
+const internalErr = "internal error"
+
+// internalFailure logs err server-side and returns the generic
+// not-OK result.
+func internalFailure(what string, err error) Result {
+	slog.Error("kiln/protocol: "+what, "error", err)
+	return Result{OK: false, Error: internalErr, Kind: "internal"}
 }
 
 // requirePlan is the destructive-op safety gate. It returns Result{OK:true}
@@ -787,26 +984,38 @@ func (t *Tools) requirePlan(planID string, target journal.PlanTarget) Result {
 	if planID == "" {
 		return needsPlan(target, "no plan_id supplied: call propose_plan listing this destructive op in `targets`, then await user approval")
 	}
-	plan, exists := t.live.Session().Plans[planID]
-	if !exists {
-		return needsPlan(target, fmt.Sprintf("plan %q not found", planID))
-	}
-	if plan.Rejected {
-		return needsPlan(target, fmt.Sprintf("plan %q was rejected: propose a new plan", planID))
-	}
-	if !plan.Approved {
-		return needsPlan(target, fmt.Sprintf("plan %q is not yet approved by the user", planID))
-	}
-	matched := slices.Contains(plan.Targets, target)
-	if !matched {
-		return needsPlan(target, fmt.Sprintf("plan %q does not list this op in `targets`: propose a plan that includes %+v", planID, target))
-	}
+	var res Result
+	done := false
 	// Consumption is read from the session, which derives it from the
 	// journal. It used to live in a per-process map here, so every restart
 	// re-armed every already-spent plan, the record of what an approval had
 	// been used for did not survive the thing it was protecting.
-	if t.live.Session().Consumed[planID][target.Op+":"+target.Name] {
-		return needsPlan(target, fmt.Sprintf("plan %q already consumed for this target: propose a new plan", planID))
+	t.live.ReadSession(func(sess *journal.Session) {
+		plan, exists := sess.Plans[planID]
+		if !exists {
+			res = needsPlan(target, fmt.Sprintf("plan %q not found", planID))
+			return
+		}
+		if plan.Rejected {
+			res = needsPlan(target, fmt.Sprintf("plan %q was rejected: propose a new plan", planID))
+			return
+		}
+		if !plan.Approved {
+			res = needsPlan(target, fmt.Sprintf("plan %q is not yet approved by the user", planID))
+			return
+		}
+		if !slices.Contains(plan.Targets, target) {
+			res = needsPlan(target, fmt.Sprintf("plan %q does not list this op in `targets`: propose a plan that includes %+v", planID, target))
+			return
+		}
+		if sess.Consumed[planID][target.Op+":"+target.Name] {
+			res = needsPlan(target, fmt.Sprintf("plan %q already consumed for this target: propose a new plan", planID))
+			return
+		}
+		done = true
+	})
+	if !done && !res.OK {
+		return res
 	}
 	return Result{OK: true}
 }

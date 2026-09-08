@@ -21,6 +21,7 @@ import (
 	"path/filepath"
 	"sync"
 
+	"github.com/DonaldMurillo/gofastr/internal/fileperm"
 	"golang.org/x/crypto/pbkdf2"
 )
 
@@ -214,9 +215,12 @@ func (s *EncryptedFileStore) saveLocked() error {
 	if err != nil {
 		return err
 	}
-	// Atomic write: write to <path>.tmp then rename.
+	// Atomic write: write to <path>.tmp then rename. WriteOwnerOnly so
+	// the tmp is 0600 on create AND overwrite — a pre-existing weaker
+	// tmp keeps its mode under bare os.WriteFile, and the renamed
+	// ciphertext inherits the tightened one.
 	tmp := s.path + ".tmp"
-	if err := os.WriteFile(tmp, enc, 0o600); err != nil {
+	if err := fileperm.WriteOwnerOnly(tmp, enc); err != nil {
 		return fmt.Errorf("credstore: write tmp: %w", err)
 	}
 	if err := os.Rename(tmp, s.path); err != nil {

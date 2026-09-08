@@ -145,6 +145,9 @@ func describeAdapter(a Adapter) map[string]any {
 }
 
 func writeJSON(w http.ResponseWriter, v any) {
+	// no-store: these bodies are per-session agent/runtime state, the
+	// same discipline kiln/chat's status endpoints carry.
+	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(v)
 }

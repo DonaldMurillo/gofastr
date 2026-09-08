@@ -239,6 +239,12 @@ func shortSessionLabel(s string) string {
 // scrollback + input box; client-side JS opens an SSE stream and
 // POSTs input so the browser experience mirrors the TUI.
 func chatPage(w http.ResponseWriter, r *http.Request, sess ids.SessionID, token string) {
+	// The chat page embeds the live 24h bearer token + session id in
+	// meta tags, and the whole path is served for a resolved principal:
+	// no shared cache or bfcache may retain either response.
+	// theme_edit_page.go sets the same header for a page carrying no
+	// token at all.
+	w.Header().Set("Cache-Control", "no-store")
 	if r.URL.Path != "/" {
 		// The /endpoints sub-page is a fallback developer reference.
 		if r.URL.Path == "/endpoints" {

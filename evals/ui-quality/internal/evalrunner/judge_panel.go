@@ -1,6 +1,8 @@
 package evalrunner
 
 import (
+	"github.com/DonaldMurillo/gofastr/internal/fileperm"
+
 	"context"
 	"fmt"
 	"os"
@@ -81,7 +83,7 @@ func runJudgePanel(ctx context.Context, suite *Suite, mapping CandidateMapping, 
 			break
 		}
 		if len(rejections) > 0 {
-			_ = os.WriteFile(rejectionLog, []byte(strings.Join(rejections, "\n")+"\n"), 0o600)
+			_ = fileperm.WriteOwnerOnly(rejectionLog, []byte(strings.Join(rejections, "\n")+"\n"))
 		}
 		if !accepted {
 			issues = append(issues, fmt.Sprintf("%s judge %d rejected after %d attempts: %s", lens, judgeRun, maxJudgeAttempts, strings.Join(rejections, "; ")))
@@ -117,7 +119,7 @@ func prepareJudgeWorkspace(workspace, schemaSource string, sourceImages []string
 	if err := os.MkdirAll(workspace, 0o700); err != nil {
 		return nil, err
 	}
-	if err := os.WriteFile(filepath.Join(workspace, "AGENTS.md"), []byte("# Isolated blind judge\nJudge only the images attached to the prompt. Do not inspect parent directories, candidate source, manifests, or other judge artifacts.\n"), 0o600); err != nil {
+	if err := fileperm.WriteOwnerOnly(filepath.Join(workspace, "AGENTS.md"), []byte("# Isolated blind judge\nJudge only the images attached to the prompt. Do not inspect parent directories, candidate source, manifests, or other judge artifacts.\n")); err != nil {
 		return nil, err
 	}
 	if err := copyFile(schemaSource, filepath.Join(workspace, "judge.schema.json")); err != nil {

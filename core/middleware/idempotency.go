@@ -222,7 +222,7 @@ func Idempotency(cfg IdempotencyConfig) Middleware {
 				return
 			}
 			if tooLarge {
-				w.Header().Set("Vary", "Idempotency-Key")
+				w.Header().Add("Vary", "Idempotency-Key") // Add, not Set: an upstream middleware (CORS) may already have written Vary
 				w.Header().Set("Idempotent-Bypass", "body-too-large")
 				original := r.Body
 				r.Body = struct {

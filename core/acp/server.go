@@ -2,12 +2,14 @@ package acp
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 
@@ -359,12 +361,19 @@ func (s *Server) Serve(ctx context.Context, in io.Reader, out io.Writer) error {
 			continue
 		}
 		var frame wireRequest
-		// UnmarshalStrict refuses duplicate and case-folded top-level
-		// keys (stdlib json keeps the last duplicate and folds key
-		// case), so no first-occurrence parser — proxy, logger, audit
-		// trail — can disagree with the dispatcher's decode. The 4 MiB
-		// scanner buffer above is the size cap.
-		if err := handler.UnmarshalStrict(line, &frame); err != nil {
+		// The no-ambiguity rule applies to the envelope's own boundary
+		// here (no key may repeat; no two keys may fold to one name;
+		// unknown envelope keys refused): stdlib keeps the last
+		// duplicate and folds key case, so a first-occurrence parser —
+		// proxy, logger, audit trail — could otherwise disagree with
+		// the dispatcher's decode. The walk stops at the top level
+		// because the full-depth rule is each params decoder's to apply
+		// (handler.UnmarshalStrict at every method handler): a folded
+		// pair inside params is an invalid-params refusal answered WITH
+		// the request id, which a frame-level refusal here cannot be —
+		// it would answer id-less and hang the client's matching. The
+		// 4 MiB scanner buffer above is the size cap.
+		if err := decodeEnvelope(line, &frame); err != nil {
 			st.respond(frame.ID, wireResponse{
 				JSONRPC: "2.0",
 				Error:   &wireRespError{Code: ErrParseError, Message: err.Error()},
@@ -394,6 +403,42 @@ func (s *Server) Serve(ctx context.Context, in io.Reader, out io.Writer) error {
 		st.respond(frame.ID, st.handleRequest(ctx, frame))
 	}
 	return scanner.Err()
+}
+
+// decodeEnvelope applies the strict decode to the frame's own boundary:
+// CheckTopLevelKeys refuses repeated and case-folded envelope keys, the
+// decoder refuses unknown envelope keys and exactly-one-value bodies.
+// Depth is deliberately NOT walked here — every params decode runs
+// handler.UnmarshalStrict, which applies the full-depth rule and can
+// answer with the request's id and the invalid-params code; see the
+// comment at the Serve call site.
+func decodeEnvelope(line []byte, frame *wireRequest) error {
+	if err := handler.CheckTopLevelKeys(line, strings.ToLower); err != nil {
+		return err
+	}
+	dec := json.NewDecoder(bytes.NewReader(line))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(frame); err != nil {
+		return err
+	}
+	var trailing json.RawMessage
+	if err := dec.Decode(&trailing); err != io.EOF {
+		return errors.New("trailing data after the JSON-RPC envelope")
+	}
+	return nil
+}
+
+// decodeParams applies the no-ambiguity rule to one frame's params at
+// every depth — the a2a decodeParams grammar: a duplicate or
+// case-folded key pair is refused wherever it sits (a nested ambiguity
+// resolves by parser accident exactly like a top-level one), while
+// unknown fields stay tolerated because the protocol reserves the right
+// to add them.
+func decodeParams(raw json.RawMessage, v any) error {
+	if err := handler.CheckObjectKeys(raw, strings.ToLower); err != nil {
+		return err
+	}
+	return json.Unmarshal(raw, v)
 }
 
 // respond writes one response, stamping the request id.
@@ -438,7 +483,7 @@ func (st *serverState) handleNotification(frame wireRequest) {
 	// data either: an unparseable session/cancel is dropped here,
 	// explicitly, rather than cancelling (or not) by accident of the
 	// zero sessionId.
-	if err := json.Unmarshal(frame.Params, &p); err != nil {
+	if err := decodeParams(frame.Params, &p); err != nil {
 		return
 	}
 	st.mu.Lock()
@@ -462,7 +507,7 @@ func (st *serverState) handleInitialize(frame wireRequest) wireResponse {
 		ClientInfo         *Implementation    `json:"clientInfo"`
 	}
 	if len(frame.Params) > 0 {
-		if err := json.Unmarshal(frame.Params, &p); err != nil {
+		if err := decodeParams(frame.Params, &p); err != nil {
 			return st.errResp(ErrInvalidParams, "initialize: %v", err)
 		}
 	}
@@ -566,7 +611,7 @@ func (st *serverState) handleAuthenticate(ctx context.Context, frame wireRequest
 	var p struct {
 		MethodID string `json:"methodId"`
 	}
-	if err := json.Unmarshal(frame.Params, &p); err != nil {
+	if err := decodeParams(frame.Params, &p); err != nil {
 		return st.errResp(ErrInvalidParams, "authenticate: %v", err)
 	}
 	for _, m := range st.srv.opts.AuthMethods {
@@ -611,7 +656,7 @@ func (st *serverState) checkSessionSetup(cwd string, mcpServers []mcpServerName,
 
 func (st *serverState) decodeSessionParams(frame wireRequest, method string) (sessionSetupParams, *wireRespError) {
 	var p sessionSetupParams
-	if err := json.Unmarshal(frame.Params, &p); err != nil {
+	if err := decodeParams(frame.Params, &p); err != nil {
 		return p, &wireRespError{Code: ErrInvalidParams, Message: method + ": " + err.Error()}
 	}
 	if e := st.checkSessionSetup(p.CWD, p.MCPServers, p.AdditionalDirectories); e != nil {
@@ -642,7 +687,10 @@ func (st *serverState) handleNewSession(ctx context.Context, frame wireRequest) 
 	}
 	impl, err := st.runNewSession(ctx, p.CWD)
 	if err != nil {
-		return st.errResp(ErrInternalError, "session/new: %v", err)
+		// The embedder's error text is internal detail (paths, driver
+		// text) and must not cross to the client on the internal-error
+		// code.
+		return st.errResp(ErrInternalError, "session/new: internal error")
 	}
 	if impl == nil || impl.ID() == "" {
 		return st.errResp(ErrInternalError, "session/new: agent returned an empty session ID")
@@ -678,7 +726,8 @@ func (st *serverState) handleLoadSession(ctx context.Context, frame wireRequest)
 		if errors.Is(err, ErrSessionNotFound) {
 			return st.errResp(ErrResourceNotFound, "session/load: %v", err)
 		}
-		return st.errResp(ErrInternalError, "session/load: %v", err)
+		// Same posture as session/new: embedder error text stays internal.
+		return st.errResp(ErrInternalError, "session/load: internal error")
 	}
 	if impl == nil || impl.ID() == "" {
 		return st.errResp(ErrInternalError, "session/load: agent returned an empty session ID")
@@ -701,7 +750,7 @@ func (st *serverState) startPrompt(ctx context.Context, frame wireRequest) {
 		SessionID string         `json:"sessionId"`
 		Prompt    []ContentBlock `json:"prompt"`
 	}
-	if err := json.Unmarshal(frame.Params, &p); err != nil {
+	if err := decodeParams(frame.Params, &p); err != nil {
 		st.respond(frame.ID, st.errResp(ErrInvalidParams, "session/prompt: %v", err))
 		return
 	}

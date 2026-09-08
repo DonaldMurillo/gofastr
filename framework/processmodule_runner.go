@@ -189,14 +189,40 @@ type childPrep struct {
 	Scratch    string
 	Stderr     *moduleproto.RingSink
 	Spec       ChildSpec
+	// Artifact is the open artifact fd when the platform execs BY FD
+	// (fdExecSupported): the exact bytes prepare hashed are the bytes
+	// startPreparedChild exec's, so no rename/rewrite of the artifact
+	// path between the two halves can substitute the program (the
+	// digest travels with the fd, §4.6 / #37 trust anchor). Nil on
+	// platforms without fd exec, where startPreparedChild instead
+	// RE-VERIFIES the digest right before exec (best-effort, see its
+	// doc).
+	Artifact *os.File
 }
+
+// fdExecSupported reports whether exec'ing through the child-side
+// /dev/fd/N name of an ExtraFiles fd pins the program to the already-hashed
+// inode. Linux: /dev/fd → /proc/self/fd, the kernel resolves the fd itself
+// (this is how fexecve(3) is implemented). macOS: devfs synthesizes the
+// mode of /dev/fd/N from the open flags, so execve answers EACCES even for
+// an O_EXEC fd (verified on darwin/arm64, macOS 25.5) — exec-by-fd is not
+// available there. Windows has no /dev/fd at all.
+const fdExecSupported = runtime.GOOS == "linux"
+
+// artifactChildFd is the child-side fd number an ExtraFiles[0] *os.File
+// lands on (0/1/2 are stdio; the first extra file is 3). Kept adjacent to
+// the only use.
+const artifactChildFd = 3
 
 // prepareChildForSpawn is the baseline-hygiene half of the §6 spawn
 // contract, shared by BOTH runners (design §6: "applied by BOTH runners"):
 //
-//   - verify-then-exec: SHA-256 pin checked BEFORE exec (mirrors
+//   - verify-then-exec: the artifact is opened ONCE and the SHA-256 pin is
+//     checked against the OPEN fd BEFORE exec (mirrors
 //     mcpclient.SpawnWithConfig, framework/experimental/harness/mcpclient/client.go:82-128;
-//     the #37 trust anchor, design §3 decision B);
+//     the #37 trust anchor, design §3 decision B). On fd-exec platforms the
+//     same fd is what startPreparedChild exec's, so the hashed bytes and
+//     the exec'd bytes cannot diverge;
 //   - per-module scratch dir as cwd (0o700; concurrent children never
 //     collide);
 //   - empty-default env allowlist: cmd.Env is the explicit union of the
@@ -209,20 +235,31 @@ type childPrep struct {
 //     RingSink (design §4.2; stdout=protocol only, stderr=bounded log).
 //
 // It does NOT call cmd.Start, the caller may apply sandbox wrapping
-// (SandboxRunner) or exec directly (TrustedProcessRunner). No fds beyond
-// 0/1/2 are inherited (cmd.ExtraFiles stays nil, the P3 enforcement).
+// (SandboxRunner) or exec directly (TrustedProcessRunner). Beyond stdio,
+// exactly ONE fd is inherited on fd-exec platforms: the artifact itself
+// (cmd.ExtraFiles carries it so the child can exec /dev/fd/3; the P3
+// "no stray fds" enforcement is unchanged everywhere else).
 func prepareChildForSpawn(spec ChildSpec, allowlist []string) (*childPrep, error) {
 	d := spec.Descriptor
 	if d.ArtifactPath == "" || d.ArtifactSHA256 == "" {
 		return nil, errors.New("processmodule: runner: descriptor artifact path/sha256 required")
 	}
-	// Verify-then-exec: pin the binary BEFORE spawning so a swapped file
-	// never reaches exec (§4.6 lift + #37 trust anchor).
-	got, err := sha256OfFile(d.ArtifactPath)
+	// Verify-then-exec on ONE open file: hash the fd, keep it open, and
+	// (where the platform allows) exec that same fd. Hashing the path
+	// and later exec'ing the path left a rename/rewrite window between
+	// the two resolutions in which a swapped binary ran under an
+	// already-verified digest (§4.6 lift + #37 trust anchor).
+	artifact, err := os.Open(d.ArtifactPath)
 	if err != nil {
+		return nil, fmt.Errorf("processmodule: open %s: %w", d.ArtifactPath, err)
+	}
+	got, err := sha256OfReader(artifact)
+	if err != nil {
+		_ = artifact.Close()
 		return nil, fmt.Errorf("processmodule: hash %s: %w", d.ArtifactPath, err)
 	}
 	if got != d.ArtifactSHA256 {
+		_ = artifact.Close()
 		return nil, &ExecutableSHAMismatchError{
 			Path: d.ArtifactPath, Expected: d.ArtifactSHA256, Actual: got,
 		}
@@ -235,6 +272,7 @@ func prepareChildForSpawn(spec ChildSpec, allowlist []string) (*childPrep, error
 			fmt.Sprintf("gofastr-module-%s-%s", safeDirName(d.Name), shortID(spec.InstanceID)))
 	}
 	if err := os.MkdirAll(scratch, 0o700); err != nil {
+		_ = artifact.Close()
 		return nil, fmt.Errorf("processmodule: scratch dir %s: %w", scratch, err)
 	}
 
@@ -243,7 +281,30 @@ func prepareChildForSpawn(spec ChildSpec, allowlist []string) (*childPrep, error
 		stderr = moduleproto.NewRingSink(moduleproto.DefaultRingSinkBytes)
 	}
 
-	cmd := exec.Command(d.ArtifactPath)
+	var cmd *exec.Cmd
+	var execFD *os.File
+	if fdExecSupported {
+		// Exec the pinned fd: Path names the child-side fd (resolved
+		// by the kernel against the dup'd ExtraFiles fd, never against
+		// the artifact path again), while Args[0] keeps the
+		// human-readable artifact path so process listings and error
+		// messages stay meaningful. Built as a bare &exec.Cmd so
+		// exec.Command's LookPath never stats the parent's fd 3.
+		execFD = artifact
+		cmd = &exec.Cmd{
+			Path: fmt.Sprintf("/dev/fd/%d", artifactChildFd),
+			Args: []string{d.ArtifactPath},
+		}
+		cmd.ExtraFiles = []*os.File{artifact}
+	} else {
+		// No fd exec on this platform: nothing pins the open fd, so
+		// release it and exec by path. startPreparedChild re-verifies
+		// the digest immediately before exec instead (best-effort: the
+		// window between that re-hash and execve is not zero, but it is
+		// the only mechanism the platform offers).
+		_ = artifact.Close()
+		cmd = exec.Command(d.ArtifactPath)
+	}
 	cmd.Dir = scratch
 	cmd.Env = buildChildEnv(allowlist, spec.ExtraEnv, spec.InheritEnv)
 	// Own process group (Unix: Setpgid; Windows: CREATE_NEW_PROCESS_GROUP).
@@ -253,17 +314,20 @@ func prepareChildForSpawn(spec ChildSpec, allowlist []string) (*childPrep, error
 
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
+		_ = execFD.Close()
 		return nil, fmt.Errorf("processmodule: stdin pipe: %w", err)
 	}
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		_ = stdin.Close()
+		_ = execFD.Close()
 		return nil, fmt.Errorf("processmodule: stdout pipe: %w", err)
 	}
 	stderrPipe, err := cmd.StderrPipe()
 	if err != nil {
 		_ = stdin.Close()
 		_ = stdout.Close()
+		_ = execFD.Close()
 		return nil, fmt.Errorf("processmodule: stderr pipe: %w", err)
 	}
 
@@ -275,6 +339,7 @@ func prepareChildForSpawn(spec ChildSpec, allowlist []string) (*childPrep, error
 		Scratch:    scratch,
 		Stderr:     stderr,
 		Spec:       spec,
+		Artifact:   execFD,
 	}, nil
 }
 
@@ -284,13 +349,53 @@ func prepareChildForSpawn(spec ChildSpec, allowlist []string) (*childPrep, error
 // Codec over stdin/stdout, and starts the stderr drain goroutine. Once it
 // returns, the supervisor owns teardown (ctx no longer bounds lifetime).
 // The returned [RunningChild] is the shared spawnedChild concrete handle.
+//
+// Digest continuity, by platform: where fdExecSupported, prepare pinned the
+// hashed artifact fd into cmd.ExtraFiles and Start exec's exactly those
+// bytes (no re-verification needed or possible to race). Everywhere else
+// (macOS, Windows) the exec resolves the PATH, so this half re-verifies
+// the SHA-256 pin right before Start — after any backend.Wrap step a
+// SandboxRunner applied to prep.Cmd between the two halves. That re-verify
+// is BEST-EFFORT only: the window between the re-hash and the child's
+// execve is small but not zero, which is the strongest guarantee a
+// path-based exec offers on platforms without exec-by-fd.
 func startPreparedChild(ctx context.Context, prep *childPrep, newCodec func(r io.Reader, w io.Writer, maxFrameBytes int) (*moduleproto.Codec, error)) (RunningChild, error) {
 	cmd := prep.Cmd
+	if prep.Artifact == nil && !fdExecSupported {
+		// Path-exec platform: re-verify the digest immediately before
+		// exec so a swap between prepare and here (concurrent deploy,
+		// a same-host process, a wrap step) refuses instead of running
+		// unverified bytes.
+		d := prep.Spec.Descriptor
+		got, err := sha256OfFile(d.ArtifactPath)
+		if err != nil {
+			_ = prep.Stdin.Close()
+			_ = prep.Stdout.Close()
+			_ = prep.StderrPipe.Close()
+			return nil, fmt.Errorf("processmodule: re-hash %s: %w", d.ArtifactPath, err)
+		}
+		if got != d.ArtifactSHA256 {
+			_ = prep.Stdin.Close()
+			_ = prep.Stdout.Close()
+			_ = prep.StderrPipe.Close()
+			return nil, &ExecutableSHAMismatchError{
+				Path: d.ArtifactPath, Expected: d.ArtifactSHA256, Actual: got,
+			}
+		}
+	}
 	if err := cmd.Start(); err != nil {
 		_ = prep.Stdin.Close()
 		_ = prep.Stdout.Close()
 		_ = prep.StderrPipe.Close()
-		return nil, fmt.Errorf("processmodule: exec %s: %w", cmd.Path, err)
+		if prep.Artifact != nil {
+			_ = prep.Artifact.Close()
+		}
+		return nil, fmt.Errorf("processmodule: exec %s: %w", execName(cmd), err)
+	}
+	if prep.Artifact != nil {
+		// The child holds its own dup of the fd; the parent's copy has
+		// done its job (the exec already resolved it).
+		_ = prep.Artifact.Close()
 	}
 	if ctx.Err() != nil {
 		_ = cmd.Process.Kill()
@@ -326,6 +431,16 @@ func startPreparedChild(ctx context.Context, prep *childPrep, newCodec func(r io
 		pgid:   childPgid(cmd),
 	}
 	return rc, nil
+}
+
+// execName is the human-readable program name for exec error messages:
+// Args[0] (the artifact path on fd-exec platforms, where cmd.Path is the
+// /dev/fd/N indirection) falling back to cmd.Path.
+func execName(cmd *exec.Cmd) string {
+	if len(cmd.Args) > 0 {
+		return cmd.Args[0]
+	}
+	return cmd.Path
 }
 
 // allowlist returns the runner's env allowlist, defaulting to
@@ -440,8 +555,15 @@ func sha256OfFile(path string) (string, error) {
 		return "", err
 	}
 	defer f.Close()
+	return sha256OfReader(f)
+}
+
+// sha256OfReader hashes the bytes readable from r (shape lifted with
+// sha256OfFile). prepareChildForSpawn calls it on the OPEN artifact fd so
+// the digest describes exactly the bytes a subsequent fd exec will run.
+func sha256OfReader(r io.Reader) (string, error) {
 	h := sha256.New()
-	if _, err := io.Copy(h, f); err != nil {
+	if _, err := io.Copy(h, r); err != nil {
 		return "", err
 	}
 	return hex.EncodeToString(h.Sum(nil)), nil

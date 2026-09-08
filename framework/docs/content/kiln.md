@@ -48,8 +48,14 @@ The three read routes (`/kiln/world`, `/kiln/status`, `/.kiln/events`)
 refuse a browser request whose `Origin` is cross-site, and one whose
 `Host` is not a loopback address when an `Origin` is present (a
 rebound page and the listener agree on the attacker-named host, so only
-the Host pin catches it). Requests without an `Origin` header, the
-agent transports and `curl`, pass untouched.
+the Host pin catches it). Write routes pin `Host` to loopback whenever
+the listener bound a loopback address, `Origin` header or not.
+Requests without an `Origin` header, the agent transports and `curl`,
+pass untouched. `/.kiln/events` seats each peer host at 16 concurrent
+streams (429 past it), and the JSON GETs answer `Cache-Control:
+no-store`. `Live.ServeHTTP` sets an `X-Kiln-Server` header; the
+`waitReady` probe requires it and fails when serve exits, instead of
+hanging on a port held by something else.
 
 `kiln mcp` exposes the same tools over stdio MCP. `kiln acp` speaks the
 published Agent Client Protocol v1 instead (see
@@ -100,8 +106,11 @@ Safety and session:
 - `propose_plan`, `approve_plan`, `reject_plan`
 - `undo`, `reset_session`, `chat`
 
-Every transport uses the same typed dispatcher. Destructive deletes require an
-approved plan naming the exact operation and target. An approval is
+Every transport uses the same typed dispatcher. Destructive deletes
+and `update_entity` require an approved plan naming the exact
+operation and target (`update_entity` carries the `PlanID` in its
+journal entry; journals written before the gate existed fail replay
+with a pointer at the entry). An approval is
 single-use. `undo` truncates one journal entry and deterministically rebuilds;
 `reset_session` clears the journal and ephemeral schema. The runtime
 database is derived from the journal: boot, `undo`, and `reset_session`
@@ -111,6 +120,20 @@ or undone world cannot resurrect through the CRUD surface. A seed's
 rows are inserted before its journal entry is durable; a seed the
 database refuses leaves nothing behind. A journal whose last line was
 torn by a crash loses exactly that in-flight entry at open.
+
+Two dispatch-side postures: an internal failure of a tool (a panic, a
+filesystem error) answers the caller with a generic "internal error"
+(`Kind: internal`) while the real error is logged server-side — a
+gate refusal still names `invalid_params` — and journaled tool args
+mask credentialed values (`db_url`, `jwt_secret`, `seed_password`)
+the same way `redactedWorld` does (`freeze.DSNHasSecret` decides
+what counts), so the journal file never gains a secret the world
+itself would not carry.
+
+On ACP, every `Destructive` tool call round-trips a
+`session/request_permission` before it runs, the same gate
+`approve_plan` uses; `undo` is not classed Destructive and stays
+ungated.
 
 Those rules are enforced during **replay**, not only at the tool call. The
 journal is the authorization record, so a destructive entry carries the

@@ -16,6 +16,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core/mcp"
 	"github.com/DonaldMurillo/gofastr/core/moduleproto"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"github.com/DonaldMurillo/gofastr/framework/access"
 	"github.com/DonaldMurillo/gofastr/framework/crud"
 	fembed "github.com/DonaldMurillo/gofastr/framework/embed"
@@ -601,7 +602,7 @@ func (b *Broker) lookupEntity(name string) (ent *entity.Entity) {
 	defer func() {
 		if r := recover(); r != nil {
 			slog.Default().Error("processmodule: entity registry Get panicked; denying lookup (fail-closed)",
-				"entity", name, "panic", r, "stack", string(debug.Stack()))
+				"entity", name, "panic", textsafe.Recovered(r), "stack", string(debug.Stack()))
 		}
 	}()
 	ent, err := b.entities.Get(name)

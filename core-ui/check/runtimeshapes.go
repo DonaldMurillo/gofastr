@@ -1,12 +1,15 @@
 package check
 
-// Eight source lints over the browser runtime's JavaScript: four per
+// Ten source lints over the browser runtime's JavaScript: four per
 // recurring bug SHAPE the adversarial-probe audit (branch
 // audit/red-tests, fixed in commit e936f791) kept finding, three more
 // from the 2026-09-03 round-3 red tests
-// (core-ui/runtime/runtime_red_test.go), and one from the 2026-09-04
-// round-3 red probes (core-ui/runtime/sidebar_storage_red_test.go) —
-// the last four's sites are still OPEN — those four fire on today's
+// (core-ui/runtime/runtime_red_test.go), one from the 2026-09-04
+// round-3 red probes (core-ui/runtime/sidebar_storage_red_test.go),
+// and two from the 2026-09-06/07 round-5 red probes
+// (core-ui/runtime/deeplink_decode_red_test.go and
+// core-ui/runtime/src_animate_proto_red_test.go) — the last six's
+// sites are still OPEN — those six fire on today's
 // sources and stay quiet on the fix spellings the red tests name. They
 // lint the fragment and module sources (core-ui/runtime/frag +
 // core-ui/runtime/src), never the generated runtime.js bundle: the
@@ -3421,4 +3424,643 @@ func encodedCallArg(op string) string {
 		return ""
 	}
 	return strings.TrimSpace(op[loc[1]:close])
+}
+
+// ── shared: data-fui provenance past one assignment ────────────────────
+
+// forOfSpan is one for…of loop: the bound identifier, the exact byte
+// span of its body, and the iterable expression's offsets (read from
+// the CODE view by the caller, so attribute-name literals inside it
+// stay visible).
+type forOfSpan struct {
+	idx                string
+	start, end         int // the loop body: brace-matched, or the single statement
+	iterStart, iterEnd int
+}
+
+var reForOfHeader = regexp.MustCompile(`for\s*\(\s*(?:const|let|var)?\s*(\w+)\s+of\s`)
+
+// forOfSpans collects the for…of loops of one file the way forInSpans
+// collects for…in: the body span is exact, however long the loop, so a
+// binding never outlives its loop.
+func forOfSpans(blank string) []forOfSpan {
+	var out []forOfSpan
+	for _, m := range reForOfHeader.FindAllStringSubmatchIndex(blank, -1) {
+		open := strings.IndexByte(blank[m[0]:m[1]], '(') + m[0]
+		close := matchDelimForward(blank, open)
+		if close < 0 {
+			continue
+		}
+		i := skipSpace(blank, close+1)
+		if i >= len(blank) {
+			continue
+		}
+		end := statementEnd(blank, i)
+		if blank[i] == '{' {
+			if e := matchDelimForward(blank, i); e >= 0 {
+				end = e
+			}
+		}
+		out = append(out, forOfSpan{
+			idx:       blank[m[2]:m[3]],
+			start:     i,
+			end:       end,
+			iterStart: m[1],
+			iterEnd:   close,
+		})
+	}
+	return out
+}
+
+// funcHead is one named same-file function: callee name, parameter
+// names, and the exact body span — what the parameter trace needs to
+// follow an attribute-borne value one call away.
+type funcHead struct {
+	name   string
+	params []string
+	start  int
+	end    int
+}
+
+// funcHeads indexes the NAMED functions of one file from its function
+// scopes. Method shorthand (kernel.js's setSignal/getSignal object
+// literals) is functionScopes' documented blind spot and is absent
+// here too; the trace resolves plain declarations, const-arrow and
+// const-function assignments, and single-param arrows.
+func funcHeads(blank string) []funcHead {
+	scopes, _ := functionScopes(blank)
+	out := make([]funcHead, 0, len(scopes))
+	for _, s := range scopes {
+		name := funcHeadName(blank, s[0])
+		if name == "" || jsKeywords[name] {
+			continue
+		}
+		out = append(out, funcHead{
+			name:   name,
+			params: paramNames(blank, s[0]),
+			start:  s[0],
+			end:    s[1],
+		})
+	}
+	return out
+}
+
+// funcHeadName returns the declared name of the function whose body '{'
+// sits at bodyOpen: the identifier heading `function NAME(…)`,
+// `NAME(…) {`, or the const forms `const NAME = (…) => {` /
+// `const NAME = function (…) {`, or the single parameter of
+// `NAME => {`. "" for anonymous bodies and keyword-headed blocks.
+func funcHeadName(blank string, bodyOpen int) string {
+	j := skipSpaceBack(blank, bodyOpen-1)
+	if j < 0 {
+		return ""
+	}
+	if blank[j] == '>' && j >= 1 && blank[j-1] == '=' { // NAME => { or (…) => {
+		k := skipSpaceBack(blank, j-2)
+		if k >= 0 && isJSIdentChar(blank[k]) {
+			return wordBefore(blank, k+1)
+		}
+		return ""
+	}
+	if blank[j] != ')' {
+		return ""
+	}
+	p := matchDelimBack(blank, j)
+	if p <= 0 {
+		return ""
+	}
+	k := skipSpaceBack(blank, p-1)
+	if k >= 0 && isJSIdentChar(blank[k]) {
+		w := wordBefore(blank, k+1)
+		if w == "function" { // `= function (…)`: anonymous, keep walking left
+			k2 := skipSpaceBack(blank, k-len("function"))
+			if k2 >= 0 && blank[k2] == '=' {
+				return wordBefore(blank, k2)
+			}
+			return ""
+		}
+		return w
+	}
+	if k >= 0 && blank[k] == '=' { // const NAME = (…) => {
+		return wordBefore(blank, k)
+	}
+	return ""
+}
+
+var reIdentToken = regexp.MustCompile(`[A-Za-z_$][A-Za-z0-9_$]*`)
+
+// freeIdents returns the variable-looking identifiers of expr: tokens
+// not preceded (ignoring space) by '.', so member names (pair.slice)
+// drop out and the base object (pair) stays. Keywords are dropped.
+func freeIdents(expr string) []string {
+	var out []string
+	for _, m := range reIdentToken.FindAllStringIndex(expr, -1) {
+		tok := expr[m[0]:m[1]]
+		if jsKeywords[tok] {
+			continue
+		}
+		if k := skipSpaceBack(expr, m[0]-1); k >= 0 && expr[k] == '.' {
+			continue
+		}
+		out = append(out, tok)
+	}
+	return out
+}
+
+// nthArgument returns the text of the n-th (0-based) top-level argument
+// between open (a '(') and close (its ')'), or "". The boundary is
+// found on the blank view; the text is read from the code view, like
+// firstArgument.
+func nthArgument(code, blank string, open, close, n int) string {
+	from := open + 1
+	for ; n > 0; n-- {
+		c := topLevelComma(blank, from, close)
+		if c < 0 {
+			return ""
+		}
+		from = c + 1
+	}
+	end := close
+	if c := topLevelComma(blank, from, close); c >= 0 {
+		end = c
+	}
+	return strings.TrimSpace(code[from:end])
+}
+
+// provCtx carries the per-file indexes the data-fui provenance trace
+// walks: assignment events (safeIdentEvents), for…of bindings, and
+// named function heads for the one-call-site parameter trace.
+type provCtx struct {
+	f      jsSource
+	events []safeEvent
+	forOfs []forOfSpan
+	heads  []funcHead
+}
+
+// culprit reports the first data-fui-* provenance witness in expr at
+// pos: an attribute read spelled inside it, or a free identifier that
+// provably holds one — by its deciding assignment (attrFuiAt, the
+// last-assignment rule lints 1/5/8 use), by a for…of binding whose
+// iterable derives from one, or as a parameter whose enclosing named
+// function receives one at a same-file call site (lightbox's
+// parseDeeplink: step() passes the attribute read one call away).
+// "" when nothing derives. The depth cap is a loop guard only: every
+// hop (argument → identifier → iterable → identifier → call site →
+// argument, the longest real chain) adds one, and mutual call chains
+// add two per cycle, so anything past six cannot terminate.
+func (c *provCtx) culprit(expr string, pos, depth int) string {
+	if depth > 6 {
+		return ""
+	}
+	t := strings.TrimSpace(expr)
+	if t == "" {
+		return ""
+	}
+	if reFuiAttrKey.MatchString(t) {
+		return t
+	}
+	for _, v := range freeIdents(t) {
+		if w := c.fuiWitness(v, pos, depth+1); w != "" {
+			return w
+		}
+	}
+	return ""
+}
+
+// fuiWitness reports why identifier v holds a data-fui value at pos,
+// or "" when it does not.
+func (c *provCtx) fuiWitness(v string, pos, depth int) string {
+	if attrFuiAt(c.events, v, pos) {
+		return v
+	}
+	for _, o := range c.forOfs {
+		if o.idx != v || pos < o.start || pos > o.end {
+			continue
+		}
+		if w := c.culprit(c.f.Code[o.iterStart:o.iterEnd], o.iterStart, depth+1); w != "" {
+			return w
+		}
+	}
+	fn := c.headContaining(pos)
+	if fn == nil {
+		return ""
+	}
+	for i, p := range fn.params {
+		if p == v {
+			return c.callSiteWitness(fn.name, i, depth+1)
+		}
+	}
+	return ""
+}
+
+// headContaining returns the innermost named function whose body span
+// contains pos, or nil.
+func (c *provCtx) headContaining(pos int) *funcHead {
+	best := -1
+	for i := range c.heads {
+		h := &c.heads[i]
+		if h.start <= pos && pos < h.end && (best < 0 || h.start > c.heads[best].start) {
+			best = i
+		}
+	}
+	if best < 0 {
+		return nil
+	}
+	return &c.heads[best]
+}
+
+// callSiteWitness reports the provenance witness of the index-th
+// argument at any same-file call of name: the attribute-borne value
+// reaches the parameter through that call. Bare and dotted calls both
+// count (NS.helper(…) and helper(…) are the same seam).
+func (c *provCtx) callSiteWitness(name string, index, depth int) string {
+	re := regexp.MustCompile(`\b` + regexp.QuoteMeta(name) + `\s*\(`)
+	for _, loc := range re.FindAllStringIndex(c.f.Blank, -1) {
+		if loc[0] > 0 && isJSIdentChar(c.f.Blank[loc[0]-1]) {
+			continue // a longer callee ending in name
+		}
+		open := loc[1] - 1
+		close := matchDelimForward(c.f.Blank, open)
+		if close < 0 {
+			continue
+		}
+		arg := nthArgument(c.f.Code, c.f.Blank, open, close, index)
+		if arg == "" {
+			continue
+		}
+		if w := c.culprit(arg, loc[0], depth+1); w != "" {
+			return w
+		}
+	}
+	return ""
+}
+
+// ── lint 9: data-fui value decoded with no containment ─────────────────
+
+// LintDecodeURIRaw fires when a decodeURIComponent(/decodeURI( call
+// decodes a data-fui-derived value outside every try block.
+//
+// Bug class: data-fui-deeplink (like every data-fui-* value) is
+// markup-borne input, and decodeURIComponent('%%E0%%A4') throws
+// URIError. The eager widget-open delegator decodes AFTER its
+// preventDefault, so the throw consumes the open click and nothing
+// opens; lightbox's srcOf/parseDeeplink throw out of step()'s click
+// and keydown handlers and recordOpen's MutationObserver, killing
+// gallery nav instead of degrading to a no-op. Probes:
+// TestDeeplinkRedDecodeThrows, TestLightboxRedDecodeThrows
+// (core-ui/runtime/deeplink_decode_red_test.go, 2026-09-06 round-5;
+// fix pending — this lint fires on today's tree). The fixed spelling is
+// the selector guard family's containment: the decode inside a try
+// block, or routed through a same-file helper whose body wraps the
+// decode in try — then the only bare decode left is inside the
+// helper's own try, the same posture.
+//
+// Provenance is the family's data-fui trust boundary (reFuiAttrKey: a
+// getAttribute('data-fui-…') read or a dataset member), traced through
+// provCtx: one assignment, one for…of iterable, one same-file call
+// site per identifier.
+//
+// Silent on:
+//   - decodes inside a try block (trySpans): the throw is contained
+//     and the handler survives — the fix direction the red tests name;
+//   - header- and literal-borne arguments (nav.js's and preload.js's
+//     X-Gofastr-Title decode, decodeURIComponent('static')): no
+//     attribute provenance, no fire — the trust boundary is data-fui,
+//     not every string;
+//   - arguments whose provenance is not traceable (a parameter with no
+//     same-file attribute-derived call site, an imported helper's
+//     input): the out-of-scope posture lints 1/5 hold for untraceable
+//     provenance.
+//
+// Call tokens are matched on the Blank view and the argument text is
+// recovered from Code by offset, exactly like lints 1 and 5.
+func LintDecodeURIRaw(roots ...string) (*Result, error) {
+	res := &Result{}
+	files, err := loadJSSources(roots...)
+	if err != nil {
+		return nil, err
+	}
+	for _, f := range files {
+		locs := reDecodeCall.FindAllStringIndex(f.Blank, -1)
+		if len(locs) == 0 {
+			continue
+		}
+		tries := trySpans(f.Blank)
+		ctx := &provCtx{
+			f:      f,
+			events: safeIdentEvents(f.Code, f.Blank),
+			forOfs: forOfSpans(f.Blank),
+			heads:  funcHeads(f.Blank),
+		}
+		for _, loc := range locs {
+			if loc[0] > 0 && isJSIdentChar(f.Blank[loc[0]-1]) {
+				continue // myDecodeURI(
+			}
+			if insideAnySpan(tries, loc[0]) {
+				continue // contained: the fix spelling
+			}
+			open := loc[1] - 1
+			close := matchDelimForward(f.Blank, open)
+			if close < 0 {
+				continue
+			}
+			arg := firstArgument(f.Code, f.Blank, open, close)
+			if arg == "" {
+				continue
+			}
+			w := ctx.culprit(arg, open, 0)
+			if w == "" {
+				continue
+			}
+			res.add(f.Path, f.lineOf(loc[0]),
+				fmt.Sprintf("[decode-uri-raw] decodeURIComponent(%s) decodes data-fui-borne %q with no try around the call — decodeURIComponent('%%E0%%A4') throws URIError out of the delegated handler (after its preventDefault the click is consumed and nothing opens); wrap the decode in try/catch, or route it through a same-file safeDecode helper whose body does (the selector guard family's containment)", arg, w))
+		}
+	}
+	return res, nil
+}
+
+// reDecodeCall matches both decode globals on the blank view.
+var reDecodeCall = regexp.MustCompile(`\bdecodeURI(?:Component)?\s*\(`)
+
+// ── lint 10: attribute-borne key into a bracket write ──────────────────
+
+// LintProtoKeyWrite fires when a bracket write X[key] = … uses a
+// data-fui-derived key with no reserved-key guard dominating the
+// write.
+//
+// Bug class: the kernel guards setSignal and both seed loops with
+// isReservedSignalKey (frag/signals.js) because a dynamic name like
+// "__proto__" on a plain-object store does not create an own property
+// — it re-parents the store through the __proto__ setter — and
+// "constructor"/"prototype" shadow Object.prototype members the read
+// paths then mis-enumerate. The animate wire() slot-creation write
+// (G._signals[name] = slot, name from data-fui-animate-signal) and the
+// toast registry write (NS._toastTimers[id] = rec, id from
+// data-fui-toast-id) bypass that guard: a planted
+// data-fui-animate-signal="__proto__" re-parents the shared signal
+// store and signals go permanently dead client-side. Probes:
+// TestAnimateRedReservedKeyWrite, TestToastsRedReservedKeyWrite
+// (core-ui/runtime/src_animate_proto_red_test.go, 2026-09-06 round-5;
+// fix pending — this lint fires on today's tree). The fixed spelling is
+// the kernel's own: reject reserved keys before the write
+// (isReservedSignalKey(key), an inline '__proto__'/'constructor'/
+// 'prototype' comparison, or Object.hasOwn), or key the store by Map.
+//
+// Silent on:
+//   - keys that provably cannot BE a bare reserved name: literal,
+//     numeric, and visibly composite keys (name+'\0'+ctx — lint 2's
+//     composite posture);
+//   - writes whose whole RHS provably yields a primitive: a literal,
+//     true/false/null/undefined, or one whole string-yielding
+//     decodeURIComponent/decodeURI call. The __proto__ setter ignores
+//     primitives, and a primitive constructor/prototype write is an
+//     own property nobody reads — toasts.js's present[id] = true and
+//     the deeplink overrides[decode(…)] = decode(…) pairs are this
+//     posture, not findings;
+//   - Map-keyed stores (a same-file `BASE = new Map(` for the write's
+//     receiver): the fix direction the toast red test names, credited
+//     so the bracket spelling is not judged before the re-keying lands;
+//   - guarded writes. The guard — isReservedSignalKey(key), an inline
+//     comparison of the key with '__proto__'/'constructor'/'prototype',
+//     or Object.hasOwn — counts in the condition of an if whose branch
+//     contains the write, or in an earlier if of a block enclosing the
+//     write whose failure branch rejects execution (return/throw/
+//     continue): setSignal's `if (isReservedSignalKey(name)) return`
+//     and the seed loops' `if (isReservedSignalKey(k)) continue` are
+//     exactly these shapes. Object.prototype.hasOwnProperty.call is
+//     deliberately NOT credited: it tests own-ness, not reserved-ness
+//     (toasts.js reads it as "already wired" while the write below the
+//     read still re-parents), and the red tests' acceptance names only
+//     the spellings above;
+//   - keys with no data-fui provenance (a for…in enumeration key, a
+//     parameter with no same-file attribute-derived call site): the
+//     out-of-scope posture lints 1/5/8 hold.
+//
+// Writes are found on the Blank view (a bracket access followed by an
+// assignment operator, member chains included — the walk
+// registryAccessIsWrite uses); key and RHS text are recovered from
+// Code by offset.
+func LintProtoKeyWrite(roots ...string) (*Result, error) {
+	res := &Result{}
+	files, err := loadJSSources(roots...)
+	if err != nil {
+		return nil, err
+	}
+	for _, f := range files {
+		sites := bracketWriteSites(f.Blank, f.Code)
+		if len(sites) == 0 {
+			continue
+		}
+		ctx := &provCtx{
+			f:      f,
+			events: safeIdentEvents(f.Code, f.Blank),
+			forOfs: forOfSpans(f.Blank),
+			heads:  funcHeads(f.Blank),
+		}
+		for _, site := range sites {
+			if isJSStringLiteral(site.key) || isJSNumericLiteral(site.key) {
+				continue
+			}
+			if compositeKey(site.key) {
+				continue
+			}
+			w := ctx.culprit(site.key, site.pos, 0)
+			if w == "" {
+				continue
+			}
+			if rhsPrimitive(site.rhs) {
+				continue
+			}
+			if mapStore(f.Blank, site.base) {
+				continue
+			}
+			if reservedGuardDominates(f.Code, site.key, site.pos) {
+				continue
+			}
+			res.add(f.Path, f.lineOf(site.pos),
+				fmt.Sprintf("[proto-key-write] %s[%s] = … writes with the data-fui-borne key %q and no reserved-key guard before it — data-fui-*=\"__proto__\" re-parents the store through the __proto__ setter (the kernel guards setSignal and both seed loops with isReservedSignalKey); reject reserved keys before the write, or key the store by Map", site.base, site.key, w))
+		}
+	}
+	return res, nil
+}
+
+// reBracketAccess matches one bracket access on the blank view.
+var reBracketAccess = regexp.MustCompile(`\[\s*([^\]\n]+?)\s*\]`)
+
+// bracketWrite is one X[key] <op>= rhs site.
+type bracketWrite struct {
+	base string // the receiver text before the bracket, dots included
+	key  string // the key expression, from the code view
+	rhs  string // the assigned expression, from the code view
+	pos  int    // the '[' offset
+}
+
+// bracketWriteSites finds the bracket writes of the file: reads,
+// comparisons, and deletes drop out (the registryAccessIsWrite shape).
+func bracketWriteSites(blank, code string) []bracketWrite {
+	var out []bracketWrite
+	for _, m := range reBracketAccess.FindAllStringIndex(blank, -1) {
+		close := m[1] - 1
+		opStart, opLen, ok := bracketWriteOp(blank, close)
+		if !ok {
+			continue
+		}
+		j := m[0] - 1
+		for j >= 0 && (isJSIdentChar(blank[j]) || blank[j] == '.') {
+			j--
+		}
+		end := statementEnd(code, opStart)
+		out = append(out, bracketWrite{
+			base: blank[j+1 : m[0]],
+			key:  strings.TrimSpace(code[m[0]+1 : close]),
+			rhs:  strings.TrimSpace(code[opStart+opLen : end]),
+			pos:  m[0],
+		})
+	}
+	return out
+}
+
+// bracketWriteOp finds the assignment operator after the bracket
+// access closing at close, skipping member chains (REG[k].member =).
+// Comparisons (==/===) and arrow bodies (=>) are rejected in code.
+func bracketWriteOp(blank string, close int) (start, length int, ok bool) {
+	i := close + 1
+	for {
+		i = skipSpace(blank, i)
+		if i < len(blank) && blank[i] == '.' {
+			i++
+			for i < len(blank) && isJSIdentChar(blank[i]) {
+				i++
+			}
+			continue
+		}
+		break
+	}
+	if i >= len(blank) {
+		return 0, 0, false
+	}
+	if blank[i] == '=' && !(i+1 < len(blank) && (blank[i+1] == '=' || blank[i+1] == '>')) {
+		return i, 1, true
+	}
+	for _, op := range []string{"<<=", ">>=", ">>>=", "**=", "&&=", "||=", "??=", "+=", "-=", "*=", "/=", "%=", "&=", "|=", "^="} {
+		if strings.HasPrefix(blank[i:], op) {
+			return i, len(op), true
+		}
+	}
+	return 0, 0, false
+}
+
+// compositeKey reports whether the key expression visibly concatenates
+// or interpolates: a top-level '+' build with more than one operand,
+// or a template literal. A composite string can never equal a bare
+// prototype property name.
+func compositeKey(key string) bool {
+	if strings.HasPrefix(strings.TrimSpace(key), "`") {
+		return true
+	}
+	return len(splitTopLevel(key, '+')) > 1
+}
+
+// reStringYield matches a call whose result is provably a string:
+// decodeURIComponent(/decodeURI(, optionally qualified.
+var reStringYield = regexp.MustCompile(`^(?:\w+\.)*(?:decodeURIComponent|decodeURI)\s*\(`)
+
+// rhsPrimitive reports whether the whole assigned expression provably
+// yields a primitive: a string or numeric literal, true/false/null/
+// undefined, or exactly one string-yielding decode call (nothing after
+// its closing paren but space — the whole-operand rule isEscapeCall
+// and isEncodedCall use).
+func rhsPrimitive(rhs string) bool {
+	t := strings.TrimSpace(rhs)
+	switch t {
+	case "true", "false", "null", "undefined", "":
+		return true
+	}
+	if isJSStringLiteral(t) || isJSNumericLiteral(t) {
+		return true
+	}
+	loc := reStringYield.FindStringIndex(t)
+	if loc == nil {
+		return false
+	}
+	close := matchDelimForward(t, loc[1]-1)
+	return close >= 0 && strings.TrimSpace(t[close+1:]) == ""
+}
+
+// mapStore reports whether the write's receiver (or its last dotted
+// segment) is declared as a Map in the file.
+func mapStore(blank, base string) bool {
+	last := base
+	if i := strings.LastIndexByte(base, '.'); i >= 0 {
+		last = base[i+1:]
+	}
+	pat := `\b(?:` + regexp.QuoteMeta(base) + `|` + regexp.QuoteMeta(last) + `)\s*=\s*new\s+Map\s*\(`
+	return regexp.MustCompile(pat).MatchString(blank)
+}
+
+// reservedGuardDominates reports whether a reserved-key guard on the
+// bare key identifier dominates the write at pos, under the two shapes
+// lint 4's and lint 7's gates use: the guard sits in the condition of
+// an if whose branch CONTAINS the write, or in an earlier if of a
+// block enclosing the write whose failure branch REJECTS execution
+// (return/throw/continue). Like attrPathGated, the scan region is the
+// enclosing function; a guard after the write cannot retroactively
+// protect it.
+func reservedGuardDominates(code, key string, pos int) bool {
+	start, _ := enclosingFunction(code, pos)
+	body := code[start:]
+	pos0 := pos - start
+	for _, loc := range reIfOpen.FindAllStringIndex(body, -1) {
+		if loc[0] >= pos0 {
+			break // every later if is past the write
+		}
+		open := loc[1] - 1
+		close := matchDelimForward(body, open)
+		if close < 0 || close >= pos0 {
+			continue
+		}
+		if !reservedGuardIn(body[open+1:close], key) {
+			continue
+		}
+		b := skipSpace(body, close+1)
+		if b >= len(body) {
+			continue
+		}
+		tEnd := b
+		if body[b] == '{' {
+			if e := matchDelimForward(body, b); e >= 0 {
+				tEnd = e
+			}
+		} else if e := statementEnd(body, b); e < len(body) {
+			tEnd = e
+		}
+		if b <= pos0 && pos0 <= tEnd {
+			return true // the branch that writes ran the guard
+		}
+		if tEnd < pos0 && branchRejects(body[b:tEnd+1]) && ifStillOpenAt(body, tEnd+1, pos0) {
+			return true // the guard's failures left; only safe keys continue
+		}
+	}
+	return false
+}
+
+// reservedGuardIn reports whether the if-condition carries a credited
+// reserved-key guard naming the key: the kernel's helper
+// (isReservedSignalKey(key), any receiver), an inline comparison of
+// the key with one of the three reserved names (either polarity), or
+// the own-property gate Object.hasOwn(store, key).
+func reservedGuardIn(cond, key string) bool {
+	if !isJSIdent(key) {
+		return false // guard matching needs the bare key identifier
+	}
+	k := regexp.QuoteMeta(key)
+	if regexp.MustCompile(`(?:\w+\.)*isReservedSignalKey\s*\(\s*` + k + `\b`).MatchString(cond) {
+		return true
+	}
+	cmp := `(?:__proto__|constructor|prototype)`
+	if regexp.MustCompile(`\b`+k+`\s*(?:===|!==|==|!=)\s*['"]`+cmp+`['"]`).MatchString(cond) ||
+		regexp.MustCompile(`['"]`+cmp+`['"]\s*(?:===|!==|==|!=)\s*`+k+`\b`).MatchString(cond) {
+		return true
+	}
+	return regexp.MustCompile(`Object\s*\.\s*hasOwn\s*\([^)]*\b` + k + `\b`).MatchString(cond)
 }

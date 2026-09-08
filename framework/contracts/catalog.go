@@ -117,6 +117,10 @@ const (
 	RuleAbsoluteAttempts   = "GOFASTR1408"
 	RuleUnfencedClaim      = "GOFASTR1409"
 	RuleFoldedKey          = "GOFASTR1410"
+	RuleFetchMetadata      = "GOFASTR1411"
+	RuleURLAttrEscape      = "GOFASTR1412"
+	RuleVarySet            = "GOFASTR1413"
+	RuleDialectDrift       = "GOFASTR1414"
 )
 
 // Performance rules.
@@ -725,6 +729,54 @@ func securityRules() []Rule {
 		Examples: []Example{{
 			Bad:  "db.Exec(`DELETE FROM jobs WHERE id = $1 AND status='claimed' AND claim_token = $2`, id, tok)\ndb.Exec(`UPDATE jobs SET status='pending', attempts = attempts - 1 WHERE id = $1`, id)",
 			Good: "db.Exec(`DELETE FROM jobs WHERE id = $1 AND status='claimed' AND claim_token = $2`, id, tok)\ndb.Exec(`UPDATE jobs SET status='pending', attempts = attempts - 1 WHERE id = $1 AND claim_token = $2`, id, tok)",
+		}},
+	}, {
+		ID: RuleFetchMetadata, Slug: "security/fetch-metadata-copy",
+		Title:      "A private copy of the Sec-Fetch-Site cross-site predicate",
+		Capability: CapSecurity, Severity: SeverityError,
+		Summary: "A file outside `core/handler` reads the `Sec-Fetch-Site` header itself (`Header.Get(\"Sec-Fetch-Site\")` or the canonical-key map form).",
+		Why:     "The cross-site predicate is security-critical and exists in exactly one place, `core/handler.IsCrossSiteRequest` (Sec-Fetch-Site first, the Origin-host comparison as the fallback). Every private copy so far has diverged: the setup and kiln copies early-allowed `same-site` — and a sibling subdomain IS same-site, so the Strict cookie rides the attack while only the Origin compare can refuse it — while other copies disagreed about which values are trusted. A tenth copy is a tenth divergence waiting for its own probe.",
+		Fix:     "Call `handler.IsCrossSiteRequest(r)` and keep only the response shape local. A transport that genuinely must read the header itself carries `//gofastr:allow(GOFASTR1411) <why>`.",
+		Doc:     "security",
+		Examples: []Example{{
+			Bad:  "if sfs := r.Header.Get(\"Sec-Fetch-Site\"); sfs != \"\" && sfs != \"same-origin\" {\n\thttp.Error(w, \"forbidden\", http.StatusForbidden)\n}",
+			Good: "if !handler.IsCrossSiteRequest(r) {\n\thttp.Error(w, \"forbidden\", http.StatusForbidden)\n}",
+		}},
+	}, {
+		ID: RuleURLAttrEscape, Slug: "security/url-attr-html-escape",
+		Title:      "HTML-escaped value in a URL attribute slot",
+		Capability: CapSecurity, Severity: SeverityError,
+		Summary: "`render.Escape`/`html.EscapeString` feeds an `href`/`src`/`action`/`formaction`/`poster`/`data` attribute.",
+		Why:     "HTML escaping is scheme-blind: `javascript:alert(1)` escapes to itself, so the escaped value becomes a live URL the moment a user clicks the link, the form submits, or the poster loads (2026-09-06/07 probes: battery/print renderShell's stylesheet href and auto-print script src, core-ui infinitescroll's noscript form action, framework/ui menu.go's MenuAction Path). Escaping proves the value cannot break OUT of the attribute; it says nothing about what the attribute then executes.",
+		Fix:     "Run the value through the scheme allow-list first — `core/urlsafe.Clean(v, urlsafe.Anchor)` or `urlsafe.CleanAnchor(v)` — and escape the cleaned result, the spelling menu.go's Href branch and `core-ui/html` setURLAttr already use. A rejected value degrades to an inert `\"#\"`.",
+		Doc:     "security",
+		Examples: []Example{{
+			Bad:  "fmt.Fprintf(w, \"<a href=\\\"%s\\\">open</a>\", render.Escape(user.URL))",
+			Good: "fmt.Fprintf(w, \"<a href=\\\"%s\\\">open</a>\", urlsafe.CleanAnchor(user.URL))",
+		}},
+	}, {
+		ID: RuleVarySet, Slug: "security/vary-set-overwrites",
+		Title:      "`Vary` written with Set in a middleware chain",
+		Capability: CapSecurity, Severity: SeverityError,
+		Summary: "`Header().Set(\"Vary\", …)` replaces the Vary entries earlier middlewares added.",
+		Why:     "Vary is append-only in a middleware chain: a response crosses CORS (which Adds `Vary: Origin`), an idempotency layer, a cache layer, and a later Set replaces every earlier entry — a shared cache then serves one principal's variant to another. The 2026-09-07 probe TestIdempotencyVaryEatsCors pinned it live: CORS(...)(Idempotency(...)) on an over-cap POST produced ACAO with Vary listing ONLY Idempotency-Key.",
+		Fix:     "Use `.Add(\"Vary\", …)`, the spelling core/middleware/cors.go, wellknown.go, embed, uihost, and the auth BFF all already use. Set is for headers one layer owns end to end; Vary is never one of them.",
+		Doc:     "security",
+		Examples: []Example{{
+			Bad:  "w.Header().Set(\"Vary\", \"Idempotency-Key\")",
+			Good: "w.Header().Add(\"Vary\", \"Idempotency-Key\")",
+		}},
+	}, {
+		ID: RuleDialectDrift, Slug: "security/dialect-twin-where-drift",
+		Title:      "Dialect twin queries whose WHERE predicates diverge",
+		Capability: CapSecurity, Severity: SeverityError,
+		Summary: "Sibling Postgres/SQLite queries — paired by name (claimDeliveriesPostgres/claimDeliveriesSQLite) or by a dialect if/switch arm — whose WHERE clauses differ by a predicate atom after normalization, and whose table sets match: a pair over different tables (pg_tables vs sqlite_master) is shaped by different catalogs and owes no predicate parity, so it stays quiet.",
+		Why:     "A dialect twin is written twice because the SPELLING differs ($n vs ?, SKIP LOCKED vs a tx); the predicates are supposed to be copies. Nothing else reviews the two against each other, so an atom one side lacks ships silently and the two dialects select different rows: framework/outbox claimDeliveriesSQLite shipped without the `next_attempt_at IS NULL OR next_attempt_at <= $` backoff its Postgres twin has, so deliveries past their retry deadline were re-claimed on SQLite only and a poison delivery looped past its backoff on every SQLite app. The rule compares only twins over the same table set (a subset counts — the Postgres side may wrap its twin's SELECT in an UPDATE on the same table); twins over different system catalogs are quiet by design.",
+		Fix:     "Decide which side is right and copy the predicate across verbatim. When the difference is a real dialect capability (a partial index, a RETURNING clause, a different system catalog), annotate the poorer statement `//gofastr:allow(GOFASTR1414) <why>` naming the capability.",
+		Doc:     "security",
+		Examples: []Example{{
+			Bad:  "func claimPostgres(db *sql.DB, now string) error {\n\t_, err := db.Exec(`UPDATE jobs SET status='claimed'\n\t\tWHERE status='pending' AND claimed_until <= $1 AND next_attempt_at <= $1`, now)\n\treturn err\n}\n\nfunc claimSQLite(db *sql.DB, now string) error {\n\t_, err := db.Exec(`UPDATE jobs SET status='claimed'\n\t\tWHERE status='pending' AND claimed_until <= ?`, now)\n\treturn err\n}",
+			Good: "func claimPostgres(db *sql.DB, now string) error {\n\t_, err := db.Exec(`UPDATE jobs SET status='claimed'\n\t\tWHERE status='pending' AND claimed_until <= $1 AND next_attempt_at <= $1`, now)\n\treturn err\n}\n\nfunc claimSQLite(db *sql.DB, now string) error {\n\t_, err := db.Exec(`UPDATE jobs SET status='claimed'\n\t\tWHERE status='pending' AND claimed_until <= ? AND next_attempt_at <= ?`, now, now)\n\treturn err\n}",
 		}},
 	}, {
 		ID: RuleFoldedKey, Slug: "security/folded-key-save",

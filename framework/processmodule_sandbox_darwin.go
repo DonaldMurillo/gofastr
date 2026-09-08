@@ -9,6 +9,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/DonaldMurillo/gofastr/internal/fileperm"
 )
 
 // This file is the macOS arm of the §6 sandbox backend: `sandbox-exec`
@@ -95,7 +97,7 @@ func (b *darwinSandboxBackend) Wrap(cmd *exec.Cmd, opts SandboxOpts) error {
 	}
 	profilePath := filepath.Join(profileDir, "gofastr-sandbox.sb")
 	profile := generateDarwinProfile(child, opts)
-	if err := os.WriteFile(profilePath, []byte(profile), 0o600); err != nil {
+	if err := fileperm.WriteOwnerOnly(profilePath, []byte(profile)); err != nil {
 		return fmt.Errorf("write profile: %w", err)
 	}
 

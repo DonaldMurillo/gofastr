@@ -40,8 +40,17 @@ func Bind(r *http.Request, dst any) error {
 
 	rv = rv.Elem()
 	if rv.Kind() != reflect.Struct {
-		// Non-struct pointer (e.g. *string); only JSON body applies.
-		return bindBody(r, dst)
+		// Non-struct pointer (e.g. *string); only the JSON body applies,
+		// under the same Content-Type gate as the struct branch. text/plain
+		// is a CORS-simple content type, so a cross-site form can post it
+		// with no preflight — the gate must hold for every destination shape.
+		hasBody := r.Body != nil && r.ContentLength != 0
+		if hasBody || r.Method == http.MethodPost || r.Method == http.MethodPut || r.Method == http.MethodPatch {
+			if isJSONContentType(r.Header.Get("Content-Type")) {
+				return bindBody(r, dst)
+			}
+		}
+		return nil
 	}
 
 	// 1. Bind header fields first (lowest priority)
@@ -125,6 +134,14 @@ func bindBody(r *http.Request, dst any) error {
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(dst); err != nil {
 		return Errorf(400, "invalid JSON: %s", err.Error())
+	}
+	// Exactly one value: a second Decode must find nothing. '{"a":1}{"b":2}'
+	// decodes its first value and hides the second, leaving two parsers (or
+	// a re-reading consumer) disagreeing about what the body said — the
+	// same two-ways-to-read ambiguity the strict key rules refuse.
+	var trailing json.RawMessage
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		return Errorf(400, "invalid JSON: body must contain exactly one JSON value")
 	}
 	return nil
 }
@@ -231,6 +248,25 @@ func collectJSONTags(t reflect.Type, out map[string]struct{}) {
 	}
 }
 
+// sanitizeQueryParam truncates s at the first control byte a query
+// parameter must never carry into handler input: the same
+// truncate-at-first-forbidden-byte walk router.SanitizePathParam
+// applies to path segments, over the full C0/DEL forge set. URL.Query
+// percent-decodes %0d%0a and friends before Bind runs, so the query is
+// a second arrival surface for the bytes the path twin already strips —
+// from handler input they flow on into logs, response headers, SSE
+// frames, and file or database lookups exactly as raw path bytes did.
+// Slashes and dot segments are NOT cut here: unlike a path component, a
+// query value legitimately carries both.
+func sanitizeQueryParam(s string) string {
+	for i := range s {
+		if c := s[i]; c < 0x20 || c == 0x7f {
+			return s[:i]
+		}
+	}
+	return s
+}
+
 // bindQuery binds query parameters to struct fields tagged with `query:"name"`.
 func bindQuery(r *http.Request, rv reflect.Value) error {
 	rt := rv.Type()
@@ -259,7 +295,7 @@ func bindQuery(r *http.Request, rv reflect.Value) error {
 			continue // don't overwrite existing values
 		}
 
-		if err := setField(fv, values[0]); err != nil {
+		if err := setField(fv, sanitizeQueryParam(values[0])); err != nil {
 			return Errorf(400, "invalid query parameter %q: %s", tag, err.Error())
 		}
 	}

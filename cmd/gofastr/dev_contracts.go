@@ -5,6 +5,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"github.com/DonaldMurillo/gofastr/framework/contracts"
 	_ "github.com/DonaldMurillo/gofastr/framework/contracts/analyzers"
 )
@@ -60,7 +61,9 @@ func (w *devContractWatch) Run() {
 		// A panic in an analyzer must never take the dev server with it.
 		defer func() {
 			if rec := recover(); rec != nil {
-				warn("contracts: %v", rec)
+				// textsafe.Recovered: the panicked-on bytes reach the log
+				// sink scrubbed of control/bidi characters and truncated.
+				warn("contracts: %s", textsafe.Recovered(rec))
 			}
 		}()
 		w.analyse()

@@ -23,10 +23,20 @@ type modalPanel struct {
 
 // openModal raises a modal with the given title + body lines. Safe to
 // call from outside renderEvent; takes the mutex.
+//
+// openModal is the modal ingest boundary: body lines may be model-borne
+// (the /tasks snapshot renders TaskList content verbatim), so every
+// title and line is scrubbed here — whole escape sequences and
+// C0/DEL/C1/bidi bytes alike — the same boundary rule every
+// terminal.go ingest path applies through sanitizeAgentText.
 func (t *TUI) openModal(title string, lines []string) {
+	clean := make([]string, len(lines))
+	for i, ln := range lines {
+		clean[i] = sanitizeModalText(ln)
+	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	t.modal = &modalPanel{title: title, lines: lines}
+	t.modal = &modalPanel{title: sanitizeModalText(title), lines: clean}
 }
 
 // closeModal dismisses any active modal.

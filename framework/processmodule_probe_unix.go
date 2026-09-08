@@ -12,6 +12,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/internal/fileperm"
 )
 
 // This file provides the Unix (!windows) implementations of:
@@ -160,7 +162,7 @@ func runProbeChildBody(id ProbeID) int {
 		// is "everything is denied including the child's own work".
 		if scratch != "" {
 			probe := filepath.Join(scratch, ".probe-write")
-			if err := os.WriteFile(probe, []byte("ok"), 0o600); err != nil {
+			if err := fileperm.WriteOwnerOnly(probe, []byte("ok")); err != nil {
 				unreachable(fmt.Sprintf("scratch %s not writable: %v", scratch, err))
 				return 0
 			}

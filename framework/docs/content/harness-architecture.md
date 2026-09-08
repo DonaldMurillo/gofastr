@@ -1001,6 +1001,18 @@ same scenarios (send / cancel / permission / disconnect / reconnect /
 multi-attach) against every transport so cross-transport drift gets
 caught early.
 
+Every long-lived control stream is seated: `rest` SSE, `ws`, and the
+MCP streamable-HTTP GET stream share one `control.SeatTable`
+(`control.DefaultStreamSeats` = 16 per credential across all three
+transports; a `Seats` field on `rest.Server`, `ws.Handler`, and
+`mcpserver.HTTPHandler` wires a separate table). A credential past
+the cap is answered 429 at connect. REST JSON responses carry
+`Cache-Control: no-store`. Malformed JSON-RPC into the mcpserver is
+answered `-32602` (invalid params) with a duplicate/case-folded key
+walk at any depth on `tools/call` and command bodies, and `ws` grows
+its frame buffer while reading under a 60 s payload deadline, so a
+peer that dribbles a frame cannot pin the reader forever.
+
 ### REST API
 
 A handful of resources, JSON bodies, idempotent where possible:

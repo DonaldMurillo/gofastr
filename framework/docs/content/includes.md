@@ -206,6 +206,12 @@ programmatic API, typed repos, seeds, and jobs are trusted server-side code and
 skip these AUTHORIZATION checks, exactly as the baseline session requirement is
 an HTTP concern.
 
+The write side resolves the same predicate now: a CRUD create or
+update whose body sets a BelongsTo FK naming a scoped row the caller
+cannot read answers 404, mirroring the read-side boundary (see
+[entity declarations](entity-declarations.md) → "A BelongsTo FK is
+a write-side trust boundary too" for the exemptions).
+
 What they do not skip is data-layer scoping. `EagerLoad(..., registry)` still
 applies the soft-delete, owner and tenant predicates described above, so an
 in-process eager load is scoped even though no posture was consulted. Only

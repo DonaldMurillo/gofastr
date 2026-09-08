@@ -30,6 +30,7 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
+	"github.com/DonaldMurillo/gofastr/core/stream"
 
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/control"
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/control/auth"
@@ -59,6 +60,21 @@ type Handler struct {
 	// Optional Host/Origin guards (same shape as REST).
 	AllowedHosts   []string
 	AllowedOrigins []string
+
+	// Seats bounds the concurrent upgraded sockets one token principal
+	// may hold (core/stream's seat policy). Nil shares the process-wide
+	// control.DefaultSeatTable with the REST and MCP-HTTP transports,
+	// so the cap counts per credential across all three.
+	Seats *control.SeatTable
+}
+
+// seatTable resolves the seat table: the wired Seats field, else the
+// process-wide table shared with the REST and MCP-HTTP transports.
+func (h *Handler) seatTable() *control.SeatTable {
+	if h.Seats != nil {
+		return h.Seats
+	}
+	return control.DefaultSeatTable()
 }
 
 // ServeHTTP implements http.Handler. Path is /v1/ws?session=<id>[&lastEventId=N].
@@ -110,18 +126,34 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "expected websocket upgrade", http.StatusBadRequest)
 		return
 	}
+	// Seat the upgrade per token principal BEFORE the Hijack, so a
+	// refusal answers 429 at connect (core/stream's seat policy; the
+	// REST twin seats its SSE stream the same way). Each accepted
+	// socket parks its run/eventPump/revocationWatch goroutines for
+	// the life of the TCP connection, so a 17th same-token dial must
+	// not be as cheap as the 1st. run() releases the seat when the
+	// socket's loops exit.
+	seat, seated := h.seatTable().AcquireSeat(string(claims.JTI), 0, stream.SeatOverflowRefuse)
+	if !seated {
+		w.Header().Set("Retry-After", "1")
+		http.Error(w, "too many concurrent control sockets for this token", http.StatusTooManyRequests)
+		return
+	}
 	hj, ok := w.(http.Hijacker)
 	if !ok {
+		h.seatTable().ReleaseSeat(seat)
 		http.Error(w, "no hijacker", http.StatusInternalServerError)
 		return
 	}
 	conn, rw, err := hj.Hijack()
 	if err != nil {
+		h.seatTable().ReleaseSeat(seat)
 		log.Printf("ws: hijack failed: %v", err)
 		http.Error(w, "hijack failed", http.StatusInternalServerError)
 		return
 	}
 	if err := completeHandshake(rw, r); err != nil {
+		h.seatTable().ReleaseSeat(seat)
 		_ = conn.Close()
 		return
 	}
@@ -137,6 +169,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		token:       tok,
 		encoder:     h.Encoder,
 		revocations: h.Revocations,
+		seats:       h.seatTable(),
+		seat:        seat,
 	}
 	// Use a fresh background context for the goroutine, the
 	// handler returns immediately after Hijack, which would cancel
@@ -197,6 +231,13 @@ type Conn struct {
 	clientID ids.ClientID
 	mux      *multiplex.Mux
 	session  ids.SessionID
+
+	// seats/seat hold this socket's admission against the shared
+	// control-plane seat table; run releases the seat when the
+	// socket's loops exit.
+	seats *control.SeatTable
+	seat  *control.Seat
+
 	// claims is the verified token scope for this connection. Every
 	// inbound command frame is checked against it, not just the
 	// handshake: see handleText.
@@ -218,8 +259,21 @@ type Conn struct {
 // events outbound. Returns when the socket closes.
 func (c *Conn) run(parentCtx context.Context) {
 	defer c.netConn.Close()
+	// The seat taken at admission is freed exactly when the socket's
+	// loops end (voluntary close, protocol error, or revocation).
+	defer c.seats.ReleaseSeat(c.seat)
 	ctx, cancel := context.WithCancel(parentCtx)
 	defer cancel()
+
+	// Displaced by an EvictOldest admission: the only way to unblock
+	// the read loop is to close the socket under it.
+	go func() {
+		select {
+		case <-c.seat.Done:
+			_ = c.netConn.Close()
+		case <-ctx.Done():
+		}
+	}()
 
 	// Attach to the multiplex.
 	if err := c.mux.Attach(c.session, c); err != nil {
@@ -430,7 +484,16 @@ func (c *Conn) Subscribe(_ context.Context) <-chan control.EventEnvelope {
 func (c *Conn) Send(_ context.Context, _ control.Command) error { return nil }
 func (c *Conn) Close() error                                    { return c.netConn.Close() }
 
-// ---------- frame I/O ----------
+// wsPayloadChunk is the read granularity readFrame grows its payload
+// buffer by, so memory tracks bytes actually delivered rather than the
+// length a header claims (core/stream's grown-reader contract).
+const wsPayloadChunk = 32 << 10
+
+// wsFrameReadTimeout bounds one frame's payload read: net/http no
+// longer manages this connection after Hijack, so without a deadline a
+// half-sent frame holds its buffer (and its socket's goroutines) for
+// the life of the TCP connection.
+const wsFrameReadTimeout = 60 * time.Second
 
 func (c *Conn) readFrame() (op byte, payload []byte, err error) {
 	b0, err := c.reader.ReadByte()
@@ -468,16 +531,35 @@ func (c *Conn) readFrame() (op byte, payload []byte, err error) {
 			return 0, nil, err
 		}
 	}
-	payload = make([]byte, length)
-	if _, err := io.ReadFull(c.reader, payload); err != nil {
-		return 0, nil, err
+	// Payload.
+	//
+	// Do NOT allocate `length` up front: the peer declares it in a
+	// handful of header bytes, so an eager make() lets 10 wire bytes
+	// pin the full 16 MiB of heap per socket for the life of the
+	// stall. Grow while reading instead, so memory tracks bytes
+	// actually delivered. A read deadline bounds the stall.
+	var payloadBuf []byte
+	if length > 0 {
+		_ = c.netConn.SetReadDeadline(time.Now().Add(wsFrameReadTimeout))
+		payloadBuf = make([]byte, 0, min(int(length), wsPayloadChunk))
+		buf := make([]byte, min(int(length), wsPayloadChunk))
+		for uint64(len(payloadBuf)) < length {
+			want := min(int(length-uint64(len(payloadBuf))), len(buf))
+			n, rerr := io.ReadFull(c.reader, buf[:want])
+			if rerr != nil {
+				_ = c.netConn.SetReadDeadline(time.Time{})
+				return 0, nil, rerr
+			}
+			payloadBuf = append(payloadBuf, buf[:n]...)
+		}
+		_ = c.netConn.SetReadDeadline(time.Time{})
 	}
 	if masked {
-		for i := range payload {
-			payload[i] ^= mask[i%4]
+		for i := range payloadBuf {
+			payloadBuf[i] ^= mask[i%4]
 		}
 	}
-	return op, payload, nil
+	return op, payloadBuf, nil
 }
 
 func (c *Conn) writeText(payload []byte) {

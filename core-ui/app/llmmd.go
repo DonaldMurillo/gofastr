@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
 // ScreenLLMMDWithMeta renders the screen's llm.md with an optional
@@ -61,7 +62,10 @@ func ScreenLLMMD(screen *Screen) string {
 		func() {
 			defer func() {
 				if r := recover(); r != nil {
-					log.Printf("llm.md: panic rendering screen %s: %v", screen.Path, r)
+					// Scrub the panicked-on bytes (textsafe.Recovered):
+					// they are host/component state and must not forge
+					// lines in the operator's log tail.
+					log.Printf("llm.md: panic rendering screen %s: %s", screen.Path, textsafe.Recovered(r))
 					b.WriteString("_(error rendering content: see server logs)_\n")
 				}
 			}()
@@ -201,7 +205,7 @@ func ScreenLLMMDForPath(ctx context.Context, a *App, path string) (ScreenLLMMDRe
 	}
 	if loaded {
 		if loader, ok := comp.(ScreenLoader); ok {
-			if err := loader.Load(ctx); err != nil {
+			if err := safeScreenLoad(loader, ctx); err != nil {
 				loaded = false
 			}
 		}
@@ -212,7 +216,7 @@ func ScreenLLMMDForPath(ctx context.Context, a *App, path string) (ScreenLLMMDRe
 
 	title := screen.Title
 	if t, ok := comp.(ScreenTitler); ok {
-		if tt := t.ScreenTitle(); tt != "" {
+		if tt := safeScreenTitle(t); tt != "" {
 			title = tt
 		}
 	}

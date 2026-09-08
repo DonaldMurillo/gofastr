@@ -21,9 +21,13 @@ var iceSchemes = map[string]bool{
 
 // validICEURLs reports whether every URL is an ICE URI a browser will
 // accept: an ICE scheme, a host (RFC 7064 and 7065 make it mandatory),
-// and for turn/turns at most a ?transport=udp|tcp query; stun URIs
-// take no query. A scheme with no endpoint parsed fine and reached the
-// browser as a SyntaxError.
+// a port that is present-and-legal when present (numeric, 1-65535,
+// never empty — bracketed-IPv6 aware), no userinfo (RFC 7065 has no
+// userinfo production; a long-lived user:secret in the URL is copied
+// verbatim by iceServersFor into every peer snapshot), and for
+// turn/turns at most a ?transport=udp|tcp query; stun URIs take no
+// query. A scheme with no endpoint parsed fine and reached the browser
+// as a SyntaxError.
 func validICEURLs(urls []string) bool {
 	for _, raw := range urls {
 		u, err := url.Parse(raw)
@@ -41,6 +45,9 @@ func validICEURLs(urls []string) bool {
 		if endpoint == "" || strings.HasPrefix(endpoint, ":") {
 			return false
 		}
+		if !validEndpointPort(endpoint) {
+			return false
+		}
 		switch {
 		case u.RawQuery == "":
 		case scheme == "turn" || scheme == "turns":
@@ -50,6 +57,48 @@ func validICEURLs(urls []string) bool {
 		default:
 			return false
 		}
+	}
+	return true
+}
+
+// validEndpointPort checks the port grammar of one ICE endpoint
+// ("host", "host:port", "[v6]", "[v6]:port"): when a port component is
+// present it must be numeric and within 1-65535, and an empty port
+// ("host:") or any userinfo ("@", RFC 7065 has no such production)
+// refuses the URL. A portless endpoint is legal (the schemes' default
+// port applies). IPv6 literals must be bracketed; the port splits at
+// the colon after the closing bracket, never inside the address.
+func validEndpointPort(endpoint string) bool {
+	if strings.Contains(endpoint, "@") {
+		return false
+	}
+	host := endpoint
+	if strings.HasPrefix(endpoint, "[") {
+		closeIdx := strings.IndexByte(endpoint, ']')
+		if closeIdx < 0 {
+			return false // unterminated IPv6 literal
+		}
+		host = endpoint[:closeIdx+1]
+		endpoint = endpoint[closeIdx+1:]
+	} else if i := strings.LastIndexByte(endpoint, ':'); i >= 0 {
+		host, endpoint = endpoint[:i], endpoint[i:]
+	}
+	if host == "" {
+		return false
+	}
+	if endpoint == "" {
+		return true // no port component
+	}
+	if !strings.HasPrefix(endpoint, ":") {
+		return false // a suffix that is not :port (e.g. a path)
+	}
+	port := endpoint[1:]
+	if port == "" {
+		return false // "host:" — empty port
+	}
+	n, err := strconv.Atoi(port)
+	if err != nil || n < 1 || n > 65535 {
+		return false
 	}
 	return true
 }

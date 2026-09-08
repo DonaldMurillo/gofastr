@@ -49,6 +49,10 @@ func (ch *CrudHandler) cursorFields() []string {
 // `?sort=` is ignored in cursor mode: keyset pagination requires a strictly
 // ordered, unique-enough key, so the cursor field(s) control ORDER BY.
 func (ch *CrudHandler) serveCursorList(ctx context.Context, w http.ResponseWriter, r *http.Request, includes []*IncludeNode, filters []filter.ParsedFilter, nested []nestedFilter, extraWhere []hook.WhereClause) {
+	// Same no-store posture as List: the cursor page is the same per-caller
+	// rows through the keyset arm, and this handler is also reachable via
+	// decodeCursorAny paths that bypass List's stamp.
+	w.Header().Set("Cache-Control", "no-store")
 	cursor, limit, direction := pagination.ParseCursorPagination(r)
 	if direction != "forward" && direction != "backward" {
 		writeJSONError(w, http.StatusBadRequest, "direction must be 'forward' or 'backward'")

@@ -234,6 +234,14 @@ func applyWorldEdit(s *Session, e Entry) error {
 		if _, exists := w.Entities[p.Entity.Name]; !exists {
 			return fmt.Errorf("update_entity: %q not found", p.Entity.Name)
 		}
+		// Wholesale replacement is destructive (every omitted field is
+		// dropped, owner_field/cross_owner_read flip to the new value),
+		// so it spends a plan target on replay exactly like the live
+		// path's requirePlan. The log is the authorization record.
+		target := PlanTarget{Op: "update_entity", Name: p.Entity.Name}
+		if err := s.spendPlan(p.PlanID, target); err != nil {
+			return err
+		}
 		w.Entities[p.Entity.Name] = p.Entity
 		return nil
 

@@ -1901,3 +1901,320 @@ func TestStorageKeyRawFiresOnAttrKey(t *testing.T) {
 		t.Errorf("paneState's finding must name the missing prefix: %s", res.Violations[2].Message)
 	}
 }
+
+// ── LintDecodeURIRaw ───────────────────────────────────────────────────
+
+// decodeFixtureRaw uses ~ for JS backticks (untailed below). Reduced
+// from the live pre-fix tree (2026-09-06/07 round-5): the
+// [data-fui-open] eager delegator (frag/widgets-boot.js and its
+// widgets-boot-static twin) and src/lightbox.js srcOf/parseDeeplink,
+// where parseDeeplink's parameter receives the attribute read from
+// step()'s call one call-site away.
+const decodeFixtureRaw = `(() => {
+  'use strict';
+
+  function installDelegators() { // frag/widgets-boot.js, pre-fix
+    document.addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-fui-open]');
+      if (!btn) return;
+      e.preventDefault();
+      const raw = btn.getAttribute('data-fui-deeplink') || '';
+      const overrides = {};
+      for (const pair of raw.split('&')) {
+        if (!pair) continue;
+        const eq = pair.indexOf('=');
+        if (eq < 0) continue;
+        overrides[decodeURIComponent(pair.slice(0, eq))] =
+          decodeURIComponent(pair.slice(eq + 1));
+      }
+    });
+  }
+
+  function srcOf(anchor) { // src/lightbox.js, pre-fix
+    const dl = anchor.getAttribute('data-fui-deeplink') || '';
+    for (const pair of dl.split('&')) {
+      const eq = pair.indexOf('=');
+      if (eq < 0) continue;
+      const k = decodeURIComponent(pair.slice(0, eq));
+      if (k === 'src') return decodeURIComponent(pair.slice(eq + 1));
+    }
+    return '';
+  }
+
+  function parseDeeplink(s) { // src/lightbox.js, pre-fix: the attribute
+    // value reaches the parameter from step()'s call below.
+    const out = {};
+    for (const pair of s.split('&')) {
+      const eq = pair.indexOf('=');
+      if (eq < 0) continue;
+      out[decodeURIComponent(pair.slice(0, eq))] = decodeURIComponent(pair.slice(eq + 1));
+    }
+    return out;
+  }
+  function step(anchor) {
+    const dl = anchor.getAttribute('data-fui-deeplink') || '';
+    const params = parseDeeplink(dl);
+    return params;
+  }
+
+  // Synthetic positives (never in this repo): different names, same shape.
+  function decodeTag(el) {
+    return decodeURI(el.dataset.fuiTag);
+  }
+  const viaVar = (node) => {
+    const v = node.getAttribute('data-fui-via');
+    return decodeURIComponent(v);
+  };
+
+  // Fixed spellings (the red tests' fix direction): must stay quiet.
+  function parseFixed(btn) {
+    const raw = btn.getAttribute('data-fui-deeplink') || '';
+    const out = {};
+    for (const pair of raw.split('&')) {
+      const eq = pair.indexOf('=');
+      if (eq < 0) continue;
+      try {
+        out[decodeURIComponent(pair.slice(0, eq))] = decodeURIComponent(pair.slice(eq + 1));
+      } catch (_) { /* malformed escape: skip the pair */ }
+    }
+    return out;
+  }
+  function viaHelper(btn) {
+    return safeDecode(btn.getAttribute('data-fui-deeplink'));
+  }
+  function safeDecode(v) {
+    try { return decodeURIComponent(v); } catch (_) { return ''; }
+  }
+
+  // Quiet postures: header- and literal-borne decodes (nav.js and
+  // preload.js read X-Gofastr-Title, never an attribute).
+  function titleFrom(resp) {
+    return decodeURIComponent(resp.headers.get('X-Gofastr-Title') || document.title);
+  }
+  decodeURIComponent('static-value');
+
+  window.__probe = { installDelegators: installDelegators, srcOf: srcOf,
+    parseDeeplink: parseDeeplink, step: step, decodeTag: decodeTag,
+    viaVar: viaVar, parseFixed: parseFixed, viaHelper: viaHelper,
+    safeDecode: safeDecode, titleFrom: titleFrom };
+})();
+`
+
+var decodeFixture = strings.ReplaceAll(decodeFixtureRaw, "~", "\x60")
+
+func TestLintDecodeURIRaw_FiresOnAttrDerived(t *testing.T) {
+	dir := writeRuntimeFixture(t, "decode.js", decodeFixture)
+	res, err := LintDecodeURIRaw(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The eight uncontained attribute-borne decodes: the delegator
+	// (×2, raw), srcOf (×2, dl), parseDeeplink (×2, dl via step()'s
+	// call), decodeTag (dataset read in the argument), viaVar (v).
+	if len(res.Violations) != 8 {
+		t.Fatalf("expected 8 findings, got %d:\n%s", len(res.Violations), res.Error())
+	}
+	for _, v := range res.Violations {
+		if !strings.HasPrefix(v.Message, "[decode-uri-raw]") {
+			t.Errorf("unexpected message: %s", v.Message)
+		}
+	}
+	for _, w := range []string{`"raw"`, `"dl"`, `"el.dataset.fuiTag"`, `"v"`} {
+		if !strings.Contains(res.Error(), w) {
+			t.Errorf("expected a finding naming witness %s (full result:\n%s)", w, res.Error())
+		}
+	}
+}
+
+func TestLintDecodeURIRaw_RepoIsClean(t *testing.T) {
+	// The oracles this lint exists for (frag/widgets-boot.js and
+	// frag/widgets-boot-static.js _installEagerWidgetDelegators,
+	// src/lightbox.js srcOf/parseDeeplink —
+	// core-ui/runtime/deeplink_decode_red_test.go) are still OPEN in
+	// this worktree, so the live tree fires today. Delete this skip
+	// once the fix worktree merges; the assertion below is the gate.
+	repoRoot, err := findRepoRoot()
+	if err != nil {
+		t.Skipf("can't locate repo root: %v", err)
+	}
+	runtimeDir := filepath.Join(repoRoot, "core-ui", "runtime")
+	if _, err := os.Stat(runtimeDir); err != nil {
+		t.Skipf("runtime dir not present: %v", err)
+	}
+	res, err := LintDecodeURIRaw(runtimeDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.HasErrors() {
+		t.Errorf("runtime JS decodes data-fui values outside try blocks:\n%s", res.Error())
+	}
+}
+
+// ── LintProtoKeyWrite ──────────────────────────────────────────────────
+
+const protoKeyFixture = `// Reduced from the live pre-fix tree (2026-09-06/07 round-5):
+// src/animate.js wire (G._signals[name] = slot) and src/toasts.js
+// _initToasts (NS._toastTimers[id] = rec); the quiet spellings are the
+// kernel's guarded setSignal/seed-loop shapes (frag/signals.js) and the
+// fix directions the red tests name.
+(() => {
+  'use strict';
+  const G = window.__gofastr;
+  const NS = window.__gofastr;
+  const isReservedSignalKey = (k) =>
+    k === '__proto__' || k === 'constructor' || k === 'prototype';
+
+  const wire = (el) => { // src/animate.js, pre-fix
+    const name = el.getAttribute('data-fui-animate-signal');
+    const cls = el.getAttribute('data-fui-animate-class');
+    if (!name || !cls) return;
+    let slot = Object.prototype.hasOwnProperty.call(G._signals, name)
+      ? G._signals[name]
+      : undefined;
+    if (!slot) {
+      slot = { value: undefined, listeners: [] };
+      G._signals[name] = slot;
+    }
+    return slot;
+  };
+
+  NS._toastTimers = NS._toastTimers || {};
+  NS._initToasts = function (root) { // src/toasts.js, pre-fix
+    const items = root.querySelectorAll('[data-fui-toast-id]');
+    const present = {};
+    items.forEach((item) => {
+      const id = item.getAttribute('data-fui-toast-id');
+      present[id] = true; // quiet: primitive RHS
+      const ttl = parseInt(item.getAttribute('data-fui-toast-ttl-ms') || '0', 10);
+      if (ttl > 0) {
+        const rec = { remaining: ttl, startedAt: Date.now(), timer: 0 };
+        NS._toastTimers[id] = rec;
+      }
+    });
+  };
+
+  // Synthetic positive (never in this repo): an unguarded cache keyed
+  // by a dataset value.
+  const glyphSlots = {};
+  function cacheGlyph(node) {
+    const g = node.dataset.fuiGlyph;
+    glyphSlots[g] = { node: node };
+  }
+
+  // Fixed spellings: must stay quiet.
+  function setSignal(name, value) { // the kernel's guarded write
+    if (isReservedSignalKey(name)) {
+      return;
+    }
+    if (!G._signals[name]) G._signals[name] = { value: value, listeners: [] };
+  }
+  function wireSignal(el) { // derived via the parameter, saved by the guard
+    setSignal(el.getAttribute('data-fui-signal'), 1);
+  }
+  function mergeAttrSeeds(btn, store) { // the seed-loop guard
+    const seed = JSON.parse(btn.getAttribute('data-fui-seed') || '{}');
+    for (const k of Object.keys(seed)) {
+      if (isReservedSignalKey(k)) continue;
+      if (!store[k]) store[k] = { value: seed[k], listeners: [] };
+    }
+  }
+  function inlineGuard(el, store) {
+    const k = el.dataset.fuiZone;
+    if (k === '__proto__' || k === 'constructor' || k === 'prototype') return;
+    store[k] = { value: 1 };
+  }
+  function hasOwnGuard(el, store) {
+    const k = el.dataset.fuiZone;
+    if (!Object.hasOwn(store, k)) return;
+    store[k] = { value: 1 };
+  }
+  function branchGuard(el, store) {
+    const k = el.getAttribute('data-fui-zone');
+    if (!isReservedSignalKey(k)) {
+      store[k] = { value: 1 };
+    }
+  }
+  const slotMap = new Map(); // Map-keyed store: credited
+  function mapBracket(el) {
+    const k = el.getAttribute('data-fui-map-key');
+    slotMap[k] = { v: 1 };
+  }
+  function mapSet(el) { // the toast red test's fix spelling
+    const t = el.getAttribute('data-fui-timer');
+    NS.timerMap = new Map();
+    NS.timerMap.set(t, { at: Date.now() });
+  }
+
+  // Quiet postures: composite key, decode-valued RHS, literal keys.
+  NS._chromeCache = NS._chromeCache || {};
+  function chromeFor(el, ctx) {
+    const name = el.getAttribute('data-fui-chrome');
+    NS._chromeCache[name + '\0' + (ctx || '')] = { at: 1 };
+  }
+  function parsePairs(btn) {
+    const raw = btn.getAttribute('data-fui-deeplink') || '';
+    const out = {};
+    for (const pair of raw.split('&')) {
+      const eq = pair.indexOf('=');
+      if (eq < 0) continue;
+      out[decodeURIComponent(pair.slice(0, eq))] = decodeURIComponent(pair.slice(eq + 1));
+    }
+    return out;
+  }
+  G._signals['literal'] = { value: 1 };
+  G._signals[0] = { value: 2 };
+
+  window.__probe = { wire: wire, cacheGlyph: cacheGlyph, setSignal: setSignal,
+    wireSignal: wireSignal, mergeAttrSeeds: mergeAttrSeeds, inlineGuard: inlineGuard,
+    hasOwnGuard: hasOwnGuard, branchGuard: branchGuard, mapBracket: mapBracket,
+    mapSet: mapSet, chromeFor: chromeFor, parsePairs: parsePairs };
+})();
+`
+
+func TestLintProtoKeyWrite_FiresOnAttrKey(t *testing.T) {
+	dir := writeRuntimeFixture(t, "protokey.js", protoKeyFixture)
+	res, err := LintProtoKeyWrite(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The three unguarded writes: wire (G._signals[name], name),
+	// _initToasts (NS._toastTimers[id], id), cacheGlyph (g).
+	if len(res.Violations) != 3 {
+		t.Fatalf("expected 3 findings, got %d:\n%s", len(res.Violations), res.Error())
+	}
+	for _, v := range res.Violations {
+		if !strings.HasPrefix(v.Message, "[proto-key-write]") {
+			t.Errorf("unexpected message: %s", v.Message)
+		}
+	}
+	for _, pair := range []string{
+		"G._signals[name]", "NS._toastTimers[id]", "glyphSlots[g]",
+	} {
+		if !strings.Contains(res.Error(), pair) {
+			t.Errorf("expected a finding on %s (full result:\n%s)", pair, res.Error())
+		}
+	}
+}
+
+func TestLintProtoKeyWrite_RepoIsClean(t *testing.T) {
+	// The oracles this lint exists for (src/animate.js wire,
+	// src/toasts.js _initToasts —
+	// core-ui/runtime/src_animate_proto_red_test.go) are still OPEN in
+	// this worktree, so the live tree fires today. Delete this skip
+	// once the fix worktree merges; the assertion below is the gate.
+	repoRoot, err := findRepoRoot()
+	if err != nil {
+		t.Skipf("can't locate repo root: %v", err)
+	}
+	runtimeDir := filepath.Join(repoRoot, "core-ui", "runtime")
+	if _, err := os.Stat(runtimeDir); err != nil {
+		t.Skipf("runtime dir not present: %v", err)
+	}
+	res, err := LintProtoKeyWrite(runtimeDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.HasErrors() {
+		t.Errorf("runtime JS writes attribute-borne keys into shared stores with no reserved-key guard:\n%s", res.Error())
+	}
+}

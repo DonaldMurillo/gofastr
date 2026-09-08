@@ -22,8 +22,10 @@ package seo
 
 import (
 	"encoding/json"
+	"reflect"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
@@ -273,9 +275,13 @@ func NewOffer() Offer { return Offer{base: newBase("Offer")} }
 // ─── Render ────────────────────────────────────────────────────────
 
 // Render emits one <script type="application/ld+json"> tag per item.
-// JSON is marshaled with html.UnescapeString-safe content, the only
+// JSON is marshaled with html.UnescapeString-safe content; the only
 // dangerous sequence inside a `<script>` body is `</`, which we
 // neutralize by escaping the `<`.
+//
+// URL-typed Schema.org fields (see urlFields) pass the same head-URL
+// allow-list the page's canonical/og/twitter arms use; a value that
+// fails is dropped, not rendered.
 //
 // The opening and closing <script> tags are split across two distinct
 // Go string literals on purpose: the build-time `no inline script`
@@ -290,7 +296,8 @@ func Render(items ...Thing) render.HTML {
 	}
 	var b strings.Builder
 	for _, it := range items {
-		body, err := json.Marshal(it)
+		scrubbed, _ := scrubUnsafeURLs(reflect.ValueOf(it))
+		body, err := json.Marshal(scrubbed.Interface())
 		if err != nil {
 			continue
 		}
@@ -302,4 +309,102 @@ func Render(items ...Thing) render.HTML {
 		b.WriteString("\n")
 	}
 	return render.HTML(strings.TrimRight(b.String(), "\n"))
+}
+
+// ─── URL gate ──────────────────────────────────────────────────────
+
+// urlFields are the JSON names of the URL-typed Schema.org fields this
+// package emits. Every string field carrying one of these names passes
+// the same urlsafe.Resource allow-list the page-head gate
+// (framework/uihost.isSafeHeadURL) applies to the canonical/og/twitter
+// arms of the same SEO bundle; a value that fails (javascript:, data:,
+// file:, blob:, protocol-relative, control bytes) is dropped, exactly
+// the way ogTags/twitterTags drop it — the ld+json script is served
+// into the live page head, so an ungated arm is the same phishing
+// primitive the og/twitter pins reject. Keyed on JSON tag names, not
+// field declarations, so a Schema type added later is covered without
+// remembering to re-wire a per-type scrubber.
+var urlFields = map[string]bool{
+	"url": true, "image": true, "logo": true, "item": true, "target": true,
+}
+
+// scrubUnsafeURLs returns v with every URL-typed string field that
+// fails the head-URL allow-list cleared. v is never mutated: structs,
+// slices and pointers are copied on first change, so a caller's value
+// (and any nested pointer it shares) keeps its fields.
+func scrubUnsafeURLs(v reflect.Value) (reflect.Value, bool) {
+	switch v.Kind() {
+	case reflect.Pointer:
+		if v.IsNil() {
+			return v, false
+		}
+		scrubbed, changed := scrubStruct(v.Elem())
+		if !changed {
+			return v, false
+		}
+		out := reflect.New(v.Type().Elem())
+		out.Elem().Set(scrubbed)
+		return out, true
+	case reflect.Slice:
+		if v.Len() == 0 {
+			return v, false
+		}
+		var out reflect.Value
+		changedAny := false
+		for i := range v.Len() {
+			scrubbed, changed := scrubUnsafeURLs(v.Index(i))
+			if !changed {
+				continue
+			}
+			if !out.IsValid() {
+				out = reflect.MakeSlice(v.Type(), v.Len(), v.Len())
+				reflect.Copy(out, v)
+			}
+			out.Index(i).Set(scrubbed)
+			changedAny = true
+		}
+		if changedAny {
+			return out, true
+		}
+		return v, false
+	}
+	if v.Kind() != reflect.Struct {
+		return v, false
+	}
+	return scrubStruct(v)
+}
+
+// scrubStruct scrubs one struct value, reporting whether anything
+// changed. URL-typed string fields are cleared in place on a copy;
+// nested pointers, slices and structs descend through scrubUnsafeURLs.
+func scrubStruct(v reflect.Value) (reflect.Value, bool) {
+	out := reflect.New(v.Type()).Elem()
+	out.Set(v)
+	changed := false
+	t := v.Type()
+	for i := range t.NumField() {
+		f := out.Field(i)
+		if !f.CanSet() {
+			continue
+		}
+		name, _, _ := strings.Cut(t.Field(i).Tag.Get("json"), ",")
+		if name != "" && name != "-" && urlFields[name] && f.Kind() == reflect.String {
+			if s := f.String(); s != "" && !urlsafe.OK(s, urlsafe.Resource) {
+				f.SetString("")
+				changed = true
+				continue
+			}
+		}
+		switch f.Kind() {
+		case reflect.Pointer, reflect.Slice, reflect.Struct:
+			if scrubbed, ch := scrubUnsafeURLs(f); ch {
+				f.Set(scrubbed)
+				changed = true
+			}
+		}
+	}
+	if !changed {
+		return v, false
+	}
+	return out, true
 }

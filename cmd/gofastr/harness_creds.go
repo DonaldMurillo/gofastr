@@ -4,18 +4,21 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/provider/credstore"
+	"github.com/DonaldMurillo/gofastr/internal/fileperm"
 )
 
 // runHarnessCreds dispatches `gofastr harness creds <subcommand>`.
 //
 // Subcommands:
 //
-//	add  <provider> <account> <secret>   Store a credential.
+//	add  <provider> <account> <secret>   Store a credential ("-" reads it from stdin; GOFASTR_HARNESS_SECRET env also works).
 //	list                                 List stored providers/accounts (no secrets).
 //	delete <provider> <account>          Remove a stored credential.
 func runHarnessCreds(args []string) {
@@ -43,10 +46,19 @@ func runHarnessCreds(args []string) {
 //
 //	gofastr harness creds add <provider> <account> <secret>
 //
+// The secret argument accepts the conventional "-" marker: the real
+// secret is then read from GOFASTR_HARNESS_SECRET or piped stdin (env
+// first), never stored as the literal marker. A literal secret keeps
+// working (documented interface) but draws a one-line warning: argv is
+// ps/procfs world-readable, the exact local observer the encrypted
+// store exists to defend against.
+//
 // Examples:
 //
-//	gofastr harness creds add openrouter default sk-or-...
-//	gofastr harness creds add zai default <api-key>
+//	gofastr harness creds add openrouter default -   # secret on stdin
+//	echo "$KEY" | gofastr harness creds add zai default -
+//	GOFASTR_HARNESS_SECRET=... gofastr harness creds add zai default -
+//	gofastr harness creds add zai default <api-key>  # legacy argv form
 //
 // Key resolution order (first wins):
 //  1. GOFASTR_HARNESS_MACHINE_KEY env var (32-byte hex/base64/raw key).
@@ -59,7 +71,13 @@ func runHarnessCredsAdd(args []string) {
 		osExit(1)
 		return
 	}
-	provider, account, secret := args[0], args[1], args[2]
+	provider, account := args[0], args[1]
+	secret, err := resolveCredSecret(args[2])
+	if err != nil {
+		fail("Cannot resolve secret: %v", err)
+		osExit(1)
+		return
+	}
 
 	store, err := openCredstore()
 	if err != nil {
@@ -73,6 +91,29 @@ func runHarnessCredsAdd(args []string) {
 		return
 	}
 	success("Stored credential for %s/%s", provider, account)
+}
+
+// resolveCredSecret resolves the `creds add` secret argument. "-" is the
+// conventional stdin marker: GOFASTR_HARNESS_SECRET wins, then piped
+// stdin; an empty resolution is refused rather than storing "-" or "".
+// A literal value is returned as-is after a one-line argv warning.
+func resolveCredSecret(literal string) (string, error) {
+	if literal != "-" {
+		fmt.Fprintln(os.Stderr, "warning: a secret passed as an argument is visible to every local process via ps; prefer GOFASTR_HARNESS_SECRET or `add <provider> <account> -` (reads the secret from stdin)")
+		return literal, nil
+	}
+	if env := os.Getenv("GOFASTR_HARNESS_SECRET"); env != "" {
+		return env, nil
+	}
+	data, err := io.ReadAll(os.Stdin)
+	if err != nil {
+		return "", fmt.Errorf("read secret from stdin: %w", err)
+	}
+	secret := strings.TrimSpace(string(data))
+	if secret == "" {
+		return "", fmt.Errorf("`-` marker given but no secret arrived on stdin (or GOFASTR_HARNESS_SECRET); refusing to store the marker")
+	}
+	return secret, nil
 }
 
 // runHarnessCredsList prints every stored provider/account pair (no secrets).
@@ -221,7 +262,9 @@ func credsReadOrCreateSalt(path string) ([]byte, error) {
 	if _, err := rand.Read(salt); err != nil {
 		return nil, fmt.Errorf("generate salt: %w", err)
 	}
-	if err := os.WriteFile(path, salt, 0o600); err != nil {
+	// WriteOwnerOnly, not os.WriteFile: the mode must hold on overwrite
+	// too, and this salt derives the credstore key.
+	if err := fileperm.WriteOwnerOnly(path, salt); err != nil {
 		return nil, fmt.Errorf("write salt: %w", err)
 	}
 	return salt, nil

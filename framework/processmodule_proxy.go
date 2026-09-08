@@ -88,7 +88,7 @@ func (s *ProcessModuleSupervisor) serveProxy(name, routeID string, w http.Respon
 
 	// Second-layer gate (design D): the route gate already 404'd if the
 	// module is desired-disabled. Here we check LIVENESS.
-	if !servingState(snap.state, snap.leaseFailingUnsafe()) {
+	if !servingState(snap.state, snap.leaseFailing) {
 		writeProxy503(w, proxyRetryAfter)
 		return
 	}
@@ -167,12 +167,6 @@ func (sl *moduleSlot) uiRenderer() *uinoderender.Renderer {
 		return p, ok
 	})
 }
-
-// leaseFailingUnsafe reads leaseFailing WITHOUT taking the lock. Used inside
-// snapshot's already-locked read; here it is a separate read for the proxy
-// path which already holds RLock via snapshot. We re-snapshot under the
-// lock instead.
-func (s *snapshot) leaseFailingUnsafe() bool { return false } // placeholder; replaced below
 
 // servingState reports whether the proxy should attempt a module.http call.
 // StateReady + lease healthy → true; everything else → false (503).

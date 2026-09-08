@@ -42,7 +42,7 @@ func (b *Badge) Mint(apiKey string) (map[string]any, error) {
 	}
 	defer resp.Body.Close()
 	var out map[string]any
-	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil { // want `decoded with no size bound`
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
 		return nil, err
 	}
 	return out, nil

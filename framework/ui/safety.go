@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"regexp"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
@@ -25,6 +26,28 @@ func safeResourceURL(u string) string {
 // "the image is broken" rather than "the URL was rejected".
 func safeImageURL(u string) string {
 	return urlsafe.Clean(u, urlsafe.ImageSource)
+}
+
+// safeCSSLength matches one plain CSS length: an optional sign, a
+// decimal number and a length unit, or a single var(--token)
+// reference. It gates the few config fields whose value must land
+// inside an inline style attribute (Carousel.VirtualPlaceholderHeight,
+// Workbench.RailWidth): a `;`-separated declaration list or a url() in
+// a request-derived config value would otherwise ship verbatim as live
+// page CSS — render.Attr HTML-escapes the value, but CSS injection
+// needs no HTML metacharacters. Same shape as battery/print's
+// safeLength, widened to the viewport units and var() the screen
+// components take.
+var safeCSSLength = regexp.MustCompile(`^(?:[+-]?(?:[0-9]+(?:\.[0-9]+)?|\.[0-9]+)(?:px|rem|em|%|vw|vh|dvh|svh|lvh|vmin|vmax|ch|ex|pt|pc|mm|cm|in|q)|var\(--[a-zA-Z0-9-]+\))$`)
+
+// cssLengthOr returns v when it is one plain CSS length, else fallback.
+// A "" fallback means "drop the style attribute": the component's CSS
+// default applies, the same degrade the URL sinks give a rejected href.
+func cssLengthOr(v, fallback string) string {
+	if safeCSSLength.MatchString(v) {
+		return v
+	}
+	return fallback
 }
 
 // scrubAttrs filters an html.Attrs map, removing keys that look like

@@ -51,19 +51,26 @@ func TestE2E(t *testing.T) {
 	base := "http://" + addr
 	e2eWaitReady(t, base)
 
-	if code, body := e2eDo(t, http.DefaultClient, "GET", base+"/", ""); code != http.StatusOK || !strings.Contains(body, "ShopFront") {
+	if code, body := e2eDo(t, e2eClient, "GET", base+"/", ""); code != http.StatusOK || !strings.Contains(body, "ShopFront") {
 		t.Errorf("home page = %d, missing brand? %v", code, !strings.Contains(body, "ShopFront"))
 	}
 
 	// Public screens render for anonymous visitors.
 	for _, p := range []string{"/", "/products", "/categories", "/orders", "/reviews", "/new-product"} {
-		if code, body := e2eDo(t, http.DefaultClient, "GET", base+p, ""); code != http.StatusOK {
+		if code, body := e2eDo(t, e2eClient, "GET", base+p, ""); code != http.StatusOK {
 			t.Errorf("public screen %s = %d, want 200", p, code)
 		} else if len(body) < 120 {
 			t.Errorf("public screen %s body suspiciously short (%d bytes)", p, len(body))
 		}
 	}
 }
+
+// e2eClient bounds every probe this suite makes: a generated app that
+// accepts the connection but never responds fails the attempt at the
+// deadline instead of hanging the suite forever (the bootProbeClient
+// shape). e2eWaitReady, the sitemap fetch in axe_test.go, and every
+// e2eDo call site share it.
+var e2eClient = &http.Client{Timeout: 10 * time.Second}
 
 func e2eFreeAddr(t *testing.T) string {
 	t.Helper()
@@ -78,7 +85,7 @@ func e2eFreeAddr(t *testing.T) string {
 func e2eWaitReady(t *testing.T, base string) {
 	t.Helper()
 	for i := 0; i < 100; i++ {
-		if r, err := http.Get(base + "/"); err == nil {
+		if r, err := e2eClient.Get(base + "/"); err == nil {
 			r.Body.Close()
 			return
 		}

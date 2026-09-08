@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"slices"
 
+	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/kiln/protocol"
 )
 
@@ -50,9 +51,8 @@ func (l *Loop) Run(ctx context.Context, userText string) error {
 	// Journal the user message via Tools so it shows up in the panel.
 	l.Tools.Chat(ctx, protocol.ChatArgs{Role: "user", Text: userText})
 	l.messages = append(l.messages, Message{Role: "user", Text: userText})
-
-	for turn := 0; turn < l.MaxTurns; turn++ {
-		system := BuildPrompt(l.Tools.Live().Session(), l.Tools.List()).String()
+	for turn := range l.MaxTurns {
+		system := BuildPromptLive(l.Tools.Live(), l.Tools.List()).String()
 		if l.ContextHook != nil {
 			if extra := l.ContextHook(ctx, lastUserText(l.messages)); extra != "" {
 				system = extra + "\n\n" + system
@@ -111,7 +111,14 @@ func dispatch(ctx context.Context, t *protocol.Tools, call ToolCall) protocol.Re
 	if err != nil {
 		return protocol.Result{OK: false, Error: err.Error(), Kind: "validation"}
 	}
-	dec := func(out any) error { return json.Unmarshal(buf, out) }
+	// The model is an untrusted-ish peer for decode purposes, the same
+	// posture the HTTP twin (kiln/chat server.go dispatch) takes: args
+	// carrying two spellings of one field that differ only by case are
+	// ambiguity, not data. A plain json.Unmarshal folds them last-wins
+	// (map marshalling sorts keys, so the fold is even deterministic),
+	// which redirected the journaled edit to whatever spelling happened
+	// to sort last. Strict decode refuses them as validation errors.
+	dec := func(out any) error { return handler.UnmarshalStrict(buf, out) }
 
 	switch call.Name {
 	case "world_get":

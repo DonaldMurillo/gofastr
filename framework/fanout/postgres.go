@@ -15,6 +15,7 @@ import (
 
 	cfanout "github.com/DonaldMurillo/gofastr/core/fanout"
 	"github.com/DonaldMurillo/gofastr/core/query"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	pq "github.com/lib/pq"
 )
 
@@ -379,7 +380,7 @@ func (p *PostgresFanout) deliver(topic string, payload []byte) {
 func (s *pgSub) deliverOne(topic string, payload []byte) {
 	defer func() {
 		if rec := recover(); rec != nil {
-			slog.Default().Error("fanout: subscriber panicked; delivery to it dropped", "topic", topic, "panic", rec)
+			slog.Default().Error("fanout: subscriber panicked; delivery to it dropped", "topic", topic, "panic", textsafe.Recovered(rec))
 		}
 	}()
 	s.send(payload)

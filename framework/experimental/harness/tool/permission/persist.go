@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/ids"
+	"github.com/DonaldMurillo/gofastr/internal/fileperm"
 )
 
 // PresetFile is the on-disk shape of a profile-level permission
@@ -49,7 +50,7 @@ func SavePreset(path string, pf *PresetFile) error {
 	if pf.SchemaVersion == 0 {
 		pf.SchemaVersion = 1
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
 	sort.Slice(pf.Rules, func(i, j int) bool {
@@ -64,7 +65,7 @@ func SavePreset(path string, pf *PresetFile) error {
 		return err
 	}
 	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o600); err != nil {
+	if err := fileperm.WriteOwnerOnly(tmp, data); err != nil {
 		return err
 	}
 	return os.Rename(tmp, path)

@@ -257,6 +257,13 @@ func extractPlansRecord(ev framework.Event, entityName string) (*Plans, bool) {
 }
 
 // registerPlans registers the "plans" entity with app.
+//
+// plans is the shared cross-tenant pricing catalog: OwnerField is wrong
+// (every subscriber reads the same rows), so writes are gated on real
+// permissions instead — reads stay open for the pricing pages, every
+// create/update/delete needs plans:write / plans:admin. A plain signup
+// session holds neither; the bootstrap admin's wildcard covers both
+// (the rolePolicy wired in app.go resolves roles to permissions).
 func registerPlans(app *framework.App) {
 	app.Entity("plans", framework.EntityConfig{Fields: []schema.Field{
 		{Name: "name", Type: schema.String, Required: true, Max: floatPtr(80)},
@@ -264,7 +271,12 @@ func registerPlans(app *framework.App) {
 		{Name: "price", Type: schema.Decimal, Required: true, Min: floatPtr(0)},
 		{Name: "interval", Type: schema.Enum, Default: "month", Values: []string{"month", "year"}},
 		{Name: "active", Type: schema.Bool, Default: true},
-	}, Exposure: &framework.ExposureConfig{CRUD: boolPtr(true), MCP: true}, Properties: map[string]any{"label": "Plans"},
+	}, Exposure: &framework.ExposureConfig{CRUD: boolPtr(true), MCP: true,
+		// Open catalog reads (blank Read, like the pricing pages want);
+		// every mutation behind a permission — the REST routes and the
+		// plans_* MCP tools enforce the same block.
+		Access: framework.AccessControl{Create: "plans:write", Update: "plans:write", Delete: "plans:admin"},
+	}, Properties: map[string]any{"label": "Plans"},
 	})
 	_ = Plans{}
 }

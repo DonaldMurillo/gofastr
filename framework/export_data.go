@@ -18,6 +18,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/datexport"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/migrate"
+	"github.com/DonaldMurillo/gofastr/internal/fileperm"
 )
 
 // Data export/import: anti-lock-in.
@@ -191,7 +192,7 @@ func (a *App) ExportData(ctx context.Context, dir string, opts ...ExportOption) 
 
 	// MarshalIndent of the manifest struct cannot fail (no unencodable fields).
 	mb, _ := json.MarshalIndent(manifest, "", "  ")
-	if err := os.WriteFile(filepath.Join(dir, "manifest.json"), mb, 0o600); err != nil {
+	if err := fileperm.WriteOwnerOnly(filepath.Join(dir, "manifest.json"), mb); err != nil {
 		return fmt.Errorf("framework: export manifest: %w", err)
 	}
 	return nil
@@ -574,7 +575,7 @@ func writeNDJSON(path string, rows []map[string]any) (string, error) {
 	}
 	data := []byte(buf.String())
 	h.Write(data) // hash.Hash.Write never returns an error (documented)
-	if err := os.WriteFile(path, data, 0o600); err != nil {
+	if err := fileperm.WriteOwnerOnly(path, data); err != nil {
 		return "", err
 	}
 	return hex.EncodeToString(h.Sum(nil)), nil

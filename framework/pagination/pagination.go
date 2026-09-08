@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+
+	"github.com/DonaldMurillo/gofastr/core/handler"
 )
 
 const (
@@ -200,6 +202,12 @@ func EncodeCursor(field string, value any) string {
 // it would not harden anything while breaking the keyset contract: a
 // sort key containing e.g. U+200B must round-trip losslessly or paging
 // resumes before that row and re-serves it.
+//
+// The token is client-crafted opaque JSON riding ?cursor=, so it decodes
+// under the same no-ambiguity rule as every other client-borne JSON body
+// (handler.CheckObjectKeys at any depth): stdlib json resolves duplicate
+// and case-folded keys last-wins, and the keyset must not resume paging
+// under a token any first-read intermediary parsed differently.
 func DecodeCursor(cursor string) (field string, value string, err error) {
 	if len(cursor) > maxCursorEncodedSize {
 		return "", "", fmt.Errorf("pagination: cursor exceeds %d bytes", maxCursorEncodedSize)
@@ -207,6 +215,9 @@ func DecodeCursor(cursor string) (field string, value string, err error) {
 	b, err := base64.StdEncoding.DecodeString(cursor)
 	if err != nil {
 		return "", "", err
+	}
+	if err := handler.CheckObjectKeys(b, strings.ToLower); err != nil {
+		return "", "", fmt.Errorf("pagination: cursor token: %w", err)
 	}
 	var token cursorToken
 	if err := json.Unmarshal(b, &token); err != nil {
@@ -254,6 +265,12 @@ func DecodeMultiCursor(cursor string) ([]multiCursorField, error) {
 	b, err := base64.StdEncoding.DecodeString(cursor)
 	if err != nil {
 		return nil, err
+	}
+	// Same no-ambiguity rule as DecodeCursor; the duplicated member key
+	// lives one level down inside the f array, which the any-depth walk
+	// sees and a top-level-only check would not.
+	if err := handler.CheckObjectKeys(b, strings.ToLower); err != nil {
+		return nil, fmt.Errorf("pagination: cursor token: %w", err)
 	}
 	var tok multiCursorToken
 	if err := json.Unmarshal(b, &tok); err != nil {

@@ -78,6 +78,196 @@ and `/api/docs/openapi.json` now filter entities by the caller's
 read scope (an entity the caller cannot read is omitted, matching
 `/api/llm.md`); `WithPublicOpenAPI` opts into the full, unfiltered
 document.
++
+- **Round-5 adversarial probes: 130 probe files, 158 failing findings
+  and 2 data races over the families the earlier rounds never opened
+  (log-side scrubbing of panic payloads, stream-seat exhaustion,
+  cache suppression on per-user responses, secrets at rest, strict
+  decode at every inbound seam, terminal-state settles, missing
+  deadlines, argv-exposed credentials, identifier gates in emitted
+  code, panic containment at host callbacks), all fixed and promoted
+  to permanent security tests.** The changes worth naming:
+  - **Session gates refuse API tokens.** `RequireSession`,
+    `SessionPolicy`, and `RolePolicy` answer 401 to a caller
+    authenticated only by a scoped `gfsk_` token (`TokenScopes` in the
+    context is the discriminator), so a leaked scoped token cannot
+    reach the SSR screens its scopes never named. `RolePolicy` now
+    honours an `access.Decider`.
+  - **Password-equivalent tokens are hashed at rest.** Magic-link,
+    password-reset, and email-verification tokens store
+    sha256(token) keyed for lookup (the `APIToken` grammar), and
+    `EntitySessionStore` does the same for the session cookie value:
+    a read-only dump of the token or session table is no longer a
+    pile of live takeover credentials. The session cookie is minted
+    by one helper (`mintSessionCookie`) and carries `SameSite=Strict`
+    on password login, magic-link verify, and the OAuth callback.
+    `BaseURL` on the three link-minting plugins must be an http(s)
+    URL or `Init` fails; the OAuth refresh-token save is a
+    compare-and-swap (`SaveIfRefreshUnchanged`).
+  - **CRUD writes gate their foreign keys.** A create/update whose
+    BelongsTo FK names an owner/tenant/read-scoped row the caller
+    cannot read answers 404, the same status reading that row gives,
+    so existence is not leaked. `owner.AllowCrossOwner`, the target's
+    `CrossOwnerRead` permission, `tenant.AllowCrossTenant`, and
+    `WithServerWrites` contexts pass unchanged. CRUD responses carry
+    `Cache-Control: no-store`; typed delete hooks error on drift and
+    typed hooks merge nested in-place mutations; pagination cursors
+    refuse duplicate and case-folded keys at any depth.
+  - **Streams admit by seat.** `rtc.Config.MaxSocketsPerUser`
+    (default 16, evict-oldest per principal) caps signaling sockets;
+    a2a gains `MaxStreamSeatsPerOwner` (0 = 16, negative unlimited)
+    and `StreamSeatOverflow` (`Refuse` answers 429, `EvictOldest`
+    closes the owner's oldest stream); the harness control plane
+    shares one `control.SeatTable` (`DefaultStreamSeats` 16) across
+    its REST SSE, WebSocket, and MCP GET streams; kiln's
+    `/.kiln/events` seats 16 per peer host.
+  - **Per-user responses suppress storage.** The auth token and
+    account listings, CRUD responses, A2A POSTs, uihost pages
+    (no-store plus `Vary: Cookie`), the resource `TableHandler`, kiln
+    JSON GETs, the harness REST surface, and the generated chat page
+    all stamp `Cache-Control: no-store`: RFC 9111's storage
+    restriction covers Authorization headers, not cookie
+    authentication. The agent-card and Link-header pages `Vary` on
+    `Host` and `X-Forwarded-Proto` when no `BaseURL` is pinned, and
+    the idempotency middleware appends to `Vary` instead of
+    overwriting it.
+  - **Strict decode at every inbound seam.** `handler.Bind`'s
+    non-struct branch is gated on a JSON Content-Type, query params
+    truncate at the first C0/DEL byte, and `bindBody` /
+    `UnmarshalStrict` / `DecodeStrict` refuse trailing JSON. MCP
+    prompts/get and resources/read, moduleproto frames
+    (`ErrInvalidFrame`), ACP params (id-matched invalid-params at any
+    depth), the harness mcpserver (refusals are -32602 with an
+    any-depth key walk), OpenAI chunks and the OpenRouter /models
+    listing, rtc signaling frames, and the uihost `?theme=` embed all
+    decode strictly now.
+  - **recover() output is scrubbed.** `textsafe.Recovered` renders
+    every panic value that reaches a log (auth audit and notify,
+    semantic metadata, a2a invoke, the fanout subscriber, mcp gates,
+    the middleware collector, stream close hooks, the semantic
+    watcher), stripping control bytes and truncating. `StateChannel`
+    also survives a panicking host `SnapshotFor`/`FilterEvent`
+    callback.
+  - **State files are owner-only on overwrite.** `os.WriteFile` with
+    an 0600 literal only applies the mode at create, so overwriting a
+    0644 file kept 0644. The shared `fileperm.WriteOwnerOnly` /
+    `SeedOwnerOnly` helpers (open, chmod the handle, write) now back
+    the harness memory/credstore/persist/tracing/DEK writes, kiln's
+    `world.json` and `session.db`, and the generated CLI's
+    `config.json`.
+  - **Terminal settles are fenced.** The queue's Redis `Reclaim`
+    drops stale entries through a fenced `releaseClaim`; webhook
+    inbound envelopes never regress a terminal status (memory and
+    SQL, both dialects); the outbox SQLite backoff predicate matches
+    its Postgres sibling; admin queue replay writes its audit row.
+  - **Deadlines on every probe.** Bare `http.Get`/`Post`/
+    `http.DefaultClient` clients are gone from kiln's port probe, the
+    bench readiness loop, semantic remote calls, and the eval probe;
+    generated e2e/axe suites use a 10s-timeout client and the
+    semantic CLI a 2s one; exec children with captured pipes set
+    `WaitDelay` (kiln agent turns also run in a process group with a
+    4 MiB stdout cap; harness hook children get 5s); the generated
+    CLI's self-client caps at 1 MiB and 30s; `image.Config.
+    MaxSourceBytes` (64 MiB default, `ErrSourceTooLarge`) bounds
+    decode buffering before the pixel guard allocates anything.
+  - **Credentials leave argv.** `gofastr audit a11y --password -`
+    reads `GOFASTR_AUDIT_PASSWORD` then stdin, and
+    `gofastr harness creds add … -` reads `GOFASTR_HARNESS_SECRET`
+    then stdin; a literal argv value still works but warns that every
+    local process can read it.
+  - **Plain errors stay server-side.** MCP prompts/get and
+    resources/read, moduleproto, and the kiln tool API answer
+    internal failures with a generic message (gate refusals still
+    answer `ErrInvalidParams`); kiln masks credentialed `db_url`,
+    `jwt_secret`, and `seed_password` in journaled tool args and the
+    redacted world (`freeze.DSNHasSecret`).
+  - **Kiln tool calls round-trip permissions.** Every `Destructive`
+    tool call goes through `session/request_permission` on ACP;
+    `Live.ServeHTTP` sets `X-Kiln-Server`, `waitReady` requires it
+    and fails when serve exits; `update_entity` requires an approved
+    plan; agent turns are bounded (see deadlines above) and `portFree`
+    uses a dial timeout; tool reads run under the Live lock.
+  - **Identifier gates before emission.** Style class names must be
+    CSS identifiers before selector emission; blueprint decoding
+    errors on list/map shapes for access permissions,
+    `owner_field`/`tenant_field`/`cross_owner_read`,
+    `screens[].access.role`, and `app.admin.role`; non-identifier
+    middleware/plugin/helper/screen names are skipped at emit;
+    login/signup form actions and the print shell's link/script URLs
+    are scheme-gated (`urlsafe.Anchor`); `gofastr new handler`
+    refuses non-identifier names and control bytes in method/path.
+  - **Browser runtime guards.** `decodeURIComponent` of a
+    `data-fui-*` value runs inside a try (`safeDecode`); bracket
+    writes keyed by `data-fui-*` values skip reserved keys; the
+    island remote roster caps at 1024 topics and 4096 members per
+    topic/replica and refuses an over-long `?session=`; uinodev1
+    refuses case-folded duplicate keys; di rejects nil-interface
+    providers without poisoning the cache; pluginhost bounds inbound
+    request saturation (`E_SATURATED`); Carousel and Workbench CSS
+    lengths are validated; toast entries with C0/DEL are dropped; the
+    responsive style cache is mutex-guarded; `seo.Render` drops
+    unsafe-scheme Schema.org URL fields.
+  - **Host callbacks cannot kill the render.** core-ui/app wraps
+    every host `Render`/`Load`/`ScreenTitle`/`ScreenLang` re-read in
+    `SafeRenderCtx` or a recover; widget `Position` is escaped and
+    slot `Components`/`Skeleton`/`ExtraCSS` panics are contained.
+    Process modules verify the child binary before exec on Linux
+    (exec by `/dev/fd/N`) and re-verify on darwin/windows, and lease
+    recovery respawns a process module whose lease died.
+- **Nineteen rule shapes from the round-5 bug families.** Four
+  contracts rules take the catalog to **63 rules**: `GOFASTR1411`
+  (reading `Sec-Fetch-Site` outside the one shared cross-site helper),
+  `GOFASTR1412` (an `href`/`src`/`action` attribute filled by
+  `render.Escape`, which escapes markup but not schemes), `GOFASTR1413`
+  (`Header().Set("Vary", …)` where an upstream middleware may already
+  have written `Vary`), and `GOFASTR1414` (sibling Postgres/SQLite
+  query pairs whose WHERE predicate token sets differ after
+  placeholder normalization). Five new vet analyzers: `recoverlog`
+  (a `recover()` value reaching a log sink unscrubbed), `nowaitdelay`
+  (`exec.CommandContext` with captured output started with no
+  `WaitDelay`), `unboundedresp` (reading or decoding an HTTP response
+  body with no size bound, on any client), `nostore` (a 2xx body
+  written on a path that resolved a principal with no Cache-Control
+  set; acknowledgement bodies, header pass-throughs, and bodyless
+  2xx stay quiet), and `unseated` (a long-lived stream surface with a
+  park loop reachable in the package and no seat acquisition on the
+  path). Eight rules widened onto the same families: `GOFASTR1407`
+  names WebSocket `Read`, child-stdout and `os.Stdin` scanners as
+  raw-JSON sources; `laxenvelope` carries the "this type is
+  strict-decoded" fact across packages, treats a `json.RawMessage`
+  field of a strict envelope as a strict carrier, and refuses
+  `CheckTopLevelKeys` as strict evidence when a nested decode of the
+  same bytes follows; `clienttimeout` fires on the bare
+  `http.Get`/`Post`/`Head`/`PostForm` sugar and `http.DefaultClient`;
+  `errleak` adds the JSON-RPC internal-code arm; `worldreadable` adds
+  the `os.WriteFile` owner-mode arm; `laxcoerce` adds the
+  discarded-assertion-on-`any`-parameter arm; `emitident` adds the
+  CSS selector and custom-property slots; `recovercallback` sees
+  through generic type instantiation. The browser-runtime lint family
+  grows to ten (`decodeuriraw`, `protokey`). Two gates landed with
+  them: the docs corpus runs the contract security rules over the
+  assembled compile-marked snippets in `framework/docs`, and the
+  emitted-code gate runs the repo vettool over the `--from-openapi`
+  CLI render and the blueprint e2e template. The `//gofastr:allow`
+  marker and `check-csp:ignore` directives are anchored
+  comment-initial, so prose that mentions them no longer silences
+  anything.
+
+**BREAKING (round 5):** magic-link, password-reset, and
+email-verification tokens are stored as sha256 digests, so tokens
+minted before the upgrade stop redeeming (they are short-lived; wait
+out the TTL or re-send). `RequireSession`, `SessionPolicy`, and
+`RolePolicy` answer 401 to callers authenticated only by an API
+token. A CRUD create/update whose BelongsTo FK names an
+owner/tenant/read-scoped row the caller cannot read now answers 404
+(exemptions: `owner.AllowCrossOwner`, the target's `CrossOwnerRead`
+permission, `tenant.AllowCrossTenant`, `WithServerWrites`). kiln's
+`update_entity` requires an approved plan (`PlanID`), and
+pre-existing journals with ungated `update_entity` entries fail
+replay. Generated CLIs drop the `--token` flag: the token resolves
+from `$PREFIX_TOKEN`, the stored config, or `login --with-token`
+(stdin). The harness mcpserver answers malformed JSON-RPC with
+-32602 (invalid params, was -32700 parse error).
 
 ### Added
 - **`SidebarConfig.Prepend` puts a component above the nav on every

@@ -9,6 +9,8 @@ import (
 	"runtime/debug"
 	"sync"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
 // cloneTask deep-copies a Task so a caller mutating a returned record
@@ -343,7 +345,7 @@ func (s *Server) invoke(ctx context.Context, t *taskRun, h Handler) (err error) 
 	defer func() {
 		if p := recover(); p != nil {
 			s.log.Error("a2a: skill handler panicked",
-				"taskId", taskID, "panic", p, "stack", string(debug.Stack()))
+				"taskId", taskID, "panic", textsafe.Recovered(p), "stack", string(debug.Stack()))
 			err = errHandlerPanicked
 		}
 	}()

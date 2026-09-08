@@ -9,10 +9,11 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
-	"strings"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/router"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
 // CorePlugin is the always-loaded auth plugin providing email/password
@@ -78,7 +79,12 @@ func (c *CorePlugin) RegisterRoutes(r *router.Router, basePath string) {
 // routes. Non-browser clients (curl, tests, native apps) send neither
 // header and pass.
 //
-// The gate is isForgeableRequest, NOT isFormRequest. It used to be the
+// The predicates are the repo's ONE cross-site form guard,
+// core/handler.IsForgeableRequest + core/handler.IsCrossSiteRequest
+// (Sec-Fetch-Site first; "same-site" falls through to the Origin-host
+// compare, since a sibling subdomain is same-site yet still carries the
+// SameSite cookie). This function owns only the auth battery's response
+// shape. The gate is forgeability, NOT isFormRequest: it used to be the
 // latter, which recognised only urlencoded and multipart, so a form with
 // enctype="text/plain" (a CORS-simple type, no preflight) skipped the
 // check entirely, and so did a bodyless fetch() that sends no
@@ -86,40 +92,13 @@ func (c *CorePlugin) RegisterRoutes(r *router.Router, basePath string) {
 // rather than the body, that was a complete confirmation-step bypass:
 // the attacker's own token, auto-submitted from their page, minted a
 // session in the victim's browser.
-//
-// Sec-Fetch-Site is the authoritative signal and is checked FIRST: every
-// modern browser sends it, and a genuine cross-site attack POST carries
-// "cross-site" regardless of the Origin value. The Origin fallback exists
-// only for older clients that omit Fetch Metadata; there, a "null" Origin
-// is NOT treated as an attack, because a legitimate top-level same-origin
-// form navigation sends Origin: null (opaque origin) too, using null as
-// the reject trigger would break normal browser logins.
 func rejectCrossSiteForm(w http.ResponseWriter, r *http.Request) bool {
-	if !isForgeableRequest(r) {
+	if !handler.IsForgeableRequest(r) {
 		return false
 	}
-	// Primary: Fetch Metadata. Same-origin / none are safe; a cross-site
-	// form POST (the CSRF shape) is refused outright. "same-site" is NOT
-	// sufficient, a form on a sibling subdomain (evil.example.com →
-	// app.example.com) is same-site yet still carries the SameSite
-	// cookie, so it falls through to the Origin-host comparison below.
-	if sfs := r.Header.Get("Sec-Fetch-Site"); sfs != "" {
-		switch sfs {
-		case "cross-site":
-			writeFormAuthError(w, r, http.StatusForbidden, "cross_site_request")
-			return true
-		case "same-origin", "none":
-			return false
-		}
-	}
-	// Fallback for clients without Fetch Metadata: compare Origin host to
-	// the request host. Absent or opaque ("null") Origin can't prove an
-	// attack, allow, matching a same-origin top-level form navigation.
-	if o := r.Header.Get("Origin"); o != "" && o != "null" {
-		if u, err := url.Parse(o); err == nil && u.Host != "" && !strings.EqualFold(u.Host, r.Host) {
-			writeFormAuthError(w, r, http.StatusForbidden, "cross_site_request")
-			return true
-		}
+	if handler.IsCrossSiteRequest(r) {
+		writeFormAuthError(w, r, http.StatusForbidden, "cross_site_request")
+		return true
 	}
 	return false
 }
@@ -143,6 +122,38 @@ func guardAuthLimit(rl *RateLimiter, w http.ResponseWriter, r *http.Request) boo
 		writeAuthError(w, http.StatusTooManyRequests, "rate limit exceeded")
 	}
 	return false
+}
+
+// mintSessionCookie writes the session cookie. It is the ONLY place in
+// the battery that constructs the session cookie: the password-login
+// mint, the logout clear, the magic-link verify mint, and the OAuth
+// callback mint all go through it, so SameSite=Strict and the attribute
+// set can never drift apart again (magic-link and OAuth shipped Lax for
+// their whole lives because each hand-rolled its own literal).
+//
+// token == "" is the logout clear: an empty value with epoch Expires
+// and MaxAge -1 retires the cookie in every browser.
+//
+// The OAuth STATE cookie (oauthStateCookie) is deliberately NOT this
+// cookie and keeps its own Lax literals in oauth2.go: it must ride the
+// provider's top-level redirect back to the callback, a trip the
+// session cookie never makes.
+func mintSessionCookie(w http.ResponseWriter, cfg AuthConfig, token string, expires time.Time) {
+	c := &http.Cookie{
+		Name:     cfg.SessionCookie,
+		Value:    token,
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   cfg.SessionSecure,
+		SameSite: http.SameSiteStrictMode,
+	}
+	if token == "" {
+		c.Expires = time.Unix(0, 0)
+		c.MaxAge = -1
+	} else {
+		c.Expires = expires
+	}
+	http.SetCookie(w, c)
 }
 
 // loginHandler handles POST /auth/login. Accepts either:
@@ -289,17 +300,8 @@ func (c *CorePlugin) loginHandler() http.HandlerFunc {
 				Remote: remoteHost(r),
 			})
 		}
-
 		cfg := c.mgr.Config()
-		http.SetCookie(w, &http.Cookie{
-			Name:     cfg.SessionCookie,
-			Value:    sess.Token,
-			Path:     "/",
-			HttpOnly: true,
-			Secure:   cfg.SessionSecure,
-			SameSite: http.SameSiteStrictMode,
-			Expires:  sess.ExpiresAt,
-		})
+		mintSessionCookie(w, cfg, sess.Token, sess.ExpiresAt)
 
 		if isForm {
 			http.Redirect(w, r, successRedirect(w, r, "/"), http.StatusSeeOther)
@@ -381,16 +383,7 @@ func (c *CorePlugin) logoutHandler() http.HandlerFunc {
 			writeAuthError(w, http.StatusInternalServerError, "could not sign out; the session is still active")
 			return
 		}
-		http.SetCookie(w, &http.Cookie{
-			Name:     cfg.SessionCookie,
-			Value:    "",
-			Path:     "/",
-			HttpOnly: true,
-			Secure:   cfg.SessionSecure,
-			SameSite: http.SameSiteStrictMode,
-			Expires:  time.Unix(0, 0),
-			MaxAge:   -1,
-		})
+		mintSessionCookie(w, cfg, "", time.Time{})
 		if isFormRequest(r) {
 			http.Redirect(w, r, successRedirect(w, r, "/"), http.StatusSeeOther)
 			return
@@ -617,8 +610,11 @@ func (c *CorePlugin) deliverRegisterDuplicateNotice(r *http.Request, holderEmail
 	go func() {
 		defer func() {
 			if p := recover(); p != nil {
+				// Scrub before the log (textsafe.Recovered): the panic
+				// value is host-sender state, control/bidi bytes in it
+				// must not reach the operator's tail raw.
 				slog.Warn("register duplicate-notice sender panicked",
-					"plugin", "core", "email_hash", hashedIdentifier(holderEmail), "panic", fmt.Sprint(p))
+					"plugin", "core", "email_hash", hashedIdentifier(holderEmail), "panic", textsafe.Recovered(p))
 			}
 		}()
 		if err := sender.Send(ctx, holderEmail, duplicateRegisterNoticeBody); err != nil {
@@ -642,4 +638,31 @@ func writeAuthError(w http.ResponseWriter, status int, msg string) {
 		"success": false,
 		"code":    status,
 	})
+}
+
+// invalidLinkBaseURL reports why base cannot serve as the origin of an
+// emailed credential link ("" when it can). The password-reset,
+// email-verification, and magic-link plugins build user-facing reset /
+// verify / sign-in URLs from a config-supplied BaseURL; each validates
+// at Init and fails loudly next to the declaration, mirroring uihost
+// strict mode's invalidSitemapBaseURL — the repo's contract that a
+// config-supplied origin building user-facing URLs is scheme-checked at
+// load. A mis-shaped value ("//evil.example", a bare host, "javascript:")
+// otherwise ships silently inside an emailed takeover link. Empty passes:
+// with no origin configured the plugins build relative links or none.
+func invalidLinkBaseURL(base string) string {
+	if base == "" {
+		return ""
+	}
+	u, err := url.Parse(base)
+	if err != nil {
+		return fmt.Sprintf("does not parse (%v)", err)
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return "needs an http or https scheme"
+	}
+	if u.Host == "" {
+		return "has no host"
+	}
+	return ""
 }

@@ -171,7 +171,13 @@
     el.removeAttribute('hidden');
     host.classList.add('ui-pane-host--' + pane + '-open');
     if (!s.stack.includes(pane)) s.stack.push(pane);
-    if (trigger) s.triggers[pane] = trigger;
+    // Reserved keys never key the trigger registry: a planted
+    // data-fui-pane="__proto__" passes the has() element lookup, and the
+    // bracket write would re-parent the registry via the __proto__
+    // setter (the kernel's isReservedSignalKey guard, spelled inline).
+    if (trigger && pane !== '__proto__' && pane !== 'constructor' && pane !== 'prototype') {
+      s.triggers[pane] = trigger;
+    }
     focusFirst(el);
     if (!syncing) pushPane(host, pane, trigger);
     host.dispatchEvent(new CustomEvent('pane-host:open', { bubbles: true, detail: { pane } }));

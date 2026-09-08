@@ -23,6 +23,9 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
+
+	"github.com/DonaldMurillo/gofastr/core/handler"
 )
 
 // Client speaks the MCP wire protocol over stdio against a child
@@ -96,6 +99,11 @@ func SpawnWithConfig(ctx context.Context, cmd string, args []string, expectedSHA
 	// unconfined child can still open/connect/dial, but it removes the
 	// handed-to-you secrets.
 	c.Env = buildChildEnv(cfg)
+	// WaitDelay bounds Close()'s cmd.Wait once the child is killed: a
+	// descendant the server forked and did not reap can hold the stdout
+	// pipe open past the kill, and without a bound Close blocks forever
+	// (the codegen/extension_command.go shape).
+	c.WaitDelay = 5 * time.Second
 	stdin, err := c.StdinPipe()
 	if err != nil {
 		return nil, err
@@ -210,6 +218,13 @@ func (c *Client) ListTools(ctx context.Context) ([]ToolDescriptor, error) {
 	var parsed struct {
 		Tools []ToolDescriptor `json:"tools"`
 	}
+	// The result blob is third-party server bytes: refuse ambiguity at
+	// every depth (the readLoop envelope rule) before the descriptors
+	// register as tools, keeping the MCP tolerance for unknown fields.
+	if err := handler.CheckObjectKeys(resp, strings.ToLower); err != nil {
+		return nil, err
+	}
+	//gofastr:allow(GOFASTR1407) the CheckObjectKeys walk above already refused duplicate and case-folded keys at every depth; this Unmarshal only decodes a vetted body
 	if err := json.Unmarshal(resp, &parsed); err != nil {
 		return nil, err
 	}
@@ -315,6 +330,18 @@ func (c *Client) readLoop() {
 	}()
 	for scanner.Scan() {
 		var r response
+		// Strict envelope rule: a response line carrying duplicate or
+		// case-folded keys must never resolve a pending call — stdlib
+		// json keeps the LAST occurrence while any first-read
+		// intermediary saw the first, and the harness would execute a
+		// tool result whose correlation id no two readers agree on.
+		// The line is dropped; the pending call surfaces the dead peer
+		// through its context or failPending. The walk keeps the MCP
+		// tolerance for unknown fields; the decode decodes vetted bytes.
+		if err := handler.CheckObjectKeys(scanner.Bytes(), strings.ToLower); err != nil {
+			continue
+		}
+		//gofastr:allow(GOFASTR1407) the CheckObjectKeys walk above already refused duplicate and case-folded keys at every depth; this Unmarshal only decodes a vetted line
 		if err := json.Unmarshal(scanner.Bytes(), &r); err != nil {
 			continue
 		}
@@ -326,7 +353,17 @@ func (c *Client) readLoop() {
 		ch := c.pending[r.ID]
 		c.mu.Unlock()
 		if ch != nil {
-			ch <- r
+			// Non-blocking deliver: the channel has room for exactly
+			// one answer and the pending entry is only removed by the
+			// Call goroutine's deferred cleanup, so a duplicate
+			// response for an id whose answer still sits in the buffer
+			// would park this loop forever on a caller-owned channel —
+			// one protocol-violating burst must not brick the client.
+			// Duplicates are dropped.
+			select {
+			case ch <- r:
+			default:
+			}
 		}
 	}
 }

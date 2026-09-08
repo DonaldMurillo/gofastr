@@ -481,6 +481,7 @@ func (o *Outbox) claimDeliveriesSQLite(ctx context.Context) ([]claimedDelivery, 
 		WHERE d.status = 'pending'
 		  AND (d.claimed_until IS NULL OR d.claimed_until <= $1)
 		  AND (d.attempts < $2 OR d.claimed_until IS NULL)
+		  AND (d.next_attempt_at IS NULL OR d.next_attempt_at <= $1)
 		ORDER BY p.created_at ASC LIMIT $3`, o.qd(), o.qt())
 	rows, err := tx.QueryContext(ctx, pick, now, o.maxAttempts, o.batchSize)
 	if err != nil {

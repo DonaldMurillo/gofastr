@@ -54,9 +54,18 @@ type ToastTrigger struct {
 //
 // Apps can call this from any HTTP handler that's reached via
 // data-fui-rpc; the toast travels back on the response that the
-// runtime is already waiting for, with no extra request.
 func AddToast(w http.ResponseWriter, t ToastTrigger) {
 	if t.Title == "" {
+		return
+	}
+	// Per-entry drop, mirroring InvalidateScreens: encoding/json does
+	// not escape DEL, so a \x7f-bearing title lands as a raw byte in the
+	// header value, and Go's HTTP/2 writer silently drops an invalid
+	// header — losing EVERY toast in the response, not just the poisoned
+	// one. C0 bytes round-trip \u-escaped on the wire but still decode
+	// back into the client-side toast text. Drop the entry, keep the
+	// header.
+	if hasCtl(t.Title) || hasCtl(t.Body) || hasCtl(t.Stack) {
 		return
 	}
 	if t.Variant == "" {
@@ -80,6 +89,17 @@ func AddToast(w http.ResponseWriter, t ToastTrigger) {
 				list = append(list, single)
 			}
 		}
+		// The re-parsed value gets the same per-entry rule: a manual
+		// caller may have written a control byte straight into the
+		// header, and re-marshalling it would poison this response's
+		// whole accumulated value.
+		kept := list[:0]
+		for _, e := range list {
+			if !hasCtl(e.Title) && !hasCtl(e.Body) && !hasCtl(e.Stack) {
+				kept = append(kept, e)
+			}
+		}
+		list = kept
 	}
 	list = append(list, t)
 	enc, err := json.Marshal(list)

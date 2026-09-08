@@ -26,6 +26,19 @@ const (
 	InboundStatusFailed     = "failed"
 )
 
+// isTerminalInboundStatus reports whether s is a terminal envelope state.
+// The inbound twin of isTerminalStatus: processed and failed rows are
+// settled — failed is retained forever as a forensic record
+// (ReapTerminalBefore only deletes processed rows) — so only a processed
+// settle (a runner that really did succeed) may land on one. A stale
+// runner that overran the queue's lease had the envelope's job re-run
+// under it; its late failure settle must not regress the recovery
+// runner's processed record into a failed one that escapes retention
+// permanently.
+func isTerminalInboundStatus(s string) bool {
+	return s == InboundStatusProcessed || s == InboundStatusFailed
+}
+
 // defaultInboundMaxBody is the cap applied when IngestConfig.MaxBodyBytes
 // is unset. Matches MaxPayloadBytes (1 MiB) so an inbound envelope is never
 // larger than what the outbound side would send.

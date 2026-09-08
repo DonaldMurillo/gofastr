@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"github.com/DonaldMurillo/gofastr/framework"
 )
 
@@ -101,8 +102,12 @@ func (m *AuthManager) emitSecurity(ctx context.Context, ev SecurityEvent) {
 	func() {
 		defer func() {
 			if r := recover(); r != nil {
+				// The recovered value is whatever the host sink held;
+				// scrub it before the log (textsafe.Recovered) so
+				// control/bidi bytes cannot forge lines in the operator's
+				// tail — this funnel is read during incidents.
 				slog.Warn("auth: audit sink panic recovered; event lost",
-					"kind", ev.Kind, "panic", r)
+					"kind", ev.Kind, "panic", textsafe.Recovered(r))
 			}
 		}()
 		sink.SecurityEvent(ctx, ev)

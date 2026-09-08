@@ -6,7 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 	"sync"
+
+	"github.com/DonaldMurillo/gofastr/core/handler"
 )
 
 // Codec cap constants (design §4.2). The scanner caps are the verbatim lift
@@ -138,8 +141,20 @@ func (c *Codec) ReadFrame() (*Frame, error) {
 		return nil, &OvercapError{Size: len(data), Cap: c.max}
 	}
 	var f Frame
+	// Strict envelope pass before the stdlib decode: a frame whose
+	// object repeats a key, or carries two spellings of one key that
+	// differ only by case, reads two ways — a monitor or audit trail
+	// reading the first "method" sees one dispatch target while
+	// stdlib's last-wins fold hands the read loop another. Refuse it
+	// as ErrInvalidFrame, the terminal frame-level sentinel, under the
+	// same no-ambiguity rule handler.DecodeStrict documents (no key may
+	// repeat; no two keys may fold to one name).
+	if err := handler.CheckObjectKeys(data, strings.ToLower); err != nil {
+		return nil, fmt.Errorf("%w: %s", ErrInvalidFrame, err.Error())
+	}
 	// Decode into a copy of the bytes: json.Unmarshal will allocate for any
 	// json.RawMessage fields, so the Frame is safe across subsequent scans.
+	//gofastr:allow(GOFASTR1407) the CheckObjectKeys walk above refused duplicate and case-folded keys at every depth; this decode reads vetted bytes
 	if err := json.Unmarshal(data, &f); err != nil {
 		return nil, fmt.Errorf("moduleproto: decode: %w", err)
 	}

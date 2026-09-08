@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/kiln/journal"
+	"github.com/DonaldMurillo/gofastr/kiln/live"
 	"github.com/DonaldMurillo/gofastr/kiln/protocol"
 	"github.com/DonaldMurillo/gofastr/kiln/world"
 )
@@ -152,16 +153,56 @@ func BuildProjectSlab(sess *journal.Session) string {
 // flattened: a payload must not be able to smuggle any of its text onto
 // the slab once its line structure is found hostile.
 func slabSafe(s string) bool {
-	for _, r := range s {
-		switch {
-		case r < 0x20, r == 0x7f, r == '\u2028', r == '\u2029':
-			return false
-		}
+	return strings.IndexFunc(s, func(r rune) bool { return !slabSafeRune(r) }) < 0
+}
+
+// slabSafeRune reports whether r may appear in a journal- or
+// index-derived string interpolated into prompt structure: C0, DEL,
+// and the Unicode line/paragraph separators are the line-break shapes
+// (plus the C0 control range generally), and none of them may.
+func slabSafeRune(r rune) bool {
+	switch {
+	case r < 0x20, r == 0x7f, r == '\u2028', r == '\u2029':
+		return false
 	}
 	return true
 }
 
+// slabLine truncates a string at the first rune slabSafe refuses, so an
+// identifier interpolated into prompt structure carries only its
+// single-line prefix: the semantic context hook feeds index-derived
+// Source/DocID values into a "## N. <source>" heading, and a newline in
+// that slot is injected directive structure, not data. Unlike the slab
+// (which omits hostile values whole), the heading keeps the clean
+// prefix — the document identity stays visible.
+func slabLine(s string) string {
+	if i := strings.IndexFunc(s, func(r rune) bool { return !slabSafeRune(r) }); i >= 0 {
+		return s[:i]
+	}
+	return s
+}
+
+// BuildPromptLive assembles the prompt with the project slab built
+// under Live's session read lock. BuildPrompt itself walks the session
+// journal (entity names, page paths, chat tail) with no lock, and both
+// transports that call it (agent.Loop.Run and kiln/acp runTurns) serve
+// each request on its own goroutine while Live.Apply mutates that same
+// session in place — the walk must be serialized against Apply like
+// every other session read.
+func BuildPromptLive(l *live.Live, tools []protocol.Descriptor) PromptLayers {
+	var project string
+	l.ReadSession(func(sess *journal.Session) { project = BuildProjectSlab(sess) })
+	return PromptLayers{
+		Persona:   DefaultPersona,
+		Framework: BuildFrameworkSlab(tools),
+		Project:   project,
+	}
+}
+
 // BuildPrompt produces a fully-assembled prompt for the current session.
+// The project slab walk reads the session with no lock; concurrent
+// transports must use BuildPromptLive, which runs the same assembly
+// under Live's session read lock.
 func BuildPrompt(sess *journal.Session, tools []protocol.Descriptor) PromptLayers {
 	return PromptLayers{
 		Persona:   DefaultPersona,

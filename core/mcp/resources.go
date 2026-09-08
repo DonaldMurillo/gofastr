@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"slices"
 	"strings"
 )
@@ -188,14 +189,18 @@ func (s *Server) handleResourcesRead(ctx context.Context, req Request) Response 
 
 	contents, err := s.readResourceContents(ctx, res)
 	if err != nil {
-		var rpcErr *RPCError
-		if e, isRPC := err.(*RPCError); isRPC {
-			rpcErr = e
+		if rpcErr, ok := err.(*RPCError); ok {
 			return Response{JSONRPC: "2.0", ID: req.ID, Error: rpcErr}
 		}
-		return newErrorResponse(req.ID, ErrInternalError, err.Error())
+		// A plain error is internal detail (filesystem paths, driver
+		// text) and must not cross the transport — callTool's posture.
+		// Log it server-side and answer the generic message this very
+		// function's panic path already uses.
+		slog.Error("mcp: resource contents func failed",
+			slog.String("uri", res.URI),
+			slog.String("err", err.Error()))
+		return newErrorResponse(req.ID, ErrInternalError, "internal resource error")
 	}
-
 	mime := contents.MimeType
 	if mime == "" {
 		mime = res.MimeType
@@ -225,7 +230,14 @@ func (s *Server) readResourceContents(ctx context.Context, res Resource) (out Re
 	// refusal propagates the gate's error to the caller.
 	if res.gate != nil {
 		if gErr := res.gate(ctx); gErr != nil {
-			return ResourceContents{}, gErr
+			// A gate refusal is a deliberate caller-facing channel —
+			// checkToolGate's contract: it crosses verbatim on
+			// invalid-params, never classified as internal (whose text
+			// must stay server-side).
+			if rpcErr, ok := gErr.(*RPCError); ok {
+				return ResourceContents{}, rpcErr
+			}
+			return ResourceContents{}, &RPCError{Code: ErrInvalidParams, Message: gErr.Error()}
 		}
 	}
 	return res.contents(ctx)

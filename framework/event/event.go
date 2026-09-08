@@ -8,6 +8,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
 // Pre-defined event types for entity lifecycle.
@@ -239,7 +241,7 @@ func emitStrict(ctx context.Context, h EventHandler, event Event) (err error) {
 		if r := recover(); r != nil {
 			slog.Default().Error("event: subscriber panicked (surfaced as a delivery error)",
 				"event_type", event.Type,
-				"panic", r,
+				"panic", textsafe.Recovered(r),
 				"stack", string(debug.Stack()),
 			)
 			err = fmt.Errorf("event: subscriber for %q panicked: %v", event.Type, r)
@@ -288,7 +290,7 @@ func emitSafe(ctx context.Context, h EventHandler, event Event) (err error) {
 			// debugging black hole, so LOG it at Error with the stack.
 			slog.Default().Error("event: subscriber panicked; recovered (event delivery is best-effort, the write is unaffected)",
 				"event_type", event.Type,
-				"panic", r,
+				"panic", textsafe.Recovered(r),
 				"stack", string(debug.Stack()),
 			)
 			err = nil

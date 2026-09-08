@@ -57,6 +57,14 @@ properties across *every* call site, not for "more cases":
 | Fail-closed scoping (multi-tenant + owner-required) on in-process paths | every CRUD method that touches DB state (not just the HTTP path; middleware doesn't protect in-process callers) | `framework/crud/owner.go::requireOwnerContext` + `framework/crud/owner.go::requireTenantContext` + every method in `framework/crud/crud_api.go` |
 | Forensic completeness on rollback / soft-delete | batch envelope, upsert ON CONFLICT, audit hook | `framework/crud/crud_batch.go::scrubRolledBackData`, `framework/crud/crud_upsert.go::errSoftDeletedResurrection` |
 | Panic isolation at extension points | every place a third-party callback runs (hooks, plugins, custom handlers) | `framework/hook/hook.go::runHookSafely` |
+| Panic-payload scrub at log sinks (a recover() value is attacker-influenced text: control bytes, bidi, secrets) | every `recover()` whose value, or an fmt.Sprint/%v of it, reaches slog/log/fmt | `core/textsafe.Recovered` |
+| Per-principal seat caps on long-lived streams | every SSE / WebSocket / Hijack park loop (a2a, rtc, harness rest/ws/mcpserver, kiln events, crud event stream, webmcp) | `core/stream/seats.go`, `framework/experimental/harness/control/seats.go` |
+| `Cache-Control: no-store` on per-user 2xx responses | every handler that resolves a principal and writes a body | `battery/auth` writeCredentialHeaders, `framework/crud` responses, the `nostore` analyzer |
+| Owner-only file mode on overwrite (a 0600 literal in os.WriteFile applies only at create) | every state/secret file written more than once | `internal/fileperm.WriteOwnerOnly` / `SeedOwnerOnly` |
+| Strict decode at every inbound seam (duplicate/case-folded keys at any depth, trailing data) | every `json.Unmarshal`/`Decoder.Decode` of a client-borne body, frame, cursor, or envelope | `core/handler.UnmarshalStrict` / `DecodeStrict` / `CheckObjectKeys` |
+| Fenced terminal settles (no status regression, no unfenced claim-state write) | queue reclaim, webhook inbound status transitions, outbox leases | `battery/queue` releaseClaim, `battery/webhook` terminal fence, `GOFASTR1409` |
+| Deadlines on probes and children | every `http.Client` construction, every `exec.CommandContext` with captured output | `hygiene` clienttimeout, `nowaitdelay` |
+| Credentials never in argv | every CLI flag that accepts a secret | `GOFASTR_AUDIT_PASSWORD` / `GOFASTR_HARNESS_SECRET` + the `-` stdin marker |
 
 When you commission the next pass, the prompt MUST mention this table
 and tell the agent to *find new surfaces*, not *new attack strings*.
@@ -125,10 +133,10 @@ pinned.
 - **Data:** `core/upload/`, `framework/{file,image,openapi,sdk,sdkdocs,
   tx.go,hook,typed_hooks}`, `framework/{db,pagination,datexport}`,
   `core/schema` beyond the Pattern note, `crud_batch/stream/events`. The
-  `sqlite/**` engine has ~25 unverified recon candidates on the
-  fileformat/varint readers; robustness bugs only unless the engine is
-  pointed at an untrusted `.db` (kiln/harness session stores), where
-  `-fuzz` is the right tool.
+  `sqlite/**` in-house engine was REMOVED from the tree (2026-09 round-5
+  recon confirmed: only the stdlib driver alias + DSN compat shim remain,
+  sibling-tested); the untrusted-`.db` robustness surface now lives in
+  modernc.org/sqlite — out of repo scope.
 - **Agent surface:** `framework/experimental`,
   `kiln/{expr,effect,render}` CSP, `cmd/gofastr/{pack,skill,docs}`,
   `core/moduleproto/{peer,handshake,methods}.go`, `framework/agentsinv`.
@@ -206,6 +214,14 @@ to known surfaces only). See the table in
 - Fail-closed multi-tenant / owner scoping on in-process paths
 - Forensic completeness on rollback / soft-delete
 - Panic isolation at extension points
+- Panic-payload scrub at log sinks (textsafe.Recovered)
+- Per-principal seat caps on long-lived streams
+- no-store on per-user 2xx responses
+- Owner-only file mode on overwrite (fileperm.WriteOwnerOnly)
+- Strict decode at every inbound seam (any-depth key walk)
+- Fenced terminal settles (queue/webhook/outbox)
+- Deadlines on every HTTP client and exec child
+- Credentials never in argv (env/stdin channels)
 
 Hard NO:
 - No new `_red_test.go` files
@@ -238,8 +254,8 @@ anything clean.
 **Both profiles run on Opus 5.** Recon used to run on Haiku; that was
 changed on 2026-07-25 because the cheap tier's *clean* verdicts proved
 worthless. On 2026-07-24 it returned "clean" on the scope holding that
-round's top finding; on 2026-07-25 it emitted 18 candidates, all 18 of
-which were refuted, while missing all 3 real findings in its scope. A
+round's top finding; on 2026-07-25 it emitted 18 candidates, all 18
+of which were refuted, while missing all 3 real findings in its scope. A
 breadth pass whose silence means nothing cannot be half of a clean-gate.
 
 | Role | Profile | Model | Job |

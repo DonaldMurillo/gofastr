@@ -147,6 +147,12 @@ func runOne(ctx context.Context, h Hook, env []string) Result {
 	}
 	// On Linux, this sets a process group so we can signal children.
 	setProcGroup(cmd)
+	// WaitDelay bounds cmd.Run once the deadline kills the shell: a
+	// hook that backgrounds a pipe-holding descendant would otherwise
+	// keep Run blocked on the output copier past the deadline the
+	// timeout already promised (the codegen/extension_command.go
+	// shape; the 5s grace matches killAfter's).
+	cmd.WaitDelay = 5 * time.Second
 
 	var buf bytes.Buffer
 	cmd.Stdout = capped(&buf, 64*1024)

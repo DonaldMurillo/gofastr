@@ -291,38 +291,49 @@ func embedClear() {
 	success("cleared %s", dir)
 }
 
+// remoteHTTPClient bounds every remote semantic call: a GOFASTR_URL peer
+// that accepts the connection but never responds fails the call within
+// the deadline instead of hanging the CLI (the bootProbeClient shape).
+var remoteHTTPClient = &http.Client{Timeout: 2 * time.Second}
+
+// remoteMaxBodyBytes caps the bytes buffered from a remote semantic peer
+// (repo convention, 1 MiB like the generated clients): a peer that
+// dribbles a response body forever errors at the cap instead of pinning
+// unbounded heap in the CLI process.
+const remoteMaxBodyBytes = 1 << 20
+
 func remoteQuery(base string, q semantic.Query) ([]semantic.Hit, error) {
 	body, err := json.Marshal(q)
 	if err != nil {
 		return nil, err
 	}
-	resp, err := http.Post(strings.TrimRight(base, "/")+"/semantic/query", "application/json", bytes.NewReader(body))
+	resp, err := remoteHTTPClient.Post(strings.TrimRight(base, "/")+"/semantic/query", "application/json", bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {
-		msg, _ := io.ReadAll(resp.Body)
+		msg, _ := io.ReadAll(io.LimitReader(resp.Body, remoteMaxBodyBytes))
 		return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(msg))
 	}
 	var payload struct {
 		Hits []semantic.Hit `json:"hits"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, remoteMaxBodyBytes)).Decode(&payload); err != nil {
 		return nil, err
 	}
 	return payload.Hits, nil
 }
 
 func remoteGet(url string) ([]byte, error) {
-	resp, err := http.Get(url)
+	resp, err := remoteHTTPClient.Get(url)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {
-		msg, _ := io.ReadAll(resp.Body)
+		msg, _ := io.ReadAll(io.LimitReader(resp.Body, remoteMaxBodyBytes))
 		return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(msg))
 	}
-	return io.ReadAll(resp.Body)
+	return io.ReadAll(io.LimitReader(resp.Body, remoteMaxBodyBytes))
 }

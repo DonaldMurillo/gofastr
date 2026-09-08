@@ -49,6 +49,14 @@ func (ch *CrudHandler) doCreate(ctx context.Context, r *http.Request, body map[s
 		return nil, &ValidationError{fields: vr.Errors}
 	}
 
+	// The belongs_to FKs in this body must resolve for THIS caller: a
+	// relation onto an owner/tenant-scoped entity is a write-side trust
+	// boundary exactly as ?include= is a read-side one (issue: order_items
+	// targeting another customer's order).
+	if err := ch.checkBelongsToScope(ctx, body); err != nil {
+		return nil, err
+	}
+
 	var cols []string
 	var vals []any
 	for _, f := range ch.Entity.GetFields() {
@@ -161,6 +169,12 @@ func (ch *CrudHandler) doUpdate(ctx context.Context, r *http.Request, id string,
 		return nil, &ValidationError{fields: vr.Errors}
 	}
 
+	// Same write-side trust boundary as doCreate: a PATCH may retarget a
+	// belongs_to FK at a foreign row as freely as a POST could.
+	if err := ch.checkBelongsToScope(ctx, body); err != nil {
+		return nil, err
+	}
+
 	ub := query.Update(ch.Entity.GetTable())
 	anySet := false
 	ownerField := ch.Entity.Config.Scope.OwnerField
@@ -240,6 +254,84 @@ func (ch *CrudHandler) doUpdate(ctx context.Context, r *http.Request, id string,
 		return nil, fmt.Errorf("stage event: %w", err)
 	}
 	return result, nil
+}
+
+// checkBelongsToScope refuses a create/update body whose BelongsTo
+// (many-to-one) FK targets a row the caller cannot read. The read side
+// already treats such a relation as a trust boundary: ?include= and
+// EagerLoad resolve the target under eagerScopeFilters, so a foreign
+// parent never surfaces. The write side now resolves the SAME predicate:
+// for every BelongsTo relation whose FK the body carries, the target row
+// must exist under the target's own owner/tenant/read scopes, or the
+// write fails with errNotFound — the exact status reading that foreign
+// row answers, so existence is not leaked by a 403.
+//
+// Callers holding an explicit cross-scope grant (owner.AllowCrossOwner,
+// the target's CrossOwnerRead permission, tenant.AllowCrossTenant) pass
+// unchanged: eagerScopeFilters emits nothing for them, matching what
+// their reads already see. WithServerWrites contexts (host-driven
+// in-process writes: jobs, imports, admin tooling) are exempt for the
+// same reason ReadOnly field writes are: the host opted into privileged
+// writes and owns the reference. A NULL/absent FK, an unscoped target,
+// or a target the registry does not know is skipped — no registry means
+// no read-side resolver either.
+func (ch *CrudHandler) checkBelongsToScope(ctx context.Context, body map[string]any) error {
+	if serverWrites(ctx) {
+		return nil
+	}
+	rels := ch.Entity.Config.Relations
+	if len(rels) == 0 || ch.Registry == nil {
+		return nil
+	}
+	for _, rel := range rels {
+		if rel.Type != entity.RelManyToOne {
+			continue
+		}
+		raw, ok := body[rel.ForeignKey]
+		if !ok || raw == nil {
+			continue
+		}
+		fk := fmt.Sprint(raw)
+		if fk == "" {
+			continue
+		}
+		target, err := ch.Registry.Get(rel.Entity)
+		if err != nil || target == nil {
+			continue
+		}
+		if target.Config.Scope.OwnerField == "" && !target.Config.Scope.MultiTenant {
+			continue
+		}
+		table, err := query.SafeIdent(target.GetTable())
+		if err != nil {
+			return fmt.Errorf("relation %q target table %q: %w", rel.Name, target.GetTable(), err)
+		}
+		pkCol, err := query.SafeIdent(target.PrimaryKey)
+		if err != nil {
+			return fmt.Errorf("relation %q target key %q: %w", rel.Name, target.PrimaryKey, err)
+		}
+		preds := eagerScopeFilters(ctx, target)
+		readPreds := readScopeFilters(ctx, target)
+		clause, args := filterClause(preds, 2)
+		readClause, readArgs := renderReadScope(readPreds, "", 2+len(args))
+		if readClause != "" {
+			readClause = " AND " + readClause
+		}
+		q := "SELECT " + query.QuoteIdent(pkCol) + " FROM " + query.QuoteIdent(table) + " WHERE " + query.QuoteIdent(pkCol) + " = $1" + clause + readClause
+		if target.Config.Scope.SoftDelete {
+			q += " AND deleted_at IS NULL"
+		}
+		allArgs := append([]any{fk}, args...)
+		allArgs = append(allArgs, readArgs...)
+		var hit any
+		if err := ch.DB.QueryRowContext(ctx, q, allArgs...).Scan(&hit); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return fmt.Errorf("%w: relation %q target %s/%s is not readable by this caller", errNotFound, rel.Name, rel.Entity, fk)
+			}
+			return fmt.Errorf("relation %q target lookup: %w", rel.Name, err)
+		}
+	}
+	return nil
 }
 
 // autoUpdatedAtColumn returns the name of the entity's auto-timestamp

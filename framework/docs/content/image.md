@@ -43,11 +43,16 @@ small, _ := img.Resize(320, 0).WebP().Bytes() // zero-value = lossless
 
 All decoders sniff the format from magic bytes and reject inputs whose
 reported `width × height` exceeds `Config.MaxPixels` (default
-`DefaultMaxPixels` = 64 MP, equivalent to an 8192×8192 square). Tune
-via `DecodeBytesWithConfig` or `DecodeWithConfig`. The default was
-intentionally tightened from Bun.Image's 268 MP after a security
-review found a 45-byte crafted PNG declaring 16383×16383 trip the
-old guard and trigger ~1 GiB of decoder allocation.
+`DefaultMaxPixels` = 64 MP, equivalent to an 8192×8192 square). A
+source-byte cap runs before that guard: `DecodeWithConfig` buffers
+through `io.LimitReader(r, MaxSourceBytes+1)`, and a source that
+delivers past the cap returns `ErrSourceTooLarge` before any pixel
+buffer is allocated. `Config.MaxSourceBytes` defaults to
+`DefaultMaxSourceBytes` (64 MiB); zero or negative means the default,
+mirroring `MaxPixels`. Tune via `DecodeBytesWithConfig` or
+`DecodeWithConfig`. The default was intentionally tightened from
+Bun.Image's 268 MP after a security review found a 45-byte crafted
+PNG declaring 16383×16383 trip the guard.
 
 `Open(path)` rejects paths containing `..` segments that escape the
 working directory (e.g. `../etc/passwd`). Callers handling user input
@@ -422,6 +427,7 @@ hand it directly to `storage.Save`).
 | Knob | Default | Configurable via |
 | ---- | ------: | --- |
 | Max decoded pixels | 64 MP (8192²) | `Config.MaxPixels` |
+| Max source bytes | 64 MiB (`ErrSourceTooLarge` past it) | `Config.MaxSourceBytes` |
 | Max encoded WebP dim | 16384 per axis | hard cap (spec) |
 | `VariantSet.Variants` | 64 entries | `MaxVariantsPerSet` const |
 | `BlurHash` working size | 64 px longest side | hard cap (perf) |

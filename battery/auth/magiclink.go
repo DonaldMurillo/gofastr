@@ -14,7 +14,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
 	"github.com/DonaldMurillo/gofastr/core/router"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
 // MagicLinkEmailSender sends the magic-link email to the user.
@@ -286,8 +288,14 @@ func NewMagicLinkPlugin(config MagicLinkConfig) *MagicLinkPlugin {
 // Name returns the plugin identifier.
 func (p *MagicLinkPlugin) Name() string { return "magic-link" }
 
-// Init stores a reference to the AuthManager.
+// Init stores a reference to the AuthManager and validates the
+// configured link origin: BaseURL builds the emailed sign-in URL, so a
+// scheme-mis-shaped value fails here rather than shipping in a
+// credential-bearing link.
 func (p *MagicLinkPlugin) Init(mgr *AuthManager) error {
+	if why := invalidLinkBaseURL(p.config.BaseURL); why != "" {
+		return fmt.Errorf("auth: magic-link plugin: BaseURL %q %s", p.config.BaseURL, why)
+	}
 	p.mgr = mgr
 	return nil
 }
@@ -337,8 +345,10 @@ func (p *MagicLinkPlugin) OnStart(_ context.Context) error {
 func (p *MagicLinkPlugin) reapExpiredTokens() {
 	defer func() {
 		if rec := recover(); rec != nil {
+			// Scrub before the log (textsafe.Recovered): a panicking
+			// host store can carry control/bidi bytes in the value.
 			slog.Error("magic-link: token store cleanup panicked",
-				"plugin", "magic-link", "panic", rec)
+				"plugin", "magic-link", "panic", textsafe.Recovered(rec))
 		}
 	}()
 	if n, err := p.tokenStore.Cleanup(context.Background()); err != nil {
@@ -556,6 +566,13 @@ func defaultConfirmPage(d ConfirmPageData) []byte {
 	if d.Email != "" {
 		who = html.EscapeString(d.Email)
 	}
+	// action is a URL attribute: HTML escaping is scheme-blind, so the
+	// value goes through the one scheme allow-list (urlsafe.CleanAnchor,
+	// the menu.go Href spelling) BEFORE the escape. The plugin builds
+	// Action itself (basePath + "/magic-link/verify"); an Action that
+	// somehow fails the allow-list renders an empty action, which posts
+	// to the current URL and is refused by the verify handler.
+	action := urlsafe.CleanAnchor(d.Action)
 	return []byte(`<!doctype html>
 <html lang="en">
 <head>
@@ -569,7 +586,7 @@ func defaultConfirmPage(d ConfirmPageData) []byte {
 <h1>Confirm sign-in</h1>
 <p>Continue to sign in as <strong>` + who + `</strong>?</p>
 <p>If you did not request this link, close this page: someone else may be trying to sign you into their account.</p>
-<form method="post" action="` + html.EscapeString(d.Action) + `">
+<form method="post" action="` + html.EscapeString(action) + `">
 <input type="hidden" name="token" value="` + html.EscapeString(d.Token) + `">
 ` + string(d.CSRFField) + `
 <button type="submit">Sign in</button>
@@ -665,17 +682,12 @@ func (p *MagicLinkPlugin) verifyHandler(w http.ResponseWriter, r *http.Request) 
 		writeAuthError(w, http.StatusInternalServerError, "session create failed")
 		return
 	}
-
-	// Set session cookie
-	http.SetCookie(w, &http.Cookie{
-		Name:     cfg.SessionCookie,
-		Value:    sess.Token,
-		Path:     "/",
-		HttpOnly: true,
-		Secure:   cfg.SessionSecure,
-		SameSite: http.SameSiteLaxMode,
-		Expires:  sess.ExpiresAt,
-	})
+	// Set session cookie through the one mint helper: SameSite=Strict,
+	// the login mint's posture. The flow needed no cross-site return
+	// trip for the SESSION cookie (the confirmation POST that mints it
+	// is same-site), so Lax bought nothing and re-opened the CSRF
+	// exposure Strict closed.
+	mintSessionCookie(w, cfg, sess.Token, sess.ExpiresAt)
 
 	p.mgr.emitSecurity(r.Context(), SecurityEvent{
 		Kind:   "magiclink.consumed",
@@ -697,14 +709,15 @@ func generateRandomPassword(n int) (string, error) {
 }
 
 // safeRedirectURL prevents open-redirect attacks by ensuring the URL is
-// a same-origin path. If the URL is not a relative path starting with '/',
-// it falls back to "/".
+// a same-origin path, falling back to "/" when it is not. The grammar
+// is isSafeRelativePath (the battery's one safe-relative validator):
+// raw backslash, percent-encoded backslash/control bytes, and C0
+// refusal included — browsers normalise '\' to '/' and decode
+// percent-escapes before navigating, so anything weaker re-opens the
+// cross-origin and header-injection shapes the form redirects already
+// refuse.
 func safeRedirectURL(u string) string {
-	if u == "" {
-		return "/"
-	}
-	// Must start with / and NOT be a protocol-relative URL (//evil.com)
-	if len(u) > 0 && u[0] == '/' && !(len(u) > 1 && u[1] == '/') {
+	if isSafeRelativePath(u) {
 		return u
 	}
 	return "/"

@@ -129,15 +129,18 @@ type rpcError struct {
 }
 
 // unmarshalMCPObject decodes a client-supplied JSON object (a JSON-RPC
-// envelope line, params, or tool arguments) under the strict top-level
-// key rule — duplicate and case-folded keys are refused, because stdlib
-// json resolves them last-wins and the request must not execute under a
-// body any first-read intermediary parsed differently — while keeping
-// the MCP tolerance for unknown fields (§ Unknown-field policy:
-// additive evolution). handler.CheckTopLevelKeys is the walk; the value
-// decode itself stays plain stdlib.
+// params blob or tool arguments) under the no-ambiguity key rule at
+// EVERY nesting depth — duplicate and case-folded keys are refused,
+// because stdlib json resolves them last-wins and the request must not
+// execute under a body any first-read intermediary parsed differently
+// — while keeping the MCP tolerance for unknown fields (§
+// Unknown-field policy: additive evolution). handler.CheckObjectKeys
+// is the walk, the same any-depth rule core/mcp's HandleRequest
+// chokepoint runs on req.Params (protocol.go:63-77, pinned by
+// TestParamsDuplicateKeysRefused); the value decode itself stays
+// plain stdlib.
 func unmarshalMCPObject(data []byte, dst any) error {
-	if err := handler.CheckTopLevelKeys(data, strings.ToLower); err != nil {
+	if err := handler.CheckObjectKeys(data, strings.ToLower); err != nil {
 		return err
 	}
 	return json.Unmarshal(data, dst)
@@ -146,13 +149,18 @@ func unmarshalMCPObject(data []byte, dst any) error {
 func (s *Server) handle(ctx context.Context, line []byte) {
 	var req rpcRequest
 	// The envelope is framing, not an evolution surface: every key must
-	// exactly match a json tag and no key may repeat (UnmarshalStrict).
-	// Params/args inside it go through unmarshalMCPObject, which keeps
-	// the MCP tolerance for unknown fields.
+	// exactly match a json tag and no key may repeat (UnmarshalStrict,
+	// which also walks every nesting level). Params/args inside it go
+	// through unmarshalMCPObject, which keeps the MCP tolerance for
+	// unknown fields.
 	if err := handler.UnmarshalStrict(line, &req); err != nil {
+		// -32602, the code core/mcp's transports answer for a strict
+		// decode refusal (transport.go:82-92, :290-299): the bytes are
+		// well-formed JSON whose envelope shape this server refuses,
+		// which is an invalid-params finding, not a parse error.
 		s.write(rpcResponse{
 			JSONRPC: "2.0",
-			Error:   &rpcError{Code: -32700, Message: "parse error"},
+			Error:   &rpcError{Code: -32602, Message: "invalid JSON: " + err.Error()},
 		})
 		return
 	}

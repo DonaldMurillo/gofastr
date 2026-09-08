@@ -1,6 +1,7 @@
 package live
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -29,6 +30,7 @@ type Live struct {
 	app          *framework.App
 	bus          *Broadcaster
 	aux          *router.Router
+	sseSeats     sseSeatRegistry
 	fallbackHTML string
 	fallbackFunc func(*http.Request) string
 }
@@ -251,6 +253,48 @@ func (l *Live) Reload() error {
 	return l.reloadBody()
 }
 
+// ErrNothingToUndo is returned by UndoLast when the journal is already
+// empty; protocol maps it to its "nothing to undo" validation result.
+var ErrNothingToUndo = errors.New("kiln/live: nothing to undo")
+
+// TruncateAndReload drops journal entries past offset n and rebuilds the
+// session from the remaining log, holding l.mu across the whole
+// operation. The single hold is the point: reset_session and undo used
+// to touch the journal outside this mutex, so an Apply parked inside
+// journal.Append under l.mu could land its entry AFTER the truncate and
+// have the trailing reload replay it — ResetSession reported success
+// over a journal that was not empty (pinned by protocol's
+// undo/reset security tests). Routing both through here excludes
+// in-flight Applies end to end.
+func (l *Live) TruncateAndReload(n int) error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if err := l.journal.TruncateAfter(n); err != nil {
+		return err
+	}
+	return l.reloadBody()
+}
+
+// UndoLast removes the most recent journal entry and reloads. The
+// Len→TruncateAfter pair runs under one hold of l.mu so the cut is
+// computed against the log a concurrent Append can no longer rewrite
+// between the two steps.
+func (l *Live) UndoLast() error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	n, err := l.journal.Len()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return ErrNothingToUndo
+	}
+	if err := l.journal.TruncateAfter(n - 1); err != nil {
+		return err
+	}
+	return l.reloadBody()
+}
+
 // reloadBody is the shared boot/reload sequence: replay the journal,
 // rebuild the app, then re-derive the DB from the replayed world.
 // Caller must hold l.mu.
@@ -387,6 +431,11 @@ var securityHeaders = middleware.SecurityHeaders(middleware.SecurityHeadersConfi
 // wrapped in the security-header middleware so aux routes and the HTML
 // fallback carry the same headers the framework default chain sets.
 func (l *Live) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// Identity marker: every response the kiln runtime serves carries
+	// it, so a readiness probe can tell "kiln answered" from "some
+	// process that won the port race answered" (cmd/kiln's waitReady
+	// refuses to export KILN_URL at an impostor without it).
+	w.Header().Set("X-Kiln-Server", "kiln")
 	securityHeaders(http.Handler(l.aux)).ServeHTTP(w, r)
 }
 

@@ -2,6 +2,7 @@ package b
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 )
 
@@ -47,4 +48,51 @@ func fixed(w http.ResponseWriter) {
 	if err := boom(); err != nil {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 	}
+}
+
+// ---- JSON-RPC internal-error arm (round 5) ---------------------------
+
+const (
+	ErrInvalidParams = -32602
+	ErrInternalError = -32603
+)
+
+func newErrorResponse(id int, code int, message string) {}
+
+// plainErr is the core/mcp prompts/resources shape: internal code plus
+// the error's text.
+func plainErr(id int, err error) {
+	newErrorResponse(id, ErrInternalError, err.Error()) // want `sends an internal error's text in a JSON-RPC internal-error response`
+}
+
+// viaSprintf is the fmt.Sprintf("%v", err) spelling.
+func viaSprintf(id int, err error) {
+	newErrorResponse(id, ErrInternalError, fmt.Sprintf("%v", err)) // want `sends an internal error's text in a JSON-RPC internal-error response`
+}
+
+// prefixed is "prefix: "+err.Error() nested in the argument.
+func prefixed(id int, err error) {
+	newErrorResponse(id, ErrInternalError, "read failed: "+err.Error()) // want `sends an internal error's text in a JSON-RPC internal-error response`
+}
+
+// generic is the fix posture: internal code, fixed message.
+func generic(id int, err error) {
+	newErrorResponse(id, ErrInternalError, "internal tool error")
+}
+
+// invalidParams echoes parser text: the useful answer for malformed
+// input, quiet by design.
+func invalidParams(id int, err error) {
+	newErrorResponse(id, ErrInvalidParams, "invalid params: "+err.Error())
+}
+
+// loggedAndCoded logs the error server-side and answers fixed text.
+func loggedAndCoded(id int, err error) {
+	_ = err.Error() // the log line reads it; the response does not
+	newErrorResponse(id, ErrInternalError, "internal error")
+}
+
+// httpErr is the http.Error helper itself: string, not code.
+func httpErr(w http.ResponseWriter, err error) {
+	http.Error(w, err.Error(), 500) // want `sends an internal error's text on a 5xx response`
 }

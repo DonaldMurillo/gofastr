@@ -2,7 +2,9 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"log/slog"
 	"reflect"
 	"sort"
 	"strings"
@@ -11,6 +13,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/di"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
 // App is the root of the UI hierarchy. It holds the DI container,
@@ -393,8 +396,10 @@ func (a *App) RenderPageResult(ctx context.Context, path string) (RenderResult, 
 
 	// Run the component's Load hook if present. Loaders run AFTER DI so they can
 	// use injected services, and BEFORE render so they can populate fields.
+	// A panicking Load takes the same error channel a Load error takes
+	// (safeScreenLoad), never an escaped panic.
 	if loader, ok := comp.(ScreenLoader); ok {
-		if err := loader.Load(ctx); err != nil {
+		if err := safeScreenLoad(loader, ctx); err != nil {
 			return RenderResult{}, fmt.Errorf("app: load failed for %q: %w", path, err)
 		}
 	}
@@ -440,10 +445,13 @@ func (a *App) RenderPageResult(ctx context.Context, path string) (RenderResult, 
 	// Title: re-read ScreenTitle() AFTER Load so dynamic routes
 	// (e.g. /docs/:slug) can compute the title from data fetched in Load.
 	// Falls back to the registration-time title, then to the app name alone.
+	// The re-read is contained (safeScreenTitle): a hook that only panics
+	// from its second call degrades to the registered title instead of
+	// killing the request.
 	titleText := a.Name
 	effectiveTitle := screen.Title
 	if titler, ok := comp.(ScreenTitler); ok {
-		if t := titler.ScreenTitle(); t != "" {
+		if t := safeScreenTitle(titler); t != "" {
 			effectiveTitle = t
 		}
 	}
@@ -452,10 +460,10 @@ func (a *App) RenderPageResult(ctx context.Context, path string) (RenderResult, 
 	}
 	// Document language, resolved like the title: the route rule first, then
 	// the component's own ScreenLang() read AFTER Load so a dynamic route can
-	// take the tag from the content it fetched.
+	// take the tag from the content it fetched. Contained like the title.
 	lang := a.LangForPath(path)
 	if langer, ok := comp.(ScreenLanger); ok {
-		if l := strings.TrimSpace(langer.ScreenLang()); l != "" {
+		if l := strings.TrimSpace(safeScreenLang(langer)); l != "" {
 			lang = l
 		}
 	}
@@ -633,7 +641,7 @@ func (a *App) renderPartial(ctx context.Context, path string, overlay *ScreenTyp
 	}
 
 	if loader, ok := comp.(ScreenLoader); ok {
-		if err := loader.Load(ctx); err != nil {
+		if err := safeScreenLoad(loader, ctx); err != nil {
 			return RenderResult{}, fmt.Errorf("app: load failed for %q: %w", path, err)
 		}
 	}
@@ -662,7 +670,7 @@ func (a *App) renderPartial(ctx context.Context, path string, overlay *ScreenTyp
 	// (or generic) title, so the partial path must re-read it from the
 	// loaded instance, same as the full-page path's <title> build.
 	if t, ok := comp.(ScreenTitler); ok {
-		out.Title = t.ScreenTitle()
+		out.Title = safeScreenTitle(t)
 	}
 	if decision.Kind == DecisionRenderAlt {
 		out.Kind = DecisionRenderAlt
@@ -683,13 +691,61 @@ func renderComponentInScreen(ctx context.Context, screen *Screen, comp component
 // renderComponentAs renders comp wrapped in the ARIA scaffolding for an
 // explicit screen type, which an intercepted render supplies instead of
 // the screen's registered one.
+//
+// The render runs under the SSR containment every host-supplied render
+// hook gets (SafeRenderCtx): the empty-layout ScreenPage full-page arm and
+// every drawer/sheet/dialog/intercept-overlay arm flow through here, and a
+// standalone host wires no recovery middleware, so an escaped panic would
+// kill the request with no response. A panicking screen renders its
+// SafeRenderCtx fallback; the failure is logged, not propagated.
 func renderComponentAs(ctx context.Context, screen *Screen, effType ScreenType, comp component.Component) render.HTML {
-	var content render.HTML
-	if cc, ok := comp.(component.ContextComponent); ok {
-		content = cc.RenderCtx(ctx)
-	} else {
-		content = comp.Render()
+	content, renderErr := component.SafeRenderCtx(ctx, comp)
+	if renderErr != nil {
+		slog.Default().Error("app: screen render panicked; rendering fallback",
+			"panic", textsafe.Recovered(renderErr))
 	}
 	content = wrapArticle(screen, comp, content)
 	return wrapByScreenType(effType, screen.Title, content)
+}
+
+// safeScreenLoad runs the ScreenLoader hook under the SSR containment: a
+// panicking Load is converted to the same error channel a Load error takes
+// (the host's not-found path), never an escaped panic. The panicked-on
+// bytes are scrubbed through textsafe.Recovered; they are host/component
+// state and must not forge log lines.
+func safeScreenLoad(loader ScreenLoader, ctx context.Context) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = errors.New("screen Load panicked: " + textsafe.Recovered(r))
+		}
+	}()
+	return loader.Load(ctx)
+}
+
+// safeScreenTitle reads the post-Load ScreenTitle re-read under the same
+// containment: a hook that works at registration (the 1st read) but panics
+// on the per-request copy (the 2nd) degrades to the registered title
+// instead of killing the request.
+func safeScreenTitle(titler ScreenTitler) (title string) {
+	defer func() {
+		if r := recover(); r != nil {
+			slog.Default().Error("app: ScreenTitle re-read panicked; using registered title",
+				"panic", textsafe.Recovered(r))
+			title = ""
+		}
+	}()
+	return titler.ScreenTitle()
+}
+
+// safeScreenLang is safeScreenTitle for the ScreenLang re-read: a panicking
+// hook degrades to the route/app language.
+func safeScreenLang(langer ScreenLanger) (lang string) {
+	defer func() {
+		if r := recover(); r != nil {
+			slog.Default().Error("app: ScreenLang re-read panicked; using route language",
+				"panic", textsafe.Recovered(r))
+			lang = ""
+		}
+	}()
+	return langer.ScreenLang()
 }

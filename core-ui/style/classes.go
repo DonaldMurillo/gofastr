@@ -36,15 +36,33 @@ func (c Classes) String() string {
 // GenerateUtilityCSS generates CSS rules for a set of utility class
 // names. Each class resolves to one CSS declaration referencing
 // theme variables via var(--*).
+//
+// A class name that is not a CSS identifier is skipped: the name is
+// interpolated unquoted into the ".%s { … }" selector slot, so braces,
+// semicolons, or a url( payload in the name would become live CSS (the
+// same identifier-slot contract StyleSheet property names carry).
 func GenerateUtilityCSS(classes []string, theme Theme) string {
 	var b strings.Builder
 	for _, class := range classes {
+		if !isCSSIdent(class) {
+			continue
+		}
 		props := resolveUtilityClass(class, theme)
 		if props != "" {
 			fmt.Fprintf(&b, ".%s { %s }\n", class, props)
 		}
 	}
 	return b.String()
+}
+
+// isCSSIdent reports whether name fits the CSS identifier grammar
+// (validCSSPropName's grammar: letters, digits, '-', '_', non-ASCII; no
+// leading digit). Class names ride into the unquoted ".%s { … }" selector
+// slot, so only identifiers may pass — the boolean, non-panicking twin of
+// the mustBePropName registration gate, for names that arrive by
+// reflection rather than from a builder call.
+func isCSSIdent(name string) bool {
+	return validCSSPropName(name)
 }
 
 // resolveUtilityClass maps a utility class name to its CSS property

@@ -13,6 +13,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core/backoff"
 	"github.com/DonaldMurillo/gofastr/core/query"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
 // DBQueue is a SQL-backed queue. Jobs persist in a single table; Dequeue
@@ -458,7 +459,7 @@ func gateAllows(logger *slog.Logger, gate func(jobType string) bool, jobType, jo
 			logger.Error("queue: gate panic; failing closed",
 				"job_type", jobType,
 				"job_id", jobID,
-				"panic", fmt.Sprintf("%v", r))
+				"panic", textsafe.Recovered(r))
 			allow = false
 		}
 	}()

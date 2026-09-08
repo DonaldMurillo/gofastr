@@ -24,14 +24,19 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"time"
 )
 
 // tokenHeader / tokenPrefix come from the spec's security scheme:
 // "Authorization" + "Bearer " for http bearer, or the apiKey header
-// name with no prefix.
+// name with no prefix. maxBodyBytes caps the bytes buffered from any
+// one response body (the repo convention, 1 MiB): a response bigger
+// than that is a misbehaving or hostile endpoint, not a payload to
+// read to EOF.
 const (
 	tokenHeader = ` + fmt.Sprintf("%q", spec.TokenHeader) + `
 	tokenPrefix = ` + fmt.Sprintf("%q", spec.TokenPrefix) + `
+	maxBodyBytes = 1 << 20
 )
 
 // Client sends requests against the API's base URL. Pass any
@@ -43,11 +48,12 @@ type Client struct {
 	Token   string
 }
 
-// NewClient constructs a Client with the default http.Client when one
-// is not supplied. BaseURL should NOT include a trailing slash.
+// NewClient constructs a Client with a deadline-bearing default when one
+// is not supplied (a zero-timeout client waits forever on an unresponsive
+// peer). BaseURL should NOT include a trailing slash.
 func NewClient(baseURL string, httpClient *http.Client) *Client {
 	if httpClient == nil {
-		httpClient = http.DefaultClient
+		httpClient = &http.Client{Timeout: 30 * time.Second}
 	}
 	return &Client{BaseURL: baseURL, HTTP: httpClient}
 }
@@ -137,9 +143,15 @@ func (c *Client) DoRaw(ctx context.Context, method, path string, query url.Value
 		return nil, "", err
 	}
 	defer resp.Body.Close()
-	data, err := io.ReadAll(resp.Body)
+	// Cap before buffering: the endpoint controls the byte count, so an
+	// unbounded ReadAll is unbounded heap. cap+1 distinguishes "at the
+	// cap" from "past the cap" so oversize is an error, not a truncation.
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maxBodyBytes+1))
 	if err != nil {
 		return nil, "", err
+	}
+	if len(data) > maxBodyBytes {
+		return nil, "", fmt.Errorf("response body exceeds %d bytes", maxBodyBytes)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, "", &APIError{Status: resp.StatusCode, Body: data}

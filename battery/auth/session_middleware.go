@@ -200,6 +200,11 @@ func resolveSessionUser(ctx context.Context, mgr *AuthManager, token string, log
 // RequireSession returns middleware that rejects requests without a
 // valid session-cookie-loaded user. Pair with SessionMiddleware upstream.
 //
+// The gate is session-only by contract: a caller authenticated by a
+// scoped API token (TokenMiddleware sets the ctx user the same way a
+// session does, plus TokenScopes) is refused with 401, so a leaked
+// gfsk_ token cannot ride this gate past its scope leash.
+//
 // By default it returns JSON 401. Use WithRedirectOnFail to redirect
 // browser (text/html-accepting) requests to a login page instead.
 func RequireSession(opts ...RequireSessionOption) middleware.Middleware {
@@ -209,7 +214,19 @@ func RequireSession(opts ...RequireSessionOption) middleware.Middleware {
 	}
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if GetCurrentUser(r.Context()) != nil {
+			if u := GetCurrentUser(r.Context()); u != nil {
+				// A gate documented "session-cookie-loaded user" only: a
+				// caller authenticated by a scoped API token carries
+				// TokenScopes in ctx (only TokenMiddleware sets them), and
+				// admitting it would let a leaked gfsk_ token escape its
+				// scope leash on every SSR screen this gate protects — the
+				// exact escape requireSessionUserID refuses on /auth/tokens.
+				// A JSON 401, not the browser redirect: a bearer client is
+				// not a browser that lost its cookie.
+				if _, tokenAuth := TokenScopes(r.Context()); tokenAuth {
+					http.Error(w, `{"error":{"code":401,"message":"interactive session required, not an API token"}}`, http.StatusUnauthorized)
+					return
+				}
 				next.ServeHTTP(w, r)
 				return
 			}

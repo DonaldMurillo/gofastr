@@ -1,6 +1,8 @@
 package evalrunner
 
 import (
+	"github.com/DonaldMurillo/gofastr/internal/fileperm"
+
 	"bytes"
 	"context"
 	"fmt"
@@ -34,7 +36,7 @@ func runCommand(ctx context.Context, dir, logPath string, env []string, program 
 		if mkErr := os.MkdirAll(filepath.Dir(logPath), 0o700); mkErr != nil {
 			return mkErr
 		}
-		if writeErr := os.WriteFile(logPath, out.Bytes(), 0o600); writeErr != nil && err == nil {
+		if writeErr := fileperm.WriteOwnerOnly(logPath, out.Bytes()); writeErr != nil && err == nil {
 			return writeErr
 		}
 	}

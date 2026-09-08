@@ -11,9 +11,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/query"
+	"github.com/DonaldMurillo/gofastr/framework/migrate"
 )
 
 // aeadSealer is the auth battery's shared at-rest sealing: AES-GCM under a
@@ -112,7 +115,19 @@ var ErrOAuthTokenNotFound = errors.New("auth: oauth token not found")
 // refresh is possible until a store is configured.
 type OAuthTokenStore interface {
 	// Save inserts or replaces the token row for (UserID, Provider).
+	// It is the login-callback's unconditional upsert; the refresh
+	// path must use SaveIfRefreshUnchanged instead.
 	Save(ctx context.Context, rec OAuthTokenRecord) error
+	// SaveIfRefreshUnchanged persists rec only while the stored row for
+	// (rec.UserID, rec.Provider) still holds `from`, the refresh token
+	// the caller refreshed FROM. It reports saved=false when the row is
+	// missing or has moved on — a concurrent login callback persisted a
+	// newer grant — and writes nothing in that case: the stored row is
+	// newer by construction, and overwriting it with the pre-exchange
+	// token bricks the linkage under provider rotation. This is the
+	// compare-and-swap RefreshOAuthToken's final write goes through;
+	// a plain Save there is check-then-act on the re-read.
+	SaveIfRefreshUnchanged(ctx context.Context, rec OAuthTokenRecord, from string) (bool, error)
 	// Get returns the stored token for the pair, or ErrOAuthTokenNotFound.
 	Get(ctx context.Context, userID, provider string) (OAuthTokenRecord, error)
 	// Delete removes the stored token for the pair. Deleting a missing row
@@ -187,13 +202,74 @@ func (s *SQLOAuthTokenStore) ensureTable(ctx context.Context) error {
 			provider TEXT NOT NULL,
 			access_token TEXT NOT NULL,
 			refresh_token TEXT NOT NULL,
+			refresh_sha TEXT NOT NULL DEFAULT '',
 			expires_at BIGINT NOT NULL,
 			PRIMARY KEY (user_id, provider)
 		)`,
 		query.QuoteIdent(s.table),
 	)
-	_, err := s.db.ExecContext(ctx, q)
-	return err
+	if _, err := s.db.ExecContext(ctx, q); err != nil {
+		return err
+	}
+	return s.migrateRefreshSHA(ctx)
+}
+
+// migrateRefreshSHA upgrades tables created before the CAS column
+// existed: ALTER in refresh_sha, then backfill it from each row's sealed
+// refresh token. The sealed column itself cannot be compared in SQL
+// (AES-GCM uses a fresh nonce per seal), so refresh_sha — a plain
+// sha256 of the refresh token — is the deterministic handle
+// SaveIfRefreshUnchanged's WHERE clause keys on. A row whose digest
+// cannot be backfilled (sealed value no longer opens) keeps ” and
+// fails CAS closed: its refresh writes are refused until a login
+// callback re-persists the row through Save.
+func (s *SQLOAuthTokenStore) migrateRefreshSHA(ctx context.Context) error {
+	alter := fmt.Sprintf(`ALTER TABLE %s ADD COLUMN refresh_sha TEXT NOT NULL DEFAULT ''`, query.QuoteIdent(s.table))
+	if migrate.DetectDialect(s.db) == migrate.DialectPostgres {
+		alter = fmt.Sprintf(`ALTER TABLE %s ADD COLUMN IF NOT EXISTS refresh_sha TEXT NOT NULL DEFAULT ''`, query.QuoteIdent(s.table))
+	}
+	if _, err := s.db.ExecContext(ctx, alter); err != nil {
+		// SQLite has no IF NOT EXISTS for columns; a duplicate-column
+		// error is the column already being there, the migration's goal.
+		if migrate.DetectDialect(s.db) != migrate.DialectPostgres && strings.Contains(err.Error(), "duplicate column") {
+			// fall through to the backfill
+		} else {
+			return err
+		}
+	}
+	rows, err := s.db.QueryContext(ctx,
+		fmt.Sprintf(`SELECT user_id, provider, refresh_token FROM %s WHERE refresh_sha = ''`, query.QuoteIdent(s.table)))
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	type key struct{ user, provider string }
+	var stale []key
+	for rows.Next() {
+		var k key
+		var sealed string
+		if err := rows.Scan(&k.user, &k.provider, &sealed); err != nil {
+			return err
+		}
+		refresh, ok := s.sealer.open(sealed)
+		if !ok {
+			stale = append(stale, k)
+			continue
+		}
+		if _, err := s.db.ExecContext(ctx,
+			fmt.Sprintf(`UPDATE %s SET refresh_sha = $1 WHERE user_id = $2 AND provider = $3`, query.QuoteIdent(s.table)),
+			sha256hex(refresh), k.user, k.provider); err != nil {
+			return err
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for _, k := range stale {
+		slog.Warn("auth: oauth token row could not be backfilled for CAS (sealed refresh no longer opens); refresh writes fail closed until the next login-callback Save",
+			"user_id", k.user, "provider", k.provider)
+	}
+	return nil
 }
 
 // Save upserts the token row for (UserID, Provider).
@@ -207,16 +283,47 @@ func (s *SQLOAuthTokenStore) Save(ctx context.Context, rec OAuthTokenRecord) err
 		return err
 	}
 	q := fmt.Sprintf(
-		`INSERT INTO %s (user_id, provider, access_token, refresh_token, expires_at)
-		 VALUES ($1, $2, $3, $4, $5)
+		`INSERT INTO %s (user_id, provider, access_token, refresh_token, refresh_sha, expires_at)
+		 VALUES ($1, $2, $3, $4, $5, $6)
 		 ON CONFLICT (user_id, provider)
 		 DO UPDATE SET access_token = EXCLUDED.access_token,
 		               refresh_token = EXCLUDED.refresh_token,
+		               refresh_sha = EXCLUDED.refresh_sha,
 		               expires_at = EXCLUDED.expires_at`,
 		query.QuoteIdent(s.table),
 	)
-	_, err = s.db.ExecContext(ctx, q, rec.UserID, rec.Provider, access, refresh, rec.Expiry.Unix())
+	_, err = s.db.ExecContext(ctx, q, rec.UserID, rec.Provider, access, refresh, sha256hex(rec.RefreshToken), rec.Expiry.Unix())
 	return err
+}
+
+// SaveIfRefreshUnchanged is the refresh path's compare-and-swap: the
+// row is rewritten only while its refresh_sha still matches sha256(from).
+// The predicate lives in the UPDATE's WHERE clause, so a grant persisted
+// by a concurrent login callback between the caller's read and this
+// write changes refresh_sha and the write declines — unlike a
+// read-compare-write sequence, which is check-then-act across two
+// statements and loses the same race one level down.
+func (s *SQLOAuthTokenStore) SaveIfRefreshUnchanged(ctx context.Context, rec OAuthTokenRecord, from string) (bool, error) {
+	access, err := s.sealer.seal(rec.AccessToken)
+	if err != nil {
+		return false, err
+	}
+	refresh, err := s.sealer.seal(rec.RefreshToken)
+	if err != nil {
+		return false, err
+	}
+	q := fmt.Sprintf(
+		`UPDATE %s SET access_token = $3, refresh_token = $4, refresh_sha = $5, expires_at = $6
+		 WHERE user_id = $1 AND provider = $2 AND refresh_sha = $7`,
+		query.QuoteIdent(s.table),
+	)
+	res, err := s.db.ExecContext(ctx, q,
+		rec.UserID, rec.Provider, access, refresh, sha256hex(rec.RefreshToken), rec.Expiry.Unix(), sha256hex(from))
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	return n == 1, err
 }
 
 // Get returns the stored token, or ErrOAuthTokenNotFound.
@@ -284,6 +391,11 @@ const refreshSkew = 60 * time.Second
 // GitHub providers do). If the stored token has no refresh token, refresh
 // is impossible and an error is returned, the user must re-authenticate.
 //
+// The final write is a compare-and-swap on the refresh token refreshed
+// FROM (SaveIfRefreshUnchanged): when a concurrent login callback
+// persists a newer grant during the exchange, this call declines to
+// write and returns that newer record instead.
+//
 // SECURITY: userID MUST be the authenticated principal's id (e.g. from the
 // resolved session), never a value taken from request input. Passing a
 // client-supplied id is an IDOR, it reads/refreshes another user's tokens.
@@ -321,25 +433,29 @@ func RefreshOAuthToken(ctx context.Context, store OAuthTokenStore, provider OAut
 		rec.RefreshToken = tok.RefreshToken
 	}
 
-	// Re-read before writing. A login callback running concurrently — the
-	// user reconnecting the provider in another tab — stores a freshly
-	// rotated grant between the Get above and this Save, and an
-	// unconditional write puts the token we started from back on top of
-	// it. Under a provider that rotates refresh tokens the overwritten
-	// one is already dead, so the linkage is bricked until the user
-	// re-authorizes, and nothing reports it.
-	//
-	// The comparison is on the refresh token we refreshed FROM: if the
-	// stored one is no longer that, someone else has moved the record on
-	// and their version is newer than ours by construction.
-	if current, err := store.Get(ctx, userID, provider.Name()); err == nil {
-		if current.RefreshToken != "" && current.RefreshToken != refreshedFrom {
-			return current, nil
-		}
-	}
-
-	if err := store.Save(ctx, rec); err != nil {
+	// Compare-and-swap the write: it lands only while the row still
+	// holds `refreshedFrom`. A login callback running concurrently — the
+	// user reconnecting the provider in another tab — persists a freshly
+	// rotated grant during the exchange, and an unconditional write puts
+	// the token we started from back on top of it; under a provider that
+	// rotates refresh tokens the overwritten one is already dead, so the
+	// linkage bricks until the user re-authorizes, and nothing reports
+	// it. CAS declines, and the caller is handed the newer grant that
+	// won. The comparison is on the refresh token we refreshed FROM: if
+	// the stored one is no longer that, someone else has moved the
+	// record on and their version is newer than ours by construction.
+	saved, err := store.SaveIfRefreshUnchanged(ctx, rec, refreshedFrom)
+	if err != nil {
 		return OAuthTokenRecord{}, err
+	}
+	if !saved {
+		current, err := store.Get(ctx, userID, provider.Name())
+		if err != nil {
+			// The row vanished (unlink) rather than moved on; hand back
+			// our refreshed record rather than failing the caller.
+			return rec, nil
+		}
+		return current, nil
 	}
 	return rec, nil
 }

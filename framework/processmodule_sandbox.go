@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/moduleproto"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
 // This file implements design §6 decision C's fail-closed runner selection:
@@ -134,7 +135,7 @@ func (r *SandboxRunner) Start(ctx context.Context, spec ChildSpec) (RunningChild
 func (r *SandboxRunner) wrapSafely(cmd *exec.Cmd, opts SandboxOpts) (err error) {
 	defer func() {
 		if p := recover(); p != nil {
-			err = fmt.Errorf("panic: %v\n%s", p, debug.Stack())
+			err = fmt.Errorf("panic: %v\n%s", textsafe.Recovered(p), debug.Stack())
 		}
 	}()
 	return r.backend.Wrap(cmd, opts)

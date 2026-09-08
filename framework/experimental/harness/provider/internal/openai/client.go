@@ -12,6 +12,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core/handler"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
+
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/control"
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/provider"
 )
@@ -66,8 +69,13 @@ func (c *Client) Chat(ctx context.Context, req *provider.Request) (<-chan provid
 	}
 	if resp.StatusCode != http.StatusOK {
 		defer resp.Body.Close()
-		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
-		return nil, fmt.Errorf("%s: HTTP %d: %s", c.Name, resp.StatusCode, string(raw))
+		// The error preview is peer-response bytes: scrub the
+		// terminal-forgery set (C0/DEL/C1/bidi) at the
+		// error-construction site so a hostile or MITM'd endpoint
+		// cannot forge lines in the operator's log tail, keeping the
+		// status and a bounded preview for diagnosis.
+		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
+		return nil, fmt.Errorf("%s: HTTP %d: %s", c.Name, resp.StatusCode, textsafe.StripUnsafe(string(raw)))
 	}
 
 	ch := make(chan provider.StreamEvent, 32)
@@ -332,6 +340,19 @@ func parseSSEStream(ctx context.Context, body io.ReadCloser, ch chan<- provider.
 			return
 		}
 		var chunk streamChunk
+		// Strict-key walk before decode: a chunk carrying duplicate or
+		// case-folded keys ({"choices":[],"Choices":[…]}) resolves
+		// last-wins under stdlib json, so the engine would record text
+		// or a tool call any first-read intermediary parsed
+		// differently. Refusing the ambiguity terminates the stream
+		// through the same KindError path a parse error takes; unknown
+		// fields stay tolerated (providers add their own).
+		if err := handler.CheckObjectKeys([]byte(payload), strings.ToLower); err != nil {
+			if !send(provider.StreamEvent{Kind: provider.KindError, Err: fmt.Errorf("parse chunk: %w", err)}) {
+				return
+			}
+			return
+		}
 		if err := json.Unmarshal([]byte(payload), &chunk); err != nil {
 			if !send(provider.StreamEvent{Kind: provider.KindError, Err: fmt.Errorf("parse chunk: %w", err)}) {
 				return

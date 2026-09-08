@@ -1166,7 +1166,20 @@ The generator rejects:
 - unsupported UI action events, duplicate action names, duplicate action events
   on one block, unreachable combined click actions, or missing `client_js`
 - custom endpoint MCP declarations without Go MCP handlers
+- scalar posture fields given a list or map shape: `access:`
+  permissions, `owner_field`, `tenant_field`, `cross_owner_read`,
+  `screens[].access.role`, and `app.admin.role` each name one value;
+  a list or map there used to decode as the zero value and silently
+  drop the gate it was configuring
+- a `login_form`/`signup_form` `action:` that is not a safe link
+  target (it must pass `urlsafe.Anchor`: http(s), relative, or
+  fragment schemes only — the form posts its credentials there)
 - unsafe output directories
+
+Middleware, plugin, helper, and screen `name:`s that are not valid
+identifiers are skipped at emit: the generator refuses to interpolate
+an ungated name into a Go declaration slot, and `gofastr generate`
+(which validates first) is where the name is reported.
 
 ### Unscoped entities (`gofastr generate` warning)
 

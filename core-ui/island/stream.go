@@ -15,6 +15,11 @@ type ssePayload struct {
 	HTML   string `json:"html"`
 }
 
+// maxSessionIDLen bounds the client-supplied ?session= value. The id is the
+// m.streams map key for the stream's lifetime (default 4096 global streams),
+// so an unbounded value is a RAM-pin vector from one unauthenticated client.
+const maxSessionIDLen = 256
+
 // ServeSSE is an http.HandlerFunc that streams island updates to a client.
 // It is the backward-compatible entry point (no presence); ServeSSEWithPresence
 // is the presence-aware variant.
@@ -38,6 +43,16 @@ func (m *Manager) ServeSSEWithPresence(w http.ResponseWriter, r *http.Request, i
 	sessionID := r.URL.Query().Get("session")
 	if sessionID == "" {
 		http.Error(w, "missing session query parameter", http.StatusBadRequest)
+		return
+	}
+	// The id is pinned as the m.streams key for the stream's lifetime; an
+	// unbounded value lets one client pin caps.global × len(session) bytes
+	// of RAM. Bounded like every other hostile-client key (the ?presence=
+	// topics cap at maxPresenceTopicLen); 256 is generous for the signed
+	// session tokens the framework mints and matches the URL-carried ctx
+	// bound serveChrome applies.
+	if len(sessionID) > maxSessionIDLen {
+		http.Error(w, "session query parameter too long", http.StatusBadRequest)
 		return
 	}
 

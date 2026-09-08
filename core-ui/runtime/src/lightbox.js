@@ -82,6 +82,16 @@
     });
   }
 
+  // data-fui-deeplink pairs are markup-borne input: a malformed percent
+  // escape makes decodeURIComponent throw URIError out of step()'s
+  // click/keydown handlers and recordOpen's MutationObserver, killing
+  // gallery nav. Degrade to '' / skip the pair (the selector-guard
+  // family's containment).
+  function safeDecode(s) {
+    try { return decodeURIComponent(s); } catch (_) { return ''; }
+  }
+
+
   function srcOf(anchor) {
     // The trigger's data-fui-deeplink has src=…&alt=…&caption=…&group=…
     // Pull the src value directly without round-tripping signals.
@@ -89,8 +99,8 @@
     for (const pair of dl.split('&')) {
       const eq = pair.indexOf('=');
       if (eq < 0) continue;
-      const k = decodeURIComponent(pair.slice(0, eq));
-      if (k === 'src') return decodeURIComponent(pair.slice(eq + 1));
+      const k = safeDecode(pair.slice(0, eq));
+      if (k === 'src') return safeDecode(pair.slice(eq + 1));
     }
     return '';
   }
@@ -101,7 +111,13 @@
     for (const pair of s.split('&')) {
       const eq = pair.indexOf('=');
       if (eq < 0) continue;
-      out[decodeURIComponent(pair.slice(0, eq))] = decodeURIComponent(pair.slice(eq + 1));
+      const k = safeDecode(pair.slice(0, eq));
+      // Reserved keys never key the parsed map: a deeplink pair named
+      // __proto__ re-parents it via the setter and the openWidget params
+      // walk then misbehaves. The kernel's isReservedSignalKey skip,
+      // spelled inline (demand module).
+      if (k === '__proto__' || k === 'constructor' || k === 'prototype') continue;
+      out[k] = safeDecode(pair.slice(eq + 1));
     }
     return out;
   }

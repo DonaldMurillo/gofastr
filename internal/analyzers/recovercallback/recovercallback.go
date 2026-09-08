@@ -24,6 +24,15 @@
 // so is a func value the host call RETURNS (Acquire's release func,
 // invoked later on a bare goroutine; probes TestCronRedAcquirePanicIsolated,
 // TestCronRedReleasePanicIsolated, bridge_red_test.go).
+// The 2026-09-07 round added the generic twin (probe
+// TestStateChannelRedPanicNet, still open): a SnapshotSource installed
+// via NewStateChannel and dispatched from a channel-receive select
+// loop is the same host-supplied extension point, but go/types hands
+// selectors on generic instantiations per-instantiation method
+// objects whose identity differs from the declared ones — the edge
+// flood and the callback test both canonicalize through
+// Named.Origin() (see originFunc) so a generic dispatcher is policed
+// like any other.
 //
 // "Dispatch path" is condition (a) of the shape, computed across the
 // package rather than lexically: a function is on a dispatch path if
@@ -419,9 +428,46 @@ func (g *graph) callTarget(fun ast.Expr) types.Object {
 		}
 	}
 	if fn, ok := obj.(*types.Func); ok && fn.Pkg() == g.pass.Pkg {
-		return obj
+		return originFunc(fn)
 	}
 	return nil
+}
+
+// originFunc canonicalizes a method selected through a GENERIC
+// instantiation to the declared method. The 2026-09-07 round found
+// core/stream.StateChannel quiet against this rule's own shape: a
+// selector on a receiver whose type is a generic instantiation
+// (Run's `c.runSnapshot(job)` inside the generic type's own methods)
+// yields a per-instantiation *types.Func whose object identity differs
+// from the Defs object the node table is keyed by, so every edge out
+// of the dispatch loop silently vanished and the callbacks under it
+// never went hot. Mapping through the receiver's Named.Origin() (a
+// no-op for non-generic receivers and for origin methods themselves)
+// restores identity; method identity, not signature, is what the
+// byObj table is keyed on.
+func originFunc(fn *types.Func) *types.Func {
+	sig, ok := fn.Type().(*types.Signature)
+	if !ok || sig.Recv() == nil {
+		return fn
+	}
+	recv := sig.Recv().Type()
+	if ptr, ok := recv.(*types.Pointer); ok {
+		recv = ptr.Elem()
+	}
+	named, ok := recv.(*types.Named)
+	if !ok {
+		return fn
+	}
+	orig := named.Origin()
+	if orig == named {
+		return fn
+	}
+	for i := range orig.NumMethods() {
+		if m := orig.Method(i); m.Name() == fn.Name() {
+			return m
+		}
+	}
+	return fn
 }
 
 // callbackCallee reports whether call invokes a registry callback —

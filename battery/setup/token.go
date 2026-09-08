@@ -5,8 +5,9 @@ import (
 	"crypto/subtle"
 	"encoding/hex"
 	"net/http"
-	"net/url"
 	"strings"
+
+	"github.com/DonaldMurillo/gofastr/core/handler"
 )
 
 const (
@@ -65,36 +66,22 @@ func hasSetupCookie(r *http.Request, expected string) bool {
 	return tokenEqual(c.Value, expected)
 }
 
-// rejectCrossSiteForm refuses a cross-site POST to the wizard. Mirrors
-// battery/auth's Sec-Fetch-Site convention: the authoritative signal is
-// checked first; browsers send Origin:null on some legitimate flows so
-// Origin-checking alone is wrong. Non-browser clients (curl, tests) send
-// neither header and pass.
+// rejectCrossSiteForm refuses a cross-site POST to the wizard. The gate
+// is handler.IsForgeableRequest (the wizard's forms are urlencoded,
+// CORS-simple) and handler.IsCrossSiteRequest, the repo's one cross-site
+// predicate: Sec-Fetch-Site first, where "same-site" is NOT proof of
+// same-origin — a page on a sibling subdomain (evil.example.com →
+// app.example.com) is same-site while its Origin names another host, and
+// the SameSite=Strict setup cookie still attaches — so it falls through
+// to the Origin-host comparison, as does any unknown value. Non-browser
+// clients (curl, tests) send neither header and pass.
 func rejectCrossSiteForm(w http.ResponseWriter, r *http.Request) bool {
-	// Primary: Fetch Metadata. same-origin / same-site / none are safe.
-	if sfs := r.Header.Get("Sec-Fetch-Site"); sfs != "" {
-		if sfs == "cross-site" {
-			http.Error(w, "forbidden: cross-site request", http.StatusForbidden)
-			return true
-		}
+	if !handler.IsForgeableRequest(r) {
 		return false
 	}
-	// Fallback for clients without Fetch Metadata: compare Origin host.
-	// Absent or opaque ("null") Origin can't prove an attack, allow.
-	if o := r.Header.Get("Origin"); o != "" && o != "null" {
-		if h := parseOriginHost(o); h != "" && !strings.EqualFold(h, r.Host) {
-			http.Error(w, "forbidden: cross-site request", http.StatusForbidden)
-			return true
-		}
+	if handler.IsCrossSiteRequest(r) {
+		http.Error(w, "forbidden: cross-site request", http.StatusForbidden)
+		return true
 	}
 	return false
-}
-
-// parseOriginHost extracts the host portion from an Origin header value.
-func parseOriginHost(origin string) string {
-	u, err := url.Parse(origin)
-	if err != nil {
-		return ""
-	}
-	return u.Host
 }

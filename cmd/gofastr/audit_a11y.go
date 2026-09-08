@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -16,7 +17,9 @@ import (
 //
 //	gofastr audit a11y [root]              static lint (default root ".")
 //	gofastr audit a11y --url <base>        axe-core scan of a running app
-//	    [--email EMAIL --password PASS]    sign in through /login first
+//	    [--email EMAIL]                    sign in through /login first
+//	    [--password -]                     password: "-" reads stdin;
+//	                                       GOFASTR_AUDIT_PASSWORD env wins
 //	    [--pages /a,/b]                    explicit page list (default: the
 //	                                       app's /sitemap.xml, else "/")
 //
@@ -24,7 +27,8 @@ import (
 func runAuditA11y(args []string) {
 	opts := parseA11yArgs(args)
 	if opts.help {
-		fmt.Println("Usage: gofastr audit a11y [root] [--url <base>] [--email EMAIL --password PASS] [--pages /a,/b]")
+		fmt.Println("Usage: gofastr audit a11y [root] [--url <base>] [--email EMAIL --password -] [--pages /a,/b]")
+		fmt.Println("  --password - reads the secret from stdin; GOFASTR_AUDIT_PASSWORD env also works (preferred: argv is ps-visible)")
 		fmt.Println()
 		fmt.Println("Static mode (default): lints every .go file under root for missing")
 		fmt.Println("required accessibility fields on core-ui/html elements (Alt on")
@@ -35,7 +39,8 @@ func runAuditA11y(args []string) {
 		fmt.Println("Chrome against the running app, checking contrast, focus, landmarks, and ARIA")
 		fmt.Println("under BOTH color schemes. Pages come from the app's /sitemap.xml")
 		fmt.Println("(uihost.WithSitemap) unless --pages is given. Pass --email and")
-		fmt.Println("--password to submit the app's /login form before discovery/auditing.")
+		fmt.Println("--password - (stdin; or GOFASTR_AUDIT_PASSWORD) to submit the app's")
+		fmt.Println("/login form before discovery/auditing.")
 		osExit(0)
 	}
 	if opts.badFlag != "" {
@@ -106,7 +111,7 @@ func parseA11yArgs(args []string) a11yArgs {
 		case strings.HasPrefix(arg, "--email="):
 			out.email = strings.TrimPrefix(arg, "--email=")
 		case strings.HasPrefix(arg, "--password="):
-			out.password = strings.TrimPrefix(arg, "--password=")
+			out.password = resolveAuditPassword(strings.TrimPrefix(arg, "--password="))
 		case strings.HasPrefix(arg, "--pages="):
 			for _, p := range strings.Split(strings.TrimPrefix(arg, "--pages="), ",") {
 				if p = strings.TrimSpace(p); p != "" {
@@ -122,6 +127,32 @@ func parseA11yArgs(args []string) a11yArgs {
 		}
 	}
 	return out
+}
+
+// resolveAuditPassword implements the credentials-never-in-argv doctrine
+// for `audit a11y --password`. "-" is the conventional stdin marker:
+// resolution order is GOFASTR_AUDIT_PASSWORD first, then piped stdin,
+// and the literal marker is never used as the password. A literal value
+// keeps working (documented interface) but draws a one-line warning: it
+// sits in ps/procfs world-readable state for the whole scan, the exact
+// local observer the marker channels exist to avoid.
+func resolveAuditPassword(literal string) string {
+	if literal != "-" {
+		fmt.Fprintln(os.Stderr, "warning: --password <value> is visible to every local process via ps; prefer GOFASTR_AUDIT_PASSWORD or `--password -` (reads the secret from stdin)")
+		return literal
+	}
+	if env := os.Getenv("GOFASTR_AUDIT_PASSWORD"); env != "" {
+		return env
+	}
+	data, err := io.ReadAll(os.Stdin)
+	if err != nil {
+		return ""
+	}
+	secret := strings.TrimSpace(string(data))
+	if secret == "" {
+		fmt.Fprintln(os.Stderr, "warning: --password - read an empty secret from stdin")
+	}
+	return secret
 }
 
 // buildA11yGate runs the static accessibility lint for `gofastr build`

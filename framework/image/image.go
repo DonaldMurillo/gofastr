@@ -46,12 +46,28 @@ import (
 // who need bigger inputs configure Config.MaxPixels explicitly.
 const DefaultMaxPixels int64 = 64 * 1024 * 1024
 
+// DefaultMaxSourceBytes caps how many source bytes DecodeWithConfig
+// buffers before the MaxPixels guard ever runs: the round-5 probe found a
+// peer dribbling PNG-magic garbage forever pinned the decoding goroutine's
+// heap at its own send rate, because the pixel cap only trips after every
+// delivered byte is already resident. Callers with legitimately larger
+// sources configure Config.MaxSourceBytes explicitly.
+const DefaultMaxSourceBytes int64 = 64 << 20
+
 // Config holds knobs that propagate through a pipeline.
 type Config struct {
 	// MaxPixels caps decoded image area. Inputs whose reported width*height
 	// exceed this return ErrDecompressionBomb at decode time. Zero means
 	// DefaultMaxPixels.
 	MaxPixels int64
+
+	// MaxSourceBytes caps the source bytes DecodeWithConfig buffers from
+	// the reader (an unbounded io.ReadAll before this field let a
+	// dribbling peer pin heap at its send rate; the pixel-dims guard
+	// only runs after every byte is resident). A source that delivers
+	// more than the cap returns ErrSourceTooLarge. Zero or negative
+	// means DefaultMaxSourceBytes, mirroring MaxPixels.
+	MaxSourceBytes int64
 }
 
 // Image is the chainable pipeline value. Transformations return a new
@@ -69,11 +85,23 @@ func Decode(r io.Reader) (*Image, error) {
 	return DecodeWithConfig(r, Config{})
 }
 
-// DecodeWithConfig is Decode with a non-default Config.
+// DecodeWithConfig is Decode with a non-default Config. The source is
+// read through io.LimitReader(r, MaxSourceBytes+1) so buffering stops at
+// the cap and a source that delivers past it returns ErrSourceTooLarge
+// BEFORE the pixel guard allocates anything.
 func DecodeWithConfig(r io.Reader, cfg Config) (*Image, error) {
-	data, err := io.ReadAll(r)
+	limit := cfg.MaxSourceBytes
+	if limit <= 0 {
+		limit = DefaultMaxSourceBytes
+	}
+	// One byte past the cap distinguishes "exactly at the cap" from
+	// "more behind it" without buffering the whole stream first.
+	data, err := io.ReadAll(io.LimitReader(r, limit+1))
 	if err != nil {
 		return nil, fmt.Errorf("image: read source: %w", err)
+	}
+	if int64(len(data)) > limit {
+		return nil, ErrSourceTooLarge
 	}
 	return decodeBytes(data, cfg)
 }
