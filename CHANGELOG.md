@@ -7,6 +7,8 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+## [0.85.0] - 2026-09-08
+
 ### Security
 - **Round-4 adversarial probes: 54 over twelve property families the
   earlier rounds never opened (authorization at derived surfaces,
@@ -78,7 +80,7 @@ and `/api/docs/openapi.json` now filter entities by the caller's
 read scope (an entity the caller cannot read is omitted, matching
 `/api/llm.md`); `WithPublicOpenAPI` opts into the full, unfiltered
 document.
-+
+
 - **Round-5 adversarial probes: 130 probe files, 158 failing findings
   and 2 data races over the families the earlier rounds never opened
   (log-side scrubbing of panic payloads, stream-seat exhaustion,
