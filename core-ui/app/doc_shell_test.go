@@ -13,7 +13,7 @@ import (
 // that was loaded first (#408). The render context now carries both
 // values to the outermost layer of every render (full page: layer 0;
 // subtree partial: the first re-rendered layer; layout-less page: the
-// <main>) as data-fui-doc-lang / data-fui-skip-label, and the runtime
+// <main>) as data-fui-lang / data-fui-skip-label, and the runtime
 // copies them onto the document after each swap.
 
 // openingTag returns the full opening tag containing s at s[idx].
@@ -44,18 +44,18 @@ func TestDocShellMarksOutermostLayerOnly(t *testing.T) {
 	}
 	s := string(res.HTML)
 	// Exactly one carrier per document: the outermost layer.
-	if got := strings.Count(s, "data-fui-doc-lang"); got != 1 {
-		t.Errorf("data-fui-doc-lang appears %d times, want 1 (outermost layer only):\n%s", got, s)
+	if got := strings.Count(s, "data-fui-lang"); got != 1 {
+		t.Errorf("data-fui-lang appears %d times, want 1 (outermost layer only):\n%s", got, s)
 	}
 	if got := strings.Count(s, "data-fui-skip-label"); got != 1 {
 		t.Errorf("data-fui-skip-label appears %d times, want 1:\n%s", got, s)
 	}
 	root := openingTag(s, strings.Index(s, `data-fui-layout-key="l:site"`))
-	if !strings.Contains(root, `data-fui-doc-lang="es"`) || !strings.Contains(root, "data-fui-skip-label") {
+	if !strings.Contains(root, `data-fui-lang="es"`) || !strings.Contains(root, "data-fui-skip-label") {
 		t.Errorf("layer 0 must carry the doc markers, got tag %q", root)
 	}
 	inner := openingTag(s, strings.Index(s, `data-fui-layout-key="g:/docs/:docs"`))
-	if strings.Contains(inner, "data-fui-doc-lang") {
+	if strings.Contains(inner, "data-fui-lang") {
 		t.Errorf("nested layer must not carry the doc markers, got tag %q", inner)
 	}
 }
@@ -81,11 +81,11 @@ func TestPartialDocShellOnFirstRenderedLayer(t *testing.T) {
 	if strings.Contains(s, `data-fui-layout-key="l:site"`) {
 		t.Fatalf("shared root must not re-render:\n%s", s)
 	}
-	if got := strings.Count(s, "data-fui-doc-lang"); got != 1 {
-		t.Errorf("data-fui-doc-lang appears %d times in partial, want 1:\n%s", got, s)
+	if got := strings.Count(s, "data-fui-lang"); got != 1 {
+		t.Errorf("data-fui-lang appears %d times in partial, want 1:\n%s", got, s)
 	}
 	frag := openingTag(s, strings.Index(s, `data-fui-layout-key="g:/docs/:docs"`))
-	if !strings.Contains(frag, `data-fui-doc-lang="es"`) || !strings.Contains(frag, "data-fui-skip-label") {
+	if !strings.Contains(frag, `data-fui-lang="es"`) || !strings.Contains(frag, "data-fui-skip-label") {
 		t.Errorf("the partial's outermost layer must carry the doc markers, got tag %q", frag)
 	}
 }
@@ -106,11 +106,11 @@ func TestMarkerOnlyPartialCarriesDocShell(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := string(res.HTML)
-	if got := strings.Count(s, "data-fui-doc-lang"); got != 1 {
-		t.Fatalf("data-fui-doc-lang appears %d times, want 1 on the marker wrapper:\n%s", got, s)
+	if got := strings.Count(s, "data-fui-lang"); got != 1 {
+		t.Fatalf("data-fui-lang appears %d times, want 1 on the marker wrapper:\n%s", got, s)
 	}
 	w := openingTag(s, strings.Index(s, `data-fui-layout-key="g:/settings/advanced/"`))
-	if !strings.Contains(w, `data-fui-doc-lang="fr"`) {
+	if !strings.Contains(w, `data-fui-lang="fr"`) {
 		t.Errorf("marker-only wrapper must carry the doc markers, got tag %q", w)
 	}
 }
@@ -127,7 +127,7 @@ func TestLayoutlessDocShellOnMain(t *testing.T) {
 	}
 	s := string(res.HTML)
 	main := openingTag(s, strings.Index(s, "<main"))
-	if !strings.Contains(main, `data-fui-doc-lang="fr"`) || !strings.Contains(main, "data-fui-skip-label") {
+	if !strings.Contains(main, `data-fui-lang="fr"`) || !strings.Contains(main, "data-fui-skip-label") {
 		t.Errorf("a layout-less page must carry the doc markers on its <main> (the element swapShell targets):\n%s", s)
 	}
 }
@@ -148,7 +148,7 @@ func TestBarePartialHasNoDocShellMarkers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if s := string(res.HTML); strings.Contains(s, "data-fui-doc-lang") || strings.Contains(s, "data-fui-skip-label") {
+	if s := string(res.HTML); strings.Contains(s, "data-fui-lang") || strings.Contains(s, "data-fui-skip-label") {
 		t.Errorf("bare partial must not carry doc markers:\n%s", s)
 	}
 }

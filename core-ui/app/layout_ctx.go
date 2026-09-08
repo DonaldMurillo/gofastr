@@ -14,7 +14,7 @@ import (
 // Spanish page arrived by partial nav still said lang="en" with an
 // English skip link. The App render paths therefore ride the resolved
 // values on the outermost layer of everything they render, as
-// data-fui-doc-lang / data-fui-skip-label, and the runtime copies them
+// data-fui-lang / data-fui-skip-label, and the runtime copies them
 // onto the document after every swap (frag/nav.js).
 //
 // "Outermost layer of everything the server renders" is the load-bearing
@@ -47,7 +47,7 @@ func docShellAttrs(ctx context.Context) html.Attrs {
 		return nil
 	}
 	return html.Attrs{
-		"data-fui-doc-lang":   ds.lang,
+		"data-fui-lang":       ds.lang,
 		"data-fui-skip-label": ds.skipLabel,
 	}
 }

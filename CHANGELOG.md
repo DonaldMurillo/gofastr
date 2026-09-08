@@ -289,7 +289,7 @@ from `$PREFIX_TOKEN`, the stored config, or `login --with-token`
   now declares `NewLayout("docs").WithKey("docs-es")`: the name keeps
   driving `data-fui-layout` and the wrapper class, the key drives the
   swap. The document language and the skip-link text travel with the
-  swapped payload too, as `data-fui-doc-lang` / `data-fui-skip-label`
+  swapped payload too, as `data-fui-lang` / `data-fui-skip-label`
   on the outermost rendered layer, and the runtime copies them onto
   `<html lang>` and the skip link after every swap, so a Spanish page
   reached by client-side navigation no longer keeps English chrome or

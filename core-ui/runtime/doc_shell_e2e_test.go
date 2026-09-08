@@ -12,7 +12,7 @@ import (
 )
 
 // docShellSite exercises the document-shell contract (#408 + #411): the
-// outermost layout layer carries data-fui-doc-lang and data-fui-skip-label,
+// outermost layout layer carries data-fui-lang and data-fui-skip-label,
 // and after a client-side swap the runtime copies them onto
 // documentElement.lang and the skip link. Two shapes:
 //
@@ -55,7 +55,7 @@ func docShellBody(lang, label string) string {
 func keyedPage(lang, key, label, id, linkID, linkHref, linkText string) string {
 	return `<!doctype html><html lang="` + lang + `"><head><title>` + id + `</title>` + docShellRoutes + `</head><body>` +
 		docShellBody(lang, label) +
-		`<div data-fui-layout="docs" data-fui-layout-key="` + key + `" data-fui-doc-lang="` + lang + `" data-fui-skip-label="` + label + `" class="layout-docs">` +
+		`<div data-fui-layout="docs" data-fui-layout-key="` + key + `" data-fui-lang="` + lang + `" data-fui-skip-label="` + label + `" class="layout-docs">` +
 		`<main role="main" tabindex="-1" data-fui-layout-slot="` + key + `">` +
 		`<h1 id="` + id + `">` + id + `</h1><a id="` + linkID + `" href="` + linkHref + `">` + linkText + `</a>` +
 		`</main></div><script src="/__gofastr/runtime.js"></script></body></html>`
@@ -67,7 +67,7 @@ func keyedPage(lang, key, label, id, linkID, linkHref, linkText string) string {
 func sharedRootPage(lang, groupPrefix, groupKey, label, id, linkID, linkText string) string {
 	return `<!doctype html><html lang="` + lang + `"><head><title>` + id + `</title>` + docShellRoutes + `</head><body>` +
 		docShellBody(lang, label) +
-		`<div data-fui-layout="site" data-fui-layout-key="l:site" data-fui-doc-lang="` + lang + `" data-fui-skip-label="` + label + `" class="layout-site">` +
+		`<div data-fui-layout="site" data-fui-layout-key="l:site" data-fui-lang="` + lang + `" data-fui-skip-label="` + label + `" class="layout-site">` +
 		`<header id="site-header">` + lang + `</header>` +
 		`<main role="main" tabindex="-1" data-fui-layout-slot="l:site">` +
 		`<div class="fui-screen-group" data-fui-screen-group="` + groupPrefix + `">` +
@@ -82,7 +82,7 @@ func sharedRootPage(lang, groupPrefix, groupKey, label, id, linkID, linkText str
 // only the group layer re-renders, and it carries the fresh markers.
 func sharedRootPartial(groupPrefix, groupKey string) string {
 	return `<div class="fui-screen-group" data-fui-screen-group="` + groupPrefix + `">` +
-		`<div data-fui-layout="docs" data-fui-layout-key="` + groupKey + `" data-fui-doc-lang="es" data-fui-skip-label="Saltar al contenido principal" class="layout-docs">` +
+		`<div data-fui-layout="docs" data-fui-layout-key="` + groupKey + `" data-fui-lang="es" data-fui-skip-label="Saltar al contenido principal" class="layout-docs">` +
 		`<div class="layout-content" tabindex="-1" data-fui-layout-slot="` + groupKey + `">` +
 		`<h1 id="g-es-screen">g-es-screen</h1>` +
 		`</div></div></div>`
@@ -173,7 +173,7 @@ func TestKeyedShellSwapSyncsDocLangAndSkip(t *testing.T) {
 			document.querySelector('[data-skip-link]').textContent,
 			window.__survived === true,
 			document.querySelector('[data-fui-layout-key="l:docs-en"]') === null,
-			!!document.querySelector('[data-fui-layout-key="l:docs-es"][data-fui-doc-lang="es"]'),
+			!!document.querySelector('[data-fui-layout-key="l:docs-es"][data-fui-lang="es"]'),
 		].join('|')`, &result),
 	); err != nil {
 		t.Fatalf("chromedp: %v", err)

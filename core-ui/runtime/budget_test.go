@@ -14,7 +14,7 @@ const (
 	// What bought the bytes, one SOURCE change that cannot be carved
 	// into a demand module:
 	//   - frag/nav.js's applyDocShell (19 lines): after any SPA swap it
-	//     copies data-fui-doc-lang / data-fui-skip-label off the swapped
+	//     copies data-fui-lang / data-fui-skip-label off the swapped
 	//     payload onto documentElement.lang and the skip link. <html
 	//     lang> and the body-level link live OUTSIDE the shell the
 	//     runtime swaps, so no partial payload can fix them; the sync

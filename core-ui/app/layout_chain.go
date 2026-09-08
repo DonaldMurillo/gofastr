@@ -138,7 +138,7 @@ func renderLayoutChain(ctx context.Context, chain []LayoutLayer, content render.
 // from > 0 the outermost shared layers are already in the caller's DOM
 // (subtree partials), so every rendered layer nests, none emits <main>.
 // The layer at index from is the root of the payload the client swaps
-// in, so it carries the doc markers (data-fui-doc-lang /
+// in, so it carries the doc markers (data-fui-lang /
 // data-fui-skip-label) from the render context; without a fresh carrier
 // the document language and skip link could never change on an in-chain
 // navigation.
