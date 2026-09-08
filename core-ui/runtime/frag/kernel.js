@@ -46,7 +46,7 @@
   // name still writes (never break the page) but warns so the drift is
   // caught in review / e2e console audits.
   const M = Object.freeze({
-    htmlAttrs: Object.freeze('aria-busy data-color-scheme data-fui-os data-fui-static'.split(' ')),
+    htmlAttrs: Object.freeze('aria-busy data-color-scheme data-fui-os data-fui-static lang'.split(' ')),
     bodyClasses: Object.freeze('fui-sse-down fui-sse-up'.split(' ')),
     singletons: Object.freeze('fui-backtotop-sentinel fui-nav-toast fui-toast-fallback fui-toast-stack-auto'.split(' ')),
   });

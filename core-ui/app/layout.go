@@ -32,6 +32,15 @@ type Layout struct {
 	// themeable via --ui-layout-header-bg, stacking via the --z-sticky theme
 	// layer. Off by default.
 	StickyHeader bool
+	// Key, when set, overrides the layout's layer identity: the runtime
+	// compares "l:<Key>" (or "g:<prefix>:<Key>" inside a group) to decide
+	// what to swap, instead of deriving it from Name. Use it when one
+	// layout shape must re-render per context, the #408 case being a
+	// shell that varies by language: key layer 0 per language and the
+	// runtime swaps it like any other layer. Name keeps driving
+	// data-fui-layout and the wrapper class, so the CSS contract stays
+	// stable while the identity varies. Empty derives from Name.
+	Key string
 }
 
 // NewLayout creates a named layout.
@@ -54,6 +63,16 @@ func (l *Layout) WithSidebar(c component.Component) *Layout {
 // WithFooter sets the layout footer and returns the layout for chaining.
 func (l *Layout) WithFooter(c component.Component) *Layout {
 	l.Footer = c
+	return l
+}
+
+// WithKey sets the layout's layer key, the identity the runtime compares
+// to decide what to swap, independent of the layout's name. A multilingual
+// site gives each language's shell the same Name (one CSS contract) and a
+// per-language Key, so navigating between languages re-renders the shell
+// instead of keeping whichever loaded first.
+func (l *Layout) WithKey(key string) *Layout {
+	l.Key = key
 	return l
 }
 
@@ -105,17 +124,32 @@ func (l *Layout) WrapNestedCtx(ctx context.Context, content render.HTML) render.
 }
 
 func (l *Layout) wrap(ctx context.Context, content render.HTML, outermost bool) render.HTML {
-	return l.wrapLayer(ctx, content, outermost, l.selfKey())
+	// A directly wrapped layout is always the frame root of what the
+	// caller renders, so it carries the doc markers when the context has
+	// them (see docShell).
+	return l.wrapLayer(ctx, content, outermost, l.selfKey(), true)
 }
 
 // selfKey is the layer key a layout carries when it is wrapped directly
 // (Wrap/WrapCtx/WrapNested*) rather than through a resolved chain, the
-// plain-layer form of LayoutLayer.Key.
+// plain-layer form of LayoutLayer.Key: Key when declared, else Name.
 func (l *Layout) selfKey() string {
-	if l == nil || l.Name == "" {
+	if id := l.identity(); id != "" {
+		return "l:" + id
+	}
+	return ""
+}
+
+// identity is the part of the layer key that distinguishes two layouts
+// at the same depth: Key when declared, else Name.
+func (l *Layout) identity() string {
+	if l == nil {
 		return ""
 	}
-	return "l:" + l.Name
+	if l.Key != "" {
+		return l.Key
+	}
+	return l.Name
 }
 
 // wrapLayer renders one level of a layout chain. outermost decides <main>
@@ -124,7 +158,11 @@ func (l *Layout) selfKey() string {
 // the wrapper and data-fui-layout-slot on the content cell, the markers
 // the runtime walks to find the deepest layer shared with a navigation
 // target and to address the swap target without structural heuristics.
-func (l *Layout) wrapLayer(ctx context.Context, content render.HTML, outermost bool, key string) render.HTML {
+// frameRoot marks the outermost layer of THIS render (layer 0 on a full
+// page, the first re-rendered layer on a subtree partial): it carries the
+// doc markers from the render context (see docShell) so the document
+// language and skip label travel with the payload the client swaps.
+func (l *Layout) wrapLayer(ctx context.Context, content render.HTML, outermost bool, key string, frameRoot bool) render.HTML {
 	if l == nil {
 		return content
 	}
@@ -211,8 +249,10 @@ func (l *Layout) wrapLayer(ctx context.Context, content render.HTML, outermost b
 	if key != "" {
 		attrs["data-fui-layout-key"] = key
 	}
-	if len(attrs) == 0 {
-		attrs = nil
+	if frameRoot {
+		for k, v := range docShellAttrs(ctx) {
+			attrs[k] = v
+		}
 	}
 	return html.Div(html.DivConfig{Class: cls, ExtraAttrs: attrs}, wrapperChildren...)
 }

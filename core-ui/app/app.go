@@ -11,6 +11,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
 	"github.com/DonaldMurillo/gofastr/core-ui/di"
+	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
@@ -43,6 +44,18 @@ type App struct {
 	// this once instead of tagging every screen. Nil (the default) keeps Lang
 	// on every page. Set with WithLangFunc.
 	LangFunc func(path string) string
+
+	// SkipLabel is the visible text of the app shell's skip link, the
+	// first string a keyboard user meets. Empty renders the default
+	// "Skip to main content". Set with WithSkipLabel.
+	SkipLabel string
+
+	// SkipLabelFunc resolves the skip-link text per route, like LangFunc
+	// for the document language. It is called with the page path on every
+	// full-page render; "" falls back to SkipLabel. A multilingual site
+	// sets this once alongside LangFunc so the link speaks the page's
+	// language (#411). Set with WithSkipLabelFunc.
+	SkipLabelFunc func(path string) string
 }
 
 // NewApp creates a new application with the given name.
@@ -100,6 +113,42 @@ func (a *App) WithLang(lang string) *App {
 func (a *App) WithLangFunc(fn func(path string) string) *App {
 	a.LangFunc = fn
 	return a
+}
+
+// The skip link is the first thing a keyboard user tabs to; a non-English
+// app that sets nothing greets them in English.
+func (a *App) WithSkipLabel(label string) *App {
+	a.SkipLabel = label
+	return a
+}
+
+// WithSkipLabelFunc sets a per-route skip-link resolver and returns the
+// app for chaining. Called with the page path on every full-page render;
+// returning "" falls back to SkipLabel. Set it alongside WithLangFunc so
+// the link and the document language agree.
+func (a *App) WithSkipLabelFunc(fn func(path string) string) *App {
+	a.SkipLabelFunc = fn
+	return a
+}
+
+// defaultSkipLabel keeps a host that sets nothing byte-identical.
+const defaultSkipLabel = "Skip to main content"
+
+// SkipLabelForPath returns the skip-link text for a route: SkipLabelFunc's
+// answer when it gives one, else SkipLabel, else the English default. It
+// mirrors LangForPath, and the value rides the outermost layout layer as
+// data-fui-skip-label so the runtime can re-localize the link after a
+// client-side navigation.
+func (a *App) SkipLabelForPath(path string) string {
+	if a.SkipLabelFunc != nil {
+		if l := strings.TrimSpace(a.SkipLabelFunc(path)); l != "" {
+			return l
+		}
+	}
+	if a.SkipLabel != "" {
+		return a.SkipLabel
+	}
+	return defaultSkipLabel
 }
 
 // EffectiveLang returns the document language, defaulting to "en" when unset.
@@ -411,6 +460,18 @@ func (a *App) RenderPageResult(ctx context.Context, path string) (RenderResult, 
 	// overlays.
 	var content render.HTML
 	var wrapped render.HTML
+	// Document language and skip label, resolved BEFORE the render so the
+	// values can ride the outermost layer (see docShell) as well as
+	// <html lang> and the link text below. ScreenLang is read after Load
+	// exactly like the title.
+	lang := a.LangForPath(path)
+	if langer, ok := comp.(ScreenLanger); ok {
+		if l := strings.TrimSpace(safeScreenLang(langer)); l != "" {
+			lang = l
+		}
+	}
+	skip := a.SkipLabelForPath(path)
+	ctx = withDocShell(ctx, lang, skip)
 	if screen.Type == ScreenPage {
 		chain := a.Router.layoutChainFor(screen)
 		if len(chain) > 0 {
@@ -458,15 +519,8 @@ func (a *App) RenderPageResult(ctx context.Context, path string) (RenderResult, 
 	if effectiveTitle != "" {
 		titleText = effectiveTitle + " — " + a.Name
 	}
-	// Document language, resolved like the title: the route rule first, then
-	// the component's own ScreenLang() read AFTER Load so a dynamic route can
-	// take the tag from the content it fetched. Contained like the title.
-	lang := a.LangForPath(path)
-	if langer, ok := comp.(ScreenLanger); ok {
-		if l := strings.TrimSpace(safeScreenLang(langer)); l != "" {
-			lang = l
-		}
-	}
+	// Document language was resolved before the render (it rides the
+	// outermost layer too); <html lang> below consumes the same value.
 	headChildren = append(headChildren,
 		render.Tag("title", nil, render.Text(titleText)),
 	)
@@ -484,7 +538,7 @@ func (a *App) RenderPageResult(ctx context.Context, path string) (RenderResult, 
 		"href":           "#main-content",
 		"class":          "skip-link",
 		"data-skip-link": "",
-	}, render.Text("Skip to main content"))
+	}, render.Text(skip))
 
 	// Polite live region for SPA route changes. document.title mutations
 	// aren't announced by screen readers; the runtime writes the new
@@ -590,6 +644,17 @@ func (a *App) RenderPartialFromResult(ctx context.Context, path, fromPath string
 	if shared == 0 {
 		return res, nil
 	}
+	// The doc markers must ride the partial's outermost layer, the same
+	// values the full page would carry: without them the document language
+	// and skip link could never change on an in-chain swap. ScreenLang is
+	// layered like the full-page path so both render shapes agree.
+	lang := a.LangForPath(path)
+	if langer, ok := res.Component.(ScreenLanger); ok {
+		if l := strings.TrimSpace(safeScreenLang(langer)); l != "" {
+			lang = l
+		}
+	}
+	ctx = withDocShell(ctx, lang, a.SkipLabelForPath(path))
 	res.HTML = renderLayoutChainFrom(ctx, tChain, shared, res.HTML)
 	res.SwapLayer = tChain[shared-1].Key()
 	return res, nil
@@ -705,6 +770,14 @@ func renderComponentAs(ctx context.Context, screen *Screen, effType ScreenType, 
 			"panic", textsafe.Recovered(renderErr))
 	}
 	content = wrapArticle(screen, comp, content)
+	// A layout-less ScreenPage page carries the doc markers on its bare
+	// <main>: that element is what the runtime's swapShell targets for a
+	// layout-less destination, and the document language / skip label
+	// must arrive with it. Mirrors wrapByScreenType's ScreenPage arm with
+	// the extra attributes; every other type keeps the shared wrapper.
+	if attrs := docShellAttrs(ctx); attrs != nil && effType == ScreenPage {
+		return html.Main(html.MainConfig{ExtraAttrs: attrs}, content)
+	}
 	return wrapByScreenType(effType, screen.Title, content)
 }
 

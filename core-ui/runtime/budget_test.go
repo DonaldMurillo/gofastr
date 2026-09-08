@@ -7,31 +7,27 @@ import (
 )
 
 const (
-	// 13077, raised 18 bytes from 13059 on 2026-09-07 (round-5 security
-	// fixes), under the same documented RULE EXCEPTION as every raise
-	// below: the shrink was measured, not skipped.
+	// 13213, raised 136 bytes from 13077 on 2026-09-07 (per-language
+	// shells, #408/#411), under the same documented RULE EXCEPTION as
+	// every raise below: the change was measured, not skipped.
 	//
-	// What bought the bytes, two SOURCE changes that cannot be carved
-	// into demand modules:
-	//   - frag/widgets-boot.js's data-fui-deeplink decode (the eager
-	//     open delegator is boot-class: it must exist before the
-	//     /__gofastr/widgets catalog resolves, so a module load is the
-	//     failure it exists to prevent) gained the degrade-don't-throw
-	//     try/catch the round-5 probes pinned
-	//     (TestDeeplinkRedDecodeThrows): a malformed percent escape
-	//     throws URIError AFTER preventDefault, consuming the open click.
-	//   - frag/boot.js's _modulePromises cache was re-keyed from {} to a
-	//     Map (the round-5 proto-key-write finding, LintProtoKeyWrite): a
-	//     "__proto__" module name re-parented the cache through the
-	//     setter. The Map spelling REPLACED the own()-gate bytes, so this
-	//     half is roughly byte-neutral raw; it costs a little at gzip
-	//     because the repeated bracket reads compressed better than
-	//     .get/.set/.delete do.
+	// What bought the bytes, one SOURCE change that cannot be carved
+	// into a demand module:
+	//   - frag/nav.js's applyDocShell (19 lines): after any SPA swap it
+	//     copies data-fui-doc-lang / data-fui-skip-label off the swapped
+	//     payload onto documentElement.lang and the skip link. <html
+	//     lang> and the body-level link live OUTSIDE the shell the
+	//     runtime swaps, so no partial payload can fix them; the sync
+	//     must ride the swap itself, which is core's click path (a
+	//     demand module loading after a swap leaves the document
+	//     announcing the previous page's language, the bug this fixes).
+	//     Plus one manifest word: 'lang' joined DOC_MANIFEST.htmlAttrs
+	//     (kernel.js) so the write is manifest-governed.
 	//
-	// The merged bundle measures 13069 at level 6; the line carries 8
+	// The merged bundle measures 13205 at level 6; the line carries 8
 	// bytes of clearance, the same margin every raise here uses.
 	// Re-measure after a merge, not before.
-	coreGoalGZ = 12*1024 + 789
+	coreGoalGZ = 12*1024 + 925
 	// 14.7 KB, not the 14 KB initial congestion window it started as.
 	//
 	// The window is still the constraint that matters, and the artifact still
@@ -104,7 +100,17 @@ const (
 	// The anti-vacuity bracket was re-verified by running
 	// TestCoreBudgetRejectsCliffOverflow against the padded fixture,
 	// not by arithmetic.
-	coreCongestionWindowGZ = 14*1024 + 750
+	//
+	// 15246, raised 160 bytes from 15086 on 2026-09-07 (per-language
+	// shells, #408/#411) under the same concession policy: frag/nav.js's
+	// applyDocShell (document-language + skip-label sync after every SPA
+	// swap; core's swap path, un-carvable for the same reason as the
+	// click bridge: a demand module lands after the swap and leaves the
+	// document in the previous language, the bug it fixes) took the real
+	// bundle 15082 → 15242. The line keeps its 4 bytes of clearance;
+	// the bracket was re-verified by running
+	// TestCoreBudgetRejectsCliffOverflow, not by arithmetic.
+	coreCongestionWindowGZ = 14*1024 + 910
 )
 
 func coreBudgetViolation(t *testing.T, src string, budget int) (level, got, limit int) {
