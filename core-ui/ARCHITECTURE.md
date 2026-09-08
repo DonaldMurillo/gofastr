@@ -367,6 +367,26 @@ current path — including a link whose only difference from the current
 URL is the `#fragment`; that click falls through to native hash
 behavior.
 
+**Widget lifecycle events (`fui:widget-open` / `fui:widget-close`).**
+The widgets module dispatches `fui:widget-open` on `document` at the
+end of `mountWidget`, once the root is in the DOM and wired: once per
+mount on both chrome paths (lazily fetched chrome appended to
+`<body>`, SSR-inlined chrome hydrated in place), again on every
+re-open after a close, and again when a swap re-inserts a root (see
+the widget DOM lifetime below). `detail` carries `{ name, root,
+hydrated, reinserted }`: `root` is the `[data-fui-widget]` element
+itself, `hydrated` mirrors the mount path, and `reinserted` is true
+only on the post-swap re-insertion. `fui:widget-close` fires with
+`{ name, root }` from the dismiss path, the single funnel for
+`closeWidget`, the chrome's own close button, backdrop clicks, and
+deep-link stripping, before the root is hidden or removed, so a
+listener can match `detail.root` against what it bound. The `fui:`
+prefix is the widget-UI family on `document`; the `gofastr:` prefix
+stays reserved for the window-level navigation/SSE events. This is
+the supported way to bind into widget chrome when it appears
+(per-language strings, section selects) instead of a whole-document
+MutationObserver.
+
 **Active-link highlighting.** After every navigation (and at module
 load) the idle-loaded `activelink` module walks every `nav a` with an
 `href` and tags the one matching the current path with
@@ -469,6 +489,7 @@ by the SPA cross-chain swap after it replaces the layout shell.
 | `<html>` attr | `data-color-scheme` | `colorscheme.js`, the separate SYNCHRONOUS `<head>` bootstrap (plus the theme toggle via `window.__gofastr_colorScheme.set`). It must stay a separate sync script so dark tokens apply before first paint (FOUC); it runs before `runtime.js` exists, so it writes directly. Enumerated in the manifest as documentation | every `--color-*` token block; `<meta name="color-scheme">` mirrors it for UA controls |
 | `<html>` attr | `data-fui-os` | core runtime at boot (`doc.setHtmlAttr`) | `framework/ui.ShortcutHint` CSS picks ⌘ vs Ctrl glyphs |
 | `<html>` attr | `data-fui-static` | the static exporter (`framework/static.Builder`), server-side only. The runtime never writes it. Enumerated as documentation | runtime static-mode guards read it at boot |
+| `<html>` attr | `lang` | core runtime after an SPA swap (`doc.setHtmlAttr`), copying `data-fui-doc-lang` off the swapped payload's outermost layer; the initial value is server-rendered by the app on `<html lang>` | `documentElement.lang`: screen readers pick pronunciation rules from it (WCAG 3.1.1), indexers pick the language index |
 | `<body>` class | `fui-sse-down` | NOT written by core-ui (the per-widget SSE block that owned it is gone). Kiln's dev-mode reload client (`kiln/live/reload.go`) toggles it on its EventSource `error`; app surfaces should read `window.__gofastr.sseStatus` / `pollStatus` instead | CSS connection-state styling (kiln panel dot) |
 | `<body>` class | `fui-sse-up` | same as `fui-sse-down`: kiln dev-mode reload client only | CSS connection-state styling |
 | `<body>` singleton | `fui-backtotop-sentinel` | backtotop module (`doc.singleton`): one shared scroll sentinel for every BackToTop button | its own IntersectionObserver |
@@ -1397,6 +1418,32 @@ and a registered styled component can never double-load CSS even
 if a future change merges them. Widgets surface through
 `/__gofastr/widgets`; styled components surface through
 the inline `<script id="gofastr-catalog">` JSON block and `/__gofastr/comp/<name>.css`.
+
+**Widget DOM lifetime across SPA swaps.** A registered widget root the
+runtime mounted (either chrome path) survives a full-shell swap. Roots
+the runtime fetched are appended to `<body>`, outside the shell, so
+the swap never touches them; the framework's own layouts inline SSR
+chrome just before `</body>`, also outside the shell. A host layout
+that wraps SSR-inlined chrome INSIDE the shell element used to lose
+it: `swapShell` replaces that element wholesale, tearing the
+registered root out of the document while `_widgets` still listed it,
+which both stranded the widget and wedged the next open
+(`_mountByName`'s "already mounted" early return). Since #409 the
+widgets module rides `doc.reattach()` (nav.js calls it right after
+every shell swap): a registered root that lost its parent is
+re-appended to `<body>` and `fui:widget-open` re-fires with
+`reinserted: true`. If the swapped-in shell SSR-inlines its own copy
+of the widget (hosts that nest chrome in the shell inline it on every
+page), the stale instance is dismissed instead (`fui:widget-close`,
+root lifted out) and the navigate catalog pass hydrates the fresh
+node, so two live roots for one registration never coexist.
+
+Closing is unchanged: the navigate listener closes every open modal
+widget (backdrop'd drawers and modals ride `_modalStack`), a fetched
+root is removed from the DOM, an SSR-hydrated root is re-hidden, the
+chrome cache is cleared, and the next open re-fetches and fires
+`fui:widget-open` again. Consumers that bind into chrome rebind on
+every `fui:widget-open` rather than assuming a root mounts once.
 
 ---
 

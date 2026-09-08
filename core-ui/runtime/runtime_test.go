@@ -262,7 +262,10 @@ func TestRuntimeModule_Widgets(t *testing.T) {
 		"widgetlinks",
 		// Toast response handling lives in the shared RPC demand module.
 		"NS.loadModule('rpc')",
-		"loadedModules",
+		// #409: lifecycle events + post-swap reattach.
+		"fui:widget-open",
+		"fui:widget-close",
+		"NS._reattachWidgets",
 		// `data-fui-copy-text-from` was previously checked here but
 		// only lives in a comment now (the delegated handler moved
 		// to core); the minifier correctly strips it.
