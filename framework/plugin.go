@@ -122,27 +122,10 @@ func (pm *PluginManager) InitAll(app *App) error {
 			continue
 		}
 		plugin := pm.plugins[name]
-		if err := initPluginSafe(name, plugin, app); err != nil {
+		if err := callModuleSafe("plugin", name, "init", func() error { return plugin.Init(app) }); err != nil {
 			return err
 		}
 		pm.initialized[name] = true
-	}
-	return nil
-}
-
-func initPluginSafe(name string, plugin Plugin, app *App) (err error) {
-	defer func() {
-		if v := recover(); v != nil {
-			// Format with %T not %v: a plugin that does panic(config)
-			// where config holds an API key would otherwise leak the
-			// secret into every operator log via this error string.
-			// Operators wanting the full panic value can set
-			// GOTRACEBACK=all and read the stack.
-			err = fmt.Errorf("plugin %q init panicked (panic type %T): set GOTRACEBACK=all for details", name, v)
-		}
-	}()
-	if e := plugin.Init(app); e != nil {
-		return fmt.Errorf("plugin %q init failed: %w", name, e)
 	}
 	return nil
 }
@@ -165,16 +148,8 @@ func (pm *PluginManager) Get(name string) (Plugin, error) {
 //
 //	logp, err := framework.PluginGetAs[*logplugin.Plugin](app.Plugins, "log")
 func PluginGetAs[T any](pm *PluginManager, name string) (T, error) {
-	var zero T
 	p, err := pm.Get(name)
-	if err != nil {
-		return zero, err
-	}
-	typed, ok := p.(T)
-	if !ok {
-		return zero, fmt.Errorf("plugin %q does not implement %T", name, zero)
-	}
-	return typed, nil
+	return getTyped[T]("plugin", name, p, err)
 }
 
 // All returns all registered plugins in order.

@@ -66,30 +66,24 @@ func (c rawColumn) IsNotNull() Condition {
 // And combines conditions with AND. Useful inside Or(...) to nest a group
 // of ANDed predicates: Or(And(a, b), And(c, d)).
 func And(conds ...Condition) Condition {
-	if len(conds) == 0 {
-		return Condition{sql: "1 = 1"}
-	}
-	if len(conds) == 1 {
-		return conds[0]
-	}
-	parts := make([]string, 0, len(conds))
-	var args []any
-	for _, c := range conds {
-		parts = append(parts, c.sql)
-		args = append(args, c.args...)
-	}
-	return Condition{
-		sql:  "(" + strings.Join(parts, " AND ") + ")",
-		args: args,
-	}
+	return combineConditions(conds, " AND ", "1 = 1")
 }
 
 // Or combines conditions with OR. Each conjunct keeps its own internal
 // argument order; placeholders are renumbered at QueryBuilder.Build time so
 // "$1" in a fragment doesn't collide with another fragment's "$1".
 func Or(conds ...Condition) Condition {
+	return combineConditions(conds, " OR ", "1 = 0")
+}
+
+// combineConditions joins conds with sep inside one parenthesised group,
+// preserving each fragment's argument order. An empty list yields emptySQL
+// (the AND identity "1 = 1", the OR identity "1 = 0") so a vacuous call
+// still binds; a single condition passes through ungrouped. It replaces
+// the former duplicated bodies of And and Or.
+func combineConditions(conds []Condition, sep, emptySQL string) Condition {
 	if len(conds) == 0 {
-		return Condition{sql: "1 = 0"}
+		return Condition{sql: emptySQL}
 	}
 	if len(conds) == 1 {
 		return conds[0]
@@ -101,7 +95,7 @@ func Or(conds ...Condition) Condition {
 		args = append(args, c.args...)
 	}
 	return Condition{
-		sql:  "(" + strings.Join(parts, " OR ") + ")",
+		sql:  "(" + strings.Join(parts, sep) + ")",
 		args: args,
 	}
 }

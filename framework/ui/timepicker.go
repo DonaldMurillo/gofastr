@@ -110,18 +110,7 @@ func TimePicker(cfg TimePickerConfig) render.HTML {
 		}, render.Text(cfg.Label)),
 		render.Tag("input", inputAttrs),
 	}
-	if cfg.Error != "" {
-		children = append(children, render.Tag("p", map[string]string{
-			"id":    id + "-error",
-			"class": "ui-time-picker__error",
-			"role":  "alert",
-		}, render.Text(cfg.Error)))
-	} else if cfg.Help != "" {
-		children = append(children, render.Tag("p", map[string]string{
-			"id":    id + "-help",
-			"class": "ui-time-picker__help",
-		}, render.Text(cfg.Help)))
-	}
+	children = append(children, fieldMessage(id, "ui-time-picker", cfg.Error, cfg.Help)...)
 
 	attrs := html.SafeExtraAttrs(cfg.ExtraAttrs)
 	if attrs == nil {

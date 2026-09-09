@@ -364,36 +364,35 @@ func (h *Host) SetPreviousKeys(nonceKeys, grantKeys [][]byte) {
 // (rotation drain window). The first key that verifies wins; every candidate
 // goes through the same constant-time HMAC comparison VerifyNonce performs.
 func (h *Host) verifyNonce(token string, now time.Time) (Nonce, error) {
-	n, err := VerifyNonce(h.nonceKey, token, now)
-	if err == nil {
-		return n, nil
-	}
-	for _, k := range h.prevNonceKeys {
-		if len(k) == 0 {
-			continue
-		}
-		if n2, err2 := VerifyNonce(k, token, now); err2 == nil {
-			return n2, nil
-		}
-	}
-	return Nonce{}, err
+	return verifyWithRotation(h.nonceKey, h.prevNonceKeys, token, now, VerifyNonce)
 }
 
 // verifyGrant is verifyNonce's counterpart for frame grants.
 func (h *Host) verifyGrant(token string, now time.Time) (Grant, error) {
-	g, err := VerifyGrant(h.grantKey, token, now)
+	return verifyWithRotation(h.grantKey, h.prevGrantKeys, token, now, VerifyGrant)
+}
+
+// verifyWithRotation checks a token against the current key, then each
+// previous key (the rotation drain window); the first key that verifies
+// wins, and every candidate goes through the same constant-time comparison
+// the verify function performs. Zero-length candidate keys are skipped. It
+// replaces the former duplicated bodies of Host.verifyNonce and
+// Host.verifyGrant.
+func verifyWithRotation[T any](current []byte, prev [][]byte, token string, now time.Time, verify func([]byte, string, time.Time) (T, error)) (T, error) {
+	v, err := verify(current, token, now)
 	if err == nil {
-		return g, nil
+		return v, nil
 	}
-	for _, k := range h.prevGrantKeys {
+	for _, k := range prev {
 		if len(k) == 0 {
 			continue
 		}
-		if g2, err2 := VerifyGrant(k, token, now); err2 == nil {
-			return g2, nil
+		if v2, err2 := verify(k, token, now); err2 == nil {
+			return v2, nil
 		}
 	}
-	return Grant{}, err
+	var zero T
+	return zero, err
 }
 
 // Ready reports whether the host has signing keys. A host without keys cannot

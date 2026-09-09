@@ -116,18 +116,7 @@ func TextArea(cfg TextAreaConfig) render.HTML {
 			render.Text(cfg.Label)),
 		render.Tag("textarea", taAttrs, render.Text(cfg.Value)),
 	}
-	if cfg.Error != "" {
-		children = append(children, html.Paragraph(html.TextConfig{
-			ID:         id + "-error",
-			Class:      "ui-textarea__error",
-			ExtraAttrs: html.Attrs{"role": "alert"},
-		}, render.Text(cfg.Error)))
-	} else if cfg.Help != "" {
-		children = append(children, html.Paragraph(html.TextConfig{
-			ID:    id + "-help",
-			Class: "ui-textarea__help",
-		}, render.Text(cfg.Help)))
-	}
+	children = append(children, fieldMessage(id, "ui-textarea", cfg.Error, cfg.Help)...)
 
 	return textAreaStyle.WrapHTML(render.Tag("div",
 		map[string]string{"class": cls}, children...))

@@ -151,19 +151,9 @@ func RecordRoute(method, pattern string) {
 // RecordPermission notes that a permission was evaluated.
 func RecordPermission(permission string) {
 	if !enabled.Load() {
-		return
+		return // current is nil until Enable ran; don't touch it
 	}
-	permission = strings.TrimSpace(permission)
-	if permission == "" {
-		return
-	}
-	mu.Lock()
-	defer mu.Unlock()
-	if !slices.Contains(current.Permissions, permission) {
-		current.Permissions = append(current.Permissions, permission)
-		slices.Sort(current.Permissions)
-		dirty = true
-	}
+	recordTrimmed(&current.Permissions, permission)
 }
 
 // RecordEntityOp notes that an entity's CRUD operation ran. op is one of
@@ -182,35 +172,35 @@ func RecordEntityOp(entity, op string) {
 // RecordRole notes that a caller held a role during a permission check.
 func RecordRole(role string) {
 	if !enabled.Load() {
-		return
+		return // current is nil until Enable ran; don't touch it
 	}
-	role = strings.TrimSpace(role)
-	if role == "" {
-		return
-	}
-	mu.Lock()
-	defer mu.Unlock()
-	if !slices.Contains(current.Roles, role) {
-		current.Roles = append(current.Roles, role)
-		slices.Sort(current.Roles)
-		dirty = true
-	}
+	recordTrimmed(&current.Roles, role)
 }
 
 // RecordEvent notes that an event type was published on the bus.
 func RecordEvent(eventType string) {
 	if !enabled.Load() {
-		return
+		return // current is nil until Enable ran; don't touch it
 	}
-	eventType = strings.TrimSpace(eventType)
-	if eventType == "" {
+	recordTrimmed(&current.Events, eventType)
+}
+
+// recordTrimmed records value (trimmed; blank dropped) as a unique sorted
+// entry of *dst under the recorder lock, marking the manifest dirty.
+// Callers must have checked enabled first: current is nil until Enable
+// ran, and taking &current.<Field> before that check would dereference
+// nil. It replaces the former duplicated gate-and-record bodies of
+// RecordPermission, RecordRole, and RecordEvent.
+func recordTrimmed(dst *[]string, value string) {
+	value = strings.TrimSpace(value)
+	if value == "" {
 		return
 	}
 	mu.Lock()
 	defer mu.Unlock()
-	if !slices.Contains(current.Events, eventType) {
-		current.Events = append(current.Events, eventType)
-		slices.Sort(current.Events)
+	if !slices.Contains(*dst, value) {
+		*dst = append(*dst, value)
+		slices.Sort(*dst)
 		dirty = true
 	}
 }

@@ -70,6 +70,16 @@ func canReadSpecEntity(ctx context.Context, ent *entity.Entity) bool {
 	return (&crud.CrudHandler{Entity: ent}).CanReadScoped(ctx)
 }
 
+// objectSchemaWith wraps a property map in the OpenAPI object envelope
+// ("type": "object" + "properties") shared by every fixed schema this
+// document registers (Error, ListResponse, CursorPage, BatchResult,
+// BatchResponse). It replaces the five former inline envelope copies in
+// entityOpenAPI. (Distinct from endpoint.go's objectSchema, the bare
+// `{"type": "object"}` fallback for untyped endpoints.)
+func objectSchemaWith(props map[string]any) map[string]any {
+	return map[string]any{"type": "object", "properties": props}
+}
+
 // entityOpenAPI is EntityOpenAPI's builder: keep, when non-nil, filters
 // which registered entities reach the document.
 func entityOpenAPI(registry entity.Registry, title, version string, crudMounted func(*entity.Entity) bool, keep func(*entity.Entity) bool, basePath ...string) *openapi.Spec {
@@ -81,59 +91,44 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted 
 	s.AddServer("/", "current")
 
 	// Add common error response schema
-	s.AddSchema("Error", map[string]any{
-		"type": "object",
-		"properties": map[string]any{
-			"error":   map[string]any{"type": "string"},
-			"success": map[string]any{"type": "boolean"},
-			"code":    map[string]any{"type": "integer"},
-			"fields":  map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}},
-		},
-	})
+	s.AddSchema("Error", objectSchemaWith(map[string]any{
+		"error":   map[string]any{"type": "string"},
+		"success": map[string]any{"type": "boolean"},
+		"code":    map[string]any{"type": "integer"},
+		"fields":  map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}},
+	}))
 
 	// Offset-mode list envelope
-	s.AddSchema("ListResponse", map[string]any{
-		"type": "object",
-		"properties": map[string]any{
-			"data":       map[string]any{"type": "array", "items": map[string]any{"type": "object"}},
-			"total":      map[string]any{"type": "integer"},
-			"page":       map[string]any{"type": "integer"},
-			"perPage":    map[string]any{"type": "integer"},
-			"totalPages": map[string]any{"type": "integer"},
-		},
-	})
+	s.AddSchema("ListResponse", objectSchemaWith(map[string]any{
+		"data":       map[string]any{"type": "array", "items": map[string]any{"type": "object"}},
+		"total":      map[string]any{"type": "integer"},
+		"page":       map[string]any{"type": "integer"},
+		"perPage":    map[string]any{"type": "integer"},
+		"totalPages": map[string]any{"type": "integer"},
+	}))
 
 	// Cursor-mode list envelope (returned when ?cursor= is present)
-	s.AddSchema("CursorPage", map[string]any{
-		"type": "object",
-		"properties": map[string]any{
-			"data":    map[string]any{"type": "array", "items": map[string]any{"type": "object"}},
-			"cursor":  map[string]any{"type": "string", "description": "Opaque cursor for the next page; empty when there are no more results."},
-			"hasMore": map[string]any{"type": "boolean"},
-			"total":   map[string]any{"type": "integer"},
-		},
-	})
+	s.AddSchema("CursorPage", objectSchemaWith(map[string]any{
+		"data":    map[string]any{"type": "array", "items": map[string]any{"type": "object"}},
+		"cursor":  map[string]any{"type": "string", "description": "Opaque cursor for the next page; empty when there are no more results."},
+		"hasMore": map[string]any{"type": "boolean"},
+		"total":   map[string]any{"type": "integer"},
+	}))
 
 	// Per-item shape inside a _batch response
-	s.AddSchema("BatchResult", map[string]any{
-		"type": "object",
-		"properties": map[string]any{
-			"index":   map[string]any{"type": "integer"},
-			"data":    map[string]any{"type": "object"},
-			"error":   map[string]any{"type": "string"},
-			"fields":  map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}},
-			"skipped": map[string]any{"type": "boolean"},
-		},
-	})
+	s.AddSchema("BatchResult", objectSchemaWith(map[string]any{
+		"index":   map[string]any{"type": "integer"},
+		"data":    map[string]any{"type": "object"},
+		"error":   map[string]any{"type": "string"},
+		"fields":  map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}},
+		"skipped": map[string]any{"type": "boolean"},
+	}))
 
 	// Top-level shape for every _batch response
-	s.AddSchema("BatchResponse", map[string]any{
-		"type": "object",
-		"properties": map[string]any{
-			"committed": map[string]any{"type": "boolean"},
-			"results":   map[string]any{"type": "array", "items": map[string]any{"$ref": "#/components/schemas/BatchResult"}},
-		},
-	})
+	s.AddSchema("BatchResponse", objectSchemaWith(map[string]any{
+		"committed": map[string]any{"type": "boolean"},
+		"results":   map[string]any{"type": "array", "items": map[string]any{"$ref": "#/components/schemas/BatchResult"}},
+	}))
 
 	// Track whether any entity is auth-gated so the shared security
 	// schemes are registered once after the loop, not per entity.

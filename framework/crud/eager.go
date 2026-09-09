@@ -214,21 +214,30 @@ func eagerLoadHasMany(ctx context.Context, db DBExecutor, safeEntity, safeFK str
 			row[c] = convertDatabaseValue(vals[i], boolCols[i])
 		}
 
-		parentID := fmt.Sprintf("%v", fkVal)
-		if existing, ok := result[parentID]; ok {
-			if rel.Type == entity.RelHasOne {
-				existing[rel.Name] = row
-			} else {
-				var slice []map[string]any
-				if prev, ok := existing[rel.Name]; ok {
-					slice = prev.([]map[string]any)
-				}
-				slice = append(slice, row)
-				existing[rel.Name] = slice
-			}
-		}
+		attachChildRow(rel, fkVal, row, result)
 	}
 	return rows.Err()
+}
+
+// attachChildRow links one scanned child row into the per-parent result
+// map of an eager load: HasOne replaces the slot, HasMany appends to it.
+// It is the single body behind the byte-identical tails of the rows.Next
+// loops in eagerLoadHasMany (eager.go) and loadHasManyFiltered
+// (eager_filtered.go).
+func attachChildRow(rel entity.Relation, fkVal any, row map[string]any, result map[string]map[string]any) {
+	parentID := fmt.Sprintf("%v", fkVal)
+	if existing, ok := result[parentID]; ok {
+		if rel.Type == entity.RelHasOne {
+			existing[rel.Name] = row
+		} else {
+			var slice []map[string]any
+			if prev, ok := existing[rel.Name]; ok {
+				slice = prev.([]map[string]any)
+			}
+			slice = append(slice, row)
+			existing[rel.Name] = slice
+		}
+	}
 }
 
 // eagerLoadBelongsTo handles BelongsTo (ManyToOne): we hold a FK pointing to the target.

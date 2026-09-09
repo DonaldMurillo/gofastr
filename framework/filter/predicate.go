@@ -3,6 +3,7 @@ package filter
 import (
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core/schema"
@@ -262,15 +263,15 @@ func buildPredSQL(p Predicate, args *[]any) string {
 		ph := make([]string, len(p.Values))
 		for i, v := range p.Values {
 			*args = append(*args, BoolBind(p.isBool, v))
-			ph[i] = "$" + itoa(len(*args))
+			ph[i] = "$" + strconv.Itoa(len(*args))
 		}
 		return "(" + p.Field + " IN (" + strings.Join(ph, ",") + "))"
 	case OpLike:
 		*args = append(*args, escapeLikePattern(p.Value))
-		return "(" + p.Field + ` LIKE $` + itoa(len(*args)) + ` ESCAPE '\')`
+		return "(" + p.Field + ` LIKE $` + strconv.Itoa(len(*args)) + ` ESCAPE '\')`
 	default:
 		*args = append(*args, BoolBind(p.isBool, p.Value))
-		return "(" + p.Field + " " + sqlOp(p.Op) + " $" + itoa(len(*args)) + ")"
+		return "(" + p.Field + " " + sqlOp(p.Op) + " $" + strconv.Itoa(len(*args)) + ")"
 	}
 }
 

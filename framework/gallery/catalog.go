@@ -37,6 +37,48 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
 
+// rpcEffectDemoSpec names the knobs of rpcEffectDemo: the demo-stage
+// button, the endpoint it POSTs, the effect fired on success, and the
+// surrounding prose + code sample shown above the stage.
+type rpcEffectDemoSpec struct {
+	btnLabel  string
+	btnClass  string
+	endpoint  string
+	effect    func(string) interactive.Effect // interactive.OpenWidget / Navigate
+	effectArg string
+	why       string
+	how       string
+	code      string
+	caption   string
+}
+
+// rpcEffectDemo renders the shared shape of the click-then-effect demo
+// entries: two explanatory paragraphs, a code sample, and a live stage
+// whose button POSTs to endpoint and, on success, triggers effect(arg).
+// It replaces the verbatim closure bodies the rpc-open-widget and
+// rpc-navigate entries used to carry inline.
+func rpcEffectDemo(spec rpcEffectDemoSpec) render.HTML {
+	btn := interactive.OnClick(
+		render.Tag("button", map[string]string{"class": spec.btnClass}, render.Text(spec.btnLabel)),
+		interactive.Post(spec.endpoint).
+			OnSuccess(spec.effect(spec.effectArg)),
+	)
+	return html.Div(html.DivConfig{Class: "demo-stack"},
+		html.Paragraph(html.TextConfig{Class: "doc-head__lede"}, render.Text(spec.why)),
+		html.Paragraph(html.TextConfig{Class: "doc-head__lede"}, render.Text(spec.how)),
+		ui.CodeBlock(ui.CodeBlockConfig{Language: "go", Code: spec.code}),
+		html.Div(html.DivConfig{Class: "demo-stage"},
+			html.Div(html.DivConfig{Class: "demo-stage__label"}, render.Text("Live")),
+			html.Div(html.DivConfig{Class: "demo-stage__viewport"},
+				html.Div(html.DivConfig{Class: "demo-stack"},
+					html.Paragraph(html.TextConfig{Class: "doc-head__lede"}, render.Text(spec.caption)),
+					btn,
+				),
+			),
+		),
+	)
+}
+
 // Catalog: every component the showcase ships. The source of truth: hosts
 // iterate over it to register routes, the index screen iterates to render
 // cards, and the showcase screen iterates to look up the active entry.
@@ -1038,35 +1080,21 @@ ui.OptimisticAction(ui.OptimisticActionConfig{
 	{"rpc-open-widget", "Click to Open Popup", "Clientside Interactivity",
 		"Click a button → server confirms → a modal pops up. No JavaScript needed.",
 		func() render.HTML {
-			btn := interactive.OnClick(
-				render.Tag("button", map[string]string{"class": "ui-button ui-button--secondary"}, render.Text("Trigger Modal")),
-				interactive.Post("/__site/interactive/open-drawer").
-					OnSuccess(interactive.OpenWidget("demo-result-modal")),
-			)
-			return html.Div(html.DivConfig{Class: "demo-stack"},
-				html.Paragraph(html.TextConfig{Class: "doc-head__lede"},
-					render.Text("A user submits a form or clicks an action, and on success a drawer or modal should appear, showing the result, a confirmation, or a next-step form. This is the \"do X, then show Y\" pattern."),
-				),
-				html.Paragraph(html.TextConfig{Class: "doc-head__lede"},
-					render.Text("Add data-fui-rpc-open=\"widget-name\" alongside data-fui-rpc. When the server returns 2xx, the runtime opens the named widget. The widget is pre-registered with widget.Mount at app startup; the RPC just triggers the reveal."),
-				),
-				ui.CodeBlock(ui.CodeBlockConfig{Language: "go", Code: `interactive.OnClick(
+			return rpcEffectDemo(rpcEffectDemoSpec{
+				btnLabel:  "Trigger Modal",
+				btnClass:  "ui-button ui-button--secondary",
+				endpoint:  "/__site/interactive/open-drawer",
+				effect:    interactive.OpenWidget,
+				effectArg: "demo-result-modal",
+				why:       "A user submits a form or clicks an action, and on success a drawer or modal should appear, showing the result, a confirmation, or a next-step form. This is the \"do X, then show Y\" pattern.",
+				how:       "Add data-fui-rpc-open=\"widget-name\" alongside data-fui-rpc. When the server returns 2xx, the runtime opens the named widget. The widget is pre-registered with widget.Mount at app startup; the RPC just triggers the reveal.",
+				code: `interactive.OnClick(
     render.Tag("button", nil, render.Text("Confirm")),
     interactive.Post("/api/action").
         OnSuccess(interactive.OpenWidget("result-modal")),
-)`}),
-				html.Div(html.DivConfig{Class: "demo-stage"},
-					html.Div(html.DivConfig{Class: "demo-stage__label"}, render.Text("Live")),
-					html.Div(html.DivConfig{Class: "demo-stage__viewport"},
-						html.Div(html.DivConfig{Class: "demo-stack"},
-							html.Paragraph(html.TextConfig{Class: "doc-head__lede"},
-								render.Text("Click: a modal pops up after the POST succeeds."),
-							),
-							btn,
-						),
-					),
-				),
-			)
+)`,
+				caption: "Click: a modal pops up after the POST succeeds.",
+			})
 		}},
 
 	{"rpc-form-signal", "Submit Without Reload", "Clientside Interactivity",
@@ -1127,35 +1155,21 @@ ui.OptimisticAction(ui.OptimisticActionConfig{
 	{"rpc-navigate", "Redirect After Action", "Clientside Interactivity",
 		"Click a button → server confirms → you land on a new page, no full reload.",
 		func() render.HTML {
-			btn := interactive.OnClick(
-				render.Tag("button", map[string]string{"class": "ui-button ui-button--ghost"}, render.Text("Navigate to Button →")),
-				interactive.Post("/__site/interactive/navigate").
-					OnSuccess(interactive.Navigate("/components/button")),
-			)
-			return html.Div(html.DivConfig{Class: "demo-stack"},
-				html.Paragraph(html.TextConfig{Class: "doc-head__lede"},
-					render.Text("A user creates a resource (\"New project\") and on success should land on that resource's page. Or completes a wizard step and moves to the next. The server confirms the action, then the client transitions to the destination."),
-				),
-				html.Paragraph(html.TextConfig{Class: "doc-head__lede"},
-					render.Text("Add data-fui-rpc-navigate=\"/path\" alongside data-fui-rpc. On 2xx the runtime calls history.pushState and fires the SPA router, swapping <main> content just like a link click, but only after the server confirms the action succeeded."),
-				),
-				ui.CodeBlock(ui.CodeBlockConfig{Language: "go", Code: `interactive.OnClick(
+			return rpcEffectDemo(rpcEffectDemoSpec{
+				btnLabel:  "Navigate to Button →",
+				btnClass:  "ui-button ui-button--ghost",
+				endpoint:  "/__site/interactive/navigate",
+				effect:    interactive.Navigate,
+				effectArg: "/components/button",
+				why:       "A user creates a resource (\"New project\") and on success should land on that resource's page. Or completes a wizard step and moves to the next. The server confirms the action, then the client transitions to the destination.",
+				how:       "Add data-fui-rpc-navigate=\"/path\" alongside data-fui-rpc. On 2xx the runtime calls history.pushState and fires the SPA router, swapping <main> content just like a link click, but only after the server confirms the action succeeded.",
+				code: `interactive.OnClick(
     render.Tag("button", nil, render.Text("Create Project")),
     interactive.Post("/api/projects").
         OnSuccess(interactive.Navigate("/projects/new-id")),
-)`}),
-				html.Div(html.DivConfig{Class: "demo-stage"},
-					html.Div(html.DivConfig{Class: "demo-stage__label"}, render.Text("Live")),
-					html.Div(html.DivConfig{Class: "demo-stage__viewport"},
-						html.Div(html.DivConfig{Class: "demo-stack"},
-							html.Paragraph(html.TextConfig{Class: "doc-head__lede"},
-								render.Text("Click: the page transitions to the Button component via SPA. Use the back button to return."),
-							),
-							btn,
-						),
-					),
-				),
-			)
+)`,
+				caption: "Click: the page transitions to the Button component via SPA. Use the back button to return.",
+			})
 		}},
 	// ---------- Clientside Interactivity: new primitives ----------
 

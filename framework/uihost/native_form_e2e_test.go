@@ -13,6 +13,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
 )
 
 // TestNativeForm_UnadornedFormSubmitsNatively pins the canonical
@@ -76,7 +77,7 @@ func TestNativeForm_UnadornedFormSubmitsNatively(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 
-	chCtx := newE2EChromeForUIHost(t)
+	chCtx := chromedptest.Context(t, chromedptest.AllocatorOptions(chromedp.ExecPath(browserExecutable(t))))
 	var url string
 	var cookies string
 	var beforeShot, afterShot []byte

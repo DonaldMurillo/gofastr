@@ -191,43 +191,37 @@ type singleResponse struct {
 // is configured for multi-tenancy and a tenant ID is present in the context.
 // Note: uses PostgreSQL-style $1 placeholders.
 func (ch *CrudHandler) ApplyTenantScope(qb *query.QueryBuilder, r *http.Request) {
-	if ch.Entity.Config.Scope.MultiTenant {
-		tenantID := tenant.GetTenantID(r.Context())
-		if tenantID != "" {
-			qb.Where(ch.Entity.Config.TenantColumn()+" = $1", tenantID)
-		}
-	}
+	applyTenantScope(ch, qb, r)
 }
 
 // ApplyTenantScopeCount adds a tenant_id filter to a count query builder.
 // Note: uses PostgreSQL-style $1 placeholders.
 func (ch *CrudHandler) ApplyTenantScopeCount(cb *query.CountBuilder, r *http.Request) {
-	if ch.Entity.Config.Scope.MultiTenant {
-		tenantID := tenant.GetTenantID(r.Context())
-		if tenantID != "" {
-			cb.Where(ch.Entity.Config.TenantColumn()+" = $1", tenantID)
-		}
-	}
+	applyTenantScope(ch, cb, r)
 }
 
 // ApplyTenantScopeUpdate adds a tenant_id filter to an update query builder.
 // Note: uses PostgreSQL-style $1 placeholders.
 func (ch *CrudHandler) ApplyTenantScopeUpdate(ub *query.UpdateBuilder, r *http.Request) {
-	if ch.Entity.Config.Scope.MultiTenant {
-		tenantID := tenant.GetTenantID(r.Context())
-		if tenantID != "" {
-			ub.Where(ch.Entity.Config.TenantColumn()+" = $1", tenantID)
-		}
-	}
+	applyTenantScope(ch, ub, r)
 }
 
 // ApplyTenantScopeDelete adds a tenant_id filter to a delete query builder.
 // Note: uses PostgreSQL-style $1 placeholders.
 func (ch *CrudHandler) ApplyTenantScopeDelete(db *query.DeleteBuilder, r *http.Request) {
+	applyTenantScope(ch, db, r)
+}
+
+// applyTenantScope is the single body behind ApplyTenantScope,
+// ApplyTenantScopeCount, ApplyTenantScopeUpdate, and ApplyTenantScopeDelete,
+// which were verbatim copies of each other differing only in the builder
+// type they drove; B is any of the four *query builders whose Where returns
+// the builder itself (the same shape as filter.applyFilters, from round 1).
+func applyTenantScope[B interface{ Where(string, ...any) B }](ch *CrudHandler, b B, r *http.Request) {
 	if ch.Entity.Config.Scope.MultiTenant {
 		tenantID := tenant.GetTenantID(r.Context())
 		if tenantID != "" {
-			db.Where(ch.Entity.Config.TenantColumn()+" = $1", tenantID)
+			b.Where(ch.Entity.Config.TenantColumn()+" = $1", tenantID)
 		}
 	}
 }

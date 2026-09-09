@@ -192,21 +192,7 @@ func (eb *EventBus) Snapshot(eventType string) []EventHandler {
 // nil entry, which shouldn't happen given Subscribe's guard, but kept for
 // defense-in-depth against direct map manipulation, is skipped.
 func (eb *EventBus) Emit(ctx context.Context, event Event) error {
-	if event.Timestamp.IsZero() {
-		event.Timestamp = time.Now()
-	}
-	eb.invokeTap(ctx, event)
-	handlers := eb.Snapshot(event.Type)
-	observeEmission(event.Type, len(handlers))
-	for _, h := range handlers {
-		if h == nil {
-			continue
-		}
-		if err := emitSafe(ctx, h, event); err != nil {
-			return err
-		}
-	}
-	return nil
+	return eb.emit(ctx, event, emitSafe)
 }
 
 // EmitStrict publishes synchronously like Emit, but treats a panicking
@@ -216,6 +202,15 @@ func (eb *EventBus) Emit(ctx context.Context, event Event) error {
 // has the opposite need, a consumer that panics must be retried and
 // eventually dead-lettered, never silently marked dispatched, so it calls
 func (eb *EventBus) EmitStrict(ctx context.Context, event Event) error {
+	return eb.emit(ctx, event, emitStrict)
+}
+
+// emit is the shared publish prologue of Emit and EmitStrict: stamp a zero
+// timestamp, tap the observer, snapshot the handler list outside the lock,
+// then invoke each handler through invoke, which carries the caller's panic
+// policy (emitSafe swallows, emitStrict converts to an error). It replaces
+// the two former copies of this body.
+func (eb *EventBus) emit(ctx context.Context, event Event, invoke func(context.Context, EventHandler, Event) error) error {
 	if event.Timestamp.IsZero() {
 		event.Timestamp = time.Now()
 	}
@@ -226,7 +221,7 @@ func (eb *EventBus) EmitStrict(ctx context.Context, event Event) error {
 		if h == nil {
 			continue
 		}
-		if err := emitStrict(ctx, h, event); err != nil {
+		if err := invoke(ctx, h, event); err != nil {
 			return err
 		}
 	}

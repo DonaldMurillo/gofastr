@@ -93,7 +93,7 @@ func NewPass(root string, cfg *Config) (*Pass, error) {
 	}
 	p := &Pass{
 		Root:       abs,
-		ModulePath: readModulePath(abs),
+		ModulePath: ReadModulePath(abs),
 		Config:     cfg,
 		fset:       token.NewFileSet(),
 		sources:    map[string][]byte{},
@@ -148,7 +148,7 @@ func (p *Pass) discover() error {
 		p.sources[rel] = body
 		pkg := ""
 		if isGo {
-			pkg = importPathFor(p.ModulePath, p.Root, filepath.Dir(path))
+			pkg = ImportPathFor(p.ModulePath, p.Root, filepath.Dir(path))
 		}
 		p.files = append(p.files, SourceFile{
 			Rel:         rel,
@@ -373,8 +373,12 @@ func IsGeneratedSource(body []byte) bool {
 // must stand as the whole comment line.
 var reGeneratedHeader = regexp.MustCompile(`(?m)^// Code generated .* DO NOT EDIT\.$`)
 
-// readModulePath returns the `module` line from root/go.mod, or "".
-func readModulePath(root string) string {
+// ReadModulePath returns the `module` line from root/go.mod, or "" when the
+// file is missing or declares no module. Pass discovery uses it to derive
+// package import paths from filesystem locations. Formerly duplicated as
+// cmd/gofastr/audit.go:readModulePath; that copy is deleted and calls
+// this one.
+func ReadModulePath(root string) string {
 	body, err := os.ReadFile(filepath.Join(root, "go.mod"))
 	if err != nil {
 		return ""
@@ -388,8 +392,11 @@ func readModulePath(root string) string {
 	return ""
 }
 
-// importPathFor maps a directory to its Go import path.
-func importPathFor(modulePath, root, dir string) string {
+// ImportPathFor maps a directory to its Go import path given the module's
+// root and module-path declaration. Formerly duplicated as
+// cmd/gofastr/audit.go:importPathFor; that copy is deleted and calls this
+// one.
+func ImportPathFor(modulePath, root, dir string) string {
 	rel, err := filepath.Rel(root, dir)
 	if err != nil {
 		return ""

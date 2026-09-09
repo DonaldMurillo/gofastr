@@ -7,7 +7,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"strings"
 	"sync"
 	"time"
 	"unicode/utf8"
@@ -250,15 +249,13 @@ const (
 	dialectPostgres
 )
 
-// detectDialect probes the driver: Postgres answers SELECT version();
-// anything else (SQLite errors on version()) falls back to the SQLite
-// code path. Mirrors battery/queue's detectDBDialect.
+// detectDialect maps the shared query.IsPostgres probe onto the local
+// dialect enum: a driver whose SELECT version() banner contains
+// "postgresql" is Postgres, everything else (SQLite drivers return an
+// error or a SQLite banner) falls back to the SQLite code path.
 func detectDialect(db *sql.DB) dialect {
-	var v string
-	if err := db.QueryRow("SELECT version()").Scan(&v); err == nil {
-		if strings.Contains(strings.ToLower(v), "postgresql") {
-			return dialectPostgres
-		}
+	if query.IsPostgres(db) {
+		return dialectPostgres
 	}
 	return dialectSQLite
 }
@@ -423,7 +420,7 @@ func scanOutboxRow(row interface {
 		return Row{}, err
 	}
 	var err error
-	r.CreatedAt, err = outboxTime(createdAt)
+	r.CreatedAt, err = query.ParseDBTime(createdAt)
 	if err != nil {
 		return Row{}, fmt.Errorf("outbox: decode row %q created_at: %w", r.ID, err)
 	}

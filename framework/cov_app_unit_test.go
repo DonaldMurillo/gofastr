@@ -128,7 +128,7 @@ func TestCovGetAsErrors(t *testing.T) {
 	}
 }
 
-// initBatterySafe recovers a panicking Init and returns an error.
+// callModuleSafe recovers a panicking Init and returns an error.
 func TestCovInitBatteryPanics(t *testing.T) {
 	bm := NewBatteryManager()
 	_ = bm.Register(&panicBattery{name: "panicky"})

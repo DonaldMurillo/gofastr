@@ -3,9 +3,6 @@ package crud
 import (
 	"context"
 	"errors"
-	"net/http"
-	"net/http/httptest"
-	"strings"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
@@ -109,39 +106,8 @@ func TestCrossOwner_AnonymousStillAllowed(t *testing.T) {
 func TestCrossOwner_HTTPCannotBypass(t *testing.T) {
 	installOwnerExtractor(t)
 	ch, _ := setupOwnerReadInProcHandler(t)
-
-	// Attacker-controlled HEADERS that name the escape. The request runs;
-	// the marker (set only by an unexported Go context key) never flips, so
-	// the list stays owner-scoped.
-	req := httptest.NewRequest(http.MethodGet, "/api/onotes", nil)
-	req.Header.Set("X-Cross-Owner", "true")
-	req.Header.Set("X-All-Owners", "true")
-	req = withTestUser(req, "alice")
-	rec := httptest.NewRecorder()
-	ch.List()(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("List() status=%d body=%s", rec.Code, rec.Body.String())
-	}
-	body := rec.Body.String()
-	if strings.Contains(body, "note-b") || strings.Contains(body, "Beta") {
-		t.Fatalf("HTTP List() leaked bob's row despite owner scope: %s", body)
-	}
-	if !strings.Contains(body, "note-a") {
-		t.Fatalf("HTTP List() did not return alice's own row: %s", body)
-	}
-
-	// Attacker-controlled QUERY PARAMS that name the escape. Strict filter
-	// parsing rejects the unknown params with a 400 before any scan, the
-	// body can never contain bob's row.
-	req2 := httptest.NewRequest(http.MethodGet, "/api/onotes?all_owners=true&cross_owner=1", nil)
-	req2 = withTestUser(req2, "alice")
-	rec2 := httptest.NewRecorder()
-	ch.List()(rec2, req2)
-	if rec2.Code != http.StatusBadRequest {
-		t.Fatalf("query-param escape want 400 (strict), got %d body=%s", rec2.Code, rec2.Body.String())
-	}
-	if b := rec2.Body.String(); strings.Contains(b, "note-b") || strings.Contains(b, "Beta") {
-		t.Fatalf("rejected request leaked bob's row: %s", b)
-	}
+	assertCrossOwnerHTTPNotGranted(t, ch, "alice", "/api/onotes",
+		[][2]string{{"X-Cross-Owner", "true"}, {"X-All-Owners", "true"}},
+		"/api/onotes?all_owners=true&cross_owner=1",
+		"note-a", "note-b", "Beta")
 }

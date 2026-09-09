@@ -119,14 +119,22 @@ func (bm *BatteryManager) Get(name string) (Battery, error) {
 // GetAs retrieves a battery by name and type-asserts it to T.
 // Returns an error if the battery is not found or doesn't implement T.
 func GetAs[T any](bm *BatteryManager, name string) (T, error) {
-	var zero T
 	b, err := bm.Get(name)
+	return getTyped[T]("battery", name, b, err)
+}
+
+// getTyped type-asserts a manager lookup result to T, attributing a
+// mismatch to the module kind ("battery"/"plugin"). It carries the shared
+// body of the former duplicated lookup-and-assert loops in GetAs and
+// PluginGetAs.
+func getTyped[T any](kind, name string, v any, err error) (T, error) {
+	var zero T
 	if err != nil {
 		return zero, err
 	}
-	typed, ok := b.(T)
+	typed, ok := v.(T)
 	if !ok {
-		return zero, fmt.Errorf("battery %q does not implement %T", name, zero)
+		return zero, fmt.Errorf("%s %q does not implement %T", kind, name, zero)
 	}
 	return typed, nil
 }
@@ -222,7 +230,7 @@ func (bm *BatteryManager) InitAll(app *App) error {
 				app.modules.clearCurrent()
 			}
 		}
-		if err := initBatterySafe(name, entry.battery, app); err != nil {
+		if err := callModuleSafe("battery", name, "init", func() error { return entry.battery.Init(app) }); err != nil {
 			return err
 		}
 		entry.initialized = true
@@ -233,48 +241,41 @@ func (bm *BatteryManager) InitAll(app *App) error {
 	return nil
 }
 
-func initBatterySafe(name string, b Battery, app *App) (err error) {
+// callModuleSafe invokes a third-party module callback (battery or plugin
+// Init, battery OnStart/OnStop) and converts both failures and panics into
+// errors attributed to the module kind, name, and phase. Third-party Init
+// and lifecycle code is the framework's biggest panic surface (a duplicate
+// route registration panics deep in ServeMux, a buggy battery can panic
+// anywhere), so every drive site funnels through this one guard instead of
+// each manager carrying its own copy. It replaces the former
+// initBatterySafe, initPluginSafe, startBatterySafe, and stopBatterySafe.
+func callModuleSafe(kind, name, phase string, call func() error) (err error) {
 	defer func() {
 		if v := recover(); v != nil {
 			// Format with %T not %v so a panic value containing secrets
 			// (e.g. panic(config)) doesn't leak into the error chain.
-			err = fmt.Errorf("battery %q init panicked (panic type %T): set GOTRACEBACK=all for details", name, v)
+			// Operators wanting the full panic value can set
+			// GOTRACEBACK=all and read the stack.
+			err = fmt.Errorf("%s %q %s panicked (panic type %T): set GOTRACEBACK=all for details", kind, name, phase, v)
 		}
 	}()
-	if e := b.Init(app); e != nil {
-		return fmt.Errorf("battery %q init failed: %w", name, e)
+	if e := call(); e != nil {
+		return fmt.Errorf("%s %q %s failed: %w", kind, name, phase, e)
 	}
 	return nil
 }
 
 // StartAll calls OnStart on batteries that implement BatteryLifecycle,
 // in dependency order (dependencies first). Each call runs under the
-// initBatterySafe recover isolation, so a panicking start hook aborts
+// callModuleSafe recover isolation, so a panicking start hook aborts
 // App.Start with an attributed error instead of unwinding through it.
 func (bm *BatteryManager) StartAll(ctx context.Context) error {
 	for _, name := range bm.sorted {
 		if lc, ok := bm.entries[name].battery.(BatteryLifecycle); ok {
-			if err := startBatterySafe(name, lc, ctx); err != nil {
+			if err := callModuleSafe("battery", name, "start", func() error { return lc.OnStart(ctx) }); err != nil {
 				return err
 			}
 		}
-	}
-	return nil
-}
-
-// startBatterySafe is the OnStart twin of initBatterySafe: battery start
-// hooks are third-party code the framework drives, so their panics
-// surface as attributed errors, not crashes.
-func startBatterySafe(name string, lc BatteryLifecycle, ctx context.Context) (err error) {
-	defer func() {
-		if v := recover(); v != nil {
-			// %T not %v so a panic(config) value cannot leak a secret
-			// into the error chain (initBatterySafe precedent).
-			err = fmt.Errorf("battery %q start panicked (panic type %T): set GOTRACEBACK=all for details", name, v)
-		}
-	}()
-	if e := lc.OnStart(ctx); e != nil {
-		return fmt.Errorf("battery %q start failed: %w", name, e)
 	}
 	return nil
 }
@@ -289,29 +290,12 @@ func (bm *BatteryManager) StopAll(ctx context.Context) error {
 	var errs []error
 	for _, name := range slices.Backward(bm.sorted) {
 		if lc, ok := bm.entries[name].battery.(BatteryLifecycle); ok {
-			if err := stopBatterySafe(name, lc, ctx); err != nil {
+			if err := callModuleSafe("battery", name, "stop", func() error { return lc.OnStop(ctx) }); err != nil {
 				errs = append(errs, err)
 			}
 		}
 	}
 	return errors.Join(errs...)
-}
-
-// stopBatterySafe is the OnStop twin of initBatterySafe: a panicking
-// stop hook is recorded as an attributed error while StopAll keeps
-// draining the remaining batteries.
-func stopBatterySafe(name string, lc BatteryLifecycle, ctx context.Context) (err error) {
-	defer func() {
-		if v := recover(); v != nil {
-			// %T not %v so a panic(config) value cannot leak a secret
-			// into the error chain (initBatterySafe precedent).
-			err = fmt.Errorf("battery %q stop panicked (panic type %T): set GOTRACEBACK=all for details", name, v)
-		}
-	}()
-	if e := lc.OnStop(ctx); e != nil {
-		return fmt.Errorf("battery %q stop failed: %w", name, e)
-	}
-	return nil
 }
 
 // All returns all registered batteries in dependency-resolved order.

@@ -149,18 +149,7 @@ func renderToggle(inputType, modifierClass string, cfg ToggleConfig) render.HTML
 	labelText := html.Span(html.TextConfig{Class: "ui-toggle__label"}, render.Text(cfg.Label))
 
 	children := []render.HTML{control, labelText}
-	if cfg.Error != "" {
-		children = append(children, html.Paragraph(html.TextConfig{
-			ID:         id + "-error",
-			Class:      "ui-toggle__error",
-			ExtraAttrs: html.Attrs{"role": "alert"},
-		}, render.Text(cfg.Error)))
-	} else if cfg.Help != "" {
-		children = append(children, html.Paragraph(html.TextConfig{
-			ID:    id + "-help",
-			Class: "ui-toggle__help",
-		}, render.Text(cfg.Help)))
-	}
+	children = append(children, fieldMessage(id, "ui-toggle", cfg.Error, cfg.Help)...)
 
 	// Native <label for=…> wraps the control. The for/id pairing is
 	// what the screen reader uses; the click-on-label-toggles-checkbox
@@ -215,81 +204,24 @@ type RadioGroupConfig struct {
 // RadioGroup renders a <fieldset> of radio buttons with a shared
 // name, group-level legend, and optional help/error text.
 func RadioGroup(cfg RadioGroupConfig) render.HTML {
-	if cfg.Name == "" {
-		panic("ui: RadioGroup requires Name")
-	}
-	if cfg.Legend == "" {
-		panic("ui: RadioGroup requires Legend")
-	}
-
-	id := cfg.ID
-	if id == "" {
-		id = cfg.Name + "-group"
-	}
-
-	cls := "ui-toggle-group"
-	if cfg.Error != "" {
-		cls += " is-error"
-	}
-	if cfg.Class != "" {
-		cls += " " + cfg.Class
-	}
-
-	// The marker lives INSIDE the <legend>: the fieldset is a grid, so a
-	// sibling span would become its own row under the legend text.
-	legendChildren := []render.HTML{render.Text(cfg.Legend)}
-	if cfg.Required {
-		legendChildren = append(legendChildren,
-			html.Span(html.TextConfig{
-				Class:      "ui-form-field__required",
-				ExtraAttrs: html.Attrs{"aria-hidden": "true"},
-			}, render.Text(" *")))
-	}
-	legend := render.Tag("legend", map[string]string{"class": "ui-toggle-group__legend"}, legendChildren...)
-
-	children := []render.HTML{legend}
+	opts := make([]toggleGroupOption, len(cfg.Options))
 	for i, opt := range cfg.Options {
-		rbID := id + "-" + slug(opt.Value)
-		if opt.Value == "" {
-			rbID = fmt.Sprintf("%s-%d", id, i)
-		}
-		children = append(children, Radio(ToggleConfig{
-			Name:     cfg.Name,
-			Label:    opt.Label,
-			Value:    opt.Value,
-			Checked:  opt.Checked,
-			Disabled: opt.Disabled,
-			Required: cfg.Required,
-			ID:       rbID,
-		}))
+		opts[i] = toggleGroupOption{value: opt.Value, label: opt.Label, checked: opt.Checked, disabled: opt.Disabled}
 	}
-	if cfg.Error != "" {
-		children = append(children, html.Paragraph(html.TextConfig{
-			ID:         id + "-error",
-			Class:      "ui-toggle-group__error",
-			ExtraAttrs: html.Attrs{"role": "alert"},
-		}, render.Text(cfg.Error)))
-	} else if cfg.Help != "" {
-		children = append(children, html.Paragraph(html.TextConfig{
-			ID:    id + "-help",
-			Class: "ui-toggle-group__help",
-		}, render.Text(cfg.Help)))
-	}
-
-	attrs := html.SafeExtraAttrs(cfg.ExtraAttrs, "role", "aria-describedby")
-	if attrs == nil {
-		attrs = map[string]string{}
-	}
-	attrs["class"] = cls
-	attrs["id"] = id
-	attrs["role"] = "radiogroup"
-	if cfg.Error != "" {
-		attrs["aria-describedby"] = id + "-error"
-	} else if cfg.Help != "" {
-		attrs["aria-describedby"] = id + "-help"
-	}
-
-	return toggleStyle.WrapHTML(render.Tag("fieldset", attrs, children...))
+	return renderToggleGroup(toggleGroupSpec{
+		kind:       "RadioGroup",
+		role:       "radiogroup",
+		name:       cfg.Name,
+		legend:     cfg.Legend,
+		help:       cfg.Help,
+		errText:    cfg.Error,
+		id:         cfg.ID,
+		class:      cfg.Class,
+		required:   cfg.Required,
+		extraAttrs: html.SafeExtraAttrs(cfg.ExtraAttrs, "role", "aria-describedby"),
+		options:    opts,
+		leaf:       Radio,
+	})
 }
 
 // CheckboxGroupOption describes one checkbox in a CheckboxGroup.
@@ -328,30 +260,83 @@ type CheckboxGroupConfig struct {
 // CheckboxGroup renders a <fieldset> of checkboxes with a shared
 // name, group-level legend, and optional help/error text.
 func CheckboxGroup(cfg CheckboxGroupConfig) render.HTML {
-	if cfg.Name == "" {
-		panic("ui: CheckboxGroup requires Name")
+	opts := make([]toggleGroupOption, len(cfg.Options))
+	for i, opt := range cfg.Options {
+		opts[i] = toggleGroupOption{value: opt.Value, label: opt.Label, checked: opt.Checked, disabled: opt.Disabled}
 	}
-	if cfg.Legend == "" {
-		panic("ui: CheckboxGroup requires Legend")
+	return renderToggleGroup(toggleGroupSpec{
+		kind:       "CheckboxGroup",
+		role:       "group",
+		name:       cfg.Name,
+		legend:     cfg.Legend,
+		help:       cfg.Help,
+		errText:    cfg.Error,
+		id:         cfg.ID,
+		class:      cfg.Class,
+		required:   cfg.Required,
+		extraAttrs: html.SafeExtraAttrs(cfg.ExtraAttrs, "role", "aria-describedby"),
+		options:    opts,
+		leaf:       Checkbox,
+	})
+}
+
+// toggleGroupOption is the option shape the two group components share;
+// renderToggleGroup works on this normalized form because Go does not
+// allow field access on a type parameter constrained to a union of the
+// two exported option structs.
+type toggleGroupOption struct {
+	value    string
+	label    string
+	checked  bool
+	disabled bool
+}
+
+// toggleGroupSpec is the shared body of the two group components: the
+// common config fields plus the pieces that differ between them (the
+// fieldset ARIA role and the leaf renderer for each option).
+type toggleGroupSpec struct {
+	kind       string // component name used in panic messages
+	role       string // fieldset ARIA role ("radiogroup" or "group")
+	name       string
+	legend     string
+	help       string
+	errText    string
+	id         string
+	class      string
+	required   bool
+	extraAttrs html.Attrs
+	options    []toggleGroupOption
+	leaf       func(ToggleConfig) render.HTML // Radio or Checkbox
+}
+
+// renderToggleGroup is the single body behind RadioGroup and
+// CheckboxGroup; before it existed, that body was duplicated verbatim
+// (once per component) in the two exported functions above.
+func renderToggleGroup(spec toggleGroupSpec) render.HTML {
+	if spec.name == "" {
+		panic("ui: " + spec.kind + " requires Name")
+	}
+	if spec.legend == "" {
+		panic("ui: " + spec.kind + " requires Legend")
 	}
 
-	id := cfg.ID
+	id := spec.id
 	if id == "" {
-		id = cfg.Name + "-group"
+		id = spec.name + "-group"
 	}
 
 	cls := "ui-toggle-group"
-	if cfg.Error != "" {
+	if spec.errText != "" {
 		cls += " is-error"
 	}
-	if cfg.Class != "" {
-		cls += " " + cfg.Class
+	if spec.class != "" {
+		cls += " " + spec.class
 	}
 
 	// The marker lives INSIDE the <legend>: the fieldset is a grid, so a
 	// sibling span would become its own row under the legend text.
-	legendChildren := []render.HTML{render.Text(cfg.Legend)}
-	if cfg.Required {
+	legendChildren := []render.HTML{render.Text(spec.legend)}
+	if spec.required {
 		legendChildren = append(legendChildren,
 			html.Span(html.TextConfig{
 				Class:      "ui-form-field__required",
@@ -361,44 +346,37 @@ func CheckboxGroup(cfg CheckboxGroupConfig) render.HTML {
 	legend := render.Tag("legend", map[string]string{"class": "ui-toggle-group__legend"}, legendChildren...)
 
 	children := []render.HTML{legend}
-	for i, opt := range cfg.Options {
-		cbID := id + "-" + slug(opt.Value)
-		if opt.Value == "" {
-			cbID = fmt.Sprintf("%s-%d", id, i)
+	for i, opt := range spec.options {
+		optID := id + "-" + slug(opt.value)
+		if opt.value == "" {
+			optID = fmt.Sprintf("%s-%d", id, i)
 		}
-		children = append(children, Checkbox(ToggleConfig{
-			Name:     cfg.Name,
-			Label:    opt.Label,
-			Value:    opt.Value,
-			Checked:  opt.Checked,
-			Disabled: opt.Disabled,
-			Required: cfg.Required,
-			ID:       cbID,
+		children = append(children, spec.leaf(ToggleConfig{
+			Name:     spec.name,
+			Label:    opt.label,
+			Value:    opt.value,
+			Checked:  opt.checked,
+			Disabled: opt.disabled,
+			Required: spec.required,
+			ID:       optID,
 		}))
 	}
-	if cfg.Error != "" {
-		children = append(children, html.Paragraph(html.TextConfig{
-			ID:         id + "-error",
-			Class:      "ui-toggle-group__error",
-			ExtraAttrs: html.Attrs{"role": "alert"},
-		}, render.Text(cfg.Error)))
-	} else if cfg.Help != "" {
-		children = append(children, html.Paragraph(html.TextConfig{
-			ID:    id + "-help",
-			Class: "ui-toggle-group__help",
-		}, render.Text(cfg.Help)))
-	}
+	children = append(children, fieldMessage(id, "ui-toggle-group", spec.errText, spec.help)...)
 
-	attrs := html.SafeExtraAttrs(cfg.ExtraAttrs, "role", "aria-describedby")
+	// extraAttrs arrives pre-sanitized (each group function routes
+	// cfg.ExtraAttrs through html.SafeExtraAttrs; the contract test
+	// requires it at the read site). SafeExtraAttrs returns nil for a
+	// nil input, so an empty attrs map starts here.
+	attrs := spec.extraAttrs
 	if attrs == nil {
 		attrs = map[string]string{}
 	}
 	attrs["class"] = cls
 	attrs["id"] = id
-	attrs["role"] = "group"
-	if cfg.Error != "" {
+	attrs["role"] = spec.role
+	if spec.errText != "" {
 		attrs["aria-describedby"] = id + "-error"
-	} else if cfg.Help != "" {
+	} else if spec.help != "" {
 		attrs["aria-describedby"] = id + "-help"
 	}
 

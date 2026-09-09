@@ -3,9 +3,10 @@ package framework
 import (
 	"fmt"
 	"net"
-	"os"
 	"strconv"
 	"strings"
+
+	"github.com/DonaldMurillo/gofastr/core/config"
 )
 
 // devMCPExposeEnv is the explicit opt-in for serving the dev MCP surface
@@ -51,15 +52,9 @@ func bindIsLoopback(addr string) bool {
 }
 
 // devMCPExposeAllowed reports whether the operator explicitly accepted
-// serving the dev MCP surface off-loopback.
-func devMCPExposeAllowed() bool {
-	v := os.Getenv(devMCPExposeEnv)
-	if v == "" {
-		return false
-	}
-	b, err := strconv.ParseBool(v)
-	return err == nil && b
-}
+// serving the dev MCP surface off-loopback. The strict env-bool read
+// lives in core/config.EnvBool, shared with the dev gates.
+func devMCPExposeAllowed() bool { return config.EnvBool(devMCPExposeEnv) }
 
 // devMCPExposureWarning is the banner printed when dev mode declines to
 // register its control tools because the listener is reachable.

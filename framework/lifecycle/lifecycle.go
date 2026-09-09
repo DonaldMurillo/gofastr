@@ -95,6 +95,17 @@ func (lc *Lifecycle) RegisterDrainer(d Drainer) error {
 // to RegisterDrainer; named explicitly when callers want to be explicit
 // about ordering relative to PrependDrainer.
 func (lc *Lifecycle) AppendDrainer(d Drainer) error {
+	return appendIfLive(lc, &lc.drainers, d)
+}
+
+// appendIfLive appends v to *dst under lc's lock, refusing with
+// ErrShuttingDown once shutdown has begun. The guard runs both before and
+// under the lock so a late registration racing Shutdown is still dropped
+// and the shutdown snapshot stays deterministic. It replaces the former
+// duplicated guard-and-append bodies of AppendDrainer and
+// RegisterHealthChecker. (Package-level, not a method, because Go methods
+// cannot carry the type parameter.)
+func appendIfLive[T any](lc *Lifecycle, dst *[]T, v T) error {
 	if lc.shuttingDown.Load() {
 		return ErrShuttingDown
 	}
@@ -103,7 +114,7 @@ func (lc *Lifecycle) AppendDrainer(d Drainer) error {
 	if lc.shuttingDown.Load() {
 		return ErrShuttingDown
 	}
-	lc.drainers = append(lc.drainers, d)
+	*dst = append(*dst, v)
 	return nil
 }
 
@@ -128,16 +139,7 @@ func (lc *Lifecycle) PrependDrainer(d Drainer) error {
 // During shutdown, all checkers are marked unhealthy. Returns
 // ErrShuttingDown if Shutdown has already started.
 func (lc *Lifecycle) RegisterHealthChecker(hc HealthChecker) error {
-	if lc.shuttingDown.Load() {
-		return ErrShuttingDown
-	}
-	lc.mu.Lock()
-	defer lc.mu.Unlock()
-	if lc.shuttingDown.Load() {
-		return ErrShuttingDown
-	}
-	lc.checkers = append(lc.checkers, hc)
-	return nil
+	return appendIfLive(lc, &lc.checkers, hc)
 }
 
 // Shutdown executes the graceful shutdown sequence:

@@ -10,7 +10,7 @@ import (
 // Panic isolation at the app's lifecycle extension points: host-supplied
 // start/ready/seed hooks and battery OnStart/OnStop hooks run under the
 // same recover-to-attributed-error isolation Init already has
-// (initPluginSafe / initBatterySafe), so a panicking callback aborts the
+// (callModuleSafe), so a panicking callback aborts the
 // phase with an error instead of unwinding through App.Start /
 // App.Shutdown.
 
@@ -28,7 +28,7 @@ func panicStartHarness() *App {
 
 // runCapturingPanic runs fn, capturing both its error and any panic that
 // escapes. The contract under test: the panic must NOT escape; the phase
-// must return an attributed error instead (the initPluginSafe precedent).
+// must return an attributed error instead (the callModuleSafe precedent).
 func runCapturingPanic(fn func() error) (err error, panicked any) {
 	defer func() { panicked = recover() }()
 	return fn(), nil
@@ -40,10 +40,9 @@ func TestOnStartHookPanicContained(t *testing.T) {
 	t.Setenv("GOFASTR_ISOLATION", "off")
 	app := panicStartHarness()
 	app.OnStart(func(context.Context) error { panic("onstart hook boom") })
-
 	err, panicked := runCapturingPanic(func() error { return app.Start("127.0.0.1:0") })
 	if panicked != nil {
-		t.Fatalf("SECURITY: [start-hook-panic] an OnStart hook panic escaped App.Start (panic: %v) — Init panics are isolated via initPluginSafe but start hooks are not, so a host-callback bug crashes boot instead of aborting it with an error", panicked)
+		t.Fatalf("SECURITY: [start-hook-panic] an OnStart hook panic escaped App.Start (panic: %v) — Init panics are isolated via callModuleSafe but start hooks are not, so a host-callback bug crashes boot instead of aborting it with an error", panicked)
 	}
 	if err == nil || !strings.Contains(err.Error(), "panick") {
 		t.Fatalf("SECURITY: [start-hook-panic] App.Start must return an attributed error for a panicking OnStart hook (like Init does), got %v", err)
@@ -96,15 +95,14 @@ func (b *lifecyclePanicBattery) OnStop(context.Context) error  { panic("battery 
 
 // TestBatteryOnStartPanicContained: a panicking battery OnStart must
 // surface as an attributed error from App.Start; battery Init is isolated
-// (initBatterySafe) one phase earlier and the start phase must match it.
+// (callModuleSafe) one phase earlier and the start phase must match it.
 func TestBatteryOnStartPanicContained(t *testing.T) {
 	t.Setenv("GOFASTR_ISOLATION", "off")
 	app := panicStartHarness()
 	app.RegisterBattery(&lifecyclePanicBattery{})
-
 	err, panicked := runCapturingPanic(func() error { return app.Start("127.0.0.1:0") })
 	if panicked != nil {
-		t.Fatalf("SECURITY: [battery-start-panic] a battery OnStart panic escaped App.Start (panic: %v) — battery Init is isolated via initBatterySafe but StartAll is not", panicked)
+		t.Fatalf("SECURITY: [battery-start-panic] a battery OnStart panic escaped App.Start (panic: %v) — battery Init is isolated via callModuleSafe but StartAll is not", panicked)
 	}
 	if err == nil || !strings.Contains(err.Error(), "panick") {
 		t.Fatalf("SECURITY: [battery-start-panic] App.Start must return an attributed error for a panicking battery OnStart, got %v", err)

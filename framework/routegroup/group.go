@@ -30,9 +30,9 @@ import (
 	"sync"
 
 	"github.com/DonaldMurillo/gofastr/core/router"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
-// GroupOption configures a RouteGroup.
 type GroupOption func(*RouteGroup)
 
 // RouteGroup clusters routes under a shared prefix, middleware stack,
@@ -226,7 +226,7 @@ func normalizePrefix(p string) string {
 	if p == "" {
 		return ""
 	}
-	p = stripPrefixCtrlBytes(p)
+	p = textsafe.SanitizeControlBytes(p)
 	p = strings.ReplaceAll(p, "\\", "/")
 	if !strings.HasPrefix(p, "/") {
 		p = "/" + p
@@ -236,27 +236,4 @@ func normalizePrefix(p string) string {
 		return ""
 	}
 	return p
-}
-
-func stripPrefixCtrlBytes(s string) string {
-	hasCtrl := false
-	for i := 0; i < len(s); i++ {
-		if s[i] < 0x20 || s[i] == 0x7f {
-			hasCtrl = true
-			break
-		}
-	}
-	if !hasCtrl {
-		return s
-	}
-	var b strings.Builder
-	b.Grow(len(s))
-	for i := 0; i < len(s); i++ {
-		c := s[i]
-		if c < 0x20 || c == 0x7f {
-			continue
-		}
-		b.WriteByte(c)
-	}
-	return b.String()
 }

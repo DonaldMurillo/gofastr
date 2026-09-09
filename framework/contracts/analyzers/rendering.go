@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/DonaldMurillo/gofastr/framework/access"
 	"github.com/DonaldMurillo/gofastr/framework/contracts"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/check"
@@ -537,34 +538,11 @@ func blankCSSCommentsAndStrings(src string) string {
 func closestToken(name string, names []string) (string, bool) {
 	best, bestDist := "", 3
 	for _, cand := range names {
-		if d := levenshtein(name, cand); d < bestDist {
+		if d := access.EditDistance(name, cand); d < bestDist {
 			best, bestDist = cand, d
 		}
 	}
 	return best, best != ""
-}
-
-// levenshtein returns the edit distance between a and b: the smallest
-// number of single-character insertions, deletions, and substitutions
-// that turns one into the other.
-func levenshtein(a, b string) int {
-	prev := make([]int, len(b)+1)
-	curr := make([]int, len(b)+1)
-	for j := range prev {
-		prev[j] = j
-	}
-	for i := 1; i <= len(a); i++ {
-		curr[0] = i
-		for j := 1; j <= len(b); j++ {
-			cost := 1
-			if a[i-1] == b[j-1] {
-				cost = 0
-			}
-			curr[j] = min(curr[j-1]+1, prev[j]+1, prev[j-1]+cost)
-		}
-		prev, curr = curr, prev
-	}
-	return prev[len(b)]
 }
 
 // propTokenCategories maps a CSS property to the theme-token categories

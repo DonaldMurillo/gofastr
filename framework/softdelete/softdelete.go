@@ -32,13 +32,7 @@ func WithSoftDelete(ent *entity.Entity) *entity.Entity {
 // check). Using this helper in a user-facing endpoint without such a check
 // creates a cross-tenant / IDOR vulnerability.
 func SoftDelete(ctx context.Context, db *sql.DB, table string, id string) error {
-	safeTable, err := query.SafeIdent(table)
-	if err != nil {
-		return fmt.Errorf("softdelete: %w", err)
-	}
-	q := fmt.Sprintf("UPDATE %s SET deleted_at = NOW() WHERE id = $1", query.QuoteIdent(safeTable))
-	_, err = db.ExecContext(ctx, q, id)
-	return err
+	return setDeletedAt(ctx, db, table, id, "deleted_at = NOW()")
 }
 
 // Restore clears the deleted_at field, making a soft-deleted record visible again.
@@ -51,11 +45,18 @@ func SoftDelete(ctx context.Context, db *sql.DB, table string, id string) error 
 // check). Using this helper in a user-facing endpoint without such a check
 // creates a cross-tenant / IDOR vulnerability.
 func Restore(ctx context.Context, db *sql.DB, table string, id string) error {
+	return setDeletedAt(ctx, db, table, id, "deleted_at = NULL")
+}
+
+// setDeletedAt is the shared UPDATE body of SoftDelete and Restore: validate
+// the table identifier, then flip deleted_at to setExpr for one row by id.
+// It replaces the two former SafeIdent → quote → Exec copies.
+func setDeletedAt(ctx context.Context, db *sql.DB, table, id, setExpr string) error {
 	safeTable, err := query.SafeIdent(table)
 	if err != nil {
-		return fmt.Errorf("softdelete: restore: %w", err)
+		return fmt.Errorf("softdelete: %w", err)
 	}
-	q := fmt.Sprintf("UPDATE %s SET deleted_at = NULL WHERE id = $1", query.QuoteIdent(safeTable))
+	q := fmt.Sprintf("UPDATE %s SET %s WHERE id = $1", query.QuoteIdent(safeTable), setExpr)
 	_, err = db.ExecContext(ctx, q, id)
 	return err
 }

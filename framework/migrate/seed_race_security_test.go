@@ -25,7 +25,7 @@ import (
 // a mutual exclusion by itself.
 // Surfaces: framework/migrate/seed.go::RunSeeds (SQLite arm takes
 // sqliteSeedMu then the leased lock row before runSeedsBody),
-// framework/migrate/seed.go::acquireSQLiteSeedLease (atomic upsert that
+// core/migrate's AcquireSQLiteLease (atomic upsert that
 // steals only an expired lease; heartbeat renewal; DELETE release),
 // framework/migrate/seed.go::runSeedsBody (read-ledger → run-body →
 // record-ledger inside the lock), framework/migrate/seed.go::recordSeeded

@@ -2,9 +2,10 @@ package contracts
 
 import (
 	"fmt"
+	"maps"
 	"os/exec"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 )
 
@@ -155,12 +156,7 @@ func (r *Report) RestrictTo(files map[string]bool) int {
 
 // SortedFiles renders a file set deterministically, for reporting.
 func SortedFiles(files map[string]bool) []string {
-	out := make([]string, 0, len(files))
-	for f := range files {
-		out = append(out, f)
-	}
-	sort.Strings(out)
-	return out
+	return slices.Sorted(maps.Keys(files))
 }
 
 // repoRelativePrefix is root's path within its repository, slash-separated

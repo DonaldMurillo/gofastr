@@ -9,6 +9,8 @@ import (
 	"image/jpeg"
 	"image/png"
 	"net/http"
+
+	"github.com/DonaldMurillo/gofastr/framework/internal/exif"
 )
 
 // StripMetadata returns a [ProcessOption] that removes privacy-bearing
@@ -164,7 +166,7 @@ func stripJPEG(data []byte) ([]byte, error) {
 		switch {
 		case marker >= 0xE0 && marker <= 0xEF: // APPn: metadata, dropped
 			if marker == 0xE1 && orient == 0 && len(payload) >= 6 && string(payload[:6]) == "Exif\x00\x00" {
-				orient = parseTIFFOrientation(payload[6:])
+				orient = exif.ParseTIFFOrientation(payload[6:])
 			}
 		case marker == 0xFE: // COM: comment, dropped
 		case marker == 0xDA: // SOS: header copied, scan data follows
@@ -228,7 +230,7 @@ func stripPNG(data []byte) ([]byte, error) {
 				// Some writers prefix the TIFF stream with the JPEG
 				// APP1 identifier; tolerate both shapes.
 				tiff = bytes.TrimPrefix(tiff, []byte("Exif\x00\x00"))
-				orient = parseTIFFOrientation(tiff)
+				orient = exif.ParseTIFFOrientation(tiff)
 			}
 		case "IEND":
 			// Stop like the decoder does; bytes after IEND only
@@ -302,7 +304,7 @@ func stripWebP(data []byte) ([]byte, error) {
 				// libwebp writes the TIFF stream bare; some writers
 				// keep the JPEG APP1 identifier. Accept both.
 				tiff := bytes.TrimPrefix(payload, []byte("Exif\x00\x00"))
-				orient = parseTIFFOrientation(tiff)
+				orient = exif.ParseTIFFOrientation(tiff)
 			}
 		case "XMP ":
 			changed = true
@@ -369,7 +371,8 @@ func fixVP8XFlags(chunks []webpChunk, exifKept bool) {
 // minimalOrientationTIFF builds a TIFF stream whose IFD0 holds exactly
 // one entry, the orientation tag. Byte layout mirrors the test fixture
 // in framework/image (insertExifAPP1) and round-trips through
-// parseTIFFOrientation in both packages.
+// exif.ParseTIFFOrientation (framework/internal/exif), which this package
+// and framework/image both call.
 func minimalOrientationTIFF(orientation int) []byte {
 	return []byte{
 		'I', 'I', 0x2A, 0x00, // little-endian TIFF magic
@@ -381,54 +384,6 @@ func minimalOrientationTIFF(orientation int) []byte {
 		byte(orientation), 0x00, 0x00, 0x00, // value in the 4-byte slot
 		0x00, 0x00, 0x00, 0x00, // no next IFD
 	}
-}
-
-// parseTIFFOrientation reads a TIFF stream and returns the orientation
-// tag (0x0112) from IFD0, or 0 if absent. It is a leaf-local twin of
-// framework/image's parseTIFFOrientation: this package cannot import
-// that one (the layering rule that keeps image codecs out of every CRUD
-// binary), and core/upload is not an EXIF home. The two are pinned
-// against each other by TestStripOrientationBakeMatchesPipeline.
-func parseTIFFOrientation(tiff []byte) int {
-	if len(tiff) < 8 {
-		return 0
-	}
-	var order binary.ByteOrder
-	switch {
-	case tiff[0] == 'I' && tiff[1] == 'I' && tiff[2] == 0x2A && tiff[3] == 0x00:
-		order = binary.LittleEndian
-	case tiff[0] == 'M' && tiff[1] == 'M' && tiff[2] == 0x00 && tiff[3] == 0x2A:
-		order = binary.BigEndian
-	default:
-		return 0
-	}
-	ifd0Offset := int(order.Uint32(tiff[4:]))
-	if ifd0Offset < 8 || ifd0Offset+2 > len(tiff) {
-		return 0
-	}
-	numEntries := int(order.Uint16(tiff[ifd0Offset:]))
-	entries := tiff[ifd0Offset+2:]
-	if numEntries*12 > len(entries) {
-		return 0
-	}
-	for n := 0; n < numEntries; n++ {
-		e := entries[n*12 : n*12+12]
-		tag := order.Uint16(e[0:2])
-		if tag != 0x0112 {
-			continue
-		}
-		typ := order.Uint16(e[2:4])
-		count := order.Uint32(e[4:8])
-		if typ != 3 /* SHORT */ || count != 1 {
-			return 0
-		}
-		v := int(order.Uint16(e[8:10]))
-		if v < 1 || v > 8 {
-			return 0
-		}
-		return v
-	}
-	return 0
 }
 
 // applyOrientation returns img with the EXIF orientation tag baked into

@@ -2,7 +2,9 @@ package contracts
 
 import (
 	"fmt"
+	"maps"
 	"runtime"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -78,12 +80,9 @@ func Register(as ...*Analyzer) {
 func Analyzers() []*Analyzer {
 	analyzerMu.RLock()
 	defer analyzerMu.RUnlock()
-	out := make([]*Analyzer, 0, len(analyzers))
-	for _, a := range analyzers {
-		out = append(out, a)
-	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
-	return out
+	return slices.SortedFunc(maps.Values(analyzers), func(a, b *Analyzer) int {
+		return strings.Compare(a.Name, b.Name)
+	})
 }
 
 // RunOptions narrows a run. Both filters are additive-empty: an empty

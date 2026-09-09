@@ -176,13 +176,13 @@ func parseIncludeTreeQ(q url.Values, ent *entity.Entity, registry entity.Registr
 	var roots []*IncludeNode
 	rootMap := map[string]*IncludeNode{}
 
-	paths := splitIncludeList(raw)
+	paths := splitIncludeDelim(raw, ',')
 	if len(paths) > maxIncludePaths {
 		return nil, fmt.Errorf("too many include paths: %d (max %d)", len(paths), maxIncludePaths)
 	}
 
 	for _, path := range paths {
-		segments := splitIncludePath(path)
+		segments := splitIncludeDelim(path, '.')
 		if len(segments) == 0 {
 			continue
 		}
@@ -288,11 +288,14 @@ func splitSegmentFilter(seg string) (name, filter string) {
 	return seg[:open], seg[open+1 : close]
 }
 
-// splitIncludeList splits the top-level comma-separated include list while
-// respecting parentheses, "comments(status=draft,body_like=x),author"
-// must split into ["comments(status=draft,body_like=x)", "author"] not
-// into four broken fragments.
-func splitIncludeList(s string) []string {
+// splitIncludeDelim splits s on sep, but only at paren depth 0 so filter
+// clauses keep their parenthesised content intact:
+// "comments(status=draft,body_like=x),author" split on ',' must yield
+// ["comments(status=draft,body_like=x)", "author"], not four broken
+// fragments; an include path split on '.' keeps dotted filter values
+// whole. It replaces the former splitIncludeList and splitIncludePath,
+// verbatim copies of each other differing only in the separator.
+func splitIncludeDelim(s string, sep byte) []string {
 	var out []string
 	depth := 0
 	start := 0
@@ -304,36 +307,7 @@ func splitIncludeList(s string) []string {
 			if depth > 0 {
 				depth--
 			}
-		case ',':
-			if depth == 0 {
-				if part := strings.TrimSpace(s[start:i]); part != "" {
-					out = append(out, part)
-				}
-				start = i + 1
-			}
-		}
-	}
-	if part := strings.TrimSpace(s[start:]); part != "" {
-		out = append(out, part)
-	}
-	return out
-}
-
-// splitIncludePath splits a single include path on dots, but only at
-// depth 0 so filter clauses keep their parenthesised content intact.
-func splitIncludePath(s string) []string {
-	var out []string
-	depth := 0
-	start := 0
-	for i := 0; i < len(s); i++ {
-		switch s[i] {
-		case '(':
-			depth++
-		case ')':
-			if depth > 0 {
-				depth--
-			}
-		case '.':
+		case sep:
 			if depth == 0 {
 				if part := strings.TrimSpace(s[start:i]); part != "" {
 					out = append(out, part)
@@ -572,18 +546,8 @@ func (ch *CrudHandler) applyIncludeTree(ctx context.Context, rows []map[string]a
 		decodeEntityJSONColumns(node.Target, gatherLoadedRows(loaded, node.Relation.Name))
 	}
 
-	// Recurse into each node that has children.
-	for _, node := range nodes {
-		if len(node.Children) == 0 || node.Target == nil {
-			continue
-		}
-		nestedRows := gatherLoadedRows(loaded, node.Relation.Name)
-		if len(nestedRows) == 0 {
-			continue
-		}
-		if err := ch.recurseLoadOnRawRows(ctx, node.Target, node.Children, nestedRows, budget); err != nil {
-			return err
-		}
+	if err := ch.recurseIncludeChildren(ctx, nodes, loaded, budget); err != nil {
+		return err
 	}
 
 	// Attach to parent rows + deep-convert keys (top-level outer key uses
@@ -643,18 +607,8 @@ func (ch *CrudHandler) recurseLoadOnRawRows(ctx context.Context, target *entity.
 		}
 		decodeEntityJSONColumns(node.Target, gatherLoadedRows(loaded, node.Relation.Name))
 	}
-	// Further recursion for grandchildren.
-	for _, node := range children {
-		if len(node.Children) == 0 || node.Target == nil {
-			continue
-		}
-		nestedRows := gatherLoadedRows(loaded, node.Relation.Name)
-		if len(nestedRows) == 0 {
-			continue
-		}
-		if err := ch.recurseLoadOnRawRows(ctx, node.Target, node.Children, nestedRows, budget); err != nil {
-			return err
-		}
+	if err := ch.recurseIncludeChildren(ctx, children, loaded, budget); err != nil {
+		return err
 	}
 	// Attach onto the raw rows under the raw relation name (no case conversion
 	// here, that happens once at the outermost merge).
@@ -668,6 +622,26 @@ func (ch *CrudHandler) recurseLoadOnRawRows(ctx context.Context, target *entity.
 		for _, node := range children {
 			val, present := bucket[node.Relation.Name]
 			row[node.Relation.Name] = rawRelationValue(node.Relation, val, present)
+		}
+	}
+	return nil
+}
+
+// recurseIncludeChildren walks the include nodes that carry children of
+// their own and recurses the freshly loaded rows into them. It is the
+// single loop behind the verbatim copies that used to close out
+// applyIncludeTree and recurseLoadOnRawRows.
+func (ch *CrudHandler) recurseIncludeChildren(ctx context.Context, nodes []*IncludeNode, loaded map[string]map[string]any, budget *includeBudget) error {
+	for _, node := range nodes {
+		if len(node.Children) == 0 || node.Target == nil {
+			continue
+		}
+		nestedRows := gatherLoadedRows(loaded, node.Relation.Name)
+		if len(nestedRows) == 0 {
+			continue
+		}
+		if err := ch.recurseLoadOnRawRows(ctx, node.Target, node.Children, nestedRows, budget); err != nil {
+			return err
 		}
 	}
 	return nil

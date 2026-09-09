@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 	"time"
 
@@ -101,7 +102,7 @@ func (m *MonthlyRollover) ListArchives() ([]string, error) {
 		}
 	}
 	// alphabetical sort happens to be chronological with YYYYMM.
-	sortStrings(out)
+	slices.Sort(out)
 	return out, nil
 }
 
@@ -131,16 +132,6 @@ func (m *MonthlyRollover) openCurrentLocked() error {
 	m.current = s
 	m.month = month
 	return nil
-}
-
-// sortStrings sorts in place; uses simple insertion to avoid
-// pulling in sort for a one-line helper.
-func sortStrings(s []string) {
-	for i := 1; i < len(s); i++ {
-		for j := i; j > 0 && s[j-1] > s[j]; j-- {
-			s[j-1], s[j] = s[j], s[j-1]
-		}
-	}
 }
 
 // ---------- Cost-ledger split into its own non-encrypted DB ----------
@@ -211,46 +202,36 @@ func (c *CostLedger) Record(ctx context.Context, session, provider, model string
 
 // CostByProvider returns USD totals grouped by provider since `since`.
 func (c *CostLedger) CostByProvider(ctx context.Context, since time.Time) (map[string]float64, error) {
-	rows, err := c.db.QueryContext(ctx, `
+	return c.groupedUSD(ctx, since, `
         SELECT provider, SUM(usd) FROM cost_rows
-         WHERE ts >= ? GROUP BY provider`,
-		since.UTC().Format(time.RFC3339Nano),
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	out := make(map[string]float64)
-	for rows.Next() {
-		var prov string
-		var usd float64
-		if err := rows.Scan(&prov, &usd); err != nil {
-			return nil, err
-		}
-		out[prov] = usd
-	}
-	return out, rows.Err()
+         WHERE ts >= ? GROUP BY provider`)
 }
 
 // CostBySession returns USD totals grouped by session since `since`.
 func (c *CostLedger) CostBySession(ctx context.Context, since time.Time) (map[string]float64, error) {
-	rows, err := c.db.QueryContext(ctx, `
+	return c.groupedUSD(ctx, since, `
         SELECT session, SUM(usd) FROM cost_rows
-         WHERE ts >= ? GROUP BY session`,
-		since.UTC().Format(time.RFC3339Nano),
-	)
+         WHERE ts >= ? GROUP BY session`)
+}
+
+// groupedUSD runs a (key, SUM(usd)) GROUP BY query over cost_rows since
+// the given time and collects the per-key totals. It replaces the
+// duplicated query-and-scan bodies of CostByProvider and CostBySession,
+// which differed only in the grouped column.
+func (c *CostLedger) groupedUSD(ctx context.Context, since time.Time, query string) (map[string]float64, error) {
+	rows, err := c.db.QueryContext(ctx, query, since.UTC().Format(time.RFC3339Nano))
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	out := make(map[string]float64)
 	for rows.Next() {
-		var sess string
+		var key string
 		var usd float64
-		if err := rows.Scan(&sess, &usd); err != nil {
+		if err := rows.Scan(&key, &usd); err != nil {
 			return nil, err
 		}
-		out[sess] = usd
+		out[key] = usd
 	}
 	return out, rows.Err()
 }

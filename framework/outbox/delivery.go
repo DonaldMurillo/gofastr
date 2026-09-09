@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/backoff"
+	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/framework/event"
 )
 
@@ -538,7 +539,7 @@ func scanClaimedDelivery(row interface {
 		return claimedDelivery{}, err
 	}
 	var err error
-	d.CreatedAt, err = outboxTime(createdAt)
+	d.CreatedAt, err = query.ParseDBTime(createdAt)
 	if err != nil {
 		return claimedDelivery{}, fmt.Errorf("outbox: decode delivery %q created_at: %w", d.Consumer, err)
 	}

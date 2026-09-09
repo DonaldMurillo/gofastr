@@ -1,9 +1,28 @@
 package contracts
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func TestReadModulePathAndImportPathFor(t *testing.T) {
+	dir := t.TempDir()
+	writeTemp(t, dir, "go.mod", "module example.com/proj\n\ngo 1.21\n")
+	if ReadModulePath(dir) != "example.com/proj" {
+		t.Fatalf("module = %q", ReadModulePath(dir))
+	}
+	if ReadModulePath(t.TempDir()) != "" {
+		t.Fatal("missing go.mod → empty")
+	}
+	if got := ImportPathFor("example.com/proj", dir, dir); got != "example.com/proj" {
+		t.Fatalf("root import = %q", got)
+	}
+	sub := filepath.Join(dir, "pkg")
+	if got := ImportPathFor("example.com/proj", dir, sub); got != "example.com/proj/pkg" {
+		t.Fatalf("sub import = %q", got)
+	}
+}
 
 // The pass discovers stylesheets as well as Go, but the Go analyzers'
 // accessors must stay Go-only: every existing analyzer assumes a file it

@@ -231,54 +231,6 @@ func (c Config) islandSignal() string {
 	return "table-" + seg
 }
 
-func (c Config) relationLabels(ctx context.Context) map[string]map[string]string {
-	out := map[string]map[string]string{}
-	for col, rel := range c.Relations {
-		if rel.Crud == nil {
-			continue
-		}
-		// A nil map marks the column REDACTED: present, so the renderer knows
-		// this is a relation, but with no labels to show. Leaving it absent
-		// instead made the cell fall through and print the raw foreign key:
-		// a bare UUID where a name belongs, which is both useless to a reader
-		// and an unnecessary disclosure of internal ids.
-		if !canReadCrud(ctx, rel.Crud) {
-			out[col] = nil
-			continue
-		}
-		// WithReadHooks: the DISPLAY value becomes the visible label on the
-		// grid and detail page, so it must show the mask. Only the id is used
-		// for lookup, and a picker submits the id, so redacting the label
-		// cannot write a masked value back.
-		// Limit 1000: label resolution loads the whole related table once per
-		// render, so it is bounded. The visible consequence is that a relation
-		// pointing past row 1000, or at a row this query filters out, finds
-		// no label, and format() falls through to printing the raw foreign key.
-		// That is an id of an entity the caller may already read (the gated
-		// case takes the nil-map path above and renders muted), so it is a
-		// legibility limit, not a disclosure. Raise it, or resolve labels by
-		// the ids actually on the page, if a large relation needs naming.
-		rows, err := rel.Crud.ListAll(crud.WithReadHooks(ctx), crud.ListOptions{Limit: 1000})
-		if err != nil {
-			continue
-		}
-		m := map[string]string{}
-		for _, r := range rows {
-			id := cell(rowValue(r, "id"))
-			if id == "" {
-				continue
-			}
-			label := cell(rowValue(r, rel.Display))
-			if label == "" {
-				label = id
-			}
-			m[id] = label
-		}
-		out[col] = m
-	}
-	return out
-}
-
 // queryFilters builds the ParsedFilters for the current query: the LIKE
 // search plus one equality per active facet. Applied to both the count and
 // the page query, so a filtered result set paginates correctly.
@@ -435,7 +387,7 @@ func (c Config) List(ctx context.Context) render.HTML {
 		}))
 	}
 	if len(c.Filters) > 0 {
-		if tb := c.filterToolbar(q, search, c.relationLabels(ctx)); tb != "" {
+		if tb := c.filterToolbar(q, search, relatedRelationLabels(ctx, c.Relations)); tb != "" {
 			body = append(body, tb)
 		}
 	}
@@ -496,7 +448,7 @@ func (c Config) table(ctx context.Context, total int) render.HTML {
 		return ui.Callout(ui.CalloutConfig{Title: "Couldn't load " + c.Title, Variant: ui.StatusDanger}, render.Text("See server logs."))
 	}
 
-	rel := c.relationLabels(ctx)
+	rel := relatedRelationLabels(ctx, c.Relations)
 	cols := make([]ui.Column, 0, len(c.Fields)+1)
 	for _, f := range c.Fields {
 		// A NoQuery column still shows its value, but ?sort= on it is a 400
@@ -695,7 +647,7 @@ func (c Config) Detail(ctx context.Context, id string) render.HTML {
 	if err != nil || row == nil {
 		return ui.EmptyState(ui.EmptyStateConfig{Title: "Not found", Description: "This " + c.Singular + " does not exist.", HeadingLevel: 1})
 	}
-	rel := c.relationLabels(ctx)
+	rel := relatedRelationLabels(ctx, c.Relations)
 	title := cell(rowValue(row, "name"))
 	if title == "" {
 		title = cell(rowValue(row, "title"))
@@ -792,14 +744,22 @@ func (c Config) relatedList(ctx context.Context, rl RelatedList, id string) rend
 	return render.Join(head, ui.DataTable(ui.DataTableConfig{Columns: cols, Rows: uiRows, Responsive: ui.ResponsiveCards}))
 }
 
-// relatedRelationLabels resolves the FK columns of a related entity's rows to
-// display names (so an invoice row under a customer still shows plan names etc.).
+// relatedRelationLabels resolves the FK columns of an entity's relations to
+// display names (an invoice row under a customer still shows plan names etc.).
+// It serves both Config.Relations (list/detail/form) and a RelatedList's
+// relations; it replaced the former Config.relationLabels method, which was
+// a verbatim copy of this body.
 func relatedRelationLabels(ctx context.Context, rels map[string]Relation) map[string]map[string]string {
 	out := map[string]map[string]string{}
 	for col, rel := range rels {
 		if rel.Crud == nil {
 			continue
 		}
+		// A nil map marks the column REDACTED: present, so the renderer knows
+		// this is a relation, but with no labels to show. Leaving it absent
+		// instead made the cell fall through and print the raw foreign key:
+		// a bare UUID where a name belongs, which is both useless to a reader
+		// and an unnecessary disclosure of internal ids.
 		if !canReadCrud(ctx, rel.Crud) {
 			out[col] = nil
 			continue
@@ -808,21 +768,29 @@ func relatedRelationLabels(ctx context.Context, rels map[string]Relation) map[st
 		// grid and detail page, so it must show the mask. Only the id is used
 		// for lookup, and a picker submits the id, so redacting the label
 		// cannot write a masked value back.
+		// Limit 1000: label resolution loads the whole related table once per
+		// render, so it is bounded. The visible consequence is that a relation
+		// pointing past row 1000, or at a row this query filters out, finds
+		// no label, and format() falls through to printing the raw foreign key.
+		// That is an id of an entity the caller may already read (the gated
+		// case takes the nil-map path above and renders muted), so it is a
+		// legibility limit, not a disclosure. Raise it, or resolve labels by
+		// the ids actually on the page, if a large relation needs naming.
 		rows, err := rel.Crud.ListAll(crud.WithReadHooks(ctx), crud.ListOptions{Limit: 1000})
 		if err != nil {
 			continue
 		}
 		m := map[string]string{}
 		for _, r := range rows {
-			rid := cell(rowValue(r, "id"))
-			if rid == "" {
+			id := cell(rowValue(r, "id"))
+			if id == "" {
 				continue
 			}
 			label := cell(rowValue(r, rel.Display))
 			if label == "" {
-				label = rid
+				label = id
 			}
-			m[rid] = label
+			m[id] = label
 		}
 		out[col] = m
 	}
@@ -851,7 +819,7 @@ func (c Config) Form(ctx context.Context, id string) render.HTML {
 		}
 		row = r
 	}
-	rel := c.relationLabels(ctx)
+	rel := relatedRelationLabels(ctx, c.Relations)
 
 	title, submit := "New "+c.Singular, "Create "+c.Singular
 	rpc, back := c.APIPath, c.BasePath

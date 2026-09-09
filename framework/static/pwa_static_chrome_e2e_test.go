@@ -21,6 +21,7 @@ import (
 
 	coreapp "github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/framework/uihost"
+	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
 )
 
 func TestPWAStaticChromeE2E(t *testing.T) {
@@ -46,35 +47,10 @@ func TestPWAStaticChromeE2E(t *testing.T) {
 	srv := &http.Server{Handler: http.FileServer(http.Dir(out))}
 	go srv.Serve(ln)
 
-	allocOpts := append(chromedp.DefaultExecAllocatorOptions[:],
-		chromedp.ExecPath(execPath),
-		chromedp.Flag("headless", true),
-		chromedp.Flag("disable-gpu", true),
-		chromedp.Flag("no-sandbox", true),
-		chromedp.WSURLReadTimeout(90*time.Second),
+	ctx := chromedptest.Context(t,
+		chromedptest.AllocatorOptions(chromedp.ExecPath(execPath)),
+		chromedptest.Timeout(120*time.Second),
 	)
-	allocCtx, allocCancel := chromedp.NewExecAllocator(context.Background(), allocOpts...)
-	defer allocCancel()
-	browserCtx, browserCancel := chromedp.NewContext(allocCtx)
-	defer browserCancel()
-
-	// chromedp starts Chrome lazily on the first Run: allocate against the
-	// browser context so the browser's lifetime is the browser context's.
-	// Passing a timeout context here would make the browser die when that
-	// deadline passed. The watchdog bounds only the startup wait.
-	started := make(chan error, 1)
-	go func() { started <- chromedp.Run(browserCtx) }()
-	select {
-	case err := <-started:
-		if err != nil {
-			t.Fatalf("chrome did not start: %v", err)
-		}
-	case <-time.After(90 * time.Second):
-		t.Fatal("chrome did not start within 90s")
-	}
-
-	ctx, cancel := context.WithTimeout(browserCtx, 120*time.Second)
-	defer cancel()
 
 	poll := func(expr string, timeout time.Duration) error {
 		deadline := time.Now().Add(timeout)

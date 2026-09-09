@@ -15,6 +15,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/DonaldMurillo/gofastr/core/markdown"
 )
 
 // Skill is the parsed representation of a SKILL.md file (tier-1 +
@@ -138,7 +140,7 @@ func parseFrontmatter(src string, s *Skill) error {
 		key := strings.TrimSpace(before)
 		val := strings.TrimSpace(after)
 		// Strip surrounding quotes on scalars.
-		val = trimYAMLQuotes(val)
+		val = markdown.Unquote(val)
 		if val == "" {
 			// Either a list follows, or it's just empty.
 			items, consumed := readList(lines[i+1:])
@@ -168,15 +170,6 @@ func startsAtCol0(s string) bool {
 	return s[0] != ' ' && s[0] != '\t'
 }
 
-func trimYAMLQuotes(s string) string {
-	if len(s) >= 2 {
-		if (s[0] == '"' && s[len(s)-1] == '"') || (s[0] == '\'' && s[len(s)-1] == '\'') {
-			return s[1 : len(s)-1]
-		}
-	}
-	return s
-}
-
 // readList consumes `- item` lines from the start of the slice.
 // Returns the items (nil if no list found) and how many lines were
 // consumed.
@@ -189,7 +182,7 @@ func readList(rest []string) (items []string, consumed int) {
 			}
 			return items, i
 		}
-		items = append(items, trimYAMLQuotes(strings.TrimSpace(trim[2:])))
+		items = append(items, markdown.Unquote(strings.TrimSpace(trim[2:])))
 		consumed = i + 1
 	}
 	return items, consumed

@@ -6,13 +6,13 @@ import (
 	"os"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/chromedp/chromedp"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/app/decide"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
 )
 
 // TestPartialRedirect_RuntimeFollowsXGofastrLocation pins the full
@@ -52,7 +52,7 @@ func TestPartialRedirect_RuntimeFollowsXGofastrLocation(t *testing.T) {
 	srv := httptest.NewServer(ds)
 	t.Cleanup(srv.Close)
 
-	ctx := newE2EChromeForUIHost(t)
+	ctx := chromedptest.Context(t, chromedptest.AllocatorOptions(chromedp.ExecPath(browserExecutable(t))))
 
 	var finalURL, body string
 	var beforeShot, afterShot []byte
@@ -95,43 +95,4 @@ type textComp struct{ tag string }
 
 func (t *textComp) Render() render.HTML {
 	return render.HTML(`<div data-text="` + t.tag + `">` + t.tag + `</div>`)
-}
-
-func newE2EChromeForUIHost(t *testing.T) context.Context {
-	t.Helper()
-	execPath := browserExecutable(t)
-	opts := append(chromedp.DefaultExecAllocatorOptions[:],
-		chromedp.ExecPath(execPath),
-		chromedp.Flag("headless", true),
-		chromedp.Flag("disable-gpu", true),
-		chromedp.Flag("no-sandbox", true),
-		// CI runners intermittently take >20s (the chromedp default)
-		// to cold-start Chrome; a generous websocket-URL deadline turns
-		// that from a flaky suite failure into a few slow seconds.
-		chromedp.WSURLReadTimeout(90*time.Second),
-		chromedp.WindowSize(1024, 768),
-	)
-	alloc, allocCancel := chromedp.NewExecAllocator(context.Background(), opts...)
-	t.Cleanup(allocCancel)
-	browser, browserCancel := chromedp.NewContext(alloc)
-	t.Cleanup(browserCancel)
-
-	// chromedp starts Chrome lazily on the first Run: allocate against the
-	// browser context so the browser's lifetime is the browser context's.
-	// Passing a timeout context here would make the browser die when that
-	// deadline passed. The watchdog bounds only the startup wait.
-	started := make(chan error, 1)
-	go func() { started <- chromedp.Run(browser) }()
-	select {
-	case err := <-started:
-		if err != nil {
-			t.Fatalf("chrome did not start: %v", err)
-		}
-	case <-time.After(90 * time.Second):
-		t.Fatal("chrome did not start within 90s")
-	}
-
-	ctx, cancel := context.WithTimeout(browser, 60*time.Second)
-	t.Cleanup(cancel)
-	return ctx
 }

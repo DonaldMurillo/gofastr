@@ -113,15 +113,7 @@ func (i *Image) JPEG(opts ...JPEGOptions) *Encoder {
 	if len(opts) > 0 {
 		o = opts[0]
 	}
-	if o.Quality == 0 {
-		o.Quality = 80
-	}
-	if o.Quality < 1 {
-		o.Quality = 1
-	}
-	if o.Quality > 100 {
-		o.Quality = 100
-	}
+	o.Quality = clampInt(o.Quality, 80, 1, 100)
 	return &Encoder{
 		img:    i,
 		format: FormatJPEG,
@@ -129,6 +121,22 @@ func (i *Image) JPEG(opts ...JPEGOptions) *Encoder {
 			return jpeg.Encode(w, img, &jpeg.Options{Quality: o.Quality})
 		},
 	}
+}
+
+// clampInt applies the options-defaulting staircase JPEG (Quality) and
+// GIF (NumColors) used to duplicate inline: 0 becomes def, then the
+// value is clamped into [lo, hi].
+func clampInt(v, def, lo, hi int) int {
+	if v == 0 {
+		v = def
+	}
+	if v < lo {
+		v = lo
+	}
+	if v > hi {
+		v = hi
+	}
+	return v
 }
 
 // PNGOptions configures PNG encoding.
@@ -174,15 +182,7 @@ func (i *Image) GIF(opts ...GIFOptions) *Encoder {
 	if len(opts) > 0 {
 		o = opts[0]
 	}
-	if o.NumColors == 0 {
-		o.NumColors = 256
-	}
-	if o.NumColors < 1 {
-		o.NumColors = 1
-	}
-	if o.NumColors > 256 {
-		o.NumColors = 256
-	}
+	o.NumColors = clampInt(o.NumColors, 256, 1, 256)
 	return &Encoder{
 		img:    i,
 		format: FormatGIF,

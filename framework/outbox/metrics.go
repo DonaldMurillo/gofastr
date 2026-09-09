@@ -4,7 +4,8 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"sort"
+	"maps"
+	"slices"
 )
 
 // DeliveryCounts returns per-consumer pending and dead-letter delivery
@@ -60,24 +61,13 @@ func (o *Outbox) MetricsCollector() func(io.Writer) {
 		}
 		fmt.Fprint(w, "# HELP outbox_pending Outbox deliveries still awaiting dispatch.\n")
 		fmt.Fprint(w, "# TYPE outbox_pending gauge\n")
-		for _, c := range sortedConsumerKeys(pending) {
+		for _, c := range slices.Sorted(maps.Keys(pending)) {
 			fmt.Fprintf(w, "outbox_pending{consumer=%q} %d\n", c, pending[c])
 		}
 		fmt.Fprint(w, "# HELP outbox_dead_letter_total Outbox deliveries dead-lettered after exhausting the retry budget.\n")
 		fmt.Fprint(w, "# TYPE outbox_dead_letter_total counter\n")
-		for _, c := range sortedConsumerKeys(dead) {
+		for _, c := range slices.Sorted(maps.Keys(dead)) {
 			fmt.Fprintf(w, "outbox_dead_letter_total{consumer=%q} %d\n", c, dead[c])
 		}
 	}
-}
-
-// sortedConsumerKeys returns the keys of m sorted, for deterministic scrape
-// output regardless of map iteration order.
-func sortedConsumerKeys(m map[string]int) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
 }

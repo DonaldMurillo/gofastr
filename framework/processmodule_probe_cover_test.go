@@ -8,7 +8,7 @@ import (
 // This file adds unit coverage for the PURE probe-report rendering helpers
 // in processmodule_probe.go (ProbeID.String/Title, ProbeStatus.String,
 // ConformanceReport.Result/Summary, denialDetail, tailForDetail) and the
-// pure splitCSV helper in processmodule_probe_unix.go. The conformance
+// pure splitCSV helper in processmodule_probe_common.go. The conformance
 // suite itself spawns children and is environment-gated (covered elsewhere).
 
 // ---- ProbeID.String / Title ----

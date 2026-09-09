@@ -102,13 +102,7 @@ func PasswordInput(cfg PasswordInputConfig) render.HTML {
 		render.Tag("button", toggleAttrs, render.Text("⊙")),
 	}
 
-	if cfg.Error != "" {
-		children = append(children, html.Paragraph(html.TextConfig{
-			ID:         cfg.ID + "-error",
-			Class:      "ui-password-input__error",
-			ExtraAttrs: html.Attrs{"role": "alert"},
-		}, render.Text(cfg.Error)))
-	}
+	children = append(children, fieldMessage(cfg.ID, "ui-password-input", cfg.Error, "")...)
 
 	wrapper := render.Tag("div",
 		map[string]string{"class": cls},

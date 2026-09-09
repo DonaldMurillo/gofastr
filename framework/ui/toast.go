@@ -7,6 +7,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
 	"github.com/DonaldMurillo/gofastr/core-ui/widget"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
 // Toast surface: client-driven, no SSE.
@@ -65,7 +66,7 @@ func AddToast(w http.ResponseWriter, t ToastTrigger) {
 	// one. C0 bytes round-trip \u-escaped on the wire but still decode
 	// back into the client-side toast text. Drop the entry, keep the
 	// header.
-	if hasCtl(t.Title) || hasCtl(t.Body) || hasCtl(t.Stack) {
+	if textsafe.HasControlBytes(t.Title) || textsafe.HasControlBytes(t.Body) || textsafe.HasControlBytes(t.Stack) {
 		return
 	}
 	if t.Variant == "" {
@@ -95,7 +96,7 @@ func AddToast(w http.ResponseWriter, t ToastTrigger) {
 		// whole accumulated value.
 		kept := list[:0]
 		for _, e := range list {
-			if !hasCtl(e.Title) && !hasCtl(e.Body) && !hasCtl(e.Stack) {
+			if !textsafe.HasControlBytes(e.Title) && !textsafe.HasControlBytes(e.Body) && !textsafe.HasControlBytes(e.Stack) {
 				kept = append(kept, e)
 			}
 		}

@@ -2,8 +2,10 @@ package contracts
 
 import (
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -181,7 +183,7 @@ func isBlueprintName(path string) bool {
 }
 
 func (c *Config) applyNode(path string, root *coreyaml.Node) error {
-	for _, key := range sortedKeys(root.Map) {
+	for _, key := range slices.Sorted(maps.Keys(root.Map)) {
 		node := root.Map[key]
 		var err error
 		switch key {
@@ -231,7 +233,7 @@ func (c *Config) applyCapabilities(path string, node *coreyaml.Node) error {
 	if node.Kind != coreyaml.Map {
 		return fmt.Errorf("%s:%d: capabilities must be a map", path, node.Line)
 	}
-	for _, key := range sortedKeys(node.Map) {
+	for _, key := range slices.Sorted(maps.Keys(node.Map)) {
 		cap, err := ParseCapability(key)
 		if err != nil {
 			return fmt.Errorf("%s:%d: %w", path, node.Map[key].Line, err)
@@ -259,7 +261,7 @@ func (c *Config) applyCapability(path string, cap Capability, node *coreyaml.Nod
 		c.capSeverity[cap] = sev
 		return nil
 	case coreyaml.Map:
-		for _, key := range sortedKeys(node.Map) {
+		for _, key := range slices.Sorted(maps.Keys(node.Map)) {
 			child := node.Map[key]
 			switch key {
 			case "enabled":
@@ -307,7 +309,7 @@ func (c *Config) applyRules(path string, node *coreyaml.Node) error {
 	if node.Kind != coreyaml.Map {
 		return fmt.Errorf("%s:%d: rules must be a map of rule ID to severity", path, node.Line)
 	}
-	for _, key := range sortedKeys(node.Map) {
+	for _, key := range slices.Sorted(maps.Keys(node.Map)) {
 		child := node.Map[key]
 		rule, ok := LookupRule(key)
 		if !ok {
@@ -325,7 +327,7 @@ func (c *Config) applyRules(path string, node *coreyaml.Node) error {
 			}
 			c.ruleSeverity[rule.ID] = sev
 		case coreyaml.Map:
-			for _, sub := range sortedKeys(child.Map) {
+			for _, sub := range slices.Sorted(maps.Keys(child.Map)) {
 				val := child.Map[sub]
 				switch sub {
 				case "severity":
@@ -367,7 +369,7 @@ func (c *Config) applyCoverage(path string, node *coreyaml.Node) error {
 	if node.Kind != coreyaml.Map {
 		return fmt.Errorf("%s:%d: coverage must be a map", path, node.Line)
 	}
-	for _, key := range sortedKeys(node.Map) {
+	for _, key := range slices.Sorted(maps.Keys(node.Map)) {
 		if err := c.applyCoverageKey(path, key, node.Map[key]); err != nil {
 			return err
 		}
@@ -428,7 +430,7 @@ func (c *Config) applyArchitecture(path string, node *coreyaml.Node) error {
 	if node.Kind != coreyaml.Map {
 		return fmt.Errorf("%s:%d: architecture must be a map", path, node.Line)
 	}
-	for _, key := range sortedKeys(node.Map) {
+	for _, key := range slices.Sorted(maps.Keys(node.Map)) {
 		child := node.Map[key]
 		switch key {
 		case "layers":
@@ -574,15 +576,6 @@ func (c *Config) Relaxations() []string {
 // ------------------------------------------------------------------
 // YAML scalar helpers
 // ------------------------------------------------------------------
-
-func sortedKeys(m map[string]*coreyaml.Node) []string {
-	out := make([]string, 0, len(m))
-	for k := range m {
-		out = append(out, k)
-	}
-	sort.Strings(out)
-	return out
-}
 
 func severityFromScalar(path string, node *coreyaml.Node) (Severity, error) {
 	// `false` is a legitimate spelling of off, and the YAML parser hands

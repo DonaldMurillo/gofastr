@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
+
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
 // Screen-cache invalidation: server-driven eviction of the runtime's
@@ -57,7 +59,7 @@ import (
 func InvalidateScreens(w http.ResponseWriter, paths ...string) {
 	var valid []string
 	for _, p := range paths {
-		if p == "*" || (strings.HasPrefix(p, "/") && !strings.HasPrefix(p, "//") && !hasCtl(p)) {
+		if p == "*" || (strings.HasPrefix(p, "/") && !strings.HasPrefix(p, "//") && !textsafe.HasControlBytes(p)) {
 			valid = append(valid, p)
 		}
 	}
@@ -79,14 +81,4 @@ func InvalidateScreens(w http.ResponseWriter, paths ...string) {
 		return
 	}
 	w.Header().Set("X-Gofastr-Invalidate", string(enc))
-}
-
-// hasCtl reports whether s contains a C0 control byte or DEL.
-func hasCtl(s string) bool {
-	for i := 0; i < len(s); i++ {
-		if s[i] < 0x20 || s[i] == 0x7f {
-			return true
-		}
-	}
-	return false
 }
