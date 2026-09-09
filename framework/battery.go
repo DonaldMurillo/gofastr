@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"slices"
 	"sort"
+	"sync"
 )
 
 // Battery is the interface for heavyweight, lifecycle-aware modules that
@@ -74,7 +75,12 @@ type batteryEntry struct {
 type BatteryManager struct {
 	entries map[string]*batteryEntry
 	order   []string // registration order
-	sorted  []string // dependency-resolved order (computed)
+	sorted  []string // dependency-resolved order (computed), guarded by mu
+
+	// mu guards sorted: App.Start resolves the order on its goroutine while
+	// a concurrent App.Shutdown walks it in StopAll (the race the seed
+	// wiring test drives on purpose). Every reader takes a snapshot.
+	mu sync.RWMutex
 }
 
 // NewBatteryManager creates a new BatteryManager.
@@ -202,8 +208,19 @@ func (bm *BatteryManager) resolveOrder() error {
 		return fmt.Errorf("circular battery dependency involving: %v", unresolved)
 	}
 
+	bm.mu.Lock()
 	bm.sorted = sorted
+	bm.mu.Unlock()
 	return nil
+}
+
+// resolved returns the dependency-resolved order under the read lock.
+// resolveOrder replaces the slice wholesale, so a snapshot of the header
+// is safe to iterate without the lock.
+func (bm *BatteryManager) resolved() []string {
+	bm.mu.RLock()
+	defer bm.mu.RUnlock()
+	return bm.sorted
 }
 
 // InitAll initializes all batteries in dependency order. Called during
@@ -212,7 +229,7 @@ func (bm *BatteryManager) InitAll(app *App) error {
 	if err := bm.resolveOrder(); err != nil {
 		return err
 	}
-	for i, name := range bm.sorted {
+	for i, name := range bm.resolved() {
 		entry := bm.entries[name]
 		entry.initOrder = i
 		if entry.initialized {
@@ -270,7 +287,7 @@ func callModuleSafe(kind, name, phase string, call func() error) (err error) {
 // callModuleSafe recover isolation, so a panicking start hook aborts
 // App.Start with an attributed error instead of unwinding through it.
 func (bm *BatteryManager) StartAll(ctx context.Context) error {
-	for _, name := range bm.sorted {
+	for _, name := range bm.resolved() {
 		if lc, ok := bm.entries[name].battery.(BatteryLifecycle); ok {
 			if err := callModuleSafe("battery", name, "start", func() error { return lc.OnStart(ctx) }); err != nil {
 				return err
@@ -288,7 +305,7 @@ func (bm *BatteryManager) StartAll(ctx context.Context) error {
 // one battery's bug.
 func (bm *BatteryManager) StopAll(ctx context.Context) error {
 	var errs []error
-	for _, name := range slices.Backward(bm.sorted) {
+	for _, name := range slices.Backward(bm.resolved()) {
 		if lc, ok := bm.entries[name].battery.(BatteryLifecycle); ok {
 			if err := callModuleSafe("battery", name, "stop", func() error { return lc.OnStop(ctx) }); err != nil {
 				errs = append(errs, err)
@@ -300,8 +317,9 @@ func (bm *BatteryManager) StopAll(ctx context.Context) error {
 
 // All returns all registered batteries in dependency-resolved order.
 func (bm *BatteryManager) All() []Battery {
-	result := make([]Battery, 0, len(bm.sorted))
-	for _, name := range bm.sorted {
+	sorted := bm.resolved()
+	result := make([]Battery, 0, len(sorted))
+	for _, name := range sorted {
 		result = append(result, bm.entries[name].battery)
 	}
 	return result
@@ -309,5 +327,5 @@ func (bm *BatteryManager) All() []Battery {
 
 // Names returns battery names in dependency-resolved order.
 func (bm *BatteryManager) Names() []string {
-	return append([]string{}, bm.sorted...)
+	return append([]string{}, bm.resolved()...)
 }
