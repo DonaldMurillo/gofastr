@@ -64,6 +64,34 @@ func ensureBridgeClass() objc.ID {
 				Fn:    ffi.NewCallback(bridgeWindowDidEndLiveResize),
 			},
 			{
+				// A resize re-lays the traffic lights out (the macOS 26
+				// quirk), so the inset is re-applied here.
+				Sel:   "windowDidResize:",
+				Types: "v@:@",
+				Fn:    ffi.NewCallback(bridgeWindowDidResize),
+			},
+			{
+				// The key-window transitions report through
+				// WindowConfig.OnWindowFocus/OnWindowBlur (the page
+				// theme dims with the native material).
+				Sel:   "windowDidBecomeKey:",
+				Types: "v@:@",
+				Fn:    ffi.NewCallback(bridgeWindowDidBecomeKey),
+			},
+			{
+				Sel:   "windowDidResignKey:",
+				Types: "v@:@",
+				Fn:    ffi.NewCallback(bridgeWindowDidResignKey),
+			},
+			{
+				// NSWorkspaceAccessibilityDisplayOptionsDidChange: the
+				// appearance surface (Reduce Transparency) the page
+				// cannot read through CSS.
+				Sel:   "workspaceAccessibilityChanged:",
+				Types: "v@:@",
+				Fn:    ffi.NewCallback(bridgeWorkspaceAccessibility),
+			},
+			{
 				Sel:   "applicationShouldTerminateAfterLastWindowClosed:",
 				Types: "B@:@",
 				Fn:    ffi.NewCallback(bridgeTerminateAfterLastWindow),
@@ -305,6 +333,69 @@ func reportWindowFrameNote(a *ffi.Args) {
 		return
 	}
 	s.reportWindowFrame(w)
+}
+
+// bridgeWindowDidResize is the windowDidResize: IMP: AppKit re-lays
+// the traffic lights out during and after a resize, so the configured
+// inset goes back on. Main thread.
+func bridgeWindowDidResize(a *ffi.Args) uintptr {
+	if s := activeShell.Load(); s != nil {
+		if w, ok := windowFromNote(a); ok {
+			w.reapplyTrafficInset()
+		}
+	}
+	return 0
+}
+
+// bridgeWindowDidBecomeKey is the windowDidBecomeKey: IMP: the inset
+// again (becoming key re-lays the buttons), then OnWindowFocus.
+func bridgeWindowDidBecomeKey(a *ffi.Args) uintptr {
+	if s := activeShell.Load(); s != nil {
+		if w, ok := windowFromNote(a); ok {
+			w.reapplyTrafficInset()
+			s.reportWindowActivity(w, true)
+		}
+	}
+	return 0
+}
+
+// bridgeWindowDidResignKey is the windowDidResignKey: IMP:
+// OnWindowBlur.
+func bridgeWindowDidResignKey(a *ffi.Args) uintptr {
+	if s := activeShell.Load(); s != nil {
+		if w, ok := windowFromNote(a); ok {
+			s.reportWindowActivity(w, false)
+		}
+	}
+	return 0
+}
+
+// windowFromNote reads the notification's window and resolves it.
+func windowFromNote(a *ffi.Args) (*darwinWindow, bool) {
+	s := activeShell.Load()
+	if s == nil {
+		return nil, false
+	}
+	note := objc.ID(a.Int[2])
+	if note == 0 {
+		return nil, false
+	}
+	win := objc.ID(objc.Send(note, objc.Sel("object")))
+	return s.lookupWindow(win)
+}
+
+// bridgeWorkspaceAccessibility is the NSWorkspace accessibility
+// notification IMP: re-read Reduce Transparency (the note fires for
+// contrast and motion too) and hand the change to the shell. Main
+// thread.
+func bridgeWorkspaceAccessibility(a *ffi.Args) uintptr {
+	s := activeShell.Load()
+	if s == nil {
+		return 0
+	}
+	ws := objc.Send(objc.Class("NSWorkspace"), objc.Sel("sharedWorkspace"))
+	s.appearanceChanged(objc.SendBool(objc.ID(ws), objc.Sel("accessibilityDisplayShouldReduceTransparency")))
+	return 0
 }
 
 // bridgeTerminateAfterLastWindow keeps the process alive when the

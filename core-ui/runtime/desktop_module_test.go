@@ -127,3 +127,39 @@ func TestRuntimeModule_DesktopSetPath(t *testing.T) {
 		t.Error("setPath report must check the leading slash before sending")
 	}
 }
+
+// TestRuntimeModule_DesktopChromeClasses pins the phase 13 chrome
+// contract: the boot marker's Reduce Transparency state becomes a
+// documentElement class at load, and the window_focus/window_blur/
+// reduce_transparency events toggle the two classes the desktop theme
+// keys on. Focus classes apply only to events whose id is this
+// window's, so one window's blur does not dim another's page.
+func TestRuntimeModule_DesktopChromeClasses(t *testing.T) {
+	src, ok := Module("desktop")
+	if !ok {
+		t.Fatal("desktop module not embedded")
+	}
+	for _, want := range []string{
+		"desktop-reduce-transparency", // the flattened-glass class
+		"desktop-inactive",            // the inactive-window class
+		"reduce_transparency",         // the change event
+		"window_focus",                // key events
+		"window_blur",
+		"reduceTransparency", // the boot marker field
+		"documentElement",    // the classes land on <html>
+	} {
+		if !strings.Contains(src, want) {
+			t.Errorf("desktop module missing %q", want)
+		}
+	}
+	// The id check gates the focus classes: a blur naming another
+	// window must not dim this page. Accept the minified and raw
+	// spellings of the payload read.
+	if !strings.Contains(src, "p.id===windowID()") && !strings.Contains(src, "p.id === windowID()") {
+		t.Error("window_focus/window_blur classes must be gated on the event's id matching this window")
+	}
+	// The boot-time read happens once, before any event can arrive.
+	if !strings.Contains(src, "__gofastr_desktop.reduceTransparency") {
+		t.Error("the module must read the marker's reduceTransparency at load for the first paint")
+	}
+}

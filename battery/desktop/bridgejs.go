@@ -189,18 +189,25 @@ func sortStrings(s []string) {
 // BootstrapJS is the ONE script a native shell injects into a window's
 // pages at document start: the host marker the desktop runtime module
 // detects (`window.__gofastr_desktop`, with the host OS, the battery's
-// module version, and the id of the window the page lives in, "main"
-// for the first window). Every window gets its own copy carrying its
-// own id. A test harness that drives a real browser injects the same
-// script so the page sees a desktop host.
+// module version, the id of the window the page lives in, "main" for
+// the first window, and the Reduce Transparency state so the first
+// paint is right: WebKit has no prefers-reduced-transparency query, so
+// the page cannot read it itself). Every window gets its own copy
+// carrying its own id. A test harness that drives a real browser
+// injects the same script so the page sees a desktop host.
 //
 // The value is built in Go and spliced in as a quoted string handed to
 // JSON.parse, never an object literal (the jsQuote rule: __proto__ in a
 // literal is a setter, a duplicate key a SyntaxError).
-func BootstrapJS(windowID string) string {
-	payload, err := json.Marshal(map[string]string{"os": runtime.GOOS, "version": moduleVersion(), "window": windowID})
+func BootstrapJS(windowID string, reduceTransparency bool) string {
+	payload, err := json.Marshal(struct {
+		OS                 string `json:"os"`
+		Version            string `json:"version"`
+		Window             string `json:"window"`
+		ReduceTransparency bool   `json:"reduceTransparency"`
+	}{runtime.GOOS, moduleVersion(), windowID, reduceTransparency})
 	if err != nil {
-		payload = []byte(`{"os":"` + runtime.GOOS + `","version":"dev","window":"main"}`)
+		payload = []byte(`{"os":"` + runtime.GOOS + `","version":"dev","window":"main","reduceTransparency":false}`)
 	}
 	return "window.__gofastr_desktop = JSON.parse(" + jsQuote(string(payload)) + ")"
 }

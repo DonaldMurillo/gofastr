@@ -618,6 +618,22 @@ func (h *Harness) MoveWindow(id string, f desktop.Frame) {
 	h.Shell.MoveWindow(id, f)
 }
 
+// FocusWindow plays the OS making window id key: the fake shell fires
+// WindowConfig.OnWindowFocus on a goroutine, the way the native
+// windowDidBecomeKey: delegate reports.
+func (h *Harness) FocusWindow(id string) { h.Shell.FocusWindow(id) }
+
+// BlurWindow plays the window resigning key (windowDidResignKey:).
+func (h *Harness) BlurWindow(id string) { h.Shell.BlurWindow(id) }
+
+// SetReduceTransparency plays the user flipping the accessibility
+// setting: the shell's Appearance changes and OnAppearance fires.
+func (h *Harness) SetReduceTransparency(on bool) { h.Shell.SetReduceTransparency(on) }
+
+// SidebarWidthOf returns the sidebar zone window id carries (0 when
+// there is no such window).
+func (h *Harness) SidebarWidthOf(id string) int { return h.Shell.SidebarWidthOf(id) }
+
 // BootRedirect is the Location the boot handshake answered with: "/"
 // or, when the app remembers windows, the main window's last path.
 func (h *Harness) BootRedirect() string { return h.bootRedirect }

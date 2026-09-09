@@ -91,3 +91,61 @@ func TestStyleFrameOrigin(t *testing.T) {
 		t.Error("frameOrigin honored Y without X, want ok=false")
 	}
 }
+
+func TestStyleMaskUnified(t *testing.T) {
+	// ChromeUnified is HiddenTitle's mask: the page paints under the
+	// title bar, the toolbar strip merges into it.
+	got := windowStyleMask(desktop.WindowStyle{Chrome: desktop.ChromeUnified})
+	want := maskTitled | maskClosable | maskResizable | maskFullSizeContentView
+	if got != want {
+		t.Fatalf("unified mask = %#x, want %#x", got, want)
+	}
+	notResizable := false
+	if got := windowStyleMask(desktop.WindowStyle{Chrome: desktop.ChromeUnified, Resizable: &notResizable}); got&maskResizable != 0 {
+		t.Fatalf("unified fixed mask kept resizable: %#x", got)
+	}
+}
+
+func TestResolveMaterial(t *testing.T) {
+	cases := []struct {
+		name  string
+		style desktop.WindowMaterial
+		glass bool
+		want  desktop.WindowMaterial
+	}{
+		// none is none everywhere.
+		{"none on 26", desktop.MaterialNone, true, desktop.MaterialNone},
+		{"none below 26", desktop.MaterialNone, false, desktop.MaterialNone},
+		// The sidebar zone has one shape: the zone vibrancy view.
+		{"sidebar on 26", desktop.MaterialSidebar, true, desktop.MaterialSidebar},
+		{"sidebar below 26", desktop.MaterialSidebar, false, desktop.MaterialSidebar},
+		// Window and glass wrap in NSGlassEffectView on 26, vibrancy
+		// below it; glass degrades to the window material.
+		{"window on 26", desktop.MaterialWindow, true, desktop.MaterialGlass},
+		{"window below 26", desktop.MaterialWindow, false, desktop.MaterialWindow},
+		{"glass on 26", desktop.MaterialGlass, true, desktop.MaterialGlass},
+		{"glass below 26", desktop.MaterialGlass, false, desktop.MaterialWindow},
+		// The battery refuses unknown materials at New; the shell's
+		// answer for one anyway is the opaque window.
+		{"unknown", desktop.WindowMaterial("frosted"), true, desktop.MaterialNone},
+	}
+	for _, tc := range cases {
+		if got := resolveMaterial(tc.style, tc.glass); got != tc.want {
+			t.Errorf("%s: resolveMaterial = %q, want %q", tc.name, got, tc.want)
+		}
+	}
+}
+
+func TestToolbarStyleName(t *testing.T) {
+	// NSWindowToolbarStyle's enum order, from NSWindow.h in the SDK.
+	for v, want := range map[uintptr]string{
+		0: "automatic", 1: "expanded", 2: "preference", 3: "unified", 4: "unifiedCompact",
+	} {
+		if got := toolbarStyleName(v); got != want {
+			t.Errorf("toolbarStyleName(%d) = %q, want %q", v, got, want)
+		}
+	}
+	if got := toolbarStyleName(9); got != "" {
+		t.Errorf("toolbarStyleName(9) = %q, want empty", got)
+	}
+}

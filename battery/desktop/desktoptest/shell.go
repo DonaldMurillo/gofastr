@@ -56,6 +56,8 @@ type Shell struct {
 	trayTitle string
 	// settingsFires counts FireOnSettings activations.
 	settingsFires int
+	// appearance is the value SetReduceTransparency installed.
+	appearance    desktop.Appearance
 	notifications []desktop.Notification
 	notifyErr     error
 }
@@ -77,7 +79,7 @@ func (f *Shell) Run(ctx context.Context, w desktop.WindowConfig, ready func(desk
 	if f.openWindows == nil {
 		f.openWindows = make(map[string]*Window)
 	}
-	win := &Window{shell: f, id: "main", title: w.Title}
+	win := &Window{shell: f, id: "main", title: w.Title, sidebarWidth: w.SidebarWidth}
 	f.openWindows["main"] = win
 	f.mu.Unlock()
 
@@ -106,12 +108,10 @@ func (f *Shell) OpenWindow(id string, spec desktop.WindowSpec, url string) (desk
 	if w, ok := f.openWindows[id]; ok {
 		return w, nil
 	}
-	w := &Window{shell: f, id: id, title: spec.Title}
+	w := &Window{shell: f, id: id, title: spec.Title, sidebarWidth: spec.SidebarWidth}
 	f.openWindows[id] = w
 	return w, nil
 }
-
-// SetTrayTitle implements desktop.Shell: records the title.
 func (f *Shell) SetTrayTitle(title string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -134,6 +134,67 @@ func (f *Shell) MoveWindow(id string, fr desktop.Frame) {
 	if cb != nil {
 		go cb(id, fr)
 	}
+}
+
+// Appearance implements desktop.Shell: the value SetReduceTransparency
+// last installed (the zero value until then).
+func (f *Shell) Appearance() desktop.Appearance {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.appearance
+}
+
+// SetReduceTransparency plays the user flipping the accessibility
+// setting: Appearance() changes and WindowConfig.OnAppearance fires on
+// a goroutine, the way the NSWorkspace observer reports on darwin.
+func (f *Shell) SetReduceTransparency(on bool) {
+	f.mu.Lock()
+	ap := desktop.Appearance{ReduceTransparency: on}
+	f.appearance = ap
+	cb := f.runCfg.OnAppearance
+	f.mu.Unlock()
+	if cb != nil {
+		go cb(ap)
+	}
+}
+
+// FocusWindow plays the OS making window id key: the frame changes and
+// WindowConfig.OnWindowFocus fires on a goroutine, the way
+// windowDidBecomeKey: reports.
+func (f *Shell) FocusWindow(id string) { f.fireWindowActivity(id, true) }
+
+// BlurWindow plays the window resigning key (windowDidResignKey:).
+func (f *Shell) BlurWindow(id string) { f.fireWindowActivity(id, false) }
+
+// fireWindowActivity snapshots the callback under the lock and fires
+// it on a goroutine; nil ids fire nothing (no such window).
+func (f *Shell) fireWindowActivity(id string, focus bool) {
+	f.mu.Lock()
+	w := f.openWindows[id]
+	focusCB, blurCB := f.runCfg.OnWindowFocus, f.runCfg.OnWindowBlur
+	f.mu.Unlock()
+	if w == nil {
+		return
+	}
+	if focus && focusCB != nil {
+		go focusCB(id)
+	}
+	if !focus && blurCB != nil {
+		go blurCB(id)
+	}
+}
+
+// SidebarWidthOf returns the sidebar zone window id carries right now
+// (0 when there is no such window), the fact the darwin WindowState
+// reads off the live zone view.
+func (f *Shell) SidebarWidthOf(id string) int {
+	f.mu.Lock()
+	w := f.openWindows[id]
+	f.mu.Unlock()
+	if w == nil {
+		return 0
+	}
+	return w.SidebarWidth()
 }
 
 // FireOnSettings invokes the WindowConfig.OnSettings callback the

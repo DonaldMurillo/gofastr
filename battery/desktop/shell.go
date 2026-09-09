@@ -108,6 +108,29 @@ type Notifier interface {
 	Show(ctx context.Context, n Notification) error
 }
 
+// WindowMaterial selects the native effect under a window's page. The
+// zero value is the opaque default; the shell picks the mechanism per
+// platform (glass on macOS 26, an NSVisualEffectView below it, Mica on
+// Windows 11, none on Linux). A material only shows where the page
+// paints transparent (html and body); the doc section spells the page
+// contract.
+type WindowMaterial string
+
+const (
+	// MaterialNone is the opaque window (default).
+	MaterialNone WindowMaterial = ""
+	// MaterialSidebar puts the effect under the sidebar zone only.
+	MaterialSidebar WindowMaterial = "sidebar"
+	// MaterialWindow puts the effect under the whole window.
+	MaterialWindow WindowMaterial = "window"
+	// MaterialGlass asks for macOS 26 glass; below 26 it degrades to
+	// MaterialWindow (the shell logs the degradation).
+	MaterialGlass WindowMaterial = "glass"
+)
+
+// Inset is an offset in screen points from a default position.
+type Inset struct{ X, Y int }
+
 // WindowChrome selects a window's title-bar treatment.
 type WindowChrome int
 
@@ -122,7 +145,15 @@ const (
 	// resize box. The page drags the window through
 	// data-fui-window-drag.
 	ChromeNone
+	// ChromeUnified is the Notes and Finder shape: a transparent title
+	// bar with a hidden title and a unified toolbar style (an empty
+	// NSToolbar attached on darwin so toolbarStyle takes effect).
+	ChromeUnified
 )
+
+// MaxSidebarWidth bounds a sidebar zone in screen points on both sides
+// of the contract (Config, WindowSpec, window.setChrome).
+const MaxSidebarWidth = 4096
 
 // WindowStyle describes the native chrome of a window beyond its
 // content. The zero value is the plain titled window. Hosts without a
@@ -148,6 +179,16 @@ type WindowStyle struct {
 	// the primary screen's top-left. Both must be set together; nil
 	// means the host centers the window.
 	X, Y *int
+	// Material selects the native effect under the page (the
+	// WindowMaterial constants). MaterialNone (the zero value) is the
+	// opaque default.
+	Material WindowMaterial
+	// TrafficLightInset moves the three window buttons (close,
+	// minimize, zoom) from the system position on darwin; nil keeps
+	// it. Both values must be >= 0. The page reserves space for the
+	// buttons (the theme's spacing token), and the shell re-applies
+	// the geometry whenever AppKit re-lays the title bar out.
+	TrafficLightInset *Inset
 }
 
 // Frame is a window's position and size in screen points. X and Y
@@ -172,6 +213,10 @@ type WindowSpec struct {
 	// (centered). A Frame from the window store replaces a nil one, so
 	// a remembered window reopens where the user left it.
 	Frame *Frame
+	// SidebarWidth is this window's initial sidebar zone in screen
+	// points (0 means no zone); the page updates it through
+	// window.setChrome as its layout changes.
+	SidebarWidth int
 }
 
 // WindowConfig describes the main window the desktop host opens and
@@ -232,11 +277,36 @@ type WindowConfig struct {
 	// the user moves or resizes a window, unthrottled: the host
 	// debounces. It never fires for windows created after Run.
 	OnWindowFrame func(id string, f Frame)
+	// SidebarWidth is the main window's initial sidebar zone in screen
+	// points (0 means no zone); the battery fills it from
+	// Config.SidebarWidth and the page updates it through
+	// window.setChrome.
+	SidebarWidth int
+	// OnWindowFocus is called by the shell (on a goroutine) when a
+	// window becomes key (windowDidBecomeKey: on darwin).
+	OnWindowFocus func(id string)
+	// OnWindowBlur is called by the shell (on a goroutine) when a
+	// window resigns key (windowDidResignKey: on darwin).
+	OnWindowBlur func(id string)
+	// OnAppearance is called by the shell (on a goroutine, any thread)
+	// when an appearance setting the page cannot see through CSS
+	// changes. It fires on change only; the boot marker carries the
+	// initial value.
+	OnAppearance func(a Appearance)
 	// OnDeepLink is called by the shell (on a goroutine) with the raw
 	// URL the OS asked the app to open (a custom URL scheme). It may be
 	// called before ready fired; the battery queues until the window is
 	// up.
 	OnDeepLink func(rawURL string)
+}
+
+// Appearance is the accessibility and appearance state the page cannot
+// read through CSS: WebKit implements no prefers-reduced-transparency
+// query, so the shell reads NSWorkspace on darwin and pushes changes
+// through the OnAppearance callback and the boot marker.
+type Appearance struct {
+	// ReduceTransparency is the user's Reduce Transparency setting.
+	ReduceTransparency bool
 }
 
 // Window is the native window + web view. Every method may be called
@@ -266,6 +336,10 @@ type Window interface {
 	Frame() (Frame, error)
 	// SetFrame moves and sizes the window.
 	SetFrame(f Frame) error
+	// SetSidebarWidth resizes the window's sidebar zone (the effect
+	// area under MaterialSidebar) to points; 0 removes the zone. The
+	// page's setChrome capability is the usual caller.
+	SetSidebarWidth(points int) error
 	// Close closes the window.
 	Close() error
 }
@@ -316,6 +390,11 @@ type Shell interface {
 	Dialogs() Dialogs
 	// Notifier returns the notification surface.
 	Notifier() Notifier
+	// Appearance returns the current appearance state (the settings
+	// the page cannot read through CSS). Callable at any time,
+	// including before Run: a shell without a native layer answers the
+	// zero value.
+	Appearance() Appearance
 }
 
 // PageEvaluator is implemented by a Window that can run a script in its
@@ -360,6 +439,11 @@ type NativeDriver interface {
 	CloseWindowNative(id string) error
 	// WindowState reads what the OS knows about a window.
 	WindowState(id string) (WindowState, error)
+	// DeactivateReactivate deactivates and reactivates the app the way
+	// a user's app switch does ([NSApp deactivate] then
+	// activateIgnoringOtherApps: on darwin): the key window must
+	// resign and become key again, firing the focus callbacks.
+	DeactivateReactivate() error
 	// NotificationLog is every Notification Show received, bundled or
 	// not, in order.
 	NotificationLog() []Notification
@@ -383,6 +467,24 @@ type WindowState struct {
 	X, Y   int
 	Width  int
 	Height int
+	// Material is what the shell actually applied under the page, read
+	// from the live view tree: "none", "vibrancy-sidebar",
+	// "vibrancy-window", or "glass" (macOS 26 only). The configured
+	// Material may degrade (glass below macOS 26 answers
+	// "vibrancy-window").
+	Material string
+	// TitlebarTransparent reports the titlebarAppearsTransparent fact.
+	TitlebarTransparent bool
+	// ToolbarStyle names the window's toolbar style when a toolbar is
+	// attached ("unified", "expanded", ...); "" when there is none.
+	ToolbarStyle string
+	// SidebarWidth is the sidebar zone's width in screen points as the
+	// live zone view is sized; 0 when the window has no zone.
+	SidebarWidth int
+	// CGWindowID is the window's CoreGraphics id (NSWindow's
+	// windowNumber on darwin), the id screencapture -l and the window
+	// services speak. 0 when the platform has none.
+	CGWindowID int64
 }
 
 // MainWindowID is the id the main window carries; the battery assigns

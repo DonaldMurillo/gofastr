@@ -94,6 +94,28 @@
     });
   }
 
+  // Window activity and Reduce Transparency, the two signals CSS
+  // cannot see (no window-activity query, no prefers-reduced-
+  // transparency in WebKit). The shell pushes them through _dispatch
+  // and the boot marker; the module mirrors them as documentElement
+  // classes the desktop theme keys on.
+  const html = () => document.documentElement;
+  function setClass(name, on) {
+    const el = html();
+    if (el) el.classList.toggle(name, on);
+  }
+  if (available() && window.__gofastr_desktop.reduceTransparency) {
+    setClass('desktop-reduce-transparency', true);
+  }
+  function chromeEvent(name, payload) {
+    const p = payload || {};
+    if (name === 'reduce_transparency') setClass('desktop-reduce-transparency', !!p.on);
+    else if (p.id === windowID()) {
+      if (name === 'window_focus') setClass('desktop-inactive', false);
+      else if (name === 'window_blur') setClass('desktop-inactive', true);
+    }
+  }
+
   // The relaunch redirect: report where the page is after every
   // client-side navigation (the gofastr:navigate event the router
   // dispatches after a swap; boot-embed uses the same event), and once
@@ -127,6 +149,7 @@
     if (set) set.delete(fn);
   }
   function _dispatch(name, payload) {
+    chromeEvent(name, payload);
     const set = listeners.get(name);
     if (!set) return;
     for (const fn of Array.from(set)) {

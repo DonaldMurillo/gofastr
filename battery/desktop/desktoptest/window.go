@@ -31,6 +31,26 @@ type Window struct {
 	// OnWindowFrame the way the native delegate does).
 	frame     desktop.Frame
 	setFrames []desktop.Frame
+	// sidebarWidth is the sidebar zone the window carries: the
+	// WindowConfig/WindowSpec value at creation, then whatever
+	// SetSidebarWidth reported.
+	sidebarWidth int
+}
+
+// SetSidebarWidth implements desktop.Window: the zone the page
+// reported through window.setChrome, recorded for SidebarWidthOf.
+func (w *Window) SetSidebarWidth(points int) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.sidebarWidth = points
+	return nil
+}
+
+// SidebarWidth returns the window's current sidebar zone in points.
+func (w *Window) SidebarWidth() int {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.sidebarWidth
 }
 
 // ID implements desktop.Window.
