@@ -2,14 +2,16 @@ package freeze
 
 import (
 	"fmt"
-	"net/url"
+	"maps"
 	"reflect"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
 	"unicode"
 
 	"github.com/DonaldMurillo/gofastr/core/query"
+	"github.com/DonaldMurillo/gofastr/internal/dsnredact"
 	"github.com/DonaldMurillo/gofastr/kiln/world"
 )
 
@@ -147,18 +149,7 @@ func appMap(a world.AppConfig) map[string]any {
 	// opt-out and must be emitted explicitly rather than re-defaulting to api.
 	m["api_prefix"] = strings.Trim(a.APIPrefix, "/")
 	if len(a.Theme) > 0 || len(a.ThemeDark) > 0 {
-		theme := map[string]any{}
-		for k, v := range a.Theme {
-			theme[k] = v
-		}
-		if len(a.ThemeDark) > 0 {
-			dark := map[string]any{}
-			for k, v := range a.ThemeDark {
-				dark[k] = v
-			}
-			theme["dark"] = dark
-		}
-		m["theme"] = theme
+		m["theme"] = ThemeMap(a.Theme, a.ThemeDark)
 	}
 	if a.Auth.Enabled || a.Auth.BasePath != "" || a.Auth.JWTSecret != "" || !a.Auth.DevMode {
 		m["auth"] = map[string]any{
@@ -183,6 +174,27 @@ func appMap(a world.AppConfig) map[string]any {
 	}
 	if a.LLMMD {
 		m["llm_md"] = true
+	}
+	return m
+}
+
+// ThemeMap builds the blueprint `theme` section from the light and dark
+// token sets: light entries verbatim, plus a nested "dark" sub-map when
+// dark overrides exist. Exported so cmd/gofastr's appToMap (pack) and
+// freeze's appMap share one serialization shape instead of a copied
+// block; key order is irrelevant here because writeYAMLMap sorts via
+// OrderedKeys.
+func ThemeMap(theme, dark map[string]string) map[string]any {
+	m := map[string]any{}
+	for k, v := range theme {
+		m[k] = v
+	}
+	if len(dark) > 0 {
+		d := map[string]any{}
+		for k, v := range dark {
+			d[k] = v
+		}
+		m["dark"] = d
 	}
 	return m
 }
@@ -596,7 +608,7 @@ func normalizeYAMLValue(value any) any {
 }
 
 func writeYAMLMap(sb *strings.Builder, m map[string]any, indent int, order []string) {
-	for _, key := range orderedKeys(m, order) {
+	for _, key := range OrderedKeys(m, order) {
 		writeYAMLEntry(sb, key, m[key], indent)
 	}
 }
@@ -639,7 +651,7 @@ func writeYAMLListItem(sb *strings.Builder, item any, indent int, order []string
 			sb.WriteString(strings.Repeat(" ", indent) + "-\n")
 			return
 		}
-		keys := orderedKeys(m, order)
+		keys := OrderedKeys(m, order)
 		// core/yaml expects the first list-map key to carry an inline value:
 		// a scalar, or a flow list of scalars. validateYAMLRepresentable
 		// guarantees one exists.
@@ -810,8 +822,8 @@ func validateYAMLRepresentable(value any, path string) error {
 			itemPath := fmt.Sprintf("%s[%d]", path, i)
 			switch entry := item.(type) {
 			case map[string]any:
-				if len(entry) > 0 && inlineLeadKey(orderedKeys(entry, nil), entry) == -1 {
-					return fmt.Errorf("freeze: %s: core/yaml cannot represent a list item whose every value is nested (keys: %s); flatten one value to a scalar or scalar list", itemPath, strings.Join(sortedKeys(entry), ", "))
+				if len(entry) > 0 && inlineLeadKey(OrderedKeys(entry, nil), entry) == -1 {
+					return fmt.Errorf("freeze: %s: core/yaml cannot represent a list item whose every value is nested (keys: %s); flatten one value to a scalar or scalar list", itemPath, strings.Join(slices.Sorted(maps.Keys(entry)), ", "))
 				}
 			case []any:
 				if !allScalars(entry) {
@@ -848,16 +860,13 @@ func joinPath(path, key string) string {
 	return path + "." + key
 }
 
-func sortedKeys(m map[string]any) []string {
-	out := make([]string, 0, len(m))
-	for key := range m {
-		out = append(out, key)
-	}
-	sort.Strings(out)
-	return out
-}
-
-func orderedKeys(m map[string]any, order []string) []string {
+// OrderedKeys returns m's keys in `order` first (only those present in m),
+// then the remaining keys sorted, so the emitted YAML keeps the documented
+// key order while never depending on map iteration order.
+//
+// Exported because cmd/gofastr/pack.go carried a byte-identical private
+// copy for its own YAML writer; that copy is deleted and calls this one.
+func OrderedKeys(m map[string]any, order []string) []string {
 	seen := map[string]bool{}
 	out := make([]string, 0, len(m))
 	for _, key := range order {
@@ -955,41 +964,11 @@ func envRef(value, name string) string {
 // pair) is live credential material: freeze writes into a directory that
 // is about to be committed, so the password must not ride along verbatim.
 // A DSN that carries no credentials (a SQLite file path, a URL with no
-// userinfo) stays verbatim so local frozen apps keep booting. Mirrors
-// cmd/gofastr's dsnHasSecret (same fail-closed rule; main-package twin,
-// kept in lockstep by freeze_security_test.go).
+// userinfo) stays verbatim so local frozen apps keep booting. The
+// credential predicate is dsnredact.HasSecret, the one canonical rule.
 func dbURLRef(dsn string) string {
-	if dsn == "" || !dsnHasSecret(dsn) {
+	if dsn == "" || !dsnredact.HasSecret(dsn) {
 		return dsn
 	}
 	return envRef(dsn, "DATABASE_URL")
 }
-
-// DSNHasSecret reports whether a DSN embeds credentials: a URL-form
-// password or a key/value `password=` pair. Fails CLOSED on URL-form
-// DSNs url.Parse rejects but that carry an '@' authority: userinfo we
-// cannot prove clean is treated as credential-bearing.
-//
-// Exported because it is the ONE credential-shape rule for DSNs in the
-// tree: kiln/chat's world-redaction masks App.DBURL under exactly this
-// predicate so the freeze contract (what must never be written) and the
-// serving contract (what must never be handed out) cannot drift apart.
-// Mirrors cmd/gofastr's dsnHasSecret (main-package twin, kept in
-// lockstep by freeze_security_test.go).
-func DSNHasSecret(dsn string) bool {
-	if strings.Contains(dsn, "password=") {
-		return true
-	}
-	if u, err := url.Parse(dsn); err == nil {
-		if u.User != nil {
-			if _, has := u.User.Password(); has {
-				return true
-			}
-		}
-	} else if i := strings.Index(dsn, "://"); i >= 0 && strings.Contains(dsn[i+3:], "@") {
-		return true
-	}
-	return false
-}
-
-func dsnHasSecret(dsn string) bool { return DSNHasSecret(dsn) }

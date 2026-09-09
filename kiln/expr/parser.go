@@ -1,6 +1,9 @@
 package expr
 
-import "fmt"
+import (
+	"fmt"
+	"slices"
+)
 
 // node is the AST interface. eval is the only contract.
 type node interface {
@@ -121,42 +124,40 @@ func (p *parser) parseExpr() (node, error) {
 	return p.parseOr()
 }
 
-func (p *parser) parseOr() (node, error) {
-	left, err := p.parseAnd()
+// parseBinary parses one left-associative binary-operator precedence
+// level: the next-higher parser's result, then zero or more (op,
+// operand) pairs folded left. It replaces the four former per-level
+// copies (parseOr, parseAnd, parseAdd, parseMul), which differed only
+// in operator set and next-level parser. parseComp stays separate:
+// comparison is single-shot, not a fold.
+func (p *parser) parseBinary(next func() (node, error), ops ...string) (node, error) {
+	left, err := next()
 	if err != nil {
 		return nil, err
 	}
-	for p.peek().kind == tokPunct && p.peek().value == "||" {
+	for {
+		t := p.peek()
+		if t.kind != tokPunct || !slices.Contains(ops, t.value) {
+			return left, nil
+		}
 		p.advance()
-		right, err := p.parseAnd()
+		right, err := next()
 		if err != nil {
 			return nil, err
 		}
 		if err := p.count(); err != nil {
 			return nil, err
 		}
-		left = &binaryNode{op: "||", left: left, right: right}
+		left = &binaryNode{op: t.value, left: left, right: right}
 	}
-	return left, nil
+}
+
+func (p *parser) parseOr() (node, error) {
+	return p.parseBinary(p.parseAnd, "||")
 }
 
 func (p *parser) parseAnd() (node, error) {
-	left, err := p.parseComp()
-	if err != nil {
-		return nil, err
-	}
-	for p.peek().kind == tokPunct && p.peek().value == "&&" {
-		p.advance()
-		right, err := p.parseComp()
-		if err != nil {
-			return nil, err
-		}
-		if err := p.count(); err != nil {
-			return nil, err
-		}
-		left = &binaryNode{op: "&&", left: left, right: right}
-	}
-	return left, nil
+	return p.parseBinary(p.parseComp, "&&")
 }
 
 func (p *parser) parseComp() (node, error) {
@@ -183,47 +184,11 @@ func (p *parser) parseComp() (node, error) {
 }
 
 func (p *parser) parseAdd() (node, error) {
-	left, err := p.parseMul()
-	if err != nil {
-		return nil, err
-	}
-	for {
-		t := p.peek()
-		if t.kind != tokPunct || (t.value != "+" && t.value != "-") {
-			return left, nil
-		}
-		p.advance()
-		right, err := p.parseMul()
-		if err != nil {
-			return nil, err
-		}
-		if err := p.count(); err != nil {
-			return nil, err
-		}
-		left = &binaryNode{op: t.value, left: left, right: right}
-	}
+	return p.parseBinary(p.parseMul, "+", "-")
 }
 
 func (p *parser) parseMul() (node, error) {
-	left, err := p.parseUnary()
-	if err != nil {
-		return nil, err
-	}
-	for {
-		t := p.peek()
-		if t.kind != tokPunct || (t.value != "*" && t.value != "/" && t.value != "%") {
-			return left, nil
-		}
-		p.advance()
-		right, err := p.parseUnary()
-		if err != nil {
-			return nil, err
-		}
-		if err := p.count(); err != nil {
-			return nil, err
-		}
-		left = &binaryNode{op: t.value, left: left, right: right}
-	}
+	return p.parseBinary(p.parseUnary, "*", "/", "%")
 }
 
 func (p *parser) parseUnary() (node, error) {

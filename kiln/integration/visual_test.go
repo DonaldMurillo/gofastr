@@ -12,6 +12,7 @@ import (
 	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 	"github.com/chromedp/chromedp"
 
+	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
 	"github.com/DonaldMurillo/gofastr/kiln/journal"
 	"github.com/DonaldMurillo/gofastr/kiln/protocol"
 	"github.com/DonaldMurillo/gofastr/kiln/world"
@@ -43,8 +44,7 @@ func saveShot(t *testing.T, name string, buf []byte) string {
 // its server-rendered quick-start tray.
 func TestVisual_HostEmptyState(t *testing.T) {
 	urlBase, _ := startKiln(t)
-	ctx, cancel := newChrome(t)
-	defer cancel()
+	ctx := chromedptest.Context(t)
 
 	if err := chromedp.Run(ctx,
 		chromedp.EmulateViewport(1280, 800),
@@ -73,8 +73,7 @@ func TestVisual_HostEmptyState(t *testing.T) {
 // (2) Agent-turn state is visibly delivered by the current SSE signal path.
 func TestVisual_StatusFeedbackDuringTurn(t *testing.T) {
 	urlBase, l, _ := startKilnExt(t)
-	ctx, cancel := newChrome(t)
-	defer cancel()
+	ctx := chromedptest.Context(t)
 
 	if err := chromedp.Run(ctx,
 		chromedp.EmulateViewport(1280, 800),
@@ -126,8 +125,7 @@ func TestVisual_StatusFeedbackDuringTurn(t *testing.T) {
 // in the chat log alongside the user message.
 func TestVisual_WorldEditSystemRow(t *testing.T) {
 	urlBase, tools := startKiln(t)
-	ctx, cancel := newChrome(t)
-	defer cancel()
+	ctx := chromedptest.Context(t)
 
 	if err := chromedp.Run(ctx,
 		chromedp.EmulateViewport(1280, 800),
@@ -179,8 +177,7 @@ func TestVisual_WorldEditSystemRow(t *testing.T) {
 // (4) Multiple rapid edits stack as a visible feed of system rows.
 func TestVisual_RapidEditsAccumulate(t *testing.T) {
 	urlBase, tools := startKiln(t)
-	ctx, cancel := newChrome(t)
-	defer cancel()
+	ctx := chromedptest.Context(t)
 
 	if err := chromedp.Run(ctx,
 		chromedp.EmulateViewport(1280, 800),
@@ -237,8 +234,7 @@ func TestVisual_RapidEditsAccumulate(t *testing.T) {
 // This is the "live build" claim.
 func TestVisual_LivePageHotReload(t *testing.T) {
 	urlBase, tools := startKiln(t)
-	ctx, cancel := newChrome(t)
-	defer cancel()
+	ctx := chromedptest.Context(t)
 
 	// Initial: page with heading "Version One"
 	addV1 := tools.AddPage(t.Context(), protocol.AddPageArgs{Page: &world.Page{
@@ -345,8 +341,7 @@ func TestVisual_LivePageHotReload(t *testing.T) {
 // FAB hidden when open, gradient background).
 func TestVisual_PanelChromeStyling(t *testing.T) {
 	urlBase, _ := startKiln(t)
-	ctx, cancel := newChrome(t)
-	defer cancel()
+	ctx := chromedptest.Context(t)
 
 	var panelOpen bool
 	if err := chromedp.Run(ctx,
@@ -389,8 +384,7 @@ func waitForPanelPoll(t *testing.T, ctx context.Context) {
 // fallback response, so host.html must carry one.
 func TestVisual_DeletePageShowsFallback(t *testing.T) {
 	urlBase, tools := startKiln(t)
-	ctx, cancel := newChrome(t)
-	defer cancel()
+	ctx := chromedptest.Context(t)
 
 	add := tools.AddPage(t.Context(), protocol.AddPageArgs{Page: &world.Page{
 		Path:  "/doomed",

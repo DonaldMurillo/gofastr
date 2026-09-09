@@ -2,7 +2,6 @@ package render
 
 import (
 	"net/http"
-	"sort"
 
 	"github.com/DonaldMurillo/gofastr/core/router"
 )
@@ -15,15 +14,6 @@ type middlewareBuilder func(cfg map[string]any) (router.Middleware, error)
 // as an error rather than silently dropping them.
 var middlewareCatalog = map[string]middlewareBuilder{
 	"recover": buildRecover,
-}
-
-func middlewareNames() []string {
-	names := make([]string, 0, len(middlewareCatalog))
-	for n := range middlewareCatalog {
-		names = append(names, n)
-	}
-	sort.Strings(names)
-	return names
 }
 
 func buildRecover(_ map[string]any) (router.Middleware, error) {

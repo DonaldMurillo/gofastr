@@ -2,6 +2,7 @@ package world
 
 import (
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 )
@@ -96,7 +97,7 @@ func ValidateScaffold(nav []NavItem, endpoints []*EndpointStub, stubGroups map[s
 			return fmt.Errorf("endpoints[%d] (%q): path is required", i, ep.Name)
 		}
 	}
-	for _, label := range sortedKeys(stubGroups) {
+	for _, label := range slices.Sorted(maps.Keys(stubGroups)) {
 		for i, s := range stubGroups[label] {
 			if strings.TrimSpace(s.Name) == "" {
 				return fmt.Errorf("%s[%d]: name is required", label, i)
@@ -189,32 +190,10 @@ func PageCollidesWithEntity(w *World, path string) string {
 	if prefix == "" {
 		prefix = "api"
 	}
-	for _, name := range sortedEntityNames(w) {
+	for _, name := range slices.Sorted(maps.Keys(w.Entities)) {
 		if EntityMountPath(prefix, w.Entities[name]) == path {
 			return name
 		}
 	}
 	return ""
-}
-
-// sortedKeys returns map keys in a stable order so an error names the
-// same offending group across runs.
-func sortedKeys[V any](m map[string]V) []string {
-	out := make([]string, 0, len(m))
-	for k := range m {
-		out = append(out, k)
-	}
-	slices.Sort(out)
-	return out
-}
-
-// sortedEntityNames keeps collision reporting deterministic when more
-// than one entity could match.
-func sortedEntityNames(w *World) []string {
-	out := make([]string, 0, len(w.Entities))
-	for k := range w.Entities {
-		out = append(out, k)
-	}
-	slices.Sort(out)
-	return out
 }

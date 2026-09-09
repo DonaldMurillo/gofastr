@@ -407,7 +407,7 @@ func worldSnapshotTextLocked(w *world.World) string {
 			for k := range w.Entities {
 				names = append(names, k)
 			}
-			sortStrings(names)
+			slices.Sort(names)
 			base += " (" + strings.Join(names, ", ") + ")"
 		}
 		parts = append(parts, base)
@@ -450,7 +450,7 @@ func worldSnapshotTooltipLocked(w *world.World) string {
 		for k := range w.Entities {
 			names = append(names, k)
 		}
-		sortStrings(names)
+		slices.Sort(names)
 		fmt.Fprintf(&b, "Entities (%d): %s\n", n, strings.Join(names, ", "))
 	}
 	if n := len(w.Pages); n > 0 {
@@ -458,7 +458,7 @@ func worldSnapshotTooltipLocked(w *world.World) string {
 		for k := range w.Pages {
 			paths = append(paths, k)
 		}
-		sortStrings(paths)
+		slices.Sort(paths)
 		fmt.Fprintf(&b, "Pages (%d): %s\n", n, strings.Join(paths, ", "))
 	}
 	if n := len(w.Routes); n > 0 {
@@ -469,14 +469,6 @@ func worldSnapshotTooltipLocked(w *world.World) string {
 	}
 	b.WriteString("Click to open /kiln/world (JSON)")
 	return b.String()
-}
-
-func sortStrings(s []string) {
-	for i := 1; i < len(s); i++ {
-		for j := i; j > 0 && s[j] < s[j-1]; j-- {
-			s[j], s[j-1] = s[j-1], s[j]
-		}
-	}
 }
 
 func pluralize(n int, singular, plural string) string {
@@ -540,7 +532,7 @@ func quickstartExamplesLocked(w *world.World) []string {
 	for k := range w.Entities {
 		names = append(names, k)
 	}
-	sortStrings(names)
+	slices.Sort(names)
 	first := names[0]
 
 	suggestions := []string{

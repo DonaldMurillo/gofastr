@@ -14,8 +14,8 @@ func DefaultEnv() *Env {
 	e.Register("lower", builtinLower)
 	e.Register("upper", builtinUpper)
 	e.Register("contains", builtinContains)
-	e.Register("starts_with", builtinStartsWith)
-	e.Register("ends_with", builtinEndsWith)
+	e.Register("starts_with", stringPairBuiltin("starts_with", strings.HasPrefix))
+	e.Register("ends_with", stringPairBuiltin("ends_with", strings.HasSuffix))
 	e.Register("abs", builtinAbs)
 	e.Register("min", builtinMin)
 	e.Register("max", builtinMax)
@@ -82,28 +82,23 @@ func builtinContains(args []any) (any, error) {
 	return nil, fmt.Errorf("contains: %w", ErrType)
 }
 
-func builtinStartsWith(args []any) (any, error) {
-	if len(args) != 2 {
-		return nil, fmt.Errorf("starts_with: %w", ErrArity)
+// stringPairBuiltin builds a two-string-argument builtin that applies
+// pred after arity and type checks, prefixing errors with name. It
+// replaces the former builtinStartsWith and builtinEndsWith, whose
+// bodies were identical except for the name prefix and the strings
+// predicate.
+func stringPairBuiltin(name string, pred func(a, b string) bool) func(args []any) (any, error) {
+	return func(args []any) (any, error) {
+		if len(args) != 2 {
+			return nil, fmt.Errorf("%s: %w", name, ErrArity)
+		}
+		a, ok1 := args[0].(string)
+		b, ok2 := args[1].(string)
+		if !ok1 || !ok2 {
+			return nil, fmt.Errorf("%s: %w", name, ErrType)
+		}
+		return pred(a, b), nil
 	}
-	a, ok1 := args[0].(string)
-	b, ok2 := args[1].(string)
-	if !ok1 || !ok2 {
-		return nil, fmt.Errorf("starts_with: %w", ErrType)
-	}
-	return strings.HasPrefix(a, b), nil
-}
-
-func builtinEndsWith(args []any) (any, error) {
-	if len(args) != 2 {
-		return nil, fmt.Errorf("ends_with: %w", ErrArity)
-	}
-	a, ok1 := args[0].(string)
-	b, ok2 := args[1].(string)
-	if !ok1 || !ok2 {
-		return nil, fmt.Errorf("ends_with: %w", ErrType)
-	}
-	return strings.HasSuffix(a, b), nil
 }
 
 func builtinAbs(args []any) (any, error) {

@@ -389,6 +389,24 @@ func (t *Tools) AddEntity(_ context.Context, args AddEntityArgs) Result {
 	return t.applyEdit(journal.OpAddEntity, journal.AddEntityPayload{Entity: args.Entity})
 }
 
+// snapshotEntity returns a copy of the named entity safe to hold as a
+// journal Prev payload. The copy is made under the read lock because
+// the payload marshals outside it while a concurrent add_field /
+// delete_field Apply can mutate the live entity's Fields slice in
+// place. Replaces the duplicated snapshot blocks formerly inline in
+// UpdateEntity and DeleteEntity.
+func (t *Tools) snapshotEntity(name string) *world.Entity {
+	var prev *world.Entity
+	t.live.ReadSession(func(sess *journal.Session) {
+		if ent, ok := sess.World.Entities[name]; ok {
+			cp := *ent
+			cp.Fields = slices.Clone(cp.Fields)
+			prev = &cp
+		}
+	})
+	return prev
+}
+
 func (t *Tools) UpdateEntity(_ context.Context, args UpdateEntityArgs) Result {
 	if args.Entity == nil || args.Entity.Name == "" {
 		return invalid("missing entity or entity.name")
@@ -397,17 +415,7 @@ func (t *Tools) UpdateEntity(_ context.Context, args UpdateEntityArgs) Result {
 		return invalid("entity %q sets multi_tenant, but Kiln cannot choose the app-specific tenant resolver", args.Entity.Name).
 			withHint("use owner_field for per-user scoping, or add tenant middleware in owned Go after freeze")
 	}
-	var prev *world.Entity
-	t.live.ReadSession(func(sess *journal.Session) {
-		if ent, ok := sess.World.Entities[args.Entity.Name]; ok {
-			// Copy: Prev rides in the journal payload, which marshals
-			// outside the lock while add_field/delete_field can mutate
-			// the live entity's Fields slice in place.
-			cp := *ent
-			cp.Fields = slices.Clone(cp.Fields)
-			prev = &cp
-		}
-	})
+	prev := t.snapshotEntity(args.Entity.Name)
 	if prev == nil {
 		return notFound("entity %q not found", args.Entity.Name)
 	}
@@ -419,15 +427,7 @@ func (t *Tools) UpdateEntity(_ context.Context, args UpdateEntityArgs) Result {
 }
 
 func (t *Tools) DeleteEntity(_ context.Context, args DeleteEntityArgs) Result {
-	var prev *world.Entity
-	t.live.ReadSession(func(sess *journal.Session) {
-		if ent, ok := sess.World.Entities[args.Name]; ok {
-			// Copy for the journal payload, same as UpdateEntity.
-			cp := *ent
-			cp.Fields = slices.Clone(cp.Fields)
-			prev = &cp
-		}
-	})
+	prev := t.snapshotEntity(args.Name)
 	if prev == nil {
 		return notFound("entity %q not found", args.Name)
 	}
@@ -644,24 +644,22 @@ func applyPageElementPatch(target, parent *world.Node, idx int, patch PageElemen
 		parent.Children = append(parent.Children[:idx], parent.Children[idx+1:]...)
 		return Result{OK: true}
 
-	case "insert_before":
+	case "insert_before", "insert_after":
+		// The two ops share one body: insert after the target instead of
+		// before it. They were two copies differing only in the message
+		// word and the offset.
 		if parent == nil {
-			return invalid("cannot insert a sibling before the root element; use append_child on the root instead")
+			return invalid("cannot insert a sibling %s the root element; use append_child on the root instead",
+				strings.TrimPrefix(patch.Op, "insert_"))
 		}
 		if patch.Element == nil {
-			return invalid("insert_before requires a non-null element")
+			return invalid("%s requires a non-null element", patch.Op)
 		}
-		parent.Children = insertAt(parent.Children, idx, *patch.Element)
-		return Result{OK: true}
-
-	case "insert_after":
-		if parent == nil {
-			return invalid("cannot insert a sibling after the root element; use append_child on the root instead")
+		at := idx
+		if patch.Op == "insert_after" {
+			at = idx + 1
 		}
-		if patch.Element == nil {
-			return invalid("insert_after requires a non-null element")
-		}
-		parent.Children = insertAt(parent.Children, idx+1, *patch.Element)
+		parent.Children = insertAt(parent.Children, at, *patch.Element)
 		return Result{OK: true}
 
 	case "append_child":

@@ -132,28 +132,30 @@ func TestCSRFSameSiteFallsThrough(t *testing.T) {
 
 // CONTRACT-QUESTION: the shipped cmd/kiln binary wraps this surface in an
 // outer originGuard that pins the Host, so there is no shipped-binary
-// exploit; the claim is library-level. csrf.go's own doc (:52) pins "Mount is
-// a library surface" (unwrapped mounting is supported), and readGuard 25
-// lines below applies this exact pin for the same stated reason. This
-// asserts the write guard's self-sufficiency and intra-file consistency.
-// Property: the POST guard applies the loopback Host pin its read sibling
-// applies. DNS rebinding arrives same-origin: after the rebind the
-// attacker's page and the listener agree on the attacker-named Host, so
-// every Origin↔Host comparison passes and only a Host pin refuses it —
-// readGuard's own words (:41-44, "Only a Host pin refuses it"), pinned by
-// TestReadRoutesRefuseCrossSiteSub's "rebound Host with matching Origin"
-// case.
-// Surfaces: kiln/chat/csrf.go::sameOriginOnly (:27-35) — checks crossSite
-// only, never r.Host — over the Server.Mount POST routes and MountPanel's
-// five RPC routes.
+// exploit; the claim is library-level. csrf.go's own doc pins "Mount is
+// a library surface" (unwrapped mounting is supported), and the read
+// routes' wrapper (now the same sameOriginOnly) applies this exact pin
+// for the same stated reason. This asserts the write guard's
+// self-sufficiency and intra-file consistency.
+// Property: the POST guard applies the loopback Host pin its read
+// sibling applies. DNS rebinding arrives same-origin: after the rebind
+// the attacker's page and the listener agree on the attacker-named
+// Host, so every Origin↔Host comparison passes and only a Host pin
+// refuses it — csrf.go's own words ("only a Host pin refuses it"),
+// pinned by TestReadRoutesRefuseCrossSiteSub's "rebound Host with
+// matching Origin" case.
+// Surfaces: kiln/chat/csrf.go::sameOriginOnly — at the time of the
+// finding it checked crossSite only, never r.Host — over the
+// Server.Mount POST routes and MountPanel's five RPC routes.
 // Finding: a rebound page POSTs /kiln/tool/approve_plan with Host+Origin
 // evil.test:8765 and Sec-Fetch-Site: same-origin (honest browser values
 // post-rebind); sameOriginOnly waves it through and the destructive plan is
 // approved, while the read arm refuses the identical request on /kiln/world.
 // Recon executed 200/Approved on the POST beside a 403 on the GET.
-// Fix direction: sameOriginOnly gains readGuard's second check — Origin
+// Fix direction: sameOriginOnly gains the Host-pin check — Origin
 // present + non-loopback r.Host → 403 — keeping no-Origin callers (agent
-// transport, curl) untouched, exactly as readGuard does.
+// transport, curl) untouched. (readGuard, the former byte-identical
+// read twin, was folded into sameOriginOnly in the 2026-09 dedupe.)
 func TestCSRFWriteGuardHostPinned(t *testing.T) {
 	l, tools := newCSRFTestServer(t)
 	for _, id := range []string{"hb-tool", "hb-agent"} {
@@ -166,7 +168,7 @@ func TestCSRFWriteGuardHostPinned(t *testing.T) {
 	rec := sfsDo(t, l, http.MethodPost, "/kiln/tool/approve_plan", `{"plan_id":"hb-tool"}`,
 		sfsReq{host: "evil.test:8765", origin: "http://evil.test:8765", sfs: "same-origin"})
 	if rec.Code != http.StatusForbidden {
-		t.Errorf("SECURITY: [kiln-csrf-write-hostpin] rebind-Host approve_plan (Host+Origin evil.test:8765, Sec-Fetch-Site: same-origin) got status %d, body %.200s — sameOriginOnly never checks r.Host while readGuard 25 lines below refuses this exact request (\"Only a Host pin refuses it\", TestReadRoutesRefuseCrossSiteSub), so a rebound page silently approves the destructive plan the read arm won't even let it see",
+		t.Errorf("SECURITY: [kiln-csrf-write-hostpin] rebind-Host approve_plan (Host+Origin evil.test:8765, Sec-Fetch-Site: same-origin) got status %d, body %.200s — sameOriginOnly never checks r.Host while its read arm refuses this exact request (\"Only a Host pin refuses it\", TestReadRoutesRefuseCrossSiteSub), so a rebound page silently approves the destructive plan the read arm won't even let it see",
 			rec.Code, rec.Body.String())
 	}
 	if planApproved(l, "hb-tool") {

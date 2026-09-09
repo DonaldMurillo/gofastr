@@ -17,7 +17,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/router"
-	"github.com/DonaldMurillo/gofastr/kiln/freeze"
+	"github.com/DonaldMurillo/gofastr/internal/dsnredact"
 	"github.com/DonaldMurillo/gofastr/kiln/internal/kid"
 	"github.com/DonaldMurillo/gofastr/kiln/journal"
 	"github.com/DonaldMurillo/gofastr/kiln/live"
@@ -84,11 +84,11 @@ func (s *Server) Mount(r *router.Router) {
 	r.Get("/kiln/chat/widget.css", http.HandlerFunc(s.serveWidgetCSS))
 	r.Get("/kiln/chat/base.css", http.HandlerFunc(s.serveBaseCSS))
 	r.Get("/kiln/theme.css", http.HandlerFunc(s.serveThemeCSS))
-	r.Get("/kiln/world", readGuard(http.HandlerFunc(s.serveWorld)))
-	r.Get("/kiln/status", readGuard(http.HandlerFunc(s.serveStatus)))
+	r.Get("/kiln/world", sameOriginOnly(http.HandlerFunc(s.serveWorld)))
+	r.Get("/kiln/status", sameOriginOnly(http.HandlerFunc(s.serveStatus)))
 	r.Post("/kiln/chat/message", sameOriginOnly(http.HandlerFunc(s.serveChatMessage)))
 	r.Post("/kiln/tool/{name}", sameOriginOnly(http.HandlerFunc(s.serveToolDispatch)))
-	r.Get("/.kiln/events", readGuard(http.HandlerFunc(s.live.ServeSSE)))
+	r.Get("/.kiln/events", sameOriginOnly(http.HandlerFunc(s.live.ServeSSE)))
 	r.Get("/.kiln/reload.js", http.HandlerFunc(live.ServeReloadJS))
 }
 
@@ -495,7 +495,7 @@ func maskCredentialArgs(args map[string]any) map[string]any {
 // Matching is fold-insensitive on the key name (EqualFold, not a
 // ToLower map key — Unicode folding maps homoglyphs onto ASCII, the
 // asciifold posture). db_url is masked only when the DSN embeds
-// credentials (freeze.DSNHasSecret, the ONE rule), so a plain
+// credentials (dsnredact.HasSecret, the ONE rule), so a plain
 // file:blog.db path stays visible.
 func maskCredentialValue(key string, v any) any {
 	switch {
@@ -505,7 +505,7 @@ func maskCredentialValue(key string, v any) any {
 		}
 		return redactedSecret
 	case strings.EqualFold(key, "db_url"):
-		if s, ok := v.(string); ok && freeze.DSNHasSecret(s) {
+		if s, ok := v.(string); ok && dsnredact.HasSecret(s) {
 			return redactedSecret
 		}
 		return v
@@ -699,11 +699,11 @@ func redactedWorld(w *world.World) *world.World {
 		out.App.Admin.SeedPassword = redactedSecret
 	}
 	// A credentialed DSN is credential material by the freeze contract
-	// (freeze.DSNHasSecret is that one rule): an embedded password must
+	// (dsnredact.HasSecret is that one rule): an embedded password must
 	// not be handed out with the world, while credential-free DSNs
 	// (file:blog.db) are configuration and stay visible so local frozen
 	// apps stay diagnosable.
-	if freeze.DSNHasSecret(out.App.DBURL) {
+	if dsnredact.HasSecret(out.App.DBURL) {
 		out.App.DBURL = redactedSecret
 	}
 	return &out
