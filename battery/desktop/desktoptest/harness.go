@@ -67,11 +67,15 @@ type Harness struct {
 	eventsSeen int
 }
 
-// pollInterval and waitTimeout bound Wait.
+// pollInterval and waitTimeout bound Wait. maxHarnessBody bounds one
+// response read (8 MiB: generous for every page, island, and export
+// body the apps under test produce, while a wedged handler cannot
+// wedge the harness on an unbounded body).
 const (
-	pollInterval = 10 * time.Millisecond
-	waitTimeout  = 10 * time.Second
-	quitTimeout  = 30 * time.Second
+	pollInterval   = 10 * time.Millisecond
+	waitTimeout    = 10 * time.Second
+	quitTimeout    = 30 * time.Second
+	maxHarnessBody = 8 << 20
 )
 
 // dataDirEnv is the battery's data-dir override (desktop.DataDir).
@@ -292,7 +296,7 @@ func (h *Harness) send(c *http.Client, req *http.Request) *Response {
 		return &Response{err: err}
 	}
 	defer resp.Body.Close()
-	data, err := io.ReadAll(resp.Body)
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maxHarnessBody))
 	if err != nil {
 		return &Response{Status: resp.StatusCode, Header: resp.Header, err: err}
 	}

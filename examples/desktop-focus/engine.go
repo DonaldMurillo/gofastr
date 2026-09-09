@@ -10,6 +10,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/battery/desktop"
 	"github.com/DonaldMurillo/gofastr/core/schema"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/crud"
 	"github.com/DonaldMurillo/gofastr/framework/filter"
@@ -266,7 +267,7 @@ func (e *Engine) Run(ctx context.Context) {
 func (e *Engine) tickGuarded(ctx context.Context) {
 	defer func() {
 		if r := recover(); r != nil {
-			slog.Warn("desktop-focus: tick recovered", "panic", r)
+			slog.Warn("desktop-focus: tick recovered", "panic", textsafe.Recovered(r))
 		}
 	}()
 	e.Tick(localUserCtx(ctx, e.d))

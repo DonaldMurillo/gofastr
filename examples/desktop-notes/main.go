@@ -26,6 +26,7 @@ import (
 	fwimage "github.com/DonaldMurillo/gofastr/framework/image"
 	"github.com/DonaldMurillo/gofastr/framework/isolation"
 	"github.com/DonaldMurillo/gofastr/framework/uihost"
+	"github.com/DonaldMurillo/gofastr/internal/fileperm"
 )
 
 // pageJS is the page-side behaviour (copy link, export toast, window
@@ -227,7 +228,7 @@ func exportAll(ctx context.Context, app *framework.App, d *desktop.Battery) erro
 			b.WriteString(body + "\n\n")
 		}
 	}
-	if err := os.WriteFile(path, []byte(b.String()), 0o600); err != nil {
+	if err := fileperm.WriteOwnerOnly(path, []byte(b.String())); err != nil {
 		return fmt.Errorf("write export: %w", err)
 	}
 	return d.Emit("notes_exported", map[string]any{"path": path})

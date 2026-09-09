@@ -12,6 +12,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"github.com/DonaldMurillo/gofastr/internal/fileperm"
 )
 
 // The release-side helpers: reading a keygen key file, and writing a
@@ -144,10 +146,10 @@ func WriteFeed(outDir, keyPath, version, notes, platform, archivePath, archiveUR
 	// The .sig verifies over the exact manifest bytes, so both files
 	// are written atomically-enough for a release step: manifest first,
 	// signature second, neither truncated by a later step.
-	if err := os.WriteFile(filepath.Join(outDir, "manifest.json"), manifest, 0o600); err != nil {
+	if err := fileperm.WriteOwnerOnly(filepath.Join(outDir, "manifest.json"), manifest); err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(outDir, "manifest.json.sig"), sigFile, 0o600)
+	return fileperm.WriteOwnerOnly(filepath.Join(outDir, "manifest.json.sig"), sigFile)
 }
 
 // zipRootName reports the single top-level directory of a zip archive
