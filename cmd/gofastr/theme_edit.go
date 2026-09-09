@@ -17,6 +17,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"syscall"
@@ -439,7 +440,7 @@ func (s *themeEditServer) handleTokens(w http.ResponseWriter, r *http.Request) {
 	for k := range tokens {
 		keys = append(keys, k)
 	}
-	sortStrings(keys)
+	slices.Sort(keys)
 	type tokenOut struct {
 		Key   string `json:"key"`
 		Value string `json:"value"`
@@ -747,14 +748,6 @@ var previewChromeCSS = `
 // (the documented past-XSS shape) survives in the tree.
 func htmlEscape(s string) string {
 	return render.Escape(s)
-}
-
-func sortStrings(s []string) {
-	for i := 1; i < len(s); i++ {
-		for j := i; j > 0 && s[j-1] > s[j]; j-- {
-			s[j-1], s[j] = s[j], s[j-1]
-		}
-	}
 }
 
 // openBrowser tries to open the OS default browser at url. Best-effort:

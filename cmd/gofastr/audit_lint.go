@@ -2,7 +2,6 @@ package main
 
 import (
 	"bufio"
-	"bytes"
 	"fmt"
 	"go/ast"
 	"go/parser"
@@ -13,6 +12,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+
+	"github.com/DonaldMurillo/gofastr/framework/contracts"
 )
 
 // LintFinding is one violation reported by `gofastr audit lint`.
@@ -54,9 +55,12 @@ func auditLint(root string) ([]LintFinding, error) {
 		if err != nil {
 			return err
 		}
-		// Generated files (DO NOT EDIT header) get skipped. The
-		// developer can't fix findings there, only the generator can.
-		if isGeneratedFile(body) {
+		// Generated files (the conventional `// Code generated … DO NOT
+		// EDIT.` header) get skipped. The developer can't fix findings
+		// there, only the generator can. The FULL header is required, not
+		// either half: contracts.IsGeneratedSource is the shared predicate
+		// (it replaced this file's local either-half copy).
+		if contracts.IsGeneratedSource(body) {
 			return nil
 		}
 		rel, _ := filepath.Rel(root, path)
@@ -82,18 +86,6 @@ func auditLint(root string) ([]LintFinding, error) {
 		return all[i].Rule < all[j].Rule
 	})
 	return all, nil
-}
-
-// isGeneratedFile reports whether body looks like a Go-generated file.
-// Convention: first ~256 bytes contain `// Code generated` and/or
-// `DO NOT EDIT.` per https://pkg.go.dev/cmd/go#hdr-Generate_Go_files.
-func isGeneratedFile(body []byte) bool {
-	head := body
-	if len(head) > 512 {
-		head = head[:512]
-	}
-	return bytes.Contains(head, []byte("// Code generated")) ||
-		bytes.Contains(head, []byte("DO NOT EDIT"))
 }
 
 func lintFile(rel string, body []byte) []LintFinding {

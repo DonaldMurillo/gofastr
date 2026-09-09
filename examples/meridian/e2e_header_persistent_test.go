@@ -3,6 +3,7 @@ package main
 import (
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
 	"github.com/chromedp/chromedp"
 )
 
@@ -15,7 +16,7 @@ func TestE2E_SignInStaysInBarAt390(t *testing.T) {
 		t.Skip("builds + boots the binary")
 	}
 	base := e2eBootApp(t)
-	ctx := e2eBrowser(t)
+	ctx := chromedptest.Context(t, chromedptest.WindowSize(1280, 800))
 
 	type rect struct {
 		Present bool    `json:"present"`

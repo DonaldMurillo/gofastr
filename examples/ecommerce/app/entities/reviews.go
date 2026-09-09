@@ -208,61 +208,26 @@ func (r *ReviewsRepo) BatchDelete(ctx context.Context, ids []string) error {
 // OnReviewsCreated subscribes to entity.created events scoped to "reviews".
 // Returns a cancel func; call it to remove the handler.
 func OnReviewsCreated(app *framework.App, fn func(ctx context.Context, row *Reviews) error) func() {
-	return app.Events().Subscribe(framework.EntityCreated, func(ctx context.Context, ev framework.Event) error {
-		row, ok := extractReviewsRecord(ev, "reviews")
-		if !ok {
-			return nil
-		}
-		return fn(ctx, row)
-	})
+	return onEntityEvent[Reviews](app, "reviews", framework.EntityCreated, fn)
 }
 
 // OnReviewsUpdated subscribes to entity.updated events scoped to "reviews".
 func OnReviewsUpdated(app *framework.App, fn func(ctx context.Context, row *Reviews) error) func() {
-	return app.Events().Subscribe(framework.EntityUpdated, func(ctx context.Context, ev framework.Event) error {
-		row, ok := extractReviewsRecord(ev, "reviews")
-		if !ok {
-			return nil
-		}
-		return fn(ctx, row)
-	})
+	return onEntityEvent[Reviews](app, "reviews", framework.EntityUpdated, fn)
 }
 
 // OnReviewsDeleted subscribes to entity.deleted events scoped to "reviews". Callback
 // receives the deleted row's id only: by the time the event fires the row
 // has been removed (or soft-deleted).
 func OnReviewsDeleted(app *framework.App, fn func(ctx context.Context, id string) error) func() {
-	return app.Events().Subscribe(framework.EntityDeleted, func(ctx context.Context, ev framework.Event) error {
-		data, ok := ev.Data.(map[string]any)
-		if !ok || data["entity"] != "reviews" {
-			return nil
-		}
-		record, _ := data["record"].(map[string]any)
-		id, _ := record["id"].(string)
-		if id == "" {
-			return nil
-		}
-		return fn(ctx, id)
-	})
+	return onEntityDeleted(app, "reviews", fn)
 }
 
 // extractReviewsRecord unmarshals an event payload's "record" field into a
 // *Reviews, returning ok=false if the event is for a different entity or
 // the payload shape doesn't match.
 func extractReviewsRecord(ev framework.Event, entityName string) (*Reviews, bool) {
-	data, ok := ev.Data.(map[string]any)
-	if !ok || data["entity"] != entityName {
-		return nil, false
-	}
-	record, ok := data["record"].(map[string]any)
-	if !ok {
-		return nil, false
-	}
-	var v Reviews
-	if err := framework.UnmarshalEntity(record, &v); err != nil {
-		return nil, false
-	}
-	return &v, true
+	return extractEntityRecord[Reviews](ev, entityName)
 }
 
 // registerReviews registers the "reviews" entity with app.

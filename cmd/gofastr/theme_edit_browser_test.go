@@ -28,6 +28,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/gallery"
 	uitheme "github.com/DonaldMurillo/gofastr/framework/ui/theme"
 	"github.com/DonaldMurillo/gofastr/framework/uihost"
+	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
 	"github.com/chromedp/chromedp"
 )
 
@@ -112,46 +113,6 @@ func newBrowserThemeServerWithDelayedVariantCSS(t *testing.T, delay time.Duratio
 	srv.hosts = []string{u.Host}
 	srv.origins = []string{httpSrv.URL}
 	return srv, httpSrv
-}
-
-// themeEditBrowserCtx boots a fresh headless Chrome for one test. Per-test
-// allocation is the established shape in this package
-// (generate_sdkjs_browser_test.go, blueprint_test.go).
-func themeEditBrowserCtx(t *testing.T) context.Context {
-	t.Helper()
-	if testing.Short() {
-		t.Skip("boots Chrome")
-	}
-	opts := append(chromedp.DefaultExecAllocatorOptions[:],
-		chromedp.Flag("headless", true),
-		chromedp.Flag("disable-gpu", true),
-		chromedp.Flag("no-sandbox", true),
-		chromedp.WSURLReadTimeout(90*time.Second),
-		chromedp.WindowSize(1280, 800),
-	)
-	allocCtx, allocCancel := chromedp.NewExecAllocator(context.Background(), opts...)
-	t.Cleanup(allocCancel)
-	browserCtx, browserCancel := chromedp.NewContext(allocCtx)
-	t.Cleanup(browserCancel)
-
-	// chromedp starts Chrome lazily on the first Run: allocate against the
-	// browser context so the browser's lifetime is the browser context's;
-	// passing a timeout context here would make the browser die when that
-	// deadline passed. The watchdog bounds only the startup wait.
-	started := make(chan error, 1)
-	go func() { started <- chromedp.Run(browserCtx) }()
-	select {
-	case err := <-started:
-		if err != nil {
-			t.Fatalf("chrome did not start: %v", err)
-		}
-	case <-time.After(90 * time.Second):
-		t.Fatal("chrome did not start within 90s")
-	}
-
-	ctx, cancel := context.WithTimeout(browserCtx, 60*time.Second)
-	t.Cleanup(cancel)
-	return ctx
 }
 
 // ─── shared page-JS probes (evaluated inside the controls page) ────────────
@@ -299,7 +260,10 @@ func navigateToEditor(t *testing.T, ctx context.Context, httpSrv *httptest.Serve
 // cannot tell whether applyEdit's swapPreviewCSS ever ran.
 func TestEditReachesPreview(t *testing.T) {
 	_, httpSrv := newBrowserThemeServer(t)
-	ctx := themeEditBrowserCtx(t)
+	if testing.Short() {
+		t.Skip("boots Chrome")
+	}
+	ctx := chromedptest.Context(t, chromedptest.WindowSize(1280, 800))
 	navigateToEditor(t, ctx, httpSrv)
 
 	// Sanity: capture a non-default baseline so "changed" is unambiguous.
@@ -333,7 +297,10 @@ func TestEditReachesPreview(t *testing.T) {
 // dropped, every ratio ~20:1, "no issues" for every theme.
 func TestContrastPanelReportsFailure(t *testing.T) {
 	_, httpSrv := newBrowserThemeServer(t)
-	ctx := themeEditBrowserCtx(t)
+	if testing.Short() {
+		t.Skip("boots Chrome")
+	}
+	ctx := chromedptest.Context(t, chromedptest.WindowSize(1280, 800))
 	navigateToEditor(t, ctx, httpSrv)
 
 	// The shipped default theme must pass its own contrast check, in both
@@ -395,7 +362,10 @@ func TestContrastPanelReportsFailure(t *testing.T) {
 // without the operator's last edit. Written first; watched fail; then fixed.
 func TestWriteIncludesLastEdit(t *testing.T) {
 	srv, httpSrv := newBrowserThemeServer(t)
-	ctx := themeEditBrowserCtx(t)
+	if testing.Short() {
+		t.Skip("boots Chrome")
+	}
+	ctx := chromedptest.Context(t, chromedptest.WindowSize(1280, 800))
 	navigateToEditor(t, ctx, httpSrv)
 
 	const want = "#ABCDEF"
@@ -431,7 +401,10 @@ func TestWriteIncludesLastEdit(t *testing.T) {
 // value. Observed request order: ['/__theme/apply', '/__theme/writeback'].
 func TestWriteBlocksOnInvalidPendingEdit(t *testing.T) {
 	srv, httpSrv := newBrowserThemeServer(t)
-	ctx := themeEditBrowserCtx(t)
+	if testing.Short() {
+		t.Skip("boots Chrome")
+	}
+	ctx := chromedptest.Context(t, chromedptest.WindowSize(1280, 800))
 	navigateToEditor(t, ctx, httpSrv)
 
 	// Type an invalid value AND click Write in ONE round-trip: the click
@@ -493,7 +466,10 @@ func TestContrastCheckRunsAfterLateStylesheetLoad(t *testing.T) {
 	// panel measure the new theme.
 	srv, httpSrv := newBrowserThemeServerWithDelayedVariantCSS(t, 2*time.Second)
 	_ = srv
-	ctx := themeEditBrowserCtx(t)
+	if testing.Short() {
+		t.Skip("boots Chrome")
+	}
+	ctx := chromedptest.Context(t, chromedptest.WindowSize(1280, 800))
 	navigateToEditor(t, ctx, httpSrv)
 
 	// Sanity: the default theme passes its own contrast check before any
@@ -533,7 +509,10 @@ func TestContrastCheckRunsAfterLateStylesheetLoad(t *testing.T) {
 // tool itself just wrote) and reflect the second edit. Both must return ok.
 func TestWriteTwiceInSession(t *testing.T) {
 	srv, httpSrv := newBrowserThemeServer(t)
-	ctx := themeEditBrowserCtx(t)
+	if testing.Short() {
+		t.Skip("boots Chrome")
+	}
+	ctx := chromedptest.Context(t, chromedptest.WindowSize(1280, 800))
 	navigateToEditor(t, ctx, httpSrv)
 
 	// edit → let the debounce apply land → write

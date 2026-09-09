@@ -27,7 +27,7 @@ func TestRenderPerEntityFileLayout(t *testing.T) {
 	for _, f := range files {
 		names[f.name] = true
 	}
-	for _, want := range []string{"register.go", "alpha.go", "beta.go", "gamma.go", "client/client.go"} {
+	for _, want := range []string{"register.go", "events.go", "alpha.go", "beta.go", "gamma.go", "client/client.go"} {
 		if !names[want] {
 			t.Fatalf("missing generated file %q; got %#v", want, files)
 		}
@@ -96,11 +96,94 @@ func TestRenderRegisterSeamIdenticalForAnyEntityCount(t *testing.T) {
 	}
 }
 
+// TestRenderEventHelpersSeamIdenticalForAnyEntityCount is the additive-file
+// property for the event seam: events.go is byte-identical whether the
+// project declares one entity or many, and carries no entity name. Adding an
+// entity (or generating into a project that predates the seam) is a new
+// file, never an edit to it.
+func TestRenderEventHelpersSeamIdenticalForAnyEntityCount(t *testing.T) {
+	one, err := renderGeneratedProject([]framework.EntityDeclaration{
+		{Name: "solo", Fields: []framework.FieldDeclaration{{Name: "n", Type: "string"}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	many, err := renderGeneratedProject([]framework.EntityDeclaration{
+		{Name: "alpha", Fields: []framework.FieldDeclaration{{Name: "n", Type: "string"}}},
+		{Name: "beta", Fields: []framework.FieldDeclaration{{Name: "n", Type: "string"}}},
+		{Name: "gamma", Fields: []framework.FieldDeclaration{{Name: "n", Type: "string"}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var e1, e3 string
+	for _, f := range one {
+		if f.name == "events.go" {
+			e1 = f.content
+		}
+	}
+	for _, f := range many {
+		if f.name == "events.go" {
+			e3 = f.content
+		}
+	}
+	if e1 == "" {
+		t.Fatal("1-entity project missing events.go")
+	}
+	if e1 != e3 {
+		t.Fatalf("events.go differs between 1-entity and 3-entity projects")
+	}
+	// The seam names no entity and no entity type; the per-entity
+	// On<Camel>* wrappers carry those.
+	for _, ent := range []string{`"solo"`, `"alpha"`, `"beta"`, `"gamma"`, `Solo`, `Alpha`, `Beta`, `Gamma`} {
+		if strings.Contains(e1, ent) {
+			t.Fatalf("events.go must not name entity %s:\n%s", ent, e1)
+		}
+	}
+	// The shared bodies the per-entity wrappers delegate to.
+	for _, want := range []string{
+		"func onEntityEvent[T any](",
+		"func onEntityDeleted(",
+		"func extractEntityRecord[T any](",
+	} {
+		if !strings.Contains(e1, want) {
+			t.Fatalf("events.go missing %q:\n%s", want, e1)
+		}
+	}
+	// The per-entity file holds only wrappers: no per-entity body copy
+	// remains to drift from the seam.
+	var solo string
+	for _, f := range one {
+		if f.name == "solo.go" {
+			solo = f.content
+		}
+	}
+	if solo == "" {
+		t.Fatal("1-entity project missing solo.go")
+	}
+	for _, want := range []string{
+		"return onEntityEvent[Solo](app, \"solo\", framework.EntityCreated, fn)",
+		"return onEntityEvent[Solo](app, \"solo\", framework.EntityUpdated, fn)",
+		"return onEntityDeleted(app, \"solo\", fn)",
+		"return extractEntityRecord[Solo](ev, entityName)",
+	} {
+		if !strings.Contains(solo, want) {
+			t.Fatalf("solo.go missing one-line wrapper %q:\n%s", want, solo)
+		}
+	}
+	if strings.Contains(solo, "func onSoloEvent(") {
+		t.Fatalf("solo.go still carries a per-entity on<Camel>Event body:\n%s", solo)
+	}
+	if strings.Contains(solo, "app.Events().Subscribe(") {
+		t.Fatalf("solo.go still subscribes directly; the seam owns the Subscribe bodies:\n%s", solo)
+	}
+}
+
 // TestRenderEntityFileNameCollisionGuard ensures an entity whose snake name
-// collides with a fixed package file (register/shared/doc) is prefixed so it
-// never shadows the seam or shared helpers.
+// collides with a fixed package file (register/events/shared/doc) is
+// prefixed so it never shadows the seams or shared helpers.
 func TestRenderEntityFileNameCollisionGuard(t *testing.T) {
-	for _, n := range []string{"register", "shared", "doc"} {
+	for _, n := range []string{"register", "events", "shared", "doc"} {
 		if got := entityFileName(n); got != "entity_"+n+".go" {
 			t.Errorf("entityFileName(%q) = %q, want entity_%s.go", n, got, n)
 		}

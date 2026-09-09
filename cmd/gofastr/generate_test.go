@@ -61,9 +61,10 @@ func TestRenderGeneratedProjectFromDeclarations(t *testing.T) {
 	if err != nil {
 		t.Fatalf("renderGeneratedProject: %v", err)
 	}
-	// register.go (seam) + client/client.go + one file per entity.
-	if len(files) != 3 {
-		t.Fatalf("files len = %d, want 3 (register.go, client/client.go, posts.go)", len(files))
+	// register.go (seam) + events.go (event-helper seam) + client/client.go
+	// + one file per entity.
+	if len(files) != 4 {
+		t.Fatalf("files len = %d, want 4 (register.go, events.go, client/client.go, posts.go)", len(files))
 	}
 	byName := map[string]string{}
 	for _, f := range files {

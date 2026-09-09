@@ -447,17 +447,15 @@ func TestCLISummaryControlBytesRefused(t *testing.T) {
 	}
 }
 
-// TestCLIRouteLiteralsEscapeTable: every route literal the entity CLI and
-// the typed client emit is fed by cliEntity.Table, which the literal gate
+// TestCLIRouteLiteralsEscapeTable: every route the entity CLI and the
+// typed client emit is fed by cliEntity.Table, which the literal gate
 // only clears of quote/backslash/control bytes — path-shaping bytes
-// (?, #, spaces, traversal) survive it raw into "/%s/" request paths.
-// All table slots now go through url.PathEscape at the emitter (the
-// treatment the id slots already had), which is identity for every
-// legitimate table byte: the generated output for a plain table is
-// byte-identical, and a hostile one stays a single inert segment.
-// Surfaces: generate_cli.go (get/delete/batch-delete route literals, list
-// path, mutation with-ID and no-ID paths, batch-json _batch path),
-// generate_client.go (List/Get/Create/Update/Patch/Delete/Batch*/Watch
+// (?, #, spaces, traversal) survive it raw. All table slots therefore go
+// through url.PathEscape at the emitter: the per-entity wrapper base
+// paths, the in-file mutation paths (create literal, update/patch
+// with-id), and the shared verbs.go route construction (get/delete
+// with-id, list, _batch), plus the typed client
+// (generate_client.go List/Get/Create/Update/Patch/Delete/Batch*/Watch
 // paths).
 func TestCLIRouteLiteralsEscapeTable(t *testing.T) {
 	const table = "a b?c#d/e" // passes the literal gate; URL-shaping bytes
@@ -485,16 +483,21 @@ func TestCLIRouteLiteralsEscapeTable(t *testing.T) {
 		}
 	}
 	for _, want := range []string{
-		`"/` + escaped + `/"`,        // get / delete (with id)
-		`"/` + escaped + `/_batch"`,  // batch-delete / batch-create / batch-update
-		`path := "/` + escaped + `"`, // list
+		`"/` + escaped + `/"`,         // mutation with-id paths (<entity>.go update/patch)
+		`"/` + escaped + `",`,         // wrapper base-path bindings in <entity>.go
+		`base+"/"+url.PathEscape(id)`, // shared get/delete (verbs.go)
+		`base+"/_batch"`,              // shared batch verbs (verbs.go)
+		`path := base`,                // shared list (verbs.go)
 	} {
 		if !strings.Contains(cliJoined, want) {
-			t.Errorf("emitted CLI route literal missing escaped table %q:\n%s", want, cliJoined)
+			t.Errorf("emitted CLI route construction missing escaped-table site %q:\n%s", want, cliJoined)
 		}
 	}
 	if strings.Contains(cliJoined, `"/`+table+`/"`) {
 		t.Errorf("raw table survived into an emitted route literal")
+	}
+	if strings.Contains(cliJoined, `"/`+table+`"`) {
+		t.Errorf("raw table survived into an emitted base-path literal")
 	}
 
 	clientSrc := renderClient(decls)

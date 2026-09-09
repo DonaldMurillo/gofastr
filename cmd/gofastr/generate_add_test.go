@@ -873,13 +873,14 @@ func TestAddEntityCaseVariantIsRedeclaration(t *testing.T) {
 	if !strings.Contains(out, "posts.go") || !strings.Contains(out, "skipped") {
 		t.Errorf("case-variant redeclaration should be reported skipped:\n%s", out)
 	}
-	// The entities dir holds exactly one entity .go file (posts.go); no
+	// The entities dir holds exactly one ENTITY .go file (posts.go); no
 	// second file for the case variant. (Can't assert on "Posts.go" directly:
-	// macOS's case-insensitive FS aliases it to posts.go.)
+	// macOS's case-insensitive FS aliases it to posts.go.) register.go and
+	// events.go are the fixed seams, not entity files.
 	ents, _ := os.ReadDir(filepath.Join(dir, "entities"))
 	goFiles := 0
 	for _, e := range ents {
-		if !e.IsDir() && strings.HasSuffix(e.Name(), ".go") && e.Name() != "register.go" {
+		if !e.IsDir() && strings.HasSuffix(e.Name(), ".go") && e.Name() != "register.go" && e.Name() != "events.go" {
 			goFiles++
 		}
 	}

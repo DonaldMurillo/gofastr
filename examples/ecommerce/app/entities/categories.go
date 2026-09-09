@@ -208,61 +208,26 @@ func (r *CategoriesRepo) BatchDelete(ctx context.Context, ids []string) error {
 // OnCategoriesCreated subscribes to entity.created events scoped to "categories".
 // Returns a cancel func; call it to remove the handler.
 func OnCategoriesCreated(app *framework.App, fn func(ctx context.Context, row *Categories) error) func() {
-	return app.Events().Subscribe(framework.EntityCreated, func(ctx context.Context, ev framework.Event) error {
-		row, ok := extractCategoriesRecord(ev, "categories")
-		if !ok {
-			return nil
-		}
-		return fn(ctx, row)
-	})
+	return onEntityEvent[Categories](app, "categories", framework.EntityCreated, fn)
 }
 
 // OnCategoriesUpdated subscribes to entity.updated events scoped to "categories".
 func OnCategoriesUpdated(app *framework.App, fn func(ctx context.Context, row *Categories) error) func() {
-	return app.Events().Subscribe(framework.EntityUpdated, func(ctx context.Context, ev framework.Event) error {
-		row, ok := extractCategoriesRecord(ev, "categories")
-		if !ok {
-			return nil
-		}
-		return fn(ctx, row)
-	})
+	return onEntityEvent[Categories](app, "categories", framework.EntityUpdated, fn)
 }
 
 // OnCategoriesDeleted subscribes to entity.deleted events scoped to "categories". Callback
 // receives the deleted row's id only: by the time the event fires the row
 // has been removed (or soft-deleted).
 func OnCategoriesDeleted(app *framework.App, fn func(ctx context.Context, id string) error) func() {
-	return app.Events().Subscribe(framework.EntityDeleted, func(ctx context.Context, ev framework.Event) error {
-		data, ok := ev.Data.(map[string]any)
-		if !ok || data["entity"] != "categories" {
-			return nil
-		}
-		record, _ := data["record"].(map[string]any)
-		id, _ := record["id"].(string)
-		if id == "" {
-			return nil
-		}
-		return fn(ctx, id)
-	})
+	return onEntityDeleted(app, "categories", fn)
 }
 
 // extractCategoriesRecord unmarshals an event payload's "record" field into a
 // *Categories, returning ok=false if the event is for a different entity or
 // the payload shape doesn't match.
 func extractCategoriesRecord(ev framework.Event, entityName string) (*Categories, bool) {
-	data, ok := ev.Data.(map[string]any)
-	if !ok || data["entity"] != entityName {
-		return nil, false
-	}
-	record, ok := data["record"].(map[string]any)
-	if !ok {
-		return nil, false
-	}
-	var v Categories
-	if err := framework.UnmarshalEntity(record, &v); err != nil {
-		return nil, false
-	}
-	return &v, true
+	return extractEntityRecord[Categories](ev, entityName)
 }
 
 // registerCategories registers the "categories" entity with app.

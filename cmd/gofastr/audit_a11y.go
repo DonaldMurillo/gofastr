@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/check"
+	"github.com/DonaldMurillo/gofastr/framework/contracts"
 )
 
 // runAuditA11y is the `gofastr audit a11y` entry point.
@@ -208,7 +209,7 @@ func auditA11y(root string) ([]A11yFinding, error) {
 		}
 		// Generated files are the generator's responsibility, not the
 		// developer's. Same policy as `gofastr audit lint`.
-		if isGeneratedFile(body) {
+		if contracts.IsGeneratedSource(body) {
 			return nil
 		}
 		res, lintErr := check.LintA11yFile(path)

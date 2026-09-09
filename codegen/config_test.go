@@ -8,7 +8,28 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	coreyaml "github.com/DonaldMurillo/gofastr/core/yaml"
 )
+
+func TestAnyValue(t *testing.T) {
+	sc := func(v any) *coreyaml.Node { return &coreyaml.Node{Kind: coreyaml.Scalar, Value: v} }
+	lst := func(items ...*coreyaml.Node) *coreyaml.Node { return &coreyaml.Node{Kind: coreyaml.List, List: items} }
+	mp := func(m map[string]*coreyaml.Node) *coreyaml.Node { return &coreyaml.Node{Kind: coreyaml.Map, Map: m} }
+
+	if AnyValue(nil) != nil {
+		t.Fatal("AnyValue nil")
+	}
+	if AnyValue(sc("x")) != "x" {
+		t.Fatal("AnyValue scalar")
+	}
+	if l, ok := AnyValue(lst(sc("a"), sc("b"))).([]any); !ok || len(l) != 2 {
+		t.Fatal("AnyValue list")
+	}
+	if m, ok := AnyValue(mp(map[string]*coreyaml.Node{"k": sc("v")})).(map[string]any); !ok || m["k"] != "v" {
+		t.Fatal("AnyValue map")
+	}
+}
 
 func extensionTestSuffix() string {
 	if runtime.GOOS == "windows" {

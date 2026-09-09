@@ -92,24 +92,6 @@ func TestRunAuditLintFindingExits(t *testing.T) {
 	}
 }
 
-func TestReadModulePathAndImportPathFor(t *testing.T) {
-	dir := t.TempDir()
-	mustWrite(t, dir, "go.mod", "module example.com/proj\n\ngo 1.21\n")
-	if readModulePath(dir) != "example.com/proj" {
-		t.Fatalf("module = %q", readModulePath(dir))
-	}
-	if readModulePath(t.TempDir()) != "" {
-		t.Fatal("missing go.mod → empty")
-	}
-	if got := importPathFor("example.com/proj", dir, dir); got != "example.com/proj" {
-		t.Fatalf("root import = %q", got)
-	}
-	sub := filepath.Join(dir, "pkg")
-	if got := importPathFor("example.com/proj", dir, sub); got != "example.com/proj/pkg" {
-		t.Fatalf("sub import = %q", got)
-	}
-}
-
 // ── generate_typed.go columnConstructor ───────────────────────────────
 
 func TestColumnConstructorAll(t *testing.T) {
@@ -166,19 +148,6 @@ func TestBlueprintScalarHelpers(t *testing.T) {
 	// scalarValue
 	if scalarValue(sc("hi")) != "hi" || scalarValue(lst()) != nil {
 		t.Fatal("scalarValue")
-	}
-	// anyValue
-	if anyValue(nil) != nil {
-		t.Fatal("anyValue nil")
-	}
-	if anyValue(sc("x")) != "x" {
-		t.Fatal("anyValue scalar")
-	}
-	if l, ok := anyValue(lst(sc("a"), sc("b"))).([]any); !ok || len(l) != 2 {
-		t.Fatal("anyValue list")
-	}
-	if m, ok := anyValue(mp(map[string]*coreyaml.Node{"k": sc("v")})).(map[string]any); !ok || m["k"] != "v" {
-		t.Fatal("anyValue map")
 	}
 }
 

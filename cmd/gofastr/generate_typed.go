@@ -69,43 +69,88 @@ func columnConstructor(value string) string {
 	}
 }
 
-// renderEntityEvents emits one entity's typed event subscription helpers
-// (On<Camel>Created/Updated/Deleted) and its record extractor. OnXCreated/
-// OnXUpdated take *T callbacks; OnXDeleted gets the id string. Each returns a
-// cancel func from EventBus.Subscribe so callers can unsubscribe.
+// renderEntityEvents emits one entity's typed event wrappers
+// (On<Camel>Created/Updated/Deleted) and its record extractor. The bodies
+// they delegate to live once per package in entities/events.go
+// (renderEventHelpers): onEntityEvent, onEntityDeleted, and the generic
+// extractEntityRecord, which formerly were duplicated per entity file. Every
+// exported name and signature is unchanged, and each wrapper still returns
+// the cancel func from EventBus.Subscribe so callers can unsubscribe.
 func renderEntityEvents(decl framework.EntityDeclaration) string {
 	struct_ := toCamelCase(decl.Name)
-	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf(`// On%sCreated subscribes to entity.created events scoped to %q.
+	return fmt.Sprintf(`// On%sCreated subscribes to entity.created events scoped to %q.
 // Returns a cancel func; call it to remove the handler.
 func On%sCreated(app *framework.App, fn func(ctx context.Context, row *%s) error) func() {
-	return app.Events().Subscribe(framework.EntityCreated, func(ctx context.Context, ev framework.Event) error {
-		row, ok := extract%sRecord(ev, %q)
-		if !ok {
-			return nil
-		}
-		return fn(ctx, row)
-	})
+	return onEntityEvent[%s](app, %q, framework.EntityCreated, fn)
 }
 
 // On%sUpdated subscribes to entity.updated events scoped to %q.
 func On%sUpdated(app *framework.App, fn func(ctx context.Context, row *%s) error) func() {
-	return app.Events().Subscribe(framework.EntityUpdated, func(ctx context.Context, ev framework.Event) error {
-		row, ok := extract%sRecord(ev, %q)
-		if !ok {
-			return nil
-		}
-		return fn(ctx, row)
-	})
+	return onEntityEvent[%s](app, %q, framework.EntityUpdated, fn)
 }
 
 // On%sDeleted subscribes to entity.deleted events scoped to %q. Callback
 // receives the deleted row's id only: by the time the event fires the row
 // has been removed (or soft-deleted).
 func On%sDeleted(app *framework.App, fn func(ctx context.Context, id string) error) func() {
+	return onEntityDeleted(app, %q, fn)
+}
+
+// extract%sRecord unmarshals an event payload's "record" field into a
+// *%s, returning ok=false if the event is for a different entity or
+// the payload shape doesn't match.
+func extract%sRecord(ev framework.Event, entityName string) (*%s, bool) {
+	return extractEntityRecord[%s](ev, entityName)
+}
+
+`,
+		struct_, decl.Name, struct_, struct_, struct_, decl.Name,
+		struct_, decl.Name, struct_, struct_, struct_, decl.Name,
+		struct_, decl.Name, struct_, decl.Name,
+		struct_, struct_, struct_, struct_, struct_,
+	)
+}
+
+// renderEventHelpers emits entities/events.go, the fixed event-helper seam
+// for the generated entities package. It holds the bodies that
+// renderEntityEvents formerly emitted per entity: the record-lifecycle
+// subscription (on<Camel>Event, now onEntityEvent), the deleted-subscription
+// body (formerly inlined in every On<Camel>Deleted, now onEntityDeleted),
+// and the record extractor (extract<Camel>Record, now the generic
+// extractEntityRecord). Like register.go it carries no entity-specific text,
+// so its bytes are identical for every project and additive generation
+// writes it only when absent.
+func renderEventHelpers() string {
+	return `package entities
+
+import (
+	"context"
+
+	"github.com/DonaldMurillo/gofastr/framework"
+)
+
+// onEntityEvent subscribes to one of the record lifecycle events for entity
+// (entity.created / entity.updated), unmarshalling the payload's record into
+// a *T before invoking fn. Shared body behind every generated On<Camel>Created
+// and On<Camel>Updated wrapper.
+func onEntityEvent[T any](app *framework.App, entity, eventType string, fn func(ctx context.Context, row *T) error) func() {
+	return app.Events().Subscribe(eventType, func(ctx context.Context, ev framework.Event) error {
+		row, ok := extractEntityRecord[T](ev, entity)
+		if !ok {
+			return nil
+		}
+		return fn(ctx, row)
+	})
+}
+
+// onEntityDeleted subscribes to entity.deleted events for entity. By the time
+// the event fires the row has been removed (or soft-deleted), so the callback
+// receives the deleted row's id only. Shared body behind every generated
+// On<Camel>Deleted wrapper.
+func onEntityDeleted(app *framework.App, entity string, fn func(ctx context.Context, id string) error) func() {
 	return app.Events().Subscribe(framework.EntityDeleted, func(ctx context.Context, ev framework.Event) error {
 		data, ok := ev.Data.(map[string]any)
-		if !ok || data["entity"] != %q {
+		if !ok || data["entity"] != entity {
 			return nil
 		}
 		record, _ := data["record"].(map[string]any)
@@ -117,35 +162,26 @@ func On%sDeleted(app *framework.App, fn func(ctx context.Context, id string) err
 	})
 }
 
-`,
-		struct_, decl.Name, struct_, struct_, struct_, decl.Name,
-		struct_, decl.Name, struct_, struct_, struct_, decl.Name,
-		struct_, decl.Name, struct_, decl.Name,
-	))
-	// Record extractor for this entity. One per struct type: identical shape
-	// but they differ in the returned *T, and codegen can't share via
-	// interface without reflection.
-	sb.WriteString(fmt.Sprintf(`// extract%sRecord unmarshals an event payload's "record" field into a
-// *%s, returning ok=false if the event is for a different entity or
-// the payload shape doesn't match.
-func extract%sRecord(ev framework.Event, entityName string) (*%s, bool) {
+// extractEntityRecord unmarshals an event payload's "record" field for entity
+// into a *T, returning ok=false if the event is for a different entity or the
+// payload shape doesn't match. Shared body behind every generated
+// extract<Camel>Record wrapper.
+func extractEntityRecord[T any](ev framework.Event, entity string) (*T, bool) {
 	data, ok := ev.Data.(map[string]any)
-	if !ok || data["entity"] != entityName {
+	if !ok || data["entity"] != entity {
 		return nil, false
 	}
 	record, ok := data["record"].(map[string]any)
 	if !ok {
 		return nil, false
 	}
-	var v %s
+	var v T
 	if err := framework.UnmarshalEntity(record, &v); err != nil {
 		return nil, false
 	}
 	return &v, true
 }
-
-`, struct_, struct_, struct_, struct_, struct_))
-	return sb.String()
+`
 }
 
 // renderEntityRepo emits one entity's typed repository, wrapping a

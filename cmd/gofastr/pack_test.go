@@ -489,9 +489,9 @@ type constructSpec struct {
 	orderName string
 	// key is the construct's emitted YAML container key. Consumed only when
 	// order is nil, to pin that the writer really has no order list for it
-	// (orderedKeys then sorts it alphabetically): a nil order is a checked
-	// contract, not a forgotten field. If orderFor learns the key, the spec
-	// must grow the list.
+	// (freeze.OrderedKeys then sorts it alphabetically): a nil order is a
+	// checked contract, not a forgotten field. If orderFor learns the key,
+	// the spec must grow the list.
 	key string
 	// leaveOneOut marks a spec whose element is a nested struct reached
 	// through a parent (App.Auth, Screen.Access, Entity.Scope, …) rather

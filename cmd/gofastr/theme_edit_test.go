@@ -668,19 +668,6 @@ func TestThemeEditServeHTTPDelegatesPreviewToHost(t *testing.T) {
 	}
 }
 
-// sortStrings is a tiny insertion sort; verify it orders correctly.
-func TestSortStrings(t *testing.T) {
-	in := []string{"c", "a", "b"}
-	sortStrings(in)
-	want := []string{"a", "b", "c"}
-	for i, v := range want {
-		if in[i] != v {
-			t.Errorf("sortStrings: got %v, want %v", in, want)
-			break
-		}
-	}
-}
-
 // A wildcard bind must still accept the Host a browser actually sends.
 //
 // net.Listen(":8090") reports "[::]:8090", and pinning the guard to that

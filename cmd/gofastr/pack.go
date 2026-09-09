@@ -16,7 +16,9 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/dotenv"
 	coreyaml "github.com/DonaldMurillo/gofastr/core/yaml"
 	"github.com/DonaldMurillo/gofastr/framework"
+	"github.com/DonaldMurillo/gofastr/internal/dsnredact"
 	"github.com/DonaldMurillo/gofastr/internal/fileperm"
+	"github.com/DonaldMurillo/gofastr/kiln/freeze"
 )
 
 // decodeBlueprintString parses a gofastr.yml from a string into a Blueprint.
@@ -187,18 +189,7 @@ func appToMap(a BlueprintApp) map[string]any {
 	}
 	putBool(m, "public_openapi", a.PublicOpenAPI)
 	if len(a.Theme) > 0 || len(a.ThemeDark) > 0 {
-		theme := map[string]any{}
-		for k, v := range a.Theme {
-			theme[k] = v
-		}
-		if len(a.ThemeDark) > 0 {
-			dark := map[string]any{}
-			for k, v := range a.ThemeDark {
-				dark[k] = v
-			}
-			theme["dark"] = dark
-		}
-		m["theme"] = theme
+		m["theme"] = freeze.ThemeMap(a.Theme, a.ThemeDark)
 	}
 	if a.Auth.Enabled || a.Auth.BasePath != "" || a.Auth.JWTSecret != "" || !a.Auth.DevMode {
 		auth := map[string]any{}
@@ -476,19 +467,10 @@ func actionToMap(a BlueprintAction) map[string]any {
 	return m
 }
 
+// relationTypeToString returns the blueprint YAML spelling of t ("has_one",
+// "belongs_to", ...), via the shared relationKinds table.
 func relationTypeToString(t framework.RelationType) string {
-	switch t {
-	case framework.RelHasOne:
-		return "has_one"
-	case framework.RelHasMany:
-		return "has_many"
-	case framework.RelManyToOne:
-		return "belongs_to"
-	case framework.RelManyToMany:
-		return "many_to_many"
-	default:
-		return "belongs_to"
-	}
+	return relationKindFor(t).yaml
 }
 
 // anyMap deep-copies a map[string]any so list/map children are []any/map[string]any
@@ -532,7 +514,7 @@ func putStrs(m map[string]any, k string, v []string) {
 // ----- generic YAML writer ---------------------------------------------------
 
 func writeYAMLMap(sb *strings.Builder, m map[string]any, indent int, order []string, path string) error {
-	for _, k := range orderedKeys(m, order) {
+	for _, k := range freeze.OrderedKeys(m, order) {
 		if err := writeYAMLEntry(sb, k, m[k], indent, path); err != nil {
 			return err
 		}
@@ -856,25 +838,6 @@ func needsQuote(s string) bool {
 	return false
 }
 
-func orderedKeys(m map[string]any, order []string) []string {
-	seen := map[string]bool{}
-	out := make([]string, 0, len(m))
-	for _, k := range order {
-		if _, ok := m[k]; ok {
-			out = append(out, k)
-			seen[k] = true
-		}
-	}
-	rest := make([]string, 0, len(m))
-	for k := range m {
-		if !seen[k] {
-			rest = append(rest, k)
-		}
-	}
-	sort.Strings(rest)
-	return append(out, rest...)
-}
-
 // ----- key orders (readability; semantics are order-independent) -------------
 var (
 	// Ordered to match blueprintToMap's emission order, which is also the
@@ -1156,17 +1119,17 @@ var schemaTypeToYAML = map[string]string{
 	"Relation": "relation", "Image": "image", "File": "file",
 }
 
+// relationTypeFromConstName reverses relationTypeConst: the const name pack
+// reads out of generated Go (`framework.RelHasOne`) back to the relation
+// kind, via the shared relationKinds table. Unknown names read as
+// belongs_to, matching the table default.
 func relationTypeFromConstName(name string) framework.RelationType {
-	switch name {
-	case "RelHasOne":
-		return framework.RelHasOne
-	case "RelHasMany":
-		return framework.RelHasMany
-	case "RelManyToMany":
-		return framework.RelManyToMany
-	default:
-		return framework.RelManyToOne
+	for _, k := range relationKinds {
+		if k.constName == name {
+			return k.typ
+		}
 	}
+	return framework.RelManyToOne
 }
 
 // packReadEntities reconstructs the entity declarations from the generated
@@ -2988,16 +2951,16 @@ func buttonVariant(e ast.Expr) string {
 // secretsInBlueprint reports whether the packed blueprint carries any of
 // the three values packReadDotEnv recovers from .env.
 // secretsInBlueprint decides whether pack prints its do-NOT-commit
-// warning. It defers to dsnHasSecret for the DSN rather than testing for
-// "@": the generator already uses dsnHasSecret to decide what to redact,
-// and the two disagreeing means pack stays silent about a secret the
-// generator considered worth hiding. A keyword/value DSN
-// ("host=db user=app password=hunter2") is the case that fell through --
-// it carries a password and no "@" at all.
+// warning. It defers to dsnredact.HasSecret for the DSN rather than
+// testing for "@": the generator already uses the same predicate to
+// decide what to redact, and the two disagreeing means pack stays silent
+// about a secret the generator considered worth hiding. A keyword/value
+// DSN ("host=db user=app password=hunter2") is the case that fell
+// through -- it carries a password and no "@" at all.
 func secretsInBlueprint(bp Blueprint) bool {
 	return bp.App.Auth.JWTSecret != "" ||
 		bp.App.Admin.SeedPassword != "" ||
-		dsnHasSecret(bp.App.DBURL)
+		dsnredact.HasSecret(bp.App.DBURL)
 }
 
 func packBlueprint(dir string) (Blueprint, error) {

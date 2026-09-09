@@ -122,40 +122,52 @@ func TestRenderCLI_CommandTreePerEntity(t *testing.T) {
 	}
 }
 
-// List flags derive from the schema: eq flag per field, range flags only on
-// numeric/date/timestamp fields, -q only with SearchFields, --trashed only
-// with SoftDelete.
+// List flags derive from the schema: an eq filter entry per field, range
+// entries only on numeric/date/timestamp fields, -q only with
+// SearchFields, --trashed only with SoftDelete. The per-entity filter
+// table (postsListFilters) registers against the shared runListVerb body
+// in verbs.go.
 func TestRenderCLI_FlagsFromSchema(t *testing.T) {
 	files := renderedCLI(t, defaultCLIOptions())
 
 	posts := files["posts.go"]
 	for _, w := range []string{
-		`fs.String("title"`,
-		`fs.String("views"`,
-		`fs.String("views-gt"`,
-		`fs.String("views-lte"`,
-		`fs.String("title-like"`,
-		`fs.String("sort"`,
-		`fs.String("page"`,
-		`fs.String("cursor"`,
-		`fs.String("include"`,
-		`fs.String("fields"`,
+		`{flag: "title", param: "title"`,
+		`{flag: "views", param: "views"`,
+		`{flag: "views-gt", param: "views_gt"`,
+		`{flag: "views-lte", param: "views_lte"`,
+		`{flag: "title-like", param: "title_like"`,
 	} {
 		if !strings.Contains(posts, w) {
-			t.Errorf("posts.go list flags missing %q", w)
+			t.Errorf("posts.go filter table missing %q", w)
 		}
 	}
-	for _, absent := range []string{`fs.String("q"`, `fs.Bool("trashed"`, `fs.String("title-gt"`, `fs.String("published-gt"`} {
+	for _, absent := range []string{`{flag: "q"`, `{flag: "trashed"`, `{flag: "title-gt"`, `{flag: "published-gt"`} {
 		if strings.Contains(posts, absent) {
 			t.Errorf("posts.go should not have %q", absent)
 		}
 	}
 
+	verbs := files["verbs.go"]
+	for _, w := range []string{
+		`fs.String("sort"`,
+		`fs.String("page"`,
+		`fs.String("cursor"`,
+		`fs.String("include"`,
+		`fs.String("fields"`,
+		`fs.String(f.flag, "", f.help)`,
+		`fs.Bool(f.flag, false, f.help)`,
+	} {
+		if !strings.Contains(verbs, w) {
+			t.Errorf("verbs.go shared list flags missing %q", w)
+		}
+	}
+
 	docs := files["documents.go"]
 	for _, w := range []string{
-		`fs.String("q"`,
-		`fs.Bool("trashed"`,
-		`fs.String("published-at-gt"`,
+		`{flag: "q", param: "q"`,
+		`{flag: "trashed", param: "trashed", help: "include soft-deleted rows", isBool: true}`,
+		`{flag: "published-at-gt"`,
 	} {
 		if !strings.Contains(docs, w) {
 			t.Errorf("documents.go missing %q", w)
@@ -254,36 +266,55 @@ func TestRenderCLI_VerbAllowList(t *testing.T) {
 	}
 }
 
-// A delete-only (or any narrow) verb selection must still emit the imports
-// its code uses. needsHTTP/needsURLValues are per-verb, and format.Source
-// cannot add missing imports.
+// A delete-only (or any narrow) verb selection must still emit code that
+// compiles: the shared delete body lands in verbs.go with its net/http
+// and net/url imports, and the entity file's wrapper needs no imports at
+// all (format.Source cannot add missing imports, so a stray reference
+// would be a broken file).
 func TestRenderCLI_NarrowVerbImports(t *testing.T) {
 	opts := defaultCLIOptions()
 	opts.verbs = "delete"
 	files := renderedCLI(t, opts)
 	posts := files["posts.go"]
-	for _, w := range []string{`"net/http"`, `"net/url"`, "url.PathEscape(id)"} {
+	for _, w := range []string{"runPostsDelete(", `runDeleteVerb("posts delete", "/posts", args)`} {
 		if !strings.Contains(posts, w) {
 			t.Errorf("delete-only posts.go missing %q\n%s", w, posts)
 		}
 	}
-}
-
-// Positional ids are path-escaped in every id-addressed verb, matching the
-// typed client: a '/' or '?' in an id must not rewrite the route.
-func TestRenderCLI_PathEscapesIDs(t *testing.T) {
-	files := renderedCLI(t, defaultCLIOptions())
-	posts := files["posts.go"]
-	if got := strings.Count(posts, "url.PathEscape(id)"); got != 4 { // get/update/patch/delete
-		t.Errorf("want 4 url.PathEscape(id) uses, got %d", got)
+	if strings.Contains(posts, "import (") {
+		t.Errorf("delete-only posts.go should need no imports:\n%s", posts)
+	}
+	verbs := files["verbs.go"]
+	for _, w := range []string{`"fmt"`, `"net/http"`, `"net/url"`, "url.PathEscape(id)"} {
+		if !strings.Contains(verbs, w) {
+			t.Errorf("delete-only verbs.go missing %q\n%s", w, verbs)
+		}
+	}
+	if strings.Contains(verbs, `"context"`) {
+		t.Errorf("delete-only verbs.go should not import context (no watch verb)")
 	}
 }
 
-// An entity whose command form collides with a CLI built-in (config, login,
-// custom, …) must fail generation: it would shadow a command or emit a
-// duplicate filename.
+// Positional ids are path-escaped in every id-addressed verb, matching the
+// typed client: a '/' or '?' in an id must not rewrite the route. The
+// in-file mutation bodies (update/patch) and the shared get/delete bodies
+// in verbs.go each escape the id where they build their path.
+func TestRenderCLI_PathEscapesIDs(t *testing.T) {
+	files := renderedCLI(t, defaultCLIOptions())
+	if got := strings.Count(files["posts.go"], "url.PathEscape(id)"); got != 2 { // update + patch
+		t.Errorf("want 2 url.PathEscape(id) uses in posts.go (mutations), got %d", got)
+	}
+	if got := strings.Count(files["verbs.go"], "url.PathEscape(id)"); got != 2 { // shared get + delete
+		t.Errorf("want 2 url.PathEscape(id) uses in verbs.go (get/delete), got %d", got)
+	}
+}
+
+// An entity whose command form collides with a CLI built-in (config,
+// login, custom, verbs, …) must fail generation: it would shadow a
+// command or emit a duplicate filename (verbs.go is the shared verb
+// bodies).
 func TestRenderCLI_ReservedCommandName(t *testing.T) {
-	for _, table := range []string{"config", "login", "custom"} {
+	for _, table := range []string{"config", "login", "custom", "verbs"} {
 		decls := []framework.EntityDeclaration{{
 			Name:   table,
 			Table:  table,

@@ -13,6 +13,9 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
+	"github.com/DonaldMurillo/gofastr/framework/contracts"
 )
 
 type finding struct {
@@ -67,7 +70,10 @@ func lintRepo(root string) ([]finding, error) {
 				Message: "process ledgers/journals/handoffs don't live as tracked markdown: the rationale goes in commit messages and pinning tests; the history IS git history",
 			})
 		}
-		if name := d.Name(); hasControlChar(name) {
+		// Control bytes in a file name mean a botched multi-line edit
+		// landed a prompt fragment as a filename; legitimate names
+		// never carry them.
+		if name := d.Name(); textsafe.HasControlBytes(name) {
 			rel, relErr := filepath.Rel(root, path)
 			if relErr != nil {
 				rel = path
@@ -414,8 +420,8 @@ func lintFrontDoor(root string) ([]finding, error) {
 		return nil, err
 	}
 	// The origin the site is actually deployed to, as declared by the Pages
-	// workflow's export base. Kept as a literal here (rather than importing
-	// the site package) so the lint stays a standalone stdlib binary.
+	// workflow's export base. Kept as a literal here rather than importing
+	// the site package, which would link the whole example into the lint.
 	const siteURL = "https://donaldmurillo.github.io/gofastr"
 	if strings.Contains(string(readme), siteURL) {
 		return nil, nil
@@ -508,18 +514,6 @@ func isProcessArtifactMarkdown(name string) bool {
 	}
 	for _, tok := range []string{"AUDIT", "FINDINGS", "NOTES", "JOURNAL", "HANDOFF", "LEDGER"} {
 		if strings.Contains(stem, tok) {
-			return true
-		}
-	}
-	return false
-}
-
-// hasControlChar reports whether s contains any ASCII control byte
-// (including newline/tab/CR). Legitimate file names never do; a botched
-// multi-line edit that lands a prompt fragment as a filename does.
-func hasControlChar(s string) bool {
-	for i := 0; i < len(s); i++ {
-		if s[i] < 0x20 || s[i] == 0x7f {
 			return true
 		}
 	}
@@ -652,7 +646,7 @@ func mentionsExternalLintDependency(line string) bool {
 }
 
 func lintGoSyntax(rel, path string, body []byte) []finding {
-	if isGeneratedGo(body) {
+	if contracts.IsGeneratedSource(body) {
 		return nil
 	}
 	fset := token.NewFileSet()
@@ -670,15 +664,6 @@ func lintGoSyntax(rel, path string, body []byte) []finding {
 		Rule:    "go-syntax",
 		Message: err.Error(),
 	}}
-}
-
-func isGeneratedGo(body []byte) bool {
-	head := body
-	if len(head) > 512 {
-		head = head[:512]
-	}
-	return bytes.Contains(head, []byte("// Code generated")) ||
-		bytes.Contains(head, []byte("DO NOT EDIT"))
 }
 
 // exampleAbsoluteURLRe finds absolute https URLs written as Go string literals.

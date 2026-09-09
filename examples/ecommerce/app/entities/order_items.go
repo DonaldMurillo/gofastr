@@ -212,61 +212,26 @@ func (r *OrderItemsRepo) BatchDelete(ctx context.Context, ids []string) error {
 // OnOrderItemsCreated subscribes to entity.created events scoped to "order_items".
 // Returns a cancel func; call it to remove the handler.
 func OnOrderItemsCreated(app *framework.App, fn func(ctx context.Context, row *OrderItems) error) func() {
-	return app.Events().Subscribe(framework.EntityCreated, func(ctx context.Context, ev framework.Event) error {
-		row, ok := extractOrderItemsRecord(ev, "order_items")
-		if !ok {
-			return nil
-		}
-		return fn(ctx, row)
-	})
+	return onEntityEvent[OrderItems](app, "order_items", framework.EntityCreated, fn)
 }
 
 // OnOrderItemsUpdated subscribes to entity.updated events scoped to "order_items".
 func OnOrderItemsUpdated(app *framework.App, fn func(ctx context.Context, row *OrderItems) error) func() {
-	return app.Events().Subscribe(framework.EntityUpdated, func(ctx context.Context, ev framework.Event) error {
-		row, ok := extractOrderItemsRecord(ev, "order_items")
-		if !ok {
-			return nil
-		}
-		return fn(ctx, row)
-	})
+	return onEntityEvent[OrderItems](app, "order_items", framework.EntityUpdated, fn)
 }
 
 // OnOrderItemsDeleted subscribes to entity.deleted events scoped to "order_items". Callback
 // receives the deleted row's id only: by the time the event fires the row
 // has been removed (or soft-deleted).
 func OnOrderItemsDeleted(app *framework.App, fn func(ctx context.Context, id string) error) func() {
-	return app.Events().Subscribe(framework.EntityDeleted, func(ctx context.Context, ev framework.Event) error {
-		data, ok := ev.Data.(map[string]any)
-		if !ok || data["entity"] != "order_items" {
-			return nil
-		}
-		record, _ := data["record"].(map[string]any)
-		id, _ := record["id"].(string)
-		if id == "" {
-			return nil
-		}
-		return fn(ctx, id)
-	})
+	return onEntityDeleted(app, "order_items", fn)
 }
 
 // extractOrderItemsRecord unmarshals an event payload's "record" field into a
 // *OrderItems, returning ok=false if the event is for a different entity or
 // the payload shape doesn't match.
 func extractOrderItemsRecord(ev framework.Event, entityName string) (*OrderItems, bool) {
-	data, ok := ev.Data.(map[string]any)
-	if !ok || data["entity"] != entityName {
-		return nil, false
-	}
-	record, ok := data["record"].(map[string]any)
-	if !ok {
-		return nil, false
-	}
-	var v OrderItems
-	if err := framework.UnmarshalEntity(record, &v); err != nil {
-		return nil, false
-	}
-	return &v, true
+	return extractEntityRecord[OrderItems](ev, entityName)
 }
 
 // registerOrderItems registers the "order_items" entity with app.

@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/check"
+	"github.com/DonaldMurillo/gofastr/framework/contracts"
 )
 
 // buildSandboxGate runs the .ui.go hydration-sandbox lint for `gofastr build`
@@ -68,7 +69,7 @@ func auditSandbox(root string) ([]SandboxFinding, error) {
 		if err != nil {
 			return err
 		}
-		if isGeneratedFile(body) {
+		if contracts.IsGeneratedSource(body) {
 			return nil
 		}
 		res, lintErr := check.LintFile(path)

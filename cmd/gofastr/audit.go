@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/DonaldMurillo/gofastr/framework/contracts"
 )
 
 // AuditFinding is one call site of a tracked init-time registration
@@ -48,7 +50,7 @@ var trackedKinds = []struct {
 // The root must contain a go.mod so package import paths can be
 // computed; modules without go.mod fall back to relative paths.
 func auditDeps(root string) ([]AuditFinding, error) {
-	modulePath := readModulePath(root)
+	modulePath := contracts.ReadModulePath(root)
 	var findings []AuditFinding
 
 	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
@@ -72,7 +74,7 @@ func auditDeps(root string) ([]AuditFinding, error) {
 			return nil
 		}
 		rel, _ := filepath.Rel(root, path)
-		pkgPath := importPathFor(modulePath, root, filepath.Dir(path))
+		pkgPath := contracts.ImportPathFor(modulePath, root, filepath.Dir(path))
 		findings = append(findings, scanFile(fs, pkgPath, rel)...)
 		return nil
 	})
@@ -291,40 +293,6 @@ func runAudit(args []string) {
 		fmt.Fprintf(os.Stderr, "Unknown audit subcommand: %s\n", args[0])
 		osExit(2)
 	}
-}
-
-// readModulePath returns the `module` line from a go.mod at root, or
-// empty when none is found. Used to derive package import paths from
-// filesystem locations.
-func readModulePath(root string) string {
-	body, err := os.ReadFile(filepath.Join(root, "go.mod"))
-	if err != nil {
-		return ""
-	}
-	for _, line := range strings.Split(string(body), "\n") {
-		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, "module ") {
-			return strings.TrimSpace(strings.TrimPrefix(line, "module"))
-		}
-	}
-	return ""
-}
-
-// importPathFor maps a directory back to its Go import path given the
-// module's root + module-path declaration.
-func importPathFor(modulePath, root, dir string) string {
-	rel, err := filepath.Rel(root, dir)
-	if err != nil {
-		return ""
-	}
-	rel = filepath.ToSlash(rel)
-	if rel == "." {
-		return modulePath
-	}
-	if modulePath == "" {
-		return rel
-	}
-	return modulePath + "/" + rel
 }
 
 // mkdirAll + writeFile are small wrappers used by the audit's tests

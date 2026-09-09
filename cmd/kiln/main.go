@@ -21,11 +21,11 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 
 	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 
+	"github.com/DonaldMurillo/gofastr/core/netguard"
 	"github.com/DonaldMurillo/gofastr/framework"
 	kilnacp "github.com/DonaldMurillo/gofastr/kiln/acp"
 	kilnmcp "github.com/DonaldMurillo/gofastr/kiln/agent/mcp"
@@ -320,7 +320,7 @@ func originGuard(next http.Handler) http.Handler {
 		// loopback -addr, we cannot know the intended public name, so
 		// the pin is skipped and the banner's "unauthenticated" warning
 		// is the contract.
-		if kilnLoopbackBound && !isLoopbackAuthority(r.Host) {
+		if kilnLoopbackBound && !netguard.IsLoopbackAuthority(r.Host) {
 			http.Error(w, "forbidden: unexpected Host (DNS-rebinding guard)", http.StatusForbidden)
 			return
 		}
@@ -348,7 +348,7 @@ func isLoopbackBindAddr(addr string) bool {
 	if host == "" {
 		return false // ":8765": all interfaces
 	}
-	return isLoopbackAuthority(host)
+	return netguard.IsLoopbackAuthority(host)
 }
 
 // kilnLoopbackBound records whether the listener bound a loopback
@@ -361,23 +361,6 @@ var kilnLoopbackBound bool
 // reaches the tool API into arbitrary command execution. Operators who
 // want it opt in with --allow-custom-agent.
 var allowCustomAgent bool
-
-// isLoopbackAuthority reports whether authority ("host" or "host:port")
-// names the loopback interface.
-func isLoopbackAuthority(authority string) bool {
-	host := authority
-	if h, _, err := net.SplitHostPort(authority); err == nil {
-		host = h
-	}
-	host = strings.Trim(host, "[]")
-	if strings.EqualFold(host, "localhost") {
-		return true
-	}
-	if ip := net.ParseIP(host); ip != nil {
-		return ip.IsLoopback()
-	}
-	return false
-}
 
 // sameOrigin reports whether an Origin header's host matches the request Host.
 func sameOrigin(origin, host string) bool {

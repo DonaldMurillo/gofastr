@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/framework"
+	"github.com/DonaldMurillo/gofastr/internal/dsnredact"
 )
 
 // Property: a CLI-written artifact that carries secrets recovered from .env
@@ -86,9 +87,9 @@ func TestPackOutOwnerOnlyOnOverwrite(t *testing.T) {
 }
 
 // TestPackDetectsKeywordDSNSecret: secretsInBlueprint must flag every DSN
-// class the generator's own dsnHasSecret hides. generate routes a
+// class the generator's own dsnredact.HasSecret hides. generate routes a
 // keyword/value DSN (`host=db user=app password=hunter2 dbname=app`) into
-// the gitignored .env precisely because dsnHasSecret sees the `password=`
+// the gitignored .env precisely because the predicate sees the `password=`
 // pair; pack rehydrates that DSN from the same .env, checks it for "@" only,
 // and packs it back into the yml with no warning — on the default no -o
 // path that yml goes to stdout, and the shell redirect creates a 0644 file
@@ -111,8 +112,8 @@ func TestPackDetectsKeywordDSNSecret(t *testing.T) {
 		}
 		// Parity with the generator's detector: any DSN generate hides
 		// from committed source, pack must warn on.
-		if gen := dsnHasSecret(tc.dsn); gen && !got {
-			t.Errorf("%s: dsnHasSecret(%q) = true but secretsInBlueprint = false — pack's do-NOT-commit warning silently disappears for a DSN class the generator itself hides", tc.name, tc.dsn)
+		if gen := dsnredact.HasSecret(tc.dsn); gen && !got {
+			t.Errorf("%s: dsnredact.HasSecret(%q) = true but secretsInBlueprint = false — pack's do-NOT-commit warning silently disappears for a DSN class the generator itself hides", tc.name, tc.dsn)
 		}
 	}
 }
