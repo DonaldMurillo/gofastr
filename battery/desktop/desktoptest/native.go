@@ -745,18 +745,18 @@ func (h *NativeHarness) MoveWindow(id string, f desktop.Frame) {
 	}
 }
 
-// DeactivateReactivate drives the app-level deactivate/reactivate the
-// user's app switch performs; the key window must resign and return,
-// firing the focus events into the battery.
-func (h *NativeHarness) DeactivateReactivate() {
+// MakeKey makes the window with this id the key window, the user's
+// window-click shape; the key-window change must fire the focus
+// events into the battery.
+func (h *NativeHarness) MakeKey(id string) {
 	h.tbOrPanic()
 	d, err := h.driver()
 	if err != nil {
-		h.fatalf("DeactivateReactivate: %v", err)
+		h.fatalf("MakeKey: %v", err)
 		return
 	}
-	if err := d.DeactivateReactivate(); err != nil {
-		h.fatalf("DeactivateReactivate: %v", err)
+	if err := d.MakeKey(id); err != nil {
+		h.fatalf("MakeKey: %v", err)
 	}
 }
 

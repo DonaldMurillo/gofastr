@@ -439,11 +439,13 @@ type NativeDriver interface {
 	CloseWindowNative(id string) error
 	// WindowState reads what the OS knows about a window.
 	WindowState(id string) (WindowState, error)
-	// DeactivateReactivate deactivates and reactivates the app the way
-	// a user's app switch does ([NSApp deactivate] then
-	// activateIgnoringOtherApps: on darwin): the key window must
-	// resign and become key again, firing the focus callbacks.
-	DeactivateReactivate() error
+	// MakeKey makes the window with this id the key window
+	// (makeKeyAndOrderFront: on darwin), the user's window-click
+	// shape: the previous key window resigns and this one becomes
+	// key, firing the focus callbacks, with no app activation
+	// involved (a process that is not the frontmost app cannot rely
+	// on one).
+	MakeKey(id string) error
 	// NotificationLog is every Notification Show received, bundled or
 	// not, in order.
 	NotificationLog() []Notification

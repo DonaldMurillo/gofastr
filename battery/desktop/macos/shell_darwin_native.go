@@ -5,7 +5,6 @@ package macos
 import (
 	"errors"
 	"fmt"
-	"os"
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/battery/desktop"
@@ -363,55 +362,30 @@ func (s *darwinShell) WindowState(id string) (desktop.WindowState, error) {
 	return st, nil
 }
 
-// DeactivateReactivate implements desktop.NativeDriver: the app
-// deactivates and reactivates, the user-switch shape that must fire
-// windowDidResignKey:/windowDidBecomeKey: and so the focus callbacks
-// into the battery. Two observed facts shape it: activate sent on the
-// same run-loop tick as deactivate is coalesced away (the resign
-// fires, nothing else does), and activation does not always hand key
-// back (the app comes back active with no key window). So the hops
-// sit on separate ticks with a pause, and the window that was key
-// gets makeKeyAndOrderFront: at the end — the window state a user's
-// app switch ends in, reached through the real notification.
-func (s *darwinShell) DeactivateReactivate() error {
-	nsApp := s.appID()
-	if nsApp == 0 {
+// MakeKey implements desktop.NativeDriver: make this window key
+// (makeKeyAndOrderFront:), the user's window-click shape. AppKit
+// delivers windowDidResignKey:/windowDidBecomeKey: for key-window
+// changes between two windows the app owns with no app activation,
+// which is why this is the lever: in a session where the test binary
+// is not the frontmost app, the window server accepts an activation
+// but never hands key back (observed: appActive=true with
+// stillKey=false after both activateIgnoringOtherApps: and
+// makeKeyAndOrderFront: on the deactivated window).
+func (s *darwinShell) MakeKey(id string) error {
+	w, ok := s.windowByID(id)
+	if !ok {
+		return &desktop.Error{Code: desktop.CodeNotFound, Message: "no window with id " + id}
+	}
+	win, _ := w.ids()
+	if win == 0 {
 		return errWindowClosed()
 	}
-	var keyWin objc.ID
 	if err := s.onMain(func() {
-		for _, w := range s.snapshotWindows() {
-			if win, _ := w.ids(); win != 0 && objc.Send(win, objc.Sel("isKeyWindow")) != 0 {
-				keyWin = win
-				break
-			}
-		}
-		objc.Send(nsApp, objc.Sel("deactivate"))
+		objc.Send(win, objc.Sel("makeKeyAndOrderFront:"), 0)
 	}); err != nil {
-		return err
+		return &desktop.Error{Code: desktop.CodeInternal, Message: desktop.InternalErrorMsg}
 	}
-	time.Sleep(200 * time.Millisecond)
-	if err := s.onMain(func() {
-		objc.Send(nsApp, objc.Sel("activateIgnoringOtherApps:"), 1)
-		if os.Getenv("GOFASTR_CHROME_DEBUG") != "" {
-			fmt.Printf("DEBUG driver: post-activate appActive=%v stillKey=%v\n",
-				objc.Send(nsApp, objc.Sel("isActive")) != 0,
-				keyWin != 0 && objc.Send(keyWin, objc.Sel("isKeyWindow")) != 0)
-		}
-	}); err != nil {
-		return err
-	}
-	time.Sleep(200 * time.Millisecond)
-	return s.onMain(func() {
-		if keyWin != 0 && objc.Send(keyWin, objc.Sel("isKeyWindow")) == 0 {
-			objc.Send(keyWin, objc.Sel("makeKeyAndOrderFront:"), 0)
-		}
-		if os.Getenv("GOFASTR_CHROME_DEBUG") != "" {
-			fmt.Printf("DEBUG driver: post-makekey appActive=%v stillKey=%v\n",
-				objc.Send(nsApp, objc.Sel("isActive")) != 0,
-				keyWin != 0 && objc.Send(keyWin, objc.Sel("isKeyWindow")) != 0)
-		}
-	})
+	return nil
 }
 
 // StatusItemTitle reads the tray button's title natively: the e2e
