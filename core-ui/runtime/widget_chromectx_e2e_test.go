@@ -1,7 +1,6 @@
 package runtime
 
 import (
-	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -10,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
 	"github.com/chromedp/chromedp"
 )
 
@@ -169,33 +169,6 @@ func startChromeCtxServer(t *testing.T, body string) *chromeCtxServer {
 	return c
 }
 
-func chromeCtxBrowser(t *testing.T) context.Context {
-	t.Helper()
-	opts := append(chromedp.DefaultExecAllocatorOptions[:],
-		chromedp.Flag("headless", true),
-		chromedp.Flag("disable-gpu", true),
-		chromedp.Flag("no-sandbox", true),
-		chromedp.WSURLReadTimeout(90*time.Second),
-	)
-	allocCtx, allocCancel := chromedp.NewExecAllocator(context.Background(), opts...)
-	t.Cleanup(allocCancel)
-	browserCtx, browserCancel := chromedp.NewContext(allocCtx)
-	t.Cleanup(browserCancel)
-	started := make(chan error, 1)
-	go func() { started <- chromedp.Run(browserCtx) }()
-	select {
-	case err := <-started:
-		if err != nil {
-			t.Fatalf("chrome did not start: %v", err)
-		}
-	case <-time.After(90 * time.Second):
-		t.Fatal("chrome did not start within 90s")
-	}
-	ctx, cancel := context.WithTimeout(browserCtx, 120*time.Second)
-	t.Cleanup(cancel)
-	return ctx
-}
-
 // closeWidget dismisses the open dialog and waits for its removal.
 func closeWidget() chromedp.Action {
 	return chromedp.Tasks{
@@ -214,7 +187,7 @@ func TestWidgetChromeCtx_DistinctPerCtxAndCachedPerCtx(t *testing.T) {
 <button id="open-a" data-fui-open="dlg" data-fui-ctx="inv-42">A</button>
 <button id="open-b" data-fui-open="dlg" data-fui-ctx="inv-99">B</button>`
 	c := startChromeCtxServer(t, body)
-	ctx := chromeCtxBrowser(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(120*time.Second))
 
 	var a1, b, a2 string
 	if err := chromedp.Run(ctx,
@@ -271,7 +244,7 @@ func TestWidgetChromeCacheClearedOnPrincipalChange(t *testing.T) {
 <button id="open1" data-fui-open="dlg">Open</button>
 <a id="nav-out" href="/after">Sign out</a>`
 	c := startChromeCtxServer(t, body)
-	ctx := chromeCtxBrowser(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(120*time.Second))
 
 	var before, after, path string
 	step := func(name string, acts ...chromedp.Action) {
@@ -315,7 +288,7 @@ func TestWidgetChromeCtx_CacheCapped(t *testing.T) {
 		fmt.Fprintf(&body, `<button id="open-%d" data-fui-open="dlg" data-fui-ctx="c%d">%d</button>`+"\n", i, i, i)
 	}
 	c := startChromeCtxServer(t, body.String())
-	ctx := chromeCtxBrowser(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(120*time.Second))
 
 	acts := []chromedp.Action{
 		chromedp.Navigate(c.Srv.URL + "/"),
@@ -363,7 +336,7 @@ func TestWidgetChromeCtx_FailedFetchAfterNavKeepsNewCache(t *testing.T) {
 <button id="open-slow" data-fui-open="dlg" data-fui-ctx="slowfail">Slow</button>
 <a id="nav-out" href="/after">Go</a>`
 	c := startChromeCtxServer(t, body)
-	ctx := chromeCtxBrowser(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(120*time.Second))
 
 	var mark string
 	step := func(name string, acts ...chromedp.Action) {
@@ -434,7 +407,7 @@ func TestWidgetChromeCtx_LRURecency(t *testing.T) {
 		fmt.Fprintf(&body, `<button id="open-%d" data-fui-open="dlg" data-fui-ctx="c%d">%d</button>`+"\n", i, i, i)
 	}
 	c := startChromeCtxServer(t, body.String())
-	ctx := chromeCtxBrowser(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(120*time.Second))
 
 	click := func(id string) chromedp.Action {
 		return chromedp.Tasks{
@@ -492,7 +465,7 @@ func TestWidgetChromeCtx_FailedFetchSurfacesToast(t *testing.T) {
 <button id="open-ok" data-fui-open="dlg" data-fui-ctx="okctx">OK</button>
 <button id="open-slow" data-fui-open="dlg" data-fui-ctx="slowfail">Slow</button>`
 	c := startChromeCtxServer(t, body)
-	ctx := chromeCtxBrowser(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(120*time.Second))
 
 	var okMark, toastTitle string
 	var happyToasts, failToasts, dlgNodes int

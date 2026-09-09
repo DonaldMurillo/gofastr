@@ -5,7 +5,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
+	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
 	"github.com/chromedp/chromedp"
 )
 
@@ -46,7 +48,7 @@ func startDocStateServer(t *testing.T) string {
 // releases it; unlocking a never-registered owner is a harmless no-op.
 func TestDocScrollLockRefcount(t *testing.T) {
 	url := startDocStateServer(t)
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 
 	var got string
 	if err := chromedp.Run(ctx,
@@ -86,7 +88,7 @@ func TestDocScrollLockRefcount(t *testing.T) {
 //     the SPA full-shell swap calls).
 func TestDocSingletonSemantics(t *testing.T) {
 	url := startDocStateServer(t)
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 
 	var got string
 	if err := chromedp.Run(ctx,
@@ -136,7 +138,7 @@ func TestDocSingletonSemantics(t *testing.T) {
 // console.warn naming the offender; manifest names stay silent.
 func TestDocManifestGuardWarns(t *testing.T) {
 	url := startDocStateServer(t)
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 
 	var got string
 	if err := chromedp.Run(ctx,

@@ -1,7 +1,6 @@
 package runtime
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -11,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
 	"github.com/chromedp/chromedp"
 )
 
@@ -68,43 +68,6 @@ func startPollServer(t *testing.T, pageHTML string, extra map[string]http.Handle
 	return srv.URL
 }
 
-// newPollBrowserCtx is the chromedp allocator the poll tests use. The
-// 5s clamp floor makes the data-fui-poll tests inherently slow, so the
-// per-test timeout is 60s (vs the 30s seed tests use).
-func newPollBrowserCtx(t *testing.T) context.Context {
-	t.Helper()
-	opts := append(chromedp.DefaultExecAllocatorOptions[:],
-		chromedp.Flag("headless", true),
-		chromedp.Flag("disable-gpu", true),
-		chromedp.Flag("no-sandbox", true),
-		chromedp.WSURLReadTimeout(90*time.Second),
-		chromedp.WindowSize(1024, 768),
-	)
-	allocCtx, allocCancel := chromedp.NewExecAllocator(context.Background(), opts...)
-	t.Cleanup(allocCancel)
-	browserCtx, browserCancel := chromedp.NewContext(allocCtx)
-	t.Cleanup(browserCancel)
-
-	// chromedp starts Chrome lazily on the first Run: allocate against the
-	// browser context so the browser's lifetime is the browser context's,
-	// passing a timeout context here would make the browser die when that
-	// deadline passed. The watchdog bounds only the startup wait.
-	started := make(chan error, 1)
-	go func() { started <- chromedp.Run(browserCtx) }()
-	select {
-	case err := <-started:
-		if err != nil {
-			t.Fatalf("chrome did not start: %v", err)
-		}
-	case <-time.After(90 * time.Second):
-		t.Fatal("chrome did not start within 90s")
-	}
-
-	ctx, cancel := context.WithTimeout(browserCtx, 60*time.Second)
-	t.Cleanup(cancel)
-	return ctx
-}
-
 // TestPoll_SwapsRegion proves the load-bearing behavior: a
 // data-fui-poll element fetches data-fui-poll-src on the (clamped)
 // cadence and the response HTML replaces the element's innerHTML.
@@ -127,7 +90,7 @@ func TestPoll_SwapsRegion(t *testing.T) {
 		},
 	})
 
-	ctx := newPollBrowserCtx(t)
+	ctx := chromedptest.Context(t)
 	var content string
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/"),
@@ -156,7 +119,7 @@ func TestPoll_ClampsIntervalToFiveSeconds(t *testing.T) {
 	page := `<!doctype html><html><head></head><body>
 <script src="/__gofastr/runtime.js"></script></body></html>`
 	base := startPollServer(t, page, nil)
-	ctx := newPollBrowserCtx(t)
+	ctx := chromedptest.Context(t)
 
 	var underFloor, atFloor, aboveFloor, raised float64
 	var bad string
@@ -217,7 +180,7 @@ func TestPoll_TeardownOnRemoval(t *testing.T) {
 		},
 	})
 
-	ctx := newPollBrowserCtx(t)
+	ctx := chromedptest.Context(t)
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/"),
 		// Wait for first tick (clamp ~5s), proves the poll armed.
@@ -308,7 +271,7 @@ func TestWidgetPoll_OverwritesSignalsAndStopsOnDismiss(t *testing.T) {
 		},
 	})
 
-	ctx := newPollBrowserCtx(t)
+	ctx := chromedptest.Context(t)
 
 	// Phase 1: let the widget mount + poll for 3 seconds (3 poll ticks
 	// at 1s cadence, plus the mount-hydration fetch). Then read the
@@ -436,7 +399,7 @@ func TestWidgetPollNow_RefreshesAfterRPC(t *testing.T) {
 		},
 	})
 
-	ctx := newPollBrowserCtx(t)
+	ctx := chromedptest.Context(t)
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/"),
 		// Widget mounted AND the demand-loaded poll module has armed
@@ -512,7 +475,7 @@ func TestWidgetPollLargeIntervalNoOverflow(t *testing.T) {
 		"/core-ui/widget/slow/style.css": func(w http.ResponseWriter, r *http.Request) { w.Header().Set("Content-Type", "text/css") },
 	})
 
-	ctx := newPollBrowserCtx(t)
+	ctx := chromedptest.Context(t)
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/"),
 		chromedp.Poll(`typeof window.__gofastr?._widgets?.["slow"]?.pollStop === 'function'`, nil,
@@ -561,7 +524,7 @@ func TestPoll_StopsOnTerminalHeader(t *testing.T) {
 		},
 	})
 
-	ctx := newPollBrowserCtx(t)
+	ctx := chromedptest.Context(t)
 	var finalText string
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/"),
@@ -658,7 +621,7 @@ func TestWidgetPoll_StopsOnTerminalHeader(t *testing.T) {
 		},
 	})
 
-	ctx := newPollBrowserCtx(t)
+	ctx := chromedptest.Context(t)
 
 	// Phase 1: wait for the terminal signal to land, proves ≥2 poll
 	// ticks fired after mount hydration and the terminal body applied.

@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
 	"github.com/chromedp/chromedp"
 )
 
@@ -21,7 +22,7 @@ import (
 // depend on the renderer producing a frame.
 func TestNavSwappedElementsBindWithoutAFrame(t *testing.T) {
 	srv := invalidationSrv(t)
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 
 	steps := []chromedp.Action{
 		chromedp.Navigate(srv.URL + "/"),

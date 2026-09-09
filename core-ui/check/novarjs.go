@@ -55,30 +55,7 @@ func LintNoVarJS(dir string) (*Result, error) {
 // LintNoVarJS on each. Skips vendor/, node_modules/, hidden dirs, and
 // testdata/.
 func LintNoVarJSRecursive(root string) (*Result, error) {
-	result := &Result{}
-	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if !d.IsDir() {
-			return nil
-		}
-		base := filepath.Base(path)
-		if path != root && (strings.HasPrefix(base, ".") ||
-			base == "vendor" || base == "node_modules" || base == "testdata") {
-			return filepath.SkipDir
-		}
-		sub, err := LintNoVarJS(path)
-		if err != nil {
-			return err
-		}
-		result.Violations = append(result.Violations, sub.Violations...)
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
-	return result, nil
+	return lintRecursive(root, LintNoVarJS)
 }
 
 func scanJSFileForVar(path string, result *Result) error {
@@ -208,33 +185,12 @@ func stripJSCommentsAndStrings(src string) string {
 		c := src[i]
 		// Line comment
 		if c == '/' && i+1 < len(src) && src[i+1] == '/' {
-			for i < len(src) && src[i] != '\n' {
-				if src[i] == '\n' {
-					out = append(out, '\n')
-				} else {
-					out = append(out, ' ')
-				}
-				i++
-			}
+			out, i = blankJSLineComment(out, src, i)
 			continue
 		}
 		// Block comment
 		if c == '/' && i+1 < len(src) && src[i+1] == '*' {
-			i += 2
-			out = append(out, ' ', ' ')
-			for i < len(src) {
-				if src[i] == '*' && i+1 < len(src) && src[i+1] == '/' {
-					out = append(out, ' ', ' ')
-					i += 2
-					break
-				}
-				if src[i] == '\n' {
-					out = append(out, '\n')
-				} else {
-					out = append(out, ' ')
-				}
-				i++
-			}
+			out, i = blankJSBlockComment(out, src, i)
 			continue
 		}
 		// Regex literal: /…/flags. Blanked like a string, because its body

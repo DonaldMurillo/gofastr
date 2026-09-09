@@ -6,7 +6,9 @@ import (
 	"net/http/httptest"
 	"sync/atomic"
 	"testing"
+	"time"
 
+	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
 	"github.com/chromedp/chromedp"
 )
 
@@ -52,7 +54,7 @@ func serveStaticCompCSSPage(t *testing.T, marked bool) (*httptest.Server, *atomi
 
 func countStaticProbeLinks(t *testing.T, srv *httptest.Server) int {
 	t.Helper()
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 	var links int
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(srv.URL+"/"),

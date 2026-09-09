@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
 	"github.com/chromedp/chromedp"
 )
 
@@ -166,7 +167,7 @@ func visit(id, want string) []chromedp.Action {
 
 func TestInvalidateHeaderEviction(t *testing.T) {
 	srv := invalidationSrv(t)
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 
 	// mutate clicks a mutation button and waits for the response body
 	// to land in the signal-bound #mutsig span. The runtime writes the
@@ -245,7 +246,7 @@ func TestInvalidateHeaderEviction(t *testing.T) {
 
 func TestInvalidateJSAndRefresh(t *testing.T) {
 	srv := invalidationSrv(t)
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 
 	var n int
 	var search string

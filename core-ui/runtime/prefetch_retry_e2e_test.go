@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
 	"github.com/chromedp/chromedp"
 )
 
@@ -60,7 +61,7 @@ func TestPrefetchRetriesAfterFailedFetch(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 
-	ctx, _ := runTabsContractBrowser(t)
+	ctx := chromedptest.Context(t)
 
 	var loaded bool
 	if err := chromedp.Run(ctx,

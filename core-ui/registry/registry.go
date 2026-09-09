@@ -36,9 +36,11 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"maps"
 	"reflect"
 	"runtime"
-	"sort"
+	"slices"
+	"strings"
 	"sync"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
@@ -193,12 +195,9 @@ func Lookup(name string) (*Entry, bool) {
 func All() []*Entry {
 	mu.Lock()
 	defer mu.Unlock()
-	out := make([]*Entry, 0, len(entries))
-	for _, e := range entries {
-		out = append(out, e)
-	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
-	return out
+	return slices.SortedFunc(maps.Values(entries), func(a, b *Entry) int {
+		return strings.Compare(a.Name, b.Name)
+	})
 }
 
 // EvictTheme drops the cached CSS + version for hash from EVERY registered

@@ -4,6 +4,8 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/core/config"
 )
 
 // TestNominifyEnvGating pins the env contract: prod wins by default,
@@ -16,21 +18,21 @@ func TestNominifyEnvGating(t *testing.T) {
 	t.Setenv("GOFASTR_ENV", "")
 	t.Setenv("GOFASTR_DEV", "")
 
-	// envBool / isNonDevEnv behaviour.
-	if envBool("RUNTIME_NOMINIFY") {
-		t.Error("envBool with empty value should be false")
+	// config.EnvBool / isNonDevEnv behaviour.
+	if config.EnvBool("RUNTIME_NOMINIFY") {
+		t.Error("config.EnvBool with empty value should be false")
 	}
 	t.Setenv("X_TEST_BOOL", "1")
-	if !envBool("X_TEST_BOOL") {
-		t.Error(`envBool("1") should be true`)
+	if !config.EnvBool("X_TEST_BOOL") {
+		t.Error(`config.EnvBool("1") should be true`)
 	}
 	t.Setenv("X_TEST_BOOL", "true")
-	if !envBool("X_TEST_BOOL") {
-		t.Error(`envBool("true") should be true`)
+	if !config.EnvBool("X_TEST_BOOL") {
+		t.Error(`config.EnvBool("true") should be true`)
 	}
 	t.Setenv("X_TEST_BOOL", "false")
-	if envBool("X_TEST_BOOL") {
-		t.Error(`envBool("false") should be false`)
+	if config.EnvBool("X_TEST_BOOL") {
+		t.Error(`config.EnvBool("false") should be false`)
 	}
 
 	for _, e := range []string{"production", "prod", "live", "staging", "PRODUCTION"} {

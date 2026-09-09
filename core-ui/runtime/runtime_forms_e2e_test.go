@@ -1,7 +1,6 @@
 package runtime
 
 import (
-	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -9,8 +8,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
-	"time"
 
+	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
 	"github.com/chromedp/chromedp"
 )
 
@@ -113,47 +112,10 @@ func startFormE2EServer(t *testing.T, recv *atomic.Pointer[formRequest]) string 
 	return srv.URL
 }
 
-func newFormBrowserCtx(t *testing.T) context.Context {
-	t.Helper()
-	opts := append(chromedp.DefaultExecAllocatorOptions[:],
-		chromedp.Flag("headless", true),
-		chromedp.Flag("disable-gpu", true),
-		chromedp.Flag("no-sandbox", true),
-		// CI runners intermittently take >20s (the chromedp default)
-		// to cold-start Chrome; a generous websocket-URL deadline turns
-		// that from a flaky suite failure into a few slow seconds.
-		chromedp.WSURLReadTimeout(90*time.Second),
-		chromedp.WindowSize(1024, 768),
-	)
-	allocCtx, allocCancel := chromedp.NewExecAllocator(context.Background(), opts...)
-	t.Cleanup(allocCancel)
-	browserCtx, browserCancel := chromedp.NewContext(allocCtx)
-	t.Cleanup(browserCancel)
-
-	// chromedp starts Chrome lazily on the first Run: allocate against the
-	// browser context so the browser's lifetime is the browser context's,
-	// passing a timeout context here would make the browser die when that
-	// deadline passed. The watchdog bounds only the startup wait.
-	started := make(chan error, 1)
-	go func() { started <- chromedp.Run(browserCtx) }()
-	select {
-	case err := <-started:
-		if err != nil {
-			t.Fatalf("chrome did not start: %v", err)
-		}
-	case <-time.After(90 * time.Second):
-		t.Fatal("chrome did not start within 90s")
-	}
-
-	ctx, cancel := context.WithTimeout(browserCtx, 60*time.Second)
-	t.Cleanup(cancel)
-	return ctx
-}
-
 func TestFormIntercept_FormEnctypeSendsFormEncoded(t *testing.T) {
 	var recv atomic.Pointer[formRequest]
 	base := startFormE2EServer(t, &recv)
-	ctx := newFormBrowserCtx(t)
+	ctx := chromedptest.Context(t)
 
 	var finalURL string
 	err := chromedp.Run(ctx,
@@ -189,7 +151,7 @@ func TestFormIntercept_FormEnctypeSendsFormEncoded(t *testing.T) {
 func TestFormIntercept_NativeByDefaultForNoEnctype(t *testing.T) {
 	var recv atomic.Pointer[formRequest]
 	base := startFormE2EServer(t, &recv)
-	ctx := newFormBrowserCtx(t)
+	ctx := chromedptest.Context(t)
 
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/"),
@@ -218,7 +180,7 @@ func TestFormIntercept_NativeByDefaultForNoEnctype(t *testing.T) {
 func TestFormIntercept_JSONEnctypeIsIntercepted(t *testing.T) {
 	var recv atomic.Pointer[formRequest]
 	base := startFormE2EServer(t, &recv)
-	ctx := newFormBrowserCtx(t)
+	ctx := chromedptest.Context(t)
 
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/?enctype=application/json"),
@@ -247,7 +209,7 @@ func TestFormIntercept_JSONEnctypeIsIntercepted(t *testing.T) {
 func TestFormIntercept_DataFuiSPAOptsIn(t *testing.T) {
 	var recv atomic.Pointer[formRequest]
 	base := startFormE2EServer(t, &recv)
-	ctx := newFormBrowserCtx(t)
+	ctx := chromedptest.Context(t)
 
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/?spa=1"),

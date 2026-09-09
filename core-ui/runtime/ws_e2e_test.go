@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
 	"github.com/chromedp/chromedp"
 )
 
@@ -139,7 +140,7 @@ func TestWSReducerRejectsStaleSnapshot(t *testing.T) {
     });
   `
 	base := wsTestPage(t, mux, script)
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/"),
@@ -289,7 +290,7 @@ func TestWSReconnectFreshEventNotDiscarded(t *testing.T) {
     });
   `
 	base := wsTestPage(t, mux, script)
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/"),
@@ -395,7 +396,7 @@ func TestWSCloseReasonNeverLogged(t *testing.T) {
     });
   `
 	base := wsTestPage(t, mux, script)
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/"),
@@ -453,7 +454,7 @@ func TestWSReducerAppliesSequenceZeroSnapshot(t *testing.T) {
     });
   `
 	base := wsTestPage(t, mux, script)
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/"),
 		chromedp.WaitVisible(`#ready`, chromedp.ByID),
@@ -507,7 +508,7 @@ func TestWSLifecycleBoundToGeneration(t *testing.T) {
     });
   `
 	base := wsTestPage(t, mux, script)
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/"),
 		chromedp.WaitVisible(`#ready`, chromedp.ByID),
@@ -548,7 +549,7 @@ func TestWSRefusedStopsReconnect(t *testing.T) {
     });
   `
 	base := wsTestPage(t, mux, script)
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/"),
 		chromedp.WaitVisible(`#ready`, chromedp.ByID),
@@ -593,7 +594,7 @@ func TestWS5xxRefusalRetries(t *testing.T) {
     });
   `
 	base := wsTestPage(t, mux, script)
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/"),
 		chromedp.WaitVisible(`#ready`, chromedp.ByID),

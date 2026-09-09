@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
 	"github.com/chromedp/chromedp"
 )
 
@@ -121,7 +122,7 @@ func startCarouselNavServer(t *testing.T) *httptest.Server {
 // pure interval ticks.
 func TestCarouselAutoRotateTeardownOnNav(t *testing.T) {
 	srv := startCarouselNavServer(t)
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 
 	read := func(el, expr string, dst *string) chromedp.Action {
 		return chromedp.Evaluate(`(function(){
@@ -228,7 +229,7 @@ func TestCarouselAutoRotateTeardownOnNav(t *testing.T) {
 // test).
 func TestCarouselInjectedAfterLoadGetsWired(t *testing.T) {
 	srv := startCarouselNavServer(t)
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 
 	var bound, ticksA, ticksB string
 	if err := chromedp.Run(ctx,

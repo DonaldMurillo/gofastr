@@ -4,12 +4,8 @@
 package check
 
 import (
-	"fmt"
 	"go/ast"
-	"go/parser"
 	"go/token"
-	"os"
-	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -74,68 +70,14 @@ var (
 // attrs to render.Tag / html.Attrs literals. Returns one violation
 // per offending source location.
 func LintNoInlineStyles(dir string) (*Result, error) {
-	result := &Result{}
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return nil, fmt.Errorf("read dir: %w", err)
-	}
-	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
-		}
-		name := entry.Name()
-		if !strings.HasSuffix(name, ".go") {
-			continue
-		}
-		if strings.HasSuffix(name, "_test.go") {
-			continue
-		}
-		filename := filepath.Join(dir, name)
-		raw, err := os.ReadFile(filename)
-		if err != nil {
-			return nil, fmt.Errorf("read %s: %w", filename, err)
-		}
-		if hasCSPIgnoreDirective(raw) {
-			continue
-		}
-		fset := token.NewFileSet()
-		file, err := parser.ParseFile(fset, filename, raw, parser.AllErrors|parser.ParseComments)
-		if err != nil {
-			return nil, fmt.Errorf("parse %s: %w", filename, err)
-		}
-		scanInlineStyles(fset, file, filename, result)
-	}
-	return result, nil
+	return lintGoDir(dir, scanInlineStyles)
 }
 
 // LintNoInlineStylesRecursive walks dir and every subdirectory.
 // Skips vendor/, node_modules/, hidden dirs, and testdata/,
 // matching the script linter's recursion contract.
 func LintNoInlineStylesRecursive(root string) (*Result, error) {
-	result := &Result{}
-	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if !d.IsDir() {
-			return nil
-		}
-		base := filepath.Base(path)
-		if path != root && (strings.HasPrefix(base, ".") ||
-			base == "vendor" || base == "node_modules" || base == "testdata") {
-			return filepath.SkipDir
-		}
-		sub, err := LintNoInlineStyles(path)
-		if err != nil {
-			return err
-		}
-		result.Violations = append(result.Violations, sub.Violations...)
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
-	return result, nil
+	return lintRecursive(root, LintNoInlineStyles)
 }
 
 func scanInlineStyles(fset *token.FileSet, file *ast.File, filename string, result *Result) {

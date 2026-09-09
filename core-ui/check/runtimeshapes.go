@@ -32,9 +32,11 @@ package check
 import (
 	"fmt"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -172,6 +174,44 @@ func loadJSSources(roots ...string) ([]jsSource, error) {
 	return out, nil
 }
 
+// blankJSLineComment blanks the line comment starting at src[i] (the
+// first '/') into out and returns the advanced buffer and the index of
+// the terminating newline (or len(src)). Every comment byte becomes a
+// space so the output stays length- and line-aligned with the source.
+// It replaces the verbatim copies of this loop in
+// stripJSCommentsKeepStrings and stripJSCommentsAndStrings.
+func blankJSLineComment(out []byte, src string, i int) ([]byte, int) {
+	for i < len(src) && src[i] != '\n' {
+		out = append(out, ' ')
+		i++
+	}
+	return out, i
+}
+
+// blankJSBlockComment blanks the block comment starting at src[i] (the
+// '/') into out and returns the advanced buffer and the index just
+// past the closing "*/" (or len(src) when unterminated). The "/*" and
+// "*/" delimiters become spaces; newlines inside are kept so the
+// output stays line-aligned. It replaces the verbatim copies of this
+// loop in stripJSCommentsKeepStrings and stripJSCommentsAndStrings.
+func blankJSBlockComment(out []byte, src string, i int) ([]byte, int) {
+	out = append(out, ' ', ' ')
+	i += 2
+	for i < len(src) {
+		if src[i] == '*' && i+1 < len(src) && src[i+1] == '/' {
+			out = append(out, ' ', ' ')
+			return out, i + 2
+		}
+		if src[i] == '\n' {
+			out = append(out, '\n')
+		} else {
+			out = append(out, ' ')
+		}
+		i++
+	}
+	return out, i
+}
+
 // stripJSCommentsKeepStrings blanks the contents of JS line and block
 // comments while copying string and template literals verbatim,
 // preserving length and line breaks. Interpolation bodies of template
@@ -185,32 +225,11 @@ func stripJSCommentsKeepStrings(src string) string {
 	for i < len(src) {
 		c := src[i]
 		if c == '/' && i+1 < len(src) && src[i+1] == '/' {
-			for i < len(src) && src[i] != '\n' {
-				if src[i] == '\n' {
-					out = append(out, '\n')
-				} else {
-					out = append(out, ' ')
-				}
-				i++
-			}
+			out, i = blankJSLineComment(out, src, i)
 			continue
 		}
 		if c == '/' && i+1 < len(src) && src[i+1] == '*' {
-			i += 2
-			out = append(out, ' ', ' ')
-			for i < len(src) {
-				if src[i] == '*' && i+1 < len(src) && src[i+1] == '/' {
-					out = append(out, ' ', ' ')
-					i += 2
-					break
-				}
-				if src[i] == '\n' {
-					out = append(out, '\n')
-				} else {
-					out = append(out, ' ')
-				}
-				i++
-			}
+			out, i = blankJSBlockComment(out, src, i)
 			continue
 		}
 		// Regex literal: copy verbatim to its closing unescaped "/".
@@ -311,37 +330,48 @@ func matchDelimForward(s string, open int) int {
 				return i
 			}
 		case '\'', '"', '`':
-			q := c
-			i++
-			for i < len(s) {
-				if s[i] == '\\' {
-					i += 2
-					continue
-				}
-				if s[i] == q {
-					break
-				}
-				if q == '`' && s[i] == '$' && i+1 < len(s) && s[i+1] == '{' {
-					d := 0
-					i += 2
-					for i < len(s) {
-						if s[i] == '{' {
-							d++
-						} else if s[i] == '}' {
-							if d == 0 {
-								break
-							}
-							d--
-						}
-						i++
-					}
-					continue
-				}
-				i++
-			}
+			i = skipQuoted(s, i)
 		}
 	}
 	return -1
+}
+
+// skipQuoted advances past the string or template literal whose opening
+// quote is s[i] and returns the index of its closing quote (or len(s)
+// when the literal is unterminated). Backslash escapes are stepped
+// over, and `${…}` interpolation bodies are skipped as nested
+// brace-delimited text. It replaces the verbatim inner scanning loops
+// that lived inside matchDelimForward, splitTopLevel, and statementEnd.
+func skipQuoted(s string, i int) int {
+	q := s[i]
+	i++
+	for i < len(s) {
+		if s[i] == '\\' {
+			i += 2
+			continue
+		}
+		if s[i] == q {
+			break
+		}
+		if q == '`' && s[i] == '$' && i+1 < len(s) && s[i+1] == '{' {
+			d := 0
+			i += 2
+			for i < len(s) {
+				if s[i] == '{' {
+					d++
+				} else if s[i] == '}' {
+					if d == 0 {
+						break
+					}
+					d--
+				}
+				i++
+			}
+			continue
+		}
+		i++
+	}
+	return i
 }
 
 // matchDelimBack returns the index of the opener pairing with the ')'
@@ -402,34 +432,7 @@ func splitTopLevel(s string, sep byte) []string {
 				depth[k]--
 			}
 		case '\'', '"', '`':
-			q := c
-			i++
-			for i < len(s) {
-				if s[i] == '\\' {
-					i += 2
-					continue
-				}
-				if s[i] == q {
-					break
-				}
-				if q == '`' && s[i] == '$' && i+1 < len(s) && s[i+1] == '{' {
-					d := 0
-					i += 2
-					for i < len(s) {
-						if s[i] == '{' {
-							d++
-						} else if s[i] == '}' {
-							if d == 0 {
-								break
-							}
-							d--
-						}
-						i++
-					}
-					continue
-				}
-				i++
-			}
+			i = skipQuoted(s, i)
 		case sep:
 			if depth[0] == 0 && depth[1] == 0 && depth[2] == 0 {
 				parts = append(parts, strings.TrimSpace(s[start:i]))
@@ -1135,7 +1138,7 @@ func LintRegistryOwnProps(roots ...string) (*Result, error) {
 		spans := forInSpans(f.Blank)
 		reads := bracketReads(f.Blank)
 		lines := strings.Split(f.Blank, "\n")
-		for _, name := range sortedKeys(reads) {
+		for _, name := range slices.Sorted(maps.Keys(reads)) {
 			if !names[name] {
 				continue
 			}
@@ -1247,25 +1250,7 @@ func collectRegistryNames(files []jsSource) []string {
 			set[m[1]] = true
 		}
 	}
-	return sortedSet(set)
-}
-
-func sortedSet(set map[string]bool) []string {
-	out := make([]string, 0, len(set))
-	for k := range set {
-		out = append(out, k)
-	}
-	sort.Strings(out)
-	return out
-}
-
-func sortedKeys[T any](m map[string]T) []string {
-	out := make([]string, 0, len(m))
-	for k := range m {
-		out = append(out, k)
-	}
-	sort.Strings(out)
-	return out
+	return slices.Sorted(maps.Keys(set))
 }
 
 // reIdentAssign matches identifier assignments on the blank view; used
@@ -2322,34 +2307,7 @@ func statementEnd(code string, from int) int {
 		case ')', ']', '}':
 			depth--
 		case '\'', '"', '`':
-			q := code[i]
-			i++
-			for i < len(code) {
-				if code[i] == '\\' {
-					i += 2
-					continue
-				}
-				if code[i] == q {
-					break
-				}
-				if q == '`' && code[i] == '$' && i+1 < len(code) && code[i+1] == '{' {
-					d := 0
-					i += 2
-					for i < len(code) {
-						if code[i] == '{' {
-							d++
-						} else if code[i] == '}' {
-							if d == 0 {
-								break
-							}
-							d--
-						}
-						i++
-					}
-					continue
-				}
-				i++
-			}
+			i = skipQuoted(code, i)
 		case ';', '\n':
 			if depth == 0 {
 				return i
@@ -2865,27 +2823,49 @@ func LintCookieConcat(roots ...string) (*Result, error) {
 	}
 	for _, f := range files {
 		var events []safeEvent
-		for _, m := range reCookieWrite.FindAllStringSubmatchIndex(f.Blank, -1) {
-			if m[4] < 0 || f.Blank[m[4]] == '=' || f.Blank[m[4]] == '>' {
-				continue // == / === comparison or => arrow, not a write
-			}
-			rhs := strings.TrimSpace(f.Code[m[3]:statementEnd(f.Code, m[3])])
-			if rhs == "" {
-				continue
-			}
+		for _, s := range rhsAssignments(reCookieWrite, f.Blank, f.Code) {
 			if events == nil {
 				events = safeIdentEvents(f.Code, f.Blank)
 			}
-			safe := func(name string) bool { return safeAt(events, name, m[3]) }
-			bad, ok := cookieUnsafeOperand(rhs, safe)
+			safe := func(name string) bool { return safeAt(events, name, s.pos) }
+			bad, ok := cookieUnsafeOperand(s.rhs, safe)
 			if !ok {
 				continue
 			}
-			res.add(f.Path, f.lineOf(m[0]),
+			res.add(f.Path, f.lineOf(s.match),
 				fmt.Sprintf("[cookie-concat] document.cookie concatenates %q raw — a value carrying ';' or '=' plants an attacker-chosen cookie name and attributes in the module's namespace and the module's own write is lost; wrap the operand in encodeURIComponent()", bad))
 		}
 	}
 	return res, nil
+}
+
+// rhsSite is one genuine assignment found by rhsAssignments.
+type rhsSite struct {
+	match int    // offset of the whole match, for line lookups
+	pos   int    // offset of the assigned expression, for provenance lookups
+	rhs   string // the trimmed assigned expression, from the code view
+}
+
+// rhsAssignments walks re's matches on the blank view and yields the
+// RHS of each genuine assignment. Group 2 captures the character after
+// the '=' so comparisons (==, ===) and arrow bodies (=>) are rejected
+// in code; the RHS text is read from the code view by offset so string
+// literals stay visible. It replaces the three verbatim copies of this
+// loop prologue in LintCookieConcat, moduleURLSites, and
+// storageKeySites.
+func rhsAssignments(re *regexp.Regexp, blank, code string) []rhsSite {
+	var out []rhsSite
+	for _, m := range re.FindAllStringSubmatchIndex(blank, -1) {
+		if m[4] < 0 || blank[m[4]] == '=' || blank[m[4]] == '>' {
+			continue // == / === comparison or => arrow, not an assignment
+		}
+		rhs := strings.TrimSpace(code[m[3]:statementEnd(code, m[3])])
+		if rhs == "" {
+			continue
+		}
+		out = append(out, rhsSite{match: m[0], pos: m[3], rhs: rhs})
+	}
+	return out
 }
 
 // reCookieWrite matches a document.cookie write, plain or compound.
@@ -3062,15 +3042,8 @@ var (
 // arrow bodies can be rejected in code.
 func moduleURLSites(blank, code string) []moduleURLSite {
 	var out []moduleURLSite
-	for _, m := range reSrcAssign.FindAllStringSubmatchIndex(blank, -1) {
-		if m[4] < 0 || blank[m[4]] == '=' || blank[m[4]] == '>' {
-			continue // == / === comparison or => arrow, not an assignment
-		}
-		expr := strings.TrimSpace(code[m[3]:statementEnd(code, m[3])])
-		if expr == "" {
-			continue
-		}
-		out = append(out, moduleURLSite{kind: "script src", expr: expr, pos: m[3]})
+	for _, s := range rhsAssignments(reSrcAssign, blank, code) {
+		out = append(out, moduleURLSite{kind: "script src", expr: s.rhs, pos: s.pos})
 	}
 	for _, loc := range reImportArg.FindAllStringIndex(blank, -1) {
 		open := loc[1] - 1
@@ -3113,7 +3086,7 @@ func compositeBuild(expr string) bool {
 // moduleURLUnsafeOperand inspects one module-URL build and reports the
 // first operand the shape gate is missing for.
 func moduleURLUnsafeOperand(expr string, events []safeEvent, code string, buildPos int) (string, bool) {
-	for _, op := range moduleBuildOperands(expr) {
+	for _, op := range concatOperands(expr) {
 		t := strings.TrimSpace(op)
 		if t == "" {
 			continue
@@ -3141,11 +3114,12 @@ func moduleURLUnsafeOperand(expr string, events []safeEvent, code string, buildP
 	return "", false
 }
 
-// moduleBuildOperands splits a build expression into its template
-// chunks and interpolation bodies (a template decomposes; its literal
-// chunks read as quoted string literals downstream) and its top-level
-// '+' operands.
-func moduleBuildOperands(expr string) []string {
+// concatOperands splits a '+' concatenation expression into its
+// top-level operands, decomposing a template-literal operand into its
+// literal chunks and interpolation bodies (the chunks read as quoted
+// string literals downstream). It replaces the identical
+// moduleBuildOperands and storageKeyOperands.
+func concatOperands(expr string) []string {
 	var out []string
 	for _, op := range splitTopLevel(expr, '+') {
 		t := strings.TrimSpace(op)
@@ -3321,15 +3295,8 @@ func storageKeySites(blank, code string) []storageKeySite {
 		kind := strings.NewReplacer(" ", "", "\t", "").Replace(blank[loc[0] : loc[1]-1])
 		out = append(out, storageKeySite{kind: kind, expr: key, pos: open + 1})
 	}
-	for _, m := range reCookieWrite.FindAllStringSubmatchIndex(blank, -1) {
-		if m[4] < 0 || blank[m[4]] == '=' || blank[m[4]] == '>' {
-			continue // == / === comparison or => arrow, not a write
-		}
-		rhs := strings.TrimSpace(code[m[3]:statementEnd(code, m[3])])
-		if rhs == "" {
-			continue
-		}
-		out = append(out, storageKeySite{kind: "document.cookie", expr: rhs, pos: m[3]})
+	for _, s := range rhsAssignments(reCookieWrite, blank, code) {
+		out = append(out, storageKeySite{kind: "document.cookie", expr: s.rhs, pos: s.pos})
 	}
 	return out
 }
@@ -3348,7 +3315,7 @@ var reFuiAttrKey = regexp.MustCompile(`getAttribute\s*\(\s*['"]data-fui-|\.\s*da
 func storageKeyUnsafe(expr string, events []safeEvent, pos int) (culprit string, unnamed bool) {
 	unwrapped, wrapped := "", ""
 	hasLiteral := false
-	for _, op := range storageKeyOperands(expr) {
+	for _, op := range concatOperands(expr) {
 		t := strings.TrimSpace(op)
 		if t == "" {
 			continue
@@ -3384,22 +3351,6 @@ func storageKeyUnsafe(expr string, events []safeEvent, pos int) (culprit string,
 		return wrapped, true
 	}
 	return "", false
-}
-
-// storageKeyOperands splits a key expression into its concatenation
-// operands, decomposing template literals into literal chunks and
-// interpolation bodies (the chunks read as quoted literals downstream).
-func storageKeyOperands(expr string) []string {
-	var out []string
-	for _, op := range splitTopLevel(expr, '+') {
-		t := strings.TrimSpace(op)
-		if strings.HasPrefix(t, "`") {
-			out = append(out, templateOperands(t[:templateEnd(t, 0)+1])...)
-			continue
-		}
-		out = append(out, t)
-	}
-	return out
 }
 
 // attrFuiAt reports whether identifier name provably holds a data-fui

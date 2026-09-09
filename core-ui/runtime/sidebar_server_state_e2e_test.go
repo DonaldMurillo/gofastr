@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
 	"github.com/chromedp/chromedp"
 )
 
@@ -103,7 +104,7 @@ func TestSidebarServerOwnedCollapseIgnoresLocalStorage(t *testing.T) {
 		"/page": serverCollapsedSidebar,
 	})
 
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 	var collapsed, expandedAttr, label string
 	var afterCollapsed, afterExpanded, afterLabel string
 	var storageValue, storageLen string
@@ -200,7 +201,7 @@ func TestSidebarGroupToggleAndAutoLabelRestore(t *testing.T) {
 		"/groups": groupsSidebarMarkup,
 	})
 
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 	var autoCollapsed, autoLabel string
 	var storageAfterToggle string
 	var moduleLoaded, grpExpanded, grpHidden, grpLinkShown, grpClosedDisplay string

@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
 	"github.com/chromedp/chromedp"
 )
 
@@ -122,7 +123,7 @@ func startGadgetServer(t *testing.T, widgets, body string) *gadgetServer {
 func TestBehaviorAttrRejectsForeignSrc(t *testing.T) {
 	g := startGadgetServer(t, `[]`, `<div id="host"></div>`)
 
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 	var pwned bool
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(g.Srv.URL+"/"),
@@ -161,7 +162,7 @@ func TestFormActionRejectsProtocolRelative(t *testing.T) {
   <button id="go" type="submit">go</button>
 </form>`)
 
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 	// The action points back at this server so a hit proves the guard
 	// let it through, rather than proving an unreachable host failed.
 	if err := chromedp.Run(ctx,
@@ -195,7 +196,7 @@ func TestRuntimeFetchRefusesForeignOrigin(t *testing.T) {
 	g := startGadgetServer(t, `[]`, `
 <button id="rpc" data-fui-rpc="/placeholder" data-fui-rpc-method="POST">go</button>`)
 
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(g.Srv.URL+"/"),
 		chromedp.WaitVisible(`#ready`, chromedp.ByID),
@@ -227,7 +228,7 @@ func TestSetSignalRejectsProtoKey(t *testing.T) {
 	g := startGadgetServer(t, `[]`, `
 <button id="pollute" data-fui-signal-set="__proto__:POLLUTED">pollute</button>`)
 
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 	var polluted, leaked string
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(g.Srv.URL+"/"),
@@ -265,7 +266,7 @@ func TestDeepLinkParamNeverReachesInnerHTML(t *testing.T) {
 	g := startGadgetServer(t, catalog, `
 <div id="sink" data-fui-signal="x" data-fui-signal-mode="html">initial</div>`)
 
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 	var sink string
 	var pwned bool
 	if err := chromedp.Run(ctx,
@@ -321,7 +322,7 @@ func TestPrefetchAttrRejectsForeignModule(t *testing.T) {
 		t.Run(tc.label, func(t *testing.T) {
 			g := startGadgetServer(t, `[]`, `<div id="host"></div>`)
 
-			ctx := newSeedBrowserCtx(t)
+			ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 			var pwned, other, menuLoaded bool
 			if err := chromedp.Run(ctx,
 				chromedp.Navigate(g.Srv.URL+"/"),

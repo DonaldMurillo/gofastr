@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
 	"github.com/chromedp/chromedp"
 )
 
@@ -76,7 +77,7 @@ const menuOpenTop = `document.querySelector('details[data-fui-menu="um"] > summa
 // Run means later actions overwrite them before the asserts ever run.
 func TestMenuSubmenuKeyboardContract(t *testing.T) {
 	g := startGadgetServer(t, `[]`, menuContractFixture)
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 
 	var afterOpen, afterDown, afterDown2, subOpen, expanded, label string
 	if err := chromedp.Run(ctx,
@@ -237,7 +238,7 @@ func TestMenuSubmenuKeyboardContract(t *testing.T) {
 // different group in another submenu is untouched.
 func TestMenuRadioArbitration(t *testing.T) {
 	g := startGadgetServer(t, `[]`, menuContractFixture)
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 
 	var label, theme0, theme1, theme2, density string
 	if err := chromedp.Run(ctx,
@@ -328,7 +329,7 @@ func menuGroupCheckedCount(dst *string, menuSel, group string) chromedp.Action {
 // the scope is the menu, not the page.
 func TestMenuRadioGroupSpansSubmenus(t *testing.T) {
 	g := startGadgetServer(t, `[]`, menuSplitGroupFixture)
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 
 	var count, top, sub, alt string
 	if err := chromedp.Run(ctx,
@@ -414,7 +415,7 @@ func TestMenuRadioGroupSpansSubmenus(t *testing.T) {
 // nothing.
 func TestMenuTypeAheadMatchesLabelsOnly(t *testing.T) {
 	g := startGadgetServer(t, `[]`, menuContractFixture)
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 
 	var atLight, afterD, afterIcon string
 	if err := chromedp.Run(ctx,
@@ -454,7 +455,7 @@ func TestMenuTypeAheadMatchesLabelsOnly(t *testing.T) {
 // ArrowRight on it does not open its submenu.
 func TestMenuDisabledParentUnreachable(t *testing.T) {
 	g := startGadgetServer(t, `[]`, menuContractFixture)
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 
 	var atEnd, lockedOpen string
 	if err := chromedp.Run(ctx,
@@ -508,7 +509,7 @@ const menuSubFirstFixture = `<details class="ui-menu ui-menu--bottom-start" data
 // .focus() no-ops, and the menu opens keyboard-dead.
 func TestMenuFocusOnOpenFirstRowIsSubmenu(t *testing.T) {
 	g := startGadgetServer(t, `[]`, menuSubFirstFixture)
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 
 	var afterOpen, afterDown, nestedAfterOpen, afterSubOpen string
 	if err := chromedp.Run(ctx,
@@ -560,7 +561,7 @@ func TestMenuFocusOnOpenFirstRowIsSubmenu(t *testing.T) {
 // root after load, no reload needed.
 func TestMenuSubmenuArrowKeysSwapInRTL(t *testing.T) {
 	g := startGadgetServer(t, `[]`, menuContractFixture)
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 
 	var atPalette, subAfterLeft, labelAfterLeft, subAfterRight, labelAfterRight string
 	if err := chromedp.Run(ctx,
@@ -601,7 +602,7 @@ func TestMenuSubmenuArrowKeysSwapInRTL(t *testing.T) {
 // Home had no coverage at all.
 func TestMenuHomeJumpsToFirstRow(t *testing.T) {
 	g := startGadgetServer(t, `[]`, menuContractFixture)
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 
 	var atEnd, afterHome string
 	if err := chromedp.Run(ctx,
@@ -641,7 +642,7 @@ const menuUngroupedRadioFixture = `<details class="ui-menu ui-menu--bottom-start
 // radio in the panel) wipes the checked state of real groups.
 func TestMenuUngroupedRadioSelfChecks(t *testing.T) {
 	g := startGadgetServer(t, `[]`, menuUngroupedRadioFixture)
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 
 	var afterU, afterB string
 	if err := chromedp.Run(ctx,
@@ -679,7 +680,7 @@ func TestMenuUngroupedRadioSelfChecks(t *testing.T) {
 // the UA's closed-details display with its author display:grid.)
 func TestMenuButtonTriggerRealClick(t *testing.T) {
 	g := startGadgetServer(t, `[]`, `<details class="ui-menu ui-menu--bottom-start" data-fui-disclosure data-fui-menu="bm" data-fui-comp="ui-menu"><summary class="ui-menu__trigger" aria-haspopup="menu" aria-controls="bm-panel"><button type="button" aria-label="Open user menu"><span>U</span></button></summary><div class="ui-menu__panel" id="bm-panel" role="menu" data-fui-menu-panel><a class="ui-menu__item" href="/x" role="menuitem" tabindex="-1"><span class="ui-menu__label">Row</span></a></div></details>`)
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 
 	var coords string
 	if err := chromedp.Run(ctx,

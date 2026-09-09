@@ -5,7 +5,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
+	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
 	"github.com/chromedp/chromedp"
 )
 
@@ -63,7 +65,7 @@ func TestGroupSlashlessIndexNavPreservesShell(t *testing.T) {
 
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 
 	var tabsSurvived bool
 	if err := chromedp.Run(ctx,
@@ -123,7 +125,7 @@ func TestCrossLayoutNavCopiesSSEMeta(t *testing.T) {
 
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 
 	var meta string
 	if err := chromedp.Run(ctx,

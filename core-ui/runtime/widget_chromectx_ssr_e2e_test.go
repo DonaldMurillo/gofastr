@@ -7,7 +7,9 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
+	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
 	"github.com/chromedp/chromedp"
 )
 
@@ -133,7 +135,7 @@ func startSSRChromeCtxServer(t *testing.T) *ssrCtxServer {
 // served for either.
 func TestWidgetChromeCtx_SSRInlinedDeepLinkOpensPerCtx(t *testing.T) {
 	s := startSSRChromeCtxServer(t)
-	ctx := chromeCtxBrowser(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(120*time.Second))
 
 	var mark string
 	mounted := `window.__gofastr && window.__gofastr._widgets && !!window.__gofastr._widgets['user-edit']`

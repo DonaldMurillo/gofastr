@@ -1,13 +1,13 @@
 package runtime
 
 import (
-	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
 	"github.com/chromedp/chromedp"
 )
 
@@ -47,49 +47,12 @@ func startSeedE2EServer(t *testing.T, seedJSON string) string {
 	return srv.URL
 }
 
-func newSeedBrowserCtx(t *testing.T) context.Context {
-	t.Helper()
-	opts := append(chromedp.DefaultExecAllocatorOptions[:],
-		chromedp.Flag("headless", true),
-		chromedp.Flag("disable-gpu", true),
-		chromedp.Flag("no-sandbox", true),
-		// CI runners intermittently take >20s (the chromedp default)
-		// to cold-start Chrome; a generous websocket-URL deadline turns
-		// that from a flaky suite failure into a few slow seconds.
-		chromedp.WSURLReadTimeout(90*time.Second),
-		chromedp.WindowSize(1024, 768),
-	)
-	allocCtx, allocCancel := chromedp.NewExecAllocator(context.Background(), opts...)
-	t.Cleanup(allocCancel)
-	browserCtx, browserCancel := chromedp.NewContext(allocCtx)
-	t.Cleanup(browserCancel)
-
-	// chromedp starts Chrome lazily on the first Run: allocate against the
-	// browser context so the browser's lifetime is the browser context's,
-	// passing a timeout context here would make the browser die when that
-	// deadline passed. The watchdog bounds only the startup wait.
-	started := make(chan error, 1)
-	go func() { started <- chromedp.Run(browserCtx) }()
-	select {
-	case err := <-started:
-		if err != nil {
-			t.Fatalf("chrome did not start: %v", err)
-		}
-	case <-time.After(90 * time.Second):
-		t.Fatal("chrome did not start within 90s")
-	}
-
-	ctx, cancel := context.WithTimeout(browserCtx, 90*time.Second)
-	t.Cleanup(cancel)
-	return ctx
-}
-
 // TestSeed_GetSignalReturnsSeededValueBeforeInteraction is the core
 // gap-#1 proof: with a seed island present, getSignal returns the
 // server value on boot, no interaction required.
 func TestSeed_GetSignalReturnsSeededValueBeforeInteraction(t *testing.T) {
 	base := startSeedE2EServer(t, `{"greeting":"hello","count":5,"open":true}`)
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 
 	var greeting string
 	var count int
@@ -132,7 +95,7 @@ func TestSeed_NoBlockLeavesSignalsEmpty(t *testing.T) {
 	})
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 
 	var typ string
 	if err := chromedp.Run(ctx,
@@ -151,7 +114,7 @@ func TestSeed_NoBlockLeavesSignalsEmpty(t *testing.T) {
 // breaks boot, the runtime swallows the parse error and continues.
 func TestSeed_MalformedBlockIsIgnored(t *testing.T) {
 	base := startSeedE2EServer(t, `{not valid json`)
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 
 	var ready string
 	if err := chromedp.Run(ctx,

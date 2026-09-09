@@ -2,8 +2,9 @@ package widget
 
 import (
 	"context"
+	"maps"
 	"net/http"
-	"sort"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -266,12 +267,9 @@ var (
 func allWidgets() []*Definition {
 	registryMu.Lock()
 	defer registryMu.Unlock()
-	out := make([]*Definition, 0, len(registry))
-	for _, d := range registry {
-		out = append(out, d)
-	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
-	return out
+	return slices.SortedFunc(maps.Values(registry), func(a, b *Definition) int {
+		return strings.Compare(a.Name, b.Name)
+	})
 }
 
 // Lookup returns the registered widget with this name.

@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
 	"github.com/chromedp/chromedp"
 )
 
@@ -63,7 +64,7 @@ func scrollSite(t *testing.T) *httptest.Server {
 
 func TestBackRestoresScrollOffset(t *testing.T) {
 	srv := scrollSite(t)
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 
 	var backY, forwardTopY float64
 	if err := chromedp.Run(ctx,
@@ -96,7 +97,7 @@ func TestBackRestoresScrollOffset(t *testing.T) {
 
 func TestForwardRestoresScrollOffset(t *testing.T) {
 	srv := scrollSite(t)
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 
 	// Trace the observable internals at every step: CI Chrome fails this
 	// flow in ways local Chrome doesn't, and the failure message must say
@@ -135,7 +136,7 @@ func TestForwardRestoresScrollOffset(t *testing.T) {
 // navigation's restored position. Regression for the _scrollSeq guard.
 func TestRapidBackForwardKeepsForwardScroll(t *testing.T) {
 	srv := scrollSite(t)
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 
 	snap := `JSON.stringify({st: history.state, ss: sessionStorage.getItem('gofastr:scroll'), y: scrollY, path: location.pathname})`
 	var after string
@@ -163,7 +164,7 @@ func TestRapidBackForwardKeepsForwardScroll(t *testing.T) {
 
 func TestReloadRestoresScrollViaSessionStorage(t *testing.T) {
 	srv := scrollSite(t)
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 
 	var y float64
 	if err := chromedp.Run(ctx,

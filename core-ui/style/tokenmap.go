@@ -5,6 +5,7 @@ import (
 	"maps"
 	"reflect"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -53,10 +54,10 @@ func ThemeToTokens(t Theme) map[string]string {
 	// but a stable insertion order keeps debug dumps readable and makes any
 	// future ordered-emit trivial, the round-trip property does not depend
 	// on it (ThemeHash is computed from the byte-stable CSS, not the map).
-	for _, name := range sortedStringKeys(t.DarkColors) {
+	for _, name := range slices.Sorted(maps.Keys(t.DarkColors)) {
 		out["dark.color-"+name] = t.DarkColors[name]
 	}
-	for _, name := range sortedStringKeys(t.DarkCode) {
+	for _, name := range slices.Sorted(maps.Keys(t.DarkCode)) {
 		out["dark.tk-"+name] = t.DarkCode[name]
 	}
 	return out
@@ -159,19 +160,7 @@ func collectSetters(v reflect.Value, setters map[string]tokenSetter, lightColors
 	}
 	switch v.Interface().(type) {
 	case Color:
-		name, ok := nonEmptyStringField(v, "Name")
-		if !ok {
-			return
-		}
-		val := v.FieldByName("Value")
-		lightColors[name] = true
-		setters["color-"+name] = func(s string) error {
-			if err := validateColorValue(s); err != nil {
-				return err
-			}
-			val.SetString(s)
-			return nil
-		}
+		registerValidatedSetter(v, "color-", lightColors, validateColorValue, setters)
 		return
 	case Spacing:
 		registerIntPxSetter(v, "spacing-", setters)
@@ -243,25 +232,13 @@ func collectSetters(v reflect.Value, setters map[string]tokenSetter, lightColors
 		registerStringSetter(v, "text-", "FontSize", setters)
 		return
 	case CodeColor:
-		name, ok := nonEmptyStringField(v, "Name")
-		if !ok {
-			return
-		}
-		val := v.FieldByName("Value")
-		lightCode[name] = true
 		// CodeColor is optional and only EMITS when Value != "", but a
 		// configurator may set the value on a slot that already has a Name;
 		// register a setter whenever Name is present so "tk-<name>" stays
 		// addressable. CodeColor values reach CSS as --tk-<name> inside the
 		// (possibly dark) :root block, so they get the free-form-string
 		// check (reject declaration-breakers), not the color grammar.
-		setters["tk-"+name] = func(s string) error {
-			if err := validateFreeFormCSS(s); err != nil {
-				return err
-			}
-			val.SetString(s)
-			return nil
-		}
+		registerValidatedSetter(v, "tk-", lightCode, validateFreeFormCSS, setters)
 		return
 	}
 	// Recurse into struct fields.
@@ -276,6 +253,28 @@ func collectSetters(v reflect.Value, setters map[string]tokenSetter, lightColors
 			continue
 		}
 		collectSetters(f, setters, lightColors, lightCode)
+	}
+}
+
+// registerValidatedSetter registers a string setter for a named typed
+// token (Color, CodeColor): the token's Name keys it under prefix and
+// is recorded in the light-token set of its kind, and each applied
+// value must pass validate before it is written. It replaces the two
+// verbatim copies of this shape in the Color and CodeColor arms of
+// collectSetters.
+func registerValidatedSetter(v reflect.Value, prefix string, names map[string]bool, validate func(string) error, setters map[string]tokenSetter) {
+	name, ok := nonEmptyStringField(v, "Name")
+	if !ok {
+		return
+	}
+	val := v.FieldByName("Value")
+	names[name] = true
+	setters[prefix+name] = func(s string) error {
+		if err := validate(s); err != nil {
+			return err
+		}
+		val.SetString(s)
+		return nil
 	}
 }
 
@@ -377,18 +376,6 @@ func copyStringMap(m map[string]string) map[string]string {
 	}
 	out := make(map[string]string, len(m))
 	maps.Copy(out, m)
-	return out
-}
-
-func sortedStringKeys(m map[string]string) []string {
-	if len(m) == 0 {
-		return nil
-	}
-	out := make([]string, 0, len(m))
-	for k := range m {
-		out = append(out, k)
-	}
-	sort.Strings(out)
 	return out
 }
 

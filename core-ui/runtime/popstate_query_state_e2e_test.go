@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
 	"github.com/chromedp/chromedp"
 )
 
@@ -56,7 +57,7 @@ func stateSite(t *testing.T) (*httptest.Server, *atomic.Int64) {
 // and made Forward unusable (the v0.44.0 known issue).
 func TestStatefulQueryBackForwardZeroFetch(t *testing.T) {
 	srv, count := stateSite(t)
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 
 	var stampKept bool
 	var afterBack, afterForward string
@@ -96,7 +97,7 @@ func TestStatefulQueryBackForwardZeroFetch(t *testing.T) {
 // screen identity: back must refetch (or cache-replay) as before.
 func TestIdentityQueryBackRefetches(t *testing.T) {
 	srv, count := stateSite(t)
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 
 	var stamp bool
 	if err := chromedp.Run(ctx,

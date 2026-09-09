@@ -6,9 +6,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
-	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
 	"github.com/chromedp/chromedp"
 )
 
@@ -24,43 +24,6 @@ func (s bareStub) Render() render.HTML { return render.HTML(s.html) }
 // sets background: var(--color-surface), so a painted panel resolves to
 // exactly this rgb() and an opted-out panel does not.
 const bareProbeSurface = "rgb(123, 45, 6)"
-
-func newBareBrowserCtx(t *testing.T) context.Context {
-	t.Helper()
-	opts := append(chromedp.DefaultExecAllocatorOptions[:],
-		chromedp.Flag("headless", true),
-		chromedp.Flag("disable-gpu", true),
-		chromedp.Flag("no-sandbox", true),
-		// CI runners intermittently take >20s (the chromedp default)
-		// to cold-start Chrome; a generous websocket-URL deadline turns
-		// that from a flaky suite failure into a few slow seconds.
-		chromedp.WSURLReadTimeout(90*time.Second),
-		chromedp.WindowSize(1024, 768),
-	)
-	allocCtx, allocCancel := chromedp.NewExecAllocator(context.Background(), opts...)
-	t.Cleanup(allocCancel)
-	browserCtx, browserCancel := chromedp.NewContext(allocCtx)
-	t.Cleanup(browserCancel)
-
-	// chromedp starts Chrome lazily on the first Run: allocate against the
-	// browser context so the browser's lifetime is the browser context's,
-	// passing a timeout context here would make the browser die when that
-	// deadline passed. The watchdog bounds only the startup wait.
-	started := make(chan error, 1)
-	go func() { started <- chromedp.Run(browserCtx) }()
-	select {
-	case err := <-started:
-		if err != nil {
-			t.Fatalf("chrome did not start: %v", err)
-		}
-	case <-time.After(90 * time.Second):
-		t.Fatal("chrome did not start within 90s")
-	}
-
-	ctx, cancel := context.WithTimeout(browserCtx, 60*time.Second)
-	t.Cleanup(cancel)
-	return ctx
-}
 
 // mountBarePage builds a centered Modal whose body root is bodyHTML,
 // generates its resolved stylesheet via widgetCSS, renders the chrome,
@@ -107,7 +70,7 @@ func barePanelBackgroundRGB(t *testing.T, ctx context.Context, url string) strin
 // and reads the panel's computed background to prove the :has()
 // selector ACTUALLY matches (not just that the selector text exists).
 func TestCenterPanelBareOptOutRendered(t *testing.T) {
-	ctx := newBareBrowserCtx(t)
+	ctx := chromedptest.Context(t)
 
 	// Sanity: a plain body DOES paint the surface, proves the CSS
 	// loaded and the panel rule applies, so the opt-out assertions
@@ -136,7 +99,7 @@ func TestCenterPanelBareOptOutRendered(t *testing.T) {
 // actually match a rendered palette root (the string test only checks
 // the selector text; a stray quote or typo would slip past it).
 func TestCenterPanelCmdPaletteExclusionRendered(t *testing.T) {
-	ctx := newBareBrowserCtx(t)
+	ctx := chromedptest.Context(t)
 
 	if bg := barePanelBackgroundRGB(t, ctx, mountBarePage(t, `<div>plain</div>`)); bg != bareProbeSurface {
 		t.Fatalf("plain body panel background = %q, want %q — CSS not applied", bg, bareProbeSurface)

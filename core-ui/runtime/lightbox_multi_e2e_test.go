@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
 	"github.com/chromedp/chromedp"
 )
 
@@ -42,7 +43,7 @@ func TestLightbox_MultiInstanceNoCrossTalk(t *testing.T) {
 </body></html>`)
 	base := startPollServer(t, page, nil)
 
-	ctx := newPollBrowserCtx(t)
+	ctx := chromedptest.Context(t)
 	var lbCall string
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/"),

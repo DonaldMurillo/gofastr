@@ -1,13 +1,13 @@
 package runtime
 
 import (
-	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
 	"github.com/chromedp/chromedp"
 )
 
@@ -60,45 +60,12 @@ func navPrefixServer(t *testing.T) *httptest.Server {
 	return srv
 }
 
-func navPrefixBrowser(t *testing.T) context.Context {
-	t.Helper()
-	opts := append(chromedp.DefaultExecAllocatorOptions[:],
-		chromedp.Flag("headless", true),
-		chromedp.Flag("disable-gpu", true),
-		chromedp.Flag("no-sandbox", true),
-		chromedp.WSURLReadTimeout(90*time.Second),
-	)
-	allocCtx, allocCancel := chromedp.NewExecAllocator(context.Background(), opts...)
-	t.Cleanup(allocCancel)
-	browserCtx, browserCancel := chromedp.NewContext(allocCtx)
-	t.Cleanup(browserCancel)
-
-	// chromedp starts Chrome lazily on the first Run: allocate against the
-	// browser context so the browser's lifetime is the browser context's,
-	// passing a timeout context here would make the browser die when that
-	// deadline passed. The watchdog bounds only the startup wait.
-	started := make(chan error, 1)
-	go func() { started <- chromedp.Run(browserCtx) }()
-	select {
-	case err := <-started:
-		if err != nil {
-			t.Fatalf("chrome did not start: %v", err)
-		}
-	case <-time.After(90 * time.Second):
-		t.Fatal("chrome did not start within 90s")
-	}
-
-	ctx, cancel := context.WithTimeout(browserCtx, 60*time.Second)
-	t.Cleanup(cancel)
-	return ctx
-}
-
 // A canonical href with no trailing slash must light up on descendant
 // routes. Apps register "/docs", not "/docs/", so requiring the trailing
 // slash made MatchPrefix silently useless for the ordinary case.
 func TestMatchPrefixCanonicalHrefOnDescendant(t *testing.T) {
 	srv := navPrefixServer(t)
-	ctx := navPrefixBrowser(t)
+	ctx := chromedptest.Context(t)
 
 	var docs, blog, old, home string
 	if err := chromedp.Run(ctx,
@@ -131,7 +98,7 @@ func TestMatchPrefixCanonicalHrefOnDescendant(t *testing.T) {
 // slash on the href. Before, "/blog/" went dark on exactly /blog.
 func TestMatchPrefixMatchesOwnPage(t *testing.T) {
 	srv := navPrefixServer(t)
-	ctx := navPrefixBrowser(t)
+	ctx := chromedptest.Context(t)
 
 	var docs, blog string
 	if err := chromedp.Run(ctx,
@@ -164,7 +131,7 @@ func TestMatchPrefixMatchesOwnPage(t *testing.T) {
 // (redirecting /docs to /docs/) put the runtime in exactly this state.
 func TestMatchPrefixTrailingSlashPath(t *testing.T) {
 	srv := navPrefixServer(t)
-	ctx := navPrefixBrowser(t)
+	ctx := chromedptest.Context(t)
 
 	var docs, old string
 	if err := chromedp.Run(ctx,
@@ -188,7 +155,7 @@ func TestMatchPrefixTrailingSlashPath(t *testing.T) {
 // without a page load has to land in the same state as a cold load.
 func TestMatchPrefixAfterClientNav(t *testing.T) {
 	srv := navPrefixServer(t)
-	ctx := navPrefixBrowser(t)
+	ctx := chromedptest.Context(t)
 
 	var docs, path string
 	if err := chromedp.Run(ctx,

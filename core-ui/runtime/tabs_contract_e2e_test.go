@@ -1,7 +1,6 @@
 package runtime
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -10,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
 	"github.com/chromedp/chromedp"
 )
 
@@ -53,35 +53,6 @@ func startTabsContractServer(t *testing.T, body string) *httptest.Server {
 	return srv
 }
 
-func runTabsContractBrowser(t *testing.T) (context.Context, context.CancelFunc) {
-	t.Helper()
-	opts := append(chromedp.DefaultExecAllocatorOptions[:],
-		chromedp.Flag("headless", true),
-		chromedp.Flag("disable-gpu", true),
-		chromedp.Flag("no-sandbox", true),
-		chromedp.WSURLReadTimeout(90*time.Second),
-	)
-	allocCtx, allocCancel := chromedp.NewExecAllocator(context.Background(), opts...)
-	browserCtx, browserCancel := chromedp.NewContext(allocCtx)
-	started := make(chan error, 1)
-	go func() { started <- chromedp.Run(browserCtx) }()
-	select {
-	case err := <-started:
-		if err != nil {
-			t.Fatalf("chromedp start: %v", err)
-		}
-	case <-time.After(90 * time.Second):
-		t.Fatal("chromedp start timeout")
-	}
-	ctx, cancel := context.WithTimeout(browserCtx, 60*time.Second)
-	t.Cleanup(func() {
-		cancel()
-		browserCancel()
-		allocCancel()
-	})
-	return ctx, cancel
-}
-
 // vacateStripPage builds a two-tab strip with VacateHidden + StateAttrs on,
 // mirroring the component's SSR: inactive panel empty, its content in the
 // stash script, wrapper carrying both markers and the prefetch bridge.
@@ -118,7 +89,7 @@ func vacateStripPage(t *testing.T, panel1 string) string {
 func TestTabsVacateHiddenPanelsAndRestore(t *testing.T) {
 	panel1 := `<p id="p1txt">beta-body</p><input id="p1in" value="">`
 	srv := startTabsContractServer(t, vacateStripPage(t, panel1))
-	ctx, _ := runTabsContractBrowser(t)
+	ctx := chromedptest.Context(t)
 
 	var ok bool
 	// Load the module through the real trigger: the kernel's prefetch
@@ -217,7 +188,7 @@ func TestTabsStateAttrMirrorsAfterClick(t *testing.T) {
   </div>
 </div>`
 	srv := startTabsContractServer(t, page)
-	ctx, _ := runTabsContractBrowser(t)
+	ctx := chromedptest.Context(t)
 
 	var ok bool
 	var s0, s1 string
@@ -281,7 +252,7 @@ func TestTabsNestedStripWiredAfterRestore(t *testing.T) {
 	inner := vacateStrip(t, "iwrap", "isig", "inner-alpha", `<p id="ip1">inner-beta</p>`)
 	outer := vacateStrip(t, "owrap", "osig", "outer-alpha", inner)
 	srv := startTabsContractServer(t, outer)
-	ctx, _ := runTabsContractBrowser(t)
+	ctx := chromedptest.Context(t)
 
 	var ok bool
 	if err := chromedp.Run(ctx,
@@ -318,7 +289,7 @@ func TestTabsRestoreLoadsComponentCSS(t *testing.T) {
 	page := `<script>window.__gofastr_catalog = {"probe-card":{stylePath:"/__gofastr/comp/probe-card.css",version:"1"}};</script>` +
 		vacateStripPage(t, `<div data-fui-comp="probe-card" id="pc">card-body</div>`)
 	srv := startTabsContractServer(t, page)
-	ctx, _ := runTabsContractBrowser(t)
+	ctx := chromedptest.Context(t)
 
 	var ok bool
 	var href string
@@ -358,7 +329,7 @@ func TestTabsRestoreLoadsComponentCSS(t *testing.T) {
 // newly-active panel stays empty until the next manual switch.
 func TestTabsProgrammaticSwitchBeforeModuleLoad(t *testing.T) {
 	srv := startTabsContractServer(t, vacateStripPage(t, `<p id="p1txt">beta-body</p>`))
-	ctx, _ := runTabsContractBrowser(t)
+	ctx := chromedptest.Context(t)
 
 	var ok, moduleLoaded bool
 	if err := chromedp.Run(ctx,

@@ -198,15 +198,20 @@ func resolveUtilityClass(class string, theme Theme) string {
 	return ""
 }
 
-func paddingCSS(class string) string {
+// spacingCSS resolves one family of box-spacing utility classes: short
+// is the class prefix letter ("p" or "m"), long the CSS property word
+// ("padding" or "margin"). It is the single body behind paddingCSS and
+// marginCSS, which were verbatim copies differing only in those two
+// constants.
+func spacingCSS(class, short, long string) string {
 	prefixes := map[string]string{
-		"p-":  "padding",
-		"px-": "padding-left",
-		"py-": "padding-top",
-		"pt-": "padding-top",
-		"pr-": "padding-right",
-		"pb-": "padding-bottom",
-		"pl-": "padding-left",
+		short + "-":  long,
+		short + "x-": long + "-left",
+		short + "y-": long + "-top",
+		short + "t-": long + "-top",
+		short + "r-": long + "-right",
+		short + "b-": long + "-bottom",
+		short + "l-": long + "-left",
 	}
 	for prefix, prop := range prefixes {
 		if !strings.HasPrefix(class, prefix) {
@@ -215,42 +220,19 @@ func paddingCSS(class string) string {
 		token := strings.TrimPrefix(class, prefix)
 		val := tokenOrPx(token, "spacing")
 		switch prefix {
-		case "px-":
-			return fmt.Sprintf("padding-left: %s; padding-right: %s;", val, val)
-		case "py-":
-			return fmt.Sprintf("padding-top: %s; padding-bottom: %s;", val, val)
+		case short + "x-":
+			return fmt.Sprintf("%s-left: %s; %s-right: %s;", long, val, long, val)
+		case short + "y-":
+			return fmt.Sprintf("%s-top: %s; %s-bottom: %s;", long, val, long, val)
 		}
 		return fmt.Sprintf("%s: %s;", prop, val)
 	}
 	return ""
 }
 
-func marginCSS(class string) string {
-	prefixes := map[string]string{
-		"m-":  "margin",
-		"mx-": "margin-left",
-		"my-": "margin-top",
-		"mt-": "margin-top",
-		"mr-": "margin-right",
-		"mb-": "margin-bottom",
-		"ml-": "margin-left",
-	}
-	for prefix, prop := range prefixes {
-		if !strings.HasPrefix(class, prefix) {
-			continue
-		}
-		token := strings.TrimPrefix(class, prefix)
-		val := tokenOrPx(token, "spacing")
-		switch prefix {
-		case "mx-":
-			return fmt.Sprintf("margin-left: %s; margin-right: %s;", val, val)
-		case "my-":
-			return fmt.Sprintf("margin-top: %s; margin-bottom: %s;", val, val)
-		}
-		return fmt.Sprintf("%s: %s;", prop, val)
-	}
-	return ""
-}
+func paddingCSS(class string) string { return spacingCSS(class, "p", "padding") }
+
+func marginCSS(class string) string { return spacingCSS(class, "m", "margin") }
 
 func gapCSS(class string) string {
 	if after, ok := strings.CutPrefix(class, "gap-x-"); ok {

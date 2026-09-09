@@ -23,11 +23,12 @@ import (
 	"io/fs"
 	"os"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
 
+	"github.com/DonaldMurillo/gofastr/core-ui/compute"
 	"github.com/DonaldMurillo/gofastr/core-ui/runtime/minify"
+	"github.com/DonaldMurillo/gofastr/core/config"
 )
 
 //go:embed frag/*.js
@@ -60,11 +61,11 @@ var nominifyVal bool
 func nominify() bool {
 	nominifyOnce.Do(func() {
 		// Explicit manual overrides win.
-		if envBool("RUNTIME_NOMINIFY") {
+		if config.EnvBool("RUNTIME_NOMINIFY") {
 			nominifyVal = true
 			return
 		}
-		if envBool("RUNTIME_MINIFY") {
+		if config.EnvBool("RUNTIME_MINIFY") {
 			nominifyVal = false
 			return
 		}
@@ -74,7 +75,7 @@ func nominify() bool {
 			return
 		}
 		// Explicit dev-mode → skip minify.
-		if envBool("GOFASTR_DEV") {
+		if config.EnvBool("GOFASTR_DEV") {
 			nominifyVal = true
 			return
 		}
@@ -82,15 +83,6 @@ func nominify() bool {
 		nominifyVal = false
 	})
 	return nominifyVal
-}
-
-func envBool(key string) bool {
-	v := os.Getenv(key)
-	if v == "" {
-		return false
-	}
-	b, err := strconv.ParseBool(v)
-	return err == nil && b
 }
 
 func isNonDevEnv(v string) bool {
@@ -383,7 +375,7 @@ func ColorSchemeJS() (string, error) {
 // /__gofastr/runtime/<name>.js. Returns "", false when the module is
 // not embedded. Minified on first read (cached).
 func Module(name string) (string, bool) {
-	if !validModuleName(name) {
+	if !compute.ValidName(name) {
 		return "", false
 	}
 	modulesOnce.Do(loadModules)
@@ -438,23 +430,4 @@ func ModuleNames() []string {
 	}
 	sort.Strings(out)
 	return out
-}
-
-// validModuleName rejects path-traversal / weird characters. Keeps
-// the file-name-as-URL contract honest.
-func validModuleName(name string) bool {
-	if name == "" || len(name) > 64 {
-		return false
-	}
-	for i := 0; i < len(name); i++ {
-		c := name[i]
-		switch {
-		case c >= 'a' && c <= 'z':
-		case c >= '0' && c <= '9':
-		case c == '-' || c == '_':
-		default:
-			return false
-		}
-	}
-	return true
 }

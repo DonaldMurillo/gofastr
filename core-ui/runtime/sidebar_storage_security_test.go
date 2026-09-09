@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
 	"github.com/chromedp/chromedp"
 )
 
@@ -32,7 +33,7 @@ import (
 // the sidebar's own namespace.
 func TestSidebarStorageKeyIsEncoded(t *testing.T) {
 	g := startGadgetServer(t, `[]`, `<div id="host"></div>`)
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 
 	var foreign, namespaced string
 	if err := chromedp.Run(ctx,
@@ -72,7 +73,7 @@ func TestSidebarStorageKeyIsEncoded(t *testing.T) {
 // namespace.
 func TestPersistStorageKeyIsEncoded(t *testing.T) {
 	g := startGadgetServer(t, `[]`, `<div id="host"></div>`)
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 
 	var foreign, namespaced string
 	if err := chromedp.Run(ctx,

@@ -151,11 +151,7 @@ func renderKind(kind string, props map[string]any, children []render.HTML) rende
 		// Sections require label or labelledby for ARIA. We auto-label
 		// from id when neither is supplied so agent IRs don't trip
 		// elements' panic.
-		label := propString(props, "label")
-		if label == "" {
-			label = propString(props, "aria-label")
-		}
-		labelledBy := propString(props, "labelledby")
+		label, labelledBy := landmarkLabel(props, "")
 		if label == "" && labelledBy == "" {
 			if id := propString(props, "id"); id != "" {
 				label = id
@@ -184,28 +180,14 @@ func renderKind(kind string, props map[string]any, children []render.HTML) rende
 			ExtraAttrs: extraAttrs(props, "id", "class"),
 		}, children...)
 	case "nav":
-		label := propString(props, "label")
-		if label == "" {
-			label = propString(props, "aria-label")
-		}
-		labelledBy := propString(props, "labelledby")
-		if label == "" && labelledBy == "" {
-			label = "Main"
-		}
+		label, labelledBy := landmarkLabel(props, "Main")
 		return html.Nav(html.NavConfig{
 			Label: label, LabelledBy: labelledBy,
 			ID: propString(props, "id"), Class: propString(props, "class"),
 			ExtraAttrs: extraAttrs(props, "id", "class", "label", "labelledby", "aria-label"),
 		}, children...)
 	case "aside":
-		label := propString(props, "label")
-		if label == "" {
-			label = propString(props, "aria-label")
-		}
-		labelledBy := propString(props, "labelledby")
-		if label == "" && labelledBy == "" {
-			label = "Aside"
-		}
+		label, labelledBy := landmarkLabel(props, "Aside")
 		return html.Aside(html.AsideConfig{
 			Label: label, LabelledBy: labelledBy,
 			ID: propString(props, "id"), Class: propString(props, "class"),
@@ -650,6 +632,23 @@ func propString(p map[string]any, key string) string {
 	default:
 		return fmt.Sprint(v)
 	}
+}
+
+// landmarkLabel resolves the accessible-name props shared by the
+// landmark elements (section, nav, aside): the explicit label, else
+// the aria-label spelling, else fallback when labelledby is absent
+// too. It replaces the three verbatim copies of this shape in the
+// section, nav, and aside cases.
+func landmarkLabel(props map[string]any, fallback string) (label, labelledBy string) {
+	label = propString(props, "label")
+	if label == "" {
+		label = propString(props, "aria-label")
+	}
+	labelledBy = propString(props, "labelledby")
+	if label == "" && labelledBy == "" {
+		label = fallback
+	}
+	return label, labelledBy
 }
 
 func propInt(p map[string]any, key string, def int) int {

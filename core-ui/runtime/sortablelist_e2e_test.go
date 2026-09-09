@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
 	"github.com/chromedp/chromedp"
 )
 
@@ -161,7 +162,7 @@ func TestSortable_CrossAllowedInGroup(t *testing.T) {
 		t.Skip("e2e: -short")
 	}
 	base := startSortableServer(t, sortablePage, okRPC(&bodyCapture{}), nil)
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 	var containerAfter string
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/"),
@@ -184,7 +185,7 @@ func TestSortable_CrossBlockedDiffGroup(t *testing.T) {
 		t.Skip("e2e: -short")
 	}
 	base := startSortableServer(t, sortablePage, okRPC(&bodyCapture{}), nil)
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 	var containerAfter string
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/"),
@@ -208,7 +209,7 @@ func TestSortable_CrossCommitPayload(t *testing.T) {
 	}
 	bc := &bodyCapture{}
 	base := startSortableServer(t, sortablePage, okRPC(bc), nil)
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 	var result string
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/"),
@@ -240,7 +241,7 @@ func TestSortable_SameContainerPayload(t *testing.T) {
 	}
 	bc := &bodyCapture{}
 	base := startSortableServer(t, sortablePage, okRPC(bc), nil)
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/"),
 		chromedp.WaitVisible(`#ready`, chromedp.ByID),
@@ -296,7 +297,7 @@ func TestSortable_409FiresConflictPath(t *testing.T) {
 		fmt.Fprint(w, `<li data-fui-sortable-item data-fui-sort-key="k2" draggable="true" tabindex="0" role="option" aria-label="Drag B1">B1</li>`)
 	}
 	base := startSortableServer(t, pageHTML, rpcHandler, conflictHandler)
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 	var conflictFetched bool
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/"),
@@ -345,7 +346,7 @@ func TestSortable_NoVersionNo409Special(t *testing.T) {
 		w.WriteHeader(http.StatusConflict)
 	}
 	base := startSortableServer(t, sortablePage, rpcHandler, nil)
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 	var containerAfter string
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/"),
@@ -375,7 +376,7 @@ func TestSortable_AriaLiveAnnounces(t *testing.T) {
 		t.Skip("e2e: -short")
 	}
 	base := startSortableServer(t, sortablePage, okRPC(&bodyCapture{}), nil)
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 	var hasLive bool
 	var liveText string
 	if err := chromedp.Run(ctx,
@@ -446,7 +447,7 @@ func TestSortable_DragIntoEmptyColumn(t *testing.T) {
 		t.Skip("e2e: -short")
 	}
 	base := startSortableServer(t, sortableEmptyPage, okRPC(&bodyCapture{}), nil)
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 	var containerAfter string
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/"),
@@ -469,7 +470,7 @@ func TestSortable_KeyboardIntoEmptyColumn(t *testing.T) {
 		t.Skip("e2e: -short")
 	}
 	base := startSortableServer(t, sortableEmptyPage, okRPC(&bodyCapture{}), nil)
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 	var containerAfter string
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/"),
@@ -514,7 +515,7 @@ func TestSortable_ConflictRefreshEmptyColumn(t *testing.T) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	}
 	base := startSortableServer(t, pageHTML, rpcHandler, conflictHandler)
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 	var colBCount int
 	var liveText string
 	var k1InA bool
@@ -565,7 +566,7 @@ func TestSortable_SameContainerNoContainer(t *testing.T) {
 	}
 	bc := &bodyCapture{}
 	base := startSortableServer(t, sortableNoContainerPage, okRPC(bc), nil)
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/"),
 		chromedp.WaitVisible(`#ready`, chromedp.ByID),
@@ -595,7 +596,7 @@ func TestSortable_SameContainerDragWithContainer(t *testing.T) {
 	}
 	bc := &bodyCapture{}
 	base := startSortableServer(t, sortablePage, okRPC(bc), nil)
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/"),
 		chromedp.WaitVisible(`#ready`, chromedp.ByID),
@@ -626,7 +627,7 @@ func TestSortable_CrossCommitNoContainer(t *testing.T) {
 	}
 	bc := &bodyCapture{}
 	base := startSortableServer(t, sortableNoContainerPage, okRPC(bc), nil)
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/"),
 		chromedp.WaitVisible(`#ready`, chromedp.ByID),
@@ -721,7 +722,7 @@ func TestSortable_409ConflictMessageAnnounced(t *testing.T) {
 	msg := "Cannot move ORB-12 to Done because ORB-9 is incomplete."
 	body := `{"error":{"code":"transition_blocked","message":` + strconv.Quote(msg) + `}}`
 	base := conflict409Server(t, "application/json; charset=utf-8", body)
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 	var liveText string
 	var colBHasK1 bool
 	if err := chromedp.Run(ctx,
@@ -750,7 +751,7 @@ func TestSortable_409InvariantMessage(t *testing.T) {
 	msg := "ORB-9 is incomplete; complete it before moving dependents."
 	body := `{"error":{"code":"dependency_blocked","message":` + strconv.Quote(msg) + `}}`
 	base := conflict409Server(t, "application/json", body)
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 	var liveText string
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/"),
@@ -775,7 +776,7 @@ func TestSortable_409MalformedFallback(t *testing.T) {
 		t.Skip("e2e: -short")
 	}
 	base := conflict409Server(t, "application/json", "{not valid json")
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 	var liveText string
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/"),
@@ -802,7 +803,7 @@ func TestSortable_409OversizedFallback(t *testing.T) {
 	big := strings.Repeat("x", 8000)
 	body := `{"error":{"message":"` + big + `"}}`
 	base := conflict409Server(t, "application/json", body)
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 	var liveText string
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/"),
@@ -827,7 +828,7 @@ func TestSortable_409HTMLFallback(t *testing.T) {
 		t.Skip("e2e: -short")
 	}
 	base := conflict409Server(t, "text/html; charset=utf-8", "<html>boom</html>")
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 	var liveText string
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/"),
@@ -852,7 +853,7 @@ func TestSortable_409EmptyBodyBackwardCompat(t *testing.T) {
 		t.Skip("e2e: -short")
 	}
 	base := conflict409Server(t, "", "")
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 	var liveText string
 	var colBCount int
 	if err := chromedp.Run(ctx,

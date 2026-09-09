@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
 	"github.com/chromedp/chromedp"
 )
 
@@ -34,7 +35,7 @@ const comboboxFilterPage = `
 // Enter must pick the visible option — not one the user filtered away.
 func TestComboboxKeyboardNavSkipsHiddenOpts(t *testing.T) {
 	g := startGadgetServer(t, `[]`, comboboxFilterPage)
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 
 	// pressKey dispatches a synthetic keydown on the combobox input,
 	// the same pattern taginput_e2e_test.go uses; the module listens

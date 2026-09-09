@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
 	"github.com/chromedp/chromedp"
 )
 
@@ -105,7 +106,7 @@ func startStaticModeServer(t *testing.T, static bool) (base string, widgetHits, 
 // stays at zero hits.
 func TestStaticMode_SkipsServerBackedRequests(t *testing.T) {
 	base, widgetHits, moduleHits, rpcHits := startStaticModeServer(t, true)
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 
 	var ready string
 	if err := chromedp.Run(ctx,
@@ -135,7 +136,7 @@ func TestStaticMode_SkipsServerBackedRequests(t *testing.T) {
 // fires on boot and an RPC click still reaches the server.
 func TestStaticMode_LiveStillFiresRequests(t *testing.T) {
 	base, widgetHits, moduleHits, rpcHits := startStaticModeServer(t, false)
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/"),
@@ -164,7 +165,7 @@ func TestStaticMode_LiveStillFiresRequests(t *testing.T) {
 // notice renders synchronously into #fui-nav-toast (the CSP-clean mini toast).
 func TestStaticMode_RPCShowsNotice(t *testing.T) {
 	base, _, _, rpcHits := startStaticModeServer(t, true)
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 
 	var toastText string
 	if err := chromedp.Run(ctx,
@@ -263,7 +264,7 @@ func TestStaticMode_WidgetOpensFromStaticCatalog(t *testing.T) {
 	})
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 
 	var mountedText string
 	if err := chromedp.Run(ctx,

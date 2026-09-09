@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
 	"github.com/chromedp/chromedp"
 )
 
@@ -131,7 +132,7 @@ func countReqs(reqs []preloadReq, path string) (total, prefetch int) {
 // Intercepting routes are never prefetched from their origin.
 func TestHoverPrefetchServesClick(t *testing.T) {
 	srv, requests := newPreloadSite(t)
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(srv.URL+"/hub"),
@@ -165,7 +166,7 @@ func TestHoverPrefetchServesClick(t *testing.T) {
 
 func TestInterceptedRouteNeverPrefetched(t *testing.T) {
 	srv, requests := newPreloadSite(t)
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(srv.URL+"/hub"),
@@ -186,7 +187,7 @@ func TestInterceptedRouteNeverPrefetched(t *testing.T) {
 // waiting 30s.
 func TestPrefetchTTLExpiryRefetches(t *testing.T) {
 	srv, requests := newPreloadSite(t)
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(srv.URL+"/hub"),
@@ -210,7 +211,7 @@ func TestPrefetchTTLExpiryRefetches(t *testing.T) {
 // semantics as the screen cache.
 func TestInvalidateEvictsPrefetched(t *testing.T) {
 	srv, requests := newPreloadSite(t)
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(srv.URL+"/hub"),
