@@ -9,6 +9,8 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"os"
+
+	"github.com/DonaldMurillo/gofastr/internal/fileperm"
 )
 
 // desktopKeygenFlags carries `desktop keygen`'s flags.
@@ -63,13 +65,13 @@ func runDesktopKeygen(args []string) {
 		osExit(1)
 		return
 	}
-	if err := os.WriteFile(f.out, []byte(body), 0o600); err != nil {
+	if err := fileperm.WriteOwnerOnly(f.out, []byte(body)); err != nil {
 		fail("writing %s failed: %v", f.out, err)
 		osExit(1)
 		return
 	}
 	pubPath := f.out + ".pub"
-	if err := os.WriteFile(pubPath, []byte(hex.EncodeToString(pub)), 0o600); err != nil {
+	if err := fileperm.WriteOwnerOnly(pubPath, []byte(hex.EncodeToString(pub))); err != nil {
 		fail("writing %s failed: %v", pubPath, err)
 		osExit(1)
 		return

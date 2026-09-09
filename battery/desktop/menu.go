@@ -7,6 +7,8 @@ import (
 	"strings"
 	"time"
 	"unicode"
+
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
 // Menu is the native menu bar (or platform equivalent) declared in Go.
@@ -234,7 +236,7 @@ func (b *Battery) dispatchMenu(id string) {
 			// recover so one panic cannot kill the process.
 			defer func() {
 				if v := recover(); v != nil {
-					b.logger.Error("desktop: menu handler panicked", "id", id, "panic", fmt.Sprintf("%T", v))
+					b.logger.Error("desktop: menu handler panicked", "id", id, "panic", textsafe.Recovered(v))
 				}
 			}()
 			ctx, cancel := context.WithTimeout(context.Background(), menuHandlerTimeout)

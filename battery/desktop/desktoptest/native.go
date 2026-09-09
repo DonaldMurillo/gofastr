@@ -16,7 +16,9 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/battery/desktop"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"github.com/DonaldMurillo/gofastr/framework"
+	"github.com/DonaldMurillo/gofastr/internal/fileperm"
 )
 
 // REAL app shell (the WKWebView the app ships in), never against a
@@ -576,7 +578,7 @@ func (h *NativeHarness) SavePNG(t TB, path string) {
 	if err != nil {
 		t.Fatalf("desktoptest: snapshot: %v", err)
 	}
-	if err := os.WriteFile(path, pngBytes, 0o600); err != nil {
+	if err := fileperm.WriteOwnerOnly(path, pngBytes); err != nil {
 		t.Fatalf("desktoptest: write %s: %v", path, err)
 	}
 }
@@ -958,7 +960,7 @@ func nativeTimeout() time.Duration {
 func (h *NativeHarness) quitSafely() {
 	defer func() {
 		if r := recover(); r != nil {
-			fmt.Fprintf(os.Stderr, "desktoptest: quitting the app panicked: %v\n", r)
+			fmt.Fprintf(os.Stderr, "desktoptest: quitting the app panicked: %s\n", textsafe.Recovered(r))
 		}
 	}()
 	h.Shell.Quit()

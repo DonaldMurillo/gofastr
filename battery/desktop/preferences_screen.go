@@ -96,10 +96,24 @@ func (s *preferencesScreen) ScreenDescription() string {
 // declared defaults, so the screen renders unchanged in --serve mode.
 func (s *preferencesScreen) RenderCtx(ctx context.Context) render.HTML {
 	p := s.b.Preferences()
-	values := p.All()
 	fields := make([]render.HTML, 0, len(p.decls))
 	for _, d := range p.Declared() {
-		fields = append(fields, preferenceField(d, values[d.Key]))
+		// Each field reads through the typed reader for its kind, the
+		// same path the capability reads: a stored value that fails
+		// its own declaration falls back to the declared default
+		// (with a Warn) instead of being asserted here.
+		var field render.HTML
+		switch d.Kind {
+		case PreferenceBool:
+			field = boolField(d, p.Bool(d.Key))
+		case PreferenceInt:
+			field = intField(d, p.Int(d.Key))
+		case PreferenceChoice:
+			field = choiceField(d, p.String(d.Key))
+		default: // PreferenceString; the kinds are a closed set validated at New
+			field = stringField(d, p.String(d.Key))
+		}
+		fields = append(fields, field)
 	}
 	action := interactive.Post(preferencesFormPath).OnSuccess(interactive.Navigate(s.path))
 	return render.Join(
@@ -114,60 +128,72 @@ func (s *preferencesScreen) RenderCtx(ctx context.Context) render.HTML {
 	)
 }
 
-// preferenceField builds one declared preference's control, prefilled
-// with v (the stored-or-default value, already the declaration's Go
-// type). Field ids follow the resource engine's "f-<key>" convention.
-func preferenceField(d Preference, v any) render.HTML {
+// boolField builds a bool preference's control from v, the
+// stored-or-default value the typed reader (Preferences.Bool)
+// answers: the hidden+checkbox pair. Field ids follow the resource
+// engine's "f-<key>" convention.
+func boolField(d Preference, v bool) render.HTML {
 	id := "f-" + d.Key
-	switch d.Kind {
-	case PreferenceBool:
-		// A bare checkbox cannot round-trip a bool through the form
-		// intercept, so the hidden "false" comes first and the checked
-		// box follows with "true"; the runtime's serializer collapses
-		// exactly this pair to one scalar (resource.go's formInput,
-		// core-ui/runtime/src/rpc.js).
-		attrs := html.Attrs{}
-		if b, ok := v.(bool); ok && b {
-			attrs["checked"] = "checked"
-		}
-		return ui.FormField(ui.FormFieldConfig{
-			Label: d.Label, For: id, Help: d.Help,
-			Input: render.Join(
-				html.Input(html.InputConfig{Type: "hidden", Name: d.Key, Value: "false"}),
-				html.Input(html.InputConfig{Type: "checkbox", Name: d.Key, ID: id, Value: "true", ExtraAttrs: attrs}),
-			),
-		})
-	case PreferenceInt:
-		n, _ := v.(int)
-		var min, max *float64
-		if d.Min != nil {
-			f := float64(*d.Min)
-			min = &f
-		}
-		if d.Max != nil {
-			f := float64(*d.Max)
-			max = &f
-		}
-		return ui.NumberField(ui.NumberFieldConfig{
-			Name: d.Key, Label: d.Label, ID: id,
-			Value: strconv.Itoa(n), Min: min, Max: max,
-			Help: intHelp(d),
-		})
-	case PreferenceChoice:
-		cur, _ := v.(string)
-		opts := make([]ui.SelectOption, 0, len(d.Choices))
-		for _, c := range d.Choices {
-			opts = append(opts, ui.SelectOption{Value: c, Text: choiceLabel(c), Selected: c == cur})
-		}
-		return ui.Select(ui.SelectConfig{
-			Name: d.Key, Label: d.Label, ID: id, Options: opts, Help: d.Help,
-		})
-	default: // PreferenceString; the kinds are a closed set validated at New
-		text, _ := v.(string)
-		return ui.TextField(ui.TextFieldConfig{
-			Name: d.Key, Label: d.Label, ID: id, Value: text, Help: d.Help,
-		})
+	// A bare checkbox cannot round-trip a bool through the form
+	// intercept, so the hidden "false" comes first and the checked
+	// box follows with "true"; the runtime's serializer collapses
+	// exactly this pair to one scalar (resource.go's formInput,
+	// core-ui/runtime/src/rpc.js).
+	attrs := html.Attrs{}
+	if v {
+		attrs["checked"] = "checked"
 	}
+	return ui.FormField(ui.FormFieldConfig{
+		Label: d.Label, For: id, Help: d.Help,
+		Input: render.Join(
+			html.Input(html.InputConfig{Type: "hidden", Name: d.Key, Value: "false"}),
+			html.Input(html.InputConfig{Type: "checkbox", Name: d.Key, ID: id, Value: "true", ExtraAttrs: attrs}),
+		),
+	})
+}
+
+// intField builds an int preference's number input from v, the
+// stored-or-default value the typed reader (Preferences.Int) answers.
+func intField(d Preference, v int) render.HTML {
+	id := "f-" + d.Key
+	var min, max *float64
+	if d.Min != nil {
+		f := float64(*d.Min)
+		min = &f
+	}
+	if d.Max != nil {
+		f := float64(*d.Max)
+		max = &f
+	}
+	return ui.NumberField(ui.NumberFieldConfig{
+		Name: d.Key, Label: d.Label, ID: id,
+		Value: strconv.Itoa(v), Min: min, Max: max,
+		Help: intHelp(d),
+	})
+}
+
+// choiceField builds a choice preference's select from cur, the
+// stored-or-default value the typed reader (Preferences.String)
+// answers.
+func choiceField(d Preference, cur string) render.HTML {
+	id := "f-" + d.Key
+	opts := make([]ui.SelectOption, 0, len(d.Choices))
+	for _, c := range d.Choices {
+		opts = append(opts, ui.SelectOption{Value: c, Text: choiceLabel(c), Selected: c == cur})
+	}
+	return ui.Select(ui.SelectConfig{
+		Name: d.Key, Label: d.Label, ID: id, Options: opts, Help: d.Help,
+	})
+}
+
+// stringField builds a string preference's text input from text, the
+// stored-or-default value the typed reader (Preferences.String)
+// answers.
+func stringField(d Preference, text string) render.HTML {
+	id := "f-" + d.Key
+	return ui.TextField(ui.TextFieldConfig{
+		Name: d.Key, Label: d.Label, ID: id, Value: text, Help: d.Help,
+	})
 }
 
 // intHelp joins the declaration's help with the range hint, so the
