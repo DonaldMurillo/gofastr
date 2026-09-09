@@ -231,6 +231,14 @@ func TestWidgetOpenTaskPostReachesMain(t *testing.T) {
 		r, err := wid.EvalQuiet(`const el = document.querySelector("[data-focus-open]"); return el ? el.getAttribute("data-focus-open") : ""`)
 		return err == nil && jsString(r) == taskID
 	})
+	// The open click posts through the desktop namespace; a page whose
+	// module has not loaded drops the post (the widget shows "The timer
+	// runs in the desktop app" instead). Wait for the module.
+	h.Wait("the widget's desktop module", func() bool {
+		r, err := wid.EvalQuiet(`return !!(window.__gofastr && window.__gofastr.desktop && window.__gofastr.desktop.windows)`)
+		var b bool
+		return err == nil && json.Unmarshal(r, &b) == nil && b
+	})
 	wid.Click(t, `[data-focus-open]`)
 	h.WaitLocation("/tasks/" + taskID)
 
