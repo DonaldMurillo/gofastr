@@ -60,6 +60,195 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   meridian's generated files predate the current templates and carry
   hand edits, so they were left alone.
 
+### Added
+- **`battery/desktop` (experimental)**: a desktop host that runs a
+  GoFastr app inside the OS WebView from a `CGO_ENABLED=0` binary.
+  The macOS arm ships (WKWebView through a pure-Go Objective-C bridge
+  in `internal/objc`, a fake-cgo layer in `internal/fakecgo` so
+  `runtime.cgocall` works without cgo, darwin/arm64 only); Windows and
+  Linux return a named `unsupported` error until their phases land).
+  The battery is split by platform: platform packages under
+  `battery/desktop/{macos,windows,linux}` (each compiling on every
+  GOOS) plus `battery/desktop/native`, whose `New`/`Shell()` pick one
+  by GOOS as `desktop.New`'s nil-`Shell` default (nil now answers the
+  unsupported shell on every platform).
+  The OS-independent half: `desktop.AppOptions` (app-data dir, SQLite,
+  secret file), the loopback boot handshake (single-use token,
+  HttpOnly session cookie, Host pin), a capability registry with a
+  frozen manifest, the generated typed JS bridge (`__gofastr.desktop.*`)
+  behind one permission-gated POST chokepoint with persisted grants and
+  an OS prompt, the `desktop` runtime module, native menus, five core
+  capabilities (window, dialogs, clipboard, notifications, fs on a
+  dialog allow-list), and plugin-registered capabilities. Secondary
+  windows (`Config.Settings` plus `Battery.OpenWindow`/`OpenSettings`/
+  `Windows` and the `windows` capability: a page opens the app's own
+  screens, second windows share the main one's boot cookie), a
+  menu-bar tray (`Config.Tray` with `RoleShow` and `RoleSettings`
+  rows, `CloseHidesWindow`, `HideDock`, the `tray` capability; macOS
+  only), and notifications that work from an ad-hoc-signed bundle
+  (`Notification.Subtitle`, `Battery.Notify`, and `gofastr desktop
+  build` signing ad-hoc by default with `--sign`/`--no-sign` to
+  override). New example `examples/desktop-notes` (notes plus a
+  settings screen and a tray); new CLI verbs `gofastr desktop
+  run|build|types` (the `.app` bundle is written in pure Go). Pin a
+  version. `battery/desktop/desktoptest.Run` is the test harness: it
+  runs the real `Run` flow with the fake shell as the OS and plays
+  both sides (`Get`/`Post`/`Call` as the page, `ClickMenu`/`ClickTray`/
+  `PressKey`/`OpenSettings`/`CloseWindow`/`Answer` as the user;
+  `Notifications`/`Events`/`Navigations`/`WindowIDs` as the record),
+  with `desktop.BootstrapJS()` and `Window.SetEvalHook` for driving a
+  real browser against it. The harness found two bugs before release: a
+  second desktop battery in one process took the first one's owner
+  extractor for battery/auth's and ran its window anonymous, and the
+  example's export event carried a dotted name the event grammar
+  refuses (now `notes_exported`).
+- Desktop (experimental): window styles. `WindowSpec.Style` and
+  `Config.Style` shape a window's chrome (borderless, hidden title bar,
+  floating, non-activating panel, transparent, fixed size, all-Spaces,
+  explicit origin), `Config.Widgets` opens floating widget windows at
+  launch, `desktop.Widget(path, w, h)` builds the typical spec, and
+  `windows.open` accepts a `style` object from the page. A borderless
+  window drags through the page: the `data-fui-window-drag` attribute
+  on any element makes mousedown there start a native window drag.
+  Every window now carries its own user script, so a page can learn
+  which window it lives in (`window.__gofastr_desktop.window`).
+  darwin/arm64 only; the contracts are OS-neutral and other hosts
+  answer `unsupported`.
+- Desktop (experimental): cross-window events and messages. `Emit` now
+  delivers a native event to every open window (main first; a failure
+  in one window is logged and skipped) and the new `EmitTo(windowID,
+  name, payload)` targets one (`not_found` when it is not open). Every
+  window learns its own id from its bootstrap script
+  (`__gofastr.desktop.windowID`), and pages can message each other
+  through the server with `windows.post({to, name, payload})`,
+  `windows.broadcast({name, payload})` (every window except the
+  caller's), and `windows.self()`; event names follow the event grammar
+  and payloads are capped at 64 KiB of compact JSON. The calling window
+  is a page-reported claim (the `X-Gofastr-Window` header), used only
+  for broadcast exclusion and `self`. The test harness gained
+  per-window event records and `h.CallFrom`.
+- Desktop deep links: `desktop.Config.DeepLink` claims a custom URL
+  scheme (`gofastr-notes`), `gofastr desktop build --scheme gofastr-notes` registers it
+  in the bundle's Info.plist, and the app answers `gofastr-notes://host/path?q`
+  by focusing the main window, navigating it to `/host/path?q`, and
+  emitting a `deep_link` event with `{url, path}`. Links are refused on
+  any other scheme, userinfo, or length over 2048 bytes; links before
+  the window opens are queued (16) and flushed after the boot
+  navigation. macOS arm64 only; experimental, like the rest of
+  `battery/desktop`.
+- `gofastr desktop build --notarize` (with `--notary-profile`, default
+  `gofastr`, and `--entitlements`, default a generated empty-dict
+  plist): signs under the hardened runtime with a timestamp, zips the
+  bundle in pure Go (modes kept, mtimes zeroed, no symlinks), submits
+  through `xcrun notarytool submit --wait`, staples with `xcrun
+  stapler`, and re-zips so the archive carries the staple. Requires
+  `--sign` with a Developer ID Application identity; any step failing
+  fails the build. Tested against fakes; not run against Apple's
+  service.
+- Auto-update for desktop apps (experimental): `desktop.UpdateConfig`
+  points an app at a signed ed25519 feed; the battery verifies the
+  signature before parsing, compares semver against the running bundle,
+  downloads and sha256-verifies the archive, extracts it with
+  zip-escape refusal, codesign-verifies the new bundle, swaps it in,
+  and relaunches. New `updates` capability (`check`, gated `install`),
+  the `update_available` page event, scheduled checks every 6 h (first
+  after 30 s), `gofastr desktop keygen` and `gofastr desktop feed` for
+  the release side. darwin only; unbundled runs never update.
+- `battery/desktop`: `Config.RememberWindows` persists every window's
+  frame and the main window's last path in the app state store's
+  `windows` entry (`state.json`, 0600, data dir) and restores them on
+  relaunch: windows reopen where the user left them, on whichever
+  monitor, the boot redirect returns to the last screen, and a frame
+  from an unplugged monitor is dropped in favor of centered. New
+  contracts `Frame`, `WindowConfig.Frame` and `OnWindowFrame`,
+  `WindowSpec.Frame`, `Window.Frame` and `SetFrame`, the ungated
+  `window.setPath` bridge method, and the `Harness.MoveWindow` /
+  `NativeHarness.MoveWindow` test seams.
+  `examples/desktop-focus` turns it on.
+- `battery/desktop`: app state. `battery/desktop/appstate` is a durable
+  key/value store over one JSON file in the data dir (`state.json`,
+  0600, debounced 500 ms writes, flush on quit, raw-JSON values capped
+  at 64 KiB, namespaced keys, a `Watch` change hook); `Run` opens it
+  and `Battery.State()` hands it to Go code. The remembered windows,
+  the preferences, and a new ungated `state` capability share it: the
+  page's keys are confined to the `page.` prefix
+  (`get`/`set`/`delete`/`keys`), and every successful `set`/`delete`
+  broadcasts `state_changed` with `{key}` to every open window.
+- `battery/desktop`: declared preferences. `Config.Preferences` takes
+  a `desktop.Preference` list (kinds bool, int, string, choice;
+  validated at `New` with a defensive copy), stores the values typed
+  in the app state under `settings`, serves them to Go through
+  `d.Preferences()` (`Bool`/`Int`/`String`/`All`/`Declared`/`Set`) and
+  to the page through an ungated `preferences` capability
+  (all-or-nothing `set`, `preferences_changed` with `{keys}`), and
+  renders them as a form through `desktop.PreferencesScreen`, a screen
+  builder the host mounts; the form saves through
+  `POST /__gofastr/desktop/preferences` with the runtime's validation
+  envelope on refusal. Both desktop examples dropped their hand-built
+  settings entity and screen for it.
+- `battery/desktop`: single-user mode documented. The local identity
+  (the `identity` file, minted 0600, revalidated on read) is the
+  offering a desktop app uses instead of `battery/auth`:
+  `LocalUser` middleware maps every gated request to that one user
+  while the boot gate is armed, and the battery installs its own owner
+  extractor only when nothing else has (linked `battery/auth` owns
+  identity end to end instead). Documented in
+  `framework/docs/content/desktop.md`.
+- **Desktop: the app-shell test harness.** Desktop tests no longer run
+  against a browser stand-in: `desktoptest.NativeMain` boots the app
+  once per test binary inside the real shell (WKWebView), and
+  `desktoptest.Native(t)` drives it from both sides, the page's
+  JavaScript through `Window.EvalAsync` (a new `PageEvaluator` seam
+  built on `callAsyncJavaScript`, which awaits promises natively) and
+  the native UI through the shell's new `NativeDriver` (menu and tray
+  activation by title, scripted permission answers, real alert clicks,
+  GetURL deep-link delivery, `performClose`, and an OS-truth
+  `WindowState`). The headless-Chrome desktop tests
+  (`browser_harness_e2e_test.go`, the desktop-notes browser pair) are
+  deleted, replaced by native e2e suites under the existing
+  `desktop_e2e` tag; the fake shell and its harness are unchanged.
+- New example `examples/desktop-focus`: a local-first pomodoro timer
+  that exercises the full `battery/desktop` surface (hidden-title
+  window, floating always-on-top widget with a live countdown, tray
+  countdown, session-end notifications, `gofastr-focus://` deep links,
+  cross-window messages, a `focus` plugin capability, and the opt-in
+  updater) and runs unchanged over HTTP behind `--serve`. The timer's
+  state lives in the `sessions` table, so restarts resume and the
+  interactive layer stays stateless.
+
+### Fixed
+- **`App.Shutdown` no longer stalls on a connection that never sent a
+  request.** A browser's speculative preconnect or an HTTP client's
+  spare dial leaves a connection in `net/http`'s StateNew, which
+  `Server.Shutdown` spares for five seconds; a bounded drain then ran
+  to its deadline and reported `draining http server: context deadline
+  exceeded` (the desktop test harness hit it on quit). Shutdown now
+  closes those connections itself before the drain: they carry no
+  work.
+- **A blank form field no longer fails validation by type.** An HTML
+  form posts `""` for a number, date, or relation the user left blank,
+  and CRUD create/update answered `must be an integer` for a field the
+  user never touched (the resource-engine forms hit this on every
+  optional number). A blank non-text field now counts as not provided:
+  the declared default applies on create, the column is left alone on
+  update, and a blank required field says `is required`.
+- **A refused form submission is no longer silent.** The runtime's
+  `data-fui-rpc` form path dropped every non-2xx answer unless a
+  response signal was set; a user pressing Save saw nothing move. The
+  server's validation envelope now fills each named field's
+  `ui-form-field` error slot (`is-error`, `aria-invalid`,
+  `aria-describedby`, a `role="alert"` message) and, when no field
+  matched, the error text is toasted.
+- **Runtime form intercept: the hidden-input-plus-checkbox pair
+  serializes as one value.** A `data-fui-rpc` form turned every
+  repeated name into an array, so the HTML checkbox idiom (hidden
+  `false` followed by a checkbox `true`) posted `["false","true"]` when
+  checked and the bool validator answered 400: a bool field could be
+  saved off but never back on. The pair (exactly one hidden input then
+  one checkbox of the same name) now posts the last value as a scalar;
+  checkbox groups and multi-selects are still arrays. The resource
+  engine's bool field renders that pair.
+
 ## [0.85.0] - 2026-09-08
 
 ### Security
@@ -372,161 +561,6 @@ from `$PREFIX_TOKEN`, the stored config, or `login --with-token`
   `title`, `showLineNumbers`, `scroll`, `{1,3-5}` / `highlight=`, `diff`,
   `words=`, and `wrap` onto it, and keeps the raw info string on the
   block's `data-meta` (#410).
-- **`battery/desktop` (experimental)**: a desktop host that runs a
-  GoFastr app inside the OS WebView from a `CGO_ENABLED=0` binary.
-  The macOS arm ships (WKWebView through a pure-Go Objective-C bridge
-  in `internal/objc`, a fake-cgo layer in `internal/fakecgo` so
-  `runtime.cgocall` works without cgo, darwin/arm64 only); Windows and
-  Linux return a named `unsupported` error until their phases land).
-  The battery is split by platform: platform packages under
-  `battery/desktop/{macos,windows,linux}` (each compiling on every
-  GOOS) plus `battery/desktop/native`, whose `New`/`Shell()` pick one
-  by GOOS as `desktop.New`'s nil-`Shell` default (nil now answers the
-  unsupported shell on every platform).
-  The OS-independent half: `desktop.AppOptions` (app-data dir, SQLite,
-  secret file), the loopback boot handshake (single-use token,
-  HttpOnly session cookie, Host pin), a capability registry with a
-  frozen manifest, the generated typed JS bridge (`__gofastr.desktop.*`)
-  behind one permission-gated POST chokepoint with persisted grants and
-  an OS prompt, the `desktop` runtime module, native menus, five core
-  capabilities (window, dialogs, clipboard, notifications, fs on a
-  dialog allow-list), and plugin-registered capabilities. Secondary
-  windows (`Config.Settings` plus `Battery.OpenWindow`/`OpenSettings`/
-  `Windows` and the `windows` capability: a page opens the app's own
-  screens, second windows share the main one's boot cookie), a
-  menu-bar tray (`Config.Tray` with `RoleShow` and `RoleSettings`
-  rows, `CloseHidesWindow`, `HideDock`, the `tray` capability; macOS
-  only), and notifications that work from an ad-hoc-signed bundle
-  (`Notification.Subtitle`, `Battery.Notify`, and `gofastr desktop
-  build` signing ad-hoc by default with `--sign`/`--no-sign` to
-  override). New example `examples/desktop-notes` (notes plus a
-  settings screen and a tray); new CLI verbs `gofastr desktop
-  run|build|types` (the `.app` bundle is written in pure Go). Pin a
-  version. `battery/desktop/desktoptest.Run` is the test harness: it
-  runs the real `Run` flow with the fake shell as the OS and plays
-  both sides (`Get`/`Post`/`Call` as the page, `ClickMenu`/`ClickTray`/
-  `PressKey`/`OpenSettings`/`CloseWindow`/`Answer` as the user;
-  `Notifications`/`Events`/`Navigations`/`WindowIDs` as the record),
-  with `desktop.BootstrapJS()` and `Window.SetEvalHook` for driving a
-  real browser against it. The harness found two bugs before release: a
-  second desktop battery in one process took the first one's owner
-  extractor for battery/auth's and ran its window anonymous, and the
-  example's export event carried a dotted name the event grammar
-  refuses (now `notes_exported`).
-- Desktop (experimental): window styles. `WindowSpec.Style` and
-  `Config.Style` shape a window's chrome (borderless, hidden title bar,
-  floating, non-activating panel, transparent, fixed size, all-Spaces,
-  explicit origin), `Config.Widgets` opens floating widget windows at
-  launch, `desktop.Widget(path, w, h)` builds the typical spec, and
-  `windows.open` accepts a `style` object from the page. A borderless
-  window drags through the page: the `data-fui-window-drag` attribute
-  on any element makes mousedown there start a native window drag.
-  Every window now carries its own user script, so a page can learn
-  which window it lives in (`window.__gofastr_desktop.window`).
-  darwin/arm64 only; the contracts are OS-neutral and other hosts
-  answer `unsupported`.
-- Desktop (experimental): cross-window events and messages. `Emit` now
-  delivers a native event to every open window (main first; a failure
-  in one window is logged and skipped) and the new `EmitTo(windowID,
-  name, payload)` targets one (`not_found` when it is not open). Every
-  window learns its own id from its bootstrap script
-  (`__gofastr.desktop.windowID`), and pages can message each other
-  through the server with `windows.post({to, name, payload})`,
-  `windows.broadcast({name, payload})` (every window except the
-  caller's), and `windows.self()`; event names follow the event grammar
-  and payloads are capped at 64 KiB of compact JSON. The calling window
-  is a page-reported claim (the `X-Gofastr-Window` header), used only
-  for broadcast exclusion and `self`. The test harness gained
-  per-window event records and `h.CallFrom`.
-- Desktop deep links: `desktop.Config.DeepLink` claims a custom URL
-  scheme (`gofastr-notes`), `gofastr desktop build --scheme gofastr-notes` registers it
-  in the bundle's Info.plist, and the app answers `gofastr-notes://host/path?q`
-  by focusing the main window, navigating it to `/host/path?q`, and
-  emitting a `deep_link` event with `{url, path}`. Links are refused on
-  any other scheme, userinfo, or length over 2048 bytes; links before
-  the window opens are queued (16) and flushed after the boot
-  navigation. macOS arm64 only; experimental, like the rest of
-  `battery/desktop`.
-- `gofastr desktop build --notarize` (with `--notary-profile`, default
-  `gofastr`, and `--entitlements`, default a generated empty-dict
-  plist): signs under the hardened runtime with a timestamp, zips the
-  bundle in pure Go (modes kept, mtimes zeroed, no symlinks), submits
-  through `xcrun notarytool submit --wait`, staples with `xcrun
-  stapler`, and re-zips so the archive carries the staple. Requires
-  `--sign` with a Developer ID Application identity; any step failing
-  fails the build. Tested against fakes; not run against Apple's
-  service.
-- Auto-update for desktop apps (experimental): `desktop.UpdateConfig`
-  points an app at a signed ed25519 feed; the battery verifies the
-  signature before parsing, compares semver against the running bundle,
-  downloads and sha256-verifies the archive, extracts it with
-  zip-escape refusal, codesign-verifies the new bundle, swaps it in,
-  and relaunches. New `updates` capability (`check`, gated `install`),
-  the `update_available` page event, scheduled checks every 6 h (first
-  after 30 s), `gofastr desktop keygen` and `gofastr desktop feed` for
-  the release side. darwin only; unbundled runs never update.
-- `battery/desktop`: `Config.RememberWindows` persists every window's
-  frame and the main window's last path in the app state store's
-  `windows` entry (`state.json`, 0600, data dir) and restores them on
-  relaunch: windows reopen where the user left them, on whichever
-  monitor, the boot redirect returns to the last screen, and a frame
-  from an unplugged monitor is dropped in favor of centered. New
-  contracts `Frame`, `WindowConfig.Frame` and `OnWindowFrame`,
-  `WindowSpec.Frame`, `Window.Frame` and `SetFrame`, the ungated
-  `window.setPath` bridge method, and the `Harness.MoveWindow` /
-  `NativeHarness.MoveWindow` test seams.
-  `examples/desktop-focus` turns it on.
-- `battery/desktop`: app state. `battery/desktop/appstate` is a durable
-  key/value store over one JSON file in the data dir (`state.json`,
-  0600, debounced 500 ms writes, flush on quit, raw-JSON values capped
-  at 64 KiB, namespaced keys, a `Watch` change hook); `Run` opens it
-  and `Battery.State()` hands it to Go code. The remembered windows,
-  the preferences, and a new ungated `state` capability share it: the
-  page's keys are confined to the `page.` prefix
-  (`get`/`set`/`delete`/`keys`), and every successful `set`/`delete`
-  broadcasts `state_changed` with `{key}` to every open window.
-- `battery/desktop`: declared preferences. `Config.Preferences` takes
-  a `desktop.Preference` list (kinds bool, int, string, choice;
-  validated at `New` with a defensive copy), stores the values typed
-  in the app state under `settings`, serves them to Go through
-  `d.Preferences()` (`Bool`/`Int`/`String`/`All`/`Declared`/`Set`) and
-  to the page through an ungated `preferences` capability
-  (all-or-nothing `set`, `preferences_changed` with `{keys}`), and
-  renders them as a form through `desktop.PreferencesScreen`, a screen
-  builder the host mounts; the form saves through
-  `POST /__gofastr/desktop/preferences` with the runtime's validation
-  envelope on refusal. Both desktop examples dropped their hand-built
-  settings entity and screen for it.
-- `battery/desktop`: single-user mode documented. The local identity
-  (the `identity` file, minted 0600, revalidated on read) is the
-  offering a desktop app uses instead of `battery/auth`:
-  `LocalUser` middleware maps every gated request to that one user
-  while the boot gate is armed, and the battery installs its own owner
-  extractor only when nothing else has (linked `battery/auth` owns
-  identity end to end instead). Documented in
-  `framework/docs/content/desktop.md`.
-- **Desktop: the app-shell test harness.** Desktop tests no longer run
-  against a browser stand-in: `desktoptest.NativeMain` boots the app
-  once per test binary inside the real shell (WKWebView), and
-  `desktoptest.Native(t)` drives it from both sides, the page's
-  JavaScript through `Window.EvalAsync` (a new `PageEvaluator` seam
-  built on `callAsyncJavaScript`, which awaits promises natively) and
-  the native UI through the shell's new `NativeDriver` (menu and tray
-  activation by title, scripted permission answers, real alert clicks,
-  GetURL deep-link delivery, `performClose`, and an OS-truth
-  `WindowState`). The headless-Chrome desktop tests
-  (`browser_harness_e2e_test.go`, the desktop-notes browser pair) are
-  deleted, replaced by native e2e suites under the existing
-  `desktop_e2e` tag; the fake shell and its harness are unchanged.
-- New example `examples/desktop-focus`: a local-first pomodoro timer
-  that exercises the full `battery/desktop` surface (hidden-title
-  window, floating always-on-top widget with a live countdown, tray
-  countdown, session-end notifications, `gofastr-focus://` deep links,
-  cross-window messages, a `focus` plugin capability, and the opt-in
-  updater) and runs unchanged over HTTP behind `--serve`. The timer's
-  state lives in the `sessions` table, so restarts resume and the
-  interactive layer stays stateless.
-
 
 ### Fixed
 - **The sortable-list 409 e2e tests no longer read the live region
@@ -547,37 +581,6 @@ from `$PREFIX_TOKEN`, the stored config, or `login --with-token`
   the rule block rather than the selector text, and a walk over every
   registered stylesheet rejects a declaration outside a block or an
   unbalanced brace, which is the shape this bug takes.
-- **`App.Shutdown` no longer stalls on a connection that never sent a
-  request.** A browser's speculative preconnect or an HTTP client's
-  spare dial leaves a connection in `net/http`'s StateNew, which
-  `Server.Shutdown` spares for five seconds; a bounded drain then ran
-  to its deadline and reported `draining http server: context deadline
-  exceeded` (the desktop test harness hit it on quit). Shutdown now
-  closes those connections itself before the drain: they carry no
-  work.
-- **A blank form field no longer fails validation by type.** An HTML
-  form posts `""` for a number, date, or relation the user left blank,
-  and CRUD create/update answered `must be an integer` for a field the
-  user never touched (the resource-engine forms hit this on every
-  optional number). A blank non-text field now counts as not provided:
-  the declared default applies on create, the column is left alone on
-  update, and a blank required field says `is required`.
-- **A refused form submission is no longer silent.** The runtime's
-  `data-fui-rpc` form path dropped every non-2xx answer unless a
-  response signal was set; a user pressing Save saw nothing move. The
-  server's validation envelope now fills each named field's
-  `ui-form-field` error slot (`is-error`, `aria-invalid`,
-  `aria-describedby`, a `role="alert"` message) and, when no field
-  matched, the error text is toasted.
-- **Runtime form intercept: the hidden-input-plus-checkbox pair
-  serializes as one value.** A `data-fui-rpc` form turned every
-  repeated name into an array, so the HTML checkbox idiom (hidden
-  `false` followed by a checkbox `true`) posted `["false","true"]` when
-  checked and the bool validator answered 400: a bool field could be
-  saved off but never back on. The pair (exactly one hidden input then
-  one checkbox of the same name) now posts the last value as a scalar;
-  checkbox groups and multi-selects are still arrays. The resource
-  engine's bool field renders that pair.
 
 ## [0.84.1] - 2026-09-06
 
@@ -594,7 +597,6 @@ from `$PREFIX_TOKEN`, the stored config, or `login --with-token`
   cascade: a sidebar title stretched to fill its column, a doc layout
   collapsed. The exported links carry the marker and id the runtime would
   have written.
-
 
 ## [0.84.0] - 2026-09-06
 
@@ -885,6 +887,7 @@ from `$PREFIX_TOKEN`, the stored config, or `login --with-token`
   authenticate requires initialize and a malformed permission answer is
   cancelled. Every JSON-RPC envelope, websocket frame and dev-tool
   endpoint decodes strictly; the GOFASTR1407 waivers are gone.
+
 ### Changed
 - **BREAKING: `auth.NewEntityTwoFAStore(db, table, cfg)`** takes an
   `EntityTwoFAStoreConfig` whose `EncryptionKey` is required and returns
@@ -1214,7 +1217,6 @@ from `$PREFIX_TOKEN`, the stored config, or `login --with-token`
   tracking-column DDL quotes its identifiers, and the blueprint's
   resource-mount stub emits only Go-identifier names.
 
-
 ## [0.80.0] - 2026-09-02
 
 ### Fixed
@@ -1515,7 +1517,6 @@ from `$PREFIX_TOKEN`, the stored config, or `login --with-token`
   surface documents), with a test pinning the symbol and its answers.
   Found while confirming an old worktree's uncommitted duplicate of the
   original #266 fix was safe to discard.
-
 
 ## [0.78.0] - 2026-09-01
 
@@ -2321,8 +2322,6 @@ from `$PREFIX_TOKEN`, the stored config, or `login --with-token`
   derived form would duplicate them) and index `expression` (not in the
   blueprint grammar).
 
-
-
 ## [0.76.0] - 2026-08-30
 
 ### Added
@@ -2517,7 +2516,6 @@ from `$PREFIX_TOKEN`, the stored config, or `login --with-token`
   makes the manifest the single source of truth, and passes less than the
   old call did (`fsys` comes from the module). `NewAssetServer` stays for
   assets that belong to no module.
-
 
 ### Fixed
 
@@ -3358,7 +3356,6 @@ from `$PREFIX_TOKEN`, the stored config, or `login --with-token`
   the process environment they consult first, so a developer with an exported
   `DATABASE_URL` ran them against a different database than CI did.
 
-
 ## [0.67.0] - 2026-08-19
 
 ### Added
@@ -3641,7 +3638,6 @@ from `$PREFIX_TOKEN`, the stored config, or `login --with-token`
   not inherit the fix. Its footer now resolves per request, and the role-gated
   "Admin" item is filtered through the context-aware path rather than rendered
   for every visitor.
-
 
 ## [0.66.0] - 2026-08-17
 
@@ -4962,6 +4958,7 @@ failing against the unfixed code first.
   catalog, so a suppression written today cannot collide with a future
   release. A worked example, a project gate command with its own rule,
   is in `gofastr docs contracts` under "Your own rules".
+
 ### Fixed
 
 - The `examples/ecommerce` flagship test no longer regenerates the committed
@@ -6300,6 +6297,7 @@ palette per request without mutating process-global state.
   `~/.gofastr/embed` snapshot directory all move together, as does
   `kiln/agent.NewEmbedContextHook`, now `agent.NewSemanticContextHook`.
   `gofastr upgrade` carries the entry.
+
 ### Documented late: API versioning shipped in 0.48.0
 
 These landed in the 0.48.0 tag with no release note, including a breaking
@@ -6664,6 +6662,7 @@ last one, all in the new embed surface.
 - `TestEmbedExchangeIsIdempotent` compared whole response bodies including a
   wall-clock `expires_in_ms`, so it failed roughly once in a thousand runs with
   the message "one nonce bought two identities", for two byte-identical grants.
+
 ## [0.48.0] - 2026-07-27
 
 `AfterGet` and `AfterList` are documented as the way to mask a field on
@@ -7344,6 +7343,7 @@ those possible.
   client-mounted widget. Back works and is covered by a test; Forward is
   deliberately not asserted. Fixing it means teaching the router which
   query parameters describe in-page state.
+
 ## [0.43.0] - 2026-07-25
 
 Security audit remediation. A dual-model pass (breadth + depth) across
@@ -7756,6 +7756,7 @@ fixes (#120): a two-round multi-model pass (Claude + GLM + Sol) over that
 range found twenty-two confirmed bugs: SQLite engine correctness, queue
 timezone/DST, outbox lease normalization, and one include-filter security
 fix, all landed test-first.
+
 ### Added
 
 - **Stateless session tokens** (#112). The uihost session map is gone;
@@ -7794,6 +7795,7 @@ fix, all landed test-first.
   still anchors in UTC: existing schedules keep their fire times, and
   `time.Local` / fixed-offset zones deliberately collapse to UTC because they
   would resolve differently per replica.
+
 ### Fixed
 
 - **Two tabs sharing one session now BOTH receive every SSE update.**
@@ -7929,6 +7931,7 @@ From the v0.32.0–v0.37.0 weekend-range review (#120):
   SDK rendered as `api: 403: [object Object]`. Both now emit the flat
   `{"error","success","code"}` envelope as `application/json`; every
   `battery/auth` error response now carries the `code` field.
+
 ### Changed
 
 - **BREAKING: `WithFanout` now requires an app secret.** Boot fails with
