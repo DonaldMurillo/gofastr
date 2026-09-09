@@ -145,6 +145,11 @@ type analyzer struct {
 // checkFunc runs the recover-taint analysis over one function
 // declaration.
 func (a *analyzer) checkFunc(fn *ast.FuncDecl) {
+	// Bodyless: a //go:linkname stub or an assembly-implemented
+	// trampoline can hold no recover (ffi.callTrampoline).
+	if fn.Body == nil {
+		return
+	}
 	a.checkBody(fn.Body)
 }
 

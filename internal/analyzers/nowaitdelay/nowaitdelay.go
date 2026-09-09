@@ -92,7 +92,12 @@ func run(pass *analysis.Pass) (any, error) {
 		for _, d := range f.Decls {
 			switch d := d.(type) {
 			case *ast.FuncDecl:
-				checkBody(pass, helpers, d.Body)
+				// Bodyless: a //go:linkname stub or an
+				// assembly-implemented trampoline has no statements
+				// to replay (ffi.callTrampoline).
+				if d.Body != nil {
+					checkBody(pass, helpers, d.Body)
+				}
 			case *ast.GenDecl:
 				// Top-level func literals (var h = func() {...}).
 				for _, spec := range d.Specs {

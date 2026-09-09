@@ -279,3 +279,11 @@ func truncate(s string, max int) string {
 func maybePanic() {
 	panic("boom\x1b[31m")
 }
+
+// bodylessDecl is the battery/desktop/internal/ffi shape that crashed
+// run (checkFunc passed fn.Body == nil into newTaint's ast.Inspect):
+// a top-level func declaration with no body, the //go:linkname stub
+// (ffi.runtime_cgocall) and assembly-trampoline (ffi.callTrampoline)
+// spelling. A bodyless function can hold no recover(); it must stay
+// quiet, never panic.
+func bodylessDecl()

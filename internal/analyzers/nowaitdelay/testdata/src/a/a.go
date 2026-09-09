@@ -169,3 +169,11 @@ func stderrOnlyCap(ctx context.Context, prog string) error {
 // stdLogSink proves the log import is used by the fixture build (the
 // recoverlog twin owns log sinks; this rule has none).
 var _ = log.Print
+
+// bodylessDecl is the battery/desktop/internal/ffi shape that crashed
+// run (nowaitdelay.go:95 passed d.Body == nil into ast.Inspect): a
+// top-level func declaration with no body, the //go:linkname stub
+// (ffi.runtime_cgocall) and assembly-trampoline (ffi.callTrampoline)
+// spelling. A bodyless function has no statements to replay; it must
+// stay quiet, never panic.
+func bodylessDecl()
