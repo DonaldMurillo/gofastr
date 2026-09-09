@@ -55,6 +55,11 @@ func (s *unsupportedShell) Prompt(context.Context, PermissionRequest) (Decision,
 	return DecisionDeny, unsupportedErrorf(s.goos, s.goarch)
 }
 
+// Appearance implements desktop.Shell: no native layer, no appearance
+// state to read; the zero value means every CSS-invisible setting is
+// off.
+func (s *unsupportedShell) Appearance() Appearance { return Appearance{} }
+
 func (s *unsupportedShell) Clipboard() Clipboard { return s }
 func (s *unsupportedShell) Dialogs() Dialogs     { return s }
 func (s *unsupportedShell) Notifier() Notifier   { return s }

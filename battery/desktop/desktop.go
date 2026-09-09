@@ -52,6 +52,21 @@ func validateAppID(id string) error {
 	return nil
 }
 
+// validateWindowStyle enforces the phase 13 chrome grammar: a Material
+// from the closed set and a TrafficLightInset that is nil (the system
+// position) or non-negative on both axes.
+func validateWindowStyle(style WindowStyle) error {
+	switch style.Material {
+	case MaterialNone, MaterialSidebar, MaterialWindow, MaterialGlass:
+	default:
+		return fmt.Errorf("desktop: WindowStyle.Material %q must be one of sidebar, window, glass, or empty", style.Material)
+	}
+	if in := style.TrafficLightInset; in != nil && (in.X < 0 || in.Y < 0) {
+		return fmt.Errorf("desktop: WindowStyle.TrafficLightInset (%d, %d) must not be negative; nil means the system position", in.X, in.Y)
+	}
+	return nil
+}
+
 // Config constructs a desktop Battery. The zero value is invalid: ID
 // is required. New panics on a bad Config (relay's posture: a wiring
 // error you want at construction, not at first window).
@@ -69,6 +84,13 @@ type Config struct {
 	// Style is the main window's chrome (frameless, floating,
 	// transparent, ...). The zero value is the host's standard window.
 	Style WindowStyle
+
+	// SidebarWidth is the main window's initial sidebar zone in screen
+	// points: the area MaterialSidebar puts the effect under. 0 means
+	// no zone; the page updates it through window.setChrome (a
+	// ResizeObserver on the sidebar element). New refuses a value
+	// outside 0..MaxSidebarWidth.
+	SidebarWidth int
 
 	// Widgets are secondary windows opened at launch, in order, after
 	// the main window's boot navigation (desktop.Widget builds the
@@ -293,6 +315,28 @@ func New(cfg Config) *Battery {
 			panic(err.Error())
 		}
 	}
+	if err := validateWindowStyle(cfg.Style); err != nil {
+		panic(err.Error())
+	}
+	for i := range cfg.Widgets {
+		if err := validateWindowStyle(cfg.Widgets[i].Style); err != nil {
+			panic(err.Error())
+		}
+		if cfg.Widgets[i].SidebarWidth < 0 || cfg.Widgets[i].SidebarWidth > MaxSidebarWidth {
+			panic(fmt.Sprintf("desktop: Widgets[%d].SidebarWidth %d must be between 0 and %d", i, cfg.Widgets[i].SidebarWidth, MaxSidebarWidth))
+		}
+	}
+	if cfg.Settings != nil {
+		if err := validateWindowStyle(cfg.Settings.Style); err != nil {
+			panic(err.Error())
+		}
+		if cfg.Settings.SidebarWidth < 0 || cfg.Settings.SidebarWidth > MaxSidebarWidth {
+			panic(fmt.Sprintf("desktop: Config.Settings.SidebarWidth %d must be between 0 and %d", cfg.Settings.SidebarWidth, MaxSidebarWidth))
+		}
+	}
+	if cfg.SidebarWidth < 0 || cfg.SidebarWidth > MaxSidebarWidth {
+		panic(fmt.Sprintf("desktop: Config.SidebarWidth %d must be between 0 and %d", cfg.SidebarWidth, MaxSidebarWidth))
+	}
 	prefs, err := newPreferences(nil, cfg.Preferences)
 	if err != nil {
 		panic(err.Error())
@@ -494,23 +538,6 @@ func (b *Battery) Window() (Window, bool) {
 	return b.window, b.window != nil
 }
 
-// Windows returns every live window: the main window first, then the
-// secondaries in opening order.
-func (b *Battery) Windows() []Window {
-	b.windowMu.Lock()
-	defer b.windowMu.Unlock()
-	var out []Window
-	if b.window != nil {
-		out = append(out, b.window)
-	}
-	for _, id := range b.winOrder {
-		if w, ok := b.windows[id]; ok {
-			out = append(out, w)
-		}
-	}
-	return out
-}
-
 // OpenWindow opens a secondary window on one of the app's own screens
 // (spec.Path is validated like a menu Navigate path). A window with
 // the same path that is already open is focused and returned, so the
@@ -520,6 +547,12 @@ func (b *Battery) Windows() []Window {
 func (b *Battery) OpenWindow(spec WindowSpec) (Window, error) {
 	if !validNavigatePath(spec.Path) {
 		return nil, &Error{Code: CodeInvalidInput, Message: "path must be a same-origin absolute path (leading /, no scheme, no //, no .. segments)"}
+	}
+	if err := validateWindowStyle(spec.Style); err != nil {
+		return nil, &Error{Code: CodeInvalidInput, Message: strings.TrimPrefix(err.Error(), "desktop: ")}
+	}
+	if spec.SidebarWidth < 0 || spec.SidebarWidth > MaxSidebarWidth {
+		return nil, &Error{Code: CodeInvalidInput, Message: fmt.Sprintf("sidebarWidth must be between 0 and %d", MaxSidebarWidth)}
 	}
 	// Serialize opens so two callers racing on the same path get one
 	// window and one Focus, not two windows.
@@ -580,9 +613,65 @@ func (b *Battery) OpenWindow(spec WindowSpec) (Window, error) {
 	return w, nil
 }
 
+// Windows returns every live window: the main window first, then the
+// secondaries in opening order.
+func (b *Battery) Windows() []Window {
+	b.windowMu.Lock()
+	defer b.windowMu.Unlock()
+	var out []Window
+	if b.window != nil {
+		out = append(out, b.window)
+	}
+	for _, id := range b.winOrder {
+		if w, ok := b.windows[id]; ok {
+			out = append(out, w)
+		}
+	}
+	return out
+}
+
 // maxSecondaryWindows bounds the secondary windows one process may have
 // open at once (the main window is not one of them). See OpenWindow.
 const maxSecondaryWindows = 16
+
+// emitWindowFocus is WindowConfig.OnWindowFocus: the shell reported a
+// window becoming key. App-wide on the Emit rail, like every native
+// event.
+func (b *Battery) emitWindowFocus(id string) {
+	b.emitWindowActivity("window_focus", id)
+}
+
+// emitWindowBlur is WindowConfig.OnWindowBlur: the shell reported a
+// window resigning key.
+func (b *Battery) emitWindowBlur(id string) {
+	b.emitWindowActivity("window_blur", id)
+}
+
+// emitWindowActivity ships one focus event to every open window. The
+// shell fires the key-window delegates during its own startup (its
+// makeKeyAndOrderFront) before the battery has registered any window;
+// that early report is dropped silently, not Warned, because it is the
+// normal boot sequence, not a failed emit.
+func (b *Battery) emitWindowActivity(name, id string) {
+	if len(b.Windows()) == 0 {
+		return
+	}
+	if err := b.Emit(name, map[string]string{"id": id}); err != nil {
+		b.logger.Warn("desktop: emitting "+name+" failed", "window", id, "error", err.Error())
+	}
+}
+
+// emitAppearance is WindowConfig.OnAppearance: an appearance setting
+// the page cannot read through CSS changed. Same startup rule as the
+// focus events.
+func (b *Battery) emitAppearance(a Appearance) {
+	if len(b.Windows()) == 0 {
+		return
+	}
+	if err := b.Emit("reduce_transparency", map[string]bool{"on": a.ReduceTransparency}); err != nil {
+		b.logger.Warn("desktop: emitting reduce_transparency failed", "error", err.Error())
+	}
+}
 
 // nextWindowIDLocked assigns the id for a new secondary window:
 // "settings" for the configured settings path, else the next "w<N>"
@@ -843,7 +932,6 @@ func (b *Battery) Run(app *framework.App) error {
 	if b.cfg.RememberWindows {
 		b.winStore.Store(newWindowStore(b.state.Load(), b.logger))
 	}
-
 	shellErr := b.shell.Run(ctx, WindowConfig{
 		Title:    b.windowTitle(),
 		Width:    b.windowWidth(),
@@ -862,6 +950,10 @@ func (b *Battery) Run(app *framework.App) error {
 		OnDeepLink:     b.handleDeepLink,
 		Frame:          b.rememberedFrame(MainWindowID),
 		OnWindowFrame:  b.onWindowFrame(),
+		SidebarWidth:   b.cfg.SidebarWidth,
+		OnWindowFocus:  b.emitWindowFocus,
+		OnWindowBlur:   b.emitWindowBlur,
+		OnAppearance:   b.emitAppearance,
 	}, func(w Window) {
 		b.windowMu.Lock()
 		b.window = w

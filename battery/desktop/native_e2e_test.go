@@ -9,7 +9,9 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -108,6 +110,28 @@ func (e2eMini) Render() render.HTML {
 	)
 }
 
+// e2eChrome is the phase 13 step's window: the page contract a
+// material needs (transparent html and body, a left column the width
+// of the configured sidebar zone) written as one fixture rule. The
+// desktop theme ships this shape properly later; the step asserts the
+// native side against the OS, so the fixture only has to let the
+// effect show through.
+type e2eChrome struct{}
+
+func (e2eChrome) Render() render.HTML {
+	style := render.Tag("style", nil, render.Text(
+		"html,body{background:transparent}"+
+			".chrome-sidebar{position:fixed;left:0;top:0;bottom:0;width:220px;"+
+			"background:rgba(128,128,150,0.15);border-right:1px solid rgba(128,128,128,0.35)}"))
+	return render.Tag("div", nil,
+		style,
+		render.Tag("div", map[string]string{"class": "chrome-sidebar"},
+			render.Tag("h1", nil, render.Text("Sidebar zone")),
+		),
+		render.Tag("p", nil, render.Text("Chrome content column")),
+	)
+}
+
 // e2eHandlerRan receives the menu Handler item's context error.
 var e2eHandlerRan chan error
 
@@ -135,6 +159,7 @@ func buildNativeApp() (*framework.App, *desktop.Battery, error) {
 	site.Register("/two", e2eTwo{}, layout)
 	site.Register("/settings", e2eSettings{}, layout)
 	site.Register("/mini", e2eMini{}, layout)
+	site.Register("/chrome", e2eChrome{}, layout)
 	fwApp.Mount(uihost.New(site))
 
 	fwApp.Router().Post("/shell-e2e/counter", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -226,6 +251,7 @@ func runNativePhase(h *desktoptest.NativeHarness) bool {
 		{"DeepLinkNavigatesRealPage", phaseDeepLink},
 		{"PageStateRoundTrips", phasePageState},
 		{"RemembersWindowFrames", phaseWindowState},
+		{"ChromeContractOnTheOS", phaseWindowChrome},
 		{"SnapshotDecodesAtWindowScale", phaseSnapshot},
 		{"ShellScenario", phaseShellScenario},
 	}
@@ -662,6 +688,153 @@ func phaseWindowState(t desktoptest.TB, h *desktoptest.NativeHarness) {
 	t.Logf("secondary window with a Frame landed at X=%d Y=%d %dx%d", st.X, st.Y, st.Width, st.Height)
 	h.CloseWindow("settings")
 	h.Wait("the framed window to close", func() bool { return h.Window("settings") == nil })
+}
+
+// phaseWindowChrome: a secondary window with the full phase 13 chrome
+// contract (MaterialSidebar, ChromeUnified, a traffic-light inset, a
+// sidebar width). Every assertion reads the OS's own WindowState off
+// the live objects; SetSidebarWidth and the page's setChrome both move
+// the zone; the Reduce Transparency read matches the OS defaults
+// domain; the focus events reach the page across a deactivate and
+// reactivate, and the id gate keeps another window's focus from
+// clearing this page's inactive class; the CGWindowID capture is the
+// pixel proof.
+func phaseWindowChrome(t desktoptest.TB, h *desktoptest.NativeHarness) {
+	w, err := h.Battery.OpenWindow(desktop.WindowSpec{
+		Path:   "/chrome",
+		Title:  "Chrome",
+		Width:  560,
+		Height: 440,
+		Style: desktop.WindowStyle{
+			Material:          desktop.MaterialSidebar,
+			Chrome:            desktop.ChromeUnified,
+			TrafficLightInset: &desktop.Inset{X: 12, Y: 10},
+		},
+		SidebarWidth: 220,
+	})
+	if err != nil {
+		t.Fatalf("OpenWindow with chrome: %v", err)
+	}
+	id := w.ID()
+	h.Wait("the chrome window to open", func() bool { return h.Window(id) != nil })
+	st, err := h.WindowState(id)
+	if err != nil {
+		t.Fatalf("chrome window state: %v", err)
+	}
+	// The sidebar material always answers the zone vibrancy view (the
+	// glass shape is whole-window only); what the OS reports is what
+	// the shell applied.
+	if st.Material != "vibrancy-sidebar" {
+		t.Fatalf("chrome window material = %q, want vibrancy-sidebar", st.Material)
+	}
+	if !st.TitlebarTransparent {
+		t.Fatal("chrome window title bar is not transparent")
+	}
+	if st.ToolbarStyle != "unified" {
+		t.Fatalf("chrome window toolbar style = %q, want unified", st.ToolbarStyle)
+	}
+	if st.SidebarWidth != 220 {
+		t.Fatalf("chrome window sidebar width = %d, want 220", st.SidebarWidth)
+	}
+	if st.CGWindowID == 0 {
+		t.Fatal("chrome window has no CGWindowID")
+	}
+	t.Logf("chrome window: material=%s toolbar=%s sidebar=%d cgwindow=%d",
+		st.Material, st.ToolbarStyle, st.SidebarWidth, st.CGWindowID)
+
+	// SetSidebarWidth moves the zone the OS reports.
+	if err := w.SetSidebarWidth(280); err != nil {
+		t.Fatalf("SetSidebarWidth: %v", err)
+	}
+	h.Wait("the zone to resize to 280", func() bool {
+		s2, err := h.WindowState(id)
+		return err == nil && s2.SidebarWidth == 280
+	})
+
+	// The page's own report through the capability reaches the same
+	// place. The secondary window's page has not loaded the desktop
+	// module yet, so this is the module's own transport (fetch with the
+	// window header) spelled inline. Wait for the page first: a page
+	// still at about:blank has no base URL for the relative fetch.
+	h.Wait("the chrome page to reach /chrome", func() bool {
+		out, err := h.Window(id).EvalQuiet("return location.pathname")
+		return err == nil && jsString(out) == "/chrome"
+	})
+	nw := h.Window(id)
+	nw.Eval(t, fmt.Sprintf("return await fetch('/__gofastr/desktop/call/window/setChrome', {"+
+		"method:'POST', headers:{'Content-Type':'application/json','X-Gofastr-Window':%q}, "+
+		"body: JSON.stringify({sidebarWidth:240}), credentials:'same-origin'}).then(r => r.text())", id))
+	h.Wait("the page report to resize the zone to 240", func() bool {
+		s2, err := h.WindowState(id)
+		return err == nil && s2.SidebarWidth == 240
+	})
+
+	// The shell's Reduce Transparency read matches the OS domain.
+	out, derr := exec.Command("defaults", "read", "com.apple.universalaccess", "reduceTransparency").Output()
+	osOn := derr == nil && strings.TrimSpace(string(out)) == "1"
+	if got := h.Battery.Shell().Appearance().ReduceTransparency; got != osOn {
+		t.Fatalf("shell Reduce Transparency = %v, OS defaults domain = %v (out=%q err=%v)", got, osOn, strings.TrimSpace(string(out)), derr)
+	}
+	t.Logf("Reduce Transparency matches the OS: %v", osOn)
+
+	// Focus events reach the page across a deactivate/reactivate, the
+	// user's app-switch shape.
+	h.RecordEvents(t, "window_focus", "window_blur")
+	h.DeactivateReactivate()
+	ev := h.WaitEvent("window_blur")
+	var blurID struct {
+		ID string `json:"id"`
+	}
+	if err := ev.Unmarshal(&blurID); err != nil || blurID.ID != id {
+		t.Fatalf("window_blur payload = %s, want id %q", ev.Payload, id)
+	}
+	if os.Getenv("GOFASTR_CHROME_DEBUG") != "" {
+		time.Sleep(700 * time.Millisecond)
+		for _, dbg := range []string{id, "main"} {
+			if ds, derr := h.WindowState(dbg); derr == nil {
+				t.Logf("DEBUG after switch: %s key=%v visible=%v", dbg, ds.Key, ds.Visible)
+			}
+		}
+		if err := w.Focus(); err != nil {
+			t.Logf("DEBUG Focus: %v", err)
+		}
+		time.Sleep(700 * time.Millisecond)
+		evs := h.Events()
+		names := make([]string, 0, len(evs))
+		for _, e := range evs {
+			names = append(names, e.Name)
+		}
+		t.Logf("DEBUG events so far: %v", names)
+	}
+	ev = h.WaitEvent("window_focus")
+	var focusID struct {
+		ID string `json:"id"`
+	}
+	if err := ev.Unmarshal(&focusID); err != nil || focusID.ID != id {
+		t.Fatalf("window_focus payload = %s, want id %q", ev.Payload, id)
+	}
+
+	// The id gate, behaviorally: the MAIN page carries desktop-inactive
+	// (it lost key when this window opened) even though this window's
+	// window_focus event reaches every page.
+	var inactive bool
+	h.EvalInto(t, "return document.documentElement.classList.contains('desktop-inactive')", &inactive)
+	if !inactive {
+		t.Fatal("main page lacks desktop-inactive while another window holds key; the focus classes must be gated on the event's window id")
+	}
+
+	// The pixel proof: capture this window by its CGWindowID.
+	if dir := os.Getenv("GOFASTR_DESKTOP_PROOF_DIR"); dir != "" {
+		path := filepath.Join(dir, "window-chrome-"+id+".png")
+		if err := exec.Command("screencapture", "-x", "-l",
+			strconv.FormatInt(st.CGWindowID, 10), path).Run(); err != nil {
+			t.Logf("screencapture failed (no display?): %v", err)
+		} else {
+			t.Logf("chrome window capture written to %s", path)
+		}
+	}
+	h.CloseWindow(id)
+	h.Wait("the chrome window to close", func() bool { return h.Window(id) == nil })
 }
 
 // phaseSnapshot: the window's real pixels decode as a PNG at the

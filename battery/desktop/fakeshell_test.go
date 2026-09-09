@@ -115,6 +115,11 @@ func (f *fakeShell) SetTrayTitle(title string) error {
 	return nil
 }
 
+// Appearance implements Shell: the internal double has no appearance
+// surface of its own (the exported desktoptest.Shell carries the
+// scriptable one the harness tests use).
+func (f *fakeShell) Appearance() Appearance { return Appearance{} }
+
 func (f *fakeShell) Quit() { f.quitOnce.Do(func() { close(f.quitCh) }) }
 
 func (f *fakeShell) Main(fn func()) error {
@@ -238,6 +243,9 @@ type fakeWindow struct {
 	closed    bool
 	frame     Frame
 	setFrames []Frame
+	// sidebarWidth is the last SetSidebarWidth (the zone the page
+	// reported); the internal double only records it.
+	sidebarWidth int
 }
 
 func (w *fakeWindow) Frame() (Frame, error) {
@@ -277,6 +285,14 @@ func (w *fakeWindow) Eval(js string) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	w.evaluated = append(w.evaluated, js)
+	return nil
+}
+
+// SetSidebarWidth implements Window: the width is recorded.
+func (w *fakeWindow) SetSidebarWidth(points int) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.sidebarWidth = points
 	return nil
 }
 

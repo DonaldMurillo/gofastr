@@ -92,6 +92,30 @@ func (b *Battery) windowCapability() Capability {
 				},
 			},
 			{
+				Name:        "setChrome",
+				Description: "Reports the sidebar zone's width in points as the page measured it (a ResizeObserver on the sidebar element). Ungated like setPath: a claim, applied to the calling window only.",
+				Input:       json.RawMessage(`{"type":"object","properties":{"sidebarWidth":{"type":"integer","minimum":0,"maximum":4096}},"required":["sidebarWidth"]}`),
+				Handler: func(ctx context.Context, in json.RawMessage) (any, error) {
+					var req struct {
+						SidebarWidth int `json:"sidebarWidth"`
+					}
+					if err := decodeInput(in, &req); err != nil {
+						return nil, err
+					}
+					if req.SidebarWidth < 0 || req.SidebarWidth > MaxSidebarWidth {
+						return nil, &Error{Code: CodeInvalidInput, Message: "sidebarWidth must be between 0 and 4096"}
+					}
+					w, ok := b.windowByID(callerWindowID(ctx))
+					if !ok {
+						return nil, &Error{Code: CodeNotFound, Message: "the calling window is not open"}
+					}
+					if err := w.SetSidebarWidth(req.SidebarWidth); err != nil {
+						return nil, err
+					}
+					return nil, nil
+				},
+			},
+			{
 				Name:        "snapshot",
 				Description: "Captures the rendered page as a base64 PNG.",
 				Output:      json.RawMessage(`{"type":"object","properties":{"png":{"type":"string"}}}`),

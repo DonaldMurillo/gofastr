@@ -68,7 +68,7 @@ func windowStyleMask(style desktop.WindowStyle) uintptr {
 	switch style.Chrome {
 	case desktop.ChromeNone:
 		// Borderless: no bits of its own.
-	case desktop.ChromeHiddenTitle:
+	case desktop.ChromeHiddenTitle, desktop.ChromeUnified:
 		mask = maskTitled | maskClosable | maskFullSizeContentView
 	default:
 		mask = maskTitled | maskClosable
@@ -109,26 +109,32 @@ func frameOrigin(style desktop.WindowStyle, height int, screenHeight float64) (x
 // main thread; the mask half of the style was applied at window
 // creation (windowStyleMask) and the panel class at alloc time.
 func applyWindowStyle(win, webView objc.ID, style desktop.WindowStyle, height int) {
-	if style.Chrome == desktop.ChromeHiddenTitle {
+	if style.Chrome == desktop.ChromeHiddenTitle || style.Chrome == desktop.ChromeUnified {
 		objc.Send(win, objc.Sel("setTitlebarAppearsTransparent:"), 1)
 		objc.Send(win, objc.Sel("setTitleVisibility:"), 1) // NSWindowTitleHidden
 	}
 	if level := windowLevel(style); level != normalWindowLevel {
 		objc.Send(win, objc.Sel("setLevel:"), uintptr(level))
 	}
+	if style.Chrome == desktop.ChromeUnified {
+		// An empty NSToolbar must be attached for the toolbar style to
+		// take effect; that is the Notes and Finder shape (the toolbar
+		// strip merges with the title bar instead of drawing its own).
+		toolbar := objc.Send(objc.ID(objc.Send(objc.Class("NSToolbar"), objc.Sel("alloc"))), objc.Sel("init"))
+		objc.Send(win, objc.Sel("setToolbar:"), uintptr(toolbar))
+		objc.Send(win, objc.Sel("setToolbarStyle:"), toolbarStyleUnified)
+	}
 	if style.Transparent {
 		objc.Send(win, objc.Sel("setOpaque:"), 0)
 		objc.Send(win, objc.Sel("setBackgroundColor:"), objc.Send(objc.Class("NSColor"), objc.Sel("clearColor")))
 		// The web view must stop painting its own background too.
 		// drawsBackground is private SPI (_drawsBackground in
-		// WKWebKitPrivate's WKWebView header); the KVC spelling reaches
-		// the same property without naming the private selector, the
-		// way Tauri does behind its macOSPrivateApi flag. There is no
-		// public switch. See the phase 13 research in
-		// docs/desktop-plan.md before shipping this wider.
-		objc.Send(webView, objc.Sel("setValue:forKey:"),
-			objc.Send(objc.Class("NSNumber"), objc.Sel("numberWithBool:"), 0),
-			uintptr(objc.NSString("drawsBackground")))
+		// WKWebViewPrivate.h); the KVC spelling reaches the same
+		// property without naming the private selector, the way Tauri
+		// does behind its macOSPrivateApi flag. There is no public
+		// switch. See the phase 13 research in docs/desktop-plan.md
+		// before shipping this wider.
+		setWebViewBackground(webView, false)
 	}
 	if style.AllSpaces {
 		objc.Send(win, objc.Sel("setCollectionBehavior:"), behaviorCanJoinAllSpaces)
@@ -309,7 +315,18 @@ type darwinShell struct {
 	// onWindowFrame reports user moves and resizes (the windowDidMove:
 	// and windowDidEndLiveResize: delegates), on a goroutine.
 	onWindowFrame func(id string, f desktop.Frame)
-	running       bool
+	// onWindowFocus and onWindowBlur report the key-window delegates
+	// (windowDidBecomeKey:/windowDidResignKey:), on a goroutine.
+	onWindowFocus func(id string)
+	onWindowBlur  func(id string)
+	// onAppearance reports appearance changes the page cannot read
+	// through CSS (the NSWorkspace accessibility observer), on a
+	// goroutine.
+	onAppearance func(desktop.Appearance)
+	// reduceTransparency is the live Reduce Transparency state, read
+	// at Run and kept current by the observer.
+	reduceTransparency atomic.Bool
+	running            bool
 
 	// windows maps NSWindow ids to their per-window state, and
 	// windowsByID maps window ids to the same, so windowShouldClose:
@@ -443,6 +460,9 @@ func (s *darwinShell) Run(ctx context.Context, cfg desktop.WindowConfig, ready f
 	s.onSettings = cfg.OnSettings
 	s.onWindowClosed = cfg.OnWindowClosed
 	s.onWindowFrame = cfg.OnWindowFrame
+	s.onWindowFocus = cfg.OnWindowFocus
+	s.onWindowBlur = cfg.OnWindowBlur
+	s.onAppearance = cfg.OnAppearance
 	s.actionIDs = actionIDs
 	s.closeHides = cfg.Tray != nil && cfg.Tray.CloseHidesWindow
 	s.windows = make(map[objc.ID]*darwinWindow)
@@ -462,9 +482,17 @@ func (s *darwinShell) Run(ctx context.Context, cfg desktop.WindowConfig, ready f
 	config := objc.ID(objc.Send(objc.ID(objc.Send(objc.Class("WKWebViewConfiguration"), objc.Sel("alloc"))), objc.Sel("init")))
 	ucc := objc.ID(objc.Send(config, objc.Sel("userContentController")))
 	objc.Send(ucc, objc.Sel("addScriptMessageHandler:name:"), uintptr(bridge), uintptr(objc.NSString(bridgeMessageHandlerName)))
+
+	// The appearance read and its observer run after the state block:
+	// installAppearanceObserver reaches the bridge through bridgeID,
+	// which takes s.mu. The boot marker below needs the value, so the
+	// first paint is right.
+	s.readReduceTransparency()
+	s.installAppearanceObserver()
+
 	userScript := objc.Send(objc.ID(objc.Send(objc.Class("WKUserScript"), objc.Sel("alloc"))),
 		objc.Sel("initWithSource:injectionTime:forMainFrameOnly:"),
-		uintptr(objc.NSString(desktop.BootstrapJS(desktop.MainWindowID))), 0 /* atDocumentStart */, 0 /* all frames */)
+		uintptr(objc.NSString(desktop.BootstrapJS(desktop.MainWindowID, s.reduceTransparency.Load()))), 0 /* atDocumentStart */, 0 /* all frames */)
 	objc.Send(ucc, objc.Sel("addUserScript:"), uintptr(userScript))
 
 	webView := objc.ID(objc.SendRect(objc.ID(objc.Send(objc.Class("WKWebView"), objc.Sel("alloc"))),
@@ -496,6 +524,9 @@ func (s *darwinShell) Run(ctx context.Context, cfg desktop.WindowConfig, ready f
 	s.asyncBlock = objc.NewBlock(ffi.NewCallback(s.onAsyncEvalCompletion))
 	s.running = true
 	applyWindowStyle(window, webView, cfg.Style, cfg.Height)
+	// The material goes in before the window fronts, so the first
+	// paint already has the effect under it.
+	mainChrome := applyWindowMaterial(window, webView, cfg.Style, cfg.SidebarWidth, s.reduceTransparency.Load(), s.logger)
 	// A remembered frame wins over the style origin and over the
 	// centered default; a frame from a screen that is gone centers.
 	framePlaced := cfg.Frame != nil
@@ -507,9 +538,12 @@ func (s *darwinShell) Run(ctx context.Context, cfg desktop.WindowConfig, ready f
 		// No explicit origin: the host default is centered.
 		objc.Send(window, objc.Sel("center"))
 	}
+	// The buttons exist once the title bar is real; the inset goes on
+	// after the window fronts and every delegate path re-applies it.
+	applyTrafficLightInset(window, cfg.Style.TrafficLightInset)
 	objc.Send(nsApp, objc.Sel("activateIgnoringOtherApps:"), 1)
 
-	main := &darwinWindow{shell: s, id: desktop.MainWindowID, window: window, webView: webView, ucc: ucc, title: cfg.Title}
+	main := &darwinWindow{shell: s, id: desktop.MainWindowID, window: window, webView: webView, ucc: ucc, title: cfg.Title, chrome: mainChrome}
 	s.mu.Lock()
 	s.window = window
 	s.webView = webView
@@ -750,6 +784,9 @@ type darwinWindow struct {
 	webView objc.ID
 	ucc     objc.ID
 	title   string
+	// chrome is this window's material/inset state (main-thread-only
+	// fields inside; the struct itself is swapped under mu).
+	chrome windowChrome
 }
 
 // appID returns the NSApplication object (0 before Run).
@@ -1146,7 +1183,7 @@ func (s *darwinShell) OpenWindow(id string, spec desktop.WindowSpec, url string)
 		objc.Send(ucc, objc.Sel("addScriptMessageHandler:name:"), uintptr(bridge), uintptr(objc.NSString(bridgeMessageHandlerName)))
 		userScript := objc.Send(objc.ID(objc.Send(objc.Class("WKUserScript"), objc.Sel("alloc"))),
 			objc.Sel("initWithSource:injectionTime:forMainFrameOnly:"),
-			uintptr(objc.NSString(desktop.BootstrapJS(id))), 0 /* atDocumentStart */, 0 /* all frames */)
+			uintptr(objc.NSString(desktop.BootstrapJS(id, s.reduceTransparency.Load()))), 0 /* atDocumentStart */, 0 /* all frames */)
 		objc.Send(ucc, objc.Sel("addUserScript:"), uintptr(userScript))
 
 		webView := objc.ID(objc.SendRect(objc.ID(objc.Send(objc.Class("WKWebView"), objc.Sel("alloc"))),
@@ -1160,6 +1197,8 @@ func (s *darwinShell) OpenWindow(id string, spec desktop.WindowSpec, url string)
 		objc.Send(window, objc.Sel("setDelegate:"), uintptr(bridge))
 		objc.Send(webView, objc.Sel("setNavigationDelegate:"), uintptr(bridge))
 		applyWindowStyle(window, webView, spec.Style, height)
+		// The material before the window fronts, like the main window.
+		chrome := applyWindowMaterial(window, webView, spec.Style, spec.SidebarWidth, s.reduceTransparency.Load(), s.logger)
 		// A remembered (or explicit) frame wins over the style origin;
 		// one from a screen that is gone centers.
 		applyRememberedFrame(window, spec.Frame)
@@ -1172,8 +1211,9 @@ func (s *darwinShell) OpenWindow(id string, spec desktop.WindowSpec, url string)
 			objc.Send(window, objc.Sel("makeKeyAndOrderFront:"), 0)
 			objc.Send(s.appID(), objc.Sel("activateIgnoringOtherApps:"), 1)
 		}
+		applyTrafficLightInset(window, spec.Style.TrafficLightInset)
 		w.mu.Lock()
-		w.window, w.webView, w.ucc = window, webView, ucc
+		w.window, w.webView, w.ucc, w.chrome = window, webView, ucc, chrome
 		w.mu.Unlock()
 		nsurl := objc.Send(objc.Class("NSURL"), objc.Sel("URLWithString:"), uintptr(objc.NSString(url)))
 		if nsurl == 0 {

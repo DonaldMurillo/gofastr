@@ -743,6 +743,21 @@ func (h *NativeHarness) MoveWindow(id string, f desktop.Frame) {
 	}
 }
 
+// DeactivateReactivate drives the app-level deactivate/reactivate the
+// user's app switch performs; the key window must resign and return,
+// firing the focus events into the battery.
+func (h *NativeHarness) DeactivateReactivate() {
+	h.tbOrPanic()
+	d, err := h.driver()
+	if err != nil {
+		h.fatalf("DeactivateReactivate: %v", err)
+		return
+	}
+	if err := d.DeactivateReactivate(); err != nil {
+		h.fatalf("DeactivateReactivate: %v", err)
+	}
+}
+
 // WindowFrame reads the window's live frame (top-left screen points).
 func (h *NativeHarness) WindowFrame(id string) (desktop.Frame, error) {
 	w := h.Window(id)
