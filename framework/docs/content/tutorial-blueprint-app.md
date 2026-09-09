@@ -99,7 +99,9 @@ gofastr dev                           # dev server with hot reload; the loop for
 
 The scaffold is normal, owned Go: a flat `package main` at the module root.
 `entities/` holds one `<entity>.go` per entity, each carrying its own
-`app.Entity(...)` registration, plus a thin `entities/register.go` seam;
+`app.Entity(...)` registration, plus two thin seams: `entities/register.go`
+and `entities/events.go` (the typed `On<Entity>Created/Updated/Deleted`
+subscribers are one-line wrappers over the helpers there);
 `screens_register.go` is a second seam that mounts every screen in declaration
 order (one `screen_<name>.go` per screen; the home page here); `app.go` holds the
 `RegisterGenerated` wiring
