@@ -4,84 +4,20 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"fmt"
 	"math"
-	"os"
 	"strings"
-	"sync"
-	"sync/atomic"
 	"testing"
-	"time"
 
-	_ "github.com/lib/pq"
+	"github.com/DonaldMurillo/gofastr/internal/pgtest"
 )
 
-// pgvector integration tests. A live Postgres-with-pgvector comes from
-// $TEST_POSTGRES_DSN if set, otherwise an ephemeral testcontainer built from
-// pgvector/pgvector:pg16 (which ships the vector type). If neither is
-// reachable the suite skips, it never fails for lack of a database, the same
-// convention as battery/search/postgres_test.go.
-//
-// Each test gets its own throwaway schema on the shared instance so they run
-// in parallel without colliding. SetMaxOpenConns(1) keeps the per-connection
-// search_path stable so the bare table name resolves into the test schema.
-
-var (
-	pgVecOnce    sync.Once
-	pgVecBaseDSN string
-	pgVecErr     error
-	pgVecUsing   string
-	pgVecLogged  atomic.Bool
-)
-
-func resolvePgVector() (string, error) {
-	pgVecOnce.Do(func() {
-		if dsn := strings.TrimSpace(os.Getenv("TEST_POSTGRES_DSN")); dsn != "" {
-			pgVecBaseDSN = dsn
-			pgVecUsing = "env"
-			return
-		}
-		pgVecErr = errNoPG
-	})
-	return pgVecBaseDSN, pgVecErr
-}
-
-// openPgVector returns a *sql.DB bound to a fresh isolated schema.
+// pgvector integration tests use internal/pgtest. It reads
+// $TEST_POSTGRES_DSN and skips locally when no server is configured. Each test
+// gets its own throwaway schema on the shared instance, with search_path set
+// for every pooled connection.
 func openPgVector(t *testing.T) *sql.DB {
 	t.Helper()
-	dsn, err := resolvePgVector()
-	if err != nil {
-		t.Skipf("pgvector unavailable: %v", err)
-	}
-	if !pgVecLogged.Swap(true) {
-		t.Logf("battery/semantic pgvector tests using %s", pgVecUsing)
-	}
-	db, err := sql.Open("postgres", dsn)
-	if err != nil {
-		t.Fatalf("open pg: %v", err)
-	}
-	db.SetMaxOpenConns(1)
-	for range 25 {
-		ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
-		if err := db.PingContext(ctx); err == nil {
-			cancel()
-			break
-		}
-		cancel()
-		time.Sleep(200 * time.Millisecond)
-	}
-	schema := fmt.Sprintf("embed_%d", time.Now().UnixNano())
-	if _, err := db.Exec("CREATE SCHEMA " + schema); err != nil {
-		t.Fatalf("create schema: %v", err)
-	}
-	if _, err := db.Exec("SET search_path TO " + schema); err != nil {
-		t.Fatalf("set search_path: %v", err)
-	}
-	t.Cleanup(func() {
-		db.Exec("DROP SCHEMA " + schema + " CASCADE")
-		db.Close()
-	})
-	return db
+	return pgtest.DB(t)
 }
 
 // newPgStore builds a PgVectorStore on a fresh schema and ensures the schema
@@ -449,12 +385,3 @@ func cloneChunks(in []Chunk) []Chunk {
 	}
 	return out
 }
-
-// errNoPG is the pgvector suite's skip reason. Note this suite needs the
-// `vector` extension, not merely a Postgres: the compose service and the CI
-// service both run pgvector/pgvector:pg16 for exactly that reason, so one
-// TEST_POSTGRES_DSN serves this suite and the plain-Postgres ones alike. A DSN
-// pointing at a stock postgres image reaches CREATE EXTENSION and fails there
-// rather than skipping, which is the honest outcome, since the database was
-// supplied but cannot do the job.
-var errNoPG = errors.New("TEST_POSTGRES_DSN is not set — `make postgres-up` starts pgvector/pgvector:pg16")

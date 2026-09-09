@@ -13,7 +13,8 @@ import (
 
 // TestDurableSchedulerMigratesExistingSchedulesTableTZ proves the tz column
 // is added idempotently to a schedules table created before tz shipped, the
-// same way ensureScheduleVersionColumn / ensureScheduleOptionsColumns do.
+// same way the version and lane/priority/max_attempts migrations do
+// (ensureScheduleColumns).
 func TestDurableSchedulerMigratesExistingSchedulesTableTZ(t *testing.T) {
 	db := openDurableSchedulerDB(t)
 	q := newDurableTestQueue(t, db)

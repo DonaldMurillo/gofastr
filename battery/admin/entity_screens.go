@@ -754,18 +754,27 @@ func (s *entityFormScreen) Load(ctx context.Context) error {
 	return nil
 }
 
+// notFoundShell renders the shared "Record not found" page both the edit
+// form and the detail screen answer a load failure with (unknown id, or
+// a row owner/tenant scoping hides from this caller). It replaces the
+// two duplicated empty-state blocks formerly inlined in
+// entityFormScreen.RenderCtx and entityDetailScreen.RenderCtx.
+func (b *Battery) notFoundShell(base string) render.HTML {
+	return b.shell(ui.Container(ui.ContainerConfig{Class: "admin-entity"},
+		ui.PageHeader(ui.PageHeaderConfig{Title: "Not found"}),
+		ui.EmptyState(ui.EmptyStateConfig{
+			Title:        "Record not found",
+			Description:  "It may have been deleted, or you may not have access.",
+			Action:       ui.Link(ui.LinkConfig{Href: base, Text: "Back to list", Variant: ui.LinkAction}),
+			HeadingLevel: 2,
+		}),
+	))
+}
+
 func (s *entityFormScreen) RenderCtx(ctx context.Context) render.HTML {
 	base := s.b.entityBase(s.ent)
 	if s.loadErr {
-		return s.b.shell(ui.Container(ui.ContainerConfig{Class: "admin-entity"},
-			ui.PageHeader(ui.PageHeaderConfig{Title: "Not found"}),
-			ui.EmptyState(ui.EmptyStateConfig{
-				Title:        "Record not found",
-				Description:  "It may have been deleted, or you may not have access.",
-				Action:       ui.Link(ui.LinkConfig{Href: base, Text: "Back to list", Variant: ui.LinkAction}),
-				HeadingLevel: 2,
-			}),
-		))
+		return s.b.notFoundShell(base)
 	}
 
 	action := base + "/_create"
@@ -946,15 +955,7 @@ func (s *entityDetailScreen) Load(ctx context.Context) error {
 func (s *entityDetailScreen) RenderCtx(_ context.Context) render.HTML {
 	base := s.b.entityBase(s.ent)
 	if s.loadErr || s.row == nil {
-		return s.b.shell(ui.Container(ui.ContainerConfig{Class: "admin-entity"},
-			ui.PageHeader(ui.PageHeaderConfig{Title: "Not found"}),
-			ui.EmptyState(ui.EmptyStateConfig{
-				Title:        "Record not found",
-				Description:  "It may have been deleted, or you may not have access.",
-				Action:       ui.Link(ui.LinkConfig{Href: base, Text: "Back to list", Variant: ui.LinkAction}),
-				HeadingLevel: 2,
-			}),
-		))
+		return s.b.notFoundShell(base)
 	}
 
 	// A definition list of every readable column (id first, timestamps last

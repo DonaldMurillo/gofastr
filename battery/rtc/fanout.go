@@ -24,6 +24,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core/fanout"
 	"github.com/DonaldMurillo/gofastr/core/stream"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
 // rtcFanoutTopic is the lane every replica of a deployment shares.
@@ -357,8 +358,8 @@ func (s *Signaler) localRoomLocked(roomName string) *room {
 func (s *Signaler) validRemotePeer(p PeerInfo) bool {
 	return printableToken(p.ID, 1, 64) &&
 		printableToken(p.Role, 0, 32) &&
-		len(p.User) <= 128 && !hasControlBytes(p.User) &&
-		len(p.DisplayName) <= 64 && !hasControlBytes(p.DisplayName) &&
+		len(p.User) <= 128 && !textsafe.HasControlBytes(p.User) &&
+		len(p.DisplayName) <= 64 && !textsafe.HasControlBytes(p.DisplayName) &&
 		(p.Status == nil || (len(p.Status) <= s.cfg.MaxStatusBytes && json.Valid(p.Status) && isObjectJSON(p.Status)))
 }
 

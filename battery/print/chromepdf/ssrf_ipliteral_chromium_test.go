@@ -3,7 +3,6 @@
 package chromepdf
 
 import (
-	"context"
 	"fmt"
 	"net"
 	"net/http"
@@ -11,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
 	"github.com/chromedp/chromedp"
 )
 
@@ -50,33 +50,9 @@ func TestResolverRulesBlockIPLiteral(t *testing.T) {
 	rules := hostResolverRules([]string{"fonts.example.com"})
 	t.Logf("host-resolver-rules = %q", rules)
 
-	allocOpts := append(chromedp.DefaultExecAllocatorOptions[:],
-		chromedp.Flag("host-resolver-rules", rules),
-		chromedp.Flag("headless", true),
-		chromedp.Flag("disable-gpu", true),
+	ctx := chromedptest.Context(t,
+		chromedptest.AllocatorOptions(chromedp.Flag("host-resolver-rules", rules)),
 	)
-	allocCtx, cancelAlloc := chromedp.NewExecAllocator(context.Background(), allocOpts...)
-	defer cancelAlloc()
-	ctx, cancel := chromedp.NewContext(allocCtx)
-	defer cancel()
-
-	// chromedp starts Chrome lazily on the first Run: allocate against the
-	// browser context so the browser's lifetime is the browser context's,
-	// passing a timeout context here would make the browser die when that
-	// deadline passed. The watchdog bounds only the startup wait.
-	started := make(chan error, 1)
-	go func() { started <- chromedp.Run(ctx) }()
-	select {
-	case err := <-started:
-		if err != nil {
-			t.Fatalf("chrome did not start: %v", err)
-		}
-	case <-time.After(90 * time.Second):
-		t.Fatal("chrome did not start within 90s")
-	}
-
-	ctx, cancelT := context.WithTimeout(ctx, 60*time.Second)
-	defer cancelT()
 
 	// A document that fetches the internal address, exactly as a malicious
 	// print payload would.

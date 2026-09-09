@@ -173,19 +173,29 @@ func (m *MemorySessionStore) Delete(_ context.Context, token string) error {
 	return nil
 }
 
+// purgeMatching deletes every entry of m for which match returns true and
+// returns the number deleted. The caller holds whatever lock guards m. It
+// replaces the duplicated delete-and-count loops formerly in
+// MemorySessionStore.DeleteByUser/Cleanup and
+// MemoryMagicLinkTokenStore.DeleteTokensForPayload/Cleanup, which differed
+// only in map type and predicate.
+func purgeMatching[K comparable, V any](m map[K]V, match func(V) bool) int {
+	n := 0
+	for k, v := range m {
+		if match(v) {
+			delete(m, k)
+			n++
+		}
+	}
+	return n
+}
+
 // DeleteByUser removes every session belonging to userID and returns the
 // count purged. Implements SessionUserPurger.
 func (m *MemorySessionStore) DeleteByUser(_ context.Context, userID string) (int, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	n := 0
-	for tok, sess := range m.sessions {
-		if sess.UserID == userID {
-			delete(m.sessions, tok)
-			n++
-		}
-	}
-	return n, nil
+	return purgeMatching(m.sessions, func(s *Session) bool { return s.UserID == userID }), nil
 }
 
 // MarkTwoFactorVerified flips TwoFactorVerified=true and clears
@@ -218,14 +228,7 @@ func (m *MemorySessionStore) Cleanup(_ context.Context) (int, error) {
 	now := time.Now()
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	n := 0
-	for tok, sess := range m.sessions {
-		if now.After(sess.ExpiresAt) {
-			delete(m.sessions, tok)
-			n++
-		}
-	}
-	return n, nil
+	return purgeMatching(m.sessions, func(s *Session) bool { return now.After(s.ExpiresAt) }), nil
 }
 
 // newSessionToken generates a 256-bit random token, base64-URL encoded.

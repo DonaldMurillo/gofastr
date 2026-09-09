@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
+	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
@@ -206,14 +207,7 @@ func (m *MemoryMagicLinkTokenStore) PeekToken(_ context.Context, token string) (
 func (m *MemoryMagicLinkTokenStore) DeleteTokensForPayload(_ context.Context, payload string) (int, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	n := 0
-	for tok, entry := range m.tokens {
-		if entry.email == payload {
-			delete(m.tokens, tok)
-			n++
-		}
-	}
-	return n, nil
+	return purgeMatching(m.tokens, func(e *magicLinkEntry) bool { return e.email == payload }), nil
 }
 
 // Cleanup removes all expired tokens and returns the count purged.
@@ -221,15 +215,7 @@ func (m *MemoryMagicLinkTokenStore) Cleanup(_ context.Context) (int, error) {
 	now := time.Now()
 	m.mu.Lock()
 	defer m.mu.Unlock()
-
-	n := 0
-	for tok, entry := range m.tokens {
-		if now.After(entry.expiresAt) {
-			delete(m.tokens, tok)
-			n++
-		}
-	}
-	return n, nil
+	return purgeMatching(m.tokens, func(e *magicLinkEntry) bool { return now.After(e.expiresAt) }), nil
 }
 
 // MagicLinkPlugin implements AuthPlugin and AuthPluginRoutes for passwordless
@@ -710,14 +696,14 @@ func generateRandomPassword(n int) (string, error) {
 
 // safeRedirectURL prevents open-redirect attacks by ensuring the URL is
 // a same-origin path, falling back to "/" when it is not. The grammar
-// is isSafeRelativePath (the battery's one safe-relative validator):
+// is handler.IsSafeRelativePath (the battery's one safe-relative validator):
 // raw backslash, percent-encoded backslash/control bytes, and C0
 // refusal included — browsers normalise '\' to '/' and decode
 // percent-escapes before navigating, so anything weaker re-opens the
 // cross-origin and header-injection shapes the form redirects already
 // refuse.
 func safeRedirectURL(u string) string {
-	if isSafeRelativePath(u) {
+	if handler.IsSafeRelativePath(u) {
 		return u
 	}
 	return "/"

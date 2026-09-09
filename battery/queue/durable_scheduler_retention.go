@@ -43,13 +43,30 @@ func (s *DurableScheduler) sweepOccurrences(ctx context.Context, now time.Time) 
 }
 
 func (s *DurableScheduler) ensureHardeningSchema() error {
-	if err := s.ensureScheduleVersionColumn(); err != nil {
+	// version: optimistic-concurrency fencing on schedules created
+	// before durable-scheduler plan fencing shipped.
+	if err := s.ensureScheduleColumns([]scheduleColumn{
+		{"version", "BIGINT", "0"},
+	}); err != nil {
 		return err
 	}
-	if err := s.ensureScheduleOptionsColumns(); err != nil {
+	// lane / priority / max_attempts: per-schedule options. All three
+	// are additive NOT NULL with defaults, so the change is safe on
+	// existing rows.
+	if err := s.ensureScheduleColumns([]scheduleColumn{
+		{"lane", "TEXT", "''"},
+		{"priority", "INTEGER", "0"},
+		{"max_attempts", "INTEGER", "0"},
+	}); err != nil {
 		return err
 	}
-	if err := s.ensureScheduleTZColumn(); err != nil {
+	// tz: the IANA location a cron schedule was registered in, so cron
+	// field evaluation happens in the schedule's wall-clock location
+	// instead of UTC. Additive NOT NULL DEFAULT '', so existing rows and
+	// interval schedules (which never consult tz) evaluate as before.
+	if err := s.ensureScheduleColumns([]scheduleColumn{
+		{"tz", "TEXT", "''"},
+	}); err != nil {
 		return err
 	}
 	for _, statement := range []string{
@@ -67,70 +84,30 @@ func (s *DurableScheduler) ensureHardeningSchema() error {
 	return nil
 }
 
-func (s *DurableScheduler) ensureScheduleVersionColumn() error {
-	table := s.queue.schedulerSchedulesTable()
-	if s.queue.dialect == dialectPostgres {
-		_, err := s.queue.db.Exec("ALTER TABLE " + table +
-			" ADD COLUMN IF NOT EXISTS version BIGINT NOT NULL DEFAULT 0")
-		return err
-	}
-
-	rows, err := s.queue.db.Query("PRAGMA table_info(" + table + ")")
-	if err != nil {
-		return err
-	}
-	found := false
-	for rows.Next() {
-		var cid, notNull, pk int
-		var name, typ string
-		var defaultValue any
-		if err := rows.Scan(&cid, &name, &typ, &notNull, &defaultValue, &pk); err != nil {
-			_ = rows.Close()
-			return err
-		}
-		if strings.EqualFold(name, "version") {
-			found = true
-		}
-	}
-	if err := rows.Err(); err != nil {
-		_ = rows.Close()
-		return err
-	}
-	if err := rows.Close(); err != nil {
-		return err
-	}
-	if found {
-		return nil
-	}
-	_, err = s.queue.db.Exec("ALTER TABLE " + table +
-		" ADD COLUMN version BIGINT NOT NULL DEFAULT 0")
-	if err != nil && isDuplicateColumnErr(err) {
-		return nil
-	}
-	return err
+// scheduleColumn names one additive column ensureScheduleColumns adds to
+// the schedules table: identifier, SQL type, default literal.
+type scheduleColumn struct {
+	name, typ, dflt string
 }
 
-// ensureScheduleOptionsColumns adds the per-schedule lane / priority /
-// max_attempts columns to a schedules table created before per-schedule
-// options shipped. Idempotent: Postgres uses ADD COLUMN IF NOT EXISTS, and
-// the SQLite path scans PRAGMA table_info first so we only ALTER when a
-// column is actually missing (matching ensureScheduleVersionColumn). All
-// three columns are additive NOT NULL with defaults, so the change is safe
-// on existing rows.
-func (s *DurableScheduler) ensureScheduleOptionsColumns() error {
+// ensureScheduleColumns idempotently adds the named columns to the
+// schedules table: Postgres uses ADD COLUMN IF NOT EXISTS; SQLite has no
+// such form, so it scans PRAGMA table_info first and ALTERs only the
+// missing columns, tolerating the duplicate-column race. It replaces the
+// three formerly duplicated column-ensure bodies in this file (the
+// version, lane/priority/max_attempts, and tz migrations), which shared
+// the same strategy and differed only in the column list.
+func (s *DurableScheduler) ensureScheduleColumns(want []scheduleColumn) error {
 	table := s.queue.schedulerSchedulesTable()
-	want := []struct {
-		name, typ, dflt string
-	}{
-		{"lane", "TEXT", "''"},
-		{"priority", "INTEGER", "0"},
-		{"max_attempts", "INTEGER", "0"},
-	}
 	if s.queue.dialect == dialectPostgres {
 		for _, c := range want {
+			ident, err := query.SafeIdent(c.name)
+			if err != nil {
+				return fmt.Errorf("queue: add column %q: %w", c.name, err)
+			}
 			if _, err := s.queue.db.Exec(fmt.Sprintf(
 				"ALTER TABLE %s ADD COLUMN IF NOT EXISTS %s %s NOT NULL DEFAULT %s",
-				table, c.name, c.typ, c.dflt)); err != nil {
+				table, ident, c.typ, c.dflt)); err != nil {
 				return err
 			}
 		}
@@ -164,63 +141,16 @@ func (s *DurableScheduler) ensureScheduleOptionsColumns() error {
 		if present[strings.ToLower(c.name)] {
 			continue
 		}
-		_, err := s.queue.db.Exec(fmt.Sprintf(
+		ident, err := query.SafeIdent(c.name)
+		if err != nil {
+			return fmt.Errorf("queue: add column %q: %w", c.name, err)
+		}
+		_, err = s.queue.db.Exec(fmt.Sprintf(
 			"ALTER TABLE %s ADD COLUMN %s %s NOT NULL DEFAULT %s",
-			table, c.name, c.typ, c.dflt))
+			table, ident, c.typ, c.dflt))
 		if err != nil && !isDuplicateColumnErr(err) {
 			return err
 		}
-	}
-	return nil
-}
-
-// ensureScheduleTZColumn adds the tz column that records the IANA location
-// name a cron schedule was registered in, so cron field evaluation happens
-// in the schedule's wall-clock location instead of UTC. Idempotent: Postgres
-// uses ADD COLUMN IF NOT EXISTS, and the SQLite path scans PRAGMA
-// table_info first so we only ALTER when the column is actually missing
-// (matching ensureScheduleVersionColumn / ensureScheduleOptionsColumns).
-// The column is additive NOT NULL DEFAULT ”, so existing rows, and
-// interval schedules, which never consult tz, evaluate exactly as before.
-func (s *DurableScheduler) ensureScheduleTZColumn() error {
-	table := s.queue.schedulerSchedulesTable()
-	if s.queue.dialect == dialectPostgres {
-		_, err := s.queue.db.Exec(fmt.Sprintf(
-			"ALTER TABLE %s ADD COLUMN IF NOT EXISTS tz TEXT NOT NULL DEFAULT ''",
-			table))
-		return err
-	}
-	rows, err := s.queue.db.Query("PRAGMA table_info(" + table + ")")
-	if err != nil {
-		return err
-	}
-	present := false
-	for rows.Next() {
-		var cid, notNull, pk int
-		var name, typ string
-		var dflt any
-		if err := rows.Scan(&cid, &name, &typ, &notNull, &dflt, &pk); err != nil {
-			_ = rows.Close()
-			return err
-		}
-		if strings.EqualFold(name, "tz") {
-			present = true
-		}
-	}
-	if err := rows.Err(); err != nil {
-		_ = rows.Close()
-		return err
-	}
-	if err := rows.Close(); err != nil {
-		return err
-	}
-	if present {
-		return nil
-	}
-	_, err = s.queue.db.Exec(fmt.Sprintf(
-		"ALTER TABLE %s ADD COLUMN tz TEXT NOT NULL DEFAULT ''", table))
-	if err != nil && !isDuplicateColumnErr(err) {
-		return err
 	}
 	return nil
 }

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"math"
 	"sort"
+	"strconv"
 	"sync"
 )
 
@@ -235,30 +236,7 @@ func errVecDim(want, got int) error {
 type dimError struct{ want, got int }
 
 func (e *dimError) Error() string {
-	return "semantic: vector dimension mismatch (want " + itoa(e.want) + ", got " + itoa(e.got) + ")"
-}
-
-func itoa(i int) string {
-	// keep store_flat.go free of fmt to minimise allocations in hot paths
-	if i == 0 {
-		return "0"
-	}
-	neg := i < 0
-	if neg {
-		i = -i
-	}
-	var b [20]byte
-	pos := len(b)
-	for i > 0 {
-		pos--
-		b[pos] = byte('0' + i%10)
-		i /= 10
-	}
-	if neg {
-		pos--
-		b[pos] = '-'
-	}
-	return string(b[pos:])
+	return "semantic: vector dimension mismatch (want " + strconv.Itoa(e.want) + ", got " + strconv.Itoa(e.got) + ")"
 }
 
 // compile-time assertion that FlatStore implements Store.

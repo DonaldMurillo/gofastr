@@ -14,90 +14,115 @@ import (
 	"time"
 )
 
-func TestCacheMiddleware_DoesNotCacheSetCookieResponses(t *testing.T) {
+// cacheReplayTest drives the shared skeleton of responses that must not be
+// cached: CacheMiddleware over a fresh MemoryCache around an origin whose
+// body is "<bodyPrefix>-<hit>" (distinct per origin run, so a replayed prime
+// is detectable). decorate may add response headers or cookies before the
+// status is written. One prime GET to path, then a probe GET to the same path.
+// It fails unless the probe bypassed the stored variant: no X-Cache: HIT and
+// a body different from the prime.
+func cacheReplayTest(t *testing.T, label string, decorate func(int, http.ResponseWriter), bodyPrefix, path string, status int) {
+	t.Helper()
 	store := NewMemoryCache()
 	var hits atomic.Int32
 	handler := CacheMiddleware(store, time.Minute)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		n := hits.Add(1)
-		http.SetCookie(w, &http.Cookie{Name: "session_id", Value: fmt.Sprintf("token-%d", n), Path: "/", HttpOnly: true})
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(fmt.Sprintf("request-%d", n)))
+		if decorate != nil {
+			decorate(int(n), w)
+		}
+		if status != 0 {
+			w.WriteHeader(status)
+		}
+		_, _ = w.Write([]byte(fmt.Sprintf("%s-%d", bodyPrefix, n)))
 	}))
 
-	req1 := httptest.NewRequest(http.MethodGet, "/account", nil)
 	rec1 := httptest.NewRecorder()
-	handler.ServeHTTP(rec1, req1)
+	handler.ServeHTTP(rec1, httptest.NewRequest(http.MethodGet, path, nil))
+	rec2 := httptest.NewRecorder()
+	handler.ServeHTTP(rec2, httptest.NewRequest(http.MethodGet, path, nil))
 
-	req2 := httptest.NewRequest(http.MethodGet, "/account", nil)
+	if rec2.Header().Get("X-Cache") == "HIT" || rec2.Body.String() == rec1.Body.String() {
+		t.Fatalf("SECURITY: [cache] %s. body1=%q body2=%q", label, rec1.Body.String(), rec2.Body.String())
+	}
+}
+
+// cacheHeaderPair drives the shared skeleton of Vary and credential-pair
+// tests: CacheMiddleware over a fresh MemoryCache around an origin that
+// echoes req.Header.Get(header) into its body. When setVary is true, the
+// origin declares that header in Vary. When failOnHit is true, the
+// credential-bearing request must run the origin instead of merely selecting
+// a separate cached variant.
+func cacheHeaderPair(t *testing.T, label, header, path, v1, v2, bodyPrefix string, setVary, failOnHit bool) {
+	t.Helper()
+	store := NewMemoryCache()
+	handler := CacheMiddleware(store, time.Minute)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if setVary {
+			w.Header().Set("Vary", header)
+		}
+		_, _ = w.Write([]byte(bodyPrefix + r.Header.Get(header)))
+	}))
+
+	req1 := httptest.NewRequest(http.MethodGet, path, nil)
+	req1.Header.Set(header, v1)
+	handler.ServeHTTP(httptest.NewRecorder(), req1)
+
+	req2 := httptest.NewRequest(http.MethodGet, path, nil)
+	req2.Header.Set(header, v2)
+	rec2 := httptest.NewRecorder()
+	handler.ServeHTTP(rec2, req2)
+
+	if (failOnHit && rec2.Header().Get("X-Cache") == "HIT") || rec2.Body.String() != bodyPrefix+v2 {
+		t.Fatalf("SECURITY: [cache] %s: second response = %q (X-Cache=%q), want %q", label, rec2.Body.String(), rec2.Header().Get("X-Cache"), bodyPrefix+v2)
+	}
+}
+
+// cacheRequestDirectiveTest drives the shared skeleton of request directives
+// that bypass a stored response. It primes a cacheable response, then sends a
+// second request with directive and requires a fresh body.
+func cacheRequestDirectiveTest(t *testing.T, label, directive, bodyPrefix string) {
+	t.Helper()
+	store := NewMemoryCache()
+	var hits atomic.Int32
+	handler := CacheMiddleware(store, time.Minute)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n := hits.Add(1)
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(fmt.Sprintf("%s-%d", bodyPrefix, n)))
+	}))
+
+	rec1 := httptest.NewRecorder()
+	handler.ServeHTTP(rec1, httptest.NewRequest(http.MethodGet, "/refresh", nil))
+
+	req2 := httptest.NewRequest(http.MethodGet, "/refresh", nil)
+	req2.Header.Set("Cache-Control", directive)
 	rec2 := httptest.NewRecorder()
 	handler.ServeHTTP(rec2, req2)
 
 	if rec2.Header().Get("X-Cache") == "HIT" || rec2.Body.String() == rec1.Body.String() {
-		t.Fatalf("SECURITY: [cache] response with Set-Cookie was cached and replayed. body1=%q body2=%q cookie2=%q", rec1.Body.String(), rec2.Body.String(), rec2.Header().Get("Set-Cookie"))
+		t.Fatalf("SECURITY: [cache] %s. body1=%q body2=%q", label, rec1.Body.String(), rec2.Body.String())
 	}
+}
+
+func TestCacheMiddleware_DoesNotCacheSetCookieResponses(t *testing.T) {
+	cacheReplayTest(t, "response with Set-Cookie was cached and replayed", func(n int, w http.ResponseWriter) {
+		http.SetCookie(w, &http.Cookie{Name: "session_id", Value: fmt.Sprintf("token-%d", n), Path: "/", HttpOnly: true})
+	}, "request", "/account", http.StatusOK)
 }
 
 func TestCacheMiddleware_DoesNotCachePrivateResponses(t *testing.T) {
-	store := NewMemoryCache()
-	var hits atomic.Int32
-	handler := CacheMiddleware(store, time.Minute)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		n := hits.Add(1)
+	cacheReplayTest(t, "Cache-Control: private response was cached and replayed", func(_ int, w http.ResponseWriter) {
 		w.Header().Set("Cache-Control", "private, max-age=60")
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(fmt.Sprintf("private-%d", n)))
-	}))
-
-	rec1 := httptest.NewRecorder()
-	handler.ServeHTTP(rec1, httptest.NewRequest(http.MethodGet, "/profile", nil))
-	rec2 := httptest.NewRecorder()
-	handler.ServeHTTP(rec2, httptest.NewRequest(http.MethodGet, "/profile", nil))
-
-	if rec2.Header().Get("X-Cache") == "HIT" || rec2.Body.String() == rec1.Body.String() {
-		t.Fatalf("SECURITY: [cache] Cache-Control: private response was cached and replayed. body1=%q body2=%q", rec1.Body.String(), rec2.Body.String())
-	}
+	}, "private", "/profile", http.StatusOK)
 }
 
 func TestCacheMiddleware_DoesNotCacheNoStoreResponses(t *testing.T) {
-	store := NewMemoryCache()
-	var hits atomic.Int32
-	handler := CacheMiddleware(store, time.Minute)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		n := hits.Add(1)
+	cacheReplayTest(t, "Cache-Control: no-store response was cached and replayed", func(_ int, w http.ResponseWriter) {
 		w.Header().Set("Cache-Control", "no-store")
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(fmt.Sprintf("nostore-%d", n)))
-	}))
-
-	rec1 := httptest.NewRecorder()
-	handler.ServeHTTP(rec1, httptest.NewRequest(http.MethodGet, "/billing", nil))
-	rec2 := httptest.NewRecorder()
-	handler.ServeHTTP(rec2, httptest.NewRequest(http.MethodGet, "/billing", nil))
-
-	if rec2.Header().Get("X-Cache") == "HIT" || rec2.Body.String() == rec1.Body.String() {
-		t.Fatalf("SECURITY: [cache] Cache-Control: no-store response was cached and replayed. body1=%q body2=%q", rec1.Body.String(), rec2.Body.String())
-	}
+	}, "nostore", "/billing", http.StatusOK)
 }
 
 func TestCacheMiddleware_HonorsVaryAuthorization(t *testing.T) {
-	store := NewMemoryCache()
-	handler := CacheMiddleware(store, time.Minute)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Vary", "Authorization")
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("user=" + r.Header.Get("Authorization")))
-	}))
-
-	req1 := httptest.NewRequest(http.MethodGet, "/me", nil)
-	req1.Header.Set("Authorization", "Bearer alice")
-	rec1 := httptest.NewRecorder()
-	handler.ServeHTTP(rec1, req1)
-
-	req2 := httptest.NewRequest(http.MethodGet, "/me", nil)
-	req2.Header.Set("Authorization", "Bearer bob")
-	rec2 := httptest.NewRecorder()
-	handler.ServeHTTP(rec2, req2)
-
-	if rec2.Body.String() != "user=Bearer bob" {
-		t.Fatalf("SECURITY: [cache] cache key ignored Vary: Authorization and replayed another user's variant: %q", rec2.Body.String())
-	}
+	cacheHeaderPair(t, "cache key ignored Vary: Authorization and replayed another user's variant",
+		"Authorization", "/me", "Bearer alice", "Bearer bob", "user=", true, false)
 }
 
 func TestCacheMiddleware_DoesNotCacheVaryStar(t *testing.T) {
@@ -145,177 +170,44 @@ func TestCacheMiddleware_DoesNotCacheVaryStar(t *testing.T) {
 }
 
 func TestCacheMiddleware_DoesNotCacheNoCacheResponses(t *testing.T) {
-	store := NewMemoryCache()
-	var hits atomic.Int32
-	handler := CacheMiddleware(store, time.Minute)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		n := hits.Add(1)
+	cacheReplayTest(t, "Cache-Control: no-cache response was cached and replayed", func(_ int, w http.ResponseWriter) {
 		w.Header().Set("Cache-Control", "no-cache")
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(fmt.Sprintf("nocache-%d", n)))
-	}))
-
-	rec1 := httptest.NewRecorder()
-	handler.ServeHTTP(rec1, httptest.NewRequest(http.MethodGet, "/statement", nil))
-	rec2 := httptest.NewRecorder()
-	handler.ServeHTTP(rec2, httptest.NewRequest(http.MethodGet, "/statement", nil))
-
-	if rec2.Header().Get("X-Cache") == "HIT" || rec2.Body.String() == rec1.Body.String() {
-		t.Fatalf("SECURITY: [cache] Cache-Control: no-cache response was cached and replayed. body1=%q body2=%q", rec1.Body.String(), rec2.Body.String())
-	}
+	}, "nocache", "/statement", http.StatusOK)
 }
 
 func TestCacheMiddleware_HonorsVaryCookie(t *testing.T) {
-	store := NewMemoryCache()
-	handler := CacheMiddleware(store, time.Minute)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Vary", "Cookie")
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("cookie=" + r.Header.Get("Cookie")))
-	}))
-
-	req1 := httptest.NewRequest(http.MethodGet, "/dashboard", nil)
-	req1.Header.Set("Cookie", "session=alice")
-	rec1 := httptest.NewRecorder()
-	handler.ServeHTTP(rec1, req1)
-
-	req2 := httptest.NewRequest(http.MethodGet, "/dashboard", nil)
-	req2.Header.Set("Cookie", "session=bob")
-	rec2 := httptest.NewRecorder()
-	handler.ServeHTTP(rec2, req2)
-
-	if rec2.Body.String() != "cookie=session=bob" {
-		t.Fatalf("SECURITY: [cache] cache key ignored Vary: Cookie and replayed another session's variant: %q", rec2.Body.String())
-	}
+	cacheHeaderPair(t, "cache key ignored Vary: Cookie and replayed another session's variant",
+		"Cookie", "/dashboard", "session=alice", "session=bob", "cookie=", true, false)
 }
 
 func TestCacheMiddleware_DoesNotCacheAuthorizationRequestsByDefault(t *testing.T) {
-	store := NewMemoryCache()
-	handler := CacheMiddleware(store, time.Minute)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("auth=" + r.Header.Get("Authorization")))
-	}))
-
-	req1 := httptest.NewRequest(http.MethodGet, "/me", nil)
-	req1.Header.Set("Authorization", "Bearer alice")
-	rec1 := httptest.NewRecorder()
-	handler.ServeHTTP(rec1, req1)
-
-	req2 := httptest.NewRequest(http.MethodGet, "/me", nil)
-	req2.Header.Set("Authorization", "Bearer bob")
-	rec2 := httptest.NewRecorder()
-	handler.ServeHTTP(rec2, req2)
-
-	if rec2.Header().Get("X-Cache") == "HIT" || rec2.Body.String() != "auth=Bearer bob" {
-		t.Fatalf("SECURITY: [cache] middleware cached Authorization-bearing request by default and replayed %q", rec2.Body.String())
-	}
+	cacheHeaderPair(t, "middleware cached Authorization-bearing request by default",
+		"Authorization", "/me", "Bearer alice", "Bearer bob", "auth=", false, true)
 }
 
 func TestCacheMiddleware_DoesNotCacheCookieAuthenticatedRequestsByDefault(t *testing.T) {
-	store := NewMemoryCache()
-	handler := CacheMiddleware(store, time.Minute)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("cookie=" + r.Header.Get("Cookie")))
-	}))
-
-	req1 := httptest.NewRequest(http.MethodGet, "/account", nil)
-	req1.Header.Set("Cookie", "session=alice")
-	rec1 := httptest.NewRecorder()
-	handler.ServeHTTP(rec1, req1)
-
-	req2 := httptest.NewRequest(http.MethodGet, "/account", nil)
-	req2.Header.Set("Cookie", "session=bob")
-	rec2 := httptest.NewRecorder()
-	handler.ServeHTTP(rec2, req2)
-
-	if rec2.Header().Get("X-Cache") == "HIT" || rec2.Body.String() != "cookie=session=bob" {
-		t.Fatalf("SECURITY: [cache] middleware cached cookie-authenticated request by default and replayed %q", rec2.Body.String())
-	}
+	cacheHeaderPair(t, "middleware cached cookie-authenticated request by default",
+		"Cookie", "/account", "session=alice", "session=bob", "cookie=", false, true)
 }
 
 func TestCacheMiddleware_DoesNotCacheServerErrors(t *testing.T) {
-	store := NewMemoryCache()
-	var hits atomic.Int32
-	handler := CacheMiddleware(store, time.Minute)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		n := hits.Add(1)
-		w.WriteHeader(http.StatusInternalServerError)
-		_, _ = w.Write([]byte(fmt.Sprintf("db-down-%d", n)))
-	}))
-
-	rec1 := httptest.NewRecorder()
-	handler.ServeHTTP(rec1, httptest.NewRequest(http.MethodGet, "/healthz", nil))
-	rec2 := httptest.NewRecorder()
-	handler.ServeHTTP(rec2, httptest.NewRequest(http.MethodGet, "/healthz", nil))
-
-	if rec2.Header().Get("X-Cache") == "HIT" || rec2.Body.String() == rec1.Body.String() {
-		t.Fatalf("SECURITY: [cache] 500 response was cached and replayed. body1=%q body2=%q", rec1.Body.String(), rec2.Body.String())
-	}
+	cacheReplayTest(t, "500 response was cached and replayed", nil,
+		"db-down", "/healthz", http.StatusInternalServerError)
 }
 
 func TestCacheMiddleware_HonorsVaryAcceptLanguage(t *testing.T) {
-	store := NewMemoryCache()
-	handler := CacheMiddleware(store, time.Minute)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Vary", "Accept-Language")
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("lang=" + r.Header.Get("Accept-Language")))
-	}))
-
-	req1 := httptest.NewRequest(http.MethodGet, "/landing", nil)
-	req1.Header.Set("Accept-Language", "en-US")
-	rec1 := httptest.NewRecorder()
-	handler.ServeHTTP(rec1, req1)
-
-	req2 := httptest.NewRequest(http.MethodGet, "/landing", nil)
-	req2.Header.Set("Accept-Language", "fr-FR")
-	rec2 := httptest.NewRecorder()
-	handler.ServeHTTP(rec2, req2)
-
-	if rec2.Body.String() != "lang=fr-FR" {
-		t.Fatalf("SECURITY: [cache] cache key ignored Vary: Accept-Language and replayed another locale's variant: %q", rec2.Body.String())
-	}
+	cacheHeaderPair(t, "cache key ignored Vary: Accept-Language and replayed another locale's variant",
+		"Accept-Language", "/landing", "en-US", "fr-FR", "lang=", true, false)
 }
 
 func TestCacheMiddleware_HonorsVaryOrigin(t *testing.T) {
-	store := NewMemoryCache()
-	handler := CacheMiddleware(store, time.Minute)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Vary", "Origin")
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("origin=" + r.Header.Get("Origin")))
-	}))
-
-	req1 := httptest.NewRequest(http.MethodGet, "/cors", nil)
-	req1.Header.Set("Origin", "https://alice.example")
-	rec1 := httptest.NewRecorder()
-	handler.ServeHTTP(rec1, req1)
-
-	req2 := httptest.NewRequest(http.MethodGet, "/cors", nil)
-	req2.Header.Set("Origin", "https://bob.example")
-	rec2 := httptest.NewRecorder()
-	handler.ServeHTTP(rec2, req2)
-
-	if rec2.Body.String() != "origin=https://bob.example" {
-		t.Fatalf("SECURITY: [cache] cache key ignored Vary: Origin and replayed another origin's variant: %q", rec2.Body.String())
-	}
+	cacheHeaderPair(t, "cache key ignored Vary: Origin and replayed another origin's variant",
+		"Origin", "/cors", "https://alice.example", "https://bob.example", "origin=", true, false)
 }
 
 func TestCacheMiddleware_RequestNoCacheBypassesStoredVariant(t *testing.T) {
-	store := NewMemoryCache()
-	var hits atomic.Int32
-	handler := CacheMiddleware(store, time.Minute)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		n := hits.Add(1)
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(fmt.Sprintf("refresh-%d", n)))
-	}))
-
-	rec1 := httptest.NewRecorder()
-	handler.ServeHTTP(rec1, httptest.NewRequest(http.MethodGet, "/refresh", nil))
-
-	req2 := httptest.NewRequest(http.MethodGet, "/refresh", nil)
-	req2.Header.Set("Cache-Control", "no-cache")
-	rec2 := httptest.NewRecorder()
-	handler.ServeHTTP(rec2, req2)
-
-	if rec2.Header().Get("X-Cache") == "HIT" || rec2.Body.String() == rec1.Body.String() {
-		t.Fatalf("SECURITY: [cache] request Cache-Control: no-cache did not bypass stored variant. body1=%q body2=%q", rec1.Body.String(), rec2.Body.String())
-	}
+	cacheRequestDirectiveTest(t, "request Cache-Control: no-cache did not bypass stored variant",
+		"no-cache", "refresh")
 }
 
 func TestCacheMiddleware_RangeDoesNotPoisonFullGet(t *testing.T) {
@@ -393,25 +285,8 @@ func TestCacheMiddleware_DoesNotLeakAcrossHosts(t *testing.T) {
 }
 
 func TestCacheMiddleware_RequestNoStoreBypassesStoredVariant(t *testing.T) {
-	store := NewMemoryCache()
-	var hits atomic.Int32
-	handler := CacheMiddleware(store, time.Minute)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		n := hits.Add(1)
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(fmt.Sprintf("nostore-req-%d", n)))
-	}))
-
-	rec1 := httptest.NewRecorder()
-	handler.ServeHTTP(rec1, httptest.NewRequest(http.MethodGet, "/refresh", nil))
-
-	req2 := httptest.NewRequest(http.MethodGet, "/refresh", nil)
-	req2.Header.Set("Cache-Control", "no-store")
-	rec2 := httptest.NewRecorder()
-	handler.ServeHTTP(rec2, req2)
-
-	if rec2.Header().Get("X-Cache") == "HIT" || rec2.Body.String() == rec1.Body.String() {
-		t.Fatalf("SECURITY: [cache] request Cache-Control: no-store did not bypass stored variant. body1=%q body2=%q", rec1.Body.String(), rec2.Body.String())
-	}
+	cacheRequestDirectiveTest(t, "request Cache-Control: no-store did not bypass stored variant",
+		"no-store", "nostore-req")
 }
 
 // An embed grant is an app credential: framework/embed's middleware resolves it

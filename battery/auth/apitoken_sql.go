@@ -53,21 +53,14 @@ func WithAPITokenTable(name string) SQLAPITokenStoreOption {
 // the store. Table-name options are validated like the battery's other
 // stores; schema is ensured at construction.
 func NewSQLAPITokenStore(db *sql.DB, opts ...SQLAPITokenStoreOption) (*SQLAPITokenStore, error) {
-	if db == nil {
-		return nil, fmt.Errorf("auth: NewSQLAPITokenStore: db is nil")
-	}
 	c := sqlAPITokenStoreConfig{table: "auth_api_tokens"}
 	for _, o := range opts {
 		o(&c)
 	}
-	if _, err := query.SafeIdent(c.table); err != nil {
-		return nil, fmt.Errorf("auth: api-token table %q: %w", c.table, err)
-	}
-	s := &SQLAPITokenStore{db: db, table: c.table}
-	if err := s.ensureSchema(context.Background()); err != nil {
-		return nil, fmt.Errorf("auth: create api-token table: %w", err)
-	}
-	return s, nil
+	return initSQLStore(db, "NewSQLAPITokenStore", "api-token", c.table,
+		func(db *sql.DB, table string) *SQLAPITokenStore { return &SQLAPITokenStore{db: db, table: table} },
+		func(s *SQLAPITokenStore) error { return s.ensureSchema(context.Background()) },
+	)
 }
 
 func (s *SQLAPITokenStore) ensureSchema(ctx context.Context) error {
@@ -251,19 +244,36 @@ func WithServiceAccountTable(name string) SQLServiceAccountStoreOption {
 // NewSQLServiceAccountStore creates the service-account table (IF NOT
 // EXISTS) and returns the store.
 func NewSQLServiceAccountStore(db *sql.DB, opts ...SQLServiceAccountStoreOption) (*SQLServiceAccountStore, error) {
-	if db == nil {
-		return nil, fmt.Errorf("auth: NewSQLServiceAccountStore: db is nil")
-	}
 	c := sqlServiceAccountStoreConfig{table: "auth_service_accounts"}
 	for _, o := range opts {
 		o(&c)
 	}
-	if _, err := query.SafeIdent(c.table); err != nil {
-		return nil, fmt.Errorf("auth: service-account table %q: %w", c.table, err)
+	return initSQLStore(db, "NewSQLServiceAccountStore", "service-account", c.table,
+		func(db *sql.DB, table string) *SQLServiceAccountStore {
+			return &SQLServiceAccountStore{db: db, table: table}
+		},
+		func(s *SQLServiceAccountStore) error { return s.ensureSchema(context.Background()) },
+	)
+}
+
+// initSQLStore is the shared spine of the battery's option-style SQL
+// store constructors: nil-db guard, table-name validation,
+// construction, and schema-ensure, with the caller's constructor name
+// and store noun for the error messages. It replaces the duplicated
+// bodies of NewSQLAPITokenStore and NewSQLServiceAccountStore, which
+// differed only in identifiers and those message nouns. (Named
+// initSQLStore because the package's tests already own newSQLStore.)
+func initSQLStore[S any](db *sql.DB, ctorName, kind, table string, build func(db *sql.DB, table string) S, ensure func(S) error) (S, error) {
+	var zero S
+	if db == nil {
+		return zero, fmt.Errorf("auth: %s: db is nil", ctorName)
 	}
-	s := &SQLServiceAccountStore{db: db, table: c.table}
-	if err := s.ensureSchema(context.Background()); err != nil {
-		return nil, fmt.Errorf("auth: create service-account table: %w", err)
+	if _, err := query.SafeIdent(table); err != nil {
+		return zero, fmt.Errorf("auth: %s table %q: %w", kind, table, err)
+	}
+	s := build(db, table)
+	if err := ensure(s); err != nil {
+		return zero, fmt.Errorf("auth: create %s table: %w", kind, err)
 	}
 	return s, nil
 }

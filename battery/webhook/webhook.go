@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/backoff"
+	"github.com/DonaldMurillo/gofastr/core/netguard"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
@@ -316,7 +317,7 @@ func New(s Store, opts Options) *Manager {
 			CheckRedirect: func(*http.Request, []*http.Request) error {
 				return http.ErrUseLastResponse
 			},
-			Transport: ssrfGuardedTransport(opts.AllowPrivateNetworks),
+			Transport: netguard.GuardedTransport(opts.AllowPrivateNetworks, "webhook"),
 		}
 	} else if !opts.AllowPrivateNetworks {
 		// A caller-supplied client (proxy, tracing, custom timeout) must

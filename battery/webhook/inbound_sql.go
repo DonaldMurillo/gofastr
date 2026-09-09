@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/core/query"
 )
 
 // SQLInboundStore is a SQL-backed InboundStore. It mirrors SQLStore's
@@ -65,14 +67,11 @@ func NewSQLInboundStore(db *sql.DB, opts ...InboundSQLOption) (*SQLInboundStore,
 	for _, opt := range opts {
 		opt(s)
 	}
-	if !safeIdent(s.table) {
+	if !query.SafeTableName(s.table) {
 		return nil, errors.New("webhook: unsafe inbound table name")
 	}
-	var v string
-	if err := db.QueryRow("SELECT version()").Scan(&v); err == nil {
-		if strings.Contains(strings.ToLower(v), "postgresql") {
-			s.dialect = "postgres"
-		}
+	if query.IsPostgres(db) {
+		s.dialect = "postgres"
 	}
 	if err := s.ensureTable(); err != nil {
 		return nil, fmt.Errorf("ensure inbound table: %w", err)
@@ -278,14 +277,10 @@ func (s *SQLInboundStore) SeenDedupeKey(ctx context.Context, source, key string)
 // post-mortem both want the payload), so only unambiguous terminal
 // success is reaped.
 func (s *SQLInboundStore) ReapTerminalBefore(ctx context.Context, cutoff time.Time) (int64, error) {
-	q := fmt.Sprintf(`DELETE FROM %s WHERE status = %s AND updated_at < %s`,
-		s.table, s.placeholder(1), s.placeholder(2))
-	res, err := s.db.ExecContext(ctx, q, string(InboundStatusProcessed), cutoff)
-	if err != nil {
-		return 0, err
-	}
-	n, _ := res.RowsAffected()
-	return n, nil
+	return reapTerminalSQL(ctx, s.db, fmt.Sprintf(
+		`DELETE FROM %s WHERE status = %s AND updated_at < %s`,
+		s.table, s.placeholder(1), s.placeholder(2)),
+		string(InboundStatusProcessed), cutoff)
 }
 
 // ----- statements -----------------------------------------------------------

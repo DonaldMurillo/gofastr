@@ -212,7 +212,7 @@ func TestSQLInbound_UnsafeTableRejected(t *testing.T) {
 		t.Fatalf("open: %v", err)
 	}
 	defer db.Close()
-	// SQL injection attempt via table name, safeIdent must reject it.
+	// SQL injection attempt via table name, query.SafeTableName must reject it.
 	if _, err := NewSQLInboundStore(db, WithInboundTable("t; DROP TABLE x")); err == nil {
 		t.Errorf("expected error for unsafe table name")
 	}

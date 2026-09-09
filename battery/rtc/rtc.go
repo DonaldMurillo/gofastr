@@ -46,6 +46,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/fanout"
 	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/core/stream"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"github.com/DonaldMurillo/gofastr/framework"
 )
 
@@ -377,10 +378,10 @@ func validJoin(j Join) error {
 	if !printableToken(j.PeerID, 0, 64) {
 		return fmt.Errorf("rtc: Join.PeerID must be 0-64 bytes of printable ASCII without whitespace")
 	}
-	if len(j.User) > 128 || hasControlBytes(j.User) {
+	if len(j.User) > 128 || textsafe.HasControlBytes(j.User) {
 		return fmt.Errorf("rtc: Join.User must be 0-128 bytes without control bytes")
 	}
-	if len(j.DisplayName) > 64 || hasControlBytes(j.DisplayName) {
+	if len(j.DisplayName) > 64 || textsafe.HasControlBytes(j.DisplayName) {
 		return fmt.Errorf("rtc: Join.DisplayName must be 0-64 bytes without control bytes")
 	}
 	return nil
@@ -398,16 +399,6 @@ func printableToken(s string, min, max int) bool {
 		}
 	}
 	return true
-}
-
-// hasControlBytes reports whether s carries a C0 control byte or DEL.
-func hasControlBytes(s string) bool {
-	for i := range len(s) {
-		if s[i] < 0x20 || s[i] == 0x7f {
-			return true
-		}
-	}
-	return false
 }
 
 // scrubLogField strips C0 control bytes and DEL so a room name or peer
