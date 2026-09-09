@@ -690,15 +690,37 @@ func phaseWindowState(t desktoptest.TB, h *desktoptest.NativeHarness) {
 	h.Wait("the framed window to close", func() bool { return h.Window("settings") == nil })
 }
 
+// wantKeyChange waits for the page's event recorder to hold, from
+// index from on, a window_blur for blurred and a window_focus for
+// focused: the two delegate notifications cross into the battery on
+// separate goroutines, so their delivery order is not fixed.
+func wantKeyChange(h *desktoptest.NativeHarness, from int, blurred, focused string) {
+	h.Wait("the key change to "+focused+" to reach the page", func() bool {
+		var sawBlur, sawFocus bool
+		for _, e := range h.Events()[from:] {
+			var p struct {
+				ID string `json:"id"`
+			}
+			if e.Name == "window_blur" && json.Unmarshal(e.Payload, &p) == nil && p.ID == blurred {
+				sawBlur = true
+			}
+			if e.Name == "window_focus" && json.Unmarshal(e.Payload, &p) == nil && p.ID == focused {
+				sawFocus = true
+			}
+		}
+		return sawBlur && sawFocus
+	})
+}
+
 // phaseWindowChrome: a secondary window with the full phase 13 chrome
 // contract (MaterialSidebar, ChromeUnified, a traffic-light inset, a
 // sidebar width). Every assertion reads the OS's own WindowState off
 // the live objects; SetSidebarWidth and the page's setChrome both move
 // the zone; the Reduce Transparency read matches the OS defaults
-// domain; the focus events reach the page across a deactivate and
-// reactivate, and the id gate keeps another window's focus from
-// clearing this page's inactive class; the CGWindowID capture is the
-// pixel proof.
+// domain; the focus events reach the page across key-window changes
+// between two windows the app owns, and the id gate keeps another
+// window's focus from clearing this page's inactive class; the
+// CGWindowID capture is the pixel proof.
 func phaseWindowChrome(t desktoptest.TB, h *desktoptest.NativeHarness) {
 	w, err := h.Battery.OpenWindow(desktop.WindowSpec{
 		Path:   "/chrome",
@@ -777,51 +799,40 @@ func phaseWindowChrome(t desktoptest.TB, h *desktoptest.NativeHarness) {
 	}
 	t.Logf("Reduce Transparency matches the OS: %v", osOn)
 
-	// Focus events reach the page across a deactivate/reactivate, the
-	// user's app-switch shape.
+	// Focus events reach the page across key-window changes between
+	// two windows the app owns, the user's window-click shape: AppKit
+	// delivers windowDidResignKey:/windowDidBecomeKey: for those with
+	// no app activation, and app activation is not a lever this test
+	// binary can pull (it is not the frontmost app; the window server
+	// accepts the activation and never hands key back).
+	// Opening this window made it key (OpenWindow's
+	// makeKeyAndOrderFront:), so main taking key back is the first
+	// transition, and every one of them is asserted through the
+	// events.
 	h.RecordEvents(t, "window_focus", "window_blur")
-	h.DeactivateReactivate()
-	ev := h.WaitEvent("window_blur")
-	var blurID struct {
-		ID string `json:"id"`
-	}
-	if err := ev.Unmarshal(&blurID); err != nil || blurID.ID != id {
-		t.Fatalf("window_blur payload = %s, want id %q", ev.Payload, id)
-	}
-	if os.Getenv("GOFASTR_CHROME_DEBUG") != "" {
-		time.Sleep(700 * time.Millisecond)
-		for _, dbg := range []string{id, "main"} {
-			if ds, derr := h.WindowState(dbg); derr == nil {
-				t.Logf("DEBUG after switch: %s key=%v visible=%v", dbg, ds.Key, ds.Visible)
-			}
-		}
-		if err := w.Focus(); err != nil {
-			t.Logf("DEBUG Focus: %v", err)
-		}
-		time.Sleep(700 * time.Millisecond)
-		evs := h.Events()
-		names := make([]string, 0, len(evs))
-		for _, e := range evs {
-			names = append(names, e.Name)
-		}
-		t.Logf("DEBUG events so far: %v", names)
-	}
-	ev = h.WaitEvent("window_focus")
-	var focusID struct {
-		ID string `json:"id"`
-	}
-	if err := ev.Unmarshal(&focusID); err != nil || focusID.ID != id {
-		t.Fatalf("window_focus payload = %s, want id %q", ev.Payload, id)
-	}
+	base := len(h.Events())
+	h.MakeKey("main")
+	wantKeyChange(h, base, id, "main")
+
+	// This window taking key back blurs main and reports its own
+	// focus.
+	base = len(h.Events())
+	h.MakeKey(id)
+	wantKeyChange(h, base, "main", id)
 
 	// The id gate, behaviorally: the MAIN page carries desktop-inactive
-	// (it lost key when this window opened) even though this window's
+	// (it lost key to this window) even though this window's
 	// window_focus event reaches every page.
 	var inactive bool
 	h.EvalInto(t, "return document.documentElement.classList.contains('desktop-inactive')", &inactive)
 	if !inactive {
 		t.Fatal("main page lacks desktop-inactive while another window holds key; the focus classes must be gated on the event's window id")
 	}
+
+	// Making main key again reports its own focus.
+	base = len(h.Events())
+	h.MakeKey("main")
+	wantKeyChange(h, base, id, "main")
 
 	// The pixel proof: capture this window by its CGWindowID.
 	if dir := os.Getenv("GOFASTR_DESKTOP_PROOF_DIR"); dir != "" {
