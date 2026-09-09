@@ -150,6 +150,8 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/astx"
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/pathflow"
 	"golang.org/x/tools/go/analysis"
 )
 
@@ -205,7 +207,7 @@ func run(pass *analysis.Pass) (any, error) {
 
 	carrying := carryingStructs(pass, decls)
 	for _, f := range pass.Files {
-		if isTestFile(pass, f) {
+		if pathflow.IsTestFile(pass, f) {
 			// Tests are not production sinks; a control byte in a
 			// test's log line fails nothing that ships.
 			continue
@@ -267,8 +269,8 @@ func walkStmt(pass *analysis.Pass, decls map[types.Object]*ast.FuncDecl, carryin
 			return true
 		case *ast.AssignStmt:
 			for _, lhs := range n.Lhs {
-				if sel, ok := unparen(lhs).(*ast.SelectorExpr); ok && sel.Sel.Name == "Detail" {
-					checkDetailValue(pass, t, guards, unparen(n.Rhs[0]), n.Pos())
+				if sel, ok := ast.Unparen(lhs).(*ast.SelectorExpr); ok && sel.Sel.Name == "Detail" {
+					checkDetailValue(pass, t, guards, ast.Unparen(n.Rhs[0]), n.Pos())
 				}
 			}
 			return true
@@ -278,7 +280,7 @@ func walkStmt(pass *analysis.Pass, decls map[types.Object]*ast.FuncDecl, carryin
 					continue
 				}
 				for _, arg := range s.args(t, n) {
-					if id, ok := unparen(arg).(*ast.Ident); ok {
+					if id, ok := ast.Unparen(arg).(*ast.Ident); ok {
 						if testedAt(guards[pass.TypesInfo.ObjectOf(id)], n.Pos()) {
 							// The value already passed a validator or
 							// an enclosing allowlist on its way here;
@@ -338,7 +340,7 @@ func testedValues(pass *analysis.Pass, body *ast.BlockStmt) map[types.Object][]g
 		switch n := n.(type) {
 		case *ast.CallExpr:
 			var name string
-			switch fun := unparen(n.Fun).(type) {
+			switch fun := ast.Unparen(n.Fun).(type) {
 			case *ast.Ident:
 				name = fun.Name
 			case *ast.SelectorExpr:
@@ -348,7 +350,7 @@ func testedValues(pass *analysis.Pass, body *ast.BlockStmt) map[types.Object][]g
 				return true
 			}
 			for _, a := range n.Args {
-				if id, ok := unparen(a).(*ast.Ident); ok {
+				if id, ok := ast.Unparen(a).(*ast.Ident); ok {
 					if obj := pass.TypesInfo.ObjectOf(id); obj != nil {
 						out[obj] = append(out[obj], guard{pos: n.Pos()})
 					}
@@ -413,17 +415,17 @@ func markNegatedDenial(out map[types.Object][]guard, pass *analysis.Pass, ifst *
 		return
 	}
 	var idx *ast.IndexExpr
-	cond := unparen(ifst.Cond)
+	cond := ast.Unparen(ifst.Cond)
 	negated := false
 	if u, ok := cond.(*ast.UnaryExpr); ok && u.Op == token.NOT {
 		negated = true
-		cond = unparen(u.X)
+		cond = ast.Unparen(u.X)
 	}
 	// Comma-ok: `v, ok := m[k]` in Init, `!ok` in Cond.
 	if as, ok := ifst.Init.(*ast.AssignStmt); ok && len(as.Lhs) == 2 && len(as.Rhs) == 1 {
-		if i, ok := unparen(as.Rhs[0]).(*ast.IndexExpr); ok {
+		if i, ok := ast.Unparen(as.Rhs[0]).(*ast.IndexExpr); ok {
 			if okID, ok := as.Lhs[1].(*ast.Ident); ok && negated {
-				if id, ok := unparen(cond).(*ast.Ident); ok && pass.TypesInfo.ObjectOf(id) == pass.TypesInfo.ObjectOf(okID) {
+				if id, ok := ast.Unparen(cond).(*ast.Ident); ok && pass.TypesInfo.ObjectOf(id) == pass.TypesInfo.ObjectOf(okID) {
 					idx = i
 				}
 			}
@@ -465,7 +467,7 @@ func diverges(body *ast.BlockStmt) bool {
 		case *ast.ReturnStmt:
 			found = true
 		case *ast.CallExpr:
-			if id, ok := unparen(x.Fun).(*ast.Ident); ok && id.Name == "panic" {
+			if id, ok := ast.Unparen(x.Fun).(*ast.Ident); ok && id.Name == "panic" {
 				found = true
 			}
 		}
@@ -484,13 +486,13 @@ func carryingStructs(pass *analysis.Pass, decls map[types.Object]*ast.FuncDecl) 
 	carrying := map[*types.Named]map[string]bool{}
 	empty := map[*types.Named]map[string]bool{}
 	for _, f := range pass.Files {
-		if isTestFile(pass, f) {
+		if pathflow.IsTestFile(pass, f) {
 			continue
 		}
-		for _, fn := range funcsOf(pass, f) {
-			t := newTaint(pass, decls, empty, body(fn), nil)
+		for _, fn := range astx.AllFuncs(f) {
+			t := newTaint(pass, decls, empty, astx.BodyOf(fn), nil)
 			t.carryingPass = true
-			ast.Inspect(body(fn), func(n ast.Node) bool {
+			ast.Inspect(astx.BodyOf(fn), func(n ast.Node) bool {
 				lit, ok := n.(*ast.CompositeLit)
 				if !ok {
 					return true
@@ -528,34 +530,6 @@ func carryingStructs(pass *analysis.Pass, decls map[types.Object]*ast.FuncDecl) 
 	return carrying
 }
 
-// funcsOf yields the file's function declarations and literals.
-func funcsOf(pass *analysis.Pass, f *ast.File) []ast.Node {
-	var out []ast.Node
-	for _, d := range f.Decls {
-		if fn, ok := d.(*ast.FuncDecl); ok && fn.Body != nil {
-			out = append(out, fn)
-		}
-	}
-	ast.Inspect(f, func(n ast.Node) bool {
-		if lit, ok := n.(*ast.FuncLit); ok && lit.Body != nil {
-			out = append(out, lit)
-		}
-		return true
-	})
-	return out
-}
-
-// body returns the node's body (FuncDecl or FuncLit).
-func body(fn ast.Node) *ast.BlockStmt {
-	switch fn := fn.(type) {
-	case *ast.FuncDecl:
-		return fn.Body
-	case *ast.FuncLit:
-		return fn.Body
-	}
-	return nil
-}
-
 // ---- sinks -------------------------------------------------------------
 
 type sink struct {
@@ -572,11 +546,11 @@ var sinks = []sink{
 	{
 		name: "slog.String/slog.Any",
 		matches: func(t *taint, call *ast.CallExpr) bool {
-			sel, ok := unparen(call.Fun).(*ast.SelectorExpr)
+			sel, ok := ast.Unparen(call.Fun).(*ast.SelectorExpr)
 			if !ok {
 				return false
 			}
-			switch qualifiedFunc(t.pass, sel) {
+			switch astx.PkgFuncName(t.pass, sel) {
 			case "slog.String", "slog.Any":
 				return true
 			}
@@ -587,18 +561,18 @@ var sinks = []sink{
 	{
 		name: "attribute.String",
 		matches: func(t *taint, call *ast.CallExpr) bool {
-			sel, ok := unparen(call.Fun).(*ast.SelectorExpr)
+			sel, ok := ast.Unparen(call.Fun).(*ast.SelectorExpr)
 			if !ok {
 				return false
 			}
-			return qualifiedFunc(t.pass, sel) == "attribute.String"
+			return astx.PkgFuncName(t.pass, sel) == "attribute.String"
 		},
 		args: valueArg1,
 	},
 	{
 		name: "logger.Debug/Info/Warn/Error key-value",
 		matches: func(t *taint, call *ast.CallExpr) bool {
-			sel, ok := unparen(call.Fun).(*ast.SelectorExpr)
+			sel, ok := ast.Unparen(call.Fun).(*ast.SelectorExpr)
 			if !ok {
 				return false
 			}
@@ -612,28 +586,19 @@ var sinks = []sink{
 			if !ok {
 				return false
 			}
-			return isNamed(deref(tv.Type), "log/slog", "Logger")
+			return astx.IsNamed(astx.Deref(tv.Type), "log/slog", "Logger")
 		},
 		// Warn(msg, k1, v1, k2, v2): the message and the values sit at
 		// even offsets — msg at 0 for the plain form, 1 for *Context.
 		args: func(t *taint, call *ast.CallExpr) []ast.Expr {
-			sel, _ := unparen(call.Fun).(*ast.SelectorExpr)
-			start := 0
-			if sel != nil && strings.HasSuffix(sel.Sel.Name, "Context") {
-				start = 1
-			}
-			var out []ast.Expr
-			for i := start; i < len(call.Args); i += 2 {
-				out = append(out, call.Args[i])
-			}
-			return out
+			return astx.EvenOffsetArgs(call)
 		},
 	},
 	{
 		// Package-level slog.* writes to the default logger (stderr).
 		name: "slog.Debug/Info/Warn/Error key-value",
 		matches: func(t *taint, call *ast.CallExpr) bool {
-			sel, ok := unparen(call.Fun).(*ast.SelectorExpr)
+			sel, ok := ast.Unparen(call.Fun).(*ast.SelectorExpr)
 			if !ok {
 				return false
 			}
@@ -648,16 +613,7 @@ var sinks = []sink{
 		// msg, k1, v1: message and values at even offsets from 0; the
 		// *Context forms shift one for ctx.
 		args: func(t *taint, call *ast.CallExpr) []ast.Expr {
-			sel, _ := unparen(call.Fun).(*ast.SelectorExpr)
-			start := 0
-			if sel != nil && strings.HasSuffix(sel.Sel.Name, "Context") {
-				start = 1
-			}
-			var out []ast.Expr
-			for i := start; i < len(call.Args); i += 2 {
-				out = append(out, call.Args[i])
-			}
-			return out
+			return astx.EvenOffsetArgs(call)
 		},
 	},
 	{
@@ -665,7 +621,7 @@ var sinks = []sink{
 		// message and values at even offsets from 2.
 		name: "slog.Log key-value",
 		matches: func(t *taint, call *ast.CallExpr) bool {
-			sel, ok := unparen(call.Fun).(*ast.SelectorExpr)
+			sel, ok := ast.Unparen(call.Fun).(*ast.SelectorExpr)
 			if !ok || sel.Sel.Name != "Log" {
 				return false
 			}
@@ -673,7 +629,7 @@ var sinks = []sink{
 				return true
 			}
 			tv, ok := t.pass.TypesInfo.Types[sel.X]
-			return ok && isNamed(deref(tv.Type), "log/slog", "Logger")
+			return ok && astx.IsNamed(astx.Deref(tv.Type), "log/slog", "Logger")
 		},
 		args: func(t *taint, call *ast.CallExpr) []ast.Expr {
 			var out []ast.Expr
@@ -686,7 +642,7 @@ var sinks = []sink{
 	{
 		name: "http.Header.Set/Add",
 		matches: func(t *taint, call *ast.CallExpr) bool {
-			sel, ok := unparen(call.Fun).(*ast.SelectorExpr)
+			sel, ok := ast.Unparen(call.Fun).(*ast.SelectorExpr)
 			if !ok {
 				return false
 			}
@@ -697,7 +653,7 @@ var sinks = []sink{
 			if !ok {
 				return false
 			}
-			if !isNamed(deref(s.Recv()), "net/http", "Header") {
+			if !astx.IsNamed(astx.Deref(s.Recv()), "net/http", "Header") {
 				return false
 			}
 			// A header map provenance-typed to an OUTBOUND request is
@@ -710,7 +666,7 @@ var sinks = []sink{
 	{
 		name: "std log print",
 		matches: func(t *taint, call *ast.CallExpr) bool {
-			sel, ok := unparen(call.Fun).(*ast.SelectorExpr)
+			sel, ok := ast.Unparen(call.Fun).(*ast.SelectorExpr)
 			if !ok {
 				return false
 			}
@@ -725,7 +681,7 @@ var sinks = []sink{
 				return true
 			}
 			tv, ok := t.pass.TypesInfo.Types[sel.X]
-			return ok && isNamed(deref(tv.Type), "log", "Logger")
+			return ok && astx.IsNamed(astx.Deref(tv.Type), "log", "Logger")
 		},
 		args: func(t *taint, call *ast.CallExpr) []ast.Expr { return call.Args },
 	},
@@ -736,7 +692,7 @@ var sinks = []sink{
 		name: "smtp.Client.Mail/Rcpt",
 		seam: true,
 		matches: func(t *taint, call *ast.CallExpr) bool {
-			sel, ok := unparen(call.Fun).(*ast.SelectorExpr)
+			sel, ok := ast.Unparen(call.Fun).(*ast.SelectorExpr)
 			if !ok || (sel.Sel.Name != "Mail" && sel.Sel.Name != "Rcpt") {
 				return false
 			}
@@ -744,7 +700,7 @@ var sinks = []sink{
 			if !ok {
 				return false
 			}
-			return isNamed(deref(s.Recv()), "net/smtp", "Client")
+			return astx.IsNamed(astx.Deref(s.Recv()), "net/smtp", "Client")
 		},
 		args: func(t *taint, call *ast.CallExpr) []ast.Expr {
 			if len(call.Args) >= 1 {
@@ -762,7 +718,7 @@ var sinks = []sink{
 		name: "message header-line write",
 		seam: true,
 		matches: func(t *taint, call *ast.CallExpr) bool {
-			sel, ok := unparen(call.Fun).(*ast.SelectorExpr)
+			sel, ok := ast.Unparen(call.Fun).(*ast.SelectorExpr)
 			if !ok || (sel.Sel.Name != "WriteString" && sel.Sel.Name != "Write") {
 				return false
 			}
@@ -770,8 +726,8 @@ var sinks = []sink{
 			if !ok {
 				return false
 			}
-			recv := deref(s.Recv())
-			if !isNamed(recv, "strings", "Builder") && !isNamed(recv, "bytes", "Buffer") {
+			recv := astx.Deref(s.Recv())
+			if !astx.IsNamed(recv, "strings", "Builder") && !astx.IsNamed(recv, "bytes", "Buffer") {
 				return false
 			}
 			return len(call.Args) > 0 && headerShaped(call.Args[0])
@@ -783,7 +739,7 @@ var sinks = []sink{
 		// net/http hex-escapes non-ASCII but passes C0 and DEL raw.
 		name: "http.Redirect Location",
 		matches: func(t *taint, call *ast.CallExpr) bool {
-			sel, ok := unparen(call.Fun).(*ast.SelectorExpr)
+			sel, ok := ast.Unparen(call.Fun).(*ast.SelectorExpr)
 			if !ok || sel.Sel.Name != "Redirect" {
 				return false
 			}
@@ -799,11 +755,11 @@ var sinks = []sink{
 	{
 		name: "stdout/stderr print",
 		matches: func(t *taint, call *ast.CallExpr) bool {
-			sel, ok := unparen(call.Fun).(*ast.SelectorExpr)
+			sel, ok := ast.Unparen(call.Fun).(*ast.SelectorExpr)
 			if !ok {
 				return false
 			}
-			switch qualifiedFunc(t.pass, sel) {
+			switch astx.PkgFuncName(t.pass, sel) {
 			case "fmt.Print", "fmt.Printf", "fmt.Println":
 				// No writer argument: these write to os.Stdout
 				// outright, which is the terminal sink.
@@ -818,7 +774,7 @@ var sinks = []sink{
 			// os.Stdout is itself a selector on the os package; a
 			// local variable or parameter that merely shares the name
 			// is not the terminal sink this rule means.
-			wsel, ok := unparen(call.Args[0]).(*ast.SelectorExpr)
+			wsel, ok := ast.Unparen(call.Args[0]).(*ast.SelectorExpr)
 			if !ok {
 				return false
 			}
@@ -830,7 +786,7 @@ var sinks = []sink{
 		// The F forms carry the writer at offset 0; the bare Print
 		// forms check every argument, format string included.
 		args: func(t *taint, call *ast.CallExpr) []ast.Expr {
-			if sel, ok := unparen(call.Fun).(*ast.SelectorExpr); ok && strings.HasPrefix(sel.Sel.Name, "F") {
+			if sel, ok := ast.Unparen(call.Fun).(*ast.SelectorExpr); ok && strings.HasPrefix(sel.Sel.Name, "F") {
 				return call.Args[1:]
 			}
 			return call.Args
@@ -841,7 +797,7 @@ var sinks = []sink{
 // checkDetailValue reports a tainted value committed to a Detail
 // diagnostic field, honouring the tested-value guards like any sink.
 func checkDetailValue(pass *analysis.Pass, t *taint, guards map[types.Object][]guard, val ast.Expr, pos token.Pos) {
-	if id, ok := unparen(val).(*ast.Ident); ok {
+	if id, ok := ast.Unparen(val).(*ast.Ident); ok {
 		if testedAt(guards[pass.TypesInfo.ObjectOf(id)], pos) {
 			return
 		}
@@ -860,9 +816,9 @@ func headerShaped(e ast.Expr) bool {
 	crlf, colon := false, false
 	var walk func(e ast.Expr)
 	walk = func(e ast.Expr) {
-		be, ok := unparen(e).(*ast.BinaryExpr)
+		be, ok := ast.Unparen(e).(*ast.BinaryExpr)
 		if !ok || be.Op != token.ADD {
-			if lit, ok := unparen(e).(*ast.BasicLit); ok && lit.Kind == token.STRING {
+			if lit, ok := ast.Unparen(e).(*ast.BasicLit); ok && lit.Kind == token.STRING {
 				if strings.Contains(lit.Value, "\\r\\n") || strings.Contains(lit.Value, "\r\n") {
 					crlf = true
 				}
@@ -926,11 +882,11 @@ func bindable(t types.Type) bool {
 	if carriesStrings(t) {
 		return true
 	}
-	n, ok := deref(t).(*types.Named)
+	n, ok := astx.Deref(t).(*types.Named)
 	if !ok {
 		return false
 	}
-	return isNamed(n, "net/http", "Request") || isNamed(n, "net/http", "Cookie")
+	return astx.IsNamed(n, "net/http", "Request") || astx.IsNamed(n, "net/http", "Cookie")
 }
 
 func newTaint(pass *analysis.Pass, decls map[types.Object]*ast.FuncDecl, carrying map[*types.Named]map[string]bool, body *ast.BlockStmt, parent *taint) *taint {
@@ -1037,7 +993,7 @@ func rangeIdent(e ast.Expr) *ast.Ident {
 	if e == nil {
 		return nil
 	}
-	id, ok := unparen(e).(*ast.Ident)
+	id, ok := ast.Unparen(e).(*ast.Ident)
 	if !ok || id.Name == "_" {
 		return nil
 	}
@@ -1063,7 +1019,7 @@ func (t *taint) orig(e ast.Expr, seen map[types.Object]bool, depth int) bool {
 	if depth > 24 {
 		return false
 	}
-	switch e := unparen(e).(type) {
+	switch e := ast.Unparen(e).(type) {
 	case *ast.Ident:
 		obj := t.pass.TypesInfo.ObjectOf(e)
 		if obj == nil || seen[obj] {
@@ -1169,7 +1125,7 @@ func (t *taint) callCleared(call *ast.CallExpr, seen map[types.Object]bool, dept
 	}
 	seen = local
 	var fn types.Object
-	switch fun := unparen(call.Fun).(type) {
+	switch fun := ast.Unparen(call.Fun).(type) {
 	case *ast.Ident:
 		fn = t.pass.TypesInfo.ObjectOf(fun)
 	case *ast.SelectorExpr:
@@ -1232,12 +1188,12 @@ func returnsScrubOf(fn *ast.FuncDecl, pass *analysis.Pass, p *types.Var) bool {
 		}
 		returns++
 		for _, res := range ret.Results {
-			call, ok := unparen(res).(*ast.CallExpr)
+			call, ok := ast.Unparen(res).(*ast.CallExpr)
 			if !ok {
 				continue
 			}
 			var name string
-			switch fun := unparen(call.Fun).(type) {
+			switch fun := ast.Unparen(call.Fun).(type) {
 			case *ast.Ident:
 				name = fun.Name
 			case *ast.SelectorExpr:
@@ -1256,7 +1212,7 @@ func returnsScrubOf(fn *ast.FuncDecl, pass *analysis.Pass, p *types.Var) bool {
 			// evidence when it is a same-package declaration (the
 			// one-line wrapper around quoteParamValue carries none).
 			var calleeObj types.Object
-			switch inner := unparen(call.Fun).(type) {
+			switch inner := ast.Unparen(call.Fun).(type) {
 			case *ast.Ident:
 				calleeObj = pass.TypesInfo.ObjectOf(inner)
 			case *ast.SelectorExpr:
@@ -1276,7 +1232,7 @@ func returnsScrubOf(fn *ast.FuncDecl, pass *analysis.Pass, p *types.Var) bool {
 				}
 			}
 			for _, a := range call.Args {
-				if id, ok := unparen(a).(*ast.Ident); ok && pass.TypesInfo.ObjectOf(id) == p {
+				if id, ok := ast.Unparen(a).(*ast.Ident); ok && pass.TypesInfo.ObjectOf(id) == p {
 					found++
 					return true
 				}
@@ -1343,7 +1299,7 @@ func c0ComparisonIn(body ast.Node, pass *analysis.Pass, depth int) bool {
 				return true
 			}
 			var callee types.Object
-			switch fun := unparen(n.Fun).(type) {
+			switch fun := ast.Unparen(n.Fun).(type) {
 			case *ast.Ident:
 				callee = pass.TypesInfo.ObjectOf(fun)
 			case *ast.SelectorExpr:
@@ -1463,7 +1419,7 @@ func isRequestSelector(pass *analysis.Pass, e *ast.SelectorExpr) bool {
 			return false
 		}
 		tv, ok := pass.TypesInfo.Types[inner]
-		if !ok || !isNamed(deref(tv.Type), "net/url", "URL") {
+		if !ok || !astx.IsNamed(astx.Deref(tv.Type), "net/url", "URL") {
 			return false
 		}
 		return isRequestTyped(pass, inner.X)
@@ -1480,7 +1436,7 @@ func isRequestSelector(pass *analysis.Pass, e *ast.SelectorExpr) bool {
 // (r.Header); w.Header().Get reads back what the SERVER wrote, which
 // this rule does not treat as request-derived.
 func isRequestSourceCall(pass *analysis.Pass, call *ast.CallExpr) bool {
-	sel, ok := unparen(call.Fun).(*ast.SelectorExpr)
+	sel, ok := ast.Unparen(call.Fun).(*ast.SelectorExpr)
 	if !ok {
 		return false
 	}
@@ -1492,14 +1448,14 @@ func isRequestSourceCall(pass *analysis.Pass, call *ast.CallExpr) bool {
 		if !ok {
 			return false
 		}
-		t := deref(tv.Type)
-		if isNamed(t, "net/url", "Values") {
+		t := astx.Deref(tv.Type)
+		if astx.IsNamed(t, "net/url", "Values") {
 			return true
 		}
-		if !isNamed(t, "net/http", "Header") {
+		if !astx.IsNamed(t, "net/http", "Header") {
 			return false
 		}
-		hdr, ok := unparen(sel.X).(*ast.SelectorExpr)
+		hdr, ok := ast.Unparen(sel.X).(*ast.SelectorExpr)
 		return ok && hdr.Sel.Name == "Header" && isRequestTyped(pass, hdr.X)
 	}
 	return false
@@ -1510,20 +1466,20 @@ func isRequestTyped(pass *analysis.Pass, e ast.Expr) bool {
 	if !ok {
 		return false
 	}
-	return isNamed(deref(tv.Type), "net/http", "Request")
+	return astx.IsNamed(astx.Deref(tv.Type), "net/http", "Request")
 }
 
 // isRequestCookieCall: r.Cookie(name) — the *http.Cookie it returns
 // carries request bytes in its Value field.
 func isRequestCookieCall(pass *analysis.Pass, call *ast.CallExpr) bool {
-	sel, ok := unparen(call.Fun).(*ast.SelectorExpr)
+	sel, ok := ast.Unparen(call.Fun).(*ast.SelectorExpr)
 	return ok && sel.Sel.Name == "Cookie" && isRequestTyped(pass, sel.X)
 }
 
 // boundToCookie: e is a variable whose binding came from an
 // r.Cookie(...) call.
 func (t *taint) boundToCookie(e ast.Expr) bool {
-	id, ok := unparen(e).(*ast.Ident)
+	id, ok := ast.Unparen(e).(*ast.Ident)
 	if !ok {
 		return false
 	}
@@ -1532,7 +1488,7 @@ func (t *taint) boundToCookie(e ast.Expr) bool {
 		return false
 	}
 	for _, b := range t.bind[obj] {
-		if call, ok := unparen(b).(*ast.CallExpr); ok && isRequestCookieCall(t.pass, call) {
+		if call, ok := ast.Unparen(b).(*ast.CallExpr); ok && isRequestCookieCall(t.pass, call) {
 			return true
 		}
 	}
@@ -1555,7 +1511,7 @@ func isChildOutputParam(obj types.Object) bool {
 	if isString(v.Type()) {
 		return true
 	}
-	if sl, ok := deref(v.Type()).(*types.Slice); ok {
+	if sl, ok := astx.Deref(v.Type()).(*types.Slice); ok {
 		b, ok := sl.Elem().Underlying().(*types.Basic)
 		return ok && b.Kind() == types.Byte
 	}
@@ -1564,11 +1520,11 @@ func isChildOutputParam(obj types.Object) bool {
 
 // isRecoverCallExpr: e is a recover() call, for the binding pass.
 func isRecoverCallExpr(pass *analysis.Pass, e ast.Expr) bool {
-	call, ok := unparen(e).(*ast.CallExpr)
+	call, ok := ast.Unparen(e).(*ast.CallExpr)
 	if !ok {
 		return false
 	}
-	id, ok := unparen(call.Fun).(*ast.Ident)
+	id, ok := ast.Unparen(call.Fun).(*ast.Ident)
 	if !ok || id.Name != "recover" {
 		return false
 	}
@@ -1612,7 +1568,7 @@ func (t *taint) seamField(e *ast.SelectorExpr) bool {
 	if t.seamWide {
 		return true
 	}
-	if n, ok := deref(sel.Recv()).(*types.Named); ok {
+	if n, ok := astx.Deref(sel.Recv()).(*types.Named); ok {
 		return t.carrying[n][e.Sel.Name]
 	}
 	return false
@@ -1625,7 +1581,7 @@ func (t *taint) seamRooted(e ast.Expr, depth int) bool {
 	if depth > 8 {
 		return false
 	}
-	switch x := unparen(e).(type) {
+	switch x := ast.Unparen(e).(type) {
 	case *ast.Ident:
 		obj, ok := t.pass.TypesInfo.ObjectOf(x).(*types.Var)
 		if !ok {
@@ -1653,13 +1609,13 @@ func (t *taint) seamRooted(e ast.Expr, depth int) bool {
 // samePackageStruct: t (or a slice/map of it, or a pointer to it) is a
 // struct type declared in the package under analysis.
 func (t *taint) samePackageStruct(typ types.Type) bool {
-	typ = deref(typ)
+	typ = astx.Deref(typ)
 	if sl, ok := typ.(*types.Slice); ok {
 		typ = sl.Elem()
 	} else if m, ok := typ.(*types.Map); ok {
 		typ = m.Elem()
 	}
-	n, ok := deref(typ).(*types.Named)
+	n, ok := astx.Deref(typ).(*types.Named)
 	if !ok {
 		return false
 	}
@@ -1681,12 +1637,12 @@ func (t *taint) samePackageStruct(typ types.Type) bool {
 // parameter's, are.
 func (t *taint) outboundHeaderMap(e ast.Expr) bool {
 	var hdr *ast.SelectorExpr
-	if s, ok := unparen(e).(*ast.SelectorExpr); ok && s.Sel.Name == "Header" {
+	if s, ok := ast.Unparen(e).(*ast.SelectorExpr); ok && s.Sel.Name == "Header" {
 		hdr = s
-	} else if id, ok := unparen(e).(*ast.Ident); ok {
+	} else if id, ok := ast.Unparen(e).(*ast.Ident); ok {
 		if obj, ok := t.pass.TypesInfo.ObjectOf(id).(*types.Var); ok {
 			for _, b := range t.bind[obj] {
-				if s, ok := unparen(b).(*ast.SelectorExpr); ok && s.Sel.Name == "Header" {
+				if s, ok := ast.Unparen(b).(*ast.SelectorExpr); ok && s.Sel.Name == "Header" {
 					hdr = s
 					break
 				}
@@ -1707,7 +1663,7 @@ func (t *taint) requestNotParam(e ast.Expr, seen map[types.Object]bool) bool {
 	if !requestTypedExpr(t.pass, e) {
 		return false
 	}
-	id, ok := unparen(e).(*ast.Ident)
+	id, ok := ast.Unparen(e).(*ast.Ident)
 	if !ok {
 		return true
 	}
@@ -1740,37 +1696,10 @@ func requestTypedExpr(pass *analysis.Pass, e ast.Expr) bool {
 	if tup, ok := t.(*types.Tuple); ok && tup.Len() > 0 {
 		t = tup.At(0).Type()
 	}
-	return isNamed(deref(t), "net/http", "Request")
+	return astx.IsNamed(astx.Deref(t), "net/http", "Request")
 }
 
 // ---- small helpers -----------------------------------------------------
-
-func unparen(e ast.Expr) ast.Expr {
-	for {
-		p, ok := e.(*ast.ParenExpr)
-		if !ok {
-			return e
-		}
-		e = p.X
-	}
-}
-
-func deref(t types.Type) types.Type {
-	if ptr, ok := t.(*types.Pointer); ok {
-		return ptr.Elem()
-	}
-	return t
-}
-
-// isNamed reports whether t is the named type pkgPath.name.
-func isNamed(t types.Type, pkgPath, name string) bool {
-	n, ok := t.(*types.Named)
-	if !ok {
-		return false
-	}
-	obj := n.Obj()
-	return obj.Pkg() != nil && obj.Pkg().Path() == pkgPath && obj.Name() == name
-}
 
 // carriesStrings: string, []string, map[string]string — the shapes
 // that can carry control bytes onward. Structs, interfaces, errors and
@@ -1790,25 +1719,6 @@ func carriesStrings(t types.Type) bool {
 func isString(t types.Type) bool {
 	b, ok := t.Underlying().(*types.Basic)
 	return ok && b.Info()&types.IsString != 0
-}
-
-func isTestFile(pass *analysis.Pass, f *ast.File) bool {
-	name := pass.Fset.Position(f.Pos()).Filename
-	return len(name) >= 8 && name[len(name)-8:] == "_test.go"
-}
-
-// qualifiedFunc renders a selector as "pkg.Func", resolving the import
-// through the type checker (same contract as mapwriter's).
-func qualifiedFunc(pass *analysis.Pass, sel *ast.SelectorExpr) string {
-	id, ok := sel.X.(*ast.Ident)
-	if !ok {
-		return ""
-	}
-	pkg, ok := pass.TypesInfo.Uses[id].(*types.PkgName)
-	if !ok {
-		return ""
-	}
-	return pkg.Imported().Name() + "." + sel.Sel.Name
 }
 
 // pkgPathOf renders the imported package path behind a selector's X,

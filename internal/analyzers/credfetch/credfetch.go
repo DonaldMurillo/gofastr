@@ -85,6 +85,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/pathflow"
 	"golang.org/x/tools/go/analysis"
 )
 
@@ -157,7 +158,7 @@ func run(pass *analysis.Pass) (any, error) {
 	ctx.collect()
 	reported := map[token.Pos]bool{}
 	for _, file := range pass.Files {
-		if isTestFile(pass, file) {
+		if pathflow.IsTestFile(pass, file) {
 			continue
 		}
 		for _, decl := range file.Decls {
@@ -171,14 +172,6 @@ func run(pass *analysis.Pass) (any, error) {
 	return nil, nil
 }
 
-// isTestFile reports whether file is a _test.go file: the excluded
-// half of the 2026-09-04 posture in the package doc comment. Both
-// consumers — the checkFunc walk and collect — must agree on it, so
-// test files neither receive reports nor contribute client knowledge.
-func isTestFile(pass *analysis.Pass, file *ast.File) bool {
-	return strings.HasSuffix(pass.Fset.Position(file.Pos()).Filename, "_test.go")
-}
-
 // collect walks every non-test file once and records the package's
 // client constructions: var initializers, struct-field assignments
 // (keyed by struct type so sibling providers with the same field name
@@ -187,7 +180,7 @@ func isTestFile(pass *analysis.Pass, file *ast.File) bool {
 // a production field's verdict.
 func (c *pkgCtx) collect() {
 	for _, file := range c.pass.Files {
-		if isTestFile(c.pass, file) {
+		if pathflow.IsTestFile(c.pass, file) {
 			continue
 		}
 		for _, decl := range file.Decls {

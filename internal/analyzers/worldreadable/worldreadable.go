@@ -101,6 +101,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/astx"
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/pathflow"
 	"golang.org/x/tools/go/analysis"
 )
 
@@ -251,7 +253,7 @@ func checkFunc(pass *analysis.Pass, fn *ast.FuncDecl, ctx *pkgCtx) {
 		if s.isDir || s.mode == nil || s.perm&0o077 != 0 {
 			continue
 		}
-		if qualifiedFunc(pass, s.call.Fun) != "os.WriteFile" {
+		if pathflow.QualifiedFunc(pass, s.call.Fun) != "os.WriteFile" {
 			continue
 		}
 		if underTempRoot(pass, s.path, bound) || createTempMinted(pass, s.path, bound) {
@@ -269,7 +271,7 @@ func checkFunc(pass *analysis.Pass, fn *ast.FuncDecl, ctx *pkgCtx) {
 // ever has. The path expression is the CALL f.Name(), its receiver
 // resolving to the mint.
 func createTempMinted(pass *analysis.Pass, path ast.Expr, bound map[types.Object]ast.Expr) bool {
-	call, ok := resolve(pass, path, bound, 0).(*ast.CallExpr)
+	call, ok := pathflow.Resolve(pass, path, bound, 0).(*ast.CallExpr)
 	if !ok {
 		return false
 	}
@@ -277,8 +279,8 @@ func createTempMinted(pass *analysis.Pass, path ast.Expr, bound map[types.Object
 	if !ok || sel.Sel.Name != "Name" {
 		return false
 	}
-	mint, ok := resolve(pass, sel.X, bound, 0).(*ast.CallExpr)
-	return ok && qualifiedFunc(pass, mint.Fun) == "os.CreateTemp"
+	mint, ok := pathflow.Resolve(pass, sel.X, bound, 0).(*ast.CallExpr)
+	return ok && pathflow.QualifiedFunc(pass, mint.Fun) == "os.CreateTemp"
 }
 
 // silent reports whether site s is one of the deliberate postures.
@@ -300,7 +302,7 @@ func silent(pass *analysis.Pass, s site, fn *ast.FuncDecl, bound map[types.Objec
 	// or opened exists, so the write cannot loosen anything. The same
 	// holds one hop up: a helper rewriting bytes its caller read from
 	// that path (cmd/mutate's restore).
-	if readPaths[exprString(resolve(pass, s.path, bound, 0))] ||
+	if readPaths[exprString(pathflow.Resolve(pass, s.path, bound, 0))] ||
 		callerReadsPath(pass, s, fn, bound, ctx) {
 		return true
 	}
@@ -335,22 +337,22 @@ func collectSites(pass *analysis.Pass, body *ast.BlockStmt) []site {
 		if !ok {
 			return true
 		}
-		switch qualifiedFunc(pass, call.Fun) {
+		switch pathflow.QualifiedFunc(pass, call.Fun) {
 		case "os.WriteFile":
-			if mode, perm, ok := constPerm(argAt(call, 2)); ok {
-				out = append(out, site{call: call, path: argAt(call, 0), mode: mode, perm: perm})
+			if mode, perm, ok := constPerm(pathflow.ArgAt(call, 2)); ok {
+				out = append(out, site{call: call, path: pathflow.ArgAt(call, 0), mode: mode, perm: perm})
 			}
 		case "os.OpenFile":
-			if hasWriteFlag(argAt(call, 1)) {
-				if mode, perm, ok := constPerm(argAt(call, 2)); ok {
-					out = append(out, site{call: call, path: argAt(call, 0), mode: mode, perm: perm})
+			if pathflow.HasWriteFlag(pathflow.ArgAt(call, 1)) {
+				if mode, perm, ok := constPerm(pathflow.ArgAt(call, 2)); ok {
+					out = append(out, site{call: call, path: pathflow.ArgAt(call, 0), mode: mode, perm: perm})
 				}
 			}
 		case "os.Create":
-			out = append(out, site{call: call, path: argAt(call, 0), perm: 0o666})
+			out = append(out, site{call: call, path: pathflow.ArgAt(call, 0), perm: 0o666})
 		case "os.Mkdir", "os.MkdirAll":
-			if mode, perm, ok := constPerm(argAt(call, 1)); ok {
-				out = append(out, site{call: call, path: argAt(call, 0), mode: mode, perm: perm, isDir: true})
+			if mode, perm, ok := constPerm(pathflow.ArgAt(call, 1)); ok {
+				out = append(out, site{call: call, path: pathflow.ArgAt(call, 0), mode: mode, perm: perm, isDir: true})
 			}
 		}
 		return true
@@ -367,10 +369,10 @@ func readFirstPaths(pass *analysis.Pass, body *ast.BlockStmt, bound map[types.Ob
 		if !ok {
 			return true
 		}
-		switch qualifiedFunc(pass, call.Fun) {
+		switch pathflow.QualifiedFunc(pass, call.Fun) {
 		case "os.ReadFile", "os.Open":
-			if p := argAt(call, 0); p != nil {
-				reads[exprString(resolve(pass, p, bound, 0))] = true
+			if p := pathflow.ArgAt(call, 0); p != nil {
+				reads[exprString(pathflow.Resolve(pass, p, bound, 0))] = true
 			}
 		}
 		return true
@@ -382,7 +384,7 @@ func readFirstPaths(pass *analysis.Pass, body *ast.BlockStmt, bound map[types.Ob
 // under) is a local bound to os.MkdirTemp / t.TempDir: throwaway by
 // construction.
 func underTempRoot(pass *analysis.Pass, path ast.Expr, bound map[types.Object]ast.Expr) bool {
-	r := resolve(pass, path, bound, 0)
+	r := pathflow.Resolve(pass, path, bound, 0)
 	if call, ok := r.(*ast.CallExpr); ok && isTempMint(pass, call) {
 		return true
 	}
@@ -407,7 +409,7 @@ func underTempRoot(pass *analysis.Pass, path ast.Expr, bound map[types.Object]as
 // isTempMint matches the throwaway-mint calls (os.TempDir itself is
 // NOT one: it is the shared root, not a private one).
 func isTempMint(pass *analysis.Pass, call *ast.CallExpr) bool {
-	q := qualifiedFunc(pass, call.Fun)
+	q := pathflow.QualifiedFunc(pass, call.Fun)
 	if q == "os.MkdirTemp" || q == "os.CreateTemp" {
 		return true
 	}
@@ -427,7 +429,7 @@ func assemblyRoot(e ast.Expr) ast.Expr {
 		}
 	case *ast.BinaryExpr:
 		if x.Op == token.ADD {
-			ops := concatOperands(x, nil)
+			ops := pathflow.ConcatOperands(x, nil)
 			if len(ops) > 0 {
 				return ops[0]
 			}
@@ -441,11 +443,11 @@ func assemblyRoot(e ast.Expr) ast.Expr {
 // may carry the evidence the last reassignment hides) ends in a public
 // extension.
 func publicNameEvidence(pass *analysis.Pass, path ast.Expr, bound map[types.Object]ast.Expr, ctx *pkgCtx) bool {
-	candidates := []ast.Expr{resolve(pass, path, bound, 0)}
+	candidates := []ast.Expr{pathflow.Resolve(pass, path, bound, 0)}
 	if id, ok := path.(*ast.Ident); ok {
 		if obj := pass.TypesInfo.ObjectOf(id); obj != nil {
 			for _, b := range bindingHistory(pass, obj, id.Pos()) {
-				candidates = append(candidates, resolve(pass, b, bound, 0))
+				candidates = append(candidates, pathflow.Resolve(pass, b, bound, 0))
 			}
 		}
 	}
@@ -462,16 +464,16 @@ func publicNameEvidence(pass *analysis.Pass, path ast.Expr, bound map[types.Obje
 // a package-const resolved to its literal value. Missing evidence
 // returns ok=false.
 func finalNameEvidence(pass *analysis.Pass, path ast.Expr, bound map[types.Object]ast.Expr, ctx *pkgCtx) (string, bool) {
-	r := resolve(pass, path, bound, 0)
+	r := pathflow.Resolve(pass, path, bound, 0)
 	var last ast.Expr
 	switch x := r.(type) {
 	case *ast.CallExpr:
-		if qualifiedFunc(pass, x.Fun) == "path/filepath.Join" && len(x.Args) > 0 {
+		if pathflow.QualifiedFunc(pass, x.Fun) == "path/filepath.Join" && len(x.Args) > 0 {
 			last = x.Args[len(x.Args)-1]
 		}
 	case *ast.BinaryExpr:
 		if x.Op == token.ADD {
-			ops := concatOperands(x, nil)
+			ops := pathflow.ConcatOperands(x, nil)
 			if len(ops) > 0 {
 				last = ops[len(ops)-1]
 			}
@@ -482,7 +484,7 @@ func finalNameEvidence(pass *analysis.Pass, path ast.Expr, bound map[types.Objec
 	if last == nil {
 		return "", false
 	}
-	return nameFromExpr(pass, resolve(pass, last, bound, 0), bound, ctx), true
+	return nameFromExpr(pass, pathflow.Resolve(pass, last, bound, 0), bound, ctx), true
 }
 
 // nameFromExpr reduces one component to its name evidence: the literal
@@ -500,13 +502,13 @@ func nameFromExpr(pass *analysis.Pass, e ast.Expr, bound map[types.Object]ast.Ex
 		}
 	case *ast.BinaryExpr:
 		if x.Op == token.ADD {
-			ops := concatOperands(x, nil)
+			ops := pathflow.ConcatOperands(x, nil)
 			if len(ops) > 0 {
 				return nameFromExpr(pass, ops[len(ops)-1], bound, ctx)
 			}
 		}
 	case *ast.CallExpr:
-		if qualifiedFunc(pass, x.Fun) == "fmt.Sprintf" {
+		if pathflow.QualifiedFunc(pass, x.Fun) == "fmt.Sprintf" {
 			if len(x.Args) > 0 {
 				if lit, ok := x.Args[0].(*ast.BasicLit); ok && lit.Kind == token.STRING {
 					return sprintfTail(unquote(lit.Value))
@@ -537,9 +539,9 @@ func outputRooted(pass *analysis.Pass, path ast.Expr, bound map[types.Object]ast
 	if depth > 2 {
 		return false
 	}
-	r := resolve(pass, path, bound, 0)
+	r := pathflow.Resolve(pass, path, bound, 0)
 	cands := []ast.Expr{r}
-	if call, ok := r.(*ast.CallExpr); ok && qualifiedFunc(pass, call.Fun) == "path/filepath.Join" {
+	if call, ok := r.(*ast.CallExpr); ok && pathflow.QualifiedFunc(pass, call.Fun) == "path/filepath.Join" {
 		cands = call.Args
 	}
 	for _, c := range cands {
@@ -559,7 +561,7 @@ func outputRooted(pass *analysis.Pass, path ast.Expr, bound map[types.Object]ast
 		if !ok || !isParamOf(pass, fn, v) {
 			continue
 		}
-		idx := paramIndex(fn, v.Name())
+		idx := pathflow.RootyParamIndex(fn, v.Name())
 		if idx < 0 {
 			continue
 		}
@@ -581,11 +583,11 @@ func callerArgNamesOutputRoot(pass *analysis.Pass, fn *ast.FuncDecl, idx int, ct
 		found := false
 		ast.Inspect(caller.Body, func(n ast.Node) bool {
 			call, ok := n.(*ast.CallExpr)
-			if !ok || calleeName(call.Fun) != fn.Name.Name {
+			if !ok || astx.CalleeName(call.Fun) != fn.Name.Name {
 				return true
 			}
-			if arg := argAt(call, idx); arg != nil &&
-				exprNamesOutputRoot(pass, resolve(pass, arg, callerBound, 0), callerBound) {
+			if arg := pathflow.ArgAt(call, idx); arg != nil &&
+				exprNamesOutputRoot(pass, pathflow.Resolve(pass, arg, callerBound, 0), callerBound) {
 				found = true
 				return false
 			}
@@ -632,7 +634,7 @@ func exprNamesOutputRoot(pass *analysis.Pass, e ast.Expr, bound map[types.Object
 			}
 			walk(n.X, depth)
 		case *ast.CallExpr:
-			if fn := calleeName(n.Fun); fn != "" && namesOutputRoot(fn) {
+			if fn := astx.CalleeName(n.Fun); fn != "" && namesOutputRoot(fn) {
 				found = true
 				return
 			}
@@ -677,7 +679,7 @@ func namesOutputRoot(name string) bool {
 // rewrites bytes that already exist on disk (cmd/mutate's restore of
 // pre-mutation source).
 func callerReadsPath(pass *analysis.Pass, s site, fn *ast.FuncDecl, bound map[types.Object]ast.Expr, ctx *pkgCtx) bool {
-	id, ok := resolve(pass, s.path, bound, 0).(*ast.Ident)
+	id, ok := pathflow.Resolve(pass, s.path, bound, 0).(*ast.Ident)
 	if !ok {
 		return false
 	}
@@ -685,7 +687,7 @@ func callerReadsPath(pass *analysis.Pass, s site, fn *ast.FuncDecl, bound map[ty
 	if !ok || !isParamOf(pass, fn, v) {
 		return false
 	}
-	idx := paramIndex(fn, v.Name())
+	idx := pathflow.RootyParamIndex(fn, v.Name())
 	if idx < 0 {
 		return false
 	}
@@ -713,10 +715,10 @@ func callerReadsArg(pass *analysis.Pass, caller *ast.FuncDecl, idx int, name str
 		if !ok {
 			return true
 		}
-		switch qualifiedFunc(pass, call.Fun) {
+		switch pathflow.QualifiedFunc(pass, call.Fun) {
 		case "os.ReadFile", "os.Open":
-			if p := argAt(call, 0); p != nil {
-				target := exprString(resolve(pass, p, callerBound, 0))
+			if p := pathflow.ArgAt(call, 0); p != nil {
+				target := exprString(pathflow.Resolve(pass, p, callerBound, 0))
 				if readFeedsArg(pass, caller, idx, name, target, callerBound) {
 					found = true
 					return false
@@ -737,11 +739,11 @@ func readFeedsArg(pass *analysis.Pass, caller *ast.FuncDecl, idx int, name, targ
 			return false
 		}
 		call, ok := n.(*ast.CallExpr)
-		if !ok || calleeName(call.Fun) != name {
+		if !ok || astx.CalleeName(call.Fun) != name {
 			return true
 		}
-		if arg := argAt(call, idx); arg != nil &&
-			exprString(resolve(pass, arg, callerBound, 0)) == target {
+		if arg := pathflow.ArgAt(call, idx); arg != nil &&
+			exprString(pathflow.Resolve(pass, arg, callerBound, 0)) == target {
 			found = true
 			return false
 		}
@@ -755,12 +757,12 @@ func readFeedsArg(pass *analysis.Pass, caller *ast.FuncDecl, idx int, name, targ
 // its caller (the harness Write builtin): the directory serves a
 // caller-owned policy.
 func dirOfCallerOwnedWrite(pass *analysis.Pass, s site, fn *ast.FuncDecl, bound map[types.Object]ast.Expr) bool {
-	dRes := resolve(pass, s.path, bound, 0)
+	dRes := pathflow.Resolve(pass, s.path, bound, 0)
 	call, ok := dRes.(*ast.CallExpr)
-	if !ok || qualifiedFunc(pass, call.Fun) != "path/filepath.Dir" || len(call.Args) == 0 {
+	if !ok || pathflow.QualifiedFunc(pass, call.Fun) != "path/filepath.Dir" || len(call.Args) == 0 {
 		return false
 	}
-	x := exprString(resolve(pass, call.Args[0], bound, 0))
+	x := exprString(pathflow.Resolve(pass, call.Args[0], bound, 0))
 	found := false
 	ast.Inspect(fn.Body, func(n ast.Node) bool {
 		w, ok := n.(*ast.CallExpr)
@@ -768,19 +770,19 @@ func dirOfCallerOwnedWrite(pass *analysis.Pass, s site, fn *ast.FuncDecl, bound 
 			return true
 		}
 		var modeArg ast.Expr
-		switch qualifiedFunc(pass, w.Fun) {
+		switch pathflow.QualifiedFunc(pass, w.Fun) {
 		case "os.WriteFile":
-			modeArg = argAt(w, 2)
+			modeArg = pathflow.ArgAt(w, 2)
 		case "os.OpenFile":
-			if hasWriteFlag(argAt(w, 1)) {
-				modeArg = argAt(w, 2)
+			if pathflow.HasWriteFlag(pathflow.ArgAt(w, 1)) {
+				modeArg = pathflow.ArgAt(w, 2)
 			}
 		}
 		if modeArg == nil {
 			return true
 		}
 		if _, _, isConst := constPerm(modeArg); !isConst {
-			if p := argAt(w, 0); p != nil && exprString(resolve(pass, p, bound, 0)) == x {
+			if p := pathflow.ArgAt(w, 0); p != nil && exprString(pathflow.Resolve(pass, p, bound, 0)) == x {
 				found = true
 				return false
 			}
@@ -797,7 +799,7 @@ func dirOfCallerOwnedWrite(pass *analysis.Pass, s site, fn *ast.FuncDecl, bound 
 // dir — is itself public or owner-only. A dir with no reachable
 // writer stays loud.
 func dirHoldsOnlyPublic(pass *analysis.Pass, d site, fn *ast.FuncDecl, bound map[types.Object]ast.Expr, readPaths map[string]bool, ctx *pkgCtx, all []site) bool {
-	dRes := resolve(pass, d.path, bound, 0)
+	dRes := pathflow.Resolve(pass, d.path, bound, 0)
 	dExpr := exprString(dRes)
 	dRoot := exprString(resolveRoot(pass, dRes, bound))
 	linked := 0
@@ -805,7 +807,7 @@ func dirHoldsOnlyPublic(pass *analysis.Pass, d site, fn *ast.FuncDecl, bound map
 		if w.call == d.call {
 			continue
 		}
-		wRes := resolve(pass, w.path, bound, 0)
+		wRes := pathflow.Resolve(pass, w.path, bound, 0)
 		wExpr := exprString(wRes)
 		wRoot := exprString(resolveRoot(pass, wRes, bound))
 		under := wExpr == dExpr ||
@@ -824,11 +826,11 @@ func dirHoldsOnlyPublic(pass *analysis.Pass, d site, fn *ast.FuncDecl, bound map
 	// os.CreateTemp carry the write's own explicit handle-chmod policy.
 	ast.Inspect(fn.Body, func(n ast.Node) bool {
 		call, ok := n.(*ast.CallExpr)
-		if !ok || qualifiedFunc(pass, call.Fun) != "os.CreateTemp" {
+		if !ok || pathflow.QualifiedFunc(pass, call.Fun) != "os.CreateTemp" {
 			return true
 		}
-		if dir := argAt(call, 0); dir != nil &&
-			exprString(resolve(pass, dir, bound, 0)) == dExpr {
+		if dir := pathflow.ArgAt(call, 0); dir != nil &&
+			exprString(pathflow.Resolve(pass, dir, bound, 0)) == dExpr {
 			linked++
 			return false
 		}
@@ -847,7 +849,7 @@ func dirHoldsOnlyPublic(pass *analysis.Pass, d site, fn *ast.FuncDecl, bound map
 		hSites := collectSites(pass, h.Body)
 		hBound := bindings(pass, h.Body)
 		for _, w := range hSites {
-			hRes := resolve(pass, w.path, hBound, 0)
+			hRes := pathflow.Resolve(pass, w.path, hBound, 0)
 			if exprString(resolveRoot(pass, hRes, hBound)) != consumed && exprString(hRes) != consumed {
 				continue
 			}
@@ -867,7 +869,7 @@ func resolveRoot(pass *analysis.Pass, resolved ast.Expr, bound map[types.Object]
 	if root == nil {
 		return nil
 	}
-	return resolve(pass, root, bound, 0)
+	return pathflow.Resolve(pass, root, bound, 0)
 }
 
 // dirContentNeutral reports whether a write into a directory is public
@@ -896,11 +898,11 @@ func helperConsumesDir(pass *analysis.Pass, body *ast.BlockStmt, h *ast.FuncDecl
 			return false
 		}
 		call, ok := n.(*ast.CallExpr)
-		if !ok || calleeName(call.Fun) != h.Name.Name {
+		if !ok || astx.CalleeName(call.Fun) != h.Name.Name {
 			return true
 		}
 		for i, a := range call.Args {
-			if exprString(resolve(pass, a, bound, 0)) != dExpr {
+			if exprString(pathflow.Resolve(pass, a, bound, 0)) != dExpr {
 				continue
 			}
 			if p := paramAt(h, i); p != "" {
@@ -918,13 +920,13 @@ func helperConsumesDir(pass *analysis.Pass, body *ast.BlockStmt, h *ast.FuncDecl
 // the journal file written at path).
 func isDirOf(pass *analysis.Pass, fileExpr, dirExpr ast.Expr, bound map[types.Object]ast.Expr) bool {
 	call, ok := dirExpr.(*ast.CallExpr)
-	if !ok || qualifiedFunc(pass, call.Fun) != "path/filepath.Dir" {
+	if !ok || pathflow.QualifiedFunc(pass, call.Fun) != "path/filepath.Dir" {
 		return false
 	}
 	if len(call.Args) == 0 {
 		return false
 	}
-	return exprString(resolve(pass, call.Args[0], bound, 0)) == exprString(fileExpr)
+	return exprString(pathflow.Resolve(pass, call.Args[0], bound, 0)) == exprString(fileExpr)
 }
 
 // constPerm evaluates e as a constant permission literal.
@@ -959,34 +961,6 @@ func sprintfTail(format string) string {
 	return rest[j:]
 }
 
-// concatOperands flattens a left-associated ADD chain, leftmost first.
-func concatOperands(be *ast.BinaryExpr, out []ast.Expr) []ast.Expr {
-	if inner, ok := be.X.(*ast.BinaryExpr); ok && inner.Op == token.ADD {
-		out = concatOperands(inner, out)
-	} else {
-		out = append(out, be.X)
-	}
-	return append(out, be.Y)
-}
-
-// resolve follows single-value local bindings, keeping the last
-// binding in source order.
-func resolve(pass *analysis.Pass, e ast.Expr, bound map[types.Object]ast.Expr, depth int) ast.Expr {
-	for depth < 8 {
-		id, ok := e.(*ast.Ident)
-		if !ok {
-			return e
-		}
-		b, ok := bound[pass.TypesInfo.ObjectOf(id)]
-		if !ok {
-			return e
-		}
-		e = b
-		depth++
-	}
-	return e
-}
-
 // bindings maps each local defined by an assignment to the expression
 // it was last bound to. Multi-value assignments map each left side to
 // the single call on the right, and range-loop value variables map to
@@ -1016,52 +990,6 @@ func bindings(pass *analysis.Pass, body *ast.BlockStmt) map[types.Object]ast.Exp
 		return true
 	})
 	return bound
-}
-
-// hasWriteFlag reports whether the os.OpenFile flag expression
-// contains any of the write/create bits.
-func hasWriteFlag(e ast.Expr) bool {
-	found := false
-	ast.Inspect(e, func(n ast.Node) bool {
-		if sel, ok := n.(*ast.SelectorExpr); ok {
-			switch sel.Sel.Name {
-			case "O_CREATE", "O_WRONLY", "O_RDWR", "O_APPEND", "O_TRUNC":
-				found = true
-			}
-		}
-		return !found
-	})
-	return found
-}
-
-// qualifiedFunc renders a selector callee as "importpath.Func",
-// resolving the package through the type checker so an aliased import
-// still matches.
-func qualifiedFunc(pass *analysis.Pass, fun ast.Expr) string {
-	sel, ok := fun.(*ast.SelectorExpr)
-	if !ok {
-		return ""
-	}
-	x, ok := sel.X.(*ast.Ident)
-	if !ok {
-		return ""
-	}
-	pn, ok := pass.TypesInfo.ObjectOf(x).(*types.PkgName)
-	if !ok {
-		return ""
-	}
-	return pn.Imported().Path() + "." + sel.Sel.Name
-}
-
-// calleeName renders a callee's base name for marker checks.
-func calleeName(fun ast.Expr) string {
-	switch f := fun.(type) {
-	case *ast.Ident:
-		return f.Name
-	case *ast.SelectorExpr:
-		return f.Sel.Name
-	}
-	return ""
 }
 
 // isParamOf reports whether v is one of fn's parameters.
@@ -1106,27 +1034,6 @@ func bindingHistory(pass *analysis.Pass, obj types.Object, _ token.Pos) []ast.Ex
 	return out
 }
 
-// -1.
-func paramIndex(fn *ast.FuncDecl, name string) int {
-	if fn.Type.Params == nil {
-		return -1
-	}
-	idx := 0
-	for _, f := range fn.Type.Params.List {
-		if len(f.Names) == 0 {
-			idx++
-			continue
-		}
-		for _, n := range f.Names {
-			if n.Name == name {
-				return idx
-			}
-			idx++
-		}
-	}
-	return -1
-}
-
 // paramAt returns helper's parameter name at positional index i.
 func paramAt(fn *ast.FuncDecl, i int) string {
 	if fn.Type.Params == nil {
@@ -1156,19 +1063,12 @@ func callsName(body *ast.BlockStmt, name string) bool {
 		if !ok {
 			return true
 		}
-		if calleeName(call.Fun) == name {
+		if astx.CalleeName(call.Fun) == name {
 			found = true
 		}
 		return !found
 	})
 	return found
-}
-
-func argAt(call *ast.CallExpr, i int) ast.Expr {
-	if len(call.Args) > i {
-		return call.Args[i]
-	}
-	return nil
 }
 
 // exprString is a nil-safe types.ExprString.

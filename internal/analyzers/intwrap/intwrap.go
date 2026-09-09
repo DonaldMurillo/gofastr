@@ -61,9 +61,9 @@ import (
 	"math"
 	"strings"
 
-	"golang.org/x/tools/go/analysis"
-
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/astx"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/dominance"
+	"golang.org/x/tools/go/analysis"
 )
 
 var Analyzer = &analysis.Analyzer{
@@ -318,7 +318,7 @@ func comparisonBounds(pass *analysis.Pass, bin *ast.BinaryExpr, subj subject, fa
 	}
 	op := bin.Op
 	if !subjectOnLeft {
-		op = flipComparison(op)
+		op = astx.FlipComparison(op)
 	}
 	whenTrue, whenFalse := boundSide(pass, op, other, family)
 	if holds {
@@ -375,22 +375,6 @@ func isExactMinBound(pass *analysis.Pass, e ast.Expr) bool {
 	}
 	i, ok := constant.Int64Val(tv.Value)
 	return ok && i == math.MinInt64
-}
-
-// flipComparison mirrors an operator so the subject can be treated as
-// the left operand.
-func flipComparison(op token.Token) token.Token {
-	switch op {
-	case token.LSS:
-		return token.GTR
-	case token.LEQ:
-		return token.GEQ
-	case token.GTR:
-		return token.LSS
-	case token.GEQ:
-		return token.LEQ
-	}
-	return op
 }
 
 func isMathBound(pass *analysis.Pass, e ast.Expr, family string) bool {

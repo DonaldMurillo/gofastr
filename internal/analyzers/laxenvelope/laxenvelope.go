@@ -97,6 +97,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/astx"
 	"golang.org/x/tools/go/analysis"
 )
 
@@ -159,7 +160,7 @@ func run(pass *analysis.Pass) (any, error) {
 			if !ok || len(call.Args) != 2 {
 				return true
 			}
-			fn, ok := calleeFunc(pass, call)
+			fn, ok := astx.CalleeFunc(pass, call.Fun)
 			if !ok {
 				return true
 			}
@@ -512,7 +513,7 @@ func envelopeTypes(pass *analysis.Pass, files []*ast.File) map[types.Type]map[st
 			if !ok || len(call.Args) != 2 {
 				return true
 			}
-			fn, ok := calleeFunc(pass, call)
+			fn, ok := astx.CalleeFunc(pass, call.Fun)
 			if !ok {
 				return true
 			}
@@ -571,7 +572,7 @@ func rawFieldCredit(pass *analysis.Pass, files []*ast.File) map[string]bool {
 			if !ok || len(call.Args) < 1 {
 				return true
 			}
-			fn, ok := calleeFunc(pass, call)
+			fn, ok := astx.CalleeFunc(pass, call.Fun)
 			if !ok || fn.Name() != "CheckObjectKeys" {
 				return true
 			}
@@ -686,7 +687,7 @@ func armC(pass *analysis.Pass, files []*ast.File) {
 			if !ok {
 				return true
 			}
-			if fn, ok := calleeFunc(pass, call); ok && fn.Pkg() == pass.Pkg {
+			if fn, ok := astx.CalleeFunc(pass, call.Fun); ok && fn.Pkg() == pass.Pkg {
 				callSites[fn] = append(callSites[fn], call)
 			}
 			return true
@@ -704,7 +705,7 @@ func armC(pass *analysis.Pass, files []*ast.File) {
 				if !ok {
 					return true
 				}
-				fn, ok := calleeFunc(pass, call)
+				fn, ok := astx.CalleeFunc(pass, call.Fun)
 				if !ok {
 					return true
 				}
@@ -1209,18 +1210,6 @@ func dstType(pass *analysis.Pass, arg ast.Expr) (types.Type, bool) {
 		return nil, false
 	}
 	return t, true
-}
-
-func calleeFunc(pass *analysis.Pass, call *ast.CallExpr) (*types.Func, bool) {
-	switch fun := call.Fun.(type) {
-	case *ast.Ident:
-		fn, ok := pass.TypesInfo.ObjectOf(fun).(*types.Func)
-		return fn, ok
-	case *ast.SelectorExpr:
-		fn, ok := pass.TypesInfo.Uses[fun.Sel].(*types.Func)
-		return fn, ok
-	}
-	return nil, false
 }
 
 func typeLabel(pass *analysis.Pass, t types.Type) string {

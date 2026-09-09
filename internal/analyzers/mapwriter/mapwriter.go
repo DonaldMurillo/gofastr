@@ -12,6 +12,7 @@ import (
 	"go/types"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/astx"
 	"golang.org/x/tools/go/analysis"
 )
 
@@ -106,7 +107,7 @@ func rangesInMapOrder(pass *analysis.Pass, x ast.Expr, bound map[types.Object]as
 		}
 		return false
 	case *ast.CallExpr:
-		switch qualifiedCallee(pass, e.Fun) {
+		switch astx.QualifiedCallee(pass, e.Fun) {
 		case "maps.Keys", "maps.Values", "maps.All":
 			return true
 		case "slices.Collect", "slices.Values", "slices.All":
@@ -133,7 +134,7 @@ func isOutputSink(pass *analysis.Pass, fun ast.Expr, bound map[types.Object]ast.
 		if writeMethods[f.Sel.Name] && isWriterish(pass, f.X) {
 			return true
 		}
-		return writeFuncs[qualifiedFunc(pass, f)]
+		return writeFuncs[astx.PkgFuncName(pass, f)]
 	case *ast.Ident:
 		switch obj := pass.TypesInfo.Uses[f].(type) {
 		case *types.Func:
@@ -148,20 +149,6 @@ func isOutputSink(pass *analysis.Pass, fun ast.Expr, bound map[types.Object]ast.
 		}
 	}
 	return false
-}
-
-// qualifiedCallee is qualifiedFunc for any callee expression, so a
-// dot-imported or bound package function resolves the same way.
-func qualifiedCallee(pass *analysis.Pass, fun ast.Expr) string {
-	switch f := fun.(type) {
-	case *ast.SelectorExpr:
-		return qualifiedFunc(pass, f)
-	case *ast.Ident:
-		if fn, ok := pass.TypesInfo.Uses[f].(*types.Func); ok && fn.Pkg() != nil {
-			return fn.Pkg().Name() + "." + fn.Name()
-		}
-	}
-	return ""
 }
 
 // boundExprs maps each local variable defined by a single-value
@@ -199,21 +186,6 @@ func boundExprs(pass *analysis.Pass, f *ast.File) map[types.Object]ast.Expr {
 		return true
 	})
 	return out
-}
-
-// qualifiedFunc renders a selector as "pkg.Func", resolving the import
-// through the type checker. Matching on the identifier text instead lets
-// `import f "fmt"` walk past every sink in writeFuncs.
-func qualifiedFunc(pass *analysis.Pass, sel *ast.SelectorExpr) string {
-	id, ok := sel.X.(*ast.Ident)
-	if !ok {
-		return ""
-	}
-	pkg, ok := pass.TypesInfo.Uses[id].(*types.PkgName)
-	if !ok {
-		return ""
-	}
-	return pkg.Imported().Name() + "." + sel.Sel.Name
 }
 
 // guardRange is the span of an `if len(m) == 1` body plus the guarded

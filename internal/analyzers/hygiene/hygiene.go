@@ -19,6 +19,7 @@ import (
 	"go/types"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/astx"
 	"golang.org/x/tools/go/analysis"
 )
 
@@ -123,7 +124,7 @@ func runClientTimeout(pass *analysis.Pass) (any, error) {
 			ctx, reqCtx := false, false
 			ast.Inspect(fd.Body, func(n ast.Node) bool {
 				if call, ok := n.(*ast.CallExpr); ok {
-					switch qualified(pass, call.Fun) {
+					switch astx.PkgFuncName(pass, call.Fun) {
 					case "context.WithTimeout", "context.WithDeadline":
 						ctx = true
 					case "http.NewRequestWithContext":
@@ -137,7 +138,7 @@ func runClientTimeout(pass *analysis.Pass) (any, error) {
 		ast.Inspect(f, func(n ast.Node) bool {
 			switch v := n.(type) {
 			case *ast.CallExpr:
-				q := qualified(pass, v.Fun)
+				q := astx.PkgFuncName(pass, v.Fun)
 				switch q {
 				case "http.Get", "http.Post", "http.Head", "http.PostForm":
 					if !fileDeadlined {
@@ -205,7 +206,7 @@ func fileDeadlinesCalls(pass *analysis.Pass, f *ast.File) bool {
 		if !ok {
 			return true
 		}
-		switch qualified(pass, call.Fun) {
+		switch astx.PkgFuncName(pass, call.Fun) {
 		case "context.WithTimeout", "context.WithDeadline":
 			found = true
 		}
@@ -223,24 +224,6 @@ func eachFile(pass *analysis.Pass, fn func(*ast.File)) {
 		}
 		fn(f)
 	}
-}
-
-// qualified renders a call target as "pkg.Func", resolving the import
-// through the type checker so an aliased import is still the real package.
-func qualified(pass *analysis.Pass, fun ast.Expr) string {
-	sel, ok := fun.(*ast.SelectorExpr)
-	if !ok {
-		return ""
-	}
-	id, ok := sel.X.(*ast.Ident)
-	if !ok {
-		return ""
-	}
-	pkg, ok := pass.TypesInfo.Uses[id].(*types.PkgName)
-	if !ok {
-		return ""
-	}
-	return pkg.Imported().Name() + "." + sel.Sel.Name
 }
 
 func isErrorTyped(pass *analysis.Pass, e ast.Expr) bool {
