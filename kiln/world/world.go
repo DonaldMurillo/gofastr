@@ -105,6 +105,11 @@ type AppConfig struct {
 //
 // Allow-list, not block-list: colors, lengths, and font stacks need only
 // alphanumerics and a short punctuation set.
+//
+// kiln/render's UIHost theme ingestion guarded this same predicate with a
+// private copy; that copy is deleted and every caller (world replay,
+// protocol's set_theme, chat's theme.css, render's app stylesheet) now
+// calls this one function.
 func SafeThemeValue(v string) bool {
 	if v == "" || len(v) > 128 {
 		return false

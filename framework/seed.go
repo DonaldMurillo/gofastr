@@ -50,14 +50,14 @@ func (a *App) runSeedHooks() error {
 }
 
 // runSeedHookSafe fires one WithSeed func under the recover-to-error
-// isolation Init already gets (initPluginSafe): seed hooks are host app
+// isolation Init already gets (callModuleSafe): seed hooks are host app
 // code holding the same trust position, so a panic aborts Start with an
 // attributed error instead of unwinding through it.
 func (a *App) runSeedHookSafe(fn func(ctx context.Context) error) (err error) {
 	defer func() {
 		if v := recover(); v != nil {
 			// %T not %v: a panic(config) value must not leak a secret
-			// into the error chain (initPluginSafe precedent).
+			// into the error chain (callModuleSafe precedent).
 			err = fmt.Errorf("seed hook panicked (panic type %T): set GOTRACEBACK=all for details", v)
 		}
 	}()

@@ -39,13 +39,13 @@ func TestEntityModelPreservesNoQueryAndSuppressesFilterKinds(t *testing.T) {
 func TestCLIListRendererOmitsNoQueryFlagsAndForwarding(t *testing.T) {
 	_, model := noQueryGeneratorFixture()
 	var source strings.Builder
-	renderCLIListVerb(&source, model)
+	renderCLIListTables(&source, model)
 	got := source.String()
-	if strings.Contains(got, "fltNumber") || strings.Contains(got, `fs.String("number"`) {
-		t.Fatalf("CLI list source exposes NoQuery filter number:\n%s", got)
+	if strings.Contains(got, `{flag: "number"`) || strings.Contains(got, `{flag: "number-like"`) {
+		t.Fatalf("CLI list filter table exposes NoQuery filter number:\n%s", got)
 	}
-	if !strings.Contains(got, "fltTitle") {
-		t.Fatalf("CLI list source lost queryable title filter:\n%s", got)
+	if !strings.Contains(got, `{flag: "title"`) {
+		t.Fatalf("CLI list filter table lost queryable title filter:\n%s", got)
 	}
 }
 

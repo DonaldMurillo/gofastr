@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
 	"github.com/chromedp/chromedp"
 )
 
@@ -54,7 +55,7 @@ func TestDispatchRPC_ConfirmCancelDoesNotAbortInFlight(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 	var sigVal any
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(srv.URL+"/"),

@@ -5,13 +5,11 @@ package framework
 import (
 	"bytes"
 	"fmt"
-	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"syscall"
-	"time"
 
 	"github.com/DonaldMurillo/gofastr/internal/fileperm"
 )
@@ -71,20 +69,9 @@ func runProbeChildBody(id ProbeID) int {
 		pass(fmt.Sprintf("child uid=%s isolated from host uid=%s", myUID, hostUID))
 
 	case ProbeNoInheritedSecret:
-		// P2: canary env + secret file both invisible under baseline hygiene.
-		if name := os.Getenv("GOFASTR_PROBE_CANARY_NAME"); name != "" {
-			if got := os.Getenv(name); got != "" {
-				breach(fmt.Sprintf("inherited host env %s=%q (baseline hygiene failed)", name, got))
-				return 0
-			}
-		}
-		if secret := os.Getenv("GOFASTR_PROBE_SECRET_FILE"); secret != "" {
-			if data, err := os.ReadFile(secret); err == nil {
-				breach(fmt.Sprintf("read host secret file %s: %q (fs confinement failed)", secret, string(data)))
-				return 0
-			}
-		}
-		pass("no canary env, no host secret file visible")
+		// P2 is portable: canary env + secret file both invisible under
+		// baseline hygiene (shared body in processmodule_probe_common.go).
+		return probeNoInheritedSecretBody(pass, breach)
 
 	case ProbeNoInheritedFD:
 		// P3: child enumerates fds > 2; an inherited host fd = breach.
@@ -117,22 +104,9 @@ func runProbeChildBody(id ProbeID) int {
 		pass(fmt.Sprintf("no fds >2 inherited (host_fd=%s)", hostFD))
 
 	case ProbeNoNetworkEgress:
-		// P4: every dial fails. Short per-dial timeout so a black-holed
-		// route does not hang the probe past its wall budget.
-		targets := splitCSV(os.Getenv("GOFASTR_PROBE_NET_TARGETS"))
-		if len(targets) == 0 {
-			unreachable("no GOFASTR_PROBE_NET_TARGETS")
-			return 0
-		}
-		for _, t := range targets {
-			d := net.Dialer{Timeout: 2 * time.Second}
-			if c, err := d.Dial("tcp", t); err == nil {
-				_ = c.Close()
-				breach(fmt.Sprintf("dialed %s (network egress permitted)", t))
-				return 0
-			}
-		}
-		pass(fmt.Sprintf("all %d dial targets refused", len(targets)))
+		// P4 is portable: every dial target must be refused (shared body
+		// in processmodule_probe_common.go); Unix breach wording kept here.
+		return probeNoNetworkEgressBody(pass, breach, unreachable, "(network egress permitted)")
 
 	case ProbeFilesystemConfinement:
 		// P5: host tree / $HOME / secrets unreadable; scratch writable.
@@ -262,24 +236,4 @@ func forkBombCount(want int) int {
 func fdIsOpen(fd int) bool {
 	var st syscall.Stat_t
 	return syscall.Fstat(fd, &st) == nil
-}
-
-// pidStr is the current pid, formatted, for unique scratch filenames.
-func pidStr() string { return fmt.Sprintf("%d", os.Getpid()) }
-
-// splitCSV splits a comma-separated env value, trimming whitespace and
-// dropping empties.
-func splitCSV(s string) []string {
-	if s == "" {
-		return nil
-	}
-	parts := strings.Split(s, ",")
-	out := make([]string, 0, len(parts))
-	for _, p := range parts {
-		p = strings.TrimSpace(p)
-		if p != "" {
-			out = append(out, p)
-		}
-	}
-	return out
 }

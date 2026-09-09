@@ -160,31 +160,60 @@ func (s *Server) handlePromptsList(ctx context.Context, req Request) Response {
 	if err != nil {
 		return newErrorResponse(req.ID, ErrInvalidParams, err.Error())
 	}
+	// A prompt the caller cannot get is not listed to them: the
+	// description and argument list are the disclosure, same as a
+	// tool's inputSchema. The name sort keeps pages stable across
+	// requests.
+	page, next := gatedListPage(s, ctx, "prompts/list", offset,
+		func() map[string]Prompt { return s.prompts },
+		func(p Prompt) func(context.Context) error { return p.gate },
+		func(a, b Prompt) int { return strings.Compare(a.Name, b.Name) },
+	)
+	return newSuccessResponse(req.ID, promptsListResult{Prompts: page, NextCursor: next})
+}
+
+// gatedListPage snapshots one of the gated registries (prompts,
+// resource templates) under the read lock, evaluates the per-caller
+// gates outside it, sorts, and cuts the page at offset. The gate runs
+// BEFORE the page is cut, so pagination walks the post-filter set: a
+// gated item never surfaces on a page and never bends the page sizes or
+// cursor arithmetic that would otherwise count it. registry is called
+// under the lock so the map header is read inside it, exactly as the
+// inlined snapshots this helper replaced (handlePromptsList and
+// handleResourcesTemplatesList, formerly verbatim copies of this body).
+func gatedListPage[T any](
+	s *Server,
+	ctx context.Context,
+	method string,
+	offset int,
+	registry func() map[string]T,
+	gateOf func(T) func(context.Context) error,
+	less func(a, b T) int,
+) ([]T, string) {
 	// Snapshot under the read lock, evaluate the per-caller gates
 	// outside it: gates are app-supplied callback code and must never
 	// contend with the registry lock (notifications.go's rule). One
 	// slow gate used to stall every registration; a panicking one
 	// unwound past the RUnlock and wedged the registry.
 	s.mu.RLock()
-	snapshot := make([]Prompt, 0, len(s.prompts))
-	for _, p := range s.prompts {
-		snapshot = append(snapshot, p)
+	all := registry()
+	snapshot := make([]T, 0, len(all))
+	for _, v := range all {
+		snapshot = append(snapshot, v)
 	}
 	s.mu.RUnlock()
-	list := make([]Prompt, 0, len(snapshot))
-	for _, p := range snapshot {
-		// A prompt the caller cannot get is not listed to them: the
-		// description and argument list are the disclosure, same as a
-		// tool's inputSchema. gateRefused also converts a panicking
-		// gate into a refusal instead of a transport crash.
-		if gateRefused(p.gate, ctx) {
+	list := make([]T, 0, len(snapshot))
+	for _, v := range snapshot {
+		// An item the caller's gate refuses is not listed to them:
+		// its metadata is the disclosure. gateRefused also converts a
+		// panicking gate into a refusal instead of a transport crash.
+		if gateRefused(gateOf(v), ctx) {
 			continue
 		}
-		list = append(list, p)
+		list = append(list, v)
 	}
-	slices.SortFunc(list, func(a, b Prompt) int { return strings.Compare(a.Name, b.Name) })
-	page, next := pageList(s, "prompts/list", list, offset)
-	return newSuccessResponse(req.ID, promptsListResult{Prompts: page, NextCursor: next})
+	slices.SortFunc(list, less)
+	return pageList(s, method, list, offset)
 }
 
 // handlePromptsGet resolves a prompt by name, validates required arguments,
@@ -238,18 +267,8 @@ func (s *Server) handlePromptsGet(ctx context.Context, req Request) Response {
 
 	messages, err := s.getPromptMessages(ctx, p, params.Arguments)
 	if err != nil {
-		if rpcErr, ok := err.(*RPCError); ok {
-			return Response{JSONRPC: "2.0", ID: req.ID, Error: rpcErr}
-		}
-		// A plain error is internal detail (filesystem paths, driver
-		// text) and must not cross the transport — callTool's posture.
-		// Log it server-side and answer the generic message this very
-		// function's panic path already uses. The caller-visible failure
-		// channel a prompt handler owns is a deliberate *RPCError.
-		slog.Error("mcp: prompt handler failed",
-			slog.String("prompt", p.Name),
-			slog.String("err", err.Error()))
-		return newErrorResponse(req.ID, ErrInternalError, "internal prompt error")
+		return handlerErrorResponse(req, err, "mcp: prompt handler failed", "internal prompt error",
+			slog.String("prompt", p.Name))
 	}
 	return newSuccessResponse(req.ID, promptsGetResult{Description: p.Description, Messages: messages})
 }
@@ -265,6 +284,24 @@ func (s *Server) getPromptMessages(ctx context.Context, p Prompt, args map[strin
 		}
 	}()
 	return p.handler(ctx, args)
+}
+
+// handlerErrorResponse converts an error returned by an app-supplied
+// prompt handler or resource contents func into a Response: a
+// deliberate *RPCError crosses verbatim (its text is a caller-facing
+// channel), while any other error is internal detail (filesystem
+// paths, driver text) that must not cross the transport — callTool's
+// posture. The plain error is logged server-side with logMsg and attrs
+// (the error itself is appended) and answered with the generic
+// genericMsg. It replaces the two verbatim copies of this shape in
+// handlePromptsGet and handleResourcesRead.
+func handlerErrorResponse(req Request, err error, logMsg, genericMsg string, attrs ...slog.Attr) Response {
+	if rpcErr, ok := err.(*RPCError); ok {
+		return Response{JSONRPC: "2.0", ID: req.ID, Error: rpcErr}
+	}
+	attrs = append(attrs, slog.String("err", err.Error()))
+	slog.Default().LogAttrs(context.Background(), slog.LevelError, logMsg, attrs...)
+	return newErrorResponse(req.ID, ErrInternalError, genericMsg)
 }
 
 // checkPromptGate runs a prompt's gate (WithPromptGate) under its own

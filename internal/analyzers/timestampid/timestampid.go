@@ -52,8 +52,9 @@ import (
 	"go/token"
 	"go/types"
 	"strings"
-	"unicode"
 
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/astx"
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/pathflow"
 	"golang.org/x/tools/go/analysis"
 )
 
@@ -146,7 +147,7 @@ var observabilityWords = map[string]bool{
 // capability suffix word: id, entryID, nextCallID, sessionToken. A
 // preceding observability word (buildID, traceID) removes it.
 func capabilityName(name string) bool {
-	words := splitWords(name)
+	words := astx.SplitWords(name)
 	if len(words) == 0 {
 		return false
 	}
@@ -173,7 +174,7 @@ func minted(pass *analysis.Pass, e ast.Expr, bound map[types.Object]ast.Expr, bi
 	}
 	switch v := e.(type) {
 	case *ast.CallExpr:
-		q := qualifiedFunc(pass, v.Fun)
+		q := pathflow.QualifiedFunc(pass, v.Fun)
 		switch q {
 		case "fmt.Sprintf", "strconv.FormatInt", "strconv.FormatUint", "strconv.Itoa":
 			for _, a := range v.Args {
@@ -237,7 +238,7 @@ func mentionsWallClock(pass *analysis.Pass, e ast.Expr, bound map[types.Object]a
 // binding is time.Now(). A clock passed as a parameter is the
 // injectable-clock posture and is not wall-clock here.
 func isNow(pass *analysis.Pass, e ast.Expr, bound map[types.Object]ast.Expr, depth int) bool {
-	if call, ok := e.(*ast.CallExpr); ok && qualifiedFunc(pass, call.Fun) == "time.Now" {
+	if call, ok := e.(*ast.CallExpr); ok && pathflow.QualifiedFunc(pass, call.Fun) == "time.Now" {
 		return true
 	}
 	if id, ok := e.(*ast.Ident); ok && depth < maxDepth {
@@ -292,7 +293,7 @@ func bigRandBuffers(pass *analysis.Pass, body *ast.BlockStmt, bound map[types.Ob
 		if !ok {
 			return true
 		}
-		if qualifiedFunc(pass, call.Fun) != "crypto/rand.Read" {
+		if pathflow.QualifiedFunc(pass, call.Fun) != "crypto/rand.Read" {
 			return true
 		}
 		if len(call.Args) == 0 {
@@ -325,7 +326,7 @@ func bigRandBuffers(pass *analysis.Pass, body *ast.BlockStmt, bound map[types.Ob
 // of make([]byte, N) or var b [N]byte, or -1 when it cannot be read.
 func bufSize(pass *analysis.Pass, obj types.Object, bound map[types.Object]ast.Expr) int {
 	if b, ok := bound[obj]; ok && b != nil {
-		if call, ok := b.(*ast.CallExpr); ok && qualifiedFunc(pass, call.Fun) == "make" {
+		if call, ok := b.(*ast.CallExpr); ok && pathflow.QualifiedFunc(pass, call.Fun) == "make" {
 			if len(call.Args) == 2 || len(call.Args) == 3 {
 				if tv, ok := pass.TypesInfo.Types[call.Args[1]]; ok && tv.Value != nil {
 					if n, ok := constant.Int64Val(tv.Value); ok {
@@ -379,50 +380,4 @@ func bindings(pass *analysis.Pass, body *ast.BlockStmt) map[types.Object]ast.Exp
 		return true
 	})
 	return m
-}
-
-// qualifiedFunc renders a selector callee as "importpath.Func",
-// resolving the package through the type checker so aliased imports
-// still match.
-func qualifiedFunc(pass *analysis.Pass, fun ast.Expr) string {
-	sel, ok := fun.(*ast.SelectorExpr)
-	if !ok {
-		return ""
-	}
-	id, ok := sel.X.(*ast.Ident)
-	if !ok {
-		return ""
-	}
-	pkgName, ok := pass.TypesInfo.ObjectOf(id).(*types.PkgName)
-	if !ok {
-		return ""
-	}
-	return pkgName.Imported().Path() + "." + sel.Sel.Name
-}
-
-// splitWords splits an identifier into camelCase / underscore words.
-func splitWords(name string) []string {
-	runes := []rune(name)
-	var words []string
-	start := 0
-	for i := 1; i < len(runes); i++ {
-		prev, cur := runes[i-1], runes[i]
-		switch {
-		case cur == '_' || !unicode.IsLetter(cur) && !unicode.IsDigit(cur):
-			if start < i {
-				words = append(words, string(runes[start:i]))
-			}
-			start = i + 1
-		case unicode.IsUpper(cur) && unicode.IsLower(prev),
-			unicode.IsUpper(cur) && unicode.IsUpper(prev) && i+1 < len(runes) && unicode.IsLower(runes[i+1]):
-			if start < i {
-				words = append(words, string(runes[start:i]))
-			}
-			start = i
-		}
-	}
-	if start < len(runes) {
-		words = append(words, string(runes[start:]))
-	}
-	return words
 }

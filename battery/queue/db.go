@@ -199,12 +199,13 @@ func NewDBQueue(db *sql.DB, opts ...DBQueueOption) (*DBQueue, error) {
 	return q, nil
 }
 
+// detectDBDialect maps the shared query.IsPostgres probe onto the local
+// dialect enum: a driver whose SELECT version() banner contains
+// "postgresql" is Postgres, everything else (SQLite drivers return an
+// error or a SQLite banner) is treated as SQLite.
 func detectDBDialect(db *sql.DB) dbDialect {
-	var v string
-	if err := db.QueryRow("SELECT version()").Scan(&v); err == nil {
-		if strings.Contains(strings.ToLower(v), "postgresql") {
-			return dialectPostgres
-		}
+	if query.IsPostgres(db) {
+		return dialectPostgres
 	}
 	return dialectSQLite
 }
@@ -242,20 +243,25 @@ func (q *DBQueue) ensureTable() error {
 	// lease column existed. Ignore the error: re-running ADD COLUMN on a
 	// table that already has it is the only expected failure here.
 	_, _ = q.db.Exec(fmt.Sprintf("ALTER TABLE %s ADD COLUMN claimed_at %s", q.qt(), tsType))
-	// Migrate the lane column onto pre-existing tables created before lane
-	// isolation shipped. Postgres supports ADD COLUMN IF NOT EXISTS; SQLite
-	// does not, so we attempt the ALTER and tolerate only the duplicate-column
-	// error (matching on the message for both drivers).
-	if err := q.migrateLaneColumn(); err != nil {
+	// Idempotent migrations for pre-existing tables: each adds its
+	// column where missing (Postgres via ADD COLUMN IF NOT EXISTS,
+	// SQLite via attempt-and-tolerate-duplicate).
+	if err := q.addTextColumn("lane"); err != nil {
 		return err
 	}
-	if err := q.migrateOccurrenceIDColumn(); err != nil {
+	if err := q.addTextColumn("occurrence_id"); err != nil {
 		return err
 	}
-	if err := q.migrateClaimTokenColumn(); err != nil {
+	// claim_token: rows claimed before the column existed carry '' and
+	// stay completable by a caller presenting no token, so the upgrade
+	// is not a flag day.
+	if err := q.addTextColumn("claim_token"); err != nil {
 		return err
 	}
-	if err := q.migrateUserIDColumn(); err != nil {
+	// user_id: rows enqueued before it existed carry '' and are not
+	// user-attributed — the same answer as a job whose payload was
+	// never personal data.
+	if err := q.addTextColumn("user_id"); err != nil {
 		return err
 	}
 	// Index supports the dequeue ORDER BY and the WHERE filter together. The
@@ -279,53 +285,24 @@ func (q *DBQueue) ensureTable() error {
 	return nil
 }
 
-// migrateLaneColumn adds the lane column to a pre-existing table, tolerating
-// the "column already exists" case so it is idempotent across versions.
-func (q *DBQueue) migrateLaneColumn() error {
-	if q.dialect == dialectPostgres {
-		// Postgres supports IF NOT EXISTS directly.
-		_, err := q.db.Exec(fmt.Sprintf(
-			"ALTER TABLE %s ADD COLUMN IF NOT EXISTS lane TEXT NOT NULL DEFAULT ''", q.qt()))
-		return err
+// addTextColumn adds a TEXT NOT NULL DEFAULT ” column to the queue
+// table, idempotently: Postgres supports ADD COLUMN IF NOT EXISTS;
+// SQLite has no such form, so it attempts the ALTER and tolerates only
+// the duplicate-column error. It replaces migrateLaneColumn,
+// migrateClaimTokenColumn, migrateUserIDColumn, and
+// migrateOccurrenceIDColumn, which differed only in the column name.
+func (q *DBQueue) addTextColumn(column string) error {
+	ident, err := query.SafeIdent(column)
+	if err != nil {
+		return fmt.Errorf("queue: add column %q: %w", column, err)
 	}
-	// SQLite has no IF NOT EXISTS for ADD COLUMN: attempt and tolerate only
-	// the duplicate-column error.
-	_, err := q.db.Exec(fmt.Sprintf(
-		"ALTER TABLE %s ADD COLUMN lane TEXT NOT NULL DEFAULT ''", q.qt()))
-	if err != nil && isDuplicateColumnErr(err) {
-		return nil
-	}
-	return err
-}
-
-// migrateClaimTokenColumn adds the per-claim fence column to a pre-existing
-// table. Rows claimed before the column existed carry ” and stay completable
-// by a caller presenting no token, so the upgrade is not a flag day.
-func (q *DBQueue) migrateClaimTokenColumn() error {
 	if q.dialect == dialectPostgres {
 		_, err := q.db.Exec(fmt.Sprintf(
-			"ALTER TABLE %s ADD COLUMN IF NOT EXISTS claim_token TEXT NOT NULL DEFAULT ''", q.qt()))
+			"ALTER TABLE %s ADD COLUMN IF NOT EXISTS %s TEXT NOT NULL DEFAULT ''", q.qt(), ident))
 		return err
 	}
-	_, err := q.db.Exec(fmt.Sprintf(
-		"ALTER TABLE %s ADD COLUMN claim_token TEXT NOT NULL DEFAULT ''", q.qt()))
-	if err != nil && isDuplicateColumnErr(err) {
-		return nil
-	}
-	return err
-}
-
-// migrateUserIDColumn adds the erasure-reach column to a pre-existing table.
-// Rows enqueued before it existed carry ” and are not user-attributed, which
-// is the same answer as a job whose payload was never personal data.
-func (q *DBQueue) migrateUserIDColumn() error {
-	if q.dialect == dialectPostgres {
-		_, err := q.db.Exec(fmt.Sprintf(
-			"ALTER TABLE %s ADD COLUMN IF NOT EXISTS user_id TEXT NOT NULL DEFAULT ''", q.qt()))
-		return err
-	}
-	_, err := q.db.Exec(fmt.Sprintf(
-		"ALTER TABLE %s ADD COLUMN user_id TEXT NOT NULL DEFAULT ''", q.qt()))
+	_, err = q.db.Exec(fmt.Sprintf(
+		"ALTER TABLE %s ADD COLUMN %s TEXT NOT NULL DEFAULT ''", q.qt(), ident))
 	if err != nil && isDuplicateColumnErr(err) {
 		return nil
 	}
@@ -829,11 +806,11 @@ func (q *DBQueue) ListJobs(ctx context.Context, status string, limit int) ([]Job
 			&j.Lane, &j.Attempts, &j.MaxAttempts, &createdAt, &scheduledAt); err != nil {
 			return nil, err
 		}
-		j.CreatedAt, err = queueTime(createdAt)
+		j.CreatedAt, err = query.ParseDBTime(createdAt)
 		if err != nil {
 			return nil, fmt.Errorf("queue: decode job %q created_at: %w", j.ID, err)
 		}
-		j.ScheduledAt, err = queueTime(scheduledAt)
+		j.ScheduledAt, err = query.ParseDBTime(scheduledAt)
 		if err != nil {
 			return nil, fmt.Errorf("queue: decode job %q scheduled_at: %w", j.ID, err)
 		}
@@ -1181,11 +1158,11 @@ func scanJob(row interface {
 		return Job{}, err
 	}
 	var err error
-	job.CreatedAt, err = queueTime(createdAt)
+	job.CreatedAt, err = query.ParseDBTime(createdAt)
 	if err != nil {
 		return Job{}, fmt.Errorf("queue: decode job %q created_at: %w", job.ID, err)
 	}
-	job.ScheduledAt, err = queueTime(scheduledAt)
+	job.ScheduledAt, err = query.ParseDBTime(scheduledAt)
 	if err != nil {
 		return Job{}, fmt.Errorf("queue: decode job %q scheduled_at: %w", job.ID, err)
 	}

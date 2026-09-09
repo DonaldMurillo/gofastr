@@ -13,8 +13,10 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -208,12 +210,7 @@ func (r *Registry) SHA256(name string) (string, bool) {
 func (r *Registry) Names() []string {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	names := make([]string, 0, len(r.skills))
-	for n := range r.skills {
-		names = append(names, n)
-	}
-	sort.Strings(names)
-	return names
+	return slices.Sorted(maps.Keys(r.skills))
 }
 
 // MatchesTrigger returns the names of skills whose triggers match the

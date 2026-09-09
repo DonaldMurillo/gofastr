@@ -33,6 +33,7 @@ import (
 	"math"
 	"net/http"
 	"path"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -244,12 +245,7 @@ func (c *MapCatalog) Get(locale, key string) (Message, bool) {
 func (c *MapCatalog) Locales() []string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	out := make([]string, 0, len(c.Entries))
-	for k := range c.Entries {
-		out = append(out, k)
-	}
-	sort.Strings(out)
-	return out
+	return slices.Sorted(maps.Keys(c.Entries))
 }
 
 // LoadJSONCatalog reads `<locale>.json` files from dir on the provided

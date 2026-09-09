@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
 	"github.com/chromedp/chromedp"
 )
 
@@ -70,7 +71,7 @@ func beforeNavigateServer(t *testing.T, spaFetches *atomic.Int32) *httptest.Serv
 func TestBeforeNavigateCancelStopsRouter(t *testing.T) {
 	var fetches atomic.Int32
 	srv := beforeNavigateServer(t, &fetches)
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 
 	var path, stamp string
 	if err := chromedp.Run(ctx,
@@ -102,7 +103,7 @@ func TestBeforeNavigateCancelStopsRouter(t *testing.T) {
 func TestBeforeNavigateDetailProceeds(t *testing.T) {
 	var fetches atomic.Int32
 	srv := beforeNavigateServer(t, &fetches)
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 
 	var detail, path string
 	if err := chromedp.Run(ctx,
@@ -158,7 +159,7 @@ func TestBeforeNavigateDetailProceeds(t *testing.T) {
 func TestBeforeNavigateSkipsSamePathFragment(t *testing.T) {
 	var fetches atomic.Int32
 	srv := beforeNavigateServer(t, &fetches)
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 
 	var seen, path, stamp string
 	if err := chromedp.Run(ctx,
@@ -199,7 +200,7 @@ func TestBeforeNavigateSkipsSamePathFragment(t *testing.T) {
 func TestUppercaseSelfTargetIsSoftNavigated(t *testing.T) {
 	var fetches atomic.Int32
 	srv := beforeNavigateServer(t, &fetches)
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 
 	var path, stamp string
 	if err := chromedp.Run(ctx,
@@ -230,7 +231,7 @@ func TestUppercaseSelfTargetIsSoftNavigated(t *testing.T) {
 func TestBlankTargetStillEscapesTheRouter(t *testing.T) {
 	var fetches atomic.Int32
 	srv := beforeNavigateServer(t, &fetches)
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 
 	var path, fired string
 	if err := chromedp.Run(ctx,
@@ -270,7 +271,7 @@ func TestBlankTargetStillEscapesTheRouter(t *testing.T) {
 func TestSVGAnchorDoesNotBreakTheClickPath(t *testing.T) {
 	var fetches atomic.Int32
 	srv := beforeNavigateServer(t, &fetches)
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 
 	var errs, path string
 	if err := chromedp.Run(ctx,

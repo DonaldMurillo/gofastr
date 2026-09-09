@@ -1221,11 +1221,13 @@ func setSessionCookie(w http.ResponseWriter, r *http.Request, id string) {
 	})
 }
 
-// scrubCtl percent-encodes C0/DEL control bytes in a request-derived
-// log field. Local spelling of core/middleware and battery/log's
-// scrubControlBytes: both are package-private, and a copy of a
-// six-line filter is cheaper than an export cycle. Tab and printable
-// bytes pass through untouched.
+// scrubCtl percent-encodes C0 control bytes (except tab) and DEL in a
+// request-derived log field. Deliberately narrower than core/textsafe.
+// ScrubControlBytes, which this package already imports: that one also
+// encodes tab and the C1/bidi set, while this filter passes tab and all
+// non-ASCII through untouched. Kept local because of that contract
+// difference, not to avoid an import. Tab and printable bytes pass
+// through untouched.
 func scrubCtl(s string) string {
 	for i := range len(s) {
 		if c := s[i]; c < 0x20 && c != '\t' || c == 0x7f {
@@ -2206,7 +2208,7 @@ func (ds *UIHost) handlePartialPage(w http.ResponseWriter, r *http.Request, path
 	// there (same mechanism as a policy redirect). The client manifest
 	// usually rewrites before the request; this covers first load and a
 	// stale manifest so a redirect never 404s.
-	if target, ok := ds.App.ResolveRedirect(path); ok && isSafePartialRedirect(target) {
+	if target, ok := ds.App.ResolveRedirect(path); ok && handler.IsSafeRelativePath(target) {
 		w.Header().Set("X-Gofastr-Location", target)
 		w.WriteHeader(http.StatusOK)
 		return
@@ -2276,7 +2278,7 @@ func (ds *UIHost) handlePartialPage(w http.ResponseWriter, r *http.Request, path
 		// the browser handles those safely (cross-origin redirects
 		// don't propagate cookies, javascript:/data: schemes are
 		// blocked at the navigation layer).
-		if isSafePartialRedirect(res.URL) {
+		if handler.IsSafeRelativePath(res.URL) {
 			w.Header().Set("X-Gofastr-Location", res.URL)
 			w.WriteHeader(http.StatusOK)
 			return

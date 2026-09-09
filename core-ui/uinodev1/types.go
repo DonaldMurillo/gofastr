@@ -335,18 +335,7 @@ type DetailListProps struct {
 func (DetailListProps) propsMarker()             {}
 func (DetailListProps) childPolicy() childPolicy { return childPolicyNone }
 func (p DetailListProps) validate(lim Limits) error {
-	if len(p.Items) == 0 {
-		return errRequired("detail-list.items")
-	}
-	for i, it := range p.Items {
-		if it.Label == "" || it.Value == "" {
-			return errRequiredIndex("detail-list.items", i)
-		}
-		if err := checkStrings(lim, "detail-list", it.Label, it.Value); err != nil {
-			return err
-		}
-	}
-	return nil
+	return validatePairs(lim, "detail-list", p.Items)
 }
 func (p DetailListProps) estimatedTextSize() int {
 	n := 0
@@ -370,18 +359,7 @@ type KeyValueProps struct {
 func (KeyValueProps) propsMarker()             {}
 func (KeyValueProps) childPolicy() childPolicy { return childPolicyNone }
 func (p KeyValueProps) validate(lim Limits) error {
-	if len(p.Items) == 0 {
-		return errRequired("key-value.items")
-	}
-	for i, it := range p.Items {
-		if it.Key == "" || it.Value == "" {
-			return errRequiredIndex("key-value.items", i)
-		}
-		if err := checkStrings(lim, "key-value", it.Key, it.Value); err != nil {
-			return err
-		}
-	}
-	return nil
+	return validatePairs(lim, "key-value", p.Items)
 }
 func (p KeyValueProps) estimatedTextSize() int {
 	n := 0
@@ -389,6 +367,37 @@ func (p KeyValueProps) estimatedTextSize() int {
 		n += len(it.Key) + len(it.Value)
 	}
 	return n
+}
+
+// labelValue is the two-string shape every list-of-pairs props reads,
+// so validatePairs can walk any of them. DetailItem and KeyValueItem
+// satisfy it.
+type labelValue interface {
+	pair() (label, value string)
+}
+
+func (it DetailItem) pair() (string, string)   { return it.Label, it.Value }
+func (it KeyValueItem) pair() (string, string) { return it.Key, it.Value }
+
+// validatePairs enforces the shared contract of the pair-list props
+// (detail-list, key-value): at least one item, both halves of every
+// item present, and every string within Limits.MaxPropString. It
+// replaces the two verbatim copies of this shape in
+// DetailListProps.validate and KeyValueProps.validate.
+func validatePairs[T labelValue](lim Limits, what string, items []T) error {
+	if len(items) == 0 {
+		return errRequired(what + ".items")
+	}
+	for i, it := range items {
+		label, value := it.pair()
+		if label == "" || value == "" {
+			return errRequiredIndex(what+".items", i)
+		}
+		if err := checkStrings(lim, what, label, value); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // StatCardProps is a single labeled metric.

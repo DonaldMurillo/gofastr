@@ -129,6 +129,8 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/astx"
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/pathflow"
 	"golang.org/x/tools/go/analysis"
 )
 
@@ -207,7 +209,7 @@ func buildGraph(pass *analysis.Pass) *graph {
 		g.modPath = pass.Module.Path
 	}
 	for _, f := range pass.Files {
-		if isTestFile(pass, f) {
+		if pathflow.IsTestFile(pass, f) {
 			continue
 		}
 		for _, d := range f.Decls {
@@ -399,7 +401,7 @@ func (g *graph) interfaceImplementations(m *types.Func) []*node {
 // body identity) becomes a seed and loses its synchronous-parent
 // recover credit; a package-local named function becomes a seed too.
 func (g *graph) markAsync(fun ast.Expr, from *node) {
-	if lit, ok := unparen(fun).(*ast.FuncLit); ok {
+	if lit, ok := ast.Unparen(fun).(*ast.FuncLit); ok {
 		for _, n := range g.all {
 			if n.owner != nil && n.body == lit.Body {
 				n.goLaunched = true
@@ -419,7 +421,7 @@ func (g *graph) markAsync(fun ast.Expr, from *node) {
 
 func (g *graph) callTarget(fun ast.Expr) types.Object {
 	var obj types.Object
-	switch fun := unparen(fun).(type) {
+	switch fun := ast.Unparen(fun).(type) {
 	case *ast.Ident:
 		obj = g.pass.TypesInfo.ObjectOf(fun)
 	case *ast.SelectorExpr:
@@ -478,7 +480,7 @@ func originFunc(fn *types.Func) *types.Func {
 // result of one of those host calls — and its printed description.
 func (g *graph) callbackCallee(call *ast.CallExpr, n *node) (string, bool) {
 	pass := g.pass
-	switch fun := unparen(call.Fun).(type) {
+	switch fun := ast.Unparen(call.Fun).(type) {
 	case *ast.SelectorExpr:
 		if s, ok := pass.TypesInfo.Selections[fun]; ok && s.Kind() == types.FieldVal {
 			if isCallbackType(s.Type()) && !isCancelNamed(s.Obj().Name()) {
@@ -564,7 +566,7 @@ func (g *graph) ifaceMethodCallee(sel *ast.SelectorExpr, n *node) (string, bool)
 // second is a package-chosen implementation whose panic the edge flood
 // already reaches.
 func (g *graph) hostSuppliedIface(x ast.Expr, n *node) bool {
-	switch v := unparen(x).(type) {
+	switch v := ast.Unparen(x).(type) {
 	case *ast.SelectorExpr:
 		if s, ok := g.pass.TypesInfo.Selections[v]; ok && s.Kind() == types.FieldVal {
 			_, isField := s.Obj().(*types.Var)
@@ -658,7 +660,7 @@ func (g *graph) derivedVars(body *ast.BlockStmt, n *node) map[types.Object]bool 
 				if i >= len(x.Lhs) {
 					continue
 				}
-				if idx, ok := unparen(rhs).(*ast.IndexExpr); ok {
+				if idx, ok := ast.Unparen(rhs).(*ast.IndexExpr); ok {
 					if _, isMap := underlyingMap(pass.TypesInfo.TypeOf(idx.X)); !isMap {
 						continue
 					}
@@ -669,7 +671,7 @@ func (g *graph) derivedVars(body *ast.BlockStmt, n *node) map[types.Object]bool 
 					}
 					continue
 				}
-				if sel, ok := unparen(rhs).(*ast.SelectorExpr); ok {
+				if sel, ok := ast.Unparen(rhs).(*ast.SelectorExpr); ok {
 					if s, ok := pass.TypesInfo.Selections[sel]; ok && s.Kind() == types.FieldVal && isCallbackType(s.Type()) && !isCancelNamed(s.Obj().Name()) {
 						if id, ok := x.Lhs[i].(*ast.Ident); ok {
 							if obj := pass.TypesInfo.Defs[id]; obj != nil {
@@ -679,7 +681,7 @@ func (g *graph) derivedVars(body *ast.BlockStmt, n *node) map[types.Object]bool 
 					}
 					continue
 				}
-				if call, ok := unparen(rhs).(*ast.CallExpr); ok {
+				if call, ok := ast.Unparen(rhs).(*ast.CallExpr); ok {
 					// A func result of a host call: `release` out of
 					// Acquire. Multi-value assigns map every func-typed
 					// left side to the one call on the right.
@@ -721,14 +723,14 @@ func (g *graph) derivedIfaceVars(body *ast.BlockStmt, n *node) map[types.Object]
 				if obj == nil {
 					continue
 				}
-				switch unparen(rhs).(type) {
+				switch ast.Unparen(rhs).(type) {
 				case *ast.SelectorExpr:
-					sel := unparen(rhs).(*ast.SelectorExpr)
+					sel := ast.Unparen(rhs).(*ast.SelectorExpr)
 					if s, ok := pass.TypesInfo.Selections[sel]; ok && s.Kind() == types.FieldVal {
 						out[obj] = true
 					}
 				case *ast.Ident:
-					other := pass.TypesInfo.ObjectOf(unparen(rhs).(*ast.Ident))
+					other := pass.TypesInfo.ObjectOf(ast.Unparen(rhs).(*ast.Ident))
 					if other != nil {
 						for m := n; m != nil; m = m.owner {
 							if m.params[other] {
@@ -737,7 +739,7 @@ func (g *graph) derivedIfaceVars(body *ast.BlockStmt, n *node) map[types.Object]
 						}
 					}
 				case *ast.IndexExpr:
-					idx := unparen(rhs).(*ast.IndexExpr)
+					idx := ast.Unparen(rhs).(*ast.IndexExpr)
 					if _, isMap := underlyingMap(pass.TypesInfo.TypeOf(idx.X)); isMap {
 						out[obj] = true
 					}
@@ -813,7 +815,7 @@ func hasRecover(body *ast.BlockStmt) bool {
 		case *ast.DeferStmt:
 			ast.Inspect(x.Call, func(y ast.Node) bool {
 				if call, ok := y.(*ast.CallExpr); ok {
-					if id, ok := unparen(call.Fun).(*ast.Ident); ok && id.Name == "recover" {
+					if id, ok := ast.Unparen(call.Fun).(*ast.Ident); ok && id.Name == "recover" {
 						found = true
 					}
 				}
@@ -836,7 +838,7 @@ func directRecover(body *ast.BlockStmt) bool {
 			return false
 		}
 		if call, ok := x.(*ast.CallExpr); ok {
-			if id, ok := unparen(call.Fun).(*ast.Ident); ok && id.Name == "recover" {
+			if id, ok := ast.Unparen(call.Fun).(*ast.Ident); ok && id.Name == "recover" {
 				found = true
 			}
 		}
@@ -873,8 +875,8 @@ func containsReadLoop(pass *analysis.Pass, body *ast.BlockStmt) bool {
 }
 
 func forLoopReads(pass *analysis.Pass, loop *ast.ForStmt) bool {
-	if call, ok := unparen(loop.Cond).(*ast.CallExpr); ok && loop.Cond != nil {
-		if sel, ok := unparen(call.Fun).(*ast.SelectorExpr); ok && readMethodName.MatchString(sel.Sel.Name) {
+	if call, ok := ast.Unparen(loop.Cond).(*ast.CallExpr); ok && loop.Cond != nil {
+		if sel, ok := ast.Unparen(call.Fun).(*ast.SelectorExpr); ok && readMethodName.MatchString(sel.Sel.Name) {
 			return true
 		}
 	}
@@ -891,16 +893,16 @@ func forLoopReads(pass *analysis.Pass, loop *ast.ForStmt) bool {
 			// channel is a ticker's or timer's .C, which no
 			// coordination wait looks like: that is a timer-driven
 			// dispatcher whose callback panic kills the process.
-			if u, ok := unparen(y.X).(*ast.UnaryExpr); ok && isReceive(u) && isTimerChan(pass, u.X) {
+			if u, ok := ast.Unparen(y.X).(*ast.UnaryExpr); ok && isReceive(u) && isTimerChan(pass, u.X) {
 				reads = true
 			}
 		case *ast.AssignStmt:
 			for _, rhs := range y.Rhs {
-				if u, ok := unparen(rhs).(*ast.UnaryExpr); ok && isReceive(u) {
+				if u, ok := ast.Unparen(rhs).(*ast.UnaryExpr); ok && isReceive(u) {
 					reads = true
 				}
-				if call, ok := unparen(rhs).(*ast.CallExpr); ok {
-					if sel, ok := unparen(call.Fun).(*ast.SelectorExpr); ok && readMethodName.MatchString(sel.Sel.Name) {
+				if call, ok := ast.Unparen(rhs).(*ast.CallExpr); ok {
+					if sel, ok := ast.Unparen(call.Fun).(*ast.SelectorExpr); ok && readMethodName.MatchString(sel.Sel.Name) {
 						reads = true // for { f, err := r.ReadFrame() }
 					}
 				}
@@ -918,7 +920,7 @@ func forLoopReads(pass *analysis.Pass, loop *ast.ForStmt) bool {
 // timer-driven dispatcher; no singleflight coordination wait receives
 // on a .C selector.
 func isTimerChan(pass *analysis.Pass, e ast.Expr) bool {
-	sel, ok := unparen(e).(*ast.SelectorExpr)
+	sel, ok := ast.Unparen(e).(*ast.SelectorExpr)
 	if !ok || sel.Sel.Name != "C" {
 		return false
 	}
@@ -929,7 +931,7 @@ func isTimerChan(pass *analysis.Pass, e ast.Expr) bool {
 	if ptr, ok := t.(*types.Pointer); ok {
 		t = ptr.Elem()
 	}
-	return isNamed(t, "time", "Ticker") || isNamed(t, "time", "Timer")
+	return astx.IsNamed(t, "time", "Ticker") || astx.IsNamed(t, "time", "Timer")
 }
 
 func isReceive(u *ast.UnaryExpr) bool { return u.Op.String() == "<-" }
@@ -997,7 +999,7 @@ func isClockType(t types.Type) bool {
 	if !ok || sig.Params().Len() != 0 || sig.Results().Len() != 1 {
 		return false
 	}
-	return isNamed(sig.Results().At(0).Type(), "time", "Time")
+	return astx.IsNamed(sig.Results().At(0).Type(), "time", "Time")
 }
 
 func isHandlerType(t types.Type) bool {
@@ -1019,36 +1021,22 @@ func isHandlerShape(sig *types.Signature) bool {
 		return false
 	}
 	p0, p1 := sig.Params().At(0), sig.Params().At(1)
-	if !isNamed(p0.Type(), "net/http", "ResponseWriter") {
+	if !astx.IsNamed(p0.Type(), "net/http", "ResponseWriter") {
 		return false
 	}
 	ptr, ok := p1.Type().(*types.Pointer)
 	if !ok {
 		return false
 	}
-	return isNamed(ptr.Elem(), "net/http", "Request")
-}
-
-func isNamed(t types.Type, pkgPath, name string) bool {
-	n, ok := t.(*types.Named)
-	if !ok {
-		return false
-	}
-	obj := n.Obj()
-	return obj.Pkg() != nil && obj.Pkg().Path() == pkgPath && obj.Name() == name
+	return astx.IsNamed(ptr.Elem(), "net/http", "Request")
 }
 
 func isCancelFunc(t types.Type) bool {
-	return isNamed(t, "context", "CancelFunc")
-}
-
-func isTestFile(pass *analysis.Pass, f *ast.File) bool {
-	name := pass.Fset.Position(f.Pos()).Filename
-	return len(name) >= 8 && name[len(name)-8:] == "_test.go"
+	return astx.IsNamed(t, "context", "CancelFunc")
 }
 
 func isAfterFunc(pass *analysis.Pass, call *ast.CallExpr) bool {
-	sel, ok := unparen(call.Fun).(*ast.SelectorExpr)
+	sel, ok := ast.Unparen(call.Fun).(*ast.SelectorExpr)
 	if !ok {
 		return false
 	}
@@ -1058,14 +1046,4 @@ func isAfterFunc(pass *analysis.Pass, call *ast.CallExpr) bool {
 	}
 	pkg, ok := pass.TypesInfo.Uses[id].(*types.PkgName)
 	return ok && pkg.Imported().Path() == "time" && sel.Sel.Name == "AfterFunc"
-}
-
-func unparen(e ast.Expr) ast.Expr {
-	for {
-		p, ok := e.(*ast.ParenExpr)
-		if !ok {
-			return e
-		}
-		e = p.X
-	}
 }

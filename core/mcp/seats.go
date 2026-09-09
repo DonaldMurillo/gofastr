@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
+	"github.com/DonaldMurillo/gofastr/core/stream"
 )
 
 // defaultSSESeatCap is the per-caller cap on concurrent SSE notification
@@ -17,19 +18,19 @@ import (
 const defaultSSESeatCap = 16
 
 // SeatOverflowPolicy selects what a caller at the SSE seat cap does with
-// its next stream.
-type SeatOverflowPolicy uint8
+// its next stream. It is core/stream's policy type under this package's
+// name: the two were verbatim copies, and the SSE bus, the crud event
+// streams, and this server all seat by the same rule.
+type SeatOverflowPolicy = stream.SeatOverflowPolicy
 
 const (
 	// SeatOverflowRefuse answers the connection with 429 and holds no
 	// seat. The default: a caller at the cap learns it is at the cap.
-	SeatOverflowRefuse SeatOverflowPolicy = iota
+	SeatOverflowRefuse = stream.SeatOverflowRefuse
 	// SeatOverflowEvictOldest closes that caller's oldest stream and
-	// seats the new one — the reconnect-friendly policy for hosts whose
-	// clients churn streams (a dropped connection whose departure the
-	// server has not noticed yet is replaced instead of blocking the
-	// client until the old stream times out).
-	SeatOverflowEvictOldest
+	// seats the new one, the reconnect-friendly policy for hosts whose
+	// clients churn streams.
+	SeatOverflowEvictOldest = stream.SeatOverflowEvictOldest
 )
 
 // SetSSESeatCap bounds how many concurrent SSE notification streams
@@ -84,15 +85,8 @@ func (s *Server) seatCapLocked() int {
 // removeSSESubscriber (voluntary departure), the admission eviction
 // path, and notifySubscribers' backpressure drop, so the FIFO never
 // retains a departed subscriber and a seat is freed exactly once.
+// The splice itself is stream.SpliceSeat, shared with core/stream's
+// broker and framework/crud's stream-seat registry.
 func (s *Server) spliceSeatLocked(sub *sseSubscriber) {
-	q := s.sseSeatOrder[sub.seatKey]
-	for i, v := range q {
-		if v == sub {
-			s.sseSeatOrder[sub.seatKey] = append(q[:i], q[i+1:]...)
-			break
-		}
-	}
-	if len(s.sseSeatOrder[sub.seatKey]) == 0 {
-		delete(s.sseSeatOrder, sub.seatKey)
-	}
+	stream.SpliceSeat(s.sseSeatOrder, sub.seatKey, sub)
 }

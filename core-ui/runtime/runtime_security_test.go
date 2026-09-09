@@ -12,6 +12,7 @@ import (
 	"github.com/chromedp/chromedp"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/check"
+	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
 )
 
 // The runtime is shipped as JavaScript with no JS engine available in
@@ -954,7 +955,7 @@ func TestBannerDismissCookieEncodesId(t *testing.T) {
           data-fui-banner-dismiss-id="boot-marker">x</button>
 </div>`)
 
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 	var raw string
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(g.Srv.URL+"/"),
@@ -1011,7 +1012,7 @@ func TestPaneHostCraftedValueNoOp(t *testing.T) {
   <div data-fui-pane="secondary" id="pane-sec2" hidden>S2</div>
 </div>`)
 
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 	var raw string
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(g.Srv.URL+"/"),
@@ -1066,7 +1067,7 @@ func TestRpcScrollSelectorDegradesOnly(t *testing.T) {
         data-fui-rpc-signal="result" data-fui-rpc-scroll-to="[[">go</button>
 <span id="sig" data-fui-signal="result"></span>`)
 
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 	var raw string
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(g.Srv.URL+"/"),

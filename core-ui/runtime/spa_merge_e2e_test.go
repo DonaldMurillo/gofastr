@@ -5,7 +5,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
+	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
 	"github.com/chromedp/chromedp"
 )
 
@@ -50,7 +52,7 @@ func TestSPAMerge_GlobalSurvivesNavPageScopedReseeds(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 
 	var countAfterInc, gAfterNav, bLocal string
 	if err := chromedp.Run(ctx,

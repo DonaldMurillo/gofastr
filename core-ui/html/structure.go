@@ -167,8 +167,27 @@ func Article(cfg ArticleConfig, children ...render.HTML) render.HTML {
 // Required: Label or LabelledBy. Automatically adds role="region" and the
 // corresponding aria attribute.
 func Section(cfg SectionConfig, children ...render.HTML) render.HTML {
+	return labelledLandmark("section", RoleRegion, "Section", landmark(cfg), children...)
+}
+
+// landmark is the field shape shared by SectionConfig, NavConfig, and
+// AsideConfig (same names, types, and order), so a plain struct
+// conversion hands it to labelledLandmark.
+type landmark struct {
+	Label      string
+	LabelledBy string
+	Class      string
+	ID         string
+	ExtraAttrs Attrs
+}
+
+// labelledLandmark builds a landmark element that requires an
+// accessible name (Label becomes aria-label, LabelledBy becomes
+// aria-labelledby) and carries its fixed ARIA role. It replaces the
+// three verbatim copies of this shape in Section, Nav, and Aside.
+func labelledLandmark(tag, role, elem string, cfg landmark, children ...render.HTML) render.HTML {
 	if cfg.Label == "" && cfg.LabelledBy == "" {
-		panic("html: Section requires Label or LabelledBy")
+		panic("html: " + elem + " requires Label or LabelledBy")
 	}
 	attrs := buildAttrs(cfg.ExtraAttrs, cfg.ID, cfg.Class)
 	if cfg.Label != "" {
@@ -177,8 +196,8 @@ func Section(cfg SectionConfig, children ...render.HTML) render.HTML {
 	if cfg.LabelledBy != "" {
 		setAttr(attrs, "aria-labelledby", cfg.LabelledBy)
 	}
-	setAttr(attrs, "role", RoleRegion)
-	return render.Tag("section", attrs, children...)
+	setAttr(attrs, "role", role)
+	return render.Tag(tag, attrs, children...)
 }
 
 // Main produces a <main> element with role="main" and id="main-content"
@@ -223,35 +242,13 @@ func Footer(cfg FooterConfig, children ...render.HTML) render.HTML {
 // Nav produces a <nav> element with role="navigation".
 // Required: Label or LabelledBy.
 func Nav(cfg NavConfig, children ...render.HTML) render.HTML {
-	if cfg.Label == "" && cfg.LabelledBy == "" {
-		panic("html: Nav requires Label or LabelledBy")
-	}
-	attrs := buildAttrs(cfg.ExtraAttrs, cfg.ID, cfg.Class)
-	if cfg.Label != "" {
-		setAttr(attrs, "aria-label", cfg.Label)
-	}
-	if cfg.LabelledBy != "" {
-		setAttr(attrs, "aria-labelledby", cfg.LabelledBy)
-	}
-	setAttr(attrs, "role", RoleNavigation)
-	return render.Tag("nav", attrs, children...)
+	return labelledLandmark("nav", RoleNavigation, "Nav", landmark(cfg), children...)
 }
 
 // Aside produces an <aside> element with role="complementary".
 // Required: Label or LabelledBy.
 func Aside(cfg AsideConfig, children ...render.HTML) render.HTML {
-	if cfg.Label == "" && cfg.LabelledBy == "" {
-		panic("html: Aside requires Label or LabelledBy")
-	}
-	attrs := buildAttrs(cfg.ExtraAttrs, cfg.ID, cfg.Class)
-	if cfg.Label != "" {
-		setAttr(attrs, "aria-label", cfg.Label)
-	}
-	if cfg.LabelledBy != "" {
-		setAttr(attrs, "aria-labelledby", cfg.LabelledBy)
-	}
-	setAttr(attrs, "role", RoleComplementary)
-	return render.Tag("aside", attrs, children...)
+	return labelledLandmark("aside", RoleComplementary, "Aside", landmark(cfg), children...)
 }
 
 // Figure produces a <figure> element for self-contained content

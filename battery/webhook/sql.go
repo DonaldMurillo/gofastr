@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/core/query"
 )
 
 // SQLStore is a SQL-backed Store. Subscribers and deliveries each
@@ -106,14 +108,11 @@ func NewSQLStore(db *sql.DB, opts ...SQLOption) (*SQLStore, error) {
 	if s.codec == nil {
 		return nil, errors.New("webhook: NewSQLStore requires WithSQLSecretCodec(...) or WithSQLAllowPlaintext(): refusing to silently store subscriber secrets in cleartext")
 	}
-	if !safeIdent(s.subTable) || !safeIdent(s.delTable) {
+	if !query.SafeTableName(s.subTable) || !query.SafeTableName(s.delTable) {
 		return nil, errors.New("webhook: unsafe table name")
 	}
-	var v string
-	if err := db.QueryRow("SELECT version()").Scan(&v); err == nil {
-		if strings.Contains(strings.ToLower(v), "postgresql") {
-			s.dialect = "postgres"
-		}
+	if query.IsPostgres(db) {
+		s.dialect = "postgres"
 	}
 	if err := s.ensureTables(); err != nil {
 		return nil, fmt.Errorf("ensure tables: %w", err)
@@ -383,9 +382,20 @@ func (s *SQLStore) ClaimDueDeliveries(ctx context.Context, now time.Time, limit 
 // retention is not a dead-letter TTL (the same boundary framework/outbox
 // documents for WithRetention).
 func (s *SQLStore) ReapTerminalBefore(ctx context.Context, cutoff time.Time) (int64, error) {
-	q := fmt.Sprintf(`DELETE FROM %s WHERE status = %s AND updated_at < %s`,
-		s.delTable, s.placeholder(1), s.placeholder(2))
-	res, err := s.db.ExecContext(ctx, q, string(StatusSuccess), cutoff)
+	return reapTerminalSQL(ctx, s.db, fmt.Sprintf(
+		`DELETE FROM %s WHERE status = %s AND updated_at < %s`,
+		s.delTable, s.placeholder(1), s.placeholder(2)),
+		string(StatusSuccess), cutoff)
+}
+
+// reapTerminalSQL runs the retention DELETE both SQL stores share: rows
+// in the given terminal status whose updated_at is older than cutoff.
+// The caller passes the fully built statement (the placeholder style is
+// dialect-specific). It replaces the duplicated bodies of
+// SQLStore.ReapTerminalBefore and SQLInboundStore.ReapTerminalBefore,
+// which differed only in table and terminal status.
+func reapTerminalSQL(ctx context.Context, db *sql.DB, stmt, status string, cutoff time.Time) (int64, error) {
+	res, err := db.ExecContext(ctx, stmt, status, cutoff)
 	if err != nil {
 		return 0, err
 	}
@@ -573,16 +583,4 @@ func (s *SQLStore) placeholder(n int) string {
 		return fmt.Sprintf("$%d", n)
 	}
 	return "?"
-}
-func safeIdent(name string) bool {
-	if name == "" || len(name) > 64 {
-		return false
-	}
-	for _, r := range name {
-		ok := (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_'
-		if !ok {
-			return false
-		}
-	}
-	return true
 }

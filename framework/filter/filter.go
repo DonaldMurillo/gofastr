@@ -710,53 +710,40 @@ func inClause(field string, values []any) (string, []any) {
 	return sb.String(), args
 }
 
-// applyFiltersToCountQuery applies parsed filters to a count builder.
+// ApplyToCountQuery applies parsed filters to a count builder.
 func ApplyToCountQuery(cb *query.CountBuilder, filters []ParsedFilter) {
-	for i := 0; i < len(filters); i++ {
-		f := filters[i]
-		switch f.Op {
-		case OpEq:
-			cb.Where(f.Field+" = $1", f.BindValue())
-		case OpGt:
-			cb.Where(f.Field+" > $1", f.BindValue())
-		case OpLt:
-			cb.Where(f.Field+" < $1", f.BindValue())
-		case OpGte:
-			cb.Where(f.Field+" >= $1", f.BindValue())
-		case OpLte:
-			cb.Where(f.Field+" <= $1", f.BindValue())
-		case OpLike:
-			cb.Where(f.Field+` LIKE $1 ESCAPE '\'`, escapeLikePattern(f.Value))
-		case OpIn:
-			vals, n := collectInRun(filters, i)
-			cond, args := inClause(f.Field, vals)
-			cb.Where(cond, args...)
-			i += n - 1
-		}
-	}
+	applyFilters(cb, filters)
 }
 
-// applyFiltersToQuery applies parsed filters to a query builder.
+// ApplyToQuery applies parsed filters to a query builder.
 func ApplyToQuery(qb *query.QueryBuilder, filters []ParsedFilter) {
+	applyFilters(qb, filters)
+}
+
+// applyFilters appends one WHERE clause per parsed filter to b. It is
+// the single body behind ApplyToCountQuery and ApplyToQuery, which were
+// verbatim copies of each other differing only in the builder type they
+// drove; B is either *query.CountBuilder or *query.QueryBuilder.
+func applyFilters[B interface{ Where(string, ...any) B }](b B, filters []ParsedFilter) {
 	for i := 0; i < len(filters); i++ {
 		f := filters[i]
 		switch f.Op {
 		case OpEq:
-			qb.Where(f.Field+" = $1", f.BindValue())
+			b.Where(f.Field+" = $1", f.BindValue())
 		case OpGt:
-			qb.Where(f.Field+" > $1", f.BindValue())
+			b.Where(f.Field+" > $1", f.BindValue())
 		case OpLt:
-			qb.Where(f.Field+" < $1", f.BindValue())
+			b.Where(f.Field+" < $1", f.BindValue())
 		case OpGte:
-			qb.Where(f.Field+" >= $1", f.BindValue())
+			b.Where(f.Field+" >= $1", f.BindValue())
 		case OpLte:
-			qb.Where(f.Field+" <= $1", f.BindValue())
+			b.Where(f.Field+" <= $1", f.BindValue())
 		case OpLike:
-			qb.Where(f.Field+` LIKE $1 ESCAPE '\'`, escapeLikePattern(f.Value))
+			b.Where(f.Field+` LIKE $1 ESCAPE '\'`, escapeLikePattern(f.Value))
 		case OpIn:
 			vals, n := collectInRun(filters, i)
 			cond, args := inClause(f.Field, vals)
-			qb.Where(cond, args...)
+			b.Where(cond, args...)
 			i += n - 1
 		}
 	}

@@ -232,9 +232,10 @@ framework/
 │                    (BeforeCreate, AfterCreate, etc.)
 ├── i18nui/          Translated default strings for framework UI surfaces
 ├── image/           Image decode/encode, variant pipeline, BlurHash encode
-│                    + decode. A zero-dependency leaf: imports nothing from
-│                    gofastr, so nothing below it may import IT either (see
-│                    imagefield/ and the framework/ui layering test).
+│                    + decode. A leaf: its only gofastr import is the stdlib-only
+│                    internal/exif, so nothing below it may import IT
+│                    either (see imagefield/ and the framework/ui layering
+│                    test).
 ├── imagefield/      Adapter making framework/image satisfy file.ImageDeriver,
 │                    so a schema.Image upload auto-produces renditions +
 │                    BlurHash. Separate package on purpose: file/ and crud/
@@ -243,6 +244,8 @@ framework/
 │                    (framework.WithImagePipeline) pay for the codecs.
 ├── internal/casing/ snake↔camel helpers (private to the framework
 │                    module, not part of the public API)
+├── internal/exif/   TIFF/EXIF orientation parser shared by file/ and
+│                    image/ (stdlib-only leaf, so file/ never links codecs)
 ├── lifecycle/       Graceful shutdown contract: drain, flush, stop phases
 ├── migrate/         AutoMigrate / DiffSchema / Dialect / Bulk queries
 ├── openapi/         EntityOpenAPI spec generator + the entity-endpoint
@@ -338,7 +341,10 @@ The root package `framework/` itself contains:
 ## Layering rules (top imports bottom, reverse is forbidden)
 
 ```
-L1  internal/casing                         (no internal deps)
+L1  internal/casing, internal/exif            (no internal deps; exif is the
+                                              leaf TIFF walker shared by
+                                              file/ and image/ so file
+                                              never links the codecs)
 L2  entity                                   (imports core/ +
                                               internal/casing only)
 L3  hook, event, file, cron, access, db,    (leaf packages, no framework-
@@ -370,7 +376,9 @@ The rule is direction: a package may import packages in lower layers,
 never higher, and intra-layer edges should stay rare and deliberate.
 Today's intra-L3 edges: `slowquery → db`, `outbox → event + db`,
 `embed → db + migrate + tenant`, `imagefield → file + image`,
-`contracts → agentsinv`, `dsl → filter` (the LIKE-escape helpers:
+`contracts → agentsinv`, `contracts/analyzers → access` (the one
+Levenshtein, `access.EditDistance`, behind both the capability
+suggester and the rendering rule), `dsl → filter` (the LIKE-escape helpers:
 one canonical `EscapeLikePattern`/`LikeEscapeSuffix`, not a per-package
 re-implementation). Within L4: `openapi → crud`. In the UI stack:
 `ui → i18nui + agentsinv`, `uihost → axecov + dev + embed + image +

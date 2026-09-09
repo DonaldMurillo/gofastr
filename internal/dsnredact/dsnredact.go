@@ -28,7 +28,7 @@ import (
 
 // Redact returns dsn with its password removed for safe logging.
 func Redact(dsn string) string {
-	if !hasSecret(dsn) {
+	if !HasSecret(dsn) {
 		return dsn
 	}
 	if u, err := url.Parse(dsn); err == nil && u.User != nil {
@@ -71,7 +71,7 @@ func Redact(dsn string) string {
 	return strings.Join(kept, " ")
 }
 
-// hasSecret reports whether dsn carries a detectable credential: a
+// HasSecret reports whether dsn carries a detectable credential: a
 // url.Parse-able userinfo password, a textual userinfo section on a URL
 // url.Parse rejects, or a `password=` pair. SQLite file DSNs return
 // false: nothing to hide.
@@ -79,7 +79,12 @@ func Redact(dsn string) string {
 // Fails CLOSED on URL-form DSNs that url.Parse rejects: if there is a
 // userinfo section we cannot prove holds no credential, treat it as
 // secret-bearing rather than passing it through verbatim.
-func hasSecret(dsn string) bool {
+//
+// Exported as the one credential-shape rule for DSNs (Redact routes
+// through it). It replaces the former in-tree copies: cmd/gofastr's
+// dsnHasSecret and kiln/freeze's DSNHasSecret, which were kept in
+// lockstep only by parallel security tests.
+func HasSecret(dsn string) bool {
 	if dsn == "" {
 		return false
 	}

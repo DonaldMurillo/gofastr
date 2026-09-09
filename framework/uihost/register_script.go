@@ -125,7 +125,7 @@ func (ds *UIHost) markServingBegun() {
 }
 
 // validExternalScriptSrc reports whether src is safe to emit as
-// <script src="src"> on every page. Same grammar as isSafePartialRedirect
+// <script src="src"> on every page. Same grammar as handler.IsSafeRelativePath
 // (single leading "/", no scheme, no host, no backslash, no control bytes,
 // checked on both the raw input AND the percent-decoded path) plus
 // script-rail specifics: no "." / ".." segments (traversal), no fragments,

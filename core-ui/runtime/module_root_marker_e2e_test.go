@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
 	"github.com/chromedp/chromedp"
 )
 
@@ -50,7 +51,7 @@ func TestModuleLoadsForRootMarkerNode(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 
 	var loaded bool
 	if err := chromedp.Run(ctx,

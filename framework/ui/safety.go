@@ -6,6 +6,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
 // safeResourceURL is safeURL for URLs the BROWSER fetches on its own:
@@ -71,19 +72,10 @@ func scrubAttrs(in html.Attrs) html.Attrs {
 			continue
 		}
 		// Attribute names with control bytes are always wrong.
-		if hasControlBytes(k) || hasControlBytes(v) {
+		if textsafe.HasControlBytes(k) || textsafe.HasControlBytes(v) {
 			continue
 		}
 		out[k] = v
 	}
 	return out
-}
-
-func hasControlBytes(s string) bool {
-	for i := 0; i < len(s); i++ {
-		if s[i] < 0x20 || s[i] == 0x7f {
-			return true
-		}
-	}
-	return false
 }

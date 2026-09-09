@@ -74,6 +74,8 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/astx"
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/pathflow"
 	"golang.org/x/tools/go/analysis"
 )
 
@@ -122,7 +124,7 @@ func run(pass *analysis.Pass) (any, error) {
 	var families []*family
 
 	for _, f := range pass.Files {
-		if isTestFile(pass, f) {
+		if pathflow.IsTestFile(pass, f) {
 			continue
 		}
 		for _, decl := range f.Decls {
@@ -132,11 +134,11 @@ func run(pass *analysis.Pass) (any, error) {
 			}
 			fam := &family{decl: fd, callees: map[*family]bool{}}
 			fam.bodies = append(fam.bodies, fd.Body)
-			collectLiterals(fd.Body, &fam.bodies)
+			astx.CollectLiterals(fd.Body, &fam.bodies)
 			families = append(families, fam)
 			if fd.Recv == nil {
 				funcs[fd.Name.Name] = append(funcs[fd.Name.Name], fd)
-			} else if base := recvBaseName(fd); base != "" {
+			} else if base := astx.RecvBaseName(fd); base != "" {
 				methods[base+"."+fd.Name.Name] = append(methods[base+"."+fd.Name.Name], fd)
 			}
 		}
@@ -155,7 +157,7 @@ func run(pass *analysis.Pass) (any, error) {
 				if !ok {
 					return true
 				}
-				if target := resolveCall(pass, call.Fun, funcs, methods); target != nil {
+				if target := astx.ResolveCall(pass, call.Fun, funcs, methods); target != nil {
 					if t := byDecl[target]; t != nil && t != fam {
 						fam.callees[t] = true
 					}
@@ -413,27 +415,15 @@ func seatSelector(pass *analysis.Pass, sel *ast.SelectorExpr) bool {
 }
 
 func fromStreamPkg(t types.Type) bool {
-	named := namedOf(t)
+	named := astx.NamedOf(t)
 	return named != nil && named.Obj() != nil && named.Obj().Pkg() != nil &&
 		strings.HasSuffix(named.Obj().Pkg().Path(), "core/stream")
 }
 
 func typeSaysSeat(t types.Type) bool {
-	named := namedOf(t)
+	named := astx.NamedOf(t)
 	return named != nil && named.Obj() != nil &&
 		strings.Contains(strings.ToLower(named.Obj().Name()), "seat")
-}
-
-func namedOf(t types.Type) *types.Named {
-	if named, ok := t.(*types.Named); ok {
-		return named
-	}
-	if p, ok := t.(*types.Pointer); ok {
-		if named, ok := p.Elem().(*types.Named); ok {
-			return named
-		}
-	}
-	return nil
 }
 
 // counterCompare: `len(m[k]) >= cap` where m is a seat/subs/streams/
@@ -445,9 +435,9 @@ func counterCompare(pass *analysis.Pass, be *ast.BinaryExpr) bool {
 	default:
 		return false
 	}
-	l, ok := unparen(be.X).(*ast.CallExpr)
+	l, ok := ast.Unparen(be.X).(*ast.CallExpr)
 	if !ok || !isLen(l) {
-		l, ok = unparen(be.Y).(*ast.CallExpr)
+		l, ok = ast.Unparen(be.Y).(*ast.CallExpr)
 		if !ok || !isLen(l) {
 			return false
 		}
@@ -456,7 +446,7 @@ func counterCompare(pass *analysis.Pass, be *ast.BinaryExpr) bool {
 	// `len(m) == 0` / `> 0` guards roster cleanup (rtc's peerGone),
 	// which is not an admission bound.
 	other := be.Y
-	if unparen(be.X) != ast.Expr(l) {
+	if ast.Unparen(be.X) != ast.Expr(l) {
 		other = be.X // len sits on the right; the bound is on the left
 	}
 	if lit, ok := other.(*ast.BasicLit); ok && lit.Kind == token.INT && lit.Value == "0" {
@@ -579,82 +569,6 @@ func flood(f *family) map[*family]bool {
 	return seen
 }
 
-// resolveCall maps a callee expression to a package-local declaration:
-// a plain function by name, a method by its receiver's named type.
-// Ambiguity stays unresolved, which is the quiet direction.
-func resolveCall(pass *analysis.Pass, fun ast.Expr, funcs, methods map[string][]*ast.FuncDecl) *ast.FuncDecl {
-	switch e := fun.(type) {
-	case *ast.Ident:
-		if decls := funcs[e.Name]; len(decls) == 1 {
-			return decls[0]
-		}
-	case *ast.SelectorExpr:
-		id, ok := e.X.(*ast.Ident)
-		if !ok {
-			return nil
-		}
-		use := pass.TypesInfo.Uses[id]
-		if pn, isPkg := use.(*types.PkgName); isPkg {
-			// Same-package qualified call (pkg.LocalFunc in the
-			// package's own files): resolve by function name.
-			if pn.Imported() == pass.Pkg {
-				if decls := funcs[e.Sel.Name]; len(decls) == 1 {
-					return decls[0]
-				}
-			}
-			return nil
-		}
-		if base := receiverTypeName(pass, e.X); base != "" {
-			if decls := methods[base+"."+e.Sel.Name]; len(decls) == 1 {
-				return decls[0]
-			}
-		}
-	}
-	return nil
-}
-
-func collectLiterals(body *ast.BlockStmt, out *[]*ast.BlockStmt) {
-	ast.Inspect(body, func(n ast.Node) bool {
-		if lit, ok := n.(*ast.FuncLit); ok {
-			*out = append(*out, lit.Body)
-			collectLiterals(lit.Body, out)
-			return false
-		}
-		return true
-	})
-}
-
-func recvBaseName(fd *ast.FuncDecl) string {
-	var t ast.Expr
-	switch r := fd.Recv.List[0].Type.(type) {
-	case *ast.StarExpr:
-		t = r.X
-	case *ast.Ident:
-		t = r
-	default:
-		return ""
-	}
-	if id, ok := t.(*ast.Ident); ok {
-		return id.Name
-	}
-	return ""
-}
-
-func receiverTypeName(pass *analysis.Pass, x ast.Expr) string {
-	tv, ok := pass.TypesInfo.Types[x]
-	if !ok {
-		return ""
-	}
-	t := tv.Type
-	if p, ok := t.(*types.Pointer); ok {
-		t = p.Elem()
-	}
-	if named, ok := t.(*types.Named); ok && named.Obj() != nil && named.Obj().Pkg() == pass.Pkg {
-		return named.Obj().Name()
-	}
-	return ""
-}
-
 func typeOf(pass *analysis.Pass, e ast.Expr) types.Type {
 	if tv, ok := pass.TypesInfo.Types[e]; ok {
 		return tv.Type
@@ -678,7 +592,7 @@ func isLen(call *ast.CallExpr) bool {
 // indexBase renders the base of an index expression (m or s.m of
 // m[k]) for the counter-map name test.
 func indexBase(e ast.Expr) string {
-	switch v := unparen(e).(type) {
+	switch v := ast.Unparen(e).(type) {
 	case *ast.IndexExpr:
 		return indexBase(v.X)
 	case *ast.Ident:
@@ -687,15 +601,4 @@ func indexBase(e ast.Expr) string {
 		return v.Sel.Name
 	}
 	return ""
-}
-
-func unparen(e ast.Expr) ast.Expr {
-	if p, ok := e.(*ast.ParenExpr); ok {
-		return unparen(p.X)
-	}
-	return e
-}
-
-func isTestFile(pass *analysis.Pass, f *ast.File) bool {
-	return strings.HasSuffix(pass.Fset.Position(f.Pos()).Filename, "_test.go")
 }

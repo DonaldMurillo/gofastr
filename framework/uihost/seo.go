@@ -82,11 +82,20 @@ func WithRobots(cfg RobotsConfig) Option {
 
 func (ds *UIHost) handleSitemap(w http.ResponseWriter, _ *http.Request) {
 	doc, ok := ds.SitemapXML("")
+	serveSeoDoc(w, "application/xml; charset=utf-8", "sitemap not configured", doc, ok)
+}
+
+// serveSeoDoc is the shared handler body behind handleSitemap and
+// handleRobots, which were verbatim copies of each other differing only
+// in content type, not-configured message, and the document builder they
+// call: 404 with that message when the doc is unconfigured, otherwise the
+// doc bytes under contentType.
+func serveSeoDoc(w http.ResponseWriter, contentType, notConfigured, doc string, ok bool) {
 	if !ok {
-		http.Error(w, "sitemap not configured", http.StatusNotFound)
+		http.Error(w, notConfigured, http.StatusNotFound)
 		return
 	}
-	w.Header().Set("Content-Type", "application/xml; charset=utf-8")
+	w.Header().Set("Content-Type", contentType)
 	w.Write([]byte(doc))
 }
 
@@ -132,12 +141,7 @@ func (ds *UIHost) SitemapXML(basePath string) (string, bool) {
 
 func (ds *UIHost) handleRobots(w http.ResponseWriter, _ *http.Request) {
 	doc, ok := ds.RobotsTXT("")
-	if !ok {
-		http.Error(w, "robots not configured", http.StatusNotFound)
-		return
-	}
-	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	w.Write([]byte(doc))
+	serveSeoDoc(w, "text/plain; charset=utf-8", "robots not configured", doc, ok)
 }
 
 // RobotsTXT builds the robots.txt document WithRobots configured. Like

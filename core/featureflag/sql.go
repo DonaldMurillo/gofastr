@@ -6,7 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strings"
+
+	"github.com/DonaldMurillo/gofastr/core/query"
 )
 
 // SQLStore is a SQL-backed MutableStore. Flags are persisted as
@@ -62,19 +63,14 @@ func NewSQLStore(db *sql.DB, opts ...SQLOption) (*SQLStore, error) {
 	for _, opt := range opts {
 		opt(s)
 	}
-	if !safeIdent(s.table) {
+	if !query.SafeTableName(s.table) {
 		return nil, fmt.Errorf("featureflag: unsafe table name %q", s.table)
 	}
 	if s.dialect != "postgres" && s.dialect != "sqlite" {
 		return nil, fmt.Errorf("featureflag: unsupported dialect %q (want postgres or sqlite)", s.dialect)
 	}
-	if !s.dialectExplicit {
-		var v string
-		if err := db.QueryRow("SELECT version()").Scan(&v); err == nil {
-			if strings.Contains(strings.ToLower(v), "postgresql") {
-				s.dialect = "postgres"
-			}
-		}
+	if !s.dialectExplicit && query.IsPostgres(db) {
+		s.dialect = "postgres"
 	}
 	if err := s.ensureTable(); err != nil {
 		return nil, fmt.Errorf("featureflag: ensure table: %w", err)
@@ -236,47 +232,4 @@ func decodeJSONList(s string, dst *[]string) error {
 		return nil
 	}
 	return json.Unmarshal([]byte(s), dst)
-}
-
-// reservedSQLIdents are tokens we refuse as table names regardless of
-// character class: naming a table after a reserved word or a real
-// system table is almost always a configuration mistake and can
-// silently no-op CREATE TABLE IF NOT EXISTS against a real table.
-var reservedSQLIdents = map[string]struct{}{
-	"select":     {},
-	"insert":     {},
-	"update":     {},
-	"delete":     {},
-	"drop":       {},
-	"create":     {},
-	"table":      {},
-	"from":       {},
-	"where":      {},
-	"users":      {},
-	"user":       {},
-	"migrations": {},
-	"sessions":   {},
-	"accounts":   {},
-}
-
-func safeIdent(name string) bool {
-	if name == "" || len(name) > 64 {
-		return false
-	}
-	// Require a leading letter or underscore: leading-digit names like
-	// "1tbl" survive otherwise and break some dialect parsers.
-	first := rune(name[0])
-	if !((first >= 'a' && first <= 'z') || (first >= 'A' && first <= 'Z') || first == '_') {
-		return false
-	}
-	for _, r := range name {
-		ok := (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_'
-		if !ok {
-			return false
-		}
-	}
-	if _, bad := reservedSQLIdents[strings.ToLower(name)]; bad {
-		return false
-	}
-	return true
 }

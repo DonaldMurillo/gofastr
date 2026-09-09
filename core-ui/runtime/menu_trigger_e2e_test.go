@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
 	"github.com/chromedp/chromedp"
 	"github.com/chromedp/chromedp/kb"
 )
@@ -56,7 +57,7 @@ func menuTriggerFocused(dst *string) chromedp.Action {
 // attributes that cannot be injected into raw caller HTML server-side.
 func TestMenuTriggerAriaWiredOnLoad(t *testing.T) {
 	g := startGadgetServer(t, `[]`, menuTriggerFixture)
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 
 	var haspopup, controls, expanded string
 	if err := chromedp.Run(ctx,
@@ -88,7 +89,7 @@ func TestMenuTriggerAriaWiredOnLoad(t *testing.T) {
 // to the caller's button.
 func TestMenuTriggerClickOpensAndFocuses(t *testing.T) {
 	g := startGadgetServer(t, `[]`, menuTriggerFixture)
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 
 	var open, expanded, label string
 	if err := chromedp.Run(ctx,
@@ -142,7 +143,7 @@ func TestMenuTriggerClickOpensAndFocuses(t *testing.T) {
 // button (native button activation produces the click) open the menu.
 func TestMenuTriggerEnterAndSpaceOpen(t *testing.T) {
 	g := startGadgetServer(t, `[]`, menuTriggerFixture)
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 
 	var open, expanded string
 	if err := chromedp.Run(ctx,
@@ -194,7 +195,7 @@ func TestMenuTriggerEnterAndSpaceOpen(t *testing.T) {
 // returns focus to the caller's button.
 func TestMenuTriggerEscapeClosesOneLevel(t *testing.T) {
 	g := startGadgetServer(t, `[]`, menuTriggerFixture)
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 
 	var label, subOpen, topOpen, focusOnBtn string
 	if err := chromedp.Run(ctx,
@@ -261,7 +262,7 @@ func TestMenuTriggerEscapeClosesOneLevel(t *testing.T) {
 // past the panel and strand the menu open).
 func TestMenuTriggerTabCloses(t *testing.T) {
 	g := startGadgetServer(t, `[]`, menuTriggerFixture)
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 
 	var topOpen, subOpen string
 	if err := chromedp.Run(ctx,
@@ -311,7 +312,7 @@ var menuTriggerAnchorFixture = strings.Replace(menuTriggerFixture,
 
 func TestMenuTriggerAnchorOpensOnSpace(t *testing.T) {
 	g := startGadgetServer(t, `[]`, menuTriggerAnchorFixture)
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 	var open, href string
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(g.Srv.URL+"/"),
@@ -337,7 +338,7 @@ func TestMenuTriggerAnchorOpensOnSpace(t *testing.T) {
 // inside a closed root would reappear expanded on the next open.
 func TestMenuTriggerTabClosesSubmenuToo(t *testing.T) {
 	g := startGadgetServer(t, `[]`, menuTriggerFixture)
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 	var topOpen, subOpen string
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(g.Srv.URL+"/"),

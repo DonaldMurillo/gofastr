@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
-	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/query"
 )
@@ -27,9 +26,9 @@ import (
 // there. Idempotent: a row whose stored value already round-trips to the same
 // canonical text is skipped. Runs at relay start (see relayLoop) so the
 // claim/grace queries see canonical values from the first pump; parsing via
-// parseOutboxTime in scanOutboxRow/listDeliveries remains as the post-scan
-// safety net for any value written after construction by a non-pure driver
-// sharing the file.
+// query.ParseDBTime in scanOutboxRow/listDeliveries remains as
+// the post-scan safety net for any value written after construction by a
+// non-pure driver sharing the file.
 func (o *Outbox) normalizeLegacyTimestamps(ctx context.Context) error {
 	if o.dialect != dialectSQLite {
 		return nil
@@ -44,28 +43,10 @@ func (o *Outbox) normalizeLegacyTimestamps(ctx context.Context) error {
 // probeBindLayout detects the text layout the connected driver produces
 // when a time.Time is bound as a parameter, the format the relay's own
 // predicates compare against, and therefore the canonical target for
-// normalization. The pure driver binds RFC3339Nano; mattn/go-sqlite3
-// binds a space-separated form. Rows already in the probed layout are
-// canonical FOR THIS HOST and skipped, which keeps the pass idempotent on
-// either driver instead of rewriting every row on every relay start when
-// the host runs mattn. An unrecognized probe result falls back to
-// RFC3339Nano (the rewrite still self-corrects, because the rewritten
-// value is bound as time.Time and the driver formats it).
+// normalization. See query.ProbeSQLiteBindLayout, the shared probe this
+// delegates to (formerly duplicated in battery/queue).
 func (o *Outbox) probeBindLayout(ctx context.Context) string {
-	ref := time.Date(2001, 2, 3, 4, 5, 6, 789012345, time.UTC)
-	var got string
-	if err := o.db.QueryRowContext(ctx, `SELECT CAST($1 AS TEXT)`, ref).Scan(&got); err != nil {
-		return time.RFC3339Nano
-	}
-	for _, layout := range []string{
-		time.RFC3339Nano,
-		"2006-01-02 15:04:05.999999999-07:00", // mattn/go-sqlite3
-	} {
-		if ref.Format(layout) == got {
-			return layout
-		}
-	}
-	return time.RFC3339Nano
+	return query.ProbeSQLiteBindLayout(ctx, o.db)
 }
 
 // timeText reads a time column as its stored text. The idempotency skip in
@@ -209,8 +190,8 @@ type timeCol struct {
 // connected driver (see probeBindLayout). NULL columns produce no fragment
 // (left untouched). Canonical values parse and reformat to the same string
 // → skipped, which makes the whole pass idempotent on either driver.
-// Unparseable values return an error: a value parseOutboxTime can't handle
-// is data corruption, and silently keeping it would leave the bug in
+// Unparseable values return an error: a value query.ParseDBTime can't
+// handle is data corruption, and silently keeping it would leave the bug in
 // place. The bound value is normalized to UTC and bound as time.Time, so
 // the driver writes exactly what its own predicate binds compare against.
 func legacyTimeSets(layout string, cols []timeCol) ([]string, []any, error) {
@@ -220,7 +201,7 @@ func legacyTimeSets(layout string, cols []timeCol) ([]string, []any, error) {
 		if c.raw == nil {
 			continue
 		}
-		parsed, err := outboxTime(c.raw)
+		parsed, err := query.ParseDBTime(c.raw)
 		if err != nil {
 			return nil, nil, fmt.Errorf("outbox: decode legacy %s: %w", c.col, err)
 		}

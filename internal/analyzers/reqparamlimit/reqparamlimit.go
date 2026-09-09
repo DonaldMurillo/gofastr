@@ -74,6 +74,7 @@ import (
 	"regexp"
 	"strconv"
 
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/astx"
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/types/typeutil"
 )
@@ -97,21 +98,7 @@ func run(pass *analysis.Pass) (any, error) {
 	// Function bodies: FuncDecls and FuncLits alike — HTTP and tool
 	// handlers are often closures. Each is analyzed independently;
 	// nothing flows across function boundaries.
-	var bodies []*ast.BlockStmt
-	for _, f := range pass.Files {
-		ast.Inspect(f, func(n ast.Node) bool {
-			switch fn := n.(type) {
-			case *ast.FuncDecl:
-				if fn.Body != nil {
-					bodies = append(bodies, fn.Body)
-				}
-			case *ast.FuncLit:
-				bodies = append(bodies, fn.Body)
-			}
-			return true
-		})
-	}
-	for _, b := range bodies {
+	for _, b := range astx.AllBodies(pass) {
 		w := &walker{pass: pass, tainted: map[string]string{}}
 		w.block(b.List)
 	}
@@ -159,7 +146,7 @@ func (w *walker) stmt(s ast.Stmt) {
 		w.checkUses(st.Rhs)
 		key, tainted := w.rhsTaint(st.Rhs)
 		for _, lhs := range st.Lhs {
-			if id, ok := unwrapParen(lhs).(*ast.Ident); ok {
+			if id, ok := ast.Unparen(lhs).(*ast.Ident); ok {
 				w.assign(id.Name, key, tainted)
 			}
 		}
@@ -541,7 +528,7 @@ func (w *walker) clampIDs(cond ast.Expr) []string {
 		default:
 			return true
 		}
-		lx, rx := unwrapParen(bin.X), unwrapParen(bin.Y)
+		lx, rx := ast.Unparen(bin.X), ast.Unparen(bin.Y)
 		if li, ok := lx.(*ast.Ident); ok && w.tainted[li.Name] != "" && isBound(rx) {
 			cleared = append(cleared, li.Name)
 		}
@@ -556,7 +543,7 @@ func (w *walker) clampIDs(cond ast.Expr) []string {
 // isBound reports whether e is a clamp bound: a constant literal or a
 // max*-prefixed identifier or field selector.
 func isBound(e ast.Expr) bool {
-	e = unwrapParen(e)
+	e = ast.Unparen(e)
 	if _, ok := e.(*ast.BasicLit); ok {
 		return true
 	}
@@ -577,7 +564,7 @@ func assignedIdents(list []ast.Stmt) map[string]bool {
 		ast.Inspect(s, func(n ast.Node) bool {
 			if as, ok := n.(*ast.AssignStmt); ok {
 				for _, l := range as.Lhs {
-					if id, ok := unwrapParen(l).(*ast.Ident); ok && id.Name != "_" {
+					if id, ok := ast.Unparen(l).(*ast.Ident); ok && id.Name != "_" {
 						m[id.Name] = true
 					}
 				}
@@ -586,14 +573,4 @@ func assignedIdents(list []ast.Stmt) map[string]bool {
 		})
 	}
 	return m
-}
-
-func unwrapParen(e ast.Expr) ast.Expr {
-	for {
-		p, ok := e.(*ast.ParenExpr)
-		if !ok {
-			return e
-		}
-		e = p.X
-	}
 }

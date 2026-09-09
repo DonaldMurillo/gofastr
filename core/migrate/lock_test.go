@@ -11,7 +11,7 @@ import (
 	"github.com/DATA-DOG/go-sqlmock"
 )
 
-// expectSQLiteLease registers the two statements acquireSQLiteMigrateLease
+// expectSQLiteLease registers the two statements AcquireSQLiteLease
 // issues before WithAdvisoryLockKey pins its connection: the idempotent
 // lease-table create and the winning upsert (60s lease, 1 row affected).
 func expectSQLiteLease(mock sqlmock.Sqlmock) {

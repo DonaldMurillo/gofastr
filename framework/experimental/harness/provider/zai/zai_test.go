@@ -2,9 +2,7 @@ package zai
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -12,87 +10,8 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/control"
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/provider"
+	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/provider/providertest"
 )
-
-// scriptedSSE writes one SSE "data: " line per element, then [DONE].
-// Mirrors internal/openai/client_test.go's scriptedSSE exactly.
-func scriptedSSE(chunks ...string) string {
-	var b strings.Builder
-	for _, c := range chunks {
-		b.WriteString("data: ")
-		b.WriteString(c)
-		b.WriteString("\n\n")
-	}
-	b.WriteString("data: [DONE]\n\n")
-	return b.String()
-}
-
-// textFrame builds a text-delta SSE frame in the OpenAI Chat
-// Completions streaming shape the internal parser expects. We can't
-// reference the unexported streamChunk/streamChoice types from this
-// package, so we mirror their JSON tags with local structs.
-func textFrame(s string) string {
-	type delta struct {
-		Content string `json:"content,omitempty"`
-	}
-	type choice struct {
-		Delta delta `json:"delta"`
-	}
-	type chunk struct {
-		Choices []choice `json:"choices"`
-	}
-	b, _ := json.Marshal(chunk{Choices: []choice{{Delta: delta{Content: s}}}})
-	return string(b)
-}
-
-// stopUsageFrame builds the terminal frame carrying a finish_reason
-// and a usage block, exercising both the KindStop and KindUsage
-// emission paths in the SSE parser.
-func stopUsageFrame(prompt, completion int) string {
-	type delta struct{}
-	type choice struct {
-		Delta        delta   `json:"delta"`
-		FinishReason *string `json:"finish_reason,omitempty"`
-	}
-	type usage struct {
-		PromptTokens     int `json:"prompt_tokens"`
-		CompletionTokens int `json:"completion_tokens"`
-	}
-	type chunk struct {
-		Choices []choice `json:"choices"`
-		Usage   *usage   `json:"usage,omitempty"`
-	}
-	fr := "stop"
-	b, _ := json.Marshal(chunk{
-		Choices: []choice{{FinishReason: &fr}},
-		Usage:   &usage{PromptTokens: prompt, CompletionTokens: completion},
-	})
-	return string(b)
-}
-
-// capturedBody is the subset of the OpenAI Chat Completions request
-// body these tests assert on.
-type capturedBody struct {
-	Model    string `json:"model"`
-	Stream   bool   `json:"stream"`
-	Messages []struct {
-		Role    string `json:"role"`
-		Content string `json:"content"`
-	} `json:"messages"`
-}
-
-func decodeBody(t *testing.T, r io.Reader) capturedBody {
-	t.Helper()
-	raw, err := io.ReadAll(r)
-	if err != nil {
-		t.Fatalf("read request body: %v", err)
-	}
-	var body capturedBody
-	if err := json.Unmarshal(raw, &body); err != nil {
-		t.Fatalf("unmarshal request body %q: %v", raw, err)
-	}
-	return body
-}
 
 // TestChatRequestShape asserts the outbound request carries the
 // bearer token, the Request.Model on the wire, the system prompt as
@@ -101,14 +20,14 @@ func decodeBody(t *testing.T, r io.Reader) capturedBody {
 // X-Title.
 func TestChatRequestShape(t *testing.T) {
 	var gotAuth, gotReferer, gotTitle string
-	var body capturedBody
+	var body providertest.RequestBody
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotAuth = r.Header.Get("Authorization")
 		gotReferer = r.Header.Get("HTTP-Referer")
 		gotTitle = r.Header.Get("X-Title")
-		body = decodeBody(t, r.Body)
+		body = providertest.DecodeRequestBody(t, r.Body)
 		w.Header().Set("Content-Type", "text/event-stream")
-		fmt.Fprint(w, scriptedSSE(stopUsageFrame(1, 1)))
+		fmt.Fprint(w, providertest.StopUsageSSE(1, 1))
 	}))
 	defer srv.Close()
 
@@ -159,62 +78,9 @@ func TestChatRequestShape(t *testing.T) {
 // least one KindTextDelta with the streamed text plus a terminal
 // KindStop and a KindUsage carrying token counts.
 func TestChatStreamingParse(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/event-stream")
-		fmt.Fprint(w, scriptedSSE(
-			textFrame("Hel"),
-			textFrame("lo"),
-			stopUsageFrame(12, 3),
-		))
-	}))
-	defer srv.Close()
-
-	p := &Provider{APIKey: "sk-test", BaseURL: srv.URL}
-	ch, err := p.Chat(context.Background(), &provider.Request{Model: "m"})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	var (
-		text     strings.Builder
-		deltas   int
-		stops    int
-		usage    *provider.Usage
-		hadError bool
-	)
-	for ev := range ch {
-		switch ev.Kind {
-		case provider.KindTextDelta:
-			deltas++
-			text.WriteString(ev.Text)
-		case provider.KindStop:
-			stops++
-		case provider.KindUsage:
-			usage = ev.Usage
-		case provider.KindError:
-			hadError = true
-			t.Errorf("unexpected KindError: %v", ev.Err)
-		}
-	}
-	if hadError {
-		t.FailNow()
-	}
-	if deltas < 1 {
-		t.Errorf("expected at least one KindTextDelta, got %d", deltas)
-	}
-	if got, want := text.String(), "Hello"; got != want {
-		t.Errorf("concatenated deltas = %q, want %q", got, want)
-	}
-	if stops < 1 {
-		t.Errorf("expected at least one KindStop terminal event, got %d", stops)
-	}
-	if usage == nil {
-		t.Fatalf("missing KindUsage event")
-	}
-	if usage.InputTokens != 12 || usage.OutputTokens != 3 {
-		t.Errorf("usage = {in:%d out:%d}, want {in:12 out:3}",
-			usage.InputTokens, usage.OutputTokens)
-	}
+	providertest.AssertStreamingParse(t, func(baseURL string) provider.Provider {
+		return &Provider{APIKey: "sk-test", BaseURL: baseURL}
+	})
 }
 
 // TestChatHTTPError401 asserts a 401 response surfaces as an error

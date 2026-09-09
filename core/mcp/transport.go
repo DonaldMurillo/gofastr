@@ -8,13 +8,13 @@ import (
 	"fmt"
 	"io"
 	"mime"
-	"net"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
+	"github.com/DonaldMurillo/gofastr/core/netguard"
 )
 
 // maxMCPBodyBytes caps the JSON-RPC request body to 1 MiB. Without
@@ -147,7 +147,7 @@ func (s *Server) originOK(r *http.Request) bool {
 	hosts := s.allowedHosts
 	loopbackOnly := s.requireLoopbackHost
 	s.mu.RUnlock()
-	if loopbackOnly && !isLoopbackAuthority(r.Host) {
+	if loopbackOnly && !netguard.IsLoopbackAuthority(r.Host) {
 		return false
 	}
 	if len(hosts) == 0 {
@@ -201,23 +201,6 @@ func (s *Server) SetRequireLoopbackHost(v bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.requireLoopbackHost = v
-}
-
-// isLoopbackAuthority reports whether authority ("host" or "host:port")
-// names the loopback interface.
-func isLoopbackAuthority(authority string) bool {
-	host := authority
-	if h, _, err := net.SplitHostPort(authority); err == nil {
-		host = h
-	}
-	host = strings.Trim(host, "[]")
-	if strings.EqualFold(host, "localhost") {
-		return true
-	}
-	if ip := net.ParseIP(host); ip != nil {
-		return ip.IsLoopback()
-	}
-	return false
 }
 
 // SetAllowedOrigins permits browser Origins that are not same-origin

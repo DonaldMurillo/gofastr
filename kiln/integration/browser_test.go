@@ -17,6 +17,7 @@ import (
 	"github.com/chromedp/chromedp/kb"
 
 	"github.com/DonaldMurillo/gofastr/framework"
+	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
 	kilnmcp "github.com/DonaldMurillo/gofastr/kiln/agent/mcp"
 	"github.com/DonaldMurillo/gofastr/kiln/chat"
 	"github.com/DonaldMurillo/gofastr/kiln/db"
@@ -127,47 +128,11 @@ func startKilnExt(t *testing.T) (string, *live.Live, *protocol.Tools) {
 	return srv.URL, l, tools
 }
 
-func newChrome(t *testing.T) (context.Context, context.CancelFunc) {
-	t.Helper()
-	opts := append(chromedp.DefaultExecAllocatorOptions[:],
-		chromedp.Flag("headless", true),
-		chromedp.Flag("disable-gpu", true),
-		chromedp.Flag("no-sandbox", true),
-		// CI runners intermittently take >20s (the chromedp default)
-		// to cold-start Chrome; a generous websocket-URL deadline turns
-		// that from a flaky suite failure into a few slow seconds.
-		chromedp.WSURLReadTimeout(90*time.Second),
-	)
-	alloc, allocCancel := chromedp.NewExecAllocator(context.Background(), opts...)
-	t.Cleanup(allocCancel)
-	browser, browserCancel := chromedp.NewContext(alloc)
-	t.Cleanup(browserCancel)
-
-	// chromedp starts Chrome lazily on the first Run: allocate against the
-	// browser context so the browser's lifetime is the browser context's,
-	// passing a timeout context here would make the browser die when that
-	// deadline passed. The watchdog bounds only the startup wait.
-	started := make(chan error, 1)
-	go func() { started <- chromedp.Run(browser) }()
-	select {
-	case err := <-started:
-		if err != nil {
-			t.Fatalf("chrome did not start: %v", err)
-		}
-	case <-time.After(90 * time.Second):
-		t.Fatal("chrome did not start within 90s")
-	}
-
-	ctx, timeoutCancel := context.WithTimeout(browser, 60*time.Second)
-	return ctx, timeoutCancel
-}
-
 // --- (1) widget loads on host fallback -------------------------------
 
 func TestBrowser_HostShowsWidget(t *testing.T) {
 	urlBase, _ := startKiln(t)
-	ctx, cancel := newChrome(t)
-	defer cancel()
+	ctx := chromedptest.Context(t)
 
 	var html string
 	if err := chromedp.Run(ctx,
@@ -189,8 +154,7 @@ func TestBrowser_HostShowsWidget(t *testing.T) {
 
 func TestBrowser_SendMessageFromWidget(t *testing.T) {
 	urlBase, tools := startKiln(t)
-	ctx, cancel := newChrome(t)
-	defer cancel()
+	ctx := chromedptest.Context(t)
 
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(urlBase+"/"),
@@ -217,8 +181,7 @@ func TestBrowser_SendMessageFromWidget(t *testing.T) {
 
 func TestBrowser_ExternalAddEntityShowsInWidget(t *testing.T) {
 	urlBase, tools := startKiln(t)
-	ctx, cancel := newChrome(t)
-	defer cancel()
+	ctx := chromedptest.Context(t)
 
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(urlBase+"/"),
@@ -281,8 +244,7 @@ func TestBrowser_ExternalAddEntityShowsInWidget(t *testing.T) {
 
 func TestBrowser_AgentAddedPageRenders(t *testing.T) {
 	urlBase, tools := startKiln(t)
-	ctx, cancel := newChrome(t)
-	defer cancel()
+	ctx := chromedptest.Context(t)
 
 	res := tools.AddPage(t.Context(), protocol.AddPageArgs{Page: &world.Page{
 		Path:  "/dashboard",
@@ -321,8 +283,7 @@ func TestBrowser_AgentAddedPageRenders(t *testing.T) {
 // hydration must not erase or replace the already-rendered application screen.
 func TestBrowser_PrepopulatedWorldHydratesWithoutErasingScreen(t *testing.T) {
 	urlBase, tools := startKiln(t)
-	ctx, cancel := newChrome(t)
-	defer cancel()
+	ctx := chromedptest.Context(t)
 
 	if res := tools.SetAppConfig(t.Context(), protocol.SetAppConfigArgs{Config: world.AppConfig{
 		Name: "Live Forge", Module: "example.com/live-forge", APIPrefix: "api",
@@ -382,8 +343,7 @@ func TestBrowser_PrepopulatedWorldHydratesWithoutErasingScreen(t *testing.T) {
 
 func TestBrowser_ButtonToolCallFires(t *testing.T) {
 	urlBase, tools := startKiln(t)
-	ctx, cancel := newChrome(t)
-	defer cancel()
+	ctx := chromedptest.Context(t)
 
 	// Build a page with a button that, when clicked, fires `chat`.
 	args := map[string]any{"role": "user", "text": "fired from button"}
@@ -431,8 +391,7 @@ func TestBrowser_ButtonToolCallFires(t *testing.T) {
 
 func TestBrowser_FormSubmitCreatesRow(t *testing.T) {
 	urlBase, tools := startKiln(t)
-	ctx, cancel := newChrome(t)
-	defer cancel()
+	ctx := chromedptest.Context(t)
 
 	if r := tools.AddEntity(t.Context(), protocol.AddEntityArgs{Entity: &world.Entity{
 		Name: "notes",
@@ -510,8 +469,7 @@ func newHTTPClient(t *testing.T) *http.Client {
 
 func TestBrowser_OpenAPIServed(t *testing.T) {
 	urlBase, tools := startKiln(t)
-	ctx, cancel := newChrome(t)
-	defer cancel()
+	ctx := chromedptest.Context(t)
 
 	if r := tools.AddEntity(t.Context(), protocol.AddEntityArgs{Entity: &world.Entity{
 		Name:   "posts",
@@ -539,8 +497,7 @@ func TestBrowser_OpenAPIServed(t *testing.T) {
 
 func TestBrowser_SeedRowsVisibleAfterAddSeed(t *testing.T) {
 	urlBase, tools := startKiln(t)
-	ctx, cancel := newChrome(t)
-	defer cancel()
+	ctx := chromedptest.Context(t)
 
 	if r := tools.AddEntity(t.Context(), protocol.AddEntityArgs{Entity: &world.Entity{
 		Name:   "tasks",
@@ -578,8 +535,7 @@ func TestBrowser_SeedRowsVisibleAfterAddSeed(t *testing.T) {
 //     (name=foo fields=N) instead of raw JSON.
 func TestBrowser_BuildBannerFlashesAndToolRowSummary(t *testing.T) {
 	urlBase, tools := startKiln(t)
-	ctx, cancel := newChrome(t)
-	defer cancel()
+	ctx := chromedptest.Context(t)
 
 	// Land on the host page and wait for SSE to be live.
 	if err := chromedp.Run(ctx,
@@ -705,8 +661,7 @@ func TestBrowser_BuildBannerFlashesAndToolRowSummary(t *testing.T) {
 // gated destructive op succeeds when retried with the plan_id.
 func TestBrowser_ApprovePlanButton(t *testing.T) {
 	urlBase, tools := startKiln(t)
-	ctx, cancel := newChrome(t)
-	defer cancel()
+	ctx := chromedptest.Context(t)
 
 	// Seed: an entity to delete + an agent-proposed plan covering it.
 	if r := tools.AddEntity(t.Context(), protocol.AddEntityArgs{Entity: &world.Entity{
@@ -807,8 +762,7 @@ func TestBrowser_ApprovePlanButton(t *testing.T) {
 // rows show up with the expected text.
 func TestBrowser_HTTPDispatchJournalsToolCallAndResult(t *testing.T) {
 	urlBase, _ := startKiln(t)
-	ctx, cancel := newChrome(t)
-	defer cancel()
+	ctx := chromedptest.Context(t)
 
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(urlBase+"/"),
@@ -878,8 +832,7 @@ func containsAny(haystack []string, needle string) bool {
 // is empty afterwards.
 func TestBrowser_ResetSessionButton(t *testing.T) {
 	urlBase, tools := startKiln(t)
-	ctx, cancel := newChrome(t)
-	defer cancel()
+	ctx := chromedptest.Context(t)
 
 	// Seed: an entity that should disappear after reset.
 	if r := tools.AddEntity(t.Context(), protocol.AddEntityArgs{Entity: &world.Entity{
@@ -930,8 +883,7 @@ func TestBrowser_ResetSessionButton(t *testing.T) {
 func TestBrowser_AgentConfigModalOpens(t *testing.T) {
 	urlBase, _ := startKiln(t)
 	testInFlight.Store(true)
-	ctx, cancel := newChrome(t)
-	defer cancel()
+	ctx := chromedptest.Context(t)
 
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(urlBase+"/"),
@@ -1069,8 +1021,7 @@ func startKilnWithNewPanel(t *testing.T) (string, *protocol.Tools) {
 // and lets the SSE refetch own log updates instead.
 func TestBrowser_EmptySendDoesNotPoisonLog(t *testing.T) {
 	urlBase, _ := startKiln(t)
-	ctx, cancel := newChrome(t)
-	defer cancel()
+	ctx := chromedptest.Context(t)
 
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(urlBase+"/"),
@@ -1101,8 +1052,7 @@ func TestBrowser_EmptySendDoesNotPoisonLog(t *testing.T) {
 // bind also drops legit updates.
 func TestBrowser_SendMessageUpdatesLogViaSSE(t *testing.T) {
 	urlBase, tools := startKiln(t)
-	ctx, cancel := newChrome(t)
-	defer cancel()
+	ctx := chromedptest.Context(t)
 
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(urlBase+"/"),
@@ -1141,8 +1091,7 @@ func TestBrowser_SendMessageUpdatesLogViaSSE(t *testing.T) {
 // aren't loaded, leaving a transparent modal that looks like nothing.
 func TestBrowser_GearOpenedModalIsActuallyVisible(t *testing.T) {
 	urlBase, _ := startKiln(t)
-	ctx, cancel := newChrome(t)
-	defer cancel()
+	ctx := chromedptest.Context(t)
 
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(urlBase+"/"),
@@ -1189,8 +1138,7 @@ func TestBrowser_GearOpenedModalIsActuallyVisible(t *testing.T) {
 // Modal widget. Catches the "I can't even open the gear" regression.
 func TestBrowser_GearOpensAgentSettingsModal(t *testing.T) {
 	urlBase, _ := startKiln(t)
-	ctx, cancel := newChrome(t)
-	defer cancel()
+	ctx := chromedptest.Context(t)
 
 	// Modal should NOT be visible before the click.
 	var presentBefore bool
@@ -1235,8 +1183,7 @@ func TestBrowser_GearOpensAgentSettingsModal(t *testing.T) {
 // no provider passed to MountPanel).
 func TestBrowser_GearOpenedModalListsAgents(t *testing.T) {
 	urlBase, _ := startKiln(t)
-	ctx, cancel := newChrome(t)
-	defer cancel()
+	ctx := chromedptest.Context(t)
 
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(urlBase+"/"),
@@ -1280,8 +1227,7 @@ func TestBrowser_GearOpenedModalListsAgents(t *testing.T) {
 // runtime treats the form's data-fui-rpc as a click target only.
 func TestBrowser_ApplyAgentActuallyPosts(t *testing.T) {
 	urlBase, _ := startKiln(t)
-	ctx, cancel := newChrome(t)
-	defer cancel()
+	ctx := chromedptest.Context(t)
 
 	// Stub /kiln/agent to capture the POST body without going through
 	// the real adapter store.
@@ -1333,8 +1279,7 @@ func TestBrowser_ApplyAgentActuallyPosts(t *testing.T) {
 // in the background but the modal stays open and unchanged).
 func TestBrowser_ApplyAgentClosesModal(t *testing.T) {
 	urlBase, _ := startKiln(t)
-	ctx, cancel := newChrome(t)
-	defer cancel()
+	ctx := chromedptest.Context(t)
 
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(urlBase+"/"),
@@ -1369,8 +1314,7 @@ func TestBrowser_ApplyAgentClosesModal(t *testing.T) {
 // form.reset() after a 2xx ack.
 func TestBrowser_SendClearsInput(t *testing.T) {
 	urlBase, _ := startKiln(t)
-	ctx, cancel := newChrome(t)
-	defer cancel()
+	ctx := chromedptest.Context(t)
 
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(urlBase+"/"),
@@ -1406,8 +1350,7 @@ func TestBrowser_SendClearsInput(t *testing.T) {
 // spawning a real agent subprocess.
 func TestBrowser_AgentTurnInFlightShowsStatus(t *testing.T) {
 	urlBase, l, _ := startKilnExt(t)
-	ctx, cancel := newChrome(t)
-	defer cancel()
+	ctx := chromedptest.Context(t)
 
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(urlBase+"/"),
@@ -1478,8 +1421,7 @@ func TestBrowser_AgentTurnInFlightShowsStatus(t *testing.T) {
 // fired chat_html refresh the panel kept showing stale items.
 func TestBrowser_ResetClearsPanelImmediately(t *testing.T) {
 	urlBase, _, tools := startKilnExt(t)
-	ctx, cancel := newChrome(t)
-	defer cancel()
+	ctx := chromedptest.Context(t)
 
 	// Seed a chat message so the log isn't empty before reset.
 	tools.Chat(context.Background(), protocol.ChatArgs{Role: "user", Text: "seeded prompt"})
@@ -1537,8 +1479,7 @@ func TestBrowser_LandingPageCurlUsesActualHost(t *testing.T) {
 // the mercy of the kiln panel's flex layout.
 func TestBrowser_RuntimeScrollBottomOnUpdate(t *testing.T) {
 	urlBase, _, _ := startKilnExt(t)
-	ctx, cancel := newChrome(t)
-	defer cancel()
+	ctx := chromedptest.Context(t)
 
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(urlBase+"/"),
@@ -1636,8 +1577,7 @@ func TestKilnPanelOptsIntoAutoScroll(t *testing.T) {
 // after the agent works. Updates live via SSE refresh on world_edit.
 func TestBrowser_WorldSnapshotPillReflectsLiveWorldChanges(t *testing.T) {
 	urlBase, _, tools := startKilnExt(t)
-	ctx, cancel := newChrome(t)
-	defer cancel()
+	ctx := chromedptest.Context(t)
 
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(urlBase+"/"),
@@ -1696,8 +1636,7 @@ func TestBrowser_WorldSnapshotPillReflectsLiveWorldChanges(t *testing.T) {
 // modal. Cancel from the modal preserves the world; Confirm wipes.
 func TestBrowser_ResetButtonAsksForConfirmation(t *testing.T) {
 	urlBase, _, tools := startKilnExt(t)
-	ctx, cancel := newChrome(t)
-	defer cancel()
+	ctx := chromedptest.Context(t)
 
 	// Seed a chat message, should survive a Cancel and disappear on Confirm.
 	tools.Chat(context.Background(), protocol.ChatArgs{Role: "user", Text: "do not lose me"})
@@ -1763,8 +1702,7 @@ func TestBrowser_ResetButtonAsksForConfirmation(t *testing.T) {
 // 2xx ack clears the textarea (existing data-fui-rpc-reset).
 func TestBrowser_SendButtonDisabledWhileInputEmpty(t *testing.T) {
 	urlBase, _, _ := startKilnExt(t)
-	ctx, cancel := newChrome(t)
-	defer cancel()
+	ctx := chromedptest.Context(t)
 
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(urlBase+"/"),
@@ -1826,8 +1764,7 @@ func TestBrowser_SendButtonDisabledWhileInputEmpty(t *testing.T) {
 // regressions for both kiln modals (gear + reset-confirm).
 func TestBrowser_EscClosesModals(t *testing.T) {
 	urlBase, _, _ := startKilnExt(t)
-	ctx, cancel := newChrome(t)
-	defer cancel()
+	ctx := chromedptest.Context(t)
 
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(urlBase+"/"),
@@ -1889,8 +1826,7 @@ func TestBrowser_EscClosesModals(t *testing.T) {
 // scannable: "▢ add_entity name=foo (210ms)" / "← ok · add_entity".
 func TestBrowser_ToolCallShowsElapsedTimeAndResultEchosName(t *testing.T) {
 	urlBase, _, _ := startKilnExt(t)
-	ctx, cancel := newChrome(t)
-	defer cancel()
+	ctx := chromedptest.Context(t)
 
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(urlBase+"/"),
@@ -1940,8 +1876,7 @@ func TestBrowser_ToolCallShowsElapsedTimeAndResultEchosName(t *testing.T) {
 // form, standard chat UX. Shift+Enter still inserts a newline.
 func TestBrowser_EnterSubmitsChat(t *testing.T) {
 	urlBase, _, _ := startKilnExt(t)
-	ctx, cancel := newChrome(t)
-	defer cancel()
+	ctx := chromedptest.Context(t)
 
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(urlBase+"/"),
@@ -1988,8 +1923,7 @@ func TestBrowser_EnterSubmitsChat(t *testing.T) {
 // tools'. Counted from the most-recent chat_user message.
 func TestBrowser_InFlightCountsToolCalls(t *testing.T) {
 	urlBase, l, tools := startKilnExt(t)
-	ctx, cancel := newChrome(t)
-	defer cancel()
+	ctx := chromedptest.Context(t)
 
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(urlBase+"/"),
@@ -2048,8 +1982,7 @@ func TestBrowser_InFlightCountsToolCalls(t *testing.T) {
 // error from the protocol layer.
 func TestBrowser_FailedToolDispatchSurfacesDistinctRow(t *testing.T) {
 	urlBase, _, _ := startKilnExt(t)
-	ctx, cancel := newChrome(t)
-	defer cancel()
+	ctx := chromedptest.Context(t)
 
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(urlBase+"/"),
@@ -2142,8 +2075,7 @@ func firstN(s string, n int) string {
 // resizing or scrolling inside the input.
 func TestBrowser_TextareaAutoGrowsWithContent(t *testing.T) {
 	urlBase, _, _ := startKilnExt(t)
-	ctx, cancel := newChrome(t)
-	defer cancel()
+	ctx := chromedptest.Context(t)
 
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(urlBase+"/"),
@@ -2189,8 +2121,7 @@ func TestBrowser_TextareaAutoGrowsWithContent(t *testing.T) {
 // next to the message body so the agent's context isn't invisible.
 func TestBrowser_PagePrefixRendersAsChip(t *testing.T) {
 	urlBase, _, tools := startKilnExt(t)
-	ctx, cancel := newChrome(t)
-	defer cancel()
+	ctx := chromedptest.Context(t)
 
 	tools.Chat(context.Background(), protocol.ChatArgs{Role: "user", Text: "[page=/dashboard] add a status field"})
 
@@ -2223,8 +2154,7 @@ func TestBrowser_PagePrefixRendersAsChip(t *testing.T) {
 // the agent_changed SSE Notify.
 func TestBrowser_AgentHeaderChipReflectsCurrentAndUpdates(t *testing.T) {
 	urlBase, l, _ := startKilnExt(t)
-	ctx, cancel := newChrome(t)
-	defer cancel()
+	ctx := chromedptest.Context(t)
 
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(urlBase+"/"),
@@ -2275,8 +2205,7 @@ func TestBrowser_AgentHeaderChipReflectsCurrentAndUpdates(t *testing.T) {
 // runtime's data-fui-tick-elapsed primitive.
 func TestBrowser_PendingToolRowTicksElapsedTime(t *testing.T) {
 	urlBase, l, _ := startKilnExt(t)
-	ctx, cancel := newChrome(t)
-	defer cancel()
+	ctx := chromedptest.Context(t)
 
 	// Inject a tool_call directly into the journal WITHOUT a result so
 	// the panel renders the pending state. Use a kind/op the journal
@@ -2335,8 +2264,7 @@ func mustJSON(v any) []byte {
 // Verifies the data-fui-tick-elapsed plumbing reaches this surface.
 func TestBrowser_InFlightHeaderShowsLiveElapsedTime(t *testing.T) {
 	urlBase, l, tools := startKilnExt(t)
-	ctx, cancel := newChrome(t)
-	defer cancel()
+	ctx := chromedptest.Context(t)
 
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(urlBase+"/"),
@@ -2391,8 +2319,7 @@ func TestBrowser_InFlightHeaderShowsLiveElapsedTime(t *testing.T) {
 // is alive vs. silently stale.
 func TestBrowser_ConnectionStatusDotReflectsSSEState(t *testing.T) {
 	urlBase, _, _ := startKilnExt(t)
-	ctx, cancel := newChrome(t)
-	defer cancel()
+	ctx := chromedptest.Context(t)
 
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(urlBase+"/"),
@@ -2441,8 +2368,7 @@ func TestBrowser_ConnectionStatusDotReflectsSSEState(t *testing.T) {
 // primitive against the kiln textarea opt-in.
 func TestBrowser_CmdKFocusesChatInput(t *testing.T) {
 	urlBase, _, _ := startKilnExt(t)
-	ctx, cancel := newChrome(t)
-	defer cancel()
+	ctx := chromedptest.Context(t)
 
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(urlBase+"/"),
@@ -2489,8 +2415,7 @@ func TestBrowser_CmdKFocusesChatInput(t *testing.T) {
 // divider before the second user message.
 func TestBrowser_TurnDividersBetweenTurns(t *testing.T) {
 	urlBase, _, tools := startKilnExt(t)
-	ctx, cancel := newChrome(t)
-	defer cancel()
+	ctx := chromedptest.Context(t)
 
 	// Two-turn shape: user → tool → user → tool → user (3 turns).
 	tools.Chat(context.Background(), protocol.ChatArgs{Role: "user", Text: "first"})
@@ -2528,8 +2453,7 @@ func TestBrowser_TurnDividersBetweenTurns(t *testing.T) {
 // has a one-click path to fix the problem from where they notice it.
 func TestBrowser_NoAgentChipOpensSettings(t *testing.T) {
 	urlBase, _, _ := startKilnExt(t)
-	ctx, cancel := newChrome(t)
-	defer cancel()
+	ctx := chromedptest.Context(t)
 
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(urlBase+"/"),
@@ -2544,8 +2468,7 @@ func TestBrowser_NoAgentChipOpensSettings(t *testing.T) {
 // World-snapshot pill links to /kiln/world for IR inspection.
 func TestBrowser_SnapshotPillLinksToWorld(t *testing.T) {
 	urlBase, _, _ := startKilnExt(t)
-	ctx, cancel := newChrome(t)
-	defer cancel()
+	ctx := chromedptest.Context(t)
 
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(urlBase+"/"),
@@ -2571,8 +2494,7 @@ func TestBrowser_SnapshotPillLinksToWorld(t *testing.T) {
 // vs stuck waiting on a single slow tool.
 func TestBrowser_InFlightShowsDoneAndRunningSplit(t *testing.T) {
 	urlBase, l, tools := startKilnExt(t)
-	ctx, cancel := newChrome(t)
-	defer cancel()
+	ctx := chromedptest.Context(t)
 
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(urlBase+"/"),
@@ -2638,8 +2560,7 @@ func TestBrowser_InFlightShowsDoneAndRunningSplit(t *testing.T) {
 // Once any chat exists the tray vanishes.
 func TestBrowser_QuickstartTrayOnEmptyPanel(t *testing.T) {
 	urlBase, _, tools := startKilnExt(t)
-	ctx, cancel := newChrome(t)
-	defer cancel()
+	ctx := chromedptest.Context(t)
 
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(urlBase+"/"),
@@ -2689,8 +2610,7 @@ func TestBrowser_QuickstartTrayOnEmptyPanel(t *testing.T) {
 // which ops are dangerous.
 func TestBrowser_PlanCardHighlightsDestructiveTargets(t *testing.T) {
 	urlBase, _, tools := startKilnExt(t)
-	ctx, cancel := newChrome(t)
-	defer cancel()
+	ctx := chromedptest.Context(t)
 
 	// Seed an entity so delete_entity is a valid target.
 	tools.AddEntity(context.Background(), protocol.AddEntityArgs{Entity: &world.Entity{
@@ -2732,8 +2652,7 @@ func TestBrowser_PlanCardHighlightsDestructiveTargets(t *testing.T) {
 // adding visual clutter to the row layout.
 func TestBrowser_ChatRowsHaveTimestampTitle(t *testing.T) {
 	urlBase, _, tools := startKilnExt(t)
-	ctx, cancel := newChrome(t)
-	defer cancel()
+	ctx := chromedptest.Context(t)
 
 	tools.Chat(context.Background(), protocol.ChatArgs{Role: "user", Text: "ping"})
 
@@ -2759,8 +2678,7 @@ func TestBrowser_ChatRowsHaveTimestampTitle(t *testing.T) {
 // flash class land on .kiln-panel-snapshot.
 func TestBrowser_FlashOnUpdateSignals(t *testing.T) {
 	urlBase, _, tools := startKilnExt(t)
-	ctx, cancel := newChrome(t)
-	defer cancel()
+	ctx := chromedptest.Context(t)
 
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(urlBase+"/"),
@@ -2803,8 +2721,7 @@ func TestBrowser_FlashOnUpdateSignals(t *testing.T) {
 // it stops the run (panel reflects no-longer-busy state).
 func TestBrowser_StopButtonCancelsInFlightTurn(t *testing.T) {
 	urlBase, l, _ := startKilnExt(t)
-	ctx, cancel := newChrome(t)
-	defer cancel()
+	ctx := chromedptest.Context(t)
 
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(urlBase+"/"),
@@ -2877,8 +2794,7 @@ func TestBrowser_StopButtonCancelsInFlightTurn(t *testing.T) {
 // Approve/Reject.
 func TestBrowser_PlanCardModifyPrefillsInput(t *testing.T) {
 	urlBase, _, tools := startKilnExt(t)
-	ctx, cancel := newChrome(t)
-	defer cancel()
+	ctx := chromedptest.Context(t)
 
 	tools.ProposePlan(context.Background(), protocol.ProposePlanArgs{
 		PlanID:  "p-tweak",
@@ -2913,8 +2829,8 @@ func TestBrowser_PlanCardModifyPrefillsInput(t *testing.T) {
 // Chat log uses aria-live so screen readers announce new messages.
 func TestBrowser_ChatLogIsAriaLive(t *testing.T) {
 	urlBase, _, _ := startKilnExt(t)
-	ctx, cancel := newChrome(t)
-	defer cancel()
+	ctx := chromedptest.Context(t)
+
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(urlBase+"/"),
 		chromedp.WaitVisible(`.kiln-log-wrap`, chromedp.ByQuery),
@@ -2938,8 +2854,8 @@ func TestBrowser_ChatLogIsAriaLive(t *testing.T) {
 // concrete backup path before destroying their session.
 func TestBrowser_ResetModalMentionsFreezeDiff(t *testing.T) {
 	urlBase, _, _ := startKilnExt(t)
-	ctx, cancel := newChrome(t)
-	defer cancel()
+	ctx := chromedptest.Context(t)
+
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(urlBase+"/"),
 		chromedp.WaitVisible(`#kiln-reset`, chromedp.ByQuery),
@@ -2975,8 +2891,8 @@ func TestBrowser_WorldEndpointReturnsIndentedJSON(t *testing.T) {
 // is the focused element with a non-empty value).
 func TestBrowser_EscClearsChatInput(t *testing.T) {
 	urlBase, _, _ := startKilnExt(t)
-	ctx, cancel := newChrome(t)
-	defer cancel()
+	ctx := chromedptest.Context(t)
+
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(urlBase+"/"),
 		chromedp.WaitVisible(`.kiln-input`, chromedp.ByQuery),
@@ -3002,8 +2918,7 @@ func TestBrowser_EscClearsChatInput(t *testing.T) {
 // what to do next ('— add a propose_plan first', etc).
 func TestBrowser_ErrorRowsIncludeHint(t *testing.T) {
 	urlBase, l, _ := startKilnExt(t)
-	ctx, cancel := newChrome(t)
-	defer cancel()
+	ctx := chromedptest.Context(t)
 
 	// Synth a tool_call + tool_result with a Hint in the result.
 	if err := l.Apply(journal.Entry{
@@ -3043,8 +2958,7 @@ func TestBrowser_ErrorRowsIncludeHint(t *testing.T) {
 // World snapshot pill names entities when there are few (≤4).
 func TestBrowser_SnapshotPillNamesEntitiesWhenFew(t *testing.T) {
 	urlBase, _, tools := startKilnExt(t)
-	ctx, cancel := newChrome(t)
-	defer cancel()
+	ctx := chromedptest.Context(t)
 
 	tools.AddEntity(context.Background(), protocol.AddEntityArgs{Entity: &world.Entity{
 		Name: "notes", Fields: []world.Field{{Name: "x", Type: "string"}}}})
@@ -3075,8 +2989,7 @@ func TestBrowser_SnapshotPillNamesEntitiesWhenFew(t *testing.T) {
 // a plan tool, so the CSS rules are wired correctly.
 func TestBrowser_ToolRowCategoryColorsApply(t *testing.T) {
 	urlBase, l, _ := startKilnExt(t)
-	ctx, cancel := newChrome(t)
-	defer cancel()
+	ctx := chromedptest.Context(t)
 
 	for _, e := range []struct {
 		callID, name string
@@ -3121,8 +3034,7 @@ func TestBrowser_ToolRowCategoryColorsApply(t *testing.T) {
 // onboarding examples.
 func TestBrowser_QuickstartAdaptsToExistingWorld(t *testing.T) {
 	urlBase, _, tools := startKilnExt(t)
-	ctx, cancel := newChrome(t)
-	defer cancel()
+	ctx := chromedptest.Context(t)
 
 	tools.AddEntity(context.Background(), protocol.AddEntityArgs{Entity: &world.Entity{
 		Name: "widgets", Fields: []world.Field{{Name: "label", Type: "string"}}}})
@@ -3146,8 +3058,8 @@ func TestBrowser_QuickstartAdaptsToExistingWorld(t *testing.T) {
 // users see when the plan landed without checking timestamps.
 func TestBrowser_PlanCardShowsRelativeProposeTime(t *testing.T) {
 	urlBase, _, tools := startKilnExt(t)
-	ctx, cancel := newChrome(t)
-	defer cancel()
+	ctx := chromedptest.Context(t)
+
 	tools.ProposePlan(context.Background(), protocol.ProposePlanArgs{
 		PlanID: "p-when",
 		Steps:  []string{"do something"},
@@ -3170,8 +3082,8 @@ func TestBrowser_PlanCardShowsRelativeProposeTime(t *testing.T) {
 // options with no obvious next step.
 func TestBrowser_GearModalShowsInstallHintWhenNoAdaptersInstalled(t *testing.T) {
 	urlBase, _, _ := startKilnExt(t)
-	ctx, cancel := newChrome(t)
-	defer cancel()
+	ctx := chromedptest.Context(t)
+
 	testNoAdaptersInstalled.Store(true)
 
 	if err := chromedp.Run(ctx,
@@ -3195,8 +3107,7 @@ func TestBrowser_GearModalShowsInstallHintWhenNoAdaptersInstalled(t *testing.T) 
 // opt-in.
 func TestBrowser_PlanCardYNApprovesAndRejects(t *testing.T) {
 	urlBase, _, tools := startKilnExt(t)
-	ctx, cancel := newChrome(t)
-	defer cancel()
+	ctx := chromedptest.Context(t)
 
 	tools.ProposePlan(context.Background(), protocol.ProposePlanArgs{
 		PlanID: "p-y", Steps: []string{"do work"},
@@ -3234,8 +3145,8 @@ func TestBrowser_PlanCardYNApprovesAndRejects(t *testing.T) {
 // scannable.
 func TestBrowser_ApprovedPlansCollapse(t *testing.T) {
 	urlBase, _, tools := startKilnExt(t)
-	ctx, cancel := newChrome(t)
-	defer cancel()
+	ctx := chromedptest.Context(t)
+
 	tools.ProposePlan(context.Background(), protocol.ProposePlanArgs{
 		PlanID: "p-collapse", Steps: []string{"step a", "step b", "step c"},
 	})
@@ -3264,8 +3175,8 @@ func TestBrowser_ApprovedPlansCollapse(t *testing.T) {
 // data-fui-charcount-source primitive on the kiln textarea.
 func TestBrowser_InputCharCounterUpdatesLive(t *testing.T) {
 	urlBase, _, _ := startKilnExt(t)
-	ctx, cancel := newChrome(t)
-	defer cancel()
+	ctx := chromedptest.Context(t)
+
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(urlBase+"/"),
 		chromedp.WaitVisible(`.kiln-input-charcount`, chromedp.ByQuery),
@@ -3291,8 +3202,7 @@ func TestBrowser_InputCharCounterUpdatesLive(t *testing.T) {
 // localStorage. Clears on send via the form.reset wiring.
 func TestBrowser_DraftPromptPersistsAcrossReload(t *testing.T) {
 	urlBase, _, _ := startKilnExt(t)
-	ctx, cancel := newChrome(t)
-	defer cancel()
+	ctx := chromedptest.Context(t)
 
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(urlBase+"/"),
@@ -3340,8 +3250,8 @@ func TestBrowser_DraftPromptPersistsAcrossReload(t *testing.T) {
 // data-fui-copy-text-from primitive on the kiln panel opt-in.
 func TestBrowser_CopyTranscriptButtonFlashesCopied(t *testing.T) {
 	urlBase, _, tools := startKilnExt(t)
-	ctx, cancel := newChrome(t)
-	defer cancel()
+	ctx := chromedptest.Context(t)
+
 	tools.Chat(context.Background(), protocol.ChatArgs{Role: "user", Text: "trace this"})
 
 	// Stub the clipboard so the copy succeeds even in headless without permissions.
@@ -3385,8 +3295,7 @@ func TestBrowser_CopyTranscriptButtonFlashesCopied(t *testing.T) {
 // chat input with a retry prompt referencing the original tool + args.
 func TestBrowser_FailedToolRowOffersRetry(t *testing.T) {
 	urlBase, l, _ := startKilnExt(t)
-	ctx, cancel := newChrome(t)
-	defer cancel()
+	ctx := chromedptest.Context(t)
 
 	if err := l.Apply(journal.Entry{
 		ID: "ret-call", Timestamp: time.Now(), Kind: journal.KindToolCall,
@@ -3430,8 +3339,8 @@ func TestBrowser_FailedToolRowOffersRetry(t *testing.T) {
 // '?' button opens a keyboard-shortcuts help modal.
 func TestBrowser_HelpButtonOpensShortcutsModal(t *testing.T) {
 	urlBase, _, _ := startKilnExt(t)
-	ctx, cancel := newChrome(t)
-	defer cancel()
+	ctx := chromedptest.Context(t)
+
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(urlBase+"/"),
 		chromedp.WaitVisible(`.kiln-panel-help`, chromedp.ByQuery),
@@ -3465,8 +3374,7 @@ func TestBrowser_HelpButtonOpensShortcutsModal(t *testing.T) {
 // panel's max-height with no visible scrollbar.
 func TestBrowser_LongChatLogScrollsInsidePanel(t *testing.T) {
 	urlBase, _, tools := startKilnExt(t)
-	ctx, cancel := newChrome(t)
-	defer cancel()
+	ctx := chromedptest.Context(t)
 
 	// Seed enough content to exceed the panel's max-height.
 	for i := range 60 {

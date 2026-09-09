@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
 	"github.com/chromedp/chromedp"
 )
 
@@ -48,7 +49,7 @@ func TestConfirmNativeFormCancelBlocks(t *testing.T) {
 		},
 	})
 
-	ctx := newPollBrowserCtx(t)
+	ctx := chromedptest.Context(t)
 	var confirmCalls int
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/"),
@@ -85,7 +86,7 @@ func TestConfirmNativeFormAcceptSubmits(t *testing.T) {
 		},
 	})
 
-	ctx := newPollBrowserCtx(t)
+	ctx := chromedptest.Context(t)
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/"),
 		chromedp.WaitVisible(`#b`, chromedp.ByID),
@@ -121,7 +122,7 @@ func TestConfirmFormLevelMsgGates(t *testing.T) {
 		},
 	})
 
-	ctx := newPollBrowserCtx(t)
+	ctx := chromedptest.Context(t)
 	var confirmCalls int
 	var confirmMsgs []string
 	if err := chromedp.Run(ctx,
@@ -160,7 +161,7 @@ func TestConfirmSubmitterBeatsFormMsg(t *testing.T) {
 		},
 	})
 
-	ctx := newPollBrowserCtx(t)
+	ctx := chromedptest.Context(t)
 	var confirmCalls int
 	var confirmMsgs []string
 	if err := chromedp.Run(ctx,
@@ -201,7 +202,7 @@ func TestConfirmRPCFormPromptsOnce(t *testing.T) {
 		},
 	})
 
-	ctx := newPollBrowserCtx(t)
+	ctx := chromedptest.Context(t)
 	var confirmCalls int
 	var confirmMsgs []string
 	if err := chromedp.Run(ctx,
@@ -255,7 +256,7 @@ func TestConfirmWidgetPlainFormGated(t *testing.T) {
 		},
 	})
 
-	ctx := newPollBrowserCtx(t)
+	ctx := chromedptest.Context(t)
 	var confirmCalls int
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/"),

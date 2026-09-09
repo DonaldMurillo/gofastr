@@ -1,7 +1,5 @@
 package query
 
-import "strings"
-
 // DeleteBuilder builds a DELETE query with parameterized placeholders.
 type DeleteBuilder struct {
 	table  string
@@ -27,30 +25,5 @@ func (db *DeleteBuilder) Where(condition string, args ...any) *DeleteBuilder {
 
 // Build produces the final parameterized SQL and argument slice.
 func (db *DeleteBuilder) Build() (string, []any) {
-	var sb strings.Builder
-
-	sb.WriteString("DELETE FROM ")
-	sb.WriteString(sanitizeFragment(db.table))
-
-	// WHERE
-	if len(db.wheres) > 0 {
-		sb.WriteString(" WHERE ")
-		paramIdx := 1
-		for i, w := range db.wheres {
-			if i > 0 {
-				sb.WriteString(" ")
-				sb.WriteString(w.connector)
-				sb.WriteString(" ")
-			}
-			// Wrap each condition in parens. See query.go for the
-			// SQL-precedence bypass this defends against.
-			condition := renumberPlaceholders(w.condition, paramIdx)
-			paramIdx += len(w.args)
-			sb.WriteByte('(')
-			sb.WriteString(condition)
-			sb.WriteByte(')')
-		}
-	}
-
-	return sb.String(), db.args
+	return buildFiltered("DELETE FROM ", db.table, db.wheres, db.args)
 }

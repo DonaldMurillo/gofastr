@@ -2681,14 +2681,14 @@ func (a *App) runStartHooks() error {
 }
 
 // runStartHookSafe fires one OnStart hook under the same
-// recover-to-attributed-error isolation initPluginSafe gives Init:
+// recover-to-attributed-error isolation callModuleSafe gives Init:
 // OnStart hooks are host/plugin callback code, and a panic in one must
 // abort Start with an error instead of unwinding through it.
 func (a *App) runStartHookSafe(fn func(ctx context.Context) error) (err error) {
 	defer func() {
 		if v := recover(); v != nil {
 			// %T not %v: a panic(config) value must not leak a secret
-			// into the error chain (initPluginSafe precedent).
+			// into the error chain (callModuleSafe precedent).
 			err = fmt.Errorf("start hook panicked (panic type %T): set GOTRACEBACK=all for details", v)
 		}
 	}()
@@ -3428,7 +3428,7 @@ func (a *App) runReadyHookSafe(fn func(addr string), addr string) (err error) {
 	defer func() {
 		if v := recover(); v != nil {
 			// %T not %v: a panic(config) value must not leak a secret
-			// into the error chain (initPluginSafe precedent).
+			// into the error chain (callModuleSafe precedent).
 			err = fmt.Errorf("ready hook panicked (panic type %T): set GOTRACEBACK=all for details", v)
 		}
 	}()

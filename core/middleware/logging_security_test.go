@@ -9,6 +9,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
 // TestSampledLogging_SanitizesMethod ensures the production-recommended
@@ -223,7 +225,8 @@ func TestLogSinksScrubAndBound(t *testing.T) {
 }
 
 // TestScrubControlBytes_FullC0Range pins that EVERY C0 control byte
-// (0x00–0x1F) and DEL (0x7F) is percent-encoded by scrubControlBytes.
+// (0x00–0x1F) and DEL (0x7F) is percent-encoded by
+// textsafe.ScrubControlBytes.
 // The fast-path probe is a ContainsAny allow-list over a byte set; if it
 // omits any byte the encoder loop would catch, a string carrying ONLY that
 // byte bypasses the encoder and is returned raw, so a lone SOH (0x01) or
@@ -231,13 +234,12 @@ func TestLogSinksScrubAndBound(t *testing.T) {
 // byte survives scrubbing, for every byte in the range.
 func TestScrubControlBytes_FullC0Range(t *testing.T) {
 	for b := range byte(0x20) {
-		out := scrubControlBytes("x" + string(b) + "y")
+		out := textsafe.ScrubControlBytes("x" + string(b) + "y")
 		if strings.ContainsRune(out, rune(b)) {
 			t.Errorf("byte %#02x reached output raw: %q", b, out)
 		}
 	}
-	// DEL.
-	out := scrubControlBytes("x" + string(byte(0x7f)) + "y")
+	out := textsafe.ScrubControlBytes("x" + string(byte(0x7f)) + "y")
 	if strings.ContainsRune(out, rune(byte(0x7f))) {
 		t.Errorf("byte 0x7f (DEL) reached output raw: %q", out)
 	}

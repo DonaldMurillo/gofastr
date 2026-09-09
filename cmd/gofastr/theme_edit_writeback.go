@@ -5,9 +5,10 @@ import (
 	"go/format"
 	"go/parser"
 	"go/token"
+	"maps"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 
@@ -59,7 +60,7 @@ func emitThemeGoSource(t style.Theme, pkgName string) ([]byte, error) {
 
 	// DarkColors: sorted for byte-stable output.
 	b.WriteString("\tDarkColors: map[string]string{\n")
-	for _, k := range sortedStringKeys(t.DarkColors) {
+	for _, k := range slices.Sorted(maps.Keys(t.DarkColors)) {
 		fmt.Fprintf(&b, "\t\t%q: %q,\n", k, t.DarkColors[k])
 	}
 	b.WriteString("\t},\n")
@@ -67,7 +68,7 @@ func emitThemeGoSource(t style.Theme, pkgName string) ([]byte, error) {
 	// DarkCode: only emitted when non-empty (the optional code palette).
 	if len(t.DarkCode) > 0 {
 		b.WriteString("\tDarkCode: map[string]string{\n")
-		for _, k := range sortedStringKeys(t.DarkCode) {
+		for _, k := range slices.Sorted(maps.Keys(t.DarkCode)) {
 			fmt.Fprintf(&b, "\t\t%q: %q,\n", k, t.DarkCode[k])
 		}
 		b.WriteString("\t},\n")
@@ -283,21 +284,6 @@ func emitCodeSet(b *strings.Builder, c *style.CodeSet) {
 
 func emitCodeColor(b *strings.Builder, field string, c style.CodeColor) {
 	fmt.Fprintf(b, "\t\t%s: style.CodeColor{Value: %q},\n", field, c.Value)
-}
-
-// sortedStringKeys returns the keys of m in sorted order, or nil for an
-// empty/nil map. Used so the emitted DarkColors/DarkCode blocks are
-// byte-stable across runs.
-func sortedStringKeys(m map[string]string) []string {
-	if len(m) == 0 {
-		return nil
-	}
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
 }
 
 // packageNameForPath adopts the package clause from another Go file in the

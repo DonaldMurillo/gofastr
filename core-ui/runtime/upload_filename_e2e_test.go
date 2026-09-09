@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
 	"github.com/chromedp/chromedp"
 )
 
@@ -65,7 +66,7 @@ func setFilesFor(inputID, name, mimeType string) string {
 // pass by silently dropping the name.
 func TestUploadFilenameRenderedAsText(t *testing.T) {
 	g := startGadgetServer(t, `[]`, uploadFilenamePage)
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 
 	var fuText, fuEls, dzText, dzAlt, canary, prevCount string
 	if err := chromedp.Run(ctx,
@@ -133,7 +134,7 @@ func jsQuote(s string) string {
 // list never renders.
 func TestFileUploadZoneInjectedAfterLoadGetsWired(t *testing.T) {
 	g := startGadgetServer(t, `[]`, uploadFilenamePage)
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 
 	var injText, injBound string
 	if err := chromedp.Run(ctx,

@@ -397,7 +397,7 @@ func (s *DurableScheduler) nextWakeDelay(ctx context.Context, now time.Time, max
 		}
 		return 0, err
 	}
-	next, err := queueTime(nextRaw)
+	next, err := query.ParseDBTime(nextRaw)
 	if err != nil {
 		return 0, fmt.Errorf("queue: decode scheduler next_run: %w", err)
 	}
@@ -500,13 +500,13 @@ func (s *DurableScheduler) loadDue(ctx context.Context, now time.Time) ([]durabl
 		}
 		row.payload = json.RawMessage(payload)
 		row.interval = time.Duration(intervalNS)
-		next, err := queueTime(nextRun)
+		next, err := query.ParseDBTime(nextRun)
 		if err != nil {
 			slog.Default().Error("queue: durable scheduler skipping schedule",
 				"schedule_id", row.id, "err", fmt.Errorf("decode next_run: %w", err).Error())
 			continue
 		}
-		updated, err := queueTime(updatedAt)
+		updated, err := query.ParseDBTime(updatedAt)
 		if err != nil {
 			slog.Default().Error("queue: durable scheduler skipping schedule",
 				"schedule_id", row.id, "err", fmt.Errorf("decode updated_at: %w", err).Error())

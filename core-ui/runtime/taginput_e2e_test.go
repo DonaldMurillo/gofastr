@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
 	"github.com/chromedp/chromedp"
 )
 
@@ -35,7 +36,7 @@ const tagInputPage = `
 // users stay in the input instead of falling out to <body>.
 func TestTagInputRoundTrip(t *testing.T) {
 	g := startGadgetServer(t, `[]`, tagInputPage)
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 
 	// typeTagValue focuses the field, sets its value, and dispatches a
 	// keydown with the given key (Enter / "," / "Backspace"). Mirrors the

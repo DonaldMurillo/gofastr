@@ -167,19 +167,7 @@ func loadHasManyFiltered(ctx context.Context, db DBExecutor, safeEntity, safeFK 
 			}
 			row[c] = convertDatabaseValue(vals[i], boolCols[i])
 		}
-		parentID := fmt.Sprintf("%v", fkVal)
-		if existing, ok := result[parentID]; ok {
-			if rel.Type == entity.RelHasOne {
-				existing[rel.Name] = row
-			} else {
-				var slice []map[string]any
-				if prev, ok := existing[rel.Name]; ok {
-					slice = prev.([]map[string]any)
-				}
-				slice = append(slice, row)
-				existing[rel.Name] = slice
-			}
-		}
+		attachChildRow(rel, fkVal, row, result)
 	}
 	return rows.Err()
 }

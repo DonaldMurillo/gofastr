@@ -228,12 +228,23 @@ func (m *MemoryStore) ClaimDueDeliveries(_ context.Context, now time.Time, limit
 func (m *MemoryStore) ReapTerminalBefore(_ context.Context, cutoff time.Time) (int64, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	return reapMatching(m.deliveries, func(d Delivery) bool {
+		return d.Status == StatusSuccess && d.UpdatedAt.Before(cutoff)
+	}), nil
+}
+
+// reapMatching deletes every entry of m for which match reports true and
+// returns the count deleted. The caller holds whatever lock guards m. It
+// replaces the duplicated delete-and-count loops formerly in
+// MemoryStore.ReapTerminalBefore and MemoryInboundStore.ReapTerminalBefore,
+// which differed only in map type and terminal status.
+func reapMatching[K comparable, V any](m map[K]V, match func(V) bool) int64 {
 	var n int64
-	for id, d := range m.deliveries {
-		if d.Status == StatusSuccess && d.UpdatedAt.Before(cutoff) {
-			delete(m.deliveries, id)
+	for k, v := range m {
+		if match(v) {
+			delete(m, k)
 			n++
 		}
 	}
-	return n, nil
+	return n
 }

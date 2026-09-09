@@ -7,6 +7,59 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+### Changed
+- **One home per helper.** A clone survey over the tree found the same
+  bodies re-implemented across packages; each now has one canonical
+  definition and the copies are gone (164 files, about 2,500 lines
+  removed). The shared homes: `core/textsafe` gains
+  `HasControlBytes`, `SanitizeControlBytes` (removes C0/DEL for
+  header, token, and route values), `ScrubControlBytes` (percent-encodes
+  for log lines), and `Truncate`; `core/query` gains `IsPostgres`,
+  `SafeTableName`, `ReservedIdent`, `ParseDBTime`, `ParseDBTimeString`,
+  and `ProbeSQLiteBindLayout`; `core/migrate.AcquireSQLiteLease` is the
+  one SQLite lease behind both the migrate and seed locks;
+  `core/stream.SpliceSeat` is the one seat-FIFO splice behind the SSE
+  bus, MCP, crud streams, RTC, and the harness; `core/netguard` gains
+  `GuardedTransport` and `IsLoopbackAuthority`; `core/handler` gains
+  `IsJSONContentType` and `IsSafeRelativePath` (the auth "next" field
+  and the partial-redirect header share one grammar); `core/config`
+  gains `EnvBool`; `framework/internal/exif` carries the TIFF
+  orientation parser for both `file` and `image` without linking the
+  codecs into `file`; `framework/contracts` exports `ReadModulePath` and
+  `ImportPathFor`, and the CLI and `cmd/repolint` call its
+  `IsGeneratedSource`; the repo
+  analyzers share `internal/analyzers/internal/astx` and use the
+  standard library's `ast.Unparen`. The hand-rolled base-10 `itoa` loops,
+  `sortStrings`, and every sorted-map-keys helper are now `strconv.Itoa`,
+  `slices.Sort`, or `slices.Sorted(maps.Keys(m))`.
+  Four checks got stricter by sharing the canonical version: the local
+  storage battery's fold-refusal walk now runs even when `os.OpenRoot`
+  fails (its own copy silently returned nil on the first empty path
+  component in that branch, so a folded key was never refused there); the
+  webhook battery's table-name validation now rejects leading digits
+  and SQL reserved words like the idempotency and feature-flag stores
+  already did; `battery/auth`'s JSON gate accepts any `+json`
+  structured suffix and rejects a Content-Type whose parameters fail
+  to parse; and `cmd/repolint` exempts a generated file only on the
+  full `// Code generated ... DO NOT EDIT.` header, no longer on either
+  half alone. Generated example apps and the frozen upgrade fixtures
+  under `evals/` were left as they are.
+- **Generated apps and CLIs carry each body once.** The blueprint
+  generator now emits `entities/events.go`, a fixed seam holding the
+  typed-event subscribe and record-extract bodies; every
+  `On<Entity>Created/Updated/Deleted` and `extract<Entity>Record` is a
+  one-line typed wrapper with its signature unchanged, so an entity file
+  is about 35 lines shorter and a fix lands in one place. `--add` writes
+  the seam only when absent, and an entity named `events` renders as
+  `entity_events.go`. The generated CLI gains `verbs.go` with the list,
+  get, delete, batch, and watch bodies once; the per-entity
+  `run<Entity><Verb>` functions stay as three-line wrappers, so the
+  documented `custom.go` wrap pattern and the `<entity>Commands()` tables
+  are untouched, and `verbs` joins the reserved command names. Usage and
+  error text is byte-identical. The ecommerce example was regenerated;
+  meridian's generated files predate the current templates and carry
+  hand edits, so they were left alone.
+
 ## [0.85.0] - 2026-09-08
 
 ### Security

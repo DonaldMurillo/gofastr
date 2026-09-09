@@ -11,17 +11,20 @@ import (
 	"image/color"
 	"image/png"
 	"io"
+	"maps"
 	"math"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/codegen"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
 	"github.com/DonaldMurillo/gofastr/core/query"
@@ -986,7 +989,7 @@ func mergeEntityPaginationDeclaration(
 	}
 	if node := root["cursor_fields"]; node != nil {
 		flat := stringListValue(node)
-		if groupMap["cursor_fields"] != nil && !stringSlicesEqual(flat, grouped.CursorFields) {
+		if groupMap["cursor_fields"] != nil && !slices.Equal(flat, grouped.CursorFields) {
 			return nil, entityDeclarationConflict(name, "cursor_fields", "pagination.cursor_fields", flat, grouped.CursorFields)
 		}
 		grouped.CursorFields = flat
@@ -1072,18 +1075,6 @@ func hasEntityDeclarationKey(root map[string]*coreyaml.Node, keys ...string) boo
 		}
 	}
 	return false
-}
-
-func stringSlicesEqual(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
 }
 
 func entityDeclarationConflict(name, flatPath, groupedPath string, flat, grouped any) error {
@@ -1819,7 +1810,7 @@ func decodeBlueprintSeed(node *coreyaml.Node) ([]BlueprintSeedEntity, error) {
 				}
 				row := make(map[string]any, len(rowMap))
 				for k, v := range rowMap {
-					row[k] = anyValue(v)
+					row[k] = codegen.AnyValue(v)
 				}
 				rows = append(rows, row)
 			}
@@ -2389,7 +2380,7 @@ func validateBlueprint(bp Blueprint) error {
 	// fetch on every page load. style.ValidateColorValue is that one grammar,
 	// called here rather than copied. Keys are sorted so the multi-error
 	// report is deterministic (map iteration order is not).
-	for _, key := range sortedMapKeys(bp.App.Theme) {
+	for _, key := range slices.Sorted(maps.Keys(bp.App.Theme)) {
 		value := bp.App.Theme[key]
 		if _, ok := blueprintThemeColorPath(key); ok {
 			if err := style.ValidateColorValue(value); err != nil {
@@ -2406,7 +2397,7 @@ func validateBlueprint(bp Blueprint) error {
 		}
 		errs.add(fmt.Errorf("blueprint: app.theme has unsupported token %q", key))
 	}
-	for _, key := range sortedMapKeys(bp.App.ThemeDark) {
+	for _, key := range slices.Sorted(maps.Keys(bp.App.ThemeDark)) {
 		value := bp.App.ThemeDark[key]
 		if _, ok := blueprintThemeColorPath(key); !ok {
 			errs.add(fmt.Errorf("blueprint: app.theme.dark has unsupported color token %q", key))
@@ -2687,7 +2678,7 @@ func validateBlueprint(bp Blueprint) error {
 			continue
 		}
 		if _, ok := blueprintHookTypes[hook.When]; !ok {
-			errs.add(fmt.Errorf("blueprint: hook %q when %q is not a lifecycle point; use one of %s", hook.ID, hook.When, strings.Join(sortedMapKeys(blueprintHookTypes), ", ")))
+			errs.add(fmt.Errorf("blueprint: hook %q when %q is not a lifecycle point; use one of %s", hook.ID, hook.When, strings.Join(slices.Sorted(maps.Keys(blueprintHookTypes)), ", ")))
 			continue
 		}
 		handler := strings.TrimSpace(hook.Handler)
@@ -2748,17 +2739,6 @@ func validateBlueprint(bp Blueprint) error {
 	return errs.err()
 }
 
-// sortedMapKeys returns m's keys in sorted order, so multi-error reports
-// built from map iteration are deterministic.
-func sortedMapKeys[V any](m map[string]V) []string {
-	keys := make([]string, 0, len(m))
-	for key := range m {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	return keys
-}
-
 // validateBlueprintSeedTypes rejects seed values whose YAML type can never
 // satisfy the target field's runtime validator (core/schema/validate.go).
 //
@@ -2787,7 +2767,7 @@ func validateBlueprintSeedTypes(bp Blueprint, entitiesByName map[string]framewor
 			// Rows are maps: iterate their keys sorted so a row with two
 			// bad values reports both, in a stable order, instead of one
 			// picked by map-iteration luck.
-			for _, name := range sortedMapKeys(row) {
+			for _, name := range slices.Sorted(maps.Keys(row)) {
 				value := row[name]
 				field, fieldKind := blueprintSeedFieldKind(decl, name)
 				if !fieldKind {
@@ -2846,7 +2826,7 @@ func validateBlueprintSeedStructure(bp Blueprint, entitiesByName map[string]fram
 			}
 		}
 		for i, row := range seed.Rows {
-			for _, name := range sortedMapKeys(row) {
+			for _, name := range slices.Sorted(maps.Keys(row)) {
 				// A key that matches no declared column is silently dropped
 				// by CreateOne (it writes declared columns only), and when
 				// the real column is required the boot error names the
@@ -3784,7 +3764,7 @@ func renderBlueprintEnv(bp Blueprint) string {
 	if bp.App.Auth.Enabled && bp.App.Auth.JWTSecret != "" {
 		writeSecret("JWT_SECRET", bp.App.Auth.JWTSecret)
 	}
-	if dsnHasSecret(bp.App.DBURL) {
+	if dsnredact.HasSecret(bp.App.DBURL) {
 		writeSecret("DATABASE_URL", bp.App.DBURL)
 	}
 	if bp.App.Auth.Enabled && bp.App.Admin.SeedEmail != "" && bp.App.Admin.SeedPassword != "" {
@@ -3834,33 +3814,6 @@ func envQuote(v string) string {
 	}
 	b.WriteByte('"')
 	return b.String()
-}
-
-// dsnHasSecret reports whether a database DSN embeds credentials: a
-// URL-form password (postgres://user:pw@host/db) or a key/value
-// `password=` pair. SQLite file DSNs return false: nothing to hide.
-//
-// Fails CLOSED on URL-form DSNs that url.Parse rejects (e.g. a password
-// containing a bad % escape): if there is a userinfo section we cannot
-// prove holds no credential, treat it as secret-bearing rather than
-// committing it verbatim into generated source.
-func dsnHasSecret(dsn string) bool {
-	if dsn == "" {
-		return false
-	}
-	if strings.Contains(dsn, "password=") {
-		return true
-	}
-	if u, err := url.Parse(dsn); err == nil {
-		if u.User != nil {
-			if _, has := u.User.Password(); has {
-				return true
-			}
-		}
-	} else if i := strings.Index(dsn, "://"); i >= 0 && strings.Contains(dsn[i+3:], "@") {
-		return true
-	}
-	return false
 }
 
 // redactDSN strips the password from a DSN so the remainder can appear in
@@ -5005,7 +4958,7 @@ func renderBlueprintMain(bp Blueprint) string {
 		// ref string when the variable is unset, so it fails closed the
 		// same way with a message naming the variable.
 		fallbackDSN := dbURL
-		if dsnHasSecret(dbURL) || isSelfEnvRef("DATABASE_URL", dbURL) {
+		if dsnredact.HasSecret(dbURL) || isSelfEnvRef("DATABASE_URL", dbURL) {
 			fallbackDSN = ""
 		}
 		sb.WriteString(fmt.Sprintf("\tdsn := getEnv(\"DATABASE_URL\", %q)\n", fallbackDSN))
@@ -5736,23 +5689,7 @@ func blueprintResourceRegistryOne(bp Blueprint, e string, entityMap map[string]f
 	sb.WriteString("\t\t},\n")
 	// Relations: FK column -> related crud + display field.
 	rels := blueprintEntityRelations(decl)
-	if len(rels) > 0 {
-		sb.WriteString("\t\tRelations: map[string]resource.Relation{\n")
-		relCols := make([]string, 0, len(rels))
-		for c := range rels {
-			relCols = append(relCols, c)
-		}
-		sort.Strings(relCols)
-		for _, col := range relCols {
-			target := rels[col]
-			disp := "id"
-			if td, ok := entityMap[target]; ok {
-				disp = blueprintDisplayField(td)
-			}
-			sb.WriteString(fmt.Sprintf("\t\t\t%q: {Crud: fwApp.MustCrudHandler(%q), Display: %q},\n", col, target, disp))
-		}
-		sb.WriteString("\t\t},\n")
-	}
+	emitResourceRelations(&sb, 2, rels, entityMap)
 	// Related: reverse relations, other entities that point back at this
 	// one via a FK. Surfaced as tables on the detail page (account view).
 	if rel := blueprintRelatedEmit(e, entityMap, base); rel != "" {
@@ -5983,23 +5920,7 @@ func blueprintRelatedEmit(e string, entityMap map[string]framework.EntityDeclara
 				shown++
 			}
 			b.WriteString("\t\t\t},\n")
-			if len(orels) > 0 {
-				b.WriteString("\t\t\tRelations: map[string]resource.Relation{\n")
-				cols := make([]string, 0, len(orels))
-				for c := range orels {
-					cols = append(cols, c)
-				}
-				sort.Strings(cols)
-				for _, col := range cols {
-					target := orels[col]
-					disp := "id"
-					if td, ok := entityMap[target]; ok {
-						disp = blueprintDisplayField(td)
-					}
-					b.WriteString(fmt.Sprintf("\t\t\t\t%q: {Crud: fwApp.MustCrudHandler(%q), Display: %q},\n", col, target, disp))
-				}
-				b.WriteString("\t\t\t},\n")
-			}
+			emitResourceRelations(&b, 3, orels, entityMap)
 			b.WriteString("\t\t},\n")
 		}
 	}
@@ -6007,6 +5928,31 @@ func blueprintRelatedEmit(e string, entityMap map[string]framework.EntityDeclara
 		return ""
 	}
 	return "\t\tRelated: []resource.RelatedList{\n" + b.String() + "\t\t},\n"
+}
+
+// emitResourceRelations writes the `Relations: map[string]resource.Relation`
+// literal of a generated resource registry entry: one relation per FK
+// column, keys sorted so the emitted Go is byte-stable, Display resolving
+// to the target entity's display field ("id" when the target is not in
+// the registry map). depth is the tab depth of the emitted `Relations:`
+// line; entries sit one tab deeper. One home for the two former in-file
+// copies: the resource entry's own Relations (depth 2) and the RelatedList
+// inline registries (depth 3).
+func emitResourceRelations(sb *strings.Builder, depth int, rels map[string]string, entityMap map[string]framework.EntityDeclaration) {
+	if len(rels) == 0 {
+		return
+	}
+	tabs := strings.Repeat("\t", depth)
+	sb.WriteString(tabs + "Relations: map[string]resource.Relation{\n")
+	for _, col := range slices.Sorted(maps.Keys(rels)) {
+		target := rels[col]
+		disp := "id"
+		if td, ok := entityMap[target]; ok {
+			disp = blueprintDisplayField(td)
+		}
+		fmt.Fprintf(sb, "%s\t%q: {Crud: fwApp.MustCrudHandler(%q), Display: %q},\n", tabs, col, target, disp)
+	}
+	sb.WriteString(tabs + "},\n")
 }
 
 // blueprintDisplayField picks the human label column for an entity.
@@ -7522,7 +7468,7 @@ func blueprintSeedGoLiteral(v any) string {
 		return "[]any{" + strings.Join(parts, ", ") + "}"
 	case map[string]any:
 		parts := make([]string, 0, len(val))
-		for _, k := range sortedMapKeys(val) {
+		for _, k := range slices.Sorted(maps.Keys(val)) {
 			parts = append(parts, fmt.Sprintf("%q: %s", k, blueprintSeedGoLiteral(val[k])))
 		}
 		return "map[string]any{" + strings.Join(parts, ", ") + "}"
@@ -7770,7 +7716,7 @@ func renderBlueprintApp(bp Blueprint) string {
 	if len(bp.App.Theme) > 0 {
 		sb.WriteString("func appTheme() style.Theme {\n")
 		sb.WriteString("\ttheme := style.DefaultTheme()\n")
-		for _, key := range sortedStringMapKeys(bp.App.Theme) {
+		for _, key := range slices.Sorted(maps.Keys(bp.App.Theme)) {
 			if path, ok := blueprintThemeColorPath(key); ok {
 				if reason := blueprintUnsafeColorNote(key, bp.App.Theme[key]); reason != "" {
 					sb.WriteString(reason)
@@ -7791,7 +7737,7 @@ func renderBlueprintApp(bp Blueprint) string {
 			// Dark-scheme palette, emitted as a [data-color-scheme="dark"] token
 			// block so the header's ui.ThemeToggle recolors the whole app.
 			sb.WriteString("\ttheme.DarkColors = map[string]string{\n")
-			for _, key := range sortedStringMapKeys(bp.App.ThemeDark) {
+			for _, key := range slices.Sorted(maps.Keys(bp.App.ThemeDark)) {
 				if reason := blueprintUnsafeColorNote("dark."+key, bp.App.ThemeDark[key]); reason != "" {
 					sb.WriteString("\t" + reason)
 					continue
@@ -8151,15 +8097,6 @@ func renderNavItemGo(sb *strings.Builder, item BlueprintNavItem, indent string) 
 		sb.WriteString(indent + "}")
 	}
 	sb.WriteString("},\n")
-}
-
-func sortedStringMapKeys(m map[string]string) []string {
-	keys := make([]string, 0, len(m))
-	for key := range m {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	return keys
 }
 
 // blueprintFontFamilyName extracts the primary family name from a theme font
@@ -8959,7 +8896,7 @@ func mapValue(node *coreyaml.Node) map[string]any {
 	}
 	out := make(map[string]any, len(node.Map))
 	for key, child := range node.Map {
-		out[key] = anyValue(child)
+		out[key] = codegen.AnyValue(child)
 	}
 	return out
 }
@@ -8975,26 +8912,6 @@ func stringStringMapValue(node *coreyaml.Node) map[string]string {
 		out[key] = stringValue(child)
 	}
 	return out
-}
-
-func anyValue(node *coreyaml.Node) any {
-	if node == nil {
-		return nil
-	}
-	switch node.Kind {
-	case coreyaml.Scalar:
-		return node.Value
-	case coreyaml.List:
-		out := make([]any, 0, len(node.List))
-		for _, child := range node.List {
-			out = append(out, anyValue(child))
-		}
-		return out
-	case coreyaml.Map:
-		return mapValue(node)
-	default:
-		return nil
-	}
 }
 
 // blueprintNeedsToasts returns true when any screen uses entity_form or

@@ -39,7 +39,7 @@ func splitFrontmatter(input string) (map[string]string, string) {
 		}
 		key := strings.TrimSpace(line[:idx])
 		val := strings.TrimSpace(line[idx+1:])
-		val = unquote(val)
+		val = Unquote(val)
 		// A key defined twice must not silently resolve to the LAST
 		// value: a stale or hostile line lower in the block would
 		// override the value a reviewer read first, and Title flows
@@ -57,7 +57,12 @@ func splitFrontmatter(input string) (map[string]string, string) {
 	return fm, body
 }
 
-func unquote(s string) string {
+// Unquote strips one layer of matching surrounding quotes (double or
+// single) from a YAML frontmatter scalar, returning s unchanged when
+// it is not quoted (or is too short to be). Exported for the skill
+// frontmatter parser, which formerly carried a byte-identical
+// trimYAMLQuotes copy.
+func Unquote(s string) string {
 	if len(s) >= 2 {
 		if (s[0] == '"' && s[len(s)-1] == '"') || (s[0] == '\'' && s[len(s)-1] == '\'') {
 			return s[1 : len(s)-1]

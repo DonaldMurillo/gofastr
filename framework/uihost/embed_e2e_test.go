@@ -16,6 +16,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	fembed "github.com/DonaldMurillo/gofastr/framework/embed"
+	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
 )
 
 // tallEmbedComp renders content taller than the loader's initial 150px frame,
@@ -140,7 +141,7 @@ func TestEmbedEndToEndInABrowser(t *testing.T) {
 		t.Fatalf("MintNonce: %v", err)
 	}
 
-	ctx := newEmbedBrowserCtx(t)
+	ctx := chromedptest.Context(t)
 
 	var frameCount int
 	var height float64
@@ -220,7 +221,7 @@ func TestEmbedRefusesToRenderUnframed(t *testing.T) {
 	srv := httptest.NewServer(f.host)
 	t.Cleanup(srv.Close)
 
-	ctx := newEmbedBrowserCtx(t)
+	ctx := chromedptest.Context(t)
 	var state string
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(srv.URL+"/__gofastr/embed/reports"),
@@ -233,38 +234,4 @@ func TestEmbedRefusesToRenderUnframed(t *testing.T) {
 	if state != "error" {
 		t.Fatalf("embed state = %q, want error — an unframed embed URL has no way to obtain a credential", state)
 	}
-}
-
-func newEmbedBrowserCtx(t *testing.T) context.Context {
-	t.Helper()
-	opts := append(chromedp.DefaultExecAllocatorOptions[:],
-		chromedp.Flag("headless", true),
-		chromedp.Flag("disable-gpu", true),
-		chromedp.Flag("no-sandbox", true),
-		chromedp.WSURLReadTimeout(90*time.Second),
-		chromedp.WindowSize(1024, 768),
-	)
-	allocCtx, allocCancel := chromedp.NewExecAllocator(context.Background(), opts...)
-	t.Cleanup(allocCancel)
-	browserCtx, browserCancel := chromedp.NewContext(allocCtx)
-	t.Cleanup(browserCancel)
-
-	// chromedp starts Chrome lazily on the first Run: allocate against the
-	// browser context so the browser's lifetime is the browser context's.
-	// Passing a timeout context here would make the browser die when that
-	// deadline passed. The watchdog bounds only the startup wait.
-	started := make(chan error, 1)
-	go func() { started <- chromedp.Run(browserCtx) }()
-	select {
-	case err := <-started:
-		if err != nil {
-			t.Fatalf("chrome did not start: %v", err)
-		}
-	case <-time.After(90 * time.Second):
-		t.Fatal("chrome did not start within 90s")
-	}
-
-	ctx, cancel := context.WithTimeout(browserCtx, 60*time.Second)
-	t.Cleanup(cancel)
-	return ctx
 }

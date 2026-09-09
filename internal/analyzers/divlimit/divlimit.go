@@ -48,9 +48,10 @@ import (
 	"regexp"
 	"strings"
 
-	"golang.org/x/tools/go/analysis"
-
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/astx"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/dominance"
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/pathflow"
+	"golang.org/x/tools/go/analysis"
 )
 
 var Analyzer = &analysis.Analyzer{
@@ -86,7 +87,7 @@ func run(pass *analysis.Pass) (any, error) {
 }
 
 func checkFunc(pass *analysis.Pass, fnType *ast.FuncType, body *ast.BlockStmt) {
-	bound := bindings(pass, body)
+	bound := pathflow.Bindings(pass, body)
 	params := map[types.Object]bool{}
 	if fnType.Params != nil {
 		for _, f := range fnType.Params.List {
@@ -224,7 +225,7 @@ func comparisonProvesNonzero(pass *analysis.Pass, bin *ast.BinaryExpr, divisor a
 	c := constValue(pass, other)
 	op := bin.Op
 	if !divisorOnLeft {
-		op = flipComparison(op)
+		op = astx.FlipComparison(op)
 	}
 	whenTrue, whenFalse := nonzeroSide(op, c)
 	if holds {
@@ -256,22 +257,6 @@ func nonzeroSide(op token.Token, c int64) (whenTrue, whenFalse bool) {
 		return c == 1, c == 0 // D ≥ 1 / ¬(D ≥ 0) ⟹ D < 0
 	}
 	return false, false
-}
-
-// flipComparison mirrors an operator so the subject can be treated as
-// the left operand.
-func flipComparison(op token.Token) token.Token {
-	switch op {
-	case token.LSS:
-		return token.GTR
-	case token.LEQ:
-		return token.GEQ
-	case token.GTR:
-		return token.LSS
-	case token.GEQ:
-		return token.LEQ
-	}
-	return op
 }
 
 // constValue returns the int64 constant value of e, or ok=false —
@@ -400,7 +385,7 @@ func divisorCandidate(pass *analysis.Pass, e ast.Expr, bound map[types.Object]as
 		if !ok {
 			return nil
 		}
-		switch qualifiedFunc(pass, call.Fun) {
+		switch pathflow.QualifiedFunc(pass, call.Fun) {
 		case "strconv.Atoi", "strconv.ParseInt", "strconv.ParseUint":
 			return x
 		}
@@ -441,43 +426,4 @@ func isZeroOrOne(pass *analysis.Pass, e ast.Expr) bool {
 func isIdentObj(pass *analysis.Pass, e ast.Expr, obj types.Object) bool {
 	id, ok := e.(*ast.Ident)
 	return ok && pass.TypesInfo.ObjectOf(id) == obj
-}
-
-// bindings maps each local to the expression it was last bound to,
-// including each side of a multi-value assignment (`limit, _ :=
-// strconv.Atoi(...)`).
-func bindings(pass *analysis.Pass, body *ast.BlockStmt) map[types.Object]ast.Expr {
-	bound := map[types.Object]ast.Expr{}
-	ast.Inspect(body, func(n ast.Node) bool {
-		st, ok := n.(*ast.AssignStmt)
-		if !ok || len(st.Rhs) != 1 {
-			return true
-		}
-		for _, lhs := range st.Lhs {
-			if id, ok := lhs.(*ast.Ident); ok && id.Name != "_" {
-				if obj := pass.TypesInfo.ObjectOf(id); obj != nil {
-					bound[obj] = st.Rhs[0]
-				}
-			}
-		}
-		return true
-	})
-	return bound
-}
-
-// qualifiedFunc renders a selector callee as "importpath.Func".
-func qualifiedFunc(pass *analysis.Pass, fun ast.Expr) string {
-	sel, ok := fun.(*ast.SelectorExpr)
-	if !ok {
-		return ""
-	}
-	x, ok := sel.X.(*ast.Ident)
-	if !ok {
-		return ""
-	}
-	pn, ok := pass.TypesInfo.ObjectOf(x).(*types.PkgName)
-	if !ok {
-		return ""
-	}
-	return pn.Imported().Path() + "." + sel.Sel.Name
 }

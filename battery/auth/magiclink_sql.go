@@ -127,25 +127,21 @@ func (s *SQLMagicLinkTokenStore) CreateToken(ctx context.Context, email string, 
 // RedeemToken atomically consumes a token (single-use) via DELETE … RETURNING,
 func (s *SQLMagicLinkTokenStore) RedeemToken(ctx context.Context, token string) (string, error) {
 	q := fmt.Sprintf(`DELETE FROM %s WHERE token = $1 RETURNING email, expires_at`, query.QuoteIdent(s.table))
-	var email string
-	var exp int64
-	err := s.db.QueryRowContext(ctx, q, sha256hex(token)).Scan(&email, &exp)
-	if err == sql.ErrNoRows {
-		return "", ErrTokenNotFound
-	}
-	if err != nil {
-		return "", err
-	}
-	if time.Now().Unix() > exp {
-		return "", ErrTokenNotFound
-	}
-	return email, nil
+	return s.tokenEmailFor(ctx, q, token)
 }
 
 // PeekToken reads a token's email without consuming it. Implements
 // [MagicLinkTokenPeeker] for the confirmation page.
 func (s *SQLMagicLinkTokenStore) PeekToken(ctx context.Context, token string) (string, error) {
 	q := fmt.Sprintf(`SELECT email, expires_at FROM %s WHERE token = $1`, query.QuoteIdent(s.table))
+	return s.tokenEmailFor(ctx, q, token)
+}
+
+// tokenEmailFor runs a one-row token lookup (the hashed token as $1,
+// scanning email and expires_at) and applies the shared not-found and
+// expiry translation. Replaces the duplicated bodies of RedeemToken
+// and PeekToken, which differed only in the SQL text.
+func (s *SQLMagicLinkTokenStore) tokenEmailFor(ctx context.Context, q, token string) (string, error) {
 	var email string
 	var exp int64
 	err := s.db.QueryRowContext(ctx, q, sha256hex(token)).Scan(&email, &exp)

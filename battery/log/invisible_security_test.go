@@ -2,7 +2,7 @@ package log
 
 // Property, found by the 2026-09-05 adversarial red-probe round 4
 // (family F25, fixed the same round by widening this package's
-// scrubControlBytes and console needsQuoting with core/textsafe):
+// textsafe.ScrubControlBytes call sites and console needsQuoting with core/textsafe):
 // request-derived fields of an http.access entry, a panic ErrorReport,
 // and a console-rendered log line must not carry invisible or
 // terminal-control characters in any encoding form — the C0+DEL scrub
@@ -12,7 +12,7 @@ package log
 // the console sink's needsQuoting missed the same set so it rendered
 // them BARE.
 //
-// Surfaces: battery/log/middleware.go::scrubControlBytes via
+// Surfaces: battery/log/middleware.go (textsafe.ScrubControlBytes) via
 // accessMiddleware (path from the percent-decoded URL, forwarded_for
 // from the raw X-Forwarded-For header, remote from trusted
 // XFF/X-Real-IP) and recoveryMiddleware (ErrorReport.Error/.Path),

@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
 	"github.com/chromedp/chromedp"
 )
 
@@ -23,7 +24,7 @@ func TestDisclosureModuleKeepsA11yBehaviour(t *testing.T) {
   <a id="inside" href="/x">item</a>
 </details>`)
 
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 	var expandedClosed, expandedOpen, siblingInert, openAfterEsc, expandedAfterEsc string
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(g.Srv.URL+"/"),
@@ -94,7 +95,7 @@ func TestTrapReleasesInertOnDetach(t *testing.T) {
   </main>
 </div>`)
 
-			ctx := newSeedBrowserCtx(t)
+			ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 			var inertWhileOpen, inertAfterDetach string
 			if err := chromedp.Run(ctx,
 				chromedp.Navigate(g.Srv.URL+"/"),

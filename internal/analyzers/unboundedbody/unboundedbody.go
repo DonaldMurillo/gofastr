@@ -73,8 +73,9 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
-	"strings"
 
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/astx"
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/pathflow"
 	"golang.org/x/tools/go/analysis"
 )
 
@@ -99,7 +100,7 @@ var sinks = map[string]int{
 func run(pass *analysis.Pass) (any, error) {
 	cappers := cappingHelpers(pass)
 	for _, f := range pass.Files {
-		if isTestFile(pass, f) {
+		if pathflow.IsTestFile(pass, f) {
 			continue
 		}
 		checkFormParse(pass, f)
@@ -111,7 +112,7 @@ func run(pass *analysis.Pass) (any, error) {
 			if !ok {
 				return true
 			}
-			argIdx, ok := sinks[qualifiedName(pass, call.Fun)]
+			argIdx, ok := sinks[astx.PkgFuncName(pass, call.Fun)]
 			if !ok || argIdx >= len(call.Args) {
 				return true
 			}
@@ -151,18 +152,18 @@ func checkFormParse(pass *analysis.Pass, f *ast.File) {
 	caps := cappingObjects(pass)
 	callers := callerSites(pass)
 	decls := funcDecls(pass)
-	for _, fn := range allFuncs(f) {
+	for _, fn := range astx.AllFuncs(f) {
 		params := requestParams(pass, fn)
 		if len(params) == 0 {
 			continue
 		}
 		reported := map[types.Object]bool{}
-		ast.Inspect(bodyOf(fn), func(n ast.Node) bool {
+		ast.Inspect(astx.BodyOf(fn), func(n ast.Node) bool {
 			call, ok := n.(*ast.CallExpr)
 			if !ok {
 				return true
 			}
-			sel, ok := unparen(call.Fun).(*ast.SelectorExpr)
+			sel, ok := ast.Unparen(call.Fun).(*ast.SelectorExpr)
 			if !ok || !parseMethods[sel.Sel.Name] {
 				return true
 			}
@@ -234,7 +235,7 @@ func rebindCapped(pass *analysis.Pass, fn ast.Node, obj types.Object, pos token.
 			return !found
 		}
 		for i, lhs := range assign.Lhs {
-			sel, ok := unparen(lhs).(*ast.SelectorExpr)
+			sel, ok := ast.Unparen(lhs).(*ast.SelectorExpr)
 			if !ok || sel.Sel.Name != "Body" || i >= len(assign.Rhs) {
 				continue
 			}
@@ -261,7 +262,7 @@ func helperCapped(pass *analysis.Pass, fn ast.Node, obj types.Object, pos token.
 			return !found
 		}
 		var callee types.Object
-		switch fun := unparen(call.Fun).(type) {
+		switch fun := ast.Unparen(call.Fun).(type) {
 		case *ast.Ident:
 			callee = pass.TypesInfo.ObjectOf(fun)
 		case *ast.SelectorExpr:
@@ -317,13 +318,13 @@ type callSite struct {
 func callerSites(pass *analysis.Pass) map[types.Object][]callSite {
 	out := map[types.Object][]callSite{}
 	for _, fn := range allFuncsAll(pass, false) {
-		ast.Inspect(bodyOf(fn), func(n ast.Node) bool {
+		ast.Inspect(astx.BodyOf(fn), func(n ast.Node) bool {
 			call, ok := n.(*ast.CallExpr)
 			if !ok {
 				return true
 			}
 			var callee types.Object
-			switch fun := unparen(call.Fun).(type) {
+			switch fun := ast.Unparen(call.Fun).(type) {
 			case *ast.Ident:
 				callee = pass.TypesInfo.ObjectOf(fun)
 			case *ast.SelectorExpr:
@@ -358,46 +359,23 @@ func funcDecls(pass *analysis.Pass) map[types.Object]*ast.FuncDecl {
 	return out
 }
 
-// allFuncs yields every function body in f: declarations plus literals
-// (handlers are usually literals returned from factories).
-func allFuncs(f *ast.File) []ast.Node {
-	var out []ast.Node
-	for _, d := range f.Decls {
-		if fn, ok := d.(*ast.FuncDecl); ok && fn.Body != nil {
-			out = append(out, fn)
-		}
-	}
-	ast.Inspect(f, func(n ast.Node) bool {
-		if lit, ok := n.(*ast.FuncLit); ok && lit.Body != nil {
-			out = append(out, lit)
-		}
-		return true
-	})
-	return out
-}
-
 // allFuncsAll is allFuncs over every non-test file of the package
 // (includeTests=false), or every file (true).
 func allFuncsAll(pass *analysis.Pass, includeTests bool) []ast.Node {
 	var out []ast.Node
 	for _, f := range pass.Files {
-		if !includeTests && isTestFile(pass, f) {
+		if !includeTests && pathflow.IsTestFile(pass, f) {
 			continue
 		}
-		out = append(out, allFuncs(f)...)
+		out = append(out, astx.AllFuncs(f)...)
 	}
 	return out
-}
-
-// isTestFile: _test.go, the posture both halves of this rule skip.
-func isTestFile(pass *analysis.Pass, f *ast.File) bool {
-	return strings.HasSuffix(pass.Fset.Position(f.Pos()).Filename, "_test.go")
 }
 
 // requestObject resolves e to its *http.Request variable object, nil
 // when e is not a plain request identifier.
 func requestObject(pass *analysis.Pass, e ast.Expr) types.Object {
-	id, ok := unparen(e).(*ast.Ident)
+	id, ok := ast.Unparen(e).(*ast.Ident)
 	if !ok {
 		return nil
 	}
@@ -469,17 +447,6 @@ func paramIndex(pass *analysis.Pass, decl *ast.FuncDecl, obj types.Object) int {
 	return -1
 }
 
-// bodyOf returns the function node's body, nil when it has none.
-func bodyOf(fn ast.Node) *ast.BlockStmt {
-	switch fn := fn.(type) {
-	case *ast.FuncDecl:
-		return fn.Body
-	case *ast.FuncLit:
-		return fn.Body
-	}
-	return nil
-}
-
 // funcObject resolves a function node to its object (literals have none).
 func funcObject(pass *analysis.Pass, fn ast.Node) types.Object {
 	if ft, ok := fn.(*ast.FuncDecl); ok {
@@ -494,17 +461,6 @@ func argAt(call *ast.CallExpr, i int) ast.Expr {
 		return nil
 	}
 	return call.Args[i]
-}
-
-// unparen strips parentheses around an expression.
-func unparen(e ast.Expr) ast.Expr {
-	for {
-		p, ok := e.(*ast.ParenExpr)
-		if !ok {
-			return e
-		}
-		e = p.X
-	}
 }
 
 // isInboundRequest reports whether expr is a *net/http.Request — the
@@ -591,22 +547,4 @@ func hasCapCall(n ast.Node) bool {
 		return !found
 	})
 	return found
-}
-
-// qualifiedName renders a call target as "pkg.Func", resolving the import
-// through the type checker so an aliased import is still the real package.
-func qualifiedName(pass *analysis.Pass, fun ast.Expr) string {
-	sel, ok := fun.(*ast.SelectorExpr)
-	if !ok {
-		return ""
-	}
-	id, ok := sel.X.(*ast.Ident)
-	if !ok {
-		return ""
-	}
-	pkgName, ok := pass.TypesInfo.Uses[id].(*types.PkgName)
-	if !ok {
-		return ""
-	}
-	return pkgName.Imported().Name() + "." + sel.Sel.Name
 }

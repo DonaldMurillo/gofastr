@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core/config"
 	"github.com/DonaldMurillo/gofastr/core/router"
 )
 
@@ -40,16 +41,26 @@ var heartbeatInterval = 25 * time.Second
 //     even when GOFASTR_DEV is set.
 //   - Otherwise on.
 func LiveReloadEnabled() bool {
+	return devFeatureEnabled("GOFASTR_DEV_LIVERELOAD")
+}
+
+// devFeatureEnabled is the gate the dev-only surfaces (livereload, the
+// dev MCP) share: off in production-like environments, on only when
+// GOFASTR_DEV is ParseBool-truthy, and an explicit falsy optOutEnv
+// (GOFASTR_DEV_LIVERELOAD / GOFASTR_DEV_MCP) wins even then. Unparseable
+// values keep the feature on so a stray GOFASTR_DEV_LIVERELOAD="maybe"
+// never disables anything. It replaces the former duplicated gate bodies
+// of LiveReloadEnabled and DevMCPEnabled.
+func devFeatureEnabled(optOutEnv string) bool {
 	if isNonDevEnv(os.Getenv("GOFASTR_ENV")) {
 		return false
 	}
-	if !envBool("GOFASTR_DEV") {
+	if !config.EnvBool("GOFASTR_DEV") {
 		return false
 	}
-	if v := os.Getenv("GOFASTR_DEV_LIVERELOAD"); v != "" {
+	if v := os.Getenv(optOutEnv); v != "" {
 		// Explicit opt-out wins; explicit opt-in is the default.
-		b, err := strconv.ParseBool(v)
-		if err == nil && !b {
+		if b, err := strconv.ParseBool(v); err == nil && !b {
 			return false
 		}
 	}
@@ -64,7 +75,7 @@ func LiveReloadEnabled() bool {
 // production (e.g. uihost strict mode's axe-coverage check, whose input
 // is a local test artifact that never ships).
 func Enabled() bool {
-	return !isNonDevEnv(os.Getenv("GOFASTR_ENV")) && envBool("GOFASTR_DEV")
+	return !isNonDevEnv(os.Getenv("GOFASTR_ENV")) && config.EnvBool("GOFASTR_DEV")
 }
 
 // isNonDevEnv returns true for any env value that names a production
@@ -77,19 +88,6 @@ func isNonDevEnv(v string) bool {
 		return true
 	}
 	return false
-}
-
-// envBool reports whether the named env var is set to a ParseBool-true
-// value. Anything else (unset, empty, "false", "no", garbage) is false.
-// Deliberately strict: dev-mode features must not turn on by accident
-// in production-leaning environments.
-func envBool(key string) bool {
-	v := os.Getenv(key)
-	if v == "" {
-		return false
-	}
-	b, err := strconv.ParseBool(v)
-	return err == nil && b
 }
 
 // registered tracks routers that already have livereload wired so calls from

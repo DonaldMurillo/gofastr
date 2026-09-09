@@ -11,7 +11,8 @@ import (
 // letter or underscore. Rejects empty strings, quotes, semicolons, spaces, etc.
 var identRe = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*(\.[a-zA-Z_][a-zA-Z0-9_]*)*$`)
 
-// SafeIdent validates that s is a safe SQL identifier and returns it quoted.
+// SafeIdent validates that s is a safe SQL identifier and returns it
+// unchanged (QuoteIdent adds the quotes).
 // This prevents SQL injection when table or column names must be interpolated
 // into queries (they can't be parameterized with $1 placeholders).
 //
@@ -51,6 +52,49 @@ func SafeQuote(s string) (string, error) {
 		return "", err
 	}
 	return QuoteIdent(s), nil
+}
+
+// reservedSQLIdents are tokens refused as bare table names regardless of
+// character class: naming a table after a reserved word or a real system
+// table is almost always a configuration mistake and can silently no-op
+// CREATE TABLE IF NOT EXISTS against a real table. This is the union of the
+// two formerly package-local copies (core/middleware's reservedSQLIdentsMW
+// and core/featureflag's reservedSQLIdents), which were identical: nine SQL
+// keywords plus five common system-table names.
+var reservedSQLIdents = map[string]struct{}{
+	"select": {}, "insert": {}, "update": {}, "delete": {},
+	"drop": {}, "create": {}, "table": {}, "from": {}, "where": {},
+	"users": {}, "user": {}, "migrations": {}, "sessions": {}, "accounts": {},
+}
+
+// ReservedIdent reports whether name, case-insensitively, is a SQL reserved
+// word or common system-table name that must not be used as a bare table
+// name. It replaces the reserved-word checks formerly inlined in the
+// package-local safeIdent validators of core/middleware, core/featureflag,
+// and battery/webhook.
+func ReservedIdent(name string) bool {
+	_, bad := reservedSQLIdents[strings.ToLower(name)]
+	return bad
+}
+
+// SafeTableName reports whether name is acceptable as a bare (single-
+// segment) table name: it must pass [SafeIdent]'s character class and
+// leading-letter rule, contain no dot (schema.table is not a bare name),
+// be at most 64 bytes, and not be [ReservedIdent].
+//
+// It replaces the package-local safeIdent validators formerly duplicated in
+// core/middleware (idempotency store), core/featureflag (SQL store), and
+// battery/webhook (subscriber/delivery/inbound stores). The webhook
+// validator was weaker (no leading-character rule, no reserved words); all
+// three now share this one contract.
+func SafeTableName(name string) bool {
+	if name == "" || len(name) > 64 || strings.Contains(name, ".") {
+		return false
+	}
+	if _, err := SafeIdent(name); err != nil {
+		return false
+	}
+	return !ReservedIdent(name)
 }
 
 // dangerousSeqs are SQL meta-sequences that should never appear in a

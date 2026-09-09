@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"strconv"
+
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
@@ -100,7 +102,7 @@ func TagInput(cfg TagInputConfig) render.HTML {
 		inputAttrs["disabled"] = ""
 	}
 	if cfg.MaxLength > 0 {
-		inputAttrs["maxlength"] = strItoa(cfg.MaxLength)
+		inputAttrs["maxlength"] = strconv.Itoa(cfg.MaxLength)
 	}
 
 	zone := render.Tag("div", map[string]string{
@@ -129,26 +131,6 @@ func TagInput(cfg TagInputConfig) render.HTML {
 	}
 	attrs["class"] = cls
 	return tagInputStyle.WrapHTML(render.Tag("div", attrs, children...))
-}
-
-func strItoa(n int) string {
-	if n == 0 {
-		return "0"
-	}
-	neg := false
-	if n < 0 {
-		neg = true
-		n = -n
-	}
-	out := make([]byte, 0, 4)
-	for n > 0 {
-		out = append([]byte{byte('0' + n%10)}, out...)
-		n /= 10
-	}
-	if neg {
-		out = append([]byte{'-'}, out...)
-	}
-	return string(out)
 }
 
 var tagInputStyle = registry.RegisterStyle("ui-tag-input", tagInputCSS)

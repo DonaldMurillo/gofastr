@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
 	"github.com/chromedp/chromedp"
 )
 
@@ -78,7 +79,7 @@ document.getElementById('viewer').innerHTML =
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 	if err := chromedp.Run(ctx,
 		// Use location assignment so this setup action does not wait for the
 		// deliberately held dynamic module response to finish the load event.

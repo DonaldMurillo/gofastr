@@ -131,22 +131,24 @@ func (s *S3Storage) Exists(ctx context.Context, key string) (bool, error) {
 
 // PresignedGetURL returns a presigned URL for downloading the object.
 func (s *S3Storage) PresignedGetURL(ctx context.Context, key string, expires time.Duration) (*url.URL, error) {
-	if err := validateKey(key); err != nil {
-		return nil, err
-	}
-	if s.presigner == nil {
-		return nil, fmt.Errorf("storage: presigner not configured")
-	}
-	return s.presigner.PresignGet(ctx, s.Bucket, key, expires)
+	return s.presignedURL(ctx, key, expires, s.presigner.PresignGet)
 }
 
 // PresignedPutURL returns a presigned URL for uploading the object directly.
 func (s *S3Storage) PresignedPutURL(ctx context.Context, key string, expires time.Duration) (*url.URL, error) {
+	return s.presignedURL(ctx, key, expires, s.presigner.PresignPut)
+}
+
+// presignedURL runs the key validation and presigner-nil guard shared by
+// the presigned-URL pair, then delegates to the passed Presign method. It
+// replaces the duplicated bodies of PresignedGetURL and PresignedPutURL,
+// which differed only in the presign verb.
+func (s *S3Storage) presignedURL(ctx context.Context, key string, expires time.Duration, presign func(context.Context, string, string, time.Duration) (*url.URL, error)) (*url.URL, error) {
 	if err := validateKey(key); err != nil {
 		return nil, err
 	}
 	if s.presigner == nil {
 		return nil, fmt.Errorf("storage: presigner not configured")
 	}
-	return s.presigner.PresignPut(ctx, s.Bucket, key, expires)
+	return presign(ctx, s.Bucket, key, expires)
 }

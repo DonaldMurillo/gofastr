@@ -250,15 +250,7 @@ func applyWorldEdit(s *Session, e Entry) error {
 		if err := e.Decode(&p); err != nil {
 			return err
 		}
-		target := PlanTarget{Op: "delete_entity", Name: p.Name}
-		if err := s.spendPlan(p.PlanID, target); err != nil {
-			return err
-		}
-		if _, exists := w.Entities[p.Name]; !exists {
-			return fmt.Errorf("delete_entity: %q not found", p.Name)
-		}
-		delete(w.Entities, p.Name)
-		return nil
+		return deleteSpendingPlan(s, p.PlanID, "delete_entity", p.Name, w.Entities)
 
 	case OpAddField:
 		var p AddFieldPayload
@@ -336,15 +328,7 @@ func applyWorldEdit(s *Session, e Entry) error {
 		if err := e.Decode(&p); err != nil {
 			return err
 		}
-		target := PlanTarget{Op: "delete_page", Name: p.Path}
-		if err := s.spendPlan(p.PlanID, target); err != nil {
-			return err
-		}
-		if _, exists := w.Pages[p.Path]; !exists {
-			return fmt.Errorf("delete_page: %q not found", p.Path)
-		}
-		delete(w.Pages, p.Path)
-		return nil
+		return deleteSpendingPlan(s, p.PlanID, "delete_page", p.Path, w.Pages)
 
 	case OpUpdatePageElement:
 		var p UpdatePageElementPayload
@@ -521,5 +505,22 @@ func (s *Session) spendPlan(planID string, target PlanTarget) error {
 		s.Consumed[planID] = map[string]bool{}
 	}
 	s.Consumed[planID][key] = true
+	return nil
+}
+
+// deleteSpendingPlan spends the plan target, then deletes name from m,
+// refusing when absent. The spend happens before the existence check —
+// the log is the authorization record, exactly as the former inlined
+// bodies ordered it. It replaces the duplicated delete blocks of the
+// OpDeleteEntity and OpDeletePage cases, which differed only in op,
+// map, and name field.
+func deleteSpendingPlan[V any](s *Session, planID, op, name string, m map[string]V) error {
+	if err := s.spendPlan(planID, PlanTarget{Op: op, Name: name}); err != nil {
+		return err
+	}
+	if _, exists := m[name]; !exists {
+		return fmt.Errorf("%s: %q not found", op, name)
+	}
+	delete(m, name)
 	return nil
 }

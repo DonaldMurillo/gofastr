@@ -9,7 +9,7 @@ import (
 
 // Pins [init-dsn], found by the 2026-09-04 red-probe round; fixed in
 // writeMainGo keeping a credentialed DSN out of the committed main.go
-// (dsnHasSecret decides; the 0600 gitignored .env is the DSN's only home).
+// (dsnredact.HasSecret decides; the 0600 gitignored .env is the DSN's only home).
 // Property: credential-bearing DSNs never land as literals in generated,
 // committed Go source — the scaffold routes DATABASE_URL through the
 // owner-only, gitignored .env and the generated main.go carries only an

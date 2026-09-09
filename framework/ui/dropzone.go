@@ -171,18 +171,7 @@ func FileDropzone(cfg FileDropzoneConfig) render.HTML {
 			help += i18nui.TVars(ctx, i18nui.KeyDropzoneMaxSizeSuffix, map[string]string{"n": strconv.Itoa(cfg.MaxSizeMB)})
 		}
 	}
-	if cfg.Error != "" {
-		children = append(children, html.Paragraph(html.TextConfig{
-			ID:         id + "-error",
-			Class:      "ui-dropzone__error",
-			ExtraAttrs: html.Attrs{"role": "alert"},
-		}, render.Text(cfg.Error)))
-	} else if help != "" {
-		children = append(children, html.Paragraph(html.TextConfig{
-			ID:    id + "-help",
-			Class: "ui-dropzone__help",
-		}, render.Text(help)))
-	}
+	children = append(children, fieldMessage(id, "ui-dropzone", cfg.Error, help)...)
 
 	attrs := html.SafeExtraAttrs(cfg.ExtraAttrs)
 	if attrs == nil {

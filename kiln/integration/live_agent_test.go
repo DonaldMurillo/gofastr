@@ -27,6 +27,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
 	"github.com/chromedp/chromedp"
 )
 
@@ -1218,8 +1219,7 @@ Stop after world_get confirms the app config, both entities, the home page, and 
 
 	// Read pixels from the actual OMP-built world before graduation. The
 	// screenshot is intentionally retained under testdata for human review.
-	ctx, cancel := newChrome(t)
-	defer cancel()
+	ctx := chromedptest.Context(t)
 	var shot []byte
 	var renderedBody string
 	if err := chromedp.Run(ctx,

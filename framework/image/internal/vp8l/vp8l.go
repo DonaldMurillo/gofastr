@@ -109,36 +109,26 @@ func isUniform(m image.Image, w, h int, bounds image.Rectangle) bool {
 	}
 	switch src := m.(type) {
 	case *image.NRGBA:
-		return nrgbaUniform(src, w, h, bounds)
+		return uniformPix(src.Pix, src.PixOffset, w, h, bounds)
 	case *image.RGBA:
-		return rgbaUniform(src, w, h, bounds)
+		return uniformPix(src.Pix, src.PixOffset, w, h, bounds)
 	}
 	return false
 }
 
-func nrgbaUniform(m *image.NRGBA, w, h int, bounds image.Rectangle) bool {
-	off0 := m.PixOffset(bounds.Min.X, bounds.Min.Y)
-	r0, g0, b0, a0 := m.Pix[off0], m.Pix[off0+1], m.Pix[off0+2], m.Pix[off0+3]
+// uniformPix reports whether every 4-byte-per-pixel sample over the
+// given bounds equals the first one. It replaces nrgbaUniform and
+// rgbaUniform, verbatim copies differing only in the concrete image
+// type (*image.NRGBA vs *image.RGBA), whose Pix layout is identical;
+// pixOffset is the image's own PixOffset method.
+func uniformPix(pix []uint8, pixOffset func(x, y int) int, w, h int, bounds image.Rectangle) bool {
+	off0 := pixOffset(bounds.Min.X, bounds.Min.Y)
+	r0, g0, b0, a0 := pix[off0], pix[off0+1], pix[off0+2], pix[off0+3]
 	for y := range h {
-		off := m.PixOffset(bounds.Min.X, bounds.Min.Y+y)
+		off := pixOffset(bounds.Min.X, bounds.Min.Y+y)
 		for x := range w {
 			i := off + x*4
-			if m.Pix[i] != r0 || m.Pix[i+1] != g0 || m.Pix[i+2] != b0 || m.Pix[i+3] != a0 {
-				return false
-			}
-		}
-	}
-	return true
-}
-
-func rgbaUniform(m *image.RGBA, w, h int, bounds image.Rectangle) bool {
-	off0 := m.PixOffset(bounds.Min.X, bounds.Min.Y)
-	r0, g0, b0, a0 := m.Pix[off0], m.Pix[off0+1], m.Pix[off0+2], m.Pix[off0+3]
-	for y := range h {
-		off := m.PixOffset(bounds.Min.X, bounds.Min.Y+y)
-		for x := range w {
-			i := off + x*4
-			if m.Pix[i] != r0 || m.Pix[i+1] != g0 || m.Pix[i+2] != b0 || m.Pix[i+3] != a0 {
+			if pix[i] != r0 || pix[i+1] != g0 || pix[i+2] != b0 || pix[i+3] != a0 {
 				return false
 			}
 		}

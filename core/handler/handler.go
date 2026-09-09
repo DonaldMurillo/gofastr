@@ -31,7 +31,7 @@ func HandlerAdapter[I, O any](h Handler[I, O]) http.HandlerFunc {
 				// operator's tail nor drive a multi-MB log.
 				slog.Default().Error("panic recovered in handler",
 					"error", textsafe.Recovered(rec),
-					"stack", truncateLog(string(debug.Stack()), maxStackLogLen),
+					"stack", textsafe.Truncate(string(debug.Stack()), maxStackLogLen),
 				)
 				WriteError(w, &Error{
 					Code:    http.StatusInternalServerError,
@@ -66,17 +66,6 @@ const (
 	maxPanicLogLen = 4 << 10  // 4 KiB
 	maxStackLogLen = 64 << 10 // 64 KiB
 )
-
-func truncateLog(s string, max int) string {
-	if len(s) <= max {
-		return s
-	}
-	const marker = " … (truncated)"
-	if max <= len(marker) {
-		return s[:max]
-	}
-	return s[:max-len(marker)] + marker
-}
 
 // Error is a structured HTTP error with optional field-level validation errors.
 type Error struct {

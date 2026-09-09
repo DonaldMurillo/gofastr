@@ -152,7 +152,7 @@ func diagnose(pass *analysis.Pass, body *ast.BlockStmt, returnsTainted map[strin
 			}
 			if id, ok := st.Fun.(*ast.Ident); ok && returnsTainted[id.Name] {
 				for _, a := range st.Args {
-					if lit, ok := unwrapParen(a).(*ast.BasicLit); ok && literalHasVerb(lit) {
+					if lit, ok := ast.Unparen(a).(*ast.BasicLit); ok && literalHasVerb(lit) {
 						pass.Reportf(st.Pos(), "fmtformat: %s returns URL-encoded output and this call joins it with fmt verbs; %%XX escapes will act as verbs if the result becomes a format — %%-double inside the helper or at the join", id.Name)
 						break
 					}
@@ -168,7 +168,7 @@ func diagnose(pass *analysis.Pass, body *ast.BlockStmt, returnsTainted map[strin
 // (strings.Builder and like-shaped writers) accumulates encoded bytes;
 // its later zero-arg String() renders them.
 func markWriterReceiver(pass *analysis.Pass, e ast.Expr, rt, tainted map[string]bool) {
-	call, ok := unwrapParen(e).(*ast.CallExpr)
+	call, ok := ast.Unparen(e).(*ast.CallExpr)
 	if !ok || len(call.Args) != 1 {
 		return
 	}
@@ -189,7 +189,7 @@ func markWriterReceiver(pass *analysis.Pass, e ast.Expr, rt, tainted map[string]
 // handed onward (field assignment, composite-literal key, return);
 // local consumption via strings.Replace stays silent.
 func taintedVerbConcat(pass *analysis.Pass, e ast.Expr, rt, tainted map[string]bool) bool {
-	b, ok := unwrapParen(e).(*ast.BinaryExpr)
+	b, ok := ast.Unparen(e).(*ast.BinaryExpr)
 	if !ok || b.Op != token.ADD {
 		return false
 	}
@@ -202,7 +202,7 @@ func taintedVerbConcat(pass *analysis.Pass, e ast.Expr, rt, tainted map[string]b
 		if found {
 			return
 		}
-		switch v := unwrapParen(x).(type) {
+		switch v := ast.Unparen(x).(type) {
 		case *ast.BasicLit:
 			if literalHasVerb(v) {
 				found = true
@@ -309,16 +309,6 @@ func isEncoder(pass *analysis.Pass, call *ast.CallExpr) bool {
 		}
 	}
 	return false
-}
-
-func unwrapParen(e ast.Expr) ast.Expr {
-	for {
-		p, ok := e.(*ast.ParenExpr)
-		if !ok {
-			return e
-		}
-		e = p.X
-	}
 }
 
 // literalHasVerb reports whether a string literal contains a fmt verb

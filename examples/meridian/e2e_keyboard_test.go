@@ -33,6 +33,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
 	"github.com/chromedp/chromedp"
 	"github.com/chromedp/chromedp/kb"
 )
@@ -488,7 +489,7 @@ func TestKeyboardWalkHome(t *testing.T) {
 		t.Skip("e2e: -short")
 	}
 	base := e2eBootApp(t)
-	ctx := e2eBrowser(t)
+	ctx := chromedptest.Context(t, chromedptest.WindowSize(1280, 800))
 	kbgatePage(t, ctx, base, "/", 800*time.Millisecond)
 }
 
@@ -497,7 +498,7 @@ func TestKeyboardWalkLogin(t *testing.T) {
 		t.Skip("e2e: -short")
 	}
 	base := e2eBootApp(t)
-	ctx := e2eBrowser(t)
+	ctx := chromedptest.Context(t, chromedptest.WindowSize(1280, 800))
 	kbgatePage(t, ctx, base, "/login", 800*time.Millisecond)
 }
 
@@ -506,7 +507,7 @@ func TestKeyboardWalkCustomers(t *testing.T) {
 		t.Skip("e2e: -short")
 	}
 	base := e2eBootApp(t)
-	ctx := e2eBrowser(t)
+	ctx := chromedptest.Context(t, chromedptest.WindowSize(1280, 800))
 	e2eLogin(t, ctx, base)
 	kbgatePage(t, ctx, base, "/app/customers", 900*time.Millisecond)
 }
@@ -540,7 +541,7 @@ func TestModalFocusTrap(t *testing.T) {
 		t.Skip("e2e: -short")
 	}
 	base := e2eBootApp(t)
-	ctx := e2eBrowser(t)
+	ctx := chromedptest.Context(t, chromedptest.WindowSize(1280, 800))
 	e2eLogin(t, ctx, base)
 
 	const triggerSel = `button[data-fui-open="customer-quick-add"]`

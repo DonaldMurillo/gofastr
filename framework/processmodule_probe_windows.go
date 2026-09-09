@@ -4,11 +4,9 @@ package framework
 
 import (
 	"fmt"
-	"net"
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 )
 
 // This file provides the Windows implementations of:
@@ -53,20 +51,9 @@ func runProbeChildBody(id ProbeID) int {
 
 	case ProbeNoInheritedSecret:
 		// P2 is portable: baseline hygiene's env scrub + filesystem
-		// confinement work the same as on Unix.
-		if name := os.Getenv("GOFASTR_PROBE_CANARY_NAME"); name != "" {
-			if got := os.Getenv(name); got != "" {
-				breach(fmt.Sprintf("inherited host env %s=%q (baseline hygiene failed)", name, got))
-				return 0
-			}
-		}
-		if secret := os.Getenv("GOFASTR_PROBE_SECRET_FILE"); secret != "" {
-			if data, err := os.ReadFile(secret); err == nil {
-				breach(fmt.Sprintf("read host secret file %s: %q (fs confinement failed)", secret, string(data)))
-				return 0
-			}
-		}
-		pass("no canary env, no host secret file visible")
+		// confinement work the same as on Unix (shared body in
+		// processmodule_probe_common.go).
+		return probeNoInheritedSecretBody(pass, breach)
 
 	case ProbeNoInheritedFD:
 		// P3 on Windows: handle inheritance under Go's exec is
@@ -77,22 +64,11 @@ func runProbeChildBody(id ProbeID) int {
 		unreachable("Windows fd-inheritance probe needs InheritedHandles plumbing (stub)")
 
 	case ProbeNoNetworkEgress:
-		// P4 is portable: dial each target. The Windows stub does not
-		// install per-SID WFP rules, so egress succeeds, honest BREACH.
-		targets := splitCSV(os.Getenv("GOFASTR_PROBE_NET_TARGETS"))
-		if len(targets) == 0 {
-			unreachable("no GOFASTR_PROBE_NET_TARGETS")
-			return 0
-		}
-		for _, t := range targets {
-			d := net.Dialer{Timeout: 2 * time.Second}
-			if c, err := d.Dial("tcp", t); err == nil {
-				_ = c.Close()
-				breach(fmt.Sprintf("dialed %s (no WFP egress rule; stub permits egress)", t))
-				return 0
-			}
-		}
-		pass(fmt.Sprintf("all %d dial targets refused", len(targets)))
+		// P4 is portable: dial each target (shared body in
+		// processmodule_probe_common.go). The Windows stub does not
+		// install per-SID WFP rules, so egress succeeds, honest BREACH;
+		// the WFP wording lives here.
+		return probeNoNetworkEgressBody(pass, breach, unreachable, "(no WFP egress rule; stub permits egress)")
 
 	case ProbeFilesystemConfinement:
 		// P5: write/read outside scratch. Windows equivalent of the
@@ -144,25 +120,4 @@ func hostUIDString() string {
 		return u
 	}
 	return "unknown-windows-user"
-}
-
-// pidStr is the current pid, formatted, for unique scratch filenames.
-func pidStr() string { return fmt.Sprintf("%d", os.Getpid()) }
-
-// splitCSV splits a comma-separated env value, trimming whitespace and
-// dropping empties. Duplicated from the Unix file because build tags
-// exclude one or the other from each compile.
-func splitCSV(s string) []string {
-	if s == "" {
-		return nil
-	}
-	parts := strings.Split(s, ",")
-	out := make([]string, 0, len(parts))
-	for _, p := range parts {
-		p = strings.TrimSpace(p)
-		if p != "" {
-			out = append(out, p)
-		}
-	}
-	return out
 }

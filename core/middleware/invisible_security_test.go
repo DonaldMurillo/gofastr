@@ -1,8 +1,8 @@
 package middleware
 
 // Property, found by the 2026-09-05 adversarial red-probe round 4
-// (family F25, fixed the same round by widening scrubControlBytes with
-// core/textsafe): request-derived values reaching operator log/trace
+// (family F25, fixed the same round by widening the scrub into
+// core/textsafe.ScrubControlBytes): request-derived values reaching operator log/trace
 // sinks must not carry invisible or terminal-control characters in any
 // encoding form — the C0+DEL scrub stopped at U+007F, so C1 controls
 // (U+0080..U+009F, including 8-bit CSI/OSC and NEL) and the
@@ -14,7 +14,8 @@ package middleware
 // 8-bit terminals execute CSI/OSC 9B/9D as escapes and NEL 85 as a line
 // break, and RLO/zero-width visually rewrite the logged path.
 //
-// Surfaces: core/middleware/logging.go::scrubControlBytes (LoggingFn /
+// Surfaces: core/middleware/logging.go's safeLogMethod/safeLogPath (→
+// textsafe.ScrubControlBytes; LoggingFn /
 // SampledLoggingFn path+method attrs, RecoveryFn error+path+method
 // attrs), core/middleware/tracing.go::Tracing (span name + http.method
 // / http.target / http.route attributes), core/middleware/idempotency.go
@@ -58,7 +59,7 @@ func hasInvisibleChar(s string) bool {
 
 // invisibleFinishFailStore lets Begin succeed and Finish fail, driving the
 // idempotency middleware's Finish-failure log path (which scrubs the
-// request-borne Idempotency-Key with scrubControlBytes).
+// request-borne Idempotency-Key with textsafe.ScrubControlBytes).
 type invisibleFinishFailStore struct{}
 
 func (invisibleFinishFailStore) Begin(context.Context, string, string) (*IdempotentResponse, bool, error) {
@@ -69,7 +70,7 @@ func (invisibleFinishFailStore) Finish(context.Context, string, string, *Idempot
 }
 
 // TestLogTraceScrubInvisibleChars loops the four attack shapes through every
-// scrubControlBytes consumer reachable from request input: the access log
+// textsafe.ScrubControlBytes consumer reachable from request input: the access log
 // middleware, the recovery log, the OTel tracing sink, and the idempotency
 // Finish-failure log.
 func TestLogTraceScrubInvisibleChars(t *testing.T) {

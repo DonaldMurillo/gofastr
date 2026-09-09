@@ -16,6 +16,8 @@ import (
 	"strconv"
 	"sync"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
 // IdempotencyKeyHeader is the request header clients use to assign a
@@ -311,7 +313,7 @@ func Idempotency(cfg IdempotencyConfig) Middleware {
 						// The key is request-borne: scrub it the way every
 						// slog sink does, so a forged key cannot paint a
 						// forged line into the operator's tail.
-						"key", scrubControlBytes(key), "error", err)
+						"key", textsafe.ScrubControlBytes(key), "error", err)
 				}
 			}
 			switch {

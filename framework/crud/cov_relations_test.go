@@ -301,11 +301,11 @@ func TestTypedQuery_FindWithInclude(t *testing.T) {
 }
 
 func TestSplitHelpers(t *testing.T) {
-	if got := splitIncludeList("comments(a=1,b=2),author"); len(got) != 2 {
-		t.Errorf("splitIncludeList = %v", got)
+	if got := splitIncludeDelim("comments(a=1,b=2),author", ','); len(got) != 2 {
+		t.Errorf("splitIncludeDelim comma = %v", got)
 	}
-	if got := splitIncludePath("author.profile"); len(got) != 2 {
-		t.Errorf("splitIncludePath = %v", got)
+	if got := splitIncludeDelim("author.profile", '.'); len(got) != 2 {
+		t.Errorf("splitIncludeDelim dot = %v", got)
 	}
 	name, f := splitSegmentFilter("comments(status=draft)")
 	if name != "comments" || f != "status=draft" {

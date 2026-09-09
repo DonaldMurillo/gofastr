@@ -179,65 +179,42 @@ const (
 )
 
 // EnsureSchema creates the desired-state and heartbeat tables idempotently.
-// DDL is dialect-aware (Postgres vs SQLite). The schema is intentionally
-// narrow: no module-owned DDL touches this store (design §7, host
-// coordination state, NOT module bookkeeping).
+// DDL is dialect-aware (Postgres vs SQLite): the two dialects differ only
+// in type words (BIGINT/INTEGER, BOOLEAN/INTEGER, JSONB/TEXT grants), so
+// one statement pair carries both. It replaces the former per-dialect
+// ensureSchemaPostgres / ensureSchemaSQLite copies. The schema is
+// intentionally narrow: no module-owned DDL touches this store (design
+// §7, host coordination state, NOT module bookkeeping).
 func (s *SQLProcessModuleStore) EnsureSchema(ctx context.Context) error {
+	label := "sqlite"
+	intType, boolType, boolDefault := "INTEGER", "INTEGER", "0"
+	grantsType := "TEXT NOT NULL DEFAULT '[]'"
 	if s.dialect == migrate.DialectPostgres {
-		return s.ensureSchemaPostgres(ctx)
+		label = "postgres"
+		intType, boolType, boolDefault = "BIGINT", "BOOLEAN", "FALSE"
+		grantsType = "JSONB NOT NULL DEFAULT '[]'::jsonb"
 	}
-	return s.ensureSchemaSQLite(ctx)
-}
-
-func (s *SQLProcessModuleStore) ensureSchemaPostgres(ctx context.Context) error {
 	stmts := []string{
 		fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
 			module            TEXT PRIMARY KEY,
-			desired_generation BIGINT NOT NULL DEFAULT 1,
-			enabled           BOOLEAN NOT NULL DEFAULT FALSE,
+			desired_generation %s NOT NULL DEFAULT 1,
+			enabled           %s NOT NULL DEFAULT %s,
 			artifact_sha256   TEXT NOT NULL,
-			effective_grants  JSONB NOT NULL DEFAULT '[]'::jsonb,
-			migrations_applied_at BIGINT NULL
-		)`, query.QuoteIdent(desiredTable)),
+			effective_grants  %s,
+			migrations_applied_at %s NULL
+		)`, query.QuoteIdent(desiredTable), intType, boolType, boolDefault, grantsType, intType),
 		fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
 			module            TEXT NOT NULL,
 			replica_id        TEXT NOT NULL,
-			observed_generation BIGINT NOT NULL DEFAULT 0,
+			observed_generation %s NOT NULL DEFAULT 0,
 			phase             TEXT NOT NULL DEFAULT '',
-			updated_at_ms     BIGINT NOT NULL,
+			updated_at_ms     %s NOT NULL,
 			PRIMARY KEY (module, replica_id)
-		)`, query.QuoteIdent(heartbeatTable)),
+		)`, query.QuoteIdent(heartbeatTable), intType, intType),
 	}
 	for _, q := range stmts {
 		if _, err := s.db.ExecContext(ctx, q); err != nil {
-			return fmt.Errorf("processmodule: ensure schema (postgres): %w", err)
-		}
-	}
-	return nil
-}
-
-func (s *SQLProcessModuleStore) ensureSchemaSQLite(ctx context.Context) error {
-	stmts := []string{
-		fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
-			module            TEXT PRIMARY KEY,
-			desired_generation INTEGER NOT NULL DEFAULT 1,
-			enabled           INTEGER NOT NULL DEFAULT 0,
-			artifact_sha256   TEXT NOT NULL,
-			effective_grants  TEXT NOT NULL DEFAULT '[]',
-			migrations_applied_at INTEGER NULL
-		)`, query.QuoteIdent(desiredTable)),
-		fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
-			module            TEXT NOT NULL,
-			replica_id        TEXT NOT NULL,
-			observed_generation INTEGER NOT NULL DEFAULT 0,
-			phase             TEXT NOT NULL DEFAULT '',
-			updated_at_ms     INTEGER NOT NULL,
-			PRIMARY KEY (module, replica_id)
-		)`, query.QuoteIdent(heartbeatTable)),
-	}
-	for _, q := range stmts {
-		if _, err := s.db.ExecContext(ctx, q); err != nil {
-			return fmt.Errorf("processmodule: ensure schema (sqlite): %w", err)
+			return fmt.Errorf("processmodule: ensure schema (%s): %w", label, err)
 		}
 	}
 	return nil

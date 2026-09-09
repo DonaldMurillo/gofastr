@@ -181,6 +181,27 @@ func (c *CorePlugin) loginHandler() http.HandlerFunc {
 		if !ok {
 			return
 		}
+		// failLogin records a failed-login security event (UserID may be
+		// empty: anti-enumeration keeps "no such user" and "wrong
+		// password" indistinguishable) and answers with the caller's
+		// status/message pair, form or JSON per the request shape. It
+		// replaces the three emit-and-respond blocks duplicated across
+		// the FindByEmail-error, bad-password, and two-factor
+		// fail-closed branches.
+		failLogin := func(userID, reason string, status int, formCode, jsonMsg string) {
+			c.mgr.emitSecurity(r.Context(), SecurityEvent{
+				Kind:   "login.failed",
+				UserID: userID,
+				Email:  email,
+				Remote: remoteHost(r),
+				Meta:   map[string]string{"reason": reason},
+			})
+			if isForm {
+				writeFormAuthError(w, r, status, formCode)
+			} else {
+				writeAuthError(w, status, jsonMsg)
+			}
+		}
 		if email == "" || password == "" {
 			if isForm {
 				writeFormAuthError(w, r, http.StatusBadRequest, "credentials_required")
@@ -229,32 +250,11 @@ func (c *CorePlugin) loginHandler() http.HandlerFunc {
 			// Unknown user OR a transport error, record a failed login.
 			// UserID stays empty (anti-enumeration: the event never
 			// distinguishes "no such user" from "wrong password").
-			c.mgr.emitSecurity(r.Context(), SecurityEvent{
-				Kind:   "login.failed",
-				Email:  email,
-				Remote: remoteHost(r),
-				Meta:   map[string]string{"reason": "bad_credentials"},
-			})
-			if isForm {
-				writeFormAuthError(w, r, http.StatusUnauthorized, "invalid_credentials")
-			} else {
-				writeAuthError(w, http.StatusUnauthorized, "invalid credentials")
-			}
+			failLogin("", "bad_credentials", http.StatusUnauthorized, "invalid_credentials", "invalid credentials")
 			return
 		}
 		if !CheckPassword(password, hash) {
-			c.mgr.emitSecurity(r.Context(), SecurityEvent{
-				Kind:   "login.failed",
-				UserID: user.GetID(),
-				Email:  email,
-				Remote: remoteHost(r),
-				Meta:   map[string]string{"reason": "bad_credentials"},
-			})
-			if isForm {
-				writeFormAuthError(w, r, http.StatusUnauthorized, "invalid_credentials")
-			} else {
-				writeAuthError(w, http.StatusUnauthorized, "invalid credentials")
-			}
+			failLogin(user.GetID(), "bad_credentials", http.StatusUnauthorized, "invalid_credentials", "invalid credentials")
 			return
 		}
 
@@ -271,18 +271,7 @@ func (c *CorePlugin) loginHandler() http.HandlerFunc {
 			return
 		}
 		if err != nil {
-			c.mgr.emitSecurity(r.Context(), SecurityEvent{
-				Kind:   "login.failed",
-				UserID: user.GetID(),
-				Email:  email,
-				Remote: remoteHost(r),
-				Meta:   map[string]string{"reason": "twofa_failclosed"},
-			})
-			if isForm {
-				writeFormAuthError(w, r, http.StatusInternalServerError, "two_factor_unavailable")
-			} else {
-				writeAuthError(w, http.StatusInternalServerError, "two-factor enforcement unavailable")
-			}
+			failLogin(user.GetID(), "twofa_failclosed", http.StatusInternalServerError, "two_factor_unavailable", "two-factor enforcement unavailable")
 			return
 		}
 		if pendingTwoFA {

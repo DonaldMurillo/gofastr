@@ -38,6 +38,11 @@ type streamSeat struct {
 	done      chan struct{}
 }
 
+// SeatDone implements stream.SeatMember so the shared
+// admission helper (stream.AdmitSeat) can count, evict, and close the
+// seat.
+func (s *streamSeat) SeatDone() chan struct{} { return s.done }
+
 // streamSeatRegistry tracks live EventStream seats per principal as a FIFO,
 // the shape the SeatOverflowEvictOldest policy pops from. It is a pointer
 // field on CrudHandler so the tx-bound copies inTx makes share one registry:
@@ -54,18 +59,11 @@ func newStreamSeatRegistry() *streamSeatRegistry {
 // spliceSeatLocked removes seat from its principal's FIFO; the caller holds
 // r.mu. A no-op when the seat is already gone (released after an eviction,
 // or evicted after a release), so a seat is removed exactly once and the
-// FIFO never retains a departed stream.
+// FIFO never retains a departed stream. The splice itself is
+// stream.SpliceSeat, shared with core/stream's broker and core/mcp's SSE
+// notification stream.
 func (r *streamSeatRegistry) spliceSeatLocked(seat *streamSeat) {
-	q := r.order[seat.principal]
-	for i, v := range q {
-		if v == seat {
-			r.order[seat.principal] = append(q[:i], q[i+1:]...)
-			break
-		}
-	}
-	if len(r.order[seat.principal]) == 0 {
-		delete(r.order, seat.principal)
-	}
+	stream.SpliceSeat(r.order, seat.principal, seat)
 }
 
 // admit seats one stream for principal under the handler's cap and overflow
@@ -73,22 +71,13 @@ func (r *streamSeatRegistry) spliceSeatLocked(seat *streamSeat) {
 // cap and the policy is Refuse; the caller answers 429 with Retry-After
 // (EventSource backs off) and holds nothing. Under EvictOldest the
 // principal's oldest seat is closed and removed in the same critical
-// section, and the new stream is seated.
+// section, and the new stream is seated. The body is the shared
+// stream.AdmitSeat, which this registry formerly duplicated.
 func (r *streamSeatRegistry) admit(principal string, cap int, overflow stream.SeatOverflowPolicy) (*streamSeat, bool) {
-	seat := &streamSeat{principal: principal, done: make(chan struct{})}
 	r.mu.Lock()
-	if seats := eventStreamSeatsFor(cap); seats > 0 && len(r.order[principal]) >= seats {
-		if overflow != stream.SeatOverflowEvictOldest || len(r.order[principal]) == 0 {
-			r.mu.Unlock()
-			return nil, false
-		}
-		oldest := r.order[principal][0]
-		r.spliceSeatLocked(oldest)
-		close(oldest.done)
-	}
-	r.order[principal] = append(r.order[principal], seat)
-	r.mu.Unlock()
-	return seat, true
+	defer r.mu.Unlock()
+	return stream.AdmitSeat(r.order, principal, eventStreamSeatsFor(cap), overflow,
+		func(p string) *streamSeat { return &streamSeat{principal: p, done: make(chan struct{})} })
 }
 
 // release departs a seat: voluntary disconnect, write error, or a re-auth

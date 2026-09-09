@@ -11,7 +11,6 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/netguard"
@@ -67,7 +66,7 @@ func newPusher(opts PushOptions, log *slog.Logger) *pusher {
 	} else {
 		client = &http.Client{
 			Timeout:   pushDeliveryTimeout,
-			Transport: guardedTransport(opts.AllowPrivate),
+			Transport: netguard.GuardedTransport(opts.AllowPrivate, "a2a"),
 			CheckRedirect: func(*http.Request, []*http.Request) error {
 				return http.ErrUseLastResponse
 			},
@@ -227,40 +226,6 @@ func rejectInternal(ip net.IP) error {
 	return nil
 }
 
-// guardedTransport builds the outbound transport for push delivery.
-// The net.Dialer.Control hook re-runs the internal-address check on the
-// ACTUAL resolved address at connect time, which is what closes the
-// DNS-rebinding window validatePushURL cannot: a host that passed
-// validation while resolving public and is later re-pointed at
-// 127.0.0.1 or 169.254.169.254 never gets dialed. When allowPrivate is
-// true the dial-time check is skipped, matching the registration-time
-// opt-out. Mirrors battery/webhook/ssrf.go, on core/netguard.
-func guardedTransport(allowPrivate bool) *http.Transport {
-	dialer := &net.Dialer{
-		Timeout:   10 * time.Second,
-		KeepAlive: 30 * time.Second,
-	}
-	if !allowPrivate {
-		dialer.Control = func(network, address string, _ syscall.RawConn) error {
-			host, _, err := net.SplitHostPort(address)
-			if err != nil {
-				host = address
-			}
-			ip := net.ParseIP(host)
-			if ip == nil {
-				// Control sees the already-resolved numeric address; a
-				// non-IP here is unexpected, refuse rather than dial
-				// blind.
-				return fmt.Errorf("a2a: dial address %q is not a resolved IP", address)
-			}
-			return rejectInternal(ip)
-		}
-	}
-	tr := http.DefaultTransport.(*http.Transport).Clone()
-	tr.DialContext = dialer.DialContext
-	return tr
-}
-
 // guardedClient returns a shallow copy of c with redirects disabled and
 // the SSRF guard applied without disturbing the caller's routing: a nil
 // transport gets the guarded dial-time hook (strongest); a custom
@@ -274,7 +239,7 @@ func guardedClient(c *http.Client, allowPrivate bool) *http.Client {
 		return http.ErrUseLastResponse
 	}
 	if c.Transport == nil && !allowPrivate {
-		cc.Transport = guardedTransport(false)
+		cc.Transport = netguard.GuardedTransport(false, "a2a")
 	} else if !allowPrivate {
 		cc.Transport = &guardedRoundTripper{inner: c.Transport}
 	}

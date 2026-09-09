@@ -68,16 +68,13 @@ func NewSQLStore(db *sql.DB, opts ...SQLStoreOption) (*SQLStore, error) {
 	return s, nil
 }
 
-// detectSQLDialect probes SELECT version() the way battery/queue does:
-// a driver that answers with "postgresql" is Postgres, everything else
-// (SQLite drivers return an error or a SQLite banner) is treated as
-// SQLite.
+// detectSQLDialect maps the shared query.IsPostgres probe onto the local
+// dialect enum: a driver whose SELECT version() banner contains
+// "postgresql" is Postgres, everything else (SQLite drivers return an
+// error or a SQLite banner) is treated as SQLite.
 func detectSQLDialect(db *sql.DB) sqlDialect {
-	var v string
-	if err := db.QueryRow("SELECT version()").Scan(&v); err == nil {
-		if strings.Contains(strings.ToLower(v), "postgresql") {
-			return dialectPostgres
-		}
+	if query.IsPostgres(db) {
+		return dialectPostgres
 	}
 	return dialectSQLite
 }

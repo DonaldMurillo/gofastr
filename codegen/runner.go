@@ -22,25 +22,28 @@ func NewRegistry() *Registry {
 
 // RegisterGenerator adds one in-process generator by name.
 func (r *Registry) RegisterGenerator(gen Generator) error {
-	if gen == nil || gen.Name() == "" {
-		return fmt.Errorf("codegen: generator name is required")
-	}
-	if _, exists := r.generators[gen.Name()]; exists {
-		return fmt.Errorf("codegen: generator %q already registered", gen.Name())
-	}
-	r.generators[gen.Name()] = gen
-	return nil
+	return registerNamed("generator", r.generators, gen)
 }
 
 // RegisterExtension adds one in-process extension by name.
 func (r *Registry) RegisterExtension(ext Extension) error {
-	if ext == nil || ext.Name() == "" {
-		return fmt.Errorf("codegen: extension name is required")
+	return registerNamed("extension", r.extensions, ext)
+}
+
+// registerNamed validates and inserts one named entry into m: a nil or
+// anonymous value is refused, a duplicate name is refused. The single
+// body behind RegisterGenerator and RegisterExtension, which were two
+// copies of the same ten lines differing only in the noun and the map.
+// any(v) == nil preserves the former `gen == nil` / `ext == nil` check
+// for the interface instantiations.
+func registerNamed[T interface{ Name() string }](noun string, m map[string]T, v T) error {
+	if any(v) == nil || v.Name() == "" {
+		return fmt.Errorf("codegen: %s name is required", noun)
 	}
-	if _, exists := r.extensions[ext.Name()]; exists {
-		return fmt.Errorf("codegen: extension %q already registered", ext.Name())
+	if _, exists := m[v.Name()]; exists {
+		return fmt.Errorf("codegen: %s %q already registered", noun, v.Name())
 	}
-	r.extensions[ext.Name()] = ext
+	m[v.Name()] = v
 	return nil
 }
 

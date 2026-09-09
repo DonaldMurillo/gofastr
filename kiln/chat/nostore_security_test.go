@@ -11,8 +11,8 @@ package chat
 // per-session state including the credentialed-DSN values round-5 findings
 // [#27]/[#55] showed are present in this state.
 // Finding: a back/forward cache or non-conforming proxy retains one
-// session's world/status JSON (readGuard is an Origin/Sec-Fetch gate only —
-// csrf.go:53 — and kiln supports deliberate LAN binds).
+// session's world/status JSON (sameOriginOnly is an Origin/Sec-Fetch/Host
+// gate only, and kiln supports deliberate LAN binds).
 // Fix direction: Cache-Control: no-store beside the Content-Type set,
 // matching the CSS arms in the same file.
 

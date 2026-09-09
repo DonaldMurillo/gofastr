@@ -3,7 +3,6 @@ package mcp
 import (
 	"context"
 	"fmt"
-	"slices"
 	"strings"
 )
 
@@ -128,31 +127,12 @@ func (s *Server) handleResourcesTemplatesList(ctx context.Context, req Request) 
 	if err != nil {
 		return newErrorResponse(req.ID, ErrInvalidParams, err.Error())
 	}
-	// Snapshot under the read lock, evaluate the per-caller gates
-	// outside it: gates are app-supplied callback code and must never
-	// contend with the registry lock (notifications.go's rule). One
-	// slow gate used to stall every registration; a panicking one
-	// unwound past the RUnlock and wedged the registry.
-	s.mu.RLock()
-	snapshot := make([]ResourceTemplate, 0, len(s.templates))
-	for _, tpl := range s.templates {
-		snapshot = append(snapshot, tpl)
-	}
-	s.mu.RUnlock()
-	list := make([]ResourceTemplate, 0, len(snapshot))
-	for _, tpl := range snapshot {
-		// A template the caller cannot use is not listed to them: the
-		// uriTemplate and description are the disclosure. gateRefused
-		// also converts a panicking gate into a refusal instead of a
-		// transport crash.
-		if gateRefused(tpl.gate, ctx) {
-			continue
-		}
-		list = append(list, tpl)
-	}
-	slices.SortFunc(list, func(a, b ResourceTemplate) int {
-		return strings.Compare(a.URITemplate, b.URITemplate)
-	})
-	page, next := pageList(s, "resources/templates/list", list, offset)
+	// A template the caller cannot use is not listed to them: the
+	// uriTemplate and description are the disclosure.
+	page, next := gatedListPage(s, ctx, "resources/templates/list", offset,
+		func() map[string]ResourceTemplate { return s.templates },
+		func(tpl ResourceTemplate) func(context.Context) error { return tpl.gate },
+		func(a, b ResourceTemplate) int { return strings.Compare(a.URITemplate, b.URITemplate) },
+	)
 	return newSuccessResponse(req.ID, resourceTemplatesListResult{ResourceTemplates: page, NextCursor: next})
 }

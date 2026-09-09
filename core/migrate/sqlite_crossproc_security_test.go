@@ -16,7 +16,7 @@ import (
 // Surfaces: core/migrate/runner.go::up (appliedVersions read → apply loop,
 // never re-read), core/migrate/lock.go::WithAdvisoryLockKey (SQLite arm:
 // _gofastr_migrate_lock lease, the twin of framework/migrate/seed.go's
-// acquireSQLiteSeedLease), and core/migrate/runner.go::runMigrationUp (the
+// core/migrate AcquireSQLiteLease), and core/migrate/runner.go::runMigrationUp (the
 // immediate pre-apply tracking-row re-check that makes a stale runner
 // converge instead of dying).
 // Guard history: the SQLite arm took no lock at all ("SQLite serializes

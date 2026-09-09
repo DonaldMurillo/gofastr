@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
 	"github.com/chromedp/chromedp"
 )
 
@@ -30,7 +31,7 @@ func TestAnimate_TearsDownOnNonNavigateDetach(t *testing.T) {
 	body := `<div id="host"><div id="t" data-fui-animate-signal="a" data-fui-animate-class="on">x</div></div>`
 	base := startPollServer(t, detachPage(body), nil)
 
-	ctx := newPollBrowserCtx(t)
+	ctx := chromedptest.Context(t)
 	var before, after float64
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/"),
@@ -61,7 +62,7 @@ func TestComputed_TearsDownOnNonNavigateDetach(t *testing.T) {
 	body := `<div id="host"><div id="c" data-fui-computed="echo" data-fui-computed-deps="a" data-fui-signal="total">0</div></div>`
 	base := startPollServer(t, detachPage(body), nil)
 
-	ctx := newPollBrowserCtx(t)
+	ctx := chromedptest.Context(t)
 	var before, after float64
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/"),

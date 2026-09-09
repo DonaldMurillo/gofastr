@@ -1,6 +1,7 @@
 package filter
 
 import (
+	"strconv"
 	"strings"
 )
 
@@ -58,7 +59,7 @@ func SearchConditions(fields []string, term string) []Condition {
 		parts := make([]string, len(fields))
 		args := make([]any, len(fields))
 		for i, f := range fields {
-			parts[i] = "LOWER(" + f + `) LIKE $` + itoa(i+1) + ` ESCAPE '\'`
+			parts[i] = "LOWER(" + f + `) LIKE $` + strconv.Itoa(i+1) + ` ESCAPE '\'`
 			args[i] = pattern
 		}
 		sql := "(" + strings.Join(parts, " OR ") + ")"
@@ -80,27 +81,4 @@ func tokenizeSearch(term string) []string {
 		out = append(out, t)
 	}
 	return out
-}
-
-// itoa is a tiny strconv.Itoa alias to keep imports minimal.
-func itoa(n int) string {
-	if n == 0 {
-		return "0"
-	}
-	var buf [20]byte
-	i := len(buf)
-	neg := n < 0
-	if neg {
-		n = -n
-	}
-	for n > 0 {
-		i--
-		buf[i] = byte('0' + n%10)
-		n /= 10
-	}
-	if neg {
-		i--
-		buf[i] = '-'
-	}
-	return string(buf[i:])
 }

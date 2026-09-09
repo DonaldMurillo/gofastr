@@ -146,8 +146,8 @@ func TestCorruptRowDoesNotStopSchedules(t *testing.T) {
 		t.Fatalf("register poison: %v", err)
 	}
 	// Corrupt one row's next_run (the partial-write / bad-repair shape):
-	// a value that still sorts as due in loadDue's WHERE but fails queueTime
-	// decode in both the driver and the parser.
+	// a value that still sorts as due in loadDue's WHERE but fails
+	// query.ParseDBTime decode in both the driver and the parser.
 	if _, err := db.Exec(fmt.Sprintf(
 		"UPDATE %s SET next_run = '0000-00-00 00:00:00' WHERE id = 'poison'", q.schedulerSchedulesTable())); err != nil {
 		t.Fatalf("corrupt poison row: %v", err)

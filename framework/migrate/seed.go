@@ -211,7 +211,7 @@ func RunSeeds(ctx context.Context, db *sql.DB, registry entity.Registry) error {
 	if dialect == DialectSQLite {
 		sqliteSeedMu.Lock()
 		defer sqliteSeedMu.Unlock()
-		release, err := acquireSQLiteSeedLease(ctx, db)
+		release, err := coremig.AcquireSQLiteLease(ctx, db, "_gofastr_seed_lock", seedLease, "seed")
 		if err != nil {
 			return fmt.Errorf("seed: acquire sqlite seed lock: %w", err)
 		}
@@ -285,77 +285,3 @@ var sqliteSeedMu sync.Mutex
 // process never loses the lock; a crashed one blocks other boots for at
 // most one lease.
 const seedLease = 60 * time.Second
-
-// acquireSQLiteSeedLease takes the cross-process seed lock: one row in
-// _gofastr_seed_lock, acquired by a single atomic upsert whose DO UPDATE
-// fires only when the previous lease has expired (SQLite's own clock via
-// strftime('%s','now'), so processes disagreeing about wall time don't
-// stretch or shrink the lease). While held, a heartbeat renews it; the
-// returned release func deletes the row. Waiting respects ctx: cancel it
-// to stop waiting for the current holder.
-func acquireSQLiteSeedLease(ctx context.Context, db *sql.DB) (release func(), err error) {
-	lockTable := query.QuoteIdent(query.MustIdent("_gofastr_seed_lock"))
-	if _, err := db.ExecContext(ctx, fmt.Sprintf(
-		"CREATE TABLE IF NOT EXISTS %s (id INTEGER PRIMARY KEY CHECK (id = 1), expires_at INTEGER NOT NULL)", lockTable)); err != nil {
-		return nil, err
-	}
-	acquire := fmt.Sprintf(`INSERT INTO %s (id, expires_at)
-VALUES (1, CAST(strftime('%%s','now') AS INTEGER) + ?)
-ON CONFLICT (id) DO UPDATE SET expires_at = excluded.expires_at
-WHERE %s.expires_at <= CAST(strftime('%%s','now') AS INTEGER)`, lockTable, lockTable)
-	leaseSeconds := int64(seedLease / time.Second)
-	for {
-		res, err := db.ExecContext(ctx, acquire, leaseSeconds)
-		if err != nil {
-			return nil, err
-		}
-		if n, _ := res.RowsAffected(); n > 0 {
-			break
-		}
-		// Held by another process. Wait and retry; the holder either
-		// releases (row deleted), its lease expires (steal succeeds), or
-		// ctx is cancelled (fail closed, nothing seeded by us).
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		case <-time.After(100 * time.Millisecond):
-		}
-	}
-	// Heartbeat: a Seed can run arbitrarily long, far past the lease, so
-	// renew at lease/3 while the body is alive. If this process dies the
-	// heartbeats stop and the lease expires, which is the crash-release
-	// path — there is no SQLite session cleanup to do it for us.
-	hbCtx, stopHB := context.WithCancel(context.WithoutCancel(ctx))
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		ticker := time.NewTicker(seedLease / 3)
-		defer ticker.Stop()
-		renew := fmt.Sprintf(
-			"UPDATE %s SET expires_at = CAST(strftime('%%s','now') AS INTEGER) + ? WHERE id = 1", lockTable)
-		for {
-			select {
-			case <-hbCtx.Done():
-				return
-			case <-ticker.C:
-				// A failed renewal is survivable but not silent: if it keeps
-				// failing the lease expires and another process may steal the
-				// seed phase, so surface it.
-				if _, err := db.ExecContext(hbCtx, renew, leaseSeconds); err != nil {
-					slog.Warn("seed lock lease renewal failed; the lease expires if this keeps failing",
-						"err", err)
-				}
-			}
-		}
-	}()
-	return func() {
-		stopHB() // stops the goroutine before the DELETE races a renewal
-		<-done
-		if _, err := db.ExecContext(context.WithoutCancel(ctx), fmt.Sprintf("DELETE FROM %s WHERE id = 1", lockTable)); err != nil {
-			// The lock still opens: the lease expires on its own after
-			// seedLease. Other boots wait that long instead of running
-			// immediately, which deserves a log line, not silence.
-			slog.Warn("seed lock release failed; the lease expires instead", "err", err)
-		}
-	}, nil
-}

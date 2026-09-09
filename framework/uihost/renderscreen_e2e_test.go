@@ -11,6 +11,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core/router"
+	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
 )
 
 // TestRenderScreenE2E_BrandedRecoveryPaints drives the full guard
@@ -50,7 +51,7 @@ func TestRenderScreenE2E_BrandedRecoveryPaints(t *testing.T) {
 	srv := httptest.NewServer(rt)
 	t.Cleanup(srv.Close)
 
-	chCtx := newE2EChromeForUIHost(t)
+	chCtx := chromedptest.Context(t, chromedptest.AllocatorOptions(chromedp.ExecPath(browserExecutable(t))))
 	var heading, readyState string
 	var shot []byte
 	err := chromedp.Run(chCtx,

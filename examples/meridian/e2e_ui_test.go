@@ -24,6 +24,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core/dotenv"
 	"github.com/DonaldMurillo/gofastr/framework"
+	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
 )
 
 // e2eBootApp builds and boots the app on a free port with a throwaway
@@ -59,44 +60,6 @@ func e2eBootApp(t *testing.T) string {
 	return base
 }
 
-// e2eBrowser returns a headless Chrome context with a test-scoped timeout.
-func e2eBrowser(t *testing.T) context.Context {
-	t.Helper()
-	opts := append(chromedp.DefaultExecAllocatorOptions[:],
-		chromedp.Flag("headless", true),
-		chromedp.Flag("disable-gpu", true),
-		chromedp.Flag("no-sandbox", true),
-		// CI runners intermittently take >20s (the chromedp default)
-		// to cold-start Chrome; a generous websocket-URL deadline turns
-		// that from a flaky suite failure into a few slow seconds.
-		chromedp.WSURLReadTimeout(90*time.Second),
-		chromedp.WindowSize(1280, 800),
-	)
-	allocCtx, allocCancel := chromedp.NewExecAllocator(context.Background(), opts...)
-	t.Cleanup(allocCancel)
-	browserCtx, browserCancel := chromedp.NewContext(allocCtx)
-	t.Cleanup(browserCancel)
-
-	// chromedp starts Chrome lazily on the first Run: allocate against the
-	// browser context so the browser's lifetime is the browser context's,
-	// passing a timeout context here would make the browser die when that
-	// deadline passed. The watchdog bounds only the startup wait.
-	started := make(chan error, 1)
-	go func() { started <- chromedp.Run(browserCtx) }()
-	select {
-	case err := <-started:
-		if err != nil {
-			t.Fatalf("chrome did not start: %v", err)
-		}
-	case <-time.After(90 * time.Second):
-		t.Fatal("chrome did not start within 90s")
-	}
-
-	ctx, cancel := context.WithTimeout(browserCtx, 60*time.Second)
-	t.Cleanup(cancel)
-	return ctx
-}
-
 // e2eLogin signs the seeded admin in through the real login form.
 // chromedp.Submit doesn't fire the submit event, click the button.
 func e2eLogin(t *testing.T, ctx context.Context, base string) {
@@ -118,7 +81,7 @@ func TestE2E_QuickAddModal(t *testing.T) {
 		t.Skip("builds + boots the binary")
 	}
 	base := e2eBootApp(t)
-	ctx := e2eBrowser(t)
+	ctx := chromedptest.Context(t, chromedptest.WindowSize(1280, 800))
 	e2eLogin(t, ctx, base)
 
 	// A dismissed widget is hidden in place when it hydrated from SSR
@@ -175,7 +138,7 @@ func TestE2E_CustomersSortIsland(t *testing.T) {
 		t.Skip("builds + boots the binary")
 	}
 	base := e2eBootApp(t)
-	ctx := e2eBrowser(t)
+	ctx := chromedptest.Context(t, chromedptest.WindowSize(1280, 800))
 	e2eLogin(t, ctx, base)
 
 	sortBtn := `.ui-data-table th:first-child button.ui-data-table__sort`
@@ -213,7 +176,7 @@ func TestE2E_CustomersPageIsland(t *testing.T) {
 		t.Skip("builds + boots the binary")
 	}
 	base := e2eBootApp(t)
-	ctx := e2eBrowser(t)
+	ctx := chromedptest.Context(t, chromedptest.WindowSize(1280, 800))
 	e2eLogin(t, ctx, base)
 
 	var mark, rows int

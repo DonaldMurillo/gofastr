@@ -5,7 +5,9 @@ import (
 	"database/sql"
 	"fmt"
 	"log/slog"
+	"maps"
 	"net/http"
+	"slices"
 	"sort"
 	"strings"
 
@@ -326,7 +328,7 @@ func applyMiddleware(app *framework.App, w *world.World) error {
 		}
 		f, ok := middlewareCatalog[mw.Name]
 		if !ok {
-			return fmt.Errorf("unknown middleware %q (catalog: %v)", mw.Name, middlewareNames())
+			return fmt.Errorf("unknown middleware %q (catalog: %v)", mw.Name, slices.Sorted(maps.Keys(middlewareCatalog)))
 		}
 		built, err := f(mw.Cfg)
 		if err != nil {

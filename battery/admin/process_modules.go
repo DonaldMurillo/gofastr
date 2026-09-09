@@ -287,24 +287,22 @@ func moduleRevokeForm(prefix, csrf, name string) render.HTML {
 // leak (generated-app rule).
 
 func (b *Battery) handleModuleEnable(w http.ResponseWriter, r *http.Request) {
-	if !parseCappedForm(w, r) {
-		return
-	}
-	name := strings.TrimSpace(r.FormValue("module"))
-	if name == "" {
-		moduleBounce(w, r, b.cfg.PathPrefix, "module name required")
-		return
-	}
-	if err := b.cfg.ProcessModules.Enable(r.Context(), name); err != nil {
-		moduleBounce(w, r, b.cfg.PathPrefix, moduleErrText("enable", name, err))
-		return
-	}
-	actor := adminActorID(r.Context())
-	b.appendAudit(r.Context(), modulesAuditEnt, opModuleEnable, name, actor, nil)
-	http.Redirect(w, r, b.cfg.PathPrefix+modulesListPath, http.StatusSeeOther)
+	b.moduleToggle(w, r, "enable", opModuleEnable, func(ctx context.Context, name string) error {
+		return b.cfg.ProcessModules.Enable(ctx, name)
+	})
 }
 
 func (b *Battery) handleModuleDisable(w http.ResponseWriter, r *http.Request) {
+	b.moduleToggle(w, r, "disable", opModuleDisable, func(ctx context.Context, name string) error {
+		return b.cfg.ProcessModules.Disable(ctx, name)
+	})
+}
+
+// moduleToggle is the shared POST body of the enable/disable levers,
+// which were two copies differing only in the controller method, action
+// label, and audit op: parse the capped form, require a module name,
+// run the call, write the audit row, 303 back to the list.
+func (b *Battery) moduleToggle(w http.ResponseWriter, r *http.Request, action, op string, call func(ctx context.Context, name string) error) {
 	if !parseCappedForm(w, r) {
 		return
 	}
@@ -313,12 +311,12 @@ func (b *Battery) handleModuleDisable(w http.ResponseWriter, r *http.Request) {
 		moduleBounce(w, r, b.cfg.PathPrefix, "module name required")
 		return
 	}
-	if err := b.cfg.ProcessModules.Disable(r.Context(), name); err != nil {
-		moduleBounce(w, r, b.cfg.PathPrefix, moduleErrText("disable", name, err))
+	if err := call(r.Context(), name); err != nil {
+		moduleBounce(w, r, b.cfg.PathPrefix, moduleErrText(action, name, err))
 		return
 	}
 	actor := adminActorID(r.Context())
-	b.appendAudit(r.Context(), modulesAuditEnt, opModuleDisable, name, actor, nil)
+	b.appendAudit(r.Context(), modulesAuditEnt, op, name, actor, nil)
 	http.Redirect(w, r, b.cfg.PathPrefix+modulesListPath, http.StatusSeeOther)
 }
 

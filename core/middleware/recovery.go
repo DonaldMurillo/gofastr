@@ -5,6 +5,8 @@ import (
 	"log/slog"
 	"net/http"
 	"runtime/debug"
+
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
 // Caps on log-entry pieces so a handler that panics with a 100 MB
@@ -16,17 +18,6 @@ const (
 	maxRecoveryPathLen   = 2 << 10  // 2 KiB
 	maxRecoveryMethodLen = 1 << 5   // 32 B; real HTTP methods are ≤ ~10 chars
 )
-
-func truncate(s string, max int) string {
-	if len(s) <= max {
-		return s
-	}
-	const marker = " … (truncated)"
-	if max <= len(marker) {
-		return s[:max]
-	}
-	return s[:max-len(marker)] + marker
-}
 
 // RecoveryFn returns recovery middleware that logs panics via the
 // *slog.Logger returned by getLogger. The accessor is called per
@@ -50,10 +41,10 @@ func RecoveryFn(getLogger func() *slog.Logger) Middleware {
 						}
 					}
 					logger.Error("panic recovered",
-						"error", truncate(scrubControlBytes(fmt.Sprint(err)), maxRecoveryPanicLen),
-						"path", truncate(safeLogPath(r.URL.Path), maxRecoveryPathLen),
-						"method", truncate(safeLogMethod(r.Method), maxRecoveryMethodLen),
-						"stack", truncate(string(debug.Stack()), maxRecoveryStackLen),
+						"error", textsafe.Truncate(textsafe.ScrubControlBytes(fmt.Sprint(err)), maxRecoveryPanicLen),
+						"path", textsafe.Truncate(safeLogPath(r.URL.Path), maxRecoveryPathLen),
+						"method", textsafe.Truncate(safeLogMethod(r.Method), maxRecoveryMethodLen),
+						"stack", textsafe.Truncate(string(debug.Stack()), maxRecoveryStackLen),
 					)
 					http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 				}

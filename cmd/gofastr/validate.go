@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/DonaldMurillo/gofastr/framework/contracts"
 )
 
 // runValidate implements `gofastr validate <blueprint.yml|dir>`: parse the
@@ -132,7 +134,7 @@ func resolveBlueprintModule(bp *Blueprint, anchorDir string) error {
 // the directory containing go.mod, or empty strings when none is found.
 func findEnclosingGoMod(dir string) (modulePath, moduleRoot string) {
 	for {
-		if mod := readModulePath(dir); mod != "" {
+		if mod := contracts.ReadModulePath(dir); mod != "" {
 			return mod, dir
 		}
 		parent := filepath.Dir(dir)

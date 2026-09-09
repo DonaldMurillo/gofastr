@@ -35,21 +35,14 @@ type socketSeat struct {
 // spliceSeatLocked removes seat from its principal's FIFO; the caller
 // holds s.mu. A no-op when the seat is already gone (released after a
 // displacement, or displaced after a release), so a seat is removed exactly
-// once and the FIFO never retains a departed socket.
+// once and the FIFO never retains a departed socket. The splice itself is
+// the generic stream.SpliceSeat, shared with core/stream's broker,
+// core/mcp's server, and framework/crud's stream-seat registry.
 func (s *Signaler) spliceSeatLocked(seat *socketSeat) {
 	if seat == nil {
 		return
 	}
-	q := s.seatOrder[seat.user]
-	for i, v := range q {
-		if v == seat {
-			s.seatOrder[seat.user] = append(q[:i], q[i+1:]...)
-			break
-		}
-	}
-	if len(s.seatOrder[seat.user]) == 0 {
-		delete(s.seatOrder, seat.user)
-	}
+	stream.SpliceSeat(s.seatOrder, seat.user, seat)
 }
 
 // admitSeatLocked seats one socket for user and returns the connections

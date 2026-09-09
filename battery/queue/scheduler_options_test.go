@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core/query"
+
 	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 )
 
@@ -241,7 +243,7 @@ func TestDurableSchedulerReregisterUpdatesOptionsKeepsWatermark(t *testing.T) {
 		" WHERE id=$1", "digest").Scan(&nextRaw); err != nil {
 		t.Fatalf("read next_run: %v", err)
 	}
-	nextRun, err := queueTime(nextRaw)
+	nextRun, err := query.ParseDBTime(nextRaw)
 	if err != nil {
 		t.Fatalf("decode next_run: %v", err)
 	}
@@ -277,7 +279,7 @@ func TestDurableSchedulerMigratesScheduleOptionsColumns(t *testing.T) {
 	q := newDurableTestQueue(t, db)
 	// Create the schedules table by hand with the schema that shipped BEFORE
 	// per-schedule options, no lane / priority / max_attempts columns. The
-	// version column IS included so ensureScheduleVersionColumn does not run
+	// version column IS included so the version migration does not run
 	// first and mask the options-migration path.
 	oldSchema := `CREATE TABLE queue_scheduler_schedules (
 		id TEXT PRIMARY KEY,

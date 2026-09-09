@@ -5,7 +5,7 @@ import (
 )
 
 // Pins: a redirect validator that documents "same-origin path" enforces
-// the battery's one safe-relative grammar (isSafeRelativePath): no
+// the battery's one safe-relative grammar (handler.IsSafeRelativePath): no
 // backslash, no percent-encoded smuggling, no C0 bytes — safeRedirectURL
 // is implemented on it. Found by the 2026-09-06/07 adversarial round 5,
 // phase 2 (family enumeration, tier T3).
@@ -13,7 +13,7 @@ import (
 // the developer — not request data), so is developer-input leniency the
 // contract here? The function's own doc answers no: safeRedirectURL
 // claims it "prevents open-redirect attacks by ensuring the URL is a
-// same-origin path", and the battery's own twin isSafeRelativePath
+// same-origin path", and the battery's own twin handler.IsSafeRelativePath
 // (form_decode.go:268-304, ~40 lines away in the same package family)
 // defines the full grammar the claim implies — raw backslash, percent-
 // decoded re-check, C0 refusal. Probe-verified divergence: the weak
@@ -30,9 +30,9 @@ import (
 // Finding: OnSuccessURL = "/\evil.com/x", "/%5Cevil.com", or
 // "/x\r\nSet-Cookie: pwn=1" is returned verbatim and lands in Location:
 // arms 1-2 send the just-authenticated session cross-origin after a
-// magic-link click, arm 3 forges a header line. isSafeRelativePath
+// magic-link click, arm 3 forges a header line. handler.IsSafeRelativePath
 // rejects all three shapes today.
-// Fix direction: implement safeRedirectURL on isSafeRelativePath (both
+// Fix direction: implement safeRedirectURL on handler.IsSafeRelativePath (both
 // live in battery/auth), keeping the "/" fallback for failures and the
 // "/dashboard"-style positive round-trip.
 
@@ -58,7 +58,7 @@ func TestSafeRedirectRedFullGrammar(t *testing.T) {
 			if got != tc.want {
 				if tc.attack != "" {
 					t.Errorf("SECURITY: [magiclink-saferedirect-weak] safeRedirectURL(%q) = %q (want %q). Attack: %s. "+
-						"isSafeRelativePath (form_decode.go:268) enforces the full grammar — backslash, percent-decoded "+
+						"handler.IsSafeRelativePath (form_decode.go:268) enforces the full grammar — backslash, percent-decoded "+
 						"re-check, C0 refusal — for the same package's form redirects; safeRedirectURL's own doc claims it "+
 						"'prevents open-redirect attacks by ensuring the URL is a same-origin path'",
 						tc.in, got, tc.want, tc.attack)

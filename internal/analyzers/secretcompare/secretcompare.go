@@ -53,8 +53,9 @@ import (
 	"go/token"
 	"go/types"
 	"strings"
-	"unicode"
 
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/astx"
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/pathflow"
 	"golang.org/x/tools/go/analysis"
 )
 
@@ -220,7 +221,7 @@ func inputFetch(pass *analysis.Pass, e ast.Expr) bool {
 	if !ok {
 		return false
 	}
-	if qualifiedFunc(pass, call.Fun) == "os.Getenv" {
+	if pathflow.QualifiedFunc(pass, call.Fun) == "os.Getenv" {
 		return true
 	}
 	sel, ok := call.Fun.(*ast.SelectorExpr)
@@ -247,31 +248,12 @@ func inputFetch(pass *analysis.Pass, e ast.Expr) bool {
 	return mentionsInput
 }
 
-// qualifiedFunc renders a selector callee as "importpath.Func",
-// resolving the package through the type checker so aliased imports
-// still match.
-func qualifiedFunc(pass *analysis.Pass, fun ast.Expr) string {
-	sel, ok := fun.(*ast.SelectorExpr)
-	if !ok {
-		return ""
-	}
-	id, ok := sel.X.(*ast.Ident)
-	if !ok {
-		return ""
-	}
-	pkgName, ok := pass.TypesInfo.ObjectOf(id).(*types.PkgName)
-	if !ok {
-		return ""
-	}
-	return pkgName.Imported().Path() + "." + sel.Sel.Name
-}
-
 // credentialWord reports whether the identifier name carries a
 // credential word as a whole word: zipcode and encoding contain the
 // letters "code" but are single unrelated words and stay quiet;
 // confirmationCode, p.code, and apiKey carry it.
 func credentialWord(name string) bool {
-	words := splitWords(name)
+	words := astx.SplitWords(name)
 	for i, w := range words {
 		if credentialWords[strings.ToLower(w)] {
 			return true
@@ -282,33 +264,4 @@ func credentialWord(name string) bool {
 		}
 	}
 	return false
-}
-
-// splitWords splits an identifier into its camelCase / underscore
-// words: confirmationCode -> [confirmation Code], api_key ->
-// [api key], APIKey -> [API Key], zipcode -> [zipcode].
-func splitWords(name string) []string {
-	runes := []rune(name)
-	var words []string
-	start := 0
-	for i := 1; i < len(runes); i++ {
-		prev, cur := runes[i-1], runes[i]
-		switch {
-		case cur == '_' || !unicode.IsLetter(cur) && !unicode.IsDigit(cur):
-			if start < i {
-				words = append(words, string(runes[start:i]))
-			}
-			start = i + 1
-		case unicode.IsUpper(cur) && unicode.IsLower(prev),
-			unicode.IsUpper(cur) && unicode.IsUpper(prev) && i+1 < len(runes) && unicode.IsLower(runes[i+1]):
-			if start < i {
-				words = append(words, string(runes[start:i]))
-			}
-			start = i
-		}
-	}
-	if start < len(runes) {
-		words = append(words, string(runes[start:]))
-	}
-	return words
 }

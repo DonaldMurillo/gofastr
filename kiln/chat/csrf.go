@@ -1,15 +1,17 @@
 package chat
 
 import (
-	"net"
 	"net/http"
-	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
+	"github.com/DonaldMurillo/gofastr/core/netguard"
 )
 
-// sameOriginOnly wraps a state-changing kiln handler so a cross-site
-// browser request cannot reach it.
+// sameOriginOnly wraps a kiln handler — the state-changing POST
+// surfaces (/kiln/chat/message, /kiln/tool/{name}, the panel's send /
+// reset / approve_plan / reject_plan / undo) and the world-disclosing
+// GET surfaces (/kiln/world, /kiln/status, the /.kiln/events stream) —
+// so a cross-site or rebound browser request cannot reach either.
 //
 // kiln's transport is deliberately unauthenticated and the loopback bind
 // is the boundary. That boundary does not see the one caller class this
@@ -19,78 +21,39 @@ import (
 // approving it, so a silent cross-site approve defeats exactly the
 // control kiln is built around.
 //
-// An Origin allow-list leaves every non-browser caller untouched: the
-// agent's $KILN_URL client and curl send no Origin at all, and the
-// operator's own panel is same-origin. Sec-Fetch-Site is honoured first
-// where the browser sends it, because a sandboxed or redirected page
-// sends Origin: null, which parses to no host and would otherwise read
-// as "not a browser".
+// The cross-site arm is an Origin allow-list, which leaves every
+// non-browser caller untouched: the agent's $KILN_URL client and curl
+// send no Origin at all, and the operator's own panel is same-origin.
+// Sec-Fetch-Site is honoured first where the browser sends it, because
+// a sandboxed or redirected page sends Origin: null, which parses to no
+// host and would otherwise read as "not a browser".
+//
+// The Host arm answers DNS rebinding, which arrives same-origin: after
+// the rebind the attacker's page and the listener agree on the
+// attacker-named Host, so every Origin↔Host comparison passes and only
+// a Host pin refuses it, because a browser cannot forge Host. The pin
+// accepts any loopback authority — kiln's default bind is
+// 127.0.0.1:8765, so the operator's panel and any localhost spelling
+// all match. Requests without an Origin header are not browsers and
+// pass untouched, matching the POST family's contract; the framework's
+// own SSE half applies the same gate (core/mcp sseGetHandler), and
+// cmd/kiln's outer originGuard covers only its own process (Mount is a
+// library surface).
+//
+// The former readGuard wrapper — whose body was byte-identical to this
+// one — is gone; the read routes call sameOriginOnly directly.
 func sameOriginOnly(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if crossSite(r) {
 			http.Error(w, "forbidden: cross-site request", http.StatusForbidden)
 			return
 		}
-		// The write guard's own Host pin, the same one readGuard 25
-		// lines below applies: DNS rebinding arrives same-origin (after
-		// the rebind the attacker's page and the listener agree on the
-		// attacker-named Host), so every Origin↔Host comparison passes
-		// and only a Host pin refuses it — a browser cannot forge Host.
-		// Origin-less callers (the agent transport, curl) pass
-		// untouched, exactly as the read arm's contract states.
-		if r.Header.Get("Origin") != "" && !isLoopbackAuthority(r.Host) {
+		if r.Header.Get("Origin") != "" && !netguard.IsLoopbackAuthority(r.Host) {
 			http.Error(w, "forbidden: unexpected Host (DNS-rebinding guard)", http.StatusForbidden)
 			return
 		}
 		h.ServeHTTP(w, r)
 	})
-}
-
-// readGuard wraps the world-disclosing GET surfaces (/kiln/world, the
-// /kiln/status fields that carry the IR, and the /.kiln/events stream)
-// so a cross-site or rebound browser subscriber is refused.
-//
-// sameOriginOnly covers the plain cross-site fetch, but DNS rebinding
-// arrives same-origin: after the rebind the attacker's page and the
-// listener agree on the attacker-named Host, so every Origin↔Host
-// comparison passes. Only a Host pin refuses it, because a browser
-// cannot forge Host. The pin accepts any loopback authority — kiln's
-// default bind is 127.0.0.1:8765, so the operator's panel and any
-// localhost spelling all match. Requests without an Origin header are
-// not browsers (curl, the $KILN_URL agent transport, MCP/ACP clients)
-// and pass untouched, matching the POST family's contract. The
-// framework's own SSE half applies the same gate (core/mcp
-// sseGetHandler); cmd/kiln's outer originGuard covers only its own
-// process, and Mount is a library surface.
-func readGuard(h http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if crossSite(r) {
-			http.Error(w, "forbidden: cross-site request", http.StatusForbidden)
-			return
-		}
-		if r.Header.Get("Origin") != "" && !isLoopbackAuthority(r.Host) {
-			http.Error(w, "forbidden: unexpected Host (DNS-rebinding guard)", http.StatusForbidden)
-			return
-		}
-		h.ServeHTTP(w, r)
-	})
-}
-
-// isLoopbackAuthority reports whether authority ("host" or "host:port")
-// names the loopback interface.
-func isLoopbackAuthority(authority string) bool {
-	host := authority
-	if h, _, err := net.SplitHostPort(authority); err == nil {
-		host = h
-	}
-	host = strings.Trim(host, "[]")
-	if strings.EqualFold(host, "localhost") {
-		return true
-	}
-	if ip := net.ParseIP(host); ip != nil {
-		return ip.IsLoopback()
-	}
-	return false
 }
 
 // crossSite reports whether the request came from another site. The

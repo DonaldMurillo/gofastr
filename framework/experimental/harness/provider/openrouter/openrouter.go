@@ -177,21 +177,7 @@ func (p *Provider) Models(ctx context.Context) ([]provider.Model, error) {
 // heuristic (the rate of thumb across English text for most modern
 // tokenizers).
 func (p *Provider) TokenCount(_ context.Context, _ string, msgs []provider.Message) (int, error) {
-	total := 0
-	for _, m := range msgs {
-		for _, b := range m.Content {
-			total += len(b.Text)
-			if b.ToolUse != nil {
-				total += len(b.ToolUse.Name) + len(b.ToolUse.Input)
-			}
-			if b.ToolResult != nil {
-				for _, c := range b.ToolResult.Content {
-					total += len(c.Text)
-				}
-			}
-		}
-	}
-	return (total + 3) / 4, nil
+	return provider.EstimateTokens(msgs), nil
 }
 
 func (p *Provider) baseURL() string {

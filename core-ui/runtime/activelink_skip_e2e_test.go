@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
 	"github.com/chromedp/chromedp"
 )
 
@@ -79,7 +80,7 @@ func activelinkSkipServer(t *testing.T) *httptest.Server {
 // attribute.
 func TestActiveLinkKeepsUnmanagedAriaCurrent(t *testing.T) {
 	srv := activelinkSkipServer(t)
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 
 	var cur string
 	if err := chromedp.Run(ctx,
@@ -103,7 +104,7 @@ func TestActiveLinkKeepsUnmanagedAriaCurrent(t *testing.T) {
 // link).
 func TestActiveLinkSkipKeepsAuthorState(t *testing.T) {
 	srv := activelinkSkipServer(t)
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 
 	var state string
 	if err := chromedp.Run(ctx,

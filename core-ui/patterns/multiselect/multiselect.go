@@ -23,6 +23,7 @@ package multiselect
 
 import (
 	"maps"
+	"strconv"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
@@ -93,7 +94,7 @@ func Render(cfg Config) render.HTML {
 		// symbol-heavy values ("C++" vs "C#") collision-free, and the
 		// instance id (cfg.ID, falling back to Name, must be unique
 		// per page) scopes them across multiselect instances.
-		optID := id + "-opt-" + itoa(i)
+		optID := id + "-opt-" + strconv.Itoa(i)
 		inputAttrs := map[string]string{
 			"type":  "checkbox",
 			"name":  cfg.Name,
@@ -151,26 +152,6 @@ func Render(cfg Config) render.HTML {
 		chips,
 		render.Tag("details", detailsAttrs, summary, fieldset),
 	))
-}
-
-func itoa(i int) string {
-	if i == 0 {
-		return "0"
-	}
-	neg := false
-	if i < 0 {
-		neg = true
-		i = -i
-	}
-	buf := make([]byte, 0, 4)
-	for i > 0 {
-		buf = append([]byte{byte('0' + i%10)}, buf...)
-		i /= 10
-	}
-	if neg {
-		buf = append([]byte{'-'}, buf...)
-	}
-	return string(buf)
 }
 
 var multiSelectStyle = registry.RegisterStyle("multiselect", multiSelectCSS)

@@ -512,6 +512,7 @@ func buildCLISpec(decls []framework.EntityDeclaration, opts cliOptions, clientIm
 // stop regenerating that entity.
 var cliReservedCommands = map[string]bool{
 	"main": true, "config": true, "auth": true, "output": true, "custom": true,
+	"verbs": true, // scaffold basename: the shared verb bodies (verbs.go)
 	"login": true, "logout": true, "version": true, "help": true,
 }
 
@@ -681,6 +682,16 @@ func renderCLIFiles(spec cliSpec) []generatedFile {
 		{name: "auth.go", content: renderCLIAuth(spec)},
 		{name: "output.go", content: renderCLIOutput(spec)},
 		{name: "custom.go", content: renderCLICustom(spec)},
+	}
+	// One shared verb-body file per CLI (pruned to the selected verbs);
+	// the per-entity files keep one-line run wrappers over these bodies.
+	if cliAnyVerb(spec, "list") || cliAnyVerb(spec, "get") || cliAnyVerb(spec, "delete") ||
+		cliAnyVerb(spec, "batch-create") || cliAnyVerb(spec, "batch-update") ||
+		cliAnyVerb(spec, "batch-delete") || cliAnyVerb(spec, "watch") {
+		files = append(files, generatedFile{
+			name:    "verbs.go",
+			content: renderCLIVerbsFile(spec),
+		})
 	}
 	for _, ent := range spec.Entities {
 		if len(ent.Verbs) == 0 {
@@ -1347,30 +1358,44 @@ func renderCLIEntityFile(spec cliSpec, ent cliEntity) string {
 		}
 	}
 	hasMutation := has("create") || has("update") || has("patch")
-	needsHTTP := has("list") || has("get") || has("delete") || hasMutation ||
-		has("batch-create") || has("batch-update") || has("batch-delete")
+	hasWrapper := has("list") || has("get") || has("delete") || has("batch-create") ||
+		has("batch-update") || has("batch-delete") || has("watch")
+	// Import needs shrink with the shared verb bodies (verbs.go): this
+	// file holds the command table, the one-line wrappers, the list
+	// flag/column tables, and the per-field mutation bodies. Only the
+	// mutation bodies and the batch wrappers reference http method
+	// identifiers directly; get/delete/list/watch plumbing is verbs.go's.
 	needsJSONImport := hasJSONField && hasMutation
-	needsFmt := has("list") || has("delete") || has("batch-delete") || has("watch") || needsJSONImport
-	// net/url: list builds query params; every id-addressed verb path-escapes
-	// the positional id.
-	needsURLValues := has("list") || has("get") || has("delete") || has("update") || has("patch")
-	// The watch verb rides parseGlobals's NotifyContext ctx (output.go);
-	// the entity file itself needs no os/os-signal imports.
+	needsFmt := needsJSONImport // json-typed mutation flags wrap parse errors
+	needsHTTP := hasMutation || has("batch-create") || has("batch-update")
+	// net/url: only the with-id mutation bodies (update/patch) build a
+	// path in this file; get/delete id escaping lives in verbs.go.
+	needsURLValues := has("update") || has("patch")
+	needsClient := has("watch") // wrapper passes the typed Watch method expression
 
-	sb.WriteString("package main\n\nimport (\n")
+	var imports []string
 	if needsJSONImport {
-		sb.WriteString("\t\"encoding/json\"\n")
+		imports = append(imports, "\t\"encoding/json\"")
 	}
 	if needsFmt {
-		sb.WriteString("\t\"fmt\"\n")
+		imports = append(imports, "\t\"fmt\"")
 	}
 	if needsHTTP {
-		sb.WriteString("\t\"net/http\"\n")
+		imports = append(imports, "\t\"net/http\"")
 	}
 	if needsURLValues {
-		sb.WriteString("\t\"net/url\"\n")
+		imports = append(imports, "\t\"net/url\"")
 	}
-	sb.WriteString(")\n\n")
+	if needsClient {
+		imports = append(imports, "\n\tclient `"+spec.ClientImport+"`")
+	}
+	if len(imports) > 0 {
+		sb.WriteString("package main\n\nimport (\n" + strings.Join(imports, "\n") + "\n)\n\n")
+	} else {
+		sb.WriteString("package main\n\n")
+	}
+	// base is the pre-escaped collection path every wrapper binds to.
+	base := "/" + url.PathEscape(ent.Table)
 
 	// Command table. The bare entity command prints its subcommand list.
 	fmt.Fprintf(&sb, "func %sCommands() []command {\n\treturn []command{\n", lowerFirst(ent.Struct))
@@ -1396,29 +1421,18 @@ func renderCLIEntityFile(spec cliSpec, ent cliEntity) string {
 			ent.Command+" "+verb, summaries[verb], ent.Struct, verbFuncSuffix(verb))
 	}
 	sb.WriteString("\t}\n}\n\n")
+	if hasWrapper {
+		fmt.Fprintf(&sb, "// Verb wrappers: each binds this entity's command names and pre-escaped\n// base path %q to the shared verb bodies in verbs.go.\n\n", base)
+	}
 
 	if has("list") {
-		renderCLIListVerb(&sb, ent)
+		renderCLIListTables(&sb, ent)
+		fmt.Fprintf(&sb, "func run%sList(args []string) int {\n\treturn runListVerb(%q, %q, %sListFilters, %sListHeaders, %sListKeys, args)\n}\n\n",
+			ent.Struct, ent.Command+" list", base, lowerFirst(ent.Struct), lowerFirst(ent.Struct), lowerFirst(ent.Struct))
 	}
 	if has("get") {
-		fmt.Fprintf(&sb, `func run%sGet(args []string) int {
-	id, rest, ok := takeID(%q, args)
-	if !ok {
-		return 2
-	}
-	fs := newFlagSet(%q)
-	g, code := parseGlobals(fs, rest)
-	if g == nil {
-		return code
-	}
-	var out singleResponse
-	if err := g.client.Do(g.ctx, http.MethodGet, "/%s/"+url.PathEscape(id), nil, &out); err != nil {
-		return apiFail(err)
-	}
-	return printJSON(out.Data)
-}
-
-`, ent.Struct, ent.Command+" get", ent.Command+" get", url.PathEscape(ent.Table))
+		fmt.Fprintf(&sb, "func run%sGet(args []string) int {\n\treturn runGetVerb(%q, %q, args)\n}\n\n",
+			ent.Struct, ent.Command+" get", base)
 	}
 	if has("create") {
 		renderCLIMutationVerb(&sb, ent, "create")
@@ -1430,88 +1444,24 @@ func renderCLIEntityFile(spec cliSpec, ent cliEntity) string {
 		renderCLIMutationVerb(&sb, ent, "patch")
 	}
 	if has("delete") {
-		fmt.Fprintf(&sb, `func run%sDelete(args []string) int {
-	id, rest, ok := takeID(%q, args)
-	if !ok {
-		return 2
-	}
-	fs := newFlagSet(%q)
-	g, code := parseGlobals(fs, rest)
-	if g == nil {
-		return code
-	}
-	if err := g.client.Do(g.ctx, http.MethodDelete, "/%s/"+url.PathEscape(id), nil, nil); err != nil {
-		return apiFail(err)
-	}
-	fmt.Printf("deleted %%s\n", id)
-	return 0
-}
-
-`, ent.Struct, ent.Command+" delete", ent.Command+" delete", url.PathEscape(ent.Table))
+		fmt.Fprintf(&sb, "func run%sDelete(args []string) int {\n\treturn runDeleteVerb(%q, %q, args)\n}\n\n",
+			ent.Struct, ent.Command+" delete", base)
 	}
 	if has("batch-create") {
-		renderCLIBatchJSONVerb(&sb, ent, "batch-create", "BatchCreate", "items", "POST")
+		fmt.Fprintf(&sb, "func run%sBatchCreate(args []string) int {\n\treturn runBatchJSONVerb(%q, %q, http.MethodPost, args)\n}\n\n",
+			ent.Struct, ent.Command+" batch-create", base)
 	}
 	if has("batch-update") {
-		renderCLIBatchJSONVerb(&sb, ent, "batch-update", "BatchUpdate", "items", "PATCH")
+		fmt.Fprintf(&sb, "func run%sBatchUpdate(args []string) int {\n\treturn runBatchJSONVerb(%q, %q, http.MethodPatch, args)\n}\n\n",
+			ent.Struct, ent.Command+" batch-update", base)
 	}
 	if has("batch-delete") {
-		fmt.Fprintf(&sb, `// run%sBatchDelete deletes the positional ids in one transaction. Ids may
-// appear before or after flags: flag.Parse stops at the first positional,
-// so the trailing ones are collected from fs.Args().
-func run%sBatchDelete(args []string) int {
-	var ids []string
-	for len(args) > 0 && args[0] != "" && args[0][0] != '-' {
-		ids = append(ids, args[0])
-		args = args[1:]
-	}
-	fs := newFlagSet(%q)
-	g, code := parseGlobals(fs, args)
-	if g == nil {
-		return code
-	}
-	for _, id := range fs.Args() {
-		if id != "" && id[0] == '-' {
-			fmt.Println(binaryName + " %s: flags must precede trailing ids (got " + id + " after an id)")
-			return 2
-		}
-		ids = append(ids, id)
-	}
-	if len(ids) == 0 {
-		fmt.Println("usage: " + binaryName + " %s <id> [id...]")
-		return 2
-	}
-	resp, code := doBatch(g, http.MethodDelete, "/%s/_batch", map[string]any{"ids": ids})
-	if code != 0 {
-		return code
-	}
-	return printBatch(resp)
-}
-
-`, ent.Struct, ent.Struct, ent.Command+" batch-delete", ent.Command+" batch-delete", ent.Command+" batch-delete", url.PathEscape(ent.Table))
+		fmt.Fprintf(&sb, "func run%sBatchDelete(args []string) int {\n\treturn runBatchDeleteVerb(%q, %q, args)\n}\n\n",
+			ent.Struct, ent.Command+" batch-delete", base)
 	}
 	if has("watch") {
-		fmt.Fprintf(&sb, `// run%sWatch streams the live event feed until interrupted; each event is
-// one JSON line on stdout.
-func run%sWatch(args []string) int {
-	fs := newFlagSet(%q)
-	g, code := parseGlobals(fs, args)
-	if g == nil {
-		return code
-	}
-	// g.ctx is already signal-cancellable: parseGlobals built it with
-	// signal.NotifyContext, so Ctrl-C cancels the stream here too.
-	err := g.client.Watch%s(g.ctx, func(event string, data []byte) error {
-		fmt.Printf("{\"event\":%%q,\"data\":%%s}\n", event, data)
-		return nil
-	})
-	if err != nil && g.ctx.Err() == nil {
-		return apiFail(err)
-	}
-	return 0
-}
-
-`, ent.Struct, ent.Struct, ent.Command+" watch", ent.Struct)
+		fmt.Fprintf(&sb, "func run%sWatch(args []string) int {\n\treturn runWatchVerb(%q, (*client.Client).Watch%s, args)\n}\n\n",
+			ent.Struct, ent.Command+" watch", ent.Struct)
 	}
 	return sb.String()
 }
@@ -1529,26 +1479,20 @@ func verbFuncSuffix(verb string) string {
 	}
 }
 
-func renderCLIListVerb(sb *strings.Builder, ent cliEntity) {
-	fmt.Fprintf(sb, "func run%sList(args []string) int {\n", ent.Struct)
-	fmt.Fprintf(sb, "\tfs := newFlagSet(%q)\n", ent.Command+" list")
-	sb.WriteString(`	sortF := fs.String("sort", "", "sort field(s), comma-separated, - prefix for desc")
-	page := fs.String("page", "", "page number (offset pagination)")
-	limit := fs.String("limit", "", "page size")
-	cursor := fs.String("cursor", "", "keyset cursor (from a prior response)")
-	include := fs.String("include", "", "relations to eager-load (comma, dots for nesting)")
-	fieldsF := fs.String("fields", "", "sparse field projection (comma-separated)")
-	outF := fs.String("o", "json", "output format: json|table")
-	var params paramFlags
-	fs.Var(&params, "param", "extra query param key=value (repeatable)")
-`)
+// renderCLIListTables emits the per-entity list data: the filter-flag
+// table (one entry per flag, in the order the former inline body
+// declared them) and the -o table columns. The mechanics live once in
+// verbs.go (runListVerb); this is the part that genuinely varies.
+func renderCLIListTables(sb *strings.Builder, ent cliEntity) {
+	p := lowerFirst(ent.Struct)
+	fmt.Fprintf(sb, "// %sListFilters is the filter-flag table behind `%s list`: one entry\n// per flag, in help order, each bound to the query param it sets.\n", p, ent.Command)
+	fmt.Fprintf(sb, "var %sListFilters = []filterFlag{\n", p)
 	if ent.Search {
-		sb.WriteString("\tqF := fs.String(\"q\", \"\", \"free-text search over the declared search fields\")\n")
+		fmt.Fprintf(sb, "\t{flag: %q, param: %q, help: %q},\n", "q", "q", "free-text search over the declared search fields")
 	}
 	if ent.SoftDelete {
-		sb.WriteString("\ttrashed := fs.Bool(\"trashed\", false, \"include soft-deleted rows\")\n")
+		fmt.Fprintf(sb, "\t{flag: %q, param: %q, help: %q, isBool: true},\n", "trashed", "trashed", "include soft-deleted rows")
 	}
-	// Filter flags: eq per field, plus range/like variants.
 	for _, f := range ent.Fields {
 		if f.NoQuery {
 			continue
@@ -1557,88 +1501,25 @@ func renderCLIListVerb(sb *strings.Builder, ent cliEntity) {
 		if len(f.Values) > 0 {
 			help += " [" + strings.Join(f.Values, "|") + "]"
 		}
-		fmt.Fprintf(sb, "\tflt%s := fs.String(%q, \"\", %q)\n", toCamelCase(f.Flag), f.Flag, help)
+		fmt.Fprintf(sb, "\t{flag: %q, param: %q, help: %q},\n", f.Flag, f.Snake, help)
 		if f.Comparable {
 			for _, op := range []string{"gt", "gte", "lt", "lte"} {
-				fmt.Fprintf(sb, "\tflt%s%s := fs.String(%q, \"\", %q)\n",
-					toCamelCase(f.Flag), strings.ToUpper(op), f.Flag+"-"+op, "filter: "+f.Snake+" "+op)
+				fmt.Fprintf(sb, "\t{flag: %q, param: %q, help: %q},\n", f.Flag+"-"+op, f.Snake+"_"+op, "filter: "+f.Snake+" "+op)
 			}
 		}
 		if f.Likeable {
-			fmt.Fprintf(sb, "\tflt%sLike := fs.String(%q, \"\", %q)\n",
-				toCamelCase(f.Flag), f.Flag+"-like", "filter: "+f.Snake+" contains")
+			fmt.Fprintf(sb, "\t{flag: %q, param: %q, help: %q},\n", f.Flag+"-like", f.Snake+"_like", "filter: "+f.Snake+" contains")
 		}
 	}
-	sb.WriteString(`	g, code := parseGlobals(fs, args)
-	if g == nil {
-		return code
-	}
-	q := url.Values{}
-	set := func(key, val string) {
-		if val != "" {
-			q.Set(key, val)
-		}
-	}
-	set("sort", *sortF)
-	set("page", *page)
-	set("limit", *limit)
-	set("cursor", *cursor)
-	set("include", *include)
-	set("fields", *fieldsF)
-`)
-	if ent.Search {
-		sb.WriteString("\tset(\"q\", *qF)\n")
-	}
-	if ent.SoftDelete {
-		sb.WriteString("\tif *trashed {\n\t\tq.Set(\"trashed\", \"true\")\n\t}\n")
-	}
-	for _, f := range ent.Fields {
-		if f.NoQuery {
-			continue
-		}
-		fmt.Fprintf(sb, "\tset(%q, *flt%s)\n", f.Snake, toCamelCase(f.Flag))
-		if f.Comparable {
-			for _, op := range []string{"gt", "gte", "lt", "lte"} {
-				fmt.Fprintf(sb, "\tset(%q, *flt%s%s)\n", f.Snake+"_"+op, toCamelCase(f.Flag), strings.ToUpper(op))
-			}
-		}
-		if f.Likeable {
-			fmt.Fprintf(sb, "\tset(%q, *flt%sLike)\n", f.Snake+"_like", toCamelCase(f.Flag))
-		}
-	}
-	sb.WriteString(`	for _, kv := range params.pairs {
-		q.Set(kv[0], kv[1])
-	}
-`)
-	fmt.Fprintf(sb, "\tpath := \"/%s\"\n", url.PathEscape(ent.Table))
-	sb.WriteString(`	if len(q) > 0 {
-		path += "?" + q.Encode()
-	}
-	var resp listResponse
-	if err := g.client.Do(g.ctx, http.MethodGet, path, nil, &resp); err != nil {
-		return apiFail(err)
-	}
-	if *outF == "table" {
-`)
+	sb.WriteString("}\n\n")
 	headers := []string{"id"}
 	keys := []string{"id"}
 	for _, f := range ent.Fields {
 		headers = append(headers, f.Snake)
 		keys = append(keys, f.Wire)
 	}
-	fmt.Fprintf(sb, "\t\tprintListTable([]string{%s}, []string{%s}, resp.Data)\n",
-		quoteList(headers), quoteList(keys))
-	sb.WriteString(`		if resp.Cursor != "" || resp.HasMore {
-			fmt.Printf("%d rows, next cursor: %s\n", len(resp.Data), resp.Cursor)
-		} else {
-			fmt.Printf("page %d/%d, %d total\n", resp.Page, resp.TotalPages, resp.Total)
-		}
-		return 0
-	}
-	return printJSON(resp)
-}
-
-`)
+	fmt.Fprintf(sb, "// Table columns for `%s list -o table`: %sListHeaders are the display\n// titles, %sListKeys the JSON wire keys each column reads.\n", ent.Command, p, p)
+	fmt.Fprintf(sb, "var (\n\t%sListHeaders = []string{%s}\n\t%sListKeys    = []string{%s}\n)\n\n", p, quoteList(headers), p, quoteList(keys))
 }
 
 // renderCLIMutationVerb emits create/update/patch: per-field flags OR --json,
@@ -1718,14 +1599,190 @@ func renderCLIMutationVerb(sb *strings.Builder, ent cliEntity, verb string) {
 `, method, path)
 }
 
-// renderCLIBatchJSONVerb emits batch-create/batch-update: a --json array
-// wrapped into the {items: [...]} envelope, decoded as client.BatchResponse.
-func renderCLIBatchJSONVerb(sb *strings.Builder, ent cliEntity, verb, funcSuffix, key, httpMethod string) {
-	methods := map[string]string{"POST": "http.MethodPost", "PATCH": "http.MethodPatch"}
-	fmt.Fprintf(sb, `// run%s%s sends a --json array through the atomic _batch route. A rolled-
-// back batch prints its {committed, results[]} envelope and exits 1.
-func run%s%s(args []string) int {
-	fs := newFlagSet(%q)
+// cliAnyVerb reports whether any selected entity kept the verb; it gates
+// which shared bodies verbs.go needs.
+func cliAnyVerb(spec cliSpec, verb string) bool {
+	for _, ent := range spec.Entities {
+		for _, v := range ent.Verbs {
+			if v == verb {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// renderCLIVerbsFile emits verbs.go, the shared verb bodies. The former
+// per-entity copies (run<Ent>List/Get/Delete/BatchCreate/BatchUpdate/
+// BatchDelete/Watch inside every <entity>.go) differed only in the
+// command name, the pre-escaped base path, and per-entity flag/column
+// tables, so each verb now has ONE body here and the entity files keep
+// one-line wrappers binding theirs. The create/update/patch bodies stay
+// per-entity: their field-flag declarations vary by field type, not just
+// by name. Emitted only when some entity kept a verb, pruned to the
+// selected verbs.
+func renderCLIVerbsFile(spec cliSpec) string {
+	list := cliAnyVerb(spec, "list")
+	get := cliAnyVerb(spec, "get")
+	del := cliAnyVerb(spec, "delete")
+	batchJSON := cliAnyVerb(spec, "batch-create") || cliAnyVerb(spec, "batch-update")
+	batchDel := cliAnyVerb(spec, "batch-delete")
+	watch := cliAnyVerb(spec, "watch")
+
+	var imports []string
+	if watch {
+		imports = append(imports, "\t\"context\"")
+	}
+	if list || del || batchDel || watch {
+		imports = append(imports, "\t\"fmt\"")
+	}
+	if list || get || del || batchDel {
+		imports = append(imports, "\t\"net/http\"")
+	}
+	if list || get || del {
+		imports = append(imports, "\t\"net/url\"")
+	}
+	if watch {
+		imports = append(imports, "\n\tclient `"+spec.ClientImport+"`")
+	}
+	var sb strings.Builder
+	sb.WriteString("package main\n\nimport (\n" + strings.Join(imports, "\n") + "\n)\n\n")
+
+	if list {
+		sb.WriteString(`// filterFlag binds one list flag to the query param it sets. String
+// filters (the default) only set their param when non-empty; isBool
+// filters (soft-delete trashed) set theirs to "true" when given.
+type filterFlag struct {
+	flag   string
+	param  string
+	help   string
+	isBool bool
+}
+
+// runListVerb is the shared list body: the pagination/output flags, the
+// entity's filter table (filters), the query string, and the JSON or
+// table print.
+func runListVerb(cmd, base string, filters []filterFlag, headers, keys []string, args []string) int {
+	fs := newFlagSet(cmd)
+	sortF := fs.String("sort", "", "sort field(s), comma-separated, - prefix for desc")
+	page := fs.String("page", "", "page number (offset pagination)")
+	limit := fs.String("limit", "", "page size")
+	cursor := fs.String("cursor", "", "keyset cursor (from a prior response)")
+	include := fs.String("include", "", "relations to eager-load (comma, dots for nesting)")
+	fieldsF := fs.String("fields", "", "sparse field projection (comma-separated)")
+	outF := fs.String("o", "json", "output format: json|table")
+	var params paramFlags
+	fs.Var(&params, "param", "extra query param key=value (repeatable)")
+	strVals := make([]*string, len(filters))
+	boolVals := make([]*bool, len(filters))
+	for i, f := range filters {
+		if f.isBool {
+			boolVals[i] = fs.Bool(f.flag, false, f.help)
+		} else {
+			strVals[i] = fs.String(f.flag, "", f.help)
+		}
+	}
+	g, code := parseGlobals(fs, args)
+	if g == nil {
+		return code
+	}
+	q := url.Values{}
+	set := func(key, val string) {
+		if val != "" {
+			q.Set(key, val)
+		}
+	}
+	set("sort", *sortF)
+	set("page", *page)
+	set("limit", *limit)
+	set("cursor", *cursor)
+	set("include", *include)
+	set("fields", *fieldsF)
+	for i, f := range filters {
+		if f.isBool {
+			if *boolVals[i] {
+				q.Set(f.param, "true")
+			}
+		} else {
+			set(f.param, *strVals[i])
+		}
+	}
+	for _, kv := range params.pairs {
+		q.Set(kv[0], kv[1])
+	}
+	path := base
+	if len(q) > 0 {
+		path += "?" + q.Encode()
+	}
+	var resp listResponse
+	if err := g.client.Do(g.ctx, http.MethodGet, path, nil, &resp); err != nil {
+		return apiFail(err)
+	}
+	if *outF == "table" {
+		printListTable(headers, keys, resp.Data)
+		if resp.Cursor != "" || resp.HasMore {
+			fmt.Printf("%d rows, next cursor: %s\n", len(resp.Data), resp.Cursor)
+		} else {
+			fmt.Printf("page %d/%d, %d total\n", resp.Page, resp.TotalPages, resp.Total)
+		}
+		return 0
+	}
+	return printJSON(resp)
+}
+
+`)
+	}
+	if get {
+		sb.WriteString(`// runGetVerb is the shared get body: take the positional id, GET
+// base/{id}, print the record.
+func runGetVerb(cmd, base string, args []string) int {
+	id, rest, ok := takeID(cmd, args)
+	if !ok {
+		return 2
+	}
+	fs := newFlagSet(cmd)
+	g, code := parseGlobals(fs, rest)
+	if g == nil {
+		return code
+	}
+	var out singleResponse
+	if err := g.client.Do(g.ctx, http.MethodGet, base+"/"+url.PathEscape(id), nil, &out); err != nil {
+		return apiFail(err)
+	}
+	return printJSON(out.Data)
+}
+
+`)
+	}
+	if del {
+		sb.WriteString(`// runDeleteVerb is the shared delete body: take the positional id,
+// DELETE base/{id}, confirm on stdout.
+func runDeleteVerb(cmd, base string, args []string) int {
+	id, rest, ok := takeID(cmd, args)
+	if !ok {
+		return 2
+	}
+	fs := newFlagSet(cmd)
+	g, code := parseGlobals(fs, rest)
+	if g == nil {
+		return code
+	}
+	if err := g.client.Do(g.ctx, http.MethodDelete, base+"/"+url.PathEscape(id), nil, nil); err != nil {
+		return apiFail(err)
+	}
+	fmt.Printf("deleted %s\n", id)
+	return 0
+}
+
+`)
+	}
+	if batchJSON {
+		sb.WriteString(`// runBatchJSONVerb is the shared batch-create/batch-update body: send a
+// --json array through the atomic _batch route wrapped into the
+// {items: [...]} envelope. A rolled-back batch prints its
+// {committed, results[]} envelope and exits 1.
+func runBatchJSONVerb(cmd, base, method string, args []string) int {
+	fs := newFlagSet(cmd)
 	jsonBody := fs.String("json", "", "JSON array of items: inline, @file, or - for stdin")
 	g, code := parseGlobals(fs, args)
 	if g == nil {
@@ -1735,14 +1792,76 @@ func run%s%s(args []string) int {
 	if code != 0 {
 		return code
 	}
-	resp, code := doBatch(g, %s, "/%s/_batch", map[string]any{%q: items})
+	resp, code := doBatch(g, method, base+"/_batch", map[string]any{"items": items})
 	if code != 0 {
 		return code
 	}
 	return printBatch(resp)
 }
 
-`, ent.Struct, funcSuffix, ent.Struct, funcSuffix, ent.Command+" "+verb, methods[httpMethod], url.PathEscape(ent.Table), key)
+`)
+	}
+	if batchDel {
+		sb.WriteString(`// runBatchDeleteVerb deletes the positional ids in one transaction. Ids
+// may appear before or after flags: flag.Parse stops at the first
+// positional, so the trailing ones are collected from fs.Args().
+func runBatchDeleteVerb(cmd, base string, args []string) int {
+	var ids []string
+	for len(args) > 0 && args[0] != "" && args[0][0] != '-' {
+		ids = append(ids, args[0])
+		args = args[1:]
+	}
+	fs := newFlagSet(cmd)
+	g, code := parseGlobals(fs, args)
+	if g == nil {
+		return code
+	}
+	for _, id := range fs.Args() {
+		if id != "" && id[0] == '-' {
+			fmt.Println(binaryName + " " + cmd + ": flags must precede trailing ids (got " + id + " after an id)")
+			return 2
+		}
+		ids = append(ids, id)
+	}
+	if len(ids) == 0 {
+		fmt.Println("usage: " + binaryName + " " + cmd + " <id> [id...]")
+		return 2
+	}
+	resp, code := doBatch(g, http.MethodDelete, base+"/_batch", map[string]any{"ids": ids})
+	if code != 0 {
+		return code
+	}
+	return printBatch(resp)
+}
+
+`)
+	}
+	if watch {
+		sb.WriteString(`// runWatchVerb is the shared watch body: stream the entity's live event
+// feed until interrupted; each event is one JSON line on stdout. watch is
+// the typed client method expression ((*client.Client).Watch<Entity>),
+// bound by each entity's wrapper.
+func runWatchVerb(cmd string, watch func(c *client.Client, ctx context.Context, fn func(event string, data []byte) error) error, args []string) int {
+	fs := newFlagSet(cmd)
+	g, code := parseGlobals(fs, args)
+	if g == nil {
+		return code
+	}
+	// g.ctx is already signal-cancellable: parseGlobals built it with
+	// signal.NotifyContext, so Ctrl-C cancels the stream here too.
+	err := watch(g.client, g.ctx, func(event string, data []byte) error {
+		fmt.Printf("{\"event\":%q,\"data\":%s}\n", event, data)
+		return nil
+	})
+	if err != nil && g.ctx.Err() == nil {
+		return apiFail(err)
+	}
+	return 0
+}
+
+`)
+	}
+	return sb.String()
 }
 
 func quoteList(items []string) string {

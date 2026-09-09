@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync/atomic"
 
+	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"golang.org/x/text/unicode/norm"
 )
@@ -224,60 +225,10 @@ func successRedirect(w http.ResponseWriter, r *http.Request, fallback string) st
 			next = r.PostFormValue("next")
 		}
 	}
-	if isSafeRelativePath(next) {
+	if handler.IsSafeRelativePath(next) {
 		return next
 	}
 	return fallback
-}
-
-// isSafeRelativePath returns true when p is safe to use directly as a
-// Location header for a same-origin redirect. Requires: starts with a
-// single '/', no scheme, no host, no backslash, no control bytes, and
-// not "//"-prefixed (protocol-relative).
-//
-// Critically, the check runs against BOTH the raw input (for the
-// shape rules) AND the decoded `u.Path` (for percent-encoded
-// backslash / control chars / //). Without the second pass, an
-// attacker can supply `next=/%5Cevil.example/x`, the raw string
-// has no literal '\' so the surface checks pass, then the browser
-// decodes %5C to '\' and normalises to '/', landing on
-// //evil.example/x cross-origin.
-func isSafeRelativePath(p string) bool {
-	if p == "" {
-		return false
-	}
-	if !strings.HasPrefix(p, "/") {
-		return false
-	}
-	if strings.HasPrefix(p, "//") {
-		return false
-	}
-	// Reject dangerous bytes in the raw input.
-	if strings.ContainsAny(p, "\\\x00\r\n\t") {
-		return false
-	}
-	// url.Parse catches the remaining shapes (schemes, hosts smuggled
-	// via percent-encoded characters, etc.) AND decodes percent-
-	// escapes so the post-parse path can be re-checked.
-	u, err := url.Parse(p)
-	if err != nil {
-		return false
-	}
-	if u.Scheme != "" || u.Host != "" {
-		return false
-	}
-	// Re-check the DECODED path: %5C → \, %00 → NUL, %0d%0a → CRLF.
-	// Any of these in the decoded form is just as dangerous as in
-	// the raw form, browsers decode before navigating.
-	if strings.ContainsAny(u.Path, "\\\x00\r\n\t") {
-		return false
-	}
-	// Protocol-relative after decoding (e.g. `/%2Fevil` decodes to
-	// `//evil` if leading slash is one of two).
-	if strings.HasPrefix(u.Path, "//") {
-		return false
-	}
-	return true
 }
 
 // defaultLoginErrorPath is the operator-configured fallback used by
@@ -328,7 +279,7 @@ func writeFormAuthError(w http.ResponseWriter, r *http.Request, status int, msg 
 	target := safeReferer(r)
 	if target == "" {
 		fallback := getDefaultLoginErrorPath()
-		if fallback != "" && isSafeRelativePath(fallback) {
+		if fallback != "" && handler.IsSafeRelativePath(fallback) {
 			target = fallback
 		}
 	}
@@ -362,7 +313,7 @@ func safeReferer(r *http.Request) string {
 	}
 	// Relative Referer (rare but possible): keep its path only.
 	if u.Host == "" {
-		if !isSafeRelativePath(u.Path) {
+		if !handler.IsSafeRelativePath(u.Path) {
 			return ""
 		}
 		return u.Path
@@ -378,7 +329,7 @@ func safeReferer(r *http.Request) string {
 	if out == "" {
 		out = "/"
 	}
-	if !isSafeRelativePath(out) {
+	if !handler.IsSafeRelativePath(out) {
 		return ""
 	}
 	return out

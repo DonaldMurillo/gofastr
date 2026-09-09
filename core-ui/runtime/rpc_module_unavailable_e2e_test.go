@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
 	"github.com/chromedp/chromedp"
 )
 
@@ -55,7 +56,7 @@ func TestFormSubmitSurvivesMissingRPCModule(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(srv.URL+"/"),
 		chromedp.WaitVisible(`#go`, chromedp.ByID),
@@ -113,7 +114,7 @@ func TestRPCFormIsNotNativelySubmittedWhenModuleMissing(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	var stillThere string
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(srv.URL+"/"),
 		chromedp.WaitVisible(`#go`, chromedp.ByID),

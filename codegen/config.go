@@ -505,12 +505,18 @@ func mapValue(node *coreyaml.Node) map[string]any {
 	}
 	out := map[string]any{}
 	for key, child := range node.Map {
-		out[key] = anyValue(child)
+		out[key] = AnyValue(child)
 	}
 	return out
 }
 
-func anyValue(node *coreyaml.Node) any {
+// AnyValue decodes a core/yaml node into the parser's native any shape:
+// scalars pass through, lists decode element-wise, maps become
+// map[string]any. nil for a nil node or an unknown kind.
+//
+// Exported because cmd/gofastr's blueprint decoder carried a byte-identical
+// private copy; that copy is deleted and calls this one.
+func AnyValue(node *coreyaml.Node) any {
 	if node == nil {
 		return nil
 	}
@@ -520,7 +526,7 @@ func anyValue(node *coreyaml.Node) any {
 	case coreyaml.List:
 		out := make([]any, 0, len(node.List))
 		for _, item := range node.List {
-			out = append(out, anyValue(item))
+			out = append(out, AnyValue(item))
 		}
 		return out
 	case coreyaml.Map:

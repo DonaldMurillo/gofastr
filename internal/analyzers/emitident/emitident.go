@@ -109,12 +109,12 @@ package emitident
 
 import (
 	"go/ast"
-	"go/constant"
 	"go/token"
 	"go/types"
 	"regexp"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/astx"
 	"golang.org/x/tools/go/analysis"
 )
 
@@ -149,10 +149,10 @@ var treatedFieldRe = regexp.MustCompile(`(?i)quoted|sanit|escap`)
 // display-quoting families (strconv.Quote and friends quote for humans;
 // they are not gates).
 func isCheckCall(pass *analysis.Pass, fun ast.Expr) bool {
-	if !checkNameRe.MatchString(calleeLastName(pass, fun)) {
+	if !checkNameRe.MatchString(astx.CalleeName(fun)) {
 		return false
 	}
-	q := qualifiedCallee(pass, fun)
+	q := astx.QualifiedCallee(pass, fun)
 	return !strings.HasPrefix(q, "strconv.") && !strings.HasPrefix(q, "strings.") && !strings.HasPrefix(q, "fmt.")
 }
 
@@ -220,7 +220,7 @@ func run(pass *analysis.Pass) (any, error) {
 			if !ok {
 				return true
 			}
-			fn, ok := calleeFunc(pass, call.Fun)
+			fn, ok := astx.CalleeFunc(pass, call.Fun)
 			if !ok {
 				return true
 			}
@@ -306,7 +306,7 @@ func checkFile(pass *analysis.Pass, f *ast.File, helperDecls map[*types.Func]*as
 			case *ast.ForStmt, *ast.RangeStmt:
 				loops = append(loops, e)
 			case *ast.CallExpr:
-				if _, ok := fmtCalls[qualifiedCallee(pass, e.Fun)]; ok {
+				if _, ok := fmtCalls[astx.QualifiedCallee(pass, e.Fun)]; ok {
 					emits = append(emits, e)
 				}
 			}
@@ -415,7 +415,7 @@ func bodyDiverges(pass *analysis.Pass, body *ast.BlockStmt) bool {
 				if id, ok := call.Fun.(*ast.Ident); ok && id.Name == "panic" {
 					return true
 				}
-				if qualifiedCallee(pass, call.Fun) == "os.Exit" {
+				if astx.QualifiedCallee(pass, call.Fun) == "os.Exit" {
 					return true
 				}
 			}
@@ -462,11 +462,11 @@ func sameLoopBody(loops []ast.Node, st *ast.IfStmt, emit *ast.CallExpr) bool {
 // checkEmit scans one Sprintf-family call's format for identifier slots
 // and reports the first ungated one.
 func checkEmit(pass *analysis.Pass, call *ast.CallExpr, bound map[types.Object]ast.Expr, helperDecls map[*types.Func]*ast.FuncDecl, guarded map[types.Object]bool, memo map[string]bool, paramGate map[*types.Var]bool) {
-	formatIndex, ok := fmtCalls[qualifiedCallee(pass, call.Fun)]
+	formatIndex, ok := fmtCalls[astx.QualifiedCallee(pass, call.Fun)]
 	if !ok || formatIndex >= len(call.Args) {
 		return
 	}
-	format, ok := stringLiteralValue(pass, call.Args[formatIndex])
+	format, ok := astx.StringConstant(pass, call.Args[formatIndex])
 	if !ok {
 		return
 	}
@@ -1084,22 +1084,22 @@ func resolveArg(pass *analysis.Pass, x ast.Expr, bound map[types.Object]ast.Expr
 	case *ast.UnaryExpr:
 		return resolveArg(pass, e.X, bound, helperDecls, guarded, memo, paramGate, depth+1)
 	case *ast.CallExpr:
-		q := qualifiedCallee(pass, e.Fun)
-		last := calleeLastName(pass, e.Fun)
+		q := astx.QualifiedCallee(pass, e.Fun)
+		last := astx.CalleeName(e.Fun)
 		if last != "" && gateNameRe.MatchString(last) {
 			return true, fields
 		}
 		if q == "fmt.Sprintf" && len(e.Args) > 0 {
 			// A constant format whose verbs are all numeric synthesizes a
 			// safe name ("pp%d"); no string input can reach it.
-			if f, ok := stringLiteralValue(pass, e.Args[0]); ok && numericOnlyVerbs(f) {
+			if f, ok := astx.StringConstant(pass, e.Args[0]); ok && numericOnlyVerbs(f) {
 				return true, fields
 			}
 		}
 		if strings.HasPrefix(q, "strconv.") || strings.HasPrefix(q, "strings.") {
 			return true, fields // silent on strconv/strings results
 		}
-		if fn, ok := calleeFunc(pass, e.Fun); ok {
+		if fn, ok := astx.CalleeFunc(pass, e.Fun); ok {
 			if decl, ok := helperDecls[fn]; ok && decl.Body != nil {
 				// A local helper: its arguments and the struct fields its
 				// body touches are the derivation roots, and its returns
@@ -1336,15 +1336,6 @@ func bodyBindings(pass *analysis.Pass, n ast.Node) map[types.Object]ast.Expr {
 	return m
 }
 
-// stringLiteralValue returns the constant string value of e.
-func stringLiteralValue(pass *analysis.Pass, e ast.Expr) (string, bool) {
-	tv, ok := pass.TypesInfo.Types[e]
-	if !ok || tv.Value == nil || tv.Value.Kind() != constant.String {
-		return "", false
-	}
-	return constant.StringVal(tv.Value), true
-}
-
 // isPkgIdent reports whether x is an identifier that resolves to an
 // imported package (used where Uses on the selector's X yields nothing
 // for unevaluated positions).
@@ -1355,44 +1346,4 @@ func isPkgIdent(pass *analysis.Pass, x ast.Expr) bool {
 	}
 	_, ok = pass.TypesInfo.Uses[id].(*types.PkgName)
 	return ok
-}
-
-func calleeLastName(pass *analysis.Pass, fun ast.Expr) string {
-	switch f := fun.(type) {
-	case *ast.Ident:
-		return f.Name
-	case *ast.SelectorExpr:
-		return f.Sel.Name
-	}
-	return ""
-}
-
-func calleeFunc(pass *analysis.Pass, fun ast.Expr) (*types.Func, bool) {
-	switch f := fun.(type) {
-	case *ast.Ident:
-		fn, ok := pass.TypesInfo.Uses[f].(*types.Func)
-		return fn, ok
-	case *ast.SelectorExpr:
-		fn, ok := pass.TypesInfo.Uses[f.Sel].(*types.Func)
-		return fn, ok
-	}
-	return nil, false
-}
-
-// qualifiedCallee renders a call target as "pkg.Func" through the type
-// checker, so an aliased import still resolves to the real package.
-func qualifiedCallee(pass *analysis.Pass, fun ast.Expr) string {
-	switch f := fun.(type) {
-	case *ast.SelectorExpr:
-		if id, ok := f.X.(*ast.Ident); ok {
-			if pkg, ok := pass.TypesInfo.Uses[id].(*types.PkgName); ok {
-				return pkg.Imported().Name() + "." + f.Sel.Name
-			}
-		}
-	case *ast.Ident:
-		if fn, ok := pass.TypesInfo.Uses[f].(*types.Func); ok && fn.Pkg() != nil {
-			return fn.Pkg().Name() + "." + fn.Name()
-		}
-	}
-	return ""
 }

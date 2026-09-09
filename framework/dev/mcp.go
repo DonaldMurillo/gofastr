@@ -1,10 +1,5 @@
 package dev
 
-import (
-	"os"
-	"strconv"
-)
-
 // DevMCPEnabled reports whether the dev-only MCP agent surface should
 // auto-activate: the /mcp mount, the read-only introspection tools, the
 // mutating control tools, and battery debug tools (battery/log) all key
@@ -21,17 +16,5 @@ import (
 // that auto-wires livereload. Production processes never see
 // GOFASTR_DEV, so none of this activates there.
 func DevMCPEnabled() bool {
-	if isNonDevEnv(os.Getenv("GOFASTR_ENV")) {
-		return false
-	}
-	if !envBool("GOFASTR_DEV") {
-		return false
-	}
-	if v := os.Getenv("GOFASTR_DEV_MCP"); v != "" {
-		b, err := strconv.ParseBool(v)
-		if err == nil && !b {
-			return false
-		}
-	}
-	return true
+	return devFeatureEnabled("GOFASTR_DEV_MCP")
 }

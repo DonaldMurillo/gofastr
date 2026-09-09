@@ -113,25 +113,13 @@ func OnAfterUpdate[T any](app *App, name string, fn func(ctx context.Context, va
 // OnBeforeDelete registers a typed BeforeDelete hook. The payload is the
 // record id; no generic parameter needed.
 func OnBeforeDelete(app *App, name string, fn func(ctx context.Context, id string) error) {
-	app.HookRegistry(name).RegisterHook(hook.BeforeDelete, func(ctx context.Context, data any) error {
-		id, ok := data.(string)
-		if !ok {
-			return fmt.Errorf("typed BeforeDelete hook: payload type = %T, want string (framework contract drift?)", data)
-		}
-		return fn(ctx, id)
-	})
+	registerIDHook(app, name, hook.BeforeDelete, "BeforeDelete", fn)
 }
 
 // OnAfterDelete registers a typed AfterDelete hook. Same shape as
 // OnBeforeDelete.
 func OnAfterDelete(app *App, name string, fn func(ctx context.Context, id string) error) {
-	app.HookRegistry(name).RegisterHook(hook.AfterDelete, func(ctx context.Context, data any) error {
-		id, ok := data.(string)
-		if !ok {
-			return fmt.Errorf("typed AfterDelete hook: payload type = %T, want string (framework contract drift?)", data)
-		}
-		return fn(ctx, id)
-	})
+	registerIDHook(app, name, hook.AfterDelete, "AfterDelete", fn)
 }
 
 // OnBeforeList registers a typed BeforeList hook. The callback receives
@@ -139,51 +127,55 @@ func OnAfterDelete(app *App, name string, fn func(ctx context.Context, id string
 // clauses (p.AddWhere) without type-asserting from any. Symmetric with
 // OnBeforeCreate/OnBeforeUpdate.
 func OnBeforeList(app *App, name string, fn func(ctx context.Context, p *hook.ListPayload) error) {
-	app.HookRegistry(name).RegisterHook(hook.BeforeList, func(ctx context.Context, data any) error {
-		p, ok := data.(*hook.ListPayload)
-		if !ok || p == nil {
-			return fmt.Errorf("typed BeforeList hook: payload type = %T, want *hook.ListPayload (framework contract drift?)", data)
-		}
-		return fn(ctx, p)
-	})
+	registerPayloadHook(app, name, hook.BeforeList, "BeforeList", fn)
 }
 
 // OnAfterList registers a typed AfterList hook. The callback receives
 // the *hook.ListPayload with Results populated, mutate the slice in
 // place to redact / drop rows.
 func OnAfterList(app *App, name string, fn func(ctx context.Context, p *hook.ListPayload) error) {
-	app.HookRegistry(name).RegisterHook(hook.AfterList, func(ctx context.Context, data any) error {
-		p, ok := data.(*hook.ListPayload)
-		if !ok || p == nil {
-			return fmt.Errorf("typed AfterList hook: payload type = %T, want *hook.ListPayload (framework contract drift?)", data)
-		}
-		return fn(ctx, p)
-	})
+	registerPayloadHook(app, name, hook.AfterList, "AfterList", fn)
 }
 
 // OnBeforeGet registers a typed BeforeGet hook. The callback receives
 // *hook.GetPayload; ID is the request's path-value and AddWhere lets
 // the host scope the lookup (mismatch → 404).
 func OnBeforeGet(app *App, name string, fn func(ctx context.Context, p *hook.GetPayload) error) {
-	app.HookRegistry(name).RegisterHook(hook.BeforeGet, func(ctx context.Context, data any) error {
-		p, ok := data.(*hook.GetPayload)
-		if !ok || p == nil {
-			return fmt.Errorf("typed BeforeGet hook: payload type = %T, want *hook.GetPayload (framework contract drift?)", data)
-		}
-		return fn(ctx, p)
-	})
+	registerPayloadHook(app, name, hook.BeforeGet, "BeforeGet", fn)
 }
 
 // OnAfterGet registers a typed AfterGet hook. The callback receives
 // *hook.GetPayload with Result populated, mutate the map in place to
 // redact fields before the response is serialised.
 func OnAfterGet(app *App, name string, fn func(ctx context.Context, p *hook.GetPayload) error) {
-	app.HookRegistry(name).RegisterHook(hook.AfterGet, func(ctx context.Context, data any) error {
-		p, ok := data.(*hook.GetPayload)
+	registerPayloadHook(app, name, hook.AfterGet, "AfterGet", fn)
+}
+
+// registerPayloadHook registers a typed hook whose payload is a framework
+// pointer type (*hook.ListPayload, *hook.GetPayload): the wrapper asserts
+// the concrete payload and forwards it, refusing nil or foreign types
+// with an error naming the drift. It replaces the four former per-hook
+// copies inside OnBeforeList / OnAfterList / OnBeforeGet / OnAfterGet.
+func registerPayloadHook[P any](app *App, name string, ht hook.HookType, label string, fn func(ctx context.Context, p *P) error) {
+	app.HookRegistry(name).RegisterHook(ht, func(ctx context.Context, data any) error {
+		p, ok := data.(*P)
 		if !ok || p == nil {
-			return fmt.Errorf("typed AfterGet hook: payload type = %T, want *hook.GetPayload (framework contract drift?)", data)
+			return fmt.Errorf("typed %s hook: payload type = %T, want %s (framework contract drift?)", label, data, reflect.TypeOf((*P)(nil)))
 		}
 		return fn(ctx, p)
+	})
+}
+
+// registerIDHook registers a typed hook whose payload is the record id
+// (BeforeDelete / AfterDelete). It replaces the two former per-hook
+// copies inside OnBeforeDelete / OnAfterDelete.
+func registerIDHook(app *App, name string, ht hook.HookType, label string, fn func(ctx context.Context, id string) error) {
+	app.HookRegistry(name).RegisterHook(ht, func(ctx context.Context, data any) error {
+		id, ok := data.(string)
+		if !ok {
+			return fmt.Errorf("typed %s hook: payload type = %T, want string (framework contract drift?)", label, data)
+		}
+		return fn(ctx, id)
 	})
 }
 

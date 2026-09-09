@@ -748,7 +748,11 @@ func generateBlueprint(bp Blueprint, options generateOptions) {
 			hasNewEntities := false
 			for _, f := range written {
 				name := filepath.ToSlash(f.name)
-				if strings.HasPrefix(name, "entities/") && name != "entities/register.go" && !strings.HasPrefix(name, "entities/client/") {
+				// events.go is a fixed seam file like register.go (the
+				// per-entity event wrappers delegate to it), not a new
+				// entity: writing it alone must not trigger the stale
+				// client.go warning below.
+				if strings.HasPrefix(name, "entities/") && name != "entities/register.go" && name != "entities/events.go" && !strings.HasPrefix(name, "entities/client/") {
 					hasNewEntities = true
 					break
 				}
@@ -1062,14 +1066,17 @@ func editedTargets(files []generatedFile, writeRoot, outDir string) []string {
 }
 
 // renderGeneratedProject emits the entities package for a set of entity
-// declarations. Output is ONE FILE PER ENTITY plus a thin registration seam:
+// declarations. Output is ONE FILE PER ENTITY plus thin fixed seams:
 //
 //   - entities/register.go: the RegisterAll seam. It is byte-identical for
 //     every project regardless of entity count; each entity file appends
 //     itself to registrars in init(), so adding an entity means adding one
 //     new file and never editing an existing one.
+//   - entities/events.go: the event-helper seam (onEntityEvent,
+//     onEntityDeleted, extractEntityRecord), also byte-identical regardless
+//     of entity count; each entity file's On<Camel>* wrappers delegate to it.
 //   - entities/<snake_name>.go: everything for one entity: model struct,
-//     column constants, typed repo, event helpers, and its registration func.
+//     column constants, typed repo, event wrappers, and its registration func.
 //   - client/client.go: a standalone typed HTTP client (separate package).
 //
 // Declaration order is carried by the registrar.order field so RegisterAll
@@ -1095,6 +1102,10 @@ func renderGeneratedProjectWithOrder(decls []framework.EntityDeclaration, orderO
 	}
 	files := []generatedFile{
 		{name: "register.go", content: renderRegisterSeam()},
+		// Event helpers are entity-independent: one fixed seam file instead
+		// of a copy of each body per entity file. Additive generation writes
+		// it only when absent (the skip-existing partition).
+		{name: "events.go", content: renderEventHelpers()},
 		// Generated client lives in its own package so consumers can import
 		// it without dragging the server-side schema/framework deps along.
 		{name: "client/client.go", content: renderClient(decls)},
@@ -1509,19 +1520,44 @@ func renderRelationLiteral(rel framework.Relation) string {
 	return "{" + strings.Join(parts, ", ") + "}"
 }
 
-func relationTypeConst(t framework.RelationType) string {
-	switch t {
-	case framework.RelHasOne:
-		return "RelHasOne"
-	case framework.RelHasMany:
-		return "RelHasMany"
-	case framework.RelManyToOne:
-		return "RelManyToOne"
-	case framework.RelManyToMany:
-		return "RelManyToMany"
-	default:
-		return "RelManyToOne"
+// relationKind is one row of relationKinds: the Go const name the
+// generator emits and the YAML string the blueprint serializes for a
+// relation kind.
+type relationKind struct {
+	typ       framework.RelationType
+	constName string
+	yaml      string
+}
+
+// relationKinds is the ONE table over framework.RelationType this package
+// switches on. It replaced three independent switches that had to agree by
+// hand: relationTypeConst (generate.go), relationTypeToString and
+// relationTypeFromConstName (pack.go). Add a kind here and every leg learns
+// it.
+var relationKinds = []relationKind{
+	{framework.RelHasOne, "RelHasOne", "has_one"},
+	{framework.RelHasMany, "RelHasMany", "has_many"},
+	{framework.RelManyToOne, "RelManyToOne", "belongs_to"},
+	{framework.RelManyToMany, "RelManyToMany", "many_to_many"},
+}
+
+// relationKindFor returns t's row, or the belongs_to row for a kind the
+// table has not learned — the default every former switch's fallback arm
+// produced, so unknown kinds keep reading as belongs_to instead of failing
+// pack on generated code.
+func relationKindFor(t framework.RelationType) relationKind {
+	for _, k := range relationKinds {
+		if k.typ == t {
+			return k
+		}
 	}
+	return relationKind{typ: framework.RelManyToOne, constName: "RelManyToOne", yaml: "belongs_to"}
+}
+
+// relationTypeConst returns the framework const name for t, for emitting
+// `Type: framework.<Name>` in generated relation literals.
+func relationTypeConst(t framework.RelationType) string {
+	return relationKindFor(t).constName
 }
 
 func renderGoLiteral(value any) (string, error) {
@@ -1811,13 +1847,13 @@ func printGeneratedErrorsJSON(errs ...error) {
 }
 
 // entityFileName maps an entity name to its generated file name, guarding
-// against collisions with the fixed package files (register.go, shared.go,
-// doc.go): a colliding name is prefixed with entity_ so it never shadows the
-// seam or shared helpers.
+// against collisions with the fixed package files (register.go, events.go,
+// shared.go, doc.go): a colliding name is prefixed with entity_ so it never
+// shadows the seams or shared helpers.
 func entityFileName(name string) string {
 	snake := toSnakeCase(name)
 	switch snake {
-	case "register", "shared", "doc":
+	case "register", "events", "shared", "doc":
 		return "entity_" + snake + ".go"
 	}
 	return snake + ".go"
@@ -1948,7 +1984,7 @@ func maxExistingEntityOrder(writeRoot string) int {
 	if err != nil {
 		return 0 // no entities dir yet
 	}
-	skip := map[string]bool{"register.go": true, "shared.go": true, "doc.go": true}
+	skip := map[string]bool{"register.go": true, "events.go": true, "shared.go": true, "doc.go": true}
 	maxOrder := -1
 	for _, entry := range entries {
 		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".go") || skip[entry.Name()] {

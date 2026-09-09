@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -59,11 +60,11 @@ func Tracing() Middleware {
 			// a %0d%0a path). Scrub both at the sink — the same
 			// control-byte rule the slog sinks carry — so a forged value
 			// cannot render as a forged line in collector UIs/exporters.
-			ctx, span := tracer.Start(ctx, fmt.Sprintf("HTTP %s", scrubControlBytes(r.Method)),
+			ctx, span := tracer.Start(ctx, fmt.Sprintf("HTTP %s", textsafe.ScrubControlBytes(r.Method)),
 				trace.WithSpanKind(trace.SpanKindServer),
 				trace.WithAttributes(
-					attribute.String("http.method", scrubControlBytes(r.Method)),
-					attribute.String("http.target", scrubControlBytes(r.URL.Path)),
+					attribute.String("http.method", textsafe.ScrubControlBytes(r.Method)),
+					attribute.String("http.target", textsafe.ScrubControlBytes(r.URL.Path)),
 				),
 			)
 			defer span.End()
@@ -76,9 +77,9 @@ func Tracing() Middleware {
 			if route == "" {
 				route = "unmatched"
 			}
-			span.SetName(fmt.Sprintf("HTTP %s %s", scrubControlBytes(r.Method), scrubControlBytes(route)))
+			span.SetName(fmt.Sprintf("HTTP %s %s", textsafe.ScrubControlBytes(r.Method), textsafe.ScrubControlBytes(route)))
 			span.SetAttributes(
-				attribute.String("http.route", scrubControlBytes(route)),
+				attribute.String("http.route", textsafe.ScrubControlBytes(route)),
 				attribute.Int("http.status_code", ww.status),
 			)
 			if ww.status >= 500 {

@@ -73,6 +73,8 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/astx"
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/pathflow"
 	"golang.org/x/tools/go/analysis"
 )
 
@@ -103,7 +105,7 @@ func run(pass *analysis.Pass) (any, error) {
 
 	a := &analyzer{pass: pass, decls: decls, helperMemo: map[*ast.FuncDecl][]bool{}}
 	for _, f := range pass.Files {
-		if isTestFile(pass, f) {
+		if pathflow.IsTestFile(pass, f) {
 			// A test's panic-assertion log line fails nothing that
 			// ships.
 			continue
@@ -164,7 +166,7 @@ func (a *analyzer) walk(t *taint, body *ast.BlockStmt) {
 		// The one-hop helper arm: a tainted argument handed to a
 		// same-package function whose own body sinks that parameter
 		// raw.
-		if id, ok := unparen(call.Fun).(*ast.Ident); ok {
+		if id, ok := ast.Unparen(call.Fun).(*ast.Ident); ok {
 			if obj, ok := a.pass.TypesInfo.ObjectOf(id).(*types.Func); ok {
 				if decl, ok := a.decls[obj]; ok {
 					flags := a.helperParamFlags(decl)
@@ -313,7 +315,7 @@ func (t *taint) orig(e ast.Expr, seen map[types.Object]bool, depth int) bool {
 	if depth > 24 {
 		return false
 	}
-	switch e := unparen(e).(type) {
+	switch e := ast.Unparen(e).(type) {
 	case *ast.Ident:
 		obj := t.a.pass.TypesInfo.ObjectOf(e)
 		if obj == nil || seen[obj] {
@@ -414,7 +416,7 @@ func valueCarrying(t types.Type) bool {
 // scrubNamed reports whether the callee's name says scrub.
 func scrubNamed(fun ast.Expr) bool {
 	var name string
-	switch f := unparen(fun).(type) {
+	switch f := ast.Unparen(fun).(type) {
 	case *ast.Ident:
 		name = f.Name
 	case *ast.SelectorExpr:
@@ -427,7 +429,7 @@ func scrubNamed(fun ast.Expr) bool {
 
 // isRecoverCall: the builtin recover().
 func isRecoverCall(pass *analysis.Pass, call *ast.CallExpr) bool {
-	id, ok := unparen(call.Fun).(*ast.Ident)
+	id, ok := ast.Unparen(call.Fun).(*ast.Ident)
 	if !ok || id.Name != "recover" {
 		return false
 	}
@@ -447,7 +449,7 @@ var sinks = []sink{
 	{
 		name: "slog.String/slog.Any",
 		matches: func(a *analyzer, call *ast.CallExpr) bool {
-			sel, ok := unparen(call.Fun).(*ast.SelectorExpr)
+			sel, ok := ast.Unparen(call.Fun).(*ast.SelectorExpr)
 			if !ok {
 				return false
 			}
@@ -465,7 +467,7 @@ var sinks = []sink{
 		// writes to the default logger (stderr).
 		name: "slog.Debug/Info/Warn/Error key-value",
 		matches: func(a *analyzer, call *ast.CallExpr) bool {
-			sel, ok := unparen(call.Fun).(*ast.SelectorExpr)
+			sel, ok := ast.Unparen(call.Fun).(*ast.SelectorExpr)
 			if !ok {
 				return false
 			}
@@ -482,18 +484,18 @@ var sinks = []sink{
 			if !ok {
 				return false
 			}
-			return isNamed(deref(tv.Type), "log/slog", "Logger")
+			return astx.IsNamed(astx.Deref(tv.Type), "log/slog", "Logger")
 		},
 		// msg, k1, v1: message and values at even offsets from 0; the
 		// *Context forms shift one for ctx.
-		args: evenOffsetArgs,
+		args: astx.EvenOffsetArgs,
 	},
 	{
 		// Log(ctx, level, msg, k1, v1): message and values at even
 		// offsets from 2.
 		name: "slog.Log key-value",
 		matches: func(a *analyzer, call *ast.CallExpr) bool {
-			sel, ok := unparen(call.Fun).(*ast.SelectorExpr)
+			sel, ok := ast.Unparen(call.Fun).(*ast.SelectorExpr)
 			if !ok || sel.Sel.Name != "Log" {
 				return false
 			}
@@ -501,7 +503,7 @@ var sinks = []sink{
 				return true
 			}
 			tv, ok := a.pass.TypesInfo.Types[sel.X]
-			return ok && isNamed(deref(tv.Type), "log/slog", "Logger")
+			return ok && astx.IsNamed(astx.Deref(tv.Type), "log/slog", "Logger")
 		},
 		args: func(call *ast.CallExpr) []ast.Expr {
 			var out []ast.Expr
@@ -514,7 +516,7 @@ var sinks = []sink{
 	{
 		name: "std log print",
 		matches: func(a *analyzer, call *ast.CallExpr) bool {
-			sel, ok := unparen(call.Fun).(*ast.SelectorExpr)
+			sel, ok := ast.Unparen(call.Fun).(*ast.SelectorExpr)
 			if !ok {
 				return false
 			}
@@ -529,14 +531,14 @@ var sinks = []sink{
 				return true
 			}
 			tv, ok := a.pass.TypesInfo.Types[sel.X]
-			return ok && isNamed(deref(tv.Type), "log", "Logger")
+			return ok && astx.IsNamed(astx.Deref(tv.Type), "log", "Logger")
 		},
 		args: func(call *ast.CallExpr) []ast.Expr { return call.Args },
 	},
 	{
 		name: "stdout/stderr print",
 		matches: func(a *analyzer, call *ast.CallExpr) bool {
-			sel, ok := unparen(call.Fun).(*ast.SelectorExpr)
+			sel, ok := ast.Unparen(call.Fun).(*ast.SelectorExpr)
 			if !ok {
 				return false
 			}
@@ -552,7 +554,7 @@ var sinks = []sink{
 			if len(call.Args) == 0 {
 				return false
 			}
-			wsel, ok := unparen(call.Args[0]).(*ast.SelectorExpr)
+			wsel, ok := ast.Unparen(call.Args[0]).(*ast.SelectorExpr)
 			if !ok {
 				return false
 			}
@@ -564,7 +566,7 @@ var sinks = []sink{
 		// The F forms carry the writer at offset 0; the bare Print
 		// forms check every argument, format string included.
 		args: func(call *ast.CallExpr) []ast.Expr {
-			if sel, ok := unparen(call.Fun).(*ast.SelectorExpr); ok && strings.HasPrefix(sel.Sel.Name, "F") {
+			if sel, ok := ast.Unparen(call.Fun).(*ast.SelectorExpr); ok && strings.HasPrefix(sel.Sel.Name, "F") {
 				return call.Args[1:]
 			}
 			return call.Args
@@ -579,56 +581,13 @@ func valueArg1(call *ast.CallExpr) []ast.Expr {
 	return nil
 }
 
-func evenOffsetArgs(call *ast.CallExpr) []ast.Expr {
-	sel, _ := unparen(call.Fun).(*ast.SelectorExpr)
-	start := 0
-	if sel != nil && strings.HasSuffix(sel.Sel.Name, "Context") {
-		start = 1
-	}
-	var out []ast.Expr
-	for i := start; i < len(call.Args); i += 2 {
-		out = append(out, call.Args[i])
-	}
-	return out
-}
-
 // ---- small helpers -------------------------------------------------------
-
-func unparen(e ast.Expr) ast.Expr {
-	for {
-		p, ok := e.(*ast.ParenExpr)
-		if !ok {
-			return e
-		}
-		e = p.X
-	}
-}
-
-func deref(t types.Type) types.Type {
-	if p, ok := t.(*types.Pointer); ok {
-		return p.Elem()
-	}
-	return t
-}
-
-// isNamed reports whether t is the named type pkgPath.name.
-func isNamed(t types.Type, pkgPath, name string) bool {
-	n, ok := t.(*types.Named)
-	if !ok {
-		return false
-	}
-	obj := n.Obj()
-	return obj.Pkg() != nil && obj.Pkg().Path() == pkgPath && obj.Name() == name
-}
-func isTestFile(pass *analysis.Pass, f *ast.File) bool {
-	return strings.HasSuffix(pass.Fset.Position(f.Pos()).Filename, "_test.go")
-}
 
 // qualifiedFunc renders a selector callee as "pkg.Func", resolving the
 // import through the type checker; a bare identifier callee renders as
 // its own name.
 func (a *analyzer) qualifiedFunc(fun ast.Expr) string {
-	sel, ok := unparen(fun).(*ast.SelectorExpr)
+	sel, ok := ast.Unparen(fun).(*ast.SelectorExpr)
 	if !ok {
 		if id, ok := fun.(*ast.Ident); ok {
 			return id.Name

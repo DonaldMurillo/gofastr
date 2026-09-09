@@ -32,9 +32,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -766,7 +768,7 @@ func oaBuildOp(root, opNode map[string]any, baseParams []any, method, path strin
 				}
 			}
 			if op.BodyKind == "" && len(content) > 0 {
-				return op, fmt.Errorf("request body offers %s; supported are application/json and binary (application/octet-stream / format: binary)", strings.Join(mapKeys(content), ", "))
+				return op, fmt.Errorf("request body offers %s; supported are application/json and binary (application/octet-stream / format: binary)", strings.Join(slices.Sorted(maps.Keys(content)), ", "))
 			}
 		}
 	}
@@ -778,13 +780,4 @@ func orEmpty(m map[string]any) map[string]any {
 		return map[string]any{}
 	}
 	return m
-}
-
-func mapKeys(m map[string]any) []string {
-	out := make([]string, 0, len(m))
-	for k := range m {
-		out = append(out, k)
-	}
-	sort.Strings(out)
-	return out
 }

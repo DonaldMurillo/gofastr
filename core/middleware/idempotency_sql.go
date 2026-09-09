@@ -7,9 +7,10 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"strings"
 	"sync/atomic"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/core/query"
 )
 
 // SQLIdempotencyStore persists idempotency claims to a SQL database.
@@ -88,19 +89,14 @@ func NewSQLIdempotencyStore(db *sql.DB, opts ...SQLIdempotencyOption) (*SQLIdemp
 	for _, opt := range opts {
 		opt(s)
 	}
-	if !safeIdent(s.table) {
+	if !query.SafeTableName(s.table) {
 		return nil, fmt.Errorf("idempotency: unsafe table name %q", s.table)
 	}
 	if s.dialect != "postgres" && s.dialect != "sqlite" {
 		return nil, fmt.Errorf("idempotency: unsupported dialect %q (want postgres or sqlite)", s.dialect)
 	}
-	if !s.dialectPinned {
-		var v string
-		if err := db.QueryRow("SELECT version()").Scan(&v); err == nil {
-			if strings.Contains(strings.ToLower(v), "postgresql") {
-				s.dialect = "postgres"
-			}
-		}
+	if !s.dialectPinned && query.IsPostgres(db) {
+		s.dialect = "postgres"
 	}
 	if err := s.ensureTable(); err != nil {
 		return nil, fmt.Errorf("ensure table: %w", err)
@@ -280,34 +276,4 @@ func (s *SQLIdempotencyStore) placeholder(n int) string {
 		return fmt.Sprintf("$%d", n)
 	}
 	return "?"
-}
-
-// reservedSQLIdentsMW is the middleware package's copy; keeping the
-// list local avoids cross-package dependency for a 12-entry guard.
-var reservedSQLIdentsMW = map[string]struct{}{
-	"select": {}, "insert": {}, "update": {}, "delete": {},
-	"drop": {}, "create": {}, "table": {}, "from": {}, "where": {},
-	"users": {}, "user": {}, "migrations": {}, "sessions": {}, "accounts": {},
-}
-
-// safeIdent rejects unsafe table names, including SQL reserved words
-// and leading-digit identifiers that some dialect parsers treat oddly.
-func safeIdent(name string) bool {
-	if name == "" || len(name) > 64 {
-		return false
-	}
-	first := rune(name[0])
-	if !((first >= 'a' && first <= 'z') || (first >= 'A' && first <= 'Z') || first == '_') {
-		return false
-	}
-	for _, r := range name {
-		ok := (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_'
-		if !ok {
-			return false
-		}
-	}
-	if _, bad := reservedSQLIdentsMW[strings.ToLower(name)]; bad {
-		return false
-	}
-	return true
 }

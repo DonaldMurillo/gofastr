@@ -48,6 +48,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/astx"
 	"golang.org/x/tools/go/analysis"
 )
 
@@ -65,21 +66,7 @@ var receiverRe = regexp.MustCompile(`(?i)(store|session|token|verifier|manager|r
 
 func run(pass *analysis.Pass) (any, error) {
 	rw := responseWriterIface(pass)
-	var bodies []*ast.BlockStmt
-	for _, f := range pass.Files {
-		ast.Inspect(f, func(n ast.Node) bool {
-			switch fn := n.(type) {
-			case *ast.FuncDecl:
-				if fn.Body != nil {
-					bodies = append(bodies, fn.Body)
-				}
-			case *ast.FuncLit:
-				bodies = append(bodies, fn.Body)
-			}
-			return true
-		})
-	}
-	for _, b := range bodies {
+	for _, b := range astx.AllBodies(pass) {
 		scanBody(pass, b, rw)
 	}
 	return nil, nil

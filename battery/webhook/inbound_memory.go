@@ -143,14 +143,9 @@ func (m *MemoryInboundStore) SeenDedupeKey(_ context.Context, source, key string
 func (m *MemoryInboundStore) ReapTerminalBefore(_ context.Context, cutoff time.Time) (int64, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	var n int64
-	for id, e := range m.envelopes {
-		if e.Status == InboundStatusProcessed && e.UpdatedAt.Before(cutoff) {
-			delete(m.envelopes, id)
-			n++
-		}
-	}
-	return n, nil
+	return reapMatching(m.envelopes, func(e InboundEnvelope) bool {
+		return e.Status == InboundStatusProcessed && e.UpdatedAt.Before(cutoff)
+	}), nil
 }
 
 // cloneEnvelope deep-copies Payload and Headers so callers can't mutate the

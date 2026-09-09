@@ -55,7 +55,7 @@ func RegisterWASM(name string, wasm []byte) {
 }
 
 func register(name string, content []byte, worker bool) {
-	if !validName(name) {
+	if !ValidName(name) {
 		panic(fmt.Sprintf("compute: invalid asset name %q (use 1-64 lowercase letters, digits, '-' or '_')", name))
 	}
 	sum := sha256.Sum256(content)
@@ -128,11 +128,18 @@ func Manifest() map[string]Versions {
 	return out
 }
 
-func validName(name string) bool {
+// ValidName reports whether name is a legal asset name: 1-64 bytes of
+// lowercase letters, digits, '-' or '_'. It is the single grammar
+// behind both the compute asset registry (formerly its unexported
+// validName) and the runtime's split-module names (formerly
+// runtime.validModuleName), which are identical by design: a compute
+// asset is served under the same name-shape contract as a runtime
+// module URL.
+func ValidName(name string) bool {
 	if name == "" || len(name) > 64 {
 		return false
 	}
-	for i := 0; i < len(name); i++ {
+	for i := range len(name) {
 		c := name[i]
 		switch {
 		case c >= 'a' && c <= 'z':

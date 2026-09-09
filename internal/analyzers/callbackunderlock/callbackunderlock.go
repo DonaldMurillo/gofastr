@@ -160,7 +160,7 @@ func serializedOneShot(deferredRelease map[string]bool, inLoop, ownBatch map[tok
 // → r); "" when the expression is not rooted at a plain name.
 func rootIdent(e ast.Expr) string {
 	for {
-		switch x := unparen(e).(type) {
+		switch x := ast.Unparen(e).(type) {
 		case *ast.Ident:
 			return x.Name
 		case *ast.SelectorExpr:
@@ -243,7 +243,7 @@ func scanLocks(pass *analysis.Pass, body *ast.BlockStmt) ([]lockEvent, []ast.Cal
 		switch n := n.(type) {
 		case *ast.DeferStmt:
 			async[n.Call.Pos()] = true
-			if sel, ok := unparen(n.Call.Fun).(*ast.SelectorExpr); ok {
+			if sel, ok := ast.Unparen(n.Call.Fun).(*ast.SelectorExpr); ok {
 				switch sel.Sel.Name {
 				case "Unlock", "RUnlock":
 					if s, ok := pass.TypesInfo.Selections[sel]; ok {
@@ -274,7 +274,7 @@ func scanLocks(pass *analysis.Pass, body *ast.BlockStmt) ([]lockEvent, []ast.Cal
 			// deferred release fires at function exit, not here.
 			return true
 		}
-		sel, ok := unparen(call.Fun).(*ast.SelectorExpr)
+		sel, ok := ast.Unparen(call.Fun).(*ast.SelectorExpr)
 		if !ok {
 			calls = append(calls, *call)
 			return true
@@ -332,7 +332,7 @@ func heldAt(events []lockEvent, pos token.Pos) (string, bool) {
 // only from map values — rather than a named function/method.
 // Everything else is not this rule's shape.
 func funcValueCallee(pass *analysis.Pass, call *ast.CallExpr, mapDerived map[types.Object]bool) (types.Object, string, bool) {
-	switch fun := unparen(call.Fun).(type) {
+	switch fun := ast.Unparen(call.Fun).(type) {
 	case *ast.SelectorExpr:
 		s, ok := pass.TypesInfo.Selections[fun]
 		if !ok || s.Kind() != types.FieldVal {
@@ -391,7 +391,7 @@ func mapDerivedBindings(pass *analysis.Pass, body *ast.BlockStmt) map[types.Obje
 				}
 			}
 			for i, rhs := range n.Rhs {
-				idx, ok := unparen(rhs).(*ast.IndexExpr)
+				idx, ok := ast.Unparen(rhs).(*ast.IndexExpr)
 				if !ok || !isMapTyped(pass, idx.X) {
 					continue
 				}
@@ -472,14 +472,4 @@ func isCancelFunc(t types.Type) bool {
 	}
 	obj := n.Obj()
 	return obj.Pkg() != nil && obj.Pkg().Path() == "context" && obj.Name() == "CancelFunc"
-}
-
-func unparen(e ast.Expr) ast.Expr {
-	for {
-		p, ok := e.(*ast.ParenExpr)
-		if !ok {
-			return e
-		}
-		e = p.X
-	}
 }

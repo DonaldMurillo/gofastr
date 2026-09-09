@@ -46,6 +46,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/pathflow"
 	"golang.org/x/tools/go/analysis"
 )
 
@@ -138,7 +139,7 @@ func run(pass *analysis.Pass) (any, error) {
 }
 
 func checkFunc(pass *analysis.Pass, fn *ast.FuncDecl, ctx *pkgCtx) {
-	bound := bindings(pass, fn.Body)
+	bound := pathflow.Bindings(pass, fn.Body)
 	hist := bindingHistory(pass, fn.Body)
 
 	ast.Inspect(fn.Body, func(n ast.Node) bool {
@@ -164,16 +165,16 @@ func checkFunc(pass *analysis.Pass, fn *ast.FuncDecl, ctx *pkgCtx) {
 func checkCall(pass *analysis.Pass, call *ast.CallExpr, bound map[types.Object]ast.Expr, hist map[types.Object][]ast.Expr, fn *ast.FuncDecl, ctx *pkgCtx) {
 	var pathExprs []ast.Expr
 	kind := ""
-	switch qualifiedFunc(pass, call.Fun) {
+	switch pathflow.QualifiedFunc(pass, call.Fun) {
 	case "os.Mkdir", "os.MkdirAll":
-		pathExprs = []ast.Expr{argAt(call, 0)}
+		pathExprs = []ast.Expr{pathflow.ArgAt(call, 0)}
 		kind = "mkdir"
 	case "os.Create", "os.WriteFile":
-		pathExprs = []ast.Expr{argAt(call, 0)}
+		pathExprs = []ast.Expr{pathflow.ArgAt(call, 0)}
 		kind = "create"
 	case "os.OpenFile":
-		if hasWriteFlag(argAt(call, 1)) {
-			pathExprs = []ast.Expr{argAt(call, 0)}
+		if pathflow.HasWriteFlag(pathflow.ArgAt(call, 1)) {
+			pathExprs = []ast.Expr{pathflow.ArgAt(call, 0)}
 			kind = "create"
 		}
 	case "os/exec.Command", "os/exec.CommandContext":
@@ -213,7 +214,7 @@ func tainted(pass *analysis.Pass, e ast.Expr, bound map[types.Object]ast.Expr, h
 		return false
 	}
 	// Through locals first: tmpBin := devServerBinaryPath(rt).
-	e = resolve(pass, e, bound, 0)
+	e = pathflow.Resolve(pass, e, bound, 0)
 	// Field reads: the kiln adapter registry's Dir values.
 	if sel, ok := e.(*ast.SelectorExpr); ok {
 		for _, p := range ctx.fieldProv[sel.Sel.Name] {
@@ -226,7 +227,7 @@ func tainted(pass *analysis.Pass, e ast.Expr, bound map[types.Object]ast.Expr, h
 	if call, ok := e.(*ast.CallExpr); ok {
 		if id, ok := call.Fun.(*ast.Ident); ok {
 			if decl, ok := ctx.funcs[id.Name]; ok && decl.Body != nil {
-				hBound := bindings(pass, decl.Body)
+				hBound := pathflow.Bindings(pass, decl.Body)
 				hHist := bindingHistory(pass, decl.Body)
 				found := false
 				ast.Inspect(decl.Body, func(n ast.Node) bool {
@@ -249,31 +250,13 @@ func tainted(pass *analysis.Pass, e ast.Expr, bound map[types.Object]ast.Expr, h
 	return tempRootedPredictable(pass, e, fn, ctx, depth)
 }
 
-// resolve follows single-value local bindings, keeping the last
-// binding in source order.
-func resolve(pass *analysis.Pass, e ast.Expr, bound map[types.Object]ast.Expr, depth int) ast.Expr {
-	for depth < 8 {
-		id, ok := e.(*ast.Ident)
-		if !ok {
-			return e
-		}
-		b, ok := bound[pass.TypesInfo.ObjectOf(id)]
-		if !ok {
-			return e
-		}
-		e = b
-		depth++
-	}
-	return e
-}
-
 // tempRootedPredictable resolves e through fn's locals and asks
 // tempRootedPredictableWith.
 func tempRootedPredictable(pass *analysis.Pass, e ast.Expr, fn *ast.FuncDecl, ctx *pkgCtx, depth int) bool {
 	var bound map[types.Object]ast.Expr
 	var hist map[types.Object][]ast.Expr
 	if fn != nil && fn.Body != nil {
-		bound = bindings(pass, fn.Body)
+		bound = pathflow.Bindings(pass, fn.Body)
 		hist = bindingHistory(pass, fn.Body)
 	}
 	return tempRootedPredictableWith(pass, e, bound, hist, fn, ctx, depth)
@@ -293,7 +276,7 @@ func tempRootedPredictableWith(pass *analysis.Pass, e ast.Expr, bound map[types.
 			case *ast.CallExpr:
 				tail = x.Args[1:]
 			case *ast.BinaryExpr:
-				ops := concatOperands(x, nil)
+				ops := pathflow.ConcatOperands(x, nil)
 				tail = ops[1:]
 			}
 			if len(tail) == 0 {
@@ -325,7 +308,7 @@ func tempRootedPredictableWith(pass *analysis.Pass, e ast.Expr, bound map[types.
 func tempRootedShape(pass *analysis.Pass, e ast.Expr) bool {
 	switch x := e.(type) {
 	case *ast.CallExpr:
-		if qualifiedFunc(pass, x.Fun) != "path/filepath.Join" || len(x.Args) < 1 {
+		if pathflow.QualifiedFunc(pass, x.Fun) != "path/filepath.Join" || len(x.Args) < 1 {
 			return false
 		}
 		return isTempRootExpr(pass, x.Args[0])
@@ -333,7 +316,7 @@ func tempRootedShape(pass *analysis.Pass, e ast.Expr) bool {
 		if x.Op != token.ADD {
 			return false
 		}
-		ops := concatOperands(x, nil)
+		ops := pathflow.ConcatOperands(x, nil)
 		return len(ops) > 1 && isTempRootExpr(pass, ops[0])
 	case *ast.BasicLit:
 		if x.Kind != token.STRING {
@@ -347,7 +330,7 @@ func tempRootedShape(pass *analysis.Pass, e ast.Expr) bool {
 
 // isTempRootExpr matches os.TempDir() and the "/tmp" literal.
 func isTempRootExpr(pass *analysis.Pass, e ast.Expr) bool {
-	if call, ok := e.(*ast.CallExpr); ok && qualifiedFunc(pass, call.Fun) == "os.TempDir" {
+	if call, ok := e.(*ast.CallExpr); ok && pathflow.QualifiedFunc(pass, call.Fun) == "os.TempDir" {
 		return true
 	}
 	if lit, ok := e.(*ast.BasicLit); ok && lit.Kind == token.STRING {
@@ -375,14 +358,14 @@ func hasEntropy(pass *analysis.Pass, e ast.Expr, bound map[types.Object]ast.Expr
 		}
 		switch n := x.(type) {
 		case *ast.CallExpr:
-			q := qualifiedFunc(pass, n.Fun)
+			q := pathflow.QualifiedFunc(pass, n.Fun)
 			if q == "os.MkdirTemp" || q == "os.CreateTemp" ||
 				strings.HasPrefix(q, "crypto/rand.") {
 				found = true
 				return
 			}
 			if sel, ok := n.Fun.(*ast.SelectorExpr); ok && sel.Sel.Name == "TempDir" &&
-				qualifiedFunc(pass, n.Fun) != "os.TempDir" {
+				pathflow.QualifiedFunc(pass, n.Fun) != "os.TempDir" {
 				found = true // t.TempDir()
 				return
 			}
@@ -453,14 +436,14 @@ func bodyHasEntropy(pass *analysis.Pass, body *ast.BlockStmt, ctx *pkgCtx, depth
 			return false
 		}
 		if call, ok := n.(*ast.CallExpr); ok {
-			q := qualifiedFunc(pass, call.Fun)
+			q := pathflow.QualifiedFunc(pass, call.Fun)
 			if q == "os.MkdirTemp" || q == "os.CreateTemp" ||
 				strings.HasPrefix(q, "crypto/rand.") {
 				found = true
 				return false
 			}
 			if sel, ok := call.Fun.(*ast.SelectorExpr); ok && sel.Sel.Name == "TempDir" &&
-				qualifiedFunc(pass, call.Fun) != "os.TempDir" {
+				pathflow.QualifiedFunc(pass, call.Fun) != "os.TempDir" {
 				found = true
 				return false
 			}
@@ -468,26 +451,6 @@ func bodyHasEntropy(pass *analysis.Pass, body *ast.BlockStmt, ctx *pkgCtx, depth
 		return !found
 	})
 	return found
-}
-
-// bindings maps each local to the expression it was last bound to.
-func bindings(pass *analysis.Pass, body *ast.BlockStmt) map[types.Object]ast.Expr {
-	bound := map[types.Object]ast.Expr{}
-	ast.Inspect(body, func(n ast.Node) bool {
-		st, ok := n.(*ast.AssignStmt)
-		if !ok || len(st.Rhs) != 1 {
-			return true
-		}
-		for _, lhs := range st.Lhs {
-			if id, ok := lhs.(*ast.Ident); ok && id.Name != "_" {
-				if obj := pass.TypesInfo.ObjectOf(id); obj != nil {
-					bound[obj] = st.Rhs[0]
-				}
-			}
-		}
-		return true
-	})
-	return bound
 }
 
 // bindingHistory maps each local to EVERY expression it was ever
@@ -509,54 +472,4 @@ func bindingHistory(pass *analysis.Pass, body *ast.BlockStmt) map[types.Object][
 		return true
 	})
 	return hist
-}
-
-// hasWriteFlag reports whether the os.OpenFile flag expression
-// contains any of the write/create bits.
-func hasWriteFlag(e ast.Expr) bool {
-	found := false
-	ast.Inspect(e, func(n ast.Node) bool {
-		if sel, ok := n.(*ast.SelectorExpr); ok {
-			switch sel.Sel.Name {
-			case "O_CREATE", "O_WRONLY", "O_RDWR", "O_APPEND", "O_TRUNC":
-				found = true
-			}
-		}
-		return !found
-	})
-	return found
-}
-
-// qualifiedFunc renders a selector callee as "importpath.Func".
-func qualifiedFunc(pass *analysis.Pass, fun ast.Expr) string {
-	sel, ok := fun.(*ast.SelectorExpr)
-	if !ok {
-		return ""
-	}
-	x, ok := sel.X.(*ast.Ident)
-	if !ok {
-		return ""
-	}
-	pn, ok := pass.TypesInfo.ObjectOf(x).(*types.PkgName)
-	if !ok {
-		return ""
-	}
-	return pn.Imported().Path() + "." + sel.Sel.Name
-}
-
-// concatOperands flattens a left-associated ADD chain, leftmost first.
-func concatOperands(be *ast.BinaryExpr, out []ast.Expr) []ast.Expr {
-	if inner, ok := be.X.(*ast.BinaryExpr); ok && inner.Op == token.ADD {
-		out = concatOperands(inner, out)
-	} else {
-		out = append(out, be.X)
-	}
-	return append(out, be.Y)
-}
-
-func argAt(call *ast.CallExpr, i int) ast.Expr {
-	if len(call.Args) > i {
-		return call.Args[i]
-	}
-	return nil
 }

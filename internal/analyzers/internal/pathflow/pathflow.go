@@ -17,6 +17,7 @@ import (
 	"go/types"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/astx"
 	"golang.org/x/tools/go/analysis"
 )
 
@@ -197,7 +198,7 @@ func RootyRoot(pass *analysis.Pass, e ast.Expr, bound map[types.Object]ast.Expr,
 // rooty param/field with caller data concatenated after it — the same
 // lexical-only containment a Join spells.
 func concatUnderRooty(pass *analysis.Pass, be *ast.BinaryExpr, bound map[types.Object]ast.Expr, params map[types.Object]bool) bool {
-	ops := concatOperands(be, nil)
+	ops := ConcatOperands(be, nil)
 	if len(ops) < 2 {
 		return false
 	}
@@ -216,10 +217,12 @@ func concatUnderRooty(pass *analysis.Pass, be *ast.BinaryExpr, bound map[types.O
 	return false
 }
 
-// concatOperands flattens a left-associated ADD chain, leftmost first.
-func concatOperands(be *ast.BinaryExpr, out []ast.Expr) []ast.Expr {
+// ConcatOperands flattens a left-associated ADD chain, leftmost
+// first. Exported for worldreadable and fixedtmp, which carried
+// identical private copies.
+func ConcatOperands(be *ast.BinaryExpr, out []ast.Expr) []ast.Expr {
 	if inner, ok := be.X.(*ast.BinaryExpr); ok && inner.Op == token.ADD {
-		out = concatOperands(inner, out)
+		out = ConcatOperands(inner, out)
 	} else {
 		out = append(out, be.X)
 	}
@@ -379,7 +382,7 @@ func CalleeDecl(pass *analysis.Pass, fun ast.Expr, pkgFuncs map[string][]*ast.Fu
 		}
 		var match *ast.FuncDecl
 		for _, d := range pkgFuncs[f.Sel.Name] {
-			if d.Recv == nil || recvBaseName(d) != recv {
+			if d.Recv == nil || astx.RecvBaseName(d) != recv {
 				continue
 			}
 			if match != nil {
@@ -407,25 +410,6 @@ func receiverTypeName(pass *analysis.Pass, x ast.Expr) string {
 		return ""
 	}
 	return named.Obj().Name()
-}
-
-// recvBaseName returns the identifier at the base of decl's receiver
-// type (T or *T), or "".
-func recvBaseName(decl *ast.FuncDecl) string {
-	if decl.Recv == nil || len(decl.Recv.List) == 0 {
-		return ""
-	}
-	switch t := decl.Recv.List[0].Type.(type) {
-	case *ast.Ident:
-		return t.Name
-	case *ast.StarExpr:
-		if id, ok := t.X.(*ast.Ident); ok {
-			return id.Name
-		}
-		return ""
-	default:
-		return ""
-	}
 }
 
 // MentionsParam reports whether e's assembly involves one of the

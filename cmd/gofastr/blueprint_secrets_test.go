@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/core/dotenv"
+	"github.com/DonaldMurillo/gofastr/internal/dsnredact"
 )
 
 // Secrets from the blueprint (JWT signing key, DB credentials, seed admin
@@ -158,8 +159,8 @@ func TestDSNRedactionFailsClosed(t *testing.T) {
 		},
 	}
 	for name, c := range cases {
-		if !dsnHasSecret(c.dsn) {
-			t.Errorf("%s: dsnHasSecret(%q) = false, want true", name, c.dsn)
+		if !dsnredact.HasSecret(c.dsn) {
+			t.Errorf("%s: dsnredact.HasSecret(%q) = false, want true", name, c.dsn)
 		}
 		if got := redactDSN(c.dsn); got != c.redacted {
 			t.Errorf("%s: redactDSN(%q) = %q, want %q", name, c.dsn, got, c.redacted)

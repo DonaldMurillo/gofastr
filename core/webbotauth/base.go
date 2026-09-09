@@ -133,6 +133,32 @@ func buildSignatureBase(req *requestCtx, covered []sfItem, params sfParams) (str
 	if req == nil {
 		return "", fmt.Errorf("no request context for signature base")
 	}
+	return buildSignatureBaseFor(covered, params, func(comp sfItem) (string, error) {
+		return componentValue(req, comp)
+	})
+}
+
+// buildResponseSignatureBase is the response-side variant used to
+// verify a directory's possession proof (draft Appendix B): components
+// resolve against the response, and the req flag pulls from the request
+// that fetched the directory.
+func buildResponseSignatureBase(resp *responseCtx, covered []sfItem, params sfParams) (string, error) {
+	if resp == nil {
+		return "", fmt.Errorf("no response context for signature base")
+	}
+	return buildSignatureBaseFor(covered, params, func(comp sfItem) (string, error) {
+		return responseComponentValue(resp, comp)
+	})
+}
+
+// buildSignatureBaseFor creates the signature base (RFC 9421 section
+// 2.5) over the ordered covered components and the signature
+// parameters, resolving each component through resolve. Every component
+// identifier must resolve against the message or the whole base fails.
+// It is the shared body of buildSignatureBase and
+// buildResponseSignatureBase, which were verbatim copies differing only
+// in the component resolver they called.
+func buildSignatureBaseFor(covered []sfItem, params sfParams, resolve func(sfItem) (string, error)) (string, error) {
 	var b strings.Builder
 	seen := make(map[string]bool, len(covered))
 	for _, comp := range covered {
@@ -147,7 +173,7 @@ func buildSignatureBase(req *requestCtx, covered []sfItem, params sfParams) (str
 		if comp.str == "@signature-params" {
 			return "", fmt.Errorf("@signature-params must not be a covered component")
 		}
-		val, err := componentValue(req, comp)
+		val, err := resolve(comp)
 		if err != nil {
 			return "", err
 		}
@@ -159,48 +185,6 @@ func buildSignatureBase(req *requestCtx, covered []sfItem, params sfParams) (str
 	// The signature parameters line is always last and holds the
 	// covered identifiers in the same order as the base, plus the
 	// signature parameters as inner-list parameters in sender order.
-	b.WriteString("\"@signature-params\": ")
-	b.WriteString(serializeInnerList(sfInnerList{items: covered, params: params}))
-	base := b.String()
-	for i := range len(base) {
-		if base[i] > 0x7f {
-			return "", fmt.Errorf("signature base contains non-ASCII bytes")
-		}
-	}
-	return base, nil
-}
-
-// buildResponseSignatureBase is the response-side variant used to
-// verify a directory's possession proof (draft Appendix B): components
-// resolve against the response, and the req flag pulls from the request
-// that fetched the directory.
-func buildResponseSignatureBase(resp *responseCtx, covered []sfItem, params sfParams) (string, error) {
-	if resp == nil {
-		return "", fmt.Errorf("no response context for signature base")
-	}
-	var b strings.Builder
-	seen := make(map[string]bool, len(covered))
-	for _, comp := range covered {
-		if comp.typ != sfString {
-			return "", fmt.Errorf("covered component is not a string identifier")
-		}
-		id := serializeItem(comp)
-		if seen[id] {
-			return "", fmt.Errorf("duplicate covered component %s", id)
-		}
-		seen[id] = true
-		if comp.str == "@signature-params" {
-			return "", fmt.Errorf("@signature-params must not be a covered component")
-		}
-		val, err := responseComponentValue(resp, comp)
-		if err != nil {
-			return "", err
-		}
-		b.WriteString(id)
-		b.WriteString(": ")
-		b.WriteString(val)
-		b.WriteString("\n")
-	}
 	b.WriteString("\"@signature-params\": ")
 	b.WriteString(serializeInnerList(sfInnerList{items: covered, params: params}))
 	base := b.String()

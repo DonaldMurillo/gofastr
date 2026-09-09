@@ -262,45 +262,44 @@ func (ch *CrudHandler) crossOwnerReadGranted(ctx context.Context) bool {
 //
 // Uses PostgreSQL-style $N placeholders, matching ApplyTenantScope.
 func (ch *CrudHandler) ApplyOwnerScope(qb *query.QueryBuilder, r *http.Request) {
-	field := ch.Entity.Config.Scope.OwnerField
-	if field == "" || owner.IsCrossOwner(r.Context()) || ch.crossOwnerReadGranted(r.Context()) {
-		return
-	}
-	if id, ok := owner.Get(r.Context()); ok {
-		qb.Where(field+" = $1", id)
-	}
+	applyOwnerScope(ch, qb, r, true)
 }
 
 // ApplyOwnerScopeCount mirrors ApplyOwnerScope for count queries.
 func (ch *CrudHandler) ApplyOwnerScopeCount(cb *query.CountBuilder, r *http.Request) {
-	field := ch.Entity.Config.Scope.OwnerField
-	if field == "" || owner.IsCrossOwner(r.Context()) || ch.crossOwnerReadGranted(r.Context()) {
-		return
-	}
-	if id, ok := owner.Get(r.Context()); ok {
-		cb.Where(field+" = $1", id)
-	}
+	applyOwnerScope(ch, cb, r, true)
 }
 
-// ApplyOwnerScopeUpdate mirrors ApplyOwnerScope for UPDATE queries.
+// ApplyOwnerScopeUpdate mirrors ApplyOwnerScope for UPDATE queries. Unlike
+// the read pair it never consults CrossOwnerRead: writes stay owner-scoped
+// even for callers whose cross-owner read was granted.
 func (ch *CrudHandler) ApplyOwnerScopeUpdate(ub *query.UpdateBuilder, r *http.Request) {
-	field := ch.Entity.Config.Scope.OwnerField
-	if field == "" || owner.IsCrossOwner(r.Context()) {
-		return
-	}
-	if id, ok := owner.Get(r.Context()); ok {
-		ub.Where(field+" = $1", id)
-	}
+	applyOwnerScope(ch, ub, r, false)
 }
 
-// ApplyOwnerScopeDelete mirrors ApplyOwnerScope for DELETE queries.
+// ApplyOwnerScopeDelete mirrors ApplyOwnerScope for DELETE queries. Like
+// the update pair it never consults CrossOwnerRead.
 func (ch *CrudHandler) ApplyOwnerScopeDelete(db *query.DeleteBuilder, r *http.Request) {
+	applyOwnerScope(ch, db, r, false)
+}
+
+// applyOwnerScope is the single body behind ApplyOwnerScope,
+// ApplyOwnerScopeCount, ApplyOwnerScopeUpdate, and ApplyOwnerScopeDelete,
+// which were verbatim copies of each other in two pairs (read and write)
+// differing only in the builder type they drove; B is any of the
+// *query builders whose Where returns the builder itself. read selects
+// the read pair's extra escape: a caller holding the entity's
+// CrossOwnerRead permission lifts the filter on reads only.
+func applyOwnerScope[B interface{ Where(string, ...any) B }](ch *CrudHandler, b B, r *http.Request, read bool) {
 	field := ch.Entity.Config.Scope.OwnerField
 	if field == "" || owner.IsCrossOwner(r.Context()) {
 		return
 	}
+	if read && ch.crossOwnerReadGranted(r.Context()) {
+		return
+	}
 	if id, ok := owner.Get(r.Context()); ok {
-		db.Where(field+" = $1", id)
+		b.Where(field+" = $1", id)
 	}
 }
 

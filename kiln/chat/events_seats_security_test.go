@@ -16,9 +16,9 @@ package chat
 // Surfaces: kiln/live/sse.go::ServeSSE :69-111 — no authentication and
 // no seat accounting; the handler loops on r.Context() for as long as
 // the peer holds the connection. kiln/live/sse.go::Broadcaster.
-// Subscribe :37-52 — unbounded subs map. Mount: kiln/chat/server.go:90
-// wraps /.kiln/events in readGuard, a CSRF gate only — Origin-less
-// peers (any local process, any scripted client) pass untouched.
+// wraps /.kiln/events in sameOriginOnly, a CSRF/Host gate only —
+// Origin-less peers (any local process, any scripted client) pass
+// untouched.
 // cmd/kiln/main.go:119-124 documents the posture: --addr 0.0.0.0:8765
 // deliberately exposes the unauthenticated tool API to the network,
 // and /.kiln/events rides the same listener.
@@ -52,10 +52,10 @@ import (
 )
 
 // TestKilnEventsSeatCapped: 17 concurrent anonymous GET /.kiln/events
-// (no Origin header — the caller class readGuard is documented to pass).
+// (no Origin header — the caller class the origin gate is documented to pass).
 // At most 16 may be admitted; the 17th must be refused at connect or
 // displace the oldest. A cross-site control leg proves the requests run
-// through the mounted readGuard, not around it.
+// through the mounted origin gate, not around it.
 func TestKilnEventsSeatCapped(t *testing.T) {
 	d, cleanup, err := db.EphemeralSQLite("kiln-events-seats-red")
 	if err != nil {
@@ -135,7 +135,7 @@ func TestKilnEventsSeatCapped(t *testing.T) {
 
 	// Control leg: the CSRF gate on the same surface still refuses a
 	// cross-site browser peer, so the admissions above ran through the
-	// mounted readGuard, not around it.
+	// mounted origin gate, not around it.
 	ctrlReq, cerr := http.NewRequestWithContext(ctx, http.MethodGet, ts.URL+"/.kiln/events", nil)
 	if cerr != nil {
 		t.Fatal("setup broken: control request:", cerr)
@@ -148,7 +148,7 @@ func TestKilnEventsSeatCapped(t *testing.T) {
 	}
 	cresp.Body.Close()
 	if cresp.StatusCode != http.StatusForbidden {
-		t.Fatalf("setup broken: cross-site GET /.kiln/events = %d, want 403 (readGuard leg)", cresp.StatusCode)
+		t.Fatalf("setup broken: cross-site GET /.kiln/events = %d, want 403 (origin-gate leg)", cresp.StatusCode)
 	}
 
 	// Cancel the shared context and bound the join: every held stream

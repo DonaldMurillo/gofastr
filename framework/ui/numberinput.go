@@ -156,18 +156,7 @@ func NumberInput(cfg NumberInputConfig) render.HTML {
 			render.Text(cfg.Label)),
 		row,
 	}
-	if cfg.Error != "" {
-		children = append(children, html.Paragraph(html.TextConfig{
-			ID:         id + "-error",
-			Class:      "ui-number-input__error",
-			ExtraAttrs: html.Attrs{"role": "alert"},
-		}, render.Text(cfg.Error)))
-	} else if cfg.Help != "" {
-		children = append(children, html.Paragraph(html.TextConfig{
-			ID:    id + "-help",
-			Class: "ui-number-input__help",
-		}, render.Text(cfg.Help)))
-	}
+	children = append(children, fieldMessage(id, "ui-number-input", cfg.Error, cfg.Help)...)
 
 	return numberInputStyle.WrapHTML(render.Tag("div",
 		map[string]string{"class": cls}, children...))

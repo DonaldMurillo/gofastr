@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"strconv"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
@@ -151,18 +152,7 @@ func FileUpload(cfg FileUploadConfig) render.HTML {
 		html.Span(html.TextConfig{Class: "ui-fileupload__label"}, render.Text(cfg.Label)),
 		zone,
 	}
-	if cfg.Error != "" {
-		children = append(children, html.Paragraph(html.TextConfig{
-			ID:         id + "-error",
-			Class:      "ui-fileupload__error",
-			ExtraAttrs: html.Attrs{"role": "alert"},
-		}, render.Text(cfg.Error)))
-	} else if help != "" {
-		children = append(children, html.Paragraph(html.TextConfig{
-			ID:    id + "-help",
-			Class: "ui-fileupload__help",
-		}, render.Text(help)))
-	}
+	children = append(children, fieldMessage(id, "ui-fileupload", cfg.Error, help)...)
 
 	attrs := html.SafeExtraAttrs(cfg.ExtraAttrs, "for")
 	if attrs == nil {
@@ -194,26 +184,7 @@ func helpText(cfg FileUploadConfig) string {
 		bits = append(bits, cfg.Help)
 	}
 	if cfg.MaxSizeMB > 0 {
-		bits = append(bits, i18nui.TVars(ctx, i18nui.KeyFileMaxSize, map[string]string{"n": itoa(cfg.MaxSizeMB)}))
+		bits = append(bits, i18nui.TVars(ctx, i18nui.KeyFileMaxSize, map[string]string{"n": strconv.Itoa(cfg.MaxSizeMB)}))
 	}
 	return strings.Join(bits, " · ")
-}
-
-func itoa(n int) string {
-	if n == 0 {
-		return "0"
-	}
-	neg := n < 0
-	if neg {
-		n = -n
-	}
-	digits := []byte{}
-	for n > 0 {
-		digits = append([]byte{byte('0' + n%10)}, digits...)
-		n /= 10
-	}
-	if neg {
-		return "-" + string(digits)
-	}
-	return string(digits)
 }

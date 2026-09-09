@@ -6,7 +6,9 @@ import (
 	"net/http/httptest"
 	"sync"
 	"testing"
+	"time"
 
+	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
 	"github.com/chromedp/chromedp"
 )
 
@@ -180,7 +182,7 @@ func newChainSite(t *testing.T) *chainSite {
 // the origin path.
 func TestSiblingNavSwapsInnermostLayer(t *testing.T) {
 	site := newChainSite(t)
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 
 	var headerKept, sidebarKept bool
 	if err := chromedp.Run(ctx,
@@ -209,7 +211,7 @@ func TestSiblingNavSwapsInnermostLayer(t *testing.T) {
 // must keep the site header, drop the docs layer, and swap at l:site.
 func TestMidChainNavRendersDelta(t *testing.T) {
 	site := newChainSite(t)
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 
 	var headerKept bool
 	var sidebarCount int
@@ -235,7 +237,7 @@ func TestMidChainNavRendersDelta(t *testing.T) {
 // Chains with no shared root swap the whole shell via a full fetch.
 func TestCrossChainNavSwapsShell(t *testing.T) {
 	site := newChainSite(t)
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 
 	var appVisible bool
 	var siteHeaderCount int
@@ -268,7 +270,7 @@ func TestCrossChainNavSwapsShell(t *testing.T) {
 // nav was treated as cross-layout and rebuilt the shell.
 func TestDynamicRouteResolvesChain(t *testing.T) {
 	site := newChainSite(t)
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 
 	var headerKept bool
 	if err := chromedp.Run(ctx,
@@ -295,7 +297,7 @@ func TestDynamicRouteResolvesChain(t *testing.T) {
 // with no refetch and no duplicated chrome.
 func TestCachedRevisitReplaysAtLayer(t *testing.T) {
 	site := newChainSite(t)
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 
 	var sidebarCount, mainCount int
 	var aVisible bool
@@ -335,7 +337,7 @@ func TestCachedRevisitReplaysAtLayer(t *testing.T) {
 // plain page's content.
 func TestChainToPlainPageDropsShell(t *testing.T) {
 	site := newChainSite(t)
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 
 	var headerCount, keyCount int
 	if err := chromedp.Run(ctx,
@@ -398,7 +400,7 @@ func TestSwapEchoMismatchRecovers(t *testing.T) {
 	})
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(srv.URL+"/x"),

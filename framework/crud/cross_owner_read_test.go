@@ -83,6 +83,43 @@ func reqWithRolesOnly(r *http.Request, uid string) *http.Request {
 	return r.WithContext(ctx)
 }
 
+// assertCrossOwnerHTTPNotGranted runs the shared two-vector HTTP check: client
+// headers cannot enable cross-owner reads, and unknown query parameters fail
+// closed before a scan. It replaces the duplicate checks in
+// cross_owner_read_test.go and cross_owner_test.go.
+func assertCrossOwnerHTTPNotGranted(t *testing.T, ch *CrudHandler, uid, route string, spoofHeaders [][2]string, queryRoute, ownID, foreignID, foreignLabel string) {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodGet, route, nil)
+	for _, header := range spoofHeaders {
+		req.Header.Set(header[0], header[1])
+	}
+	req = withTestUser(req, uid)
+	rec := httptest.NewRecorder()
+	ch.List()(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("header-spoof List status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	body := rec.Body.String()
+	if strings.Contains(body, foreignID) || strings.Contains(body, foreignLabel) {
+		t.Fatalf("spoofed grant leaked foreign row: %s", body)
+	}
+	if !strings.Contains(body, ownID) {
+		t.Fatalf("HTTP List() did not return the authenticated owner's row: %s", body)
+	}
+
+	req2 := httptest.NewRequest(http.MethodGet, queryRoute, nil)
+	req2 = withTestUser(req2, uid)
+	rec2 := httptest.NewRecorder()
+	ch.List()(rec2, req2)
+	if rec2.Code != http.StatusBadRequest {
+		t.Fatalf("query-param escape want 400 (strict), got %d body=%s", rec2.Code, rec2.Body.String())
+	}
+	if b := rec2.Body.String(); strings.Contains(b, foreignID) || strings.Contains(b, foreignLabel) {
+		t.Fatalf("rejected request leaked foreign row: %s", b)
+	}
+}
+
 // TestCrossOwnerReadHTTPCannotSpoof proves client-supplied headers/params
 // naming the permission never widen the scope without a server-side grant.
 // Two vectors: a spoof carried in trusted-looking HEADERS still runs but
@@ -91,38 +128,10 @@ func reqWithRolesOnly(r *http.Request, uid string) *http.Request {
 func TestCrossOwnerReadHTTPCannotSpoof(t *testing.T) {
 	installOwnerExtractor(t)
 	ch, _ := setupCrossOwnerReadHandler(t)
-
-	// Vector 1: header spoof. The request runs; owner scope holds.
-	req := httptest.NewRequest(http.MethodGet, "/api/ctickets", nil)
-	req.Header.Set("X-Cross-Owner-Read", "tickets:read:all")
-	req.Header.Set("X-Role", "staff")
-	req = withTestUser(req, "alice") // no policy/roles in context
-	rec := httptest.NewRecorder()
-	ch.List()(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("header-spoof List status=%d body=%s", rec.Code, rec.Body.String())
-	}
-	body := rec.Body.String()
-	if strings.Contains(body, "t-b") || strings.Contains(body, "Beta") {
-		t.Fatalf("spoofed grant leaked bob's row: %s", body)
-	}
-	if !strings.Contains(body, "t-a") {
-		t.Fatalf("alice's own row missing: %s", body)
-	}
-
-	// Vector 2: query-param spoof. Strict filter parsing fails closed with
-	// a 400; the response body can never contain bob's row.
-	req2 := httptest.NewRequest(http.MethodGet, "/api/ctickets?cross_owner_read=tickets:read:all&role=staff", nil)
-	req2 = withTestUser(req2, "alice")
-	rec2 := httptest.NewRecorder()
-	ch.List()(rec2, req2)
-	if rec2.Code != http.StatusBadRequest {
-		t.Fatalf("query-param spoof want 400 (strict), got %d body=%s", rec2.Code, rec2.Body.String())
-	}
-	if b := rec2.Body.String(); strings.Contains(b, "t-b") || strings.Contains(b, "Beta") {
-		t.Fatalf("rejected request leaked bob's row: %s", b)
-	}
+	assertCrossOwnerHTTPNotGranted(t, ch, "alice", "/api/ctickets",
+		[][2]string{{"X-Cross-Owner-Read", "tickets:read:all"}, {"X-Role", "staff"}},
+		"/api/ctickets?cross_owner_read=tickets:read:all&role=staff",
+		"t-a", "t-b", "Beta")
 }
 
 // TestCrossOwnerReadNoPolicyFailsClosed: knob set, but ctx has roles

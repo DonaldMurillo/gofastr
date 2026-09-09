@@ -56,8 +56,8 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
-	"strings"
 
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/pathflow"
 	"golang.org/x/tools/go/analysis"
 )
 
@@ -84,7 +84,7 @@ func run(pass *analysis.Pass) (any, error) {
 	helpers := waitDelayHelpers(pass)
 
 	for _, f := range pass.Files {
-		if isTestFile(pass, f) {
+		if pathflow.IsTestFile(pass, f) {
 			// A test that hangs on a stray grandchild fails the test
 			// run loudly; it is not a shipped hang.
 			continue
@@ -225,10 +225,10 @@ func checkBody(pass *analysis.Pass, helpers map[types.Object]map[int]bool, body 
 				}
 			}
 		case *ast.CallExpr:
-			sel, ok := unparen(n.Fun).(*ast.SelectorExpr)
+			sel, ok := ast.Unparen(n.Fun).(*ast.SelectorExpr)
 			if !ok {
 				// A same-package helper taking the Cmd positionally.
-				if id, ok := unparen(n.Fun).(*ast.Ident); ok {
+				if id, ok := ast.Unparen(n.Fun).(*ast.Ident); ok {
 					if callee, ok := pass.TypesInfo.ObjectOf(id).(*types.Func); ok {
 						if flagged, ok := helpers[callee]; ok {
 							for i, arg := range n.Args {
@@ -320,7 +320,7 @@ func stdoutCaptures(pass *analysis.Pass, rhs ast.Expr) bool {
 
 // localOf: e is an identifier naming a local variable.
 func localOf(pass *analysis.Pass, e ast.Expr) types.Object {
-	id, ok := unparen(e).(*ast.Ident)
+	id, ok := ast.Unparen(e).(*ast.Ident)
 	if !ok {
 		return nil
 	}
@@ -332,11 +332,11 @@ func localOf(pass *analysis.Pass, e ast.Expr) types.Object {
 
 // isCommandContextCall: e is a call to os/exec.CommandContext.
 func isCommandContextCall(pass *analysis.Pass, e ast.Expr) bool {
-	call, ok := unparen(e).(*ast.CallExpr)
+	call, ok := ast.Unparen(e).(*ast.CallExpr)
 	if !ok {
 		return false
 	}
-	sel, ok := unparen(call.Fun).(*ast.SelectorExpr)
+	sel, ok := ast.Unparen(call.Fun).(*ast.SelectorExpr)
 	if !ok || sel.Sel.Name != "CommandContext" {
 		return false
 	}
@@ -405,18 +405,4 @@ func assignsWaitDelayOn(pass *analysis.Pass, body *ast.BlockStmt, obj types.Obje
 		return true
 	})
 	return found
-}
-
-func isTestFile(pass *analysis.Pass, f *ast.File) bool {
-	return strings.HasSuffix(pass.Fset.Position(f.Pos()).Filename, "_test.go")
-}
-
-func unparen(e ast.Expr) ast.Expr {
-	for {
-		p, ok := e.(*ast.ParenExpr)
-		if !ok {
-			return e
-		}
-		e = p.X
-	}
 }

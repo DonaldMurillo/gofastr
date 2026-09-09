@@ -6,6 +6,8 @@ import (
 	"log/slog"
 	"runtime/debug"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
 // ErrorReport is the payload handed to an ErrorReporter: the error/panic
@@ -69,13 +71,13 @@ func (s SlogErrorReporter) Report(r ErrorReport) {
 		ctx = context.Background()
 	}
 	attrs := []slog.Attr{
-		slog.String("panic", scrubControlBytes(r.Error)),
-		slog.String("method", scrubControlBytes(r.Method)),
-		slog.String("path", scrubControlBytes(r.Path)),
-		slog.String("request_id", scrubControlBytes(r.RequestID)),
+		slog.String("panic", textsafe.ScrubControlBytes(r.Error)),
+		slog.String("method", textsafe.ScrubControlBytes(r.Method)),
+		slog.String("path", textsafe.ScrubControlBytes(r.Path)),
+		slog.String("request_id", textsafe.ScrubControlBytes(r.RequestID)),
 	}
 	if r.Route != "" {
-		attrs = append(attrs, slog.String("route", scrubControlBytes(r.Route)))
+		attrs = append(attrs, slog.String("route", textsafe.ScrubControlBytes(r.Route)))
 	}
 	if r.Stack != "" {
 		attrs = append(attrs, slog.String("stack", r.Stack))
@@ -135,5 +137,5 @@ func (h *HTTPErrorReporter) Close() error {
 // reports bounded. App code reporting a non-panic error can attach a stack so
 // the receiver gets a traceback without a panic having occurred.
 func CaptureStack() string {
-	return truncateString(string(debug.Stack()), maxStackLen)
+	return textsafe.Truncate(string(debug.Stack()), maxStackLen)
 }

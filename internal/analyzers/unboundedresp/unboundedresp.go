@@ -39,6 +39,7 @@ import (
 	"go/types"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/astx"
 	"golang.org/x/tools/go/analysis"
 )
 
@@ -148,7 +149,7 @@ func reportIfUnbounded(pass *analysis.Pass, f *ast.File, call *ast.CallExpr, res
 	if fn == nil {
 		return
 	}
-	if funcBoundsBody(pass, fn, resp) {
+	if wrapsInLimiter(pass, fn.Body, resp) {
 		return
 	}
 	// One hop: a same-package call passing this response's body (or
@@ -157,32 +158,6 @@ func reportIfUnbounded(pass *analysis.Pass, f *ast.File, call *ast.CallExpr, res
 		return
 	}
 	pass.Reportf(call.Pos(), readMsg)
-}
-
-// funcBoundsBody reports whether fn wraps resp's Body (or the whole
-// resp) in io.LimitReader / http.MaxBytesReader.
-func funcBoundsBody(pass *analysis.Pass, fn *ast.FuncDecl, resp types.Object) bool {
-	bounded := false
-	ast.Inspect(fn.Body, func(n ast.Node) bool {
-		if bounded {
-			return false
-		}
-		call, ok := n.(*ast.CallExpr)
-		if !ok {
-			return true
-		}
-		switch qualified(pass, call.Fun) {
-		case "io.LimitReader", "http.MaxBytesReader":
-			for _, arg := range call.Args {
-				if mentionsObject(arg, resp, pass) {
-					bounded = true
-					return false
-				}
-			}
-		}
-		return true
-	})
-	return bounded
 }
 
 // passesToCappingHelper reports whether fn passes this response's body
@@ -198,7 +173,7 @@ func passesToCappingHelper(pass *analysis.Pass, fn *ast.FuncDecl, resp types.Obj
 		if !ok {
 			return true
 		}
-		callee, ok := calleeFunc(pass, call)
+		callee, ok := astx.CalleeFunc(pass, call.Fun)
 		if !ok {
 			return true
 		}
@@ -352,18 +327,6 @@ func enclosingFunc(f *ast.File, pos token.Pos) *ast.FuncDecl {
 		}
 	}
 	return match
-}
-
-func calleeFunc(pass *analysis.Pass, call *ast.CallExpr) (*types.Func, bool) {
-	switch fun := call.Fun.(type) {
-	case *ast.Ident:
-		fn, ok := pass.TypesInfo.ObjectOf(fun).(*types.Func)
-		return fn, ok
-	case *ast.SelectorExpr:
-		fn, ok := pass.TypesInfo.Uses[fun.Sel].(*types.Func)
-		return fn, ok
-	}
-	return nil, false
 }
 
 // qualified renders a call target as "pkg.Func" through the type

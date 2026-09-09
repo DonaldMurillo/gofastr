@@ -96,7 +96,7 @@ func WithAdvisoryLockKey(ctx context.Context, db *sql.DB, dialect Dialect, key i
 	if dialect == DialectSQLite {
 		sqliteMigrateMu.Lock()
 		defer sqliteMigrateMu.Unlock()
-		release, err := acquireSQLiteMigrateLease(ctx, db)
+		release, err := AcquireSQLiteLease(ctx, db, "_gofastr_migrate_lock", migrateLease, "migrate")
 		if err != nil {
 			return fmt.Errorf("migrate lock: sqlite lease: %w", err)
 		}
@@ -160,17 +160,23 @@ var sqliteMigrateMu sync.Mutex
 // corrupting or failing its boot.
 const migrateLease = 60 * time.Second
 
-// acquireSQLiteMigrateLease takes the cross-process migration lock on SQLite:
-// one row in _gofastr_migrate_lock, acquired by a single atomic upsert whose
-// DO UPDATE fires only when the previous lease has expired (SQLite's own
-// clock via strftime('%s','now'), so processes disagreeing about wall time
-// don't stretch or shrink the lease). While held, a heartbeat renews it; the
-// returned release func deletes the row. Waiting respects ctx: cancel it to
-// stop waiting for the current holder. Mirrors acquireSQLiteSeedLease in
-// framework/migrate/seed.go; the table is distinct so a boot holding both
-// locks (migrate then seed) never self-deadlocks.
-func acquireSQLiteMigrateLease(ctx context.Context, db *sql.DB) (release func(), err error) {
-	lockTable := query.QuoteIdent(query.MustIdent("_gofastr_migrate_lock"))
+// AcquireSQLiteLease takes a cross-process leased lock on SQLite: one row in
+// the named lock table, acquired by a single atomic upsert whose DO UPDATE
+// fires only when the previous lease has expired (SQLite's own clock via
+// strftime('%s','now'), so processes disagreeing about wall time don't
+// stretch or shrink the lease). While held, a heartbeat renews the row at
+// lease/3; the returned release func stops the heartbeat and deletes the
+// row. Waiting respects ctx: cancel it to stop waiting for the current
+// holder.
+//
+// It is the canonical lease acquisition formerly duplicated as core/
+// migrate's acquireSQLiteMigrateLease (_gofastr_migrate_lock, the migration
+// lease) and framework/migrate's acquireSQLiteSeedLease (_gofastr_seed_lock,
+// the seed lease); the table is a parameter so a boot holding both locks
+// (migrate then seed) never self-deadlocks. what names the lock in the
+// heartbeat and release warnings ("migrate", "seed").
+func AcquireSQLiteLease(ctx context.Context, db *sql.DB, table string, lease time.Duration, what string) (release func(), err error) {
+	lockTable := query.QuoteIdent(query.MustIdent(table))
 	if _, err := db.ExecContext(ctx, fmt.Sprintf(
 		"CREATE TABLE IF NOT EXISTS %s (id INTEGER PRIMARY KEY CHECK (id = 1), expires_at INTEGER NOT NULL)", lockTable)); err != nil {
 		return nil, err
@@ -179,7 +185,7 @@ func acquireSQLiteMigrateLease(ctx context.Context, db *sql.DB) (release func(),
 VALUES (1, CAST(strftime('%%s','now') AS INTEGER) + ?)
 ON CONFLICT (id) DO UPDATE SET expires_at = excluded.expires_at
 WHERE %s.expires_at <= CAST(strftime('%%s','now') AS INTEGER)`, lockTable, lockTable)
-	leaseSeconds := int64(migrateLease / time.Second)
+	leaseSeconds := int64(lease / time.Second)
 	for {
 		res, err := db.ExecContext(ctx, acquire, leaseSeconds)
 		if err != nil {
@@ -190,23 +196,23 @@ WHERE %s.expires_at <= CAST(strftime('%%s','now') AS INTEGER)`, lockTable, lockT
 		}
 		// Held by another process. Wait and retry; the holder either
 		// releases (row deleted), its lease expires (steal succeeds), or
-		// ctx is cancelled (fail closed, nothing migrated by us).
+		// ctx is cancelled (fail closed, nothing acquired by us).
 		select {
 		case <-ctx.Done():
 			return nil, ctx.Err()
 		case <-time.After(100 * time.Millisecond):
 		}
 	}
-	// Heartbeat: a migration run can take arbitrarily long, far past the
-	// lease, so renew at lease/3 while the run is alive. If this process
-	// dies the heartbeats stop and the lease expires, which is the
-	// crash-release path — there is no SQLite session cleanup to do it for
-	// us, unlike a Postgres session advisory lock.
+	// Heartbeat: the work held under the lease can take arbitrarily long,
+	// far past the lease, so renew at lease/3 while the holder is alive. If
+	// this process dies the heartbeats stop and the lease expires, which is
+	// the crash-release path — there is no SQLite session cleanup to do it
+	// for us, unlike a Postgres session advisory lock.
 	hbCtx, stopHB := context.WithCancel(context.WithoutCancel(ctx))
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		ticker := time.NewTicker(migrateLease / 3)
+		ticker := time.NewTicker(lease / 3)
 		defer ticker.Stop()
 		renew := fmt.Sprintf(
 			"UPDATE %s SET expires_at = CAST(strftime('%%s','now') AS INTEGER) + ? WHERE id = 1", lockTable)
@@ -217,9 +223,9 @@ WHERE %s.expires_at <= CAST(strftime('%%s','now') AS INTEGER)`, lockTable, lockT
 			case <-ticker.C:
 				// A failed renewal is survivable but not silent: if it keeps
 				// failing the lease expires and another process may steal the
-				// migration run, so surface it.
+				// run, so surface it.
 				if _, err := db.ExecContext(hbCtx, renew, leaseSeconds); err != nil {
-					slog.Warn("migrate lock lease renewal failed; the lease expires if this keeps failing",
+					slog.Warn(what+" lock lease renewal failed; the lease expires if this keeps failing",
 						"err", err)
 				}
 			}
@@ -229,10 +235,10 @@ WHERE %s.expires_at <= CAST(strftime('%%s','now') AS INTEGER)`, lockTable, lockT
 		stopHB() // stops the goroutine before the DELETE races a renewal
 		<-done
 		if _, err := db.ExecContext(context.WithoutCancel(ctx), fmt.Sprintf("DELETE FROM %s WHERE id = 1", lockTable)); err != nil {
-			// The lock still opens: the lease expires on its own after
-			// migrateLease. Other boots wait that long instead of running
+			// The lock still opens: the lease expires on its own after one
+			// lease period. Other boots wait that long instead of running
 			// immediately, which deserves a log line, not silence.
-			slog.Warn("migrate lock release failed; the lease expires instead", "err", err)
+			slog.Warn(what+" lock release failed; the lease expires instead", "err", err)
 		}
 	}, nil
 }

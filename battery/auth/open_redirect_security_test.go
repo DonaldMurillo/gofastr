@@ -5,9 +5,11 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/core/handler"
 )
 
-// TestOpenRedirect_SafeRelativePath verifies that isSafeRelativePath
+// TestOpenRedirect_SafeRelativePath verifies that handler.IsSafeRelativePath
 // rejects various open-redirect payloads.
 func TestOpenRedirect_SafeRelativePath(t *testing.T) {
 	tests := []struct {
@@ -34,12 +36,12 @@ func TestOpenRedirect_SafeRelativePath(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := isSafeRelativePath(tc.input)
+			got := handler.IsSafeRelativePath(tc.input)
 			if got != tc.safe {
 				if tc.safe && !got {
-					t.Errorf("isSafeRelativePath(%q) = false (want true). Legitimate path rejected.", tc.input)
+					t.Errorf("handler.IsSafeRelativePath(%q) = false (want true). Legitimate path rejected.", tc.input)
 				} else {
-					t.Errorf("SECURITY: [open_redirect] isSafeRelativePath(%q) = true (want false). Attack: %s.", tc.input, tc.desc)
+					t.Errorf("SECURITY: [open_redirect] handler.IsSafeRelativePath(%q) = true (want false). Attack: %s.", tc.input, tc.desc)
 				}
 			}
 		})
@@ -77,7 +79,7 @@ func TestOpenRedirect_SuccessRedirectValidatesNext(t *testing.T) {
 			}
 			// For unsafe inputs, result should be the fallback or a safe path
 			if !tc.wantSafe && got == tc.nextURL {
-				if !isSafeRelativePath(tc.nextURL) {
+				if !handler.IsSafeRelativePath(tc.nextURL) {
 					t.Errorf("SECURITY: [open_redirect] successRedirect returned %q for unsafe input. Attack: %s.", got, tc.desc)
 				}
 			}

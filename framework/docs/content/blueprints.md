@@ -392,8 +392,8 @@ gofastr generate --from=additions.yml --add
 
 Partial ymls are legal: an entities-only (or screens-only) fragment omits
 `app.module`, so the module is derived from the enclosing `go.mod` exactly as
-in a full generate. This means `main.go`, `app.go`, `entities/register.go`, and
-`screens_register.go` are still rendered (the generator needs them for a valid
+in a full generate. This means `main.go`, `app.go`, `entities/register.go`,
+`entities/events.go`, and `screens_register.go` are still rendered (the generator needs them for a valid
 package), but since they already exist in your project, `--add` skips them.
 Every generated app ships both registration seams and their call sites
 (`entities.RegisterAll` in `main.go`, `mountGenerated` in `app.go`) even when

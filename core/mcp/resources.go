@@ -189,17 +189,8 @@ func (s *Server) handleResourcesRead(ctx context.Context, req Request) Response 
 
 	contents, err := s.readResourceContents(ctx, res)
 	if err != nil {
-		if rpcErr, ok := err.(*RPCError); ok {
-			return Response{JSONRPC: "2.0", ID: req.ID, Error: rpcErr}
-		}
-		// A plain error is internal detail (filesystem paths, driver
-		// text) and must not cross the transport — callTool's posture.
-		// Log it server-side and answer the generic message this very
-		// function's panic path already uses.
-		slog.Error("mcp: resource contents func failed",
-			slog.String("uri", res.URI),
-			slog.String("err", err.Error()))
-		return newErrorResponse(req.ID, ErrInternalError, "internal resource error")
+		return handlerErrorResponse(req, err, "mcp: resource contents func failed", "internal resource error",
+			slog.String("uri", res.URI))
 	}
 	mime := contents.MimeType
 	if mime == "" {

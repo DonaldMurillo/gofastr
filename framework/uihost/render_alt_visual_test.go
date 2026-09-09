@@ -12,6 +12,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/app/decide"
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
+	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
 )
 
 // TestRenderAlt_AnonSeesAltAtSameURL drives the canonical
@@ -36,7 +37,7 @@ func TestRenderAlt_AnonSeesAltAtSameURL(t *testing.T) {
 	srv := httptest.NewServer(ds)
 	t.Cleanup(srv.Close)
 
-	chCtx := newE2EChromeForUIHost(t)
+	chCtx := chromedptest.Context(t, chromedptest.AllocatorOptions(chromedp.ExecPath(browserExecutable(t))))
 	var body string
 	var shot []byte
 	err := chromedp.Run(chCtx,

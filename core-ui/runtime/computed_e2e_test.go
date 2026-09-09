@@ -7,7 +7,9 @@ import (
 	"os"
 	"regexp"
 	"testing"
+	"time"
 
+	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
 	"github.com/chromedp/chromedp"
 )
 
@@ -76,7 +78,7 @@ func TestComputed_RecomputesOnDepChange(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 
 	var initial, afterRename string
 	if err := chromedp.Run(ctx,

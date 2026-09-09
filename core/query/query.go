@@ -199,27 +199,7 @@ func (qb *QueryBuilder) Build() (string, []any) {
 	// WHERE
 	if len(qb.wheres) > 0 {
 		sb.WriteString(" WHERE ")
-		paramIdx := 1
-		for i, w := range qb.wheres {
-			if i > 0 {
-				sb.WriteString(" ")
-				sb.WriteString(w.connector)
-				sb.WriteString(" ")
-			}
-			// Re-number placeholders in the condition. Wrap in parens
-			// so a caller's OR-containing clause can't combine with
-			// framework-injected AND scopes via SQL precedence (which
-			// would let `tenant_id = X AND visibility = 'pub' OR
-			// author_id = Y AND owner_id = Z` group as `(... AND pub)
-			// OR (...AND Z)`, bypassing tenant scope on the OR
-			// branch). Wrapping each condition makes the AND/OR tree
-			// reflect the caller's intent.
-			condition := renumberPlaceholders(w.condition, paramIdx)
-			paramIdx += len(w.args)
-			sb.WriteByte('(')
-			sb.WriteString(condition)
-			sb.WriteByte(')')
-		}
+		appendWhereClauses(&sb, qb.wheres, 1)
 	}
 
 	// ORDER BY: column gets fragment sanitisation, direction is
@@ -253,6 +233,31 @@ func (qb *QueryBuilder) Build() (string, []any) {
 	}
 
 	return sb.String(), args
+}
+
+// appendWhereClauses writes each WHERE condition to sb in order,
+// separated by its connector, with placeholders renumbered starting at
+// paramIdx. Each condition is wrapped in parens so a caller's
+// OR-containing clause can't combine with framework-injected AND
+// scopes via SQL precedence (which would let `tenant_id = X AND
+// visibility = 'pub' OR author_id = Y AND owner_id = Z` group as
+// `(... AND pub) OR (... AND Z)`, bypassing tenant scope on the OR
+// branch). Wrapping each condition makes the AND/OR tree reflect the
+// caller's intent. It replaces the two verbatim copies of this loop in
+// QueryBuilder.Build and UpdateBuilder.Build.
+func appendWhereClauses(sb *strings.Builder, wheres []whereClause, paramIdx int) {
+	for i, w := range wheres {
+		if i > 0 {
+			sb.WriteString(" ")
+			sb.WriteString(w.connector)
+			sb.WriteString(" ")
+		}
+		condition := renumberPlaceholders(w.condition, paramIdx)
+		paramIdx += len(w.args)
+		sb.WriteByte('(')
+		sb.WriteString(condition)
+		sb.WriteByte(')')
+	}
 }
 
 // renumberPlaceholders rewrites the $N placeholders in a condition string

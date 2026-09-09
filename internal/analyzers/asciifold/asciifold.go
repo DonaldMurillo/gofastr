@@ -54,6 +54,7 @@ import (
 	"go/types"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/astx"
 	"golang.org/x/tools/go/analysis"
 )
 
@@ -402,7 +403,7 @@ func foldArg(pass *analysis.Pass, x ast.Expr, bound map[types.Object]ast.Expr, h
 		}
 		// A one-line fold helper: `func norm(s string) string {
 		// return strings.ToLower(s) }` keyed as gadgets[norm(name)].
-		if fn, ok := calleeFunc(pass, e.Fun); ok {
+		if fn, ok := astx.CalleeFunc(pass, e.Fun); ok {
 			if pi, ok := helpers[fn]; ok && pi < len(e.Args) {
 				return e.Args[pi]
 			}
@@ -520,18 +521,6 @@ func foldVariables(pass *analysis.Pass) map[types.Object]bool {
 	return out
 }
 
-func calleeFunc(pass *analysis.Pass, fun ast.Expr) (*types.Func, bool) {
-	switch f := fun.(type) {
-	case *ast.Ident:
-		fn, ok := pass.TypesInfo.Uses[f].(*types.Func)
-		return fn, ok
-	case *ast.SelectorExpr:
-		fn, ok := pass.TypesInfo.Uses[f.Sel].(*types.Func)
-		return fn, ok
-	}
-	return nil, false
-}
-
 // hasASCIIConstantArg reports whether one EqualFold argument is a
 // constant that is ASCII-only and non-empty.
 func hasASCIIConstantArg(pass *analysis.Pass, args []ast.Expr) bool {
@@ -584,7 +573,7 @@ func asciiPinned(pass *analysis.Pass, f *ast.File) map[types.Object]bool {
 			if !ok || len(call.Args) != 2 {
 				return true
 			}
-			switch calleeName(call.Fun) {
+			switch astx.CalleeName(call.Fun) {
 			case "ContainsFunc", "IndexFunc":
 			default:
 				return true
@@ -623,7 +612,7 @@ func asciiPinned(pass *analysis.Pass, f *ast.File) map[types.Object]bool {
 					}
 				}
 			case *ast.CallExpr:
-				if containsFoldASCII(calleeName(e.Fun)) {
+				if containsFoldASCII(astx.CalleeName(e.Fun)) {
 					for _, a := range e.Args {
 						if id, ok := a.(*ast.Ident); ok {
 							if obj := pass.TypesInfo.ObjectOf(id); obj != nil {
@@ -669,16 +658,6 @@ func byteRuneView(pass *analysis.Pass, x ast.Expr, cb map[types.Object]types.Obj
 	return nil
 }
 
-func calleeName(fun ast.Expr) string {
-	switch f := fun.(type) {
-	case *ast.Ident:
-		return f.Name
-	case *ast.SelectorExpr:
-		return f.Sel.Name
-	}
-	return ""
-}
-
 // isASCIIBound reports whether a literal is the ASCII boundary (0x80,
 // 0x7f, 128, 127) or a string starting past it.
 func isASCIIBound(lit *ast.BasicLit) bool {
@@ -698,15 +677,6 @@ func isASCIIBound(lit *ast.BasicLit) bool {
 
 func containsFoldASCII(name string) bool {
 	return strings.Contains(strings.ToLower(name), "ascii")
-}
-
-func mapUnderlying(pass *analysis.Pass, x ast.Expr) (*types.Map, bool) {
-	tv, ok := pass.TypesInfo.Types[x]
-	if !ok || tv.Type == nil {
-		return nil, false
-	}
-	m, ok := tv.Type.Underlying().(*types.Map)
-	return m, ok
 }
 
 func boundExprs(pass *analysis.Pass, f *ast.File) map[types.Object]ast.Expr {

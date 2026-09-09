@@ -28,6 +28,7 @@ import (
 	"github.com/chromedp/chromedp"
 
 	"github.com/DonaldMurillo/gofastr/core/stream"
+	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
 )
 
 // --- test signaling server -------------------------------------------
@@ -531,50 +532,6 @@ const rtcPageScript = wsConsoleTap + `
 })();
 `
 
-// rtcBrowserCtx boots a browser with the fake media flags (a camera
-// device and a fake grant UI, the same pair the remote-assist browser
-// test uses) and tears it down with the test.
-func rtcBrowserCtx(t *testing.T) context.Context {
-	t.Helper()
-	if testing.Short() {
-		t.Skip("browser E2E disabled in short mode")
-	}
-	opts := append(chromedp.DefaultExecAllocatorOptions[:],
-		chromedp.Flag("headless", true),
-		chromedp.Flag("disable-gpu", true),
-		chromedp.Flag("no-sandbox", true),
-		chromedp.Flag("use-fake-device-for-media-stream", true),
-		chromedp.Flag("use-fake-ui-for-media-stream", true),
-		// Without a getUserMedia grant, Chrome anonymizes ICE host
-		// candidates as mDNS .local names. Between two tabs of one
-		// headless browser that resolution intermittently never
-		// happens and ICE stays in 'new' forever, so tests that only
-		// exercise data channels flake. Emit real host candidates.
-		chromedp.Flag("disable-features", "WebRtcHideLocalIpsWithMdns"),
-		chromedp.WSURLReadTimeout(90*time.Second),
-		chromedp.WindowSize(1280, 800),
-	)
-	allocCtx, allocCancel := chromedp.NewExecAllocator(context.Background(), opts...)
-	t.Cleanup(allocCancel)
-	browserCtx, browserCancel := chromedp.NewContext(allocCtx)
-	t.Cleanup(browserCancel)
-	started := make(chan error, 1)
-	go func() { started <- chromedp.Run(browserCtx) }()
-	select {
-	case err := <-started:
-		if err != nil {
-			t.Fatalf("chrome did not start: %v", err)
-		}
-	case <-time.After(90 * time.Second):
-		t.Fatal("chrome did not start within 90s")
-	}
-	// A generous ceiling for the whole test: media polls are 15s each
-	// and reconnects add WebSocket backoff.
-	ctx, cancel := context.WithTimeout(browserCtx, 300*time.Second)
-	t.Cleanup(cancel)
-	return ctx
-}
-
 // rtcTab opens one tab of the browser at url and returns its context.
 func rtcTab(t *testing.T, browser context.Context, url string) context.Context {
 	t.Helper()
@@ -664,7 +621,23 @@ func rtcSetup(t *testing.T, query ...string) *rtcEnv {
 		_ = conn.Close()
 	})
 	base := rtcModulePage(t, mux, rtcPageScript)
-	browser := rtcBrowserCtx(t)
+	// Fake media flags (a camera device and a fake grant UI, the same
+	// pair the remote-assist browser test uses). Without a getUserMedia
+	// grant, Chrome anonymizes ICE host candidates as mDNS .local names.
+	// Between two tabs of one headless browser that resolution
+	// intermittently never happens and ICE stays in 'new' forever, so
+	// tests that only exercise data channels flake — emit real host
+	// candidates. The 300s ceiling: media polls are 15s each and
+	// reconnects add WebSocket backoff.
+	browser := chromedptest.Context(t,
+		chromedptest.Timeout(300*time.Second),
+		chromedptest.WindowSize(1280, 800),
+		chromedptest.AllocatorOptions(
+			chromedp.Flag("use-fake-device-for-media-stream", true),
+			chromedp.Flag("use-fake-ui-for-media-stream", true),
+			chromedp.Flag("disable-features", "WebRtcHideLocalIpsWithMdns"),
+		),
+	)
 	qa, qb := "", ""
 	if len(query) > 0 {
 		qa = query[0]

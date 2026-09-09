@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -110,6 +111,18 @@ func ScanInlineScriptsIn(fset *token.FileSet, file *ast.File, filename string, r
 }
 
 func LintNoInlineScripts(dir string) (*Result, error) {
+	return lintGoDir(dir, scanInlineScripts)
+}
+
+// lintGoDir walks the non-test .go files in dir, skips files carrying
+// the check-csp:ignore-file directive, parses each, and runs scan over
+// it, accumulating into one Result. Test files are skipped, they may
+// legitimately embed inline scripts or styles as fixtures for
+// assertion; the runtime rule applies to production code only. It is
+// the shared body of LintNoInlineScripts and LintNoInlineStyles, which
+// were verbatim copies of this walk differing only in the AST scan
+// they ran.
+func lintGoDir(dir string, scan func(fset *token.FileSet, file *ast.File, filename string, result *Result)) (*Result, error) {
 	result := &Result{}
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -120,13 +133,7 @@ func LintNoInlineScripts(dir string) (*Result, error) {
 			continue
 		}
 		name := entry.Name()
-		if !strings.HasSuffix(name, ".go") {
-			continue
-		}
-		// Skip test files, they may legitimately embed inline
-		// scripts as fixtures for assertion. The runtime rule
-		// applies to production code only.
-		if strings.HasSuffix(name, "_test.go") {
+		if !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
 			continue
 		}
 		filename := filepath.Join(dir, name)
@@ -143,7 +150,7 @@ func LintNoInlineScripts(dir string) (*Result, error) {
 		if err != nil {
 			return nil, fmt.Errorf("parse %s: %w", filename, err)
 		}
-		scanInlineScripts(fset, file, filename, result)
+		scan(fset, file, filename, result)
 	}
 	return result, nil
 }
@@ -158,6 +165,18 @@ func LintNoInlineScripts(dir string) (*Result, error) {
 // any machine that has run `make build-all` or an eval, pointing at a file
 // nobody wrote and nobody ships.
 func LintNoInlineScriptsRecursive(root string) (*Result, error) {
+	return lintRecursive(root, LintNoInlineScripts, "dist")
+}
+
+// lintRecursive walks root and every subdirectory, runs lint on each
+// directory, and merges the violations. Skips vendor/, node_modules/,
+// hidden dirs, testdata/, plus any extra directory names in skip (the
+// script linter also skips dist/, the sanctioned build-output
+// directory: what lives there is generated, including whole example
+// workspaces written by the evaluation harness). It is the shared body
+// of the three *Recursive linters, which were verbatim copies of this
+// walk differing only in the lint they ran.
+func lintRecursive(root string, lint func(string) (*Result, error), skip ...string) (*Result, error) {
 	result := &Result{}
 	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
@@ -169,10 +188,10 @@ func LintNoInlineScriptsRecursive(root string) (*Result, error) {
 		base := filepath.Base(path)
 		if path != root && (strings.HasPrefix(base, ".") ||
 			base == "vendor" || base == "node_modules" || base == "testdata" ||
-			base == "dist") {
+			slices.Contains(skip, base)) {
 			return filepath.SkipDir
 		}
-		sub, err := LintNoInlineScripts(path)
+		sub, err := lint(path)
 		if err != nil {
 			return err
 		}

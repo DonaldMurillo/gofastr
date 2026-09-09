@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
 	"github.com/chromedp/chromedp"
 )
 
@@ -64,7 +65,7 @@ func TestWidgetRPC_ConfirmHonored(t *testing.T) {
 		},
 	})
 
-	ctx := newPollBrowserCtx(t)
+	ctx := chromedptest.Context(t)
 	var confirmCalls int
 
 	// --- cancel: confirm returns false → RPC MUST NOT fire ---
@@ -151,7 +152,7 @@ func TestWidgetRPC_GetFormEncodesToQuery(t *testing.T) {
 		},
 	})
 
-	ctx := newPollBrowserCtx(t)
+	ctx := chromedptest.Context(t)
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/"),
 		chromedp.WaitVisible(`#go`, chromedp.ByID),

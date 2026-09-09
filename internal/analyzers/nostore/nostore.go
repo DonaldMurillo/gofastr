@@ -99,6 +99,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/astx"
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/pathflow"
 	"golang.org/x/tools/go/analysis"
 )
 
@@ -191,7 +193,7 @@ func run(pass *analysis.Pass) (any, error) {
 	var families []*family
 
 	for _, f := range pass.Files {
-		if isTestFile(pass, f) {
+		if pathflow.IsTestFile(pass, f) {
 			continue
 		}
 		for _, decl := range f.Decls {
@@ -201,11 +203,11 @@ func run(pass *analysis.Pass) (any, error) {
 			}
 			fam := &family{decl: fd, callees: map[*family]bool{}, writers: map[types.Object]bool{}}
 			fam.bodies = append(fam.bodies, fd.Body)
-			collectLiterals(fd.Body, &fam.bodies)
+			astx.CollectLiterals(fd.Body, &fam.bodies)
 			families = append(families, fam)
 			if fd.Recv == nil {
 				funcs[fd.Name.Name] = append(funcs[fd.Name.Name], fd)
-			} else if base := recvBaseName(fd); base != "" {
+			} else if base := astx.RecvBaseName(fd); base != "" {
 				methods[base+"."+fd.Name.Name] = append(methods[base+"."+fd.Name.Name], fd)
 			}
 		}
@@ -235,7 +237,7 @@ func run(pass *analysis.Pass) (any, error) {
 					return true
 				}
 				fam.callSites = append(fam.callSites, call)
-				target := resolveCall(pass, call.Fun, funcs, methods)
+				target := astx.ResolveCall(pass, call.Fun, funcs, methods)
 				if target != nil {
 					if t := byDecl[target]; t != nil && t != fam {
 						fam.callees[t] = true
@@ -255,7 +257,7 @@ func run(pass *analysis.Pass) (any, error) {
 			continue
 		}
 		for _, top := range fam.topCalls {
-			if t := byDecl[resolveCall(pass, top.Fun, funcs, methods)]; t != nil && t.cc {
+			if t := byDecl[astx.ResolveCall(pass, top.Fun, funcs, methods)]; t != nil && t.cc {
 				fam.cc = true
 				break
 			}
@@ -338,7 +340,7 @@ func run(pass *analysis.Pass) (any, error) {
 				if len(site.Args) <= sink.paramIdx {
 					continue
 				}
-				target := resolveCall(pass, site.Fun, funcs, methods)
+				target := astx.ResolveCall(pass, site.Fun, funcs, methods)
 				if target != r.decl {
 					continue
 				}
@@ -476,21 +478,9 @@ func identityParams(pass *analysis.Pass, fam *family) bool {
 
 // isRequestType: *http.Request — the handler shape's second half.
 func isRequestType(t types.Type) bool {
-	named := namedOf(t)
+	named := astx.NamedOf(t)
 	return named != nil && named.Obj() != nil && named.Obj().Name() == "Request" &&
 		named.Obj().Pkg() != nil && named.Obj().Pkg().Path() == "net/http"
-}
-
-func namedOf(t types.Type) *types.Named {
-	if named, ok := t.(*types.Named); ok {
-		return named
-	}
-	if p, ok := t.(*types.Pointer); ok {
-		if named, ok := p.Elem().(*types.Named); ok {
-			return named
-		}
-	}
-	return nil
 }
 
 // bodyResolves: the principal-resolution spellings.
@@ -664,7 +654,7 @@ func scanContext(pass *analysis.Pass, fam *family) {
 				// An ack encode is not a cacheable body: a 202 whose
 				// only body is {"accepted": true} is still bodyless.
 				if len(call.Args) == 1 {
-					if lit, ok := unparen(call.Args[0]).(*ast.CompositeLit); ok && fam.ackLiteral(pass, lit) {
+					if lit, ok := ast.Unparen(call.Args[0]).(*ast.CompositeLit); ok && fam.ackLiteral(pass, lit) {
 						return true
 					}
 				}
@@ -757,7 +747,7 @@ func (fam *family) ackValue(pass *analysis.Pass, e ast.Expr, depth int) bool {
 	if depth > 4 {
 		return false
 	}
-	switch v := unparen(e).(type) {
+	switch v := ast.Unparen(e).(type) {
 	case *ast.BasicLit:
 		return true
 	case *ast.Ident:
@@ -874,7 +864,7 @@ func bodySinks(pass *analysis.Pass, fam *family, body *ast.BlockStmt) []sinkSite
 			sinks = append(sinks, sinkSite{node: call, paramIdx: idx})
 		} else if sinkEncode(pass, fam, call) {
 			if len(call.Args) == 1 {
-				if lit, ok := unparen(call.Args[0]).(*ast.CompositeLit); ok && fam.ackLiteral(pass, lit) {
+				if lit, ok := ast.Unparen(call.Args[0]).(*ast.CompositeLit); ok && fam.ackLiteral(pass, lit) {
 					return true // acknowledgement body: nothing to replay
 				}
 			}
@@ -1015,7 +1005,7 @@ func statusParamIdx(pass *analysis.Pass, fam *family, call *ast.CallExpr) int {
 	if len(call.Args) != 1 {
 		return -1
 	}
-	id, ok := unparen(call.Args[0]).(*ast.Ident)
+	id, ok := ast.Unparen(call.Args[0]).(*ast.Ident)
 	if !ok {
 		return -1
 	}
@@ -1214,14 +1204,14 @@ func collectWiring(pass *analysis.Pass, call *ast.CallExpr, fam *family, byDecl 
 	// owns the callee (nil for cross-package calls).
 	var calleeParams []types.Object
 	var calleeFamily *family
-	if target := resolveCall(pass, call.Fun, funcs, methods); target != nil {
+	if target := astx.ResolveCall(pass, call.Fun, funcs, methods); target != nil {
 		calleeFamily = byDecl[target]
-		calleeParams = declParams(pass, target)
+		calleeParams = funcTypeParams(pass, target.Type)
 	} else if id, ok := call.Fun.(*ast.Ident); ok {
 		// A call to a local function literal of this same family: its
 		// params are threading targets.
 		if lit := boundLiteral(pass, fam, id); lit != nil {
-			calleeParams = litParams(pass, lit)
+			calleeParams = funcTypeParams(pass, lit.Type)
 		}
 	}
 	if len(calleeParams) == 0 || len(call.Args) == 0 {
@@ -1234,7 +1224,7 @@ func collectWiring(pass *analysis.Pass, call *ast.CallExpr, fam *family, byDecl 
 		}
 		switch a := arg.(type) {
 		case *ast.SelectorExpr, *ast.Ident:
-			if target := resolveCall(pass, a, funcs, methods); false {
+			if target := astx.ResolveCall(pass, a, funcs, methods); false {
 				_ = target
 			}
 			if hf := handlerFamilyOf(pass, arg, funcs, methods, byDecl); hf != nil {
@@ -1266,7 +1256,7 @@ func handlerFamilyOf(pass *analysis.Pass, e ast.Expr, funcs, methods map[string]
 		return nil
 	}
 	var target *ast.FuncDecl
-	switch v := unparen(e).(type) {
+	switch v := ast.Unparen(e).(type) {
 	case *ast.CallExpr:
 		// A handler-producing call (b.entityRows(ent)): the producer's
 		// family owns the returned closure.
@@ -1276,7 +1266,7 @@ func handlerFamilyOf(pass *analysis.Pass, e ast.Expr, funcs, methods map[string]
 				target = decls[0]
 			}
 		case *ast.SelectorExpr:
-			if base := receiverTypeName(pass, fun.X); base != "" {
+			if base := astx.ReceiverTypeName(pass, fun.X); base != "" {
 				if decls := methods[base+"."+fun.Sel.Name]; len(decls) == 1 {
 					target = decls[0]
 				}
@@ -1288,7 +1278,7 @@ func handlerFamilyOf(pass *analysis.Pass, e ast.Expr, funcs, methods map[string]
 				return nil
 			}
 		}
-		if base := receiverTypeName(pass, v.X); base != "" {
+		if base := astx.ReceiverTypeName(pass, v.X); base != "" {
 			if decls := methods[base+"."+v.Sel.Name]; len(decls) == 1 {
 				target = decls[0]
 			}
@@ -1453,28 +1443,11 @@ func familyOwningParam(families []*family, param types.Object) *family {
 
 // paramObjects: the decl's and its literals' parameter variables.
 func paramObjects(pass *analysis.Pass, fam *family) []types.Object {
-	var out []types.Object
-	if fam.decl.Type.Params != nil {
-		for _, field := range fam.decl.Type.Params.List {
-			for _, id := range field.Names {
-				if obj := pass.TypesInfo.ObjectOf(id); obj != nil {
-					out = append(out, obj)
-				}
-			}
-		}
-	}
+	out := funcTypeParams(pass, fam.decl.Type)
 	for _, body := range fam.bodies {
 		ast.Inspect(body, func(n ast.Node) bool {
 			if lit, ok := n.(*ast.FuncLit); ok {
-				if lit.Type.Params != nil {
-					for _, field := range lit.Type.Params.List {
-						for _, id := range field.Names {
-							if obj := pass.TypesInfo.ObjectOf(id); obj != nil {
-								out = append(out, obj)
-							}
-						}
-					}
-				}
+				out = append(out, funcTypeParams(pass, lit.Type)...)
 			}
 			return true
 		})
@@ -1482,12 +1455,15 @@ func paramObjects(pass *analysis.Pass, fam *family) []types.Object {
 	return out
 }
 
-func declParams(pass *analysis.Pass, fd *ast.FuncDecl) []types.Object {
+// funcTypeParams: a FuncType's parameter variables — FuncDecl and
+// FuncLit share the shape. It replaces the former declParams and
+// litParams pair.
+func funcTypeParams(pass *analysis.Pass, ft *ast.FuncType) []types.Object {
 	var out []types.Object
-	if fd.Type.Params == nil {
+	if ft.Params == nil {
 		return nil
 	}
-	for _, field := range fd.Type.Params.List {
+	for _, field := range ft.Params.List {
 		for _, id := range field.Names {
 			if obj := pass.TypesInfo.ObjectOf(id); obj != nil {
 				out = append(out, obj)
@@ -1495,102 +1471,4 @@ func declParams(pass *analysis.Pass, fd *ast.FuncDecl) []types.Object {
 		}
 	}
 	return out
-}
-
-func litParams(pass *analysis.Pass, lit *ast.FuncLit) []types.Object {
-	var out []types.Object
-	if lit.Type.Params == nil {
-		return nil
-	}
-	for _, field := range lit.Type.Params.List {
-		for _, id := range field.Names {
-			if obj := pass.TypesInfo.ObjectOf(id); obj != nil {
-				out = append(out, obj)
-			}
-		}
-	}
-	return out
-}
-
-// resolveCall maps a callee expression to a package-local declaration.
-func resolveCall(pass *analysis.Pass, fun ast.Expr, funcs, methods map[string][]*ast.FuncDecl) *ast.FuncDecl {
-	switch e := fun.(type) {
-	case *ast.Ident:
-		if decls := funcs[e.Name]; len(decls) == 1 {
-			return decls[0]
-		}
-	case *ast.SelectorExpr:
-		id, ok := e.X.(*ast.Ident)
-		if !ok {
-			return nil
-		}
-		use := pass.TypesInfo.Uses[id]
-		if pn, isPkg := use.(*types.PkgName); isPkg {
-			if pn.Imported() == pass.Pkg {
-				if decls := funcs[e.Sel.Name]; len(decls) == 1 {
-					return decls[0]
-				}
-			}
-			return nil
-		}
-		if base := receiverTypeName(pass, e.X); base != "" {
-			if decls := methods[base+"."+e.Sel.Name]; len(decls) == 1 {
-				return decls[0]
-			}
-		}
-	}
-	return nil
-}
-
-func collectLiterals(body *ast.BlockStmt, out *[]*ast.BlockStmt) {
-	ast.Inspect(body, func(n ast.Node) bool {
-		if lit, ok := n.(*ast.FuncLit); ok {
-			*out = append(*out, lit.Body)
-			collectLiterals(lit.Body, out)
-			return false
-		}
-		return true
-	})
-}
-
-func recvBaseName(fd *ast.FuncDecl) string {
-	var t ast.Expr
-	switch r := fd.Recv.List[0].Type.(type) {
-	case *ast.StarExpr:
-		t = r.X
-	case *ast.Ident:
-		t = r
-	default:
-		return ""
-	}
-	if id, ok := t.(*ast.Ident); ok {
-		return id.Name
-	}
-	return ""
-}
-
-func receiverTypeName(pass *analysis.Pass, x ast.Expr) string {
-	tv, ok := pass.TypesInfo.Types[x]
-	if !ok {
-		return ""
-	}
-	t := tv.Type
-	if p, ok := t.(*types.Pointer); ok {
-		t = p.Elem()
-	}
-	if named, ok := t.(*types.Named); ok && named.Obj() != nil && named.Obj().Pkg() == pass.Pkg {
-		return named.Obj().Name()
-	}
-	return ""
-}
-
-func unparen(e ast.Expr) ast.Expr {
-	if p, ok := e.(*ast.ParenExpr); ok {
-		return unparen(p.X)
-	}
-	return e
-}
-
-func isTestFile(pass *analysis.Pass, f *ast.File) bool {
-	return strings.HasSuffix(pass.Fset.Position(f.Pos()).Filename, "_test.go")
 }

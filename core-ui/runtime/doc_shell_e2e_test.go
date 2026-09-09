@@ -7,7 +7,9 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
+	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
 	"github.com/chromedp/chromedp"
 )
 
@@ -188,7 +190,7 @@ func newDocShellSite(t *testing.T) *docShellSite {
 // without a hard reload.
 func TestKeyedShellSwapSyncsDocLangAndSkip(t *testing.T) {
 	site := newDocShellSite(t)
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 
 	var lang, skip, result string
 	if err := chromedp.Run(ctx,
@@ -240,7 +242,7 @@ func TestKeyedShellSwapSyncsDocLangAndSkip(t *testing.T) {
 // document language and skip label.
 func TestSharedShellKeepsNodeSyncsDocLang(t *testing.T) {
 	site := newDocShellSite(t)
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 
 	var result string
 	if err := chromedp.Run(ctx,
@@ -287,7 +289,7 @@ func TestSharedShellKeepsNodeSyncsDocLang(t *testing.T) {
 // exercised here because it stays a bare partial (pinned server-side).
 func TestLayoutlessLangSwitchFetchesFullPage(t *testing.T) {
 	site := newDocShellSite(t)
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 
 	var result string
 	if err := chromedp.Run(ctx,

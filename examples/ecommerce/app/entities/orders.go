@@ -226,61 +226,26 @@ func (r *OrdersRepo) BatchDelete(ctx context.Context, ids []string) error {
 // OnOrdersCreated subscribes to entity.created events scoped to "orders".
 // Returns a cancel func; call it to remove the handler.
 func OnOrdersCreated(app *framework.App, fn func(ctx context.Context, row *Orders) error) func() {
-	return app.Events().Subscribe(framework.EntityCreated, func(ctx context.Context, ev framework.Event) error {
-		row, ok := extractOrdersRecord(ev, "orders")
-		if !ok {
-			return nil
-		}
-		return fn(ctx, row)
-	})
+	return onEntityEvent[Orders](app, "orders", framework.EntityCreated, fn)
 }
 
 // OnOrdersUpdated subscribes to entity.updated events scoped to "orders".
 func OnOrdersUpdated(app *framework.App, fn func(ctx context.Context, row *Orders) error) func() {
-	return app.Events().Subscribe(framework.EntityUpdated, func(ctx context.Context, ev framework.Event) error {
-		row, ok := extractOrdersRecord(ev, "orders")
-		if !ok {
-			return nil
-		}
-		return fn(ctx, row)
-	})
+	return onEntityEvent[Orders](app, "orders", framework.EntityUpdated, fn)
 }
 
 // OnOrdersDeleted subscribes to entity.deleted events scoped to "orders". Callback
 // receives the deleted row's id only: by the time the event fires the row
 // has been removed (or soft-deleted).
 func OnOrdersDeleted(app *framework.App, fn func(ctx context.Context, id string) error) func() {
-	return app.Events().Subscribe(framework.EntityDeleted, func(ctx context.Context, ev framework.Event) error {
-		data, ok := ev.Data.(map[string]any)
-		if !ok || data["entity"] != "orders" {
-			return nil
-		}
-		record, _ := data["record"].(map[string]any)
-		id, _ := record["id"].(string)
-		if id == "" {
-			return nil
-		}
-		return fn(ctx, id)
-	})
+	return onEntityDeleted(app, "orders", fn)
 }
 
 // extractOrdersRecord unmarshals an event payload's "record" field into a
 // *Orders, returning ok=false if the event is for a different entity or
 // the payload shape doesn't match.
 func extractOrdersRecord(ev framework.Event, entityName string) (*Orders, bool) {
-	data, ok := ev.Data.(map[string]any)
-	if !ok || data["entity"] != entityName {
-		return nil, false
-	}
-	record, ok := data["record"].(map[string]any)
-	if !ok {
-		return nil, false
-	}
-	var v Orders
-	if err := framework.UnmarshalEntity(record, &v); err != nil {
-		return nil, false
-	}
-	return &v, true
+	return extractEntityRecord[Orders](ev, entityName)
 }
 
 // registerOrders registers the "orders" entity with app.

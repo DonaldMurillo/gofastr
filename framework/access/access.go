@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"maps"
 	"net/http"
 	"slices"
-	"sort"
 	"strings"
 	"sync"
 
@@ -279,9 +279,9 @@ func nearestCapability(grant Permission, registered []Permission) Permission {
 		return ""
 	}
 	nearest := registered[0]
-	best := stringDistance(string(grant), string(nearest))
+	best := EditDistance(string(grant), string(nearest))
 	for _, candidate := range registered[1:] {
-		distance := stringDistance(string(grant), string(candidate))
+		distance := EditDistance(string(grant), string(candidate))
 		if distance < best {
 			nearest = candidate
 			best = distance
@@ -290,7 +290,13 @@ func nearestCapability(grant Permission, registered []Permission) Permission {
 	return nearest
 }
 
-func stringDistance(a, b string) int {
+// EditDistance returns the Levenshtein distance between a and b: the
+// smallest number of single-character insertions, deletions, and
+// substitutions that turns one into the other. It backs
+// nearestCapability's "did you mean" suggestions here and the theme-token
+// typo hints in contracts/analyzers (closestToken), which formerly carried
+// its own private copy of this loop.
+func EditDistance(a, b string) int {
 	if len(a) < len(b) {
 		a, b = b, a
 	}
@@ -390,12 +396,7 @@ func (rp *RolePolicy) permissionsFor(role string) []Permission {
 func (rp *RolePolicy) Roles() []string {
 	rp.mu.RLock()
 	defer rp.mu.RUnlock()
-	roles := make([]string, 0, len(rp.rolePermissions))
-	for r := range rp.rolePermissions {
-		roles = append(roles, r)
-	}
-	sort.Strings(roles)
-	return roles
+	return slices.Sorted(maps.Keys(rp.rolePermissions))
 }
 
 // PermissionsOf returns a defensive copy of the permissions granted to

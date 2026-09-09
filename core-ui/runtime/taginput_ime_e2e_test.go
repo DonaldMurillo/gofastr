@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
 	"github.com/chromedp/chromedp"
 )
 
@@ -24,7 +25,7 @@ import (
 // field is observably mid-composition.
 func TestTagInputEnterDuringCompositionDoesNotCommit(t *testing.T) {
 	g := startGadgetServer(t, `[]`, tagInputPage)
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 
 	var afterCompose, afterPlain, composingEcho string
 	if err := chromedp.Run(ctx,

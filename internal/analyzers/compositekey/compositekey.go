@@ -47,11 +47,11 @@ package compositekey
 
 import (
 	"go/ast"
-	"go/constant"
 	"go/token"
 	"go/types"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/astx"
 	"golang.org/x/tools/go/analysis"
 )
 
@@ -206,12 +206,12 @@ func checkFile(pass *analysis.Pass, f *ast.File, helpers map[*types.Func]ast.Exp
 	ast.Inspect(f, func(n ast.Node) bool {
 		switch e := n.(type) {
 		case *ast.IndexExpr:
-			if _, isMap := mapUnderlying(pass, e.X); isMap && isKey(e.Index) {
+			if _, isMap := astx.MapUnderlying(pass, e.X); isMap && isKey(e.Index) {
 				report(e.Index)
 			}
 		case *ast.CompositeLit:
 			// Key position of a map composite literal.
-			if _, isMap := mapUnderlying(pass, e); isMap {
+			if _, isMap := astx.MapUnderlying(pass, e); isMap {
 				for _, elt := range e.Elts {
 					kv, ok := elt.(*ast.KeyValueExpr)
 					if !ok {
@@ -231,7 +231,7 @@ func checkFile(pass *analysis.Pass, f *ast.File, helpers map[*types.Func]ast.Exp
 			// key (key, storeKey, cacheKey...): the idempotency
 			// Store.Begin / Finish shape, where the join feeds a keyed
 			// store behind an interface rather than a map in this file.
-			if fn, ok := calleeFunc(pass, e.Fun); ok {
+			if fn, ok := astx.CalleeFunc(pass, e.Fun); ok {
 				if sig, ok := fn.Type().(*types.Signature); ok {
 					params := sig.Params()
 					for i, arg := range e.Args {
@@ -302,7 +302,7 @@ func keyOrigin(pass *analysis.Pass, x ast.Expr, bound map[types.Object]ast.Expr,
 		}
 		return nil
 	case *ast.CallExpr:
-		if fn, ok := calleeFunc(pass, e.Fun); ok {
+		if fn, ok := astx.CalleeFunc(pass, e.Fun); ok {
 			if join, ok := helpers[fn]; ok {
 				return &keySource{obj: fn, join: join, node: e}
 			}
@@ -421,16 +421,6 @@ func exprPrintsSame(a, b ast.Expr) bool {
 	return false
 }
 
-// stringConstant resolves a basic literal or named constant to its string
-// value.
-func stringConstant(pass *analysis.Pass, e ast.Expr) (string, bool) {
-	tv, ok := pass.TypesInfo.Types[e]
-	if !ok || tv.Value == nil || tv.Value.Kind() != constant.String {
-		return "", false
-	}
-	return constant.StringVal(tv.Value), true
-}
-
 // stringConstantResolving resolves a literal, named constant, or local
 // bound to one (transitively) to its constant string value: a local
 // holding a fixed string is a fixed string.
@@ -438,10 +428,10 @@ func stringConstantResolving(pass *analysis.Pass, e ast.Expr, bound map[types.Ob
 	if depth > 4 {
 		return "", false
 	}
-	if s, ok := stringConstant(pass, e); ok {
+	if s, ok := astx.StringConstant(pass, e); ok {
 		return s, true
 	}
-	if id, ok := unparen(e).(*ast.Ident); ok {
+	if id, ok := ast.Unparen(e).(*ast.Ident); ok {
 		if obj := pass.TypesInfo.ObjectOf(id); obj != nil {
 			if src, ok := bound[obj]; ok {
 				return stringConstantResolving(pass, src, bound, depth+1)
@@ -449,25 +439,6 @@ func stringConstantResolving(pass *analysis.Pass, e ast.Expr, bound map[types.Ob
 		}
 	}
 	return "", false
-}
-
-func unparen(e ast.Expr) ast.Expr {
-	for {
-		p, ok := e.(*ast.ParenExpr)
-		if !ok {
-			return e
-		}
-		e = p.X
-	}
-}
-
-func mapUnderlying(pass *analysis.Pass, x ast.Expr) (*types.Map, bool) {
-	tv, ok := pass.TypesInfo.Types[x]
-	if !ok || tv.Type == nil {
-		return nil, false
-	}
-	m, ok := tv.Type.Underlying().(*types.Map)
-	return m, ok
 }
 
 func boundExprs(pass *analysis.Pass, f *ast.File) map[types.Object]ast.Expr {
@@ -506,18 +477,6 @@ func boundExprs(pass *analysis.Pass, f *ast.File) map[types.Object]ast.Expr {
 		return true
 	})
 	return m
-}
-
-func calleeFunc(pass *analysis.Pass, fun ast.Expr) (*types.Func, bool) {
-	switch f := fun.(type) {
-	case *ast.Ident:
-		fn, ok := pass.TypesInfo.Uses[f].(*types.Func)
-		return fn, ok
-	case *ast.SelectorExpr:
-		fn, ok := pass.TypesInfo.Uses[f.Sel].(*types.Func)
-		return fn, ok
-	}
-	return nil, false
 }
 
 // qualifiedCallee renders a call target as "pkg.Func" through the type

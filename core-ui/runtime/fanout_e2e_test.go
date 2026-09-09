@@ -8,7 +8,9 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
+	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
 	"github.com/chromedp/chromedp"
 )
 
@@ -72,7 +74,7 @@ func TestFanout_ProducerUpdatesConsumersWithoutPerConsumerRequests(t *testing.T)
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 
 	var c1Before, c2Before, c1After, c2After string
 	if err := chromedp.Run(ctx,

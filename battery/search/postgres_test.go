@@ -3,85 +3,19 @@ package search
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"fmt"
-	"os"
-	"strings"
-	"sync"
-	"sync/atomic"
 	"testing"
-	"time"
 
-	_ "github.com/lib/pq"
+	"github.com/DonaldMurillo/gofastr/internal/pgtest"
 )
 
-// Postgres integration tests for PostgresSearch. Postgres comes from
-// $TEST_POSTGRES_DSN if set; otherwise an ephemeral testcontainer. If neither
-// is reachable the suite skips, it never fails for lack of a database (same
-// convention as battery/auth/entity_store_pg_test.go).
-//
-// Each test gets its own throwaway schema on the shared instance, so they run
-// in parallel without colliding. SetMaxOpenConns(1) keeps the per-connection
-// search_path stable.
-
-var (
-	searchPGOnce    sync.Once
-	searchPGBaseDSN string
-	searchPGErr     error
-	searchPGUsing   string
-	searchPGLogged  atomic.Bool
-)
-
-func resolveSearchPG() (string, error) {
-	searchPGOnce.Do(func() {
-		if dsn := strings.TrimSpace(os.Getenv("TEST_POSTGRES_DSN")); dsn != "" {
-			searchPGBaseDSN = dsn
-			searchPGUsing = "env"
-			return
-		}
-		searchPGErr = errNoPG
-	})
-	return searchPGBaseDSN, searchPGErr
-}
-
-// openSearchPG returns a *sql.DB bound to a fresh isolated schema. The schema
-// is dropped on test cleanup. search_path is set so bare table names in
-// PostgresConfig resolve into the test schema.
+// Postgres integration tests use internal/pgtest. It reads $TEST_POSTGRES_DSN
+// and skips locally when no server is configured. Each test gets its own
+// throwaway schema on the shared instance, with search_path set for every
+// pooled connection.
 func openSearchPG(t *testing.T) *sql.DB {
 	t.Helper()
-	dsn, err := resolveSearchPG()
-	if err != nil {
-		t.Skipf("Postgres unavailable: %v", err)
-	}
-	if !searchPGLogged.Swap(true) {
-		t.Logf("battery/search Postgres tests using %s", searchPGUsing)
-	}
-	db, err := sql.Open("postgres", dsn)
-	if err != nil {
-		t.Fatalf("open pg: %v", err)
-	}
-	db.SetMaxOpenConns(1)
-	for range 25 {
-		ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
-		if err := db.PingContext(ctx); err == nil {
-			cancel()
-			break
-		}
-		cancel()
-		time.Sleep(200 * time.Millisecond)
-	}
-	schema := fmt.Sprintf("search_%d", time.Now().UnixNano())
-	if _, err := db.Exec("CREATE SCHEMA " + schema); err != nil {
-		t.Fatalf("create schema: %v", err)
-	}
-	if _, err := db.Exec("SET search_path TO " + schema); err != nil {
-		t.Fatalf("set search_path: %v", err)
-	}
-	t.Cleanup(func() {
-		db.Exec("DROP SCHEMA " + schema + " CASCADE")
-		db.Close()
-	})
-	return db
+	return pgtest.DB(t)
 }
 
 // newSearchIndex builds a PostgresSearch on a fresh schema and ensures the
@@ -446,8 +380,3 @@ func TestPostgresHyphenatedQueryTerm(t *testing.T) {
 		t.Fatalf("hyphenated first term missed: %#v", got)
 	}
 }
-
-// errNoPG mirrors battery/auth: env-supplied Postgres or skip. See
-// cmd/repolint's test-only-dep-in-consumer-graph rule for why the
-// testcontainers fallback was removed.
-var errNoPG = errors.New("TEST_POSTGRES_DSN is not set — `make postgres-up` starts one")

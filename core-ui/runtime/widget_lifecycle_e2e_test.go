@@ -18,6 +18,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
 	"github.com/chromedp/chromedp"
 )
 
@@ -144,7 +145,7 @@ var widgetPollOpts = chromedp.WithPollingTimeout(10 * time.Second)
 //     element on both the fetched and the SSR-hydrated path.
 func TestAppwideWidgetRootsSurviveShellSwap(t *testing.T) {
 	site := startWidgetLifecycleServer(t)
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 
 	var panelHydrated map[string]any
 	if err := chromedp.Run(ctx,
@@ -286,7 +287,7 @@ return n===2&&root.isConnected&&root.parentElement===document.body;})()`, &settl
 // Two live roots for one registration must never coexist.
 func TestSwappedSSRPanelMovesToFreshInline(t *testing.T) {
 	site := startWidgetLifecycleServer(t)
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 
 	var done map[string]any
 	if err := chromedp.Run(ctx,
