@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"fmt"
+	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
 	"net/http"
 	"net/http/httptest"
 	"sync/atomic"
@@ -53,7 +54,7 @@ func TestDispatchRPC_FormFailureShowsFieldErrors(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 
-	ctx := newSeedBrowserCtx(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 	var msg, invalid, describedBy string
 	var wrapErr bool
 	if err := chromedp.Run(ctx,
