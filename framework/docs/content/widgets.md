@@ -338,6 +338,57 @@ Details worth knowing:
   do the thing → dismiss" needs no form at all (that's how
   `ui.ConfirmAction` is built).
 
+## Lifecycle events
+
+Widget chrome arrives in the document lazily: a `Hidden` widget's
+chrome is fetched on first open, SSR-inlined chrome appears at first
+paint. When it lands, the runtime dispatches `fui:widget-open` on
+`document`, so code that needs to touch the chrome the moment it
+exists can listen instead of running a MutationObserver over the whole
+document:
+
+```js
+// Re-apply per-language strings to the palette whenever its chrome
+// (re)enters the document.
+document.addEventListener('fui:widget-open', (e) => {
+  if (e.detail.name !== 'cmd-palette') return;
+  applyStrings(e.detail.root, currentLang);
+});
+```
+
+`e.detail` carries `{ name, root, hydrated, reinserted }`:
+
+| Field | Meaning |
+|---|---|
+| `name` | The widget's registered name |
+| `root` | The `[data-fui-widget]` element itself (safe to query and bind into) |
+| `hydrated` | `true` when SSR-inlined chrome was hydrated in place, `false` for fetched chrome |
+| `reinserted` | `true` only when a SPA shell swap re-inserted an already-mounted root |
+
+The event fires every time the root (re)enters a wired state: first
+mount (both chrome paths), every re-open after a close, and the
+post-swap re-insertion above. The close twin, `fui:widget-close`, fires
+with `{ name, root }` before the root is hidden or removed, on every
+close path (trigger-side close, the chrome's own close button, a
+backdrop click, Escape). Rebind on open, unbind on close; never assume
+a root mounts exactly once. The `fui:` prefix marks widget-UI events on
+`document`; the `gofastr:` prefix is reserved for window-level
+navigation events (`gofastr:navigate`, `gofastr:beforenavigate`).
+
+**DOM lifetime.** A registered widget root survives SPA navigation.
+Roots the runtime fetches are appended to `<body>`, outside the layout
+shell, and the framework inlines SSR chrome just before `</body>`, so
+a full-shell swap leaves both alone; if a host layout wraps inlined
+chrome inside the swapped shell anyway, the runtime re-appends the
+root to `<body>` after the swap and fires `fui:widget-open` again with
+`reinserted: true` (or, when the destination page inlines its own
+copy, dismisses the stale instance and hydrates the fresh node). What
+does NOT survive is an open modal: navigation closes every open
+backdrop'd widget, a closed widget's fetched chrome is dropped (the
+next open re-fetches it, served from the per-navigation chrome cache),
+and that close → reopen cycle fires `fui:widget-close` followed by
+`fui:widget-open`.
+
 ## Routing
 
 `widget.Mount(router, &def)` registers the per-widget HTTP routes:

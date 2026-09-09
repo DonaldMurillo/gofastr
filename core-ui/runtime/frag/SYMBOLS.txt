@@ -215,6 +215,7 @@ nav	2	_settleScroll
 nav	2	_showNavToast
 nav	2	_statefulParams
 nav	2	announceRoute
+nav	2	applyDocShell
 nav	2	cacheScreen
 nav	2	closeDisclosures
 nav	2	crossesDocBoundary
@@ -242,6 +243,7 @@ nav	2	swapShell
 nav	4	anchor
 nav	4	ap
 nav	4	as
+nav	4	c
 nav	4	cat
 nav	4	clean
 nav	4	cur
@@ -259,6 +261,8 @@ nav	4	id
 nav	4	id
 nav	4	ids
 nav	4	keys
+nav	4	lang
+nav	4	link
 nav	4	m
 nav	4	m
 nav	4	myEpoch
@@ -276,6 +280,7 @@ nav	4	r
 nav	4	r
 nav	4	seq
 nav	4	set
+nav	4	skip
 nav	4	srcs
 nav	4	st
 nav	4	stateful

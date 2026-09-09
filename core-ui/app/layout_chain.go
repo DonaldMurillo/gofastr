@@ -29,23 +29,27 @@ type LayoutLayer struct {
 
 // Key returns the stable identity the client runtime compares to decide
 // the deepest layer shared between the current DOM and a navigation
-// target: "g:<prefix>:<layoutName>" for group levels ("g:<prefix>" when
-// marker-only), "l:<name>" for plain layouts. The layout name is part of
-// a group level's key so a per-screen layout override inside a group
-// compares as a DIFFERENT layer than its siblings, navigating between
-// them re-renders the shell instead of silently keeping whichever one
-// happened to be on screen. Empty when the level has no usable identity
-// (an unnamed non-group layout), the client treats an empty key as
-// never-matching, forcing a full swap at that depth.
+// target: "g:<prefix>:<identity>" for group levels ("g:<prefix>" when
+// marker-only), "l:<identity>" for plain layouts, where identity is the
+// layout's declared Key when set, else its Name. Declaring Key lets one
+// layout shape re-render per context (the #408 case: a shell per
+// language, same Name, one CSS contract) while the name keeps driving
+// data-fui-layout. The identity is part of a group level's key so a
+// per-screen layout override inside a group compares as a DIFFERENT
+// layer than its siblings, navigating between them re-renders the shell
+// instead of silently keeping whichever one happened to be on screen.
+// Empty when the level has no usable identity (an unnamed non-group
+// layout), the client treats an empty key as never-matching, forcing a
+// full swap at that depth.
 func (l LayoutLayer) Key() string {
 	if l.GroupPrefix != "" {
 		if l.Layout == nil {
 			return "g:" + l.GroupPrefix
 		}
-		return "g:" + l.GroupPrefix + ":" + l.Layout.Name
+		return "g:" + l.GroupPrefix + ":" + l.Layout.identity()
 	}
-	if l.Layout != nil && l.Layout.Name != "" {
-		return "l:" + l.Layout.Name
+	if l.Layout != nil {
+		return l.Layout.selfKey()
 	}
 	return ""
 }
@@ -133,13 +137,18 @@ func renderLayoutChain(ctx context.Context, chain []LayoutLayer, content render.
 // renderLayoutChainFrom wraps content in layers from..len(chain)-1. When
 // from > 0 the outermost shared layers are already in the caller's DOM
 // (subtree partials), so every rendered layer nests, none emits <main>.
+// The layer at index from is the root of the payload the client swaps
+// in, so it carries the doc markers (data-fui-lang /
+// data-fui-skip-label) from the render context; without a fresh carrier
+// the document language and skip link could never change on an in-chain
+// navigation.
 func renderLayoutChainFrom(ctx context.Context, chain []LayoutLayer, from int, content render.HTML) render.HTML {
 	out := content
 	for i := len(chain) - 1; i >= from; i-- {
 		layer := chain[i]
 		key := layer.Key()
 		if layer.Layout != nil {
-			out = layer.Layout.wrapLayer(ctx, out, i == 0, key)
+			out = layer.Layout.wrapLayer(ctx, out, i == 0, key, i == from)
 		}
 		if layer.GroupPrefix != "" {
 			attrs := map[string]string{"data-fui-screen-group": layer.GroupPrefix}
@@ -150,6 +159,14 @@ func renderLayoutChainFrom(ctx context.Context, chain []LayoutLayer, from int, c
 				attrs["data-fui-layout-key"] = key
 				attrs["data-fui-layout-slot"] = key
 				attrs["tabindex"] = "-1"
+			}
+			if i == from && layer.Layout == nil {
+				// Marker-only payload root: the wrapper div itself is the
+				// carrier (a level with a layout carries the markers on
+				// its layout wrapper, emitted just above).
+				for k, v := range docShellAttrs(ctx) {
+					attrs[k] = v
+				}
 			}
 			out = html.Div(html.DivConfig{
 				Class:      "fui-screen-group",

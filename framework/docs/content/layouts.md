@@ -59,7 +59,7 @@ Every layer gets three attributes:
 | Attribute | Where | What it is |
 |---|---|---|
 | `data-fui-layout="<name>"` | layer wrapper div | the layout's name; pairs with the `.layout-<name>` class for CSS |
-| `data-fui-layout-key="<key>"` | layer wrapper div | the layer's identity: `l:<name>` for a plain layout, `g:<prefix>:<name>` for a group layer |
+| `data-fui-layout-key="<key>"` | layer wrapper div | the layer's identity: `l:<name>` for a plain layout, `g:<prefix>:<name>` for a group layer (`<key>` replaces `<name>` in both when the layout declares one, see `WithKey` below) |
 | `data-fui-layout-slot="<key>"` | the layer's content cell | the swap target: `<main>` at the root, a `.layout-content` div below it |
 
 The route manifest carries each route's chain as the `layouts` array of
@@ -67,6 +67,32 @@ those keys, outermost first. A group layer's key embeds its layout
 name, so a per-screen layout override inside a group compares as a
 different layer than its siblings and gets its shell re-rendered on
 navigation instead of silently keeping whichever was on screen.
+
+### Keying a layer independently of its name
+
+`WithKey` decouples the layer's identity from its name:
+
+```go
+en := app.NewLayout("docs").WithKey("docs-en").WithHeader(enHeader)
+es := app.NewLayout("docs").WithKey("docs-es").WithHeader(esHeader)
+application.Register("/en/reference", &ReferenceScreen{}, en)
+application.Register("/es/reference", &ReferenceScreen{}, es)
+```
+
+The key is what the runtime compares to decide what to swap; the name is
+what CSS and diagnostics see (`data-fui-layout`, `.layout-docs`). Use it
+when one layout shape must re-render per context while its styling stays
+the same shape. The common case is a shell that varies by language:
+without a key, both layouts compare as `l:docs`, the first one loaded
+stays on screen forever, and a Spanish page arrived at by client-side
+navigation keeps the English header. With per-language keys the language
+switch is an ordinary cross-chain navigation: the shell is replaced. See
+[internationalization](i18n.md) for the full recipe, including how
+`<html lang>` and the skip link travel with the swap.
+
+Reach for a distinct name when the shape genuinely differs (different
+slots, different `.layout-<name>` CSS); reach for `WithKey` when the
+shape is the same and only the content or context varies.
 
 Each level also wraps its slots in elements of its own: the header
 component renders inside a `<header role="banner">`, the sidebar inside
@@ -177,7 +203,9 @@ unaware of the change and breaks both behaviors above.
 - **Reusing one layout name for two different layouts.** Layer keys
   embed the name; two distinct `*Layout` values named `"docs"` at the
   same depth compare as the same layer, and navigation between them
-  keeps the wrong shell. Names should be unique per shape.
+  keeps the wrong shell. Names should be unique per shape. When the two
+  layouts ARE the same shape varying by context (a shell per language),
+  keep the shared name and declare a `WithKey` on each instead.
 - **Expecting `Standalone()` per screen.** It is a group property: the
   whole group opts out of the default layout, not one route.
 - **Prefetching mutating or per-user-expensive routes.** Prefetch is a

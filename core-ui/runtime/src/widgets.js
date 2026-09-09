@@ -1,7 +1,10 @@
 // GoFastr runtime module, Widgets
 //
 // The widget runtime: mountWidget (chrome + dismiss + modal stack),
-// openWidget / closeWidget / _mountByName / chrome cache. The
+// openWidget / closeWidget / _mountByName / chrome cache, the
+// fui:widget-open / fui:widget-close lifecycle events (#409), and the
+// post-swap reattach that keeps app-wide roots alive across shell
+// swaps. The
 // per-widget data-fui-* primitives now live in demand-loaded sibling
 // modules: widgethelpers (charcount, persist-storage, fill-input,
 // clear-on-esc, submit-on-enter, disable-when-invalid, tick-elapsed),
@@ -25,7 +28,13 @@
 // core can still read them.
 (() => {
   'use strict';
+  const _wEv = (t, d) => document.dispatchEvent(new CustomEvent(t, { detail: d }));
+  // #409: widget lifecycle events are dispatched on document (fui: is
+  // the widget-UI family; gofastr: stays reserved for window-level
+  // navigation events). One shared dispatch spelling: three inline
+  // CustomEvent constructions pushed the module past its gzip budget.
   window.__gofastr = window.__gofastr || {};
+
   const NS = window.__gofastr;
 
   NS._chromeCache = NS._chromeCache || {};
@@ -282,8 +291,13 @@
         if (focusables.length > 0) focusables[0].focus({ preventScroll: true });
       });
     }
-
     function dismiss() {
+      // #409: the close twin of fui:widget-open, dispatched before any
+      // teardown so a listener can match detail.root against what it
+      // bound. Every close path funnels through here (closeWidget, the
+      // chrome's own close button, backdrop click, deep-link strip), so
+      // this is the single announce point.
+      _wEv('fui:widget-close', { name: cfg.name, root: w });
       const st = NS._widgets[cfg.name] || {};
       const hydrated = st.hydrated;
       const oh = st.outsideHandler;
@@ -441,8 +455,15 @@
       }
     }
 
+    // #409: chrome insertion is observable. Both mount paths (fetched
+    // chrome appended to <body>, SSR-inlined chrome hydrated in place)
+    // and every re-open land here with the root in the DOM and wired,
+    // the moment consumers that bind into widget chrome (per-language
+    // strings, section selects) could only guess at with whole-document
+    // MutationObservers. Re-insertion after a shell swap re-announces
+    // through _reattachWidgets below with reinserted: true.
+    _wEv('fui:widget-open', { name: cfg.name, root: w, hydrated: reg.hydrated, reinserted: false });
   };
-
   // #329: chrome renders per-principal (serveChrome renders with the
   // request context), but this cache lives on window and SPA navigation
   // keeps the document. A sign-in / sign-out that happens without a full
@@ -458,5 +479,44 @@
   // framework/docs/content/widgets.md § Chrome context.
   window.addEventListener('gofastr:navigate', () => { NS._chromeCache = {}; });
 
+  // #409: app-wide widget roots survive the SPA full-shell swap. A
+  // root the runtime fetched is appended to <body> and the swap never
+  // touches it, but a host layout can wrap SSR-inlined chrome INSIDE
+  // the shell element, and swapShell replaces that element wholesale:
+  // the registered root is torn out of the document while _widgets
+  // still lists it, which strands the widget AND wedges the next open
+  // (_mountByName's "already mounted" early return, openWidget's
+  // trigger included). nav.js calls doc.reattach() right after every
+  // swap, so this rides the same hook. Wrapping NS.doc.reattach here
+  // instead of calling out from kernel.js keeps the call out of the
+  // core bundle, whose gzip budget has single-digit bytes of headroom;
+  // the widget DOM is this module's to own.
+  NS._reattachWidgets = () => {
+    for (const name in NS._widgets) {
+      const r = NS._widgets[name];
+      if (!r?.root) continue;
+      const f = document.querySelector('[data-fui-widget="' + CSS.escape(name) + '"]');
+      if (f && f !== r.root) {
+        // The swapped-in shell SSR-inlined its own copy of this widget
+        // (host layouts that nest chrome in the shell inline it on
+        // every page). Drop the stale instance (dismiss announces
+        // fui:widget-close and stops the poll / outside handlers) and
+        // the navigate catalog pass hydrates the fresh node, which
+        // announces fui:widget-open. Dismiss's hydrated branch only
+        // re-hides, so lift the leftover root out explicitly (remove()
+        // is a no-op on an already-detached node).
+        r.dismiss();
+        r.root.remove();
+        continue;
+      }
+      if (r.root.isConnected) continue;
+      // Backdrops are runtime-created on <body> (mountWidget), so the
+      // swap never detaches one; only the root can ride inside a shell.
+      NS.doc.appendBody(r.root);
+      _wEv('fui:widget-open', { name, root: r.root, hydrated: r.hydrated, reinserted: true });
+    }
+  };
+  const _kr = NS.doc.reattach;
+  NS.doc.reattach = () => { _kr(); NS._reattachWidgets(); };
   (NS.loadedModules ||= {}).widgets = true;
 })();

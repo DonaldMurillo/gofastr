@@ -7,6 +7,61 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+### Changed
+- **One home per helper.** A clone survey over the tree found the same
+  bodies re-implemented across packages; each now has one canonical
+  definition and the copies are gone (164 files, about 2,500 lines
+  removed). The shared homes: `core/textsafe` gains
+  `HasControlBytes`, `SanitizeControlBytes` (removes C0/DEL for
+  header, token, and route values), `ScrubControlBytes` (percent-encodes
+  for log lines), and `Truncate`; `core/query` gains `IsPostgres`,
+  `SafeTableName`, `ReservedIdent`, `ParseDBTime`, `ParseDBTimeString`,
+  and `ProbeSQLiteBindLayout`; `core/migrate.AcquireSQLiteLease` is the
+  one SQLite lease behind both the migrate and seed locks;
+  `core/stream.SpliceSeat` is the one seat-FIFO splice behind the SSE
+  bus, MCP, crud streams, RTC, and the harness; `core/netguard` gains
+  `GuardedTransport` and `IsLoopbackAuthority`; `core/handler` gains
+  `IsJSONContentType` and `IsSafeRelativePath` (the auth "next" field
+  and the partial-redirect header share one grammar); `core/config`
+  gains `EnvBool`; `framework/internal/exif` carries the TIFF
+  orientation parser for both `file` and `image` without linking the
+  codecs into `file`; `framework/contracts` exports `ReadModulePath` and
+  `ImportPathFor`, and the CLI and `cmd/repolint` call its
+  `IsGeneratedSource`; the repo
+  analyzers share `internal/analyzers/internal/astx` and use the
+  standard library's `ast.Unparen`. The hand-rolled base-10 `itoa` loops,
+  `sortStrings`, and every sorted-map-keys helper are now `strconv.Itoa`,
+  `slices.Sort`, or `slices.Sorted(maps.Keys(m))`.
+  Four checks got stricter by sharing the canonical version: the local
+  storage battery's fold-refusal walk now runs even when `os.OpenRoot`
+  fails (its own copy silently returned nil on the first empty path
+  component in that branch, so a folded key was never refused there); the
+  webhook battery's table-name validation now rejects leading digits
+  and SQL reserved words like the idempotency and feature-flag stores
+  already did; `battery/auth`'s JSON gate accepts any `+json`
+  structured suffix and rejects a Content-Type whose parameters fail
+  to parse; and `cmd/repolint` exempts a generated file only on the
+  full `// Code generated ... DO NOT EDIT.` header, no longer on either
+  half alone. Generated example apps and the frozen upgrade fixtures
+  under `evals/` were left as they are.
+- **Generated apps and CLIs carry each body once.** The blueprint
+  generator now emits `entities/events.go`, a fixed seam holding the
+  typed-event subscribe and record-extract bodies; every
+  `On<Entity>Created/Updated/Deleted` and `extract<Entity>Record` is a
+  one-line typed wrapper with its signature unchanged, so an entity file
+  is about 35 lines shorter and a fix lands in one place. `--add` writes
+  the seam only when absent, and an entity named `events` renders as
+  `entity_events.go`. The generated CLI gains `verbs.go` with the list,
+  get, delete, batch, and watch bodies once; the per-entity
+  `run<Entity><Verb>` functions stay as three-line wrappers, so the
+  documented `custom.go` wrap pattern and the `<entity>Commands()` tables
+  are untouched, and `verbs` joins the reserved command names. Usage and
+  error text is byte-identical. The ecommerce example was regenerated;
+  meridian's generated files predate the current templates and carry
+  hand edits, so they were left alone.
+
+## [0.85.0] - 2026-09-08
+
 ### Security
 - **Round-4 adversarial probes: 54 over twelve property families the
   earlier rounds never opened (authorization at derived surfaces,
@@ -78,7 +133,7 @@ and `/api/docs/openapi.json` now filter entities by the caller's
 read scope (an entity the caller cannot read is omitted, matching
 `/api/llm.md`); `WithPublicOpenAPI` opts into the full, unfiltered
 document.
-+
+
 - **Round-5 adversarial probes: 130 probe files, 158 failing findings
   and 2 data races over the families the earlier rounds never opened
   (log-side scrubbing of panic payloads, stream-seat exhaustion,
@@ -281,60 +336,42 @@ from `$PREFIX_TOKEN`, the stored config, or `login --with-token`
   mark the current section. Static markup goes through
   `app.NewStaticComponent`. It hides with the title in the collapsed
   rail and the auto-hide rest state (#405).
-
-### Changed
-- **One home per helper.** A clone survey over the tree found the same
-  bodies re-implemented across packages; each now has one canonical
-  definition and the copies are gone (164 files, about 2,500 lines
-  removed). The shared homes: `core/textsafe` gains
-  `HasControlBytes`, `SanitizeControlBytes` (removes C0/DEL for
-  header, token, and route values), `ScrubControlBytes` (percent-encodes
-  for log lines), and `Truncate`; `core/query` gains `IsPostgres`,
-  `SafeTableName`, `ReservedIdent`, `ParseDBTime`, `ParseDBTimeString`,
-  and `ProbeSQLiteBindLayout`; `core/migrate.AcquireSQLiteLease` is the
-  one SQLite lease behind both the migrate and seed locks;
-  `core/stream.SpliceSeat` is the one seat-FIFO splice behind the SSE
-  bus, MCP, crud streams, RTC, and the harness; `core/netguard` gains
-  `GuardedTransport` and `IsLoopbackAuthority`; `core/handler` gains
-  `IsJSONContentType` and `IsSafeRelativePath` (the auth "next" field
-  and the partial-redirect header share one grammar); `core/config`
-  gains `EnvBool`; `framework/internal/exif` carries the TIFF
-  orientation parser for both `file` and `image` without linking the
-  codecs into `file`; `framework/contracts` exports `ReadModulePath` and
-  `ImportPathFor`, and the CLI and `cmd/repolint` call its
-  `IsGeneratedSource`; the repo
-  analyzers share `internal/analyzers/internal/astx` and use the
-  standard library's `ast.Unparen`. The hand-rolled base-10 `itoa` loops,
-  `sortStrings`, and every sorted-map-keys helper are now `strconv.Itoa`,
-  `slices.Sort`, or `slices.Sorted(maps.Keys(m))`.
-  Four checks got stricter by sharing the canonical version: the local
-  storage battery's fold-refusal walk now runs even when `os.OpenRoot`
-  fails (its own copy silently returned nil on the first empty path
-  component in that branch, so a folded key was never refused there); the
-  webhook battery's table-name validation now rejects leading digits
-  and SQL reserved words like the idempotency and feature-flag stores
-  already did; `battery/auth`'s JSON gate accepts any `+json`
-  structured suffix and rejects a Content-Type whose parameters fail
-  to parse; and `cmd/repolint` exempts a generated file only on the
-  full `// Code generated ... DO NOT EDIT.` header, no longer on either
-  half alone. Generated example apps and the frozen upgrade fixtures
-  under `evals/` were left as they are.
-- **Generated apps and CLIs carry each body once.** The blueprint
-  generator now emits `entities/events.go`, a fixed seam holding the
-  typed-event subscribe and record-extract bodies; every
-  `On<Entity>Created/Updated/Deleted` and `extract<Entity>Record` is a
-  one-line typed wrapper with its signature unchanged, so an entity file
-  is about 35 lines shorter and a fix lands in one place. `--add` writes
-  the seam only when absent, and an entity named `events` renders as
-  `entity_events.go`. The generated CLI gains `verbs.go` with the list,
-  get, delete, batch, and watch bodies once; the per-entity
-  `run<Entity><Verb>` functions stay as three-line wrappers, so the
-  documented `custom.go` wrap pattern and the `<entity>Commands()` tables
-  are untouched, and `verbs` joins the reserved command names. Usage and
-  error text is byte-identical. The ecommerce example was regenerated;
-  meridian's generated files predate the current templates and carry
-  hand edits, so they were left alone.
-
+- **`Layout.WithKey` gives a layout a layer identity independent of its
+  name.** The runtime compares layer keys to decide how much of the page
+  to swap on a client-side navigation, and the key used to be derived
+  from the name alone, so a shell that must re-render per language had
+  to bake the language into its name and its CSS selectors. A layout
+  now declares `NewLayout("docs").WithKey("docs-es")`: the name keeps
+  driving `data-fui-layout` and the wrapper class, the key drives the
+  swap. The document language and the skip-link text travel with the
+  swapped payload too, as `data-fui-lang` / `data-fui-skip-label`
+  on the outermost rendered layer, and the runtime copies them onto
+  `<html lang>` and the skip link after every swap, so a Spanish page
+  reached by client-side navigation no longer keeps English chrome or
+  `lang="en"` (#408).
+- **`App.WithSkipLabel` and `WithSkipLabelFunc` localize the app shell's
+  skip link.** The link was hardcoded to "Skip to main content"; a host
+  sets one label, or one per route the way `WithLangFunc` works, and a
+  host that sets nothing renders byte-identically (#411).
+- **Widget lifecycle events and DOM lifetime.** The runtime dispatches
+  `fui:widget-open` on `document` (detail `{ name, root, hydrated,
+  reinserted }`) whenever a widget's chrome is in the document and
+  wired, on both the fetched and the SSR-inlined path and on every
+  re-open, and `fui:widget-close` before a root is hidden or removed, so
+  code that binds into widget chrome listens instead of running a
+  whole-document MutationObserver. A registered widget root now survives
+  a full-shell swap: a root a host layout wrapped inside the shell is
+  re-appended to `<body>` after the swap and announced again with
+  `reinserted: true` (#409).
+- **CodeBlock highlights lines and words, marks diffs, and can wrap.**
+  `CodeBlockConfig` gains `HighlightLines []LineRange` (with
+  `ParseLineRanges("1,3-5")`), `Diff`, `HighlightWords`, and `Wrap`; the
+  per-line wrapper carries the class the CSS bands read, word marks are
+  `<mark>` elements that never cross a tag, and a zero config renders
+  byte-identical markup. `ui.Markdown` forwards the fence options
+  `title`, `showLineNumbers`, `scroll`, `{1,3-5}` / `highlight=`, `diff`,
+  `words=`, and `wrap` onto it, and keeps the raw info string on the
+  block's `data-meta` (#410).
 
 ### Fixed
 - **The sortable-list 409 e2e tests no longer read the live region

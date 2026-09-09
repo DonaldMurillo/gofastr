@@ -189,8 +189,10 @@ string is a language followed by options, not one opaque name:
 `class="language-X"` as before; `Meta` is everything after it,
 verbatim, carried on the `<code>` tag's `data-meta` attribute for a
 renderer to interpret. `core/markdown` assigns it no meaning:
-`framework/ui.Markdown` is what maps `title=` and `showLineNumbers`
-onto `CodeBlockConfig`.
+`framework/ui.Markdown` is what maps fence options onto
+`CodeBlockConfig` (`title=`, `showLineNumbers`, `scroll`, highlight
+ranges, `diff`, `words=`, `wrap`; the full table lives in
+[UI components index → CodeBlock](ui-new-components.md#codeblock-line-highlighting-diffs-wrapping)).
 
 Before this, the whole info string became the language, so
 ` ```go title="main.go" ` emitted

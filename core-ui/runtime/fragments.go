@@ -162,6 +162,12 @@ var fragmentAttrs = map[string][]string{
 		// destination route's manifest docScripts at every soft-nav
 		// entry point. A difference is a hard document load.
 		"data-fui-doc",
+		// data-fui-lang / data-fui-skip-label ride the outermost layer
+		// the server renders (App.LangForPath / SkipLabelForPath): the
+		// runtime copies them onto documentElement.lang and the skip link
+		// after every swap, they live outside the shell it replaces.
+		"data-fui-lang",
+		"data-fui-skip-label",
 		"data-fui-screen-group",
 	},
 	"widgets-boot": {
