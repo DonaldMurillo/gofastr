@@ -11,6 +11,8 @@ import (
 	"net/http"
 	"sync"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
 // timeoutWriter wraps an http.ResponseWriter so that the timeout path and
@@ -421,9 +423,9 @@ func Timeout(d time.Duration) Middleware {
 					<-done
 					if childPanic != nil {
 						slog.Error("panic in timed-out handler",
-							"error", truncate(scrubControlBytes(fmt.Sprint(childPanic)), maxRecoveryPanicLen),
-							"path", truncate(safeLogPath(r.URL.Path), maxRecoveryPathLen),
-							"method", truncate(safeLogMethod(r.Method), maxRecoveryMethodLen),
+							"error", textsafe.Truncate(textsafe.ScrubControlBytes(fmt.Sprint(childPanic)), maxRecoveryPanicLen),
+							"path", textsafe.Truncate(safeLogPath(r.URL.Path), maxRecoveryPathLen),
+							"method", textsafe.Truncate(safeLogMethod(r.Method), maxRecoveryMethodLen),
 						)
 					}
 				}()
@@ -468,8 +470,8 @@ func Timeout(d time.Duration) Middleware {
 					// endpoint 504" starts from this line. Streaming
 					// responses don't get here; their deadline is shed.
 					attrs := []any{
-						"method", truncate(safeLogMethod(r.Method), maxRecoveryMethodLen),
-						"path", truncate(safeLogPath(r.URL.Path), maxRecoveryPathLen),
+						"method", textsafe.Truncate(safeLogMethod(r.Method), maxRecoveryMethodLen),
+						"path", textsafe.Truncate(safeLogPath(r.URL.Path), maxRecoveryPathLen),
 						"timeout", effective,
 					}
 					if hasRoute && rt.Pattern != "" {

@@ -155,16 +155,7 @@ func (p Part) Kind() string {
 
 // Validate enforces the exactly-one-content rule the spec states for Part.
 func (p Part) Validate() error {
-	n := 0
-	for _, set := range []bool{p.Text != nil, p.Raw != nil, p.URL != nil, p.Data != nil} {
-		if set {
-			n++
-		}
-	}
-	if n != 1 {
-		return fmt.Errorf("a2a: part must carry exactly one of text, raw, url, data; got %d", n)
-	}
-	return nil
+	return exactlyOne("part", "text, raw, url, data", p.Text != nil, p.Raw != nil, p.URL != nil, p.Data != nil)
 }
 
 // UnmarshalJSON decodes a part and enforces the exactly-one-content rule,
@@ -271,14 +262,23 @@ type StreamResponse struct {
 
 // Validate enforces the exactly-one rule for StreamResponse.
 func (r StreamResponse) Validate() error {
+	return exactlyOne("stream response", "task, message, statusUpdate, artifactUpdate",
+		r.Task != nil, r.Message != nil, r.StatusUpdate != nil, r.ArtifactUpdate != nil)
+}
+
+// exactlyOne returns nil when precisely one of the set flags is set,
+// and otherwise the error naming what and its alternatives. It
+// replaces the two verbatim copies of this shape in Part.Validate and
+// StreamResponse.Validate.
+func exactlyOne(what, alternatives string, set ...bool) error {
 	n := 0
-	for _, set := range []bool{r.Task != nil, r.Message != nil, r.StatusUpdate != nil, r.ArtifactUpdate != nil} {
-		if set {
+	for _, s := range set {
+		if s {
 			n++
 		}
 	}
 	if n != 1 {
-		return fmt.Errorf("a2a: stream response must carry exactly one of task, message, statusUpdate, artifactUpdate; got %d", n)
+		return fmt.Errorf("a2a: %s must carry exactly one of %s; got %d", what, alternatives, n)
 	}
 	return nil
 }

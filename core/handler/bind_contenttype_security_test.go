@@ -15,11 +15,11 @@ import (
 // decoded first") and TestBind_NonJSONContentTypeSkipped pins the struct
 // branch only.
 // Surfaces: core/handler/bind.go non-struct-pointer branch — bindBody(r, dst)
-// with no isJSONContentType check, while the struct branch checks it.
+// with no IsJSONContentType check, while the struct branch checks it.
 // Finding: a cross-site POST (text/plain is CORS-simple — no preflight) with
 // a JSON body into *map[string]any or *string binds; the struct branch
 // correctly skips the same body.
-// Fix direction: apply the struct branch's isJSONContentType gate to the
+// Fix direction: apply the struct branch's IsJSONContentType gate to the
 // non-struct branch before bindBody.
 
 func TestBindRedNonStructJSONGate(t *testing.T) {
@@ -75,4 +75,35 @@ func TestBindRedNonStructJSONGate(t *testing.T) {
 				"still decode into *string (s=%q)", s)
 		}
 	})
+}
+
+// TestIsJSONContentType pins the shared Content-Type gate table. The
+// auth battery's former hand-rolled copy (battery/auth json_limit.go)
+// answered the same for every input its tests exercised (text/plain,
+// missing, application/json); battery/auth now calls this function, so
+// this table is the one place those answers are pinned. The documented
+// deltas over the old auth copy: any "+json" suffix counts (not only
+// application/*+json), and malformed parameters reject the value.
+func TestIsJSONContentType(t *testing.T) {
+	cases := []struct {
+		ct   string
+		want bool
+	}{
+		{"", false},                // missing Content-Type → gate closed
+		{"application/json", true}, // the gate's pass case
+		{"application/json; charset=utf-8", true},
+		{"APPLICATION/JSON", true},   // ParseMediaType lowercases the type
+		{"text/plain", false},        // auth's smuggle-reject case
+		{"application/jsonp", false}, // literal-prefix trick must not match
+		{"application/json-evil", false},
+		{"application/vnd.api+json", true}, // RFC 6839 structured suffix
+		{"text/calendar+json", true},       // suffix counts from any type (widened vs the auth copy)
+		{"text/event-stream", false},
+		{"application/json; charset=\"unclosed", false}, // params must parse (strict vs the auth copy)
+	}
+	for _, tc := range cases {
+		if got := IsJSONContentType(tc.ct); got != tc.want {
+			t.Errorf("IsJSONContentType(%q) = %v, want %v", tc.ct, got, tc.want)
+		}
+	}
 }

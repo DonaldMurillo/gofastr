@@ -14,10 +14,10 @@ import (
 // adversarial round 5, phase 2).
 // Property: a recovered panic value embedding collector-derived text
 // reaches the default slog sink scrubbed of C0/DEL/C1/bidi — the
-// scrubControlBytes rule pinned for RecoveryFn + Timeout's late-panic
+// textsafe.ScrubControlBytes rule pinned for RecoveryFn + Timeout's late-panic
 // log (this package) and battery/log's SlogErrorReporter.
 // Surface: core/middleware/metrics.go::runCollectorSafely :250-256 —
-// "error", truncate(fmt.Sprint(r), maxRecoveryPanicLen): truncate only,
+// "error", textsafe.Truncate(fmt.Sprint(r), maxRecoveryPanicLen): truncate only,
 // no scrub (the sibling RecoveryFn path scrubs AND truncates).
 // Finding: a third-party CollectorFunc that panics with a value carrying
 // raw control bytes (\x1b OSC opener, U+202E bidi override, U+009B CSI)
@@ -25,8 +25,8 @@ import (
 // lines into the operator's tail (terminal-injection). The isolation
 // itself is pinned (TestMetricsCollectorPanicIsolated) — the scrub of
 // the recovered value is the open gap, and it sits in the very package
-// that defines scrubControlBytes.
-// Fix direction: run the truncated value through scrubControlBytes (the
+// that owns the scrub rule.
+// Fix direction: run the truncated value through textsafe.ScrubControlBytes (the
 // same rule the package's own RecoveryFn applies).
 // Probe note: the payload embeds the control bytes RAW (panic value),
 // not %q-escaped — %q pre-escapes them and would hide the surface.

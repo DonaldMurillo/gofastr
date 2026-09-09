@@ -34,16 +34,25 @@ func (cb *CountBuilder) Where(condition string, args ...any) *CountBuilder {
 
 // Build produces the final parameterized SQL and argument slice.
 func (cb *CountBuilder) Build() (string, []any) {
+	return buildFiltered("SELECT COUNT(*) FROM ", cb.table, cb.wheres, cb.args)
+}
+
+// buildFiltered writes "<verb><table> [WHERE (…) AND (…)…]" plus the
+// flattened argument slice for a builder whose WHERE clauses are all
+// ANDed. It is the shared body of CountBuilder.Build and
+// DeleteBuilder.Build, which were verbatim copies of each other
+// differing only in the SQL verb.
+func buildFiltered(verb, table string, wheres []whereClause, args []any) (string, []any) {
 	var sb strings.Builder
 
-	sb.WriteString("SELECT COUNT(*) FROM ")
-	sb.WriteString(sanitizeFragment(cb.table))
+	sb.WriteString(verb)
+	sb.WriteString(sanitizeFragment(table))
 
 	// WHERE
-	if len(cb.wheres) > 0 {
+	if len(wheres) > 0 {
 		sb.WriteString(" WHERE ")
 		paramIdx := 1
-		for i, w := range cb.wheres {
+		for i, w := range wheres {
 			if i > 0 {
 				sb.WriteString(" ")
 				sb.WriteString(w.connector)
@@ -59,5 +68,5 @@ func (cb *CountBuilder) Build() (string, []any) {
 		}
 	}
 
-	return sb.String(), cb.args
+	return sb.String(), args
 }

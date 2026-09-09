@@ -6,6 +6,8 @@ import (
 	"net"
 	"net/http"
 	"strings"
+
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
 // CORSConfig holds configuration for the CORS middleware.
@@ -159,7 +161,7 @@ func (s stripCredsWriter) Unwrap() http.ResponseWriter { return s.ResponseWriter
 func sanitizeCORSTokens(in []string) []string {
 	out := make([]string, 0, len(in))
 	for _, t := range in {
-		clean := stripCtrlBytes(t)
+		clean := textsafe.SanitizeControlBytes(t)
 		clean = strings.TrimSpace(clean)
 		if clean == "" {
 			continue
@@ -167,29 +169,4 @@ func sanitizeCORSTokens(in []string) []string {
 		out = append(out, clean)
 	}
 	return out
-}
-
-func stripCtrlBytes(s string) string {
-	if !containsCtrl(s) {
-		return s
-	}
-	var b strings.Builder
-	b.Grow(len(s))
-	for i := 0; i < len(s); i++ {
-		c := s[i]
-		if c < 0x20 || c == 0x7f {
-			continue
-		}
-		b.WriteByte(c)
-	}
-	return b.String()
-}
-
-func containsCtrl(s string) bool {
-	for i := 0; i < len(s); i++ {
-		if s[i] < 0x20 || s[i] == 0x7f {
-			return true
-		}
-	}
-	return false
 }

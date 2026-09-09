@@ -5,36 +5,9 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
-
-// sanitizeHeaderValue strips bytes that would otherwise smuggle a new
-// header line (CR/LF/NUL) or terminal-control mischief (other C0, DEL)
-// into a response header value. Used to scrub caller-supplied
-// Content-Type strings before writing them to the ResponseWriter.
-func sanitizeHeaderValue(s string) string {
-	if !needsHeaderSanitize(s) {
-		return s
-	}
-	var b strings.Builder
-	b.Grow(len(s))
-	for i := 0; i < len(s); i++ {
-		c := s[i]
-		if c < 0x20 || c == 0x7f {
-			continue
-		}
-		b.WriteByte(c)
-	}
-	return b.String()
-}
-
-func needsHeaderSanitize(s string) bool {
-	for i := 0; i < len(s); i++ {
-		if s[i] < 0x20 || s[i] == 0x7f {
-			return true
-		}
-	}
-	return false
-}
 
 // stripSSEField truncates a single-line SSE field value at the first
 // CR/LF/NUL. Those bytes terminate an SSE field and would otherwise let
@@ -75,10 +48,11 @@ func Respond(w http.ResponseWriter, r *http.Request, out any) {
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
-
-	// Check for custom ResponseType
 	if rt, ok := out.(ResponseType); ok {
-		ct := sanitizeHeaderValue(rt.ContentType())
+		// Caller-supplied Content-Type is sanitized (C0/DEL removed)
+		// before it reaches the ResponseWriter so it cannot smuggle a
+		// new header line or terminal-control mischief.
+		ct := textsafe.SanitizeControlBytes(rt.ContentType())
 		if ct == "" {
 			ct = "application/octet-stream"
 		}

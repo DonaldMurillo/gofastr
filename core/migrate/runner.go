@@ -53,6 +53,19 @@ func (m *Migrator) placeholder(n int) string {
 	return fmt.Sprintf("$%d", n)
 }
 
+// trackingRowWhere returns the predicate and its args that target
+// mig's row in the tracking table: group-qualified when ga, bare
+// version otherwise. It replaces the if/else halves of the three
+// tracking-row statements in runMigrationUpNoTx and
+// runMigrationDownNoTx.
+func (m *Migrator) trackingRowWhere(mig Migration, ga bool) (string, []any) {
+	if ga {
+		return "group_name = " + m.placeholder(1) + " AND version = " + m.placeholder(2),
+			[]any{mig.Group, mig.Version}
+	}
+	return "version = " + m.placeholder(1), []any{mig.Version}
+}
+
 // connish is the subset of *sql.DB / *sql.Conn the runner needs. Threading it
 // lets Up/Down run every statement, tracking-table DDL, applied-version
 // reads, and each migration's transaction, on the single connection that
@@ -503,16 +516,9 @@ func (m *Migrator) runMigrationUpNoTx(ctx context.Context, x connish, tbl string
 		return fmt.Errorf("exec up (no-transaction, left dirty): %w", err)
 	}
 
-	if ga {
-		clearSQL := fmt.Sprintf("UPDATE %s SET dirty = FALSE WHERE group_name = %s AND version = %s", tbl, m.placeholder(1), m.placeholder(2))
-		if _, err := x.ExecContext(ctx, clearSQL, mig.Group, mig.Version); err != nil {
-			return fmt.Errorf("clear dirty flag: %w", err)
-		}
-	} else {
-		clearSQL := fmt.Sprintf("UPDATE %s SET dirty = FALSE WHERE version = %s", tbl, m.placeholder(1))
-		if _, err := x.ExecContext(ctx, clearSQL, mig.Version); err != nil {
-			return fmt.Errorf("clear dirty flag: %w", err)
-		}
+	where, args := m.trackingRowWhere(mig, ga)
+	if _, err := x.ExecContext(ctx, fmt.Sprintf("UPDATE %s SET dirty = FALSE WHERE "+where, tbl), args...); err != nil {
+		return fmt.Errorf("clear dirty flag: %w", err)
 	}
 	return nil
 }
@@ -669,31 +675,17 @@ func (m *Migrator) runMigrationDown(ctx context.Context, x connish, tbl string, 
 // CONCURRENTLY that errors partway) leaves a dirty marker that blocks later
 // runs until reconciled; success removes the row.
 func (m *Migrator) runMigrationDownNoTx(ctx context.Context, x connish, tbl string, mig Migration, ga bool) error {
-	if ga {
-		markSQL := fmt.Sprintf("UPDATE %s SET dirty = TRUE WHERE group_name = %s AND version = %s", tbl, m.placeholder(1), m.placeholder(2))
-		if _, err := x.ExecContext(ctx, markSQL, mig.Group, mig.Version); err != nil {
-			return fmt.Errorf("mark dirty: %w", err)
-		}
-	} else {
-		markSQL := fmt.Sprintf("UPDATE %s SET dirty = TRUE WHERE version = %s", tbl, m.placeholder(1))
-		if _, err := x.ExecContext(ctx, markSQL, mig.Version); err != nil {
-			return fmt.Errorf("mark dirty: %w", err)
-		}
+	where, args := m.trackingRowWhere(mig, ga)
+	if _, err := x.ExecContext(ctx, fmt.Sprintf("UPDATE %s SET dirty = TRUE WHERE "+where, tbl), args...); err != nil {
+		return fmt.Errorf("mark dirty: %w", err)
 	}
 	if _, err := x.ExecContext(ctx, mig.Down); err != nil {
 		// Leave the dirty row. The rollback half-applied and needs a human.
 		return fmt.Errorf("exec down (no-transaction, left dirty): %w", err)
 	}
-	if ga {
-		deleteSQL := fmt.Sprintf("DELETE FROM %s WHERE group_name = %s AND version = %s", tbl, m.placeholder(1), m.placeholder(2))
-		if _, err := x.ExecContext(ctx, deleteSQL, mig.Group, mig.Version); err != nil {
-			return fmt.Errorf("delete migration record: %w", err)
-		}
-	} else {
-		deleteSQL := fmt.Sprintf("DELETE FROM %s WHERE version = %s", tbl, m.placeholder(1))
-		if _, err := x.ExecContext(ctx, deleteSQL, mig.Version); err != nil {
-			return fmt.Errorf("delete migration record: %w", err)
-		}
+	where, args = m.trackingRowWhere(mig, ga)
+	if _, err := x.ExecContext(ctx, fmt.Sprintf("DELETE FROM %s WHERE "+where, tbl), args...); err != nil {
+		return fmt.Errorf("delete migration record: %w", err)
 	}
 	return nil
 }

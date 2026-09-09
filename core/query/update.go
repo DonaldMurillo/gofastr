@@ -71,20 +71,7 @@ func (ub *UpdateBuilder) Build() (string, []any) {
 	// WHERE
 	if len(ub.wheres) > 0 {
 		sb.WriteString(" WHERE ")
-		for i, w := range ub.wheres {
-			if i > 0 {
-				sb.WriteString(" ")
-				sb.WriteString(w.connector)
-				sb.WriteString(" ")
-			}
-			// Wrap each condition in parens. See query.go for the
-			// SQL-precedence bypass this defends against.
-			condition := renumberPlaceholders(w.condition, paramIdx)
-			paramIdx += len(w.args)
-			sb.WriteByte('(')
-			sb.WriteString(condition)
-			sb.WriteByte(')')
-		}
+		appendWhereClauses(&sb, ub.wheres, paramIdx)
 	}
 
 	// Returning: each column sanitized.

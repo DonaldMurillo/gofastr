@@ -79,8 +79,8 @@ func TestSSEStream_SetsNosniff(t *testing.T) {
 }
 
 // Property: every ResponseType surface routes its caller-supplied
-// Content-Type through sanitizeHeaderValue before it reaches the wire,
-// and a value that sanitizes to EMPTY falls back to
+// Content-Type through textsafe.SanitizeControlBytes before it reaches
+// the wire, and a value that sanitizes to EMPTY falls back to
 // application/octet-stream rather than an empty header. Surfaces:
 // RawBytes.CT (the public field most likely to carry interpolated input)
 // across CRLF / lone CR / NUL / DEL shapes plus the all-control-bytes

@@ -46,7 +46,7 @@ func Bind(r *http.Request, dst any) error {
 		// with no preflight — the gate must hold for every destination shape.
 		hasBody := r.Body != nil && r.ContentLength != 0
 		if hasBody || r.Method == http.MethodPost || r.Method == http.MethodPut || r.Method == http.MethodPatch {
-			if isJSONContentType(r.Header.Get("Content-Type")) {
+			if IsJSONContentType(r.Header.Get("Content-Type")) {
 				return bindBody(r, dst)
 			}
 		}
@@ -71,7 +71,7 @@ func Bind(r *http.Request, dst any) error {
 	// 4. Bind JSON body (highest priority, overwrites)
 	hasBody := r.Body != nil && r.ContentLength != 0
 	if hasBody || r.Method == http.MethodPost || r.Method == http.MethodPut || r.Method == http.MethodPatch {
-		if isJSONContentType(r.Header.Get("Content-Type")) {
+		if IsJSONContentType(r.Header.Get("Content-Type")) {
 			if err := bindBody(r, dst); err != nil {
 				return err
 			}
@@ -81,12 +81,18 @@ func Bind(r *http.Request, dst any) error {
 	return nil
 }
 
-// isJSONContentType reports whether ct names the JSON media type. It
+// IsJSONContentType reports whether ct names the JSON media type. It
 // parses the value through mime.ParseMediaType so "application/json"
 // and "application/json; charset=utf-8" both match, while a literal
 // prefix check would also accept "application/jsonp" or
 // "application/json-evil", a known Content-Type smuggling trick.
-func isJSONContentType(ct string) bool {
+//
+// Exported for battery/auth's JSON gate (json_limit.go), which
+// previously carried its own hand-rolled copy: the shared version
+// accepts any "+json" structured-syntax suffix (not only
+// application/*+json) and rejects values whose parameters fail to
+// parse, where the old copy ignored parameter syntax entirely.
+func IsJSONContentType(ct string) bool {
 	if ct == "" {
 		return false
 	}
