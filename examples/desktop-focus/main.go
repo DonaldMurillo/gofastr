@@ -1,9 +1,10 @@
 // Command desktop-focus is the desktop battery's feature-complete
 // dogfood app: a local-first pomodoro timer that exercises the whole
-// battery/desktop surface (hidden-title main window, floating widget,
-// settings window, tray countdown, notifications, deep links,
-// cross-window messages, a plugin capability, the updater) and runs
-// unchanged over plain HTTP behind --serve / --addr / $PORT.
+// battery/desktop surface (unified-chrome main window over the sidebar
+// material, floating widget, settings window, tray countdown,
+// notifications, deep links, cross-window messages, a plugin
+// capability, the updater) and runs unchanged over plain HTTP behind
+// --serve / --addr / $PORT.
 //
 //	go run ./examples/desktop-focus              # opens the window
 //	go run ./examples/desktop-focus --serve :8080
@@ -25,6 +26,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/battery/desktop"
 	"github.com/DonaldMurillo/gofastr/battery/desktop/native"
+	desktopui "github.com/DonaldMurillo/gofastr/battery/desktop/ui"
 	"github.com/DonaldMurillo/gofastr/framework"
 	fwimage "github.com/DonaldMurillo/gofastr/framework/image"
 	"github.com/DonaldMurillo/gofastr/framework/isolation"
@@ -117,14 +119,29 @@ func buildApp(shell desktop.Shell) (*framework.App, *desktop.Battery, *Engine, e
 		Title: "Focus",
 		Width: 1000,
 		Shell: shell,
-		// Hidden title bar: the page paints under it, the traffic
-		// lights stay.
-		Style: desktop.WindowStyle{Chrome: desktop.ChromeHiddenTitle},
-		// The settings window: the app menu's own item (cmd+,), the
-		// File menu's row, the tray's row, and the page's
-		// windows.openSettings all reach it. The screen it opens is
+		// The macOS look (phase 13): the main window wears the unified
+		// toolbar shape (transparent title bar, hidden title, an empty
+		// toolbar so the style takes effect) over the sidebar material,
+		// with the sidebar zone sized to the source list the desktop
+		// layout renders. The page reports later changes through
+		// window.setChrome (the ResizeObserver in the page script).
+		Style: desktop.WindowStyle{
+			Chrome:   desktop.ChromeUnified,
+			Material: desktop.MaterialSidebar,
+		},
+		SidebarWidth: desktopui.DefaultSidebarWidth,
+		// The settings window: the same unified chrome over the
+		// whole-window material. The four entry points (the app menu's
+		// own item, the File menu's row, the tray's row, and the page's
+		// windows.openSettings) all reach it; the screen it opens is
 		// the battery's own preferences form (see buildSite).
-		Settings: &desktop.WindowSpec{Path: "/settings", Title: "Settings", Width: 480, Height: 600},
+		Settings: &desktop.WindowSpec{
+			Path: "/settings", Title: "Settings", Width: 480, Height: 600,
+			Style: desktop.WindowStyle{
+				Chrome:   desktop.ChromeUnified,
+				Material: desktop.MaterialWindow,
+			},
+		},
 		// The app's settings, declared once: stored in the app state
 		// under "settings", read by the engine through
 		// d.Preferences(), and rendered by desktop.PreferencesScreen

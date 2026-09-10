@@ -1,8 +1,8 @@
 # desktop-focus
 
 A local-first pomodoro timer and the `battery/desktop` dogfood app that
-uses every desktop feature: hidden-title main window, floating
-always-on-top timer widget, settings window, tray countdown,
+uses every desktop feature: unified-chrome main window,
+floating always-on-top timer widget, settings window, tray countdown,
 notifications, deep links, cross-window messages, a plugin capability,
 and the updater. One `main.go` runs it unchanged inside the OS WebView
 or over plain HTTP.
@@ -25,8 +25,11 @@ or over plain HTTP.
   `skip`, `state`. The page never talks to the engine any other way;
   every mutation answer carries the new state so the page syncs from
   the engine instead of guessing.
-- Window styles: the main window is `ChromeHiddenTitle` (traffic
-  lights, page paints under the title bar); the timer widget is
+- Window styles: the main window is `ChromeUnified` over the sidebar
+  material (transparent title bar, hidden title, an empty toolbar so
+  the style takes effect, vibrancy under the source list, the zone at
+  `SidebarWidth`); the settings window is `ChromeUnified` over the
+  whole-window material; the timer widget is
   `desktop.Widget("/widget", 320, 300)` with `AllSpaces` (borderless,
   non-activating, transparent, visible on every Space), opened
   automatically when a session starts. The widget's card header is the
@@ -49,6 +52,19 @@ or over plain HTTP.
 - The updater wired from `FOCUS_UPDATE_FEED` / `FOCUS_UPDATE_KEY`
   (`gofastr desktop keygen` / `feed`), with the File menu's
   "Check for updates…" item.
+
+## The macOS look
+
+The app opts into the phase 13 desktop theme and layout:
+`site.WithTheme(desktopui.Theme())` and every screen but the widget
+mounts on `desktopui.Layout()` with a `SourceList` sidebar (Dashboard,
+Tasks, History, Settings; the active row follows the path). The timer
+controls float in a `FloatingToolbar`, the task detail shows its facts
+in an `Inspector`, and the sidebar zone's width is reported to the
+shell through `window.setChrome` from a `ResizeObserver` in the page
+script. The example itself ships no CSS: the theme, the layout, and
+the `battery/desktop/ui` components carry all of it. Capture findings
+and the exact commands live in `docs/desktop-sections/13-focus.md`.
 
 ## Run it
 

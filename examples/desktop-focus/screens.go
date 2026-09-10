@@ -7,9 +7,11 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/battery/desktop"
+	desktopui "github.com/DonaldMurillo/gofastr/battery/desktop/ui"
 	appui "github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
+	"github.com/DonaldMurillo/gofastr/core-ui/interactive"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework"
@@ -65,25 +67,32 @@ func tasksFormResource(src resource.DataSource) resource.Config {
 	}
 }
 
-// taskDetailScreen is "/tasks/{id}" and taskEditorScreen is
-// "/tasks/new" + "/tasks/{id}/edit", the notes example's landing
-// shapes: Load resolves the title (owner-scoped, so a foreign id falls
-// back, never leaks) and the editor's Cancel lands on the detail page.
+// taskDetailScreen is "/tasks/{id}": the task's title and actions, the
+// Start card (a saved task lands here, so this is where a session
+// starts), and the task's facts in the desktop inspector pane. It
+// composes the same framework primitives the resource engine's Detail
+// uses (PageHeader, DetailList rows via desktopui.Inspector, the
+// interactive delete) instead of res.Detail, because the facts read
+// better in the Mac inspector pane beside the content than in a
+// full-width list under it, the Things and Reminders shape.
 type taskDetailScreen struct {
 	component.ContextOnly
 	res   resource.Config
 	id    string
 	title string
+	row   map[string]any
 }
 
 func (s *taskDetailScreen) SetParams(p map[string]string) { s.id = p["id"] }
 
 func (s *taskDetailScreen) Load(ctx context.Context) error {
 	s.title = "Task"
+	s.row = nil
 	row, err := s.res.Crud.GetOne(ctx, s.id, nil)
 	if err != nil || row == nil {
 		return nil
 	}
+	s.row = row
 	if v, present := row["title"]; present {
 		if t, ok := v.(string); ok && t != "" {
 			s.title = t
@@ -96,11 +105,32 @@ func (s *taskDetailScreen) ScreenTitle() string       { return s.title }
 func (s *taskDetailScreen) ScreenDescription() string { return "A task" }
 
 func (s *taskDetailScreen) RenderCtx(ctx context.Context) render.HTML {
+	if s.row == nil {
+		// The owner-scoped read answered nothing: a foreign or deleted
+		// id is simply not there, never a leak.
+		return ui.EmptyState(ui.EmptyStateConfig{
+			Title: "Task not found", Description: "It may have been deleted.", HeadingLevel: 1,
+		})
+	}
+	header := ui.PageHeader(ui.PageHeaderConfig{
+		Title: s.title,
+		Actions: ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM, Align: ui.AlignCenter},
+			ui.LinkButton(ui.LinkButtonConfig{Label: "Edit", Href: "/tasks/" + s.id + "/edit", Variant: ui.ButtonSecondary}),
+			ui.Button(ui.ButtonConfig{
+				Label: "Delete", Variant: ui.ButtonDanger,
+				ExtraAttrs: interactive.Delete("/api/tasks/" + s.id).
+					WithConfirm("Delete this task? This cannot be undone.").
+					OnSuccess(interactive.Navigate("/tasks")).Attrs(),
+			}),
+			ui.Link(ui.LinkConfig{Href: "/tasks", Text: "← Back", Variant: ui.LinkMuted}),
+		),
+	})
+
 	// A saved task lands here, so this is where a session starts: the
 	// primary action the dashboard's row button repeats. The paragraph
 	// names what Start does, since every one of those things happens
 	// outside this page (a floating panel, the menu bar, a notification).
-	start := ui.Card(ui.CardConfig{},
+	start := ui.Card(ui.CardConfig{Heading: "Start a session", HeadingLevel: 2},
 		ui.Cluster(ui.ClusterConfig{Gap: ui.GapMD, Align: ui.AlignCenter},
 			ui.Button(ui.ButtonConfig{
 				Label:      "Start focus",
@@ -111,7 +141,21 @@ func (s *taskDetailScreen) RenderCtx(ctx context.Context) render.HTML {
 			html.Paragraph(html.TextConfig{}, render.Text("Opens the floating timer, counts down in the menu bar, and notifies you when the session ends.")),
 		),
 	)
-	return render.Join(start, s.res.Detail(ctx, s.id))
+	content := start
+	if note := stringField(s.row, "note"); note != "" {
+		content = render.Join(start, ui.Card(ui.CardConfig{Heading: "Note", HeadingLevel: 2},
+			html.Paragraph(html.TextConfig{}, render.Text(note))))
+	}
+
+	facts := desktopui.Inspector(desktopui.InspectorConfig{
+		Label: "Task facts",
+		Items: []ui.DetailItem{
+			{Label: "Estimate", Value: render.Text(strconv.Itoa(asInt(s.row["estimate"])) + " pomodoros")},
+			{Label: "Completed", Value: render.Text(strconv.Itoa(asInt(s.row["completedPomodoros"])) + " pomodoros")},
+			{Label: "Done", Value: render.Text(boolField(s.row, "done"))},
+		},
+	})
+	return render.Join(header, ui.Grid(ui.GridConfig{Min: "18rem"}, content, facts))
 }
 
 type taskEditorScreen struct {
@@ -148,9 +192,9 @@ func (s *taskEditorScreen) RenderCtx(ctx context.Context) render.HTML {
 	return tasksFormResource(s.src).Form(ctx, s.id)
 }
 
-// dashboardScreen is "/": the page header, three stat cards, the "Now"
-// card (phase, task, countdown, the four timer buttons), and the tasks
-// table with its per-row Start link. The countdown and button
+// dashboardScreen is "/": the page header, the floating timer toolbar,
+// three stat cards, the "Now" card (phase, task, countdown), and the
+// tasks table with its per-row Start link. The countdown and button
 // visibility are server-rendered from the engine's state, then kept
 // live by static/desktop-focus.js from focus_tick.
 type dashboardScreen struct {
@@ -173,6 +217,13 @@ func (s *dashboardScreen) RenderCtx(ctx context.Context) render.HTML {
 			Label: "New task", Href: "/tasks/new", Variant: ui.ButtonPrimary,
 		}),
 	})
+	// The timer controls float in the glass capsule (the macOS
+	// floating-toolbar group), sticky over the content while the task
+	// list scrolls under them.
+	toolbar := desktopui.FloatingToolbar(ui.ToolbarConfig{
+		Label:  "Timer actions",
+		Groups: []ui.ToolbarGroup{{Label: "Session", Children: timerControls(state.Phase)}},
+	})
 	cards := ui.Grid(ui.GridConfig{Min: "10rem"},
 		ui.StatCard(ui.StatCardConfig{Label: "Focused today", Value: strconv.Itoa(stats.minutes) + "m"}),
 		ui.StatCard(ui.StatCardConfig{Label: "Sessions today", Value: strconv.Itoa(stats.sessions)}),
@@ -180,14 +231,25 @@ func (s *dashboardScreen) RenderCtx(ctx context.Context) render.HTML {
 	)
 	now := nowCard(state)
 	tasks := s.tasksTable(ctx, state.Phase)
-	return render.Join(header, cards, now, tasks)
+	return render.Join(header, toolbar, cards, now, tasks)
+}
+
+// timerControls is the four timer buttons, visible per the phase. The
+// data-focus-action hooks are the page script's; the hidden attributes
+// are the server's best render of the same visibility rules the script
+// applies on each focus_tick.
+func timerControls(phase string) []render.HTML {
+	return []render.HTML{
+		focusButton("Start", "start", phase == phaseIdle, ui.ButtonPrimary),
+		focusButton("Pause", "pause", phase == phaseWork || phase == phaseBreak, ui.ButtonSecondary),
+		focusButton("Resume", "resume", phase == phasePaused, ui.ButtonSecondary),
+		focusButton("Skip", "skip", phase != phaseIdle, ui.ButtonGhost),
+	}
 }
 
 // nowCard is the "Now" card: what phase the timer is in, on which
-// task, the countdown, and the controls. The data-focus-* hooks are
-// the page script's; the hidden attributes are the server's best
-// render of the same visibility rules the script applies on each
-// focus_tick.
+// task, and the countdown. The data-focus-* hooks are the page
+// script's, the same hooks the widget's countdown carries.
 func nowCard(state State) render.HTML {
 	phase := state.Phase
 	countdown := "--:--"
@@ -196,18 +258,12 @@ func nowCard(state State) render.HTML {
 	}
 	body := []render.HTML{
 		html.Paragraph(html.TextConfig{ExtraAttrs: html.Attrs{"data-focus-hint": ""}},
-			render.Text("Start a session on a task below, or an untracked one here. The floating timer opens, the menu bar counts down, and a notification marks the end.")),
+			render.Text("Start a session on a task below, or an untracked one from the toolbar. The floating timer opens, the menu bar counts down, and a notification marks the end.")),
 		html.Paragraph(html.TextConfig{ExtraAttrs: html.Attrs{"data-focus-phase": ""}}, render.Text(phase)),
 		html.Paragraph(html.TextConfig{ExtraAttrs: html.Attrs{"data-focus-task": ""}}, render.Text(state.TaskTitle)),
 		html.Paragraph(html.TextConfig{ExtraAttrs: html.Attrs{"data-focus-countdown": ""}}, render.Text(countdown)),
 	}
-	controls := ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM, Align: ui.AlignCenter},
-		focusButton("Start", "start", phase == phaseIdle, ui.ButtonPrimary),
-		focusButton("Pause", "pause", phase == phaseWork || phase == phaseBreak, ui.ButtonSecondary),
-		focusButton("Resume", "resume", phase == phasePaused, ui.ButtonSecondary),
-		focusButton("Skip", "skip", phase != phaseIdle, ui.ButtonGhost),
-	)
-	return ui.Card(ui.CardConfig{Heading: "Now", HeadingLevel: 2}, append(body, controls)...)
+	return ui.Card(ui.CardConfig{Heading: "Now", HeadingLevel: 2}, body...)
 }
 
 // focusButton is one timer control: a plain button carrying the action
@@ -452,12 +508,46 @@ func (s *widgetScreen) RenderCtx(ctx context.Context) render.HTML {
 	)
 }
 
-// buildSite assembles the UI app and its screens. The island endpoint
-// behind the tasks list's sort/pagination is registered on the app
-// router, the notes example's shape.
+// sidebarNav is the app's source list: the macOS sidebar the desktop
+// layout places over the native sidebar material. The active row is
+// marked from the live request path in the SSR bytes; after hydration
+// the page script and the runtime's active-link module keep
+// aria-current on the exact href match across client-side navigations
+// (the script from first paint, the module once it idle-loads; see
+// static/desktop-focus.js for why both). Sub-pages (/tasks/{id}) show
+// no active row: exact matches only, and a server-side prefix rule
+// would double-mark once the page clears what it owns.
+func sidebarNav() component.Component {
+	return appui.NewContextComponent(func(ctx context.Context) render.HTML {
+		path := ""
+		if r := appui.RequestFromContext(ctx); r != nil && r.URL != nil {
+			path = r.URL.Path
+		}
+		return desktopui.SourceList(desktopui.SourceListConfig{
+			Label: "Focus",
+			Sections: []desktopui.SourceSection{{
+				Title: "Focus",
+				Items: []desktopui.SourceItem{
+					{Label: "Dashboard", Href: "/"},
+					{Label: "Tasks", Href: "/tasks"},
+					{Label: "History", Href: "/history"},
+					{Label: "Settings", Href: "/settings"},
+				},
+			}},
+			CurrentPath: path,
+		})
+	})
+}
+
+// buildSite assembles the UI app and its screens: the desktop theme
+// and the desktop layout with the source-list sidebar over the native
+// sidebar material. The island endpoint behind the tasks list's
+// sort/pagination is registered on the app router, the notes example's
+// shape.
 func buildSite(app *framework.App, eng *Engine, d *desktop.Battery) (*appui.App, error) {
 	site := appui.NewApp("desktop-focus")
-	layout := appui.NewLayout("app").WithContainer()
+	site.WithTheme(desktopui.Theme())
+	layout := desktopui.Layout().WithSidebar(sidebarNav())
 
 	tasks := tasksResource(app)
 	site.Register("/", &dashboardScreen{app: app, eng: eng}, layout)
@@ -474,12 +564,15 @@ func buildSite(app *framework.App, eng *Engine, d *desktop.Battery) (*appui.App,
 	site.Register("/tasks/{id}/edit", &taskEditorScreen{src: tasks.Crud}, layout)
 	site.Register("/history", &historyScreen{app: app}, layout)
 	// The widget window is borderless and transparent: its screen
-	// renders in the chrome-less widget layout, never the app layout
-	// with its header and padded column.
+	// renders in the chrome-less widget layout, never the desktop
+	// layout with its sidebar and opaque content column.
 	site.Register("/widget", &widgetScreen{eng: eng}, appui.WidgetLayout())
 	// The settings screen is the battery's: one form per declared
-	// preference, saved through the battery's own route. There is no
-	// /settings/{id}; the post-save landing is /settings itself.
+	// preference, saved through the battery's own route. It shares the
+	// desktop layout, so the settings window (a small window over the
+	// whole-window material) and the main window's Settings row land on
+	// the same page. There is no /settings/{id}; the post-save landing
+	// is /settings itself.
 	site.Register("/settings", desktop.PreferencesScreen(d, desktop.PreferencesScreenPath("/settings")), layout)
 	return site, nil
 }

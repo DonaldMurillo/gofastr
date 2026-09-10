@@ -15,6 +15,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/battery/desktop"
 	"github.com/DonaldMurillo/gofastr/battery/desktop/desktoptest"
+	desktopui "github.com/DonaldMurillo/gofastr/battery/desktop/ui"
 	"github.com/DonaldMurillo/gofastr/framework"
 )
 
@@ -511,4 +512,80 @@ func TestRememberedWindowFrameAndPath(t *testing.T) {
 		t.Fatalf("state.json mode = %v, want 0600", fi.Mode().Perm())
 	}
 	t.Logf("state.json at %s holds frame %+v and path /tasks", dir, frame)
+}
+
+// sourceMarked answers whether the source list holds exactly one
+// active row and it names href (aria-current="page", the marker the
+// server stamps and the page script keeps fresh on navigations).
+func sourceMarked(h *desktoptest.NativeHarness, href string) bool {
+	r, err := h.EvalQuiet(`return [...document.querySelectorAll('.desktopui-sourcelist__item[aria-current="page"]')].map(a => a.getAttribute('href'))`)
+	if err != nil {
+		return false
+	}
+	var got []string
+	return json.Unmarshal(r, &got) == nil && len(got) == 1 && got[0] == href
+}
+
+// TestSidebarNavigatesAndMarksActive: click every source-list row in
+// the real window and the page lands where the row points with the
+// active marker on that row alone (the SSR marks the first paint, the
+// runtime's active-link module moves it on every client-side
+// navigation).
+func TestSidebarNavigatesAndMarksActive(t *testing.T) {
+	h := desktoptest.Native(t)
+	ensureIdle(t, h)
+
+	reloadTo(t, h, "/")
+	h.Wait("the source list", func() bool { return h.ExistsQuiet(".desktopui-sourcelist__item") })
+	h.Wait("Dashboard marked on first paint", func() bool { return sourceMarked(h, "/") })
+
+	for _, row := range []struct{ label, href string }{
+		{"Tasks", "/tasks"},
+		{"History", "/history"},
+		{"Settings", "/settings"},
+		{"Dashboard", "/"},
+	} {
+		h.Click(`.desktopui-sourcelist__item[href="` + row.href + `"]`)
+		h.WaitLocation(row.href)
+		h.Wait(row.label+" marked alone", func() bool { return sourceMarked(h, row.href) })
+	}
+}
+
+// TestWindowChromeIsUnified: the main window's chrome as the OS
+// reports it through WindowState (the live NSWindow facts, not a page
+// claim): the unified toolbar shape (a transparent title bar with the
+// toolbar style unified), the sidebar material under the source-list
+// zone, and the declared sidebar width. The page's own measured report
+// (the ResizeObserver behind window.setChrome) must leave the zone at
+// the same width.
+func TestWindowChromeIsUnified(t *testing.T) {
+	h := desktoptest.Native(t)
+	reloadTo(t, h, "/")
+	h.Wait("the source list", func() bool { return h.ExistsQuiet(".desktopui-sourcelist__item") })
+
+	st, err := h.WindowState("main")
+	if err != nil {
+		t.Fatalf("main window state: %v", err)
+	}
+	if st.ToolbarStyle != "unified" {
+		t.Fatalf("main toolbar style = %q, want unified", st.ToolbarStyle)
+	}
+	if !st.TitlebarTransparent {
+		t.Fatal("main title bar is not transparent")
+	}
+	if st.Material != "vibrancy-sidebar" {
+		t.Fatalf("main material = %q, want vibrancy-sidebar", st.Material)
+	}
+	if want := desktopui.DefaultSidebarWidth; st.SidebarWidth != want {
+		t.Fatalf("main sidebar width = %d, want %d", st.SidebarWidth, want)
+	}
+	// The page reports the zone it measured; the OS must still answer
+	// the declared width after that report lands.
+	h.Wait("the page's setChrome report to agree with the OS", func() bool {
+		s2, err := h.WindowState("main")
+		return err == nil && s2.SidebarWidth == desktopui.DefaultSidebarWidth
+	})
+	if st.CGWindowID == 0 {
+		t.Fatal("main window has no CGWindowID")
+	}
 }
