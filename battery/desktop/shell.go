@@ -480,6 +480,12 @@ type WindowState struct {
 	// ToolbarStyle names the window's toolbar style when a toolbar is
 	// attached ("unified", "expanded", ...); "" when there is none.
 	ToolbarStyle string
+	// TitleVisibility reports the effective title visibility
+	// ("visible" or "hidden"; "" when the platform does not expose
+	// it). ChromeUnified and ChromeHiddenTitle ask for hidden; the
+	// assertion reads it back off the live window so a setter order
+	// that re-shows the title cannot pass silently.
+	TitleVisibility string
 	// SidebarWidth is the sidebar zone's width in screen points as the
 	// live zone view is sized; 0 when the window has no zone.
 	SidebarWidth int

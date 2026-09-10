@@ -19,17 +19,19 @@ func TestStyleMaskBits(t *testing.T) {
 		style desktop.WindowStyle
 		want  uintptr
 	}{
-		// ChromeDefault keeps the PoC's titled|closable|resizable.
-		{"default", desktop.WindowStyle{}, maskTitled | maskClosable | maskResizable},
+		// ChromeDefault keeps the PoC's titled window with all three
+		// standard buttons: the miniaturize bit was missing once and
+		// the yellow light rendered disabled in every active window.
+		{"default", desktop.WindowStyle{}, maskTitled | maskClosable | maskMiniaturizable | maskResizable},
 		// HiddenTitle lets the page paint under the title bar.
-		{"hidden title", desktop.WindowStyle{Chrome: desktop.ChromeHiddenTitle}, maskTitled | maskClosable | maskResizable | maskFullSizeContentView},
+		{"hidden title", desktop.WindowStyle{Chrome: desktop.ChromeHiddenTitle}, maskTitled | maskClosable | maskMiniaturizable | maskResizable | maskFullSizeContentView},
 		// Borderless is 0: no title bar, no close button, no resize.
 		{"none", desktop.WindowStyle{Chrome: desktop.ChromeNone}, 0},
 		// A panel adds nonactivatingPanel to whatever chrome it has.
-		{"panel default", desktop.WindowStyle{Panel: true}, maskTitled | maskClosable | maskResizable | maskNonactivatingPanel},
+		{"panel default", desktop.WindowStyle{Panel: true}, maskTitled | maskClosable | maskMiniaturizable | maskResizable | maskNonactivatingPanel},
 		{"panel none", desktop.WindowStyle{Chrome: desktop.ChromeNone, Panel: true}, maskNonactivatingPanel},
 		// Resizable=false clears only the resizable bit.
-		{"fixed default", desktop.WindowStyle{Resizable: &fixed}, maskTitled | maskClosable},
+		{"fixed default", desktop.WindowStyle{Resizable: &fixed}, maskTitled | maskClosable | maskMiniaturizable},
 		// A fixed borderless window stays borderless (nothing to clear).
 		{"fixed none", desktop.WindowStyle{Chrome: desktop.ChromeNone, Resizable: &fixed}, 0},
 	}
@@ -96,7 +98,7 @@ func TestStyleMaskUnified(t *testing.T) {
 	// ChromeUnified is HiddenTitle's mask: the page paints under the
 	// title bar, the toolbar strip merges into it.
 	got := windowStyleMask(desktop.WindowStyle{Chrome: desktop.ChromeUnified})
-	want := maskTitled | maskClosable | maskResizable | maskFullSizeContentView
+	want := maskTitled | maskClosable | maskMiniaturizable | maskResizable | maskFullSizeContentView
 	if got != want {
 		t.Fatalf("unified mask = %#x, want %#x", got, want)
 	}
@@ -147,5 +149,18 @@ func TestToolbarStyleName(t *testing.T) {
 	}
 	if got := toolbarStyleName(9); got != "" {
 		t.Errorf("toolbarStyleName(9) = %q, want empty", got)
+	}
+}
+
+func TestTitleVisibilityName(t *testing.T) {
+	// NSWindowTitleVisibility, from NSWindow.h in the SDK: visible 0,
+	// hidden 1.
+	for v, want := range map[uintptr]string{0: "visible", 1: "hidden"} {
+		if got := titleVisibilityName(v); got != want {
+			t.Errorf("titleVisibilityName(%d) = %q, want %q", v, got, want)
+		}
+	}
+	if got := titleVisibilityName(7); got != "" {
+		t.Errorf("titleVisibilityName(7) = %q, want empty", got)
 	}
 }

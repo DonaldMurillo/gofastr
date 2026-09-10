@@ -104,7 +104,7 @@ func TestDemoPageBundlesDesktopStyles(t *testing.T) {
 	// list's capsule.
 	layoutCSS := ta.Get("/__gofastr/comp/desktopui-layout.css").Body()
 	for _, w := range []string{
-		"--desktop-traffic-inset: 12px;",
+		"--desktop-sidebar-top-inset: 52px;",
 		"background-color: transparent;",
 	} {
 		if !strings.Contains(layoutCSS, w) {
@@ -116,8 +116,8 @@ func TestDemoPageBundlesDesktopStyles(t *testing.T) {
 		t.Errorf("served desktopui-glass.css missing the blur recipe:\n%s", glassCSS)
 	}
 	listCSS := ta.Get("/__gofastr/comp/desktopui-sourcelist.css").Body()
-	if !strings.Contains(listCSS, "var(--radii-full") {
-		t.Errorf("served desktopui-sourcelist.css missing the capsule:\n%s", listCSS)
+	if !strings.Contains(listCSS, "--desktop-sourcelist-row: 28px") {
+		t.Errorf("served desktopui-sourcelist.css missing the native row metric:\n%s", listCSS)
 	}
 
 	// app.css carries the desktop theme's :root tokens, the applied

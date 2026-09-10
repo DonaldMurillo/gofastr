@@ -355,6 +355,7 @@ func (s *darwinShell) WindowState(id string) (desktop.WindowState, error) {
 		if toolbar := objc.ID(objc.Send(win, objc.Sel("toolbar"))); toolbar != 0 {
 			st.ToolbarStyle = toolbarStyleName(uintptr(objc.Send(win, objc.Sel("toolbarStyle"))))
 		}
+		st.TitleVisibility = titleVisibilityName(uintptr(objc.Send(win, objc.Sel("titleVisibility"))))
 		st.Material, st.SidebarWidth = materialState(win)
 	}); err != nil {
 		return desktop.WindowState{}, &desktop.Error{Code: desktop.CodeInternal, Message: desktop.InternalErrorMsg}

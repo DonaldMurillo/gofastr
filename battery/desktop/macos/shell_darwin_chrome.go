@@ -58,6 +58,21 @@ func toolbarStyleName(v uintptr) string {
 	return ""
 }
 
+// titleVisibilityName maps NSWindowTitleVisibility values for
+// WindowState: NSWindowVisibleTitle is 0, NSWindowTitleHidden is 1
+// (NSWindow.h in the SDK, re-verified 2026-09-09; an earlier capture
+// review blamed the toolbar for re-showing the title, and the live
+// window answers hidden).
+func titleVisibilityName(v uintptr) string {
+	switch v {
+	case 0:
+		return "visible"
+	case 1:
+		return "hidden"
+	}
+	return ""
+}
+
 // NSGlassEffectViewStyleRegular (NSGlassEffectView.h). Clear is the
 // other case; the plan keeps it out (private in practice per the
 // window-vibrancy source, and it needs a dimming layer).

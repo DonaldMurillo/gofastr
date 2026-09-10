@@ -13,14 +13,16 @@ import (
 // part of the CSS contract, not a private string.
 const LayoutName = "desktop"
 
-// TrafficLightInset is the traffic-light inset (x and y, points) this
-// layout reserves above the sidebar. It is the value the shell-side
-// contract's TrafficLightInset defaults to: Electron's hiddenInset
-// margin is (12, 11) and its own source comment says it does not match
-// native apps; the desktop contract rounds to 12x12 so the page
-// reservation and the native button placement agree. A shell that
-// moves the lights overrides --desktop-traffic-inset to match.
-const TrafficLightInset = 12
+// SidebarTopInset is the top padding the sidebar column reserves for
+// the traffic-light zone, in points. MEASURED against the native
+// Notes capture (scratchpad focus-shots-13/light-active-notes.png,
+// 2026-09-09): the traffic lights occupy 19 to 32.5 pt from the
+// window's top edge and the first sidebar row's box top sits 51.5 pt
+// below it, so 52 pt of empty sidebar precedes the first row. The
+// number comes from the capture, not from a source. A shell that
+// moves the lights further down overrides --desktop-sidebar-top-inset
+// to match.
+const SidebarTopInset = 52
 
 // DefaultSidebarWidth is the sidebar zone's default width in points
 // (measured against Finder/Notes sidebars, unverified). A host whose
@@ -31,9 +33,9 @@ const TrafficLightInset = 12
 const DefaultSidebarWidth = 220
 
 // Layout returns the desktop layout: the core-ui layout shell with the
-// sidebar zone at the declared width, the traffic-light inset reserved
-// at the top of the sidebar, transparent html/body so the native
-// material shows through, and an opaque content column.
+// sidebar zone at the declared width, the measured traffic-light zone
+// reserved at the top of the sidebar, transparent html/body so the
+// native material shows through, and an opaque content column.
 //
 // Chain it the way any layout is chained, the sidebar slot usually
 // holding a SourceList:
@@ -70,23 +72,39 @@ html:has(.layout-desktop), body:has(.layout-desktop) { background-color: transpa
 
 /* The zone knobs. --desktop-sidebar-width mirrors the shell Config's
    declared sidebar width (default measured against native sidebars,
-   unverified); --desktop-traffic-inset mirrors the shell's
-   TrafficLightInset default (12x12, see the constant). */
+   unverified); --desktop-sidebar-top-inset is the measured
+   traffic-light zone (see SidebarTopInset); --desktop-sidebar-surface
+   is transparent in light mode (the native sidebar material under the
+   zone is the surface) and a faint label tint in dark mode. */
 .layout-desktop {
   --desktop-sidebar-width: ` + strconv.Itoa(DefaultSidebarWidth) + `px;
-  --desktop-traffic-inset: ` + strconv.Itoa(TrafficLightInset) + `px;
+  --desktop-sidebar-top-inset: ` + strconv.Itoa(SidebarTopInset) + `px;
+  --desktop-sidebar-surface: transparent;
 }
-/* The sidebar zone: transparent (the native sidebar material placed
-   under it is the surface), at the declared width, with the
-   traffic-light inset reserved at the top. */
+/* The sidebar zone: at the declared width, with the measured
+   traffic-light zone reserved at the top. */
 .layout-desktop .layout-body > nav {
   flex-basis: var(--desktop-sidebar-width, 220px);
   flex-grow: 0;
   flex-shrink: 0;
   block-size: auto;
-  background: transparent;
+  background: var(--desktop-sidebar-surface, transparent);
   border-right: none;
-  padding-top: var(--desktop-traffic-inset, 12px);
+  padding-top: var(--desktop-sidebar-top-inset, 52px);
+}
+/* Dark mode: the dark vibrancy sidebar material lands on the same
+   near-black as the content background (#1E1E1E), so the split that
+   reads in light mode disappears (measured against the native Notes
+   capture: its dark sidebar sits about 3/255 above its content). A 2%
+   wash of the label color over the zone lands within a couple of
+   points of that lift while the material still shows through. */
+:root[data-color-scheme="dark"] .layout-desktop {
+  --desktop-sidebar-surface: color-mix(in srgb, var(--color-text, #F5F5F7) 2%, transparent);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-color-scheme="light"]) .layout-desktop {
+    --desktop-sidebar-surface: color-mix(in srgb, var(--color-text, #F5F5F7) 2%, transparent);
+  }
 }
 /* The content column: the one opaque region, so text sits on a solid
    page even where the window material is translucent. The start
