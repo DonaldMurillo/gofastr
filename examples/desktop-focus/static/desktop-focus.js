@@ -118,10 +118,58 @@
     }
   });
 
+  // The sidebar zone: the page owns the sidebar's width, so it
+  // reports the measured nav to the shell through window.setChrome
+  // (the shell contract's intended producer is a ResizeObserver on
+  // the sidebar element). Windows without a sidebar (the widget)
+  // report nothing.
+  let lastSidebarWidth = -1;
+  const reportSidebar = () => {
+    const d = desktopNS();
+    const nav = document.querySelector('.layout-body > nav');
+    if (!d || !d.window || typeof d.window.setChrome !== 'function' || !nav) return;
+    const w = Math.round(nav.getBoundingClientRect().width);
+    if (w <= 0 || w === lastSidebarWidth) return;
+    lastSidebarWidth = w;
+    d.window.setChrome({ sidebarWidth: w }).catch(() => {});
+  };
+  const observeSidebar = () => {
+    const nav = document.querySelector('.layout-body > nav');
+    if (!nav || typeof ResizeObserver === 'undefined') return;
+    // The initial observe fires the callback once, which sends the
+    // first report; every later resize (the window, the layout)
+    // re-sends only when the width actually changed.
+    new ResizeObserver(reportSidebar).observe(nav);
+  };
+
+  // The source list's marker: the server stamps aria-current on the
+  // current row, and the runtime's activelink module keeps it fresh on
+  // every navigation once it has idle-loaded. Between first paint and
+  // that load a navigation leaves the server's row stale (two rows
+  // then read as current), so the page reconciles the marker itself on
+  // every navigation, the exact-match rule both use. Once the module
+  // loads, the two agree: it stamps the same aria-current on the same
+  // row.
+  const reconcileSourceList = () => {
+    const path = location.pathname + location.search;
+    document.querySelectorAll('.desktopui-sourcelist__item').forEach((a) => {
+      if ((a.getAttribute('href') || '') === path) {
+        a.setAttribute('aria-current', 'page');
+      } else {
+        a.removeAttribute('aria-current');
+      }
+    });
+  };
+  window.addEventListener('gofastr:navigate', reconcileSourceList);
+
   const wire = () => {
     const ns = window.__gofastr;
     if (!ns || !ns.desktop || typeof ns.desktop.on !== 'function') return;
 
+    // The sidebar report needs the desktop namespace; the observer
+    // outlives SPA navigations because the layout (and its nav)
+    // stays mounted across content swaps.
+    observeSidebar();
     // The engine's heartbeat and lifecycle events.
     ns.desktop.on('focus_tick', (p) => applyState(p));
     ns.desktop.on('focus_done', (p) => {
