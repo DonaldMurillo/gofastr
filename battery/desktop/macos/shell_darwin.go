@@ -61,17 +61,17 @@ const behaviorCanJoinAllSpaces uintptr = 1 << 0
 
 // windowStyleMask resolves a desktop.WindowStyle to the styleMask for
 // initWithContentRect:styleMask:backing:defer:. desktop.ChromeNone is
-// borderless (0): closable and resizable are meaningless without a
-// title bar, so they drop with it.
+// borderless (0): closable, miniaturizable, and resizable are meaningless
+// without a title bar, so they drop with it.
 func windowStyleMask(style desktop.WindowStyle) uintptr {
 	var mask uintptr
 	switch style.Chrome {
 	case desktop.ChromeNone:
 		// Borderless: no bits of its own.
 	case desktop.ChromeHiddenTitle, desktop.ChromeUnified:
-		mask = maskTitled | maskClosable | maskFullSizeContentView
+		mask = maskTitled | maskClosable | maskMiniaturizable | maskFullSizeContentView
 	default:
-		mask = maskTitled | maskClosable
+		mask = maskTitled | maskClosable | maskMiniaturizable
 	}
 	if style.Chrome != desktop.ChromeNone {
 		if style.Resizable == nil || *style.Resizable {
@@ -108,10 +108,15 @@ func frameOrigin(style desktop.WindowStyle, height int, screenHeight float64) (x
 // applyWindowStyle runs every post-creation style setter. Call on the
 // main thread; the mask half of the style was applied at window
 // creation (windowStyleMask) and the panel class at alloc time.
+//
+// Order inside the unified branch is load-bearing: the toolbar goes on
+// FIRST and titleVisibility LAST. NSWindowTitleHidden is 1 (NSWindow.h,
+// re-verified against the SDK on this machine), so the value itself is
+// right; setting it after setToolbar: keeps it safe against an AppKit
+// release that lets attaching a toolbar reset the visibility.
 func applyWindowStyle(win, webView objc.ID, style desktop.WindowStyle, height int) {
 	if style.Chrome == desktop.ChromeHiddenTitle || style.Chrome == desktop.ChromeUnified {
 		objc.Send(win, objc.Sel("setTitlebarAppearsTransparent:"), 1)
-		objc.Send(win, objc.Sel("setTitleVisibility:"), 1) // NSWindowTitleHidden
 	}
 	if level := windowLevel(style); level != normalWindowLevel {
 		objc.Send(win, objc.Sel("setLevel:"), uintptr(level))
@@ -123,6 +128,9 @@ func applyWindowStyle(win, webView objc.ID, style desktop.WindowStyle, height in
 		toolbar := objc.Send(objc.ID(objc.Send(objc.Class("NSToolbar"), objc.Sel("alloc"))), objc.Sel("init"))
 		objc.Send(win, objc.Sel("setToolbar:"), uintptr(toolbar))
 		objc.Send(win, objc.Sel("setToolbarStyle:"), toolbarStyleUnified)
+	}
+	if style.Chrome == desktop.ChromeHiddenTitle || style.Chrome == desktop.ChromeUnified {
+		objc.Send(win, objc.Sel("setTitleVisibility:"), 1) // NSWindowTitleHidden
 	}
 	if style.Transparent {
 		objc.Send(win, objc.Sel("setOpaque:"), 0)

@@ -755,6 +755,14 @@ func phaseWindowChrome(t desktoptest.TB, h *desktoptest.NativeHarness) {
 	if st.ToolbarStyle != "unified" {
 		t.Fatalf("chrome window toolbar style = %q, want unified", st.ToolbarStyle)
 	}
+	if st.TitleVisibility != "hidden" {
+		t.Fatalf("chrome window title visibility = %q, want hidden (no window title over the traffic lights)", st.TitleVisibility)
+	}
+	// NSWindowStyleMaskMiniaturizable (1<<2, NSWindow.h): without it
+	// the yellow light renders disabled in an active window.
+	if st.StyleMask&(1<<2) == 0 {
+		t.Fatalf("chrome window style mask %#x lacks the miniaturizable bit; the minimize button renders disabled", st.StyleMask)
+	}
 	if st.SidebarWidth != 220 {
 		t.Fatalf("chrome window sidebar width = %d, want 220", st.SidebarWidth)
 	}

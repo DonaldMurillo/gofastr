@@ -516,7 +516,10 @@ func TestRememberedWindowFrameAndPath(t *testing.T) {
 
 // sourceMarked answers whether the source list holds exactly one
 // active row and it names href (aria-current="page", the marker the
-// server stamps and the page script keeps fresh on navigations).
+// server stamps and the runtime's active-link module moves on every
+// client-side navigation; the SSR also stamps the module's own active
+// class so its first sweep reconciles a stale marker even when a
+// navigation landed before the module idle-loaded).
 func sourceMarked(h *desktoptest.NativeHarness, href string) bool {
 	r, err := h.EvalQuiet(`return [...document.querySelectorAll('.desktopui-sourcelist__item[aria-current="page"]')].map(a => a.getAttribute('href'))`)
 	if err != nil {
@@ -528,9 +531,10 @@ func sourceMarked(h *desktoptest.NativeHarness, href string) bool {
 
 // TestSidebarNavigatesAndMarksActive: click every source-list row in
 // the real window and the page lands where the row points with the
-// active marker on that row alone (the SSR marks the first paint, the
-// runtime's active-link module moves it on every client-side
-// navigation).
+// active marker on that row alone. The SSR marks the first paint (with
+// the runtime's active class beside aria-current), and the runtime's
+// active-link module moves it on every client-side navigation; no
+// page-script reconcile runs between them anymore.
 func TestSidebarNavigatesAndMarksActive(t *testing.T) {
 	h := desktoptest.Native(t)
 	ensureIdle(t, h)
@@ -538,6 +542,15 @@ func TestSidebarNavigatesAndMarksActive(t *testing.T) {
 	reloadTo(t, h, "/")
 	h.Wait("the source list", func() bool { return h.ExistsQuiet(".desktopui-sourcelist__item") })
 	h.Wait("Dashboard marked on first paint", func() bool { return sourceMarked(h, "/") })
+	// The first paint carries both markers: the attribute the page
+	// reads and the class the module reconciles by. Without the class
+	// a navigation that lands before the module idle-loads leaves the
+	// server's stale marker beside the module's fresh one.
+	var cls bool
+	h.EvalInto(t, `return document.querySelector('.desktopui-sourcelist__item[aria-current="page"]').classList.contains('active')`, &cls)
+	if !cls {
+		t.Fatal("the SSR current row lacks the runtime active class; the module's first sweep cannot reconcile it")
+	}
 
 	for _, row := range []struct{ label, href string }{
 		{"Tasks", "/tasks"},

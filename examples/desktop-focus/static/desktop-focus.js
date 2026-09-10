@@ -142,26 +142,6 @@
     new ResizeObserver(reportSidebar).observe(nav);
   };
 
-  // The source list's marker: the server stamps aria-current on the
-  // current row, and the runtime's activelink module keeps it fresh on
-  // every navigation once it has idle-loaded. Between first paint and
-  // that load a navigation leaves the server's row stale (two rows
-  // then read as current), so the page reconciles the marker itself on
-  // every navigation, the exact-match rule both use. Once the module
-  // loads, the two agree: it stamps the same aria-current on the same
-  // row.
-  const reconcileSourceList = () => {
-    const path = location.pathname + location.search;
-    document.querySelectorAll('.desktopui-sourcelist__item').forEach((a) => {
-      if ((a.getAttribute('href') || '') === path) {
-        a.setAttribute('aria-current', 'page');
-      } else {
-        a.removeAttribute('aria-current');
-      }
-    });
-  };
-  window.addEventListener('gofastr:navigate', reconcileSourceList);
-
   const wire = () => {
     const ns = window.__gofastr;
     if (!ns || !ns.desktop || typeof ns.desktop.on !== 'function') return;

@@ -18,8 +18,13 @@ type SourceItem struct {
 	Href string
 
 	// Icon is optional inline HTML rendered before the label inside an
-	// aria-hidden span (it decorates; the label names the row).
+	// aria-hidden span (it decorates; the label names the row). It
+	// keeps its own color while selected, the native read.
 	Icon string
+
+	// Count is the optional right-aligned trailing number (a mailbox's
+	// unread count, a folder's item count). Empty renders nothing.
+	Count string
 }
 
 // SourceSection is one labelled group of rows. A source list is flat:
@@ -53,19 +58,21 @@ type SourceListConfig struct {
 	Footer render.HTML
 }
 
-// SourceList is the macOS source-list sidebar: section headers at the
-// HIG caption size, rows with a capsule selection in Accent, and a
-// keyboard focus ring. The surface itself paints NOTHING (background:
-// transparent): the native sidebar material the shell places under the
-// sidebar zone shows through, so the page never fakes the material in
-// CSS.
+// SourceList is the macOS source-list sidebar: rows at the native
+// metrics (28 px rows, the theme's HIG body size, an optional leading
+// icon and trailing count, gray section headers at the caption size),
+// a soft rounded-rect selection whose text keeps its normal color,
+// and a keyboard focus ring in the accent. The surface itself paints
+// NOTHING (background: transparent): the native sidebar material the
+// shell places under the sidebar zone shows through, so the page never
+// fakes the material in CSS.
 //
 // It is not a twin of ui.Sidebar: that component owns the responsive
 // web-sidebar machinery (hamburger drawer, collapse rail, localStorage
 // state) and its fixed square-corner look cannot take the translucent
-// pill treatment through its config. A desktop window is never narrow,
-// so the drawer machinery is dead weight there. Use ui.Sidebar for web
-// apps, SourceList for the desktop layout's sidebar slot.
+// selection treatment through its config. A desktop window is never
+// narrow, so the drawer machinery is dead weight there. Use ui.Sidebar
+// for web apps, SourceList for the desktop layout's sidebar slot.
 //
 // Compose it with the desktop layout:
 //
@@ -92,8 +99,21 @@ func SourceList(cfg SourceListConfig) render.HTML {
 			if href == "" {
 				href = "#"
 			}
-			b.WriteString(`<a class="desktopui-sourcelist__item" href="` + render.Escape(href) + `"`)
-			if cfg.CurrentPath != "" && cfg.CurrentPath == it.Href {
+			// The current row carries the runtime's own active class
+			// beside aria-current. core-ui's activelink module clears
+			// a stale marker only from links carrying the class it
+			// stamps, so a server-rendered marker without the class
+			// survives the module's first sweep: a navigation that
+			// lands before the module idle-loads would leave two rows
+			// reading as current. The class is the documented
+			// reconciliation contract; nothing styles it here.
+			class := "desktopui-sourcelist__item"
+			current := cfg.CurrentPath != "" && cfg.CurrentPath == it.Href
+			if current {
+				class += " active"
+			}
+			b.WriteString(`<a class="` + class + `" href="` + render.Escape(href) + `"`)
+			if current {
 				b.WriteString(` aria-current="page"`)
 			}
 			b.WriteString(`>`)
@@ -104,7 +124,13 @@ func SourceList(cfg SourceListConfig) render.HTML {
 			}
 			b.WriteString(`<span class="desktopui-sourcelist__label">`)
 			b.WriteString(render.Escape(it.Label))
-			b.WriteString(`</span></a></li>`)
+			b.WriteString(`</span>`)
+			if it.Count != "" {
+				b.WriteString(`<span class="desktopui-sourcelist__count">`)
+				b.WriteString(render.Escape(it.Count))
+				b.WriteString(`</span>`)
+			}
+			b.WriteString(`</a></li>`)
 		}
 		b.WriteString(`</ul></div>`)
 	}
@@ -124,12 +150,15 @@ func sourceListCSS(_ style.Theme) string {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-lg, 16px);
-  padding: var(--spacing-md, 8px) var(--spacing-sm, 4px);
+  /* The layout's sidebar zone owns the top inset (the traffic-light
+     reservation), so the list adds no top padding of its own. */
+  padding: 0 var(--spacing-sm, 4px) var(--spacing-md, 8px);
   min-block-size: 100%;
   /* The native material under the sidebar zone shows through. The page
      never paints it: CSS cannot reach the real blur, and a fake one is
      the thing the plan refuses to imitate. */
   background: transparent;
+  --desktop-sourcelist-row: 28px;
 }
 [data-fui-comp="desktopui-sourcelist"] .desktopui-sourcelist__section {
   display: flex;
@@ -157,20 +186,34 @@ func sourceListCSS(_ style.Theme) string {
   display: flex;
   align-items: center;
   gap: var(--spacing-sm, 4px);
-  /* Capsule selection: the concentric rule's capsule case, radius
-     half the row height. Row height measured against native captures,
-     unverified; 26px keeps every row at or above the 24px 2.5.8 AA
-     minimum. */
-  min-height: var(--desktop-sourcelist-row, 26px);
+  /* Row height measured against the native Notes capture (31.5pt
+     pitch on a 28pt row, unverified); the type is the theme's body
+     token, which the desktop theme resolves to the HIG 13px body
+     size. The fallback states the canonical token value (the rule:
+     a fallback teaches what the token means, and an unthemed page
+     renders the canonical scale). */
+  min-height: var(--desktop-sourcelist-row, 28px);
   padding: var(--spacing-xs, 2px) var(--spacing-md, 8px);
-  border-radius: var(--radii-full, 9999px);
+  border-radius: var(--radii-md, 8px);
   color: var(--color-text, #18181B);
   font-size: var(--text-base, 1rem);
   text-decoration: none;
   cursor: pointer;
 }
+[data-fui-comp="desktopui-sourcelist"] .desktopui-sourcelist__label {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+[data-fui-comp="desktopui-sourcelist"] .desktopui-sourcelist__count {
+  margin-inline-start: auto;
+  font-size: var(--text-xs, 0.75rem);
+  color: var(--color-text-subtle, #71717A);
+}
 [data-fui-comp="desktopui-sourcelist"] .desktopui-sourcelist__item:hover {
-  background: color-mix(in srgb, var(--color-text, #18181B) 8%, transparent);
+  background: color-mix(in srgb, var(--color-text, #18181B) 3%, transparent);
 }
 [data-fui-comp="desktopui-sourcelist"] .desktopui-sourcelist__item:focus-visible {
   /* Keyboard focus ring in the accent, the Mac focus-ring read. */
@@ -178,25 +221,27 @@ func sourceListCSS(_ style.Theme) string {
   outline-offset: var(--spacing-xs, 2px);
 }
 [data-fui-comp="desktopui-sourcelist"] .desktopui-sourcelist__item[aria-current="page"] {
-  /* Pill selection in Accent: white label on the system blue, the
-     native selected-row pair. */
-  background: var(--color-accent, #7C3AED);
-  color: var(--color-primary-fg, #FFFFFF);
+  /* Soft selection, measured on the native capture: #EFEFEF over a
+     #F9F9F9 light sidebar and #2F2F2F over a #212121 dark one, both
+     within a couple of points of a 5% mix of the text color. The text
+     and the icon keep their own colors; the accent belongs to the
+     focus ring, not the row. */
+  background: color-mix(in srgb, var(--color-text, #18181B) 5%, transparent);
 }
 [data-fui-comp="desktopui-sourcelist"] .desktopui-sourcelist__icon {
   display: inline-flex;
   align-items: center;
+  flex: 0 0 auto;
 }
 [data-fui-comp="desktopui-sourcelist"] .desktopui-sourcelist__footer {
   margin-block-start: auto;
   padding: var(--spacing-md, 8px);
 }
-/* Inactive window: the selected row grays out, the read a native
-   source list gives when its window resigns key. The runtime module
-   sets the class; the page never guesses. */
+/* Inactive window: the selection washes out, the read a native source
+   list gives when its window resigns key. The runtime module sets the
+   class; the page never guesses. */
 html.desktop-inactive [data-fui-comp="desktopui-sourcelist"] .desktopui-sourcelist__item[aria-current="page"] {
-  background: var(--color-text-muted, #52525B);
-  color: var(--color-primary-fg, #FFFFFF);
+  background: color-mix(in srgb, var(--color-text-muted, #52525B) 3%, transparent);
 }
 `
 }
