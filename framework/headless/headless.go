@@ -199,8 +199,11 @@ func refused(key string) bool {
 
 // Safe copies caller-supplied extras, dropping the keys a component
 // owns so no caller can break its structure or its labelling, and the
-// keys refused on every seam (see refused). Keys are compared folded,
-// the way the browser will read them.
+// keys refused on every seam (see refused). Keys are stored folded,
+// the way the browser reads them: NAME and name are one attribute, and
+// stored as written a caller's NAME sorted ahead of the component's
+// name, so the browser kept the caller's. One key under two spellings
+// is refused rather than left to map order.
 func Safe(extra html.Attrs, owned ...string) html.Attrs {
 	blocked := map[string]bool{"class": true, "id": true}
 	for _, k := range owned {
@@ -208,10 +211,14 @@ func Safe(extra html.Attrs, owned ...string) html.Attrs {
 	}
 	out := html.Attrs{}
 	for k, v := range extra {
-		if blocked[strings.ToLower(k)] || refused(k) {
+		key := strings.ToLower(k)
+		if blocked[key] || refused(key) {
 			continue
 		}
-		out[k] = v
+		if _, twice := out[key]; twice {
+			panic("headless: extra attrs repeat " + key + " under two spellings")
+		}
+		out[key] = v
 	}
 	return out
 }

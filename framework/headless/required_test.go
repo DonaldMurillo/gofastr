@@ -1,6 +1,7 @@
 package headless
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 
@@ -163,3 +164,31 @@ func TestTimelineRefusesAMachineValueThatIsNotATimestamp(t *testing.T) {
 		Timeline(TimelineProps{Events: []Event{{Title: "Deployed", When: "soon", Machine: "tomorrow"}}}, nil)
 	})
 }
+
+// NAME and name are one attribute to the browser, which keeps the
+// first it reads. Stored as written, a caller's NAME sorted ahead of
+// the component's name and the submitted field carried the caller's
+// value; Safe and the override sanitiser store keys folded, and one
+// key under two spellings is refused rather than left to map order.
+func TestExtrasAndOverridesStoreKeysFolded(t *testing.T) {
+	got := Input(InputProps{Name: "owner", AriaLabel: "n", Extra: html.Attrs{"NAME": "caller", "Data-Testid": "kept"}}, nil)
+	if n := len(nameAttr.FindAllString(string(got), -1)); n != 1 {
+		t.Errorf("the input carries %d name attributes, not one:\n%s", n, got)
+	}
+	has(t, got, `name="owner"`, "the component's own name lost to a caller's spelling")
+	has(t, got, `data-testid="kept"`, "an ordinary attribute was not stored folded")
+	refuse(t, "two spellings", func() {
+		Badge(BadgeProps{Label: "x", ExtraAttrs: html.Attrs{"data-testid": "a", "DATA-TESTID": "b"}}, nil)
+	})
+	for _, sp := range Specs() {
+		if sp.WithSeams == nil {
+			continue
+		}
+		refuse(t, "two spellings", func() {
+			sp.WithSeams(Skin{PartRoot: "real"}, Seams{Overrides: Overrides{PartRoot: html.Attrs{"role": "a", "ROLE": "b"}}})
+		})
+		break
+	}
+}
+
+var nameAttr = regexp.MustCompile(`(?i)\sname="`)

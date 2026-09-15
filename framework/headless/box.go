@@ -211,15 +211,20 @@ func (b Box) Filled(p Part) bool {
 func (b Box) Child(s Skin) Box { return Box{Skin: s} }
 
 // allowedOverride drops what a caller may not set. It is a function
-// rather than a method so the test can state the rule directly.
+// rather than a method so the test can state the rule directly. Keys
+// are stored folded, as Safe stores them, and one key under two
+// spellings is refused for the same reason.
 func allowedOverride(a html.Attrs) html.Attrs {
 	out := html.Attrs{}
 	for k, v := range a {
 		lk := strings.ToLower(k)
-		if lk == "id" || refused(k) {
+		if lk == "id" || refused(lk) {
 			continue
 		}
-		out[k] = v
+		if _, twice := out[lk]; twice {
+			panic("headless: overrides repeat " + lk + " under two spellings")
+		}
+		out[lk] = v
 	}
 	return out
 }

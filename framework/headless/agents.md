@@ -58,6 +58,10 @@ English words, `spec_golden_words.txt` at probe words).
 - **A request through `ExtraAttrs`.** `Safe` drops every `data-fui-*`
   key. A request is `ButtonProps.Action`; a signal is a `Bind`; a
   region's refresh is an `Island`.
+- **One attribute under two spellings.** `Safe` and the override
+  sanitiser store names folded, as the browser reads them, so a
+  caller's `NAME` cannot land beside the component's `name`; a key
+  given twice is refused.
 - **An English string in a component.** Words live on `Words`, one typed
   field each, so a missing translation is a compile error rather than a
   stray word on a French page; `words_test.go` refuses English outside

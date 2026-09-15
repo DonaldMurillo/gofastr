@@ -44,9 +44,10 @@ both directions.
 - **Overrides** add attributes to a part, through a sanitiser that
   refuses `id`, `style`, every `data-hui-*` hook, every `data-fui-*`
   key and the runtime's privileged unprefixed keys (`data-behavior`,
-  `data-island`, `data-action` and their family), compares names the
-  way the browser folds them, and never beats an attribute the
-  component owns. `ExtraAttrs` goes through the same refusal.
+  `data-island`, `data-action` and their family), stores names folded
+  the way the browser reads them, refuses one name under two
+  spellings, and never beats an attribute the component owns.
+  `ExtraAttrs` goes through the same refusal.
 - **Binds** keep a part in step with a client signal (text, html or one
   attribute), refusing reserved signal names and attributes outside the
   runtime's own allow-list.
@@ -177,6 +178,10 @@ module and that adoption follow in their own changes.
 - **Smuggling a request through `ExtraAttrs` or an Override.** Both
   drop every `data-fui-*` key. A request is `ButtonProps.Action`, a
   signal is a `Bind`, a region's refresh is an `Island`.
+- **One attribute under two spellings.** `NAME` and `name` are one
+  attribute to the browser, which keeps the first it reads. Both seams
+  store names folded, so the component's own spelling wins, and a key
+  given twice is refused at render.
 - **Building the hint's id by hand.** `Field` passes a `FieldControl`
   with the id, the `aria-describedby` and the invalid state already
   agreed; a control built from anything else drifts.

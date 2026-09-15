@@ -73,6 +73,12 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   meridian's generated files predate the current templates and carry
   hand edits, so they were left alone.
 
+### Fixed
+- **`framework/headless`**: `Safe` and the override sanitiser store
+  attribute names folded, as the browser reads them. Stored as written, a
+  caller's `NAME` sorted ahead of the component's `name` and the browser
+  kept the caller's value; one key under two spellings is now refused.
+
 ## [0.85.0] - 2026-09-08
 
 ### Security
