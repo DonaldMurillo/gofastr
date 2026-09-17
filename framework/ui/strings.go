@@ -95,16 +95,73 @@ var stringsKeys = map[string]i18nui.Key{
 // placeholders differ from the English default's (one dropped, one
 // added, a %s written as {name}) is refused and the field keeps its
 // English, because the alternative is fmt's "%!s(MISSING)" inside an
-// accessible name, where nobody sighted would see it.
+// accessible name, where nobody sighted would see it. Reordering is a
+// translator's right where the substitution is by name; see
+// placeholdersMatch for the split.
 func StringsFor(ctx context.Context) *headless.Strings {
-	if ctx == nil {
-		return headless.DefaultStrings()
-	}
 	w := headless.DefaultStrings()
+	if ctx == nil {
+		return w
+	}
+	eachBridgedField(w, func(_ string, f reflect.Value, key i18nui.Key) {
+		if s := i18nui.T(ctx, key); placeholdersMatch(f.String(), s) {
+			f.SetString(s)
+		}
+	})
+	return w
+}
+
+// StringsRefusal is one translation StringsFor will not use, and the
+// English it renders instead.
+type StringsRefusal struct {
+	// Field is the headless.Strings field, Key the catalog key it
+	// reads.
+	Field string
+	Key   i18nui.Key
+	// English is what the page will say; Translated is what the
+	// catalog offered and the bridge refused.
+	English    string
+	Translated string
+}
+
+// CheckStrings reports every bridged key whose translation on this
+// context would be refused for placeholder drift.
+//
+// It exists because the refusal is otherwise invisible: a catalog that
+// drops a %s renders one English sentence among the translated ones,
+// on every request, with nothing to notice it by. The fallback is
+// deliberate — English beats fmt's "%!s(MISSING)" inside an accessible
+// name — but a translator cannot fix what nobody can see. Call this
+// once per locale you ship, in a test or at boot, and fail on a
+// non-empty result: the drift is a catalog bug, and this is where it
+// is cheap to find.
+//
+// A nil ctx, or one with no translator, has nothing to refuse and
+// returns nil. The order follows headless.Strings' field order, so
+// the result is stable to print and to diff.
+func CheckStrings(ctx context.Context) []StringsRefusal {
+	if ctx == nil {
+		return nil
+	}
+	var out []StringsRefusal
+	eachBridgedField(headless.DefaultStrings(), func(name string, f reflect.Value, key i18nui.Key) {
+		def := f.String()
+		if s := i18nui.T(ctx, key); !placeholdersMatch(def, s) {
+			out = append(out, StringsRefusal{Field: name, Key: key, English: def, Translated: s})
+		}
+	})
+	return out
+}
+
+// eachBridgedField walks the settable string fields of w that the
+// bridge maps, in field order. Both the fill and the check go through
+// it so neither can walk a different set than the other.
+func eachBridgedField(w *headless.Strings, fn func(name string, f reflect.Value, key i18nui.Key)) {
 	v := reflect.ValueOf(w).Elem()
 	t := v.Type()
 	for i := range t.NumField() {
-		key, mapped := stringsKeys[t.Field(i).Name]
+		name := t.Field(i).Name
+		key, mapped := stringsKeys[name]
 		if !mapped {
 			// Unreachable in a green build: the reflection gate
 			// refuses an unmapped field at test time.
@@ -112,27 +169,40 @@ func StringsFor(ctx context.Context) *headless.Strings {
 		}
 		f := v.Field(i)
 		if !f.CanSet() {
-			panic("ui: headless.Strings." + t.Field(i).Name + " is not settable — every field of Strings must be an exported string")
+			panic("ui: headless.Strings." + name + " is not settable — every field of Strings must be an exported string")
 		}
-		if s := i18nui.T(ctx, key); placeholdersMatch(f.String(), s) {
-			f.SetString(s)
-		}
+		fn(name, f, key)
 	}
-	return w
 }
 
 // placeholdersMatch reports whether translated carries exactly the
-// placeholders of def, in order: the % verbs (an escaped %% is not
-// one) and the {name} tokens. Order matters because fmt applies
-// positional arguments; a reordered pair would swap the values.
+// placeholders of def. The two kinds are held to different rules,
+// because the two substitutions are different:
+//
+//   - The % verbs are applied by fmt, positionally, so their ORDER is
+//     part of the contract: a translation that swaps two verbs swaps
+//     the values. An escaped %% is not a verb at all.
+//   - The {name} tokens are replaced by name in the runtime
+//     (behavior.js replaces "{n}" and "{names}" literally), so a
+//     translation may put them in whatever order its grammar wants.
+//     Only which tokens appear, and how many times, has to match —
+//     refusing a reordered pair would refuse a correct translation.
 func placeholdersMatch(def, translated string) bool {
-	return slices.Equal(placeholdersIn(def), placeholdersIn(translated))
+	defVerbs, defNames := placeholdersIn(def)
+	trVerbs, trNames := placeholdersIn(translated)
+	if !slices.Equal(defVerbs, trVerbs) {
+		return false
+	}
+	slices.Sort(defNames)
+	slices.Sort(trNames)
+	return slices.Equal(defNames, trNames)
 }
 
-// placeholdersIn lists a string's placeholders in order, the same walk
-// framework/headless uses to hold its probe words to its defaults.
-func placeholdersIn(s string) []string {
-	var out []string
+// placeholdersIn splits a string's placeholders into the % verbs, in
+// the order fmt will apply them, and the {name} tokens, whose order
+// does not bind. It is the same walk framework/headless uses to hold
+// its probe words to its defaults.
+func placeholdersIn(s string) (verbs, names []string) {
 	for i := 0; i < len(s); i++ {
 		switch s[i] {
 		case '%':
@@ -141,15 +211,15 @@ func placeholdersIn(s string) []string {
 					i++
 					continue
 				}
-				out = append(out, s[i:i+2])
+				verbs = append(verbs, s[i:i+2])
 				i++
 			}
 		case '{':
 			if end := strings.IndexByte(s[i:], '}'); end > 0 {
-				out = append(out, s[i:i+end+1])
+				names = append(names, s[i:i+end+1])
 				i += end
 			}
 		}
 	}
-	return out
+	return verbs, names
 }

@@ -27,7 +27,13 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   Previous/Next reuse the keys their existing consumers say. A
   translation whose placeholders differ from the English default's is
   refused and the field keeps its English, so a dropped `%s` cannot
-  put fmt's error text into an accessible name. A reflection gate in `framework/ui` fails the build
+  put fmt's error text into an accessible name. The two kinds are
+  judged differently: `%s` verbs are positional, so their order binds,
+  while `{name}` tokens are replaced by name in the runtime, so a
+  translation may reorder those freely. `ui.CheckStrings(ctx)` reports
+  every key whose translation would be refused, with the English that
+  renders instead, so a host fails a test on catalog drift rather than
+  shipping one English sentence among the translated ones. A reflection gate in `framework/ui` fails the build
   when a field is added to `headless.Strings` without a bridge entry.
   The headless landing screen's bare fixture renders a
   `headless.SystemBanner` through the bridge as the seam proof.
