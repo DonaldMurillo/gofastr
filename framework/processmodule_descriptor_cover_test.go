@@ -2,6 +2,7 @@ package framework
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -202,6 +203,25 @@ func TestValidate_rejectsBadRouteMethodAndPath(t *testing.T) {
 	d.Routes = []RouteDeclaration{{ID: "r", Method: "GET", Path: "no-slash"}} // missing leading /
 	if _, err := ValidateProcessModuleDescriptor(d, nil); err == nil {
 		t.Error("path without leading slash must error")
+	}
+	// A protocol-relative route path would mount nothing the host can
+	// serve and panics headless's same-origin check mid-render when a
+	// ui.node button references it — the whole page 500s instead of
+	// one control deadening. Registration must refuse it first,
+	// naming the module and the route (review finding 6).
+	for _, path := range []string{"//evil.example/x", `/\evil.example/x`} {
+		d := validDescriptor()
+		d.Routes = []RouteDeclaration{{ID: "r", Method: "GET", Path: path}}
+		_, err := ValidateProcessModuleDescriptor(d, nil)
+		if err == nil {
+			t.Errorf("protocol-relative path %q must error", path)
+			continue
+		}
+		for _, want := range []string{`"demo"`, `"r"`, fmt.Sprintf("%q", path)} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("path %q: error does not name %s: %v", path, want, err)
+			}
+		}
 	}
 }
 

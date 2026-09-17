@@ -36,10 +36,10 @@
 // "headless" through the same seam a stylesheet uses
 // (registry.RegisterBehavior), the host serves it at
 // /__gofastr/runtime/headless.js, and the kernel loads it when one of
-// its markers is on the page. No class map dresses the parts yet: the class maps,
-// the stylesheet and that adoption follow in their own changes, and
-// framework/ui remains today's styled layer, not rendering through
-// this package.
+// its markers is on the page. The styled layer's adoption has begun:
+// framework/ui's Button family renders through this package dressed
+// with the fui-button class map, and the remaining families follow in
+// their own changes.
 package headless
 
 import (

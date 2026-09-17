@@ -178,12 +178,12 @@ func adminCSS(_ style.Theme) string {
   display: inline-flex; align-items: center; gap: var(--spacing-sm, 4px);
   justify-content: flex-end;
 }
-.admin-row-actions .ui-button--danger {
+.admin-row-actions .fui-button--danger {
   background: transparent;
   color: var(--color-danger, #e5645f);
   border: 1px solid color-mix(in oklab, var(--color-danger, #e5645f) 40%, transparent);
 }
-.admin-row-actions .ui-button--danger:hover {
+.admin-row-actions .fui-button--danger:hover {
   background: color-mix(in oklab, var(--color-danger, #e5645f) 14%, transparent);
 }
 

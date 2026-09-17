@@ -54,7 +54,7 @@ func registerTestStyle(t *testing.T, prefix string, opts ...registry.Option) *re
 // TestCSSLoadOrder_AppCSSWinsOverComponentCSS pins the cascade
 // ordering for hosts that override framework component defaults.
 // app.css is the last <link> in <head>, so a host's customCSS for
-// `.ui-button { padding: ... }` wins against the framework default
+// `.fui-button { padding: ... }` wins against the framework default
 // at matching specificity without needing `!important` or
 // selector-stacking gymnastics.
 //

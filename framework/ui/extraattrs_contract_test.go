@@ -190,6 +190,19 @@ func TestExtraAttrsForwardingIsSanitized(t *testing.T) {
 					if fun.Name == "scrubAttrs" || fun.Name == "chartEmpty" {
 						sanitized = append(sanitized, d)
 					}
+					// splitButtonAttrs / splitLinkAttrs are Button's
+					// and LinkButton's own sanitizers: every data-fui-*
+					// key is routed into headless's typed Action seam,
+					// which admits exactly the wiring vocabulary and
+					// panics on any other key (refusal pinned by
+					// TestButtonPanicsOnAWiringKeyOutsideTheVocabulary
+					// and TestLinkButtonWiringVocabulary), and the rest
+					// lands in headless's Safe — stronger than the
+					// carrier it replaced, which passed data-fui-*
+					// through unchecked.
+					if fun.Name == "splitButtonAttrs" || fun.Name == "splitLinkAttrs" {
+						sanitized = append(sanitized, d)
+					}
 				}
 			case *ast.AssignStmt:
 				// Writes of framework-owned values INTO a primitive

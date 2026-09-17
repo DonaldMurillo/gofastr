@@ -7,24 +7,36 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
+	"github.com/DonaldMurillo/gofastr/framework/ui/theme"
 )
 
-// The danger button must take its colors from the theme's status
-// tokens (with the axe-safe literals as var() fallbacks), not from
-// hardcoded hex: a re-themed danger slot has to recolor it.
+// The danger button takes its colours through the per-variant
+// treatment trio the component-options compiler declares at every
+// theme boundary — filled reads --color-danger with the white
+// foreground pair — so a re-themed danger slot recolors it through
+// the token chain, and the rule never hardcodes a hex.
 func TestDangerButtonColorTokens(t *testing.T) {
 	css := buttonCSS(style.DefaultTheme())
-	i := strings.Index(css, ".ui-button--danger {")
+	i := strings.Index(css, ".fui-button--danger {")
 	if i < 0 {
-		t.Fatal("ui-button--danger rule missing")
+		t.Fatal("fui-button--danger rule missing")
 	}
 	rule := css[i:]
 	rule = rule[:strings.Index(rule, "}")]
-	if !strings.Contains(rule, "background: var(--color-danger, #B91C1C)") {
-		t.Errorf("danger background must be var(--color-danger, #B91C1C), got rule:\n%s", rule)
+	for _, want := range []string{
+		"background: var(--fui-button-danger-bg)",
+		"color: var(--fui-button-danger-fg)",
+		"border-color: var(--fui-button-danger-border)",
+	} {
+		if !strings.Contains(rule, want) {
+			t.Errorf("danger rule missing %q, got rule:\n%s", want, rule)
+		}
 	}
-	if !strings.Contains(rule, "color: var(--color-primary-fg, #FFFFFF)") {
-		t.Errorf("danger text must be var(--color-primary-fg, #FFFFFF), got rule:\n%s", rule)
+	// And the compiler end of that chain: filled danger resolves the
+	// theme's danger token, not a literal.
+	root := theme.Default(theme.Overrides{}).CSSCustomProperties()
+	if !strings.Contains(root, "--fui-button-danger-bg: var(--color-danger);") {
+		t.Errorf("the filled danger trio must read --color-danger, got:\n%s", root)
 	}
 }
 
@@ -51,9 +63,9 @@ func TestBellBadgeColorTokens(t *testing.T) {
 // default size regardless of the fallback literal.
 func TestButtonLargeUsesTextLgToken(t *testing.T) {
 	css := buttonCSS(style.DefaultTheme())
-	i := strings.Index(css, ".ui-button--large {")
+	i := strings.Index(css, ".fui-button--large {")
 	if i < 0 {
-		t.Fatal("ui-button--large rule missing")
+		t.Fatal("fui-button--large rule missing")
 	}
 	rule := css[i:]
 	rule = rule[:strings.Index(rule, "}")]
@@ -141,7 +153,7 @@ func countFontSizeLiterals(css string) (int, []string) {
 // or, for a genuinely off-scale size, raise the budget with a
 // comment saying why.
 func TestFontSizeLiteralBudget(t *testing.T) {
-	// Current leftovers (9 total):
+	// Current leftovers (8 total):
 	//   - Fluid clamp() display sizes in ui-hero: clamp(2.5rem, 6vw, 4rem),
 	//     clamp(1.125rem, 2.2vw, 1.375rem): viewport-interpolated, no
 	//     single token fits (2).
@@ -149,8 +161,8 @@ func TestFontSizeLiteralBudget(t *testing.T) {
 	//     (stat-card) (2).
 	//   - Micro-labels below --text-xs: 0.625rem (anchored-rail),
 	//     0.65rem (avatar-group), 0.68rem (bar-chart) (3).
-	//   - Test-registered "hero" button size: 1.15rem (×2 in ui-button) (2).
-	const budget = 9
+	//   - Test-registered "hero" button size: 1.15rem (1).
+	const budget = 8
 	theme := style.DefaultTheme()
 	total := 0
 	for _, e := range registry.All() {

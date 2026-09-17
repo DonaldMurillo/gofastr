@@ -168,8 +168,24 @@ func (t Theme) tokenCSS() string {
 	return css
 }
 
-// compiledOptionsCSS is the :root block of compiled component options,
-// or "" when no compiler is registered or the theme carries none.
+// compiledOptionsCSS is the :root block of compiled component options.
+// A theme with options of its own emits those; a theme with NONE emits
+// the styled layer's registered default set instead — the :root floor.
+// Without it, every host whose theme carries no Components (a bare
+// style.DefaultTheme, the `gofastr theme init` scaffold, a host with no
+// App.Theme) would emit no option variables at all and the component
+// rules consuming them (`.fui-button--primary { background:
+// var(--fui-button-primary-bg) }`) would resolve to nothing: an
+// uncoloured, unshaped button. The floor is deliberately ROOT-only:
+// scope blocks (ThemeOverrideCSS) emit a theme's own options or
+// nothing, because a scoped theme with no options inherits its
+// parent's variables — that is the nesting contract. With no compiler
+// registered, or no defaults, the block is "" as before.
+//
+// The floor does not change a theme's identity: ThemeHash fingerprints
+// the flattened options directly, so an optionless theme still hashes
+// as optionless in every binary — the compiled block (floor included)
+// is a function of the linked layer, not part of what the theme is.
 func (t Theme) compiledOptionsCSS() string {
 	// The compiled component options join the root block AFTER the
 	// tokens they reference: a declaration like
@@ -179,6 +195,9 @@ func (t Theme) compiledOptionsCSS() string {
 	// each scope's palette instead of carrying the root's colours into
 	// it. Sorted by name for the byte-stable output ThemeHash needs.
 	opts := componentOptionDecls(t.Components)
+	if len(opts) == 0 {
+		opts = componentOptionDecls(componentCompilerDefaults())
+	}
 	if len(opts) == 0 {
 		return ""
 	}
@@ -191,6 +210,15 @@ func (t Theme) compiledOptionsCSS() string {
 	}
 	b.WriteString("}")
 	return b.String()
+}
+
+// componentCompilerDefaults snapshots the registered default option
+// set under the lock; nil when no compiler (or no defaults) is
+// registered.
+func componentCompilerDefaults() map[string]string {
+	componentCompiler.mu.Lock()
+	defer componentCompiler.mu.Unlock()
+	return componentCompiler.defaults
 }
 
 // aliasTokenCSS emits derived aliases for token names that framework/ui

@@ -95,17 +95,21 @@ func TestModal_ActionURLXSS(t *testing.T) {
 		confirmLabel: "OK",
 		cancelLabel:  "Cancel",
 	}
-	h := string(slot.Render())
-	// The RPC path goes into data-fui-rpc="..." which is attr-escaped.
-	// It should not appear as href="javascript:".
-	if strings.Contains(h, `href="javascript:`) {
-		t.Errorf("SECURITY: [modal-action-url-xss] javascript: URI leaked into href")
-	} else {
-		t.Logf("NOTE: [modal-action-url-xss] javascript: URI in data-fui-rpc, not href")
-	}
-	if !strings.Contains(h, "javascript:") {
-		t.Errorf("SECURITY: [modal-action-url-xss] expected RPC path value in output, got: %s", h)
-	}
+	// The RPC path is an endpoint, and an endpoint is refused at
+	// render unless it is same-origin and starts with / — the same
+	// rule headless's Action seam enforces. A javascript: URI never
+	// reaches data-fui-rpc (or href) at all; escaping it would still
+	// ship a control whose click posts to a scheme the runtime would
+	// never answer.
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Error("SECURITY: [modal-action-url-xss] a javascript: RPC path must be refused at render, not rendered")
+		} else if msg, ok := r.(string); !ok || !strings.Contains(msg, "same-origin") {
+			t.Errorf("SECURITY: [modal-action-url-xss] the refusal must name the same-origin rule: %v", r)
+		}
+	}()
+	_ = slot.Render()
 }
 
 // TestModal_ClassInjection verifies that body text containing quote and

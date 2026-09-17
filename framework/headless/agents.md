@@ -12,9 +12,11 @@ which the module's registration `Requires`; nothing here borrows a
 `data-fui-comp` marker, so a headless button can never pull
 `framework/ui`'s stylesheet. The harness
 proves every registered component against the same contract, so a class
-map can be replaced without a single accessibility guarantee moving. No
-class map or stylesheet ships in this repository yet; `framework/ui` is
-today's styled layer and does not render through this package.
+map can be replaced without a single accessibility guarantee moving.
+`framework/ui`'s Button family renders through this package with the
+internal `fui-button` class map (its stylesheet and marker still live
+in the styled layer); the other families adopt their components'
+headless counterparts in their own changes.
 
 **Use this when** the prompt mentions: headless, unstyled, reskin, a
 second design system, parts, anatomy, slots, attrs, binds, strings, translated
@@ -64,7 +66,11 @@ the fixtures are handed is harness infrastructure, not caller surface.
   anchor policy (`urlsafe.CleanAnchor`).
 - **A request through `ExtraAttrs`.** `Safe` drops every `data-fui-*`
   key. A request is `ButtonProps.Action`; a signal is a `Bind`; a
-  region's refresh is an `Island`.
+  region's refresh is an `Island`. Action also admits the wiring
+  keys a page can put on any clickable — widget and pane open/close,
+  toast, push-state, deeplink, prefetch, intercept-close — each
+  checked for what it deserves; on an anchor only the four that say
+  where a click goes may ride.
 - **One attribute under two spellings.** `Safe` and the part-attrs
   sanitiser store names folded, as the browser reads them, so a
   caller's `NAME` cannot land beside the component's `name`; a key

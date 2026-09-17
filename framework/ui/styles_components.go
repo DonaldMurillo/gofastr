@@ -40,33 +40,37 @@ var (
 	formRepeaterStyle     = registry.RegisterStyle("ui-form-repeater", formRepeaterCSS)
 )
 
-// buttonCSS is the base .ui-button styling that several call sites
-// (including html.Button users with class="ui-button") expect. It is
-// LoadAlways because buttons are everywhere. Paying the eager link
-// avoids the "looks like a native browser button on first paint"
-// failure mode.
+// buttonCSS is the Button/LinkButton stylesheet, on class selectors:
+// the buttonClasses map names the classes, this sheet matches them,
+// and the data-fui-comp="ui-button" marker (Style.WrapHTML) is only
+// what fetches the sheet — ToggleAction and OptimisticAction wear the
+// same classes under their own markers, so every rule here is a plain
+// class rule that matches under any marker. It is LoadAlways because
+// buttons are everywhere; paying the eager link avoids the "looks
+// like a native browser button on first paint" failure mode.
 //
-// .ui-button is class-based, not pure scope-based, because it's
-// applied to <button> tags rendered through core-ui/html (which
-// doesn't go through Style.WrapHTML). The scope still applies to
-// any element with both data-fui-comp="ui-button" AND class="ui-
-// button", and via the html selector under the scope we cover the
-// plain class usage too.
+// Option variables (--fui-density-*, --fui-button-*) are declared at
+// theme boundaries by the component-options compiler and only consumed
+// here: redeclaring one on .fui-button would block the inheritance
+// that makes ui.Themed nesting work. The base rule carries no colours
+// — they live in the variant rules, primary and danger through the
+// per-variant treatment trio, secondary and ghost drawn directly.
 func buttonCSS(t style.Theme) string {
-	return `[data-fui-comp="ui-button"], .ui-button {
+	return `.fui-button {
   display: inline-flex;
   flex: 0 0 auto;
   align-items: center;
   justify-content: center;
-  gap: var(--spacing-sm);
-  /* Token-scaled touch target: --spacing-touch-target defaults to
-     44px (WCAG 2.5.5 floor). Apps that want a larger tap zone for
-     accessibility-mode skins can bump it via theme.Layout.
-     TouchTarget without forking the component. */
-  min-height: var(--spacing-touch-target);
+  gap: var(--fui-density-gap);
+  /* Density owns the touch target: --fui-density-control-h is the
+     theme's control height — the --spacing-touch-target token
+     (44px by default, the WCAG 2.5.5 floor) at comfortable density,
+     36px at compact. An explicit Size wins over it — see the size
+     rules below, which is why they come after this one. */
+  min-height: var(--fui-density-control-h);
   padding: 10px var(--spacing-lg);
   border: 1px solid transparent;
-  border-radius: var(--radii-md);
+  border-radius: var(--fui-button-radius);
   font: inherit;
   font-size: var(--text-base, 1rem);
   font-weight: 600;
@@ -82,93 +86,103 @@ func buttonCSS(t style.Theme) string {
   max-inline-size: 100%;
   overflow-wrap: break-word;
   cursor: pointer;
-  background: var(--color-primary);
-  color: var(--color-primary-fg);
   text-decoration: none;
   transition: filter 150ms ease, opacity 150ms ease;
 }
-[data-fui-comp="ui-button"]:hover, .ui-button:hover { filter: brightness(0.95); }
+.fui-button:hover { filter: brightness(0.95); }
 /* Layered focus ring: inner halo in the surface color creates a
    visible gap between the button and the outer primary ring, so
    keyboard focus stays visible regardless of the button's own
    background color. */
-[data-fui-comp="ui-button"]:focus-visible, .ui-button:focus-visible {
+.fui-button:focus-visible {
   outline: none;
   box-shadow: 0 0 0 2px var(--color-surface), 0 0 0 4px var(--color-primary);
 }
-[data-fui-comp="ui-button"]:disabled, .ui-button:disabled,
-[data-fui-comp="ui-button"][aria-disabled="true"], .ui-button[aria-disabled="true"] {
+.fui-button:disabled,
+.fui-button[aria-disabled="true"] {
   cursor: not-allowed;
   opacity: 0.6;
   filter: none;
 }
+/* The action lifecycle marks an in-flight request with aria-busy; the
+   click that started it must not still read as ready for another. */
+.fui-button[aria-busy="true"] {
+  cursor: progress;
+}
 
-/* Variants — Primary is the default style above. */
-.ui-button--secondary {
+/* Variants. Primary and danger read the treatment trio the
+   component-options compiler declares per variant at every theme
+   boundary (filled, outline or soft); their contrast is the theme's
+   to keep — the trio resolves the same --color-primary /
+   --color-primary-fg pair the tokens guarantee. Secondary is the
+   neutral outline and ghost is transparent with primary ink; neither
+   reads a treatment. */
+.fui-button--primary {
+  background: var(--fui-button-primary-bg);
+  color: var(--fui-button-primary-fg);
+  border-color: var(--fui-button-primary-border);
+}
+.fui-button--danger {
+  background: var(--fui-button-danger-bg);
+  color: var(--fui-button-danger-fg);
+  border-color: var(--fui-button-danger-border);
+}
+.fui-button--danger:focus-visible {
+  box-shadow: 0 0 0 2px var(--color-surface), 0 0 0 4px var(--color-danger);
+}
+.fui-button--secondary {
   background: var(--color-surface);
   color: var(--color-text);
-  border-color: var(--color-border);
+  border-color: var(--color-border-strong);
 }
-.ui-button--secondary:hover { filter: none; background: var(--color-surface-soft); }
+.fui-button--secondary:hover { filter: none; background: var(--color-surface-soft); }
 /* secondary's bg IS --color-surface, so the layered-shadow inner halo
    would be invisible. Use a plain outline with offset instead — it
    contrasts against any page background. */
-.ui-button--secondary:focus-visible {
+.fui-button--secondary:focus-visible {
   box-shadow: none;
   outline: 2px solid var(--color-text);
   outline-offset: 2px;
 }
-
-.ui-button--danger {
-  /* Theme status token with a red-700 literal fallback: the default
-     --color-danger IS #B91C1C (7.07:1 vs white), so axe's
-     color-contrast scanner resolves the same unambiguous pair
-     whether or not the theme :root block is present. Themes that
-     override --color-danger own keeping ≥4.5:1 against
-     --color-primary-fg. */
-  background: var(--color-danger, #B91C1C);
-  color: var(--color-primary-fg, #FFFFFF);
-}
-.ui-button--danger:focus-visible {
-  box-shadow: 0 0 0 2px var(--color-surface), 0 0 0 4px var(--color-danger);
-}
-
-.ui-button--ghost {
+.fui-button--ghost {
   background: transparent;
-  color: var(--color-text);
+  color: var(--color-primary);
   border-color: transparent;
 }
-.ui-button--ghost:hover { filter: none; background: var(--color-surface-soft); }
+.fui-button--ghost:hover { filter: none; background: var(--color-surface-soft); }
 /* ghost sits on --color-background; a halo of --color-surface collapses
    to near-invisible. Plain outline + offset is reliable on any bg. */
-.ui-button--ghost:focus-visible {
+.fui-button--ghost:focus-visible {
   box-shadow: none;
   outline: 2px solid var(--color-text);
   outline-offset: 2px;
 }
 
-/* Size modifiers — the default Button size already meets WCAG 2.5.5
-   touch-target via min-height. --small explicitly opts out for compact
-   row-action contexts (table rows, dense toolbars) where the parent
-   row already provides the 44px tap area. --large bumps padding +
-   font-size for hero CTAs. */
-.ui-button--small {
+/* The icon part: sized by the glyph it carries, never squeezed by the
+   label's own line box. */
+.fui-button__icon { display: inline-flex; flex: 0 0 auto; }
+
+/* Size modifiers — the default Button size meets WCAG 2.5.5 through
+   the density rule above. --small explicitly opts out of the density
+   floor for compact row-action contexts (table rows, dense toolbars)
+   where the parent row already provides the tap area. --large bumps
+   padding + font-size for hero CTAs. Both set their own min-height,
+   so an explicit Size wins over whatever the theme's density set. */
+.fui-button--small {
   min-height: auto;
   padding: var(--spacing-sm, 4px) var(--spacing-md, 8px);
   font-size: var(--text-xs, 0.75rem);
 }
-.ui-button--large {
+.fui-button--large {
+  min-height: 48px;
   padding: 14px var(--spacing-xl, 24px);
   /* --text-lg, NOT --text-base: :root always emits --text-base (1rem),
      so reading it here would collapse --large into the default size. */
   font-size: var(--text-lg, 1.125rem);
 }
 ` +
-		// ToggleAction renders class="ui-button ui-button--<variant>"
-		// under its own data-fui-comp marker, so registered custom
-		// variants/sizes are dual-scoped into it (built-in variants are
-		// plain class rules and already match).
-		customModsCSS(buttonMods, "ui-button", "ui-button", t, "ui-toggle-action")
+		// Registered custom variants and sizes, as plain class rules.
+		buttonModsCSS(t)
 }
 
 func codeBlockCSS(_ style.Theme) string {
@@ -414,7 +428,7 @@ func formFieldCSS(_ style.Theme) string {
      intrinsic ~20ch width instead of the panel/container width. */
   width: 100%;
   box-sizing: border-box;
-  /* Token-scaled touch target (see ui-button). */
+  /* Token-scaled touch target (see fui-button). */
   min-height: var(--spacing-touch-target);
   padding: 10px var(--spacing-md, 8px);
   border: 1px solid var(--color-border, #E4E4E7);
@@ -682,7 +696,7 @@ func formCSS(_ style.Theme) string {
   display: grid;
   grid-template-columns: 1fr;
 }
-[data-fui-comp="ui-form"].ui-form--block-actions .ui-form__actions .ui-button {
+[data-fui-comp="ui-form"].ui-form--block-actions .ui-form__actions .fui-button {
   width: 100%;
   box-sizing: border-box;
 }`

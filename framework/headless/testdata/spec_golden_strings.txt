@@ -30,6 +30,10 @@ a button with no text still needs a name, or it cannot be operated by anyone who
 it navigates, so it is an anchor — a button that changes the URL is a button a middle click cannot open
 <a href="/docs">Read the docs</a>
 
+=== Button / off-site link ===
+a link that leaves the site opens a new tab and severs the opener — target=_blank without the noopener rel hands the destination a window handle back
+<a href="https://example.com/docs" rel="noopener noreferrer" target="_blank">Read the changelog</a>
+
 === Button / disabled link ===
 a disabled anchor is not a thing in HTML, so the href goes and aria-disabled says why, rather than leaving a live link that looks dead
 <a aria-disabled="true" role="link" tabindex="-1">Rollback</a>

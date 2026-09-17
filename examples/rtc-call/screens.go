@@ -149,11 +149,11 @@ func (s *RoomScreen) RenderCtx(ctx context.Context) render.HTML {
 				// enables them once the room is hydrated, so nothing can
 				// acquire a camera with no room to publish to.
 				ui.Button(ui.ButtonConfig{Label: "Share camera", ID: "call-share", Type: "button",
-					ExtraAttrs: html.Attrs{"disabled": ""}}),
+					Disabled: true}),
 				// Mute needs an audio track to toggle, so it waits for
 				// the share; app.js enables it.
 				ui.Button(ui.ButtonConfig{Label: "Mute", ID: "call-mute", Type: "button",
-					ExtraAttrs: html.Attrs{"disabled": ""}}),
+					Disabled: true}),
 				// Leave is a plain link. app.js is a document-scoped
 				// script, so the runtime loads the lobby as a real
 				// document (register_script.go: a navigation that
@@ -235,7 +235,7 @@ func chatSection(ctx context.Context, room string) render.HTML {
 				Required: true, MaxLength: 500, Placeholder: "Hello", Disabled: true,
 			}),
 			ui.Button(ui.ButtonConfig{Label: "Send", ID: "call-chat-send", Type: "submit",
-				ExtraAttrs: html.Attrs{"disabled": ""}}),
+				Disabled: true}),
 		),
 	)
 }

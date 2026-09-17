@@ -24,7 +24,7 @@ func TestCompilerEmitsDensityVariables(t *testing.T) {
 		controlH string
 		gap      string
 	}{
-		{theme.Comfortable, "44px", "var(--spacing-md)"},
+		{theme.Comfortable, "var(--spacing-touch-target)", "var(--spacing-md)"},
 		{theme.Compact, "36px", "var(--spacing-sm)"},
 	} {
 		css := rootOptionCSS(theme.ComponentOptions{Density: tc.density})
@@ -55,22 +55,48 @@ func TestCompilerEmitsRadiusVariables(t *testing.T) {
 
 func TestCompilerEmitsTreatmentVariables(t *testing.T) {
 	for _, tc := range []struct {
-		treatment      theme.ButtonTreatment
-		bg, fg, border string
+		treatment theme.ButtonTreatment
+		bg, fg    string
+		border    string
 	}{
 		{theme.Filled, "var(--color-primary)", "var(--color-primary-fg)", "transparent"},
 		{theme.Outline, "transparent", "var(--color-primary)", "var(--color-primary)"},
-		{theme.Soft, "var(--color-surface-soft)", "var(--color-primary)", "transparent"},
+		{theme.Soft, "color-mix(in srgb, var(--color-primary) 15%, transparent)", "var(--color-primary)", "transparent"},
 	} {
 		css := rootOptionCSS(theme.ComponentOptions{Button: theme.ButtonOptions{Treatment: tc.treatment}})
-		for name, want := range map[string]string{
-			"--fui-button-bg":     tc.bg,
-			"--fui-button-fg":     tc.fg,
-			"--fui-button-border": tc.border,
+		for _, variant := range []struct{ name, colour string }{
+			{"primary", "var(--color-primary)"},
+			{"danger", "var(--color-danger)"},
 		} {
-			if !strings.Contains(css, name+": "+want+";") {
-				t.Errorf("treatment %v: %s missing (want %s)", tc.treatment, name, want)
+			// The substitution below rewrites the PRIMARY colour
+			// reference into the danger one, but the danger FG
+			// intentionally survives it: the needle
+			// "var(--color-primary)" has its ")" right after
+			// "primary", while the fg string is
+			// "var(--color-primary-fg)" (a "-" follows), so it never
+			// matches and danger keeps the white --color-primary-fg
+			// foreground — the compiler's documented pairing, not an
+			// accident this test should paper over.
+			bg := strings.ReplaceAll(tc.bg, "var(--color-primary)", variant.colour)
+			fg := strings.ReplaceAll(tc.fg, "var(--color-primary)", variant.colour)
+			border := strings.ReplaceAll(tc.border, "var(--color-primary)", variant.colour)
+			for name, want := range map[string]string{
+				"--fui-button-" + variant.name + "-bg":     bg,
+				"--fui-button-" + variant.name + "-fg":     fg,
+				"--fui-button-" + variant.name + "-border": border,
+			} {
+				if !strings.Contains(css, name+": "+want+";") {
+					t.Errorf("treatment %v: %s missing (want %s)", tc.treatment, name, want)
+				}
 			}
+		}
+	}
+	// The un-prefixed trio is gone: a rule reading --fui-button-bg
+	// would fall back to nothing and draw an uncoloured button.
+	def := rootOptionCSS(theme.DefaultOptions)
+	for _, gone := range []string{"--fui-button-bg:", "--fui-button-fg:", "--fui-button-border:"} {
+		if strings.Contains(def, gone) {
+			t.Errorf("the un-prefixed trio %s still ships", gone)
 		}
 	}
 }
@@ -83,11 +109,56 @@ func TestCompilerEmitsTheCompleteSetAtRoot(t *testing.T) {
 	for _, name := range []string{
 		"--fui-density-control-h", "--fui-density-gap",
 		"--fui-button-radius",
-		"--fui-button-bg", "--fui-button-fg", "--fui-button-border",
+		"--fui-button-primary-bg", "--fui-button-primary-fg", "--fui-button-primary-border",
+		"--fui-button-danger-bg", "--fui-button-danger-fg", "--fui-button-danger-border",
 	} {
 		if !strings.Contains(css, name+":") {
 			t.Errorf("complete option set missing %s", name)
 		}
+	}
+}
+
+// The :root floor: a theme with no Components of its own — a bare
+// style.DefaultTheme (what a host with no App.Theme gets), or the
+// `gofastr theme init` scaffold — still emits the framework's complete
+// default option set at :root, because this package registered it with
+// the compiler. Without the floor the ui-button rules reading
+// var(--fui-button-primary-bg) and kin resolve to nothing and a primary
+// CTA renders as an unstyled text label (review finding 1).
+func TestOptionlessThemeCarriesTheRootFloor(t *testing.T) {
+	css := style.DefaultTheme().CSSCustomProperties()
+	for _, want := range []string{
+		"--fui-density-control-h: var(--spacing-touch-target);",
+		"--fui-density-gap: var(--spacing-md);",
+		"--fui-button-radius: var(--radii-md);",
+		"--fui-button-primary-bg: var(--color-primary);",
+		"--fui-button-primary-fg: var(--color-primary-fg);",
+		"--fui-button-primary-border: transparent;",
+		"--fui-button-danger-bg: var(--color-danger);",
+		"--fui-button-danger-fg: var(--color-primary-fg);",
+		"--fui-button-danger-border: transparent;",
+	} {
+		if !strings.Contains(css, want) {
+			t.Errorf("optionless theme's :root floor missing %s\nroot options block:\n%s", want, css)
+		}
+	}
+	// The floor is a default, not an override: a theme that carries
+	// its own options emits those values, not the defaults'.
+	compact := rootOptionCSS(theme.ComponentOptions{Density: theme.Compact})
+	if !strings.Contains(compact, "--fui-density-control-h: 36px;") {
+		t.Error("a compact theme did not emit its own control height")
+	}
+	if strings.Contains(compact, "--fui-density-control-h: var(--spacing-touch-target);") {
+		t.Error("the default floor overrode a theme's own compact option")
+	}
+}
+
+// A scoped theme with no options emits no option variables and inherits
+// its parent's — the nesting contract. The floor is a :root-only
+// guarantee; leaking it into scope blocks would block inheritance.
+func TestOptionlessScopeBlockEmitsNoOptions(t *testing.T) {
+	if css := style.ThemeOverrideCSS("probe", style.Theme{}); strings.Contains(css, "--fui-") {
+		t.Errorf("an optionless scope block emitted option variables:\n%s", css)
 	}
 }
 
@@ -117,8 +188,10 @@ func TestCompilerEmitsOptionsInsideScopeBlocks(t *testing.T) {
 		for _, want := range []string{
 			"--fui-density-control-h: 36px;",
 			"--fui-button-radius: 0;",
-			"--fui-button-bg: transparent;",
-			"--fui-button-border: var(--color-primary);",
+			"--fui-button-primary-bg: transparent;",
+			"--fui-button-primary-border: var(--color-primary);",
+			"--fui-button-danger-bg: transparent;",
+			"--fui-button-danger-border: var(--color-danger);",
 		} {
 			if !strings.Contains(body, want) {
 				t.Errorf("%s scope block missing %s:\n%s", probe.block, want, body)
@@ -177,5 +250,15 @@ func TestThemeHashSeparatesOptionsUnderRealCompiler(t *testing.T) {
 	}})
 	if style.ThemeHash(filled) == style.ThemeHash(outline) {
 		t.Error("equal tokens with different treatments hash identically")
+	}
+}
+
+// The sheet consumes what the compiler emits: the base rule reads the
+// density height, or comfortable and compact would draw the same
+// button. Pinned here because the compiler tests never read the sheet.
+func TestButtonSheetConsumesTheDensityHeight(t *testing.T) {
+	css := buttonCSS(theme.Default())
+	if !strings.Contains(css, "min-height: var(--fui-density-control-h)") {
+		t.Fatal("the button base rule does not read --fui-density-control-h: density cannot change the control height")
 	}
 }

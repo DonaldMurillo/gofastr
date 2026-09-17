@@ -39,7 +39,7 @@
 //	Banner:               page-level persistent status strip (dismissible)
 //	BarChart:             categorical SVG bar chart
 //	Box:                  padded/bordered layout box
-//	Button:               primary/secondary/danger/ghost variants
+//	Button:               primary/secondary/danger/ghost variants, Disabled, Action wiring seam
 //	Callout:              inline info/warning/danger/neutral block
 //	Card:                 labelled <section> with header/body/footer
 //	Carousel:             horizontal scroll-snap slider

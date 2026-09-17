@@ -71,22 +71,22 @@ func TestOptimisticVariantClass(t *testing.T) {
 		Endpoint: "/x", IdleLabel: "x", SuccessLabel: "y",
 		Variant: ButtonSecondary,
 	}))
-	if !strings.Contains(got, "ui-button--secondary") {
+	if !strings.Contains(got, "fui-button--secondary") {
 		t.Errorf("expected secondary variant class, got: %s", got)
 	}
 }
 
 // Regression: explicit Variant=ButtonPrimary was being silently
 // dropped by the `Variant != "" && Variant != ButtonPrimary` guard,
-// rendering the button without ui-button--primary even though the
+// rendering the button without fui-button--primary even though the
 // caller asked for it.
 func TestOptimisticExplicitPrimary(t *testing.T) {
 	got := string(OptimisticAction(OptimisticActionConfig{
 		Endpoint: "/x", IdleLabel: "x", SuccessLabel: "y",
 		Variant: ButtonPrimary,
 	}))
-	if !strings.Contains(got, "ui-button--primary") {
-		t.Errorf("expected ui-button--primary on explicit primary variant, got: %s", got)
+	if !strings.Contains(got, "fui-button--primary") {
+		t.Errorf("expected fui-button--primary on explicit primary variant, got: %s", got)
 	}
 }
 

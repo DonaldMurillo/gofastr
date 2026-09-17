@@ -90,7 +90,7 @@ func TestE2ERecordSummaryResponsiveContract(t *testing.T) {
   const title = root.querySelector('.ui-record-summary__title');
   const actions = root.querySelector('.ui-record-summary__actions');
   const actionCluster = actions.querySelector('.ui-cluster');
-  const primaryAction = actions.querySelector('.ui-button');
+  const primaryAction = actions.querySelector('.fui-button');
   const highlight = root.querySelector('.ui-record-summary__highlight');
   const lead = root.querySelector('.ui-record-summary__lead');
   const overflow = root.querySelector('.ui-avatar-group__overflow');

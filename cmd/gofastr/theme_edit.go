@@ -703,12 +703,14 @@ func buildContrastPairs() []contrastPair {
 	// Each status tone twice: as a filled control, and as label text on its own
 	// 15% tint. core-ui/style/theme.go is explicit that the tint is the harder
 	// target, which is exactly why it must actually be measured.
-	//
-	// The fill's foreground is var(--color-primary-fg), because that is what the
-	// design system paints there: `.ui-button--danger` and `.ui-badge--danger`
-	// both set `color: var(--color-primary-fg)` on a `--color-danger`
-	// background, and styles_components.go says so explicitly: "Themes that
-	// override --color-danger own keeping >=4.5:1 against --color-primary-fg."
+	// The fill's foreground is var(--color-primary-fg), because that is
+	// what the design system paints there: `.fui-button--danger`
+	// consumes the --fui-button-danger trio the component-options
+	// compiler derives from `--color-danger` / `--color-primary-fg`
+	// (there is no --color-danger-fg token), and `.ui-badge--danger`
+	// sets `color: var(--color-primary-fg)` on a `--color-danger`
+	// background directly. Themes that override --color-danger own
+	// keeping >=4.5:1 against --color-primary-fg.
 	//
 	// Hardcoding #ffffff here measured a pair the UI never renders. In the
 	// default dark scheme --color-primary-fg is #111827 and the status tones are

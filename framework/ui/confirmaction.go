@@ -232,9 +232,14 @@ func (s *confirmDialogSlot) Render() render.HTML {
 		"data-fui-rpc-close": "",
 	}
 	confirmAttrs := html.Attrs{
-		"data-fui-rpc":        s.rpcPath,
-		"data-fui-rpc-method": s.rpcMethod,
-		"data-fui-rpc-close":  "",
+		"data-fui-rpc-close": "",
+	}
+	if s.rpcPath != "" {
+		// A dialog with no endpoint is a plain confirmation: the
+		// confirm button renders without the request wiring rather
+		// than carrying a dead data-fui-rpc="".
+		confirmAttrs["data-fui-rpc"] = s.rpcPath
+		confirmAttrs["data-fui-rpc-method"] = s.rpcMethod
 	}
 	if s.successSignal != "" {
 		confirmAttrs["data-fui-rpc-signal"] = s.successSignal

@@ -307,7 +307,7 @@ func TestRenderButtonActionRefResolves(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	mustContain(t, h, `data-fui-rpc="/m/mod/save"`)
-	mustContain(t, h, "ui-button--primary")
+	mustContain(t, h, "fui-button--primary")
 }
 
 func TestRenderLinkActionRefResolvedToRpcURL(t *testing.T) {

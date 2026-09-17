@@ -301,10 +301,13 @@ new RPC is still in flight.
 - ❌ Opening per-page SSE for surfaces that fire once per session.
 - ❌ Inline `style="…"` attributes (strict CSP strips them).
 - ❌ "Open the modal client-side then hope SSR caught up". SSR-inline first.
-- ❌ Hand-rolling `<button class="ui-btn …">` instead of `ui.Button(...)`.
-  The framework class is `ui-button` (with the `data-fui-comp` marker so
-  the CSS auto-loads). `ui-btn` IS NOT a thing; it renders unstyled
-  native buttons. **Always compose with the typed framework components.**
+- ❌ Hand-rolling `<button class="ui-btn …">` (or `class="fui-button …"`)
+  instead of `ui.Button(...)`. The framework class is `fui-button`,
+  emitted only by the class map inside `ui.Button` / `ui.LinkButton`
+  (with the `data-fui-comp` marker so the CSS auto-loads; the marker
+  and the sheet registration keep the `ui-button` NAME). `ui-btn` IS
+  NOT a thing; it renders unstyled native buttons. **Always compose
+  with the typed framework components.**
 - ❌ Reading form data with `req.FormValue()` when the runtime POSTs
   JSON. `dispatchRPC` serializes non-multipart forms as JSON
   (`Content-Type: application/json`); only manual `URLSearchParams`

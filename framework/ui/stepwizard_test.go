@@ -86,6 +86,21 @@ func TestStepWizardRendersMultiStepWithNavigation(t *testing.T) {
 			t.Errorf("missing %q in:\n%s", want, h)
 		}
 	}
+	// Back is secondary and Continue is the step's one weighted
+	// action: the button carrying value="back" must wear the
+	// secondary variant, and no other button may (a wizard step with
+	// two equally filled primary buttons loses its hierarchy).
+	backAt := strings.Index(h, `value="back"`)
+	if backAt < 0 {
+		t.Fatalf("no back button in:\n%s", h)
+	}
+	tagStart := strings.LastIndex(h[:backAt], "<button")
+	if !strings.Contains(h[tagStart:backAt], "fui-button--secondary") {
+		t.Errorf("the Back button is not secondary:\n%s", h[tagStart:backAt])
+	}
+	if n := strings.Count(h, "fui-button--secondary"); n != 1 {
+		t.Errorf("fui-button--secondary appears %d times, want exactly once (on Back):\n%s", n, h)
+	}
 }
 
 func TestStepWizardSecondStepShowsBackAndSubmit(t *testing.T) {

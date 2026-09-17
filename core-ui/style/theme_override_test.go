@@ -54,7 +54,7 @@ func TestRegisterThemeOverrideDoesNotHash(t *testing.T) {
 
 	// The late registration the pattern needs to survive: this is
 	// framework/ui's init running after the library package's.
-	RegisterComponentOptionsCompiler(echoCompiler)
+	RegisterComponentOptionsCompiler(echoCompiler, testOptionDefaults)
 
 	class := ref.Class()
 	if !strings.HasPrefix(class, "fui-theme-") {

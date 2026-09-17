@@ -51,7 +51,7 @@ var _ = registry.RegisterBehavior("toggleaction", toggleActionJS,
 //	        data-fui-toggle-endpoint="/follow"
 //	        data-fui-toggle-method="POST"
 //	        data-state="idle" aria-pressed="false"
-//	        class="ui-button ui-toggle-action">
+//	        class="fui-button fui-toggle-action">
 //	    <span data-fui-toggle-idle>Follow</span>
 //	    <span data-fui-toggle-committed hidden>Following ✓</span>
 //	</button>
@@ -139,16 +139,16 @@ func ToggleAction(cfg ToggleActionConfig) render.HTML {
 	if cfg.Committed {
 		state, pressed = "committed", "true"
 	}
-
-	cls := "ui-button ui-toggle-action"
-	if cfg.Variant != "" {
-		checkButtonVariant("ToggleAction", cfg.Variant)
-		cls += " ui-button--" + string(cfg.Variant)
+	tv := cfg.Variant
+	if tv == "" {
+		tv = ButtonPrimary
 	}
-	if cfg.Size != "" {
-		checkButtonSize("ToggleAction", cfg.Size)
-		cls += " ui-button--" + string(cfg.Size)
-	}
+	checkButtonVariant("ToggleAction", tv)
+	checkButtonSize("ToggleAction", cfg.Size)
+	// The button's root classes come from the class map, beside this
+	// (default primary) because the stylesheet's colours live in the
+	// variant rules, not the base.
+	cls := buttonClassTokens(cfg.Variant, cfg.Size) + " ui-toggle-action"
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
 	}
@@ -210,7 +210,7 @@ func ToggleAction(cfg ToggleActionConfig) render.HTML {
 
 var toggleActionStyle = registry.RegisterStyle("ui-toggle-action", func(_ style.Theme) string {
 	return `[data-fui-comp="ui-toggle-action"] {
-  /* Inherits .ui-button base; override only what the toggle flip needs. */
+  /* Inherits .fui-button base; override only what the toggle flip needs. */
   position: relative;
   transition: background-color 120ms ease, color 120ms ease;
 }

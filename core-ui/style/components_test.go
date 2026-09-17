@@ -12,16 +12,22 @@ import (
 // blocks' shape. One test compiler stands in for framework/ui's; the
 // real one's emission has its own tests beside it.
 
-// stageTestCompiler resets the hook and installs fn; the caller's
-// deferred restore keeps the package's other tests free to emit theme
-// CSS without a compiler installed (they never set Components, but the
-// freeze must not leak between tests either).
+// stageTestCompiler resets the hook and installs fn with a standard
+// default set; the caller's deferred restore keeps the package's other
+// tests free to emit theme CSS without a compiler installed (they never
+// set Components, but the freeze must not leak between tests either).
 func stageTestCompiler(t *testing.T, fn func(components map[string]string) []Declaration) {
 	t.Helper()
 	resetComponentOptionsForTest()
 	t.Cleanup(resetComponentOptionsForTest)
-	RegisterComponentOptionsCompiler(fn)
+	RegisterComponentOptionsCompiler(fn, testOptionDefaults)
 }
+
+// testOptionDefaults is the default set the staged compiler registers:
+// grammar-valid under echoCompiler (which accepts any grammar-clean
+// map) and distinct from a bare empty map, so the :root floor tests
+// can tell the floor's emission from nothing.
+var testOptionDefaults = map[string]string{"density": "compact", "button.treatment": "outline"}
 
 // echoCompiler emits one declaration per option, name derived from the
 // key, value from the value: deterministic, and different options
@@ -65,16 +71,28 @@ func TestComponentsGrammarInValidate(t *testing.T) {
 }
 
 func TestComponentOptionsRootEmission(t *testing.T) {
+	// A theme with no options of its own emits the registered DEFAULT
+	// set at :root — the floor that keeps every optionless host's
+	// component rules resolving.
+	stageTestCompiler(t, echoCompiler)
+	if css := DefaultTheme().CSSCustomProperties(); !strings.Contains(css, "--fui-test-density: compact;") {
+		t.Error("empty Components did not emit the registered default set at :root:\n" + css)
+	}
+	// The floor does not leak into scope blocks: an optionless scoped
+	// theme inherits its parent's variables (the nesting contract).
+	stageTestCompiler(t, echoCompiler)
+	if css := ThemeOverrideCSS("floor", Theme{}); strings.Contains(css, "--fui-test") {
+		t.Error("the default set leaked into a scope block:\n" + css)
+	}
+	// A theme with options of its own emits those, not the defaults.
 	stageTestCompiler(t, echoCompiler)
 	css := themeWithComponents(map[string]string{"density": "compact"}).CSSCustomProperties()
 	want := ":root {\n  --fui-test-density: compact;\n}"
 	if !strings.Contains(css, want) {
 		t.Errorf("root block missing compiled option\nwant substring:\n%s\ngot:\n%s", want, css)
 	}
-	// A theme with no options emits no compiled block.
-	stageTestCompiler(t, echoCompiler)
-	if css := DefaultTheme().CSSCustomProperties(); strings.Contains(css, "--fui-test") {
-		t.Error("empty Components emitted compiled declarations")
+	if n := strings.Count(css, "--fui-test-density: compact;"); n != 1 {
+		t.Errorf("option emitted %d times, want exactly once (own options, not own + floor):\n%s", n, css)
 	}
 }
 
@@ -136,10 +154,14 @@ func TestComponentOptionsCompilerRegistrationRules(t *testing.T) {
 		fn()
 	}
 
-	mustPanic("nil compiler", func() { RegisterComponentOptionsCompiler(nil) })
+	mustPanic("nil compiler", func() { RegisterComponentOptionsCompiler(nil, testOptionDefaults) })
+	mustPanic("empty defaults", func() { RegisterComponentOptionsCompiler(echoCompiler, nil) })
+	mustPanic("grammar-bad defaults", func() {
+		RegisterComponentOptionsCompiler(echoCompiler, map[string]string{"Density": "compact"})
+	})
 
-	RegisterComponentOptionsCompiler(echoCompiler)
-	mustPanic("second registration", func() { RegisterComponentOptionsCompiler(echoCompiler) })
+	RegisterComponentOptionsCompiler(echoCompiler, testOptionDefaults)
+	mustPanic("second registration", func() { RegisterComponentOptionsCompiler(echoCompiler, testOptionDefaults) })
 
 	// The freeze: the first emit latches the registration shut. A
 	// compiler registered after the host composed app.css would be
@@ -147,7 +169,7 @@ func TestComponentOptionsCompilerRegistrationRules(t *testing.T) {
 	// three caches, one miss — so registration after that point is a
 	// wiring bug and says so.
 	_ = DefaultTheme().CSSCustomProperties()
-	mustPanic("late registration", func() { RegisterComponentOptionsCompiler(echoCompiler) })
+	mustPanic("late registration", func() { RegisterComponentOptionsCompiler(echoCompiler, testOptionDefaults) })
 
 	// The freeze must hold on its own, not ride on "already
 	// registered": emit FIRST, with no compiler at all, then try to
@@ -155,7 +177,7 @@ func TestComponentOptionsCompilerRegistrationRules(t *testing.T) {
 	// the host composed app.css before the styled layer's init ran.
 	resetComponentOptionsForTest()
 	_ = DefaultTheme().CSSCustomProperties()
-	mustPanic("registration after an emit with no compiler", func() { RegisterComponentOptionsCompiler(echoCompiler) })
+	mustPanic("registration after an emit with no compiler", func() { RegisterComponentOptionsCompiler(echoCompiler, testOptionDefaults) })
 
 	// Emitting with no compiler registered at all stays silent: a
 	// process that never imports the styled layer stores options it
@@ -181,14 +203,18 @@ func TestComponentCompilerInvalidDeclarationPanicsAtEmit(t *testing.T) {
 		{"value loads a url", Declaration{Name: "--fui-density", Value: "url(https://attacker/x)"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			stageTestCompiler(t, func(map[string]string) []Declaration {
-				return []Declaration{tc.decl}
-			})
 			defer func() {
 				if recover() == nil {
 					t.Errorf("compiler declaration %+v emitted without a panic", tc.decl)
 				}
 			}()
+			// The panic fires at registration or at emit — the
+			// default set is compiled once at registration, so a
+			// compiler that always returns a bad declaration dies
+			// there; either site proves the guard.
+			stageTestCompiler(t, func(map[string]string) []Declaration {
+				return []Declaration{tc.decl}
+			})
 			_ = themeWithComponents(map[string]string{"density": "compact"}).CSSCustomProperties()
 		})
 	}

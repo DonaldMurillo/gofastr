@@ -18,16 +18,25 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   saving an edited theme keeps its options.
 - **`style.RegisterComponentOptionsCompiler`** — the one-per-process
   hook that turns component options into CSS custom properties,
-  registered by `framework/ui` from its package `init`. The compiled
-  declarations join the `:root` block and every theme-override scope
-  block, are validated at emit (a name that is not a custom property
-  or a value that breaks a declaration panics), and land in
-  `ThemeHash`, so themes that differ only in options hash apart — with
-  or without a compiler registered: the hash fingerprints the
-  flattened options directly, so a binary that links no styled layer
-  (framework/uihost alone) still never aliases option-different
-  themes. A registration after a theme was hashed or theme CSS was
-  emitted panics with the reason: the host freezes app.css, the
+  registered by `framework/ui` from its package `init` together with
+  the framework's complete default option set (`theme.DefaultOptions.
+  Flattened()`), validated with the same grammar at registration.
+  That default set is the **:root floor**: a theme with no
+  `Components` of its own — a bare `style.DefaultTheme()`, the
+  `gofastr theme init` scaffold, a host with no `App.Theme` — emits
+  it at `:root`, so the `--fui-*` variables the component stylesheets
+  consume resolve on every host (without the floor a primary button
+  rendered as an unstyled text label). The floor is root-only: scoped
+  themes with no options inherit their parent's variables, and
+  `ThemeHash` still hashes an optionless theme as optionless. The
+  compiled declarations join the `:root` block and every
+  theme-override scope block, are validated at emit (a name that is
+  not a custom property or a value that breaks a declaration panics),
+  and `ThemeHash` covers the flat option map, not the compiled
+  declarations nor the registered defaults, so themes that differ only
+  in options hash apart with or without a compiler registered, and an
+  optionless theme hashes as optionless. A registration after a theme
+  was hashed or theme CSS was emitted panics with the reason: the host freezes app.css, the
   catalog and the manifest at first use. `Theme.Validate` runs the
   registered compiler too, so an unknown option key or value (a
   grammar-clean `"density": "cozy"`) fails at boot, not as a panic at
@@ -50,13 +59,52 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   means unspecified while overrides merge; `Default()` flattens a
   complete set (Comfortable, Filled, Round), and an explicit
   Comfortable/Filled/Round resets an earlier override. The compiler
-  emits `--fui-density-control-h`/`--fui-density-gap` (44px/36px,
-  md/sm spacing), `--fui-button-radius` (radii-md/0/9999px) and the
-  treatment trio `--fui-button-bg`/`-fg`/`-border`. Theme boundaries
+  emits `--fui-density-control-h`/`--fui-density-gap` (the
+  `--spacing-touch-target` token / 36px, md/sm spacing),
+  `--fui-button-radius` (radii-md/0/9999px) and the per-variant
+  treatment trios `--fui-button-primary-*` / `--fui-button-danger-*`.
+  Theme boundaries
   declare the option variables, component rules consume them, no
   descendant option rules — so options nest by inheritance
   (browser-proven A → B → A). The `fui-` prefix is reserved for
   `framework/ui`; `data-hui-*` hooks belong to `framework/headless`.
+
+- **`ui.Button` / `ui.LinkButton` render through `framework/headless`**,
+  dressed with the internal `fui-button` class map (root, variant and
+  size modifiers, icon part). The class map is framework/ui's: class
+  names are the same under every theme, `RegisterButtonVariant` /
+  `RegisterButtonSize` add their `root--<name>` entries at init, and
+  the marker that fetches the sheet stays `data-fui-comp="ui-button"`
+  (the registration name is unchanged — discovery and styling are
+  separate). `ButtonConfig.Disabled` renders the disabled state, and
+  `Class` appends after the class map's own classes without mutating
+  the shared map. The `ui-button` stylesheet is rewritten on class
+  selectors (`.fui-button`, variants, `[aria-busy="true"]`,
+  `:focus-visible`, `:disabled`, `__icon`), consumes the density /
+  radius / treatment option variables and redeclares none of them;
+  registered variants ship as plain `.fui-button--<name>` rules once,
+  which is also why the `ui-toggle-action` dual scope is gone —
+  `ToggleAction` and `OptimisticAction` take their root classes from
+  the class map under their own markers.
+- **`headless.ButtonProps.Action` admits the wiring vocabulary** a
+  page can put on a clickable: `interactive.Action.Attrs()` and every
+  `.OnSuccess` effect (including the post-success widget refresh,
+  `data-fui-rpc-refresh`), widget/pane open and close, keyed-pane
+  deep-links (`data-fui-pane-key`), toast, push-state, deeplink,
+  prefetch, `data-fui-intercept-close` — each checked for what it
+  deserves (same-origin for endpoints, push-state and navigate;
+  non-empty for names; JSON for bodies and toasts; the module-name
+  shape for prefetch; `secondary`/`tertiary` for panes).
+  On an anchor only the four keys that say where a click goes
+  (push-state, prefetch, open, deeplink) may ride; a request on a
+  link is still refused. `ButtonProps` also gains `External`
+  (target/rel owned, case-fold proof) and `Parts` (attrs on the root
+  and icon; a class appends).
+- **`headless.Button` renders through its `Parts` box**, so the
+  harness's part-attr, bind-routing and override sweeps cover it; the
+  spec gained a `WithParts` fixture and an off-site-link case (goldens
+  regenerated and read).
+
 - **`registry.RegisterBehavior`**: behaviour registers like style. A
   component's package embeds its runtime module beside the Go and
   registers it with the markers the kernel scans for; the host serves
@@ -66,6 +114,39 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   markers from one block beside the manifest and loads the module once
   when one appears. No trigger vocabulary: the marker is the trigger.
   Spec: `docs/spec-behavior-registry.md`.
+
+### BREAKING
+- **A `data-fui-*` key the runtime does not read on a button panics.**
+  Under the old carrier contract `ui.Button`'s `ExtraAttrs` rendered
+  any `data-fui-*` key as a (usually dead) attribute; now every
+  `data-fui-*` key routes through the typed `Action` seam and any key
+  outside the vocabulary is refused at render, naming the key and the
+  seam. The admitted vocabulary (each value checked for what it
+  deserves): `data-fui-rpc`, `-rpc-method`, `-rpc-body`,
+  `-rpc-signal`, `-rpc-navigate`, `-rpc-open`, `-rpc-close`,
+  `-rpc-reset`, `-rpc-after-text`, `-rpc-after-disable`,
+  `-rpc-scroll-to`, `-rpc-refresh`, `-confirm`, `-signal-set`,
+  `-signal-inc`, `-signal-toggle`, `-push-state`, `-open`,
+  `-deeplink`, `-toast`, `-pane-open`, `-pane-key`, `-pane-close`,
+  `-prefetch`, `-intercept-close`. Notably `data-fui-rpc-refresh` and
+  `data-fui-pane-key` — both runtime-read, both legal on a button —
+  ARE in the vocabulary; everything else `data-fui-*` (signal
+  display bindings, `data-fui-toggle-*`, `data-fui-optimistic-*`,
+  polling, layout markers, …) belongs to the component that renders
+  its own markup for it and panics here. `ui.LinkButton` refuses
+  every `data-fui-*` key except the four link-legal ones
+  (`-push-state`, `-prefetch`, `-open`, `-deeplink`), as before.
+- **`disabled` belongs to `ButtonConfig.Disabled`.** A `disabled` key
+  in `ui.Button`'s `ExtraAttrs` panics pointing at the field (any
+  spelling; `FormRepeater`'s buttons now use the field).
+- **The button classes are `fui-button*`.** The `ui-button` class no
+  longer exists in any emitted markup or stylesheet; the four
+  `.ui-button`-selecting rules elsewhere (Form's block-actions,
+  FilterToolbar's actions, admin's row-action danger pair) select
+  `.fui-button` now. Hand-rolled `class="ui-button"` markup renders
+  unstyled — call `ui.Button` / `ui.LinkButton`. The option compiler
+  emits per-variant trios (`--fui-button-primary-*`,
+  `--fui-button-danger-*`) and no un-prefixed `--fui-button-bg/-fg/-border`.
 - **`framework/headless`**: the structure half of a design system.
   Components render tags, roles, labelling relationships, state
   attributes and `data-hui-*` hooks with no classes at a nil Classes; a
@@ -110,7 +191,6 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   and drops keyboard focus) and the `action:*` events. No
   marker: owners reach it through `Requires("action")`.
 
-### BREAKING
 - **`headless.Skin` is now `headless.Classes`.** The type is the map
   from part to class name, and the name now says what it holds: the
   theme is the whole look, `Classes` is one component's part of it

@@ -198,7 +198,7 @@ func TestFormFieldHelpAddsAriaDescribedBy(t *testing.T) {
 func TestButtonVariantsRenderClass(t *testing.T) {
 	for _, v := range []ButtonVariant{ButtonPrimary, ButtonSecondary, ButtonDanger, ButtonGhost} {
 		h := Button(ButtonConfig{Label: "Action", Variant: v})
-		want := "ui-button--" + string(v)
+		want := "fui-button--" + string(v)
 		mustContain(t, h, want)
 		mustContain(t, h, "Action")
 	}
@@ -206,7 +206,7 @@ func TestButtonVariantsRenderClass(t *testing.T) {
 
 func TestButtonDefaultsToPrimary(t *testing.T) {
 	h := Button(ButtonConfig{Label: "x"})
-	mustContain(t, h, "ui-button--primary")
+	mustContain(t, h, "fui-button--primary")
 }
 
 func TestButtonRejectsUnknownVariant(t *testing.T) {
@@ -248,22 +248,22 @@ func TestButtonDangerEmitsSingleMarker(t *testing.T) {
 
 func TestButtonSizeDefaultEmitsNoSizeClass(t *testing.T) {
 	h := string(Button(ButtonConfig{Label: "x"}))
-	if strings.Contains(h, "ui-button--small") || strings.Contains(h, "ui-button--large") {
+	if strings.Contains(h, "fui-button--small") || strings.Contains(h, "fui-button--large") {
 		t.Errorf("default Size should not emit a size modifier:\n%s", h)
 	}
 }
 
 func TestButtonSizeSmallEmitsSmallClass(t *testing.T) {
 	h := string(Button(ButtonConfig{Label: "x", Size: ButtonSizeSmall}))
-	if !strings.Contains(h, "ui-button--small") {
-		t.Errorf("Size: ButtonSizeSmall should emit .ui-button--small:\n%s", h)
+	if !strings.Contains(h, "fui-button--small") {
+		t.Errorf("Size: ButtonSizeSmall should emit .fui-button--small:\n%s", h)
 	}
 }
 
 func TestButtonSizeLargeEmitsLargeClass(t *testing.T) {
 	h := string(Button(ButtonConfig{Label: "x", Size: ButtonSizeLarge}))
-	if !strings.Contains(h, "ui-button--large") {
-		t.Errorf("Size: ButtonSizeLarge should emit .ui-button--large:\n%s", h)
+	if !strings.Contains(h, "fui-button--large") {
+		t.Errorf("Size: ButtonSizeLarge should emit .fui-button--large:\n%s", h)
 	}
 }
 
@@ -275,7 +275,7 @@ func TestLinkButtonRendersAnchorWithButtonClass(t *testing.T) {
 	if !strings.Contains(h, `href="/get-started"`) {
 		t.Errorf("LinkButton should preserve Href:\n%s", h)
 	}
-	if !strings.Contains(h, "ui-button ui-button--primary") {
+	if !strings.Contains(h, "fui-button fui-button--primary") {
 		t.Errorf("LinkButton should default to primary variant:\n%s", h)
 	}
 	if !strings.Contains(h, `data-fui-comp="ui-button"`) {
@@ -288,6 +288,22 @@ func TestLinkButtonExternalAddsTargetAndRel(t *testing.T) {
 	if !strings.Contains(h, `target="_blank"`) || !strings.Contains(h, `rel="noopener noreferrer"`) {
 		t.Errorf("LinkButton{External:true} missing target/rel:\n%s", h)
 	}
+	// External owns the pair: a caller's spelling must not clobber
+	// the noopener contract, whichever case it arrives in.
+	smuggled := string(LinkButton(LinkButtonConfig{Label: "Repo", Href: "https://github.com/x", External: true,
+		ExtraAttrs: html.Attrs{"TARGET": "_self", "REL": "opener"}}))
+	if strings.Contains(smuggled, "_self") || strings.Contains(smuggled, "opener\"") {
+		t.Errorf("a case-variant target/rel survived External ownership:\n%s", smuggled)
+	}
+	// Without External the caller keeps the keys.
+	caller := string(LinkButton(LinkButtonConfig{Label: "Repo", Href: "https://example.com/x",
+		ExtraAttrs: html.Attrs{"target": "framename"}}))
+	if !strings.Contains(caller, `target="framename"`) {
+		t.Errorf("without External a caller may set target:\n%s", caller)
+	}
+	if strings.Contains(string(LinkButton(LinkButtonConfig{Label: "Repo", Href: "https://example.com"})), "target=") {
+		t.Error("target must not appear without External or a caller setting it")
+	}
 }
 
 func TestLinkButtonRefusesUnsafeSchemes(t *testing.T) {
@@ -297,7 +313,14 @@ func TestLinkButtonRefusesUnsafeSchemes(t *testing.T) {
 		"JaVaScRiPt:alert(1)",
 		"vbscript:msg",
 		"data:text/html,<script>alert(1)</script>",
+		"data:image/png;base64,xx",
 		"data:application/javascript,alert(1)",
+		// Origin-absolute spellings: a foreign origin without a
+		// scheme. headless's anchor policy drops both to a dead link;
+		// the panic names the mistake where it is made (finding 5).
+		"//evil.example/x",
+		`/\evil.example/x`,
+		"/\t/evil.example/x",
 	}
 	for _, href := range bad {
 		func() {
@@ -309,8 +332,10 @@ func TestLinkButtonRefusesUnsafeSchemes(t *testing.T) {
 			LinkButton(LinkButtonConfig{Label: "x", Href: href})
 		}()
 	}
-	// Allowed: http(s), relative paths, mailto, tel, data:image/*.
-	ok := []string{"/docs/", "https://gh", "mailto:a@b", "tel:+1", "data:image/png;base64,xx"}
+	// Allowed: http(s), relative paths, mailto, tel. Every data: URL is
+	// refused, images included, matching the anchor policy headless
+	// applies: admitting one would render a dead link, not a panic.
+	ok := []string{"/docs/", "https://gh", "mailto:a@b", "tel:+1"}
 	for _, href := range ok {
 		func() {
 			defer func() {
@@ -688,7 +713,7 @@ func TestSkipLinkExtraAttrsOnRoot(t *testing.T) {
 func TestButtonExtraAttrsCannotOverrideOwned(t *testing.T) {
 	h := Button(ButtonConfig{Label: "Save", ExtraAttrs: map[string]string{
 		"data-test": "hook", "type": "evil", "Class": "evil",
-		"aria-label": "evil", "data-fui-comp": "evil",
+		"aria-label": "evil",
 	}})
 	root := string(h)[:strings.Index(string(h), ">")+1]
 	if !strings.Contains(root, `data-test="hook"`) {
@@ -699,6 +724,117 @@ func TestButtonExtraAttrsCannotOverrideOwned(t *testing.T) {
 	}
 	if strings.Contains(root, "evil") {
 		t.Errorf("owned attr overridden by ExtraAttrs:\n%s", root)
+	}
+	if !strings.Contains(string(h), "Save") {
+		t.Errorf("label lost:\n%s", h)
+	}
+}
+
+// Disabled renders the real disabled state; a disabled key in
+// ExtraAttrs is the mistake the field exists to make impossible, so
+// it panics naming the field rather than silently racing the state.
+func TestButtonDisabled(t *testing.T) {
+	h := string(Button(ButtonConfig{Label: "Save", Disabled: true}))
+	if !strings.Contains(h, "disabled") {
+		t.Errorf("Disabled must render the disabled attribute:\n%s", h)
+	}
+	plain := string(Button(ButtonConfig{Label: "Save"}))
+	if strings.Contains(plain, "disabled") {
+		t.Errorf("Disabled must be absent when unset:\n%s", plain)
+	}
+	for _, k := range []string{"disabled", "DISABLED"} {
+		func() {
+			defer func() {
+				r := recover()
+				if r == nil {
+					t.Errorf("ExtraAttrs carrying %q must panic", k)
+				} else if msg, ok := r.(string); !ok || !strings.Contains(msg, "Disabled") {
+					t.Errorf("the panic for %q must point at the field: %v", k, r)
+				}
+			}()
+			Button(ButtonConfig{Label: "Save", ExtraAttrs: html.Attrs{k: ""}})
+		}()
+	}
+}
+
+// The runtime-wiring keys the framework emits ride the typed Action
+// seam; everything else a caller passes is still decoration.
+func TestButtonRoutesWiringThroughTheActionSeam(t *testing.T) {
+	h := string(Button(ButtonConfig{Label: "Edit", ExtraAttrs: html.Attrs{
+		"data-fui-open":         "user-edit",
+		"data-fui-deeplink":     "user_id=42",
+		"data-fui-prefetch":     "menu",
+		"data-fui-signal-inc":   "count:1",
+		"data-fui-pane-open":    "secondary",
+		"data-fui-confirm":      "Sure?",
+		"data-site-ping":        "1",
+		"aria-pressed":          "false",
+		"data-fui-rpc":          "/__site/x",
+		"data-fui-rpc-method":   "POST",
+		"data-fui-rpc-signal":   "xsig",
+		"data-fui-push-state":   "/after",
+		"data-fui-toast":        `{"variant":"info","title":"Hi"}`,
+		"data-fui-pane-close":   "",
+		"data-fui-rpc-close":    "true",
+		"data-fui-rpc-body":     `{"a":1}`,
+		"data-fui-rpc-navigate": "/next",
+	}}))
+	for _, want := range []string{
+		`data-fui-open="user-edit"`, `data-fui-deeplink="user_id=42"`,
+		`data-fui-prefetch="menu"`, `data-fui-signal-inc="count:1"`,
+		`data-fui-pane-open="secondary"`, `data-fui-confirm="Sure?"`,
+		`data-site-ping="1"`, `aria-pressed="false"`,
+		`data-fui-rpc="/__site/x"`, `data-fui-rpc-method="POST"`,
+		`data-fui-rpc-signal="xsig"`, `data-fui-push-state="/after"`,
+		`data-fui-toast="{&quot;variant&quot;`, `data-fui-pane-close=""`,
+		`data-fui-rpc-close="true"`, `data-fui-rpc-body="{&quot;a&quot;`, `data-fui-rpc-navigate="/next"`,
+	} {
+		if !strings.Contains(h, want) {
+			t.Errorf("missing %q in:\n%s", want, h)
+		}
+	}
+}
+
+// A data-fui-* key outside the wiring vocabulary used to render as a
+// dead attribute under the old carrier contract; now it panics naming
+// the key and the seam it should have used.
+func TestButtonPanicsOnAWiringKeyOutsideTheVocabulary(t *testing.T) {
+	for _, k := range []string{"data-fui-comp", "data-fui-optimistic-endpoint", "data-fui-toggle-group", "data-fui-anything-else"} {
+		func() {
+			defer func() {
+				r := recover()
+				if r == nil {
+					t.Errorf("%q outside the vocabulary must panic, not render dead", k)
+				} else if msg, ok := r.(string); !ok || !strings.Contains(msg, k) {
+					t.Errorf("the panic must name the key %q: %v", k, r)
+				}
+			}()
+			Button(ButtonConfig{Label: "x", ExtraAttrs: html.Attrs{k: "y"}})
+		}()
+	}
+}
+
+// A link carries exactly the four data-fui-* keys that make sense on
+// an anchor; the rest are refused as they always were, because a link
+// navigates and a button acts.
+func TestLinkButtonWiringVocabulary(t *testing.T) {
+	h := string(LinkButton(LinkButtonConfig{Label: "Docs", Href: "/docs", ExtraAttrs: html.Attrs{
+		"data-fui-push-state": "/docs", "data-fui-prefetch": "menu",
+		"data-fui-open": "help", "data-fui-deeplink": "topic=ssh",
+		"data-fui-rpc": "/x", "data-fui-signal-inc": "count", "data-fui-toast": `{"a":1}`,
+	}}))
+	for _, want := range []string{
+		`data-fui-push-state="/docs"`, `data-fui-prefetch="menu"`,
+		`data-fui-open="help"`, `data-fui-deeplink="topic=ssh"`,
+	} {
+		if !strings.Contains(h, want) {
+			t.Errorf("a link-legal wiring key was refused:\n%s", h)
+		}
+	}
+	for _, banned := range []string{"data-fui-rpc", "data-fui-signal-inc", "data-fui-toast"} {
+		if strings.Contains(h, banned) {
+			t.Errorf("%s rode an anchor — a link navigates, a button acts:\n%s", banned, h)
+		}
 	}
 }
 
@@ -797,5 +933,23 @@ func TestLinkButtonExternalOwnsTargetAndRel(t *testing.T) {
 	}
 	if strings.Contains(root, "evil") {
 		t.Errorf("ExtraAttrs target/rel overrode External:\n%s", root)
+	}
+}
+
+// One attribute, one spelling: a key given twice under different
+// casings is refused rather than resolved by map order.
+func TestButtonExtraAttrsRefuseTwoSpellings(t *testing.T) {
+	for _, attrs := range []html.Attrs{
+		{"data-fui-open": "a", "DATA-FUI-OPEN": "b"},
+		{"data-test": "a", "Data-Test": "b"},
+	} {
+		func() {
+			defer func() {
+				if recover() == nil {
+					t.Errorf("ExtraAttrs %v rendered instead of panicking on two spellings", attrs)
+				}
+			}()
+			Button(ButtonConfig{Label: "x", ExtraAttrs: attrs})
+		}()
 	}
 }
