@@ -160,6 +160,47 @@ func TestThemeEditWritebackReflectsEditedValue(t *testing.T) {
 	}
 }
 
+// Write-back keeps a theme's component options. The edit server round-
+// trips the whole token map ("component.*" keys ride ThemeToTokens →
+// ApplyTokens), and the emitter writes the map back out as %q
+// literals in sorted order. There is no option editor, so this path is
+// the only one that could silently drop them.
+func TestThemeEditWritebackKeepsComponentOptions(t *testing.T) {
+	srv := newTestServer(t)
+	if _, err := srv.applyToken("component.density", "compact"); err != nil {
+		t.Fatalf("applyToken(component.density): %v", err)
+	}
+	if _, err := srv.applyToken("component.button.treatment", "outline"); err != nil {
+		t.Fatalf("applyToken(component.button.treatment): %v", err)
+	}
+	if err := srv.writeBack(); err != nil {
+		t.Fatalf("writeBack: %v", err)
+	}
+	src, err := os.ReadFile(srv.outPath)
+	if err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+	s := string(src)
+	if !strings.Contains(s, "Components: map[string]string{") {
+		t.Errorf("emitted theme.go lost the Components map:\n%s", truncate(s, 400))
+	}
+	// Sorted, quoted, both entries (gofmt aligns values, so the check
+	// tolerates the alignment gap).
+	if !regexp.MustCompile(`"button\.treatment":\s+"outline",`).MatchString(s) ||
+		!regexp.MustCompile(`"density":\s+"compact",`).MatchString(s) {
+		t.Errorf("emitted theme.go lost an option entry:\n%s", truncate(s, 400))
+	}
+	if strings.Index(s, `"button.treatment"`) > strings.Index(s, `"density"`) {
+		t.Error("Components entries not emitted in sorted key order")
+	}
+
+	// The grammar is enforced on the way in: an uppercase value is
+	// refused at apply, exactly like an uppercase color token value.
+	if _, err := srv.applyToken("component.density", "Compact"); err == nil {
+		t.Error("applyToken accepted an uppercase component value")
+	}
+}
+
 // goLiteralBreakers are the byte sequences that end a Go string literal,
 // the same set blueprint_emitter_injection_test.go uses. A raw backtick
 // literal has no escape mechanism, so one backtick closes it; an

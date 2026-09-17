@@ -8,6 +8,49 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 ## [Unreleased]
 
 ### Added
+- **`style.Theme.Components` — component options in the theme.** A
+  theme can carry a flattened option map
+  (`"density": "compact"`, `"button.treatment": "outline"`) beside
+  its tokens. `Theme.Validate` enforces the grammar (lowercase
+  dot-separated keys, one lowercase word per value);
+  `ThemeToTokens`/`ApplyTokens` carry the options under the reserved
+  `component.` prefix; `gofastr theme edit` write-back emits them, so
+  saving an edited theme keeps its options.
+- **`style.RegisterComponentOptionsCompiler`** — the one-per-process
+  hook that turns component options into CSS custom properties,
+  registered by `framework/ui` from its package `init`. The compiled
+  declarations join the `:root` block and every theme-override scope
+  block, are validated at emit (a name that is not a custom property
+  or a value that breaks a declaration panics), and land in
+  `ThemeHash`, so themes that differ only in options hash apart. A
+  registration after the first theme CSS emission panics with the
+  reason: the host freezes app.css, the catalog and the manifest at
+  first use.
+- **Scoped dark mode follows the document.** A registered theme
+  override with a dark palette now emits it under
+  `[data-color-scheme="dark"] .fui-theme-<hash>` plus the
+  `prefers-color-scheme` fallback — the same two selectors the root
+  theme uses — and re-emits the `:root`-only alias tokens
+  (`--color-primary-foreground` and kin) and the compiled options
+  inside every scope block, so token references resolve against each
+  scope's own palette. A scope with no dark palette stays light in
+  dark mode (documented). `RegisterThemeOverride` deep-clones the
+  theme before hashing (dark maps and `Components`); reads return
+  deep copies; `ApplyTokens` and `RegisterThemeVariant` clone
+  `Components` the same way.
+- **`theme.ComponentOptions`** — typed component options for
+  `framework/ui/theme.Default`:
+  `Overrides.Components{Density, Button{Treatment, Radius}}`. Zero
+  means unspecified while overrides merge; `Default()` flattens a
+  complete set (Comfortable, Filled, Round), and an explicit
+  Comfortable/Filled/Round resets an earlier override. The compiler
+  emits `--hui-density-control-h`/`--hui-density-gap` (44px/36px,
+  md/sm spacing), `--hui-button-radius` (radii-md/0/9999px) and the
+  treatment trio `--hui-button-bg`/`-fg`/`-border`. Theme boundaries
+  declare the option variables, component rules consume them, no
+  descendant option rules — so options nest by inheritance
+  (browser-proven A → B → A). The `hui-` prefix is reserved for
+  `framework/ui`; `data-hui-*` hooks belong to `framework/headless`.
 - **`registry.RegisterBehavior`**: behaviour registers like style. A
   component's package embeds its runtime module beside the Go and
   registers it with the markers the kernel scans for; the host serves
@@ -19,11 +62,12 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   Spec: `docs/spec-behavior-registry.md`.
 - **`framework/headless`**: the structure half of a design system.
   Components render tags, roles, labelling relationships, state
-  attributes and `data-hui-*` hooks with no classes at a nil skin; a
-  `Skin` maps parts to classes; what a caller sets on the parts
-  (`Parts`: `Attrs`, `Slots`, `Binds`), its `Strings` and an `Island`
-  are typed and sanitised; every component registers a `Spec` with its
-  `Anatomy` that drives the nil-skin sweep, the parts gates and two
+  attributes and `data-hui-*` hooks with no classes at a nil Classes; a
+  `Classes` value maps parts to classes; what a caller sets on the
+  parts (`Parts`: `Attrs`, `Slots`, `Binds`), its `Strings` and an
+  `Island` are typed and sanitised; every component registers a
+  `Spec` with its `Anatomy` that drives the nil-Classes sweep, the
+  parts gates and two
   goldens.
   An in-page state change is an `Island` at render time (hard rule 1):
   `Pagination`, `ToolbarSearch` and a dismissible `Tag` or `Alert`
@@ -59,6 +103,16 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `aria-busy` while pending (never `disabled`, which has other owners
   and drops keyboard focus) and the `action:*` events. No
   marker: owners reach it through `Requires("action")`.
+
+### BREAKING
+- **`headless.Skin` is now `headless.Classes`.** The type is the map
+  from part to class name, and the name now says what it holds: the
+  theme is the whole look, `Classes` is one component's part of it
+  (the word MUI uses). Same type, same nil behaviour, no golden
+  changed. A caller moves with one command:
+  `gofmt -r 'headless.Skin -> headless.Classes'` (plus renaming local
+  `skin` variables, e.g. `perl -pi -e 's/\bskin\b/classes/g'`), and
+  `Kit.Skin` is now `Kit.Classes`.
 
 ### Changed
 - **One home per helper.** A clone survey over the tree found the same

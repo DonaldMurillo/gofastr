@@ -185,7 +185,7 @@ func TestExtrasAndOverridesStoreKeysFolded(t *testing.T) {
 			continue
 		}
 		refuse(t, "two spellings", func() {
-			sp.WithParts(Skin{PartRoot: "real"}, Parts{Attrs: PartAttrs{PartRoot: html.Attrs{"role": "a", "ROLE": "b"}}})
+			sp.WithParts(Classes{PartRoot: "real"}, Parts{Attrs: PartAttrs{PartRoot: html.Attrs{"role": "a", "ROLE": "b"}}})
 		})
 		break
 	}

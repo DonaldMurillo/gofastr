@@ -9,13 +9,13 @@
 // tied to its input by aria-describedby, whether a pager says which
 // page is current — none of that changes when the palette does, and
 // all of it is testable without rendering a pixel (a11y_test.go,
-// harness_test.go). A skin is then free to be redrawn, or replaced
+// harness_test.go). A class map is then free to be redrawn, or replaced
 // entirely, without putting a single accessibility guarantee back at
 // risk.
 //
-// A component here is a pure function from its props and a Skin to
-// HTML. The Skin decides what class each named Part carries; a nil
-// Skin renders the same markup with no classes at all, which is what
+// A component here is a pure function from its props and a Classes to
+// HTML. The Classes decides what class each named Part carries; a nil
+// Classes renders the same markup with no classes at all, which is what
 // "headless" means and what the goldens pin. Seven things are named in
 // a component's contract, and the harness checks each: its Parts, its
 // runtime hooks (data-hui-*), what a caller may set on its Parts
@@ -36,7 +36,7 @@
 // "headless" through the same seam a stylesheet uses
 // (registry.RegisterBehavior), the host serves it at
 // /__gofastr/runtime/headless.js, and the kernel loads it when one of
-// its markers is on the page. No skin dresses the parts yet: the skin,
+// its markers is on the page. No class map dresses the parts yet: the class maps,
 // the stylesheet and that adoption follow in their own changes, and
 // framework/ui remains today's styled layer, not rendering through
 // this package.
@@ -50,10 +50,10 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
-// Part names an element inside a component. A skin styles parts; the
+// Part names an element inside a component. A class map styles parts; the
 // structure names them. Adding a part is a change to both layers, which
-// is the point: a skin cannot invent a hook the markup does not offer,
-// and the markup cannot quietly drop one a skin is using.
+// is the point: a class map cannot invent a hook the markup does not offer,
+// and the markup cannot quietly drop one a class map is using.
 type Part string
 
 // The shared vocabulary. Component-specific parts live beside their
@@ -82,15 +82,15 @@ const (
 	PartVisuallyHidden Part = "visually-hidden"
 )
 
-// Skin maps parts to class names. Nil is valid and renders unstyled.
-type Skin map[Part]string
+// Classes maps parts to class names. Nil is valid and renders unstyled.
+type Classes map[Part]string
 
-// Class returns the class for a part, or "" when the skin has none.
-func (s Skin) Class(p Part) string { return s[p] }
+// Class returns the class for a part, or "" when the class map has none.
+func (s Classes) Class(p Part) string { return s[p] }
 
-// Variant returns the class a skin uses for a named variant of a part,
+// Variant returns the class a class map uses for a named variant of a part,
 // looked up as "<part>--<variant>". Empty when unstyled or unknown.
-func (s Skin) Variant(p Part, variant string) string {
+func (s Classes) Variant(p Part, variant string) string {
 	if variant == "" {
 		return ""
 	}
@@ -100,7 +100,7 @@ func (s Skin) Variant(p Part, variant string) string {
 // El builds one element: the part's class, then the caller's attrs,
 // then children. Attrs the component owns always win over ExtraAttrs,
 // which is why they are passed separately.
-func El(tag string, s Skin, p Part, own html.Attrs, children ...render.HTML) render.HTML {
+func El(tag string, s Classes, p Part, own html.Attrs, children ...render.HTML) render.HTML {
 	attrs := html.Attrs{}
 	for k, v := range own {
 		attrs[k] = v

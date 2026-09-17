@@ -67,7 +67,7 @@ type FormProps struct {
 // move, a screen reader user is left at the top of an unchanged-looking
 // page with no indication anything happened — the single most common
 // way an accessible-looking form is not one.
-func Form(p FormProps, s Skin, fields ...render.HTML) render.HTML {
+func Form(p FormProps, s Classes, fields ...render.HTML) render.HTML {
 	if p.Action == "" {
 		panic("headless: Form requires Action — with none the form posts to the page it is on, and a failed submit quietly renders the same page again")
 	}
@@ -129,7 +129,7 @@ type InputGroupProps struct {
 // controls in a group with a third name means a screen reader reads
 // the group name before each one. A name is added only when the caller
 // says the group needs one.
-func InputGroup(p InputGroupProps, s Skin, children ...render.HTML) render.HTML {
+func InputGroup(p InputGroupProps, s Classes, children ...render.HTML) render.HTML {
 	own := Merge(Safe(p.ExtraAttrs), Attrs(map[string]string{"id": p.ID}))
 	if p.Label != "" {
 		own["role"] = "group"
@@ -144,7 +144,7 @@ func init() {
 		Anatomy: []Part{PartRoot, PartFormBody, PartFormActions},
 		Hooks:   []string{"data-hui-form-errors"},
 		Cases: func(k Kit) []Case {
-			s := k.Skin
+			s := k.Classes
 			appName := Field(FieldProps{Label: "App name", For: "new-app-name"}, k.For("Field"),
 				func(c FieldControl) render.HTML {
 					return Input(InputProps{Name: "app-name", ID: c.ID, Required: c.Required}, k.For("Input"))
@@ -194,7 +194,7 @@ func init() {
 		Name:    "InputGroup",
 		Anatomy: []Part{PartRoot},
 		Cases: func(k Kit) []Case {
-			s := k.Skin
+			s := k.Classes
 			return []Case{{
 				Name: "an input with a button",
 				Why:  "with no label the group is a plain div, because wrapping labelled controls in a group with a third name makes a screen reader read the group name before each one",

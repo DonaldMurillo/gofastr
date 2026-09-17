@@ -28,13 +28,13 @@ const (
 
 // ─── Badge ──────────────────────────────────────────────────────────
 
-// BadgeTone selects a badge's colour. It is skin vocabulary: the
-// structure does not care, the skin looks it up.
+// BadgeTone selects a badge's colour. It is class-map vocabulary: the
+// structure does not care, the class map looks it up.
 type BadgeTone string
 
 // BadgeProps is a badge: a small status chip, not a fill.
 // A badge has no tone of its own and says none: its label IS its
-// meaning ("running", "3 unread", "beta"), and the tone a skin
+// meaning ("running", "3 unread", "beta"), and the tone a class map
 // variant paints it is decoration for the word already there. An Alert prefixes its tone because its title
 // may not say it; a badge whose colour means something its label does
 // not say has the wrong label.
@@ -53,7 +53,7 @@ type BadgeProps struct {
 }
 
 // Badge renders a badge.
-func Badge(p BadgeProps, s Skin) render.HTML {
+func Badge(p BadgeProps, s Classes) render.HTML {
 	if p.Label == "" {
 		panic("headless: Badge requires Label")
 	}
@@ -103,7 +103,7 @@ type TagProps struct {
 }
 
 // Tag renders a chip, optionally dismissible.
-func Tag(p TagProps, s Skin) render.HTML {
+func Tag(p TagProps, s Classes) render.HTML {
 	b := p.Parts.Box(s)
 	if p.Label == "" {
 		panic("headless: Tag requires Label")
@@ -154,7 +154,7 @@ type ToolbarProps struct {
 // Toolbar renders a row of controls that aligns by construction: every
 // child is control-height, so nothing needs aligning to anything else.
 // Build children from ToolbarGroup, ToolbarSpacer and ToolbarSearch.
-func Toolbar(p ToolbarProps, s Skin, children ...render.HTML) render.HTML {
+func Toolbar(p ToolbarProps, s Classes, children ...render.HTML) render.HTML {
 	return El("div", s, PartRoot,
 		Merge(Safe(p.ExtraAttrs), Attrs(map[string]string{"id": p.ID})),
 		children...)
@@ -162,7 +162,7 @@ func Toolbar(p ToolbarProps, s Skin, children ...render.HTML) render.HTML {
 
 // ToolbarGroup clusters related controls under a visible label. An
 // empty label omits the label span; the cluster remains.
-func ToolbarGroup(s Skin, label string, children ...render.HTML) render.HTML {
+func ToolbarGroup(s Classes, label string, children ...render.HTML) render.HTML {
 	kids := make([]render.HTML, 0, len(children)+1)
 	if label != "" {
 		kids = append(kids, El("span", s, PartToolbarLabel, nil, render.Text(label)))
@@ -172,7 +172,7 @@ func ToolbarGroup(s Skin, label string, children ...render.HTML) render.HTML {
 }
 
 // ToolbarSpacer pushes everything after it to the far end of the row.
-func ToolbarSpacer(s Skin) render.HTML {
+func ToolbarSpacer(s Classes) render.HTML {
 	return El("div", s, PartToolbarSpacer, nil)
 }
 
@@ -191,7 +191,7 @@ type ToolbarSearchProps struct {
 
 // ToolbarSearch wraps the search field, the one child allowed to take
 // the row's slack, in the GET form that submits it.
-func ToolbarSearch(p ToolbarSearchProps, s Skin, child render.HTML) render.HTML {
+func ToolbarSearch(p ToolbarSearchProps, s Classes, child render.HTML) render.HTML {
 	requireIsland("ToolbarSearch", p.Island)
 	return El("form", s, PartToolbarSearch,
 		Merge(Attrs(map[string]string{"method": "get"}), p.Island.attrs("", "GET")),
@@ -244,7 +244,7 @@ type PaginationProps struct {
 // The nav landmark itself is PartRoot and carries no class; the list
 // inside it is PartPagination, which is where a caller's Class has
 // always landed.
-func Pagination(p PaginationProps, s Skin) render.HTML {
+func Pagination(p PaginationProps, s Classes) render.HTML {
 	b := p.Parts.Box(s)
 	if p.AriaLabel == "" {
 		panic("headless: Pagination requires AriaLabel")
@@ -387,7 +387,7 @@ type StepsProps struct {
 // connecting line the stylesheet draws between markers, so the rail
 // cannot disagree with the states; the current step also carries
 // aria-current="step" for AT.
-func Steps(p StepsProps, s Skin) render.HTML {
+func Steps(p StepsProps, s Classes) render.HTML {
 	if len(p.Labels) == 0 {
 		panic("headless: Steps requires Labels")
 	}
@@ -425,7 +425,7 @@ func init() {
 		Name:    "Badge",
 		Anatomy: []Part{PartRoot, PartIcon},
 		Cases: func(k Kit) []Case {
-			s := k.Skin
+			s := k.Classes
 			return []Case{{
 				Name: "plain",
 				Why:  "a badge is a word, and the word is the accessible name — which is why the icon beside it is hidden rather than read twice",
@@ -441,11 +441,11 @@ func init() {
 	Register(Spec{
 		Name:    "Tag",
 		Anatomy: []Part{PartRoot, PartIcon, PartBadgeDismiss},
-		WithParts: func(s Skin, parts Parts) render.HTML {
+		WithParts: func(s Classes, parts Parts) render.HTML {
 			return Tag(TagProps{Label: "env=prod", Parts: parts}, s)
 		},
 		Cases: func(k Kit) []Case {
-			s := k.Skin
+			s := k.Classes
 			return []Case{{
 				Name: "removable",
 				Why:  "the × names what it removes — twelve controls all called Remove tell a screen reader user nothing — and it is an anchor that keeps its href for no script while carrying the island contract, because dropping a filter is an in-page state change and never a route",
@@ -462,13 +462,13 @@ func init() {
 	Register(Spec{
 		Name:    "Pagination",
 		Anatomy: []Part{PartRoot, PartPagination, PartPaginationLink, PartPaginationGap},
-		WithParts: func(s Skin, parts Parts) render.HTML {
+		WithParts: func(s Classes, parts Parts) render.HTML {
 			return Pagination(PaginationProps{Page: 1, Pages: 2, HrefPattern: "/apps?page=%d",
 				AriaLabel: "Pages", Island: Island{Endpoint: "/island/apps", Signal: "apps"},
 				Parts: parts}, s)
 		},
 		Cases: func(k Kit) []Case {
-			s := k.Skin
+			s := k.Classes
 			return []Case{{
 				Name: "middle of a long run",
 				Why:  "the gap is a span and not a link, the current page says aria-current=page rather than being told apart by weight, and a page change is an island update rather than a route: every anchor keeps its href for no script and carries the RPC contract beside it",
@@ -489,7 +489,7 @@ func init() {
 		Name:    "Steps",
 		Anatomy: []Part{PartRoot, PartStep, PartMarker, PartLabel},
 		Cases: func(k Kit) []Case {
-			s := k.Skin
+			s := k.Classes
 			return []Case{{
 				Name: "part way",
 				Why:  "a rail of states, not a set of controls: each step's data-state drives both its marker and the line drawn between markers, so the picture cannot disagree with the states",
@@ -506,7 +506,7 @@ func init() {
 		Name:    "Toolbar",
 		Anatomy: []Part{PartRoot},
 		Cases: func(k Kit) []Case {
-			s := k.Skin
+			s := k.Classes
 			return []Case{{
 				Name: "controls in a row",
 				Why:  "no role=toolbar: that role promises arrow-key roving with a single tab stop, and a promise a script-free component cannot keep is worse than saying nothing",
@@ -521,7 +521,7 @@ func init() {
 		Name:    "ToolbarGroup",
 		Anatomy: []Part{PartToolbarGroup, PartToolbarLabel},
 		Cases: func(k Kit) []Case {
-			s := k.Skin
+			s := k.Classes
 			return []Case{{
 				Name: "labelled group",
 				Why:  "the label names what the group of controls acts on, so the controls inside can stay short without becoming ambiguous",
@@ -534,7 +534,7 @@ func init() {
 		Name:    "ToolbarSpacer",
 		Anatomy: []Part{PartToolbarSpacer},
 		Cases: func(k Kit) []Case {
-			s := k.Skin
+			s := k.Classes
 			return []Case{{
 				Name: "gap",
 				Why:  "an empty element that pushes what follows to the far end — it renders nothing, says nothing, and is in the markup only because the layout needs a thing to grow",
@@ -547,7 +547,7 @@ func init() {
 		Name:    "ToolbarSearch",
 		Anatomy: []Part{PartToolbarSearch},
 		Cases: func(k Kit) []Case {
-			s := k.Skin
+			s := k.Classes
 			return []Case{{
 				Name: "search slot",
 				Why:  "the search field is the one control in a toolbar that should grow, so its wrapper is the GET form that submits it — an island update with script, the page's own query without",

@@ -2,18 +2,18 @@
 
 The headless layer renders a component's tags, roles, labelling
 relationships, state attributes and runtime hooks, and nothing else: no
-classes at a nil skin, no CSS, no script. A skin (a flat map from part
-to class) dresses it; the behaviour module (behavior.go, served as the
-runtime module "headless") binds its `data-hui-*` hooks. The action
-buttons carry their own hooks — `data-hui-action-endpoint`, `-method`,
-`-group`, `-untoggle`, and the `data-hui-action-idle` / `-done` label
-parts — and bind through the kernel's `action` primitive, which the
-module's registration `Requires`; nothing here borrows a
+classes at a nil `Classes`, no CSS, no script. A `Classes` value (a flat
+map from part to class) dresses it; the behaviour module (behavior.go,
+served as the runtime module "headless") binds its `data-hui-*` hooks.
+The action buttons carry their own hooks — `data-hui-action-endpoint`,
+`-method`, `-group`, `-untoggle`, and the `data-hui-action-idle` /
+`-done` label parts — and bind through the kernel's `action` primitive,
+which the module's registration `Requires`; nothing here borrows a
 `data-fui-comp` marker, so a headless button can never pull
 `framework/ui`'s stylesheet. The harness
-proves every registered component against the same contract, so a skin
-can be replaced without a single accessibility guarantee moving. No
-skin or stylesheet ships in this repository yet; `framework/ui` is
+proves every registered component against the same contract, so a class
+map can be replaced without a single accessibility guarantee moving. No
+class map or stylesheet ships in this repository yet; `framework/ui` is
 today's styled layer and does not render through this package.
 
 **Use this when** the prompt mentions: headless, unstyled, reskin, a
@@ -26,36 +26,37 @@ accessibility must be pinned by a golden.
 ## Shape
 
 ```go
-// A component: props and a skin in, HTML out. Nil skin = no classes.
-headless.Button(headless.ButtonProps{Label: "Save", Type: "submit"}, skin)
+// A component: props and a Classes value in, HTML out. Nil = no classes.
+headless.Button(headless.ButtonProps{Label: "Save", Type: "submit"}, classes)
 
-// A skin: part → class. The only coupling between the two layers.
-skin := headless.Skin{headless.PartRoot: "btn", headless.PartIcon: "btn__icon"}
+// Classes: part → class. The only coupling between the two layers.
+classes := headless.Classes{headless.PartRoot: "btn", headless.PartIcon: "btn__icon"}
 
 // Parts: how a page reaches inside without forking, keyed by part.
 headless.Card(headless.CardProps{Title: "Apps", Parts: headless.Parts{
     Attrs: headless.PartAttrs{headless.PartFooter: {"data-testid": "f"}},
     Slots: headless.Slots{headless.PartCardHeader: header},
     Binds: headless.Binds{headless.PartTitle: {Signal: "count"}},
-}, Strings: strings /* nil means English */}, skin, body)
+}, Strings: strings /* nil means English */}, classes, body)
 
 // An in-page state change is an island, never a route (hard rule 1).
 headless.Pagination(headless.PaginationProps{
     Page: 2, Pages: 9, HrefPattern: "/apps?page=%d",
     Island: headless.Island{Endpoint: "/island/apps", Signal: "apps"},
-}, skin)
+}, classes)
 ```
 
 Every component registers a `Spec`: its name, the parts it draws, the
 parts a slot may fill, the hooks it publishes, and the cases worth
-rendering with a reason each. One fixture drives the nil-skin sweep,
+rendering with a reason each. One fixture drives the nil-Classes sweep,
 the parts tests and the two goldens (`testdata/spec_golden.txt` at the
-English strings, `spec_golden_strings.txt` at probe strings).
+English strings, `spec_golden_strings.txt` at probe strings). The `Kit`
+the fixtures are handed is harness infrastructure, not caller surface.
 
 ## Don't reinvent
 
 - **A class to find an element from script.** The runtime binds to
-  `data-hui-*` hooks only; a skin may rename every class.
+  `data-hui-*` hooks only; a class map may rename every class.
 - **A link that changes in-page state.** `Pagination`, `ToolbarSearch`,
   a `Tag` with a dismiss and an `Alert` with a dismiss require an
   `Island` and refuse to render without one; the same element keeps

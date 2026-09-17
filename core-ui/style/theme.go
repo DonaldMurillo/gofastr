@@ -47,6 +47,21 @@ type Theme struct {
 	// so the reflection token-walk ignores it.
 	DarkCode map[string]string
 
+	// Components is the canonical flattened component-option set, keyed
+	// like "density" or "button.treatment" with one lowercase word as the
+	// value. It is the theme's answer to questions a component family
+	// asks about its own drawing (how dense, which treatment, which
+	// radius), not a token: it never appears on the reflection token
+	// walk and cannot be read as a --color/--spacing var. A map (not a
+	// typed struct) so the walk ignores it, exactly like DarkColors.
+	//
+	// core-ui/style stores, validates, hashes and copies this map but
+	// cannot turn it into CSS; the compiler that can is registered once
+	// per process via RegisterComponentOptionsCompiler (framework/ui
+	// registers it from its init), and its declarations join the :root
+	// block and every theme-override scope block. Empty by default.
+	Components map[string]string
+
 	Colors      ColorSet
 	Spacing     SpacingScale
 	Radii       RadiusSet
@@ -264,10 +279,17 @@ func camelToKebab(s string) string {
 //
 //	theme.Colors.Primary: Color.Name is empty
 //
+// The Components map is checked with the same intent: a key that is
+// not lowercase dot-separated words, or a value that is not one
+// lowercase word, is a theme-shape mistake and fails here, at boot.
+//
 // MustValidate is the panicking variant used by App.WithTheme so a
 // bad theme fails at boot, not at first request.
 func (t Theme) Validate() error {
-	return validateTokens(reflect.ValueOf(t), "Theme")
+	if err := validateTokens(reflect.ValueOf(t), "Theme"); err != nil {
+		return err
+	}
+	return validateComponents(t.Components)
 }
 
 // MustValidate panics if validation fails. Wraps Validate.

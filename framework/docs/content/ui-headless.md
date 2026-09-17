@@ -3,14 +3,14 @@
 `framework/headless` is the structure half of a design system. A
 component there renders tags, roles, labelling relationships, state
 attributes and the hooks a runtime binds to, and nothing else: no
-classes at a nil skin, no CSS, no script. A skin dresses it; a runtime
+classes at a nil Classes, no CSS, no script. A class map dresses it; a runtime
 module binds it; a harness proves every registered component against
 one contract.
 
 It exists because structure and styling have different lifetimes.
 Whether a field's error is tied to its input by `aria-describedby` does
 not change when the palette does, and it is testable without rendering
-a pixel. Once the two are separate, a skin can be redrawn or replaced
+a pixel. Once the two are separate, a class map can be redrawn or replaced
 without putting a single accessibility guarantee back at risk.
 
 This is the same SSR-first, incrementally hydrated model as the rest of
@@ -24,14 +24,14 @@ an in-page state change is an island RPC, never a route.
 
 ## The vocabulary
 
-A component is a pure function from its props and a `Skin` to HTML.
+A component is a pure function from its props and a `Classes` value to HTML.
 Seven things are named in its contract, and the harness checks each in
 both directions.
 
 - A **part** (`headless.Part`) names an element the component draws.
-  The skin styles those and only those; a part declared and never
+  The class map styles those and only those; a part declared and never
   rendered fails a test, and so does a rendered part nobody declared.
-- A **skin** (`headless.Skin`) is a flat map from part to class. Nil is
+- A **class map** (`headless.Classes`) is a flat map from part to class. Nil is
   valid and renders unstyled. Variants are looked up as
   `<part>--<variant>`, so the headless layer passes a variant name
   through without knowing what any of them mean.
@@ -80,7 +80,7 @@ endpoint that renders the region again and the signal the region is
 bound to.
 
 ```go
-skin := headless.Skin{
+classes := headless.Classes{
     headless.PartRoot:  "field",
     headless.PartLabel: "field__label",
     headless.PartHint:  "field__hint",
@@ -89,11 +89,11 @@ skin := headless.Skin{
 
 headless.Field(headless.FieldProps{
     Label: "Port", For: "port", Hint: "1024 to 65535", Required: true,
-}, skin, func(c headless.FieldControl) render.HTML {
+, classes, func(c headless.FieldControl) render.HTML {
     return headless.Input(headless.InputProps{
         Name: "port", ID: c.ID, Required: c.Required,
         DescribedBy: c.DescribedBy, Invalid: c.Invalid,
-    }, inputSkin)
+    }, inputClasses)
 })
 ```
 
@@ -116,7 +116,7 @@ makes it the island; the URL is written by the runtime.
 headless.Pagination(headless.PaginationProps{
     Page: 2, Pages: 9, HrefPattern: "/apps?page=%d",
     Island: headless.Island{Endpoint: "/island/apps", Signal: "apps"},
-}, skin)
+, classes)
 ```
 
 Where the change would otherwise be a route the Island is required:
@@ -153,7 +153,7 @@ its cases, each with a `Why`. One fixture drives everything that must
 hold for every component:
 
 - every case says why it exists and renders something;
-- at the nil skin no case renders a `class`, an empty `aria-*`, a
+- at the nil Classes no case renders a `class`, an empty `aria-*`, a
   `style`, a `<button>` with no type, or a duplicate id;
 - rendering is deterministic;
 - every declared part is drawn and every drawn part is declared;
@@ -253,7 +253,7 @@ component: `data-hui-when-off` and `data-hui-drop-over`.
 Arming is the kernel's. The module registers a scanner and the kernel
 calls it on every inserted subtree and over the document after a
 client navigation; a host adds no observer, and the module adds none
-of its own. The skin and the stylesheet follow in their own change,
+of its own. The class map and the stylesheet follow in their own change,
 and `framework/ui` remains today's styled layer, not rendering
 through this package.
 
@@ -270,7 +270,7 @@ through this package.
   gate in `behavior_test.go` refuses an English literal the module
   writes itself.
 - **Finding an element from script by its class.** The runtime binds to
-  `data-hui-*` hooks only. A skin may rename every class, and a class
+  `data-hui-*` hooks only. A class map may rename every class, and a class
   used as a hook is the one thing it cannot rename.
 - **Rendering a pager or a search form without an Island.** That is a
   route for an in-page state change, and the component refuses it at

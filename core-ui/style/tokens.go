@@ -124,6 +124,24 @@ func (t Theme) ResolveRadius(name string) string {
 // struct to include the embedded extensions.
 func (t Theme) CSSCustomProperties() string {
 	css := CSSCustomPropertiesOf(t) + "\n" + aliasTokenCSS()
+	// The compiled component options join the root block AFTER the
+	// tokens they reference: a declaration like
+	// --hui-button-bg: var(--color-primary) computes its var() at the
+	// element it is declared on, so it must be re-declared at every
+	// theme boundary (ThemeOverrideCSS does the scoped half) to pick up
+	// each scope's palette instead of carrying the root's colours into
+	// it. Sorted by name for the byte-stable output ThemeHash needs.
+	if opts := componentOptionDecls(t.Components); len(opts) > 0 {
+		var b strings.Builder
+		b.WriteString(":root {\n")
+		for _, line := range opts {
+			b.WriteString("  ")
+			b.WriteString(line)
+			b.WriteString("\n")
+		}
+		b.WriteString("}")
+		css += "\n" + b.String()
+	}
 	if dark := darkSchemeCSS(t.DarkColors, t.DarkCode); dark != "" {
 		css += "\n" + dark
 	}
@@ -139,19 +157,41 @@ func (t Theme) CSSCustomProperties() string {
 // dark-scheme re-declarations automatically; emit once in :root and both
 // schemes are covered. New components should use the canonical ColorSet
 // names; this block exists so every theme keeps the legacy names live.
+// The bare declaration lines live in aliasTokenDecls, which the scope
+// emitter re-emits inside every theme-override block.
 func aliasTokenCSS() string {
-	return `:root {
-  --color-muted: var(--color-surface-soft);
-  --color-surface-hover: var(--color-surface-soft);
-  --color-border-subtle: var(--color-border);
-  --color-border-hover: var(--color-border-strong);
-  --color-primary-hover: color-mix(in srgb, var(--color-primary) 85%, var(--color-text));
-  --color-primary-foreground: var(--color-primary-fg);
-  --color-ring: var(--color-primary);
-  --color-warn: var(--color-warning);
-  --color-warn-soft: color-mix(in srgb, var(--color-warning) 15%, transparent);
-  --color-warn-strong: color-mix(in srgb, var(--color-warning) 80%, var(--color-text));
-}`
+	var b strings.Builder
+	b.WriteString(":root {\n")
+	for _, line := range aliasTokenDecls() {
+		b.WriteString("  ")
+		b.WriteString(line)
+		b.WriteString("\n")
+	}
+	b.WriteString("}")
+	return b.String()
+}
+
+// aliasTokenDecls is aliasTokenCSS as bare "--name: value;" lines, the
+// form a theme-override scope block needs. The aliases are emitted at
+// :root only by the root emitter, but a custom property's var()
+// references compute at the element the declaration sits on: inside a
+// .fui-theme-<hash> scope with a different --color-primary, the root's
+// --color-primary-foreground would still carry the root's resolved
+// chain. Re-emitting the alias lines inside every scope block rebinds
+// them to that scope's palette.
+func aliasTokenDecls() []string {
+	return []string{
+		"--color-muted: var(--color-surface-soft);",
+		"--color-surface-hover: var(--color-surface-soft);",
+		"--color-border-subtle: var(--color-border);",
+		"--color-border-hover: var(--color-border-strong);",
+		"--color-primary-hover: color-mix(in srgb, var(--color-primary) 85%, var(--color-text));",
+		"--color-primary-foreground: var(--color-primary-fg);",
+		"--color-ring: var(--color-primary);",
+		"--color-warn: var(--color-warning);",
+		"--color-warn-soft: color-mix(in srgb, var(--color-warning) 15%, transparent);",
+		"--color-warn-strong: color-mix(in srgb, var(--color-warning) 80%, var(--color-text));",
+	}
 }
 
 // DarkSchemeCSS emits the dark-scheme token overrides for a theme's DarkColors

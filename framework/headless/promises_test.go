@@ -13,14 +13,14 @@ import (
 // reaches nobody who cannot see the colour (WCAG 1.4.1) — Alert and
 // SystemBanner say their tone in words, and a badge owes the same.
 //
-// A badge's label is its whole meaning. The tone the skin paints is
+// A badge's label is its whole meaning. The tone the class map paints is
 // decoration for the word already there, so no hidden tone word is
 // injected: "Warning: restarting" would read the colour to someone who
 // already heard the status, and a badge whose colour means something
 // its label does not say has the wrong label.
 func TestBadgeMeansWhatItsLabelSays(t *testing.T) {
 	got := Badge(BadgeProps{Label: "restarting"},
-		Skin{PartRoot: "ds-badge ds-badge--warning"})
+		Classes{PartRoot: "ds-badge ds-badge--warning"})
 	has(t, got, ">restarting<", "the label is not the badge's text")
 	strip := regexp.MustCompile(`<[^>]*>`)
 	if words := strings.TrimSpace(strip.ReplaceAllString(string(got), "")); words != "restarting" {
@@ -62,7 +62,7 @@ func TestTextareaIsNamedByItsFieldWiring(t *testing.T) {
 // keyboard operates and what the zone opens the picker through. A
 // display:none would keep it in the source and take it out of
 // everything else, so the structure keeps it in the tree and refuses
-// to hide it itself — the skin may shrink it, never remove it. The
+// to hide it itself — the class map may shrink it, never remove it. The
 // zone is its <label>, bound by the for/id pair the ID requirement
 // exists to keep whole.
 func TestFileUploadKeepsTheInputInTheTree(t *testing.T) {
@@ -89,15 +89,15 @@ func TestToolbarDoesNotClaimTheToolbarPattern(t *testing.T) {
 	has(t, with, `role="toolbar"`, "a caller who ships the roving keyboard cannot add the role")
 }
 
-// Tone reaches the skin as the root's variant, the same lookup a
+// Tone reaches the class map as the root's variant, the same lookup a
 // Button's variant uses, so a danger alert and an info alert can be
 // told apart by a stylesheet without the structure knowing what
 // either means.
-func TestAlertToneReachesTheSkin(t *testing.T) {
-	skin := Skin{PartRoot: "alert", "root--danger": "alert--danger"}
-	got := Alert(AlertProps{Title: "Deploy failed", Tone: "danger"}, skin)
+func TestAlertToneReachesTheClasses(t *testing.T) {
+	classes := Classes{PartRoot: "alert", "root--danger": "alert--danger"}
+	got := Alert(AlertProps{Title: "Deploy failed", Tone: "danger"}, classes)
 	has(t, got, `class="alert alert--danger"`, "the tone did not reach the root")
-	plain := Alert(AlertProps{Title: "Deploy failed"}, skin)
+	plain := Alert(AlertProps{Title: "Deploy failed"}, classes)
 	has(t, plain, `class="alert"`, "an alert with no tone lost its root class")
 }
 

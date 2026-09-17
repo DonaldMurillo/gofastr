@@ -28,12 +28,12 @@ const (
 //     must be hidden, or a screen reader announces "separator" at
 //     every visual flourish on the page.
 //
-// Everything else here — gaps, tracks, gutters — is the skin's, and
+// Everything else here — gaps, tracks, gutters — is the class map's, and
 // these types exist so an app never writes a grid-template by hand.
 
 // StackProps is vertical flow: one thing after another, with one gap.
 type StackProps struct {
-	// Gap is a name from the scale, passed through to the skin. It is
+	// Gap is a name from the scale, passed through to the class map. It is
 	// not a length, because a system with arbitrary gaps has no
 	// rhythm — and the one the framework ships proves the point: its
 	// Grid takes a free-form Min that nothing ever read.
@@ -50,7 +50,7 @@ type StackProps struct {
 }
 
 // Stack renders vertical flow.
-func Stack(p StackProps, s Skin, children ...render.HTML) render.HTML {
+func Stack(p StackProps, s Classes, children ...render.HTML) render.HTML {
 	own := Merge(Safe(p.ExtraAttrs), Attrs(map[string]string{"id": p.ID}))
 	mods(own, s, "gap", p.Gap, "align", p.Align)
 	return El(orDefault(p.Tag, "div"), s, PartRoot, own, children...)
@@ -61,7 +61,7 @@ func init() {
 		Name:    "Stack",
 		Anatomy: []Part{PartRoot},
 		Cases: func(k Kit) []Case {
-			s := k.Skin
+			s := k.Classes
 			return []Case{{
 				Name: "default gap",
 				Why:  "no gap named is still a gap: the default is this primitive's own rhythm, so two pages that say nothing agree",
@@ -87,7 +87,7 @@ func init() {
 // of tags, a toolbar.
 type ClusterProps struct {
 	Gap string
-	// Align is cross-axis: "center" by default in the skin, because a
+	// Align is cross-axis: "center" by default in the class map, because a
 	// row of controls of different heights should line up on their
 	// middles.
 	Align string
@@ -110,7 +110,7 @@ type ClusterProps struct {
 // search field the slack and the groups their labels. Cluster is for
 // content that wraps — tags, badges, a byline's parts — where the row
 // is a layout fact and nothing in it is a control.
-func Cluster(p ClusterProps, s Skin, children ...render.HTML) render.HTML {
+func Cluster(p ClusterProps, s Classes, children ...render.HTML) render.HTML {
 	own := Merge(Safe(p.ExtraAttrs), Attrs(map[string]string{"id": p.ID}))
 	mods(own, s, "gap", p.Gap, "align", p.Align, "justify", p.Justify)
 	if p.NoWrap {
@@ -124,7 +124,7 @@ func init() {
 		Name:    "Cluster",
 		Anatomy: []Part{PartRoot},
 		Cases: func(k Kit) []Case {
-			s := k.Skin
+			s := k.Classes
 			button := func(label, variant string) render.HTML {
 				return Button(ButtonProps{Label: label, Variant: variant}, k.For("Button"))
 			}
@@ -158,7 +158,7 @@ type GridProps struct {
 	// A length is what the framework's Grid takes, and it silently did
 	// nothing for every value: the component wrote a data attribute
 	// and no stylesheet ever read it. A named step cannot rot that way
-	// — the skin either has a rule for the name or the name is a typo
+	// — the class map either has a rule for the name or the name is a typo
 	// that shows up the first time anyone looks.
 	Min string
 	Gap string
@@ -169,7 +169,7 @@ type GridProps struct {
 }
 
 // Grid renders the auto-fitting grid.
-func Grid(p GridProps, s Skin, children ...render.HTML) render.HTML {
+func Grid(p GridProps, s Classes, children ...render.HTML) render.HTML {
 	own := Merge(Safe(p.ExtraAttrs), Attrs(map[string]string{"id": p.ID}))
 	mods(own, s, "gap", p.Gap, "min", p.Min)
 	return El(orDefault(p.Tag, "div"), s, PartRoot, own, children...)
@@ -180,7 +180,7 @@ func init() {
 		Name:    "Grid",
 		Anatomy: []Part{PartRoot},
 		Cases: func(k Kit) []Case {
-			s := k.Skin
+			s := k.Classes
 			return []Case{{
 				Name: "minimum column and gap",
 				Why:  "Min is a floor — a column never gets narrower than the named step before the grid gives one up — and the name is what keeps the floor wired: the framework's Grid took a free-form Min that nothing read, so every auto-fit grid was the default width whatever its author asked",
@@ -205,7 +205,7 @@ type ContainerProps struct {
 }
 
 // Container renders the measure.
-func Container(p ContainerProps, s Skin, children ...render.HTML) render.HTML {
+func Container(p ContainerProps, s Classes, children ...render.HTML) render.HTML {
 	own := Merge(Safe(p.ExtraAttrs), Attrs(map[string]string{"id": p.ID}))
 	mods(own, s, "size", p.Size)
 	return El(orDefault(p.Tag, "div"), s, PartRoot, own, children...)
@@ -216,7 +216,7 @@ func init() {
 		Name:    "Container",
 		Anatomy: []Part{PartRoot},
 		Cases: func(k Kit) []Case {
-			s := k.Skin
+			s := k.Classes
 			measure := func(size, body string) render.HTML {
 				return Container(ContainerProps{Size: size}, s, render.HTML(body))
 			}
@@ -268,7 +268,7 @@ type SectionProps struct {
 }
 
 // Section renders the region.
-func Section(p SectionProps, s Skin, children ...render.HTML) render.HTML {
+func Section(p SectionProps, s Classes, children ...render.HTML) render.HTML {
 	own := Merge(Safe(p.ExtraAttrs), Attrs(map[string]string{"id": p.ID}))
 	mods(own, s, "gap", p.Gap)
 	body := El("div", s, PartSectionBody, nil, children...)
@@ -310,9 +310,9 @@ func headingTag(level int) string {
 // sections with the same title on one page collide — which is a real
 // limit, and the reason ID exists.
 //
-// The prefix is "section-", not the skin's class namespace: this layer
+// The prefix is "section-", not the class map's namespace: this layer
 // does not know what anyone calls their classes, and an id that
-// borrowed that name would tie the structure to one skin.
+// borrowed that name would tie the structure to one class map.
 func slugID(s string) string {
 	out := make([]rune, 0, len(s))
 	prevDash := false
@@ -360,7 +360,7 @@ type DividerProps struct {
 // break", so no role has to be claimed. A decorative one is a div that
 // says nothing, because the alternative — an <hr> with aria-hidden —
 // is a semantic element being told to lie.
-func Divider(p DividerProps, s Skin) render.HTML {
+func Divider(p DividerProps, s Classes) render.HTML {
 	own := Merge(Safe(p.ExtraAttrs), Attrs(map[string]string{"id": p.ID}))
 	if p.Vertical {
 		mods(own, s, "orient", "vertical")
@@ -390,7 +390,7 @@ func init() {
 		Name:    "Divider",
 		Anatomy: []Part{PartRoot, PartDividerLine, PartText},
 		Cases: func(k Kit) []Case {
-			s := k.Skin
+			s := k.Classes
 			return []Case{{
 				Name: "horizontal",
 				Why:  "the default is a real hr: a break between two groups of content means separator, and the element already says it, so no role is claimed",
@@ -411,13 +411,13 @@ func init() {
 // mods looks up one class per modifier and joins them onto the
 // element, as Button does with its variant and size.
 //
-// One lookup per modifier, never a combined key: a skin keyed on
+// One lookup per modifier, never a combined key: a class map keyed on
 // "root--md--center" would have to enumerate every gap crossed with
 // every alignment, and the first value nobody thought to combine
 // renders unstyled. Keys are namespaced by axis ("gap-md",
 // "align-center") so a gap named "center" could never collide with an
 // alignment named "center".
-func mods(own html.Attrs, s Skin, pairs ...string) {
+func mods(own html.Attrs, s Classes, pairs ...string) {
 	for i := 0; i+1 < len(pairs); i += 2 {
 		axis, value := pairs[i], pairs[i+1]
 		if value == "" {
@@ -434,7 +434,7 @@ func init() {
 		Name:    "Section",
 		Anatomy: []Part{PartRoot, PartTitle, PartDesc, PartHeader, PartSectionHead, PartSectionBody, PartFooter},
 		Cases: func(k Kit) []Case {
-			s := k.Skin
+			s := k.Classes
 			return []Case{{
 				Name: "named",
 				Why:  "a name is what makes it a landmark, and the name comes from the heading itself rather than a second string that can drift from it",
@@ -469,7 +469,7 @@ type SpacerProps struct {
 	//
 	// It travels as data-hui-grow rather than a style, because an
 	// inline style is a rule the CSP drops and a class per factor is
-	// a class the skin has to enumerate from a number it cannot see.
+	// a class the class map has to enumerate from a number it cannot see.
 	Grow int
 	// Min and Max bound the space, as names from the gap scale rather
 	// than lengths: a spacer with a floor keeps a contents list legible
@@ -500,7 +500,7 @@ type SpacerProps struct {
 // and empty: the space is the whole content, and a screen reader user
 // gets the term and the value as neighbours, which is the same fact
 // the leader line draws for the eye.
-func Spacer(p SpacerProps, s Skin) render.HTML {
+func Spacer(p SpacerProps, s Classes) render.HTML {
 	if p.Grow < 1 || p.Grow > 4 {
 		panic("headless: Spacer Grow must be 1 through 4 — the stylesheet wires those four factors, and 0 is a spacer that cannot grow")
 	}
@@ -529,7 +529,7 @@ func init() {
 		Anatomy: []Part{PartRoot},
 		Hooks:   []string{"data-hui-grow"},
 		Cases: func(k Kit) []Case {
-			s := k.Skin
+			s := k.Classes
 			return []Case{{
 				Name: "plain",
 				Why:  "it renders nothing, says nothing, and is in the markup only because a row needs a thing to grow — the space between two controls is the skin's, not a third control somebody wedged between them",

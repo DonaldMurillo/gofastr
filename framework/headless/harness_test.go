@@ -58,14 +58,14 @@ func hasAttr(html, name string) bool {
 }
 
 // probeKit is a kit where this component and every child it composes
-// resolve to the same probe skin. A kit that only skinned the component
-// itself would let a fixture pass its own skin to a child and look
+// resolve to the same probe class map. A kit that only dressed the component
+// itself would let a fixture pass its own class map to a child and look
 // correct, which is the defect these sweeps exist to catch.
-func probeKit(probe Skin) Kit {
-	return NewKit(probe, func(component, variant string) Skin { return probe })
+func probeKit(probe Classes) Kit {
+	return NewKit(probe, func(component, variant string) Classes { return probe })
 }
 
-// eachCase runs fn over every case of every spec, at the nil skin.
+// eachCase runs fn over every case of every spec, at the nil Classes.
 func eachCase(t *testing.T, fn func(t *testing.T, sp Spec, c Case)) {
 	t.Helper()
 	for _, sp := range Specs() {
@@ -96,7 +96,7 @@ func TestEveryCaseMeetsTheUniversalContract(t *testing.T) {
 	eachCase(t, func(t *testing.T, sp Spec, c Case) {
 		got := c.HTML
 		if strings.Contains(string(got), "class=") {
-			t.Error("renders a class at the nil skin — structure is carrying styling")
+			t.Error("renders a class at the nil Classes — structure is carrying styling")
 		}
 		if m := emptyAria.FindString(string(got)); m != "" {
 			t.Errorf("emits %s — an aria attribute pointing at nothing", m)
@@ -131,14 +131,14 @@ func TestRenderingIsDeterministic(t *testing.T) {
 	}
 }
 
-// A part is a promise to a skin: name it and a stylesheet may target
+// A part is a promise to a class map: name it and a stylesheet may target
 // it. A part that no case renders is a class with nothing to land on,
 // and the way to find out is to give every part a class of its own
 // and look for it.
 func TestEveryDeclaredPartIsActuallyDrawn(t *testing.T) {
 	for _, sp := range Specs() {
 		t.Run(sp.Name, func(t *testing.T) {
-			probe := Skin{}
+			probe := Classes{}
 			for _, p := range sp.Anatomy {
 				probe[p] = "probe-" + string(p)
 			}
@@ -161,11 +161,11 @@ func TestEveryDeclaredPartIsActuallyDrawn(t *testing.T) {
 // keeps looking for the old one, and nothing fails.
 func TestEveryDeclaredHookIsRendered(t *testing.T) {
 	for _, sp := range Specs() {
-		// At the nil skin AND at a skin where every part has a class,
+		// At the nil classes AND at a class map where every part has a class,
 		// because some hooks carry a class as their value — the
 		// multi-select tells its runtime which class to give the chips
 		// it builds — and those exist only once something is styled.
-		probe := Skin{}
+		probe := Classes{}
 		for _, p := range sp.Anatomy {
 			probe[p] = "probe-" + string(p)
 		}
@@ -193,7 +193,7 @@ func TestEveryDeclaredHookIsRendered(t *testing.T) {
 			}
 		}
 		// The namespace rule: a hook this system invents, whether a
-		// runtime module or a skin reads it, is data-hui-*, so it cannot
+		// runtime module or a class map reads it, is data-hui-*, so it cannot
 		// collide with anything the platform or the framework owns. A
 		// cue that restates a native state the platform already names —
 		// data-invalid, data-required, data-state — stays unprefixed
@@ -310,7 +310,7 @@ func TestFilledSlotsKeepTheContract(t *testing.T) {
 					t.Errorf("part %q is listed as fillable and the content never arrived:\n%s", p, got)
 				}
 				if strings.Contains(string(got), "class=") {
-					t.Error("a filled slot brought classes into the nil skin")
+					t.Error("a filled slot brought a class attribute into the nil class map")
 				}
 				for id, n := range idsIn(got) {
 					if n > 1 {
@@ -345,7 +345,7 @@ func TestOverridesCannotBreakAComponent(t *testing.T) {
 			continue
 		}
 		t.Run(sp.Name, func(t *testing.T) {
-			got := sp.WithParts(Skin{PartRoot: "real"}, Parts{Attrs: PartAttrs{PartRoot: hostile}})
+			got := sp.WithParts(Classes{PartRoot: "real"}, Parts{Attrs: PartAttrs{PartRoot: hostile}})
 			if strings.Contains(string(got), `"stolen"`) {
 				t.Error("a caller renamed the root: ids are how a label finds its control")
 			}
@@ -478,27 +478,27 @@ func idsIn(h render.HTML) map[string]int {
 	return out
 }
 
-// probeFor is the probe skin for one named component: a class on every
+// probeFor is the probe class map for one named component: a class on every
 // part that component declares, and nothing else. Keying it to the
-// component is the whole point — a skin that styled every part of every
-// component would let a fixture hand a Form's skin to an Input and
+// component is the whole point — a class map that styled every part of every
+// component would let a fixture hand a Form's class map to an Input and
 // still look correct.
-func probeFor(name string) Skin {
+func probeFor(name string) Classes {
 	sp, ok := SpecOf(name)
 	if !ok {
 		return nil
 	}
-	s := Skin{}
+	s := Classes{}
 	for _, p := range sp.Anatomy {
 		s[p] = "probe-" + name + "-" + string(p)
 	}
 	return s
 }
 
-// namedProbeKit skins this component and resolves every child to the
+// namedProbeKit dresses this component and resolves every child to the
 // child's own probe.
 func namedProbeKit(own string) Kit {
-	return NewKit(probeFor(own), func(component, variant string) Skin {
+	return NewKit(probeFor(own), func(component, variant string) Classes {
 		return probeFor(component)
 	})
 }
@@ -511,7 +511,7 @@ var controlTag = regexp.MustCompile(`<(button|input|select|textarea|a)(\s[^>]*)?
 //
 // Two defects look identical on screen and neither was visible to any
 // other check. A fixture that needs a button inside it could hand the
-// child its own parent's skin — an Input wearing .ds-form, which styles
+// child its own parent's class map — an Input wearing .ds-form, which styles
 // none of an input's parts — or give up and write the child as a raw
 // HTML string. Both render a naked browser-default control. A part
 // check does not see it, because the control is not one of the
@@ -540,9 +540,9 @@ func TestEveryControlInAFixtureWearsAClass(t *testing.T) {
 						continue
 					}
 					t.Errorf("%s/%s: a <%s> with no class — %s\n"+
-						"  either it is raw HTML in the fixture, or it was given a skin "+
+						"  either it is raw HTML in the fixture, or it was given a class map "+
 						"that does not style it. Build it with the component and pass "+
-						"k.For(\"…\") for its skin.",
+						"k.For(\"…\") for its class map.",
 						sp.Name, c.Name, tag, strings.TrimSpace(m[0]))
 				}
 			}
@@ -558,15 +558,15 @@ func TestEveryControlInAFixtureWearsAClass(t *testing.T) {
 // This catches the reverse: a part the component draws and the spec
 // never mentions. A range slider once called s.Class(PartControl) for
 // its <input type="range"> while declaring only root, row, track,
-// label and value. The skin happened to define it, so the real page
-// was fine and nothing failed — but the spec is what a skin author
-// reads, and by that document the input did not exist. A new skin
+// label and value. The class map happened to define it, so the real page
+// was fine and nothing failed — but the spec is what a class-map author
+// reads, and by that document the input did not exist. A new class map
 // would have left it
 // unstyled and no test would have said so.
 func TestEveryPartDrawnIsDeclared(t *testing.T) {
 	// Every part any component declares, so a part drawn by one and
 	// declared by none of them still has a class to be caught by.
-	universal := Skin{}
+	universal := Classes{}
 	for _, sp := range Specs() {
 		for _, p := range sp.Anatomy {
 			universal[p] = "probe-" + string(p)
@@ -581,7 +581,7 @@ func TestEveryPartDrawnIsDeclared(t *testing.T) {
 			}
 			// Children resolve to nil, so what is drawn here is this
 			// component's own markup and not a child's.
-			kit := NewKit(universal, func(component, variant string) Skin { return nil })
+			kit := NewKit(universal, func(component, variant string) Classes { return nil })
 			var all strings.Builder
 			for _, c := range sp.Cases(kit) {
 				all.WriteString(string(c.HTML))
@@ -592,8 +592,8 @@ func TestEveryPartDrawnIsDeclared(t *testing.T) {
 					continue
 				}
 				t.Errorf("%s draws the part %q but does not declare it in Parts.\n"+
-					"  A spec is what a skin author reads. An undeclared part is a "+
-					"part nobody knows to style, and it renders naked in every skin "+
+					"  A spec is what a class-map author reads. An undeclared part is a "+
+					"part nobody knows to style, and it renders naked in every class map "+
 					"but the one that happened to guess.", sp.Name, p)
 			}
 		})
@@ -677,7 +677,7 @@ func TestEveryDrawnPartRoutesTheAttrsACallerSets(t *testing.T) {
 		}
 		for _, p := range sp.Anatomy {
 			probe := "probe-" + string(p)
-			if !drawsClass(string(sp.WithParts(Skin{p: probe}, Parts{})), probe) {
+			if !drawsClass(string(sp.WithParts(Classes{p: probe}, Parts{})), probe) {
 				continue
 			}
 			t.Run(sp.Name+"/"+string(p), func(t *testing.T) {
@@ -708,7 +708,7 @@ func TestATextBindNeedsAFillablePart(t *testing.T) {
 				continue
 			}
 			probe := "probe-" + string(p)
-			if !drawsClass(string(sp.WithParts(Skin{p: probe}, Parts{})), probe) {
+			if !drawsClass(string(sp.WithParts(Classes{p: probe}, Parts{})), probe) {
 				continue
 			}
 			t.Run(sp.Name+"/"+string(p), func(t *testing.T) {

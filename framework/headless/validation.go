@@ -73,7 +73,7 @@ type ValidationSummaryProps struct {
 //
 // Rendering it with no errors renders nothing: an empty "there is a
 // problem" box that announces itself is a lie that interrupts.
-func ValidationSummary(p ValidationSummaryProps, s Skin) render.HTML {
+func ValidationSummary(p ValidationSummaryProps, s Classes) render.HTML {
 	b := p.Parts.Box(s)
 	if p.ID == "" {
 		panic("headless: ValidationSummary requires ID — two summaries on one page would share one title id, breaking both labels")
@@ -119,7 +119,7 @@ func ValidationSummary(p ValidationSummaryProps, s Skin) render.HTML {
 }
 
 // titleIDFor names the heading the summary is labelled by. The
-// fallback prefix is structural, not the skin's class namespace: this
+// fallback prefix is structural, not the class map's namespace: this
 // layer does not know what anyone calls their classes. The ID is
 // required, so the name is always the summary's own.
 func titleIDFor(id string) string {
@@ -148,7 +148,7 @@ type Event struct {
 	// RFC 3339. Without it "3 days ago" is a string no assistive tech,
 	// translation layer or scraper can resolve to a moment.
 	Machine string
-	// Tone lets the skin colour the marker — "success", "danger".
+	// Tone lets the class map colour the marker — "success", "danger".
 	Tone string
 	// Body is extra markup under the detail: a log excerpt, actions.
 	Body render.HTML
@@ -174,7 +174,7 @@ type TimelineProps struct {
 // The dots and the connecting line are aria-hidden. They are a picture
 // of the ordering that the list already states, and announcing them
 // would mean hearing "bullet" before every entry.
-func Timeline(p TimelineProps, s Skin) render.HTML {
+func Timeline(p TimelineProps, s Classes) render.HTML {
 	if len(p.Events) == 0 {
 		panic("headless: Timeline requires at least one event")
 	}
@@ -227,13 +227,13 @@ func init() {
 	Register(Spec{
 		Name:    "ValidationSummary",
 		Anatomy: []Part{PartRoot, PartTitle, PartErrorList, PartErrorItem, PartErrorLink},
-		WithParts: func(s Skin, parts Parts) render.HTML {
+		WithParts: func(s Classes, parts Parts) render.HTML {
 			return ValidationSummary(ValidationSummaryProps{ID: "errors",
 				Errors: []FieldError{{For: "name", Message: "Enter an app name."}},
 				Parts:  parts}, s)
 		},
 		Cases: func(k Kit) []Case {
-			s := k.Skin
+			s := k.Classes
 			return []Case{{
 				Name: "after a failed submit",
 				Why:  "it interrupts and can take focus, and every error is a link to the field it is about — a list of complaints you cannot navigate to is a list you have to hunt through",
@@ -271,7 +271,7 @@ func init() {
 		Name:    "Timeline",
 		Anatomy: []Part{PartRoot, PartTimelineItem, PartTimelineMark, PartTimelineTime, PartTimelineBody, PartTitle, PartDesc},
 		Cases: func(k Kit) []Case {
-			s := k.Skin
+			s := k.Classes
 			return []Case{{
 				Name: "history",
 				Why:  "an event with no tone is the ordinary case and draws an untinted marker; ordered, because the order is the content: a screen reader announces the count and the position, so \"3 of 7\" locates you in the history without seeing the line down the left",

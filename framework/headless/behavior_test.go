@@ -3,7 +3,7 @@ package headless
 // The behaviour module gates. The registration and the module are two
 // halves of one contract, and each gate below catches the way one half
 // drifts from the other: a marker nothing declares, a hook nothing
-// binds, a skin-only list that outlived its hooks, a sentence said in
+// binds, a stylesheet-only list that outlived its hooks, a sentence said in
 // a language the caller did not choose, and a kernel contract left
 // half-kept. The gates read the module's source rather than executing
 // it, so they hold everywhere the package's tests run, browser or not.
@@ -165,23 +165,23 @@ func TestEveryHookTheModuleBindsIsDeclared(t *testing.T) {
 	}
 }
 
-// skinHooks are the declared hooks no script reads, each with the
+// sheetHooks are the declared hooks no script reads, each with the
 // reason it needs no module. The reason is load-bearing: the gate
 // refuses an empty one, because an unexplained exemption is an
 // exemption nobody re-reads.
-var skinHooks = map[string]string{
+var sheetHooks = map[string]string{
 	"data-hui-grow":          "the spacer's flex factor: the stylesheet sizes the spacer from the number, and no script ever reads it",
 	"data-hui-lines":         "the skeleton's line count: the stylesheet draws as many bars as the root says",
 	"data-hui-skeleton-last": "the short final line of a multi-line skeleton: a shape decision a stylesheet makes and a script never touches",
 }
 
-// TestEveryDeclaredHookIsBoundOrForTheSkin catches the other direction
+// TestEveryDeclaredHookIsBoundOrForTheStylesheet catches the other direction
 // of the same drift: a hook every Spec declares that neither the
 // module nor a stylesheet reads is an attribute the markup carries for
 // no one. The list itself is checked both ways so it cannot rot: a
 // hook the module grew to read must leave it, and a hook no Spec
 // declares means it outlived its reason.
-func TestEveryDeclaredHookIsBoundOrForTheSkin(t *testing.T) {
+func TestEveryDeclaredHookIsBoundOrForTheStylesheet(t *testing.T) {
 	src := jsWithoutComments()
 	read := moduleBoundHooks(src)
 	declared := declaredHooks()
@@ -190,20 +190,20 @@ func TestEveryDeclaredHookIsBoundOrForTheSkin(t *testing.T) {
 			if read[h] {
 				continue
 			}
-			if _, ok := skinHooks[h]; !ok {
+			if _, ok := sheetHooks[h]; !ok {
 				t.Errorf("%s (declared by %s) is read by neither the module nor a stylesheet: a hook nothing binds is an attribute the markup carries for no one", h, sp.Name)
 			}
 		}
 	}
-	for h, reason := range skinHooks {
+	for h, reason := range sheetHooks {
 		if reason == "" {
 			t.Errorf("%s carries no reason: an unexplained exemption is one nobody re-reads", h)
 		}
 		if !declared[h] {
-			t.Errorf("%s is listed as skin-only but no Spec declares it: the list has outlived its hook", h)
+			t.Errorf("%s is listed as stylesheet-only but no Spec declares it: the list has outlived its hook", h)
 		}
 		if read[h] {
-			t.Errorf("%s is listed as skin-only but the module reads it: the list is wrong today, not just stale", h)
+			t.Errorf("%s is listed as stylesheet-only but the module reads it: the list is wrong today, not just stale", h)
 		}
 	}
 }

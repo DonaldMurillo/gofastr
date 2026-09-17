@@ -1,10 +1,7 @@
 package style
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
-	"maps"
 	"reflect"
 	"sort"
 	"strings"
@@ -46,10 +43,19 @@ var (
 // default"). When emitted, the framework walks the theme and emits
 // every token under the override class, the browser's cascade
 // handles the actual delta vs the canonical :root.
+//
+// The theme is deep-cloned BEFORE hashing and the clone is what is
+// stored. Theme travels by value, but its maps (DarkColors, DarkCode,
+// Components) are references: without the clone a caller-side write
+// after registration would change what every page serves while the
+// hash — computed once, from the bytes as they were — kept naming the
+// old content, and the write could race a request reading the same
+// map. The hash is ThemeHash, the one canonical content address.
 func RegisterThemeOverride(t Theme) ThemeRef {
-	css := t.CSSCustomProperties()
-	sum := sha256.Sum256([]byte(css))
-	hash := hex.EncodeToString(sum[:6])
+	t.DarkColors = copyStringMap(t.DarkColors)
+	t.DarkCode = copyStringMap(t.DarkCode)
+	t.Components = copyStringMap(t.Components)
+	hash := ThemeHash(t)
 	themeOverrideMu.Lock()
 	defer themeOverrideMu.Unlock()
 	if _, ok := themeOverrides[hash]; !ok {
@@ -59,44 +65,82 @@ func RegisterThemeOverride(t Theme) ThemeRef {
 }
 
 // AllThemeOverrides returns a snapshot of every registered theme,
-// keyed by hash. Used by the uihost to emit `.fui-theme-<hash>`
-// blocks in app.css.
+// keyed by hash, with the nested maps deep-copied: a caller mutating a
+// returned theme changes nothing the process serves. Used by the
+// uihost to emit `.fui-theme-<hash>` blocks in app.css.
 func AllThemeOverrides() map[string]Theme {
 	themeOverrideMu.Lock()
 	defer themeOverrideMu.Unlock()
 	out := make(map[string]Theme, len(themeOverrides))
-	maps.Copy(out, themeOverrides)
+	for h, t := range themeOverrides {
+		t.DarkColors = copyStringMap(t.DarkColors)
+		t.DarkCode = copyStringMap(t.DarkCode)
+		t.Components = copyStringMap(t.Components)
+		out[h] = t
+	}
 	return out
 }
 
-// ThemeOverrideCSS emits the class-scoped block for one override:
+// ThemeOverrideCSS emits the class-scoped blocks for one override:
 //
 //	.fui-theme-<hash> {
 //	  --color-primary: …;
-//	  --color-text: …;
-//	  …
+//	  …every typed token…
+//	  …the :root-only alias tokens, re-emitted…
+//	  …the compiled component options, re-emitted…
 //	  color: var(--color-text);
 //	  background: var(--color-background);
 //	}
 //
-// The block re-declares every typed token, AND sets `color` +
+// and, when the theme carries a dark palette (DarkColors or DarkCode),
+// the same declarations under the document's dark scheme:
+//
+//	[data-color-scheme="dark"] .fui-theme-<hash> { …dark tokens… }
+//	@media (prefers-color-scheme: dark) {
+//	  :root:not([data-color-scheme="light"]) .fui-theme-<hash> { …dark tokens… }
+//	}
+//
+// The light block re-declares every typed token, AND sets `color` +
 // `background` on the wrapper itself. The `color` declaration is
 // load-bearing: text inside the wrapper inherits the overridden
 // color, so plain `<p>` / `<span>` elements (which don't carry
 // their own `color: var(--*)` rule) still pick up the dark theme.
 // Descendant components reading `var(--color-primary)` get the
 // overridden value via the CSS variable cascade.
+//
+// # Why the aliases and the component options are re-emitted inside
+//
+// A custom property's var() references compute at the element the
+// declaration sits on, before inheritance. --color-primary-foreground
+// and the --hui-* option variables are declared at :root only, so
+// without re-declaration a scope with a different palette would
+// inherit the ROOT's resolved colours. Every scope block therefore
+// carries the alias lines (aliasTokenDecls) and the compiled option
+// lines (componentOptionDecls) after its own tokens, rebound to the
+// scope's palette.
+//
+// # Dark mode follows the document, not the wrapper
+//
+// `data-color-scheme` is written on <html> (the color-scheme
+// bootstrap / ui.ThemeToggle), never on the wrapper, so the dark
+// blocks key on the document element the same way darkSchemeCSS
+// does: the explicit attribute wins, the prefers-color-scheme media
+// query is the fallback while the user has not forced light. The
+// wrapper's own `color`/`background` from the light block re-resolve
+// against the re-declared dark tokens, so no separate paint lines are
+// needed in the dark blocks. A scope with NO dark palette stays light
+// in dark mode: its light declarations block inheritance, by design —
+// a dark section on a light page is a theme WITH a dark palette, not
+// an inheritance accident.
 func ThemeOverrideCSS(hash string, t Theme) string {
 	var lines []string
 	collectTokenDecls(reflect.ValueOf(t), &lines)
 	sort.Strings(lines)
+	lines = append(lines, aliasTokenDecls()...)
+	lines = append(lines, componentOptionDecls(t.Components)...)
 	var b strings.Builder
 	fmt.Fprintf(&b, ".fui-theme-%s {\n", hash)
-	for _, line := range lines {
-		b.WriteString("  ")
-		b.WriteString(line)
-		b.WriteString("\n")
-	}
+	writeScopeLines(&b, "  ", lines)
 	// The wrapper itself adopts the overridden palette so inherited
 	// `color` flows down. Without this, descendants that don't
 	// explicitly set color: var(--color-text) inherit from outside
@@ -104,7 +148,58 @@ func ThemeOverrideCSS(hash string, t Theme) string {
 	b.WriteString("  color: var(--color-text);\n")
 	b.WriteString("  background: var(--color-background);\n")
 	b.WriteString("}")
+	if len(t.DarkColors) == 0 && len(t.DarkCode) == 0 {
+		return b.String()
+	}
+	darkLines := darkScopeLines(t)
+	b.WriteString("\n[data-color-scheme=\"dark\"] .fui-theme-" + hash + " {\n")
+	writeScopeLines(&b, "  ", darkLines)
+	b.WriteString("}\n")
+	b.WriteString("@media (prefers-color-scheme: dark) {\n")
+	b.WriteString("  :root:not([data-color-scheme=\"light\"]) .fui-theme-" + hash + " {\n")
+	writeScopeLines(&b, "    ", darkLines)
+	b.WriteString("  }\n")
+	b.WriteString("}")
 	return b.String()
+}
+
+// darkScopeLines builds the declaration lines for a scope's dark
+// blocks: the dark tokens first (so the aliases and options that
+// follow rebind against them), then the same alias and compiled-option
+// lines the light block carries. No color/background paint lines: the
+// light block's `color: var(--color-text)` re-resolves here against
+// the re-declared token.
+func darkScopeLines(t Theme) []string {
+	lines := make([]string, 0, len(t.DarkColors)+len(t.DarkCode)+16)
+	for _, name := range sortedMapKeys(t.DarkColors) {
+		lines = append(lines, fmt.Sprintf("--color-%s: %s;", name, t.DarkColors[name]))
+	}
+	for _, name := range sortedMapKeys(t.DarkCode) {
+		lines = append(lines, fmt.Sprintf("--tk-%s: %s;", name, t.DarkCode[name]))
+	}
+	lines = append(lines, aliasTokenDecls()...)
+	lines = append(lines, componentOptionDecls(t.Components)...)
+	return lines
+}
+
+// sortedMapKeys is the deterministic iteration every map-written CSS
+// block here uses (the mapwriter discipline: never range a map while
+// writing output).
+func sortedMapKeys(m map[string]string) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func writeScopeLines(b *strings.Builder, indent string, lines []string) {
+	for _, line := range lines {
+		b.WriteString(indent)
+		b.WriteString(line)
+		b.WriteString("\n")
+	}
 }
 
 // AllThemeOverridesCSS emits every registered override as a
