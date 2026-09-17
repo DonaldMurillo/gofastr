@@ -168,7 +168,7 @@ func AllThemeOverrides() map[string]Theme {
 //
 // A custom property's var() references compute at the element the
 // declaration sits on, before inheritance. --color-primary-foreground
-// and the --hui-* option variables are declared at :root only, so
+// and the --fui-* option variables are declared at :root only, so
 // without re-declaration a scope with a different palette would
 // inherit the ROOT's resolved colours. Every scope block therefore
 // carries the alias lines (aliasTokenDecls) and the compiled option

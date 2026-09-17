@@ -88,7 +88,7 @@ func validateComponentEntry(key, value string) error {
 
 // Declaration is one custom property a component-options compiler
 // returns for a theme's Components: Name includes the leading "--"
-// ("--hui-button-radius"), Value is the exact text after the colon
+// ("--fui-button-radius"), Value is the exact text after the colon
 // ("var(--radii-md)", "0", "9999px").
 type Declaration struct {
 	Name  string
@@ -115,7 +115,7 @@ var componentCompiler struct {
 //
 // A binary that never imports framework/ui (a host built on
 // framework/uihost alone, say) registers no compiler: it stores options
-// it cannot draw, emits none of the --hui-* variables, and still hashes
+// it cannot draw, emits none of the --fui-* variables, and still hashes
 // option-different themes apart — ThemeHash fingerprints the flattened
 // options directly, not only the compiled output — so linking the
 // styled layer later cannot silently alias two themes that were

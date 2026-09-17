@@ -66,7 +66,7 @@ func TestRegisterThemeOverrideDoesNotHash(t *testing.T) {
 	// The handle's hash still addresses the stored theme: the scope CSS
 	// is servable under it, options compiled.
 	css := ThemeOverrideCSS(ref.Hash(), AllThemeOverrides()[ref.Hash()])
-	if !strings.Contains(css, "--hui-test-density: compact;") {
+	if !strings.Contains(css, "--fui-test-density: compact;") {
 		t.Errorf("compiled options missing from the scope block under the handle's hash:\n%s", css)
 	}
 }

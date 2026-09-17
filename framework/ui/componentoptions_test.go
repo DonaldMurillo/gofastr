@@ -28,10 +28,10 @@ func TestCompilerEmitsDensityVariables(t *testing.T) {
 		{theme.Compact, "36px", "var(--spacing-sm)"},
 	} {
 		css := rootOptionCSS(theme.ComponentOptions{Density: tc.density})
-		if !strings.Contains(css, "--hui-density-control-h: "+tc.controlH+";") {
+		if !strings.Contains(css, "--fui-density-control-h: "+tc.controlH+";") {
 			t.Errorf("density %v: control height missing (want %s)", tc.density, tc.controlH)
 		}
-		if !strings.Contains(css, "--hui-density-gap: "+tc.gap+";") {
+		if !strings.Contains(css, "--fui-density-gap: "+tc.gap+";") {
 			t.Errorf("density %v: gap missing (want %s)", tc.density, tc.gap)
 		}
 	}
@@ -47,7 +47,7 @@ func TestCompilerEmitsRadiusVariables(t *testing.T) {
 		{theme.Pill, "9999px"},
 	} {
 		css := rootOptionCSS(theme.ComponentOptions{Button: theme.ButtonOptions{Radius: tc.radius}})
-		if !strings.Contains(css, "--hui-button-radius: "+tc.value+";") {
+		if !strings.Contains(css, "--fui-button-radius: "+tc.value+";") {
 			t.Errorf("radius %v: variable missing (want %s)", tc.radius, tc.value)
 		}
 	}
@@ -64,9 +64,9 @@ func TestCompilerEmitsTreatmentVariables(t *testing.T) {
 	} {
 		css := rootOptionCSS(theme.ComponentOptions{Button: theme.ButtonOptions{Treatment: tc.treatment}})
 		for name, want := range map[string]string{
-			"--hui-button-bg":     tc.bg,
-			"--hui-button-fg":     tc.fg,
-			"--hui-button-border": tc.border,
+			"--fui-button-bg":     tc.bg,
+			"--fui-button-fg":     tc.fg,
+			"--fui-button-border": tc.border,
 		} {
 			if !strings.Contains(css, name+": "+want+";") {
 				t.Errorf("treatment %v: %s missing (want %s)", tc.treatment, name, want)
@@ -81,9 +81,9 @@ func TestCompilerEmitsTreatmentVariables(t *testing.T) {
 func TestCompilerEmitsTheCompleteSetAtRoot(t *testing.T) {
 	css := rootOptionCSS(theme.DefaultOptions)
 	for _, name := range []string{
-		"--hui-density-control-h", "--hui-density-gap",
-		"--hui-button-radius",
-		"--hui-button-bg", "--hui-button-fg", "--hui-button-border",
+		"--fui-density-control-h", "--fui-density-gap",
+		"--fui-button-radius",
+		"--fui-button-bg", "--fui-button-fg", "--fui-button-border",
 	} {
 		if !strings.Contains(css, name+":") {
 			t.Errorf("complete option set missing %s", name)
@@ -115,10 +115,10 @@ func TestCompilerEmitsOptionsInsideScopeBlocks(t *testing.T) {
 		}
 		body := css[i : i+end]
 		for _, want := range []string{
-			"--hui-density-control-h: 36px;",
-			"--hui-button-radius: 0;",
-			"--hui-button-bg: transparent;",
-			"--hui-button-border: var(--color-primary);",
+			"--fui-density-control-h: 36px;",
+			"--fui-button-radius: 0;",
+			"--fui-button-bg: transparent;",
+			"--fui-button-border: var(--color-primary);",
 		} {
 			if !strings.Contains(body, want) {
 				t.Errorf("%s scope block missing %s:\n%s", probe.block, want, body)

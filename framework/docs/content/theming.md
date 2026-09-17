@@ -316,12 +316,12 @@ density is. The one function that can is the **component-options
 compiler** `framework/ui` registers from its `init`
 (`style.RegisterComponentOptionsCompiler`, one per process; a late
 registration panics because the host freezes `app.css` at first
-render). It turns the flattened options into `--hui-*` custom
+render). It turns the flattened options into `--fui-*` custom
 properties:
 
 A binary that never imports `framework/ui` — a host built on
 `framework/uihost` alone — registers no compiler: it stores options it
-cannot draw, emits none of the `--hui-*` variables, and still hashes
+cannot draw, emits none of the `--fui-*` variables, and still hashes
 option-different themes apart (`ThemeHash` fingerprints the flattened
 options directly, not only the compiled output), so adding the styled
 layer later cannot silently alias two themes that were distinct all
@@ -329,18 +329,18 @@ along.
 
 | Option | Emits |
 |---|---|
-| `density: comfortable` | `--hui-density-control-h: 44px`, `--hui-density-gap: var(--spacing-md)` |
-| `density: compact` | `--hui-density-control-h: 36px`, `--hui-density-gap: var(--spacing-sm)` |
-| `button.radius: round` / `square` / `pill` | `--hui-button-radius: var(--radii-md)` / `0` / `9999px` |
-| `button.treatment: filled` | `--hui-button-bg: var(--color-primary)`, `--hui-button-fg: var(--color-primary-fg)`, `--hui-button-border: transparent` |
-| `button.treatment: outline` | `--hui-button-bg: transparent`, `--hui-button-fg: var(--color-primary)`, `--hui-button-border: var(--color-primary)` |
-| `button.treatment: soft` | `--hui-button-bg: var(--color-surface-soft)`, `--hui-button-fg: var(--color-primary)`, `--hui-button-border: transparent` |
+| `density: comfortable` | `--fui-density-control-h: 44px`, `--fui-density-gap: var(--spacing-md)` |
+| `density: compact` | `--fui-density-control-h: 36px`, `--fui-density-gap: var(--spacing-sm)` |
+| `button.radius: round` / `square` / `pill` | `--fui-button-radius: var(--radii-md)` / `0` / `9999px` |
+| `button.treatment: filled` | `--fui-button-bg: var(--color-primary)`, `--fui-button-fg: var(--color-primary-fg)`, `--fui-button-border: transparent` |
+| `button.treatment: outline` | `--fui-button-bg: transparent`, `--fui-button-fg: var(--color-primary)`, `--fui-button-border: var(--color-primary)` |
+| `button.treatment: soft` | `--fui-button-bg: var(--color-surface-soft)`, `--fui-button-fg: var(--color-primary)`, `--fui-button-border: transparent` |
 
 The cascade rule: **theme boundaries declare the option variables,
 component rules consume them.** A component stylesheet writes
-`border-radius: var(--hui-button-radius)` and never redeclares the
+`border-radius: var(--fui-button-radius)` and never redeclares the
 variable; a treatment that changes fill, text and border together is
-three variables, never a descendant rule (`.fui-theme-a .hui-button`
+three variables, never a descendant rule (`.fui-theme-a .fui-button`
 would outrank the component's own variant and state selectors, and
 could not nest). Because every theme declares the complete set, an
 inner `ui.Themed` scope redeclares all of it and wins by proximity:
@@ -348,17 +348,16 @@ nesting A → B → A ends on A's values.
 
 The declarations are re-emitted at every boundary — root and scope,
 light and dark — because a custom property's `var()` references
-compute where the declaration sits: `--hui-button-bg:
+compute where the declaration sits: `--fui-button-bg:
 var(--color-primary)` declared only at `:root` would carry the root's
 resolved primary into a scope with its own palette. The `:root`-only
 alias tokens (`--color-primary-foreground` and kin) are re-emitted in
 scope blocks for the same reason.
 
-The `hui-` prefix is reserved for `framework/ui`'s class names and
-option variables. Writing `hui-button` on your own markup gets the
-framework's styling whenever that sheet is on the page — the prefix is
-a namespace, not a convention you can borrow. (`data-hui-*` hooks
-belong to `framework/headless`; same prefix, different owner.)
+The `fui-` prefix is reserved for `framework/ui`'s class names and
+option variables. Writing `fui-button` on your own markup gets the
+framework's styling whenever that sheet is on the page. Headless has
+its own prefix: the `data-hui-*` hooks belong to `framework/headless`.
 
 ## Token map: `ThemeToTokens` / `ApplyTokens`
 
@@ -528,12 +527,12 @@ its internals from the outside.
   "works," but dark mode and every other consumer of that token never
   see it. For a one-section reskin, use `ui.Themed` plus a registered
   override theme instead.
-- **Writing `hui-` classes on your own markup.** The prefix belongs
-  to `framework/ui`; a hand-written `hui-button` picks up the
+- **Writing `fui-` classes on your own markup.** The prefix belongs
+  to `framework/ui`; a hand-written `fui-button` picks up the
   framework's styling whenever that stylesheet is loaded, today or
   after any release. Style your own markup with your own classes.
 - **Redeclaring an option variable on a component.** A rule like
-  `.my-button { --hui-button-radius: 0; }` blocks inheritance, so the
+  `.my-button { --fui-button-radius: 0; }` blocks inheritance, so the
   component stops following the enclosing `ui.Themed` scope. Options
   are declared at theme boundaries (`theme.Overrides.Components`) and
   consumed by component rules; that is the whole contract.

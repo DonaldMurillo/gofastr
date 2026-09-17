@@ -15,7 +15,7 @@ import (
 	// The blank import is load-bearing: framework/ui's init registers
 	// the component-options compiler these tests prove. Importing only
 	// framework/ui/theme would leave the compiler unregistered and
-	// every --hui-* variable unset.
+	// every --fui-* variable unset.
 	_ "github.com/DonaldMurillo/gofastr/framework/ui"
 	"github.com/DonaldMurillo/gofastr/framework/ui/theme"
 	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
@@ -166,7 +166,7 @@ func TestNestedScopedThemeOptionsWinByProximity(t *testing.T) {
 		chromedp.Evaluate(`(() => {
 			const read = (id) => {
 				const cs = getComputedStyle(document.getElementById(id));
-				return cs.getPropertyValue('--hui-button-radius').trim() + '|' + cs.getPropertyValue('--hui-density-control-h').trim();
+				return cs.getPropertyValue('--fui-button-radius').trim() + '|' + cs.getPropertyValue('--fui-density-control-h').trim();
 			};
 			return { a1: read('probe-a1'), b: read('probe-b'), a2: read('probe-a2') };
 		})()`, &got),
@@ -184,7 +184,7 @@ func TestNestedScopedThemeOptionsWinByProximity(t *testing.T) {
 		{"a2", "0|36px", "the innermost A resets to A's values, not B's"},
 	} {
 		if got[tc.probe] != tc.want {
-			t.Errorf("probe %s (%s): --hui-button-radius|--hui-density-control-h = %q, want %q", tc.probe, tc.why, got[tc.probe], tc.want)
+			t.Errorf("probe %s (%s): --fui-button-radius|--fui-density-control-h = %q, want %q", tc.probe, tc.why, got[tc.probe], tc.want)
 		}
 	}
 }

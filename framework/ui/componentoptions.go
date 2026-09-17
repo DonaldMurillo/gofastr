@@ -19,10 +19,10 @@ import (
 //
 // # The cascade rule
 //
-// Theme boundaries DECLARE the --hui-* option variables; component
-// rules CONSUME them (border-radius: var(--hui-button-radius)) and
+// Theme boundaries DECLARE the --fui-* option variables; component
+// rules CONSUME them (border-radius: var(--fui-button-radius)) and
 // never redeclare them. No descendant option rules: .fui-theme-a
-// .hui-button would outrank the component's own variant and state
+// .fui-button would outrank the component's own variant and state
 // selectors, so options travel by inheritance instead. Because every
 // theme built by theme.Default declares the complete set, an inner
 // scope redeclares all of it and wins by proximity; nesting needs no
@@ -31,13 +31,13 @@ import (
 // The variables are re-emitted at every boundary (root and scope,
 // light and dark — see style.ThemeOverrideCSS) because a custom
 // property's var() references compute where the declaration sits:
-// --hui-button-bg: var(--color-primary) declared only at :root would
+// --fui-button-bg: var(--color-primary) declared only at :root would
 // carry the root's resolved primary into a scope with its own palette.
 //
 // # The prefix
 //
-// `hui-` is reserved for this package's class names and option
-// variables. A caller who writes hui-button on their own markup gets
+// `fui-` is reserved for this package's class names and option
+// variables. A caller who writes fui-button on their own markup gets
 // the framework's styling whenever this sheet is on the page; the docs
 // say so once. Classes belong to framework/ui; the data-hui-* hooks
 // belong to framework/headless. The prefixes match, the ownership
@@ -67,24 +67,24 @@ func componentOptionsCSS(components map[string]string) []style.Declaration {
 		// 44px is the WCAG 2.5.5 minimum tap target; the md step is
 		// the comfortable gap.
 		decls = append(decls,
-			style.Declaration{Name: "--hui-density-control-h", Value: "44px"},
-			style.Declaration{Name: "--hui-density-gap", Value: "var(--spacing-md)"},
+			style.Declaration{Name: "--fui-density-control-h", Value: "44px"},
+			style.Declaration{Name: "--fui-density-gap", Value: "var(--spacing-md)"},
 		)
 	case theme.Compact:
 		decls = append(decls,
-			style.Declaration{Name: "--hui-density-control-h", Value: "36px"},
-			style.Declaration{Name: "--hui-density-gap", Value: "var(--spacing-sm)"},
+			style.Declaration{Name: "--fui-density-control-h", Value: "36px"},
+			style.Declaration{Name: "--fui-density-gap", Value: "var(--spacing-sm)"},
 		)
 	case theme.DensityUnset:
 		// Inherit: nothing to declare.
 	}
 	switch opts.Button.Radius {
 	case theme.Round:
-		decls = append(decls, style.Declaration{Name: "--hui-button-radius", Value: "var(--radii-md)"})
+		decls = append(decls, style.Declaration{Name: "--fui-button-radius", Value: "var(--radii-md)"})
 	case theme.Square:
-		decls = append(decls, style.Declaration{Name: "--hui-button-radius", Value: "0"})
+		decls = append(decls, style.Declaration{Name: "--fui-button-radius", Value: "0"})
 	case theme.Pill:
-		decls = append(decls, style.Declaration{Name: "--hui-button-radius", Value: "9999px"})
+		decls = append(decls, style.Declaration{Name: "--fui-button-radius", Value: "9999px"})
 	case theme.RadiusUnset:
 	}
 	// Treatment draws background, foreground and border TOGETHER: one
@@ -93,21 +93,21 @@ func componentOptionsCSS(components map[string]string) []style.Declaration {
 	switch opts.Button.Treatment {
 	case theme.Filled:
 		decls = append(decls,
-			style.Declaration{Name: "--hui-button-bg", Value: "var(--color-primary)"},
-			style.Declaration{Name: "--hui-button-fg", Value: "var(--color-primary-fg)"},
-			style.Declaration{Name: "--hui-button-border", Value: "transparent"},
+			style.Declaration{Name: "--fui-button-bg", Value: "var(--color-primary)"},
+			style.Declaration{Name: "--fui-button-fg", Value: "var(--color-primary-fg)"},
+			style.Declaration{Name: "--fui-button-border", Value: "transparent"},
 		)
 	case theme.Outline:
 		decls = append(decls,
-			style.Declaration{Name: "--hui-button-bg", Value: "transparent"},
-			style.Declaration{Name: "--hui-button-fg", Value: "var(--color-primary)"},
-			style.Declaration{Name: "--hui-button-border", Value: "var(--color-primary)"},
+			style.Declaration{Name: "--fui-button-bg", Value: "transparent"},
+			style.Declaration{Name: "--fui-button-fg", Value: "var(--color-primary)"},
+			style.Declaration{Name: "--fui-button-border", Value: "var(--color-primary)"},
 		)
 	case theme.Soft:
 		decls = append(decls,
-			style.Declaration{Name: "--hui-button-bg", Value: "var(--color-surface-soft)"},
-			style.Declaration{Name: "--hui-button-fg", Value: "var(--color-primary)"},
-			style.Declaration{Name: "--hui-button-border", Value: "transparent"},
+			style.Declaration{Name: "--fui-button-bg", Value: "var(--color-surface-soft)"},
+			style.Declaration{Name: "--fui-button-fg", Value: "var(--color-primary)"},
+			style.Declaration{Name: "--fui-button-border", Value: "transparent"},
 		)
 	case theme.TreatmentUnset:
 	}

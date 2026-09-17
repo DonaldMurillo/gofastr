@@ -50,12 +50,12 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   means unspecified while overrides merge; `Default()` flattens a
   complete set (Comfortable, Filled, Round), and an explicit
   Comfortable/Filled/Round resets an earlier override. The compiler
-  emits `--hui-density-control-h`/`--hui-density-gap` (44px/36px,
-  md/sm spacing), `--hui-button-radius` (radii-md/0/9999px) and the
-  treatment trio `--hui-button-bg`/`-fg`/`-border`. Theme boundaries
+  emits `--fui-density-control-h`/`--fui-density-gap` (44px/36px,
+  md/sm spacing), `--fui-button-radius` (radii-md/0/9999px) and the
+  treatment trio `--fui-button-bg`/`-fg`/`-border`. Theme boundaries
   declare the option variables, component rules consume them, no
   descendant option rules — so options nest by inheritance
-  (browser-proven A → B → A). The `hui-` prefix is reserved for
+  (browser-proven A → B → A). The `fui-` prefix is reserved for
   `framework/ui`; `data-hui-*` hooks belong to `framework/headless`.
 - **`registry.RegisterBehavior`**: behaviour registers like style. A
   component's package embeds its runtime module beside the Go and

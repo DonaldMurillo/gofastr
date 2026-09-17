@@ -1216,7 +1216,7 @@ class="fui-theme-<hash>">` scopes the override via CSS variable
 cascade: no per-component changes, no inline `<style>`, no extra
 HTTP requests beyond the always-present app.css.
 
-### Component options (`Theme.Components` and the `--hui-*` variables)
+### Component options (`Theme.Components` and the `--fui-*` variables)
 
 Beside its tokens, a theme carries **component options**:
 `Theme.Components`, a flattened map (`"density": "compact"`,
@@ -1240,13 +1240,13 @@ cause.
 The cascade rule, which is the whole design:
 
 - **Theme boundaries declare option variables; component rules consume
-  them.** The root theme emits `:root { --hui-button-radius: …; }`, a
+  them.** The root theme emits `:root { --fui-button-radius: …; }`, a
   scoped theme emits the same declarations inside
   `.fui-theme-<hash> { … }`, and a component stylesheet reads
-  `border-radius: var(--hui-button-radius)` without ever redeclaring
+  `border-radius: var(--fui-button-radius)` without ever redeclaring
   the variable on the component (a redeclaration would block
   inheritance and break nesting).
-- **No descendant option rules.** `.fui-theme-a .hui-button` (0,2,0)
+- **No descendant option rules.** `.fui-theme-a .fui-button` (0,2,0)
   outranks the component's own variant and state selectors, so an
   option that changes several properties together (a treatment: fill,
   text and border) emits SEVERAL variables, never one descendant
@@ -1256,7 +1256,7 @@ The cascade rule, which is the whole design:
   exception, no specificity ladder.
 - **Token references resolve where declared.** A custom property's
   `var()` references compute at the element the declaration sits on,
-  so `--hui-button-bg: var(--color-primary)` and the `:root`-only
+  so `--fui-button-bg: var(--color-primary)` and the `:root`-only
   alias tokens (`--color-primary-foreground` and kin) are re-emitted
   inside every scope block — light and dark — or a scope with its own
   palette would inherit the ROOT's resolved colours.
@@ -1270,11 +1270,11 @@ The cascade rule, which is the whole design:
   theme with NO dark palette stays light in dark mode: its light
   declarations block inheritance, by design.
 
-The `hui-` prefix is reserved for `framework/ui`'s class names and
+The `fui-` prefix is reserved for `framework/ui`'s class names and
 option variables. Classes belong to framework/ui; the `data-hui-*`
-hooks belong to framework/headless. The prefixes match, the ownership
-does not: a caller who writes `hui-button` on their own markup gets
-the framework's styling whenever that sheet is on the page.
+hooks belong to framework/headless. One prefix each: `fui-` is the framework's, `hui-`
+is headless's. A caller who writes `fui-button` on their own markup
+gets the framework's styling whenever that sheet is on the page.
 
 Options ride the same plumbing as tokens: `ThemeToTokens` /
 `ApplyTokens` carry them under the reserved `component.` prefix,

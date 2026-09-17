@@ -144,7 +144,7 @@ func (t Theme) CSSCustomProperties() string {
 	css := CSSCustomPropertiesOf(t) + "\n" + aliasTokenCSS()
 	// The compiled component options join the root block AFTER the
 	// tokens they reference: a declaration like
-	// --hui-button-bg: var(--color-primary) computes its var() at the
+	// --fui-button-bg: var(--color-primary) computes its var() at the
 	// element it is declared on, so it must be re-declared at every
 	// theme boundary (ThemeOverrideCSS does the scoped half) to pick up
 	// each scope's palette instead of carrying the root's colours into

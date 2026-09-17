@@ -30,7 +30,7 @@ func echoCompiler(components map[string]string) []Declaration {
 	decls := make([]Declaration, 0, len(components))
 	for _, k := range sortedMapKeys(components) {
 		decls = append(decls, Declaration{
-			Name:  "--hui-test-" + strings.ReplaceAll(k, ".", "-"),
+			Name:  "--fui-test-" + strings.ReplaceAll(k, ".", "-"),
 			Value: components[k],
 		})
 	}
@@ -67,13 +67,13 @@ func TestComponentsGrammarInValidate(t *testing.T) {
 func TestComponentOptionsRootEmission(t *testing.T) {
 	stageTestCompiler(t, echoCompiler)
 	css := themeWithComponents(map[string]string{"density": "compact"}).CSSCustomProperties()
-	want := ":root {\n  --hui-test-density: compact;\n}"
+	want := ":root {\n  --fui-test-density: compact;\n}"
 	if !strings.Contains(css, want) {
 		t.Errorf("root block missing compiled option\nwant substring:\n%s\ngot:\n%s", want, css)
 	}
 	// A theme with no options emits no compiled block.
 	stageTestCompiler(t, echoCompiler)
-	if css := DefaultTheme().CSSCustomProperties(); strings.Contains(css, "--hui-test") {
+	if css := DefaultTheme().CSSCustomProperties(); strings.Contains(css, "--fui-test") {
 		t.Error("empty Components emitted compiled declarations")
 	}
 }
@@ -100,7 +100,7 @@ func TestComponentOptionsScopedEmission(t *testing.T) {
 			t.Fatalf("%s block missing its closer in:\n%s", probe.block, css)
 		}
 		body := css[i : i+end]
-		if !strings.Contains(body, "--hui-test-button-treatment: outline;") {
+		if !strings.Contains(body, "--fui-test-button-treatment: outline;") {
 			t.Errorf("%s block lacks the compiled option:\n%s", probe.block, body)
 		}
 		if !strings.Contains(body, "--color-primary-foreground: var(--color-primary-fg);") {
@@ -171,14 +171,14 @@ func TestComponentCompilerInvalidDeclarationPanicsAtEmit(t *testing.T) {
 		name string
 		decl Declaration
 	}{
-		{"name without --", Declaration{Name: "hui-density", Value: "36px"}},
+		{"name without --", Declaration{Name: "fui-density", Value: "36px"}},
 		{"name with a space", Declaration{Name: "--hui density", Value: "36px"}},
 		{"name that selectors", Declaration{Name: "--x}body{", Value: "36px"}},
-		{"empty value", Declaration{Name: "--hui-density", Value: ""}},
-		{"value breaks the declaration", Declaration{Name: "--hui-density", Value: "36px; color: red"}},
-		{"value closes the block", Declaration{Name: "--hui-density", Value: "36px}"}},
-		{"value opens markup", Declaration{Name: "--hui-density", Value: "36px<img>"}},
-		{"value loads a url", Declaration{Name: "--hui-density", Value: "url(https://attacker/x)"}},
+		{"empty value", Declaration{Name: "--fui-density", Value: ""}},
+		{"value breaks the declaration", Declaration{Name: "--fui-density", Value: "36px; color: red"}},
+		{"value closes the block", Declaration{Name: "--fui-density", Value: "36px}"}},
+		{"value opens markup", Declaration{Name: "--fui-density", Value: "36px<img>"}},
+		{"value loads a url", Declaration{Name: "--fui-density", Value: "url(https://attacker/x)"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			stageTestCompiler(t, func(map[string]string) []Declaration {
@@ -195,9 +195,9 @@ func TestComponentCompilerInvalidDeclarationPanicsAtEmit(t *testing.T) {
 	// The grammar the compiler's output MAY use: token references,
 	// parentheses, commas, spaces, numbers.
 	stageTestCompiler(t, func(map[string]string) []Declaration {
-		return []Declaration{{Name: "--hui-ok", Value: "color-mix(in srgb, var(--color-primary) 85%, transparent)"}}
+		return []Declaration{{Name: "--fui-ok", Value: "color-mix(in srgb, var(--color-primary) 85%, transparent)"}}
 	})
-	if css := themeWithComponents(map[string]string{"density": "compact"}).CSSCustomProperties(); !strings.Contains(css, "--hui-ok: color-mix(in srgb, var(--color-primary) 85%, transparent);") {
+	if css := themeWithComponents(map[string]string{"density": "compact"}).CSSCustomProperties(); !strings.Contains(css, "--fui-ok: color-mix(in srgb, var(--color-primary) 85%, transparent);") {
 		t.Error("a legitimate value with parens, commas and spaces was refused")
 	}
 }

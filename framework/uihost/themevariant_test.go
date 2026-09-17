@@ -182,7 +182,7 @@ func TestAppCSS_VariantIsIsolatedFromCallerMutation(t *testing.T) {
 // The Components map is cloned at registration for the same reason as
 // DarkColors above: a caller-side write after the key was issued must
 // not change the bytes served under it. The options reach app.css as
-// --hui-* variables (the test binary links framework/ui, so the
+// --fui-* variables (the test binary links framework/ui, so the
 // compiler is registered), which is what makes the mutation observable.
 func TestAppCSS_VariantComponentsIsolatedFromCallerMutation(t *testing.T) {
 	ds := hostWithTheme(t, style.DefaultTheme())
@@ -192,7 +192,7 @@ func TestAppCSS_VariantComponentsIsolatedFromCallerMutation(t *testing.T) {
 
 	key := ds.RegisterThemeVariant(th)
 	before := getAppCSS(t, ds, "t="+key).Body.String()
-	if !strings.Contains(before, "--hui-density-control-h: 36px;") {
+	if !strings.Contains(before, "--fui-density-control-h: 36px;") {
 		t.Fatalf("precondition: the compact option must reach the served CSS:\n%s", before)
 	}
 
