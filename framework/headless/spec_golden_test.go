@@ -2,8 +2,8 @@ package headless
 
 // One golden for every component, generated from the specs.
 //
-// A skin's own snapshots pin the styled markup a page gets. This pins
-// the other half: the structure, at the nil skin, which is where every
+// A class map's own snapshots pin the styled markup a page gets. This pins
+// the other half: the structure, at the nil Classes, which is where every
 // accessibility guarantee actually lives. Until now that half was
 // asserted only where somebody had written an assertion for it, so a
 // change to a component nobody had thought about — an attribute

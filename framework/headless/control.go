@@ -4,7 +4,7 @@ package headless
 // textarea, the native select, and the two affix-shell controls
 // (password with its reveal button, colour with its swatch).
 // Structure, labelling and the data-hui-* hooks a runtime module binds
-// to live here; heights, borders and class structure live in the skin.
+// to live here; heights, borders and class structure live in the class map.
 
 import (
 	"fmt"
@@ -17,7 +17,7 @@ import (
 
 // Control parts. The single-line controls and the affix shells are
 // their own root; the input inside an affix shell is PartControl, and
-// the reveal button and swatch are named so a skin can style them
+// the reveal button and swatch are named so a class map can style them
 // without the markup having to carry a class for them to be found by.
 const (
 	PartOption      Part = "option"
@@ -43,7 +43,7 @@ type InputProps struct {
 	Placeholder string
 	Required    bool
 	Disabled    bool
-	// Invalid states aria-invalid for assistive tech; the skin
+	// Invalid states aria-invalid for assistive tech; the class map
 	// colours the border off the same attribute.
 	Invalid bool
 	// AriaLabel names the control where a visible label cannot go — a
@@ -65,7 +65,7 @@ type InputProps struct {
 	Owned html.Attrs
 }
 
-func Input(p InputProps, s Skin) render.HTML {
+func Input(p InputProps, s Classes) render.HTML {
 	if p.Name == "" {
 		panic("headless: Input requires Name — a control with no name submits nothing")
 	}
@@ -135,7 +135,7 @@ type TextareaProps struct {
 // Textarea renders the multiline control. The value is the content,
 // not an attribute: setting both is what makes some browsers show the
 // stale attribute after a reset.
-func Textarea(p TextareaProps, s Skin) render.HTML {
+func Textarea(p TextareaProps, s Classes) render.HTML {
 	if p.Name == "" {
 		panic("headless: Textarea requires Name — a control with no name submits nothing")
 	}
@@ -193,7 +193,7 @@ type SelectProps struct {
 // Select renders the native dropdown. The chevron is the stylesheet's
 // (appearance: none plus a drawn arrow), so the markup stays a plain
 // select — no wrapper div to align against its neighbours.
-func Select(p SelectProps, s Skin) render.HTML {
+func Select(p SelectProps, s Classes) render.HTML {
 	if p.Name == "" {
 		panic("headless: Select requires Name — a select with no name submits nothing")
 	}
@@ -263,7 +263,7 @@ type PasswordProps struct {
 // module exists to toggle the input's type and the button's own label.
 // Nothing is wired on purpose: no inline script, no dead onclick, and
 // no pretending it works before it does.
-func Password(p PasswordProps, s Skin) render.HTML {
+func Password(p PasswordProps, s Classes) render.HTML {
 	b := p.Parts.Box(s)
 	if p.Name == "" {
 		panic("headless: Password requires Name — a control with no name submits nothing")
@@ -301,7 +301,7 @@ func Password(p PasswordProps, s Skin) render.HTML {
 
 	shell := html.Attrs{"data-hui-affix": ""}
 	if p.Invalid {
-		// The skin colours the shell's border off data-invalid; the
+		// The class map colours the shell's border off data-invalid; the
 		// input inside has no border of its own to colour.
 		shell["data-invalid"] = ""
 	}
@@ -345,7 +345,7 @@ type ColorProps struct {
 // submitted value. There is no Required notion here because
 // type=color always has a value; a required field that cannot bite
 // would be a lie.
-func Color(p ColorProps, s Skin) render.HTML {
+func Color(p ColorProps, s Classes) render.HTML {
 	b := p.Parts.Box(s)
 	if p.Name == "" {
 		panic("headless: Color requires Name — the hex field is what submits, and without a name it sends nothing")
@@ -436,7 +436,7 @@ func init() {
 		Name:    "Input",
 		Anatomy: []Part{PartRoot},
 		Cases: func(k Kit) []Case {
-			s := k.Skin
+			s := k.Classes
 			// The hint and the error are rendered beside the control
 			// rather than left implied. A fixture whose
 			// aria-describedby points outside itself is a fixture that
@@ -464,7 +464,7 @@ func init() {
 		Name:    "Textarea",
 		Anatomy: []Part{PartRoot},
 		Cases: func(k Kit) []Case {
-			s := k.Skin
+			s := k.Classes
 			return []Case{{
 				Name: "with content",
 				Why:  "the value is the element's text, not an attribute — which is why it is the one control whose content must be escaped rather than quoted",
@@ -477,7 +477,7 @@ func init() {
 		Name:    "Select",
 		Anatomy: []Part{PartRoot, PartOption},
 		Cases: func(k Kit) []Case {
-			s := k.Skin
+			s := k.Classes
 			return []Case{{
 				Name: "options",
 				Why:  "a real select, because the platform's own picker is the one thing that already works on a phone, with a keyboard, and under every screen reader",
@@ -494,11 +494,11 @@ func init() {
 		Anatomy: []Part{PartRoot, PartControl, PartAffixButton},
 		Hooks: []string{"data-hui-affix", "data-hui-affix-input", "data-hui-reveal",
 			"data-hui-show-label", "data-hui-hide-label", "data-hui-show-text", "data-hui-hide-text"},
-		WithParts: func(s Skin, parts Parts) render.HTML {
+		WithParts: func(s Classes, parts Parts) render.HTML {
 			return Password(PasswordProps{Name: "token", ID: "token", Parts: parts}, s)
 		},
 		Cases: func(k Kit) []Case {
-			s := k.Skin
+			s := k.Classes
 			return []Case{{
 				Name: "revealable",
 				Why:  "the reveal button says what it will do next rather than what the field is doing now, and the labels it swaps between are published for the runtime instead of built from a class",
@@ -514,11 +514,11 @@ func init() {
 		Name:    "Color",
 		Anatomy: []Part{PartRoot, PartControl, PartAffixSwatch},
 		Hooks:   []string{"data-hui-affix", "data-hui-color", "data-hui-affix-input", "data-hui-affix-swatch"},
-		WithParts: func(s Skin, parts Parts) render.HTML {
+		WithParts: func(s Classes, parts Parts) render.HTML {
 			return Color(ColorProps{Name: "accent", ID: "accent", Value: "#10b981", Parts: parts}, s)
 		},
 		Cases: func(k Kit) []Case {
-			s := k.Skin
+			s := k.Classes
 			return []Case{{
 				Name: "swatch",
 				Why:  "a colour input is useless alone to anyone who cannot see it, so the hex value stays beside it as text that can be read and typed — inside a Field, so the value is a labelled setting and not a bare control",

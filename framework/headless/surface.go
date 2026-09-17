@@ -54,7 +54,7 @@ type CardProps struct {
 }
 
 // Card renders a card around its body.
-func Card(p CardProps, s Skin, body ...render.HTML) render.HTML {
+func Card(p CardProps, s Classes, body ...render.HTML) render.HTML {
 	// The one fillable part, the same list the spec declares: a text
 	// Bind may replace what a Slot may (box.go), and nothing else in
 	// a card may have its content rewritten.
@@ -87,11 +87,11 @@ func init() {
 		Name:     "Card",
 		Anatomy:  []Part{PartRoot, PartTitle, PartDesc, PartCardHeader, PartCardBody, PartFooter},
 		Fillable: []Part{PartCardHeader},
-		WithParts: func(s Skin, parts Parts) render.HTML {
+		WithParts: func(s Classes, parts Parts) render.HTML {
 			return Card(CardProps{Title: "Deployments", Parts: parts}, s, render.Text("body"))
 		},
 		Cases: func(k Kit) []Case {
-			s := k.Skin
+			s := k.Classes
 			return []Case{{
 				Name: "titled",
 				Why:  "the common card: a heading, a line of context, a body",

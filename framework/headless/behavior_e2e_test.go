@@ -7,7 +7,7 @@ package headless
 // harness mirrors core-ui/runtime/behavior_e2e_test.go: an httptest
 // server that serves the real runtime.js, the module the way the host
 // does, and one page per test whose body is the rendered component at
-// the nil skin. The real registration is used, never
+// the nil Classes. The real registration is used, never
 // registry.IsolateForTest: these tests exist to prove the registration
 // itself serves.
 

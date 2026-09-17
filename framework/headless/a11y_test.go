@@ -241,11 +241,11 @@ func TestLabelledDividerKeepsItsRoleAndHidesItsRules(t *testing.T) {
 	}
 }
 
-// One lookup per axis, never a combined key: a skin keyed on
+// One lookup per axis, never a combined key: a class map keyed on
 // "root--md--center" has to enumerate every gap crossed with every
 // alignment, and the first pair nobody thought of renders unstyled.
 func TestLayoutModifiersAreIndependent(t *testing.T) {
-	sk := Skin{
+	sk := Classes{
 		PartRoot:             "ds-stack",
 		"root--gap-lg":       "ds-stack--gap-lg",
 		"root--align-center": "ds-stack--align-center",
@@ -549,7 +549,7 @@ func TestActionExtraAttrsCannotStealTheLifecycle(t *testing.T) {
 	hasNot(t, got, "//evil.example", "an extra redirected the mutation to another origin")
 	hasNot(t, got, "forged", "an extra forged a runtime hook")
 	hasNot(t, got, `"stolen"`, "an extra renamed the root")
-	hasNot(t, got, "mine", "an extra replaced the skin's class")
+	hasNot(t, got, "mine", "an extra replaced the class map's class")
 	has(t, got, `data-testid="keep"`, "an ordinary attribute was dropped — then the escape hatch is not one")
 
 	toggle := ToggleAction(ToggleActionProps{

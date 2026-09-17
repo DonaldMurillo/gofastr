@@ -28,7 +28,7 @@ import (
 // framework's bubbled rolled-back event into words.
 
 // Action parts. The idle and done labels are parts of their own
-// because a skin may want to weigh one differently from the other —
+// because a class map may want to weigh one differently from the other —
 // a committed toggle that reads heavier than its idle sibling. The
 // status span is PartVisuallyHidden because it must be read and must
 // not be seen, the same rule as every other off-screen sentence in
@@ -142,8 +142,8 @@ type OptimisticActionProps struct {
 	// span carries its own so the flip swaps glyph and word together.
 	IdleIcon render.HTML
 	DoneIcon render.HTML
-	// Variant and Size are skin vocabulary, passed through so the
-	// skin can look up "<part>--<variant>". The structure does not
+	// Variant and Size are class-map vocabulary, passed through so the
+	// class map can look up "<part>--<variant>". The structure does not
 	// care.
 	Variant string
 	Size    string
@@ -199,7 +199,7 @@ type ToggleActionProps struct {
 	// idle. Setting it implies AllowUntoggle; when empty the revert
 	// flips locally with no request.
 	UntoggleEndpoint string
-	// Variant and Size are skin vocabulary.
+	// Variant and Size are class-map vocabulary.
 	Variant string
 	Size    string
 	// Disabled is the state at render time.
@@ -259,9 +259,9 @@ type action struct {
 // OptimisticAction renders the button. The headless module binds it
 // through the kernel's action primitive: endpoint, method and both
 // label parts are the data-hui-action-* hooks below, and a non-2xx
-// rolls everything back with the shake the skin's stylesheet may hang
+// rolls everything back with the shake the class map's stylesheet may hang
 // on data-state="error".
-func OptimisticAction(p OptimisticActionProps, s Skin) render.HTML {
+func OptimisticAction(p OptimisticActionProps, s Classes) render.HTML {
 	checkActionEndpoint("OptimisticAction", "Endpoint", p.Endpoint)
 	if p.IdleLabel == "" {
 		panic("headless: OptimisticAction requires IdleLabel")
@@ -293,7 +293,7 @@ func OptimisticAction(p OptimisticActionProps, s Skin) render.HTML {
 // through the kernel's action primitive, ships nothing itself but the
 // initial state below, and mirrors committed onto aria-pressed from
 // then on.
-func ToggleAction(p ToggleActionProps, s Skin) render.HTML {
+func ToggleAction(p ToggleActionProps, s Classes) render.HTML {
 	checkActionEndpoint("ToggleAction", "Endpoint", p.Endpoint)
 	if p.IdleLabel == "" {
 		panic("headless: ToggleAction requires IdleLabel")
@@ -338,7 +338,7 @@ func ToggleAction(p ToggleActionProps, s Skin) render.HTML {
 // hooks the action primitive's binder reads, the announcement hooks
 // ours writes to, and two label spans of which exactly the one
 // matching the shipped state is visible.
-func renderAction(a action, s Skin) render.HTML {
+func renderAction(a action, s Classes) render.HTML {
 	own := Merge(safeActionExtras(a.extra), Attrs(map[string]string{
 		"id": a.id,
 		// The binder reads endpoint and method off the root; the
@@ -431,14 +431,14 @@ func init() {
 		Name:    "OptimisticAction",
 		Anatomy: []Part{PartRoot, PartIcon, PartActionIdle, PartActionDone, PartVisuallyHidden},
 		Hooks:   []string{"data-hui-action", "data-hui-action-endpoint", "data-hui-action-method", "data-hui-action-idle", "data-hui-action-done", "data-hui-action-failed", "data-hui-action-status"},
-		WithParts: func(s Skin, parts Parts) render.HTML {
+		WithParts: func(s Classes, parts Parts) render.HTML {
 			return OptimisticAction(OptimisticActionProps{
 				Endpoint: "/follow", IdleLabel: "Follow", SuccessLabel: "Following",
 				Parts: parts,
 			}, s)
 		},
 		Cases: func(k Kit) []Case {
-			s := k.Skin
+			s := k.Classes
 			return []Case{{
 				Name: "default",
 				Why: "both labels ship in the SSR so the optimistic flip needs no round-trip, the method is " +
@@ -481,14 +481,14 @@ func init() {
 		Name:    "ToggleAction",
 		Anatomy: []Part{PartRoot, PartIcon, PartActionIdle, PartActionDone, PartVisuallyHidden},
 		Hooks:   []string{"data-hui-action", "data-hui-action-endpoint", "data-hui-action-method", "data-hui-action-group", "data-hui-action-untoggle", "data-hui-action-idle", "data-hui-action-done", "data-hui-action-failed", "data-hui-action-status"},
-		WithParts: func(s Skin, parts Parts) render.HTML {
+		WithParts: func(s Classes, parts Parts) render.HTML {
 			return ToggleAction(ToggleActionProps{
 				Endpoint: "/watch", IdleLabel: "Watch", CommittedLabel: "Watching",
 				Parts: parts,
 			}, s)
 		},
 		Cases: func(k Kit) []Case {
-			s := k.Skin
+			s := k.Classes
 			return []Case{{
 				Name: "idle",
 				Why: "aria-pressed false and the committed span hidden: first paint matches the server's " +

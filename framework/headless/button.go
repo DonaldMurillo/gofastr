@@ -21,7 +21,7 @@ type ButtonProps struct {
 	// decision: a keyboard hint hides its glyphs and supplies words, a
 	// badge announces itself.
 	Suffix render.HTML
-	// Variant and Size are skin vocabulary, passed through so the skin
+	// Variant and Size are class-map vocabulary, passed through so the class map
 	// can look up "<part>--<variant>". The structure does not care.
 	Variant string
 	Size    string
@@ -90,7 +90,7 @@ func actionAttrs(a html.Attrs) html.Attrs {
 }
 
 // Button renders the control.
-func Button(p ButtonProps, s Skin) render.HTML {
+func Button(p ButtonProps, s Classes) render.HTML {
 	if p.Label == "" && p.AriaLabel == "" {
 		panic("headless: Button needs Label, or AriaLabel for an icon-only button")
 	}

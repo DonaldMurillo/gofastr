@@ -60,6 +60,13 @@ func ThemeToTokens(t Theme) map[string]string {
 	for _, name := range slices.Sorted(maps.Keys(t.DarkCode)) {
 		out["dark.tk-"+name] = t.DarkCode[name]
 	}
+	// Components ride under the reserved "component." prefix: no typed
+	// token key contains a "." and "dark." is taken, so the three
+	// families stay unambiguous in one flat map. Keys are the Components
+	// keys verbatim ("component.button.treatment").
+	for _, k := range slices.Sorted(maps.Keys(t.Components)) {
+		out["component."+k] = t.Components[k]
+	}
 	return out
 }
 
@@ -87,16 +94,19 @@ func ThemeToTokens(t Theme) map[string]string {
 // On any error ApplyTokens returns the zero Theme and a non-nil error
 // naming the offending key and the reason, in the voice of Theme.Validate
 // ("theme: token %q: <reason>"). The supplied base is never mutated: the
-// dark maps are deep-copied so one caller's overrides cannot leak into the
+// reference-typed maps (dark palettes, Components) are deep-copied so
+// one caller's overrides cannot leak into the
 // process-global base theme shared across requests.
 func ApplyTokens(base Theme, tokens map[string]string) (Theme, error) {
 	result := base
-	// Deep-copy the dark maps. Without this, writing result.DarkColors
-	// would mutate base's map (maps are reference types) and leak one
-	// caller's overrides into the base theme, which is process-global and
-	// shared across concurrent requests in the theme-variant host.
+	// Deep-copy the reference-typed fields. Without this, writing
+	// result.DarkColors would mutate base's map (maps are reference
+	// types) and leak one caller's overrides into the base theme,
+	// which is process-global and shared across concurrent requests in
+	// the theme-variant host.
 	result.DarkColors = copyStringMap(base.DarkColors)
 	result.DarkCode = copyStringMap(base.DarkCode)
+	result.Components = copyStringMap(base.Components)
 
 	// One reflection walk over the addressable result builds a validating
 	// setter per typed token, keyed by the same CSS-var name ThemeToTokens
@@ -130,6 +140,20 @@ func ApplyTokens(base Theme, tokens map[string]string) (Theme, error) {
 			if err := applyDark(rest, value, lightColorNames, lightCodeNames, &result.DarkColors, &result.DarkCode); err != nil {
 				return Theme{}, fmt.Errorf("theme: token %q: %w", k, err)
 			}
+			continue
+		}
+		// component.<key>: one flattened component option. The grammar is
+		// the whole check — WHICH options exist is the registered
+		// compiler's vocabulary, not something core-ui/style can know
+		// without importing the layer that owns it — so a key that parses
+		// writes through, and a key that does not is refused here, the
+		// same fail-closed posture as every other token family.
+		if rest, ok := strings.CutPrefix(k, "component."); ok {
+			if err := validateComponentEntry(rest, value); err != nil {
+				return Theme{}, fmt.Errorf("theme: token %q: %w", k, err)
+			}
+			result.Components = ensureMap(&result.Components)
+			result.Components[rest] = value
 			continue
 		}
 		return Theme{}, fmt.Errorf("theme: unknown token %q, not a key this theme exposes (see ThemeToTokens)", k)

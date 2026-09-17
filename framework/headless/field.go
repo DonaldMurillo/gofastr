@@ -57,7 +57,7 @@ type FieldControl struct {
 
 // Field renders the group. build receives the wiring and returns the
 // control.
-func Field(p FieldProps, s Skin, build func(FieldControl) render.HTML) render.HTML {
+func Field(p FieldProps, s Classes, build func(FieldControl) render.HTML) render.HTML {
 	if p.Label == "" {
 		panic("headless: Field requires Label")
 	}
@@ -104,7 +104,7 @@ func FieldDescribedBy(controlID, hint, errText string) string {
 }
 
 // FieldRow lays fields side by side.
-func FieldRow(s Skin, fields ...render.HTML) render.HTML {
+func FieldRow(s Classes, fields ...render.HTML) render.HTML {
 	return El("div", s, PartFieldRow, nil, fields...)
 }
 
@@ -147,7 +147,7 @@ type ConditionalFieldProps struct {
 //
 // It is a div and adds no semantics: the fields inside arrive with
 // their own labels, and a region name would be read before each one.
-func ConditionalField(p ConditionalFieldProps, s Skin, children ...render.HTML) render.HTML {
+func ConditionalField(p ConditionalFieldProps, s Classes, children ...render.HTML) render.HTML {
 	if p.When == "" {
 		panic("headless: ConditionalField requires When — a region that watches nothing is always shown")
 	}
@@ -170,7 +170,7 @@ func init() {
 		// here would let a page replace the hint with markup that has
 		// no id, leaving aria-describedby pointing at nothing.
 		Cases: func(k Kit) []Case {
-			s := k.Skin
+			s := k.Classes
 			input := func(c FieldControl) render.HTML {
 				return Input(InputProps{Name: c.ID, ID: c.ID, DescribedBy: c.DescribedBy,
 					Invalid: c.Invalid, Required: c.Required}, s)
@@ -195,7 +195,7 @@ func init() {
 		Name:    "FieldRow",
 		Anatomy: []Part{PartFieldRow},
 		Cases: func(k Kit) []Case {
-			s := k.Skin
+			s := k.Classes
 			return []Case{{
 				Name: "pair",
 				Why:  "two fields side by side are still two fields: the row adds layout and no semantics, so nothing here is announced",
@@ -215,7 +215,7 @@ func init() {
 		Anatomy: []Part{PartRoot},
 		Hooks:   []string{"data-hui-when", "data-hui-when-value"},
 		Cases: func(k Kit) []Case {
-			s := k.Skin
+			s := k.Classes
 			return []Case{{
 				Name: "shown when the watched field matches",
 				Why:  "rendered visible with no hidden attribute, because a field only script can reveal is a field a scriptless reader never reaches — the runtime hides it when the watched field does not match, and not before",

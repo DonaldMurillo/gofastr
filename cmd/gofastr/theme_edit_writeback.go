@@ -74,6 +74,18 @@ func emitThemeGoSource(t style.Theme, pkgName string) ([]byte, error) {
 		b.WriteString("\t},\n")
 	}
 
+	// Components: the flattened component options, sorted for
+	// byte-stable output. Emitted so saving an edited theme keeps its
+	// options — the writeback is the round-trip's only chance to drop
+	// them silently. Only when non-empty, like DarkCode.
+	if len(t.Components) > 0 {
+		b.WriteString("\tComponents: map[string]string{\n")
+		for _, k := range slices.Sorted(maps.Keys(t.Components)) {
+			fmt.Fprintf(&b, "\t\t%q: %q,\n", k, t.Components[k])
+		}
+		b.WriteString("\t},\n")
+	}
+
 	emitColorSet(&b, &t.Colors)
 	emitSpacingScale(&b, &t.Spacing)
 	emitRadiusSet(&b, &t.Radii)

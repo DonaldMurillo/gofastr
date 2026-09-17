@@ -47,7 +47,7 @@ const (
 
 // AlertProps is a message about something that happened, or is true.
 type AlertProps struct {
-	// Tone names the kind of message: the skin turns it into colour
+	// Tone names the kind of message: the class map turns it into colour
 	// through the root's "<part>--<tone>" variant. It is passed
 	// through, not interpreted; the tone word is what carries it to a
 	// reader.
@@ -109,7 +109,7 @@ type AlertProps struct {
 }
 
 // Alert renders the message.
-func Alert(p AlertProps, s Skin) render.HTML {
+func Alert(p AlertProps, s Classes) render.HTML {
 	b := p.Parts.Box(s)
 	if p.Title == "" {
 		panic("headless: Alert requires Title")
@@ -177,14 +177,14 @@ func init() {
 	Register(Spec{
 		Name:    "Alert",
 		Anatomy: []Part{PartRoot, PartHeader, PartIcon, PartToneWord, PartTitle, PartDesc, PartFooter, PartDismiss},
-		WithParts: func(s Skin, parts Parts) render.HTML {
+		WithParts: func(s Classes, parts Parts) render.HTML {
 			return Alert(AlertProps{Title: "Deploy failed", Text: "Exit 1 in the test stage.", Tone: "danger",
 				ToneWord: "Error", Icon: SpecimenGlyph, Actions: render.HTML("<a href=\"/logs\">View logs</a>"),
 				DismissHref: "/apps?dismiss=1", Island: Island{Endpoint: "/island/alerts", Signal: "alerts"},
 				Parts: parts}, s)
 		},
 		Cases: func(k Kit) []Case {
-			s := k.Skin
+			s := k.Classes
 			return []Case{{
 				Name: "loud",
 				Why:  "something went wrong and the reader must be interrupted: assertive, with the tone said in words as well as drawn in colour",
@@ -212,7 +212,7 @@ func init() {
 		Name:    "Button",
 		Anatomy: []Part{PartRoot, PartIcon},
 		Cases: func(k Kit) []Case {
-			s := k.Skin
+			s := k.Classes
 			return []Case{{
 				Name: "labelled",
 				Why:  "the ordinary case, and the reason type is always stated: inside a form the default is submit",

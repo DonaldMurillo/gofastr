@@ -113,14 +113,20 @@ func TestThemeToTokens_DarkColorsKeyScheme(t *testing.T) {
 		t.Errorf("light and dark primary collapsed to one value %q — dark. prefix not distinct",
 			tokens["color-primary"])
 	}
-	// No typed-token key contains a ".", the dark. prefix is unambiguous.
+	// No typed-token key contains a ".", so both reserved prefixes are
+	// unambiguous: "dark." for the dark maps and "component." for the
+	// flattened component options (uitheme.Default carries a complete
+	// option set, so those keys are present here).
 	for k := range tokens {
-		if strings.HasPrefix(k, "dark.") {
+		if strings.HasPrefix(k, "dark.") || strings.HasPrefix(k, "component.") {
 			continue
 		}
 		if strings.Contains(k, ".") {
-			t.Errorf("non-dark key %q contains '.' — would collide with the dark. scheme", k)
+			t.Errorf("non-reserved key %q contains '.' — would collide with the dark./component. schemes", k)
 		}
+	}
+	if v, ok := tokens["component.density"]; !ok || v != "comfortable" {
+		t.Errorf("component.density = %q (%v): the framework default's options must ride the token map", v, ok)
 	}
 }
 

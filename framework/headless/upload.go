@@ -72,7 +72,7 @@ type FileUploadProps struct {
 // picking a file otherwise changes nothing a screen reader notices:
 // the input's value is not read back, and the list of names appears
 // silently.
-func FileUpload(p FileUploadProps, s Skin) render.HTML {
+func FileUpload(p FileUploadProps, s Classes) render.HTML {
 	b := p.Parts.Box(s)
 	if p.Name == "" {
 		panic("headless: FileUpload requires Name")
@@ -157,12 +157,12 @@ func init() {
 		Anatomy: []Part{PartRoot, PartDropZone, PartText, PartDropCTA, PartDropHint, PartDropInput, PartDropList, PartStatus},
 		Hooks: []string{"data-hui-drop", "data-hui-drop-input", "data-hui-drop-list",
 			"data-hui-drop-status", "data-hui-drop-one", "data-hui-drop-many"},
-		WithParts: func(s Skin, parts Parts) render.HTML {
+		WithParts: func(s Classes, parts Parts) render.HTML {
 			return FileUpload(FileUploadProps{Name: "seam-upload", ID: "seam-upload",
 				Label: "Drag an archive here, or ", CTA: "choose a file", Parts: parts}, s)
 		},
 		Cases: func(k Kit) []Case {
-			s := k.Skin
+			s := k.Classes
 			return []Case{{
 				Name: "with a hint",
 				Why:  "the zone is a label around a real input, so the whole target opens the picker — and the call to action is styled text, because a button inside a label swallows the label's click",

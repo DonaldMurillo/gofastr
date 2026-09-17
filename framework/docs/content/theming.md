@@ -243,6 +243,125 @@ every component inside it reads `var(--color-…)` from that class
 instead of from `:root`. Registering the same theme twice returns the
 same handle, so its CSS only ships once.
 
+### Scoped themes and dark mode
+
+A registered override with a dark palette (`DarkColors` or `DarkCode`)
+follows the document's scheme, not the wrapper's: the same two
+selectors that flip the root theme flip the scope —
+`[data-color-scheme="dark"] .fui-theme-<hash>` for the explicit toggle
+and a `prefers-color-scheme` fallback that stops applying once the
+user forced light. Flip `ui.ThemeToggle` (or set
+`data-color-scheme` on `<html>`) and every scoped theme with a dark
+palette recolors with the page.
+
+A scope with **no** dark palette stays **light** in dark mode. Its
+light declarations block inheritance, on purpose: a dark section on a
+light page is a theme with a dark palette, not an accident of
+inheritance. If you want a section to follow the page's scheme, give
+its override the dark values too.
+
+## Component options
+
+Tokens retune the palette and the scales; **component options** decide
+how a component family draws itself. They live in the theme, beside
+the tokens, and travel the same roads (`ThemeToTokens`,
+`ApplyTokens` under the `component.` prefix, the theme-edit writeback,
+`ThemeHash`). Today the theme stores them and the compiler emits their
+variables; no component stylesheet reads those variables yet, so an
+option changes nothing on screen until the first rebuilt component
+(Button, the next PR) consumes them:
+
+```go
+t := theme.Default(theme.Overrides{
+    Components: theme.ComponentOptions{
+        Density: theme.Compact,
+        Button:  theme.ButtonOptions{Treatment: theme.Outline, Radius: theme.Square},
+    },
+})
+```
+
+The flattened form on `style.Theme` is a map —
+`Components{"density": "compact", "button.treatment": "outline",
+"button.radius": "square"}` — with a fixed grammar (lowercase
+dot-separated keys, one lowercase word per value) that
+`Theme.Validate` enforces at boot. The grammar is checked at boot; the
+vocabulary — is `"cozy"` a density? — at boot when the styled layer is
+linked (`framework/ui`'s compiler runs inside `Validate`), otherwise
+at first render, where the compiler lives.
+
+Two axes, and keeping them apart is the point:
+
+- **Variant** (`ui.ButtonPrimary`, `ui.ButtonDanger`, ghost) is what a
+  button *means*. A danger button says danger whatever the theme.
+- **Treatment** (`theme.Filled`, `theme.Outline`, `theme.Soft`) is how
+  a theme *draws* that meaning: where the ink goes. Primary and danger
+  supply the semantic colour; the treatment decides fill against
+  border. Changing the treatment restyles every variant at once — that
+  is what it is for.
+
+**Density versus explicit size:** `Density` (`theme.Comfortable`,
+`theme.Compact`) retunes control heights and gaps theme-wide (44px/36px
+controls, the md/sm spacing step). An explicit `Size` on one component
+always wins over density — density is the default rhythm, not a
+ceiling. Reach for density when a whole screen should tighten; reach
+for a size when one control must.
+
+Zero values mean *unspecified* while overrides merge, and only then:
+`theme.Default()` flattens a complete set (Comfortable, Filled,
+Round), and an explicit `Comfortable`, `Filled` or `Round` in a later
+override **resets** an earlier one rather than being ignored. Every
+theme the framework builds therefore declares the full option set.
+
+### How options reach CSS (and why they nest)
+
+`core-ui/style` cannot draw the options — it does not know what a
+density is. The one function that can is the **component-options
+compiler** `framework/ui` registers from its `init`
+(`style.RegisterComponentOptionsCompiler`, one per process; a late
+registration panics because the host freezes `app.css` at first
+render). It turns the flattened options into `--fui-*` custom
+properties:
+
+A binary that never imports `framework/ui` — a host built on
+`framework/uihost` alone — registers no compiler: it stores options it
+cannot draw, emits none of the `--fui-*` variables, and still hashes
+option-different themes apart (`ThemeHash` fingerprints the flattened
+options directly, not only the compiled output), so adding the styled
+layer later cannot silently alias two themes that were distinct all
+along.
+
+| Option | Emits |
+|---|---|
+| `density: comfortable` | `--fui-density-control-h: 44px`, `--fui-density-gap: var(--spacing-md)` |
+| `density: compact` | `--fui-density-control-h: 36px`, `--fui-density-gap: var(--spacing-sm)` |
+| `button.radius: round` / `square` / `pill` | `--fui-button-radius: var(--radii-md)` / `0` / `9999px` |
+| `button.treatment: filled` | `--fui-button-bg: var(--color-primary)`, `--fui-button-fg: var(--color-primary-fg)`, `--fui-button-border: transparent` |
+| `button.treatment: outline` | `--fui-button-bg: transparent`, `--fui-button-fg: var(--color-primary)`, `--fui-button-border: var(--color-primary)` |
+| `button.treatment: soft` | `--fui-button-bg: var(--color-surface-soft)`, `--fui-button-fg: var(--color-primary)`, `--fui-button-border: transparent` |
+
+The cascade rule: **theme boundaries declare the option variables,
+component rules consume them.** A component stylesheet writes
+`border-radius: var(--fui-button-radius)` and never redeclares the
+variable; a treatment that changes fill, text and border together is
+three variables, never a descendant rule (`.fui-theme-a .fui-button`
+would outrank the component's own variant and state selectors, and
+could not nest). Because every theme declares the complete set, an
+inner `ui.Themed` scope redeclares all of it and wins by proximity:
+nesting A → B → A ends on A's values.
+
+The declarations are re-emitted at every boundary — root and scope,
+light and dark — because a custom property's `var()` references
+compute where the declaration sits: `--fui-button-bg:
+var(--color-primary)` declared only at `:root` would carry the root's
+resolved primary into a scope with its own palette. The `:root`-only
+alias tokens (`--color-primary-foreground` and kin) are re-emitted in
+scope blocks for the same reason.
+
+The `fui-` prefix is reserved for `framework/ui`'s class names and
+option variables. Writing `fui-button` on your own markup gets the
+framework's styling whenever that sheet is on the page. Headless has
+its own prefix: the `data-hui-*` hooks belong to `framework/headless`.
+
 ## Token map: `ThemeToTokens` / `ApplyTokens`
 
 Two surfaces need to move tokens in and out of a `style.Theme` as a flat
@@ -411,3 +530,19 @@ its internals from the outside.
   "works," but dark mode and every other consumer of that token never
   see it. For a one-section reskin, use `ui.Themed` plus a registered
   override theme instead.
+- **Writing `fui-` classes on your own markup.** The prefix belongs
+  to `framework/ui`; a hand-written `fui-button` picks up the
+  framework's styling whenever that stylesheet is loaded, today or
+  after any release. Style your own markup with your own classes.
+- **Redeclaring an option variable on a component.** A rule like
+  `.my-button { --fui-button-radius: 0; }` blocks inheritance, so the
+  component stops following the enclosing `ui.Themed` scope. Options
+  are declared at theme boundaries (`theme.Overrides.Components`) and
+  consumed by component rules; that is the whole contract.
+- **Expecting a scope without a dark palette to follow dark mode.** It
+  stays light, on purpose: its light declarations block inheritance.
+  Give the override `DarkColors` if the section should flip with the
+  page.
+- **Confusing Variant with Treatment.** `ui.ButtonPrimary` is what the
+  button means; `theme.Outline` is how the theme draws it. A variant
+  is a per-component prop; a treatment is a theme-wide option.

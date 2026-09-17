@@ -8,7 +8,7 @@ import (
 )
 
 // systemTones are the tones a banner may be drawn in; the tone drives
-// both the skin's root--<tone> class and the word said before the
+// both the class map's root--<tone> class and the word said before the
 // title.
 var systemTones = map[string]bool{
 	"info": true, "success": true, "warning": true, "danger": true,
@@ -46,7 +46,7 @@ type SystemBannerProps struct {
 	// Required.
 	ID string
 	// Tone is "info" (the default), "warning", "danger" or
-	// "success". The skin looks it up as root--<tone>, and the word
+	// "success". The class map looks it up as root--<tone>, and the word
 	// a screen reader hears is derived from it, so a tone nobody
 	// spelled is refused rather than silently rendered untinted.
 	Tone string
@@ -103,7 +103,7 @@ type SystemBannerProps struct {
 // until it is back. It carries role="alert" and aria-live="assertive"
 // both, as the framework banner it replaces did, so either attribute
 // alone still says how urgent it is.
-func SystemBanner(p SystemBannerProps, s Skin) render.HTML {
+func SystemBanner(p SystemBannerProps, s Classes) render.HTML {
 	b := p.Parts.Box(s)
 	if p.ID == "" {
 		panic("headless: SystemBanner requires ID — it is the message's identity, so the same message is not shown twice")
@@ -179,13 +179,13 @@ func init() {
 			PartDismiss, PartVisuallyHidden},
 		Hooks: []string{"data-hui-system", "data-hui-system-id",
 			"data-hui-system-dismiss", "data-hui-system-offline"},
-		WithParts: func(s Skin, parts Parts) render.HTML {
+		WithParts: func(s Classes, parts Parts) render.HTML {
 			return SystemBanner(SystemBannerProps{
 				ID: "sys-parts", Title: "Deploy in progress", Shown: true, Parts: parts,
 			}, s)
 		},
 		Cases: func(k Kit) []Case {
-			s := k.Skin
+			s := k.Classes
 			noDismiss := false
 			return []Case{{
 				Name: "deploy in progress",

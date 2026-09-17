@@ -9,15 +9,15 @@ package headless
 // will not be fixed when the accessibility bug is found. Every escape
 // hatch below exists so that page can stay on the real component.
 //
-// The vocabulary is deliberately the SAME vocabulary the skin uses.
+// The vocabulary is deliberately the SAME vocabulary the class map uses.
 // A Part is a name for an element inside a component, and it now
 // answers three questions instead of one:
 //
-//	skin[part]       what class does it carry
+//	classes[part]       what class does it carry
 //	slots[part]      what goes inside it
 //	attrs[part]      what attributes does it also carry
 //
-// One list of names, three things you can do to each. A part a skin
+// One list of names, three things you can do to each. A part a class map
 // can style is a part a caller can fill and annotate, which means the
 // component author declares its parts once and cannot accidentally
 // offer a hook to one layer and not the others.
@@ -41,7 +41,7 @@ package headless
 //
 // class is the exception, and it appends rather than replaces: adding
 // a utility class is the common, harmless want, and dropping the
-// skin's own class is how a component arrives unstyled.
+// Dropping the class map's own class is how a component arrives unstyled.
 
 import (
 	"net/url"
@@ -151,13 +151,13 @@ func checkSignalName(name string) {
 }
 
 // Box carries the three layers through a component's render. A zero
-// Box with only a Skin behaves exactly as El always did, which is why
+// Box with only a Classes behaves exactly as El always did, which is why
 // adopting it is a per-component change and not a rewrite.
 type Box struct {
-	Skin  Skin
-	Slots Slots
-	Over  PartAttrs
-	Binds Binds
+	Classes Classes
+	Slots   Slots
+	Over    PartAttrs
+	Binds   Binds
 
 	// fillable is the set of parts whose content a caller may replace:
 	// a Slot fills one, and a text or html Bind rewrites one. It is
@@ -186,8 +186,8 @@ func (b Box) FillableOn(parts ...Part) Box {
 
 // Boxed is the constructor a component calls with whatever its props
 // carry.
-func Boxed(s Skin, slots Slots, over PartAttrs) Box {
-	return Box{Skin: s, Slots: slots, Over: over}
+func Boxed(s Classes, slots Slots, over PartAttrs) Box {
+	return Box{Classes: s, Slots: slots, Over: over}
 }
 
 // El renders one element with the part's class, the caller's
@@ -195,7 +195,7 @@ func Boxed(s Skin, slots Slots, over PartAttrs) Box {
 // order, so the component wins.
 func (b Box) El(tag string, p Part, own html.Attrs, children ...render.HTML) render.HTML {
 	if len(b.Over) == 0 && len(b.Binds) == 0 {
-		return El(tag, b.Skin, p, own, children...)
+		return El(tag, b.Classes, p, own, children...)
 	}
 	merged := html.Attrs{}
 	extraClass := ""
@@ -241,7 +241,7 @@ func (b Box) El(tag string, p Part, own html.Attrs, children ...render.HTML) ren
 			merged[k] = v
 		}
 	}
-	return El(tag, b.Skin, p, merged, children...)
+	return El(tag, b.Classes, p, merged, children...)
 }
 
 // Fill returns the caller's content for a part, or the component's own
@@ -261,12 +261,12 @@ func (b Box) Filled(p Part) bool {
 	return ok && v != ""
 }
 
-// Child returns a Box for a nested component: the same skin, and none
+// Child returns a Box for a nested component: the same class map, and none
 // of the slots or attrs. A slot named "footer" means this
 // component's footer, not the footer of everything it happens to
 // contain — passing them down would make one name reach an unbounded
 // set of elements.
-func (b Box) Child(s Skin) Box { return Box{Skin: s} }
+func (b Box) Child(s Classes) Box { return Box{Classes: s} }
 
 // allowedPartAttrs drops what a caller may not set on a part. It is a function
 // rather than a method so the test can state the rule directly. Keys
@@ -313,8 +313,8 @@ type Parts struct {
 // the spec's Fillable list — and a text or html Bind on any other
 // part is refused at render: it would replace content the component
 // guarantees, which is the same reason a Slot is offered only there.
-func (s Parts) Box(skin Skin, fillable ...Part) Box {
-	b := Boxed(skin, s.Slots, s.Attrs)
+func (s Parts) Box(classes Classes, fillable ...Part) Box {
+	b := Boxed(classes, s.Slots, s.Attrs)
 	b.Binds = s.Binds
 	return b.FillableOn(fillable...)
 }

@@ -230,12 +230,13 @@ framework/
 │                    like sdkdocs it is deliberately NOT a uihost option.
 ├── headless/        The structure half of a design system: components
 │                    that render tags, roles, labelling and data-hui-*
-│                    hooks with no classes, a Skin that maps parts to
-│                    classes, the seams (Slots, Overrides, Binds, Words,
-│                    Island) and the harness that pins every component.
+│                    hooks with no classes, a Classes value that maps
+│                    parts to classes, the seams (Slots, Overrides,
+│                    Binds, Words, Island) and the harness that pins
+│                    every component.
 │                    Imports core-ui/html, core-ui/interactive (the
 │                    signal-attribute allow-list), core/render and
-│                    agentsinv. No skin or runtime module binds its
+│                    agentsinv. No class map or runtime module binds its
 │                    hooks yet; framework/ui does not render through it.
 ├── hook/            HookRegistry / HookType + lifecycle constants
 │                    (BeforeCreate, AfterCreate, etc.)

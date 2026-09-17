@@ -49,6 +49,15 @@ type Overrides struct {
 	// usually different.
 	DarkColors map[string]string
 
+	// Components are the typed component options (Density, the button
+	// family's Treatment and Radius). Zero values mean "leave the
+	// construction base unchanged" while overrides merge, exactly like
+	// the string fields above; an explicit Comfortable, Filled or Round
+	// resets an earlier override. The merged result is flattened into
+	// style.Theme.Components complete, so every theme this package
+	// produces declares a full option set.
+	Components ComponentOptions
+
 	// Font families.
 	FontBody, FontHeading, FontMono string
 
@@ -102,6 +111,10 @@ func baseTheme() style.Theme {
 		"text-subtle":  "#A1A1AA",
 		"warning":      "#FBBF24",
 	}
+	// The complete default option set, flattened. Every theme built
+	// here carries a full option set, which is what makes option
+	// variables nest: each boundary redeclares the whole set.
+	t.Components = DefaultOptions.Flattened()
 	return t
 }
 
@@ -156,5 +169,24 @@ func applyOverrides(t *style.Theme, o Overrides) {
 	}
 	if o.RadiusLg > 0 {
 		t.Radii.LG.Value = o.RadiusLg
+	}
+	applyComponentOptions(t, o.Components)
+}
+
+// applyComponentOptions merges the typed options into the theme's
+// flattened map: only non-unset fields write their key, so an
+// explicit Comfortable, Filled or Round resets an earlier override
+// while an unset one leaves the base value standing. The base map is
+// complete, so the result is too.
+func applyComponentOptions(t *style.Theme, o ComponentOptions) {
+	flat := o.Flattened()
+	if len(flat) == 0 {
+		return
+	}
+	if t.Components == nil {
+		t.Components = map[string]string{}
+	}
+	for k, v := range flat {
+		t.Components[k] = v
 	}
 }

@@ -11,10 +11,15 @@ import (
 )
 
 // ThemeHash is the canonical content address of a theme: a short digest of
-// the :root custom properties it emits. Two themes that produce identical
-// CSS hash identically, which is exactly the equivalence callers want,
-// a theme differing only in its Name changes no pixel and should not bust
-// a cache.
+// the :root custom properties it emits plus a canonical serialization of
+// its Components map, so two themes that produce identical CSS hash
+// identically — exactly the equivalence callers want: a theme differing
+// only in its Name changes no pixel and should not bust a cache — while
+// two themes that differ only in options hash apart EVEN where no
+// component-options compiler is registered (a binary built on
+// framework/uihost alone links none; without the canonical block its
+// option-different themes would collide and the second registration
+// would be dropped as a duplicate).
 //
 // This is the single implementation. Anything keying a cache, a URL, or an
 // asset version on "which theme is this" must call it rather than hashing
@@ -24,7 +29,23 @@ import (
 // Six bytes is 48 bits, ample for distinguishing the handful of themes a
 // process serves, and short enough to sit in a query string.
 func ThemeHash(t Theme) string {
-	return CSSFingerprint(t.CSSCustomProperties())
+	// The options join the fingerprint in their FLAT form, over the
+	// compiler-independent token CSS (tokenCSS, not CSSCustomProperties):
+	// the compiled block only exists once a compiler is registered, and a
+	// theme's identity must be the same in every binary, whichever layers
+	// it links. Hashing therefore never touches the compiler hook, so a
+	// hash computed during init cannot freeze it. sortedMapKeys is the
+	// mapwriter discipline.
+	var b strings.Builder
+	b.WriteString(t.tokenCSS())
+	b.WriteString("\n/* components */\n")
+	for _, k := range sortedMapKeys(t.Components) {
+		b.WriteString(k)
+		b.WriteString("=")
+		b.WriteString(t.Components[k])
+		b.WriteString("\n")
+	}
+	return CSSFingerprint(b.String())
 }
 
 // CSSFingerprint is the content address of an arbitrary block of CSS, in the
@@ -124,10 +145,52 @@ func (t Theme) ResolveRadius(name string) string {
 // struct to include the embedded extensions.
 func (t Theme) CSSCustomProperties() string {
 	css := CSSCustomPropertiesOf(t) + "\n" + aliasTokenCSS()
+	if compiled := t.compiledOptionsCSS(); compiled != "" {
+		css += "\n" + compiled
+	}
 	if dark := darkSchemeCSS(t.DarkColors, t.DarkCode); dark != "" {
 		css += "\n" + dark
 	}
 	return css
+}
+
+// tokenCSS is CSSCustomProperties without the compiled component
+// options: the tokens, the aliases and the dark blocks, which depend on
+// the theme alone. ThemeHash fingerprints this plus the options in their
+// flat form, so a theme has the same identity in every binary, whether
+// or not a compiler is linked; the compiled block is a function of the
+// options and the linked layer, not part of what the theme is.
+func (t Theme) tokenCSS() string {
+	css := CSSCustomPropertiesOf(t) + "\n" + aliasTokenCSS()
+	if dark := darkSchemeCSS(t.DarkColors, t.DarkCode); dark != "" {
+		css += "\n" + dark
+	}
+	return css
+}
+
+// compiledOptionsCSS is the :root block of compiled component options,
+// or "" when no compiler is registered or the theme carries none.
+func (t Theme) compiledOptionsCSS() string {
+	// The compiled component options join the root block AFTER the
+	// tokens they reference: a declaration like
+	// --fui-button-bg: var(--color-primary) computes its var() at the
+	// element it is declared on, so it must be re-declared at every
+	// theme boundary (ThemeOverrideCSS does the scoped half) to pick up
+	// each scope's palette instead of carrying the root's colours into
+	// it. Sorted by name for the byte-stable output ThemeHash needs.
+	opts := componentOptionDecls(t.Components)
+	if len(opts) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString(":root {\n")
+	for _, line := range opts {
+		b.WriteString("  ")
+		b.WriteString(line)
+		b.WriteString("\n")
+	}
+	b.WriteString("}")
+	return b.String()
 }
 
 // aliasTokenCSS emits derived aliases for token names that framework/ui
@@ -139,19 +202,41 @@ func (t Theme) CSSCustomProperties() string {
 // dark-scheme re-declarations automatically; emit once in :root and both
 // schemes are covered. New components should use the canonical ColorSet
 // names; this block exists so every theme keeps the legacy names live.
+// The bare declaration lines live in aliasTokenDecls, which the scope
+// emitter re-emits inside every theme-override block.
 func aliasTokenCSS() string {
-	return `:root {
-  --color-muted: var(--color-surface-soft);
-  --color-surface-hover: var(--color-surface-soft);
-  --color-border-subtle: var(--color-border);
-  --color-border-hover: var(--color-border-strong);
-  --color-primary-hover: color-mix(in srgb, var(--color-primary) 85%, var(--color-text));
-  --color-primary-foreground: var(--color-primary-fg);
-  --color-ring: var(--color-primary);
-  --color-warn: var(--color-warning);
-  --color-warn-soft: color-mix(in srgb, var(--color-warning) 15%, transparent);
-  --color-warn-strong: color-mix(in srgb, var(--color-warning) 80%, var(--color-text));
-}`
+	var b strings.Builder
+	b.WriteString(":root {\n")
+	for _, line := range aliasTokenDecls() {
+		b.WriteString("  ")
+		b.WriteString(line)
+		b.WriteString("\n")
+	}
+	b.WriteString("}")
+	return b.String()
+}
+
+// aliasTokenDecls is aliasTokenCSS as bare "--name: value;" lines, the
+// form a theme-override scope block needs. The aliases are emitted at
+// :root only by the root emitter, but a custom property's var()
+// references compute at the element the declaration sits on: inside a
+// .fui-theme-<hash> scope with a different --color-primary, the root's
+// --color-primary-foreground would still carry the root's resolved
+// chain. Re-emitting the alias lines inside every scope block rebinds
+// them to that scope's palette.
+func aliasTokenDecls() []string {
+	return []string{
+		"--color-muted: var(--color-surface-soft);",
+		"--color-surface-hover: var(--color-surface-soft);",
+		"--color-border-subtle: var(--color-border);",
+		"--color-border-hover: var(--color-border-strong);",
+		"--color-primary-hover: color-mix(in srgb, var(--color-primary) 85%, var(--color-text));",
+		"--color-primary-foreground: var(--color-primary-fg);",
+		"--color-ring: var(--color-primary);",
+		"--color-warn: var(--color-warning);",
+		"--color-warn-soft: color-mix(in srgb, var(--color-warning) 15%, transparent);",
+		"--color-warn-strong: color-mix(in srgb, var(--color-warning) 80%, var(--color-text));",
+	}
 }
 
 // DarkSchemeCSS emits the dark-scheme token overrides for a theme's DarkColors

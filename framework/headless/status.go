@@ -28,7 +28,7 @@ type SpinnerProps struct {
 	//
 	// Turn it on for a spinner that replaces content after an action.
 	Announce bool
-	// Size is a skin hint ("sm", "lg").
+	// Size is a class-map hint ("sm", "lg").
 	Size string
 
 	ID         string
@@ -42,7 +42,7 @@ type SpinnerProps struct {
 // rather than a Progress. An indeterminate <progress> is the right
 // element when the wait has a place in the layout; this is for the
 // small inline case.
-func Spinner(p SpinnerProps, s Skin) render.HTML {
+func Spinner(p SpinnerProps, s Classes) render.HTML {
 	if p.Label == "" {
 		panic("headless: Spinner requires Label — a moving shape says nothing on its own")
 	}
@@ -69,7 +69,7 @@ type SkeletonProps struct {
 	Label string
 	// Lines is how many bars to draw. Zero means one.
 	Lines int
-	// Shape is a skin hint: "text", "title", "block", "circle".
+	// Shape is a class map hint: "text", "title", "block", "circle".
 	Shape string
 
 	ID         string
@@ -86,7 +86,7 @@ type SkeletonProps struct {
 //
 // This is also why the bars are not <p> or <div> full of nbsp: there
 // is no text to read, so there should be no text.
-func Skeleton(p SkeletonProps, s Skin) render.HTML {
+func Skeleton(p SkeletonProps, s Classes) render.HTML {
 	if p.Label == "" {
 		panic("headless: Skeleton requires Label")
 	}
@@ -121,7 +121,7 @@ func init() {
 		Name:    "Spinner",
 		Anatomy: []Part{PartRoot, PartSpinnerRing, PartVisuallyHidden},
 		Cases: func(k Kit) []Case {
-			s := k.Skin
+			s := k.Classes
 			return []Case{{
 				Name: "inline wait",
 				Why:  "role=status, not progressbar: a progressbar promises a value and a spinner has none — and the label says what is being waited for, because a moving shape says nothing on its own",
@@ -135,7 +135,7 @@ func init() {
 		Anatomy: []Part{PartRoot, PartSkeleton, PartVisuallyHidden},
 		Hooks:   []string{"data-hui-lines", "data-hui-skeleton-last"},
 		Cases: func(k Kit) []Case {
-			s := k.Skin
+			s := k.Classes
 			return []Case{{
 				Name: "three lines",
 				Why:  "every bar is hidden from the tree: a screen reader reading out eight empty boxes, or announcing each shimmer, is strictly worse than one polite \"Loading apps\" and silence",

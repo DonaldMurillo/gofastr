@@ -1216,6 +1216,76 @@ class="fui-theme-<hash>">` scopes the override via CSS variable
 cascade: no per-component changes, no inline `<style>`, no extra
 HTTP requests beyond the always-present app.css.
 
+### Component options (`Theme.Components` and the `--fui-*` variables)
+
+Beside its tokens, a theme carries **component options**:
+`Theme.Components`, a flattened map (`"density": "compact"`,
+`"button.treatment": "outline"`) that answers questions a component
+family asks about its own drawing. It is not a token — the reflection
+token walk ignores it (it is a map, like `DarkColors`) — and
+core-ui/style can only store, validate, hash and copy it. Turning it
+into CSS is the job of the one **component-options compiler**
+registered per process (`style.RegisterComponentOptionsCompiler`);
+`framework/ui` registers its compiler from its package `init`, and a
+registration after a theme was hashed or theme CSS was emitted panics,
+because the host freezes `app.css`, the component catalog and the
+manifest at first use and a late compiler would be missing from all
+three. Registration never hashes — `ThemeRef` computes its hash on
+first use — so the package-level `var Dark =
+style.RegisterThemeOverride(…)` pattern is safe in a package that does
+not import `framework/ui`; only a package-level `Class()`/`ThemeHash`
+call can hash before the styled layer's init, and the panic names that
+cause.
+
+The cascade rule, which is the whole design:
+
+- **Theme boundaries declare option variables; component rules consume
+  them.** The root theme emits `:root { --fui-button-radius: …; }`, a
+  scoped theme emits the same declarations inside
+  `.fui-theme-<hash> { … }`, and a component stylesheet reads
+  `border-radius: var(--fui-button-radius)` without ever redeclaring
+  the variable on the component (a redeclaration would block
+  inheritance and break nesting).
+- **No descendant option rules.** `.fui-theme-a .fui-button` (0,2,0)
+  outranks the component's own variant and state selectors, so an
+  option that changes several properties together (a treatment: fill,
+  text and border) emits SEVERAL variables, never one descendant
+  rule. Nesting then resolves by inheritance: every theme built by
+  `framework/ui/theme.Default` declares the complete option set, so an
+  inner scope redeclares all of it and wins by proximity — no
+  exception, no specificity ladder.
+- **Token references resolve where declared.** A custom property's
+  `var()` references compute at the element the declaration sits on,
+  so `--fui-button-bg: var(--color-primary)` and the `:root`-only
+  alias tokens (`--color-primary-foreground` and kin) are re-emitted
+  inside every scope block — light and dark — or a scope with its own
+  palette would inherit the ROOT's resolved colours.
+- **Scoped dark mode follows the document.** A theme override with a
+  dark palette emits its dark tokens under
+  `[data-color-scheme="dark"] .fui-theme-<hash>` plus the
+  `prefers-color-scheme` fallback on
+  `:root:not([data-color-scheme="light"]) .fui-theme-<hash>`, the same
+  two selectors `darkSchemeCSS` uses at `:root` (`data-color-scheme`
+  is written on `<html>` by the colour-scheme bootstrap). A scoped
+  theme with NO dark palette stays light in dark mode: its light
+  declarations block inheritance, by design.
+
+The `fui-` prefix is reserved for `framework/ui`'s class names and
+option variables. Classes belong to framework/ui; the `data-hui-*`
+hooks belong to framework/headless. One prefix each: `fui-` is the framework's, `hui-`
+is headless's. A caller who writes `fui-button` on their own markup
+gets the framework's styling whenever that sheet is on the page.
+
+Options ride the same plumbing as tokens: `ThemeToTokens` /
+`ApplyTokens` carry them under the reserved `component.` prefix,
+`Theme.Validate` enforces their grammar (lowercase dot-separated keys,
+one lowercase word per value) and, when the compiler is registered,
+their vocabulary too; `ThemeHash` separates themes that differ only in
+options with or without a compiler registered (the fingerprint carries
+the flattened options directly); the theme-edit writeback emits them,
+and every registry that stores a theme clones the map before storing
+and on every read.
+
 ### app.css: one asset, one request
 
 The framework serves a single `/__gofastr/app.css` per app:
@@ -1331,9 +1401,9 @@ The legacy `/__gofastr/catalog.js` endpoint now returns 410 GONE.
 ### The headless layer (`framework/headless`)
 
 A second way to author a component separates what this section joins:
-structure in one function, classes in a skin, behaviour bound by a
+structure in one function, classes in a Classes value, behaviour bound by a
 `data-hui-*` hook rather than a class. A headless component renders the
-same markup at a nil skin with no `class` attribute at all, and the
+same markup at a nil Classes with no `class` attribute at all, and the
 harness pins that render in a golden, so restyling cannot move a role,
 a label or a hook. The layer satisfies every hard rule above the same
 way `framework/ui` does: an in-page state change is an `Island` (the
@@ -1343,7 +1413,7 @@ no-script), a request is a typed `Action`, and a signal is a typed
 module now exists: `framework/headless/behavior.go` registers its
 JavaScript under the name `headless` through the same seam a
 stylesheet uses, and binds the `data-hui-*` hooks (see "Component
-behaviour: the same seam" below for the mechanism). No skin dresses
+behaviour: the same seam" below for the mechanism). No class map dresses
 the parts in this repository yet; `framework/ui` is today's styled
 layer and does not render through this package. Contract and
 invariants: `gofastr docs ui-headless`.
@@ -1617,10 +1687,11 @@ framework/
   static/      : SSG builder (renders every screen at build time)
   headless/    : the structure half of a design system: components that
                  render tags, roles, labelling and data-hui-* hooks with
-                 no classes; a Skin maps parts to classes; a caller's
+                 no classes; a Classes value maps parts to classes; a
+                 caller's
                  Parts (Attrs, Slots, Binds), Strings and Island are
                  typed and checked;
-                 a harness pins every component at the nil skin. See
+                 a harness pins every component at the nil Classes. See
                  `gofastr docs ui-headless`.
   ui/          : opinionated semantic components on top of core-ui
                  (see full list in the cheat sheet below)

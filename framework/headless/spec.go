@@ -11,8 +11,8 @@ package headless
 //
 // A Spec is the fixture, once. It says what the component is called,
 // which parts it draws, which of those a caller may fill, and what
-// runtime hooks it publishes; and it renders itself at any skin, so
-// the SAME fixture drives the nil-skin contract sweep, the goldens,
+// runtime hooks it publishes; and it renders itself at any class map, so
+// the SAME fixture drives the nil-Classes contract sweep, the goldens,
 // and the parts tests below. A component with a spec cannot be half
 // tested, and one without a spec fails the build.
 //
@@ -43,7 +43,7 @@ type Spec struct {
 	// Name is the exported function's name, exactly. The coverage
 	// gate matches on it.
 	Name string
-	// Anatomy lists the parts this component draws. A skin styles these
+	// Anatomy lists the parts this component draws. A class map styles these
 	// and only these; a part listed here and never rendered is a
 	// class in the stylesheet with nothing to land on.
 	Anatomy []Part
@@ -59,57 +59,57 @@ type Spec struct {
 	// A component that offers its parts must provide it: it is how the
 	// harness proves that filling a slot or adding an attribute cannot
 	// break the contract, and a part nothing tests is a part that will.
-	WithParts func(s Skin, parts Parts) render.HTML
-	// Cases renders the component at a given skin. Nil skin means
+	WithParts func(s Classes, parts Parts) render.HTML
+	// Cases renders the component at a given Classes. A nil Classes means
 	// unstyled, which is what the contract is asserted against.
 	Cases func(k Kit) []Case
 }
 
-// Kit is what a fixture is handed: this component's skin, and a way to
+// Kit is what a fixture is handed: this component's class map, and a way to
 // reach any other component's.
 //
 // It exists because a fixture composes. A Form fixture needs a Button
 // and an Input inside it, and before this existed there was only one
-// skin in scope — the Form's — so every fixture either passed the
-// parent's skin to the child, which dresses an <input> in .ds-form and
+// class map in scope — the Form's — so every fixture either passed the
+// parent's class map to the child, which dresses an <input> in .ds-form and
 // leaves it otherwise naked, or gave up and wrote the child as a raw
 // HTML string, which no part check, no golden and no audit can see.
 // Thirty-one components did one or the other.
 //
-// The lookup is a function rather than a map because the skins live in
-// the skin package, which imports this one. Inverting that would put
+// The lookup is a function rather than a map because the class maps live in
+// the styled layer, which imports this one. Inverting that would put
 // class names in the headless half, and the whole split is that they
 // are not there.
 type Kit struct {
-	// Skin is this component's own skin.
-	Skin Skin
-	// of resolves another component's skin by name and variant. Nil
+	// Classes is this component's own classes.
+	Classes Classes
+	// of resolves another component's class map by name and variant. Nil
 	// means every lookup is unstyled, which is what the contract
 	// suite wants and what a caller who supplies nothing gets.
-	of func(component, variant string) Skin
+	of func(component, variant string) Classes
 }
 
-// For is the skin a child component should wear. The name is the
+// For is the class map a child component should wear. The name is the
 // component's, exactly as it is registered.
-func (k Kit) For(component string) Skin { return k.Variant(component, "") }
+func (k Kit) For(component string) Classes { return k.Variant(component, "") }
 
-// Variant is For, for a component whose skin depends on a tone or
+// Variant is For, for a component whose class map depends on a tone or
 // kind: an alert is danger or info, a badge neutral or warning. The
 // catalogue drew every alert in the same blue until this existed,
-// because one component mapped to one skin and a tone could not be
+// because one component mapped to one class map and a tone could not be
 // asked for.
-func (k Kit) Variant(component, variant string) Skin {
+func (k Kit) Variant(component, variant string) Classes {
 	if k.of == nil {
 		return nil
 	}
 	return k.of(component, variant)
 }
 
-// NewKit builds a Kit with a resolver. A skin package calls this to
+// NewKit builds a Kit with a resolver. The package that owns the class maps calls this to
 // render the fixtures dressed; the contract suite passes nil and gets
 // an unstyled system.
-func NewKit(own Skin, of func(component, variant string) Skin) Kit {
-	return Kit{Skin: own, of: of}
+func NewKit(own Classes, of func(component, variant string) Classes) Kit {
+	return Kit{Classes: own, of: of}
 }
 
 var registry = map[string]Spec{}
