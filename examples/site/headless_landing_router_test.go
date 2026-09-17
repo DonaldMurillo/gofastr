@@ -132,17 +132,29 @@ func TestHeadlessSubscribeIslandAnswersRegion(t *testing.T) {
 }
 
 // The no-script path is post-redirect-get: 303 to the landing route with
-// the answer in the query — subscribe=invalid plus the url-encoded typed
-// value, or subscribe=ok — never a body of its own.
+// the OUTCOME in the query — blank, invalid or ok — never a body of its
+// own and never the submitted address, which would land in the reader's
+// history and in any referrer a later click sends.
 func TestHeadlessSubscribeNoScriptRedirects(t *testing.T) {
 	rec := serveSubscribe(t, "application/x-www-form-urlencoded",
 		"email=not-an-address&theme=default")
 	if rec.Code != http.StatusSeeOther {
 		t.Fatalf("invalid form submit: status = %d, want 303 (body: %s)", rec.Code, rec.Body.String())
 	}
-	want := landingRoutePath("default") + "?email=not-an-address&subscribe=invalid"
+	want := landingRoutePath("default") + "?subscribe=invalid"
 	if got := rec.Header().Get("Location"); got != want {
 		t.Errorf("invalid form submit Location = %q, want %q", got, want)
+	}
+	if loc := rec.Header().Get("Location"); strings.Contains(loc, "not-an-address") {
+		t.Errorf("Location %q carries the submitted address; the outcome travels, the value does not", loc)
+	}
+
+	rec = serveSubscribe(t, "application/x-www-form-urlencoded", "email=&theme=default")
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("blank form submit: status = %d, want 303", rec.Code)
+	}
+	if got, want := rec.Header().Get("Location"), landingRoutePath("default")+"?subscribe=blank"; got != want {
+		t.Errorf("blank form submit Location = %q, want %q", got, want)
 	}
 
 	rec = serveSubscribe(t, "application/x-www-form-urlencoded",
@@ -156,19 +168,25 @@ func TestHeadlessSubscribeNoScriptRedirects(t *testing.T) {
 	}
 }
 
-// The landing route renders the newsletter region from that query: the
-// error summary with the typed value kept, and the success callout —
-// through the site's own chrome, not a standalone document.
+// The landing route renders the newsletter region from that query: each
+// outcome's own message, and the success callout — through the site's
+// own chrome, not a standalone document.
 func TestHeadlessLandingRendersSubscribeQuery(t *testing.T) {
-	page := body(t, landingRoutePath("default")+"?subscribe=invalid&email=not-an-address")
+	page := body(t, landingRoutePath("default")+"?subscribe=invalid")
 	for _, want := range []string{
 		`data-hui-form-errors`,
 		"hl-subscribe-summary",
-		`value="not-an-address"`,
+		"does not parse as an email",
 	} {
 		if !strings.Contains(page, want) {
 			t.Errorf("invalid-answered landing page lost %q", want)
 		}
+	}
+
+	// The blank outcome says its own sentence, not the malformed one.
+	page = body(t, landingRoutePath("default")+"?subscribe=blank")
+	if !strings.Contains(page, "Enter an email address.") {
+		t.Error("blank-answered landing page does not say the blank message")
 	}
 
 	page = body(t, landingRoutePath("default")+"?subscribe=ok")

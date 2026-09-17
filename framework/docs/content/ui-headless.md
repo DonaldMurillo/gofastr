@@ -178,8 +178,9 @@ boot-registered themes —
 `/examples/headless/dense/landing` — with every variant and size, the
 same palette under two option sets, an A → B → A nest, explicit scheme
 controls, bare headless beside styled ui, a newsletter form whose
-no-script POST is answered with a 303 back to the page (the answer
-renders from the route's query, inside the site's chrome), and a cold
+no-script POST is answered with a 303 back to the page (the outcome
+rides the route's query and the answer renders inside the site's
+chrome; the submitted address never travels in the URL), and a cold
 `LoadAuto` insertion. The browser proofs live in
 `examples/site/e2e_headless_landing_test.go`.
 

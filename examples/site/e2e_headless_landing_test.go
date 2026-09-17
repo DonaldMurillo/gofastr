@@ -401,7 +401,7 @@ func TestE2E_HeadlessLanding_NewsletterNoScriptRoundTrip(t *testing.T) {
 	}
 	base := startE2EServer(t)
 	ctx := newE2EBrowserCtx(t)
-	var afterInvalid, afterValid, keptValue string
+	var afterInvalid, afterValid string
 	var summaryShown, doneShown bool
 	err := chromedp.Run(ctx,
 		// No-script pass: block the runtime (and its split modules) the
@@ -417,8 +417,8 @@ func TestE2E_HeadlessLanding_NewsletterNoScriptRoundTrip(t *testing.T) {
 		chromedp.Navigate(base+landingRoutePath("default")),
 		pageReady(),
 		// Invalid submit with a typed address: the 303 lands on the
-		// landing route carrying subscribe=invalid and the typed value,
-		// the error summary renders, and the input keeps what was
+		// landing route carrying the outcome alone — the address never
+		// travels in the URL — and the error summary renders.
 		chromedp.SetValue(`#hl-subscribe-email`, "not-an-address", chromedp.ByQuery),
 		chromedp.Click(`#hl-newsletter button[type="submit"]`, chromedp.ByQuery),
 		// WaitVisible, not Poll: the submit navigates (native POST →
@@ -428,7 +428,6 @@ func TestE2E_HeadlessLanding_NewsletterNoScriptRoundTrip(t *testing.T) {
 		chromedp.WaitVisible(`#hl-subscribe-summary`, chromedp.ByID),
 		chromedp.Location(&afterInvalid),
 		chromedp.Evaluate(`!!document.getElementById('hl-subscribe-summary')`, &summaryShown),
-		chromedp.Evaluate(`(document.getElementById('hl-subscribe-email')||{}).value || ''`, &keptValue),
 		// Valid resubmit from the answered page: the 303 carries
 		// subscribe=ok and the success callout renders.
 		chromedp.SetValue(`#hl-subscribe-email`, "reader@example.com", chromedp.ByQuery),
@@ -446,17 +445,19 @@ func TestE2E_HeadlessLanding_NewsletterNoScriptRoundTrip(t *testing.T) {
 	// round trip would have stayed put. (window.__gofastr is no probe
 	// here: an inline bootstrap stub can define the name.)
 	invalidURL := base + landingRoutePath("default") + "?"
-	if !strings.HasPrefix(afterInvalid, invalidURL) || !strings.Contains(afterInvalid, "subscribe=invalid") || !strings.Contains(afterInvalid, "email=not-an-address") {
-		t.Fatalf("after the invalid submit the browser is at %q, want %s…subscribe=invalid&email=not-an-address — without the runtime the POST must navigate and the 303 must land back on the landing route", afterInvalid, invalidURL)
+	if !strings.HasPrefix(afterInvalid, invalidURL) || !strings.Contains(afterInvalid, "subscribe=invalid") {
+		t.Fatalf("after the invalid submit the browser is at %q, want %s…subscribe=invalid — without the runtime the POST must navigate and the 303 must land back on the landing route", afterInvalid, invalidURL)
+	}
+	// The submitted address must not ride in the URL: it would sit in
+	// history and in any referrer a later click sends.
+	if strings.Contains(afterInvalid, "not-an-address") {
+		t.Errorf("the landing URL %q carries the submitted address", afterInvalid)
 	}
 	if !strings.HasPrefix(afterValid, invalidURL) || !strings.Contains(afterValid, "subscribe=ok") {
 		t.Fatalf("after the valid submit the browser is at %q, want %s…subscribe=ok", afterValid, invalidURL)
 	}
 	if !summaryShown {
 		t.Error("no-script submit: the error summary never rendered in the answered page")
-	}
-	if keptValue != "not-an-address" {
-		t.Errorf("no-script submit: the typed value was not kept (got %q)", keptValue)
 	}
 	if !doneShown {
 		t.Error("no-script valid submit: the success callout never rendered")

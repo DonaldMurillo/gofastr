@@ -213,22 +213,21 @@ func (s *HeadlessLandingScreen) SetParams(p map[string]string) {
 // Load rejects unknown theme segments so the site's 404 screen answers
 // them (a panic would 500; a wrong theme would silently lie), and reads
 // the newsletter round trip's query: the no-script POST is answered with
-// a 303 back here carrying subscribe=invalid (+ the typed email) or
-// subscribe=ok, and the page renders its region from it. The keys are
-// render state, not routes — they never reach StaticPaths.
+// a 303 back here carrying the outcome — blank, invalid or ok — and
+// the page renders its region from it. The outcome travels, never the
+// address: a submitted value in a query string lands in the reader's
+// history and in any referrer a later click sends, and this page needs
+// the message, not the value. The key is render state, not a route —
+// it never reaches StaticPaths.
 func (s *HeadlessLandingScreen) Load(ctx context.Context) error {
 	if _, ok := landingRouteFor(s.Route.Segment); !ok {
 		return errors.New("headless landing: unknown theme " + s.Route.Segment)
 	}
-	q := app.QueryFromContext(ctx)
-	switch q.Get("subscribe") {
-	case "invalid":
-		s.Subscribe = landingSubscribeState{
-			Email: q.Get("email"),
-			Error: landingValidateEmail(q.Get("email")),
-		}
-	case "ok":
-		s.Subscribe = landingSubscribeState{Email: q.Get("email"), Done: true}
+	switch o := landingSubscribeOutcome(app.QueryFromContext(ctx).Get("subscribe")); o {
+	case landingSubscribeOK:
+		s.Subscribe = landingSubscribeState{Done: true}
+	case landingSubscribeBlank, landingSubscribeInvalid:
+		s.Subscribe = landingSubscribeState{Error: landingSubscribeMessage(o)}
 	}
 	return nil
 }
@@ -381,15 +380,38 @@ type landingSubscribeState struct {
 	Done  bool
 }
 
+// landingSubscribeOutcome is what the server decided about a submitted
+// address. The no-script redirect carries this, not the address.
+type landingSubscribeOutcome string
+
+const (
+	landingSubscribeOK      landingSubscribeOutcome = "ok"
+	landingSubscribeBlank   landingSubscribeOutcome = "blank"
+	landingSubscribeInvalid landingSubscribeOutcome = "invalid"
+)
+
 // landingValidateEmail applies the server-side check both paths share.
 // The form is novalidate on purpose: the server owns validation so the
 // island and the no-script round trip answer identically.
-func landingValidateEmail(email string) string {
+func landingValidateEmail(email string) landingSubscribeOutcome {
 	email = strings.TrimSpace(email)
 	if email == "" {
-		return "Enter an email address."
+		return landingSubscribeBlank
 	}
 	if _, err := mail.ParseAddress(email); err != nil {
+		return landingSubscribeInvalid
+	}
+	return landingSubscribeOK
+}
+
+// landingSubscribeMessage is the sentence an outcome renders; empty for
+// a valid address. It lives beside the outcome so the no-script answer
+// and the island answer say the same words from the same place.
+func landingSubscribeMessage(o landingSubscribeOutcome) string {
+	switch o {
+	case landingSubscribeBlank:
+		return "Enter an email address."
+	case landingSubscribeInvalid:
 		return "That address does not parse as an email."
 	}
 	return ""
@@ -450,9 +472,9 @@ func renderLandingSubscribe(r landingRoute, state landingSubscribeState) render.
 		Summary:     "Enter a valid address to subscribe.",
 		// The island wiring rides the form itself: with the runtime on
 		// the page a submit is an RPC whose 200 body is this region,
-		// re-rendered; without it the same POST navigates and the
-		// handler answers 303 back to this page, whose query carries
-		// the re-rendered region's state.
+		// re-rendered, and the typed value survives in it; without the
+		// runtime the same POST navigates and the handler answers 303
+		// back to this page, whose query carries the outcome alone.
 		ExtraAttrs: html.MergeAttrs(extra,
 			interactive.Post(landingSubscribePath).
 				OnSuccess(interactive.SetSignal(landingSubscribeSignal)).Attrs()),
@@ -546,26 +568,20 @@ func serveHeadlessSubscribe(w http.ResponseWriter, r *http.Request) {
 	}
 
 	state := landingSubscribeState{Email: strings.TrimSpace(email)}
-	if msg := landingValidateEmail(email); msg != "" {
-		state.Error = msg
-	} else {
-		state.Done = true
-	}
+	outcome := landingValidateEmail(email)
+	state.Error = landingSubscribeMessage(outcome)
+	state.Done = outcome == landingSubscribeOK
 
 	if island {
 		render.RespondHTML(w, renderLandingSubscribe(route, state))
 		return
 	}
-	// Post-redirect-get: the answer lives in the landing route's query
+	// Post-redirect-get: the outcome lives in the landing route's query
 	// and the page renders its region from it, so a refresh or a back
-	// button never re-POSTs. Values.Encode escapes the typed email.
-	q := url.Values{}
-	if state.Done {
-		q.Set("subscribe", "ok")
-	} else {
-		q.Set("subscribe", "invalid")
-		q.Set("email", state.Email)
-	}
+	// button never re-POSTs. The typed address does not travel — see
+	// Load — so a no-script reader retypes an address the server
+	// refused, which is the price of keeping it out of history.
+	q := url.Values{"subscribe": {string(outcome)}}
 	http.Redirect(w, r, landingRoutePath(route.Segment)+"?"+q.Encode(), http.StatusSeeOther)
 }
 

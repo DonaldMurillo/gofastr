@@ -199,8 +199,10 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   nil `Classes` beside a `ui.Button`, a newsletter form whose island
   round trip (200-with-the-region, focus on the summary) falls back,
   without script, to the native POST answered with a 303 back to the
-  page whose query re-renders the region (summary shown, typed value
-  kept, success callout), and a cold `LoadAuto`
+  page whose query carries the outcome — blank, invalid or ok — and
+  re-renders the region from it (the address itself never travels in
+  the URL, so it stays out of history and out of any referrer), and a
+  cold `LoadAuto`
   insertion (`ui.Callout` via `/__site/headless/late`) whose sheet the
   runtime fetches on arrival. Unknown theme segments 404. Browser proofs
   in `examples/site/e2e_headless_landing_test.go` (computed option
