@@ -8,6 +8,87 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 ## [Unreleased]
 
 ### Added
+- **`framework/headless`**: the structure half of a design system.
+  Components render tags, roles, labelling relationships, state
+  attributes and `data-hui-*` hooks with no classes at a nil Classes; a
+  `Classes` value maps parts to classes; what a caller sets on the
+  parts (`Parts`: `Attrs`, `Slots`, `Binds`), its `Strings` and an
+  `Island` are typed and sanitised; every component registers a
+  `Spec` with its `Anatomy` that drives the nil-Classes sweep, the
+  parts gates and two
+  goldens.
+  An in-page state change is an `Island` at render time (hard rule 1):
+  `Pagination`, `ToolbarSearch` and a dismissible `Tag` or `Alert`
+  refuse the link-only render; every href passes the anchor policy.
+  Ships the vocabulary, the harness and the basic components.
+  `gofastr docs ui-headless`.
+- **`framework/headless` behaviour module**: the `data-hui-*` hooks
+  are bound. `behavior.go` registers the package's JavaScript as the
+  runtime module `headless` through `registry.RegisterBehavior`; the
+  kernel loads it on one of its seven markers (reveal, color, when,
+  form-errors, action, drop, system) and hands it inserted DOM. Every
+  sentence the module writes travels as a `data-hui-*` attribute from
+  `Strings` (Upload gains `FileSelected` and `FilesSelected`), and the
+  two attributes it writes back (`data-hui-when-off`,
+  `data-hui-drop-over`) are its own. Source gates in
+  `behavior_test.go`, browser coverage in `behavior_e2e_test.go`.
+- **`registry.Requires` and loader readiness**: a behaviour may name
+  the modules that must be loaded before it; the behaviours block
+  carries them as `r`, and `loadModule` loads requirements before the
+  module's script on every load path. Readiness is registration: a
+  module's promise resolves only when `loadedModules[name]` is set
+  after its script ran, and a script that ran and never registered
+  rejects with "module failed to register" and drops its cached
+  promise so a retry fetches again. Preload and the static export
+  list a needed behaviour's requirements with it. Spec:
+  `docs/spec-behavior-registry.md` "Dependencies and readiness".
+- **The action primitive** (`core-ui/runtime/src/action.js`): the
+  optimistic mutation machine written once —
+  `window.__gofastr.action.request(url, method)` performs the
+  same-origin mutation with the CSRF header and resolves to a
+  boolean, `window.__gofastr.action.bind(el, spec)` attaches the
+  idle → pending → committed → error lifecycle, the label flip,
+  `aria-busy` while pending (never `disabled`, which has other owners
+  and drops keyboard focus) and the `action:*` events. No
+  marker: owners reach it through `Requires("action")`.
+
+- **`headless.Classes` (renamed from `headless.Skin` while the package
+  is unreleased).** The type is the map
+  from part to class name, and the name now says what it holds: the
+  theme is the whole look, `Classes` is one component's part of it
+  (the word MUI uses). Same type, same nil behaviour, no golden
+  changed, and `Kit.Skin` is now `Kit.Classes`.
+
+- **`danger-fg` — the danger pair gets its own ink token.** The
+  component-options compiler paired the filled danger trio's foreground
+  with `--color-primary-fg`, which only has a contrast guarantee against
+  `--color-primary`: a host whose primary is light with dark ink
+  (amber, yellow, pastel) shipped an unreadable filled danger button and
+  an axe failure out of the box. `ColorSet` gains `DangerFg`
+  (`--color-danger-fg`, white in `DefaultTheme`, `#111827` on the
+  framework dark palette's `#F87171` — 6.4:1), `theme.Overrides` gains
+  `DangerFg`, the compiler compiles the trio from
+  `--color-danger` / `--color-danger-fg`, and the token rides every
+  name-pinned surface: the `gofastr theme init` scaffold, the blueprint
+  theme path (`app.theme.dark` accepts `danger-fg`), the theme editor's
+  controls + write-back, the pluginhost token bridge, and kiln's
+  `set_theme`. `Theme.Validate` now also refuses a hex `primary` ×
+  `primary-fg` or `danger` × `danger-fg` pair below 4.5:1 — in the
+  light palette and, resolved key by key with the light token as the
+  fallback for an absent key, in a non-empty `DarkColors` map (values
+  Go cannot parse exactly — oklch, var(), names — are skipped, never
+  approximated, and short-form `#RGB` expands per CSS, so `#FFF` is
+  white, not near-black) — so an unreadable pair fails at boot instead
+  of at the first axe run. **BREAKING** only for themes that already
+  ship such a pair in plain hex: validation now panics at `WithTheme`
+  where it previously passed silently.
+  Every in-tree palette now clears the bar: the blog, ecommerce, lms
+  and portfolio examples move their danger from red-500 (`#EF4444`,
+  3.76:1 under white ink) and project-manager and real-estate from
+  red-600 (`#DC2626`) to red-700 (`#B91C1C`, 6.47:1 under white ink
+  and 5.0:1 as label text on the status chips' 15% tint, where
+  red-600 measured 3.96:1); a host on red-500 with white ink either
+  does the same or sets `danger-fg`.
 - **`style.Theme.Components` — component options in the theme.** A
   theme can carry a flattened option map
   (`"density": "compact"`, `"button.treatment": "outline"`) beside
@@ -104,6 +185,36 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   harness's part-attr, bind-routing and override sweeps cover it; the
   spec gained a `WithParts` fixture and an off-site-link case (goldens
   regenerated and read).
+- **The theme-layer showcase: `/examples/headless/{default,dense}/landing`
+  on the product site.** One screen parameterised by the theme segment,
+  its content scoped by the route's boot-registered theme
+  (`style.RegisterThemeOverride` at package init; hashing is lazy). The
+  default route is the framework look on the site's palette; the dense
+  route is compact · outline · square with its own teal-tinted dark
+  palette. Two option-only twins (same palette, flipped options) back
+  the same-palette fixture. The page carries every button variant and
+  size, a disabled button, an icon LinkButton and an external one, the
+  same palette under two option sets, an A → B → A nest, explicit
+  scheme controls (`ui.ThemeToggle` pill), a bare `headless.Button` with
+  nil `Classes` beside a `ui.Button`, a newsletter form whose island
+  round trip (200-with-the-region, focus on the summary) falls back,
+  without script, to the native POST answered with a 303 back to the
+  page whose query carries the outcome — blank, invalid or ok — and
+  re-renders the region from it (the address itself never travels in
+  the URL, so it stays out of history and out of any referrer), and a
+  cold `LoadAuto`
+  insertion (`ui.Callout` via `/__site/headless/late`) whose sheet the
+  runtime fetches on arrival. Unknown theme segments 404. Browser proofs
+  in `examples/site/e2e_headless_landing_test.go` (computed option
+  variables per scope, nesting, palette-keeping twin, scoped dark mode,
+  bare-vs-styled, cold sheet, both newsletter passes — the no-script
+  pass blocks `runtime.js` via `network.SetBlockedURLs`); both routes
+  joined the desktop and mobile axe lists; the static export test pins
+  the two pages under the `/gofastr` base with their wrapper classes,
+  the option variables in `app.css`, and the static-mode notice wiring
+  for the server-backed POST. Linked from `/examples` and the ⌘K
+  palette; `StaticPaths` enumerates both routes for export, sitemap and
+  the coverage gates.
 
 - **`registry.RegisterBehavior`**: behaviour registers like style. A
   component's package embeds its runtime module beside the Go and
@@ -147,59 +258,6 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   unstyled — call `ui.Button` / `ui.LinkButton`. The option compiler
   emits per-variant trios (`--fui-button-primary-*`,
   `--fui-button-danger-*`) and no un-prefixed `--fui-button-bg/-fg/-border`.
-- **`framework/headless`**: the structure half of a design system.
-  Components render tags, roles, labelling relationships, state
-  attributes and `data-hui-*` hooks with no classes at a nil Classes; a
-  `Classes` value maps parts to classes; what a caller sets on the
-  parts (`Parts`: `Attrs`, `Slots`, `Binds`), its `Strings` and an
-  `Island` are typed and sanitised; every component registers a
-  `Spec` with its `Anatomy` that drives the nil-Classes sweep, the
-  parts gates and two
-  goldens.
-  An in-page state change is an `Island` at render time (hard rule 1):
-  `Pagination`, `ToolbarSearch` and a dismissible `Tag` or `Alert`
-  refuse the link-only render; every href passes the anchor policy.
-  Ships the vocabulary, the harness and the basic components.
-  `gofastr docs ui-headless`.
-- **`framework/headless` behaviour module**: the `data-hui-*` hooks
-  are bound. `behavior.go` registers the package's JavaScript as the
-  runtime module `headless` through `registry.RegisterBehavior`; the
-  kernel loads it on one of its seven markers (reveal, color, when,
-  form-errors, action, drop, system) and hands it inserted DOM. Every
-  sentence the module writes travels as a `data-hui-*` attribute from
-  `Strings` (Upload gains `FileSelected` and `FilesSelected`), and the
-  two attributes it writes back (`data-hui-when-off`,
-  `data-hui-drop-over`) are its own. Source gates in
-  `behavior_test.go`, browser coverage in `behavior_e2e_test.go`.
-- **`registry.Requires` and loader readiness**: a behaviour may name
-  the modules that must be loaded before it; the behaviours block
-  carries them as `r`, and `loadModule` loads requirements before the
-  module's script on every load path. Readiness is registration: a
-  module's promise resolves only when `loadedModules[name]` is set
-  after its script ran, and a script that ran and never registered
-  rejects with "module failed to register" and drops its cached
-  promise so a retry fetches again. Preload and the static export
-  list a needed behaviour's requirements with it. Spec:
-  `docs/spec-behavior-registry.md` "Dependencies and readiness".
-- **The action primitive** (`core-ui/runtime/src/action.js`): the
-  optimistic mutation machine written once —
-  `window.__gofastr.action.request(url, method)` performs the
-  same-origin mutation with the CSRF header and resolves to a
-  boolean, `window.__gofastr.action.bind(el, spec)` attaches the
-  idle → pending → committed → error lifecycle, the label flip,
-  `aria-busy` while pending (never `disabled`, which has other owners
-  and drops keyboard focus) and the `action:*` events. No
-  marker: owners reach it through `Requires("action")`.
-
-- **`headless.Skin` is now `headless.Classes`.** The type is the map
-  from part to class name, and the name now says what it holds: the
-  theme is the whole look, `Classes` is one component's part of it
-  (the word MUI uses). Same type, same nil behaviour, no golden
-  changed. A caller moves with one command:
-  `gofmt -r 'headless.Skin -> headless.Classes'` (plus renaming local
-  `skin` variables, e.g. `perl -pi -e 's/\bskin\b/classes/g'`), and
-  `Kit.Skin` is now `Kit.Classes`.
-
 - **`style.ThemeRef.Hash` is a method now.** `RegisterThemeOverride`
   no longer hashes at registration; the handle computes its content
   hash on first use (`Hash()`/`Class()`). The documented package-level
@@ -208,6 +266,33 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `framework/ui`: registering during init cannot hash, freeze the
   component-options compiler hook and panic `framework/ui`'s later
   init. Code that read `ref.Hash` as a field moves to `ref.Hash()`.
+
+### Migration ledger — the headless stack so far
+
+One place to read every breaking change this stack has landed, in
+application order. Each entry is detailed above in this release's
+`BREAKING` section; this ledger is the checklist for moving an app
+across the whole stack. `framework/headless` itself is unreleased
+(nothing in v0.85.0 ships it), so its rename and its vocabulary entry
+are listed under Added above, not here.
+
+1. **`style.ThemeRef.Hash` is a method now.** `RegisterThemeOverride`
+   hashes lazily, so package-level registration is safe in a library
+   that does not import `framework/ui`; move `ref.Hash` field reads to
+   `ref.Hash()`.
+2. **`disabled` belongs to `ButtonConfig.Disabled`.** A `disabled` key
+   in `ui.Button`'s `ExtraAttrs` panics pointing at the field.
+3. **The button wiring vocabulary is typed.** Every `data-fui-*` key on
+   a button routes through the `Action` seam
+   (`interactive.Action.Attrs()` and friends); a key outside the
+   admitted vocabulary panics at render, naming the key. On an anchor
+   only the four link-legal keys ride.
+4. **The button classes are `fui-button*`.** The `ui-button` class no
+   longer exists in any emitted markup or stylesheet; hand-rolled
+   `class="ui-button"` markup renders unstyled — call
+   `ui.Button` / `ui.LinkButton`. Selectors that targeted `.ui-button`
+   (Form's block-actions, FilterToolbar, admin row actions) select
+   `.fui-button` now.
 
 ### Changed
 - **One home per helper.** A clone survey over the tree found the same
@@ -286,6 +371,13 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   where the old module reverted in silence.
 
 ### Fixed
+- **`handler.DecodeStrict` keeps the size cap visible.** The read
+  error was flattened into the 400 envelope's text, so a caller that
+  capped the body with `http.MaxBytesReader` and asked for the cap's
+  `*http.MaxBytesError` never saw it and answered 400 where 413 was
+  meant; the envelope now wraps the cause. The docs site's newsletter
+  and interactive-submit demo endpoints answer 413 for an oversized
+  JSON body, with router tests.
 - **Action groups converge on one committed member.** Two members of
   one `data-fui-toggle-group` clicked inside one round trip both
   passed the per-element re-entry guard, and the click-time revoke

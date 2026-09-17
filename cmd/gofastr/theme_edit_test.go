@@ -56,7 +56,7 @@ func newTestServer(t *testing.T) *themeEditServer {
 func TestThemeEditVariantCSSCarriesEditedValue(t *testing.T) {
 	srv := newTestServer(t)
 
-	hash, err := srv.applyToken("color-primary", "#FF0000")
+	hash, err := srv.applyToken("color-primary", "#B91C1C")
 	if err != nil {
 		t.Fatalf("applyToken: %v", err)
 	}
@@ -72,7 +72,7 @@ func TestThemeEditVariantCSSCarriesEditedValue(t *testing.T) {
 		t.Fatalf("app.css?t=%s: status %d, want 200", hash, rec.Code)
 	}
 	body := rec.Body.String()
-	if !strings.Contains(body, "--color-primary: #FF0000") {
+	if !strings.Contains(body, "--color-primary: #B91C1C") {
 		t.Fatalf("variant CSS does not carry the edited value:\n%s", truncate(body, 400))
 	}
 	// The variant must be served immutable: the content-addressed URL is
@@ -142,7 +142,7 @@ func TestThemeEditWritebackProducesParseableGo(t *testing.T) {
 // generated file as a %q literal, round-tripping through the emitter.
 func TestThemeEditWritebackReflectsEditedValue(t *testing.T) {
 	srv := newTestServer(t)
-	if _, err := srv.applyToken("color-primary", "#00FF00"); err != nil {
+	if _, err := srv.applyToken("color-primary", "#166534"); err != nil {
 		t.Fatalf("applyToken: %v", err)
 	}
 	if err := srv.writeBack(); err != nil {
@@ -152,10 +152,10 @@ func TestThemeEditWritebackReflectsEditedValue(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read back: %v", err)
 	}
-	// %q renders #00FF00 as "#00FF00", a double-quoted literal. The raw
+	// %q renders #166534 as "#166534", a double-quoted literal. The raw
 	// value must appear; a backtick literal would have been an injection
 	// risk.
-	if !strings.Contains(string(src), `"#00FF00"`) {
+	if !strings.Contains(string(src), `"#166534"`) {
 		t.Errorf("edited value not in written file:\n%s", truncate(string(src), 400))
 	}
 }
@@ -603,7 +603,7 @@ func TestThemeEditApplyHappyPath(t *testing.T) {
 	srv := newTestServer(t)
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/__theme/apply",
-		strings.NewReader(`{"key":"color-primary","value":"#00CC66"}`))
+		strings.NewReader(`{"key":"color-primary","value":"#0F766E"}`))
 	req.Host = "127.0.0.1:0"
 	req.Header.Set("Authorization", "Bearer "+srv.token)
 	req.Header.Set("Origin", "http://127.0.0.1:0")
@@ -745,7 +745,7 @@ func TestLoopbackGuardsAcceptAWildcardBind(t *testing.T) {
 // the operator could not see.
 func TestThemeEditControlsPageShowsTheWorkingTheme(t *testing.T) {
 	srv := newTestServer(t)
-	if _, err := srv.applyToken("color-primary", "#FF0000"); err != nil {
+	if _, err := srv.applyToken("color-primary", "#B91C1C"); err != nil {
 		t.Fatalf("applyToken: %v", err)
 	}
 
@@ -757,7 +757,7 @@ func TestThemeEditControlsPageShowsTheWorkingTheme(t *testing.T) {
 		t.Fatalf("status %d", rec.Code)
 	}
 	body := rec.Body.String()
-	if !strings.Contains(body, "#FF0000") {
+	if !strings.Contains(body, "#B91C1C") {
 		t.Errorf("the controls page does not show the edited value:\n%s", truncate(body, 400))
 	}
 	if !strings.Contains(body, `name="theme-edit-variant"`) {
@@ -1122,6 +1122,9 @@ func TestApplyRefusesAThemeThatWouldPanicAtBoot(t *testing.T) {
 	for _, bad := range []struct{ key, value string }{
 		{"spacing-md", "0px"},
 		{"radii-sm", "0px"},
+		// White ink on pure red is 4.0:1: the pair guard refuses it for
+		// the same reason — the written app panics at WithTheme.
+		{"color-primary", "#FF0000"},
 	} {
 		if _, err := srv.applyToken(bad.key, bad.value); err == nil {
 			t.Errorf("%s=%s was accepted; app.WithTheme calls MustValidate, so this "+
@@ -1129,7 +1132,7 @@ func TestApplyRefusesAThemeThatWouldPanicAtBoot(t *testing.T) {
 		}
 	}
 	// A legitimate edit still applies, or the guard has simply broken the tool.
-	if _, err := srv.applyToken("color-primary", "#0d9488"); err != nil {
+	if _, err := srv.applyToken("color-primary", "#0F766E"); err != nil {
 		t.Errorf("a valid edit was refused: %v", err)
 	}
 }

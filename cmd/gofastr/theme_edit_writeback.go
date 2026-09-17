@@ -128,6 +128,7 @@ func emitColorSet(b *strings.Builder, c *style.ColorSet) {
 	emitColor(b, "Border", c.Border)
 	emitColor(b, "BorderStrong", c.BorderStrong)
 	emitColor(b, "Danger", c.Danger)
+	emitColor(b, "DangerFg", c.DangerFg)
 	emitColor(b, "Success", c.Success)
 	emitColor(b, "Warning", c.Warning)
 	emitColor(b, "Info", c.Info)

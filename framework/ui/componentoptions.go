@@ -98,12 +98,15 @@ func componentOptionsCSS(components map[string]string) []style.Declaration {
 	}
 	// Treatment draws background, foreground and border TOGETHER, per
 	// variant: one option, three variables per variant, no descendant
-	// rule that could outrank a variant's own selector. Primary reads
-	// the primary colour pair; danger reads --color-danger with the
-	// same white foreground (there is no --color-danger-fg token —
-	// --color-primary-fg is the closest, and the pair keeps the ≥4.5:1
-	// contract the tokens guarantee). Secondary and ghost read no
-	// treatment: they are drawn, not treated.
+	// rule that could outrank a variant's own selector. Each treated
+	// variant reads its OWN colour pair: primary primary/primary-fg,
+	// danger danger/danger-fg. The token system's ≥4.5:1 contract (and
+	// Theme.Validate's guard) covers a colour and its -fg companion
+	// only — danger once borrowed --color-primary-fg, and any host
+	// whose primary is light with dark ink (amber, yellow, pastel)
+	// inherited an unreadable filled danger button from the pairing.
+	// Secondary and ghost read no treatment: they are drawn, not
+	// treated.
 	variantTrio := func(prefix, colour, fg string) {
 		switch opts.Button.Treatment {
 		case theme.Filled:
@@ -128,6 +131,6 @@ func componentOptionsCSS(components map[string]string) []style.Declaration {
 		}
 	}
 	variantTrio("--fui-button-primary", "var(--color-primary)", "var(--color-primary-fg)")
-	variantTrio("--fui-button-danger", "var(--color-danger)", "var(--color-primary-fg)")
+	variantTrio("--fui-button-danger", "var(--color-danger)", "var(--color-danger-fg)")
 	return decls
 }

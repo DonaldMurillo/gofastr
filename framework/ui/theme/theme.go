@@ -31,12 +31,12 @@ func Default(overrides ...Overrides) style.Theme {
 // ignored, zero-value RadiusXX ints likewise.
 type Overrides struct {
 	// Color tokens (CSS hex values).
-	Background, Surface, SurfaceSoft string
-	Border, BorderStrong             string
-	Text, TextMuted, TextSubtle      string
-	Primary, PrimaryFg               string
-	Accent                           string
-	Success, Warning, Danger, Info   string
+	Background, Surface, SurfaceSoft         string
+	Border, BorderStrong                     string
+	Text, TextMuted, TextSubtle              string
+	Primary, PrimaryFg                       string
+	Accent                                   string
+	Success, Warning, Danger, DangerFg, Info string
 
 	// Code-display surface tokens (ui.CodeBlock + demo source panels).
 	// Intentionally a separate pair so dark mode reskins code blocks
@@ -98,6 +98,7 @@ func baseTheme() style.Theme {
 		"code-surface": "#18181B",
 		"code-text":    "#E4E4E7",
 		"danger":       "#F87171",
+		"danger-fg":    "#111827", // 6.41:1 on the dark danger fill; the dark ink mirrors primary-fg's
 		"info":         "#60A5FA",
 		"primary":      "#A5B4FC",
 		"primary-fg":   "#111827",
@@ -141,6 +142,7 @@ func applyOverrides(t *style.Theme, o Overrides) {
 	setColor(&t.Colors.Success, o.Success)
 	setColor(&t.Colors.Warning, o.Warning)
 	setColor(&t.Colors.Danger, o.Danger)
+	setColor(&t.Colors.DangerFg, o.DangerFg)
 	setColor(&t.Colors.Info, o.Info)
 	setColor(&t.Colors.CodeSurface, o.CodeSurface)
 	setColor(&t.Colors.CodeText, o.CodeText)

@@ -82,7 +82,7 @@
 //	             Background, Surface, SurfaceSoft,
 //	             Text, TextMuted, TextSubtle,
 //	             Border, BorderStrong,
-//	             Danger, Success, Warning, Info, Accent
+//	             Danger, DangerFg, Success, Warning, Info, Accent
 //	Spacing:     XS, SM, MD, LG, XL, XXL, XXXL  (pixels)
 //	Radii:       None, SM, MD, LG, XL, Full     (pixels)
 //	Fonts:       Body, Heading, Mono            (font-family stacks)

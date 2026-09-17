@@ -29,12 +29,17 @@ import (
 // respond/Error directly.
 //
 // Size is the caller's job: wrap the reader in http.MaxBytesReader (or
-// io.LimitReader) before calling. The probes that pinned each surface
-// live beside the callers as *_security_test.go.
+// io.LimitReader) before calling. The read error is wrapped, not
+// flattened, so a caller can still see the cap's *http.MaxBytesError
+// through errors.As and answer 413 instead of the 400 the envelope
+// carries. The probes that pinned each surface live beside the callers
+// as *_security_test.go.
 func DecodeStrict(r io.Reader, dst any) error {
 	body, err := io.ReadAll(r)
 	if err != nil {
-		return Errorf(400, "invalid JSON: %s", err.Error())
+		e := Errorf(400, "invalid JSON: %s", err.Error())
+		e.Err = err
+		return e
 	}
 	return UnmarshalStrict(body, dst)
 }

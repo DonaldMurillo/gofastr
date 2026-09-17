@@ -281,11 +281,12 @@ func TestThemeEditPreviewReceivesEdit(t *testing.T) {
 
 	before := evalString(t, ctx, primaryColorJS)
 
-	// #01FF70 = rgb(1, 255, 112); the default primary is indigo (#4F46E5),
-	// so a change here is unambiguous.
+	// #166534 = rgb(22, 101, 52); the default primary is indigo (#4F46E5),
+	// so a change here is unambiguous, and the green clears 7.13:1 under
+	// white ink: the theme guard refuses a primary pair below 4.5:1.
 	if err := chromedp.Run(ctx,
-		chromedp.Evaluate(setTokenInputJS("color-primary", "#01FF70"), nil),
-		chromedp.Poll(primaryColorIsJS("rgb(1, 255, 112)"), nil),
+		chromedp.Evaluate(setTokenInputJS("color-primary", "#166534"), nil),
+		chromedp.Poll(primaryColorIsJS("rgb(22, 101, 52)"), nil),
 	); err != nil {
 		t.Fatalf("edit never reached the rendered preview: %v", err)
 	}
@@ -294,8 +295,8 @@ func TestThemeEditPreviewReceivesEdit(t *testing.T) {
 	if after == before {
 		t.Fatalf("preview primary did not change (before=%s after=%s) — the edit did not reach the rendered iframe", before, after)
 	}
-	if after != "rgb(1, 255, 112)" {
-		t.Errorf("preview primary = %s, want rgb(1, 255, 112)", after)
+	if after != "rgb(22, 101, 52)" {
+		t.Errorf("preview primary = %s, want rgb(22, 101, 52)", after)
 	}
 }
 

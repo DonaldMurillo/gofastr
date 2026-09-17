@@ -64,21 +64,23 @@ func TestCompilerEmitsTreatmentVariables(t *testing.T) {
 		{theme.Soft, "color-mix(in srgb, var(--color-primary) 15%, transparent)", "var(--color-primary)", "transparent"},
 	} {
 		css := rootOptionCSS(theme.ComponentOptions{Button: theme.ButtonOptions{Treatment: tc.treatment}})
-		for _, variant := range []struct{ name, colour string }{
-			{"primary", "var(--color-primary)"},
-			{"danger", "var(--color-danger)"},
+		for _, variant := range []struct {
+			name, colour, fgFill string
+		}{
+			// Each treated variant's ink is its OWN token: the danger
+			// trio's filled foreground is --color-danger-fg, never the
+			// primary's. Borrowing --color-primary-fg was the defect
+			// that made every light-primary host (amber, pastel) paint
+			// an unreadable filled danger button, so the expectation is
+			// written per variant, not derived by substitution.
+			{"primary", "var(--color-primary)", "var(--color-primary-fg)"},
+			{"danger", "var(--color-danger)", "var(--color-danger-fg)"},
 		} {
-			// The substitution below rewrites the PRIMARY colour
-			// reference into the danger one, but the danger FG
-			// intentionally survives it: the needle
-			// "var(--color-primary)" has its ")" right after
-			// "primary", while the fg string is
-			// "var(--color-primary-fg)" (a "-" follows), so it never
-			// matches and danger keeps the white --color-primary-fg
-			// foreground — the compiler's documented pairing, not an
-			// accident this test should paper over.
 			bg := strings.ReplaceAll(tc.bg, "var(--color-primary)", variant.colour)
-			fg := strings.ReplaceAll(tc.fg, "var(--color-primary)", variant.colour)
+			fg := variant.fgFill
+			if tc.treatment != theme.Filled {
+				fg = variant.colour
+			}
 			border := strings.ReplaceAll(tc.border, "var(--color-primary)", variant.colour)
 			for name, want := range map[string]string{
 				"--fui-button-" + variant.name + "-bg":     bg,
@@ -135,7 +137,7 @@ func TestOptionlessThemeCarriesTheRootFloor(t *testing.T) {
 		"--fui-button-primary-fg: var(--color-primary-fg);",
 		"--fui-button-primary-border: transparent;",
 		"--fui-button-danger-bg: var(--color-danger);",
-		"--fui-button-danger-fg: var(--color-primary-fg);",
+		"--fui-button-danger-fg: var(--color-danger-fg);",
 		"--fui-button-danger-border: transparent;",
 	} {
 		if !strings.Contains(css, want) {
