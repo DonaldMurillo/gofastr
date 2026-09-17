@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
+	"github.com/DonaldMurillo/gofastr/framework/headless"
 )
 
 // ─── Custom variants ────────────────────────────────────────────────
@@ -44,11 +45,11 @@ import (
 //
 // Values may reference theme tokens: "{colors.primary}" resolves to
 // "var(--color-primary)", so registered variants re-skin with the
-// theme like every other component. The emitted rules are scoped to
-// the component's data-fui-comp marker (e.g.
-// `[data-fui-comp="ui-button"].ui-button--brand`), which outranks the
-// base component rules, so Props override the default look without
-// !important.
+// theme like every other component. Button rules are emitted as
+// plain `.fui-button--<name>` class rules, appended after the
+// sheet's built-ins, so Props override the default look by source
+// order without !important; card rules stay marker-scoped
+// (`[data-fui-comp="ui-card"].ui-card--<name>`).
 type VariantCSS struct {
 	// Props is the variant's base-state declarations. Required.
 	Props []string
@@ -82,7 +83,9 @@ type StatusVariantCSS struct {
 // returns the typed value to pass as ButtonConfig.Variant /
 // LinkButtonConfig.Variant (the two share the variant set and the
 // ui-button stylesheet). The CSS lands in the registered ui-button
-// sheet as `[data-fui-comp="ui-button"].ui-button--<name>` rules.
+// sheet as plain `.fui-button--<name>` class rules, and the class
+// itself joins the shared button class map, so every wearer — Button,
+// LinkButton, ToggleAction, OptimisticAction — draws it.
 //
 // Call at package init. Panics on: empty/invalid name (allowed:
 // lowercase letters, digits, hyphens), a built-in or already-registered
@@ -90,6 +93,7 @@ type StatusVariantCSS struct {
 // the ui-button sheet was built.
 func RegisterButtonVariant(name string, css VariantCSS) ButtonVariant {
 	buttonMods.register("RegisterButtonVariant", name, kindVariant, css)
+	registerButtonClass(name)
 	return ButtonVariant(name)
 }
 
@@ -99,7 +103,18 @@ func RegisterButtonVariant(name string, css VariantCSS) ButtonVariant {
 // a name can only be one or the other).
 func RegisterButtonSize(name string, css VariantCSS) ButtonSize {
 	buttonMods.register("RegisterButtonSize", name, kindSize, css)
+	registerButtonClass(name)
 	return ButtonSize(name)
+}
+
+// registerButtonClass adds one root--<name> entry to the button class
+// map under the set's mutex, beside the entry the registration already
+// wrote into the validation set. Registrations are init-time and the
+// set seals when the ui-button sheet is first built (a late
+// registration panics), so the map is complete before the first
+// request reads it.
+func registerButtonClass(name string) {
+	buttonClasses[headless.Part("root--"+name)] = "fui-button--" + name
 }
 
 // RegisterCardVariant registers a custom CardVariant under name. The
@@ -186,6 +201,44 @@ var (
 		status: map[string]StatusVariantCSS{},
 	}
 )
+
+// buttonClasses dresses headless.Button for this package: the
+// fui-button root, its variant and size modifiers (a variant looks up
+// "root--<name>", the same key a Classes value uses for any part),
+// and the icon part. Class names are the same under every theme; a
+// theme never picks classes. This is the one place the styled layer
+// meets the structure's part vocabulary — Button, LinkButton,
+// ToggleAction and OptimisticAction all take their root classes from
+// it, so a registered variant styles every one of them.
+var buttonClasses = headless.Classes{
+	headless.PartRoot: "fui-button",
+	"root--primary":   "fui-button--primary",
+	"root--secondary": "fui-button--secondary",
+	"root--danger":    "fui-button--danger",
+	"root--ghost":     "fui-button--ghost",
+	"root--small":     "fui-button--small",
+	"root--large":     "fui-button--large",
+	headless.PartIcon: "fui-button__icon",
+}
+
+// buttonClassTokens joins the root and modifier classes the map holds
+// for one variant/size pair, for the action components that wear the
+// button's classes under their own marker. A default variant resolves
+// to primary because the stylesheet's colours live in the variant
+// rules, not the base.
+func buttonClassTokens(variant ButtonVariant, size ButtonSize) string {
+	if variant == "" {
+		variant = ButtonPrimary
+	}
+	classes := []string{buttonClasses.Class(headless.PartRoot)}
+	if c := buttonClasses.Variant(headless.PartRoot, string(variant)); c != "" {
+		classes = append(classes, c)
+	}
+	if c := buttonClasses.Variant(headless.PartRoot, string(size)); c != "" {
+		classes = append(classes, c)
+	}
+	return strings.Join(classes, " ")
+}
 
 func (s *variantSet) register(api, name string, kind variantKind, css VariantCSS) {
 	if !validVariantName(name) {
@@ -340,15 +393,7 @@ func registeredStatusColor(name string) (color string, ok bool) {
 // customModsCSS renders the registered entries of set as scoped rules
 // in the named component sheet, using classPrefix--<name> selectors on
 // the marker element. Seals the set.
-//
-// extraScopes lists additional data-fui-comp markers whose elements
-// carry the same modifier classes. Components like ToggleAction
-// render class="ui-button ui-button--<variant>" under their OWN
-// marker (ui-toggle-action), so rules scoped only to ui-button would
-// never match them. Each extra scope gets a full copy of the variant
-// rules (the built-in variants don't need this: they're plain
-// .ui-button--<name> class rules that match under any marker).
-func customModsCSS(set *variantSet, sheet, classPrefix string, t style.Theme, extraScopes ...string) string {
+func customModsCSS(set *variantSet, sheet, classPrefix string, t style.Theme) string {
 	names := set.sealAndSnapshot()
 	if len(names) == 0 {
 		return ""
@@ -360,24 +405,54 @@ func customModsCSS(set *variantSet, sheet, classPrefix string, t style.Theme, ex
 	}
 	set.mu.RUnlock()
 
-	var out strings.Builder
-	for _, scope := range append([]string{sheet}, extraScopes...) {
-		cs := style.NewComponentSheet(scope, t)
-		for _, n := range names {
-			e := entries[n]
-			cs.Rule("&." + classPrefix + "--" + n).Set(e.Props...)
-			if len(e.Hover) > 0 {
-				cs.Pseudo(":hover", e.Hover...)
-			}
-			if len(e.Focus) > 0 {
-				cs.Pseudo(":focus-visible", e.Focus...)
-			}
-			cs.End()
+	cs := style.NewComponentSheet(sheet, t)
+	for _, n := range names {
+		e := entries[n]
+		cs.Rule("&." + classPrefix + "--" + n).Set(e.Props...)
+		if len(e.Hover) > 0 {
+			cs.Pseudo(":hover", e.Hover...)
 		}
-		out.WriteString("\n")
-		out.WriteString(cs.MustBuild())
+		if len(e.Focus) > 0 {
+			cs.Pseudo(":focus-visible", e.Focus...)
+		}
+		cs.End()
 	}
-	return out.String()
+	return "\n" + cs.MustBuild()
+}
+
+// buttonModsCSS renders the registered button variants and sizes as
+// plain .fui-button--<name> class rules, ONCE. Every element that
+// wears the class matches them under any marker — Button, LinkButton,
+// ToggleAction, OptimisticAction — which is why they are plain class
+// rules rather than marker-scoped ones: the action components carry
+// the same classes under their own data-fui-comp markers, so a rule
+// scoped to ui-button could never style them, and the dual-scope
+// copies that peculiarity used to need are gone. Seals the set.
+func buttonModsCSS(t style.Theme) string {
+	names := buttonMods.sealAndSnapshot()
+	if len(names) == 0 {
+		return ""
+	}
+	buttonMods.mu.RLock()
+	entries := make(map[string]VariantCSS, len(names))
+	for _, n := range names {
+		entries[n] = buttonMods.entries[n]
+	}
+	buttonMods.mu.RUnlock()
+
+	ss := style.NewStyleSheet(t)
+	for _, n := range names {
+		e := entries[n]
+		ss.Rule(".fui-button--" + n).Set(e.Props...)
+		if len(e.Hover) > 0 {
+			ss.Pseudo(":hover", e.Hover...)
+		}
+		if len(e.Focus) > 0 {
+			ss.Pseudo(":focus-visible", e.Focus...)
+		}
+		ss.End()
+	}
+	return "\n" + ss.CSS()
 }
 
 // customStatusCSS renders the registered status variants into one

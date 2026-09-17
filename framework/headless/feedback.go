@@ -211,6 +211,12 @@ func init() {
 	Register(Spec{
 		Name:    "Button",
 		Anatomy: []Part{PartRoot, PartIcon},
+		WithParts: func(s Classes, parts Parts) render.HTML {
+			// Icon-only, so the fixture draws the icon part too: a
+			// class or an attribute a caller sets on either part has
+			// somewhere to land and the sweep can see it arrive.
+			return Button(ButtonProps{AriaLabel: "Close", Icon: SpecimenGlyph, Variant: "ghost", Parts: parts}, s)
+		},
 		Cases: func(k Kit) []Case {
 			s := k.Classes
 			return []Case{{
@@ -225,6 +231,10 @@ func init() {
 				Name: "link that looks like a button",
 				Why:  "it navigates, so it is an anchor — a button that changes the URL is a button a middle click cannot open",
 				HTML: Button(ButtonProps{Label: "Read the docs", Variant: "primary", Href: "/docs"}, s),
+			}, {
+				Name: "off-site link",
+				Why:  "a link that leaves the site opens a new tab and severs the opener — target=_blank without the noopener rel hands the destination a window handle back",
+				HTML: Button(ButtonProps{Label: "Read the changelog", Variant: "primary", Href: "https://example.com/docs", External: true}, s),
 			}, {
 				Name: "disabled link",
 				Why:  "a disabled anchor is not a thing in HTML, so the href goes and aria-disabled says why, rather than leaving a live link that looks dead",

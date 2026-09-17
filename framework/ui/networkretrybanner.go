@@ -126,9 +126,15 @@ func NetworkRetryBanner(cfg NetworkRetryBannerConfig) render.HTML {
 			render.Tag("span", map[string]string{"class": "ui-network-retry-banner__desc"},
 				render.Text(desc)),
 		),
+		// The retry control keeps its own tag rather than calling
+		// Button: it carries this module's own runtime hook
+		// (data-fui-network-retry-button), which is not wiring
+		// vocabulary but component-owned behaviour — the same posture
+		// as ToggleAction. Its classes still come from the shared
+		// button class map, so the look cannot drift.
 		render.Tag("button", map[string]string{
 			"type":                          "button",
-			"class":                         "ui-button ui-button--secondary ui-network-retry-banner__retry",
+			"class":                         buttonClassTokens(ButtonSecondary, ButtonSizeDefault) + " ui-network-retry-banner__retry",
 			"data-fui-network-retry-button": "",
 		}, render.Text(retryLabel)),
 	))

@@ -57,6 +57,41 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   descendant option rules — so options nest by inheritance
   (browser-proven A → B → A). The `fui-` prefix is reserved for
   `framework/ui`; `data-hui-*` hooks belong to `framework/headless`.
+
+- **`ui.Button` / `ui.LinkButton` render through `framework/headless`**,
+  dressed with the internal `fui-button` class map (root, variant and
+  size modifiers, icon part). The class map is framework/ui's: class
+  names are the same under every theme, `RegisterButtonVariant` /
+  `RegisterButtonSize` add their `root--<name>` entries at init, and
+  the marker that fetches the sheet stays `data-fui-comp="ui-button"`
+  (the registration name is unchanged — discovery and styling are
+  separate). `ButtonConfig.Disabled` renders the disabled state, and
+  `Class` appends after the class map's own classes without mutating
+  the shared map. The `ui-button` stylesheet is rewritten on class
+  selectors (`.fui-button`, variants, `[aria-busy="true"]`,
+  `:focus-visible`, `:disabled`, `__icon`), consumes the density /
+  radius / treatment option variables and redeclares none of them;
+  registered variants ship as plain `.fui-button--<name>` rules once,
+  which is also why the `ui-toggle-action` dual scope is gone —
+  `ToggleAction` and `OptimisticAction` take their root classes from
+  the class map under their own markers.
+- **`headless.ButtonProps.Action` admits the wiring vocabulary** a
+  page can put on a clickable: `interactive.Action.Attrs()` and every
+  `.OnSuccess` effect, widget/pane open and close, toast, push-state,
+  deeplink, prefetch, `data-fui-intercept-close` — each checked for
+  what it deserves (same-origin for endpoints, push-state and
+  navigate; non-empty for names; JSON for bodies and toasts; the
+  module-name shape for prefetch; `secondary`/`tertiary` for panes).
+  On an anchor only the four keys that say where a click goes
+  (push-state, prefetch, open, deeplink) may ride; a request on a
+  link is still refused. `ButtonProps` also gains `External`
+  (target/rel owned, case-fold proof) and `Parts` (attrs on the root
+  and icon; a class appends).
+- **`headless.Button` renders through its `Parts` box**, so the
+  harness's part-attr, bind-routing and override sweeps cover it; the
+  spec gained a `WithParts` fixture and an off-site-link case (goldens
+  regenerated and read).
+
 - **`registry.RegisterBehavior`**: behaviour registers like style. A
   component's package embeds its runtime module beside the Go and
   registers it with the markers the kernel scans for; the host serves
@@ -66,6 +101,26 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   markers from one block beside the manifest and loads the module once
   when one appears. No trigger vocabulary: the marker is the trigger.
   Spec: `docs/spec-behavior-registry.md`.
+
+### BREAKING
+- **A `data-fui-*` key outside the Action vocabulary panics.** Under
+  the old carrier contract `ui.Button`'s `ExtraAttrs` rendered any
+  `data-fui-*` key as a (usually dead) attribute; now every
+  `data-fui-*` key routes through the typed `Action` seam and an
+  unknown one is refused at render, naming the key and the seam.
+  `ui.LinkButton` refuses every `data-fui-*` key except the four
+  link-legal ones, as before.
+- **`disabled` belongs to `ButtonConfig.Disabled`.** A `disabled` key
+  in `ui.Button`'s `ExtraAttrs` panics pointing at the field (any
+  spelling; `FormRepeater`'s buttons now use the field).
+- **The button classes are `fui-button*`.** The `ui-button` class no
+  longer exists in any emitted markup or stylesheet; the four
+  `.ui-button`-selecting rules elsewhere (Form's block-actions,
+  FilterToolbar's actions, admin's row-action danger pair) select
+  `.fui-button` now. Hand-rolled `class="ui-button"` markup renders
+  unstyled — call `ui.Button` / `ui.LinkButton`. The option compiler
+  emits per-variant trios (`--fui-button-primary-*`,
+  `--fui-button-danger-*`) and no un-prefixed `--fui-button-bg/-fg/-border`.
 - **`framework/headless`**: the structure half of a design system.
   Components render tags, roles, labelling relationships, state
   attributes and `data-hui-*` hooks with no classes at a nil Classes; a
@@ -110,7 +165,6 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   and drops keyboard focus) and the `action:*` events. No
   marker: owners reach it through `Requires("action")`.
 
-### BREAKING
 - **`headless.Skin` is now `headless.Classes`.** The type is the map
   from part to class name, and the name now says what it holds: the
   theme is the whole look, `Classes` is one component's part of it

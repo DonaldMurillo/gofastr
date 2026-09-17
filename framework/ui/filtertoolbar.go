@@ -452,7 +452,7 @@ func filterToolbarCSS(_ style.Theme) string {
   gap: var(--spacing-sm, 4px);
   margin-inline-start: auto;
 }
-[data-fui-comp="ui-filter-toolbar"] .ui-filter-toolbar__actions .ui-button {
+[data-fui-comp="ui-filter-toolbar"] .ui-filter-toolbar__actions .fui-button {
   min-block-size: var(--spacing-touch-target, 44px);
 }
 

@@ -18,7 +18,7 @@ func TestToggleActionIdleMarkup(t *testing.T) {
 		`data-state="idle"`,
 		`aria-pressed="false"`,
 		`type="button"`,
-		`class="ui-button ui-toggle-action"`,
+		`class="fui-button fui-button--primary ui-toggle-action"`,
 		`data-fui-toggle-idle`,
 		`data-fui-toggle-committed`,
 		`>Follow<`,
@@ -115,7 +115,7 @@ func TestToggleActionVariantClass(t *testing.T) {
 		Class:          "extra",
 		ID:             "t1",
 	}))
-	for _, want := range []string{"ui-button--secondary", "extra", `id="t1"`} {
+	for _, want := range []string{"fui-button--secondary", "extra", `id="t1"`} {
 		if !strings.Contains(got, want) {
 			t.Errorf("missing %q in:\n%s", want, got)
 		}

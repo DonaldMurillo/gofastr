@@ -55,22 +55,39 @@ func TestCompilerEmitsRadiusVariables(t *testing.T) {
 
 func TestCompilerEmitsTreatmentVariables(t *testing.T) {
 	for _, tc := range []struct {
-		treatment      theme.ButtonTreatment
-		bg, fg, border string
+		treatment theme.ButtonTreatment
+		bg, fg    string
+		border    string
 	}{
 		{theme.Filled, "var(--color-primary)", "var(--color-primary-fg)", "transparent"},
 		{theme.Outline, "transparent", "var(--color-primary)", "var(--color-primary)"},
-		{theme.Soft, "var(--color-surface-soft)", "var(--color-primary)", "transparent"},
+		{theme.Soft, "color-mix(in srgb, var(--color-primary) 15%, transparent)", "var(--color-primary)", "transparent"},
 	} {
 		css := rootOptionCSS(theme.ComponentOptions{Button: theme.ButtonOptions{Treatment: tc.treatment}})
-		for name, want := range map[string]string{
-			"--fui-button-bg":     tc.bg,
-			"--fui-button-fg":     tc.fg,
-			"--fui-button-border": tc.border,
+		for _, variant := range []struct{ name, colour string }{
+			{"primary", "var(--color-primary)"},
+			{"danger", "var(--color-danger)"},
 		} {
-			if !strings.Contains(css, name+": "+want+";") {
-				t.Errorf("treatment %v: %s missing (want %s)", tc.treatment, name, want)
+			bg := strings.ReplaceAll(tc.bg, "var(--color-primary)", variant.colour)
+			fg := strings.ReplaceAll(tc.fg, "var(--color-primary)", variant.colour)
+			border := strings.ReplaceAll(tc.border, "var(--color-primary)", variant.colour)
+			for name, want := range map[string]string{
+				"--fui-button-" + variant.name + "-bg":     bg,
+				"--fui-button-" + variant.name + "-fg":     fg,
+				"--fui-button-" + variant.name + "-border": border,
+			} {
+				if !strings.Contains(css, name+": "+want+";") {
+					t.Errorf("treatment %v: %s missing (want %s)", tc.treatment, name, want)
+				}
 			}
+		}
+	}
+	// The un-prefixed trio is gone: a rule reading --fui-button-bg
+	// would fall back to nothing and draw an uncoloured button.
+	def := rootOptionCSS(theme.DefaultOptions)
+	for _, gone := range []string{"--fui-button-bg:", "--fui-button-fg:", "--fui-button-border:"} {
+		if strings.Contains(def, gone) {
+			t.Errorf("the un-prefixed trio %s still ships", gone)
 		}
 	}
 }
@@ -83,7 +100,8 @@ func TestCompilerEmitsTheCompleteSetAtRoot(t *testing.T) {
 	for _, name := range []string{
 		"--fui-density-control-h", "--fui-density-gap",
 		"--fui-button-radius",
-		"--fui-button-bg", "--fui-button-fg", "--fui-button-border",
+		"--fui-button-primary-bg", "--fui-button-primary-fg", "--fui-button-primary-border",
+		"--fui-button-danger-bg", "--fui-button-danger-fg", "--fui-button-danger-border",
 	} {
 		if !strings.Contains(css, name+":") {
 			t.Errorf("complete option set missing %s", name)
@@ -117,8 +135,10 @@ func TestCompilerEmitsOptionsInsideScopeBlocks(t *testing.T) {
 		for _, want := range []string{
 			"--fui-density-control-h: 36px;",
 			"--fui-button-radius: 0;",
-			"--fui-button-bg: transparent;",
-			"--fui-button-border: var(--color-primary);",
+			"--fui-button-primary-bg: transparent;",
+			"--fui-button-primary-border: var(--color-primary);",
+			"--fui-button-danger-bg: transparent;",
+			"--fui-button-danger-border: var(--color-danger);",
 		} {
 			if !strings.Contains(body, want) {
 				t.Errorf("%s scope block missing %s:\n%s", probe.block, want, body)

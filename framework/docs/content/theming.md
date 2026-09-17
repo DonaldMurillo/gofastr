@@ -335,9 +335,14 @@ along.
 | `density: comfortable` | `--fui-density-control-h: 44px`, `--fui-density-gap: var(--spacing-md)` |
 | `density: compact` | `--fui-density-control-h: 36px`, `--fui-density-gap: var(--spacing-sm)` |
 | `button.radius: round` / `square` / `pill` | `--fui-button-radius: var(--radii-md)` / `0` / `9999px` |
-| `button.treatment: filled` | `--fui-button-bg: var(--color-primary)`, `--fui-button-fg: var(--color-primary-fg)`, `--fui-button-border: transparent` |
-| `button.treatment: outline` | `--fui-button-bg: transparent`, `--fui-button-fg: var(--color-primary)`, `--fui-button-border: var(--color-primary)` |
-| `button.treatment: soft` | `--fui-button-bg: var(--color-surface-soft)`, `--fui-button-fg: var(--color-primary)`, `--fui-button-border: transparent` |
+| `button.treatment: filled` | `--fui-button-primary-bg: var(--color-primary)`, `--fui-button-primary-fg: var(--color-primary-fg)`, `--fui-button-primary-border: transparent`, and the same `-danger` trio from `--color-danger` / `--color-primary-fg` |
+| `button.treatment: outline` | `--fui-button-primary-bg: transparent`, `--fui-button-primary-fg: var(--color-primary)`, `--fui-button-primary-border: var(--color-primary)`, and the `-danger` trio from `--color-danger` |
+| `button.treatment: soft` | `--fui-button-primary-bg: color-mix(in srgb, var(--color-primary) 15%, transparent)`, `--fui-button-primary-fg: var(--color-primary)`, `--fui-button-primary-border: transparent`, and the `-danger` trio likewise |
+
+The `.fui-button--primary` and `.fui-button--danger` rules in the
+`ui-button` sheet consume those trios (`background:
+var(--fui-button-primary-bg)` and friends); secondary and ghost draw
+themselves and read no treatment.
 
 The cascade rule: **theme boundaries declare the option variables,
 component rules consume them.** A component stylesheet writes
@@ -351,7 +356,7 @@ nesting A → B → A ends on A's values.
 
 The declarations are re-emitted at every boundary — root and scope,
 light and dark — because a custom property's `var()` references
-compute where the declaration sits: `--fui-button-bg:
+compute where the declaration sits: `--fui-button-primary-bg:
 var(--color-primary)` declared only at `:root` would carry the root's
 resolved primary into a scope with its own palette. The `:root`-only
 alias tokens (`--color-primary-foreground` and kin) are re-emitted in
@@ -482,7 +487,7 @@ first and `/__gofastr/app.css` after it. But a component's CSS can
 load lazily, after hydration, when it first shows up in an island
 response, a widget, or an SPA navigation; then its `<link>` gets appended
 to the end of `<head>`, after `app.css`. So a site rule with the same
-specificity as a component's internal rule (`.ui-button { background:
+specificity as a component's internal rule (`.fui-button { background:
 … }`) wins on one page and silently loses on another, depending on how
 that component's stylesheet arrived. Reaching for `!important` or a
 higher-specificity selector "fixes" it today and breaks again the next

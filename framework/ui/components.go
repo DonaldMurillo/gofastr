@@ -11,6 +11,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/headless"
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
@@ -537,22 +538,27 @@ type ButtonConfig struct {
 	Size ButtonSize
 	// Type is the button type: "button" (default), "submit", or "reset".
 	Type string
+	// Disabled renders the disabled state. This is the supported way to
+	// set it — a disabled key in ExtraAttrs panics pointing here.
+	Disabled bool
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers, ARIA overrides) to the rendered <button>.
-	// Button is the documented carrier for runtime wiring, so
-	// data-fui-* keys pass through — attach interactive wiring with
-	// interactive.Action.Attrs() (see interactive-patterns). Keys the
-	// component owns are dropped: class and id (use Class / ID), type
-	// (use Type), and aria-label (use Label, or AriaLabel to override
-	// the accessible name).
+	// Every data-fui-* key is runtime wiring and goes through the
+	// typed Action seam (attach interactive wiring with
+	// interactive.Action.Attrs(), interactive.OpenOnClick and friends —
+	// headless.ButtonProps.Action admits exactly that vocabulary and
+	// panics on any data-fui-* key outside it, where the old carrier
+	// contract rendered it as a dead attribute). Keys the component
+	// owns are dropped: class and id (use Class / ID), type (use
+	// Type), disabled (use Disabled) and aria-label (use AriaLabel).
 	ExtraAttrs html.Attrs
 	ID         string
 	Class      string
 }
 
-// Button renders a semantic button with a typed variant. Variant
-// maps to .ui-button--<variant> in the registered ui-button CSS;
-// the framework's styled component handles the visual rules.
+// Button renders a semantic button with a typed variant, through the
+// headless structure dressed with this package's class map: Variant
+// maps to .fui-button--<variant> in the registered ui-button CSS.
 //
 // Authors never reach for raw class strings. Pick a variant.
 // Unknown variants panic at render time so typos surface
@@ -569,25 +575,23 @@ func Button(cfg ButtonConfig) render.HTML {
 	}
 	checkButtonVariant("Button", v)
 	checkButtonSize("Button", cfg.Size)
-	cls := "ui-button ui-button--" + string(v)
-	if cfg.Size != ButtonSizeDefault {
-		cls += " ui-button--" + string(cfg.Size)
-	}
-	if cfg.Class != "" {
-		cls += " " + cfg.Class
-	}
+	action, extra := splitButtonAttrs(cfg.ExtraAttrs)
 	// All variants share the single canonical ui-button marker; the
-	// .ui-button--<variant> class on the same element drives the
+	// .fui-button--<variant> class on the same element drives the
 	// visual delta via buttonCSS's variant rules. No legacy per-
 	// variant marker / sheet.
-	return buttonStyle.WrapHTML(html.Button(html.ButtonConfig{
+	return buttonStyle.WrapHTML(headless.Button(headless.ButtonProps{
 		Label:      cfg.Label,
 		AriaLabel:  cfg.AriaLabel,
+		Variant:    string(v),
+		Size:       string(cfg.Size),
 		Type:       cfg.Type,
-		Class:      cls,
+		Disabled:   cfg.Disabled,
 		ID:         cfg.ID,
-		ExtraAttrs: html.SafeCarrierAttrs(cfg.ExtraAttrs, "type", "aria-label"),
-	}))
+		Action:     action,
+		ExtraAttrs: extra,
+		Parts:      rootClassParts(cfg.Class),
+	}, buttonClasses))
 }
 
 // ─── LinkButton ─────────────────────────────────────────────────────
@@ -615,16 +619,20 @@ type LinkButtonConfig struct {
 	ID    string
 	Class string
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
-	// analytics markers, ARIA overrides) to the rendered <a>. Keys the
-	// component owns are dropped: class and id (use Class / ID),
-	// data-fui-*, and href (use Href). With External, target and rel
-	// are owned too; without it a caller may still set them.
+	// analytics markers, ARIA overrides) to the rendered <a>. The
+	// four data-fui-* keys that make sense on a link (push-state,
+	// prefetch, open, deeplink) go through the typed Action seam;
+	// every other data-fui-* key is refused, as it always was — a
+	// link navigates, a button acts. Keys the component owns are
+	// dropped: class and id (use Class / ID) and href (use Href).
+	// With External, target and rel are owned too; without it a caller
+	// may still set them.
 	ExtraAttrs html.Attrs
 }
 
-// LinkButton renders a button-styled anchor. Same variant/size grammar
-// as Button. The visual styling is shared via the registered ui-button
-// CSS (class-based, not tag-scoped). The difference is semantic:
+// LinkButton renders a button-styled anchor, through the same headless
+// structure and class map as Button. The visual styling is shared via
+// the registered ui-button CSS. The difference is semantic:
 // <a> for navigation, <button> for actions. Screen readers, "open in
 // new tab", and SPA push-state nav all rely on the right tag choice.
 func LinkButton(cfg LinkButtonConfig) render.HTML {
@@ -638,7 +646,9 @@ func LinkButton(cfg LinkButtonConfig) render.HTML {
 	// navigator screens these too, but a direct anchor click bypasses
 	// the SPA interceptor (browser handles it natively), so the
 	// rendered href must already be safe. javascript:/vbscript:/non-
-	// image data: are the canonical XSS vectors for links.
+	// image data: are the canonical XSS vectors for links. headless
+	// degrades a rejected href to a dead link; this package refuses
+	// outright, so the mistake is found where it is made.
 	if isUnsafeScheme(cfg.Href) {
 		panic("ui: LinkButton refuses unsafe Href scheme: " + cfg.Href)
 	}
@@ -648,41 +658,81 @@ func LinkButton(cfg LinkButtonConfig) render.HTML {
 	}
 	checkButtonVariant("LinkButton", v)
 	checkButtonSize("LinkButton", cfg.Size)
-	cls := "ui-button ui-button--" + string(v)
-	if cfg.Size != ButtonSizeDefault {
-		cls += " ui-button--" + string(cfg.Size)
-	}
-	if cfg.Class != "" {
-		cls += " " + cfg.Class
-	}
-	extraProtected := []string{"href"}
-	if cfg.External {
-		// External owns target/rel, so their case-variants must drop
-		// too: an unprotected "TARGET"/"REL" entry sorts before the
-		// owned lowercase attr in the rendered tag and wins the
-		// parser's first-occurrence fold, clobbering the noopener
-		// contract.
-		extraProtected = append(extraProtected, "target", "rel")
-	}
-	extra := html.SafeExtraAttrs(cfg.ExtraAttrs, extraProtected...)
-	if cfg.External {
-		if extra == nil {
-			extra = html.Attrs{}
-		}
-		extra["target"] = "_blank"
-		extra["rel"] = "noopener noreferrer"
-	}
+	action, extra := splitLinkAttrs(cfg.ExtraAttrs)
+	var icon render.HTML
 	if cfg.Icon != "" && IconRegistered(cfg.Icon) {
-		content := Icon(cfg.Icon, IconConfig{Size: "18"}) + render.Text(cfg.Label)
-		return buttonStyle.WrapHTML(html.LinkHTML(html.LinkHTMLConfig{
-			Href: cfg.Href, Content: content, Class: cls, ID: cfg.ID,
-			ExtraAttrs: extra,
-		}))
+		icon = Icon(cfg.Icon, IconConfig{Size: "18"})
 	}
-	return buttonStyle.WrapHTML(html.Link(html.LinkConfig{
-		Href: cfg.Href, Text: cfg.Label, Class: cls, ID: cfg.ID,
+	return buttonStyle.WrapHTML(headless.Button(headless.ButtonProps{
+		Label:      cfg.Label,
+		Href:       cfg.Href,
+		External:   cfg.External,
+		Variant:    string(v),
+		Size:       string(cfg.Size),
+		ID:         cfg.ID,
+		Icon:       icon,
+		Action:     action,
 		ExtraAttrs: extra,
-	}))
+		Parts:      rootClassParts(cfg.Class),
+	}, buttonClasses))
+}
+
+// rootClassParts carries a caller's Class onto the root part, where
+// the headless box appends it after the class map's own classes
+// instead of replacing them. The shared class map is never mutated.
+func rootClassParts(class string) headless.Parts {
+	if class == "" {
+		return headless.Parts{}
+	}
+	return headless.Parts{Attrs: headless.PartAttrs{
+		headless.PartRoot: {"class": class},
+	}}
+}
+
+// splitButtonAttrs splits a Button's ExtraAttrs at the seam: every
+// data-fui-* key is runtime wiring and travels through the typed
+// Action, where headless admits exactly the wiring vocabulary and
+// panics on anything else, naming the key; everything else is
+// decoration and travels through headless's ExtraAttrs, whose Safe
+// drops the keys the component owns (aria-label among them, which the
+// AriaLabel field is the supported way to set).
+func splitButtonAttrs(extra html.Attrs) (action, plain html.Attrs) {
+	action, plain = html.Attrs{}, html.Attrs{}
+	for k, v := range extra {
+		lk := strings.ToLower(k)
+		switch {
+		case lk == "disabled":
+			panic("ui: Button ExtraAttrs carries disabled — use ButtonConfig.Disabled, the field owns the state")
+		case lk == "aria-label":
+			// Owned: use AriaLabel.
+		case strings.HasPrefix(lk, "data-fui-"):
+			action[lk] = v
+		default:
+			plain[lk] = v
+		}
+	}
+	return action, plain
+}
+
+// splitLinkAttrs is splitButtonAttrs for a link: only the four
+// data-fui-* keys that make sense on an anchor travel the Action seam;
+// every other data-fui-* key is refused as it always was, because a
+// link navigates and a button acts.
+func splitLinkAttrs(extra html.Attrs) (action, plain html.Attrs) {
+	action, plain = html.Attrs{}, html.Attrs{}
+	for k, v := range extra {
+		lk := strings.ToLower(k)
+		switch {
+		case lk == "data-fui-push-state", lk == "data-fui-prefetch",
+			lk == "data-fui-open", lk == "data-fui-deeplink":
+			action[lk] = v
+		case strings.HasPrefix(lk, "data-fui-"):
+			// Refused, as before the seam existed.
+		default:
+			plain[lk] = v
+		}
+	}
+	return action, plain
 }
 
 // isUnsafeScheme rejects the canonical XSS vectors for `href`/`src`

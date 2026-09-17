@@ -102,13 +102,12 @@ func FormRepeater(cfg FormRepeaterConfig) render.HTML {
 			"name":  cfg.Name + "_remove",
 			"value": fmt.Sprintf("%d", i),
 		}
-		if removeDisabled {
-			removeAttrs["disabled"] = ""
-		}
-		removeBtn := html.Button(html.ButtonConfig{
+		removeBtn := Button(ButtonConfig{
 			Label:      removeLabel,
 			Type:       "submit",
-			Class:      "ui-button ui-button--danger ui-button--small",
+			Variant:    ButtonDanger,
+			Size:       ButtonSizeSmall,
+			Disabled:   removeDisabled,
 			ExtraAttrs: removeAttrs,
 		})
 		itemChildren = append(itemChildren, render.Tag("div", map[string]string{
@@ -128,13 +127,11 @@ func FormRepeater(cfg FormRepeaterConfig) render.HTML {
 		"name":  cfg.Name + "_add",
 		"value": "1",
 	}
-	if addDisabled {
-		addAttrs["disabled"] = ""
-	}
-	addBtn := html.Button(html.ButtonConfig{
+	addBtn := Button(ButtonConfig{
 		Label:      addLabel,
 		Type:       "submit",
-		Class:      "ui-button ui-button--secondary",
+		Variant:    ButtonSecondary,
+		Disabled:   addDisabled,
 		ExtraAttrs: addAttrs,
 	})
 	children = append(children, render.Tag("div", map[string]string{

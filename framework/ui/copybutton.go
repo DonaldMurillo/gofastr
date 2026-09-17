@@ -23,7 +23,7 @@ import (
 //   - A visually-hidden role="status" sibling that the runtime
 //     populates via data-fui-copy-status on success so screen-reader
 //     users hear "Copied" without focus-loss.
-//   - Token-driven min tap target (inherits .ui-button-style sizing).
+//   - Token-driven min tap target (the button family's token-driven sizing).
 //
 // Pairs naturally with CodeBlock (Target="#my-code"), but works for
 // any element with a stable selector.

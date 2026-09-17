@@ -31,8 +31,9 @@ import (
 // The variables are re-emitted at every boundary (root and scope,
 // light and dark — see style.ThemeOverrideCSS) because a custom
 // property's var() references compute where the declaration sits:
-// --fui-button-bg: var(--color-primary) declared only at :root would
-// carry the root's resolved primary into a scope with its own palette.
+// --fui-button-primary-bg: var(--color-primary) declared only at :root
+// would carry the root's resolved primary into a scope with its own
+// palette.
 //
 // # The prefix
 //
@@ -42,9 +43,9 @@ import (
 // say so once. Classes belong to framework/ui; the data-hui-* hooks
 // belong to framework/headless. The prefixes match, the ownership
 // does not.
-//
-// Nothing consumes these variables yet; the component stylesheets
-// that read them arrive with their components' own changes.
+// The button stylesheet consumes these variables (styles_components.go:
+// buttonCSS); the remaining component families' sheets arrive with
+// their own changes.
 func init() {
 	style.RegisterComponentOptionsCompiler(componentOptionsCSS)
 }
@@ -87,29 +88,38 @@ func componentOptionsCSS(components map[string]string) []style.Declaration {
 		decls = append(decls, style.Declaration{Name: "--fui-button-radius", Value: "9999px"})
 	case theme.RadiusUnset:
 	}
-	// Treatment draws background, foreground and border TOGETHER: one
-	// option, three variables, no descendant rule that could outrank a
-	// variant.
-	switch opts.Button.Treatment {
-	case theme.Filled:
-		decls = append(decls,
-			style.Declaration{Name: "--fui-button-bg", Value: "var(--color-primary)"},
-			style.Declaration{Name: "--fui-button-fg", Value: "var(--color-primary-fg)"},
-			style.Declaration{Name: "--fui-button-border", Value: "transparent"},
-		)
-	case theme.Outline:
-		decls = append(decls,
-			style.Declaration{Name: "--fui-button-bg", Value: "transparent"},
-			style.Declaration{Name: "--fui-button-fg", Value: "var(--color-primary)"},
-			style.Declaration{Name: "--fui-button-border", Value: "var(--color-primary)"},
-		)
-	case theme.Soft:
-		decls = append(decls,
-			style.Declaration{Name: "--fui-button-bg", Value: "var(--color-surface-soft)"},
-			style.Declaration{Name: "--fui-button-fg", Value: "var(--color-primary)"},
-			style.Declaration{Name: "--fui-button-border", Value: "transparent"},
-		)
-	case theme.TreatmentUnset:
+	// Treatment draws background, foreground and border TOGETHER, per
+	// variant: one option, three variables per variant, no descendant
+	// rule that could outrank a variant's own selector. Primary reads
+	// the primary colour pair; danger reads --color-danger with the
+	// same white foreground (there is no --color-danger-fg token —
+	// --color-primary-fg is the closest, and the pair keeps the ≥4.5:1
+	// contract the tokens guarantee). Secondary and ghost read no
+	// treatment: they are drawn, not treated.
+	variantTrio := func(prefix, colour, fg string) {
+		switch opts.Button.Treatment {
+		case theme.Filled:
+			decls = append(decls,
+				style.Declaration{Name: prefix + "-bg", Value: colour},
+				style.Declaration{Name: prefix + "-fg", Value: fg},
+				style.Declaration{Name: prefix + "-border", Value: "transparent"},
+			)
+		case theme.Outline:
+			decls = append(decls,
+				style.Declaration{Name: prefix + "-bg", Value: "transparent"},
+				style.Declaration{Name: prefix + "-fg", Value: colour},
+				style.Declaration{Name: prefix + "-border", Value: colour},
+			)
+		case theme.Soft:
+			decls = append(decls,
+				style.Declaration{Name: prefix + "-bg", Value: "color-mix(in srgb, " + colour + " 15%, transparent)"},
+				style.Declaration{Name: prefix + "-fg", Value: colour},
+				style.Declaration{Name: prefix + "-border", Value: "transparent"},
+			)
+		case theme.TreatmentUnset:
+		}
 	}
+	variantTrio("--fui-button-primary", "var(--color-primary)", "var(--color-primary-fg)")
+	variantTrio("--fui-button-danger", "var(--color-danger)", "var(--color-primary-fg)")
 	return decls
 }

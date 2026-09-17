@@ -146,10 +146,9 @@ func Form(cfg FormConfig, fields ...render.HTML) render.HTML {
 		}
 		children = append(children,
 			render.Tag("div", map[string]string{"class": "ui-form__actions"},
-				html.Button(html.ButtonConfig{
+				Button(ButtonConfig{
 					Label: submitLabel,
 					Type:  "submit",
-					Class: "ui-button",
 				}),
 			))
 	}

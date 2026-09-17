@@ -71,3 +71,144 @@ func TestButtonWithoutAnActionIsUnchanged(t *testing.T) {
 	}
 	hasNot(t, plain, "data-fui", "a button with no action carries framework attributes")
 }
+
+// The wiring keys core-ui/interactive can splice onto a clickable are
+// vocabulary too: what a click opens, closes, toasts, writes into the
+// URL, deep-links, or prefetches travels the same seam as a request,
+// each checked for what it deserves.
+func TestButtonActionAdmitsTheWiringKeys(t *testing.T) {
+	for k, v := range map[string]string{
+		"data-fui-open":            "user-edit",
+		"data-fui-pane-open":       "secondary",
+		"data-fui-intercept-close": "",
+		"data-fui-toast":           `{"variant":"success","title":"Saved"}`,
+		"data-fui-pane-close":      "",
+		"data-fui-push-state":      "/apps/42",
+		"data-fui-deeplink":        "user_id=42",
+		"data-fui-prefetch":        "tabs fileupload",
+		"data-fui-rpc-open":        "result-modal",
+		"data-fui-rpc-close":       "true",
+		"data-fui-rpc-reset":       "true",
+		"data-fui-rpc-navigate":    "/apps/42",
+		"data-fui-rpc-body":        `{"a":1}`,
+	} {
+		got := Button(ButtonProps{Label: "Act", Action: html.Attrs{"data-fui-rpc": "/x", k: v}}, nil)
+		has(t, got, k, "the wiring key "+k+" did not land on the button")
+	}
+	// after-text and after-disable and scroll-to ride beside an rpc;
+	// after-disable is presence-valued, so it lands bare.
+	got := Button(ButtonProps{Label: "Save", Action: html.Attrs{
+		"data-fui-rpc": "/x", "data-fui-rpc-after-text": "Saved",
+		"data-fui-rpc-after-disable": "", "data-fui-rpc-scroll-to": "#item",
+	}}, nil)
+	has(t, got, `data-fui-rpc-after-text="Saved"`, "after-text did not land")
+	has(t, got, "data-fui-rpc-after-disable", "after-disable did not land")
+	has(t, got, `data-fui-rpc-scroll-to="#item"`, "scroll-to did not land")
+}
+
+// A wiring key that would fire something — none of them do — or a
+// request on an anchor: the link carries only what may ride it. The
+// four link-legal keys stay, because they say where a click goes
+// without firing anything.
+func TestButtonLinkCarriesOnlyLinkLegalActions(t *testing.T) {
+	got := Button(ButtonProps{Label: "Docs", Href: "/docs", Action: html.Attrs{
+		"data-fui-push-state": "/docs", "data-fui-prefetch": "menu",
+		"data-fui-open": "help", "data-fui-deeplink": "topic=ssh",
+	}}, nil)
+	for _, want := range []string{
+		`data-fui-push-state="/docs"`, `data-fui-prefetch="menu"`,
+		`data-fui-open="help"`, `data-fui-deeplink="topic=ssh"`,
+	} {
+		has(t, got, want, "a link-legal wiring key was refused on the anchor")
+	}
+	for _, k := range []string{
+		"data-fui-rpc", "data-fui-rpc-close", "data-fui-rpc-navigate",
+		"data-fui-confirm", "data-fui-signal-inc", "data-fui-pane-open",
+		"data-fui-toast",
+	} {
+		func() {
+			defer func() {
+				if recover() == nil {
+					t.Errorf("an anchor carried %q — a link navigates, a button acts", k)
+				}
+			}()
+			Button(ButtonProps{Label: "Go", Href: "/apps", Action: html.Attrs{k: "secondary", "data-fui-open": "w"}}, nil)
+		}()
+	}
+}
+
+// Each check exists because a value that fails it is a button that
+// looks wired and does nothing: an empty name, a foreign origin, a
+// method or pane the runtime never answers to, a payload that fails
+// to parse at click time.
+func TestButtonActionChecksItsValues(t *testing.T) {
+	cases := []html.Attrs{
+		{"data-fui-open": ""},
+		{"data-fui-deeplink": ""},
+		{"data-fui-toast": ""},
+		{"data-fui-toast": `{"variant":`},
+		{"data-fui-push-state": ""},
+		{"data-fui-push-state": "https://evil.example/x"},
+		{"data-fui-push-state": "//evil/x"},
+		{"data-fui-rpc-navigate": "https://evil.example/x"},
+		{"data-fui-rpc-navigate": ""},
+		{"data-fui-rpc-method": "TRACE"},
+		{"data-fui-rpc-body": `{not json`},
+		{"data-fui-rpc-open": ""},
+		{"data-fui-rpc-after-text": ""},
+		{"data-fui-rpc-scroll-to": ""},
+		{"data-fui-confirm": ""},
+		{"data-fui-pane-open": "primary"},
+		{"data-fui-pane-close": "left"},
+		{"data-fui-prefetch": "../../../evil"},
+		{"data-fui-prefetch": "name/with/slashes"},
+	}
+	for _, a := range cases {
+		func() {
+			defer func() {
+				if recover() == nil {
+					t.Errorf("Action %v was accepted unchecked", a)
+				}
+			}()
+			Button(ButtonProps{Label: "x", Action: a}, nil)
+		}()
+	}
+}
+
+// Attribute names fold in HTML: a spelling in any case is the same
+// attribute to the runtime, so it is checked and stored under one
+// canonical name — and one key under two spellings is a duplicate the
+// caller cannot see in the rendered tag.
+func TestButtonActionFoldsAndRefusesDuplicateSpellings(t *testing.T) {
+	got := Button(ButtonProps{Label: "Open", Action: html.Attrs{"DATA-FUI-OPEN": "help"}}, nil)
+	has(t, got, `data-fui-open="help"`, "an upper-case spelling did not land under its folded name")
+	func() {
+		defer func() {
+			if recover() == nil {
+				t.Error("one key under two spellings was accepted")
+			}
+		}()
+		Button(ButtonProps{Label: "x", Action: html.Attrs{"data-fui-open": "a", "Data-Fui-Open": "b"}}, nil)
+	}()
+	func() {
+		defer func() {
+			if recover() == nil {
+				t.Error("an upper-case rpc spelling dodged the same-origin check")
+			}
+		}()
+		Button(ButtonProps{Label: "x", Action: html.Attrs{"DATA-FUI-RPC": "//evil/x"}}, nil)
+	}()
+}
+
+// A class a caller appends through Parts lands after the class map's
+// own, never instead of it, and the shared map is not mutated.
+func TestButtonPartsAppendTheRootClass(t *testing.T) {
+	classes := Classes{PartRoot: "btn", PartIcon: "btn__icon"}
+	got := Button(ButtonProps{Label: "Save", Parts: Parts{Attrs: PartAttrs{
+		PartRoot: {"class": "mine"},
+	}}}, classes)
+	has(t, got, `class="btn mine"`, "the caller's class must append, not replace")
+	if classes[PartRoot] != "btn" {
+		t.Error("the class map itself was mutated")
+	}
+}

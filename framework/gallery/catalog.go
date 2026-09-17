@@ -41,15 +41,15 @@ import (
 // button, the endpoint it POSTs, the effect fired on success, and the
 // surrounding prose + code sample shown above the stage.
 type rpcEffectDemoSpec struct {
-	btnLabel  string
-	btnClass  string
-	endpoint  string
-	effect    func(string) interactive.Effect // interactive.OpenWidget / Navigate
-	effectArg string
-	why       string
-	how       string
-	code      string
-	caption   string
+	btnLabel   string
+	btnVariant ui.ButtonVariant
+	endpoint   string
+	effect     func(string) interactive.Effect // interactive.OpenWidget / Navigate
+	effectArg  string
+	why        string
+	how        string
+	code       string
+	caption    string
 }
 
 // rpcEffectDemo renders the shared shape of the click-then-effect demo
@@ -59,7 +59,7 @@ type rpcEffectDemoSpec struct {
 // rpc-navigate entries used to carry inline.
 func rpcEffectDemo(spec rpcEffectDemoSpec) render.HTML {
 	btn := interactive.OnClick(
-		render.Tag("button", map[string]string{"class": spec.btnClass}, render.Text(spec.btnLabel)),
+		ui.Button(ui.ButtonConfig{Label: spec.btnLabel, Variant: spec.btnVariant}),
 		interactive.Post(spec.endpoint).
 			OnSuccess(spec.effect(spec.effectArg)),
 	)
@@ -1041,7 +1041,7 @@ ui.OptimisticAction(ui.OptimisticActionConfig{
 		func() render.HTML {
 			// Live demo button: uses the interactive package.
 			btn := interactive.OnClick(
-				render.Tag("button", map[string]string{"class": "ui-button ui-button--primary"}, render.Text("Count")),
+				ui.Button(ui.ButtonConfig{Label: "Count", Variant: ui.ButtonPrimary}),
 				interactive.Post("/__site/interactive/counter").
 					OnSuccess(interactive.SetSignal("demo-counter")),
 			)
@@ -1081,13 +1081,13 @@ ui.OptimisticAction(ui.OptimisticActionConfig{
 		"Click a button → server confirms → a modal pops up. No JavaScript needed.",
 		func() render.HTML {
 			return rpcEffectDemo(rpcEffectDemoSpec{
-				btnLabel:  "Trigger Modal",
-				btnClass:  "ui-button ui-button--secondary",
-				endpoint:  "/__site/interactive/open-drawer",
-				effect:    interactive.OpenWidget,
-				effectArg: "demo-result-modal",
-				why:       "A user submits a form or clicks an action, and on success a drawer or modal should appear, showing the result, a confirmation, or a next-step form. This is the \"do X, then show Y\" pattern.",
-				how:       "Add data-fui-rpc-open=\"widget-name\" alongside data-fui-rpc. When the server returns 2xx, the runtime opens the named widget. The widget is pre-registered with widget.Mount at app startup; the RPC just triggers the reveal.",
+				btnLabel:   "Trigger Modal",
+				btnVariant: ui.ButtonSecondary,
+				endpoint:   "/__site/interactive/open-drawer",
+				effect:     interactive.OpenWidget,
+				effectArg:  "demo-result-modal",
+				why:        "A user submits a form or clicks an action, and on success a drawer or modal should appear, showing the result, a confirmation, or a next-step form. This is the \"do X, then show Y\" pattern.",
+				how:        "Add data-fui-rpc-open=\"widget-name\" alongside data-fui-rpc. When the server returns 2xx, the runtime opens the named widget. The widget is pre-registered with widget.Mount at app startup; the RPC just triggers the reveal.",
 				code: `interactive.OnClick(
     render.Tag("button", nil, render.Text("Confirm")),
     interactive.Post("/api/action").
@@ -1106,10 +1106,7 @@ ui.OptimisticAction(ui.OptimisticActionConfig{
 						"type": "text", "name": "message", "placeholder": "Type something…",
 						"required": "", "aria-label": "Message",
 					}),
-					render.Tag("button", map[string]string{
-						"type":  "submit",
-						"class": "ui-button ui-button--primary",
-					}, render.Text("Send")),
+					ui.Button(ui.ButtonConfig{Label: "Send", Variant: ui.ButtonPrimary, Type: "submit"}),
 				),
 				interactive.Post("/__site/interactive/submit").
 					OnSuccess(
@@ -1156,13 +1153,13 @@ ui.OptimisticAction(ui.OptimisticActionConfig{
 		"Click a button → server confirms → you land on a new page, no full reload.",
 		func() render.HTML {
 			return rpcEffectDemo(rpcEffectDemoSpec{
-				btnLabel:  "Navigate to Button →",
-				btnClass:  "ui-button ui-button--ghost",
-				endpoint:  "/__site/interactive/navigate",
-				effect:    interactive.Navigate,
-				effectArg: "/components/button",
-				why:       "A user creates a resource (\"New project\") and on success should land on that resource's page. Or completes a wizard step and moves to the next. The server confirms the action, then the client transitions to the destination.",
-				how:       "Add data-fui-rpc-navigate=\"/path\" alongside data-fui-rpc. On 2xx the runtime calls history.pushState and fires the SPA router, swapping <main> content just like a link click, but only after the server confirms the action succeeded.",
+				btnLabel:   "Navigate to Button →",
+				btnVariant: ui.ButtonGhost,
+				endpoint:   "/__site/interactive/navigate",
+				effect:     interactive.Navigate,
+				effectArg:  "/components/button",
+				why:        "A user creates a resource (\"New project\") and on success should land on that resource's page. Or completes a wizard step and moves to the next. The server confirms the action, then the client transitions to the destination.",
+				how:        "Add data-fui-rpc-navigate=\"/path\" alongside data-fui-rpc. On 2xx the runtime calls history.pushState and fires the SPA router, swapping <main> content just like a link click, but only after the server confirms the action succeeded.",
 				code: `interactive.OnClick(
     render.Tag("button", nil, render.Text("Create Project")),
     interactive.Post("/api/projects").

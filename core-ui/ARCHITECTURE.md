@@ -1270,6 +1270,16 @@ The cascade rule, which is the whole design:
   theme with NO dark palette stays light in dark mode: its light
   declarations block inheritance, by design.
 
+The Button family consumes them now: the `ui-button` sheet's base
+rule reads `min-height: var(--fui-density-control-h)`,
+`gap: var(--fui-density-gap)` and
+`border-radius: var(--fui-button-radius)`, and its `.fui-button--primary`
+/ `.fui-button--danger` variant rules read the per-variant treatment
+trios (`--fui-button-primary-bg/-fg/-border` and the `-danger` set).
+The compiler declares one trio per treated variant rather than one
+un-prefixed trio, so a variant's rule can never inherit another
+variant's drawing.
+
 The `fui-` prefix is reserved for `framework/ui`'s class names and
 option variables. Classes belong to framework/ui; the `data-hui-*`
 hooks belong to framework/headless. One prefix each: `fui-` is the framework's, `hui-`

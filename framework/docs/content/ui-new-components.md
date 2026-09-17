@@ -62,8 +62,8 @@ raw (enumerated in `framework/ui/extraattrs_contract_test.go`). See
 
 ### Buttons & form controls
 
-- **button**: `framework/ui.Button`, semantic button with typed variants (primary / secondary / danger / ghost) + sizes
-- **linkbutton**: `framework/ui.LinkButton`, anchor styled as a Button, for CTAs that navigate
+- **button**: `framework/ui.Button`, semantic button with typed variants (primary / secondary / danger / ghost) + sizes, rendered through the headless structure with the `fui-button` class map. `Disabled` renders the disabled state (a `disabled` key in `ExtraAttrs` panics pointing at the field). Every `data-fui-*` key in `ExtraAttrs` is runtime wiring and travels the typed `Action` seam (`interactive.Action.Attrs()`, `OpenOnClick`, pane open/close, toast, push-state, deeplink, prefetch, signal mutations, `data-fui-intercept-close`); a key outside that vocabulary panics naming it — under the old carrier contract it rendered as a dead attribute
+- **linkbutton**: `framework/ui.LinkButton`, anchor styled as a Button, for CTAs that navigate. `External` owns `target`/`rel` (noopener). Carries the four link-legal wiring keys (`data-fui-push-state`, `-prefetch`, `-open`, `-deeplink`); every other `data-fui-*` key is refused, as always — a link navigates, a button acts
 - **toggle**: `framework/ui.Checkbox` / `Radio` / `Switch`, labelled native inputs, FieldErrors-aware
 - **checkboxgroup**: `framework/ui.CheckboxGroup` / `RadioGroup`, `<fieldset>` of checkboxes / radios with shared label + errors
 - **colorfield**: `framework/ui.ColorField`, colour swatch beside a text input holding the same value, as one control; the text input is the source of truth, so values the native picker cannot represent (`transparent`, `var(--x)`) survive. Use `ColorPicker` when a swatch + label is enough

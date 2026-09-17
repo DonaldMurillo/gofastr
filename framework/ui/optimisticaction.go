@@ -42,7 +42,7 @@ var _ = registry.RegisterBehavior("optimisticaction", optimisticActionJS,
 //	        data-fui-optimistic-endpoint="/follow"
 //	        data-fui-optimistic-method="POST"
 //	        data-state="idle"
-//	        class="ui-button ui-optimistic-action">
+//	        class="fui-button fui-optimistic-action">
 //	    <span data-fui-optimistic-idle>Follow</span>
 //	    <span data-fui-optimistic-success hidden>Following ✓</span>
 //	</button>
@@ -108,18 +108,17 @@ func OptimisticAction(cfg OptimisticActionConfig) render.HTML {
 		method = "POST"
 	}
 
-	cls := "ui-button ui-optimistic-action"
-	// Always append the variant modifier when set. Primary needs the
-	// class too because the base .ui-button selectors include the
-	// primary colors via ui-button--primary on some themes. The
-	// earlier `!= ButtonPrimary` guard silently dropped the class for
-	// explicit-primary callers.
-	if cfg.Variant != "" {
-		cls += " ui-button--" + string(cfg.Variant)
+	ov := cfg.Variant
+	if ov == "" {
+		ov = ButtonPrimary
 	}
-	if cfg.Size != "" {
-		cls += " ui-button--" + string(cfg.Size)
-	}
+	checkButtonVariant("OptimisticAction", ov)
+	checkButtonSize("OptimisticAction", cfg.Size)
+	// The button's root classes come from the class map, beside this
+	// default primary included, which the earlier `Variant != ""` guard
+	// silently dropped for explicit-primary callers — because the
+	// stylesheet's colours live in the variant rules, not the base.
+	cls := buttonClassTokens(cfg.Variant, cfg.Size) + " ui-optimistic-action"
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
 	}
@@ -166,7 +165,7 @@ func OptimisticAction(cfg OptimisticActionConfig) render.HTML {
 
 var optimisticActionStyle = registry.RegisterStyle("ui-optimistic-action", func(_ style.Theme) string {
 	return `[data-fui-comp="ui-optimistic-action"] {
-  /* Inherits .ui-button base; override only what the optimistic flip needs. */
+  /* Inherits .fui-button base; override only what the optimistic flip needs. */
   position: relative;
   transition: background-color 120ms ease, color 120ms ease;
 }

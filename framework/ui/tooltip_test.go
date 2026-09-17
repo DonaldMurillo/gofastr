@@ -14,7 +14,7 @@ func TestTooltipRequiresText(t *testing.T) {
 }
 
 func TestTooltipWrapsTriggerAndAddsAriaDescribedBy(t *testing.T) {
-	trigger := render.HTML(`<button class="ui-button">Help</button>`)
+	trigger := render.HTML(`<button class="fui-button">Help</button>`)
 	h := Tooltip(TooltipConfig{Text: "Need help?"}, trigger)
 	for _, want := range []string{
 		`data-fui-comp="ui-tooltip"`,

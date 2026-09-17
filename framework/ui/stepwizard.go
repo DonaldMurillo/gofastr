@@ -184,10 +184,9 @@ func renderStepActions(ctx context.Context, current, total int) render.HTML {
 
 	// Back button (not on first step).
 	if current > 0 {
-		btns = append(btns, html.Button(html.ButtonConfig{
+		btns = append(btns, Button(ButtonConfig{
 			Label: i18nui.T(ctx, i18nui.KeyStepWizardBack),
 			Type:  "submit",
-			Class: "ui-button ui-button--secondary",
 			ExtraAttrs: html.Attrs{
 				"name":  "wizard_action",
 				"value": "back",
@@ -197,27 +196,18 @@ func renderStepActions(ctx context.Context, current, total int) render.HTML {
 
 	// Continue or Submit button.
 	isLast := current == total-1
+	next := i18nui.T(ctx, i18nui.KeyStepWizardNext)
 	if isLast {
-		btns = append(btns, html.Button(html.ButtonConfig{
-			Label: i18nui.T(ctx, i18nui.KeyStepWizardSubmit),
-			Type:  "submit",
-			Class: "ui-button",
-			ExtraAttrs: html.Attrs{
-				"name":  "wizard_action",
-				"value": "next",
-			},
-		}))
-	} else {
-		btns = append(btns, html.Button(html.ButtonConfig{
-			Label: i18nui.T(ctx, i18nui.KeyStepWizardNext),
-			Type:  "submit",
-			Class: "ui-button",
-			ExtraAttrs: html.Attrs{
-				"name":  "wizard_action",
-				"value": "next",
-			},
-		}))
+		next = i18nui.T(ctx, i18nui.KeyStepWizardSubmit)
 	}
+	btns = append(btns, Button(ButtonConfig{
+		Label: next,
+		Type:  "submit",
+		ExtraAttrs: html.Attrs{
+			"name":  "wizard_action",
+			"value": "next",
+		},
+	}))
 
 	return render.Tag("div", map[string]string{
 		"class": "ui-step-wizard__actions",
