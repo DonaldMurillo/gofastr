@@ -264,176 +264,185 @@ func imageCSS(_ style.Theme) string {
 // ─── Toggle (Checkbox / Radio / Switch) ─────────────────────────────
 
 func toggleCSS(_ style.Theme) string {
-	return `[data-fui-comp="ui-toggle"] {
+	return `/* Choice rows are drawn from the native input itself
+   (appearance: none): headless.Choice's anatomy has no indicator
+   span, and an input cannot host a pseudo-element — so the box, the
+   dot and the switch's thumb are background layers keyed to :checked.
+   The row keeps its own wrapping-label structure and deliberately
+   ignores the field sheet's --fui-field-columns: a choice row is one
+   inline run, not a label track above a control track. */
+.fui-choice {
   display: inline-flex;
-  /* flex-wrap so the help/error pseudo-line below wraps to a new
-     line instead of forcing itself between the control and the
-     label text. */
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--spacing-md, 8px);
+  gap: var(--spacing-sm, 4px);
   cursor: pointer;
-  /* Token-scaled touch target. */
+  /* Token-scaled touch target; the label wrap is the accessible
+     target (WCAG 2.5.8), the row keeps the comfortable height. */
   min-block-size: var(--spacing-touch-target, 44px);
   padding-block: var(--spacing-sm, 4px);
 }
-[data-fui-comp="ui-toggle"].is-disabled { opacity: 0.55; cursor: not-allowed; }
-
-[data-fui-comp="ui-toggle"] .ui-toggle__control {
-  position: relative;
+.fui-choice__input {
+  appearance: none;
+  -webkit-appearance: none;
   flex-shrink: 0;
+  box-sizing: border-box;
   inline-size: 1.25rem;
-  block-size:  1.25rem;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-[data-fui-comp="ui-toggle"] .ui-toggle__input {
-  position: absolute;
-  inset: 0;
-  inline-size: 100%;
-  block-size: 100%;
+  block-size: 1.25rem;
   margin: 0;
-  opacity: 0;
-  cursor: inherit;
-}
-[data-fui-comp="ui-toggle"] .ui-toggle__indicator {
-  /* inline-flex so the ::after marker (checkmark / radio dot) is
-     centered both axes regardless of variant. inline-block lets the
-     pseudo-element drift to top-left in some browsers — visible
-     bug. */
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  inline-size: 1.1rem;
-  block-size:  1.1rem;
   border: 1.5px solid var(--color-border-strong, #A1A1AA);
   background: var(--color-surface, #FFFFFF);
-  transition: background var(--duration-fast, 150ms) ease,
+  cursor: inherit;
+  transition: background-color var(--duration-fast, 150ms) ease,
               border-color var(--duration-fast, 150ms) ease;
 }
+.fui-choice__text {
+  flex: 1 1 auto;
+  font-size: var(--text-base, 1rem);
+  color: var(--color-text, #18181B);
+  line-height: 1.4;
+  min-inline-size: 0;
+}
+.fui-choice__hint {
+  display: block;
+  flex-basis: 100%;
+  margin: var(--spacing-xs, 2px) 0 0 calc(1.25rem + var(--spacing-sm, 4px));
+  font-size: var(--text-sm, 0.875rem);
+  color: var(--color-text-muted, #52525B);
+}
 
-/* ─── Checkbox ─── */
-[data-fui-comp="ui-toggle"].ui-toggle--checkbox .ui-toggle__indicator {
+/* ─── Checkbox: the check is two gradient strokes, so its ink is a
+   token (--color-primary-fg) rather than a hex baked into an SVG. ─── */
+.fui-choice--checkbox .fui-choice__input {
   border-radius: var(--radii-sm, 4px);
 }
-[data-fui-comp="ui-toggle"].ui-toggle--checkbox .ui-toggle__input:checked + .ui-toggle__indicator {
-  background: var(--color-primary, #4F46E5);
+.fui-choice--checkbox .fui-choice__input:checked {
+  background-color: var(--color-primary, #4F46E5);
   border-color: var(--color-primary, #4F46E5);
-}
-[data-fui-comp="ui-toggle"].ui-toggle--checkbox .ui-toggle__input:checked + .ui-toggle__indicator::after {
-  content: "";
-  display: block;
-  inline-size: 0.35rem;
-  block-size:  0.65rem;
-  border: solid var(--color-primary-fg, #FFFFFF);
-  border-width: 0 2px 2px 0;
-  transform: translateY(-1px) rotate(45deg);
+  background-image:
+    linear-gradient(45deg, transparent 52%, var(--color-primary-fg, #FFFFFF) 52%, var(--color-primary-fg, #FFFFFF) 68%, transparent 68%),
+    linear-gradient(135deg, transparent 34%, var(--color-primary-fg, #FFFFFF) 34%, var(--color-primary-fg, #FFFFFF) 50%, transparent 50%);
+  background-repeat: no-repeat;
+  background-size: 9px 9px, 12px 9px;
+  background-position: 3px 7px, 5px 3px;
 }
 
-/* ─── Radio ─── */
-[data-fui-comp="ui-toggle"].ui-toggle--radio .ui-toggle__indicator {
+/* ─── Radio: the dot is a hard-stop radial gradient. ─── */
+.fui-choice--radio .fui-choice__input {
   border-radius: 50%;
 }
-[data-fui-comp="ui-toggle"].ui-toggle--radio .ui-toggle__input:checked + .ui-toggle__indicator {
+.fui-choice--radio .fui-choice__input:checked {
   border-color: var(--color-primary, #4F46E5);
-}
-[data-fui-comp="ui-toggle"].ui-toggle--radio .ui-toggle__input:checked + .ui-toggle__indicator::after {
-  content: "";
-  inline-size: 0.55rem;
-  block-size: 0.55rem;
-  border-radius: 50%;
-  background: var(--color-primary, #4F46E5);
+  background-image: radial-gradient(circle at center, var(--color-primary, #4F46E5) 0 5px, transparent 5.5px);
 }
 
-/* ─── Switch ─── */
-[data-fui-comp="ui-toggle"].ui-toggle--switch .ui-toggle__control {
-  inline-size: 2.25rem;
-  block-size:  1.25rem;
+/* ─── Switch: the track IS the input; the thumb is a positioned
+   gradient that slides with background-position. ─── */
+.fui-switch {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-sm, 4px);
+  cursor: pointer;
+  min-block-size: var(--spacing-touch-target, 44px);
+  padding-block: var(--spacing-sm, 4px);
 }
-[data-fui-comp="ui-toggle"].ui-toggle--switch .ui-toggle__indicator {
+.fui-switch__input {
+  appearance: none;
+  -webkit-appearance: none;
+  flex-shrink: 0;
+  box-sizing: border-box;
   inline-size: 2.25rem;
-  block-size:  1.25rem;
+  block-size: 1.25rem;
+  margin: 0;
+  border: 1px solid var(--color-border, #E4E4E7);
   border-radius: var(--radii-full, 9999px);
-  background: var(--color-surface-soft, #F4F4F5);
-  border-color: var(--color-border, #E4E4E7);
-  position: relative;
+  background-color: var(--color-surface-soft, #F4F4F5);
+  background-image: radial-gradient(circle, var(--color-primary-fg, #FFFFFF) 0 7.5px, rgba(0, 0, 0, 0.18) 7.5px 8.5px, transparent 9px);
+  background-repeat: no-repeat;
+  background-size: 1.125rem 1.125rem;
+  background-position: left 0.0625rem center;
+  cursor: inherit;
+  transition: background-color var(--duration-fast, 150ms) ease,
+              background-position var(--duration-fast, 150ms) ease;
 }
-[data-fui-comp="ui-toggle"].ui-toggle--switch .ui-toggle__indicator::after {
-  content: "";
-  position: absolute;
-  inset-block-start: 50%;
-  inset-inline-start: 2px;
-  inline-size: 1rem;
-  block-size: 1rem;
-  border-radius: 50%;
-  background: var(--color-primary-fg, #FFFFFF);
-  transform: translateY(-50%);
-  transition: inset-inline-start var(--duration-fast, 150ms) ease;
-  box-shadow: 0 1px 2px rgba(0,0,0,0.2);
-}
-[data-fui-comp="ui-toggle"].ui-toggle--switch .ui-toggle__input:checked + .ui-toggle__indicator {
-  background: var(--color-primary, #4F46E5);
+.fui-switch__input:checked {
+  background-color: var(--color-primary, #4F46E5);
   border-color: var(--color-primary, #4F46E5);
+  background-position: right 0.0625rem center;
 }
-[data-fui-comp="ui-toggle"].ui-toggle--switch .ui-toggle__input:checked + .ui-toggle__indicator::after {
-  inset-inline-start: calc(100% - 1.125rem);
-}
-
-/* ─── Focus ring shared across all variants ─── */
-[data-fui-comp="ui-toggle"] .ui-toggle__input:focus-visible + .ui-toggle__indicator {
-  outline: 2px solid var(--color-primary, #4F46E5);
-  outline-offset: 2px;
-}
-[data-fui-comp="ui-toggle"].is-error .ui-toggle__indicator {
-  border-color: var(--color-danger, #DC2626);
-}
-
-[data-fui-comp="ui-toggle"] .ui-toggle__label {
+.fui-switch__text {
   flex: 1 1 auto;
   font-size: var(--text-base, 1rem);
   color: var(--color-text, #18181B);
   line-height: 1.4;
 }
-[data-fui-comp="ui-toggle"] .ui-toggle__help,
-[data-fui-comp="ui-toggle"] .ui-toggle__error {
-  display: block;
-  flex-basis: 100%;
-  margin: var(--spacing-xs, 2px) 0 0 calc(1.25rem + var(--spacing-md, 8px));
+
+/* ─── Shared state styling, from the state attributes themselves. ─── */
+.fui-choice__input:focus-visible,
+.fui-switch__input:focus-visible {
+  outline: 2px solid var(--color-primary, #4F46E5);
+  outline-offset: 2px;
+}
+.fui-choice__input[aria-invalid="true"],
+.fui-switch__input[aria-invalid="true"] {
+  border-color: var(--color-danger, #DC2626);
+}
+.fui-choice__input:disabled,
+.fui-switch__input:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.fui-choice:has(.fui-choice__input:disabled),
+.fui-switch:has(.fui-switch__input:disabled) {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* ─── The errored-run shell: a standalone choice with a message. ─── */
+.fui-choice-field {
+  display: grid;
+  gap: var(--spacing-xs, 2px);
+  justify-items: start;
+}
+.fui-choice-field__error,
+.fui-choice-field__hint {
+  margin: 0;
   font-size: var(--text-sm, 0.875rem);
 }
-[data-fui-comp="ui-toggle"] .ui-toggle__help  { color: var(--color-text-muted, #52525B); }
-[data-fui-comp="ui-toggle"] .ui-toggle__error { color: var(--color-danger, #DC2626); }
+.fui-choice-field__error { color: var(--color-danger, #DC2626); }
+.fui-choice-field__hint { color: var(--color-text-muted, #52525B); }
 
-/* ─── Toggle Group (fieldset wrapper for RadioGroup / CheckboxGroup) ─── */
-.ui-toggle-group {
+/* ─── Choice groups: a real fieldset, laid out as a stack of rows. ─── */
+.fui-choice-group {
   border: none;
   padding: 0;
   margin: 0;
   display: grid;
   gap: var(--spacing-sm, 4px);
 }
-.ui-toggle-group .ui-toggle-group__legend {
+.fui-choice-group__legend {
   font-weight: 500;
   font-size: var(--text-sm, 0.875rem);
   color: var(--color-text, #18181B);
   padding: 0;
   margin-bottom: var(--spacing-xs, 2px);
 }
-.ui-toggle-group .fui-field__required {
+/* The same required mark a field's label carries, drawn from the same
+   state attribute: an asterisk with empty alternative text, so the
+   legend's accessible name stays clean. The rule itself is on the
+   leaves' required attributes; this is the cue beside it. */
+.fui-choice-group__legend[data-required]::after {
+  content: " *" / "";
   color: var(--color-danger, #DC2626);
-  margin-inline-start: var(--spacing-xs, 2px);
 }
-.ui-toggle-group .ui-toggle-group__help {
+.fui-choice-group__hint,
+.fui-choice-group__error {
   margin: 0;
   font-size: var(--text-sm, 0.875rem);
-  color: var(--color-text-muted, #52525B);
 }
-.ui-toggle-group .ui-toggle-group__error {
-  margin: 0;
-  font-size: var(--text-sm, 0.875rem);
-  color: var(--color-danger, #DC2626);
-}`
+.fui-choice-group__hint  { color: var(--color-text-muted, #52525B); }
+.fui-choice-group__error { color: var(--color-danger, #DC2626); }`
 }
 
 // ─── Tooltip ────────────────────────────────────────────────────────

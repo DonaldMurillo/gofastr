@@ -155,7 +155,18 @@ const (
 	// keeps 8 bytes of clearance; the bracket was re-verified by
 	// running TestCoreBudgetRejectsCliffOverflow against the padded
 	// fixture, not by arithmetic.
-	coreCongestionWindowGZ = 14*1024 + 1110
+	//
+	// 15443, lowered 3 bytes from 15446 on 2026-09-17, a SOURCE change
+	// in the downward direction: the passwordinput module's retirement
+	// (its marker-table row left frag/boot.js with the component's
+	// move to the headless module) took the real bundle 15438 → 15422
+	// at level 1, and a bundle padded onto the level-6 goal no longer
+	// crossed the old window (fixture 15444 ≤ 15446 — the anti-vacuity
+	// bracket had gone vacuous). The line moved to the largest value
+	// below the fixture's crossing, restoring the bracket [real 15422,
+	// fixture 15444]; verified by running
+	// TestCoreBudgetRejectsCliffOverflow, not by arithmetic.
+	coreCongestionWindowGZ = 14*1024 + 1107
 )
 
 func coreBudgetViolation(t *testing.T, src string, budget int) (level, got, limit int) {

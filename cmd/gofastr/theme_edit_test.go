@@ -407,26 +407,6 @@ func TestDurationLiteral(t *testing.T) {
 	}
 }
 
-// colorSwatchValue normalises a CSS colour value into #rrggbb for the
-// <input type="color"> picker, falling back to #000000 for values the
-// picker cannot represent (oklch, color-mix, var()).
-func TestColorSwatchValue(t *testing.T) {
-	cases := []struct {
-		in, want string
-	}{
-		{"#4F46E5", "#4F46E5"},
-		{"#FFF", "#FFFFFF"},
-		{"#FFFFFFFF", "#FFFFFF"},
-		{"oklch(0.5 0.2 240)", "#000000"},
-		{"var(--color-primary)", "#000000"},
-	}
-	for _, c := range cases {
-		if got := colorSwatchValue(c.in); got != c.want {
-			t.Errorf("colorSwatchValue(%q) = %q, want %q", c.in, got, c.want)
-		}
-	}
-}
-
 // frameFriendlyWriter strips X-Frame-Options and widens frame-ancestors so
 // the preview iframe can load a UIHost-served page.
 func TestFrameFriendlyWriterStripsHeaders(t *testing.T) {

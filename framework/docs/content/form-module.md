@@ -177,9 +177,13 @@ All components pass **axe-core 4.10** with zero violations:
 
 | Module | File | Purpose |
 |--------|------|---------|
-| passwordinput | `core-ui/runtime/src/passwordinput.js` | Toggle password visibility |
 | searchinput | `core-ui/runtime/src/searchinput.js` | Clear button + auto-show/hide |
 | conditionalfield | `core-ui/runtime/src/conditionalfield.js` | Show/hide based on parent field value |
+
+The password reveal is not a module of its own: `ui.PasswordInput`
+renders through `headless.Password` and the headless behaviour module
+(`framework/headless/behavior.js`) binds the reveal button's
+`data-hui-reveal` hook.
 
 ## Demo page
 

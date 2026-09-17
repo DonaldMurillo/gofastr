@@ -105,9 +105,13 @@ readers. Works with a `document.execCommand('copy')` fallback.
 
 ### Password visibility toggle
 
-`framework/ui.PasswordInput` renders a password field with an eye icon
-that toggles between `type="password"` and `type="text"`. The runtime
-module (`passwordinput.js`) handles the click and type switch.
+`framework/ui.PasswordInput` renders a password field with a reveal
+button that toggles between `type="password"` and `type="text"`. The
+headless behaviour module (`framework/headless/behavior.js`) binds the
+button's `data-hui-reveal` hook: it retypes the input, swaps the
+button's visible word and accessible name from the four `data-hui-*`
+attributes the component rendered from its `Strings`, and keeps the
+caret where the reader left it.
 
 ### Textarea auto-resize
 

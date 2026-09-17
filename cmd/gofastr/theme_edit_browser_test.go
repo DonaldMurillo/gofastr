@@ -289,6 +289,57 @@ func TestEditReachesPreview(t *testing.T) {
 		before, got, want)
 }
 
+// TestSwatchPickSyncsThroughHeadless pins the colour-sync ownership:
+// the editor's own JS no longer copies the picked hex into the text
+// input — the headless behaviour module (data-hui-color) does, and
+// the editor's apply reads the same hex. A pick must land the
+// uppercase value in the text input (the source of truth), clear the
+// shell's invalid mark, and reach the preview through the normal
+// apply path.
+func TestSwatchPickSyncsThroughHeadless(t *testing.T) {
+	_, httpSrv := newBrowserThemeServer(t)
+	if testing.Short() {
+		t.Skip("boots Chrome")
+	}
+	ctx := chromedptest.Context(t, chromedptest.WindowSize(1280, 800))
+	navigateToEditor(t, ctx, httpSrv)
+
+	var synced bool
+	if err := chromedp.Run(ctx, chromedp.Evaluate(`(function () {
+		var swatch = document.querySelector('[data-token="color-primary"][data-type="color-swatch"]'); // not-a-secret: a selector for the editor's colour-primary row; data-token is the theme TOKEN NAME, not a credential
+		var shell = swatch && swatch.closest('[data-hui-color]');
+		if (!swatch || !shell) return false;
+		shell.setAttribute('data-invalid', ''); // the mark a stale non-hex value leaves
+		swatch.value = '#7c3aed';
+		swatch.dispatchEvent(new Event('input', { bubbles: true }));
+		return true;
+	})()`, &synced)); err != nil || !synced {
+		t.Fatalf("no swatch to pick on (err=%v synced=%v) — the editor's colour controls lost their headless hooks", err, synced)
+	}
+
+	deadline := time.Now().Add(12 * time.Second)
+	for time.Now().Before(deadline) {
+		var text, preview string
+		var markedInvalid bool
+		if err := chromedp.Run(ctx,
+			chromedp.Evaluate(teReadControlJS("color-primary"), &text),
+			chromedp.Evaluate(`(function () {
+				var s = document.querySelector('[data-token="color-primary"][data-type="color-swatch"]'); // not-a-secret: a selector for the editor's colour-primary row; data-token is the theme TOKEN NAME, not a credential
+				var shell = s && s.closest('[data-hui-color]');
+				return shell ? shell.hasAttribute('data-invalid') : true;
+			})()`, &markedInvalid),
+			chromedp.Evaluate(tePreviewTokenJS("--color-primary"), &preview),
+		); err != nil {
+			t.Fatalf("read state: %v", err)
+		}
+		if strings.EqualFold(strings.TrimSpace(text), "#7c3aed") && !markedInvalid &&
+			strings.EqualFold(strings.TrimSpace(preview), "#7c3aed") {
+			return // pass: the module synced, unmarked, and the apply landed
+		}
+	}
+	t.Fatal("a swatch pick did not sync through the headless module and land in the preview — either data-hui-color lost its binding or the editor's apply no longer reads the picked hex")
+}
+
 // TestContrastPanelReportsFailure pins that the checker CAN fail. Set
 // color-text to a low-contrast value against the default light surface and
 // assert the panel becomes visible and names the failing pair; then restore a

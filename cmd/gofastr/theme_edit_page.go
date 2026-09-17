@@ -21,6 +21,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
+	"github.com/DonaldMurillo/gofastr/core-ui/runtime"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/headless"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
@@ -190,14 +191,17 @@ func renderOneControl(t tokenControl) render.HTML {
 	buildInput := func(c headless.FieldControl) render.HTML {
 		switch t.Type {
 		case "color":
-			// ui.ColorField is the design system's swatch + hex-input pair. Both
-			// inputs carry data-token so the editor's JS wires them as one control;
-			// the swatch writes its hex into the text input, which is the source of
-			// truth (it can hold values the native picker cannot represent).
+			// ui.ColorField is the design system's swatch + hex-input
+			// affix shell, bound by the headless behaviour module: the
+			// module keeps the swatch and the hex one value in both
+			// directions and marks the shell when the text holds
+			// something the picker cannot show. Both inputs carry
+			// data-token so the editor's JS finds the control by key;
+			// the hex input is the source of truth.
 			return ui.ColorField(ui.ColorFieldConfig{
+				Name:        t.Key,
 				Value:       t.Value,
-				SwatchValue: colorSwatchValue(t.Value),
-				TextID:      c.ID,
+				Field:       c,
 				SwatchLabel: t.Key + " colour swatch",
 				// Matches the visible <label> text below, so the announced name and
 				// the seen name are the same string.
@@ -262,23 +266,6 @@ func controlInputID(key string) string {
 		}
 	}
 	return "te-input-" + b.String()
-}
-
-// colorSwatchValue returns a #rrggbb form the <input type="color"> can
-// render, or "#000000" when the value is not a plain 3/4/6/8-digit hex (the
-// picker cannot represent oklch/color-mix/var(), but the text input beside
-// it always holds the true value).
-func colorSwatchValue(v string) string {
-	hex := strings.TrimPrefix(v, "#")
-	switch len(hex) {
-	case 3:
-		// #rgb → #rrggbb
-		r, g, b := hex[0], hex[1], hex[2]
-		return "#" + string([]byte{r, r, g, g, b, b})
-	case 6, 8:
-		return "#" + hex[:6]
-	}
-	return "#000000"
 }
 
 // themeEditPageHTML composes the editor chrome from design-system primitives
@@ -393,10 +380,25 @@ func themeEditPageHTML(token, controls, outPath, previewKey string) string {
 		}))
 	}
 
+	// The chrome ships the runtime too: the colour controls bind
+	// through the headless behaviour module (data-hui-color), so the
+	// kernel has to be on the page to load it. The behaviours block
+	// in the head is the same inert JSON a host page embeds (the
+	// kernel reads it at boot), and runtime.js loads before the
+	// chrome's own script, the order host scripts keep.
+	behaviors := runtime.BehaviorsJSON()
+	if len(behaviors) > 0 {
+		head = append(head,
+			render.Tag("script", map[string]string{
+				"type": "application/json", "id": "gofastr-behaviors",
+			}, render.HTML(behaviors)))
+	}
+
 	page := render.Tag("html", map[string]string{"lang": "en", "data-color-scheme": "light"},
 		render.Tag("head", nil, head...),
 		render.Tag("body", nil,
 			bodyInner,
+			render.Tag("script", map[string]string{"src": "/__gofastr/runtime.js", "defer": ""}),
 			render.Tag("script", nil, render.HTML(themeEditChromeJS)),
 		),
 	)
@@ -628,13 +630,18 @@ const themeEditChromeJS = `
   // short quiet period so rapid typing doesn't flood the server.
   function onControlInput(input) {
     var key = input.dataset.token;
+    var value;
     if (input.dataset.type === 'color-swatch') {
-      // The colour picker writes its hex into the sibling text input, which
-      // is the actual source of truth; let the text input's handler fire.
-      var text = input.parentElement.querySelector('[data-token]:not([data-type="color-swatch"])');
-      if (text) { text.value = input.value; key = text.dataset.token; input = text; }
+      // The headless behaviour module owns the swatch→text sync: it
+      // writes the picked hex (uppercased) into the text input — the
+      // source of truth — and clears the shell's invalid mark. What
+      // is left here is the apply, from the same hex the sync is
+      // writing, uppercased to match it. Which listener runs first
+      // cannot change the value applied.
+      value = input.value.toUpperCase();
+    } else {
+      value = readControl(input);
     }
-    var value = readControl(input);
     pendingValues[key] = value;
     clearTimeout(pendingTimers[key]);
     pendingTimers[key] = setTimeout(function() {
