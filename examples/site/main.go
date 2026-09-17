@@ -1,3 +1,4 @@
+//gofastr:allow-file(GOFASTR1902) every /__site/* POST here is a demo handler of the docs site, unauthenticated by design (see the NOTE at the interactive endpoints): none keeps state or guards anything
 // =============================================================================
 // examples/site, the GoFastr product site AND the canonical feature gallery.
 // The single example app: the product/marketing pages, the docs, and a
@@ -295,6 +296,13 @@ func setupServer() *framework.App {
 	fwApp.Router().Post("/__site/toggle/noop", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	}))
+	// Headless landing demo endpoints (screen_headless_landing.go): the
+	// newsletter round trip (island JSON with the runtime, urlencoded
+	// full page without it) and the cold LoadAuto fragment. Same
+	// caveat as the rest of the /__site/* family: demo-only, no CSRF,
+	// no rate limit, no auth, bodies capped in the handlers.
+	fwApp.Router().Post("/__site/headless/subscribe", http.HandlerFunc(serveHeadlessSubscribe))
+	fwApp.Router().Get("/__site/headless/late", http.HandlerFunc(serveHeadlessLate))
 	// Optimistic UI demo endpoints. See framework/docs/content/optimistic-ui.md
 	// and the four /components/optimistic-* demos. Each endpoint is a
 	// demo-only no-op or in-memory mutation; same caveat as the rest of
@@ -758,10 +766,12 @@ var paletteCatalog = []paletteRoute{
 	{"Docs index", "/docs/"},
 	{"Entity declarations: modeling the domain", "/docs/entity-declarations"},
 	{"Examples: the reference apps", "/examples"},
-	{"Plugins: the gofastr-plugins registry", "/plugins"},
-	{"Workspace: master-detail pane-host example", "/examples/workspace"},
+	{"Headless landing: default theme", "/examples/headless/default/landing"},
+	{"Headless landing: dense theme", "/examples/headless/dense/landing"},
 	{"Live dashboard: SSE + signals reference", "/examples/live-dashboard?presence=live-dashboard-demo"},
 	{"Live presence: viewer roster demo", "/examples/presence?presence=presence-demo"},
+	{"Plugins: the gofastr-plugins registry", "/plugins"},
+	{"Workspace: master-detail pane-host example", "/examples/workspace"},
 	{"Kiln: agent build mode (experimental)", "/kiln"},
 	{"Philosophy: the convictions essay", "/philosophy"},
 	{"Reader-ready pages: browser Reader Mode", "/reader"},
@@ -844,6 +854,12 @@ func registerScreens(site *app.App) {
 	// on ui.PaneHost. Its /__site/workspace/* detail endpoints are mounted
 	// in setupServer.
 	site.Register("/examples/workspace", &WorkspaceScreen{}, nil)
+	// ── Headless landing, the theme-layer showcase (additive) ──────
+	// /examples/headless/{default,dense}/landing: one screen
+	// parameterised by the theme segment, its content scoped by the
+	// route's boot-registered theme (screen_headless_landing.go). Its
+	// /__site/headless/* endpoints are mounted in setupServer.
+	site.Register("/examples/headless/:theme/landing", &HeadlessLandingScreen{}, nil)
 	// Intercepting route: the detail is a normal page registration, and
 	// InterceptFrom only changes how a soft nav that STARTED on the list
 	// presents it. Hard load, refresh, or an external link still render

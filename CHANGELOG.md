@@ -104,6 +104,32 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   harness's part-attr, bind-routing and override sweeps cover it; the
   spec gained a `WithParts` fixture and an off-site-link case (goldens
   regenerated and read).
+- **The theme-layer showcase: `/examples/headless/{default,dense}/landing`
+  on the product site.** One screen parameterised by the theme segment,
+  its content scoped by the route's boot-registered theme
+  (`style.RegisterThemeOverride` at package init; hashing is lazy). The
+  default route is the framework look on the site's palette; the dense
+  route is compact · outline · square with its own teal-tinted dark
+  palette. Two option-only twins (same palette, flipped options) back
+  the same-palette fixture. The page carries every button variant and
+  size, a disabled button, an icon LinkButton and an external one, the
+  same palette under two option sets, an A → B → A nest, explicit
+  scheme controls (`ui.ThemeToggle` pill), a bare `headless.Button` with
+  nil `Classes` beside a `ui.Button`, a newsletter form whose island
+  round trip (200-with-the-region, focus on the summary) falls back to
+  a native full-page POST without script, and a cold `LoadAuto`
+  insertion (`ui.Callout` via `/__site/headless/late`) whose sheet the
+  runtime fetches on arrival. Unknown theme segments 404. Browser proofs
+  in `examples/site/e2e_headless_landing_test.go` (computed option
+  variables per scope, nesting, palette-keeping twin, scoped dark mode,
+  bare-vs-styled, cold sheet, both newsletter passes — the no-script
+  pass blocks `runtime.js` via `network.SetBlockedURLs`); both routes
+  joined the desktop and mobile axe lists; the static export test pins
+  the two pages under the `/gofastr` base with their wrapper classes,
+  the option variables in `app.css`, and the static-mode notice wiring
+  for the server-backed POST. Linked from `/examples` and the ⌘K
+  palette; `StaticPaths` enumerates both routes for export, sitemap and
+  the coverage gates.
 
 - **`registry.RegisterBehavior`**: behaviour registers like style. A
   component's package embeds its runtime module beside the Go and
@@ -208,6 +234,35 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `framework/ui`: registering during init cannot hash, freeze the
   component-options compiler hook and panic `framework/ui`'s later
   init. Code that read `ref.Hash` as a field moves to `ref.Hash()`.
+
+### Migration ledger — the headless stack so far
+
+One place to read every breaking change this stack has landed, in
+application order. Each entry is detailed above in this release's
+`BREAKING` section; this ledger is the checklist for moving an app
+across the whole stack.
+
+1. **`headless.Skin` is now `headless.Classes`** (and `Kit.Skin` is
+   `Kit.Classes`). Mechanical rename:
+   `gofmt -r 'headless.Skin -> headless.Classes'` plus local variable
+   renames. No golden changed.
+2. **`style.ThemeRef.Hash` is a method now.** `RegisterThemeOverride`
+   hashes lazily, so package-level registration is safe in a library
+   that does not import `framework/ui`; move `ref.Hash` field reads to
+   `ref.Hash()`.
+3. **`disabled` belongs to `ButtonConfig.Disabled`.** A `disabled` key
+   in `ui.Button`'s `ExtraAttrs` panics pointing at the field.
+4. **The button wiring vocabulary is typed.** Every `data-fui-*` key on
+   a button routes through the `Action` seam
+   (`interactive.Action.Attrs()` and friends); a key outside the
+   admitted vocabulary panics at render, naming the key. On an anchor
+   only the four link-legal keys ride.
+5. **The button classes are `fui-button*`.** The `ui-button` class no
+   longer exists in any emitted markup or stylesheet; hand-rolled
+   `class="ui-button"` markup renders unstyled — call
+   `ui.Button` / `ui.LinkButton`. Selectors that targeted `.ui-button`
+   (Form's block-actions, FilterToolbar, admin row actions) select
+   `.fui-button` now.
 
 ### Changed
 - **One home per helper.** A clone survey over the tree found the same

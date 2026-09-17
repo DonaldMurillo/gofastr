@@ -395,6 +395,21 @@ func exHero() render.HTML {
 			html.Paragraph(html.TextConfig{Class: "lede"},
 				render.Text("Clone the one that looks like your problem; swap the entity declarations. Each app's full source is under examples/ in the repo. Run it with gofastr dev for rebuild-on-save, livereload, and the dev MCP tools; plain go run . works too."),
 			),
+			// The theme-layer showcase lives on this site rather than
+			// under examples/<slug>, so it links from the hub hero
+			// instead of joining exRowItems (whose row set the source-
+			// link gate pins).
+			ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM},
+				ui.LinkButton(ui.LinkButtonConfig{
+					Label: "Headless landing · default theme",
+					Href:  "/examples/headless/default/landing",
+				}),
+				ui.LinkButton(ui.LinkButtonConfig{
+					Label:   "Headless landing · dense theme",
+					Href:    "/examples/headless/dense/landing",
+					Variant: ui.ButtonSecondary,
+				}),
+			),
 		),
 	)
 }

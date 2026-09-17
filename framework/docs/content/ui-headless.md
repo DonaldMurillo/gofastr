@@ -145,6 +145,42 @@ one. `data-fui-push-state` is rendered only for a GET
 with a href to write; a mutation's URL is the server's to set through
 `X-Gofastr-Push-State`.
 
+## Headless via framework/ui
+
+Two callers, two surfaces, one package. Pick your scenario by what you
+want to own:
+
+- **Bare headless.** You render `headless.Button(props, nil)` (or with a
+  `Classes` of your own) and style it with your own stylesheet. You see
+  parts, hooks, `Parts{Attrs, Slots, Binds}`, `Strings`, `Island`,
+  `Action`, `Classes`. You never see a theme. The `fui-` class prefix is
+  reserved for framework/ui: writing `fui-button` on your own markup gets
+  the framework's styling whenever that sheet is on the page.
+- **framework/ui.** You render `ui.Button(ui.ButtonConfig{...})` and
+  customise through the theme: tokens for palette and scale, and the
+  typed component options (`theme.Overrides.Components`) for how the
+  component family draws — density, button treatment, button radius. You
+  never see `Classes`, parts, or a class name.
+
+`Classes` is internal to the styled layer: `ui.Button` dresses the
+headless structure with this package's own `fui-button` class map, and
+the class names are the same under every theme — a theme never picks
+classes, it declares option variables that the component's stylesheet
+consumes (see [theming](theming.md) → "Component options"). Discovery
+and styling stay separate there too: the `data-fui-comp="ui-button"`
+marker is what fetches the sheet; the classes are what the sheet matches.
+A bare headless button beside a styled one on the same page stays
+unstyled — that pair is one of the fixtures below.
+
+**See it live:** the product site ships a landing page under each of two
+boot-registered themes —
+`/examples/headless/default/landing` and
+`/examples/headless/dense/landing` — with every variant and size, the
+same palette under two option sets, an A → B → A nest, explicit scheme
+controls, bare headless beside styled ui, and a cold `LoadAuto`
+insertion. The browser proofs live in
+`examples/site/e2e_headless_landing_test.go`.
+
 ## The spec and the harness
 
 Every component registers a `Spec` beside its code: its name, the
@@ -253,9 +289,9 @@ component: `data-hui-when-off` and `data-hui-drop-over`.
 Arming is the kernel's. The module registers a scanner and the kernel
 calls it on every inserted subtree and over the document after a
 client navigation; a host adds no observer, and the module adds none
-of its own. The class map and the stylesheet follow in their own change,
-and `framework/ui` remains today's styled layer, not rendering
-through this package.
+of its own. `framework/ui` is the styled layer on top of this package:
+its components render through these structures dressed with their own
+class maps (Button first), and a bare headless render stays unstyled.
 
 ## Common mistakes
 
