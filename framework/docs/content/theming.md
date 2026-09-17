@@ -266,7 +266,10 @@ Tokens retune the palette and the scales; **component options** decide
 how a component family draws itself. They live in the theme, beside
 the tokens, and travel the same roads (`ThemeToTokens`,
 `ApplyTokens` under the `component.` prefix, the theme-edit writeback,
-`ThemeHash`):
+`ThemeHash`). Today the theme stores them and the compiler emits their
+variables; no component stylesheet reads those variables yet, so an
+option changes nothing on screen until the first rebuilt component
+(Button, the next PR) consumes them:
 
 ```go
 t := theme.Default(theme.Overrides{

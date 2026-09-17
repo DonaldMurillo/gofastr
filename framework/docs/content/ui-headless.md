@@ -89,7 +89,7 @@ classes := headless.Classes{
 
 headless.Field(headless.FieldProps{
     Label: "Port", For: "port", Hint: "1024 to 65535", Required: true,
-, classes, func(c headless.FieldControl) render.HTML {
+}, classes, func(c headless.FieldControl) render.HTML {
     return headless.Input(headless.InputProps{
         Name: "port", ID: c.ID, Required: c.Required,
         DescribedBy: c.DescribedBy, Invalid: c.Invalid,
@@ -116,7 +116,7 @@ makes it the island; the URL is written by the runtime.
 headless.Pagination(headless.PaginationProps{
     Page: 2, Pages: 9, HrefPattern: "/apps?page=%d",
     Island: headless.Island{Endpoint: "/island/apps", Signal: "apps"},
-, classes)
+}, classes)
 ```
 
 Where the change would otherwise be a route the Island is required:

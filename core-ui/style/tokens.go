@@ -29,12 +29,15 @@ import (
 // Six bytes is 48 bits, ample for distinguishing the handful of themes a
 // process serves, and short enough to sit in a query string.
 func ThemeHash(t Theme) string {
-	// The options join the fingerprint in their FLAT form, not as the
-	// compiler's output: the compiled form only exists once a compiler is
-	// registered, and identity must not depend on which layers a binary
-	// happened to link. sortedMapKeys is the mapwriter discipline.
+	// The options join the fingerprint in their FLAT form, over the
+	// compiler-independent token CSS (tokenCSS, not CSSCustomProperties):
+	// the compiled block only exists once a compiler is registered, and a
+	// theme's identity must be the same in every binary, whichever layers
+	// it links. Hashing therefore never touches the compiler hook, so a
+	// hash computed during init cannot freeze it. sortedMapKeys is the
+	// mapwriter discipline.
 	var b strings.Builder
-	b.WriteString(t.CSSCustomProperties())
+	b.WriteString(t.tokenCSS())
 	b.WriteString("\n/* components */\n")
 	for _, k := range sortedMapKeys(t.Components) {
 		b.WriteString(k)
@@ -142,6 +145,32 @@ func (t Theme) ResolveRadius(name string) string {
 // struct to include the embedded extensions.
 func (t Theme) CSSCustomProperties() string {
 	css := CSSCustomPropertiesOf(t) + "\n" + aliasTokenCSS()
+	if compiled := t.compiledOptionsCSS(); compiled != "" {
+		css += "\n" + compiled
+	}
+	if dark := darkSchemeCSS(t.DarkColors, t.DarkCode); dark != "" {
+		css += "\n" + dark
+	}
+	return css
+}
+
+// tokenCSS is CSSCustomProperties without the compiled component
+// options: the tokens, the aliases and the dark blocks, which depend on
+// the theme alone. ThemeHash fingerprints this plus the options in their
+// flat form, so a theme has the same identity in every binary, whether
+// or not a compiler is linked; the compiled block is a function of the
+// options and the linked layer, not part of what the theme is.
+func (t Theme) tokenCSS() string {
+	css := CSSCustomPropertiesOf(t) + "\n" + aliasTokenCSS()
+	if dark := darkSchemeCSS(t.DarkColors, t.DarkCode); dark != "" {
+		css += "\n" + dark
+	}
+	return css
+}
+
+// compiledOptionsCSS is the :root block of compiled component options,
+// or "" when no compiler is registered or the theme carries none.
+func (t Theme) compiledOptionsCSS() string {
 	// The compiled component options join the root block AFTER the
 	// tokens they reference: a declaration like
 	// --fui-button-bg: var(--color-primary) computes its var() at the
@@ -149,21 +178,19 @@ func (t Theme) CSSCustomProperties() string {
 	// theme boundary (ThemeOverrideCSS does the scoped half) to pick up
 	// each scope's palette instead of carrying the root's colours into
 	// it. Sorted by name for the byte-stable output ThemeHash needs.
-	if opts := componentOptionDecls(t.Components); len(opts) > 0 {
-		var b strings.Builder
-		b.WriteString(":root {\n")
-		for _, line := range opts {
-			b.WriteString("  ")
-			b.WriteString(line)
-			b.WriteString("\n")
-		}
-		b.WriteString("}")
-		css += "\n" + b.String()
+	opts := componentOptionDecls(t.Components)
+	if len(opts) == 0 {
+		return ""
 	}
-	if dark := darkSchemeCSS(t.DarkColors, t.DarkCode); dark != "" {
-		css += "\n" + dark
+	var b strings.Builder
+	b.WriteString(":root {\n")
+	for _, line := range opts {
+		b.WriteString("  ")
+		b.WriteString(line)
+		b.WriteString("\n")
 	}
-	return css
+	b.WriteString("}")
+	return b.String()
 }
 
 // aliasTokenCSS emits derived aliases for token names that framework/ui

@@ -1,6 +1,7 @@
 package theme
 
 import (
+	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"reflect"
 	"testing"
 )
@@ -102,5 +103,15 @@ func TestUnknownComponentValueFailsValidate(t *testing.T) {
 	th.Components["density"] = "Compact" // uppercase: not [a-z][a-z0-9-]*
 	if err := th.Validate(); err == nil {
 		t.Error("uppercase component value passed Theme.Validate")
+	}
+}
+
+// A theme built outside Default, with no Components map at all, still
+// takes options: the nil map is made on first write.
+func TestApplyComponentOptionsMakesTheMapWhenNil(t *testing.T) {
+	var th style.Theme
+	applyComponentOptions(&th, ComponentOptions{Density: Compact})
+	if got := th.Components["density"]; got != "compact" {
+		t.Fatalf("Components[density] = %q after applying to a nil map, want compact", got)
 	}
 }

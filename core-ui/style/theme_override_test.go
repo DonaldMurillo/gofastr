@@ -39,8 +39,8 @@ func TestThemeOverrideCSSWrapsInClass(t *testing.T) {
 // that does not import framework/ui) runs during init, before the
 // component-options compiler is registered, and a hash computed there
 // would freeze the hook with none registered — framework/ui's later
-// init would panic. Hashing happens on first use instead, and only
-// that latches the freeze.
+// init would panic. Hashing happens on first use instead, and never
+// reaches the compiler at all: only emitting CSS latches the freeze.
 func TestRegisterThemeOverrideDoesNotHash(t *testing.T) {
 	resetComponentOptionsForTest()
 	t.Cleanup(resetComponentOptionsForTest)
@@ -60,14 +60,21 @@ func TestRegisterThemeOverrideDoesNotHash(t *testing.T) {
 	if !strings.HasPrefix(class, "fui-theme-") {
 		t.Errorf("Class() = %q, want fui-theme-<hash>", class)
 	}
-	if !componentOptionsFrozenForTest() {
-		t.Error("Class() hashes, and that first use is what must freeze the compiler hook")
+	// Hashing is compiler-independent (the flat options join the
+	// token CSS), so even the first use of the handle leaves the hook
+	// open; only emitting CSS with compiled options freezes it.
+	if componentOptionsFrozenForTest() {
+		t.Error("Class() froze the compiler hook: hashing must not touch the compiler, or a hash during init would freeze it")
 	}
 	// The handle's hash still addresses the stored theme: the scope CSS
-	// is servable under it, options compiled.
+	// is servable under it, options compiled, and that emission is
+	// what freezes the hook.
 	css := ThemeOverrideCSS(ref.Hash(), AllThemeOverrides()[ref.Hash()])
 	if !strings.Contains(css, "--fui-test-density: compact;") {
 		t.Errorf("compiled options missing from the scope block under the handle's hash:\n%s", css)
+	}
+	if !componentOptionsFrozenForTest() {
+		t.Error("emitting the scope CSS with compiled options must freeze the compiler hook")
 	}
 }
 
