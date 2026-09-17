@@ -30,7 +30,10 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   put fmt's error text into an accessible name. The two kinds are
   judged differently: `%s` verbs are positional, so their order binds,
   while `{name}` tokens are replaced by name in the runtime, so a
-  translation may reorder those freely. `ui.CheckStrings(ctx)` reports
+  translation may reorder those freely. A percent sign in prose is not
+  a verb (the scan follows `fmt`'s grammar), and a field whose English
+  carries no verb is not a format string, so a translator writing
+  "Échec à 100 %." is not refused. `ui.CheckStrings(ctx)` reports
   every key whose translation would be refused, with the English that
   renders instead, so a host fails a test on catalog drift rather than
   shipping one English sentence among the translated ones. A reflection gate in `framework/ui` fails the build

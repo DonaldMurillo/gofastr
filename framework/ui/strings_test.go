@@ -205,6 +205,20 @@ func TestPlaceholdersMatch(t *testing.T) {
 		{"named token repeated", "{name} selected.", "{name} et {name}.", false},
 		{"no placeholder either side", "Could not save.", "Échec.", true},
 		{"escaped percent is not a verb", "100%% sure", "sûr à 100%%", true},
+		// A percent sign in prose is not a placeholder. French sets a
+		// space before it, and the sentence often ends right after —
+		// neither is a verb, because no verb letter follows.
+		{"percent ending a sentence", "Could not save.", "Échec à 100 %.", true},
+		{"percent before a space", "Could not save.", "100 % sûr", true},
+		{"percent with a width but no verb", "Could not save.", "remise de 50 %", true},
+		// A field whose English carries a verb still holds its
+		// translation to that verb.
+		{"format field still needs its verb", "Dismiss: %s", "Fermer à 100 %.", false},
+		// The discriminating case for the grammar: the verb is there
+		// AND the sentence carries a prose percent. Reading the two
+		// bytes after a % would see a second verb and refuse a correct
+		// translation.
+		{"verb kept, prose percent alongside", "Pick %s", "Choisir %s (100 %) environ", true},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -240,6 +254,25 @@ func TestStringsForRefusesPlaceholderDrift(t *testing.T) {
 		if val := reflect.ValueOf(got).Elem().FieldByName(name).String(); val != w {
 			t.Errorf("%s = %q, want %q", name, val, w)
 		}
+	}
+}
+
+// TestStringsForAcceptsProseWithAPercentSign: ActionFailed carries no
+// verb, so it is not a format string and nothing calls Sprintf on it.
+// A translator writing a percent sign in that sentence is writing
+// prose, and the bridge must let it through.
+func TestStringsForAcceptsProseWithAPercentSign(t *testing.T) {
+	const prose = "Échec de l'enregistrement à 100 %. Réessayez."
+	got := StringsFor(stringsCtx(map[i18nui.Key]string{
+		i18nui.KeyActionFailed: prose,
+	}))
+	if got.ActionFailed != prose {
+		t.Errorf("ActionFailed = %q, want the translation %q — a percent in prose is not a placeholder", got.ActionFailed, prose)
+	}
+	if drift := CheckStrings(stringsCtx(map[i18nui.Key]string{
+		i18nui.KeyActionFailed: prose,
+	})); len(drift) != 0 {
+		t.Errorf("CheckStrings reported %+v for prose with a percent sign", drift)
 	}
 }
 

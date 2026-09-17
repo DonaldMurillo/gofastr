@@ -181,7 +181,13 @@ func eachBridgedField(w *headless.Strings, fn func(name string, f reflect.Value,
 //
 //   - The % verbs are applied by fmt, positionally, so their ORDER is
 //     part of the contract: a translation that swaps two verbs swaps
-//     the values. An escaped %% is not a verb at all.
+//     the values. An escaped %% is not a verb at all, and neither is a
+//     percent sign in prose ("Échec à 100 %."), which is why the scan
+//     follows fmt's own grammar instead of taking the two bytes after
+//     a %. A field whose English carries no verb is not a format
+//     string, so its translation is not held to a verb contract at
+//     all: nothing calls Sprintf on it, and a translator writing
+//     "100 % sûr" is writing prose, not a placeholder.
 //   - The {name} tokens are replaced by name in the runtime
 //     (behavior.js replaces "{n}" and "{names}" literally), so a
 //     translation may put them in whatever order its grammar wants.
@@ -190,12 +196,37 @@ func eachBridgedField(w *headless.Strings, fn func(name string, f reflect.Value,
 func placeholdersMatch(def, translated string) bool {
 	defVerbs, defNames := placeholdersIn(def)
 	trVerbs, trNames := placeholdersIn(translated)
-	if !slices.Equal(defVerbs, trVerbs) {
+	if len(defVerbs) > 0 && !slices.Equal(defVerbs, trVerbs) {
 		return false
 	}
 	slices.Sort(defNames)
 	slices.Sort(trNames)
 	return slices.Equal(defNames, trNames)
+}
+
+// verbEnd reports where the fmt verb starting at s[i] ends, following
+// fmt's grammar: the percent, any flags, a width, an optional
+// precision, then the verb letter that makes it a verb. Without that
+// letter there is no verb — "100 %." ends the sentence, it does not
+// format anything — and an escaped %% is handled by the caller.
+func verbEnd(s string, i int) (int, bool) {
+	j := i + 1
+	for j < len(s) && strings.IndexByte("+-# 0", s[j]) >= 0 {
+		j++
+	}
+	for j < len(s) && s[j] >= '0' && s[j] <= '9' {
+		j++
+	}
+	if j < len(s) && s[j] == '.' {
+		j++
+		for j < len(s) && s[j] >= '0' && s[j] <= '9' {
+			j++
+		}
+	}
+	if j < len(s) && (s[j] >= 'a' && s[j] <= 'z' || s[j] >= 'A' && s[j] <= 'Z') {
+		return j + 1, true
+	}
+	return 0, false
 }
 
 // placeholdersIn splits a string's placeholders into the % verbs, in
@@ -206,13 +237,11 @@ func placeholdersIn(s string) (verbs, names []string) {
 	for i := 0; i < len(s); i++ {
 		switch s[i] {
 		case '%':
-			if i+1 < len(s) {
-				if s[i+1] == '%' {
-					i++
-					continue
-				}
-				verbs = append(verbs, s[i:i+2])
-				i++
+			if end, ok := verbEnd(s, i); ok {
+				verbs = append(verbs, s[i:end])
+				i = end - 1
+			} else if i+1 < len(s) && s[i+1] == '%' {
+				i++ // an escaped %%, and not a verb
 			}
 		case '{':
 			if end := strings.IndexByte(s[i:], '}'); end > 0 {
