@@ -28,12 +28,6 @@ func TestCompilerEmitsDensityVariables(t *testing.T) {
 		{theme.Compact, "36px", "var(--spacing-sm)"},
 	} {
 		css := rootOptionCSS(theme.ComponentOptions{Density: tc.density})
-		for _, want := range []string{
-			"--hui-density-control-h: " + tc.controlH + ";",
-			"--hui-gap-x: ", // placeholder replaced below
-		} {
-			_ = want
-		}
 		if !strings.Contains(css, "--hui-density-control-h: "+tc.controlH+";") {
 			t.Errorf("density %v: control height missing (want %s)", tc.density, tc.controlH)
 		}
@@ -103,27 +97,32 @@ func TestCompilerEmitsOptionsInsideScopeBlocks(t *testing.T) {
 		Button:  theme.ButtonOptions{Treatment: theme.Outline, Radius: theme.Square},
 	}})
 	ref := style.RegisterThemeOverride(th)
-	css := style.ThemeOverrideCSS(ref.Hash, th)
+	css := style.ThemeOverrideCSS(ref.Hash(), th)
 	// Light and both dark scope blocks each re-declare the options:
 	// every boundary is where the var() references must compute.
-	opener := "\n[data-color-scheme=\"dark\"] .fui-theme-" + ref.Hash + " {\n"
-	i := strings.Index(css, opener)
-	if i < 0 {
-		t.Fatalf("dark scope block missing:\n%s", css)
-	}
-	end := strings.Index(css[i:], "\n}")
-	darkBody := css[i : i+end]
-	for _, want := range []string{
-		"--hui-density-control-h: 36px;",
-		"--hui-button-radius: 0;",
-		"--hui-button-bg: transparent;",
-		"--hui-button-border: var(--color-primary);",
+	for _, probe := range []struct{ block, opener string }{
+		{"light", ".fui-theme-" + ref.Hash() + " {\n"},
+		{"explicit dark", "\n[data-color-scheme=\"dark\"] .fui-theme-" + ref.Hash() + " {\n"},
+		{"media dark", "  :root:not([data-color-scheme=\"light\"]) .fui-theme-" + ref.Hash() + " {\n"},
 	} {
-		if !strings.Contains(css, want) {
-			t.Errorf("light scope block missing %s", want)
+		i := strings.Index(css, probe.opener)
+		if i < 0 {
+			t.Fatalf("%s scope block missing its opener %q in:\n%s", probe.block, probe.opener, css)
 		}
-		if !strings.Contains(darkBody, want) {
-			t.Errorf("dark scope block missing %s", want)
+		end := strings.Index(css[i:], "\n}")
+		if end < 0 {
+			t.Fatalf("%s scope block missing its closer in:\n%s", probe.block, css)
+		}
+		body := css[i : i+end]
+		for _, want := range []string{
+			"--hui-density-control-h: 36px;",
+			"--hui-button-radius: 0;",
+			"--hui-button-bg: transparent;",
+			"--hui-button-border: var(--color-primary);",
+		} {
+			if !strings.Contains(body, want) {
+				t.Errorf("%s scope block missing %s:\n%s", probe.block, want, body)
+			}
 		}
 	}
 }
@@ -152,6 +151,20 @@ func TestCompilerPanicsOnUnknownOption(t *testing.T) {
 	th := theme.Default()
 	th.Components["banana.split"] = "ripe"
 	_ = th.CSSCustomProperties()
+}
+
+// With the real compiler registered (this package's init), Validate
+// runs it, so an unknown vocabulary fails at boot instead of
+// detonating as a panic inside the first request. The value here is
+// grammar-clean — "cozy" is one lowercase word — so only the
+// vocabulary check can catch it.
+func TestValidateCatchesUnknownVocabularyAtBoot(t *testing.T) {
+	th := theme.Default()
+	th.Components["density"] = "cozy"
+	err := th.Validate()
+	if err == nil || !strings.Contains(err.Error(), "density") {
+		t.Fatalf("Validate must name the unknown option at boot; got %v", err)
+	}
 }
 
 // The theme's own hash separates option sets under the REAL compiler,

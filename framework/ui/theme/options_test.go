@@ -93,9 +93,10 @@ func TestCompleteFillsUnset(t *testing.T) {
 
 // An unknown VALUE in Components fails style.Theme.Validate: the
 // grammar check is the theme-shape gate every host runs at boot. (A
-// grammatical non-member like "cozy" is refused by the compiler at
-// emit; that test lives in framework/ui, where the compiler is
-// registered.)
+// grammatical non-member like "cozy" is refused at Validate where the
+// compiler is registered — this package's tests link no compiler — and
+// at emit everywhere else; both tests live in framework/ui, where the
+// compiler is.)
 func TestUnknownComponentValueFailsValidate(t *testing.T) {
 	th := Default()
 	th.Components["density"] = "Compact" // uppercase: not [a-z][a-z0-9-]*

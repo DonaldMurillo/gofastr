@@ -1227,9 +1227,15 @@ core-ui/style can only store, validate, hash and copy it. Turning it
 into CSS is the job of the one **component-options compiler**
 registered per process (`style.RegisterComponentOptionsCompiler`);
 `framework/ui` registers its compiler from its package `init`, and a
-registration after the first theme CSS emission panics, because the
-host freezes `app.css`, the component catalog and the manifest at
-first use and a late compiler would be missing from all three.
+registration after a theme was hashed or theme CSS was emitted panics,
+because the host freezes `app.css`, the component catalog and the
+manifest at first use and a late compiler would be missing from all
+three. Registration never hashes — `ThemeRef` computes its hash on
+first use — so the package-level `var Dark =
+style.RegisterThemeOverride(…)` pattern is safe in a package that does
+not import `framework/ui`; only a package-level `Class()`/`ThemeHash`
+call can hash before the styled layer's init, and the panic names that
+cause.
 
 The cascade rule, which is the whole design:
 
@@ -1273,10 +1279,12 @@ the framework's styling whenever that sheet is on the page.
 Options ride the same plumbing as tokens: `ThemeToTokens` /
 `ApplyTokens` carry them under the reserved `component.` prefix,
 `Theme.Validate` enforces their grammar (lowercase dot-separated keys,
-one lowercase word per value), `ThemeHash` separates themes that
-differ only in options (once a compiler is registered), the theme-edit
-writeback emits them, and every registry that stores a theme clones
-the map before hashing and on every read.
+one lowercase word per value) and, when the compiler is registered,
+their vocabulary too; `ThemeHash` separates themes that differ only in
+options with or without a compiler registered (the fingerprint carries
+the flattened options directly); the theme-edit writeback emits them,
+and every registry that stores a theme clones the map before storing
+and on every read.
 
 ### app.css: one asset, one request
 

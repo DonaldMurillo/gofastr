@@ -22,10 +22,16 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   declarations join the `:root` block and every theme-override scope
   block, are validated at emit (a name that is not a custom property
   or a value that breaks a declaration panics), and land in
-  `ThemeHash`, so themes that differ only in options hash apart. A
-  registration after the first theme CSS emission panics with the
-  reason: the host freezes app.css, the catalog and the manifest at
-  first use.
+  `ThemeHash`, so themes that differ only in options hash apart — with
+  or without a compiler registered: the hash fingerprints the
+  flattened options directly, so a binary that links no styled layer
+  (framework/uihost alone) still never aliases option-different
+  themes. A registration after a theme was hashed or theme CSS was
+  emitted panics with the reason: the host freezes app.css, the
+  catalog and the manifest at first use. `Theme.Validate` runs the
+  registered compiler too, so an unknown option key or value (a
+  grammar-clean `"density": "cozy"`) fails at boot, not as a panic at
+  first render.
 - **Scoped dark mode follows the document.** A registered theme
   override with a dark palette now emits it under
   `[data-color-scheme="dark"] .fui-theme-<hash>` plus the
@@ -35,7 +41,7 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   inside every scope block, so token references resolve against each
   scope's own palette. A scope with no dark palette stays light in
   dark mode (documented). `RegisterThemeOverride` deep-clones the
-  theme before hashing (dark maps and `Components`); reads return
+  theme before storing it (dark maps and `Components`); reads return
   deep copies; `ApplyTokens` and `RegisterThemeVariant` clone
   `Components` the same way.
 - **`theme.ComponentOptions`** — typed component options for
@@ -113,6 +119,15 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `gofmt -r 'headless.Skin -> headless.Classes'` (plus renaming local
   `skin` variables, e.g. `perl -pi -e 's/\bskin\b/classes/g'`), and
   `Kit.Skin` is now `Kit.Classes`.
+
+- **`style.ThemeRef.Hash` is a method now.** `RegisterThemeOverride`
+  no longer hashes at registration; the handle computes its content
+  hash on first use (`Hash()`/`Class()`). The documented package-level
+  pattern `var Dark = style.RegisterThemeOverride(darkTheme)` is
+  therefore safe in a library package that does not import
+  `framework/ui`: registering during init cannot hash, freeze the
+  component-options compiler hook and panic `framework/ui`'s later
+  init. Code that read `ref.Hash` as a field moves to `ref.Hash()`.
 
 ### Changed
 - **One home per helper.** A clone survey over the tree found the same

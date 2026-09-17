@@ -24,8 +24,8 @@
 //   - framework/cron       in-process cron scheduler
 //   - framework/slowquery  SlowQueryLogger DBExecutor wrapper
 //   - framework/db         shared Executor + tx context primitives
-//   - framework/headless   unstyled components: parts, skins, seams,
-//     islands, and the harness that pins them
+//   - framework/headless   unstyled components: parts, class maps,
+//     slots, binds, islands, and the harness that pins them
 //
 // Both surfaces are first-class: the facade re-exports give callers
 // short, one-import access (`framework.Entity`, `framework.AutoMigrate`),

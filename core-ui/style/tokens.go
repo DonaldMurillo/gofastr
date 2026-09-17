@@ -11,10 +11,15 @@ import (
 )
 
 // ThemeHash is the canonical content address of a theme: a short digest of
-// the :root custom properties it emits. Two themes that produce identical
-// CSS hash identically, which is exactly the equivalence callers want,
-// a theme differing only in its Name changes no pixel and should not bust
-// a cache.
+// the :root custom properties it emits plus a canonical serialization of
+// its Components map, so two themes that produce identical CSS hash
+// identically — exactly the equivalence callers want: a theme differing
+// only in its Name changes no pixel and should not bust a cache — while
+// two themes that differ only in options hash apart EVEN where no
+// component-options compiler is registered (a binary built on
+// framework/uihost alone links none; without the canonical block its
+// option-different themes would collide and the second registration
+// would be dropped as a duplicate).
 //
 // This is the single implementation. Anything keying a cache, a URL, or an
 // asset version on "which theme is this" must call it rather than hashing
@@ -24,7 +29,20 @@ import (
 // Six bytes is 48 bits, ample for distinguishing the handful of themes a
 // process serves, and short enough to sit in a query string.
 func ThemeHash(t Theme) string {
-	return CSSFingerprint(t.CSSCustomProperties())
+	// The options join the fingerprint in their FLAT form, not as the
+	// compiler's output: the compiled form only exists once a compiler is
+	// registered, and identity must not depend on which layers a binary
+	// happened to link. sortedMapKeys is the mapwriter discipline.
+	var b strings.Builder
+	b.WriteString(t.CSSCustomProperties())
+	b.WriteString("\n/* components */\n")
+	for _, k := range sortedMapKeys(t.Components) {
+		b.WriteString(k)
+		b.WriteString("=")
+		b.WriteString(t.Components[k])
+		b.WriteString("\n")
+	}
+	return CSSFingerprint(b.String())
 }
 
 // CSSFingerprint is the content address of an arbitrary block of CSS, in the

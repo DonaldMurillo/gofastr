@@ -111,7 +111,7 @@ var docIntents = []docIntent{
 			{"ui-wiring", "Wiring UI into an app", "framework.App + core-ui app + uihost, end to end in one annotated main.go."},
 			{"layouts", "Screens and layouts", "Layout chains: nesting with ScreenGroup, per-layer markers, deepest-shared-layer swaps, prefetch, scroll restore."},
 			{"ui-new-components", "New components", "The minimal-register + SSR-inline + hydrate contract."},
-			{"ui-headless", "Headless components", "Structure, roles and hooks with no classes: parts, skins, seams, islands, and the harness that pins them."},
+			{"ui-headless", "Headless components", "Structure, roles and hooks with no classes: parts, class maps, slots, binds, islands, and the harness that pins them."},
 			{"theming", "Theming", "The token catalog, dark mode, ui.Themed, and the --ui-* override vars."},
 			{"widgets", "Widget builder", "Build islands that hydrate against a registered handler."},
 			{"form-module", "Forms", "Server-validated forms with island-swapped error states."},

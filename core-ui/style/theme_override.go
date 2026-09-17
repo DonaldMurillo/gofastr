@@ -3,6 +3,7 @@ package style
 import (
 	"fmt"
 	"reflect"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -21,58 +22,113 @@ import (
 //
 //	ui.Themed(style.Dark, ui.Card{...})
 //
+// Registration does NOT hash; Hash/Class compute the content address on
+// first use. That ordering is what makes the package-level pattern above
+// safe: a `var Dark = …` in a library package that does not import
+// framework/ui runs during init, before the component-options compiler
+// is registered, and a hash computed there would freeze the compiler
+// hook with none registered and panic framework/ui's later init. With
+// lazy hashing, init order stops mattering for registration; only a
+// package-level Class()/ThemeHash call still hashes before the styled
+// layer's init (the panic RegisterComponentOptionsCompiler raises names
+// that cause).
+//
 // Hash is content-addressed (sha256 of the override's :root output)
-// so registering the same theme twice returns the same ref.
+// so registering the same theme twice yields the same hash and class.
 type ThemeRef struct {
-	Hash string
+	rec *themeOverrideRecord
+}
+
+// themeOverrideRecord is one registration: the deep-cloned theme as
+// registered, plus its content hash computed on first use. Records are
+// immutable once RegisterThemeOverride returns, so the lazy hash needs
+// no lock beyond its own Once.
+type themeOverrideRecord struct {
+	theme Theme
+	once  sync.Once
+	hash  string
+}
+
+// contentHash returns the record's ThemeHash, computing it on first use.
+func (r *themeOverrideRecord) contentHash() string {
+	r.once.Do(func() { r.hash = ThemeHash(r.theme) })
+	return r.hash
+}
+
+// Hash returns the override's content address, computing it on first
+// use. Registering the same theme twice yields the same hash.
+func (r ThemeRef) Hash() string { return r.record().contentHash() }
+
+// record refuses the zero ThemeRef with a reason: a handle comes from
+// RegisterThemeOverride, and a zero value used by mistake would
+// otherwise fail on a nil pointer with nothing to say.
+func (r ThemeRef) record() *themeOverrideRecord {
+	if r.rec == nil {
+		panic("style: a zero ThemeRef has no theme: take the handle RegisterThemeOverride returns")
+	}
+	return r.rec
 }
 
 // Class returns the CSS class name applied to wrapped subtrees:
 // `fui-theme-<hash>`.
-func (r ThemeRef) Class() string { return "fui-theme-" + r.Hash }
+func (r ThemeRef) Class() string { return "fui-theme-" + r.record().contentHash() }
 
 var (
 	themeOverrideMu sync.Mutex
-	themeOverrides  = map[string]Theme{} // hash → theme
+	themeOverrides  []*themeOverrideRecord // registration order; deduped by hash on read
 )
 
 // RegisterThemeOverride records a theme override and returns its
-// handle. Idempotent: same content → same hash → same handle.
+// handle. Idempotent by content: the same theme registered twice yields
+// the same hash and class, and AllThemeOverrides emits one block for it.
 //
 // The override is registered against the FULL theme (not "diffs vs
 // default"). When emitted, the framework walks the theme and emits
 // every token under the override class, the browser's cascade
 // handles the actual delta vs the canonical :root.
 //
-// The theme is deep-cloned BEFORE hashing and the clone is what is
-// stored. Theme travels by value, but its maps (DarkColors, DarkCode,
-// Components) are references: without the clone a caller-side write
-// after registration would change what every page serves while the
-// hash — computed once, from the bytes as they were — kept naming the
-// old content, and the write could race a request reading the same
-// map. The hash is ThemeHash, the one canonical content address.
+// The theme is deep-cloned BEFORE it is stored, and the hash is
+// computed from that clone on first use, never here. Theme travels by
+// value, but its maps (DarkColors, DarkCode, Components) are
+// references: without the clone a caller-side write after registration
+// would change what every page serves while the hash — computed once,
+// from the bytes as they were — kept naming the old content, and the
+// write could race a request reading the same map. And without the
+// lazy hash, the package-level registration pattern taught above would
+// hash during a library package's init and freeze the compiler hook
+// before framework/ui registers it (see ThemeRef). The hash, when it
+// is computed, is ThemeHash, the one canonical content address.
 func RegisterThemeOverride(t Theme) ThemeRef {
 	t.DarkColors = copyStringMap(t.DarkColors)
 	t.DarkCode = copyStringMap(t.DarkCode)
 	t.Components = copyStringMap(t.Components)
-	hash := ThemeHash(t)
+	rec := &themeOverrideRecord{theme: t}
 	themeOverrideMu.Lock()
 	defer themeOverrideMu.Unlock()
-	if _, ok := themeOverrides[hash]; !ok {
-		themeOverrides[hash] = t
-	}
-	return ThemeRef{Hash: hash}
+	themeOverrides = append(themeOverrides, rec)
+	return ThemeRef{rec: rec}
 }
 
 // AllThemeOverrides returns a snapshot of every registered theme,
 // keyed by hash, with the nested maps deep-copied: a caller mutating a
 // returned theme changes nothing the process serves. Used by the
 // uihost to emit `.fui-theme-<hash>` blocks in app.css.
+//
+// Each record is hashed HERE, at call time: registration order cannot
+// influence the hash (there is none yet), and the same content
+// registered twice dedupes to one entry, so the CSS ships once and
+// both handles name the same class.
 func AllThemeOverrides() map[string]Theme {
 	themeOverrideMu.Lock()
-	defer themeOverrideMu.Unlock()
-	out := make(map[string]Theme, len(themeOverrides))
-	for h, t := range themeOverrides {
+	recs := slices.Clone(themeOverrides)
+	themeOverrideMu.Unlock()
+	out := make(map[string]Theme, len(recs))
+	for _, rec := range recs {
+		h := rec.contentHash()
+		if _, dup := out[h]; dup {
+			continue
+		}
+		t := rec.theme
 		t.DarkColors = copyStringMap(t.DarkColors)
 		t.DarkCode = copyStringMap(t.DarkCode)
 		t.Components = copyStringMap(t.Components)

@@ -281,7 +281,10 @@ The flattened form on `style.Theme` is a map —
 `Components{"density": "compact", "button.treatment": "outline",
 "button.radius": "square"}` — with a fixed grammar (lowercase
 dot-separated keys, one lowercase word per value) that
-`Theme.Validate` enforces at boot.
+`Theme.Validate` enforces at boot. The grammar is checked at boot; the
+vocabulary — is `"cozy"` a density? — at boot when the styled layer is
+linked (`framework/ui`'s compiler runs inside `Validate`), otherwise
+at first render, where the compiler lives.
 
 Two axes, and keeping them apart is the point:
 
@@ -315,6 +318,14 @@ compiler** `framework/ui` registers from its `init`
 registration panics because the host freezes `app.css` at first
 render). It turns the flattened options into `--hui-*` custom
 properties:
+
+A binary that never imports `framework/ui` — a host built on
+`framework/uihost` alone — registers no compiler: it stores options it
+cannot draw, emits none of the `--hui-*` variables, and still hashes
+option-different themes apart (`ThemeHash` fingerprints the flattened
+options directly, not only the compiled output), so adding the styled
+layer later cannot silently alias two themes that were distinct all
+along.
 
 | Option | Emits |
 |---|---|

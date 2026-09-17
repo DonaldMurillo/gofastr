@@ -35,7 +35,17 @@ var customPropNameRe = regexp.MustCompile(`^--[a-zA-Z][a-zA-Z0-9-]*$`)
 // validateComponents checks every entry of a Components map. Keys are
 // visited in sorted order so the first error is deterministic, the same
 // posture Theme.Validate takes elsewhere.
-func validateComponents(m map[string]string) error {
+//
+// Two gates, in order. The grammar is this package's own and always
+// runs. The vocabulary — is "cozy" a density? — belongs to the
+// component-options compiler, so it is checked here ONLY when one is
+// registered (the styled layer is linked): the compiler function value
+// is called directly, never through componentOptionDecls, so
+// validating a theme never freezes registration, and its panic
+// becomes the error the caller reports at boot instead of detonating
+// at first render. With no compiler, the grammar is all this package
+// can check and an unknown vocabulary surfaces at emit.
+func validateComponents(m map[string]string) (err error) {
 	keys := make([]string, 0, len(m))
 	for k := range m {
 		keys = append(keys, k)
@@ -46,6 +56,18 @@ func validateComponents(m map[string]string) error {
 			return err
 		}
 	}
+	componentCompiler.mu.Lock()
+	fn := componentCompiler.fn
+	componentCompiler.mu.Unlock()
+	if fn == nil {
+		return nil
+	}
+	defer func() {
+		if p := recover(); p != nil {
+			err = fmt.Errorf("theme: Components: %v", p)
+		}
+	}()
+	fn(m)
 	return nil
 }
 
@@ -91,13 +113,24 @@ var componentCompiler struct {
 // which puts them in the app.css identity the host's theme variants
 // hash.
 //
+// A binary that never imports framework/ui (a host built on
+// framework/uihost alone, say) registers no compiler: it stores options
+// it cannot draw, emits none of the --hui-* variables, and still hashes
+// option-different themes apart — ThemeHash fingerprints the flattened
+// options directly, not only the compiled output — so linking the
+// styled layer later cannot silently alias two themes that were
+// distinct all along.
+//
 // It panics when called twice (one compiler per process; the second
 // registration is a wiring bug, not a preference) and when called after
-// the first theme CSS was emitted: the uihost freezes app.css, the
+// a theme was hashed or theme CSS was emitted: a package-level
+// ref.Class() or ThemeHash call in a package that does not import
+// framework/ui runs before this package's init and freezes the hook
+// with no compiler registered. The uihost freezes app.css, the
 // component catalog and the manifest in sync.Once at first use, so a
 // compiler registered late would be missing from all three and a page
 // would render options another page never saw. Register from init,
-// before the host serves.
+// before the host serves; hash later, not at package scope.
 func RegisterComponentOptionsCompiler(fn func(components map[string]string) []Declaration) {
 	if fn == nil {
 		panic("style: RegisterComponentOptionsCompiler needs a compiler, not nil")
@@ -105,9 +138,10 @@ func RegisterComponentOptionsCompiler(fn func(components map[string]string) []De
 	componentCompiler.mu.Lock()
 	defer componentCompiler.mu.Unlock()
 	if componentCompiler.frozen {
-		panic("style: RegisterComponentOptionsCompiler called after the first theme CSS was emitted: " +
-			"the host freezes app.css, the component catalog and the manifest at first use, so a compiler " +
-			"registered now would be missing from all three; register from package init, before Mount")
+		panic("style: RegisterComponentOptionsCompiler called after a theme was hashed or emitted: " +
+			"a package-level ref.Class() or ThemeHash call, or theme CSS emission, in a package that does " +
+			"not import framework/ui runs before the compiler's init and freezes the hook with none " +
+			"registered; register the compiler earlier or hash later")
 	}
 	if componentCompiler.fn != nil {
 		panic("style: a component-options compiler is already registered: one per process (framework/ui registers it from its init)")
@@ -165,4 +199,15 @@ func resetComponentOptionsForTest() {
 	componentCompiler.fn = nil
 	componentCompiler.frozen = false
 	componentCompiler.mu.Unlock()
+}
+
+// componentOptionsFrozenForTest reports whether the first theme-CSS
+// emission or hash already latched registration shut. Unexported like
+// the reset helper beside it: production code learns this as the panic
+// a late RegisterComponentOptionsCompiler raises, and only this
+// package's tests need to observe the latch itself.
+func componentOptionsFrozenForTest() bool {
+	componentCompiler.mu.Lock()
+	defer componentCompiler.mu.Unlock()
+	return componentCompiler.frozen
 }

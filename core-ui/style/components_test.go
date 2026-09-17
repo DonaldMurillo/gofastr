@@ -83,13 +83,13 @@ func TestComponentOptionsScopedEmission(t *testing.T) {
 	th := themeWithComponents(map[string]string{"button.treatment": "outline"})
 	th.DarkColors = map[string]string{"background": "#0a0a0a"}
 	ref := RegisterThemeOverride(th)
-	css := ThemeOverrideCSS(ref.Hash, th)
+	css := ThemeOverrideCSS(ref.Hash(), th)
 	// The option and the alias lines must sit INSIDE every scope block,
 	// after the tokens they rebind against.
 	for _, probe := range []struct{ block, opener string }{
-		{"light", ".fui-theme-" + ref.Hash + " {\n"},
-		{"explicit dark", "\n[data-color-scheme=\"dark\"] .fui-theme-" + ref.Hash + " {\n"},
-		{"media dark", "  :root:not([data-color-scheme=\"light\"]) .fui-theme-" + ref.Hash + " {\n"},
+		{"light", ".fui-theme-" + ref.Hash() + " {\n"},
+		{"explicit dark", "\n[data-color-scheme=\"dark\"] .fui-theme-" + ref.Hash() + " {\n"},
+		{"media dark", "  :root:not([data-color-scheme=\"light\"]) .fui-theme-" + ref.Hash() + " {\n"},
 	} {
 		i := strings.Index(css, probe.opener)
 		if i < 0 {
@@ -116,7 +116,7 @@ func TestScopedThemeWithoutDarkPaletteStaysLight(t *testing.T) {
 	stageTestCompiler(t, echoCompiler)
 	th := themeWithComponents(nil)
 	ref := RegisterThemeOverride(th)
-	css := ThemeOverrideCSS(ref.Hash, th)
+	css := ThemeOverrideCSS(ref.Hash(), th)
 	if strings.Contains(css, "data-color-scheme=\"dark\"") || strings.Contains(css, "prefers-color-scheme") {
 		t.Errorf("a scope with no dark palette emitted dark blocks:\n%s", css)
 	}
@@ -215,6 +215,27 @@ func TestThemeHashSeparatesComponentOptions(t *testing.T) {
 	}
 }
 
+// A binary that links no component-options compiler (framework/uihost
+// alone imports neither framework/ui nor registers one here) must still
+// not hash two option-different themes together: ThemeHash fingerprints
+// the flattened options directly, so identity holds whatever layers the
+// binary linked. Without it, the second RegisterThemeOverride of an
+// option-different theme would be dropped as a duplicate.
+func TestThemeHashSeparatesOptionsWithoutCompiler(t *testing.T) {
+	resetComponentOptionsForTest()
+	t.Cleanup(resetComponentOptionsForTest)
+
+	base := themeWithComponents(map[string]string{"button.treatment": "filled"})
+	outline := themeWithComponents(map[string]string{"button.treatment": "outline"})
+	same := themeWithComponents(map[string]string{"button.treatment": "filled"})
+	if ThemeHash(base) == ThemeHash(outline) {
+		t.Error("option-different themes hashed identically with no compiler registered: identity would depend on which layers the binary linked")
+	}
+	if ThemeHash(base) != ThemeHash(same) {
+		t.Error("identical themes hashed apart with no compiler registered")
+	}
+}
+
 func TestComponentsTokenMapRoundTrip(t *testing.T) {
 	stageTestCompiler(t, echoCompiler)
 	th := themeWithComponents(map[string]string{
@@ -254,18 +275,18 @@ func TestRegisterThemeOverrideClonesComponents(t *testing.T) {
 	th := themeWithComponents(shared)
 	th.DarkColors = sharedDark
 	ref := RegisterThemeOverride(th)
-	before := ThemeOverrideCSS(ref.Hash, AllThemeOverrides()[ref.Hash])
+	before := ThemeOverrideCSS(ref.Hash(), AllThemeOverrides()[ref.Hash()])
 
 	// A caller-side write after registration changes nothing served…
 	shared["density"] = "comfortable"
-	if after := ThemeOverrideCSS(ref.Hash, AllThemeOverrides()[ref.Hash]); after != before {
+	if after := ThemeOverrideCSS(ref.Hash(), AllThemeOverrides()[ref.Hash()]); after != before {
 		t.Error("mutating the caller's map after registration changed the emitted CSS")
 	}
 	// …and neither does mutating a theme handed back by the registry.
-	returned := AllThemeOverrides()[ref.Hash]
+	returned := AllThemeOverrides()[ref.Hash()]
 	returned.Components["density"] = "comfortable"
 	returned.DarkColors["background"] = "#ffffff"
-	if after := ThemeOverrideCSS(ref.Hash, AllThemeOverrides()[ref.Hash]); after != before {
+	if after := ThemeOverrideCSS(ref.Hash(), AllThemeOverrides()[ref.Hash()]); after != before {
 		t.Error("mutating a returned copy changed the stored theme")
 	}
 }
