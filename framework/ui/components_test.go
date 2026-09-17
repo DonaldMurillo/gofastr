@@ -313,6 +313,7 @@ func TestLinkButtonRefusesUnsafeSchemes(t *testing.T) {
 		"JaVaScRiPt:alert(1)",
 		"vbscript:msg",
 		"data:text/html,<script>alert(1)</script>",
+		"data:image/png;base64,xx",
 		"data:application/javascript,alert(1)",
 		// Origin-absolute spellings: a foreign origin without a
 		// scheme. headless's anchor policy drops both to a dead link;
@@ -331,8 +332,10 @@ func TestLinkButtonRefusesUnsafeSchemes(t *testing.T) {
 			LinkButton(LinkButtonConfig{Label: "x", Href: href})
 		}()
 	}
-	// Allowed: http(s), relative paths, mailto, tel, data:image/*.
-	ok := []string{"/docs/", "https://gh", "mailto:a@b", "tel:+1", "data:image/png;base64,xx"}
+	// Allowed: http(s), relative paths, mailto, tel. Every data: URL is
+	// refused, images included, matching the anchor policy headless
+	// applies: admitting one would render a dead link, not a panic.
+	ok := []string{"/docs/", "https://gh", "mailto:a@b", "tel:+1"}
 	for _, href := range ok {
 		func() {
 			defer func() {
@@ -930,5 +933,23 @@ func TestLinkButtonExternalOwnsTargetAndRel(t *testing.T) {
 	}
 	if strings.Contains(root, "evil") {
 		t.Errorf("ExtraAttrs target/rel overrode External:\n%s", root)
+	}
+}
+
+// One attribute, one spelling: a key given twice under different
+// casings is refused rather than resolved by map order.
+func TestButtonExtraAttrsRefuseTwoSpellings(t *testing.T) {
+	for _, attrs := range []html.Attrs{
+		{"data-fui-open": "a", "DATA-FUI-OPEN": "b"},
+		{"data-test": "a", "Data-Test": "b"},
+	} {
+		func() {
+			defer func() {
+				if recover() == nil {
+					t.Errorf("ExtraAttrs %v rendered instead of panicking on two spellings", attrs)
+				}
+			}()
+			Button(ButtonConfig{Label: "x", ExtraAttrs: attrs})
+		}()
 	}
 }

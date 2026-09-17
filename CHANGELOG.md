@@ -32,12 +32,11 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   compiled declarations join the `:root` block and every
   theme-override scope block, are validated at emit (a name that is
   not a custom property or a value that breaks a declaration panics),
-  and land in `ThemeHash`, so themes that differ only in options hash
-  apart — with or without a compiler registered: the hash fingerprints
-  the flattened options directly, so a binary that links no styled
-  layer (framework/uihost alone) still never aliases option-different
-  themes. A registration after a theme was hashed or theme CSS was
-  emitted panics with the reason: the host freezes app.css, the
+  and `ThemeHash` covers the flat option map, not the compiled
+  declarations nor the registered defaults, so themes that differ only
+  in options hash apart with or without a compiler registered, and an
+  optionless theme hashes as optionless. A registration after a theme
+  was hashed or theme CSS was emitted panics with the reason: the host freezes app.css, the
   catalog and the manifest at first use. `Theme.Validate` runs the
   registered compiler too, so an unknown option key or value (a
   grammar-clean `"density": "cozy"`) fails at boot, not as a panic at

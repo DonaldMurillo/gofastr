@@ -708,6 +708,12 @@ func splitButtonAttrs(extra html.Attrs) (action, plain html.Attrs) {
 	action, plain = html.Attrs{}, html.Attrs{}
 	for k, v := range extra {
 		lk := strings.ToLower(k)
+		if _, dup := action[lk]; dup {
+			panic("ui: ExtraAttrs carries " + lk + " under two spellings; one attribute, one spelling")
+		}
+		if _, dup := plain[lk]; dup {
+			panic("ui: ExtraAttrs carries " + lk + " under two spellings; one attribute, one spelling")
+		}
 		switch {
 		case lk == "disabled":
 			panic("ui: Button ExtraAttrs carries disabled — use ButtonConfig.Disabled, the field owns the state")
@@ -730,6 +736,12 @@ func splitLinkAttrs(extra html.Attrs) (action, plain html.Attrs) {
 	action, plain = html.Attrs{}, html.Attrs{}
 	for k, v := range extra {
 		lk := strings.ToLower(k)
+		if _, dup := action[lk]; dup {
+			panic("ui: ExtraAttrs carries " + lk + " under two spellings; one attribute, one spelling")
+		}
+		if _, dup := plain[lk]; dup {
+			panic("ui: ExtraAttrs carries " + lk + " under two spellings; one attribute, one spelling")
+		}
 		switch {
 		case lk == "data-fui-push-state", lk == "data-fui-prefetch",
 			lk == "data-fui-open", lk == "data-fui-deeplink":
@@ -777,8 +789,10 @@ func isUnsafeScheme(href string) bool {
 		return true
 	}
 	if strings.HasPrefix(lower, "data:") {
-		// Allow data:image/* only.
-		return !strings.HasPrefix(lower, "data:image/")
+		// Every data: URL, images included: the anchor policy headless
+		// applies (urlsafe.CleanAnchor) refuses them all, so admitting
+		// data:image/ here would render a dead link instead of a panic.
+		return true
 	}
 	return false
 }

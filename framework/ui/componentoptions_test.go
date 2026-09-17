@@ -252,3 +252,13 @@ func TestThemeHashSeparatesOptionsUnderRealCompiler(t *testing.T) {
 		t.Error("equal tokens with different treatments hash identically")
 	}
 }
+
+// The sheet consumes what the compiler emits: the base rule reads the
+// density height, or comfortable and compact would draw the same
+// button. Pinned here because the compiler tests never read the sheet.
+func TestButtonSheetConsumesTheDensityHeight(t *testing.T) {
+	css := buttonCSS(theme.Default())
+	if !strings.Contains(css, "min-height: var(--fui-density-control-h)") {
+		t.Fatal("the button base rule does not read --fui-density-control-h: density cannot change the control height")
+	}
+}
