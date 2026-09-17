@@ -64,7 +64,9 @@ func TestHeadlessLandingRoutesRender(t *testing.T) {
 	if !strings.Contains(dense, landingRefDense.Class()) {
 		t.Error("dense route: the dense theme's wrapper class is not on the page")
 	}
-	if strings.Contains(def, landingRefDense.Class()) && landingRefDense.Class() == landingRefFramework.Class() {
+	// The two themes must hash apart. (The other theme's class is
+	// legitimately on each page too: the nesting fixture wraps it.)
+	if landingRefDense.Class() == landingRefFramework.Class() {
 		t.Error("the two route themes share one wrapper class; they must hash apart")
 	}
 	// An unknown theme segment is a 404, not a panic and not a wrong theme.

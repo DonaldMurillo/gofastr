@@ -501,7 +501,10 @@ func serveHeadlessSubscribe(w http.ResponseWriter, r *http.Request) {
 
 	route, ok := landingRouteFor(segment)
 	if !ok {
-		route = landingRoutes[0]
+		// The route 404s an unknown segment because a wrong theme would
+		// silently lie; the handler holds the same line for its carry.
+		http.Error(w, "unknown theme", http.StatusBadRequest)
+		return
 	}
 
 	state := landingSubscribeState{Email: strings.TrimSpace(email)}
@@ -536,6 +539,11 @@ func landingSubscribeStandalone(r landingRoute, state landingSubscribeState) ren
 		render.Tag("html", map[string]string{"lang": "en"},
 			render.Tag("head", nil,
 				render.VoidTag("meta", map[string]string{"charset": "utf-8"}),
+				render.VoidTag("meta", map[string]string{"name": "viewport", "content": "width=device-width, initial-scale=1"}),
+				// The answer wears the theme it was posted from: the app
+				// stylesheet carries the tokens and every scope block, so
+				// the region renders under its real theme without script.
+				render.VoidTag("link", map[string]string{"rel": "stylesheet", "href": "/__gofastr/app.css"}),
 				render.Tag("title", nil, render.Text("Newsletter demo")),
 			),
 			body,

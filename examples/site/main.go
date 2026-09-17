@@ -1,4 +1,3 @@
-//gofastr:allow-file(GOFASTR1902) every /__site/* POST here is a demo handler of the docs site, unauthenticated by design (see the NOTE at the interactive endpoints): none keeps state or guards anything
 // =============================================================================
 // examples/site, the GoFastr product site AND the canonical feature gallery.
 // The single example app: the product/marketing pages, the docs, and a
@@ -267,6 +266,7 @@ func setupServer() *framework.App {
 	// same router instance. The palette's RPC handler runs an in-memory
 	// fuzzy match over a curated route catalog, no DB roundtrip.
 	widget.MountBuilder(fwApp.Router(), paletteBuilder)
+	//gofastr:allow(GOFASTR1902) docs-site demo endpoint, unauthenticated by design (the NOTE at the interactive endpoints), keeps no state
 	fwApp.Router().Post("/__site/palette", http.HandlerFunc(servePaletteSearch))
 
 	// Raw markdown for every embedded doc at /docs/<name>.md, the URLs
@@ -284,15 +284,18 @@ func setupServer() *framework.App {
 	// runtime needs a real 2xx response to keep the optimistic label;
 	// these record nothing because the page is a demo, but the round-trip
 	// is genuine (network panel will show the POST).
+	//gofastr:allow(GOFASTR1902) docs-site demo endpoint, unauthenticated by design (the NOTE at the interactive endpoints), keeps no state
 	fwApp.Router().Post("/__site/kiln/approve", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	}))
+	//gofastr:allow(GOFASTR1902) docs-site demo endpoint, unauthenticated by design (the NOTE at the interactive endpoints), keeps no state
 	fwApp.Router().Post("/__site/kiln/reject", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	}))
 	// ToggleAction demo, same deal: the toggle runtime keeps the
 	// committed (or reverted) state only on a real 2xx, so the demo
 	// buttons round-trip through this no-op.
+	//gofastr:allow(GOFASTR1902) docs-site demo endpoint, unauthenticated by design (the NOTE at the interactive endpoints), keeps no state
 	fwApp.Router().Post("/__site/toggle/noop", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	}))
@@ -301,6 +304,7 @@ func setupServer() *framework.App {
 	// full page without it) and the cold LoadAuto fragment. Same
 	// caveat as the rest of the /__site/* family: demo-only, no CSRF,
 	// no rate limit, no auth, bodies capped in the handlers.
+	//gofastr:allow(GOFASTR1902) docs-site demo endpoint, unauthenticated by design (the NOTE at the interactive endpoints), keeps no state
 	fwApp.Router().Post("/__site/headless/subscribe", http.HandlerFunc(serveHeadlessSubscribe))
 	fwApp.Router().Get("/__site/headless/late", http.HandlerFunc(serveHeadlessLate))
 	// Optimistic UI demo endpoints. See framework/docs/content/optimistic-ui.md
@@ -312,9 +316,11 @@ func setupServer() *framework.App {
 	// OptimisticAction commits; the other returns 422 so it shakes and
 	// reverts. Neither reads a body, the OptimisticAction runtime is
 	// fire-and-forget.
+	//gofastr:allow(GOFASTR1902) docs-site demo endpoint, unauthenticated by design (the NOTE at the interactive endpoints), keeps no state
 	fwApp.Router().Post("/__site/optimistic/edit/ok", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	}))
+	//gofastr:allow(GOFASTR1902) docs-site demo endpoint, unauthenticated by design (the NOTE at the interactive endpoints), keeps no state
 	fwApp.Router().Post("/__site/optimistic/edit/fail", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, "validation failed", http.StatusUnprocessableEntity)
 	}))
@@ -323,6 +329,7 @@ func setupServer() *framework.App {
 	// immediately. The slow endpoint exercises the pending window
 	// (aria-busy + disabled) before commit; the fail endpoint exercises
 	// the shake-and-revert path.
+	//gofastr:allow(GOFASTR1902) docs-site demo endpoint, unauthenticated by design (the NOTE at the interactive endpoints), keeps no state
 	fwApp.Router().Post("/__site/optimistic/slow", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		// Long enough to show the pending window (aria-busy + disabled),
 		// short enough not to be a cheap connection-amplification lever on
@@ -330,6 +337,7 @@ func setupServer() *framework.App {
 		time.Sleep(500 * time.Millisecond)
 		w.WriteHeader(http.StatusNoContent)
 	}))
+	//gofastr:allow(GOFASTR1902) docs-site demo endpoint, unauthenticated by design (the NOTE at the interactive endpoints), keeps no state
 	fwApp.Router().Post("/__site/optimistic/fail", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, "save failed", http.StatusUnprocessableEntity)
 	}))
@@ -341,6 +349,7 @@ func setupServer() *framework.App {
 	// without bound. The create list is independent of the delete list so a
 	// created n4 never reaches /components/optimisticdelete (whose modals are
 	// mounted only for the initial n1–n3).
+	//gofastr:allow(GOFASTR1902) docs-site demo endpoint, unauthenticated by design (the NOTE at the interactive endpoints), keeps no state
 	fwApp.Router().Post("/__site/optimistic/create", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		sess := demoStateWrite(w, r)
 		sess.mu.Lock()
@@ -362,6 +371,7 @@ func setupServer() *framework.App {
 	// VISITOR's delete list, then return the fresh authoritative list HTML.
 	// The runtime swaps the list region's innerHTML with the response body.
 	// A missing or unknown id leaves the list unchanged.
+	//gofastr:allow(GOFASTR1902) docs-site demo endpoint, unauthenticated by design (the NOTE at the interactive endpoints), keeps no state
 	fwApp.Router().Post("/__site/optimistic/delete", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		id := r.URL.Query().Get("id")
 		sess := demoStateWrite(w, r)
@@ -387,6 +397,7 @@ func setupServer() *framework.App {
 	// "failed delete leaves the list/row unchanged" invariant. The
 	// runtime broadcasts the auto-built error object into opt-delete-list
 	// and the html-mode region ignores the non-string value (no swap).
+	//gofastr:allow(GOFASTR1902) docs-site demo endpoint, unauthenticated by design (the NOTE at the interactive endpoints), keeps no state
 	fwApp.Router().Post("/__site/optimistic/delete/fail", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, "delete rejected (demo)", http.StatusUnprocessableEntity)
 	}))
@@ -406,6 +417,7 @@ func setupServer() *framework.App {
 	// interactive examples. They have no CSRF protection, rate limiting,
 	// or input sanitization. Do NOT copy these as a template for
 	// production code.
+	//gofastr:allow(GOFASTR1902) docs-site demo endpoint, unauthenticated by design (the NOTE at the interactive endpoints), keeps no state
 	fwApp.Router().Post("/__site/interactive/counter", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		sess := demoStateWrite(w, r)
 		sess.mu.Lock()
@@ -415,9 +427,11 @@ func setupServer() *framework.App {
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprintf(w, `%d`, n)
 	}))
+	//gofastr:allow(GOFASTR1902) docs-site demo endpoint, unauthenticated by design (the NOTE at the interactive endpoints), keeps no state
 	fwApp.Router().Post("/__site/interactive/open-drawer", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	}))
+	//gofastr:allow(GOFASTR1902) docs-site demo endpoint, unauthenticated by design (the NOTE at the interactive endpoints), keeps no state
 	fwApp.Router().Post("/__site/interactive/submit", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Cap the body: this handler buffers the decoded message, so an
 		// uncapped POST is a memory lever on a public origin. 4 KiB is far
@@ -438,6 +452,7 @@ func setupServer() *framework.App {
 		msg := "✓ Received: " + body.Message
 		json.NewEncoder(w).Encode(msg)
 	}))
+	//gofastr:allow(GOFASTR1902) docs-site demo endpoint, unauthenticated by design (the NOTE at the interactive endpoints), keeps no state
 	fwApp.Router().Post("/__site/interactive/navigate", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	}))
@@ -447,6 +462,7 @@ func setupServer() *framework.App {
 	// order/moved/container/version; the conflict endpoint returns fresh <li>
 	// HTML for 409 reconciliation. Each visitor moves their own board, no
 	// shared global to vandalize.
+	//gofastr:allow(GOFASTR1902) docs-site demo endpoint, unauthenticated by design (the NOTE at the interactive endpoints), keeps no state
 	fwApp.Router().Post("/__site/sortable/move", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Cap the body, a move carries a handful of short card ids; without
 		// this an attacker could POST a 10 MiB order=k1,k1,k1,… and inflate
@@ -576,6 +592,7 @@ func setupServer() *framework.App {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		fmt.Fprint(w, string(renderCustomerDetail(c)))
 	}))
+	//gofastr:allow(GOFASTR1902) docs-site demo endpoint, unauthenticated by design (the NOTE at the interactive endpoints), keeps no state
 	fwApp.Router().Post("/__site/interactive/error", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 		fmt.Fprint(w, "something went wrong")
@@ -640,6 +657,7 @@ func setupServer() *framework.App {
 	widget.MountBuilder(fwApp.Router(), preset.ToastStack("site-toasts").Mount(widget.TopRight))
 	// Server-path toast demo: any data-fui-rpc handler can attach the toast
 	// header on a 2xx and the runtime fires it (no SSE, no extra request).
+	//gofastr:allow(GOFASTR1902) docs-site demo endpoint, unauthenticated by design (the NOTE at the interactive endpoints), keeps no state
 	fwApp.Router().Post("/__site/toast/push", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		ui.AddToastSuccess(w, "Saved", "Pushed from the server via the X-Gofastr-Toast header.", 5000)
 		w.WriteHeader(http.StatusNoContent)

@@ -81,6 +81,37 @@ func TestStaticExportWritesHeadlessLanding(t *testing.T) {
 	if !strings.Contains(denseBlock, "--fui-density-control-h") || !strings.Contains(denseBlock, "--fui-button-radius") {
 		t.Error("the dense scope block redeclares no option variables; nesting would leak the root's values into it")
 	}
+	// The option-only twins share their route's palette byte for byte:
+	// the twin's scope block minus its option lines equals the route's
+	// scope block minus its option lines, on both routes. This is the
+	// "same palette, different options" fixture's claim, pinned at the
+	// stylesheet rather than through one computed colour.
+	for _, pair := range []struct{ name, route, twin string }{
+		{"default", landingRefFramework.Class(), landingRefFrameworkTight.Class()},
+		{"dense", landingRefDense.Class(), landingRefDenseRelaxed.Class()},
+	} {
+		routeTokens := withoutOptionLines(scopedCSSBlock(sheet, pair.route))
+		twinTokens := withoutOptionLines(scopedCSSBlock(sheet, pair.twin))
+		if routeTokens == "" || twinTokens == "" {
+			t.Fatalf("%s: a scope block is missing for the route or its twin", pair.name)
+		}
+		if routeTokens != twinTokens {
+			t.Errorf("%s: the option-only twin's palette drifted from its route's:\n--- route ---\n%s\n--- twin ---\n%s", pair.name, routeTokens, twinTokens)
+		}
+	}
+}
+
+// withoutOptionLines drops the compiled --fui-* option declarations from
+// a scope block so what remains is the palette: tokens and aliases.
+func withoutOptionLines(block string) string {
+	var keep []string
+	for _, line := range strings.Split(block, "\n") {
+		if strings.Contains(line, "--fui-") {
+			continue
+		}
+		keep = append(keep, line)
+	}
+	return strings.Join(keep, "\n")
 }
 
 // scopedCSSBlock extracts the `{ … }` body of the first `.fui-theme-<ref>`
