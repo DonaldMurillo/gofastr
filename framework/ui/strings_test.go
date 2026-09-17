@@ -126,8 +126,11 @@ func TestStringsForTranslatesEveryField(t *testing.T) {
 	}
 	// Placeholders on the format fields: the translation keeps the
 	// tokens headless formats into, and the bridge must hand them
-	// through untouched.
+	// through untouched (a probe without them would be refused, which
+	// TestStringsForRefusesPlaceholderDrift covers on its own).
 	entries[i18nui.KeyDismissTitled] = "fr·Fermer : %s"
+	entries[i18nui.KeyTagRemoveLabelled] = "fr·Retirer %s"
+	entries[i18nui.KeyColorPick] = "fr·Choisir %s"
 	entries[i18nui.KeyFileSelected] = "fr·{name} choisi."
 	entries[i18nui.KeyFilesSelected] = "fr·{n} fichiers : {names}."
 
@@ -148,18 +151,61 @@ func TestStringsForTranslatesEveryField(t *testing.T) {
 func TestStringsForPartialCatalogKeepsEnglishForMisses(t *testing.T) {
 	got := StringsFor(stringsCtx(map[i18nui.Key]string{
 		i18nui.KeyPaginationNext: "Suivant",
-		i18nui.KeyToneInfo:       "Information",
+		i18nui.KeyToneInfo:       "Renseignements",
 	}))
 	for name, want := range map[string]string{
 		"Next":            "Suivant",            // hit
 		"Previous":        "Previous",           // miss: English
-		"ToneInfo":        "Information",        // hit (same word as English)
+		"ToneInfo":        "Renseignements",     // hit
 		"ToneDanger":      "Error",              // miss: English
 		"ShowPassword":    "Show password",      // miss: English
 		"ThereIsAProblem": "There is a problem", // miss: English
 	} {
 		if val := reflect.ValueOf(got).Elem().FieldByName(name).String(); val != want {
 			t.Errorf("%s = %q, want %q", name, val, want)
+		}
+	}
+}
+
+// TestStringsForDefaultsArePairwiseDistinct makes the English-parity
+// oracle sufficient for identity: TestStringsForNoTranslatorIsHeadlessEnglish
+// catches two fields mapped to each other's keys only while their
+// English differs, so two fields sharing a default would let a swap
+// through every gate. This holds the precondition.
+func TestStringsForDefaultsArePairwiseDistinct(t *testing.T) {
+	seen := map[string]string{}
+	everyHeadlessStringField(t, headless.DefaultStrings(), func(name, val string) {
+		if other, dup := seen[val]; dup {
+			t.Errorf("headless.Strings.%s and .%s share the default %q; the bridge's identity oracle needs distinct English, give one of them its own words or pin their keys by name", name, other, val)
+		}
+		seen[val] = name
+	})
+}
+
+// TestStringsForRefusesPlaceholderDrift: a translation that loses,
+// gains, reorders or respells a placeholder is refused and the field
+// keeps its English, because headless formats these with fmt and the
+// result lands in accessible names.
+func TestStringsForRefusesPlaceholderDrift(t *testing.T) {
+	got := StringsFor(stringsCtx(map[i18nui.Key]string{
+		i18nui.KeyDismissTitled:     "Fermer",                  // dropped %s
+		i18nui.KeyTagRemoveLabelled: "Retirer {label}",         // %s written as a token
+		i18nui.KeyColorPick:         "Choisir %s parmi %s",     // one added
+		i18nui.KeyFilesSelected:     "{names} : {n} fichiers.", // reordered
+		i18nui.KeyFileSelected:      "{name} choisi.",          // kept: accepted
+		i18nui.KeyActionFailed:      "Échec. 100%% sûr.",       // no placeholder either side: accepted
+	}))
+	want := map[string]string{
+		"DismissTitled":  "Dismiss: %s",
+		"RemoveLabelled": "Remove %s",
+		"PickColor":      "Pick %s",
+		"FilesSelected":  "{n} files selected: {names}.",
+		"FileSelected":   "{name} choisi.",
+		"ActionFailed":   "Échec. 100%% sûr.",
+	}
+	for name, w := range want {
+		if val := reflect.ValueOf(got).Elem().FieldByName(name).String(); val != w {
+			t.Errorf("%s = %q, want %q", name, val, w)
 		}
 	}
 }

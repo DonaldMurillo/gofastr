@@ -3,6 +3,8 @@ package ui
 import (
 	"context"
 	"reflect"
+	"slices"
+	"strings"
 
 	"github.com/DonaldMurillo/gofastr/framework/headless"
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
@@ -27,8 +29,8 @@ import (
 // a map entry naming a field the struct does not carry (a typo) fails
 // the same test rather than silently translating nothing.
 //
-// Where a key already said the sentence (password show/hide,
-// pagination Previous/Next, three of the four tone words) it is
+// Where an existing consumer already says the same word for the
+// same job (password show/hide, pagination Previous/Next) its key is
 // reused; the rest were added with headless's own English as their
 // defaults, and the bridge test pins those defaults byte-for-byte
 // against headless.DefaultStrings, so the no-translator page is the
@@ -58,14 +60,14 @@ var stringsKeys = map[string]i18nui.Key{
 	"Next":     i18nui.KeyPaginationNext,
 
 	// The tone word said before a SystemBanner's or Alert's title.
-	// Success/Warning/Danger reuse the toast keys, whose English is
-	// the same word; Information does not reuse ui.toast.info because
-	// headless says "Information", not "Info", and the headless
-	// wording wins.
+	// Their own keys, not ui.toast.*: the toast keys name a surface
+	// a host may have translated with toast wording, and nothing in
+	// the framework renders them yet, so the first renderer of a key
+	// should be the surface its name promises.
 	"ToneInfo":    i18nui.KeyToneInfo,
-	"ToneSuccess": i18nui.KeyToastSuccess,
-	"ToneWarning": i18nui.KeyToastWarning,
-	"ToneDanger":  i18nui.KeyToastError,
+	"ToneSuccess": i18nui.KeyToneSuccess,
+	"ToneWarning": i18nui.KeyToneWarning,
+	"ToneDanger":  i18nui.KeyToneDanger,
 
 	// Upload's runtime-substituted sentences. The {name}/{n}/{names}
 	// tokens are substituted by the runtime when the reader has
@@ -88,12 +90,17 @@ var stringsKeys = map[string]i18nui.Key{
 // Format fields keep their %s verbs and runtime-substituted fields
 // their {name} tokens: strings travel unformatted and headless
 // applies them at render, so a translation may reorder the words but
-// must keep the placeholders the component formats into.
+// must keep the placeholders the component formats into. That rule
+// is enforced here, not only documented: a translation whose
+// placeholders differ from the English default's (one dropped, one
+// added, a %s written as {name}) is refused and the field keeps its
+// English, because the alternative is fmt's "%!s(MISSING)" inside an
+// accessible name, where nobody sighted would see it.
 func StringsFor(ctx context.Context) *headless.Strings {
 	if ctx == nil {
 		return headless.DefaultStrings()
 	}
-	w := &headless.Strings{}
+	w := headless.DefaultStrings()
 	v := reflect.ValueOf(w).Elem()
 	t := v.Type()
 	for i := range t.NumField() {
@@ -107,7 +114,42 @@ func StringsFor(ctx context.Context) *headless.Strings {
 		if !f.CanSet() {
 			panic("ui: headless.Strings." + t.Field(i).Name + " is not settable — every field of Strings must be an exported string")
 		}
-		f.SetString(i18nui.T(ctx, key))
+		if s := i18nui.T(ctx, key); placeholdersMatch(f.String(), s) {
+			f.SetString(s)
+		}
 	}
 	return w
+}
+
+// placeholdersMatch reports whether translated carries exactly the
+// placeholders of def, in order: the % verbs (an escaped %% is not
+// one) and the {name} tokens. Order matters because fmt applies
+// positional arguments; a reordered pair would swap the values.
+func placeholdersMatch(def, translated string) bool {
+	return slices.Equal(placeholdersIn(def), placeholdersIn(translated))
+}
+
+// placeholdersIn lists a string's placeholders in order, the same walk
+// framework/headless uses to hold its probe words to its defaults.
+func placeholdersIn(s string) []string {
+	var out []string
+	for i := 0; i < len(s); i++ {
+		switch s[i] {
+		case '%':
+			if i+1 < len(s) {
+				if s[i+1] == '%' {
+					i++
+					continue
+				}
+				out = append(out, s[i:i+2])
+				i++
+			}
+		case '{':
+			if end := strings.IndexByte(s[i:], '}'); end > 0 {
+				out = append(out, s[i:i+end+1])
+				i += end
+			}
+		}
+	}
+	return out
 }

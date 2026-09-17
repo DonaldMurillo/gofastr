@@ -17,14 +17,17 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   (or a per-key catalog miss) yields the English defaults headless
   itself ships — byte for byte, pinned against
   `headless.DefaultStrings()` — so a nil `Strings` and a translated
-  page share one English contract. Ten keys were added for sentences
-  no key said yet (`ui.dismiss.titled`, `ui.tag.removeLabelled`,
-  `ui.action.failed`, `ui.color.pick`,
-  `ui.passwordInput.revealShow`/`revealHide`, `ui.tone.info`,
+  page share one English contract. Thirteen keys were added for
+  sentences no key said yet (`ui.dismiss.titled`,
+  `ui.tag.removeLabelled`, `ui.action.failed`, `ui.color.pick`,
+  `ui.passwordInput.revealShow`/`revealHide`,
+  `ui.tone.info`/`success`/`warning`/`danger`,
   `ui.fileUpload.fileSelected`/`filesSelected`,
-  `ui.validationSummary.problem`); the rest reuse existing keys
-  (password show/hide, pagination Previous/Next, three of the four
-  tone words). A reflection gate in `framework/ui` fails the build
+  `ui.validationSummary.problem`); password show/hide and pagination
+  Previous/Next reuse the keys their existing consumers say. A
+  translation whose placeholders differ from the English default's is
+  refused and the field keeps its English, so a dropped `%s` cannot
+  put fmt's error text into an accessible name. A reflection gate in `framework/ui` fails the build
   when a field is added to `headless.Strings` without a bridge entry.
   The headless landing screen's bare fixture renders a
   `headless.SystemBanner` through the bridge as the seam proof.

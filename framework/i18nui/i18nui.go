@@ -234,6 +234,9 @@ const (
 	KeyPasswordRevealShow Key = "ui.passwordInput.revealShow"  // "Show"
 	KeyPasswordRevealHide Key = "ui.passwordInput.revealHide"  // "Hide"
 	KeyToneInfo           Key = "ui.tone.info"                 // "Information"
+	KeyToneSuccess        Key = "ui.tone.success"              // "Success"
+	KeyToneWarning        Key = "ui.tone.warning"              // "Warning"
+	KeyToneDanger         Key = "ui.tone.danger"               // "Error"
 	KeyFileSelected       Key = "ui.fileUpload.fileSelected"   // "{name} selected."
 	KeyFilesSelected      Key = "ui.fileUpload.filesSelected"  // "{n} files selected: {names}."
 	KeyValidationProblem  Key = "ui.validationSummary.problem" // "There is a problem"
@@ -413,6 +416,9 @@ var Defaults = map[Key]string{
 	KeyPasswordRevealShow: "Show",
 	KeyPasswordRevealHide: "Hide",
 	KeyToneInfo:           "Information",
+	KeyToneSuccess:        "Success",
+	KeyToneWarning:        "Warning",
+	KeyToneDanger:         "Error",
 	KeyFileSelected:       "{name} selected.",
 	KeyFilesSelected:      "{n} files selected: {names}.",
 	KeyValidationProblem:  "There is a problem",
@@ -594,8 +600,8 @@ func AllKeys() []Key {
 		KeyNavPrimary, KeyNavMobilePrimary, KeyNavToggle,
 		KeyDismissTitled, KeyTagRemoveLabelled, KeyActionFailed,
 		KeyColorPick, KeyPasswordRevealShow, KeyPasswordRevealHide,
-		KeyToneInfo, KeyFileSelected, KeyFilesSelected,
-		KeyValidationProblem,
+		KeyToneInfo, KeyToneSuccess, KeyToneWarning, KeyToneDanger,
+		KeyFileSelected, KeyFilesSelected, KeyValidationProblem,
 	}
 }
 

@@ -250,8 +250,11 @@ func (s *HeadlessLandingScreen) Render() render.HTML {
 // ui.StringsFor(ctx) — the Strings bridge. The site installs no
 // translator, so today that means the English defaults; a site built
 // with WithI18n would hear the same fixtures in the reader's locale
-// with nothing in this file changing. Render (static export, llm.md)
-// keeps the background ctx and the English words.
+// with nothing in this file changing. The static export renders
+// through RenderCtx too, with the build's context (no translator, so
+// English today; a per-locale export would flow through it with no
+// change here); Render keeps the background ctx for the callers that
+// take a plain Component, llm.md among them.
 func (s *HeadlessLandingScreen) RenderCtx(ctx context.Context) render.HTML {
 	return s.render(ctx)
 }
