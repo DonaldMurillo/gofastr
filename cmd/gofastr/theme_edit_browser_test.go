@@ -270,7 +270,7 @@ func TestEditReachesPreview(t *testing.T) {
 	var before string
 	_ = chromedp.Run(ctx, chromedp.Evaluate(tePreviewTokenJS("--color-primary"), &before))
 
-	const want = "#FF00FF" // distinct from the default #4F46E5
+	const want = "#166534" // distinct from the default #4F46E5, and AA-safe under white ink (7.13:1): the theme guard refuses a lower pair
 	if err := chromedp.Run(ctx, chromedp.Evaluate(teSetControlJS("color-primary", want), nil)); err != nil {
 		t.Fatalf("set color-primary: %v", err)
 	}
@@ -368,7 +368,9 @@ func TestWriteIncludesLastEdit(t *testing.T) {
 	ctx := chromedptest.Context(t, chromedptest.WindowSize(1280, 800))
 	navigateToEditor(t, ctx, httpSrv)
 
-	const want = "#ABCDEF"
+	// An AA-safe blue under the default white ink: the theme guard
+	// refuses a primary pair under 4.5:1, and the write must succeed.
+	const want = "#1D4ED8"
 	// Type + click in ONE round-trip: the click beats the 300ms timer.
 	raceStart := time.Now()
 	if err := chromedp.Run(ctx, chromedp.Evaluate(teTypeAndWriteJS("color-primary", want), nil)); err != nil {

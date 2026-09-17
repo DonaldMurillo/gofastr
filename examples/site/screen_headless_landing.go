@@ -55,20 +55,25 @@ import (
 // survives the scheme flip).
 func landingFrameworkTheme() style.Theme {
 	t := createTheme()
-	// The compiler pairs the danger trio's foreground with
-	// --color-primary-fg, which this palette sets to the dark ink built
-	// for the amber primary. The framework's mid red under that ink
-	// fails contrast; the site's own stylesheets use this light red
-	// precisely because it clears 4.5:1 both as a fill under the ink
-	// and as outline text on the dark surfaces (see styles.go).
+	// danger keeps the site's light red rather than the framework's
+	// mid #B91C1C for a reason of its own: this palette is dark-first
+	// (near-black background, see createTheme), and the outline
+	// treatment the tight twin renders paints the danger colour AS
+	// text on those surfaces, where #B91C1C only reaches ~3.1:1 while
+	// this red clears AA (it is the value the site's own stylesheets
+	// ship, see styles.go). The filled pair needs no help anymore: the
+	// compiler paints --color-danger-fg there, so the dark amber
+	// primary-fg no longer leaks onto the danger fill.
 	t.Colors.Danger = style.Color{Name: "danger", Value: "oklch(0.72 0.16 25)"}
+	// The ink that light red is built for: the palette's near-black
+	// (the same --on-accent value primary-fg carries). The framework's
+	// default white danger-fg is tuned for its mid #B91C1C, not this
+	// red — the token exists precisely so a palette owns both halves
+	// of the pair.
+	t.Colors.DangerFg = style.Color{Name: "danger-fg", Value: "oklch(0.14 0.005 75)"}
 	t.DarkColors["primary"] = "#F2B14D"
 	t.DarkColors["primary-fg"] = "#161310"
 	t.DarkColors["accent"] = "#F2B14D"
-	// The framework dark default (#F87171) is the light red this
-	// palette's dark ink needs in dark mode; pin it so the pairing is
-	// explicit, not inherited.
-	t.DarkColors["danger"] = "#F87171"
 	return t
 }
 

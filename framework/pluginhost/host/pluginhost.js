@@ -98,7 +98,7 @@
     "--breakpoint-2xl", "--breakpoint-lg", "--breakpoint-md", "--breakpoint-sm", "--breakpoint-xl",
     "--color-accent", "--color-background", "--color-border", "--color-border-strong",
     "--color-code-border", "--color-code-surface", "--color-code-text",
-    "--color-danger", "--color-info", "--color-primary", "--color-primary-fg",
+    "--color-danger", "--color-danger-fg", "--color-info", "--color-primary", "--color-primary-fg",
     "--color-secondary", "--color-secondary-fg", "--color-success",
     "--color-surface", "--color-surface-soft", "--color-text", "--color-text-muted",
     "--color-text-subtle", "--color-warning",

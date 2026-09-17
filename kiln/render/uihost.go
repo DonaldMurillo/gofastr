@@ -209,6 +209,8 @@ func worldTheme(c world.AppConfig) style.Theme {
 			t.Colors.Warning.Value = value
 		case "danger":
 			t.Colors.Danger.Value = value
+		case "danger-fg":
+			t.Colors.DangerFg.Value = value
 		case "info":
 			t.Colors.Info.Value = value
 		case "font_body":

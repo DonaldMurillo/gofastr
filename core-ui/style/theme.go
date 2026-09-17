@@ -84,8 +84,14 @@ type ColorSet struct {
 	Background, Surface, SurfaceSoft Color
 	Text, TextMuted, TextSubtle      Color
 	Border, BorderStrong             Color
-	Danger, Success, Warning, Info   Color
-	Accent                           Color
+	// Danger is the one status tone whose filled-control ink is its own
+	// token (danger-fg) rather than primary-fg: a host whose primary is
+	// light with dark ink (amber, pastel) would otherwise paint an
+	// unreadable filled danger button. Validate refuses a pair below
+	// 4.5:1 when both values are plain hex.
+	Danger, DangerFg       Color
+	Success, Warning, Info Color
+	Accent                 Color
 
 	// Code surface, the background + foreground used by code-display
 	// components (ui.CodeBlock, demo source panels). Intentionally a
@@ -286,13 +292,51 @@ func camelToKebab(s string) string {
 // not lowercase dot-separated words, or a value that is not one
 // lowercase word, is a theme-shape mistake and fails here, at boot.
 //
+// Finally the filled-control ink pairs (primary × primary-fg, danger ×
+// danger-fg) must clear 4.5:1 when both values are plain hex — see
+// validatePairContrast.
+//
 // MustValidate is the panicking variant used by App.WithTheme so a
 // bad theme fails at boot, not at first request.
 func (t Theme) Validate() error {
 	if err := validateTokens(reflect.ValueOf(t), "Theme"); err != nil {
 		return err
 	}
-	return validateComponents(t.Components)
+	if err := validateComponents(t.Components); err != nil {
+		return err
+	}
+	return t.validatePairContrast()
+}
+
+// validatePairContrast refuses a theme whose filled-control ink pairs —
+// primary × primary-fg and danger × danger-fg — sit below the 4.5:1 WCAG
+// AA floor. Those are the pairs the token system actually guarantees and
+// the filled button paints; borrowing another variant's ink was exactly
+// how the amber-primary sites shipped unreadable danger buttons (an axe
+// failure out of the box). The check only runs when BOTH values parse as
+// plain hex (#RGB / #RRGGBB): oklch(), var() references, rgb()/hsl() and
+// named colours are skipped rather than approximated, so a theme whose
+// colours Go cannot resolve exactly is never refused on a guess. Dark
+// palettes are not pair-checked here — a dark value re-declares the same
+// property, and the partial-dark-map case is already covered by the
+// DarkPaletteGaps boot warning.
+func (t Theme) validatePairContrast() error {
+	for _, p := range []struct {
+		name   string
+		bg, fg Color
+	}{
+		{"primary", t.Colors.Primary, t.Colors.PrimaryFg},
+		{"danger", t.Colors.Danger, t.Colors.DangerFg},
+	} {
+		ratio, ok := contrastRatio(p.fg.Value, p.bg.Value)
+		if !ok || ratio >= 4.5 {
+			continue
+		}
+		return fmt.Errorf(
+			"Theme.Colors: %s × %s-fg contrast is %.2f:1 (%s on %s), below the 4.5:1 WCAG AA floor the filled %s button paints; give %s-fg an ink that clears AA over %s",
+			p.name, p.name, ratio, p.fg.Value, p.bg.Value, p.name, p.name, p.name)
+	}
+	return nil
 }
 
 // MustValidate panics if validation fails. Wraps Validate.
@@ -457,12 +501,16 @@ func DefaultTheme() Theme {
 			// the previous values (#DC2626 / #15803D / #A16207 / #2563EB)
 			// hit 4.5:1 on white but only 3.7–4.2:1 on the tinted chips,
 			// which axe flags on any light scheme. These shades clear
-			// 4.6:1 on the chips and ≥6.4:1 with white fills.
-			Danger:  Color{Name: "danger", Value: "#B91C1C"},  // 5.2:1 on its 15% chip, was #DC2626 (3.96:1)
-			Success: Color{Name: "success", Value: "#166534"}, // 5.6:1 on its 15% chip, was #15803D (4.10:1)
-			Warning: Color{Name: "warning", Value: "#854D0E"}, // 5.4:1 on its 15% chip, was #A16207 (4.03:1)
-			Info:    Color{Name: "info", Value: "#1D4ED8"},    // 5.3:1 on its 15% chip, was #2563EB (4.23:1)
-			Accent:  Color{Name: "accent", Value: "#7C3AED"},
+			// 4.6:1 on the chips and ≥6.4:1 with white fills. Danger's
+			// fill ink is its own token: danger-fg pairs with danger the
+			// way primary-fg pairs with primary, so a light primary with
+			// dark ink cannot leak that ink onto a filled danger button.
+			Danger:   Color{Name: "danger", Value: "#B91C1C"},    // 5.2:1 on its 15% chip, was #DC2626 (3.96:1)
+			DangerFg: Color{Name: "danger-fg", Value: "#FFFFFF"}, // 6.47:1 on danger, the filled danger button's ink
+			Success:  Color{Name: "success", Value: "#166534"},   // 5.6:1 on its 15% chip, was #15803D (4.10:1)
+			Warning:  Color{Name: "warning", Value: "#854D0E"},   // 5.4:1 on its 15% chip, was #A16207 (4.03:1)
+			Info:     Color{Name: "info", Value: "#1D4ED8"},      // 5.3:1 on its 15% chip, was #2563EB (4.23:1)
+			Accent:   Color{Name: "accent", Value: "#7C3AED"},
 			// Code surface: an always-dark panel for ui.CodeBlock and
 			// other code-display contexts. Light mode keeps the dark
 			// inkwell look (classic IDE feel); dark mode shifts it a

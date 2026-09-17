@@ -154,6 +154,7 @@ func appTheme() style.Theme {
 		"border":        "#322E3D",
 		"border-strong": "#494457",
 		"danger":        "#F87171",
+		"danger-fg":     "#15141B", // 6.61:1 on the dark danger fill; without it the light white ink carries into dark mode (2.77:1)
 		"info":          "#60A5FA",
 		"primary":       "#8B80F2",
 		"primary-fg":    "#15141B",
@@ -182,6 +183,7 @@ func inkTheme() style.Theme {
 		&t.Colors.Border:       "#322E3D",
 		&t.Colors.BorderStrong: "#494457",
 		&t.Colors.Danger:       "#F87171",
+		&t.Colors.DangerFg:     "#15141B",
 		&t.Colors.Info:         "#60A5FA",
 		&t.Colors.Primary:      "#8B80F2",
 		&t.Colors.PrimaryFg:    "#15141B",

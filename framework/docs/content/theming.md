@@ -23,7 +23,7 @@ out. Each group writes CSS variables with a fixed prefix:
 
 | Theme group | Emits | Examples |
 |---|---|---|
-| `Colors` | `--color-<name>` | `--color-primary`, `--color-surface`, `--color-text-muted`, `--color-danger`, `--color-code-surface` |
+| `Colors` | `--color-<name>` | `--color-primary`, `--color-primary-fg`, `--color-danger`, `--color-danger-fg`, `--color-text-muted`, `--color-code-surface` |
 | `Fonts` | `--font-<name>` | `--font-body`, `--font-heading`, `--font-mono` |
 | `Spacing` | `--spacing-<name>` | `--spacing-xs` … `--spacing-3xl` (px) |
 | `Radii` | `--radii-<name>` | `--radii-sm`, `--radii-md`, `--radii-full` |
@@ -112,8 +112,10 @@ measured probe background, then composites any transparent probe background
 over the page background. A transparent page canvas falls back to white.
 Pairs below 4.5:1 are flagged for both light and dark schemes. The pairs
 checked are the ones `core-ui/style/theme.go` documents: text tiers on
-`surface`, `primary-fg` on `primary`, and each status tone both as a
-white-text fill and as label text on its own 15% tint.
+`surface`, `primary-fg` on `primary`, `danger-fg` on `danger`, and each
+status tone both as a white-text fill and as label text on its own 15%
+tint. `Theme.Validate` additionally refuses, at boot, a hex
+`primary` × `primary-fg` or `danger` × `danger-fg` pair below 4.5:1.
 
 **Write-back** emits `%q` string literals, then writes a temporary file in the
 target directory, calls `fsync`, and renames it over the destination. Each
@@ -347,9 +349,8 @@ the floor lives at `:root`, where one declaration covers every rule.
 | Option | Emits |
 |---|---|
 | `density: comfortable` | `--fui-density-control-h: var(--spacing-touch-target)`, `--fui-density-gap: var(--spacing-md)` |
-| `density: compact` | `--fui-density-control-h: 36px`, `--fui-density-gap: var(--spacing-sm)` |
 | `button.radius: round` / `square` / `pill` | `--fui-button-radius: var(--radii-md)` / `0` / `9999px` |
-| `button.treatment: filled` | `--fui-button-primary-bg: var(--color-primary)`, `--fui-button-primary-fg: var(--color-primary-fg)`, `--fui-button-primary-border: transparent`, and the same `-danger` trio from `--color-danger` / `--color-primary-fg` |
+| `button.treatment: filled` | `--fui-button-primary-bg: var(--color-primary)`, `--fui-button-primary-fg: var(--color-primary-fg)`, `--fui-button-primary-border: transparent`, and the same `-danger` trio from `--color-danger` / `--color-danger-fg` |
 | `button.treatment: outline` | `--fui-button-primary-bg: transparent`, `--fui-button-primary-fg: var(--color-primary)`, `--fui-button-primary-border: var(--color-primary)`, and the `-danger` trio from `--color-danger` |
 | `button.treatment: soft` | `--fui-button-primary-bg: color-mix(in srgb, var(--color-primary) 15%, transparent)`, `--fui-button-primary-fg: var(--color-primary)`, `--fui-button-primary-border: transparent`, and the `-danger` trio likewise |
 

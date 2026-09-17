@@ -8,6 +8,30 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 ## [Unreleased]
 
 ### Added
+- **`danger-fg` — the danger pair gets its own ink token.** The
+  component-options compiler paired the filled danger trio's foreground
+  with `--color-primary-fg`, which only has a contrast guarantee against
+  `--color-primary`: a host whose primary is light with dark ink
+  (amber, yellow, pastel) shipped an unreadable filled danger button and
+  an axe failure out of the box. `ColorSet` gains `DangerFg`
+  (`--color-danger-fg`, white in `DefaultTheme`, `#111827` on the
+  framework dark palette's `#F87171` — 6.4:1), `theme.Overrides` gains
+  `DangerFg`, the compiler compiles the trio from
+  `--color-danger` / `--color-danger-fg`, and the token rides every
+  name-pinned surface: the `gofastr theme init` scaffold, the blueprint
+  theme path (`app.theme.dark` accepts `danger-fg`), the theme editor's
+  controls + write-back, the pluginhost token bridge, and kiln's
+  `set_theme`. `Theme.Validate` now also refuses a hex `primary` ×
+  `primary-fg` or `danger` × `danger-fg` pair below 4.5:1 (values Go
+  cannot parse exactly — oklch, var(), names — are skipped, never
+  approximated), so an unreadable pair fails at boot instead of at the
+  first axe run. **BREAKING** only for themes that already ship such a
+  pair in plain hex: validation now panics at `WithTheme` where it
+  previously passed silently.
+  Every in-tree palette now clears the bar: the blog, ecommerce, lms
+  and portfolio examples move their danger from red-500 (`#EF4444`,
+  3.76:1 under white ink) to red-600 (`#DC2626`, 4.76:1); a host on
+  red-500 with white ink either does the same or sets `danger-fg`.
 - **`style.Theme.Components` — component options in the theme.** A
   theme can carry a flattened option map
   (`"density": "compact"`, `"button.treatment": "outline"`) beside

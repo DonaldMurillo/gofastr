@@ -703,26 +703,30 @@ func buildContrastPairs() []contrastPair {
 	// Each status tone twice: as a filled control, and as label text on its own
 	// 15% tint. core-ui/style/theme.go is explicit that the tint is the harder
 	// target, which is exactly why it must actually be measured.
-	// The fill's foreground is var(--color-primary-fg), because that is
-	// what the design system paints there: `.fui-button--danger`
-	// consumes the --fui-button-danger trio the component-options
-	// compiler derives from `--color-danger` / `--color-primary-fg`
-	// (there is no --color-danger-fg token), and `.ui-badge--danger`
-	// sets `color: var(--color-primary-fg)` on a `--color-danger`
-	// background directly. Themes that override --color-danger own
-	// keeping >=4.5:1 against --color-primary-fg.
-	//
-	// Hardcoding #ffffff here measured a pair the UI never renders. In the
-	// default dark scheme --color-primary-fg is #111827 and the status tones are
-	// light, so the probe reported four failures, white on #F87171 at 2.77:1,
-	// for text nothing paints. A checker that invents failures is as useless as
-	// one that cannot report them; both teach the operator to ignore it.
+	// The fill's foreground follows what the design system paints there.
+	// Danger's ink is its own token: `.fui-button--danger` consumes the
+	// --fui-button-danger trio the component-options compiler derives
+	// from `--color-danger` / `--color-danger-fg`, so the danger pair is
+	// measured danger-fg on danger. The other tones are still measured
+	// against --color-primary-fg, the ink their white-text fills are
+	// tuned for (core-ui/style's DefaultTheme note). Hardcoding #ffffff
+	// instead measured a pair the UI never renders: in the default dark
+	// scheme --color-primary-fg is #111827 and the status tones are
+	// light, so the probe reported four failures, white on #F87171 at
+	// 2.77:1, for text nothing paints. A checker that invents failures
+	// is as useless as one that cannot report them; both teach the
+	// operator to ignore it.
 	for _, tone := range []string{"danger", "success", "warning", "info"} {
+		fillFg := "var(--color-primary-fg)"
+		if tone == "danger" {
+			fillFg = "var(--color-danger-fg)"
+		}
 		pairs = append(pairs,
-			contrastPair{"primary-fg|" + tone, "primary-fg-" + tone,
-				"var(--color-primary-fg)", "var(--color-" + tone + ")"},
+			contrastPair{tone + "-fg|" + tone, tone + "-fg-" + tone,
+				fillFg, "var(--color-" + tone + ")"},
 			contrastPair{tone + "|" + tone + "-tint", tone + "-tint", "var(--color-" + tone + ")",
-				"color-mix(in srgb, var(--color-" + tone + ") 15%, var(--color-surface))"})
+				"color-mix(in srgb, var(--color-" + tone + ") 15%, var(--color-surface))"},
+		)
 	}
 	return pairs
 }

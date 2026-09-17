@@ -1543,6 +1543,9 @@ app:
   theme:
     background: "#101820"
     primary: "#F2AA4C"
+    # Dark ink on the amber fill (9.2:1): the light primary the E2E app
+    # ships, whose default white ink the Validate pair guard refuses.
+    primary-fg: "#101820"
     text: "#F7F4EA"
   db:
     driver: sqlite

@@ -206,7 +206,7 @@ func TestRelationTypeFromStringAndScreenType(t *testing.T) {
 func TestBlueprintThemeColorPathAll(t *testing.T) {
 	keys := []string{"primary", "primary-fg", "secondary", "background", "surface",
 		"surface-soft", "text", "text-muted", "text-subtle", "border", "border-strong",
-		"accent", "success", "warning", "danger", "info"}
+		"accent", "success", "warning", "danger", "danger-fg", "info"}
 	for _, k := range keys {
 		if _, ok := blueprintThemeColorPath(k); !ok {
 			t.Errorf("blueprintThemeColorPath(%q) not ok", k)

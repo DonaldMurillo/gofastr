@@ -8633,6 +8633,8 @@ func blueprintThemeColorPath(key string) (string, bool) {
 		return "Warning", true
 	case "danger":
 		return "Danger", true
+	case "danger-fg":
+		return "DangerFg", true
 	case "info":
 		return "Info", true
 	default:

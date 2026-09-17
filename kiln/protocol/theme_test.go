@@ -20,6 +20,9 @@ func TestSetThemeUpdatesWorldAppTheme(t *testing.T) {
 		Theme: map[string]string{
 			"background": "#0F172A",
 			"primary":    "#22D3EE",
+			// A light cyan primary needs a dark ink: Theme.Validate refuses a
+			// primary pair under 4.5:1 (white on this cyan is 1.81:1).
+			"primary-fg": "#0B1220",
 		},
 	})
 	if !res.OK {

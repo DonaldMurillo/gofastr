@@ -181,11 +181,13 @@ var App = style.Theme{
 
 		// Status colors: WCAG-AA against white text AND as text on the
 		// components' 15%-tinted chips (Badge/Tag/StatCard). Matches
-		// core-ui/style DefaultTheme. Keep the two in sync.
-		Danger:  style.Color{Value: "#B91C1C"},
-		Success: style.Color{Value: "#166534"},
-		Warning: style.Color{Value: "#854D0E"},
-		Info:    style.Color{Value: "#1D4ED8"},
+		// core-ui/style DefaultTheme. Keep the two in sync. danger-fg
+		// is the filled danger button's ink (6.47:1 on danger).
+		Danger:   style.Color{Value: "#B91C1C"},
+		DangerFg: style.Color{Value: "#FFFFFF"},
+		Success:  style.Color{Value: "#166534"},
+		Warning:  style.Color{Value: "#854D0E"},
+		Info:     style.Color{Value: "#1D4ED8"},
 
 		// Surfaces + text: usually leave alone.
 		Secondary:    style.Color{Value: "#6B7280"},
