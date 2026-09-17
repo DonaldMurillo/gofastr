@@ -188,3 +188,60 @@ func TestNestedScopedThemeOptionsWinByProximity(t *testing.T) {
 		}
 	}
 }
+
+// TestNestedFieldOptionsWinByProximity is the field-family half of the
+// same proof: --fui-field-columns and --fui-field-radius nest the same
+// way the button and density variables do.
+func TestNestedFieldOptionsWinByProximity(t *testing.T) {
+	if testing.Short() {
+		t.Skip("browser e2e: needs a real Chrome")
+	}
+	// Distinct primaries, the same precaution the button test takes:
+	// a scoped override's tokens ship in every app.css, so a theme
+	// carrying the default primary would trip the variant tests'
+	// leak assertions next door.
+	a := theme.Default(theme.Overrides{
+		Primary:    "#7C3AED",
+		Components: theme.ComponentOptions{Field: theme.FieldOptions{Layout: theme.Stacked, Radius: theme.FieldSquare}},
+	})
+	b := theme.Default(theme.Overrides{
+		Primary:    "#0EA5E9",
+		Components: theme.ComponentOptions{Field: theme.FieldOptions{Layout: theme.Inline, Radius: theme.FieldRound}},
+	})
+	refA := style.RegisterThemeOverride(a)
+	refB := style.RegisterThemeOverride(b)
+
+	body := fmt.Sprintf(
+		`<div class="%s"><p id="fprobe-a">in A</p>`+
+			`<div class="%s"><p id="fprobe-b">in B</p></div>`+
+			`</div>`, refA.Class(), refB.Class())
+	srv := themeOptServer(t, theme.Default(), body)
+
+	chCtx := themeOptContext(t)
+
+	var got map[string]string
+	err := chromedp.Run(chCtx,
+		chromedp.Navigate(srv.URL+"/"),
+		chromedp.WaitVisible(`#fprobe-b`, chromedp.ByID),
+		chromedp.Evaluate(`(() => {
+			const read = (id) => {
+				const cs = getComputedStyle(document.getElementById(id));
+				return cs.getPropertyValue('--fui-field-columns').trim() + '|' + cs.getPropertyValue('--fui-field-radius').trim();
+			};
+			return { a: read('fprobe-a'), b: read('fprobe-b') };
+		})()`, &got),
+	)
+	if err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	for _, tc := range []struct {
+		probe, want, why string
+	}{
+		{"a", "minmax(0, 1fr)|0", "inside A: stacked columns, square corners"},
+		{"b", "minmax(8rem, 1fr) minmax(0, 3fr)|8px", "the inner B boundary wins by proximity (the radius resolves to the theme's --radii-md)"},
+	} {
+		if got[tc.probe] != tc.want {
+			t.Errorf("probe %s (%s): --fui-field-columns|--fui-field-radius = %q, want %q", tc.probe, tc.why, got[tc.probe], tc.want)
+		}
+	}
+}

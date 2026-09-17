@@ -3,6 +3,7 @@ package ui
 import (
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"strings"
 )
 
 // ─── Tooltip ────────────────────────────────────────────────────────
@@ -74,10 +75,12 @@ func Tooltip(cfg TooltipConfig, trigger render.HTML) render.HTML {
 		cls += " " + cfg.Class
 	}
 
-	// The trigger receives aria-describedby: splice it via the
-	// existing injectAttrs helper from form.go so the caller's
-	// element gets the attribute without re-parsing.
-	triggerWithDescribedBy := injectAttrs(trigger, ` aria-describedby="`+id+`"`)
+	// The trigger receives aria-describedby: the caller's element is
+	// pre-built markup, so the attribute is spliced into its first
+	// open tag. This is Tooltip's own local splice — FormField's old
+	// injectAttrs was deleted with its composition hack; a tooltip
+	// trigger has no builder seam to hand wiring to (yet).
+	triggerWithDescribedBy := injectTriggerDescribedBy(trigger, id)
 
 	pop := html.Span(html.TextConfig{
 		Class:      "ui-tooltip__pop",
@@ -89,4 +92,24 @@ func Tooltip(cfg TooltipConfig, trigger render.HTML) render.HTML {
 		Class:      cls,
 		ExtraAttrs: html.SafeExtraAttrs(cfg.ExtraAttrs),
 	}, triggerWithDescribedBy, pop))
+}
+
+// injectTriggerDescribedBy splices ` aria-describedby="<id>"` into the
+// first open tag of the caller's trigger element. Idempotent: a trigger
+// that already carries the attribute is returned unchanged. Local to
+// Tooltip: its trigger is caller-built markup with no builder seam, so
+// the relationship is spliced rather than handed down (see FormField
+// for the seam-based alternative).
+func injectTriggerDescribedBy(trigger render.HTML, id string) render.HTML {
+	s := string(trigger)
+	attr := ` aria-describedby="` + string(render.Escape(id)) + `"`
+	if strings.Contains(s, `aria-describedby="`) {
+		return trigger
+	}
+	end := strings.IndexByte(s, '>')
+	if end < 0 {
+		return trigger
+	}
+	// safe-html: attr is assembled from render.Escape output only.
+	return render.HTML(s[:end] + attr + s[end:])
 }

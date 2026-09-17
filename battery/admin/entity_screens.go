@@ -25,13 +25,13 @@ import (
 
 	appui "github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
-	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/interactive"
 	"github.com/DonaldMurillo/gofastr/core-ui/patterns/pagination"
 	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
+	"github.com/DonaldMurillo/gofastr/framework/headless"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
 
@@ -783,22 +783,36 @@ func (s *entityFormScreen) RenderCtx(ctx context.Context) render.HTML {
 		action = base + "/_update/" + url.PathEscape(s.id)
 		title = "Edit " + singular(s.ent.GetName())
 	}
-
 	errs := ui.FieldErrors(s.fieldErrs)
-	fields := make([]render.HTML, 0, len(editableFields(s.ent)))
-	for _, f := range editableFields(s.ent) {
+	// The summary's field mapping, built beside the fields it maps:
+	// this form's controls carry f_<name> ids, so a summary link must
+	// target those — a link to #<name> would miss. Labels come from
+	// the same pretty rendering the fields use; the order is the
+	// fields' own.
+	editable := editableFields(s.ent)
+	fields := make([]render.HTML, 0, len(editable))
+	fieldIDs := make(map[string]string, len(editable))
+	fieldLabels := make(map[string]string, len(editable))
+	fieldOrder := make([]string, 0, len(editable))
+	for _, f := range editable {
 		fields = append(fields, s.field(f, errs))
+		fieldIDs[f.Name] = "f_" + f.Name
+		fieldLabels[f.Name] = prettyLabel(f.Name)
+		fieldOrder = append(fieldOrder, f.Name)
 	}
 
 	form := ui.Form(ui.FormConfig{
 		Action:      action,
 		Method:      "POST",
+		ID:          "admin-entity-form",
 		Ctx:         ctx, // auto-stamps the hidden _csrf input
 		Errors:      errs,
+		FieldIDs:    fieldIDs,
+		FieldLabels: fieldLabels,
+		FieldOrder:  fieldOrder,
 		Summary:     s.general,
 		SubmitLabel: "Save",
 	}, fields...)
-
 	return s.b.shell(ui.Container(ui.ContainerConfig{Class: "admin-entity"},
 		ui.PageHeader(ui.PageHeaderConfig{
 			Title:   title,
@@ -886,10 +900,15 @@ func (s *entityFormScreen) field(f schema.Field, errs ui.FieldErrors) render.HTM
 		return ui.FormFieldFor(errs, f.Name, ui.FormFieldConfig{
 			Label: prettyLabel(f.Name), For: id, Required: f.Required && !masked,
 			Help: s.maskedPlaceholder(f.Name),
-			Input: html.Input(html.InputConfig{
-				Type: inputType(f.Type), Name: f.Name, ID: id, Value: val,
-				Placeholder: s.maskedPlaceholder(f.Name),
-			}),
+			Input: func(c headless.FieldControl) render.HTML {
+				return ui.Control(ui.ControlConfig{
+					Field:       c,
+					Type:        inputType(f.Type),
+					Name:        f.Name,
+					Value:       val,
+					Placeholder: s.maskedPlaceholder(f.Name),
+				})
+			},
 		})
 	}
 }

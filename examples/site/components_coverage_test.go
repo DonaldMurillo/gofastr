@@ -39,6 +39,7 @@ func TestComponentGalleryCoversUI(t *testing.T) {
 		"SiteFooter":              "page chrome; shown on every site page",
 		"AnchoredRail":            "in-page scrollspy rail; needs a scrollable page to demo",
 		"SignOut":                 "auth action button; needs an auth session to demo",
+		"Control":                 "builder half of FormField; cannot render outside a field's Input closure (its wiring comes from the field), shown via every typed-field and FormField tile",
 	}
 
 	// Gallery display names, normalized (lowercase, spaces stripped).

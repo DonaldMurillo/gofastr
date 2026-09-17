@@ -22,6 +22,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/access"
+	"github.com/DonaldMurillo/gofastr/framework/headless"
 	fwimage "github.com/DonaldMurillo/gofastr/framework/image"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
@@ -230,9 +231,11 @@ func quickAddCustomerModal() widget.Definition {
 	heading := html.Heading(html.HeadingConfig{Level: 2, ID: "customer-quick-add-title"}, render.Text("New customer"))
 	form := ui.Form(ui.FormConfig{Action: "/api/customers", Method: "POST", SubmitLabel: "Add customer", ExtraAttrs: interactive.Post("/api/customers").
 		OnSuccess(interactive.CloseWidget(), interactive.ResetForm(), interactive.Navigate("/app/customers")).Attrs()},
-		ui.FormField(ui.FormFieldConfig{Label: "Name", For: "qa-name", Required: true, Input: html.Input(html.InputConfig{Type: "text", Name: "name", ID: "qa-name", ExtraAttrs: html.Attrs{"required": "required"}})}),
-		ui.FormField(ui.FormFieldConfig{Label: "Email", For: "qa-email", Required: true, Input: html.Input(html.InputConfig{Type: "email", Name: "email", ID: "qa-email", ExtraAttrs: html.Attrs{"required": "required"}})}),
-		ui.FormField(ui.FormFieldConfig{Label: "Company", For: "qa-company", Input: html.Input(html.InputConfig{Type: "text", Name: "company", ID: "qa-company"})}),
+		ui.TextField(ui.TextFieldConfig{Name: "name", Label: "Name", ID: "qa-name", Required: true}),
+		ui.FormField(ui.FormFieldConfig{Label: "Email", For: "qa-email", Required: true, Input: func(c headless.FieldControl) render.HTML {
+			return ui.Control(ui.ControlConfig{Field: c, Type: "email", Name: "email"})
+		}}),
+		ui.TextField(ui.TextFieldConfig{Name: "company", Label: "Company", ID: "qa-company"}),
 	)
 	return preset.Modal("customer-quick-add").
 		Hidden().

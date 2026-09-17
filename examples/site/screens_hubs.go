@@ -211,8 +211,11 @@ host.Islands.SetOnPresenceChange(func(topic string) {
 				CodeLang: "go",
 				Code: `// errs is the server's validation result (ui.FieldErrors). On error
 // the form comes back with each message in place, swapped like an island.
-ui.Form(ui.FormConfig{Method: "POST", Action: "/login", SubmitLabel: "Sign in", Errors: errs},
-    ui.FormFieldFor(errs, "email", ui.FormFieldConfig{Label: "Email", For: "email", Input: emailInput}),
+ui.Form(ui.FormConfig{Method: "POST", Action: "/login", ID: "login", SubmitLabel: "Sign in", Errors: errs},
+    ui.FormFieldFor(errs, "email", ui.FormFieldConfig{Label: "Email", For: "email",
+        Input: func(c headless.FieldControl) render.HTML {
+            return ui.Control(ui.ControlConfig{Field: c, Type: "email", Name: "email"})
+        }}),
 )`,
 				RefSlug: "form-module",
 			},

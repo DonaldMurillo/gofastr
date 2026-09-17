@@ -22,12 +22,12 @@ import (
 	"github.com/DonaldMurillo/gofastr/battery/admin"
 	appui "github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
-	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
+	"github.com/DonaldMurillo/gofastr/framework/headless"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 	"github.com/DonaldMurillo/gofastr/framework/uihost"
 
@@ -261,11 +261,15 @@ func (loginScreen) RenderCtx(context.Context) render.HTML {
 		Title: "Backoffice",
 		Body: ui.Form(ui.FormConfig{Action: "/login/submit", Method: "POST", SubmitLabel: "Sign in"},
 			ui.FormField(ui.FormFieldConfig{Label: "Email", For: "f-email", Required: true,
-				Input: html.Input(html.InputConfig{ID: "f-email", Name: "email", Type: "email", Value: "admin@example.com",
-					ExtraAttrs: html.Attrs{"autocomplete": "email", "required": ""}})}),
+				Input: func(c headless.FieldControl) render.HTML {
+					return ui.Control(ui.ControlConfig{Field: c, Type: "email", Name: "email",
+						Value: "admin@example.com", AutoComplete: "email"})
+				}}),
 			ui.FormField(ui.FormFieldConfig{Label: "Password", For: "f-password",
-				Input: html.Input(html.InputConfig{ID: "f-password", Name: "password", Type: "password", Value: "demo",
-					ExtraAttrs: html.Attrs{"autocomplete": "current-password"}})}),
+				Input: func(c headless.FieldControl) render.HTML {
+					return ui.Control(ui.ControlConfig{Field: c, Type: "password", Name: "password",
+						Value: "demo", AutoComplete: "current-password"})
+				}}),
 		),
 		Footer: ui.Muted(render.Text("Demo sign-in: any email works.")),
 	})

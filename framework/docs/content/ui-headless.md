@@ -168,14 +168,30 @@ want to own:
   never see `Classes`, parts, or a class name.
 
 `Classes` is internal to the styled layer: `ui.Button` dresses the
-headless structure with this package's own `fui-button` class map, and
-the class names are the same under every theme — a theme never picks
-classes, it declares option variables that the component's stylesheet
-consumes (see [theming](theming.md) → "Component options"). Discovery
-and styling stay separate there too: the `data-fui-comp="ui-button"`
-marker is what fetches the sheet; the classes are what the sheet matches.
-A bare headless button beside a styled one on the same page stays
-unstyled — that pair is one of the fixtures below.
+headless structure with this package's own `fui-button` class map,
+and the class names are the same under every theme — a theme never
+picks classes, it declares option variables that the component's
+stylesheet consumes (see [theming](theming.md) → "Component
+options"). Discovery and styling stay separate there too: the
+`data-fui-comp="ui-button"` marker is what fetches the sheet; the
+classes are what the sheet matches. A bare headless button beside a
+styled one on the same page stays unstyled — that pair is one of the
+fixtures below.
+
+The plain-markup form family renders through headless the same way:
+`ui.Form`, `ui.FormField` (whose `Input` is a builder receiving the
+field's wiring — the id, the described-by chain, the invalid state,
+the required flag), `ui.FormSection`, the typed fields, `ui.Select`
+(which carries its own `data-fui-comp="ui-select"` marker on the
+control beside the field's marker, so both sheets load wherever it
+renders), `ui.ValidationSummary` and `ui.InputGroup`. `ui.Control` is
+the styled native input for the types the typed fields do not name,
+built inside a FormField builder from the wiring the field hands it.
+`ui.Form` routes its island wiring through `headless.FormProps.Request`,
+the typed request seam (what Button's `Action` is to a click): the
+`data-fui-rpc` contract, a method that may differ from the native
+one, the success effects, and the generator's `data-action-mount`
+hook, each checked for what it deserves.
 
 **See it live:** the product site ships a landing page under each of two
 boot-registered themes —

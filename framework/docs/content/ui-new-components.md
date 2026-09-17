@@ -86,6 +86,7 @@ raw (enumerated in `framework/ui/extraattrs_contract_test.go`). See
 - **multiselect**: `core-ui/patterns/multiselect`, checkbox group with chip display above
 - **form**: `framework/ui.Form`, opinionated `<form>` wrapper with submit + error summary
 - **formfield**: `framework/ui.FormField`, labelled input with required + help + error states
+- **control**: `framework/ui.Control`, styled native input (email, password, datetime-local, file, tel, url, search…) for a FormField builder
 - **textfield**: `framework/ui.TextField`, typed labelled native text field with required, help, error, autocomplete, and length attributes
 - **numberfield**: `framework/ui.NumberField`, typed labelled native number field with explicit min/max/step bounds
 - **datefield**: `framework/ui.DateField`, typed labelled native date field with HTML-date min/max bounds

@@ -16,6 +16,8 @@ func TestDefaultCarriesCompleteOptions(t *testing.T) {
 		"density":          "comfortable",
 		"button.treatment": "filled",
 		"button.radius":    "round",
+		"field.layout":     "stacked",
+		"field.radius":     "round",
 	}
 	if !reflect.DeepEqual(th.Components, want) {
 		t.Fatalf("Default() Components = %#v, want %#v", th.Components, want)
@@ -67,7 +69,20 @@ func TestComponentOptionsStringParseRoundTrip(t *testing.T) {
 			t.Errorf("Radius round trip failed: %v → %q → %v (%v)", r, r.String(), back, err)
 		}
 	}
-	if (DensityUnset).String() != "" || (TreatmentUnset).String() != "" || (RadiusUnset).String() != "" {
+	for _, l := range []FieldLayout{Stacked, Inline} {
+		back, err := ParseFieldLayout(l.String())
+		if err != nil || back != l {
+			t.Errorf("FieldLayout round trip failed: %v → %q → %v (%v)", l, l.String(), back, err)
+		}
+	}
+	for _, r := range []FieldRadius{FieldRound, FieldSquare} {
+		back, err := ParseFieldRadius(r.String())
+		if err != nil || back != r {
+			t.Errorf("FieldRadius round trip failed: %v → %q → %v (%v)", r, r.String(), back, err)
+		}
+	}
+	if (DensityUnset).String() != "" || (TreatmentUnset).String() != "" || (RadiusUnset).String() != "" ||
+		(LayoutUnset).String() != "" || (FieldRadiusUnset).String() != "" {
 		t.Error("unset enums must flatten to the empty string (the key is omitted)")
 	}
 }
@@ -86,9 +101,14 @@ func TestOptionsFromFlattenedRejectsUnknowns(t *testing.T) {
 }
 
 func TestCompleteFillsUnset(t *testing.T) {
-	got := ComponentOptions{Button: ButtonOptions{Radius: Pill}}.Complete()
-	if got != (ComponentOptions{Density: Comfortable, Button: ButtonOptions{Treatment: Filled, Radius: Pill}}) {
-		t.Errorf("Complete() = %#v", got)
+	got := ComponentOptions{Button: ButtonOptions{Radius: Pill}, Field: FieldOptions{Layout: Inline}}.Complete()
+	want := ComponentOptions{
+		Density: Comfortable,
+		Button:  ButtonOptions{Treatment: Filled, Radius: Pill},
+		Field:   FieldOptions{Layout: Inline, Radius: FieldRound},
+	}
+	if got != want {
+		t.Errorf("Complete() = %#v, want %#v", got, want)
 	}
 }
 

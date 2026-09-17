@@ -9,6 +9,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/headless"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
 
@@ -55,12 +56,11 @@ func (r *Runner) buildStepForm(stepIdx int, steps []Step, fieldErrors map[string
 			Label:    f.Label,
 			For:      inputID,
 			Required: true,
-			Input: html.Input(html.InputConfig{
-				Type:  inputType,
-				Name:  f.Name,
-				ID:    inputID,
-				Value: inputValue,
-			}),
+			Input: func(c headless.FieldControl) render.HTML {
+				return ui.Control(ui.ControlConfig{
+					Field: c, Type: inputType, Name: f.Name, Value: inputValue,
+				})
+			},
 		}))
 	}
 

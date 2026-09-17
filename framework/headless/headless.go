@@ -238,11 +238,17 @@ func Merge(a, b html.Attrs) html.Attrs {
 	return out
 }
 
-// Describe wires an input to its hint and error by id, returning the
-// aria-describedby value. This is the whole reason a field is a
+// Describe wires an input to its error and its hint by id, returning
+// the aria-describedby value. This is the whole reason a field is a
 // component and not three elements in a row: the relationship has to
 // be built from the same ids the elements are given, in one place, or
 // it silently rots.
+//
+// The error comes first, so the correction is read before the rule it
+// violated; both ids ride in one attribute whenever both are set —
+// the hint is the rule the value must obey, and dropping it from the
+// description exactly when it was broken is dropping it when the
+// reader needs it most.
 func Describe(id, hint, errText string) (describedBy, hintID, errID string) {
 	if id == "" {
 		return "", "", ""
@@ -251,7 +257,8 @@ func Describe(id, hint, errText string) (describedBy, hintID, errID string) {
 	if errText != "" {
 		errID = id + "-error"
 		ids = append(ids, errID)
-	} else if hint != "" {
+	}
+	if hint != "" {
 		hintID = id + "-hint"
 		ids = append(ids, hintID)
 	}

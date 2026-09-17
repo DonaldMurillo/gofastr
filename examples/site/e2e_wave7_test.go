@@ -31,7 +31,7 @@ func TestE2E_Select_BasicRenders(t *testing.T) {
 		chromedp.Navigate(base+"/components/select"),
 		pageReady(),
 		chromedp.Evaluate(`document.querySelectorAll('[data-fui-comp="ui-select"]').length`, &count),
-		chromedp.Evaluate(`document.querySelector('[data-fui-comp="ui-select"] label.ui-select__label') !== null`, &hasLabel),
+		chromedp.Evaluate(`document.querySelector('[data-fui-comp="ui-form-field"] label.fui-field__label') !== null`, &hasLabel),
 	)
 	if err != nil {
 		t.Fatalf("chromedp: %v", err)
@@ -40,7 +40,7 @@ func TestE2E_Select_BasicRenders(t *testing.T) {
 		t.Error("expected at least one ui-select component on the page")
 	}
 	if !hasLabel {
-		t.Error("expected a <label> with class ui-select__label inside the component")
+		t.Error("expected a <label> with class fui-field__label inside the component")
 	}
 }
 
@@ -51,7 +51,7 @@ func TestE2E_Select_HasOptions(t *testing.T) {
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/select"),
 		pageReady(),
-		chromedp.Evaluate(`document.querySelectorAll('[data-fui-comp="ui-select"] select option').length`, &optCount),
+		chromedp.Evaluate(`document.querySelectorAll('select[data-fui-comp="ui-select"] option').length`, &optCount),
 	)
 	if err != nil {
 		t.Fatalf("chromedp: %v", err)
@@ -69,7 +69,7 @@ func TestE2E_Select_CustomArrow(t *testing.T) {
 		chromedp.Navigate(base+"/components/select"),
 		pageReady(),
 		chromedp.Evaluate(`(function() {
-			var sel = document.querySelector('[data-fui-comp="ui-select"] select');
+			var sel = document.querySelector('select[data-fui-comp="ui-select"]');
 			return sel ? getComputedStyle(sel).backgroundImage : '';
 		})()`, &bgImage),
 	)

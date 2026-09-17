@@ -12,6 +12,7 @@ package main
 // class + 404 + StaticPaths are deterministic facts of the rendered HTML.
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -385,8 +386,8 @@ func TestE2E_HeadlessLanding_NewsletterIslandRoundTrip(t *testing.T) {
 		// re-rendered region, the island swaps it in, and the headless
 		// behaviour module moves focus to the summary.
 		chromedp.Click(`#hl-newsletter button[type="submit"]`, chromedp.ByQuery),
-		waitModule(`!!document.getElementById('hl-subscribe-summary')`),
-		chromedp.Evaluate(`String(document.activeElement === document.getElementById('hl-subscribe-summary'))`, &focused),
+		waitModule(`!!document.getElementById('hl-subscribe-errors')`),
+		chromedp.Evaluate(`String(document.activeElement === document.getElementById('hl-subscribe-errors'))`, &focused),
 		// Valid submit: the same round trip renders the success callout.
 		chromedp.SetValue(`#hl-subscribe-email`, "reader@example.com", chromedp.ByQuery),
 		chromedp.Click(`#hl-newsletter button[type="submit"]`, chromedp.ByQuery),
@@ -440,9 +441,9 @@ func TestE2E_HeadlessLanding_NewsletterNoScriptRoundTrip(t *testing.T) {
 		// 303 → GET), and a poll task does not survive navigation
 		// (chromedp raises "Inspected target navigated or closed"),
 		// while the query actions retry onto the new document.
-		chromedp.WaitVisible(`#hl-subscribe-summary`, chromedp.ByID),
+		chromedp.WaitVisible(`#hl-subscribe-errors`, chromedp.ByID),
 		chromedp.Location(&afterInvalid),
-		chromedp.Evaluate(`!!document.getElementById('hl-subscribe-summary')`, &summaryShown),
+		chromedp.Evaluate(`!!document.getElementById('hl-subscribe-errors')`, &summaryShown),
 		// Valid resubmit from the answered page: the 303 carries
 		// subscribe=ok and the success callout renders.
 		chromedp.SetValue(`#hl-subscribe-email`, "reader@example.com", chromedp.ByQuery),
@@ -482,4 +483,86 @@ func TestE2E_HeadlessLanding_NewsletterNoScriptRoundTrip(t *testing.T) {
 // fmtHL fills a %q selector into the metrics probe.
 func fmtHL(format, selector string) string {
 	return strings.ReplaceAll(format, "%q", "`"+selector+"`")
+}
+
+// TestE2E_HeadlessLanding_FieldLayoutsUnderConstraint is the
+// FieldOptions acceptance pass: the long label wraps rather than
+// widening its track, both messages render at once with the error
+// first, the choice row sits beside the ordinary fields, and nothing
+// overflows — in a narrow grid CELL at a wide viewport (the
+// container case) as well as at a narrow viewport.
+func TestE2E_HeadlessLanding_FieldLayoutsUnderConstraint(t *testing.T) {
+	if testing.Short() {
+		t.Skip("e2e: -short")
+	}
+	base := startE2EServer(t)
+	for _, route := range landingRoutes {
+		for _, vp := range []struct{ w, h int64 }{{1280, 800}, {390, 844}} {
+			t.Run(fmt.Sprintf("%s/%dx%d", route.Segment, vp.w, vp.h), func(t *testing.T) {
+				ctx := newE2EBrowserCtx(t)
+				if err := chromedp.Run(ctx,
+					chromedp.EmulateViewport(vp.w, vp.h),
+					chromedp.Navigate(base+landingRoutePath(route.Segment)),
+					pageReady(),
+					chromedp.WaitVisible(`#hl-field-layout-section`, chromedp.ByID),
+				); err != nil {
+					t.Fatalf("chromedp: %v", err)
+				}
+				var got struct {
+					Overflow        bool
+					HintVisible     bool
+					ErrorVisible    bool
+					ErrorFirst      bool
+					LongWraps       bool
+					CheckboxVisible bool
+					CellOverflow    bool
+				}
+				if err := chromedp.Run(ctx, chromedp.Evaluate(`(() => {
+					const de = document.documentElement;
+					let cellOverflow = false;
+					for (const f of document.querySelectorAll('#hl-field-layout-section .fui-field')) {
+						if (f.scrollWidth > f.clientWidth + 1) cellOverflow = true;
+					}
+					// The ids sit on the CONTROLS; the field roots are
+					// their closest .fui-field.
+					const fieldOf = (id) => document.getElementById(id).closest('.fui-field');
+					const both = fieldOf('hl-field-both');
+					const hint = both.querySelector('.fui-field__hint');
+					const err = both.querySelector('.fui-field__error');
+					const longLabel = fieldOf('hl-field-long').querySelector('.fui-field__label');
+					const bothLabel = both.querySelector('.fui-field__label');
+					const cb = document.getElementById('hl-field-checkbox');
+					return {
+						overflow: de.scrollWidth > window.innerWidth + 1,
+						hintVisible: !!hint && hint.offsetParent !== null,
+						errorVisible: !!err && err.offsetParent !== null,
+						errorFirst: !!hint && !!err && (err.compareDocumentPosition(hint) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0,
+						longWraps: !!longLabel && !!bothLabel && longLabel.offsetHeight > bothLabel.offsetHeight + 4,
+						checkboxVisible: !!cb && cb.offsetParent !== null,
+						cellOverflow,
+					};
+				})()`, &got)); err != nil {
+					t.Fatalf("probe: %v", err)
+				}
+				if got.Overflow {
+					t.Error("the page overflows horizontally at this size")
+				}
+				if got.CellOverflow {
+					t.Error("a field overflows its grid cell (the narrow-container case)")
+				}
+				if !got.HintVisible || !got.ErrorVisible {
+					t.Errorf("both messages must be visible at once: hint=%v error=%v", got.HintVisible, got.ErrorVisible)
+				}
+				if !got.ErrorFirst {
+					t.Error("the error must be drawn before the hint")
+				}
+				if !got.LongWraps {
+					t.Error("the long label did not wrap to more lines than the short one")
+				}
+				if !got.CheckboxVisible {
+					t.Error("the checkbox row is not visible beside the ordinary fields")
+				}
+			})
+		}
+	}
 }

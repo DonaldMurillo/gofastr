@@ -7,6 +7,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/headless"
 )
 
 func mustContain(t *testing.T, h render.HTML, sub string) {
@@ -97,61 +98,93 @@ func TestFormFieldRequiresLabelForInput(t *testing.T) {
 	t.Fatal("expected panic on empty config")
 }
 
+// A nil Input is the one misuse the type cannot prevent: the builder
+// is the point, and a missing one is a migration half-done.
+func TestFormFieldRequiresInputBuilder(t *testing.T) {
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Fatal("expected panic on nil Input")
+		}
+		if !strings.Contains(r.(string), "builder") {
+			t.Fatalf("the panic should say what Input now is, got: %v", r)
+		}
+	}()
+	FormField(FormFieldConfig{Label: "n", For: "n"})
+}
+
 func TestFormFieldRequired(t *testing.T) {
-	in := html.Input(html.InputConfig{Type: "text", Name: "n", ID: "name"})
 	h := FormField(FormFieldConfig{
-		Label: "Name", For: "name", Required: true, Input: in,
+		Label: "Name", For: "name", Required: true,
+		Input: func(c headless.FieldControl) render.HTML {
+			return Control(ControlConfig{Field: c, Type: "text", Name: "n"})
+		},
 	})
 	mustContain(t, h, `for="name"`)
 	mustContain(t, h, "Name")
-	mustContain(t, h, "ui-form-field__required")
+	// The required mark is drawn from the state the label carries.
+	mustContain(t, h, `data-required`)
 }
 
 func TestFormFieldErrorSwitchesStyling(t *testing.T) {
-	in := html.Input(html.InputConfig{Type: "text", Name: "n", ID: "n"})
 	h := FormField(FormFieldConfig{
-		Label: "Name", For: "n", Error: "Required field", Input: in,
+		Label: "Name", For: "n", Error: "Required field",
 		Help: "Your legal name",
+		Input: func(c headless.FieldControl) render.HTML {
+			return Control(ControlConfig{Field: c, Type: "text", Name: "n"})
+		},
 	})
-	mustContain(t, h, "is-error")
 	mustContain(t, h, `role="alert"`)
 	mustContain(t, h, "Required field")
-	// Help text should also be present alongside error (S-3).
-	mustContain(t, h, "ui-form-field__help")
+	// Help text is present alongside the error, after it.
+	mustContain(t, h, "fui-field__hint")
 	mustContain(t, h, "Your legal name")
 }
 
 func TestFormFieldHelpRendersWhenNoError(t *testing.T) {
-	in := html.Input(html.InputConfig{Type: "text", Name: "n", ID: "n"})
-	h := FormField(FormFieldConfig{Label: "x", For: "n", Help: "Hint", Input: in})
+	h := FormField(FormFieldConfig{Label: "x", For: "n", Help: "Hint",
+		Input: func(c headless.FieldControl) render.HTML {
+			return Control(ControlConfig{Field: c, Type: "text", Name: "n"})
+		}})
 	mustContain(t, h, "Hint")
-	mustContain(t, h, "ui-form-field__help")
+	mustContain(t, h, "fui-field__hint")
 }
 
+// The both-visible contract, order included: the error paragraph
+// precedes the hint, and the control's described-by lists the error's
 func TestFormFieldHelpRendersAlongsideError(t *testing.T) {
-	in := html.Input(html.InputConfig{Type: "text", Name: "n", ID: "n"})
 	h := FormField(FormFieldConfig{
-		Label: "Name", For: "n", Input: in,
+		Label: "Name", For: "n",
+		Input: func(c headless.FieldControl) render.HTML {
+			return Control(ControlConfig{Field: c, Type: "text", Name: "n"})
+		},
 		Help:  "Enter your full name",
 		Error: "Required",
 	})
 	s := string(h)
-	if !strings.Contains(s, "Enter your full name") {
-		t.Errorf("help text should still render when error is present, got: %s", s)
+	errAt := strings.Index(s, `id="n-error"`)
+	hintAt := strings.Index(s, `id="n-hint"`)
+	if hintAt == -1 {
+		t.Fatalf("the hint is missing entirely:\n%s", s)
 	}
-	if !strings.Contains(s, "ui-form-field__help") {
-		t.Errorf("help class should still be present, got: %s", s)
+	if errAt > hintAt {
+		t.Errorf("the error must be drawn before the hint:\n%s", s)
 	}
-	if !strings.Contains(s, "Required") {
-		t.Errorf("error text should render, got: %s", s)
+	if !strings.Contains(s, `aria-describedby="n-error n-hint"`) {
+		t.Errorf("the control must carry both ids, error first:\n%s", s)
+	}
+	if !strings.Contains(s, "Required") || !strings.Contains(s, "Enter your full name") {
+		t.Errorf("both messages must render:\n%s", s)
 	}
 }
 
 // ─── FormField a11y ───
 func TestFormFieldErrorAddsAriaInvalid(t *testing.T) {
-	in := html.Input(html.InputConfig{Type: "text", Name: "n", ID: "n"})
 	h := FormField(FormFieldConfig{
-		Label: "Name", For: "n", Error: "Required", Input: in,
+		Label: "Name", For: "n", Error: "Required",
+		Input: func(c headless.FieldControl) render.HTML {
+			return Control(ControlConfig{Field: c, Type: "text", Name: "n"})
+		},
 	})
 	s := string(h)
 	if !strings.Contains(s, `aria-invalid="true"`) {
@@ -162,35 +195,41 @@ func TestFormFieldErrorAddsAriaInvalid(t *testing.T) {
 	}
 }
 
-func TestInjectAttrsHandlesLeadingComment(t *testing.T) {
-	// Input wrapped in an HTML comment must not splice into the
-	// comment terminator. The attrs land on the real <input>.
-	in := render.HTML(`<!-- preset --><input type="text" name="n" id="n">`)
-	out := string(injectAttrs(in, ` aria-invalid="true"`))
-	if !strings.Contains(out, `<input type="text" name="n" id="n" aria-invalid="true">`) {
-		t.Errorf("injectAttrs should splice into the real <input> tag, not the comment:\n%s", out)
-	}
-	if strings.Contains(out, `comment --aria-invalid`) {
-		t.Errorf("injectAttrs corrupted the comment:\n%s", out)
-	}
-}
-
-func TestInjectAttrsHandlesLeadingWhitespace(t *testing.T) {
-	in := render.HTML("\n  <input type=\"text\" name=\"n\">")
-	out := string(injectAttrs(in, ` aria-invalid="true"`))
-	if !strings.Contains(out, `aria-invalid="true"`) {
-		t.Errorf("injectAttrs missed the input after whitespace:\n%s", out)
-	}
-}
-
 func TestFormFieldHelpAddsAriaDescribedBy(t *testing.T) {
-	in := html.Input(html.InputConfig{Type: "text", Name: "n", ID: "n"})
 	h := FormField(FormFieldConfig{
-		Label: "Name", For: "n", Help: "Use your full name.", Input: in,
+		Label: "Name", For: "n", Help: "Use your full name.",
+		Input: func(c headless.FieldControl) render.HTML {
+			return Control(ControlConfig{Field: c, Type: "text", Name: "n"})
+		},
 	})
 	s := string(h)
-	if !strings.Contains(s, `aria-describedby="n-help"`) {
+	if !strings.Contains(s, `aria-describedby="n-hint"`) {
 		t.Errorf("help-state FormField must link to help text via aria-describedby:\n%s", s)
+	}
+}
+
+// The reserved error node: rendered empty and wired into the control's
+// description, found by the id that rides aria-describedby.
+func TestFormFieldReserveErrorRendersAnEmptyWiredNode(t *testing.T) {
+	h := FormField(FormFieldConfig{
+		Label: "Token", For: "tok", ReserveError: true,
+		Input: func(c headless.FieldControl) render.HTML {
+			return Control(ControlConfig{Field: c, Type: "text", Name: "tok"})
+		},
+	})
+	s := string(h)
+	if !strings.Contains(s, `id="tok-error" role="alert"></p>`) &&
+		!strings.Contains(s, `role="alert" id="tok-error"></p>`) {
+		t.Errorf("the reserved node must render empty, so the stylesheet can take it out of the grid until a script fills it:\n%s", s)
+	}
+	if strings.Contains(s, "data-hui-") {
+		t.Errorf("the reserved node carries a data-hui-* hook, which belongs to a runtime module that binds it; nothing binds this one:\n%s", s)
+	}
+	if !strings.Contains(s, `aria-describedby="tok-error"`) {
+		t.Errorf("the reserved node's id must ride the control's description:\n%s", s)
+	}
+	if !strings.Contains(s, `id="tok-error"`) {
+		t.Errorf("the reserved node must carry the stable id:\n%s", s)
 	}
 }
 
@@ -553,29 +592,11 @@ func TestInitialsHelper(t *testing.T) {
 	}
 }
 
-// injectAriaInvalid must escape the errID to prevent attribute injection
-// when cfg.For contains special characters (quotes, angle brackets).
-func TestInjectAriaInvalidEscapesID(t *testing.T) {
-	input := render.HTML(`<input id="test" name="test">`)
-	result := string(injectAriaInvalid(input, `foo"bar`))
-	// The raw quote must be escaped, not break the attribute boundary.
-	if strings.Contains(result, `aria-describedby="foo"bar"`) {
-		t.Errorf("unescaped ID in aria-describedby — attribute injection:\n%s", result)
-	}
-	if !strings.Contains(result, `aria-invalid="true"`) {
-		t.Errorf("missing aria-invalid:\n%s", result)
-	}
-}
-
-// injectAttrs must inject aria-describedby even when aria-invalid is
-// already present on the element. Idempotence check must cover all attrs.
-func TestInjectAttrsDoesNotSkipDescribedByWhenInvalidPresent(t *testing.T) {
-	input := render.HTML(`<input id="test" aria-invalid="true">`)
-	result := string(injectAttrs(input, ` aria-invalid="true" aria-describedby="test-error"`))
-	if !strings.Contains(result, `aria-describedby="test-error"`) {
-		t.Errorf("aria-describedby was skipped because aria-invalid already present:\n%s", result)
-	}
-}
+// injectAttrs and its ARIA wrappers were deleted with FormField's
+// post-hoc string surgery: the builder hands the wiring down by
+// construction, so there is nothing left to splice. The escaping
+// those tests pinned now lives in headless's attribute renderer,
+// pinned by the headless package's own tests.
 
 // ─── ExtraAttrs pass-through (#251) ───
 
@@ -599,11 +620,12 @@ func TestSectionExtraAttrsOnEveryRootShape(t *testing.T) {
 		}
 	}
 }
-
 func TestFormFieldExtraAttrsOnRoot(t *testing.T) {
 	h := FormField(FormFieldConfig{
 		Label: "Name", For: "f",
-		Input:      html.Input(html.InputConfig{Type: "text", Name: "f", ID: "f"}),
+		Input: func(c headless.FieldControl) render.HTML {
+			return Control(ControlConfig{Field: c, Type: "text", Name: "f"})
+		},
 		ExtraAttrs: map[string]string{"data-test": "hook"},
 	})
 	root := string(h)[:strings.Index(string(h), ">")+1]

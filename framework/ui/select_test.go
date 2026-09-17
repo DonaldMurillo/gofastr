@@ -16,27 +16,50 @@ func requiredSelect() string {
 	}))
 }
 
-// The component root is display: grid, so a marker rendered as a SIBLING of
-// the <label> becomes its own grid row: "Policy" on one line, "*" on the
-// next. Inside the label it shares the line, matching ui.FormField.
-func TestSelectMarkerRendersInsideLabel(t *testing.T) {
+// The required state rides the label (data-required) and the control
+// (required), and the stylesheet draws the mark from the state — a
+// sibling span would become its own grid row under the label text.
+func TestSelectRequiredMarksLabelAndControl(t *testing.T) {
 	h := requiredSelect()
-	marker := strings.Index(h, "ui-form-field__required")
+	marker := strings.Index(h, `data-required`)
 	if marker == -1 {
-		t.Fatalf("Required: true rendered no marker:\n%s", h)
+		t.Fatalf("Required: true marked no label:\n%s", h)
 	}
 	if marker > strings.Index(h, "</label>") {
-		t.Fatalf("required marker is a sibling of the <label>, so the grid gives it its own row:\n%s", h)
+		t.Fatalf("the required state is not on the label:\n%s", h)
+	}
+	if !strings.Contains(h, `<select class="fui-select" id="policy" name="policy" required=""`) &&
+		!strings.Contains(h, `required=""`) {
+		t.Fatalf("the control itself is not marked required:\n%s", h)
 	}
 }
 
-// The marker's red color + spacing rule in formFieldCSS is scoped to
-// [data-fui-comp="ui-form-field"]; a page that mounts a Select but never a
-// FormField would render the marker unstyled. The component styles what it
-// emits.
-func TestSelectCSSStylesTheMarker(t *testing.T) {
-	if !strings.Contains(selectCSS(style.Theme{}), ".ui-form-field__required") {
-		t.Fatal("selectCSS has no rule for .ui-form-field__required — the marker is unstyled unless ui-form-field happens to be on the page")
+// A Select renders BOTH markers it needs wherever it renders: the
+// field's (ui-form-field, on the root) and its own (ui-select, on the
+// control) — so a Select outside any Form still loads both sheets.
+func TestSelectCarriesItsOwnMarkerBesideTheFields(t *testing.T) {
+	h := requiredSelect()
+	root := h[:strings.Index(h, ">")+1]
+	if !strings.Contains(root, `data-fui-comp="ui-form-field"`) {
+		t.Fatalf("the field marker is missing from the root:\n%s", root)
+	}
+	if !strings.Contains(h, `<select class="fui-select"`) {
+		t.Fatalf("the control does not carry its classes:\n%s", h)
+	}
+	sel := h[strings.Index(h, "<select"):strings.Index(h, "</select>")]
+	if !strings.Contains(sel, `data-fui-comp="ui-select"`) {
+		t.Fatalf("the select's own marker is missing — its sheet would never load outside a FormField:\n%s", sel)
+	}
+}
+
+// The select's own sheet styles the classes it emits, so the marker is
+// never styled by another component's sheet happening to be present.
+func TestSelectCSSStylesItsOwnClasses(t *testing.T) {
+	css := selectCSS(style.Theme{})
+	for _, want := range []string{".fui-select", "var(--fui-field-radius)"} {
+		if !strings.Contains(css, want) {
+			t.Fatalf("selectCSS missing %q:\n%s", want, css)
+		}
 	}
 }
 
@@ -50,17 +73,45 @@ func TestSelectExtraAttrsCannotOverrideOwned(t *testing.T) {
 			"data-test": "hook", "name": "evil", "Class": "evil", "data-fui-comp": "spoof",
 		},
 	}))
-	sel := extraAttrsOpeningTag(t, h, "select")
+	sel := h[strings.Index(h, "<select"):strings.Index(h, "</select>")]
 	for _, banned := range []string{"evil", "spoof"} {
 		if strings.Contains(sel, banned) {
 			t.Errorf("owned attr overridden by ExtraAttrs (%q):\n%s", banned, sel)
 		}
 	}
 	for _, want := range []string{
-		`data-test="hook"`, `name="country"`, `class="ui-select__input"`, `required=""`,
+		`data-test="hook"`, `name="country"`, `class="fui-select"`, `required=""`,
 	} {
 		if !strings.Contains(sel, want) {
 			t.Errorf("select missing %q:\n%s", want, sel)
 		}
+	}
+	// The relation attribute survives: the generator's mount hook
+	// populates the select by it.
+	rel := string(Select(SelectConfig{
+		Name: "owner", Label: "Owner",
+		Options:    []SelectOption{{Value: "1", Text: "One"}},
+		ExtraAttrs: map[string]string{"data-rel-entity": "users"},
+	}))
+	if !strings.Contains(rel, `data-rel-entity="users"`) {
+		t.Errorf("data-rel-entity dropped from the select:\n%s", rel)
+	}
+}
+
+// Help and error are both visible when both are set, the error first,
+// and both ids ride the control's described-by — the field family's
+// contract, which Select inherits from headless.Field.
+func TestSelectHelpAndErrorBothVisible(t *testing.T) {
+	h := string(Select(SelectConfig{
+		Name: "policy", Label: "Policy",
+		Options: []SelectOption{{Value: "a", Text: "A"}},
+		Help:    "Pick the strictest that fits.",
+		Error:   "Pick one.",
+	}))
+	if !strings.Contains(h, `aria-describedby="policy-error policy-hint"`) {
+		t.Errorf("the control must carry both ids, error first:\n%s", h)
+	}
+	if strings.Index(h, `id="policy-error"`) > strings.Index(h, `id="policy-hint"`) {
+		t.Errorf("the error must be drawn before the hint:\n%s", h)
 	}
 }

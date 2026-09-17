@@ -420,7 +420,7 @@ func toggleCSS(_ style.Theme) string {
   padding: 0;
   margin-bottom: var(--spacing-xs, 2px);
 }
-.ui-toggle-group .ui-form-field__required {
+.ui-toggle-group .fui-field__required {
   color: var(--color-danger, #DC2626);
   margin-inline-start: var(--spacing-xs, 2px);
 }

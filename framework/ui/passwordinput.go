@@ -8,6 +8,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/headless"
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
@@ -44,6 +45,16 @@ type PasswordInputConfig struct {
 	// (show/hide toggle aria-label). When nil, context.Background() is
 	// used and English fallbacks are returned, preserving today's behaviour.
 	Ctx context.Context
+
+	// Field is the wiring an enclosing FormField handed its builder
+	// (the headless.FieldControl its Input closure received). Applied
+	// to the inner input — the described-by chain, the invalid state,
+	// the required flag and the id — so a password field inside a
+	// labelled field carries its description and its name arrives
+	// once. Zero value means standalone, and its own Error drives the
+	// wiring as before. When both are set the FIELD wins: the outer
+	// field owns the relationship.
+	Field headless.FieldControl
 }
 
 // PasswordInput renders a password field with a show/hide toggle button.
@@ -89,6 +100,25 @@ func PasswordInput(cfg PasswordInputConfig) render.HTML {
 	maps.Copy(inputAttrs, html.SafeExtraAttrs(cfg.ExtraAttrs,
 		"type", "name", "placeholder", "required", "autocomplete",
 		"aria-invalid", "aria-describedby"))
+	// The enclosing field's wiring, applied after the sanitiser so
+	// nothing drops it: the id the outer label points at, the
+	// description chain, the invalid state, the required flag. Two
+	// sources for one fact is how they drift, which is why these four
+	// come from the field and nowhere else when a field is present.
+	if fc := cfg.Field; fc.ID != "" || fc.DescribedBy != "" || fc.Invalid || fc.Required {
+		if fc.ID != "" {
+			inputAttrs["id"] = fc.ID
+		}
+		if fc.DescribedBy != "" {
+			inputAttrs["aria-describedby"] = fc.DescribedBy
+		}
+		if fc.Invalid {
+			inputAttrs["aria-invalid"] = "true"
+		}
+		if fc.Required {
+			inputAttrs["required"] = ""
+		}
+	}
 
 	toggleAttrs := map[string]string{
 		"type":         "button",

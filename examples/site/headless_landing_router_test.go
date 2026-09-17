@@ -118,7 +118,7 @@ func TestHeadlessSubscribeIslandAnswersRegion(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("empty-email island submit: status = %d, want 200 (body: %s)", rec.Code, rec.Body.String())
 	}
-	if body := rec.Body.String(); !strings.Contains(body, "hl-subscribe-summary") {
+	if body := rec.Body.String(); !strings.Contains(body, "hl-subscribe-errors") {
 		t.Errorf("island answer does not carry the error summary: %s", body)
 	}
 
@@ -175,7 +175,7 @@ func TestHeadlessLandingRendersSubscribeQuery(t *testing.T) {
 	page := body(t, landingRoutePath("default")+"?subscribe=invalid")
 	for _, want := range []string{
 		`data-hui-form-errors`,
-		"hl-subscribe-summary",
+		"hl-subscribe-errors",
 		"does not parse as an email",
 	} {
 		if !strings.Contains(page, want) {
@@ -196,7 +196,7 @@ func TestHeadlessLandingRendersSubscribeQuery(t *testing.T) {
 
 	// The plain route renders the empty form: no summary, no callout.
 	page = body(t, landingRoutePath("default"))
-	if strings.Contains(page, "hl-subscribe-summary") || strings.Contains(page, "hl-subscribe-done") {
+	if strings.Contains(page, "hl-subscribe-errors") || strings.Contains(page, "hl-subscribe-done") {
 		t.Error("plain landing page rendered a subscribe answer with no query asking for one")
 	}
 }

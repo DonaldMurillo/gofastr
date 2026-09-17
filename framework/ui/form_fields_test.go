@@ -15,7 +15,7 @@ func TestTextFieldWiresLabelHelpAndTypedAttributes(t *testing.T) {
 		`for="email"`, `type="text"`, `name="email"`, `id="email"`,
 		`value="a@example.com"`, `placeholder="you@example.com"`,
 		`autocomplete="email"`, `minlength="3"`, `maxlength="120"`,
-		`required`, `aria-describedby="email-help"`,
+		`required`, `aria-describedby="email-hint"`,
 	} {
 		if !strings.Contains(h, want) {
 			t.Errorf("TextField output missing %q: %s", want, h)

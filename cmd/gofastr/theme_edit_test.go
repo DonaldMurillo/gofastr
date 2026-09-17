@@ -1025,11 +1025,17 @@ func TestControlKeyEscapesEveryAttribute(t *testing.T) {
 		Value: "#000000",
 		Type:  "color",
 	}))
-	if strings.Contains(controls, `data-err-for="color-a"b<c"`) {
-		t.Fatalf("error target contains an unescaped token key:\n%s", controls)
+	if strings.Contains(controls, `data-err-for=`) {
+		t.Fatalf("the bespoke data-err-for lookup is back; the reserved node is found by id:\n%s", controls)
 	}
-	if !strings.Contains(controls, `data-err-for="color-a&quot;b&lt;c"`) {
-		t.Fatalf("error target does not contain the escaped token key:\n%s", controls)
+	// The hostile key reaches every attribute it rides escaped, and the
+	// reserved error node is addressed by the control-id-derived id —
+	// the slug of the key, which contains nothing hostile to begin with.
+	if !strings.Contains(controls, `data-field="color-a&quot;b&lt;c"`) {
+		t.Fatalf("the field marker does not carry the escaped token key:\n%s", controls)
+	}
+	if !strings.Contains(controls, `id="te-input-color-a-b-c-error"`) {
+		t.Fatalf("the reserved error node is not addressed by its derived id:\n%s", controls)
 	}
 }
 

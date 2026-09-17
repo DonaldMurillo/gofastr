@@ -171,8 +171,8 @@ func TestE2E_InputGroup_Renders(t *testing.T) {
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/inputgroup"),
 		pageReady(),
-		chromedp.Evaluate(`!!document.querySelector('[data-fui-comp="ui-input-group"] .ui-input-group__prepend')`, &hasPrepend),
-		chromedp.Evaluate(`!!document.querySelector('[data-fui-comp="ui-input-group"] .ui-input-group__append')`, &hasAppend),
+		chromedp.Evaluate(`!!document.querySelector('[data-fui-comp="ui-input-group"] .fui-input-group__prepend')`, &hasPrepend),
+		chromedp.Evaluate(`!!document.querySelector('[data-fui-comp="ui-input-group"] .fui-input-group__append')`, &hasAppend),
 	)
 	if err != nil {
 		t.Fatalf("chromedp: %v", err)
@@ -260,7 +260,7 @@ func TestE2EFieldOrderAndTitle(t *testing.T) {
 			var links = Array.from(last.querySelectorAll('a[href^="#"]'));
 			return {
 				found: true,
-				titleText: (last.querySelector('.ui-validation-summary__title') || {}).textContent || '',
+				titleText: (last.querySelector('.fui-validation-summary__title') || {}).textContent || '',
 				hrefs: links.map(a => a.getAttribute('href')),
 			};
 		})())`, &raw),

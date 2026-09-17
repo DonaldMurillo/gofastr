@@ -8,8 +8,11 @@ import (
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
+	"github.com/DonaldMurillo/gofastr/core-ui/interactive"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/middleware"
+	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/headless"
 )
 
 func TestFormRequiresAction(t *testing.T) {
@@ -18,14 +21,34 @@ func TestFormRequiresAction(t *testing.T) {
 	t.Fatal("expected panic without Action")
 }
 
+// An action the anchor policy refuses used to be substituted with "#",
+// shipping a form whose submit went nowhere. The refusal is the
+// contract now: a dangerous action is a programming error, said at
+// render.
+func TestFormRefusesAnUnsafeAction(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatal("expected a panic for a javascript: action")
+		}
+	}()
+	Form(FormConfig{Action: "javascript:alert(1)"})
+}
+
+// A small builder the tests share: a field whose control carries the
+// wiring the field hands it.
+func testControl(name string) func(headless.FieldControl) render.HTML {
+	return func(c headless.FieldControl) render.HTML {
+		return Control(ControlConfig{Field: c, Type: "text", Name: name})
+	}
+}
+
 func TestFormRendersDefaultsAndSubmitButton(t *testing.T) {
-	in := html.Input(html.InputConfig{Type: "text", Name: "n", ID: "n"})
 	h := string(Form(FormConfig{Action: "/x"},
-		FormField(FormFieldConfig{Label: "n", For: "n", Input: in}),
+		FormField(FormFieldConfig{Label: "n", For: "n", Input: testControl("n")}),
 	))
 	for _, want := range []string{
-		`<form`, `action="/x"`, `method="POST"`, `ui-form__fields`,
-		`ui-form__actions`, `>Save<`,
+		`<form`, `action="/x"`, `method="POST"`, `fui-form__body`,
+		`fui-form__actions`, `>Save<`,
 	} {
 		if !strings.Contains(h, want) {
 			t.Errorf("missing %q in: %s", want, h)
@@ -33,54 +56,108 @@ func TestFormRendersDefaultsAndSubmitButton(t *testing.T) {
 	}
 }
 
-func TestFormErrorsRenderSummaryCallout(t *testing.T) {
-	in := html.Input(html.InputConfig{Type: "email", Name: "e", ID: "e"})
+func TestFormErrorsRenderTheSummary(t *testing.T) {
 	h := string(Form(FormConfig{
 		Action: "/x",
+		ID:     "f",
 		Errors: FieldErrors{"e": "Invalid email"},
 	},
 		FormFieldFor(FieldErrors{"e": "Invalid email"}, "e",
-			FormFieldConfig{Label: "Email", For: "e", Input: in}),
+			FormFieldConfig{Label: "Email", For: "e", Input: testControl("e")}),
 	))
 	for _, want := range []string{
-		"ui-callout--danger", "Form has errors",
-		`role="alert"`, `is-error`, "Invalid email",
+		// The form is marked so the behaviour module moves focus to
+		// the summary after a failed submit.
+		`data-hui-form-errors`,
+		// The summary's id is derived from the form's.
+		`id="f-errors"`,
+		// Focusable by script, never a tab stop.
+		`tabindex="-1"`, `role="alert"`,
+		"Invalid email",
+		// The per-field error reaches the field too.
+		`aria-invalid="true"`,
 	} {
 		if !strings.Contains(h, want) {
 			t.Errorf("missing %q in: %s", want, h)
 		}
+	}
+}
+
+// A form rendering errors without an id has no way to derive a stable
+// summary id; two such forms on one page would share a title id. The
+// panic names the config field.
+func TestFormErrorsRequireAnID(t *testing.T) {
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Fatal("expected a panic for Errors without ID")
+		}
+		if !strings.Contains(string(r.(string)), "FormConfig.ID") {
+			t.Fatalf("panic should name FormConfig.ID, got: %v", r)
+		}
+	}()
+	Form(FormConfig{Action: "/x", Errors: FieldErrors{"e": "bad"}})
+}
+
+// Two errored forms on one page keep distinct summary ids — the whole
+// reason the id is required.
+func TestTwoErroredFormsKeepDistinctSummaryIDs(t *testing.T) {
+	a := string(Form(FormConfig{Action: "/x", ID: "form-a", Errors: FieldErrors{"e": "a"}}))
+	b := string(Form(FormConfig{Action: "/x", ID: "form-b", Errors: FieldErrors{"e": "b"}}))
+	if !strings.Contains(a, `id="form-a-errors"`) || !strings.Contains(b, `id="form-b-errors"`) {
+		t.Errorf("summary ids should be derived from each form's id:\n%s\n%s", a, b)
+	}
+	if strings.Contains(a, "form-b-errors") || strings.Contains(b, "form-a-errors") {
+		t.Errorf("each form should carry only its own summary id")
+	}
+}
+
+// The summary's general sentence (FormConfig.Summary) renders as a text
+// row, after the field errors: it belongs to no field, so it links to
+// nothing.
+func TestFormSummaryGeneralRowRendersAsText(t *testing.T) {
+	h := string(Form(FormConfig{
+		Action: "/x", ID: "f",
+		Errors:  FieldErrors{"e": "Invalid"},
+		Summary: "Those credentials do not match.",
+	}))
+	if !strings.Contains(h, "Those credentials do not match.") {
+		t.Errorf("the general summary sentence is missing:\n%s", h)
+	}
+	// The general row must not be a link: there is no field to link to.
+	if strings.Contains(h, `href="#">Those credentials`) {
+		t.Errorf("the general sentence rendered as an anchor:\n%s", h)
 	}
 }
 
 func TestFormFieldForPullsErrorByName(t *testing.T) {
-	in := html.Input(html.InputConfig{Type: "text", Name: "n", ID: "n"})
 	errs := FieldErrors{"n": "Required"}
 	h := string(FormFieldFor(errs, "n",
-		FormFieldConfig{Label: "Name", For: "n", Input: in}))
-	if !strings.Contains(h, "is-error") || !strings.Contains(h, "Required") {
+		FormFieldConfig{Label: "Name", For: "n", Input: testControl("n")}))
+	if !strings.Contains(h, `aria-invalid="true"`) || !strings.Contains(h, "Required") {
 		t.Errorf("expected error wired in: %s", h)
 	}
 }
 
 func TestFormFieldForNoErrorWhenNotInMap(t *testing.T) {
-	in := html.Input(html.InputConfig{Type: "text", Name: "n", ID: "n"})
 	errs := FieldErrors{"other": "X"}
 	h := string(FormFieldFor(errs, "n",
-		FormFieldConfig{Label: "Name", For: "n", Input: in}))
-	if strings.Contains(h, "is-error") {
-		t.Errorf("expected no error class, got: %s", h)
+		FormFieldConfig{Label: "Name", For: "n", Input: testControl("n")}))
+	if strings.Contains(h, `aria-invalid="true"`) {
+		t.Errorf("expected no invalid state, got: %s", h)
 	}
 }
 
 func TestValidationSummaryRendersErrors(t *testing.T) {
 	h := string(ValidationSummary(ValidationSummaryConfig{
+		ID: "sum",
 		Errors: FieldErrors{
 			"email": "Invalid email",
 			"name":  "Required",
 		},
 	}))
 	for _, want := range []string{
-		"ui-validation-summary",
+		"fui-validation-summary",
 		`role="alert"`,
 		"Please fix the following errors:",
 		"email: Invalid email",
@@ -107,6 +184,7 @@ func TestValidationSummaryLinksMeetTouchTargetFloor(t *testing.T) {
 
 func TestValidationSummaryWithFieldLabels(t *testing.T) {
 	h := string(ValidationSummary(ValidationSummaryConfig{
+		ID:          "sum",
 		Errors:      FieldErrors{"email": "Invalid"},
 		FieldLabels: map[string]string{"email": "Email Address"},
 	}))
@@ -117,7 +195,7 @@ func TestValidationSummaryWithFieldLabels(t *testing.T) {
 
 func TestValidationSummaryEmptyErrors(t *testing.T) {
 	h := string(ValidationSummary(ValidationSummaryConfig{
-		Errors: FieldErrors{},
+		ID: "sum", Errors: FieldErrors{},
 	}))
 	if h != "" {
 		t.Errorf("empty errors should render nothing, got: %s", h)
@@ -126,12 +204,11 @@ func TestValidationSummaryEmptyErrors(t *testing.T) {
 
 func TestValidationSummaryURLEncodesFieldName(t *testing.T) {
 	h := string(ValidationSummary(ValidationSummaryConfig{
-		Errors: FieldErrors{"user[email]": "Invalid"},
+		ID: "sum", Errors: FieldErrors{"user[email]": "Invalid"},
 	}))
 	if !strings.Contains(h, `href="#user[email]"`) {
 		t.Errorf("href should contain raw field name for anchor link, got: %s", h)
 	}
-	// The field name with brackets must be a valid href
 	if strings.Contains(h, "user%5Bemail%5D") {
 		t.Errorf("href should NOT be URL-encoded (it's a fragment, not a URL path), got: %s", h)
 	}
@@ -141,6 +218,7 @@ func TestValidationSummaryURLEncodesFieldName(t *testing.T) {
 // point to actual input element IDs (which may differ from FieldErrors keys).
 func TestValidationSummaryUsesFieldIDs(t *testing.T) {
 	h := string(ValidationSummary(ValidationSummaryConfig{
+		ID:       "sum",
 		Errors:   FieldErrors{"val-name": "Name is required"},
 		FieldIDs: map[string]string{"val-name": "f-name"},
 	}))
@@ -152,55 +230,57 @@ func TestValidationSummaryUsesFieldIDs(t *testing.T) {
 // A-2: Without FieldIDs, fallback to the map key (backward compatible).
 func TestValidationSummaryFallsBackToKeyWithoutFieldIDs(t *testing.T) {
 	h := string(ValidationSummary(ValidationSummaryConfig{
-		Errors: FieldErrors{"email": "Invalid"},
+		ID: "sum", Errors: FieldErrors{"email": "Invalid"},
 	}))
 	if !strings.Contains(h, `href="#email"`) {
 		t.Errorf("expected href to fallback to key email:\n%s", h)
 	}
 }
 
+// An error whose field has no known id renders as text, not as an
+// anchor to nothing. The admin battery's shape: errors keyed by field
+// name, controls carrying f_<name> ids — a miss in the map means the
+// link would point nowhere.
+func TestValidationSummaryUnknownFieldRendersAsText(t *testing.T) {
+	h := string(ValidationSummary(ValidationSummaryConfig{
+		ID:       "sum",
+		Errors:   FieldErrors{"mystery": "No control has this name"},
+		FieldIDs: map[string]string{"email": "f-email"},
+	}))
+	if !strings.Contains(h, "No control has this name") {
+		t.Errorf("the message is missing:\n%s", h)
+	}
+	if strings.Contains(h, "<a") {
+		t.Errorf("an unknown field must not render as a link:\n%s", h)
+	}
+}
+
 func TestValidationSummarySafeWithSpecialChars(t *testing.T) {
 	h := string(ValidationSummary(ValidationSummaryConfig{
-		Errors: FieldErrors{"a\"b": "X"},
+		ID:     "sum",
+		Errors: FieldErrors{"x": "<script>alert(1)</script> & \"quotes\""},
 	}))
-	// The href must not contain unescaped quotes in the attribute
-	idx := strings.Index(h, `href=`)
-	if idx == -1 {
-		t.Fatal("missing href")
+	if strings.Contains(h, "<script>") {
+		t.Errorf("script not escaped: %s", h)
 	}
-	seg := h[idx:]
-	endQ := strings.Index(seg[6:], `"`)
-	if endQ == -1 {
-		t.Fatal("unclosed href value")
-	}
-	hrefVal := seg[6 : 6+endQ]
-	if strings.Contains(hrefVal, `"`) {
-		t.Errorf("href value should not contain raw quotes, got href=%s", hrefVal)
+	if !strings.Contains(h, "&lt;script&gt;") {
+		t.Errorf("expected escaped script: %s", h)
 	}
 }
 
 // D-1: Form Method must be GET or POST. Anything else silently produces
 // invalid HTML that browsers treat as GET, potentially exposing sensitive data.
 func TestFormPanicOnInvalidMethod(t *testing.T) {
-	defer func() {
-		if recover() == nil {
-			t.Fatal("Form with invalid Method should panic")
-		}
-	}()
-	in := html.Input(html.InputConfig{Type: "text", Name: "n", ID: "n"})
-	Form(FormConfig{Action: "/x", Method: "PAST"}, FormField(FormFieldConfig{Label: "n", For: "n", Input: in}))
+	defer func() { recover() }()
+	Form(FormConfig{Action: "/x", Method: "DELETE"})
+	t.Fatal("expected panic on invalid method")
 }
 
 func TestFormCustomMethodAndSubmitLabel(t *testing.T) {
-	in := html.Input(html.InputConfig{Type: "text", Name: "n", ID: "n"})
-	h := string(Form(FormConfig{
-		Action: "/x", Method: "GET", SubmitLabel: "Search",
-	}, FormField(FormFieldConfig{Label: "n", For: "n", Input: in})))
-	if !strings.Contains(h, `method="GET"`) {
-		t.Errorf("expected method=GET, got: %s", h)
-	}
-	if !strings.Contains(h, ">Search<") {
-		t.Errorf("expected custom submit label, got: %s", h)
+	h := string(Form(FormConfig{Action: "/x", Method: "GET", SubmitLabel: "Go"},
+		FormField(FormFieldConfig{Label: "n", For: "n", Input: testControl("n")})))
+	if !strings.Contains(h, `method="GET"`) || !strings.Contains(h, ">Go<") {
+		t.Errorf("expected custom method and label: %s", h)
 	}
 }
 
@@ -210,30 +290,27 @@ func TestFormCustomMethodAndSubmitLabel(t *testing.T) {
 // 403 the moment they forget).
 func TestFormAutoStampsCSRFInput(t *testing.T) {
 	ctx, token := ctxWithCSRFToken(t)
-	in := html.Input(html.InputConfig{Type: "text", Name: "n", ID: "n"})
-	h := string(Form(FormConfig{Action: "/save", Ctx: ctx},
-		FormField(FormFieldConfig{Label: "n", For: "n", Input: in}),
-	))
+	h := string(Form(FormConfig{Action: "/x", Ctx: ctx},
+		FormField(FormFieldConfig{Label: "n", For: "n", Input: testControl("n")})))
 	want := `<input type="hidden" name="_csrf" value="` + token + `">`
 	if !strings.Contains(h, want) {
-		t.Fatalf("expected auto-embedded CSRF input %q in:\n%s", want, h)
+		t.Errorf("missing CSRF hidden input %q in: %s", want, h)
 	}
-	// Hidden input must precede the form-fields container, otherwise
-	// some servers see fields without the token (multipart parse order).
-	if strings.Index(h, want) > strings.Index(h, `ui-form__fields`) {
-		t.Errorf("CSRF input rendered AFTER fields container — should be before:\n%s", h)
+	// The token input is the FIRST child of the body, before the fields.
+	body := strings.Index(h, `fui-form__body`)
+	csrf := strings.Index(h, want)
+	if body == -1 || csrf < body {
+		t.Errorf("CSRF input should be inside the body before the fields: %s", h)
 	}
 }
 
 // TestFormCSRFOmittedWithoutCtx guards backward compat: forms rendered
 // without Ctx (legacy callers) emit no hidden input, same as today.
 func TestFormCSRFOmittedWithoutCtx(t *testing.T) {
-	in := html.Input(html.InputConfig{Type: "text", Name: "n", ID: "n"})
-	h := string(Form(FormConfig{Action: "/save"},
-		FormField(FormFieldConfig{Label: "n", For: "n", Input: in}),
-	))
-	if strings.Contains(h, `name="_csrf"`) {
-		t.Errorf("nil Ctx should not stamp CSRF input, got: %s", h)
+	h := string(Form(FormConfig{Action: "/x"},
+		FormField(FormFieldConfig{Label: "n", For: "n", Input: testControl("n")})))
+	if strings.Contains(h, "_csrf") {
+		t.Errorf("CSRF input without Ctx: %s", h)
 	}
 }
 
@@ -242,12 +319,10 @@ func TestFormCSRFOmittedWithoutCtx(t *testing.T) {
 // input in a search form would surface the token in URLs.
 func TestFormCSRFOmittedOnGET(t *testing.T) {
 	ctx, _ := ctxWithCSRFToken(t)
-	in := html.Input(html.InputConfig{Type: "text", Name: "q", ID: "q"})
-	h := string(Form(FormConfig{Action: "/search", Method: "GET", Ctx: ctx},
-		FormField(FormFieldConfig{Label: "q", For: "q", Input: in}),
-	))
-	if strings.Contains(h, `name="_csrf"`) {
-		t.Errorf("GET form should not stamp CSRF input, got: %s", h)
+	h := string(Form(FormConfig{Action: "/x", Method: "GET", Ctx: ctx},
+		FormField(FormFieldConfig{Label: "n", For: "n", Input: testControl("n")})))
+	if strings.Contains(h, "_csrf") {
+		t.Errorf("CSRF input on GET form: %s", h)
 	}
 }
 
@@ -255,13 +330,10 @@ func TestFormCSRFOmittedOnGET(t *testing.T) {
 // that don't sit behind CSRF middleware: Form must not stamp an empty
 // input that would break form decoding.
 func TestFormCSRFOmittedWhenNoTokenOnCtx(t *testing.T) {
-	in := html.Input(html.InputConfig{Type: "text", Name: "n", ID: "n"})
-	bareCtx := httptest.NewRequest(http.MethodGet, "/", nil).Context()
-	h := string(Form(FormConfig{Action: "/save", Ctx: bareCtx},
-		FormField(FormFieldConfig{Label: "n", For: "n", Input: in}),
-	))
-	if strings.Contains(h, `name="_csrf"`) {
-		t.Errorf("token-less ctx should not stamp CSRF input, got: %s", h)
+	h := string(Form(FormConfig{Action: "/x", Ctx: context.Background()},
+		FormField(FormFieldConfig{Label: "n", For: "n", Input: testControl("n")})))
+	if strings.Contains(h, "_csrf") {
+		t.Errorf("CSRF input with no token on ctx: %s", h)
 	}
 }
 
@@ -287,15 +359,137 @@ func ctxWithCSRFToken(t *testing.T) (ctx context.Context, token string) {
 }
 
 func TestFormHideSubmitOmitsButton(t *testing.T) {
-	in := html.Input(html.InputConfig{Type: "text", Name: "n", ID: "n"})
 	h := string(Form(FormConfig{
 		Action:     "/x",
 		HideSubmit: true,
-	}, FormField(FormFieldConfig{Label: "n", For: "n", Input: in})))
-	if strings.Contains(h, "ui-form__actions") {
+	}, FormField(FormFieldConfig{Label: "n", For: "n", Input: testControl("n")})))
+	if strings.Contains(h, "fui-form__actions") {
 		t.Errorf("HideSubmit should omit submit button and actions div, got: %s", h)
 	}
 	if strings.Contains(h, "<button") {
 		t.Errorf("HideSubmit should omit all buttons, got: %s", h)
+	}
+}
+
+// ─── The request seam ─────────────────────────────────────────────
+//
+// Form's ExtraAttrs routes every data-fui-* and data-action-* key
+// through the typed Request seam (the way Button's Action does), so
+// the wiring survives headless's Safe instead of rendering a plain
+// form that posts natively.
+
+// The newsletter's shape: a POST whose 200 body lands in a signal.
+func TestFormRequestNewsletterShape(t *testing.T) {
+	h := string(Form(FormConfig{
+		Action: "/__site/headless/subscribe",
+		Method: "POST",
+		ID:     "hl-subscribe",
+		ExtraAttrs: html.MergeAttrs(html.Attrs{"novalidate": ""},
+			interactive.Post("/__site/headless/subscribe").
+				OnSuccess(interactive.SetSignal("hl-subscribe")).Attrs()),
+	}, FormField(FormFieldConfig{Label: "Email", For: "e", Input: testControl("e")})))
+	for _, want := range []string{
+		`data-fui-rpc="/__site/headless/subscribe"`,
+		`data-fui-rpc-method="POST"`,
+		`data-fui-rpc-signal="hl-subscribe"`,
+		// The native method and action stay for no script.
+		`method="POST"`, `action="/__site/headless/subscribe"`,
+		// novalidate is decoration and passes through.
+		`novalidate`,
+	} {
+		if !strings.Contains(h, want) {
+			t.Errorf("missing %q in: %s", want, h)
+		}
+	}
+}
+
+// The resource engine's shape: an edit form that natively POSTs but
+// PUTs over RPC, then navigates.
+func TestFormRequestResourcePUTShape(t *testing.T) {
+	h := string(Form(FormConfig{
+		Action: "/api/customers/42",
+		Method: "POST",
+		ExtraAttrs: interactive.Put("/api/customers/42").
+			OnSuccess(interactive.Navigate("/app/customers/42")).Attrs(),
+	}, FormField(FormFieldConfig{Label: "Name", For: "n", Input: testControl("n")})))
+	if !strings.Contains(h, `data-fui-rpc-method="PUT"`) {
+		t.Errorf("the RPC method must be independent of the native one:\n%s", h)
+	}
+	if !strings.Contains(h, `data-fui-rpc-navigate="/app/customers/42"`) {
+		t.Errorf("the navigate effect is missing:\n%s", h)
+	}
+	if !strings.Contains(h, `method="POST"`) {
+		t.Errorf("the native method stays for no script:\n%s", h)
+	}
+}
+
+// The generator's shape: a create form with reset and a relation
+// mount. data-action-mount is refused by Safe like every data-action-*
+// key — riding the seam is what keeps it rendered.
+func TestFormRequestGeneratorShape(t *testing.T) {
+	h := string(Form(FormConfig{
+		Action: "/api/products",
+		Method: "POST",
+		ExtraAttrs: html.MergeAttrs(
+			html.Attrs{
+				"data-entity-form":  "products",
+				"data-entity-mode":  "create",
+				"data-action-mount": "productFormMount",
+			},
+			interactive.Post("/api/products").
+				OnSuccess(interactive.ResetForm()).Attrs()),
+	}, FormField(FormFieldConfig{Label: "Name", For: "n", Input: testControl("n")})))
+	for _, want := range []string{
+		`data-fui-rpc-reset`,
+		`data-action-mount="productFormMount"`,
+		// The entity markers are plain data attrs and survive.
+		`data-entity-form="products"`, `data-entity-mode="create"`,
+	} {
+		if !strings.Contains(h, want) {
+			t.Errorf("missing %q in: %s", want, h)
+		}
+	}
+}
+
+// A key outside the vocabulary panics, naming the key and the seam.
+func TestFormRequestRefusesUnknownKeys(t *testing.T) {
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Fatal("expected a panic for an unknown wiring key")
+		}
+		msg := r.(string)
+		if !strings.Contains(msg, "data-fui-rpc-body") || !strings.Contains(msg, "Request") {
+			t.Fatalf("the panic should name the key and the seam, got: %v", r)
+		}
+	}()
+	Form(FormConfig{
+		Action:     "/x",
+		ExtraAttrs: html.Attrs{"data-fui-rpc-body": `{"a":1}`},
+	}, FormField(FormFieldConfig{Label: "n", For: "n", Input: testControl("n")}))
+}
+
+// The widget-effect family and the live-search pair all ride the seam.
+func TestFormRequestAdmitsCloseOpenRefreshTrigger(t *testing.T) {
+	h := string(Form(FormConfig{
+		Action: "/x",
+		ExtraAttrs: html.MergeAttrs(
+			interactive.Post("/x").
+				OnSuccess(interactive.CloseWidget(), interactive.ResetForm(), interactive.OpenWidget("results")).Attrs(),
+			html.Attrs{
+				// The refresh pair has no typed constructor; the raw
+				// keys ride the seam and take their checks there.
+				"data-fui-rpc-refresh":     "panel",
+				"data-fui-rpc-trigger":     "input",
+				"data-fui-rpc-debounce-ms": "150",
+			}),
+	}, FormField(FormFieldConfig{Label: "n", For: "n", Input: testControl("n")})))
+	for _, want := range []string{
+		"data-fui-rpc-close", "data-fui-rpc-reset", `data-fui-rpc-open="results"`,
+		`data-fui-rpc-refresh="panel"`, `data-fui-rpc-trigger="input"`, `data-fui-rpc-debounce-ms="150"`,
+	} {
+		if !strings.Contains(h, want) {
+			t.Errorf("missing %q in: %s", want, h)
+		}
 	}
 }

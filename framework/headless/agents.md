@@ -15,9 +15,19 @@ proves every registered component against the same contract, so a class
 map can be replaced without a single accessibility guarantee moving.
 `framework/ui`'s Button family renders through this package with the
 internal `fui-button` class map (its stylesheet and marker still live
-in the styled layer); the other families adopt their components'
-headless counterparts in their own changes.
-
+in the styled layer); the plain-markup form family does too (Form,
+FormField whose Input is a builder receiving the field's wiring, the
+typed fields, Select, ValidationSummary, InputGroup, and ui.Control
+for the types the typed fields do not name), with the `fui-form*` /
+`fui-field*` / `fui-select*` / `fui-input*` class maps. A Field
+renders its hint AND its error when both are set, the error first,
+with both ids in the control's described-by: the hint is the rule the
+value must obey and the error is the violation, so dropping the rule
+exactly when it was broken is dropping it when it is needed most.
+`ReserveError` keeps an empty, wired, `data-hui-field-error`-marked
+error node rendered for a script that fills it without re-rendering.
+The other families adopt their components' headless counterparts in
+their own changes.
 **Use this when** the prompt mentions: headless, unstyled, reskin, a
 second design system, parts, anatomy, slots, attrs, binds, strings, translated
 component strings, an island on a table or pager, or a component whose

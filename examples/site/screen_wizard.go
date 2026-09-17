@@ -22,6 +22,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/headless"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
 
@@ -141,6 +142,11 @@ func wizardDemoPage(current int, values url.Values) render.HTML {
 		CurrentStep:  current,
 		HiddenFields: wizardDemoHiddenCarry(current, values),
 		Steps:        wizardDemoSteps(values),
+		// The handler owns the step flow and answers every POST
+		// server-side, so the form is novalidate for the same reason
+		// the newsletter's is: a browser validation bubble on an
+		// untouched step would trap the flow the demo exists to show.
+		ExtraAttrs: html.Attrs{"novalidate": ""},
 	})
 
 	body := render.Tag("body", nil,
@@ -216,19 +222,6 @@ func wizardDemoHiddenCarry(current int, values url.Values) []render.HTML {
 }
 
 func wizardDemoSteps(values url.Values) []ui.StepWizardStep {
-	nameAttrs := html.Attrs{}
-	if v := values.Get("wd-name"); v != "" {
-		nameAttrs["value"] = v
-	}
-	emailAttrs := html.Attrs{}
-	if v := values.Get("wd-email"); v != "" {
-		emailAttrs["value"] = v
-	}
-	commentsAttrs := html.Attrs{}
-	if v := values.Get("wd-comments"); v != "" {
-		commentsAttrs["value"] = v
-	}
-
 	themeLight := []ui.RadioGroupOption{
 		{Label: "Light", Value: "light"},
 		{Label: "Dark", Value: "dark"},
@@ -240,17 +233,16 @@ func wizardDemoSteps(values url.Values) []ui.StepWizardStep {
 			Heading:     "Personal info",
 			Description: "Your basic details.",
 			Fields: []render.HTML{
-				ui.FormField(ui.FormFieldConfig{
-					Label: "Full name", For: "wd-name", Required: true,
-					Input: html.Input(html.InputConfig{
-						Type: "text", Name: "wd-name", ID: "wd-name", ExtraAttrs: nameAttrs,
-					}),
+				ui.TextField(ui.TextFieldConfig{
+					Name: "wd-name", Label: "Full name", ID: "wd-name", Required: true,
+					Value: values.Get("wd-name"),
 				}),
 				ui.FormField(ui.FormFieldConfig{
 					Label: "Email", For: "wd-email", Required: true,
-					Input: html.Input(html.InputConfig{
-						Type: "email", Name: "wd-email", ID: "wd-email", ExtraAttrs: emailAttrs,
-					}),
+					Input: func(c headless.FieldControl) render.HTML {
+						return ui.Control(ui.ControlConfig{Field: c, Type: "email", Name: "wd-email",
+							Value: values.Get("wd-email")})
+					},
 				}),
 			},
 		},
@@ -265,11 +257,9 @@ func wizardDemoSteps(values url.Values) []ui.StepWizardStep {
 			Heading:     "Review",
 			Description: "Add a final comment.",
 			Fields: []render.HTML{
-				ui.FormField(ui.FormFieldConfig{
-					Label: "Comments", For: "wd-comments",
-					Input: html.Input(html.InputConfig{
-						Type: "text", Name: "wd-comments", ID: "wd-comments", ExtraAttrs: commentsAttrs,
-					}),
+				ui.TextField(ui.TextFieldConfig{
+					Name: "wd-comments", Label: "Comments", ID: "wd-comments",
+					Value: values.Get("wd-comments"),
 				}),
 			},
 		},

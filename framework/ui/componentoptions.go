@@ -96,6 +96,32 @@ func componentOptionsCSS(components map[string]string) []style.Declaration {
 		decls = append(decls, style.Declaration{Name: "--fui-button-radius", Value: "9999px"})
 	case theme.RadiusUnset:
 	}
+	// Field: the columns variable is the layout (stacked is one full
+	// track; inline is a label track beside a control track whose
+	// minimum is zero so a long value can never force overflow), the
+	// message column keeps the hint and the error under the control
+	// in the inline layout, and the radius is what the field's
+	// inputs, selects and summaries draw.
+	switch opts.Field.Layout {
+	case theme.Stacked:
+		decls = append(decls,
+			style.Declaration{Name: "--fui-field-columns", Value: "minmax(0, 1fr)"},
+			style.Declaration{Name: "--fui-field-message-column", Value: "1 / -1"},
+		)
+	case theme.Inline:
+		decls = append(decls,
+			style.Declaration{Name: "--fui-field-columns", Value: "minmax(8rem, 1fr) minmax(0, 3fr)"},
+			style.Declaration{Name: "--fui-field-message-column", Value: "2"},
+		)
+	case theme.LayoutUnset:
+	}
+	switch opts.Field.Radius {
+	case theme.FieldRound:
+		decls = append(decls, style.Declaration{Name: "--fui-field-radius", Value: "var(--radii-md)"})
+	case theme.FieldSquare:
+		decls = append(decls, style.Declaration{Name: "--fui-field-radius", Value: "0"})
+	case theme.FieldRadiusUnset:
+	}
 	// Treatment draws background, foreground and border TOGETHER, per
 	// variant: one option, three variables per variant, no descendant
 	// rule that could outrank a variant's own selector. Each treated
