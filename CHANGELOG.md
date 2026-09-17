@@ -8,6 +8,38 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 ## [Unreleased]
 
 ### Added
+- **`ui.StringsFor` — the i18n bridge into `headless.Strings`.** The
+  headless layer's words are a typed struct, one field per sentence;
+  `ui.StringsFor(ctx)` is the layer above that resolves every field
+  from the `i18nui` key table through the request's translator, so a
+  component rebuilt on headless says its words in the reader's locale
+  via `Strings: ui.StringsFor(r.Context())`. No translator on the ctx
+  (or a per-key catalog miss) yields the English defaults headless
+  itself ships — byte for byte, pinned against
+  `headless.DefaultStrings()` — so a nil `Strings` and a translated
+  page share one English contract. Thirteen keys were added for
+  sentences no key said yet (`ui.dismiss.titled`,
+  `ui.tag.removeLabelled`, `ui.action.failed`, `ui.color.pick`,
+  `ui.passwordInput.revealShow`/`revealHide`,
+  `ui.tone.info`/`success`/`warning`/`danger`,
+  `ui.fileUpload.fileSelected`/`filesSelected`,
+  `ui.validationSummary.problem`); password show/hide and pagination
+  Previous/Next reuse the keys their existing consumers say. A
+  translation whose placeholders differ from the English default's is
+  refused and the field keeps its English, so a dropped `%s` cannot
+  put fmt's error text into an accessible name. The two kinds are
+  judged differently: `%s` verbs are positional, so their order binds,
+  while `{name}` tokens are replaced by name in the runtime, so a
+  translation may reorder those freely. A percent sign in prose is not
+  a verb (the scan follows `fmt`'s grammar), and a field whose English
+  carries no verb is not a format string, so a translator writing
+  "Échec à 100 %." is not refused. `ui.CheckStrings(ctx)` reports
+  every key whose translation would be refused, with the English that
+  renders instead, so a host fails a test on catalog drift rather than
+  shipping one English sentence among the translated ones. A reflection gate in `framework/ui` fails the build
+  when a field is added to `headless.Strings` without a bridge entry.
+  The headless landing screen's bare fixture renders a
+  `headless.SystemBanner` through the bridge as the seam proof.
 - **`framework/headless`**: the structure half of a design system.
   Components render tags, roles, labelling relationships, state
   attributes and `data-hui-*` hooks with no classes at a nil Classes; a

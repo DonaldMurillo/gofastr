@@ -76,6 +76,21 @@ func TestHeadlessLandingRoutesRender(t *testing.T) {
 	if len(paths) != 2 || paths[0]["theme"] == paths[1]["theme"] {
 		t.Errorf("StaticPaths = %v, want one entry per registered theme", paths)
 	}
+	// The Strings bridge on the bare fixture: the site installs no
+	// translator, so ui.StringsFor(r.Context()) must leave the page
+	// saying headless's own English — the tone word before the
+	// banner's title and the dismiss control's formatted name. A
+	// translated word here would mean the bridge stopped falling
+	// back to the English defaults.
+	for _, want := range []string{
+		"Information: ",                          // ToneInfo, said before the title
+		"Dismiss: Strings from the request",      // DismissTitled, formatted with the title
+		"The tone word and the dismiss name are", // the banner's own text
+	} {
+		if !strings.Contains(def, want) {
+			t.Errorf("bare fixture: %q missing from the page — the Strings bridge changed the no-translator English", want)
+		}
+	}
 }
 
 func TestE2E_HeadlessLanding_ThemeVariables(t *testing.T) {

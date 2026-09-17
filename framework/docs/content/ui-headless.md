@@ -64,14 +64,19 @@ value on the props, with three maps keyed by part:
 
 **Strings** are the strings a component says, a prop of its own: one
 typed struct, nil for English, for a layer above to resolve once per
-request from the framework's `i18nui` keys. A field left empty falls
-back to its English default at runtime — a partial translation is
-safe, and the one that misses shows as a stray English word on the
-translated page, not as a compile error; the probe golden
-(`spec_golden_strings.txt`) is what catches a component saying a word
-no `Strings` field carries. The list of parts a component draws is its
-`Spec.Anatomy`, the word Ark UI, Chakra and Radix use for the same
-list.
+request from the framework's `i18nui` keys. That layer is
+`ui.StringsFor(ctx)` (`framework/ui/strings.go`): one table maps every
+field to its `i18nui` key, and the call fills the struct through the
+request's translator — pass `Strings: ui.StringsFor(r.Context())` and
+the component says its words in the reader's locale. No translator on
+the ctx (or a per-key catalog miss) yields the English defaults, the
+same words nil yields. A field left empty falls back to its English
+default at runtime — a partial translation is safe, and the one that
+misses shows as a stray English word on the translated page, not as a
+compile error; the probe golden (`spec_golden_strings.txt`) is what
+catches a component saying a word no `Strings` field carries. The list
+of parts a component draws is its `Spec.Anatomy`, the word Ark UI,
+Chakra and Radix use for the same list.
 
 Two more are not per part. A `Button` takes an **Action**, the
 framework's request contract, on itself; `ExtraAttrs` cannot carry one.

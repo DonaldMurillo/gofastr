@@ -242,6 +242,24 @@ func (s *HeadlessLandingScreen) StaticPaths(ctx context.Context) []map[string]st
 	return out
 }
 func (s *HeadlessLandingScreen) Render() render.HTML {
+	return s.render(context.Background())
+}
+
+// RenderCtx renders with the request's context, so the headless
+// components the page renders directly resolve their words through
+// ui.StringsFor(ctx) — the Strings bridge. The site installs no
+// translator, so today that means the English defaults; a site built
+// with WithI18n would hear the same fixtures in the reader's locale
+// with nothing in this file changing. The static export renders
+// through RenderCtx too, with the build's context (no translator, so
+// English today; a per-locale export would flow through it with no
+// change here); Render keeps the background ctx for the callers that
+// take a plain Component, llm.md among them.
+func (s *HeadlessLandingScreen) RenderCtx(ctx context.Context) render.HTML {
+	return s.render(ctx)
+}
+
+func (s *HeadlessLandingScreen) render(ctx context.Context) render.HTML {
 	r := s.Route
 	return ui.Themed(r.Ref, container(
 		landingHero(r),
@@ -251,7 +269,7 @@ func (s *HeadlessLandingScreen) Render() render.HTML {
 		landingOptionsSection(r),
 		landingNestingSection(r),
 		landingSchemeSection(),
-		landingBareSection(),
+		landingBareSection(ctx),
 		landingLateSection(),
 	))
 }
@@ -735,11 +753,11 @@ func landingSchemeSection() render.HTML {
 
 // ── Fixture e: bare headless beside styled ui ──────────────────────
 
-func landingBareSection() render.HTML {
+func landingBareSection(ctx context.Context) render.HTML {
 	return ui.Section(ui.SectionConfig{
 		ID:          "hl-bare",
 		Heading:     "Bare headless, styled ui",
-		Description: "The left button is headless.Button with a nil Classes: structure, roles, no classes, no stylesheet. The right one is ui.Button on the same page. The bare one stays unstyled on a styled page.",
+		Description: "The left button is headless.Button with a nil Classes: structure, roles, no classes, no stylesheet. The right one is ui.Button on the same page. The banner beneath is headless.SystemBanner with its Strings resolved from the request through ui.StringsFor — English words here, the reader's locale the moment the site installs a translator.",
 	},
 		ui.Grid(ui.GridConfig{Min: "18rem"},
 			ui.Stack(ui.StackConfig{Gap: ui.GapSM},
@@ -753,6 +771,22 @@ func landingBareSection() render.HTML {
 			ui.Stack(ui.StackConfig{Gap: ui.GapSM},
 				html.Heading(html.HeadingConfig{Level: 3}, render.Text("ui.Button")),
 				ui.Button(ui.ButtonConfig{Label: "Styled ui button", Variant: ui.ButtonPrimary, ID: "hl-styled-button"}),
+			),
+			ui.Stack(ui.StackConfig{Gap: ui.GapSM},
+				html.Heading(html.HeadingConfig{Level: 3}, render.Text("headless.SystemBanner, ui.StringsFor(ctx)")),
+				// The B0 seam proof: the tone word before the title and
+				// the dismiss control's name are Strings fields, filled
+				// from the request's locale by the bridge. With no
+				// translator installed they are the English defaults,
+				// which the SSR test pins on the rendered page.
+				headless.SystemBanner(headless.SystemBannerProps{
+					ID:      "hl-bare-banner",
+					Tone:    "info",
+					Title:   "Strings from the request",
+					Text:    "The tone word and the dismiss name are headless.Strings fields; ui.StringsFor resolves them per request.",
+					Shown:   true,
+					Strings: ui.StringsFor(ctx),
+				}, nil),
 			),
 		),
 	)
