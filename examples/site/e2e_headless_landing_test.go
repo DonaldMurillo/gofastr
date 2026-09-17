@@ -14,7 +14,6 @@ package main
 import (
 	"strings"
 	"testing"
-	"time"
 
 	cdplog "github.com/chromedp/cdproto/log"
 	cdnetwork "github.com/chromedp/cdproto/network"
@@ -325,9 +324,12 @@ func TestE2E_HeadlessLanding_ColdLoadAutoSheet(t *testing.T) {
 		chromedp.Evaluate(`document.querySelector('link[data-fui-style="ui-callout"]') === null`, &absentBefore),
 		// Click: the button fetches the fragment, the signal region
 		// swaps, and the runtime must scan the insertion for
-		// data-fui-comp and fetch the sheet.
+		// data-fui-comp and fetch the sheet. Condition waits, not a
+		// fixed sleep: the fragment arriving and the sheet landing are
+		// the two facts under test.
 		chromedp.Click(`#hl-late-button`, chromedp.ByQuery),
-		chromedp.Sleep(700*time.Millisecond),
+		waitModule(`!!document.getElementById('hl-late-fragment')`),
+		waitModule(`!!document.querySelector('link[data-fui-style="ui-callout"]')`),
 		chromedp.Evaluate(`!!document.getElementById('hl-late-fragment')`, &fragmentAfter),
 		chromedp.Evaluate(`!!document.querySelector('link[data-fui-style="ui-callout"]')`, &presentAfter),
 	)
@@ -393,20 +395,20 @@ func TestE2E_HeadlessLanding_NewsletterIslandRoundTrip(t *testing.T) {
 		t.Errorf("newsletter island produced %d console/CSP/network error(s):\n  %s", len(errs), strings.Join(errs, "\n  "))
 	}
 }
-
 func TestE2E_HeadlessLanding_NewsletterNoScriptRoundTrip(t *testing.T) {
 	if testing.Short() {
 		t.Skip("e2e: -short")
 	}
 	base := startE2EServer(t)
 	ctx := newE2EBrowserCtx(t)
-
-	var landingPath, afterPath string
+	var afterInvalid, afterValid, keptValue string
 	var summaryShown, doneShown bool
 	err := chromedp.Run(ctx,
 		// No-script pass: block the runtime (and its split modules) the
 		// way a reader with script disabled experiences the page. The
-		// form still POSTs natively; the handler answers a full page.
+		// form still POSTs natively; the handler answers 303 back to
+		// the landing route and the page renders the region from the
+		// query it lands with.
 		cdnetwork.Enable(),
 		cdnetwork.SetBlockedURLs().WithURLPatterns([]*cdnetwork.BlockPattern{
 			{URLPattern: "*://*:*/*runtime.js*", Block: true},
@@ -414,29 +416,47 @@ func TestE2E_HeadlessLanding_NewsletterNoScriptRoundTrip(t *testing.T) {
 		}),
 		chromedp.Navigate(base+landingRoutePath("default")),
 		pageReady(),
-		chromedp.Location(&landingPath),
+		// Invalid submit with a typed address: the 303 lands on the
+		// landing route carrying subscribe=invalid and the typed value,
+		// the error summary renders, and the input keeps what was
+		chromedp.SetValue(`#hl-subscribe-email`, "not-an-address", chromedp.ByQuery),
 		chromedp.Click(`#hl-newsletter button[type="submit"]`, chromedp.ByQuery),
-		chromedp.Sleep(500*time.Millisecond),
-		chromedp.Location(&afterPath),
+		// WaitVisible, not Poll: the submit navigates (native POST →
+		// 303 → GET), and a poll task does not survive navigation
+		// (chromedp raises "Inspected target navigated or closed"),
+		// while the query actions retry onto the new document.
+		chromedp.WaitVisible(`#hl-subscribe-summary`, chromedp.ByID),
+		chromedp.Location(&afterInvalid),
 		chromedp.Evaluate(`!!document.getElementById('hl-subscribe-summary')`, &summaryShown),
-		// Resubmit with a valid address from the answered page.
+		chromedp.Evaluate(`(document.getElementById('hl-subscribe-email')||{}).value || ''`, &keptValue),
+		// Valid resubmit from the answered page: the 303 carries
+		// subscribe=ok and the success callout renders.
 		chromedp.SetValue(`#hl-subscribe-email`, "reader@example.com", chromedp.ByQuery),
 		chromedp.Click(`#hl-newsletter button[type="submit"]`, chromedp.ByQuery),
-		chromedp.Sleep(500*time.Millisecond),
+		chromedp.WaitVisible(`#hl-subscribe-done`, chromedp.ByID),
+		chromedp.Location(&afterValid),
 		chromedp.Evaluate(`!!document.getElementById('hl-subscribe-done')`, &doneShown),
 	)
 	if err != nil {
 		t.Fatalf("chromedp: %v", err)
 	}
 	// The proof the runtime never intercepted the submit is the URL: a
-	// native form POST navigates to the handler's page, an island round
-	// trip would have stayed on the landing route. (window.__gofastr is
-	// no probe here: an inline bootstrap stub can define the name.)
-	if !strings.HasSuffix(afterPath, landingSubscribePath) {
-		t.Fatalf("after the submit the browser is at %q, want %q — without the runtime the form must POST natively and the handler answers a full page", afterPath, landingSubscribePath)
+	// native form POST navigates to the handler's 303 target — the
+	// landing route with the answer in its query — where an island
+	// round trip would have stayed put. (window.__gofastr is no probe
+	// here: an inline bootstrap stub can define the name.)
+	invalidURL := base + landingRoutePath("default") + "?"
+	if !strings.HasPrefix(afterInvalid, invalidURL) || !strings.Contains(afterInvalid, "subscribe=invalid") || !strings.Contains(afterInvalid, "email=not-an-address") {
+		t.Fatalf("after the invalid submit the browser is at %q, want %s…subscribe=invalid&email=not-an-address — without the runtime the POST must navigate and the 303 must land back on the landing route", afterInvalid, invalidURL)
+	}
+	if !strings.HasPrefix(afterValid, invalidURL) || !strings.Contains(afterValid, "subscribe=ok") {
+		t.Fatalf("after the valid submit the browser is at %q, want %s…subscribe=ok", afterValid, invalidURL)
 	}
 	if !summaryShown {
 		t.Error("no-script submit: the error summary never rendered in the answered page")
+	}
+	if keptValue != "not-an-address" {
+		t.Errorf("no-script submit: the typed value was not kept (got %q)", keptValue)
 	}
 	if !doneShown {
 		t.Error("no-script valid submit: the success callout never rendered")

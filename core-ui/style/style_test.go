@@ -1,6 +1,7 @@
 package style
 
 import (
+	"math"
 	"strings"
 	"testing"
 )
@@ -404,6 +405,105 @@ func TestThemeValidate_SkipsUnparseableInkPairs(t *testing.T) {
 				t.Errorf("%s: Validate refused an unparseable pair it must skip: %v", c.name, err)
 			}
 		})
+	}
+}
+
+// Short-form hex is a legitimate token spelling (#FFF, #F00): the
+// contrast arithmetic must read it as CSS does — each digit doubled —
+// not as a bare nibble divided by 255, which read #FFF as near-black
+// and a valid #000 × #FFF pair as ~1.1:1.
+func TestContrastRatio_ShortFormHex(t *testing.T) {
+	r, ok := contrastRatio("#FFF", "#000")
+	if !ok || math.Abs(r-21.0) > 0.01 {
+		t.Errorf("#FFF on #000 = %.2f:1 (ok=%v), want 21:1 — the short pair must expand like CSS", r, ok)
+	}
+	short, okS := contrastRatio("#F00", "#FFF")
+	long, okL := contrastRatio("#FF0000", "#FFFFFF")
+	if !okS || !okL || math.Abs(short-long) > 1e-9 {
+		t.Errorf("#F00 on #FFF (%.4f, ok=%v) must equal #FF0000 on #FFFFFF (%.4f, ok=%v)", short, okS, long, okL)
+	}
+}
+
+// A short-hex pair that clears AA validates: the guard must judge the
+// expanded value, not refuse (or wave through) the spelling.
+func TestThemeValidate_ShortHexPairPassingAAClears(t *testing.T) {
+	th := DefaultTheme()
+	th.Colors.Primary = Color{Name: "primary", Value: "#888"}      // #888888, 5.9:1 under black ink
+	th.Colors.PrimaryFg = Color{Name: "primary-fg", Value: "#000"} // #000000
+	if err := th.Validate(); err != nil {
+		t.Fatalf("short-hex primary pair clearing AA failed Validate: %v", err)
+	}
+}
+
+// The ink-pair guard's dark half: a non-empty DarkColors map
+// re-declares the same variables, so the dark pairs are judged by the
+// same 4.5:1 floor — resolved key by key, an absent key falling back to
+// the light token that actually paints when the map does not override it.
+func TestThemeValidate_RefusesLowContrastDarkPairs(t *testing.T) {
+	cases := []struct {
+		name    string
+		dark    map[string]string
+		wantErr string
+	}{
+		{
+			// White ink on the light-red dark danger: 2.77:1.
+			"dark danger with light ink",
+			map[string]string{"danger": "#F87171", "danger-fg": "#FFFFFF"},
+			"Theme.DarkColors: danger × danger-fg",
+		},
+		{
+			// The map omits danger-fg, so the LIGHT ink (#FFFFFF)
+			// is what paints on the dark danger — judged, not waved
+			// through as "absent".
+			"dark danger, danger-fg falls back to the light ink",
+			map[string]string{"danger": "#F87171"},
+			"Theme.DarkColors: danger × danger-fg",
+		},
+		{
+			"dark primary with light ink",
+			map[string]string{"primary": "#5EEAD4", "primary-fg": "#FFFFFF"},
+			"Theme.DarkColors: primary × primary-fg",
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			th := DefaultTheme()
+			th.DarkColors = c.dark
+			err := th.Validate()
+			if err == nil {
+				t.Fatalf("%s should fail validation (dark contrast below 4.5:1)", c.name)
+			}
+			if !strings.Contains(err.Error(), c.wantErr) || !strings.Contains(err.Error(), "4.5:1") {
+				t.Errorf("error should name the dark pair (%s) and the 4.5:1 floor, got: %v", c.wantErr, err)
+			}
+		})
+	}
+}
+
+// The dark half skips what it cannot compute exactly, exactly like the
+// light half — and a dark palette whose pairs clear AA (the framework
+// base dark values) validates.
+func TestThemeValidate_DarkPairsSkippedAndPassing(t *testing.T) {
+	th := DefaultTheme()
+	th.DarkColors = map[string]string{"primary": "oklch(0.82 0.155 78)"}
+	if err := th.Validate(); err != nil {
+		t.Errorf("oklch dark primary must be skipped, not approximated: %v", err)
+	}
+	// The framework dark palette's own pairs: 8.90:1 and 6.41:1.
+	th.DarkColors = map[string]string{
+		"primary":    "#A5B4FC",
+		"primary-fg": "#111827",
+		"danger":     "#F87171",
+		"danger-fg":  "#111827",
+	}
+	if err := th.Validate(); err != nil {
+		t.Errorf("contrast-safe dark palette failed Validate: %v", err)
+	}
+	// An empty dark map is light-only: nothing to judge, and the light
+	// pairs already ran.
+	th.DarkColors = nil
+	if err := th.Validate(); err != nil {
+		t.Errorf("light-only theme failed Validate: %v", err)
 	}
 }
 

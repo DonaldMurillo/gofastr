@@ -28,8 +28,8 @@ func contrastRatio(hexA, hexB string) (ratio float64, ok bool) {
 }
 
 // hexRGB parses #RGB and #RRGGBB (case-insensitive) into 0–1 sRGB
-// components. Anything else — 8-digit hex, rgb(), oklch(), var(),
-// names — is !ok.
+// components, expanding each short-form digit to its full byte. Anything
+// else — 8-digit hex, rgb(), oklch(), var(), names — is !ok.
 func hexRGB(s string) (r, g, b float64, ok bool) {
 	s = trimHex(s)
 	short := len(s) == 3
@@ -54,14 +54,17 @@ func hexRGB(s string) (r, g, b float64, ok bool) {
 	return comps[0], comps[1], comps[2], true
 }
 
-// hexPair parses one short-form digit or a long-form digit pair.
+// hexPair parses one short-form digit or a long-form digit pair. The
+// short form expands the nibble (F → FF, 0 → 00): CSS defines #RGB as
+// each digit doubled, so returning the bare nibble divided by 255 read
+// #FFF as near-black and a valid #000 × #FFF pair as ~1.1:1.
 func hexPair(a, b byte, short bool) (float64, bool) {
 	hi, ok := hexVal(a)
 	if !ok {
 		return 0, false
 	}
 	if short {
-		return float64(hi), true
+		return float64(hi*16 + hi), true
 	}
 	lo, ok := hexVal(b)
 	if !ok {

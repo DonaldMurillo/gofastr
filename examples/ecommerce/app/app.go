@@ -42,7 +42,7 @@ func appTheme() style.Theme {
 	theme := style.DefaultTheme()
 	theme.Colors.Background.Value = "#F8FAFC"
 	theme.Colors.Border.Value = "#E2E8F0"
-	theme.Colors.Danger.Value = "#DC2626"
+	theme.Colors.Danger.Value = "#B91C1C"
 	theme.Colors.Primary.Value = "#2563EB"
 	theme.Colors.PrimaryFg.Value = "#FFFFFF"
 	theme.Colors.Secondary.Value = "#F59E0B"

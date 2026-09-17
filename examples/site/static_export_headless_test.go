@@ -51,6 +51,9 @@ func TestStaticExportWritesHeadlessLanding(t *testing.T) {
 			if !strings.Contains(html, landingSubscribePath) {
 				t.Errorf("exported page lost the newsletter island wiring for %s — the runtime's \"needs the server\" notice keys on it", landingSubscribePath)
 			}
+			if !strings.Contains(html, `data-fui-rpc`) {
+				t.Error("exported page carries no data-fui-rpc marker — without it the static-mode runtime cannot recognize the form as an RPC and show the \"needs the server\" notice")
+			}
 			// Under --export-base /gofastr every root-absolute URL the
 			// page references is rewritten to resolve under the mount.
 			if !strings.Contains(html, "/gofastr/__gofastr/app.css") {

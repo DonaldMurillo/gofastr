@@ -177,8 +177,10 @@ boot-registered themes —
 `/examples/headless/default/landing` and
 `/examples/headless/dense/landing` — with every variant and size, the
 same palette under two option sets, an A → B → A nest, explicit scheme
-controls, bare headless beside styled ui, and a cold `LoadAuto`
-insertion. The browser proofs live in
+controls, bare headless beside styled ui, a newsletter form whose
+no-script POST is answered with a 303 back to the page (the answer
+renders from the route's query, inside the site's chrome), and a cold
+`LoadAuto` insertion. The browser proofs live in
 `examples/site/e2e_headless_landing_test.go`.
 
 ## The spec and the harness

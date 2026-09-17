@@ -31,6 +31,7 @@ import (
 	"image/draw"
 	"net/http"
 	"net/mail"
+	"net/url"
 	"strings"
 	"sync"
 
@@ -181,10 +182,14 @@ func landingRoutePath(segment string) string {
 }
 
 // ── The screen ─────────────────────────────────────────────────────
-
 // HeadlessLandingScreen is /examples/headless/:theme/landing.
 type HeadlessLandingScreen struct {
 	Route landingRoute
+	// Subscribe carries the newsletter round trip's no-script state,
+	// read from the landing route's query (see Load): the 303 the
+	// native POST answers leaves the answer in the URL, and the page
+	// renders its newsletter region from it.
+	Subscribe landingSubscribeState
 }
 
 func (s *HeadlessLandingScreen) ScreenTitle() string {
@@ -206,10 +211,24 @@ func (s *HeadlessLandingScreen) SetParams(p map[string]string) {
 }
 
 // Load rejects unknown theme segments so the site's 404 screen answers
-// them (a panic would 500; a wrong theme would silently lie).
+// them (a panic would 500; a wrong theme would silently lie), and reads
+// the newsletter round trip's query: the no-script POST is answered with
+// a 303 back here carrying subscribe=invalid (+ the typed email) or
+// subscribe=ok, and the page renders its region from it. The keys are
+// render state, not routes — they never reach StaticPaths.
 func (s *HeadlessLandingScreen) Load(ctx context.Context) error {
 	if _, ok := landingRouteFor(s.Route.Segment); !ok {
 		return errors.New("headless landing: unknown theme " + s.Route.Segment)
+	}
+	q := app.QueryFromContext(ctx)
+	switch q.Get("subscribe") {
+	case "invalid":
+		s.Subscribe = landingSubscribeState{
+			Email: q.Get("email"),
+			Error: landingValidateEmail(q.Get("email")),
+		}
+	case "ok":
+		s.Subscribe = landingSubscribeState{Email: q.Get("email"), Done: true}
 	}
 	return nil
 }
@@ -223,13 +242,12 @@ func (s *HeadlessLandingScreen) StaticPaths(ctx context.Context) []map[string]st
 	}
 	return out
 }
-
 func (s *HeadlessLandingScreen) Render() render.HTML {
 	r := s.Route
 	return ui.Themed(r.Ref, container(
 		landingHero(r),
 		landingContentSection(),
-		landingNewsletterSection(r),
+		landingNewsletterSection(r, s.Subscribe),
 		landingVariantsSection(),
 		landingOptionsSection(r),
 		landingNestingSection(r),
@@ -398,17 +416,24 @@ func landingSubscribeErrorSummary(msg string) render.HTML {
 }
 
 // renderLandingSubscribe renders the form (or, after a success, the
-// success callout). Both the SSR page and every island response go through
-// this one function, so the round trip is stateless: the answer is the
-// re-rendered region.
+// success callout). The SSR page, the query-rendered no-script answer
+// and every island response go through this one function, so the round
+// trip is stateless: the answer is the re-rendered region.
 func renderLandingSubscribe(r landingRoute, state landingSubscribeState) render.HTML {
 	if state.Done {
+		// The no-script success redirect carries no email (only the
+		// island round trip still holds it in memory), so the copy has
+		// a shape that does not name one it was not given.
+		detail := "A confirmation would go to " + state.Email + ". This demo keeps no list: the round trip is the point."
+		if state.Email == "" {
+			detail = "You are on the list. This demo keeps no list: the round trip is the point."
+		}
 		return ui.Callout(ui.CalloutConfig{
 			Variant:  ui.StatusSuccess,
 			ID:       "hl-subscribe-done",
 			Title:    "Subscribed",
 			Landmark: falsePtr(),
-		}, render.Text("A confirmation would go to "+state.Email+". This demo keeps no list: the round trip is the point."))
+		}, render.Text(detail))
 	}
 	extra := html.Attrs{"novalidate": ""}
 	var summary render.HTML
@@ -426,7 +451,8 @@ func renderLandingSubscribe(r landingRoute, state landingSubscribeState) render.
 		// The island wiring rides the form itself: with the runtime on
 		// the page a submit is an RPC whose 200 body is this region,
 		// re-rendered; without it the same POST navigates and the
-		// handler answers the full page (the wizard's shape).
+		// handler answers 303 back to this page, whose query carries
+		// the re-rendered region's state.
 		ExtraAttrs: html.MergeAttrs(extra,
 			interactive.Post(landingSubscribePath).
 				OnSuccess(interactive.SetSignal(landingSubscribeSignal)).Attrs()),
@@ -459,18 +485,21 @@ func landingSubscribeRegion(r landingRoute, state landingSubscribeState) render.
 		landingSubscribeSignal)
 }
 
-func landingNewsletterSection(r landingRoute) render.HTML {
+func landingNewsletterSection(r landingRoute, state landingSubscribeState) render.HTML {
 	return ui.Section(ui.SectionConfig{
 		ID:          "hl-newsletter-section",
 		Heading:     "A form with a real round trip",
-		Description: "Server-validated. With the runtime: an island swap and focus lands on the summary. Without script: the same POST re-renders the page.",
-	}, landingSubscribeRegion(r, landingSubscribeState{}))
+		Description: "Server-validated. With the runtime: an island swap and focus lands on the summary. Without script: the same POST redirects back and this page re-renders the answer.",
+	}, landingSubscribeRegion(r, state))
 }
 
-// serveHeadlessSubscribe answers both the island RPC (JSON body → 200 with
-// the re-rendered region; the errors ARE the answer) and the no-script
-// native POST (urlencoded body → a full standalone page, the wizard's
-// round-trip shape). Mounted in setupServer.
+// serveHeadlessSubscribe answers both the island RPC (JSON body → 200
+// with the re-rendered region; the errors ARE the answer) and the
+// no-script native POST (urlencoded body → 303 See Other back to the
+// landing route, whose query carries the answer: subscribe=invalid plus
+// the typed email, or subscribe=ok). The redirect keeps the answer on a
+// real site page — chrome, stylesheets and all — instead of a
+// hand-rolled document. Mounted in setupServer.
 func serveHeadlessSubscribe(w http.ResponseWriter, r *http.Request) {
 	var email, segment string
 	island := false
@@ -483,11 +512,15 @@ func serveHeadlessSubscribe(w http.ResponseWriter, r *http.Request) {
 			Theme string `json:"theme"`
 		}
 		if err := handler.DecodeStrict(r.Body, &body); err != nil {
+			// DecodeStrict wraps the read error, so the cap's
+			// *http.MaxBytesError is visible here and answers 413.
 			if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
 				http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
 				return
 			}
-			http.Error(w, "parse body: "+err.Error(), http.StatusBadRequest)
+			// Constant on purpose: the parse error text is request
+			// data and never belongs in the response.
+			http.Error(w, "invalid JSON body", http.StatusBadRequest)
 			return
 		}
 		email, segment = body.Email, body.Theme
@@ -498,7 +531,7 @@ func serveHeadlessSubscribe(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
 				return
 			}
-			http.Error(w, "parse form: "+err.Error(), http.StatusBadRequest)
+			http.Error(w, "invalid form body", http.StatusBadRequest)
 			return
 		}
 		email, segment = r.PostForm.Get("email"), r.PostForm.Get("theme")
@@ -523,36 +556,17 @@ func serveHeadlessSubscribe(w http.ResponseWriter, r *http.Request) {
 		render.RespondHTML(w, renderLandingSubscribe(route, state))
 		return
 	}
-	render.RespondHTML(w, landingSubscribeStandalone(route, state))
-}
-
-// landingSubscribeStandalone is the no-script answer: a bare full page
-// (the wizard demo's shape) carrying the themed region, with a way back.
-func landingSubscribeStandalone(r landingRoute, state landingSubscribeState) render.HTML {
-	body := render.Tag("body", nil,
-		render.Tag("h1", nil, render.Text("Newsletter demo")),
-		html.Paragraph(html.TextConfig{},
-			render.Text("Answered without script. "),
-			html.Link(html.LinkConfig{
-				Href: landingRoutePath(r.Segment),
-				Text: "Back to the landing page",
-			}),
-		),
-		ui.Themed(r.Ref, landingSubscribeRegion(r, state)),
-	)
-	return render.HTML("<!doctype html>") +
-		render.Tag("html", map[string]string{"lang": "en"},
-			render.Tag("head", nil,
-				render.VoidTag("meta", map[string]string{"charset": "utf-8"}),
-				render.VoidTag("meta", map[string]string{"name": "viewport", "content": "width=device-width, initial-scale=1"}),
-				// The answer wears the theme it was posted from: the app
-				// stylesheet carries the tokens and every scope block, so
-				// the region renders under its real theme without script.
-				render.VoidTag("link", map[string]string{"rel": "stylesheet", "href": "/__gofastr/app.css"}),
-				render.Tag("title", nil, render.Text("Newsletter demo")),
-			),
-			body,
-		)
+	// Post-redirect-get: the answer lives in the landing route's query
+	// and the page renders its region from it, so a refresh or a back
+	// button never re-POSTs. Values.Encode escapes the typed email.
+	q := url.Values{}
+	if state.Done {
+		q.Set("subscribe", "ok")
+	} else {
+		q.Set("subscribe", "invalid")
+		q.Set("email", state.Email)
+	}
+	http.Redirect(w, r, landingRoutePath(route.Segment)+"?"+q.Encode(), http.StatusSeeOther)
 }
 
 // ── Fixture a: every variant and size ──────────────────────────────

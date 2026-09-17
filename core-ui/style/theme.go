@@ -293,8 +293,9 @@ func camelToKebab(s string) string {
 // lowercase word, is a theme-shape mistake and fails here, at boot.
 //
 // Finally the filled-control ink pairs (primary × primary-fg, danger ×
-// danger-fg) must clear 4.5:1 when both values are plain hex — see
-// validatePairContrast.
+// danger-fg) must clear 4.5:1 when both values are plain hex, in the
+// light palette and, key by key with light fallback, in a non-empty
+// DarkColors map — see validatePairContrast.
 //
 // MustValidate is the panicking variant used by App.WithTheme so a
 // bad theme fails at boot, not at first request.
@@ -316,10 +317,14 @@ func (t Theme) Validate() error {
 // failure out of the box). The check only runs when BOTH values parse as
 // plain hex (#RGB / #RRGGBB): oklch(), var() references, rgb()/hsl() and
 // named colours are skipped rather than approximated, so a theme whose
-// colours Go cannot resolve exactly is never refused on a guess. Dark
-// palettes are not pair-checked here — a dark value re-declares the same
-// property, and the partial-dark-map case is already covered by the
-// DarkPaletteGaps boot warning.
+// colours Go cannot resolve exactly is never refused on a guess.
+//
+// A non-empty DarkColors map re-declares the same variables, so each pair
+// is resolved from it and judged by the same floor: an absent key falls
+// back to the light token, the value that actually paints when the map
+// does not override it. The partial-map case this catches (a dark colour
+// whose light ink cannot wear it) is the filled-control half of what the
+// DarkPaletteGaps boot warning names.
 func (t Theme) validatePairContrast() error {
 	for _, p := range []struct {
 		name   string
@@ -328,15 +333,45 @@ func (t Theme) validatePairContrast() error {
 		{"primary", t.Colors.Primary, t.Colors.PrimaryFg},
 		{"danger", t.Colors.Danger, t.Colors.DangerFg},
 	} {
-		ratio, ok := contrastRatio(p.fg.Value, p.bg.Value)
-		if !ok || ratio >= 4.5 {
-			continue
+		if err := inkPairError("Theme.Colors", p.name, p.bg.Value, p.fg.Value); err != nil {
+			return err
 		}
-		return fmt.Errorf(
-			"Theme.Colors: %s × %s-fg contrast is %.2f:1 (%s on %s), below the 4.5:1 WCAG AA floor the filled %s button paints; give %s-fg an ink that clears AA over %s",
-			p.name, p.name, ratio, p.fg.Value, p.bg.Value, p.name, p.name, p.name)
+	}
+	if len(t.DarkColors) == 0 {
+		return nil
+	}
+	for _, p := range []struct {
+		name   string
+		bg, fg string // the light values: the fallback per key
+	}{
+		{"primary", t.Colors.Primary.Value, t.Colors.PrimaryFg.Value},
+		{"danger", t.Colors.Danger.Value, t.Colors.DangerFg.Value},
+	} {
+		bg, fg := p.bg, p.fg
+		if v, ok := t.DarkColors[p.name]; ok {
+			bg = v
+		}
+		if v, ok := t.DarkColors[p.name+"-fg"]; ok {
+			fg = v
+		}
+		if err := inkPairError("Theme.DarkColors", p.name, bg, fg); err != nil {
+			return err
+		}
 	}
 	return nil
+}
+
+// inkPairError is the one pair check both schemes share: nil when the
+// pair clears the floor or cannot be computed exactly, the refusal
+// otherwise. where names the palette the values came from.
+func inkPairError(where, name, bg, fg string) error {
+	ratio, ok := contrastRatio(fg, bg)
+	if !ok || ratio >= 4.5 {
+		return nil
+	}
+	return fmt.Errorf(
+		"%s: %s × %s-fg contrast is %.2f:1 (%s on %s), below the 4.5:1 WCAG AA floor the filled %s button paints; give %s-fg an ink that clears AA over %s",
+		where, name, name, ratio, fg, bg, name, name, name)
 }
 
 // MustValidate panics if validation fails. Wraps Validate.

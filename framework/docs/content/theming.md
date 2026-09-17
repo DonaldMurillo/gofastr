@@ -115,7 +115,9 @@ checked are the ones `core-ui/style/theme.go` documents: text tiers on
 `surface`, `primary-fg` on `primary`, `danger-fg` on `danger`, and each
 status tone both as a white-text fill and as label text on its own 15%
 tint. `Theme.Validate` additionally refuses, at boot, a hex
-`primary` × `primary-fg` or `danger` × `danger-fg` pair below 4.5:1.
+`primary` × `primary-fg` or `danger` × `danger-fg` pair below 4.5:1 —
+in the light palette and, key by key with the light token as the
+fallback for an absent key, in a non-empty `DarkColors` map.
 
 **Write-back** emits `%q` string literals, then writes a temporary file in the
 target directory, calls `fsync`, and renames it over the destination. Each

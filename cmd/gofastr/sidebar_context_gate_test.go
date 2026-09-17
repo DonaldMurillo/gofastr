@@ -36,6 +36,7 @@ const sidebarGateBlueprint = `app:
     primary: "#1E293B"
     dark:
       primary: "#93C5FD"
+      primary-fg: "#0F172A"
 
 entities:
   - name: notes
