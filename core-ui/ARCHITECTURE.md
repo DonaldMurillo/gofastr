@@ -1280,6 +1280,22 @@ The compiler declares one trio per treated variant rather than one
 un-prefixed trio, so a variant's rule can never inherit another
 variant's drawing.
 
+**The :root floor.** A theme with no `Components` of its own — a bare
+`style.DefaultTheme()`, the `gofastr theme init` scaffold, a host with
+no `App.Theme` — still emits the styled layer's registered default
+option set at `:root`: `RegisterComponentOptionsCompiler` takes the
+complete default set as its second argument and the root emitter
+compiles it whenever a theme carries no options, so every host that
+links `framework/ui` ships the full `--fui-*` vocabulary and the
+component rules above resolve. The floor is root-only by design: a
+scoped theme with no options emits nothing and inherits its parent's
+variables (the nesting contract), and a binary that links no styled
+layer registers no compiler and emits none of the variables. A theme's
+identity is unchanged either way — `ThemeHash` fingerprints the
+flattened options, and an optionless theme hashes as optionless in
+every binary. There are no in-CSS fallbacks (`var(--x, fallback)`);
+the floor sits at `:root`, where one declaration covers every rule.
+
 The `fui-` prefix is reserved for `framework/ui`'s class names and
 option variables. Classes belong to framework/ui; the `data-hui-*`
 hooks belong to framework/headless. One prefix each: `fui-` is the framework's, `hui-`

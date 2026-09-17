@@ -37,7 +37,7 @@ func TestButtonCarriesARequestOnlyThroughAction(t *testing.T) {
 }
 
 func TestButtonActionAcceptsOnlyRequestAttributes(t *testing.T) {
-	for _, k := range []string{"data-fui-signal", "data-fui-pane-key", "data-fui-comp", "data-fui-optimistic-endpoint", "onclick", "data-hui-copy"} {
+	for _, k := range []string{"data-fui-signal", "data-fui-poll", "data-fui-comp", "data-fui-optimistic-endpoint", "onclick", "data-hui-copy"} {
 		func() {
 			defer func() {
 				if r := recover(); r == nil {
@@ -80,6 +80,7 @@ func TestButtonActionAdmitsTheWiringKeys(t *testing.T) {
 	for k, v := range map[string]string{
 		"data-fui-open":            "user-edit",
 		"data-fui-pane-open":       "secondary",
+		"data-fui-pane-key":        "ticket-42",
 		"data-fui-intercept-close": "",
 		"data-fui-toast":           `{"variant":"success","title":"Saved"}`,
 		"data-fui-pane-close":      "",
@@ -87,6 +88,7 @@ func TestButtonActionAdmitsTheWiringKeys(t *testing.T) {
 		"data-fui-deeplink":        "user_id=42",
 		"data-fui-prefetch":        "tabs fileupload",
 		"data-fui-rpc-open":        "result-modal",
+		"data-fui-rpc-refresh":     "my-widget",
 		"data-fui-rpc-close":       "true",
 		"data-fui-rpc-reset":       "true",
 		"data-fui-rpc-navigate":    "/apps/42",
@@ -123,8 +125,8 @@ func TestButtonLinkCarriesOnlyLinkLegalActions(t *testing.T) {
 	}
 	for _, k := range []string{
 		"data-fui-rpc", "data-fui-rpc-close", "data-fui-rpc-navigate",
-		"data-fui-confirm", "data-fui-signal-inc", "data-fui-pane-open",
-		"data-fui-toast",
+		"data-fui-rpc-refresh", "data-fui-confirm", "data-fui-signal-inc",
+		"data-fui-pane-open", "data-fui-pane-key", "data-fui-toast",
 	} {
 		func() {
 			defer func() {
@@ -143,6 +145,10 @@ func TestButtonLinkCarriesOnlyLinkLegalActions(t *testing.T) {
 // to parse at click time.
 func TestButtonActionChecksItsValues(t *testing.T) {
 	cases := []html.Attrs{
+		{"data-fui-rpc": ""},
+		{"data-fui-rpc": "//evil/x"},
+		{"data-fui-rpc-refresh": ""},
+		{"data-fui-pane-key": ""},
 		{"data-fui-open": ""},
 		{"data-fui-deeplink": ""},
 		{"data-fui-toast": ""},

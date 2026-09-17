@@ -93,14 +93,14 @@ func linkLegal(key string) bool {
 // not an action's. The framework's runtime reads many data-fui-*
 // families; what belongs here is what a click DOES — a request, a
 // local signal mutation, or one of the wiring keys core-ui/interactive
-// can splice onto a clickable (open, pane open/close, toast, push
-// state, deeplink, prefetch) — so a caller cannot use this seam to
-// hand a button a signal binding, a pane key, or an optimistic
-// lifecycle it does not render the markup for. Every key is checked
-// for what it deserves: endpoints and the URLs the history API
-// touches must be same-origin, values that name things must be
-// non-empty, the toast payload must parse as JSON, and module names
-// must keep the shape the runtime's loader checks anyway.
+// can splice onto a clickable (open, pane open/close, pane key, toast,
+// push state, deeplink, prefetch) — so a caller cannot use this seam
+// to hand a button a signal binding or an optimistic lifecycle it does
+// not render the markup for. Every key is checked for what it
+// deserves: endpoints and the URLs the history API touches must be
+// same-origin, values that name things must be non-empty, the toast
+// payload must parse as JSON, and module names must keep the shape the
+// runtime's loader checks anyway.
 func actionAttrs(a html.Attrs) html.Attrs {
 	out := html.Attrs{}
 	for k, v := range a {
@@ -141,7 +141,11 @@ func actionAttrs(a html.Attrs) html.Attrs {
 			}
 			checkSameOrigin("a Button Action", "data-fui-rpc-navigate", v)
 			out[k] = v
-		case "data-fui-rpc-open", "data-fui-rpc-after-text", "data-fui-rpc-scroll-to", "data-fui-confirm":
+		case "data-fui-rpc-open", "data-fui-rpc-after-text", "data-fui-rpc-scroll-to",
+			"data-fui-rpc-refresh", "data-fui-confirm":
+			// refresh names the widget the runtime re-polls once the
+			// request succeeds (rpc.js); the rest of the family names
+			// or says something, and empty names nothing.
 			if v == "" {
 				panic("headless: Action carries an empty " + k + " — it names or says something, and empty names nothing")
 			}
@@ -174,6 +178,14 @@ func actionAttrs(a html.Attrs) html.Attrs {
 		case "data-fui-pane-open":
 			if v != "secondary" && v != "tertiary" {
 				panic("headless: Action carries data-fui-pane-open " + strconv.Quote(v) + ", which is not a pane a PaneHost renders")
+			}
+			out[k] = v
+		case "data-fui-pane-key":
+			// The record identity a keyed pane deep-links into the
+			// URL (interactive.PaneKey; the runtime reads it on pane
+			// triggers). Names something; empty names nothing.
+			if v == "" {
+				panic("headless: Action carries an empty data-fui-pane-key — it names the record a keyed pane deep-links, and empty names nothing")
 			}
 			out[k] = v
 		case "data-fui-pane-close":

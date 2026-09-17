@@ -160,7 +160,11 @@ import (
 //
 //	app.WithTheme(theme.App)
 //
-// ── Brand: edit these first ─────────────────────────────────────────
+// This scaffold carries no component options (Theme.Components):
+// the framework's complete default set — comfortable density, filled
+// round buttons — is compiled into :root anyway, so primary and
+// danger buttons draw their fill out of the box. Declare Components
+// only to deviate from those defaults.
 var App = style.Theme{
 	Name: "app",
 	// DarkColors makes ThemeToggle and OS dark preference complete: every
@@ -243,8 +247,11 @@ var App = style.Theme{
 		XXXL: style.FontSize{Value: "1.875rem"},
 	},
 
-	// Layout: the WCAG 2.5.5 tap-target floor. ui-button, pagination,
-	// inputs, and the mobile hamburger summary all scale to this token.
+	// Layout: the WCAG 2.5.5 tap-target floor. Pagination, inputs,
+	// and the mobile hamburger summary read this token directly;
+	// buttons reach it through the comfortable density's
+	// --fui-density-control-h (framework/ui's option compiler reads
+	// the token), so raising it here keeps every control taller.
 	Layout: style.LayoutSet{
 		TouchTarget: style.Spacing{Value: 44},
 	},

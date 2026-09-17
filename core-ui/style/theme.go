@@ -173,8 +173,11 @@ type CodeSet struct {
 }
 
 // LayoutSet: interaction-affordance dimensions. TouchTarget is
-// the WCAG 2.5.5 minimum tap target (default 44px); buttons and
-// form inputs reference var(--spacing-touch-target) to land on it.
+// the WCAG 2.5.5 minimum tap target (default 44px); pagination,
+// inputs and the mobile hamburger summary reference
+// var(--spacing-touch-target) directly, while comfortable-density
+// controls reach it through the --fui-density-control-h option
+// variable (which the framework/ui compiler draws from this token).
 type LayoutSet struct {
 	TouchTarget Spacing
 }

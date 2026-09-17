@@ -648,9 +648,17 @@ func LinkButton(cfg LinkButtonConfig) render.HTML {
 	// rendered href must already be safe. javascript:/vbscript:/non-
 	// image data: are the canonical XSS vectors for links. headless
 	// degrades a rejected href to a dead link; this package refuses
-	// outright, so the mistake is found where it is made.
+	// outright, so the mistake is found where it is made. The same
+	// posture covers the origin-absolute spellings — "//host/x" and
+	// its backslash twin — which are not XSS but are hrefs headless
+	// drops to a dead link; generated apps feed spec-authored hrefs
+	// here, so an LLM's "//github.com/…" CTA must fail loudly at
+	// build time, not ship as a disabled control.
 	if isUnsafeScheme(cfg.Href) {
 		panic("ui: LinkButton refuses unsafe Href scheme: " + cfg.Href)
+	}
+	if isCrossOriginAbsolute(cfg.Href) {
+		panic("ui: LinkButton refuses a protocol-relative Href — name the scheme (https://…) or keep the path root-relative: " + cfg.Href)
 	}
 	v := cfg.Variant
 	if v == "" {
@@ -735,27 +743,31 @@ func splitLinkAttrs(extra html.Attrs) (action, plain html.Attrs) {
 	return action, plain
 }
 
-// isUnsafeScheme rejects the canonical XSS vectors for `href`/`src`
-// attributes: javascript:, vbscript:, and non-image data: URIs. Used
-// by LinkButton (render-time guard) and shadowed by the runtime's
-// _isUnsafeSignalUrl for programmatic SPA navigation.
-func isUnsafeScheme(href string) bool {
-	// Browsers strip ASCII whitespace and control bytes from a URL,
-	// including bytes INTERIOR to the scheme token ("java\tscript:" is
-	// resolved as "javascript:"), before scheme resolution. A leading-
-	// only strip therefore misses "java\tscript:". Remove every ASCII
-	// control byte and space anywhere in the string before matching, so
-	// the deny-list sees the same scheme the browser will.
+// stripURLControls removes every ASCII control byte and space from a
+// URL-shaped string. Browsers strip this set from a URL — including
+// bytes INTERIOR to the scheme token ("java\tscript:" resolves as
+// "javascript:") and between the slashes of an origin ("/\t/evil"
+// resolves as "//evil") — before scheme and origin resolution, so the
+// checks that follow must see the same URL the browser will.
+func stripURLControls(href string) string {
 	var b strings.Builder
 	b.Grow(len(href))
-	for i := 0; i < len(href); i++ {
+	for i := range len(href) {
 		c := href[i]
 		if c == ' ' || c <= 0x1f || c == 0x7f {
 			continue
 		}
 		b.WriteByte(c)
 	}
-	s := b.String()
+	return b.String()
+}
+
+// isUnsafeScheme rejects the canonical XSS vectors for `href`/`src`
+// attributes: javascript:, vbscript:, and non-image data: URIs. Used
+// by LinkButton (render-time guard) and shadowed by the runtime's
+// _isUnsafeSignalUrl for programmatic SPA navigation.
+func isUnsafeScheme(href string) bool {
+	s := stripURLControls(href)
 	// Case-insensitive prefix check.
 	lower := strings.ToLower(s)
 	if strings.HasPrefix(lower, "javascript:") {
@@ -769,6 +781,17 @@ func isUnsafeScheme(href string) bool {
 		return !strings.HasPrefix(lower, "data:image/")
 	}
 	return false
+}
+
+// isCrossOriginAbsolute reports whether href names a foreign origin
+// WITHOUT naming its scheme: the protocol-relative "//host/x" and its
+// backslash twin "/\host/x" (a URL parser treats "\" as a path
+// separator, so both resolve to an origin-absolute URL). headless's
+// anchor policy drops both to a dead link; LinkButton refuses them
+// with their own reason instead.
+func isCrossOriginAbsolute(href string) bool {
+	s := stripURLControls(href)
+	return strings.HasPrefix(s, "//") || strings.HasPrefix(s, `/\`)
 }
 
 // ─── StatusBadge ────────────────────────────────────────────────────

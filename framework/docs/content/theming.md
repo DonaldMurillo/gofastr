@@ -33,7 +33,7 @@ out. Each group writes CSS variables with a fixed prefix:
 | `Easings` | `--easing-<name>` | `--easing-ease-out`, `--easing-spring` |
 | `Typography` | `--text-<name>` | `--text-sm`, `--text-base`, `--text-2xl` |
 | `Breakpoints` | `--breakpoint-<name>` | `--breakpoint-md` (informational; media queries can't read vars) |
-| `Layout` | `--spacing-touch-target` | the WCAG minimum tap-target size (44px); buttons and inputs use it for sizing |
+| `Layout` | `--spacing-touch-target` | the WCAG 2.5.5 minimum tap-target size (44px default). Comfortable-density controls reach it through `--fui-density-control-h` (see component options); pagination, inputs, and the mobile hamburger summary read the token directly |
 | `Code` | `--tk-<name>` | `--tk-kw`, `--tk-str`, `--tk-com`, the syntax-highlight colors code blocks read. This is the only optional group: leave a slot unset and it falls back to the built-in palette. Dark values go in `Theme.DarkCode` (a map, like `DarkColors`) |
 
 Token names come from the Go field path, converted to kebab-case
@@ -300,11 +300,14 @@ Two axes, and keeping them apart is the point:
   is what it is for.
 
 **Density versus explicit size:** `Density` (`theme.Comfortable`,
-`theme.Compact`) retunes control heights and gaps theme-wide (44px/36px
-controls, the md/sm spacing step). An explicit `Size` on one component
-always wins over density — density is the default rhythm, not a
-ceiling. Reach for density when a whole screen should tighten; reach
-for a size when one control must.
+`theme.Compact`) retunes control heights and gaps theme-wide. The
+comfortable height rides the `--spacing-touch-target` token (44px by
+default — raise `Layout.TouchTarget` and comfortable controls grow
+with it); compact is a deliberate 36px squeeze below that floor, and
+the md/sm spacing step separates controls in each. An explicit `Size`
+on one component always wins over density — density is the default
+rhythm, not a ceiling. Reach for density when a whole screen should
+tighten; reach for a size when one control must.
 
 Zero values mean *unspecified* while overrides merge, and only then:
 `theme.Default()` flattens a complete set (Comfortable, Filled,
@@ -330,9 +333,20 @@ options directly, not only the compiled output), so adding the styled
 layer later cannot silently alias two themes that were distinct all
 along.
 
+Registration carries the framework's complete default set, and that
+set is the **:root floor**: a theme with no `Components` of its own (a
+bare `style.DefaultTheme()`, the `gofastr theme init` scaffold, a host
+with no `App.Theme`) emits the defaults at `:root`, so the component
+rules consuming `--fui-*` variables resolve on every host. The floor
+is root-only — a scoped theme with no options inherits its parent's
+variables, which is the nesting contract — and it does not touch a
+theme's identity: an optionless theme hashes as optionless in every
+binary. There are still no in-CSS fallbacks (`var(--x, fallback)`):
+the floor lives at `:root`, where one declaration covers every rule.
+
 | Option | Emits |
 |---|---|
-| `density: comfortable` | `--fui-density-control-h: 44px`, `--fui-density-gap: var(--spacing-md)` |
+| `density: comfortable` | `--fui-density-control-h: var(--spacing-touch-target)`, `--fui-density-gap: var(--spacing-md)` |
 | `density: compact` | `--fui-density-control-h: 36px`, `--fui-density-gap: var(--spacing-sm)` |
 | `button.radius: round` / `square` / `pill` | `--fui-button-radius: var(--radii-md)` / `0` / `9999px` |
 | `button.treatment: filled` | `--fui-button-primary-bg: var(--color-primary)`, `--fui-button-primary-fg: var(--color-primary-fg)`, `--fui-button-primary-border: transparent`, and the same `-danger` trio from `--color-danger` / `--color-primary-fg` |

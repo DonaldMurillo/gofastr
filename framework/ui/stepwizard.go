@@ -182,11 +182,14 @@ func renderStepContent(step StepWizardStep, current, total int) render.HTML {
 func renderStepActions(ctx context.Context, current, total int) render.HTML {
 	btns := []render.HTML{}
 
-	// Back button (not on first step).
+	// Back button (not on first step): secondary, so the step shows
+	// one weighted action — Continue/Submit — and a subdued way back,
+	// instead of two equally filled primary buttons.
 	if current > 0 {
 		btns = append(btns, Button(ButtonConfig{
-			Label: i18nui.T(ctx, i18nui.KeyStepWizardBack),
-			Type:  "submit",
+			Label:   i18nui.T(ctx, i18nui.KeyStepWizardBack),
+			Type:    "submit",
+			Variant: ButtonSecondary,
 			ExtraAttrs: html.Attrs{
 				"name":  "wizard_action",
 				"value": "back",

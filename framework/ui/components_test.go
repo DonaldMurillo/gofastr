@@ -314,6 +314,12 @@ func TestLinkButtonRefusesUnsafeSchemes(t *testing.T) {
 		"vbscript:msg",
 		"data:text/html,<script>alert(1)</script>",
 		"data:application/javascript,alert(1)",
+		// Origin-absolute spellings: a foreign origin without a
+		// scheme. headless's anchor policy drops both to a dead link;
+		// the panic names the mistake where it is made (finding 5).
+		"//evil.example/x",
+		`/\evil.example/x`,
+		"/\t/evil.example/x",
 	}
 	for _, href := range bad {
 		func() {
@@ -691,6 +697,14 @@ func TestCodeBlockExtraAttrsCannotOverrideOwned(t *testing.T) {
 	}
 	mustContain(t, h, `tabindex="0"`)
 	mustContain(t, h, `aria-label="go source"`)
+}
+
+func TestSkipLinkExtraAttrsOnRoot(t *testing.T) {
+	h := SkipLink(SkipLinkConfig{ExtraAttrs: map[string]string{"data-test": "hook"}})
+	root := string(h)[:strings.Index(string(h), ">")+1]
+	if !strings.Contains(root, `data-test="hook"`) {
+		t.Errorf("SkipLink root missing data-test:\n%s", root)
+	}
 }
 
 func TestButtonExtraAttrsCannotOverrideOwned(t *testing.T) {

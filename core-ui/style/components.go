@@ -2,6 +2,7 @@ package style
 
 import (
 	"fmt"
+	"maps"
 	"regexp"
 	"sort"
 	"sync"
@@ -97,21 +98,37 @@ type Declaration struct {
 
 // componentCompiler is the process-wide registration state of the
 // component-options compiler. One compiler per process, registered from
-// a package init, read (and frozen) at the first theme-CSS emission.
+// a package init with its complete default option set, read (and frozen)
+// at the first theme-CSS emission. The defaults are the :root floor for
+// themes that carry no options of their own (see compiledOptionsCSS).
 var componentCompiler struct {
-	mu     sync.Mutex
-	fn     func(components map[string]string) []Declaration
-	frozen bool
+	mu       sync.Mutex
+	fn       func(components map[string]string) []Declaration
+	defaults map[string]string
+	frozen   bool
 }
 
 // RegisterComponentOptionsCompiler installs the one function that turns
-// a theme's flattened Components into custom-property declarations.
+// a theme's flattened Components into custom-property declarations,
+// together with the styled layer's complete default option set.
 // core-ui/style stores, hashes and copies the options but cannot turn
 // them into CSS without knowing what they mean; framework/ui knows and
 // registers its compiler from its package init. The declarations reach
 // CSSCustomProperties (:root) and ThemeOverrideCSS (every scope block),
 // which puts them in the app.css identity the host's theme variants
 // hash.
+//
+// defaults is the floor: the root emitter compiles it when a theme
+// carries no Components of its own, so a bare style.DefaultTheme, the
+// `gofastr theme init` scaffold and a host with no App.Theme still ship
+// every --fui-* variable the component stylesheets consume — without
+// the floor those rules resolve to nothing and a primary button
+// renders as an unstyled text label. Scope blocks never take the floor:
+// a scoped theme with no options inherits its parent's variables, which
+// is the nesting contract. defaults is validated with the same grammar
+// (and the same compiler-vocabulary run) as a theme's own options, at
+// registration, because it reaches CSS the moment any optionless theme
+// is emitted.
 //
 // A binary that never imports framework/ui (a host built on
 // framework/uihost alone, say) registers no compiler: it stores options
@@ -131,10 +148,26 @@ var componentCompiler struct {
 // compiler registered late would be missing from all three and a page
 // would render options another page never saw. Register from init,
 // before the host serves; hash later, not at package scope.
-func RegisterComponentOptionsCompiler(fn func(components map[string]string) []Declaration) {
+func RegisterComponentOptionsCompiler(fn func(components map[string]string) []Declaration, defaults map[string]string) {
 	if fn == nil {
 		panic("style: RegisterComponentOptionsCompiler needs a compiler, not nil")
 	}
+	if len(defaults) == 0 {
+		panic("style: RegisterComponentOptionsCompiler needs the styled layer's complete default option set — " +
+			"an optionless theme would otherwise emit no option variables and the component rules would resolve to nothing")
+	}
+	// The default set answers to the same gates a theme's own options
+	// answer to, checked BEFORE installation so a bad registration
+	// leaves nothing behind: the grammar here, then the vocabulary
+	// (a compiler that does not know an option panics, naming it) and
+	// the emit shape through the compiler being registered — the
+	// defaults reach CSS the moment any optionless theme is emitted.
+	for _, k := range sortedMapKeys(defaults) {
+		if err := validateComponentEntry(k, defaults[k]); err != nil {
+			panic(fmt.Sprintf("style: RegisterComponentOptionsCompiler: default option %q: %v", k, err))
+		}
+	}
+	validatedDeclLines(fn(defaults))
 	componentCompiler.mu.Lock()
 	defer componentCompiler.mu.Unlock()
 	if componentCompiler.frozen {
@@ -147,6 +180,7 @@ func RegisterComponentOptionsCompiler(fn func(components map[string]string) []De
 		panic("style: a component-options compiler is already registered: one per process (framework/ui registers it from its init)")
 	}
 	componentCompiler.fn = fn
+	componentCompiler.defaults = maps.Clone(defaults)
 }
 
 // componentOptionDecls compiles one theme's Components into sorted
@@ -161,9 +195,6 @@ func RegisterComponentOptionsCompiler(fn func(components map[string]string) []De
 // declaration-breaking sequence (the same findDeclBreaker set every
 // other CSS-bound value answers to — parentheses, dashes, commas and
 // spaces are allowed, "var(--spacing-md)" is the expected shape).
-// Values are otherwise free-form on purpose: an option's value is where
-// token references live, and the compiler is the component family's own
-// code.
 func componentOptionDecls(components map[string]string) []string {
 	componentCompiler.mu.Lock()
 	fn := componentCompiler.fn
@@ -172,7 +203,20 @@ func componentOptionDecls(components map[string]string) []string {
 	if fn == nil || len(components) == 0 {
 		return nil
 	}
-	decls := fn(components)
+	return validatedDeclLines(fn(components))
+}
+
+// validatedDeclLines turns a compiler's declarations into sorted
+// "--name: value;" lines, validating the shape because it reaches CSS:
+// a name must be a custom property name and a value must carry no
+// declaration-breaking sequence (the same findDeclBreaker set every
+// other CSS-bound value answers to — parentheses, dashes, commas and
+// spaces are allowed, "var(--spacing-md)" is the expected shape).
+// Values are otherwise free-form on purpose: an option's value is where
+// token references live, and the compiler is the component family's own
+// code. Shared by the emit path and by registration, which compiles
+// the default set once so a bad one dies at init.
+func validatedDeclLines(decls []Declaration) []string {
 	lines := make([]string, 0, len(decls))
 	for _, d := range decls {
 		if !customPropNameRe.MatchString(d.Name) {
@@ -197,6 +241,7 @@ func componentOptionDecls(components map[string]string) []string {
 func resetComponentOptionsForTest() {
 	componentCompiler.mu.Lock()
 	componentCompiler.fn = nil
+	componentCompiler.defaults = nil
 	componentCompiler.frozen = false
 	componentCompiler.mu.Unlock()
 }

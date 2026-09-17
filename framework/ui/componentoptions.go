@@ -47,7 +47,12 @@ import (
 // buttonCSS); the remaining component families' sheets arrive with
 // their own changes.
 func init() {
-	style.RegisterComponentOptionsCompiler(componentOptionsCSS)
+	// The complete default set rides the registration: it is the :root
+	// floor every optionless theme (DefaultTheme, the theme-init
+	// scaffold, a host with no App.Theme) emits, so the component rules
+	// consuming the --fui-* variables resolve on every host that links
+	// this package.
+	style.RegisterComponentOptionsCompiler(componentOptionsCSS, theme.DefaultOptions.Flattened())
 }
 
 // componentOptionsCSS compiles one theme's flattened options into the
@@ -65,10 +70,13 @@ func componentOptionsCSS(components map[string]string) []style.Declaration {
 	var decls []style.Declaration
 	switch opts.Density {
 	case theme.Comfortable:
-		// 44px is the WCAG 2.5.5 minimum tap target; the md step is
-		// the comfortable gap.
+		// The comfortable height rides the --spacing-touch-target
+		// token (Layout.TouchTarget, 44px by default — the WCAG 2.5.5
+		// floor), so a host that raises the token for an accessibility
+		// skin keeps its taller controls. Compact is a deliberate
+		// squeeze BELOW the floor and stays a literal.
 		decls = append(decls,
-			style.Declaration{Name: "--fui-density-control-h", Value: "44px"},
+			style.Declaration{Name: "--fui-density-control-h", Value: "var(--spacing-touch-target)"},
 			style.Declaration{Name: "--fui-density-gap", Value: "var(--spacing-md)"},
 		)
 	case theme.Compact:

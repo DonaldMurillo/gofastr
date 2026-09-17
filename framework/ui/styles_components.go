@@ -63,10 +63,10 @@ func buttonCSS(t style.Theme) string {
   justify-content: center;
   gap: var(--fui-density-gap);
   /* Density owns the touch target: --fui-density-control-h is the
-     theme's control height (44px comfortable, the WCAG 2.5.5 floor;
-     36px compact). An explicit Size wins over it — see the size rules
-     below, which is why they come after this one. */
-  min-height: var(--fui-density-control-h);
+     theme's control height — the --spacing-touch-target token
+     (44px by default, the WCAG 2.5.5 floor) at comfortable density,
+     36px at compact. An explicit Size wins over it — see the size
+     rules below, which is why they come after this one. */
   padding: 10px var(--spacing-lg);
   border: 1px solid transparent;
   border-radius: var(--fui-button-radius);
