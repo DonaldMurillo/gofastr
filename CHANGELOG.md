@@ -407,7 +407,10 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `ui-form-field`, `ui-form-section`, `ui-select`, `ui-input-group`
   or `ui-validation-summary` as a class any more; the registration
   names and `data-fui-comp` markers stay (the marker fetches the
-  sheet). The choice family's one borrowed class
+  sheet), with one narrowing: a group's LEAVES no longer carry the
+  toggle marker, only the fieldset does, so a host selecting
+  individual options by `[data-fui-comp="ui-toggle"]` now matches one
+  element per group. The choice family's one borrowed class
   (`ui-form-field__required`, emitted by the toggle groups) is
   renamed with its rule to `fui-field__required`. Hand-rolled
   `class="ui-form-field"` markup renders unstyled — call
@@ -424,11 +427,18 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   switch's thumb are drawn from the native input itself through
   `appearance: none`), the groups are plain fieldsets with no
   `role="radiogroup"`/`"group"` (the fieldset is the native group
-  semantic) and no legend asterisk (a required group marks every
-  leaf's input `required`, which is how HTML makes a radio group
-  required), `ToggleConfig.ExtraAttrs` lands on the `<input>` (the
-  label offers no attribute seam), and the standalone help id scheme
-  is `-hint`.
+  semantic), and a required group says so twice: every leaf's input
+  carries `required`, which is how HTML makes a radio group required,
+  and the legend carries `data-required`, which the sheet draws the
+  asterisk from (`content: " *" / ""`, so the mark stays out of the
+  legend's accessible name). `ToggleConfig.ExtraAttrs` lands on the
+  `<input>` (the label offers no attribute seam), and the standalone
+  help id scheme is `-hint`. Two smaller changes to released
+  behaviour ride with the family: a `Checkbox`'s or `Radio`'s `Help`
+  joins the accessible name inside the wrapping label instead of
+  hanging off `aria-describedby`, and `ColorField`'s swatch is out of
+  the tab order (`tabindex="-1"`) so the pair is one focus target,
+  the hex input, which is the value that submits.
 - **`PasswordInputConfig.Error` is gone.** The affix-shell control
   renders no message of its own; put the error on the enclosing
   `FormField`. `PasswordInputConfig.ID` is no longer required when a

@@ -210,17 +210,13 @@ func renderOneControl(t tokenControl) render.HTML {
 					"data-token": t.Key,
 					"data-type":  "color-swatch",
 				},
+				// The field's wiring rides Field above, which is the
+				// typed seam; an aria-describedby here would be a
+				// second source for the same fact, and the component
+				// drops it as its own anyway.
 				TextAttrs: map[string]string{
 					"data-token": t.Key,
 					"data-type":  t.Type,
-					// The field's own wiring, which ColorField has no
-					// typed seam for until the colour rebuild: without
-					// it the reserved error node is filled and shown
-					// while the input it describes points at nothing,
-					// so the message is on screen and absent to a
-					// screen reader — the defect the builder exists to
-					// prevent.
-					"aria-describedby": c.DescribedBy,
 				},
 			})
 		case "number", "number-px":

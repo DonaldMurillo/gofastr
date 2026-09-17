@@ -192,3 +192,27 @@ func TestExtrasAndOverridesStoreKeysFolded(t *testing.T) {
 }
 
 var nameAttr = regexp.MustCompile(`(?i)\sname="`)
+
+// The short hex form is a colour, and the module that binds this
+// component expands it on every keystroke. Rendering it as an error
+// would open a legal token in the error state and clear the error the
+// moment its owner retyped the same value — which is what the theme
+// editor's own tokens look like when a host authors "#FFF".
+func TestColorAcceptsShortHexAndExpandsItForThePicker(t *testing.T) {
+	h := string(Color(ColorProps{Name: "primary", Value: "#FFF"}, nil))
+	if !strings.Contains(h, `value="#FFFFFF"`) {
+		t.Errorf("the picker needs the expanded form:\n%s", h)
+	}
+	if !strings.Contains(h, `value="#FFF"`) {
+		t.Errorf("the text input keeps what its owner wrote:\n%s", h)
+	}
+	if strings.Contains(h, "data-invalid") {
+		t.Errorf("a short hex colour is not an invalid value:\n%s", h)
+	}
+	// A value the picker genuinely cannot show still marks the shell
+	// and keeps its text verbatim.
+	ref := string(Color(ColorProps{Name: "primary", Value: "var(--brand)"}, nil))
+	if !strings.Contains(ref, "data-invalid") || !strings.Contains(ref, "var(--brand)") {
+		t.Errorf("a token reference must stay verbatim and mark the shell:\n%s", ref)
+	}
+}
