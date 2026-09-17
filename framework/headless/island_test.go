@@ -1,6 +1,7 @@
 package headless
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
@@ -257,4 +258,42 @@ func TestAlertDismissIsAnIsland(t *testing.T) {
 	refuse(t, "Island", func() {
 		Alert(AlertProps{Title: "Deploy failed", DismissHref: "/apps?dismiss=1"}, nil)
 	})
+}
+
+// A Form says its submit is an RPC exactly once. Island and Request
+// are two ways of saying it, and the second one to arrive would have
+// to win or lose by precedence — a silent choice between two things a
+// caller meant. The refusal is the contract; this is the test nobody
+// had watched fail.
+func TestFormRefusesIslandAndRequestTogether(t *testing.T) {
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Fatal("a Form carrying both Island and Request must panic, not pick one")
+		}
+		msg, _ := r.(string)
+		for _, want := range []string{"Island", "Request", "pick one"} {
+			if !strings.Contains(msg, want) {
+				t.Errorf("panic %q does not say %q", msg, want)
+			}
+		}
+	}()
+	Form(FormProps{
+		Action:  "/apps",
+		Island:  Island{Endpoint: "/island/apps", Signal: "apps"},
+		Request: Action{"data-fui-rpc": "/apps"},
+	}, nil)
+}
+
+// Either one alone is fine: the refusal is about the pair, not about
+// the fields.
+func TestFormAcceptsIslandOrRequestAlone(t *testing.T) {
+	isle := string(Form(FormProps{Action: "/apps", Island: Island{Endpoint: "/island/apps", Signal: "apps"}}, nil))
+	if !strings.Contains(isle, "data-fui-rpc") {
+		t.Errorf("an Island form carries no rpc wiring:\n%s", isle)
+	}
+	req := string(Form(FormProps{Action: "/apps", Request: Action{"data-fui-rpc": "/apps"}}, nil))
+	if !strings.Contains(req, `data-fui-rpc="/apps"`) {
+		t.Errorf("a Request form carries no rpc wiring:\n%s", req)
+	}
 }

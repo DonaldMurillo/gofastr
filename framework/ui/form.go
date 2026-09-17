@@ -157,8 +157,12 @@ func Form(cfg FormConfig, fields ...render.HTML) render.HTML {
 
 	// The summary, when there is one, renders above the body and marks
 	// the form so the behaviour module moves focus to it on arrival.
+	// A general sentence with no field errors is still a failure the
+	// reader has to see: a save refused by a guard or a conflict names
+	// no field, and gating the summary on Errors alone rendered
+	// nothing at all for it.
 	var errorsHTML render.HTML
-	if len(cfg.Errors) > 0 {
+	if len(cfg.Errors) > 0 || cfg.Summary != "" {
 		if cfg.ID == "" {
 			panic("ui: Form rendering Errors requires ID — the summary's id is derived from it (FormConfig.ID + \"-errors\"), and two summaries on one page would share one title id")
 		}

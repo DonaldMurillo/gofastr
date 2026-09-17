@@ -493,3 +493,34 @@ func TestFormRequestAdmitsCloseOpenRefreshTrigger(t *testing.T) {
 		}
 	}
 }
+
+// A failure that names no field is still a failure the reader has to
+// see. A save refused by a guard, or a conflict, sets the general
+// sentence and no field errors; gating the summary on Errors alone
+// rendered nothing at all for it — the admin battery's general flash
+// going silent on exactly the saves it exists for.
+func TestFormRendersASummaryForAGeneralOnlyFailure(t *testing.T) {
+	h := string(Form(FormConfig{
+		Action:  "/save",
+		ID:      "settings",
+		Summary: "That name is taken by another workspace.",
+	}))
+	for _, want := range []string{
+		`id="settings-errors"`,
+		"That name is taken by another workspace.",
+		"data-hui-form-errors", // so focus moves to it, as with field errors
+	} {
+		if !strings.Contains(h, want) {
+			t.Errorf("a general-only failure lost %q:\n%s", want, h)
+		}
+	}
+}
+
+// And a form with neither renders no summary at all, so an ordinary
+// form is not decorated with an empty alert.
+func TestFormWithNoErrorsAndNoSummaryRendersNoSummary(t *testing.T) {
+	h := string(Form(FormConfig{Action: "/save", ID: "settings"}))
+	if strings.Contains(h, "settings-errors") || strings.Contains(h, "data-hui-form-errors") {
+		t.Errorf("a form with nothing wrong rendered a summary:\n%s", h)
+	}
+}

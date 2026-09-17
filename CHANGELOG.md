@@ -344,9 +344,7 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   failed submit, and maps field names to control ids through the new
   `FieldIDs`/`FieldLabels`/`FieldOrder` config — a link to `#email`
   misses a control whose id is `f_email`. An error whose field has no
-  known id renders as text, not as an anchor to nothing;
-  `FormConfig.Summary` renders as a text row for the sentence that
-  belongs to no field. The summary is focusable by script
+  known id renders as text, not as an anchor to nothing. The summary is focusable by script
   (`tabindex="-1"`, never a tab stop), `role="alert"`, and its links
   go through the anchor policy. The newsletter on the headless
   landing page migrated onto `Errors` with a stable id, replacing
@@ -391,8 +389,26 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `data-action-*` key in `ui.Form`'s `ExtraAttrs` routes through the
   request seam; a key outside the vocabulary panics at render,
   naming the key and the seam. Build the wiring with
-  `interactive.Post(...).OnSuccess(...).Attrs()` as before — the
-  routed keys are exactly what that produces.
+  `interactive.Post(...).OnSuccess(...).Attrs()`: the request, the
+  method, the signal, navigate, open, refresh, close, reset, the
+  input trigger with its debounce, confirm, and `data-action-mount`
+  all ride. Four effects a button may carry are refused on a form,
+  each for its own reason: `AfterText` and `AfterDisable` would
+  rewrite or disable the form element itself rather than a control,
+  `ScrollTo` and `PushState` belong to a navigation the server owns
+  after a mutation, and `WithBody` gets its own refusal because a
+  form serializes its own fields and a static body would drop every
+  one of them. A host composing those on a form hits a render panic
+  naming the key.
+- **`FormConfig.Summary` is a row inside the summary, not a Callout's
+  body.** It was the whole text of an error Callout above the fields;
+  it is now the sentence that belongs to no field, rendered as a text
+  row inside `ui.ValidationSummary` above the per-field links. The
+  rendered output of a released component changes for every caller
+  that sets it. It also renders now when `Errors` is empty: a save
+  refused with no field error named — a conflict, a guard — used to
+  render nothing at all, which is the admin battery's general flash
+  going silent.
 - **`ui.Form` refuses an action the anchor policy rejects.** The old
   behaviour substituted `#`, shipping a form whose submit went
   nowhere; the refusal is a panic at render, where the mistake was
@@ -475,9 +491,16 @@ are listed under Added above, not here.
 7. **Form wiring rides the request seam.** `data-fui-*` and
    `data-action-*` keys in `ui.Form`'s `ExtraAttrs` are admitted
    vocabulary or a render-time panic; `data-fui-rpc-body` is refused
-   outright (a form serializes itself).
+   outright (a form serializes itself), as are `after-text`,
+   `after-disable`, `scroll-to` and `push-state`, which mean nothing
+   a form can honour.
 8. **An unsafe `FormConfig.Action` panics.** The `#` substitution is
    gone.
+9. **`FormConfig.Summary` moved inside the summary.** It was an error
+   Callout's whole body; it is the no-field sentence rendered as a row
+   inside `ui.ValidationSummary`, and it now renders even when
+   `Errors` is empty. A caller that set it gets different markup and,
+   in the general-only case, output where there was none.
 
 ### Changed
 - **One home per helper.** A clone survey over the tree found the same

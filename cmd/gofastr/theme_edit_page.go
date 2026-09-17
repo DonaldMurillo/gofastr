@@ -209,6 +209,14 @@ func renderOneControl(t tokenControl) render.HTML {
 				TextAttrs: map[string]string{
 					"data-token": t.Key,
 					"data-type":  t.Type,
+					// The field's own wiring, which ColorField has no
+					// typed seam for until the colour rebuild: without
+					// it the reserved error node is filled and shown
+					// while the input it describes points at nothing,
+					// so the message is on screen and absent to a
+					// screen reader — the defect the builder exists to
+					// prevent.
+					"aria-describedby": c.DescribedBy,
 				},
 			})
 		case "number", "number-px":

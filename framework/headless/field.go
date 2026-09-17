@@ -136,10 +136,15 @@ func Field(p FieldProps, s Classes, build func(FieldControl) render.HTML) render
 			Attrs(map[string]string{"id": errID, "role": "alert"}),
 			render.Text(p.Error)))
 	} else if reserved {
-		// The same paragraph, empty, found by its id. role=alert stays
-		// so the filled words interrupt the way an error's do; an
-		// empty alert node is silent, which is why shipping it
-		// reserved is safe. The stylesheet takes it out of the grid
+		// The same paragraph, empty, found by its id. An empty alert
+		// node is silent, which is why shipping it reserved is safe,
+		// and the description picks the words up on focus once they
+		// are there. Whether filling it also INTERRUPTS depends on the
+		// engine: the insertion is what flips :empty off, so an engine
+		// that recomputes style before processing the mutation
+		// announces and one that had dropped the hidden node may not.
+		// Do not rely on the interrupt; the visible text and the
+		// description are the contract. The stylesheet takes it out of the grid
 		// while it is empty, so a reserved field is not a field with a
 		// blank row under it.
 		kids = append(kids, b.El("p", PartError,
