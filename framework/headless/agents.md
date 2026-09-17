@@ -39,7 +39,7 @@ headless.Card(headless.CardProps{Title: "Apps", Parts: headless.Parts{
     Attrs: headless.PartAttrs{headless.PartFooter: {"data-testid": "f"}},
     Slots: headless.Slots{headless.PartCardHeader: header},
     Binds: headless.Binds{headless.PartTitle: {Signal: "count"}},
-}, Strings: strings /* nil means English */}, classes, body)
+}, Strings: strings /* nil means English; ui.StringsFor(ctx) resolves it */}, classes, body)
 
 // An in-page state change is an island, never a route (hard rule 1).
 headless.Pagination(headless.PaginationProps{
@@ -80,7 +80,10 @@ the fixtures are handed is harness infrastructure, not caller surface.
   the shape of; a field left empty falls back to its English default
   at runtime — the miss is a stray English word on a French page, not
   a compile error — and `strings_test.go` refuses English written
-  outside `Strings`.
+  outside `Strings`. The layer above that resolves them per request is
+  `ui.StringsFor(ctx)` (framework/ui), one field-to-key table over
+  `i18nui`; a field added here fails that package's gate until the
+  bridge maps it.
 - **A golden update without reading it.** `GOFASTR_UPDATE_GOLDEN=1 go test`
   regenerates; every changed line is a change to what assistive
   technology is told.

@@ -8,6 +8,26 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 ## [Unreleased]
 
 ### Added
+- **`ui.StringsFor` — the i18n bridge into `headless.Strings`.** The
+  headless layer's words are a typed struct, one field per sentence;
+  `ui.StringsFor(ctx)` is the layer above that resolves every field
+  from the `i18nui` key table through the request's translator, so a
+  component rebuilt on headless says its words in the reader's locale
+  via `Strings: ui.StringsFor(r.Context())`. No translator on the ctx
+  (or a per-key catalog miss) yields the English defaults headless
+  itself ships — byte for byte, pinned against
+  `headless.DefaultStrings()` — so a nil `Strings` and a translated
+  page share one English contract. Ten keys were added for sentences
+  no key said yet (`ui.dismiss.titled`, `ui.tag.removeLabelled`,
+  `ui.action.failed`, `ui.color.pick`,
+  `ui.passwordInput.revealShow`/`revealHide`, `ui.tone.info`,
+  `ui.fileUpload.fileSelected`/`filesSelected`,
+  `ui.validationSummary.problem`); the rest reuse existing keys
+  (password show/hide, pagination Previous/Next, three of the four
+  tone words). A reflection gate in `framework/ui` fails the build
+  when a field is added to `headless.Strings` without a bridge entry.
+  The headless landing screen's bare fixture renders a
+  `headless.SystemBanner` through the bridge as the seam proof.
 - **`framework/headless`**: the structure half of a design system.
   Components render tags, roles, labelling relationships, state
   attributes and `data-hui-*` hooks with no classes at a nil Classes; a

@@ -218,6 +218,25 @@ const (
 
 	// Repeater extras
 	KeyRepeaterRemoveItem Key = "ui.repeater.removeItem" // "Remove item {index}"
+
+	// Headless component strings. framework/ui's StringsFor bridge
+	// resolves every field of headless.Strings from these, so a
+	// component rebuilt on headless says its words in the reader's
+	// language. Placeholder conventions follow headless, not this
+	// package's {name} style: %s where headless formats at render
+	// (fmt.Sprintf at the site that owns the value), {name} tokens
+	// where the runtime substitutes. A catalog translation keeps the
+	// placeholders and may reorder the words around them.
+	KeyDismissTitled      Key = "ui.dismiss.titled"            // "Dismiss: %s"
+	KeyTagRemoveLabelled  Key = "ui.tag.removeLabelled"        // "Remove %s"
+	KeyActionFailed       Key = "ui.action.failed"             // "Could not save. Try again."
+	KeyColorPick          Key = "ui.color.pick"                // "Pick %s"
+	KeyPasswordRevealShow Key = "ui.passwordInput.revealShow"  // "Show"
+	KeyPasswordRevealHide Key = "ui.passwordInput.revealHide"  // "Hide"
+	KeyToneInfo           Key = "ui.tone.info"                 // "Information"
+	KeyFileSelected       Key = "ui.fileUpload.fileSelected"   // "{name} selected."
+	KeyFilesSelected      Key = "ui.fileUpload.filesSelected"  // "{n} files selected: {names}."
+	KeyValidationProblem  Key = "ui.validationSummary.problem" // "There is a problem"
 )
 
 // Defaults are the English fallback strings. Apps that provide their
@@ -382,6 +401,21 @@ var Defaults = map[Key]string{
 	KeyNavToggle:        "Toggle navigation",
 
 	KeyRepeaterRemoveItem: "Remove item {index}",
+
+	// Headless component strings (see the const block above; the
+	// English matches headless's own defaults byte for byte — the
+	// bridge's no-translator output must be the words the goldens
+	// pin, and framework/ui's bridge test holds the two together).
+	KeyDismissTitled:      "Dismiss: %s",
+	KeyTagRemoveLabelled:  "Remove %s",
+	KeyActionFailed:       "Could not save. Try again.",
+	KeyColorPick:          "Pick %s",
+	KeyPasswordRevealShow: "Show",
+	KeyPasswordRevealHide: "Hide",
+	KeyToneInfo:           "Information",
+	KeyFileSelected:       "{name} selected.",
+	KeyFilesSelected:      "{n} files selected: {names}.",
+	KeyValidationProblem:  "There is a problem",
 }
 
 // translatorKey is the unexported context key used by WithTranslator
@@ -558,6 +592,10 @@ func AllKeys() []Key {
 		KeyThemeToggle, KeyThemeLight, KeyThemeDark,
 		KeyThemeAuto, KeyThemeColorScheme,
 		KeyNavPrimary, KeyNavMobilePrimary, KeyNavToggle,
+		KeyDismissTitled, KeyTagRemoveLabelled, KeyActionFailed,
+		KeyColorPick, KeyPasswordRevealShow, KeyPasswordRevealHide,
+		KeyToneInfo, KeyFileSelected, KeyFilesSelected,
+		KeyValidationProblem,
 	}
 }
 

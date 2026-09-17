@@ -15,8 +15,9 @@ package headless
 // French page, not a compile error. The probe golden
 // (spec_golden_strings.txt) is what catches a component saying a
 // word no field carries. The framework's own translated strings live
-// in framework/i18nui as keys; a layer above this one resolves each
-// field from those keys once per request.
+// in framework/i18nui as keys; framework/ui's StringsFor(ctx) is the
+// layer above that resolves each field from those keys once per
+// request.
 //
 // The field is Strings on every component's props: nil means the
 // English defaults below, which is what the goldens pin.
