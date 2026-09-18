@@ -170,15 +170,26 @@ func serveRuntimeModule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
-	// Content-addressed URL (?v=<hash>) → safe to cache forever.
-	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+	// Only a request that carries the content hash earns the year-long
+	// immutable cache. A mismatched or missing ?v= revalidates, the
+	// policy every other /__gofastr script follows: freezing a module
+	// under a URL that cannot bust means the next deploy never reaches
+	// that browser.
+	if r.URL.Query().Get("v") == runtime.ModuleHash(name) {
+		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+	} else {
+		w.Header().Set("Cache-Control", "no-cache")
+	}
 	fmt.Fprint(w, src)
 }
 
 const computeWorkerCSP = "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'self'"
 
-// ServeComputeAsset serves registered workers and WebAssembly modules from
-// /__gofastr/compute/<name>.js|wasm under immutable cache headers.
+// ServeComputeAsset serves registered workers and WebAssembly modules
+// from /__gofastr/compute/<name>.js|wasm. Only a request whose ?v= is
+// the asset's hash caches immutably: the compute manifest is inline in
+// the document, so a tab open across a deploy asks for the old hash and
+// must not pin the new bytes under it. Same rule as serveRuntimeModule.
 func ServeComputeAsset(w http.ResponseWriter, r *http.Request) {
 	const prefix = "/__gofastr/compute/"
 	path := r.URL.Path
@@ -214,7 +225,11 @@ func ServeComputeAsset(w http.ResponseWriter, r *http.Request) {
 		// Permit WebAssembly compilation without enabling JavaScript eval.
 		w.Header().Set("Content-Security-Policy", computeWorkerCSP)
 	}
-	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+	if r.URL.Query().Get("v") == asset.Hash() {
+		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+	} else {
+		w.Header().Set("Cache-Control", "no-cache")
+	}
 	_, _ = asset.WriteTo(w)
 }
 

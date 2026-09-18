@@ -155,7 +155,17 @@ const (
 	// keeps 8 bytes of clearance; the bracket was re-verified by
 	// running TestCoreBudgetRejectsCliffOverflow against the padded
 	// fixture, not by arithmetic.
-	coreCongestionWindowGZ = 14*1024 + 1110
+	//
+	// 15442, lowered 4 bytes from 15446 on 2026-09-17, a source change
+	// downward under the 2026-09-04 precedent above. The loader's module
+	// URL lost its ternary when the un-versioned fallback became a
+	// sentinel ?v=, so the real core shrank at level 1 (15438 to 15427)
+	// and the fixture stopped crossing the old window (15443 <= 15446),
+	// which had made the bracket vacuous. The line is the largest value
+	// below the fixture's crossing, so the bracket is [real 15427,
+	// fixture 15443] again, checked by running
+	// TestCoreBudgetRejectsCliffOverflow rather than by arithmetic.
+	coreCongestionWindowGZ = 14*1024 + 1106
 )
 
 func coreBudgetViolation(t *testing.T, src string, budget int) (level, got, limit int) {

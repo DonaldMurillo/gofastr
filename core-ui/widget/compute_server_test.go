@@ -12,7 +12,8 @@ import (
 
 func TestServeComputeWorker(t *testing.T) {
 	compute.RegisterWorker("route-worker", []byte("self.onmessage=function(){}"))
-	req := httptest.NewRequest(http.MethodGet, "/__gofastr/compute/route-worker.js?v=hash", nil)
+	worker, _ := compute.LookupWorker("route-worker")
+	req := httptest.NewRequest(http.MethodGet, "/__gofastr/compute/route-worker.js?v="+worker.Hash(), nil)
 	rec := httptest.NewRecorder()
 
 	ServeComputeAsset(rec, req)
@@ -37,7 +38,8 @@ func TestServeComputeWorker(t *testing.T) {
 func TestServeComputeWASM(t *testing.T) {
 	wasm := []byte("\x00asm\x01\x00\x00\x00")
 	compute.RegisterWASM("route-wasm", wasm)
-	req := httptest.NewRequest(http.MethodGet, "/__gofastr/compute/route-wasm.wasm?v=hash", nil)
+	wasmAsset, _ := compute.LookupWASM("route-wasm")
+	req := httptest.NewRequest(http.MethodGet, "/__gofastr/compute/route-wasm.wasm?v="+wasmAsset.Hash(), nil)
 	rec := httptest.NewRecorder()
 
 	ServeComputeAsset(rec, req)
@@ -109,5 +111,31 @@ func TestComputeManifestEscapesClosingScript(t *testing.T) {
 	}
 	if got["x"].JS != "</script><script>alert(1)</script>" {
 		t.Fatalf("escaped value=%q", got["x"].JS)
+	}
+}
+
+// Only a request whose ?v= is the asset's content hash earns the
+// immutable header. The compute manifest is an inline block in the
+// document, so a tab left open across a deploy asks for the old hash;
+// answering it with the new bytes marked immutable would pin an old URL
+// to a new body for a year.
+func TestServeComputeAssetRefusesToFreezeAMismatchedHash(t *testing.T) {
+	compute.RegisterWorker("cache-worker", []byte("self.onmessage=function(){}"))
+	worker, _ := compute.LookupWorker("cache-worker")
+	for _, tc := range []struct{ name, query, want string }{
+		{"matching hash", "?v=" + worker.Hash(), "public, max-age=31536000, immutable"},
+		{"stale hash", "?v=0000000000000000", "no-cache"},
+		{"no version", "", "no-cache"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			ServeComputeAsset(rec, httptest.NewRequest(http.MethodGet, "/__gofastr/compute/cache-worker.js"+tc.query, nil))
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status=%d", rec.Code)
+			}
+			if got := rec.Header().Get("Cache-Control"); got != tc.want {
+				t.Fatalf("Cache-Control=%q, want %q", got, tc.want)
+			}
+		})
 	}
 }

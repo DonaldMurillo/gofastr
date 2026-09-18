@@ -69,3 +69,37 @@ func TestServeRuntimeModuleServesRegisteredBehavior(t *testing.T) {
 		t.Fatalf("unknown module status = %d, want 404", resp404.StatusCode)
 	}
 }
+
+// A module URL WITHOUT the content hash — the loader's fallback for a
+// name the manifest does not carry — must not be cached immutably.
+// Freezing it pins that build of the module in the browser under a URL
+// that can never bust: the next deploy never reaches it, and only the
+// user clearing their cache does.
+func TestServeRuntimeModuleRefusesToFreezeAnUnversionedURL(t *testing.T) {
+	registry.IsolateForTest(t)
+	registry.RegisterBehavior("cache-probe", `(function () { 'use strict'; window.__cacheProbe = true; })();`, registry.Markers("[data-cache-probe]"))
+
+	r := router.New()
+	widget.MountRuntime(r)
+	srv := httptest.NewServer(r)
+	t.Cleanup(srv.Close)
+
+	for _, c := range []struct{ name, url, want string }{
+		{"no ?v=", "/__gofastr/runtime/cache-probe.js", "no-cache"},
+		{"a stale ?v=", "/__gofastr/runtime/cache-probe.js?v=deadbeef", "no-cache"},
+		{"the content hash", "/__gofastr/runtime/cache-probe.js?v=" + runtime.ModuleHash("cache-probe"), "public, max-age=31536000, immutable"},
+	} {
+		resp, err := http.Get(srv.URL + c.url)
+		if err != nil {
+			t.Fatal(err)
+		}
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusOK || !strings.Contains(string(body), "__cacheProbe") {
+			t.Fatalf("%s: status %d, body %q", c.name, resp.StatusCode, body)
+		}
+		if cc := resp.Header.Get("Cache-Control"); cc != c.want {
+			t.Fatalf("%s: Cache-Control = %q, want %q", c.name, cc, c.want)
+		}
+	}
+}

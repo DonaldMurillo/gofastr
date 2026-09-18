@@ -205,8 +205,10 @@
       // own failure message, keeps the guard within the core bundle's
       // gzip budget -- both are bytes this file already carried.
       if (!/^[\w-]+$/.test(name)) return reject(new Error('module failed'));
-      const v = _moduleManifest[name] || '';
-      const url = '/__gofastr/runtime/' + name + '.js' + (v ? '?v=' + v : '');
+      // Never a bare URL. A name the manifest lacks gets a sentinel ?v=
+      // that matches no hash, so the route answers no-cache instead of
+      // freezing the module under a URL that cannot bust.
+      const url = '/__gofastr/runtime/' + name + '.js?v=' + (_moduleManifest[name] || 'x');
       // Requirements live in the registered descriptors only:
       // embedded modules have no channel to declare one. Looked up
       // here rather than at scan time so every load path (marker scan,
