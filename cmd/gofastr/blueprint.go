@@ -6938,7 +6938,13 @@ func isSignupFormBlock(block BlueprintBlock) bool {
 // label association and any future description wiring arrive by construction
 // rather than by raw input strings.
 func blueprintAuthFormExpr(heading, action, next, submitLabel, pwAutocomplete string, pwMinLength int, footerHref, footerText string) string {
-	hidden := `<input type="hidden" name="next" value="` + htmlEscapeJSString(next) + `">`
+	// html.Input, NOT a hand-rolled <input> string through render.Raw:
+	// the generator ships zero raw markup (hard rule 7), and the
+	// primitive is the same one every other control in the emitted app
+	// goes through. gofastr pack reads this expression back —
+	// reverseAuthCard knows both this shape and the legacy render.Raw
+	// string an older generator emitted.
+	hidden := fmt.Sprintf(`html.Input(html.InputConfig{Type: "hidden", Name: "next", Value: %q})`, next)
 	emailField := `ui.FormField(ui.FormFieldConfig{Label: "Email", For: "auth-email", Required: true,` +
 		` Input: func(c headless.FieldControl) render.HTML { return ui.Control(ui.ControlConfig{Field: c, Type: "email", Name: "email", AutoComplete: "email"}) }})`
 	minLen := ""
@@ -6948,7 +6954,7 @@ func blueprintAuthFormExpr(heading, action, next, submitLabel, pwAutocomplete st
 	pwField := `ui.FormField(ui.FormFieldConfig{Label: "Password", For: "auth-password", Required: true,` +
 		fmt.Sprintf(` Input: func(c headless.FieldControl) render.HTML { return ui.Control(ui.ControlConfig{Field: c, Type: "password", Name: "password", AutoComplete: %q%s}) }})`, pwAutocomplete, minLen)
 	form := fmt.Sprintf(
-		"ui.Form(ui.FormConfig{Action: %q, Method: \"POST\", SubmitLabel: %q}, render.Raw(%q), %s, %s)",
+		"ui.Form(ui.FormConfig{Action: %q, Method: \"POST\", SubmitLabel: %q}, %s, %s, %s)",
 		action, submitLabel, hidden, emailField, pwField)
 	footer := ""
 	if footerHref != "" {
@@ -7042,11 +7048,6 @@ func blueprintAPIBase(apiPrefix string) string {
 		return ""
 	}
 	return "/" + p
-}
-
-func htmlEscapeJSString(value string) string {
-	replacer := strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;", `"`, "&quot;", `'`, "&#39;")
-	return replacer.Replace(value)
 }
 
 // blueprintFormInputType maps an entity field type to an <input type=…>.

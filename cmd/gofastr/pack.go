@@ -2776,6 +2776,18 @@ func reverseAuthCard(call *ast.CallExpr) BlueprintBlock {
 	if form, ok := c["Body"].(*ast.CallExpr); ok && callSel(form) == "ui.Form" {
 		action = astString(cfgOf(form, 0)["Action"])
 		for _, arg := range form.Args[1:] {
+			// The hidden next input: html.Input since the generator
+			// stopped shipping raw markup, render.Raw("<input …>")
+			// in every app an older generator emitted (meridian's
+			// hand-maintained screens among them). Both shapes carry
+			// the post-login target; read whichever is present.
+			if in, ok := arg.(*ast.CallExpr); ok && callSel(in) == "html.Input" {
+				ic := cfgOf(in, 0)
+				if astString(ic["Name"]) == "next" {
+					next = astString(ic["Value"])
+				}
+				continue
+			}
 			raw := rawString(arg)
 			if strings.Contains(raw, `name="next"`) {
 				next = htmlAttr(raw, "value")

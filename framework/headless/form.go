@@ -190,6 +190,9 @@ func formRequestAttrs(a html.Attrs) html.Attrs {
 			}
 			out[k] = v
 		case "data-fui-rpc-signal":
+			if v == "" {
+				panic("headless: Form Request carries an empty data-fui-rpc-signal — a success with nowhere to land")
+			}
 			checkSignalName(v)
 			out[k] = v
 		case "data-fui-rpc-navigate":

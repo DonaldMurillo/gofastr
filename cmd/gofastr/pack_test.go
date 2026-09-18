@@ -1170,3 +1170,75 @@ func TestPackReadsNavFromAGeneratedAuthApp(t *testing.T) {
 		}
 	}
 }
+
+// TestPack_RoundTripsAuthNextThroughHtmlInput pins the auth form's
+// hidden next input end to end: the generator emits it as
+// html.Input(html.InputConfig{Type: "hidden", Name: "next", …}) — not
+// a hand-rolled <input> string through render.Raw — and pack reads the
+// expression back. The legacy render.Raw branch stays for apps an
+// older generator emitted (meridian's hand-maintained screens), and is
+// covered by TestPack_MeridianRoundTrip.
+func TestPack_RoundTripsAuthNextThroughHtmlInput(t *testing.T) {
+	bp := Blueprint{
+		App: BlueprintApp{Name: "Authy", Module: "example.com/authy", DBDriver: "sqlite", DBURL: "file:authy.db"},
+		Entities: []framework.EntityDeclaration{{
+			Name:   "notes",
+			Fields: []framework.FieldDeclaration{{Name: "title", Type: "string"}},
+		}},
+		Screens: []BlueprintScreen{
+			{Name: "login", Route: "/login", Body: []BlueprintBlock{
+				{Kind: "login_form", Props: map[string]any{"action": "/auth/login", "next": "/app", "register_href": "/signup"}},
+			}},
+			{Name: "signup", Route: "/signup", Body: []BlueprintBlock{
+				{Kind: "signup_form", Props: map[string]any{"action": "/auth/register", "next": "/app", "login_href": "/login"}},
+			}},
+		},
+	}
+	dir := materializeBlueprint(t, bp)
+
+	// Pin the emitted shape first: if the emitter drifts back to a raw
+	// string, the parser's html.Input arm goes dead and this test is
+	// the one that says so.
+	screensSrc, err := os.ReadFile(filepath.Join(dir, "screen_login.go"))
+	if err != nil {
+		t.Fatalf("read generated login screen: %v", err)
+	}
+	if !strings.Contains(string(screensSrc), `html.Input(html.InputConfig{Type: "hidden", Name: "next", Value: "/app"})`) {
+		t.Fatalf("the hidden next input is not emitted through html.Input:\n%s", screensSrc)
+	}
+	if strings.Contains(string(screensSrc), "render.Raw(") {
+		t.Fatalf("the auth form still carries raw markup:\n%s", screensSrc)
+	}
+
+	packed, err := packBlueprint(dir)
+	if err != nil {
+		t.Fatalf("packBlueprint: %v", err)
+	}
+	var login, signup BlueprintBlock
+	var haveLogin, haveSignup bool
+	for _, screen := range packed.Screens {
+		for _, b := range screen.Body {
+			switch b.Kind {
+			case "login_form":
+				login, haveLogin = b, true
+			case "signup_form":
+				signup, haveSignup = b, true
+			}
+		}
+	}
+	if !haveLogin || !haveSignup {
+		t.Fatalf("auth screens lost in round-trip: %#v", packed.Screens)
+	}
+	if got, _ := login.Props["next"].(string); got != "/app" {
+		t.Errorf("login next = %q, want /app — the parser lost the html.Input value", got)
+	}
+	if got, _ := login.Props["register_href"].(string); got != "/signup" {
+		t.Errorf("login register_href = %q, want /signup", got)
+	}
+	if got, _ := signup.Props["next"].(string); got != "/app" {
+		t.Errorf("signup next = %q, want /app", got)
+	}
+	if got, _ := signup.Props["login_href"].(string); got != "/login" {
+		t.Errorf("signup login_href = %q, want /login", got)
+	}
+}

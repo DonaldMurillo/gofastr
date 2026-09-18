@@ -247,8 +247,8 @@ type FormFieldConfig struct {
 	Input func(headless.FieldControl) render.HTML
 
 	// ReserveError keeps an empty error paragraph rendered — wired
-	// into the control's aria-describedby and marked
-	// found by the id that rides aria-describedby — for a script that fills it without
+	// into the control's aria-describedby and found by the id that
+	// rides it — for a script that fills it without
 	// re-rendering (see headless.FieldProps.ReserveError). The caller
 	// that fills it must also set aria-invalid on the control; the
 	// server-rendered path should pass Error instead.

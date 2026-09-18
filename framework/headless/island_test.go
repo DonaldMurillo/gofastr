@@ -205,6 +205,17 @@ func TestIslandRefusesAReservedSignal(t *testing.T) {
 	}
 }
 
+// The Form Request seam names signals too, and an empty one is not a
+// name: the submit would succeed and land in a region that never
+// updates. Refused beside the reserved names, with the same shape of
+// message the seam's other empties get.
+func TestFormRequestRefusesAnEmptySignal(t *testing.T) {
+	refuse(t, "empty", func() {
+		Form(FormProps{Action: "/x",
+			Request: html.Attrs{"data-fui-rpc": "/x", "data-fui-rpc-signal": ""}}, nil)
+	})
+}
+
 // The same-origin guard covers the whole class it names: "//host" is
 // protocol-relative, and the URL parser reads a backslash the same
 // way, so "/\\host" resolves off-origin and the runtime declines to

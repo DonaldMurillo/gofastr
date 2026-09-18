@@ -24,8 +24,10 @@ renders its hint AND its error when both are set, the error first,
 with both ids in the control's described-by: the hint is the rule the
 value must obey and the error is the violation, so dropping the rule
 exactly when it was broken is dropping it when it is needed most.
-`ReserveError` keeps an empty, wired, `data-hui-field-error`-marked
-error node rendered for a script that fills it without re-rendering.
+`ReserveError` keeps an empty, wired error node rendered for a script
+that fills it without re-rendering; the node carries no hook of its
+own — it is found by the control's id with `-error` appended, the same
+id that rides the control's aria-describedby.
 The other families adopt their components' headless counterparts in
 their own changes.
 **Use this when** the prompt mentions: headless, unstyled, reskin, a

@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"math"
 	"net/http"
 	"net/url"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -883,8 +885,11 @@ func (c Config) formField(ctx context.Context, f Field, cur string, rel map[stri
 // list/detail show.
 func (c Config) relationSelect(f Field, id string, labels map[string]string, cur string) render.HTML {
 	opts := []ui.SelectOption{{Value: "", Text: "— Select —"}}
-	for val, label := range labels {
-		opts = append(opts, ui.SelectOption{Value: val, Text: label, Selected: val == cur})
+	// The labels map is walked in sorted key order, never ranged
+	// directly: a map's iteration order is randomized per run, and
+	// this loop writes markup (the repo's mapwriter rule).
+	for _, val := range slices.Sorted(maps.Keys(labels)) {
+		opts = append(opts, ui.SelectOption{Value: val, Text: labels[val], Selected: val == cur})
 	}
 	return ui.Select(ui.SelectConfig{Name: f.Key, Label: f.Label, ID: id, Options: opts})
 }

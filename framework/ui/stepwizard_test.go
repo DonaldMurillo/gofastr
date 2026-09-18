@@ -208,3 +208,63 @@ func TestStepWizardExtraAttrsOnRoot(t *testing.T) {
 		t.Errorf("comp marker lost:\n%s", root)
 	}
 }
+
+// Errors renders the same ValidationSummary ui.Form renders, between
+// the indicator and the step's fields, and marks the form so the
+// behaviour module moves focus to the summary after a failed submit.
+func TestStepWizardRendersValidationSummaryForErrors(t *testing.T) {
+	h := StepWizard(StepWizardConfig{
+		Action:      "/wiz",
+		CurrentStep: 0,
+		ID:          "wiz-form",
+		Errors:      FieldErrors{"name": "Your full name is required."},
+		FieldLabels: map[string]string{"name": "Full name"},
+		Steps:       []StepWizardStep{{Heading: "A"}},
+	})
+	s := string(h)
+	for _, want := range []string{
+		`data-hui-form-errors`,
+		`id="wiz-form-errors"`,
+		`href="#name"`,
+		"Full name: Your full name is required.",
+		`id="wiz-form"`,
+	} {
+		if !strings.Contains(s, want) {
+			t.Errorf("StepWizard with Errors missing %q:\n%s", want, s)
+		}
+	}
+	// The summary sits between the indicator and the step content:
+	// indicator < summary < heading.
+	indAt := strings.Index(s, "ui-step-wizard__indicator")
+	sumAt := strings.Index(s, `id="wiz-form-errors"`)
+	headingAt := strings.Index(s, "ui-step-wizard__heading")
+	if indAt == -1 || sumAt == -1 || headingAt == -1 {
+		t.Fatalf("indicator, summary or heading missing (%d/%d/%d):\n%s", indAt, sumAt, headingAt, s)
+	}
+	if !(indAt < sumAt && sumAt < headingAt) {
+		t.Errorf("the summary is not between the indicator and the step content:\n%s", s)
+	}
+	// No errors, no mark: an unmarked form would be focused by a
+	// module that has nothing to announce.
+	clean := string(StepWizard(StepWizardConfig{Action: "/wiz", ID: "wiz-form",
+		Steps: []StepWizardStep{{Heading: "A"}}}))
+	if strings.Contains(clean, "data-hui-form-errors") || strings.Contains(clean, "ui-validation-summary") {
+		t.Errorf("a clean wizard carries the error surface anyway:\n%s", clean)
+	}
+}
+
+// The same refusal ui.Form applies: a summary with no ID to derive
+// its own id from is a render-time programming error.
+func TestStepWizardErrorsRequireID(t *testing.T) {
+	defer func() {
+		if recover() == nil {
+			t.Fatal("expected panic rendering Errors without ID")
+		}
+	}()
+	StepWizard(StepWizardConfig{
+		Action:      "/wiz",
+		CurrentStep: 0,
+		Errors:      FieldErrors{"name": "required"},
+		Steps:       []StepWizardStep{{Heading: "A"}},
+	})
+}

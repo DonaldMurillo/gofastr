@@ -127,6 +127,29 @@ ui.StepWizard(ui.StepWizardConfig{
 })
 ```
 
+A step that fails server-side validation re-renders through the same
+summary `ui.Form` uses: pass the errors (plus the form's `ID`, which
+the summary derives its own id from) and set the failing field's
+`Error` on the step's fields.
+
+```go
+ui.StepWizard(ui.StepWizardConfig{
+    Action: "/wizard", CurrentStep: step, ID: "wiz-form",
+    Errors: ui.FieldErrors{"name": "Your full name is required."},
+    Steps:  []ui.StepWizardStep{
+        {Heading: "Personal info", Fields: []render.HTML{
+            ui.TextField(ui.TextFieldConfig{Name: "name", Label: "Full name", ID: "name",
+                Required: true, Error: "Your full name is required."}),
+        }},
+    },
+})
+```
+
+The wizard renders the summary between the progress indicator and the
+step's fields and marks the form (`data-hui-form-errors`), so the
+runtime moves focus to the summary after the failed submit — the same
+announcement a failed `ui.Form` gets.
+
 ### Form repeater
 
 Dynamic repeating field groups. Server-driven add/remove via `name_add`/`name_remove` POST fields.

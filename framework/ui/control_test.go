@@ -82,6 +82,19 @@ func TestControlRequiresTheFieldAndName(t *testing.T) {
 	mustPanic("no Field", func() {
 		Control(ControlConfig{Type: "text", Name: "t"})
 	})
+	// A PARTIAL FieldControl must not slip through either: Required
+	// with no ID renders a control the label points at and never
+	// reaches — the guard names Field.ID, not the empty-value
+	// conjunction around it.
+	mustPanic("Required but no ID", func() {
+		Control(ControlConfig{Field: headless.FieldControl{Required: true}, Type: "text", Name: "t"})
+	})
+	mustPanic("Invalid but no ID", func() {
+		Control(ControlConfig{Field: headless.FieldControl{Invalid: true}, Type: "text", Name: "t"})
+	})
+	mustPanic("DescribedBy but no ID", func() {
+		Control(ControlConfig{Field: headless.FieldControl{DescribedBy: "d"}, Type: "text", Name: "t"})
+	})
 	mustPanic("no Name", func() {
 		Control(ControlConfig{Field: headless.FieldControl{ID: "x"}, Type: "text"})
 	})

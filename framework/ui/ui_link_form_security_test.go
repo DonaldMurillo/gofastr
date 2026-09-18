@@ -642,8 +642,18 @@ func TestFormInput_RequiredAttribute(t *testing.T) {
 	if !strings.Contains(out, `data-required`) {
 		t.Errorf("SECURITY: [form-input] required field missing its state on the label\nHTML: %s", out)
 	}
-	if !strings.Contains(out, `required=""`) {
-		t.Errorf("SECURITY: [form-input] required field missing its state on the control\nHTML: %s", out)
+	// The control's own opening tag carries required: a whole-field
+	// search is satisfied by the label's data-required="".
+	i := strings.Index(out, "<input")
+	if i < 0 {
+		t.Fatalf("SECURITY: [form-input] no <input> control in the field\nHTML: %s", out)
+	}
+	open := out[i:]
+	if j := strings.IndexByte(open, '>'); j >= 0 {
+		open = open[:j+1]
+	}
+	if !strings.Contains(open, `required=""`) {
+		t.Errorf("SECURITY: [form-input] required field missing its state on the control\nHTML: %s", open)
 	}
 }
 

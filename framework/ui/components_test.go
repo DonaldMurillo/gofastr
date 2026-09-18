@@ -164,8 +164,10 @@ func TestFormFieldHelpRendersAlongsideError(t *testing.T) {
 	s := string(h)
 	errAt := strings.Index(s, `id="n-error"`)
 	hintAt := strings.Index(s, `id="n-hint"`)
-	if hintAt == -1 {
-		t.Fatalf("the hint is missing entirely:\n%s", s)
+	// A missing node indexes at -1 and -1 compares as "in order", so
+	// absence fails first, before the order comparison runs.
+	if errAt == -1 || hintAt == -1 {
+		t.Fatalf("the error node or the hint node is missing (error at %d, hint at %d):\n%s", errAt, hintAt, s)
 	}
 	if errAt > hintAt {
 		t.Errorf("the error must be drawn before the hint:\n%s", s)

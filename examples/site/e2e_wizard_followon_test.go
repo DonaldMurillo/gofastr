@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/chromedp/chromedp"
 )
@@ -144,6 +145,98 @@ func TestE2E_Wizard_HappyPath(t *testing.T) {
 	}
 }
 
+// ─── Wizard: an empty step-one submit is refused ───────────────────
+// The form is novalidate (the server owns validation), so the browser
+// would happily advance an empty step: the handler has to refuse it,
+// re-render step one with the messages, and record nothing.
+func TestE2E_Wizard_EmptySubmitStaysOnStepOne(t *testing.T) {
+	if testing.Short() {
+		t.Skip("e2e: -short")
+	}
+	base := startE2EServer(t)
+	ctx := newE2EBrowserCtx(t)
+
+	wizardDemoReset()
+	var raw string
+	err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/forms/wizard"),
+		pageReady(),
+		// Continue with BOTH required fields empty (Click, not Submit:
+		// chromedp.Submit does not fire the submit event).
+		chromedp.Click(`button[name="wizard_action"][value="next"]`, chromedp.ByQuery),
+	)
+	if err != nil {
+		t.Fatalf("chromedp empty submit: %v", err)
+	}
+
+	// The click is a full-page POST; the re-render can land outside the
+	// suite's settle on a loaded runner (and an evaluate that starts
+	// mid-navigation dies with "target navigated"), so probe for the
+	// failed step's summary with a bounded retry instead of one fixed
+	// sleep.
+	shown := false
+	for range 25 {
+		if err := chromedp.Run(ctx, chromedp.Evaluate(
+			`document.readyState === 'complete' && document.getElementById('wd-form-errors') !== null`,
+			&shown)); err == nil && shown {
+			break
+		}
+		if !shown {
+			time.Sleep(200 * time.Millisecond)
+		}
+	}
+	if !shown {
+		t.Fatal("the failed step's summary never rendered after the empty submit")
+	}
+
+	err = chromedp.Run(ctx,
+		chromedp.Evaluate(`JSON.stringify((() => {
+			var heading = document.querySelector('.ui-step-wizard__heading');
+			var summary = document.querySelector('[data-hui-form-errors] [role="alert"], #wd-form-errors');
+			var nameErr = document.getElementById('wd-name-error');
+			var emailErr = document.getElementById('wd-email-error');
+			return {
+				heading: heading ? heading.textContent.trim() : '',
+				summary: summary ? summary.textContent.trim() : '',
+				nameErr: nameErr ? nameErr.textContent.trim() : '',
+				emailErr: emailErr ? emailErr.textContent.trim() : '',
+				nameInvalid: !!(document.getElementById('wd-name') && document.getElementById('wd-name').getAttribute('aria-invalid')),
+			};
+		})())`, &raw),
+	)
+	if err != nil {
+		t.Fatalf("chromedp probe of the failed step: %v", err)
+	}
+	var got struct {
+		Heading     string
+		Summary     string
+		NameErr     string
+		EmailErr    string
+		NameInvalid bool
+	}
+	if err := json.Unmarshal([]byte(raw), &got); err != nil {
+		t.Fatalf("json: %v", err)
+	}
+	if !strings.Contains(got.Heading, "Personal info") {
+		t.Errorf("an empty submit left step one (heading %q)", got.Heading)
+	}
+	if !strings.Contains(got.Summary, "Please fix") {
+		t.Errorf("the validation summary is missing (summary %q)", got.Summary)
+	}
+	if !strings.Contains(got.NameErr, "full name is required") {
+		t.Errorf("the name message is missing (nameErr %q)", got.NameErr)
+	}
+	if !strings.Contains(got.EmailErr, "email is required") {
+		t.Errorf("the email message is missing (emailErr %q)", got.EmailErr)
+	}
+	if !got.NameInvalid {
+		t.Error("the name control is not marked aria-invalid after the failed submit")
+	}
+	if last := wizardDemoLast(); last != nil {
+		t.Errorf("an empty submit recorded a payload: %v", last)
+	}
+}
+
 // ─── Wizard: Back preserves values ──────────────────────────────────
 
 func TestE2E_Wizard_BackPreservesState(t *testing.T) {
@@ -215,9 +308,13 @@ func TestE2E_Wizard_FinalStepNoOverflow(t *testing.T) {
 	wizardDemoReset()
 
 	// Drive to step 3, then simulate a stale POST with step=3 and wizard_action=next.
+	// Step one is filled: the handler validates before advancing, so an
+	// empty submit would (correctly) stay on step one.
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/forms/wizard"),
 		pageReady(),
+		chromedp.SetValue(`#wd-name`, "Ada Lovelace", chromedp.ByQuery),
+		chromedp.SetValue(`#wd-email`, "ada@example.com", chromedp.ByQuery),
 		chromedp.Click(`button[name="wizard_action"][value="next"]`, chromedp.ByQuery),
 		pageReady(),
 		chromedp.Click(`button[name="wizard_action"][value="next"]`, chromedp.ByQuery),

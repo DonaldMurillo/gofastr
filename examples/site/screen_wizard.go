@@ -16,8 +16,10 @@ package main
 import (
 	"errors"
 	"net/http"
+	"net/mail"
 	"net/url"
 	"strconv"
+	"strings"
 	"sync"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
@@ -106,11 +108,26 @@ func WizardDemoHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// The server owns validation (the form is novalidate), so the
+	// submitted step is validated before the flow advances or the
+	// confirmation renders: a blank or malformed value re-renders the
+	// same step with the field's error set and the summary populated.
+	errs := ui.FieldErrors{}
+	if r.Method == http.MethodPost && action == "next" {
+		errs = wizardDemoValidate(submittedStep, values)
+	}
+
 	totalSteps := 3
 	current := submittedStep
 
 	switch action {
 	case "next":
+		// A step that failed validation re-renders itself; the flow
+		// neither advances nor confirms on an invalid step.
+		if len(errs) > 0 {
+			current = submittedStep
+			break
+		}
 		// Final-step Next means Submit, capture and confirm. Guard against
 		// a stale POST with _step=last pushing past the last index.
 		if submittedStep >= totalSteps-1 {
@@ -132,21 +149,48 @@ func WizardDemoHandler(w http.ResponseWriter, r *http.Request) {
 		current = totalSteps - 1
 	}
 
-	render.RespondHTML(w, wizardDemoPage(current, values))
+	render.RespondHTML(w, wizardDemoPage(current, values, errs))
 }
 
-func wizardDemoPage(current int, values url.Values) render.HTML {
+// wizardDemoValidate checks the fields visible on the given step and
+// returns the per-field errors. Steps past the wizard's range have no
+// visible fields to validate (their POST is clamped onto a real step
+// before rendering).
+func wizardDemoValidate(step int, values url.Values) ui.FieldErrors {
+	errs := ui.FieldErrors{}
+	if step != 0 {
+		return errs
+	}
+	if strings.TrimSpace(values.Get("wd-name")) == "" {
+		errs["wd-name"] = "Your full name is required."
+	}
+	if v := strings.TrimSpace(values.Get("wd-email")); v == "" {
+		errs["wd-email"] = "Your email is required."
+	} else if _, err := mail.ParseAddress(v); err != nil {
+		errs["wd-email"] = "That email address does not look right."
+	}
+	return errs
+}
+
+func wizardDemoPage(current int, values url.Values, errs ui.FieldErrors) render.HTML {
 	wiz := ui.StepWizard(ui.StepWizardConfig{
 		Action:       wizardDemoPath,
 		Method:       "POST",
 		CurrentStep:  current,
 		HiddenFields: wizardDemoHiddenCarry(current, values),
-		Steps:        wizardDemoSteps(values),
+		Steps:        wizardDemoSteps(values, errs),
 		// The handler owns the step flow and answers every POST
 		// server-side, so the form is novalidate for the same reason
 		// the newsletter's is: a browser validation bubble on an
 		// untouched step would trap the flow the demo exists to show.
 		ExtraAttrs: html.Attrs{"novalidate": ""},
+		// The failed submit re-renders through the same summary and
+		// focus hook ui.Form uses; the control ids equal the field
+		// names, so the summary's links need no FieldIDs map.
+		ID:          "wd-form",
+		Errors:      errs,
+		FieldLabels: map[string]string{"wd-name": "Full name", "wd-email": "Email"},
+		FieldOrder:  []string{"wd-name", "wd-email"},
 	})
 
 	body := render.Tag("body", nil,
@@ -221,7 +265,7 @@ func wizardDemoHiddenCarry(current int, values url.Values) []render.HTML {
 	return out
 }
 
-func wizardDemoSteps(values url.Values) []ui.StepWizardStep {
+func wizardDemoSteps(values url.Values, errs ui.FieldErrors) []ui.StepWizardStep {
 	themeLight := []ui.RadioGroupOption{
 		{Label: "Light", Value: "light"},
 		{Label: "Dark", Value: "dark"},
@@ -235,10 +279,11 @@ func wizardDemoSteps(values url.Values) []ui.StepWizardStep {
 			Fields: []render.HTML{
 				ui.TextField(ui.TextFieldConfig{
 					Name: "wd-name", Label: "Full name", ID: "wd-name", Required: true,
-					Value: values.Get("wd-name"),
+					Value: values.Get("wd-name"), Error: errs["wd-name"],
 				}),
 				ui.FormField(ui.FormFieldConfig{
 					Label: "Email", For: "wd-email", Required: true,
+					Error: errs["wd-email"],
 					Input: func(c headless.FieldControl) render.HTML {
 						return ui.Control(ui.ControlConfig{Field: c, Type: "email", Name: "wd-email",
 							Value: values.Get("wd-email")})

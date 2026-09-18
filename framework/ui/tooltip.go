@@ -96,20 +96,90 @@ func Tooltip(cfg TooltipConfig, trigger render.HTML) render.HTML {
 
 // injectTriggerDescribedBy splices ` aria-describedby="<id>"` into the
 // first open tag of the caller's trigger element. Idempotent: a trigger
-// that already carries the attribute is returned unchanged. Local to
-// Tooltip: its trigger is caller-built markup with no builder seam, so
-// the relationship is spliced rather than handed down (see FormField
-// for the seam-based alternative).
+// whose FIRST OPEN TAG already carries the attribute is returned
+// unchanged — the check is scoped to that tag, because the trigger is a
+// subtree (a button wrapping an icon, an input wrapping nothing) and a
+// DESCENDANT carrying aria-describedby is its own description, not
+// evidence the trigger root is wired. Local to Tooltip: its trigger is
+// caller-built markup with no builder seam, so the relationship is
+// spliced rather than handed down (see FormField for the seam-based
+// alternative).
 func injectTriggerDescribedBy(trigger render.HTML, id string) render.HTML {
 	s := string(trigger)
-	attr := ` aria-describedby="` + string(render.Escape(id)) + `"`
-	if strings.Contains(s, `aria-describedby="`) {
+	// Find the real open tag, skipping leading whitespace and HTML
+	// comments. The splice target is the `>` that closes that tag,
+	// respecting attribute quotes (so `>` inside `title="a > b"` doesn't
+	// terminate the tag prematurely).
+	start := skipToFirstTag(s)
+	if start < 0 {
 		return trigger
 	}
-	end := strings.IndexByte(s, '>')
+	end := findFirstTagClose(s[start:])
 	if end < 0 {
 		return trigger
 	}
+	end += start
+	tag := s[start:end]
+	if strings.Contains(tag, ` aria-describedby=`) {
+		return trigger
+	}
+	insertAt := end
+	if end > 0 && s[end-1] == '/' {
+		insertAt = end - 1
+	}
+	attr := ` aria-describedby="` + string(render.Escape(id)) + `"`
 	// safe-html: attr is assembled from render.Escape output only.
-	return render.HTML(s[:end] + attr + s[end:])
+	return render.HTML(s[:insertAt] + attr + s[insertAt:])
+}
+
+// skipToFirstTag returns the index of the first byte of the outermost
+// real open tag, skipping whitespace and HTML comments (a comment's
+// `-->` is not a tag close). Returns -1 when no open tag is found.
+func skipToFirstTag(s string) int {
+	i := 0
+	for i < len(s) {
+		for i < len(s) {
+			c := s[i]
+			if c == ' ' || c == '\t' || c == '\n' || c == '\r' {
+				i++
+				continue
+			}
+			break
+		}
+		if i+4 <= len(s) && s[i:i+4] == "<!--" {
+			nc := strings.Index(s[i+4:], "-->")
+			if nc < 0 {
+				return -1
+			}
+			i = i + 4 + nc + 3
+			continue
+		}
+		break
+	}
+	if i >= len(s) || s[i] != '<' {
+		return -1
+	}
+	return i
+}
+
+// findFirstTagClose returns the index of the first `>` that closes the
+// open tag starting at offset 0 of s, respecting attribute quotes.
+func findFirstTagClose(s string) int {
+	var quote byte
+	for i := range len(s) {
+		c := s[i]
+		if quote != 0 {
+			if c == quote {
+				quote = 0
+			}
+			continue
+		}
+		switch c {
+		case '"', '\'':
+			quote = c
+		case '>':
+			return i
+		}
+	}
+	return -1
 }

@@ -28,9 +28,18 @@ func TestSelectRequiredMarksLabelAndControl(t *testing.T) {
 	if marker > strings.Index(h, "</label>") {
 		t.Fatalf("the required state is not on the label:\n%s", h)
 	}
-	if !strings.Contains(h, `<select class="fui-select" id="policy" name="policy" required=""`) &&
-		!strings.Contains(h, `required=""`) {
-		t.Fatalf("the control itself is not marked required:\n%s", h)
+	// The control's own opening tag carries required: a whole-field
+	// search is satisfied by the label's data-required="".
+	i := strings.Index(h, "<select")
+	if i < 0 {
+		t.Fatalf("no <select> in the field:\n%s", h)
+	}
+	open := h[i:]
+	if j := strings.IndexByte(open, '>'); j >= 0 {
+		open = open[:j+1]
+	}
+	if !strings.Contains(open, `required=""`) {
+		t.Fatalf("the control itself is not marked required:\n%s", open)
 	}
 }
 
@@ -111,7 +120,14 @@ func TestSelectHelpAndErrorBothVisible(t *testing.T) {
 	if !strings.Contains(h, `aria-describedby="policy-error policy-hint"`) {
 		t.Errorf("the control must carry both ids, error first:\n%s", h)
 	}
-	if strings.Index(h, `id="policy-error"`) > strings.Index(h, `id="policy-hint"`) {
+	errAt := strings.Index(h, `id="policy-error"`)
+	hintAt := strings.Index(h, `id="policy-hint"`)
+	// A missing node indexes at -1 and -1 compares as "in order", so
+	// absence fails first, before the order comparison runs.
+	if errAt == -1 || hintAt == -1 {
+		t.Fatalf("the error node or the hint node is missing (error at %d, hint at %d):\n%s", errAt, hintAt, h)
+	}
+	if errAt > hintAt {
 		t.Errorf("the error must be drawn before the hint:\n%s", h)
 	}
 }

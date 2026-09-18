@@ -197,3 +197,55 @@ func TestFormatHelpers(t *testing.T) {
 		t.Fatalf("enum format missing label: %s", h)
 	}
 }
+
+// relationSelect walks the labels map, and a map's iteration order is
+// randomized per run — the options it writes must not be. The order is
+// sorted by value (the mapwriter rule), and two renders of the same
+// relation are byte-identical.
+func TestRelationSelectOptionsAreDeterministic(t *testing.T) {
+	labels := map[string]string{
+		"c-3": "Cain", "c-1": "Ada Lovelace", "c-5": "Edsger Dijkstra",
+		"c-2": "Grace Hopper", "c-6": "Blaise Pascal", "c-4": "Alan Turing",
+	}
+	cfg := Config{}
+	first := string(cfg.relationSelect(Field{Key: "customer_id", Label: "Customer"}, "f-customer_id", labels, "c-2"))
+	second := string(cfg.relationSelect(Field{Key: "customer_id", Label: "Customer"}, "f-customer_id", labels, "c-2"))
+	if first != second {
+		t.Fatalf("two renders of the same relation differ:\n%s\n---\n%s", first, second)
+	}
+	// The order is not merely stable, it is sorted: assert the
+	// <option> value sequence directly.
+	want := []string{"", "c-1", "c-2", "c-3", "c-4", "c-5", "c-6"}
+	got := []string{}
+	for _, seg := range strings.Split(first, "<option ") {
+		if v := betweenAttr(seg, "value"); v != "" || len(got) == 0 {
+			got = append(got, v)
+		}
+	}
+	if len(got) != len(want) {
+		t.Fatalf("option count = %d, want %d:\n%s", len(got), len(want), first)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("option %d = %q, want %q (sorted by value):\n%s", i, got[i], want[i], first)
+		}
+	}
+	// The current value stays selected wherever it sits in the order.
+	if !strings.Contains(first, `selected="" value="c-2"`) {
+		t.Errorf("the current relation is not marked selected:\n%s", first)
+	}
+}
+
+// betweenAttr pulls attr="…" out of an <option …-shaped segment.
+func betweenAttr(seg, attr string) string {
+	needle := attr + `="`
+	i := strings.Index(seg, needle)
+	if i < 0 {
+		return ""
+	}
+	rest := seg[i+len(needle):]
+	if j := strings.IndexByte(rest, '"'); j >= 0 {
+		return rest[:j]
+	}
+	return ""
+}

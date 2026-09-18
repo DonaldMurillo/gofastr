@@ -59,8 +59,8 @@ type ControlConfig struct {
 // map. The field sheet (ui-form-field) is what styles it, fetched by
 // the field whose builder this control was built in.
 func Control(cfg ControlConfig) render.HTML {
-	if cfg.Field.ID == "" && cfg.Field.DescribedBy == "" && !cfg.Field.Invalid && !cfg.Field.Required {
-		panic("ui: Control requires Field — the wiring a FormField hands its builder; a control built beside its field is the defect the builder exists to prevent")
+	if cfg.Field.ID == "" {
+		panic("ui: Control requires Field.ID — the wiring a FormField hands its builder; a control with no id is a label pointing at nothing, however much else it carries")
 	}
 	if cfg.Name == "" {
 		panic("ui: Control requires Name — a control with no name submits nothing")

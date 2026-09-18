@@ -337,6 +337,15 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   variable. The field sheet draws the required mark from the label's
   `data-required` state (an asterisk whose alternative text is empty,
   so the accessible name stays clean).
+- **`ui.StepWizard` takes the same error surface as `ui.Form`.**
+  `Errors`, `Summary`, `FieldLabels`, `FieldIDs`, `FieldOrder` and
+  `ID`: a non-empty `Errors` renders `ui.ValidationSummary` between
+  the step indicator and the step's fields, marks the form so the
+  headless behaviour module moves focus to it, and requires `ID` for
+  the same reason `ui.Form` does. A wizard validates the submitted
+  step on the server and re-renders it with the errors, which is what
+  a `novalidate` form owes its reader now that `required` on its
+  controls is real rather than decorative.
 - **`ui.Form` renders its errors through `ui.ValidationSummary`.**
   With `Errors` set the form derives the summary's id from its own
   (`<formID>-errors`), marks itself `data-hui-form-errors` so the
