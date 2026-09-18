@@ -229,12 +229,31 @@ func Section(cfg SectionConfig, body ...render.HTML) render.HTML {
 // FormFieldConfig configures a single form field row.
 type FormFieldConfig struct {
 	Label    string // required → <label>
-	For      string // required → <label for=…> matches the input ID
+	For      string // required → <label for=…> matches the control ID
 	Help     string // optional helper text under the field
-	Error    string // optional error message; non-empty switches to error styling
-	Required bool   // adds a visible "required" hint and aria-required
-	Input    render.HTML
-	Class    string
+	Error    string // optional error message; non-empty marks the control invalid
+	Required bool   // marks the label and the control
+
+	// Input BUILDS the control from the wiring the field hands it:
+	// the id the label points at, the described-by chain, the invalid
+	// state and the required flag. It is a builder rather than a
+	// pre-built value because the wiring has to reach the control, and
+	// a pre-built control is how a hint ends up rendered, given an id,
+	// and never referenced — visible on screen and absent to a screen
+	// reader. Build the control with ui.Control (any input type), a
+	// typed field, ui.PasswordInput (its Field field), or headless
+	// directly; a closure that ignores its FieldControl compiles and
+	// loses the wiring, which is the one way left to get this wrong.
+	Input func(headless.FieldControl) render.HTML
+
+	// ReserveError keeps an empty error paragraph rendered — wired
+	// into the control's aria-describedby and found by the id that
+	// rides it — for a script that fills it without
+	// re-rendering (see headless.FieldProps.ReserveError). The caller
+	// that fills it must also set aria-invalid on the control; the
+	// server-rendered path should pass Error instead.
+	ReserveError bool
+	Class        string
 
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers) to the field row's root <div>. Keys the
@@ -244,203 +263,31 @@ type FormFieldConfig struct {
 }
 
 // FormField renders a labelled form field with optional help and error
-// text. Wire the input ID to cfg.For for label association.
+// text. Wire the control through Input's builder; the label's For and
+// the control's id cannot disagree, because the control is built from
+// the field's own wiring.
+//
+// Help and Error are BOTH rendered when both are set, the error
+// first: the hint is the rule the value must obey and the error is
+// the violation, so dropping the rule exactly when it was broken is
+// dropping it when it is needed most.
 func FormField(cfg FormFieldConfig) render.HTML {
 	if cfg.Label == "" {
 		panic("ui: FormField requires Label")
 	}
 	if cfg.For == "" {
-		panic("ui: FormField requires For (the input element's ID)")
+		panic("ui: FormField requires For (the control element's ID)")
 	}
-	if cfg.Input == "" {
-		panic("ui: FormField requires Input")
+	if cfg.Input == nil {
+		panic("ui: FormField requires Input — a builder that receives the field's wiring (headless.FieldControl); build the control with ui.Control, a typed field, or headless directly")
 	}
-	cls := "ui-form-field"
-	if cfg.Error != "" {
-		cls += " is-error"
-	}
-	if cfg.Class != "" {
-		cls += " " + cfg.Class
-	}
-	labelEl := html.Label(html.LabelConfig{
-		For:   cfg.For,
-		Text:  cfg.Label,
-		Class: "ui-form-field__label",
-	})
-	if cfg.Required {
-		// Wrap label + asterisk in a flex container so they sit on
-		// one line inside the grid. The asterisk is aria-hidden so
-		// the label's accessible name stays clean.
-		labelEl = render.Tag("div", map[string]string{"class": "ui-form-field__label-row"},
-			labelEl,
-			html.Span(html.TextConfig{
-				Class:      "ui-form-field__required",
-				ExtraAttrs: html.Attrs{"aria-hidden": "true"},
-			}, render.Text(" *")),
-		)
-	}
-	labelHTML := labelEl
-	// When the field is in an error state, inject aria-invalid +
-	// aria-describedby into the input's first open tag so SR users
-	// hear "invalid entry" and the error message text. Without this
-	// the visual error (red border) is the only signal. It fails
-	// WCAG 1.3.1 / 4.1.2 / 1.4.1.
-	input := cfg.Input
-	if cfg.Error != "" {
-		input = injectAriaInvalid(input, cfg.For+"-error")
-	} else if cfg.Help != "" {
-		input = injectAriaDescribedBy(input, cfg.For+"-help")
-	}
-	out := []render.HTML{labelHTML, input}
-	if cfg.Help != "" {
-		out = append(out, html.Paragraph(html.TextConfig{
-			Class: "ui-form-field__help", ID: cfg.For + "-help",
-		}, render.Text(cfg.Help)))
-	}
-	if cfg.Error != "" {
-		out = append(out, html.Paragraph(html.TextConfig{
-			Class:      "ui-form-field__error",
-			ID:         cfg.For + "-error",
-			ExtraAttrs: html.Attrs{"role": "alert"},
-		}, render.Text(cfg.Error)))
-	}
-	return formFieldStyle.WrapHTML(html.Div(html.DivConfig{
-		Class: cls, ExtraAttrs: html.SafeExtraAttrs(cfg.ExtraAttrs),
-	}, out...))
-}
-
-// injectAriaInvalid splices ` aria-invalid="true" aria-describedby="<id>"`
-// into the first open tag of the input HTML. Idempotent: won't
-// add duplicates.
-func injectAriaInvalid(input render.HTML, errID string) render.HTML {
-	safe := render.Escape(errID)
-	return injectAttrs(input, ` aria-invalid="true" aria-describedby="`+safe+`"`)
-}
-
-// injectAriaDescribedBy splices ` aria-describedby="<id>"` for the
-// non-error help text case.
-func injectAriaDescribedBy(input render.HTML, helpID string) render.HTML {
-	safe := render.Escape(helpID)
-	return injectAttrs(input, ` aria-describedby="`+safe+`"`)
-}
-
-func injectAttrs(input render.HTML, attrs string) render.HTML {
-	s := string(input)
-	// Idempotence: skip injection only when ALL attribute names in the
-	// attrs string are already present on the element. This prevents
-	// aria-describedby from being skipped when aria-invalid is already
-	// on the tag.
-	if allAttrsPresent(s, attrs) {
-		return input
-	}
-	// Find the real open tag, skipping leading whitespace and HTML
-	// comments. The splice target is the `>` that closes that tag,
-	// respecting attribute quotes (so `>` inside `title="a > b"`
-	// doesn't terminate the tag prematurely).
-	start := skipNonTagPreamble(s)
-	if start < 0 || start >= len(s) || s[start] != '<' {
-		return input
-	}
-	end := findFirstTagClose(s[start:])
-	if end < 0 {
-		return input
-	}
-	end += start
-	insertAt := end
-	if end > 0 && s[end-1] == '/' {
-		insertAt = end - 1
-	}
-	// safe-html: attrs is assembled exclusively by component-owned escaped
-	// attribute renderers before it reaches this splice helper.
-	return render.HTML(s[:insertAt] + attrs + s[insertAt:])
-}
-
-// skipNonTagPreamble returns the index of the first byte of the
-// outermost real open tag, skipping whitespace + HTML comments.
-// Returns -1 if no open tag is found.
-func skipNonTagPreamble(s string) int {
-	i := 0
-	for i < len(s) {
-		// whitespace
-		for i < len(s) {
-			c := s[i]
-			if c == ' ' || c == '\t' || c == '\n' || c == '\r' {
-				i++
-				continue
-			}
-			break
-		}
-		// HTML comment
-		if i+4 <= len(s) && s[i:i+4] == "<!--" {
-			end := strings.Index(s[i+4:], "-->")
-			if end < 0 {
-				return -1
-			}
-			i = i + 4 + end + 3
-			continue
-		}
-		break
-	}
-	if i >= len(s) {
-		return -1
-	}
-	return i
-}
-
-// findFirstTagClose returns the index of the first `>` that closes
-// the open tag at offset 0 of s, respecting attribute quotes.
-func findFirstTagClose(s string) int {
-	var quote byte
-	for i := 0; i < len(s); i++ {
-		c := s[i]
-		if quote != 0 {
-			if c == quote {
-				quote = 0
-			}
-			continue
-		}
-		switch c {
-		case '"', '\'':
-			quote = c
-		case '>':
-			return i
-		}
-	}
-	return -1
-}
-
-// leadingAttrName extracts the attribute name from an attrs string
-// like ` aria-invalid="true" aria-describedby="x"`. Returns
-// "aria-invalid". Used for idempotence: if a tag already has the
-// named attribute, skip injection.
-func leadingAttrName(attrs string) string {
-	a := strings.TrimSpace(attrs)
-	eq := strings.IndexByte(a, '=')
-	if eq <= 0 {
-		return ""
-	}
-	return a[:eq]
-}
-
-// allAttrsPresent returns true when every attribute name in the attrs
-// string (e.g. "aria-invalid" and "aria-describedby") is already
-// present in the HTML string s. Returns false if any name is missing.
-func allAttrsPresent(s, attrs string) bool {
-	for chunk := range strings.SplitSeq(strings.TrimSpace(attrs), " ") {
-		chunk = strings.TrimSpace(chunk)
-		if chunk == "" {
-			continue
-		}
-		eq := strings.IndexByte(chunk, '=')
-		if eq <= 0 {
-			continue
-		}
-		name := chunk[:eq]
-		if !strings.Contains(s, name+"=") {
-			return false
-		}
-	}
-	return true
+	return formFieldStyle.WrapHTML(headless.Field(headless.FieldProps{
+		Label: cfg.Label, For: cfg.For,
+		Hint: cfg.Help, Error: cfg.Error, Required: cfg.Required,
+		ReserveError: cfg.ReserveError,
+		Parts:        rootClassParts(cfg.Class),
+		ExtraAttrs:   html.SafeExtraAttrs(cfg.ExtraAttrs),
+	}, fieldClasses, cfg.Input))
 }
 
 // ─── FormSection ────────────────────────────────────────────────────
@@ -453,8 +300,8 @@ type FormSectionConfig struct {
 
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers) to the group's root element, whichever shape
-	// it takes (<div> without a Heading, <fieldset> with one). Keys the
-	// component owns are dropped: class and id (use Class) and
+	// it takes (<div> without a Heading, <fieldset> with one). Keys
+	// the component owns are dropped: class and id (use Class) and
 	// data-fui-*.
 	ExtraAttrs html.Attrs
 }
@@ -465,7 +312,7 @@ type FormSectionConfig struct {
 // heading is provided; otherwise a plain <div> container so screen
 // readers don't announce an empty group label.
 func FormSection(cfg FormSectionConfig, fields ...render.HTML) render.HTML {
-	cls := "ui-form-section"
+	cls := "fui-form-section"
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
 	}
@@ -476,21 +323,21 @@ func FormSection(cfg FormSectionConfig, fields ...render.HTML) render.HTML {
 		out := []render.HTML{}
 		if cfg.Description != "" {
 			out = append(out, html.Paragraph(
-				html.TextConfig{Class: "ui-form-section__description"},
+				html.TextConfig{Class: "fui-form-section__description"},
 				render.Text(cfg.Description)))
 		}
 		out = append(out, html.Div(
-			html.DivConfig{Class: "ui-form-section__fields"}, fields...))
+			html.DivConfig{Class: "fui-form-section__fields"}, fields...))
 		return formSectionStyle.WrapHTML(html.Div(html.DivConfig{Class: cls, ExtraAttrs: extra}, out...))
 	}
 	out := []render.HTML{}
 	if cfg.Description != "" {
 		out = append(out, html.Paragraph(
-			html.TextConfig{Class: "ui-form-section__description"},
+			html.TextConfig{Class: "fui-form-section__description"},
 			render.Text(cfg.Description)))
 	}
 	out = append(out, html.Div(
-		html.DivConfig{Class: "ui-form-section__fields"}, fields...))
+		html.DivConfig{Class: "fui-form-section__fields"}, fields...))
 	return formSectionStyle.WrapHTML(html.FieldSet(
 		html.FieldSetConfig{Legend: cfg.Heading, Class: cls, ExtraAttrs: extra},
 		out...))

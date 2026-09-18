@@ -34,6 +34,7 @@ import (
 	patternsProgress "github.com/DonaldMurillo/gofastr/core-ui/patterns/progress"
 	patternsTree "github.com/DonaldMurillo/gofastr/core-ui/patterns/tree"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/headless"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
 
@@ -476,23 +477,24 @@ var Catalog = []Entry{
 
 	// ---------- Forms ----------
 	{"form", "Form", "Forms", "Form container with submit + validation.", func() render.HTML {
-		emailInput := render.Tag("input", map[string]string{
-			"type": "email", "name": "email", "id": "demo-email", "required": "",
-		})
-		pwInput := render.Tag("input", map[string]string{
-			"type": "password", "name": "password", "id": "demo-password", "required": "",
-		})
 		return ui.Form(ui.FormConfig{Action: "#", Method: "POST", SubmitLabel: "Sign in"},
-			ui.FormField(ui.FormFieldConfig{Label: "Email", For: "demo-email", Required: true, Input: emailInput}),
-			ui.FormField(ui.FormFieldConfig{Label: "Password", For: "demo-password", Required: true, Input: pwInput}),
+			ui.FormField(ui.FormFieldConfig{Label: "Email", For: "demo-email", Required: true,
+				Input: func(c headless.FieldControl) render.HTML {
+					return ui.Control(ui.ControlConfig{Field: c, Type: "email", Name: "email"})
+				}}),
+			ui.FormField(ui.FormFieldConfig{Label: "Password", For: "demo-password", Required: true,
+				Input: func(c headless.FieldControl) render.HTML {
+					return ui.Control(ui.ControlConfig{Field: c, Type: "password", Name: "password"})
+				}}),
 		)
 	}},
 	{"formfield", "FormField", "Forms", "Label + input + help text + error.", func() render.HTML {
-		input := render.Tag("input", map[string]string{"type": "text", "name": "name", "id": "demo-name"})
 		return ui.FormField(ui.FormFieldConfig{
 			Label: "Display name", For: "demo-name",
-			Help:  "Visible to everyone in your workspace.",
-			Input: input,
+			Help: "Visible to everyone in your workspace.",
+			Input: func(c headless.FieldControl) render.HTML {
+				return ui.Control(ui.ControlConfig{Field: c, Type: "text", Name: "name"})
+			},
 		})
 	}},
 	{"textfield", "TextField", "Forms", "Typed labelled text input with built-in help and error wiring.", func() render.HTML {
@@ -515,11 +517,9 @@ var Catalog = []Entry{
 		})
 	}},
 	{"formsection", "FormSection", "Forms", "Bordered group of related fields.", func() render.HTML {
-		firstIn := render.Tag("input", map[string]string{"type": "text", "name": "first", "id": "demo-first"})
-		lastIn := render.Tag("input", map[string]string{"type": "text", "name": "last", "id": "demo-last"})
 		return ui.FormSection(ui.FormSectionConfig{Heading: "Profile", Description: "Tell us a little about you."},
-			ui.FormField(ui.FormFieldConfig{Label: "First name", For: "demo-first", Input: firstIn}),
-			ui.FormField(ui.FormFieldConfig{Label: "Last name", For: "demo-last", Input: lastIn}),
+			ui.TextField(ui.TextFieldConfig{Name: "first", Label: "First name", ID: "demo-first"}),
+			ui.TextField(ui.TextFieldConfig{Name: "last", Label: "Last name", ID: "demo-last"}),
 		)
 	}},
 	{"select", "Select", "Forms", "Native <select> styled to match the theme.", func() render.HTML {
@@ -565,7 +565,9 @@ var Catalog = []Entry{
 	}},
 	{"passwordinput", "PasswordInput", "Forms", "Password with show/hide toggle.", func() render.HTML {
 		return ui.FormField(ui.FormFieldConfig{Label: "Password", For: "demo-pw",
-			Input: ui.PasswordInput(ui.PasswordInputConfig{Name: "pw", ID: "demo-pw"})})
+			Input: func(c headless.FieldControl) render.HTML {
+				return ui.PasswordInput(ui.PasswordInputConfig{Name: "pw", ID: "demo-pw", Field: c})
+			}})
 	}},
 	{"searchinput", "SearchInput", "Forms", "Search field with leading icon + clear button.", func() render.HTML {
 		return ui.SearchInput(ui.SearchInputConfig{Name: "q", ID: "demo-search", Placeholder: "Search docs…"})
@@ -635,6 +637,7 @@ var Catalog = []Entry{
 	}},
 	{"validationsummary", "ValidationSummary", "Forms", "Form-top error roll-up.", func() render.HTML {
 		return ui.ValidationSummary(ui.ValidationSummaryConfig{
+			ID: "demo-validation-summary",
 			Errors: ui.FieldErrors{
 				"email":    "must be a valid email address",
 				"password": "must be at least 8 characters",
@@ -1385,9 +1388,13 @@ ui.OptimisticAction(ui.OptimisticActionConfig{
 			Title: "Sign in",
 			Body: html.Div(html.DivConfig{Class: "demo-stack"},
 				ui.FormField(ui.FormFieldConfig{Label: "Email", For: "demo-email",
-					Input: html.Input(html.InputConfig{Type: "email", Name: "email", ID: "demo-email"})}),
+					Input: func(c headless.FieldControl) render.HTML {
+						return ui.Control(ui.ControlConfig{Field: c, Type: "email", Name: "email"})
+					}}),
 				ui.FormField(ui.FormFieldConfig{Label: "Password", For: "demo-password",
-					Input: html.Input(html.InputConfig{Type: "password", Name: "password", ID: "demo-password"})}),
+					Input: func(c headless.FieldControl) render.HTML {
+						return ui.Control(ui.ControlConfig{Field: c, Type: "password", Name: "password"})
+					}}),
 				ui.Button(ui.ButtonConfig{Label: "Sign in", Variant: ui.ButtonPrimary}),
 			),
 			Footer: ui.Link(ui.LinkConfig{Href: "#", Text: "Forgot password?"}),

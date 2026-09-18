@@ -14,6 +14,7 @@ func TestSummaryEmpty(t *testing.T) {
 
 func TestListsEachError(t *testing.T) {
 	got := string(ValidationSummary(ValidationSummaryConfig{
+		ID: "tsum",
 		Errors: FieldErrors{
 			"email": "must be a valid email",
 			"name":  "is required",
@@ -29,6 +30,7 @@ func TestListsEachError(t *testing.T) {
 
 func TestAnchorLinksFieldName(t *testing.T) {
 	got := string(ValidationSummary(ValidationSummaryConfig{
+		ID:     "tsum",
 		Errors: FieldErrors{"email": "bad"},
 	}))
 	if !strings.Contains(got, `href="#email"`) {
@@ -38,6 +40,7 @@ func TestAnchorLinksFieldName(t *testing.T) {
 
 func TestFieldIDsOverrideAnchor(t *testing.T) {
 	got := string(ValidationSummary(ValidationSummaryConfig{
+		ID:       "tsum",
 		Errors:   FieldErrors{"email": "bad"},
 		FieldIDs: map[string]string{"email": "form-email-input"},
 	}))
@@ -48,6 +51,7 @@ func TestFieldIDsOverrideAnchor(t *testing.T) {
 
 func TestUsesFieldLabel(t *testing.T) {
 	got := string(ValidationSummary(ValidationSummaryConfig{
+		ID:          "tsum",
 		Errors:      FieldErrors{"email": "bad"},
 		FieldLabels: map[string]string{"email": "Email address"},
 	}))
@@ -56,20 +60,25 @@ func TestUsesFieldLabel(t *testing.T) {
 	}
 }
 
-func TestRoleAlertAndAriaLive(t *testing.T) {
+func TestRoleAlertAndFocusableByScript(t *testing.T) {
 	got := string(ValidationSummary(ValidationSummaryConfig{
+		ID:     "tsum",
 		Errors: FieldErrors{"x": "y"},
 	}))
 	if !strings.Contains(got, `role="alert"`) {
 		t.Errorf("expected role=\"alert\", got: %s", got)
 	}
-	if !strings.Contains(got, `aria-live="assertive"`) {
-		t.Errorf("expected aria-live=\"assertive\", got: %s", got)
+	// tabindex -1, not aria-live: role=alert carries the assertive
+	// live semantics; the summary's own job is being focusable by
+	// script after a failed submit without ever being a tab stop.
+	if !strings.Contains(got, `tabindex="-1"`) {
+		t.Errorf("expected tabindex=\"-1\", got: %s", got)
 	}
 }
 
 func TestFieldOrderControlsRowOrder(t *testing.T) {
 	got := string(ValidationSummary(ValidationSummaryConfig{
+		ID: "tsum",
 		Errors: FieldErrors{
 			"email": "bad",
 			"name":  "required",
@@ -88,6 +97,7 @@ func TestFieldOrderControlsRowOrder(t *testing.T) {
 
 func TestFieldOrderSkipsMissing(t *testing.T) {
 	got := string(ValidationSummary(ValidationSummaryConfig{
+		ID:         "tsum",
 		Errors:     FieldErrors{"email": "bad"},
 		FieldOrder: []string{"name", "email", "age"}, // only email has an error
 	}))
@@ -101,6 +111,7 @@ func TestAlphabeticalFallback(t *testing.T) {
 	// output is deterministic across requests (Go map iteration is
 	// randomized otherwise).
 	got := string(ValidationSummary(ValidationSummaryConfig{
+		ID: "tsum",
 		Errors: FieldErrors{
 			"zip":   "bad zip",
 			"alpha": "bad alpha",
@@ -118,6 +129,7 @@ func TestAlphabeticalFallback(t *testing.T) {
 
 func TestCustomTitle(t *testing.T) {
 	got := string(ValidationSummary(ValidationSummaryConfig{
+		ID:     "tsum",
 		Errors: FieldErrors{"x": "y"},
 		Title:  "Fix these problems",
 	}))
@@ -128,6 +140,7 @@ func TestCustomTitle(t *testing.T) {
 
 func TestValidationSummaryExtraAttrsOnRoot(t *testing.T) {
 	h := ValidationSummary(ValidationSummaryConfig{
+		ID:         "tsum",
 		Errors:     FieldErrors{"email": "required"},
 		ExtraAttrs: map[string]string{"data-test": "hook"},
 	})

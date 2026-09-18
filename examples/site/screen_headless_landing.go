@@ -111,10 +111,12 @@ var (
 	landingTightOptions = theme.ComponentOptions{
 		Density: theme.Compact,
 		Button:  theme.ButtonOptions{Treatment: theme.Outline, Radius: theme.Square},
+		Field:   theme.FieldOptions{Layout: theme.Inline, Radius: theme.FieldSquare},
 	}
 	landingRelaxedOptions = theme.ComponentOptions{
 		Density: theme.Comfortable,
 		Button:  theme.ButtonOptions{Treatment: theme.Filled, Radius: theme.Round},
+		Field:   theme.FieldOptions{Layout: theme.Stacked, Radius: theme.FieldRound},
 	}
 )
 
@@ -265,6 +267,7 @@ func (s *HeadlessLandingScreen) render(ctx context.Context) render.HTML {
 		landingHero(r),
 		landingContentSection(),
 		landingNewsletterSection(r, s.Subscribe),
+		landingFieldLayoutSection(),
 		landingVariantsSection(),
 		landingOptionsSection(r),
 		landingNestingSection(r),
@@ -442,19 +445,6 @@ func falsePtr() *bool {
 	return &b
 }
 
-// landingSubscribeErrorSummary renders the focusable error summary: a
-// danger callout, role="alert" by variant, tabindex="-1" so the headless
-// behaviour module can move focus to it after a failed island submit.
-func landingSubscribeErrorSummary(msg string) render.HTML {
-	return ui.Callout(ui.CalloutConfig{
-		Variant:    ui.StatusDanger,
-		ID:         "hl-subscribe-summary",
-		Title:      "Check the address",
-		Landmark:   falsePtr(),
-		ExtraAttrs: html.Attrs{"tabindex": "-1"},
-	}, render.Text(msg))
-}
-
 // renderLandingSubscribe renders the form (or, after a success, the
 // success callout). The SSR page, the query-rendered no-script answer
 // and every island response go through this one function, so the round
@@ -475,29 +465,34 @@ func renderLandingSubscribe(r landingRoute, state landingSubscribeState) render.
 			Landmark: falsePtr(),
 		}, render.Text(detail))
 	}
-	extra := html.Attrs{"novalidate": ""}
-	var summary render.HTML
+	// A failed submit renders through FormConfig.Errors: the form
+	// derives its summary's id from its own (hl-subscribe-errors),
+	// marks itself so the headless behaviour module moves focus to
+	// the summary after the island swap, and maps the email error to
+	// the control's real id so the summary's link lands on the input.
+	var errs ui.FieldErrors
 	if state.Error != "" {
-		// The hook the headless behaviour module keys on: a form inside
-		// it moves focus to its [role="alert"][tabindex="-1"] summary.
-		extra["data-hui-form-errors"] = ""
-		summary = landingSubscribeErrorSummary(state.Error)
+		errs = ui.FieldErrors{"email": state.Error}
 	}
-	form := ui.Form(ui.FormConfig{
+	return ui.Form(ui.FormConfig{
 		Action:      landingSubscribePath,
 		Method:      "POST",
+		ID:          "hl-subscribe",
 		SubmitLabel: "Subscribe",
-		Summary:     "Enter a valid address to subscribe.",
-		// The island wiring rides the form itself: with the runtime on
-		// the page a submit is an RPC whose 200 body is this region,
-		// re-rendered, and the typed value survives in it; without the
-		// runtime the same POST navigates and the handler answers 303
-		// back to this page, whose query carries the outcome alone.
-		ExtraAttrs: html.MergeAttrs(extra,
-			interactive.Post(landingSubscribePath).
-				OnSuccess(interactive.SetSignal(landingSubscribeSignal)).Attrs()),
+		Errors:      errs,
+		FieldIDs:    map[string]string{"email": "hl-subscribe-email"},
+		FieldLabels: map[string]string{"email": "Email address"},
+		FieldOrder:  []string{"email"},
+		NoValidate:  true,
+		// The island wiring rides the request seam: with the runtime
+		// on the page a submit is an RPC whose 200 body is this
+		// region, re-rendered, and the typed value survives in it;
+		// without the runtime the same POST navigates and the handler
+		// answers 303 back to this page, whose query carries the
+		// outcome alone.
+		ExtraAttrs: interactive.Post(landingSubscribePath).
+			OnSuccess(interactive.SetSignal(landingSubscribeSignal)).Attrs(),
 	},
-		summary,
 		ui.TextField(ui.TextFieldConfig{
 			Name:         "email",
 			Label:        "Email address",
@@ -514,7 +509,6 @@ func renderLandingSubscribe(r landingRoute, state landingSubscribeState) render.
 		// page).
 		html.Input(html.InputConfig{Type: "hidden", Name: "theme", Value: r.Segment}),
 	)
-	return form
 }
 
 // landingSubscribeRegion is the signal-bound region the island response
@@ -822,6 +816,58 @@ const landingLateSignal = "hl-late"
 // stylesheet is LoadAuto (ui-callout) and appears nowhere else on the
 // landing page's first paint, so its sheet is genuinely cold. Mounted in
 // setupServer.
+
+// ── Fixture g: field layouts under constraint ─────────────────────
+
+// landingFieldLayoutSection is the FieldOptions acceptance fixture:
+// a long label, both messages at once, a choice row beside ordinary
+// fields, a Field containing an InputGroup and a Field inside one —
+// each inside a Grid cell narrower than the sheet's stacking width,
+// so the inline layout (the dense route) must survive a narrow
+// container at a wide viewport and not only a narrow viewport.
+func landingFieldLayoutSection() render.HTML {
+	long := ui.TextField(ui.TextFieldConfig{
+		Name:  "hl-layout-long",
+		ID:    "hl-field-long",
+		Label: "Primary disaster recovery contact for this region, including out-of-hours escalation",
+		Help:  "A label this long wraps rather than widening its track.",
+	})
+	both := ui.TextField(ui.TextFieldConfig{
+		Name:  "hl-layout-both",
+		ID:    "hl-field-both",
+		Label: "Port",
+		Value: "65536",
+		Help:  "The rule: 1–65535.",
+		Error: "The violation: 65536 is outside the range.",
+	})
+	groupInField := ui.FormField(ui.FormFieldConfig{
+		Label: "Monthly budget", For: "hl-field-group",
+		Help: "A field whose control is an input group.",
+		Input: func(c headless.FieldControl) render.HTML {
+			return ui.InputGroup(ui.InputGroupConfig{
+				Prepend: render.Text("$"),
+				Input:   ui.Control(ui.ControlConfig{Field: c, Type: "number", Name: "hl-layout-budget"}),
+				Append:  render.Text("USD"),
+			})
+		},
+	})
+	fieldInGroup := ui.InputGroup(ui.InputGroupConfig{
+		Append: render.Text("items"),
+		Input: ui.TextField(ui.TextFieldConfig{
+			Name: "hl-layout-quantity", Label: "Quantity", ID: "hl-field-in-group",
+			Help: "A whole field inside a group.",
+		}),
+	})
+	choice := ui.Checkbox(ui.ToggleConfig{
+		Name: "hl-layout-copy", Label: "Email me a copy of every alert", Value: "on",
+		ID: "hl-field-checkbox",
+	})
+	return ui.Section(ui.SectionConfig{
+		ID:          "hl-field-layout-section",
+		Heading:     "Field layouts under constraint",
+		Description: "The dense route lays labels out inline; below the sheet's width, in a narrow container as much as a narrow viewport, the rows stack instead of overflowing.",
+	}, ui.Grid(ui.GridConfig{Min: "20rem"}, long, both, groupInField, fieldInGroup, choice))
+}
 func serveHeadlessLate(w http.ResponseWriter, _ *http.Request) {
 	render.RespondHTML(w, ui.Callout(ui.CalloutConfig{
 		Variant:  ui.StatusInfo,

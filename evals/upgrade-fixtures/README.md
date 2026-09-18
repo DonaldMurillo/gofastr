@@ -89,10 +89,22 @@ Two documented `upgrades.yml` entries, identical for both fixtures:
   app builds and runs with `CGO_ENABLED=0`. The `sql.Open("sqlite3", …)` call is
   unchanged because the stdlib package registers the `sqlite3` name.
 
-Everything else the v0.38.0 / v0.53.0 generators emitted (the resource engine,
-the screens, the auth wiring) compiles against the current tree unchanged. No
-`upgrades.yml` entries were missing. Both required manual steps were already
-documented.
+- **Unreleased, `ui.FormFieldConfig.Input` is a builder.** The field hands its
+  control an id, an `aria-describedby` and an invalid state before the control
+  renders, replacing the attribute splicing that injected them afterwards.
+  `migration.patch` threads a `headless.FieldControl` through the fixture's own
+  `formInput` and puts those three onto every control it builds — a closure
+  that ignores the argument compiles and silently drops the wiring, which is
+  the defect the builder exists to prevent.
+
+  This step has **no `upgrades.yml` entry yet**, and deliberately so: the
+  registry is keyed by released version and its `through:` marker is pinned to
+  the newest CHANGELOG release heading (two tests enforce both). The entry gets
+  written when the release carrying the framework/ui rebuild is cut; the
+  fixtures cannot wait for that, because they build against the current tree.
+
+Everything else the v0.38.0 / v0.53.0 generators emitted (the screens, the auth
+wiring) compiles against the current tree unchanged.
 
 ## Running
 

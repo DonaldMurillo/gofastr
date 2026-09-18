@@ -6,16 +6,17 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"math"
 	"net/http"
 	"net/url"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 
 	appui "github.com/DonaldMurillo/gofastr/core-ui/app"
-	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/interactive"
 	"github.com/DonaldMurillo/gofastr/core-ui/patterns/pagination"
 	"github.com/DonaldMurillo/gofastr/core/handler"
@@ -23,6 +24,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/crud"
 	"github.com/DonaldMurillo/gofastr/framework/filter"
+	"github.com/DonaldMurillo/gofastr/framework/headless"
 	"github.com/DonaldMurillo/gofastr/framework/internal/casing"
 	fwpagination "github.com/DonaldMurillo/gofastr/framework/pagination"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
@@ -839,9 +841,7 @@ func (c Config) Form(ctx context.Context, id string) render.HTML {
 		if edit {
 			cur = cell(rowValue(row, f.Key))
 		}
-		fields = append(fields, ui.FormField(ui.FormFieldConfig{
-			Label: f.Label, For: "f-" + f.Key, Input: c.formInput(ctx, f, cur, rel),
-		}))
+		fields = append(fields, c.formField(ctx, f, cur, rel))
 	}
 	form := ui.Form(ui.FormConfig{Action: rpc, Method: "POST", SubmitLabel: submit, ExtraAttrs: attrs, Ctx: ctx}, fields...)
 	return render.Join(
@@ -850,36 +850,48 @@ func (c Config) Form(ctx context.Context, id string) render.HTML {
 	)
 }
 
-// formInput builds the typed control for one field, prefilled with cur. Enums
-// and relations render their options server-side; relations resolve to the same
-// human label the list/detail show.
-func (c Config) formInput(ctx context.Context, f Field, cur string, rel map[string]map[string]string) render.HTML {
+// formField renders one labelled control for the create/edit form,
+// built from the field's wiring: the label association, the
+// description chain and the invalid state reach the control through
+// the FormField builder, never beside it.
+func (c Config) formField(ctx context.Context, f Field, cur string, rel map[string]map[string]string) render.HTML {
 	id := "f-" + f.Key
 	if labels, ok := rel[f.Key]; ok {
-		opts := []html.SelectOption{{Value: "", Text: "— Select —"}}
-		for val, label := range labels {
-			opts = append(opts, html.SelectOption{Value: val, Text: label, Selected: val == cur})
-		}
-		return html.Select(html.SelectConfig{Name: f.Key, ID: id, Options: opts})
+		return c.relationSelect(f, id, labels, cur)
 	}
 	switch f.Type {
 	case "enum":
-		opts := []html.SelectOption{{Value: "", Text: "— Select —"}}
+		opts := []ui.SelectOption{{Value: "", Text: "— Select —"}}
 		for _, v := range f.Values {
-			opts = append(opts, html.SelectOption{Value: v, Text: title(v), Selected: v == cur})
+			opts = append(opts, ui.SelectOption{Value: v, Text: title(v), Selected: v == cur})
 		}
-		return html.Select(html.SelectConfig{Name: f.Key, ID: id, Options: opts})
+		return ui.Select(ui.SelectConfig{Name: f.Key, Label: f.Label, ID: id, Options: opts})
 	case "text":
-		return html.TextArea(html.TextAreaConfig{Name: f.Key, ID: id, Content: cur, Rows: 4})
+		return ui.TextArea(ui.TextAreaConfig{Name: f.Key, Label: f.Label, ID: id, Value: cur, Rows: 4})
 	case "bool", "boolean":
-		attrs := html.Attrs{}
-		if truthy(cur) {
-			attrs["checked"] = "checked"
-		}
-		return html.Input(html.InputConfig{Type: "checkbox", Name: f.Key, ID: id, ExtraAttrs: attrs})
+		return ui.Checkbox(ui.ToggleConfig{Name: f.Key, Label: f.Label, ID: id, Value: "on", Checked: truthy(cur)})
 	default:
-		return html.Input(html.InputConfig{Type: inputType(f.Type), Name: f.Key, ID: id, Value: cur})
+		return ui.FormField(ui.FormFieldConfig{
+			Label: f.Label, For: id,
+			Input: func(fc headless.FieldControl) render.HTML {
+				return ui.Control(ui.ControlConfig{Field: fc, Type: inputType(f.Type), Name: f.Key, Value: cur})
+			},
+		})
 	}
+}
+
+// relationSelect renders a belongs-to picker: a Select whose options
+// are the related records, resolved to the same human label the
+// list/detail show.
+func (c Config) relationSelect(f Field, id string, labels map[string]string, cur string) render.HTML {
+	opts := []ui.SelectOption{{Value: "", Text: "— Select —"}}
+	// The labels map is walked in sorted key order, never ranged
+	// directly: a map's iteration order is randomized per run, and
+	// this loop writes markup (the repo's mapwriter rule).
+	for _, val := range slices.Sorted(maps.Keys(labels)) {
+		opts = append(opts, ui.SelectOption{Value: val, Text: labels[val], Selected: val == cur})
+	}
+	return ui.Select(ui.SelectConfig{Name: f.Key, Label: f.Label, ID: id, Options: opts})
 }
 
 // inputType maps a field type to an <input type=...>.

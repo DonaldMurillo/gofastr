@@ -355,11 +355,26 @@ the floor lives at `:root`, where one declaration covers every rule.
 | `button.treatment: filled` | `--fui-button-primary-bg: var(--color-primary)`, `--fui-button-primary-fg: var(--color-primary-fg)`, `--fui-button-primary-border: transparent`, and the same `-danger` trio from `--color-danger` / `--color-danger-fg` |
 | `button.treatment: outline` | `--fui-button-primary-bg: transparent`, `--fui-button-primary-fg: var(--color-primary)`, `--fui-button-primary-border: var(--color-primary)`, and the `-danger` trio from `--color-danger` |
 | `button.treatment: soft` | `--fui-button-primary-bg: color-mix(in srgb, var(--color-primary) 15%, transparent)`, `--fui-button-primary-fg: var(--color-primary)`, `--fui-button-primary-border: transparent`, and the `-danger` trio likewise |
+| `field.layout: stacked` | `--fui-field-columns: minmax(0, 1fr)`, `--fui-field-message-column: 1 / -1` |
+| `field.layout: inline` | `--fui-field-columns: minmax(8rem, 1fr) minmax(0, 3fr)`, `--fui-field-message-column: 2` |
+| `field.radius: round` / `square` | `--fui-field-radius: var(--radii-md)` / `0` |
 
 The `.fui-button--primary` and `.fui-button--danger` rules in the
 `ui-button` sheet consume those trios (`background:
 var(--fui-button-primary-bg)` and friends); secondary and ghost draw
 themselves and read no treatment.
+
+The field family's rules in the `ui-form-field` sheet consume
+`--fui-field-columns` (the label/control track split),
+`--fui-field-message-column` (which track the hint and error sit in)
+and `--fui-field-radius` (what the field's inputs, selects and
+summaries draw). Inline is a preference, not a promise: below a stated
+width the sheet stacks the row whatever the theme asked for, the
+control track's minimum is zero so a long value can never force
+overflow, and a long label wraps rather than widening its track.
+Choice rows (checkbox, radio, switch and their groups) keep their own
+wrapping-label structure and deliberately ignore the columns
+variables.
 
 The cascade rule: **theme boundaries declare the option variables,
 component rules consume them.** A component stylesheet writes

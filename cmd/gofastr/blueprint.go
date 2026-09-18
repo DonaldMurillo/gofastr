@@ -5166,6 +5166,9 @@ func writeScreenImportBlock(sb *strings.Builder, needs screenImportNeeds, anyCtx
 	if hasScreens && needs.ui {
 		sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/framework/ui\"\n")
 	}
+	if hasScreens && needs.headless {
+		sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/framework/headless\"\n")
+	}
 	if needs.resource {
 		sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/framework/ui/resource\"\n")
 	}
@@ -6249,6 +6252,9 @@ type screenImportNeeds struct {
 	node        bool
 	ui          bool
 	resource    bool
+	// headless: a form field builder names headless.FieldControl (the
+	// auth and entity form emitters build ui.Control inside one).
+	headless bool
 	// nethttp: the file mounts an island endpoint, whose closure takes
 	// (http.ResponseWriter, *http.Request).
 	nethttp bool
@@ -6262,7 +6268,6 @@ type screenImportNeeds struct {
 func blueprintCatalogKind(kind string) bool {
 	switch strings.ToLower(strings.TrimSpace(kind)) {
 	case "page_header", "hero", "section", "card", "stat_row", "stat_card",
-		"stack", "cluster", "grid", "stat_grid",
 		"bar_chart", "pie_chart", "line_chart", "link_button", "callout", "divider",
 		"markdown", "pricing":
 		return true
@@ -6322,16 +6327,21 @@ func blueprintScreensImportNeeds(bp Blueprint, screens []BlueprintScreen, entity
 					kind = block.Type
 				}
 				if isLoginFormBlock(block) || isSignupFormBlock(block) {
-					// Auth forms compose ui.AuthCard + ui.Form + ui.FormField.
+					// Auth forms compose ui.AuthCard + ui.Form + FormField
+					// builders with ui.Control.
 					needs.ui = true
+					needs.headless = true
 					continue
 				}
 				if isEntityFormBlock(block) {
-					// Entity forms compose ui.Form + ui.FormField, with the
-					// data-fui-rpc wiring built via interactive.*.Attrs().
+					// Entity forms compose ui.Form with the typed fields,
+					// with the data-fui-rpc wiring built via
+					// interactive.*.Attrs(); a field none of them names
+					// builds ui.Control inside a FormField builder.
 					needs.ui = true
 					needs.html = true
 					needs.interactive = true
+					needs.headless = true
 					continue
 				}
 				if isEntityListBlock(block) || isEntityDetailBlock(block) || isEntityCreateBlock(block) || isEntityEditBlock(block) {
@@ -6923,16 +6933,29 @@ func isSignupFormBlock(block BlueprintBlock) bool {
 // zero bespoke styling. The form posts urlencoded to the auth battery's POST
 // <action> handler, which sets the session cookie and 303-redirects to ?next=,
 // so it works with no JavaScript.
-func blueprintAuthFormExpr(heading, action, next, submitLabel, pwAutocomplete, pwExtra, footerHref, footerText string) string {
-	e := htmlEscapeJSString
-	hidden := `<input type="hidden" name="next" value="` + e(next) + `">`
-	emailInput := `<input id="auth-email" name="email" type="email" autocomplete="email" required>`
-	pwInput := `<input id="auth-password" name="password" type="password" autocomplete="` + pwAutocomplete + `" required` + pwExtra + `>`
+//
+// The fields are built through FormField's builder with ui.Control, so the
+// label association and any future description wiring arrive by construction
+// rather than by raw input strings.
+func blueprintAuthFormExpr(heading, action, next, submitLabel, pwAutocomplete string, pwMinLength int, footerHref, footerText string) string {
+	// html.Input, NOT a hand-rolled <input> string through render.Raw:
+	// the generator ships zero raw markup (hard rule 7), and the
+	// primitive is the same one every other control in the emitted app
+	// goes through. gofastr pack reads this expression back —
+	// reverseAuthCard knows both this shape and the legacy render.Raw
+	// string an older generator emitted.
+	hidden := fmt.Sprintf(`html.Input(html.InputConfig{Type: "hidden", Name: "next", Value: %q})`, next)
+	emailField := `ui.FormField(ui.FormFieldConfig{Label: "Email", For: "auth-email", Required: true,` +
+		` Input: func(c headless.FieldControl) render.HTML { return ui.Control(ui.ControlConfig{Field: c, Type: "email", Name: "email", AutoComplete: "email"}) }})`
+	minLen := ""
+	if pwMinLength > 0 {
+		minLen = fmt.Sprintf(", MinLength: %d", pwMinLength)
+	}
+	pwField := `ui.FormField(ui.FormFieldConfig{Label: "Password", For: "auth-password", Required: true,` +
+		fmt.Sprintf(` Input: func(c headless.FieldControl) render.HTML { return ui.Control(ui.ControlConfig{Field: c, Type: "password", Name: "password", AutoComplete: %q%s}) }})`, pwAutocomplete, minLen)
 	form := fmt.Sprintf(
-		"ui.Form(ui.FormConfig{Action: %q, Method: \"POST\", SubmitLabel: %q}, render.Raw(%q), "+
-			"ui.FormField(ui.FormFieldConfig{Label: \"Email\", For: \"auth-email\", Required: true, Input: render.Raw(%q)}), "+
-			"ui.FormField(ui.FormFieldConfig{Label: \"Password\", For: \"auth-password\", Required: true, Input: render.Raw(%q)}))",
-		action, submitLabel, hidden, emailInput, pwInput)
+		"ui.Form(ui.FormConfig{Action: %q, Method: \"POST\", SubmitLabel: %q}, %s, %s, %s)",
+		action, submitLabel, hidden, emailField, pwField)
 	footer := ""
 	if footerHref != "" {
 		// ui.Link, NOT a hand-rolled <a> inside render.Raw. render.Raw is what
@@ -6969,7 +6992,7 @@ func renderBlueprintSignupFormExpr(block BlueprintBlock) string {
 	if heading == "" {
 		heading = "Create your account"
 	}
-	return blueprintAuthFormExpr(heading, action, next, "Create account", "new-password", ` minlength="8"`, propStr("login_href"), "Already have an account? Sign in")
+	return blueprintAuthFormExpr(heading, action, next, "Create account", "new-password", 8, propStr("login_href"), "Already have an account? Sign in")
 }
 
 // renderBlueprintLoginFormExpr emits the login form. props: action (default
@@ -6988,7 +7011,7 @@ func renderBlueprintLoginFormExpr(block BlueprintBlock) string {
 	if heading == "" {
 		heading = "Sign in"
 	}
-	return blueprintAuthFormExpr(heading, action, next, "Sign in", "current-password", "", propStr("register_href"), "Create an account")
+	return blueprintAuthFormExpr(heading, action, next, "Sign in", "current-password", 0, propStr("register_href"), "Create an account")
 }
 
 func blueprintBlockKindIs(block BlueprintBlock, want string) bool {
@@ -7025,11 +7048,6 @@ func blueprintAPIBase(apiPrefix string) string {
 		return ""
 	}
 	return "/" + p
-}
-
-func htmlEscapeJSString(value string) string {
-	replacer := strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;", `"`, "&quot;", `'`, "&#39;")
-	return replacer.Replace(value)
 }
 
 // blueprintFormInputType maps an entity field type to an <input type=…>.
@@ -7095,46 +7113,53 @@ func blueprintEntityFormExpr(screen BlueprintScreen, block BlueprintBlock, path 
 	}
 	extraAttrs := "html.MergeAttrs(" + markers + ", " + actionExpr + ".Attrs())"
 
-	e := htmlEscapeJSString
 	var fields []string
 	for _, field := range decl.Fields {
 		if blueprintFormFieldSkipped(field, block.Fields) {
 			continue
 		}
+		// field.Name is constrained to a Go identifier by
+		// validateBlueprint, so %q here is stable and escaped once (the
+		// components' own renderers escape again at the value level,
+		// never double-escaping the identifier).
 		label := toDisplayName(field.Name)
-		// fieldID needs a different treatment in each of its two uses: escaped
-		// (eID) where it is interpolated into the raw markup below, and RAW as
-		// ui.FormFieldConfig.For, which the renderer escapes itself; escaping
-		// that one here would double-escape it. field.Name is already
-		// constrained to a Go identifier by validateBlueprint, so eID is
-		// defense-in-depth; it matters because `id="` + fieldID sat three tokens
-		// from `e(field.Name)` in the same attribute list, one raw and one
-		// escaped, and that asymmetry stops being unreachable the moment the
-		// identifier rule is relaxed.
 		fieldID := "field-" + field.Name
-		eID := e(fieldID)
-		req := ""
-		if field.Required {
-			req = " required"
-		}
-		var input string
+		req := fmt.Sprintf("%t", field.Required)
+		var expr string
 		switch field.Type {
 		case "enum":
-			opts := `<option value="">— Select —</option>`
+			var opts strings.Builder
+			opts.WriteString("[]ui.SelectOption{")
 			for _, v := range field.Values {
-				opts += `<option value="` + e(v) + `">` + e(toDisplayName(v)) + `</option>`
+				fmt.Fprintf(&opts, "{Value: %q, Text: %q},", v, toDisplayName(v))
 			}
-			input = `<select name="` + e(field.Name) + `" id="` + eID + `"` + req + `>` + opts + `</select>`
+			opts.WriteString("}")
+			expr = fmt.Sprintf("ui.Select(ui.SelectConfig{Name: %q, Label: %q, ID: %q, Placeholder: \"— Select —\", Options: %s, Required: %s})",
+				field.Name, label, fieldID, opts.String(), req)
 		case "relation":
-			input = `<select name="` + e(field.Name) + `" id="` + eID + `"` + req + ` data-rel-entity="` + e(field.To) + `"><option value="">— Select —</option></select>`
+			// The relation select keeps data-rel-entity: the generated
+			// mount hook populates it from the related entity's API.
+			expr = fmt.Sprintf("ui.Select(ui.SelectConfig{Name: %q, Label: %q, ID: %q, Placeholder: \"— Select —\", Required: %s, ExtraAttrs: html.Attrs{\"data-rel-entity\": %q}})",
+				field.Name, label, fieldID, req, field.To)
 		case "text":
-			input = `<textarea name="` + e(field.Name) + `" id="` + eID + `"` + req + `></textarea>`
+			expr = fmt.Sprintf("ui.TextArea(ui.TextAreaConfig{Name: %q, Label: %q, ID: %q, Required: %s})",
+				field.Name, label, fieldID, req)
 		case "bool", "boolean":
-			input = `<input type="checkbox" name="` + e(field.Name) + `" id="` + eID + `">`
+			expr = fmt.Sprintf("ui.Checkbox(ui.ToggleConfig{Name: %q, Label: %q, ID: %q, Required: %s})",
+				field.Name, label, fieldID, req)
+		case "int", "integer", "float", "decimal":
+			expr = fmt.Sprintf("ui.NumberField(ui.NumberFieldConfig{Name: %q, Label: %q, ID: %q, Required: %s})",
+				field.Name, label, fieldID, req)
+		case "date":
+			expr = fmt.Sprintf("ui.DateField(ui.DateFieldConfig{Name: %q, Label: %q, ID: %q, Required: %s})",
+				field.Name, label, fieldID, req)
 		default:
-			input = `<input type="` + blueprintFormInputType(field.Type) + `" name="` + e(field.Name) + `" id="` + eID + `"` + req + `>`
+			// datetime-local, file, email and anything else the typed
+			// fields do not name: the styled native control.
+			expr = fmt.Sprintf("ui.FormField(ui.FormFieldConfig{Label: %q, For: %q, Required: %s, Input: func(c headless.FieldControl) render.HTML { return ui.Control(ui.ControlConfig{Field: c, Type: %q, Name: %q}) }})",
+				label, fieldID, req, blueprintFormInputType(field.Type), field.Name)
 		}
-		fields = append(fields, fmt.Sprintf("ui.FormField(ui.FormFieldConfig{Label: %q, For: %q, Required: %t, Input: render.Raw(%q)})", label, fieldID, field.Required, input))
+		fields = append(fields, expr)
 	}
 	form := fmt.Sprintf("ui.Form(ui.FormConfig{Action: %q, Method: \"POST\", SubmitLabel: %q, ExtraAttrs: %s}, %s)", rpcPath, submitLabel, extraAttrs, strings.Join(fields, ", "))
 	return fmt.Sprintf("render.Join(ui.PageHeader(ui.PageHeaderConfig{Title: %q}), %s)", title, form)

@@ -1,19 +1,20 @@
 package ui
 
 import (
-	"maps"
-
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/headless"
 )
 
 // ─── Select ─────────────────────────────────────────────────────────
 //
-// Labelled native <select> with FormField-style label, help, and
-// error wiring. Wraps core-ui/html.Select but adds the same
-// chrome (label, error, help, required) that Checkbox/Radio/TextArea get.
+// Labelled native <select>, rendered through headless.Field +
+// headless.Select: the field owns the label, the hint, the error and
+// the wiring that ties them to the control; the select is the control,
+// marked with this component's own data-fui-comp so its sheet loads
+// wherever a Select renders, inside a Form or alone.
 
 // SelectOption describes a single <option>.
 type SelectOption struct {
@@ -39,14 +40,16 @@ type SelectConfig struct {
 	Disabled bool
 	// Help renders supporting text under the field.
 	Help string
-	// Error overrides Help with an error message + aria-invalid.
+	// Error renders the field's error message and marks the control
+	// invalid. The help stays visible alongside it, the error first.
 	Error string
 	ID    string
 	Class string
 	// ExtraAttrs forwards additional attributes to the <select>
-	// element. Keys the component owns are dropped: class and id (use
-	// Class / ID), data-fui-*, name, disabled, required, aria-invalid,
-	// and aria-describedby.
+	// element (a relation's data-rel-entity among them). Keys the
+	// component owns are dropped: class and id (use Class / ID),
+	// data-fui-*, name, disabled, required, aria-invalid, and
+	// aria-describedby.
 	ExtraAttrs html.Attrs
 }
 
@@ -62,103 +65,55 @@ func Select(cfg SelectConfig) render.HTML {
 	if id == "" {
 		id = cfg.Name
 	}
-
-	cls := "ui-select"
-	if cfg.Error != "" {
-		cls += " is-error"
-	}
-	if cfg.Disabled {
-		cls += " is-disabled"
-	}
-	if cfg.Class != "" {
-		cls += " " + cfg.Class
-	}
-
-	// Build options HTML
-	var optChildren []render.HTML
-	if cfg.Placeholder != "" {
-		optChildren = append(optChildren, render.Tag("option", map[string]string{
-			"value":    "",
-			"disabled": "disabled",
-			"selected": "selected",
-		}, render.Text(cfg.Placeholder)))
-	}
+	// The last Selected option wins, which is the browser's own rule
+	// when more than one carries the attribute.
+	selected := ""
 	for _, opt := range cfg.Options {
-		attrs := map[string]string{"value": opt.Value}
 		if opt.Selected {
-			attrs["selected"] = "selected"
+			selected = opt.Value
 		}
-		optChildren = append(optChildren, render.Tag("option", attrs, render.Text(opt.Text)))
 	}
-
-	selAttrs := map[string]string{
-		"name":  cfg.Name,
-		"id":    id,
-		"class": "ui-select__input",
+	control := func(c headless.FieldControl) render.HTML {
+		opts := make([]headless.Option, 0, len(cfg.Options))
+		for _, opt := range cfg.Options {
+			opts = append(opts, headless.Option{Value: opt.Value, Label: opt.Text})
+		}
+		// The select carries this component's own marker: its sheet is
+		// fetched wherever the control renders, not only inside the
+		// field whose marker fetches the field sheet.
+		return selectStyle.WrapHTML(headless.Select(headless.SelectProps{
+			Name:        cfg.Name,
+			DescribedBy: c.DescribedBy,
+			Options:     opts,
+			Selected:    selected,
+			Placeholder: cfg.Placeholder,
+			Required:    c.Required,
+			Disabled:    cfg.Disabled,
+			Invalid:     c.Invalid,
+			ID:          c.ID,
+			Extra: html.SafeExtraAttrs(cfg.ExtraAttrs,
+				"name", "disabled", "required", "aria-invalid", "aria-describedby"),
+		}, selectClasses))
 	}
-	if cfg.Disabled {
-		selAttrs["disabled"] = ""
-	}
-	if cfg.Required {
-		selAttrs["required"] = ""
-	}
-	if cfg.Error != "" {
-		selAttrs["aria-invalid"] = "true"
-		selAttrs["aria-describedby"] = id + "-error"
-	} else if cfg.Help != "" {
-		selAttrs["aria-describedby"] = id + "-help"
-	}
-	maps.Copy(selAttrs, html.SafeExtraAttrs(cfg.ExtraAttrs,
-		"name", "disabled", "required", "aria-invalid", "aria-describedby"))
-
-	// The marker lives INSIDE the <label>: the component root is a grid,
-	// so a sibling span would become its own row under the label text.
-	labelChildren := []render.HTML{render.Text(cfg.Label)}
-	if cfg.Required {
-		labelChildren = append(labelChildren,
-			html.Span(html.TextConfig{
-				Class:      "ui-form-field__required",
-				ExtraAttrs: html.Attrs{"aria-hidden": "true"},
-			}, render.Text(" *")))
-	}
-	labelHTML := render.Tag("label", map[string]string{
-		"for":   id,
-		"class": "ui-select__label",
-	}, labelChildren...)
-
-	children := []render.HTML{
-		labelHTML,
-		render.Tag("select", selAttrs, optChildren...),
-	}
-	children = append(children, fieldMessage(id, "ui-select", cfg.Error, cfg.Help)...)
-
-	return selectStyle.WrapHTML(render.Tag("div",
-		map[string]string{"class": cls, "data-fui-comp": "ui-select"}, children...))
+	return formFieldStyle.WrapHTML(headless.Field(headless.FieldProps{
+		Label:    cfg.Label,
+		For:      id,
+		Hint:     cfg.Help,
+		Error:    cfg.Error,
+		Required: cfg.Required,
+		Parts:    rootClassParts(cfg.Class),
+	}, fieldClasses, control))
 }
 
 var selectStyle = registry.RegisterStyle("ui-select", selectCSS)
 
 func selectCSS(_ style.Theme) string {
-	return `[data-fui-comp="ui-select"] {
-  display: grid;
-  gap: var(--spacing-xs, 2px);
-}
-[data-fui-comp="ui-select"] .ui-select__label {
-  font-weight: 500;
-  font-size: var(--text-sm, 0.875rem);
-  color: var(--color-text, #18181B);
-}
-[data-fui-comp="ui-select"] .ui-form-field__required {
-  color: var(--color-danger, #DC2626);
-  margin-inline-start: var(--spacing-xs, 2px);
-}
-[data-fui-comp="ui-select"] .ui-select__input {
+	return `.fui-select {
   font: inherit;
   font-size: var(--text-base, 1rem);
   padding: 10px var(--spacing-md, 8px);
   border: 1px solid var(--color-border, #E4E4E7);
-  border-radius: var(--radii-md, 8px);
-  background: var(--color-surface, #FFFFFF);
+  border-radius: var(--fui-field-radius);
   color: var(--color-text, #18181B);
   appearance: none;
   -webkit-appearance: none;
@@ -167,28 +122,19 @@ func selectCSS(_ style.Theme) string {
   background-position: right 12px center;
   padding-right: 36px;
   cursor: pointer;
-  min-block-size: 44px;
+  min-block-size: var(--fui-density-control-h);
+  max-inline-size: 100%;
 }
-[data-fui-comp="ui-select"] .ui-select__input:focus-visible {
+.fui-select:focus-visible {
   outline: 2px solid var(--color-primary, #4F46E5);
   outline-offset: 1px;
   border-color: var(--color-primary, #4F46E5);
 }
-[data-fui-comp="ui-select"] .ui-select__help {
-  margin: 0;
-  font-size: var(--text-sm, 0.875rem);
-  color: var(--color-text-muted, #52525B);
-}
-[data-fui-comp="ui-select"] .ui-select__error {
-  margin: 0;
-  font-size: var(--text-sm, 0.875rem);
-  color: var(--color-danger, #DC2626);
-}
-[data-fui-comp="ui-select"].is-error .ui-select__input {
+.fui-select[aria-invalid="true"] {
   border-color: var(--color-danger, #DC2626);
   box-shadow: inset 0 0 0 1px var(--color-danger, #DC2626);
 }
-[data-fui-comp="ui-select"].is-disabled .ui-select__input {
+.fui-select:disabled {
   opacity: 0.6;
   cursor: not-allowed;
 }`

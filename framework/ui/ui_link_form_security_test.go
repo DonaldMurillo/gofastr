@@ -6,6 +6,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/headless"
 	ui "github.com/DonaldMurillo/gofastr/framework/ui"
 )
 
@@ -389,19 +390,16 @@ func TestForm_ActionPathTraversal(t *testing.T) {
 	t.Logf("NOTE: path traversal in action is attribute-escaped but not path-sanitized")
 }
 
+// An action the anchor policy refuses used to be substituted with
+// "#": a form whose submit went nowhere, which is worse than a no-op.
+// The refusal is the contract now — the panic is the fix, not a bug.
 func TestForm_ActionJavaScriptScheme(t *testing.T) {
 	t.Parallel()
-	h := ui.Form(ui.FormConfig{
-		Action: "javascript:alert(1)",
-	}, render.Text("field"))
-	out := string(h)
-	// HTML forms don't execute javascript: actions, but the value should
-	// still be properly attribute-escaped.
-	action := extractAttr(out, "action")
-	if action == "" {
-		t.Fatal("SECURITY: [form-xss] action attribute missing from output")
-	}
-	t.Logf("NOTE: javascript: action rendered as %q", action)
+	mustPanic(t, "unsafe action must panic at render, not render a dead form", func() {
+		ui.Form(ui.FormConfig{
+			Action: "javascript:alert(1)",
+		}, render.Text("field"))
+	})
 }
 
 func TestForm_MethodInjection(t *testing.T) {
@@ -473,12 +471,15 @@ func TestForm_ErrorMessageXSS(t *testing.T) {
 	errs := ui.FieldErrors{"email": `<script>alert("xss")</script>`}
 	h := ui.Form(ui.FormConfig{
 		Action: "/save",
+		ID:     "xss-form",
 		Errors: errs,
 	},
 		ui.FormFieldFor(errs, "email", ui.FormFieldConfig{
 			Label: "Email",
 			For:   "email",
-			Input: html.Input(html.InputConfig{Type: "email", Name: "email"}),
+			Input: func(c headless.FieldControl) render.HTML {
+				return ui.Control(ui.ControlConfig{Field: c, Type: "email", Name: "email"})
+			},
 		}),
 	)
 	mustNotContain(t, h, `<script>alert("xss")</script>`)
@@ -547,7 +548,9 @@ func TestFormInput_LabelXSS(t *testing.T) {
 	h := ui.FormField(ui.FormFieldConfig{
 		Label: `<script>alert("label-xss")</script>`,
 		For:   "field-id",
-		Input: html.Input(html.InputConfig{Type: "text", Name: "field", ID: "field-id"}),
+		Input: func(c headless.FieldControl) render.HTML {
+			return ui.Control(ui.ControlConfig{Field: c, Type: "text", Name: "field"})
+		},
 	})
 	mustNotContain(t, h, `<script>alert("label-xss")</script>`)
 	mustContain(t, h, "&lt;script&gt;")
@@ -560,7 +563,9 @@ func TestFormInput_HelpTextXSS(t *testing.T) {
 		Label: "Email",
 		For:   "email",
 		Help:  `<img src=x onerror=alert(1)> click here`,
-		Input: html.Input(html.InputConfig{Type: "email", Name: "email", ID: "email"}),
+		Input: func(c headless.FieldControl) render.HTML {
+			return ui.Control(ui.ControlConfig{Field: c, Type: "email", Name: "email"})
+		},
 	})
 	mustNotContain(t, h, `<img src=x onerror=alert(1)>`)
 	mustContain(t, h, "&lt;img")
@@ -626,19 +631,30 @@ func TestFormInput_RequiredAttribute(t *testing.T) {
 		Label:    "Email",
 		For:      "email",
 		Required: true,
-		Input: html.Input(html.InputConfig{
-			Type:       "email",
-			Name:       "email",
-			ID:         "email",
-			ExtraAttrs: html.Attrs{"required": ""},
-		}),
+		Input: func(c headless.FieldControl) render.HTML {
+			return ui.Control(ui.ControlConfig{Field: c, Type: "email", Name: "email"})
+		},
 	})
 	out := string(h)
-	// The required hint should be visible (asterisk)
-	if !strings.Contains(out, "ui-form-field__required") {
-		t.Errorf("SECURITY: [form-input] required field missing visual indicator\nHTML: %s", out)
+	// The required state rides the label (data-required) and the
+	// control (required); the stylesheet draws the visible mark from
+	// the state.
+	if !strings.Contains(out, `data-required`) {
+		t.Errorf("SECURITY: [form-input] required field missing its state on the label\nHTML: %s", out)
 	}
-	t.Logf("NOTE: required field rendered with asterisk indicator")
+	// The control's own opening tag carries required: a whole-field
+	// search is satisfied by the label's data-required="".
+	i := strings.Index(out, "<input")
+	if i < 0 {
+		t.Fatalf("SECURITY: [form-input] no <input> control in the field\nHTML: %s", out)
+	}
+	open := out[i:]
+	if j := strings.IndexByte(open, '>'); j >= 0 {
+		open = open[:j+1]
+	}
+	if !strings.Contains(open, `required=""`) {
+		t.Errorf("SECURITY: [form-input] required field missing its state on the control\nHTML: %s", open)
+	}
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -944,9 +960,13 @@ func TestRailAnchorsStayFragmentReferences(t *testing.T) {
 	}
 
 	summary := string(ui.ValidationSummary(ui.ValidationSummaryConfig{
+		ID:       "rail-sum",
 		Errors:   ui.FieldErrors{"email": "invalid"},
 		FieldIDs: map[string]string{"email": `javascript:alert(1)`},
 	}))
+	// The anchor policy accepts a bare fragment, so the forged value
+	// rides behind the "#": a same-page fragment, inert by
+	// construction — "#javascript:…" is an id lookup, not a scheme.
 	if !strings.Contains(summary, `href="#javascript:alert(1)"`) {
 		t.Errorf("ValidationSummary: field anchor must stay a fragment reference:\n%s", summary)
 	}

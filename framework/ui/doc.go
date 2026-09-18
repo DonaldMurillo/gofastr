@@ -147,6 +147,7 @@
 //	TagInput:             free-form chips, Enter/comma to commit
 //	TerminalBlock:        terminal transcript with a labelled header
 //	TextArea:             multi-line input with typed Autogrow
+//	Control:              styled native input for a FormField builder
 //	TextField:            typed labelled native text field
 //	Themed:               wraps a subtree in a registered theme override
 //	ThemeToggle:          dark/light/auto toggle persisting color-scheme

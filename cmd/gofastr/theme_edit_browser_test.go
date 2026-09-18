@@ -545,3 +545,65 @@ func writeTwiceStep(t *testing.T, ctx context.Context, key, value, statusSub str
 	}
 	waitStatusContains(t, ctx, statusSub, 12*time.Second)
 }
+
+// TestReservedErrorNodeFillsAndClears pins the reserved error node's
+// whole contract on the real control: an invalid edit fills the node
+// the server rejects, marks the control aria-invalid, and a corrected
+// value clears both. The preview and write-back tests never touch this
+// path — they only ever send valid values.
+func TestReservedErrorNodeFillsAndClears(t *testing.T) {
+	_, httpSrv := newBrowserThemeServer(t)
+	if testing.Short() {
+		t.Skip("boots Chrome")
+	}
+	ctx := chromedptest.Context(t, chromedptest.WindowSize(1280, 800))
+	navigateToEditor(t, ctx, httpSrv)
+
+	probe := `(function () {
+  var el = document.querySelector('[data-token="color-primary"]:not([data-type="color-swatch"])'); // not-a-secret: a CSS selector for the editor's colour-primary row; data-token here is the theme TOKEN NAME, not a credential
+  var errEl = document.getElementById(el.id + '-error');
+  return (errEl ? errEl.textContent : '') + '\u0000' + (el.getAttribute('aria-invalid') || '');
+})()`
+	stateOf := func(s string) (msg, invalid string) {
+		msg, invalid, _ = strings.Cut(s, "\u0000")
+		return strings.TrimSpace(msg), strings.TrimSpace(invalid)
+	}
+
+	// An invalid colour: the apply endpoint rejects it, the reserved
+	// node fills, the control is marked invalid.
+	if err := chromedp.Run(ctx, chromedp.Evaluate(teSetControlJS("color-primary", "not-a-color"), nil)); err != nil {
+		t.Fatalf("set invalid color-primary: %v", err)
+	}
+	var state struct{ Msg, Invalid string }
+	deadline := time.Now().Add(12 * time.Second)
+	var raw string
+	for time.Now().Before(deadline) {
+		_ = chromedp.Run(ctx, chromedp.Evaluate(probe, &raw))
+		state.Msg, state.Invalid = stateOf(raw)
+		if state.Msg != "" && state.Invalid == "true" {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if state.Msg == "" {
+		t.Fatal("the reserved error node never filled after the rejected edit")
+	}
+	if state.Invalid != "true" {
+		t.Fatalf("the control is not marked aria-invalid after the rejected edit (got %q)", state.Invalid)
+	}
+
+	// A valid value clears both: the message empties, the state goes.
+	if err := chromedp.Run(ctx, chromedp.Evaluate(teSetControlJS("color-primary", "#166534"), nil)); err != nil {
+		t.Fatalf("set valid color-primary: %v", err)
+	}
+	deadline = time.Now().Add(12 * time.Second)
+	for time.Now().Before(deadline) {
+		_ = chromedp.Run(ctx, chromedp.Evaluate(probe, &raw))
+		state.Msg, state.Invalid = stateOf(raw)
+		if state.Msg == "" && state.Invalid == "" {
+			return // pass
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	t.Fatalf("the error state never cleared after a valid edit: msg=%q invalid=%q", state.Msg, state.Invalid)
+}

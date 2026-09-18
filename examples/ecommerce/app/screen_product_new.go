@@ -7,6 +7,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/interactive"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework"
+	"github.com/DonaldMurillo/gofastr/framework/headless"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
 
@@ -19,7 +20,13 @@ func (s *ProductNewScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 func (s *ProductNewScreen) Render() render.HTML {
 	return html.Div(html.DivConfig{},
 		html.Heading(html.HeadingConfig{Level: 1, Class: ""}, render.Text("Add New Product")),
-		render.Join(ui.PageHeader(ui.PageHeaderConfig{Title: "New Product"}), ui.Form(ui.FormConfig{Action: "/api/products", Method: "POST", SubmitLabel: "Create", ExtraAttrs: html.MergeAttrs(html.Attrs{"data-entity-form": "products", "data-entity-mode": "create"}, interactive.Post("/api/products").OnSuccess(interactive.ResetForm()).Attrs())}, ui.FormField(ui.FormFieldConfig{Label: "Name", For: "field-name", Required: true, Input: render.Raw("<input type=\"text\" name=\"name\" id=\"field-name\" required>")}), ui.FormField(ui.FormFieldConfig{Label: "Slug", For: "field-slug", Required: true, Input: render.Raw("<input type=\"text\" name=\"slug\" id=\"field-slug\" required>")}), ui.FormField(ui.FormFieldConfig{Label: "SKU", For: "field-sku", Required: false, Input: render.Raw("<input type=\"text\" name=\"sku\" id=\"field-sku\">")}), ui.FormField(ui.FormFieldConfig{Label: "Description", For: "field-description", Required: false, Input: render.Raw("<textarea name=\"description\" id=\"field-description\"></textarea>")}), ui.FormField(ui.FormFieldConfig{Label: "Price", For: "field-price", Required: true, Input: render.Raw("<input type=\"number\" name=\"price\" id=\"field-price\" required>")}), ui.FormField(ui.FormFieldConfig{Label: "Stock", For: "field-stock", Required: true, Input: render.Raw("<input type=\"number\" name=\"stock\" id=\"field-stock\" required>")}), ui.FormField(ui.FormFieldConfig{Label: "Status", For: "field-status", Required: false, Input: render.Raw("<select name=\"status\" id=\"field-status\"><option value=\"\">— Select —</option><option value=\"draft\">Draft</option><option value=\"active\">Active</option><option value=\"archived\">Archived</option></select>")}), ui.FormField(ui.FormFieldConfig{Label: "Featured", For: "field-featured", Required: false, Input: render.Raw("<input type=\"checkbox\" name=\"featured\" id=\"field-featured\">")}))),
+		render.Join(ui.PageHeader(ui.PageHeaderConfig{Title: "New Product"}), ui.Form(ui.FormConfig{Action: "/api/products", Method: "POST", SubmitLabel: "Create", ExtraAttrs: html.MergeAttrs(html.Attrs{"data-entity-form": "products", "data-entity-mode": "create"}, interactive.Post("/api/products").OnSuccess(interactive.ResetForm()).Attrs())}, ui.FormField(ui.FormFieldConfig{Label: "Name", For: "field-name", Required: true, Input: func(c headless.FieldControl) render.HTML {
+			return ui.Control(ui.ControlConfig{Field: c, Type: "text", Name: "name"})
+		}}), ui.FormField(ui.FormFieldConfig{Label: "Slug", For: "field-slug", Required: true, Input: func(c headless.FieldControl) render.HTML {
+			return ui.Control(ui.ControlConfig{Field: c, Type: "text", Name: "slug"})
+		}}), ui.FormField(ui.FormFieldConfig{Label: "SKU", For: "field-sku", Required: false, Input: func(c headless.FieldControl) render.HTML {
+			return ui.Control(ui.ControlConfig{Field: c, Type: "text", Name: "sku"})
+		}}), ui.TextArea(ui.TextAreaConfig{Name: "description", Label: "Description", ID: "field-description", Required: false}), ui.NumberField(ui.NumberFieldConfig{Name: "price", Label: "Price", ID: "field-price", Required: true}), ui.NumberField(ui.NumberFieldConfig{Name: "stock", Label: "Stock", ID: "field-stock", Required: true}), ui.Select(ui.SelectConfig{Name: "status", Label: "Status", ID: "field-status", Placeholder: "— Select —", Options: []ui.SelectOption{{Value: "draft", Text: "Draft"}, {Value: "active", Text: "Active"}, {Value: "archived", Text: "Archived"}}, Required: false}), ui.Checkbox(ui.ToggleConfig{Name: "featured", Label: "Featured", ID: "field-featured", Required: false}))),
 	)
 }
 

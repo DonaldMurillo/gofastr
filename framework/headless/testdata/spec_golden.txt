@@ -123,8 +123,12 @@ the hint is tied to the control by id, or it is on screen for sighted users only
 <div><label for="field-port">Port</label><input aria-describedby="field-port-hint" id="field-port" name="field-port" type="text"><p id="field-port-hint">1–65535</p></div>
 
 === Field / errored ===
-the error REPLACES the hint in the description rather than joining it: when something is wrong, reading both buries the correction
-<div><label for="field-port-bad">Port</label><input aria-describedby="field-port-bad-error" aria-invalid="true" id="field-port-bad" name="field-port-bad" type="text"><p id="field-port-bad-error" role="alert">Already in use.</p></div>
+the error JOINS the hint in the description, ahead of it: the hint is the rule the value must obey and the error is the violation, so dropping the rule exactly when it was broken is dropping it when it is needed most — and the correction is read first because it comes first
+<div><label for="field-port-bad">Port</label><input aria-describedby="field-port-bad-error field-port-bad-hint" aria-invalid="true" id="field-port-bad" name="field-port-bad" type="text"><p id="field-port-bad-error" role="alert">Already in use.</p><p id="field-port-bad-hint">1–65535</p></div>
+
+=== Field / reserved error node ===
+a script that fills the error without re-rendering needs the node and its id already in the description — an empty described-by target announces nothing until it is filled, which is the point, and the stylesheet keeps the empty node out of the layout
+<div><label for="field-token-live">Token</label><input aria-describedby="field-token-live-error" id="field-token-live" name="field-token-live" type="text"><p id="field-token-live-error" role="alert"></p></div>
 
 === Field / required ===
 required is a state the parser is told about, not a red asterisk — which is a picture of a rule

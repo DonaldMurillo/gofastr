@@ -44,11 +44,15 @@ Form components for GoFastr: HTML primitives, framework UI components, form patt
 | NumberField | `ui.NumberField(NumberFieldConfig)` | Self-labelled native number input; use `NumberInput` for +/- controls |
 | DateField | `ui.DateField(DateFieldConfig)` | Self-labelled native date input with typed min/max bounds |
 
-The typed field wrappers compose `FormField + html.Input` and own the
-`for`/`id`, `aria-describedby`, and `aria-invalid` wiring. Prefer them for
-ordinary forms so `Required`, `Placeholder`, bounds, value, help, and error
-states stay visible in the Go type instead of being repeated through
-`html.Attrs` literals at each call site.
+The typed field wrappers compose `FormField`'s builder with the styled
+native control and own the `for`/`id`, `aria-describedby`, and
+`aria-invalid` wiring by construction: the field hands its control the
+wiring before the control renders. Prefer them for ordinary forms so
+`Required`, `Placeholder`, bounds, value, help, and error states stay
+visible in the Go type instead of being repeated through `html.Attrs`
+literals at each call site. For the input types they do not name
+(email, password, datetime-local, file, tel, url, search), build a
+`ui.Control` inside a `FormField` builder.
 
 ## Validation
 
@@ -60,13 +64,16 @@ errs := ui.FieldErrors{
     "name":  "Name is required.",
 }
 
-// Pass to Form for the error callout
-ui.Form(ui.FormConfig{Action: "/submit", Method: "POST", Errors: errs}, ...)
+// Pass to Form for the summary (ID is required: the summary's id is
+// derived from it, and focus moves to the summary after a failed submit)
+ui.Form(ui.FormConfig{Action: "/submit", Method: "POST", ID: "signup", Errors: errs}, ...)
 
 // Per-field error display
 ui.FormFieldFor(errs, "email", ui.FormFieldConfig{
     Label: "Email", For: "f-email",
-    Input: html.Input(html.InputConfig{Type: "email", Name: "email", ID: "f-email"}),
+    Input: func(c headless.FieldControl) render.HTML {
+        return ui.Control(ui.ControlConfig{Field: c, Type: "email", Name: "email"})
+    },
 })
 ```
 
@@ -76,8 +83,12 @@ Standalone component rendering `<div role="alert"><ul>` with anchor links per er
 
 ```go
 ui.ValidationSummary(ui.ValidationSummaryConfig{
+    ID: "signup-errors",
     Errors: errs,
     FieldLabels: map[string]string{"email": "Email", "name": "Name"},
+    // FieldIDs maps a field name to its control's real id when they
+    // differ; an error whose field has no known id renders as text.
+    FieldIDs: map[string]string{"email": "f-email", "name": "f-name"},
 })
 ```
 
@@ -115,6 +126,29 @@ ui.StepWizard(ui.StepWizardConfig{
     },
 })
 ```
+
+A step that fails server-side validation re-renders through the same
+summary `ui.Form` uses: pass the errors (plus the form's `ID`, which
+the summary derives its own id from) and set the failing field's
+`Error` on the step's fields.
+
+```go
+ui.StepWizard(ui.StepWizardConfig{
+    Action: "/wizard", CurrentStep: step, ID: "wiz-form",
+    Errors: ui.FieldErrors{"name": "Your full name is required."},
+    Steps:  []ui.StepWizardStep{
+        {Heading: "Personal info", Fields: []render.HTML{
+            ui.TextField(ui.TextFieldConfig{Name: "name", Label: "Full name", ID: "name",
+                Required: true, Error: "Your full name is required."}),
+        }},
+    },
+})
+```
+
+The wizard renders the summary between the progress indicator and the
+step's fields and marks the form (`data-hui-form-errors`), so the
+runtime moves focus to the summary after the failed submit — the same
+announcement a failed `ui.Form` gets.
 
 ### Form repeater
 

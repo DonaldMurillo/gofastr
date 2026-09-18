@@ -143,21 +143,90 @@ func ParseButtonRadius(s string) (ButtonRadius, error) {
 	}
 }
 
+// FieldLayout is how a field's label sits against its control:
+// stacked above it, or inline beside it. Inline is a preference the
+// stylesheet may override in a narrow context, not a promise.
+type FieldLayout int
+
+const (
+	LayoutUnset FieldLayout = iota
+	Stacked
+	Inline
+)
+
+// String returns the flattened form ("stacked", "inline").
+func (l FieldLayout) String() string {
+	switch l {
+	case Stacked:
+		return "stacked"
+	case Inline:
+		return "inline"
+	default:
+		return ""
+	}
+}
+
+// ParseFieldLayout is String's inverse.
+func ParseFieldLayout(s string) (FieldLayout, error) {
+	switch s {
+	case "stacked":
+		return Stacked, nil
+	case "inline":
+		return Inline, nil
+	default:
+		return LayoutUnset, fmt.Errorf("unknown field layout %q (want stacked or inline)", s)
+	}
+}
+
+// FieldRadius is a field control's corner shape: the radius the
+// field's inputs, selects and summaries draw.
+type FieldRadius int
+
+const (
+	FieldRadiusUnset FieldRadius = iota
+	FieldRound
+	FieldSquare
+)
+
+// String returns the flattened form ("round", "square").
+func (r FieldRadius) String() string {
+	switch r {
+	case FieldRound:
+		return "round"
+	case FieldSquare:
+		return "square"
+	default:
+		return ""
+	}
+}
+
+// ParseFieldRadius is String's inverse.
+func ParseFieldRadius(s string) (FieldRadius, error) {
+	switch s {
+	case "round":
+		return FieldRound, nil
+	case "square":
+		return FieldSquare, nil
+	default:
+		return FieldRadiusUnset, fmt.Errorf("unknown field radius %q (want round or square)", s)
+	}
+}
+
 // ButtonOptions is the button family's slice of the option set.
 type ButtonOptions struct {
 	Treatment ButtonTreatment
 	Radius    ButtonRadius
 }
 
-// ComponentOptions is the typed component-option set a host passes in
-// Overrides. Every field's zero value means "unspecified" during
-// merging; an explicit Comfortable, Filled or Round RESETS an earlier
-// override rather than being ignored as a no-op.
+// FieldOptions is the form field family's slice of the option set.
+type FieldOptions struct {
+	Layout FieldLayout
+	Radius FieldRadius
+}
 type ComponentOptions struct {
 	Density Density
 	Button  ButtonOptions
-	// Field, Card and the rest arrive with their family's change, not
-	// before.
+	Field   FieldOptions
 }
 
 // DefaultOptions is the complete option set: what a theme carries when
@@ -165,6 +234,7 @@ type ComponentOptions struct {
 var DefaultOptions = ComponentOptions{
 	Density: Comfortable,
 	Button:  ButtonOptions{Treatment: Filled, Radius: Round},
+	Field:   FieldOptions{Layout: Stacked, Radius: FieldRound},
 }
 
 // Complete returns o with every unset option replaced by its default.
@@ -179,6 +249,12 @@ func (o ComponentOptions) Complete() ComponentOptions {
 	}
 	if o.Button.Radius == RadiusUnset {
 		o.Button.Radius = DefaultOptions.Button.Radius
+	}
+	if o.Field.Layout == LayoutUnset {
+		o.Field.Layout = DefaultOptions.Field.Layout
+	}
+	if o.Field.Radius == FieldRadiusUnset {
+		o.Field.Radius = DefaultOptions.Field.Radius
 	}
 	return o
 }
@@ -196,6 +272,12 @@ func (o ComponentOptions) Flattened() map[string]string {
 	}
 	if o.Button.Radius != RadiusUnset {
 		m["button.radius"] = o.Button.Radius.String()
+	}
+	if o.Field.Layout != LayoutUnset {
+		m["field.layout"] = o.Field.Layout.String()
+	}
+	if o.Field.Radius != FieldRadiusUnset {
+		m["field.radius"] = o.Field.Radius.String()
 	}
 	return m
 }
@@ -217,6 +299,10 @@ func OptionsFromFlattened(m map[string]string) (ComponentOptions, error) {
 			o.Button.Treatment, err = ParseButtonTreatment(v)
 		case "button.radius":
 			o.Button.Radius, err = ParseButtonRadius(v)
+		case "field.layout":
+			o.Field.Layout, err = ParseFieldLayout(v)
+		case "field.radius":
+			o.Field.Radius, err = ParseFieldRadius(v)
 		default:
 			err = fmt.Errorf("unknown component option %q", k)
 		}

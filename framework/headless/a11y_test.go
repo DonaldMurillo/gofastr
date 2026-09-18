@@ -60,14 +60,16 @@ func TestFieldWiresLabelHintAndErrorToTheControl(t *testing.T) {
 	has(t, got, `id="port-hint"`, "the hint has no id to be referenced by")
 	has(t, got, `aria-describedby="port-hint"`, "the control is not tied to its hint")
 
-	// An error replaces the hint in the description rather than
-	// joining it: when something is wrong, the correction is what
-	// needs to be heard first, and reading both buries it.
+	// The error JOINS the hint in the description, ahead of it: the
+	// hint is the rule the value must obey and the error is the
+	// violation, so dropping the rule exactly when it was broken is
+	// dropping it when it is needed most. The correction is read
+	// first because it comes first.
 	bad := Field(FieldProps{Label: "Port", For: "p2", Hint: "1–65535", Error: "Already in use."}, nil,
 		func(c FieldControl) render.HTML {
 			return Input(InputProps{Name: "p2", ID: c.ID, DescribedBy: c.DescribedBy, Invalid: c.Invalid}, nil)
 		})
-	has(t, bad, `aria-describedby="p2-error"`, "the control is not tied to its error")
+	has(t, bad, `aria-describedby="p2-error p2-hint"`, "the control is not tied to its error and its hint")
 	has(t, bad, `aria-invalid="true"`, "an errored field does not mark its control invalid")
 
 	// The error itself has to interrupt. A message that appears

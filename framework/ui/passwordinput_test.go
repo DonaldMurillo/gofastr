@@ -3,6 +3,8 @@ package ui
 import (
 	"strings"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/framework/headless"
 )
 
 func TestPasswordInputRequiresName(t *testing.T) {
@@ -176,5 +178,56 @@ func TestPasswordInputExtraAttrsCannotOverrideOwned(t *testing.T) {
 		if !strings.Contains(input, want) {
 			t.Errorf("input missing %q:\n%s", want, input)
 		}
+	}
+}
+
+// The field's wiring reaches the inner input: an outer hint and an
+// outer error set at once both arrive (described-by carries both ids,
+// the invalid state lands), and nothing the sanitiser does drops what
+// the component itself set.
+func TestPasswordInputCarriesTheFieldsWiring(t *testing.T) {
+	fc := headless.FieldControl{
+		ID:          "acct-password",
+		DescribedBy: "acct-password-error acct-password-hint",
+		Invalid:     true,
+		Required:    true,
+	}
+	h := string(PasswordInput(PasswordInputConfig{
+		Name: "password", ID: "inner", Field: fc,
+		Autocomplete: "new-password",
+	}))
+	for _, want := range []string{
+		`id="acct-password"`,
+		`aria-describedby="acct-password-error acct-password-hint"`,
+		`aria-invalid="true"`,
+		`required=""`,
+		`autocomplete="new-password"`,
+	} {
+		if !strings.Contains(h, want) {
+			t.Errorf("inner input missing %q:\n%s", want, h)
+		}
+	}
+	// A caller's aria-describedby in ExtraAttrs cannot beat the
+	// field's wiring: the relationship belongs to the field.
+	h2 := string(PasswordInput(PasswordInputConfig{
+		Name: "password", ID: "inner2", Field: fc,
+		ExtraAttrs: map[string]string{"aria-describedby": "evil"},
+	}))
+	if !strings.Contains(h2, `aria-describedby="acct-password-error acct-password-hint"`) {
+		t.Errorf("the field's described-by lost to a caller's extra:\n%s", h2)
+	}
+}
+
+// Standalone (no Field): the component's own Error drives the wiring
+// as before, and renders its own message paragraph.
+func TestPasswordInputStandaloneErrorStillWires(t *testing.T) {
+	h := string(PasswordInput(PasswordInputConfig{
+		Name: "password", ID: "solo", Error: "Too short.",
+	}))
+	if !strings.Contains(h, `aria-describedby="solo-error"`) || !strings.Contains(h, `aria-invalid="true"`) {
+		t.Errorf("standalone error wiring lost:\n%s", h)
+	}
+	if !strings.Contains(h, "Too short.") {
+		t.Errorf("standalone error message missing:\n%s", h)
 	}
 }

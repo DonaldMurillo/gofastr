@@ -378,41 +378,97 @@ func sectionCSS(_ style.Theme) string {
 }`
 }
 
+// formFieldCSS is the field stylesheet, on class selectors: the
+// fieldClasses map names the classes, this sheet matches them, and
+// the data-fui-comp="ui-form-field" marker is only what fetches the
+// sheet.
+//
+// FieldOptions (--fui-field-columns, --fui-field-message-column,
+// --fui-field-radius) are declared at theme boundaries by the
+// component-options compiler and only consumed here: redeclaring one
+// on .fui-field would block the inheritance that makes nesting work.
+//
+// The layout rules, which are the sheet's half of FieldOptions:
+//
+//   - Inline is a preference, not a promise. The row is a grid whose
+//     label track sits beside the control track only above the stated
+//     width; below it the row stacks. The width is a viewport floor
+//     (the repo's sheets carry no container queries); in a narrow
+//     container at a wide viewport the two-track layout holds, and
+//     the minmax(0, 1fr) control track plus the wrapping label keep
+//     the row from overflowing.
+//   - The control track is minmax(0, 1fr), never auto: an auto track
+//     sizes to the control's intrinsic ~20ch, so a long value forces
+//     overflow instead of filling the field.
+//   - A long label wraps (overflow-wrap) rather than widening its
+//     track.
+//   - Choice rows (checkbox, radio, switch and their groups) keep
+//     their own wrapping-label structure — the label wraps the
+//     control — and deliberately ignore the columns variables: a
+//     choice row is one inline run, not a label track above a control
+//     track.
 func formFieldCSS(_ style.Theme) string {
-	return `[data-fui-comp="ui-form-field"] {
+	return `.fui-field {
   display: grid;
-  /* 1fr (not auto): an auto track sizes to the input's intrinsic ~20ch,
-     so percentage-width controls never fill the field. */
-  grid-template-columns: 1fr;
-  gap: var(--spacing-xs, 2px);
+  grid-template-columns: var(--fui-field-columns);
+  gap: var(--fui-density-gap) var(--spacing-md, 8px);
 }
-[data-fui-comp="ui-form-field"] .ui-form-field__label-row {
-  display: flex;
-  align-items: baseline;
-  gap: 0;
+@media (max-width: 33rem) {
+  .fui-field { grid-template-columns: minmax(0, 1fr); }
+  .fui-field__hint, .fui-field__error { grid-column: auto; }
 }
-[data-fui-comp="ui-form-field"] .ui-form-field__label {
+.fui-field__label {
+  align-self: center;
   font-weight: 500;
   font-size: var(--text-sm, 0.875rem);
   color: var(--color-text, #18181B);
+  /* A long label wraps rather than widening its track. */
+  overflow-wrap: break-word;
 }
-[data-fui-comp="ui-form-field"] .ui-form-field__required {
-  color: var(--color-danger, #DC2626);
-  margin-inline-start: var(--spacing-xs, 2px);
-}
-[data-fui-comp="ui-form-field"] .ui-form-field__help {
-  margin: 0;
-  font-size: var(--text-sm, 0.875rem);
-  color: var(--color-text-muted, #52525B);
-}
-[data-fui-comp="ui-form-field"] .ui-form-field__error {
-  margin: 0;
-  font-size: var(--text-sm, 0.875rem);
+/* The required mark is drawn from the state attribute: an asterisk
+   whose alternative text is empty, so the label's accessible name
+   stays clean (the parser is told the rule by the control's own
+   required attribute, not by a spoken "*"). */
+.fui-field__label[data-required]::after {
+  content: " *" / "";
   color: var(--color-danger, #DC2626);
 }
-[data-fui-comp="ui-form-field"].is-error input,
-[data-fui-comp="ui-form-field"].is-error textarea,
-[data-fui-comp="ui-form-field"].is-error select {
+.fui-field__hint,
+.fui-field__error {
+  grid-column: var(--fui-field-message-column);
+  margin: 0;
+  font-size: var(--text-sm, 0.875rem);
+}
+.fui-field__hint { color: var(--color-text-muted, #52525B); }
+.fui-field__error { color: var(--color-danger, #DC2626); }
+/* A reserved error node (headless.FieldProps.ReserveError) ships empty
+   so a script can fill it without re-rendering. Empty, it must not
+   take a grid row: the row gap under every reserved field would be
+   space reserved for words that are not there. It returns the moment
+   anything is written into it, because :empty stops matching. */
+.fui-field__error:empty { display: none; }
+.fui-input {
+  /* Fill the field track: the control track is minmax(0, 1fr), so an
+     unsized <input> otherwise keeps its intrinsic ~20ch width
+     instead of the panel/container width. */
+  width: 100%;
+  box-sizing: border-box;
+  /* Density owns the touch target: --fui-density-control-h is the
+     theme's control height (44px comfortable, 36px compact). */
+  min-height: var(--fui-density-control-h);
+  padding: 10px var(--spacing-md, 8px);
+  border: 1px solid var(--color-border, #E4E4E7);
+  border-radius: var(--fui-field-radius);
+  background: var(--color-surface, #FFFFFF);
+  color: var(--color-text, #18181B);
+  font: inherit;
+  font-size: var(--text-base, 1rem);
+}
+.fui-input:focus-visible {
+  outline: 2px solid var(--color-primary, #4F46E5);
+  outline-offset: 1px;
+}
+.fui-input[aria-invalid="true"] {
   /* Non-color affordance: stack an inset 1px ring so the error state
      reads as a thicker border without bumping border-width and
      shifting the input's internal text by 1px on every validation
@@ -420,34 +476,16 @@ func formFieldCSS(_ style.Theme) string {
   border-color: var(--color-danger, #DC2626);
   box-shadow: inset 0 0 0 1px var(--color-danger, #DC2626);
 }
-[data-fui-comp="ui-form-field"] input,
-[data-fui-comp="ui-form-field"] textarea,
-[data-fui-comp="ui-form-field"] select {
-  /* Fill the field track: the field root is display:grid with an
-     auto-sized column, so an unsized <input> otherwise keeps its
-     intrinsic ~20ch width instead of the panel/container width. */
-  width: 100%;
-  box-sizing: border-box;
-  /* Token-scaled touch target (see fui-button). */
-  min-height: var(--spacing-touch-target);
-  padding: 10px var(--spacing-md, 8px);
-  border: 1px solid var(--color-border, #E4E4E7);
-  border-radius: var(--radii-md, 8px);
-  background: var(--color-surface, #FFFFFF);
-  color: var(--color-text, #18181B);
-  font: inherit;
-  font-size: var(--text-base, 1rem);
-}
-[data-fui-comp="ui-form-field"] input:focus-visible,
-[data-fui-comp="ui-form-field"] textarea:focus-visible,
-[data-fui-comp="ui-form-field"] select:focus-visible {
-  outline: 2px solid var(--color-primary, #4F46E5);
-  outline-offset: 1px;
-}`
+/* A control an InputGroup wraps fills the field's control track, and
+   a whole Field inside a group keeps the group from overflowing: the
+   group's flex children need min-width 0 the same way the grid's
+   tracks do. */
+.fui-field .fui-input-group { inline-size: 100%; }
+.fui-input-group > .fui-field { flex: 1; min-width: 0; }`
 }
 
 func formSectionCSS(_ style.Theme) string {
-	return `[data-fui-comp="ui-form-section"] {
+	return `.fui-form-section {
   display: grid;
   gap: var(--spacing-lg, 16px);
   padding: var(--spacing-lg, 16px);
@@ -455,18 +493,18 @@ func formSectionCSS(_ style.Theme) string {
   border-radius: var(--radii-md, 8px);
   background: var(--color-surface, #FFFFFF);
 }
-[data-fui-comp="ui-form-section"] .ui-form-section__heading {
+.fui-form-section__heading {
   margin: 0;
   font-size: var(--text-base, 1rem);
   font-weight: 600;
   color: var(--color-text, #18181B);
 }
-[data-fui-comp="ui-form-section"] .ui-form-section__description {
+.fui-form-section__description {
   margin: 0;
   font-size: var(--text-sm, 0.875rem);
   color: var(--color-text-muted, #52525B);
 }
-[data-fui-comp="ui-form-section"] .ui-form-section__fields {
+.fui-form-section__fields {
   display: grid;
   gap: var(--spacing-md, 8px);
 }`
@@ -685,18 +723,18 @@ func avatarCSS(_ style.Theme) string {
 }
 
 func formCSS(_ style.Theme) string {
-	return `[data-fui-comp="ui-form"] { display: grid; gap: var(--spacing-lg, 16px); grid-template-columns: 1fr; }
-[data-fui-comp="ui-form"] .ui-form__fields { display: grid; gap: var(--spacing-md, 8px); grid-template-columns: 1fr; }
-[data-fui-comp="ui-form"] .ui-form__actions {
+	return `.fui-form { display: grid; gap: var(--spacing-lg, 16px); grid-template-columns: 1fr; }
+.fui-form__body { display: grid; gap: var(--spacing-md, 8px); grid-template-columns: 1fr; }
+.fui-form__actions {
   display: flex;
   justify-content: flex-end;
   gap: var(--spacing-sm, 4px);
 }
-[data-fui-comp="ui-form"].ui-form--block-actions .ui-form__actions {
+.fui-form--block-actions .fui-form__actions {
   display: grid;
   grid-template-columns: 1fr;
 }
-[data-fui-comp="ui-form"].ui-form--block-actions .ui-form__actions .fui-button {
+.fui-form--block-actions .fui-form__actions .fui-button {
   width: 100%;
   box-sizing: border-box;
 }`

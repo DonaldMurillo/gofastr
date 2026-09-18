@@ -339,7 +339,7 @@ func renderToggleGroup(spec toggleGroupSpec) render.HTML {
 	if spec.required {
 		legendChildren = append(legendChildren,
 			html.Span(html.TextConfig{
-				Class:      "ui-form-field__required",
+				Class:      "fui-field__required",
 				ExtraAttrs: html.Attrs{"aria-hidden": "true"},
 			}, render.Text(" *")))
 	}

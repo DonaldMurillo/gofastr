@@ -19,8 +19,10 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/headless"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
 
@@ -170,12 +172,14 @@ func tokenGroupName(key string) string {
 // hex back to it). Integer-px tokens strip the "px" suffix for display and
 // the JS re-appends it on submit.
 //
-// Each row is a ui-form-field: the design system's stylesheet styles every
-// descendant input/select/textarea via [data-fui-comp="ui-form-field"] input,
-// so we get label spacing, focus rings, and the is-error affordance for free
-// with no per-control CSS. The token key is carried on data-token (so the
-// editor JS can find each control by key) and data-field on the wrapper (so
-// the JS can flip is-error without selecting on a bespoke class).
+// Each row is a ui.FormField with ReserveError: the field renders an
+// empty error paragraph (id <control-id>-error, already wired into the
+// control's aria-describedby, and taken out of the grid by the
+// stylesheet while it is empty) that the editor's JS fills on apply
+// failure — no re-render, no bespoke data-err-for lookup. The token key rides on
+// data-token (so the editor JS finds each control by key) and
+// data-field on the wrapper (so the JS can flip the error state
+// without selecting on a bespoke class).
 func renderOneControl(t tokenControl) render.HTML {
 	displayValue := t.Value
 	if t.Type == "number-px" {
@@ -183,67 +187,64 @@ func renderOneControl(t tokenControl) render.HTML {
 	}
 	id := controlInputID(t.Key)
 
-	var inputFrag render.HTML
-	switch t.Type {
-	case "color":
-		// ui.ColorField is the design system's swatch + hex-input pair. Both
-		// inputs carry data-token so the editor's JS wires them as one control;
-		// the swatch writes its hex into the text input, which is the source of
-		// truth (it can hold values the native picker cannot represent).
-		inputFrag = ui.ColorField(ui.ColorFieldConfig{
-			Value:       t.Value,
-			SwatchValue: colorSwatchValue(t.Value),
-			TextID:      id,
-			SwatchLabel: t.Key + " colour swatch",
-			// Matches the visible <label> text below, so the announced name and
-			// the seen name are the same string.
-			TextLabel: t.Key,
-			SwatchAttrs: map[string]string{
-				"data-token": t.Key,
-				"data-type":  "color-swatch",
-			},
-			TextAttrs: map[string]string{
-				"data-token": t.Key,
-				"data-type":  t.Type,
-			},
-		})
-	case "number", "number-px":
-		inputFrag = render.VoidTag("input", map[string]string{
-			"type":       "number",
-			"value":      displayValue,
-			"id":         id,
-			"data-token": t.Key,
-			"data-type":  t.Type,
-		})
-	default:
-		inputFrag = render.VoidTag("input", map[string]string{
-			"type":       "text",
-			"value":      t.Value,
-			"id":         id,
-			"data-token": t.Key,
-			"data-type":  t.Type,
-		})
+	buildInput := func(c headless.FieldControl) render.HTML {
+		switch t.Type {
+		case "color":
+			// ui.ColorField is the design system's swatch + hex-input pair. Both
+			// inputs carry data-token so the editor's JS wires them as one control;
+			// the swatch writes its hex into the text input, which is the source of
+			// truth (it can hold values the native picker cannot represent).
+			return ui.ColorField(ui.ColorFieldConfig{
+				Value:       t.Value,
+				SwatchValue: colorSwatchValue(t.Value),
+				TextID:      c.ID,
+				SwatchLabel: t.Key + " colour swatch",
+				// Matches the visible <label> text below, so the announced name and
+				// the seen name are the same string.
+				TextLabel: t.Key,
+				SwatchAttrs: map[string]string{
+					"data-token": t.Key,
+					"data-type":  "color-swatch",
+				},
+				TextAttrs: map[string]string{
+					"data-token": t.Key,
+					"data-type":  t.Type,
+					// The field's own wiring, which ColorField has no
+					// typed seam for until the colour rebuild: without
+					// it the reserved error node is filled and shown
+					// while the input it describes points at nothing,
+					// so the message is on screen and absent to a
+					// screen reader — the defect the builder exists to
+					// prevent.
+					"aria-describedby": c.DescribedBy,
+				},
+			})
+		case "number", "number-px":
+			return ui.Control(ui.ControlConfig{
+				Field: c, Type: "number", Name: t.Key, Value: displayValue,
+				ExtraAttrs: map[string]string{"data-token": t.Key, "data-type": t.Type},
+			})
+		default:
+			// Name is the token key: these controls live outside any
+			// form (nothing submits), and the name says what the value
+			// is the moment one ever wraps them.
+			return ui.Control(ui.ControlConfig{
+				Field: c, Type: "text", Name: t.Key, Value: t.Value,
+				ExtraAttrs: map[string]string{"data-token": t.Key, "data-type": t.Type},
+			})
+		}
 	}
 
-	label := render.Tag("label", map[string]string{
-		"class": "ui-form-field__label",
-		"for":   id,
-	}, render.Text(t.Key))
-
-	// Empty error span: the JS fills this on apply failure. data-err-for is
-	// the JS's lookup key; the design system's ui-form-field__error class
-	// colours it via the --color-danger token.
-	errSpan := render.Tag("span", map[string]string{
-		"class":        "ui-form-field__error",
-		"data-err-for": t.Key,
+	return ui.FormField(ui.FormFieldConfig{
+		Label:        t.Key,
+		For:          id,
+		ReserveError: true,
+		Input:        buildInput,
+		ExtraAttrs: html.Attrs{
+			"data-field":      t.Key,
+			"data-field-type": t.Type,
+		},
 	})
-
-	return render.Tag("div", map[string]string{
-		"class":           "ui-form-field",
-		"data-fui-comp":   "ui-form-field",
-		"data-field":      t.Key,
-		"data-field-type": t.Type,
-	}, label, inputFrag, errSpan)
 }
 
 // controlInputID derives a stable, HTML-legal id from a token key. Used as
@@ -461,25 +462,29 @@ const themeEditChromeJS = `
     return findDataElement('[data-token]:not([data-type="color-swatch"])', 'data-token', key);
   }
 
+  function errNodeFor(input) {
+    // The reserved error paragraph: ui.FormField rendered it with the
+    // id derived from the control's own (ReserveError), already wired
+    // into the input's aria-describedby.
+    return document.getElementById(input.id + '-error');
+  }
+
   function showError(key, msg) {
     var input = findTextInput(key) || findDataElement('[data-token]', 'data-token', key);
     if (!input) return;
-    // Flip the design system's is-error class on the wrapping form-field.
-    // The variant CSS ([data-fui-comp="ui-form-field"].is-error input)
-    // recolours the input border via --color-danger: no bespoke invalid
-    // class needed.
-    var field = input.closest('[data-field]');
-    if (field) field.classList.add('is-error');
-    var errEl = findDataElement('[data-err-for]', 'data-err-for', key);
+    // The field's error state, on the control itself: aria-invalid is
+    // what the stylesheet colours the border from, and what the
+    // reserved error node's contract asks the filling caller to set.
+    input.setAttribute('aria-invalid', 'true');
+    var errEl = errNodeFor(input);
     if (errEl) errEl.textContent = msg || 'invalid';
   }
 
   function clearError(key) {
     var input = findTextInput(key);
     if (!input) return;
-    var field = input.closest('[data-field]');
-    if (field) field.classList.remove('is-error');
-    var errEl = findDataElement('[data-err-for]', 'data-err-for', key);
+    input.removeAttribute('aria-invalid');
+    var errEl = errNodeFor(input);
     if (errEl) errEl.textContent = '';
   }
 

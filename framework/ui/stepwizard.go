@@ -45,6 +45,29 @@ type StepWizardConfig struct {
 	// (e.g. previously entered data).
 	HiddenFields []render.HTML
 
+	// Errors is an optional set of field-level errors for the current
+	// step, the same shape ui.Form takes. When non-empty the wizard
+	// renders a ValidationSummary between the step indicator and the
+	// step's fields, and marks the form (data-hui-form-errors) so the
+	// headless behaviour module moves focus to the summary after a
+	// failed submit — which requires ID, the summary's id being derived
+	// from it. FieldErrors round-trips directly from a server-side
+	// validation of the submitted step.
+	Errors FieldErrors
+	// Summary is a sentence that belongs to no one field, rendered in
+	// the summary after the field errors. Empty means the framework
+	// default when Errors is not.
+	Summary string
+	// FieldLabels, FieldIDs and FieldOrder are passed to the
+	// ValidationSummary; see ValidationSummaryConfig.
+	FieldLabels map[string]string
+	FieldIDs    map[string]string
+	FieldOrder  []string
+
+	// ID is the form's id; required when Errors is set (the summary's
+	// id is derived from it).
+	ID string
+
 	Class string
 
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
@@ -99,6 +122,31 @@ func StepWizard(cfg StepWizardConfig) render.HTML {
 	// 1. Step indicator bar (visual dots/segments).
 	children = append(children, renderStepIndicator(ctx, cfg.Steps, cfg.CurrentStep))
 
+	// 1b. The validation summary for a failed submit, the same one
+	// ui.Form renders: above the fields, and the form is marked so
+	// the behaviour module moves focus to it on arrival.
+	var formErrs bool
+	if len(cfg.Errors) > 0 || cfg.Summary != "" {
+		if cfg.ID == "" {
+			panic("ui: StepWizard rendering Errors requires ID — the summary's id is derived from it (StepWizardConfig.ID + \"-errors\"), and two summaries on one page would share one title id")
+		}
+		general := cfg.Summary
+		if general == "" {
+			general = i18nui.T(ctx, i18nui.KeyFormErrorsSummary)
+		}
+		children = append(children, ValidationSummary(ValidationSummaryConfig{
+			ID:          cfg.ID + "-errors",
+			Errors:      cfg.Errors,
+			General:     general,
+			FieldLabels: cfg.FieldLabels,
+			FieldIDs:    cfg.FieldIDs,
+			FieldOrder:  cfg.FieldOrder,
+			Title:       i18nui.T(ctx, i18nui.KeyFormHasErrors),
+			Ctx:         ctx,
+		}))
+		formErrs = true
+	}
+
 	// 2. Current step content wrapped in a section.
 	step := cfg.Steps[cfg.CurrentStep]
 	stepContent := renderStepContent(step, cfg.CurrentStep, len(cfg.Steps))
@@ -117,10 +165,14 @@ func StepWizard(cfg StepWizardConfig) render.HTML {
 		formAttrs = html.Attrs{}
 	}
 	formAttrs["data-fui-comp"] = "ui-step-wizard"
+	if formErrs {
+		formAttrs["data-hui-form-errors"] = ""
+	}
 	return stepWizardStyle.WrapHTML(html.Form(html.FormConfig{
 		Method:     method,
 		Action:     cfg.Action,
 		Class:      cls,
+		ID:         cfg.ID,
 		ExtraAttrs: formAttrs,
 	}, children...))
 }

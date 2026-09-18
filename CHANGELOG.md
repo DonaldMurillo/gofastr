@@ -256,9 +256,172 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   preloads it when a marker is in the page. The kernel reads registered
   markers from one block beside the manifest and loads the module once
   when one appears. No trigger vocabulary: the marker is the trigger.
-  Spec: `docs/spec-behavior-registry.md`.
+- **The plain-markup form family renders through
+  `framework/headless`.** `ui.Form`, `ui.FormField`, `ui.FormFieldFor`,
+  `ui.FormSection`, `ui.TextField`, `ui.NumberField`, `ui.DateField`,
+  `ui.Select`, `ui.ValidationSummary` and `ui.InputGroup` render their
+  headless counterparts dressed with this package's internal class maps
+  (`fui-form*`, `fui-field*`, `fui-select*`, `fui-input*`,
+  `fui-input-group*`, `fui-validation-summary*`), the way Button did:
+  class names are the same under every theme, the
+  `data-fui-comp` markers stay and fetch the same sheets, and the
+  field map and the control map are passed separately (Field and
+  Input both key their root on `PartRoot`; one merged map would lose
+  a root class). A `Select` carries its own marker on the `<select>`
+  beside the field's marker on the row, so it loads both sheets it
+  needs wherever it renders.
+- **`ui.Control` — the styled native control.** A single input for
+  the types the typed fields do not name (email, password,
+  datetime-local, file, tel, url, search, hidden), built inside a
+  `FormField` builder from the wiring the field handed it: the id,
+  the described-by chain, the invalid state and the required flag
+  come from the field and nowhere else, because two sources for one
+  fact is how they drift.
+- **`FormFieldConfig.Input` is a builder.**
+  `func(headless.FieldControl) render.HTML` — the field hands its
+  control the id, the described-by chain, the invalid state and the
+  required flag before the control renders, which is how
+  `headless.Field` composes and the reason it exists. The
+  post-hoc `injectAttrs` string surgery (and its idempotence,
+  comment-skipping and quote-respecting helpers) is deleted; Tooltip
+  keeps its own local splice for its caller-built trigger.
+- **Hint and error are both visible.** `headless.Field` renders the
+  hint and the error when both are set, the error first, and
+  `Describe` joins both ids into `aria-describedby` in that order:
+  the hint is the rule the value must obey and the error is the
+  violation, so dropping the rule exactly when it was broken is
+  dropping it when it is needed most. The cost — longer descriptions
+  and taller errored rows for bare-headless callers — is the
+  deliberate trade of the primitive; a caller who wants the hint gone
+  on error says so by not setting it. `Choice` keeps hint-only.
+- **`headless.FieldProps.ReserveError`.** When set and `Error` is
+  empty, the field renders the error paragraph empty with its stable
+  id and keeps it in the control's `aria-describedby` — the node a
+  script fills without re-rendering (the theme editor's live apply).
+  The id is the contract it is found by (the control's id with
+  `-error`); the node carries no hook, because a `data-hui-*`
+  attribute is one this package's runtime module binds and no module
+  has behaviour for an empty paragraph. `framework/ui`'s field sheet
+  takes the node out of the grid while it is empty, so a reserved
+  field is not a field with a blank row under it. A caller that fills
+  it must also set `aria-invalid` on the control; the server-rendered
+  path should pass `Error` instead. The theme editor's hand-rolled
+  field rows and its `data-err-for` lookup are gone, moved onto
+  `ui.FormField` with `ReserveError`, targeting the node by its id.
+- **`headless.FormProps.Request` — the typed request seam for
+  forms.** What Button's `Action` is to a click: the
+  `data-fui-rpc` contract of a submitted form (endpoint, an RPC
+  method that may differ from the native one, the success effects —
+  signal, navigate, reset, widget open/close, refresh — the
+  input-trigger and debounce pair a live-search form uses, the
+  pre-flight confirm, and the generator's `data-action-mount` hook,
+  which `Safe` refuses like every `data-action-*` key and therefore
+  rides the seam). Every key is checked for what it deserves
+  (same-origin endpoints, methods the runtime sends, a numeric
+  debounce, non-empty names); `data-fui-rpc-body` is refused with its
+  own message (a form serializes itself); a key outside the
+  vocabulary panics naming the key and the seam; `Island` and
+  `Request` on one form are refused rather than resolved by
+  precedence. `ui.Form` routes `ExtraAttrs`' `data-fui-*` and
+  `data-action-*` keys through it, the way `splitButtonAttrs` does.
+- **`FieldOptions` — the form family's component options.**
+  `theme.ComponentOptions` gains `Field{Layout: Stacked | Inline,
+  Radius: Round | Square}` (defaults Stacked, Round; flattened keys
+  `field.layout`, `field.radius`); the compiler emits
+  `--fui-field-columns`, `--fui-field-message-column` and
+  `--fui-field-radius`. Inline is a preference, not a promise: the
+  field sheet stacks the row below a stated width, the control track
+  is `minmax(0, 1fr)` so a long value can never force overflow, a
+  long label wraps rather than widening its track, and choice rows
+  keep their own wrapping-label structure and ignore the columns
+  variable. The field sheet draws the required mark from the label's
+  `data-required` state (an asterisk whose alternative text is empty,
+  so the accessible name stays clean).
+- **`ui.StepWizard` takes the same error surface as `ui.Form`.**
+  `Errors`, `Summary`, `FieldLabels`, `FieldIDs`, `FieldOrder` and
+  `ID`: a non-empty `Errors` renders `ui.ValidationSummary` between
+  the step indicator and the step's fields, marks the form so the
+  headless behaviour module moves focus to it, and requires `ID` for
+  the same reason `ui.Form` does. A wizard validates the submitted
+  step on the server and re-renders it with the errors, which is what
+  a `novalidate` form owes its reader now that `required` on its
+  controls is real rather than decorative.
+- **`ui.Form` renders its errors through `ui.ValidationSummary`.**
+  With `Errors` set the form derives the summary's id from its own
+  (`<formID>-errors`), marks itself `data-hui-form-errors` so the
+  headless behaviour module moves focus to the summary after a
+  failed submit, and maps field names to control ids through the new
+  `FieldIDs`/`FieldLabels`/`FieldOrder` config — a link to `#email`
+  misses a control whose id is `f_email`. An error whose field has no
+  known id renders as text, not as an anchor to nothing. The summary is focusable by script
+  (`tabindex="-1"`, never a tab stop), `role="alert"`, and its links
+  go through the anchor policy. The newsletter on the headless
+  landing page migrated onto `Errors` with a stable id, replacing
+  its hand-stamped `data-hui-form-errors` and its own Callout.
+- **`ui.PasswordInput` takes the field's wiring.** A `Field
+  headless.FieldControl` on the config applies the enclosing field's
+  described-by, invalid state, required flag and id to the inner
+  input after the sanitiser, so a password field inside a labelled
+  field carries its description; when both are set the field wins.
+  The reveal button, its runtime module and its class family are
+  unchanged (they move in the next change of the stack).
 
 ### BREAKING
+- **`FormFieldConfig.Input` is a builder, not pre-built markup.**
+  `Input func(headless.FieldControl) render.HTML`; a nil `Input`
+  panics as an empty one did. The migration is one closure per call
+  site — build the control from the wiring the field hands the
+  closure with `ui.Control` (any input type), a typed field, or
+  `ui.PasswordInput`'s new `Field` — and the three raw-HTML feeders
+  (the blueprint generator, the resource engine, the admin battery)
+  emit the typed controls now, which is the better generator anyway.
+  A closure that ignores its `FieldControl` compiles and loses the
+  wiring; the docs say so once.
+- **The form family's classes are `fui-form*`, `fui-field*`,
+  `fui-select*`, `fui-input*`, `fui-input-group*`,
+  `fui-validation-summary*`.** No file emits or selects `ui-form`,
+  `ui-form-field`, `ui-form-section`, `ui-select`, `ui-input-group`
+  or `ui-validation-summary` as a class any more; the registration
+  names and `data-fui-comp` markers stay (the marker fetches the
+  sheet). The choice family's one borrowed class
+  (`ui-form-field__required`, emitted by the toggle groups) is
+  renamed with its rule to `fui-field__required`. Hand-rolled
+  `class="ui-form-field"` markup renders unstyled — call
+  `ui.FormField`.
+- **`ui.ValidationSummary` requires `ID`, and a `ui.Form` rendering
+  `Errors` requires its own.** The summary's title id is derived from
+  the root id; two summaries (or two errored forms) without ids would
+  share one title id and break both labels and both announcements.
+  A form's summary id is `<formID>-errors` unless the caller
+  overrides it.
+- **The form wiring vocabulary is typed.** Every `data-fui-*` and
+  `data-action-*` key in `ui.Form`'s `ExtraAttrs` routes through the
+  request seam; a key outside the vocabulary panics at render,
+  naming the key and the seam. Build the wiring with
+  `interactive.Post(...).OnSuccess(...).Attrs()`: the request, the
+  method, the signal, navigate, open, refresh, close, reset, the
+  input trigger with its debounce, confirm, and `data-action-mount`
+  all ride. Four effects a button may carry are refused on a form,
+  each for its own reason: `AfterText` and `AfterDisable` would
+  rewrite or disable the form element itself rather than a control,
+  `ScrollTo` and `PushState` belong to a navigation the server owns
+  after a mutation, and `WithBody` gets its own refusal because a
+  form serializes its own fields and a static body would drop every
+  one of them. A host composing those on a form hits a render panic
+  naming the key.
+- **`FormConfig.Summary` is a row inside the summary, not a Callout's
+  body.** It was the whole text of an error Callout above the fields;
+  it is now the sentence that belongs to no field, rendered as a text
+  row inside `ui.ValidationSummary` above the per-field links. The
+  rendered output of a released component changes for every caller
+  that sets it. It also renders now when `Errors` is empty: a save
+  refused with no field error named — a conflict, a guard — used to
+  render nothing at all, which is the admin battery's general flash
+  going silent.
+- **`ui.Form` refuses an action the anchor policy rejects.** The old
+  behaviour substituted `#`, shipping a form whose submit went
+  nowhere; the refusal is a panic at render, where the mistake was
+  made (matching `headless.Form`, which always refused).
 - **A `data-fui-*` key the runtime does not read on a button panics.**
   Under the old carrier contract `ui.Button`'s `ExtraAttrs` rendered
   any `data-fui-*` key as a (usually dead) attribute; now every
@@ -325,6 +488,28 @@ are listed under Added above, not here.
    `ui.Button` / `ui.LinkButton`. Selectors that targeted `.ui-button`
    (Form's block-actions, FilterToolbar, admin row actions) select
    `.fui-button` now.
+5. **The form family's `Input` is a builder and its classes are
+   `fui-*`.** `FormFieldConfig.Input` takes
+   `func(headless.FieldControl) render.HTML`; build the control with
+   `ui.Control`, a typed field, or `ui.PasswordInput`'s `Field`.
+   Hand-rolled `ui-form`/`ui-form-field`/`ui-select`/… class markup
+   renders unstyled.
+6. **`ui.ValidationSummary` requires `ID`; a `ui.Form` rendering
+   `Errors` requires `FormConfig.ID`.** The summary's id is derived
+   from the form's.
+7. **Form wiring rides the request seam.** `data-fui-*` and
+   `data-action-*` keys in `ui.Form`'s `ExtraAttrs` are admitted
+   vocabulary or a render-time panic; `data-fui-rpc-body` is refused
+   outright (a form serializes itself), as are `after-text`,
+   `after-disable`, `scroll-to` and `push-state`, which mean nothing
+   a form can honour.
+8. **An unsafe `FormConfig.Action` panics.** The `#` substitution is
+   gone.
+9. **`FormConfig.Summary` moved inside the summary.** It was an error
+   Callout's whole body; it is the no-field sentence rendered as a row
+   inside `ui.ValidationSummary`, and it now renders even when
+   `Errors` is empty. A caller that set it gets different markup and,
+   in the general-only case, output where there was none.
 
 ### Changed
 - **One home per helper.** A clone survey over the tree found the same

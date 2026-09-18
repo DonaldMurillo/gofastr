@@ -96,7 +96,7 @@ func TestRadioGroupMarkerInsideLegend(t *testing.T) {
 		Name: "plan", Legend: "Plan", Required: true,
 		Options: []RadioGroupOption{{Value: "a", Label: "A"}},
 	}))
-	marker := strings.Index(h, "ui-form-field__required")
+	marker := strings.Index(h, "fui-field__required")
 	if marker == -1 {
 		t.Fatalf("Required: true rendered no marker:\n%s", h)
 	}
@@ -110,7 +110,7 @@ func TestCheckboxGroupMarkerInsideLegend(t *testing.T) {
 		Name: "tags", Legend: "Tags", Required: true,
 		Options: []CheckboxGroupOption{{Value: "a", Label: "A"}},
 	}))
-	marker := strings.Index(h, "ui-form-field__required")
+	marker := strings.Index(h, "fui-field__required")
 	if marker == -1 {
 		t.Fatalf("Required: true rendered no marker:\n%s", h)
 	}
@@ -122,8 +122,8 @@ func TestCheckboxGroupMarkerInsideLegend(t *testing.T) {
 // The marker's styling lives in formFieldCSS scoped to ui-form-field; the
 // toggle groups emit the class, so their stylesheet must style it too.
 func TestToggleCSSStylesTheMarker(t *testing.T) {
-	if !strings.Contains(toggleCSS(style.Theme{}), ".ui-form-field__required") {
-		t.Fatal("toggleCSS has no rule for .ui-form-field__required — group markers are unstyled unless ui-form-field happens to be on the page")
+	if !strings.Contains(toggleCSS(style.Theme{}), ".fui-field__required") {
+		t.Fatal("toggleCSS has no rule for .fui-field__required — group markers are unstyled unless ui-form-field happens to be on the page")
 	}
 }
 

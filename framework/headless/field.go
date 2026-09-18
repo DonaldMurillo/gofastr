@@ -1,6 +1,8 @@
 package headless
 
 import (
+	"strings"
+
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
@@ -20,14 +22,49 @@ type FieldProps struct {
 	// neither names the control for assistive tech nor enlarges its hit
 	// area — so a Field with a Label and no For is refused.
 	For string
-	// Hint is help text. Suppressed while Error is set, so the two
-	// never stack and shift the row.
+	// Hint is help text: the rule the value must obey. It stays
+	// rendered — and stays in the description — when Error is set: the
+	// hint is the rule, the error is the violation, and dropping the
+	// rule exactly when it was broken is dropping it when the reader
+	// needs it most. The error is drawn first and read first, so the
+	// correction arrives before the reminder.
+	//
+	// The cost is paid in pixels and syllables: an errored row is
+	// taller, and its description is longer, than an error-only one.
+	// That is the deliberate trade of this primitive; a caller who
+	// wants the hint gone on error says so by not setting it.
 	Hint string
-	// Error replaces the hint and is announced.
+	// Error is announced and drawn before the hint.
 	Error string
+	// ReserveError keeps an error paragraph rendered — empty and wired
+	// into the control's aria-describedby — when Error itself is
+	// empty. It exists for a script that fills the node without
+	// re-rendering the field (a live editor applying edits as the
+	// operator types). An empty described-by target announces nothing
+	// until it is filled, which is the point: the wiring ships, the
+	// words arrive when they are true.
+	//
+	// The node's id is the contract a filling script looks it up by:
+	// the control's id with "-error" appended, the same id that rides
+	// aria-describedby. It carries no hook of its own — a data-hui-*
+	// attribute is something this package's runtime module binds, and
+	// no module has behaviour for an empty paragraph.
+	//
+	// A caller that fills the node must also set aria-invalid on the
+	// control it describes; this component cannot know the script's
+	// verdict. The server-rendered path should pass Error instead —
+	// a reserved node is a scaffold, not an answer.
+	ReserveError bool
 	// Required marks the label and is mirrored onto the control by the
 	// caller (the control owns its own required attribute).
 	Required bool
+
+	// Parts is the caller's reach into the field's named parts:
+	// attributes on the root (a class appends, never replaces). No
+	// part is fillable — every element a field draws is half of a
+	// relationship built from the control's id, and replacement
+	// content would break the half it replaced.
+	Parts Parts
 
 	ID         string
 	ExtraAttrs html.Attrs
@@ -45,8 +82,10 @@ type FieldProps struct {
 type FieldControl struct {
 	// ID is the field's For: the id the label points at.
 	ID string
-	// DescribedBy is the hint's or the error's id, for the control's
-	// aria-describedby. Empty when the field has neither.
+	// DescribedBy is the error's and the hint's ids, error first, for
+	// the control's aria-describedby. Empty when the field has
+	// neither — unless ReserveError held an empty error node in place,
+	// whose id rides here too.
 	DescribedBy string
 	// Invalid is true when the field has an Error, so a control never
 	// has to be told twice.
@@ -64,35 +103,73 @@ func Field(p FieldProps, s Classes, build func(FieldControl) render.HTML) render
 	if p.For == "" {
 		panic("headless: Field requires For — a label that names no control is decoration")
 	}
+	reserved := p.ReserveError && p.Error == ""
 	describedBy, hintID, errID := Describe(p.For, p.Hint, p.Error)
+	if reserved {
+		if errID == "" {
+			errID = p.For + "-error"
+		}
+		// The node's id is part of the control's description even
+		// while the node is empty: the wiring is what the reserving
+		// caller ships, the words are what their script writes.
+		describedBy = nonEmpty(errID, describedBy)
+	}
 	control := build(FieldControl{
 		ID: p.For, DescribedBy: describedBy,
 		Invalid: p.Error != "", Required: p.Required,
 	})
 
+	b := p.Parts.Box(s)
 	labelAttrs := Attrs(map[string]string{"for": p.For})
 	if p.Required {
 		labelAttrs["data-required"] = ""
 	}
 	kids := []render.HTML{
-		El("label", s, PartLabel, labelAttrs, render.Text(p.Label)),
+		b.El("label", PartLabel, labelAttrs, render.Text(p.Label)),
 		control,
 	}
-	switch {
-	case p.Error != "":
+	if p.Error != "" {
 		// role=alert, not aria-live: an error that appears after a
 		// failed submit has to interrupt, and the element is inserted
 		// rather than updated in place.
-		kids = append(kids, El("p", s, PartError,
+		kids = append(kids, b.El("p", PartError,
 			Attrs(map[string]string{"id": errID, "role": "alert"}),
 			render.Text(p.Error)))
-	case p.Hint != "":
-		kids = append(kids, El("p", s, PartHint,
+	} else if reserved {
+		// The same paragraph, empty, found by its id. An empty alert
+		// node is silent, which is why shipping it reserved is safe,
+		// and the description picks the words up on focus once they
+		// are there. Whether filling it also INTERRUPTS depends on the
+		// engine: the insertion is what flips :empty off, so an engine
+		// that recomputes style before processing the mutation
+		// announces and one that had dropped the hidden node may not.
+		// Do not rely on the interrupt; the visible text and the
+		// description are the contract. The stylesheet takes it out of the grid
+		// while it is empty, so a reserved field is not a field with a
+		// blank row under it.
+		kids = append(kids, b.El("p", PartError,
+			Attrs(map[string]string{"id": errID, "role": "alert"})))
+	}
+	if p.Hint != "" {
+		kids = append(kids, b.El("p", PartHint,
 			Attrs(map[string]string{"id": hintID}), render.Text(p.Hint)))
 	}
 
 	own := Merge(Safe(p.ExtraAttrs), Attrs(map[string]string{"id": p.ID}))
-	return El("div", s, PartRoot, own, kids...)
+	return b.El("div", PartRoot, own, kids...)
+}
+
+// nonEmpty joins the values that say something, in order, with a
+// space — the described-by shape when the ids arrive from more than
+// one branch.
+func nonEmpty(vals ...string) string {
+	out := make([]string, 0, len(vals))
+	for _, v := range vals {
+		if v != "" {
+			out = append(out, v)
+		}
+	}
+	return strings.Join(out, " ")
 }
 
 // FieldDescribedBy is what a control inside a Field must carry so the
@@ -169,6 +246,12 @@ func init() {
 		// relationship built from the same id as the control: a slot
 		// here would let a page replace the hint with markup that has
 		// no id, leaving aria-describedby pointing at nothing.
+		WithParts: func(s Classes, parts Parts) render.HTML {
+			return Field(FieldProps{Label: "Port", For: "field-parts", Hint: "1–65535", Parts: parts}, s,
+				func(c FieldControl) render.HTML {
+					return Input(InputProps{Name: c.ID, ID: c.ID, DescribedBy: c.DescribedBy}, s)
+				})
+		},
 		Cases: func(k Kit) []Case {
 			s := k.Classes
 			input := func(c FieldControl) render.HTML {
@@ -181,8 +264,12 @@ func init() {
 				HTML: Field(FieldProps{Label: "Port", For: "field-port", Hint: "1–65535"}, s, input),
 			}, {
 				Name: "errored",
-				Why:  "the error REPLACES the hint in the description rather than joining it: when something is wrong, reading both buries the correction",
+				Why:  "the error JOINS the hint in the description, ahead of it: the hint is the rule the value must obey and the error is the violation, so dropping the rule exactly when it was broken is dropping it when it is needed most — and the correction is read first because it comes first",
 				HTML: Field(FieldProps{Label: "Port", For: "field-port-bad", Hint: "1–65535", Error: "Already in use."}, s, input),
+			}, {
+				Name: "reserved error node",
+				Why:  "a script that fills the error without re-rendering needs the node and its id already in the description — an empty described-by target announces nothing until it is filled, which is the point, and the stylesheet keeps the empty node out of the layout",
+				HTML: Field(FieldProps{Label: "Token", For: "field-token-live", ReserveError: true}, s, input),
 			}, {
 				Name: "required",
 				Why:  "required is a state the parser is told about, not a red asterisk — which is a picture of a rule",

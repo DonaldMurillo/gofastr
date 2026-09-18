@@ -2,6 +2,7 @@ package headless
 
 import (
 	"strconv"
+	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
@@ -13,6 +14,12 @@ const (
 	PartFormBody    Part = "form-body"
 	PartFormActions Part = "form-actions"
 )
+
+// Action is the wiring a component admits through its request seam:
+// the same type Button's Action prop takes, named here so a form's
+// Request reads as what it is. Every key is checked for what it
+// deserves at render; see formRequestAttrs.
+type Action = html.Attrs
 
 // FormProps is a form and the things around it.
 type FormProps struct {
@@ -54,6 +61,31 @@ type FormProps struct {
 	// where the plain POST to the page is the whole design.
 	Island Island
 
+	// Request is what the form DOES when the host framework's runtime
+	// is on the page: its data-fui-rpc contract — the endpoint the
+	// submit posts to, a method that may differ from the native one
+	// (a form that natively POSTs for no-script may PUT over RPC),
+	// the success effects (a signal to land in, a page to navigate
+	// to, a reset, a widget to open or close) — plus the mount hook a
+	// generated form carries (data-action-mount, the compiled action
+	// that populates its relation selects). It is a seam of its own
+	// rather than a use of ExtraAttrs for the same reason Button's
+	// Action is: Safe drops every data-fui-* and data-action-* key, so
+	// wiring through extras would render a plain form that posts
+	// natively. A key outside the request vocabulary panics at render,
+	// naming the key and the seam.
+	//
+	// Island and Request are two ways of saying "the submit is an
+	// RPC"; carrying both on one form is refused rather than resolved
+	// by precedence.
+	Request Action
+
+	// Parts is the caller's reach into the form's named parts:
+	// attributes on the root and on the body and actions rows (a
+	// class appends, never replaces). Nothing is fillable — the
+	// fields and the actions are the caller's own children.
+	Parts Parts
+
 	ID         string
 	ExtraAttrs html.Attrs
 }
@@ -82,16 +114,28 @@ func Form(p FormProps, s Classes, fields ...render.HTML) render.HTML {
 		"method": orDefault(p.Method, "post"),
 	}))
 	if !p.Island.zero() {
+		if len(p.Request) > 0 {
+			panic("headless: Form carries both Island and Request — two ways of saying the submit is an RPC; pick one")
+		}
 		// The method and action stay for no script; the contract beside
 		// them makes the submit a region update. No push-state: a
 		// mutation's URL is the server's to set.
 		own = Merge(own, p.Island.attrs("", orDefault(p.Method, "post")))
+	} else if len(p.Request) > 0 {
+		// The native method and action stay for no script; the
+		// request contract beside them is what the runtime sends. The
+		// two may disagree on purpose — a form that natively POSTs may
+		// PUT over RPC — because they answer different questions: what
+		// a scriptless browser submits, and what the region update
+		// asks for.
+		own = Merge(own, formRequestAttrs(p.Request))
 	}
 	if p.Multipart {
 		own["enctype"] = "multipart/form-data"
 	}
 	Flag(own, "novalidate", p.NoValidate)
 
+	b := p.Parts.Box(s)
 	kids := make([]render.HTML, 0, 3)
 	if p.Errors != "" {
 		// The hook says "there are errors in here"; the runtime moves
@@ -99,11 +143,116 @@ func Form(p FormProps, s Classes, fields ...render.HTML) render.HTML {
 		Mark(own, "data-hui-form-errors")
 		kids = append(kids, p.Errors)
 	}
-	kids = append(kids, El("div", s, PartFormBody, nil, fields...))
+	kids = append(kids, b.El("div", PartFormBody, nil, fields...))
 	if p.Actions != "" {
-		kids = append(kids, El("div", s, PartFormActions, nil, p.Actions))
+		kids = append(kids, b.El("div", PartFormActions, nil, p.Actions))
 	}
-	return El("form", s, PartRoot, own, kids...)
+	return b.El("form", PartRoot, own, kids...)
+}
+
+// formRequestAttrs returns the request contract a form admits through
+// its Request seam, refusing anything that is not one. The vocabulary
+// is the request family the runtime reads on a submitted form: the
+// endpoint and its method, the success effects (signal, navigate,
+// reset, widget open/close, refresh), the input-trigger and debounce
+// pair a live-search form uses, the pre-flight confirm, and the
+// mount hook a generated form carries (data-action-mount, a compiled
+// action name — refused by Safe like every data-action-* key, which
+// is exactly why it rides this seam). Every key is checked for what
+// it deserves: endpoints and the URLs navigation touches must be
+// same-origin, methods must be ones the runtime sends, the debounce
+// must be a number, values that name things must name them.
+//
+// data-fui-rpc-body is refused with its own message: a form
+// serializes itself, and a static body would drop every field on the
+// floor while the form sat there looking submitted.
+func formRequestAttrs(a html.Attrs) html.Attrs {
+	out := html.Attrs{}
+	for k, v := range a {
+		// Folded first, stored folded: one key, one spelling, the way
+		// the browser reads it.
+		k = strings.ToLower(k)
+		if _, twice := out[k]; twice {
+			panic("headless: Form Request repeats " + k + " under two spellings")
+		}
+		switch k {
+		case "data-fui-rpc":
+			if v == "" {
+				panic("headless: Form Request carries an empty data-fui-rpc — a request with no endpoint")
+			}
+			checkSameOrigin("a Form Request", "data-fui-rpc", v)
+			out[k] = v
+		case "data-fui-rpc-method":
+			switch v {
+			case "GET", "POST", "PUT", "PATCH", "DELETE":
+			default:
+				panic("headless: Form Request carries data-fui-rpc-method " + strconv.Quote(v) + ", which is not a method the runtime sends")
+			}
+			out[k] = v
+		case "data-fui-rpc-signal":
+			if v == "" {
+				panic("headless: Form Request carries an empty data-fui-rpc-signal — a success with nowhere to land")
+			}
+			checkSignalName(v)
+			out[k] = v
+		case "data-fui-rpc-navigate":
+			if v == "" {
+				panic("headless: Form Request carries an empty data-fui-rpc-navigate — a success with nowhere to go")
+			}
+			checkSameOrigin("a Form Request", "data-fui-rpc-navigate", v)
+			out[k] = v
+		case "data-fui-rpc-open", "data-fui-rpc-refresh":
+			// open names the widget that opens on success; refresh
+			// names the one the runtime re-polls. Both name things.
+			if v == "" {
+				panic("headless: Form Request carries an empty " + k + " — it names a widget, and empty names nothing")
+			}
+			out[k] = v
+		case "data-fui-rpc-close", "data-fui-rpc-reset":
+			// Presence is the value: close the enclosing widget,
+			// reset the form's own fields.
+			out[k] = v
+		case "data-fui-rpc-trigger":
+			if v != "input" {
+				panic("headless: Form Request carries data-fui-rpc-trigger " + strconv.Quote(v) + " — \"input\" is the only trigger a form's runtime reads")
+			}
+			out[k] = v
+		case "data-fui-rpc-debounce-ms":
+			if v == "" {
+				panic("headless: Form Request carries an empty data-fui-rpc-debounce-ms — say the window or leave it to the default")
+			}
+			for i := range len(v) {
+				if v[i] < '0' || v[i] > '9' {
+					panic("headless: Form Request carries data-fui-rpc-debounce-ms " + strconv.Quote(v) + ", which is not a number of milliseconds")
+				}
+			}
+			out[k] = v
+		case "data-fui-confirm":
+			if v == "" {
+				panic("headless: Form Request carries an empty data-fui-confirm — a confirmation with no message confirms nothing")
+			}
+			out[k] = v
+		case "data-action-mount":
+			// A compiled action name: an identifier the host
+			// registered, not prose. Whitespace or control bytes in it
+			// name nothing the dispatcher knows.
+			if v == "" {
+				panic("headless: Form Request carries an empty data-action-mount — it names the compiled action that runs on mount, and empty names nothing")
+			}
+			for i := range len(v) {
+				c := v[i]
+				if c <= ' ' || c == 0x7f {
+					panic("headless: Form Request carries data-action-mount " + strconv.Quote(v) + ", which is not an action name the dispatcher knows")
+				}
+			}
+			out[k] = v
+		case "data-fui-rpc-body":
+			panic("headless: Form Request carries data-fui-rpc-body — a form serializes itself; a static body would drop every field")
+		default:
+			panic("headless: Form Request carries " + k + ", which is not a request attribute a form admits (the wiring vocabulary lives on FormProps.Request; decoration belongs in ExtraAttrs)")
+		}
+	}
+	return out
 }
 
 // ─── InputGroup ─────────────────────────────────────────────────────
@@ -143,6 +292,9 @@ func init() {
 		Name:    "Form",
 		Anatomy: []Part{PartRoot, PartFormBody, PartFormActions},
 		Hooks:   []string{"data-hui-form-errors"},
+		WithParts: func(s Classes, parts Parts) render.HTML {
+			return Form(FormProps{Action: "/apps", Parts: parts}, s)
+		},
 		Cases: func(k Kit) []Case {
 			s := k.Classes
 			appName := Field(FieldProps{Label: "App name", For: "new-app-name"}, k.For("Field"),

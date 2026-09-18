@@ -53,6 +53,46 @@ func TestCompilerEmitsRadiusVariables(t *testing.T) {
 	}
 }
 
+func TestCompilerEmitsFieldVariables(t *testing.T) {
+	for _, tc := range []struct {
+		layout  theme.FieldLayout
+		columns string
+		message string
+	}{
+		{theme.Stacked, "minmax(0, 1fr)", "1 / -1"},
+		{theme.Inline, "minmax(8rem, 1fr) minmax(0, 3fr)", "2"},
+	} {
+		css := rootOptionCSS(theme.ComponentOptions{Field: theme.FieldOptions{Layout: tc.layout}})
+		if !strings.Contains(css, "--fui-field-columns: "+tc.columns+";") {
+			t.Errorf("layout %v: columns missing (want %s)", tc.layout, tc.columns)
+		}
+		if !strings.Contains(css, "--fui-field-message-column: "+tc.message+";") {
+			t.Errorf("layout %v: message column missing (want %s)", tc.layout, tc.message)
+		}
+	}
+	// The inline control track's minimum is zero: an auto-min track
+	// sizes to the control's intrinsic width, so a long value forces
+	// overflow instead of scrolling inside the control.
+	if css := rootOptionCSS(theme.ComponentOptions{Field: theme.FieldOptions{Layout: theme.Inline}}); !strings.Contains(css, "minmax(0, 3fr)") {
+		t.Error("the inline control track must be minmax(0, …), never auto")
+	}
+}
+
+func TestCompilerEmitsFieldRadiusVariables(t *testing.T) {
+	for _, tc := range []struct {
+		radius theme.FieldRadius
+		value  string
+	}{
+		{theme.FieldRound, "var(--radii-md)"},
+		{theme.FieldSquare, "0"},
+	} {
+		css := rootOptionCSS(theme.ComponentOptions{Field: theme.FieldOptions{Radius: tc.radius}})
+		if !strings.Contains(css, "--fui-field-radius: "+tc.value+";") {
+			t.Errorf("field radius %v: variable missing (want %s)", tc.radius, tc.value)
+		}
+	}
+}
+
 func TestCompilerEmitsTreatmentVariables(t *testing.T) {
 	for _, tc := range []struct {
 		treatment theme.ButtonTreatment
@@ -113,6 +153,7 @@ func TestCompilerEmitsTheCompleteSetAtRoot(t *testing.T) {
 		"--fui-button-radius",
 		"--fui-button-primary-bg", "--fui-button-primary-fg", "--fui-button-primary-border",
 		"--fui-button-danger-bg", "--fui-button-danger-fg", "--fui-button-danger-border",
+		"--fui-field-columns", "--fui-field-message-column", "--fui-field-radius",
 	} {
 		if !strings.Contains(css, name+":") {
 			t.Errorf("complete option set missing %s", name)

@@ -240,6 +240,55 @@ func buttonClassTokens(variant ButtonVariant, size ButtonSize) string {
 	return strings.Join(classes, " ")
 }
 
+// fieldClasses dresses headless.Field: the fui-field root and its
+// label, hint and error parts. Passed to Field ALONE, never merged
+// with a control's map: Field and Input both key their root on
+// PartRoot, and one merged map would lose a root class.
+var fieldClasses = headless.Classes{
+	headless.PartRoot:  "fui-field",
+	headless.PartLabel: "fui-field__label",
+	headless.PartHint:  "fui-field__hint",
+	headless.PartError: "fui-field__error",
+}
+
+// formClasses dresses headless.Form.
+var formClasses = headless.Classes{
+	headless.PartRoot:        "fui-form",
+	headless.PartFormBody:    "fui-form__body",
+	headless.PartFormActions: "fui-form__actions",
+}
+
+// inputClasses dresses the single-line controls (headless.Input) a
+// field builds. The input's classes are consumed by the FIELD sheet:
+// an input only ever renders inside a field, so the field's
+// data-fui-comp marker is what fetches the sheet that styles it.
+var inputClasses = headless.Classes{
+	headless.PartRoot: "fui-input",
+}
+
+// selectClasses dresses headless.Select. The select's own sheet
+// (ui-select) is fetched by the marker Select wraps its control with,
+// so a Select rendered outside any Form still loads both sheets it
+// needs: its own and the field's.
+var selectClasses = headless.Classes{
+	headless.PartRoot:   "fui-select",
+	headless.PartOption: "fui-select__option",
+}
+
+// inputGroupClasses dresses headless.InputGroup.
+var inputGroupClasses = headless.Classes{
+	headless.PartRoot: "fui-input-group",
+}
+
+// validationSummaryClasses dresses headless.ValidationSummary.
+var validationSummaryClasses = headless.Classes{
+	headless.PartRoot:      "fui-validation-summary",
+	headless.PartTitle:     "fui-validation-summary__title",
+	headless.PartErrorList: "fui-validation-summary__list",
+	headless.PartErrorItem: "fui-validation-summary__item",
+	headless.PartErrorLink: "fui-validation-summary__link",
+}
+
 func (s *variantSet) register(api, name string, kind variantKind, css VariantCSS) {
 	if !validVariantName(name) {
 		panic("ui: " + api + "(" + name + "): name must be non-empty lowercase letters, digits, or hyphens")
