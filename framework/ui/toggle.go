@@ -108,8 +108,11 @@ func Switch(cfg ToggleConfig) render.HTML {
 	// is not part of the control's name — the input's described-by
 	// must point at it or it is decoration.
 	id := choiceID(cfg.ID, "checkbox", cfg.Name, cfg.Value)
+	// A caller's Class reaches the root the same way Checkbox and
+	// Radio carry it; both render paths below go through this map.
+	classes := withRootClass(switchClasses, cfg.Class)
 	if cfg.Error == "" && cfg.Help == "" {
-		return toggleStyle.WrapHTML(headless.Switch(switchProps(cfg), switchClasses))
+		return toggleStyle.WrapHTML(headless.Switch(switchProps(cfg), classes))
 	}
 	p := switchProps(cfg)
 	if cfg.Error != "" {
@@ -119,7 +122,7 @@ func Switch(cfg ToggleConfig) render.HTML {
 		p.Extra["aria-describedby"] = id + "-hint"
 	}
 	return toggleStyle.WrapHTML(erroredRun(
-		headless.Switch(p, switchClasses),
+		headless.Switch(p, classes),
 		cfg.Help, cfg.Error, id))
 }
 

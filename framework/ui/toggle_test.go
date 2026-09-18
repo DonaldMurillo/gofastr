@@ -119,6 +119,32 @@ func TestToggleRequiredAttribute(t *testing.T) {
 	mustContain(t, h, "required")
 }
 
+// A caller's Class reaches the root of all three controls — Checkbox
+// and Radio always carried it; the Switch dropped it on both render
+// paths. The message path is covered too: the switch wraps in the
+// errored-run shell there, and the class must survive the wrap.
+func TestToggleCustomClassReachesTheRootOfAllThree(t *testing.T) {
+	cases := []struct {
+		name string
+		html string
+	}{
+		{"Checkbox", string(Checkbox(ToggleConfig{Name: "n", Label: "x", Class: "track-hook"}))},
+		{"Radio", string(Radio(ToggleConfig{Name: "n", Value: "v", Label: "x", Class: "track-hook"}))},
+		{"Switch", string(Switch(ToggleConfig{Name: "n", Label: "x", Class: "track-hook"}))},
+		{"Switch with help", string(Switch(ToggleConfig{Name: "n", Label: "x", Help: "h", Class: "track-hook"}))},
+	}
+	for _, c := range cases {
+		i := strings.Index(c.html, "<label")
+		if i < 0 {
+			t.Fatalf("%s: no label root rendered:\n%s", c.name, c.html)
+		}
+		root := c.html[i : i+strings.Index(c.html[i:], ">")+1]
+		if !strings.Contains(root, "track-hook") {
+			t.Errorf("%s: custom class must reach the root:\n%s", c.name, root)
+		}
+	}
+}
+
 // A required group marks every leaf's input required — that is how
 // HTML makes a radio group required — and draws no legend asterisk:
 // headless.Group owns the legend and takes plain text, and an

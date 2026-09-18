@@ -660,6 +660,21 @@ are listed under Added above, not here.
   where the old module reverted in silence.
 
 ### Fixed
+- **`ui.PasswordInput` ExtraAttrs reach the shell's root**, the
+  contract every component's `ExtraAttrs` carries (`data-*` test
+  hooks, analytics markers, via `html.SafeExtraAttrs`): they landed
+  on the inner input that submits, so a hook hung on the component
+  attached itself to the wrong element. `Autocomplete` keeps its own
+  field and stays on the input, where it belongs. The same review
+  round found `ui.Switch` dropping a caller's `Class` on both render
+  paths, where Checkbox and Radio carried theirs to the root; all
+  three now do.
+- **The choice sheet's hint indent and the password reveal's divider
+  are logical CSS properties** (`margin-inline-start`,
+  `border-inline-start`), like the rest of their sheets: in a
+  right-to-left document the hint stays under its label instead of
+  detaching to the physical left of the row, and the reveal button's
+  divider keeps facing the input. Identical pixels in LTR.
 - **`handler.DecodeStrict` keeps the size cap visible.** The read
   error was flattened into the 400 envelope's text, so a caller that
   capped the body with `http.MaxBytesReader` and asked for the cap's

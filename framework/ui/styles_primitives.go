@@ -306,7 +306,11 @@ func toggleCSS(_ style.Theme) string {
 .fui-choice__hint {
   display: block;
   flex-basis: 100%;
-  margin: var(--spacing-xs, 2px) 0 0 calc(1.25rem + var(--spacing-sm, 4px));
+  margin-block-start: var(--spacing-xs, 2px);
+  /* Logical inline-start, like the rest of this sheet: the indent
+     follows the control in RTL, staying under the label, instead of
+     detaching to the physical left of the row. */
+  margin-inline-start: calc(1.25rem + var(--spacing-sm, 4px));
   font-size: var(--text-sm, 0.875rem);
   color: var(--color-text-muted, #52525B);
 }

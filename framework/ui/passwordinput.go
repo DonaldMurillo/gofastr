@@ -2,7 +2,6 @@ package ui
 
 import (
 	"context"
-	"maps"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
@@ -41,12 +40,15 @@ type PasswordInputConfig struct {
 	Autocomplete string
 	// Class adds extra CSS classes to the shell.
 	Class string
-	// ExtraAttrs forwards additional attributes to the <input> element.
-	// Keys the component owns are dropped: type, name, placeholder,
-	// required, autocomplete, aria-invalid and aria-describedby (the
-	// field's wiring owns them), plus every data-fui-* and data-hui-*
-	// key — the reveal hooks are the runtime's contract, not a
-	// caller's to forge.
+	// ExtraAttrs forwards additional attributes to the shell's root
+	// element — the same contract every component's ExtraAttrs
+	// carries (data-* test hooks, analytics markers). Keys the
+	// component owns are dropped: class (use Class), id, the input's
+	// type, name, placeholder, required, autocomplete, aria-invalid
+	// and aria-describedby (the field's wiring owns them), plus every
+	// data-fui-* and data-hui-* key — the reveal hooks are the
+	// runtime's contract, not a caller's to forge. Autocomplete has
+	// its own field because it belongs to the input that submits.
 	ExtraAttrs map[string]string
 
 	// Ctx carries the per-request context used to resolve the reveal
@@ -78,10 +80,14 @@ func PasswordInput(cfg PasswordInputConfig) render.HTML {
 		panic("ui: PasswordInput requires ID (or a Field carrying one)")
 	}
 
-	extra := html.Attrs{}
-	maps.Copy(extra, html.SafeExtraAttrs(cfg.ExtraAttrs))
+	// Autocomplete is an attribute of the inner input (it tells the
+	// browser what to fill), so it travels the headless Extra seam the
+	// props document for exactly that. A caller's ExtraAttrs go to
+	// the shell's root, the contract every component's ExtraAttrs
+	// carries — never the input that submits.
+	inputExtra := html.Attrs{}
 	if cfg.Autocomplete != "" {
-		extra["autocomplete"] = cfg.Autocomplete
+		inputExtra["autocomplete"] = cfg.Autocomplete
 	}
 	// A nil Ctx resolves through i18nui's English defaults rather
 	// than the bridge's nil short-circuit, the behaviour the
@@ -99,8 +105,13 @@ func PasswordInput(cfg PasswordInputConfig) render.HTML {
 		Invalid:     cfg.Field.Invalid,
 		ID:          id,
 		DescribedBy: cfg.Field.DescribedBy,
-		Extra:       extra,
-		Strings:     StringsFor(ctx),
+		Extra:       inputExtra,
+		Parts: headless.Parts{Attrs: headless.PartAttrs{
+			headless.PartRoot: html.SafeExtraAttrs(cfg.ExtraAttrs,
+				"type", "name", "placeholder", "required", "autocomplete",
+				"aria-invalid", "aria-describedby"),
+		}},
+		Strings: StringsFor(ctx),
 	}, withRootClass(passwordClasses, cfg.Class)))
 }
 
@@ -122,7 +133,6 @@ func passwordInputCSS(_ style.Theme) string {
   font: inherit;
   font-size: var(--text-base, 1rem);
   padding: 10px var(--spacing-md, 8px);
-  color: var(--color-text, #18181B);
   min-block-size: var(--fui-density-control-h);
   min-inline-size: 0;
 }
@@ -139,7 +149,7 @@ func passwordInputCSS(_ style.Theme) string {
   padding-inline: var(--spacing-md, 8px);
   background: var(--color-surface-soft, #F4F4F5);
   border: 0;
-  border-left: 1px solid var(--color-border, #E4E4E7);
+  border-inline-start: 1px solid var(--color-border, #E4E4E7);
   font: inherit;
   font-size: var(--text-sm, 0.875rem);
   color: var(--color-text-muted, #52525B);

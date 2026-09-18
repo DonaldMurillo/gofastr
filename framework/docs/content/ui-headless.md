@@ -204,8 +204,12 @@ group's error belonging on the group and never on each leaf;
 `data-hui-reveal` is bound by the headless module, and its words come
 from `ui.StringsFor`); `ui.ColorField` is `headless.Color` (the
 swatch out of the tab order, the hex text the source of truth, and
-the headless module's colour sync keeping the two one value — the
-theme editor's own sync was deleted for it).
+the headless module's colour sync keeping the two one value for
+every value the picker can show — the short `#abc` form included,
+expanded to `#aabbcc` for the swatch and never an error; a value the
+picker cannot show stays verbatim in the text while the swatch falls
+back to black and the shell is marked `data-invalid` — the theme
+editor's own sync was deleted for it).
 
 **See it live:** the product site ships a landing page under each of two
 boot-registered themes —

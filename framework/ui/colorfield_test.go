@@ -33,8 +33,8 @@ func TestColorFieldTextInputHoldsTheRawValue(t *testing.T) {
 			t.Errorf("Value %q must be the TEXT input's value (the source of truth), not the swatch's:\n%s", raw, out)
 		}
 		pickable := strings.HasPrefix(raw, "#") && (len(raw) == 4 || len(raw) == 7)
-		if pickable && !strings.Contains(out, `data-invalid`) {
-			continue // fine
+		if pickable && strings.Contains(out, `data-invalid`) {
+			t.Errorf("pickable Value %q must not mark the shell data-invalid:\n%s", raw, out)
 		} else if !pickable && !strings.Contains(out, `data-invalid`) {
 			t.Errorf("unpickable Value %q must mark the shell data-invalid:\n%s", raw, out)
 		}
