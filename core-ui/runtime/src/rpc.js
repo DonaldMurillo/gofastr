@@ -209,6 +209,58 @@
     if (widgetName) headers['X-FUI-Widget'] = widgetName;
     if (body && !bodyIsFormData) headers['Content-Type'] = 'application/json';
 
+    // The request as one object a hook can decorate. A trigger that
+    // names modules in data-fui-rpc-with has each loaded first (the
+    // loader is idempotent), so a module that must ride on this
+    // request is registered before the fetch, never racing the
+    // marker scan; framework/local's upload bridge is the one that
+    // exists. Hooks are a seam, not a policy: NS._rpcHooks.request
+    // is awaited in order before the fetch, NS._rpcHooks.response is
+    // awaited in order on a 2xx after the headers the runtime itself
+    // reads and before it reads the body. A response hook must not
+    // read the body: the runtime reads it once, after the hooks, and a
+    // body read twice is a TypeError. A hook that rejects is logged and
+    // the response is still applied.
+    //
+    // req.fatal is how the seam FAILS CLOSED. A trigger that names a
+    // module in data-fui-rpc-with declares it a PRECONDITION of the
+    // request, and a hook that could not prepare the request is saying
+    // the server would be handed something other than what the markup
+    // promised. Dispatching anyway is the worst of the three outcomes:
+    // the handler acts on a request that looks complete and is not: a
+    // save with the draft missing, a check run against no team, and
+    // nothing in the page to say so. A module that would not load, a
+    // hook that threw, or a hook that set req.fatal itself cancels the
+    // dispatch and raises gofastr:rpc-refused.
+    const req = { path: resolvedPath, method, body, isFormData: bodyIsFormData, headers, fatal: '' };
+    const withModules = node.getAttribute('data-fui-rpc-with');
+    if (withModules) {
+      for (const raw of withModules.split(',')) {
+        const modName = raw.trim();
+        if (!modName) continue;
+        try { await NS.loadModule(modName); }
+        catch (err) {
+          console.warn('[gofastr] data-fui-rpc-with: module did not load', modName, err);
+          req.fatal = 'module:' + modName;
+        }
+      }
+    }
+    const hooks = NS._rpcHooks || (NS._rpcHooks = { request: [], response: [] });
+    if (!req.fatal) {
+      for (const hook of hooks.request) {
+        try { await hook(node, req); }
+        catch (err) { console.warn('[gofastr] rpc request hook failed', err); req.fatal = 'hook'; }
+        if (req.fatal) break;
+      }
+    }
+    if (req.fatal) {
+      console.warn('[gofastr] rpc not dispatched:', req.fatal, req.path);
+      try {
+        window.dispatchEvent(new CustomEvent('gofastr:rpc-refused', { detail: { path: req.path, reason: req.fatal } }));
+      } catch (_) { /* best-effort */ }
+      return;
+    }
+
     // Signal-targeted requests stay clickable because their abort controller
     // makes rapid replacement safe. Other button/input triggers are disabled.
     const wantDisable = !responseSignal && (node.tagName === 'BUTTON' || node.tagName === 'INPUT');
@@ -216,11 +268,11 @@
     node.classList.add('fui-loading');
     node.setAttribute('aria-busy', 'true');
     try {
-      if (!NS._originOK(resolvedPath)) return;
-      const r = await fetch(resolvedPath, {
-        method,
-        headers,
-        body: body || undefined,
+      if (!NS._originOK(req.path)) return;
+      const r = await fetch(req.path, {
+        method: req.method,
+        headers: req.headers,
+        body: req.body || undefined,
         signal: ctl.signal,
         credentials: 'same-origin',
       });
@@ -249,6 +301,10 @@
 
       const toastHeader = r.headers.get('X-Gofastr-Toast');
       if (toastHeader) NS._dispatchToastHeader(toastHeader);
+      for (const hook of hooks.response) {
+        try { await hook(node, r); }
+        catch (err) { console.warn('[gofastr] rpc response hook failed', err); }
+      }
       const ct = r.headers.get('content-type') || '';
       const data = ct.indexOf('application/json') >= 0 ? await r.json() : await r.text();
       if (responseSignal) NS.setSignal(responseSignal, data);

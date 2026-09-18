@@ -81,7 +81,6 @@ boot	6	script
 boot	6	sub
 boot	6	target
 boot	6	url
-boot	6	v
 boot	8	G
 boot	8	lb
 boot	8	lbId

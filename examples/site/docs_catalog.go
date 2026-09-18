@@ -134,6 +134,7 @@ var docIntents = []docIntent{
 			{"process-modules", "Process modules", "Third-party modules as isolated child processes: crash/upgrade/revoke without touching the host, capability-brokered data, sandbox trust tiers."},
 			{"runtime-contract", "Runtime contract", "The SSR/hydration/island/SSE model and the full data-fui-* attribute reference."},
 			{"signal-store", "Signal store", "Typed, namespaced client state that fans out to many consumers from one declaration."},
+			{"local-state", "Local state", "Local-first state declared in Go and kept in the browser: collections, caps, migrations, and the explicit bridges to Go screens."},
 			{"compute", "Background compute", "Registered Web Workers + WASM modules, content-addressed and CSP-safe, off the main thread."},
 		},
 	},

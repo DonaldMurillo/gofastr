@@ -232,6 +232,8 @@ jobs:
         #     exclusions document)
         #   - framework/headless (the behaviour-module browser suite; same
         #     Chrome-contention class as core-ui/runtime)
+        #   - framework/local (the local-state browser suite; same
+        #     Chrome-contention class as framework/headless)
         #   - evals/ui-quality/internal/evalrunner (its capture tests drive
         #     a real headless Chrome; same class)
         #   - cmd/gofastr browser tests via -skip (the rest of the
@@ -243,7 +245,7 @@ jobs:
           # shellcheck disable=SC2046  # word splitting of go list output is intended
           go test -timeout=20m -p 2 \
             -skip 'TestBlueprintCLIGeneratesEntireWorkingAppE2E|TestE2E_HotReload_BrowserAutoRefreshes|TestLivereloadSameBuildIDDoesNotReload|TestE2E_DevLoop_Examples' \
-            $(go list ./... | grep -vE 'gofastr/(examples/site|examples/meridian|kiln/integration|core-ui/runtime|core-ui/widget|evals/ui-quality/internal/evalrunner|framework/headless)$')
+            $(go list ./... | grep -vE 'gofastr/(examples/site|examples/meridian|kiln/integration|core-ui/runtime|core-ui/widget|evals/ui-quality/internal/evalrunner|framework/headless|framework/local)$')
 
       - name: Race detector (concurrency packages)
         # The recurring defect class in this repo's release history is
@@ -437,6 +439,10 @@ jobs:
             # package parallelism the chromedp websocket connect
             # starves and times out. Runs isolated here.
             run: go test -count=1 -timeout=10m ./framework/headless/
+          - suite: framework-local
+            # Same class again: framework/local's suite drives a real
+            # Chrome per scenario. Runs isolated here.
+            run: go test -count=1 -timeout=10m ./framework/local/
           - suite: meridian
             # The 16-surface rendered canary (desktop/mobile × light/dark
             # × marketing/auth/app/admin) captures in software on the

@@ -167,6 +167,16 @@ func repoGoDirective(t *testing.T, repoRoot string) string {
 	return ""
 }
 
+// agentDocs are the package-level agents.md files whose snippets opt into
+// this gate too. They are read from disk rather than contentFS: they live
+// beside the code they describe, not in the guide corpus, and a shape
+// snippet that does not compile is the same rot there as here:
+// framework/local/agents.md reused a type name as a variable name and
+// referred to three identifiers it never declared.
+var agentDocs = []string{
+	"../local/agents.md",
+}
+
 func TestDocExamplesCompile(t *testing.T) {
 	entries, err := fs.ReadDir(contentFS, "content")
 	if err != nil {
@@ -175,6 +185,12 @@ func TestDocExamplesCompile(t *testing.T) {
 
 	var snippets []snippet
 	totalFences := 0
+	collect := func(name, text string) {
+		totalFences += len(goFence.FindAllString(text, -1))
+		for _, m := range compileDirective.FindAllStringSubmatch(text, -1) {
+			snippets = append(snippets, snippet{doc: name, body: assemble(m[1], m[2])})
+		}
+	}
 	for _, e := range entries {
 		if !strings.HasSuffix(e.Name(), ".md") {
 			continue
@@ -183,14 +199,18 @@ func TestDocExamplesCompile(t *testing.T) {
 		if err != nil {
 			t.Fatalf("read %s: %v", e.Name(), err)
 		}
-		text := string(body)
-		totalFences += len(goFence.FindAllString(text, -1))
-		for _, m := range compileDirective.FindAllStringSubmatch(text, -1) {
-			snippets = append(snippets, snippet{
-				doc:  e.Name(),
-				body: assemble(m[1], m[2]),
-			})
+		collect(e.Name(), string(body))
+	}
+	for _, path := range agentDocs {
+		body, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read %s: %v", path, err)
 		}
+		text := string(body)
+		if !compileDirective.MatchString(text) {
+			t.Errorf("%s has no gofastr:compile block: it is listed here so its shape snippet is compiled", path)
+		}
+		collect(path, text)
 	}
 
 	// Report coverage rather than letting an opt-in gate read as full coverage.

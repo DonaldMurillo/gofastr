@@ -170,8 +170,21 @@ func serveRuntimeModule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
-	// Content-addressed URL (?v=<hash>) → safe to cache forever.
-	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+	// Only a URL that CARRIES the content hash is content-addressed, so
+	// only that one earns the year-long immutable cache. The loader
+	// falls back to an un-versioned URL for a module the manifest does
+	// not carry (an export without the manifest block, a behaviour
+	// registered after a host cached its manifest), and answering that
+	// request "immutable" freezes the module in every browser that
+	// asked for it: the URL cannot bust, so the next deploy never
+	// reaches them and the only cure is the user clearing their cache.
+	// A mismatched or missing ?v= revalidates instead, the policy
+	// every other /__gofastr script follows.
+	if r.URL.Query().Get("v") == runtime.ModuleHash(name) {
+		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+	} else {
+		w.Header().Set("Cache-Control", "no-cache")
+	}
 	fmt.Fprint(w, src)
 }
 

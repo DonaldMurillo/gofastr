@@ -72,6 +72,14 @@ type fragmentDef struct {
 // at all: it is a pure API module an application loads explicitly with
 // __gofastr.loadModule('ws') (connectWebSocket /
 // createSequencedReducer). Nothing scans the DOM for it.
+//
+// The local module is the same shape as action: the browser-store
+// primitive (IndexedDB, with a tiny-value localStorage fallback) owns
+// no attribute and has no marker, and is reached through
+// registry.Requires("local"), which core-ui/store's signal-persist
+// behaviour declares, or __gofastr.loadModule('local').
+// window.__gofastr.local (get, set, remove, keys, entries, subscribe,
+// watch, available) is its public API.
 // boot-embed depends on kernel. RPC requests inside an embed route through
 // boot's delegation bridge and load src/rpc.js at interaction time. It also
 // relies on boot's mutation observer to hydrate injected content, but boot is
@@ -206,8 +214,9 @@ var fragmentAttrs = map[string][]string{
 //
 // Modules that own zero data-fui-* attributes are absent ON PURPOSE:
 // compute and sse (their attribute is claimed by the like-named core
-// fragment. See fragments note); formrepeater, passwordinput, and
-// searchinput (triggered by data-fui-comp="ui-<name>" CSS markers, which
+// fragment. See fragments note); local (the browser-store primitive:
+// no marker, no attribute, reached through Requires or loadModule, the
+// action shape); formrepeater, passwordinput, and searchinput (triggered by data-fui-comp="ui-<name>" CSS markers, which
 // kernel owns, and otherwise driven by rpc/signals); widgetfocus and
 // widgetlinks (triggered by internal JS markers, not data-fui-* at all);
 // preload (manifest-triggered like intercept, boot loads it when any
@@ -379,6 +388,7 @@ var moduleAttrs = map[string][]string{
 	"rpc": {
 		"data-fui-rpc",
 		"data-fui-rpc-method",
+		"data-fui-rpc-with",
 		"data-fui-rpc-signal",
 		"data-fui-rpc-close",
 		"data-fui-rpc-reset",

@@ -34,6 +34,11 @@ server, so `go run` it.
 | `rtc-call` | WebRTC rooms the packaged way: `battery/rtc` signaling (zero hand-rolled relay), anonymous cookie identity through `Authorize`, the `rtc` runtime module with one peer connection per peer, peer-to-peer camera plus chat on a negotiated data channel. |
 | `site` | The framework's live component gallery and reference docs site: every UI component rendered one per page, the hosted examples, and the gofastr-plugins registry rendered from a vendored `plugins.json` (`scripts/vendor-plugins-json.sh` refreshes it). Run with `cd examples/site && gofastr dev`. |
 
+The smallest `framework/local` app, a team builder whose roster lives in
+the browser and survives quitting it, is its own repository:
+[AlexCiccolella125/gofastr-team-builder](https://github.com/AlexCiccolella125/gofastr-team-builder)
+(live at https://team-builder-311787706390.us-east1.run.app).
+
 ## Blueprint examples (declarative)
 
 These are **`gofastr.yml` blueprints**, no Go. They describe a whole app

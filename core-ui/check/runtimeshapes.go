@@ -3198,7 +3198,7 @@ func regexTestDominates(code, v string, pos int) bool {
 // a localStorage/sessionStorage setItem/getItem/removeItem call, or the
 // name side of a document.cookie write — is built from a data-fui-*
 // attribute value without BOTH the namespace prefix and the component
-// encoding.
+// encoding, or with a prefix that is not the framework's own namespace.
 //
 // Bug class: a key read from a data-fui-* attribute (or any dataset
 // member) and used verbatim lets markup injected after boot (island
@@ -3215,6 +3215,31 @@ func regexTestDominates(code, v string, pos int) bool {
 // enough — encodeURIComponent leaves dots and hyphens alone, so the
 // probe's dotted key survives it verbatim — and neither is the prefix
 // alone.
+//
+// The prefix has to be the framework's namespace, and it has to come
+// FIRST. "Any literal" was the rule until the browser store of
+// core-ui/runtime/src/local.js needed a namespace of its own
+// (gofastr.state.): under it `'x' + encodeURIComponent(v)` passed,
+// while the value still reached every key on the origin that happens
+// to start with an x, and `encodeURIComponent(v) + '.gofastr'` passed
+// while naming nothing at all. Every namespace in the tree already
+// reads gofastr. or gofastr: (gofastr.persist.,
+// gofastr.sidebar-collapse., gofastr.banner-dismiss., gofastr.state.,
+// gofastr.colorScheme, gofastr:scroll), so the rule is that spelling:
+// the first operand of the key is a literal, or an identifier provably
+// holding one, whose text starts with gofastr. or gofastr:,
+// machine-checked instead of conventional. A registered behaviour
+// shares the origin with the kernel's own modules and shares this
+// namespace with them.
+//
+// The namespace arm asks about ANY component-encoded operand, not only
+// an attribute-borne one. The raw and no-namespace arms keep the
+// data-fui provenance requirement (an unencoded value is only a
+// finding when it provably came from the DOM), but a key the module
+// bothered to encode is a key with a dynamic segment in it, whoever
+// supplied it: local.js's is a function parameter an application
+// chooses, which the provenance walk cannot see and which is exactly
+// the value that must not be able to name gofastr.colorScheme.
 //
 // Silent on:
 //   - key expressions whose every operand is a literal, a numeric
@@ -3252,11 +3277,16 @@ func LintStorageKeyRaw(roots ...string) (*Result, error) {
 		}
 		events := safeIdentEvents(f.Code, f.Blank)
 		for _, site := range sites {
-			culprit, unnamed := storageKeyUnsafe(site.expr, events, site.pos)
+			culprit, fault := storageKeyUnsafe(site.expr, events, site.pos)
 			if culprit == "" {
 				continue
 			}
-			if unnamed {
+			if fault == keyFaultForeignNamespace {
+				res.add(f.Path, f.lineOf(site.pos),
+					fmt.Sprintf("[storage-key-raw] %s encodes %q behind a namespace that is not the framework's; an attribute value still reaches every key on the origin under that prefix; lead the key with a gofastr. (or gofastr:) literal, the namespace every storage key in the runtime already uses", site.kind, culprit))
+				continue
+			}
+			if fault == keyFaultNoNamespace {
 				res.add(f.Path, f.lineOf(site.pos),
 					fmt.Sprintf("[storage-key-raw] %s encodes %q but names no namespace — encodeURIComponent leaves dots and hyphens alone, so an attribute value still names any key on the origin; prefix a literal (PREFIX + encodeURIComponent(%s), banner.js's dismissKey spelling)", site.kind, culprit, culprit))
 				continue
@@ -3314,26 +3344,80 @@ func storageKeySites(blank, code string) []storageKeySite {
 // spelling. Non-fui attributes are deliberately absent.
 var reFuiAttrKey = regexp.MustCompile(`getAttribute\s*\(\s*['"]data-fui-|\.\s*dataset\s*[.\[]`)
 
+// keyFault names what is wrong with one key expression.
+type keyFault int
+
+const (
+	// keyFaultRaw: an attribute-borne value reaches the key unencoded.
+	keyFaultRaw keyFault = iota
+	// keyFaultNoNamespace: it is encoded, but no literal names a
+	// namespace beside it.
+	keyFaultNoNamespace
+	// keyFaultForeignNamespace: it is encoded behind a literal, but the
+	// literal is not one of the framework's own namespaces (or it does
+	// not lead the key).
+	keyFaultForeignNamespace
+)
+
+// gofastrNamespace reports whether a literal's TEXT (quotes already
+// stripped) opens one of the framework's storage namespaces. Both
+// separators the tree uses are accepted: the '.' of gofastr.persist.
+// and friends and the ':' of nav.js's gofastr:scroll.
+func gofastrNamespace(text string) bool {
+	return strings.HasPrefix(text, "gofastr.") || strings.HasPrefix(text, "gofastr:")
+}
+
+// literalTextAt returns the string a key operand provably holds at pos,
+// and whether it holds one: a quoted literal spelled inline, or an
+// identifier whose deciding assignment (the last-assignment rule the
+// other lints use) is a quoted literal, banner.js's STORAGE_PREFIX.
+func literalTextAt(op string, events []safeEvent, pos int) (string, bool) {
+	if isJSStringLiteral(op) {
+		return op[1 : len(op)-1], true
+	}
+	if !isJSIdent(op) || jsKeywords[op] {
+		return "", false
+	}
+	e, ok := latestEvent(events, op, pos)
+	if !ok || !e.safe || !isJSStringLiteral(e.rhs) {
+		return "", false
+	}
+	return e.rhs[1 : len(e.rhs)-1], true
+}
+
 // storageKeyUnsafe inspects one key expression and reports the
-// attribute-borne value that reaches it raw (unnamed false), or the one
-// that is component-encoded with no literal prefix beside it (unnamed
-// true). Operands split like lint 7's builds: top-level '+' operands,
-// with templates decomposed into their literal chunks and interpolation
-// bodies.
-func storageKeyUnsafe(expr string, events []safeEvent, pos int) (culprit string, unnamed bool) {
-	unwrapped, wrapped := "", ""
+// attribute-borne value that reaches it and what is wrong with the
+// build around it (see keyFault). Operands split like lint 7's builds:
+// top-level '+' operands, with templates decomposed into their literal
+// chunks and interpolation bodies.
+func storageKeyUnsafe(expr string, events []safeEvent, pos int) (culprit string, fault keyFault) {
+	unwrapped, wrapped, encodedAny := "", "", ""
 	hasLiteral := false
-	for _, op := range concatOperands(expr) {
+	// The namespace operand: the first one holding a provable literal,
+	// and where it sits relative to the first encoded value. A literal
+	// AFTER the value namespaces nothing.
+	ns, nsIdx, encIdx := "", -1, -1
+	for i, op := range concatOperands(expr) {
 		t := strings.TrimSpace(op)
 		if t == "" {
 			continue
+		}
+		if text, ok := literalTextAt(t, events, pos); ok && nsIdx < 0 {
+			ns, nsIdx = text, i
 		}
 		if isJSStringLiteral(t) || isJSNumericLiteral(t) {
 			hasLiteral = true
 			continue
 		}
 		if isEncodedCall(t) {
-			if arg := encodedCallArg(t); attrFuiAt(events, arg, pos) || reFuiAttrKey.MatchString(arg) {
+			arg := encodedCallArg(t)
+			if arg != "" && encodedAny == "" {
+				encodedAny = arg
+			}
+			if arg != "" && encIdx < 0 {
+				encIdx = i
+			}
+			if attrFuiAt(events, arg, pos) || reFuiAttrKey.MatchString(arg) {
 				wrapped = arg
 			}
 			continue
@@ -3353,12 +3437,24 @@ func storageKeyUnsafe(expr string, events []safeEvent, pos int) (culprit string,
 		// every other operand (calls, member chains): out of scope
 	}
 	if unwrapped != "" {
-		return unwrapped, false
+		return unwrapped, keyFaultRaw
 	}
-	if wrapped != "" && !hasLiteral {
-		return wrapped, true
+	if encodedAny == "" {
+		return "", keyFaultRaw
 	}
-	return "", false
+	// The culprit is named as the attribute-borne operand when there is
+	// one, so the existing findings read unchanged.
+	culprit = wrapped
+	if culprit == "" {
+		culprit = encodedAny
+	}
+	if !hasLiteral {
+		return culprit, keyFaultNoNamespace
+	}
+	if nsIdx < 0 || nsIdx > encIdx || !gofastrNamespace(ns) {
+		return culprit, keyFaultForeignNamespace
+	}
+	return "", keyFaultRaw
 }
 
 // attrFuiAt reports whether identifier name provably holds a data-fui

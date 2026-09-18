@@ -8,12 +8,137 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 ## [Unreleased]
 
 ### Added
+- **`framework/local`**: local-first state for a GoFastr app, declared
+  in Go, persisted in the browser, with a documented contract. A
+  `local.Store` is declared once per app with named collections
+  (`local.Define[T]`: a Go record type with a JSON round-trip, a key
+  field, a size cap per record and per collection, a schema version
+  with `Rename`/`Default`/`Remove`/`Func` migrations the browser runs
+  once). The browser API is generated from the declaration and served
+  as three runtime modules registered through the behaviour seam, split
+  by responsibility and each under the per-module byte budget:
+  `local-store` (`Requires("local")`: the store, the caps and the
+  collection API), `local-bridge` (`Requires("local-store")`: every way
+  the store reaches a Go handler, the seed, the mirror cookie, the
+  upload and the download; a store that keeps its records to itself
+  never loads it) and `local-migrate` (`LoadIdle`: the version steps,
+  asked for by name the moment a rewrite is due, so a collection with no
+  version step never runs a line of it), on top of the kernel's
+  browser-store primitive (IndexedDB; no dependency): `get`, `put`, `delete`, `list`
+  with ordering, `count`, `subscribe` (this tab's writes and other
+  tabs'), `clear`; every call settles, and a refusal
+  raises `gofastr:local-error` with its reason. A collection whose
+  migration did not complete is **gated**: every method refuses with
+  reason `migration` rather than answer from records on a schema the
+  build cannot read, a half-finished rewrite is never stamped as done,
+  and a stored version above the declared one (a rolled-back deploy)
+  fails the collection with reason `version`. One collection's puts are
+  serialised, so racing writes cannot pass its declared cap. Four explicit bridges to
+  Go screens and nothing in the background: `SeedSignal` fills a
+  `core-ui/store` slice from a record after hydration and writes it
+  back; a `Mirror` collection keeps tiny records in cookies so a render
+  reads them at first paint; `Send` declares the collections or keys
+  that ride an RPC request as the reserved field `__local` and
+  `Upload.Wrap` reads them (undeclared refused, caps enforced, the
+  field stripped before the handler); `Put`/`Delete`/`Clear` write
+  records back through the `X-Gofastr-Local` response header, and
+  `ClearOnNextLoad` covers a full-navigation logout. Reads say where
+  the record came from: `local.SourceUpload` or `local.SourceMirror`,
+  a mirror being a **client hint** anyone on the origin can write.
+  The mirrored collections of every store share one 4 KiB cookie
+  budget (`MirrorStoreMaxBytes`, a panic at `Define` naming the stores,
+  refused in the browser with reason `mirror`) so they cannot cook a
+  Cookie header into a 431.
+  The upload bridge **fails closed**: a request whose declared records
+  could not be attached, or that is past the bound `Send` derives from
+  the declaration, is not sent at all. Local-first state, not offline
+  sync. Proof: `examples/site` at `/forms/draft-notes`;
+  `gofastr docs local-state`.
+  `Store.Script()` serves the declaration as one expression, the URL
+  for the rail and the step that mounts the route, because doing one
+  half without the other 404s the manifest and leaves `localStore(app)`
+  answering `null`, which the module warns about by name; the upload
+  bound `Send` derives is the smaller of a collection's two caps rather
+  than its `MaxBytes` alone, so a 5 KiB collection never declares a
+  1 MiB body the fail-closed pre-flight cannot refuse; and a `Get` or
+  `List` on an unwrapped request warns under `GOFASTR_DEV` instead of
+  answering an empty result in silence.
+- **`data-fui-rpc-with="<module>"`** (`rpc.js`): the trigger names the
+  modules the runtime loads before dispatching, and the request hooks
+  on `__gofastr._rpcHooks.request` decorate the request the fetch is
+  built from; the response hooks run on a 2xx after the runtime's own
+  headers. A hook can mark the request fatal, and a module named here
+  that will not load or a hook that throws does so: the dispatch is
+  cancelled and the page hears `gofastr:rpc-refused`, because a trigger
+  that names a module is declaring it a precondition, not a hint. The
+  one seam `framework/local`'s bridges ride on. Browser coverage in
+  `core-ui/runtime/rpc_hooks_e2e_test.go`.
+- **The `local` browser store** (`core-ui/runtime/src/local.js`): the
+  runtime's five hard-coded Web-storage keys, generalised into one
+  primitive with one owner. `window.__gofastr.local` is `available()`,
+  `get`, `set`, `remove`, `keys`, `entries`, `subscribe` and `watch`.
+  `available()` resolves to `{idb, ls, engine}`; `set`, `remove`, `keys`
+  and `entries` resolve to `{ok, reason, …}`.
+  `keys` and `entries` take an optional prefix and read one IndexedDB
+  key range (an entry's `size` is the stored UTF-8 length of its JSON
+  text) and settle the way `set` does, so an aborted enumeration is
+  never mistaken for an empty store; `watch(prefix, fn)` hears another tab's write of any key
+  under a prefix. Those are the three calls a layer that groups records
+  under a common prefix needs, with no opinion about what a group means.
+  The engine is **IndexedDB**, because a saved value is not a
+  preference: asynchronous, not
+  capped at the few megabytes `localStorage` shares across an origin,
+  and a large read does not block the main thread; `localStorage` is
+  the fallback, used only when IndexedDB will not open and only for
+  values up to 8 KiB. Both are browser APIs, so no dependency was
+  added. Every entry, in either engine, lives under the literal
+  `gofastr.state.` plus the component-encoded key, so an application
+  key can never name another feature's storage (and `core-ui/check`'s
+  `storage-key-raw` lint now requires that namespace, `gofastr.` or
+  `gofastr:`, in front of any component-encoded storage key, the
+  primitive's application-chosen key included, where any literal prefix
+  used to pass). `subscribe` fires when
+  another tab of the origin changes the key (BroadcastChannel, plus the
+  `storage` event for the fallback, never both, so one write delivers
+  once); a tab never hears its own writes. The fallback is a fallback
+  and not a second engine: the first session that opens IndexedDB
+  adopts the entries a fallback session left behind and empties the
+  namespace out of `localStorage`, and `remove` reaches both engines,
+  so a record written on the fallback cannot outlive a delete or a
+  logout.
+  Every call settles rather than throwing and `set` says which of
+  `size`/`quota`/`encode`/`unavailable` refused it: the contract is
+  best-effort, and truth still lives on the server. Like `action` it is
+  a marker-less primitive, with no `data-fui-*` attribute and no
+  core-bundle bytes, reached through `registry.Requires("local")` or
+  `__gofastr.loadModule('local')`. `gofastr docs runtime-contract`.
+- **`store.Slice.Persist()` / `.PersistMax(n)`**: a slice the browser
+  remembers. Every binding it renders carries
+  `data-fui-signal-persist="<cap>"`; the registered behaviour
+  `signal-persist` (`core-ui/store/persist.js`, `Requires("local")`)
+  restores the browser's value into the signal after hydration, writes
+  every later value back through the primitive above, and mirrors
+  another tab's write in. `Persist` implies `.Global()` so a partial
+  render cannot clobber the browser's value. A value over the slice's
+  cap is not written and the page hears `gofastr:persist-overflow`
+  instead, so an app can say "you have run out of room" rather than
+  lose the write silently. A signal the runtime marked **untrusted** is
+  never written (reason `untrusted`), and a value read back out of the
+  browser is restored untrusted: what the browser stored is not
+  server-authored HTML, so an `html`-mode binding renders it as text. The restore is asynchronous, so first paint
+  always shows the server's seed, and nothing reaches the server: no
+  cookie, no header, no post. This is not offline-first, which remains
+  an explicit non-goal: no conflict resolution, no pending-mutation
+  queue, no sync. `gofastr docs signal-store`.
 - **`registry.RegisterBehavior`**: behaviour registers like style. A
   component's package embeds its runtime module beside the Go and
   registers it with the markers the kernel scans for; the host serves
   it at `/__gofastr/runtime/<name>.js` under the same minification and
-  cache rules as the embedded modules, lists it in the manifest, and
-  preloads it when a marker is in the page. The kernel reads registered
+  cache rules as the embedded modules (a module URL always carries a
+  `?v=`, a sentinel when the manifest has none, and the route earns
+  `immutable` only when the `?v=` is the served bytes' hash, so no
+  build is ever pinned under a URL that cannot bust), lists it in the
+  manifest, and preloads it when a marker is in the page. The kernel reads registered
   markers from one block beside the manifest and loads the module once
   when one appears. No trigger vocabulary: the marker is the trigger.
   Spec: `docs/spec-behavior-registry.md`.

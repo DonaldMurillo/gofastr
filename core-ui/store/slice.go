@@ -17,10 +17,11 @@ import (
 // attribute AND the resolved initial value, so the SSR DOM and the
 // seeded client store can never drift.
 type Slice[T any] struct {
-	name  string
-	scope Scope
-	def   T
-	comp  *computedCfg // non-nil for Computed slices
+	name    string
+	scope   Scope
+	def     T
+	comp    *computedCfg // non-nil for Computed slices
+	persist *persistCfg  // non-nil for browser-persisted slices (see persist.go)
 }
 
 type computedCfg struct {
@@ -78,6 +79,7 @@ func (sl *Slice[T]) Bind(ctx context.Context, tag string, attrs map[string]strin
 	a := cloneAttrs(attrs)
 	a["data-fui-signal"] = sl.name
 	sl.applyComputed(a)
+	sl.applyPersist(a)
 	return renderEl(tag, a, render.Text(valueString(any(sl.resolve(ctx)))))
 }
 
@@ -111,6 +113,7 @@ func (sl *Slice[T]) BindAttr(ctx context.Context, tag, htmlAttr string, attrs ma
 	a["data-fui-signal"] = sl.name
 	a["data-fui-signal-mode"] = "attr"
 	a["data-fui-signal-attr"] = htmlAttr
+	sl.applyPersist(a)
 	a[htmlAttr] = sanitizeSignalURL(htmlAttr, valueString(any(sl.resolve(ctx))))
 	return renderEl(tag, a)
 }
@@ -168,6 +171,7 @@ func (sl *Slice[T]) BindHTML(ctx context.Context, tag string, attrs map[string]s
 	a := cloneAttrs(attrs)
 	a["data-fui-signal"] = sl.name
 	a["data-fui-signal-mode"] = "html"
+	sl.applyPersist(a)
 	return renderEl(tag, a, render.HTML(valueString(any(sl.resolve(ctx)))))
 }
 

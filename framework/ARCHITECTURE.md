@@ -256,6 +256,14 @@ framework/
 ├── internal/exif/   TIFF/EXIF orientation parser shared by file/ and
 │                    image/ (stdlib-only leaf, so file/ never links codecs)
 ├── lifecycle/       Graceful shutdown contract: drain, flush, stop phases
+├── local/           Local-first state declared in Go and kept in the
+│                    browser: a Store of typed collections with caps and
+│                    versioned migrations, served as three runtime
+│                    modules, with four explicit bridges to Go screens
+│                    (seed, mirror cookie, upload, download). Imports
+│                    core-ui/app, core-ui/registry, core-ui/store,
+│                    core/config, core/handler, core/render and
+│                    agentsinv. Not offline sync.
 ├── migrate/         AutoMigrate / DiffSchema / Dialect / Bulk queries
 ├── openapi/         EntityOpenAPI spec generator + the entity-endpoint
 │                    URL builders (EntityEndpointPath etc.)
@@ -360,7 +368,7 @@ L3  hook, event, file, cron, access, db,    (leaf packages, no framework-
     pagination, filter, owner, agentsinv,    internal imports at all)
     axecov, datexport, fanout, i18nui,
     image, lifecycle, ratelimit, semcov,
-    docs, dev, routegroup, headless
+    docs, dev, routegroup, headless, local
     dsl, tenant, softdelete, migrate, sdk    (each imports entity)
     slowquery, outbox, embed, imagefield,    (intra-L3 edges, listed
     contracts                                 below)
@@ -385,7 +393,7 @@ The rule is direction: a package may import packages in lower layers,
 never higher, and intra-layer edges should stay rare and deliberate.
 Today's intra-L3 edges: `slowquery → db`, `outbox → event + db`,
 `embed → db + migrate + tenant`, `imagefield → file + image`,
-`contracts → agentsinv`, `headless → agentsinv`, `contracts/analyzers → access` (the one
+`contracts → agentsinv`, `headless → agentsinv`, `local → agentsinv`, `contracts/analyzers → access` (the one
 Levenshtein, `access.EditDistance`, behind both the capability
 suggester and the rendering rule), `dsl → filter` (the LIKE-escape helpers:
 one canonical `EscapeLikePattern`/`LikeEscapeSuffix`, not a per-package

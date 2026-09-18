@@ -26,7 +26,11 @@ Three click-time primitives mutate it:
 
 Any element with `data-fui-signal="<name>"` re-renders when the value changes.
 For typed, shared, SSR-seeded state, wrap signals with `core-ui/store` (see
-[Signal store](signal-store.md)).
+[Signal store](signal-store.md)). A value the browser should *keep* between
+page loads is a rung below this one, not above it: `store.Persist` for one
+slice, or [`framework/local`](local-state.md) for declared collections with
+caps, migrations and explicit bridges to Go screens. Neither reaches the
+server unless a screen or action says so.
 
 No server involvement. No RPC. No page reload.
 
@@ -281,6 +285,8 @@ request to whichever replica the load balancer picks.
 
 - [Interactive patterns](interactive-patterns.md): the full `data-fui-*`
   vocabulary, including the RPC and signal primitives summarized above.
+- [Local state](local-state.md): browser-kept collections declared in Go,
+  and the explicit upload/download bridges to a screen or action.
 - [Widgets](widgets.md): `Builder.Poll` and the widget builder.
 - [Presence](presence.md): the canonical SSE push case.
 - [Live dashboards](live-dashboards.md): choosing between polling and SSE for
