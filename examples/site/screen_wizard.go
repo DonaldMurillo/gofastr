@@ -77,6 +77,10 @@ func wizardDemoStore(v url.Values) {
 // POST → read wizard_action ("next" | "back") and _step (the step the form
 // was submitted from), clamp the next step into [0, len-1], and re-render. On
 // the final-step "next" the payload is recorded and a confirmation page shows.
+// wizardDemoStepCount is how many steps the demo has; the handler and
+// the completeness check read the same number.
+const wizardDemoStepCount = 3
+
 func WizardDemoHandler(w http.ResponseWriter, r *http.Request) {
 	values := url.Values{}
 	action := ""
@@ -117,7 +121,7 @@ func WizardDemoHandler(w http.ResponseWriter, r *http.Request) {
 		errs = wizardDemoValidate(submittedStep, values)
 	}
 
-	totalSteps := 3
+	totalSteps := wizardDemoStepCount
 	current := submittedStep
 
 	switch action {
@@ -131,6 +135,16 @@ func WizardDemoHandler(w http.ResponseWriter, r *http.Request) {
 		// Final-step Next means Submit, capture and confirm. Guard against
 		// a stale POST with _step=last pushing past the last index.
 		if submittedStep >= totalSteps-1 {
+			// The step number came from the client, so a post of the
+			// final step carrying only the final field would otherwise
+			// confirm having skipped the name and the email. Every
+			// required field is checked here, and a failure sends the
+			// reader to the first step that is wrong.
+			if all, badStep := wizardDemoComplete(values); len(all) > 0 {
+				errs = all
+				current = badStep
+				break
+			}
 			wizardDemoStore(values)
 			render.RespondHTML(w, wizardDemoConfirmation(values))
 			return
@@ -156,6 +170,27 @@ func WizardDemoHandler(w http.ResponseWriter, r *http.Request) {
 // returns the per-field errors. Steps past the wizard's range have no
 // visible fields to validate (their POST is clamped onto a real step
 // before rendering).
+//
+// It is not the whole story on a final submit: see wizardDemoComplete.
+// wizardDemoComplete validates every required field the wizard
+// collects, whatever step the client says it is on.
+//
+// The step number arrives in the request, so a client can post the
+// FINAL step with only the final step's field and skip the ones
+// before it. Validating the submitted step alone trusts that number;
+// this is the check that does not. A field that fails here belongs to
+// an earlier step, so the answer sends the reader back to the first
+// step that is wrong rather than confirming or re-rendering a step
+// whose own fields are fine.
+func wizardDemoComplete(values url.Values) (ui.FieldErrors, int) {
+	for step := range wizardDemoStepCount {
+		if errs := wizardDemoValidate(step, values); len(errs) > 0 {
+			return errs, step
+		}
+	}
+	return ui.FieldErrors{}, 0
+}
+
 func wizardDemoValidate(step int, values url.Values) ui.FieldErrors {
 	errs := ui.FieldErrors{}
 	if step != 0 {

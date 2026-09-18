@@ -200,7 +200,10 @@ func TestE2E_Wizard_EmptySubmitStaysOnStepOne(t *testing.T) {
 				summary: summary ? summary.textContent.trim() : '',
 				nameErr: nameErr ? nameErr.textContent.trim() : '',
 				emailErr: emailErr ? emailErr.textContent.trim() : '',
-				nameInvalid: !!(document.getElementById('wd-name') && document.getElementById('wd-name').getAttribute('aria-invalid')),
+				// The VALUE, not its presence: aria-invalid="false" is a
+				// non-empty string, so a control reporting no error to
+				// assistive technology would satisfy a presence check.
+				nameInvalid: (document.getElementById('wd-name') || {getAttribute: () => null}).getAttribute('aria-invalid') === 'true',
 			};
 		})())`, &raw),
 	)

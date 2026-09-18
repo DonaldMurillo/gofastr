@@ -255,16 +255,40 @@ func TestStepWizardRendersValidationSummaryForErrors(t *testing.T) {
 
 // The same refusal ui.Form applies: a summary with no ID to derive
 // its own id from is a render-time programming error.
+// Both operands of the guard, because a summary rendered from either
+// one derives its id from the wizard's: dropping the Summary operand
+// would let two general-only wizards on a page share a title id, and
+// a test that only exercises Errors would stay green through it.
 func TestStepWizardErrorsRequireID(t *testing.T) {
-	defer func() {
-		if recover() == nil {
-			t.Fatal("expected panic rendering Errors without ID")
-		}
-	}()
-	StepWizard(StepWizardConfig{
-		Action:      "/wiz",
-		CurrentStep: 0,
-		Errors:      FieldErrors{"name": "required"},
-		Steps:       []StepWizardStep{{Heading: "A"}},
-	})
+	cases := []struct {
+		name string
+		cfg  StepWizardConfig
+	}{
+		{"errors without an id", StepWizardConfig{
+			Action:      "/wiz",
+			CurrentStep: 0,
+			Errors:      FieldErrors{"name": "required"},
+			Steps:       []StepWizardStep{{Heading: "A"}},
+		}},
+		{"a general summary without an id", StepWizardConfig{
+			Action:      "/wiz",
+			CurrentStep: 0,
+			Summary:     "That plan is no longer available.",
+			Steps:       []StepWizardStep{{Heading: "A"}},
+		}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			defer func() {
+				r := recover()
+				if r == nil {
+					t.Fatal("expected a panic naming StepWizardConfig.ID")
+				}
+				if msg, _ := r.(string); !strings.Contains(msg, "ID") {
+					t.Errorf("panic %q does not name the field to set", msg)
+				}
+			}()
+			StepWizard(c.cfg)
+		})
+	}
 }

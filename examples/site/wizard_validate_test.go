@@ -70,10 +70,26 @@ func TestWizardDemoValidatesBeforeAdvancing(t *testing.T) {
 		t.Errorf("a valid submit carries the error surface:\n%s", firstN(body, 600))
 	}
 
-	// The final submit confirms: the confirmation page is reachable
-	// only through valid steps.
+	// A post of the FINAL step carrying only the final field must not
+	// confirm. The step number comes from the client, so trusting it
+	// is how a reader skips the name and the email entirely; the
+	// answer is the first step that is wrong, with its messages.
 	code, body = post("wizard_action=next&_step=2&wd-comments=ok")
+	if code != http.StatusOK {
+		t.Fatalf("final submit without the earlier fields = %d, want 200", code)
+	}
+	if strings.Contains(body, "data-wizard-confirm") {
+		t.Fatalf("a final-step post skipped the earlier required fields and confirmed:\n%s", firstN(body, 700))
+	}
+	for _, want := range []string{"Personal info", "Your full name is required.", "Your email is required."} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the answer does not send the reader back to the first wrong step (%q missing):\n%s", want, firstN(body, 700))
+		}
+	}
+
+	// Carrying every required field, the same final post confirms.
+	code, body = post("wizard_action=next&_step=2&wd-name=Ada+Lovelace&wd-email=ada@example.com&wd-comments=ok")
 	if code != http.StatusOK || !strings.Contains(body, "data-wizard-confirm") {
-		t.Fatalf("final submit = %d, want the confirmation page", code)
+		t.Fatalf("a complete final submit = %d, want the confirmation page:\n%s", code, firstN(body, 700))
 	}
 }
