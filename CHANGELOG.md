@@ -8,6 +8,59 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 ## [Unreleased]
 
 ### Added
+- **The `local` browser store** (`core-ui/runtime/src/local.js`): the
+  runtime's five hard-coded Web-storage keys, generalised into one
+  primitive with one owner. `window.__gofastr.local` is `available()`,
+  `get`, `set`, `remove`, `keys`, `entries`, `subscribe` and `watch`.
+  `available()` resolves to `{idb, ls, engine}`; `set`, `remove`, `keys`
+  and `entries` resolve to `{ok, reason, …}`.
+  `keys` and `entries` take an optional prefix and read one IndexedDB
+  key range (an entry's `size` is the stored UTF-8 length of its JSON
+  text) and settle the way `set` does, so an aborted enumeration is
+  never mistaken for an empty store; `watch(prefix, fn)` hears another tab's write of any key
+  under a prefix. Those are the three calls a layer that groups records
+  under a common prefix needs, with no opinion about what a group means.
+  The engine is **IndexedDB**, because a saved value is not a
+  preference: asynchronous, not
+  capped at the few megabytes `localStorage` shares across an origin,
+  and a large read does not block the main thread; `localStorage` is
+  the fallback, used only when IndexedDB will not open and only for
+  values up to 8 KiB. Both are browser APIs, so no dependency was
+  added. Every entry, in either engine, lives under the literal
+  `gofastr.state.` plus the component-encoded key, so an application
+  key can never name another feature's storage. `subscribe` fires when
+  another tab of the origin changes the key (BroadcastChannel, plus the
+  `storage` event for the fallback, never both, so one write delivers
+  once); a tab never hears its own writes. The fallback is a fallback
+  and not a second engine: the first session that opens IndexedDB
+  adopts the entries a fallback session left behind and empties the
+  namespace out of `localStorage`, and `remove` reaches both engines,
+  so a record written on the fallback cannot outlive a delete or a
+  logout.
+  Every call settles rather than throwing and `set` says which of
+  `size`/`quota`/`encode`/`unavailable` refused it: the contract is
+  best-effort, and truth still lives on the server. Like `action` it is
+  a marker-less primitive, with no `data-fui-*` attribute and no
+  core-bundle bytes, reached through `registry.Requires("local")` or
+  `__gofastr.loadModule('local')`. `gofastr docs runtime-contract`.
+- **`store.Slice.Persist()` / `.PersistMax(n)`**: a slice the browser
+  remembers. Every binding it renders carries
+  `data-fui-signal-persist="<cap>"`; the registered behaviour
+  `signal-persist` (`core-ui/store/persist.js`, `Requires("local")`)
+  restores the browser's value into the signal after hydration, writes
+  every later value back through the primitive above, and mirrors
+  another tab's write in. `Persist` implies `.Global()` so a partial
+  render cannot clobber the browser's value. A value over the slice's
+  cap is not written and the page hears `gofastr:persist-overflow`
+  instead, so an app can say "you have run out of room" rather than
+  lose the write silently. A signal the runtime marked **untrusted** is
+  never written (reason `untrusted`), and a value read back out of the
+  browser is restored untrusted: what the browser stored is not
+  server-authored HTML, so an `html`-mode binding renders it as text. The restore is asynchronous, so first paint
+  always shows the server's seed, and nothing reaches the server: no
+  cookie, no header, no post. This is not offline-first, which remains
+  an explicit non-goal: no conflict resolution, no pending-mutation
+  queue, no sync. `gofastr docs signal-store`.
 - **`registry.RegisterBehavior`**: behaviour registers like style. A
   component's package embeds its runtime module beside the Go and
   registers it with the markers the kernel scans for; the host serves
@@ -61,6 +114,19 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   marker: owners reach it through `Requires("action")`.
 
 ### Changed
+- **`core-ui/check`'s `storage-key-raw` lint now checks the
+  namespace.** "Any literal prefix" was the rule; `'x' +
+  encodeURIComponent(v)` passed it while the value still reached every
+  key on the origin under an `x`, and `encodeURIComponent(v) +
+  '.gofastr'` passed while naming nothing at all. A Web-storage key
+  with a component-encoded operand must now lead with a literal (or an
+  identifier provably holding one) that opens `gofastr.` or
+  `gofastr:`, the namespace every storage key in the tree already
+  used, machine-checked instead of conventional. The namespace arm
+  reads any encoded operand, not only an attribute-borne one, because
+  the `local` primitive's key is an application-chosen parameter the
+  provenance walk cannot see. No change to the raw and no-namespace
+  arms; the tree was already clean.
 - **One home per helper.** A clone survey over the tree found the same
   bodies re-implemented across packages; each now has one canonical
   definition and the copies are gone (164 files, about 2,500 lines

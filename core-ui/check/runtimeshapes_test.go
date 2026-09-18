@@ -1902,6 +1902,168 @@ func TestStorageKeyRawFiresOnAttrKey(t *testing.T) {
 	}
 }
 
+// storageNamespaceFixture is the namespace arm's fixture: a key is
+// encoded and prefixed, and the prefix is the only thing separating a
+// contained namespace from an uncontained one. The accepted spelling is
+// the one core-ui/store/persist.js ships for browser-persisted slices.
+const storageNamespaceFixture = `const STATE_PREFIX = 'gofastr.state.';
+const APP_PREFIX = 'x.';
+
+// Accepted: the framework's namespace, spelled at the sink, leading.
+function persistWrite(el) {
+  const name = el.getAttribute('data-fui-signal');
+  localStorage.setItem(STATE_PREFIX + encodeURIComponent(name), '1');
+}
+// Accepted: the same, inline rather than through a constant.
+function persistRead(el) {
+  const name = el.getAttribute('data-fui-signal');
+  return localStorage.getItem('gofastr.state.' + encodeURIComponent(name));
+}
+// FIRES: a literal namespace, but not the framework's; an attribute
+// value still reaches every key on the origin starting with 'x.'.
+function foreignPrefix(el) {
+  const name = el.getAttribute('data-fui-signal');
+  localStorage.setItem(APP_PREFIX + encodeURIComponent(name), '1');
+}
+// FIRES: the literal is there but it does not LEAD, so it namespaces
+// nothing.
+function trailingPrefix(el) {
+  const name = el.getAttribute('data-fui-signal');
+  localStorage.setItem(encodeURIComponent(name) + '.gofastr', '1');
+}
+window.__probe = { persistWrite: persistWrite, persistRead: persistRead,
+  foreignPrefix: foreignPrefix, trailingPrefix: trailingPrefix };
+`
+
+// TestStorageKeyRawFiresOnForeignNamespace pins the namespace arm: the
+// prefix that makes an encoded attribute value safe has to be the
+// framework's own, and it has to lead the key. Both halves are the
+// reason core-ui/store's browser-persisted slices can promise that an
+// app never chooses the raw key.
+func TestStorageKeyRawFiresOnForeignNamespace(t *testing.T) {
+	dir := writeRuntimeFixture(t, "namespace.js", storageNamespaceFixture)
+	res, err := LintStorageKeyRaw(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Violations) != 2 {
+		t.Fatalf("expected 2 findings (foreignPrefix, trailingPrefix), got %d:\n%s", len(res.Violations), res.Error())
+	}
+	for _, v := range res.Violations {
+		if !strings.Contains(v.Message, "not the framework's") {
+			t.Errorf("finding must name the foreign namespace: %s", v.Message)
+		}
+	}
+	// Mutation: give the accepted pair a foreign namespace and the
+	// count moves. A guard nothing can make fail is not a guard.
+	mutated := strings.ReplaceAll(storageNamespaceFixture, "gofastr.state.", "app.state.")
+	mres, err := LintStorageKeyRaw(writeRuntimeFixture(t, "namespace.js", mutated))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(mres.Violations) != 4 {
+		t.Fatalf("with the framework namespace renamed away, expected 4 findings, got %d:\n%s", len(mres.Violations), mres.Error())
+	}
+}
+
+// storageParamKeyFixture is the no-namespace arm on a key the provenance
+// walk cannot see: a function PARAMETER, encoded, with no literal beside
+// it. Before the namespace arm the finding needed data-fui provenance on
+// the encoded value, so this shape was silent; after it, an encoded
+// operand of any provenance with no literal is a key with a dynamic
+// segment and no namespace, and it says so.
+const storageParamKeyFixture = `function storeDraft(param, v) {
+  localStorage.setItem(encodeURIComponent(param), v);
+}
+window.__probe = { storeDraft: storeDraft };
+`
+
+// TestStorageKeyRawFiresOnUnnamedParamKey pins that the no-namespace
+// arm reads any encoded operand, not only an attribute-borne one, and
+// that the finding is the no-namespace one: with the arm narrowed back
+// to attribute provenance the site still fires, but through the
+// foreign-namespace arm with a message that asks for a different fix.
+func TestStorageKeyRawFiresOnUnnamedParamKey(t *testing.T) {
+	dir := writeRuntimeFixture(t, "paramkey.js", storageParamKeyFixture)
+	res, err := LintStorageKeyRaw(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Violations) != 1 {
+		t.Fatalf("expected 1 finding on storeDraft, got %d:\n%s", len(res.Violations), res.Error())
+	}
+	msg := res.Violations[0].Message
+	if !strings.Contains(msg, `"param"`) {
+		t.Errorf("the finding must name the encoded operand: %s", msg)
+	}
+	if !strings.Contains(msg, "names no namespace") {
+		t.Errorf("a parameter-rooted key with no literal is the no-namespace shape, not the foreign-namespace one: %s", msg)
+	}
+	// Mutation: lead the key with the framework's namespace and the
+	// finding is gone.
+	fixed := strings.Replace(storageParamKeyFixture, "encodeURIComponent(param)", "'gofastr.draft.' + encodeURIComponent(param)", 1)
+	fres, err := LintStorageKeyRaw(writeRuntimeFixture(t, "paramkey.js", fixed))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fres.HasErrors() {
+		t.Errorf("the namespaced spelling must be accepted:\n%s", fres.Error())
+	}
+}
+
+// Dropping the ENCODING while keeping the namespace is deliberately not
+// one of the mutations below: the key is a parameter there, and the raw
+// arm's documented posture is that provenance stops at the seam
+// (storePref in the fixture above is the same shape). Inside its own
+// namespace an unencoded application key cannot name another feature's
+// storage, which is the property this lint defends; the encoding is
+// still spelled at every sink so the shape holds when a caller's key
+// does come from the DOM.
+//
+// TestStorageKeyRawAcceptsTheLocalPrimitive runs the lint over the real
+// browser-store module (core-ui/runtime/src/local.js): the shape the
+// docs promise is the shape the lint accepts, and each of the three
+// ways to break the guarantee makes it fire. The keys there are
+// function PARAMETERS, not attribute reads; that is the posture the
+// namespace arm exists for, since the provenance walk cannot see an
+// application key and the primitive's whole promise is that such a key
+// can never name another feature's storage.
+func TestStorageKeyRawAcceptsTheLocalPrimitive(t *testing.T) {
+	repoRoot, err := findRepoRoot()
+	if err != nil {
+		t.Skipf("can't locate repo root: %v", err)
+	}
+	path := filepath.Join(repoRoot, "core-ui", "runtime", "src", "local.js")
+	src, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read local.js: %v", err)
+	}
+	res, err := LintStorageKeyRaw(writeRuntimeFixture(t, "local.js", string(src)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.HasErrors() {
+		t.Errorf("core-ui/runtime/src/local.js is not accepted by the storage-key lint:\n%s", res.Error())
+	}
+	const decl = "const PREFIX = 'gofastr.state.';"
+	if !strings.Contains(string(src), decl) {
+		t.Fatalf("local.js no longer declares %q — the mutations below would prove nothing", decl)
+	}
+	for _, m := range []struct{ name, mutated string }{
+		{"namespace emptied", strings.Replace(string(src), decl, "const PREFIX = '';", 1)},
+		{"namespace outside gofastr.", strings.Replace(string(src), decl, "const PREFIX = 'state.';", 1)},
+		{"namespace moved behind the value", strings.ReplaceAll(string(src), "PREFIX + encodeURIComponent(key)", "encodeURIComponent(key) + PREFIX")},
+	} {
+		r, err := LintStorageKeyRaw(writeRuntimeFixture(t, "local.js", m.mutated))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !r.HasErrors() {
+			t.Errorf("VACUITY: the lint accepts local.js with the %s", m.name)
+		}
+	}
+}
+
 // ── LintDecodeURIRaw ───────────────────────────────────────────────────
 
 // decodeFixtureRaw uses ~ for JS backticks (untailed below). Reduced

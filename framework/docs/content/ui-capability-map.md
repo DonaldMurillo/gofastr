@@ -156,7 +156,9 @@ gofastr docs --grep "reactive state"
 - **Starting from a component name.** State the job, truth owner, mutation
   path, and delivery guarantee first; then choose components.
 - **Calling a signal durable state.** It is a UI projection. Persist business
-  truth on the server.
+  truth on the server. `store.Slice.Persist` lets a BROWSER remember a
+  projection; it is best-effort by contract and a user can clear it between
+  two page loads.
 - **Using SSE as mutation acknowledgment.** The initiating RPC response is the
   acknowledgment and reconciliation channel.
 - **Assuming fanout makes process-held widget state stateless.** It only bridges

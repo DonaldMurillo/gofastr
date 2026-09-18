@@ -105,6 +105,7 @@ server side and the runtime does the work.
 | `data-fui-tabs-state` | On a `framework/ui.Tabs` wrapper (`TabsConfig.StateAttrs`): the demand-loaded `tabs` module mirrors `data-active` into `data-state="active"/"inactive"` on each `[role=tab]` button, the contract Radix-style ports pin test locators to. |
 | `data-fui-tabs-vacate` | On a `framework/ui.Tabs` wrapper (`TabsConfig.VacateHidden`): hidden panels ship empty (content in `data-fui-tabs-stash`); the `tabs` module restores content on first show and moves live nodes out/in on later switches, so swapped island content survives re-show. Vacated panels are detached: document-scoped updates targeting them are dropped permanently (nothing is queued; re-show resurrects the pre-vacate nodes, and only updates arriving after re-show land). |
 | `data-fui-tabs-stash` | On the JSON `<script>` beside the panels of a `VacateHidden` strip: map of tab index → panel HTML for the panels that shipped empty. Escaped so embedded `</script>` cannot terminate it. |
+| `data-fui-signal-persist="<max-bytes>"` | On a `core-ui/store` binding whose slice declared `.Persist()` / `.PersistMax(n)`: the value this browser last held is restored into the signal after hydration and every later value is written back. Storage is the kernel's `local` primitive (IndexedDB, with a tiny-value `localStorage` fallback), keyed under `gofastr.state.` + `encodeURIComponent(<the data-fui-signal name beside it>)`, so a name arriving through the DOM can only ever reach that namespace. The attribute carries the slice's cap in bytes; a larger value is NOT written and the page gets a `gofastr:persist-overflow` event (`{name, reason: "size"|"quota"|"encode"|"unavailable"|"untrusted", size, max}`) instead; `untrusted` means the signal held a value the runtime marked as not page-authored (a `?query` seed, for instance), which the store never keeps. Handled by the registered behaviour `signal-persist` (`core-ui/store/persist.js`, `Requires("local")`), which also mirrors another tab's write of the same key into this one. The restore is asynchronous by construction, so FIRST PAINT always shows the server's seeded value. Best-effort by contract: private mode, a blocked origin, a full quota and a cleared store all leave that value in place. The server never sees it: no cookie, no header, no post. |
 | `data-fui-computed="<reducer>"` | Marks a `core-ui/store` computed slice. The `computed` runtime module subscribes the node to its dependency signals and, on any change, runs the host-registered JS reducer `window.__gofastr._reducers[<reducer>]` over the current dep values and broadcasts the result to this node's `data-fui-signal`. CSP-safe; the reducer is a real function the host registers (no `eval`). |
 | `data-fui-computed-deps="<a,b>"` | Comma-separated dependency signal names a `data-fui-computed` node recomputes from. |
 | `data-fui-open="<widget-name>"` | Click opens a registered widget surface |
@@ -495,6 +496,35 @@ while a successful one displaces every other, and two members clicked
 inside one round trip still end with exactly one committed. Group
 members whose elements left the document are pruned on
 `gofastr:navigate`.
+
+The kernel's `local` module is the other one: the browser's own store,
+as one primitive. `window.__gofastr.local` has `available()`, which
+resolves to `{idb, ls, engine}` (`engine` names the one that will
+answer: `idb`, `ls` or `none`); `get(key)`; `set(key, value)`,
+which resolves to `{ok, reason}`; `remove(key)`; `keys(prefix?)`, which
+resolves to `{ok, reason, keys}`; `entries(prefix?)`, which resolves to
+`{ok, reason, entries}` with entries `[{key, value, size}]`;
+`subscribe(key, fn)`, which returns an unsubscribe function; and
+`watch(prefix, fn)`, which returns an unwatch function. The engine is
+**IndexedDB**;
+`localStorage` is the fallback, used only when IndexedDB will not open
+and only for values up to 8 KiB. Every entry, in either engine, lives
+under the literal `gofastr.state.` plus the component-encoded key, so
+an application key can never name another feature's storage.
+`subscribe` fires when ANOTHER tab of this origin changes the key
+(BroadcastChannel, plus the `storage` event for the fallback), and
+`watch` when another tab changes any key under a prefix; a tab never
+hears its own writes. `keys` and `entries` given a prefix read one
+IndexedDB key range, not the whole store, so a layer that groups its
+records under a common prefix lists one group without reading the
+rest. Every call is asynchronous and settles
+rather than throwing. The contract is **best-effort**: private mode, a
+blocked origin, a full quota and a cleared store are all normal, and
+`set` says which one refused it. Never keep something there whose loss
+is a bug; the server is still where truth lives, and this is not
+offline-first (see the capability map's non-goals). `core-ui/store`'s
+`Slice.Persist()` is the one consumer core-ui ships
+(`data-fui-signal-persist` in the table above).
 
 The framework's own `headless` module is registered this way by
 `framework/headless/behavior.go`, binding that package's `data-hui-*`

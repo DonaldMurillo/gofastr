@@ -122,6 +122,7 @@ server side and the runtime does the work.
 | `data-fui-tabs-state` | Emitted by `framework/ui.Tabs` on the strip wrapper when `TabsConfig.StateAttrs` is on: the module mirrors the wrapper's `data-active` into `data-state="active"/"inactive"` on every `[role=tab]` button, the attribute contract Radix-style ports pin their test locators to (core mirrors `aria-selected` on the same write). Handled by the demand-loaded `tabs` module; the wrapper also carries `data-fui-prefetch="tabs"` so the kernel's prefetch bridge has it loaded by first pointerover/focusin — both behaviors are interaction-time, so no core scanner entry (the core gzip budget has no room for one). Zero value: no attribute, no module fetch. |
 | `data-fui-tabs-vacate` | Emitted by `framework/ui.Tabs` on the strip wrapper when `TabsConfig.VacateHidden` is on: hidden panels ship EMPTY (content parked in the `data-fui-tabs-stash` script) so page-scoped test locators cannot match text inside hidden panels — DOM parity with a source component that unmounts inactive panels. The `tabs` module restores a panel's content on first show (from the stash) and from then on moves the live nodes out and back on every switch, so runtime-swapped island content and form state survive re-show intact. While a panel is vacated its nodes are detached: document-scoped updates targeting them (SSE island pushes, in-flight RPC responses) are dropped permanently — nothing is queued for replay; re-show resurrects the panel's pre-vacate nodes, and only updates that arrive after re-show land. Focus inside a vacated panel escapes to `<body>`. |
 | `data-fui-tabs-stash` | On the `<script type="application/json">` sibling of the panels inside a `VacateHidden` strip: a JSON map of tab index → panel HTML for every panel that shipped empty (`json.Marshal`-escaped, `</` rewritten to `<\/` so embedded `</script>` in panel content cannot terminate it — same idiom as the carousel defer manifest). Read once by the `tabs` module for first-show restore; every later hide/show cycle stashes live nodes instead, which is what preserves island state. |
+| `data-fui-signal-persist="<max-bytes>"` | On a `core-ui/store` binding whose slice declared `.Persist()` / `.PersistMax(n)`: the value this browser last held is restored into the signal after hydration and every later value is written back. Storage is the kernel's `local` primitive (IndexedDB, with a tiny-value `localStorage` fallback), keyed under `gofastr.state.` + `encodeURIComponent(<the data-fui-signal name beside it>)`, so a name arriving through the DOM can only ever reach that namespace. The attribute carries the slice's cap in bytes; a larger value is NOT written and the page gets a `gofastr:persist-overflow` event (`{name, reason: "size"|"quota"|"encode"|"unavailable"|"untrusted", size, max}`) instead; `untrusted` means the signal held a value the runtime marked as not page-authored (a `?query` seed, for instance), which the store never keeps. Handled by the registered behaviour `signal-persist` (`core-ui/store/persist.js`, `Requires("local")`), which also mirrors another tab's write of the same key into this one. The restore is asynchronous by construction, so FIRST PAINT always shows the server's seeded value. Best-effort by contract: private mode, a blocked origin, a full quota and a cleared store all leave that value in place. The server never sees it: no cookie, no header, no post. |
 | `data-fui-computed="<reducer>"` | Marks a `core-ui/store` computed slice. The `computed` runtime module subscribes the node to its dependency signals and, on any change, runs the host-registered JS reducer `window.__gofastr._reducers[<reducer>]` over the current dep values and broadcasts the result to this node's `data-fui-signal`. CSP-safe: the reducer is a real function the host registers (no `eval`). |
 | `data-fui-computed-deps="<a,b>"` | Comma-separated dependency signal names a `data-fui-computed` node recomputes from. |
 | `data-fui-compute` | Loads the `compute` demand module, which exposes `window.__gofastr.compute`. It is a trigger marker only; worker name, function, and payload stay in the imperative `compute.task(...)` call. |
@@ -631,6 +632,20 @@ client-side with no per-consumer round-trip.
   the kernel fragment's `window.__gofastr = {…}` line is the fresh-object
   assignment that overwrites anything set earlier.)
 
+- **Browser-persisted.** `Slice.Persist()` / `.PersistMax(n)` marks a
+  slice the browser remembers: every binding it renders carries
+  `data-fui-signal-persist="<cap>"`, the `signal-persist` behaviour
+  (`core-ui/store/persist.js`, `Requires("local")`) restores the
+  browser's value into the signal after hydration, writes every later
+  value back through the `local` primitive above, and mirrors another
+  tab's write in. `Persist` implies `.Global()`, so the app-global
+  merge rule keeps a partial render from clobbering the browser's
+  value. The restore is asynchronous, so first paint always shows the
+  server's seed; it is BEST-EFFORT and invisible to the server. A Go
+  render never sees it; the cookie mirror `ui.Banner` uses is still
+  the answer when the server must know a browser-held value at first
+  paint.
+
 See `framework/docs/content/signal-store.md` for the full guide.
 
 ### Extra scripts (the body-close script rail)
@@ -720,6 +735,67 @@ fired per message, to avoid a notification storm. The `gofastr:`
 prefix matches the existing `gofastr:navigate` convention. The
 NetworkRetryBanner reads `lastEventAt` for its silence trigger and
 listens for the event to re-probe its health endpoint on reconnect.
+
+### Browser storage: the `local` primitive (`runtime/src/local.js`)
+
+The runtime had five hard-coded Web-storage keys and no way for
+anything else to keep a value in the browser: the sidebar's collapse
+boolean, a banner's dismiss bit, the colour scheme, a form draft
+(`data-fui-persist-storage`) and the scroll map. Each was written where
+it was needed and re-derived its own namespace; an app that wanted to
+remember anything of its own had to leave the framework and write a
+document script. `local` is that capability with one owner.
+
+Like `action` it is a PRIMITIVE: no marker, no `data-fui-*` attribute
+of its own, reached through `registry.Requires("local")` or an explicit
+`__gofastr.loadModule('local')`, and served, hashed, budgeted and
+linted like every other module. It adds nothing to the core bundle.
+
+**Engine.** IndexedDB, because a saved value is not a preference: it is
+asynchronous, it is not capped at the few megabytes `localStorage`
+shares across a whole origin, and a large read does not block the main
+thread. `localStorage` is the FALLBACK, used only when IndexedDB will
+not open and only for values up to 8 KiB. Both are browser APIs; the
+module adds no dependency.
+
+**Namespace.** Every entry, in either engine, is stored under the
+literal `gofastr.state.` plus the component-encoded application key,
+spelled at each sink. An application key can therefore never name
+another feature's storage, and `core-ui/check`'s `storage-key-raw` lint
+enforces both halves, including that the namespace is the framework's
+own and that it leads the key.
+
+**API** (`window.__gofastr.local`), every call asynchronous and
+settling rather than throwing:
+
+| Call | Resolves |
+| --- | --- |
+| `available()` | `{idb, ls, engine}`, probed rather than feature-detected (Safari's private mode exposes `localStorage` and throws on every write). `engine` is the one that will answer: `idb`, `ls` or `none` |
+| `get(key)` | the stored value, or `undefined` when it is absent, unreadable, or no engine is available |
+| `set(key, value)` | `{ok, reason}`; `reason` is `""`, `encode` (the value is not JSON), `size` (over the fallback's tiny-value cap), `quota` or `unavailable` |
+| `remove(key)` | `{ok, reason}`; the entry is dropped from BOTH engines, so a record a fallback session wrote cannot outlive a delete |
+| `keys(prefix?)` | `{ok, reason, keys}`: the sorted application keys this origin holds, namespace stripped, or only those under `prefix`, read as one IndexedDB key range rather than a scan (the component encoding is per character, so the encoded prefix is a prefix of every encoded key beneath it). A failed enumeration says so: an empty store and an aborted transaction are not the same answer, and a caller that deletes what it enumerated must be able to tell them apart |
+| `entries(prefix?)` | `{ok, reason, entries}`, entries being `[{key, value, size}]` under `prefix` (or the whole namespace), sorted by key, keys and values from one transaction; `size` is the stored UTF-8 length of the entry's JSON text. Settles like `keys` |
+| `subscribe(key, fn)` | an unsubscribe function; `fn(value, key)` runs when ANOTHER tab of this origin changes the key (BroadcastChannel, plus the `storage` event for the fallback engine). A tab never hears its own writes: both transports skip the writing context |
+| `watch(prefix, fn)` | an unwatch function; `fn(key)` runs when another tab changes any key under `prefix`. The key travels, never the value: the watcher re-reads. One watcher covers a whole group of records |
+
+**One store, not two.** The fallback is a fallback, never a second
+engine running beside the first: the first session that opens IndexedDB
+adopts every `gofastr.state.` entry a fallback session left in
+`localStorage` and empties the namespace there (one way: the fallback
+never receives). Without it those entries are records no IndexedDB
+session can read, overwrite or clear, which is a previous user's data
+surviving a logout. On the fallback engine a write announces only
+through the native `storage` event, never on BroadcastChannel too: one
+write must deliver once.
+
+**The contract is best-effort, and that is the design.** Private mode, a
+blocked origin, a full quota, a cleared store and a browser that
+refuses to open a database are all normal. Never keep something here
+whose loss is a bug: the server is still where truth lives. This is
+not offline-first (`ui-capability-map.md` non-goals): there is no
+conflict resolution, no queue of pending mutations, no sync. Opinions
+of that shape belong in a layer ABOVE core-ui, never in the primitive.
 
 ### Sequenced WebSocket client (`__gofastr.connectWebSocket`)
 

@@ -86,6 +86,82 @@ the JS reducer registered under its name. Register reducers as real functions,
 > `window.__gofastr` namespace wholesale on boot, which would wipe a
 > `_reducers` map set before it.
 
+## Browser-persisted slices
+
+A signal is a UI projection and the server is where truth lives. Some
+state has no server to live on: a draft, a filter set, a scratch list a
+signed-out visitor builds in one browser. `Persist` lets the browser
+remember such a slice without an app leaving the framework to write a
+document script.
+
+<!-- gofastr:compile
+import "context"
+import "github.com/DonaldMurillo/gofastr/core-ui/store"
+
+type Team struct{ Name string }
+-->
+```go
+TB := store.New("teambuilder")
+
+// 64 KiB cap (PersistDefaultMaxBytes), or name your own.
+Teams := store.JSON[[]Team](TB, "teams", nil).Persist()
+Filter := TB.String("filter", "").PersistMax(2048)
+
+// Read and write them like any other slice: Bind, Publish,
+// __gofastr.setSignal / getSignal.
+ctx := context.Background()
+_ = Teams.Bind(ctx, "ol", map[string]string{"class": "teams"})
+_ = Filter.Bind(ctx, "span", nil)
+```
+
+Every binding a persisted slice renders carries
+`data-fui-signal-persist="<cap>"`, and that marker is what loads the
+runtime half, so a persisted slice is restored on the screens that
+bind it, exactly as a page-scoped slice is seeded on the screens that
+reference it.
+
+### The contract, in four promises and no more
+
+- **Best-effort.** Private mode, a blocked origin, a full quota and a
+  cleared store are all normal. A read that fails leaves the server's
+  value in place; a write that fails raises `gofastr:persist-overflow`
+  on `window` (`{name, reason, size, max}`, `reason` one of `size`,
+  `quota`, `encode`, `unavailable`, `untrusted`) and changes nothing
+  else. `untrusted` means the signal held a value the runtime marked as
+  not page-authored (a `?query` seed, for instance), which the store
+  never keeps. `size` is counted in UTF-8 bytes of the JSON text, the
+  unit `PersistMax` is declared in. **Never persist something whose loss
+  is a bug.**
+- **Namespaced.** Storage is the runtime's `local` primitive
+  (IndexedDB, with a tiny-value `localStorage` fallback), keyed
+  `gofastr.state.` + the component-encoded slice name, and the slice
+  name carries its `Store` namespace, so `Teams` above is
+  `gofastr.state.teambuilder.teams`. An app cannot choose the raw key;
+  `core-ui/check`'s storage-key lint refuses one.
+- **Size-bounded.** A value over the slice's cap is not written and the
+  page is told instead, so an app can say "you have run out of room"
+  rather than lose the write silently. `PersistMax` accepts up to 1 MiB:
+  a signal is re-serialised on every change, so large data
+  wants `__gofastr.local` directly, or the server.
+- **Invisible to the server.** Nothing is posted, no cookie is set, no
+  header is added, and the restore lands AFTER hydration, so first paint
+  always shows the server's seed. When a Go render must know a
+  browser-held value at first paint, use the cookie mirror `ui.Banner`
+  uses (`framework/ui/banner.go` reads it with
+  `app.RequestFromContext`); that channel is sized for a bit, not a
+  blob.
+
+`Persist` implies `.Global()`: the browser's value has to survive a
+client-side navigation, and the app-global merge rule ("seed a global
+only the first time it is seen") is what keeps a partial render from
+clobbering it. Two open tabs of the same origin converge: the
+primitive mirrors one tab's write into the other.
+
+It does **not** make GoFastr offline-first (an explicit
+[non-goal](ui-capability-map.md)): there is no conflict resolution, no
+queue of pending mutations and no sync. It is a browser remembering a
+projection.
+
 ## Retrofitted components
 
 `ui.Counter`, `ui.Tabs`, and `ui.SignalToggle` accept a typed `Slice` (their
@@ -114,7 +190,7 @@ ui.Counter(ui.CounterConfig{Slice: store.New("cart").Int("count", 0)})
 
 - [UI capability map](ui-capability-map.md) shows when a local signal, typed store, server recomputation, or durable database state is the right boundary.
 - [Interactive patterns](interactive-patterns.md) covers RPC producers that publish authoritative values and fragments.
-- [Runtime contract](runtime-contract.md) defines seeding and SPA-navigation rules.
+- [Runtime contract](runtime-contract.md) defines seeding and SPA-navigation rules, and documents the `local` browser-store primitive `Persist` is built on.
 
 ## Common mistakes
 
@@ -139,3 +215,16 @@ ui.Counter(ui.CounterConfig{Slice: store.New("cart").Int("count", 0)})
 - **Using `BindHTML` for user-influenced values.** It writes to
   `innerHTML`: trusted values only. `Bind` (text mode) escapes;
   reach for it unless you control every byte of the value.
+- **Treating a persisted slice as durable.** `Persist` is best-effort
+  by contract: a browser may refuse to store anything at all, and a
+  user may clear it between two page loads. Business truth still
+  belongs on the server.
+- **Expecting a persisted value at first paint.** The restore is
+  asynchronous and runs after hydration, so SSR always renders the
+  server's seed. A screen that must not flash needs the value on the
+  request, the cookie mirror `ui.Banner` uses, not in the browser
+  store.
+- **Persisting a slice the page never binds.** The marker rides on the
+  bindings, exactly as the seed rides on references: a persisted slice
+  no element on the page binds is never restored. Bind it, even to a
+  hidden anchor, on the screens that need it.

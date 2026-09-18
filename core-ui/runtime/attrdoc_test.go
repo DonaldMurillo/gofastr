@@ -609,6 +609,9 @@ func goEmittedAttrs(t *testing.T) []string {
 		filepath.Join("..", "widget"),
 		filepath.Join("..", "app"),
 		filepath.Join("..", "patterns"),
+		// core-ui/store emits the signal-binding family and the
+		// browser-persistence marker its registered behaviour reads.
+		filepath.Join("..", "store"),
 		filepath.Join("..", "..", "framework", "ui"),
 		// pluginhost emits the data-fui-plugin* mount markers via string
 		// concat (mount.go); it owns its own parity gate too, but the
