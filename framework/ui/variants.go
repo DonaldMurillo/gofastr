@@ -289,6 +289,55 @@ var validationSummaryClasses = headless.Classes{
 	headless.PartErrorLink: "fui-validation-summary__link",
 }
 
+// choiceClasses dresses headless.Choice (Checkbox, Radio and the
+// groups' leaves). The variant class (fui-choice--checkbox /
+// --radio) is appended on the root per call, the way a caller's own
+// Class is, so one shared map serves both types. The hint span rides
+// inside the text part: a choice row is one inline run, the label
+// wrapped around the control.
+var choiceClasses = headless.Classes{
+	headless.PartRoot:    "fui-choice",
+	headless.PartControl: "fui-choice__input",
+	headless.PartText:    "fui-choice__text",
+	headless.PartHint:    "fui-choice__hint",
+}
+
+// switchClasses dresses headless.Switch. headless.Switch carries no
+// hint part, so a standalone Switch with a message wraps itself in
+// the fui-choice-field shell beside the message paragraph.
+var switchClasses = headless.Classes{
+	headless.PartRoot:    "fui-switch",
+	headless.PartControl: "fui-switch__input",
+	headless.PartText:    "fui-switch__text",
+}
+
+// choiceGroupClasses dresses headless.Group (RadioGroup,
+// CheckboxGroup). The group's hint and error paragraphs are ui-owned
+// children handed to Group beside the rendered leaves; the fieldset's
+// aria-describedby points at whichever of them rendered.
+var choiceGroupClasses = headless.Classes{
+	headless.PartRoot:  "fui-choice-group",
+	headless.PartLabel: "fui-choice-group__legend",
+}
+
+// passwordClasses dresses headless.Password's affix shell: the input
+// and the reveal button inside it. The shell owns the one border;
+// the invalid state arrives as data-invalid on the shell.
+var passwordClasses = headless.Classes{
+	headless.PartRoot:        "fui-password",
+	headless.PartControl:     "fui-password__input",
+	headless.PartAffixButton: "fui-password__reveal",
+}
+
+// colorClasses dresses headless.Color's affix shell: the swatch
+// (PartAffixSwatch, out of the tab order) and the hex text input
+// (PartControl, the source of truth and the control that submits).
+var colorClasses = headless.Classes{
+	headless.PartRoot:        "fui-color",
+	headless.PartControl:     "fui-color__text",
+	headless.PartAffixSwatch: "fui-color__swatch",
+}
+
 func (s *variantSet) register(api, name string, kind variantKind, css VariantCSS) {
 	if !validVariantName(name) {
 		panic("ui: " + api + "(" + name + "): name must be non-empty lowercase letters, digits, or hyphens")

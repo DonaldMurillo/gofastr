@@ -19,7 +19,7 @@ func TestPasswordInputRequiresName(t *testing.T) {
 func TestPasswordInputRequiresID(t *testing.T) {
 	defer func() {
 		if recover() == nil {
-			t.Fatal("PasswordInput without ID should panic")
+			t.Fatal("PasswordInput without ID (and without a Field carrying one) should panic")
 		}
 	}()
 	PasswordInput(PasswordInputConfig{Name: "pw"})
@@ -38,16 +38,28 @@ func TestPasswordInputEmitsTypePassword(t *testing.T) {
 	}
 }
 
-func TestPasswordInputEmitsToggleButton(t *testing.T) {
+// The reveal button is the headless module's contract: data-hui-reveal
+// on the button, data-hui-affix on the shell, data-hui-affix-input on
+// the input, and the four label/text attributes the module swaps
+// between. The retired passwordinput.js module bound none of these.
+func TestPasswordInputEmitsTheHeadlessRevealHooks(t *testing.T) {
 	h := string(PasswordInput(PasswordInputConfig{Name: "pw", ID: "pw"}))
-	if !strings.Contains(h, `type="button"`) {
-		t.Errorf("expected toggle button type=button:\n%s", h)
-	}
-	if !strings.Contains(h, `aria-label="Show password"`) {
-		t.Errorf("expected aria-label Show password:\n%s", h)
-	}
-	if !strings.Contains(h, `aria-pressed="false"`) {
-		t.Errorf("expected aria-pressed=false:\n%s", h)
+	for _, want := range []string{
+		`type="button"`,
+		`data-hui-reveal`,
+		`data-hui-affix`,
+		`data-hui-affix-input`,
+		`aria-label="Show password"`,
+		`data-hui-show-label="Show password"`,
+		`data-hui-hide-label="Hide password"`,
+		`data-hui-show-text="Show"`,
+		`data-hui-hide-text="Hide"`,
+		`aria-pressed="false"`,
+		`>Show<`,
+	} {
+		if !strings.Contains(h, want) {
+			t.Errorf("reveal contract missing %q:\n%s", want, h)
+		}
 	}
 }
 
@@ -69,42 +81,20 @@ func TestPasswordInputAutocomplete(t *testing.T) {
 	}
 }
 
-func TestPasswordInputErrorState(t *testing.T) {
+// The invalid state arrives as data-invalid on the SHELL (the input
+// inside has no border of its own to colour) and as aria-invalid on
+// the input — driven by the field's wiring, never by a config Error:
+// the affix shell is a control and renders no message of its own.
+func TestPasswordInputInvalidMarksTheShell(t *testing.T) {
 	h := string(PasswordInput(PasswordInputConfig{
-		Name: "pw", ID: "pw", Error: "Too short",
+		Name: "pw", ID: "pw",
+		Field: headless.FieldControl{ID: "pw", Invalid: true},
 	}))
-	if !strings.Contains(h, "is-error") {
-		t.Errorf("Error state should add .is-error class:\n%s", h)
+	if !strings.Contains(h, `data-invalid`) {
+		t.Errorf("the shell must carry data-invalid:\n%s", h)
 	}
 	if !strings.Contains(h, `aria-invalid="true"`) {
-		t.Errorf("Error state should mark input aria-invalid:\n%s", h)
-	}
-	if !strings.Contains(h, "Too short") {
-		t.Errorf("Error message should render:\n%s", h)
-	}
-}
-
-func TestPasswordInputErrorInsideComponentScope(t *testing.T) {
-	h := string(PasswordInput(PasswordInputConfig{
-		Name: "pw", ID: "pw", Error: "Too short",
-	}))
-	// The error <p> must be INSIDE the [data-fui-comp] wrapper, not a sibling.
-	// Otherwise scoped CSS [data-fui-comp="ui-password-input"] .ui-password-input__error won't match.
-	idx := strings.Index(h, `data-fui-comp="ui-password-input"`)
-	if idx == -1 {
-		t.Fatal("missing data-fui-comp")
-	}
-	// Find the closing tag of the component wrapper
-	closeIdx := strings.LastIndex(h, "</div>")
-	if closeIdx == -1 {
-		t.Fatal("missing closing div")
-	}
-	scope := h[idx:closeIdx]
-	if !strings.Contains(scope, "ui-password-input__error") {
-		t.Errorf("error paragraph must be inside component scope, got HTML:\n%s", h)
-	}
-	if !strings.Contains(scope, "Too short") {
-		t.Errorf("error text must be inside component scope, got HTML:\n%s", h)
+		t.Errorf("the input must carry aria-invalid:\n%s", h)
 	}
 }
 
@@ -116,7 +106,6 @@ func TestPasswordInputAttrsCannotOverrideType(t *testing.T) {
 	if !strings.Contains(h, `type="password"`) {
 		t.Errorf("type should remain password despite Attrs override, got:\n%s", h)
 	}
-	// Should NOT have a duplicate type="text"
 	if strings.Contains(h, `type="text"`) {
 		t.Errorf("type should not be overridden to text, got:\n%s", h)
 	}
@@ -127,8 +116,8 @@ func TestPasswordInputAttrsCannotOverrideName(t *testing.T) {
 		Name: "pw", ID: "pw",
 		ExtraAttrs: map[string]string{"name": "evil"},
 	}))
-	if !strings.Contains(h, `name="pw"`) {
-		t.Errorf("name should remain pw despite Attrs override, got:\n%s", h)
+	if strings.Contains(h, `name="evil"`) {
+		t.Errorf("name should not be overridable, got:\n%s", h)
 	}
 }
 
@@ -137,97 +126,61 @@ func TestPasswordInputAttrsCannotOverrideID(t *testing.T) {
 		Name: "pw", ID: "pw",
 		ExtraAttrs: map[string]string{"id": "evil"},
 	}))
-	if !strings.Contains(h, `id="pw"`) {
-		t.Errorf("id should remain pw despite Attrs override, got:\n%s", h)
+	if strings.Contains(h, `id="evil"`) {
+		t.Errorf("id should not be overridable, got:\n%s", h)
 	}
 }
 
-func TestPasswordInputRequired(t *testing.T) {
-	h := string(PasswordInput(PasswordInputConfig{
-		Name: "pw", ID: "pw", Required: true,
-	}))
-	if !strings.Contains(h, `required`) {
-		t.Errorf("expected required attribute:\n%s", h)
-	}
-}
-
-// ExtraAttrs land on the <input> but never override what the component
-// owns (#262). The old maps.Copy + re-assert left case-variant holes
-// ("Type" folded back onto type in the parser); the SafeExtraAttrs
-// route closes them.
+// Extras land on the shell's ROOT — the contract every component's
+// ExtraAttrs carries — never on the inner input that submits, and
+// never override what the component owns (#262); the reveal hooks
+// cannot be forged: a data-hui-* or data-fui-* key is dropped on the
+// way in.
 func TestPasswordInputExtraAttrsCannotOverrideOwned(t *testing.T) {
 	h := string(PasswordInput(PasswordInputConfig{
-		Name: "pw", ID: "pw", Placeholder: "Enter password",
-		Autocomplete: "new-password", Class: "mine",
+		Name: "pw", ID: "pw",
 		ExtraAttrs: map[string]string{
-			"data-test": "hook", "type": "text", "Type": "text", "Class": "evil",
-			"data-fui-comp": "spoof",
+			"data-testid":     "pw-field",
+			"data-hui-reveal": "forged",
+			"data-fui-rpc":    "/evil",
 		},
 	}))
-	input := extraAttrsOpeningTag(t, h, "input")
-	for _, banned := range []string{"evil", "spoof", `type="text"`} {
-		if strings.Contains(input, banned) {
-			t.Errorf("owned attr overridden by ExtraAttrs (%q):\n%s", banned, input)
-		}
+	root := h[:strings.Index(h, ">")+1]
+	if !strings.Contains(root, `data-testid="pw-field"`) {
+		t.Errorf("benign extra must reach the shell's root:\n%s", h)
 	}
-	for _, want := range []string{
-		`data-test="hook"`, `type="password"`, `name="pw"`, `id="pw"`,
-		`placeholder="Enter password"`, `autocomplete="new-password"`,
-		`class="ui-password-input__input`,
-	} {
-		if !strings.Contains(input, want) {
-			t.Errorf("input missing %q:\n%s", want, input)
-		}
+	i := strings.Index(h, "<input")
+	input := h[i : i+strings.Index(h[i:], ">")+1]
+	if strings.Contains(input, `data-testid`) {
+		t.Errorf("extras must not land on the inner input that submits:\n%s", input)
+	}
+	if strings.Contains(h, `data-hui-reveal="forged"`) {
+		t.Errorf("a forged data-hui hook must not ship:\n%s", h)
+	}
+	if strings.Contains(h, `data-fui-rpc`) {
+		t.Errorf("a data-fui-* key must not ship:\n%s", h)
 	}
 }
 
-// The field's wiring reaches the inner input: an outer hint and an
-// outer error set at once both arrive (described-by carries both ids,
-// the invalid state lands), and nothing the sanitiser does drops what
-// the component itself set.
 func TestPasswordInputCarriesTheFieldsWiring(t *testing.T) {
-	fc := headless.FieldControl{
-		ID:          "acct-password",
-		DescribedBy: "acct-password-error acct-password-hint",
-		Invalid:     true,
-		Required:    true,
-	}
 	h := string(PasswordInput(PasswordInputConfig{
-		Name: "password", ID: "inner", Field: fc,
-		Autocomplete: "new-password",
+		Name: "pw", ID: "ignored",
+		Field: headless.FieldControl{
+			ID:          "f1",
+			DescribedBy: "f1-error f1-hint",
+			Invalid:     true,
+			Required:    true,
+		},
 	}))
-	for _, want := range []string{
-		`id="acct-password"`,
-		`aria-describedby="acct-password-error acct-password-hint"`,
-		`aria-invalid="true"`,
-		`required=""`,
-		`autocomplete="new-password"`,
-	} {
-		if !strings.Contains(h, want) {
-			t.Errorf("inner input missing %q:\n%s", want, h)
+	s := string(h)
+	i := strings.Index(s, "<input")
+	input := s[i : i+strings.Index(s[i:], ">")+1]
+	for _, want := range []string{`id="f1"`, `aria-describedby="f1-error f1-hint"`, `aria-invalid="true"`, "required"} {
+		if !strings.Contains(input, want) {
+			t.Errorf("inner input missing %q:\n%s", want, input)
 		}
 	}
-	// A caller's aria-describedby in ExtraAttrs cannot beat the
-	// field's wiring: the relationship belongs to the field.
-	h2 := string(PasswordInput(PasswordInputConfig{
-		Name: "password", ID: "inner2", Field: fc,
-		ExtraAttrs: map[string]string{"aria-describedby": "evil"},
-	}))
-	if !strings.Contains(h2, `aria-describedby="acct-password-error acct-password-hint"`) {
-		t.Errorf("the field's described-by lost to a caller's extra:\n%s", h2)
-	}
-}
-
-// Standalone (no Field): the component's own Error drives the wiring
-// as before, and renders its own message paragraph.
-func TestPasswordInputStandaloneErrorStillWires(t *testing.T) {
-	h := string(PasswordInput(PasswordInputConfig{
-		Name: "password", ID: "solo", Error: "Too short.",
-	}))
-	if !strings.Contains(h, `aria-describedby="solo-error"`) || !strings.Contains(h, `aria-invalid="true"`) {
-		t.Errorf("standalone error wiring lost:\n%s", h)
-	}
-	if !strings.Contains(h, "Too short.") {
-		t.Errorf("standalone error message missing:\n%s", h)
+	if strings.Contains(h, `id="ignored"`) {
+		t.Errorf("the field's id must win over the config's own:\n%s", h)
 	}
 }

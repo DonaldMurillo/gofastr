@@ -21,11 +21,10 @@ import "github.com/DonaldMurillo/gofastr/core/render"
 //
 // It replaces the twelve-line if/else-if paragraph pair that was copied
 // verbatim (differing only in the BEM base class) in NumberInput,
-// Select, TextArea, Checkbox/Radio/Switch (renderToggle), RadioGroup
-// and CheckboxGroup (renderToggleGroup), FileDropzone, FileUpload,
-// TimePicker, and the error-only variant in PasswordInput. FormField
-// (components.go) intentionally keeps its own spelling: it renders help
-// and error as two independent paragraphs instead of either/or.
+// TextArea, FileDropzone, FileUpload and TimePicker. The families the
+// headless rebuild has reached render their messages through their
+// headless counterparts instead (the field owns both, the choice group
+// renders its own either/or paragraph, the affix shells carry none).
 func fieldMessage(id, base, errText, helpText string) []render.HTML {
 	if errText != "" {
 		return []render.HTML{render.Tag("p", map[string]string{

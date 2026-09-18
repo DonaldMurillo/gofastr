@@ -2,28 +2,35 @@ package ui
 
 import (
 	"context"
-	"maps"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/headless"
-	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
 // ─── PasswordInput ──────────────────────────────────────────────────
 //
-// Password input with a toggle button that flips between hidden and
-// visible text. SSR renders the password field in its hidden state;
-// the runtime JS module (core-ui/runtime/src/passwordinput.js) wires
-// the toggle button to flip input type between "password" and "text".
+// The affix-shell password control, rendered through headless.Password:
+// a div carrying data-hui-affix with a borderless input and a reveal
+// button inside, the shell owning the one border. The headless
+// behaviour module (not a component of its own) binds the reveal
+// button's data-hui-reveal: it retypes the input, swaps the button's
+// visible word and its accessible name from the four data-hui-*
+// attributes, and keeps the caret where the reader left it. SSR ships
+// the hidden state.
+//
+// The component is a control, not a field: it renders no message of
+// its own. Wrap it in a FormField and let the field own the error;
+// this is what the Field wiring below carries.
 
 // PasswordInputConfig configures a PasswordInput.
 type PasswordInputConfig struct {
 	// Name is the form-field name (required).
 	Name string
-	// ID is the input element's id (required).
+	// ID is the input element's id — the id a surrounding label's
+	// for= points at. Required unless Field carries one.
 	ID string
 	// Placeholder renders the native placeholder.
 	Placeholder string
@@ -31,170 +38,140 @@ type PasswordInputConfig struct {
 	Required bool
 	// Autocomplete sets the autocomplete attribute (e.g. "current-password", "new-password").
 	Autocomplete string
-	// Error overrides with an error message + aria-invalid.
-	Error string
-	// Class adds extra CSS classes to the wrapper.
+	// Class adds extra CSS classes to the shell.
 	Class string
-	// ExtraAttrs forwards additional attributes to the <input> element.
-	// Keys the component owns are dropped: class and id (use Class /
-	// ID), data-fui-*, type, name, placeholder, required, autocomplete,
-	// aria-invalid, and aria-describedby.
+	// ExtraAttrs forwards additional attributes to the shell's root
+	// element — the same contract every component's ExtraAttrs
+	// carries (data-* test hooks, analytics markers). Keys the
+	// component owns are dropped: class (use Class), id, the input's
+	// type, name, placeholder, required, autocomplete, aria-invalid
+	// and aria-describedby (the field's wiring owns them), plus every
+	// data-fui-* and data-hui-* key — the reveal hooks are the
+	// runtime's contract, not a caller's to forge. Autocomplete has
+	// its own field because it belongs to the input that submits.
 	ExtraAttrs map[string]string
 
-	// Ctx carries the per-request context used to resolve i18n strings
-	// (show/hide toggle aria-label). When nil, context.Background() is
-	// used and English fallbacks are returned, preserving today's behaviour.
+	// Ctx carries the per-request context used to resolve the reveal
+	// button's words (ui.StringsFor: ShowPassword, HidePassword,
+	// RevealShow, RevealHide). When nil, the English defaults are
+	// used.
 	Ctx context.Context
 
 	// Field is the wiring an enclosing FormField handed its builder
 	// (the headless.FieldControl its Input closure received). Applied
-	// to the inner input — the described-by chain, the invalid state,
-	// the required flag and the id — so a password field inside a
-	// labelled field carries its description and its name arrives
-	// once. Zero value means standalone, and its own Error drives the
-	// wiring as before. When both are set the FIELD wins: the outer
-	// field owns the relationship.
+	// to the inner input — the id the outer label points at, the
+	// described-by chain, the invalid state and the required flag —
+	// and it wins over the config's own: two sources for one fact is
+	// how they drift. Zero value means standalone.
 	Field headless.FieldControl
 }
 
-// PasswordInput renders a password field with a show/hide toggle button.
+// PasswordInput renders a password field with a show/hide reveal
+// button bound by the headless behaviour module.
 func PasswordInput(cfg PasswordInputConfig) render.HTML {
 	if cfg.Name == "" {
 		panic("ui: PasswordInput requires Name")
 	}
-	if cfg.ID == "" {
-		panic("ui: PasswordInput requires ID")
+	id := cfg.ID
+	if cfg.Field.ID != "" {
+		id = cfg.Field.ID
 	}
+	if id == "" {
+		panic("ui: PasswordInput requires ID (or a Field carrying one)")
+	}
+
+	// Autocomplete is an attribute of the inner input (it tells the
+	// browser what to fill), so it travels the headless Extra seam the
+	// props document for exactly that. A caller's ExtraAttrs go to
+	// the shell's root, the contract every component's ExtraAttrs
+	// carries — never the input that submits.
+	inputExtra := html.Attrs{}
+	if cfg.Autocomplete != "" {
+		inputExtra["autocomplete"] = cfg.Autocomplete
+	}
+	// A nil Ctx resolves through i18nui's English defaults rather
+	// than the bridge's nil short-circuit, the behaviour the
+	// component always had: the bytes are the same (the bridge pins
+	// them), and a host that swaps the default table is heard.
 	ctx := cfg.Ctx
 	if ctx == nil {
 		ctx = context.Background()
 	}
 
-	cls := "ui-password-input"
-	if cfg.Error != "" {
-		cls += " is-error"
-	}
-	if cfg.Class != "" {
-		cls += " " + cfg.Class
-	}
-
-	inputAttrs := map[string]string{
-		"type":  "password",
-		"name":  cfg.Name,
-		"id":    cfg.ID,
-		"class": "ui-password-input__input",
-	}
-	if cfg.Placeholder != "" {
-		inputAttrs["placeholder"] = cfg.Placeholder
-	}
-	if cfg.Required {
-		inputAttrs["required"] = ""
-	}
-	if cfg.Autocomplete != "" {
-		inputAttrs["autocomplete"] = cfg.Autocomplete
-	}
-	if cfg.Error != "" {
-		inputAttrs["aria-invalid"] = "true"
-		inputAttrs["aria-describedby"] = cfg.ID + "-error"
-	}
-	maps.Copy(inputAttrs, html.SafeExtraAttrs(cfg.ExtraAttrs,
-		"type", "name", "placeholder", "required", "autocomplete",
-		"aria-invalid", "aria-describedby"))
-	// The enclosing field's wiring, applied after the sanitiser so
-	// nothing drops it: the id the outer label points at, the
-	// description chain, the invalid state, the required flag. Two
-	// sources for one fact is how they drift, which is why these four
-	// come from the field and nowhere else when a field is present.
-	if fc := cfg.Field; fc.ID != "" || fc.DescribedBy != "" || fc.Invalid || fc.Required {
-		if fc.ID != "" {
-			inputAttrs["id"] = fc.ID
-		}
-		if fc.DescribedBy != "" {
-			inputAttrs["aria-describedby"] = fc.DescribedBy
-		}
-		if fc.Invalid {
-			inputAttrs["aria-invalid"] = "true"
-		}
-		if fc.Required {
-			inputAttrs["required"] = ""
-		}
-	}
-
-	toggleAttrs := map[string]string{
-		"type":         "button",
-		"class":        "ui-password-input__toggle",
-		"aria-label":   i18nui.T(ctx, i18nui.KeyPasswordInputShow),
-		"aria-pressed": "false",
-	}
-
-	children := []render.HTML{
-		render.VoidTag("input", inputAttrs),
-		render.Tag("button", toggleAttrs, render.Text("⊙")),
-	}
-
-	children = append(children, fieldMessage(cfg.ID, "ui-password-input", cfg.Error, "")...)
-
-	wrapper := render.Tag("div",
-		map[string]string{"class": cls},
-		children...)
-
-	return passwordInputStyle.WrapHTML(wrapper)
+	return passwordInputStyle.WrapHTML(headless.Password(headless.PasswordProps{
+		Name:        cfg.Name,
+		Placeholder: cfg.Placeholder,
+		Required:    cfg.Required || cfg.Field.Required,
+		Invalid:     cfg.Field.Invalid,
+		ID:          id,
+		DescribedBy: cfg.Field.DescribedBy,
+		Extra:       inputExtra,
+		Parts: headless.Parts{Attrs: headless.PartAttrs{
+			headless.PartRoot: html.SafeExtraAttrs(cfg.ExtraAttrs,
+				"type", "name", "placeholder", "required", "autocomplete",
+				"aria-invalid", "aria-describedby"),
+		}},
+		Strings: StringsFor(ctx),
+	}, withRootClass(passwordClasses, cfg.Class)))
 }
 
 var passwordInputStyle = registry.RegisterStyle("ui-password-input", passwordInputCSS)
 
 func passwordInputCSS(_ style.Theme) string {
-	return `[data-fui-comp="ui-password-input"] {
+	return `.fui-password {
   display: flex;
   align-items: stretch;
   border: 1px solid var(--color-border, #E4E4E7);
-  border-radius: var(--radii-md, 8px);
+  border-radius: var(--fui-field-radius);
   background: var(--color-surface, #FFFFFF);
   overflow: hidden;
 }
-[data-fui-comp="ui-password-input"] .ui-password-input__input {
+.fui-password__input {
   flex: 1;
   border: 0;
   background: transparent;
   font: inherit;
   font-size: var(--text-base, 1rem);
   padding: 10px var(--spacing-md, 8px);
-  color: var(--color-text, #18181B);
-  min-block-size: var(--spacing-touch-target, 44px);
+  min-block-size: var(--fui-density-control-h);
+  min-inline-size: 0;
 }
-[data-fui-comp="ui-password-input"] .ui-password-input__input:focus-visible {
+.fui-password__input:focus-visible {
   outline: 2px solid var(--color-primary, #4F46E5);
   outline-offset: -2px;
 }
-[data-fui-comp="ui-password-input"] .ui-password-input__toggle {
+.fui-password__reveal {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-block-size: var(--spacing-touch-target, 44px);
+  min-block-size: var(--fui-density-control-h);
   min-inline-size: var(--spacing-touch-target, 44px);
+  padding-inline: var(--spacing-md, 8px);
   background: var(--color-surface-soft, #F4F4F5);
   border: 0;
-  border-left: 1px solid var(--color-border, #E4E4E7);
-  font-size: var(--text-lg, 1.125rem);
+  border-inline-start: 1px solid var(--color-border, #E4E4E7);
+  font: inherit;
+  font-size: var(--text-sm, 0.875rem);
   color: var(--color-text-muted, #52525B);
   cursor: pointer;
   user-select: none;
 }
-[data-fui-comp="ui-password-input"] .ui-password-input__toggle:hover {
+.fui-password__reveal:hover {
   background: var(--color-border, #E4E4E7);
   color: var(--color-text, #18181B);
 }
-[data-fui-comp="ui-password-input"] .ui-password-input__toggle:focus-visible {
+.fui-password__reveal:focus-visible {
   outline: 2px solid var(--color-primary, #4F46E5);
   outline-offset: -2px;
 }
-[data-fui-comp="ui-password-input"].is-error {
+.fui-password__reveal:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+/* The invalid state arrives as data-invalid on the shell (the input
+   inside has no border of its own to colour). */
+.fui-password[data-invalid] {
   border-color: var(--color-danger, #DC2626);
   box-shadow: inset 0 0 0 1px var(--color-danger, #DC2626);
-}
-[data-fui-comp="ui-password-input"] .ui-password-input__error {
-  margin: 0;
-  font-size: var(--text-sm, 0.875rem);
-  color: var(--color-danger, #DC2626);
 }`
 }

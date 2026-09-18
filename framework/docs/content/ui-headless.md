@@ -193,6 +193,24 @@ the typed request seam (what Button's `Action` is to a click): the
 one, the success effects, and the generator's `data-action-mount`
 hook, each checked for what it deserves.
 
+The choice family and the affix shells render through headless too:
+`ui.Checkbox`, `ui.Radio` and `ui.Switch` dress `headless.Choice` and
+`headless.Switch` (one inline run — the label wraps the control —
+which keeps its own structure and ignores the field sheet's columns
+variables); `ui.RadioGroup` and `ui.CheckboxGroup` hand their rendered
+leaves to `headless.Group` with the group's own message paragraph, a
+group's error belonging on the group and never on each leaf;
+`ui.PasswordInput` is `headless.Password` (the reveal button's
+`data-hui-reveal` is bound by the headless module, and its words come
+from `ui.StringsFor`); `ui.ColorField` is `headless.Color` (the
+swatch out of the tab order, the hex text the source of truth, and
+the headless module's colour sync keeping the two one value for
+every value the picker can show — the short `#abc` form included,
+expanded to `#aabbcc` for the swatch and never an error; a value the
+picker cannot show stays verbatim in the text while the swatch falls
+back to black and the shell is marked `data-invalid` — the theme
+editor's own sync was deleted for it).
+
 **See it live:** the product site ships a landing page under each of two
 boot-registered themes —
 `/examples/headless/default/landing` and

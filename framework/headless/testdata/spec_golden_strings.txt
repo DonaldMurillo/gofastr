@@ -162,6 +162,10 @@ Min is a floor — a column never gets narrower than the named step before the g
 the legend is the question the choices answer — without it a screen reader reads three labels and never says what is being decided
 <fieldset><legend>Restart policy</legend><label><input name="policy" type="radio" value="always"><span>Always</span></label><label><input name="policy" type="radio" value="failure"><span>On failure</span></label></fieldset>
 
+=== Group / required set ===
+the cue and the rule are two different things: data-required on the legend is what a sighted reader looks for, and the required attribute on a leaf is what the browser enforces — a group carrying only one of them is a group that either lies or looks optional
+<fieldset><legend data-required="">Plan</legend><label><input name="plan" required="" type="radio" value="free"><span>Free</span></label><label><input name="plan" type="radio" value="pro"><span>Pro</span></label></fieldset>
+
 === Input / described ===
 the description it is handed is written out: six of the eight text controls once accepted DescribedBy and dropped it, so the field wired a relationship to an attribute nobody rendered — here the control sits in a Field the way a page would use it, and the hint arrives through that relationship
 <div><label for="input-port">Port</label><input aria-describedby="input-port-hint" id="input-port" name="port" type="text" value="8080"><p id="input-port-hint">1–65535</p></div>

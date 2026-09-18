@@ -134,6 +134,12 @@ type GroupProps struct {
 	// Legend is the group's shared label. Required: a set of choices
 	// with no question above them is as broken as an unlabelled input.
 	Legend string
+	// Required marks the legend with data-required, the same state
+	// attribute a Field puts on its label, so a class map can draw
+	// the mark a sighted reader looks for. It is a cue, not a
+	// constraint: what the browser and the parser enforce is the
+	// required attribute on the leaves, which the caller sets there.
+	Required bool
 
 	ID    string
 	Extra html.Attrs
@@ -148,8 +154,12 @@ func Group(p GroupProps, s Classes, items ...render.HTML) render.HTML {
 	}
 	attrs := Safe(p.Extra)
 	attrsSet(attrs, "id", p.ID)
+	legendAttrs := Attrs(nil)
+	if p.Required {
+		legendAttrs["data-required"] = ""
+	}
 	kids := append([]render.HTML{
-		El("legend", s, PartLabel, nil, render.Text(p.Legend)),
+		El("legend", s, PartLabel, legendAttrs, render.Text(p.Legend)),
 	}, items...)
 	return El("fieldset", s, PartRoot, attrs, kids...)
 }
@@ -197,6 +207,13 @@ func init() {
 				HTML: Group(GroupProps{Legend: "Restart policy"}, s,
 					Choice(ChoiceProps{Type: "radio", Name: "policy", Value: "always", Label: "Always"}, k.For("Choice")),
 					Choice(ChoiceProps{Type: "radio", Name: "policy", Value: "failure", Label: "On failure"}, k.For("Choice"))),
+			}, {
+				Name: "required set",
+				Why:  "the cue and the rule are two different things: data-required on the legend is what a sighted reader looks for, and the required attribute on a leaf is what the browser enforces — a group carrying only one of them is a group that either lies or looks optional",
+				HTML: Group(GroupProps{Legend: "Plan", Required: true}, s,
+					Choice(ChoiceProps{Type: "radio", Name: "plan", Value: "free", Label: "Free",
+						Extra: html.Attrs{"required": ""}}, k.For("Choice")),
+					Choice(ChoiceProps{Type: "radio", Name: "plan", Value: "pro", Label: "Pro"}, k.For("Choice"))),
 			}}
 		},
 	})

@@ -59,7 +59,6 @@ var demandLoadMarkers = []demandLoadMarker{
 	{"data-fui-sidebar-group-toggle", "sidebar"},
 	{"data-fui-back-to-top", "backtotop"},
 	{`data-fui-comp="ui-conditional-field"`, "conditionalfield"},
-	{`data-fui-comp="ui-password-input"`, "passwordinput"},
 	{`data-fui-comp="ui-search-input"`, "searchinput"},
 	{`data-fui-comp="ui-form-repeater"`, "formrepeater"},
 	{"data-fui-dropdown-wrap", "dropdown"},

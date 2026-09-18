@@ -264,9 +264,8 @@ var Catalog = []Entry{
 	}},
 	{"workbench", "Workbench", "Layout", "Inspector shell: a fixed-width rail that scrolls on its own beside a pane that fills the rest. An <iframe> in the pane fills it edge to edge. Stacks below 720px.", func() render.HTML {
 		rail := ui.Stack(ui.StackConfig{Gap: ui.GapSM},
-			html.Strong(html.TextConfig{}, render.Text("Controls")),
-			ui.ColorField(ui.ColorFieldConfig{Value: "#4F46E5", SwatchValue: "#4F46E5", SwatchLabel: "Primary"}),
-			ui.ColorField(ui.ColorFieldConfig{Value: "#0891B2", SwatchValue: "#0891B2", SwatchLabel: "Accent"}),
+			ui.ColorField(ui.ColorFieldConfig{Name: "primary", Value: "#4F46E5", SwatchLabel: "Primary"}),
+			ui.ColorField(ui.ColorFieldConfig{Name: "accent", Value: "#0891B2", SwatchLabel: "Accent"}),
 		)
 		pane := html.Div(html.DivConfig{Class: "demo-row"},
 			html.Paragraph(html.TextConfig{}, render.Text("The pane fills the remaining space.")))
@@ -530,7 +529,11 @@ var Catalog = []Entry{
 		})
 	}},
 	{"checkbox", "Checkbox", "Forms", "Single boolean toggle.", func() render.HTML {
-		return ui.Checkbox(ui.ToggleConfig{Name: "ok", Label: "Subscribe to release notes"})
+		// Checked on purpose: the checkmark is two gradient strokes at
+		// hand-tuned offsets and renders only under :checked, so an
+		// unchecked-only gallery shows none of the drawing this
+		// component's sheet is mostly made of.
+		return ui.Checkbox(ui.ToggleConfig{Name: "ok", Label: "Subscribe to release notes", Checked: true})
 	}},
 	{"checkboxgroup", "CheckboxGroup", "Forms", "Grouped boolean options.", func() render.HTML {
 		return ui.CheckboxGroup(ui.CheckboxGroupConfig{
@@ -548,14 +551,17 @@ var Catalog = []Entry{
 			Legend: "Notification frequency",
 			Name:   "freq",
 			Options: []ui.RadioGroupOption{
-				{Label: "Always", Value: "all"},
+				// One pre-selected, for the dot the radio draws only
+				// when checked.
+				{Label: "Always", Value: "all", Checked: true},
 				{Label: "Mentions only", Value: "mention"},
 				{Label: "Never", Value: "none"},
 			},
 		})
 	}},
 	{"switch", "Switch", "Forms", "On/off toggle that looks like a physical switch.", func() render.HTML {
-		return ui.Switch(ui.ToggleConfig{Name: "live", Label: "Live updates"})
+		// On, for the thumb's slid position and the track's filled state.
+		return ui.Switch(ui.ToggleConfig{Name: "live", Label: "Live updates", Checked: true})
 	}},
 	{"textarea", "Textarea", "Forms", "Multi-line text input with autosize.", func() render.HTML {
 		return ui.TextArea(ui.TextAreaConfig{Name: "body", Label: "Body", Placeholder: "Write your post…", Rows: 6, Autogrow: true})
@@ -827,16 +833,16 @@ const page = await api.posts.list({ limit: 25 });`},
 	{"colorpicker", "ColorPicker", "Inputs", "Native swatch picker.", func() render.HTML {
 		return ui.ColorPicker(ui.ColorPickerConfig{Name: "accent", Label: "Accent", Value: "#e0a040"})
 	}},
-	{"colorfield", "ColorField", "Inputs", "Swatch beside a text input holding the same value. The text input is the source of truth, so values a native picker cannot represent survive.", func() render.HTML {
+	{"colorfield", "ColorField", "Inputs", "Swatch beside a text input holding the same value. The text input is the source of truth, so values a native picker cannot represent survive; the headless colour sync keeps the two one value.", func() render.HTML {
 		return ui.Stack(ui.StackConfig{Gap: ui.GapSM},
 			ui.ColorField(ui.ColorFieldConfig{
+				Name:        "brand",
 				Value:       "#4F46E5",
-				SwatchValue: "#4F46E5",
 				SwatchLabel: "Brand colour",
 			}),
 			ui.ColorField(ui.ColorFieldConfig{
+				Name:        "accent",
 				Value:       "var(--color-accent)",
-				SwatchValue: "#0891B2",
 				SwatchLabel: "Accent colour",
 			}),
 		)

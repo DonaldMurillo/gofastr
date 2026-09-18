@@ -56,13 +56,14 @@ func TestE2E_PasswordInput_RendersAndToggles(t *testing.T) {
 		chromedp.Navigate(base+"/components/passwordinput"),
 		pageReady(),
 		chromedp.Evaluate(`JSON.stringify((() => {
-			var wrapper = document.querySelector('[data-fui-comp="ui-password-input"]');
-			if (!wrapper) return {type:'',label:''};
-			var input = wrapper.querySelector('input');
-			var btn = wrapper.querySelector('.ui-password-input__toggle');
+			var shell = document.querySelector('[data-hui-affix]');
+			if (!shell) return {type:'',label:'',btnText:''};
+			var input = shell.querySelector('[data-hui-affix-input]');
+			var btn = shell.querySelector('[data-hui-reveal]');
 			return {
 				type: input ? input.type : '',
-				label: btn ? btn.getAttribute('aria-label') : ''
+				label: btn ? btn.getAttribute('aria-label') : '',
+				btnText: btn ? btn.textContent : ''
 			};
 		})())`, &raw),
 	)
@@ -70,8 +71,9 @@ func TestE2E_PasswordInput_RendersAndToggles(t *testing.T) {
 		t.Fatalf("chromedp: %v", err)
 	}
 	var result struct {
-		Type  string `json:"type"`
-		Label string `json:"label"`
+		Type    string `json:"type"`
+		Label   string `json:"label"`
+		BtnText string `json:"btnText"`
 	}
 	if err := json.Unmarshal([]byte(raw), &result); err != nil {
 		t.Fatalf("json: %v", err)
@@ -82,21 +84,42 @@ func TestE2E_PasswordInput_RendersAndToggles(t *testing.T) {
 	if !strings.Contains(strings.ToLower(result.Label), "show") {
 		t.Errorf("expected aria-label containing 'show', got %q", result.Label)
 	}
+	// The reveal button's visible word comes from Strings (RevealShow).
+	if strings.TrimSpace(result.BtnText) == "" {
+		t.Errorf("reveal button has no visible word: %q", result.BtnText)
+	}
 
-	// Click the toggle button.
+	// Click the reveal button: the headless module retypes the input,
+	// swaps the pressed state, the accessible name AND the visible
+	// word from the four data-hui-* attributes.
+	var afterLabel, afterText string
 	err = chromedp.Run(ctx,
 		chromedp.Evaluate(`(() => {
-			var btn = document.querySelector('[data-fui-comp="ui-password-input"] .ui-password-input__toggle');
+			var btn = document.querySelector('[data-hui-reveal]');
 			if (btn) btn.click();
-			var input = document.querySelector('[data-fui-comp="ui-password-input"] input');
+			var input = document.querySelector('[data-hui-affix-input]');
 			return input ? input.type : '';
 		})()`, &result.Type),
+		chromedp.Evaluate(`(() => {
+			var btn = document.querySelector('[data-hui-reveal]');
+			return btn ? btn.getAttribute('aria-label') : '';
+		})()`, &afterLabel),
+		chromedp.Evaluate(`(() => {
+			var btn = document.querySelector('[data-hui-reveal]');
+			return btn ? btn.textContent : '';
+		})()`, &afterText),
 	)
 	if err != nil {
-		t.Fatalf("chromedp toggle click: %v", err)
+		t.Fatalf("chromedp reveal click: %v", err)
 	}
 	if result.Type != "text" {
-		t.Errorf("expected type=text after toggle, got %q", result.Type)
+		t.Errorf("expected type=text after reveal, got %q", result.Type)
+	}
+	if !strings.Contains(strings.ToLower(afterLabel), "hide") {
+		t.Errorf("expected aria-label swapped to 'hide', got %q", afterLabel)
+	}
+	if !strings.Contains(strings.ToLower(afterText), "hide") {
+		t.Errorf("expected visible word swapped to 'Hide', got %q", afterText)
 	}
 }
 

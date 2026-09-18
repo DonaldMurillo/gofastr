@@ -973,11 +973,17 @@ func TestE2E_OfflineBannerIgnoresTheDismissedSet(t *testing.T) {
 	if err := chromedp.Run(ctx, chromedp.Evaluate(`(() => {
 		sessionStorage.setItem('gofastr.headless.system.dismissed', '["sys-off2"]');
 		window.__gofastr.sseStatus = {connected: false, lastEventAt: 1, retryCount: 2};
+		// A sentinel the reload wipes. Polling for the module alone
+		// races the navigation: the first poll can answer on the OLD
+		// document, where the module is still loaded, and the evaluate
+		// after it then lands on the fresh one before the kernel has
+		// booted — window.__gofastr undefined, under CI load only.
+		window.__preReload = true;
 		location.reload();
 	})()`, nil)); err != nil {
 		t.Fatalf("seeding the dismissed set and reloading: %v", err)
 	}
-	if !pollTrue(ctx, moduleLoadedExpr) {
+	if !pollTrue(ctx, `!window.__preReload && `+moduleLoadedExpr) {
 		t.Fatal("the module never loaded after the reload")
 	}
 	// The reload made a fresh document, so the mirror sse.js owns is

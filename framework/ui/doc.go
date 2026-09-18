@@ -140,7 +140,7 @@
 //	StepRail:             sticky numbered nav for multi-step pages
 //	StepWizard:           multi-step form with a progress indicator bar
 //	Sticky:               theme-token sticky wrapper (top/bottom pinning)
-//	Switch:               iOS-style toggle (Checkbox variant)
+//	Switch:               iOS-style toggle switch with role=switch
 //	TableOfContents:      auto-built sticky nav from <h2>/<h3>
 //	Tabs:                 signal-driven tab strip
 //	Tag:                  interactive pill (filter link or × dismiss)

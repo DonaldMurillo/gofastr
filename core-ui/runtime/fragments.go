@@ -206,9 +206,9 @@ var fragmentAttrs = map[string][]string{
 //
 // Modules that own zero data-fui-* attributes are absent ON PURPOSE:
 // compute and sse (their attribute is claimed by the like-named core
-// fragment. See fragments note); formrepeater, passwordinput, and
-// searchinput (triggered by data-fui-comp="ui-<name>" CSS markers, which
-// kernel owns, and otherwise driven by rpc/signals); widgetfocus and
+// fragment. See fragments note); formrepeater and searchinput
+// (triggered by data-fui-comp="ui-<name>" CSS markers, which kernel
+// owns, and otherwise driven by rpc/signals); widgetfocus and
 // widgetlinks (triggered by internal JS markers, not data-fui-* at all);
 // preload (manifest-triggered like intercept, boot loads it when any
 // route declares a preload mode, and it reads route data, not markers);

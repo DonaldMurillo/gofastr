@@ -270,6 +270,30 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   a root class). A `Select` carries its own marker on the `<select>`
   beside the field's marker on the row, so it loads both sheets it
   needs wherever it renders.
+- **The choice family and the affix shells render through
+  `framework/headless`.** `ui.Checkbox`, `ui.Radio`, `ui.Switch`,
+  `ui.RadioGroup`, `ui.CheckboxGroup`, `ui.PasswordInput` and
+  `ui.ColorField` render their headless counterparts
+  (`headless.Choice`, `headless.Switch`, `headless.Group`,
+  `headless.Password`, `headless.Color`) dressed with the internal
+  `fui-choice*` / `fui-switch*` / `fui-password*` / `fui-color*`
+  class maps; the `data-fui-comp` markers and registration names
+  stay and fetch the same sheets. A choice row is one inline run —
+  the label wraps the control — and keeps its own structure,
+  ignoring the field sheet's columns variables. A group's message
+  (error, else hint) belongs to the group and never to each leaf; a
+  standalone choice with an error wraps the run and its message in
+  the `fui-choice-field` shell, because the message cannot ride
+  inside the label without joining the control's accessible name.
+  `ui.PasswordInput`'s reveal words and `ui.ColorField`'s `PickColor`
+  resolve through `ui.StringsFor`. The retired
+  `core-ui/runtime/src/passwordinput.js` module is deleted (see
+  BREAKING): the headless behaviour module owns the reveal through
+  `data-hui-reveal`, and the theme editor's own swatch→hex sync is
+  deleted with its page loading the runtime so `data-hui-color`
+  binds — the editor's input handler now applies the picked hex
+  (uppercased the way the sync writes it) and touches no values
+  itself.
 - **`ui.Control` — the styled native control.** A single input for
   the types the typed fields do not name (email, password,
   datetime-local, file, tel, url, search, hidden), built inside a
@@ -383,11 +407,59 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `ui-form-field`, `ui-form-section`, `ui-select`, `ui-input-group`
   or `ui-validation-summary` as a class any more; the registration
   names and `data-fui-comp` markers stay (the marker fetches the
-  sheet). The choice family's one borrowed class
+  sheet), with one narrowing: a group's LEAVES no longer carry the
+  toggle marker, only the fieldset does, so a host selecting
+  individual options by `[data-fui-comp="ui-toggle"]` now matches one
+  element per group. The choice family's one borrowed class
   (`ui-form-field__required`, emitted by the toggle groups) is
   renamed with its rule to `fui-field__required`. Hand-rolled
   `class="ui-form-field"` markup renders unstyled — call
   `ui.FormField`.
+- **The choice family's and the affix shells' classes are
+  `fui-choice*`, `fui-switch*`, `fui-choice-field*`,
+  `fui-password*` and `fui-color*`.** No file emits or selects
+  `ui-toggle`, `ui-toggle-group`, `ui-password-input` or
+  `ui-color-field` as a class any more; the registration names and
+  `data-fui-comp` markers stay (the marker fetches the sheet).
+  Hand-rolled selectors on the old classes render unstyled — call the
+  components. Markup changes with the classes: the label wraps the
+  control (no `for=`/indicator pair — the box, the dot and the
+  switch's thumb are drawn from the native input itself through
+  `appearance: none`), the groups are plain fieldsets with no
+  `role="radiogroup"`/`"group"` (the fieldset is the native group
+  semantic), and a required group says so twice: every leaf's input
+  carries `required`, which is how HTML makes a radio group required,
+  and the legend carries `data-required`, which the sheet draws the
+  asterisk from (`content: " *" / ""`, so the mark stays out of the
+  legend's accessible name). `ToggleConfig.ExtraAttrs` lands on the
+  `<input>` (the label offers no attribute seam), and the standalone
+  help id scheme is `-hint`. Two smaller changes to released
+  behaviour ride with the family: a `Checkbox`'s or `Radio`'s `Help`
+  joins the accessible name inside the wrapping label instead of
+  hanging off `aria-describedby`, and `ColorField`'s swatch is out of
+  the tab order (`tabindex="-1"`) so the pair is one focus target,
+  the hex input, which is the value that submits.
+- **`PasswordInputConfig.Error` is gone.** The affix-shell control
+  renders no message of its own; put the error on the enclosing
+  `FormField`. `PasswordInputConfig.ID` is no longer required when a
+  `Field` carries one.
+- **`ColorFieldConfig.SwatchValue` is gone; `Name` is required.**
+  headless.Color derives the swatch from `Value`: a non-`#rgb`/`#rrggbb`
+  value falls the swatch back to black and marks the shell
+  `data-invalid` instead of degrading, which is what `SwatchValue`
+  used to paper over. The hex text input takes the form-field name
+  (it is the control that submits) and gains `Field` (the builder
+  wiring: id, described-by, invalid) and `Ctx`; `SwatchLabel` stays
+  required and names the text input when `TextLabel` is empty — the
+  swatch names itself through `PickColor` + `Name`.
+- **The `passwordinput` runtime module is deleted**
+  (`core-ui/runtime/src/passwordinput.js`, its kernel marker-table
+  entry, its preload row and its docs row). `ui.PasswordInput` binds
+  through the headless module's `data-hui-reveal`; a host that
+  hand-loaded the old module gets a 404, which is the retirement
+  speaking. The reveal still works through the headless hooks — the
+  site's password e2e asserts the retype, the pressed state, the
+  swapped accessible name and the swapped visible word.
 - **`ui.ValidationSummary` requires `ID`, and a `ui.Form` rendering
   `Errors` requires its own.** The summary's title id is derived from
   the root id; two summaries (or two errored forms) without ids would
@@ -588,6 +660,21 @@ are listed under Added above, not here.
   where the old module reverted in silence.
 
 ### Fixed
+- **`ui.PasswordInput` ExtraAttrs reach the shell's root**, the
+  contract every component's `ExtraAttrs` carries (`data-*` test
+  hooks, analytics markers, via `html.SafeExtraAttrs`): they landed
+  on the inner input that submits, so a hook hung on the component
+  attached itself to the wrong element. `Autocomplete` keeps its own
+  field and stays on the input, where it belongs. The same review
+  round found `ui.Switch` dropping a caller's `Class` on both render
+  paths, where Checkbox and Radio carried theirs to the root; all
+  three now do.
+- **The choice sheet's hint indent and the password reveal's divider
+  are logical CSS properties** (`margin-inline-start`,
+  `border-inline-start`), like the rest of their sheets: in a
+  right-to-left document the hint stays under its label instead of
+  detaching to the physical left of the row, and the reveal button's
+  divider keeps facing the input. Identical pixels in LTR.
 - **`handler.DecodeStrict` keeps the size cap visible.** The read
   error was flattened into the 400 envelope's text, so a caller that
   capped the body with `http.MaxBytesReader` and asked for the cap's

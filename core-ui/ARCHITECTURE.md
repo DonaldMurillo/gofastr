@@ -1695,7 +1695,7 @@ core-ui/
                  dragdismiss, dropdown, dropzone, fileupload,
                  formrepeater, infinitescroll, lightbox, menu,
                  multiselect, networkretrybanner, numberinput,
-                 optimisticaction, passwordinput, popover, rangeslider,
+                 optimisticaction, popover, rangeslider,
                  reveal, scrollspy, searchinput, shortcut, slider,
                  sortablelist, sse, taginput, textarea, themeswitch,
                  toasts, toc, toggleaction, tree, widgets, ws

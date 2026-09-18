@@ -356,8 +356,7 @@ func Color(p ColorProps, s Classes) render.HTML {
 	// rewritten to black on the way in. Rejecting it outright would
 	// make the component unusable for exactly the config it exists to
 	// edit.
-	value := p.Value
-	pickable := isHexColor(value)
+	value, pickable := swatchValue(p.Value)
 	if !pickable {
 		value = "#000000"
 	}
@@ -414,10 +413,28 @@ func attrsSet(a html.Attrs, key, val string) {
 	}
 }
 
-// isHexColor reports whether s is #rrggbb, the only value form
+// swatchValue returns the #rrggbb the picker can show for s, and
+// whether s is a colour it can show at all. The short form is a colour:
+// the module that binds this component expands #abc the same way on
+// every keystroke, so refusing it here would open a legal value in the
+// error state and clear the error the moment its owner retyped it.
+func swatchValue(s string) (string, bool) {
+	if !isHexColor(s) {
+		return s, false
+	}
+	if len(s) == 4 {
+		return "#" + string([]byte{s[1], s[1], s[2], s[2], s[3], s[3]}), true
+	}
+	return s, true
+}
+
+// isHexColor reports whether s is #rgb or #rrggbb, the value forms
 // input type=color accepts.
 func isHexColor(s string) bool {
-	if len(s) != 7 || s[0] != '#' {
+	if len(s) != 7 && len(s) != 4 {
+		return false
+	}
+	if s[0] != '#' {
 		return false
 	}
 	for i := 1; i < len(s); i++ {

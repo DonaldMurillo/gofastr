@@ -409,8 +409,8 @@ func TestE2E_PasswordInputToggle(t *testing.T) {
 		chromedp.Navigate(base+"/components/passwordinput"),
 		pageReady(),
 		chromedp.Evaluate(`JSON.stringify((() => {
-			var btn = document.querySelector('[data-fui-comp="ui-password-input"] .ui-password-input__toggle');
-			var input = document.querySelector('[data-fui-comp="ui-password-input"] input');
+			var btn = document.querySelector('[data-hui-reveal]');
+			var input = document.querySelector('[data-hui-affix-input]');
 			if (!btn || !input) return {ok: false};
 			var initial = {type: input.type, pressed: btn.getAttribute('aria-pressed')};
 			btn.click();
