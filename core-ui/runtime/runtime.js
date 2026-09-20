@@ -2420,8 +2420,11 @@
       // Silent on purpose: the kernel boots on its own module table
       // either way, and the bytes for a warning here do not clear the
       // core budget (measured: +34 gz at level 6 for the long wording,
-      // +17 for the shortest, against 8 bytes of clearance). The
-      // finding is recorded in docs/spec-behavior-registry.md.
+      // +17 for the shortest). Re-measure the clearance against
+      // budget_test.go's comment history before spending it rather
+      // than trusting a number written here; it moves under the
+      // kernel. The finding is recorded in
+      // docs/spec-behavior-registry.md.
       return [];
     }
   })();
@@ -2438,13 +2441,24 @@
   const _warnModuleUnavailable = (name) => {
     console.warn('[gofastr] ' + name + ' module unavailable — retrying may help');
   };
+  // The selector is guarded, not trusted. The Go registry validates
+  // every descriptor it builds, but the behaviours block is JSON the
+  // host hands the page, and a hand-written or corrupted one can carry
+  // a well-shaped entry whose selector the browser refuses — or a
+  // keydown with no scope, where querySelector('') throws. That throw
+  // lands here, inside an async listener, long after the parser's try:
+  // an unhandled rejection on every such event, retention silently
+  // dead, nothing in the page saying why. Refusing to resolve a node
+  // is the same answer as not matching one.
   const _interactionNode = (e, spec) => {
-    if (spec.event === 'keydown') {
-      if (!spec.keys || !spec.keys.includes(e.key) ||
-          !document.querySelector(spec.scope || '')) return null;
-      return e.target && e.target.dispatchEvent ? e.target : document.body;
-    }
-    return e.target && e.target.closest && e.target.closest(spec.selector);
+    try {
+      if (spec.event === 'keydown') {
+        if (!spec.keys || !spec.keys.includes(e.key) ||
+            !document.querySelector(spec.scope || '')) return null;
+        return e.target && e.target.dispatchEvent ? e.target : document.body;
+      }
+      return e.target && e.target.closest && e.target.closest(spec.selector);
+    } catch (_) { return null; }
   };
   const _replayInteraction = (e, node) => {
     const init = { bubbles: true, cancelable: true, composed: true };

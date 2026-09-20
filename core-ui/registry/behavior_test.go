@@ -235,6 +235,31 @@ func TestRegisterBehaviorInteractions(t *testing.T) {
 		})
 		IsolateForTest(t)
 	}
+	// CSS whitespace is all five characters, not just space and tab:
+	// a selector written across two source lines is browser-valid and
+	// must register. The quoted value still refuses every control
+	// character, which the bad list above pins.
+	for _, ws := range []string{"\n", "\r", "\f", "\r\n", " \n\t"} {
+		IsolateForTest(t)
+		RegisterBehavior("ia-ws", "x", Markers("[data-x]"), Interactions(
+			Interaction{Event: "click", Selector: "[data-x-a]" + ws + "[data-x-b]"},
+			Interaction{Event: "click", Selector: "[data-x-a]" + ws + ">" + ws + "[data-x-b]"},
+			Interaction{Event: "click", Selector: "[data-x-a]," + ws + "[data-x-b]"},
+		))
+	}
+	IsolateForTest(t)
+	// The entry stops being the caller's at registration: a later write
+	// to the slice that was passed in must not reach a descriptor that
+	// has already been validated and is on its way to the manifest.
+	keys := []string{"ArrowLeft", "ArrowRight"}
+	kb := RegisterBehavior("ia-keys", "x", Markers("[data-x]"), Interactions(
+		Interaction{Event: "keydown", Keys: keys, Scope: "[data-x-open]"},
+	))
+	keys[0] = "Escape"
+	if got := kb.Entry().Interactions[0].Keys[0]; got != "ArrowLeft" {
+		t.Fatalf("the caller's later write reached the registered entry: Keys[0] = %q", got)
+	}
+	IsolateForTest(t)
 	// The widest in-tree shapes register: the lightbox's real pair.
 	b := RegisterBehavior("ia-real", "x", Markers("[data-x]"), Interactions(
 		Interaction{Event: "click", Selector: "[data-x-prev],[data-x-next]"},

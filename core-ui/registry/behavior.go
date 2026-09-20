@@ -129,7 +129,17 @@ func Requires(names ...string) BehaviorOption {
 // error is refused here, at registration, not discovered as a lost
 // click.
 func Interactions(specs ...Interaction) BehaviorOption {
-	return func(e *BehaviorEntry) { e.Interactions = append(e.Interactions, specs...) }
+	return func(e *BehaviorEntry) {
+		for _, spec := range specs {
+			// The struct copies, but its Keys slice would keep pointing
+			// at the caller's array, so a later write there would change
+			// a descriptor that has already been validated and is on its
+			// way to the manifest. Clone it here, where the entry stops
+			// being the caller's.
+			spec.Keys = slices.Clone(spec.Keys)
+			e.Interactions = append(e.Interactions, spec)
+		}
+	}
 }
 
 // Behavior is the handle RegisterBehavior returns. Authors keep it in a
@@ -185,9 +195,14 @@ var (
 // attribute, never by class); widen the grammar with the client that
 // needs it, not ahead of it.
 var (
-	iaAttr     = `\[(?:[A-Za-z][A-Za-z0-9_-]*)(?:="[^"\\\x00-\x1f\x7f]*")?\]`
+	iaAttr = `\[(?:[A-Za-z][A-Za-z0-9_-]*)(?:="[^"\\\x00-\x1f\x7f]*")?\]`
+	// CSS whitespace is all five of these, so a selector written across
+	// two source lines is browser-valid and must not panic here. Only
+	// the separators take them: iaAttr's quoted value still refuses
+	// every control character, newline and carriage return included.
+	iaWS       = `[ \t\n\f\r]`
 	iaCompound = `(?:` + iaAttr + `|:not\(` + iaAttr + `\))+`
-	iaSelector = regexp.MustCompile(`^[ \t]*` + iaCompound + `(?:[ \t]*(?:[ \t]+|[>+~][ \t]*)` + iaCompound + `)*[ \t]*(?:,[ \t]*` + iaCompound + `(?:[ \t]*(?:[ \t]+|[>+~][ \t]*)` + iaCompound + `)*[ \t]*)*$`)
+	iaSelector = regexp.MustCompile(`^` + iaWS + `*` + iaCompound + `(?:` + iaWS + `*(?:` + iaWS + `+|[>+~]` + iaWS + `*)` + iaCompound + `)*` + iaWS + `*(?:,` + iaWS + `*` + iaCompound + `(?:` + iaWS + `*(?:` + iaWS + `+|[>+~]` + iaWS + `*)` + iaCompound + `)*` + iaWS + `*)*$`)
 	iaEvent    = map[string]bool{"click": true, "keydown": true}
 )
 

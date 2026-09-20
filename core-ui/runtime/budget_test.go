@@ -69,6 +69,10 @@ const (
 	// level 6; the line carries 47 bytes of clearance. The
 	// anti-vacuity self-test was re-run against the padded fixture,
 	// not assumed.
+	//
+	// Re-measure after a merge, not before: this line is a measurement,
+	// and a change landing on main under it invalidates the number, not
+	// the rule.
 	coreGoalGZ = 12*1024 + 1084
 	// 14.7 KB, not the 14 KB initial congestion window it started as.
 	//

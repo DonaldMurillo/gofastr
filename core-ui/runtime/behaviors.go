@@ -26,6 +26,11 @@ func init() {
 	// where it is written. init order guarantees it: this package's
 	// init runs before any package that imports it, and every package
 	// that registers a behaviour renders through the runtime.
+	// The directory is embedded, so this read cannot fail in a built
+	// binary; if it somehow does, the reservation is skipped and a
+	// shadowing registration is caught later by the panic in
+	// BehaviorsJSON instead of here. Losing the better error message is
+	// worth more than a panic in an init nobody can act on.
 	entries, err := fs.ReadDir(modulesFS, "src")
 	if err != nil {
 		return
@@ -159,9 +164,16 @@ func BehaviorsJSON() []byte {
 		out[e.Name] = behaviorManifest{Selectors: append([]string(nil), e.Markers...), Idle: e.Idle, Requires: append([]string(nil), e.Requires...), Interactions: append([]registry.Interaction(nil), e.Interactions...)}
 	}
 	validateRequirements(all)
+	// Refused the way a shadowed name is, six lines above, and for the
+	// same reason: both are programming errors in the registry, not
+	// runtime conditions, and the descriptor types hold nothing
+	// encoding/json cannot render. Returning nil instead would ship
+	// every page with no behaviours block at all — every registered
+	// behaviour dead, no marker scanned, no interaction retained — and
+	// nothing in the page or the log would say why.
 	buf, err := json.Marshal(out)
 	if err != nil {
-		return nil
+		panic("runtime: the behaviours block cannot be marshalled: " + err.Error())
 	}
 	return buf
 }

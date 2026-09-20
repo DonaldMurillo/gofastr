@@ -28,10 +28,11 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   event never reads is a startup panic naming the field; the
   selector grammar is deliberately wider than a marker's
   (combinators, `:not([attr])`, comma lists, plain HTML attributes
-  like `[hidden]`) because only the browser's `querySelector` ever
-  consumes it, while a marker must stay parseable by the host's
-  preload scan. The behaviours manifest carries the specs as `x`
-  beside `s`, `i` and `r` through every delivery path (live
+  like `[hidden]`) because only the browser consumes it — a click's
+  selector through `Element.closest`, a keydown's scope through
+  `document.querySelector` — while a marker must stay parseable by
+  the host's preload scan. The behaviours manifest carries the specs
+  as `x` beside `s`, `i` and `r` through every delivery path (live
   `manifest.js`, the export/embed inline block, the theme editor),
   and the kernel's bridge installs its listeners over the registered
   descriptors exactly as over its own table, with the loop body

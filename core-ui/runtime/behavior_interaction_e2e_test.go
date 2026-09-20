@@ -348,3 +348,73 @@ func TestBehaviorMalformedInteractionsLeaveKernelStanding(t *testing.T) {
 		t.Fatalf("the malformed interactions field still loaded the probe module: %d fetches, want 0", n)
 	}
 }
+
+// A well-shaped entry whose selector the browser refuses is the case
+// the reader's filter cannot catch: the shape is fine, so the entry
+// reaches the install loop, and the throw happens later still —
+// inside an async listener, on every matching event, as an unhandled
+// rejection nothing surfaces. A hand-written behaviours block is the
+// way to get one, and the block is a documented global. The guard in
+// _interactionNode is what keeps the page working: the selector does
+// not resolve a node, which is the same answer as not matching one,
+// and the kernel's own interactions still retain.
+func TestBehaviorUnresolvableSelectorLeavesThePageWorking(t *testing.T) {
+	registerInteractionProbe(t, registry.Interactions(
+		registry.Interaction{Event: "click", Selector: "[data-ia-go]"},
+	))
+	// Two entries the Go registry would have refused: a click whose
+	// selector querySelector throws on, and a keydown with no scope at
+	// all, where the kernel resolves querySelector('') — also a throw.
+	head := `<script>window.__gofastr_behaviors = {"probe-ia": {"s": ["[data-ia]"], "x": [` +
+		`{"event": "click", "selector": "!!!"},` +
+		`{"event": "keydown", "keys": ["Enter"]}` +
+		`]}};</script>`
+	s := startIAServer(t, head, `
+<p data-ia>probe target</p>
+<button id="go" data-ia-go>go</button>
+<input id="k">
+<p data-fui-reveal="fade-up" id="rev">reveal marker</p>`, "")
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
+	iaGoto(t, ctx, s.srv.URL+"/")
+
+	// The kernel boots and its own table still works.
+	if !pollTrue(ctx, `!!(window.__gofastr.loadedModules && window.__gofastr.loadedModules.reveal)`) {
+		t.Fatal("the kernel stopped loading its own modules after an unresolvable selector")
+	}
+	// Record anything the listeners throw, then drive both events.
+	if err := chromedp.Run(ctx, chromedp.Evaluate(`
+		window.__iaErrors = [];
+		window.addEventListener('error', (e) => window.__iaErrors.push(String(e.message)));
+		window.addEventListener('unhandledrejection', (e) => window.__iaErrors.push(String(e.reason)));
+		true;`, nil)); err != nil {
+		t.Fatalf("install the error sink: %v", err)
+	}
+	if err := chromedp.Run(ctx,
+		chromedp.Click("#go", chromedp.ByID),
+		chromedp.SendKeys("#k", "\r", chromedp.ByID),
+	); err != nil {
+		t.Fatalf("drive the events: %v", err)
+	}
+	// The bridge's listener is async, so a throw inside it is a rejected
+	// promise, and unhandledrejection is reported a turn later than the
+	// click. Reading the sink immediately would pass whether the guard
+	// is there or not.
+	var errs []string
+	for i := 0; i < 40; i++ {
+		if err := chromedp.Run(ctx, chromedp.Sleep(50*time.Millisecond),
+			chromedp.Evaluate(`window.__iaErrors`, &errs)); err != nil {
+			t.Fatalf("read the error sink: %v", err)
+		}
+		if len(errs) != 0 {
+			break
+		}
+	}
+	if len(errs) != 0 {
+		t.Fatalf("an unresolvable selector threw in the bridge: %v", errs)
+	}
+	// And the page is still live: the kernel's own reveal module
+	// answers a rescan, which a dead boot pass could not.
+	if !pollTrue(ctx, `typeof window.__gofastr.loadModule === 'function'`) {
+		t.Fatal("the kernel's loader is gone after an unresolvable selector")
+	}
+}

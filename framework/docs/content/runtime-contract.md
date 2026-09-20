@@ -479,7 +479,20 @@ registered descriptors exactly as over its own marker table,
 preventing the default synchronously and replaying the event on the
 original node once the module registers. A behaviour that declares no
 interactions installs no listener and costs nothing; a malformed `x`
-field is swallowed with the rest of a broken block. Readiness is
+field is swallowed with the rest of a broken block. An interaction
+selector is owned the way a marker is: one that names a `data-fui-*`
+attribute names an attribute in the table above, and a selector
+belongs to one behaviour — nothing refuses two descriptors that claim
+the same event and selector, and each of them retains and replays, so
+one user action arrives at both modules twice. The grammar is wider
+than the marker grammar, and deliberately: a marker is parsed back out
+of rendered HTML host-side for preload, while an interaction selector
+only ever reaches the browser's own `querySelector` and `closest`, so
+it may carry combinators, `:not([attr])` and comma lists. What the
+browser throws on is refused at registration, because a throw inside
+the bridge's document-level listener kills retention silently; class
+and id selectors are refused too, not because they throw but because a
+registered module binds by attribute. Readiness is
 registration: the loader resolves a module's
 promise only when `loadedModules[name]` is set after its script ran —
 and the module sets its flag FIRST, before it installs anything (a
