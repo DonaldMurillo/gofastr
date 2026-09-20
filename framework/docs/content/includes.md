@@ -246,3 +246,32 @@ the oracle but also refused an owner filtering their own rows.
 
 Soft-deleted rows never match a nested filter, matching every other read
 surface.
+
+### Multi-hop filtering and relation-hop limit
+
+Nested filters can span multiple relation hops using dot notation (e.g. `?author.profile.city=Berlin` or `?posts.comments.author.name=Carol`). Each hop compiles to a correlated `EXISTS` subquery that validates identifiers and enforces tenant and owner boundaries at each level.
+
+To prevent unbounded recursion or denial-of-service query plans, nested filtering is bounded to a maximum of **4** relation hops (`maxIncludeDepth = 4`). Exceeding this limit returns a **400 Bad Request** validation error.
+
+### Programmatic API (`framework.NestedFilter` & `WhereNested`)
+
+In-process and typed queries can apply nested filters directly:
+
+- **`framework.NestedFilter`**: Structured declaration representing a filter across relations:
+  ```go
+  type NestedFilter struct {
+      RelationPath string   // e.g. "author" or "comments.author" (max 4 hops)
+      Field        string   // field name on the target entity
+      Op           string   // operator: "eq", "gt", "gte", "lt", "lte", "like", "in"
+      Value        string   // filter value
+      Values       []string // filter values for "in" operator
+  }
+  ```
+
+- **`TypedQuery.WhereNested`**: Fluent query builder method to filter typed collections across relations:
+  ```go
+  posts, err := repo.Query().
+      WhereNested("author.profile", "verified", "eq", true).
+      Find(ctx)
+  ```
+  `WhereNested` is supported on all `TypedQuery` execution methods, including `Find`, `First`, `Count`, `Exists`, `UpdateAll`, and `DeleteAll`.

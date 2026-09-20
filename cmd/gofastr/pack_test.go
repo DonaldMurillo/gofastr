@@ -1170,3 +1170,43 @@ func TestPackReadsNavFromAGeneratedAuthApp(t *testing.T) {
 		}
 	}
 }
+
+func TestPackReadRelations_UnsupportedOnDeleteFails(t *testing.T) {
+	src := `package entities
+
+import (
+	"github.com/DonaldMurillo/gofastr/framework"
+	"github.com/DonaldMurillo/gofastr/framework/entity"
+)
+
+func registerPosts(app *framework.App) {
+	app.Entity("posts", entity.EntityConfig{
+		Table: "posts",
+		Relations: []entity.Relation{
+			{
+				Type:     entity.RelManyToOne,
+				Name:     "author",
+				Entity:   "users",
+				OnDelete: entity.OnDeleteAction("InvalidAction"),
+			},
+		},
+	})
+}
+`
+	dir := t.TempDir()
+	entDir := filepath.Join(dir, "entities")
+	if err := os.MkdirAll(entDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(entDir, "posts.go"), []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := packReadEntities(dir)
+	if err == nil {
+		t.Fatal("expected packReadEntities to fail for unsupported OnDelete action, got nil")
+	}
+	if !strings.Contains(err.Error(), "unsupported OnDelete action") {
+		t.Fatalf("expected error mentioning unsupported OnDelete action, got: %v", err)
+	}
+}

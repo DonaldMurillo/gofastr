@@ -1517,7 +1517,28 @@ func renderRelationLiteral(rel framework.Relation) string {
 	if rel.ForeignKeyTarget != "" {
 		parts = append(parts, fmt.Sprintf("ForeignKeyTarget: %q", rel.ForeignKeyTarget))
 	}
+	if rel.OnDelete != "" {
+		parts = append(parts, fmt.Sprintf("OnDelete: framework.%s", onDeleteConstName(rel.OnDelete)))
+	}
+	if rel.CascadeWrite {
+		parts = append(parts, "CascadeWrite: true")
+	}
 	return "{" + strings.Join(parts, ", ") + "}"
+}
+
+func onDeleteConstName(action framework.OnDeleteAction) string {
+	switch action {
+	case framework.OnDeleteCascade:
+		return "OnDeleteCascade"
+	case framework.OnDeleteSetNull:
+		return "OnDeleteSetNull"
+	case framework.OnDeleteRestrict:
+		return "OnDeleteRestrict"
+	case framework.OnDeleteNoAction:
+		return "OnDeleteNoAction"
+	default:
+		return "OnDeleteNoAction"
+	}
 }
 
 // relationKind is one row of relationKinds: the Go const name the

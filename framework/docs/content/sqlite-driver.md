@@ -142,9 +142,15 @@ column, and the resulting error names the constraint, not the cause. Run
 without it. Disabling foreign keys would only hide the problem, and it
 turns off the keys that belong there too.
 
-**Deleting a parent before its children.** `AutoMigrate` declares no
-`ON DELETE` action and `entity.Relation` cannot express one, so nothing
-cascades. Delete the children first.
+**Deleting a parent before its children.** By default, undeclared foreign keys
+use `NO ACTION`, requiring children to be deleted first. To cascade child deletions
+automatically, configure `.OnDeleteCascade()` (or `.OnDeleteAction(entity.OnDeleteCascade)`)
+on the relation. ManyToMany pivot tables always cascade automatically. (Note: `.Cascade()`
+enables nested cascade writes, not delete cascading.)
+
+The delete action is written when the table is created or rebuilt. Adding or changing
+`.OnDeleteAction(...)` on an existing table emits no schema diff or warning. Rebuild
+the table with a versioned migration to change the action on an existing database.
 
 **Removing `_time_format=sqlite` from a DSN you build yourself.** The
 readers in `battery/auth` and `framework/outbox` accept either RFC3339 or

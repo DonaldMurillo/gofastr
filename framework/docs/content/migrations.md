@@ -324,9 +324,35 @@ whose AutoIncrement PK was created by older code as a plain `INTEGER PRIMARY KEY
 (no sequence) is not auto-upgraded to `SERIAL`. Bring it up with a one-time
 `ALTER`/rebuild if you adopt `auto_generate: increment` on Postgres.
 
-The snapshot is offline
-state. Pick `--driver` to match your production engine so the emitted types are
-right.
+The snapshot is offline state. Pick `--driver` to match your production engine so the emitted types are right.
+
+### Snapshot file format (`schema.snapshot.json`)
+
+The schema snapshot file records the declarative state migrations have been generated up to:
+
+```json
+{
+  "tables": {
+    "posts": {
+      "id": "TEXT",
+      "title": "TEXT",
+      "published": "BOOLEAN"
+    }
+  },
+  "table_ddl": {
+    "posts": "CREATE TABLE posts (...)"
+  },
+  "indices": {
+    "posts": [
+      "CREATE INDEX idx_posts_title ON posts(title)"
+    ]
+  }
+}
+```
+
+- `tables`: Map of table names to column-name-to-SQL-type maps, used for structural column diffing.
+- `table_ddl`: Full table creation DDL for each table, used during rollback (`Down` migrations) to accurately recreate dropped tables with exact constraints.
+- `indices`: Map of table names to arrays of index DDL statements (`CREATE [UNIQUE] INDEX ...`). The diff engine compares these to detect new, modified, or dropped indices without relying on live database index introspection.
 
 Flags: `--from=<blueprint.yml>` (required), `--migrations=<dir>`
 (default `migrations`), `--snapshot=<path>` (default

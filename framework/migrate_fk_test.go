@@ -1,12 +1,14 @@
 package framework
 
 import (
+	"context"
 	"database/sql"
 	"strings"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
+	"github.com/DonaldMurillo/gofastr/framework/migrate"
 )
 
 // usersAndPostsRegistry returns a registry where posts.author_id is a
@@ -178,4 +180,247 @@ func TestMigrate_FK_HasManyDoesNotAddSourceFK(t *testing.T) {
 			t.Fatalf("expected valid author insert to succeed, got: %v", err)
 		}
 	})
+}
+
+// ============================================================================
+// Test: OnDelete CASCADE deletes child rows when the parent is deleted.
+// ============================================================================
+
+func TestMigrate_FK_OnDeleteCascade(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
+		reg := NewRegistry()
+		reg.Register(entity.Define("users", entity.EntityConfig{
+			Table: "users",
+			Fields: []schema.Field{
+				{Name: "name", Type: schema.String, Required: true},
+			},
+		}.WithTimestamps(false)))
+		reg.Register(entity.Define("posts", entity.EntityConfig{
+			Table: "posts",
+			Fields: []schema.Field{
+				{Name: "title", Type: schema.String, Required: true},
+				{Name: "author_id", Type: schema.String, Required: true},
+			},
+			Relations: []entity.Relation{
+				entity.BelongsTo("author", "users", "author_id").OnDeleteAction(entity.OnDeleteCascade),
+			},
+		}.WithTimestamps(false)))
+
+		if err := AutoMigrate(db, reg); err != nil {
+			t.Fatalf("automigrate: %v", err)
+		}
+
+		if _, err := db.Exec("INSERT INTO users(id, name) VALUES ($1, $2)", "u1", "Alice"); err != nil {
+			t.Fatalf("insert user: %v", err)
+		}
+		if _, err := db.Exec("INSERT INTO posts(id, title, author_id) VALUES ($1, $2, $3)", "p1", "Post 1", "u1"); err != nil {
+			t.Fatalf("insert post: %v", err)
+		}
+
+		// Delete user u1: post p1 must be cascade-deleted.
+		if _, err := db.Exec("DELETE FROM users WHERE id = $1", "u1"); err != nil {
+			t.Fatalf("delete user: %v", err)
+		}
+
+		var count int
+		if err := db.QueryRow("SELECT COUNT(*) FROM posts WHERE id = 'p1'").Scan(&count); err != nil {
+			t.Fatalf("count posts: %v", err)
+		}
+		if count != 0 {
+			t.Fatalf("expected 0 posts after cascade delete, got %d", count)
+		}
+	})
+}
+
+// ============================================================================
+// Test: Foreign keys on BelongsTo are auto-indexed.
+// ============================================================================
+
+func TestMigrate_FK_AutoIndex(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, db *sql.DB, dialect Dialect) {
+		reg := usersAndPostsRegistry()
+		if err := AutoMigrate(db, reg); err != nil {
+			t.Fatalf("automigrate: %v", err)
+		}
+
+		// Verify index exists on posts(author_id)
+		var indexFound bool
+		if dialect == DialectSQLite {
+			var count int
+			err := db.QueryRow("SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = 'idx_posts_author_id'").Scan(&count)
+			if err != nil {
+				t.Fatalf("query sqlite_master: %v", err)
+			}
+			indexFound = count > 0
+		} else {
+			var count int
+			err := db.QueryRow("SELECT COUNT(*) FROM pg_indexes WHERE indexname = 'idx_posts_author_id'").Scan(&count)
+			if err != nil {
+				t.Fatalf("query pg_indexes: %v", err)
+			}
+			indexFound = count > 0
+		}
+
+		if !indexFound {
+			t.Errorf("expected auto-created index idx_posts_author_id to exist")
+		}
+	})
+}
+
+// ============================================================================
+// Test: ManyToMany pivot tables are auto-created with cascading foreign keys.
+// ============================================================================
+
+func TestMigrate_ManyToMany_PivotTable(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
+		reg := NewRegistry()
+		reg.Register(entity.Define("posts", entity.EntityConfig{
+			Table: "posts",
+			Fields: []schema.Field{
+				{Name: "title", Type: schema.String, Required: true},
+			},
+			Relations: []entity.Relation{
+				entity.ManyToMany("tags", "tags", "post_tags", "post_id", "tag_id"),
+			},
+		}.WithTimestamps(false)))
+		reg.Register(entity.Define("tags", entity.EntityConfig{
+			Table: "tags",
+			Fields: []schema.Field{
+				{Name: "name", Type: schema.String, Required: true},
+			},
+		}.WithTimestamps(false)))
+
+		if err := AutoMigrate(db, reg); err != nil {
+			t.Fatalf("automigrate: %v", err)
+		}
+
+		// Insert post and tag
+		if _, err := db.Exec("INSERT INTO posts(id, title) VALUES ($1, $2)", "p1", "Go"); err != nil {
+			t.Fatalf("insert post: %v", err)
+		}
+		if _, err := db.Exec("INSERT INTO tags(id, name) VALUES ($1, $2)", "t1", "tech"); err != nil {
+			t.Fatalf("insert tag: %v", err)
+		}
+
+		// Insert into auto-created pivot table post_tags
+		if _, err := db.Exec("INSERT INTO post_tags(post_id, tag_id) VALUES ($1, $2)", "p1", "t1"); err != nil {
+			t.Fatalf("insert into post_tags: %v", err)
+		}
+
+		// Delete post p1: pivot row must cascade-delete
+		if _, err := db.Exec("DELETE FROM posts WHERE id = $1", "p1"); err != nil {
+			t.Fatalf("delete post: %v", err)
+		}
+
+		var count int
+		if err := db.QueryRow("SELECT COUNT(*) FROM post_tags WHERE post_id = 'p1'").Scan(&count); err != nil {
+			t.Fatalf("count post_tags: %v", err)
+		}
+		if count != 0 {
+			t.Fatalf("expected 0 pivot rows after post delete, got %d", count)
+		}
+	})
+}
+
+// ============================================================================
+// Test: DiffSchema emits pivot table creation and secondary index.
+// ============================================================================
+
+func TestMigrate_SchemaDiff_PivotSecondaryIndex(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
+		reg := NewRegistry()
+		reg.Register(entity.Define("posts", entity.EntityConfig{
+			Table: "posts",
+			Fields: []schema.Field{
+				{Name: "title", Type: schema.String, Required: true},
+			},
+			Relations: []entity.Relation{
+				entity.ManyToMany("tags", "tags", "post_tags", "post_id", "tag_id"),
+			},
+		}.WithTimestamps(false)))
+		reg.Register(entity.Define("tags", entity.EntityConfig{
+			Table: "tags",
+			Fields: []schema.Field{
+				{Name: "name", Type: schema.String, Required: true},
+			},
+		}.WithTimestamps(false)))
+
+		changes, err := DiffSchema(context.Background(), db, reg)
+		if err != nil {
+			t.Fatalf("DiffSchema: %v", err)
+		}
+
+		var foundPivotTable, foundPivotIndex bool
+		for _, ch := range changes {
+			if strings.Contains(ch.Summary, "post_tags: create pivot table") {
+				foundPivotTable = true
+				if ch.Down != "DROP TABLE IF EXISTS post_tags" {
+					t.Errorf("expected DROP TABLE IF EXISTS post_tags, got %q", ch.Down)
+				}
+			}
+			if strings.Contains(ch.Summary, "post_tags: index tag_id") {
+				foundPivotIndex = true
+				if ch.Down != "DROP INDEX IF EXISTS idx_post_tags_tag_id" {
+					t.Errorf("expected DROP INDEX IF EXISTS idx_post_tags_tag_id, got %q", ch.Down)
+				}
+			}
+		}
+
+		if !foundPivotTable {
+			t.Errorf("expected pivot table change in DiffSchema")
+		}
+		if !foundPivotIndex {
+			t.Errorf("expected pivot index change in DiffSchema")
+		}
+	})
+}
+
+// TestMigrate_Snapshot_ManyToMany_PivotTable asserts that SnapshotFromPlan and GeneratePlan
+// include ManyToMany pivot tables and their secondary indexes with symmetric rollback.
+func TestMigrate_Snapshot_ManyToMany_PivotTable(t *testing.T) {
+	reg := NewRegistry()
+	reg.Register(entity.Define("posts", entity.EntityConfig{
+		Table: "posts",
+		Fields: []schema.Field{
+			{Name: "title", Type: schema.String, Required: true},
+		},
+		Relations: []entity.Relation{
+			entity.ManyToMany("tags", "tags", "post_tags", "post_id", "tag_id"),
+		},
+	}.WithTimestamps(false)))
+
+	reg.Register(entity.Define("tags", entity.EntityConfig{
+		Table: "tags",
+		Fields: []schema.Field{
+			{Name: "name", Type: schema.String, Required: true},
+		},
+	}.WithTimestamps(false)))
+
+	snap := SnapshotFromPlan(migrate.Plan{Registry: reg}, DialectSQLite)
+	if snap.Tables["post_tags"] == nil {
+		t.Fatalf("expected post_tags in SnapshotFromPlan tables")
+	}
+	if snap.TableDDL["post_tags"] == "" {
+		t.Fatalf("expected post_tags DDL in SnapshotFromPlan TableDDL")
+	}
+
+	up, down, next, err := GenerateMigration(reg, migrate.SchemaSnapshot{}, DialectSQLite)
+	if err != nil {
+		t.Fatalf("GenerateMigration: %v", err)
+	}
+	if !strings.Contains(up, "CREATE TABLE IF NOT EXISTS post_tags") {
+		t.Fatalf("expected CREATE TABLE post_tags in up migration, got:\n%s", up)
+	}
+	if !strings.Contains(up, "CREATE INDEX IF NOT EXISTS idx_post_tags_tag_id") {
+		t.Fatalf("expected CREATE INDEX idx_post_tags_tag_id in up migration, got:\n%s", up)
+	}
+	if !strings.Contains(down, "DROP TABLE IF EXISTS post_tags") {
+		t.Fatalf("expected DROP TABLE post_tags in down migration, got:\n%s", down)
+	}
+	if !strings.Contains(down, "DROP INDEX IF EXISTS idx_post_tags_tag_id") {
+		t.Fatalf("expected DROP INDEX idx_post_tags_tag_id in down migration, got:\n%s", down)
+	}
+	if next.Tables["post_tags"] == nil {
+		t.Fatalf("expected post_tags in next snapshot")
+	}
 }

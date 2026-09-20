@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -81,6 +82,18 @@ func DiffSchema(ctx context.Context, db *sql.DB, registry entity.Registry) ([]Sc
 		}
 		tables = append(tables, ent.GetTable())
 	}
+	seenThrough := make(map[string]bool)
+	for _, ent := range ordered {
+		for _, rel := range ent.Config.Relations {
+			if rel.Type == entity.RelManyToMany && rel.Through != "" {
+				key := strings.ToLower(rel.Through)
+				if !seenThrough[key] {
+					seenThrough[key] = true
+					tables = append(tables, rel.Through)
+				}
+			}
+		}
+	}
 	liveByTable, err := ReadLiveColumnsBulk(ctx, db, tables, dialect)
 	if err != nil {
 		return nil, err
@@ -94,6 +107,119 @@ func DiffSchema(ctx context.Context, db *sql.DB, registry entity.Registry) ([]Sc
 			return nil, fmt.Errorf("diff %s: %w", ent.GetName(), err)
 		}
 		out = append(out, changes...)
+	}
+
+	pivotChanges, err := diffPivotTables(ordered, all, dialect, liveByTable)
+	if err != nil {
+		return nil, err
+	}
+	out = append(out, pivotChanges...)
+	return out, nil
+}
+
+// diffPivotTables generates CREATE TABLE and CREATE INDEX statements for ManyToMany
+// pivot tables that do not have their own entity declaration.
+func diffPivotTables(ordered []*entity.Entity, all map[string]*entity.Entity, dialect Dialect, existingTables map[string]map[string]string) ([]SchemaChange, error) {
+	seenPivot := make(map[string]bool)
+	var out []SchemaChange
+	for _, ent := range ordered {
+		for _, rel := range ent.Config.Relations {
+			if rel.Type != entity.RelManyToMany || rel.Through == "" {
+				continue
+			}
+			pivotTable := rel.Through
+			key := strings.ToLower(pivotTable)
+			if seenPivot[key] {
+				continue
+			}
+			seenPivot[key] = true
+			hasEntity := false
+			if all != nil {
+				if all[pivotTable] != nil {
+					hasEntity = true
+				} else {
+					for _, e := range all {
+						if strings.EqualFold(e.GetTable(), pivotTable) {
+							hasEntity = true
+							break
+						}
+					}
+				}
+			}
+			if hasEntity {
+				continue
+			}
+			if cols := lookupTableCols(existingTables, pivotTable); len(cols) > 0 {
+				continue
+			}
+
+			safeThrough, err := query.SafeIdent(pivotTable)
+			if err != nil {
+				return nil, fmt.Errorf("relation %q: invalid through table %q: %w", rel.Name, pivotTable, err)
+			}
+			target, ok := all[rel.Entity]
+			if !ok {
+				return nil, fmt.Errorf("relation %q references unknown entity %q", rel.Name, rel.Entity)
+			}
+			safeLocalKey, err := query.SafeIdent(rel.LocalKey)
+			if err != nil {
+				return nil, fmt.Errorf("relation %q: invalid local key %q: %w", rel.Name, rel.LocalKey, err)
+			}
+			safeTargetKey, err := query.SafeIdent(rel.ForeignKeyTarget)
+			if err != nil {
+				return nil, fmt.Errorf("relation %q: invalid foreign key target %q: %w", rel.Name, rel.ForeignKeyTarget, err)
+			}
+			safeSourceTable, err := query.SafeIdent(ent.GetTable())
+			if err != nil {
+				return nil, fmt.Errorf("relation %q: invalid source table %q: %w", rel.Name, ent.GetTable(), err)
+			}
+			safeTargetTable, err := query.SafeIdent(target.GetTable())
+			if err != nil {
+				return nil, fmt.Errorf("relation %q: invalid target table %q: %w", rel.Name, target.GetTable(), err)
+			}
+			sourcePK := ent.PrimaryKey
+			if sourcePK == "" {
+				sourcePK = "id"
+			}
+			safeSourcePK, err := query.SafeIdent(sourcePK)
+			if err != nil {
+				return nil, fmt.Errorf("relation %q: invalid source PK %q: %w", rel.Name, sourcePK, err)
+			}
+			targetPK := target.PrimaryKey
+			if targetPK == "" {
+				targetPK = "id"
+			}
+			safeTargetPK, err := query.SafeIdent(targetPK)
+			if err != nil {
+				return nil, fmt.Errorf("relation %q: invalid target PK %q: %w", rel.Name, targetPK, err)
+			}
+
+			sourcePKType := fkColumnSQLType(ent, sourcePK, dialect)
+			targetPKType := fkColumnSQLType(target, targetPK, dialect)
+
+			pivotDDL := fmt.Sprintf(
+				"CREATE TABLE IF NOT EXISTS %s (\n\t%s %s NOT NULL,\n\t%s %s NOT NULL,\n\tPRIMARY KEY (%s, %s),\n\tFOREIGN KEY (%s) REFERENCES %s(%s) ON DELETE CASCADE,\n\tFOREIGN KEY (%s) REFERENCES %s(%s) ON DELETE CASCADE\n)",
+				safeThrough,
+				safeLocalKey, sourcePKType,
+				safeTargetKey, targetPKType,
+				safeLocalKey, safeTargetKey,
+				safeLocalKey, safeSourceTable, safeSourcePK,
+				safeTargetKey, safeTargetTable, safeTargetPK,
+			)
+
+			out = append(out, SchemaChange{
+				Summary: fmt.Sprintf("%s: create pivot table", pivotTable),
+				SQL:     pivotDDL,
+				Down:    fmt.Sprintf("DROP TABLE IF EXISTS %s", safeThrough),
+			})
+
+			idxTarget := fmt.Sprintf("CREATE INDEX IF NOT EXISTS idx_%s_%s ON %s(%s)", safeThrough, safeTargetKey, safeThrough, safeTargetKey)
+			out = append(out, SchemaChange{
+				Summary: fmt.Sprintf("%s: index %s", pivotTable, safeTargetKey),
+				SQL:     idxTarget,
+				Down:    fmt.Sprintf("DROP INDEX IF EXISTS idx_%s_%s", safeThrough, safeTargetKey),
+			})
+		}
 	}
 	return out, nil
 }
@@ -160,9 +286,14 @@ func diffEntityFromLive(ent *entity.Entity, all map[string]*entity.Entity, diale
 		if err != nil {
 			return nil, err
 		}
+		var sqlParts []string
+		sqlParts = append(sqlParts, ddl)
+		for _, idx := range entityIndices(ent) {
+			sqlParts = append(sqlParts, indexDDL(qtable, idx))
+		}
 		return []SchemaChange{{
 			Summary: fmt.Sprintf("%s: create table", ent.GetName()),
-			SQL:     ddl,
+			SQL:     strings.Join(sqlParts, ";\n"),
 			Down:    fmt.Sprintf("DROP TABLE IF EXISTS %s", qtable),
 		}}, nil
 	}
@@ -252,6 +383,21 @@ func diffEntityFromLive(ent *entity.Entity, all map[string]*entity.Entity, diale
 			SQL:     ddl,
 			Down:    fmt.Sprintf("ALTER TABLE %s DROP COLUMN %s", qtable, qcol),
 		})
+		for _, idx := range entityIndices(ent) {
+			if len(idx.Columns) == 1 && strings.EqualFold(idx.Columns[0], f.Name) {
+				idxDDL := indexDDL(qtable, idx)
+				idxName := parseIndexName(idxDDL)
+				safeIdxName, err := query.SafeIdent(idxName)
+				if err != nil {
+					continue
+				}
+				changes = append(changes, SchemaChange{
+					Summary: fmt.Sprintf("%s: index %s", ent.GetName(), safeIdxName),
+					SQL:     idxDDL,
+					Down:    fmt.Sprintf("DROP INDEX IF EXISTS %s", safeIdxName),
+				})
+			}
+		}
 	}
 
 	// TYPE CHANGE for declared-and-present columns whose type drifted. A type
@@ -309,7 +455,7 @@ func diffEntityFromLive(ent *entity.Entity, all map[string]*entity.Entity, diale
 	}
 	sort.Strings(liveNames)
 	for _, name := range liveNames {
-		if _, ok := declared[name]; ok {
+		if _, ok := declared[strings.ToLower(name)]; ok {
 			continue
 		}
 		if isFrameworkManagedColumn(name, ent) {
@@ -704,4 +850,48 @@ func columnDefs(ent *entity.Entity, all map[string]*entity.Entity, dialect Diale
 		columns = append(columns, fks...)
 	}
 	return columns, nil
+}
+
+var reIndexName = regexp.MustCompile(`(?i)\bINDEX\s+(?:CONCURRENTLY\s+)?(?:IF\s+(?:NOT\s+)?EXISTS\s+)?([a-zA-Z0-9_]+)`)
+
+func parseIndexName(ddl string) string {
+	m := reIndexName.FindStringSubmatch(ddl)
+	if len(m) > 1 {
+		return m[1]
+	}
+	return ""
+}
+
+// entityIndices returns all declared indices on the entity plus auto-created
+// BelongsTo foreign key indices matching AutoMigrate.
+func entityIndices(ent *entity.Entity) []entity.Index {
+	if ent == nil {
+		return nil
+	}
+	var out []entity.Index
+	for _, idx := range ent.Config.Indices {
+		if len(idx.Columns) == 0 && idx.Expression == "" {
+			continue
+		}
+		out = append(out, idx)
+	}
+	for _, rel := range ent.Config.Relations {
+		if rel.Type != entity.RelManyToOne || rel.ForeignKey == "" {
+			continue
+		}
+		if ent.Config.Scope.OwnerField != "" && strings.EqualFold(rel.ForeignKey, ent.Config.Scope.OwnerField) {
+			continue
+		}
+		hasIdx := false
+		for _, idx := range ent.Config.Indices {
+			if len(idx.Columns) == 1 && strings.EqualFold(idx.Columns[0], rel.ForeignKey) {
+				hasIdx = true
+				break
+			}
+		}
+		if !hasIdx {
+			out = append(out, entity.Index{Columns: []string{rel.ForeignKey}})
+		}
+	}
+	return out
 }

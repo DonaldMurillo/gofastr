@@ -320,6 +320,9 @@ func AutoMigratePlanContext(ctx context.Context, db *sql.DB, plan Plan) error {
 				return fmt.Errorf("migrate %s: %w", ent.GetName(), err)
 			}
 		}
+		if err := migratePivotTables(ctx, tx, ordered, all, dialect); err != nil {
+			return err
+		}
 		// The routine ledger, dialect skip log, orphan WARN, and summary
 		// line all apply ONLY when the plan carries at least one routine.
 		// Gating here keeps apps that don't use routines from acquiring a
@@ -559,6 +562,29 @@ func migrateEntity(ctx context.Context, exec execQueryer, ent *entity.Entity, al
 			return fmt.Errorf("create index on %s: %w", ent.GetTable(), err)
 		}
 	}
+
+	// Auto-index foreign keys on BelongsTo relations for fast relation traversal:
+	for _, rel := range ent.Config.Relations {
+		if rel.Type != entity.RelManyToOne || rel.ForeignKey == "" {
+			continue
+		}
+		if ent.Config.Scope.OwnerField != "" && strings.EqualFold(rel.ForeignKey, ent.Config.Scope.OwnerField) {
+			continue
+		}
+		hasIdx := false
+		for _, idx := range ent.Config.Indices {
+			if len(idx.Columns) == 1 && strings.EqualFold(idx.Columns[0], rel.ForeignKey) {
+				hasIdx = true
+				break
+			}
+		}
+		if !hasIdx {
+			idx := entity.Index{Columns: []string{rel.ForeignKey}}
+			if _, err := exec.ExecContext(ctx, indexDDL(safeTable, idx)); err != nil {
+				return fmt.Errorf("create fk index on %s(%s): %w", ent.GetTable(), rel.ForeignKey, err)
+			}
+		}
+	}
 	return nil
 }
 
@@ -746,16 +772,29 @@ func foreignKeyClauses(ent *entity.Entity, all map[string]*entity.Entity) ([]str
 		if err != nil {
 			return nil, fmt.Errorf("relation %q: invalid target table %q: %w", rel.Name, target.GetTable(), err)
 		}
-		safeTargetPK, err := query.SafeIdent(target.PrimaryKey)
+		targetPK := target.PrimaryKey
+		if targetPK == "" {
+			targetPK = "id"
+		}
+		safeTargetPK, err := query.SafeIdent(targetPK)
 		if err != nil {
-			return nil, fmt.Errorf("relation %q: invalid target PK %q: %w", rel.Name, target.PrimaryKey, err)
+			return nil, fmt.Errorf("relation %q: invalid target PK %q: %w", rel.Name, targetPK, err)
 		}
 		// Validated but UNQUOTED, same convention as columnDefs. Quoting would
 		// preserve case on Postgres while the referenced CREATE TABLE folded its
 		// identifiers to lowercase, so a mixed-case target like "MixedAccount"
 		// would resolve to a relation that doesn't exist.
-		out = append(out, fmt.Sprintf("FOREIGN KEY (%s) REFERENCES %s(%s)",
-			safeRelFK, safeTargetTable, safeTargetPK))
+		fkClause := fmt.Sprintf("FOREIGN KEY (%s) REFERENCES %s(%s)",
+			safeRelFK, safeTargetTable, safeTargetPK)
+		if rel.OnDelete != "" {
+			switch rel.OnDelete {
+			case entity.OnDeleteCascade, entity.OnDeleteSetNull, entity.OnDeleteRestrict, entity.OnDeleteNoAction:
+				fkClause += " ON DELETE " + string(rel.OnDelete)
+			default:
+				return nil, fmt.Errorf("relation %q: invalid ON DELETE action %q", rel.Name, rel.OnDelete)
+			}
+		}
+		out = append(out, fkClause)
 	}
 	return out, nil
 }
@@ -1126,4 +1165,124 @@ func SQLDefault(f schema.Field, dialect Dialect) string {
 // quote, producing a literal that cannot be terminated from inside.
 func quoteSQLLiteral(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", "''") + "'"
+}
+
+// fkColumnSQLType resolves the SQL column type for a foreign key referencing ent's pkName.
+// In PostgreSQL, if the primary key is SERIAL or BIGSERIAL, the referencing column must be INTEGER or BIGINT.
+func fkColumnSQLType(ent *entity.Entity, pkName string, dialect Dialect) string {
+	for _, f := range ent.GetFields() {
+		if strings.EqualFold(f.Name, pkName) {
+			t := SQLType(f, dialect)
+			if dialect == DialectPostgres {
+				if strings.EqualFold(t, "SERIAL") {
+					return "INTEGER"
+				}
+				if strings.EqualFold(t, "BIGSERIAL") {
+					return "BIGINT"
+				}
+			}
+			return t
+		}
+	}
+	return "TEXT"
+}
+
+// migratePivotTables synthesizes and creates pivot tables for ManyToMany relations
+// that do not have an explicitly registered entity table.
+func migratePivotTables(ctx context.Context, exec execQueryer, ordered []*entity.Entity, all map[string]*entity.Entity, dialect Dialect) error {
+	seenPivot := make(map[string]bool)
+	for _, ent := range ordered {
+		for _, rel := range ent.Config.Relations {
+			if rel.Type != entity.RelManyToMany || rel.Through == "" {
+				continue
+			}
+			pivotTable := rel.Through
+			key := strings.ToLower(pivotTable)
+			if seenPivot[key] {
+				continue
+			}
+			seenPivot[key] = true
+
+			// If the pivot table is already explicitly registered as an entity, it has its own table migration.
+			hasEntity := false
+			if all != nil {
+				if all[pivotTable] != nil {
+					hasEntity = true
+				} else {
+					for _, e := range all {
+						if strings.EqualFold(e.GetTable(), pivotTable) {
+							hasEntity = true
+							break
+						}
+					}
+				}
+			}
+			if hasEntity {
+				continue
+			}
+
+			safeThrough, err := query.SafeIdent(pivotTable)
+			if err != nil {
+				return fmt.Errorf("relation %q: invalid through table %q: %w", rel.Name, pivotTable, err)
+			}
+			target, ok := all[rel.Entity]
+			if !ok {
+				return fmt.Errorf("relation %q references unknown entity %q", rel.Name, rel.Entity)
+			}
+			safeLocalKey, err := query.SafeIdent(rel.LocalKey)
+			if err != nil {
+				return fmt.Errorf("relation %q: invalid local key %q: %w", rel.Name, rel.LocalKey, err)
+			}
+			safeTargetKey, err := query.SafeIdent(rel.ForeignKeyTarget)
+			if err != nil {
+				return fmt.Errorf("relation %q: invalid foreign key target %q: %w", rel.Name, rel.ForeignKeyTarget, err)
+			}
+			safeSourceTable, err := query.SafeIdent(ent.GetTable())
+			if err != nil {
+				return fmt.Errorf("relation %q: invalid source table %q: %w", rel.Name, ent.GetTable(), err)
+			}
+			safeTargetTable, err := query.SafeIdent(target.GetTable())
+			if err != nil {
+				return fmt.Errorf("relation %q: invalid target table %q: %w", rel.Name, target.GetTable(), err)
+			}
+			sourcePK := ent.PrimaryKey
+			if sourcePK == "" {
+				sourcePK = "id"
+			}
+			safeSourcePK, err := query.SafeIdent(sourcePK)
+			if err != nil {
+				return fmt.Errorf("relation %q: invalid source PK %q: %w", rel.Name, sourcePK, err)
+			}
+			targetPK := target.PrimaryKey
+			if targetPK == "" {
+				targetPK = "id"
+			}
+			safeTargetPK, err := query.SafeIdent(targetPK)
+			if err != nil {
+				return fmt.Errorf("relation %q: invalid target PK %q: %w", rel.Name, targetPK, err)
+			}
+
+			sourcePKType := fkColumnSQLType(ent, sourcePK, dialect)
+			targetPKType := fkColumnSQLType(target, targetPK, dialect)
+
+			pivotDDL := fmt.Sprintf(
+				"CREATE TABLE IF NOT EXISTS %s (\n\t%s %s NOT NULL,\n\t%s %s NOT NULL,\n\tPRIMARY KEY (%s, %s),\n\tFOREIGN KEY (%s) REFERENCES %s(%s) ON DELETE CASCADE,\n\tFOREIGN KEY (%s) REFERENCES %s(%s) ON DELETE CASCADE\n)",
+				safeThrough,
+				safeLocalKey, sourcePKType,
+				safeTargetKey, targetPKType,
+				safeLocalKey, safeTargetKey,
+				safeLocalKey, safeSourceTable, safeSourcePK,
+				safeTargetKey, safeTargetTable, safeTargetPK,
+			)
+			if _, err := exec.ExecContext(ctx, pivotDDL); err != nil {
+				return fmt.Errorf("create pivot table %s: %w", pivotTable, err)
+			}
+
+			idxTarget := fmt.Sprintf("CREATE INDEX IF NOT EXISTS idx_%s_%s ON %s(%s)", safeThrough, safeTargetKey, safeThrough, safeTargetKey)
+			if _, err := exec.ExecContext(ctx, idxTarget); err != nil {
+				return fmt.Errorf("create index on pivot table %s(%s): %w", pivotTable, safeTargetKey, err)
+			}
+		}
+	}
+	return nil
 }

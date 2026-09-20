@@ -111,6 +111,7 @@ func decodeStrictUseNumber(data []byte) (map[string]any, error) {
 	if err := handler.CheckObjectKeys(data, strings.ToLower); err != nil {
 		return nil, err
 	}
+	//gofastr:allow(GOFASTR1407) CheckObjectKeys already verified key uniqueness and casing (see doc comment); this decode only preserves integer precision via UseNumber.
 	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.UseNumber()
 	var body map[string]any

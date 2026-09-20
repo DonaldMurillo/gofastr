@@ -23,6 +23,11 @@ import (
 // tx-derived context. body is the snake_cased payload; this method mutates
 // it in-place when injecting tenant_id and auto-generated values.
 func (ch *CrudHandler) doCreate(ctx context.Context, r *http.Request, body map[string]any) (map[string]any, error) {
+	if ch.Entity != nil && ch.Entity.Config.Scope.OwnerField != "" && !serverWrites(ctx) {
+		if err := ch.requireOwnerContext(ctx); err != nil {
+			return nil, err
+		}
+	}
 	ch.InjectTenant(body, ctx)
 	ch.InjectOwner(body, ctx)
 	for _, f := range ch.Entity.GetFields() {
@@ -35,6 +40,11 @@ func (ch *CrudHandler) doCreate(ctx context.Context, r *http.Request, body map[s
 		if err := ch.Hooks.ExecuteHooks(ctx, hook.BeforeCreate, body); err != nil {
 			return nil, &beforeHookError{err: err}
 		}
+	}
+
+	belongsToResults, err := ch.processBelongsToCascadeWrites(ctx, r, body, false)
+	if err != nil {
+		return nil, err
 	}
 
 	if err := ch.validateMediaURLs(body); err != nil {
@@ -125,6 +135,38 @@ func (ch *CrudHandler) doCreate(ctx context.Context, r *http.Request, body map[s
 		return nil, fmt.Errorf("insert: %w", err)
 	}
 
+	parentPK := ch.PrimaryKey
+	if parentPK == "" {
+		parentPK = "id"
+	}
+	parentID := result[parentPK]
+	if parentID == nil {
+		parentID = result[ch.convertKey(parentPK)]
+	}
+	if parentID == nil {
+		if idVal, ok := body[parentPK]; ok && idVal != nil {
+			parentID = idVal
+		} else if idVal, ok := body[ch.convertKey(parentPK)]; ok && idVal != nil {
+			parentID = idVal
+		}
+	}
+
+	depResults, err := ch.processDependentCascadeWrites(ctx, r, parentID, body, false)
+	if err != nil {
+		return nil, err
+	}
+
+	for k, v := range belongsToResults {
+		result[k] = v
+	}
+	for k, v := range depResults {
+		result[k] = v
+	}
+
+	if err := ch.applyCascadeChildReadHooks(ctx, result); err != nil {
+		return nil, err
+	}
+
 	if ch.Hooks != nil {
 		if err := ch.Hooks.ExecuteHooks(ctx, hook.AfterCreate, result); err != nil {
 			return nil, fmt.Errorf("after-create hook: %w", err)
@@ -139,6 +181,11 @@ func (ch *CrudHandler) doCreate(ctx context.Context, r *http.Request, body map[s
 // doUpdate runs the BeforeUpdate → UPDATE → AfterUpdate chain for a single
 // record by id. Same pre-conditions as doCreate.
 func (ch *CrudHandler) doUpdate(ctx context.Context, r *http.Request, id string, body map[string]any) (map[string]any, error) {
+	if ch.Entity != nil && ch.Entity.Config.Scope.OwnerField != "" && !serverWrites(ctx) {
+		if err := ch.requireOwnerContext(ctx); err != nil {
+			return nil, err
+		}
+	}
 	// Snapshot the pre-change row inside the same transaction so the audit
 	// hook can diff old vs new. Best-effort, a SELECT failure here must
 	// not block the update itself (the audit log already tolerates a
@@ -151,6 +198,11 @@ func (ch *CrudHandler) doUpdate(ctx context.Context, r *http.Request, id string,
 		if err := ch.Hooks.ExecuteHooks(ctx, hook.BeforeUpdate, body); err != nil {
 			return nil, &beforeHookError{err: err}
 		}
+	}
+
+	belongsToResults, err := ch.processBelongsToCascadeWrites(ctx, r, body, true)
+	if err != nil {
+		return nil, err
 	}
 
 	if err := ch.validateMediaURLs(body); err != nil {
@@ -207,42 +259,75 @@ func (ch *CrudHandler) doUpdate(ctx context.Context, r *http.Request, id string,
 		ub.Set(f.Name, ch.bindJSONValue(f.Name, val))
 		anySet = true
 	}
+
+	var result map[string]any
 	if !anySet {
-		return nil, errNoFieldsToUpdate
-	}
-	// Restamp updated_at to now(). The field loop above skips every
-	// AutoGenerate field (so a client can't forge the timestamp), which
-	// would otherwise leave updated_at frozen at its creation value. Only
-	// stamp when a real update is happening (anySet) and the entity actually
-	// declares an auto-timestamp updated_at column.
-	if col := autoUpdatedAtColumn(ch.Entity); col != "" {
-		ub.Set(col, generateFieldValue(schema.AutoTimestamp))
-	}
-
-	ub.Where(ch.PrimaryKey+" = $1", id)
-	ch.ApplyTenantScopeUpdate(ub, r)
-	ch.ApplyOwnerScopeUpdate(ub, r)
-	// A soft-deleted row is logically gone: the read paths hide it
-	// (ApplySoftDeleteFilter on Get/List/cursor/pre-image) and so must the
-	// write path, otherwise an owner could mutate / resurrect a record the
-	// system considers deleted, which the upsert path already refuses
-	// (errSoftDeletedResurrection). Match-nothing ⇒ scanRow gets ErrNoRows
-	// ⇒ errNotFound, same 404 a deleted row gives on Get.
-	if ch.Entity.Config.Scope.SoftDelete {
-		ub.Where("deleted_at IS NULL")
-	}
-	visFields := ch.visibleFields()
-	ub.Returning(visFields...)
-
-	sqlStr, args := ub.Build()
-	row := ch.DB.QueryRowContext(ctx, sqlStr, args...)
-
-	result, err := ch.scanOne(row, visFields)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+		if !ch.hasCascadeWrites(body) {
+			return nil, errNoFieldsToUpdate
+		}
+		var selErr error
+		result, selErr = ch.selectPreImage(ctx, r, id)
+		if selErr != nil {
+			if errors.Is(selErr, sql.ErrNoRows) {
+				return nil, errNotFound
+			}
+			return nil, selErr
+		}
+		if result == nil {
 			return nil, errNotFound
 		}
-		return nil, fmt.Errorf("update: %w", err)
+	} else {
+		// Restamp updated_at to now(). The field loop above skips every
+		// AutoGenerate field (so a client can't forge the timestamp), which
+		// would otherwise leave updated_at frozen at its creation value. Only
+		// stamp when a real update is happening (anySet) and the entity actually
+		// declares an auto-timestamp updated_at column.
+		if col := autoUpdatedAtColumn(ch.Entity); col != "" {
+			ub.Set(col, generateFieldValue(schema.AutoTimestamp))
+		}
+
+		ub.Where(ch.PrimaryKey+" = $1", id)
+		ch.ApplyTenantScopeUpdate(ub, r)
+		ch.ApplyOwnerScopeUpdate(ub, r)
+		// A soft-deleted row is logically gone: the read paths hide it
+		// (ApplySoftDeleteFilter on Get/List/cursor/pre-image) and so must the
+		// write path, otherwise an owner could mutate / resurrect a record the
+		// system considers deleted, which the upsert path already refuses
+		// (errSoftDeletedResurrection). Match-nothing ⇒ scanRow gets ErrNoRows
+		// ⇒ errNotFound, same 404 a deleted row gives on Get.
+		if ch.Entity.Config.Scope.SoftDelete {
+			ub.Where("deleted_at IS NULL")
+		}
+		visFields := ch.visibleFields()
+		ub.Returning(visFields...)
+
+		sqlStr, args := ub.Build()
+		row := ch.DB.QueryRowContext(ctx, sqlStr, args...)
+
+		var scanErr error
+		result, scanErr = ch.scanOne(row, visFields)
+		if scanErr != nil {
+			if errors.Is(scanErr, sql.ErrNoRows) {
+				return nil, errNotFound
+			}
+			return nil, fmt.Errorf("update: %w", scanErr)
+		}
+	}
+
+	depResults, err := ch.processDependentCascadeWrites(ctx, r, id, body, true)
+	if err != nil {
+		return nil, err
+	}
+
+	for k, v := range belongsToResults {
+		result[k] = v
+	}
+	for k, v := range depResults {
+		result[k] = v
+	}
+
+	if err := ch.applyCascadeChildReadHooks(ctx, result); err != nil {
+		return nil, err
 	}
 
 	if ch.Hooks != nil {
@@ -295,20 +380,28 @@ func (ch *CrudHandler) checkBelongsToScope(ctx context.Context, body map[string]
 		if fk == "" {
 			continue
 		}
-		target, err := ch.Registry.Get(rel.Entity)
-		if err != nil || target == nil {
-			continue
+		target, err := entity.ResolveTarget(ch.Registry, ch.Entity, rel.Entity)
+		if err != nil {
+			return fmt.Errorf("check belongs_to %q: cannot resolve target %q: %w", rel.Name, rel.Entity, err)
 		}
-		if target.Config.Scope.OwnerField == "" && !target.Config.Scope.MultiTenant {
+		if target == nil {
+			return fmt.Errorf("check belongs_to %q: unknown target entity %q", rel.Name, rel.Entity)
+		}
+		hasReadScope := len(readScopeFilters(ctx, target)) > 0
+		if target.Config.Scope.OwnerField == "" && !target.Config.Scope.MultiTenant && !target.Config.Scope.SoftDelete && !hasReadScope {
 			continue
 		}
 		table, err := query.SafeIdent(target.GetTable())
 		if err != nil {
 			return fmt.Errorf("relation %q target table %q: %w", rel.Name, target.GetTable(), err)
 		}
-		pkCol, err := query.SafeIdent(target.PrimaryKey)
+		targetPK := target.PrimaryKey
+		if targetPK == "" {
+			targetPK = "id"
+		}
+		pkCol, err := query.SafeIdent(targetPK)
 		if err != nil {
-			return fmt.Errorf("relation %q target key %q: %w", rel.Name, target.PrimaryKey, err)
+			return fmt.Errorf("relation %q target key %q: %w", rel.Name, targetPK, err)
 		}
 		preds := eagerScopeFilters(ctx, target)
 		readPreds := readScopeFilters(ctx, target)
@@ -317,11 +410,12 @@ func (ch *CrudHandler) checkBelongsToScope(ctx context.Context, body map[string]
 		if readClause != "" {
 			readClause = " AND " + readClause
 		}
-		q := "SELECT " + query.QuoteIdent(pkCol) + " FROM " + query.QuoteIdent(table) + " WHERE " + query.QuoteIdent(pkCol) + " = $1" + clause + readClause
+		q := fmt.Sprintf("SELECT %s FROM %s WHERE %s = $1%s%s", pkCol, table, pkCol, clause, readClause)
 		if target.Config.Scope.SoftDelete {
 			q += " AND deleted_at IS NULL"
 		}
-		allArgs := append([]any{fk}, args...)
+		coercedFK := coercePKValue(target, targetPK, raw)
+		allArgs := append([]any{coercedFK}, args...)
 		allArgs = append(allArgs, readArgs...)
 		var hit any
 		if err := ch.DB.QueryRowContext(ctx, q, allArgs...).Scan(&hit); err != nil {

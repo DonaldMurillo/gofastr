@@ -3,6 +3,7 @@ package crud
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"net/http"
 	"testing"
 
@@ -313,3 +314,122 @@ func TestTypedQuery_DeleteAllSkipsSoftDeleted(t *testing.T) {
 // tests, but typed queries go through ctx. Compile-time check that
 // nothing in this file references http.
 var _ = http.MethodGet
+
+func TestTypedQuery_UpdateAllBelongsToScopeEnforced(t *testing.T) {
+	installOwnerExtractor(t)
+	db, err := sql.Open("sqlite3", ":memory:")
+	if err != nil {
+		t.Skip("sqlite3 driver not available")
+	}
+	t.Cleanup(func() { db.Close() })
+
+	_, err = db.Exec(`
+		CREATE TABLE parents (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, name TEXT);
+		CREATE TABLE items (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, parent_id TEXT, title TEXT);
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = db.Exec(`
+		INSERT INTO parents (id, user_id, name) VALUES ('p-alice', 'alice', 'alice parent');
+		INSERT INTO parents (id, user_id, name) VALUES ('p-bob', 'bob', 'bob parent');
+		INSERT INTO items (id, user_id, parent_id, title) VALUES ('item-a1', 'alice', 'p-alice', 'item 1');
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	parentEnt := entity.Define("parents", entity.EntityConfig{
+		Table: "parents",
+		Fields: []schema.Field{
+			{Name: "id", Type: schema.String},
+			{Name: "user_id", Type: schema.String},
+			{Name: "name", Type: schema.String},
+		},
+		Scope: &entity.ScopeConfig{OwnerField: "user_id"},
+	}.WithTimestamps(false))
+	parentEnt.SetDB(db)
+
+	titleMin := 10.0
+	itemEnt := entity.Define("items", entity.EntityConfig{
+		Table: "items",
+		Fields: []schema.Field{
+			{Name: "id", Type: schema.String},
+			{Name: "user_id", Type: schema.String},
+			{Name: "parent_id", Type: schema.String},
+			{Name: "title", Type: schema.String, Min: &titleMin},
+		},
+		Scope: &entity.ScopeConfig{OwnerField: "user_id"},
+		Relations: []entity.Relation{
+			{Name: "parent", Type: entity.RelManyToOne, Entity: "parents", ForeignKey: "parent_id"},
+		},
+	}.WithTimestamps(false))
+	itemEnt.SetDB(db)
+
+	ch := NewCrudHandler(itemEnt, db)
+	ch.Registry = stubRegistry{byName: map[string]*entity.Entity{
+		"parents": parentEnt,
+		"items":   itemEnt,
+	}}
+
+	type typedItem struct {
+		ID       string `json:"id"`
+		UserID   string `json:"userId"`
+		ParentID string `json:"parentId"`
+		Title    string `json:"title"`
+	}
+
+	q := NewTypedQuery[typedItem](ch)
+
+	// Alice tries to update parent_id to Bob's parent: must fail closed with not found.
+	_, err = q.UpdateAll(ctxAs("alice"), map[string]any{"parent_id": "p-bob"})
+	if err == nil {
+		t.Fatal("expected error when UpdateAll sets BelongsTo FK to another user's record")
+	}
+
+	// Alice updates parent_id to her own parent: succeeds.
+	n, err := q.UpdateAll(ctxAs("alice"), map[string]any{"parent_id": "p-alice"})
+	if err != nil {
+		t.Fatalf("UpdateAll with own parent failed: %v", err)
+	}
+	if n != 1 {
+		t.Fatalf("expected 1 row updated, got %d", n)
+	}
+
+	// Wire key test (Fix F1): camelCase "parentId" targeting Bob's parent must be caught by checkBelongsToScope!
+	_, err = q.UpdateAll(ctxAs("alice"), map[string]any{"parentId": "p-bob"})
+	if err == nil {
+		t.Fatal("expected error when UpdateAll sets camelCase BelongsTo FK to another user's record")
+	}
+
+	// Validation test (Fix F2): schema validation must reject invalid fields
+	_, err = q.UpdateAll(ctxAs("alice"), map[string]any{"title": "short"})
+	if err == nil {
+		t.Fatal("expected validation error when UpdateAll supplies field violating schema rules")
+	}
+}
+
+func TestTypedQuery_UpdateAllNoSettableFields(t *testing.T) {
+	installOwnerExtractor(t)
+	ch, _ := setupOwnerScopedHandler(t)
+	q := NewTypedQuery[typedLog](ch)
+
+	// Supplying only unknown fields or un-settable fields (e.g. ID, owner)
+	// should return errNoFieldsToUpdate rather than emitting broken SQL.
+	_, err := q.UpdateAll(ctxAs("alice"), map[string]any{"unknownField": "val"})
+	if err == nil {
+		t.Fatal("expected error when UpdateAll has no settable fields")
+	}
+	if !errors.Is(err, errNoFieldsToUpdate) {
+		t.Fatalf("expected errNoFieldsToUpdate, got: %v", err)
+	}
+
+	_, err = q.UpdateAll(ctxAs("alice"), map[string]any{"id": "log-a1"})
+	if err == nil {
+		t.Fatal("expected error when UpdateAll only supplies primary key")
+	}
+	if !errors.Is(err, errNoFieldsToUpdate) {
+		t.Fatalf("expected errNoFieldsToUpdate, got: %v", err)
+	}
+}
