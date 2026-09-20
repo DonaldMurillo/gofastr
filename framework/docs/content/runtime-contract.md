@@ -466,10 +466,21 @@ script. A name that is neither, or a cycle, panics where the block is
 built — at the first render that builds the manifest, not at startup
 (the registry is only complete once every package's init has run);
 through the framework's recovery middleware the panic surfaces as a
-500 with the cycle path in the log line. The interaction bridge is not
-yet a load path for registered behaviours: it iterates the kernel's own
-marker table only, so a registered behaviour has no interaction trigger
-today. Readiness is registration: the loader resolves a module's
+500 with the cycle path in the log line. The interaction bridge is a
+load path for registered behaviours too: a behaviour declares the
+interactions it needs retained through its module's cold-cache fetch
+with `registry.Interactions(...)` — one spec per interaction, in the
+bridge's own shape (`Event`; a click's `Selector`, the node resolved
+with `closest`; a keydown's `Keys` and `Scope`, a selector that must
+match somewhere in the document before the key is retained) — the
+behaviours block carries them as `x` beside `s`, `i` and `r`, and the
+kernel installs one document-level listener per spec over the
+registered descriptors exactly as over its own marker table,
+preventing the default synchronously and replaying the event on the
+original node once the module registers. A behaviour that declares no
+interactions installs no listener and costs nothing; a malformed `x`
+field is swallowed with the rest of a broken block. Readiness is
+registration: the loader resolves a module's
 promise only when `loadedModules[name]` is set after its script ran —
 and the module sets its flag FIRST, before it installs anything (a
 script that failed halfway with its flag unset has its load rejected

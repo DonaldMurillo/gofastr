@@ -198,6 +198,56 @@ func TestBehaviorsJSONRequirements(t *testing.T) {
 	mustPanicNames(t, "aa -> bb -> cc -> aa", func() { BehaviorsJSON() })
 }
 
+// The interactions ride the behaviours block as x, in the kernel
+// bridge's own spec shape, beside s/i/r; a behaviour with none adds
+// no x key to the payload at all. BehaviorsJSON is the one function
+// behind every delivery shape (manifest.js's
+// window.__gofastr_behaviors, the export/embed inline block, the
+// theme editor's head block), so the field reaching it here reaches
+// each of them — the browser tests prove the kernel's read end-to-end.
+func TestBehaviorsJSONInteractions(t *testing.T) {
+	registry.IsolateForTest(t)
+	registry.RegisterBehavior("plain", probeJS, registry.Markers("[data-plain]"))
+	registry.RegisterBehavior("interactive", probeJS, registry.Markers("[data-ia]"),
+		registry.Interactions(
+			registry.Interaction{Event: "click", Selector: "[data-ia-prev],[data-ia-next]"},
+			registry.Interaction{Event: "keydown", Keys: []string{"ArrowLeft", "ArrowRight"}, Scope: `[data-ia-widget]:not([hidden]) [data-ia]`},
+		))
+	var got map[string]struct {
+		X []struct {
+			Event    string   `json:"event"`
+			Selector string   `json:"selector"`
+			Keys     []string `json:"keys"`
+			Scope    string   `json:"scope"`
+		} `json:"x"`
+	}
+	if err := json.Unmarshal(BehaviorsJSON(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got["plain"].X) != 0 {
+		t.Fatalf("a behaviour with no interactions carried x: %v", got["plain"].X)
+	}
+	x := got["interactive"].X
+	if len(x) != 2 {
+		t.Fatalf("x = %v, want the two declared specs", x)
+	}
+	if x[0].Event != "click" || x[0].Selector != "[data-ia-prev],[data-ia-next]" || x[0].Keys != nil || x[0].Scope != "" {
+		t.Fatalf("click spec wrong: %+v", x[0])
+	}
+	if x[1].Event != "keydown" || x[1].Selector != "" || strings.Join(x[1].Keys, ",") != "ArrowLeft,ArrowRight" || x[1].Scope != `[data-ia-widget]:not([hidden]) [data-ia]` {
+		t.Fatalf("keydown spec wrong: %+v", x[1])
+	}
+	// The omitempty is the "costs nothing" half: a registry where
+	// nothing declares interactions carries no x at all, so the
+	// payload every page bears is unchanged for the behaviours that
+	// need no retention.
+	registry.IsolateForTest(t)
+	registry.RegisterBehavior("plain", probeJS, registry.Markers("[data-plain]"))
+	if buf := BehaviorsJSON(); strings.Contains(string(buf), `"x"`) {
+		t.Fatalf("x rode the block with no behaviour declaring interactions: %s", buf)
+	}
+}
+
 // A behaviour registered under an embedded module's name is refused
 // twice: at registration, by the names this package reserved at init,
 // and where the two sets meet, for a registration that ran before the

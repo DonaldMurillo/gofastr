@@ -125,18 +125,27 @@ func embeddedModuleNames() []string {
 
 // behaviorManifest is the shape of one entry in the behaviours block:
 // the markers the kernel scans for, whether the load defers to idle,
-// and the modules loaded before this one.
+// the modules loaded before this one, and the interactions the
+// kernel's bridge retains while the module is fetching. The
+// interactions ride under "x" in the bridge's own spec shape
+// (registry.Interaction's JSON tags), so the kernel hands the array
+// to its install loop without translating it — the bytes land in the
+// page's manifest, not the core bundle.
 type behaviorManifest struct {
-	Selectors []string `json:"s"`
-	Idle      bool     `json:"i,omitempty"`
-	Requires  []string `json:"r,omitempty"`
+	Selectors    []string               `json:"s"`
+	Idle         bool                   `json:"i,omitempty"`
+	Requires     []string               `json:"r,omitempty"`
+	Interactions []registry.Interaction `json:"x,omitempty"`
 }
 
 // BehaviorsJSON returns the behaviours block the kernel reads to learn
-// registered markers: {"<name>": {"s": ["[data-x]"], "i": true}}. Nil
-// when nothing is registered. Live pages receive it as
+// registered markers, requirements and interactions:
+// {"<name>": {"s": ["[data-x]"], "i": true, "r": ["dep"], "x": [...]}}.
+// Nil when nothing is registered. Live pages receive it as
 // window.__gofastr_behaviors from /__gofastr/manifest.js; exports and
-// the embed frame as the inline block #gofastr-behaviors.
+// the embed frame as the inline block #gofastr-behaviors — every
+// delivery path is this one function, so a field added here reaches
+// each of them.
 func BehaviorsJSON() []byte {
 	all := registry.Behaviors()
 	if len(all) == 0 {
@@ -147,7 +156,7 @@ func BehaviorsJSON() []byte {
 		if _, shadowed := embeddedModule(e.Name); shadowed {
 			panic("runtime: behaviour " + e.Name + " shadows an embedded runtime module of the same name")
 		}
-		out[e.Name] = behaviorManifest{Selectors: append([]string(nil), e.Markers...), Idle: e.Idle, Requires: append([]string(nil), e.Requires...)}
+		out[e.Name] = behaviorManifest{Selectors: append([]string(nil), e.Markers...), Idle: e.Idle, Requires: append([]string(nil), e.Requires...), Interactions: append([]registry.Interaction(nil), e.Interactions...)}
 	}
 	validateRequirements(all)
 	buf, err := json.Marshal(out)

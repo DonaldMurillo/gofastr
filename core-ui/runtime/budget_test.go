@@ -57,9 +57,18 @@ const (
 	//     when a script ran and never registered. The two action modules
 	//     leaving the kernel's marker table for the behaviour seam bought
 	//     a few bytes back; the net is the number above.
-	// The merged bundle measures 13364 at level 6; the line carries 8
-	// bytes of clearance, the same margin every raise here uses.
-	// Re-measure after a merge, not before.
+	//
+	// 2026-09-20, the interaction bridge learns registered descriptors
+	// (docs/spec-behavior-registry.md, sequence step 5's prerequisite):
+	// frag/boot.js's _registered parse gains the x array and moves
+	// above the bridge, whose install loop now iterates
+	// _moduleMarkers.concat(_registered). The line did NOT move: the
+	// four form modules retired on stack/07 shrank the real bundle to
+	// 13304 before this change, and its +21 (13304 → 13325, +67 raw)
+	// spends part of that room. The real bundle measures 13325 at
+	// level 6; the line carries 47 bytes of clearance. The
+	// anti-vacuity self-test was re-run against the padded fixture,
+	// not assumed.
 	coreGoalGZ = 12*1024 + 1084
 	// 14.7 KB, not the 14 KB initial congestion window it started as.
 	//
@@ -166,6 +175,16 @@ const (
 	// below the fixture's crossing, restoring the bracket [real 15422,
 	// fixture 15444]; verified by running
 	// TestCoreBudgetRejectsCliffOverflow, not by arithmetic.
+	//
+	// 2026-09-20, the interaction bridge learns registered descriptors
+	// (the same boot.js change as the level-6 entry above): +25 at
+	// level 1 (15361 → 15386; the form-module retirements on stack/07
+	// had already taken the real bundle to 15361, 82 under the line).
+	// The line did not move; the real bundle measures 15386 at level 1
+	// and the line carries 57 bytes of clearance. The anti-vacuity
+	// bracket was re-verified by running
+	// TestCoreBudgetRejectsCliffOverflow against the padded fixture,
+	// not by arithmetic.
 	coreCongestionWindowGZ = 14*1024 + 1107
 )
 

@@ -207,15 +207,19 @@ documented table. A registered behaviour is not an owner in
 
 A behaviour may need another module before it can bind: the action
 adapters need the action primitive. The loader is the one place every
-load goes through (marker scan, idle queue, hover prefetch), so
-dependencies live there and nowhere else. One path is not on that list
-yet: the interaction bridge (boot.js's interaction-time load, which
-prevents the default, loads the module, and replays the event) iterates
-the kernel's own `_moduleMarkers` table only — it cannot see registered
-descriptors, so a registered behaviour has no interaction trigger today
-and the bridge neither delays nor dispatches for it. Teaching the
-bridge to read registered descriptors is the later change that unblocks
-the lightbox move (sequence step 5), not this one.
+load goes through (marker scan, idle queue, hover prefetch, interaction
+bridge), so dependencies live there and nowhere else. Teaching the
+bridge to read registered descriptors was its own change (2026-09-20,
+the interaction-descriptor layer): a behaviour declares the
+interactions it needs retained — `Interactions(...)` beside
+`Markers(...)`, the bridge's own spec shape (event, selector, and for
+a keydown the keys and the scope selector that arms the retention) —
+the behaviours block carries them as `x` beside `s`, `i` and `r`, and
+the kernel's bridge installs its retention listeners over the
+registered descriptors exactly as over its own table. That was the
+prerequisite the lightbox move waited on (sequence step 5's ordering
+note), because a lightbox's first click or arrow key can land while
+its module is still cold-fetching.
 
 - `registry.Requires(names...)` declares the modules that must be
   loaded before this one. A name is an embedded kernel module or a
@@ -395,7 +399,10 @@ Dependencies and the primitive add:
    each a `RegisterBehavior` in the Go file that renders its markup;
    the kernel's table and `preload.go`'s mirror lose the entry; the
    `ui-*` literals leave the runtime with it. The interaction bridge
-   reads registered descriptors too before lightbox moves.
+   reads registered descriptors too before lightbox moves. (Done
+   2026-09-20: `registry.Interactions`, the manifest's `x` field, and
+   the kernel's merged install loop — this change is what unblocks
+   the lightbox move.)
 6. `core-ui/patterns`, the same way. What remains in `core-ui/runtime`
    is the kernel, its fragments, and the kernel-side modules: the
    primitives, the manifest-driven loaders and the widget internals.
