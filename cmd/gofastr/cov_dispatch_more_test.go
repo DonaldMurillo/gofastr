@@ -49,7 +49,12 @@ func TestMigratorFromArgsErrors(t *testing.T) {
 	if _, _, err := migratorFromArgs(nil); err == nil {
 		t.Fatal("missing migrations dir should error")
 	}
-	// Migrations dir present but no DB URL.
+	// Migrations dir present but no DB URL. The environment has to be
+	// cleared, not assumed: migratorFromArgs falls back to DATABASE_URL,
+	// and anyone working on a Postgres app is likely to have it exported,
+	// which turns "missing db url should error" into a failure that
+	// depends on whose shell ran the suite.
+	t.Setenv("DATABASE_URL", "")
 	dir := t.TempDir()
 	if err := os.Mkdir(filepath.Join(dir, "migrations"), 0o755); err != nil {
 		t.Fatal(err)
