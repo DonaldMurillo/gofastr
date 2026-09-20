@@ -105,11 +105,11 @@
       // Demand-load split runtime modules whose marker attributes show
       // up in injected subtrees (RPC innerHTML replacement, signal
       // swaps, island updates). Without this, dynamically-inserted
-      // fileupload zones / popover triggers / toast stacks would never
-      // load their module and behave as dead DOM.
+      // popover triggers / toast stacks would never load their
+      // module and behave as dead DOM.
       _scanForModules(node);
       // And re-run scanners of modules that ARE loaded so they wire
-      // any newly-inserted elements (toast TTL, fileupload drop zones).
+      // any newly-inserted elements (toast TTL, drop zones).
       const G = window.__gofastr;
       if (G && G._moduleScanners) {
         for (const name in G._moduleScanners) {
@@ -138,16 +138,6 @@
   // The module self-installs an EventSource and reflects "island"
   // events into matching [data-island] regions. Reconnect lives in
   // the module too.
-
-  // FileUpload runtime has moved to its own demand-loaded module at
-  // /__gofastr/runtime/fileupload.js. Core ships the loader + the
-  // page-scan trigger below; the actual drag/drop wiring + filename
-  // preview ships only when the page contains a [data-fui-fileupload]
-  // zone (or when a `data-fui-prefetch="fileupload"` trigger is
-  // hovered, whichever comes first).
-  //
-  // The legacy `window.__fuiWireFileUploads` is preserved by the
-  // module itself for back-compat with external callers.
 
   // === MODULE LOADER ===================================================
   // loadModule(name) returns a cached Promise covering the module AND
@@ -407,7 +397,6 @@
     // Compute: registered same-origin Web Worker and WebAssembly assets.
     // The marker only loads the imperative __gofastr.compute API.
     { name: 'compute',    selector: '[data-fui-compute]' },
-    { name: 'fileupload', selector: '[data-fui-fileupload]' },
     { name: 'popover',    selector: '[data-fui-popover-anchor]' },
     { name: 'menu',       selector: '[data-fui-menu]' },
     // Disclosure: aria-expanded mirroring, Escape-to-close, menu
@@ -454,8 +443,6 @@
     { name: 'textarea',       selector: 'textarea[data-fui-autogrow]' },
     // MultiSelect: chip rendering for checked options + chip removal.
     { name: 'multiselect',    selector: '[data-fui-multiselect-chips]' },
-    // FileDropzone: filename display + optional image preview strip.
-    { name: 'dropzone',       selector: '[data-fui-comp="ui-dropzone"]' },
     // RangeSlider: cross-clamp min/max thumbs + optional value mirror.
     { name: 'rangeslider',    selector: 'input[data-fui-range-slider]' },
     // TagInput: commit on Enter/comma, backspace removes last, chip ×.
@@ -482,8 +469,6 @@
     { name: 'sidebar', selector: '[data-fui-sidebar-collapse],[data-fui-sidebar-group-toggle]' },
     // BackToTop: scroll-past-threshold reveal + smooth scroll.
     { name: 'backtotop',       selector: '[data-fui-back-to-top]' },
-    // ConditionalField: show/hide content based on another field's value.
-    { name: 'conditionalfield', selector: '[data-fui-comp="ui-conditional-field"]' },
     // SearchInput: clear button visibility + input clearing.
     { name: 'searchinput',     selector: '[data-fui-comp="ui-search-input"]' },
     // FormRepeater: serializes field values into RPC add/remove clicks.

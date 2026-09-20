@@ -211,6 +211,25 @@ picker cannot show stays verbatim in the text while the swatch falls
 back to black and the shell is marked `data-invalid` — the theme
 editor's own sync was deleted for it).
 
+The bespoke-behaviour family renders through headless too:
+`ui.FileUpload` is `headless.FileUpload` (the drop zone a label for
+the real input, the chosen names a role="list" the module fills, the
+pick announced by a role="status" span saying the `FileSelected` /
+`FilesSelected` sentences the strings bridge resolved); `ui.FileDropzone`
+carries the same `data-hui-drop` hooks around its hero surface and
+keeps only the thumbnail strip for itself — a styling concern with no
+headless counterpart, bound by framework/ui's own `filedropzone`
+module; `ui.ConditionalField` is `headless.ConditionalField`, a region
+rendered VISIBLE and hidden by the module until the watched field
+matches (a field only a script can reveal is a field a scriptless
+reader never reaches — the module also disables what it hides, so
+nothing hidden submits); `ui.TextArea` is `headless.Field` +
+`headless.Textarea` the way `ui.Select` is, with `Autogrow` reaching
+the control through the prop that survives the data-fui-* refusal.
+`ui.SearchInput` has no headless counterpart (the icon, the clear
+button and the role="search" wrap are its own) and keeps its own
+module.
+
 **See it live:** the product site ships a landing page under each of two
 boot-registered themes —
 `/examples/headless/default/landing` and
@@ -222,6 +241,15 @@ rides the route's query and the answer renders inside the site's
 chrome; the submitted address never travels in the URL), and a cold
 `LoadAuto` insertion. The browser proofs live in
 `examples/site/e2e_headless_landing_test.go`.
+
+The form family's first dashboard lives under the same routes —
+`/examples/headless/default/dashboard` and
+`/examples/headless/dense/dashboard` — one settings form that submits
+both ways (island RPC with the runtime, plain POST without),
+validates on the server, moves focus to the summary on a failed
+submit, carries a password field and an upload, and nests conditional
+regions two deep. Its browser proofs live in
+`examples/site/e2e_headless_dashboard_test.go`.
 
 ## The spec and the harness
 

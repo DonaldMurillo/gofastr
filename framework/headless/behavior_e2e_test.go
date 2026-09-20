@@ -1135,6 +1135,126 @@ func TestE2E_DropFollowsAReplacedInput(t *testing.T) {
 	}
 }
 
+// A filename is attacker-controlled — the uploader controls the name
+// of the file they pick — so the list and the sentence must carry it
+// as TEXT, never as markup. showFiles builds the list items with
+// textContent and writes the sentence with textContent; this is the
+// pin that a future switch to an HTML sink cannot silently survive.
+// The payload is a full element with an onerror handler and a quote
+// breakout prefix; if either path ever parses it, src=x 404s and the
+// canary fires. The text assertions also pin that the raw name is
+// DISPLAYED, so a fix cannot pass by dropping the name.
+func TestE2E_HostileFilenameLandsAsText(t *testing.T) {
+	b := startBehaviorServer(t, string(FileUpload(FileUploadProps{
+		Name: "evil", ID: "evil", Multiple: true,
+		Label: "Drag anything here, or ", CTA: "browse",
+	}, nil)))
+	ctx := behaviorPage(t, b)
+	if !pollTrue(ctx, moduleLoadedExpr) {
+		t.Fatal("the module never loaded")
+	}
+	payload := `<img src=x onerror="window.__huiXSS=1">.txt`
+	var state struct {
+		Items  []string `json:"items"`
+		Status string   `json:"status"`
+		Els    int      `json:"els"`
+		Canary string   `json:"canary"`
+	}
+	if err := chromedp.Run(ctx,
+		chromedp.Evaluate(`(() => {
+			const dt = new DataTransfer();
+			dt.items.add(new File(['x'], `+string(mustJSON(payload))+`, {type: 'text/plain'}));
+			const input = document.getElementById('evil');
+			input.files = dt.files;
+			input.dispatchEvent(new Event('change', {bubbles: true}));
+		})()`, nil),
+		chromedp.Evaluate(`(() => {
+			const root = document.querySelector('[data-hui-drop]');
+			return {
+				items: [...root.querySelectorAll('[data-hui-drop-list] li')].map((li) => li.textContent),
+				status: root.querySelector('[data-hui-drop-status]').textContent,
+				els: root.querySelectorAll('[data-hui-drop-list] img, [data-hui-drop-list] script, [data-hui-drop-list] iframe, [data-hui-drop-status] img').length,
+				canary: String(window.__huiXSS || 'clean'),
+			};
+		})()`, &state),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if len(state.Items) != 1 || state.Items[0] != payload {
+		t.Fatalf("the hostile filename was not displayed as literal text: %v", state.Items)
+	}
+	if !strings.Contains(state.Status, payload) {
+		t.Fatalf("the sentence must carry the raw filename, got %q", state.Status)
+	}
+	if state.Els != 0 {
+		t.Fatalf("the filename path parsed %d element(s) out of the name — HTML sink", state.Els)
+	}
+	if state.Canary != "clean" {
+		t.Fatal("onerror executed from a filename")
+	}
+}
+
+// A zone that arrives after load (an island swap, an RPC innerHTML
+// replacement) is armed by the kernel's insertion scan handing the
+// inserted subtree to the module — including the subtree whose root
+// IS the zone, which querySelectorAll alone would miss. This retires
+// the core runtime's own upload-insertion test with the module.
+func TestE2E_AZoneInsertedAfterLoadIsArmed(t *testing.T) {
+	b := startBehaviorServer(t, string(Badge(BadgeProps{Label: "running"}, nil)))
+	ctx := behaviorPage(t, b)
+	if !pollTrue(ctx, bootSettledExpr) {
+		t.Fatal("the page never finished booting")
+	}
+	late, err := json.Marshal(string(FileUpload(FileUploadProps{
+		Name: "late-files", ID: "late-files",
+		Label: "Drag files here, or ", CTA: "browse",
+	}, nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := chromedp.Run(ctx, chromedp.Evaluate(`document.querySelector('main')
+		.insertAdjacentHTML('beforeend', '<div id="latezone">'+`+string(late)+`+'</div>')`, nil)); err != nil {
+		t.Fatalf("inserting a zone late: %v", err)
+	}
+	if !pollTrue(ctx, moduleLoadedExpr) {
+		t.Fatal("the late marker never loaded the module through the insertion scan")
+	}
+	if err := chromedp.Run(ctx, chromedp.Evaluate(`(() => {
+		const dt = new DataTransfer();
+		dt.items.add(new File(['x'], 'injected.txt', {type: 'text/plain'}));
+		const root = document.getElementById('latezone').querySelector('[data-hui-drop]');
+		root.dispatchEvent(new DragEvent('drop', {bubbles: true, dataTransfer: dt}));
+	})()`, nil)); err != nil {
+		t.Fatalf("dropping on the late zone: %v", err)
+	}
+	var state struct {
+		Count int    `json:"count"`
+		First string `json:"first"`
+	}
+	if err := chromedp.Run(ctx, chromedp.Evaluate(`(() => {
+		const root = document.getElementById('latezone').querySelector('[data-hui-drop]');
+		return {
+			count: document.getElementById('late-files').files.length,
+			first: (root.querySelector('[data-hui-drop-list] li') || {}).textContent || '',
+		};
+	})()`, &state)); err != nil {
+		t.Fatal(err)
+	}
+	if state.Count != 1 || state.First != "injected.txt" {
+		t.Fatalf("the inserted zone is dead: %d files, list says %q — the insertion scan never armed it", state.Count, state.First)
+	}
+}
+
+// mustJSON renders a Go string as a JSON string literal, which is a
+// valid JS string literal — the payload contains both quote styles.
+func mustJSON(s string) []byte {
+	b, err := json.Marshal(s)
+	if err != nil {
+		panic(err)
+	}
+	return b
+}
+
 // The island form's error convention, end to end: a failed validation
 // is answered 200 with the region's HTML — the errors ARE the answer
 // — the runtime swaps the region, and the arrival pass focuses the

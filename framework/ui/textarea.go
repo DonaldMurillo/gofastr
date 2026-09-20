@@ -1,20 +1,28 @@
 package ui
 
 import (
-	"maps"
 	"strconv"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/headless"
 )
 
 // ─── TextArea ───────────────────────────────────────────────────────
 //
-// Labelled multi-line text input. Wraps core-ui/html.TextArea but
-// exposes Autogrow as a typed field so the data-fui-autogrow runtime
-// hook can resize the height to fit content as the user types.
+// Labelled multi-line text input, rendered through headless.Field +
+// headless.Textarea the way Select is: the field owns the label, the
+// hint, the error and the wiring that ties them to the control, and
+// the textarea carries this component's own marker so its sheet loads
+// wherever a TextArea renders, inside a Form or alone.
+//
+// Autogrow is ui-only surface with its own runtime module
+// (textarea.js, bound on data-fui-autogrow), so it reaches the
+// control through headless.Textarea's typed Autogrow prop — the one
+// seam that survives the data-fui-* refusal every caller-reachable
+// extra goes through.
 
 // TextAreaConfig configures a TextArea.
 type TextAreaConfig struct {
@@ -28,9 +36,9 @@ type TextAreaConfig struct {
 	Placeholder string
 	// Rows is the initial visible row count. Defaults to 3.
 	Rows int
-	// Autogrow opts the textarea into runtime auto-resize: every
-	// input event resets the height to scrollHeight so the field
-	// always shows all content without an internal scrollbar.
+	// Autogrow opts into runtime auto-resize: every input event
+	// resets the height to scrollHeight so the field always shows all
+	// content without an internal scrollbar.
 	Autogrow bool
 	// Required marks the field required.
 	Required bool
@@ -68,109 +76,71 @@ func TextArea(cfg TextAreaConfig) render.HTML {
 	if rows == 0 {
 		rows = 3
 	}
-
-	cls := "ui-textarea"
-	if cfg.Error != "" {
-		cls += " is-error"
-	}
-	if cfg.Disabled {
-		cls += " is-disabled"
-	}
-	if cfg.Class != "" {
-		cls += " " + cfg.Class
-	}
-
-	taAttrs := map[string]string{
-		"name":  cfg.Name,
-		"id":    id,
-		"class": "ui-textarea__input",
-		"rows":  strconv.Itoa(rows),
-	}
-	if cfg.Placeholder != "" {
-		taAttrs["placeholder"] = cfg.Placeholder
-	}
-	if cfg.Disabled {
-		taAttrs["disabled"] = ""
-	}
-	if cfg.Required {
-		taAttrs["required"] = ""
+	extra := html.SafeExtraAttrs(cfg.ExtraAttrs,
+		"name", "rows", "placeholder", "disabled", "required", "maxlength",
+		"aria-invalid", "aria-describedby")
+	if extra == nil {
+		extra = html.Attrs{}
 	}
 	if cfg.MaxLength > 0 {
-		taAttrs["maxlength"] = strconv.Itoa(cfg.MaxLength)
+		extra["maxlength"] = strconv.Itoa(cfg.MaxLength)
 	}
-	if cfg.Autogrow {
-		taAttrs["data-fui-autogrow"] = ""
-	}
-	if cfg.Error != "" {
-		taAttrs["aria-invalid"] = "true"
-		taAttrs["aria-describedby"] = id + "-error"
-	} else if cfg.Help != "" {
-		taAttrs["aria-describedby"] = id + "-help"
-	}
-	maps.Copy(taAttrs, html.SafeExtraAttrs(cfg.ExtraAttrs,
-		"name", "rows", "placeholder", "disabled", "required", "maxlength",
-		"aria-invalid", "aria-describedby"))
 
-	children := []render.HTML{
-		render.Tag("label", map[string]string{"for": id, "class": "ui-textarea__label"},
-			render.Text(cfg.Label)),
-		render.Tag("textarea", taAttrs, render.Text(cfg.Value)),
+	control := func(c headless.FieldControl) render.HTML {
+		return textAreaStyle.WrapHTML(headless.Textarea(headless.TextareaProps{
+			Name:        cfg.Name,
+			DescribedBy: c.DescribedBy,
+			Value:       cfg.Value,
+			Placeholder: cfg.Placeholder,
+			Rows:        rows,
+			Required:    c.Required,
+			Disabled:    cfg.Disabled,
+			Invalid:     c.Invalid,
+			Autogrow:    cfg.Autogrow,
+			ID:          c.ID,
+			Extra:       extra,
+		}, textAreaClasses))
 	}
-	children = append(children, fieldMessage(id, "ui-textarea", cfg.Error, cfg.Help)...)
-
-	return textAreaStyle.WrapHTML(render.Tag("div",
-		map[string]string{"class": cls}, children...))
+	return formFieldStyle.WrapHTML(headless.Field(headless.FieldProps{
+		Label:    cfg.Label,
+		For:      id,
+		Hint:     cfg.Help,
+		Error:    cfg.Error,
+		Required: cfg.Required,
+		Parts:    rootClassParts(cfg.Class),
+	}, fieldClasses, control))
 }
 
 var textAreaStyle = registry.RegisterStyle("ui-textarea", textAreaCSS)
 
 func textAreaCSS(_ style.Theme) string {
-	return `[data-fui-comp="ui-textarea"] {
-  display: grid;
-  gap: var(--spacing-xs, 2px);
-}
-[data-fui-comp="ui-textarea"] .ui-textarea__label {
-  font-weight: 500;
-  font-size: var(--text-sm, 0.875rem);
-  color: var(--color-text, #18181B);
-}
-[data-fui-comp="ui-textarea"] .ui-textarea__input {
+	return `.fui-textarea {
   font: inherit;
   font-size: var(--text-base, 1rem);
   padding: 10px var(--spacing-md, 8px);
   border: 1px solid var(--color-border, #E4E4E7);
-  border-radius: var(--radii-md, 8px);
+  border-radius: var(--fui-field-radius);
   background: var(--color-surface, #FFFFFF);
   color: var(--color-text, #18181B);
   resize: vertical;
   min-block-size: 44px;
   line-height: 1.5;
 }
-[data-fui-comp="ui-textarea"] .ui-textarea__input[data-fui-autogrow] {
+.fui-textarea[data-fui-autogrow] {
   /* Autogrow rules the height; user resize would fight the JS. */
   resize: none;
   overflow: hidden;
 }
-[data-fui-comp="ui-textarea"] .ui-textarea__input:focus-visible {
+.fui-textarea:focus-visible {
   outline: 2px solid var(--color-primary, #4F46E5);
   outline-offset: 1px;
   border-color: var(--color-primary, #4F46E5);
 }
-[data-fui-comp="ui-textarea"] .ui-textarea__help {
-  margin: 0;
-  font-size: var(--text-sm, 0.875rem);
-  color: var(--color-text-muted, #52525B);
-}
-[data-fui-comp="ui-textarea"] .ui-textarea__error {
-  margin: 0;
-  font-size: var(--text-sm, 0.875rem);
-  color: var(--color-danger, #DC2626);
-}
-[data-fui-comp="ui-textarea"].is-error .ui-textarea__input {
+.fui-textarea[aria-invalid="true"] {
   border-color: var(--color-danger, #DC2626);
   box-shadow: inset 0 0 0 1px var(--color-danger, #DC2626);
 }
-[data-fui-comp="ui-textarea"].is-disabled .ui-textarea__input {
+.fui-textarea:disabled {
   opacity: 0.6;
   cursor: not-allowed;
 }`

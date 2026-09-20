@@ -536,8 +536,8 @@ the example website:
   variants and reduced-motion fallback.
 - `Divider`: native `<hr>` for plain horizontal; `role="separator"`
   for vertical / labelled (e.g. "OR" between options).
-- `FileUpload`: drag-drop zone over a native `<input type="file">`
-  via `data-fui-fileupload`.
+- `FileUpload`: drag-drop zone over a native `<input type="file">`,
+  bound by the headless module's `data-hui-drop` hooks.
 
 The matching widget preset is `preset.Popover`, a click-triggered
 anchored surface without backdrop dim or focus trap. Closes on ESC

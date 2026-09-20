@@ -26,11 +26,26 @@ func TestFileUploadRendersInputAndZone(t *testing.T) {
 		`id="doc"`,
 		`for="doc"`,
 		"Document",
-		`data-fui-fileupload`,
-		"ui-fileupload__zone",
+		// The headless drop hooks: the module arms drag-and-drop on
+		// the root, resolves the input per event, and fills the list
+		// and the status on every pick.
+		`data-hui-drop`,
+		`data-hui-drop-input="doc"`,
+		`data-hui-drop-list`,
+		`data-hui-drop-status`,
+		"fui-upload__zone",
 	} {
 		mustContain(t, h, want)
 	}
+}
+
+// The announcement sentences travel as attributes from the Strings
+// the component resolved, so a translated page announces in its own
+// language — the module itself says nothing.
+func TestFileUploadCarriesTheAnnouncementSentences(t *testing.T) {
+	h := FileUpload(FileUploadConfig{Name: "doc", Label: "Document"})
+	mustContain(t, h, `data-hui-drop-one="`)
+	mustContain(t, h, `data-hui-drop-many="`)
 }
 
 func TestFileUploadMultipleEnablesMultipleAttr(t *testing.T) {
@@ -52,25 +67,27 @@ func TestFileUploadErrorWiresAria(t *testing.T) {
 	mustContain(t, h, "Too large")
 }
 
+// The hint rides inside the zone, tied to the input by
+// aria-describedby so it is read with the field rather than being
+// small print beside it.
 func TestFileUploadHelpAndMaxSizeCompose(t *testing.T) {
 	h := FileUpload(FileUploadConfig{Name: "f", Label: "x", Help: "PDF only", MaxSizeMB: 5})
 	mustContain(t, h, "PDF only")
 	mustContain(t, h, "Max 5 MB")
-	mustContain(t, h, `aria-describedby="f-help"`)
+	mustContain(t, h, `id="f-accept"`)
+	mustContain(t, h, `aria-describedby="f-accept"`)
 }
 
-func TestFileUploadDisabledAddsClassAndAttr(t *testing.T) {
+func TestFileUploadDisabledDisablesTheInput(t *testing.T) {
 	h := FileUpload(FileUploadConfig{Name: "f", Label: "x", Disabled: true})
-	mustContain(t, h, "is-disabled")
 	mustContain(t, h, "disabled")
 }
 
-func TestFileUploadNoErrorKeepsHelpVisible(t *testing.T) {
+func TestFileUploadNoErrorRendersNoErrorNode(t *testing.T) {
 	h := FileUpload(FileUploadConfig{Name: "f", Label: "x", Help: "Hi"})
-	if strings.Contains(string(h), "ui-fileupload__error") {
+	if strings.Contains(string(h), "fui-upload__error") {
 		t.Fatalf("no Error should not render error block:\n%s", h)
 	}
-	mustContain(t, h, "ui-fileupload__help")
 }
 
 func TestFileUploadExtraAttrsOnRoot(t *testing.T) {
@@ -82,5 +99,8 @@ func TestFileUploadExtraAttrsOnRoot(t *testing.T) {
 	root := string(h)[:strings.Index(string(h), ">")+1]
 	if !strings.Contains(root, `data-test="hook"`) {
 		t.Errorf("file upload root missing data-test:\n%s", root)
+	}
+	if !strings.Contains(root, "fui-upload-field") {
+		t.Errorf("file upload root missing its class:\n%s", root)
 	}
 }

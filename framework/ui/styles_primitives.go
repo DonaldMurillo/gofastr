@@ -22,7 +22,6 @@ var (
 	tagStyle         = registry.RegisterStyle("ui-tag", tagCSS)
 	spinnerStyle     = registry.RegisterStyle("ui-spinner", spinnerCSS)
 	dividerStyle     = registry.RegisterStyle("ui-divider", dividerCSS)
-	fileUploadStyle  = registry.RegisterStyle("ui-fileupload", fileUploadCSS)
 )
 
 // ─── Layout ─────────────────────────────────────────────────────────
@@ -725,104 +724,6 @@ hr[data-fui-comp="ui-divider"] {
   block-size: 1px;
   background: var(--color-border, #E4E4E7);
 }`
-}
-
-// ─── FileUpload ─────────────────────────────────────────────────────
-
-func fileUploadCSS(_ style.Theme) string {
-	return `[data-fui-comp="ui-fileupload"] {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-xs, 2px);
-  cursor: pointer;
-}
-[data-fui-comp="ui-fileupload"].is-disabled { opacity: 0.6; cursor: not-allowed; }
-[data-fui-comp="ui-fileupload"] .ui-fileupload__label {
-  font-weight: 500;
-  font-size: var(--text-sm, 0.875rem);
-  color: var(--color-text, #18181B);
-}
-[data-fui-comp="ui-fileupload"] .ui-fileupload__zone {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: var(--spacing-xs, 2px);
-  padding: var(--spacing-xl, 24px);
-  border: 2px dashed var(--color-border, #E4E4E7);
-  border-radius: var(--radii-lg, 12px);
-  background: var(--color-surface, #FFFFFF);
-  color: var(--color-text-muted, #52525B);
-  text-align: center;
-  transition: border-color var(--duration-fast, 150ms) ease,
-              background var(--duration-fast, 150ms) ease;
-  min-block-size: calc(var(--spacing-touch-target, 44px) * 2);
-}
-[data-fui-comp="ui-fileupload"] .ui-fileupload__zone:hover {
-  border-color: var(--color-primary, #4F46E5);
-}
-[data-fui-comp="ui-fileupload"].is-dragover .ui-fileupload__zone {
-  border-color: var(--color-primary, #4F46E5);
-  background: color-mix(in oklab, var(--color-primary, #4F46E5) 10%, var(--color-surface, #FFFFFF) 90%);
-}
-[data-fui-comp="ui-fileupload"].is-error .ui-fileupload__zone {
-  border-color: var(--color-danger, #DC2626);
-}
-[data-fui-comp="ui-fileupload"] .ui-fileupload__input {
-  position: absolute;
-  inset: 0;
-  inline-size: 100%;
-  block-size: 100%;
-  opacity: 0;
-  cursor: inherit;
-}
-[data-fui-comp="ui-fileupload"] .ui-fileupload__input:focus-visible + .ui-fileupload__prompt {
-  outline: 2px solid var(--color-primary, #4F46E5);
-  outline-offset: 4px;
-}
-[data-fui-comp="ui-fileupload"] .ui-fileupload__prompt {
-  margin: 0;
-  font-size: var(--text-base, 1rem);
-  color: var(--color-text, #18181B);
-}
-[data-fui-comp="ui-fileupload"] .ui-fileupload__filename {
-  margin: 0;
-  font-size: var(--text-sm, 0.875rem);
-  color: var(--color-text-muted, #52525B);
-  font-weight: 600;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--spacing-sm, 4px);
-}
-[data-fui-comp="ui-fileupload"] .ui-fileupload__filename:empty { display: none; }
-[data-fui-comp="ui-fileupload"] .ui-fileupload__filename .ui-fileupload__list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  text-align: center;
-  color: var(--color-text, #18181B);
-  font-weight: 500;
-}
-[data-fui-comp="ui-fileupload"] .ui-fileupload__filename .ui-fileupload__list li {
-  padding: 1px 0;
-}
-[data-fui-comp="ui-fileupload"] .ui-fileupload__filename .ui-fileupload__thumb {
-  inline-size: 96px;
-  block-size: 96px;
-  object-fit: cover;
-  border-radius: var(--radii-md, 8px);
-  border: 1px solid var(--color-border, #E4E4E7);
-  background: var(--color-surface-soft, #F4F4F5);
-}
-[data-fui-comp="ui-fileupload"] .ui-fileupload__help,
-[data-fui-comp="ui-fileupload"] .ui-fileupload__error {
-  margin: 0;
-  font-size: var(--text-sm, 0.875rem);
-}
-[data-fui-comp="ui-fileupload"] .ui-fileupload__help  { color: var(--color-text-muted, #52525B); }
-[data-fui-comp="ui-fileupload"] .ui-fileupload__error { color: var(--color-danger, #DC2626); }`
 }
 
 func stickyCSS(_ style.Theme) string {

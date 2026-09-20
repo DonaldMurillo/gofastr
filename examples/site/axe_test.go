@@ -188,6 +188,7 @@ func axePages(t *testing.T) []string {
 		// The headless landing routes, by hand: they are page screens,
 		// not catalog rows, so no generator lists them.
 		"/examples/headless/default/landing", "/examples/headless/dense/landing",
+		"/examples/headless/default/dashboard", "/examples/headless/dense/dashboard",
 	)
 	sort.Strings(out)
 	return out
@@ -229,6 +230,7 @@ func TestAxe_AllPagesAreClean(t *testing.T) {
 		"/components/recordsummary", "/components/metricband",
 		"/components/toggleaction", "/components/pagination",
 		"/examples/headless/default/landing", "/examples/headless/dense/landing",
+		"/examples/headless/default/dashboard",
 	}
 	for _, p := range mobileSubset {
 		for _, scheme := range axetest.Schemes {

@@ -17,6 +17,8 @@ package main
 // chromedp suites (the shared browser collides).
 
 import (
+	"io"
+	"net/http"
 	"strings"
 	"testing"
 	"time"
@@ -311,5 +313,39 @@ func TestE2E_LiveDashboard_AcknowledgeButtonBumpsCount(t *testing.T) {
 	}
 	if after != "1" {
 		t.Fatalf("acknowledged count after click = %q, want \"1\" — the Acknowledge button is inert (data-fui-signal-inc fired but no DOM node is bound to dash.incidentsAckd, or the runtime did not apply the mutation)", after)
+	}
+}
+
+// TestE2E_LiveDashboard_ReconcileEndpointAnswersIslands pins the
+// reconnect/refresh endpoint the docs tell an app to call after the
+// SSE stream reconnects: one request per island id answers that
+// island's CURRENT rendered HTML, and an unknown id is a 404 rather
+// than a body for the wrong region. Plain HTTP — no browser needed.
+func TestE2E_LiveDashboard_ReconcileEndpointAnswersIslands(t *testing.T) {
+	if testing.Short() {
+		t.Skip("e2e: -short")
+	}
+	base := siteE2EServer(t)
+	for _, island := range []string{"stats", "feed", "jobs"} {
+		resp, err := http.Get(base + "/__site/livedash/refresh?island=" + island)
+		if err != nil {
+			t.Fatalf("refresh %s: %v", island, err)
+		}
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			t.Errorf("refresh %s answered %d, want 200", island, resp.StatusCode)
+		}
+		if len(body) == 0 {
+			t.Errorf("refresh %s answered an empty body", island)
+		}
+	}
+	resp, err := http.Get(base + "/__site/livedash/refresh?island=nope")
+	if err != nil {
+		t.Fatalf("refresh unknown: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("an unknown island answered %d, want 404", resp.StatusCode)
 	}
 }

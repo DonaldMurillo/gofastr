@@ -127,6 +127,16 @@ type TextareaProps struct {
 	Required bool
 	Disabled bool
 	Invalid  bool
+	// Autogrow opts the control into the core runtime's auto-resize
+	// (textarea.js: every input event resets the height to the
+	// scrollHeight, so the field always shows all its content). It is
+	// the one data-fui-* attribute a component here renders, and it
+	// is a prop rather than an extra because every seam a caller can
+	// reach — Safe, the part-attrs sanitiser — refuses the prefix
+	// precisely so decoration cannot become a request; autogrow is a
+	// behaviour of the control itself, not a decoration, and the
+	// styled layer's TextArea has no other way to say it.
+	Autogrow bool
 
 	ID    string
 	Extra html.Attrs
@@ -147,6 +157,7 @@ func Textarea(p TextareaProps, s Classes) render.HTML {
 	attrsSet(attrs, "placeholder", p.Placeholder)
 	attrsSet(attrs, "id", p.ID)
 	attrsSet(attrs, "aria-describedby", p.DescribedBy)
+	Flag(attrs, "data-fui-autogrow", p.Autogrow)
 	Flag(attrs, "required", p.Required)
 	Flag(attrs, "disabled", p.Disabled)
 	if p.Invalid {
@@ -486,6 +497,13 @@ func init() {
 				Name: "with content",
 				Why:  "the value is the element's text, not an attribute — which is why it is the one control whose content must be escaped rather than quoted",
 				HTML: Textarea(TextareaProps{Name: "notes", ID: "notes", Value: "Restarted after the 4am alert."}, s),
+			}, {
+				Name: "growing",
+				Why:  "autogrow is the one core-runtime hook a control here renders — the behaviour belongs to the control, and the prop is the only seam that survives the prefix refusal",
+				HTML: Field(FieldProps{Label: "Release notes", For: "notes-grow"}, k.For("Field"),
+					func(c FieldControl) render.HTML {
+						return Textarea(TextareaProps{Name: "notes", ID: c.ID, Value: "Grows to fit whatever is typed.", Autogrow: true}, s)
+					}),
 			}}
 		},
 	})

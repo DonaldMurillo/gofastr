@@ -338,6 +338,34 @@ var colorClasses = headless.Classes{
 	headless.PartAffixSwatch: "fui-color__swatch",
 }
 
+// uploadClasses dresses headless.FileUpload: the drop zone (a label
+// for the input, so the whole target opens the picker with no
+// script), the CTA and hint spans inside it, the visually-hidden
+// input, the chosen-files list the runtime fills, and the status span
+// that announces the pick.
+var uploadClasses = headless.Classes{
+	headless.PartRoot:      "fui-upload",
+	headless.PartDropZone:  "fui-upload__zone",
+	headless.PartText:      "fui-upload__label",
+	headless.PartDropCTA:   "fui-upload__cta",
+	headless.PartDropHint:  "fui-upload__hint",
+	headless.PartDropInput: "fui-upload__input",
+	headless.PartDropList:  "fui-upload__list",
+	headless.PartStatus:    "fui-upload__status",
+}
+
+// textAreaClasses dresses headless.Textarea. Like the select, the
+// control carries this component's own marker so its sheet loads
+// wherever a TextArea renders, inside a Form or alone.
+var textAreaClasses = headless.Classes{
+	headless.PartRoot: "fui-textarea",
+}
+
+// whenClasses dresses headless.ConditionalField's region.
+var whenClasses = headless.Classes{
+	headless.PartRoot: "fui-when",
+}
+
 func (s *variantSet) register(api, name string, kind variantKind, css VariantCSS) {
 	if !validVariantName(name) {
 		panic("ui: " + api + "(" + name + "): name must be non-empty lowercase letters, digits, or hyphens")

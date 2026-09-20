@@ -69,7 +69,7 @@ func SearchInput(cfg SearchInputConfig) render.HTML {
 		panic("ui: SearchInput Method must be GET or POST, got " + method)
 	}
 
-	cls := "ui-search-input"
+	cls := "fui-search"
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
 	}
@@ -78,7 +78,7 @@ func SearchInput(cfg SearchInputConfig) render.HTML {
 		"type":        "search",
 		"name":        cfg.Name,
 		"id":          cfg.ID,
-		"class":       "ui-search-input__input",
+		"class":       "fui-search__input",
 		"placeholder": placeholder,
 		"aria-label":  i18nui.T(ctx, i18nui.KeySearchLabel),
 	}
@@ -90,13 +90,13 @@ func SearchInput(cfg SearchInputConfig) render.HTML {
 
 	inner := []render.HTML{
 		html.Span(html.TextConfig{
-			Class:      "ui-search-input__icon",
+			Class:      "fui-search__icon",
 			ExtraAttrs: html.Attrs{"aria-hidden": "true"},
 		}, render.Text("⌕")),
 		render.VoidTag("input", inputAttrs),
 		render.Tag("button", map[string]string{
 			"type":       "button",
-			"class":      "ui-search-input__clear",
+			"class":      "fui-search__clear",
 			"aria-label": i18nui.T(ctx, i18nui.KeySearchClear),
 			"hidden":     "",
 		}, render.Text("×")),
@@ -121,7 +121,7 @@ func SearchInput(cfg SearchInputConfig) render.HTML {
 			"role":   "search",
 			"action": action,
 			"method": method,
-			"class":  "ui-search-input__form",
+			"class":  "fui-search__form",
 		}, innerWrapper))
 	}
 
@@ -130,14 +130,14 @@ func SearchInput(cfg SearchInputConfig) render.HTML {
 
 var searchInputStyle = registry.RegisterStyle("ui-search-input", searchInputCSS)
 
-// searchInputCSS keys every rule on the .ui-search-input class, NOT the
+// searchInputCSS keys every rule on the .fui-search class, NOT the
 // data-fui-comp marker: WrapHTML injects the marker into the OUTERMOST
 // tag, which is the <label> in the bare variant but the <form> in the
 // Action variant. Attribute-ancestor selectors therefore stop matching
 // the label the moment Action is set (#239) — the class is the one
 // thing the label carries in both shapes.
 func searchInputCSS(_ style.Theme) string {
-	return `.ui-search-input {
+	return `.fui-search {
   display: inline-flex;
   align-items: stretch;
   border: 1px solid var(--color-border, #E4E4E7);
@@ -145,7 +145,7 @@ func searchInputCSS(_ style.Theme) string {
   background: var(--color-surface, #FFFFFF);
   overflow: hidden;
 }
-.ui-search-input .ui-search-input__icon {
+.fui-search .fui-search__icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -154,7 +154,7 @@ func searchInputCSS(_ style.Theme) string {
   font-size: var(--text-base, 1rem);
   user-select: none;
 }
-.ui-search-input .ui-search-input__input {
+.fui-search .fui-search__input {
   flex: 1;
   border: 0;
   background: transparent;
@@ -167,15 +167,15 @@ func searchInputCSS(_ style.Theme) string {
   appearance: none;
   -webkit-appearance: none;
 }
-.ui-search-input .ui-search-input__input::-webkit-search-cancel-button,
-.ui-search-input .ui-search-input__input::-webkit-search-decoration {
+.fui-search .fui-search__input::-webkit-search-cancel-button,
+.fui-search .fui-search__input::-webkit-search-decoration {
   -webkit-appearance: none;
 }
-.ui-search-input .ui-search-input__input:focus-visible {
+.fui-search .fui-search__input:focus-visible {
   outline: 2px solid var(--color-primary, #4F46E5);
   outline-offset: -2px;
 }
-.ui-search-input .ui-search-input__clear {
+.fui-search .fui-search__clear {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -189,19 +189,19 @@ func searchInputCSS(_ style.Theme) string {
   user-select: none;
   padding: 0 var(--spacing-sm, 4px);
 }
-.ui-search-input .ui-search-input__clear:hover {
+.fui-search .fui-search__clear:hover {
   color: var(--color-text, #18181B);
   background: var(--color-surface-soft, #F4F4F5);
 }
-.ui-search-input .ui-search-input__clear[hidden] {
+.fui-search .fui-search__clear[hidden] {
   display: none;
 }
-.ui-search-input__form {
+.fui-search__form {
   display: inline-flex;
 }
 /* When a parent gives the form a width, the label must fill it so the
    input's flex:1 spans the box instead of shrink-wrapping. */
-.ui-search-input__form > .ui-search-input {
+.fui-search__form > .fui-search {
   flex: 1 1 auto;
   min-inline-size: 0;
 }`

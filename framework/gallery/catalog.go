@@ -652,9 +652,22 @@ var Catalog = []Entry{
 			FieldOrder:  []string{"email", "password"},
 		})
 	}},
-	{"conditionalfield", "ConditionalField", "Forms", "Show/hide a form field based on a sibling value.", func() render.HTML {
-		return html.Div(html.DivConfig{Class: "fact"},
-			render.Text("ConditionalField is a runtime helper. Wire it inside a Form via field watchers."),
+	{"conditionalfield", "ConditionalField", "Forms", "A field shown or hidden by another field's value — visible on first paint, hidden by the runtime until the watched field matches.", func() render.HTML {
+		return ui.Form(ui.FormConfig{ID: "demo-conditional", Action: "#"},
+			ui.RadioGroup(ui.RadioGroupConfig{
+				Legend: "Plan",
+				Name:   "plan",
+				Options: []ui.RadioGroupOption{
+					{Label: "Free", Value: "free", Checked: true},
+					{Label: "Pro", Value: "pro"},
+				},
+			}),
+			ui.ConditionalField(ui.ConditionalFieldConfig{
+				WhenName: "plan", WhenValue: "pro",
+				Children: []render.HTML{
+					ui.TextField(ui.TextFieldConfig{Name: "coupon", Label: "Coupon code", Help: "Pro only."}),
+				},
+			}),
 		)
 	}},
 	{"formrepeater", "FormRepeater", "Forms", "Add/remove rows of fields.", func() render.HTML {
@@ -821,11 +834,11 @@ const page = await api.posts.list({ limit: 25 });`},
 	}},
 
 	// ---------- Inputs (file / time / color) ----------
-	{"fileupload", "FileUpload", "Inputs", "Single-file picker with preview.", func() render.HTML {
+	{"fileupload", "FileUpload", "Inputs", "File picker with a drop zone; chosen names are listed and announced.", func() render.HTML {
 		return ui.FileUpload(ui.FileUploadConfig{Name: "avatar", Label: "Upload avatar", Accept: "image/*"})
 	}},
-	{"dropzone", "FileDropzone", "Inputs", "Drag-and-drop file upload.", func() render.HTML {
-		return ui.FileDropzone(ui.FileDropzoneConfig{Name: "files", Label: "Drop files here", Multiple: true, MaxSizeMB: 10})
+	{"dropzone", "FileDropzone", "Inputs", "Drag-and-drop file upload with an image thumbnail strip.", func() render.HTML {
+		return ui.FileDropzone(ui.FileDropzoneConfig{Name: "files", Label: "Drop files here", Multiple: true, ShowPreview: true, MaxSizeMB: 10})
 	}},
 	{"timepicker", "TimePicker", "Inputs", "Hour + minute picker.", func() render.HTML {
 		return ui.TimePicker(ui.TimePickerConfig{Name: "wakeup", Label: "Wake-up"})
@@ -1634,8 +1647,8 @@ sortablelist.Render(sortablelist.Config{
 // box doesn't claim to be something it isn't. Private for the same reason
 // as codeSnippets. Read through the IsNoteOnly accessor.
 var noteOnlySlugs = map[string]bool{
-	"datatable":        true,
-	"conditionalfield": true, "formrepeater": true, "repeater": true,
+	"datatable":    true,
+	"formrepeater": true, "repeater": true,
 	"gallery": true, "lightbox": true, "commandpalette": true,
 	"globalsearch": true, "notificationbell": true, "pipelineimage": true,
 	"confirmaction": true, "scrollspy": true,

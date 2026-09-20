@@ -196,7 +196,7 @@ func TestE2E_FileUpload_NativeInputAndDropZone(t *testing.T) {
 		// Site demo: name="avatar", accept="image/*"
 		chromedp.Evaluate(`document.querySelector('input[name="avatar"]')?.getAttribute('type') || ''`, &inputType),
 		chromedp.Evaluate(`document.querySelector('input[name="avatar"]')?.getAttribute('accept') || ''`, &accept),
-		chromedp.Evaluate(`document.querySelector('[data-fui-fileupload]') !== null`, &hasDropZone),
+		chromedp.Evaluate(`document.querySelector('[data-hui-drop]') !== null`, &hasDropZone),
 	); err != nil {
 		t.Fatalf("fileupload: %v", err)
 	}
@@ -207,7 +207,7 @@ func TestE2E_FileUpload_NativeInputAndDropZone(t *testing.T) {
 		t.Errorf("expected accept attribute to be passed through")
 	}
 	if !hasDropZone {
-		t.Errorf("expected data-fui-fileupload drop zone marker")
+		t.Errorf("expected the headless drop hook on the zone")
 	}
 }
 
@@ -230,11 +230,11 @@ func TestE2E_FileUpload_PreviewShowsFilename(t *testing.T) {
 			return '';
 		})()`, nil),
 		chromedp.Sleep(200*time.Millisecond),
-		chromedp.Evaluate(`document.querySelector('[data-fui-comp="ui-fileupload"] .ui-fileupload__filename')?.textContent || ''`, &preview),
+		chromedp.Evaluate(`document.querySelector('[data-fui-comp="ui-fileupload"] [data-hui-drop-list]')?.textContent || ''`, &preview),
 	); err != nil {
 		t.Fatalf("fileupload preview: %v", err)
 	}
 	if !strings.Contains(preview, "photo.jpg") {
-		t.Errorf("filename preview should contain photo.jpg; got %q", preview)
+		t.Errorf("the chosen-files list should contain photo.jpg; got %q", preview)
 	}
 }

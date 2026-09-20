@@ -92,7 +92,7 @@ raw (enumerated in `framework/ui/extraattrs_contract_test.go`). See
 - **datefield**: `framework/ui.DateField`, typed labelled native date field with HTML-date min/max bounds
 - **formsection**: `framework/ui.FormSection`, grouped fields with a shared heading + description
 - **validationsummary**: `framework/ui.ValidationSummary`, inline summary of form validation errors
-- **conditionalfield**: `framework/ui.ConditionalField` (+ `ConditionalFieldVisible` inverse), form section shown/hidden by another field's value
+- **conditionalfield**: `framework/ui.ConditionalField`, form region visible on first paint and hidden by the runtime until the watched field matches
 - **formrepeater**: `framework/ui.FormRepeater`, dynamic list of repeating field groups (add / remove rows)
 - **repeater**: `framework/ui.Repeater`, dynamic add / remove item list with min / max limits
 - **stepwizard**: `framework/ui.StepWizard`, multi-step form with a progress indicator bar

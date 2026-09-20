@@ -148,7 +148,7 @@ func TestE2E_SearchInput_ClearButton(t *testing.T) {
 		})()`, &value),
 		// Check clear button is visible.
 		chromedp.Evaluate(`(() => {
-			var btn = document.querySelector('[data-fui-comp="ui-search-input"] .ui-search-input__clear');
+			var btn = document.querySelector('[data-fui-comp="ui-search-input"] .fui-search__clear');
 			return btn ? btn.hasAttribute('hidden') : true;
 		})()`, &clearHidden),
 	)
@@ -165,7 +165,7 @@ func TestE2E_SearchInput_ClearButton(t *testing.T) {
 	// Click clear.
 	err = chromedp.Run(ctx,
 		chromedp.Evaluate(`(() => {
-			var btn = document.querySelector('[data-fui-comp="ui-search-input"] .ui-search-input__clear');
+			var btn = document.querySelector('[data-fui-comp="ui-search-input"] .fui-search__clear');
 			if (btn) btn.click();
 			var input = document.querySelector('[data-fui-comp="ui-search-input"] input');
 			return input ? input.value : '';

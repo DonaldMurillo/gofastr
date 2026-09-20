@@ -682,9 +682,8 @@ own runtime modules for client-side behavior.
 | Carousel | `carousel.js` | Prev/next navigation, pagination dots, keyboard, auto-rotation |
 | Combobox | `combobox.js` | Debounced search RPC, listbox navigation, type-ahead |
 | Command Palette | (uses Modal + Combobox) | ⌘K overlay with search |
-| Conditional Field | `conditionalfield.js` | Show/hide form sections based on field values |
 | Drag Sortable List | `sortablelist.js` | Native drag-and-drop + keyboard reorder, cross-container kanban, version-aware 409 conflict recovery, RPC commit |
-| File Dropzone | `dropzone.js` | Drag-and-drop file handling with previews |
+| File Dropzone | `filedropzone.js` (framework/ui) | Image thumbnail strip; the drop, the chosen-files list and the pick announcement are the headless module's `data-hui-drop` hooks |
 | Gallery + Lightbox | `lightbox.js` | Image zoom overlay, prev/next, keyboard |
 | Infinite Scroll | `infinitescroll.js` | IntersectionObserver-driven lazy loading |
 | Menu | `menu.js` | Keyboard navigation (arrows, Home/End, type-ahead), submenu open/close (ArrowRight/Left, swapped in RTL), menuitemradio group arbitration |

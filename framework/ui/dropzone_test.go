@@ -48,10 +48,20 @@ func TestFileDropzoneAriaLabelOnRegion(t *testing.T) {
 	}
 }
 
-func TestFileDropzoneUsesFileUploadDragDropHook(t *testing.T) {
+// The drop behaviour is headless's: the same hooks headless.FileUpload
+// renders — the armed root, the per-event input lookup, the list, the
+// status, and the two sentences — with no second drop implementation
+// anywhere in this package.
+func TestFileDropzoneUsesTheHeadlessDropHooks(t *testing.T) {
 	h := string(FileDropzone(FileDropzoneConfig{Name: "f", Label: "Upload"}))
-	if !strings.Contains(h, "data-fui-fileupload") {
-		t.Errorf("dropzone should reuse data-fui-fileupload runtime hook:\n%s", h)
+	for _, want := range []string{
+		`data-hui-drop`, `data-hui-drop-input="f"`,
+		`data-hui-drop-list`, `data-hui-drop-status`,
+		`data-hui-drop-one="`, `data-hui-drop-many="`,
+	} {
+		if !strings.Contains(h, want) {
+			t.Errorf("dropzone should carry the headless drop hook %q:\n%s", want, h)
+		}
 	}
 }
 

@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	_ "embed"
 	"strconv"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
@@ -13,14 +14,28 @@ import (
 
 // ─── FileDropzone ───────────────────────────────────────────────────
 //
-// A larger-surface variant of FileUpload. Same form-POST semantics
-// (native <input type="file"> under the hood, runtime drag-drop
-// handler via data-fui-fileupload), but a more prominent drop area
-// and an optional thumbnail preview strip for image uploads.
+// A larger-surface variant of FileUpload for hero import pages,
+// asset libraries, profile-picture uploads — anywhere the drop
+// affordance is the main UI. Same form-POST semantics: a real
+// <input type="file"> under a <label>, so the whole surface opens the
+// picker with no script. The drop behaviour, the chosen-files list
+// and the pick announcement come from the headless behaviour module
+// on the data-hui-drop hooks (armDrop / showFiles), and the
+// announcement sentences resolve per request through the strings
+// bridge.
 //
-// Use FileUpload for inline form fields; use FileDropzone for hero
-// import pages, asset libraries, profile-picture uploads where the
-// drop affordance is the main UI.
+// The preview strip is this component's own: headless has no
+// counterpart and thumbnails are a styling concern. It is driven by
+// the filedropzone module this file registers on
+// data-fui-dropzone-preview — which duplicates nothing, because the
+// names, the drop forwarding and the sentence all belong to the
+// headless module and this package's module touches none of them.
+
+//go:embed filedropzone.js
+var fileDropzoneJS string
+
+var _ = registry.RegisterBehavior("filedropzone", fileDropzoneJS,
+	registry.Markers("[data-fui-dropzone-preview]"))
 
 // FileDropzoneConfig configures a FileDropzone.
 type FileDropzoneConfig struct {
@@ -42,7 +57,8 @@ type FileDropzoneConfig struct {
 	Disabled bool
 	// ShowPreview opts into a thumbnail strip rendered below the
 	// dropzone after change. Only works for image MIME types: the
-	// runtime FileReader-reads each file and emits <img>.
+	// filedropzone runtime module FileReader-reads each file and
+	// emits <img>.
 	ShowPreview bool
 	// MaxSizeMB is announced in the help text. Server is still
 	// authoritative.
@@ -60,8 +76,9 @@ type FileDropzoneConfig struct {
 	// ID) and data-fui-*.
 	ExtraAttrs html.Attrs
 
-	// Ctx carries the per-request context used to resolve the prompt
-	// and max-size help labels. When nil, English fallbacks apply.
+	// Ctx carries the per-request context used to resolve the prompt,
+	// the max-size help label and the announcement sentences. When
+	// nil, English fallbacks apply.
 	Ctx context.Context
 }
 
@@ -89,23 +106,13 @@ func FileDropzone(cfg FileDropzoneConfig) render.HTML {
 			prompt = i18nui.T(ctx, i18nui.KeyDropzoneDropFile)
 		}
 	}
-
-	cls := "ui-dropzone"
-	if cfg.Error != "" {
-		cls += " is-error"
-	}
-	if cfg.Disabled {
-		cls += " is-disabled"
-	}
-	if cfg.Class != "" {
-		cls += " " + cfg.Class
-	}
+	words := StringsFor(ctx)
 
 	inputAttrs := map[string]string{
 		"type":       "file",
 		"name":       cfg.Name,
 		"id":         id,
-		"class":      "ui-dropzone__input",
+		"class":      "fui-drop__input",
 		"aria-label": cfg.Label,
 	}
 	if cfg.Accept != "" {
@@ -120,65 +127,114 @@ func FileDropzone(cfg FileDropzoneConfig) render.HTML {
 	if cfg.Disabled {
 		inputAttrs["disabled"] = ""
 	}
+	// The preview wiring: ui-only surface with no headless
+	// counterpart (thumbnails are styling, the names list and the
+	// announcement are the headless module's), so it stays in this
+	// package's own vocabulary and is bound by this package's own
+	// module — it duplicates nothing the headless hooks already do.
 	if cfg.ShowPreview {
 		inputAttrs["data-fui-dropzone-preview"] = ""
 	}
 	if cfg.Error != "" {
 		inputAttrs["aria-invalid"] = "true"
 		inputAttrs["aria-describedby"] = id + "-error"
-	} else if cfg.Help != "" || cfg.MaxSizeMB > 0 {
+	} else if help := dropzoneHelp(cfg, ctx); help != "" {
 		inputAttrs["aria-describedby"] = id + "-help"
-	}
-
-	zoneAttrs := map[string]string{
-		"class":               "ui-dropzone__zone",
-		"data-fui-fileupload": "true", // reuse the existing drag-drop runtime hook
-		// role=region + aria-label so AT users hear "<Label>, region"
-		// when the focus passes through the dropzone container,
-		// distinct from the inner file input.
-		"role":       "region",
-		"aria-label": cfg.Label,
 	}
 
 	zoneChildren := []render.HTML{
 		render.Tag("input", inputAttrs),
-		render.Tag("div", map[string]string{"class": "ui-dropzone__icon", "aria-hidden": "true"},
+		render.Tag("div", map[string]string{"class": "fui-drop__icon", "aria-hidden": "true"},
 			render.HTML(dropzoneIcon())),
-		html.Heading(html.HeadingConfig{Level: 3, Class: "ui-dropzone__label"},
+		html.Heading(html.HeadingConfig{Level: 3, Class: "fui-drop__label"},
 			render.Text(cfg.Label)),
-		html.Paragraph(html.TextConfig{Class: "ui-dropzone__prompt"}, render.Text(prompt)),
-		html.Paragraph(html.TextConfig{Class: "ui-dropzone__filename"}, render.Text("")),
+		html.Paragraph(html.TextConfig{Class: "fui-drop__prompt"}, render.Text(prompt)),
 	}
 	zone := render.Tag("label",
-		map[string]string{"for": id, "class": "ui-dropzone__label-wrap"},
-		render.Tag("div", zoneAttrs, zoneChildren...),
+		map[string]string{"for": id, "class": "fui-drop__label-wrap"},
+		render.Tag("div", map[string]string{
+			"class": "fui-drop__zone",
+			// role=region + aria-label so AT users hear "<Label>, region"
+			// when the focus passes through the dropzone container,
+			// distinct from the inner file input.
+			"role":       "region",
+			"aria-label": cfg.Label,
+		}, zoneChildren...),
 	)
 
 	children := []render.HTML{zone}
+	// The names list and the announcement: the headless module fills
+	// these on every pick or drop (showFiles).
+	children = append(children,
+		render.Tag("ul", map[string]string{
+			"class":              "fui-drop__list",
+			"role":               "list",
+			"data-hui-drop-list": "",
+		}),
+		render.Tag("span", map[string]string{
+			"class":                "fui-drop__status",
+			"role":                 "status",
+			"data-hui-drop-status": "",
+		}),
+	)
 	if cfg.ShowPreview {
 		children = append(children, render.Tag("div", map[string]string{
-			"class":                         "ui-dropzone__previews",
+			"class":                         "fui-drop__previews",
 			"data-fui-dropzone-preview-for": id,
 			"aria-live":                     "polite",
 		}))
 	}
 
-	help := cfg.Help
-	if cfg.MaxSizeMB > 0 {
-		if help == "" {
-			help = i18nui.TVars(ctx, i18nui.KeyDropzoneMaxSize, map[string]string{"n": strconv.Itoa(cfg.MaxSizeMB)})
-		} else {
-			help += i18nui.TVars(ctx, i18nui.KeyDropzoneMaxSizeSuffix, map[string]string{"n": strconv.Itoa(cfg.MaxSizeMB)})
-		}
+	if help := dropzoneHelp(cfg, ctx); help != "" {
+		children = append(children, render.Tag("p", map[string]string{
+			"id": id + "-help", "class": "fui-drop__help",
+		}, render.Text(help)))
 	}
-	children = append(children, fieldMessage(id, "ui-dropzone", cfg.Error, help)...)
+	if cfg.Error != "" {
+		children = append(children, render.Tag("p", map[string]string{
+			"id": id + "-error", "class": "fui-drop__error", "role": "alert",
+		}, render.Text(cfg.Error)))
+	}
 
-	attrs := html.SafeExtraAttrs(cfg.ExtraAttrs)
-	if attrs == nil {
-		attrs = map[string]string{}
+	cls := "fui-drop"
+	if cfg.Error != "" {
+		cls += " is-error"
 	}
-	attrs["class"] = cls
-	return dropzoneStyle.WrapHTML(render.Tag("div", attrs, children...))
+	if cfg.Disabled {
+		cls += " is-disabled"
+	}
+	if cfg.Class != "" {
+		cls += " " + cfg.Class
+	}
+
+	// The headless drop hooks on the root: data-hui-drop arms the
+	// drag listeners, -input resolves the input per event, and the
+	// one/many sentences travel as attributes so a translated page
+	// announces in its own language.
+	rootAttrs := map[string]string{
+		"class":               cls,
+		"data-hui-drop":       "",
+		"data-hui-drop-input": id,
+		"data-hui-drop-one":   words.FileSelected,
+		"data-hui-drop-many":  words.FilesSelected,
+	}
+	attrs := html.SafeExtraAttrs(cfg.ExtraAttrs)
+	for k, v := range attrs {
+		rootAttrs[k] = v
+	}
+	return dropzoneStyle.WrapHTML(render.Tag("div", rootAttrs, children...))
+}
+
+// dropzoneHelp joins the caller's Help with the localized size hint.
+func dropzoneHelp(cfg FileDropzoneConfig, ctx context.Context) string {
+	if cfg.MaxSizeMB <= 0 {
+		return cfg.Help
+	}
+	n := strconv.Itoa(cfg.MaxSizeMB)
+	if cfg.Help == "" {
+		return i18nui.TVars(ctx, i18nui.KeyDropzoneMaxSize, map[string]string{"n": n})
+	}
+	return cfg.Help + i18nui.TVars(ctx, i18nui.KeyDropzoneMaxSizeSuffix, map[string]string{"n": n})
 }
 
 func dropzoneIcon() string {
@@ -188,15 +244,15 @@ func dropzoneIcon() string {
 var dropzoneStyle = registry.RegisterStyle("ui-dropzone", dropzoneCSS)
 
 func dropzoneCSS(_ style.Theme) string {
-	return `[data-fui-comp="ui-dropzone"] {
+	return `.fui-drop {
   display: grid;
   gap: var(--spacing-md, 8px);
 }
-[data-fui-comp="ui-dropzone"] .ui-dropzone__label-wrap {
+.fui-drop__label-wrap {
   display: block;
   cursor: pointer;
 }
-[data-fui-comp="ui-dropzone"] .ui-dropzone__zone {
+.fui-drop__zone {
   display: grid;
   justify-items: center;
   gap: var(--spacing-xs, 2px);
@@ -207,20 +263,18 @@ func dropzoneCSS(_ style.Theme) string {
   text-align: center;
   transition: border-color 120ms ease, background 120ms ease;
 }
-[data-fui-comp="ui-dropzone"].is-dragover .ui-dropzone__zone,
-[data-fui-comp="ui-dropzone"] .ui-dropzone__zone.is-dragover,
-[data-fui-comp="ui-dropzone"] .ui-dropzone__label-wrap:hover .ui-dropzone__zone {
+.fui-drop[data-hui-drop-over] .fui-drop__zone,
+.fui-drop__label-wrap:hover .fui-drop__zone {
   border-color: var(--color-primary, #4F46E5);
   background: color-mix(in srgb, var(--color-primary, #4F46E5) 10%, var(--color-surface, #FFFFFF));
   border-style: solid;
 }
-/* Slight scale-in for tactile feedback. */
-[data-fui-comp="ui-dropzone"].is-dragover .ui-dropzone__icon,
-[data-fui-comp="ui-dropzone"] .ui-dropzone__zone.is-dragover .ui-dropzone__icon {
+/* Slight lift for tactile feedback while a drag is over. */
+.fui-drop[data-hui-drop-over] .fui-drop__icon {
   transform: translateY(-2px);
   transition: transform 120ms ease;
 }
-[data-fui-comp="ui-dropzone"] .ui-dropzone__input {
+.fui-drop__input {
   position: absolute;
   width: 1px;
   height: 1px;
@@ -231,38 +285,48 @@ func dropzoneCSS(_ style.Theme) string {
   white-space: nowrap;
   border: 0;
 }
-[data-fui-comp="ui-dropzone"] .ui-dropzone__input:focus-visible + .ui-dropzone__icon {
+.fui-drop__input:focus-visible + .fui-drop__icon {
   outline: 2px solid var(--color-primary, #4F46E5);
   outline-offset: 4px;
   border-radius: var(--radii-sm, 4px);
 }
-[data-fui-comp="ui-dropzone"] .ui-dropzone__icon {
+.fui-drop__icon {
   color: var(--color-primary, #4F46E5);
 }
-[data-fui-comp="ui-dropzone"] .ui-dropzone__label {
+.fui-drop__label {
   margin: 0;
   font-size: var(--text-base, 1rem);
   font-weight: 600;
   color: var(--color-text, #18181B);
 }
-[data-fui-comp="ui-dropzone"] .ui-dropzone__prompt {
+.fui-drop__prompt {
   margin: 0;
   font-size: var(--text-sm, 0.875rem);
   color: var(--color-text-muted, #52525B);
 }
-[data-fui-comp="ui-dropzone"] .ui-dropzone__filename {
+.fui-drop__list {
+  list-style: none;
   margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 1px;
   font-size: var(--text-sm, 0.875rem);
+  font-weight: 600;
   color: var(--color-primary, #4F46E5);
-  font-weight: 500;
-  min-block-size: 1.2em;
+  justify-items: start;
 }
-[data-fui-comp="ui-dropzone"] .ui-dropzone__previews {
+.fui-drop__list:empty { display: none; }
+.fui-drop__status {
+  font-size: var(--text-sm, 0.875rem);
+  color: var(--color-text-muted, #52525B);
+}
+.fui-drop__status:empty { display: none; }
+.fui-drop__previews {
   display: flex;
   flex-wrap: wrap;
   gap: var(--spacing-sm, 4px);
 }
-[data-fui-comp="ui-dropzone"] .ui-dropzone__preview {
+.fui-drop__preview {
   width: 72px;
   height: 72px;
   border-radius: var(--radii-sm, 4px);
@@ -270,20 +334,20 @@ func dropzoneCSS(_ style.Theme) string {
   object-fit: cover;
   border: 1px solid var(--color-border, #E4E4E7);
 }
-[data-fui-comp="ui-dropzone"] .ui-dropzone__help {
+.fui-drop__help {
   margin: 0;
   font-size: var(--text-sm, 0.875rem);
   color: var(--color-text-muted, #52525B);
 }
-[data-fui-comp="ui-dropzone"] .ui-dropzone__error {
+.fui-drop__error {
   margin: 0;
   font-size: var(--text-sm, 0.875rem);
   color: var(--color-danger, #DC2626);
 }
-[data-fui-comp="ui-dropzone"].is-error .ui-dropzone__zone {
+.fui-drop.is-error .fui-drop__zone {
   border-color: var(--color-danger, #DC2626);
 }
-[data-fui-comp="ui-dropzone"].is-disabled .ui-dropzone__zone {
+.fui-drop.is-disabled .fui-drop__zone {
   opacity: 0.6;
   cursor: not-allowed;
 }`
