@@ -484,7 +484,7 @@
         entry to true on load. */
     loadedModules: {},
 
-    /** Load a split runtime module by name (e.g. "fileupload",
+    /** Load a split runtime module by name (e.g. "popover",
         "popover"). Returns a cached Promise that resolves once the
         module's IIFE has executed. Safe to call concurrently, the
         first call wins, all callers await the same fetch. */

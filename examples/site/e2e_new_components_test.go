@@ -15,8 +15,11 @@ import (
 // NOTE: several slugs are note-only in site (combobox, multiselect,
 // confirmaction, sortablelist, infinitescroll, gallery, lightbox,
 // commandpalette, globalsearch, notificationbell, datatable, scrollspy,
-// pipelineimage, conditionalfield, formrepeater, repeater), those
-// are only tested for page-loads or dropped entirely.
+// pipelineimage, formrepeater, repeater), those
+// are only tested for page-loads or dropped entirely. The
+// conditionalfield page is live now (a plan radio group gating a
+// coupon field); its behaviour is covered in
+// e2e_bespoke_forms_test.go.
 //
 // Tests that would exactly duplicate existing tests in e2e_test.go are
 // also dropped (copybutton, textarea autogrow are covered there).

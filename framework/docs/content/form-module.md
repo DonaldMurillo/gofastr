@@ -21,11 +21,11 @@ Form components for GoFastr: HTML primitives, framework UI components, form patt
 | NumberInput | `ui.NumberInput(NumberInputConfig)` | ✓ | ✓ stepper |
 | ColorPicker | `ui.ColorPicker(ColorPickerConfig)` | ✓ | — |
 | RatingInput | `ui.RatingInput(RatingConfig)` | ✓ | — |
-| TextArea | `ui.TextArea(TextAreaConfig)` | ✓ | ✓ autogrow |
+| TextArea | `ui.TextArea(TextAreaConfig)` | ✓ | ✓ autogrow (its own module) |
 | RadioGroup | `ui.RadioGroup(RadioGroupConfig)` | ✓ (fieldset) | — |
 | CheckboxGroup | `ui.CheckboxGroup(CheckboxGroupConfig)` | ✓ (fieldset) | — |
 | ValidationSummary | `ui.ValidationSummary(ValidationSummaryConfig)` | — | — |
-| ConditionalField | `ui.ConditionalField(ConditionalFieldConfig)` | — | ✓ toggle |
+| ConditionalField | `ui.ConditionalField(ConditionalFieldConfig)` | — | ✓ toggle (headless module) |
 | StepWizard | `ui.StepWizard(StepWizardConfig)` | — | — |
 | FormRepeater | `ui.FormRepeater(FormRepeaterConfig)` | — | — |
 
@@ -96,7 +96,12 @@ ui.ValidationSummary(ui.ValidationSummaryConfig{
 
 ### Conditional fields
 
-Show/hide fields based on another field's value. Runtime JS listens for `change`/`input` on the parent form and toggles `hidden`+`aria-hidden`.
+Show/hide fields based on another field's value. The region renders
+VISIBLE and the headless behaviour module hides it until the watched
+field matches (`data-hui-when` / `data-hui-when-value`), because a
+field only a script can reveal is a field a reader without script
+never reaches. The module also disables the controls inside a hidden
+region, so nothing hidden submits.
 
 ```go
 ui.RadioGroup(ui.RadioGroupConfig{
@@ -171,19 +176,25 @@ All components pass **axe-core 4.10** with zero violations:
 - **Keyboard**: All interactive elements focusable and operable via keyboard
 - **Contrast**: All text meets WCAG 2.1 AA minimum (4.5:1 for normal text)
 - **Roles**: Proper ARIA roles (`role="alert"`, `role="list"`, `role="listitem"`, etc.)
-- **Hidden state**: Conditional fields use `hidden` + `aria-hidden="true"` when inactive
+- **Hidden state**: the conditional region carries `hidden` (and nothing else) while inactive; the headless module owns it
 
 ## Runtime JS modules
 
 | Module | File | Purpose |
 |--------|------|---------|
 | searchinput | `core-ui/runtime/src/searchinput.js` | Clear button + auto-show/hide |
-| conditionalfield | `core-ui/runtime/src/conditionalfield.js` | Show/hide based on parent field value |
+| textarea | `core-ui/runtime/src/textarea.js` | Autogrow (`data-fui-autogrow`) |
+| filedropzone | `framework/ui/filedropzone.js` | FileDropzone's image thumbnail strip |
 
-The password reveal is not a module of its own: `ui.PasswordInput`
-renders through `headless.Password` and the headless behaviour module
-(`framework/headless/behavior.js`) binds the reveal button's
-`data-hui-reveal` hook.
+Four modules this family used to carry are gone: `passwordinput`,
+`conditionalfield`, `fileupload` and `dropzone`. The headless
+behaviour module (`framework/headless/behavior.js`) binds all of
+those behaviours on its `data-hui-*` hooks (`data-hui-reveal` for the
+password reveal, `data-hui-when` for a conditional region,
+`data-hui-drop` for both file zones), listing the chosen names and
+announcing the pick through the `Strings` sentences the component
+resolved per request. The thumbnail strip is the one piece with no
+headless counterpart, so it ships as framework/ui's own module.
 
 ## Demo page
 
@@ -205,11 +216,12 @@ renders through `headless.Password` and the headless behaviour module
   must match the HTML field `name` attribute exactly (typically
   snake_case or the CRUD entity field name). A key mismatch causes the
   error to silently not render next to the intended field.
-- **Expecting `ConditionalField` to hide server-side.** The visibility
-  toggle runs in the browser. On first load, `ConditionalField` renders
-  with the `hidden` attribute when the condition is false, but the
-  _server_ does not skip the field from the HTML. Server-side logic
-  must independently ignore values from hidden fields.
+- **Expecting `ConditionalField` to hide server-side.** The region
+  renders visible on first paint and the runtime hides it when the
+  watched field does not match; the _server_ does not skip the field
+  from the HTML. The module disables the controls inside a hidden
+  region so they do not submit, but server-side logic must still
+  validate what it receives.
 - **Relying on `StepWizard` to prevent multi-step submission.** Each
   Continue/Back click is a regular form POST; the wizard does not
   disable earlier-step fields. Validate each step's data on the server

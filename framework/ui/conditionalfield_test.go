@@ -19,7 +19,11 @@ func TestConditionalFieldRequiresWhenValue(t *testing.T) {
 	t.Fatal("expected panic without WhenValue")
 }
 
-func TestConditionalFieldRendersHidden(t *testing.T) {
+// The reader-without-script case is the point of the posture: the
+// region ships VISIBLE, because a field only a script can reveal is a
+// field a scriptless reader never reaches. The module hides it until
+// the watched field matches — never the other way round.
+func TestConditionalFieldRendersVisible(t *testing.T) {
 	h := string(ConditionalField(ConditionalFieldConfig{
 		WhenName:  "plan",
 		WhenValue: "pro",
@@ -27,42 +31,20 @@ func TestConditionalFieldRendersHidden(t *testing.T) {
 	}))
 	for _, want := range []string{
 		`data-fui-comp="ui-conditional-field"`,
-		`data-when-name="plan"`,
-		`data-when-value="pro"`,
-		`hidden`,
-		`aria-hidden="true"`,
+		`data-hui-when="plan"`,
+		`data-hui-when-value="pro"`,
 		"Pro content",
-		"ui-conditional-field",
+		"fui-when",
 	} {
 		if !strings.Contains(h, want) {
 			t.Errorf("missing %q in: %s", want, h)
 		}
 	}
-}
-
-func TestConditionalFieldVisibleRendersWithoutHidden(t *testing.T) {
-	h := string(ConditionalFieldVisible(ConditionalFieldConfig{
-		WhenName:  "plan",
-		WhenValue: "pro",
-		Children:  []render.HTML{render.Text("Pro content")},
-	}))
-	// Must NOT have hidden attribute.
-	if strings.Contains(h, ` hidden`) || strings.Contains(h, `hidden=""`) {
-		t.Errorf("ConditionalFieldVisible should NOT have hidden attr: %s", h)
+	if strings.Contains(h, "hidden") {
+		t.Errorf("the region must not ship hidden — without script the field inside is unreachable:\n%s", h)
 	}
-	// A-3: Visible conditional field should NOT have aria-hidden at all.
-	// Best practice: omit aria-hidden entirely when visible.
 	if strings.Contains(h, "aria-hidden") {
-		t.Errorf("ConditionalFieldVisible should NOT have aria-hidden attr: %s", h)
-	}
-	for _, want := range []string{
-		`data-when-name="plan"`,
-		`data-when-value="pro"`,
-		"Pro content",
-	} {
-		if !strings.Contains(h, want) {
-			t.Errorf("missing %q in: %s", want, h)
-		}
+		t.Errorf("the region must not ship aria-hidden:\n%s", h)
 	}
 }
 
@@ -71,30 +53,34 @@ func TestConditionalFieldCustomClass(t *testing.T) {
 		WhenName:  "plan",
 		WhenValue: "pro",
 		Class:     "extra",
+		Children:  []render.HTML{render.Text("x")},
 	}))
-	if !strings.Contains(h, "ui-conditional-field extra") {
-		t.Errorf("expected custom class, got: %s", h)
+	if !strings.Contains(h, `"fui-when extra"`) {
+		t.Errorf("expected custom class appended to the region, got: %s", h)
 	}
 }
 
-func TestConditionalFieldEvaluateInitialState(t *testing.T) {
-	cfg := ConditionalFieldConfig{WhenName: "plan", WhenValue: "pro"}
-	if !cfg.EvaluateInitialState("pro") {
-		t.Error("should match when value equals WhenValue")
+// The hooks and the visibility are the runtime's contract: a caller
+// cannot forge the hooks the module binds to, and cannot pre-hide or
+// pre-aria-hide the region the module owns the visibility of.
+func TestConditionalFieldExtraAttrsCannotOverrideOwned(t *testing.T) {
+	h := string(ConditionalField(ConditionalFieldConfig{
+		WhenName:  "plan",
+		WhenValue: "pro",
+		ExtraAttrs: map[string]string{
+			"data-test": "hook", "hidden": "", "aria-hidden": "true",
+			"data-hui-when": "evil", "data-hui-when-value": "evil",
+		},
+		Children: []render.HTML{render.Text("x")},
+	}))
+	for _, want := range []string{`data-test="hook"`, `data-hui-when="plan"`, `data-hui-when-value="pro"`} {
+		if !strings.Contains(h, want) {
+			t.Errorf("missing %q in: %s", want, h)
+		}
 	}
-	if cfg.EvaluateInitialState("free") {
-		t.Error("should not match when value differs from WhenValue")
-	}
-}
-
-func TestConditionalFieldExtraAttrsOnRoot(t *testing.T) {
-	h := ConditionalField(ConditionalFieldConfig{
-		WhenName:   "plan",
-		WhenValue:  "pro",
-		ExtraAttrs: map[string]string{"data-test": "hook"},
-	})
-	root := string(h)[:strings.Index(string(h), ">")+1]
-	if !strings.Contains(root, `data-test="hook"`) {
-		t.Errorf("root missing data-test:\n%s", root)
+	for _, banned := range []string{"evil", "hidden"} {
+		if strings.Contains(h, banned) {
+			t.Errorf("owned attribute smuggled through ExtraAttrs (%q):\n%s", banned, h)
+		}
 	}
 }

@@ -302,6 +302,10 @@ a tag with nothing to navigate to renders no control at all rather than a dead �
 the value is the element's text, not an attribute — which is why it is the one control whose content must be escaped rather than quoted
 <textarea id="notes" name="notes">Restarted after the 4am alert.</textarea>
 
+=== Textarea / growing ===
+autogrow is the one core-runtime hook a control here renders — the behaviour belongs to the control, and the prop is the only seam that survives the prefix refusal
+<div><label for="notes-grow">Release notes</label><textarea data-fui-autogrow="" id="notes-grow" name="notes">Grows to fit whatever is typed.</textarea></div>
+
 === Timeline / history ===
 an event with no tone is the ordinary case and draws an untinted marker; ordered, because the order is the content: a screen reader announces the count and the position, so "3 of 7" locates you in the history without seeing the line down the left
 <ol aria-label="Deploy history"><li><span aria-hidden="true"></span><div><time datetime="2026-09-08T11:04:00Z">3 days ago</time><p>Deployed</p><p>From main, by Donald.</p></div></li><li><span aria-hidden="true"></span><div><time datetime="2026-09-07T09:12:00Z">4 days ago</time><p>Build failed</p><p>Exit 1 in the test stage.</p></div></li><li><span aria-hidden="true"></span><div><time datetime="2026-09-06T16:40:00Z">5 days ago</time><p>Configuration changed</p></div></li></ol>

@@ -137,7 +137,7 @@ func TestRuntimeSize(t *testing.T) {
 	// still well under typical TCP slow-start initial windows after
 	// compression.
 	// Cap stays generous during the code-split transition. As each
-	// runtime module (fileupload, popover, toasts, menu, sse, forms,
+	// runtime module (popover, toasts, menu, sse, forms,
 	// widgets) moves to core-ui/runtime/src/, this cap will tighten.
 	// Final target: core ≤ 36 KB raw, each split module ≤ 8 KB.
 	if size > 112000 {
@@ -191,31 +191,6 @@ func truncate(s string, n int) string {
 
 // Split-runtime modules under core-ui/runtime/src/ ship as
 // individually-loadable bundles.
-
-func TestRuntimeModule_Fileupload(t *testing.T) {
-	src, ok := Module("fileupload")
-	if !ok {
-		t.Fatal("fileupload module not embedded")
-	}
-	for _, want := range []string{
-		"data-fui-fileupload",       // marker the scanner reads
-		"input[type=\"file\"]",      // wires the inner native input
-		"DataTransfer",              // drop path
-		"FileReader",                // image thumbnail
-		"__gofastr.scanFileUploads", // exposed scanner for SPA re-wire
-		"loadedModules",             // self-registers as loaded
-	} {
-		if !strings.Contains(src, want) {
-			t.Errorf("fileupload module missing %q", want)
-		}
-	}
-	// Per-module size budget. Fileupload is small (drag/drop +
-	// preview only); cap stays generous so a future feature add
-	// still has headroom. Raw bytes, not gzip.
-	if size := ModuleSize("fileupload"); size > 6000 {
-		t.Errorf("fileupload module is %d bytes — budget is 6000", size)
-	}
-}
 
 func TestRuntimeModule_PaneHost(t *testing.T) {
 	src, ok := Module("panehost")

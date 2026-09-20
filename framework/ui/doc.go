@@ -53,8 +53,7 @@
 //	ColorField:           colour swatch beside a text input, one control
 //	ColorPicker:          styled native <input type=color>
 //	CommandPalette:       ⌘K modal + combobox composition
-//	ConditionalField:     form section hidden until another field matches
-//	ConditionalFieldVisible: inverse: visible until the field matches
+//	ConditionalField:     form region visible until the watched field mismatches (the runtime hides it)
 //	ConfirmAction:        trigger + themed alertdialog modal pair
 //	Container:            max-width page wrapper with breakpoint padding
 //	CopyButton:           clipboard button with SR-announced confirmation

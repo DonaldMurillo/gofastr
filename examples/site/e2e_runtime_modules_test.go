@@ -54,7 +54,7 @@ func collectRuntimeModuleURLs(ctx context.Context) (*sync.Map, func()) {
 // modules whose markers aren't on the page. The site mounts a
 // site-wide toast stack on every page + emits the gofastr-sse meta
 // tag, so toasts.js and sse.js are legitimately loaded, those are
-// excluded. The split's payoff is asserting fileupload/menu
+// excluded. The split's payoff is asserting headless/menu
 // DON'T load.
 func TestE2E_RuntimeSplit_NoMarkersNoFetch(t *testing.T) {
 	if testing.Short() {
@@ -77,10 +77,10 @@ func TestE2E_RuntimeSplit_NoMarkersNoFetch(t *testing.T) {
 		t.Fatalf("navigate: %v", err)
 	}
 
-	// The home page has no fileupload zone, no menu, those modules
+	// The home page has no headless hooks, no menu, those modules
 	// should not load. (toasts + sse load legitimately because of
 	// site-wide widgets above.)
-	for _, mod := range []string{"fileupload", "menu"} {
+	for _, mod := range []string{"headless", "menu"} {
 		urls.Range(func(k, _ any) bool {
 			u := k.(string)
 			if strings.Contains(u, "/runtime/"+mod+".js") {
@@ -91,8 +91,9 @@ func TestE2E_RuntimeSplit_NoMarkersNoFetch(t *testing.T) {
 	}
 }
 
-// /components/fileupload has a [data-fui-fileupload] marker; the
-// scanner MUST trigger a fetch for the fileupload module.
+// /components/fileupload carries the headless module's [data-hui-drop]
+// marker; the behaviours block the kernel reads MUST trigger a fetch for
+// the headless module.
 func TestE2E_RuntimeSplit_FileuploadLoadsOnMarker(t *testing.T) {
 	if testing.Short() {
 		t.Skip("e2e: -short")
@@ -113,7 +114,7 @@ func TestE2E_RuntimeSplit_FileuploadLoadsOnMarker(t *testing.T) {
 
 	found := false
 	urls.Range(func(k, _ any) bool {
-		if strings.Contains(k.(string), "/runtime/fileupload.js") {
+		if strings.Contains(k.(string), "/runtime/headless.js") {
 			found = true
 		}
 		return true
@@ -121,7 +122,7 @@ func TestE2E_RuntimeSplit_FileuploadLoadsOnMarker(t *testing.T) {
 	if !found {
 		var listed []string
 		urls.Range(func(k, _ any) bool { listed = append(listed, k.(string)); return true })
-		t.Errorf("/components/fileupload should fetch fileupload module; runtime urls observed: %v", listed)
+		t.Errorf("/components/fileupload should fetch the headless module for its data-hui-drop marker; runtime urls observed: %v", listed)
 	}
 }
 
@@ -209,22 +210,22 @@ func TestE2E_RuntimeSplit_ManifestIsContentAddressed(t *testing.T) {
 		// (the window global); the inline block remains only in export mode.
 		chromedp.Evaluate(`JSON.stringify(window.__gofastr_runtime_modules || null) || document.getElementById('gofastr-runtime-modules')?.textContent || ''`, &manifest),
 		chromedp.Sleep(500*time.Millisecond),
-		// Pull the actual src= of any loaded fileupload script tag
+		// Pull the actual src= of any loaded headless script tag
 		chromedp.Evaluate(`(() => {
-            const s = document.querySelector('script[src*="/runtime/fileupload.js"]');
+            const s = document.querySelector('script[src*="/runtime/headless.js"]');
             return s ? s.getAttribute('src') : '';
         })()`, &requestedURL),
 	); err != nil {
 		t.Fatalf("chromedp: %v", err)
 	}
-	if !strings.Contains(manifest, `"fileupload"`) {
-		t.Errorf("manifest should declare fileupload hash; got %q", manifest)
+	if !strings.Contains(manifest, `"headless"`) {
+		t.Errorf("manifest should declare the headless module's hash; got %q", manifest)
 	}
 	if requestedURL == "" {
-		t.Fatal("fileupload script not present — demand-load marker contract regressed")
+		t.Fatal("headless script not present — demand-load marker contract regressed")
 	}
 	if !strings.Contains(requestedURL, "?v=") {
-		t.Errorf("fileupload script URL should carry ?v=<hash> cache-buster; got %q", requestedURL)
+		t.Errorf("headless script URL should carry ?v=<hash> cache-buster; got %q", requestedURL)
 	}
 }
 
@@ -578,7 +579,7 @@ func TestE2E_RuntimeSplit_Toast500NotMaskedByStalePortCache(t *testing.T) {
 // Inserting a marker into the DOM via island RPC, signal swap, or any
 // other in-place mutation MUST trigger the module loader. Today the
 // marker scanner runs only on DOMContentLoaded + gofastr:navigate;
-// a newly-injected [data-fui-fileupload] zone (e.g. an RPC response
+// a newly-injected [data-hui-drop] zone (e.g. an RPC response
 // that replaces innerHTML) used to be dead, the module never loaded.
 //
 // The MutationObserver in core handles component/widget hydration on
@@ -596,18 +597,18 @@ func TestE2E_RuntimeSplit_MutationObserverLoadsNewMarker(t *testing.T) {
 
 	if err := chromedp.Run(ctx,
 		network.Enable(),
-		// Home page has no fileupload marker, so the module is NOT
-		// pre-loaded, exactly the cold-cache case we want to test.
+		// Home page has no data-hui-* hooks, so the headless module
+		// is NOT pre-loaded, exactly the cold-cache case we want.
 		chromedp.Navigate(base+"/"),
 		pageReady(),
 		chromedp.Sleep(300*time.Millisecond),
-		// Inject a fresh fileupload zone via DOM mutation. This is the
-		// same shape an island swap or RPC innerHTML replacement would
+		// Inject a fresh drop zone via DOM mutation. This is the same
+		// shape an island swap or RPC innerHTML replacement would
 		// produce: new subtree appended under document.body containing
 		// the module's marker attribute.
 		chromedp.Evaluate(`(() => {
             const wrap = document.createElement('div');
-            wrap.innerHTML = '<div data-fui-fileupload><input type="file" /></div>';
+            wrap.innerHTML = '<div data-hui-drop data-hui-drop-input="mut"><input type="file" id="mut"></div>';
             document.body.appendChild(wrap);
         })()`, nil),
 		chromedp.Sleep(600*time.Millisecond),
@@ -617,14 +618,14 @@ func TestE2E_RuntimeSplit_MutationObserverLoadsNewMarker(t *testing.T) {
 
 	found := false
 	urls.Range(func(k, _ any) bool {
-		if strings.Contains(k.(string), "/runtime/fileupload.js") {
+		if strings.Contains(k.(string), "/runtime/headless.js") {
 			found = true
 		}
 		return true
 	})
 	if !found {
-		t.Errorf("appending a [data-fui-fileupload] subtree to the DOM should trigger the " +
-			"module loader via the MutationObserver, but fileupload.js was never fetched.")
+		t.Errorf("appending a [data-hui-drop] subtree to the DOM should trigger the " +
+			"module loader via the MutationObserver, but headless.js was never fetched.")
 	}
 }
 

@@ -11,7 +11,7 @@ import (
 // WrapHTML injects data-fui-comp into the <form> (the outermost tag),
 // so every rule keyed on the marker attribute as an ANCESTOR stops
 // matching the label — the box shell landed on the form and the label
-// lost all styling. The shell must key on the .ui-search-input class,
+// lost all styling. The shell must key on the .fui-search class,
 // which the label carries in both variants.
 func TestSearchInputActionVariantKeepsBoxStyle(t *testing.T) {
 	h := SearchInput(SearchInputConfig{Name: "q", ID: "q", Action: "/search"})
@@ -20,13 +20,13 @@ func TestSearchInputActionVariantKeepsBoxStyle(t *testing.T) {
 		t.Fatalf("action variant root should be the marked form:\n%s", root)
 	}
 	css := searchInputCSS(style.Theme{})
-	if !strings.Contains(css, ".ui-search-input {") {
-		t.Errorf("shell rule must key on the .ui-search-input class (the label), which exists in both variants:\n%s", css)
+	if !strings.Contains(css, ".fui-search {") {
+		t.Errorf("shell rule must key on the .fui-search class (the label), which exists in both variants:\n%s", css)
 	}
 	if strings.Contains(css, `[data-fui-comp="ui-search-input"] `) {
 		t.Errorf("marker-attribute descendant selectors cannot match in the Action variant (the form carries the marker):\n%s", css)
 	}
-	if !strings.Contains(css, ".ui-search-input__form {") {
+	if !strings.Contains(css, ".fui-search__form {") {
 		t.Errorf("form rule must be a plain class rule (the form IS the marked element):\n%s", css)
 	}
 }
@@ -87,14 +87,14 @@ func TestSearchInputHasAriaLabel(t *testing.T) {
 
 func TestSearchInputEmitsSearchIcon(t *testing.T) {
 	h := string(SearchInput(SearchInputConfig{Name: "q", ID: "q"}))
-	if !strings.Contains(h, "ui-search-input__icon") {
+	if !strings.Contains(h, "fui-search__icon") {
 		t.Errorf("expected search icon:\n%s", h)
 	}
 }
 
 func TestSearchInputEmitsClearButton(t *testing.T) {
 	h := string(SearchInput(SearchInputConfig{Name: "q", ID: "q"}))
-	if !strings.Contains(h, "ui-search-input__clear") {
+	if !strings.Contains(h, "fui-search__clear") {
 		t.Errorf("expected clear button:\n%s", h)
 	}
 	if !strings.Contains(h, `aria-label="Clear search"`) {

@@ -438,22 +438,22 @@ func TestE2E_FileDropzone_AriaRegionAndDragoverClass(t *testing.T) {
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/dropzone"),
 		pageReady(),
-		chromedp.Evaluate(`document.querySelector('.ui-dropzone__zone')?.getAttribute('role') || ''`, &role),
+		chromedp.Evaluate(`document.querySelector('.fui-drop__zone')?.getAttribute('role') || ''`, &role),
 		chromedp.Evaluate(`(function(){
-			const z = document.querySelector('.ui-dropzone__zone');
+			const z = document.querySelector('.fui-drop__zone');
 			if (!z) return;
 			const dt = new DataTransfer();
 			z.dispatchEvent(new DragEvent('dragenter', {bubbles: true, cancelable: true, dataTransfer: dt}));
 		})()`, nil),
 		chromedp.Sleep(80*1e6),
-		chromedp.Evaluate(`document.querySelector('.ui-dropzone__zone')?.classList.contains('is-dragover') || false`, &dragoverClassAfterEnter),
+		chromedp.Evaluate(`document.querySelector('.fui-drop').hasAttribute('data-hui-drop-over')`, &dragoverClassAfterEnter),
 		chromedp.Evaluate(`(function(){
-			const z = document.querySelector('.ui-dropzone__zone');
+			const z = document.querySelector('.fui-drop__zone');
 			if (!z) return;
 			z.dispatchEvent(new DragEvent('dragleave', {bubbles: true, cancelable: true, relatedTarget: document.body}));
 		})()`, nil),
 		chromedp.Sleep(80*1e6),
-		chromedp.Evaluate(`document.querySelector('.ui-dropzone__zone')?.classList.contains('is-dragover') || false`, &dragoverClassAfterLeave),
+		chromedp.Evaluate(`document.querySelector('.fui-drop').hasAttribute('data-hui-drop-over')`, &dragoverClassAfterLeave),
 	)
 	if err != nil {
 		t.Fatalf("chromedp: %v", err)
@@ -462,10 +462,10 @@ func TestE2E_FileDropzone_AriaRegionAndDragoverClass(t *testing.T) {
 		t.Errorf("dropzone should have role=region, got %q", role)
 	}
 	if !dragoverClassAfterEnter {
-		t.Errorf(".is-dragover should be applied on dragenter")
+		t.Errorf("the headless module should mark data-hui-drop-over on the root on dragenter")
 	}
 	if dragoverClassAfterLeave {
-		t.Errorf(".is-dragover should be removed on dragleave")
+		t.Errorf("data-hui-drop-over should be removed on dragleave")
 	}
 }
 

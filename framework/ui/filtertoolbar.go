@@ -436,7 +436,7 @@ func filterToolbarCSS(_ style.Theme) string {
 [data-fui-comp="ui-filter-toolbar"] .ui-filter-toolbar__pills {
   flex: 0 1 max-content;
 }
-/* ui.Search / ui.Select fill their facet cell. */
+/* ui.SearchInput / ui.Select fill their facet cell. */
 [data-fui-comp="ui-filter-toolbar"] .ui-filter-toolbar__search [data-fui-comp="ui-search-input"] {
   display: flex;
   inline-size: 100%;

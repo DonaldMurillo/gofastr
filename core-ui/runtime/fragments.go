@@ -270,9 +270,6 @@ var moduleAttrs = map[string][]string{
 		"data-fui-computed",
 		"data-fui-computed-deps",
 	},
-	"conditionalfield": {
-		"data-fui-cond-disabled",
-	},
 	"copy": {
 		"data-fui-copy-text-from",
 		"data-fui-copy-announce",
@@ -298,13 +295,6 @@ var moduleAttrs = map[string][]string{
 		"data-fui-dropdown",
 		"data-fui-dropdown-open",
 		"data-fui-dropdown-panel",
-	},
-	"dropzone": {
-		"data-fui-dropzone-preview",
-		"data-fui-dropzone-preview-for",
-	},
-	"fileupload": {
-		"data-fui-fileupload",
 	},
 	"infinitescroll": {
 		"data-fui-infinite-scroll",

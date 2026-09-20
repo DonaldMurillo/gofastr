@@ -306,6 +306,8 @@ func setupServer() *framework.App {
 	// no rate limit, no auth, bodies capped in the handlers.
 	//gofastr:allow(GOFASTR1902) docs-site demo endpoint, unauthenticated by design (the NOTE at the interactive endpoints), keeps no state
 	fwApp.Router().Post("/__site/headless/subscribe", http.HandlerFunc(serveHeadlessSubscribe))
+	//gofastr:allow(GOFASTR1902) docs-site demo endpoint, unauthenticated by design (the NOTE at the interactive endpoints), keeps no state
+	fwApp.Router().Post("/__site/headless/settings", http.HandlerFunc(serveHeadlessSettings))
 	fwApp.Router().Get("/__site/headless/late", http.HandlerFunc(serveHeadlessLate))
 	// Optimistic UI demo endpoints. See framework/docs/content/optimistic-ui.md
 	// and the four /components/optimistic-* demos. Each endpoint is a
@@ -878,6 +880,9 @@ func registerScreens(site *app.App) {
 	// route's boot-registered theme (screen_headless_landing.go). Its
 	// /__site/headless/* endpoints are mounted in setupServer.
 	site.Register("/examples/headless/:theme/landing", &HeadlessLandingScreen{}, nil)
+	// The form family's dashboard: same parameterised shape, scoped by
+	// the theme segment (screen_headless_dashboard.go).
+	site.Register("/examples/headless/:theme/dashboard", &HeadlessDashboardScreen{}, nil)
 	// Intercepting route: the detail is a normal page registration, and
 	// InterceptFrom only changes how a soft nav that STARTED on the list
 	// presents it. Hard load, refresh, or an external link still render

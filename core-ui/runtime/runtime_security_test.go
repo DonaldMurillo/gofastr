@@ -562,7 +562,7 @@ func ifStmtStartBefore(s string, elseOpen int) int {
 // data-behavior gate's comment documents and the reason
 // TestBehaviorAttrRejectsForeignSrc pins that sibling. Every emitted
 // name (runtime.ModuleNames, and every internal loadModule call site:
-// rpc, widgets, toasts, popover, fileupload) is [A-Za-z0-9_-]+, so an
+// rpc, widgets, toasts, popover) is [A-Za-z0-9_-]+, so an
 // anchored allow-list rejects nothing legitimate.
 //
 // Surfaces: loadModule in the composed runtime.js AND its fragment
@@ -651,7 +651,6 @@ func TestSelectorInterpolationEscaped(t *testing.T) {
 		anchor string // unique literal at the selector call site
 		where  string // human-readable surface description
 	}{
-		{"src/conditionalfield.js", `'[name="'`, "data-when-name value → [name=…] lookup"},
 		{"src/multiselect.js", `label[for="`, "checkbox id → label[for=…] lookup"},
 		{"src/carousel.js", `data-fui-carousel-deferred-for="`, "carousel id → manifest script lookup"},
 		{"src/carousel.js", `'[data-fui-carousel-defer="`, "manifest key → defer placeholder lookup"},

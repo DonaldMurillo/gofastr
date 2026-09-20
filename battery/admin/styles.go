@@ -78,8 +78,8 @@ func adminCSS(_ style.Theme) string {
   margin-block-end: var(--spacing-lg, 16px);
 }
 .admin-toolbar [data-fui-comp="ui-search-input"] { flex: 1 1 16rem; max-inline-size: 26rem; }
-.admin-toolbar .ui-search-input,
-.admin-toolbar .ui-search-input__form { inline-size: 100%; }
+.admin-toolbar .fui-search,
+.admin-toolbar .fui-search__form { inline-size: 100%; }
 
 /* Sort control — a native <details> dropdown so it works on every viewport
    (the mobile card layout hides the clickable column headers). */

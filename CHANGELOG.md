@@ -301,6 +301,36 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   the described-by chain, the invalid state and the required flag
   come from the field and nowhere else, because two sources for one
   fact is how they drift.
+- **The bespoke-behaviour family renders through
+  `framework/headless`.** `ui.FileUpload` is `headless.FileUpload`:
+  the zone a `<label>` for the real input (so the whole target opens
+  the picker with no script), the chosen names a `role="list"` and
+  the pick a `role="status"` sentence, both filled by the headless
+  module from the `FileSelected` / `FilesSelected` words the strings
+  bridge resolved per request. `ui.FileDropzone` carries the same
+  `data-hui-drop` hooks around its hero surface and keeps only the
+  thumbnail strip — a styling concern with no headless counterpart —
+  bound by framework/ui's own `filedropzone` module, which duplicates
+  nothing (the drop, the list and the sentence are the headless
+  module's). `ui.ConditionalField` is `headless.ConditionalField`;
+  `ui.TextArea` is `headless.Field` + `headless.Textarea` the way
+  `ui.Select` is, with `Autogrow` reaching the control through
+  `headless.Textarea`'s new `Autogrow` prop — the one data-fui-*
+  attribute a component there renders, because every caller-reachable
+  seam refuses the prefix and autogrow is a behaviour of the control,
+  not decoration. `ui.SearchInput` keeps its own module (no headless
+  counterpart) and is restyled onto `fui-*` classes only. The
+  gallery's conditional-field page is live now (a plan radio group
+  gating a coupon field) and its dropzone fixture opts into the
+  preview strip, so both halves of the family have pixels under
+  test. The family's first dashboard ships with it:
+  `/examples/headless/{default,dense}/dashboard`, one settings form
+  that submits both ways (the runtime's RPC sends multipart when the
+  form carries the upload's file input; the handler answers the
+  island region, and the no-script POST redirects back carrying the
+  outcome alone), validates on the server, moves focus to the summary
+  on a failed submit, and nests conditional regions two deep — the
+  plan's "what this layer makes possible" page.
 - **`FormFieldConfig.Input` is a builder.**
   `func(headless.FieldControl) render.HTML` — the field hands its
   control the id, the described-by chain, the invalid state and the
@@ -534,6 +564,54 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   component-options compiler hook and panic `framework/ui`'s later
   init. Code that read `ref.Hash` as a field moves to `ref.Hash()`.
 
+- **The bespoke-behaviour family's classes are `fui-upload*`,
+  `fui-drop*`, `fui-when`, `fui-textarea` and `fui-search*`, and its
+  runtime modules are deleted.** No file emits or selects
+  `ui-fileupload`, `ui-dropzone`, `ui-conditional-field`,
+  `ui-textarea` or `ui-search-input` as a class any more; the
+  registration names and `data-fui-comp` markers stay (the marker
+  fetches the sheet). The selectors that reached into SearchInput's
+  shape move with it (`framework/ui/filtertoolbar.go`, the admin
+  toolbar's CSS, and the searchinput module's own clear-button
+  lookup). Three runtime modules are deleted with their sources,
+  kernel marker-table rows, preload rows and docs rows:
+  `conditionalfield.js`, `fileupload.js` and `dropzone.js` — the
+  headless module's `data-hui-when` and `data-hui-drop` hooks own
+  their behaviour now, and a host that hand-loaded a deleted module
+  gets a 404, which is the retirement speaking. Hand-rolled
+  `data-fui-fileupload` zones lose their drag-drop; render the
+  components or carry the `data-hui-drop` hooks. The one piece with
+  no headless counterpart — the dropzone's image thumbnails — ships
+  as framework/ui's own `filedropzone` module on the unchanged
+  `data-fui-dropzone-preview` wiring.
+- **`ui.ConditionalField` renders VISIBLE, and
+  `ConditionalFieldVisible` is gone.** The region ships with no
+  `hidden` and no `aria-hidden`, and the headless module hides it
+  once it arms and the watched field does not match — because a
+  field only a script can reveal is a field a reader without script
+  never reaches. A host relying on the old hidden-by-default posture
+  sees its dependent fields on first paint until the module arms.
+  Size that honestly: the headless module is split, so the window is
+  the runtime's load, the marker scan, and a second fetch for the
+  module itself — two round trips on a cold page, not a tick. The
+  module disables what it hides, so nothing hidden submits. The watched-field attributes are
+  `data-hui-when` / `data-hui-when-value` (was `data-when-name` /
+  `data-when-value`), `ConditionalFieldVisible` folds into
+  `ConditionalField` (the server-side pre-show it existed for is the
+  new default), and `ConditionalFieldConfig.EvaluateInitialState`
+  is withdrawn with it.
+- **`ui.FileUpload` and `ui.TextArea` changed shape with their
+  headless adoption.** FileUpload's hint renders inside the zone
+  (id `<id>-accept`, joined into the input's `aria-describedby`)
+  and its error below it as a `role="alert"` paragraph; the old
+  `.ui-fileupload__filename` live paragraph and its first-image
+  thumbnail are replaced by the module-filled `role="list"` of
+  chosen names and the `role="status"` announcement sentence.
+  TextArea is a field: the `fui-field` shell owns the label, hint
+  and error, the control carries the `ui-textarea` marker beside
+  the field's, and `Autogrow` still reaches the control as
+  `data-fui-autogrow` (its module is unchanged).
+
 ### Migration ledger — the headless stack so far
 
 One place to read every breaking change this stack has landed, in
@@ -582,6 +660,31 @@ are listed under Added above, not here.
    inside `ui.ValidationSummary`, and it now renders even when
    `Errors` is empty. A caller that set it gets different markup and,
    in the general-only case, output where there was none.
+
+10. **The bespoke-behaviour classes are `fui-upload*`, `fui-drop*`,
+   `fui-when`, `fui-textarea`, `fui-search*`; three runtime modules
+   are deleted.** Hand-rolled markup on the old classes renders
+   unstyled — call `ui.FileUpload` / `ui.FileDropzone` /
+   `ui.ConditionalField` / `ui.TextArea` / `ui.SearchInput`. Select
+   `.fui-search` where the admin toolbar and FilterToolbar selected
+   `.ui-search-input`. The `conditionalfield`, `fileupload` and
+   `dropzone` modules 404 if hand-loaded; the headless module's
+   `data-hui-when` / `data-hui-drop` hooks own their behaviour, and
+   hand-rolled `data-fui-fileupload` zones lose their drag-drop.
+11. **`ui.ConditionalField` renders visible; `ConditionalFieldVisible`
+   and `EvaluateInitialState` are gone.** A host relying on
+   hidden-by-default sees its dependent fields on first paint until
+   the headless module arms — two round trips on a cold page, since
+   the module is split, not one tick. The watched-field attributes
+   are `data-hui-when` / `data-hui-when-value`, and the marker the
+   runtime writes on a control it disables is `data-hui-when-off`
+   (was `data-fui-cond-disabled`): CSS that styled the old one has
+   no target now.
+12. **`ui.FileUpload`'s and `ui.TextArea`'s markup changed.** The
+   upload's hint sits inside the zone (`<id>-accept`) with the error
+   below it; the filename paragraph is a module-filled list plus a
+   status sentence. TextArea is a `fui-field` shell around a
+   `fui-textarea` control carrying its own marker.
 
 ### Changed
 - **One home per helper.** A clone survey over the tree found the same
