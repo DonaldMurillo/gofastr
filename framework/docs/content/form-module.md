@@ -186,12 +186,12 @@ All components pass **axe-core 4.10** with zero violations:
 | textarea | `core-ui/runtime/src/textarea.js` | Autogrow (`data-fui-autogrow`) |
 | filedropzone | `framework/ui/filedropzone.js` | FileDropzone's image thumbnail strip |
 
-Three modules this family used to carry are gone: the password reveal
-(`ui.PasswordInput` renders through `headless.Password`), the
-conditional-field toggle and the file-upload/dropzone wiring — the
-headless behaviour module (`framework/headless/behavior.js`) binds all
-of those on its `data-hui-*` hooks (`data-hui-reveal`,
-`data-hui-when`, `data-hui-drop`), listing the chosen names and
+Four modules this family used to carry are gone: `passwordinput`,
+`conditionalfield`, `fileupload` and `dropzone`. The headless
+behaviour module (`framework/headless/behavior.js`) binds all of
+those behaviours on its `data-hui-*` hooks (`data-hui-reveal` for the
+password reveal, `data-hui-when` for a conditional region,
+`data-hui-drop` for both file zones), listing the chosen names and
 announcing the pick through the `Strings` sentences the component
 resolved per request. The thumbnail strip is the one piece with no
 headless counterpart, so it ships as framework/ui's own module.
