@@ -1579,13 +1579,18 @@ panics where the block is built — at the first render that builds the
 manifest, not at startup (the registry is only complete once every
 package's init has run), surfacing as a 500 through the framework's
 recovery middleware. The loader is the one place every load goes
-through (marker scan, idle queue, hover prefetch), so it is where
-dependencies live: `loadModule` loads a module's requirements first,
-in parallel, and only then appends its script. The interaction bridge
-is not on that list yet: it iterates the kernel's own marker table
-only, so a registered behaviour has no interaction trigger today
-(teaching the bridge registered descriptors is the later change that
-unblocks the lightbox move). Readiness is registration, not transport:
+through (marker scan, idle queue, hover prefetch, interaction
+bridge), so it is where dependencies live: `loadModule` loads a
+module's requirements first, in parallel, and only then appends its
+script. The interaction bridge reads registered descriptors too:
+`registry.Interactions(...)` declares the interactions a behaviour
+needs retained through its module's cold-cache fetch — the bridge's
+own spec shape (event, and for a click the node's selector, for a
+keydown the keys and the scope selector that arms the retention) —
+the behaviours block carries them as `x`, and the kernel installs its
+retention listeners over the registered descriptors exactly as over
+its own table; a behaviour that declares none pays nothing.
+Readiness is registration, not transport:
 the loader resolves a module's promise when `loadedModules[name]` is an
 own truthy property after the script ran, and a script that ran and
 never set its flag rejects with "module failed to register" and drops

@@ -53,8 +53,34 @@ type BehaviorEntry struct {
 	// they were named, deduplicated. They may be embedded kernel
 	// modules or other registered behaviours.
 	Requires []string
+	// Interactions are the user interactions the kernel's interaction
+	// bridge retains while the module is still fetching, replayed on
+	// the original node once the module registers: the cold-cache
+	// window where a click or a keypress would otherwise be lost. The
+	// bridge is the kernel's (frag/boot.js); the descriptor only names
+	// what it retains. Empty for the behaviours that need no
+	// retention, which is the default and costs no listener.
+	Interactions []Interaction
 
 	sourceHash string
+}
+
+// Interaction is one interaction a behaviour asks the kernel to retain
+// while its module is still fetching — the exact shape the bridge
+// already understands, which is why the fields are the bridge's own:
+// Event, and for a click the Selector the node is resolved with
+// (closest from the event target), and for a keydown the Keys
+// (e.key values) and the Scope, a selector that must match somewhere
+// in the document — the retention is armed only while the scope
+// exists, so a key that belongs to an open surface is not eaten while
+// that surface is closed. The JSON tags are the wire shape: the
+// behaviours block carries these verbatim under "x", so the kernel
+// reads the array without translating it.
+type Interaction struct {
+	Event    string   `json:"event"`
+	Selector string   `json:"selector,omitempty"`
+	Keys     []string `json:"keys,omitempty"`
+	Scope    string   `json:"scope,omitempty"`
 }
 
 // SourceHash is the SHA-256 of the registered source, eight bytes as
@@ -82,15 +108,38 @@ func LoadIdle() BehaviorOption { return func(e *BehaviorEntry) { e.Idle = true }
 // before this one: the action adapters need the action primitive, and
 // a dependency declared here is a dependency the loader honors on
 // every path that loads the module (marker scan, idle queue, hover
-// prefetch; the interaction bridge reads only the kernel's own table
-// today). A name is an embedded kernel module or another registered
-// behaviour; the manifest carries it and core-ui/runtime refuses a
-// name that is neither, or a cycle, when it builds the block — at the
-// first render that needs the manifest, not at startup, because the
-// registry is only complete once every package's init has run. A
-// module may not require itself.
+// prefetch, interaction bridge). A name is an embedded kernel module
+// or another registered behaviour; the manifest carries it and
+// core-ui/runtime refuses a name that is neither, or a cycle, when it
+// builds the block — at the first render that needs the manifest, not
+// at startup, because the registry is only complete once every
+// package's init has run. A module may not require itself.
 func Requires(names ...string) BehaviorOption {
 	return func(e *BehaviorEntry) { e.Requires = append(e.Requires, names...) }
+}
+
+// Interactions declares the user interactions the kernel's
+// interaction bridge retains while the module is still fetching —
+// click on a slow module's control, keydown on its surface — and
+// replays on the original node once the module registers, so the
+// cold-cache window eats no click and no keypress. The default (no
+// option) installs no listener and costs nothing, which is right for
+// every behaviour whose wiring happens on insertion rather than on a
+// user event. Each spec is validated like a marker: a programming
+// error is refused here, at registration, not discovered as a lost
+// click.
+func Interactions(specs ...Interaction) BehaviorOption {
+	return func(e *BehaviorEntry) {
+		for _, spec := range specs {
+			// The struct copies, but its Keys slice would keep pointing
+			// at the caller's array, so a later write there would change
+			// a descriptor that has already been validated and is on its
+			// way to the manifest. Clone it here, where the entry stops
+			// being the caller's.
+			spec.Keys = slices.Clone(spec.Keys)
+			e.Interactions = append(e.Interactions, spec)
+		}
+	}
 }
 
 // Behavior is the handle RegisterBehavior returns. Authors keep it in a
@@ -121,6 +170,40 @@ var (
 	// aborts the boot pass for every module. Refused here, where it is
 	// a startup failure.
 	behaviorMarker = regexp.MustCompile(`^\[(data-[a-z0-9-]+)(="[^"\]\\\x00-\x1f\x7f]*")?\]$`)
+)
+
+// The interaction grammar is deliberately WIDER than the marker
+// grammar above, and the marker rule is not widened with it. A marker
+// must be a single attribute selector on a data- attribute because
+// the HOST parses it back out of rendered HTML for preload
+// (MarkerSubstring rewrites it into the bytes it appears as in
+// markup). An interaction selector — a click's node selector, a
+// keydown's scope — is only ever handed to the browser's own
+// querySelector/closest inside the kernel's bridge, never parsed
+// host-side, so it may use the parts of the selector grammar a
+// browser accepts and a descriptor needs: combinators (descendant,
+// >, +, ~), :not([attr]) — the lightbox's scope is
+// `[data-fui-widget]:not([hidden]) …`, where [hidden] is a plain HTML
+// attribute, not a data- one — and comma lists. What is still refused
+// is the set querySelector THROWS on, because a throw lives inside
+// the bridge's document-level listener and silently kills retention
+// for that event: control characters and DEL anywhere a value can
+// carry them, backslashes, unbalanced brackets and parens (the shape
+// rules below make imbalance unrepresentable). Type, class and id
+// selectors are refused too: not because they throw, but because no
+// descriptor needs one yet (and a registered module binds by
+// attribute, never by class); widen the grammar with the client that
+// needs it, not ahead of it.
+var (
+	iaAttr = `\[(?:[A-Za-z][A-Za-z0-9_-]*)(?:="[^"\\\x00-\x1f\x7f]*")?\]`
+	// CSS whitespace is all five of these, so a selector written across
+	// two source lines is browser-valid and must not panic here. Only
+	// the separators take them: iaAttr's quoted value still refuses
+	// every control character, newline and carriage return included.
+	iaWS       = `[ \t\n\f\r]`
+	iaCompound = `(?:` + iaAttr + `|:not\(` + iaAttr + `\))+`
+	iaSelector = regexp.MustCompile(`^` + iaWS + `*` + iaCompound + `(?:` + iaWS + `*(?:` + iaWS + `+|[>+~]` + iaWS + `*)` + iaCompound + `)*` + iaWS + `*(?:,` + iaWS + `*` + iaCompound + `(?:` + iaWS + `*(?:` + iaWS + `+|[>+~]` + iaWS + `*)` + iaCompound + `)*` + iaWS + `*)*$`)
+	iaEvent    = map[string]bool{"click": true, "keydown": true}
 )
 
 // ReserveBehaviorNames records names no behaviour may register under:
@@ -166,6 +249,55 @@ func RegisterBehavior(name, js string, opts ...BehaviorOption) *Behavior {
 			panic(fmt.Sprintf("registry.RegisterBehavior(%s): marker %q must be an attribute selector on a data- attribute, [data-x] or [data-x=\"v\"]", name, m))
 		}
 	}
+	// An interaction is validated the way a marker is: refused here,
+	// at registration, where it is a startup failure and not a lost
+	// click. The event must be one the bridge retains — its node
+	// resolution branches on exactly click and keydown; a click names
+	// the node's selector, a keydown names its keys and the scope
+	// selector that arms the retention (the kernel resolves
+	// querySelector(scope) on every keydown, and the empty string is a
+	// selector querySelector throws on, so a keyless or scopeless
+	// spec is refused rather than shipped as a listener that dies on
+	// its first event). Fields a spec's event never reads are dead
+	// configuration and are refused with the field's name.
+	for i, ia := range e.Interactions {
+		where := fmt.Sprintf("registry.RegisterBehavior(%s): interaction %d", name, i)
+		switch ia.Event {
+		case "click":
+			if ia.Keys != nil {
+				panic(where + " (click): Keys is set — the click resolution never reads keys; declare them on a keydown spec")
+			}
+			if ia.Scope != "" {
+				panic(where + " (click): Scope is set — the click resolution matches the node by Selector, not by a scope")
+			}
+			if ia.Selector == "" {
+				panic(where + " (click): Selector is empty — the bridge would resolve no node and retain nothing")
+			}
+			if !iaSelector.MatchString(ia.Selector) {
+				panic(fmt.Sprintf("%s (click): Selector %q must be a selector list of attribute selectors ([attr], [attr=\"v\"]), :not([attr]) and combinators — the grammar querySelector accepts, wider than a marker's", where, ia.Selector))
+			}
+		case "keydown":
+			if ia.Selector != "" {
+				panic(where + " (keydown): Selector is set — the keydown resolution matches by Keys and Scope, not by a node selector")
+			}
+			if len(ia.Keys) == 0 {
+				panic(where + " (keydown): Keys is empty — the bridge retains no key, so the spec would install a listener that ignores every keypress")
+			}
+			for _, k := range ia.Keys {
+				if k == "" {
+					panic(where + " (keydown): Keys contains an empty key — e.key is never the empty string, the entry matches nothing")
+				}
+			}
+			if ia.Scope == "" {
+				panic(where + " (keydown): Scope is empty — the kernel resolves querySelector(scope) on every keydown and querySelector('') throws, so the listener would die on its first event")
+			}
+			if !iaSelector.MatchString(ia.Scope) {
+				panic(fmt.Sprintf("%s (keydown): Scope %q must be a selector list of attribute selectors ([attr], [attr=\"v\"]), :not([attr]) and combinators — the grammar querySelector accepts, wider than a marker's", where, ia.Scope))
+			}
+		default:
+			panic(fmt.Sprintf("%s: Event %q is not one the bridge retains — its node resolution branches on exactly click and keydown", where, ia.Event))
+		}
+	}
 	// A requirement is a module name: the same shape rule the
 	// behaviour's own name keeps, because it names the same URL shape.
 	// A self-requirement is a cycle of one and is refused here rather
@@ -195,9 +327,9 @@ func RegisterBehavior(name, js string, opts ...BehaviorOption) *Behavior {
 	if existing, ok := behaviors[name]; ok {
 		if !sameBehavior(existing, e) {
 			panic(fmt.Sprintf("registry.RegisterBehavior: duplicate name %q with a different definition. Pick a unique name in one of the two call sites\n"+
-				"  existing: source=%s markers=%v idle=%v requires=%v\n"+
-				"  new:      source=%s markers=%v idle=%v requires=%v",
-				name, existing.sourceHash, existing.Markers, existing.Idle, existing.Requires, e.sourceHash, e.Markers, e.Idle, e.Requires))
+				"  existing: source=%s markers=%v idle=%v requires=%v interactions=%v\n"+
+				"  new:      source=%s markers=%v idle=%v requires=%v interactions=%v",
+				name, existing.sourceHash, existing.Markers, existing.Idle, existing.Requires, existing.Interactions, e.sourceHash, e.Markers, e.Idle, e.Requires, e.Interactions))
 		}
 		return &Behavior{e: existing}
 	}
@@ -243,5 +375,17 @@ func MarkerSubstring(selector string) string {
 }
 
 func sameBehavior(a, b *BehaviorEntry) bool {
-	return a.Name == b.Name && a.sourceHash == b.sourceHash && a.Idle == b.Idle && slices.Equal(a.Markers, b.Markers) && slices.Equal(a.Requires, b.Requires)
+	return a.Name == b.Name && a.sourceHash == b.sourceHash && a.Idle == b.Idle && slices.Equal(a.Markers, b.Markers) && slices.Equal(a.Requires, b.Requires) && sameInteractions(a.Interactions, b.Interactions)
+}
+
+func sameInteractions(a, b []Interaction) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i].Event != b[i].Event || a[i].Selector != b[i].Selector || a[i].Scope != b[i].Scope || !slices.Equal(a[i].Keys, b[i].Keys) {
+			return false
+		}
+	}
+	return true
 }

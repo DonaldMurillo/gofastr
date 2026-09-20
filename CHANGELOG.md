@@ -8,6 +8,40 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 ## [Unreleased]
 
 ### Added
+- **`registry.Interactions` — a registered behaviour can declare the
+  interactions the runtime retains while its module is still
+  fetching.** Until now the interaction bridge (the fourth load path,
+  which keeps a click or a keypress from being lost in a module's
+  cold-cache window) read only the kernel's own hard-coded marker
+  table, so a behaviour registered through
+  `registry.RegisterBehavior` could not ask for retention — the one
+  property the Lightbox needs before it can leave the kernel, and
+  the prerequisite the behaviour-registry spec's sequence called out.
+  A behaviour now passes `registry.Interactions(...)` beside
+  `Markers(...)`: one spec per interaction, in the bridge's own shape
+  — an event (`click` or `keydown`), for a click the node's selector,
+  for a keydown the keys and a scope selector that arms the
+  retention only while it matches (a key that belongs to an open
+  surface is not eaten while that surface is closed). Specs are
+  validated at registration like markers — an unknown event, an
+  empty selector, a keyless or scopeless keydown, or a field the
+  event never reads is a startup panic naming the field; the
+  selector grammar is deliberately wider than a marker's
+  (combinators, `:not([attr])`, comma lists, plain HTML attributes
+  like `[hidden]`) because only the browser consumes it — a click's
+  selector through `Element.closest`, a keydown's scope through
+  `document.querySelector` — while a marker must stay parseable by
+  the host's preload scan. The behaviours manifest carries the specs
+  as `x` beside `s`, `i` and `r` through every delivery path (live
+  `manifest.js`, the export/embed inline block, the theme editor),
+  and the kernel's bridge installs its listeners over the registered
+  descriptors exactly as over its own table, with the loop body
+  unchanged. Nothing released changes shape: a behaviour that
+  declares no interactions adds not one byte to its manifest entry
+  and installs no listener. Cost in the core bundle: +21 bytes gzip
+  at level 6 and +25 at level 1, measured, with both budget lines
+  holding and the anti-vacuity self-test re-run. The Lightbox itself
+  does not move in this change.
 - **`ui.StringsFor` — the i18n bridge into `headless.Strings`.** The
   headless layer's words are a typed struct, one field per sentence;
   `ui.StringsFor(ctx)` is the layer above that resolves every field

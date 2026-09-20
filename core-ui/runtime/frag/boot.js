@@ -490,22 +490,81 @@
     { name: 'poll',         selector: '[data-fui-poll]' },
 ];
 
-  // Demand-loaded modules may declare interactions that must survive their
-  // own cold-cache fetch. This bridge is deliberately metadata-driven: core
-  // owns event retention/replay, while feature modules own selectors and
-  // behavior. No optional component's selectors or policy are hard-coded in
-  // the always-loaded runtime.
+  // Registered behaviours (registry.RegisterBehavior): a component's own
+  // package ships its module and declares its markers and interactions;
+  // the host lists them beside the manifest, live pages as
+  // window.__gofastr_behaviors from /__gofastr/manifest.js, exports and
+  // the embed frame as the inline #gofastr-behaviors block. Same scan,
+  // same bridge, same loader, same module contract as the table above:
+  // the bridge's install loop and _scanForModules both iterate this
+  // list after the kernel's own table, so a registered behaviour's
+  // interactions are retained and replayed exactly as a table module's
+  // are. Parsed here, before the bridge, because the bridge installs
+  // its listeners at boot and reads this list in the same pass.
+  const _registered = (() => {
+    try {
+      const o = window.__gofastr_behaviors ||
+        JSON.parse((document.getElementById('gofastr-behaviors') || {}).textContent || '{}');
+      // Own entries only: the block is JSON from the host, but the
+      // kernel never reads a registry through the prototype chain.
+      // requires is the r array: the modules loadModule'd before this
+      // one (see the loader above). interactions is the x array, in
+      // the bridge's own spec shape (event/selector/keys/scope): the
+      // registry validates the shape at registration, and the filter
+      // keeps a malformed block from reaching the install loop below —
+      // a non-array x throws here inside the try, so the kernel drops
+      // the registry and boots on its own table rather than dying in
+      // that loop, and an entry without an event never installs.
+      return Object.entries(o).map(([n, v]) => ({
+        name: n,
+        selector: v.s.join(','),
+        idle: !!v.i,
+        requires: v.r || [],
+        interactions: (v.x || []).filter((y) => y && y.event),
+      }));
+    } catch (_) {
+      // Silent on purpose: the kernel boots on its own module table
+      // either way, and the bytes for a warning here do not clear the
+      // core budget (measured: +34 gz at level 6 for the long wording,
+      // +17 for the shortest). Re-measure the clearance against
+      // budget_test.go's comment history before spending it rather
+      // than trusting a number written here; it moves under the
+      // kernel. The finding is recorded in
+      // docs/spec-behavior-registry.md.
+      return [];
+    }
+  })();
+
+  // Demand-loaded modules — the kernel's table and registered
+  // descriptors alike — may declare interactions that must survive
+  // their own cold-cache fetch. This bridge is deliberately
+  // metadata-driven: core owns event retention/replay, while feature
+  // modules and registered behaviours own selectors and behavior. No
+  // optional component's selectors or policy are hard-coded in the
+  // always-loaded runtime, and the loop body below is the same for
+  // both tables: what it does with a descriptor is already right.
   const _interactionReplay = new WeakSet();
   const _warnModuleUnavailable = (name) => {
     console.warn('[gofastr] ' + name + ' module unavailable — retrying may help');
   };
+  // The selector is guarded, not trusted. The Go registry validates
+  // every descriptor it builds, but the behaviours block is JSON the
+  // host hands the page, and a hand-written or corrupted one can carry
+  // a well-shaped entry whose selector the browser refuses — or a
+  // keydown with no scope, where querySelector('') throws. That throw
+  // lands here, inside an async listener, long after the parser's try:
+  // an unhandled rejection on every such event, retention silently
+  // dead, nothing in the page saying why. Refusing to resolve a node
+  // is the same answer as not matching one.
   const _interactionNode = (e, spec) => {
-    if (spec.event === 'keydown') {
-      if (!spec.keys || !spec.keys.includes(e.key) ||
-          !document.querySelector(spec.scope || '')) return null;
-      return e.target && e.target.dispatchEvent ? e.target : document.body;
-    }
-    return e.target && e.target.closest && e.target.closest(spec.selector);
+    try {
+      if (spec.event === 'keydown') {
+        if (!spec.keys || !spec.keys.includes(e.key) ||
+            !document.querySelector(spec.scope || '')) return null;
+        return e.target && e.target.dispatchEvent ? e.target : document.body;
+      }
+      return e.target && e.target.closest && e.target.closest(spec.selector);
+    } catch (_) { return null; }
   };
   const _replayInteraction = (e, node) => {
     const init = { bubbles: true, cancelable: true, composed: true };
@@ -534,7 +593,7 @@
     }
     node.dispatchEvent(replay);
   };
-  for (const marker of _moduleMarkers) {
+  for (const marker of _moduleMarkers.concat(_registered)) {
     for (const spec of marker.interactions || []) {
       document.addEventListener(spec.event, async (e) => {
         const node = _interactionNode(e, spec);
@@ -552,31 +611,6 @@
       });
     }
   }
-
-  // Registered behaviours (registry.RegisterBehavior): a component's own
-  // package ships its module and declares its markers; the host lists
-  // them beside the manifest, live pages as window.__gofastr_behaviors
-  // from /__gofastr/manifest.js, exports and the embed frame as the
-  // inline #gofastr-behaviors block. Same scan, same loader, same
-  // module contract as the table above.
-  const _registered = (() => {
-    try {
-      const o = window.__gofastr_behaviors ||
-        JSON.parse((document.getElementById('gofastr-behaviors') || {}).textContent || '{}');
-      // Own entries only: the block is JSON from the host, but the
-      // kernel never reads a registry through the prototype chain.
-      // requires is the r array: the modules loadModule'd before this
-      // one (see the loader above).
-      return Object.entries(o).map(([n, v]) => ({ name: n, selector: v.s.join(','), idle: !!v.i, requires: v.r || [] }));
-    } catch (_) {
-      // Silent on purpose: the kernel boots on its own module table
-      // either way, and the bytes for a warning here do not clear the
-      // core budget (measured: +34 gz at level 6 for the long wording,
-      // +17 for the shortest, against 8 bytes of clearance). The
-      // finding is recorded in docs/spec-behavior-registry.md.
-      return [];
-    }
-  })();
   function _scanForModules(root) {
     const scope = root && root.querySelectorAll ? root : document;
     const idleQueue = [];
