@@ -847,7 +847,7 @@
       // attributes (e.g. on a combobox option) and signal-bound
       // hrefs are the trust boundary; navigate() is the choke point
       // for all programmatic SPA navigation, so the guard lives
-      // here. Reuses the same gate as Lightbox AllowDownload etc.
+      // here. Reuses the same gate as the signal-bound anchors etc.
       if (!this._originOK(path)) return;
       // Document boundary: load a real document instead of swapping.
       // assign/replace keep the push/replace shape the caller asked for.

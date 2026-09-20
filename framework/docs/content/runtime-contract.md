@@ -226,10 +226,11 @@ server side and the runtime does the work.
 | `data-fui-sortable-version="<token>"` | Optional optimistic-concurrency token. When set, appended as a `version` body field to every commit POST. A 409 response then fires the conflict path (refetch `data-fui-sortable-conflict` HTML) instead of a blanket rollback. Without this attr, 409 is treated like any other non-2xx (rollback); back-compat. |
 | `data-fui-sortable-conflict="<rpc>"` | GET endpoint refetched on a 409 response (only when `data-fui-sortable-version` is set). The response body replaces the destination list's `innerHTML`: server-rendered reconciliation (an empty body reconciles the column to zero items, #82). Before refetching, the runtime reads the 409 body under hard bounds (#83): Content-Type MUST be `application/json`, ≤ ~4 KB read, must parse as `{"error":{"code","message":<string>}}`, message capped ~300 chars. A valid message is surfaced via the polite `aria-live` region (replacing the generic copy) + the framework toast surface when wired; malformed/oversized/non-JSON/empty falls back to the generic copy. Without this attr, a 409 falls back to rollback + a `console.warn`. |
 | `data-fui-shortcut-target="<selector>"` | Optional companion to a page-level `data-fui-shortcut-focus` on a non-focusable wrapper: when the chord fires, the runtime focuses the element matched by this selector instead of the wrapper itself. Used by `framework/ui.GlobalSearch` where the chord lives on the wrapper but the focus target is the inner `<input>`. |
-| `data-fui-lightbox="<name>"` | On the slot wrapper of a `framework/ui.Lightbox`: identifies the open viewer for the runtime. Pair with optional `data-fui-lightbox-nav="true"` to enable Prev/Next + ArrowLeft/Right keyboard nav across siblings sharing `data-fui-lightbox-group`. |
-| `data-fui-lightbox-nav="true"` | On the lightbox slot wrapper: opts into the runtime's arrow-key + Prev/Next button navigation. |
-| `data-fui-lightbox-group="<id>"` | On a trigger anchor that opens a Lightbox: identifies the gallery group whose siblings the runtime walks during Prev/Next nav. |
-| `data-fui-lightbox-prev` / `data-fui-lightbox-next` | On Prev/Next buttons inside the open Lightbox: clicking steps to the previous/next image in the gallery group. |
+| `data-fui-lightbox="<name>"` | On the slot wrapper of a `framework/ui.Lightbox`: identifies the open viewer for the lightbox module — a registered behaviour `framework/ui` ships, so the kernel's own tables name no lightbox; the module's cold-load interactions arrive through the behaviours block. Pair with optional `data-fui-lightbox-nav="true"` to enable Prev/Next + ArrowLeft/Right keyboard nav across siblings sharing `data-fui-lightbox-group`. |
+| `data-fui-lightbox-nav="true"` | On the lightbox slot wrapper: opts into the lightbox module's arrow-key + Prev/Next button navigation. |
+| `data-fui-lightbox-group="<id>"` | On a trigger anchor that opens a Lightbox: identifies the gallery group whose siblings the lightbox module walks during Prev/Next nav. |
+| `data-fui-lightbox-prev` / `data-fui-lightbox-next` | On Prev/Next buttons inside the open Lightbox: clicking steps to the previous/next image in the gallery group. The module's registration declares these as its retained click selectors. |
+| `data-fui-lightbox-image` | On the `<img>` inside a Lightbox viewer: the image the module's pinch-to-zoom owns, named by attribute rather than class (the module contract binds attributes only; an unwired `headless.LightboxViewer` publishes the same fact as `data-hui-lightbox-image` — one vocabulary per render, the two spellings never ride the same element). |
 | `data-fui-carousel` | Marks a `framework/ui.Carousel` root. The runtime wires Prev/Next clicks, pagination dot clicks, ArrowLeft/Right keyboard nav, and optional AutoRotate. |
 | `data-fui-carousel-track` | The inner scrolling `<ul>` of a carousel. The runtime reads its `scrollLeft` + slide offsets to compute the current index. |
 | `data-fui-carousel-slide="<i>"` | Marks a slide `<li>` inside the carousel track with its index. |
@@ -262,7 +263,7 @@ server side and the runtime does the work.
 | `data-wizard-steps="<n>"` | On the `<form>` wrapper of a `Wizard` component. The runtime uses this to know the total number of steps for navigation. |
 | `data-fui-drag-dismiss="true"` | On a widget root whose Definition has `DragDismiss=true` (e.g. `preset.BottomSheet`). Driven by the demand-loaded `runtime/src/dragdismiss.js` module (the marker itself is the load trigger: present at boot for SSR-inlined sheets; dynamically-opened chrome is caught by the MutationObserver scan). Drag starts only from the `data-fui-drag-handle` bar; the module follows pointer Y movement with `transform: translateY` and closes the widget on `pointerup` when distance > 80px or downward velocity > 0.5 px/ms. Snaps back otherwise. While dragging, `data-fui-dragging` is set on the root (used by CSS to suppress conflicting animations). |
 | `data-fui-drag-handle="true"` | On the visible drag-handle bar rendered at the top of a drag-dismiss-enabled widget. Marks the affordance for cursor styling; the actual pointer logic is delegated from the widget root. |
-| `data-fui-zoomed` | Written by the runtime onto a `.ui-lightbox__full` image when the user has pinch-zoomed past 1×. CSS uses it to flip the cursor from `zoom-in` to `grab` and to enable single-pointer panning. Cleared on snap-back and on lightbox close. |
+| `data-fui-zoomed` | Written by the lightbox module onto the viewer's `[data-fui-lightbox-image]` image when the user has pinch-zoomed past 1×. CSS uses it to flip the cursor from `zoom-in` to `grab` and to enable single-pointer panning. Cleared on snap-back and on lightbox close. |
 | `data-fui-trusted` | Marks a server-emitted region as trusted to host the legacy `data-kiln-tool` click/submit delegators. Without this ancestor (or `<body class="kiln-app">`), the legacy delegator refuses to dispatch, preventing stored-XSS content from forging authenticated kiln-tool POSTs. Apply only to chrome you fully control. |
 | `data-fui-sidebar` | Emitted by `framework/ui.Sidebar` on its `<div>` root. The sidebar runtime module scopes collapse state and controls to this element (styling still keys off `.ui-sidebar` classes). |
 | `data-fui-sidebar-collapse` | On a collapsible sidebar's toggle button. Demand-loads the sidebar module, toggles the compact rail, and keeps `aria-expanded` and the button's `aria-label` synchronized. |
@@ -451,7 +452,10 @@ fetch the console reports nothing on its own.
 
 Registered markers use the package's own `data-` prefix; a
 `data-fui-*` marker is admitted only when the attribute is in the table
-above. The module is held to the same source lints as the kernel's own
+above — and a `data-fui-*` attribute named by an interaction selector
+(a click's `Selector`, a keydown's `Scope`) is held to the same rule by
+`TestInteractionSelectorsInTheTreeUseDocumentedDataFuiAttrs`. The
+module is held to the same source lints as the kernel's own
 (`core-ui/check`: no `var`, no selector or storage key built from a raw
 value, and the rest): the clean-tree tests find every registered
 behaviour through its `//go:embed` directive. Contract and rules:

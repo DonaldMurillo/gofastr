@@ -118,6 +118,22 @@ type Strings struct {
 	// count nor the names exist until the reader has picked.
 	FilesSelected string
 
+	// ─── Lightbox viewer ────────────────────────────────────────────
+
+	// LightboxViewerLabel is the accessible name of the open image
+	// viewer: what a screen reader says when the viewer takes focus.
+	// A short noun phrase; the image's own alt travels beside it.
+	LightboxViewerLabel string
+	// LightboxPrevious and LightboxNext name the viewer's nav buttons.
+	// They name the action on this surface ("Previous image"), not the
+	// pager's bare word: a reader inside a viewer needs to know what
+	// stepping moves.
+	LightboxPrevious string
+	LightboxNext     string
+	// LightboxDownload names the anchor that saves the image being
+	// viewed.
+	LightboxDownload string
+
 	// ─── ValidationSummary ──────────────────────────────────────────
 
 	// ThereIsAProblem heads the list a failed submit focuses. A short
@@ -150,6 +166,11 @@ var defaultStrings = Strings{
 
 	FileSelected:  "{name} selected.",
 	FilesSelected: "{n} files selected: {names}.",
+
+	LightboxViewerLabel: "Image viewer",
+	LightboxPrevious:    "Previous image",
+	LightboxNext:        "Next image",
+	LightboxDownload:    "Download image",
 
 	ThereIsAProblem: "There is a problem",
 }

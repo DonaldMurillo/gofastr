@@ -34,7 +34,7 @@
   //     (#fui-route-announce) stay unwrapped.
   //
   // lockScroll/unlockScroll refcount by OWNER (a Set), so two
-  // concurrent lockers, a modal over a lightbox, a drawer over a
+  // concurrent lockers, a modal over an image overlay, a drawer over a
   // modal, can't fight over documentElement.style.overflow: the lock
   // releases only when the LAST owner unlocks. (Lock lives on <html>,
   // not <body>: overflow:hidden on <body> breaks position:sticky
@@ -234,8 +234,9 @@
         payloads.
 
         This is the runtime-side guard against signal-bound `href` on
-        Lightbox AllowDownload + any other widget that mirrors an
-        attacker-controllable signal into a click-triggered attribute.
+        a media viewer's download control + any other widget that
+        mirrors an attacker-controllable signal into a click-triggered
+        attribute.
     */
     _isUnsafeSignalUrl(attr, value) {
       if (!attr) return false;
@@ -708,7 +709,7 @@
           // URL-bearing attrs (href / src / action / xlink:href /
           // formaction): reject dangerous schemes (javascript:,
           // vbscript:, data: except data:image/*). Stops a signal-
-          // driven anchor (e.g. Lightbox AllowDownload) from
+          // driven anchor (e.g. a media viewer's download) from
           // executing arbitrary JS when an attacker controls the
           // signal value via a query-string deeplink param.
           if (window.__gofastr._isUnsafeSignalUrl(attr, v)) v = '';
@@ -1678,7 +1679,7 @@
       // attributes (e.g. on a combobox option) and signal-bound
       // hrefs are the trust boundary; navigate() is the choke point
       // for all programmatic SPA navigation, so the guard lives
-      // here. Reuses the same gate as Lightbox AllowDownload etc.
+      // here. Reuses the same gate as the signal-bound anchors etc.
       if (!this._originOK(path)) return;
       // Document boundary: load a real document instead of swapping.
       // assign/replace keep the push/replace shape the caller asked for.
@@ -2354,10 +2355,6 @@
     // SortableList: HTML5 drag + keyboard reorder. POSTs new order on commit.
     { name: 'sortablelist',    selector: '[data-fui-sortable]' },
     { name: 'shortcut',        selector: '[data-fui-shortcut-focus],[data-fui-shortcut-click]' },
-    { name: 'lightbox',        selector: '[data-fui-comp="ui-lightbox"][data-fui-lightbox]', interactions: [
-      { event: 'click', selector: '[data-fui-lightbox-prev],[data-fui-lightbox-next]' },
-      { event: 'keydown', scope: '[data-fui-widget]:not([hidden]) [data-fui-comp="ui-lightbox"][data-fui-lightbox]', keys: ['ArrowLeft', 'ArrowRight'] },
-    ] },
     { name: 'carousel',        selector: '[data-fui-carousel]' },
     { name: 'themeswitch',     selector: '[data-fui-theme-toggle]' },
     { name: 'sidebar', selector: '[data-fui-sidebar-collapse],[data-fui-sidebar-group-toggle]' },

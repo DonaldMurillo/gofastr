@@ -238,7 +238,13 @@ the kernel's bridge installs its retention listeners over the
 registered descriptors exactly as over its own table. That was the
 prerequisite the lightbox move waited on (sequence step 5's ordering
 note), because a lightbox's first click or arrow key can land while
-its module is still cold-fetching.
+its module is still cold-fetching. The lightbox then moved
+(2026-09-20, same day): `framework/ui/lightbox.js` is the first
+registered module that declares interactions — the prev/next clicks
+and the arrow keys over an open viewer — and with it the kernel's
+table and bridge literals lost their last interaction entry. The
+kernel names no lightbox at all now; `TestRuntimeDemandInteractionBridgeIsGeneric`
+fails on one appearing again.
 
 - `registry.Requires(names...)` declares the modules that must be
   loaded before this one. A name is an embedded kernel module or a
@@ -420,8 +426,12 @@ Dependencies and the primitive add:
    `ui-*` literals leave the runtime with it. The interaction bridge
    reads registered descriptors too before lightbox moves. (Done
    2026-09-20: `registry.Interactions`, the manifest's `x` field, and
-   the kernel's merged install loop — this change is what unblocks
-   the lightbox move.)
+   the kernel's merged install loop — this change is what unblocked
+   the lightbox move, which landed with it: the lightbox is the first
+   of these moves, the module, its viewer anatomy
+   (`framework/headless.LightboxViewer`) and its descriptor all owned
+   by the component's packages, and the kernel's table holds no
+   lightbox entry.)
 6. `core-ui/patterns`, the same way. What remains in `core-ui/runtime`
    is the kernel, its fragments, and the kernel-side modules: the
    primitives, the manifest-driven loaders and the widget internals.

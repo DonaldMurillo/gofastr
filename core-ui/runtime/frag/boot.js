@@ -460,10 +460,6 @@
     // SortableList: HTML5 drag + keyboard reorder. POSTs new order on commit.
     { name: 'sortablelist',    selector: '[data-fui-sortable]' },
     { name: 'shortcut',        selector: '[data-fui-shortcut-focus],[data-fui-shortcut-click]' },
-    { name: 'lightbox',        selector: '[data-fui-comp="ui-lightbox"][data-fui-lightbox]', interactions: [
-      { event: 'click', selector: '[data-fui-lightbox-prev],[data-fui-lightbox-next]' },
-      { event: 'keydown', scope: '[data-fui-widget]:not([hidden]) [data-fui-comp="ui-lightbox"][data-fui-lightbox]', keys: ['ArrowLeft', 'ArrowRight'] },
-    ] },
     { name: 'carousel',        selector: '[data-fui-carousel]' },
     { name: 'themeswitch',     selector: '[data-fui-theme-toggle]' },
     { name: 'sidebar', selector: '[data-fui-sidebar-collapse],[data-fui-sidebar-group-toggle]' },

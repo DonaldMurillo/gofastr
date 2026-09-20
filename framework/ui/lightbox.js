@@ -1,5 +1,10 @@
-// Lightbox runtime module, arrow nav + image preload + tiny extras
-// on top of the framework's preset.Modal machinery.
+// lightbox: the behaviour module framework/ui's Lightbox viewer ships.
+// Registered beside the Go that renders the markup it binds
+// (registry.RegisterBehavior in lightbox.go), served as the runtime
+// module "lightbox", and bound — like every module this package owns —
+// to data-fui-* hooks only, never to a class and never to a data-hui-*
+// hook (those are the headless anatomy's, for a host writing its own
+// viewer module).
 //
 // Responsibilities (all opt-in via Lightbox config):
 //
@@ -8,18 +13,41 @@
 //      anchors that share data-fui-lightbox-group=<id>. The current
 //      index is the position of the trigger that opened the modal.
 //
-//   2. Prev/Next button click → step the index, programmatically
-//      click the next trigger so the existing data-fui-open + signal
-//      pipeline swaps src/alt/caption.
+//   2. Prev/Next button click → step the index and re-open the widget
+//      with the sibling's deeplink params, so the existing
+//      data-fui-open + signal pipeline swaps src/alt/caption.
 //
 //   3. ArrowLeft / ArrowRight while the modal is open → same.
 //
 //   4. After every open, preload the previous + next image in the
 //      sequence so Arrow-key nav feels instant.
 //
-// Loaded on-demand when an [data-fui-lightbox] marker is in the DOM.
+//   5. Pinch-to-zoom on the image (data-fui-lightbox-image): the
+//      gesture math is behaviour, but it writes presentation state —
+//      style.transform and data-fui-zoomed, both consumed by the
+//      component's stylesheet — so it is ui-layer media handling and
+//      lives here, keyed on the attribute the component owns.
+//
+// The widget surface it depends on (openWidget, the signal store, the
+// triggers' data-fui-deeplink) is declared on the registration as
+// Requires("widgets"). Loaded on demand when a [data-fui-lightbox]
+// marker is in the DOM; its prev/next clicks and arrow keys are
+// retained through its own cold-cache fetch by the interaction bridge,
+// from the interactions the registration declares.
 (function () {
   'use strict';
+  const NAME = 'lightbox';
+  const NS = window.__gofastr = window.__gofastr || {};
+  // The kernel fetches a module once per page, but anything that
+  // evaluates this file a second time must bind nothing twice.
+  if (NS.loadedModules && Object.prototype.hasOwnProperty.call(NS.loadedModules, NAME)) return;
+
+  // The loaded flag is set before anything installs, the contract
+  // every registered module keeps: a script that failed halfway has
+  // its cached promise dropped, so a retry re-executes this file and
+  // would install every listener of the first pass a second time.
+  NS.loadedModules = NS.loadedModules || {};
+  NS.loadedModules[NAME] = true;
 
   // Per-instance open state, keyed by the lightbox's modal element
   // ([data-fui-widget]). The previous single module-scoped `state` plus
@@ -30,7 +58,7 @@
   const states = new WeakMap(); // modal element → state
 
   function viewerOfModal(modal) {
-    return modal && modal.querySelector('[data-fui-comp="ui-lightbox"][data-fui-lightbox]');
+    return modal && modal.querySelector('[data-fui-lightbox]');
   }
 
   // The topmost OPEN lightbox modal, last open one in DOM order, which
@@ -38,7 +66,7 @@
   // element to resolve the active lightbox from.
   function findOpenModal() {
     let open = null;
-    document.querySelectorAll('[data-fui-comp="ui-lightbox"][data-fui-lightbox]').forEach(function (v) {
+    document.querySelectorAll('[data-fui-lightbox]').forEach(function (v) {
       const m = modalOf(v);
       if (isOpen(m)) open = m;
     });
@@ -207,7 +235,7 @@
 
   function scan(root) {
     const scope = root && root.querySelectorAll ? root : document;
-    scope.querySelectorAll('[data-fui-comp="ui-lightbox"][data-fui-lightbox]').forEach(function (v) {
+    scope.querySelectorAll('[data-fui-lightbox]').forEach(function (v) {
       const m = modalOf(v);
       if (m) watch(m);
     });
@@ -251,7 +279,7 @@
   });
 
   // ─── Pinch-to-zoom ─────────────────────────────────────────────────
-  // Two-pointer pinch on the .ui-lightbox__full <img>:
+  // Two-pointer pinch on the [data-fui-lightbox-image] <img>:
   //   - Scale is bounded to [1.0, 4.0]; below 1.0 snaps back on release.
   //   - When scaled >1.0, single-pointer drag pans the image.
   //   - Double-tap toggles 1× ↔ 2×.
@@ -259,6 +287,11 @@
   // The pinch state is per-viewer instance (one open lightbox at a time
   // in practice, but we key by the element to stay correct). On modal
   // close the transform is reset so the next open starts at 1×.
+  //
+  // The image is found by the attribute the component owns, never by a
+  // class: a class map may rename every class, and a module that binds
+  // by class binds markup it cannot see (the registered-module
+  // contract's first rule).
   function _installPinchZoom() {
     if (document.__fuiLightboxPinch) return;
     document.__fuiLightboxPinch = true;
@@ -301,7 +334,7 @@
       return Math.hypot(dx, dy);
     }
     function isLightboxImg(target) {
-      return target && target.matches && target.matches('.ui-lightbox__full');
+      return target && target.matches && target.matches('[data-fui-lightbox-image]');
     }
     document.addEventListener('pointerdown', (e) => {
       if (!isLightboxImg(e.target)) return;
@@ -394,7 +427,7 @@
     // Reset zoom whenever the lightbox modal closes.
     function resetAllOnClose(modal) {
       if (isOpen(modal)) return;
-      modal.querySelectorAll('.ui-lightbox__full').forEach((img) => {
+      modal.querySelectorAll('[data-fui-lightbox-image]').forEach((img) => {
         const st = zoomStates.get(img);
         if (st) reset(img, st);
       });
@@ -404,7 +437,7 @@
     // a viewer (initial + SPA-nav + MutationObserver re-scan).
     pinchScannerHook = function (root) {
       const scope = root && root.querySelectorAll ? root : document;
-      scope.querySelectorAll('[data-fui-comp="ui-lightbox"][data-fui-lightbox]').forEach((v) => {
+      scope.querySelectorAll('[data-fui-lightbox]').forEach((v) => {
         const m = modalOf(v);
         if (!m || m.dataset.fuiLightboxPinchWatched === '1') return;
         m.dataset.fuiLightboxPinchWatched = '1';
@@ -419,11 +452,9 @@
   let pinchScannerHook = null;
   _installPinchZoom();
 
-  window.__gofastr = window.__gofastr || {};
-  window.__gofastr.lightbox = { rescan: scan };
-  window.__gofastr._moduleScanners = window.__gofastr._moduleScanners || {};
-  window.__gofastr._moduleScanners.lightbox = scan;
-  (window.__gofastr.loadedModules ||= {}).lightbox = true;
+  NS.lightbox = { rescan: scan };
+  NS._moduleScanners = NS._moduleScanners || {};
+  NS._moduleScanners[NAME] = scan;
   scan(document);
   window.addEventListener('gofastr:navigate', function () { scan(document); });
 })();

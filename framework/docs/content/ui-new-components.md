@@ -493,8 +493,11 @@ helpful pre-flight read for human reviewers.
 - **Writing a new runtime module when composition already covers it.**
   Check `preset.Modal` / `preset.Popover` / `preset.Drawer` +
   `data-fui-open` + `data-fui-deeplink` + signal binding first.
-  Lightbox and NotificationBell ship with zero new JS by composing
-  them. New modules are the expensive path (budget, tests, docs).
+  NotificationBell ships with zero new JS by composing them; the
+  Lightbox composed the same primitives and then earned a module for
+  the behaviour composition cannot give (gallery stepping,
+  pinch-zoom). New modules are the expensive path (budget, tests,
+  docs).
 - **Styling a component from `examples/site/styles.go`.** Top-level
   `.ui-*` rules in the site stylesheet are forbidden; the site chrome
   is page-only. A component owns its CSS via `registry.RegisterStyle`

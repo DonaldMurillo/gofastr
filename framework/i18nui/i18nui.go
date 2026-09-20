@@ -103,6 +103,7 @@ const (
 	KeyPasswordInputHide Key = "ui.passwordInput.hide"
 
 	// Lightbox
+	KeyLightboxLabel    Key = "ui.lightbox.label"
 	KeyLightboxPrev     Key = "ui.lightbox.previous"
 	KeyLightboxNext     Key = "ui.lightbox.next"
 	KeyLightboxDownload Key = "ui.lightbox.download"
@@ -312,10 +313,10 @@ var Defaults = map[Key]string{
 
 	KeyPasswordInputShow: "Show password",
 	KeyPasswordInputHide: "Hide password",
-
-	KeyLightboxPrev:     "Previous image",
-	KeyLightboxNext:     "Next image",
-	KeyLightboxDownload: "Download image",
+	KeyLightboxLabel:     "Image viewer",
+	KeyLightboxPrev:      "Previous image",
+	KeyLightboxNext:      "Next image",
+	KeyLightboxDownload:  "Download image",
 
 	KeyStepWizardBack:   "Back",
 	KeyStepWizardNext:   "Continue",
@@ -591,7 +592,7 @@ func AllKeys() []Key {
 		KeyProgressLabel, KeyTagRemove,
 		KeyRepeaterAdd, KeyRepeaterRemove, KeyRepeaterRemoveItem,
 		KeyPasswordInputShow, KeyPasswordInputHide,
-		KeyLightboxPrev, KeyLightboxNext, KeyLightboxDownload,
+		KeyLightboxLabel, KeyLightboxPrev, KeyLightboxNext, KeyLightboxDownload,
 		KeyStepWizardBack, KeyStepWizardNext, KeyStepWizardSubmit,
 		KeyStepWizardStep, KeyStepWizardStepOf,
 		KeySectionLabel,

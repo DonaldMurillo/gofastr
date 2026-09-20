@@ -78,6 +78,15 @@ var stringsKeys = map[string]i18nui.Key{
 
 	// ValidationSummary's heading.
 	"ThereIsAProblem": i18nui.KeyValidationProblem,
+
+	// The lightbox viewer's accessible name and its three controls.
+	// Prev/Next/Download reuse the keys the config-struct Lightbox
+	// already resolved through Ctx; the label is new with the headless
+	// viewer and its English is the default the config carried.
+	"LightboxViewerLabel": i18nui.KeyLightboxLabel,
+	"LightboxPrevious":    i18nui.KeyLightboxPrev,
+	"LightboxNext":        i18nui.KeyLightboxNext,
+	"LightboxDownload":    i18nui.KeyLightboxDownload,
 }
 
 // StringsFor resolves a headless.Strings from the request's context:

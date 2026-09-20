@@ -244,9 +244,10 @@ server side and the runtime does the work.
 | `data-fui-sortable-version="<token>"` | Optional optimistic-concurrency token. When set, appended as a `version` body field to every commit POST. A 409 response then fires the conflict path (refetch `data-fui-sortable-conflict` HTML) instead of a blanket rollback. Without this attr, 409 is treated like any other non-2xx (rollback), the back-compat behavior. |
 | `data-fui-sortable-conflict="<rpc>"` | GET endpoint refetched on a 409 response (only when `data-fui-sortable-version` is set). The response body replaces the destination list's `innerHTML`: server-rendered reconciliation (an empty body reconciles the column to zero items, #82). Before refetching, the runtime reads the 409 response body under hard safety bounds (#83): Content-Type MUST be `application/json`, at most ~4 KB is read, the body MUST parse as `{"error":{"code","message":<string>}}`, and `error.message` is capped at ~300 chars. When a valid message is present it is surfaced through the polite `aria-live` region (replacing the generic copy) and the framework toast surface (`__gofastr.toast`) when wired; any malformed / oversized / non-JSON / empty body falls back to today's generic copy. Without this attr, a 409 falls back to rollback + a `console.warn`. |
 | `data-fui-shortcut-target="<selector>"` | Optional companion to a page-level `data-fui-shortcut-focus` on a non-focusable wrapper: when the chord fires, the runtime focuses the element matched by this selector instead of the wrapper itself. Used by `framework/ui.GlobalSearch` where the chord lives on the wrapper but the focus target is the inner `<input>`. |
-| `data-fui-lightbox="<name>"` | On the slot wrapper of a `framework/ui.Lightbox`: identifies the open viewer for the runtime. Pair with optional `data-fui-lightbox-nav="true"` to enable Prev/Next + ArrowLeft/Right keyboard nav across siblings sharing `data-fui-lightbox-group`. |
-| `data-fui-lightbox-nav="true"` | On the lightbox slot wrapper: opts into the runtime's arrow-key + Prev/Next button navigation. |
-| `data-fui-lightbox-group="<id>"` | On a trigger anchor that opens a Lightbox: identifies the gallery group whose siblings the runtime walks during Prev/Next nav. |
+| `data-fui-lightbox="<name>"` | On the slot wrapper of a `framework/ui.Lightbox`: identifies the open viewer for the lightbox module (a registered behaviour `framework/ui` ships; the kernel's own tables name no lightbox). Pair with optional `data-fui-lightbox-nav="true"` to enable Prev/Next + ArrowLeft/Right keyboard nav across siblings sharing `data-fui-lightbox-group`. |
+| `data-fui-lightbox-nav="true"` | On the lightbox slot wrapper: opts into the lightbox module's arrow-key + Prev/Next button navigation. |
+| `data-fui-lightbox-image` | On the `<img>` inside a Lightbox viewer: the image the module's pinch-to-zoom owns. Present so the zoom targets an attribute, never a class (a class map may rename every class); an unwired `headless.LightboxViewer` publishes the same fact as `data-hui-lightbox-image` — the two spellings are alternatives, one vocabulary per render. |
+| `data-fui-lightbox-group="<id>"` | On a trigger anchor that opens a Lightbox: identifies the gallery group whose siblings the lightbox module walks during Prev/Next nav. |
 | `data-fui-lightbox-prev` / `data-fui-lightbox-next` | On Prev/Next buttons inside the open Lightbox: clicking steps to the previous/next image in the gallery group. |
 | `data-fui-carousel` | Marks a `framework/ui.Carousel` root. The runtime wires Prev/Next clicks, pagination dot clicks, ArrowLeft/Right keyboard nav, and optional AutoRotate. |
 | `data-fui-carousel-track` | The inner scrolling `<ul>` of a carousel. The runtime reads its `scrollLeft` + slide offsets to compute the current index. |
@@ -285,7 +286,7 @@ server side and the runtime does the work.
 | `data-fui-plugin-for="<json,md>"` | Plugin-defined extension attribute (wysiwyg): names the hidden form fields the host adapter mirrors `docChanged` content into. Plugins may add namespaced `data-fui-plugin-*` extras via `MountConfig.Attributes`; document them in the owning plugin. |
 | `data-fui-plugin-fallback` | Wraps the server-rendered pre-hydration node inside the plugin mount marker (`MountConfig.Fallback`). The broker shows it while the frame loads, hides it — never removes it — on the frame's `ready`, and swaps back to it on `bootError` (a dead frame degrades to the static node, not an empty box). |
 | `data-fui-drag-handle="true"` | On the visible drag-handle bar rendered at the top of a drag-dismiss-enabled widget. Marks the affordance for cursor styling; the actual pointer logic is delegated from the widget root. |
-| `data-fui-zoomed` | Written by the runtime onto a `.ui-lightbox__full` image when the user has pinch-zoomed past 1×. CSS uses it to flip the cursor from `zoom-in` to `grab` and to enable single-pointer panning. Cleared on snap-back and on lightbox close. |
+| `data-fui-zoomed` | Written by the lightbox module onto the viewer's `[data-fui-lightbox-image]` image when the user has pinch-zoomed past 1×. CSS uses it to flip the cursor from `zoom-in` to `grab` and to enable single-pointer panning. Cleared on snap-back and on lightbox close. |
 | `data-behavior="/__gofastr/widget/<id>.js"` | On a `[data-widget]` / `[data-component]` root: the behaviour script the runtime appends as `<script src>` on first hydration. **The runtime's most privileged attribute**: it is a script-loading sink, so the value is matched against exactly the shape `core-ui/component` emits and anything else is refused with a console warning. Never hand-write it. |
 | `data-widget="<id>"` | Widget root marker. Names the widget for hydration, chrome lookup, and `X-FUI-Widget` on scoped RPCs. |
 | `data-component="<id>"` | Component island root marker. The hydration counterpart of `data-widget` for non-widget islands; `data-action` handlers resolve their component id by walking up to it. |
@@ -454,8 +455,11 @@ that appear in BOTH `runtime.js` and a `src/*.js` module are core's
 load/dispatch glue (`_scanForModules`, `dispatchRPC`'s widget-scoping
 reads), not ownership. Registered behaviours (`registry.RegisterBehavior`,
 "Component behaviour" below) are outside this map on purpose: they own
-their own prefix, and the scanner learns their markers from the
-behaviours block rather than from the table. An attribute owned by a `src/<name>.js` module maps
+their own prefix or — for the ones that bind documented `data-fui-*`
+wiring, like the optimistic/toggle action adapters and the lightbox —
+attributes a registered source reads, not anything in this package;
+the scanner learns their markers from the behaviours block rather than
+from the table. An attribute owned by a `src/<name>.js` module maps
 to that module. `data-fui-compute` is the one overlap to note: it is owned
 by the `compute` core fragment (which step 2 extracts from today's
 `src/compute.js`), not by the module of the same name.
@@ -1590,6 +1594,25 @@ keydown the keys and the scope selector that arms the retention) —
 the behaviours block carries them as `x`, and the kernel installs its
 retention listeners over the registered descriptors exactly as over
 its own table; a behaviour that declares none pays nothing.
+The lightbox is the
+first module to declare interactions: prev/next clicks and the arrow
+keys over an open viewer, retained through the module's cold-cache
+fetch exactly as they were when the kernel's table carried them.
+Its layer split is the seam's working example: the viewer's anatomy
+is `framework/headless.LightboxViewer` (structure, roles, and
+`data-hui-lightbox*` hooks that render exactly when `LightboxWiring`
+is zero — the path a host's own viewer module binds), the
+styled `framework/ui.Lightbox` renders through it dressed with the
+fui-lightbox class map and the `data-fui-lightbox*` wiring instead of
+the hui hooks (a viewer that rendered both would invite a host module
+to double-bind the gallery the framework module steps), and the
+module — registered in the same file — binds `data-fui-*` only (the
+filedropzone rule: a ui-owned module never reads a `data-hui-*` hook),
+pinch-zoom included, which targets the image by
+`data-fui-lightbox-image` and not by the class it wore before the
+move. The kernel's table, `preload.go` and this file's ownership map
+lost their lightbox rows with it.
+
 Readiness is registration, not transport:
 the loader resolves a module's promise when `loadedModules[name]` is an
 own truthy property after the script ran, and a script that ran and
@@ -1696,7 +1719,7 @@ core-ui/
                  animate, animatedcounter, backtosop, banner, carousel,
                  combobox, compute, computed, copy,
                  dragdismiss, dropdown,
-                 formrepeater, infinitescroll, lightbox, menu,
+                 formrepeater, infinitescroll, menu,
                  multiselect, networkretrybanner, numberinput,
                  optimisticaction, popover, rangeslider,
                  reveal, scrollspy, searchinput, shortcut, slider,

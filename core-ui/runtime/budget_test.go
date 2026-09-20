@@ -70,9 +70,20 @@ const (
 	// anti-vacuity self-test was re-run against the padded fixture,
 	// not assumed.
 	//
-	// Re-measure after a merge, not before: this line is a measurement,
-	// and a change landing on main under it invalidates the number, not
-	// the rule.
+	// 2026-09-20, the lightbox leaves the kernel for a registered
+	// behaviour (framework/ui/lightbox.js): boot.js's _moduleMarkers
+	// entry — the only one carrying interactions — and its interaction
+	// literals left the table, taking the real bundle 13325 → 13242 at
+	// level 6 (−83; raw 43948 → 43664). Measured on the rebased tree:
+	// the first measurement read 13236, before the layer below gained
+	// the guard that wraps the bridge's selector resolution, and the
+	// rebase is exactly the merge the rule under this entry warns
+	// about. The line did not move:
+	// TestCoreBudgetRejectsCliffOverflow's padded fixture still crosses
+	// the level-1 window (re-run, not assumed), so the bracket holds
+	// [real 13242, fixture crossing] and the line carries 130 bytes of
+	// clearance.
+	// Re-measure after a merge, not before.
 	coreGoalGZ = 12*1024 + 1084
 	// 14.7 KB, not the 14 KB initial congestion window it started as.
 	//
@@ -189,6 +200,15 @@ const (
 	// bracket was re-verified by running
 	// TestCoreBudgetRejectsCliffOverflow against the padded fixture,
 	// not by arithmetic.
+	//
+	// 2026-09-20, the lightbox leaves the kernel for a registered
+	// behaviour (the same boot.js removal as the level-6 entry above):
+	// the real bundle 15386 → 15288 at level 1 (−98). Measured on the
+	// rebased tree, for the reason the level-6 entry gives. The line
+	// did not move — the padded fixture still crosses it (re-run, not
+	// assumed), so the bracket holds [real 15288, fixture crossing]
+	// and the line carries 155 bytes of clearance.
+	// Re-measure after a merge, not before.
 	coreCongestionWindowGZ = 14*1024 + 1107
 )
 

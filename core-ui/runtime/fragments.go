@@ -308,14 +308,10 @@ var moduleAttrs = map[string][]string{
 		"data-fui-intercept-as",
 		"data-fui-intercept-close",
 	},
-	"lightbox": {
-		"data-fui-lightbox",
-		"data-fui-lightbox-group",
-		"data-fui-lightbox-nav",
-		"data-fui-lightbox-next",
-		"data-fui-lightbox-prev",
-		"data-fui-zoomed",
-	},
+	// Lightbox's wiring (data-fui-lightbox*, data-fui-zoomed) moved to
+	// framework/ui/lightbox.js, a registered behaviour: its attributes
+	// are read by a registered source, not by anything in this package,
+	// so they left this table.
 	"menu": {
 		"data-fui-menu",
 		"data-fui-menu-radio",
