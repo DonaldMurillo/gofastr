@@ -91,7 +91,12 @@ func TestE2E_FileDropzone_PreviewStripRendersThumbnails(t *testing.T) {
 			const input = document.querySelector('input[data-fui-dropzone-preview]');
 			if (!input) return '';
 			const dt = new DataTransfer();
-			dt.items.add(new File(['x'], 'photo.png', {type: 'image/png'}));
+			// The image's name is hostile on purpose: the strip puts a
+			// filename into an alt, and the old runtime test that
+			// pinned that sink is gone with its module. Assigning to
+			// .alt is a property write, not a parse, so this asserts
+			// the sink stays a property write.
+			dt.items.add(new File(['x'], '"><img src=x onerror="window.__stripXSS=1">.png', {type: 'image/png'}));
 			dt.items.add(new File(['y'], 'notes.txt', {type: 'text/plain'}));
 			input.files = dt.files;
 			input.dispatchEvent(new Event('change', {bubbles: true}));
@@ -106,16 +111,22 @@ func TestE2E_FileDropzone_PreviewStripRendersThumbnails(t *testing.T) {
 				alts: imgs.map((i) => i.alt),
 				srcs: imgs.map((i) => i.src.slice(0, 10)),
 				list: (document.querySelector('[data-fui-comp="ui-dropzone"] [data-hui-drop-list]') || {textContent: ''}).textContent,
+				// Anything parsed out of the name would land here, and
+				// the canary fires if an onerror ever runs.
+				stray: (document.querySelector('[data-fui-dropzone-preview-for]') || {querySelectorAll: () => []}).querySelectorAll('img[src="x"], script, iframe').length,
+				canary: String(window.__stripXSS || 'clean'),
 			};
 		})())`, &raw),
 	); err != nil {
 		t.Fatalf("chromedp: %v", err)
 	}
 	var state struct {
-		Count int      `json:"count"`
-		Alts  []string `json:"alts"`
-		Srcs  []string `json:"srcs"`
-		List  string   `json:"list"`
+		Count  int      `json:"count"`
+		Alts   []string `json:"alts"`
+		Srcs   []string `json:"srcs"`
+		List   string   `json:"list"`
+		Stray  int      `json:"stray"`
+		Canary string   `json:"canary"`
 	}
 	if err := json.Unmarshal([]byte(raw), &state); err != nil {
 		t.Fatalf("json: %v", err)
@@ -124,14 +135,21 @@ func TestE2E_FileDropzone_PreviewStripRendersThumbnails(t *testing.T) {
 	if state.Count != 1 {
 		t.Fatalf("expected 1 preview img for the image file among two chosen, got %d", state.Count)
 	}
-	if len(state.Alts) != 1 || state.Alts[0] != "photo.png" {
+	const hostile = `"><img src=x onerror="window.__stripXSS=1">.png`
+	if len(state.Alts) != 1 || state.Alts[0] != hostile {
 		t.Errorf("preview alt should be the raw filename, got %v", state.Alts)
+	}
+	if state.Stray != 0 {
+		t.Errorf("the filename parsed %d element(s) into the strip — the alt is an HTML sink", state.Stray)
+	}
+	if state.Canary != "clean" {
+		t.Fatal("onerror executed from a filename in the preview strip")
 	}
 	if len(state.Srcs) != 1 || !strings.HasPrefix(state.Srcs[0], "data:image") {
 		t.Errorf("preview src should be a data: URL from FileReader, got %v", state.Srcs)
 	}
 	// The names list (the headless module's half) carries BOTH names.
-	if !strings.Contains(state.List, "photo.png") || !strings.Contains(state.List, "notes.txt") {
+	if !strings.Contains(state.List, hostile) || !strings.Contains(state.List, "notes.txt") {
 		t.Errorf("the chosen-files list should name both files, got %q", state.List)
 	}
 }

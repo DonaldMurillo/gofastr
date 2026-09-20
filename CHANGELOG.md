@@ -590,9 +590,11 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   once it arms and the watched field does not match — because a
   field only a script can reveal is a field a reader without script
   never reaches. A host relying on the old hidden-by-default posture
-  sees its dependent fields on first paint until the module arms
-  (one script tick); the module disables what it hides, so nothing
-  hidden submits. The watched-field attributes are
+  sees its dependent fields on first paint until the module arms.
+  Size that honestly: the headless module is split, so the window is
+  the runtime's load, the marker scan, and a second fetch for the
+  module itself — two round trips on a cold page, not a tick. The
+  module disables what it hides, so nothing hidden submits. The watched-field attributes are
   `data-hui-when` / `data-hui-when-value` (was `data-when-name` /
   `data-when-value`), `ConditionalFieldVisible` folds into
   `ConditionalField` (the server-side pre-show it existed for is the
@@ -672,8 +674,12 @@ are listed under Added above, not here.
 11. **`ui.ConditionalField` renders visible; `ConditionalFieldVisible`
    and `EvaluateInitialState` are gone.** A host relying on
    hidden-by-default sees its dependent fields on first paint until
-   the headless module arms (one script tick); the watched-field
-   attributes are `data-hui-when` / `data-hui-when-value`.
+   the headless module arms — two round trips on a cold page, since
+   the module is split, not one tick. The watched-field attributes
+   are `data-hui-when` / `data-hui-when-value`, and the marker the
+   runtime writes on a control it disables is `data-hui-when-off`
+   (was `data-fui-cond-disabled`): CSS that styled the old one has
+   no target now.
 12. **`ui.FileUpload`'s and `ui.TextArea`'s markup changed.** The
    upload's hint sits inside the zone (`<id>-accept`) with the error
    below it; the filename paragraph is a module-filled list plus a

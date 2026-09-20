@@ -151,9 +151,16 @@ func FileUpload(cfg FileUploadConfig) render.HTML {
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
 	}
-	attrs := html.SafeExtraAttrs(cfg.ExtraAttrs)
-	if attrs == nil {
-		attrs = map[string]string{}
+	// The field wrapper takes the caller's extras, minus the runtime's
+	// own vocabulary: a forged data-hui-drop here would arm a second,
+	// mostly inert drop root around the real one. The hooks belong to
+	// the zone the component renders.
+	attrs := map[string]string{}
+	for k, v := range html.SafeExtraAttrs(cfg.ExtraAttrs) {
+		if strings.HasPrefix(strings.ToLower(k), "data-hui-") {
+			continue
+		}
+		attrs[k] = v
 	}
 	attrs["class"] = cls
 	return fileUploadStyle.WrapHTML(render.Tag("div", attrs, children...))

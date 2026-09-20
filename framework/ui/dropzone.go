@@ -4,6 +4,7 @@ import (
 	"context"
 	_ "embed"
 	"strconv"
+	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
@@ -73,7 +74,10 @@ type FileDropzoneConfig struct {
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers, ARIA overrides) to the dropzone's root div.
 	// Keys the component owns are dropped: class and id (use Class /
-	// ID) and data-fui-*.
+	// ID), data-fui-*, and every data-hui-* key — the drop hooks are
+	// the runtime's contract, not a caller's to forge. A retargeted
+	// data-hui-drop-input would send every drop on this zone to
+	// another input.
 	ExtraAttrs html.Attrs
 
 	// Ctx carries the per-request context used to resolve the prompt,
@@ -218,11 +222,21 @@ func FileDropzone(cfg FileDropzoneConfig) render.HTML {
 		"data-hui-drop-one":   words.FileSelected,
 		"data-hui-drop-many":  words.FilesSelected,
 	}
-	attrs := html.SafeExtraAttrs(cfg.ExtraAttrs)
-	for k, v := range attrs {
-		rootAttrs[k] = v
+	// The caller's extras go on first and the owned hooks over them,
+	// so a forged data-hui-* key cannot retarget the drop or rewrite
+	// the announcement. Every headless component resolves the same
+	// collision the same way: what the component owns wins.
+	merged := map[string]string{}
+	for k, v := range html.SafeExtraAttrs(cfg.ExtraAttrs) {
+		if strings.HasPrefix(strings.ToLower(k), "data-hui-") {
+			continue
+		}
+		merged[k] = v
 	}
-	return dropzoneStyle.WrapHTML(render.Tag("div", rootAttrs, children...))
+	for k, v := range rootAttrs {
+		merged[k] = v
+	}
+	return dropzoneStyle.WrapHTML(render.Tag("div", merged, children...))
 }
 
 // dropzoneHelp joins the caller's Help with the localized size hint.

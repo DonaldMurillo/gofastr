@@ -372,7 +372,7 @@ func ColorSchemeJS() (string, error) {
 }
 
 // Module returns the source of a single split runtime module by name
-// (e.g. "fileupload"). Used by the HTTP server to serve
+// (e.g. "popover"). Used by the HTTP server to serve
 // /__gofastr/runtime/<name>.js. Returns "", false when the module is
 // not embedded. Minified on first read (cached).
 func Module(name string) (string, bool) {

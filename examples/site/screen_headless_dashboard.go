@@ -103,7 +103,7 @@ const (
 // success callout). The SSR page, the query-rendered no-script answer
 // and every island response go through this one function, so the round
 // trip is stateless: the answer is the re-rendered region.
-func renderDashboardSettings(r landingRoute, state dashboardSettingsState) render.HTML {
+func renderDashboardSettings(ctx context.Context, r landingRoute, state dashboardSettingsState) render.HTML {
 	if state.Done {
 		return ui.Callout(ui.CalloutConfig{
 			Variant:  ui.StatusSuccess,
@@ -160,6 +160,10 @@ func renderDashboardSettings(r landingRoute, state dashboardSettingsState) rende
 				return ui.FileUpload(ui.FileUploadConfig{
 					Name: "avatar", ID: c.ID, Label: "Drop an image here, or", Accept: "image/*",
 					MaxSizeMB: 2,
+					// The announcement sentences and the size hint
+					// resolve per request: this page exists to show
+					// the bridge, so it must actually use it.
+					Ctx: ctx,
 				})
 			},
 		}),
@@ -207,9 +211,9 @@ func renderDashboardSettings(r landingRoute, state dashboardSettingsState) rende
 
 // dashboardSettingsRegion is the signal-bound region the island
 // response replaces.
-func dashboardSettingsRegion(r landingRoute, state dashboardSettingsState) render.HTML {
+func dashboardSettingsRegion(ctx context.Context, r landingRoute, state dashboardSettingsState) render.HTML {
 	return interactive.BindHTML(
-		html.Div(html.DivConfig{ID: "hd-settings-region"}, renderDashboardSettings(r, state)),
+		html.Div(html.DivConfig{ID: "hd-settings-region"}, renderDashboardSettings(ctx, r, state)),
 		dashboardSettingsSignal)
 }
 
@@ -306,7 +310,7 @@ func (s *HeadlessDashboardScreen) render(ctx context.Context) render.HTML {
 			ID:          "hd-settings-section",
 			Heading:     "Account settings",
 			Description: "Server-validated. With the runtime: an island swap and focus lands on the summary. Without script: the same POST redirects back and this page re-renders the answer.",
-		}, dashboardSettingsRegion(r, s.Settings)),
+		}, dashboardSettingsRegion(ctx, r, s.Settings)),
 	))
 }
 
@@ -390,7 +394,9 @@ func serveHeadlessSettings(w http.ResponseWriter, r *http.Request) {
 	outcome, errs := dashboardValidate(form)
 	state := dashboardSettingsState{Errors: errs, Done: outcome == dashboardSettingsOK}
 	if island {
-		render.RespondHTML(w, renderDashboardSettings(route, state))
+		// The island answer is a render of its own, so it resolves
+		// its words from the request the same way the page did.
+		render.RespondHTML(w, renderDashboardSettings(r.Context(), route, state))
 		return
 	}
 	// Post-redirect-get: the outcome lives in the dashboard route's

@@ -3,6 +3,8 @@ package ui
 import (
 	"strings"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/core-ui/html"
 )
 
 func TestFileDropzoneRequiresName(t *testing.T) {
@@ -114,5 +116,50 @@ func TestFileDropzoneExtraAttrsOnRoot(t *testing.T) {
 	root := string(h)[:strings.Index(string(h), ">")+1]
 	if !strings.Contains(root, `data-test="hook"`) {
 		t.Errorf("dropzone root missing data-test:\n%s", root)
+	}
+}
+
+// The drop hooks are the runtime's contract. A caller's ExtraAttrs
+// reach the root, but a forged data-hui-* key would retarget every
+// drop on the zone to another input, or rewrite the sentence the
+// module announces — so the component's own attributes win, the way
+// every headless component resolves the same collision.
+func TestFileDropzoneRefusesForgedRuntimeHooks(t *testing.T) {
+	h := string(FileDropzone(FileDropzoneConfig{
+		Name: "docs", ID: "docs", Label: "Drop files",
+		ExtraAttrs: html.Attrs{
+			"data-hui-drop-input": "someone-elses-input",
+			"data-hui-drop-one":   "pwned {name}",
+			"data-testid":         "zone",
+		},
+	}))
+	if strings.Contains(h, "someone-elses-input") {
+		t.Errorf("a forged data-hui-drop-input retargeted the zone:\n%s", h)
+	}
+	if strings.Contains(h, "pwned") {
+		t.Errorf("a forged data-hui-drop-one rewrote the announcement:\n%s", h)
+	}
+	if !strings.Contains(h, `data-hui-drop-input="docs"`) {
+		t.Errorf("the component's own hook did not survive:\n%s", h)
+	}
+	// What the caller is allowed to hang on the root still arrives.
+	if !strings.Contains(h, `data-testid="zone"`) {
+		t.Errorf("a legitimate extra attribute was dropped:\n%s", h)
+	}
+}
+
+// The upload's field wrapper has the milder sibling of the same
+// problem: a forged data-hui-drop there arms a second drop root
+// around the real one.
+func TestFileUploadWrapperRefusesForgedDropHook(t *testing.T) {
+	h := string(FileUpload(FileUploadConfig{
+		Name: "avatar", ID: "avatar", Label: "Avatar",
+		ExtraAttrs: html.Attrs{"data-hui-drop": "", "data-testid": "field"},
+	}))
+	if strings.Count(h, "data-hui-drop=") != 1 {
+		t.Errorf("the wrapper armed a second drop root:\n%s", h)
+	}
+	if !strings.Contains(h, `data-testid="field"`) {
+		t.Errorf("a legitimate extra attribute was dropped:\n%s", h)
 	}
 }
