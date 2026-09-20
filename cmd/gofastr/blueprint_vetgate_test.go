@@ -33,10 +33,22 @@ import (
 
 // blueprintVetScratch is the throwaway package each blueprint is
 // rendered into. It differs from buildGateScratchPkg and from the
-// committed "blueprintgen"/"blueprintbuildgen" scratch names for the
+// committed "_blueprintgen"/"_blueprintbuildgen" scratch names for the
 // same reason those two differ from each other: suites that run beside
 // each other must not share a scratch directory.
-const blueprintVetScratch = "blueprintvetgen"
+//
+// The leading underscore is what keeps the window shut. The directory
+// is created inside the repo module mid-test and filled a moment
+// later, so a `go list ./...` or `go build ./...` running in another
+// package's test binary at that instant used to fail hard with "no Go
+// files in examples/<name>/<scratch>". Removing the directory before
+// and after the run covers a leaked one, not the window while the run
+// is live. Go's tooling ignores a directory whose name begins with
+// "_" when it expands a `./...` pattern, at every moment, while still
+// resolving an explicit import path through it — which is what the
+// rewritten module line below needs. Verified both halves before
+// relying on either.
+const blueprintVetScratch = "_blueprintvetgen"
 
 func TestBlueprintProjectPassesRepoVettool(t *testing.T) {
 	if testing.Short() {
