@@ -119,8 +119,8 @@ func TestChoiceGroupCarriesItsQuestion(t *testing.T) {
 }
 
 func TestPaginationIsNavigationWithACurrentPage(t *testing.T) {
-	got := Pagination(PaginationProps{Page: 2, Pages: 5, HrefPattern: "/x?p=%d", AriaLabel: "Pages",
-		Island: fixtureIsland}, nil)
+	got := Pagination(PaginationProps{Page: 2, Pages: 5, Path: "/x", PageParam: "p",
+		AriaLabel: "Pages", Island: fixtureIsland}, nil)
 	has(t, got, "<nav", "pagination is not a nav landmark")
 	has(t, got, `aria-current="page"`, "pagination does not mark the current page")
 	if n := count(got, `aria-current="page"`); n != 1 {

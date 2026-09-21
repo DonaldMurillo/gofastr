@@ -60,12 +60,14 @@ headless.Card(headless.CardProps{Title: "Apps", Parts: headless.Parts{
     Binds: headless.Binds{headless.PartTitle: {Signal: "count"}},
 }, Strings: strings /* nil means English; ui.StringsFor(ctx) resolves it */}, classes, body)
 
-// An in-page state change is an island, never a route (hard rule 1).
+// An in-page state change is an island, never a route (hard rule 1) —
+// and a list's own state (page, sort) lives in the URL, so a list
+// screen's pager and sort anchors are plain navigations the client
+// router intercepts, and the Island is for the embedded case.
 headless.Pagination(headless.PaginationProps{
-    Page: 2, Pages: 9, HrefPattern: "/apps?page=%d",
+    Page: 2, Pages: 9, Path: "/apps",
     Island: headless.Island{Endpoint: "/island/apps", Signal: "apps"},
 }, classes)
-```
 
 Every component registers a `Spec`: its name, the parts it draws, the
 parts a slot may fill, the hooks it publishes, and the cases worth
@@ -76,19 +78,18 @@ the fixtures are handed is harness infrastructure, not caller surface.
 
 ## Don't reinvent
 
-- **A class to find an element from script.** The runtime binds to
-  `data-hui-*` hooks only; a class map may rename every class.
-- **A link that changes in-page state.** `Pagination`, `ToolbarSearch`,
-  a `Tag` with a dismiss and an `Alert` with a dismiss require an
-  `Island` and refuse to render without one; the same element keeps
-  its href for no-script. `Table` takes the `Form` posture instead:
-  the URL is the truth for a list, so a list screen's sort anchors
-  are plain navigations the client router intercepts, and the
-  `Island` is for an embedded table whose sort must not change the
-  URL — its anchors then carry the contract beside their hrefs, and
-  the module restores focus and announces the swap through the
-  `data-hui-table*` hooks the Table renders. Every href goes through
-  the framework's anchor policy (`urlsafe.CleanAnchor`).
+- **A link that changes in-page state.** `ToolbarSearch`, a `Tag`
+  with a dismiss and an `Alert` with a dismiss require an `Island`
+  and refuse to render without one; the same element keeps its href
+  for no-script. `Table` and `Pagination` take the list posture
+  instead: the URL is the truth for a list, so a list screen's sort
+  and page anchors are plain navigations the client router
+  intercepts, and the `Island` is for an embedded table or pager
+  whose state must not change the URL — its anchors then carry the
+  contract beside their hrefs, and the module restores focus and
+  announces the swap through the `data-hui-table*` and `data-hui-page`
+  hooks the components render. Every href goes through the
+  framework's anchor policy (`urlsafe.CleanAnchor`).
 - **A request through `ExtraAttrs`.** `Safe` drops every `data-fui-*`
   key. A request is `ButtonProps.Action`; a signal is a `Bind`; a
   region's refresh is an `Island`. Action also admits the wiring

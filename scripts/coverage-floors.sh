@@ -102,7 +102,6 @@ FLOORS="
 ./core-ui/patterns/disclosure/ 69.9
 ./core-ui/patterns/multiselect/ 85.0
 ./core-ui/patterns/nestedlist/ 89.1
-./core-ui/patterns/pagination/ 70.4
 ./core-ui/patterns/progress/ 88.0
 ./core-ui/patterns/scrollspy/ 81.8
 ./core-ui/patterns/skeleton/ 90.2

@@ -188,8 +188,10 @@ func TestE2E_CustomersPageIsland(t *testing.T) {
 		chromedp.WaitVisible(`.ui-data-table`, chromedp.ByQuery),
 		chromedp.Evaluate(`window.__e2eMark = 1`, nil),
 		// 10 seeded customers at page size 8 → the seed data alone
-		// paginates. Page 2 holds the last two rows.
-		chromedp.Click(`.ui-data-table__footer button[data-fui-rpc$="p=2"]`, chromedp.ByQuery),
+		// paginates. Page 2 holds the last two rows. The pager is the
+		// typed one: page anchors keep their hrefs and carry the RPC
+		// contract beside them.
+		chromedp.Click(`.ui-data-table__footer a[data-fui-rpc$="p=2"]`, chromedp.ByQuery),
 		chromedp.Sleep(700*time.Millisecond),
 		chromedp.Evaluate(`document.querySelectorAll('.ui-data-table tbody tr').length`, &rows),
 		chromedp.Evaluate(`window.__e2eMark || 0`, &mark),

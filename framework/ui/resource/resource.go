@@ -18,7 +18,6 @@ import (
 
 	appui "github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/interactive"
-	"github.com/DonaldMurillo/gofastr/core-ui/patterns/pagination"
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/schema"
@@ -444,6 +443,16 @@ func (c Config) table(ctx context.Context, total int) render.HTML {
 			slog.Warn("resource: count", "entity", c.Title, "error", err)
 		}
 	}
+	// The requested page is clamped into the real run BEFORE the rows
+	// are fetched: ?p=999 on a two-page list is a URL anyone can type,
+	// and the typed pager refuses a page outside 1..Pages. The clamp
+	// lands the reader on the last page's rows under a pager saying
+	// the last page — never a 500, and never an empty page under a
+	// pager that claims another. No rows means one page: page 1, the
+	// empty state, no pager.
+	if pages := int(math.Ceil(float64(total) / float64(limit))); page > pages {
+		page = max(pages, 1)
+	}
 	// WithReadHooks: these rows are rendered to an end user.
 	rows, err := c.Crud.ListAll(crud.WithReadHooks(ctx), crud.ListOptions{Filters: filters, Sorts: sorts, Limit: limit, Offset: fwpagination.OffsetForPage(page, limit)})
 	if err != nil {
@@ -495,20 +504,32 @@ func (c Config) table(ctx context.Context, total int) render.HTML {
 		Empty: ui.EmptyStateConfig{Title: "No " + c.Title + " yet", Description: emptyDescription(c.EmptyText), HeadingLevel: 2},
 	}
 	if c.IslandPath != "" {
-		// Island mode: the sort anchors carry the GET RPC contract
-		// beside their hrefs, and the pagination inherits the same
-		// endpoint and signal automatically.
+		// Island mode: the sort anchors and the pager's page anchors
+		// carry the GET RPC contract beside their hrefs, all hitting
+		// the same endpoint and signal.
 		dt.Island = headless.Island{Endpoint: c.IslandPath, Signal: c.islandSignal()}
 	}
 	if pages := int(math.Ceil(float64(total) / float64(limit))); pages > 1 {
-		// The pager keeps the search/facet carry and appends the page.
-		// It does not carry the active sort — pre-existing, recorded
-		// separately; the typed Query above is not padded to change it.
-		href := "?" + query.Encode() + "&p=%d"
-		if len(query) == 0 {
-			href = "?p=%d"
+		// The pager keeps the search, the facets AND the active sort:
+		// turning a page must not drop the order the reader chose
+		// (the defect the changelog once recorded as pre-existing).
+		// The typed pager replaces p in the carry rather than
+		// appending a second page parameter.
+		pagerQ := url.Values{}
+		for k, vs := range query {
+			for _, v := range vs {
+				pagerQ.Add(k, v)
+			}
 		}
-		dt.Pagination = &pagination.Config{Total: pages, Current: page, HrefPattern: href}
+		if sortCol != "" {
+			pagerQ.Set("sort", sortCol)
+			if q.Get("dir") == "desc" {
+				pagerQ.Set("dir", "desc")
+			} else {
+				pagerQ.Set("dir", "asc")
+			}
+		}
+		dt.Pagination = &ui.PaginationConfig{Pages: pages, Page: page, Query: pagerQ}
 	}
 	return ui.DataTable(dt)
 }

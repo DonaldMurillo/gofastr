@@ -233,9 +233,13 @@ func assertRuntimeContract(t *testing.T, fx fixture, base string, want manifestE
 }
 
 // TestUpgradeFailsWhenMigrationSkipped is the negative proof: deliberately do
-// NOT apply migration.patch, and `go build` must fail with a message naming the
-// field the v0.54.0 grouped-config move removed. A green build here would mean
-// the driver could not catch a skipped upgrade step, which defeats its purpose.
+// NOT apply migration.patch, and `go build` must fail with a message naming
+// what the upgrade removed. A green build here would mean the driver could
+// not catch a skipped upgrade step, which defeats its purpose. Two shapes
+// count as actionable: the v0.54.0 grouped-config move's "unknown field"
+// naming a removed flat field, and the pagination pattern's retirement naming
+// the import the migration.patch deletes — a missing package is the one error
+// that says "this import is gone" outright.
 func TestUpgradeFailsWhenMigrationSkipped(t *testing.T) {
 	if os.Getenv("GOFASTR_UPGRADE_FIXTURES") != "1" {
 		t.Skip("set GOFASTR_UPGRADE_FIXTURES=1 to run the negative upgrade-fixture proof")
@@ -249,7 +253,8 @@ func TestUpgradeFailsWhenMigrationSkipped(t *testing.T) {
 
 	// NO migration.patch, simulating skipping every manual step from
 	// upgrades.yml. The flat EntityConfig fields (Public/CRUD/OwnerField/MCP)
-	// were removed in v0.54.0, so the build must fail naming one of them.
+	// were removed in v0.54.0 and core-ui/patterns/pagination was deleted
+	// later, so the build must fail naming one of them or the import.
 	cmd := exec.CommandContext(ctxWithTimeout(t, 5*time.Minute), "go", "build", "./...")
 	cmd.Dir = appDir
 	cmd.Env = append(os.Environ(), "CGO_ENABLED=0", "GOFLAGS=-mod=mod")
@@ -258,8 +263,9 @@ func TestUpgradeFailsWhenMigrationSkipped(t *testing.T) {
 		t.Fatalf("go build SUCCEEDED with the migration skipped — the driver cannot detect a skipped upgrade step (expected a compile error)")
 	}
 	joined := string(out)
-	// The error names the removed flat field, that is the "useful message".
-	if !strings.Contains(joined, "unknown field") || !regexp.MustCompile(`Public|CRUD|OwnerField|MCP|Access`).MatchString(joined) {
+	actionable := (strings.Contains(joined, "unknown field") && regexp.MustCompile(`Public|CRUD|OwnerField|MCP|Access`).MatchString(joined)) ||
+		strings.Contains(joined, "core-ui/patterns/pagination")
+	if !actionable {
 		t.Fatalf("build failed but the error is not actionable:\n%s", joined)
 	}
 	t.Logf("negative proof OK — skipping migration.patch fails the build as expected:\n%s", firstLines(joined, 8))

@@ -26,7 +26,6 @@ import (
 	appui "github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
 	"github.com/DonaldMurillo/gofastr/core-ui/interactive"
-	"github.com/DonaldMurillo/gofastr/core-ui/patterns/pagination"
 	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/schema"
@@ -137,6 +136,24 @@ func (b *Battery) renderTable(ctx context.Context, ent *entity.Entity, q url.Val
 			HeadingLevel: 2,
 		})
 	}
+	// Clamp the requested page into the real run: ?p=999 on a two-page
+	// list is a URL anyone can type, and the typed pager refuses a page
+	// outside 1..Pages. The total only arrives with the rows, so an
+	// out-of-range page is re-fetched at the last page — the reader sees
+	// the last page's rows under a pager saying the last page, never a
+	// 500 and never page 999's empty rows. No rows means one page.
+	if totalPages := int(math.Ceil(float64(total) / float64(limit))); page > totalPages {
+		page = max(totalPages, 1)
+		crudQ.Set("page", strconv.Itoa(page))
+		rows, _, err = b.listRows(ctx, ent, crudQ.Encode())
+		if err != nil {
+			return ui.EmptyState(ui.EmptyStateConfig{
+				Title:        "Could not load " + ent.GetName(),
+				Description:  "Check the server logs for details.",
+				HeadingLevel: 2,
+			})
+		}
+	}
 
 	ftypes := fieldTypeMap(ent)
 	relLabels := b.relationLabelMaps(ctx, ent)
@@ -205,6 +222,9 @@ func (b *Battery) renderTable(ctx context.Context, ent *entity.Entity, q url.Val
 	}
 	if totalPages := int(math.Ceil(float64(total) / float64(limit))); totalPages > 1 {
 		// Pagination links carry search + sort so paging preserves both.
+		// The typed pager builds every href through net/url with p
+		// replaced in the carry, so the encoded values that broke the
+		// old "%d" pattern's fmt-safety story cannot be expressed here.
 		carry := url.Values{}
 		if search != "" {
 			carry.Set("q", search)
@@ -213,10 +233,10 @@ func (b *Battery) renderTable(ctx context.Context, ent *entity.Entity, q url.Val
 			carry.Set("sort", sortCol)
 			carry.Set("dir", sortDir)
 		}
-		cfg.Pagination = &pagination.Config{
-			Total:       totalPages,
-			Current:     page,
-			HrefPattern: patternWith(carry, "p=%d"),
+		cfg.Pagination = &ui.PaginationConfig{
+			Pages: totalPages,
+			Page:  page,
+			Query: carry,
 		}
 	}
 	table := ui.DataTable(cfg)
@@ -336,21 +356,6 @@ func SortDirOf(v string) string {
 		return "desc"
 	}
 	return "asc"
-}
-
-// patternWith builds a query-string pattern that preserves the carry params
-// and appends tail (which holds the pagination %d marker). Encoding does not
-// make the result fmt-safe -- it is the reason it is not: Encode emits %XX,
-// and fmt would read those escapes as verbs. The pattern is safe because
-// pagination substitutes its marker with strings.Replace and never fmt (see
-// [pagination.Config.HrefPattern]). A consumer that reaches for Sprintf
-// reintroduces the bug this comment used to invite.
-func patternWith(carry url.Values, tail string) string {
-	enc := carry.Encode()
-	if enc == "" {
-		return "?" + tail
-	}
-	return "?" + enc + "&" + tail
 }
 
 func containsStr(ss []string, want string) bool {

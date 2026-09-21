@@ -4,7 +4,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/DonaldMurillo/gofastr/core-ui/patterns/pagination"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
@@ -163,8 +162,8 @@ func TestDataTableThreadsI18nPagination(t *testing.T) {
 	out := htmlString(t, DataTable(DataTableConfig{
 		Columns: []Column{{Key: "x", Header: "X"}},
 		Rows:    []Row{{Cells: map[string]render.HTML{"x": render.Text("v")}}},
-		Pagination: &pagination.Config{
-			Total: 2, Current: 1, HrefPattern: "?p=%d",
+		Pagination: &PaginationConfig{
+			Pages: 2, Page: 1,
 		},
 	}))
 	for _, want := range []string{"PROBE-PAG", "PROBE-PREV", "PROBE-NEXT"} {

@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
-	"github.com/DonaldMurillo/gofastr/core-ui/patterns/pagination"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/headless"
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
@@ -14,13 +13,11 @@ import (
 
 // DataTable is a server-rendered list view: headless.Table's structure
 // dressed with this package's class map, the styled EmptyState in the
-// primitive's empty slot, and the core-ui pager in its footer slot.
-// Sorting is typed props — the active sort, the query the screen
-// carries, the parameter names — and the primitive builds every href
-// through net/url, replacing the sort parameters rather than
+// primitive's empty slot, and the typed pager (ui.Pagination) in its
+// footer slot. Sorting is typed props — the active sort, the query the
+// screen carries, the parameter names — and the primitive builds every
+// href through net/url, replacing the sort parameters rather than
 // substituting into a caller's pattern string.
-//
-// Cells are pre-rendered HTML so callers control formatting.
 
 // Column describes one DataTable column.
 type Column struct {
@@ -84,15 +81,15 @@ const (
 
 // DataTableConfig configures a DataTable.
 //
-// Note there are two pagination packages, and DataTable uses exactly
-// one of them: the Pagination field takes a
-// core-ui/patterns/pagination.Config, which renders the page-link nav
-// below the table. The other package, framework/pagination, is the
-// server side of the story. It parses ?limit/?offset/?cursor query
-// params and builds cursor tokens for the auto-generated CRUD list
-// endpoints, and never renders HTML. A typical handler uses
-// framework/pagination to slice the data, then feeds the resulting
-// page count into this config's Pagination nav.
+// Note the split between the two paginations this type touches:
+// framework/pagination is the server side — it parses
+// ?limit/?offset/?cursor params for the auto-generated CRUD list
+// endpoints and builds cursor tokens, and never renders HTML — while
+// the Pagination field takes a *PaginationConfig (this package, over
+// the headless primitive) and renders the page-link nav below the
+// table. A typical handler uses framework/pagination to slice the
+// data, then feeds the resulting page count into this config's
+// Pagination nav.
 type DataTableConfig struct {
 	// Columns is the column definitions. Required.
 	Columns []Column
@@ -150,11 +147,11 @@ type DataTableConfig struct {
 	//     {DataTable(...)}
 	//   </div>
 	Island headless.Island
-
-	// Pagination is an optional pagination.Config. When set, the
+	// Pagination is an optional *PaginationConfig. When set, the
 	// pagination nav renders below the table, outside the scroll
-	// region.
-	Pagination *pagination.Config
+	// region. A table with an Island shares it with the pager, so
+	// sort and page hit the same handler and swap the same region.
+	Pagination *PaginationConfig
 
 	// Empty is the EmptyState shown when len(Rows) == 0, under the
 	// table's head: an empty result still has named columns and
@@ -206,7 +203,7 @@ var dataTableClasses = headless.Classes{
 
 // DataTable renders the table: the headless primitive's structure,
 // roles and sort anchors under this package's class map, the styled
-// EmptyState in the primitive's empty slot, and the core-ui pager in
+// EmptyState in the primitive's empty slot, and the typed pager in
 // a footer div of its own outside the scroll region.
 func DataTable(cfg DataTableConfig) render.HTML {
 	if len(cfg.Columns) == 0 {
@@ -262,24 +259,13 @@ func DataTable(cfg DataTableConfig) render.HTML {
 		// In island mode, the pagination inherits the DataTable's
 		// endpoint and signal so sort and page hit the same handler.
 		pag := *cfg.Pagination
-		if cfg.Island.Endpoint != "" && pag.IslandSignal == "" {
-			pag.IslandSignal = cfg.Island.Signal
-			pag.IslandEndpoint = cfg.Island.Endpoint
+		if pag.Island.Endpoint == "" && pag.Island.Signal == "" {
+			pag.Island = cfg.Island
 		}
-		// Thread i18n labels into the pagination nav (Previous / Next /
-		// "Pagination") when the caller hasn't set them explicitly. The
-		// pagination package is in core-ui (which may not import i18nui),
-		// so the labels are resolved here and passed via the config.
-		if pag.Label == "" {
-			pag.Label = i18nui.T(ctx, i18nui.KeyPaginationLabel)
+		if pag.Ctx == nil {
+			pag.Ctx = ctx
 		}
-		if pag.PrevLabel == "" {
-			pag.PrevLabel = i18nui.T(ctx, i18nui.KeyPaginationPrevious)
-		}
-		if pag.NextLabel == "" {
-			pag.NextLabel = i18nui.T(ctx, i18nui.KeyPaginationNext)
-		}
-		footer = html.Div(html.DivConfig{Class: "ui-data-table__footer"}, pagination.New(pag))
+		footer = html.Div(html.DivConfig{Class: "ui-data-table__footer"}, Pagination(pag))
 	}
 
 	// The root's modifier classes travel as part attrs, which append

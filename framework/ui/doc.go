@@ -100,6 +100,7 @@
 //	Workbench:            scrolling rail beside a filling pane (inspector shell)
 //	PaneHost:             primary pane + openable secondary/tertiary side panes
 //	PasswordInput:        password field with show/hide toggle
+//	Pagination:           numeric page pager over a list (typed query props, optional island)
 //	PieChart:             SVG ratio chart (donut variant via InnerRadius)
 //	PipelineImage:        multi-format <picture> consuming framework/image
 //	                       VariantSet output (typed sources + a stacked

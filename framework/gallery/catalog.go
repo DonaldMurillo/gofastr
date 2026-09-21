@@ -30,7 +30,6 @@ import (
 	patternsDisclosure "github.com/DonaldMurillo/gofastr/core-ui/patterns/disclosure"
 	patternsMultiselect "github.com/DonaldMurillo/gofastr/core-ui/patterns/multiselect"
 	patternsNestedlist "github.com/DonaldMurillo/gofastr/core-ui/patterns/nestedlist"
-	patternsPagination "github.com/DonaldMurillo/gofastr/core-ui/patterns/pagination"
 	patternsProgress "github.com/DonaldMurillo/gofastr/core-ui/patterns/progress"
 	patternsTree "github.com/DonaldMurillo/gofastr/core-ui/patterns/tree"
 	"github.com/DonaldMurillo/gofastr/core/render"
@@ -366,9 +365,9 @@ var Catalog = []Entry{
 	}},
 	{"pagination", "Pagination", "Navigation", "Page-cursor controls.", func() render.HTML {
 		return html.Div(html.DivConfig{Class: "demo-stack"},
-			patternsPagination.New(patternsPagination.Config{Current: 2, Total: 8, HrefPattern: "?page=%d", Label: "Middle-page example"}),
+			ui.Pagination(ui.PaginationConfig{Page: 2, Pages: 8, PageParam: "page", AriaLabel: "Middle-page example"}),
 			// First-page variant: the Previous boundary renders disabled.
-			patternsPagination.New(patternsPagination.Config{Current: 1, Total: 8, HrefPattern: "?page=%d", Label: "First-page example"}),
+			ui.Pagination(ui.PaginationConfig{Page: 1, Pages: 8, PageParam: "page", AriaLabel: "First-page example"}),
 		)
 	}},
 	{"toolbar", "Toolbar", "Navigation", "Horizontal action group with separators.", func() render.HTML {
@@ -1660,7 +1659,7 @@ var noteOnlySlugs = map[string]bool{
 // framework/ui; a few are core-ui patterns or the image pipeline.
 func PkgForSlug(slug string) string {
 	switch slug {
-	case "accordion", "breadcrumbs", "pagination",
+	case "accordion", "breadcrumbs",
 		"tree", "nestedlist", "progress", "scrollspy", "disclosure",
 		"sortablelist", "infinitescroll":
 		return "core-ui/patterns/" + slug

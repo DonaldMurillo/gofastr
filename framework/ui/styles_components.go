@@ -30,6 +30,7 @@ var (
 	formStyle         = registry.RegisterStyle("ui-form", formCSS)
 	notificationStyle = registry.RegisterStyle("ui-notification", notificationCSS)
 	_                 = registry.RegisterStyle("ui-toast-stack", toastStackCSS)
+	paginationStyle   = registry.RegisterStyle("ui-pagination", paginationCSS)
 	dataTableStyle    = registry.RegisterStyle("ui-data-table", dataTableCSS)
 	codeBlockStyle    = registry.RegisterStyle("ui-code-block", codeBlockCSS)
 	skipLinkStyle     = registry.RegisterStyle("ui-skip-link", skipLinkCSS)
@@ -1055,6 +1056,73 @@ func dataTableCSS(_ style.Theme) string {
     justify-content: flex-end;
   }
 }`
+}
+
+// paginationCSS is the pager's stylesheet, the core-ui pattern's sheet
+// redrawn for the headless anatomy: the list is a div rather than an
+// ol, the ends are anchors that say aria-disabled rather than spans
+// inside an .is-disabled item, and an island pager's controls are
+// anchors that keep their hrefs rather than buttons — so the selectors
+// match anchors and spans by tag and state attributes, and the gap by
+// the one class the pattern's sheet read on it. Tokens:
+// --color-text, --color-primary, --color-border, --color-text-muted,
+// --radii-md, --spacing-xs, --spacing-sm, --spacing-touch-target.
+func paginationCSS(_ style.Theme) string {
+	return `[data-fui-comp="ui-pagination"] .pagination {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs, 2px);
+  margin: 0;
+  font-size: var(--text-sm, 0.875rem);
+}
+/* The anchors are the controls; the spans are the gaps, which are
+   decoration and say nothing. */
+[data-fui-comp="ui-pagination"] .pagination a,
+[data-fui-comp="ui-pagination"] .pagination span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  /* Token-scaled tap target (default 44px, WCAG 2.5.5). */
+  min-inline-size: var(--spacing-touch-target);
+  min-block-size: var(--spacing-touch-target);
+  padding: 0 var(--spacing-sm, 4px);
+  border-radius: var(--radii-md, 8px);
+  border: 1px solid transparent;
+  background: transparent;
+  text-decoration: none;
+  color: var(--color-text, #1F2937);
+  font: inherit;
+  font-size: inherit;
+  cursor: pointer;
+}
+[data-fui-comp="ui-pagination"] .pagination span { cursor: default; }
+[data-fui-comp="ui-pagination"] .pagination a:hover {
+  background: var(--color-surface, #FFFFFF);
+  border-color: var(--color-border, #E5E7EB);
+}
+/* :focus-visible is critical — without an explicit rule the focus
+   indicator on the active page (white-on-primary) is invisible because
+   the UA default outline blends with the primary background. */
+[data-fui-comp="ui-pagination"] .pagination a:focus-visible {
+  outline: 2px solid var(--color-text, #1F2937);
+  outline-offset: 2px;
+}
+[data-fui-comp="ui-pagination"] .pagination [aria-current="page"] {
+  background: var(--color-primary, #4F46E5);
+  color: white;
+  font-weight: 600;
+  border-color: var(--color-primary, #4F46E5);
+}
+[data-fui-comp="ui-pagination"] .pagination [aria-disabled="true"] {
+  color: var(--color-text-muted, #6B7280);
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+[data-fui-comp="ui-pagination"] .pagination-gap {
+  border: 0;
+  cursor: default;
+}
+`
 }
 
 func skipLinkCSS(_ style.Theme) string {

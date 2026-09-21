@@ -2,6 +2,7 @@ package headless
 
 import (
 	"fmt"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -209,19 +210,41 @@ type PaginationProps struct {
 	Page int
 	// Pages is the total number of pages. At least 1.
 	Pages int
-	// HrefPattern is the href for every page number: the literal "%d"
-	// in it is replaced with the page number. The substitution is a
-	// string replacement rather than fmt, so a pattern carrying other
-	// text cannot be reinterpreted as a verb.
-	HrefPattern string
+
+	// Path is the screen's own path: each page href is it plus the
+	// carried query, the page parameter replaced. Empty means the
+	// current document — a relative "?query" href. When set it must
+	// be same-origin and carry no query or fragment of its own: the
+	// carry belongs in Query, where it survives the page turn, and a
+	// Path query is silently replaced — a value lost with no error is
+	// the defect this component exists to make structural.
+	Path string
+	// Query is the query the screen's URL already carries — the
+	// search, the filters, the sort — and survives a page turn
+	// beside the page number.
+	Query url.Values
+	// PageParam names the page query parameter. It defaults to "p".
+	PageParam string
+
+	// Window is the number of pages shown each side of the current
+	// one, the first and last always shown. Default 1; a Window
+	// large enough shows every page.
+	Window int
+	// OmitPrevNext drops the Previous and Next anchors entirely.
+	OmitPrevNext bool
+
 	// PrevLabel and NextLabel default to "Previous" and "Next".
 	PrevLabel string
 	NextLabel string
 
-	// Island is where a page change goes: turning a page is an
-	// in-page state change, so every page anchor carries the RPC
-	// contract beside its href — the page without script, the island
-	// update with it, and the URL written after the swap. Required.
+	// Island is where a page change goes when the pager sits inside
+	// a region rather than being the page: the page anchors then
+	// carry the RPC contract beside their hrefs — the page without
+	// script, the region update with it, the URL written after the
+	// swap. Optional, the Table posture: the URL is the truth for a
+	// list, so a list screen's page anchors are plain navigations
+	// the client router intercepts. An Island that looks wired and
+	// is not is refused, whichever shape the pager renders.
 	Island Island
 
 	ID         string
@@ -249,18 +272,15 @@ func Pagination(p PaginationProps, s Classes) render.HTML {
 	if p.AriaLabel == "" {
 		panic("headless: Pagination requires AriaLabel")
 	}
-	if p.HrefPattern == "" {
-		panic("headless: Pagination requires HrefPattern")
+	if !p.Island.zero() {
+		p.Island.check()
 	}
-	// The page number is substituted as text, not formatted, so the
-	// token is the literal "%d": without it every anchor is the same
-	// URL and no page can be told from another. The pattern passes the
-	// anchor policy once, here, so no substituted href needs to.
-	if !strings.Contains(p.HrefPattern, "%d") {
-		panic("headless: Pagination HrefPattern " + strconv.Quote(p.HrefPattern) + " has no %d for the page number")
-	}
-	if urlsafe.CleanAnchor(p.HrefPattern) == "" {
-		panic("headless: Pagination HrefPattern " + strconv.Quote(p.HrefPattern) + " is not a URL the anchor policy allows")
+	if p.Path != "" {
+		checkSameOrigin("Pagination", "Path", p.Path)
+		if strings.ContainsAny(p.Path, "?#") {
+			panic("headless: Pagination Path " + strconv.Quote(p.Path) +
+				" carries its own query or fragment — the carry belongs in Query, where it survives the page turn; a Path query is silently replaced, and a value lost with no error is the defect this component exists to make structural")
+		}
 	}
 	if p.Pages < 1 {
 		panic("headless: Pagination requires Pages >= 1")
@@ -268,23 +288,26 @@ func Pagination(p PaginationProps, s Classes) render.HTML {
 	if p.Page < 1 || p.Page > p.Pages {
 		panic("headless: Pagination Page " + strconv.Itoa(p.Page) + " outside 1.." + strconv.Itoa(p.Pages))
 	}
-	requireIsland("Pagination", p.Island)
 	w := p.Strings.Resolve()
 	prev := orDefault(p.PrevLabel, w.Previous)
 	next := orDefault(p.NextLabel, w.Next)
 
 	links := make([]render.HTML, 0, 10)
-	links = append(links, paginationLink(b, p.Island, p.Page-1, prev, p.HrefPattern, p.Page == 1, false))
-	for _, n := range pageWindow(p.Page, p.Pages) {
+	if !p.OmitPrevNext {
+		links = append(links, paginationLink(b, p, p.Page-1, prev, p.Page == 1, false))
+	}
+	for _, n := range pageNumbers(p.Pages, p.Page, max(p.Window, 1)) {
 		if n == 0 {
 			links = append(links, b.El("span", PartPaginationGap,
 				Attrs(map[string]string{"aria-hidden": "true"}),
 				render.Text("…")))
 			continue
 		}
-		links = append(links, paginationLink(b, p.Island, n, strconv.Itoa(n), p.HrefPattern, false, n == p.Page))
+		links = append(links, paginationLink(b, p, n, strconv.Itoa(n), false, n == p.Page))
 	}
-	links = append(links, paginationLink(b, p.Island, p.Page+1, next, p.HrefPattern, p.Page == p.Pages, false))
+	if !p.OmitPrevNext {
+		links = append(links, paginationLink(b, p, p.Page+1, next, p.Page == p.Pages, false))
+	}
 
 	return b.El("nav", PartRoot,
 		Merge(Safe(p.ExtraAttrs), Attrs(map[string]string{
@@ -301,7 +324,7 @@ func Pagination(p PaginationProps, s Classes) render.HTML {
 // through the caller's Box, because the link is a named part: the
 // attrs and binds a caller sets on PartPaginationLink land here or
 // they land nowhere.
-func paginationLink(b Box, isle Island, page int, label, pattern string, disabled, current bool) render.HTML {
+func paginationLink(b Box, p PaginationProps, page int, label string, disabled, current bool) render.HTML {
 	attrs := html.Attrs{}
 	if current {
 		attrs["aria-current"] = "page"
@@ -310,61 +333,85 @@ func paginationLink(b Box, isle Island, page int, label, pattern string, disable
 		attrs["aria-disabled"] = "true"
 		attrs["tabindex"] = "-1"
 	} else {
-		href := strings.ReplaceAll(pattern, "%d", strconv.Itoa(page))
+		href := pageHref(p, page)
 		attrs["href"] = href
-		// The same element is both destinations: the href is the page
-		// without script, the island contract is the region update with
-		// it, and the query is shared so the two answer one question.
-		attrs = Merge(attrs, isle.attrs(href, "GET"))
+		if !p.Island.zero() {
+			// The same element is both destinations: the href is the
+			// page without script, the island contract is the region
+			// update with it, and the query is shared so the two
+			// answer one question.
+			attrs = Merge(attrs, p.Island.attrs(href, "GET"))
+			// The page number the table module records on click and
+			// looks for in the swapped-in pager. Island anchors only:
+			// a plain pager's page is a navigation the router already
+			// focuses, and a hook nothing reads on it is markup
+			// carried for no one.
+			attrs["data-hui-page"] = strconv.Itoa(page)
+		}
 	}
 	return b.El("a", PartPaginationLink, attrs, render.Text(label))
 }
 
-// pageWindow picks which page numbers to render: the first and last
-// page always, a window around the current page, and a 0 marking each
-// elision. Pages small enough to show whole are shown whole.
-func pageWindow(page, pages int) []int {
-	if pages <= 7 {
-		out := make([]int, 0, pages)
-		for p := 1; p <= pages; p++ {
-			out = append(out, p)
+// pageHref builds one page anchor's href: the carried query with the
+// page parameter replaced, on p.Path. Built through net/url and never
+// by substitution; the carried query is scrubbed, not refused, exactly
+// as the table's is.
+func pageHref(p PaginationProps, page int) string {
+	q := scrubbedQuery(p.Query)
+	// Set replaces, and that is the contract: the query a screen
+	// carries may still hold the last page, and p=2&p=3 is two
+	// answers to one question. Add would append; Set does not.
+	q.Set(orDefault(p.PageParam, "p"), strconv.Itoa(page))
+
+	href := "?" + q.Encode()
+	if p.Path != "" {
+		u, err := url.Parse(p.Path)
+		if err != nil {
+			panic("headless: Pagination Path " + strconv.Quote(p.Path) + " does not parse as a URL: " + err.Error())
+		}
+		u.RawQuery = q.Encode()
+		href = u.String()
+	}
+	// Every href this package writes goes through the anchor policy;
+	// same-origin and the scrub have refused what a refusal is for.
+	if urlsafe.CleanAnchor(href) == "" {
+		panic("headless: Pagination Path " + strconv.Quote(p.Path) + " is not a URL the anchor policy allows")
+	}
+	return href
+}
+
+// pageNumbers picks which page numbers to render: the first and last
+// page always, a window of the given size around the current page, and
+// a 0 marking each elision. Pages small enough to show whole are shown
+// whole. It is the core pattern's algorithm, moved.
+func pageNumbers(pages, page, window int) []int {
+	if pages <= 7+2*(window-1) {
+		out := make([]int, pages)
+		for i := range out {
+			out[i] = i + 1
 		}
 		return out
 	}
-	nums := make([]int, 0, 9)
-	addRange := func(from, to int) {
-		if from < 1 {
-			from = 1
-		}
-		if to > pages {
-			to = pages
-		}
-		if len(nums) > 0 {
-			if last := nums[len(nums)-1]; from <= last {
-				from = last + 1
-			}
-			if from > to {
-				return
-			}
-			if from > nums[len(nums)-1]+1 {
-				nums = append(nums, 0)
-			}
-		}
-		for p := from; p <= to; p++ {
-			nums = append(nums, p)
-		}
+	left := page - window
+	right := page + window
+	if left < 2 {
+		left = 2
 	}
-	addRange(1, 1)
-	switch {
-	case page <= 4:
-		addRange(2, 5)
-	case page >= pages-3:
-		addRange(pages-4, pages)
-	default:
-		addRange(page-1, page+1)
+	if right > pages-1 {
+		right = pages - 1
 	}
-	addRange(pages, pages)
-	return nums
+	out := []int{1}
+	if left > 2 {
+		out = append(out, 0)
+	}
+	for n := left; n <= right; n++ {
+		out = append(out, n)
+	}
+	if right < pages-1 {
+		out = append(out, 0)
+	}
+	out = append(out, pages)
+	return out
 }
 
 // ─── Steps ──────────────────────────────────────────────────────────
@@ -462,29 +509,34 @@ func init() {
 	Register(Spec{
 		Name:    "Pagination",
 		Anatomy: []Part{PartRoot, PartPagination, PartPaginationLink, PartPaginationGap},
+		Hooks:   []string{"data-hui-page"},
 		WithParts: func(s Classes, parts Parts) render.HTML {
-			return Pagination(PaginationProps{Page: 1, Pages: 2, HrefPattern: "/apps?page=%d",
+			return Pagination(PaginationProps{Page: 1, Pages: 2, Path: "/apps",
 				AriaLabel: "Pages", Island: Island{Endpoint: "/island/apps", Signal: "apps"},
 				Parts: parts}, s)
 		},
 		Cases: func(k Kit) []Case {
 			s := k.Classes
 			return []Case{{
-				Name: "middle of a long run",
-				Why:  "the gap is a span and not a link, the current page says aria-current=page rather than being told apart by weight, and a page change is an island update rather than a route: every anchor keeps its href for no script and carries the RPC contract beside it",
-				HTML: Pagination(PaginationProps{Page: 5, Pages: 12, HrefPattern: "/apps?page=%d",
+				Name: "plain, on a list screen",
+				Why:  "the URL is the truth for a list and a pager on it is list state: the page anchors are plain navigations the client router intercepts, and no data-hui-page renders without an Island — a hook nothing reads is markup carried for no one",
+				HTML: Pagination(PaginationProps{Page: 2, Pages: 3, Path: "/apps",
+					AriaLabel: "Application pages, plain"}, s),
+			}, {
+				Name: "middle of a long run, an island pager",
+				Why:  "the gap is a span and not a link, the current page says aria-current=page rather than being told apart by weight, and an embedded pager's anchors carry the RPC contract beside their hrefs — the page without script, the region update with it — plus the data-hui-page the module restores focus through",
+				HTML: Pagination(PaginationProps{Page: 5, Pages: 12, Path: "/apps",
 					AriaLabel: "Application pages, middle",
 					Island:    Island{Endpoint: "/island/apps", Signal: "apps"}}, s),
 			}, {
 				Name: "at the first page",
 				Why:  "Previous stays visible and named with no href — removing it moves every other control one place left — and a disabled end carries no island contract, because a control that goes nowhere fires nothing",
-				HTML: Pagination(PaginationProps{Page: 1, Pages: 3, HrefPattern: "/apps?page=%d",
+				HTML: Pagination(PaginationProps{Page: 1, Pages: 3, Path: "/apps",
 					AriaLabel: "Application pages, first",
 					Island:    Island{Endpoint: "/island/apps", Signal: "apps"}}, s),
 			}}
 		},
 	})
-
 	Register(Spec{
 		Name:    "Steps",
 		Anatomy: []Part{PartRoot, PartStep, PartMarker, PartLabel},

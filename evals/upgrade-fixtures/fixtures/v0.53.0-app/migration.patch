@@ -59,10 +59,13 @@ index 4181027..2499058 100644
  	"example.com/upgrade-fixture/entities"
  )
 diff --git a/resource.go b/resource.go
-index cb327a5..e9ecb72 100644
 --- a/resource.go
 +++ b/resource.go
-@@ -18,6 +18,7 @@ import (
+@@ -14,10 +14,10 @@ import (
+ 	appui "github.com/DonaldMurillo/gofastr/core-ui/app"
+ 	"github.com/DonaldMurillo/gofastr/core-ui/html"
+ 	"github.com/DonaldMurillo/gofastr/core-ui/interactive"
+-	"github.com/DonaldMurillo/gofastr/core-ui/patterns/pagination"
  	"github.com/DonaldMurillo/gofastr/core/render"
  	"github.com/DonaldMurillo/gofastr/framework"
  	"github.com/DonaldMurillo/gofastr/framework/filter"
@@ -70,7 +73,7 @@ index cb327a5..e9ecb72 100644
  	"github.com/DonaldMurillo/gofastr/framework/ui"
  )
  
-@@ -284,26 +285,30 @@
+@@ -284,26 +284,26 @@ func (c ResourceConfig) List(ctx context.Context) render.HTML {
  		uiRows = append(uiRows, ui.Row{ID: id, Cells: cells})
  	}
  
@@ -103,15 +106,11 @@ index cb327a5..e9ecb72 100644
  	}
  	if pages := int(math.Ceil(float64(total) / float64(limit))); pages > 1 {
 -		dt.Pagination = &pagination.Config{Total: pages, Current: page, HrefPattern: "?" + carry + "p=%d"}
-+		pagerHref := "?" + query.Encode() + "&p=%d"
-+		if len(query) == 0 {
-+			pagerHref = "?p=%d"
-+		}
-+		dt.Pagination = &pagination.Config{Total: pages, Current: page, HrefPattern: pagerHref}
++		dt.Pagination = &ui.PaginationConfig{Pages: pages, Page: page, Query: query}
  	}
  	body = append(body, ui.DataTable(dt))
  	return render.Join(body...)
-@@ -538,7 +539,13 @@ func (c ResourceConfig) Form(ctx context.Context, id string) render.HTML {
+@@ -538,7 +538,13 @@ func (c ResourceConfig) Form(ctx context.Context, id string) render.HTML {
  			cur = resCell(resGet(row, f.Key))
  		}
  		fields = append(fields, ui.FormField(ui.FormFieldConfig{
@@ -126,7 +125,7 @@ index cb327a5..e9ecb72 100644
  		}))
  	}
  	form := ui.Form(ui.FormConfig{Action: rpc, Method: "POST", SubmitLabel: submit, ExtraAttrs: attrs, Ctx: ctx}, fields...)
-@@ -551,14 +558,26 @@ func (c ResourceConfig) Form(ctx context.Context, id string) render.HTML {
+@@ -551,14 +557,26 @@ func (c ResourceConfig) Form(ctx context.Context, id string) render.HTML {
  // formInput builds the typed control for one field, prefilled with cur. Enums
  // and relations render their options server-side; relations resolve to the same
  // human label the list/detail show.
@@ -156,7 +155,7 @@ index cb327a5..e9ecb72 100644
  	}
  	switch f.Type {
  	case "enum":
-@@ -566,17 +585,20 @@ func (c ResourceConfig) formInput(ctx context.Context, f ResField, cur string, r
+@@ -566,17 +584,20 @@ func (c ResourceConfig) formInput(ctx context.Context, f ResField, cur string, r
  		for _, v := range f.Values {
  			opts = append(opts, html.SelectOption{Value: v, Text: resTitle(v), Selected: v == cur})
  		}

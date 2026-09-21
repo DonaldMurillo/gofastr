@@ -15,13 +15,13 @@ import (
 // TestListCarryQueryKeepsFmtVerbs pins the production carry builders
 // themselves (resource.go table(): Query = the search and active facets
 // as url.Values, handed to the typed DataTable sort props, and the
-// pagination HrefPattern = "?" + Query.Encode() + "&p=%d"). A
-// request-derived value like ?q=a%26b must never corrupt those hrefs:
-// the sort anchors are built by the primitive through net/url, and the
-// pager pattern is substituted by pagination's strings.Replace, never
-// fmt — Encode()'s own %XX triples would read as flag/width/verb to
-// Sprintf and every link on the page would navigate to a corrupted URL
-// (silent filter/state loss on the CRUD list surface).
+// pager = the same carry plus the active sort, handed to the typed
+// pager's Query with p replaced). A request-derived value like
+// ?q=a%26b must never corrupt those hrefs: both are built by the
+// primitive through net/url, never fmt or a pattern string —
+// Encode()'s own %XX triples would read as flag/width/verb to
+// Sprintf and every link on the page would navigate to a corrupted
+// URL (silent filter/state loss on the CRUD list surface).
 func TestListCarryQueryKeepsFmtVerbs(t *testing.T) {
 	for _, tc := range []struct{ name, raw, search string }{
 		{"search-amp", "/orders?q=a%26b", "a&b"},
@@ -93,4 +93,91 @@ func parsedQuery(t *testing.T, href string) url.Values {
 		t.Fatalf("href %q does not parse: %v", href, err)
 	}
 	return u.Query()
+}
+
+// currentPageAnchor finds the pager anchor the reader is on: the one
+// carrying aria-current, its href parsed back.
+var currentAnchorHref = regexp.MustCompile(`<a aria-current="page" href="([^"]*)"`)
+
+// TestPageOutOfRangeIsTheLastPage pins the request-facing clamp: ?p=
+// beyond the run is a URL anyone can type, and the typed pager refuses
+// a page outside 1..Pages — the screen must answer with the last
+// page's rows under a pager whose current page IS the last page, not a
+// 500 (the panic escapes List otherwise and fails this test). ?p=0 and
+// negative pages are page 1.
+func TestPageOutOfRangeIsTheLastPage(t *testing.T) {
+	fiveRows := []map[string]any{
+		{"id": "1", "name": "a"}, {"id": "2", "name": "b"},
+		{"id": "3", "name": "c"}, {"id": "4", "name": "d"},
+		{"id": "5", "name": "e"},
+	}
+	for _, tc := range []struct {
+		raw       string
+		wantPage  string
+		wantFirst string
+	}{
+		{"/orders?p=999", "2", "e"}, // 5 rows / size 4 → page 2 holds "e"
+		{"/orders?p=2", "2", "e"},
+		{"/orders?p=0", "1", "a"},
+		{"/orders?p=-3", "1", "a"},
+	} {
+		t.Run(tc.raw, func(t *testing.T) {
+			cfg := Config{
+				Entity: "orders", Title: "Orders", Singular: "Order",
+				BasePath: "/orders", APIPath: "/api/orders",
+				Crud: &stubSource{rows: fiveRows}, PageSize: 4,
+				Fields: []Field{{Key: "name", Label: "Name", Type: "string"}},
+			}
+			req := httptest.NewRequest("GET", tc.raw, nil)
+			s := string(cfg.List(appui.WithRequest(context.Background(), req)))
+			if !strings.Contains(s, ">"+tc.wantFirst+"<") {
+				t.Fatalf("[page-clamp] request %q did not render page %s's first row %q:\n%s", tc.raw, tc.wantPage, tc.wantFirst, s[:min(len(s), 400)])
+			}
+			m := currentAnchorHref.FindStringSubmatch(s)
+			if m == nil {
+				t.Fatalf("[page-clamp] request %q rendered no current page anchor:\n%s", tc.raw, s[:min(len(s), 400)])
+			}
+			if q := parsedQuery(t, m[1]); q.Get("p") != tc.wantPage {
+				t.Fatalf("[page-clamp] request %q: the pager's current page is %q, want %q", tc.raw, q.Get("p"), tc.wantPage)
+			}
+		})
+	}
+}
+
+// TestPagerCarriesTheActiveSort is defect 10's regression: the
+// resource pager's carry kept the search and the facets but dropped
+// the active sort, so turning a page silently lost the order the
+// reader chose. The page-2 href must carry sort and dir beside the
+// search, exactly as the battery's pager does.
+func TestPagerCarriesTheActiveSort(t *testing.T) {
+	source := &stubSource{rows: []map[string]any{
+		{"id": "1", "name": "a"}, {"id": "2", "name": "b"},
+		{"id": "3", "name": "c"}, {"id": "4", "name": "d"},
+		{"id": "5", "name": "e"},
+	}}
+	cfg := Config{
+		Entity: "orders", Title: "Orders", Singular: "Order",
+		BasePath: "/orders", APIPath: "/api/orders",
+		Crud: source, PageSize: 4,
+		Fields: []Field{{Key: "name", Label: "Name", Type: "string"}},
+	}
+	req := httptest.NewRequest("GET", "/orders?q=ada&sort=name&dir=desc", nil)
+	s := string(cfg.List(appui.WithRequest(context.Background(), req)))
+	var pq url.Values
+	for _, m := range anyHref.FindAllStringSubmatch(s, -1) {
+		if q := parsedQuery(t, m[1]); q.Get("p") == "2" {
+			pq = q
+			break
+		}
+	}
+	if pq == nil {
+		t.Fatalf("[pager-sort-carry] no page-2 link rendered (5 rows / page size 4 = 2 pages):\n%s", s[:min(len(s), 400)])
+	}
+	if pq.Get("sort") != "name" || pq.Get("dir") != "desc" || len(pq["sort"]) != 1 || len(pq["dir"]) != 1 {
+		t.Errorf("[pager-sort-carry] the page-2 href lost the active sort: sort=%q dir=%q values=%v",
+			pq.Get("sort"), pq.Get("dir"), pq)
+	}
+	if pq.Get("q") != "ada" {
+		t.Errorf("[pager-sort-carry] the page-2 href lost the search: q=%q", pq.Get("q"))
+	}
 }
