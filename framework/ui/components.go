@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"context"
 	"fmt"
 	stdhtml "html"
 	"strconv"
@@ -12,7 +11,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/headless"
-	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
 // ─── PageHeader ─────────────────────────────────────────────────────
@@ -34,52 +32,35 @@ type PageHeaderConfig struct {
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers, ARIA overrides) to the header's root <header>
 	// element. Keys the component owns are dropped: class and id
-	// (use Class / ID) and data-fui-*.
+	// (use Class / ID), style, data-fui-* and role.
 	ExtraAttrs html.Attrs
 }
 
-// PageHeader renders a top-of-page header with title, optional subtitle
-// and eyebrow label, and an action slot.
-//
-// Composition: html.Header (semantic <header role="banner">) +
-// html.Heading (h1) + html.Paragraph for eyebrow/subtitle.
+// pageHeaderClasses dresses headless.PageHeader's parts.
+var pageHeaderClasses = headless.Classes{
+	headless.PartRoot:         "fui-page-header",
+	headless.PartPageEyebrow:  "fui-page-header__eyebrow",
+	headless.PartTitle:        "fui-page-header__title",
+	headless.PartPageSubtitle: "fui-page-header__subtitle",
+	headless.PartPageText:     "fui-page-header__text",
+	headless.PartPageActions:  "fui-page-header__actions",
+}
+
+// PageHeader renders a top-of-page header on headless.PageHeader:
+// the title, the words that qualify it, and the page's own actions.
+// The element is a plain <header> — claiming role=banner is the
+// top-level page header's decision, not the component's.
 func PageHeader(cfg PageHeaderConfig) render.HTML {
-	if cfg.Title == "" {
-		panic("ui: PageHeader requires Title")
-	}
-	cls := "ui-page-header"
-	if cfg.Class != "" {
-		cls = cls + " " + cfg.Class
-	}
-	textChildren := []render.HTML{}
-	if cfg.Eyebrow != "" {
-		textChildren = append(textChildren, html.Paragraph(
-			html.TextConfig{Class: "ui-page-header__eyebrow"},
-			render.Text(cfg.Eyebrow)))
-	}
-	level := cfg.HeadingLevel
-	if level < 1 || level > 6 {
-		level = 1
-	}
-	textChildren = append(textChildren,
-		html.Heading(html.HeadingConfig{Level: level,
-			Class: "ui-page-header__title"}, render.Text(cfg.Title)))
-	if cfg.Subtitle != "" {
-		textChildren = append(textChildren, html.Paragraph(
-			html.TextConfig{Class: "ui-page-header__subtitle"},
-			render.Text(cfg.Subtitle)))
-	}
-	textBlock := html.Div(html.DivConfig{Class: "ui-page-header__text"}, textChildren...)
-	body := []render.HTML{textBlock}
-	if cfg.Actions != "" {
-		body = append(body, html.Div(
-			html.DivConfig{Class: "ui-page-header__actions"}, cfg.Actions))
-	}
-	return pageHeaderStyle.WrapHTML(
-		html.Header(html.HeaderConfig{
-			Class: cls, ID: cfg.ID, ExtraAttrs: html.SafeExtraAttrs(cfg.ExtraAttrs),
-		}, body...),
-	)
+	return pageHeaderStyle.WrapHTML(headless.PageHeader(headless.PageHeaderProps{
+		Title:      cfg.Title,
+		Level:      cfg.HeadingLevel,
+		Eyebrow:    cfg.Eyebrow,
+		Subtitle:   cfg.Subtitle,
+		Actions:    cfg.Actions,
+		ID:         cfg.ID,
+		ExtraAttrs: headless.Safe(cfg.ExtraAttrs, "class", "id", "role"),
+		Parts:      rootClassParts(cfg.Class),
+	}, pageHeaderClasses))
 }
 
 // slug normalizes text into a URL/id-safe slug.
@@ -108,36 +89,33 @@ func slug(s string) string {
 
 // SectionConfig configures a labelled content section.
 //
-// ID behavior:
-//   - If ID is set, it's used verbatim. Caller controls the anchor, and
-//     the heading's own id derives from it ("ui-section-<id>"), so a
-//     repeated heading text with distinct IDs never shares a target.
+// ID behaviour, on headless.Section:
+//   - If ID is set, it names the root, and the heading's own id
+//     derives from it ("<id>-title"), so repeated heading text with
+//     distinct IDs never shares a target.
 //   - If ID is empty and Heading is set, the section auto-slugs the
-//     heading as its id ("Forms" → id="forms"). This is the typical
-//     case for in-page navs / scrollspy rails where the rail's
-//     anchor href should match the section just by typing the heading
-//     text twice.
-//   - If both ID and Heading are empty, the section gets no id and
-//     a generic aria-label.
+//     heading as its id ("Forms" → id="forms"), the scrollspy/rail
+//     case, and the heading's id is the slug plus "-title".
+//   - If both ID and Heading are empty but Label is set, the region
+//     is named by aria-label.
+//   - If all three are empty the section renders a plain div: an
+//     unnamed section is noise in the landmark list, not a landmark.
 type SectionConfig struct {
-	// Eyebrow is an optional short decorative kicker rendered above/around
-	// the heading, e.g. a section number ("01 / what it generates"). It is
-	// marked aria-hidden because it duplicates the heading for SR users.
+	// Eyebrow is an optional short decorative kicker rendered above
+	// the heading, e.g. a section number ("01 / what it generates").
+	// It is marked aria-hidden because it duplicates the heading for
+	// SR users.
 	Eyebrow     string
 	Heading     string // optional <h2> heading
 	Description string // optional supporting text under the heading
 	// DescriptionHTML lets the supporting text carry inline markup (code,
 	// links). When non-empty it takes precedence over Description.
 	DescriptionHTML render.HTML
-	// Label sets the section's accessible name when there is no Heading.
-	// Without a Heading or Label the section falls back to a generic
-	// "Section" aria-label.
+	// Label sets the section's accessible name when there is no
+	// Heading, by aria-label.
 	Label string
 	Class string
 	ID    string
-	// Ctx carries the per-request context used to resolve the default
-	// Section aria-label. When nil, English fallback applies.
-	Ctx context.Context
 
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers) to the section's root <section> element.
@@ -147,61 +125,21 @@ type SectionConfig struct {
 	ExtraAttrs html.Attrs
 }
 
-// Section renders a content section with consistent spacing and an
-// optional heading + description.
-//
-// Composition: a labelled <section> via html.Section. When a
-// Heading is provided, an h2 + aria-labelledby wires up the
-// accessibility name; otherwise a generic aria-label is required.
-// Without a heading or label this would silently produce an
-// inaccessible region. Section panics in that case to push callers
-// toward the right shape.
+// sectionClasses dresses headless.Section's parts.
+var sectionClasses = headless.Classes{
+	headless.PartRoot:        "fui-section",
+	headless.PartSectionBrow: "fui-section__eyebrow",
+	headless.PartTitle:       "fui-section__heading",
+	headless.PartDesc:        "fui-section__description",
+	headless.PartHeader:      "fui-section__head",
+	headless.PartSectionBody: "fui-section__body",
+}
+
+// Section renders a content section on headless.Section: a heading
+// names the region through aria-labelledby, a Label names it by
+// aria-label when there is no heading, and neither means the region
+// renders as a plain div rather than an unnamed landmark.
 func Section(cfg SectionConfig, body ...render.HTML) render.HTML {
-	ctx := cfg.Ctx
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	cls := "ui-section"
-	if cfg.Class != "" {
-		cls = cls + " " + cfg.Class
-	}
-
-	out := []render.HTML{}
-	if cfg.Eyebrow != "" {
-		// Decorative kicker (section number/label). aria-hidden because it
-		// duplicates the heading; visual-only.
-		out = append(out, html.Span(html.TextConfig{
-			Class:      "ui-section__eyebrow",
-			ExtraAttrs: html.Attrs{"aria-hidden": "true"},
-		}, render.Text(cfg.Eyebrow)))
-	}
-	headingID := ""
-	if cfg.Heading != "" {
-		// The heading id follows the section's explicit ID when one is
-		// given, so two sections with one heading text and distinct IDs
-		// keep distinct aria-labelledby targets.
-		headingID = "ui-section-" + slug(cfg.Heading)
-		if cfg.ID != "" {
-			headingID = "ui-section-" + slug(cfg.ID)
-		}
-		out = append(out, html.Heading(html.HeadingConfig{
-			Level: 2, ID: headingID, Class: "ui-section__heading",
-		}, render.Text(cfg.Heading)))
-	}
-	if cfg.DescriptionHTML != "" {
-		out = append(out, html.Paragraph(
-			html.TextConfig{Class: "ui-section__description"},
-			cfg.DescriptionHTML))
-	} else if cfg.Description != "" {
-		out = append(out, html.Paragraph(
-			html.TextConfig{Class: "ui-section__description"},
-			render.Text(cfg.Description)))
-	}
-	if len(body) > 0 {
-		out = append(out, html.Div(
-			html.DivConfig{Class: "ui-section__body"}, body...))
-	}
-
 	sectionID := cfg.ID
 	if sectionID == "" && cfg.Heading != "" {
 		// Auto-anchor: typical use is in-page rails / scrollspy where the
@@ -209,19 +147,17 @@ func Section(cfg SectionConfig, body ...render.HTML) render.HTML {
 		// caller having to repeat the slug.
 		sectionID = slug(cfg.Heading)
 	}
-	secCfg := html.SectionConfig{Class: cls, ID: sectionID}
-	secCfg.ExtraAttrs = html.SafeExtraAttrs(cfg.ExtraAttrs, "role", "aria-label", "aria-labelledby")
-	if headingID != "" {
-		secCfg.LabelledBy = headingID
-	} else if cfg.Label != "" {
-		// No heading → use the caller-supplied accessible name.
-		secCfg.Label = cfg.Label
-	} else {
-		// No heading and no label → default to a generic aria-label so the
-		// region is at least announced, rather than panicking on every call.
-		secCfg.Label = i18nui.T(ctx, i18nui.KeySectionLabel)
-	}
-	return sectionStyle.WrapHTML(html.Section(secCfg, out...))
+	return sectionStyle.WrapHTML(headless.Section(headless.SectionProps{
+		Title:           cfg.Heading,
+		Level:           2,
+		Eyebrow:         cfg.Eyebrow,
+		Description:     cfg.Description,
+		DescriptionHTML: cfg.DescriptionHTML,
+		Label:           cfg.Label,
+		ID:              sectionID,
+		ExtraAttrs:      headless.Safe(cfg.ExtraAttrs, "class", "id", "role", "aria-label", "aria-labelledby"),
+		Parts:           rootClassParts(cfg.Class),
+	}, sectionClasses, body...))
 }
 
 // ─── FormField ──────────────────────────────────────────────────────
@@ -297,6 +233,11 @@ type FormSectionConfig struct {
 	Heading     string // optional
 	Description string // optional
 	Class       string
+	// ID names the group and roots the description's id (<ID>-desc).
+	// Without one the id is derived from Heading, so two sections
+	// with one heading and a description on a page would share it:
+	// give the second an ID.
+	ID string
 
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers) to the group's root element, whichever shape
@@ -306,41 +247,30 @@ type FormSectionConfig struct {
 	ExtraAttrs html.Attrs
 }
 
-// FormSection wraps a group of FormFields with a shared heading.
-//
-// Composition: html.FieldSet + a heading-driven legend when a
-// heading is provided; otherwise a plain <div> container so screen
-// readers don't announce an empty group label.
+// formSectionClasses dresses headless.Fieldset's parts. The legend
+// maps to fui-form-section__heading: the name the sheet styles and
+// the old markup emitted, so the legend's typography survives the
+// move to the primitive.
+var formSectionClasses = headless.Classes{
+	headless.PartRoot:       "fui-form-section",
+	headless.PartLegend:     "fui-form-section__heading",
+	headless.PartGroupDesc:  "fui-form-section__description",
+	headless.PartFields:     "fui-form-section__fields",
+	headless.PartGroupError: "fui-form-section__error",
+}
+
+// FormSection wraps a group of FormFields with a shared heading, on
+// headless.Fieldset: a heading renders the native fieldset + legend
+// pair, and no heading renders the plain div — an unlabelled fieldset
+// is a landmark that names nothing.
 func FormSection(cfg FormSectionConfig, fields ...render.HTML) render.HTML {
-	cls := "fui-form-section"
-	if cfg.Class != "" {
-		cls += " " + cfg.Class
-	}
-	extra := html.SafeExtraAttrs(cfg.ExtraAttrs)
-	if cfg.Heading == "" {
-		// No heading → use a plain div, not <fieldset>, to avoid an
-		// unlabelled grouping landmark.
-		out := []render.HTML{}
-		if cfg.Description != "" {
-			out = append(out, html.Paragraph(
-				html.TextConfig{Class: "fui-form-section__description"},
-				render.Text(cfg.Description)))
-		}
-		out = append(out, html.Div(
-			html.DivConfig{Class: "fui-form-section__fields"}, fields...))
-		return formSectionStyle.WrapHTML(html.Div(html.DivConfig{Class: cls, ExtraAttrs: extra}, out...))
-	}
-	out := []render.HTML{}
-	if cfg.Description != "" {
-		out = append(out, html.Paragraph(
-			html.TextConfig{Class: "fui-form-section__description"},
-			render.Text(cfg.Description)))
-	}
-	out = append(out, html.Div(
-		html.DivConfig{Class: "fui-form-section__fields"}, fields...))
-	return formSectionStyle.WrapHTML(html.FieldSet(
-		html.FieldSetConfig{Legend: cfg.Heading, Class: cls, ExtraAttrs: extra},
-		out...))
+	return formSectionStyle.WrapHTML(headless.Fieldset(headless.FieldsetProps{
+		Legend:      cfg.Heading,
+		Description: cfg.Description,
+		ID:          cfg.ID,
+		ExtraAttrs:  headless.Safe(cfg.ExtraAttrs, "class", "id"),
+		Parts:       rootClassParts(cfg.Class),
+	}, formSectionClasses, fields...))
 }
 
 // ─── Button ─────────────────────────────────────────────────────────
@@ -685,7 +615,9 @@ type StatusBadgeConfig struct {
 	ExtraAttrs html.Attrs
 }
 
-// StatusBadge renders a small inline pill conveying state.
+// StatusBadge renders a small inline pill conveying state, on
+// headless.Badge: the label is the whole of what a screen reader
+// hears, so the tone a variant paints is decoration for the word.
 func StatusBadge(cfg StatusBadgeConfig) render.HTML {
 	if cfg.Label == "" {
 		panic("ui: StatusBadge requires Label")
@@ -695,13 +627,18 @@ func StatusBadge(cfg StatusBadgeConfig) render.HTML {
 		v = StatusNeutral
 	}
 	checkStatusVariant("StatusBadge", v)
-	cls := "ui-badge ui-badge--" + string(v)
-	if cfg.Class != "" {
-		cls += " " + cfg.Class
-	}
-	return statusBadgeStyle.WrapHTML(html.Span(html.TextConfig{
-		Class: cls, ID: cfg.ID, ExtraAttrs: html.SafeExtraAttrs(cfg.ExtraAttrs),
-	}, render.Text(cfg.Label)))
+	cls := joinNonEmpty("fui-badge--"+string(v), cfg.Class)
+	return statusBadgeStyle.WrapHTML(headless.Badge(headless.BadgeProps{
+		Label:      cfg.Label,
+		ID:         cfg.ID,
+		ExtraAttrs: headless.Safe(cfg.ExtraAttrs, "class", "id"),
+		Parts:      rootClassParts(cls),
+	}, badgeClasses))
+}
+
+// badgeClasses dresses headless.Badge.
+var badgeClasses = headless.Classes{
+	headless.PartRoot: "fui-badge",
 }
 
 // ─── EmptyState ─────────────────────────────────────────────────────
@@ -722,46 +659,34 @@ type EmptyStateConfig struct {
 	HeadingLevel int
 
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
-	// analytics markers, ARIA overrides) to the empty state's root
-	// <div>. Keys the component owns are dropped: class and id (use
-	// Class / ID) and data-fui-*.
+	// analytics markers, ARIA overrides) to the empty state's root.
+	// Keys the component owns are dropped: class and id (use
+	// Class / ID), style, data-fui-*, role, aria-label and
+	// aria-labelledby.
 	ExtraAttrs html.Attrs
 }
 
-// EmptyState renders a centered title + description + optional CTA for
-// blank lists or zero-data screens.
-//
-// Composition: html.Heading (h3 by default; see HeadingLevel) + html.Paragraph
-// + a div for the action slot.
+// emptyStateClasses dresses headless.EmptyState's parts.
+var emptyStateClasses = headless.Classes{
+	headless.PartRoot:       "fui-empty-state",
+	headless.PartEmptyTitle: "fui-empty-state__title",
+	headless.PartEmptyDesc:  "fui-empty-state__description",
+	headless.PartEmptyAct:   "fui-empty-state__action",
+}
+
+// EmptyState renders the nothing-here on headless.EmptyState: a
+// region named by its own heading, so "no results" is a findable
+// place with a way out.
 func EmptyState(cfg EmptyStateConfig) render.HTML {
-	if cfg.Title == "" {
-		panic("ui: EmptyState requires Title")
-	}
-	cls := "ui-empty-state"
-	if cfg.Class != "" {
-		cls += " " + cfg.Class
-	}
-	level := cfg.HeadingLevel
-	if level < 1 || level > 6 {
-		level = 3
-	}
-	out := []render.HTML{
-		html.Heading(html.HeadingConfig{
-			Level: level, Class: "ui-empty-state__title",
-		}, render.Text(cfg.Title)),
-	}
-	if cfg.Description != "" {
-		out = append(out, html.Paragraph(
-			html.TextConfig{Class: "ui-empty-state__description"},
-			render.Text(cfg.Description)))
-	}
-	if cfg.Action != "" {
-		out = append(out, html.Div(
-			html.DivConfig{Class: "ui-empty-state__action"}, cfg.Action))
-	}
-	return emptyStateStyle.WrapHTML(html.Div(html.DivConfig{
-		Class: cls, ID: cfg.ID, ExtraAttrs: html.SafeExtraAttrs(cfg.ExtraAttrs),
-	}, out...))
+	return emptyStateStyle.WrapHTML(headless.EmptyState(headless.EmptyStateProps{
+		Title:       cfg.Title,
+		Level:       cfg.HeadingLevel,
+		Description: cfg.Description,
+		Action:      cfg.Action,
+		ID:          cfg.ID,
+		ExtraAttrs:  headless.Safe(cfg.ExtraAttrs, "class", "id", "role", "aria-label", "aria-labelledby"),
+		Parts:       rootClassParts(cfg.Class),
+	}, emptyStateClasses))
 }
 
 // ─── Callout ────────────────────────────────────────────────────────
@@ -773,91 +698,58 @@ type CalloutConfig struct {
 	ID      string
 	Class   string
 
-	// Landmark controls whether an info/success/neutral callout renders as a
-	// complementary <aside> landmark (the default, mandated by the framework's
-	// own tests). Set to false for a callout embedded inline in main content
-	// flow: a nested complementary landmark trips axe's
-	// landmark-complementary-is-top-level rule, and an inline tip is emphasis,
-	// not a tangential region. Same trade-off Sidebar already made (div, not
-	// role="alert" regardless of this flag.
-	Landmark *bool
-
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
-	// analytics markers) to the callout's root element, whichever shape
-	// it takes (<aside> landmark, plain <div>, or role="alert" <div>).
-	// Keys the component owns are dropped: class and id (use Class /
-	// ID), data-fui-*, and the landmark contract (role, aria-label).
+	// analytics markers) to the callout's root element. Keys the
+	// component owns are dropped: class and id (use Class / ID),
+	// data-fui-* and role.
 	ExtraAttrs html.Attrs
 }
 
-// Callout renders a persistent info/warning/error block. Distinct from
-// Toast / Notification (ephemeral). Callouts live inline with content.
+// calloutClasses dresses headless.Alert's parts. The tone modifier
+// class is appended by the adapter — the registered custom variants
+// arrive as names, not class-map entries.
+var calloutClasses = headless.Classes{
+	headless.PartRoot:   "fui-callout",
+	headless.PartHeader: "fui-callout__head",
+	headless.PartTitle:  "fui-callout__title",
+	headless.PartDesc:   "fui-callout__desc",
+	headless.PartBody:   "fui-callout__body",
+	headless.PartFooter: "fui-callout__footer",
+}
+
+// Callout renders a persistent info/warning/error block on
+// headless.Alert. Distinct from Toast / Notification (ephemeral);
+// callouts live inline with content.
 //
-// Composition: html.Aside (which auto-applies role=complementary
-// and requires an aria-label, here derived from Title or variant).
-// Falls through to a plain <div> with the appropriate role when no
-// Title is set, so the variant-driven role takes precedence over a
-// generic "complementary" landmark.
+// Danger and warning callouts interrupt (role=alert); the rest are
+// standing messages the page rendered, which do not. The old
+// complementary-<aside> shape is gone: a tip is emphasis, not a
+// tangential region, and a nested complementary landmark is the axe
+// finding the Landmark field existed to dodge.
 func Callout(cfg CalloutConfig, body ...render.HTML) render.HTML {
 	v := cfg.Variant
 	if v == "" {
 		v = StatusInfo
 	}
 	checkStatusVariant("Callout", v)
-	extra := html.SafeExtraAttrs(cfg.ExtraAttrs, "role", "aria-label")
-	cls := "ui-callout ui-callout--" + string(v)
-	if cfg.Class != "" {
-		cls += " " + cfg.Class
+	live := headless.LiveOff
+	if v == StatusDanger || v == StatusWarning {
+		live = headless.LiveAssertive
 	}
-	out := []render.HTML{}
-	if cfg.Title != "" {
-		out = append(out, html.Strong(
-			html.TextConfig{Class: "ui-callout__title"},
-			render.Text(cfg.Title)))
-	}
+	var bodyHTML render.HTML
 	if len(body) > 0 {
-		out = append(out, html.Div(
-			html.DivConfig{Class: "ui-callout__body"}, body...))
+		bodyHTML = render.Join(body...)
 	}
-
-	// We want role="alert" on danger/warning callouts; html.Aside
-	// always applies role=complementary, so for those variants we use
-	// a div + explicit role via html.Div+Attrs.
-	role := calloutRole(v)
-	if role == "alert" {
-		return calloutStyle.WrapHTML(html.Div(html.DivConfig{
-			Class: cls, ID: cfg.ID, Role: "alert", ExtraAttrs: extra,
-		}, out...))
-	}
-	// Note "info" role: html.Aside requires Label/LabelledBy. Use
-	// the variant name as a safe fallback when no Title is provided.
-	landmark := true
-	if cfg.Landmark != nil {
-		landmark = *cfg.Landmark
-	}
-	if !landmark {
-		// Inline callout: a styled <div>, not a complementary landmark, so it
-		// can nest inside <main> without tripping landmark-complementary-
-		// is-top-level. Visually identical to the landmark form.
-		return calloutStyle.WrapHTML(html.Div(html.DivConfig{
-			Class: cls, ID: cfg.ID, ExtraAttrs: extra,
-		}, out...))
-	}
-	label := cfg.Title
-	if label == "" {
-		label = string(v) + " note"
-	}
-	return calloutStyle.WrapHTML(html.Aside(html.AsideConfig{
-		Class: cls, ID: cfg.ID, Label: label, ExtraAttrs: extra,
-	}, out...))
-}
-func calloutRole(v StatusVariant) string {
-	switch v {
-	case StatusDanger, StatusWarning:
-		return "alert"
-	default:
-		return "note"
-	}
+	cls := joinNonEmpty("fui-callout--"+string(v), cfg.Class)
+	return calloutStyle.WrapHTML(headless.Alert(headless.AlertProps{
+		Title:      cfg.Title,
+		Tone:       string(v),
+		Body:       bodyHTML,
+		Live:       live,
+		ID:         cfg.ID,
+		ExtraAttrs: headless.Safe(cfg.ExtraAttrs, "class", "id", "role"),
+		Parts:      rootClassParts(cls),
+	}, calloutClasses))
 }
 
 // ─── StatCard ───────────────────────────────────────────────────────
@@ -890,7 +782,21 @@ type StatCardConfig struct {
 	ExtraAttrs html.Attrs
 }
 
-// StatCard renders a metric card: label, value, optional trend pill.
+// statCardClasses dresses headless.StatCard's parts.
+var statCardClasses = headless.Classes{
+	headless.PartRoot:      "fui-stat-card",
+	headless.PartLabel:     "fui-stat-card__label",
+	headless.PartStatValue: "fui-stat-card__value",
+	headless.PartStatTrend: "fui-stat-card__trend",
+
+	headless.Part("stat-trend--up"):   "fui-stat-card__trend--up",
+	headless.Part("stat-trend--down"): "fui-stat-card__trend--down",
+	headless.Part("stat-trend--flat"): "fui-stat-card__trend--flat",
+}
+
+// StatCard renders a metric card on headless.StatCard: label, value,
+// optional trend — the label first, because the name before the
+// number is what makes the number a fact.
 func StatCard(cfg StatCardConfig) render.HTML {
 	if cfg.Label == "" {
 		panic("ui: StatCard requires Label")
@@ -898,26 +804,19 @@ func StatCard(cfg StatCardConfig) render.HTML {
 	if cfg.Value == "" {
 		panic("ui: StatCard requires Value")
 	}
-	cls := "ui-stat-card"
-	if cfg.Class != "" {
-		cls += " " + cfg.Class
+	dir := cfg.Direction
+	if dir == "" {
+		dir = TrendFlat
 	}
-	out := []render.HTML{
-		html.Paragraph(html.TextConfig{Class: "ui-stat-card__label"}, render.Text(cfg.Label)),
-		html.Paragraph(html.TextConfig{Class: "ui-stat-card__value"}, render.Text(cfg.Value)),
-	}
-	if cfg.Trend != "" {
-		dir := cfg.Direction
-		if dir == "" {
-			dir = TrendFlat
-		}
-		out = append(out, html.Paragraph(
-			html.TextConfig{Class: "ui-stat-card__trend ui-stat-card__trend--" + string(dir)},
-			render.Text(cfg.Trend)))
-	}
-	return statCardStyle.WrapHTML(html.Div(html.DivConfig{
-		Class: cls, ID: cfg.ID, ExtraAttrs: html.SafeExtraAttrs(cfg.ExtraAttrs),
-	}, out...))
+	return statCardStyle.WrapHTML(headless.StatCard(headless.StatCardProps{
+		Label:      cfg.Label,
+		Value:      cfg.Value,
+		Trend:      cfg.Trend,
+		Direction:  string(dir),
+		ID:         cfg.ID,
+		ExtraAttrs: headless.Safe(cfg.ExtraAttrs, "class", "id"),
+		Parts:      rootClassParts(cfg.Class),
+	}, statCardClasses))
 }
 
 // ─── Avatar ─────────────────────────────────────────────────────────
@@ -1493,7 +1392,7 @@ func SkipLink(cfg SkipLinkConfig) render.HTML {
 	if text == "" {
 		text = "Skip to main content"
 	}
-	cls := "ui-skip-link"
+	cls := "fui-skip-link"
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
 	}

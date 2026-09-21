@@ -10,6 +10,10 @@ import (
 // Spinner and Skeleton parts.
 const (
 	PartSpinnerRing Part = "spinner-ring"
+	PartSpinnerDots Part = "spinner-dots"
+	PartSpinnerDot  Part = "spinner-dot"
+	PartSpinnerGrid Part = "spinner-grid"
+	PartSpinnerCell Part = "spinner-cell"
 	PartSkeleton    Part = "skeleton-line"
 )
 
@@ -30,35 +34,62 @@ type SpinnerProps struct {
 	Announce bool
 	// Size is a class-map hint ("sm", "lg").
 	Size string
+	// Variant is the animated shape, a class-map hint: "" draws a
+	// bordered ring, "dots" three pulsing dots, "grid" a rippling
+	// square of nine. Every shape is aria-hidden — the shape is a
+	// picture of waiting and the label is what waiting is FOR.
+	Variant string
 
 	ID         string
 	ExtraAttrs html.Attrs
+
+	// Parts: attrs and binds on the root and the shape.
+	Parts Parts
 }
 
 // Spinner renders the indicator.
 //
 // role="status" rather than role="progressbar": a progressbar promises
 // a value, and a spinner has none — that is what makes it a spinner
-// rather than a Progress. An indeterminate <progress> is the right
-// element when the wait has a place in the layout; this is for the
-// small inline case.
 func Spinner(p SpinnerProps, s Classes) render.HTML {
 	if p.Label == "" {
 		panic("headless: Spinner requires Label — a moving shape says nothing on its own")
 	}
+	b := p.Parts.Box(s)
 	own := Merge(Safe(p.ExtraAttrs), Attrs(map[string]string{"id": p.ID}))
 	if cls := s.Variant(PartRoot, "size-"+p.Size); p.Size != "" && cls != "" {
+		own["class"] = joinClasses(own["class"], cls)
+	}
+	if cls := s.Variant(PartRoot, p.Variant); p.Variant != "" && cls != "" {
 		own["class"] = joinClasses(own["class"], cls)
 	}
 	if p.Announce {
 		own["role"] = "status"
 	}
-	return El("span", s, PartRoot, own,
+	hidden := Attrs(map[string]string{"aria-hidden": "true"})
+	var shape render.HTML
+	switch p.Variant {
+	case "dots":
+		dots := make([]render.HTML, 3)
+		for i := range dots {
+			dots[i] = b.El("span", PartSpinnerDot, nil)
+		}
+		shape = b.El("span", PartSpinnerDots, hidden, dots...)
+	case "grid":
+		cells := make([]render.HTML, 9)
+		for i := range cells {
+			cells[i] = b.El("span", PartSpinnerCell, nil)
+		}
+		shape = b.El("span", PartSpinnerGrid, hidden, cells...)
+	default:
 		// The ring is the animation, and it is hidden: what it means
 		// is in the text beside it, and a spinning shape has no
 		// meaning to announce.
-		El("span", s, PartSpinnerRing, Attrs(map[string]string{"aria-hidden": "true"}), render.HTML("")),
-		El("span", s, PartVisuallyHidden, nil, render.Text(p.Label)),
+		shape = b.El("span", PartSpinnerRing, hidden, render.HTML(""))
+	}
+	return b.El("span", PartRoot, own,
+		shape,
+		b.El("span", PartVisuallyHidden, nil, render.Text(p.Label)),
 	)
 }
 
@@ -74,6 +105,9 @@ type SkeletonProps struct {
 
 	ID         string
 	ExtraAttrs html.Attrs
+
+	// Parts: attrs and binds on the root and the bars.
+	Parts Parts
 }
 
 // Skeleton renders the placeholder.
@@ -94,8 +128,9 @@ func Skeleton(p SkeletonProps, s Classes) render.HTML {
 	if n <= 0 {
 		n = 1
 	}
+	b := p.Parts.Box(s)
 	bars := make([]render.HTML, 0, n+1)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		attrs := Attrs(map[string]string{"aria-hidden": "true"})
 		// The last line of a paragraph is short, and a skeleton that
 		// draws every line full width reads as a block, not as text.
@@ -106,32 +141,46 @@ func Skeleton(p SkeletonProps, s Classes) render.HTML {
 		if p.Shape != "" {
 			part = Part(string(PartSkeleton) + "--" + p.Shape)
 		}
-		bars = append(bars, El("span", s, part, attrs, render.HTML("")))
+		bars = append(bars, b.El("span", part, attrs, render.HTML("")))
 	}
 	own := Merge(Safe(p.ExtraAttrs), Attrs(map[string]string{
 		"id": p.ID, "data-hui-lines": strconv.Itoa(n),
 	}))
 	own["role"] = "status"
-	return El("div", s, PartRoot, own,
-		append(bars, El("span", s, PartVisuallyHidden, nil, render.Text(p.Label)))...)
+	return b.El("div", PartRoot, own,
+		append(bars, b.El("span", PartVisuallyHidden, nil, render.Text(p.Label)))...)
 }
 
 func init() {
 	Register(Spec{
-		Name:    "Spinner",
-		Anatomy: []Part{PartRoot, PartSpinnerRing, PartVisuallyHidden},
+		Name: "Spinner",
+		WithParts: func(s Classes, parts Parts) render.HTML {
+			return Spinner(SpinnerProps{Label: "Checking", Parts: parts}, s)
+		},
+		Anatomy: []Part{PartRoot, PartSpinnerRing, PartSpinnerDots, PartSpinnerDot, PartSpinnerGrid, PartSpinnerCell, PartVisuallyHidden},
 		Cases: func(k Kit) []Case {
 			s := k.Classes
 			return []Case{{
 				Name: "inline wait",
 				Why:  "role=status, not progressbar: a progressbar promises a value and a spinner has none — and the label says what is being waited for, because a moving shape says nothing on its own",
 				HTML: Spinner(SpinnerProps{Label: "Checking the registry"}, s),
+			}, {
+				Name: "dots",
+				Why:  "the shape is the class map's choice and the meaning never moves: the dots are hidden and the label is what the wait is for",
+				HTML: Spinner(SpinnerProps{Label: "Saving", Variant: "dots"}, s),
+			}, {
+				Name: "grid",
+				Why:  "a heavy wait says so with a busier picture, and the picture is still hidden: the nine cells are motion and the label is the meaning",
+				HTML: Spinner(SpinnerProps{Label: "Restoring the backup", Variant: "grid"}, s),
 			}}
 		},
 	})
 
 	Register(Spec{
-		Name:    "Skeleton",
+		Name: "Skeleton",
+		WithParts: func(s Classes, parts Parts) render.HTML {
+			return Skeleton(SkeletonProps{Label: "Loading apps", Lines: 2, Parts: parts}, s)
+		},
 		Anatomy: []Part{PartRoot, PartSkeleton, PartVisuallyHidden},
 		Hooks:   []string{"data-hui-lines", "data-hui-skeleton-last"},
 		Cases: func(k Kit) []Case {

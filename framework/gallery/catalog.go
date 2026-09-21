@@ -204,7 +204,7 @@ var Catalog = []Entry{
 				Footer:      html.Div(html.DivConfig{Class: "demo-row"}, ui.Button(ui.ButtonConfig{Label: "Action", Variant: ui.ButtonPrimary})),
 			}, html.Paragraph(html.TextConfig{}, render.Text("This is the body. The card's surface, border, and radius come from the theme."))),
 			// Interactive variant: with Href the whole shell becomes a
-			// focusable <a class="ui-card ui-card--interactive">.
+			// focusable <a class="fui-card fui-card--interactive">.
 			ui.Card(ui.CardConfig{
 				Heading:     "Interactive card →",
 				Description: "Set Href and the entire surface becomes one focusable link.",
@@ -1453,9 +1453,9 @@ ui.OptimisticAction(ui.OptimisticActionConfig{
 		return ui.StepRail(ui.StepRailConfig{
 			Title: "Setup",
 			Items: []ui.StepRailItem{
-				{Number: "1", Label: "Create blueprint", Anchor: "#a"},
-				{Number: "2", Label: "Generate app", Anchor: "#b"},
-				{Number: "3", Label: "Own the Go", Anchor: "#c"},
+				{Number: "1", Label: "Create blueprint", Anchor: "a"},
+				{Number: "2", Label: "Generate app", Anchor: "b"},
+				{Number: "3", Label: "Own the Go", Anchor: "c"},
 			},
 			ActiveIndex: 1,
 		})

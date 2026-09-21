@@ -26,9 +26,9 @@ func TestContainerAsTagOverride(t *testing.T) {
 
 func TestContainerWidthVariantClass(t *testing.T) {
 	cases := map[ContainerWidth]string{
-		ContainerNarrow: "ui-container--narrow",
-		ContainerWide:   "ui-container--wide",
-		ContainerFull:   "ui-container--full",
+		ContainerNarrow: "fui-container--narrow",
+		ContainerWide:   "fui-container--wide",
+		ContainerFull:   "fui-container--full",
 	}
 	for w, cls := range cases {
 		h := string(Container(ContainerConfig{Width: w}))
@@ -40,7 +40,7 @@ func TestContainerWidthVariantClass(t *testing.T) {
 
 func TestContainerDefaultWidthEmitsNoModifier(t *testing.T) {
 	h := string(Container(ContainerConfig{}))
-	if strings.Contains(h, "ui-container--") {
+	if strings.Contains(h, "fui-container--") {
 		t.Errorf("default Width should not emit a modifier class:\n%s", h)
 	}
 }
@@ -65,7 +65,7 @@ func TestContainerExtraAttrsCannotOverrideOwned(t *testing.T) {
 	if !strings.Contains(root, `id="real"`) {
 		t.Errorf("framework id lost:\n%s", root)
 	}
-	if !strings.Contains(root, "ui-container") {
+	if !strings.Contains(root, "fui-container") {
 		t.Errorf("framework class lost:\n%s", root)
 	}
 	if strings.Contains(root, "evil") {

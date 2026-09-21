@@ -25,9 +25,9 @@ import (
 var docCatalogExempt = map[string]string{
 	"AspectRatioComponent": "exported alias; documented as AspectRatio (slug aspectratio)",
 	"SidebarBody":          "internal building block of Sidebar; documented via the sidebar entry",
-	"SkeletonAvatar":       "preset of core-ui/patterns/skeleton; documented via the skeleton entry",
-	"SkeletonCard":         "preset of core-ui/patterns/skeleton; documented via the skeleton entry",
-	"SkeletonRow":          "preset of core-ui/patterns/skeleton; documented via the skeleton entry",
+	"SkeletonAvatar":       "preset over headless.Skeleton; documented via the skeleton entry",
+	"SkeletonCard":         "preset over headless.Skeleton; documented via the skeleton entry",
+	"SkeletonRow":          "preset over headless.Skeleton; documented via the skeleton entry",
 }
 
 func TestDocGoInventoryComplete(t *testing.T) {

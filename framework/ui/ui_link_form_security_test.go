@@ -236,11 +236,12 @@ func TestMenuNeutralisesControlByteScheme(t *testing.T) {
 	}
 }
 
-// TestCardHrefDropsUnsafeSchemes pins the URL scheme allow-list on the
-// interactive Card shell: a javascript:/data: (or control-byte-split)
-// Href never reaches the rendered <a>; it is reduced to "#": dropped,
-// not panicked, because Card is a content-level component.
-func TestCardHrefDropsUnsafeSchemes(t *testing.T) {
+// TestCardHrefRefusesUnsafeSchemes pins the URL scheme allow-list on
+// the linked Card: a javascript:/data: (or control-byte-split) Href is
+// refused at render naming the prop — a configured href is the
+// developer's mistake, the same refusal Alert.DismissHref and
+// Form.Action meet — and never reaches the rendered <a>.
+func TestCardHrefRefusesUnsafeSchemes(t *testing.T) {
 	for _, payload := range []string{
 		"javascript:alert(document.cookie)",
 		"data:text/html,<script>alert(1)</script>",
@@ -248,12 +249,18 @@ func TestCardHrefDropsUnsafeSchemes(t *testing.T) {
 		"//evil.example/x",
 	} {
 		t.Run(payload, func(t *testing.T) {
+			defer func() {
+				r := recover()
+				if r == nil {
+					t.Fatalf("unsafe card href rendered instead of refusing: %s", payload)
+				}
+				msg, ok := r.(string)
+				if !ok || !strings.Contains(msg, "Href") {
+					t.Fatalf("panic does not name Href: %v", r)
+				}
+			}()
 			h := ui.Card(ui.CardConfig{Heading: "T", Href: payload}, render.Text("body"))
-			out := strings.ToLower(string(h))
-			if strings.Contains(out, "javascript:") || strings.Contains(out, "data:") || strings.Contains(out, "//evil.example") {
-				t.Fatalf("unsafe scheme reached card href: %s", h)
-			}
-			mustContain(t, h, `href="#"`)
+			t.Fatalf("unsafe card href rendered: %s", h)
 		})
 	}
 	// Happy path: a safe href round-trips.
@@ -286,17 +293,14 @@ func TestTagHrefDropsUnsafeSchemes(t *testing.T) {
 
 // TestNavHrefSinksDropUnsafeSchemes pins the URL scheme allow-list on
 // the remaining content-level Href sinks that render live anchors:
-// ProgressSteps step Href, Sidebar item Href, DocLayout crumb Href,
-// and DocPrevNext pager Hrefs. Each degrades to "#", never a live
-// javascript: link.
+// Sidebar item Href, DocLayout crumb Href, and DocPrevNext pager
+// Hrefs. Each degrades to "#", never a live javascript: link.
+// ProgressSteps step Href is no longer in this set: it rides
+// headless.Steps, which refuses a configured href the anchor policy
+// rejects (see TestProgressStepsHrefIsRefusedNotDegraded).
 func TestNavHrefSinksDropUnsafeSchemes(t *testing.T) {
 	const payload = "javascript:alert(1)"
 	surfaces := map[string]func() render.HTML{
-		"progress-steps": func() render.HTML {
-			return ui.ProgressSteps(ui.ProgressStepsConfig{
-				Steps: []ui.ProgressStep{{Label: "One", Status: ui.ProgressStepComplete, Href: payload}},
-			})
-		},
 		"sidebar-item": func() render.HTML {
 			return ui.SidebarBody(ui.SidebarConfig{
 				Items: []ui.SidebarItem{{Label: "Home", Href: payload}},
@@ -320,9 +324,32 @@ func TestNavHrefSinksDropUnsafeSchemes(t *testing.T) {
 			if strings.Contains(strings.ToLower(string(h)), "javascript:") {
 				t.Fatalf("javascript: href reached output: %s", h)
 			}
-			mustContain(t, h, `href="#"`)
+			// Every surface here degrades the refused href to the
+			// inert "#" anchor it keeps.
+			if !strings.Contains(string(h), `href="#"`) {
+				t.Fatalf("a refused href still rendered an anchor: %s", h)
+			}
 		})
 	}
+}
+
+// A ProgressSteps step Href the anchor policy refuses is refused at
+// render naming the prop: the configured href is the developer's
+// mistake, the posture the primitive shares with Card and Form.
+func TestProgressStepsHrefIsRefusedNotDegraded(t *testing.T) {
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Fatal("an unsafe step href rendered instead of refusing")
+		}
+		msg, ok := r.(string)
+		if !ok || !strings.Contains(msg, "Href") {
+			t.Fatalf("panic does not name Href: %v", r)
+		}
+	}()
+	ui.ProgressSteps(ui.ProgressStepsConfig{
+		Steps: []ui.ProgressStep{{Label: "One", Status: ui.ProgressStepComplete, Href: "javascript:alert(1)"}},
+	})
 }
 
 // TestHrefSinksDropProtocolRelative pins that the three sinks that

@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"strings"
 	"testing"
 )
@@ -40,10 +41,10 @@ func TestProgressStepsCurrentEmitsAriaCurrent(t *testing.T) {
 	if !strings.Contains(h, `aria-current="step"`) {
 		t.Errorf("current step should have aria-current=step:\n%s", h)
 	}
-	if !strings.Contains(h, "ui-progress-steps__item--current") {
+	if !strings.Contains(h, `data-state="current"`) {
 		t.Errorf("current step should have modifier class:\n%s", h)
 	}
-	if !strings.Contains(h, "ui-progress-steps__item--complete") {
+	if !strings.Contains(h, `data-state="done"`) {
 		t.Errorf("complete step should have modifier class:\n%s", h)
 	}
 }
@@ -60,12 +61,33 @@ func TestProgressStepsCompleteWithHrefIsLink(t *testing.T) {
 	}
 }
 
+// Upcoming steps ignore Href — the field's own contract: only a
+// completed step is a way back.
+func TestProgressStepsUpcomingStepIgnoresHref(t *testing.T) {
+	h := string(ProgressSteps(ProgressStepsConfig{
+		Steps: []ProgressStep{
+			{Label: "Done", Status: ProgressStepComplete, Href: "/back"},
+			{Label: "Now", Status: ProgressStepCurrent},
+			{Label: "Later", Href: "/ahead"},
+		},
+	}))
+	if !strings.Contains(h, `href="/back"`) {
+		t.Errorf("complete + Href should render an <a>:\n%s", h)
+	}
+	if strings.Contains(h, `href="/ahead"`) {
+		t.Errorf("an upcoming step's Href became an anchor:\n%s", h)
+	}
+	if n := strings.Count(h, "<a "); n != 1 {
+		t.Errorf("expected exactly one anchor, got %d:\n%s", n, h)
+	}
+}
+
 func TestProgressStepsVerticalOrientation(t *testing.T) {
 	h := string(ProgressSteps(ProgressStepsConfig{
 		Orientation: ProgressStepsVertical,
 		Steps:       []ProgressStep{{Label: "A"}},
 	}))
-	if !strings.Contains(h, "ui-progress-steps--vertical") {
+	if !strings.Contains(h, "fui-progress-steps--vertical") {
 		t.Errorf("Vertical orientation should add modifier class:\n%s", h)
 	}
 }
@@ -99,10 +121,44 @@ func TestProgressStepsExtraAttrsCannotOverrideOwned(t *testing.T) {
 		}
 	}
 	for _, want := range []string{
-		`data-test="hook"`, `aria-label="Checkout"`, `class="ui-progress-steps mine"`,
+		`data-test="hook"`, `aria-label="Checkout"`, `class="fui-progress-steps mine"`,
 	} {
 		if !strings.Contains(root, want) {
 			t.Errorf("nav missing %q:\n%s", want, root)
 		}
+	}
+}
+
+// The vertical connector is a short bar above each item, the exact
+// geometry the base sheet drew; the modifier class alone proves
+// nothing about it.
+func TestProgressStepsVerticalConnectorGeometry(t *testing.T) {
+	css := progressStepsCSS(style.Theme{})
+	i := strings.Index(css, ".fui-progress-steps--vertical .fui-progress-steps__item + .fui-progress-steps__item::before")
+	if i < 0 {
+		t.Fatalf("the vertical connector rule is gone:\n%s", css)
+	}
+	rule := css[i:]
+	rule = rule[:strings.Index(rule, "}")]
+	for _, want := range []string{"left: 13px", "right: auto", "top: -12px", "bottom: auto", "width: 2px", "height: 12px"} {
+		if !strings.Contains(rule, want) {
+			t.Errorf("the vertical connector lost %q:\n%s", want, rule)
+		}
+	}
+}
+
+// An upcoming step before the current one stays upcoming. The
+// primitive derives "done" for every step before Current, so the
+// adapter names each state explicitly instead of leaning on that.
+func TestProgressStepsUpcomingBeforeCurrentIsTodo(t *testing.T) {
+	h := string(ProgressSteps(ProgressStepsConfig{
+		Steps: []ProgressStep{
+			{Label: "Skipped"},
+			{Label: "Now", Status: ProgressStepCurrent},
+		},
+	}))
+	first := h[:strings.Index(h, "Now")]
+	if !strings.Contains(first, `data-state="todo"`) || strings.Contains(first, `data-state="done"`) || strings.Contains(first, "✓") {
+		t.Errorf("the upcoming step before the current one rendered as done:\n%s", first)
 	}
 }

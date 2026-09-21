@@ -44,7 +44,7 @@ func TestSlugDerivedIDsCollideOnRepeat(t *testing.T) {
 		},
 		{
 			name: "section-heading-explicit-id",
-			id:   "ui-section-overview", // h2 id — aria-labelledby target
+			id:   "overview-2-title", // h2 id — aria-labelledby target, derived from the explicit section ID
 			page: string(ui.Section(ui.SectionConfig{Heading: "Overview"}, render.Text("a"))) +
 				string(ui.Section(ui.SectionConfig{Heading: "Overview", ID: "overview-2"}, render.Text("b"))),
 		},

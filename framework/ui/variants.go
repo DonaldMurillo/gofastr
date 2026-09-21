@@ -49,7 +49,7 @@ import (
 // plain `.fui-button--<name>` class rules, appended after the
 // sheet's built-ins, so Props override the default look by source
 // order without !important; card rules stay marker-scoped
-// (`[data-fui-comp="ui-card"].ui-card--<name>`).
+// (`[data-fui-comp="ui-card"].fui-card--<name>`).
 type VariantCSS struct {
 	// Props is the variant's base-state declarations. Required.
 	Props []string
@@ -119,7 +119,7 @@ func registerButtonClass(name string) {
 
 // RegisterCardVariant registers a custom CardVariant under name. The
 // CSS lands in the registered ui-card sheet as
-// `[data-fui-comp="ui-card"].ui-card--<name>` rules. Same rules and
+// `[data-fui-comp="ui-card"].fui-card--<name>` rules. Same rules and
 // panics as RegisterButtonVariant ("interactive" is reserved: Card
 // uses it for the Href form).
 func RegisterCardVariant(name string, css VariantCSS) CardVariant {
@@ -584,7 +584,7 @@ func buttonModsCSS(t style.Theme) string {
 // customStatusCSS renders the registered status variants into one
 // consuming component's sheet, following that component's own built-in
 // variant pattern. Seals the status set on the first consuming build.
-func customStatusCSS(component string, t style.Theme) string {
+func customStatusCSS(sheet, classPrefix string, t style.Theme) string {
 	names := statusMods.sealAndSnapshot()
 	if len(names) == 0 {
 		return ""
@@ -596,7 +596,7 @@ func customStatusCSS(component string, t style.Theme) string {
 	}
 	statusMods.mu.RUnlock()
 
-	cs := style.NewComponentSheet(component, t)
+	cs := style.NewComponentSheet(sheet, t)
 	for _, n := range names {
 		e := entries[n]
 		c := e.Color
@@ -604,11 +604,11 @@ func customStatusCSS(component string, t style.Theme) string {
 		if icon == "" {
 			icon = "•"
 		}
-		switch component {
+		switch sheet {
 		case "ui-badge", "ui-tag":
 			// Same soft-tint pattern as the built-in success/warning/…
 			// rules: 15% accent surface, full-accent text, 30% border.
-			cs.Rule("&."+component+"--"+n).Set(
+			cs.Rule("&."+classPrefix+"--"+n).Set(
 				"background", statusTint(c, "15%", "85%"),
 				"color", c,
 				"border-color", statusTint(c, "30%", "70%"),
@@ -616,14 +616,14 @@ func customStatusCSS(component string, t style.Theme) string {
 		case "ui-callout":
 			// Callout's variant hook is a pair of custom properties the
 			// base rules consume.
-			cs.Rule("&.ui-callout--"+n).Set(
+			cs.Rule("&."+classPrefix+"--"+n).Set(
 				"--ui-callout-accent", c,
 				"--ui-callout-icon", `"`+icon+`"`,
 			).End()
 		case "ui-notification":
-			cs.Rule("&.ui-notification--"+n).
+			cs.Rule("&."+classPrefix+"--"+n).
 				Set("border-inline-start-color", c).
-				Child(".ui-notification__icon", "background", c).
+				Child("."+classPrefix+"__icon", "background", c).
 				End()
 		}
 	}

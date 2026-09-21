@@ -106,10 +106,9 @@ const (
 func renderDashboardSettings(ctx context.Context, r landingRoute, state dashboardSettingsState) render.HTML {
 	if state.Done {
 		return ui.Callout(ui.CalloutConfig{
-			Variant:  ui.StatusSuccess,
-			ID:       "hd-settings-done",
-			Title:    "Settings saved",
-			Landmark: falsePtr(),
+			Variant: ui.StatusSuccess,
+			ID:      "hd-settings-done",
+			Title:   "Settings saved",
 		}, render.Text("This demo persists nothing: the round trip — validation, focus transfer, the announcement — is the point. Reload for the form again."))
 	}
 	// A failed submit renders through FormConfig.Errors: the form

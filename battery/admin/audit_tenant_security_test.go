@@ -83,7 +83,7 @@ func TestAuditSurfacesStayInsideTenant(t *testing.T) {
 	if ov.Code != http.StatusOK {
 		t.Fatalf("GET /admin = %d body=%s", ov.Code, ov.Body.String())
 	}
-	m := regexp.MustCompile(`ui-stat-card__label">entries</p>\s*<p[^>]*ui-stat-card__value">(\d+)<`).FindStringSubmatch(ov.Body.String())
+	m := regexp.MustCompile(`fui-stat-card__label">entries</p>\s*<p[^>]*fui-stat-card__value">(\d+)<`).FindStringSubmatch(ov.Body.String())
 	if m == nil {
 		t.Fatalf("sanity: overview audit entries tile not found in body=%s", ov.Body.String())
 	}

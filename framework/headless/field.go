@@ -185,6 +185,126 @@ func FieldRow(s Classes, fields ...render.HTML) render.HTML {
 	return El("div", s, PartFieldRow, nil, fields...)
 }
 
+// ─── Fieldset ───────────────────────────────────────────────────────
+
+// Fieldset parts.
+const (
+	PartLegend     Part = "legend"
+	PartGroupDesc  Part = "group-desc"
+	PartFields     Part = "fields"
+	PartGroupError Part = "group-error"
+)
+
+// FieldsetProps is a titled group of fields: the section of a form
+// that belongs together ("Notifications", "Access").
+type FieldsetProps struct {
+	// Legend is the group's name, rendered as a real <legend> inside
+	// a real <fieldset>: that pair is the native group semantic,
+	// naming every control inside without a single aria attribute.
+	//
+	// Empty renders the group as a plain div: an unlabelled fieldset
+	// is a landmark that names nothing, and a group with no name to
+	// give is a row of fields, not a section.
+	Legend string
+	// Description is the supporting line under the legend. It is
+	// wired to the group by aria-describedby beside any group error,
+	// read with the question it explains.
+	Description string
+	// Error is the error that belongs to the group as a whole — the
+	// question was answered wrong somewhere in it, not in any one
+	// field. It is wired to the group by aria-describedby, so the
+	// fields' own errors and the group's never compete for the same
+	// relationship.
+	Error string
+
+	ID         string
+	ExtraAttrs html.Attrs
+
+	// Parts: attrs and binds on the group and every part it draws.
+	Parts Parts
+}
+
+// Fieldset renders the group.
+func Fieldset(p FieldsetProps, s Classes, fields ...render.HTML) render.HTML {
+	b := p.Parts.Box(s)
+	head := make([]render.HTML, 0, 3)
+	if p.Legend != "" {
+		head = append(head, b.El("legend", PartLegend, nil, render.Text(p.Legend)))
+	}
+	// A description and an error are both wired to the group by id,
+	// and an id needs a base: the explicit group id, or the legend's
+	// slug when the group is named by its legend.
+	if (p.Description != "" || p.Error != "") && p.ID == "" && p.Legend == "" {
+		panic("headless: Fieldset Description and Error need ID or Legend — their ids are derived from one of them, and a group instruction nothing can point at is advice nobody hears")
+	}
+	base := p.ID
+	if base == "" {
+		base = slugID("fieldset", p.Legend)
+	}
+	own := Merge(Safe(p.ExtraAttrs, "aria-describedby"), Attrs(map[string]string{"id": p.ID}))
+	var described []string
+	if p.Description != "" {
+		descID := base + "-desc"
+		described = append(described, descID)
+		head = append(head, b.El("p", PartGroupDesc,
+			Attrs(map[string]string{"id": descID}), render.Text(p.Description)))
+	}
+	if p.Error != "" {
+		errID := base + "-error"
+		described = append(described, errID)
+		head = append(head, b.El("p", PartGroupError,
+			Attrs(map[string]string{"id": errID}), render.Text(p.Error)))
+	}
+	if len(described) > 0 {
+		// The description first, then the error: the rule the group
+		// must obey is read before the way it was broken.
+		own["aria-describedby"] = strings.Join(described, " ")
+	}
+	body := b.El("div", PartFields, nil, fields...)
+
+	kids := append(head, body)
+	if p.Legend == "" {
+		return b.El("div", PartRoot, own, kids...)
+	}
+	return b.El("fieldset", PartRoot, own, kids...)
+}
+
+func init() {
+	Register(Spec{
+		Name: "Fieldset",
+		WithParts: func(s Classes, parts Parts) render.HTML {
+			return Fieldset(FieldsetProps{Legend: "Access", Parts: parts}, s)
+		},
+		Anatomy: []Part{PartRoot, PartLegend, PartGroupDesc, PartFields, PartGroupError},
+		Cases: func(k Kit) []Case {
+			s := k.Classes
+			field := func(label, name string) render.HTML {
+				return Field(FieldProps{Label: label, For: name},
+					k.For("Field"), func(c FieldControl) render.HTML {
+						return Input(InputProps{Name: name, ID: c.ID}, k.For("Input"))
+					})
+			}
+			return []Case{{
+				Name: "a titled group",
+				Why:  "a real legend in a real fieldset names every control inside without a single aria attribute — the native group semantic a wrapper div has to fake with labels nobody checks",
+				HTML: Fieldset(FieldsetProps{Legend: "Notifications",
+					Description: "How this app tells you about deploys."},
+					s, field("Deploy email", "deploy-email"), field("Failure email", "failure-email")),
+			}, {
+				Name: "a group error",
+				Why:  "the error that belongs to the group as a whole is wired by aria-describedby on the group, so it is read with the question and never replaces a field's own error",
+				HTML: Fieldset(FieldsetProps{Legend: "Access", Error: "Pick at least one role."},
+					s, field("Admin", "role-admin")),
+			}, {
+				Name: "no title",
+				Why:  "a group with no name renders as a plain div: an unlabelled fieldset is a landmark that names nothing, and a screen reader announcing an empty group label is the alternative",
+				HTML: Fieldset(FieldsetProps{ID: "misc", Description: "The remaining settings."},
+					s, field("Retries", "retries")),
+			}}
+		},
+	})
+}
+
 // ─── ConditionalField ───────────────────────────────────────────────
 
 // ConditionalFieldProps is a region shown when another field has a

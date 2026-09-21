@@ -1,19 +1,20 @@
 package ui
 
-import (
-	"maps"
-
-	"github.com/DonaldMurillo/gofastr/core-ui/html"
-	"github.com/DonaldMurillo/gofastr/core-ui/registry"
-	"github.com/DonaldMurillo/gofastr/core-ui/style"
-	"github.com/DonaldMurillo/gofastr/core/render"
-)
-
 // ─── Container ──────────────────────────────────────────────────────
 //
 // Max-width page wrapper with breakpoint-aware horizontal padding.
 // Pairs with Stack/Cluster/Grid (which manage internal spacing).
 // Container manages the OUTER bounds: the gutter against the viewport.
+// headless.Container renders the measure; this adapter dresses it with
+// the fui-container class map.
+
+import (
+	"github.com/DonaldMurillo/gofastr/core-ui/html"
+	"github.com/DonaldMurillo/gofastr/core-ui/registry"
+	"github.com/DonaldMurillo/gofastr/core-ui/style"
+	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/headless"
+)
 
 // ContainerWidth picks the max-inline-size cap.
 type ContainerWidth string
@@ -41,35 +42,42 @@ type ContainerConfig struct {
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers, ARIA overrides) to the wrapper element.
 	// Keys the component owns are dropped: class and id (use Class /
-	// ID) and data-fui-*.
+	// ID), style and data-fui-*.
 	ExtraAttrs html.Attrs
+}
+
+// containerClasses dresses headless.Container: the measure names map
+// to this package's width vocabulary (narrow / wide / full), the
+// default carrying no modifier.
+var containerClasses = headless.Classes{
+	headless.PartRoot:                "fui-container",
+	headless.Part("root--size-sm"):   "fui-container--narrow",
+	headless.Part("root--size-lg"):   "fui-container--wide",
+	headless.Part("root--size-full"): "fui-container--full",
 }
 
 // Container renders a max-width wrapper.
 func Container(cfg ContainerConfig, children ...render.HTML) render.HTML {
+	size := ""
 	switch cfg.Width {
-	case ContainerNarrow, ContainerDefault, ContainerWide, ContainerFull:
+	case ContainerNarrow:
+		size = "sm"
+	case ContainerDefault:
+	case ContainerWide:
+		size = "lg"
+	case ContainerFull:
+		size = "full"
 	default:
 		panic("ui: Container unknown Width " + string(cfg.Width) +
 			`. Pick one of: narrow, "" (default), wide, full`)
 	}
-	tag := cfg.As
-	if tag == "" {
-		tag = "div"
-	}
-	cls := "ui-container"
-	if cfg.Width != ContainerDefault {
-		cls += " ui-container--" + string(cfg.Width)
-	}
-	if cfg.Class != "" {
-		cls += " " + cfg.Class
-	}
-	attrs := html.Attrs{"class": cls}
-	if cfg.ID != "" {
-		attrs["id"] = cfg.ID
-	}
-	maps.Copy(attrs, html.SafeExtraAttrs(cfg.ExtraAttrs))
-	return containerStyle.WrapHTML(render.Tag(tag, attrs, children...))
+	return containerStyle.WrapHTML(headless.Container(headless.ContainerProps{
+		Size:       size,
+		Tag:        cfg.As,
+		ID:         cfg.ID,
+		ExtraAttrs: headless.Safe(cfg.ExtraAttrs, "class", "id"),
+		Parts:      rootClassParts(cfg.Class),
+	}, containerClasses, children...))
 }
 
 var containerStyle = registry.RegisterStyle("ui-container", containerCSS)
@@ -99,7 +107,7 @@ func containerCSS(_ style.Theme) string {
   }
 }
 
-[data-fui-comp="ui-container"].ui-container--narrow { max-inline-size: var(--ui-container-narrow, 640px); }
-[data-fui-comp="ui-container"].ui-container--wide   { max-inline-size: var(--ui-container-wide, 1280px); }
-[data-fui-comp="ui-container"].ui-container--full   { max-inline-size: none; }`
+[data-fui-comp="ui-container"].fui-container--narrow { max-inline-size: var(--ui-container-narrow, 640px); }
+[data-fui-comp="ui-container"].fui-container--wide   { max-inline-size: var(--ui-container-wide, 1280px); }
+[data-fui-comp="ui-container"].fui-container--full   { max-inline-size: none; }`
 }

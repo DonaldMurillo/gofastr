@@ -150,7 +150,7 @@ raw (enumerated in `framework/ui/extraattrs_contract_test.go`). See
 - **panehost**: `framework/ui.PaneHost`, primary pane + openable secondary/tertiary side panes with a responsive overlay-drawer collapse
 - **themed**: `framework/ui.Themed`, wraps a subtree in a registered section-level theme override
 - **workbench**: `framework/ui.Workbench`, viewport-height inspector shell: a fixed-width rail that scrolls on its own beside a pane that fills the rest (an `<iframe>` in the pane fills it edge to edge); stacks below 720px
-- **card**: `framework/ui.Card`, labelled `<section>` with header/body/footer
+- **card**: `framework/ui.Card`, a surface with header/body/footer over `headless.Card`; `Href` makes the whole card one link
 - **sticky**: `framework/ui.Sticky`, theme-token sticky wrapper for top or bottom edge pinning
 - **aspectratio**: `framework/ui.AspectRatio`, CLS-safe aspect-ratio wrapper for media and embeds
 - **image**: `framework/ui.OptimizedImage`, responsive `<picture>` with CLS-safe Width/Height
@@ -188,7 +188,7 @@ raw (enumerated in `framework/ui/extraattrs_contract_test.go`). See
 - **factbox**: `framework/ui.FactBox`, single labelled fact (compact label + value pair; label-first or value-first)
 - **terminalblock**: `framework/ui.TerminalBlock`, terminal transcript with a labelled header and `TerminalOut` / `TerminalOK` lines
 - **progress**: `core-ui/patterns/progress`, native `<progress>` with theme styling
-- **skeleton**: `core-ui/patterns/skeleton`, pure-CSS shimmer placeholders
+- **skeleton**: `framework/ui.SkeletonCard` / `SkeletonRow` / `SkeletonAvatar`, loading placeholders over `framework/headless.Skeleton`: hidden shimmer bars, one polite "Loading…" announcement per preset
 - **spinner**: `framework/ui.Spinner`, inline CSS loading indicator
 
 ### Tags, badges, filters

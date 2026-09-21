@@ -25,6 +25,9 @@ const (
 	PartPaginationLink Part = "pagination-link"
 	PartPaginationGap  Part = "pagination-gap"
 	PartStep           Part = "step"
+	PartStepRow        Part = "step-row"
+	PartStepText       Part = "step-text"
+	PartStepHint       Part = "step-hint"
 )
 
 // ─── Badge ──────────────────────────────────────────────────────────
@@ -51,6 +54,9 @@ type BadgeProps struct {
 	ID   string
 
 	ExtraAttrs html.Attrs
+
+	// Parts: attrs and binds on the root and the icon.
+	Parts Parts
 }
 
 // Badge renders a badge.
@@ -58,13 +64,14 @@ func Badge(p BadgeProps, s Classes) render.HTML {
 	if p.Label == "" {
 		panic("headless: Badge requires Label")
 	}
+	b := p.Parts.Box(s)
 	kids := make([]render.HTML, 0, 2)
 	if p.Icon != "" {
-		kids = append(kids, El("span", s, PartIcon,
+		kids = append(kids, b.El("span", PartIcon,
 			Attrs(map[string]string{"aria-hidden": "true"}), p.Icon))
 	}
 	kids = append(kids, render.Text(p.Label))
-	return El("span", s, PartRoot,
+	return b.El("span", PartRoot,
 		Merge(Safe(p.ExtraAttrs), Attrs(map[string]string{"id": p.ID})),
 		kids...)
 }
@@ -416,13 +423,36 @@ func pageNumbers(pages, page, window int) []int {
 
 // ─── Steps ──────────────────────────────────────────────────────────
 
+// Step is one entry on a Steps rail.
+type Step struct {
+	// Label is the step's name. Required.
+	Label string
+	// Hint is the supporting line under the label.
+	Hint string
+	// Href makes the step a link — a completed step the reader can go
+	// back to. Every href goes through the anchor policy; one the
+	// policy refuses is the developer's mistake, said at render like
+	// every configured href in this package.
+	Href string
+	// Marker overrides the glyph in the marker circle — a zero-padded
+	// number ("01"), a caller's check icon. It is aria-hidden either
+	// way: the marker is a picture of the step's state, and the label
+	// beside it is what a reader hears.
+	Marker render.HTML
+	// State overrides the state derived from Current: "done",
+	// "current" or "todo". Empty derives. An explicit state is how a
+	// rail says a later step finished while an earlier one is still
+	// open.
+	State string
+}
+
 // StepsProps configures a step indicator.
 type StepsProps struct {
-	// Labels lists the step names in order. At least one.
-	Labels []string
+	// Steps are the entries in order. At least one.
+	Steps []Step
 	// Current is the 1-based step in progress: the steps before it are
 	// done, it is current, the rest are todo. 0 means nothing has
-	// started yet. Must not exceed len(Labels).
+	// started yet. Must not exceed len(Steps).
 	Current int
 
 	ID         string
@@ -433,32 +463,87 @@ type StepsProps struct {
 // controls. Each step's data-state drives both its marker and the
 // connecting line the stylesheet draws between markers, so the rail
 // cannot disagree with the states; the current step also carries
-// aria-current="step" for AT.
+// aria-current="step" for AT. Exactly one step may be current: an
+// explicit State "current" on a step other than Current's is
+// refused, because two current steps tell assistive technology the
+// flow is in two places at once.
 func Steps(p StepsProps, s Classes) render.HTML {
-	if len(p.Labels) == 0 {
-		panic("headless: Steps requires Labels")
+	if len(p.Steps) == 0 {
+		panic("headless: Steps requires Steps")
 	}
-	if p.Current < 0 || p.Current > len(p.Labels) {
-		panic("headless: Steps Current " + strconv.Itoa(p.Current) + " outside 0.." + strconv.Itoa(len(p.Labels)))
+	if p.Current < 0 || p.Current > len(p.Steps) {
+		panic("headless: Steps Current " + strconv.Itoa(p.Current) + " outside 0.." + strconv.Itoa(len(p.Steps)))
 	}
-
-	items := make([]render.HTML, 0, len(p.Labels))
-	for i, label := range p.Labels {
-		state, marker := "todo", strconv.Itoa(i+1)
-		current := false
+	// Exactly one current step: an explicit State "current" names the
+	// step it marks, and Current names another, so the two are only
+	// allowed to agree.
+	explicit := -1
+	for i, st := range p.Steps {
+		if st.State == "current" {
+			if explicit >= 0 {
+				panic("headless: Steps marks steps " + strconv.Itoa(explicit+1) + " and " +
+					strconv.Itoa(i+1) + " current — exactly one step may be current")
+			}
+			explicit = i
+		}
+	}
+	if explicit >= 0 && p.Current > 0 && p.Current != explicit+1 {
+		panic("headless: Steps Current is " + strconv.Itoa(p.Current) + " and step " +
+			strconv.Itoa(explicit+1) + " says State current — exactly one step may be current")
+	}
+	items := make([]render.HTML, 0, len(p.Steps))
+	for i, st := range p.Steps {
+		if st.Label == "" {
+			panic("headless: Step requires Label")
+		}
+		state, current := "todo", false
 		switch {
 		case i+1 < p.Current:
-			state, marker = "done", "✓"
+			state = "done"
 		case i+1 == p.Current:
 			state, current = "current", true
+		}
+		if st.State != "" {
+			switch st.State {
+			case "done", "current", "todo":
+				state = st.State
+			default:
+				panic("headless: Step State " + strconv.Quote(st.State) + ` is not one of: "" (derived), done, current, todo`)
+			}
+		}
+		current = state == "current"
+		marker := st.Marker
+		if marker == "" {
+			if state == "done" {
+				marker = render.Text("✓")
+			} else {
+				marker = render.Text(strconv.Itoa(i + 1))
+			}
 		}
 		attrs := Attrs(map[string]string{"data-state": state})
 		if current {
 			attrs["aria-current"] = "step"
 		}
+		text := []render.HTML{El("span", s, PartLabel, nil, render.Text(st.Label))}
+		if st.Hint != "" {
+			text = append(text, El("span", s, PartStepHint, nil, render.Text(st.Hint)))
+		}
+		rowAttrs := Attrs(nil)
+		tag := "span"
+		if st.Href != "" {
+			href := urlsafe.CleanAnchor(st.Href)
+			if href == "" {
+				panic("headless: Step Href " + strconv.Quote(st.Href) + " is not a URL the anchor policy allows")
+			}
+			tag = "a"
+			rowAttrs["href"] = href
+		}
 		items = append(items, El("li", s, PartStep, attrs,
-			El("span", s, PartMarker, nil, render.Text(marker)),
-			El("span", s, PartLabel, nil, render.Text(label)),
+			El(tag, s, PartStepRow, rowAttrs,
+				El("span", s, PartMarker,
+					Attrs(map[string]string{"aria-hidden": "true"}), marker),
+				El("span", s, PartStepText, nil, text...),
+			),
 		))
 	}
 
@@ -469,7 +554,10 @@ func Steps(p StepsProps, s Classes) render.HTML {
 
 func init() {
 	Register(Spec{
-		Name:    "Badge",
+		Name: "Badge",
+		WithParts: func(s Classes, parts Parts) render.HTML {
+			return Badge(BadgeProps{Label: "running", Parts: parts}, s)
+		},
 		Anatomy: []Part{PartRoot, PartIcon},
 		Cases: func(k Kit) []Case {
 			s := k.Classes
@@ -539,21 +627,29 @@ func init() {
 	})
 	Register(Spec{
 		Name:    "Steps",
-		Anatomy: []Part{PartRoot, PartStep, PartMarker, PartLabel},
+		Anatomy: []Part{PartRoot, PartStep, PartStepRow, PartMarker, PartStepText, PartLabel, PartStepHint},
 		Cases: func(k Kit) []Case {
 			s := k.Classes
 			return []Case{{
 				Name: "part way",
 				Why:  "a rail of states, not a set of controls: each step's data-state drives both its marker and the line drawn between markers, so the picture cannot disagree with the states",
-				HTML: Steps(StepsProps{Labels: []string{"Source", "Build", "Deploy"}, Current: 2}, s),
+				HTML: Steps(StepsProps{Steps: []Step{
+					{Label: "Source"}, {Label: "Build", Hint: "About a minute"}, {Label: "Deploy"},
+				}, Current: 2}, s),
 			}, {
 				Name: "not started",
 				Why:  "zero is a real value — nothing has begun — and is not the same as being on the first step",
-				HTML: Steps(StepsProps{Labels: []string{"Source", "Build", "Deploy"}}, s),
+				HTML: Steps(StepsProps{Steps: []Step{{Label: "Source"}, {Label: "Build"}, {Label: "Deploy"}}}, s),
+			}, {
+				Name: "a completed step links back",
+				Why:  "a step that is done is somewhere the reader may want to return to, and the link keeps its href for a reader with no script",
+				HTML: Steps(StepsProps{Steps: []Step{
+					{Label: "Source", Href: "/setup/source", Marker: "01"},
+					{Label: "Build", Marker: "02"},
+				}, Current: 2}, s),
 			}}
 		},
 	})
-
 	Register(Spec{
 		Name:    "Toolbar",
 		Anatomy: []Part{PartRoot},

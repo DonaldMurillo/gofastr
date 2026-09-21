@@ -43,7 +43,7 @@ type LinkConfig struct {
 }
 
 // Link renders an anchor with a typed variant. The component owns its
-// CSS. The .ui-link class works without any app-level overrides.
+// CSS. The .fui-link class works without any app-level overrides.
 //
 // Defaults to LinkInline. Picking LinkAction gives the link a 44×44
 // minimum tap area so it can stand next to a Button in a row action
@@ -62,9 +62,9 @@ func Link(cfg LinkConfig) render.HTML {
 		panic("ui: Link unknown Variant " + string(cfg.Variant) +
 			`. Pick one of: "" (inline), action, muted`)
 	}
-	cls := "ui-link"
+	cls := "fui-link"
 	if cfg.Variant != LinkInline {
-		cls += " ui-link--" + string(cfg.Variant)
+		cls += " fui-link--" + string(cfg.Variant)
 	}
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
@@ -93,14 +93,14 @@ func Link(cfg LinkConfig) render.HTML {
 var linkStyle = registry.RegisterStyle("ui-link", linkCSS)
 
 func linkCSS(_ style.Theme) string {
-	return `[data-fui-comp="ui-link"], .ui-link {
+	return `[data-fui-comp="ui-link"], .fui-link {
   color: var(--color-primary);
   text-decoration: none;
   font-weight: 500;
   cursor: pointer;
 }
-[data-fui-comp="ui-link"]:hover, .ui-link:hover { text-decoration: underline; }
-[data-fui-comp="ui-link"]:focus-visible, .ui-link:focus-visible {
+[data-fui-comp="ui-link"]:hover, .fui-link:hover { text-decoration: underline; }
+[data-fui-comp="ui-link"]:focus-visible, .fui-link:focus-visible {
   outline: 2px solid var(--color-primary);
   outline-offset: 2px;
   border-radius: var(--radii-sm, 4px);
@@ -108,7 +108,7 @@ func linkCSS(_ style.Theme) string {
 
 /* Action variant — 44×44 tap target so the link can sit beside a
    Button in a row action without violating WCAG 2.5.5. */
-.ui-link--action {
+.fui-link--action {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -119,6 +119,6 @@ func linkCSS(_ style.Theme) string {
 
 /* Muted — quieter affordance ("see all", "view details") that doesn't
    compete with primary CTAs. */
-.ui-link--muted { color: var(--color-text-muted); font-weight: 400; }
-.ui-link--muted:hover { color: var(--color-text); }`
+.fui-link--muted { color: var(--color-text-muted); font-weight: 400; }
+.fui-link--muted:hover { color: var(--color-text); }`
 }

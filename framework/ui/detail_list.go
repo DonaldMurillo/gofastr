@@ -1,15 +1,18 @@
 package ui
 
 // DetailList: a label/value description list for record detail screens
-// ("Name: Ada Lovelace", "Status: <badge>"). Renders semantic <dl>/<dt>/<dd>
-// with a two-column grid that collapses gracefully. The framework owns the
-// layout so detail screens don't hand-roll key/value CSS.
+// ("Name: Ada Lovelace", "Status: <badge>"). headless.DetailList
+// renders the <dl>/<dt>/<dd> contract — a term and the value after it
+// are one pair to assistive technology — dressed with this package's
+// fui-detail-list class map. The framework owns the layout so detail
+// screens don't hand-roll key/value CSS.
 
 import (
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/headless"
 )
 
 // DetailItem is one label/value row.
@@ -25,30 +28,49 @@ type DetailListConfig struct {
 
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers, ARIA overrides) to the root <dl>. Keys the
-	// component owns are dropped: class (use Class), id, and
+	// component owns are dropped: class (use Class), id, style and
 	// data-fui-*.
 	ExtraAttrs html.Attrs
 }
 
-// DetailList renders a label/value description list.
+// detailListClasses dresses headless.DetailList's parts.
+var detailListClasses = headless.Classes{
+	headless.PartRoot:        "fui-detail-list",
+	headless.PartDetailRow:   "fui-detail-list__row",
+	headless.PartDetailTerm:  "fui-detail-list__label",
+	headless.PartDetailValue: "fui-detail-list__value",
+}
+
+// DetailList renders a label/value description list on
+// headless.DetailList. An item with no Value renders the empty-value
+// dash, so an absence reads as deliberate. A list with no items
+// renders nothing: the primitive refuses an empty <dl>, and a record
+// with no fields is data, not a developer's mistake.
 func DetailList(cfg DetailListConfig) render.HTML {
-	rows := make([]render.HTML, 0, len(cfg.Items))
+	if len(cfg.Items) == 0 {
+		return render.HTML("")
+	}
+	rows := make([]headless.DetailRow, 0, len(cfg.Items))
 	for _, it := range cfg.Items {
-		rows = append(rows, html.Div(html.DivConfig{Class: "ui-detail-list__row"},
-			render.Tag("dt", map[string]string{"class": "ui-detail-list__label"}, render.Text(it.Label)),
-			render.Tag("dd", map[string]string{"class": "ui-detail-list__value"}, it.Value),
-		))
+		value := it.Value
+		if value == "" {
+			value = EmptyValue()
+		}
+		rows = append(rows, headless.DetailRow{Label: it.Label, Value: value})
 	}
-	cls := "ui-detail-list"
-	if cfg.Class != "" {
-		cls = cls + " " + cfg.Class
-	}
-	attrs := html.SafeExtraAttrs(cfg.ExtraAttrs)
+	attrs := headless.Safe(cfg.ExtraAttrs, "class", "id")
 	if attrs == nil {
-		attrs = map[string]string{}
+		attrs = html.Attrs{}
 	}
-	attrs["class"] = cls
-	return detailListStyle.WrapHTML(render.Tag("dl", attrs, rows...))
+	if cfg.Class != "" {
+		attrs["class"] = cfg.Class
+	}
+	return detailListStyle.WrapHTML(headless.DetailList(headless.DetailListProps{
+		Rows: rows,
+		Parts: headless.Parts{Attrs: headless.PartAttrs{
+			headless.PartRoot: attrs,
+		}},
+	}, detailListClasses))
 }
 
 var detailListStyle = registry.RegisterStyle("ui-detail-list", detailListCSS)
@@ -60,7 +82,7 @@ func detailListCSS(_ style.Theme) string {
   max-width: 44rem;
   margin: 0;
 }
-[data-fui-comp="ui-detail-list"] .ui-detail-list__row {
+[data-fui-comp="ui-detail-list"] .fui-detail-list__row {
   display: grid;
   grid-template-columns: minmax(7rem, 13rem) 1fr;
   gap: var(--spacing-lg, 16px);
@@ -68,18 +90,18 @@ func detailListCSS(_ style.Theme) string {
   padding: var(--spacing-sm, 4px) 0;
   border-bottom: 1px solid var(--color-border, rgba(0,0,0,0.1));
 }
-[data-fui-comp="ui-detail-list"] .ui-detail-list__row:last-child { border-bottom: none; }
-[data-fui-comp="ui-detail-list"] .ui-detail-list__label {
+[data-fui-comp="ui-detail-list"] .fui-detail-list__row:last-child { border-bottom: none; }
+[data-fui-comp="ui-detail-list"] .fui-detail-list__label {
   margin: 0;
   color: var(--color-text-muted, inherit);
   font-weight: 500;
 }
-[data-fui-comp="ui-detail-list"] .ui-detail-list__value {
+[data-fui-comp="ui-detail-list"] .fui-detail-list__value {
   margin: 0;
   color: var(--color-text, inherit);
 }
 @media (max-width: 30rem) {
-  [data-fui-comp="ui-detail-list"] .ui-detail-list__row { grid-template-columns: 1fr; gap: var(--spacing-xs, 2px); }
+  [data-fui-comp="ui-detail-list"] .fui-detail-list__row { grid-template-columns: 1fr; gap: var(--spacing-xs, 2px); }
 }
 `
 }

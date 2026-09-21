@@ -67,6 +67,10 @@ type AlertProps struct {
 	Title string
 	// Text is the detail, in prose.
 	Text string
+	// Body is the detail as markup — a list, a code sample, nested
+	// content that is not an action. It renders after Text; prose
+	// belongs in Text, and actions in Actions.
+	Body render.HTML
 	// Icon is decorative. The tone word carries the meaning.
 	Icon render.HTML
 	// Actions are the controls: retry, view logs, dismiss.
@@ -111,8 +115,8 @@ type AlertProps struct {
 // Alert renders the message.
 func Alert(p AlertProps, s Classes) render.HTML {
 	b := p.Parts.Box(s)
-	if p.Title == "" {
-		panic("headless: Alert requires Title")
+	if p.Title == "" && p.Text == "" && p.Body == "" {
+		panic("headless: Alert requires Title, Text or Body — a coloured box that says nothing is decoration pretending to be a message")
 	}
 	own := Merge(Safe(p.ExtraAttrs, "role"), Attrs(map[string]string{"id": p.ID}))
 	if p.Focus {
@@ -144,12 +148,17 @@ func Alert(p AlertProps, s Classes) render.HTML {
 		// failed").
 		title = append(title, b.El("span", PartToneWord, nil, render.Text(p.ToneWord+": ")))
 	}
-	title = append(title, render.Text(p.Title))
-	head = append(head, b.El("p", PartTitle, nil, title...))
+	if p.Title != "" || p.ToneWord != "" {
+		title = append(title, render.Text(p.Title))
+		head = append(head, b.El("p", PartTitle, nil, title...))
+	}
 
 	kids := []render.HTML{b.El("div", PartHeader, nil, head...)}
 	if p.Text != "" {
 		kids = append(kids, b.El("p", PartDesc, nil, render.Text(p.Text)))
+	}
+	if p.Body != "" {
+		kids = append(kids, b.El("div", PartBody, nil, p.Body))
 	}
 	if p.Actions != "" {
 		kids = append(kids, b.El("div", PartFooter, nil, p.Actions))
@@ -176,7 +185,7 @@ func Alert(p AlertProps, s Classes) render.HTML {
 func init() {
 	Register(Spec{
 		Name:    "Alert",
-		Anatomy: []Part{PartRoot, PartHeader, PartIcon, PartToneWord, PartTitle, PartDesc, PartFooter, PartDismiss},
+		Anatomy: []Part{PartRoot, PartHeader, PartIcon, PartToneWord, PartTitle, PartDesc, PartBody, PartFooter, PartDismiss},
 		WithParts: func(s Classes, parts Parts) render.HTML {
 			return Alert(AlertProps{Title: "Deploy failed", Text: "Exit 1 in the test stage.", Tone: "danger",
 				ToneWord: "Error", Icon: SpecimenGlyph, Actions: render.HTML("<a href=\"/logs\">View logs</a>"),
@@ -204,6 +213,15 @@ func init() {
 				Why:  "the confirmation after a post-and-redirect — present at load, so the only reliable way to announce it is to put the reader on it",
 				HTML: Alert(AlertProps{Title: "App restarted", Focus: true, ID: "restarted"},
 					k.Variant("Alert", "success")),
+			}, {
+				Name: "with a body",
+				Why:  "the detail as markup: a persistent callout's contents are a list or a sample, and putting markup in the prose part would wrap it in a paragraph no validator allows",
+				HTML: Alert(AlertProps{Title: "Two apps need attention", Tone: "warning",
+					Body: render.HTML("<ul><li>blog: disk at 91%</li><li>wiki: 4 restarts overnight</li></ul>")}, s),
+			}, {
+				Name: "no headline",
+				Why:  "a message with no headline is still a message — the titleless shape is how a status line interrupts, and the refusal is saved for the box that says nothing at all",
+				HTML: Alert(AlertProps{Text: "Two apps need attention.", Tone: "warning", Live: LivePolite}, s),
 			}}
 		},
 	})

@@ -230,7 +230,7 @@ func TestE2E_Sticky_TopHasStickyCSS(t *testing.T) {
 		chromedp.Navigate(base+"/components/sticky"),
 		pageReady(),
 		chromedp.Evaluate(`(function() {
-			var el = document.querySelector('[data-fui-comp="ui-sticky"].ui-sticky--top');
+			var el = document.querySelector('[data-fui-comp="ui-sticky"].fui-sticky--top');
 			return el ? getComputedStyle(el).position : 'none';
 		})()`, &pos),
 	)

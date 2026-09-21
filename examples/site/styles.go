@@ -403,7 +403,7 @@ func tagsAndButtons(ss *style.StyleSheet) {
 	// tokens via the component's --ui-status-pill-* vars.
 	ss.Rule(`[data-fui-comp="ui-status-pill"]`).
 		Set("border-color", "var(--line-faint)").End()
-	ss.Rule(`[data-fui-comp="ui-status-pill"].ui-status-pill--accent`).
+	ss.Rule(`[data-fui-comp="ui-status-pill"].fui-status-pill--accent`).
 		Set("--ui-status-pill-accent-border", "var(--accent-dim)").End()
 
 	// Spacing utilities used in place of inline style="margin-bottom:…"
@@ -788,9 +788,9 @@ func sectionFraming(ss *style.StyleSheet) {
 		Set("color", "{colors.text-muted}",
 			"font-size", "var(--t-md)",
 			"max-width", "50ch").End()
-	// The eyebrow markup is now ui.Section's .ui-section__eyebrow; the site
+	// The eyebrow markup is now ui.Section's .fui-section__eyebrow; the site
 	// only pins it to the section's top-right corner.
-	ss.Rule(".section-v2 .ui-section__eyebrow").
+	ss.Rule(".section-v2 .fui-section__eyebrow").
 		Set("position", "absolute",
 			"top", "{spacing.xxxl}",
 			"right", "{spacing.xxl}",

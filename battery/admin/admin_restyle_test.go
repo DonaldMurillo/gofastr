@@ -65,7 +65,7 @@ func TestAdmin_CSSServedFromRegistryNotBaseCSS(t *testing.T) {
 	// Positive: the registry-served sheet carries the components the pages
 	// compose. DataTable + StatCard + ui-admin are registered styles, so
 	// their scoped selectors appear once handleCSS emits registry.All().
-	for _, want := range []string{"ui-data-table", "ui-stat-card", "ui-admin"} {
+	for _, want := range []string{"ui-data-table", "fui-stat-card", "ui-admin"} {
 		if !strings.Contains(css, want) {
 			t.Errorf("admin.css must serve registry CSS (missing %q) — baseCSS leak or registry not wired", want)
 		}

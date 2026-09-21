@@ -129,7 +129,7 @@ func TestDataTable_NilRowsHandled(t *testing.T) {
 		Rows:    nil,
 	})
 	s := string(h)
-	if !strings.Contains(s, "ui-empty-state") {
+	if !strings.Contains(s, `"fui-empty-state`) {
 		t.Errorf("SECURITY: [datatable-nil-rows] expected empty state for nil rows, got:\n  %s", truncate(s, 300))
 	}
 	if !strings.Contains(s, "<table") {
@@ -343,8 +343,11 @@ func TestCard_NilBodyHandled(t *testing.T) {
 	if !strings.Contains(s, `data-fui-comp="ui-card"`) {
 		t.Errorf("SECURITY: [card-nil-body] expected ui-card marker in output:\n  %s", s)
 	}
-	if strings.Contains(s, "ui-card__body") {
-		t.Errorf("SECURITY: [card-nil-body] should not render body element when no body provided")
+	// The primitive keeps the body element in the tree (its contract:
+	// the body is where a swap lands), and the sheet collapses it
+	// when empty, so a bodiless card gains no space.
+	if !strings.Contains(s, `<div class="fui-card__body"></div>`) {
+		t.Errorf("SECURITY: [card-nil-body] the body element is not the empty node the sheet collapses:\n  %s", s)
 	}
 }
 

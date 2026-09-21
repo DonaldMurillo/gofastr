@@ -438,13 +438,6 @@ func landingSubscribeMessage(o landingSubscribeOutcome) string {
 	return ""
 }
 
-// falsePtr is the *bool for Callout's Landmark field (inline callouts are
-// not complementary landmarks).
-func falsePtr() *bool {
-	b := false
-	return &b
-}
-
 // renderLandingSubscribe renders the form (or, after a success, the
 // success callout). The SSR page, the query-rendered no-script answer
 // and every island response go through this one function, so the round
@@ -459,10 +452,9 @@ func renderLandingSubscribe(r landingRoute, state landingSubscribeState) render.
 			detail = "You are on the list. This demo keeps no list: the round trip is the point."
 		}
 		return ui.Callout(ui.CalloutConfig{
-			Variant:  ui.StatusSuccess,
-			ID:       "hl-subscribe-done",
-			Title:    "Subscribed",
-			Landmark: falsePtr(),
+			Variant: ui.StatusSuccess,
+			ID:      "hl-subscribe-done",
+			Title:   "Subscribed",
 		}, render.Text(detail))
 	}
 	// A failed submit renders through FormConfig.Errors: the form
@@ -870,10 +862,9 @@ func landingFieldLayoutSection() render.HTML {
 }
 func serveHeadlessLate(w http.ResponseWriter, _ *http.Request) {
 	render.RespondHTML(w, ui.Callout(ui.CalloutConfig{
-		Variant:  ui.StatusInfo,
-		ID:       "hl-late-fragment",
-		Title:    "Late fragment",
-		Landmark: falsePtr(),
+		Variant: ui.StatusInfo,
+		ID:      "hl-late-fragment",
+		Title:   "Late fragment",
 	}, render.Text("This callout arrived after a click, and its stylesheet was fetched on arrival: the marker the runtime scans for is what loaded it, not the page.")))
 }
 

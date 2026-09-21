@@ -177,7 +177,7 @@ func TestTableScrollRegionIsFocusableAndNamedByItsCaption(t *testing.T) {
 }
 
 func TestStepsSayWhichStepIsCurrent(t *testing.T) {
-	got := Steps(StepsProps{Labels: []string{"Account", "Plan", "Pay"}, Current: 2}, nil)
+	got := Steps(StepsProps{Steps: []Step{{Label: "Account"}, {Label: "Plan"}, {Label: "Pay"}}, Current: 2}, nil)
 	has(t, got, `aria-current=`, "the current step is not marked")
 }
 
@@ -263,6 +263,20 @@ func TestSectionHeadingLevelIsHonoured(t *testing.T) {
 	// Out of range falls back rather than emitting <h9>, which is not
 	// an element and would silently become an unknown inline tag.
 	has(t, Section(SectionProps{Title: "Apps", Level: 9}, nil), "<h2", "an impossible level produced an invalid element")
+}
+
+// A section named by Label alone still renders its eyebrow: the
+// caller's heading rides in the body, and the kicker decorates it —
+// the site's numbered sections are this shape, and losing the kicker
+// changed the page the class-map move was meant to keep identical.
+func TestSectionLabelledByNameKeepsItsEyebrow(t *testing.T) {
+	got := Section(SectionProps{Label: "The numbers", Eyebrow: "01 / the numbers"}, nil,
+		render.HTML("<h2>The numbers</h2><p>x</p>"))
+	has(t, got, `aria-label="The numbers"`, "the section is not named by its label")
+	has(t, got, `aria-hidden="true">01 / the numbers</p>`, "the kicker was dropped from the Label branch")
+	if b, h := strings.Index(string(got), "01 / the numbers"), strings.Index(string(got), "<h2"); b > h {
+		t.Errorf("the kicker renders after the heading it decorates:\n%s", got)
+	}
 }
 
 // A separator between groups is meaningful and is an <hr>, which

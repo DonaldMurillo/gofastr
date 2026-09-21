@@ -8,6 +8,65 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 ## [Unreleased]
 
 ### BREAKING
+
+- **The structural, status and layout family moved to `fui-*` class
+  names.** Every component in this family now renders through its
+  headless primitive (or, for the pure layout facts, stays a styled
+  adapter) under the `fui-` prefix, with the block/element shape the
+  `fui-button` map uses: `fui-card`, `fui-page-header`, `fui-section`,
+  `fui-stack`, `fui-cluster`, `fui-grid`, `fui-container`, `fui-divider`,
+  `fui-spacer`, `fui-spinner`, `fui-skeleton-*`, `fui-stat-card`,
+  `fui-empty-state`, `fui-badge`, `fui-status-pill`, `fui-step-rail`,
+  `fui-progress-steps`, `fui-timeline`, `fui-callout`, `fui-detail-list`,
+  `fui-fact-box`, `fui-layout` (+ `fui-layout--gap/align/justify-*`),
+  `fui-center`, `fui-box`, `fui-sticky`, `fui-ar--*`, `fui-muted`,
+  `fui-link`, `fui-skip-link`. Hand-written markup and host CSS
+  selectors on the old `ui-*` names stop being styled; the registered
+  style sheets keep their `ui-*` names (`[data-fui-comp="ui-card"]`
+  still fetches the card sheet), exactly as `fui-button` has always
+  loaded under the `ui-button` marker. `ui.DataTable`'s
+  `ui-data-table*` names are unchanged (recorded exception). In the
+  same move, `ui.PageHeader` no longer renders `role="banner"` (a
+  top-level `<header>` is the banner implicitly; a nested one is not,
+  and the page decides), `ui.Spinner` no longer writes
+  `aria-live`/`aria-busy` (role=status already implies polite, and
+  busy belongs to the region an RPC marks), and `ui.Card`'s
+  `HeadingLevel` outside 1..6 is refused at render where it was
+  silently 3.
+- **`ui.Callout` renders through `headless.Alert`: the
+  complementary-`<aside>` shape and the `Landmark *bool` field are
+  gone.** Danger and warning callouts still interrupt (`role=alert`);
+  every other variant is a standing `div` with no live role. A
+  titleless callout renders its body without a headline (the
+  primitive accepts Title or Text or Body).
+- **`ui.Card` renders through `headless.Card`: a titled card is no
+  longer a `<section aria-labelledby>` region and the heading carries
+  no derived id.** The caller's `Header` rides the primitive's
+  fillable header part; `Href` keeps the whole-card anchor shape, and
+  a href the anchor policy refuses is refused at render.
+- **`ui.EmptyState` renders through `headless.EmptyState`: the root
+  is `role=region`** — with an explicit `ID`, named by its heading
+  (aria-labelledby to `<ID>-title`); without one, named by an
+  `aria-label` equal to the Title and the heading carries no id. It
+  was an unnamed div.
+- **`ui.Section` renders through `headless.Section`: a section with
+  neither `Heading` nor `Label` renders a plain `div`**, where it
+  rendered `<section aria-label>` with a generic label; the
+  `SectionConfig.Ctx` field is removed (only the generic fallback
+  read it); heading ids change from `ui-section-<slug>` to
+  `<slug>-title` (`<id>-title` with an explicit ID), and the
+  auto-anchor root id (`slug(Heading)`) is unchanged.
+- **`ui.SkeletonAvatarConfig.Size` is removed.** It rendered an
+  inline `style` a strict CSP drops, and no caller set it; a custom
+  diameter is a stylesheet override on the `fui-skeleton-avatar`
+  preset class. `core-ui/patterns/skeleton` is deleted (see Added).
+- **`ui.Divider`'s vertical shape is an `<hr
+  aria-orientation="vertical">`**, where it was a `<div
+  role=separator>`: the element already says separator. `ui.Spacer`
+  is a `<span aria-hidden>` with `data-hui-grow` (was a `<div>`);
+  `ui.ProgressSteps`' step hrefs that fail the anchor policy are
+  refused at render (was a dead `#` anchor, then a text row).
+
 - **`ui.DataTableConfig.Pagination` is a `*ui.PaginationConfig`, and
   `core-ui/patterns/pagination` is deleted.** The field was a
   `*core-ui/patterns/pagination.Config`; the DataTable's pager now
@@ -32,6 +91,25 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   the new config.
 
 ### Added
+- **Five new headless primitives**: `Fieldset` (legend, description,
+  fields, a group error wired by aria-describedby), `PageHeader`
+  (heading, subtitle, eyebrow, an action slot; a plain `<header>`),
+  `EmptyState` (a named region, heading, description, an action),
+  `StatCard` (label, value, trend with a direction variant) and
+  `DetailList` (label/value rows as a `<dl>`). Each carries Parts,
+  refusals, spec fixtures and goldens; none says a word of its own,
+  so none carries Strings. Existing primitives gained the props the
+  adapters needed: `Stack.Justify`, `Section.Eyebrow/DescriptionHTML/
+  Label`, `Alert.Body`, `Card.Href` (+ the card-inner part),
+  `Spinner.Variant` (dots/grid shapes), `Steps` items with
+  `Hint/Href/Marker/State`, `Timeline.Event.Meta`, and `Parts` on the
+  layout/status primitives.
+- **The skeleton presets render through `headless.Skeleton`.** One
+  primitive render per preset: exactly one polite "Loading…"
+  announcement and one hidden bar set, however many lines the preset
+  draws. The presets gained `Label`/`Ctx` config fields;
+  `core-ui/patterns/skeleton` is deleted with its coverage floor,
+  its pinned properties moved to the preset tests.
 - **`ui.Pagination`: the styled pager, rendered through
   `headless.Pagination`.** The anatomy is the headless one
   (`nav > div > a|span`): no `ol/li`, and no buttons in island mode —

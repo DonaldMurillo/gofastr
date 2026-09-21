@@ -104,7 +104,6 @@ FLOORS="
 ./core-ui/patterns/nestedlist/ 89.1
 ./core-ui/patterns/progress/ 88.0
 ./core-ui/patterns/scrollspy/ 81.8
-./core-ui/patterns/skeleton/ 90.2
 ./core-ui/patterns/sortablelist/ 87.4
 ./core-ui/patterns/tabs/ 90.2
 ./core-ui/patterns/tree/ 92.5

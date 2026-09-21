@@ -10,6 +10,14 @@ the default: a standing message that is on screen anyway and must not interrupt 
 the confirmation after a post-and-redirect — present at load, so the only reliable way to announce it is to put the reader on it
 <div autofocus="" id="restarted" tabindex="-1"><div><p>App restarted</p></div></div>
 
+=== Alert / with a body ===
+the detail as markup: a persistent callout's contents are a list or a sample, and putting markup in the prose part would wrap it in a paragraph no validator allows
+<div><div><p>Two apps need attention</p></div><div><ul><li>blog: disk at 91%</li><li>wiki: 4 restarts overnight</li></ul></div></div>
+
+=== Alert / no headline ===
+a message with no headline is still a message — the titleless shape is how a status line interrupts, and the refusal is saved for the box that says nothing at all
+<div role="status"><div></div><p>Two apps need attention.</p></div>
+
 === Badge / plain ===
 a badge is a word, and the word is the accessible name — which is why the icon beside it is hidden rather than read twice
 <span>running</span>
@@ -57,6 +65,10 @@ no title and no description means no header — an empty header is a stripe of p
 === Card / footed ===
 the footer is where the actions that apply to the whole card live
 <div><div><h3>Restart policy</h3></div><div><p>On failure, up to 3 times.</p></div><div><button type="button">Save</button></div></div>
+
+=== Card / the whole card is the link ===
+an href on the card makes the surface itself the affordance — one focusable link wrapping what the div showed, so the click target is the card a reader can see rather than a Read more crammed into the footer
+<a href="/apps/blog"><div><div><h3>blog</h3><p>2 vCPU, 4 GB</p></div><div><p>Deployed 3 days ago.</p></div></div></a>
 
 === Choice / checkbox with a hint ===
 the label WRAPS the control, so the hit area is the whole row and there is no for/id pair left to go stale
@@ -106,6 +118,10 @@ the widest bounded measure — wide content such as a table of apps, still stopp
 full drops the maximum and keeps the gutter — a dashboard should use the whole screen, and the gutter is the one thing it may not lose, because the edge of a phone is where text stops being readable
 <div><p>CPU, memory and network for every node.</p></div>
 
+=== DetailList / a record ===
+a dt and the dd after it are one pair to assistive technology in a way a grid of divs never is, and the pair survives every restyling because the relationship is the element
+<dl><div><dt>Name</dt><dd>blog</dd></div><div><dt>Status</dt><dd><span>running</span></dd></div><div><dt>Restarts</dt><dd>263</dd></div></dl>
+
 === Divider / horizontal ===
 the default is a real hr: a break between two groups of content means separator, and the element already says it, so no role is claimed
 <hr>
@@ -117,6 +133,14 @@ inside a row the break runs along the block axis, and aria-orientation says so �
 === Divider / labelled ===
 a label cannot live in an hr — it has no content model — so the separator role is claimed on the div that replaces it and the lines around the words are hidden
 <div role="separator"><span aria-hidden="true"></span><span>or</span><span aria-hidden="true"></span></div>
+
+=== EmptyState / nothing here yet ===
+the region is named by its own heading, so a reader who lands on it is told what is absent and offered the way out — a dead end with no action is a page the back button owns
+<div aria-label="No apps yet" role="region"><h3>No apps yet</h3><p>Deploy your first app and it will appear here.</p><div><button type="button">New app</button></div></div>
+
+=== EmptyState / an empty result ===
+a search that matched nothing names the absence after itself; with no explicit ID the name is an aria-label, so two panels that share a title share no id
+<div aria-label="No apps match" role="region"><h2>No apps match</h2><p>Clear a filter or try another name.</p></div>
 
 === Field / hinted ===
 the hint is tied to the control by id, or it is on screen for sighted users only and the format rule never arrives
@@ -137,6 +161,18 @@ required is a state the parser is told about, not a red asterisk — which is a 
 === FieldRow / pair ===
 two fields side by side are still two fields: the row adds layout and no semantics, so nothing here is announced
 <div><div><label for="from">From</label><input id="from" name="from" type="text"></div><div><label for="to">To</label><input id="to" name="to" type="text"></div></div>
+
+=== Fieldset / a titled group ===
+a real legend in a real fieldset names every control inside without a single aria attribute — the native group semantic a wrapper div has to fake with labels nobody checks
+<fieldset aria-describedby="fieldset-notifications-desc"><legend>Notifications</legend><p id="fieldset-notifications-desc">How this app tells you about deploys.</p><div><div><label for="deploy-email">Deploy email</label><input id="deploy-email" name="deploy-email" type="text"></div><div><label for="failure-email">Failure email</label><input id="failure-email" name="failure-email" type="text"></div></div></fieldset>
+
+=== Fieldset / a group error ===
+the error that belongs to the group as a whole is wired by aria-describedby on the group, so it is read with the question and never replaces a field's own error
+<fieldset aria-describedby="fieldset-access-error"><legend>Access</legend><p id="fieldset-access-error">Pick at least one role.</p><div><div><label for="role-admin">Admin</label><input id="role-admin" name="role-admin" type="text"></div></div></fieldset>
+
+=== Fieldset / no title ===
+a group with no name renders as a plain div: an unlabelled fieldset is a landmark that names nothing, and a screen reader announcing an empty group label is the alternative
+<div aria-describedby="misc-desc" id="misc"><p id="misc-desc">The remaining settings.</p><div><div><label for="retries">Retries</label><input id="retries" name="retries" type="text"></div></div></div>
 
 === FileUpload / with a hint ===
 the zone is a label around a real input, so the whole target opens the picker — and the call to action is styled text, because a button inside a label swallows the label's click
@@ -210,6 +246,18 @@ a method other than POST is published as an attribute, because the runtime defau
 a disabled optimistic button still ships both labels and its announcement hook — disabling is a state of the click, not of the contract, and the runtime re-enables the button itself while a mutation is in flight
 <button data-hui-action="" data-hui-action-endpoint="/apps/blog/redeploy" data-hui-action-failed="&lt;ActionFailed&gt;" data-state="idle" disabled="" type="button"><span data-hui-action-idle="">Redeploy</span><span data-hui-action-done="" hidden="">Redeploying</span><span data-hui-action-status="" role="status"></span></button>
 
+=== PageHeader / page top ===
+the title is the page's h1 and the actions beside it are the page's own — a reader who lands mid-scroll jumps here to learn where they are
+<header><div><h1>Apps</h1><p>Eleven apps across three workers.</p></div><div><button type="button">New app</button></div></header>
+
+=== PageHeader / eyebrow ===
+a kicker above the title is hidden from the tree: it repeats what the title or the navigation already says, and hearing the page's name twice is the alternative
+<header><div><p aria-hidden="true">Customers</p><h1>Northwind Traders</h1></div></header>
+
+=== PageHeader / deeper in the outline ===
+a header for a sub-page inside a page claims level 2 rather than a second h1 — the outline is how a screen reader user moves, and two h1s on one page is a hole in it
+<header><div><h2>Deployment history</h2></div></header>
+
 === Pagination / plain, on a list screen ===
 the URL is the truth for a list and a pager on it is list state: the page anchors are plain navigations the client router intercepts, and no data-hui-page renders without an Island — a hook nothing reads is markup carried for no one
 <nav aria-label="Application pages, plain"><div><a href="/apps?p=1">&lt;Previous&gt;</a><a href="/apps?p=1">1</a><a aria-current="page" href="/apps?p=2">2</a><a href="/apps?p=3">3</a><a href="/apps?p=3">&lt;Next&gt;</a></div></nav>
@@ -230,8 +278,16 @@ the reveal button says what it will do next rather than what the field is doing 
 a name is what makes it a landmark, and the name comes from the heading itself rather than a second string that can drift from it
 <section aria-labelledby="section-volumes-title"><div><div><h2 id="section-volumes-title">Volumes</h2><p>Disks attached to this node.</p></div><div><button type="button">Add</button></div></div><div><p>Two volumes.</p></div></section>
 
+=== Section / an eyebrow ===
+the kicker above the title is hidden from the tree: it decorates a heading the reader has already heard, and reading the section's name twice is the alternative
+<section aria-labelledby="section-the-cluster-title"><div><p aria-hidden="true">01 / Overview</p><h2 id="section-the-cluster-title">The cluster</h2></div><div><p>One leader, two workers.</p></div></section>
+
+=== Section / named without a heading ===
+a name is what makes it a landmark, and a label the page already carries can name a region whose heading lives somewhere else
+<section aria-label="Settings"><div><p>Loose but named.</p></div></section>
+
 === Section / unnamed ===
-no title means a plain div: a section with no name is a row in the landmark list that says nothing, which is worse than not being in it
+no title and no label means a plain div: a section with no name is a row in the landmark list that says nothing, which is worse than not being in it
 <div><div><p>Loose content.</p></div></div>
 
 === Section / deeper in the outline ===
@@ -266,6 +322,14 @@ a hairline across the space reads as structure rather than as a tie, and the two
 role=status, not progressbar: a progressbar promises a value and a spinner has none — and the label says what is being waited for, because a moving shape says nothing on its own
 <span><span aria-hidden="true"></span><span>Checking the registry</span></span>
 
+=== Spinner / dots ===
+the shape is the class map's choice and the meaning never moves: the dots are hidden and the label is what the wait is for
+<span><span aria-hidden="true"><span></span><span></span><span></span></span><span>Saving</span></span>
+
+=== Spinner / grid ===
+a heavy wait says so with a busier picture, and the picture is still hidden: the nine cells are motion and the label is the meaning
+<span><span aria-hidden="true"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span><span>Restoring the backup</span></span>
+
 === Stack / default gap ===
 no gap named is still a gap: the default is this primitive's own rhythm, so two pages that say nothing agree
 <div><p>CPU is back under 60%.</p><p>The worker drained its deploy queue overnight.</p></div>
@@ -278,13 +342,25 @@ the step is a name from the scale, never a length the caller brings — the clas
 a stack of one is still a stack: the element is the seam the second block arrives into, and a wrapper that appears with it moves everything below
 <div><p>No volumes are attached to this node.</p></div>
 
+=== StatCard / with a trend ===
+label before value, and the trend's direction carried by its own words — the colour the class map paints from Direction is emphasis, never the only carrier
+<div><p>Active users</p><p>12,483</p><p data-direction="up">+12% vs. last week</p></div>
+
+=== StatCard / the number alone ===
+a card with no trend renders without one, and the label still arrives before the value it names
+<div><p>Queued builds</p><p>2</p></div>
+
 === Steps / part way ===
 a rail of states, not a set of controls: each step's data-state drives both its marker and the line drawn between markers, so the picture cannot disagree with the states
-<ol><li data-state="done"><span>✓</span><span>Source</span></li><li aria-current="step" data-state="current"><span>2</span><span>Build</span></li><li data-state="todo"><span>3</span><span>Deploy</span></li></ol>
+<ol><li data-state="done"><span><span aria-hidden="true">✓</span><span><span>Source</span></span></span></li><li aria-current="step" data-state="current"><span><span aria-hidden="true">2</span><span><span>Build</span><span>About a minute</span></span></span></li><li data-state="todo"><span><span aria-hidden="true">3</span><span><span>Deploy</span></span></span></li></ol>
 
 === Steps / not started ===
 zero is a real value — nothing has begun — and is not the same as being on the first step
-<ol><li data-state="todo"><span>1</span><span>Source</span></li><li data-state="todo"><span>2</span><span>Build</span></li><li data-state="todo"><span>3</span><span>Deploy</span></li></ol>
+<ol><li data-state="todo"><span><span aria-hidden="true">1</span><span><span>Source</span></span></span></li><li data-state="todo"><span><span aria-hidden="true">2</span><span><span>Build</span></span></span></li><li data-state="todo"><span><span aria-hidden="true">3</span><span><span>Deploy</span></span></span></li></ol>
+
+=== Steps / a completed step links back ===
+a step that is done is somewhere the reader may want to return to, and the link keeps its href for a reader with no script
+<ol><li data-state="done"><a href="/setup/source"><span aria-hidden="true">01</span><span><span>Source</span></span></a></li><li aria-current="step" data-state="current"><span><span aria-hidden="true">02</span><span><span>Build</span></span></span></li></ol>
 
 === Switch / on ===
 a checkbox that says role=switch: it submits like a checkbox and is announced as on or off rather than checked or unchecked
@@ -345,6 +421,10 @@ autogrow is the one core-runtime hook a control here renders — the behaviour b
 === Timeline / history ===
 an event with no tone is the ordinary case and draws an untinted marker; ordered, because the order is the content: a screen reader announces the count and the position, so "3 of 7" locates you in the history without seeing the line down the left
 <ol aria-label="Deploy history"><li><span aria-hidden="true"></span><div><time datetime="2026-09-08T11:04:00Z">3 days ago</time><p>Deployed</p><p>From main, by Donald.</p></div></li><li><span aria-hidden="true"></span><div><time datetime="2026-09-07T09:12:00Z">4 days ago</time><p>Build failed</p><p>Exit 1 in the test stage.</p></div></li><li><span aria-hidden="true"></span><div><time datetime="2026-09-06T16:40:00Z">5 days ago</time><p>Configuration changed</p></div></li></ol>
+
+=== Timeline / attributed ===
+the meta line qualifies the title from the same row — an actor or a relative time — and the title stays first in the tree so a reader hears the event before its attribution
+<ol aria-label="Audit log"><li><span aria-hidden="true"></span><div><div><p>Role granted</p><span>by dom</span></div><p>admin, on the api app.</p></div></li></ol>
 
 === ToggleAction / idle ===
 aria-pressed false and the committed span hidden: first paint matches the server's answer, and the runtime only ever flips what is already there

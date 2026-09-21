@@ -111,13 +111,13 @@ var escapeSurfaces = []struct {
 	}, "&lt;img src=x", false},
 	{"stack.gap", func(p string) string {
 		return `{"component":"stack","props":{"gap":"` + p + `"},"children":[{"component":"text","props":{"text":"b"}}]}`
-	}, "&lt;img src=x", false},
+	}, "&lt;img src=x", true}, // gap is a class-map lookup key through headless: an unknown name renders no class, so the payload never reaches the output
 	{"cluster.gap", func(p string) string {
 		return `{"component":"cluster","props":{"gap":"` + p + `"},"children":[{"component":"text","props":{"text":"b"}}]}`
-	}, "&lt;img src=x", false},
+	}, "&lt;img src=x", true}, // gap is a class-map lookup key through headless: an unknown name renders no class, so the payload never reaches the output
 	{"grid.gap", func(p string) string {
 		return `{"component":"grid","props":{"gap":"` + p + `"},"children":[{"component":"text","props":{"text":"b"}}]}`
-	}, "&lt;img src=x", false},
+	}, "&lt;img src=x", true}, // gap is a class-map lookup key through headless: an unknown name renders no class, so the payload never reaches the output
 	{"button.label", func(p string) string {
 		return `{"component":"button","props":{"label":"` + p + `"},"action_ref":"a"}`
 	}, "&lt;img src=x", false},

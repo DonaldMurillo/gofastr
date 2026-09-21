@@ -312,10 +312,11 @@ technology will be told.
 
 Button, Field, FieldRow, ConditionalField, Input, Textarea, Select,
 Password, Color, Choice, Switch, Group, Form, InputGroup, FileUpload,
-ValidationSummary, Card, Stack, Cluster, Grid, Container, Section,
-Divider, Spacer, Spinner, Skeleton, Alert, SystemBanner, Badge, Tag,
-Toolbar, ToolbarGroup, ToolbarSpacer, ToolbarSearch, Pagination, Table, Steps,
-Timeline, OptimisticAction and ToggleAction.
+Fieldset, ValidationSummary, Card, Stack, Cluster, Grid, Container,
+Section, Divider, Spacer, Spinner, Skeleton, Alert, SystemBanner,
+Badge, Tag, Toolbar, ToolbarGroup, ToolbarSpacer, ToolbarSearch,
+Pagination, Table, Steps, Timeline, PageHeader, EmptyState, StatCard,
+DetailList, OptimisticAction and ToggleAction.
 
 ## The behaviour module
 

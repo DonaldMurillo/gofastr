@@ -117,7 +117,7 @@ func captureMeridianSurface(t *testing.T, browser context.Context, base, surface
 					}
 					if surface == "marketing" {
 						actions = append(actions, chromedp.Evaluate(`(() => {
-							const heading = document.getElementById("ui-card-simple-honest-pricing");
+							const heading = [...document.querySelectorAll('.fui-card__heading')].find(h => h.textContent.trim() === "Simple, honest pricing");
 							const card = heading && heading.closest('[data-fui-comp="ui-card"]');
 							const paragraph = heading && heading.nextElementSibling;
 							if (!heading || !card || !paragraph) return {};

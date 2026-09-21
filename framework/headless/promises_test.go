@@ -101,6 +101,20 @@ func TestAlertToneReachesTheClasses(t *testing.T) {
 	has(t, plain, `class="alert"`, "an alert with no tone lost its root class")
 }
 
+// A timeline event's tone reaches the class map as the mark's
+// variant, joined to the mark's own class: a tinted dot is still a
+// dot. This is the Alert shape; a map that carried the base class in
+// every variant entry would be working around a replace.
+func TestTimelineToneJoinsTheMarkClass(t *testing.T) {
+	classes := Classes{PartTimelineMark: "dot", "timeline-mark--danger": "dot--danger"}
+	got := Timeline(TimelineProps{Label: "History", Events: []Event{
+		{Title: "Build failed", Tone: "danger"},
+		{Title: "Started"},
+	}}, classes)
+	has(t, got, `class="dot dot--danger"`, "the tone replaced the mark's class instead of joining it")
+	has(t, got, `aria-hidden="true" class="dot"></span>`, "the untinted mark lost its class")
+}
+
 // A partial Strings keeps every string it does not set: a caller that
 // translates one string must not unname the reveal button.
 func TestPartialStringsFallBackToEnglish(t *testing.T) {

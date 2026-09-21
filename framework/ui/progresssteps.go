@@ -2,27 +2,23 @@ package ui
 
 import (
 	"context"
-	"maps"
-	"strconv"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
-	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
 	"github.com/DonaldMurillo/gofastr/core/render"
-
+	"github.com/DonaldMurillo/gofastr/framework/headless"
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
 // ─── ProgressSteps ──────────────────────────────────────────────────
 //
 // Step indicator showing current + completed + upcoming steps in a
-// linear flow. Horizontal by default; vertical orientation for tall
-// narrow layouts (mobile, sidebar). Pairs with the (deferred) Form
-// Step Wizard pattern.
-//
-// Renders as <ol> with each step in <li>; the current step is marked
-// aria-current="step" so screen readers announce position.
+// linear flow. headless.Steps carries the contract — the ordered
+// list, the per-step data-state, aria-current on the current step,
+// and the optional link back on a completed step. This adapter adds
+// the typed status vocabulary, the orientation modifier and the nav
+// landmark wrapper with its label.
 
 // ProgressStepStatus is the rendered state of a single step.
 type ProgressStepStatus string
@@ -62,7 +58,7 @@ type ProgressStepsConfig struct {
 	// Orientation defaults to horizontal.
 	Orientation ProgressStepsOrientation
 	// Label is the optional aria-label for the wrapping nav. Defaults
-	// to "Progress".
+	// to the reader's "Progress".
 	Label string
 	// Ctx carries the per-request context used to resolve the
 	// aria-label. When nil, English fallbacks apply.
@@ -72,11 +68,26 @@ type ProgressStepsConfig struct {
 	Class string
 	// ExtraAttrs forwards additional attributes to the <nav> root.
 	// Keys the component owns are dropped: class and id (use Class /
-	// ID), data-fui-*, and aria-label (use Label).
+	// ID), data-fui-* and aria-label (use Label).
 	ExtraAttrs html.Attrs
 }
 
-// ProgressSteps renders a step indicator.
+// progressStepsClasses dresses headless.Steps' parts under the
+// wrapper the adapter draws.
+var progressStepsClasses = headless.Classes{
+	headless.PartRoot:     "fui-progress-steps__list",
+	headless.PartStep:     "fui-progress-steps__item",
+	headless.PartStepRow:  "fui-progress-steps__row",
+	headless.PartMarker:   "fui-progress-steps__marker",
+	headless.PartStepText: "fui-progress-steps__text",
+	headless.PartLabel:    "fui-progress-steps__label",
+	headless.PartStepHint: "fui-progress-steps__hint",
+}
+
+// ProgressSteps renders a step indicator on headless.Steps. Every
+// step's Status is passed as an explicit state, so "a later step
+// finished while an earlier one is open" renders as configured; the
+// primitive's derivation from Current is not used.
 func ProgressSteps(cfg ProgressStepsConfig) render.HTML {
 	if len(cfg.Steps) == 0 {
 		panic("ui: ProgressSteps requires at least one Step")
@@ -95,81 +106,65 @@ func ProgressSteps(cfg ProgressStepsConfig) render.HTML {
 	if label == "" {
 		label = i18nui.T(ctx, i18nui.KeyProgressLabel)
 	}
-	cls := "ui-progress-steps"
+	navClass := cfg.Class
 	if cfg.Orientation == ProgressStepsVertical {
-		cls += " ui-progress-steps--vertical"
+		navClass = joinNonEmpty("fui-progress-steps--vertical", navClass)
 	}
-	if cfg.Class != "" {
-		cls += " " + cfg.Class
+	navAttrs := headless.Safe(cfg.ExtraAttrs, "class", "id", "aria-label")
+	if navAttrs == nil {
+		navAttrs = html.Attrs{}
 	}
-	navAttrs := html.Attrs{"class": cls, "aria-label": label}
+	navAttrs["class"] = joinNonEmpty("fui-progress-steps", navClass)
+	navAttrs["aria-label"] = label
 	if cfg.ID != "" {
 		navAttrs["id"] = cfg.ID
 	}
-	maps.Copy(navAttrs, html.SafeExtraAttrs(cfg.ExtraAttrs, "aria-label"))
 
-	items := make([]render.HTML, 0, len(cfg.Steps))
+	steps := make([]headless.Step, len(cfg.Steps))
 	for i, s := range cfg.Steps {
 		if s.Label == "" {
 			panic("ui: ProgressSteps step requires Label")
 		}
+		// Every state is explicit: the primitive derives "done" for
+		// each step before Current, and an upcoming step that sits
+		// before the current one would otherwise render as finished.
+		state := "todo"
 		switch s.Status {
-		case ProgressStepUpcoming, ProgressStepCurrent, ProgressStepComplete:
+		case ProgressStepUpcoming:
+		case ProgressStepCurrent:
+			state = "current"
+		case ProgressStepComplete:
+			state = "done"
 		default:
 			panic("ui: ProgressSteps step unknown Status " + string(s.Status) +
 				`. Pick one of: "" (upcoming), current, complete`)
 		}
-		liCls := "ui-progress-steps__item"
-		if s.Status != ProgressStepUpcoming {
-			liCls += " ui-progress-steps__item--" + string(s.Status)
-		}
-		liAttrs := map[string]string{"class": liCls}
-		if s.Status == ProgressStepCurrent {
-			liAttrs["aria-current"] = "step"
-		}
-		// Marker: number for upcoming/current, checkmark for complete.
 		var marker render.HTML
-		switch s.Status {
-		case ProgressStepComplete:
-			marker = render.Tag("span", map[string]string{
-				"class":       "ui-progress-steps__marker",
-				"aria-hidden": "true",
-			}, render.HTML(progressStepsCheckIcon()))
-		default:
-			marker = render.Tag("span", map[string]string{
-				"class":       "ui-progress-steps__marker",
-				"aria-hidden": "true",
-			}, render.Text(strconv.Itoa(i+1)))
+		if s.Status == ProgressStepComplete {
+			// The done glyph is this package's check icon; the
+			// primitive's own default is a text ✓.
+			marker = render.HTML(progressStepsCheckIcon())
 		}
-
-		textChildren := []render.HTML{
-			html.Span(html.TextConfig{Class: "ui-progress-steps__label"}, render.Text(s.Label)),
+		href := ""
+		if s.Status == ProgressStepComplete {
+			// Only a completed step is a way back; an upcoming step
+			// with an Href renders no anchor, the field's own contract.
+			href = s.Href
 		}
-		if s.Hint != "" {
-			textChildren = append(textChildren,
-				html.Span(html.TextConfig{Class: "ui-progress-steps__hint"}, render.Text(s.Hint)))
+		steps[i] = headless.Step{
+			Label:  s.Label,
+			Hint:   s.Hint,
+			Href:   href,
+			Marker: marker,
+			State:  state,
 		}
-		text := render.Tag("span", map[string]string{"class": "ui-progress-steps__text"}, textChildren...)
-
-		var inner render.HTML
-		if s.Status == ProgressStepComplete && s.Href != "" {
-			// Drop unsafe href schemes (framework/ui/safety.go allow-list);
-			// degrade to an inert "#" rather than a live javascript: link.
-			href := urlsafe.CleanAnchor(s.Href)
-			if href == "" {
-				href = "#"
-			}
-			inner = render.Tag("a", map[string]string{"href": href, "class": "ui-progress-steps__row"},
-				marker, text)
-		} else {
-			inner = render.Tag("span", map[string]string{"class": "ui-progress-steps__row"},
-				marker, text)
-		}
-
-		items = append(items, render.Tag("li", liAttrs, inner))
 	}
+
 	return progressStepsStyle.WrapHTML(render.Tag("nav", navAttrs,
-		render.Tag("ol", map[string]string{"class": "ui-progress-steps__list"}, items...)))
+		headless.Steps(headless.StepsProps{
+			Steps: steps,
+		}, progressStepsClasses),
+	))
 }
 
 func progressStepsCheckIcon() string {
@@ -182,7 +177,7 @@ func progressStepsCSS(_ style.Theme) string {
 	return `[data-fui-comp="ui-progress-steps"] {
   display: block;
 }
-[data-fui-comp="ui-progress-steps"] .ui-progress-steps__list {
+[data-fui-comp="ui-progress-steps"] .fui-progress-steps__list {
   display: flex;
   gap: var(--spacing-sm, 4px);
   margin: 0;
@@ -190,7 +185,7 @@ func progressStepsCSS(_ style.Theme) string {
   list-style: none;
   counter-reset: progress-steps;
 }
-[data-fui-comp="ui-progress-steps"] .ui-progress-steps__item {
+[data-fui-comp="ui-progress-steps"] .fui-progress-steps__item {
   flex: 1 1 0;
   position: relative;
   min-width: 0;
@@ -199,7 +194,7 @@ func progressStepsCSS(_ style.Theme) string {
    item except the last, behind the marker so the marker punches
    through. Tinted by the NEXT step's status — green if both complete,
    border-color otherwise. */
-[data-fui-comp="ui-progress-steps"] .ui-progress-steps__item + .ui-progress-steps__item::before {
+[data-fui-comp="ui-progress-steps"] .fui-progress-steps__item + .fui-progress-steps__item::before {
   content: "";
   position: absolute;
   left: 0;
@@ -209,12 +204,12 @@ func progressStepsCSS(_ style.Theme) string {
   background: var(--color-border, #E4E4E7);
   z-index: 0;
 }
-.ui-progress-steps__item--current + .ui-progress-steps__item::before,
-.ui-progress-steps__item--complete + .ui-progress-steps__item--complete::before,
-.ui-progress-steps__item--complete + .ui-progress-steps__item::before {
+.fui-progress-steps__item[data-state="current"] + .fui-progress-steps__item::before,
+.fui-progress-steps__item[data-state="done"] + .fui-progress-steps__item[data-state="done"]::before,
+.fui-progress-steps__item[data-state="done"] + .fui-progress-steps__item::before {
   background: var(--color-primary, #4F46E5);
 }
-[data-fui-comp="ui-progress-steps"] .ui-progress-steps__row {
+[data-fui-comp="ui-progress-steps"] .fui-progress-steps__row {
   position: relative;
   z-index: 1;
   display: grid;
@@ -224,16 +219,16 @@ func progressStepsCSS(_ style.Theme) string {
   color: var(--color-text-muted, #52525B);
   text-decoration: none;
 }
-[data-fui-comp="ui-progress-steps"] .ui-progress-steps__text {
+[data-fui-comp="ui-progress-steps"] .fui-progress-steps__text {
   display: grid;
   justify-items: center;
   gap: var(--spacing-xs, 2px);
   min-width: 0;
 }
-[data-fui-comp="ui-progress-steps"] a.ui-progress-steps__row:hover {
+[data-fui-comp="ui-progress-steps"] a.fui-progress-steps__row:hover {
   text-decoration: underline;
 }
-[data-fui-comp="ui-progress-steps"] .ui-progress-steps__marker {
+[data-fui-comp="ui-progress-steps"] .fui-progress-steps__marker {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -246,63 +241,64 @@ func progressStepsCSS(_ style.Theme) string {
   font-weight: 600;
   color: var(--color-text-muted, #52525B);
 }
-[data-fui-comp="ui-progress-steps"] .ui-progress-steps__label {
+[data-fui-comp="ui-progress-steps"] .fui-progress-steps__label {
   font-size: var(--text-sm, 0.875rem);
   font-weight: 600;
   text-align: center;
 }
-[data-fui-comp="ui-progress-steps"] .ui-progress-steps__hint {
+[data-fui-comp="ui-progress-steps"] .fui-progress-steps__hint {
   font-size: var(--text-xs, 0.75rem);
   color: var(--color-text-muted, #52525B);
   text-align: center;
 }
 
 /* Status states. */
-.ui-progress-steps__item--current .ui-progress-steps__marker {
+.fui-progress-steps__item[data-state="current"] .fui-progress-steps__marker {
   background: var(--color-primary, #4F46E5);
   border-color: var(--color-primary, #4F46E5);
   color: var(--color-primary-fg, #FFFFFF);
 }
-.ui-progress-steps__item--current .ui-progress-steps__label {
+.fui-progress-steps__item[data-state="current"] .fui-progress-steps__label {
   color: var(--color-text, #18181B);
 }
-.ui-progress-steps__item--complete .ui-progress-steps__marker {
+.fui-progress-steps__item[data-state="done"] .fui-progress-steps__marker {
   background: var(--color-primary, #4F46E5);
   border-color: var(--color-primary, #4F46E5);
   color: var(--color-primary-fg, #FFFFFF);
 }
-.ui-progress-steps__item--complete .ui-progress-steps__label {
+.fui-progress-steps__item[data-state="done"] .fui-progress-steps__label {
   color: var(--color-text, #18181B);
 }
 
 /* Vertical orientation. */
-.ui-progress-steps--vertical .ui-progress-steps__list {
+.fui-progress-steps--vertical .fui-progress-steps__list {
   flex-direction: column;
   gap: var(--spacing-md, 8px);
 }
-.ui-progress-steps--vertical .ui-progress-steps__item {
+.fui-progress-steps--vertical .fui-progress-steps__item {
   flex: 0 0 auto;
 }
-.ui-progress-steps--vertical .ui-progress-steps__row {
+.fui-progress-steps--vertical .fui-progress-steps__row {
   grid-template-rows: auto;
   grid-template-columns: auto 1fr;
   justify-items: start;
   align-items: center;
   gap: var(--spacing-md, 8px);
 }
-.ui-progress-steps--vertical .ui-progress-steps__text {
+.fui-progress-steps--vertical .fui-progress-steps__text {
   justify-items: start;
 }
-.ui-progress-steps--vertical .ui-progress-steps__label,
-.ui-progress-steps--vertical .ui-progress-steps__hint {
+.fui-progress-steps--vertical .fui-progress-steps__label,
+.fui-progress-steps--vertical .fui-progress-steps__hint {
   text-align: start;
 }
-.ui-progress-steps--vertical .ui-progress-steps__item + .ui-progress-steps__item::before {
+.fui-progress-steps--vertical .fui-progress-steps__item + .fui-progress-steps__item::before {
   left: 13px;
   right: auto;
   top: -12px;
   bottom: auto;
   width: 2px;
   height: 12px;
-}`
+}
+`
 }
