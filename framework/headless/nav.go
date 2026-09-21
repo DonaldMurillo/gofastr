@@ -436,6 +436,8 @@ type Step struct {
 	Href string
 	// Marker overrides the glyph in the marker circle — a zero-padded
 	// number ("01"), a caller's check icon. It is aria-hidden either
+	// way: the marker is a picture of the step's state, and the label
+	// beside it is what a reader hears.
 	Marker render.HTML
 	// State overrides the state derived from Current: "done",
 	// "current" or "todo". Empty derives. An explicit state is how a

@@ -84,10 +84,10 @@ var progressStepsClasses = headless.Classes{
 	headless.PartStepHint: "fui-progress-steps__hint",
 }
 
-// ProgressSteps renders a step indicator on headless.Steps. A step
-// with an explicit Status keeps it (the derivation from Current
-// cannot express "a later step finished while an earlier one is
-// open"); the rest derive from the last current step.
+// ProgressSteps renders a step indicator on headless.Steps. Every
+// step's Status is passed as an explicit state, so "a later step
+// finished while an earlier one is open" renders as configured; the
+// primitive's derivation from Current is not used.
 func ProgressSteps(cfg ProgressStepsConfig) render.HTML {
 	if len(cfg.Steps) == 0 {
 		panic("ui: ProgressSteps requires at least one Step")
@@ -120,13 +120,15 @@ func ProgressSteps(cfg ProgressStepsConfig) render.HTML {
 		navAttrs["id"] = cfg.ID
 	}
 
-	current := 0
 	steps := make([]headless.Step, len(cfg.Steps))
 	for i, s := range cfg.Steps {
 		if s.Label == "" {
 			panic("ui: ProgressSteps step requires Label")
 		}
-		state := ""
+		// Every state is explicit: the primitive derives "done" for
+		// each step before Current, and an upcoming step that sits
+		// before the current one would otherwise render as finished.
+		state := "todo"
 		switch s.Status {
 		case ProgressStepUpcoming:
 		case ProgressStepCurrent:
@@ -136,9 +138,6 @@ func ProgressSteps(cfg ProgressStepsConfig) render.HTML {
 		default:
 			panic("ui: ProgressSteps step unknown Status " + string(s.Status) +
 				`. Pick one of: "" (upcoming), current, complete`)
-		}
-		if s.Status == ProgressStepCurrent {
-			current = i + 1
 		}
 		var marker render.HTML
 		if s.Status == ProgressStepComplete {
@@ -163,8 +162,7 @@ func ProgressSteps(cfg ProgressStepsConfig) render.HTML {
 
 	return progressStepsStyle.WrapHTML(render.Tag("nav", navAttrs,
 		headless.Steps(headless.StepsProps{
-			Steps:   steps,
-			Current: current,
+			Steps: steps,
 		}, progressStepsClasses),
 	))
 }

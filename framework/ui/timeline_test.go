@@ -149,3 +149,16 @@ func TestTimelineVariantDotRulesAreScoped(t *testing.T) {
 		}
 	}
 }
+
+// cfg.ID reaches the root through the primitive's ID: a part's attrs
+// refuse id, so routing it there dropped it silently.
+func TestTimelineIDLandsOnTheRoot(t *testing.T) {
+	h := string(Timeline(TimelineConfig{
+		ID:     "deploy-log",
+		Events: []TimelineEvent{{Title: "Built", Meta: "2h ago"}},
+	}))
+	root := h[:strings.Index(h, ">")+1]
+	if !strings.Contains(root, `id="deploy-log"`) {
+		t.Errorf("ID did not land on the root:\n%s", root)
+	}
+}

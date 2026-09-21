@@ -43,3 +43,12 @@ func TestDetailListAppliesClassOnTheRoot(t *testing.T) {
 		t.Errorf("the caller's Class did not land after the base class:\n%s", h)
 	}
 }
+
+// No items renders nothing rather than reaching the primitive's
+// refusal of an empty <dl>: an empty record is data the page can
+// carry, not a configuration mistake.
+func TestDetailListWithNoItemsRendersNothing(t *testing.T) {
+	if h := string(DetailList(DetailListConfig{})); h != "" {
+		t.Errorf("an empty list should render nothing, got:\n%s", h)
+	}
+}

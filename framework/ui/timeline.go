@@ -114,12 +114,10 @@ func Timeline(cfg TimelineConfig) render.HTML {
 	if cfg.Class != "" {
 		attrs["class"] = cfg.Class
 	}
-	if cfg.ID != "" {
-		attrs["id"] = cfg.ID
-	}
 	parts := headless.Parts{Attrs: headless.PartAttrs{headless.PartRoot: attrs}}
 
 	return timelineStyle.WrapHTML(headless.Timeline(headless.TimelineProps{
+		ID:     cfg.ID,
 		Events: events,
 		Parts:  parts,
 	}, timelineClasses))

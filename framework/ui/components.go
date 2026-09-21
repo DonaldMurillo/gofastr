@@ -685,6 +685,7 @@ func EmptyState(cfg EmptyStateConfig) render.HTML {
 		Action:      cfg.Action,
 		ID:          cfg.ID,
 		ExtraAttrs:  headless.Safe(cfg.ExtraAttrs, "class", "id", "role", "aria-label", "aria-labelledby"),
+		Parts:       rootClassParts(cfg.Class),
 	}, emptyStateClasses))
 }
 

@@ -152,12 +152,12 @@ type Event struct {
 	Machine string
 	// Tone lets the class map colour the marker — "success", "danger".
 	Tone string
-	// Body is extra markup under the detail: a log excerpt, actions.
 	// Meta is the secondary line beside the title — an actor, a
 	// relative time ("by dom", "2h ago") — in the header row, read
 	// after the title it qualifies. When is the timestamp contract;
 	// Meta is a caption with no machine form.
 	Meta string
+	// Body is extra markup under the detail: a log excerpt, actions.
 	Body render.HTML
 }
 

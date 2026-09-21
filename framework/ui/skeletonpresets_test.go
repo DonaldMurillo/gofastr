@@ -76,7 +76,7 @@ func TestSkeletonCard_FooterOptional(t *testing.T) {
 	for _, want := range []string{
 		".fui-skeleton-card > .fui-skeleton__line[data-hui-skeleton-last]:nth-child(n+3)",
 		".fui-skeleton-card--footed > .fui-skeleton__line[data-hui-skeleton-last]",
-		".fui-skeleton-card--footed > .fui-skeleton__line:nth-last-child(2)",
+		".fui-skeleton-card--footed > .fui-skeleton__line:nth-last-child(3)",
 		"gap: var(--spacing-sm, 4px)",
 	} {
 		if !strings.Contains(css, want) {

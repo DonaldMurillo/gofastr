@@ -241,8 +241,10 @@ const skeletonPresetsCSS = `
 }
 /* A footed card's body keeps its own short last line: the footer is
    a separate rhythm below it, and the mark names the footer, not the
-   body's end. */
-.fui-skeleton-card--footed > .fui-skeleton__line:nth-last-child(2):nth-child(n+3) {
+   body's end. The primitive's announcement is the root's last child,
+   so the footer is the second-last and the body's last line the
+   third-last. */
+.fui-skeleton-card--footed > .fui-skeleton__line:nth-last-child(3):nth-child(n+3) {
   inline-size: 65%;
 }
 

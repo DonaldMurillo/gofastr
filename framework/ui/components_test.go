@@ -968,3 +968,12 @@ func TestFormSectionIDRootsTheDescriptionID(t *testing.T) {
 		t.Errorf("an explicit ID did not root the description id:\n%s", b)
 	}
 }
+
+// cfg.Class lands on the empty state's root beside the class map's
+// own class, the way every adapter in this file routes it.
+func TestEmptyStateAppliesClassOnTheRoot(t *testing.T) {
+	h := string(EmptyState(EmptyStateConfig{Title: "No apps", Class: "hero"}))
+	if !strings.Contains(h, `class="fui-empty-state hero"`) {
+		t.Errorf("the caller's Class did not land after the base class:\n%s", h)
+	}
+}

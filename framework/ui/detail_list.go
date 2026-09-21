@@ -43,8 +43,13 @@ var detailListClasses = headless.Classes{
 
 // DetailList renders a label/value description list on
 // headless.DetailList. An item with no Value renders the empty-value
-// dash, so an absence reads as deliberate.
+// dash, so an absence reads as deliberate. A list with no items
+// renders nothing: the primitive refuses an empty <dl>, and a record
+// with no fields is data, not a developer's mistake.
 func DetailList(cfg DetailListConfig) render.HTML {
+	if len(cfg.Items) == 0 {
+		return render.HTML("")
+	}
 	rows := make([]headless.DetailRow, 0, len(cfg.Items))
 	for _, it := range cfg.Items {
 		value := it.Value

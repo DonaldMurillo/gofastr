@@ -146,3 +146,19 @@ func TestProgressStepsVerticalConnectorGeometry(t *testing.T) {
 		}
 	}
 }
+
+// An upcoming step before the current one stays upcoming. The
+// primitive derives "done" for every step before Current, so the
+// adapter names each state explicitly instead of leaning on that.
+func TestProgressStepsUpcomingBeforeCurrentIsTodo(t *testing.T) {
+	h := string(ProgressSteps(ProgressStepsConfig{
+		Steps: []ProgressStep{
+			{Label: "Skipped"},
+			{Label: "Now", Status: ProgressStepCurrent},
+		},
+	}))
+	first := h[:strings.Index(h, "Now")]
+	if !strings.Contains(first, `data-state="todo"`) || strings.Contains(first, `data-state="done"`) || strings.Contains(first, "✓") {
+		t.Errorf("the upcoming step before the current one rendered as done:\n%s", first)
+	}
+}
