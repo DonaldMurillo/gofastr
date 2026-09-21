@@ -183,7 +183,11 @@ func TestExtraAttrsForwardingIsSanitized(t *testing.T) {
 					// ownership each caller names): a component that
 					// hands its extras to a headless primitive
 					// sanitises there, before the primitive's own Safe.
-					if fun.Sel.Name == "SafeExtraAttrs" || fun.Sel.Name == "SafeCarrierAttrs" || fun.Sel.Name == "Safe" {
+					// Only that package's Safe counts: another Safe
+					// with the same name would mark the subtree clean.
+					pkg, _ := fun.X.(*ast.Ident)
+					headlessSafe := fun.Sel.Name == "Safe" && pkg != nil && pkg.Name == "headless"
+					if fun.Sel.Name == "SafeExtraAttrs" || fun.Sel.Name == "SafeCarrierAttrs" || headlessSafe {
 						sanitized = append(sanitized, d)
 					}
 					if fun.Sel.Name == "SafeCarrierAttrs" && !safeCarrierAllowed[name] {
