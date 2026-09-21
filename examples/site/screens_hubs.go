@@ -170,6 +170,10 @@ func interactivityHub() *TeachHubScreen {
 // it: without script it navigates, with it the runtime swaps this
 // island in place and writes the URL after the swap.
 ui.DataTable(ui.DataTableConfig{
+    Columns: []ui.Column{
+        {Key: "name", Header: "Name", Sortable: true},
+        {Key: "email", Header: "Email"},
+    },
     Rows: rows,
     Island: headless.Island{
         Signal:   "customers",

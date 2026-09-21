@@ -601,9 +601,10 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   rendered no table at all; `is-empty` stays on the root. Every
   headered cell carries `data-label` in every mode: a cards
   collapse reads it, the scroll sheet does not. A carried query
-  value with C0 control bytes is scrubbed at this boundary — the
-  anchor policy refuses `%0D`/`%0A` in every href the framework
-  writes, and a hostile `?q=` must refuse a sort, not the page.
+  value with C0 control bytes is scrubbed by the primitive, so a
+  hostile `?q=` with CR LF (which the anchor policy would refuse as
+  `%0D%0A`) still renders the sort anchors and the page; nothing is
+  refused.
   `CaptionHidden` keeps a caption out of sight for a table that sits
   under a visible heading saying the same thing: the caption element,
   its text and the region's `aria-labelledby` all stay (the resource

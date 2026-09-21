@@ -31,7 +31,6 @@ type Column struct {
 	// Header is the visible column header text. May be empty: an
 	// actions or icon column. A sortable column with no header gets
 	// its sort anchor named from the column Key.
-	// its sort anchor named from the column Key.
 	Header string
 
 	// Sortable makes the header a sort control: an anchor that
@@ -236,7 +235,6 @@ func DataTable(cfg DataTableConfig) render.HTML {
 	for i, r := range cfg.Rows {
 		rows[i] = headless.Row{ID: r.ID, Cells: r.Cells}
 	}
-	query := scrubQueryValues(cfg.Query)
 
 	var empty render.HTML
 	if len(cfg.Rows) == 0 {
@@ -306,7 +304,7 @@ func DataTable(cfg DataTableConfig) render.HTML {
 		SortBy:     cfg.SortBy,
 		SortDir:    headless.SortDir(cfg.SortDir),
 		Path:       cfg.Path,
-		Query:      query,
+		Query:      cfg.Query,
 		SortParam:  cfg.SortParam,
 		DirParam:   cfg.DirParam,
 		Island:     cfg.Island,
@@ -317,48 +315,4 @@ func DataTable(cfg DataTableConfig) render.HTML {
 		Parts:      parts,
 		Strings:    StringsFor(ctx),
 	}, dataTableClasses))
-}
-
-// scrubQueryValues strips C0 control bytes and DEL from the carried
-// query's values. The query a screen carries is request state, and a
-// hostile ?q= with CR/LF percent-encodes to %0D/%0A in the href —
-// which the anchor policy refuses for every URL this framework writes,
-// and the primitive (whose props are typed configuration) refuses at
-// render. This component is the request boundary, so the scrub happens
-// here, once, for every caller: a control byte in a carried value is
-// never a search a user meant, and a pair whose value scrubs to
-// nothing is dropped rather than carried as an empty filter.
-func scrubQueryValues(q url.Values) url.Values {
-	if len(q) == 0 {
-		return q
-	}
-	out := make(url.Values, len(q))
-	for k, vs := range q {
-		cleaned := make([]string, 0, len(vs))
-		for _, v := range vs {
-			if s := scrubControlBytes(v); s != "" {
-				cleaned = append(cleaned, s)
-			}
-		}
-		if len(cleaned) > 0 {
-			out[k] = cleaned
-		}
-	}
-	return out
-}
-
-// scrubControlBytes removes every C0 control byte and DEL from s.
-func scrubControlBytes(s string) string {
-	if !strings.ContainsFunc(s, func(r rune) bool { return r < 0x20 || r == 0x7f }) {
-		return s
-	}
-	var b strings.Builder
-	b.Grow(len(s))
-	for _, r := range s {
-		if r < 0x20 || r == 0x7f {
-			continue
-		}
-		b.WriteRune(r)
-	}
-	return b.String()
 }

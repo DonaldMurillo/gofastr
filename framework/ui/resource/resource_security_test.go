@@ -2,7 +2,10 @@ package resource
 
 import (
 	"context"
+	stdhtml "html"
 	"net/http/httptest"
+	"net/url"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -20,9 +23,9 @@ import (
 // Sprintf and every link on the page would navigate to a corrupted URL
 // (silent filter/state loss on the CRUD list surface).
 func TestListCarryQueryKeepsFmtVerbs(t *testing.T) {
-	for _, tc := range []struct{ name, raw string }{
-		{"search-amp", "/orders?q=a%26b"},
-		{"search-percent", "/orders?q=50%25+off"},
+	for _, tc := range []struct{ name, raw, search string }{
+		{"search-amp", "/orders?q=a%26b", "a&b"},
+		{"search-percent", "/orders?q=50%25+off", "50% off"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			source := &stubSource{rows: []map[string]any{
@@ -38,25 +41,56 @@ func TestListCarryQueryKeepsFmtVerbs(t *testing.T) {
 			}
 			req := httptest.NewRequest("GET", tc.raw, nil)
 			s := string(cfg.List(appui.WithRequest(context.Background(), req)))
-			// Show the sort-header region, not the page header, as evidence.
-			sortAt := strings.Index(s, "ui-data-table__sort")
-			hrefRegion := s[:min(len(s), 400)]
-			if sortAt >= 0 {
-				lo := max(0, sortAt-40)
-				hrefRegion = s[lo:min(len(s), sortAt+260)]
-			}
 			if strings.Contains(s, "%!") {
-				t.Errorf("SECURITY: [fmt-carry] request %q: sort/pagination hrefs corrupted by fmt directives injected through the carry; sort href region: %s", tc.raw, hrefRegion)
+				t.Errorf("SECURITY: [fmt-carry] request %q: a href on the page carries a fmt directive: %s", tc.raw, s[:min(len(s), 400)])
 			}
-			if !strings.Contains(s, "sort=name") {
-				t.Errorf("SECURITY: [fmt-carry] request %q: column key must land in its own sort= param, got: %s", tc.raw, hrefRegion)
+			// The sort anchor and the page-2 link are parsed back, not
+			// matched as substrings: a "sort=name" anywhere on the page
+			// would satisfy a substring, and the property is that THESE
+			// hrefs carry the search beside their own parameters.
+			sortHref := sortAnchorHref.FindStringSubmatch(s)
+			if sortHref == nil {
+				t.Fatalf("SECURITY: [fmt-carry] request %q: no sort anchor rendered", tc.raw)
 			}
-			if !strings.Contains(s, "dir=asc") {
-				t.Errorf("SECURITY: [fmt-carry] request %q: direction must land in its own dir= param, got: %s", tc.raw, hrefRegion)
+			sq := parsedQuery(t, sortHref[1])
+			if sq.Get("q") != tc.search {
+				t.Errorf("SECURITY: [fmt-carry] request %q: the sort href lost or corrupted the search: q=%q want %q", tc.raw, sq.Get("q"), tc.search)
 			}
-			if !strings.Contains(s, "p=2") {
-				t.Errorf("SECURITY: [fmt-carry] request %q: page-2 link must keep its p= param (5 rows / page size 4 = 2 pages), got: %s", tc.raw, hrefRegion)
+			if sq.Get("sort") != "name" || sq.Get("dir") != "asc" || len(sq["sort"]) != 1 {
+				t.Errorf("SECURITY: [fmt-carry] request %q: the sort href's own parameters are wrong: %v", tc.raw, sq)
+			}
+			var pq url.Values
+			for _, m := range anyHref.FindAllStringSubmatch(s, -1) {
+				if q := parsedQuery(t, m[1]); q.Get("p") == "2" {
+					pq = q
+					break
+				}
+			}
+			if pq == nil {
+				t.Fatalf("SECURITY: [fmt-carry] request %q: no page-2 link rendered (5 rows / page size 4 = 2 pages)", tc.raw)
+			}
+			if pq.Get("q") != tc.search {
+				t.Errorf("SECURITY: [fmt-carry] request %q: the page-2 href lost or corrupted the search: q=%q want %q", tc.raw, pq.Get("q"), tc.search)
 			}
 		})
 	}
+}
+
+// sortAnchorHref matches the DataTable's sort anchor; attributes render
+// sorted, so class precedes href. anyHref matches every href on the
+// page; the page-2 link is the one whose parsed query says p=2.
+var (
+	sortAnchorHref = regexp.MustCompile(`<a class="ui-data-table__sort" href="([^"]*)"`)
+	anyHref        = regexp.MustCompile(`href="([^"]*)"`)
+)
+
+// parsedQuery unescapes an attribute value and parses its query, so the
+// assertions read values rather than byte order.
+func parsedQuery(t *testing.T, href string) url.Values {
+	t.Helper()
+	u, err := url.Parse(stdhtml.UnescapeString(href))
+	if err != nil {
+		t.Fatalf("href %q does not parse: %v", href, err)
+	}
+	return u.Query()
 }
