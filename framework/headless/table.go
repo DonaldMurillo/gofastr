@@ -336,9 +336,25 @@ func tableHeaderCell(b Box, p TableProps, w *Strings, col Column, sortParam, dir
 // net/url and never by substitution. An empty Path is the current
 // document, a relative "?query" href.
 func tableSortHref(p TableProps, key string, dir SortDir, sortParam, dirParam string) string {
+	// The carried query is request state, unlike Path: a value with a
+	// control byte in it — a crafted ?q= with CR LF — percent-encodes
+	// to %0D%0A, which the anchor policy refuses for every URL this
+	// framework writes, and a refusal here would be a 500 from a
+	// link. So the bytes are stripped rather than refused: a control
+	// byte is never a search a user meant, and a key or value that
+	// scrubs to nothing is dropped rather than carried as an empty
+	// filter. Path stays a refusal, because Path is configuration.
 	q := url.Values{}
 	for k, vs := range p.Query {
-		q[k] = append(q[k], vs...)
+		k = scrubControlBytes(k)
+		if k == "" {
+			continue
+		}
+		for _, v := range vs {
+			if v = scrubControlBytes(v); v != "" {
+				q.Add(k, v)
+			}
+		}
 	}
 	// Set replaces, and that is the contract: the query a screen
 	// carries may still hold the last sort, and sort=old&sort=name is
@@ -364,6 +380,22 @@ func tableSortHref(p TableProps, key string, dir SortDir, sortParam, dirParam st
 		panic("headless: Table Path " + strconv.Quote(p.Path) + " is not a URL the anchor policy allows")
 	}
 	return href
+}
+
+// scrubControlBytes removes every C0 control byte and DEL from s.
+func scrubControlBytes(s string) string {
+	if !strings.ContainsFunc(s, func(r rune) bool { return r < 0x20 || r == 0x7f }) {
+		return s
+	}
+	var b strings.Builder
+	b.Grow(len(s))
+	for _, r := range s {
+		if r < 0x20 || r == 0x7f {
+			continue
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
 }
 
 func tableBody(b Box, p TableProps) render.HTML {

@@ -280,6 +280,35 @@ func TestTableRefusesAPathWithItsOwnQuery(t *testing.T) {
 	})
 }
 
+// The carried query is request state: a value or key with a control
+// byte in it percent-encodes to something the anchor policy refuses,
+// and refusing at render would be a 500 from a crafted list URL. The
+// bytes are stripped, and a pair that scrubs to nothing is dropped;
+// the rest of the query survives, parsed back rather than matched.
+func TestTableScrubsControlBytesFromTheCarriedQuery(t *testing.T) {
+	got := Table(TableProps{Path: "/apps",
+		Query: url.Values{
+			"q":        {"ev\r\nSet-Cookie: x=1"},
+			"\x01team": {"ops"},
+			"gone":     {"\x00\x7f"},
+			"keep":     {"yes"},
+		},
+		Columns: []Column{{Key: "name", Header: "Name", Sortable: true}}}, nil)
+	q := sortHrefs(t, got)[0].Query()
+	if q.Get("q") != "evSet-Cookie: x=1" {
+		t.Errorf("the control bytes were not stripped from the value: %q", q.Get("q"))
+	}
+	if q.Get("team") != "ops" {
+		t.Errorf("the control byte was not stripped from the key: %v", q)
+	}
+	if _, ok := q["gone"]; ok {
+		t.Error("a value that scrubbed to nothing was carried as an empty filter")
+	}
+	if q.Get("keep") != "yes" || q.Get("sort") != "name" {
+		t.Errorf("the rest of the query did not survive the scrub: %v", q)
+	}
+}
+
 // A column's Variant is the one channel a class map has for styling a
 // whole column: the class lands on that column's <th> and on every
 // one of its <td>, and on no other column's. A nil class map or an

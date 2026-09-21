@@ -52,7 +52,12 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   Roselli's responsive-table pattern). A `Path` carrying its own
   query or fragment is refused at render — the carry belongs in
   `Query`, where it survives the sort, and a silently replaced value
-  is the exact loss this component exists to make structural. A
+  is the exact loss this component exists to make structural. The
+  carried `Query` itself is request state, so it is never refused: a
+  control byte in a key or value (a crafted `?q=` with CR LF, which
+  percent-encodes to what the anchor policy rejects) is stripped, and
+  a pair that scrubs to nothing is dropped, because a refusal there
+  would be a 500 from a link. A
   column's `Variant` is the one channel a class map has for styling a
   whole column (`<part>--<variant>` on that column's `<th>` and every
   `<td>` under it), so alignment and column shading are the map's to
