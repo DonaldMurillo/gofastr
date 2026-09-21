@@ -22,7 +22,7 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `_moduleMarkers` entry (the only one carrying interactions), its
   interaction literals, `preload.go`'s mirror row and
   `fragments.go`'s `moduleAttrs` ownership are gone, and
-  `TestRuntimeDemandBridgeIsGeneric` is inverted — it now FAILS on a
+  `TestRuntimeDemandInteractionBridgeIsGeneric` is inverted — it now FAILS on a
   lightbox string appearing in the kernel's composed bytes or its
   Go-side tables. Two contract violations the move forced: the
   module's viewer lookup no longer keys off the kernel-owned
@@ -66,7 +66,7 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   out of `framework/ui/lightbox.go` (markers, requirements,
   interactions) so the browser tests run the real descriptor and
   cannot drift from it. The guarded core bundle shrank: 13325 →
-  13236 gzip level 6 (−89) and 15386 → 15280 level 1 (−106); both
+  13242 gzip level 6 (−83) and 15386 → 15288 level 1 (−98); both
   budget lines hold, the anti-vacuity fixture still crosses the
   level-1 window, and the bracket is recorded in both constants'
   histories. Two deeplink hardening tests moved with their subject

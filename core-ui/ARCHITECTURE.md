@@ -1441,10 +1441,11 @@ no-script), a request is a typed `Action`, and a signal is a typed
 module now exists: `framework/headless/behavior.go` registers its
 JavaScript under the name `headless` through the same seam a
 stylesheet uses, and binds the `data-hui-*` hooks (see "Component
-behaviour: the same seam" below for the mechanism). No class map dresses
-the parts in this repository yet; `framework/ui` is today's styled
-layer and does not render through this package. Contract and
-invariants: `gofastr docs ui-headless`.
+behaviour: the same seam" below for the mechanism). `framework/ui` is
+the class map that dresses the parts: its buttons, form family and
+Lightbox render through this package (the Lightbox section below is
+the worked example); the components not yet moved are listed in the
+stack's plan. Contract and invariants: `gofastr docs ui-headless`.
 
 ### Adding a styled component
 
