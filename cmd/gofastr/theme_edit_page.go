@@ -265,7 +265,7 @@ func controlInputID(key string) string {
 }
 
 // themeEditPageHTML composes the editor chrome from design-system primitives
-// (ui.Stack, ui.Cluster, ui.Button, the ui-callout variant surface) plus the
+// (ui.Stack, ui.Cluster, ui.Button, the fui-callout variant surface) plus the
 // framework's ui.Workbench inspector shell. The chrome
 // LINKS /__gofastr/app.css with no ?t= query, so it renders against the
 // host app's DEFAULT theme, pinning the controls to known-good tokens even
@@ -302,23 +302,23 @@ func themeEditPageHTML(token, controls, outPath, previewKey string) string {
 	}, title, ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM}, schemeBtn, writeBtn))
 
 	// Status line: a Callout the JS updates by swapping its variant class.
-	// ui-callout--<success|danger|warning|info|neutral> recolours the leading
+	// fui-callout--<success|danger|warning|info|neutral> recolours the leading
 	// glyph via the --color-* tokens, so the chrome needs no per-status CSS.
 	statusBox := render.Tag("div", map[string]string{
 		"id":            "te-status",
 		"role":          "status",
 		"aria-live":     "polite",
-		"class":         "ui-callout ui-callout--neutral",
+		"class":         "fui-callout fui-callout--neutral",
 		"data-fui-comp": "ui-callout",
-	}, render.Tag("div", map[string]string{"class": "ui-callout__body"}, render.Text("")))
+	}, render.Tag("div", map[string]string{"class": "fui-callout__body"}, render.Text("")))
 
 	// Contrast panel: JS fills this. Same Callout shape; the JS swaps to
-	// ui-callout--warning when findings exist, hidden when none.
+	// fui-callout--warning when findings exist, hidden when none.
 	contrastBox := render.Tag("div", map[string]string{
 		"id":            "te-contrast",
 		"role":          "alert",
 		"hidden":        "",
-		"class":         "ui-callout ui-callout--warning",
+		"class":         "fui-callout fui-callout--warning",
 		"data-fui-comp": "ui-callout",
 	})
 
@@ -425,15 +425,15 @@ const themeEditChromeJS = `
   var pendingError = null;
 
   function setStatus(msg, kind) {
-    // Status lives inside a ui-callout. The variant class drives the colour
+    // Status lives inside a fui-callout. The variant class drives the colour
     // via the design system's --color-* tokens, so kind is mapped to a
     // Callout variant rather than a bespoke .te-status--<kind> rule.
     var variant = 'neutral';
     if (kind === 'ok') variant = 'success';
     else if (kind === 'err') variant = 'danger';
-    var body = statusEl.querySelector('.ui-callout__body');
+    var body = statusEl.querySelector('.fui-callout__body');
     if (body) body.textContent = msg || '';
-    statusEl.className = 'ui-callout ui-callout--' + variant;
+    statusEl.className = 'fui-callout fui-callout--' + variant;
   }
 
   function authHeaders() {

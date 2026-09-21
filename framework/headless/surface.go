@@ -4,6 +4,7 @@ import (
 	"strconv"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
+	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
@@ -11,6 +12,7 @@ import (
 const (
 	PartCardHeader Part = "card-header"
 	PartCardBody   Part = "card-body"
+	PartCardInner  Part = "card-inner"
 )
 
 // CardProps configures a card.
@@ -31,7 +33,15 @@ type CardProps struct {
 	// navigate by.
 	TitleTag string
 	Desc     string
-	Footer   render.HTML
+	// Href makes the whole card one focusable link — the surface is
+	// the affordance. The contents render inside a single inner part,
+	// so the anchor wraps exactly what the card showed as a div. A
+	// href the anchor policy refuses is refused at render, naming the
+	// prop, the package's posture for every configured href
+	// (Alert.DismissHref, Form.Action, Table.Path): a rejected href is
+	// the developer's mistake, not a link to render dead.
+	Href   string
+	Footer render.HTML
 
 	ID         string
 	ExtraAttrs html.Attrs
@@ -78,14 +88,23 @@ func Card(p CardProps, s Classes, body ...render.HTML) render.HTML {
 	if p.Footer != "" {
 		kids = append(kids, b.El("div", PartFooter, nil, p.Footer))
 	}
-	own := Merge(Safe(p.ExtraAttrs), Attrs(map[string]string{"id": p.ID}))
+	own := Merge(Safe(p.ExtraAttrs, "href"), Attrs(map[string]string{"id": p.ID}))
+	if p.Href != "" {
+		href := urlsafe.CleanAnchor(p.Href)
+		if href == "" {
+			panic("headless: Card Href " + strconv.Quote(p.Href) + " is not a URL the anchor policy allows")
+		}
+		own["href"] = href
+		inner := b.El("div", PartCardInner, nil, kids...)
+		return b.El("a", PartRoot, own, inner)
+	}
 	return b.El("div", PartRoot, own, kids...)
 }
 
 func init() {
 	Register(Spec{
 		Name:     "Card",
-		Anatomy:  []Part{PartRoot, PartTitle, PartDesc, PartCardHeader, PartCardBody, PartFooter},
+		Anatomy:  []Part{PartRoot, PartTitle, PartDesc, PartCardHeader, PartCardBody, PartCardInner, PartFooter},
 		Fillable: []Part{PartCardHeader},
 		WithParts: func(s Classes, parts Parts) render.HTML {
 			return Card(CardProps{Title: "Deployments", Parts: parts}, s, render.Text("body"))
@@ -106,6 +125,11 @@ func init() {
 				Why:  "the footer is where the actions that apply to the whole card live",
 				HTML: Card(CardProps{Title: "Restart policy", Footer: Button(ButtonProps{Label: "Save", Variant: "primary"}, k.For("Button"))}, s,
 					render.HTML("<p>On failure, up to 3 times.</p>")),
+			}, {
+				Name: "the whole card is the link",
+				Why:  "an href on the card makes the surface itself the affordance — one focusable link wrapping what the div showed, so the click target is the card a reader can see rather than a Read more crammed into the footer",
+				HTML: Card(CardProps{Title: "blog", Desc: "2 vCPU, 4 GB", Href: "/apps/blog"}, s,
+					render.HTML("<p>Deployed 3 days ago.</p>")),
 			}}
 		},
 	})

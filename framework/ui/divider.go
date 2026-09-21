@@ -1,11 +1,17 @@
 package ui
 
+// ─── Divider ────────────────────────────────────────────────────────
+//
+// headless.Divider carries the separator contract: a meaningful break
+// is an <hr>, a vertical break carries aria-orientation, a labelled
+// one claims the separator role on the div that replaces the hr. This
+// adapter dresses it with the fui-divider class map.
+
 import (
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/headless"
 )
-
-// ─── Divider ────────────────────────────────────────────────────────
 
 // DividerOrientation selects horizontal vs. vertical line.
 type DividerOrientation string
@@ -33,59 +39,49 @@ type DividerConfig struct {
 	// analytics markers, ARIA overrides) to the root element (<hr>,
 	// or the role=separator div for vertical / labelled shapes).
 	// Keys the component owns are dropped: class and id (use Class /
-	// ID), data-fui-*, role, and aria-orientation (use Orientation).
+	// ID), style, data-fui-*, role and aria-orientation (use
+	// Orientation).
 	ExtraAttrs html.Attrs
 }
 
-// Divider renders a semantic separator. Plain horizontal dividers use
-// the native <hr> element; vertical or labelled dividers use a
-// role="separator" div so the orientation / label gets announced.
-func Divider(cfg DividerConfig) render.HTML {
-	cls := "ui-divider"
-	if cfg.Orientation != DividerHorizontal {
-		cls += " ui-divider--" + string(cfg.Orientation)
-	}
-	if cfg.Label != "" {
-		cls += " ui-divider--labelled"
-	}
-	if cfg.Class != "" {
-		cls += " " + cfg.Class
-	}
-	extra := html.SafeExtraAttrs(cfg.ExtraAttrs, "role", "aria-orientation")
-
-	// Native <hr> is the cleanest case: no label, horizontal, no
-	// extra DOM. Keeps "<hr>" findable in view-source for plain
-	// dividers and avoids unnecessary role announcements.
-	if cfg.Label == "" && cfg.Orientation == DividerHorizontal {
-		attrs := map[string]string{"class": cls, "id": cfg.ID}
-		for k, v := range extra {
-			attrs[k] = v
-		}
-		return dividerStyle.WrapHTML(render.Tag("hr", attrs))
-	}
-
-	attrs := extra
-	if attrs == nil {
-		attrs = map[string]string{}
-	}
-	attrs["class"] = cls
-	attrs["role"] = "separator"
-	attrs["aria-orientation"] = string(orientationOrHorizontal(cfg.Orientation))
-
-	if cfg.ID != "" {
-		attrs["id"] = cfg.ID
-	}
-	if cfg.Label == "" {
-		return dividerStyle.WrapHTML(render.Tag("div", attrs))
-	}
-	return dividerStyle.WrapHTML(render.Tag("div", attrs,
-		html.Span(html.TextConfig{Class: "ui-divider__label"}, render.Text(cfg.Label)),
-	))
+// dividerClasses dresses headless.Divider's parts.
+var dividerClasses = headless.Classes{
+	headless.PartRoot:                      "fui-divider",
+	headless.Part("root--orient-vertical"): "fui-divider--vertical",
+	headless.PartDividerLine:               "fui-divider__line",
+	headless.PartText:                      "fui-divider__label",
 }
 
-func orientationOrHorizontal(o DividerOrientation) DividerOrientation {
-	if o == "" {
-		return "horizontal"
+// Divider renders a semantic separator on headless.Divider: plain
+// horizontal dividers are the native <hr>; vertical or labelled
+// dividers carry the orientation / label on the element the contract
+// gives them.
+func Divider(cfg DividerConfig) render.HTML {
+	cls := cfg.Class
+	if cfg.Label != "" {
+		// The labelled shape is its own modifier in this package's
+		// sheet; the primitive knows the role, the class map knows
+		// the look.
+		cls = joinNonEmpty("fui-divider--labelled", cls)
 	}
-	return o
+	return dividerStyle.WrapHTML(headless.Divider(headless.DividerProps{
+		Label:      cfg.Label,
+		Vertical:   cfg.Orientation == DividerVertical,
+		ID:         cfg.ID,
+		ExtraAttrs: headless.Safe(cfg.ExtraAttrs, "class", "id", "role", "aria-orientation"),
+		Parts:      rootClassParts(cls),
+	}, dividerClasses))
+}
+func joinNonEmpty(parts ...string) string {
+	out := ""
+	for _, p := range parts {
+		if p == "" {
+			continue
+		}
+		if out != "" {
+			out += " "
+		}
+		out += p
+	}
+	return out
 }

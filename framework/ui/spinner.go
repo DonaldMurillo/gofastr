@@ -5,15 +5,16 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/headless"
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
 // ─── Spinner ────────────────────────────────────────────────────────
 //
-// A pure-CSS inline spinner. Two visual variants (ring + dots) and
-// three sizes. role="status" + aria-busy="true" so assistive tech
-// announces "loading" once. The visible spin animation respects
-// prefers-reduced-motion (falls back to a low-frequency pulse).
+// headless.Spinner carries the contract: role=status, a hidden visual
+// and a label that says what is being waited for. This adapter adds
+// this package's visual vocabulary — the three shapes, the sizes, the
+// inline posture — through the class map.
 
 // SpinnerSize selects a named size.
 type SpinnerSize string
@@ -55,17 +56,30 @@ type SpinnerConfig struct {
 	ID    string
 	Class string
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
-	// analytics markers, ARIA overrides) to the spinner's root
-	// element. Keys the component owns are dropped: class and id
-	// (use Class / ID), data-fui-*, role, aria-live, and aria-busy —
-	// the live-region contract assistive tech depends on.
+	// analytics markers) to the spinner's root element. Keys the
+	// component owns are dropped: class and id (use Class / ID),
+	// style, data-fui-* and role — the live-region contract is the
+	// primitive's.
 	ExtraAttrs html.Attrs
 	// Ctx carries the per-request context used to resolve the loading label.
 	// When nil, English fallbacks apply.
 	Ctx context.Context
 }
 
-// Spinner renders a loading indicator.
+// spinnerClasses dresses headless.Spinner's parts.
+var spinnerClasses = headless.Classes{
+	headless.PartRoot:              "fui-spinner",
+	headless.PartSpinnerRing:       "fui-spinner__ring",
+	headless.PartSpinnerDots:       "fui-spinner__dots",
+	headless.PartSpinnerDot:        "fui-spinner__dot",
+	headless.PartSpinnerGrid:       "fui-spinner__grid",
+	headless.PartSpinnerCell:       "fui-spinner__cell",
+	headless.PartVisuallyHidden:    "ui-visually-hidden",
+	headless.Part("root--size-sm"): "fui-spinner--sm",
+	headless.Part("root--size-lg"): "fui-spinner--lg",
+}
+
+// Spinner renders a loading indicator on headless.Spinner.
 //
 // Pair with data-fui-rpc lifecycle to surface pending state on
 // island-side updates: the runtime adds `aria-busy="true"` to the
@@ -77,64 +91,21 @@ func Spinner(cfg SpinnerConfig) render.HTML {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	cls := "ui-spinner"
-	if cfg.Variant != SpinnerRing {
-		cls += " ui-spinner--" + string(cfg.Variant)
-	}
-	if cfg.Size != SpinnerMd {
-		cls += " ui-spinner--" + string(cfg.Size)
-	}
-	if cfg.Inline {
-		cls += " ui-spinner--inline"
-	}
-	if cfg.Class != "" {
-		cls += " " + cfg.Class
-	}
-
 	label := cfg.Label
 	if label == "" {
 		label = i18nui.T(ctx, i18nui.KeyLoading)
 	}
-
-	// Variant visuals: SpinnerDots → three dots; SpinnerGrid → 3×3
-	// squares; otherwise the bordered ring.
-	var visual render.HTML
-	if cfg.Variant == SpinnerDots {
-		visual = html.Span(html.TextConfig{
-			Class:      "ui-spinner__dots",
-			ExtraAttrs: html.Attrs{"aria-hidden": "true"},
-		},
-			html.Span(html.TextConfig{Class: "ui-spinner__dot"}),
-			html.Span(html.TextConfig{Class: "ui-spinner__dot"}),
-			html.Span(html.TextConfig{Class: "ui-spinner__dot"}),
-		)
-	} else if cfg.Variant == SpinnerGrid {
-		cells := make([]render.HTML, 9)
-		for i := range cells {
-			cells[i] = html.Span(html.TextConfig{Class: "ui-spinner__cell"})
-		}
-		visual = html.Span(html.TextConfig{
-			Class:      "ui-spinner__grid",
-			ExtraAttrs: html.Attrs{"aria-hidden": "true"},
-		}, cells...)
-	} else {
-		visual = html.Span(html.TextConfig{
-			Class:      "ui-spinner__ring",
-			ExtraAttrs: html.Attrs{"aria-hidden": "true"},
-		})
+	cls := cfg.Class
+	if cfg.Inline {
+		cls = joinNonEmpty("fui-spinner--inline", cls)
 	}
-
-	return spinnerStyle.WrapHTML(html.Span(html.TextConfig{
-		Class: cls, ID: cfg.ID,
-		ExtraAttrs: html.MergeAttrs(
-			html.SafeExtraAttrs(cfg.ExtraAttrs, "role", "aria-live", "aria-busy"),
-			html.Attrs{
-				"role":      "status",
-				"aria-live": "polite",
-				"aria-busy": "true",
-			}),
-	},
-		visual,
-		html.Span(html.TextConfig{Class: "ui-visually-hidden"}, render.Text(label)),
-	))
+	return spinnerStyle.WrapHTML(headless.Spinner(headless.SpinnerProps{
+		Label:      label,
+		Announce:   true,
+		Size:       string(cfg.Size),
+		Variant:    string(cfg.Variant),
+		ID:         cfg.ID,
+		ExtraAttrs: headless.Safe(cfg.ExtraAttrs, "class", "id", "role"),
+		Parts:      rootClassParts(cls),
+	}, spinnerClasses))
 }

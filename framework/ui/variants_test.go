@@ -226,11 +226,11 @@ func TestSidebarBadVariantPanics(t *testing.T) {
 
 func TestCardRegisteredVariantRenders(t *testing.T) {
 	h := Card(CardConfig{Variant: testPromoCard, Heading: "Deal"}, render.Text("body"))
-	mustContain(t, h, "ui-card--promo")
+	mustContain(t, h, "fui-card--promo")
 	css := cardCSS(style.DefaultTheme())
 	for _, want := range []string{
-		`[data-fui-comp="ui-card"].ui-card--promo`,
-		".ui-card--promo:hover",
+		`[data-fui-comp="ui-card"].fui-card--promo`,
+		".fui-card--promo:hover",
 	} {
 		if !strings.Contains(css, want) {
 			t.Errorf("ui-card sheet missing %q", want)
@@ -241,10 +241,10 @@ func TestCardRegisteredVariantRenders(t *testing.T) {
 func TestStatusVariantSpansComponents(t *testing.T) {
 	mustContain(t,
 		StatusBadge(StatusBadgeConfig{Label: "Beta", Variant: testBetaStatus}),
-		"ui-badge--beta")
+		"fui-badge--beta")
 	mustContain(t,
 		Callout(CalloutConfig{Title: "Beta", Variant: testBetaStatus}, render.Text("b")),
-		"ui-callout--beta")
+		"fui-callout--beta")
 	mustContain(t,
 		Tag(TagConfig{Label: "Beta", Variant: testBetaStatus}),
 		"ui-tag--beta")
@@ -260,7 +260,7 @@ func TestStatusVariantCSSInAllSheets(t *testing.T) {
 		css   string
 		want  string
 	}{
-		{"ui-badge", statusBadgeCSS(th), `[data-fui-comp="ui-badge"].ui-badge--beta`},
+		{"ui-badge", statusBadgeCSS(th), `[data-fui-comp="ui-badge"].fui-badge--beta`},
 		{"ui-badge", statusBadgeCSS(th), "color-mix(in oklab, var(--color-primary) 15%"},
 		{"ui-tag", tagCSS(th), `[data-fui-comp="ui-tag"].ui-tag--beta`},
 		{"ui-callout", calloutCSS(th), "--ui-callout-accent: var(--color-primary)"},

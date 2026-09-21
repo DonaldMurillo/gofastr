@@ -139,12 +139,12 @@ func gsBody() render.HTML {
 	o := ui.TerminalOut
 	ok := ui.TerminalOK
 
-	// Inline tips inside the main content flow: render as a styled <div>, not
-	// a complementary <aside> landmark, so they don't trip
-	// landmark-complementary-is-top-level (a nested complementary landmark).
+	// Inline tips inside the main content flow: ui.Callout renders a
+	// plain div through headless.Alert (the complementary-aside shape
+	// is gone), so nesting them under <main> trips nothing.
 	callout := func(title, body string) render.HTML {
 		return ui.Callout(
-			ui.CalloutConfig{Title: title, Variant: ui.StatusInfo, Landmark: new(false)},
+			ui.CalloutConfig{Title: title, Variant: ui.StatusInfo},
 			html.Paragraph(html.TextConfig{}, render.Text(body)),
 		)
 	}

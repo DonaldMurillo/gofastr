@@ -11,21 +11,21 @@ func TestFactBoxLabelFirstDefaultsToLabelThenValueInSource(t *testing.T) {
 	h := string(FactBox(FactBoxConfig{Label: "Prereqs", Value: "Go 1.26+, git"}))
 	for _, want := range []string{
 		`data-fui-comp="ui-fact-box"`,
-		`class="ui-fact-box__label"`,
+		`class="fui-fact-box__label"`,
 		`>Prereqs<`,
-		`class="ui-fact-box__value"`,
+		`class="fui-fact-box__value"`,
 		`Go 1.26+, git`,
 	} {
 		if !strings.Contains(h, want) {
 			t.Errorf("FactBox missing %q\n%s", want, h)
 		}
 	}
-	labelIdx := strings.Index(h, "ui-fact-box__label")
-	valueIdx := strings.Index(h, "ui-fact-box__value")
+	labelIdx := strings.Index(h, "fui-fact-box__label")
+	valueIdx := strings.Index(h, "fui-fact-box__value")
 	if labelIdx == -1 || valueIdx == -1 || labelIdx > valueIdx {
 		t.Errorf("LabelFirst (default) Style must put label before value in source order:\n%s", h)
 	}
-	if strings.Contains(h, "ui-fact-box--value-first") {
+	if strings.Contains(h, "fui-fact-box--value-first") {
 		t.Errorf("default Style should not emit --value-first modifier:\n%s", h)
 	}
 }
@@ -34,11 +34,11 @@ func TestFactBoxValueFirstReversesSourceOrderAndAddsModifier(t *testing.T) {
 	h := string(FactBox(FactBoxConfig{
 		Label: "docs", Value: "53", Style: FactStyleValueFirst,
 	}))
-	if !strings.Contains(h, "ui-fact-box--value-first") {
+	if !strings.Contains(h, "fui-fact-box--value-first") {
 		t.Errorf("ValueFirst should emit --value-first modifier class:\n%s", h)
 	}
-	labelIdx := strings.Index(h, "ui-fact-box__label")
-	valueIdx := strings.Index(h, "ui-fact-box__value")
+	labelIdx := strings.Index(h, "fui-fact-box__label")
+	valueIdx := strings.Index(h, "fui-fact-box__value")
 	if labelIdx == -1 || valueIdx == -1 || valueIdx > labelIdx {
 		t.Errorf("ValueFirst Style must put value BEFORE label in source order:\n%s", h)
 	}
@@ -46,7 +46,7 @@ func TestFactBoxValueFirstReversesSourceOrderAndAddsModifier(t *testing.T) {
 
 func TestFactBoxFullWidthFlag(t *testing.T) {
 	h := string(FactBox(FactBoxConfig{Label: "x", Value: "y", FullWidth: true}))
-	if !strings.Contains(h, "ui-fact-box--full") {
+	if !strings.Contains(h, "fui-fact-box--full") {
 		t.Errorf("FullWidth should emit modifier class:\n%s", h)
 	}
 }

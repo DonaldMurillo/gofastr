@@ -15,7 +15,7 @@ import (
 // Muted renders children in a subdued inline <span>.
 func Muted(children ...render.HTML) render.HTML {
 	return mutedStyle.WrapHTML(render.Tag("span",
-		map[string]string{"class": "ui-muted"}, children...))
+		map[string]string{"class": "fui-muted"}, children...))
 }
 
 // EmptyValue is the canonical "no value here" placeholder: a muted em

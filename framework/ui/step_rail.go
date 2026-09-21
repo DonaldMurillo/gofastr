@@ -4,14 +4,16 @@ package ui
 // multi-step pages (onboarding, tutorials, guided tours). Reads as
 // "you are here" + "what's next." Each step is an in-page anchor;
 // pair with html.Section IDs (or ui.Section auto-slugs) for the
-// jumps. The rail does not auto-track scroll position. Wire to
-// scrollspy if that's wanted (see core-ui/patterns/scrollspy).
+// jumps. headless.Steps carries the list contract — the ordered
+// steps, the anchors, the current step's aria-current — and this
+// adapter wraps it in the complementary rail with its title and meta.
 
 import (
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/headless"
 )
 
 // StepRailItem is one numbered step.
@@ -34,11 +36,11 @@ type StepRailConfig struct {
 	// Items are the numbered steps, in order.
 	Items []StepRailItem
 	// ActiveIndex marks one step as the active one (visually
-	// highlighted). Must be in [0, len(Items)) or -1 for "no active
-	// step". Out-of-range values panic at render time so a typo
-	// (or a `slices.Index` -1 result, which is the common one) is
-	// caught immediately rather than silently rendering a rail with
-	// no highlight.
+	// highlighted, aria-current="step"). Must be in [0, len(Items))
+	// or -1 for "no active step". Out-of-range values panic at render
+	// time so a typo (or a `slices.Index` -1 result, which is the
+	// common one) is caught immediately rather than silently
+	// rendering a rail with no highlight.
 	ActiveIndex int
 	// Meta is optional small text below the list (e.g. a "stuck?
 	// open the journal" pointer).
@@ -47,20 +49,30 @@ type StepRailConfig struct {
 	// instead of plain text, so a "stuck? ask here" pointer is
 	// actually clickable.
 	MetaHref string
-	// Class is appended to the ui-step-rail wrapper.
+	// Class is appended to the fui-step-rail wrapper.
 	Class string
 
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers, ARIA overrides) to the rail's root <aside>
 	// element. Keys the component owns are dropped: class (use
-	// Class), data-fui-*, role, and aria-label (derived from Title).
+	// Class), data-fui-*, role and aria-label (derived from Title).
 	ExtraAttrs html.Attrs
 }
 
-// StepRail renders the sticky numbered nav. The wrapper is an <aside>
-// with role=complementary and an aria-label derived from Title (or a
-// generic fallback). The rail is a navigation landmark for AT users
-// reading along.
+// stepRailClasses dresses headless.Steps' parts under the rail. The
+// text wrapper carries no class: the row's grid gives the number its
+// column and the label the rest.
+var stepRailClasses = headless.Classes{
+	headless.PartRoot:    "fui-step-rail__list",
+	headless.PartStep:    "fui-step-rail__item",
+	headless.PartStepRow: "fui-step-rail__link",
+	headless.PartMarker:  "fui-step-rail__num",
+	headless.PartLabel:   "fui-step-rail__label",
+}
+
+// StepRail renders the sticky numbered nav: headless.Steps under the
+// rail's own class map, wrapped in the complementary <aside> the rail
+// has always been.
 func StepRail(cfg StepRailConfig) render.HTML {
 	if len(cfg.Items) == 0 {
 		panic("ui: StepRail requires at least one Item")
@@ -68,63 +80,56 @@ func StepRail(cfg StepRailConfig) render.HTML {
 	if cfg.ActiveIndex < -1 || cfg.ActiveIndex >= len(cfg.Items) {
 		panic("ui: StepRail ActiveIndex out of range")
 	}
-	cls := "ui-step-rail"
-	if cfg.Class != "" {
-		cls = cls + " " + cfg.Class
-	}
 	aria := cfg.Title
 	if aria == "" {
 		aria = "Page steps"
 	}
 
-	listItems := make([]render.HTML, 0, len(cfg.Items))
+	steps := make([]headless.Step, len(cfg.Items))
 	for i, item := range cfg.Items {
-		linkCls := ""
+		state := ""
 		if i == cfg.ActiveIndex {
-			linkCls = "ui-step-rail__link ui-step-rail__link--active"
-		} else {
-			linkCls = "ui-step-rail__link"
+			state = "current"
 		}
-		listItems = append(listItems, html.ListItem(html.ListItemConfig{},
-			html.LinkHTML(html.LinkHTMLConfig{
-				Href:  "#" + item.Anchor,
-				Class: linkCls,
-				Content: render.Join(
-					html.Span(html.TextConfig{Class: "ui-step-rail__num"}, render.Text(item.Number)),
-					html.Span(html.TextConfig{Class: "ui-step-rail__label"}, render.Text(item.Label)),
-				),
-			}),
-		))
+		steps[i] = headless.Step{
+			Label: item.Label,
+			Href:  "#" + item.Anchor,
+			// The caller's Number is text, not markup: Marker is the
+			// one slot typed render.HTML so ProgressSteps can pass an
+			// SVG, and a string that arrives here unescaped would ride
+			// into the aria-hidden marker raw.
+			Marker: render.Text(item.Number),
+			State:  state,
+		}
 	}
+	list := headless.Steps(headless.StepsProps{Steps: steps}, stepRailClasses)
 
 	body := []render.HTML{}
 	if cfg.Title != "" {
 		// A plain label, NOT a heading: the rail is a complementary
-		// landmark already named by Title (aria-label below), and emitting
-		// an <h6> here injected a stray, out-of-order heading into the
-		// page outline (h1 → h6 → h2…). The label keeps the visual + the
-		// landmark name without polluting the heading hierarchy.
-		body = append(body, render.Tag("div",
-			map[string]string{"class": "ui-step-rail__title"},
+		// landmark already named by Title (aria-label below), and
+		// emitting an <h6> here would inject a stray, out-of-order
+		// heading into the page outline. The label keeps the visual +
+		// the landmark name without polluting the heading hierarchy.
+		body = append(body, html.Div(
+			html.DivConfig{Class: "fui-step-rail__title"},
 			render.Text(cfg.Title)))
 	}
-	body = append(body, render.Tag("ol",
-		map[string]string{"class": "ui-step-rail__list"},
-		listItems...))
+	body = append(body, list)
 	if cfg.Meta != "" {
 		var meta render.HTML = render.Text(cfg.Meta)
 		if cfg.MetaHref != "" {
 			meta = html.Link(html.LinkConfig{Href: cfg.MetaHref, Text: cfg.Meta})
 		}
 		body = append(body, html.Div(
-			html.DivConfig{Class: "ui-step-rail__meta"},
-			meta))
+			html.DivConfig{Class: "fui-step-rail__meta"}, meta))
 	}
 
-	attrs := html.SafeExtraAttrs(cfg.ExtraAttrs, "role", "aria-label")
+	attrs := headless.Safe(cfg.ExtraAttrs, "class", "role", "aria-label")
 	if attrs == nil {
-		attrs = map[string]string{}
+		attrs = html.Attrs{}
 	}
+	cls := joinNonEmpty("fui-step-rail", cfg.Class)
 	attrs["class"] = cls
 	attrs["role"] = "complementary"
 	attrs["aria-label"] = aria
@@ -146,7 +151,7 @@ func stepRailCSS(_ style.Theme) string {
   border-radius: var(--radii-md, 8px);
   background: var(--color-surface-soft, transparent);
 }
-[data-fui-comp="ui-step-rail"] .ui-step-rail__title {
+[data-fui-comp="ui-step-rail"] .fui-step-rail__title {
   margin: 0;
   font-size: var(--text-xs, 0.75rem);
   font-weight: 600;
@@ -154,14 +159,14 @@ func stepRailCSS(_ style.Theme) string {
   letter-spacing: 0.08em;
   color: var(--color-text-subtle, currentColor);
 }
-[data-fui-comp="ui-step-rail"] .ui-step-rail__list {
+[data-fui-comp="ui-step-rail"] .fui-step-rail__list {
   list-style: none;
   margin: 0;
   padding: 0;
   display: grid;
   gap: var(--spacing-xs, 2px);
 }
-[data-fui-comp="ui-step-rail"] .ui-step-rail__link {
+[data-fui-comp="ui-step-rail"] .fui-step-rail__link {
   display: grid;
   grid-template-columns: 32px 1fr;
   align-items: center;
@@ -171,24 +176,27 @@ func stepRailCSS(_ style.Theme) string {
   text-decoration: none;
   border-radius: var(--radii-sm, 4px);
 }
-[data-fui-comp="ui-step-rail"] .ui-step-rail__link:hover,
-[data-fui-comp="ui-step-rail"] .ui-step-rail__link:focus-visible {
+[data-fui-comp="ui-step-rail"] .fui-step-rail__link:hover,
+[data-fui-comp="ui-step-rail"] .fui-step-rail__link:focus-visible {
   background: var(--color-surface-soft, rgba(0,0,0,0.04));
   color: var(--color-text, currentColor);
 }
-[data-fui-comp="ui-step-rail"] .ui-step-rail__link--active {
+[data-fui-comp="ui-step-rail"] .fui-step-rail__link[data-state="current"] {
   color: var(--color-text, currentColor);
 }
-[data-fui-comp="ui-step-rail"] .ui-step-rail__num {
+[data-fui-comp="ui-step-rail"] .fui-step-rail__num {
   font-family: var(--font-mono, ui-monospace, SFMono-Regular, monospace);
   font-size: var(--text-xs, 0.75rem);
   color: var(--color-text-subtle, currentColor);
   font-variant-numeric: tabular-nums;
 }
-[data-fui-comp="ui-step-rail"] .ui-step-rail__link--active .ui-step-rail__num {
+[data-fui-comp="ui-step-rail"] .fui-step-rail__link[data-state="current"] .fui-step-rail__num {
   color: var(--ui-step-rail-active-color, var(--color-primary, currentColor));
 }
-[data-fui-comp="ui-step-rail"] .ui-step-rail__meta {
+[data-fui-comp="ui-step-rail"] .fui-step-rail__label {
+  font-size: var(--text-sm, 0.875rem);
+}
+[data-fui-comp="ui-step-rail"] .fui-step-rail__meta {
   font-size: var(--text-xs, 0.75rem);
   color: var(--color-text-subtle, currentColor);
   line-height: 1.5;
@@ -202,7 +210,7 @@ func stepRailCSS(_ style.Theme) string {
 /* On phones the rail can't be sticky next to body content because
    the body collapses to a single column. We drop the sticky pin so
    the rail flows inline. Hosts that want it hidden behind a
-   disclosure can override .ui-step-rail with display: none in their
+   disclosure can override .fui-step-rail with display: none in their
    mobile breakpoint. */
 @media (max-width: 720px) {
   [data-fui-comp="ui-step-rail"] {

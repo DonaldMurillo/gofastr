@@ -407,7 +407,7 @@ func renderDashFeed(s liveDashData) render.HTML {
 		events = events[len(events)-liveDashFeedCap:]
 	}
 	if len(events) == 0 {
-		return html.Paragraph(html.TextConfig{Class: "ui-muted"},
+		return html.Paragraph(html.TextConfig{Class: "fui-muted"},
 			render.Text("No activity yet. Events will appear here as they arrive."))
 	}
 	return ui.Timeline(ui.TimelineConfig{Events: events})
@@ -499,7 +499,7 @@ func renderDashConsole(ctx context.Context) render.HTML {
 	// The computed module subscribes to the deps, runs the reducer on
 	// change, and fans the result through the signal to this same span.
 	statusPill := dashStatus.Bind(ctx, "span", map[string]string{
-		"class":         "ui-status-pill ui-status-pill--accent",
+		"class":         "fui-status-pill fui-status-pill--accent",
 		"data-fui-comp": "ui-status-pill",
 		"aria-live":     "polite",
 		"aria-atomic":   "true",
@@ -513,7 +513,7 @@ func renderDashConsole(ctx context.Context) render.HTML {
 		controls,
 		html.Div(html.DivConfig{Role: "status", AriaLabel: "Operational status"},
 			statusPill,
-			html.Paragraph(html.TextConfig{Class: "ui-muted"},
+			html.Paragraph(html.TextConfig{Class: "fui-muted"},
 				render.Text("Open "+strconv.Itoa(open)+" · Acknowledged "),
 				// Live-bound count: dashIncidentsAckd.Bind emits a
 				// <span data-fui-signal="dash.incidentsAckd"> that the
@@ -522,7 +522,7 @@ func renderDashConsole(ctx context.Context) render.HTML {
 				// bind the click increments the signal but the visible
 				// count stays at the SSR-painted 0 forever.
 				dashIncidentsAckd.Bind(ctx, "span", map[string]string{
-					"class": "ui-muted",
+					"class": "fui-muted",
 				}),
 			),
 		),

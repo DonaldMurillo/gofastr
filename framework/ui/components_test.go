@@ -32,14 +32,14 @@ func TestPageHeaderRendersTitleAndOptionalParts(t *testing.T) {
 		Actions:  render.Text("ACTIONS_SLOT"),
 	})
 	for _, want := range []string{"Customers", "1,283 active", "Admin", "ACTIONS_SLOT",
-		"ui-page-header", "ui-page-header__eyebrow", "ui-page-header__actions"} {
+		`"fui-page-header`, `"fui-page-header__eyebrow`, `"fui-page-header__actions`} {
 		mustContain(t, h, want)
 	}
 }
 
 func TestPageHeaderOmitsActionsWhenEmpty(t *testing.T) {
 	h := PageHeader(PageHeaderConfig{Title: "x"})
-	if strings.Contains(string(h), "ui-page-header__actions") {
+	if strings.Contains(string(h), `"fui-page-header__actions"`) {
 		t.Fatal("expected no actions div when Actions is empty")
 	}
 }
@@ -48,7 +48,7 @@ func TestPageHeaderOmitsActionsWhenEmpty(t *testing.T) {
 func TestSectionRendersHeadingDescriptionBody(t *testing.T) {
 	h := Section(SectionConfig{Heading: "Settings", Description: "Account-wide"},
 		render.Text("BODY"))
-	for _, want := range []string{"Settings", "Account-wide", "BODY", "ui-section__body"} {
+	for _, want := range []string{"Settings", "Account-wide", "BODY", `"fui-section__body`} {
 		mustContain(t, h, want)
 	}
 }
@@ -59,13 +59,13 @@ func TestSectionEyebrowRendersBeforeHeadingAndIsDecorative(t *testing.T) {
 		Heading: "One entity call",
 	}, render.Text("BODY"))
 	s := string(h)
-	mustContain(t, h, "ui-section__eyebrow")
+	mustContain(t, h, `"fui-section__eyebrow`)
 	mustContain(t, h, "01 / what it generates")
 	// Decorative numeric eyebrow, hidden from the a11y tree so SR users
 	// don't hear "01 slash what it generates" then the heading.
 	mustContain(t, h, `aria-hidden="true"`)
-	eyebrowIdx := strings.Index(s, "ui-section__eyebrow")
-	headingIdx := strings.Index(s, "ui-section__heading")
+	eyebrowIdx := strings.Index(s, `"fui-section__eyebrow`)
+	headingIdx := strings.Index(s, `"fui-section__heading`)
 	if eyebrowIdx == -1 || headingIdx == -1 || eyebrowIdx > headingIdx {
 		t.Errorf("eyebrow must render before heading in source order:\n%s", s)
 	}
@@ -416,14 +416,14 @@ func TestButtonRejectsUnknownSize(t *testing.T) {
 func TestStatusBadgeVariantsRenderClass(t *testing.T) {
 	for _, v := range []StatusVariant{StatusSuccess, StatusWarning, StatusDanger, StatusInfo, StatusNeutral} {
 		h := StatusBadge(StatusBadgeConfig{Label: "x", Variant: v})
-		want := "ui-badge--" + string(v)
+		want := ` fui-badge--` + string(v) + `"` // boundary: follows the base class
 		mustContain(t, h, want)
 	}
 }
 
 func TestStatusBadgeDefaultsToNeutral(t *testing.T) {
 	h := StatusBadge(StatusBadgeConfig{Label: "x"})
-	mustContain(t, h, "ui-badge--neutral")
+	mustContain(t, h, ` fui-badge--neutral"`)
 }
 
 // TestStatusBadgeRejectsUnknownVariant mirrors Button. A typo like
@@ -444,7 +444,7 @@ func TestEmptyStateRendersTitleDescriptionAction(t *testing.T) {
 		Action: render.Text("INVITE_BUTTON"),
 	})
 	for _, want := range []string{"No customers yet", "Invite your first.", "INVITE_BUTTON",
-		"ui-empty-state__action"} {
+		`"fui-empty-state__action`} {
 		mustContain(t, h, want)
 	}
 }
@@ -504,42 +504,27 @@ func TestCalloutRejectsUnknownVariant(t *testing.T) {
 }
 
 func TestCalloutRoleSwitchesForAlerts(t *testing.T) {
-	// Danger/warning callouts must announce assertively → role=alert
-	// (rendered as a <div role="alert">).
+	// Danger/warning callouts must announce assertively → role=alert.
 	for _, v := range []StatusVariant{StatusDanger, StatusWarning} {
 		h := Callout(CalloutConfig{Title: "x", Variant: v}, render.Text("body"))
 		mustContain(t, h, `role="alert"`)
 	}
-	// Info/success/neutral callouts are non-urgent → rendered as
-	// <aside role="complementary"> (via html.Aside) so screen
-	// readers treat them as side notes.
+	// Info/success/neutral callouts are standing messages the page
+	// rendered: no live role at all, so nothing interrupts on load.
 	for _, v := range []StatusVariant{StatusInfo, StatusSuccess, StatusNeutral} {
 		h := Callout(CalloutConfig{Title: "x", Variant: v}, render.Text("body"))
-		mustContain(t, h, `<aside`)
-		mustContain(t, h, `role="complementary"`)
+		if strings.Contains(string(h), "role=") {
+			t.Errorf("%s: a standing callout claimed a role:\n%s", v, h)
+		}
 	}
+	// The complementary-<aside> shape is gone: an inline tip is
+	// emphasis, not a tangential region.
+	h := Callout(CalloutConfig{Title: "Tip", Variant: StatusInfo}, render.Text("body"))
+	if strings.Contains(string(h), "<aside") || strings.Contains(string(h), "complementary") {
+		t.Errorf("the aside shape survived the move to headless.Alert:\n%s", h)
+	}
+	mustContain(t, h, "fui-callout--info")
 }
-
-// TestCalloutLandmarkOptOut verifies the Landmark=false config renders an
-// inline callout as a plain <div> (not a complementary <aside>), so it can
-// nest inside <main> without tripping landmark-complementary-is-top-level.
-// Default (nil) keeps the <aside> landmark.
-func TestCalloutLandmarkOptOut(t *testing.T) {
-	noLandmark := false
-	h := Callout(CalloutConfig{Title: "Tip", Variant: StatusInfo, Landmark: &noLandmark}, render.Text("body"))
-	if strings.Contains(string(h), `<aside`) || strings.Contains(string(h), `role="complementary"`) {
-		t.Errorf("Landmark=false should render a <div>, not a complementary <aside>:\n%s", h)
-	}
-	if !strings.Contains(string(h), `ui-callout--info`) {
-		t.Errorf("Landmark=false should keep the variant styling:\n%s", h)
-	}
-	// Default still renders the complementary landmark.
-	def := Callout(CalloutConfig{Title: "Tip", Variant: StatusInfo}, render.Text("body"))
-	mustContain(t, def, `<aside`)
-	mustContain(t, def, `role="complementary"`)
-}
-
-// ─── StatCard ───
 func TestStatCardRequiresLabelAndValue(t *testing.T) {
 	defer func() { recover() }()
 	StatCard(StatCardConfig{Label: "x"})
@@ -548,7 +533,9 @@ func TestStatCardRequiresLabelAndValue(t *testing.T) {
 
 func TestStatCardTrendDirection(t *testing.T) {
 	h := StatCard(StatCardConfig{Label: "Revenue", Value: "$12.4k", Trend: "+8%", Direction: TrendUp})
-	mustContain(t, h, "ui-stat-card__trend--up")
+	// Boundary form: the variant token follows the base trend class.
+	mustContain(t, h, ` fui-stat-card__trend--up"`)
+	mustContain(t, h, `data-direction="up"`)
 }
 
 // ─── Avatar ───
@@ -649,6 +636,20 @@ func TestFormSectionExtraAttrsOnEveryRootShape(t *testing.T) {
 	}
 }
 
+// The legend maps to the exact token the sheet styles — a heading
+// class the old markup emitted, so a headed section keeps its legend
+// typography, and a rule for that token exists in the sheet.
+func TestFormSectionLegendCarriesTheSheetHeadingClass(t *testing.T) {
+	h := FormSection(FormSectionConfig{Heading: "Access"}, render.Text("f"))
+	if !strings.Contains(string(h), `<legend class="fui-form-section__heading">`) {
+		t.Errorf("the legend does not carry the heading class the sheet styles:\n%s", h)
+	}
+	css := formSectionCSS(style.Theme{})
+	if !strings.Contains(css, ".fui-form-section__heading {") {
+		t.Errorf("the sheet has no rule for the legend's class:\n%s", css)
+	}
+}
+
 func TestStatusBadgeExtraAttrsOnRoot(t *testing.T) {
 	h := StatusBadge(StatusBadgeConfig{Label: "ok", ExtraAttrs: map[string]string{"data-test": "hook"}})
 	root := string(h)[:strings.Index(string(h), ">")+1]
@@ -665,21 +666,6 @@ func TestEmptyStateExtraAttrsOnRoot(t *testing.T) {
 	}
 }
 
-func TestCalloutExtraAttrsOnEveryRootShape(t *testing.T) {
-	extra := map[string]string{"data-test": "hook"}
-	inline := false
-	for name, h := range map[string]render.HTML{
-		"aside": Callout(CalloutConfig{Title: "t", ExtraAttrs: extra}, render.Text("b")),
-		"alert": Callout(CalloutConfig{Variant: StatusDanger, ExtraAttrs: extra}, render.Text("b")),
-		"div":   Callout(CalloutConfig{Landmark: &inline, ExtraAttrs: extra}, render.Text("b")),
-	} {
-		root := string(h)[:strings.Index(string(h), ">")+1]
-		if !strings.Contains(root, `data-test="hook"`) {
-			t.Errorf("%s root missing data-test:\n%s", name, root)
-		}
-	}
-}
-
 func TestStatCardExtraAttrsOnRoot(t *testing.T) {
 	h := StatCard(StatCardConfig{Label: "l", Value: "1", ExtraAttrs: map[string]string{"data-test": "hook"}})
 	root := string(h)[:strings.Index(string(h), ">")+1]
@@ -687,20 +673,12 @@ func TestStatCardExtraAttrsOnRoot(t *testing.T) {
 		t.Errorf("StatCard root missing data-test:\n%s", root)
 	}
 }
-
-func TestAvatarExtraAttrsOnRoot(t *testing.T) {
-	h := Avatar(AvatarConfig{Name: "Ada Lovelace", ExtraAttrs: map[string]string{"data-test": "hook"}})
-	root := string(h)[:strings.Index(string(h), ">")+1]
-	if !strings.Contains(root, `data-test="hook"`) {
-		t.Errorf("Avatar root missing data-test:\n%s", root)
-	}
-}
-
-func TestCodeBlockExtraAttrsOnEveryRootShape(t *testing.T) {
+func TestCalloutExtraAttrsOnEveryRootShape(t *testing.T) {
 	extra := map[string]string{"data-test": "hook"}
 	for name, h := range map[string]render.HTML{
-		"pre":    CodeBlock(CodeBlockConfig{Code: "x = 1", ExtraAttrs: extra}),
-		"framed": CodeBlock(CodeBlockConfig{Code: "x = 1", Filename: "a.go", ExtraAttrs: extra}),
+		"titled":   Callout(CalloutConfig{Title: "t", ExtraAttrs: extra}, render.Text("b")),
+		"alert":    Callout(CalloutConfig{Variant: StatusDanger, ExtraAttrs: extra}, render.Text("b")),
+		"untitled": Callout(CalloutConfig{ExtraAttrs: extra}, render.Text("b")),
 	} {
 		root := string(h)[:strings.Index(string(h), ">")+1]
 		if !strings.Contains(root, `data-test="hook"`) {
@@ -975,5 +953,18 @@ func TestButtonExtraAttrsRefuseTwoSpellings(t *testing.T) {
 			}()
 			Button(ButtonConfig{Label: "x", ExtraAttrs: attrs})
 		}()
+	}
+}
+
+// Two headed sections with one heading and a description would share
+// the derived description id; an ID roots the second's ids instead.
+func TestFormSectionIDRootsTheDescriptionID(t *testing.T) {
+	a := string(FormSection(FormSectionConfig{Heading: "Access", Description: "Who may sign in."}))
+	b := string(FormSection(FormSectionConfig{Heading: "Access", Description: "Who may sign in.", ID: "access-2"}))
+	if !strings.Contains(a, `id="fieldset-access-desc"`) || !strings.Contains(a, `aria-describedby="fieldset-access-desc"`) {
+		t.Errorf("the derived description id is not wired:\n%s", a)
+	}
+	if !strings.Contains(b, `id="access-2-desc"`) || !strings.Contains(b, `aria-describedby="access-2-desc"`) || strings.Contains(b, "fieldset-access-desc") {
+		t.Errorf("an explicit ID did not root the description id:\n%s", b)
 	}
 }

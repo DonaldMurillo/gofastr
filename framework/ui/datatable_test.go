@@ -82,7 +82,7 @@ func TestDataTableEmptyStateRenders(t *testing.T) {
 		"<table",
 		"<thead",
 		">Name<",
-		"ui-empty-state",
+		`"fui-empty-state`,
 		"No results",
 	} {
 		if !strings.Contains(h, want) {

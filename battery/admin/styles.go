@@ -67,7 +67,7 @@ func adminCSS(_ style.Theme) string {
 }
 
 /* ── page header rhythm ────────────────────────────────────────────────── */
-.layout-admin .admin-entity > .ui-page-header { margin-block-end: clamp(1rem, 0.5rem + 2vw, 1.75rem); }
+.layout-admin .admin-entity > .fui-page-header { margin-block-end: clamp(1rem, 0.5rem + 2vw, 1.75rem); }
 
 /* ── toolbar: search + result summary ──────────────────────────────────── */
 .admin-toolbar {
@@ -269,7 +269,7 @@ body.admin-standalone {
 }
 /* Nav active link — the standalone nav is a row of ui.Link action targets;
    the current page's link carries aria-current="page". */
-.admin-nav .ui-link[aria-current="page"] {
+.admin-nav .fui-link[aria-current="page"] {
   color: var(--color-primary, #f0b429);
   font-weight: 600;
 }

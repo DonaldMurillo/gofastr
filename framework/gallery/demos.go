@@ -119,7 +119,7 @@ func RenderOptimisticCreateList(notes []OptimisticNote) render.HTML {
 	if len(items) == 0 {
 		// Empty state: the list region reconciles to zero items (#82
 		// style), so the swap target is never a bare missing element.
-		return html.Paragraph(html.TextConfig{Class: "ui-muted"},
+		return html.Paragraph(html.TextConfig{Class: "fui-muted"},
 			render.Text("No notes yet: click Add."))
 	}
 	return html.UnorderedList(html.ListConfig{Class: "demo-stack"}, items...)
@@ -149,7 +149,7 @@ func RenderOptimisticDeleteList(notes []OptimisticNote) render.HTML {
 		))
 	}
 	if len(items) == 0 {
-		return html.Paragraph(html.TextConfig{Class: "ui-muted"},
+		return html.Paragraph(html.TextConfig{Class: "fui-muted"},
 			render.Text("No notes: the list reconciled to zero. Reload to reset the demo."))
 	}
 	return html.UnorderedList(html.ListConfig{Class: "demo-stack"}, items...)

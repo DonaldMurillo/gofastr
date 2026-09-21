@@ -31,3 +31,15 @@ func TestDetailListExtraAttrsOnRoot(t *testing.T) {
 		t.Errorf("dl root missing data-test:\n%s", root)
 	}
 }
+
+// cfg.Class lands on the root beside the class map's own classes,
+// appended rather than replacing them.
+func TestDetailListAppliesClassOnTheRoot(t *testing.T) {
+	h := string(DetailList(DetailListConfig{
+		Items: []DetailItem{{Label: "Name", Value: render.Text("Ada")}},
+		Class: "record-head",
+	}))
+	if !strings.Contains(h, `class="fui-detail-list record-head"`) {
+		t.Errorf("the caller's Class did not land after the base class:\n%s", h)
+	}
+}

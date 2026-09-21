@@ -47,7 +47,7 @@ func TestRenderStackMapsToLayoutPrimitive(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	mustContain(t, h, `data-fui-comp="ui-layout"`)
-	mustContain(t, h, "ui-stack")
+	mustContain(t, h, "fui-stack")
 }
 
 func TestRenderStackHorizontalMapsToCluster(t *testing.T) {
@@ -59,8 +59,8 @@ func TestRenderStackHorizontalMapsToCluster(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	mustContain(t, h, "ui-cluster")
-	mustContain(t, h, "ui-cluster--nowrap")
+	mustContain(t, h, "fui-cluster")
+	mustContain(t, h, "fui-cluster--nowrap")
 }
 
 func TestRenderClusterMapsToLayoutPrimitive(t *testing.T) {
@@ -71,7 +71,7 @@ func TestRenderClusterMapsToLayoutPrimitive(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	mustContain(t, h, "ui-cluster")
+	mustContain(t, h, "fui-cluster")
 }
 
 func TestRenderGridMapsToLayoutPrimitive(t *testing.T) {
@@ -82,7 +82,7 @@ func TestRenderGridMapsToLayoutPrimitive(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	mustContain(t, h, "ui-grid")
+	mustContain(t, h, "fui-grid")
 	mustContain(t, h, `data-min="18rem"`)
 }
 
@@ -177,12 +177,12 @@ func TestRenderBadgeToneMapsToStatusVariant(t *testing.T) {
 		tone string
 		cls  string
 	}{
-		{"positive", "ui-badge--success"},
-		{"negative", "ui-badge--danger"},
-		{"warning", "ui-badge--warning"},
-		{"info", "ui-badge--info"},
-		{"neutral", "ui-badge--neutral"},
-		{"", "ui-badge--neutral"},
+		{"positive", "fui-badge--success"},
+		{"negative", "fui-badge--danger"},
+		{"warning", "fui-badge--warning"},
+		{"info", "fui-badge--info"},
+		{"neutral", "fui-badge--neutral"},
+		{"", "fui-badge--neutral"},
 	}
 	for _, c := range cases {
 		t.Run(c.tone, func(t *testing.T) {
@@ -234,7 +234,7 @@ func TestRenderStatCardMapsToPrimitive(t *testing.T) {
 	mustContain(t, h, `data-fui-comp="ui-stat-card"`)
 	mustContain(t, h, ">MRR<")
 	mustContain(t, h, ">$1k USD<")
-	mustContain(t, h, "ui-stat-card__trend--up")
+	mustContain(t, h, "fui-stat-card__trend--up")
 }
 
 func TestRenderImageMapsToHtmlImage(t *testing.T) {
@@ -277,7 +277,7 @@ func TestRenderDataTableEmptyColumns(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	mustContain(t, h, "ui-empty-state")
+	mustContain(t, h, "fui-empty-state")
 }
 
 func TestRenderDataTableEmptyRows(t *testing.T) {

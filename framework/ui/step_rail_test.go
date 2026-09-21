@@ -21,7 +21,7 @@ func TestStepRailRendersItemsAndMarksActive(t *testing.T) {
 		`data-fui-comp="ui-step-rail"`,
 		`role="complementary"`,
 		`aria-label="The path"`,
-		`class="ui-step-rail__title"`,
+		`class="fui-step-rail__title"`,
 		`>The path<`,
 		`href="#s1"`,
 		`href="#s2"`,
@@ -36,19 +36,34 @@ func TestStepRailRendersItemsAndMarksActive(t *testing.T) {
 		}
 	}
 
-	// Active link should have the active modifier class only on item 1.
-	activeChunk := strings.Index(h, `href="#s2"`)
-	if activeChunk == -1 {
-		t.Fatal("missing s2 link")
+	// Active item: exactly one step carries data-state=current with
+	// aria-current, and it is the s2 entry (Scaffold).
+	if n := strings.Count(h, `data-state="current"`); n != 1 {
+		t.Errorf("exactly one current step expected, got %d:\n%s", n, h)
 	}
-	preceding := h[:activeChunk]
-	lastOpenAnchor := strings.LastIndex(preceding, "<a")
-	if lastOpenAnchor == -1 {
-		t.Fatal("no <a tag preceding s2")
+	liAt := strings.Index(h, `data-state="current"`)
+	liOpen := strings.LastIndex(h[:liAt], "<li")
+	liChunk := h[liOpen:]
+	if !strings.Contains(liChunk, `aria-current="step"`) {
+		t.Errorf("the current step is not aria-current:\n%s", liChunk)
 	}
-	activeTag := h[lastOpenAnchor:activeChunk]
-	if !strings.Contains(activeTag, "ui-step-rail__link--active") {
-		t.Errorf("active item (s2) should carry --active class:\n%s", activeTag)
+	if !strings.Contains(liChunk[:strings.Index(liChunk, "</li>")], "Scaffold") {
+		t.Errorf("the current step is not the s2 entry:\n%s", liChunk)
+	}
+}
+
+// The caller's Number is text, never markup: the marker slot is typed
+// render.HTML so ProgressSteps can pass an SVG, so the adapter must
+// escape the string it receives.
+func TestStepRailEscapesTheMarkerNumber(t *testing.T) {
+	h := string(StepRail(StepRailConfig{Items: []StepRailItem{
+		{Number: "<b>1</b>", Anchor: "s1", Label: "Install"},
+	}}))
+	if !strings.Contains(h, "&lt;b&gt;1&lt;/b&gt;") {
+		t.Errorf("the marker number was not escaped:\n%s", h)
+	}
+	if strings.Contains(h, "<b>1</b>") {
+		t.Errorf("raw markup reached the marker:\n%s", h)
 	}
 }
 
@@ -72,7 +87,7 @@ func TestStepRailMetaHrefRendersLink(t *testing.T) {
 		ActiveIndex: 0,
 		Meta:        "Plain note",
 	}))
-	if !strings.Contains(plain, `ui-step-rail__meta">Plain note</div>`) {
+	if !strings.Contains(plain, `fui-step-rail__meta">Plain note</div>`) {
 		t.Fatalf("Meta without MetaHref should be plain text in the meta div; got %q", plain)
 	}
 }
@@ -84,7 +99,7 @@ func TestStepRailDefaultsAriaLabelWhenTitleEmpty(t *testing.T) {
 	if !strings.Contains(h, `aria-label="Page steps"`) {
 		t.Errorf("missing default aria-label:\n%s", h)
 	}
-	if strings.Contains(h, "ui-step-rail__title") {
+	if strings.Contains(h, "fui-step-rail__title") {
 		t.Errorf("empty Title should not render the title element:\n%s", h)
 	}
 }

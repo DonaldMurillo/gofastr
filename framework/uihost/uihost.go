@@ -741,7 +741,7 @@ h1, h2, h3, h4 { font-family: var(--font-heading, var(--font-body, inherit)); }
 [data-fui-comp="ui-data-table"] td,
 [data-fui-comp="ui-stat-card"],
 [data-fui-comp="ui-bar-chart"],
-[data-fui-comp="ui-detail-list"] .ui-detail-list__value,
+[data-fui-comp="ui-detail-list"] .fui-detail-list__value,
 .ui-money,
 td[data-align="end"] {
   font-variant-numeric: tabular-nums;

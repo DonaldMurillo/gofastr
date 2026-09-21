@@ -133,6 +133,8 @@ const (
 	PartTimelineItem Part = "timeline-item"
 	PartTimelineMark Part = "timeline-mark"
 	PartTimelineTime Part = "timeline-time"
+	PartTimelineHead Part = "timeline-head"
+	PartTimelineMeta Part = "timeline-meta"
 	PartTimelineBody Part = "timeline-body"
 )
 
@@ -151,6 +153,11 @@ type Event struct {
 	// Tone lets the class map colour the marker — "success", "danger".
 	Tone string
 	// Body is extra markup under the detail: a log excerpt, actions.
+	// Meta is the secondary line beside the title — an actor, a
+	// relative time ("by dom", "2h ago") — in the header row, read
+	// after the title it qualifies. When is the timestamp contract;
+	// Meta is a caption with no machine form.
+	Meta string
 	Body render.HTML
 }
 
@@ -162,6 +169,9 @@ type TimelineProps struct {
 
 	ID         string
 	ExtraAttrs html.Attrs
+
+	// Parts: attrs and binds on the list and every part it draws.
+	Parts Parts
 }
 
 // Timeline renders the events as an ordered list.
@@ -178,6 +188,7 @@ func Timeline(p TimelineProps, s Classes) render.HTML {
 	if len(p.Events) == 0 {
 		panic("headless: Timeline requires at least one event")
 	}
+	b := p.Parts.Box(s)
 	items := make([]render.HTML, 0, len(p.Events))
 	for _, e := range p.Events {
 		if e.Title == "" {
@@ -185,11 +196,13 @@ func Timeline(p TimelineProps, s Classes) render.HTML {
 		}
 		kids := make([]render.HTML, 0, 4)
 		markAttrs := Attrs(map[string]string{"aria-hidden": "true"})
-		part := PartTimelineMark
-		if e.Tone != "" {
-			part = Part(string(PartTimelineMark) + "--" + e.Tone)
+		// Tone reaches the class map as the mark's variant, joined to
+		// the mark's own class the way Alert's tone joins its root: a
+		// tinted dot is still a dot.
+		if cls := s.Variant(PartTimelineMark, e.Tone); cls != "" {
+			markAttrs["class"] = cls
 		}
-		kids = append(kids, El("span", s, part, markAttrs, render.HTML("")))
+		kids = append(kids, b.El("span", PartTimelineMark, markAttrs, render.HTML("")))
 
 		body := make([]render.HTML, 0, 4)
 		if e.When != "" {
@@ -201,26 +214,35 @@ func Timeline(p TimelineProps, s Classes) render.HTML {
 				if _, err := time.Parse(time.RFC3339, e.Machine); err != nil {
 					panic("headless: Event Machine must be an RFC 3339 timestamp, not " + strconv.Quote(e.Machine))
 				}
-				body = append(body, El("time", s, PartTimelineTime,
+				body = append(body, b.El("time", PartTimelineTime,
 					Attrs(map[string]string{"datetime": e.Machine}), render.Text(e.When)))
 			} else {
-				body = append(body, El("span", s, PartTimelineTime, nil, render.Text(e.When)))
+				body = append(body, b.El("span", PartTimelineTime, nil, render.Text(e.When)))
 			}
 		}
-		body = append(body, El("p", s, PartTitle, nil, render.Text(e.Title)))
+		body = append(body, b.El("p", PartTitle, nil, render.Text(e.Title)))
+		if e.Meta != "" {
+			// The meta line and the title share a header row: the meta
+			// qualifies the title, and DOM order keeps the title first
+			// for a reader who hears the event before its attribution.
+			headRow := body[len(body)-1]
+			body[len(body)-1] = b.El("div", PartTimelineHead, nil,
+				headRow,
+				b.El("span", PartTimelineMeta, nil, render.Text(e.Meta)))
+		}
 		if e.Detail != "" {
-			body = append(body, El("p", s, PartDesc, nil, render.Text(e.Detail)))
+			body = append(body, b.El("p", PartDesc, nil, render.Text(e.Detail)))
 		}
 		if e.Body != "" {
 			body = append(body, e.Body)
 		}
-		kids = append(kids, El("div", s, PartTimelineBody, nil, body...))
-		items = append(items, El("li", s, PartTimelineItem, nil, kids...))
+		kids = append(kids, b.El("div", PartTimelineBody, nil, body...))
+		items = append(items, b.El("li", PartTimelineItem, nil, kids...))
 	}
 	own := Merge(Safe(p.ExtraAttrs), Attrs(map[string]string{
 		"id": p.ID, "aria-label": p.Label,
 	}))
-	return El("ol", s, PartRoot, own, items...)
+	return b.El("ol", PartRoot, own, items...)
 }
 
 func init() {
@@ -269,7 +291,10 @@ func init() {
 
 	Register(Spec{
 		Name:    "Timeline",
-		Anatomy: []Part{PartRoot, PartTimelineItem, PartTimelineMark, PartTimelineTime, PartTimelineBody, PartTitle, PartDesc},
+		Anatomy: []Part{PartRoot, PartTimelineItem, PartTimelineMark, PartTimelineTime, PartTimelineHead, PartTimelineMeta, PartTimelineBody, PartTitle, PartDesc},
+		WithParts: func(s Classes, parts Parts) render.HTML {
+			return Timeline(TimelineProps{Events: []Event{{Title: "Deployed"}}, Parts: parts}, s)
+		},
 		Cases: func(k Kit) []Case {
 			s := k.Classes
 			return []Case{{
@@ -281,6 +306,12 @@ func init() {
 					{Title: "Build failed", Detail: "Exit 1 in the test stage.", When: "4 days ago",
 						Machine: "2026-09-07T09:12:00Z", Tone: "danger"},
 					{Title: "Configuration changed", When: "5 days ago", Machine: "2026-09-06T16:40:00Z"},
+				}}, s),
+			}, {
+				Name: "attributed",
+				Why:  "the meta line qualifies the title from the same row — an actor or a relative time — and the title stays first in the tree so a reader hears the event before its attribution",
+				HTML: Timeline(TimelineProps{Label: "Audit log", Events: []Event{
+					{Title: "Role granted", Meta: "by dom", Detail: "admin, on the api app."},
 				}}, s),
 			}}
 		},

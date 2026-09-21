@@ -220,7 +220,7 @@ func localTile(name string) render.HTML {
 // log); the form is POST so even a stray submit never serializes into a
 // query string.
 func chatSection(ctx context.Context, room string) render.HTML {
-	return ui.Section(ui.SectionConfig{Heading: "Chat", Ctx: ctx,
+	return ui.Section(ui.SectionConfig{Heading: "Chat",
 		Description: "Messages travel on a negotiated data channel, peer to peer. The server relays neither chat nor media."},
 		html.UnorderedList(html.ListConfig{ID: "call-chat"}),
 		ui.Form(ui.FormConfig{

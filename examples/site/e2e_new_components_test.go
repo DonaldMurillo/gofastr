@@ -221,7 +221,7 @@ func TestE2E_NewComponents_TimelineItems(t *testing.T) {
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/timeline"),
 		pageReady(),
-		chromedp.Evaluate(`document.querySelectorAll('[data-fui-comp="ui-timeline"] .ui-timeline__item').length`, &items),
+		chromedp.Evaluate(`document.querySelectorAll('[data-fui-comp="ui-timeline"] .fui-timeline__item').length`, &items),
 	)
 	if err != nil {
 		t.Fatalf("chromedp: %v", err)

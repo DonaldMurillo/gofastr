@@ -349,7 +349,11 @@ func sectionCSS(_ style.Theme) string {
      with a fixed header set --ui-section-scroll-margin to its height. */
   scroll-margin-top: var(--ui-section-scroll-margin, 0);
 }
-[data-fui-comp="ui-section"] .ui-section__eyebrow {
+[data-fui-comp="ui-section"] .fui-section__head {
+  display: grid;
+  gap: var(--spacing-md, 8px);
+}
+[data-fui-comp="ui-section"] .fui-section__eyebrow {
   /* Knobs: --ui-section-eyebrow-font/-size/-weight/-tracking/-color let a
      host retune the kicker (e.g. body face instead of mono) without
      restyling the component's internals. */
@@ -359,7 +363,7 @@ func sectionCSS(_ style.Theme) string {
   letter-spacing: var(--ui-section-eyebrow-tracking, 0.04em);
   color: var(--ui-section-eyebrow-color, var(--color-text-subtle, #71717A));
 }
-[data-fui-comp="ui-section"] .ui-section__heading {
+[data-fui-comp="ui-section"] .fui-section__heading {
   /* Knobs: --ui-section-heading-size/-weight/-tracking scale the heading
      up to display type on marketing surfaces. */
   margin: 0;
@@ -368,11 +372,11 @@ func sectionCSS(_ style.Theme) string {
   letter-spacing: var(--ui-section-heading-tracking, normal);
   color: var(--color-text, #18181B);
 }
-[data-fui-comp="ui-section"] .ui-section__description {
+[data-fui-comp="ui-section"] .fui-section__description {
   margin: 0;
   color: var(--color-text-muted, #52525B);
 }
-[data-fui-comp="ui-section"] .ui-section__body {
+[data-fui-comp="ui-section"] .fui-section__body {
   display: grid;
   gap: var(--spacing-md, 8px);
 }`
@@ -521,7 +525,7 @@ func statusBadgeCSS(t style.Theme) string {
   letter-spacing: 0.02em;
   border: 1px solid transparent;
 }
-[data-fui-comp="ui-badge"].ui-badge--success {
+[data-fui-comp="ui-badge"].fui-badge--success {
   background: color-mix(in oklab, var(--color-success, #16A34A) 15%, var(--color-surface, #fff) 85%);
   /* Text mixes the status hue toward --color-text so it darkens on a
      light scheme and lightens on a dark one — AA contrast on the 15%
@@ -530,26 +534,26 @@ func statusBadgeCSS(t style.Theme) string {
   color: color-mix(in oklab, var(--color-success, #16A34A) 55%, var(--color-text, #18181B) 45%);
   border-color: color-mix(in oklab, var(--color-success, #16A34A) 30%, var(--color-surface, #fff) 70%);
 }
-[data-fui-comp="ui-badge"].ui-badge--warning {
+[data-fui-comp="ui-badge"].fui-badge--warning {
   background: color-mix(in oklab, var(--color-warning, #CA8A04) 15%, var(--color-surface, #fff) 85%);
   color: color-mix(in oklab, var(--color-warning, #CA8A04) 55%, var(--color-text, #18181B) 45%);
   border-color: color-mix(in oklab, var(--color-warning, #CA8A04) 30%, var(--color-surface, #fff) 70%);
 }
-[data-fui-comp="ui-badge"].ui-badge--danger {
+[data-fui-comp="ui-badge"].fui-badge--danger {
   background: color-mix(in oklab, var(--color-danger, #DC2626) 15%, var(--color-surface, #fff) 85%);
   color: color-mix(in oklab, var(--color-danger, #DC2626) 55%, var(--color-text, #18181B) 45%);
   border-color: color-mix(in oklab, var(--color-danger, #DC2626) 30%, var(--color-surface, #fff) 70%);
 }
-[data-fui-comp="ui-badge"].ui-badge--info {
+[data-fui-comp="ui-badge"].fui-badge--info {
   background: color-mix(in oklab, var(--color-info, #2563EB) 15%, var(--color-surface, #fff) 85%);
   color: color-mix(in oklab, var(--color-info, #2563EB) 55%, var(--color-text, #18181B) 45%);
   border-color: color-mix(in oklab, var(--color-info, #2563EB) 30%, var(--color-surface, #fff) 70%);
 }
-[data-fui-comp="ui-badge"].ui-badge--neutral {
+[data-fui-comp="ui-badge"].fui-badge--neutral {
   background: var(--color-surface-soft, #F4F4F5);
   color: var(--color-text-muted, #52525B);
   border-color: var(--color-border, #E4E4E7);
-}` + customStatusCSS("ui-badge", t)
+}` + customStatusCSS("ui-badge", "fui-badge", t)
 }
 
 func emptyStateCSS(_ style.Theme) string {
@@ -563,18 +567,18 @@ func emptyStateCSS(_ style.Theme) string {
   border: 1px dashed var(--color-border, #E4E4E7);
   border-radius: var(--radii-lg, 12px);
 }
-[data-fui-comp="ui-empty-state"] .ui-empty-state__title {
+[data-fui-comp="ui-empty-state"] .fui-empty-state__title {
   margin: 0;
   font-size: var(--text-base, 1rem);
   font-weight: 600;
   color: var(--color-text, #18181B);
 }
-[data-fui-comp="ui-empty-state"] .ui-empty-state__description {
+[data-fui-comp="ui-empty-state"] .fui-empty-state__description {
   margin: 0;
   color: var(--color-text-muted, #52525B);
   max-inline-size: 36ch;
 }
-[data-fui-comp="ui-empty-state"] .ui-empty-state__action { margin-top: var(--spacing-sm, 4px); }`
+[data-fui-comp="ui-empty-state"] .fui-empty-state__action { margin-top: var(--spacing-sm, 4px); }`
 }
 
 func calloutCSS(t style.Theme) string {
@@ -618,22 +622,39 @@ func calloutCSS(t style.Theme) string {
   border: 1px solid color-mix(in oklch, var(--ui-callout-accent, var(--color-text-muted, #52525B)) 28%, transparent);
   border-radius: 999px;
 }
-[data-fui-comp="ui-callout"] .ui-callout__title {
+[data-fui-comp="ui-callout"] .fui-callout__head {
+  grid-column: 2;
+  display: grid;
+  gap: var(--spacing-xs, 2px);
+}
+/* The primitive always draws the head node; empty (a titleless
+   callout) it takes no space. */
+[data-fui-comp="ui-callout"] .fui-callout__head:empty { display: none; }
+[data-fui-comp="ui-callout"] .fui-callout__title {
+  margin: 0;
+  /* The primitive renders the title as a p; a host's global p rule
+     must not retune its metrics — the rhythm is the family's. */
+  line-height: inherit;
   font-size: var(--text-sm, 0.875rem);
   font-weight: 700;
   color: var(--color-text, #18181B);
-  grid-column: 2;
 }
-[data-fui-comp="ui-callout"] .ui-callout__body {
+[data-fui-comp="ui-callout"] .fui-callout__body {
   font-size: var(--text-sm, 0.875rem);
   color: var(--color-text-muted, #52525B);
   grid-column: 2;
 }
-[data-fui-comp="ui-callout"].ui-callout--info    { --ui-callout-accent: var(--color-info, #2563EB);    --ui-callout-icon: "i"; }
-[data-fui-comp="ui-callout"].ui-callout--success { --ui-callout-accent: var(--color-success, #16A34A); --ui-callout-icon: "✓"; }
-[data-fui-comp="ui-callout"].ui-callout--warning { --ui-callout-accent: var(--color-warning, #CA8A04); --ui-callout-icon: "!"; }
-[data-fui-comp="ui-callout"].ui-callout--danger  { --ui-callout-accent: var(--color-danger, #DC2626);  --ui-callout-icon: "!"; }
-[data-fui-comp="ui-callout"].ui-callout--neutral { --ui-callout-accent: var(--color-text-muted, #52525B); --ui-callout-icon: "·"; }` + customStatusCSS("ui-callout", t)
+[data-fui-comp="ui-callout"] .fui-callout__desc {
+  margin: 0;
+  grid-column: 2;
+  font-size: var(--text-sm, 0.875rem);
+  color: var(--color-text-muted, #52525B);
+}
+[data-fui-comp="ui-callout"].fui-callout--info    { --ui-callout-accent: var(--color-info, #2563EB);    --ui-callout-icon: "i"; }
+[data-fui-comp="ui-callout"].fui-callout--success { --ui-callout-accent: var(--color-success, #16A34A); --ui-callout-icon: "✓"; }
+[data-fui-comp="ui-callout"].fui-callout--warning { --ui-callout-accent: var(--color-warning, #CA8A04); --ui-callout-icon: "!"; }
+[data-fui-comp="ui-callout"].fui-callout--danger  { --ui-callout-accent: var(--color-danger, #DC2626);  --ui-callout-icon: "!"; }
+[data-fui-comp="ui-callout"].fui-callout--neutral { --ui-callout-accent: var(--color-text-muted, #52525B); --ui-callout-icon: "·"; }` + customStatusCSS("ui-callout", "fui-callout", t)
 }
 
 func statCardCSS(_ style.Theme) string {
@@ -645,7 +666,7 @@ func statCardCSS(_ style.Theme) string {
   border: 1px solid var(--color-border, #E4E4E7);
   border-radius: var(--radii-md, 8px);
 }
-[data-fui-comp="ui-stat-card"] .ui-stat-card__label {
+[data-fui-comp="ui-stat-card"] .fui-stat-card__label {
   margin: 0;
   font-size: var(--text-xs, 0.75rem);
   font-weight: 600;
@@ -653,21 +674,21 @@ func statCardCSS(_ style.Theme) string {
   letter-spacing: 0.06em;
   color: var(--color-text-muted, #52525B);
 }
-[data-fui-comp="ui-stat-card"] .ui-stat-card__value {
+[data-fui-comp="ui-stat-card"] .fui-stat-card__value {
   margin: 0;
   font-size: 1.75rem;
   font-weight: 700;
   line-height: 1;
   color: var(--color-text, #18181B);
 }
-[data-fui-comp="ui-stat-card"] .ui-stat-card__trend {
+[data-fui-comp="ui-stat-card"] .fui-stat-card__trend {
   margin: 0;
   font-size: var(--text-sm, 0.875rem);
   font-weight: 600;
 }
-[data-fui-comp="ui-stat-card"] .ui-stat-card__trend--up   { color: var(--color-success, #16A34A); }
-[data-fui-comp="ui-stat-card"] .ui-stat-card__trend--down { color: var(--color-danger, #DC2626); }
-[data-fui-comp="ui-stat-card"] .ui-stat-card__trend--flat { color: var(--color-text-muted, #52525B); }`
+[data-fui-comp="ui-stat-card"] .fui-stat-card__trend--up   { color: var(--color-success, #16A34A); }
+[data-fui-comp="ui-stat-card"] .fui-stat-card__trend--down { color: var(--color-danger, #DC2626); }
+[data-fui-comp="ui-stat-card"] .fui-stat-card__trend--flat { color: var(--color-text-muted, #52525B); }`
 }
 
 func avatarCSS(_ style.Theme) string {
@@ -835,7 +856,7 @@ func notificationCSS(t style.Theme) string {
 }
 @media (prefers-reduced-motion: reduce) {
   [data-fui-comp="ui-notification"].ui-notification--floating { animation: none; }
-}` + customStatusCSS("ui-notification", t)
+}` + customStatusCSS("ui-notification", "ui-notification", t)
 }
 
 // toastStackCSS styles the vertical stack of toast items rendered by

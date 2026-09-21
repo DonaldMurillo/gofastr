@@ -67,7 +67,7 @@ type AnchoredRailConfig struct {
 	// runtime then can't track active state.
 	ObserveSelector string
 
-	// TargetSelector overrides the default ".ui-section[id]". Set it
+	// TargetSelector overrides the default ".fui-section[id]". Set it
 	// when the sections aren't ui.Section calls.
 	TargetSelector string
 
@@ -172,9 +172,9 @@ func AnchoredRail(cfg AnchoredRailConfig) render.HTML {
 	target := cfg.TargetSelector
 	if target == "" {
 		// Match what ui.Section emits: auto-slugged-from-heading sections
-		// land as .ui-section[id="…"], so the default selector picks them
+		// land as .fui-section[id="…"], so the default selector picks them
 		// up without the caller having to spell it out.
-		target = ".ui-section[id]"
+		target = ".fui-section[id]"
 	}
 	return scrollspy.Wrap(scrollspy.Config{
 		ObserveSelector: cfg.ObserveSelector,

@@ -20,24 +20,24 @@ import (
 
 // ─── Card ───────────────────────────────────────────────────────────
 
-func TestE2E_Card_LabelledByHeading(t *testing.T) {
+func TestE2E_Card_HeadingInsideTheCard(t *testing.T) {
 	base := startE2EServer(t)
 	ctx := newE2EBrowserCtx(t)
 
-	var labelledBy, role string
+	var headingText, role string
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/card"),
 		pageReady(),
-		chromedp.Evaluate(`document.querySelector('[data-fui-comp="ui-card"]')?.getAttribute('aria-labelledby') || ''`, &labelledBy),
+		chromedp.Evaluate(`document.querySelector('[data-fui-comp="ui-card"] h3')?.textContent.trim() || ''`, &headingText),
 		chromedp.Evaluate(`document.querySelector('[data-fui-comp="ui-card"]')?.getAttribute('role') || ''`, &role),
 	); err != nil {
 		t.Fatalf("card: %v", err)
 	}
-	if !strings.HasPrefix(labelledBy, "ui-card-") {
-		t.Errorf("card aria-labelledby = %q, want ui-card-*", labelledBy)
+	if headingText == "" {
+		t.Error("the card's heading is missing: a titled card draws its heading inside the header part")
 	}
-	if role != "region" {
-		t.Errorf("card role = %q, want region", role)
+	if role != "" {
+		t.Errorf("card role = %q, want none: headless.Card is a div, not a landmark", role)
 	}
 }
 
@@ -142,12 +142,11 @@ func TestE2E_Spinner_HasStatusRoleAndAriaBusy(t *testing.T) {
 	base := startE2EServer(t)
 	ctx := newE2EBrowserCtx(t)
 
-	var role, ariaBusy, hiddenLabel string
+	var role, hiddenLabel string
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/spinner"),
 		pageReady(),
 		chromedp.Evaluate(`document.querySelector('[data-fui-comp="ui-spinner"]')?.getAttribute('role') || ''`, &role),
-		chromedp.Evaluate(`document.querySelector('[data-fui-comp="ui-spinner"]')?.getAttribute('aria-busy') || ''`, &ariaBusy),
 		chromedp.Evaluate(`document.querySelector('[data-fui-comp="ui-spinner"] .ui-visually-hidden')?.textContent || ''`, &hiddenLabel),
 	); err != nil {
 		t.Fatalf("spinner: %v", err)
@@ -155,9 +154,9 @@ func TestE2E_Spinner_HasStatusRoleAndAriaBusy(t *testing.T) {
 	if role != "status" {
 		t.Errorf("role = %q, want status", role)
 	}
-	if ariaBusy != "true" {
-		t.Errorf("aria-busy = %q, want true", ariaBusy)
-	}
+	// aria-busy is not the spinner's to claim: role=status is the
+	// contract, and busy belongs to the region an in-flight RPC
+	// marks (the runtime writes it on the form or button).
 	if !strings.Contains(hiddenLabel, "Loading") {
 		t.Errorf("expected screen-reader label containing 'Loading', got %q", hiddenLabel)
 	}

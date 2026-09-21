@@ -30,10 +30,10 @@ func pageHeaderCSS(t style.Theme) string {
 			"border-bottom", "1px solid var(--color-border, #E4E4E7)",
 		).
 		End().
-		Rule(".ui-page-header__text").
+		Rule(".fui-page-header__text").
 		Set("display", "grid", "gap", "var(--spacing-xs, 2px)").
 		End().
-		Rule(".ui-page-header__eyebrow").
+		Rule(".fui-page-header__eyebrow").
 		Set(
 			"margin", "0",
 			"font-size", "var(--text-xs, 0.75rem)",
@@ -46,7 +46,7 @@ func pageHeaderCSS(t style.Theme) string {
 		// Knobs: --ui-page-header-title-size/-leading/-tracking let a host
 		// scale titles to editorial display type app-wide without
 		// restyling the component's internals.
-		Rule(".ui-page-header__title").
+		Rule(".fui-page-header__title").
 		Set(
 			"margin", "0",
 			"font-size", "var(--ui-page-header-title-size, var(--text-2xl, 1.5rem))",
@@ -56,10 +56,10 @@ func pageHeaderCSS(t style.Theme) string {
 			"color", "var(--color-text, #18181B)",
 		).
 		End().
-		Rule(".ui-page-header__subtitle").
+		Rule(".fui-page-header__subtitle").
 		Set("margin", "0", "color", "var(--color-text-muted, #52525B)").
 		End().
-		Rule(".ui-page-header__actions").
+		Rule(".fui-page-header__actions").
 		Set(
 			"display", "flex",
 			"flex-wrap", "wrap",
