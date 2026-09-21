@@ -120,8 +120,12 @@ func TestPaginationWindowsItsPages(t *testing.T) {
 // and the current-page marker stay.
 func TestPaginationOmitsPrevNextWhenAsked(t *testing.T) {
 	got := Pagination(PaginationProps{Page: 2, Pages: 3, OmitPrevNext: true,
-		Path: "/a", AriaLabel: "Pages"}, nil)
+		Path: "/a", AriaLabel: "Pages", PrevLabel: "Backwards", NextLabel: "Onwards"}, nil)
 	has(t, got, `aria-current="page"`, "the current page lost its marker with the ends gone")
+	// The labels are unique to this test, so their absence is the
+	// ends' absence and not a default the run happened to elide.
+	hasNot(t, got, "Backwards", "OmitPrevNext kept the previous anchor")
+	hasNot(t, got, "Onwards", "OmitPrevNext kept the next anchor")
 }
 
 // The page hook is the island's alone: a plain pager renders no

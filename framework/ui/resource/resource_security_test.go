@@ -2,6 +2,7 @@ package resource
 
 import (
 	"context"
+	"errors"
 	stdhtml "html"
 	"net/http/httptest"
 	"net/url"
@@ -141,6 +142,32 @@ func TestPageOutOfRangeIsTheLastPage(t *testing.T) {
 				t.Fatalf("[page-clamp] request %q: the pager's current page is %q, want %q", tc.raw, q.Get("p"), tc.wantPage)
 			}
 		})
+	}
+}
+
+// TestAFailedCountDoesNotClampThePage: the clamp needs a real run to
+// clamp into. When CountAll fails the total is 0 with an error, and a
+// zero total must not turn ?p=3 into page 1's rows under a URL that
+// says page 3: the rows are fetched at the page asked for, and no
+// pager renders, so nothing is refused either.
+func TestAFailedCountDoesNotClampThePage(t *testing.T) {
+	source := &stubSource{rows: []map[string]any{{"id": "1", "name": "a"}}, countErr: errors.New("count refused")}
+	cfg := Config{
+		Entity: "orders", Title: "Orders", Singular: "Order",
+		BasePath: "/orders", APIPath: "/api/orders",
+		Crud: source, PageSize: 4,
+		Fields: []Field{{Key: "name", Label: "Name", Type: "string"}},
+	}
+	req := httptest.NewRequest("GET", "/orders?p=3", nil)
+	s := string(cfg.List(appui.WithRequest(context.Background(), req)))
+	if len(source.listCalls) != 1 {
+		t.Fatalf("[count-error] ListAll calls = %d, want 1", len(source.listCalls))
+	}
+	if got, want := source.listCalls[0].Offset, 8; got != want {
+		t.Fatalf("[count-error] rows fetched at offset %d, want page 3's %d: a failed count clamped the page", got, want)
+	}
+	if strings.Contains(s, `aria-current="page"`) {
+		t.Fatalf("[count-error] a pager rendered on an unknown total:\n%s", s[:min(len(s), 400)])
 	}
 }
 

@@ -115,11 +115,13 @@ document's state — a list screen's pager and sort headers are plain
 anchors (`?p=2`, `?sort=name`) that work with no script and that the
 client router intercepts when script is present, because changing the
 address bar IS changing the list's state; an Island enters only for a
-table or pager embedded in a region whose state must not move the
-document's URL, and then the SAME anchors carry the framework's RPC
-contract (`data-fui-rpc`, `data-fui-rpc-method`, `data-fui-rpc-signal`,
+table or pager embedded in a region whose page turn must not
+navigate the document, and then the SAME anchors carry the framework's
+RPC contract (`data-fui-rpc`, `data-fui-rpc-method`, `data-fui-rpc-signal`,
 `data-fui-push-state`) beside their hrefs. First paint is the page;
-hydration makes it the island; the URL is written by the runtime.
+hydration makes it the island; the region is swapped in place and the
+address bar still follows, written by the runtime through
+`pushState` rather than by a navigation.
 Everything else — expand, reveal, a dismiss, a filter applied in
 place, a search — is in-page state: `ToolbarSearch`, a `Tag` with a
 dismiss and an `Alert` with a dismiss refuse to render without an

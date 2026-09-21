@@ -16,10 +16,15 @@ type stubSource struct {
 	rows       []map[string]any
 	countCalls []crud.ListOptions
 	listCalls  []crud.ListOptions
+	// countErr, when set, is what CountAll returns beside a zero count.
+	countErr error
 }
 
 func (s *stubSource) CountAll(_ context.Context, opts crud.ListOptions) (int, error) {
 	s.countCalls = append(s.countCalls, opts)
+	if s.countErr != nil {
+		return 0, s.countErr
+	}
 	return len(s.rows), nil
 }
 

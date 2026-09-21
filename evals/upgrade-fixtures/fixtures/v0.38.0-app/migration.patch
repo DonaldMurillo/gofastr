@@ -73,7 +73,22 @@ diff --git a/resource.go b/resource.go
  	"github.com/DonaldMurillo/gofastr/framework/ui"
  )
  
-@@ -258,26 +258,26 @@ func (c ResourceConfig) List(ctx context.Context) render.HTML {
+@@ -206,7 +206,14 @@ func (c ResourceConfig) List(ctx context.Context) render.HTML {
+ 	}
+ 
+ 	total, _ := c.Crud.CountAll(ctx, framework.ListOptions{Filters: filters})
++	// v0.86.0: the typed pager refuses a page outside 1..Pages, so the
++	// requested page is clamped into the real run before the rows are
++	// fetched: ?p=999 on a two-page list lands on the last page's rows
++	// under a pager saying the last page, never a 500 from a URL.
++	if pages := int(math.Ceil(float64(total) / float64(limit))); page > pages {
++		page = max(pages, 1)
++	}
+ 	rows, err := c.Crud.ListAll(ctx, framework.ListOptions{Filters: filters, Sorts: sorts, Limit: limit, Offset: (page - 1) * limit})
+ 
+ 	var actions render.HTML
+ 	if c.CanCreate {
+@@ -258,26 +265,26 @@ func (c ResourceConfig) List(ctx context.Context) render.HTML {
  		uiRows = append(uiRows, ui.Row{ID: id, Cells: cells})
  	}
  
@@ -110,7 +125,7 @@ diff --git a/resource.go b/resource.go
  	}
  	body = append(body, ui.DataTable(dt))
  	return render.Join(body...)
-@@ -505,7 +505,13 @@ func (c ResourceConfig) Form(ctx context.Context, id string) render.HTML {
+@@ -505,7 +512,13 @@ func (c ResourceConfig) Form(ctx context.Context, id string) render.HTML {
  			cur = resCell(resGet(row, f.Key))
  		}
  		fields = append(fields, ui.FormField(ui.FormFieldConfig{
@@ -125,7 +140,7 @@ diff --git a/resource.go b/resource.go
  		}))
  	}
  	form := ui.Form(ui.FormConfig{Action: rpc, Method: "POST", SubmitLabel: submit, ExtraAttrs: attrs, Ctx: ctx}, fields...)
-@@ -518,14 +524,26 @@ func (c ResourceConfig) Form(ctx context.Context, id string) render.HTML {
+@@ -518,14 +531,26 @@ func (c ResourceConfig) Form(ctx context.Context, id string) render.HTML {
  // formInput builds the typed control for one field, prefilled with cur. Enums
  // and relations render their options server-side; relations resolve to the same
  // human label the list/detail show.
@@ -155,7 +170,7 @@ diff --git a/resource.go b/resource.go
  	}
  	switch f.Type {
  	case "enum":
-@@ -533,17 +551,20 @@ func (c ResourceConfig) formInput(ctx context.Context, f ResField, cur string, r
+@@ -533,17 +558,20 @@ func (c ResourceConfig) formInput(ctx context.Context, f ResField, cur string, r
  		for _, v := range f.Values {
  			opts = append(opts, html.SelectOption{Value: v, Text: resTitle(v), Selected: v == cur})
  		}

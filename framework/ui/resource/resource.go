@@ -392,7 +392,7 @@ func (c Config) List(ctx context.Context) render.HTML {
 			body = append(body, tb)
 		}
 	}
-	table := c.table(ctx, total)
+	table := c.table(ctx, total, err == nil)
 	if c.IslandPath != "" {
 		// The island wrapper: sort/page RPC responses (the same Table HTML,
 		// served by TableHandler) replace this element's innerHTML.
@@ -412,10 +412,14 @@ func (c Config) Table(ctx context.Context) render.HTML {
 	if !c.canRead(ctx) {
 		return c.accessDenied()
 	}
-	return c.table(ctx, -1)
+	return c.table(ctx, -1, false)
 }
 
-func (c Config) table(ctx context.Context, total int) render.HTML {
+// table renders the grid for ctx's query state. known says whether
+// total is a real count: List passes the count it took (false when
+// the count failed), TableHandler passes -1 so the count is taken
+// here. Only a known total may clamp the requested page.
+func (c Config) table(ctx context.Context, total int, known bool) render.HTML {
 	q := appui.QueryFromContext(ctx)
 	page := 1
 	if n, err := strconv.Atoi(q.Get("p")); err == nil && n > 1 {
@@ -438,6 +442,7 @@ func (c Config) table(ctx context.Context, total int) render.HTML {
 	if total < 0 {
 		var err error
 		total, err = c.Crud.CountAll(ctx, crud.ListOptions{Filters: filters})
+		known = err == nil
 		if err != nil {
 			// Same as List: the count feeds pagination chrome only.
 			slog.Warn("resource: count", "entity", c.Title, "error", err)
@@ -449,8 +454,11 @@ func (c Config) table(ctx context.Context, total int) render.HTML {
 	// lands the reader on the last page's rows under a pager saying
 	// the last page — never a 500, and never an empty page under a
 	// pager that claims another. No rows means one page: page 1, the
-	// empty state, no pager.
-	if pages := int(math.Ceil(float64(total) / float64(limit))); page > pages {
+	// empty state, no pager. A failed count is not a run of zero pages:
+	// the rows are fetched at the page asked for, and no pager renders
+	// (a total of 0 draws none), so nothing is refused and the reader
+	// is not shown page 1's rows under a URL that says another.
+	if pages := int(math.Ceil(float64(total) / float64(limit))); known && page > pages {
 		page = max(pages, 1)
 	}
 	// WithReadHooks: these rows are rendered to an end user.

@@ -85,8 +85,10 @@ the fixtures are handed is harness infrastructure, not caller surface.
   instead: the URL is the truth for a list, so a list screen's sort
   and page anchors are plain navigations the client router
   intercepts, and the `Island` is for an embedded table or pager
-  whose state must not change the URL — its anchors then carry the
-  contract beside their hrefs, and the module restores focus and
+  whose page turn must not navigate the document — its anchors then
+  carry the contract beside their hrefs (the runtime swaps the region
+  and writes the URL through `pushState`), and the module restores
+  focus and
   announces the swap through the `data-hui-table*` and `data-hui-page`
   hooks the components render. Every href goes through the
   framework's anchor policy (`urlsafe.CleanAnchor`).
