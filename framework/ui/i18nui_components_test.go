@@ -130,6 +130,31 @@ func TestDataTableSortAriaLabelTVars(t *testing.T) {
 	}
 }
 
+// DataTable's sort announcement resolves the three table keys through
+// i18nui: the sentence and both direction words, substituted by name
+// on the server.
+func TestDataTableAnnouncementI18n(t *testing.T) {
+	swapDefault(t, i18nui.KeyTableSortedBy, "PROBE-SORTED {column} {direction}")
+	swapDefault(t, i18nui.KeyTableDirAscending, "PROBE-ASC")
+	swapDefault(t, i18nui.KeyTableDirDescending, "PROBE-DESC")
+	out := htmlString(t, DataTable(DataTableConfig{
+		Columns: []Column{{Key: "name", Header: "Name", Sortable: true}},
+		Rows:    []Row{{Cells: map[string]render.HTML{"name": render.Text("v")}}},
+		SortBy:  "name",
+	}))
+	if !strings.Contains(out, `data-hui-table-announcement="PROBE-SORTED Name PROBE-ASC"`) {
+		t.Fatalf("missing announcement probes:\n%s", out)
+	}
+	desc := htmlString(t, DataTable(DataTableConfig{
+		Columns: []Column{{Key: "name", Header: "Name", Sortable: true}},
+		Rows:    []Row{{Cells: map[string]render.HTML{"name": render.Text("v")}}},
+		SortBy:  "name", SortDir: SortDesc,
+	}))
+	if !strings.Contains(desc, `data-hui-table-announcement="PROBE-SORTED Name PROBE-DESC"`) {
+		t.Fatalf("missing descending probe:\n%s", desc)
+	}
+}
+
 // DataTable threads i18n labels into the pagination nav.
 func TestDataTableThreadsI18nPagination(t *testing.T) {
 	swapDefault(t, i18nui.KeyPaginationLabel, "PROBE-PAG")

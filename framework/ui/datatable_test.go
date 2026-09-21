@@ -272,8 +272,10 @@ func TestDataTableCaptionRenders(t *testing.T) {
 		t.Errorf("expected caption to render, got: %s", h)
 	}
 	// A visible caption carries only the caption class; the hidden
-	// recipe must not leak into it.
-	if strings.Contains(h, "ui-visually-hidden") {
+	// recipe must not leak into it. (The status span carries the
+	// recipe by design — it must be read and not seen — so the check
+	// reads the caption element, not the whole markup.)
+	if capAt := strings.Index(h, "<caption"); capAt < 0 || strings.Contains(h[capAt:strings.Index(h, "</caption>")], "ui-visually-hidden") {
 		t.Errorf("visible caption must not carry the hidden class: %s", h)
 	}
 }

@@ -167,13 +167,13 @@ func TestTableScrollRegionIsFocusableAndNamedByItsCaption(t *testing.T) {
 	// One substring binds the three attributes to the one element
 	// that wraps the table, and the caption's id to the name that
 	// points at it: attributes render sorted, so the shape is exact.
-	has(t, got, `<div aria-labelledby="apps-caption" role="region" tabindex="0"><table role="table"><caption id="apps-caption">Applications</caption>`,
+	has(t, got, `<div aria-labelledby="apps-caption" data-hui-table-scroll="" role="region" tabindex="0"><table role="table"><caption id="apps-caption">Applications</caption>`,
 		"the scroll region does not carry focus and the caption's name on the one element that wraps the table")
 
 	unnamed := Table(TableProps{
 		Columns: []Column{{Key: "name", Header: "Name"}}}, nil)
 	hasNot(t, unnamed, "aria-labelledby", "a region with no caption carried a name pointing at nothing")
-	has(t, unnamed, `<div role="region" tabindex="0"><table role="table">`, "the unnamed region is not the element wrapping the table")
+	has(t, unnamed, `<div data-hui-table-scroll="" role="region" tabindex="0"><table role="table">`, "the unnamed region is not the element wrapping the table")
 }
 
 func TestStepsSayWhichStepIsCurrent(t *testing.T) {

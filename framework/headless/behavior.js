@@ -10,7 +10,7 @@
 // own would arm everything a second time on top of the kernel's pass.
 //
 // Every sentence this module writes arrived as a data-hui-* attribute
-// the component rendered from its Words, so a translated page
+// the component rendered from its Strings, so a translated page
 // announces in its own language. The only attributes it writes back
 // are its own runtime-owned hooks, data-hui-when-off and
 // data-hui-drop-over, which no component renders.
@@ -423,6 +423,52 @@
     return !!st && st.connected === false && st.retryCount > 0;
   }
 
+  // ─── table (Table) ──────────────────────────────────────────────
+
+  // An island sort is a swap: the runtime writes the region's HTML,
+  // the anchor the reader clicked is destroyed with it, and focus
+  // falls to <body> with nothing saying what changed. The click
+  // listener accepts a signal-bound table and records the clicked
+  // column's key and replacement region; when a fresh answer inserts
+  // a table in that region, armTables returns focus to the same
+  // column's anchor, or the scroll region when the answer dropped
+  // the column, and copies the sentence the server rendered into
+  // data-hui-table-announcement into the status. A failed answer
+  // inserts no table and leaves the existing focus and status alone.
+  function armTables(root) {
+    const p = NS._huiTableSort;
+    if (!p) return;
+    // Thirty seconds covers a cold module fetch and a slow answer; it
+    // still prevents an old click from owning a later passive swap.
+    if (p[2] + 3e4 < performance.now()) return NS._huiTableSort = null;
+    for (const x of within(root, '[data-hui-table]')) {
+      if (x.parentNode !== p[1]) continue;
+      NS._huiTableSort = null;
+      // a column key is anything a query can encode, and a key with
+      // a quote or a bracket in it must find its column like any
+      // other. The anchor the answer dropped leaves el null, and the
+      // scroll region — the table's own focusable surface — takes
+      // the focus instead.
+      let el = null;
+      for (const a of x.querySelectorAll('[data-hui-table-sort]')) {
+        if (a.getAttribute('data-hui-table-sort') === p[0]) { el = a; break; }
+      }
+      if (!el) el = x.querySelector('[data-hui-table-scroll]');
+      el.focus({preventScroll:!0});
+      // The sentence is the server's, composed from the component's
+      // Strings into data-hui-table-announcement: the module copies
+      // it, clear then frame, so a repeated identical sentence is
+      // announced again the way the action module's failure is.
+      const status = x.querySelector('[data-hui-table-status]');
+      if (status) {
+        const text = x.getAttribute('data-hui-table-announcement') || '';
+        status.textContent = '';
+        requestAnimationFrame(function () { status.textContent = text; });
+      }
+      return;
+    }
+  }
+
   // ─── delegated listeners ────────────────────────────────────────
 
   // Clicks, typing and the two custom events are delegated from the
@@ -432,6 +478,8 @@
   document.addEventListener('click', function (e) {
     const t = e.target;
     if (!t || !t.closest) return;
+    const a = t.closest('[data-hui-table-sort]');
+    if (!a) NS._huiTableSort = null;
     const btn = t.closest('[data-hui-reveal]');
     if (btn) {
       e.preventDefault();
@@ -446,6 +494,9 @@
       el.hidden = true;
       if (el.dataset.huiSystemId) rememberDismissal(el.dataset.huiSystemId);
     }
+    const table = a?.closest('[data-hui-table-signal]');
+    NS._huiTableSort = table && [a.getAttribute('data-hui-table-sort'),
+      table.parentNode, performance.now()];
   });
 
   document.addEventListener('input', function (e) {
@@ -487,15 +538,18 @@
 
   // scan arms what arrival alone cannot: the summary focus, the drag
   // listeners, the when-regions' first sync, the dismissed banners,
-  // the action buttons' bind. It is what the kernel calls on every
-  // inserted subtree and over the document after a client navigation,
-  // and it is idempotent: once() guards what binds a listener, and
-  // the primitive's own WeakSet guards the buttons.
+  // the action buttons' bind, the sort the reader just clicked made
+  // whole again. It is what the kernel calls on every inserted
+  // subtree and over the document after a client navigation, and it
+  // is idempotent: once() guards what binds a listener, and the
+  // primitive's own WeakSet guards the buttons.
   function scan(root) {
+    if (root === document) NS._huiTableSort = null;
     const scope = root && root.querySelectorAll ? root : document;
     armFormErrors(scope);
     armActions(scope);
     armDrops(scope);
+    armTables(scope);
     let regions = within(scope, '[data-hui-when]');
     // A subtree inserted inside a region arrives with no region of its
     // own above it: sync every enclosing region as well, so a control

@@ -58,6 +58,82 @@ func TestTableCarriesTheContractOnItsSortAnchors(t *testing.T) {
 	has(t, smuggled, `data-fui-rpc="/island/apps?dir=asc&amp;sort=name"`, "the island's own contract was not rendered")
 }
 
+// The behaviour module's hooks. Every table carries the module marker
+// on its root, the scroll hook on the focusable region, and the
+// status span as the root's last child — a plain table's next page
+// announces too. The signal and the sort keys are the island's alone:
+// a plain table's sort is a page navigation the router already
+// focuses, and hooks nothing reads on it are markup carried for no
+// one.
+func TestTableBehaviourHooks(t *testing.T) {
+	cols := []Column{
+		{Key: "name", Header: "Name", Sortable: true},
+		{Key: "env", Header: "Environment", Sortable: true},
+	}
+	island := Table(TableProps{
+		Columns: cols, SortBy: "name",
+		Island: Island{Endpoint: "/island/apps", Signal: "apps"},
+	}, nil)
+	has(t, island, `data-hui-table=""`, "the island table root lost the module marker")
+	has(t, island, `data-hui-table-signal="apps"`, "the island table root did not name its signal")
+	has(t, island, `data-hui-table-sort="name"`, "a sort anchor lost its column key")
+	has(t, island, `data-hui-table-sort="env"`, "a sort anchor lost its column key")
+	has(t, island, `data-hui-table-scroll=""`, "the scroll region lost the focus-fallback hook")
+	has(t, island, `<span data-hui-table-status="" role="status"></span>`, "the status span did not render empty on the server")
+
+	plain := Table(TableProps{Columns: cols, SortBy: "name"}, nil)
+	has(t, plain, `data-hui-table=""`, "a plain table root lost the module marker")
+	has(t, plain, `data-hui-table-scroll=""`, "a plain table's scroll region lost the hook")
+	has(t, plain, `<span data-hui-table-status="" role="status"></span>`, "a plain table carries no status for its next page to announce into")
+	hasNot(t, plain, "data-hui-table-signal", "a plain table named a signal no island gave it")
+	hasNot(t, plain, "data-hui-table-sort", "a plain table's sort anchors carry keys nothing reads")
+}
+
+// The announcement is composed on the server, from Strings and the
+// caller's Summary, into the attribute the module copies: the sort
+// sentence names the column by its Header (its Key when the header is
+// empty — the anchor's own naming rule), the direction word follows
+// the comma, and the Summary is appended with a space when there is
+// one. An empty SortDir reads ascending, the reading the sort anchors
+// give it. Nothing to say renders no attribute at all.
+func TestTableAnnouncementIsComposedOnTheServer(t *testing.T) {
+	cols := []Column{
+		{Key: "name", Header: "Name", Sortable: true},
+		{Key: "env", Sortable: true},
+	}
+	has(t, Table(TableProps{Columns: cols, SortBy: "name"}, nil),
+		`data-hui-table-announcement="Sorted by Name, ascending"`,
+		"an ascending sort did not say its column and direction")
+	has(t, Table(TableProps{Columns: cols, SortBy: "env", SortDir: SortDesc}, nil),
+		`data-hui-table-announcement="Sorted by env, descending"`,
+		"a headerless column was not named by its Key, or the descending word is wrong")
+	has(t, Table(TableProps{Columns: cols, SortBy: "name", Summary: "Showing 8 of 10"}, nil),
+		`data-hui-table-announcement="Sorted by Name, ascending Showing 8 of 10"`,
+		"the caller's Summary was not appended to the sort sentence with a space")
+	has(t, Table(TableProps{Columns: cols, Summary: "Showing 8 of 10"}, nil),
+		`data-hui-table-announcement="Showing 8 of 10"`,
+		"an unsorted window said no Summary it was given")
+	hasNot(t, Table(TableProps{Columns: cols}, nil),
+		"data-hui-table-announcement",
+		"a table with no sort and no Summary carried an announcement anyway")
+}
+
+// A translated Strings lands in the announcement attribute: the
+// sentence and the direction words are the reader's, and the module
+// copies them without knowing a language.
+func TestTableAnnouncementIsTranslated(t *testing.T) {
+	w := DefaultStrings()
+	w.TableSortedBy = "Trié par {column}, {direction}"
+	w.SortAscending = "ascendant"
+	got := Table(TableProps{
+		Columns: []Column{{Key: "name", Header: "Nom", Sortable: true}},
+		SortBy:  "name", Strings: w,
+	}, nil)
+	has(t, got, `data-hui-table-announcement="Trié par Nom, ascendant"`,
+		"the announcement did not carry the translated sentence")
+	hasNot(t, got, "Sorted by", "the English default leaked past a translated Strings")
+}
+
 // aria-sort is the only sort indicator, and it is three-state:
 // ascending and descending on the active column, none on every other
 // sortable column, and absent on a column that cannot be sorted. The
@@ -239,7 +315,8 @@ func TestTableRootIsOneShapeWithAScrollRegion(t *testing.T) {
 	if !strings.HasPrefix(string(plain), "<div") {
 		t.Errorf("the root should be the wrapper div, footer or none: %s", plain)
 	}
-	has(t, plain, `<div><div role="region" tabindex="0"><table role="table">`, "the root, the focusable region and the table are not nested in that order")
+	has(t, plain, `<div data-hui-table=""><div data-hui-table-scroll="" role="region" tabindex="0"><table role="table">`, "the root, the focusable region and the table are not nested in that order")
+	has(t, plain, `</table></div><span data-hui-table-status="" role="status"></span></div>`, "the status is not the root's last child")
 
 	withFooter := Table(TableProps{Columns: cols,
 		Footer: render.HTML(`<nav aria-label="Pages">Page 1 of 2</nav>`)}, nil)
@@ -247,8 +324,7 @@ func TestTableRootIsOneShapeWithAScrollRegion(t *testing.T) {
 	if close == -1 || nav < close {
 		t.Errorf("the footer did not render after the table: %s", withFooter)
 	}
-	hasNot(t, withFooter, "<tfoot", "the footer landed inside the table")
-	has(t, withFooter, `</table></div><nav aria-label="Pages">Page 1 of 2</nav></div>`, "the footer is not the scroll region's sibling inside the root")
+	has(t, withFooter, `</table></div><nav aria-label="Pages">Page 1 of 2</nav><span data-hui-table-status="" role="status"></span></div>`, "the footer is not the scroll region's sibling inside the root, with the status last")
 }
 
 // The scroll region is named by the caption when there is one — the
@@ -258,13 +334,13 @@ func TestTableRootIsOneShapeWithAScrollRegion(t *testing.T) {
 func TestTableScrollRegionIsNamedByTheCaption(t *testing.T) {
 	cols := []Column{{Key: "app", Header: "Application"}}
 	named := Table(TableProps{ID: "apps", Caption: "Applications", Columns: cols}, nil)
-	has(t, named, `<div aria-labelledby="apps-caption" role="region" tabindex="0"><table role="table"><caption id="apps-caption">Applications</caption>`,
+	has(t, named, `<div aria-labelledby="apps-caption" data-hui-table-scroll="" role="region" tabindex="0"><table role="table"><caption id="apps-caption">Applications</caption>`,
 		"the scroll region is not named by the caption it wraps")
 
 	// No ID: the id is derived from the caption the way Section
 	// derives its title's.
 	derived := Table(TableProps{Caption: "Recent deployments", Columns: cols}, nil)
-	has(t, derived, `<div aria-labelledby="table-recent-deployments-caption" role="region" tabindex="0"><table role="table"><caption id="table-recent-deployments-caption">`,
+	has(t, derived, `<div aria-labelledby="table-recent-deployments-caption" data-hui-table-scroll="" role="region" tabindex="0"><table role="table"><caption id="table-recent-deployments-caption">`,
 		"the caption id was not derived from the caption text, or the region does not point at it")
 
 	// No caption: no name, and no attribute pointing at nothing.

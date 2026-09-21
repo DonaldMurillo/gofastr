@@ -116,6 +116,11 @@ type DataTableConfig struct {
 
 	// SortDir is the active sort direction (asc/desc).
 	SortDir SortDir
+	// Summary is a sentence about the result window the caller owns,
+	// e.g. "Showing 8 of 10". Appended to the sort sentence the
+	// table's announcement carries after a sort swap: the table knows
+	// the sort, and only the caller knows the window.
+	Summary string
 
 	// Path is the screen's own path: each sort href is it plus the
 	// carried query, the sort parameters replaced. Empty means the
@@ -181,13 +186,17 @@ type DataTableConfig struct {
 // matches. Only the parts a selector reads: the sheet reaches the
 // head, rows and cells by tag inside .ui-data-table__table, so those
 // parts carry no class. Alignment travels as the column variant: the
-// same is-align-* class names the header and the cell variant.
+// same is-align-* class names the header and the cell variant. The
+// status span is the exception to "only what a selector reads": it
+// must not be seen, and ui-visually-hidden is the recipe that hides
+// it without taking it out of the accessibility tree.
 var dataTableClasses = headless.Classes{
 	headless.PartRoot:    "ui-data-table",
 	headless.PartScroll:  "ui-data-table__scroll",
 	headless.PartTable:   "ui-data-table__table",
 	headless.PartCaption: "ui-data-table__caption",
 	headless.PartSort:    "ui-data-table__sort",
+	headless.PartStatus:  "ui-visually-hidden",
 
 	"header--center": "is-align-center",
 	"header--end":    "is-align-end",
@@ -302,6 +311,7 @@ func DataTable(cfg DataTableConfig) render.HTML {
 		Rows:       rows,
 		Caption:    cfg.Caption,
 		SortBy:     cfg.SortBy,
+		Summary:    cfg.Summary,
 		SortDir:    headless.SortDir(cfg.SortDir),
 		Path:       cfg.Path,
 		Query:      cfg.Query,

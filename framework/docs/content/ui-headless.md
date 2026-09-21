@@ -311,8 +311,9 @@ stylesheet uses (`registry.RegisterBehavior`). The host serves it as
 the module `headless` at `/__gofastr/runtime/headless.js`, and the
 kernel loads it when one of its markers is on the page. The markers
 are `[data-hui-reveal]`, `[data-hui-color]`, `[data-hui-when]`,
-`[data-hui-form-errors]`, `[data-hui-action]`, `[data-hui-drop]` and
-`[data-hui-system]`: one per behaviour, the root hook of each.
+`[data-hui-form-errors]`, `[data-hui-action]`, `[data-hui-drop]`,
+`[data-hui-system]` and `[data-hui-table]`: one per behaviour, the
+root hook of each.
 
 What it does, one line per behaviour:
 
@@ -362,6 +363,16 @@ What it does, one line per behaviour:
   dismissed set never applies to it: losing the connection again must
   show it again, which is also why the offline banner carries no
   dismiss.
+- **table** restores what an island sort destroys when a valid answer
+  arrives: the click on a `data-hui-table-sort` anchor accepts only a
+  signal-bound table, then records the column key and replacement region;
+  focus returns to the same column's anchor in that region (the
+  `data-hui-table-scroll` region when the answer dropped the column).
+  The sentence the server rendered into
+  `data-hui-table-announcement` is copied, clear then frame, into the
+  `data-hui-table-status` span. A failed answer leaves focus and status
+  where they were. A plain table's status and announcement render for
+  the pager's later use; this module fills neither.
 
 Two attributes are the module's own, written by it and rendered by no
 component: `data-hui-when-off` and `data-hui-drop-over`.

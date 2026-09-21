@@ -136,6 +136,11 @@ type TableProps struct {
 	// the head stays either way — an empty result still has named
 	// columns, and the sort controls stay usable.
 	Empty render.HTML
+	// Summary is a sentence about the result window the caller owns,
+	// e.g. "Showing 8 of 10". Appended to the sort sentence the
+	// announcement carries, with a space, when given: the primitive
+	// knows the sort, and only the caller knows the window.
+	Summary string
 	// Footer renders after the scroll region, as its sibling inside
 	// the root, never inside the table, so a pager's nav landmark
 	// never nests in a table. Nil renders nothing — the scroll region
@@ -251,6 +256,10 @@ func Table(p TableProps, s Classes) render.HTML {
 	if capID != "" {
 		scroll["aria-labelledby"] = capID
 	}
+	// The scroll region is the focus fallback for an island sort whose
+	// column the answer dropped: focus stays inside the table the
+	// reader is reading.
+	Mark(scroll, "data-hui-table-scroll")
 	scrollRegion := b.El("div", PartScroll, scroll,
 		b.El("table", PartTable, Attrs(map[string]string{"role": "table"}), kids...))
 
@@ -260,8 +269,62 @@ func Table(p TableProps, s Classes) render.HTML {
 	if p.Footer != "" {
 		rootKids = append(rootKids, p.Footer)
 	}
-	return b.El("div", PartRoot,
-		Merge(Safe(p.ExtraAttrs), Attrs(map[string]string{"id": p.ID})), rootKids...)
+	// The status is the root's last child on every table, island or
+	// plain, because a plain table's next page announces too. Empty on
+	// the server: the sentence is the answer's, rendered into the
+	// announcement attribute, and the module copies it in after a
+	// swap — clear then frame, so a repeated identical sentence is
+	// said again. role=status already means polite; stating aria-live
+	// too can announce twice.
+	rootKids = append(rootKids,
+		b.El("span", PartStatus, Mark(Attrs(map[string]string{"role": "status"}), "data-hui-table-status")))
+	own := Merge(Safe(p.ExtraAttrs), Attrs(map[string]string{"id": p.ID}))
+	// The module marker, the signal it records the clicked sort
+	// against, and the sentence it copies: everything the behaviour
+	// needs travels on the root the component rendered.
+	Mark(own, "data-hui-table")
+	if !p.Island.zero() {
+		own["data-hui-table-signal"] = p.Island.Signal
+	}
+	if ann := tableAnnouncement(p, w); ann != "" {
+		own["data-hui-table-announcement"] = ann
+	}
+	return b.El("div", PartRoot, own, rootKids...)
+}
+
+// tableAnnouncement composes the sentence a reader is told after the
+// region changed: the sort the answer carries, in the reader's words,
+// and the caller's Summary of the window when there is one. The
+// column is named by its Header, or its Key when the header is empty
+// — the anchor's own naming rule, so the sentence and the control the
+// reader clicked agree on what the column is called. No sort and no
+// Summary is no announcement: an attribute nothing says is noise the
+// module would copy into the status for nothing.
+func tableAnnouncement(p TableProps, w *Strings) string {
+	if p.SortBy == "" {
+		return p.Summary
+	}
+	name := p.SortBy
+	for _, col := range p.Columns {
+		if col.Key == p.SortBy {
+			if col.Header != "" {
+				name = col.Header
+			}
+			break
+		}
+	}
+	// An empty SortDir means ascending, the same reading the sort
+	// anchors give it.
+	dir := w.SortAscending
+	if p.SortDir == SortDesc {
+		dir = w.SortDescending
+	}
+	sentence := strings.ReplaceAll(w.TableSortedBy, "{column}", name)
+	sentence = strings.ReplaceAll(sentence, "{direction}", dir)
+	if p.Summary != "" {
+		sentence += " " + p.Summary
+	}
+	return sentence
 }
 
 // tableHead renders the head: one row of column headers.
@@ -324,6 +387,11 @@ func tableHeaderCell(b Box, p TableProps, w *Strings, col Column, sortParam, dir
 		a["aria-label"] = strings.ReplaceAll(w.TableSortBy, "{column}", col.Key)
 	}
 	if !p.Island.zero() {
+		// The sort key the module records on click and looks for in
+		// the swapped-in table. Island anchors only: a plain table's
+		// sort is a navigation the router already focuses, and a hook
+		// nothing reads on it is markup carried for no one.
+		a["data-hui-table-sort"] = col.Key
 		// The same element is both destinations: the href is the page
 		// without script, the island contract is the region update
 		// with it, and the query is shared so the two answer one
@@ -449,7 +517,9 @@ func init() {
 	Register(Spec{
 		Name: "Table",
 		Anatomy: []Part{PartRoot, PartScroll, PartTable, PartCaption, PartHead, PartRow, PartHeader,
-			PartSort, PartBody, PartCell, PartEmpty},
+			PartSort, PartBody, PartCell, PartEmpty, PartStatus},
+		Hooks: []string{"data-hui-table", "data-hui-table-signal", "data-hui-table-sort",
+			"data-hui-table-scroll", "data-hui-table-status", "data-hui-table-announcement"},
 		WithParts: func(s Classes, parts Parts) render.HTML {
 			return Table(TableProps{
 				Caption: "Applications", Path: "/apps",
@@ -487,7 +557,8 @@ func init() {
 				Name: "the same table as an island",
 				Why: "an embedded table's sort anchors carry the RPC contract beside their hrefs — the page without " +
 					"script, the region update with it, the query shared so the two answer one question — and the endpoint " +
-					"that carries its own query joins rather than stacks a second one",
+					"that carries its own query joins rather than stacks a second one; the announcement carries the sort " +
+					"sentence with the caller's Summary appended, for the module to copy into the status after the swap",
 				HTML: Table(TableProps{
 					Path:  "/apps",
 					Query: url.Values{"q": {"blog"}},
@@ -500,6 +571,7 @@ func init() {
 					Rows: []Row{
 						{ID: "app-1", Cells: map[string]render.HTML{"name": render.Text("blog"), "env": render.Text("production")}},
 					},
+					Summary: "Showing 1 of 8",
 				}, s),
 			}, {
 				Name: "empty with a slot",

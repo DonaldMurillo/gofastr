@@ -1599,7 +1599,14 @@ The lightbox is the
 first module to declare interactions: prev/next clicks and the arrow
 keys over an open viewer, retained through the module's cold-cache
 fetch exactly as they were when the kernel's table carried them.
-Its layer split is the seam's working example: the viewer's anatomy
+The headless module's own table behaviour is the second client of
+that seam: its registration retains a click on
+`[data-hui-table-sort]` (an island table's sort anchor) so the first
+sort on a cold module is recorded and the swap it triggers still
+restores focus, through the same bridge, with no table name in the
+kernel.
+
+The lightbox's layer split is the seam's working example: the viewer's anatomy
 is `framework/headless.LightboxViewer` (structure, roles, and
 `data-hui-lightbox*` hooks that render exactly when `LightboxWiring`
 is zero — the path a host's own viewer module binds), the
