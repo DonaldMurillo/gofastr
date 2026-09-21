@@ -8,6 +8,62 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 ## [Unreleased]
 
 ### Added
+- **`headless.Table`: the table as a headless primitive.** Structure,
+  roles and sort semantics with zero CSS and no caller moved —
+  `ui.DataTable`, the resource engine and the battery render exactly
+  as before; the move onto this primitive is its own change. A caller
+  renders named columns of cells with `<table role="table">` through
+  `<td role="cell">`: the explicit ARIA roles stay on every element
+  because a cards collapse sets `display: block` on them, and a table
+  element displayed as a block loses its implicit table semantics in
+  Chromium and WebKit — the roles keep a collapsed table a table.
+  `aria-sort` is three-state and the only sort indicator, so a
+  stylesheet draws from the attribute and state and appearance cannot
+  disagree. Sorting is typed props, not a pattern string: the caller
+  gives the active sort, the query the screen carries (`url.Values`)
+  and the parameter names, and every href is built through `net/url`
+  with the sort and direction parameters replaced rather than
+  appended — the literal-`Replace` pattern `ui.DataTable` still uses,
+  and the request-derived-string defect class it carries, cannot be
+  expressed here. The Island is optional, the `Form` posture: the URL
+  is the truth for a list, so a list screen's sort anchors are plain
+  navigations the client router intercepts, and an embedded table
+  whose sort must not change the URL gives the `Island` and its
+  anchors carry the RPC contract beside their hrefs (`Pagination`
+  still requires one, unchanged, until the pager moves). A column with
+  no visible header is hidden from assistive tech when it cannot be
+  sorted and named from a new `Strings.TableSortBy` ("Sort by
+  {column}", bridged over the existing `i18nui.KeyTableSortBy`) when
+  it can; every cell of a headered column carries `data-label` for a
+  cards-collapse stylesheet; rows carry `id` for keyed swaps; an
+  `Empty` slot renders under the head, which stays — an empty result
+  still has named columns and usable sort controls; and a `Footer`
+  slot renders as the scroll region's sibling, so a pager's `nav`
+  landmark never nests in a table. The root is one shape, footer or
+  none: a wrapper `div` (PartRoot) around a focusable scroll region
+  (PartScroll, `role="region"` `tabindex="0"`, named by the caption's
+  id through `aria-labelledby` when there is one) around the table —
+  the region is where horizontal overflow lives and it is markup, not
+  styling, because a scroll region that cannot take focus cannot be
+  scrolled by keyboard (WCAG 2.1.1; axe's
+  `scrollable-region-focusable`); `tabindex` is always `0` because
+  the server cannot know the viewport and a region that becomes
+  scrollable at a narrow width must already be reachable (Adrian
+  Roselli's responsive-table pattern). A `Path` carrying its own
+  query or fragment is refused at render — the carry belongs in
+  `Query`, where it survives the sort, and a silently replaced value
+  is the exact loss this component exists to make structural. A
+  column's `Variant` is the one channel a class map has for styling a
+  whole column (`<part>--<variant>` on that column's `<th>` and every
+  `<td>` under it), so alignment and column shading are the map's to
+  choose; the structure renders none of it at a nil class map.
+  Deliberately not here: no pager (the footer slot is the
+  seam the existing `core-ui/patterns/pagination` lands in), no row
+  selection, no behaviour module (focus restoration and the result
+  announcement arrive with their `data-hui-table*` hooks in a later
+  change — `Spec.Hooks` is empty because a declared hook nothing
+  binds is a promise nothing keeps), and no zebra or sticky:
+  styling facts belong to the class map and the sheet.
 - **The Lightbox moves out of the kernel: the module, its viewer
   anatomy and its interaction descriptor all belong to the
   component's packages now.** `framework/ui/lightbox.js` replaces

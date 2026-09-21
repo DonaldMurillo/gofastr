@@ -134,6 +134,16 @@ type Strings struct {
 	// viewed.
 	LightboxDownload string
 
+	// ─── Table ───────────────────────────────────────────────────────
+
+	// TableSortBy names a sort control whose column carries no
+	// visible header text: an actions or icon column that can still
+	// be sorted. A format taking the column's Key as {column}; the
+	// token is written in at render, when the anchor is built —
+	// unlike the {n} the runtime substitutes, the key is known on
+	// the server.
+	TableSortBy string
+
 	// ─── ValidationSummary ──────────────────────────────────────────
 
 	// ThereIsAProblem heads the list a failed submit focuses. A short
@@ -171,6 +181,9 @@ var defaultStrings = Strings{
 	LightboxPrevious:    "Previous image",
 	LightboxNext:        "Next image",
 	LightboxDownload:    "Download image",
+	// The i18nui catalog's own English for ui.table.sortBy; the ui
+	// bridge's gate holds the two to the same bytes.
+	TableSortBy: "Sort by {column}",
 
 	ThereIsAProblem: "There is a problem",
 }

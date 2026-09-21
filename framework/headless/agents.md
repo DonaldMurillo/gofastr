@@ -81,8 +81,13 @@ the fixtures are handed is harness infrastructure, not caller surface.
 - **A link that changes in-page state.** `Pagination`, `ToolbarSearch`,
   a `Tag` with a dismiss and an `Alert` with a dismiss require an
   `Island` and refuse to render without one; the same element keeps
-  its href for no-script. Every href goes through the framework's
-  anchor policy (`urlsafe.CleanAnchor`).
+  its href for no-script. `Table` takes the `Form` posture instead:
+  the URL is the truth for a list, so a list screen's sort anchors
+  are plain navigations the client router intercepts, and the
+  `Island` is for an embedded table whose sort must not change the
+  URL — its anchors then carry the contract beside their hrefs.
+  Every href goes through the framework's anchor policy
+  (`urlsafe.CleanAnchor`).
 - **A request through `ExtraAttrs`.** `Safe` drops every `data-fui-*`
   key. A request is `ButtonProps.Action`; a signal is a `Bind`; a
   region's refresh is an `Island`. Action also admits the wiring

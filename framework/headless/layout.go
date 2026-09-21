@@ -278,7 +278,7 @@ func Section(p SectionProps, s Classes, children ...render.HTML) render.HTML {
 
 	titleID := p.ID
 	if titleID == "" {
-		titleID = slugID(p.Title)
+		titleID = slugID("section", p.Title)
 	}
 	titleID += "-title"
 	own["aria-labelledby"] = titleID
@@ -305,15 +305,16 @@ func headingTag(level int) string {
 	return "h" + string(rune('0'+level))
 }
 
-// slugID derives a stable id from a title, so a section without an
+// slugID derives a stable id from a title, so a component without an
 // explicit ID still has one for aria-labelledby to point at. Two
-// sections with the same title on one page collide — which is a real
+// regions with the same title on one page collide — which is a real
 // limit, and the reason ID exists.
 //
-// The prefix is "section-", not the class map's namespace: this layer
-// does not know what anyone calls their classes, and an id that
-// borrowed that name would tie the structure to one class map.
-func slugID(s string) string {
+// The prefix is the component's own ("section", "table"), not the
+// class map's namespace: this layer does not know what anyone calls
+// their classes, and an id that borrowed that name would tie the
+// structure to one class map.
+func slugID(prefix, s string) string {
 	out := make([]rune, 0, len(s))
 	prevDash := false
 	for _, r := range s {
@@ -334,7 +335,7 @@ func slugID(s string) string {
 	for len(out) > 0 && out[len(out)-1] == '-' {
 		out = out[:len(out)-1]
 	}
-	return "section-" + string(out)
+	return prefix + "-" + string(out)
 }
 
 // DividerProps is a line between things.

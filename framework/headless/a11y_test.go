@@ -128,6 +128,54 @@ func TestPaginationIsNavigationWithACurrentPage(t *testing.T) {
 	}
 }
 
+// The explicit roles look redundant on a displayed <table> and are
+// not: a cards collapse sets display:block on the table's elements,
+// and a table element displayed as a block loses its implicit table
+// semantics in Chromium and WebKit. The roles are what keep a
+// collapsed table a table for assistive tech, and scope="col" is
+// what ties each header to its column. Survey 2026-09-20 §4: nothing
+// in the repo asserted these directly — they arrived from
+// core-ui/html and were pinned only by meridian's axe runs.
+func TestTableIsATableWithScopedColumnHeaders(t *testing.T) {
+	got := Table(TableProps{
+		Caption: "Applications",
+		Columns: []Column{{Key: "name", Header: "Name", Sortable: true}, {Key: "env", Header: "Environment"}},
+		Rows:    []Row{{Cells: map[string]render.HTML{"name": render.Text("blog"), "env": render.Text("production")}}},
+	}, nil)
+	has(t, got, "<caption", "the table has no caption to be named by")
+	for _, want := range []string{`role="table"`, `role="rowgroup"`, `role="row"`, `role="columnheader"`, `role="cell"`} {
+		has(t, got, want, "the table markup lost "+want)
+	}
+	if n := count(got, `scope="col"`); n != 2 {
+		t.Errorf("scope=col rendered %d times, want 2: every column header carries it", n)
+	}
+}
+
+// The scroll region is keyboard-reachable (WCAG 2.1.1: a region that
+// can only be scrolled with a mouse fails it, and axe reports
+// scrollable-region-focusable) and, when the table has a caption,
+// named by it: the focus stop announces what it is. tabindex is
+// always 0 — the server cannot know whether this table overflows at
+// the reader's width, so the region is reachable before it scrolls.
+// Adrian Roselli's responsive-table pattern.
+func TestTableScrollRegionIsFocusableAndNamedByItsCaption(t *testing.T) {
+	got := Table(TableProps{ID: "apps", Caption: "Applications",
+		Columns: []Column{{Key: "name", Header: "Name"}},
+		Rows:    []Row{{Cells: map[string]render.HTML{"name": render.Text("blog")}}},
+	}, nil)
+	has(t, got, `role="region"`, "the table does not render a scroll region")
+	has(t, got, `tabindex="0"`, "the scroll region cannot take focus")
+	// The name is the caption itself, by id: the label and the
+	// element it names cannot disagree because both come from the
+	// same derivation.
+	has(t, got, `aria-labelledby="apps-caption"`, "the scroll region is not named")
+	has(t, got, `id="apps-caption"`, "the caption has no id to be named by")
+
+	unnamed := Table(TableProps{
+		Columns: []Column{{Key: "name", Header: "Name"}}}, nil)
+	hasNot(t, unnamed, "aria-labelledby", "a region with no caption carried a name pointing at nothing")
+}
+
 func TestStepsSayWhichStepIsCurrent(t *testing.T) {
 	got := Steps(StepsProps{Labels: []string{"Account", "Plan", "Pay"}, Current: 2}, nil)
 	has(t, got, `aria-current=`, "the current step is not marked")
