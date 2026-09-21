@@ -43,8 +43,8 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   none: a wrapper `div` (PartRoot) around a focusable scroll region
   (PartScroll, `role="region"` `tabindex="0"`, named by the caption's
   id through `aria-labelledby` when there is one) around the table —
-  the region is where horizontal overflow lives and it is markup, not
-  styling, because a scroll region that cannot take focus cannot be
+  the region is the element a class map makes the horizontal scroll
+  surface, and it is markup, not styling, because a scroll region that cannot take focus cannot be
   scrolled by keyboard (WCAG 2.1.1; axe's
   `scrollable-region-focusable`); `tabindex` is always `0` because
   the server cannot know the viewport and a region that becomes

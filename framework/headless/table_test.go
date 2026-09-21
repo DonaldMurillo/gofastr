@@ -70,11 +70,14 @@ func TestTableSortIsThreeStateAndCycles(t *testing.T) {
 		{Key: "region", Header: "Region"},
 	}
 	asc := Table(TableProps{Path: "/apps", Columns: cols, SortBy: "name", SortDir: SortAsc}, nil)
-	has(t, asc, `aria-sort="ascending"`, "the active ascending column does not say so")
-	has(t, asc, `aria-sort="none"`, "an inactive sortable column does not say none")
-	if n := count(asc, `aria-sort="`); n != 2 {
-		t.Errorf("aria-sort rendered %d times, want 2: only the sortable columns carry it", n)
-	}
+	// The three headers in order bind each state to its column: the
+	// active one ascending with a descending anchor, the inactive
+	// sortable one none with an ascending anchor, the unsortable one
+	// with no aria-sort at all.
+	has(t, asc, `<th aria-sort="ascending" role="columnheader" scope="col"><a href="/apps?dir=desc&amp;sort=name">Name</a></th>`+
+		`<th aria-sort="none" role="columnheader" scope="col"><a href="/apps?dir=asc&amp;sort=env">Environment</a></th>`+
+		`<th role="columnheader" scope="col">Region</th>`,
+		"the three sort states did not land on their own columns")
 	// Two anchors, in column order: the active one flips to desc, the
 	// inactive one sorts asc.
 	hrefs := sortHrefs(t, asc)
@@ -87,7 +90,8 @@ func TestTableSortIsThreeStateAndCycles(t *testing.T) {
 	}
 
 	desc := Table(TableProps{Path: "/apps", Columns: cols, SortBy: "name", SortDir: SortDesc}, nil)
-	has(t, desc, `aria-sort="descending"`, "the active descending column does not say so")
+	has(t, desc, `<th aria-sort="descending" role="columnheader" scope="col"><a href="/apps?dir=asc&amp;sort=name">Name</a></th>`,
+		"the active descending column does not say so on its own header")
 	if got := sortHrefs(t, desc)[0].Query().Get("dir"); got != "asc" {
 		t.Errorf("a descending column's anchor sorts %q; it should flip back to asc", got)
 	}
@@ -174,8 +178,8 @@ func TestTableRefusesWhatItCannotRender(t *testing.T) {
 func TestTableHeaderlessColumns(t *testing.T) {
 	got := Table(TableProps{Path: "/apps",
 		Columns: []Column{{Key: "actions"}, {Key: "env", Sortable: true}}}, nil)
-	has(t, got, `aria-hidden="true"`, "a header-less non-sortable column is not hidden from assistive tech")
-	has(t, got, `aria-label="Sort by env"`, "a header-less sortable column's anchor is unnamed")
+	has(t, got, `<th aria-hidden="true" role="columnheader" scope="col"></th>`, "the header-less non-sortable column's own th is not hidden from assistive tech")
+	has(t, got, `<a aria-label="Sort by env" href="/apps?dir=asc&amp;sort=env"></a>`, "the header-less sortable column's anchor is unnamed")
 	// The label is the Strings table's to say, not the component's.
 	fr := Table(TableProps{Path: "/apps",
 		Columns: []Column{{Key: "env", Sortable: true}},
@@ -193,6 +197,8 @@ func TestTableCellsCarryTheHeaderTheyShowCollapsed(t *testing.T) {
 		Rows: []Row{{Cells: map[string]render.HTML{
 			"name": render.Text("blog"), "actions": render.Text("View"),
 		}}}}, nil)
+	has(t, got, `<td data-label="Name" role="cell">blog</td><td role="cell">View</td>`,
+		"the headered column's cell does not carry its header, or the header-less one carries something")
 	if n := count(got, `data-label=`); n != 1 {
 		t.Errorf("data-label rendered %d times, want 1: only a headered column's cells carry it", n)
 	}
@@ -226,8 +232,7 @@ func TestTableRootIsOneShapeWithAScrollRegion(t *testing.T) {
 	if !strings.HasPrefix(string(plain), "<div") {
 		t.Errorf("the root should be the wrapper div, footer or none: %s", plain)
 	}
-	has(t, plain, `tabindex="0"`, "the scroll region is not focusable")
-	has(t, plain, `role="region"`, "the scroll region does not say it is a region")
+	has(t, plain, `<div><div role="region" tabindex="0"><table role="table">`, "the root, the focusable region and the table are not nested in that order")
 
 	withFooter := Table(TableProps{Columns: cols,
 		Footer: render.HTML(`<nav aria-label="Pages">Page 1 of 2</nav>`)}, nil)
@@ -236,6 +241,7 @@ func TestTableRootIsOneShapeWithAScrollRegion(t *testing.T) {
 		t.Errorf("the footer did not render after the table: %s", withFooter)
 	}
 	hasNot(t, withFooter, "<tfoot", "the footer landed inside the table")
+	has(t, withFooter, `</table></div><nav aria-label="Pages">Page 1 of 2</nav></div>`, "the footer is not the scroll region's sibling inside the root")
 }
 
 // The scroll region is named by the caption when there is one — the
@@ -245,14 +251,14 @@ func TestTableRootIsOneShapeWithAScrollRegion(t *testing.T) {
 func TestTableScrollRegionIsNamedByTheCaption(t *testing.T) {
 	cols := []Column{{Key: "app", Header: "Application"}}
 	named := Table(TableProps{ID: "apps", Caption: "Applications", Columns: cols}, nil)
-	has(t, named, `id="apps-caption"`, "the caption has no id to be referenced by")
-	has(t, named, `aria-labelledby="apps-caption"`, "the scroll region is not named by the caption")
+	has(t, named, `<div aria-labelledby="apps-caption" role="region" tabindex="0"><table role="table"><caption id="apps-caption">Applications</caption>`,
+		"the scroll region is not named by the caption it wraps")
 
 	// No ID: the id is derived from the caption the way Section
 	// derives its title's.
 	derived := Table(TableProps{Caption: "Recent deployments", Columns: cols}, nil)
-	has(t, derived, `aria-labelledby="table-recent-deployments-caption"`,
-		"the caption id was not derived from the caption text")
+	has(t, derived, `<div aria-labelledby="table-recent-deployments-caption" role="region" tabindex="0"><table role="table"><caption id="table-recent-deployments-caption">`,
+		"the caption id was not derived from the caption text, or the region does not point at it")
 
 	// No caption: no name, and no attribute pointing at nothing.
 	unnamed := Table(TableProps{Columns: cols}, nil)
@@ -301,9 +307,13 @@ func TestTableColumnVariantLandsOnHeaderAndCells(t *testing.T) {
 	if n := count(got, `tbl__c--end`); n != 2 {
 		t.Errorf("the variant landed on %d cells, want one per row of the column", n)
 	}
-	// The variant joins the part's own class rather than replacing it.
-	has(t, got, `class="tbl__h tbl__h--end"`, "the header variant replaced the part class instead of joining it")
-	has(t, got, `class="tbl__c tbl__c--end"`, "the cell variant replaced the part class instead of joining it")
+	// The variant joins the part's own class rather than replacing
+	// it, on the one column's header and cells, and the other
+	// column's carry the part class alone.
+	has(t, got, `<th class="tbl__h" role="columnheader" scope="col">Name</th><th class="tbl__h tbl__h--end" role="columnheader" scope="col">Cost</th>`,
+		"the header variant did not land on its own column alone, joined to the part class")
+	has(t, got, `<td class="tbl__c" data-label="Name" role="cell">blog</td><td class="tbl__c tbl__c--end" data-label="Cost" role="cell">12</td>`,
+		"the cell variant did not land on its own column alone, joined to the part class")
 	// And a nil class map renders none of it.
 	bare := Table(TableProps{
 		Columns: []Column{{Key: "cost", Header: "Cost", Variant: "end"}},

@@ -314,6 +314,8 @@ are `[data-hui-reveal]`, `[data-hui-color]`, `[data-hui-when]`,
 `[data-hui-form-errors]`, `[data-hui-action]`, `[data-hui-drop]` and
 `[data-hui-system]`: one per behaviour, the root hook of each.
 
+What it does, one line per behaviour:
+
 - **reveal** retypes the password input, swaps the button's text and
   accessible name from the `data-hui-show-*` and `data-hui-hide-*`
   attributes, and keeps focus and the caret where the reader left

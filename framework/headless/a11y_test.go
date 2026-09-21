@@ -142,13 +142,14 @@ func TestTableIsATableWithScopedColumnHeaders(t *testing.T) {
 		Columns: []Column{{Key: "name", Header: "Name", Sortable: true}, {Key: "env", Header: "Environment"}},
 		Rows:    []Row{{Cells: map[string]render.HTML{"name": render.Text("blog"), "env": render.Text("production")}}},
 	}, nil)
-	has(t, got, "<caption", "the table has no caption to be named by")
-	for _, want := range []string{`role="table"`, `role="rowgroup"`, `role="row"`, `role="columnheader"`, `role="cell"`} {
-		has(t, got, want, "the table markup lost "+want)
-	}
-	if n := count(got, `scope="col"`); n != 2 {
-		t.Errorf("scope=col rendered %d times, want 2: every column header carries it", n)
-	}
+	// Two substrings bind every role to its element: the head with
+	// both headers scoped, and the body row with both cells.
+	has(t, got, `<table role="table"><caption id="table-applications-caption">Applications</caption>`+
+		`<thead role="rowgroup"><tr role="row"><th aria-sort="none" role="columnheader" scope="col"><a href="?dir=asc&amp;sort=name">Name</a></th>`+
+		`<th role="columnheader" scope="col">Environment</th></tr></thead>`,
+		"the head lost a role, a scope, or the caption that names the table")
+	has(t, got, `<tbody role="rowgroup"><tr role="row"><td data-label="Name" role="cell">blog</td><td data-label="Environment" role="cell">production</td></tr></tbody></table>`,
+		"the body lost a role or a cell's label")
 }
 
 // The scroll region is keyboard-reachable (WCAG 2.1.1: a region that
@@ -163,17 +164,16 @@ func TestTableScrollRegionIsFocusableAndNamedByItsCaption(t *testing.T) {
 		Columns: []Column{{Key: "name", Header: "Name"}},
 		Rows:    []Row{{Cells: map[string]render.HTML{"name": render.Text("blog")}}},
 	}, nil)
-	has(t, got, `role="region"`, "the table does not render a scroll region")
-	has(t, got, `tabindex="0"`, "the scroll region cannot take focus")
-	// The name is the caption itself, by id: the label and the
-	// element it names cannot disagree because both come from the
-	// same derivation.
-	has(t, got, `aria-labelledby="apps-caption"`, "the scroll region is not named")
-	has(t, got, `id="apps-caption"`, "the caption has no id to be named by")
+	// One substring binds the three attributes to the one element
+	// that wraps the table, and the caption's id to the name that
+	// points at it: attributes render sorted, so the shape is exact.
+	has(t, got, `<div aria-labelledby="apps-caption" role="region" tabindex="0"><table role="table"><caption id="apps-caption">Applications</caption>`,
+		"the scroll region does not carry focus and the caption's name on the one element that wraps the table")
 
 	unnamed := Table(TableProps{
 		Columns: []Column{{Key: "name", Header: "Name"}}}, nil)
 	hasNot(t, unnamed, "aria-labelledby", "a region with no caption carried a name pointing at nothing")
+	has(t, unnamed, `<div role="region" tabindex="0"><table role="table">`, "the unnamed region is not the element wrapping the table")
 }
 
 func TestStepsSayWhichStepIsCurrent(t *testing.T) {

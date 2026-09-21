@@ -157,10 +157,10 @@ type TableProps struct {
 // Table renders the list: one wrapper div (PartRoot) holding a
 // focusable scroll region (PartScroll) around the table, and the
 // footer, when there is one, as the region's sibling. The scroll
-// region is where horizontal overflow lives — the one element a wide
-// table on a narrow screen scrolls inside — and it is markup, not
-// styling, because a scroll region that cannot take focus cannot be
-// scrolled by keyboard.
+// region is the element a class map makes the horizontal scroll
+// surface — the one a wide table on a narrow screen scrolls inside —
+// and it is markup, not styling, because a scroll region that cannot
+// take focus cannot be scrolled by keyboard.
 //
 // The explicit ARIA roles stay on every element. They look redundant
 // on a displayed <table> and are not: a cards collapse sets
