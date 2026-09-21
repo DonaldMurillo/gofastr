@@ -175,12 +175,33 @@ var sheetHooks = map[string]string{
 	"data-hui-skeleton-last": "the short final line of a multi-line skeleton: a shape decision a stylesheet makes and a script never touches",
 }
 
+// hostHooks are the declared hooks whose binder is not this package's
+// module and never will be: the lightbox viewer's anatomy ships for a
+// host writing its own viewer behaviour against a zero Wiring, and the
+// hooks render exactly there — the wired render carries the
+// data-fui-lightbox* family for framework/ui's module instead (a
+// ui-owned module binds data-fui-* hooks only). The reasons describe
+// the unwired host-direct path and stake no in-tree claim: what the
+// framework's binder reads is pinned where it lives, in framework/ui's
+// own tests. Same discipline as sheetHooks: the reason is mandatory,
+// the list is checked both ways, and a hook this package's own module
+// ever grows to read must leave it (the module-bound pass below
+// enforces that).
+var hostHooks = map[string]string{
+	"data-hui-lightbox":       "the viewer's identity on an unwired render: what a host's own viewer module resolves the open viewer by",
+	"data-hui-lightbox-nav":   "the nav opt-in on an unwired render: for a host module that steps the gallery group itself",
+	"data-hui-lightbox-image": "the zoom target on an unwired render: the image a host's own gesture handling owns, named by attribute so no class selector is needed",
+	"data-hui-lightbox-prev":  "the previous-image button on an unwired render, for a host module binding its own nav",
+	"data-hui-lightbox-next":  "the next-image button on an unwired render, for a host module binding its own nav",
+}
+
 // TestEveryDeclaredHookIsBoundOrForTheStylesheet catches the other direction
 // of the same drift: a hook every Spec declares that neither the
-// module nor a stylesheet reads is an attribute the markup carries for
-// no one. The list itself is checked both ways so it cannot rot: a
-// hook the module grew to read must leave it, and a hook no Spec
-// declares means it outlived its reason.
+// module, a stylesheet nor a host's own module reads is an attribute
+// the markup carries for no one. The exemption lists are checked both
+// ways so they cannot rot: a hook the module grew to read must leave
+// its list, and a hook no Spec declares means the list outlived its
+// reason.
 func TestEveryDeclaredHookIsBoundOrForTheStylesheet(t *testing.T) {
 	src := jsWithoutComments()
 	read := moduleBoundHooks(src)
@@ -191,7 +212,9 @@ func TestEveryDeclaredHookIsBoundOrForTheStylesheet(t *testing.T) {
 				continue
 			}
 			if _, ok := sheetHooks[h]; !ok {
-				t.Errorf("%s (declared by %s) is read by neither the module nor a stylesheet: a hook nothing binds is an attribute the markup carries for no one", h, sp.Name)
+				if _, ok := hostHooks[h]; !ok {
+					t.Errorf("%s (declared by %s) is read by neither the module, a stylesheet nor a host's own module: a hook nothing binds is an attribute the markup carries for no one", h, sp.Name)
+				}
 			}
 		}
 	}
@@ -204,6 +227,17 @@ func TestEveryDeclaredHookIsBoundOrForTheStylesheet(t *testing.T) {
 		}
 		if read[h] {
 			t.Errorf("%s is listed as stylesheet-only but the module reads it: the list is wrong today, not just stale", h)
+		}
+	}
+	for h, reason := range hostHooks {
+		if reason == "" {
+			t.Errorf("%s carries no reason: an unexplained exemption is one nobody re-reads", h)
+		}
+		if !declared[h] {
+			t.Errorf("%s is listed as host-bound but no Spec declares it: the list has outlived its hook", h)
+		}
+		if read[h] {
+			t.Errorf("%s is listed as host-bound but this package's module reads it: the hook has its binder here now, drop the exemption", h)
 		}
 	}
 }

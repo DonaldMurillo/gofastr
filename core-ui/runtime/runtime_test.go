@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"os"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -805,6 +806,22 @@ func TestRuntimeDisclosureFocusTrapWiring(t *testing.T) {
 	}
 }
 
+// TestRuntimeDemandInteractionBridgeIsGeneric pins two halves of the
+// same property: the bridge is metadata-driven, and the kernel names
+// no lightbox. The first half is unchanged in spirit from the original
+// gate (issue #161's fix had to be generic, not a special case): the
+// bridge reads its specs from the descriptor tables — the kernel's own
+// and the registered behaviours' — and a hard-coded replay helper is
+// the regression it refuses. The second half INVERTED with the
+// lightbox's move to a registered behaviour (framework/ui's module):
+// before the move this test required the data-fui-lightbox-prev/-next
+// literals in boot.js, because the kernel table was their only home.
+// Their presence is now the defect — a component's selectors or
+// interactions hard-coded back into the always-loaded runtime are
+// exactly what the seam exists to remove — so the gate fails on any
+// lightbox string in the kernel's shipped bytes or its Go-side tables,
+// and the interaction descriptors are proven to arrive the way every
+// registered behaviour's do: through the behaviours block.
 func TestRuntimeDemandInteractionBridgeIsGeneric(t *testing.T) {
 	boot, err := os.ReadFile("frag/boot.js")
 	if err != nil {
@@ -814,10 +831,48 @@ func TestRuntimeDemandInteractionBridgeIsGeneric(t *testing.T) {
 	if strings.Contains(body, "__fuiLightboxDispatch") || strings.Contains(body, "_lightboxReplay") {
 		t.Fatal("boot fragment contains a lightbox-specific interaction bridge")
 	}
-	for _, want := range []string{"interactions", "loadModule(name)", "data-fui-lightbox-prev", "data-fui-lightbox-next"} {
-		if !strings.Contains(body, want) {
-			t.Errorf("generic interaction bridge missing %q", want)
+	// The generic half: the BRIDGE install loop iterates BOTH
+	// descriptor tables and loads through the same loader every path
+	// uses. The concat is anchored to the loop that walks
+	// marker.interactions — the scan loop concats the same pair one
+	// screen later, so a bare Contains on the concat string passes
+	// even when the bridge alone regressed to _moduleMarkers. The
+	// end-to-end proof of the property (a registered behaviour's
+	// interaction replaying with the kernel's table empty of it) is
+	// TestLightboxClickBeforeModuleLoadIsReplayed in
+	// lightbox_bridge_e2e_test.go; this half is defence in depth
+	// around it, not the proof itself.
+	bridgeLoop := regexp.MustCompile(
+		`for \(const marker of _moduleMarkers\.concat\(_registered\)\) \{\s*` +
+			`for \(const spec of marker\.interactions \|\| \[\]\) \{`)
+	if !bridgeLoop.MatchString(body) {
+		t.Errorf("the interaction bridge's install loop must iterate _moduleMarkers.concat(_registered) over marker.interactions — a bridge reading only the kernel's table is the special case this gate exists to refuse")
+	}
+	if !strings.Contains(body, "loadModule(marker.name)") {
+		t.Errorf("generic interaction bridge missing %q — the bridge must load through the same loader every path uses", "loadModule(marker.name)")
+	}
+	// The inverted half: the kernel must not name the lightbox. Its
+	// marker, its interactions and its requirements are the descriptor
+	// framework/ui registers; a literal back in the composed bundle, in
+	// the boot fragment it is composed from, in the preload mirror's
+	// table, or as a moduleAttrs owner is the special case returning.
+	composed, err := RuntimeJS()
+	if err != nil {
+		t.Fatalf("RuntimeJS: %v", err)
+	}
+	if got := strings.Count(strings.ToLower(composed), "lightbox"); got != 0 {
+		t.Errorf("the composed runtime names the lightbox %d time(s) — a component's strings belong in its registered descriptor, not the always-loaded kernel", got)
+	}
+	if got := strings.Count(strings.ToLower(body), "lightbox"); got != 0 {
+		t.Errorf("frag/boot.js names the lightbox %d time(s)", got)
+	}
+	for _, name := range DemandLoadModuleNames() {
+		if strings.Contains(name, "lightbox") {
+			t.Errorf("the preload table still maps a marker to %q — the behaviour's own registration drives its preload now", name)
 		}
+	}
+	if _, owned := moduleAttrs["lightbox"]; owned {
+		t.Error("fragments.go still lists a lightbox moduleAttrs owner — its attributes are a registered behaviour's")
 	}
 }
 

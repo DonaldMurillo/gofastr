@@ -8,6 +8,7 @@ import (
 	"go/types"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"sort"
 	"strconv"
@@ -610,6 +611,11 @@ func goEmittedAttrs(t *testing.T) []string {
 		filepath.Join("..", "app"),
 		filepath.Join("..", "patterns"),
 		filepath.Join("..", "..", "framework", "ui"),
+		// framework/headless renders the host framework's runtime
+		// vocabulary too: the lightbox viewer's LightboxWiring emits the
+		// data-fui-lightbox* family, and a Bind renders the signal
+		// triple. A component below framework/ui is still a component.
+		filepath.Join("..", "..", "framework", "headless"),
 		// pluginhost emits the data-fui-plugin* mount markers via string
 		// concat (mount.go); it owns its own parity gate too, but the
 		// doc→owner gate must still see them as emitted.
@@ -764,6 +770,228 @@ func markerSelectorsInSource(src string) (selectors, nonLiteral []string) {
 		return true
 	})
 	return selectors, nonLiteral
+}
+
+// interactionsInSource parses every registry.Interactions(...) call in
+// one Go source file, returning each spec's fields and every argument
+// it could not read. It binds the call through the file's own import
+// of the registry package, the same binding markerSelectorsInSource
+// uses; the composite literals it reads carry the bridge's own spec
+// shape (registry.Interaction), so a field added there is a field this
+// walk must be taught to refuse rather than silently skip.
+func interactionsInSource(src string) (specs []registry.Interaction, nonLiteral []string) {
+	fset := token.NewFileSet()
+	f, err := parser.ParseFile(fset, "", src, 0)
+	if err != nil {
+		return nil, []string{"unparseable source: " + err.Error()}
+	}
+	local := ""
+	for _, imp := range f.Imports {
+		if path, err := strconv.Unquote(imp.Path.Value); err == nil && path == registryImportPath {
+			local = "registry"
+			if imp.Name != nil {
+				local = imp.Name.Name
+			}
+		}
+	}
+	if local == "" || local == "_" {
+		return nil, nil
+	}
+	lit := func(e ast.Expr) (string, bool) {
+		b, ok := e.(*ast.BasicLit)
+		if !ok || b.Kind != token.STRING {
+			return types.ExprString(e), false
+		}
+		s, err := strconv.Unquote(b.Value)
+		return s, err == nil
+	}
+	ast.Inspect(f, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		isInteractions := false
+		switch fn := call.Fun.(type) {
+		case *ast.SelectorExpr:
+			if id, ok := fn.X.(*ast.Ident); ok && id.Name == local && fn.Sel.Name == "Interactions" {
+				isInteractions = true
+			}
+		case *ast.Ident:
+			if local == "." && fn.Name == "Interactions" {
+				isInteractions = true
+			}
+		}
+		if !isInteractions {
+			return true
+		}
+		for _, a := range call.Args {
+			cl, ok := a.(*ast.CompositeLit)
+			if !ok {
+				nonLiteral = append(nonLiteral, types.ExprString(a))
+				continue
+			}
+			spec := registry.Interaction{}
+			for _, elt := range cl.Elts {
+				kv, ok := elt.(*ast.KeyValueExpr)
+				if !ok {
+					nonLiteral = append(nonLiteral, types.ExprString(elt))
+					continue
+				}
+				key, _ := kv.Key.(*ast.Ident)
+				if key == nil {
+					continue
+				}
+				switch key.Name {
+				case "Event", "Selector", "Scope":
+					if s, ok := lit(kv.Value); ok {
+						switch key.Name {
+						case "Event":
+							spec.Event = s
+						case "Selector":
+							spec.Selector = s
+						case "Scope":
+							spec.Scope = s
+						}
+					} else {
+						nonLiteral = append(nonLiteral, key.Name+": "+types.ExprString(kv.Value))
+					}
+				case "Keys":
+					if kl, ok := kv.Value.(*ast.CompositeLit); ok {
+						for _, k := range kl.Elts {
+							if s, ok := lit(k); ok {
+								spec.Keys = append(spec.Keys, s)
+							} else {
+								nonLiteral = append(nonLiteral, "Keys: "+types.ExprString(k))
+							}
+						}
+					} else {
+						nonLiteral = append(nonLiteral, "Keys: "+types.ExprString(kv.Value))
+					}
+				default:
+					nonLiteral = append(nonLiteral, key.Name)
+				}
+			}
+			specs = append(specs, spec)
+		}
+		return true
+	})
+	return specs, nonLiteral
+}
+
+// interactionAttrNames lists the data-fui-* attributes an interaction
+// selector names. The grammar accepts more than a marker's (combinators,
+// :not([attr]), comma lists), so the walk is a token scan of the
+// bracketed attribute names rather than MarkerSubstring's exact rewrite.
+var interactionAttr = regexp.MustCompile(`\[(data-fui-[a-z0-9-]+)`)
+
+func interactionAttrNames(specs []registry.Interaction) []string {
+	set := map[string]struct{}{}
+	for _, sp := range specs {
+		for _, sel := range []string{sp.Selector, sp.Scope} {
+			for _, m := range interactionAttr.FindAllStringSubmatch(sel, -1) {
+				set[m[1]] = struct{}{}
+			}
+		}
+	}
+	out := make([]string, 0, len(set))
+	for a := range set {
+		out = append(out, a)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// TestInteractionSelectorsInTheTreeUseDocumentedDataFuiAttrs is the
+// hard-rule-5 gate for the interaction half of a descriptor: a click's
+// node selector and a keydown's scope selector name attributes the
+// bridge hands straight to querySelector, so a data-fui-* among them
+// is runtime vocabulary and belongs in the documented table exactly as
+// a marker does. The prose contract existed from the interaction
+// descriptor layer (2026-09-20) with no client to check; the lightbox
+// move brought the first in-tree selector, and with it this gate.
+func TestInteractionSelectorsInTheTreeUseDocumentedDataFuiAttrs(t *testing.T) {
+	doc := documentedAttrs(t)
+	root := filepath.Join("..", "..")
+	var specs []registry.Interaction
+	var nonLiteral []string
+	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			switch d.Name() {
+			case ".git", "dist", "node_modules", "vendor", "tmp", "worktrees":
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+		raw, rerr := os.ReadFile(path)
+		if rerr != nil {
+			return rerr
+		}
+		if !strings.Contains(string(raw), registryImportPath) {
+			return nil
+		}
+		got, non := interactionsInSource(string(raw))
+		specs = append(specs, got...)
+		for _, n := range non {
+			nonLiteral = append(nonLiteral, path+": "+n)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(specs) == 0 {
+		t.Fatal("no Interactions call found in the tree — the lightbox's registration declares two, so the scan is broken")
+	}
+	if len(nonLiteral) != 0 {
+		t.Fatalf("registry.Interactions called with arguments this gate cannot read; declare selector, scope and key literals:\n  %s", strings.Join(nonLiteral, "\n  "))
+	}
+	var missing []string
+	for _, a := range interactionAttrNames(specs) {
+		if _, ok := doc[a]; !ok {
+			missing = append(missing, a)
+		}
+	}
+	if len(missing) != 0 {
+		t.Fatalf("interaction selectors in the tree name data-fui-* attributes not in core-ui/ARCHITECTURE.md's table (hard rule 5): %v", missing)
+	}
+	// The walk itself, on fixtures: a composite literal is read field
+	// by field, a non-literal field and an unknown field are refused
+	// as unreadable, and the documented-versus-undocumented split is
+	// the same one the markers gate checks.
+	const head = "package p\nimport \"" + registryImportPath + "\"\n"
+	src := head + `var b = registry.RegisterBehavior("x", js, registry.Markers("[data-hui-p]"), registry.Interactions(
+		registry.Interaction{Event: "click", Selector: "[data-fui-rpc],[data-fui-not-in-the-table-probe]"},
+		registry.Interaction{Event: "keydown", Scope: "[data-fui-widget]:not([hidden]) [data-hui-p]", Keys: []string{"ArrowLeft"}},
+	))`
+	got, non := interactionsInSource(src)
+	if len(non) != 0 || len(got) != 2 {
+		t.Fatalf("fixture walk: specs %v nonLiteral %v, want 2 specs and none unreadable", got, non)
+	}
+	attrs := interactionAttrNames(got)
+	want := []string{"data-fui-not-in-the-table-probe", "data-fui-rpc", "data-fui-widget"}
+	if !reflect.DeepEqual(attrs, want) {
+		t.Fatalf("fixture attrs = %v, want %v", attrs, want)
+	}
+	undoc := []string{}
+	for _, a := range attrs {
+		if _, ok := doc[a]; !ok {
+			undoc = append(undoc, a)
+		}
+	}
+	if len(undoc) != 1 || undoc[0] != "data-fui-not-in-the-table-probe" {
+		t.Fatalf("the check missed the undocumented attribute or flagged a documented one: %v", undoc)
+	}
+	// A field the bridge grows is refused rather than skipped.
+	_, non = interactionsInSource(head + `var b = registry.RegisterBehavior("x", js, registry.Interactions(registry.Interaction{Event: "click", Selector: k, Pointer: "x"}))`)
+	if len(non) != 2 {
+		t.Fatalf("unreadable fields were not both refused: %v", non)
+	}
 }
 
 // undocumentedDataFuiMarkers reports the data-fui-* attributes among

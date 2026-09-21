@@ -1,6 +1,7 @@
 package runtime
 
 import (
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
@@ -9,7 +10,7 @@ import (
 // Pins: malformed data-fui-* attribute values degrade to a no-op — never
 // throw out of delegated handlers. Every data-fui-deeplink decode routes
 // through a same-file safeDecode helper (frag twins, composed runtime.js,
-// src/lightbox.js). (2026-09-06 adversarial pass, round 5.)
+// framework/ui/lightbox.js). (2026-09-06 adversarial pass, round 5.)
 // Property: malformed data-fui-* attribute values degrade to a no-op — never throw out of
 // delegated handlers. The family is pinned for selectors (TestSelectorByDesignLookupsGuarded);
 // the data-fui-deeplink decode sites are unguarded.
@@ -163,7 +164,9 @@ func TestDeeplinkRedDecodeThrows(t *testing.T) {
 // chrome. A malformed escape throws out of those handlers and kills gallery
 // nav instead of degrading to a no-op (empty src / skipped pair).
 func TestLightboxRedDecodeThrows(t *testing.T) {
-	src := readSrc(t, "src/lightbox.js")
+	// The module moved to framework/ui (a registered behaviour); the
+	// deeplink parser it carries moved with it unchanged.
+	src := readSrc(t, filepath.Join("..", "..", "framework", "ui", "lightbox.js"))
 	windows := [][2]string{
 		{"function parseDeeplink(s)", "function step"},
 		{"function srcOf(anchor)", "function parseDeeplink"},
@@ -171,15 +174,15 @@ func TestLightboxRedDecodeThrows(t *testing.T) {
 	for _, w := range windows {
 		start := strings.Index(src, w[0])
 		if start < 0 {
-			t.Fatalf("setup broken: could not locate %q in src/lightbox.js", w[0])
+			t.Fatalf("setup broken: could not locate %q in framework/ui/lightbox.js", w[0])
 		}
 		endRel := strings.Index(src[start:], w[1])
 		if endRel < 0 {
-			t.Fatalf("setup broken: could not locate %q after %q in src/lightbox.js", w[1], w[0])
+			t.Fatalf("setup broken: could not locate %q after %q in framework/ui/lightbox.js", w[1], w[0])
 		}
 		window := src[start : start+endRel]
-		for range redDecodeFindings(t, src, window, "src/lightbox.js "+w[0]) {
-			t.Errorf("SECURITY: [lightbox-decode-throws] src/lightbox.js %s decodes data-fui-deeplink pairs with bare decodeURIComponent — a malformed escape (decodeURIComponent('%%E0%%A4') throws URIError) throws out of step()'s click/keydown handlers and recordOpen's MutationObserver, killing gallery nav instead of degrading to a no-op", w[0])
+		for range redDecodeFindings(t, src, window, "framework/ui/lightbox.js "+w[0]) {
+			t.Errorf("SECURITY: [lightbox-decode-throws] framework/ui/lightbox.js %s decodes data-fui-deeplink pairs with bare decodeURIComponent — a malformed escape (decodeURIComponent('%%E0%%A4') throws URIError) throws out of step()'s click/keydown handlers and recordOpen's MutationObserver, killing gallery nav instead of degrading to a no-op", w[0])
 		}
 	}
 }
@@ -191,14 +194,14 @@ func TestLightboxRedDecodeThrows(t *testing.T) {
 // carry (TestSeedLoopsSkipReservedKeys, TestAnimateRedReservedKeyWrite).
 // Found by LintProtoKeyWrite over the live tree (R6 follow-up).
 func TestLightboxParseDeeplinkReservedKey(t *testing.T) {
-	src := readSrc(t, "src/lightbox.js")
+	src := readSrc(t, filepath.Join("..", "..", "framework", "ui", "lightbox.js"))
 	start := strings.Index(src, "function parseDeeplink(s)")
 	if start < 0 {
-		t.Fatalf("setup broken: could not locate parseDeeplink in src/lightbox.js")
+		t.Fatalf("setup broken: could not locate parseDeeplink in framework/ui/lightbox.js")
 	}
 	endRel := strings.Index(src[start:], "function step")
 	if endRel < 0 {
-		t.Fatalf("setup broken: could not locate 'function step' after parseDeeplink in src/lightbox.js")
+		t.Fatalf("setup broken: could not locate 'function step' after parseDeeplink in framework/ui/lightbox.js")
 	}
 	body := src[start : start+endRel]
 
@@ -214,7 +217,7 @@ func TestLightboxParseDeeplinkReservedKey(t *testing.T) {
 		if strings.Contains(body, "out[safeDecode(") {
 			t.Errorf("SECURITY: [lightbox-parse-proto-write] parseDeeplink writes the decoded key straight into a plain object (out[safeDecode(…)] = …) — a data-fui-deeplink pair named __proto__ re-parents the parsed map via the setter; skip reserved keys before the write. Body:\n%s", body)
 		} else {
-			t.Fatalf("setup broken: could not locate the parse map's write in src/lightbox.js parseDeeplink()")
+			t.Fatalf("setup broken: could not locate the parse map's write in framework/ui/lightbox.js parseDeeplink()")
 		}
 		return
 	}

@@ -50,7 +50,6 @@ var demandLoadMarkers = []demandLoadMarker{
 	{"data-fui-sortable", "sortablelist"},
 	{"data-fui-shortcut-focus", "shortcut"},
 	{"data-fui-shortcut-click", "shortcut"},
-	{`data-fui-comp="ui-lightbox"`, "lightbox"},
 	{"data-fui-carousel", "carousel"},
 	{"data-fui-theme-toggle", "themeswitch"},
 	{"data-fui-sidebar-collapse", "sidebar"},

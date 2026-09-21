@@ -778,7 +778,11 @@ func widgetCSS(def Definition) string {
 	//     documented escape hatch for chrome-less content;
 	//   - `[data-fui-lightbox]`: Lightbox viewers center bare media
 	//     on the backdrop; a card behind a photo is unwanted and the
-	//     panel's max-inline-size would fight the viewer's 90vw;
+	//     panel's max-inline-size would fight the viewer's 90vw.
+	//     Follow-up: the lightbox should adopt .fui-slot-bare — it is
+	//     chrome-less content, the escape hatch's exact case, and one
+	//     class-map entry replicates this exclusion — so this row can
+	//     leave and the selector stops naming a framework/ui component;
 	//   - `[data-fui-comp="ui-cmd-palette"]`: the command palette
 	//     predates this rule and paints its own 36rem panel (incl. a
 	//     full-screen mobile variant the panel caps would break).

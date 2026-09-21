@@ -8,6 +8,70 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 ## [Unreleased]
 
 ### Added
+- **The Lightbox moves out of the kernel: the module, its viewer
+  anatomy and its interaction descriptor all belong to the
+  component's packages now.** `framework/ui/lightbox.js` replaces
+  `core-ui/runtime/src/lightbox.js`, registered in the Go that renders
+  the markup (`registry.RegisterBehavior("lightbox", …,
+  registry.Markers("[data-fui-lightbox]"), registry.Requires("widgets"),
+  registry.Interactions(…))`) — the first registered module to declare
+  interactions, using the seam the previous entry opened. The
+  prev/next clicks and the ArrowLeft/ArrowRight keys are retained
+  through the module's cold-cache fetch exactly as before, but from
+  the behaviours block, not the kernel's table: `frag/boot.js`'s
+  `_moduleMarkers` entry (the only one carrying interactions), its
+  interaction literals, `preload.go`'s mirror row and
+  `fragments.go`'s `moduleAttrs` ownership are gone, and
+  `TestRuntimeDemandInteractionBridgeIsGeneric` is inverted — it now FAILS on a
+  lightbox string appearing in the kernel's composed bytes or its
+  Go-side tables. Two contract violations the move forced: the
+  module's viewer lookup no longer keys off the kernel-owned
+  `data-fui-comp="ui-lightbox"` (the marker keeps its one job,
+  fetching the sheet; the viewer's own `data-fui-lightbox` is the
+  lookup), and pinch-zoom no longer finds the image by the
+  `.ui-lightbox__full` class — a new `data-fui-lightbox-image`
+  attribute on the `<img>` is the target, because a class map may
+  rename every class. The viewer's anatomy is new in
+  `framework/headless` (`LightboxViewer`: viewer root, figure, image,
+  caption, toolbar, prev, next, download; `data-hui-lightbox*` hooks
+  for a host writing its own viewer module, rendered exactly when
+  `LightboxWiring` is zero; four new `Strings`
+  fields — viewer label, previous image, next image, download —
+  bridged over the `i18nui.KeyLightbox*` keys, one new:
+  `ui.lightbox.label`), and `framework/ui.Lightbox` renders through
+  it dressed with the `fui-lightbox*` class map and the
+  `data-fui-lightbox*` wiring IN PLACE OF the hui hooks — one
+  vocabulary per render, so a host module cannot double-bind the
+  gallery the shipped module steps — so Gallery and its triggers are
+  untouched. One deliberate retention outside the kernel:
+  `core-ui/widget/server.go`'s centered-panel chrome keeps its
+  `> .fui-slot > [data-fui-lightbox]` exclusion (the row predates
+  this PR and sits beside the command palette's), and the follow-up
+  is named plainly: the lightbox adopts `.fui-slot-bare`, the
+  documented escape hatch for chrome-less content, the selector
+  shrinks to the generic cases, and the always-shipped widget CSS
+  stops naming a framework/ui component. The headless hook admission
+  gained a third binder class (`hostHooks` in behavior_test.go: hooks
+  a host's own module binds,
+  each with a reason, checked both ways), and the interaction side of
+  hard rule 5 is mechanical now:
+  `TestInteractionSelectorsInTheTreeUseDocumentedDataFuiAttrs` walks
+  every `registry.Interactions(...)` call in the tree and refuses a
+  `data-fui-*` selector naming an attribute outside the documented
+  table — the gate the interaction-descriptor layer deferred until a
+  real client existed. The cold-load regression (#161) and the
+  multi-instance regression are kept and re-headed: their fixtures
+  carry the inline behaviours block, their server serves the module
+  from `framework/ui/lightbox.js`, and their registration is PARSED
+  out of `framework/ui/lightbox.go` (markers, requirements,
+  interactions) so the browser tests run the real descriptor and
+  cannot drift from it. The guarded core bundle shrank: 13325 →
+  13242 gzip level 6 (−83) and 15386 → 15288 level 1 (−98); both
+  budget lines hold, the anti-vacuity fixture still crosses the
+  level-1 window, and the bracket is recorded in both constants'
+  histories. Two deeplink hardening tests moved with their subject
+  (`deeplink_decode_security_test.go` now reads
+  `framework/ui/lightbox.js` by path).
 - **`registry.Interactions` — a registered behaviour can declare the
   interactions the runtime retains while its module is still
   fetching.** Until now the interaction bridge (the fourth load path,
@@ -455,6 +519,24 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   unchanged (they move in the next change of the stack).
 
 ### BREAKING
+- **The Lightbox viewer's classes are `fui-lightbox*` and its image
+  carries `data-fui-lightbox-image`.** The `ui-lightbox__viewer`,
+  `ui-lightbox__figure`, `ui-lightbox__full`, `ui-lightbox__caption`,
+  `ui-lightbox__toolbar`, `ui-lightbox__nav`, `ui-lightbox__download`
+  classes no longer exist in any emitted markup or stylesheet;
+  hand-rolled markup on them renders unstyled — call `ui.Lightbox`.
+  CSS that selected `.ui-lightbox__full[data-fui-zoomed]` selects
+  `.fui-lightbox__full[data-fui-zoomed]`. No `data-fui-*` attribute
+  the runtime contract documents changed spelling; the one new
+  attribute is `data-fui-lightbox-image`, and the module that read
+  `.ui-lightbox__full` by class reads it now. The move also changes
+  the module's availability: it no longer ships in the kernel's
+  `_moduleMarkers` table, it arrives with framework/ui's registration
+  — a host importing no `framework/ui` (a core-ui-only page
+  hand-rolling the `data-fui-comp="ui-lightbox"` markup the kernel
+  table used to serve) loses nav and zoom with no error; import
+  `framework/ui` (or mount a `ui.Lightbox`) so the registration
+  links in.
 - **`FormFieldConfig.Input` is a builder, not pre-built markup.**
   `Input func(headless.FieldControl) render.HTML`; a nil `Input`
   panics as an empty one did. The migration is one closure per call
@@ -719,6 +801,14 @@ are listed under Added above, not here.
    below it; the filename paragraph is a module-filled list plus a
    status sentence. TextArea is a `fui-field` shell around a
    `fui-textarea` control carrying its own marker.
+13. **The Lightbox viewer's classes are `fui-lightbox*`** (see
+   BREAKING): hand-rolled `ui-lightbox__*` markup renders unstyled,
+   `.ui-lightbox__full[data-fui-zoomed]` selectors retarget
+   `.fui-lightbox__full[data-fui-zoomed]`, and any custom script that
+   found the image by class reads `data-fui-lightbox-image`. Every
+   documented `data-fui-*` attribute keeps its spelling; the
+   `data-hui-lightbox*` hooks and `headless.LightboxViewer` are
+   unreleased surface (Added), not breaking.
 
 ### Changed
 - **One home per helper.** A clone survey over the tree found the same

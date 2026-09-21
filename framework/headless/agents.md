@@ -29,7 +29,14 @@ that fills it without re-rendering; the node carries no hook of its
 own — it is found by the control's id with `-error` appended, the same
 id that rides the control's aria-describedby.
 The other families adopt their components' headless counterparts in
-their own changes.
+their own changes; the lightbox viewer is the first overlay anatomy
+here (`LightboxViewer`, the body a zoom modal mounts): its
+`data-hui-lightbox*` hooks are for a host writing its own viewer
+module and render exactly when `LightboxWiring` is zero; a set Wiring
+renders the `data-fui-lightbox*` family for framework/ui's lightbox
+behaviour instead — one vocabulary per render, because a host module
+binding the hooks beside the framework's would double-bind the
+gallery it steps — and this package's module reads neither.
 **Use this when** the prompt mentions: headless, unstyled, reskin, a
 second design system, parts, anatomy, slots, attrs, binds, strings, translated
 component strings, an island on a table or pager, or a component whose

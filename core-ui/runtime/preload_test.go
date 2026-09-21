@@ -57,16 +57,15 @@ func TestNeededModules_SidebarCollapse(t *testing.T) {
 }
 
 func TestNeededModules_MultipleMarkersDedupSorted(t *testing.T) {
-	// popover, widgets (twice), toasts, lightbox
+	// popover, widgets (twice), toasts
 	html := `
 		<button data-fui-open="m1">open</button>
 		<div data-fui-widget="m1"></div>
 		<button data-fui-toast='{"title":"hi"}'>toast</button>
 		<button data-fui-popover-anchor="auto">pop</button>
-		<div data-fui-comp="ui-lightbox" data-fui-lightbox="lb"></div>
 	`
 	got := NeededModules(html)
-	want := []string{"lightbox", "popover", "toasts", "widgets"}
+	want := []string{"popover", "toasts", "widgets"}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("got %v, want %v", got, want)
 	}

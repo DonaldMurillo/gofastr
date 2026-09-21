@@ -26,7 +26,7 @@
   //     (#fui-route-announce) stay unwrapped.
   //
   // lockScroll/unlockScroll refcount by OWNER (a Set), so two
-  // concurrent lockers, a modal over a lightbox, a drawer over a
+  // concurrent lockers, a modal over an image overlay, a drawer over a
   // modal, can't fight over documentElement.style.overflow: the lock
   // releases only when the LAST owner unlocks. (Lock lives on <html>,
   // not <body>: overflow:hidden on <body> breaks position:sticky
@@ -226,8 +226,9 @@
         payloads.
 
         This is the runtime-side guard against signal-bound `href` on
-        Lightbox AllowDownload + any other widget that mirrors an
-        attacker-controllable signal into a click-triggered attribute.
+        a media viewer's download control + any other widget that
+        mirrors an attacker-controllable signal into a click-triggered
+        attribute.
     */
     _isUnsafeSignalUrl(attr, value) {
       if (!attr) return false;
