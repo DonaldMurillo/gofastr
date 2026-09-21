@@ -141,15 +141,22 @@ func TestTableSortReplacesTheSortAndCarriesTheQuery(t *testing.T) {
 	}
 }
 
-// The refusals, each naming what to fix: a column with no Key can
-// neither be sorted nor receive a cell; a cell key that matches no
+// The refusals, each naming what to fix: no columns at all is a
+// table with nothing to render; a column with no Key can neither be
+// sorted nor receive a cell; two columns under one Key claim one cell; a cell key that matches no
 // column is a typo, not an omission; a Path pointing off-origin is a
 // sort anchor that leaves the site; an Island that looks wired and is
 // not is a region that never updates.
 func TestTableRefusesWhatItCannotRender(t *testing.T) {
 	sortable := []Column{{Key: "name", Header: "Name", Sortable: true}}
+	refuse(t, "Columns", func() {
+		Table(TableProps{Empty: render.HTML("<p>nothing</p>")}, nil)
+	})
 	refuse(t, "Key", func() {
 		Table(TableProps{Columns: []Column{{Header: "Name"}}}, nil)
+	})
+	refuse(t, "two columns", func() {
+		Table(TableProps{Columns: []Column{{Key: "name", Header: "Name"}, {Key: "name", Header: "Also name"}}}, nil)
 	})
 	refuse(t, "owner", func() {
 		Table(TableProps{

@@ -177,6 +177,9 @@ func Table(p TableProps, s Classes) render.HTML {
 	b := p.Parts.Box(s)
 	w := p.Strings.Resolve()
 
+	if len(p.Columns) == 0 {
+		panic("headless: Table requires Columns — a table with no columns has no cells to render and, empty, a slot spanning nothing")
+	}
 	for i, col := range p.Columns {
 		if col.Key == "" {
 			panic("headless: Table column " + strconv.Itoa(i) + " has no Key — Row.Cells are matched by column Key, so a column without one can neither be sorted nor receive a cell")
@@ -194,6 +197,11 @@ func Table(p TableProps, s Classes) render.HTML {
 	}
 	cols := make(map[string]bool, len(p.Columns))
 	for _, col := range p.Columns {
+		// Two columns under one Key would render the same cell twice
+		// and sort to the same href: one answer claimed by two headers.
+		if cols[col.Key] {
+			panic("headless: Table has two columns with the Key " + strconv.Quote(col.Key) + " — Row.Cells are matched by Key, so a repeated one is two columns claiming one cell")
+		}
 		cols[col.Key] = true
 	}
 	for _, r := range p.Rows {
