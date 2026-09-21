@@ -122,9 +122,8 @@ func TestDataTableEmptyTitleOverrideWins(t *testing.T) {
 func TestDataTableSortAriaLabelTVars(t *testing.T) {
 	swapDefault(t, i18nui.KeyTableSortBy, "Sortby {column}")
 	out := htmlString(t, DataTable(DataTableConfig{
-		Columns:         []Column{{Key: "name", Sortable: true}},
-		SortHrefPattern: "?sort=%s&dir=%s",
-		Rows:            []Row{{Cells: map[string]render.HTML{"name": render.Text("v")}}},
+		Columns: []Column{{Key: "name", Sortable: true}},
+		Rows:    []Row{{Cells: map[string]render.HTML{"name": render.Text("v")}}},
 	}))
 	if !strings.Contains(out, `aria-label="Sortby name"`) {
 		t.Fatalf("missing TVars sort aria-label:\n%s", out)

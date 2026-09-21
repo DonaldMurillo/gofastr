@@ -78,9 +78,10 @@ The entity screens mount at `<PathPrefix>/e/<table>`:
 Everything is a declarative `data-fui-*` primitive the runtime already
 understands. The battery ships zero JS:
 
-- **List** uses `ui.DataTable` with `IslandSignal`/`IslandEndpoint`. Page
-  links fire a `GET` RPC to `_rows`, which returns the new table fragment;
-  the runtime swaps it in place and pushes the new URL.
+- **List** uses `ui.DataTable`. Its sort headers and page links are
+  plain anchors the client router intercepts, so the URL stays the
+  list's state; a sort header's direction indicator is drawn by CSS
+  from `aria-sort`.
 - **Delete** is a `<button data-fui-confirm="…" data-fui-rpc="…/_delete/{id}"
   data-fui-rpc-method="DELETE" data-fui-rpc-signal="…">`. The runtime runs
   the native confirm, fires the DELETE, and swaps the returned (refreshed)

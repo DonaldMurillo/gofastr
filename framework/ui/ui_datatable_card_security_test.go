@@ -39,18 +39,19 @@ func truncate(s string, max int) string {
 
 func TestDataTable_ColumnKeyXSS(t *testing.T) {
 	t.Parallel()
-	// Column Key with script tags, it's URL-encoded in sort hrefs.
+	// Column Key with script tags: the typed sort props put it through
+	// url.Values.Encode, so it lands percent-encoded in the href.
 	h := ui.DataTable(ui.DataTableConfig{
-		Columns:         []ui.Column{{Key: "<script>alert(1)</script>", Header: "X", Sortable: true}},
-		Rows:            []ui.Row{{Cells: map[string]render.HTML{"<script>alert(1)</script>": render.Text("ok")}}},
-		SortHrefPattern: "?sort=%s&dir=%s",
+		Columns: []ui.Column{{Key: "<script>alert(1)</script>", Header: "X", Sortable: true}},
+		Rows:    []ui.Row{{Cells: map[string]render.HTML{"<script>alert(1)</script>": render.Text("ok")}}},
 	})
 	s := string(h)
-	// The key should be URL-encoded in the href, not injected raw.
 	if strings.Contains(s, "?sort=<script>") {
 		t.Errorf("SECURITY: [datatable-column-key] sort href contains raw script tag in key\n  got: %s", truncate(s, 300))
 	}
-	t.Logf("NOTE: Column keys are URL-encoded in hrefs via url.QueryEscape")
+	if !strings.Contains(s, "sort=%3Cscript%3E") {
+		t.Errorf("SECURITY: [datatable-column-key] expected the key percent-encoded in the href\n  got: %s", truncate(s, 300))
+	}
 }
 
 func TestDataTable_ColumnHeaderXSS(t *testing.T) {
@@ -87,24 +88,6 @@ func TestDataTable_CellContentXSS(t *testing.T) {
 	t.Logf("NOTE: [datatable-cell-content] cell content is render.HTML (raw) — caller is responsible for sanitization")
 }
 
-func TestDataTable_SortHrefInjection(t *testing.T) {
-	t.Parallel()
-	// SortHrefPattern with path traversal, it's a Sprintf pattern.
-	h := ui.DataTable(ui.DataTableConfig{
-		Columns:         []ui.Column{{Key: "name", Header: "Name", Sortable: true}},
-		Rows:            []ui.Row{{Cells: map[string]render.HTML{"name": render.Text("Alice")}}},
-		SortHrefPattern: "?sort=%s&dir=%s&redirect=../../../etc/passwd",
-	})
-	s := string(h)
-	// The pattern is used directly. This documents that callers must provide safe patterns.
-	if strings.Contains(s, "../../../etc/passwd") {
-		t.Logf("NOTE: [datatable-sort-href] SortHrefPattern is caller-controlled format string; framework does not sanitize it")
-	}
-	if !strings.Contains(s, "href=") {
-		t.Errorf("SECURITY: [datatable-sort-href] expected href attribute in output")
-	}
-}
-
 func TestDataTable_RowIDXSS(t *testing.T) {
 	t.Parallel()
 	h := ui.DataTable(ui.DataTableConfig{
@@ -139,7 +122,8 @@ func TestDataTable_EmptyColumnsHandled(t *testing.T) {
 
 func TestDataTable_NilRowsHandled(t *testing.T) {
 	t.Parallel()
-	// Nil rows should render the empty state without panicking.
+	// Nil rows render the table with its head and the empty row: an
+	// empty result still has named columns and usable sort controls.
 	h := ui.DataTable(ui.DataTableConfig{
 		Columns: []ui.Column{{Key: "x", Header: "X"}},
 		Rows:    nil,
@@ -148,8 +132,8 @@ func TestDataTable_NilRowsHandled(t *testing.T) {
 	if !strings.Contains(s, "ui-empty-state") {
 		t.Errorf("SECURITY: [datatable-nil-rows] expected empty state for nil rows, got:\n  %s", truncate(s, 300))
 	}
-	if strings.Contains(s, "<table") {
-		t.Errorf("SECURITY: [datatable-nil-rows] should not render table element for nil rows")
+	if !strings.Contains(s, "<table") {
+		t.Errorf("SECURITY: [datatable-nil-rows] expected the head to stay for nil rows, got:\n  %s", truncate(s, 300))
 	}
 }
 
@@ -223,9 +207,8 @@ func TestDataTable_SortKeyInjection(t *testing.T) {
 	// SQL-like content in sort key, should be URL-encoded in href.
 	sqlPayload := "1; DROP TABLE users--"
 	h := ui.DataTable(ui.DataTableConfig{
-		Columns:         []ui.Column{{Key: sqlPayload, Header: "ID", Sortable: true}},
-		Rows:            []ui.Row{{Cells: map[string]render.HTML{sqlPayload: render.Text("1")}}},
-		SortHrefPattern: "?sort=%s&dir=%s",
+		Columns: []ui.Column{{Key: sqlPayload, Header: "ID", Sortable: true}},
+		Rows:    []ui.Row{{Cells: map[string]render.HTML{sqlPayload: render.Text("1")}}},
 	})
 	s := string(h)
 	// The raw SQL should NOT appear in an href value unencoded.
@@ -246,9 +229,8 @@ func TestDataTable_ConcurrentRender(t *testing.T) {
 	}
 	rows := []ui.Row{{Cells: map[string]render.HTML{"a": render.Text("1"), "b": render.Text("2")}}}
 	cfg := ui.DataTableConfig{
-		Columns:         cols,
-		Rows:            rows,
-		SortHrefPattern: "?sort=%s&dir=%s",
+		Columns: cols,
+		Rows:    rows,
 	}
 
 	var wg sync.WaitGroup
@@ -636,16 +618,17 @@ func TestLayout_ClassInjection(t *testing.T) {
 	t.Logf("NOTE: [layout-class-injection] class goes through render.Tag attribute escaping")
 }
 
-// TestSortHrefCarryPatternFmtSafe pins that a query-string carry built by
-// URL-encoding request-derived values (the patternWith / resource.Table
-// construction: url.Values.Encode() + "&" + "sort=%s&dir=%s") can never
-// inject fmt directives into Config.SortHrefPattern. url.Values.Encode()
-// emits %XX triples for every reserved character, and fmt.Sprintf parses
-// those bytes as flag/width/verb, so a carried search like "a&b"
-// (q=a%26b) makes the first verb swallow the column key and the last verb
-// report %!s(MISSING). The sink is fmt.Sprintf(pattern, ...) in
-// framework/ui/datatable.go renderHeader.
-func TestSortHrefCarryPatternFmtSafe(t *testing.T) {
+// TestDataTable_QueryCarrySurvivesSortHref pins the typed-props sort href
+// against the request-derived carry: the query a screen carries (a search
+// like "a&b", a page, even the LAST sort's sort/dir pair) must survive a
+// sort click untouched, while sort and dir are REPLACED rather than
+// appended. This is the regression that replaces the old
+// TestSortHrefCarryPatternFmtSafe: the free-form pattern string whose
+// literal-Replace substitution could misalign is gone, and the property
+// that matters now is that the typed sink (url.Values through
+// headless.Table) both preserves the carry and keeps one answer per sort
+// question — sort=old&sort=title is two answers where the href means one.
+func TestDataTable_QueryCarrySurvivesSortHref(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct{ name, search string }{
 		{"amp", "a&b"},
@@ -656,30 +639,75 @@ func TestSortHrefCarryPatternFmtSafe(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			// Build the carry pattern exactly as production does:
-			// battery/admin patternWith and framework/ui/resource Table.
-			enc := url.Values{"q": {tc.search}}.Encode()
-			pattern := "?" + enc + "&sort=%s&dir=%s"
-			h := ui.DataTable(ui.DataTableConfig{
-				Columns:         []ui.Column{{Key: "title", Header: "Title", Sortable: true}},
-				Rows:            []ui.Row{{Cells: map[string]render.HTML{"title": render.Text("x")}}},
-				SortHrefPattern: pattern,
-			})
-			s := string(h)
-			if strings.Contains(s, "%!") {
-				t.Errorf("SECURITY: [fmt-carry] search %q (encoded carry %q) injected fmt directives into sort pattern %q; fmt consumed/misaligned the verbs: %s", tc.search, enc, pattern, truncate(s, 300))
+			// Build the carry exactly as production does: the
+			// resource engine's Query — the search, the page, and
+			// whatever sort/dir the URL still holds.
+			query := url.Values{
+				"q":    {tc.search},
+				"page": {"3"},
+				"sort": {"old"},
+				"dir":  {"desc"},
 			}
-			if !strings.Contains(s, "sort=title") {
-				t.Errorf("SECURITY: [fmt-carry] search %q: column key must land in its own sort= param, got misaligned href: %s", tc.search, truncate(s, 300))
+			h := string(ui.DataTable(ui.DataTableConfig{
+				Columns: []ui.Column{{Key: "title", Header: "Title", Sortable: true}},
+				Rows:    []ui.Row{{Cells: map[string]render.HTML{"title": render.Text("x")}}},
+				Query:   query,
+			}))
+			const needle = `<a class="ui-data-table__sort" href="`
+			i := strings.Index(h, needle)
+			if i < 0 {
+				t.Fatalf("SECURITY: [query-carry] no sort anchor in: %s", truncate(h, 300))
 			}
-			if !strings.Contains(s, "dir=asc") {
-				t.Errorf("SECURITY: [fmt-carry] search %q: direction must land in its own dir= param, got: %s", tc.search, truncate(s, 300))
+			rest := h[i+len(needle):]
+			href := strings.ReplaceAll(rest[:strings.IndexByte(rest, '"')], "&amp;", "&")
+			got, err := url.ParseQuery(strings.TrimPrefix(href, "?"))
+			if err != nil {
+				t.Fatalf("SECURITY: [query-carry] href %q does not parse: %v", href, err)
 			}
-			// enc is already "q=<value>"; prefixing another "q=" looked
-			// for "q=q=…", which no correct href can contain.
-			if !strings.Contains(s, enc) {
-				t.Errorf("SECURITY: [fmt-carry] search %q: carried value %q must round-trip untouched in the href, got: %s", tc.search, enc, truncate(s, 300))
+			if got.Get("q") != tc.search {
+				t.Errorf("SECURITY: [query-carry] search %q did not round-trip (href %s)", tc.search, href)
+			}
+			if got.Get("page") != "3" {
+				t.Errorf("SECURITY: [query-carry] carried page lost (href %s)", href)
+			}
+			if len(got["sort"]) != 1 || got.Get("sort") != "title" {
+				t.Errorf("SECURITY: [query-carry] sort must be replaced by the clicked column once, got %v (href %s)", got["sort"], href)
+			}
+			if len(got["dir"]) != 1 || got.Get("dir") != "asc" {
+				t.Errorf("SECURITY: [query-carry] dir must be replaced by the next direction once, got %v (href %s)", got["dir"], href)
 			}
 		})
+	}
+}
+
+// TestDataTable_ControlBytesInQueryCarry pins the request boundary: a
+// carried search with CR/LF/NUL (the X-Gofastr-Push-State probe shape
+// from battery/admin) must not blow up the render — the anchor policy
+// refuses %0D/%0A in every href this framework writes, so the adapter
+// scrubs the control bytes from the carry before the primitive builds
+// the sort anchors, and the page renders with the scrubbed search.
+func TestDataTable_ControlBytesInQueryCarry(t *testing.T) {
+	t.Parallel()
+	h := string(ui.DataTable(ui.DataTableConfig{
+		Columns: []ui.Column{{Key: "title", Header: "Title", Sortable: true}},
+		Rows:    []ui.Row{{Cells: map[string]render.HTML{"title": render.Text("x")}}},
+		Query: url.Values{
+			"q": {"ev\r\nSet-Cookie: pwn=1\r\n\x00tail"},
+		},
+	}))
+	const needle = `<a class="ui-data-table__sort" href="`
+	i := strings.Index(h, needle)
+	if i < 0 {
+		t.Fatalf("SECURITY: [query-c0] no sort anchor rendered for a hostile carry:\n%s", truncate(h, 300))
+	}
+	rest := h[i+len(needle):]
+	href := rest[:strings.IndexByte(rest, '"')]
+	for _, bad := range []string{"%0D", "%0A", "%00", "\r", "\n", "\x00"} {
+		if strings.Contains(href, bad) {
+			t.Errorf("SECURITY: [query-c0] href %q carries control-byte escape %q", href, bad)
+		}
+	}
+	if want := "q=evSet-Cookie%3A+pwn%3D1tail"; !strings.Contains(href, want) {
+		t.Errorf("SECURITY: [query-c0] scrubbed search must survive the carry; want %q in %q", want, href)
 	}
 }

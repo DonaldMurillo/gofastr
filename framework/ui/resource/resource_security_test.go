@@ -9,15 +9,16 @@ import (
 	appui "github.com/DonaldMurillo/gofastr/core-ui/app"
 )
 
-// TestListCarryQueryKeepsFmtVerbs pins the production carry builder itself
-// (resource.go table(): carry = QueryEscape'd search/facets off the query
-// string, then SortHrefPattern = "?" + carry + "sort=%s&dir=%s" and
-// Pagination HrefPattern = "?" + carry + "p=%d"). A request-derived value
-// like ?q=a%26b must never inject fmt directives into those Sprintf
-// patterns: today Encode()'s own %XX triples make fmt parse %26 as
-// width+verb, so the sort verbs misalign, the page verb reports
-// %!d(MISSING), and every sort/pagination link on the page navigates to a
-// corrupted URL (silent filter/state loss on the CRUD list surface).
+// TestListCarryQueryKeepsFmtVerbs pins the production carry builders
+// themselves (resource.go table(): Query = the search and active facets
+// as url.Values, handed to the typed DataTable sort props, and the
+// pagination HrefPattern = "?" + Query.Encode() + "&p=%d"). A
+// request-derived value like ?q=a%26b must never corrupt those hrefs:
+// the sort anchors are built by the primitive through net/url, and the
+// pager pattern is substituted by pagination's strings.Replace, never
+// fmt — Encode()'s own %XX triples would read as flag/width/verb to
+// Sprintf and every link on the page would navigate to a corrupted URL
+// (silent filter/state loss on the CRUD list surface).
 func TestListCarryQueryKeepsFmtVerbs(t *testing.T) {
 	for _, tc := range []struct{ name, raw string }{
 		{"search-amp", "/orders?q=a%26b"},
