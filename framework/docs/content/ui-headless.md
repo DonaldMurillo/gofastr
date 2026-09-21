@@ -145,6 +145,20 @@ the same anchors then carry the RPC contract beside their hrefs,
 exactly as the pager's do. `Pagination` still requires one; that
 stays as it is until the pager moves onto a `Table`'s footer slot.
 
+What a reader is told after an island sort is composed on the server,
+never in script. `TableProps.Summary` (and `ui.DataTableConfig.Summary`,
+which passes it through) is the caller's sentence about the result
+window, "Showing 8 of 10", because only the caller knows the total.
+The primitive prefixes the sort when `SortBy` names a column, from
+three `Strings` fields: `TableSortedBy` ("Sorted by {column},
+{direction}", the column named by its `Header` or its `Key`),
+`SortAscending` ("ascending") and `SortDescending` ("descending"),
+bridged by `ui.StringsFor` to `i18nui.KeyTableSortedBy`,
+`KeyTableDirAscending` and `KeyTableDirDescending`. The result lands in
+`data-hui-table-announcement` on the root, and the behaviour module
+copies it into the table's status after the swap; a table with no sort
+and no `Summary` renders no announcement at all.
+
 Every href a component writes goes through the framework's anchor
 policy, `urlsafe.CleanAnchor`: a `Button` whose href is rejected
 renders the disabled-link posture; a form action, a dismiss href and
