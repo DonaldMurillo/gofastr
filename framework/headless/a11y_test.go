@@ -128,6 +128,54 @@ func TestPaginationIsNavigationWithACurrentPage(t *testing.T) {
 	}
 }
 
+// The explicit roles look redundant on a displayed <table> and are
+// not: a cards collapse sets display:block on the table's elements,
+// and a table element displayed as a block loses its implicit table
+// semantics in Chromium and WebKit. The roles are what keep a
+// collapsed table a table for assistive tech, and scope="col" is
+// what ties each header to its column. Survey 2026-09-20 §4: nothing
+// in the repo asserted these directly — they arrived from
+// core-ui/html and were pinned only by meridian's axe runs.
+func TestTableIsATableWithScopedColumnHeaders(t *testing.T) {
+	got := Table(TableProps{
+		Caption: "Applications",
+		Columns: []Column{{Key: "name", Header: "Name", Sortable: true}, {Key: "env", Header: "Environment"}},
+		Rows:    []Row{{Cells: map[string]render.HTML{"name": render.Text("blog"), "env": render.Text("production")}}},
+	}, nil)
+	// Two substrings bind every role to its element: the head with
+	// both headers scoped, and the body row with both cells.
+	has(t, got, `<table role="table"><caption id="table-applications-caption">Applications</caption>`+
+		`<thead role="rowgroup"><tr role="row"><th aria-sort="none" role="columnheader" scope="col"><a href="?dir=asc&amp;sort=name">Name</a></th>`+
+		`<th role="columnheader" scope="col">Environment</th></tr></thead>`,
+		"the head lost a role, a scope, or the caption that names the table")
+	has(t, got, `<tbody role="rowgroup"><tr role="row"><td data-label="Name" role="cell">blog</td><td data-label="Environment" role="cell">production</td></tr></tbody></table>`,
+		"the body lost a role or a cell's label")
+}
+
+// The scroll region is keyboard-reachable (WCAG 2.1.1: a region that
+// can only be scrolled with a mouse fails it, and axe reports
+// scrollable-region-focusable) and, when the table has a caption,
+// named by it: the focus stop announces what it is. tabindex is
+// always 0 — the server cannot know whether this table overflows at
+// the reader's width, so the region is reachable before it scrolls.
+// Adrian Roselli's responsive-table pattern.
+func TestTableScrollRegionIsFocusableAndNamedByItsCaption(t *testing.T) {
+	got := Table(TableProps{ID: "apps", Caption: "Applications",
+		Columns: []Column{{Key: "name", Header: "Name"}},
+		Rows:    []Row{{Cells: map[string]render.HTML{"name": render.Text("blog")}}},
+	}, nil)
+	// One substring binds the three attributes to the one element
+	// that wraps the table, and the caption's id to the name that
+	// points at it: attributes render sorted, so the shape is exact.
+	has(t, got, `<div aria-labelledby="apps-caption" role="region" tabindex="0"><table role="table"><caption id="apps-caption">Applications</caption>`,
+		"the scroll region does not carry focus and the caption's name on the one element that wraps the table")
+
+	unnamed := Table(TableProps{
+		Columns: []Column{{Key: "name", Header: "Name"}}}, nil)
+	hasNot(t, unnamed, "aria-labelledby", "a region with no caption carried a name pointing at nothing")
+	has(t, unnamed, `<div role="region" tabindex="0"><table role="table">`, "the unnamed region is not the element wrapping the table")
+}
+
 func TestStepsSayWhichStepIsCurrent(t *testing.T) {
 	got := Steps(StepsProps{Labels: []string{"Account", "Plan", "Pay"}, Current: 2}, nil)
 	has(t, got, `aria-current=`, "the current step is not marked")

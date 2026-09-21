@@ -135,6 +135,16 @@ summary. A non-2xx lands in the signal as `{ok:false, status, text}`
 and renders nothing, so it is for transport and server errors, never
 for validation.
 
+A `Table`'s Island is optional too, for the opposite reason a Form's
+is: the URL is the truth for a list. A list screen renders plain sort
+anchors that work with no script and that the client router
+intercepts when script is present — the sort changes the address bar
+because the address bar is where a list's state lives — and the
+Island is for an embedded table whose sort must not change the URL:
+the same anchors then carry the RPC contract beside their hrefs,
+exactly as the pager's do. `Pagination` still requires one; that
+stays as it is until the pager moves onto a `Table`'s footer slot.
+
 Every href a component writes goes through the framework's anchor
 policy, `urlsafe.CleanAnchor`: a `Button` whose href is rejected
 renders the disabled-link posture; a form action, a dismiss href and
@@ -290,7 +300,7 @@ Button, Field, FieldRow, ConditionalField, Input, Textarea, Select,
 Password, Color, Choice, Switch, Group, Form, InputGroup, FileUpload,
 ValidationSummary, Card, Stack, Cluster, Grid, Container, Section,
 Divider, Spacer, Spinner, Skeleton, Alert, SystemBanner, Badge, Tag,
-Toolbar, ToolbarGroup, ToolbarSpacer, ToolbarSearch, Pagination, Steps,
+Toolbar, ToolbarGroup, ToolbarSpacer, ToolbarSearch, Pagination, Table, Steps,
 Timeline, OptimisticAction and ToggleAction.
 
 ## The behaviour module

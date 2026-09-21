@@ -87,6 +87,11 @@ var stringsKeys = map[string]i18nui.Key{
 	"LightboxPrevious":    i18nui.KeyLightboxPrev,
 	"LightboxNext":        i18nui.KeyLightboxNext,
 	"LightboxDownload":    i18nui.KeyLightboxDownload,
+
+	// Table's sort control on a column with no visible header. The
+	// key is the one ui.DataTable already resolves for the same
+	// purpose, and the English here is the catalog's own.
+	"TableSortBy": i18nui.KeyTableSortBy,
 }
 
 // StringsFor resolves a headless.Strings from the request's context:
