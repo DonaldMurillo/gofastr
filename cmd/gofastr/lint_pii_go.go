@@ -42,8 +42,8 @@ func lintGoSourcePII(rel string, body []byte) []LintFinding {
 	}
 	var out []LintFinding
 	for _, call := range goEntityCalls(file) {
-		decl, err := packEntityDeclFromCall(call)
-		if err != nil || decl.Name == "" {
+		decl, _ := packEntityDeclFromCall(call)
+		if decl.Name == "" {
 			continue // not an entity registration we can read
 		}
 		bp := Blueprint{Entities: []framework.EntityDeclaration{decl}}

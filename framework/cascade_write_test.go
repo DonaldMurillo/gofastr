@@ -33,6 +33,7 @@ func cascadeTestApp(t *testing.T, db *sql.DB) *App {
 			{Name: "order_id", Type: schema.String, Required: true},
 			{Name: "name", Type: schema.String, Required: true},
 			{Name: "price", Type: schema.Int, Required: true},
+			{Name: "unit_price", Type: schema.Int},
 		},
 		Relations: []entity.Relation{
 			entity.BelongsTo("order", "orders", "order_id"),
@@ -83,7 +84,7 @@ func seedCascadeDB(t *testing.T, db *sql.DB) {
 	t.Helper()
 	stmts := []string{
 		`CREATE TABLE orders (id TEXT PRIMARY KEY, customer_name TEXT NOT NULL, status TEXT)`,
-		`CREATE TABLE order_items (id TEXT PRIMARY KEY, order_id TEXT NOT NULL, name TEXT NOT NULL, price INTEGER NOT NULL)`,
+		`CREATE TABLE order_items (id TEXT PRIMARY KEY, order_id TEXT NOT NULL, name TEXT NOT NULL, price INTEGER NOT NULL, unit_price INTEGER)`,
 		`CREATE TABLE users (id TEXT PRIMARY KEY, name TEXT NOT NULL)`,
 		`CREATE TABLE profiles (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, bio TEXT NOT NULL)`,
 		`CREATE TABLE articles (id TEXT PRIMARY KEY, title TEXT NOT NULL, author_id TEXT NOT NULL)`,
@@ -421,6 +422,68 @@ func TestCascadeWrite_ManyToMany_ExistingIDs_Security(t *testing.T) {
 	})
 }
 
+// TestCascadeWrite_ManyToMany_CrossTenant_Rejection asserts that linking an existing ManyToMany
+// record that belongs to another tenant/scope returns 404 and prevents mutation.
+func TestCascadeWrite_ManyToMany_CrossTenant_Rejection(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
+		app := NewApp(WithDB(db), WithoutDefaultMiddleware())
+		app.Entity("tags_scoped", entity.EntityConfig{
+			Table: "tags_scoped",
+			Scope: &entity.ScopeConfig{MultiTenant: true, TenantField: "tenant_id"},
+			Fields: []schema.Field{
+				{Name: "id", Type: schema.String},
+				{Name: "name", Type: schema.String},
+				{Name: "tenant_id", Type: schema.String},
+			},
+		}.WithTimestamps(false))
+
+		app.Entity("posts_scoped", entity.EntityConfig{
+			Table: "posts_scoped",
+			Scope: &entity.ScopeConfig{MultiTenant: true, TenantField: "tenant_id"},
+			Fields: []schema.Field{
+				{Name: "id", Type: schema.String},
+				{Name: "title", Type: schema.String},
+				{Name: "tenant_id", Type: schema.String},
+			},
+			Relations: []entity.Relation{
+				entity.ManyToMany("tags", "tags_scoped", "post_tags_scoped", "post_id", "tag_id").WithCascadeWrite(true),
+			},
+		}.WithTimestamps(false))
+
+		_, err := db.Exec(`
+			CREATE TABLE posts_scoped (id TEXT PRIMARY KEY, title TEXT, tenant_id TEXT);
+			CREATE TABLE tags_scoped (id TEXT PRIMARY KEY, name TEXT, tenant_id TEXT);
+			CREATE TABLE post_tags_scoped (post_id TEXT NOT NULL, tag_id TEXT NOT NULL, PRIMARY KEY (post_id, tag_id));
+		`)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		// Insert tag belonging to tenant B
+		if _, err := db.Exec("INSERT INTO tags_scoped(id, name, tenant_id) VALUES ('tag-tenant-b', 'secret-tag', 'tenant-b')"); err != nil {
+			t.Fatal(err)
+		}
+
+		// Tenant A attempts to link tenant B's tag
+		ta := TestHarness(t, app).AsUser(struct{ ID string }{ID: "u1"}).AsTenant("tenant-a")
+		payload := map[string]any{
+			"id":    "p-tenant-a",
+			"title": "Tenant A Post",
+			"tags":  []any{"tag-tenant-b"},
+		}
+		resp := ta.Post("/posts_scoped", payload)
+		resp.AssertStatus(t, http.StatusNotFound)
+
+		// Verify no article was created, no pivot was created, and tag was not modified
+		var postCount, pivotCount int
+		db.QueryRow("SELECT COUNT(*) FROM posts_scoped").Scan(&postCount)
+		db.QueryRow("SELECT COUNT(*) FROM post_tags_scoped").Scan(&pivotCount)
+		if postCount != 0 || pivotCount != 0 {
+			t.Fatalf("expected 0 posts and 0 pivots, got %d posts, %d pivots", postCount, pivotCount)
+		}
+	})
+}
+
 // TestCascadeWrite_ManyToMany_JsonNumber asserts that json.Number IDs are handled gracefully in-process.
 func TestCascadeWrite_ManyToMany_JsonNumber(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
@@ -457,7 +520,29 @@ func TestCascadeWrite_ManyToMany_JsonNumber(t *testing.T) {
 func TestCascadeWrite_ExplicitParentID(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
 		seedCascadeDB(t, db)
-		app := cascadeTestApp(t, db)
+		app := NewApp(WithDB(db), WithoutDefaultMiddleware())
+		app.Entity("orders", entity.EntityConfig{
+			Table: "orders",
+			Fields: []schema.Field{
+				{Name: "id", Type: schema.String},
+				{Name: "customer_name", Type: schema.String, Required: true},
+				{Name: "status", Type: schema.String, Default: "pending"},
+			},
+			Relations: []entity.Relation{
+				entity.HasMany("items", "order_items", "order_id").WithCascadeWrite(true),
+			},
+		}.WithTimestamps(false))
+		app.Entity("order_items", entity.EntityConfig{
+			Table: "order_items",
+			Fields: []schema.Field{
+				{Name: "order_id", Type: schema.String, Required: true},
+				{Name: "name", Type: schema.String, Required: true},
+				{Name: "price", Type: schema.Int, Required: true},
+			},
+			Relations: []entity.Relation{
+				entity.BelongsTo("order", "orders", "order_id"),
+			},
+		}.WithTimestamps(false))
 		ta := TestHarness(t, app).AsUser(struct{ ID string }{ID: "u1"})
 
 		payload := map[string]any{
@@ -475,8 +560,8 @@ func TestCascadeWrite_ExplicitParentID(t *testing.T) {
 		}
 		json.Unmarshal([]byte(resp.Body()), &res)
 		createdID, _ := res.Data["id"].(string)
-		if createdID == "" {
-			t.Fatalf("expected createdID in response, got %v", res.Data)
+		if createdID != "ord-explicit-1" {
+			t.Fatalf("expected explicit ID %q, got %q", "ord-explicit-1", createdID)
 		}
 
 		var itemCount int
@@ -577,11 +662,19 @@ func TestCascadeWrite_CamelCase_NestedFields(t *testing.T) {
 		payload := map[string]any{
 			"customer_name": "Camel Customer",
 			"items": []any{
-				map[string]any{"name": "Widget", "price": 100},
+				map[string]any{"name": "Widget", "price": 100, "unitPrice": 42},
 			},
 		}
 		resp := ta.Post("/orders", payload)
 		resp.AssertStatus(t, http.StatusCreated)
+
+		var unitPrice int
+		if err := db.QueryRow("SELECT unit_price FROM order_items WHERE name = 'Widget'").Scan(&unitPrice); err != nil {
+			t.Fatalf("query unit_price: %v", err)
+		}
+		if unitPrice != 42 {
+			t.Fatalf("expected unit_price=42 from camelCase unitPrice, got %d", unitPrice)
+		}
 	})
 }
 

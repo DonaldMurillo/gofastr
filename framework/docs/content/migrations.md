@@ -346,6 +346,18 @@ The schema snapshot file records the declarative state migrations have been gene
     "posts": [
       "CREATE INDEX idx_posts_title ON posts(title)"
     ]
+  },
+  "views": {
+    "published_posts": {
+      "up": "CREATE VIEW published_posts AS SELECT ...",
+      "down": "DROP VIEW IF EXISTS published_posts"
+    }
+  },
+  "routines": {
+    "refresh_post_stats": {
+      "up": "CREATE PROCEDURE refresh_post_stats() ...",
+      "down": "DROP PROCEDURE IF EXISTS refresh_post_stats"
+    }
   }
 }
 ```
@@ -353,6 +365,8 @@ The schema snapshot file records the declarative state migrations have been gene
 - `tables`: Map of table names to column-name-to-SQL-type maps, used for structural column diffing.
 - `table_ddl`: Full table creation DDL for each table, used during rollback (`Down` migrations) to accurately recreate dropped tables with exact constraints.
 - `indices`: Map of table names to arrays of index DDL statements (`CREATE [UNIQUE] INDEX ...`). The diff engine compares these to detect new, modified, or dropped indices without relying on live database index introspection.
+- `views`: Map of view names to `RoutineDef` objects (`up` and `down` DDL strings), tracking view definitions so modified or dropped views can be migrated and rolled back cleanly.
+- `routines`: Map of routine/stored procedure names to `RoutineDef` objects (`up` and `down` DDL strings), tracking stored routines across migration lifecycles.
 
 Flags: `--from=<blueprint.yml>` (required), `--migrations=<dir>`
 (default `migrations`), `--snapshot=<path>` (default

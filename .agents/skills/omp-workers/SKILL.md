@@ -28,11 +28,13 @@ Write each worker a self-contained brief, launch it headless in the background, 
    By default, run commands sandboxed. When dispatching `omp`, external LLM API network calls and writes to `~/.omp/` SQLite databases require unsandboxed execution; only use `BypassSandbox: true` and `--auto-approve` when operating on trusted repositories and tasks where the user has explicitly requested or approved external worker dispatch.
 
    ```sh
-   omp -p --auto-approve --max-time 5400 \
-     --cwd /path/to/repo \
-     @/path/to/scratch/brief-<name>.md \
-     > /path/to/scratch/omp-<name>.log 2>&1; \
-   echo "OMP_EXIT=$?" >> /path/to/scratch/omp-<name>.log
+   (
+     omp -p --auto-approve --max-time 5400 \
+       --cwd /path/to/repo \
+       @/path/to/scratch/brief-<name>.md \
+       > /path/to/scratch/omp-<name>.log 2>&1
+     echo "OMP_EXIT=$?" >> /path/to/scratch/omp-<name>.log
+   ) &
    ```
 
    Flag notes (verified against omp v18.x):

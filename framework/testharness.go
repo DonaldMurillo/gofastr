@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
+	"github.com/DonaldMurillo/gofastr/framework/tenant"
 )
 
 // TestApp wraps an App for in-memory testing (no real HTTP listener).
@@ -17,6 +18,7 @@ type TestApp struct {
 	App    *App
 	router http.Handler
 	user   any // set via AsUser; nil = anonymous
+	tenant any // set via AsTenant; nil = no tenant
 }
 
 // AsUser returns a copy of the harness whose Get/Post/Put/Delete/Request
@@ -32,7 +34,12 @@ type TestApp struct {
 //	ta := TestHarness(t, app).AsUser(struct{ ID string }{ID: "u1"})
 //	ta.Post("/posts", body).AssertStatus(t, http.StatusCreated)
 func (ta *TestApp) AsUser(user any) *TestApp {
-	return &TestApp{App: ta.App, router: ta.router, user: user}
+	return &TestApp{App: ta.App, router: ta.router, user: user, tenant: ta.tenant}
+}
+
+// AsTenant returns a copy of the harness whose requests carry a tenant in context.
+func (ta *TestApp) AsTenant(t any) *TestApp {
+	return &TestApp{App: ta.App, router: ta.router, user: ta.user, tenant: t}
 }
 
 // TestHarness creates an in-memory test harness around an App.
@@ -84,6 +91,12 @@ func (ta *TestApp) Request(method, path string, body io.Reader) *TestRequest {
 	if ta.user != nil {
 		req = req.WithContext(handler.SetUser(req.Context(), ta.user))
 	}
+	if ta.tenant != nil {
+		req = req.WithContext(handler.SetTenant(req.Context(), ta.tenant))
+		if tenantStr, ok := ta.tenant.(string); ok {
+			req = req.WithContext(tenant.SetTenantID(req.Context(), tenantStr))
+		}
+	}
 	return &TestRequest{
 		testApp: ta,
 		request: req,
@@ -110,6 +123,12 @@ func (ta *TestApp) doRequest(method, path string, body any, headers map[string]s
 	}
 	if ta.user != nil {
 		req = req.WithContext(handler.SetUser(req.Context(), ta.user))
+	}
+	if ta.tenant != nil {
+		req = req.WithContext(handler.SetTenant(req.Context(), ta.tenant))
+		if tenantStr, ok := ta.tenant.(string); ok {
+			req = req.WithContext(tenant.SetTenantID(req.Context(), tenantStr))
+		}
 	}
 
 	rec := httptest.NewRecorder()

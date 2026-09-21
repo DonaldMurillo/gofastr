@@ -357,3 +357,45 @@ func TestAuditLintFlagsGoSourcePII(t *testing.T) {
 	}
 	mustNotHaveRule(t, gotScoped, "unscoped-pii")
 }
+
+func TestLintGoSourcePII_InvalidOnDeleteDoesNotSuppressPII(t *testing.T) {
+	src := `package entities
+
+import (
+	"github.com/DonaldMurillo/gofastr/framework"
+	"github.com/DonaldMurillo/gofastr/framework/entity"
+	"github.com/DonaldMurillo/gofastr/framework/schema"
+)
+
+func registerCustomers(app *framework.App) {
+	app.Entity("customers", entity.EntityConfig{
+		Table: "customers",
+		Fields: []schema.Field{
+			{Name: "id", Type: schema.String},
+			{Name: "email", Type: schema.String},
+		},
+		Relations: []entity.Relation{
+			{
+				Type:     entity.RelManyToOne,
+				Name:     "company",
+				Entity:   "companies",
+				OnDelete: entity.OnDeleteAction("UnsupportedAction"),
+			},
+		},
+	})
+}
+`
+	findings := lintGoSourcePII("entities/customers.go", []byte(src))
+	found := false
+	for _, f := range findings {
+		if f.Rule == "unscoped-pii" {
+			found = true
+			if !strings.Contains(f.Message, "customers") || !strings.Contains(f.Message, "email") {
+				t.Fatalf("unexpected finding message: %s", f.Message)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("expected unscoped-pii finding despite invalid OnDelete action, got none")
+	}
+}
