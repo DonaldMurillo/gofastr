@@ -169,18 +169,37 @@ func TestDataTable_ColumnAlignInjection(t *testing.T) {
 
 func TestDataTable_PaginationLinksXSS(t *testing.T) {
 	t.Parallel()
-	// We can't easily construct a pagination.Config with XSS in the URL
-	// since the URL is passed directly. Test that DataTable renders
-	// without error when a pagination config is present.
-	t.Logf("NOTE: [datatable-pagination-xss] pagination links are caller-controlled; framework renders them via core-ui/patterns/pagination")
-	// Verify basic rendering with a pagination-like setup doesn't panic.
-	func() {
-		ui.DataTable(ui.DataTableConfig{
-			Columns: []ui.Column{{Key: "x", Header: "X"}},
-			Rows:    []ui.Row{{Cells: map[string]render.HTML{"x": render.Text("v")}}},
-			// No pagination set, just verify no crash
-		})
-	}()
+	// The typed pager builds every href through net/url from the
+	// carry, so request-derived values can only land percent-encoded,
+	// and control bytes are scrubbed before the anchor policy reads
+	// the URL. A hostile carry must not inject markup or a raw
+	// control byte into any href on the page.
+	h := ui.DataTable(ui.DataTableConfig{
+		Columns: []ui.Column{{Key: "x", Header: "X"}},
+		Rows:    []ui.Row{{Cells: map[string]render.HTML{"x": render.Text("v")}}},
+		Pagination: &ui.PaginationConfig{
+			Pages: 2, Page: 1,
+			Query: url.Values{
+				"q":  {`"><script>alert(1)</script>`},
+				"cr": {"a\r\nb"},
+				"p":  {"9"},
+			},
+		},
+	})
+	s := string(h)
+	if strings.Contains(s, "<script>alert(1)</script>") {
+		t.Errorf("SECURITY: [datatable-pagination-xss] hostile query value injected into output:\n  %s", truncate(s, 300))
+	}
+	if strings.ContainsAny(s, "\r\n") {
+		t.Errorf("SECURITY: [datatable-pagination-xss] a control byte reached the markup:\n  %s", truncate(s, 300))
+	}
+	// The carried p=9 is replaced, not kept beside the anchor's own.
+	if strings.Contains(s, "p=9") {
+		t.Errorf("SECURITY: [datatable-pagination-xss] the carried page value survived beside the replaced one:\n  %s", truncate(s, 300))
+	}
+	if !strings.Contains(s, "q=%22%3E%3Cscript%3E") {
+		t.Logf("NOTE: [datatable-pagination-xss] hostile value percent-encoded: %s", truncate(s, 300))
+	}
 }
 
 func TestDataTable_EmptyStateMessageXSS(t *testing.T) {

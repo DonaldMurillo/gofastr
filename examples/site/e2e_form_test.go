@@ -17,15 +17,18 @@ import (
 // equivalent page renders standalone FormField error demos.
 //
 // DROPPED: TestE2E_Pagination_IslandMode_NoFullReload
-// The site's /components/pagination page renders a static pagination
-// component (no island mode, no IslandSignal/IslandEndpoint wired). The
-// website's island RPC at /islands/pagination-demo/page has no equivalent
-// registered route in site. Dropping this sub-test rather than faking it.
+// The site's /components/pagination page renders the plain pager: the
+// gallery's ui.PaginationConfig leaves the Island zero, so the page
+// anchors are plain navigations and no island RPC exists to keep
+// whole. The website's island RPC at /islands/pagination-demo/page has
+// no equivalent registered route in site. Dropping this sub-test
+// rather than faking it.
 //
 // SOFTENED: TestE2E_Pagination_PageLinkPointsAtCorrectURL
-// The site's pagination demo uses HrefPattern "?page=%d" (not "?p=%d"),
-// so the assertion is updated to match what the site actually renders.
-// The "aria-current" link test still holds; the href check accepts any
+// The site's pagination demo names its page parameter "page"
+// (ui.PaginationConfig{PageParam: "page"}), not "p", so the assertion
+// is updated to match what the site actually renders. The
+// "aria-current" link test still holds; the href check accepts any
 // "?page=" prefix.
 
 func TestE2E_Pagination_FirstPagePrevDisabled(t *testing.T) {
@@ -33,13 +36,14 @@ func TestE2E_Pagination_FirstPagePrevDisabled(t *testing.T) {
 	ctx := newE2EBrowserCtx(t)
 
 	// The site renders a static demo that includes an atFirst variant
-	// (Current=1 in the catalog Demo). The prev/boundary item should
-	// have the is-disabled class.
+	// (Page 1 in the catalog Demo). The pager is ui.Pagination now: a
+	// disabled boundary is the anchor itself saying aria-disabled,
+	// not a span inside an .is-disabled item.
 	var disabledCount int
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/pagination"),
 		pageReady(),
-		chromedp.Evaluate(`document.querySelectorAll('.pagination .is-disabled [aria-disabled="true"]').length`, &disabledCount),
+		chromedp.Evaluate(`document.querySelectorAll('.pagination a[aria-disabled="true"]').length`, &disabledCount),
 	)
 	if err != nil {
 		t.Fatalf("chromedp: %v", err)
@@ -53,7 +57,7 @@ func TestE2E_Pagination_PageLinkPointsAtCorrectURL(t *testing.T) {
 	base := startE2EServer(t)
 	ctx := newE2EBrowserCtx(t)
 
-	// The site's pagination demo uses HrefPattern "?page=%d".
+	// The demo's typed config: ui.PaginationConfig{PageParam: "page"}.
 	var hrefs []string
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/pagination"),

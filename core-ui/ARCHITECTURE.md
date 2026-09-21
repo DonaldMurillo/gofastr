@@ -1041,7 +1041,7 @@ completeness test: when it can't, you found the gap.
    - `app.ParamSetter`: `SetParams(map[string]string)` receives route params from dynamic paths
    (`Screen` itself is a struct value the router holds, not the interface you implement on your component.)
 2. Inside Render, compose `core-ui/html` (1:1 tag primitives) +
-   `core-ui/patterns` (accordion, tabs, pagination…) + `framework/ui`
+   `core-ui/patterns` (accordion, tabs…) + `framework/ui`
    (semantic components like PageHeader, FormField, DataTable).
 3. Anything that changes state in response to a user action → wrap it in
    an **island** (see below).
@@ -1481,11 +1481,15 @@ by building the `ComponentSheet` directly and asserting on bytes.
 
 Every package under `core-ui/patterns/*` (accordion, breadcrumbs,
 combobox, disclosure, infinitescroll, multiselect, nestedlist,
-pagination, progress, skeleton, sortablelist, tabs, tree) uses
+progress, skeleton, sortablelist, tabs, tree) uses
 `registry.RegisterStyle` and wraps its top-level rendered element
 with `Style.WrapHTML(...)`. Class selectors stay class-based
 (`.accordion`, `.tabs`, `.nested-list`); the marker only signals
 to the auto-loader "fetch this stylesheet". No host setup required.
+(The pagination pattern is gone: the pager lives in `framework/ui`
+as `ui.Pagination`, rendered through the `headless.Pagination`
+primitive under the same style seam — `ui-data-table`'s footer
+carries it.)
 
 **Legacy `BaseCSS() string` exports are forbidden**: host apps used
 to import each pattern and concatenate `BaseCSS()` into their custom
@@ -1601,10 +1605,11 @@ keys over an open viewer, retained through the module's cold-cache
 fetch exactly as they were when the kernel's table carried them.
 The headless module's own table behaviour is the second client of
 that seam: its registration retains a click on
-`[data-hui-table-sort]` (an island table's sort anchor) so the first
-sort on a cold module is recorded and the swap it triggers still
-restores focus, through the same bridge, with no table name in the
-kernel.
+`[data-hui-table-sort]` (an island table's sort anchor) and on
+`[data-hui-page]` (its pager's page anchor) so the first sort or
+page turn on a cold module is recorded and the swap it triggers
+still restores focus, through the same bridge, with no table name in
+the kernel.
 
 The lightbox's layer split is the seam's working example: the viewer's anatomy
 is `framework/headless.LightboxViewer` (structure, roles, and
@@ -1696,8 +1701,10 @@ core-ui/
                  (Div, Button, Heading, Form, Table…)
   patterns/    : composed UI patterns (not 1:1 with HTML):
                  accordion, breadcrumbs, combobox, disclosure,
-                 infinitescroll, multiselect, nestedlist, pagination,
-                 progress, scrollspy, skeleton, sortablelist, tabs, tree
+                 infinitescroll, multiselect, nestedlist, progress,
+                 scrollspy, skeleton, sortablelist, tabs, tree
+                 (the pagination pattern is retired; the pager is
+                 framework/ui.Pagination over headless.Pagination)
   component/   : Component / InteractiveComponent interfaces (the contract
                  every renderable satisfies)
   interactive/ : declarative data-fui-* attribute builders (RPC, signal
@@ -1762,7 +1769,7 @@ framework/
 
 ## Hard rules
 
-1. **Never** treat in-page state changes as routes. No `<a href="?p=2">` for pagination.
+1. **Never** treat in-page state changes as routes: no `<a href="?p=2">` for a pager embedded in a region — that is an island. A list screen's own page, sort and filter state lives in the URL, and its anchors are navigations the client router intercepts.
 2. **Never** re-implement pagination/sort/filter logic in JS. Server-side, always.
 3. **Never** make user-action-driven updates flow through SSE. SSE is for server-pushed updates only. RPC is for user-initiated updates.
 4. **Never** introduce a hard refresh as a fix. If you find yourself doing `location.href = …`, stop.

@@ -1608,6 +1608,117 @@ func TestE2E_IslandSortFallsBackToTheScrollRegion(t *testing.T) {
 	}
 }
 
+// pagerFixture renders one island table with a real pager in its
+// footer slot, the way a list screen's island answers a page turn.
+// The pager shares the table's island, so the page anchors carry the
+// RPC contract beside their hrefs.
+func pagerFixture(t *testing.T, page, pages int, summary string) render.HTML {
+	t.Helper()
+	return Table(TableProps{
+		Path:    "/",
+		Columns: tableCols,
+		SortBy:  "name", SortDir: SortAsc,
+		Island:  Island{Endpoint: "/__hui/table", Signal: "apps"},
+		Rows:    []Row{{ID: "app-1", Cells: map[string]render.HTML{"name": render.Text("blog"), "env": render.Text("production")}}},
+		Summary: summary,
+		Footer: Pagination(PaginationProps{Page: page, Pages: pages,
+			AriaLabel: "Applications", Island: Island{Endpoint: "/__hui/table", Signal: "apps"}}, nil),
+	}, nil)
+}
+
+// The island page turn, end to end. A click on the old pager's page-2
+// anchor sends the island request, the runtime swaps the region's
+// HTML, and the module — armed by the kernel on the inserted subtree —
+// returns focus to the page-2 anchor in the NEW pager (the element
+// found after the swap, connected, not the detached one, not <body>)
+// and the status carries the endpoint's sentence. The URL is the one
+// the island pushed.
+func TestE2E_IslandPageTurnRestoresFocusOnThePageAnchor(t *testing.T) {
+	b := startBehaviorServer(t,
+		`<div id="isle" data-fui-signal="apps" data-fui-signal-mode="html">`+
+			string(pagerFixture(t, 1, 3, ""))+`</div>`,
+		func(mux *http.ServeMux) {
+			mux.HandleFunc("/__hui/table", func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "text/html")
+				fmt.Fprint(w, string(pagerFixture(t, 2, 3, "PAGE TWO SENTINEL")))
+			})
+		})
+	ctx := behaviorPage(t, b)
+	if !pollTrue(ctx, moduleLoadedExpr) {
+		t.Fatal("the module never loaded")
+	}
+	if err := chromedp.Run(ctx,
+		chromedp.Click(`#isle [data-hui-page="2"]`, chromedp.ByQuery),
+	); err != nil {
+		t.Fatalf("clicking the page-2 anchor: %v", err)
+	}
+	// The swap settles FIRST: the answer's pager marks page 2 current
+	// and carries the SENTINEL summary the initial render does not.
+	if !pollTrue(ctx, `(() => {
+		const a = document.querySelector('#isle [data-hui-page="2"]');
+		return !!a && a.getAttribute('aria-current') === 'page' &&
+			document.querySelector('#isle [data-hui-table]').getAttribute('data-hui-table-announcement').includes('PAGE TWO SENTINEL');
+	})()`) {
+		t.Fatal("the region was never swapped for the endpoint's answer")
+	}
+	const focused = `(() => {
+		const el = document.querySelector('#isle [data-hui-page="2"]');
+		return !!el && document.activeElement === el && el.isConnected;
+	})()`
+	if !pollTrue(ctx, focused) {
+		t.Fatal("focus did not return to the page-2 anchor in the swapped-in pager")
+	}
+	if !pollTrue(ctx, `document.querySelector('#isle [data-hui-table-status]').textContent.includes('PAGE TWO SENTINEL')`) {
+		var status string
+		chromedp.Run(ctx, chromedp.Evaluate(`document.querySelector('#isle [data-hui-table-status]').textContent`, &status))
+		t.Fatalf("the status does not carry the endpoint's sentence, got %q", status)
+	}
+	var search string
+	if err := chromedp.Run(ctx, chromedp.Evaluate(`location.search`, &search)); err != nil {
+		t.Fatal(err)
+	}
+	if search != "?p=2" {
+		t.Fatalf("the page turn did not push the anchor's URL, got %q", search)
+	}
+}
+
+// The answer may have fewer pages than the pager the reader clicked
+// (rows were deleted, a filter narrowed the result). The clicked page
+// is gone, so focus lands on the current page's anchor — the pager's
+// own marked position — rather than falling to <body>.
+func TestE2E_IslandPageTurnFallsBackToTheCurrentPage(t *testing.T) {
+	b := startBehaviorServer(t,
+		`<div id="isle" data-fui-signal="apps" data-fui-signal-mode="html">`+
+			string(pagerFixture(t, 1, 3, ""))+`</div>`,
+		func(mux *http.ServeMux) {
+			mux.HandleFunc("/__hui/table", func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "text/html")
+				fmt.Fprint(w, string(pagerFixture(t, 1, 2, "SHORT ANSWER")))
+			})
+		})
+	ctx := behaviorPage(t, b)
+	if !pollTrue(ctx, moduleLoadedExpr) {
+		t.Fatal("the module never loaded")
+	}
+	if err := chromedp.Run(ctx,
+		chromedp.Click(`#isle [data-hui-page="3"]`, chromedp.ByQuery),
+	); err != nil {
+		t.Fatalf("clicking the page-3 anchor: %v", err)
+	}
+	// The swap settles first: the answer is a two-page pager, so the
+	// page-3 anchor is gone.
+	if !pollTrue(ctx, `!document.querySelector('#isle [data-hui-page="3"]') && !!document.querySelector('#isle [data-hui-page="2"]')`) {
+		t.Fatal("the region was never swapped for the shorter answer")
+	}
+	const focused = `(() => {
+		const el = document.querySelector('#isle [aria-current="page"]');
+		return !!el && document.activeElement === el;
+	})()`
+	if !pollTrue(ctx, focused) {
+		t.Fatal("focus did not fall to the current page's anchor when the answer dropped the clicked page")
+	}
+}
+
 // A plain table's sort is a page navigation the client router owns:
 // the module records nothing (no signal hook to record against) and
 // intercepts nothing, and the URL changes the way a navigation's does.
@@ -1650,7 +1761,7 @@ func TestE2E_PlainTableSortIsTheRouters(t *testing.T) {
 		chromedp.Run(ctx, chromedp.Evaluate(`location.search`, &search))
 		t.Fatalf("the navigation never happened, got %q", search)
 	}
-	if !pollTrue(ctx, `!window.__gofastr || !window.__gofastr._huiTableSort`) {
+	if !pollTrue(ctx, `!window.__gofastr || !window.__gofastr._huiTableSwap`) {
 		t.Fatal("the module recorded a sort on a plain table: a navigation is the router's, not the module's")
 	}
 }
@@ -1713,7 +1824,7 @@ func TestE2E_FailedSortThenRefreshDoesNotRestoreFocus(t *testing.T) {
 	); err != nil {
 		t.Fatalf("clicking the sort anchor: %v", err)
 	}
-	if !pollTrue(ctx, `!!window.__gofastr._huiTableSort`) {
+	if !pollTrue(ctx, `!!window.__gofastr._huiTableSwap`) {
 		t.Fatal("the failed sort did not leave the pending record for the next-act test")
 	}
 	if err := chromedp.Run(ctx,
@@ -1764,7 +1875,8 @@ func TestE2E_ExpiredTableSortDoesNotRestoreFocus(t *testing.T) {
 	}
 	if err := chromedp.Run(ctx, chromedp.Evaluate(`(() => {
 		const table = document.querySelector('#isle [data-hui-table]');
-		window.__gofastr._huiTableSort = [
+		window.__gofastr._huiTableSwap = [
+			'data-hui-table-sort',
 			'name',
 			table.parentNode,
 			performance.now() - 30001,

@@ -43,10 +43,7 @@
   function within(root, sel) {
     const out = [];
     if (root.matches && root.matches(sel)) out.push(root);
-    if (root.querySelectorAll) {
-      const found = root.querySelectorAll(sel);
-      for (let i = 0; i < found.length; i++) out.push(found[i]);
-    }
+    if (root.querySelectorAll) out.push(...root.querySelectorAll(sel));
     return out;
   }
 
@@ -138,14 +135,14 @@
       // it: a control outside the element with form="id" belongs to
       // it, and one inside with form= pointing elsewhere does not.
       const own = [];
-      for (let i = 0; i < all.length; i++) {
-        if (all[i].form === form) own.push(all[i]);
+      for (const a of all) {
+        if (a.form === form) own.push(a);
       }
       if (own.length) return own;
     }
     const loose = [];
-    for (let i = 0; i < all.length; i++) {
-      if (!all[i].form) loose.push(all[i]);
+    for (const a of all) {
+      if (!a.form) loose.push(a);
     }
     return loose.length ? loose : all;
   }
@@ -192,15 +189,13 @@
   // control sits NOW, not which region disabled it — an inner region
   // showing inside a hidden outer one re-enables nothing.
   function syncWhenRegions(regions) {
-    for (let i = 0; i < regions.length; i++) {
-      const region = regions[i];
+    for (const region of regions) {
       const own = whenValue(watchedControls(region, region.dataset.huiWhen)) === region.dataset.huiWhenValue;
       region.hidden = !(own && !insideHiddenWhen(region));
     }
-    for (let i = 0; i < regions.length; i++) {
-      const controls = regions[i].querySelectorAll('input, select, textarea, button');
-      for (let j = 0; j < controls.length; j++) {
-        const c = controls[j];
+    for (const region of regions) {
+      const controls = region.querySelectorAll('input, select, textarea, button');
+      for (const c of controls) {
         if (insideHiddenWhen(c)) {
           if (!c.disabled) {
             c.disabled = true;
@@ -269,10 +264,10 @@
       const endpoint = btn.getAttribute('data-hui-action-endpoint');
       if (!idle || !done || !endpoint) continue;
       const spec = {
-        endpoint: endpoint,
+        endpoint,
         method: btn.getAttribute('data-hui-action-method') || 'POST',
-        idle: idle,
-        done: done,
+        idle,
+        done,
         pressed: btn.getAttribute('aria-pressed') !== null,
       };
       const group = btn.getAttribute('data-hui-action-group');
@@ -370,8 +365,7 @@
 
 
   function armDrops(root) {
-    const roots = within(root, '[data-hui-drop]');
-    for (let i = 0; i < roots.length; i++) armDrop(roots[i]);
+    for (const r of within(root, '[data-hui-drop]')) armDrop(r);
   }
 
   // ─── system banners (SystemBanner) ──────────────────────────────
@@ -383,7 +377,7 @@
   const systemDismissed = new Set();
   try {
     const stored = JSON.parse(sessionStorage.getItem(DISMISSED_KEY) || '[]');
-    for (let s = 0; s < stored.length; s++) systemDismissed.add(stored[s]);
+    for (const s of stored) systemDismissed.add(s);
   } catch (e) { /* no storage: dismissals last until the page does */ }
 
   function rememberDismissal(id) {
@@ -396,9 +390,7 @@
   }
 
   function armSystem(root) {
-    const banners = within(root, '[data-hui-system]');
-    for (let i = 0; i < banners.length; i++) {
-      const el = banners[i];
+    for (const el of within(root, '[data-hui-system]')) {
       if (el.hasAttribute('data-hui-system-offline')) {
         // The runtime owns this one. The dismissed set never applies:
         // the banner has no dismiss memory of its own, because losing
@@ -425,34 +417,39 @@
 
   // ─── table (Table) ──────────────────────────────────────────────
 
-  // An island sort is a swap: the runtime writes the region's HTML,
-  // the anchor the reader clicked is destroyed with it, and focus
-  // falls to <body> with nothing saying what changed. The click
-  // listener accepts a signal-bound table and records the clicked
-  // column's key and replacement region; when a fresh answer inserts
-  // a table in that region, armTables returns focus to the same
-  // column's anchor, or the scroll region when the answer dropped
-  // the column, and copies the sentence the server rendered into
-  // data-hui-table-announcement into the status. A failed answer
-  // inserts no table and leaves the existing focus and status alone.
+  // An island sort or page turn is a swap: the runtime writes the
+  // region's HTML, the anchor the reader clicked is destroyed with
+  // it, and focus falls to <body> with nothing saying what changed.
+  // The click listener accepts a signal-bound table and records the
+  // clicked control's identity and replacement region; when a fresh
+  // answer inserts a table in that region, armTables returns focus
+  // to the same control in that region — the same column's anchor
+  // for a sort, the same page's anchor for a page turn, the current
+  // page's anchor when the answer has fewer pages, and the scroll
+  // region when the answer dropped the control — and copies the
+  // sentence the server rendered into data-hui-table-announcement
+  // into the status. A failed answer inserts no table and leaves the
+  // existing focus and status alone.
   function armTables(root) {
-    const p = NS._huiTableSort;
+    const p = NS._huiTableSwap;
     if (!p) return;
     // Thirty seconds covers a cold module fetch and a slow answer; it
     // still prevents an old click from owning a later passive swap.
-    if (p[2] + 3e4 < performance.now()) return NS._huiTableSort = null;
+    if (p[3] + 3e4 < performance.now()) return NS._huiTableSwap = null;
     for (const x of within(root, '[data-hui-table]')) {
-      if (x.parentNode !== p[1]) continue;
-      NS._huiTableSort = null;
-      // a column key is anything a query can encode, and a key with
-      // a quote or a bracket in it must find its column like any
-      // other. The anchor the answer dropped leaves el null, and the
-      // scroll region — the table's own focusable surface — takes
-      // the focus instead.
+      if (x.parentNode !== p[2]) continue;
+      NS._huiTableSwap = null;
+      // a column key and a page number are both anything a query can
+      // encode, and one with a quote or a bracket in it must find its
+      // control like any other. The control the answer dropped leaves
+      // el null — for a page that is gone, the current page's anchor
+      // is where the reader lands — and the scroll region, the
+      // table's own focusable surface, takes the focus after that.
       let el = null;
-      for (const a of x.querySelectorAll('[data-hui-table-sort]')) {
-        if (a.getAttribute('data-hui-table-sort') === p[0]) { el = a; break; }
+      for (const a of x.querySelectorAll('[' + CSS.escape(p[0]) + ']')) {
+        if (a.getAttribute(p[0]) === p[1]) { el = a; break; }
       }
+      if (!el && p[0] === 'data-hui-page') el = x.querySelector('[aria-current="page"]');
       if (!el) el = x.querySelector('[data-hui-table-scroll]');
       el.focus({preventScroll:!0});
       // The sentence is the server's, composed from the component's
@@ -478,8 +475,17 @@
   document.addEventListener('click', function (e) {
     const t = e.target;
     if (!t || !t.closest) return;
-    const a = t.closest('[data-hui-table-sort]');
-    if (!a) NS._huiTableSort = null;
+    // One record: whichever control the reader clicked — a sort
+    // anchor, or the pager's page anchor, which the table treats
+    // exactly as a sort click — owns the next swap's restore. A
+    // click on anything else clears it, so an old click cannot own a
+    // later passive swap.
+    const c = t.closest('[data-hui-table-sort],[data-hui-page]'),
+      table = c?.closest('[data-hui-table-signal]'),
+      page = c?.hasAttribute('data-hui-page');
+    NS._huiTableSwap = table && [page ? 'data-hui-page' : 'data-hui-table-sort',
+      c.getAttribute(page ? 'data-hui-page' : 'data-hui-table-sort'),
+      table.parentNode, performance.now()];
     const btn = t.closest('[data-hui-reveal]');
     if (btn) {
       e.preventDefault();
@@ -494,9 +500,6 @@
       el.hidden = true;
       if (el.dataset.huiSystemId) rememberDismissal(el.dataset.huiSystemId);
     }
-    const table = a?.closest('[data-hui-table-signal]');
-    NS._huiTableSort = table && [a.getAttribute('data-hui-table-sort'),
-      table.parentNode, performance.now()];
   });
 
   document.addEventListener('input', function (e) {
@@ -530,21 +533,20 @@
   // it again.
   document.addEventListener('gofastr:sse-status', function (e) {
     const lost = sseLost(e && e.detail);
-    const banners = document.querySelectorAll('[data-hui-system-offline]');
-    for (let i = 0; i < banners.length; i++) banners[i].hidden = !lost;
+    for (const b of document.querySelectorAll('[data-hui-system-offline]')) b.hidden = !lost;
   });
 
   // ─── the arrival pass ───────────────────────────────────────────
 
   // scan arms what arrival alone cannot: the summary focus, the drag
   // listeners, the when-regions' first sync, the dismissed banners,
-  // the action buttons' bind, the sort the reader just clicked made
-  // whole again. It is what the kernel calls on every inserted
+  // the action buttons' bind, the sort or page the reader just
+  // clicked made whole again. It is what the kernel calls on every inserted
   // subtree and over the document after a client navigation, and it
   // is idempotent: once() guards what binds a listener, and the
   // primitive's own WeakSet guards the buttons.
   function scan(root) {
-    if (root === document) NS._huiTableSort = null;
+    if (root === document) NS._huiTableSwap = null;
     const scope = root && root.querySelectorAll ? root : document;
     armFormErrors(scope);
     armActions(scope);

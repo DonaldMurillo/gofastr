@@ -5,7 +5,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/DonaldMurillo/gofastr/core-ui/patterns/pagination"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/headless"
 )
@@ -205,8 +204,8 @@ func TestDataTablePaginationFooterRenders(t *testing.T) {
 	h := string(DataTable(DataTableConfig{
 		Columns: []Column{{Key: "name", Header: "Name"}},
 		Rows:    []Row{{Cells: map[string]render.HTML{"name": render.Text("a")}}},
-		Pagination: &pagination.Config{
-			Total: 5, Current: 2, HrefPattern: "?p=%d",
+		Pagination: &PaginationConfig{
+			Pages: 5, Page: 2,
 		},
 	}))
 	if !strings.Contains(h, "ui-data-table__footer") {
@@ -214,6 +213,15 @@ func TestDataTablePaginationFooterRenders(t *testing.T) {
 	}
 	if !strings.Contains(h, `aria-label="Pagination"`) {
 		t.Errorf("expected pagination nav, got: %s", h)
+	}
+	// The typed pager replaced the page parameter in a carry-free
+	// query: page 3's anchor is the relative href a plain list screen
+	// renders, and the current page is the only one marked.
+	if !strings.Contains(h, `href="?p=3"`) {
+		t.Errorf("expected the page-3 anchor at ?p=3, got: %s", h)
+	}
+	if n := strings.Count(h, `aria-current="page"`); n != 1 {
+		t.Errorf("exactly one page is current, found %d", n)
 	}
 	// The footer is the scroll region's sibling, never inside the
 	// table: a pager's nav landmark must not nest in one.

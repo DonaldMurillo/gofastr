@@ -84,7 +84,7 @@ func TestChoiceRefusesAnUnknownType(t *testing.T) {
 // refusals were the ones a port left in another package's name.
 func TestPaginationRefusesAnUnnamedNav(t *testing.T) {
 	refuse(t, "AriaLabel", func() {
-		Pagination(PaginationProps{Page: 1, Pages: 2, HrefPattern: "/x?p=%d", Island: fixtureIsland}, nil)
+		Pagination(PaginationProps{Page: 1, Pages: 2, Path: "/x", Island: fixtureIsland}, nil)
 	})
 }
 
@@ -116,17 +116,19 @@ func TestInputOwnedIsForBoundsOnly(t *testing.T) {
 	has(t, got, `max="9"`, "a folded bound was dropped")
 }
 
-// A pager whose pattern has no %d renders every page at one URL.
-func TestPaginationRefusesAPatternWithoutThePage(t *testing.T) {
-	refuse(t, "%d", func() {
-		Pagination(PaginationProps{Page: 1, Pages: 2, HrefPattern: "/apps", AriaLabel: "Pages", Island: fixtureIsland}, nil)
+// A pager whose Path is not a URL the anchor policy allows is refused
+// at render, the same refusal every href this package writes meets:
+// an off-origin path never reaches an anchor.
+func TestPaginationRefusesAPathTheAnchorPolicyRejects(t *testing.T) {
+	refuse(t, "same-origin", func() {
+		Pagination(PaginationProps{Page: 1, Pages: 2, Path: "javascript:x", AriaLabel: "Pages"}, nil)
 	})
 }
 
 // Every href a component writes goes through the framework's anchor
 // policy. A Button's rejected href renders the disabled-link posture;
-// a Form's action, a Tag's or an Alert's dismiss, and a pager's
-// pattern are refused at render.
+// a Form's action, a Tag's or an Alert's dismiss, and a pager's Path
+// are refused at render.
 func TestHrefsGoThroughTheAnchorPolicy(t *testing.T) {
 	got := Button(ButtonProps{Label: "Go", Href: "javascript:alert(1)"}, nil)
 	hasNot(t, got, "href=", "a javascript: href reached the anchor")
@@ -138,8 +140,8 @@ func TestHrefsGoThroughTheAnchorPolicy(t *testing.T) {
 	refuse(t, "DismissHref", func() {
 		Alert(AlertProps{Title: "T", DismissHref: "//evil/x", Island: fixtureIsland}, nil)
 	})
-	refuse(t, "HrefPattern", func() {
-		Pagination(PaginationProps{Page: 1, Pages: 2, HrefPattern: "javascript:%d", AriaLabel: "Pages", Island: fixtureIsland}, nil)
+	refuse(t, "Path", func() {
+		Pagination(PaginationProps{Page: 1, Pages: 2, Path: "//evil/x", AriaLabel: "Pages"}, nil)
 	})
 	refuse(t, "data-fui-rpc", func() {
 		Button(ButtonProps{Label: "Go", Type: "button", Action: html.Attrs{"data-fui-rpc": "//evil/x"}}, nil)

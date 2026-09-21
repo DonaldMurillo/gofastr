@@ -18,7 +18,6 @@ import (
 
 	appui "github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/interactive"
-	"github.com/DonaldMurillo/gofastr/core-ui/patterns/pagination"
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/schema"
@@ -393,7 +392,7 @@ func (c Config) List(ctx context.Context) render.HTML {
 			body = append(body, tb)
 		}
 	}
-	table := c.table(ctx, total)
+	table := c.table(ctx, total, err == nil)
 	if c.IslandPath != "" {
 		// The island wrapper: sort/page RPC responses (the same Table HTML,
 		// served by TableHandler) replace this element's innerHTML.
@@ -413,10 +412,14 @@ func (c Config) Table(ctx context.Context) render.HTML {
 	if !c.canRead(ctx) {
 		return c.accessDenied()
 	}
-	return c.table(ctx, -1)
+	return c.table(ctx, -1, false)
 }
 
-func (c Config) table(ctx context.Context, total int) render.HTML {
+// table renders the grid for ctx's query state. known says whether
+// total is a real count: List passes the count it took (false when
+// the count failed), TableHandler passes -1 so the count is taken
+// here. Only a known total may clamp the requested page.
+func (c Config) table(ctx context.Context, total int, known bool) render.HTML {
 	q := appui.QueryFromContext(ctx)
 	page := 1
 	if n, err := strconv.Atoi(q.Get("p")); err == nil && n > 1 {
@@ -439,10 +442,24 @@ func (c Config) table(ctx context.Context, total int) render.HTML {
 	if total < 0 {
 		var err error
 		total, err = c.Crud.CountAll(ctx, crud.ListOptions{Filters: filters})
+		known = err == nil
 		if err != nil {
 			// Same as List: the count feeds pagination chrome only.
 			slog.Warn("resource: count", "entity", c.Title, "error", err)
 		}
+	}
+	// The requested page is clamped into the real run BEFORE the rows
+	// are fetched: ?p=999 on a two-page list is a URL anyone can type,
+	// and the typed pager refuses a page outside 1..Pages. The clamp
+	// lands the reader on the last page's rows under a pager saying
+	// the last page — never a 500, and never an empty page under a
+	// pager that claims another. No rows means one page: page 1, the
+	// empty state, no pager. A failed count is not a run of zero pages:
+	// the rows are fetched at the page asked for, and no pager renders
+	// (a total of 0 draws none), so nothing is refused and the reader
+	// is not shown page 1's rows under a URL that says another.
+	if pages := int(math.Ceil(float64(total) / float64(limit))); known && page > pages {
+		page = max(pages, 1)
 	}
 	// WithReadHooks: these rows are rendered to an end user.
 	rows, err := c.Crud.ListAll(crud.WithReadHooks(ctx), crud.ListOptions{Filters: filters, Sorts: sorts, Limit: limit, Offset: fwpagination.OffsetForPage(page, limit)})
@@ -495,20 +512,32 @@ func (c Config) table(ctx context.Context, total int) render.HTML {
 		Empty: ui.EmptyStateConfig{Title: "No " + c.Title + " yet", Description: emptyDescription(c.EmptyText), HeadingLevel: 2},
 	}
 	if c.IslandPath != "" {
-		// Island mode: the sort anchors carry the GET RPC contract
-		// beside their hrefs, and the pagination inherits the same
-		// endpoint and signal automatically.
+		// Island mode: the sort anchors and the pager's page anchors
+		// carry the GET RPC contract beside their hrefs, all hitting
+		// the same endpoint and signal.
 		dt.Island = headless.Island{Endpoint: c.IslandPath, Signal: c.islandSignal()}
 	}
 	if pages := int(math.Ceil(float64(total) / float64(limit))); pages > 1 {
-		// The pager keeps the search/facet carry and appends the page.
-		// It does not carry the active sort — pre-existing, recorded
-		// separately; the typed Query above is not padded to change it.
-		href := "?" + query.Encode() + "&p=%d"
-		if len(query) == 0 {
-			href = "?p=%d"
+		// The pager keeps the search, the facets AND the active sort:
+		// turning a page must not drop the order the reader chose
+		// (the defect the changelog once recorded as pre-existing).
+		// The typed pager replaces p in the carry rather than
+		// appending a second page parameter.
+		pagerQ := url.Values{}
+		for k, vs := range query {
+			for _, v := range vs {
+				pagerQ.Add(k, v)
+			}
 		}
-		dt.Pagination = &pagination.Config{Total: pages, Current: page, HrefPattern: href}
+		if sortCol != "" {
+			pagerQ.Set("sort", sortCol)
+			if q.Get("dir") == "desc" {
+				pagerQ.Set("dir", "desc")
+			} else {
+				pagerQ.Set("dir", "asc")
+			}
+		}
+		dt.Pagination = &ui.PaginationConfig{Pages: pages, Page: page, Query: pagerQ}
 	}
 	return ui.DataTable(dt)
 }

@@ -133,9 +133,10 @@ var repoAnalyzers = []*analysis.Analyzer{
 	//
 	//   fmtformat — 4 findings, all false positives. The repo fixed
 	//   the encoded-pattern class at the CONSUMER (ui.DataTable and
-	//   core-ui/patterns/pagination substitute their %s/%d markers
-	//   with strings.Replace, never fmt, each with a comment saying
-	//   so), and the analyzer only recognizes producer-side postures
+	//   the core-ui pagination pattern, since retired, substituted
+	//   their %s/%d markers with strings.Replace, never fmt, each
+	//   with a comment saying so), and the analyzer only recognizes
+	//   producer-side postures
 	//   (%%-doubling at the join). Until it can see a literal-
 	//   substitution consumer, enabling it would mean four
 	//   suppressions on day one.

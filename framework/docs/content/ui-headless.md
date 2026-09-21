@@ -108,42 +108,42 @@ label, the hint and the error beside it.
 
 ## Islands: hard rule 1, at render time
 
-The framework's first hard rule is that an in-page state change is
-never a route: no `<a href="?page=2">` that the router treats as a
-navigation. A headless component that turns a page, sorts a column or
-applies a filter takes an `Island` and renders the framework's own RPC
-contract (`data-fui-rpc`, `data-fui-rpc-method`, `data-fui-rpc-signal`,
-`data-fui-push-state`) on the same element that keeps its href or
-action for a reader with no script. First paint is the page; hydration
-makes it the island; the URL is written by the runtime.
+The framework's first hard rule draws one line: state that is the
+document's renders as the URL, and state that is not the document's
+requires an Island. A list's page, sort and URL-owned filters are the
+document's state — a list screen's pager and sort headers are plain
+anchors (`?p=2`, `?sort=name`) that work with no script and that the
+client router intercepts when script is present, because changing the
+address bar IS changing the list's state; an Island enters only for a
+table or pager embedded in a region whose page turn must not
+navigate the document, and then the SAME anchors carry the framework's
+RPC contract (`data-fui-rpc`, `data-fui-rpc-method`, `data-fui-rpc-signal`,
+`data-fui-push-state`) beside their hrefs. First paint is the page;
+hydration makes it the island; the region is swapped in place and the
+address bar still follows, written by the runtime through
+`pushState` rather than by a navigation.
+Everything else — expand, reveal, a dismiss, a filter applied in
+place, a search — is in-page state: `ToolbarSearch`, a `Tag` with a
+dismiss and an `Alert` with a dismiss refuse to render without an
+Island, so the link-only render cannot be built. The carve-out is the
+list's alone, and it cannot be stretched: an accordion or a reveal is
+not list state, and a plain-link accordion is exactly as wrong under
+this rule as it was before the carve-out was written.
 
 ```go
 headless.Pagination(headless.PaginationProps{
-    Page: 2, Pages: 9, HrefPattern: "/apps?page=%d",
+    Page: 2, Pages: 9, Path: "/apps",
     Island: headless.Island{Endpoint: "/island/apps", Signal: "apps"},
 }, classes)
 ```
 
-Where the change would otherwise be a route the Island is required:
-`Pagination`, `ToolbarSearch`, a `Tag` with a dismiss and an `Alert`
-with a dismiss panic without one, so the link-only render cannot be
-built. On a `Form` it is optional, for a page that is the form — and
-an island form answers a failed validation with **200 and the
-region's HTML**: the errors are the answer, the runtime swaps them
-into the signal-bound region, and the arrival pass focuses the
-summary. A non-2xx lands in the signal as `{ok:false, status, text}`
+On a `Form` the Island is optional too, for a page that is the
+form — and an island form answers a failed validation with
+**200 and the region's HTML**: the errors are the answer, the runtime
+swaps them into the signal-bound region, and the arrival pass focuses
+the summary. A non-2xx lands in the signal as `{ok:false, status, text}`
 and renders nothing, so it is for transport and server errors, never
 for validation.
-
-A `Table`'s Island is optional too, for the opposite reason a Form's
-is: the URL is the truth for a list. A list screen renders plain sort
-anchors that work with no script and that the client router
-intercepts when script is present — the sort changes the address bar
-because the address bar is where a list's state lives — and the
-Island is for an embedded table whose sort must not change the URL:
-the same anchors then carry the RPC contract beside their hrefs,
-exactly as the pager's do. `Pagination` still requires one; that
-stays as it is until the pager moves onto a `Table`'s footer slot.
 
 What a reader is told after an island sort is composed on the server,
 never in script. `TableProps.Summary` (and `ui.DataTableConfig.Summary`,
@@ -162,7 +162,7 @@ and no `Summary` renders no announcement at all.
 Every href a component writes goes through the framework's anchor
 policy, `urlsafe.CleanAnchor`: a `Button` whose href is rejected
 renders the disabled-link posture; a form action, a dismiss href and
-a pager pattern that are rejected are refused at render; and a
+a pager's Path that are rejected are refused at render; and a
 summary's field link the policy refuses falls back to plain text.
 
 The endpoint keeps the href's query, merged pair by pair onto its own,
@@ -377,16 +377,18 @@ What it does, one line per behaviour:
   dismissed set never applies to it: losing the connection again must
   show it again, which is also why the offline banner carries no
   dismiss.
-- **table** restores what an island sort destroys when a valid answer
-  arrives: the click on a `data-hui-table-sort` anchor accepts only a
-  signal-bound table, then records the column key and replacement region;
-  focus returns to the same column's anchor in that region (the
-  `data-hui-table-scroll` region when the answer dropped the column).
-  The sentence the server rendered into
-  `data-hui-table-announcement` is copied, clear then frame, into the
-  `data-hui-table-status` span. A failed answer leaves focus and status
-  where they were. A plain table's status and announcement render for
-  the pager's later use; this module fills neither.
+- **table** restores what an island sort or page turn destroys when a
+  valid answer arrives: the click on a `data-hui-table-sort` anchor or
+  the pager's `data-hui-page` anchor accepts only a signal-bound
+  table, then records the control's identity (the column key, the page
+  number) and replacement region; focus returns to the same control's
+  anchor in that region (the current page's `aria-current` anchor when
+  the answer has fewer pages, the `data-hui-table-scroll` region when
+  the answer dropped the control). The sentence the server rendered
+  into `data-hui-table-announcement` is copied, clear then frame, into
+  the `data-hui-table-status` span. A failed answer leaves focus and
+  status where they were. A plain table's status and announcement
+  render for the pager's later use; this module fills neither.
 
 Two attributes are the module's own, written by it and rendered by no
 component: `data-hui-when-off` and `data-hui-drop-over`.
@@ -413,9 +415,11 @@ class maps (Button first), and a bare headless render stays unstyled.
 - **Finding an element from script by its class.** The runtime binds to
   `data-hui-*` hooks only. A class map may rename every class, and a class
   used as a hook is the one thing it cannot rename.
-- **Rendering a pager or a search form without an Island.** That is a
-  route for an in-page state change, and the component refuses it at
-  render time with the rule's reason.
+- **Rendering a search form without an Island.** That is a route for
+  an in-page state change, and the component refuses it at render
+  time with the rule's reason. A pager on a list screen is the
+  allowed plain posture: its state is the URL's, and the Island is
+  for the pager embedded in a region.
 - **Smuggling a request through `ExtraAttrs` or an Override.** Both
   drop every `data-fui-*` key. A request is `ButtonProps.Action`, a
   signal is a `Bind`, a region's refresh is an `Island`.

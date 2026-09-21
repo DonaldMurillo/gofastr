@@ -16,10 +16,15 @@ type stubSource struct {
 	rows       []map[string]any
 	countCalls []crud.ListOptions
 	listCalls  []crud.ListOptions
+	// countErr, when set, is what CountAll returns beside a zero count.
+	countErr error
 }
 
 func (s *stubSource) CountAll(_ context.Context, opts crud.ListOptions) (int, error) {
 	s.countCalls = append(s.countCalls, opts)
+	if s.countErr != nil {
+		return 0, s.countErr
+	}
 	return len(s.rows), nil
 }
 
@@ -106,8 +111,12 @@ func TestConfigListPassesURLQueryToDataSource(t *testing.T) {
 		t.Fatalf("ListAll calls = %d, want 1", len(source.listCalls))
 	}
 	opts := source.listCalls[0]
-	if opts.Limit != 10 || opts.Offset != 10 {
-		t.Errorf("paging options = limit %d offset %d, want 10/10", opts.Limit, opts.Offset)
+	// The stub holds one row, so the run is one page at size 10: the
+	// requested ?p=2 is out of range and the screen clamps it to the
+	// last real page (page 1) before fetching — offset 0, never the
+	// empty window offset 10 would fetch.
+	if opts.Limit != 10 || opts.Offset != 0 {
+		t.Errorf("paging options = limit %d offset %d, want 10/0 (p=2 clamped to the one-page run)", opts.Limit, opts.Offset)
 	}
 	if len(opts.Sorts) != 1 || opts.Sorts[0].Field != "amount" || !opts.Sorts[0].Desc {
 		t.Errorf("sort options = %#v, want amount desc", opts.Sorts)

@@ -7,7 +7,98 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+### BREAKING
+- **`ui.DataTableConfig.Pagination` is a `*ui.PaginationConfig`, and
+  `core-ui/patterns/pagination` is deleted.** The field was a
+  `*core-ui/patterns/pagination.Config`; the DataTable's pager now
+  renders through the headless primitive like the table itself, and
+  the pattern package — the last thing still importing it was this
+  field — is gone with its tests and its coverage floor. A caller
+  replaces `github.com/DonaldMurillo/gofastr/core-ui/patterns/pagination`
+  with `github.com/DonaldMurillo/gofastr/framework/ui` (`ui.Pagination`
+  / `ui.PaginationConfig`). The pattern string is gone: the page
+  hrefs are built from typed props. Before and after:
+  ```go
+  // before
+  Pagination: &pagination.Config{Total: pages, Current: page,
+      HrefPattern: "?" + query.Encode() + "&p=%d"},
+  // after
+  Pagination: &ui.PaginationConfig{Pages: pages, Page: page,
+      Query: query},
+  ```
+  In island mode the table's `Island` still reaches the pager
+  automatically; a pager with its own Island wins. `Window`
+  (`core`'s page neighbourhood size) and `OmitPrevNext` are fields on
+  the new config.
+
 ### Added
+- **`ui.Pagination`: the styled pager, rendered through
+  `headless.Pagination`.** The anatomy is the headless one
+  (`nav > div > a|span`): no `ol/li`, and no buttons in island mode —
+  an island pager's anchors keep their hrefs and carry the RPC
+  contract beside them, where the core pattern replaced them with
+  `<button>`s and dropped the no-script destination. The class map
+  keeps the names the pattern's sheet read (`pagination` on the list,
+  `pagination-gap` on the gap) and a registered `ui-pagination` sheet
+  follows the new anatomy, so a host stylesheet written against the
+  pattern's names keeps matching. The labels resolve through
+  `StringsFor` (`ui.pagination.label` for the nav landmark,
+  `.previous`/`.next` for the ends).
+- **`headless.Pagination` takes typed page props and an optional
+  Island.** `HrefPattern`'s literal `%d` is gone the way the table's
+  `SortHrefPattern` went: the caller gives `Path`, `Query
+  url.Values` and `PageParam` (default `p`), and every href is built
+  through `net/url` with the page parameter replaced rather than
+  appended — the request-derived-string defect class a pattern string
+  carries cannot be expressed here. A `Path` with its own query or
+  fragment is refused; the carried `Query` is scrubbed of control
+  bytes exactly as the table's is (one shared helper). `Window` and
+  `OmitPrevNext` are props with the core pattern's semantics. The
+  Island is now optional, the Table posture: the URL is the truth for
+  a list, and a pager on a list screen is list state — without an
+  Island the page anchors are plain navigations the client router
+  intercepts; with one, the same anchors carry the RPC contract
+  beside their hrefs. An island pager renders `data-hui-page="<n>"`
+  on every enabled anchor (the ends carry the page they turn to), and
+  the table module treats a click on one exactly as a sort click:
+  focus returns to the same page's anchor after the swap, or the
+  current page's `aria-current` anchor when the answer has fewer
+  pages, or the scroll region — and the announcement is copied into
+  the status as a sort's is. The registration retains the page click
+  through the interaction bridge beside the sort's. The module stays
+  within its gzip budget (3053 of 3072 bytes) through mechanical
+  for-of conversions and shorthand properties in code the behaviour
+  shares.
+- **The resource engine's pager carries the active sort** (defect 10,
+  previously recorded as pre-existing): the pager's `Query` carries
+  `sort` and `dir` when a sort is active beside the search and the
+  facets, so turning a page no longer drops the order the reader
+  chose. Regression: `TestPagerCarriesTheActiveSort` parses the
+  page-2 href and asserts both survive. The battery's plain-link
+  posture is unchanged: its pager passes `Path`-less typed props with
+  the search, sort and direction in `Query`, no Island, and its
+  `patternWith` helper is deleted — the typed pager replaced what it
+  built.
+- `core-ui/patterns/pagination` is deleted, with its tests, its
+  security test and its coverage-floor line. The gallery's two plain
+  pagers render through `ui.Pagination` with `Path`/`Query` and no
+  Island, the same appearance the gallery page showed; the frozen
+  upgrade fixtures reach `ui.PaginationConfig` through their
+  `migration.patch` hunks, the way the typed-sort hunks reached them.
+  The properties its tests pinned that still apply moved: the
+  island-mode push-state and RPC sinks (a request-derived carry can
+  corrupt neither) to `framework/headless`'s
+  `TestPaginationCarryCannotCorruptTheIslandSinks`, the aria-current
+  count to `a11y_test.go`'s `TestPaginationIsNavigationWithACurrentPage`,
+  the "Pagination" nav label to `framework/ui`'s
+  `TestPaginationLabelsResolveThroughI18n` and
+  `TestDataTablePaginationFooterRenders`, the small-run/large-run
+  window shapes to `TestPaginationWindowsItsPages`, the boundary
+  refusals to `TestPaginationRefusesPagesOutsideTheRun`, and the
+  disabled ends to the spec's island cases; the `%d`-placeholder
+  refusal is obsolete — the typed props cannot express the defect it
+  guarded.
+
 - **The table behaviour: an island sort now gives focus back and
   says what changed.** The runtime swaps a signal region's HTML, the
   sort anchor the reader clicked is destroyed with it, and focus
