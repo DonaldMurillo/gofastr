@@ -70,6 +70,47 @@ index cb327a5..e9ecb72 100644
  	"github.com/DonaldMurillo/gofastr/framework/ui"
  )
  
+@@ -284,26 +285,30 @@
+ 		uiRows = append(uiRows, ui.Row{ID: id, Cells: cells})
+ 	}
+ 
+-	// carry preserves search + active facets across sort-header and pagination
+-	// links (which are <a> navigations, not the toolbar form) so those actions
+-	// never silently drop the current filter set.
+-	carry := ""
++	// query carries search + active facets across sort-header and pagination
++	// links (which are <a> navigations, not the toolbar form) so those
++	// actions never silently drop the current filter set. The typed sort
++	// props own sort and dir.
++	query := url.Values{}
+ 	if search != "" {
+-		carry += "q=" + url.QueryEscape(search) + "&"
++		query.Set("q", search)
+ 	}
+ 	for _, ff := range c.Filters {
+ 		if v := strings.TrimSpace(q.Get(ff.Key)); v != "" {
+-			carry += url.QueryEscape(ff.Key) + "=" + url.QueryEscape(v) + "&"
++			query.Set(ff.Key, v)
+ 		}
+ 	}
+ 	dt := ui.DataTableConfig{
+ 		Columns: cols, Rows: uiRows, Responsive: ui.ResponsiveCards,
+-		SortBy: sortCol, SortDir: ui.SortDir(q.Get("dir")),
+-		SortHrefPattern: "?" + carry + "sort=%s&dir=%s",
+-		Empty:           ui.EmptyStateConfig{Title: "No " + c.Title + " yet", Description: resEmptyDesc(c.EmptyText), HeadingLevel: 2},
++		SortBy: sortCol, SortDir: ui.SortDir(q.Get("dir")), Query: query,
++		Empty: ui.EmptyStateConfig{Title: "No " + c.Title + " yet", Description: resEmptyDesc(c.EmptyText), HeadingLevel: 2},
+ 	}
+ 	if pages := int(math.Ceil(float64(total) / float64(limit))); pages > 1 {
+-		dt.Pagination = &pagination.Config{Total: pages, Current: page, HrefPattern: "?" + carry + "p=%d"}
++		pagerHref := "?" + query.Encode() + "&p=%d"
++		if len(query) == 0 {
++			pagerHref = "?p=%d"
++		}
++		dt.Pagination = &pagination.Config{Total: pages, Current: page, HrefPattern: pagerHref}
+ 	}
+ 	body = append(body, ui.DataTable(dt))
+ 	return render.Join(body...)
 @@ -538,7 +539,13 @@ func (c ResourceConfig) Form(ctx context.Context, id string) render.HTML {
  			cur = resCell(resGet(row, f.Key))
  		}

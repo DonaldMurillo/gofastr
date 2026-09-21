@@ -178,7 +178,16 @@ func TestExtraAttrsForwardingIsSanitized(t *testing.T) {
 					// owned keys still drop, data-fui-* passes through
 					// by documented contract — allowed only in the
 					// pinned carrier files.
-					if fun.Sel.Name == "SafeExtraAttrs" || fun.Sel.Name == "SafeCarrierAttrs" {
+					// headless.Safe is the render-through components'
+					// sanitiser (the same refusal vocabulary, plus the
+					// ownership each caller names): a component that
+					// hands its extras to a headless primitive
+					// sanitises there, before the primitive's own Safe.
+					// Only that package's Safe counts: another Safe
+					// with the same name would mark the subtree clean.
+					pkg, _ := fun.X.(*ast.Ident)
+					headlessSafe := fun.Sel.Name == "Safe" && pkg != nil && pkg.Name == "headless"
+					if fun.Sel.Name == "SafeExtraAttrs" || fun.Sel.Name == "SafeCarrierAttrs" || headlessSafe {
 						sanitized = append(sanitized, d)
 					}
 					if fun.Sel.Name == "SafeCarrierAttrs" && !safeCarrierAllowed[name] {

@@ -580,6 +580,66 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   unchanged (they move in the next change of the stack).
 
 ### BREAKING
+- **`ui.DataTable` renders through `headless.Table`: the sort pattern
+  string is gone, sorting is typed props, and the sort control is an
+  anchor in both postures.** `SortHrefPattern` (two literal `%s`
+  markers substituted by `strings.Replace`), `IslandSignal` and
+  `IslandEndpoint` are removed with no alias; the same facts travel
+  as typed fields and the primitive builds every sort href through
+  `net/url`, replacing the sort parameters rather than substituting
+  into a caller's string. Field by field: `SortHrefPattern` becomes
+  `Query url.Values` (the request state a sort must carry) with
+  optional `Path`, `SortParam` and `DirParam` (empty `SortParam`/
+  `DirParam` keep the `sort`/`dir` names); `IslandSignal` +
+  `IslandEndpoint` become `Island headless.Island{Endpoint, Signal}`;
+  `SortBy` keeps its name and meaning. The island sort control is an
+  `<a>` that carries the `data-fui-rpc` contract beside its href —
+  the no-script fallback the old `<button>` dropped — so a
+  `th button.ui-data-table__sort` selector becomes
+  `th a.ui-data-table__sort`. An empty result renders the table with
+  its head and the styled empty state in one spanning cell, where it
+  rendered no table at all; `is-empty` stays on the root. Every
+  headered cell carries `data-label` in every mode: a cards
+  collapse reads it, the scroll sheet does not. A carried query
+  value with C0 control bytes is scrubbed by the primitive, so a
+  hostile `?q=` with CR LF (which the anchor policy would refuse as
+  `%0D%0A`) still renders the sort anchors and the page; nothing is
+  refused.
+  `CaptionHidden` keeps a caption out of sight for a table that sits
+  under a visible heading saying the same thing: the caption element,
+  its text and the region's `aria-labelledby` all stay (the resource
+  engine's detail-page related lists use it, so the table and its
+  scroll region keep a name without a second visible band), and
+  `CaptionHidden` without `Caption` is refused at render. The
+  markup carries no direction glyph; the stylesheet draws it from
+  `aria-sort`, and the `ui-data-table__sort-indicator` class is
+  gone. The pager is untouched (`core-ui/patterns/pagination`, still
+  a `%d` `HrefPattern`; its island page items are still buttons).
+  Worked example, the resource engine's carry:
+  ```go
+  // before
+  carry := "" // "q=" + url.QueryEscape(search) + "&" per active facet
+  dt := ui.DataTableConfig{
+      SortBy: sortCol, SortDir: ui.SortDir(q.Get("dir")),
+      SortHrefPattern: "?" + carry + "sort=%s&dir=%s",
+  }
+  if c.IslandPath != "" {
+      dt.IslandSignal, dt.IslandEndpoint = c.islandSignal(), c.IslandPath
+  }
+
+  // after
+  query := url.Values{} // query.Set("q", search); query.Set(facetKey, v)
+  dt := ui.DataTableConfig{
+      SortBy: sortCol, SortDir: ui.SortDir(q.Get("dir")),
+      Query:  query,
+  }
+  if c.IslandPath != "" {
+      dt.Island = headless.Island{Endpoint: c.IslandPath, Signal: c.islandSignal()}
+  }
+  ```
+  The page-2 pager href keeps its old shape (the carry plus `p=%d`);
+  it still does not carry the active sort, which is a pre-existing
+  defect recorded separately and unchanged here.
 - **The Lightbox viewer's classes are `fui-lightbox*` and its image
   carries `data-fui-lightbox-image`.** The `ui-lightbox__viewer`,
   `ui-lightbox__figure`, `ui-lightbox__full`, `ui-lightbox__caption`,

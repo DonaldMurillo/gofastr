@@ -176,7 +176,7 @@ func (b *Battery) renderTable(ctx context.Context, ent *entity.Entity, q url.Val
 	}
 
 	// Sort links carry the active search so sorting doesn't drop the filter;
-	// clicking a header resets to page 1 (no p in the sort pattern).
+	// clicking a header resets to page 1 (no p in the sort query).
 	carrySearch := url.Values{}
 	if search != "" {
 		carrySearch.Set("q", search)
@@ -185,17 +185,18 @@ func (b *Battery) renderTable(ctx context.Context, ent *entity.Entity, q url.Val
 	// SPA-navigates and re-renders the whole screen, keeping the toolbar Sort
 	// summary, the active-search chip, and the table all in one consistent
 	// state. (Delete still island-swaps via the signal wrapper around this
-	// table, so removing a row doesn't reload the page.)
+	// table, so removing a row doesn't reload the page.) The typed Table
+	// props own sort and dir; the anchors the primitive renders navigate.
 	cfg := ui.DataTableConfig{
 		Columns: columns,
 		Rows:    uiRows,
 		// No visible caption: the page header already names the collection, and
 		// a repeated "PRODUCTS" band just adds noise. Column headers + the H1
 		// provide the table's accessible context.
-		Responsive:      ui.ResponsiveCards,
-		SortBy:          sortCol,
-		SortDir:         ui.SortDir(sortDir),
-		SortHrefPattern: patternWith(carrySearch, "sort=%s&dir=%s"),
+		Responsive: ui.ResponsiveCards,
+		SortBy:     sortCol,
+		SortDir:    ui.SortDir(sortDir),
+		Query:      carrySearch,
 		Empty: ui.EmptyStateConfig{
 			Title:        "Nothing here yet",
 			Description:  "Create the first " + singular(ent.GetName()) + " with the New button.",
@@ -338,13 +339,12 @@ func SortDirOf(v string) string {
 }
 
 // patternWith builds a query-string pattern that preserves the carry params
-// and appends tail (which holds the %s/%d markers DataTable and pagination
-// fill in). Encoding does not make the result fmt-safe -- it is the reason
-// it is not: Encode emits %XX, and fmt would read those escapes as verbs.
-// The pattern is safe because both consumers substitute their markers with
-// strings.Replace and never fmt (see [ui.DataTableConfig.SortHrefPattern]
-// and [pagination.Config.HrefPattern]). A consumer that reaches for
-// Sprintf reintroduces the bug this comment used to invite.
+// and appends tail (which holds the pagination %d marker). Encoding does not
+// make the result fmt-safe -- it is the reason it is not: Encode emits %XX,
+// and fmt would read those escapes as verbs. The pattern is safe because
+// pagination substitutes its marker with strings.Replace and never fmt (see
+// [pagination.Config.HrefPattern]). A consumer that reaches for Sprintf
+// reintroduces the bug this comment used to invite.
 func patternWith(carry url.Values, tail string) string {
 	enc := carry.Encode()
 	if enc == "" {

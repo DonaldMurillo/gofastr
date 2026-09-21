@@ -883,6 +883,13 @@ func dataTableCSS(_ style.Theme) string {
   border-radius: var(--radii-md, 8px);
   background: var(--color-surface, #FFFFFF);
 }
+/* The scroll region is a keyboard tab stop (tabindex=0, so it can be
+   scrolled by keyboard whenever it overflows), so its focus state
+   must be visible. */
+[data-fui-comp="ui-data-table"] .ui-data-table__scroll:focus-visible {
+  outline: 2px solid var(--color-primary, #4F46E5);
+  outline-offset: -2px;
+}
 [data-fui-comp="ui-data-table"] .ui-data-table__table {
   width: 100%;
   border-collapse: collapse;
@@ -923,8 +930,7 @@ func dataTableCSS(_ style.Theme) string {
 }
 [data-fui-comp="ui-data-table"] .ui-data-table__table .is-align-end   { text-align: end; }
 [data-fui-comp="ui-data-table"] .ui-data-table__table .is-align-center { text-align: center; }
-[data-fui-comp="ui-data-table"] .ui-data-table__sort,
-[data-fui-comp="ui-data-table"] button.ui-data-table__sort {
+[data-fui-comp="ui-data-table"] .ui-data-table__sort {
   display: inline-flex;
   align-items: center;
   /* Token-scaled tap target. Sort headers are the most-tapped
@@ -933,11 +939,13 @@ func dataTableCSS(_ style.Theme) string {
   min-block-size: var(--spacing-touch-target);
   min-inline-size: var(--spacing-touch-target);
   gap: var(--spacing-sm, 0.25rem);
+  box-sizing: border-box;
   background: transparent;
   border: 0;
   padding: 0 var(--spacing-sm, 0.25rem);
   color: inherit;
   font: inherit;
+  text-align: inherit;
   text-decoration: none;
   cursor: pointer;
 }
@@ -945,9 +953,23 @@ func dataTableCSS(_ style.Theme) string {
   color: var(--color-text, #18181B);
   text-decoration: none;
 }
-[data-fui-comp="ui-data-table"] .ui-data-table__sort-indicator {
+[data-fui-comp="ui-data-table"] .ui-data-table__sort:focus-visible {
+  outline: 2px solid var(--color-primary, #4F46E5);
+  outline-offset: 2px;
+}
+/* The direction indicator is drawn from aria-sort, the same
+   attribute assistive technology reads: state and appearance share
+   one source and cannot disagree. The markup carries no glyph. */
+[data-fui-comp="ui-data-table"] .ui-data-table__table th[aria-sort="ascending"] .ui-data-table__sort::after,
+[data-fui-comp="ui-data-table"] .ui-data-table__table th[aria-sort="descending"] .ui-data-table__sort::after {
   font-size: 0.7em;
   color: var(--color-primary, #4F46E5);
+}
+[data-fui-comp="ui-data-table"] .ui-data-table__table th[aria-sort="ascending"] .ui-data-table__sort::after {
+  content: "↑";
+}
+[data-fui-comp="ui-data-table"] .ui-data-table__table th[aria-sort="descending"] .ui-data-table__sort::after {
+  content: "↓";
 }
 [data-fui-comp="ui-data-table"] .ui-data-table__table th[aria-sort="ascending"],
 [data-fui-comp="ui-data-table"] .ui-data-table__table th[aria-sort="descending"] {

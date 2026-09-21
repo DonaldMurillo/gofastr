@@ -170,7 +170,7 @@ raw (enumerated in `framework/ui/extraattrs_contract_test.go`). See
 ### Data display
 
 - **metricband**: `framework/ui.MetricBand`, flat semantic signal band (one row wide, two columns on phones) for related facts that should not become a wall of cards; `Hint` adds a trend or qualifier
-- **datatable**: `framework/ui.DataTable`, sortable / paginated / island-swappable rows
+- **datatable**: `framework/ui.DataTable`, sortable / paginated / island-swappable rows; a sort header is an anchor in both postures — the URL is a list screen's state, and an embedded table's anchors carry the island contract beside their hrefs
 - **statcard**: `framework/ui.StatCard`, metric card with label/value/trend. A 4-card dashboard row lives in a `ui.Grid`; the Grid default `Min: "16rem"` wraps 3+1 inside a sidebar-narrowed content column (~900px). For a 4-up row that fits (and degrades to 2+2 on tablet), pass `Grid(GridConfig{Min: "13rem"}, …)`; the `Min` knob is the intended control, not a Grid default change (16rem stays right for general content cards).
 - **animatedcounter**: `framework/ui.AnimatedCounter`, IntersectionObserver-driven tick
 - **timeline**: `framework/ui.Timeline`, vertical event rail

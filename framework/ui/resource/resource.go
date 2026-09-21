@@ -474,32 +474,41 @@ func (c Config) table(ctx context.Context, total int) render.HTML {
 		uiRows = append(uiRows, ui.Row{ID: id, Cells: cells})
 	}
 
-	// carry preserves search + active facets across sort-header and pagination
-	// links (which are <a> navigations, not the toolbar form) so those actions
-	// never silently drop the current filter set.
-	var carry strings.Builder
+	// query carries the search and active facets across a sort-header
+	// click (an <a> navigation, not the toolbar form) so sorting never
+	// silently drops the current filter set. The typed sort props own
+	// sort and dir: the primitive replaces them in the carry rather
+	// than appending duplicate pairs.
+	query := url.Values{}
 	if search != "" {
-		carry.WriteString("q=" + url.QueryEscape(search) + "&")
+		query.Set("q", search)
 	}
 	for _, ff := range c.Filters {
 		if v := strings.TrimSpace(q.Get(ff.Key)); v != "" {
-			carry.WriteString(url.QueryEscape(ff.Key) + "=" + url.QueryEscape(v) + "&")
+			query.Set(ff.Key, v)
 		}
 	}
 	dt := ui.DataTableConfig{
 		Columns: cols, Rows: uiRows, Responsive: ui.ResponsiveCards,
 		SortBy: sortCol, SortDir: ui.SortDir(q.Get("dir")),
-		SortHrefPattern: "?" + carry.String() + "sort=%s&dir=%s",
-		Empty:           ui.EmptyStateConfig{Title: "No " + c.Title + " yet", Description: emptyDescription(c.EmptyText), HeadingLevel: 2},
+		Query: query,
+		Empty: ui.EmptyStateConfig{Title: "No " + c.Title + " yet", Description: emptyDescription(c.EmptyText), HeadingLevel: 2},
 	}
 	if c.IslandPath != "" {
-		// Island mode: sort headers become data-fui-rpc buttons and the
-		// pagination inherits the same signal/endpoint pair automatically.
-		dt.IslandSignal = c.islandSignal()
-		dt.IslandEndpoint = c.IslandPath
+		// Island mode: the sort anchors carry the GET RPC contract
+		// beside their hrefs, and the pagination inherits the same
+		// endpoint and signal automatically.
+		dt.Island = headless.Island{Endpoint: c.IslandPath, Signal: c.islandSignal()}
 	}
 	if pages := int(math.Ceil(float64(total) / float64(limit))); pages > 1 {
-		dt.Pagination = &pagination.Config{Total: pages, Current: page, HrefPattern: "?" + carry.String() + "p=%d"}
+		// The pager keeps the search/facet carry and appends the page.
+		// It does not carry the active sort — pre-existing, recorded
+		// separately; the typed Query above is not padded to change it.
+		href := "?" + query.Encode() + "&p=%d"
+		if len(query) == 0 {
+			href = "?p=%d"
+		}
+		dt.Pagination = &pagination.Config{Total: pages, Current: page, HrefPattern: href}
 	}
 	return ui.DataTable(dt)
 }
@@ -743,7 +752,15 @@ func (c Config) relatedList(ctx context.Context, rl RelatedList, id string) rend
 		}
 		uiRows = append(uiRows, ui.Row{ID: rid, Cells: cells})
 	}
-	return render.Join(head, ui.DataTable(ui.DataTableConfig{Columns: cols, Rows: uiRows, Responsive: ui.ResponsiveCards}))
+	// The caption names the table and its scroll region (a detail page
+	// stacks several related lists, and an unnamed role=region beside
+	// another unnamed one is a landmark axe cannot tell apart), and it
+	// is hidden: the section heading right above already says the same
+	// thing, and a reader should not be shown it twice.
+	return render.Join(head, ui.DataTable(ui.DataTableConfig{
+		Caption: rl.Title, CaptionHidden: true,
+		Columns: cols, Rows: uiRows, Responsive: ui.ResponsiveCards,
+	}))
 }
 
 // relatedRelationLabels resolves the FK columns of an entity's relations to

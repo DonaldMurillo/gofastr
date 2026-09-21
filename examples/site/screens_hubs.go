@@ -166,12 +166,19 @@ func interactivityHub() *TeachHubScreen {
 				Body:     []render.HTML{p("A click changes one part of the page. The click calls the server, the server returns new HTML for that part, and the runtime swaps it in. Use it for sort, paginate, expand, add a row, anything that isn't a whole new page.")},
 				CodeFile: "customers.go",
 				CodeLang: "go",
-				Code: `// Sort headers fire an RPC instead of navigating. The handler
-// returns the new table HTML; the runtime swaps this island in place.
+				Code: `// A sort header keeps its href and carries the RPC contract beside
+// it: without script it navigates, with it the runtime swaps this
+// island in place and writes the URL after the swap.
 ui.DataTable(ui.DataTableConfig{
-    Rows:           rows,
-    IslandSignal:   "customers",
-    IslandEndpoint: "/customers/table",
+    Columns: []ui.Column{
+        {Key: "name", Header: "Name", Sortable: true},
+        {Key: "email", Header: "Email"},
+    },
+    Rows: rows,
+    Island: headless.Island{
+        Signal:   "customers",
+        Endpoint: "/customers/table",
+    },
 })`,
 				RefSlug: "interactive-patterns",
 			},
