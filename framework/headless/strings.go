@@ -143,6 +143,17 @@ type Strings struct {
 	// unlike the {n} the runtime substitutes, the key is known on
 	// the server.
 	TableSortBy string
+	// TableSortedBy says what a changed table is now sorted by, with
+	// {column} where the column's header goes and {direction} where
+	// the direction word goes. Rendered into data-hui-table-announcement
+	// at render and copied into the status after a swap, so a
+	// translated page announces in its own language.
+	TableSortedBy string
+	// SortAscending and SortDescending are the direction words
+	// TableSortedBy carries. One lowercase word each: they sit inside
+	// a sentence, after a comma.
+	SortAscending  string
+	SortDescending string
 
 	// ─── ValidationSummary ──────────────────────────────────────────
 
@@ -169,11 +180,10 @@ var defaultStrings = Strings{
 	Previous: "Previous",
 	Next:     "Next",
 
-	ToneInfo:    "Information",
-	ToneSuccess: "Success",
-	ToneWarning: "Warning",
-	ToneDanger:  "Error",
-
+	ToneInfo:      "Information",
+	ToneSuccess:   "Success",
+	ToneWarning:   "Warning",
+	ToneDanger:    "Error",
 	FileSelected:  "{name} selected.",
 	FilesSelected: "{n} files selected: {names}.",
 
@@ -184,6 +194,12 @@ var defaultStrings = Strings{
 	// The i18nui catalog's own English for ui.table.sortBy; the ui
 	// bridge's gate holds the two to the same bytes.
 	TableSortBy: "Sort by {column}",
+	// The i18nui catalog's own English for ui.table.sortedBy and the
+	// two direction words; the ui bridge's gate holds the two to the
+	// same bytes.
+	TableSortedBy:  "Sorted by {column}, {direction}",
+	SortAscending:  "ascending",
+	SortDescending: "descending",
 
 	ThereIsAProblem: "There is a problem",
 }

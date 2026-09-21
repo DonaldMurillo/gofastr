@@ -241,6 +241,9 @@ const (
 	KeyFileSelected       Key = "ui.fileUpload.fileSelected"   // "{name} selected."
 	KeyFilesSelected      Key = "ui.fileUpload.filesSelected"  // "{n} files selected: {names}."
 	KeyValidationProblem  Key = "ui.validationSummary.problem" // "There is a problem"
+	KeyTableSortedBy      Key = "ui.table.sortedBy"            // "Sorted by {column}, {direction}"
+	KeyTableDirAscending  Key = "ui.table.dirAscending"        // "ascending"
+	KeyTableDirDescending Key = "ui.table.dirDescending"       // "descending"
 )
 
 // Defaults are the English fallback strings. Apps that provide their
@@ -420,6 +423,9 @@ var Defaults = map[Key]string{
 	KeyToneSuccess:        "Success",
 	KeyToneWarning:        "Warning",
 	KeyToneDanger:         "Error",
+	KeyTableSortedBy:      "Sorted by {column}, {direction}",
+	KeyTableDirAscending:  "ascending",
+	KeyTableDirDescending: "descending",
 	KeyFileSelected:       "{name} selected.",
 	KeyFilesSelected:      "{n} files selected: {names}.",
 	KeyValidationProblem:  "There is a problem",
@@ -603,6 +609,7 @@ func AllKeys() []Key {
 		KeyColorPick, KeyPasswordRevealShow, KeyPasswordRevealHide,
 		KeyToneInfo, KeyToneSuccess, KeyToneWarning, KeyToneDanger,
 		KeyFileSelected, KeyFilesSelected, KeyValidationProblem,
+		KeyTableSortedBy, KeyTableDirAscending, KeyTableDirDescending,
 	}
 }
 

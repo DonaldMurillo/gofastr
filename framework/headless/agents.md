@@ -85,9 +85,10 @@ the fixtures are handed is harness infrastructure, not caller surface.
   the URL is the truth for a list, so a list screen's sort anchors
   are plain navigations the client router intercepts, and the
   `Island` is for an embedded table whose sort must not change the
-  URL — its anchors then carry the contract beside their hrefs.
-  Every href goes through the framework's anchor policy
-  (`urlsafe.CleanAnchor`).
+  URL — its anchors then carry the contract beside their hrefs, and
+  the module restores focus and announces the swap through the
+  `data-hui-table*` hooks the Table renders. Every href goes through
+  the framework's anchor policy (`urlsafe.CleanAnchor`).
 - **A request through `ExtraAttrs`.** `Safe` drops every `data-fui-*`
   key. A request is `ButtonProps.Action`; a signal is a `Bind`; a
   region's refresh is an `Island`. Action also admits the wiring

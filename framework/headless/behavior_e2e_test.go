@@ -626,7 +626,7 @@ func TestE2E_ActionFailureIsAnnounced(t *testing.T) {
 		t.Fatalf("reading the outcome: %v", err)
 	}
 	if sentence != "Could not save. Try again." {
-		t.Fatalf("the failure sentence was %q, want the Words default", sentence)
+		t.Fatalf("the failure sentence was %q, want the Strings default", sentence)
 	}
 	// The rollback passes through error and returns to idle, so the
 	// button can be tried again.
@@ -1419,5 +1419,381 @@ func TestE2E_WhenFollowsAFormAssociatedControlOutsideTheFormElement(t *testing.T
 	}
 	if !pollTrue(ctx, `!document.getElementById('owned').hidden`) {
 		t.Fatal("the region never followed the form-associated control")
+	}
+}
+
+// The route every swap-driven behaviour is built on, proved on its own
+// before the table behaviour is built on it: an island update is an
+// innerHTML write into a data-fui-signal region, which the kernel's
+// MutationObserver sees as an insertion and hands to every loaded
+// module's scanner. A module that could not rely on this would need an
+// observer of its own, which arms everything a second time on top of
+// the kernel's pass. The arm visible here without any table code is
+// the form-errors focus: a click on an anchor carrying the island
+// contract, a real endpoint answering 200 with the region's HTML, and
+// focus landing on a summary inside the swapped-in markup.
+func TestE2E_TheKernelArmsTheModuleOnASwappedSignalRegion(t *testing.T) {
+	arrived := Form(FormProps{
+		Action: "/x", Island: Island{Endpoint: "/__hui/swap", Signal: "probe"},
+		Errors: ValidationSummary(ValidationSummaryProps{
+			ID: "probe-errors", Errors: []FieldError{{For: "probe-name", Message: "Name is required."}},
+		}, nil),
+	}, nil, Input(InputProps{Name: "name", ID: "probe-name"}, nil))
+	// A boot marker beside the region: the module must be loaded
+	// BEFORE the click — the way a table page loads it for
+	// data-hui-table — so the proof is the scanner handed the inserted
+	// subtree, not the module loading on the marker the swap brought.
+	b := startBehaviorServer(t,
+		string(Password(PasswordProps{Name: "token", ID: "token"}, nil))+
+			`<div id="isle" data-fui-signal="probe" data-fui-signal-mode="html"><p id="before">before</p></div>`+
+			`<a id="sorter" href="?sort=name" data-fui-rpc="/__hui/swap?sort=name" data-fui-rpc-method="GET" data-fui-rpc-signal="probe" data-fui-push-state="?sort=name">Sort</a>`,
+		func(mux *http.ServeMux) {
+			mux.HandleFunc("/__hui/swap", func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "text/html")
+				fmt.Fprint(w, string(arrived))
+			})
+		})
+	ctx := behaviorPage(t, b)
+	if !pollTrue(ctx, moduleLoadedExpr) {
+		t.Fatal("the module never loaded")
+	}
+	if err := chromedp.Run(ctx, chromedp.Click(`#sorter`, chromedp.ByID)); err != nil {
+		t.Fatalf("clicking the island anchor: %v", err)
+	}
+	const focused = `document.activeElement === document.querySelector('#isle [role="alert"][tabindex="-1"]')`
+	if !pollTrue(ctx, focused) {
+		t.Fatal("the arm never ran on the swapped-in markup: the innerHTML insertion was not handed to the loaded module's scanner")
+	}
+	var swapped struct {
+		Gone   bool   `json:"gone"`
+		Search string `json:"search"`
+	}
+	if err := chromedp.Run(ctx, chromedp.Evaluate(`(() => ({
+		gone: !document.getElementById('before'),
+		search: location.search,
+	}))()`, &swapped)); err != nil {
+		t.Fatal(err)
+	}
+	if !swapped.Gone {
+		t.Fatal("the region was never swapped: the endpoint's answer did not replace it")
+	}
+	if swapped.Search != "?sort=name" {
+		t.Fatalf("the island's push-state never wrote the URL, got %q", swapped.Search)
+	}
+}
+
+// tableFixture renders one island table against the given sort state,
+// the way the island's handler answers a sort click. Cells are built
+// for the columns given, so a narrower answer renders too.
+func tableFixture(t *testing.T, sortBy string, dir SortDir, cols []Column, summary string) render.HTML {
+	t.Helper()
+	text := map[string]string{"name": "blog", "env": "production"}
+	cells := map[string]render.HTML{}
+	for _, col := range cols {
+		cells[col.Key] = render.Text(text[col.Key])
+	}
+	return Table(TableProps{
+		Path:    "/",
+		Columns: cols,
+		SortBy:  sortBy, SortDir: dir,
+		Island:  Island{Endpoint: "/__hui/table", Signal: "apps"},
+		Rows:    []Row{{ID: "app-1", Cells: cells}},
+		Summary: summary,
+	}, nil)
+}
+
+var tableCols = []Column{
+	{Key: "name", Header: "Name", Sortable: true},
+	{Key: "env", Header: "Environment", Sortable: true},
+}
+
+// The island sort, end to end. A click on the old sort anchor sends
+// the island request, the runtime swaps the region's HTML, and the
+// module — armed by the kernel on the inserted subtree — returns focus
+// to the SAME column's anchor in the NEW table (the element found
+// after the swap, not the detached one, not <body>) and copies the
+// sentence the endpoint rendered into the status. The URL is the one
+// the island pushed.
+func TestE2E_IslandSortRestoresFocusAndAnnounces(t *testing.T) {
+	b := startBehaviorServer(t,
+		`<div id="isle" data-fui-signal="apps" data-fui-signal-mode="html">`+
+			string(tableFixture(t, "name", SortAsc, tableCols, ""))+`</div>`,
+		func(mux *http.ServeMux) {
+			mux.HandleFunc("/__hui/table", func(w http.ResponseWriter, r *http.Request) {
+				q := r.URL.Query()
+				dir := SortDir(q.Get("dir"))
+				w.Header().Set("Content-Type", "text/html")
+				fmt.Fprint(w, string(tableFixture(t, q.Get("sort"), dir, tableCols, "SENTINEL window")))
+			})
+		})
+	ctx := behaviorPage(t, b)
+	if !pollTrue(ctx, moduleLoadedExpr) {
+		t.Fatal("the module never loaded")
+	}
+	if err := chromedp.Run(ctx,
+		chromedp.Click(`#isle [data-hui-table-sort="name"]`, chromedp.ByQuery),
+	); err != nil {
+		t.Fatalf("clicking the sort anchor: %v", err)
+	}
+	// The swap settles FIRST: the focus identity is meaningless until
+	// the region's HTML has been replaced — before it, the clicked
+	// anchor is still the focused element, and an assertion that only
+	// asks "is the name anchor focused" passes on the pre-swap DOM.
+	// The answer carries the SENTINEL Summary the initial render does
+	// not, so its presence in the announcement is the swap-settled
+	// predicate.
+	if !pollTrue(ctx, `(document.querySelector('#isle [data-hui-table]') || {getAttribute: () => null}).getAttribute('data-hui-table-announcement') === 'Sorted by Name, descending SENTINEL window'`) {
+		t.Fatal("the region was never swapped for the endpoint's answer")
+	}
+	// The focused element must be the NEW table's anchor for the same
+	// key — the element found after the swap, connected, not <body>
+	// and not whatever the click left focused.
+	const focused = `(() => {
+		const el = document.querySelector('#isle [data-hui-table-sort="name"]');
+		return !!el && document.activeElement === el && el.isConnected;
+	})()`
+	if !pollTrue(ctx, focused) {
+		t.Fatal("focus did not return to the clicked column's anchor in the swapped-in table")
+	}
+	if !pollTrue(ctx, `document.querySelector('#isle [data-hui-table-status]').textContent === 'Sorted by Name, descending SENTINEL window'`) {
+		var status string
+		chromedp.Run(ctx, chromedp.Evaluate(`document.querySelector('#isle [data-hui-table-status]').textContent`, &status))
+		t.Fatalf("the status does not carry the endpoint's sentence, got %q", status)
+	}
+	var search string
+	if err := chromedp.Run(ctx, chromedp.Evaluate(`location.search`, &search)); err != nil {
+		t.Fatal(err)
+	}
+	if search != "?dir=desc&sort=name" {
+		t.Fatalf("the sort did not push the anchor's URL, got %q", search)
+	}
+}
+
+// The answer may drop the clicked column — a narrower result, a
+// different view. Focus then falls to the scroll region, the table's
+// own focusable surface, so it stays inside the table the reader is
+// reading instead of falling to <body>.
+func TestE2E_IslandSortFallsBackToTheScrollRegion(t *testing.T) {
+	narrow := []Column{{Key: "env", Header: "Environment", Sortable: true}}
+	b := startBehaviorServer(t,
+		`<div id="isle" data-fui-signal="apps" data-fui-signal-mode="html">`+
+			string(tableFixture(t, "name", SortAsc, tableCols, ""))+`</div>`,
+		func(mux *http.ServeMux) {
+			mux.HandleFunc("/__hui/table", func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "text/html")
+				fmt.Fprint(w, string(tableFixture(t, "env", SortAsc, narrow, "")))
+			})
+		})
+	ctx := behaviorPage(t, b)
+	if !pollTrue(ctx, moduleLoadedExpr) {
+		t.Fatal("the module never loaded")
+	}
+	if err := chromedp.Run(ctx,
+		chromedp.Click(`#isle [data-hui-table-sort="name"]`, chromedp.ByQuery),
+	); err != nil {
+		t.Fatalf("clicking the sort anchor: %v", err)
+	}
+	// Swap settles first (the answer is the narrow table), then the
+	// focus identity: the NEW region's scroll element, found after
+	// the swap.
+	if !pollTrue(ctx, `!document.querySelector('#isle [data-hui-table-sort="name"]') && !!document.querySelector('#isle [data-hui-table-sort="env"]')`) {
+		t.Fatal("the region was never swapped for the narrower answer")
+	}
+	const focused = `(() => {
+		const el = document.querySelector('#isle [data-hui-table-scroll]');
+		return !!el && document.activeElement === el;
+	})()`
+	if !pollTrue(ctx, focused) {
+		t.Fatal("focus did not fall to the scroll region when the answer dropped the clicked column")
+	}
+}
+
+// A plain table's sort is a page navigation the client router owns:
+// the module records nothing (no signal hook to record against) and
+// intercepts nothing, and the URL changes the way a navigation's does.
+func TestE2E_PlainTableSortIsTheRouters(t *testing.T) {
+	plain := Table(TableProps{
+		Path:    "/plain-destination",
+		Columns: tableCols,
+		SortBy:  "name", SortDir: SortAsc,
+		Rows: []Row{
+			{ID: "app-1", Cells: map[string]render.HTML{"name": render.Text("blog"), "env": render.Text("production")}},
+		},
+	}, nil)
+	var requests atomic.Int32
+	b := startBehaviorServer(t, string(plain), func(mux *http.ServeMux) {
+		mux.HandleFunc("/plain-destination", func(w http.ResponseWriter, r *http.Request) {
+			requests.Add(1)
+			w.Header().Set("Content-Type", "text/html")
+			fmt.Fprint(w, `<!doctype html><html><head><title>destination</title></head><body>`+
+				`<main role="main"><span id="plain-server-sentinel">server destination</span></main>`+
+				`</body></html>`)
+		})
+	})
+	ctx := behaviorPage(t, b)
+	if !pollTrue(ctx, moduleLoadedExpr) {
+		t.Fatal("the module never loaded — a plain table's data-hui-table marker must load it")
+	}
+	if err := chromedp.Run(ctx,
+		chromedp.Click(`[data-hui-table] th a`, chromedp.ByQuery),
+	); err != nil {
+		t.Fatalf("clicking the plain sort anchor: %v", err)
+	}
+	if !pollTrue(ctx, `!!document.getElementById('plain-server-sentinel')`) {
+		t.Fatal("the router did not render the server's destination response")
+	}
+	if got := requests.Load(); got != 1 {
+		t.Fatalf("the router fetched the plain destination %d times, want exactly once", got)
+	}
+	if !pollTrue(ctx, `location.search === '?dir=desc&sort=name'`) {
+		var search string
+		chromedp.Run(ctx, chromedp.Evaluate(`location.search`, &search))
+		t.Fatalf("the navigation never happened, got %q", search)
+	}
+	if !pollTrue(ctx, `!window.__gofastr || !window.__gofastr._huiTableSort`) {
+		t.Fatal("the module recorded a sort on a plain table: a navigation is the router's, not the module's")
+	}
+}
+
+// Two tables may share a signal, but each signal-bound wrapper is its own
+// replacement region. A sort in the second wrapper must not focus the first
+// table when both wrappers receive the same response.
+func TestE2E_IslandSortSameSignalRestoresClickedRegion(t *testing.T) {
+	b := startBehaviorServer(t,
+		`<div id="first" data-fui-signal="apps" data-fui-signal-mode="html">`+
+			string(tableFixture(t, "name", SortAsc, tableCols, ""))+`</div>`+
+			`<div id="second" data-fui-signal="apps" data-fui-signal-mode="html">`+
+			string(tableFixture(t, "name", SortAsc, tableCols, ""))+`</div>`,
+		func(mux *http.ServeMux) {
+			mux.HandleFunc("/__hui/table", func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "text/html")
+				fmt.Fprint(w, string(tableFixture(t, "name", SortDesc, tableCols, "SAME SIGNAL")))
+			})
+		})
+	ctx := behaviorPage(t, b)
+	if !pollTrue(ctx, moduleLoadedExpr) {
+		t.Fatal("the module never loaded")
+	}
+	if err := chromedp.Run(ctx,
+		chromedp.Click(`#second [data-hui-table-sort="name"]`, chromedp.ByQuery),
+	); err != nil {
+		t.Fatalf("clicking the second table's sort anchor: %v", err)
+	}
+	if !pollTrue(ctx, `document.querySelector('#second [data-hui-table]').getAttribute('data-hui-table-announcement').includes('SAME SIGNAL')`) {
+		t.Fatal("the shared-signal tables did not receive the endpoint's answer")
+	}
+	if !pollTrue(ctx, `document.activeElement === document.querySelector('#second [data-hui-table-sort="name"]')`) {
+		t.Fatal("focus landed outside the table whose sort was clicked")
+	}
+}
+
+// A failed sort leaves its record pending until the reader acts again. A
+// non-sort RPC in the same replacement region is that next act, so its
+// answer must not restore the old sort's focus or announcement.
+func TestE2E_FailedSortThenRefreshDoesNotRestoreFocus(t *testing.T) {
+	initial := `<div id="isle" data-fui-signal="apps" data-fui-signal-mode="html">` +
+		string(tableFixture(t, "name", SortAsc, tableCols, "")) +
+		`<button id="refresh" type="button" data-fui-rpc="/__hui/refresh" data-fui-rpc-method="GET" data-fui-rpc-signal="apps">Refresh</button></div>`
+	b := startBehaviorServer(t, initial,
+		func(mux *http.ServeMux) {
+			mux.HandleFunc("/__hui/table", func(w http.ResponseWriter, r *http.Request) {
+				http.Error(w, "sort failed", http.StatusInternalServerError)
+			})
+			mux.HandleFunc("/__hui/refresh", func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "text/html")
+				fmt.Fprint(w, string(tableFixture(t, "env", SortAsc, tableCols, "REFRESH ANSWER")))
+			})
+		})
+	ctx := behaviorPage(t, b)
+	if !pollTrue(ctx, moduleLoadedExpr) {
+		t.Fatal("the module never loaded")
+	}
+	if err := chromedp.Run(ctx,
+		chromedp.Click(`#isle [data-hui-table-sort="name"]`, chromedp.ByQuery),
+	); err != nil {
+		t.Fatalf("clicking the sort anchor: %v", err)
+	}
+	if !pollTrue(ctx, `!!window.__gofastr._huiTableSort`) {
+		t.Fatal("the failed sort did not leave the pending record for the next-act test")
+	}
+	if err := chromedp.Run(ctx,
+		chromedp.Click(`#refresh`, chromedp.ByID),
+	); err != nil {
+		t.Fatalf("clicking the refresh RPC: %v", err)
+	}
+	if !pollTrue(ctx, `document.querySelector('#isle [data-hui-table-announcement]').getAttribute('data-hui-table-announcement').includes('REFRESH ANSWER')`) {
+		t.Fatal("the refresh RPC did not replace the signal region")
+	}
+	if err := chromedp.Run(ctx, chromedp.Sleep(100*time.Millisecond)); err != nil {
+		t.Fatalf("waiting for the refresh answer to settle: %v", err)
+	}
+	var state struct {
+		Status      string `json:"status"`
+		NameFocused bool   `json:"nameFocused"`
+	}
+	if err := chromedp.Run(ctx, chromedp.Evaluate(`(() => {
+		const root = document.querySelector('#isle');
+		const name = root.querySelector('[data-hui-table-sort="name"]');
+		return {
+			status: root.querySelector('[data-hui-table-status]').textContent,
+			nameFocused: document.activeElement === name,
+		};
+	})()`, &state)); err != nil {
+		t.Fatalf("reading the refresh outcome: %v", err)
+	}
+	if state.Status != "" || state.NameFocused {
+		t.Fatalf("a failed sort moved focus or status during the later refresh: status=%q nameFocused=%v", state.Status, state.NameFocused)
+	}
+}
+
+// A record old enough to outlive the generous cold-load/slow-response window
+// cannot claim a later passive signal swap.
+func TestE2E_ExpiredTableSortDoesNotRestoreFocus(t *testing.T) {
+	b := startBehaviorServer(t,
+		`<div id="isle" data-fui-signal="apps" data-fui-signal-mode="html">`+
+			string(tableFixture(t, "name", SortAsc, tableCols, ""))+`</div>`,
+		func(mux *http.ServeMux) {
+			mux.HandleFunc("/__hui/age", func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "text/html")
+				fmt.Fprint(w, string(tableFixture(t, "name", SortDesc, tableCols, "EXPIRED ANSWER")))
+			})
+		})
+	ctx := behaviorPage(t, b)
+	if !pollTrue(ctx, moduleLoadedExpr) {
+		t.Fatal("the module never loaded")
+	}
+	if err := chromedp.Run(ctx, chromedp.Evaluate(`(() => {
+		const table = document.querySelector('#isle [data-hui-table]');
+		window.__gofastr._huiTableSort = [
+			'name',
+			table.parentNode,
+			performance.now() - 30001,
+		];
+		void fetch('/__hui/age').then(r => r.text()).then(html => window.__gofastr.setSignal('apps', html));
+	})()`, nil)); err != nil {
+		t.Fatalf("starting the aged signal swap: %v", err)
+	}
+	if !pollTrue(ctx, `document.querySelector('#isle [data-hui-table-announcement]').getAttribute('data-hui-table-announcement').includes('EXPIRED ANSWER')`) {
+		t.Fatal("the aged signal swap did not arrive")
+	}
+	if err := chromedp.Run(ctx, chromedp.Sleep(100*time.Millisecond)); err != nil {
+		t.Fatalf("waiting for the aged answer to settle: %v", err)
+	}
+	var state struct {
+		Status      string `json:"status"`
+		NameFocused bool   `json:"nameFocused"`
+	}
+	if err := chromedp.Run(ctx, chromedp.Evaluate(`(() => {
+		const root = document.querySelector('#isle');
+		const name = root.querySelector('[data-hui-table-sort="name"]');
+		return {
+			status: root.querySelector('[data-hui-table-status]').textContent,
+			nameFocused: document.activeElement === name,
+		};
+	})()`, &state)); err != nil {
+		t.Fatalf("reading the aged-swap outcome: %v", err)
+	}
+	if state.Status != "" || state.NameFocused {
+		t.Fatalf("an expired sort moved focus or status: status=%q nameFocused=%v", state.Status, state.NameFocused)
 	}
 }

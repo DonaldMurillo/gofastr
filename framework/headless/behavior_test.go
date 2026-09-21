@@ -248,7 +248,7 @@ func isAsciiLetter(r rune) bool {
 
 // TestModuleSaysNothingInEnglish catches a sentence the module says
 // itself. Every string it writes must have arrived as a data-hui-*
-// attribute the component rendered from its Words, because a sentence
+// attribute the component rendered from its Strings, because a sentence
 // hardcoded here is a sentence every translated page says in English.
 func TestModuleSaysNothingInEnglish(t *testing.T) {
 	src := jsWithoutComments()

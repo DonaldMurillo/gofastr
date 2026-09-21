@@ -134,6 +134,9 @@ func TestStringsForTranslatesEveryField(t *testing.T) {
 	entries[i18nui.KeyFileSelected] = "fr·{name} choisi."
 	entries[i18nui.KeyFilesSelected] = "fr·{n} fichiers : {names}."
 	entries[i18nui.KeyTableSortBy] = "fr·Trier par {column}"
+	entries[i18nui.KeyTableSortedBy] = "fr·Trié par {column}, {direction}"
+	entries[i18nui.KeyTableDirAscending] = "fr·ascendant"
+	entries[i18nui.KeyTableDirDescending] = "fr·descendant"
 
 	got := StringsFor(stringsCtx(entries))
 	everyHeadlessStringField(t, got, func(name, val string) {
@@ -342,6 +345,7 @@ func TestCheckStringsCleanCatalogIsEmpty(t *testing.T) {
 	entries[i18nui.KeyFileSelected] = "fr·{name} choisi."
 	entries[i18nui.KeyFilesSelected] = "fr·{names} : {n}."
 	entries[i18nui.KeyTableSortBy] = "fr·Trier par {column}"
+	entries[i18nui.KeyTableSortedBy] = "fr·Trié par {column}, {direction}"
 	if got := CheckStrings(stringsCtx(entries)); len(got) != 0 {
 		t.Errorf("a catalog that keeps every placeholder reported %d refusal(s): %+v", len(got), got)
 	}

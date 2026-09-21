@@ -8,6 +8,40 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 ## [Unreleased]
 
 ### Added
+- **The table behaviour: an island sort now gives focus back and
+  says what changed.** The runtime swaps a signal region's HTML, the
+  sort anchor the reader clicked is destroyed with it, and focus
+  fell to `<body>` with nothing announcing the change — the reader
+  had to re-find the table on every sort. `headless.Table` renders
+  the hooks (`data-hui-table` on the root, `-signal` and `-sort` on
+  island tables, `-scroll` on the focusable region, a visually
+  hidden `role="status"` span as the root's last child, empty on the
+  server) and `framework/headless`'s behaviour module binds them:
+  the click accepts a signal-bound table and records the column key and
+  replacement region; when a valid answer arrives, focus returns to the
+  same column's anchor in that region (`preventScroll`; the scroll region
+  when the answer dropped the column), and the sentence the server
+  rendered into `data-hui-table-announcement` is copied into the
+  status, clear then frame so a repeated identical sentence is
+  announced again. A failed answer leaves focus and status where they
+  were.
+  The sentence is the server's, composed from three new `Strings` fields
+  (`TableSortedBy` "Sorted by {column}, {direction}",
+  `SortAscending` "ascending", `SortDescending` "descending",
+  bridged to new `i18nui` keys `ui.table.sortedBy`,
+  `ui.table.dirAscending`, `ui.table.dirDescending`) with the
+  column's header or key and the direction word substituted at
+  render, and an optional caller-composed `Summary` (`TableProps`
+  and `ui.DataTableConfig`) appended — "Showing 8 of 10" is the
+  caller's to say, because the primitive does not know the total.
+  The module writes no sentence itself, so a translated page
+  announces in its own language. A plain table's status and
+  announcement render for the pager's later use; this module fills
+  neither. The registration declares the click on
+  `[data-hui-table-sort]` to the kernel's interaction bridge
+  (gofastr#436's seam), so a first click while the module is still
+  fetching is retained and replayed. No kernel change: nothing under
+  `core-ui/runtime` moved.
 - **`headless.Table`: the table as a headless primitive.** Structure,
   roles and sort semantics with zero CSS and no caller moved —
   `ui.DataTable`, the resource engine and the battery render exactly
@@ -64,11 +98,10 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   choose; the structure renders none of it at a nil class map.
   Deliberately not here: no pager (the footer slot is the
   seam the existing `core-ui/patterns/pagination` lands in), no row
-  selection, no behaviour module (focus restoration and the result
-  announcement arrive with their `data-hui-table*` hooks in a later
-  change — `Spec.Hooks` is empty because a declared hook nothing
-  binds is a promise nothing keeps), and no zebra or sticky:
-  styling facts belong to the class map and the sheet.
+  selection, no behaviour module (it has arrived since, as the entry
+  above records — `Spec.Hooks` was empty here because a declared
+  hook nothing binds is a promise nothing keeps), and no zebra or
+  sticky: styling facts belong to the class map and the sheet.
 - **The Lightbox moves out of the kernel: the module, its viewer
   anatomy and its interaction descriptor all belong to the
   component's packages now.** `framework/ui/lightbox.js` replaces

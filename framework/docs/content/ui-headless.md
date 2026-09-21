@@ -145,6 +145,20 @@ the same anchors then carry the RPC contract beside their hrefs,
 exactly as the pager's do. `Pagination` still requires one; that
 stays as it is until the pager moves onto a `Table`'s footer slot.
 
+What a reader is told after an island sort is composed on the server,
+never in script. `TableProps.Summary` (and `ui.DataTableConfig.Summary`,
+which passes it through) is the caller's sentence about the result
+window, "Showing 8 of 10", because only the caller knows the total.
+The primitive prefixes the sort when `SortBy` names a column, from
+three `Strings` fields: `TableSortedBy` ("Sorted by {column},
+{direction}", the column named by its `Header` or its `Key`),
+`SortAscending` ("ascending") and `SortDescending` ("descending"),
+bridged by `ui.StringsFor` to `i18nui.KeyTableSortedBy`,
+`KeyTableDirAscending` and `KeyTableDirDescending`. The result lands in
+`data-hui-table-announcement` on the root, and the behaviour module
+copies it into the table's status after the swap; a table with no sort
+and no `Summary` renders no announcement at all.
+
 Every href a component writes goes through the framework's anchor
 policy, `urlsafe.CleanAnchor`: a `Button` whose href is rejected
 renders the disabled-link posture; a form action, a dismiss href and
@@ -311,8 +325,9 @@ stylesheet uses (`registry.RegisterBehavior`). The host serves it as
 the module `headless` at `/__gofastr/runtime/headless.js`, and the
 kernel loads it when one of its markers is on the page. The markers
 are `[data-hui-reveal]`, `[data-hui-color]`, `[data-hui-when]`,
-`[data-hui-form-errors]`, `[data-hui-action]`, `[data-hui-drop]` and
-`[data-hui-system]`: one per behaviour, the root hook of each.
+`[data-hui-form-errors]`, `[data-hui-action]`, `[data-hui-drop]`,
+`[data-hui-system]` and `[data-hui-table]`: one per behaviour, the
+root hook of each.
 
 What it does, one line per behaviour:
 
@@ -362,6 +377,16 @@ What it does, one line per behaviour:
   dismissed set never applies to it: losing the connection again must
   show it again, which is also why the offline banner carries no
   dismiss.
+- **table** restores what an island sort destroys when a valid answer
+  arrives: the click on a `data-hui-table-sort` anchor accepts only a
+  signal-bound table, then records the column key and replacement region;
+  focus returns to the same column's anchor in that region (the
+  `data-hui-table-scroll` region when the answer dropped the column).
+  The sentence the server rendered into
+  `data-hui-table-announcement` is copied, clear then frame, into the
+  `data-hui-table-status` span. A failed answer leaves focus and status
+  where they were. A plain table's status and announcement render for
+  the pager's later use; this module fills neither.
 
 Two attributes are the module's own, written by it and rendered by no
 component: `data-hui-when-off` and `data-hui-drop-over`.
