@@ -96,11 +96,11 @@ func startGadgetServer(t *testing.T, widgets, body string) *gadgetServer {
 	})
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		fmt.Fprintf(w, `<!doctype html><html><head><title>gadget</title></head><body>
+		fmt.Fprintf(w, `<!doctype html><html><head><title>gadget</title><script type="application/json" id="gofastr-behaviors">%s</script></head><body>
 %s
 <span id="ready">ready</span>
 <script src="/__gofastr/runtime.js"></script>
-</body></html>`, body)
+</body></html>`, BehaviorsJSON(), body)
 	})
 	g.Srv = httptest.NewServer(mux)
 	t.Cleanup(g.Srv.Close)

@@ -18,6 +18,18 @@ the detail as markup: a persistent callout's contents are a list or a sample, an
 a message with no headline is still a message — the titleless shape is how a status line interrupts, and the refusal is saved for the box that says nothing at all
 <div role="status"><div></div><p>Two apps need attention.</p></div>
 
+=== BackToTop / to the page top ===
+the anchor is a real same-origin link, so the no-script page jumps exactly where it says; the module only adds the threshold, the scroll and the focus return
+<a aria-label="Back to top" data-hui-back-to-top="" href="#main-content"><span aria-hidden="true">↑</span><span>Back to top</span></a>
+
+=== BackToTop / the default name ===
+a jump control with no label of its own still names itself — the default word is the one Strings carries, and a translated page says it in the reader's language
+<a aria-label="&lt;BackToTop&gt;" data-hui-back-to-top="" href="#top"><span aria-hidden="true">↑</span><span>&lt;BackToTop&gt;</span></a>
+
+=== BackToTop / an explicit target and threshold ===
+the target is an element id, never a selector — the module resolves it — and a threshold of zero would be the module's default, so an explicit one is the caller tuning when the link becomes true
+<a aria-label="Back to contents" data-hui-back-to-top="" data-hui-back-to-top-smooth="" data-hui-back-to-top-target="toc" data-hui-back-to-top-threshold="480" href="#toc"><span aria-hidden="true">↑</span><span>Back to contents</span></a>
+
 === Badge / plain ===
 a badge is a word, and the word is the accessible name — which is why the icon beside it is hidden rather than read twice
 <span>running</span>
@@ -117,6 +129,22 @@ the widest bounded measure — wide content such as a table of apps, still stopp
 === Container / full ===
 full drops the maximum and keeps the gutter — a dashboard should use the whole screen, and the gutter is the one thing it may not lose, because the edge of a phone is where text stops being readable
 <div><p>CPU, memory and network for every node.</p></div>
+
+=== Counter / a signal counter ===
+the value is on the page before any script runs and the buttons speak the kernel's increment contract — the counter works with no module of this package loaded at all
+<div aria-label="Quantity" role="group"><button aria-label="&lt;CounterDecrement&gt;" data-fui-signal-inc="qty:-1" type="button">−</button><span aria-live="polite" data-fui-signal="qty">2</span><button aria-label="&lt;CounterIncrement&gt;" data-fui-signal-inc="qty" type="button">+</button></div>
+
+=== Counter / animated ===
+the final value is the SSR text, so a reader without script sees the true count while the animation is only presentation, and reduced motion keeps the number
+<div aria-label="Deployed" data-hui-counter-animate="" data-hui-counter-from="0" data-hui-counter-ms="600" role="group"><button aria-label="&lt;CounterDecrement&gt;" data-fui-signal-inc="deployed:-1" type="button">−</button><span aria-live="polite" data-fui-signal="deployed">4820</span><button aria-label="&lt;CounterIncrement&gt;" data-fui-signal-inc="deployed" type="button">+</button></div>
+
+=== Counter / the unlabelled group names itself ===
+a counter with no label of its own still names its group — the default word is the one Strings carries, so a translated page says it in the reader's language
+<div aria-label="&lt;CounterLabel&gt;" role="group"><button aria-label="&lt;CounterDecrement&gt;" data-fui-signal-inc="hits:-1" type="button">−</button><span aria-live="polite" data-fui-signal="hits">7</span><button aria-label="&lt;CounterIncrement&gt;" data-fui-signal-inc="hits" type="button">+</button></div>
+
+=== Counter / named, for a form ===
+a named number input submits without script, and the signal writes its value attribute so the display and the submitted field are one number
+<div aria-label="Seats" role="group"><button aria-label="&lt;CounterDecrement&gt;" data-fui-signal-inc="seats:-1" type="button">−</button><input aria-label="Seats" data-fui-signal="seats" data-fui-signal-attr="value" name="seats" step="1" type="number" value="4"><button aria-label="&lt;CounterIncrement&gt;" data-fui-signal-inc="seats" type="button">+</button></div>
 
 === DetailList / a record ===
 a dt and the dd after it are one pair to assistive technology in a way a grid of divs never is, and the pair survives every restyling because the relationship is the element
@@ -230,6 +258,30 @@ the minimum a viewer is: a named image and its accessible name, nothing optional
 the binder's spellings instead of the hooks: the same identity, nav opt-in, buttons and zoom target as data-fui-lightbox*, for the framework module a styled lightbox ships — the hui twins are suppressed here; they render exactly when the host's own module is the intended binder
 <div data-fui-lightbox="photos" data-fui-lightbox-nav="true"><figure><span data-fui-signal="alt" data-fui-signal-mode="text" id="photos-title">&lt;LightboxViewerLabel&gt;</span><img data-fui-lightbox-image="" data-fui-signal="src" data-fui-signal-attr="src" data-fui-signal-mode="attr"></figure><div><button aria-label="&lt;LightboxPrevious&gt;" data-fui-lightbox-prev="photos" type="button"></button><button aria-label="&lt;LightboxNext&gt;" data-fui-lightbox-next="photos" type="button"></button><a aria-label="&lt;LightboxDownload&gt;" data-fui-signal="src" data-fui-signal-attr="href" data-fui-signal-mode="attr" download=""></a></div></div>
 
+=== NotificationBell / unread ===
+the anchor's accessible name says the count in words while the badge shows the number, and the href is the notifications page — the no-script page goes there
+<a aria-label="&lt;NotificationCount 3&gt;" data-hui-notification-bell="" data-hui-notification-count-fmt="&lt;NotificationCount %d&gt;" href="/notifications"><span aria-hidden="true">🔔</span><span data-hui-notification-count="3"><span>3</span></span></a>
+
+=== NotificationBell / a widget trigger ===
+Opens names the widget the same anchor opens with script: one element is the no-script link and the trigger, through the kernel's own data-fui-open spelling typed from a prop
+<a aria-label="&lt;NotificationCount 1&gt;" data-fui-open="bell-panel" data-fui-popover-anchor="bottom" data-hui-notification-bell="" data-hui-notification-count-fmt="&lt;NotificationCount %d&gt;" href="/notifications"><span aria-hidden="true">🔔</span><span data-hui-notification-count="1"><span>1</span></span></a>
+
+=== NotificationBell / nothing unread, the count live ===
+zero renders no badge (no news is no news) and the signal-bound count raises it the moment news arrives, without a re-render
+<a aria-label="&lt;NotificationCount 0&gt;" data-hui-notification-bell="" data-hui-notification-count-fmt="&lt;NotificationCount %d&gt;" href="/notifications"><span aria-hidden="true">🔔</span><span data-fui-signal="unread" data-fui-signal-mode="text" data-hui-notification-count="0"><span>0</span></span></a>
+
+=== NumberInput / unbounded, with help ===
+a real, named number input works with no script at all, and the rule it obeys rides its description — the buttons are enhancement only
+<div aria-label="Port" role="group"><label for="port">Port</label><div><button aria-label="&lt;NumberDecrement Port&gt;" data-hui-number-input-decrement="" data-hui-number-input-for="port" type="button">−</button><input aria-describedby="port-hint" id="port" name="port" step="1" type="number" value="8080"><button aria-label="&lt;NumberIncrement Port&gt;" data-hui-number-input-for="port" data-hui-number-input-increment="" type="button">+</button></div><p id="port-hint">1024 to 65535</p></div>
+
+=== NumberInput / bounded at both edges ===
+the bounds are on the input (the browser enforces them for typing) and the buttons' names say which field they step — the hook the module resolves the input by rides each button
+<div aria-label="Replicas" role="group"><label for="replicas">Replicas</label><div><button aria-label="&lt;NumberDecrement Replicas&gt;" data-hui-number-input-decrement="" data-hui-number-input-for="replicas" type="button">−</button><input id="replicas" max="10" min="1" name="replicas" step="1" type="number" value="3"><button aria-label="&lt;NumberIncrement Replicas&gt;" data-hui-number-input-for="replicas" data-hui-number-input-increment="" type="button">+</button></div></div>
+
+=== NumberInput / disabled with an error ===
+disabled takes the buttons out with the input, and the violation is read before the rule because the correction arrives before the reminder
+<div aria-label="Quota" role="group"><label for="quota">Quota</label><div><button aria-label="&lt;NumberDecrement Quota&gt;" data-hui-number-input-decrement="" data-hui-number-input-for="quota" disabled="" type="button">−</button><input aria-describedby="quota-error" aria-invalid="true" disabled="" id="quota" max="10" min="1" name="quota" step="1" type="number" value="2"><button aria-label="&lt;NumberIncrement Quota&gt;" data-hui-number-input-for="quota" data-hui-number-input-increment="" disabled="" type="button">+</button></div><p id="quota-error" role="alert">Below the minimum</p></div>
+
 === OptimisticAction / default ===
 both labels ship in the SSR so the optimistic flip needs no round-trip, the method is absent because POST is the runtime's default, and the status span exists because the framework's shake announces nothing
 <button data-hui-action="" data-hui-action-endpoint="/apps/blog/restart" data-hui-action-failed="&lt;ActionFailed&gt;" data-state="idle" type="button"><span data-hui-action-idle="">Restart now</span><span data-hui-action-done="" hidden="">Restarting</span><span data-hui-action-status="" role="status"></span></button>
@@ -274,6 +326,42 @@ Previous stays visible and named with no href — removing it moves every other 
 the reveal button says what it will do next rather than what the field is doing now, and the labels it swaps between are published for the runtime instead of built from a class
 <div><label for="password-token">Registry token</label><div data-hui-affix=""><input data-hui-affix-input="" id="password-token" name="token" type="password"><button aria-label="&lt;ShowPassword&gt;" aria-pressed="false" data-hui-hide-label="&lt;HidePassword&gt;" data-hui-hide-text="&lt;RevealHide&gt;" data-hui-reveal="" data-hui-show-label="&lt;ShowPassword&gt;" data-hui-show-text="&lt;RevealShow&gt;" type="button">&lt;RevealShow&gt;</button></div></div>
 
+=== RangeSlider / a full default pair ===
+two named range inputs the form submits as -min and -max, each thumb named (Minimum/Maximum) because two anonymous thumbs in one group tell a screen reader user nothing
+<div aria-label="Price" data-hui-range-slider="" role="group"><span>Price</span><output data-hui-range-slider-output="&lt;RangeValue %s %s&gt;" for="price-min price-max">&lt;RangeValue 0 100&gt;</output><div><input aria-label="&lt;RangeLow Price&gt;" data-hui-range-slider-low="" id="price-min" max="100" min="0" name="price-min" step="1" type="range" value="0"><input aria-label="&lt;RangeHigh Price&gt;" data-hui-range-slider-high="" id="price-max" max="100" min="0" name="price-max" step="1" type="range" value="100"></div></div>
+
+=== RangeSlider / a narrowed pair ===
+the output sentence travels with the output (the module re-formats through it, so a translated page says its own words live) and a crossed pair renders ordered — the same repair the module makes of a drag
+<div aria-label="Age" data-hui-range-slider="" role="group"><span>Age</span><output data-hui-range-slider-output="&lt;RangeValue %s %s&gt;" for="age-min age-max">&lt;RangeValue 25 40&gt;</output><div><input aria-label="&lt;RangeLow Age&gt;" data-hui-range-slider-low="" id="age-min" max="65" min="18" name="age-min" step="1" type="range" value="25"><input aria-label="&lt;RangeHigh Age&gt;" data-hui-range-slider-high="" id="age-max" max="65" min="18" name="age-max" step="1" type="range" value="40"></div></div>
+
+=== RangeSlider / equal values ===
+low equal to high is a real pair — a single-point range, rendered as given rather than repaired
+<div aria-label="Window" data-hui-range-slider="" role="group"><span>Window</span><div><input aria-label="&lt;RangeLow Window&gt;" data-hui-range-slider-low="" id="window-min" max="100" min="0" name="window-min" step="1" type="range" value="5"><input aria-label="&lt;RangeHigh Window&gt;" data-hui-range-slider-high="" id="window-max" max="100" min="0" name="window-max" step="1" type="range" value="5"></div></div>
+
+=== Rating / no selection ===
+zero is a real value — no rating chosen — and the radios still submit nothing rather than a pretend zero
+<fieldset aria-label="Score" role="radiogroup"><input aria-label="&lt;RatingChoice 5 5&gt;" id="score-5" name="score" type="radio" value="5"><label for="score-5"><span aria-hidden="true">★</span></label><input aria-label="&lt;RatingChoice 4 5&gt;" id="score-4" name="score" type="radio" value="4"><label for="score-4"><span aria-hidden="true">★</span></label><input aria-label="&lt;RatingChoice 3 5&gt;" id="score-3" name="score" type="radio" value="3"><label for="score-3"><span aria-hidden="true">★</span></label><input aria-label="&lt;RatingChoice 2 5&gt;" id="score-2" name="score" type="radio" value="2"><label for="score-2"><span aria-hidden="true">★</span></label><input aria-label="&lt;RatingChoice 1 5&gt;" id="score-1" name="score" type="radio" value="1"><label for="score-1"><span aria-hidden="true">★</span></label></fieldset>
+
+=== Rating / a middle choice ===
+each radio says its own name ("3 out of 5") and the checked one is the group's value the form POSTs — the whole contract, with no module at all
+<fieldset aria-label="Score" role="radiogroup"><input aria-label="&lt;RatingChoice 5 5&gt;" id="score-5" name="score" type="radio" value="5"><label for="score-5"><span aria-hidden="true">★</span></label><input aria-label="&lt;RatingChoice 4 5&gt;" id="score-4" name="score" type="radio" value="4"><label for="score-4"><span aria-hidden="true">★</span></label><input aria-label="&lt;RatingChoice 3 5&gt;" checked="" id="score-3" name="score" type="radio" value="3"><label for="score-3"><span aria-hidden="true">★</span></label><input aria-label="&lt;RatingChoice 2 5&gt;" id="score-2" name="score" type="radio" value="2"><label for="score-2"><span aria-hidden="true">★</span></label><input aria-label="&lt;RatingChoice 1 5&gt;" id="score-1" name="score" type="radio" value="1"><label for="score-1"><span aria-hidden="true">★</span></label></fieldset>
+
+=== Rating / a caller's glyph, disabled ===
+the glyph is presentation, hidden from assistive technology and swappable, and disabled takes the group out without unravelling the names
+<fieldset aria-label="Heat" role="radiogroup"><input aria-label="&lt;RatingChoice 5 5&gt;" disabled="" id="heat-5" name="heat" type="radio" value="5"><label for="heat-5"><span aria-hidden="true"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2z"/></svg></span></label><input aria-label="&lt;RatingChoice 4 5&gt;" disabled="" id="heat-4" name="heat" type="radio" value="4"><label for="heat-4"><span aria-hidden="true"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2z"/></svg></span></label><input aria-label="&lt;RatingChoice 3 5&gt;" disabled="" id="heat-3" name="heat" type="radio" value="3"><label for="heat-3"><span aria-hidden="true"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2z"/></svg></span></label><input aria-label="&lt;RatingChoice 2 5&gt;" checked="" disabled="" id="heat-2" name="heat" type="radio" value="2"><label for="heat-2"><span aria-hidden="true"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2z"/></svg></span></label><input aria-label="&lt;RatingChoice 1 5&gt;" disabled="" id="heat-1" name="heat" type="radio" value="1"><label for="heat-1"><span aria-hidden="true"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2z"/></svg></span></label></fieldset>
+
+=== Repeater / named submit controls, no script ===
+the add and remove controls are named submit buttons riding the surrounding form — the no-script page adds and removes rows through ordinary POSTs, and each remove names its row
+<div aria-label="Links" data-hui-repeater="links" role="group"><span>Links</span><ul aria-label="Links" id="links-items" role="list"><li data-hui-repeater-index="0" data-hui-repeater-item=""><div><input aria-label="Link label" name="links-label" type="text"></div><div><button aria-label="&lt;RepeaterRemove 1&gt;" data-hui-repeater-action="remove" name="links_remove" type="submit" value="0">&lt;RepeaterRemove 1&gt;</button></div></li><li data-hui-repeater-index="1" data-hui-repeater-item=""><div><input aria-label="Link label" name="links-label" type="text"></div><div><button aria-label="&lt;RepeaterRemove 2&gt;" data-hui-repeater-action="remove" name="links_remove" type="submit" value="1">&lt;RepeaterRemove 2&gt;</button></div></li></ul><button data-hui-repeater-action="add" name="links_add" type="submit" value="1">&lt;RepeaterAdd&gt;</button><span data-hui-repeater-status="" role="status"></span></div>
+
+=== Repeater / an island repeater ===
+the same buttons carry the framework's RPC contract beside their submit semantics — the href-shaped operation in the endpoint's query — so the region swaps in place and the module restores focus to the row or the add control
+<div aria-label="Guests" data-hui-repeater="guests" role="group"><span>Guests</span><ul aria-label="Guests" id="guests-items" role="list"><li data-hui-repeater-index="0" data-hui-repeater-item=""><div><input aria-label="Link label" name="links-label" type="text"></div><div><button aria-label="&lt;RepeaterRemove 1&gt;" data-fui-rpc="/island/guests?index=0&amp;op=remove" data-fui-rpc-method="POST" data-fui-rpc-signal="guests" data-hui-repeater-action="remove" type="submit">&lt;RepeaterRemove 1&gt;</button></div></li></ul><button data-fui-rpc="/island/guests?op=add" data-fui-rpc-method="POST" data-fui-rpc-signal="guests" data-hui-repeater-action="add" type="submit">&lt;RepeaterAdd&gt;</button><span data-hui-repeater-status="" role="status"></span></div>
+
+=== Repeater / at the floor ===
+a min of one disables the single row's remove control rather than hiding it — the row is real, and the control says it cannot go
+<div aria-label="Owners" data-hui-repeater="owners" role="group"><span>Owners</span><ul aria-label="Owners" id="owners-items" role="list"><li data-hui-repeater-index="0" data-hui-repeater-item=""><div><input aria-label="Link label" name="links-label" type="text"></div><div><button aria-label="&lt;RepeaterRemove 1&gt;" data-hui-repeater-action="remove" disabled="" name="owners_remove" type="submit" value="0">&lt;RepeaterRemove 1&gt;</button></div></li></ul><button data-hui-repeater-action="add" name="owners_add" type="submit" value="1">&lt;RepeaterAdd&gt;</button><span data-hui-repeater-status="" role="status">One owner is required.</span></div>
+
 === Section / named ===
 a name is what makes it a landmark, and the name comes from the heading itself rather than a second string that can drift from it
 <section aria-labelledby="section-volumes-title"><div><div><h2 id="section-volumes-title">Volumes</h2><p>Disks attached to this node.</p></div><div><button type="button">Add</button></div></div><div><p>Two volumes.</p></div></section>
@@ -301,6 +389,18 @@ a real select, because the platform's own picker is the one thing that already w
 === Skeleton / three lines ===
 every bar is hidden from the tree: a screen reader reading out eight empty boxes, or announcing each shimmer, is strictly worse than one polite "Loading apps" and silence
 <div data-hui-lines="3" role="status"><span aria-hidden="true"></span><span aria-hidden="true"></span><span aria-hidden="true" data-hui-skeleton-last=""></span><span>Loading apps</span></div>
+
+=== Slider / with a live output ===
+the output is a real form output associated with the input, its SSR text is the true value, and the hook it carries is how the module keeps it in step while the thumb moves
+<div data-hui-slider=""><label for="cpu">CPU share</label><output data-hui-slider-output="" for="cpu">40</output><input aria-label="CPU share" id="cpu" max="100" min="0" name="cpu" step="1" type="range" value="40"><div><span>0</span><span>100</span></div></div>
+
+=== Slider / bare, no output ===
+a slider with no output renders no hook at all — markup carried for no one is the defect the hooks gate exists to catch
+<div data-hui-slider=""><label for="mem">Memory</label><input aria-label="Memory" id="mem" max="100" min="0" name="mem" step="1" type="range" value="0"></div>
+
+=== Slider / bounded custom step ===
+a step the value lands on: the browser, the server and the module all read the same three attributes, and a value between steps renders as given — data, not a broken prop
+<div data-hui-slider=""><label for="batch">Batch size</label><output data-hui-slider-output="" for="batch">50</output><input aria-label="Batch size" id="batch" max="100" min="10" name="batch" step="10" type="range" value="50"></div>
 
 === Spacer / plain ===
 it renders nothing, says nothing, and is in the markup only because a row needs a thing to grow — the space between two controls is the skin's, not a third control somebody wedged between them
@@ -350,6 +450,18 @@ label before value, and the trend's direction carried by its own words — the c
 a card with no trend renders without one, and the label still arrives before the value it names
 <div><p>Queued builds</p><p>2</p></div>
 
+=== StepWizard / the first step ===
+the transition is a plain form POST with wizard_action=next — the no-script page walks the whole flow — and the first step renders no Back because there is nothing to go back to
+<form action="/setup" data-hui-step-wizard="" data-hui-step-wizard-current="0" method="POST"><ol aria-label="&lt;StepOf 1 3&gt;"><li aria-current="step" data-state="current"><span aria-label="&lt;StepName 1 Source&gt;"><span aria-hidden="true">1</span><span>Source</span></span></li><li data-state="todo"><span aria-label="&lt;StepName 2 Build&gt;"><span aria-hidden="true">2</span><span>Build</span></span></li><li data-state="todo"><span aria-label="&lt;StepName 3 Deploy&gt;"><span aria-hidden="true">3</span><span>Deploy</span></span></li></ol><h2 tabindex="-1">Source</h2><div><input aria-label="Repository" name="repo" type="text"></div><div><button data-hui-step-wizard-action="next" name="wizard_action" type="submit" value="next">&lt;StepNext&gt;</button></div><span data-hui-step-wizard-status="" role="status">&lt;StepOf 1 3&gt;</span></form>
+
+=== StepWizard / mid-flow, with Back ===
+the rail names every dot (the step and its heading) and says where the reader is (step of total), the current dot carries aria-current, and Back submits the same form with the other value
+<form action="/setup" data-hui-step-wizard="" data-hui-step-wizard-current="1" method="POST"><ol aria-label="&lt;StepOf 2 3&gt;"><li data-state="done"><span aria-label="&lt;StepName 1 Source&gt;"><span aria-hidden="true">✓</span><span>Source</span></span></li><li aria-current="step" data-state="current"><span aria-label="&lt;StepName 2 Build&gt;"><span aria-hidden="true">2</span><span>Build</span></span></li><li data-state="todo"><span aria-label="&lt;StepName 3 Deploy&gt;"><span aria-hidden="true">3</span><span>Deploy</span></span></li></ol><h2 tabindex="-1">Build</h2><p>About a minute</p><div><button data-hui-step-wizard-action="back" name="wizard_action" type="submit" value="back">&lt;StepBack&gt;</button><button data-hui-step-wizard-action="next" name="wizard_action" type="submit" value="next">&lt;StepNext&gt;</button></div><span data-hui-step-wizard-status="" role="status">&lt;StepOf 2 3&gt;</span></form>
+
+=== StepWizard / the last step, an island, a failed submit ===
+the last step's weighted action says Submit, the failed submit's summary rides the form the existing headless module already focuses, and the Island makes the answer a region update the wizard module announces through the server's step-of sentence
+<form action="/setup" data-fui-rpc="/island/setup" data-fui-rpc-method="POST" data-fui-rpc-signal="setup" data-hui-form-errors="" data-hui-step-wizard="" data-hui-step-wizard-current="2" id="setup" method="POST"><ol aria-label="&lt;StepOf 3 3&gt;"><li data-state="done"><span aria-label="&lt;StepName 1 Source&gt;"><span aria-hidden="true">✓</span><span>Source</span></span></li><li data-state="done"><span aria-label="&lt;StepName 2 Build&gt;"><span aria-hidden="true">✓</span><span>Build</span></span></li><li aria-current="step" data-state="current"><span aria-label="&lt;StepName 3 Deploy&gt;"><span aria-hidden="true">3</span><span>Deploy</span></span></li></ol><div aria-labelledby="setup-errors-title" id="setup-errors" role="alert" tabindex="-1"><h2 id="setup-errors-title">&lt;ThereIsAProblem&gt;</h2><ul><li>Pick a region</li></ul></div><h2 tabindex="-1">Deploy</h2><div><button data-hui-step-wizard-action="back" name="wizard_action" type="submit" value="back">&lt;StepBack&gt;</button><button data-hui-step-wizard-action="next" name="wizard_action" type="submit" value="next">&lt;StepSubmit&gt;</button></div><span data-hui-step-wizard-status="" role="status">&lt;StepOf 3 3&gt;</span></form>
+
 === Steps / part way ===
 a rail of states, not a set of controls: each step's data-state drives both its marker and the line drawn between markers, so the picture cannot disagree with the states
 <ol><li data-state="done"><span><span aria-hidden="true">✓</span><span><span>Source</span></span></span></li><li aria-current="step" data-state="current"><span><span aria-hidden="true">2</span><span><span>Build</span><span>About a minute</span></span></span></li><li data-state="todo"><span><span aria-hidden="true">3</span><span><span>Deploy</span></span></span></li></ol>
@@ -368,7 +480,7 @@ a checkbox that says role=switch: it submits like a checkbox and is announced as
 
 === SystemBanner / deploy in progress ===
 a message about the system, shown by the server's own render: role=status so it waits its turn, one action, and the tone said in words as well as drawn in colour
-<div data-hui-system="" data-hui-system-id="sys-deploy" role="status"><p><span>&lt;ToneInfo&gt;: </span>Deploy in progress</p><p>blog is moving to image 41; the app stays reachable the whole time.</p><div><button type="button">View the deploy</button></div><button aria-label="&lt;DismissTitled Deploy in progress&gt;" data-hui-system-dismiss="" type="button">×</button></div>
+<div data-hui-system="" data-hui-system-id="sys-deploy" role="status"><span aria-hidden="true"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="8" cy="8" r="6.25"/><path d="M5.5 8.25 7.25 10l3.25-3.5"/></svg></span><p><span>&lt;ToneInfo&gt;: </span>Deploy in progress</p><p>blog is moving to image 41; the app stays reachable the whole time.</p><div><button type="button">View the deploy</button></div><button aria-label="&lt;DismissTitled Deploy in progress&gt;" data-hui-system-dismiss="" type="button">×</button></div>
 
 === SystemBanner / offline ===
 the built-in connection message, and the one system banner worth interrupting for: assertive, marked as the runtime's, shipped hidden because the runtime — not the page — shows it, and carrying no dismiss because its ending is the reconnect
@@ -410,6 +522,18 @@ the × names what it removes — twelve controls all called Remove tell a screen
 a tag with nothing to navigate to renders no control at all rather than a dead ×, and its icon is hidden from assistive technology exactly as a badge's is, because a tag is a badge with a dismiss control and the two must not drift
 <span><span aria-hidden="true"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="8" cy="8" r="6.25"/><path d="M5.5 8.25 7.25 10l3.25-3.5"/></svg></span>leader</span>
 
+=== TagInput / values, visible and submittable ===
+every committed value is a chip with its own named remove control AND a hidden input — what a reader sees removed is what a submit stops carrying, on the first paint, with no module at all
+<div aria-label="Tags" data-hui-tag-input="tags" data-hui-tag-input-remove-label="&lt;RemoveLabelled %s&gt;" role="group"><label for="tags">Tags</label><div><ul data-hui-tag-input-list="" role="list"><li aria-label="&lt;RemoveLabelled go&gt;" data-hui-tag-input-remove="">go<button aria-label="&lt;RemoveLabelled go&gt;" type="button">×</button><input name="tags" type="hidden" value="go"></li><li aria-label="&lt;RemoveLabelled css&gt;" data-hui-tag-input-remove="">css<button aria-label="&lt;RemoveLabelled css&gt;" type="button">×</button><input name="tags" type="hidden" value="css"></li></ul><input aria-label="Tags" autocomplete="off" data-hui-tag-input-field="" id="tags" type="text"><button aria-label="&lt;TagInputAdd Tags&gt;" data-hui-tag-input-add="" type="button">+</button></div><span data-hui-tag-input-added="&lt;TagInputAdded {name}&gt;" data-hui-tag-input-removed="&lt;TagInputRemoved {name}&gt;" data-hui-tag-input-status="" role="status"></span></div>
+
+=== TagInput / an empty list with a draft field ===
+an empty tag field still renders its list and its status wiring, so the module that binds the field arrives to a page shaped like the one it expects
+<div aria-label="Topics" data-hui-tag-input="topics" data-hui-tag-input-remove-label="&lt;RemoveLabelled %s&gt;" role="group"><label for="topics">Topics</label><div><ul data-hui-tag-input-list="" role="list"></ul><input aria-label="Topics" autocomplete="off" data-hui-tag-input-field="" id="topics" placeholder="Type a topic" type="text"><button aria-label="&lt;TagInputAdd Topics&gt;" data-hui-tag-input-add="" type="button">+</button></div><span data-hui-tag-input-added="&lt;TagInputAdded {name}&gt;" data-hui-tag-input-removed="&lt;TagInputRemoved {name}&gt;" data-hui-tag-input-status="" role="status"></span></div>
+
+=== TagInput / a capped, helped field ===
+the cap rides both the draft input and the rendered values — a server value longer than the cap cannot submit unchanged while a typed one is refused — and the rule rides the field's own description
+<div aria-label="Labels" data-hui-tag-input="labels" data-hui-tag-input-maxlength="8" data-hui-tag-input-remove-label="&lt;RemoveLabelled %s&gt;" role="group"><label for="labels">Labels</label><div><ul data-hui-tag-input-list="" role="list"><li aria-label="&lt;RemoveLabelled prod&gt;" data-hui-tag-input-remove="">prod<button aria-label="&lt;RemoveLabelled prod&gt;" type="button">×</button><input name="labels" type="hidden" value="prod"></li></ul><input aria-label="Labels" autocomplete="off" data-hui-tag-input-field="" id="labels" maxlength="8" type="text"><button aria-label="&lt;TagInputAdd Labels&gt;" data-hui-tag-input-add="" type="button">+</button></div><span data-hui-tag-input-added="&lt;TagInputAdded {name}&gt;" data-hui-tag-input-removed="&lt;TagInputRemoved {name}&gt;" data-hui-tag-input-status="" role="status"></span><p>One word each, eight characters at most.</p></div>
+
 === Textarea / with content ===
 the value is the element's text, not an attribute — which is why it is the one control whose content must be escaped rather than quoted
 <textarea id="notes" name="notes">Restarted after the 4am alert.</textarea>
@@ -425,6 +549,22 @@ an event with no tone is the ordinary case and draws an untinted marker; ordered
 === Timeline / attributed ===
 the meta line qualifies the title from the same row — an actor or a relative time — and the title stays first in the tree so a reader hears the event before its attribution
 <ol aria-label="Audit log"><li><span aria-hidden="true"></span><div><div><p>Role granted</p><span>by dom</span></div><p>admin, on the api app.</p></div></li></ol>
+
+=== Toast / a success, visible with no script ===
+the toast row is on the first paint — a notification the server rendered is news already delivered, and no module is needed to read it
+<div data-hui-toast=""><span>&lt;ToneSuccess&gt;: </span><span aria-hidden="true">✓</span><span>Deploy finished</span><span>api is serving build 482</span></div>
+
+=== Toast / assertive, with a dismiss that keeps its href ===
+the failure a reader must hear carries role=alert on its own row inside the politely-announcing stack, and the dismiss link needs its Island at render because dropping a notification is an in-page state change, never a route
+<div data-hui-toast="" data-hui-toast-ttl-ms="8000" role="alert"><span>&lt;ToneDanger&gt;: </span><span>Connection lost</span><a aria-label="&lt;DismissTitled Connection lost&gt;" data-fui-push-state="/dismiss/conn" data-fui-rpc="/island/toasts" data-fui-rpc-method="GET" data-fui-rpc-signal="toasts" data-hui-toast-dismiss="" href="/dismiss/conn">×</a></div>
+
+=== ToastStack / the stack with its rows ===
+one region a layout mounts once: the runtime's header path inserts into it, the server's rows are already in it, and its name is what a reader jumps by
+<div aria-label="Notifications" data-fui-toast-stack="Notifications" data-hui-toast-dismiss-label="&lt;DismissTitled %s&gt;" data-hui-toast-max="4" data-hui-toast-stack="" data-hui-toast-tone-danger="&lt;ToneDanger&gt;" data-hui-toast-tone-info="&lt;ToneInfo&gt;" data-hui-toast-tone-success="&lt;ToneSuccess&gt;" data-hui-toast-tone-warning="&lt;ToneWarning&gt;" role="region"><div data-hui-toast=""><span>&lt;ToneSuccess&gt;: </span><span>Saved</span></div></div>
+
+=== ToastStack / empty, the wiring still there ===
+an empty stack still renders, because the module that injects runtime toasts needs the region to exist — a stack that vanishes when empty is a stack the first toast has to rebuild
+<div aria-label="Notifications" data-fui-toast-stack="Notifications" data-hui-toast-dismiss-label="&lt;DismissTitled %s&gt;" data-hui-toast-stack="" data-hui-toast-tone-danger="&lt;ToneDanger&gt;" data-hui-toast-tone-info="&lt;ToneInfo&gt;" data-hui-toast-tone-success="&lt;ToneSuccess&gt;" data-hui-toast-tone-warning="&lt;ToneWarning&gt;" role="region"></div>
 
 === ToggleAction / idle ===
 aria-pressed false and the committed span hidden: first paint matches the server's answer, and the runtime only ever flips what is already there

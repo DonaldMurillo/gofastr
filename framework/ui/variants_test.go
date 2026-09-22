@@ -247,10 +247,10 @@ func TestStatusVariantSpansComponents(t *testing.T) {
 		"fui-callout--beta")
 	mustContain(t,
 		Tag(TagConfig{Label: "Beta", Variant: testBetaStatus}),
-		"ui-tag--beta")
+		"fui-tag--beta")
 	mustContain(t,
 		Notification(NotificationConfig{Title: "Beta", Variant: testBetaStatus}),
-		"ui-notification--beta")
+		"fui-notification--beta")
 }
 
 func TestStatusVariantCSSInAllSheets(t *testing.T) {
@@ -262,9 +262,9 @@ func TestStatusVariantCSSInAllSheets(t *testing.T) {
 	}{
 		{"ui-badge", statusBadgeCSS(th), `[data-fui-comp="ui-badge"].fui-badge--beta`},
 		{"ui-badge", statusBadgeCSS(th), "color-mix(in oklab, var(--color-primary) 15%"},
-		{"ui-tag", tagCSS(th), `[data-fui-comp="ui-tag"].ui-tag--beta`},
+		{"ui-tag", tagCSS(th), `[data-fui-comp="ui-tag"].fui-tag--beta`},
 		{"ui-callout", calloutCSS(th), "--ui-callout-accent: var(--color-primary)"},
-		{"ui-notification", notificationCSS(th), `[data-fui-comp="ui-notification"].ui-notification--beta`},
+		{"ui-notification", notificationCSS(th), `[data-fui-comp="ui-notification"].fui-notification--beta`},
 	}
 	for _, c := range cases {
 		if !strings.Contains(c.css, c.want) {

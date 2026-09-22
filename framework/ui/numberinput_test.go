@@ -35,19 +35,25 @@ func TestNumberInputEmitsTypeNumber(t *testing.T) {
 
 func TestNumberInputEmitsStepperButtons(t *testing.T) {
 	h := string(NumberInput(NumberInputConfig{Name: "qty", Label: "Quantity", Step: 5}))
-	if !strings.Contains(h, `data-fui-number-step="-5"`) {
-		t.Errorf("expected minus button with data-fui-number-step=-5:\n%s", h)
+	// The hooks the headless-controls module resolves the input by,
+	// one per button; the step size the module reads off the input's
+	// own step attribute, so the two can never disagree.
+	if !strings.Contains(h, `data-hui-number-input-decrement=""`) {
+		t.Errorf("expected the decrement hook on the minus button:\n%s", h)
 	}
-	if !strings.Contains(h, `data-fui-number-step="5"`) {
-		t.Errorf("expected plus button with data-fui-number-step=5:\n%s", h)
+	if !strings.Contains(h, `data-hui-number-input-increment=""`) {
+		t.Errorf("expected the increment hook on the plus button:\n%s", h)
 	}
-	if !strings.Contains(h, `data-fui-number-for="qty"`) {
-		t.Errorf("expected data-fui-number-for=qty on buttons:\n%s", h)
+	if !strings.Contains(h, `data-hui-number-input-for="qty"`) {
+		t.Errorf("expected data-hui-number-input-for=qty on buttons:\n%s", h)
+	}
+	if !strings.Contains(h, `step="5"`) {
+		t.Errorf("expected the configured step on the input the module reads:\n%s", h)
 	}
 }
 
 func TestNumberInputEmitsMinMaxWhenSet(t *testing.T) {
-	h := string(NumberInput(NumberInputConfig{Name: "qty", Label: "Quantity", Min: 1, Max: 99}))
+	h := string(NumberInput(NumberInputConfig{Name: "qty", Label: "Quantity", Min: 1, Max: 99, Value: 5}))
 	if !strings.Contains(h, `min="1"`) {
 		t.Errorf("expected min=1:\n%s", h)
 	}
@@ -107,22 +113,24 @@ func TestNumberInputExtraAttrsCannotOverrideOwned(t *testing.T) {
 			"data-test": "hook", "step": "evil", "Class": "evil", "data-fui-comp": "spoof",
 		},
 	}))
-	input := extraAttrsOpeningTag(t, h, "input")
+	// Extras land on the root and the input's own attributes cannot
+	// be reached by them: the sanitiser drops every key the component
+	// owns and every forged hook, wherever the caller spelled it.
+	root := h[:strings.Index(h, ">")+1]
 	for _, banned := range []string{"evil", "spoof"} {
-		if strings.Contains(input, banned) {
-			t.Errorf("owned attr overridden by ExtraAttrs (%q):\n%s", banned, input)
+		if strings.Contains(h, banned) {
+			t.Errorf("owned attr overridden by ExtraAttrs (%q):\n%s", banned, h)
 		}
 	}
 	for _, want := range []string{
 		`data-test="hook"`, `type="number"`, `name="qty"`, `step="2"`, `value="4"`,
-		`min="1"`, `max="9"`, `class="ui-number-input__input`,
+		`min="1"`, `max="9"`, `class="fui-number-input__input`,
 	} {
-		if !strings.Contains(input, want) {
-			t.Errorf("input missing %q:\n%s", want, input)
+		if !strings.Contains(h, want) {
+			t.Errorf("missing %q:\n%s", want, h)
 		}
 	}
-	root := h[:strings.Index(h, ">")+1]
-	if !strings.Contains(root, `class="ui-number-input mine"`) {
+	if !strings.Contains(root, `class="fui-number-input mine"`) {
 		t.Errorf("wrapper class should stay framework+caller:\n%s", root)
 	}
 }

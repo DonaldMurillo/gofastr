@@ -70,22 +70,21 @@ func TestRuntimeJS(t *testing.T) {
 		"MutationObserver",
 		"hydrate",
 		"collectParams",
-		"screenCache",             // screen caching for back-navigation
-		"swapAtSlot",              // layer-cell content swapping
-		"data-fui-layout-key",     // layout-chain identity marker
-		"data-fui-layout-slot",    // layer swap-target marker
-		"X-Gofastr-Navigate",      // client-side navigation header
-		"X-Gofastr-Swap",          // subtree-partial swap boundary
-		"X-Gofastr-Partial",       // server partial response header
-		"loadComponentCSS",        // per-component CSS loader
-		"scanAndLoadCSS",          // marker scan post-swap/post-mount
-		"_pendingLinks",           // sync dedup guard
-		"data-fui-style",          // <link> dedup key
-		"scheduleIdleLoads",       // LoadPrewarm idle queue
-		"data-fui-comp",           // marker attr the scanner reads
-		"data-fui-copy-text-from", // marker triggers copy module load
-		"data-fui-os",             // OS detection on <html> for ShortcutHint
-		"data-fui-spa",            // opt-IN form-intercept for non-JSON forms
+		"screenCache",          // screen caching for back-navigation
+		"swapAtSlot",           // layer-cell content swapping
+		"data-fui-layout-key",  // layout-chain identity marker
+		"data-fui-layout-slot", // layer swap-target marker
+		"X-Gofastr-Navigate",   // client-side navigation header
+		"X-Gofastr-Swap",       // subtree-partial swap boundary
+		"X-Gofastr-Partial",    // server partial response header
+		"loadComponentCSS",     // per-component CSS loader
+		"scanAndLoadCSS",       // marker scan post-swap/post-mount
+		"_pendingLinks",        // sync dedup guard
+		"data-fui-style",       // <link> dedup key
+		"scheduleIdleLoads",    // LoadPrewarm idle queue
+		"data-fui-comp",        // marker attr the scanner reads
+		"data-fui-os",          // OS detection on <html> for ShortcutHint
+		"data-fui-spa",         // opt-IN form-intercept for non-JSON forms
 	}
 	for _, check := range checks {
 		if !strings.Contains(js, check) {
@@ -278,29 +277,6 @@ func TestRuntimeModule_Widgets(t *testing.T) {
 	}
 }
 
-func TestRuntimeModule_Copy(t *testing.T) {
-	src, ok := Module("copy")
-	if !ok {
-		t.Fatal("copy module not embedded")
-	}
-	for _, want := range []string{
-		"data-fui-copy-text-from", // marker
-		"data-fui-copy-status",    // SR-announce sibling
-		"data-fui-copy-announce",  // override text
-		"data-fui-copy-toast",     // toast-on-copy opt-in
-		"fui-copied",              // visual feedback class
-		"navigator.clipboard",     // primary path
-		"loadedModules",           // self-registers as loaded
-	} {
-		if !strings.Contains(src, want) {
-			t.Errorf("copy module missing %q", want)
-		}
-	}
-	if size := ModuleSize("copy"); size > 1800 {
-		t.Errorf("copy module is %d bytes — budget is 1800", size)
-	}
-}
-
 func TestRuntimeModule_SSE(t *testing.T) {
 	src, ok := Module("sse")
 	if !ok {
@@ -389,32 +365,6 @@ func TestRuntimeModule_RTC(t *testing.T) {
 	}
 }
 
-func TestRuntimeModule_NetworkRetryBanner(t *testing.T) {
-	src, ok := Module("networkretrybanner")
-	if !ok {
-		t.Fatal("networkretrybanner module not embedded")
-	}
-	for _, want := range []string{
-		`data-fui-comp="ui-network-retry-banner"`, // on-demand marker
-		"data-fui-network-retry-health",           // health probe URL
-		"data-fui-network-retry-sse-silence",      // opt-in silence threshold
-		"networkStatus",                           // public API on __gofastr
-		"checkHealthOn",                           // recovery helper reused on reconnect
-		"reportRecoveryOn",                        // dismiss path
-		"__gofastr.sseStatus",                     // silence poll reads the SSE global
-		"gofastr:sse-status",                      // reconnect-recovery listener
-	} {
-		if !strings.Contains(src, want) {
-			t.Errorf("networkretrybanner module missing %q", want)
-		}
-	}
-	// Ceiling near the current minified size (same shape as menu/cop),
-	// not a goal, tighten down if the module shrinks.
-	if size := ModuleSize("networkretrybanner"); size > 4000 {
-		t.Errorf("networkretrybanner module is %d bytes — budget is 4000", size)
-	}
-}
-
 func TestRuntimeModule_Sidebar(t *testing.T) {
 	src, ok := Module("sidebar")
 	if !ok {
@@ -437,30 +387,6 @@ func TestRuntimeModule_Sidebar(t *testing.T) {
 	}
 	if size := ModuleSize("sidebar"); size > 3000 {
 		t.Errorf("sidebar module is %d bytes — budget is 3000", size)
-	}
-}
-
-func TestRuntimeModule_Toasts(t *testing.T) {
-	src, ok := Module("toasts")
-	if !ok {
-		t.Fatal("toasts module not embedded")
-	}
-	for _, want := range []string{
-		"NS.toast",
-		"NS._initToasts",
-		"NS._dismissToast",
-		"data-fui-toast-id",
-		"data-fui-toast-stack",
-		"data-fui-toast-dismiss",
-		"data-fui-toast-ttl-ms",
-		"loadedModules",
-	} {
-		if !strings.Contains(src, want) {
-			t.Errorf("toasts module missing %q", want)
-		}
-	}
-	if size := ModuleSize("toasts"); size > 8000 {
-		t.Errorf("toasts module is %d bytes — budget is 8000", size)
 	}
 }
 

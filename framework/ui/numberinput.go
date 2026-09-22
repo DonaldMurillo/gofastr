@@ -2,25 +2,25 @@ package ui
 
 import (
 	"context"
-	"maps"
 	"strconv"
+	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
-	"github.com/DonaldMurillo/gofastr/framework/i18nui"
+	"github.com/DonaldMurillo/gofastr/framework/headless"
 )
 
 // ─── NumberInput / Stepper ──────────────────────────────────────────
 //
-// Native <input type="number"> flanked by explicit −/+ buttons. Why:
-// the spinner arrows shipped by browsers are tiny, hidden on touch,
-// and disabled when type=number is in a form-validation error state.
-// Explicit buttons are easier to hit, more discoverable, and we can
-// theme + size them. Buttons fire a runtime increment that respects
-// Step, Min, Max, and dispatches an `input` event so existing
-// form-RPC pipelines see the change.
+// Native <input type="number"> flanked by explicit −/+ buttons, over
+// headless.NumberInput. Why the buttons exist: the spinner arrows
+// shipped by browsers are tiny, hidden on touch, and disabled when
+// type=number is in a form-validation error state. The module steps
+// the value inside the declared bounds and dispatches an `input` event
+// so existing form-RPC pipelines see the change; without it the field
+// is still a normal named number control.
 
 // NumberInputConfig configures a NumberInput.
 type NumberInputConfig struct {
@@ -49,14 +49,27 @@ type NumberInputConfig struct {
 	Error string
 	ID    string
 	Class string
-	// ExtraAttrs forwards additional attributes to the <input> element.
+	// ExtraAttrs forwards additional attributes to the root element.
 	// Keys the component owns are dropped: class and id (use Class /
-	// ID), data-fui-*, type, name, step, value, min, max, disabled,
-	// required, aria-invalid, and aria-describedby.
+	// ID), data-fui-*, and every data-hui-* hook.
 	ExtraAttrs html.Attrs
-	// Ctx carries the per-request context used to resolve the Decrement and
-	// Increment aria labels. When nil, English fallbacks apply.
+	// Ctx carries the per-request context used to resolve the Decrement
+	// and Increment aria labels. When nil, English fallbacks apply.
 	Ctx context.Context
+}
+
+// numberInputClasses dresses headless.NumberInput's parts in this
+// package's own vocabulary — the names the registered ui-number-input
+// sheet matches.
+var numberInputClasses = headless.Classes{
+	headless.PartRoot:            "fui-number-input",
+	headless.PartLabel:           "fui-number-input__label",
+	headless.PartFieldRow:        "fui-number-input__row",
+	headless.PartControl:         "fui-number-input__input",
+	headless.PartNumberDecrement: "fui-number-input__decrement",
+	headless.PartNumberIncrement: "fui-number-input__increment",
+	headless.PartHint:            "fui-number-input__help",
+	headless.PartError:           "fui-number-input__error",
 }
 
 // NumberInput renders a number field with explicit +/- buttons.
@@ -67,99 +80,51 @@ func NumberInput(cfg NumberInputConfig) render.HTML {
 	if cfg.Label == "" {
 		panic("ui: NumberInput requires Label")
 	}
-
-	ctx := cfg.Ctx
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	step := cfg.Step
-	if step == 0 {
-		step = 1
-	}
-	id := cfg.ID
-	if id == "" {
-		id = cfg.Name
-	}
-
-	cls := "ui-number-input"
-	if cfg.Error != "" {
-		cls += " is-error"
-	}
-	if cfg.Disabled {
-		cls += " is-disabled"
-	}
-	if cfg.Class != "" {
-		cls += " " + cfg.Class
-	}
-
-	inputAttrs := map[string]string{
-		"type":  "number",
-		"name":  cfg.Name,
-		"id":    id,
-		"class": "ui-number-input__input",
-		"step":  strconv.Itoa(step),
-		"value": strconv.Itoa(cfg.Value),
-	}
-	// min is emitted whenever a bound is declared: the documented zero
-	// floor is what a Min: 0, Max: N caller means (the site's quantity
-	// field). max is emitted only when declared, so a Min-only config
-	// never fabricates max="0", an empty range.
+	var min, max *int
 	if cfg.Min != 0 || cfg.Max != 0 {
-		inputAttrs["min"] = strconv.Itoa(cfg.Min)
+		m := cfg.Min
+		min = &m
 	}
 	if cfg.Max != 0 {
-		inputAttrs["max"] = strconv.Itoa(cfg.Max)
-	}
-	if cfg.Disabled {
-		inputAttrs["disabled"] = ""
-	}
-	if cfg.Required {
-		inputAttrs["required"] = ""
-	}
-	if cfg.Error != "" {
-		inputAttrs["aria-invalid"] = "true"
-		inputAttrs["aria-describedby"] = id + "-error"
-	} else if cfg.Help != "" {
-		inputAttrs["aria-describedby"] = id + "-help"
-	}
-	maps.Copy(inputAttrs, html.SafeExtraAttrs(cfg.ExtraAttrs,
-		"type", "name", "step", "value", "min", "max",
-		"disabled", "required", "aria-invalid", "aria-describedby"))
-
-	minusAttrs := map[string]string{
-		"type":                 "button",
-		"class":                "ui-number-input__step ui-number-input__step--minus",
-		"aria-label":           i18nui.TVars(ctx, i18nui.KeyNumberDecrement, map[string]string{"label": cfg.Label}),
-		"data-fui-number-step": "-" + strconv.Itoa(step),
-		"data-fui-number-for":  id,
-	}
-	plusAttrs := map[string]string{
-		"type":                 "button",
-		"class":                "ui-number-input__step ui-number-input__step--plus",
-		"aria-label":           i18nui.TVars(ctx, i18nui.KeyNumberIncrement, map[string]string{"label": cfg.Label}),
-		"data-fui-number-step": strconv.Itoa(step),
-		"data-fui-number-for":  id,
-	}
-	if cfg.Disabled {
-		minusAttrs["disabled"] = ""
-		plusAttrs["disabled"] = ""
+		m := cfg.Max
+		max = &m
 	}
 
-	row := render.Tag("div", map[string]string{"class": "ui-number-input__row"},
-		render.Tag("button", minusAttrs, render.Text("−")),
-		render.Tag("input", inputAttrs),
-		render.Tag("button", plusAttrs, render.Text("+")),
-	)
-
-	children := []render.HTML{
-		render.Tag("label", map[string]string{"for": id, "class": "ui-number-input__label"},
-			render.Text(cfg.Label)),
-		row,
+	// The root's modifier classes travel as part attrs, which append
+	// to the class map's own root class rather than replacing it.
+	parts := headless.Parts{}
+	if rootClass := strings.TrimSpace(modifierClass("is-error", cfg.Error != "") +
+		" " + modifierClass("is-disabled", cfg.Disabled) + " " + cfg.Class); rootClass != "" {
+		parts.Attrs = headless.PartAttrs{headless.PartRoot: {"class": strings.TrimSpace(rootClass)}}
 	}
-	children = append(children, fieldMessage(id, "ui-number-input", cfg.Error, cfg.Help)...)
 
-	return numberInputStyle.WrapHTML(render.Tag("div",
-		map[string]string{"class": cls}, children...))
+	return numberInputStyle.WrapHTML(headless.NumberInput(headless.NumberInputProps{
+		Name:     cfg.Name,
+		Label:    cfg.Label,
+		Value:    strconv.Itoa(cfg.Value),
+		Min:      min,
+		Max:      max,
+		Step:     cfg.Step,
+		Required: cfg.Required,
+		Disabled: cfg.Disabled,
+		Help:     cfg.Help,
+		Error:    cfg.Error,
+		ID:       cfg.ID,
+		ExtraAttrs: headless.Safe(cfg.ExtraAttrs, "class", "id", "role", "aria-label",
+			"type", "name", "step", "value", "min", "max", "disabled", "required",
+			"aria-invalid", "aria-describedby"),
+		Parts:   parts,
+		Strings: StringsFor(cfg.Ctx),
+	}, numberInputClasses))
+}
+
+// modifierClass returns the class when on, "" when off, so a caller's
+// own Class and the component's state classes merge in one string.
+func modifierClass(name string, on bool) string {
+	if !on {
+		return ""
+	}
+	return name
 }
 
 var numberInputStyle = registry.RegisterStyle("ui-number-input", numberInputCSS)
@@ -169,12 +134,12 @@ func numberInputCSS(_ style.Theme) string {
   display: grid;
   gap: var(--spacing-xs, 2px);
 }
-[data-fui-comp="ui-number-input"] .ui-number-input__label {
+[data-fui-comp="ui-number-input"] .fui-number-input__label {
   font-weight: 500;
   font-size: var(--text-sm, 0.875rem);
   color: var(--color-text, #18181B);
 }
-[data-fui-comp="ui-number-input"] .ui-number-input__row {
+[data-fui-comp="ui-number-input"] .fui-number-input__row {
   display: inline-flex;
   align-items: stretch;
   border: 1px solid var(--color-border, #E4E4E7);
@@ -183,7 +148,7 @@ func numberInputCSS(_ style.Theme) string {
   overflow: hidden;
   width: fit-content;
 }
-[data-fui-comp="ui-number-input"] .ui-number-input__input {
+[data-fui-comp="ui-number-input"] .fui-number-input__input {
   appearance: textfield;
   -moz-appearance: textfield;
   border: 0;
@@ -196,16 +161,17 @@ func numberInputCSS(_ style.Theme) string {
   width: 5ch;
   padding: 0;
 }
-[data-fui-comp="ui-number-input"] .ui-number-input__input::-webkit-outer-spin-button,
-[data-fui-comp="ui-number-input"] .ui-number-input__input::-webkit-inner-spin-button {
+[data-fui-comp="ui-number-input"] .fui-number-input__input::-webkit-outer-spin-button,
+[data-fui-comp="ui-number-input"] .fui-number-input__input::-webkit-inner-spin-button {
   -webkit-appearance: none;
   margin: 0;
 }
-[data-fui-comp="ui-number-input"] .ui-number-input__input:focus {
+[data-fui-comp="ui-number-input"] .fui-number-input__input:focus {
   outline: none;
   background: var(--color-surface-soft, #F4F4F5);
 }
-[data-fui-comp="ui-number-input"] .ui-number-input__step {
+[data-fui-comp="ui-number-input"] .fui-number-input__decrement,
+[data-fui-comp="ui-number-input"] .fui-number-input__increment {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -220,28 +186,31 @@ func numberInputCSS(_ style.Theme) string {
   cursor: pointer;
   user-select: none;
 }
-[data-fui-comp="ui-number-input"] .ui-number-input__step:hover {
+[data-fui-comp="ui-number-input"] .fui-number-input__decrement:hover,
+[data-fui-comp="ui-number-input"] .fui-number-input__increment:hover {
   background: var(--color-border, #E4E4E7);
 }
-[data-fui-comp="ui-number-input"] .ui-number-input__step:focus-visible {
+[data-fui-comp="ui-number-input"] .fui-number-input__decrement:focus-visible,
+[data-fui-comp="ui-number-input"] .fui-number-input__increment:focus-visible {
   outline: 2px solid var(--color-primary, #4F46E5);
   outline-offset: -2px;
 }
-[data-fui-comp="ui-number-input"] .ui-number-input__step:disabled {
+[data-fui-comp="ui-number-input"] .fui-number-input__decrement:disabled,
+[data-fui-comp="ui-number-input"] .fui-number-input__increment:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
-[data-fui-comp="ui-number-input"] .ui-number-input__help {
+[data-fui-comp="ui-number-input"] .fui-number-input__help {
   margin: 0;
   font-size: var(--text-sm, 0.875rem);
   color: var(--color-text-muted, #52525B);
 }
-[data-fui-comp="ui-number-input"] .ui-number-input__error {
+[data-fui-comp="ui-number-input"] .fui-number-input__error {
   margin: 0;
   font-size: var(--text-sm, 0.875rem);
   color: var(--color-danger, #DC2626);
 }
-[data-fui-comp="ui-number-input"].is-error .ui-number-input__row {
+[data-fui-comp="ui-number-input"].is-error .fui-number-input__row {
   border-color: var(--color-danger, #DC2626);
   box-shadow: inset 0 0 0 1px var(--color-danger, #DC2626);
 }`

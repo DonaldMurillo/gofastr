@@ -30,8 +30,8 @@ func TestOptimisticInitialMarkup(t *testing.T) {
 	for _, want := range []string{
 		`data-fui-comp="ui-optimistic-action"`,
 		`data-state="idle"`,
-		`data-fui-optimistic-endpoint="/follow"`,
-		`data-fui-optimistic-method="POST"`,
+		`data-hui-action-endpoint="/follow"`,
+		`data-hui-action=""`,
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("missing %q, got: %s", want, got)
@@ -51,7 +51,7 @@ func TestSuccessHiddenByDefault(t *testing.T) {
 	}
 	// Success span must be hidden by default: runtime un-hides it on
 	// commit. Attribute order isn't guaranteed; check for both pieces.
-	if !strings.Contains(got, `data-fui-optimistic-success=""`) ||
+	if !strings.Contains(got, `data-hui-action-done=""`) ||
 		!strings.Contains(got, `hidden=""`) {
 		t.Errorf("expected success span hidden by default, got: %s", got)
 	}
@@ -61,7 +61,7 @@ func TestOptimisticCustomMethod(t *testing.T) {
 	got := string(OptimisticAction(OptimisticActionConfig{
 		Endpoint: "/x", Method: "DELETE", IdleLabel: "Remove", SuccessLabel: "Removed",
 	}))
-	if !strings.Contains(got, `data-fui-optimistic-method="DELETE"`) {
+	if !strings.Contains(got, `data-hui-action-method="DELETE"`) {
 		t.Errorf("expected DELETE method, got: %s", got)
 	}
 }

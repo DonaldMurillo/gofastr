@@ -89,8 +89,8 @@
           // Awaits the toasts module, when an island-driven update
           // injects a toast for the first time, the module loads,
           // then _initToasts runs against the new content.
-          if (node.querySelector && node.querySelector('[data-fui-toast-id]')) {
-            window.__gofastr.loadModule('toasts').then(() => {
+          if (node.querySelector && node.querySelector('[data-hui-toast]')) {
+            window.__gofastr.loadModule('headless-feedback').then(() => {
               window.__gofastr._initToasts(node);
             }).catch(() => {});
           }

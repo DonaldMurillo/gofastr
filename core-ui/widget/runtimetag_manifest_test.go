@@ -33,6 +33,21 @@ func TestRuntimeTagEmbedsModuleManifest(t *testing.T) {
 	if !strings.Contains(tag, `type="application/json"`) {
 		t.Fatalf("manifest must be an inert JSON script: %q", tag)
 	}
+	// The kernel parses the inline blocks while runtime.js executes,
+	// so every block RuntimeModuleManifestScript emits must precede
+	// the script tag; a block that follows it is read as absent, and
+	// for #gofastr-behaviors that means no registered behaviour's
+	// marker is ever scanned on a kiln page. This package registers
+	// no behaviour, so the module manifest, which every binary
+	// carries, stands for the whole run of blocks; the behaviours
+	// block is checked too when a host's binary emits it.
+	si := strings.Index(tag, `<script src="/__gofastr/runtime.js`)
+	if mi := strings.Index(tag, `id="gofastr-runtime-modules"`); mi < 0 || mi > si {
+		t.Fatalf("the module manifest must precede runtime.js in RuntimeTag (block at %d, script at %d):\n%s", mi, si, tag)
+	}
+	if bi := strings.Index(tag, `id="gofastr-behaviors"`); bi > si {
+		t.Fatalf("the behaviours block must precede runtime.js in RuntimeTag (block at %d, script at %d)", bi, si)
+	}
 	// Every embedded module must appear in the manifest with a non-empty
 	// hash, otherwise loadModule constructs ?v= URLs without busting.
 	for _, name := range runtime.ModuleNames() {

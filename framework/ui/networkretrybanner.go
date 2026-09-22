@@ -1,12 +1,11 @@
 package ui
 
 import (
-	"fmt"
-
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/headless"
 )
 
 // ─── NetworkRetryBanner ─────────────────────────────────────────────
@@ -18,23 +17,20 @@ import (
 // (b) app code explicitly calls
 // `window.__gofastr.networkStatus.reportRecovery()`. The runtime does
 // NOT wrap `window.fetch`, so unrelated successful requests do not
-// auto-dismiss the banner: apps wire reportFailure / reportRecovery
-// into their RPC error handlers themselves.
+// The banner follows the connection the framework reports: it ships
+// hidden, the headless module shows it when the framework reports the
+// connection lost with a retry scheduled (the offline SystemBanner
+// contract), and a successful Retry pings the health endpoint and
+// hides it again. The failure-count and SSE-silence triggers retired
+// with the old runtime module.
 //
 // Place once near the top of the page chrome (above the main content,
 // inside the persistent shell so SPA navigation doesn't remove it).
-// The banner is hidden by default: the runtime un-hides it when
-// thresholds trip.
 //
-// Public runtime API (window.__gofastr.networkStatus):
-//
-//	reportFailure():   call from any RPC failure handler. After
-//	                    FailureThreshold consecutive calls without an
-//	                    intervening reportRecovery(), the banner shows.
-//	reportRecovery():  call on any successful RPC. Resets the counter
-//	                    and hides the banner.
-//	checkHealth():     manually fire the health-check ping (the same
-//	                    one the Retry button triggers).
+// Manual API (window.__gofastr.networkStatus): reportFailure() shows
+// every mounted offline banner, reportRecovery() hides them — wire
+// them into app-level connection signals when a page has no SSE
+// stream to follow.
 
 // NetworkRetryBannerConfig configures the banner.
 type NetworkRetryBannerConfig struct {
@@ -42,20 +38,6 @@ type NetworkRetryBannerConfig struct {
 	// connectivity. Must return 2xx when the server is healthy.
 	// Required.
 	HealthEndpoint string
-
-	// FailureThreshold is the number of consecutive RPC failures that
-	// trip the banner. Default 3. Zero disables the failure-count
-	// trigger (banner only shows on explicit reportFailure threshold
-	// hits never reached).
-	FailureThreshold int
-
-	// SSESilenceMs triggers the banner if no SSE event arrives for
-	// this many milliseconds. Default 0 (disabled, opt-in). When set,
-	// the runtime polls window.__gofastr.sseStatus.lastEventAt (kept
-	// current by the SSE module on every frame) and shows the banner
-	// after this much silence; on SSE reconnect a gofastr:sse-status
-	// event re-probes the health endpoint so the banner can dismiss.
-	SSESilenceMs int
 
 	// Title is the banner heading. Default "Connection lost".
 	Title string
@@ -83,10 +65,6 @@ func NetworkRetryBanner(cfg NetworkRetryBannerConfig) render.HTML {
 	if cfg.HealthEndpoint == "" {
 		panic("ui: NetworkRetryBanner requires HealthEndpoint")
 	}
-	threshold := cfg.FailureThreshold
-	if threshold == 0 {
-		threshold = 3
-	}
 	title := cfg.Title
 	if title == "" {
 		title = "Connection lost"
@@ -99,52 +77,65 @@ func NetworkRetryBanner(cfg NetworkRetryBannerConfig) render.HTML {
 	if retryLabel == "" {
 		retryLabel = "Retry now"
 	}
+	noDismiss := false
 
-	cls := "ui-network-retry-banner"
+	// The offline SystemBanner owns the banner: it ships hidden, the
+	// headless module shows it when the framework reports the
+	// connection lost with a retry scheduled, and its ending is the
+	// reconnect. The retry control is a real link to the health
+	// endpoint — no script reloads through it, script re-fetches it.
+	parts := headless.Parts{}
 	if cfg.Class != "" {
-		cls += " " + cfg.Class
+		parts.Attrs = headless.PartAttrs{headless.PartRoot: {"class": cfg.Class}}
 	}
-	attrs := html.SafeExtraAttrs(cfg.ExtraAttrs, "role", "aria-live", "hidden")
-	if attrs == nil {
-		attrs = map[string]string{}
-	}
-	attrs["class"] = cls
-	attrs["role"] = "alert"
-	attrs["aria-live"] = "assertive"
-	attrs["data-fui-network-retry-health"] = cfg.HealthEndpoint
-	attrs["data-fui-network-retry-threshold"] = fmt.Sprintf("%d", threshold)
-	attrs["data-fui-network-retry-sse-silence"] = fmt.Sprintf("%d", cfg.SSESilenceMs)
-	attrs["hidden"] = ""
-	if cfg.ID != "" {
-		attrs["id"] = cfg.ID
-	}
+	retry := render.Tag("a", map[string]string{
+		"href":                   cfg.HealthEndpoint,
+		"class":                  buttonClassTokens(ButtonSecondary, ButtonSizeDefault) + " fui-network-retry-banner__retry",
+		"data-hui-network-retry": "",
+	}, render.Text(retryLabel))
+	_ = noDismiss
+	return networkRetryBannerStyle.WrapHTML(headless.SystemBanner(headless.SystemBannerProps{
+		ID:      orDefaultStr(cfg.ID, "network-offline"),
+		Tone:    "warning",
+		Title:   title,
+		Text:    desc,
+		Action:  retry,
+		Dismiss: &noDismiss,
+		Offline: true,
+		ExtraAttrs: headless.Safe(cfg.ExtraAttrs, "role", "aria-live", "hidden",
+			"data-fui-network-retry-health", "data-fui-network-retry-threshold"),
+		Parts:   parts,
+		Strings: StringsFor(nil),
+	}, networkRetryClasses))
+}
 
-	return networkRetryBannerStyle.WrapHTML(render.Tag("div", attrs,
-		render.Tag("div", map[string]string{"class": "ui-network-retry-banner__body"},
-			render.Tag("strong", map[string]string{"class": "ui-network-retry-banner__title"},
-				render.Text(title)),
-			render.Tag("span", map[string]string{"class": "ui-network-retry-banner__desc"},
-				render.Text(desc)),
-		),
-		// The retry control keeps its own tag rather than calling
-		// Button: it carries this module's own runtime hook
-		// (data-fui-network-retry-button), which is not wiring
-		// vocabulary but component-owned behaviour — the same posture
-		// as ToggleAction. Its classes still come from the shared
-		// button class map, so the look cannot drift.
-		render.Tag("button", map[string]string{
-			"type":                          "button",
-			"class":                         buttonClassTokens(ButtonSecondary, ButtonSizeDefault) + " ui-network-retry-banner__retry",
-			"data-fui-network-retry-button": "",
-		}, render.Text(retryLabel)),
-	))
+// networkRetryClasses dresses the offline SystemBanner in this
+// package's own vocabulary.
+var networkRetryClasses = headless.Classes{
+	headless.PartRoot:           "fui-network-retry-banner",
+	headless.PartVisuallyHidden: "fui-visually-hidden",
+	headless.PartTitle:          "fui-network-retry-banner__title",
+	headless.PartText:           "fui-network-retry-banner__desc",
+	headless.PartActions:        "fui-network-retry-banner__actions",
 }
 
 var networkRetryBannerStyle = registry.RegisterStyle("ui-network-retry-banner", func(_ style.Theme) string {
-	return `[data-fui-comp="ui-network-retry-banner"] {
-  display: flex;
+	return `[data-fui-comp="ui-network-retry-banner"] .fui-visually-hidden {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
+[data-fui-comp="ui-network-retry-banner"] {
+  display: grid;
+  grid-template-columns: 1fr auto;
   align-items: center;
-  gap: var(--spacing-md, 8px);
+  column-gap: var(--spacing-md, 8px);
+  row-gap: var(--spacing-xs, 2px);
   padding: var(--spacing-md, 8px) var(--spacing-lg, 16px);
   border: 1px solid var(--color-warn, #B45309);
   border-radius: var(--radii-md, 8px);
@@ -154,19 +145,47 @@ var networkRetryBannerStyle = registry.RegisterStyle("ui-network-retry-banner", 
   inset-block-start: 0;
   z-index: 50;
 }
-[data-fui-comp="ui-network-retry-banner"] .ui-network-retry-banner__body {
-  display: grid;
-  gap: var(--spacing-xs, 2px);
-  flex: 1 1 auto;
-}
-[data-fui-comp="ui-network-retry-banner"] .ui-network-retry-banner__title {
+/* SystemBanner's parts are the banner's own children: title over
+   description in the first column, the retry link beside both. */
+[data-fui-comp="ui-network-retry-banner"] .fui-network-retry-banner__title {
+  grid-column: 1;
+  grid-row: 1;
+  margin: 0;
   font-weight: 700;
 }
-[data-fui-comp="ui-network-retry-banner"] .ui-network-retry-banner__desc {
+[data-fui-comp="ui-network-retry-banner"] .fui-network-retry-banner__desc {
+  grid-column: 1;
+  grid-row: 2;
+  margin: 0;
   font-size: var(--text-sm, 0.875rem);
   opacity: 0.9;
 }
-[data-fui-comp="ui-network-retry-banner"][data-state="checking"] .ui-network-retry-banner__retry {
+[data-fui-comp="ui-network-retry-banner"] .fui-network-retry-banner__actions {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+}
+[data-fui-comp="ui-network-retry-banner"] .fui-network-retry-banner__retry {
+  /* Self-contained secondary button: the link carries the button
+     classes, but this sheet must not depend on ui.Button's being
+     loaded — a page whose only control is the banner still shows a
+     button. Same variables buttonCSS reads, so with both sheets
+     loaded the computed style is identical. */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--fui-density-control-h, var(--spacing-touch-target, 44px));
+  padding: 10px var(--spacing-lg, 16px);
+  border: 1px solid var(--color-border-strong, var(--color-border, #d0d0d8));
+  border-radius: var(--fui-button-radius, var(--radii-md, 8px));
+  background: var(--color-surface, #fff);
+  color: var(--color-text, #18181B);
+  font: inherit;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+  white-space: nowrap;
+}
+[data-fui-comp="ui-network-retry-banner"][data-state="checking"] .fui-network-retry-banner__retry {
   cursor: progress;
   opacity: 0.7;
 }

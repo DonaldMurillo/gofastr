@@ -540,41 +540,41 @@ func tagCSS(t style.Theme) string {
   line-height: 1.3;
   text-decoration: none;
 }
-[data-fui-comp="ui-tag"].ui-tag--neutral {
+[data-fui-comp="ui-tag"].fui-tag--neutral {
   background: var(--color-surface-soft, #F4F4F5);
   color: var(--color-text, #18181B);
   border-color: var(--color-border, #E4E4E7);
 }
-[data-fui-comp="ui-tag"].ui-tag--success {
+[data-fui-comp="ui-tag"].fui-tag--success {
   background: color-mix(in oklab, var(--color-success, #16A34A) 15%, var(--color-surface, #fff) 85%);
   color: var(--color-success, #16A34A);
   border-color: color-mix(in oklab, var(--color-success, #16A34A) 30%, var(--color-surface, #fff) 70%);
 }
-[data-fui-comp="ui-tag"].ui-tag--warning {
+[data-fui-comp="ui-tag"].fui-tag--warning {
   background: color-mix(in oklab, var(--color-warning, #CA8A04) 15%, var(--color-surface, #fff) 85%);
   color: var(--color-warning, #CA8A04);
   border-color: color-mix(in oklab, var(--color-warning, #CA8A04) 30%, var(--color-surface, #fff) 70%);
 }
-[data-fui-comp="ui-tag"].ui-tag--danger {
+[data-fui-comp="ui-tag"].fui-tag--danger {
   background: color-mix(in oklab, var(--color-danger, #DC2626) 15%, var(--color-surface, #fff) 85%);
   color: var(--color-danger, #DC2626);
   border-color: color-mix(in oklab, var(--color-danger, #DC2626) 30%, var(--color-surface, #fff) 70%);
 }
-[data-fui-comp="ui-tag"].ui-tag--info {
+[data-fui-comp="ui-tag"].fui-tag--info {
   background: color-mix(in oklab, var(--color-info, #2563EB) 15%, var(--color-surface, #fff) 85%);
   color: var(--color-info, #2563EB);
   border-color: color-mix(in oklab, var(--color-info, #2563EB) 30%, var(--color-surface, #fff) 70%);
 }
-[data-fui-comp="ui-tag"].ui-tag--interactive {
+[data-fui-comp="ui-tag"].fui-tag--interactive {
   cursor: pointer;
   transition: filter var(--duration-fast, 150ms) ease;
 }
-[data-fui-comp="ui-tag"].ui-tag--interactive:hover { filter: brightness(0.96); }
+[data-fui-comp="ui-tag"].fui-tag--interactive:hover { filter: brightness(0.96); }
 [data-fui-comp="ui-tag"]:focus-visible {
   outline: 2px solid var(--color-primary, #4F46E5);
   outline-offset: 1px;
 }
-[data-fui-comp="ui-tag"] .ui-tag__dismiss {
+[data-fui-comp="ui-tag"] .fui-tag__dismiss {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -590,11 +590,11 @@ func tagCSS(t style.Theme) string {
   line-height: 1;
   padding: 0;
 }
-[data-fui-comp="ui-tag"] .ui-tag__dismiss:hover { background: rgba(0,0,0,0.08); }
-[data-fui-comp="ui-tag"] .ui-tag__dismiss:focus-visible {
+[data-fui-comp="ui-tag"] .fui-tag__dismiss:hover { background: rgba(0,0,0,0.08); }
+[data-fui-comp="ui-tag"] .fui-tag__dismiss:focus-visible {
   outline: 2px solid var(--color-primary, #4F46E5);
   outline-offset: 1px;
-}` + customStatusCSS("ui-tag", "ui-tag", t)
+}` + customStatusCSS("ui-tag", "fui-tag", t)
 }
 
 // ─── Spinner ────────────────────────────────────────────────────────
@@ -679,7 +679,8 @@ func spinnerCSS(_ style.Theme) string {
   }
 }
 
-.ui-visually-hidden {
+.ui-visually-hidden,
+.fui-visually-hidden {
   position: absolute;
   inline-size: 1px;
   block-size: 1px;

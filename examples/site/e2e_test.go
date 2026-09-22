@@ -1083,7 +1083,7 @@ func TestE2E_CopyButtonWorks(t *testing.T) {
 
 	// Click the copy button.
 	if err := chromedp.Run(ctx,
-		chromedp.Evaluate(`document.querySelector('.ui-copy-btn').click()`, nil),
+		chromedp.Evaluate(`document.querySelector('.fui-copy-btn').click()`, nil),
 		chromedp.Sleep(300*time.Millisecond),
 	); err != nil {
 		t.Fatalf("click copy: %v", err)
@@ -1092,7 +1092,7 @@ func TestE2E_CopyButtonWorks(t *testing.T) {
 	// The button should show a copied state (fui-copied class).
 	var hasCopied bool
 	if err := chromedp.Run(ctx,
-		chromedp.Evaluate(`document.querySelector('.ui-copy-btn').classList.contains('fui-copied')`, &hasCopied),
+		chromedp.Evaluate(`document.querySelector('.fui-copy-btn').classList.contains('fui-copied')`, &hasCopied),
 	); err != nil {
 		t.Fatalf("read copied state: %v", err)
 	}

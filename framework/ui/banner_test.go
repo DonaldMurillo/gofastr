@@ -36,8 +36,12 @@ func TestBannerVariantsRoleSemantics(t *testing.T) {
 	if !strings.Contains(info, `role="status"`) {
 		t.Errorf("info banner should be role=status:\n%s", info)
 	}
-	if !strings.Contains(info, `aria-live="polite"`) {
-		t.Errorf("info banner should be aria-live=polite:\n%s", info)
+	// The SystemBanner posture: a system message is polite even when
+	// urgent — it sits at the top of the shell and must not interrupt
+	// (the offline banner is the one exception, and it is the
+	// NetworkRetryBanner's, not this component's).
+	if strings.Contains(info, `role="alert"`) {
+		t.Errorf("an info banner must not interrupt:\n%s", info)
 	}
 
 	success := string(Banner(BannerConfig{Title: "x", Variant: BannerSuccess}))
@@ -45,14 +49,18 @@ func TestBannerVariantsRoleSemantics(t *testing.T) {
 		t.Errorf("success banner should be role=status:\n%s", success)
 	}
 
-	// Warn / Danger → role=alert (assertive, interrupts)
+	// Warn / Danger keep the polite posture and carry the urgency in
+	// the tone word said before the title — the primitive's contract.
 	warn := string(Banner(BannerConfig{Title: "x", Variant: BannerWarn}))
-	if !strings.Contains(warn, `role="alert"`) {
-		t.Errorf("warn banner should be role=alert:\n%s", warn)
+	if !strings.Contains(warn, `role="status"`) {
+		t.Errorf("warn banner should stay polite (the tone word carries the urgency):\n%s", warn)
+	}
+	if !strings.Contains(warn, "Warning: ") {
+		t.Errorf("warn banner should say the tone word:\n%s", warn)
 	}
 	danger := string(Banner(BannerConfig{Title: "x", Variant: BannerDanger}))
-	if !strings.Contains(danger, `role="alert"`) {
-		t.Errorf("danger banner should be role=alert:\n%s", danger)
+	if !strings.Contains(danger, "Error: ") {
+		t.Errorf("danger banner should say the tone word:\n%s", danger)
 	}
 }
 
@@ -60,11 +68,11 @@ func TestBannerDismissibleEmitsButtonAndMarker(t *testing.T) {
 	h := string(Banner(BannerConfig{
 		Title: "x", Dismissible: true, DismissID: "feature-X-2026",
 	}))
-	if !strings.Contains(h, "data-fui-banner-dismiss") {
-		t.Errorf("Dismissible should emit data-fui-banner-dismiss:\n%s", h)
+	if !strings.Contains(h, "data-hui-system-dismiss") {
+		t.Errorf("Dismissible should emit the system dismiss hook:\n%s", h)
 	}
-	if !strings.Contains(h, `data-fui-banner-dismiss-id="feature-X-2026"`) {
-		t.Errorf("DismissID should emit data-fui-banner-dismiss-id:\n%s", h)
+	if !strings.Contains(h, `data-hui-system-id="feature-X-2026"`) {
+		t.Errorf("DismissID is the message's identity on the primitive:\n%s", h)
 	}
 	if !strings.Contains(h, `aria-label="Dismiss"`) {
 		t.Errorf("dismiss button should have aria-label=Dismiss:\n%s", h)
@@ -73,7 +81,7 @@ func TestBannerDismissibleEmitsButtonAndMarker(t *testing.T) {
 
 func TestBannerNotDismissibleByDefault(t *testing.T) {
 	h := string(Banner(BannerConfig{Title: "x"}))
-	if strings.Contains(h, "data-fui-banner-dismiss") {
+	if strings.Contains(h, "data-hui-system-dismiss") {
 		t.Errorf("default Banner should NOT be dismissible:\n%s", h)
 	}
 }
@@ -83,8 +91,8 @@ func TestBannerActionRenders(t *testing.T) {
 		Title:  "Heads up",
 		Action: Link(LinkConfig{Href: "/x", Text: "Go"}),
 	}))
-	if !strings.Contains(h, "ui-banner__action") {
-		t.Errorf("Action should render in .ui-banner__action wrapper:\n%s", h)
+	if !strings.Contains(h, "fui-banner__action") {
+		t.Errorf("Action should render in .fui-banner__action wrapper:\n%s", h)
 	}
 	if !strings.Contains(h, `href="/x"`) {
 		t.Errorf("Action HTML should appear in output:\n%s", h)

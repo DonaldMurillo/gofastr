@@ -120,7 +120,7 @@ func TestAdmin_RolesRenderViaUIComponentsAndDropOrphanBadges(t *testing.T) {
 	if strings.Contains(body, `class="badge"`) || strings.Contains(body, "badge-remove") {
 		t.Errorf("roles must drop orphan .badge/.badge-remove in favor of ui.Tag; got %s", trunc(body, 400))
 	}
-	if !strings.Contains(body, `ui-tag`) {
+	if !strings.Contains(body, `class="fui-tag`) {
 		t.Errorf("roles must render permission chips via ui.Tag; got %s", trunc(body, 300))
 	}
 }

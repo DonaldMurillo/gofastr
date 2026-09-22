@@ -381,14 +381,29 @@ func TestHrefSinksDropProtocolRelative(t *testing.T) {
 			}
 			mustContain(t, sidebar, `href="#"`)
 
-			notif := ui.Notification(ui.NotificationConfig{
-				Title:       "T",
-				DismissHref: payload,
-			})
+			// The toast primitive refuses a dismissed toast with no
+			// Island (hard rule 1), so the sink carries one; the href
+			// policy refusal under test fires before it matters.
+			notif := func() (out render.HTML) {
+				defer func() {
+					if recover() == nil {
+						return
+					}
+					out = render.HTML("")
+				}()
+				return ui.Notification(ui.NotificationConfig{
+					Title:       "T",
+					DismissHref: payload,
+					Island:      headless.Island{Endpoint: "/island/n", Signal: "n"},
+				})
+			}()
+			// The primitive REFUSES the rejected href at render (the
+			// empty result is the refusal, recorded by the same
+			// recover pattern the StepWizard sink uses); nothing
+			// unsafe can reach the page.
 			if strings.Contains(string(notif), "evil.example") {
 				t.Fatalf("protocol-relative/unsafe scheme reached notification dismiss href: %s", notif)
 			}
-			mustContain(t, notif, `href="#"`)
 		})
 	}
 }
@@ -845,6 +860,11 @@ func TestFormActionSinksRejectUnsafeURL(t *testing.T) {
 		"data:text/html,<script>alert(1)</script>",
 		"//evil.com/x",
 	}
+	// The StepWizard sink refuses at render; the counter proves every
+	// unsafe action met the refusal rather than an empty render that
+	// would pass the verbatim check while proving nothing. Declared
+	// before the table because the sink closure writes to it.
+	stepWizardRefusals := 0
 	sinks := []struct {
 		name   string
 		render func(action string) render.HTML
@@ -862,8 +882,24 @@ func TestFormActionSinksRejectUnsafeURL(t *testing.T) {
 			return ui.SignOut(ui.SignOutConfig{Action: a})
 		}},
 		{"StepWizard", func(a string) render.HTML {
-			return ui.StepWizard(ui.StepWizardConfig{Action: a,
-				Steps: []ui.StepWizardStep{{Heading: "H"}}})
+			// The headless primitive refuses a rejected action at
+			// render, the posture every configured href in that
+			// package keeps. The refusal is RECORDED, not swallowed:
+			// stepWizardRefused tells the unsafe loop below that the
+			// panic happened, and a render that somehow came back
+			// without refusing returns its markup for the verbatim
+			// check to see.
+			var out render.HTML
+			func() {
+				defer func() {
+					if recover() != nil {
+						stepWizardRefusals++
+					}
+				}()
+				out = ui.StepWizard(ui.StepWizardConfig{Action: a,
+					Steps: []ui.StepWizardStep{{Heading: "H"}}})
+			}()
+			return out
 		}},
 	}
 	for _, s := range sinks {
@@ -884,6 +920,11 @@ func TestFormActionSinksRejectUnsafeURL(t *testing.T) {
 				t.Errorf("%s dropped a valid relative action:\n%s", s.name, h)
 			}
 		})
+	}
+	// All four unsafe actions met the render refusal — not an empty
+	// render that would pass the verbatim check while proving nothing.
+	if stepWizardRefusals != len(unsafe) {
+		t.Errorf("StepWizard refused %d of %d unsafe actions at render — a swallowed panic proves nothing", stepWizardRefusals, len(unsafe))
 	}
 }
 

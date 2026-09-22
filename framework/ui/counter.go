@@ -2,14 +2,13 @@ package ui
 
 import (
 	"context"
-	"strconv"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/store"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
-	"github.com/DonaldMurillo/gofastr/framework/i18nui"
+	"github.com/DonaldMurillo/gofastr/framework/headless"
 )
 
 // counterStyle registers the scoped CSS for fui-counter. The host emits
@@ -17,7 +16,17 @@ import (
 var counterStyle = registry.RegisterStyle("fui-counter", counterCSS)
 
 func counterCSS(_ style.Theme) string {
-	return `[data-fui-comp="fui-counter"]{display:inline-flex;align-items:center;gap:.5rem}` +
+	return `[data-fui-comp="fui-counter"] .fui-visually-hidden {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
+[data-fui-comp="fui-counter"]{display:inline-flex;align-items:center;gap:.5rem}` +
 		`[data-fui-comp="fui-counter"] .fui-counter__btn{display:inline-flex;align-items:center;justify-content:center;width:2rem;height:2rem;border:1px solid var(--fui-border, var(--color-border, #e2e8f0));border-radius:.375rem;background:var(--fui-surface, var(--color-surface, #fff));color:var(--fui-foreground, var(--color-text, #0f172a));font-size:var(--text-lg, 1.125rem);line-height:1;cursor:pointer;transition:background .15s,border-color .15s}` +
 		`[data-fui-comp="fui-counter"] .fui-counter__btn:hover{background:var(--fui-muted-bg, var(--color-surface-soft, #f1f5f9));border-color:var(--fui-primary, var(--color-primary, #3b82f6))}` +
 		`[data-fui-comp="fui-counter"] .fui-counter__btn:focus-visible{outline:2px solid var(--fui-primary, var(--color-primary, #3b82f6));outline-offset:2px}` +
@@ -72,48 +81,27 @@ func Counter(cfg CounterConfig) render.HTML {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	step := cfg.Step
-	if step == 0 {
-		step = 1
-	}
-
-	cls := "fui-counter"
+	parts := headless.Parts{}
 	if cfg.Class != "" {
-		cls += " " + cfg.Class
+		parts.Attrs = headless.PartAttrs{headless.PartRoot: {"class": cfg.Class}}
 	}
+	return counterStyle.WrapHTML(headless.Counter(headless.CounterProps{
+		Signal:     name,
+		Value:      initial,
+		Step:       cfg.Step,
+		ID:         autoID("counter"),
+		ExtraAttrs: headless.Safe(cfg.ExtraAttrs, "class", "id", "role", "aria-label"),
+		Parts:      parts,
+		Strings:    StringsFor(ctx),
+	}, counterClasses))
+}
 
-	decBtn := render.Tag("button", map[string]string{
-		"class":               "fui-counter__btn fui-counter__dec",
-		"data-fui-signal-inc": name + ":" + strconv.Itoa(-step),
-		"aria-label":          i18nui.T(ctx, i18nui.KeyCounterDecrement),
-		"type":                "button",
-	}, render.Text("−"))
-
-	display := render.Tag("span", map[string]string{
-		"class":           "fui-counter__value",
-		"data-fui-signal": name,
-		"aria-live":       "polite",
-	}, render.Text(strconv.Itoa(initial)))
-
-	incAttrs := map[string]string{
-		"class":      "fui-counter__btn fui-counter__inc",
-		"aria-label": i18nui.T(ctx, i18nui.KeyCounterIncrement),
-		"type":       "button",
-	}
-	if step == 1 {
-		incAttrs["data-fui-signal-inc"] = name
-	} else {
-		incAttrs["data-fui-signal-inc"] = name + ":" + strconv.Itoa(step)
-	}
-	incBtn := render.Tag("button", incAttrs, render.Text("+"))
-
-	rootAttrs := html.SafeExtraAttrs(cfg.ExtraAttrs, "role", "aria-label")
-	if rootAttrs == nil {
-		rootAttrs = map[string]string{}
-	}
-	rootAttrs["class"] = cls
-	rootAttrs["data-fui-comp"] = "fui-counter"
-	rootAttrs["role"] = "group"
-	rootAttrs["aria-label"] = i18nui.T(ctx, i18nui.KeyCounterLabel)
-	return render.Tag("div", rootAttrs, decBtn, display, incBtn)
+// counterClasses dresses headless.Counter's parts in this package's
+// own vocabulary — the names the registered fui-counter sheet
+// matches.
+var counterClasses = headless.Classes{
+	headless.PartRoot:             "fui-counter",
+	headless.PartCounterDecrement: "fui-counter__btn fui-counter__dec",
+	headless.PartCounterValue:     "fui-counter__value",
+	headless.PartCounterIncrement: "fui-counter__btn fui-counter__inc",
 }

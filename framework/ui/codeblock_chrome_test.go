@@ -39,10 +39,10 @@ func TestCodeBlockFilenameRendersHead(t *testing.T) {
 func TestCodeBlockShowCopyTargetsItsOwnBody(t *testing.T) {
 	h := string(CodeBlock(CodeBlockConfig{Filename: "main.go", Code: "x", ShowCopy: true}))
 	// The copy button (composed ui.CopyButton) must point at the body pre's id.
-	if !strings.Contains(h, "data-fui-copy-text-from") {
+	if !strings.Contains(h, "data-hui-copy-target") {
 		t.Fatalf("ShowCopy should emit a copy button:\n%s", h)
 	}
-	target := regexp.MustCompile(`data-fui-copy-text-from="#([^"]+)"`).FindStringSubmatch(h)
+	target := regexp.MustCompile(`data-hui-copy-target="([^"]+)"`).FindStringSubmatch(h)
 	if target == nil {
 		t.Fatalf("could not find copy target:\n%s", h)
 	}

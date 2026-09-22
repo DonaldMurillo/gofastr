@@ -1,6 +1,9 @@
 package ui
 
 import (
+	"fmt"
+	"strings"
+
 	"context"
 	"maps"
 
@@ -8,7 +11,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
 	"github.com/DonaldMurillo/gofastr/core/render"
 
-	"github.com/DonaldMurillo/gofastr/framework/i18nui"
+	"github.com/DonaldMurillo/gofastr/framework/headless"
 )
 
 // ─── Tag / Chip ─────────────────────────────────────────────────────
@@ -31,10 +34,19 @@ type TagConfig struct {
 	// Href makes the entire tag an anchor (e.g. a filter link).
 	Href string
 
-	// Dismiss, when non-empty, renders a × button that fires an RPC
-	// to this path on click. Pair with data-fui-rpc-signal in DismissAttrs
-	// or simply rely on the runtime's default RPC behavior.
+	// Dismiss, when non-empty, is the href of the × link that removes
+	// the tag. A dismissal is an in-page state change, so the Island
+	// that re-renders the region is required with it: the same link is
+	// the no-script destination and the island's trigger.
 	Dismiss string
+
+	// Island is where the dismissal goes with script: the endpoint
+	// that renders the region again and the signal it is bound to.
+	// Required when Dismiss is set.
+	Island headless.Island
+
+	// Icon renders before the label, aria-hidden.
+	Icon render.HTML
 
 	// DismissLabel is the assistive-text label on the × button.
 	// Defaults to "Remove <Label>".
@@ -77,59 +89,59 @@ func Tag(cfg TagConfig) render.HTML {
 		ctx = context.Background()
 	}
 
-	cls := "ui-tag ui-tag--" + string(v)
+	// The chip IS the headless Tag: its root (span, or anchor when
+	// Href is set), its label text, its optional icon and its dismiss
+	// anchor — one label in the output, whatever shape it renders.
+	// The variant and interactive modifiers travel as root class
+	// appends: the primitive has no tone of its own.
+	var mods []string
+	mods = append(mods, "fui-tag--"+string(v))
 	if cfg.Href != "" {
-		cls += " ui-tag--interactive"
+		mods = append(mods, "fui-tag--interactive")
 	}
 	if cfg.Class != "" {
-		cls += " " + cfg.Class
+		mods = append(mods, cfg.Class)
 	}
-
-	labelSpan := html.Span(html.TextConfig{Class: "ui-tag__label"}, render.Text(cfg.Label))
-
-	body := []render.HTML{labelSpan}
-	if cfg.Dismiss != "" {
-		dismissLabel := cfg.DismissLabel
-		if dismissLabel == "" {
-			dismissLabel = i18nui.TVars(ctx, i18nui.KeyTagRemove, map[string]string{"label": cfg.Label})
-		}
-		attrs := html.Attrs{
-			"data-fui-rpc":        cfg.Dismiss,
-			"data-fui-rpc-method": "POST",
-			"aria-label":          dismissLabel,
-			"type":                "button",
-			"class":               "ui-tag__dismiss",
-		}
-		maps.Copy(attrs, cfg.DismissAttrs)
-		// SVG × icon: kept aria-hidden so the aria-label is the
-		// single announced name.
-		body = append(body, render.Tag("button", flattenAttrs(attrs),
-			html.Span(html.TextConfig{ExtraAttrs: html.Attrs{"aria-hidden": "true"}},
-				render.HTML("&times;"))))
+	parts := headless.Parts{}
+	if len(mods) > 0 {
+		parts.Attrs = headless.PartAttrs{headless.PartRoot: {"class": strings.Join(mods, " ")}}
 	}
-
+	dismissLabel := cfg.DismissLabel
+	if dismissLabel == "" && cfg.Dismiss != "" {
+		dismissLabel = fmt.Sprintf(StringsFor(ctx).RemoveLabelled, cfg.Label)
+	}
+	href := ""
 	if cfg.Href != "" {
-		// Drop unsafe hrefs (javascript:, data:, control bytes, …):
-		// same allow-list as ui.Link; see framework/ui/safety.go. Tag
-		// is a content-level component, so a rejected href degrades to
-		// an inert "#" rather than panicking.
-		href := urlsafe.CleanAnchor(cfg.Href)
+		// Drop unsafe hrefs: same allow-list as ui.Link; Tag is a
+		// content-level component, so a rejected href degrades to an
+		// inert "#" rather than panicking.
+		href = urlsafe.CleanAnchor(cfg.Href)
 		if href == "" {
 			href = "#"
 		}
-		return tagStyle.WrapHTML(html.LinkHTML(html.LinkHTMLConfig{
-			Href:       href,
-			Class:      cls,
-			ID:         cfg.ID,
-			Content:    render.Join(body...),
-			ExtraAttrs: html.SafeExtraAttrs(cfg.ExtraAttrs, "href"),
-		}))
 	}
-	return tagStyle.WrapHTML(html.Span(html.TextConfig{
-		Class:      cls,
-		ID:         cfg.ID,
-		ExtraAttrs: html.SafeExtraAttrs(cfg.ExtraAttrs),
-	}, body...))
+	return tagStyle.WrapHTML(headless.Tag(headless.TagProps{
+		Label:            cfg.Label,
+		Icon:             cfg.Icon,
+		DismissHref:      cfg.Dismiss,
+		DismissAriaLabel: dismissLabel,
+		Href:             href,
+		Island:           cfg.Island,
+		ID:               cfg.ID,
+		ExtraAttrs:       headless.Safe(cfg.ExtraAttrs, "class", "id", "href"),
+		Parts:            parts,
+		Strings:          StringsFor(ctx),
+	}, tagClasses))
+}
+
+// tagClasses dresses headless.Tag's parts in this package's own
+// vocabulary — the names the registered ui-tag sheet matches. The
+// variant and interactive modifiers travel as the root's variant
+// classes, which the class map names per variant.
+var tagClasses = headless.Classes{
+	headless.PartRoot:         "fui-tag",
+	headless.PartIcon:         "fui-tag__icon",
+	headless.PartBadgeDismiss: "fui-tag__dismiss",
 }
 
 // flattenAttrs converts html.Attrs (map[string]string) into the

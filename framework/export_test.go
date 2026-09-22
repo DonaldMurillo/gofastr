@@ -29,8 +29,11 @@ func TestAppExportStatic_BuildsSiteAndModules(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(dir, "index.html")); err != nil {
 		t.Errorf("index.html missing: %v", err)
 	}
-	// The split runtime module that 404'd under the wget crawl must now be on disk.
-	if _, err := os.Stat(filepath.Join(dir, "__gofastr", "runtime", "themeswitch.js")); err != nil {
+	// The split runtime module that 404'd under the wget crawl must
+	// now be on disk. The themeswitch module retired with the theme
+	// family's move onto headless-navigation; the navigation module
+	// that replaced it is the exported split module now.
+	if _, err := os.Stat(filepath.Join(dir, "__gofastr", "runtime", "headless-navigation.js")); err != nil {
 		t.Errorf("split runtime module missing: %v", err)
 	}
 }

@@ -1,27 +1,20 @@
 package ui
 
 import (
-	_ "embed"
+	"context"
+	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/headless"
 )
 
-// The component's behaviour registers the way its stylesheet does:
-// the module is embedded beside the Go that renders the markup it
-// binds, and Requires("action") puts the kernel's action primitive
-// (core-ui/runtime/src/action.js) on the page before this module
-// evaluates. The markers are spelled as literals because the
-// hard-rule-5 gate reads every registry.Markers call in the tree.
-//
-//go:embed optimisticaction.js
-var optimisticActionJS string
-
-var _ = registry.RegisterBehavior("optimisticaction", optimisticActionJS,
-	registry.Markers("[data-fui-comp=\"ui-optimistic-action\"]"),
-	registry.Requires("action"))
+// The behaviour is the headless module's: the primitive's
+// data-hui-action* hooks bind through the kernel's action primitive,
+// and the retired optimisticaction adapter module (its .js and its
+// registration) is deleted with this move.
 
 // ─── OptimisticAction ───────────────────────────────────────────────
 //
@@ -36,19 +29,22 @@ var _ = registry.RegisterBehavior("optimisticaction", optimisticActionJS,
 // confirmation. NOT for irreversible / destructive actions (delete,
 // charge, …). Pair those with ConfirmAction instead.
 //
-// SSR shape:
+// SSR shape (the headless action contract):
 //
 //	<button data-fui-comp="ui-optimistic-action"
-//	        data-fui-optimistic-endpoint="/follow"
-//	        data-fui-optimistic-method="POST"
+//	        data-hui-action="" data-hui-action-endpoint="/follow"
+//	        data-hui-action-failed="…"
 //	        data-state="idle"
-//	        class="fui-button fui-optimistic-action">
-//	    <span data-fui-optimistic-idle>Follow</span>
-//	    <span data-fui-optimistic-success hidden>Following ✓</span>
+//	        class="fui-button fui-button--primary ui-optimistic-action">
+//	    <span data-hui-action-idle>Follow</span>
+//	    <span data-hui-action-done hidden>Following ✓</span>
+//	    …a visually-hidden role=status span the rollback sentence is
+//	    announced into…
 //	</button>
 //
-// The runtime auto-loads `/runtime/optimisticaction.js` on first
-// appearance.
+// The headless module binds the data-hui-action* hooks through the
+// kernel's action primitive — the retired optimisticaction.js is
+// deleted, and a host that still hand-loads it gets a 404.
 
 // OptimisticActionConfig configures an OptimisticAction button.
 type OptimisticActionConfig struct {
@@ -89,10 +85,18 @@ type OptimisticActionConfig struct {
 	// (use Class / ID), data-fui-* (endpoint and method wiring),
 	// type, and data-state — the optimistic lifecycle contract.
 	ExtraAttrs html.Attrs
+
+	// FailedText is what the status span announces when the server
+	// refuses. Empty takes the Strings default.
+	FailedText string
+	// Ctx carries the per-request context used to resolve the
+	// failure sentence. When nil, English fallbacks apply.
+	Ctx context.Context
 }
 
-// OptimisticAction renders the button. The runtime listens for clicks
-// via the data-fui-comp marker.
+// OptimisticAction renders the button. The marker fetches this sheet;
+// the clicks are bound through the data-hui-action* hooks the
+// primitive renders.
 func OptimisticAction(cfg OptimisticActionConfig) render.HTML {
 	if cfg.Endpoint == "" {
 		panic("ui: OptimisticAction requires Endpoint")
@@ -103,64 +107,44 @@ func OptimisticAction(cfg OptimisticActionConfig) render.HTML {
 	if cfg.SuccessLabel == "" {
 		panic("ui: OptimisticAction requires SuccessLabel")
 	}
-	method := cfg.Method
-	if method == "" {
-		method = "POST"
-	}
-
 	ov := cfg.Variant
 	if ov == "" {
 		ov = ButtonPrimary
 	}
 	checkButtonVariant("OptimisticAction", ov)
 	checkButtonSize("OptimisticAction", cfg.Size)
-	// The button's root classes come from the class map, beside this
-	// default primary included, which the earlier `Variant != ""` guard
-	// silently dropped for explicit-primary callers — because the
-	// stylesheet's colours live in the variant rules, not the base.
-	cls := buttonClassTokens(cfg.Variant, cfg.Size) + " ui-optimistic-action"
-	if cfg.Class != "" {
-		cls += " " + cfg.Class
+
+	// The optimistic classes ride beside the button family's own so
+	// this sheet's flip styling reaches the same button.
+	parts := headless.Parts{}
+	if extra := strings.TrimSpace(buttonClassTokens(ov, cfg.Size) + " ui-optimistic-action " + cfg.Class); extra != "" {
+		parts.Attrs = headless.PartAttrs{headless.PartRoot: {"class": strings.TrimSpace(extra)}}
 	}
-
-	// Sanitized extras first, owned keys on top so they win.
-	attrs := html.SafeExtraAttrs(cfg.ExtraAttrs, "type", "data-state")
-	if attrs == nil {
-		attrs = html.Attrs{}
+	ctx := cfg.Ctx
+	if ctx == nil {
+		ctx = context.Background()
 	}
-	attrs["class"] = cls
-	attrs["type"] = "button"
-	attrs["data-fui-optimistic-endpoint"] = cfg.Endpoint
-	attrs["data-fui-optimistic-method"] = method
-	attrs["data-state"] = "idle"
-	if cfg.ID != "" {
-		attrs["id"] = cfg.ID
-	}
+	return optimisticActionStyle.WrapHTML(headless.OptimisticAction(headless.OptimisticActionProps{
+		Endpoint:     cfg.Endpoint,
+		Method:       cfg.Method,
+		IdleLabel:    cfg.IdleLabel,
+		SuccessLabel: cfg.SuccessLabel,
+		IdleIcon:     cfg.IdleIcon,
+		DoneIcon:     cfg.SuccessIcon,
+		Variant:      string(cfg.Variant),
+		Size:         string(cfg.Size),
+		FailedText:   cfg.FailedText,
+		ID:           cfg.ID,
+		ExtraAttrs:   headless.Safe(cfg.ExtraAttrs, "type", "data-state"),
+		Parts:        parts,
+		Strings:      StringsFor(ctx),
+	}, optimisticActionClasses))
+}
 
-	idleChildren := []render.HTML{}
-	if cfg.IdleIcon != "" {
-		idleChildren = append(idleChildren, cfg.IdleIcon)
-	}
-	idleChildren = append(idleChildren, render.Text(cfg.IdleLabel))
-
-	successChildren := []render.HTML{}
-	if cfg.SuccessIcon != "" {
-		successChildren = append(successChildren, cfg.SuccessIcon)
-	}
-	successChildren = append(successChildren, render.Text(cfg.SuccessLabel))
-
-	idleSpan := render.Tag("span", map[string]string{
-		"data-fui-optimistic-idle": "",
-		"class":                    "ui-optimistic-action__idle",
-	}, idleChildren...)
-
-	successSpan := render.Tag("span", map[string]string{
-		"data-fui-optimistic-success": "",
-		"class":                       "ui-optimistic-action__success",
-		"hidden":                      "",
-	}, successChildren...)
-
-	return optimisticActionStyle.WrapHTML(render.Tag("button", attrs, idleSpan, successSpan))
+// optimisticActionClasses dresses the primitive's parts in the button
+// family's vocabulary.
+var optimisticActionClasses = headless.Classes{
+	headless.PartRoot: "fui-button",
 }
 
 var optimisticActionStyle = registry.RegisterStyle("ui-optimistic-action", func(_ style.Theme) string {

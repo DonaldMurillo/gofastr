@@ -169,9 +169,9 @@ component PR must include chromedp e2e tests that:
     increases; end-of-feed (empty cursor header) removes the sentinel.
   - Tree: clicking the toggle (or pressing ArrowRight) flips
     `aria-expanded="true"` AND populates `<ul role="group">` children.
-  - CopyButton: click → `.fui-copied` applied, `data-fui-copy-status`
-    sibling reads `"Copied"`; if `ToastOnCopy=true`, the toast stack
-    receives the title.
+  - CopyButton: click → `.fui-copied` applied, the
+    `data-hui-copy-status` sibling reads the copy sentence (clear then
+    frame); if `ToastOnCopy=true`, the toast stack receives the title.
   - ConfirmAction: trigger click → modal visible, Cancel autofocused;
     Esc → modal closed, modal stack empty.
   - FilterChipBar: click × → chip count decreases by 1 (server-driven

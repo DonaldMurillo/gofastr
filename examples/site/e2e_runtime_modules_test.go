@@ -53,9 +53,9 @@ func collectRuntimeModuleURLs(ctx context.Context) (*sync.Map, func()) {
 // Visiting / (home page) must NOT trigger fetches for runtime
 // modules whose markers aren't on the page. The site mounts a
 // site-wide toast stack on every page + emits the gofastr-sse meta
-// tag, so toasts.js and sse.js are legitimately loaded, those are
-// excluded. The split's payoff is asserting headless/menu
-// DON'T load.
+// tag, so headless-feedback.js (the toast runtime) and sse.js are
+// legitimately loaded, those are excluded. The split's payoff is
+// asserting headless/menu DON'T load.
 func TestE2E_RuntimeSplit_NoMarkersNoFetch(t *testing.T) {
 	if testing.Short() {
 		t.Skip("e2e: -short")
@@ -160,8 +160,8 @@ func TestE2E_RuntimeSplit_DrawerLoadsOnMarker(t *testing.T) {
 	}
 }
 
-// /components/toast has a toast stack widget mounted, so the toasts
-// module must load.
+// /components/toast has a toast stack widget mounted, so the
+// headless-feedback module must load.
 func TestE2E_RuntimeSplit_ToastsLoadOnMarker(t *testing.T) {
 	if testing.Short() {
 		t.Skip("e2e: -short")
@@ -182,13 +182,13 @@ func TestE2E_RuntimeSplit_ToastsLoadOnMarker(t *testing.T) {
 
 	found := false
 	urls.Range(func(k, _ any) bool {
-		if strings.Contains(k.(string), "/runtime/toasts.js") {
+		if strings.Contains(k.(string), "/runtime/headless-feedback.js") {
 			found = true
 		}
 		return true
 	})
 	if !found {
-		t.Errorf("/components/toast should fetch toasts module")
+		t.Errorf("/components/toast should fetch headless-feedback (the toast runtime module)")
 	}
 }
 
@@ -285,19 +285,20 @@ func TestE2E_RuntimeSplit_ClickBeforeCatalogStillOpens(t *testing.T) {
 	}
 }
 
-// When `/__gofastr/runtime/toasts.js` fails to load (deploy mid-flight,
-// CDN cache miss, transient 5xx), the X-Gofastr-Toast header path used
-// to swallow the rejection via `.catch(() => {})`, the user's toast
-// (often a "Save failed" error) silently vanished. Core must show a
-// minimal fallback notice so the user still sees the message.
+// When `/__gofastr/runtime/headless-feedback.js` fails to load (deploy
+// mid-flight, CDN cache miss, transient 5xx), the X-Gofastr-Toast
+// header path used to swallow the rejection via `.catch(() => {})`,
+// and the user's toast (often a "Save failed" error) silently
+// vanished. Core must show a fallback notice, visibly, even when the
+// module cannot load.
 func TestE2E_RuntimeSplit_ToastModuleFailureShowsFallback(t *testing.T) {
 	if testing.Short() {
 		t.Skip("e2e: -short")
 	}
 	app := newTestApp(t)
 	srv500 := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/__gofastr/runtime/toasts.js" {
-			// Force toasts.js to 500, simulates a deploy mid-flight.
+		if r.URL.Path == "/__gofastr/runtime/headless-feedback.js" {
+			// Force headless-feedback.js to 500, simulates a deploy mid-flight.
 			http.Error(w, "broken", http.StatusInternalServerError)
 			return
 		}
@@ -309,9 +310,10 @@ func TestE2E_RuntimeSplit_ToastModuleFailureShowsFallback(t *testing.T) {
 	ctx := newE2EBrowserCtx(t)
 
 	var fallbackResult string
-	// Navigate to a page that doesn't pre-load the toast module so
-	// toasts.js isn't already cached, then manually trigger the
-	// toast push path to exercise the fallback when the module 500s.
+	// Navigate to the home page: its site-wide toast stack's boot scan
+	// fetches headless-feedback.js, which 500s here, so the module
+	// never evaluates. Then manually trigger the toast push path and
+	// exercise the fallback the way the kernel's own dispatcher would.
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/"),
 		pageReady(),
@@ -325,10 +327,11 @@ func TestE2E_RuntimeSplit_ToastModuleFailureShowsFallback(t *testing.T) {
                 body: JSON.stringify({}),
             });
             const header = r.headers.get('X-Gofastr-Toast');
-            // Mimic core's X-Gofastr-Toast dispatch path: kick off
-            // loadModule('toasts') then call NS.toast. Since the
-            // module 500s, the .catch path must show a fallback.
-            window.__gofastr.loadModule('toasts').then(() => {
+            // Mimic the kernel's _toastOrFallback dispatch path: kick
+            // off loadModule('headless-feedback') then call NS.toast.
+            // The module 500s, so the .catch path must show a
+            // fallback.
+            window.__gofastr.loadModule('headless-feedback').then(() => {
                 try {
                     const parsed = JSON.parse(header);
                     const arr = Array.isArray(parsed) ? parsed : [parsed];
@@ -350,14 +353,13 @@ func TestE2E_RuntimeSplit_ToastModuleFailureShowsFallback(t *testing.T) {
 		// with the title text the server sent. POLL for it rather than
 		// sampling once after a fixed sleep: loadModule inserts module
 		// <script>s with async=false, so they join the document's
-		// in-order script list, and per the HTML spec even the ERROR
-		// event of an in-order script waits for every earlier pending
 		// in-order script to settle. The home page queues several
-		// modules at boot (toasts, sse, widgets, …); on a starved CI
-		// runner any of those fetches can outlive a fixed sleep, which
-		// delays the toasts.js onerror → fallback render past the
-		// sample point. The fallback is delayed, never lost, so wait
-		// on the real signal with a generous budget.
+		// modules at boot (headless-feedback, sse, widgets, …); on a
+		// starved CI runner any of those fetches can outlive a fixed
+		// sleep, which delays the headless-feedback.js onerror →
+		// fallback render past the sample point. The fallback is
+		// delayed, never lost, so wait on the real signal with a
+		// generous budget.
 		// Issue #278: a starved CI runner once let that in-order
 		// chain outlive 10s, so the budget is now 30s (the per-test
 		// tab context is 45s) and the timeout path resolves a
@@ -392,7 +394,7 @@ func TestE2E_RuntimeSplit_ToastModuleFailureShowsFallback(t *testing.T) {
 		t.Fatalf("chromedp: %v", err)
 	}
 	if fallbackResult != "ok" {
-		t.Errorf("X-Gofastr-Toast header fired with toasts.js returning 500 should render a fallback "+
+		t.Errorf("X-Gofastr-Toast header fired with headless-feedback.js returning 500 should render a fallback "+
 			"notice carrying the server-sent title; nothing visible was found. Diagnostic: %s", fallbackResult)
 	}
 }
@@ -402,21 +404,24 @@ func TestE2E_RuntimeSplit_ToastModuleFailureShowsFallback(t *testing.T) {
 // hit by accident:
 //
 //  1. An earlier server on port P serves the home page; the site-wide
-//     toast stack makes the boot scan fetch toasts.js, which the server
-//     sends with `Cache-Control: public, max-age=31536000, immutable`.
-//     The SHARED browser profile (one Chrome for the whole suite, one
-//     cache per profile, not per tab) now holds a 200 for
-//     http://127.0.0.1:P/__gofastr/runtime/toasts.js?v=<hash>.
-//  2. A server that 500s toasts.js then binds the SAME port P. In CI
-//     this happens by chance — httptest ports are ephemeral and the
-//     kernel reuses recently closed ones — which is why #278 is
-//     intermittent and order-dependent, not load-dependent.
+//     toast stack makes the boot scan fetch headless-feedback.js,
+//     which the server sends with `Cache-Control: public,
+//     max-age=31536000, immutable`. The SHARED browser profile (one
+//     Chrome for the whole suite, one cache per profile, not per tab)
+//     now holds a 200 for
+//     http://127.0.0.1:P/__gofastr/runtime/headless-feedback.js?v=<hash>.
+//  2. A server that 500s headless-feedback.js then binds the SAME
+//     port P. In CI this happens by chance — httptest ports are
+//     ephemeral and the kernel reuses recently closed ones — which is
+//     why #278 is intermittent and order-dependent, not
+//     load-dependent.
 //
-// Without per-tab cache isolation the boot scan resolves toasts.js from
-// the stale immutable entry without a network request: the 500 never
-// fires, loadModule('toasts') resolves, the REAL toast renders, and the
-// fallback correctly never appears — exactly the CI diagnostic (toasts
-// in loadedModules, its script in runtimeScripts, fallbackPresent:
+// Without per-tab cache isolation the boot scan resolves
+// headless-feedback.js from the stale immutable entry without a
+// network request: the 500 never fires, loadModule('headless-feedback')
+// resolves, the REAL toast renders, and the fallback correctly never
+// appears — exactly the CI diagnostic (headless-feedback in
+// loadedModules, its script in runtimeScripts, fallbackPresent:
 // false). siteBrowserCtx prevents that by clearing the browser cache
 // when it hands out a tab.
 func TestE2E_RuntimeSplit_Toast500NotMaskedByStalePortCache(t *testing.T) {
@@ -425,8 +430,8 @@ func TestE2E_RuntimeSplit_Toast500NotMaskedByStalePortCache(t *testing.T) {
 	}
 	app := newTestApp(t)
 
-	// Phase 1 — prime the shared profile's cache for toasts.js on
-	// port P (200 + immutable).
+	// Phase 1 — prime the shared profile's cache for
+	// headless-feedback.js on port P (200 + immutable).
 	prime := httptest.NewUnstartedServer(app.Router())
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -439,7 +444,7 @@ func TestE2E_RuntimeSplit_Toast500NotMaskedByStalePortCache(t *testing.T) {
 	ctxPrime := newE2EBrowserCtx(t)
 	if err := chromedp.Run(ctxPrime,
 		chromedp.Navigate(primeURL+"/"),
-		chromedp.Poll(`window.__gofastr && window.__gofastr.loadedModules && window.__gofastr.loadedModules.toasts === true`, nil, chromedp.WithPollingInterval(100*1e6)),
+		chromedp.Poll(`window.__gofastr && window.__gofastr.loadedModules && window.__gofastr.loadedModules['headless-feedback'] === true`, nil, chromedp.WithPollingInterval(100*1e6)),
 		// Let the network service commit the immutable entry before
 		// the port is handed back.
 		chromedp.Sleep(500*time.Millisecond),
@@ -459,10 +464,10 @@ func TestE2E_RuntimeSplit_Toast500NotMaskedByStalePortCache(t *testing.T) {
 	prime.CloseClientConnections()
 	prime.Close()
 
-	var toastsHits atomic.Int64
+	var feedbackHits atomic.Int64
 	srv500 := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/__gofastr/runtime/toasts.js" {
-			toastsHits.Add(1)
+		if r.URL.Path == "/__gofastr/runtime/headless-feedback.js" {
+			feedbackHits.Add(1)
 			http.Error(w, "broken", http.StatusInternalServerError)
 			return
 		}
@@ -500,8 +505,8 @@ func TestE2E_RuntimeSplit_Toast500NotMaskedByStalePortCache(t *testing.T) {
 		chromedp.Navigate(broken.URL+"/"),
 		pageReady(),
 		// Same header-dispatch mimic as the parent test: kick
-		// loadModule('toasts') and let the .catch render the
-		// fallback when the 500 lands.
+		// loadModule('headless-feedback') and let the .catch render
+		// the fallback when the 500 lands.
 		chromedp.Evaluate(`(async () => {
             const r = await fetch('/__site/toast/push', {
                 method: 'POST',
@@ -509,7 +514,7 @@ func TestE2E_RuntimeSplit_Toast500NotMaskedByStalePortCache(t *testing.T) {
                 body: JSON.stringify({}),
             });
             const header = r.headers.get('X-Gofastr-Toast');
-            window.__gofastr.loadModule('toasts').then(() => {
+            window.__gofastr.loadModule('headless-feedback').then(() => {
                 try {
                     const parsed = JSON.parse(header);
                     const arr = Array.isArray(parsed) ? parsed : [parsed];
@@ -552,27 +557,27 @@ func TestE2E_RuntimeSplit_Toast500NotMaskedByStalePortCache(t *testing.T) {
 	}
 
 	var observed []string
-	toastsRequested := false
+	feedbackRequested := false
 	urls.Range(func(k, _ any) bool {
 		u := k.(string)
 		observed = append(observed, u)
-		if strings.Contains(u, "/runtime/toasts.js") {
-			toastsRequested = true
+		if strings.Contains(u, "/runtime/headless-feedback.js") {
+			feedbackRequested = true
 		}
 		return true
 	})
 	if fallbackResult != "ok" {
-		t.Errorf("toasts.js 500 on a port whose cached 200 the browser still holds should NOT mask the fallback; "+
-			"the module must fail and the fallback must render. Diagnostic: %s; toasts.js requests observed: %v; "+
-			"500-server toasts.js hits: %d; all runtime URLs: %v",
-			fallbackResult, toastsRequested, toastsHits.Load(), observed)
+		t.Errorf("headless-feedback.js 500 on a port whose cached 200 the browser still holds should NOT mask the fallback; "+
+			"the module must fail and the fallback must render. Diagnostic: %s; headless-feedback.js requests observed: %v; "+
+			"500-server headless-feedback.js hits: %d; all runtime URLs: %v",
+			fallbackResult, feedbackRequested, feedbackHits.Load(), observed)
 		return
 	}
-	if !toastsRequested {
-		t.Errorf("the toasts.js request should have hit the 500 server (observed runtime URLs: %v)", observed)
+	if !feedbackRequested {
+		t.Errorf("the headless-feedback.js request should have hit the 500 server (observed runtime URLs: %v)", observed)
 	}
-	if n := toastsHits.Load(); n == 0 {
-		t.Errorf("the 500 server never saw a toasts.js request (hits=0); the module loaded without touching the injection server")
+	if n := feedbackHits.Load(); n == 0 {
+		t.Errorf("the 500 server never saw a headless-feedback.js request (hits=0); the module loaded without touching the injection server")
 	}
 }
 
@@ -631,14 +636,15 @@ func TestE2E_RuntimeSplit_MutationObserverLoadsNewMarker(t *testing.T) {
 
 // After a SPA-nav swaps `<main>` content, every ALREADY-LOADED runtime
 // module must re-run its initializer against the fresh DOM. Without
-// this, a page like /components/toast loads the toasts module on first
-// paint, the user navs to a different page that has its own SSR-inlined
-// toast stack with TTL items, and those new items NEVER get their auto-
-// dismiss timers armed, _initToasts only ran once at module-load time
-// before that DOM existed.
+// this, a page like /components/toast loads the toast runtime
+// (headless-feedback) on first paint, the user navs to a different
+// page that has its own SSR-inlined toast stack with TTL items, and
+// those new items NEVER get their auto-dismiss timers armed,
+// _initToasts only ran once at module-load time before that DOM
+// existed.
 //
 // The test injects a fresh SSR-style toast item with a 300ms TTL into
-// the DOM AFTER the toasts module is loaded, then fires
+// the DOM AFTER headless-feedback is loaded, then fires
 // `gofastr:navigate`. If the per-module rescan contract is wired, the
 // item's auto-dismiss timer arms inside the rescan and the item is
 // removed within ~500ms. If not, the item lingers forever.
@@ -654,15 +660,18 @@ func TestE2E_RuntimeSplit_SPANavRescansLoadedModules(t *testing.T) {
 		network.Enable(),
 		chromedp.Navigate(base+"/components/toast"),
 		pageReady(),
-		chromedp.Sleep(400*time.Millisecond), // toasts module loaded by now
+		// The toast runtime module is demand-loaded by marker, and this
+		// page carries no stack of its own — load it the way the kernel
+		// would when a marker appears, then wait for its loaded flag.
+		chromedp.Evaluate(`window.__gofastr.loadModule('headless-feedback')`, nil),
+		chromedp.Poll(`window.__gofastr && window.__gofastr.loadedModules && window.__gofastr.loadedModules['headless-feedback'] === true`, nil, chromedp.WithPollingInterval(100*1e6), chromedp.WithPollingTimeout(8*time.Second)),
 		// Inject a brand-new toast-stack with a TTL item, simulating
 		// the post-SPA-nav case where a freshly-swapped <main> brings
 		// a stack the module never saw at load time.
 		chromedp.Evaluate(`(() => {
             const stack = document.createElement('div');
             stack.setAttribute('data-fui-toast-stack', 'spa-nav-rescan-test');
-            stack.innerHTML = '<div data-fui-toast-id="rescan-target" data-fui-toast-ttl-ms="300">' +
-                '<div class="ui-notification ui-notification--info">SPA nav rescan target</div>' +
+                '<div class="fui-notification fui-notification--info">SPA nav rescan target</div>' +
                 '</div>';
             document.body.appendChild(stack);
             // The contract: core dispatches gofastr:navigate after the
@@ -671,12 +680,12 @@ func TestE2E_RuntimeSplit_SPANavRescansLoadedModules(t *testing.T) {
             window.dispatchEvent(new CustomEvent('gofastr:navigate', { detail: { path: '/x' } }));
         })()`, nil),
 		chromedp.Sleep(700*time.Millisecond), // TTL is 300ms, dismiss anim ~200ms
-		chromedp.Evaluate(`!document.querySelector('[data-fui-toast-id="rescan-target"]')`, &dismissed),
+		chromedp.Evaluate(`!document.querySelector('[data-hui-toast-id="rescan-target"]')`, &dismissed),
 	); err != nil {
 		t.Fatalf("chromedp: %v", err)
 	}
 	if !dismissed {
-		t.Errorf("SSR toast with TTL=300ms injected after toasts.js loaded was NOT dismissed " +
+		t.Errorf("SSR toast with TTL=300ms injected after headless-feedback loaded was NOT dismissed " +
 			"after gofastr:navigate fired — modules don't re-init on SPA nav.")
 	}
 }

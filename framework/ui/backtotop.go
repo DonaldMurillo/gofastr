@@ -1,10 +1,11 @@
 package ui
 
 import (
-	"fmt"
+	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/headless"
 )
 
 // ─── BackToTop ──────────────────────────────────────────────────────
@@ -137,63 +138,61 @@ const defaultArrowUpSVG = `<svg xmlns="http://www.w3.org/2000/svg" width="20" he
 //	    Icon:     render.Raw(`<svg>...</svg>`),
 //	})
 func BackToTop(cfg BackToTopConfig) render.HTML {
-	pos := cfg.Position
-	if pos == "" {
-		pos = BackToTopBottomRight
-	}
 	threshold := cfg.ThresholdPx
 	if threshold == 0 {
 		threshold = 400
 	}
-	label := cfg.Label
-	if label == "" {
-		label = "Back to top"
-	}
-	size := cfg.Size
-	variant := cfg.Variant
-	offset := cfg.Offset
+	// The scroll target is an element id on the headless primitive,
+	// not a CSS selector: a "#main" selector string becomes "main"
+	// here, because the primitive refuses the "#" spelling and the
+	// module resolves by id.
+	target := strings.TrimPrefix(cfg.ScrollTarget, "#")
 
-	cls := "ui-back-to-top"
-	if pos != "" {
-		cls += " ui-back-to-top--" + string(pos)
+	var mods []string
+	if cfg.Position != "" {
+		mods = append(mods, "fui-back-to-top--"+string(cfg.Position))
 	}
-	if size != "" {
-		cls += " ui-back-to-top--" + string(size)
+	if cfg.Size != "" {
+		mods = append(mods, "fui-back-to-top--"+string(cfg.Size))
 	}
-	if variant != "" {
-		cls += " ui-back-to-top--" + string(variant)
+	if cfg.Variant != "" {
+		mods = append(mods, "fui-back-to-top--"+string(cfg.Variant))
 	}
-	if offset != "" && offset != BackToTopOffsetMD {
-		cls += " ui-back-to-top--offset-" + string(offset)
+	if cfg.Offset != "" && cfg.Offset != BackToTopOffsetMD {
+		mods = append(mods, "fui-back-to-top--offset-"+string(cfg.Offset))
 	}
 	if cfg.Class != "" {
-		cls += " " + cfg.Class
+		mods = append(mods, cfg.Class)
 	}
-
-	attrs := html.SafeExtraAttrs(cfg.ExtraAttrs, "type", "aria-label", "inert")
-	if attrs == nil {
-		attrs = map[string]string{}
-	}
-	attrs["type"] = "button"
-	attrs["data-fui-back-to-top"] = ""
-	attrs["data-fui-btt-threshold"] = fmt.Sprintf("%d", threshold)
-	attrs["aria-label"] = label
-	attrs["inert"] = ""
-	attrs["class"] = cls
-	if cfg.Smooth != "" {
-		attrs["data-fui-btt-scroll"] = string(cfg.Smooth)
-	}
-	if cfg.ScrollTarget != "" {
-		attrs["data-fui-btt-target"] = cfg.ScrollTarget
-	}
-	if cfg.ID != "" {
-		attrs["id"] = cfg.ID
+	parts := headless.Parts{}
+	if len(mods) > 0 {
+		parts.Attrs = headless.PartAttrs{headless.PartRoot: {"class": strings.Join(mods, " ")}}
 	}
 
 	icon := cfg.Icon
 	if icon == "" {
-		icon = render.Raw(defaultArrowUpSVG)
+		icon = render.HTML(defaultArrowUpSVG)
 	}
 
-	return backToTopStyle.WrapHTML(render.Tag("button", attrs, icon))
+	return backToTopStyle.WrapHTML(headless.BackToTop(headless.BackToTopProps{
+		Href:      "#top",
+		Target:    target,
+		Label:     cfg.Label,
+		Threshold: threshold,
+		Icon:      icon,
+		Smooth:    cfg.Smooth != BackToTopInstant,
+		ID:        cfg.ID,
+		ExtraAttrs: headless.Safe(cfg.ExtraAttrs, "class", "id", "href",
+			"aria-label", "data-hui-back-to-top", "data-hui-back-to-top-target"),
+		Parts:   parts,
+		Strings: StringsFor(nil),
+	}, backToTopClasses))
+}
+
+// backToTopClasses dresses headless.BackToTop's parts in this
+// package's own vocabulary; the icon slot carries the chevron.
+var backToTopClasses = headless.Classes{
+	headless.PartRoot:  "fui-back-to-top",
+	headless.PartIcon:  "fui-back-to-top__icon",
+	headless.PartLabel: "fui-visually-hidden",
 }

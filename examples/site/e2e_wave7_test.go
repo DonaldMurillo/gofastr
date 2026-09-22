@@ -174,7 +174,7 @@ func TestE2E_ThemeToggle_Renders(t *testing.T) {
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/themetoggle"),
 		pageReady(),
-		chromedp.Evaluate(`document.querySelector('button[data-fui-theme-toggle]') !== null`, &iconPresent),
+		chromedp.Evaluate(`document.querySelector('[data-hui-theme-cycle]') !== null || document.querySelector('[data-hui-theme-toggle]') !== null`, &iconPresent),
 	)
 	if err != nil {
 		t.Fatalf("chromedp: %v", err)
@@ -191,7 +191,7 @@ func TestE2E_ThemeToggle_ClickCyclesScheme(t *testing.T) {
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/themetoggle"),
 		chromedp.Sleep(1500*time.Millisecond),
-		chromedp.Evaluate(`document.querySelector('button[data-fui-theme-toggle]')?.click()`, nil),
+		chromedp.Evaluate(`(document.querySelector('[data-hui-theme-cycle]') || document.querySelector('[data-hui-theme-toggle] [data-hui-theme-option]'))?.click()`, nil),
 		settle(),
 		chromedp.Evaluate(`document.documentElement.getAttribute('data-color-scheme') || ''`, &schemeAfter),
 	)
@@ -252,18 +252,20 @@ func TestE2E_BackToTop_Renders(t *testing.T) {
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/backtotop"),
 		pageReady(),
-		chromedp.Evaluate(`document.querySelector('[data-fui-back-to-top]') !== null`, &exists),
-		chromedp.Evaluate(`document.querySelector('[data-fui-back-to-top]')?.tagName?.toLowerCase() || ''`, &tag),
-		chromedp.Evaluate(`document.querySelector('[data-fui-back-to-top]')?.getAttribute('aria-label') || ''`, &ariaLabel),
+		chromedp.Evaluate(`document.querySelector('[data-hui-back-to-top]') !== null`, &exists),
+		chromedp.Evaluate(`document.querySelector('[data-hui-back-to-top]')?.tagName?.toLowerCase() || ''`, &tag),
+		chromedp.Evaluate(`document.querySelector('[data-hui-back-to-top]')?.getAttribute('aria-label') || ''`, &ariaLabel),
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !exists {
-		t.Error("expected [data-fui-back-to-top] element to exist")
+		t.Error("expected [data-hui-back-to-top] element to exist")
 	}
-	if tag != "button" {
-		t.Errorf("expected tag button, got %q", tag)
+	// The headless contract is an ANCHOR: its href is the no-script
+	// destination and the module adds threshold, scroll and focus.
+	if tag != "a" {
+		t.Errorf("expected tag a (the primitive's anchor), got %q", tag)
 	}
 	if ariaLabel == "" {
 		t.Errorf("expected aria-label on BackToTop, got empty")
@@ -273,17 +275,17 @@ func TestE2E_BackToTop_Renders(t *testing.T) {
 func TestE2E_BackToTop_HiddenByDefault(t *testing.T) {
 	base := startE2EServer(t)
 	ctx := newE2EBrowserCtx(t)
-	var inert bool
+	var visible bool
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/backtotop"),
 		pageReady(),
-		chromedp.Evaluate(`document.querySelector('[data-fui-back-to-top]')?.hasAttribute('inert') || false`, &inert),
+		chromedp.Evaluate(`document.querySelector('[data-hui-back-to-top]')?.hasAttribute('data-hui-back-to-top-visible') || false`, &visible),
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !inert {
-		t.Error("expected inert attribute initially (button must not be focusable when hidden)")
+	if visible {
+		t.Error("expected the visibility mark absent initially (a page at its top needs no way back to it)")
 	}
 }
 
@@ -294,7 +296,7 @@ func TestE2E_BackToTop_RuntimeModuleLoads(t *testing.T) {
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/backtotop"),
 		chromedp.Sleep(1500*time.Millisecond),
-		chromedp.Evaluate(`(window.__gofastr && window.__gofastr.loadedModules && window.__gofastr.loadedModules.backtotop) || false`, &loaded),
+		chromedp.Evaluate(`(window.__gofastr && window.__gofastr.loadedModules && window.__gofastr.loadedModules['headless-navigation']) || false`, &loaded),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -307,24 +309,23 @@ func TestE2E_BackToTop_RuntimeModuleLoads(t *testing.T) {
 func TestE2E_BackToTop_ScrollShowsButton(t *testing.T) {
 	base := startE2EServer(t)
 	ctx := newE2EBrowserCtx(t)
-	var visible, inert bool
+	var visible bool
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/backtotop"),
 		pageReady(),
 		chromedp.Evaluate(`window.scrollTo(0, 600)`, nil),
-		chromedp.Sleep(500*time.Millisecond),
-		chromedp.Evaluate(`document.querySelector('[data-fui-back-to-top]')?.hasAttribute('data-fui-btt-visible') || false`, &visible),
-		chromedp.Evaluate(`document.querySelector('[data-fui-back-to-top]')?.hasAttribute('inert') || false`, &inert),
+		chromedp.Sleep(900*time.Millisecond),
+		chromedp.Evaluate(`document.querySelector('[data-hui-back-to-top]')?.hasAttribute('data-hui-back-to-top-visible') || false`, &visible),
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !visible {
-		t.Error("expected data-fui-btt-visible after scrolling past threshold")
+		t.Error("expected the visibility mark after scrolling past the threshold")
 	}
-	if inert {
-		t.Error("expected inert to be removed after scrolling, button should be focusable")
-	}
+	// The visibility mark is the whole contract now: a stylesheet
+	// keys display off it, and the anchor is focusable whenever it is
+	// visible (the old inert dance belonged to the retired module).
 }
 
 func TestE2E_BackToTop_ClickScrollsToTop(t *testing.T) {
@@ -336,7 +337,7 @@ func TestE2E_BackToTop_ClickScrollsToTop(t *testing.T) {
 		pageReady(),
 		chromedp.Evaluate(`window.scrollTo(0, 800)`, nil),
 		chromedp.Sleep(500*time.Millisecond),
-		chromedp.Evaluate(`document.querySelector('[data-fui-back-to-top][data-fui-btt-visible]')?.click()`, nil),
+		chromedp.Evaluate(`document.querySelector('[data-hui-back-to-top][data-hui-back-to-top-visible]')?.click()`, nil),
 		chromedp.Sleep(800*time.Millisecond),
 		chromedp.Evaluate(`window.scrollY`, &scrollY),
 	)

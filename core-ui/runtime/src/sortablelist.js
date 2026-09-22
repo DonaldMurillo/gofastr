@@ -106,7 +106,7 @@
   }
 
   // ── aria-live announcements ────────────────────────────────────────
-  // Mirrors copy.js: blank then set text after ~30ms so AT re-reads.
+  // Mirrors the feedback module's copy path: blank then set text after ~30ms so AT re-reads.
   function announce(msg) {
     let live = document.getElementById('fui-sortable-live');
     if (!live) {
@@ -122,7 +122,7 @@
   }
 
   // fireToast: best-effort error toast via the framework toast surface
-  // (#83). No-op when neither __gofastr.toast nor loadModule('toasts')
+  // (#83). No-op when neither __gofastr.toast nor loadModule('headless-feedback')
   // is available (e.g. bare test pages), the live region is the
   // primary, always-on surface; this is secondary.
   function fireToast(msg) {
@@ -131,7 +131,7 @@
     let cfg = { variant: 'error', title: msg, ttl: 6000 };
     if (typeof g.toast === 'function') { g.toast(cfg); return; }
     if (typeof g.loadModule === 'function') {
-      g.loadModule('toasts').then(function () {
+      g.loadModule('headless-feedback').then(function () {
         if (typeof g.toast === 'function') g.toast(cfg);
       }).catch(function () {});
     }

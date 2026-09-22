@@ -31,9 +31,9 @@ package main
 //   - A keyed changing collection. The jobs DataTable renders one row
 //     per job; Row.ID is the job key, so successive pushes produce
 //     near-identical HTML that differs only on changed rows.
-//   - Connection health/retry. ui.NetworkRetryBanner watches the SSE
-//     lane: SSESilenceMs trips the banner if the ticker goes quiet, and
-//     the Retry button probes /__site/livedash/health.
+//   - Connection health/retry. ui.NetworkRetryBanner follows the
+//     connection the framework reports, and the Retry button probes
+//     /__site/livedash/health (a 2xx hides it again).
 //   - Topic-scoped delivery. Pushes are addressed to
 //     host.Islands.PresenceSessions(liveDashTopic), only sessions that
 //     joined the "live-dashboard-demo" presence topic receive them. The
@@ -545,14 +545,13 @@ func (s *LiveDashboardScreen) RenderCtx(ctx context.Context) render.HTML {
 
 	// The site layout already owns the document's sole <main> landmark.
 	return html.Div(html.DivConfig{Class: "livedash-page"},
-		// Connection-health banner. Sits above the content. SSESilenceMs
-		// trips it if the ticker goes quiet (the runtime polls
-		// window.__gofastr.sseStatus.lastEventAt). The Retry button
-		// probes /__site/livedash/health, which returns 204 when the
-		// server is up.
+		// Connection-health banner. Sits above the content. It follows
+		// the connection the framework reports (the offline
+		// SystemBanner contract); the Retry button probes
+		// /__site/livedash/health, which returns 204 when the server
+		// is up — a 2xx hides the banner again.
 		ui.NetworkRetryBanner(ui.NetworkRetryBannerConfig{
 			HealthEndpoint: "/__site/livedash/health",
-			SSESilenceMs:   6000,
 			Title:          "Live updates paused",
 			Description:    "The dashboard's SSE stream went quiet. Your last-known values are still on screen; reconnect to refresh.",
 			RetryLabel:     "Reconnect",

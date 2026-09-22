@@ -34,7 +34,7 @@
   NS.loadedModules[NAME] = true;
 
   const HEX = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i;
-  const DISMISSED_KEY = 'gofastr.headless.system.dismissed';
+  const DISMISSED_KEY = 'hui.system.dismissed';
 
   // within(root, sel): root itself when it matches, plus everything
   // matching inside it. The kernel hands scan() one inserted subtree,
@@ -110,102 +110,6 @@
       shell.removeAttribute('data-invalid');
     } else if (v !== '') {
       shell.setAttribute('data-invalid', '');
-    }
-  }
-
-  // ─── when (ConditionalField) ────────────────────────────────────
-
-  // watchedControls finds the controls a region's condition reads.
-  // The region's own form comes first: two forms on one page can each
-  // carry a "plan" control, and a region inside one form must follow
-  // that form's plan, not whichever control the document happens to
-  // offer first. A region with no form of its own — or one whose form
-  // holds no control of that name — reads the document, preferring
-  // controls no form owns: a form-less control is a page-level switch
-  // a region outside the forms can belong to, where the first form's
-  // control of the same name is that form's business. Among several
-  // candidates the first in document order wins, so the rule is
-  // deterministic.
-  function watchedControls(region, name) {
-    const sel = '[name="' + CSS.escape(name) + '"]';
-    const all = document.querySelectorAll(sel);
-    const form = region.closest('form');
-    if (form) {
-      // The form's controls are the ones it owns, not the ones inside
-      // it: a control outside the element with form="id" belongs to
-      // it, and one inside with form= pointing elsewhere does not.
-      const own = [];
-      for (const a of all) {
-        if (a.form === form) own.push(a);
-      }
-      if (own.length) return own;
-    }
-    const loose = [];
-    for (const a of all) {
-      if (!a.form) loose.push(a);
-    }
-    return loose.length ? loose : all;
-  }
-
-  // whenValue reads the watched field's value the way the form would
-  // submit it: the checked radio's value, a checkbox's value when
-  // checked and the empty string when not, and any other control's
-  // value.
-  function whenValue(fields) {
-    for (let i = 0; i < fields.length; i++) {
-      const el = fields[i];
-      if (el.type === 'radio') {
-        if (el.checked) return el.value;
-        continue;
-      }
-      if (el.type === 'checkbox') return el.checked ? el.value : '';
-      return el.value;
-    }
-    return '';
-  }
-
-  // insideHiddenWhen reports whether el sits inside a [data-hui-when]
-  // region that is hidden. Regions nest, and each hides on its own
-  // condition; a region inside a hidden region is out whatever its
-  // own condition says, because showing it would reach controls the
-  // outer region's condition meant to keep out of the page and out of
-  // the submit.
-  function insideHiddenWhen(el) {
-    for (let anc = el.parentElement; anc; anc = anc.parentElement) {
-      if (anc.matches && anc.matches('[data-hui-when]') && anc.hidden) return true;
-    }
-    return false;
-  }
-
-  // syncWhenRegions is the whole when behaviour in two passes. The
-  // first sets every region's effective visibility — its own
-  // condition AND no hidden ancestor region — in document order, so
-  // an outer region's fresh state is already on it when its
-  // descendants look up. The second disables exactly the controls
-  // inside any hidden region and re-enables only the controls hiding
-  // disabled, told apart by the runtime-owned data-hui-when-off mark:
-  // a control the page disabled itself is never touched. One mark
-  // serves the whole nest because the second pass asks where the
-  // control sits NOW, not which region disabled it — an inner region
-  // showing inside a hidden outer one re-enables nothing.
-  function syncWhenRegions(regions) {
-    for (const region of regions) {
-      const own = whenValue(watchedControls(region, region.dataset.huiWhen)) === region.dataset.huiWhenValue;
-      region.hidden = !(own && !insideHiddenWhen(region));
-    }
-    for (const region of regions) {
-      const controls = region.querySelectorAll('input, select, textarea, button');
-      for (const c of controls) {
-        if (insideHiddenWhen(c)) {
-          if (!c.disabled) {
-            c.disabled = true;
-            c.dataset.huiWhenOff = '';
-          }
-        } else if (c.dataset.huiWhenOff !== undefined) {
-          c.disabled = false;
-          delete c.dataset.huiWhenOff;
-        }
-      }
     }
   }
 
@@ -380,8 +284,13 @@
     for (const s of stored) systemDismissed.add(s);
   } catch (e) { /* no storage: dismissals last until the page does */ }
 
+  // The dismissal also mirrors into the session cookie framework/
+  // ui.Banner reads (gofastr.banner-dismiss.<id>, component-encoded so
+  // a DOM-sourced id cannot plant cookie delimiters), so the server
+  // can skip a dismissed banner on the next request.
   function rememberDismissal(id) {
     systemDismissed.add(id);
+    try { document.cookie = 'gofastr.banner-dismiss.' + encodeURIComponent(id) + '=1;path=/'; } catch (e) {}
     try {
       const ids = [];
       systemDismissed.forEach(function (v) { ids.push(v); });
@@ -435,7 +344,7 @@
     if (!p) return;
     // Thirty seconds covers a cold module fetch and a slow answer; it
     // still prevents an old click from owning a later passive swap.
-    if (p[3] + 3e4 < performance.now()) return NS._huiTableSwap = null;
+    if (p[3] + 3e4 < Date.now()) return NS._huiTableSwap = null;
     for (const x of within(root, '[data-hui-table]')) {
       if (x.parentNode !== p[2]) continue;
       NS._huiTableSwap = null;
@@ -482,10 +391,9 @@
     // later passive swap.
     const c = t.closest('[data-hui-table-sort],[data-hui-page]'),
       table = c?.closest('[data-hui-table-signal]'),
-      page = c?.hasAttribute('data-hui-page');
-    NS._huiTableSwap = table && [page ? 'data-hui-page' : 'data-hui-table-sort',
-      c.getAttribute(page ? 'data-hui-page' : 'data-hui-table-sort'),
-      table.parentNode, performance.now()];
+      page = c?.hasAttribute('data-hui-page'),
+      attr = page ? 'data-hui-page' : 'data-hui-table-sort';
+    NS._huiTableSwap = table && [attr, c.getAttribute(attr), table.parentNode, Date.now()];
     const btn = t.closest('[data-hui-reveal]');
     if (btn) {
       e.preventDefault();
@@ -506,10 +414,6 @@
     const t = e.target;
     if (!t || !t.closest) return;
     if (t.matches('[data-hui-affix-swatch], [data-hui-color] [data-hui-affix-input]')) syncColour(t);
-    // The document, not the control's form: a region may watch a
-    // control outside its own form, and one outside every form may
-    // watch a control inside one, so no smaller scope holds.
-    syncWhenRegions(document.querySelectorAll('[data-hui-when]'));
   });
 
   document.addEventListener('change', function (e) {
@@ -517,7 +421,6 @@
     if (!t || !t.closest) return;
     const root = t.closest('[data-hui-drop]');
     if (root && t.type === 'file') showFiles(root);
-    syncWhenRegions(document.querySelectorAll('[data-hui-when]'));
   });
 
   document.addEventListener('action:rolled-back', function (e) {
@@ -539,9 +442,8 @@
   // ─── the arrival pass ───────────────────────────────────────────
 
   // scan arms what arrival alone cannot: the summary focus, the drag
-  // listeners, the when-regions' first sync, the dismissed banners,
-  // the action buttons' bind, the sort or page the reader just
-  // clicked made whole again. It is what the kernel calls on every inserted
+  // listeners, the dismissed banners, the action buttons' bind, the
+  // sort or page the reader just clicked made whole again. It is what the kernel calls on every inserted
   // subtree and over the document after a client navigation, and it
   // is idempotent: once() guards what binds a listener, and the
   // primitive's own WeakSet guards the buttons.
@@ -552,24 +454,6 @@
     armActions(scope);
     armDrops(scope);
     armTables(scope);
-    let regions = within(scope, '[data-hui-when]');
-    // A subtree inserted inside a region arrives with no region of its
-    // own above it: sync every enclosing region as well, so a control
-    // inserted alone inside a hidden region is disabled like the
-    // siblings it joined. The enclosing regions go FIRST, outermost
-    // first, because the first pass reads an ancestor's hidden state
-    // as it goes: an inserted swap that restores the gating value of
-    // the region around it must un-hide that region before the regions
-    // inside the swap look up, or they read the stale hidden and stay
-    // buried until the next input.
-    if (scope !== document && scope.closest) {
-      const enclosing = [];
-      for (let r = scope.closest('[data-hui-when]'); r; r = r.parentElement && r.parentElement.closest('[data-hui-when]')) {
-        if (regions.indexOf(r) === -1) enclosing.unshift(r);
-      }
-      regions = enclosing.concat(regions);
-    }
-    if (regions.length) syncWhenRegions(regions);
     armSystem(scope);
   }
 

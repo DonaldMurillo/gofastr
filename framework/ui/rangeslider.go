@@ -1,24 +1,25 @@
 package ui
 
 import (
-	"maps"
-	"strconv"
+	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/headless"
 )
 
 // ─── RangeSlider (dual thumb) ───────────────────────────────────────
 //
-// Two overlaid <input type="range"> elements representing a low and
-// a high bound. Native semantics on each thumb (keyboard, accessibility
-// tree). The runtime module ensures the low thumb never exceeds the
-// high thumb and vice-versa.
+// Two overlaid <input type="range"> elements over headless.RangeSlider,
+// one low bound and one high bound. Native semantics on each thumb.
+// The module cross-clamps a drag that would cross the pair and keeps
+// the output sentence in step, re-formatted through the sentence the
+// server rendered into the output's hook.
 //
-// Form-submit shape: two fields, Name+"-min" and Name+"-max", so
-// the server gets explicit lo/hi values without parsing a composite
+// Form-submit shape: two fields, Name+"-min" and Name+"-max", so the
+// server gets explicit lo/hi values without parsing a composite
 // string.
 
 // RangeSliderConfig configures a RangeSlider.
@@ -26,19 +27,20 @@ type RangeSliderConfig struct {
 	// Name is the form-field base name (required). Two inputs ship:
 	// Name+"-min" and Name+"-max".
 	Name string
-	// Label is the accessible group name (required, used as the
-	// fieldset legend / radiogroup aria-label).
+	// Label is the accessible group name (required; each thumb is
+	// named from it: "Minimum <Label>", "Maximum <Label>").
 	Label string
 	// Min / Max bound the range. Defaults: 0 / 100.
 	Min int
 	Max int
 	// Step is the step granularity. Default 1.
 	Step int
-	// ValueLow / ValueHigh are the initial low and high values.
-	// Defaults: Min / Max.
+	// ValueLow / ValueHigh are the initial values. Defaults: Min / Max.
+	// A crossed pair (low above high) is refused at render — the
+	// module clamps drags, never the server's props.
 	ValueLow  int
 	ValueHigh int
-	// ShowValue renders a live "lo – hi" text alongside the label.
+	// ShowValue renders the live "lo to hi" sentence beside the label.
 	ShowValue bool
 	// Disabled disables both thumbs.
 	Disabled bool
@@ -50,6 +52,22 @@ type RangeSliderConfig struct {
 	ExtraAttrs html.Attrs
 }
 
+// rangeSliderClasses dresses headless.RangeSlider's parts in this
+// package's own vocabulary — the names the registered ui-range-slider
+// sheet matches. The two thumbs carry one class: they are visually
+// identical by design (the module cross-clamps the pair), and the
+// inputs are distinguished by their data-hui-range-slider-low/-high
+// hooks and their -min/-max field names, which is what a selector
+// should key on — not by a styling modifier nothing styles.
+var rangeSliderClasses = headless.Classes{
+	headless.PartRoot:        "fui-range-slider",
+	headless.PartLabel:       "fui-range-slider__label",
+	headless.PartRangeLow:    "fui-range-slider__input",
+	headless.PartRangeHigh:   "fui-range-slider__input",
+	headless.PartRangeOutput: "fui-range-slider__value",
+	headless.PartRangeTrack:  "fui-range-slider__track",
+}
+
 // RangeSlider renders a dual-thumb range input.
 func RangeSlider(cfg RangeSliderConfig) render.HTML {
 	if cfg.Name == "" {
@@ -58,97 +76,26 @@ func RangeSlider(cfg RangeSliderConfig) render.HTML {
 	if cfg.Label == "" {
 		panic("ui: RangeSlider requires Label")
 	}
-	min := cfg.Min
-	max := cfg.Max
-	if max == 0 && min == 0 {
-		max = 100
+	parts := headless.Parts{}
+	if rootClass := strings.TrimSpace(modifierClass("is-disabled", cfg.Disabled) +
+		" " + cfg.Class); rootClass != "" {
+		parts.Attrs = headless.PartAttrs{headless.PartRoot: {"class": strings.TrimSpace(rootClass)}}
 	}
-	if min >= max {
-		panic("ui: RangeSlider requires Min < Max")
-	}
-	step := cfg.Step
-	if step == 0 {
-		step = 1
-	}
-	lo := cfg.ValueLow
-	hi := cfg.ValueHigh
-	if lo == 0 && hi == 0 {
-		lo, hi = min, max
-	}
-	if lo < min {
-		lo = min
-	}
-	if hi > max {
-		hi = max
-	}
-	if lo > hi {
-		lo, hi = hi, lo
-	}
-	id := cfg.ID
-	if id == "" {
-		id = cfg.Name
-	}
-
-	cls := "ui-range-slider"
-	if cfg.Disabled {
-		cls += " is-disabled"
-	}
-	if cfg.Class != "" {
-		cls += " " + cfg.Class
-	}
-
-	mkInput := func(suffix string, val int, ariaLabel string) render.HTML {
-		a := map[string]string{
-			"type":       "range",
-			"name":       cfg.Name + "-" + suffix,
-			"id":         id + "-" + suffix,
-			"class":      "ui-range-slider__input ui-range-slider__input--" + suffix,
-			"min":        strconv.Itoa(min),
-			"max":        strconv.Itoa(max),
-			"step":       strconv.Itoa(step),
-			"value":      strconv.Itoa(val),
-			"aria-label": ariaLabel,
-			// Module marker so the cross-clamp + value-mirror code only
-			// hooks pairs that opt in.
-			"data-fui-range-slider": id,
-		}
-		if cfg.Disabled {
-			a["disabled"] = ""
-		}
-		return render.Tag("input", a)
-	}
-
-	header := []render.HTML{
-		render.Tag("span", map[string]string{"class": "ui-range-slider__label"},
-			render.Text(cfg.Label)),
-	}
-	if cfg.ShowValue {
-		header = append(header,
-			render.Tag("output", map[string]string{
-				"class":                       "ui-range-slider__value",
-				"data-fui-range-slider-value": id,
-			}, render.Text(strconv.Itoa(lo)+" – "+strconv.Itoa(hi))))
-	}
-
-	children := []render.HTML{
-		render.Tag("div", map[string]string{"class": "ui-range-slider__header"}, header...),
-		render.Tag("div", map[string]string{"class": "ui-range-slider__track-wrap"},
-			render.Tag("div", map[string]string{"class": "ui-range-slider__track"}),
-			mkInput("min", lo, cfg.Label+" minimum"),
-			mkInput("max", hi, cfg.Label+" maximum"),
-		),
-	}
-
-	attrs := html.Attrs{
-		"class":      cls,
-		"role":       "group",
-		"aria-label": cfg.Label,
-	}
-	if cfg.ID != "" {
-		attrs["id"] = cfg.ID
-	}
-	maps.Copy(attrs, html.SafeExtraAttrs(cfg.ExtraAttrs, "role", "aria-label"))
-	return rangeSliderStyle.WrapHTML(render.Tag("div", attrs, children...))
+	return rangeSliderStyle.WrapHTML(headless.RangeSlider(headless.RangeSliderProps{
+		Name:       cfg.Name,
+		Label:      cfg.Label,
+		Min:        cfg.Min,
+		Max:        cfg.Max,
+		Step:       cfg.Step,
+		ValueLow:   cfg.ValueLow,
+		ValueHigh:  cfg.ValueHigh,
+		ShowValue:  cfg.ShowValue,
+		Disabled:   cfg.Disabled,
+		ID:         cfg.ID,
+		ExtraAttrs: headless.Safe(cfg.ExtraAttrs, "class", "id", "role", "aria-label"),
+		Parts:      parts,
+		Strings:    StringsFor(nil),
+	}, rangeSliderClasses))
 }
 
 var rangeSliderStyle = registry.RegisterStyle("ui-range-slider", rangeSliderCSS)
@@ -158,29 +105,29 @@ func rangeSliderCSS(_ style.Theme) string {
   display: grid;
   gap: var(--spacing-xs, 2px);
 }
-[data-fui-comp="ui-range-slider"] .ui-range-slider__header {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: var(--spacing-md, 8px);
-}
-[data-fui-comp="ui-range-slider"] .ui-range-slider__label {
+[data-fui-comp="ui-range-slider"] .fui-range-slider__label {
   font-weight: 500;
   font-size: var(--text-sm, 0.875rem);
   color: var(--color-text, #18181B);
 }
-[data-fui-comp="ui-range-slider"] .ui-range-slider__value {
+[data-fui-comp="ui-range-slider"] .fui-range-slider__label + .fui-range-slider__value {
+  justify-self: end;
+}
+[data-fui-comp="ui-range-slider"] .fui-range-slider__value {
   font-variant-numeric: tabular-nums;
   font-weight: 600;
   font-size: var(--text-sm, 0.875rem);
   color: var(--color-primary, #4F46E5);
 }
-[data-fui-comp="ui-range-slider"] .ui-range-slider__track-wrap {
+/* The track is the positioning context the two thumbs overlay; its
+   own bar is drawn behind them. */
+[data-fui-comp="ui-range-slider"] .fui-range-slider__track {
   position: relative;
   block-size: var(--spacing-touch-target, 44px);
   padding-block: calc((var(--spacing-touch-target, 44px) - 6px) / 2);
 }
-[data-fui-comp="ui-range-slider"] .ui-range-slider__track {
+[data-fui-comp="ui-range-slider"] .fui-range-slider__track::before {
+  content: "";
   position: absolute;
   inset-inline: 0;
   inset-block-start: calc(50% - 3px);
@@ -188,7 +135,7 @@ func rangeSliderCSS(_ style.Theme) string {
   background: var(--color-border, #E4E4E7);
   border-radius: 999px;
 }
-[data-fui-comp="ui-range-slider"] .ui-range-slider__input {
+[data-fui-comp="ui-range-slider"] .fui-range-slider__input {
   position: absolute;
   inset-inline: 0;
   inset-block: 0;
@@ -200,7 +147,7 @@ func rangeSliderCSS(_ style.Theme) string {
   pointer-events: none;
 }
 /* The thumbs ARE clickable (pointer-events:auto on the thumb only). */
-[data-fui-comp="ui-range-slider"] .ui-range-slider__input::-webkit-slider-thumb {
+[data-fui-comp="ui-range-slider"] .fui-range-slider__input::-webkit-slider-thumb {
   appearance: none;
   -webkit-appearance: none;
   width: 20px; height: 20px;
@@ -210,7 +157,7 @@ func rangeSliderCSS(_ style.Theme) string {
   cursor: pointer;
   pointer-events: auto;
 }
-[data-fui-comp="ui-range-slider"] .ui-range-slider__input::-moz-range-thumb {
+[data-fui-comp="ui-range-slider"] .fui-range-slider__input::-moz-range-thumb {
   width: 18px; height: 18px;
   border-radius: 999px;
   background: var(--color-primary, #4F46E5);
@@ -218,18 +165,18 @@ func rangeSliderCSS(_ style.Theme) string {
   cursor: pointer;
   pointer-events: auto;
 }
-[data-fui-comp="ui-range-slider"] .ui-range-slider__input::-webkit-slider-runnable-track {
+[data-fui-comp="ui-range-slider"] .fui-range-slider__input::-webkit-slider-runnable-track {
   background: transparent;
   height: 6px;
 }
-[data-fui-comp="ui-range-slider"] .ui-range-slider__input::-moz-range-track {
+[data-fui-comp="ui-range-slider"] .fui-range-slider__input::-moz-range-track {
   background: transparent;
   height: 6px;
 }
-[data-fui-comp="ui-range-slider"] .ui-range-slider__input:focus-visible::-webkit-slider-thumb {
+[data-fui-comp="ui-range-slider"] .fui-range-slider__input:focus-visible::-webkit-slider-thumb {
   box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-primary, #4F46E5) 30%, transparent);
 }
-[data-fui-comp="ui-range-slider"].is-disabled .ui-range-slider__input {
+[data-fui-comp="ui-range-slider"].is-disabled .fui-range-slider__input {
   opacity: 0.6;
   cursor: not-allowed;
 }`

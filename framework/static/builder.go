@@ -206,9 +206,10 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 	}
 	assets := []asset{
 		{urlPath: "/__gofastr/runtime.js", body: []byte(runtime.MustStaticJS())},
-		// Loaded synchronously at the top of <head>; themeswitch.js
-		// early-returns without window.__gofastr_colorScheme, so a
-		// missing file silently kills the theme toggle on a static host.
+		// Loaded synchronously at the top of <head>: it applies the
+		// stored scheme before first paint, so a reload never flashes.
+		// Without it headless-navigation still works, but only from
+		// its own load onward.
 		{urlPath: "/__gofastr/color-scheme.js", body: []byte(colorScheme)},
 	}
 	if js := b.Host.GetActionJS(); js != "" {

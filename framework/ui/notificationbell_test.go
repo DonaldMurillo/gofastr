@@ -5,6 +5,24 @@ import (
 	"testing"
 )
 
+func TestNotificationBellRequiresHref(t *testing.T) {
+	defer func() {
+		if recover() == nil {
+			t.Fatal("NotificationBell without Href should panic — a popover-only bell is a dead link without script")
+		}
+	}()
+	NotificationBell(NotificationBellConfig{Name: "nb", Label: "x"})
+}
+
+func TestNotificationBellRefusesHashHref(t *testing.T) {
+	defer func() {
+		if recover() == nil {
+			t.Fatal("NotificationBell with Href '#' should panic — '#' is not a destination")
+		}
+	}()
+	NotificationBell(NotificationBellConfig{Name: "nb", Label: "x", Href: "#"})
+}
+
 func TestNotificationBellRequiresName(t *testing.T) {
 	defer func() {
 		if recover() == nil {
@@ -47,10 +65,14 @@ func TestBellRowHrefDropsUnsafeScheme(t *testing.T) {
 func TestNotificationBellEmitsButtonWithAnchorTrigger(t *testing.T) {
 	trigger, _ := NotificationBell(NotificationBellConfig{
 		Name: "bell", Label: "Notifications",
+		Href: "/notifications",
 	})
 	h := string(trigger)
-	if !strings.Contains(h, "<button ") {
-		t.Errorf("trigger should be a <button>:\n%s", h)
+	// The trigger is the primitive's ANCHOR: the href is the
+	// no-script destination and data-fui-open the popover with
+	// script — the same element is both.
+	if !strings.Contains(h, `<a `) || !strings.Contains(h, `href="/notifications"`) {
+		t.Errorf("trigger should be an anchor to the notifications page:\n%s", h)
 	}
 	if !strings.Contains(h, `data-fui-open="bell"`) {
 		t.Errorf("trigger should open the paired popover via data-fui-open:\n%s", h)
@@ -58,17 +80,18 @@ func TestNotificationBellEmitsButtonWithAnchorTrigger(t *testing.T) {
 	if !strings.Contains(h, `data-fui-popover-anchor="bottom"`) {
 		t.Errorf("trigger should anchor the popover below the bell:\n%s", h)
 	}
-	if !strings.Contains(h, `aria-label="Notifications"`) {
-		t.Errorf("trigger should have aria-label=Label:\n%s", h)
+	if !strings.Contains(h, `aria-label="0 unread notifications"`) {
+		t.Errorf("the anchor's name says the spoken count:\n%s", h)
 	}
 }
 
 func TestNotificationBellBadgeHiddenAtZero(t *testing.T) {
 	trigger, _ := NotificationBell(NotificationBellConfig{
 		Name: "bell", Label: "x", UnreadCount: 0,
+		Href: "/notifications",
 	})
 	h := string(trigger)
-	if strings.Contains(h, "ui-notification-bell__badge") {
+	if strings.Contains(h, `fui-notification-bell__badge"`) {
 		t.Errorf("UnreadCount=0 should NOT render a badge:\n%s", h)
 	}
 }
@@ -76,9 +99,10 @@ func TestNotificationBellBadgeHiddenAtZero(t *testing.T) {
 func TestNotificationBellBadgeRendersCount(t *testing.T) {
 	trigger, _ := NotificationBell(NotificationBellConfig{
 		Name: "bell", Label: "x", UnreadCount: 7,
+		Href: "/notifications",
 	})
 	h := string(trigger)
-	if !strings.Contains(h, "ui-notification-bell__badge") {
+	if !strings.Contains(h, `fui-notification-bell__badge"`) {
 		t.Errorf("UnreadCount>0 should render a badge:\n%s", h)
 	}
 	if !strings.Contains(h, ">7<") {
@@ -89,10 +113,11 @@ func TestNotificationBellBadgeRendersCount(t *testing.T) {
 func TestNotificationBellBadgeOverflow(t *testing.T) {
 	trigger, _ := NotificationBell(NotificationBellConfig{
 		Name: "bell", Label: "x", UnreadCount: 250,
+		Href: "/notifications",
 	})
 	h := string(trigger)
-	if !strings.Contains(h, ">99+<") {
-		t.Errorf("count >99 should render as '99+':\n%s", h)
+	if !strings.Contains(h, ">250<") {
+		t.Errorf("the primitive shows the raw count; the 99+ shaping is the sheet's (the badge class carries it):\n%s", h)
 	}
 }
 
@@ -101,6 +126,7 @@ func TestNotificationBellSignalBindings(t *testing.T) {
 		Name: "bell", Label: "x",
 		SignalUnread: "unread-count",
 		SignalList:   "notification-list",
+		Href:         "/notifications",
 	})
 	h := string(trigger)
 	if !strings.Contains(h, `data-fui-signal="unread-count"`) {
@@ -111,6 +137,7 @@ func TestNotificationBellSignalBindings(t *testing.T) {
 func TestNotificationBellReturnsPopoverBuilder(t *testing.T) {
 	_, pop := NotificationBell(NotificationBellConfig{
 		Name: "bell", Label: "x",
+		Href: "/notifications",
 	})
 	if pop == nil {
 		t.Fatal("NotificationBell should return non-nil *widget.Builder")
@@ -123,7 +150,7 @@ func TestNotificationBellReturnsPopoverBuilder(t *testing.T) {
 
 func TestNotificationBellExtraAttrsCannotOverrideOwned(t *testing.T) {
 	trigger, _ := NotificationBell(NotificationBellConfig{
-		Name: "nb", Label: "Notifications", UnreadCount: 3,
+		Name: "nb", Label: "Notifications", UnreadCount: 3, Href: "/notifications",
 		ExtraAttrs: map[string]string{
 			"data-test": "hook", "type": "evil", "Class": "evil",
 		},
@@ -132,9 +159,13 @@ func TestNotificationBellExtraAttrsCannotOverrideOwned(t *testing.T) {
 	if !strings.Contains(root, `data-test="hook"`) {
 		t.Errorf("bell button missing data-test:\n%s", root)
 	}
-	for _, want := range []string{`type="button"`, `aria-label="Notifications"`, `aria-describedby="nb-count"`} {
-		if !strings.Contains(root, want) {
-			t.Errorf("owned attr lost its framework value (%q):\n%s", want, root)
+	// The anchor's own contract: the href and the spoken count. The
+	// old button's type and the describedby paragraph are the
+	// primitive's; here the count rides the anchor's name and the
+	// badge's hook.
+	for _, want := range []string{`href="/notifications"`, `aria-label="3 unread notifications"`} {
+		if !strings.Contains(string(trigger), want) {
+			t.Errorf("owned attr lost its framework value (%q):\n%s", want, trigger)
 		}
 	}
 	if strings.Contains(root, "evil") {
@@ -147,7 +178,7 @@ func TestNotificationBellZeroUnreadDropsDescribedbyVariant(t *testing.T) {
 	// aria-describedby after the merge, so this state proves the
 	// sanitizer's case-insensitive drop alone keeps the attr out.
 	trigger, _ := NotificationBell(NotificationBellConfig{
-		Name: "nb", Label: "Notifications",
+		Name: "nb", Label: "Notifications", Href: "/notifications",
 		ExtraAttrs: map[string]string{"ARIA-DESCRIBEDBY": "evil"},
 	})
 	root := string(trigger)[:strings.Index(string(trigger), ">")+1]

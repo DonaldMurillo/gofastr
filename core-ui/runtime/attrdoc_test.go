@@ -601,7 +601,7 @@ func TestDocumentedAttrsHaveAnOwner(t *testing.T) {
 // literal "data-fui-*" string constants, in non-comment, non-test source. It
 // generalizes goInteractiveAttrs (which covers core-ui/interactive alone) so
 // the doc→owner gate can see attributes emitted outside the interactive
-// package, e.g. framework/ui.TagInput's data-fui-tag-input-id.
+// package, e.g. framework/ui.FileDropzone's preview hooks.
 func goEmittedAttrs(t *testing.T) []string {
 	t.Helper()
 	roots := []string{

@@ -99,7 +99,7 @@
       const toastBtn = e.target.closest && e.target.closest('[data-fui-toast]');
       if (toastBtn) {
         e.preventDefault();
-        window.__gofastr.loadModule('toasts').then(() => {
+        window.__gofastr.loadModule('headless-feedback').then(() => {
           try {
             const cfg = JSON.parse(toastBtn.getAttribute('data-fui-toast'));
             window.__gofastr.toast(cfg);

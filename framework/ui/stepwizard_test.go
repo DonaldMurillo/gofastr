@@ -42,11 +42,11 @@ func TestStepWizardRendersSingleStep(t *testing.T) {
 		`data-fui-comp="ui-step-wizard"`,
 		`action="/wiz"`,
 		`method="POST"`,
-		"ui-step-wizard__indicator",
-		"is-current",
+		"fui-step-wizard__indicator",
+		`data-state="current"`,
 		"Personal Info",
 		"Enter your details",
-		"ui-step-wizard__actions",
+		"fui-step-wizard__actions",
 		`name="wizard_action"`,
 		`value="next"`,
 		">Submit<",
@@ -75,8 +75,8 @@ func TestStepWizardRendersMultiStepWithNavigation(t *testing.T) {
 		Action:      "/wiz",
 	}))
 	for _, want := range []string{
-		"is-current",
-		"is-completed",
+		`data-state="current"`,
+		`data-state="done"`,
 		">Continue<",
 		">Back<",
 		`name="wizard_action"`,
@@ -86,20 +86,20 @@ func TestStepWizardRendersMultiStepWithNavigation(t *testing.T) {
 			t.Errorf("missing %q in:\n%s", want, h)
 		}
 	}
-	// Back is secondary and Continue is the step's one weighted
-	// action: the button carrying value="back" must wear the
-	// secondary variant, and no other button may (a wizard step with
-	// two equally filled primary buttons loses its hierarchy).
+	// Back is the subdued control and Continue/Submit the step's one
+	// weighted action: the back button wears the wizard's own back
+	// class, and no other button may (a wizard step with two equally
+	// filled primary buttons loses its hierarchy).
 	backAt := strings.Index(h, `value="back"`)
 	if backAt < 0 {
 		t.Fatalf("no back button in:\n%s", h)
 	}
 	tagStart := strings.LastIndex(h[:backAt], "<button")
-	if !strings.Contains(h[tagStart:backAt], "fui-button--secondary") {
-		t.Errorf("the Back button is not secondary:\n%s", h[tagStart:backAt])
+	if !strings.Contains(h[tagStart:backAt], "fui-step-wizard__back") {
+		t.Errorf("the Back button is not the subdued control:\n%s", h[tagStart:backAt])
 	}
-	if n := strings.Count(h, "fui-button--secondary"); n != 1 {
-		t.Errorf("fui-button--secondary appears %d times, want exactly once (on Back):\n%s", n, h)
+	if n := strings.Count(h, "fui-step-wizard__back"); n != 1 {
+		t.Errorf("fui-step-wizard__back appears %d times, want exactly once:\n%s", n, h)
 	}
 }
 
@@ -149,7 +149,7 @@ func TestStepWizardCustomClass(t *testing.T) {
 		Action: "/wiz",
 		Class:  "extra",
 	}))
-	if !strings.Contains(h, "ui-step-wizard extra") {
+	if !strings.Contains(h, "fui-step-wizard extra") {
 		t.Errorf("expected custom class, got: %s", h)
 	}
 }

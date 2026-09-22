@@ -447,7 +447,8 @@ func CancelEdit(html render.HTML, signalName string) render.HTML {
 // state immediately on click, fires an RPC in the background, and
 // reverts to idle if the RPC fails (non-2xx or network error).
 //
-// The runtime module optimisticaction.js handles the full lifecycle:
+// The headless action contract (data-hui-action*, bound through the
+// kernel's action primitive) owns the lifecycle:
 // idle → pending (optimistic flip) → committed (RPC 2xx) or error → idle.
 //
 // The caller provides two visual states:
@@ -464,28 +465,27 @@ func CancelEdit(html render.HTML, signalName string) render.HTML {
 //
 // Produces:
 //
-//	<button data-fui-comp="ui-optimistic-action"
-//	        data-state="idle"
-//	        data-fui-optimistic-endpoint="/api/like/42"
-//	        data-fui-optimistic-method="POST">
-//	  <span data-fui-optimistic-idle><span class="icon">♡</span> Like</span>
-//	  <span hidden data-fui-optimistic-success><span class="icon">♥</span> Liked</span>
+//	<button data-state="idle"
+//	        data-hui-action="" data-hui-action-endpoint="/api/like/42">
+//	  <span data-hui-action-idle><span class="icon">♡</span> Like</span>
+//	  <span hidden data-hui-action-done><span class="icon">♥</span> Liked</span>
 //	</button>
+
 func OptimisticUpdate(action Action, idle, success render.HTML) render.HTML {
 	attrs := map[string]string{
-		"data-fui-comp":                "ui-optimistic-action",
-		"data-state":                   "idle",
-		"data-fui-optimistic-endpoint": action.path,
+		"data-state":               "idle",
+		"data-hui-action":          "",
+		"data-hui-action-endpoint": action.path,
 	}
 	if action.method != "" && action.method != "POST" {
-		attrs["data-fui-optimistic-method"] = action.method
+		attrs["data-hui-action-method"] = action.method
 	}
 	idleSpan := render.Tag("span", map[string]string{
-		"data-fui-optimistic-idle": "",
+		"data-hui-action-idle": "",
 	}, idle)
 	successSpan := render.Tag("span", map[string]string{
-		"data-fui-optimistic-success": "",
-		"hidden":                      "",
+		"data-hui-action-done": "",
+		"hidden":               "",
 	}, success)
 	return render.Tag("button", attrs, idleSpan, successSpan)
 }
@@ -638,8 +638,8 @@ func OpenOnClick(html render.HTML, widget string) render.HTML {
 // Toast is the config for a click-fired toast notification. Zero fields
 // are omitted from the emitted JSON, so a Toast{Variant, Title, Body,
 // TTLMs} marshals to exactly {"variant":…,"title":…,"body":…,"ttl":…},
-// the shape call sites hand-write. The runtime's toast module
-// (core-ui/runtime/src/toasts.js __gofastr.toast) reads these keys:
+// the shape call sites hand-write. The feedback module's toast
+// runtime (`headless-feedback` `__gofastr.toast`) reads these keys:
 // variant, title, body, ttl, stack.
 type Toast struct {
 	Variant string `json:"variant,omitempty"` // "success" | "warning" | "danger" | "info" | "neutral"; defaults to "info"
