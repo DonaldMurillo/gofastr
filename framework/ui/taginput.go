@@ -1,21 +1,25 @@
 package ui
 
 import (
-	"strconv"
+	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/headless"
 )
 
 // ─── TagInput ───────────────────────────────────────────────────────
 //
-// Free-form text → chips. User types in the input, hits Enter or
-// comma to commit a tag; Backspace on an empty input removes the
-// last tag. Each committed tag becomes its own hidden <input> sharing
-// the same Name, so form submission uses the standard repeated-key
-// pattern (?tags=go&tags=rust).
+// Free-form text → chips, over headless.TagInput. The committed values
+// are visible chips with their own named remove controls on the first
+// paint AND hidden inputs under one Name (the standard repeated-key
+// pattern), so what a reader sees removed is what a submit stops
+// carrying — with or without script. The module commits the draft on
+// Enter or comma, removes on Backspace or the chip's ×, returns focus
+// to the field, and announces through the sentences the component
+// carries from its Strings.
 //
 // Different from MultiSelect: MultiSelect has a fixed option list;
 // TagInput is open-ended free text.
@@ -40,11 +44,26 @@ type TagInputConfig struct {
 	ID       string
 	Class    string
 
-	// ExtraAttrs forwards additional attributes (data-* test hooks,
-	// analytics markers, ARIA overrides) to the field's root wrapper
-	// <div>. Keys the component owns are dropped: class and id
-	// (use Class / ID), data-fui-* (the tag-input runtime wiring).
+	// ExtraAttrs forwards additional attributes to the field's root.
+	// Keys the component owns are dropped: class and id (use Class /
+	// ID), data-fui-*, and every data-hui-* hook.
 	ExtraAttrs html.Attrs
+}
+
+// tagInputClasses dresses headless.TagInput's parts in this package's
+// own vocabulary — the names the registered ui-tag-input sheet
+// matches.
+var tagInputClasses = headless.Classes{
+	headless.PartRoot:          "fui-tag-input",
+	headless.PartLabel:         "fui-tag-input__label",
+	headless.PartTagInputZone:  "fui-tag-input__zone",
+	headless.PartTagInputList:  "fui-tag-input__list",
+	headless.PartTagInputTag:   "fui-tag-input__chip",
+	headless.PartDismiss:       "fui-tag-input__chip-remove",
+	headless.PartTagInputField: "fui-tag-input__field",
+	headless.PartTagInputAdd:   "fui-tag-input__add",
+	headless.PartHint:          "fui-tag-input__help",
+	headless.PartStatus:        "fui-visually-hidden",
 }
 
 // TagInput renders a free-form tag input bound to a chip strip.
@@ -55,82 +74,24 @@ func TagInput(cfg TagInputConfig) render.HTML {
 	if cfg.Label == "" {
 		panic("ui: TagInput requires Label")
 	}
-	id := cfg.ID
-	if id == "" {
-		id = cfg.Name
+	parts := headless.Parts{}
+	if rootClass := strings.TrimSpace(modifierClass("is-disabled", cfg.Disabled) +
+		" " + cfg.Class); rootClass != "" {
+		parts.Attrs = headless.PartAttrs{headless.PartRoot: {"class": strings.TrimSpace(rootClass)}}
 	}
-	cls := "ui-tag-input"
-	if cfg.Disabled {
-		cls += " is-disabled"
-	}
-	if cfg.Class != "" {
-		cls += " " + cfg.Class
-	}
-
-	// Initial tags as hidden inputs.
-	tagInputs := make([]render.HTML, 0, len(cfg.Values))
-	for _, v := range cfg.Values {
-		// MaxLength caps every rendered tag, not only ones typed later:
-		// a server-rendered value longer than the cap would submit
-		// unchanged while the same text typed by hand is refused.
-		if cfg.MaxLength > 0 {
-			if r := []rune(v); len(r) > cfg.MaxLength {
-				v = string(r[:cfg.MaxLength])
-			}
-		}
-		tagInputs = append(tagInputs, render.Tag("input", map[string]string{
-			"type":  "hidden",
-			"name":  cfg.Name,
-			"value": v,
-			"class": "ui-tag-input__hidden",
-		}))
-	}
-
-	inputAttrs := map[string]string{
-		"type":                  "text",
-		"id":                    id,
-		"class":                 "ui-tag-input__field",
-		"aria-label":            cfg.Label,
-		"autocomplete":          "off",
-		"data-fui-tag-input":    cfg.Name,
-		"data-fui-tag-input-id": id,
-	}
-	if cfg.Placeholder != "" {
-		inputAttrs["placeholder"] = cfg.Placeholder
-	}
-	if cfg.Disabled {
-		inputAttrs["disabled"] = ""
-	}
-	if cfg.MaxLength > 0 {
-		inputAttrs["maxlength"] = strconv.Itoa(cfg.MaxLength)
-	}
-
-	zone := render.Tag("div", map[string]string{
-		"class":                   "ui-tag-input__zone",
-		"data-fui-tag-input-zone": "true",
-	},
-		append(tagInputs,
-			render.Tag("input", inputAttrs),
-		)...,
-	)
-
-	children := []render.HTML{
-		render.Tag("label", map[string]string{"for": id, "class": "ui-tag-input__label"},
-			render.Text(cfg.Label)),
-		zone,
-	}
-	if cfg.Help != "" {
-		children = append(children, html.Paragraph(html.TextConfig{
-			Class: "ui-tag-input__help",
-		}, render.Text(cfg.Help)))
-	}
-
-	attrs := html.SafeExtraAttrs(cfg.ExtraAttrs)
-	if attrs == nil {
-		attrs = map[string]string{}
-	}
-	attrs["class"] = cls
-	return tagInputStyle.WrapHTML(render.Tag("div", attrs, children...))
+	return tagInputStyle.WrapHTML(headless.TagInput(headless.TagInputProps{
+		Name:        cfg.Name,
+		Label:       cfg.Label,
+		Values:      cfg.Values,
+		Placeholder: cfg.Placeholder,
+		MaxLength:   cfg.MaxLength,
+		Help:        cfg.Help,
+		Disabled:    cfg.Disabled,
+		ID:          cfg.ID,
+		ExtraAttrs:  headless.Safe(cfg.ExtraAttrs, "class", "id", "role", "aria-label"),
+		Parts:       parts,
+		Strings:     StringsFor(nil),
+	}, tagInputClasses))
 }
 
 var tagInputStyle = registry.RegisterStyle("ui-tag-input", tagInputCSS)
@@ -140,12 +101,12 @@ func tagInputCSS(_ style.Theme) string {
   display: grid;
   gap: var(--spacing-xs, 2px);
 }
-[data-fui-comp="ui-tag-input"] .ui-tag-input__label {
+[data-fui-comp="ui-tag-input"] .fui-tag-input__label {
   font-weight: 500;
   font-size: var(--text-sm, 0.875rem);
   color: var(--color-text, #18181B);
 }
-[data-fui-comp="ui-tag-input"] .ui-tag-input__zone {
+[data-fui-comp="ui-tag-input"] .fui-tag-input__zone {
   display: flex;
   flex-wrap: wrap;
   gap: var(--spacing-xs, 2px);
@@ -156,12 +117,15 @@ func tagInputCSS(_ style.Theme) string {
   border-radius: var(--radii-md, 8px);
   background: var(--color-surface, #FFFFFF);
 }
-[data-fui-comp="ui-tag-input"] .ui-tag-input__zone:focus-within {
+[data-fui-comp="ui-tag-input"] .fui-tag-input__zone:focus-within {
   outline: 2px solid var(--color-primary, #4F46E5);
   outline-offset: 1px;
   border-color: var(--color-primary, #4F46E5);
 }
-[data-fui-comp="ui-tag-input"] .ui-tag-input__chip {
+[data-fui-comp="ui-tag-input"] .fui-tag-input__list {
+  display: contents;
+}
+[data-fui-comp="ui-tag-input"] .fui-tag-input__chip {
   display: inline-flex;
   align-items: center;
   gap: var(--spacing-sm, 4px);
@@ -172,7 +136,7 @@ func tagInputCSS(_ style.Theme) string {
   font-size: var(--text-sm, 0.875rem);
   font-weight: 500;
 }
-[data-fui-comp="ui-tag-input"] .ui-tag-input__chip-remove {
+[data-fui-comp="ui-tag-input"] .fui-tag-input__chip-remove {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -187,10 +151,10 @@ func tagInputCSS(_ style.Theme) string {
   font-size: var(--text-base, 1rem);
   line-height: 1;
 }
-[data-fui-comp="ui-tag-input"] .ui-tag-input__chip-remove:hover {
+[data-fui-comp="ui-tag-input"] .fui-tag-input__chip-remove:hover {
   background: color-mix(in srgb, var(--color-primary-fg, #FFFFFF) 25%, transparent);
 }
-[data-fui-comp="ui-tag-input"] .ui-tag-input__field {
+[data-fui-comp="ui-tag-input"] .fui-tag-input__field {
   flex: 1 1 8rem;
   border: 0;
   outline: 0;
@@ -201,13 +165,46 @@ func tagInputCSS(_ style.Theme) string {
   min-block-size: 28px;
   padding: 0;
 }
-[data-fui-comp="ui-tag-input"] .ui-tag-input__help {
+[data-fui-comp="ui-tag-input"] .fui-tag-input__add {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-inline-size: 28px;
+  min-block-size: 28px;
+  border: 1px solid var(--color-border, #E4E4E7);
+  border-radius: var(--radii-md, 8px);
+  background: var(--color-surface-soft, #F4F4F5);
+  font: inherit;
+  font-weight: 600;
+  color: var(--color-text, #18181B);
+  cursor: pointer;
+}
+[data-fui-comp="ui-tag-input"] .fui-tag-input__add:hover {
+  background: var(--color-border, #E4E4E7);
+}
+[data-fui-comp="ui-tag-input"] .fui-tag-input__add:focus-visible {
+  outline: 2px solid var(--color-primary, #4F46E5);
+  outline-offset: 1px;
+}
+[data-fui-comp="ui-tag-input"] .fui-tag-input__help {
   margin: 0;
   font-size: var(--text-sm, 0.875rem);
   color: var(--color-text-muted, #52525B);
 }
-[data-fui-comp="ui-tag-input"].is-disabled .ui-tag-input__zone {
+[data-fui-comp="ui-tag-input"].is-disabled .fui-tag-input__zone {
   opacity: 0.6;
   cursor: not-allowed;
+}
+/* Scoped copy of the visually-hidden recipe: the status live region
+   must not be seen on a page that loads only this sheet. */
+[data-fui-comp="ui-tag-input"] .fui-visually-hidden {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
 }`
 }

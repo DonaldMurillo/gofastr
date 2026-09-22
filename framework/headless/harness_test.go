@@ -300,7 +300,7 @@ func TestFilledSlotsKeepTheContract(t *testing.T) {
 			continue
 		}
 		if sp.WithParts == nil {
-			t.Errorf("%s offers %d fillable parts and no WithSeams, so nothing tests them", sp.Name, len(sp.Fillable))
+			t.Errorf("%s offers %d fillable parts and no WithParts, so nothing tests them", sp.Name, len(sp.Fillable))
 			continue
 		}
 		for _, p := range sp.Fillable {
@@ -744,12 +744,12 @@ func TestEveryFillablePartTakesATextBind(t *testing.T) {
 	}
 }
 
-// A props type that embeds Seams offers them, and Spec.WithSeams is
+// A props type that embeds Parts offers them, and Spec.WithParts is
 // the only thing that proves they arrive. Five components once carried
 // the field for Slots alone and dropped Attrs and Binds on the
 // floor, with nothing failing, because every parts gate above skips a
-// spec with no WithSeams. This reads the source instead: a struct
-// with an embedded Seams field names a component, and that
+// spec with no WithParts. This reads the source instead: a struct
+// with an embedded Parts field names a component, and that
 // component's spec must render with its parts.
 func TestEveryPropsTypeWithPartsHasAFixture(t *testing.T) {
 	fset := token.NewFileSet()
@@ -775,11 +775,11 @@ func TestEveryPropsTypeWithPartsHasAFixture(t *testing.T) {
 					name := strings.TrimSuffix(ts.Name.Name, "Props")
 					sp, ok := SpecOf(name)
 					if !ok {
-						t.Errorf("%s embeds Seams and no spec is named %q", ts.Name.Name, name)
+						t.Errorf("%s embeds Parts and no spec is named %q", ts.Name.Name, name)
 						continue
 					}
 					if sp.WithParts == nil {
-						t.Errorf("%s embeds Seams and its spec has no WithSeams: the seam gates skip it, "+
+						t.Errorf("%s embeds Parts and its spec has no WithParts: the parts gates skip it, "+
 							"so an override or a bind it drops fails nothing", ts.Name.Name)
 					}
 				}

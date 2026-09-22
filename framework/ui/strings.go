@@ -97,6 +97,42 @@ var stringsKeys = map[string]i18nui.Key{
 	"TableSortedBy":  i18nui.KeyTableSortedBy,
 	"SortAscending":  i18nui.KeyTableDirAscending,
 	"SortDescending": i18nui.KeyTableDirDescending,
+
+	// The stateful-control family's words. The counter, copy and
+	// scheme words reuse the keys their config-struct components
+	// already resolved through Ctx (their English is the same word
+	// for the same job); the rest are new with the headless
+	// primitives and their English is the component's own default.
+	"CounterLabel":     i18nui.KeyCounterLabel,
+	"CounterDecrement": i18nui.KeyCounterDecrement,
+	"CounterIncrement": i18nui.KeyCounterIncrement,
+	"BackToTop":        i18nui.KeyHuiBackToTop,
+	"NumberDecrement":  i18nui.KeyHuiNumberDecrement,
+	"NumberIncrement":  i18nui.KeyHuiNumberIncrement,
+	"RangeLow":         i18nui.KeyHuiRangeLow,
+	"RangeHigh":        i18nui.KeyHuiRangeHigh,
+	"RangeValue":       i18nui.KeyHuiRangeValue,
+	"RatingChoice":     i18nui.KeyHuiRatingChoice,
+	"TagInputAdd":      i18nui.KeyHuiTagInputAdd,
+	"TagInputAdded":    i18nui.KeyHuiTagInputAdded,
+	"TagInputRemoved":  i18nui.KeyHuiTagInputRemoved,
+	"RepeaterAdd":      i18nui.KeyRepeaterAdd,
+	"RepeaterRemove":   i18nui.KeyHuiRepeaterRemove,
+
+	// NotificationBell's spoken count.
+	"NotificationCount": i18nui.KeyHuiNotificationCount,
+
+	// StepWizard's three controls, the rail's name and one dot's.
+	// The three control words reuse the keys the config-struct wizard
+	// already resolved through Ctx; the two sentence shapes are new
+	// with the primitive, whose formats are %d-shaped (headless
+	// formats at render) rather than the {step}/{total} tokens the
+	// config-struct keys carry.
+	"StepBack":   i18nui.KeyStepWizardBack,
+	"StepNext":   i18nui.KeyStepWizardNext,
+	"StepSubmit": i18nui.KeyStepWizardSubmit,
+	"StepOf":     i18nui.KeyHuiStepOf,
+	"StepName":   i18nui.KeyHuiStepName,
 }
 
 // StringsFor resolves a headless.Strings from the request's context:

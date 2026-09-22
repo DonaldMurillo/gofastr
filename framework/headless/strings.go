@@ -155,6 +155,85 @@ type Strings struct {
 	SortAscending  string
 	SortDescending string
 
+	// ─── Counter ─────────────────────────────────────────────────────
+
+	// CounterLabel names the counter group, which carries no visible
+	// label of its own. One noun.
+	CounterLabel string
+	// CounterDecrement and CounterIncrement name the counter's two
+	// buttons. One word each; the counter's value is the context.
+	CounterDecrement string
+	CounterIncrement string
+
+	// ─── BackToTop ───────────────────────────────────────────────────
+
+	// BackToTop names the back-to-top anchor, whose glyph carries no
+	// words. A short imperative.
+	BackToTop string
+
+	// ─── NumberInput ─────────────────────────────────────────────────
+
+	// NumberDecrement and NumberIncrement name the stepper's two
+	// buttons, which need the field's name to tell them from any
+	// other stepper's. Formats taking the label as %s.
+	NumberDecrement string
+	NumberIncrement string
+
+	// ─── Slider and RangeSlider ──────────────────────────────────────
+
+	// RangeLow and RangeHigh name the two thumbs of a range pair —
+	// "Minimum %s" and "Maximum %s", the label standing in for the
+	// thing bounded. RangeValue is the pair's one output sentence,
+	// "%s to %s", low first.
+	RangeLow   string
+	RangeHigh  string
+	RangeValue string
+
+	// ─── Rating ──────────────────────────────────────────────────────
+
+	// RatingChoice names one rating radio: "%d out of %d", the chosen
+	// value and the ceiling.
+	RatingChoice string
+
+	// ─── TagInput ────────────────────────────────────────────────────
+
+	// TagInputAdd names the control that commits the draft, a format
+	// taking the field's label as %s. TagInputAdded and
+	// TagInputRemoved are what the status region says after a chip
+	// operation, with {name} where the chip's text goes — the runtime
+	// writes it when the operation has happened.
+	TagInputAdd     string
+	TagInputAdded   string
+	TagInputRemoved string
+
+	// ─── Repeater ────────────────────────────────────────────────────
+
+	// RepeaterAdd names the add control. RepeaterRemove names one
+	// remove control, a format taking the item's 1-based position as
+	// %d, because twelve controls all called Remove tell a screen
+	// reader user nothing.
+	RepeaterAdd    string
+	RepeaterRemove string
+
+	// ─── NotificationBell ────────────────────────────────────────────
+
+	// NotificationCount is the bell's accessible name, "%d unread
+	// notifications" — the count the anchor carries, said in words.
+	NotificationCount string
+
+	// ─── StepWizard ──────────────────────────────────────────────────
+
+	// StepBack, StepNext and StepSubmit are the wizard's three
+	// controls; Next is the one weighted action until the last step
+	// makes it Submit. StepOf is the rail's name, "Step %d of %d",
+	// and StepName is one dot's, "Step %d: %s" with the step's
+	// heading as %s.
+	StepBack   string
+	StepNext   string
+	StepSubmit string
+	StepOf     string
+	StepName   string
+
 	// ─── ValidationSummary ──────────────────────────────────────────
 
 	// ThereIsAProblem heads the list a failed submit focuses. A short
@@ -201,6 +280,35 @@ var defaultStrings = Strings{
 	SortAscending:  "ascending",
 	SortDescending: "descending",
 
+	CounterLabel:     "Counter",
+	CounterDecrement: "Decrement",
+	CounterIncrement: "Increment",
+
+	BackToTop: "Back to top",
+
+	NumberDecrement: "Decrement %s",
+	NumberIncrement: "Increment %s",
+
+	RangeLow:   "Minimum %s",
+	RangeHigh:  "Maximum %s",
+	RangeValue: "%s to %s",
+
+	RatingChoice: "%d out of %d",
+
+	TagInputAdd:     "Add %s",
+	TagInputAdded:   "{name} added",
+	TagInputRemoved: "{name} removed",
+
+	RepeaterAdd:    "Add item",
+	RepeaterRemove: "Remove item %d",
+
+	NotificationCount: "%d unread notifications",
+
+	StepBack:        "Back",
+	StepNext:        "Continue",
+	StepSubmit:      "Submit",
+	StepOf:          "Step %d of %d",
+	StepName:        "Step %d: %s",
 	ThereIsAProblem: "There is a problem",
 }
 

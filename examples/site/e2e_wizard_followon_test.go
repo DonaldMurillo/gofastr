@@ -50,12 +50,12 @@ func TestE2E_Wizard_HappyPath(t *testing.T) {
 		pageReady(),
 		// Step 2 visible: assert the step heading, indicator state.
 		chromedp.Evaluate(`JSON.stringify((() => {
-			var heading = document.querySelector('.ui-step-wizard__heading');
-			var dots = document.querySelectorAll('.ui-step-wizard__step-dot');
+			var heading = document.querySelector('.fui-step-wizard__heading');
+			var dots = document.querySelectorAll('.fui-step-wizard__step-dot');
 			return {
 				heading: heading ? heading.textContent.trim() : '',
-				step0: dots[0] ? dots[0].className : '',
-				step1: dots[1] ? dots[1].className : '',
+				step0: dots[0] ? dots[0].getAttribute('data-state') : '',
+				step1: dots[1] ? dots[1].getAttribute('data-state') : '',
 			};
 		})())`, &raw),
 	)
@@ -73,11 +73,11 @@ func TestE2E_Wizard_HappyPath(t *testing.T) {
 	if !strings.Contains(s2.Heading, "Preferences") {
 		t.Errorf("expected step 2 heading 'Preferences', got %q", s2.Heading)
 	}
-	if !strings.Contains(s2.Step0, "is-completed") {
-		t.Errorf("step 0 should be completed, got class %q", s2.Step0)
+	if s2.Step0 != "done" {
+		t.Errorf("step 0 should be completed, got attrs %q", s2.Step0)
 	}
-	if !strings.Contains(s2.Step1, "is-current") {
-		t.Errorf("step 1 should be current, got class %q", s2.Step1)
+	if s2.Step1 != "current" {
+		t.Errorf("step 1 should be current, got attrs %q", s2.Step1)
 	}
 
 	// Step 2: fill theme then Continue.
@@ -91,7 +91,7 @@ func TestE2E_Wizard_HappyPath(t *testing.T) {
 		pageReady(),
 		// Step 3: assert heading + Submit visible (no Continue).
 		chromedp.Evaluate(`JSON.stringify((() => {
-			var heading = document.querySelector('.ui-step-wizard__heading');
+			var heading = document.querySelector('.fui-step-wizard__heading');
 			var btns = document.querySelectorAll('button[name="wizard_action"]');
 			var labels = Array.from(btns).map(b => b.textContent.trim());
 			return {
@@ -191,7 +191,7 @@ func TestE2E_Wizard_EmptySubmitStaysOnStepOne(t *testing.T) {
 
 	err = chromedp.Run(ctx,
 		chromedp.Evaluate(`JSON.stringify((() => {
-			var heading = document.querySelector('.ui-step-wizard__heading');
+			var heading = document.querySelector('.fui-step-wizard__heading');
 			var summary = document.querySelector('[data-hui-form-errors] [role="alert"], #wd-form-errors');
 			var nameErr = document.getElementById('wd-name-error');
 			var emailErr = document.getElementById('wd-email-error');
@@ -274,7 +274,7 @@ func TestE2E_Wizard_BackPreservesState(t *testing.T) {
 		// Step 2 must show the previously-checked radio.
 		chromedp.Evaluate(`JSON.stringify((() => {
 			var checked = document.querySelector('input[name="wd-theme"]:checked');
-			var heading = document.querySelector('.ui-step-wizard__heading');
+			var heading = document.querySelector('.fui-step-wizard__heading');
 			return {
 				heading: heading ? heading.textContent.trim() : '',
 				themeValue: checked ? checked.value : '',
@@ -331,9 +331,9 @@ func TestE2E_Wizard_FinalStepNoOverflow(t *testing.T) {
 	var raw string
 	err = chromedp.Run(ctx,
 		chromedp.Evaluate(`JSON.stringify((() => {
-			var dots = document.querySelectorAll('.ui-step-wizard__step-dot');
+			var dots = document.querySelectorAll('.fui-step-wizard__step-dot');
 			var current = -1;
-			dots.forEach((d, i) => { if (d.classList.contains('is-current')) current = i; });
+			dots.forEach((d, i) => { if (d.getAttribute('data-state') === 'current') current = i; });
 			var hiddenStep = document.querySelector('input[type="hidden"][name="_step"]');
 			return {
 				dots: dots.length,
@@ -365,9 +365,9 @@ func TestE2E_Wizard_FinalStepNoOverflow(t *testing.T) {
 		chromedp.Evaluate(`JSON.stringify((() => {
 			// After submit, either confirmation page or still wizard step 2.
 			var confirm = document.querySelector('[data-wizard-confirm]');
-			var dots = document.querySelectorAll('.ui-step-wizard__step-dot');
+			var dots = document.querySelectorAll('.fui-step-wizard__step-dot');
 			var current = -1;
-			dots.forEach((d, i) => { if (d.classList.contains('is-current')) current = i; });
+			dots.forEach((d, i) => { if (d.getAttribute('data-state') === 'current') current = i; });
 			return {
 				confirm: !!confirm,
 				dots: dots.length,

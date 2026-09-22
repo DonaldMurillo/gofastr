@@ -125,7 +125,7 @@ func TestE2E_NewComponents_FilterChipBarToolbarRole(t *testing.T) {
 		chromedp.Navigate(base+"/components/filterchipbar"),
 		pageReady(),
 		// Site demo has 2 chips (Open + Mine), no toolbar wrapper id
-		chromedp.Evaluate(`document.querySelectorAll('[data-fui-comp="ui-filter-bar"] .ui-tag').length`, &chipCount),
+		chromedp.Evaluate(`document.querySelectorAll('[data-fui-comp="ui-filter-bar"] .fui-tag').length`, &chipCount),
 	)
 	if err != nil {
 		t.Fatalf("chromedp: %v", err)

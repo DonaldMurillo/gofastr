@@ -1,27 +1,20 @@
 package ui
 
 import (
-	_ "embed"
+	"context"
+	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/headless"
 )
 
-// The component's behaviour registers the way its stylesheet does:
-// the module is embedded beside the Go that renders the markup it
-// binds, and Requires("action") puts the kernel's action primitive
-// (core-ui/runtime/src/action.js) on the page before this module
-// evaluates. The markers are spelled as literals because the
-// hard-rule-5 gate reads every registry.Markers call in the tree.
-//
-//go:embed toggleaction.js
-var toggleActionJS string
-
-var _ = registry.RegisterBehavior("toggleaction", toggleActionJS,
-	registry.Markers("[data-fui-comp=\"ui-toggle-action\"]"),
-	registry.Requires("action"))
+// The behaviour is the headless module's: the primitive's
+// data-hui-action* hooks bind through the kernel's action primitive,
+// and the retired toggleaction adapter module (its .js and its
+// registration) is deleted with this move.
 
 // ─── ToggleAction ───────────────────────────────────────────────────
 //
@@ -48,16 +41,19 @@ var _ = registry.RegisterBehavior("toggleaction", toggleActionJS,
 // SSR shape (state ships server-rendered; the runtime only flips it):
 //
 //	<button data-fui-comp="ui-toggle-action"
-//	        data-fui-toggle-endpoint="/follow"
-//	        data-fui-toggle-method="POST"
+//	        data-hui-action="" data-hui-action-endpoint="/follow"
+//	        data-hui-action-untoggle="/unfollow"
+//	        data-hui-action-group="follows"
+//	        data-hui-action-failed="…"
 //	        data-state="idle" aria-pressed="false"
-//	        class="fui-button fui-toggle-action">
-//	    <span data-fui-toggle-idle>Follow</span>
-//	    <span data-fui-toggle-committed hidden>Following ✓</span>
+//	        class="fui-button fui-button--primary ui-toggle-action">
+//	    <span data-hui-action-idle>Follow</span>
+//	    <span data-hui-action-done hidden>Following ✓</span>
 //	</button>
 //
-// The runtime auto-loads `/runtime/toggleaction.js` on first
-// appearance and mirrors the committed state onto aria-pressed.
+// The headless module binds the data-hui-action* hooks through the
+// kernel's action primitive (the retired toggleaction.js is deleted)
+// and mirrors the committed state onto aria-pressed.
 
 // ToggleActionConfig configures a ToggleAction button.
 type ToggleActionConfig struct {
@@ -88,11 +84,12 @@ type ToggleActionConfig struct {
 
 	// Group, when set, joins this button to a client-side mutex:
 	// committing any button with the same Group key reverts the
-	// previously-committed sibling. Maps to data-fui-toggle-group.
+	// previously-committed sibling. Maps to data-hui-action-group.
 	Group string
 
 	// AllowUntoggle lets a click on a committed button revert it to
-	// idle. Maps to data-fui-toggle-allow-untoggle="true".
+	// idle. Maps to the data-hui-action-untoggle hook (empty for a
+	// local flip, the untoggle endpoint's URL when one is set).
 	AllowUntoggle bool
 
 	// UntoggleEndpoint is the URL hit when reverting committed → idle.
@@ -117,10 +114,20 @@ type ToggleActionConfig struct {
 	// data-fui-* (the toggle runtime wiring), type, data-state, and
 	// aria-pressed (mirrored from Committed by the runtime).
 	ExtraAttrs html.Attrs
+
+	// FailedText is what the status span announces on a failure.
+	// Empty takes the Strings default.
+	FailedText string
+	// Ctx carries the per-request context used to resolve the
+	// failure sentence. When nil, English fallbacks apply.
+	Ctx context.Context
+	// Disabled is the state at render time.
+	Disabled bool
 }
 
-// ToggleAction renders the button. The runtime listens for clicks via
-// the data-fui-comp marker.
+// ToggleAction renders the button. The marker fetches this sheet; the
+// clicks are bound through the data-hui-action* hooks the primitive
+// renders.
 func ToggleAction(cfg ToggleActionConfig) render.HTML {
 	if cfg.Endpoint == "" {
 		panic("ui: ToggleAction requires Endpoint")
@@ -131,81 +138,47 @@ func ToggleAction(cfg ToggleActionConfig) render.HTML {
 	if cfg.CommittedLabel == "" {
 		panic("ui: ToggleAction requires CommittedLabel")
 	}
-	method := cfg.Method
-	if method == "" {
-		method = "POST"
-	}
-	state, pressed := "idle", "false"
-	if cfg.Committed {
-		state, pressed = "committed", "true"
-	}
 	tv := cfg.Variant
 	if tv == "" {
 		tv = ButtonPrimary
 	}
 	checkButtonVariant("ToggleAction", tv)
 	checkButtonSize("ToggleAction", cfg.Size)
-	// The button's root classes come from the class map, beside this
-	// (default primary) because the stylesheet's colours live in the
-	// variant rules, not the base.
-	cls := buttonClassTokens(cfg.Variant, cfg.Size) + " ui-toggle-action"
-	if cfg.Class != "" {
-		cls += " " + cfg.Class
-	}
 
-	attrs := html.SafeExtraAttrs(cfg.ExtraAttrs, "type", "data-state", "aria-pressed")
-	if attrs == nil {
-		attrs = map[string]string{}
+	parts := headless.Parts{}
+	if extra := strings.TrimSpace(buttonClassTokens(tv, cfg.Size) + " ui-toggle-action " + cfg.Class); extra != "" {
+		parts.Attrs = headless.PartAttrs{headless.PartRoot: {"class": strings.TrimSpace(extra)}}
 	}
-	attrs["class"] = cls
-	attrs["type"] = "button"
-	attrs["data-fui-toggle-endpoint"] = cfg.Endpoint
-	attrs["data-fui-toggle-method"] = method
-	attrs["data-state"] = state
-	attrs["aria-pressed"] = pressed
-	if cfg.ID != "" {
-		attrs["id"] = cfg.ID
+	ctx := cfg.Ctx
+	if ctx == nil {
+		ctx = context.Background()
 	}
-	if cfg.Group != "" {
-		attrs["data-fui-toggle-group"] = cfg.Group
-	}
-	if cfg.AllowUntoggle || cfg.UntoggleEndpoint != "" {
-		attrs["data-fui-toggle-allow-untoggle"] = "true"
-	}
-	if cfg.UntoggleEndpoint != "" {
-		attrs["data-fui-toggle-untoggle-endpoint"] = cfg.UntoggleEndpoint
-	}
+	return toggleActionStyle.WrapHTML(headless.ToggleAction(headless.ToggleActionProps{
+		Endpoint:         cfg.Endpoint,
+		Method:           cfg.Method,
+		IdleLabel:        cfg.IdleLabel,
+		CommittedLabel:   cfg.CommittedLabel,
+		IdleIcon:         cfg.IdleIcon,
+		DoneIcon:         cfg.CommittedIcon,
+		Committed:        cfg.Committed,
+		Group:            cfg.Group,
+		AllowUntoggle:    cfg.AllowUntoggle,
+		UntoggleEndpoint: cfg.UntoggleEndpoint,
+		Variant:          string(cfg.Variant),
+		Size:             string(cfg.Size),
+		Disabled:         cfg.Disabled,
+		FailedText:       cfg.FailedText,
+		ID:               cfg.ID,
+		ExtraAttrs:       headless.Safe(cfg.ExtraAttrs, "type", "data-state", "aria-pressed"),
+		Parts:            parts,
+		Strings:          StringsFor(ctx),
+	}, toggleActionClasses))
+}
 
-	idleChildren := []render.HTML{}
-	if cfg.IdleIcon != "" {
-		idleChildren = append(idleChildren, cfg.IdleIcon)
-	}
-	idleChildren = append(idleChildren, render.Text(cfg.IdleLabel))
-
-	committedChildren := []render.HTML{}
-	if cfg.CommittedIcon != "" {
-		committedChildren = append(committedChildren, cfg.CommittedIcon)
-	}
-	committedChildren = append(committedChildren, render.Text(cfg.CommittedLabel))
-
-	idleAttrs := map[string]string{
-		"data-fui-toggle-idle": "",
-		"class":                "ui-toggle-action__idle",
-	}
-	committedAttrs := map[string]string{
-		"data-fui-toggle-committed": "",
-		"class":                     "ui-toggle-action__committed",
-	}
-	if cfg.Committed {
-		idleAttrs["hidden"] = ""
-	} else {
-		committedAttrs["hidden"] = ""
-	}
-
-	idleSpan := render.Tag("span", idleAttrs, idleChildren...)
-	committedSpan := render.Tag("span", committedAttrs, committedChildren...)
-
-	return toggleActionStyle.WrapHTML(render.Tag("button", attrs, idleSpan, committedSpan))
+// toggleActionClasses dresses the primitive's parts in the button
+// family's vocabulary.
+var toggleActionClasses = headless.Classes{
+	headless.PartRoot: "fui-button",
 }
 
 var toggleActionStyle = registry.RegisterStyle("ui-toggle-action", func(_ style.Theme) string {

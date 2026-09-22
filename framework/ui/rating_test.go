@@ -48,8 +48,8 @@ func TestRatingValueInitialChecked(t *testing.T) {
 
 func TestRatingHeartVariantClass(t *testing.T) {
 	h := string(RatingInput(RatingConfig{Name: "r", Label: "Rate", Shape: RatingShapeHeart}))
-	if !strings.Contains(h, "ui-rating--heart") {
-		t.Errorf("Heart shape should add .ui-rating--heart:\n%s", h)
+	if !strings.Contains(h, "fui-rating--heart") {
+		t.Errorf("Heart shape should add .fui-rating--heart:\n%s", h)
 	}
 }
 
@@ -58,11 +58,11 @@ func TestRatingSizeAndGapVariantClasses(t *testing.T) {
 		Name: "r", Label: "Rate",
 		Size: RatingSizeLarge, Gap: RatingGapWide,
 	}))
-	if !strings.Contains(h, "ui-rating--large") {
-		t.Errorf("Size=Large should add .ui-rating--large:\n%s", h)
+	if !strings.Contains(h, "fui-rating--large") {
+		t.Errorf("Size=Large should add .fui-rating--large:\n%s", h)
 	}
-	if !strings.Contains(h, "ui-rating--gap-wide") {
-		t.Errorf("Gap=Wide should add .ui-rating--gap-wide:\n%s", h)
+	if !strings.Contains(h, "fui-rating--gap-wide") {
+		t.Errorf("Gap=Wide should add .fui-rating--gap-wide:\n%s", h)
 	}
 }
 
@@ -74,6 +74,9 @@ func TestRatingCustomIconOverridesShape(t *testing.T) {
 	if !strings.Contains(h, "viewBox=\"0 0 4 4\"") {
 		t.Errorf("custom Icon should override Shape glyph:\n%s", h)
 	}
+	// The ui- substring matches both spellings (fui- contains ui-), so
+	// this negative refuses the shape class whichever vocabulary
+	// emitted it.
 	if strings.Contains(h, "ui-rating--heart") {
 		t.Errorf("Icon overrides Shape — Shape variant class should not emit:\n%s", h)
 	}
@@ -81,11 +84,13 @@ func TestRatingCustomIconOverridesShape(t *testing.T) {
 
 func TestRatingRadioInputsHaveAriaLabel(t *testing.T) {
 	h := string(RatingInput(RatingConfig{Name: "r", Label: "Rate"}))
-	if !strings.Contains(h, `aria-label="1 star out of 5"`) {
-		t.Errorf("each radio should carry an aria-label like '1 star out of 5':\n%s", h)
+	// The name is the RatingChoice sentence, %d out of %d: the value
+	// and the ceiling, said in words, with no plural branch to keep.
+	if !strings.Contains(h, `aria-label="1 out of 5"`) {
+		t.Errorf("each radio should carry an aria-label like '1 out of 5':\n%s", h)
 	}
-	if !strings.Contains(h, `aria-label="5 stars out of 5"`) {
-		t.Errorf("each radio should carry an aria-label like 'N stars out of 5':\n%s", h)
+	if !strings.Contains(h, `aria-label="5 out of 5"`) {
+		t.Errorf("each radio should carry an aria-label like '5 out of 5':\n%s", h)
 	}
 }
 

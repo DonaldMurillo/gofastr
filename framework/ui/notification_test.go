@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"github.com/DonaldMurillo/gofastr/framework/headless"
+
 	"strings"
 	"testing"
 )
@@ -13,11 +15,14 @@ func TestNotificationRequiresTitle(t *testing.T) {
 
 func TestNotificationDefaultsToInfo(t *testing.T) {
 	h := string(Notification(NotificationConfig{Title: "Hello"}))
-	if !strings.Contains(h, "ui-notification--info") {
+	if !strings.Contains(h, "fui-notification--info") {
 		t.Errorf("expected default info variant, got: %s", h)
 	}
-	if !strings.Contains(h, `role="status"`) {
-		t.Errorf("expected role=status for info, got: %s", h)
+	// A polite toast carries no role of its own: the stack it lives
+	// in is the live region, and the row announcing itself twice is
+	// the defect the primitive exists to prevent.
+	if strings.Contains(h, `role="alert"`) {
+		t.Errorf("an info notification must not interrupt, got: %s", h)
 	}
 }
 
@@ -38,13 +43,12 @@ func TestNotificationDangerGetsAlertRole(t *testing.T) {
 	if !strings.Contains(h, `role="alert"`) {
 		t.Errorf("expected role=alert for danger, got: %s", h)
 	}
-	// Severity-correct: alert implies assertive announcement; the
-	// earlier code paired alert with polite which contradicts the
-	// role.
-	if !strings.Contains(h, `aria-live="assertive"`) {
-		t.Errorf("danger notification must be aria-live=assertive (matches role=alert), got: %s", h)
+	// role=alert implies assertive; stating aria-live beside it is
+	// how a message ends up announced twice.
+	if strings.Contains(h, `aria-live=`) {
+		t.Errorf("danger notification carries aria-live beside role=alert, announcing twice, got: %s", h)
 	}
-	if !strings.Contains(h, "ui-notification--danger") {
+	if !strings.Contains(h, "fui-notification--danger") {
 		t.Errorf("expected danger variant, got: %s", h)
 	}
 }
@@ -52,7 +56,12 @@ func TestNotificationDangerGetsAlertRole(t *testing.T) {
 func TestNotificationVariantsRenderClass(t *testing.T) {
 	for _, v := range []StatusVariant{StatusSuccess, StatusWarning, StatusInfo, StatusNeutral} {
 		h := string(Notification(NotificationConfig{Title: "x", Variant: v}))
-		want := "ui-notification--" + string(v)
+		want := "fui-notification--" + string(v)
+		if v == StatusNeutral {
+			// Neutral maps to the info tone on the toast primitive;
+			// the sheet keeps its neutral class through the variant.
+			want = "fui-notification--info"
+		}
 		if !strings.Contains(h, want) {
 			t.Errorf("expected %s, got: %s", want, h)
 		}
@@ -62,12 +71,14 @@ func TestNotificationVariantsRenderClass(t *testing.T) {
 func TestNotificationDismissLink(t *testing.T) {
 	h := string(Notification(NotificationConfig{
 		Title: "Saved", Variant: StatusSuccess, DismissHref: "/notif/dismiss/123",
+		Island: headless.Island{Endpoint: "/island/notifications", Signal: "notifications"},
 	}))
 	for _, want := range []string{
 		`href="/notif/dismiss/123"`,
 		`aria-label="Dismiss notification"`,
-		"ui-notification__dismiss",
+		"fui-notification__dismiss",
 	} {
+		_ = want
 		if !strings.Contains(h, want) {
 			t.Errorf("missing %q in: %s", want, h)
 		}
@@ -76,7 +87,7 @@ func TestNotificationDismissLink(t *testing.T) {
 
 func TestNotificationOmitsDismissWhenNoHref(t *testing.T) {
 	h := string(Notification(NotificationConfig{Title: "x"}))
-	if strings.Contains(h, "ui-notification__dismiss") {
+	if strings.Contains(h, "fui-notification__dismiss") {
 		t.Errorf("expected no dismiss link, got: %s", h)
 	}
 }
@@ -90,14 +101,14 @@ func TestNotificationBodyRenders(t *testing.T) {
 
 func TestNotificationPositionAddsFloatingClasses(t *testing.T) {
 	cases := map[NotificationPosition]string{
-		NotificationTopRight:    "ui-notification--at-top-right",
-		NotificationTopLeft:     "ui-notification--at-top-left",
-		NotificationBottomRight: "ui-notification--at-bottom-right",
-		NotificationBottomLeft:  "ui-notification--at-bottom-left",
+		NotificationTopRight:    "fui-notification--at-top-right",
+		NotificationTopLeft:     "fui-notification--at-top-left",
+		NotificationBottomRight: "fui-notification--at-bottom-right",
+		NotificationBottomLeft:  "fui-notification--at-bottom-left",
 	}
 	for pos, want := range cases {
 		h := string(Notification(NotificationConfig{Title: "x", Position: pos}))
-		if !strings.Contains(h, "ui-notification--floating") {
+		if !strings.Contains(h, "fui-notification--floating") {
 			t.Errorf("Position=%q expected floating class, got: %s", pos, h)
 		}
 		if !strings.Contains(h, want) {
@@ -108,7 +119,7 @@ func TestNotificationPositionAddsFloatingClasses(t *testing.T) {
 
 func TestNotificationInlineHasNoFloatingClass(t *testing.T) {
 	h := string(Notification(NotificationConfig{Title: "x"}))
-	if strings.Contains(h, "ui-notification--floating") {
+	if strings.Contains(h, "fui-notification--floating") {
 		t.Errorf("default (inline) should not be floating, got: %s", h)
 	}
 }

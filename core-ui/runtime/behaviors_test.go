@@ -50,7 +50,7 @@ func TestRegisteredBehaviorIsAModule(t *testing.T) {
 		t.Fatal("an unknown name has a hash")
 	}
 	// Embedded modules keep theirs.
-	if ModuleHash("copy") == "" {
+	if ModuleHash("rpc") == "" {
 		t.Fatal("embedded module lost its hash")
 	}
 }
@@ -173,15 +173,15 @@ func mustPanicNames(t *testing.T, want string, fn func()) {
 func TestBehaviorsJSONRequirements(t *testing.T) {
 	registry.IsolateForTest(t)
 	registry.RegisterBehavior("dep", probeJS, registry.Markers("[data-dep]"))
-	registry.RegisterBehavior("user", probeJS, registry.Markers("[data-user]"), registry.Requires("dep", "copy"))
+	registry.RegisterBehavior("user", probeJS, registry.Markers("[data-user]"), registry.Requires("dep", "rpc"))
 	var got map[string]struct {
 		R []string `json:"r"`
 	}
 	if err := json.Unmarshal(BehaviorsJSON(), &got); err != nil {
 		t.Fatal(err)
 	}
-	if strings.Join(got["user"].R, ",") != "dep,copy" {
-		t.Fatalf("requirements = %v, want dep,copy", got["user"].R)
+	if strings.Join(got["user"].R, ",") != "dep,rpc" {
+		t.Fatalf("requirements = %v, want dep,rpc", got["user"].R)
 	}
 	if len(got["dep"].R) != 0 {
 		t.Fatalf("a behaviour with no requirements carried r: %v", got["dep"].R)
@@ -266,12 +266,12 @@ func TestBehaviorShadowingAnEmbeddedModuleIsRefused(t *testing.T) {
 	}
 	t.Run("at registration", func(t *testing.T) {
 		registry.IsolateForTest(t)
-		registry.ReserveBehaviorNames("copy")
-		expectPanic(t, func() { registry.RegisterBehavior("copy", probeJS, registry.Markers("[data-copy-probe]")) })
+		registry.ReserveBehaviorNames("rpc")
+		expectPanic(t, func() { registry.RegisterBehavior("rpc", probeJS, registry.Markers("[data-copy-probe]")) })
 	})
 	t.Run("where the sets meet", func(t *testing.T) {
 		registry.IsolateForTest(t)
-		registry.RegisterBehavior("copy", probeJS, registry.Markers("[data-copy-probe]"))
+		registry.RegisterBehavior("rpc", probeJS, registry.Markers("[data-copy-probe]"))
 		expectPanic(t, func() { ModuleNames() })
 		expectPanic(t, func() { BehaviorsJSON() })
 	})

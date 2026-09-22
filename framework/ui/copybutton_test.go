@@ -8,16 +8,16 @@ import (
 func TestCopyButtonBasic(t *testing.T) {
 	out := string(CopyButton(CopyButtonConfig{Target: "#code-1"}))
 	wants := []string{
-		`data-fui-copy-text-from="#code-1"`,
-		`data-fui-copy-announce="Copied"`,
+		`data-hui-copy-target="code-1"`,
+		`data-hui-copy-sentence="Copied"`,
 		`type="button"`,
-		`ui-copy-btn__label`,
+		`class="fui-copy-btn__label"`,
 		`>Copy<`,
-		`ui-copy-btn__copied`,
+		`class="fui-copy-btn__copied"`,
 		`aria-hidden="true"`,
 		`role="status"`,
 		`aria-live="polite"`,
-		`data-fui-copy-status=""`,
+		`data-hui-copy-status=""`,
 	}
 	for _, w := range wants {
 		if !strings.Contains(out, w) {
@@ -48,7 +48,7 @@ func TestCopyButtonCustomLabels(t *testing.T) {
 	if !strings.Contains(out, ">Token copied<") {
 		t.Errorf("expected custom CopiedLabel, got: %s", out)
 	}
-	if !strings.Contains(out, `data-fui-copy-announce="Token copied to clipboard"`) {
+	if !strings.Contains(out, `data-hui-copy-sentence="Token copied to clipboard"`) {
 		t.Errorf("expected custom AnnounceText, got: %s", out)
 	}
 }
@@ -61,10 +61,12 @@ func TestCopyButtonIconOnly(t *testing.T) {
 	if !strings.Contains(out, `aria-label="Copy to clipboard"`) {
 		t.Errorf("icon-only must have default aria-label, got: %s", out)
 	}
+	// The ui- substring matches both spellings (fui- contains ui-), so
+	// this negative refuses the label span whichever vocabulary emitted it.
 	if strings.Contains(out, "ui-copy-btn__label") {
 		t.Errorf("icon-only must not render visible label span, got: %s", out)
 	}
-	if !strings.Contains(out, "ui-copy-btn--icon") {
+	if !strings.Contains(out, "fui-copy-btn--icon") {
 		t.Errorf("expected icon modifier class, got: %s", out)
 	}
 }

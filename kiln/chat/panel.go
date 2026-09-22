@@ -354,7 +354,7 @@ func (pe *panelEnv) headerHTML() string {
 		})() +
 		`<a class="kiln-panel-snapshot" data-fui-signal="world_snapshot" data-fui-flash-on-update href="/kiln/world" target="_blank" rel="noopener" title="` + render.Escape(pe.worldSnapshotTooltip()) + `">` + render.Escape(pe.worldSnapshotText()) + `</a>` +
 		`<button type="button" class="kiln-panel-help" title="Keyboard shortcuts (?)" data-fui-open="kiln-help" data-fui-shortcut-click="?" aria-keyshortcuts="?">?</button>` +
-		`<button type="button" class="kiln-panel-copy" title="Copy transcript to clipboard" data-fui-copy-text-from=".kiln-log">⎘</button>` +
+		`<span data-hui-copy="" data-hui-copy-target="kiln-log"><button type="button" class="kiln-panel-copy" title="Copy transcript to clipboard">⎘</button></span>` +
 		`<button type="button" class="kiln-panel-stop" title="Cancel running turn" data-fui-rpc="/kiln/agent/cancel" data-fui-rpc-method="POST">■</button>` +
 		`<button type="button" class="kiln-panel-config" title="Agent settings" data-fui-open="kiln-agent-settings">⚙</button>` +
 		`<button type="button" id="kiln-reset" class="kiln-panel-reset" title="Reset session" data-fui-open="kiln-reset-confirm">↺</button>` +
@@ -630,7 +630,7 @@ func (pe *panelEnv) logHTMLForCurrentLocked(sess *journal.Session) string {
 		}
 	}
 
-	b.WriteString(`<ol class="kiln-log">`)
+	b.WriteString(`<ol class="kiln-log" id="kiln-log">`)
 
 	type item struct {
 		ts      time.Time

@@ -23,18 +23,17 @@ func TestRetryBannerHiddenByDefault(t *testing.T) {
 
 func TestRetryBannerAttrs(t *testing.T) {
 	got := string(NetworkRetryBanner(NetworkRetryBannerConfig{
-		HealthEndpoint:   "/health",
-		FailureThreshold: 5,
-		SSESilenceMs:     20000,
-		Title:            "Offline",
+		HealthEndpoint: "/health",
+		Title:          "Offline",
 	}))
 	for _, want := range []string{
 		`data-fui-comp="ui-network-retry-banner"`,
 		`role="alert"`,
 		`aria-live="assertive"`,
-		`data-fui-network-retry-health="/health"`,
-		`data-fui-network-retry-threshold="5"`,
-		`data-fui-network-retry-sse-silence="20000"`,
+		`href="/health"`,
+		`data-hui-network-retry=""`,
+		`data-hui-system-offline=""`,
+		`data-hui-system=""`,
 		"Offline",
 	} {
 		if !strings.Contains(got, want) {
@@ -46,9 +45,9 @@ func TestRetryBannerAttrs(t *testing.T) {
 func TestRetryBannerDefaults(t *testing.T) {
 	got := string(NetworkRetryBanner(NetworkRetryBannerConfig{HealthEndpoint: "/h"}))
 	for _, want := range []string{
-		`data-fui-network-retry-threshold="3"`, // default
-		"Connection lost",                      // default title
-		"Retry now",                            // default retry label
+		`data-hui-system-offline=""`, // default
+		"Connection lost",            // default title
+		"Retry now",                  // default retry label
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("missing default %q, got: %s", want, got)

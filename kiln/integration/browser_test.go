@@ -3247,7 +3247,7 @@ func TestBrowser_DraftPromptPersistsAcrossReload(t *testing.T) {
 
 // Copy-transcript button copies the chat log textContent to the
 // clipboard and flashes a 'copied' state. Verifies the framework
-// data-fui-copy-text-from primitive on the kiln panel opt-in.
+// data-hui-copy primitive on the kiln panel opt-in.
 func TestBrowser_CopyTranscriptButtonFlashesCopied(t *testing.T) {
 	urlBase, _, tools := startKilnExt(t)
 	ctx := chromedptest.Context(t)

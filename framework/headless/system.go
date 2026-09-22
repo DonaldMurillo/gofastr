@@ -72,6 +72,9 @@ type SystemBannerProps struct {
 	// Shown renders the banner visible. The default is hidden: the
 	// banner ships hidden and something shows it.
 	Shown bool
+	// Icon is decoration beside the title, hidden from assistive
+	// technology (the tone word in words carries the severity).
+	Icon render.HTML
 	// Offline marks this banner as the built-in connection message.
 	// The root carries data-hui-system-offline for the module that
 	// binds it to show when the framework reports the connection lost
@@ -155,7 +158,12 @@ func SystemBanner(p SystemBannerProps, s Classes) render.HTML {
 		b.El("span", PartVisuallyHidden, nil, render.Text(word+": ")),
 		render.Text(p.Title),
 	}
-	kids := []render.HTML{b.El("p", PartTitle, nil, title...)}
+	kids := []render.HTML{}
+	if p.Icon != "" {
+		kids = append(kids, b.El("span", PartIcon,
+			Attrs(map[string]string{"aria-hidden": "true"}), p.Icon))
+	}
+	kids = append(kids, b.El("p", PartTitle, nil, title...))
 	if p.Text != "" {
 		kids = append(kids, b.El("p", PartText, nil, render.Text(p.Text)))
 	}
@@ -175,7 +183,7 @@ func SystemBanner(p SystemBannerProps, s Classes) render.HTML {
 func init() {
 	Register(Spec{
 		Name: "SystemBanner",
-		Anatomy: []Part{PartRoot, PartTitle, PartText, PartActions,
+		Anatomy: []Part{PartRoot, PartIcon, PartTitle, PartText, PartActions,
 			PartDismiss, PartVisuallyHidden},
 		Hooks: []string{"data-hui-system", "data-hui-system-id",
 			"data-hui-system-dismiss", "data-hui-system-offline"},
@@ -193,6 +201,7 @@ func init() {
 					"one action, and the tone said in words as well as drawn in colour",
 				HTML: SystemBanner(SystemBannerProps{
 					ID: "sys-deploy", Shown: true,
+					Icon:   SpecimenGlyph,
 					Title:  "Deploy in progress",
 					Text:   "blog is moving to image 41; the app stays reachable the whole time.",
 					Action: Button(ButtonProps{Label: "View the deploy", Variant: "secondary"}, k.For("Button")),

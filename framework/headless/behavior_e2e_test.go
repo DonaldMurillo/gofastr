@@ -720,7 +720,7 @@ func TestE2E_SystemDismissIsRemembered(t *testing.T) {
 	}
 	var stored string
 	if err := chromedp.Run(ctx, chromedp.Evaluate(
-		`sessionStorage.getItem('gofastr.headless.system.dismissed')`, &stored)); err != nil {
+		`sessionStorage.getItem('hui.system.dismissed')`, &stored)); err != nil {
 		t.Fatalf("reading the session store: %v", err)
 	}
 	if !strings.Contains(stored, "sys-e2e") {
@@ -971,7 +971,7 @@ func TestE2E_OfflineBannerIgnoresTheDismissedSet(t *testing.T) {
 		t.Fatal("the module never loaded")
 	}
 	if err := chromedp.Run(ctx, chromedp.Evaluate(`(() => {
-		sessionStorage.setItem('gofastr.headless.system.dismissed', '["sys-off2"]');
+		sessionStorage.setItem('hui.system.dismissed', '["sys-off2"]');
 		window.__gofastr.sseStatus = {connected: false, lastEventAt: 1, retryCount: 2};
 		// A sentinel the reload wipes. Polling for the module alone
 		// races the navigation: the first poll can answer on the OLD
@@ -1379,7 +1379,7 @@ func TestE2E_WhenOutsideTheFormsPrefersTheLooseControl(t *testing.T) {
 		`<div data-hui-when="plan" data-hui-when-value="pro" id="pro-only"><input name="seats" id="seats"></div>`
 	b := startBehaviorServer(t, page)
 	ctx := behaviorPage(t, b)
-	if !pollTrue(ctx, moduleLoadedExpr) {
+	if !pollTrue(ctx, `!!(window.__gofastr && window.__gofastr.loadedModules && window.__gofastr.loadedModules['headless-when'])`) {
 		t.Fatal("the module never loaded")
 	}
 	// The form's select says pro; the loose radios say basic. The
@@ -1406,7 +1406,7 @@ func TestE2E_WhenFollowsAFormAssociatedControlOutsideTheFormElement(t *testing.T
 		`<select name="mode" id="assoc" form="owner"><option value="auto" selected>Auto</option><option value="custom">Custom</option></select>`
 	b := startBehaviorServer(t, page)
 	ctx := behaviorPage(t, b)
-	if !pollTrue(ctx, moduleLoadedExpr) {
+	if !pollTrue(ctx, `!!(window.__gofastr && window.__gofastr.loadedModules && window.__gofastr.loadedModules['headless-when'])`) {
 		t.Fatal("the module never loaded")
 	}
 	// The decoy says custom and stands first; the form's own control,

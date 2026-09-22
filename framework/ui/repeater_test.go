@@ -18,12 +18,12 @@ func TestRepeaterRendersItems(t *testing.T) {
 		},
 	})
 	for _, want := range []string{
-		"ui-repeater",
+		"fui-repeater",
 		"Tags",
 		"ITEM_A",
 		"ITEM_B",
-		"ui-repeater-item",
-		"ui-repeater-add",
+		"fui-repeater__item",
+		"fui-repeater__add",
 		"Add item",
 		"Remove",
 	} {
@@ -50,8 +50,10 @@ func TestRepeaterMinMaxAttrs(t *testing.T) {
 		MaxItems: 5,
 		Items:    []render.HTML{render.Text("x")},
 	})
-	mustContain(t, h, `data-min-items="1"`)
-	mustContain(t, h, `data-max-items="5"`)
+	// The floor and the ceiling speak through the controls themselves:
+	// a row at the floor keeps a disabled remove, a full list a
+	// disabled add. No min/max attr is carried for no one.
+	mustContain(t, h, `data-hui-repeater-action="remove" disabled=""`)
 }
 
 func TestRepeaterRPCAttrs(t *testing.T) {
@@ -60,8 +62,8 @@ func TestRepeaterRPCAttrs(t *testing.T) {
 		RPCPath: "/api/items/repeater",
 		Items:   []render.HTML{render.Text("x")},
 	})
-	mustContain(t, h, `data-fui-rpc="/api/items/repeater?action=add"`)
-	mustContain(t, h, `data-fui-rpc="/api/items/repeater?action=remove`)
+	mustContain(t, h, `data-fui-rpc="/api/items/repeater?op=add"`)
+	mustContain(t, h, `data-fui-rpc="/api/items/repeater?index=0&amp;op=remove`)
 }
 
 func TestRepeaterHidesRemoveOnMinItems(t *testing.T) {
@@ -70,9 +72,10 @@ func TestRepeaterHidesRemoveOnMinItems(t *testing.T) {
 		MinItems: 1,
 		Template: func(i int) render.HTML { return render.Text("t") },
 	})
-	// The first item's remove button should be hidden (index 0 < MinItems 1)
-	if !strings.Contains(string(h), `hidden`) {
-		t.Fatalf("expected hidden attr on remove button for min-items:\n%s", h)
+	// A row at the floor keeps its remove control, disabled: the row
+	// is real and the control says it cannot go.
+	if !strings.Contains(string(h), `data-hui-repeater-action="remove" disabled=""`) {
+		t.Fatalf("expected disabled remove at the floor:\n%s", h)
 	}
 }
 
@@ -89,17 +92,18 @@ func TestRepeaterRPCPathWithExistingQuery(t *testing.T) {
 		t.Fatalf("double-? in RPC URL:\n%s", s)
 	}
 	// Strings are HTML-escaped so & becomes &amp;
-	mustContain(t, h, `data-fui-rpc="/api/items?tenant=42&amp;action=add"`)
-	mustContain(t, h, `data-fui-rpc="/api/items?tenant=42&amp;action=remove`)
+	mustContain(t, h, `data-fui-rpc="/api/items?op=add&amp;tenant=42"`)
+	mustContain(t, h, `data-fui-rpc="/api/items?index=0&amp;op=remove&amp;tenant=42`)
 }
 
 func TestRepeaterItemsAriaLive(t *testing.T) {
-	// Add/remove must be announced to SR users.
+	// Add/remove must be announced to SR users: the status node is
+	// the live region the module says the operation's outcome through.
 	h := Repeater(RepeaterConfig{
 		Name:  "items",
 		Items: []render.HTML{render.Text("x")},
 	})
-	mustContain(t, h, `aria-live="polite"`)
+	mustContain(t, h, `data-hui-repeater-status="" role="status"`)
 }
 
 func TestRepeaterCustomLabels(t *testing.T) {

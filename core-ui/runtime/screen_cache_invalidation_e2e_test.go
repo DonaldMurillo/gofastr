@@ -42,12 +42,18 @@ func invalidationSrv(t *testing.T) *httptest.Server {
 	// the inline behaviours block the kernel reads. The bytes are the
 	// ones the host serves; only the registration's origin differs.
 	registry.IsolateForTest(t)
-	toggleJS, err := os.ReadFile("../../framework/ui/toggleaction.js")
+	// The retired framework/ui/toggleaction adapter is gone; the
+	// action lifecycle is the headless module's now. The fixture
+	// registers that module exactly as its owner package does, so the
+	// invalidation scenarios run against the real binder.
+	headlessJS, err := os.ReadFile("../../framework/headless/behavior.js")
 	if err != nil {
-		t.Fatalf("reading framework/ui/toggleaction.js: %v", err)
+		t.Fatalf("reading framework/headless/behavior.js: %v", err)
 	}
-	registry.RegisterBehavior("toggleaction", string(toggleJS),
-		registry.Markers("[data-fui-comp=\"ui-toggle-action\"]"), registry.Requires("action"))
+	registry.RegisterBehavior("headless", string(headlessJS),
+		registry.Markers("[data-hui-reveal]", "[data-hui-color]",
+			"[data-hui-form-errors]", "[data-hui-action]", "[data-hui-drop]",
+			"[data-hui-system]", "[data-hui-table]"), registry.Requires("action"))
 	behaviorsBlock := string(BehaviorsJSON())
 
 	var mu sync.Mutex
@@ -146,9 +152,8 @@ func invalidationSrv(t *testing.T) *httptest.Server {
     <a id="redir" href="/redir">redir</a>
     <button id="mut-items" data-fui-rpc="/mut-items" data-fui-rpc-method="POST" data-fui-rpc-signal="mut">a</button>
     <button id="mut-fail" data-fui-rpc="/mut-fail" data-fui-rpc-method="POST" data-fui-rpc-signal="mut">e</button>
-    <button id="tog" data-fui-comp="ui-toggle-action" data-state="idle"
-            data-fui-toggle-endpoint="/mut-items">
-      <span data-fui-toggle-idle>t</span><span data-fui-toggle-committed hidden>c</span>
+    <button id="tog" data-hui-action="" data-hui-action-endpoint="/mut-items" data-state="idle">
+      <span data-hui-action-idle>t</span><span data-hui-action-done hidden>c</span>
     </button>
     <button id="mut-exact" data-fui-rpc="/mut-exact" data-fui-rpc-method="POST" data-fui-rpc-signal="mut">b</button>
     <button id="mut-all" data-fui-rpc="/mut-all" data-fui-rpc-method="POST" data-fui-rpc-signal="mut">c</button>

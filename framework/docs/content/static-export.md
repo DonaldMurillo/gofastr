@@ -43,10 +43,11 @@ go build -o site ./examples/site/
   `about/index.html`, `/products/:slug` → `products/<slug>/index.html`).
 - `/__gofastr/runtime.js`: the runtime core.
 - `/__gofastr/color-scheme.js`: the FOUC-prevention bootstrap loaded
-  synchronously at the top of `<head>`. Without it `themeswitch.js`
-  early-returns and the theme toggle is dead.
+  synchronously at the top of `<head>`. Without it the stored scheme
+  is applied only when `headless-navigation` loads, so a reload
+  flashes.
 - `/__gofastr/runtime/<name>.js`: each split runtime module
-  (`themeswitch`, `copy`, `widgets`, `toasts`, …), one file per module.
+  (`widgets`, `headless-feedback`, `headless-navigation`, …), one file per module.
 - `/__gofastr/app.css` and `/__gofastr/comp/<name>.css`: global and
   per-component stylesheets.
 - Per-route `llm.md` (unless `NoLLMMD` is set).
@@ -190,8 +191,9 @@ only match real markup.
 
 - **Crawling instead of exporting.** A `wget --mirror` of a running server
   is the trap this feature replaces. The cache-bust `?v=<hash>` query
-  lands in the on-disk filename (`themeswitch.js?v=…`), the static host
-  strips the query, looks for bare `themeswitch.js`, and 404s, so zero
+  lands in the on-disk filename (`headless-feedback.js?v=…`), the
+  static host strips the query, looks for bare `headless-feedback.js`,
+  and 404s, so zero
   modules load and all client interactivity silently dies. Always use
   `ExportStatic`.
 - **Forgetting a `StaticPathsProvider` on a dynamic route.** A

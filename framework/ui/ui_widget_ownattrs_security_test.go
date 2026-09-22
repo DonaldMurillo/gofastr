@@ -43,7 +43,7 @@ func TestOwnedAttrsWinOverExtraAttrsFold(t *testing.T) {
 		}, `role`, `role="status"`},
 		{"formrepeater-arialive", func(ex map[string]string) string {
 			return string(ui.FormRepeater(ui.FormRepeaterConfig{Name: "rows", ExtraAttrs: ex}))
-		}, `aria-live`, `aria-live="polite"`},
+		}, `role`, `data-hui-repeater-status="" role="status"`},
 		{"stepwizard-action", func(ex map[string]string) string {
 			return string(ui.StepWizard(ui.StepWizardConfig{Action: "/wiz", ExtraAttrs: ex,
 				Steps: []ui.StepWizardStep{{Heading: "H"}}}))
@@ -57,7 +57,7 @@ func TestOwnedAttrsWinOverExtraAttrsFold(t *testing.T) {
 		}, `value`, `value="7"`},
 		{"taginput-wiring", func(ex map[string]string) string {
 			return string(ui.TagInput(ui.TagInputConfig{Name: "tags", Label: "Tags", ExtraAttrs: ex}))
-		}, `data-fui-tag-input`, `data-fui-tag-input="tags"`},
+		}, `data-hui-tag-input`, `data-hui-tag-input="tags"`},
 		{"panehost-marker", func(ex map[string]string) string {
 			return string(ui.PaneHost(ui.PaneHostConfig{Primary: render.Text("p"), ExtraAttrs: ex}))
 		}, `data-fui-pane-host`, `data-fui-pane-host=""`},

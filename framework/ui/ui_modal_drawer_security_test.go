@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/headless"
 )
 
 // ---------------------------------------------------------------------------
@@ -447,14 +448,22 @@ func TestNotification_MessageXSS(t *testing.T) {
 // passes through. This is a FINDING: hosts must validate DismissHref.
 func TestNotification_ActionLinkXSS(t *testing.T) {
 	t.Parallel()
+	// The toast primitive REFUSES a javascript: href at render (the
+	// finding this test documented is closed by the move): the render
+	// panics before any markup exists, so nothing unsanitized can
+	// reach the page either way.
+	defer func() {
+		if recover() == nil {
+			t.Errorf("a javascript: DismissHref should be refused at render, not rendered")
+		}
+	}()
 	h := string(Notification(NotificationConfig{
 		Title:       "Dismiss me",
 		DismissHref: `javascript:alert(1)`,
+		Island:      headless.Island{Endpoint: "/island/n", Signal: "n"},
 	}))
 	if strings.Contains(h, `javascript:`) {
 		t.Errorf("SECURITY: [notification-action-link-xss] javascript: URI in DismissHref not sanitized by render.Attr")
-	} else {
-		t.Logf("NOTE: [notification-action-link-xss] dismiss href is attr-escaped")
 	}
 }
 
@@ -523,6 +532,7 @@ func TestNotificationBell_ClassInjection(t *testing.T) {
 	trigger, _ := NotificationBell(NotificationBellConfig{
 		Name:  "bell",
 		Label: "Notifications",
+		Href:  "/notifications",
 		Class: `" onclick="alert(1)`,
 	})
 	h := string(trigger)
@@ -537,7 +547,7 @@ func TestNotification_VariantHandling(t *testing.T) {
 	variants := []StatusVariant{StatusSuccess, StatusWarning, StatusDanger, StatusInfo, StatusNeutral}
 	for _, v := range variants {
 		h := string(Notification(NotificationConfig{Title: "Test", Variant: v}))
-		expected := "ui-notification--" + string(v)
+		expected := "fui-notification--" + string(v)
 		if !strings.Contains(h, expected) {
 			t.Errorf("SECURITY: [notification-variant-handling] missing class %q for variant %q", expected, v)
 		}

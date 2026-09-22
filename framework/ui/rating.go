@@ -1,31 +1,29 @@
 package ui
 
 import (
-	"strconv"
+	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/headless"
 )
 
 // ─── RatingInput ────────────────────────────────────────────────────
 //
-// Keyboard-accessible star rating bound to a hidden radio group, so
-// it submits via plain form POST without JavaScript. Hover-preview
-// uses :has() / sibling selectors, no JS needed.
-//
-// Markup: <fieldset role=radiogroup> containing <input type=radio>
-// + <label> pairs in REVERSE order (5..1). The reverse order plus
-// the CSS sibling selector lets the highlight cascade backward from
-// the hovered/checked star to all earlier stars without JS.
+// A star rating over headless.Rating: a fieldset radiogroup of real
+// radios (reverse order in the DOM, flipped back visually by
+// flex-direction: row-reverse), each named "N out of Max", submitted
+// by a plain form POST without JavaScript. The hover-preview cascade
+// and the checked-state highlight are pure CSS sibling selectors.
 
 // RatingShape picks one of the bundled glyphs. For a custom glyph,
 // set RatingConfig.Icon instead. Icon overrides Shape.
 type RatingShape string
 
 const (
-	RatingShapeStar    RatingShape = ""
+	RatingShapeStar    RatingShape = "" // default
 	RatingShapeHeart   RatingShape = "heart"
 	RatingShapeThumb   RatingShape = "thumb"
 	RatingShapeFire    RatingShape = "fire"
@@ -40,7 +38,7 @@ const (
 type RatingSize string
 
 const (
-	RatingSizeDefault RatingSize = ""
+	RatingSizeDefault RatingSize = "" // 24px
 	RatingSizeSmall   RatingSize = "small"
 	RatingSizeLarge   RatingSize = "large"
 )
@@ -51,18 +49,18 @@ const (
 type RatingGap string
 
 const (
-	RatingGapDefault RatingGap = ""      // 2px
-	RatingGapTight   RatingGap = "tight" // 0
-	RatingGapLoose   RatingGap = "loose" // 8px
-	RatingGapWide    RatingGap = "wide"  // 16px
+	RatingGapDefault RatingGap = "" // AAA 44px tap target per star
+	RatingGapTight   RatingGap = "tight"
+	RatingGapLoose   RatingGap = "loose"
+	RatingGapWide    RatingGap = "wide"
 )
 
 // RatingConfig configures a RatingInput.
 type RatingConfig struct {
 	// Name is the form-field name (required).
 	Name string
-	// Label is the accessible label (required, used as fieldset
-	// legend / radiogroup aria-label).
+	// Label is the accessible label (required, used as the
+	// radiogroup's aria-label).
 	Label string
 	// Max is the rating ceiling (1..N). Defaults to 5.
 	Max int
@@ -80,39 +78,38 @@ type RatingConfig struct {
 	// Large=32px. Tap target stays at the WCAG floor regardless.
 	Size RatingSize
 	// Gap picks the visual spacing between stars. Default keeps the
-	// AAA 44×44 tap target per star (glyphs ~22px apart). Tight
-	// shrinks the inline tap zone to glyph+8px so adjacent glyphs
-	// nearly touch (~8px gap), relaxes AAA to AA (24px floor) for
-	// dense inline ratings. Loose / Wide widen the gap without
-	// touching the tap zone. Independent of Size.
+	// AAA 44×44 tap target per star. Tight shrinks the inline tap
+	// zone to glyph+8px, relaxing AAA to AA (24px floor) for dense
+	// inline ratings. Loose / Wide widen the gap. Independent of Size.
 	Gap RatingGap
 	// Disabled disables all radios.
 	Disabled bool
 	ID       string
 	Class    string
-	// ExtraAttrs forwards additional attributes (data-* test hooks,
-	// analytics markers, ARIA overrides) to the rating's root
+	// ExtraAttrs forwards additional attributes to the rating's root
 	// <fieldset>. Keys the component owns are dropped: class and id
 	// (use Class / ID), data-fui-*, role, and aria-label — the
 	// radiogroup contract.
 	ExtraAttrs html.Attrs
 }
 
-// RatingInput renders a star/heart rating bound to a hidden radio
-// group. Submits as Name=<1..Max> on the surrounding form.
+// ratingClasses dresses headless.Rating's parts in this package's own
+// vocabulary — the names the registered ui-rating sheet matches.
+var ratingClasses = headless.Classes{
+	headless.PartRoot:         "fui-rating",
+	headless.PartControl:      "fui-rating__input",
+	headless.PartOptionChoice: "fui-rating__choice",
+	headless.PartIcon:         "fui-rating__star",
+}
+
+// RatingInput renders a star/heart rating bound to a radio group.
+// Submits as Name=<1..Max> on the surrounding form.
 func RatingInput(cfg RatingConfig) render.HTML {
 	if cfg.Name == "" {
 		panic("ui: RatingInput requires Name")
 	}
 	if cfg.Label == "" {
 		panic("ui: RatingInput requires Label")
-	}
-	max := cfg.Max
-	if max == 0 {
-		max = 5
-	}
-	if max < 1 {
-		panic("ui: RatingInput Max must be >= 1")
 	}
 	switch cfg.Shape {
 	case RatingShapeStar, RatingShapeHeart, RatingShapeThumb,
@@ -135,82 +132,51 @@ func RatingInput(cfg RatingConfig) render.HTML {
 			`. Pick one of: "" (default), tight, loose, wide`)
 	}
 
-	cls := "ui-rating"
-	// Apply a shape-specific class so per-shape color overrides (e.g.
-	// heart → danger red, fire → danger, thumb → primary) can theme
-	// without the caller picking colors. Only the bundled Shape is
-	// considered. When Icon is set, the user is on their own.
+	// Per-shape color and per-size/-gap density travel as root
+	// modifier classes; the sheet consumes them through custom
+	// properties, so no rule here needs to know a shape's colour.
+	// The modifiers travel as a part-attr class, which APPENDS to the
+	// class map's own root class — so they carry no base of their own.
+	var mods []string
 	if cfg.Icon == "" && cfg.Shape != RatingShapeStar {
-		cls += " ui-rating--" + string(cfg.Shape)
+		mods = append(mods, "fui-rating--"+string(cfg.Shape))
 	}
 	if cfg.Size != RatingSizeDefault {
-		cls += " ui-rating--" + string(cfg.Size)
+		mods = append(mods, "fui-rating--"+string(cfg.Size))
 	}
 	if cfg.Gap != RatingGapDefault {
-		cls += " ui-rating--gap-" + string(cfg.Gap)
+		mods = append(mods, "fui-rating--gap-"+string(cfg.Gap))
 	}
 	if cfg.Disabled {
-		cls += " is-disabled"
+		mods = append(mods, "is-disabled")
 	}
 	if cfg.Class != "" {
-		cls += " " + cfg.Class
+		mods = append(mods, cfg.Class)
 	}
-	// Sanitized extras first, owned keys on top so they win.
-	fsAttrs := html.SafeExtraAttrs(cfg.ExtraAttrs, "role", "aria-label")
-	if fsAttrs == nil {
-		fsAttrs = html.Attrs{}
-	}
-	fsAttrs["class"] = cls
-	fsAttrs["role"] = "radiogroup"
-	fsAttrs["aria-label"] = cfg.Label
-	if cfg.ID != "" {
-		fsAttrs["id"] = cfg.ID
+	parts := headless.Parts{}
+	if len(mods) > 0 {
+		parts.Attrs = headless.PartAttrs{headless.PartRoot: {"class": strings.Join(mods, " ")}}
 	}
 
-	// Render in REVERSE order so the CSS ~ sibling selector can
-	// cascade highlight from the checked/hovered radio backward.
-	items := make([]render.HTML, 0, max*2)
-	for i := max; i >= 1; i-- {
-		idV := cfg.Name + "-" + strconv.Itoa(i)
-		// Belt-and-suspenders accessible name: <label for=…>
-		// associates the label's aria-label with the input, but some
-		// screen readers fall back to scanning the input's own attrs.
-		// An explicit aria-label here guarantees a name in every AT.
-		inputAttrs := map[string]string{
-			"type":       "radio",
-			"name":       cfg.Name,
-			"id":         idV,
-			"value":      strconv.Itoa(i),
-			"class":      "ui-rating__input",
-			"aria-label": pluralStars(i) + " out of " + strconv.Itoa(max),
-		}
-		if cfg.Value == i {
-			inputAttrs["checked"] = ""
-		}
-		if cfg.Disabled {
-			inputAttrs["disabled"] = ""
-		}
-		items = append(items, render.Tag("input", inputAttrs))
-		labelAttrs := map[string]string{
-			"for":        idV,
-			"class":      "ui-rating__star",
-			"aria-label": pluralStars(i),
-		}
-		glyph := cfg.Icon
-		if glyph == "" {
-			glyph = render.HTML(ratingIcon(cfg.Shape))
-		}
-		items = append(items, render.Tag("label", labelAttrs, glyph))
+	icon := cfg.Icon
+	if icon == "" {
+		// The bundled glyph is this layer's art: the primitive's own
+		// default is a plain star, and every other shape is ours.
+		icon = render.HTML(ratingIcon(cfg.Shape))
 	}
 
-	return ratingStyle.WrapHTML(render.Tag("fieldset", fsAttrs, items...))
-}
-
-func pluralStars(n int) string {
-	if n == 1 {
-		return "1 star"
-	}
-	return strconv.Itoa(n) + " stars"
+	return ratingStyle.WrapHTML(headless.Rating(headless.RatingProps{
+		Name:       cfg.Name,
+		Label:      cfg.Label,
+		Max:        cfg.Max,
+		Value:      cfg.Value,
+		Icon:       icon,
+		Disabled:   cfg.Disabled,
+		ID:         cfg.ID,
+		ExtraAttrs: headless.Safe(cfg.ExtraAttrs, "class", "id", "role", "aria-label"),
+		Parts:      parts,
+		Strings:    StringsFor(nil),
+	}, ratingClasses))
 }
 
 func ratingIcon(shape RatingShape) string {
@@ -249,7 +215,7 @@ func ratingCSS(_ style.Theme) string {
   padding: 0;
   border: 0;
 }
-[data-fui-comp="ui-rating"] .ui-rating__input {
+[data-fui-comp="ui-rating"] .fui-rating__input {
   /* Visually hidden; clicking the label activates the input. */
   position: absolute;
   width: 1px;
@@ -261,7 +227,7 @@ func ratingCSS(_ style.Theme) string {
   overflow: hidden;
   white-space: nowrap;
 }
-[data-fui-comp="ui-rating"] .ui-rating__star {
+[data-fui-comp="ui-rating"] .fui-rating__choice {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -276,12 +242,12 @@ func ratingCSS(_ style.Theme) string {
 }
 /* Glyph (svg) size is driven by a custom property so size variants
    only have to override the property, not duplicate the rule. */
-[data-fui-comp="ui-rating"] .ui-rating__star svg {
+[data-fui-comp="ui-rating"] .fui-rating__star svg {
   width: var(--ui-rating-glyph, 24px);
   height: var(--ui-rating-glyph, 24px);
 }
-[data-fui-comp="ui-rating"].ui-rating--small { --ui-rating-glyph: 16px; }
-[data-fui-comp="ui-rating"].ui-rating--large { --ui-rating-glyph: 32px; }
+[data-fui-comp="ui-rating"].fui-rating--small { --ui-rating-glyph: 16px; }
+[data-fui-comp="ui-rating"].fui-rating--large { --ui-rating-glyph: 32px; }
 
 /* Gap presets — independent of Size.
    Default keeps the WCAG 2.5.5 AAA tap-target floor (44×44 per star).
@@ -289,16 +255,16 @@ func ratingCSS(_ style.Theme) string {
    actually touch — the block axis stays 44px and the inline zone
    stays ≥24px (WCAG 2.5.8 AA), but AAA is intentionally relaxed for
    dense inline ratings. */
-[data-fui-comp="ui-rating"].ui-rating--gap-tight {
+[data-fui-comp="ui-rating"].fui-rating--gap-tight {
   --ui-rating-cell: max(24px, calc(var(--ui-rating-glyph) + 8px));
   gap: 0;
 }
-[data-fui-comp="ui-rating"].ui-rating--gap-loose { gap: var(--spacing-md, 8px); }
-[data-fui-comp="ui-rating"].ui-rating--gap-wide { gap: 20px; }
-[data-fui-comp="ui-rating"] .ui-rating__star:hover {
+[data-fui-comp="ui-rating"].fui-rating--gap-loose { gap: var(--spacing-md, 8px); }
+[data-fui-comp="ui-rating"].fui-rating--gap-wide { gap: 20px; }
+[data-fui-comp="ui-rating"] .fui-rating__choice:hover {
   transform: scale(1.08);
 }
-[data-fui-comp="ui-rating"] .ui-rating__input:focus-visible + .ui-rating__star {
+[data-fui-comp="ui-rating"] .fui-rating__input:focus-visible + .fui-rating__choice {
   outline: 2px solid var(--color-primary, #4F46E5);
   outline-offset: 2px;
   border-radius: var(--radii-sm, 4px);
@@ -308,21 +274,21 @@ func ratingCSS(_ style.Theme) string {
    reverse-order = smaller-value) sibling label lights up. Color is
    driven by --ui-rating-color so per-shape variants and per-instance
    overrides can recolor without writing new highlight rules. */
-[data-fui-comp="ui-rating"] .ui-rating__input:checked ~ .ui-rating__star,
-[data-fui-comp="ui-rating"]:not(.is-disabled) .ui-rating__star:hover,
-[data-fui-comp="ui-rating"]:not(.is-disabled) .ui-rating__star:hover ~ .ui-rating__star {
+[data-fui-comp="ui-rating"] .fui-rating__input:checked ~ .fui-rating__choice,
+[data-fui-comp="ui-rating"]:not(.is-disabled) .fui-rating__choice:hover,
+[data-fui-comp="ui-rating"]:not(.is-disabled) .fui-rating__choice:hover ~ .fui-rating__choice {
   color: var(--ui-rating-color);
 }
 
 /* Per-shape color overrides — heart / fire feel red, thumb feels
    primary, diamond feels info. Star (default) and circle / square
    stay on the warning yellow. */
-.ui-rating--heart   { --ui-rating-color: var(--color-danger, #DC2626); }
-.ui-rating--fire    { --ui-rating-color: var(--color-danger, #DC2626); }
-.ui-rating--thumb   { --ui-rating-color: var(--color-primary, #4F46E5); }
-.ui-rating--diamond { --ui-rating-color: var(--color-info, #3B82F6); }
+.fui-rating--heart   { --ui-rating-color: var(--color-danger, #DC2626); }
+.fui-rating--fire    { --ui-rating-color: var(--color-danger, #DC2626); }
+.fui-rating--thumb   { --ui-rating-color: var(--color-primary, #4F46E5); }
+.fui-rating--diamond { --ui-rating-color: var(--color-info, #3B82F6); }
 
-[data-fui-comp="ui-rating"].is-disabled .ui-rating__star {
+[data-fui-comp="ui-rating"].is-disabled .fui-rating__choice {
   cursor: not-allowed;
   opacity: 0.6;
 }`

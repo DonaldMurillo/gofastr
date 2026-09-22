@@ -762,11 +762,22 @@ func formCSS(_ style.Theme) string {
 }
 
 func notificationCSS(t style.Theme) string {
-	return `[data-fui-comp="ui-notification"] {
+	return `[data-fui-comp="ui-notification"] .fui-visually-hidden {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
+[data-fui-comp="ui-notification"] {
   display: grid;
   grid-template-columns: auto 1fr auto;
   align-items: start;
-  gap: var(--spacing-md, 8px);
+  column-gap: var(--spacing-md, 8px);
+  row-gap: var(--spacing-xs, 2px);
   padding: var(--spacing-md, 8px) var(--spacing-lg, 16px);
   border-radius: var(--radii-md, 8px);
   background: var(--color-surface, #FFFFFF);
@@ -775,7 +786,7 @@ func notificationCSS(t style.Theme) string {
   box-shadow: 0 4px 12px rgba(0,0,0,0.06);
   max-inline-size: 28rem;
 }
-[data-fui-comp="ui-notification"] .ui-notification__icon {
+[data-fui-comp="ui-notification"] .fui-notification__icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -788,18 +799,24 @@ func notificationCSS(t style.Theme) string {
   font-size: var(--text-sm, 0.875rem);
   line-height: 1;
 }
-[data-fui-comp="ui-notification"] .ui-notification__text { display: grid; gap: var(--spacing-xs, 2px); }
-[data-fui-comp="ui-notification"] .ui-notification__title {
+/* The toast's parts are the row's own children — no text wrapper —
+   so the grid places them: icon and dismiss span both rows, title
+   above body. The tone word is read, not shown. */
+[data-fui-comp="ui-notification"] > .fui-notification__icon { grid-column: 1; grid-row: 1 / span 2; }
+[data-fui-comp="ui-notification"] > .fui-notification__title { grid-column: 2; grid-row: 1; }
+[data-fui-comp="ui-notification"] > .fui-notification__body { grid-column: 2; grid-row: 2; }
+[data-fui-comp="ui-notification"] > .fui-notification__dismiss { grid-column: 3; grid-row: 1 / span 2; }
+[data-fui-comp="ui-notification"] .fui-notification__title {
   font-size: var(--text-base, 1rem);
   font-weight: 700;
   color: var(--color-text, #18181B);
 }
-[data-fui-comp="ui-notification"] .ui-notification__body {
+[data-fui-comp="ui-notification"] .fui-notification__body {
   margin: 0;
   font-size: var(--text-sm, 0.875rem);
   color: var(--color-text-muted, #52525B);
 }
-[data-fui-comp="ui-notification"] .ui-notification__dismiss {
+[data-fui-comp="ui-notification"] .fui-notification__dismiss {
   align-self: start;
   display: inline-flex;
   align-items: center;
@@ -814,40 +831,40 @@ func notificationCSS(t style.Theme) string {
   color: var(--color-text-muted, #52525B);
   text-decoration: none;
 }
-[data-fui-comp="ui-notification"] .ui-notification__dismiss:hover {
+[data-fui-comp="ui-notification"] .fui-notification__dismiss:hover {
   background: var(--color-surface-soft, #F4F4F5);
   color: var(--color-text, #18181B);
   text-decoration: none;
 }
-[data-fui-comp="ui-notification"].ui-notification--success { border-inline-start-color: var(--color-success, #16A34A); }
-[data-fui-comp="ui-notification"].ui-notification--success .ui-notification__icon { background: var(--color-success, #16A34A); }
-[data-fui-comp="ui-notification"].ui-notification--warning { border-inline-start-color: var(--color-warning, #CA8A04); }
-[data-fui-comp="ui-notification"].ui-notification--warning .ui-notification__icon { background: var(--color-warning, #CA8A04); }
-[data-fui-comp="ui-notification"].ui-notification--danger  { border-inline-start-color: var(--color-danger, #DC2626); }
-[data-fui-comp="ui-notification"].ui-notification--danger  .ui-notification__icon { background: var(--color-danger, #DC2626); }
-[data-fui-comp="ui-notification"].ui-notification--info    { border-inline-start-color: var(--color-info, #2563EB); }
-[data-fui-comp="ui-notification"].ui-notification--info    .ui-notification__icon { background: var(--color-info, #2563EB); }
-[data-fui-comp="ui-notification"].ui-notification--neutral { border-inline-start-color: var(--color-border-strong, #A1A1AA); }
-[data-fui-comp="ui-notification"].ui-notification--neutral .ui-notification__icon {
+[data-fui-comp="ui-notification"].fui-notification--success { border-inline-start-color: var(--color-success, #16A34A); }
+[data-fui-comp="ui-notification"].fui-notification--success .fui-notification__icon { background: var(--color-success, #16A34A); }
+[data-fui-comp="ui-notification"].fui-notification--warning { border-inline-start-color: var(--color-warning, #CA8A04); }
+[data-fui-comp="ui-notification"].fui-notification--warning .fui-notification__icon { background: var(--color-warning, #CA8A04); }
+[data-fui-comp="ui-notification"].fui-notification--danger  { border-inline-start-color: var(--color-danger, #DC2626); }
+[data-fui-comp="ui-notification"].fui-notification--danger  .fui-notification__icon { background: var(--color-danger, #DC2626); }
+[data-fui-comp="ui-notification"].fui-notification--info    { border-inline-start-color: var(--color-info, #2563EB); }
+[data-fui-comp="ui-notification"].fui-notification--info    .fui-notification__icon { background: var(--color-info, #2563EB); }
+[data-fui-comp="ui-notification"].fui-notification--neutral { border-inline-start-color: var(--color-border-strong, #A1A1AA); }
+[data-fui-comp="ui-notification"].fui-notification--neutral .fui-notification__icon {
   background: var(--color-surface-soft, #F4F4F5);
   color: var(--color-text-muted, #52525B);
 }
-[data-fui-comp="ui-notification"].ui-notification--floating {
+[data-fui-comp="ui-notification"].fui-notification--floating {
   position: fixed;
   z-index: 1000;
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.18);
   animation: ui-notification-slide-in 220ms ease-out;
 }
-[data-fui-comp="ui-notification"].ui-notification--at-top-right    { top: 1rem; right: 1rem; }
-[data-fui-comp="ui-notification"].ui-notification--at-top-left     { top: 1rem; left: 1rem; }
-[data-fui-comp="ui-notification"].ui-notification--at-bottom-right { bottom: 1rem; right: 1rem; }
-[data-fui-comp="ui-notification"].ui-notification--at-bottom-left  { bottom: 1rem; left: 1rem; }
+[data-fui-comp="ui-notification"].fui-notification--at-top-right    { top: 1rem; right: 1rem; }
+[data-fui-comp="ui-notification"].fui-notification--at-top-left     { top: 1rem; left: 1rem; }
+[data-fui-comp="ui-notification"].fui-notification--at-bottom-right { bottom: 1rem; right: 1rem; }
+[data-fui-comp="ui-notification"].fui-notification--at-bottom-left  { bottom: 1rem; left: 1rem; }
 @keyframes ui-notification-slide-in {
   from { opacity: 0; transform: translateY(-12px); }
   to   { opacity: 1; transform: translateY(0); }
 }
-[data-fui-comp="ui-notification"].ui-notification--at-bottom-right,
-[data-fui-comp="ui-notification"].ui-notification--at-bottom-left {
+[data-fui-comp="ui-notification"].fui-notification--at-bottom-right,
+[data-fui-comp="ui-notification"].fui-notification--at-bottom-left {
   animation-name: ui-notification-slide-in-up;
 }
 @keyframes ui-notification-slide-in-up {
@@ -855,8 +872,8 @@ func notificationCSS(t style.Theme) string {
   to   { opacity: 1; transform: translateY(0); }
 }
 @media (prefers-reduced-motion: reduce) {
-  [data-fui-comp="ui-notification"].ui-notification--floating { animation: none; }
-}` + customStatusCSS("ui-notification", "ui-notification", t)
+  [data-fui-comp="ui-notification"].fui-notification--floating { animation: none; }
+}` + customStatusCSS("ui-notification", "fui-notification", t)
 }
 
 // toastStackCSS styles the vertical stack of toast items rendered by
@@ -865,33 +882,43 @@ func notificationCSS(t style.Theme) string {
 // All animation values come from theme tokens so a single theme tweak
 // retunes every toast at once.
 func toastStackCSS(_ style.Theme) string {
-	return `[data-fui-comp="ui-toast-stack"] {
+	return `[data-fui-comp="ui-toast-stack"] .fui-visually-hidden {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
+[data-fui-comp="ui-toast-stack"] {
   display: grid;
   gap: var(--spacing-md, 8px);
   pointer-events: none;
   max-width: min(360px, calc(100vw - 2rem));
 }
-[data-fui-comp="ui-toast-stack"] .ui-toast-stack__item {
+[data-fui-comp="ui-toast-stack"] .fui-toast-stack__item {
   pointer-events: auto;
-  animation: ui-toast-stack-in var(--duration-toast-enter, 220ms)
+  animation: fui-toast-stack-in var(--duration-toast-enter, 220ms)
     var(--easing-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
   will-change: transform, opacity;
 }
-[data-fui-comp="ui-toast-stack"] .ui-toast-stack__item.is-leaving {
-  animation: ui-toast-stack-out var(--duration-toast-exit, 180ms)
+[data-fui-comp="ui-toast-stack"] .fui-toast-stack__item.is-leaving {
+  animation: fui-toast-stack-out var(--duration-toast-exit, 180ms)
     var(--easing-ease-in, cubic-bezier(0.4, 0, 1, 1)) forwards;
 }
-@keyframes ui-toast-stack-in {
+@keyframes fui-toast-stack-in {
   from { opacity: 0; transform: translateY(-8px) scale(0.98); }
   to   { opacity: 1; transform: translateY(0)    scale(1);    }
 }
-@keyframes ui-toast-stack-out {
+@keyframes fui-toast-stack-out {
   from { opacity: 1; transform: translateY(0)   scale(1);    }
   to   { opacity: 0; transform: translateY(-6px) scale(0.98); }
 }
 @media (prefers-reduced-motion: reduce) {
-  [data-fui-comp="ui-toast-stack"] .ui-toast-stack__item,
-  [data-fui-comp="ui-toast-stack"] .ui-toast-stack__item.is-leaving {
+  [data-fui-comp="ui-toast-stack"] .fui-toast-stack__item,
+  [data-fui-comp="ui-toast-stack"] .fui-toast-stack__item.is-leaving {
     animation: none;
   }
 }`
@@ -1209,12 +1236,12 @@ button[data-fui-comp="ui-theme-toggle"]:focus-visible {
    glyph in the current text color, with a subtle hover wash. Reads as a calm
    header affordance rather than a heavy bordered box. The variant class sits on
    the same element as data-fui-comp, so match it as a compound selector. */
-[data-fui-comp="ui-theme-toggle"].ui-theme-toggle--icon {
+[data-fui-comp="ui-theme-toggle"].fui-theme-toggle--icon {
   background: transparent;
   border-color: transparent;
   color: var(--color-text-muted, #52525B);
 }
-[data-fui-comp="ui-theme-toggle"].ui-theme-toggle--icon:hover {
+[data-fui-comp="ui-theme-toggle"].fui-theme-toggle--icon:hover {
   background: color-mix(in oklab, var(--color-text, #18181B) 7%, transparent);
   color: var(--color-text, #18181B);
 }
@@ -1222,25 +1249,30 @@ button[data-fui-comp="ui-theme-toggle"]:focus-visible {
   width: 18px;
   height: 18px;
 }
-[data-fui-comp="ui-theme-toggle"] .ui-theme-toggle__moon { display: none; }
-[data-fui-comp="ui-theme-toggle"] .ui-theme-toggle__sun  { display: block; }
-html[data-color-scheme="light"] [data-fui-comp="ui-theme-toggle"] .ui-theme-toggle__moon { display: block; }
-html[data-color-scheme="light"] [data-fui-comp="ui-theme-toggle"] .ui-theme-toggle__sun  { display: none; }
+[data-fui-comp="ui-theme-toggle"] .fui-theme-toggle__moon { display: none; }
+[data-fui-comp="ui-theme-toggle"] .fui-theme-toggle__sun  { display: block; }
+html[data-color-scheme="light"] [data-fui-comp="ui-theme-toggle"] .fui-theme-toggle__moon { display: block; }
+html[data-color-scheme="light"] [data-fui-comp="ui-theme-toggle"] .fui-theme-toggle__sun  { display: none; }
 
+/* Label variant: the base padding is sized for an icon square; a text
+   label needs room to breathe on both sides of the word. */
+[data-fui-comp="ui-theme-toggle"].fui-theme-toggle--label {
+  padding-inline: var(--spacing-md, 8px);
+}
 /* Label variant: show correct text */
-[data-fui-comp="ui-theme-toggle"] .ui-theme-toggle__dark  { display: none; }
-html[data-color-scheme="dark"] [data-fui-comp="ui-theme-toggle"] .ui-theme-toggle__light { display: none; }
-html[data-color-scheme="dark"] [data-fui-comp="ui-theme-toggle"] .ui-theme-toggle__dark  { display: inline; }
+[data-fui-comp="ui-theme-toggle"] .fui-theme-toggle__dark  { display: none; }
+html[data-color-scheme="dark"] [data-fui-comp="ui-theme-toggle"] .fui-theme-toggle__light { display: none; }
+html[data-color-scheme="dark"] [data-fui-comp="ui-theme-toggle"] .fui-theme-toggle__dark  { display: inline; }
 
 /* Pill variant */
-[data-fui-comp="ui-theme-toggle"] .ui-theme-toggle--pill {
+[data-fui-comp="ui-theme-toggle"] .fui-theme-toggle--pill {
   display: inline-flex;
   border: 1px solid var(--color-border, #E4E4E7);
   border-radius: 999px;
   overflow: hidden;
   background: var(--color-surface, #fff);
 }
-[data-fui-comp="ui-theme-toggle"] .ui-theme-toggle__opt {
+[data-fui-comp="ui-theme-toggle"] .fui-theme-toggle__option {
   border: none;
   border-radius: 999px;
   padding: var(--spacing-xs, 2px) var(--spacing-sm, 4px);
@@ -1250,7 +1282,7 @@ html[data-color-scheme="dark"] [data-fui-comp="ui-theme-toggle"] .ui-theme-toggl
   min-block-size: 36px;
   background: transparent;
 }
-[data-fui-comp="ui-theme-toggle"] .ui-theme-toggle__opt[aria-pressed="true"] {
+[data-fui-comp="ui-theme-toggle"] .fui-theme-toggle__option[aria-checked="true"] {
   background: var(--color-primary, #4F46E5);
   color: var(--color-primary-foreground, #fff);
 }`
@@ -1278,8 +1310,8 @@ func backToTopCSS(_ style.Theme) string {
   pointer-events: none;
 }
 
-/* ── Visible state (toggled by runtime) ── */
-[data-fui-comp="ui-back-to-top"][data-fui-btt-visible] {
+/* ── Visible state (written by headless-navigation) ── */
+[data-fui-comp="ui-back-to-top"][data-hui-back-to-top-visible] {
   opacity: 1;
   visibility: visible;
   transform: translateY(0);
@@ -1308,127 +1340,130 @@ func backToTopCSS(_ style.Theme) string {
 }
 
 /* ── Positions (defaults to bottom-right) ── */
-.ui-back-to-top--br {
+.fui-back-to-top--br {
   right: var(--spacing-lg, 16px);
   bottom: var(--spacing-lg, 16px);
 }
-.ui-back-to-top--bl {
+.fui-back-to-top--bl {
   left: var(--spacing-lg, 16px);
   bottom: var(--spacing-lg, 16px);
 }
-.ui-back-to-top--tr {
+.fui-back-to-top--tr {
   right: var(--spacing-lg, 16px);
   top: var(--spacing-lg, 16px);
 }
-.ui-back-to-top--tl {
+.fui-back-to-top--tl {
   left: var(--spacing-lg, 16px);
   top: var(--spacing-lg, 16px);
 }
 
 /* ── Sizes ── */
-.ui-back-to-top--sm {
+.fui-back-to-top--sm {
   width: 2rem;
   height: 2rem;
 }
-.ui-back-to-top--sm svg {
+.fui-back-to-top--sm svg {
   width: 14px;
   height: 14px;
 }
-.ui-back-to-top--lg {
+.fui-back-to-top--lg {
   width: 3.5rem;
   height: 3.5rem;
 }
-.ui-back-to-top--lg svg {
+.fui-back-to-top--lg svg {
   width: 24px;
   height: 24px;
 }
 
 /* ── Variants ── */
-.ui-back-to-top--secondary {
+.fui-back-to-top--secondary {
   background: var(--color-surface, #fff);
   color: var(--color-text, #1a1a1a);
   border: 1px solid var(--color-border, #e5e7eb);
 }
-.ui-back-to-top--secondary:hover {
+.fui-back-to-top--secondary:hover {
   background: var(--color-surface-hover, #f3f4f6);
   border-color: var(--color-border-hover, #d1d5db);
 }
-.ui-back-to-top--ghost {
+.fui-back-to-top--ghost {
   background: transparent;
   color: var(--color-text-muted, #6b7280);
   box-shadow: none;
 }
-.ui-back-to-top--ghost:hover {
+.fui-back-to-top--ghost:hover {
   background: var(--color-surface-hover, #f3f4f6);
   color: var(--color-text, #1a1a1a);
 }
 
 /* ── Offset presets ── */
-.ui-back-to-top--offset-none {
+.fui-back-to-top--offset-none {
   --btt-offset: 0;
 }
-.ui-back-to-top--offset-sm {
+.fui-back-to-top--offset-sm {
   --btt-offset: var(--spacing-sm, 4px);
 }
 /* md is the default (spacing-lg) — no override class needed */
-.ui-back-to-top--offset-lg {
+.fui-back-to-top--offset-lg {
   --btt-offset: var(--spacing-xl, 24px);
 }
-.ui-back-to-top--offset-xl {
+.fui-back-to-top--offset-xl {
   --btt-offset: var(--spacing-2xl, 32px);
 }
 
 /* When an offset custom property is set, override position coords. */
-.ui-back-to-top--offset-none,
-.ui-back-to-top--offset-sm,
-.ui-back-to-top--offset-lg,
-.ui-back-to-top--offset-xl {
+.fui-back-to-top--offset-none,
+.fui-back-to-top--offset-sm,
+.fui-back-to-top--offset-lg,
+.fui-back-to-top--offset-xl {
   --btt-right: var(--btt-offset);
   --btt-left: var(--btt-offset);
   --btt-bottom: var(--btt-offset);
   --btt-top: var(--btt-offset);
 }
-.ui-back-to-top--offset-none.ui-back-to-top--br,
-.ui-back-to-top--offset-sm.ui-back-to-top--br,
-.ui-back-to-top--offset-lg.ui-back-to-top--br,
-.ui-back-to-top--offset-xl.ui-back-to-top--br { right: var(--btt-right, var(--spacing-lg, 16px)); bottom: var(--btt-bottom, var(--spacing-lg, 16px)); }
-.ui-back-to-top--offset-none.ui-back-to-top--bl,
-.ui-back-to-top--offset-sm.ui-back-to-top--bl,
-.ui-back-to-top--offset-lg.ui-back-to-top--bl,
-.ui-back-to-top--offset-xl.ui-back-to-top--bl { left: var(--btt-left, var(--spacing-lg, 16px)); bottom: var(--btt-bottom, var(--spacing-lg, 16px)); }
-.ui-back-to-top--offset-none.ui-back-to-top--tr,
-.ui-back-to-top--offset-sm.ui-back-to-top--tr,
-.ui-back-to-top--offset-lg.ui-back-to-top--tr,
-.ui-back-to-top--offset-xl.ui-back-to-top--tr { right: var(--btt-right, var(--spacing-lg, 16px)); top: var(--btt-top, var(--spacing-lg, 16px)); }
-.ui-back-to-top--offset-none.ui-back-to-top--tl,
-.ui-back-to-top--offset-sm.ui-back-to-top--tl,
-.ui-back-to-top--offset-lg.ui-back-to-top--tl,
-.ui-back-to-top--offset-xl.ui-back-to-top--tl { left: var(--btt-left, var(--spacing-lg, 16px)); top: var(--btt-top, var(--spacing-lg, 16px)); }
+.fui-back-to-top--offset-none.fui-back-to-top--br,
+.fui-back-to-top--offset-sm.fui-back-to-top--br,
+.fui-back-to-top--offset-lg.fui-back-to-top--br,
+.fui-back-to-top--offset-xl.fui-back-to-top--br { right: var(--btt-right, var(--spacing-lg, 16px)); bottom: var(--btt-bottom, var(--spacing-lg, 16px)); }
+.fui-back-to-top--offset-none.fui-back-to-top--bl,
+.fui-back-to-top--offset-sm.fui-back-to-top--bl,
+.fui-back-to-top--offset-lg.fui-back-to-top--bl,
+.fui-back-to-top--offset-xl.fui-back-to-top--bl { left: var(--btt-left, var(--spacing-lg, 16px)); bottom: var(--btt-bottom, var(--spacing-lg, 16px)); }
+.fui-back-to-top--offset-none.fui-back-to-top--tr,
+.fui-back-to-top--offset-sm.fui-back-to-top--tr,
+.fui-back-to-top--offset-lg.fui-back-to-top--tr,
+.fui-back-to-top--offset-xl.fui-back-to-top--tr { right: var(--btt-right, var(--spacing-lg, 16px)); top: var(--btt-top, var(--spacing-lg, 16px)); }
+.fui-back-to-top--offset-none.fui-back-to-top--tl,
+.fui-back-to-top--offset-sm.fui-back-to-top--tl,
+.fui-back-to-top--offset-lg.fui-back-to-top--tl,
+.fui-back-to-top--offset-xl.fui-back-to-top--tl { left: var(--btt-left, var(--spacing-lg, 16px)); top: var(--btt-top, var(--spacing-lg, 16px)); }
 
 /* ── Dark mode adjustments ── */
-[data-color-scheme="dark"] .ui-back-to-top--secondary {
+[data-color-scheme="dark"] .fui-back-to-top--secondary {
   background: var(--color-surface, #1e1e2e);
   color: var(--color-text, #e5e7eb);
   border-color: var(--color-border, #374151);
 }
-[data-color-scheme="dark"] .ui-back-to-top--secondary:hover {
+[data-color-scheme="dark"] .fui-back-to-top--secondary:hover {
   background: var(--color-surface-hover, #2d2d3f);
 }
-[data-color-scheme="dark"] .ui-back-to-top--ghost {
+[data-color-scheme="dark"] .fui-back-to-top--ghost {
   color: var(--color-text-muted, #9ca3af);
 }
-[data-color-scheme="dark"] .ui-back-to-top--ghost:hover {
+[data-color-scheme="dark"] .fui-back-to-top--ghost:hover {
   background: var(--color-surface-hover, #2d2d3f);
   color: var(--color-text, #e5e7eb);
 }
 
-/* Sentinel element for IntersectionObserver — positioned off-layout. */
-.ui-btt-sentinel {
+/* Scoped copy of the visually-hidden recipe: the link's accessible
+   name must not be seen on a page that loads only this sheet. */
+[data-fui-comp="ui-back-to-top"] .fui-visually-hidden {
   position: absolute;
-  top: 0;
-  left: 0;
-  width: 1px;
-  pointer-events: none;
-  visibility: hidden;
+  inline-size: 1px;
+  block-size: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
 }`
 }

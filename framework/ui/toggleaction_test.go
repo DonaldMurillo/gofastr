@@ -13,14 +13,14 @@ func TestToggleActionIdleMarkup(t *testing.T) {
 	}))
 	for _, want := range []string{
 		`data-fui-comp="ui-toggle-action"`,
-		`data-fui-toggle-endpoint="/api/follow"`,
-		`data-fui-toggle-method="POST"`,
+		`data-hui-action-endpoint="/api/follow"`,
+		`data-hui-action=""`,
 		`data-state="idle"`,
 		`aria-pressed="false"`,
 		`type="button"`,
-		`class="fui-button fui-button--primary ui-toggle-action"`,
-		`data-fui-toggle-idle`,
-		`data-fui-toggle-committed`,
+		`ui-toggle-action`,
+		`data-hui-action-idle`,
+		`data-hui-action-done`,
 		`>Follow<`,
 	} {
 		if !strings.Contains(got, want) {
@@ -29,16 +29,16 @@ func TestToggleActionIdleMarkup(t *testing.T) {
 	}
 	// The committed span ships hidden when SSR state is idle; the idle
 	// span must NOT be hidden.
-	if !strings.Contains(got, `data-fui-toggle-committed"`) &&
-		!strings.Contains(got, `data-fui-toggle-committed=`) {
+	if !strings.Contains(got, `data-hui-action-done"`) &&
+		!strings.Contains(got, `data-hui-action-done=`) {
 		t.Fatalf("committed span marker missing:\n%s", got)
 	}
-	committedSpan := got[strings.Index(got, "data-fui-toggle-committed"):]
+	committedSpan := got[strings.Index(got, "data-hui-action-done"):]
 	committedSpan = committedSpan[:strings.Index(committedSpan, ">")]
 	if !strings.Contains(committedSpan, "hidden") {
 		t.Errorf("committed span not hidden in idle state:\n%s", got)
 	}
-	idleSpan := got[strings.Index(got, "data-fui-toggle-idle"):]
+	idleSpan := got[strings.Index(got, "data-hui-action-idle"):]
 	idleSpan = idleSpan[:strings.Index(idleSpan, ">")]
 	if strings.Contains(idleSpan, "hidden") {
 		t.Errorf("idle span hidden in idle state:\n%s", got)
@@ -58,12 +58,12 @@ func TestToggleActionCommittedSSR(t *testing.T) {
 	if !strings.Contains(got, `aria-pressed="true"`) {
 		t.Errorf("missing aria-pressed=true:\n%s", got)
 	}
-	idleSpan := got[strings.Index(got, "data-fui-toggle-idle"):]
+	idleSpan := got[strings.Index(got, "data-hui-action-idle"):]
 	idleSpan = idleSpan[:strings.Index(idleSpan, ">")]
 	if !strings.Contains(idleSpan, "hidden") {
 		t.Errorf("idle span not hidden in committed state:\n%s", got)
 	}
-	committedSpan := got[strings.Index(got, "data-fui-toggle-committed"):]
+	committedSpan := got[strings.Index(got, "data-hui-action-done"):]
 	committedSpan = committedSpan[:strings.Index(committedSpan, ">")]
 	if strings.Contains(committedSpan, "hidden") {
 		t.Errorf("committed span hidden in committed state:\n%s", got)
@@ -81,10 +81,10 @@ func TestToggleActionGroupUntoggle(t *testing.T) {
 		UntoggleEndpoint: "/api/plan/clear",
 	}))
 	for _, want := range []string{
-		`data-fui-toggle-group="plan"`,
-		`data-fui-toggle-allow-untoggle="true"`,
-		`data-fui-toggle-untoggle-endpoint="/api/plan/clear"`,
-		`data-fui-toggle-method="PUT"`,
+		`data-hui-action-group="plan"`,
+		`data-hui-action-untoggle="/api/plan/clear"`,
+		`data-hui-action-untoggle="/api/plan/clear"`,
+		`data-hui-action-method="PUT"`,
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("missing %q in:\n%s", want, got)
@@ -101,8 +101,8 @@ func TestToggleActionUntoggleEndpointImplies(t *testing.T) {
 		CommittedLabel:   "Following",
 		UntoggleEndpoint: "/api/unfollow",
 	}))
-	if !strings.Contains(got, `data-fui-toggle-allow-untoggle="true"`) {
-		t.Errorf("UntoggleEndpoint should imply allow-untoggle:\n%s", got)
+	if !strings.Contains(got, `data-hui-action-untoggle="/api/unfollow"`) {
+		t.Errorf("UntoggleEndpoint should reach the untoggle hook:\n%s", got)
 	}
 }
 

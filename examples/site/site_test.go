@@ -338,11 +338,12 @@ func TestWizardsCategoryHoldsOnlyWizards(t *testing.T) {
 func TestCodeBlockHasFunctionalCopyButton(t *testing.T) {
 	// The chrome + copy button now come from the framework's ui.CodeBlock; the
 	// behaviour is unchanged, a real <button> that targets this block's own
-	// <pre> via data-fui-copy-text-from.
+	// <pre> by id through data-hui-copy-target (the feedback module's
+	// [data-hui-copy] reader resolves it with getElementById).
 	out := string(codeBlock("x.go", []render.HTML{ln(kw("package"), render.Text(" main"))}))
-	m := regexp.MustCompile(`data-fui-copy-text-from="#(ui-code-block-\d+)"`).FindStringSubmatch(out)
+	m := regexp.MustCompile(`data-hui-copy-target="(ui-code-block-\d+)"`).FindStringSubmatch(out)
 	if m == nil {
-		t.Fatalf("code block copy button should target its pre via data-fui-copy-text-from; got %q", firstN(out, 300))
+		t.Fatalf("code block copy button should target its pre via data-hui-copy-target; got %q", firstN(out, 300))
 	}
 	if !strings.Contains(out, `id="`+m[1]+`"`) {
 		t.Error("code block pre should carry the id the copy button targets")

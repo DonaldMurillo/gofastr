@@ -2,19 +2,20 @@ package ui
 
 import (
 	"context"
-	"maps"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/headless"
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
-// bannerDismissCookiePrefix matches the runtime's STORAGE_PREFIX in
-// src/banner.js: the dismissal is mirrored into a cookie under the same
-// key so the server can skip rendering a dismissed banner.
+// bannerDismissCookiePrefix is the key the headless module's
+// rememberDismissal writes (behavior.js): the dismissal is mirrored
+// into a cookie under this key — the id component-encoded — so the
+// server can skip rendering a dismissed banner.
 const bannerDismissCookiePrefix = "gofastr.banner-dismiss."
 
 // ─── Banner / InlineAlert ───────────────────────────────────────────
@@ -70,16 +71,20 @@ type BannerConfig struct {
 
 // Banner renders a persistent page-status strip.
 //
-// SR semantics: BannerWarn/Danger emit role="alert" so an injected
-// banner is announced; BannerInfo/Success use role="status" so the
-// announcement is polite (doesn't interrupt screen-reader reading).
+// SR semantics: every tone is a polite status — role="status" — so a
+// banner never interrupts; the offline banner (NetworkRetryBanner) is
+// the one that alerts, because everything the reader does next fails
+// until the connection is back.
 func Banner(cfg BannerConfig) render.HTML {
 	if cfg.Title == "" {
 		panic("ui: Banner requires Title")
 	}
+	tone := string(cfg.Variant)
+	if cfg.Variant == BannerWarn {
+		tone = "warning"
+	}
 	switch cfg.Variant {
 	case BannerInfo, BannerSuccess, BannerWarn, BannerDanger:
-		// recognized
 	default:
 		panic("ui: Banner unknown Variant " + string(cfg.Variant) +
 			`. Pick one of: "" (info), success, warn, danger`)
@@ -98,65 +103,56 @@ func Banner(cfg BannerConfig) render.HTML {
 		}
 	}
 
-	cls := "ui-banner"
-	if cfg.Variant != BannerInfo {
-		cls += " ui-banner--" + string(cfg.Variant)
-	}
+	// A banner is page-wide, so the SystemBanner primitive owns it:
+	// the message is shown, the dismiss is remembered by the headless
+	// module for the session, and the posture is polite whatever the
+	// tone (the offline banner is the one that alerts).
+	dismiss := cfg.Dismissible
+	parts := headless.Parts{}
 	if cfg.Class != "" {
-		cls += " " + cfg.Class
+		parts.Attrs = headless.PartAttrs{headless.PartRoot: {"class": cfg.Class}}
 	}
+	return bannerStyle.WrapHTML(headless.SystemBanner(headless.SystemBannerProps{
+		ID:     orDefaultStr(orDefaultStr(cfg.DismissID, cfg.ID), autoID("banner")),
+		Icon:   render.HTML(bannerIcon(cfg.Variant)),
+		Tone:   tone,
+		Title:  cfg.Title,
+		Text:   cfg.Body,
+		Action: cfg.Action,
+		// SystemBanner's own roles already carry the severity: the
+		// offline/urgent banner alerts, the rest are polite status.
+		Dismiss:      &dismiss,
+		DismissLabel: i18nui.T(ctx, i18nui.KeyBannerDismiss),
+		Shown:        true,
+		ExtraAttrs:   headless.Safe(cfg.ExtraAttrs, "role", "aria-live"),
+		Parts:        parts,
+		Strings:      StringsFor(ctx),
+	}, bannerClasses))
+}
 
-	attrs := html.Attrs{"class": cls}
-	if cfg.ID != "" {
-		attrs["id"] = cfg.ID
+func orDefaultStr(s, fallback string) string {
+	if s == "" {
+		return fallback
 	}
-	// role + aria-live tailored to severity. Danger/Warn = alert
-	// (assertive, interrupts SR reading); Info/Success = status
-	// (polite, queued).
-	switch cfg.Variant {
-	case BannerWarn, BannerDanger:
-		attrs["role"] = "alert"
-	default:
-		attrs["role"] = "status"
-		attrs["aria-live"] = "polite"
-	}
-	maps.Copy(attrs, html.SafeExtraAttrs(cfg.ExtraAttrs, "role", "aria-live"))
+	return s
+}
 
-	children := []render.HTML{
-		render.Tag("div", map[string]string{"class": "ui-banner__icon", "aria-hidden": "true"},
-			render.HTML(bannerIcon(cfg.Variant))),
-	}
+// bannerClasses dresses headless.SystemBanner's parts in this
+// package's own vocabulary — the names the registered ui-banner sheet
+// matches.
+var bannerClasses = headless.Classes{
+	headless.PartRoot:           "fui-banner",
+	headless.PartVisuallyHidden: "fui-visually-hidden",
+	headless.PartIcon:           "fui-banner__icon",
+	headless.PartTitle:          "fui-banner__title",
+	headless.PartText:           "fui-banner__body",
+	headless.PartActions:        "fui-banner__action",
+	headless.PartDismiss:        "fui-banner__dismiss",
 
-	bodyChildren := []render.HTML{
-		html.Paragraph(html.TextConfig{Class: "ui-banner__title"}, render.Text(cfg.Title)),
-	}
-	if cfg.Body != "" {
-		bodyChildren = append(bodyChildren,
-			html.Paragraph(html.TextConfig{Class: "ui-banner__body"}, render.Text(cfg.Body)))
-	}
-	children = append(children,
-		render.Tag("div", map[string]string{"class": "ui-banner__content"}, bodyChildren...))
-
-	if cfg.Action != "" {
-		children = append(children,
-			render.Tag("div", map[string]string{"class": "ui-banner__action"}, cfg.Action))
-	}
-
-	if cfg.Dismissible {
-		dismissAttrs := map[string]string{
-			"type":                    "button",
-			"class":                   "ui-banner__dismiss",
-			"aria-label":              i18nui.T(ctx, i18nui.KeyBannerDismiss),
-			"data-fui-banner-dismiss": "true",
-		}
-		if cfg.DismissID != "" {
-			dismissAttrs["data-fui-banner-dismiss-id"] = cfg.DismissID
-		}
-		children = append(children,
-			render.Tag("button", dismissAttrs, render.HTML(bannerCloseIcon())))
-	}
-
-	return bannerStyle.WrapHTML(render.Tag("div", attrs, children...))
+	"root--info":    "fui-banner--info",
+	"root--success": "fui-banner--success",
+	"root--warning": "fui-banner--warn",
+	"root--danger":  "fui-banner--danger",
 }
 
 var bannerStyle = registry.RegisterStyle("ui-banner", bannerCSS)
@@ -174,51 +170,64 @@ func bannerIcon(v BannerVariant) string {
 	}
 }
 
-func bannerCloseIcon() string {
-	return `<svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M11 3L3 11M3 3l8 8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>`
-}
-
 func bannerCSS(_ style.Theme) string {
 	return `[data-fui-comp="ui-banner"] {
-  display: flex;
-  gap: var(--spacing-md, 8px);
-  align-items: flex-start;
+  display: grid;
+  grid-template-columns: auto 1fr auto auto;
+  column-gap: var(--spacing-md, 8px);
+  row-gap: var(--spacing-xs, 2px);
+  align-items: start;
   padding: var(--spacing-md, 8px) var(--spacing-lg, 16px);
   border: 1px solid var(--ui-banner-accent, var(--color-info, #3B82F6));
   border-radius: var(--radii-md, 8px);
   background: var(--color-surface, #FFFFFF);
   color: var(--color-text, #18181B);
 }
-[data-fui-comp="ui-banner"] .ui-banner__icon {
-  flex: 0 0 auto;
+[data-fui-comp="ui-banner"] .fui-visually-hidden {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
+/* SystemBanner's parts are the banner's own children: the icon and
+   the controls span both rows, the title sits over the body. */
+[data-fui-comp="ui-banner"] .fui-banner__icon {
+  grid-column: 1;
+  grid-row: 1 / span 2;
   display: inline-flex;
   color: var(--color-info, #3B82F6);
   margin-top: var(--spacing-xs, 2px);
 }
-[data-fui-comp="ui-banner"] .ui-banner__content {
-  flex: 1 1 auto;
+[data-fui-comp="ui-banner"] .fui-banner__title {
+  grid-column: 2;
+  grid-row: 1;
   min-width: 0;
-  display: grid;
-  gap: var(--spacing-xs, 2px);
-}
-[data-fui-comp="ui-banner"] .ui-banner__title {
   margin: 0;
   font-weight: 600;
   font-size: var(--text-base, 1rem);
 }
-[data-fui-comp="ui-banner"] .ui-banner__body {
+[data-fui-comp="ui-banner"] .fui-banner__body {
+  grid-column: 2;
+  grid-row: 2;
+  min-width: 0;
   margin: 0;
   color: var(--color-text-muted, #52525B);
   font-size: var(--text-sm, 0.875rem);
   line-height: 1.45;
 }
-[data-fui-comp="ui-banner"] .ui-banner__action {
-  flex: 0 0 auto;
+[data-fui-comp="ui-banner"] .fui-banner__action {
+  grid-column: 3;
+  grid-row: 1 / span 2;
   display: inline-flex;
   align-items: center;
 }
-[data-fui-comp="ui-banner"] .ui-banner__dismiss {
-  flex: 0 0 auto;
+[data-fui-comp="ui-banner"] .fui-banner__dismiss {
+  grid-column: 4;
+  grid-row: 1 / span 2;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -229,25 +238,27 @@ func bannerCSS(_ style.Theme) string {
   border: 0;
   color: var(--color-text-muted, #52525B);
   cursor: pointer;
+  font-size: var(--text-lg, 1.125rem);
+  line-height: 1;
   border-radius: var(--radii-sm, 4px);
   margin: -8px -8px -8px 0;
 }
-[data-fui-comp="ui-banner"] .ui-banner__dismiss:hover {
+[data-fui-comp="ui-banner"] .fui-banner__dismiss:hover {
   background: var(--color-surface-soft, #F4F4F5);
   color: var(--color-text, #18181B);
 }
-[data-fui-comp="ui-banner"] .ui-banner__dismiss:focus-visible {
+[data-fui-comp="ui-banner"] .fui-banner__dismiss:focus-visible {
   outline: 2px solid var(--color-primary, #4F46E5);
   outline-offset: 2px;
 }
 
 /* Variants — use the full outline + icon, avoiding a decorative side stripe. */
-.ui-banner--success { --ui-banner-accent: var(--color-success, #16A34A); }
-.ui-banner--success .ui-banner__icon { color: var(--color-success, #16A34A); }
-.ui-banner--warn { --ui-banner-accent: var(--color-warning, #D97706); }
-.ui-banner--warn .ui-banner__icon { color: var(--color-warning, #D97706); }
-.ui-banner--danger { --ui-banner-accent: var(--color-danger, #DC2626); }
-.ui-banner--danger .ui-banner__icon { color: var(--color-danger, #DC2626); }
+.fui-banner--success { --ui-banner-accent: var(--color-success, #16A34A); }
+.fui-banner--success .fui-banner__icon { color: var(--color-success, #16A34A); }
+.fui-banner--warn { --ui-banner-accent: var(--color-warning, #D97706); }
+.fui-banner--warn .fui-banner__icon { color: var(--color-warning, #D97706); }
+.fui-banner--danger { --ui-banner-accent: var(--color-danger, #DC2626); }
+.fui-banner--danger .fui-banner__icon { color: var(--color-danger, #DC2626); }
 
 /* Hidden state for runtime dismiss. */
 [data-fui-comp="ui-banner"][hidden] { display: none; }`

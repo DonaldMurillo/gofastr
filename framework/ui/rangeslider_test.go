@@ -45,14 +45,18 @@ func TestRangeSliderEmitsTwoInputs(t *testing.T) {
 	}
 }
 
-func TestRangeSliderSwapsCrossedValues(t *testing.T) {
+// Posted data is ordered, not refused: a crossed pair renders as the
+// ordered low/high pair, the same repair the module makes of a drag.
+func TestRangeSliderOrdersCrossedPostedValues(t *testing.T) {
 	h := string(RangeSlider(RangeSliderConfig{
 		Name: "x", Label: "x", Min: 0, Max: 100,
-		ValueLow: 80, ValueHigh: 20, // crossed, should auto-swap
+		ValueLow: 80, ValueHigh: 20,
 	}))
-	// After swap: lo=20, hi=80.
-	if !strings.Contains(h, `value="20"`) || !strings.Contains(h, `value="80"`) {
-		t.Errorf("crossed Low/High should swap into ordered pair:\n%s", h)
+	if !strings.Contains(h, `name="x-min" step="1" type="range" value="20"`) {
+		t.Errorf("crossed Low/High should order to the smaller value first:\n%s", h)
+	}
+	if !strings.Contains(h, `name="x-max" step="1" type="range" value="80"`) {
+		t.Errorf("crossed Low/High should order to the larger value second:\n%s", h)
 	}
 }
 
@@ -60,34 +64,37 @@ func TestRangeSliderShowValueAddsMirror(t *testing.T) {
 	on := string(RangeSlider(RangeSliderConfig{
 		Name: "x", Label: "x", ShowValue: true,
 	}))
-	if !strings.Contains(on, "data-fui-range-slider-value") {
-		t.Errorf("ShowValue should emit data-fui-range-slider-value:\n%s", on)
+	if !strings.Contains(on, `data-hui-range-slider-output="%s to %s"`) {
+		t.Errorf("ShowValue should emit the output hook carrying the sentence's shape:\n%s", on)
 	}
-	if !strings.Contains(on, " – ") {
-		t.Errorf("ShowValue mirror should render the initial lo – hi text:\n%s", on)
+	if !strings.Contains(on, ">0 to 100</output>") {
+		t.Errorf("ShowValue mirror should render the initial pair sentence:\n%s", on)
 	}
 	off := string(RangeSlider(RangeSliderConfig{Name: "x", Label: "x"}))
-	if strings.Contains(off, "data-fui-range-slider-value") {
-		t.Errorf("default ShowValue=false should NOT emit mirror:\n%s", off)
+	if strings.Contains(off, "data-hui-range-slider-output") {
+		t.Errorf("default ShowValue=false should NOT emit the output:\n%s", off)
 	}
 }
 
 func TestRangeSliderModuleMarkersPaired(t *testing.T) {
 	h := string(RangeSlider(RangeSliderConfig{Name: "x", Label: "x", ID: "rs1"}))
-	if c := strings.Count(h, `data-fui-range-slider="rs1"`); c != 2 {
-		t.Errorf("both inputs should share data-fui-range-slider=<id>, got %d:\n%s", c, h)
+	if !strings.Contains(h, `data-hui-range-slider-low=""`) || !strings.Contains(h, `data-hui-range-slider-high=""`) {
+		t.Errorf("each thumb should carry its own hook:\n%s", h)
+	}
+	if !strings.Contains(h, `data-hui-range-slider=""`) {
+		t.Errorf("the pair should carry its root hook the module scopes by:\n%s", h)
 	}
 }
 
 // ExtraAttrs land on the root element but never override what the
 // component owns (#262): role and aria-label keep framework values, and
-// a spoofed data-fui-range-slider wiring key is dropped.
+// a spoofed range hook is dropped by the data-hui refusal.
 func TestRangeSliderExtraAttrsCannotOverrideOwned(t *testing.T) {
 	h := string(RangeSlider(RangeSliderConfig{
 		Name: "price", Label: "Price", Class: "mine",
 		ExtraAttrs: map[string]string{
 			"data-test": "hook", "role": "evil", "aria-label": "evil", "Class": "evil",
-			"data-fui-range-slider": "spoof",
+			"data-hui-range-slider": "spoof",
 		},
 	}))
 	root := h[:strings.Index(h, ">")+1]
@@ -97,7 +104,7 @@ func TestRangeSliderExtraAttrsCannotOverrideOwned(t *testing.T) {
 		}
 	}
 	for _, want := range []string{
-		`data-test="hook"`, `role="group"`, `aria-label="Price"`, `class="ui-range-slider mine"`,
+		`data-test="hook"`, `role="group"`, `aria-label="Price"`, `class="fui-range-slider mine"`,
 	} {
 		if !strings.Contains(root, want) {
 			t.Errorf("root missing %q:\n%s", want, root)

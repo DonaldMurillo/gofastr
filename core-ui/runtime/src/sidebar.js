@@ -10,8 +10,8 @@
 // from localStorage, and setCollapsed() skips its write when no key exists,
 // so a stale local value can never be written back either.
 //
-// Storage keys are namespaced and component-encoded (the banner.js dismissKey
-// shape): "gofastr.sidebar-collapse." + encodeURIComponent(key). Injected
+// Storage keys are namespaced and component-encoded (the banner-dismiss
+// cookie's shape): "gofastr.sidebar-collapse." + encodeURIComponent(key). Injected
 // markup carrying a data-fui-sidebar-storage value that names another
 // feature's key can therefore only ever touch this module's own namespace.
 // A legacy raw-key entry (the pre-namespace spelling) is migrated once on

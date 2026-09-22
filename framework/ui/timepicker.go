@@ -2,18 +2,21 @@ package ui
 
 import (
 	"strconv"
+	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/headless"
 )
 
 // ─── TimePicker ─────────────────────────────────────────────────────
 //
-// Styled wrapper around <input type="time">. Browser handles the
-// native time UI; we own the label, the 44px touch-target, and the
-// focus ring. Twin of ColorPicker, both wrap a native picker.
+// A styled native time input over headless.Field + headless.Input:
+// the browser owns the time UI; this layer owns the label, the 44px
+// touch target and the focus ring. The input's type and accessible
+// label do not change.
 
 // TimePickerConfig configures a TimePicker.
 type TimePickerConfig struct {
@@ -40,11 +43,24 @@ type TimePickerConfig struct {
 	ID    string
 	Class string
 
-	// ExtraAttrs forwards additional attributes (data-* test hooks,
-	// analytics markers, ARIA overrides) to the picker's root
-	// wrapper <div>. Keys the component owns are dropped: class
-	// and id (use Class / ID), data-fui-*.
+	// ExtraAttrs forwards additional attributes to the input element.
+	// Keys the component owns are dropped: class and id (use Class /
+	// ID), data-fui-*, and every data-hui-* hook.
 	ExtraAttrs html.Attrs
+}
+
+// timePickerClasses dresses headless.Field's parts; the control
+// inside gets timePickerInputClasses, because Input renders through
+// its own root part and the input's class is not the field's.
+var timePickerClasses = headless.Classes{
+	headless.PartRoot:  "fui-time-picker",
+	headless.PartLabel: "fui-time-picker__label",
+	headless.PartHint:  "fui-time-picker__help",
+	headless.PartError: "fui-time-picker__error",
+}
+
+var timePickerInputClasses = headless.Classes{
+	headless.PartRoot: "fui-time-picker__input",
 }
 
 // TimePicker renders a styled native time input with a label.
@@ -59,65 +75,49 @@ func TimePicker(cfg TimePickerConfig) render.HTML {
 	if id == "" {
 		id = cfg.Name
 	}
-	cls := "ui-time-picker"
-	if cfg.Error != "" {
-		cls += " is-error"
-	}
-	if cfg.Disabled {
-		cls += " is-disabled"
-	}
-	if cfg.Class != "" {
-		cls += " " + cfg.Class
+	parts := headless.Parts{}
+	if rootClass := strings.TrimSpace(modifierClass("is-error", cfg.Error != "") +
+		" " + modifierClass("is-disabled", cfg.Disabled) + " " + cfg.Class); rootClass != "" {
+		parts.Attrs = headless.PartAttrs{headless.PartRoot: {"class": strings.TrimSpace(rootClass)}}
 	}
 
-	inputAttrs := map[string]string{
-		"type":       "time",
-		"name":       cfg.Name,
-		"id":         id,
-		"class":      "ui-time-picker__input",
-		"aria-label": cfg.Label,
-	}
-	if cfg.Value != "" {
-		inputAttrs["value"] = cfg.Value
-	}
+	// The type-specific attributes travel through Input's Owned seam —
+	// the one place a numeric control's bounds may reach the input
+	// without a caller being able to widen them.
+	owned := html.Attrs{}
 	if cfg.Min != "" {
-		inputAttrs["min"] = cfg.Min
+		owned["min"] = cfg.Min
 	}
 	if cfg.Max != "" {
-		inputAttrs["max"] = cfg.Max
+		owned["max"] = cfg.Max
 	}
 	if cfg.Step > 0 {
 		// browsers spec: step in seconds.
-		inputAttrs["step"] = strconv.Itoa(cfg.Step)
-	}
-	if cfg.Required {
-		inputAttrs["required"] = ""
-	}
-	if cfg.Disabled {
-		inputAttrs["disabled"] = ""
-	}
-	if cfg.Error != "" {
-		inputAttrs["aria-invalid"] = "true"
-		inputAttrs["aria-describedby"] = id + "-error"
-	} else if cfg.Help != "" {
-		inputAttrs["aria-describedby"] = id + "-help"
+		owned["step"] = strconv.Itoa(cfg.Step)
 	}
 
-	children := []render.HTML{
-		render.Tag("label", map[string]string{
-			"for":   id,
-			"class": "ui-time-picker__label",
-		}, render.Text(cfg.Label)),
-		render.Tag("input", inputAttrs),
-	}
-	children = append(children, fieldMessage(id, "ui-time-picker", cfg.Error, cfg.Help)...)
-
-	attrs := html.SafeExtraAttrs(cfg.ExtraAttrs)
-	if attrs == nil {
-		attrs = map[string]string{}
-	}
-	attrs["class"] = cls
-	return timePickerStyle.WrapHTML(render.Tag("div", attrs, children...))
+	return timePickerStyle.WrapHTML(headless.Field(headless.FieldProps{
+		Label:      cfg.Label,
+		For:        id,
+		Hint:       cfg.Help,
+		Error:      cfg.Error,
+		Required:   cfg.Required,
+		Parts:      parts,
+		ExtraAttrs: headless.Safe(cfg.ExtraAttrs, "class", "id"),
+	}, timePickerClasses, func(c headless.FieldControl) render.HTML {
+		return headless.Input(headless.InputProps{
+			Type:        "time",
+			Name:        cfg.Name,
+			ID:          c.ID,
+			Value:       cfg.Value,
+			Required:    c.Required,
+			Disabled:    cfg.Disabled,
+			Invalid:     c.Invalid,
+			DescribedBy: c.DescribedBy,
+			AriaLabel:   cfg.Label,
+			Owned:       owned,
+		}, timePickerInputClasses)
+	}))
 }
 
 var timePickerStyle = registry.RegisterStyle("ui-time-picker", timePickerCSS)
@@ -126,44 +126,36 @@ func timePickerCSS(_ style.Theme) string {
 	return `[data-fui-comp="ui-time-picker"] {
   display: grid;
   gap: var(--spacing-xs, 2px);
-  max-inline-size: 16rem;
 }
-[data-fui-comp="ui-time-picker"] .ui-time-picker__label {
+[data-fui-comp="ui-time-picker"] .fui-time-picker__label {
   font-weight: 500;
   font-size: var(--text-sm, 0.875rem);
   color: var(--color-text, #18181B);
 }
-[data-fui-comp="ui-time-picker"] .ui-time-picker__input {
-  font: inherit;
-  font-size: var(--text-base, 1rem);
+[data-fui-comp="ui-time-picker"] .fui-time-picker__input {
   min-block-size: var(--spacing-touch-target, 44px);
-  padding: 10px var(--spacing-md, 8px);
+  padding: 0 var(--spacing-sm, 4px);
   border: 1px solid var(--color-border, #E4E4E7);
   border-radius: var(--radii-md, 8px);
   background: var(--color-surface, #FFFFFF);
+  font: inherit;
   color: var(--color-text, #18181B);
 }
-[data-fui-comp="ui-time-picker"] .ui-time-picker__input:focus-visible {
+[data-fui-comp="ui-time-picker"] .fui-time-picker__input:focus-visible {
   outline: 2px solid var(--color-primary, #4F46E5);
   outline-offset: 1px;
-  border-color: var(--color-primary, #4F46E5);
 }
-[data-fui-comp="ui-time-picker"] .ui-time-picker__help {
+[data-fui-comp="ui-time-picker"].is-error .fui-time-picker__input {
+  border-color: var(--color-danger, #DC2626);
+}
+[data-fui-comp="ui-time-picker"] .fui-time-picker__help {
   margin: 0;
   font-size: var(--text-sm, 0.875rem);
   color: var(--color-text-muted, #52525B);
 }
-[data-fui-comp="ui-time-picker"] .ui-time-picker__error {
+[data-fui-comp="ui-time-picker"] .fui-time-picker__error {
   margin: 0;
   font-size: var(--text-sm, 0.875rem);
   color: var(--color-danger, #DC2626);
-}
-[data-fui-comp="ui-time-picker"].is-error .ui-time-picker__input {
-  border-color: var(--color-danger, #DC2626);
-  box-shadow: inset 0 0 0 1px var(--color-danger, #DC2626);
-}
-[data-fui-comp="ui-time-picker"].is-disabled .ui-time-picker__input {
-  opacity: 0.6;
-  cursor: not-allowed;
 }`
 }

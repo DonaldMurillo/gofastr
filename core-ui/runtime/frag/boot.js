@@ -385,11 +385,6 @@
   // and DOM insertion.
   const _moduleMarkers = [
     { name: 'rpc', selector: '[data-fui-rpc],[data-kiln-tool]' },
-    // Copy-to-clipboard delegated handler. Loaded when any
-    // [data-fui-copy-text-from] button is on the page (or arrives via
-    // SPA-nav). The src/copy.js module installs a single document-level
-    // listener that handles every button.
-    { name: 'copy',       selector: '[data-fui-copy-text-from]' },
     // Computed: client-side derived signals (core-ui/store). The module
     // subscribes each [data-fui-computed] node to its dependency signals
     // and recomputes via the host-registered reducer on any change.
@@ -402,7 +397,6 @@
     // Disclosure: aria-expanded mirroring, Escape-to-close, menu
     // focus-on-open, and the opt-in inert focus trap for drawers.
     { name: 'disclosure', selector: 'details[data-fui-disclosure]' },
-    { name: 'toasts',     selector: '[data-fui-toast-stack],[data-fui-toast]' },
     // SSE: background event stream. Idle-loaded, never blocks first
     // interaction; the channel only carries push updates, not user
     // actions. See ROADMAP §8 Phase 5.
@@ -430,25 +424,19 @@
     // Banner: dismissible inline-alert support. The module runs the
     // localStorage-backed hide pass for already-dismissed banners and
     // wires the delegated click handler for the X button.
-    { name: 'banner',         selector: '[data-fui-banner-dismiss]' },
     // Slider: mirrors <input type="range"> value into the associated
     // <output> on input events. Loaded only when ShowValue=true (the
     // mirror marker is on the input then).
-    { name: 'slider',         selector: '[data-fui-slider-mirror]' },
     // NumberInput: wires the +/- step buttons of framework/ui.NumberInput
     // to the associated <input type="number">.
-    { name: 'numberinput',    selector: '[data-fui-number-step]' },
     // TextArea autogrow: applies the same auto-resize handler the
     // widget runtime uses for textareas anywhere on the page.
     { name: 'textarea',       selector: 'textarea[data-fui-autogrow]' },
     // MultiSelect: chip rendering for checked options + chip removal.
     { name: 'multiselect',    selector: '[data-fui-multiselect-chips]' },
     // RangeSlider: cross-clamp min/max thumbs + optional value mirror.
-    { name: 'rangeslider',    selector: 'input[data-fui-range-slider]' },
     // TagInput: commit on Enter/comma, backspace removes last, chip ×.
-    { name: 'taginput',       selector: '[data-fui-tag-input]' },
     // AnimatedCounter: IntersectionObserver-driven tick on first view.
-    { name: 'animatedcounter', selector: '[data-fui-animated-counter]' },
     // TableOfContents: harvest h2/h3 from target region + active-section tracking.
     { name: 'toc',             selector: '[data-fui-toc]' },
     // ScrollSpy: generic IntersectionObserver section tracking for any nav with in-page anchors.
@@ -456,19 +444,15 @@
     // DragDismiss: pointer drag-to-close for BottomSheet-style widgets.
     { name: 'dragdismiss', selector: '[data-fui-drag-dismiss="true"]' },
     // NetworkRetryBanner: persistent banner gated by RPC-failure threshold / SSE silence. Health-check retry.
-    { name: 'networkretrybanner', selector: '[data-fui-comp="ui-network-retry-banner"]' },
     // SortableList: HTML5 drag + keyboard reorder. POSTs new order on commit.
     { name: 'sortablelist',    selector: '[data-fui-sortable]' },
     { name: 'shortcut',        selector: '[data-fui-shortcut-focus],[data-fui-shortcut-click]' },
     { name: 'carousel',        selector: '[data-fui-carousel]' },
-    { name: 'themeswitch',     selector: '[data-fui-theme-toggle]' },
     { name: 'sidebar', selector: '[data-fui-sidebar-collapse],[data-fui-sidebar-group-toggle]' },
     // BackToTop: scroll-past-threshold reveal + smooth scroll.
-    { name: 'backtotop',       selector: '[data-fui-back-to-top]' },
     // SearchInput: clear button visibility + input clearing.
     { name: 'searchinput',     selector: '[data-fui-comp="ui-search-input"]' },
     // FormRepeater: serializes field values into RPC add/remove clicks.
-    { name: 'formrepeater',    selector: '[data-fui-comp="ui-form-repeater"]' },
       // Dropdown: click-toggle + click-outside dismiss + Esc close.
     { name: 'dropdown',         selector: '[data-fui-dropdown-wrap]' },
     // Reveal: IntersectionObserver-driven entrance animations.

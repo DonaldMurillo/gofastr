@@ -98,6 +98,11 @@ type TagProps struct {
 	// DismissAriaLabel names the × for screen readers. Defaults to
 	// "Remove <Label>".
 	DismissAriaLabel string
+	// Href makes the whole chip an anchor — a filter link — with the
+	// label and any dismiss inside it. The same anchor policy as
+	// every href this package writes; one chip, one label, whatever
+	// shape it renders.
+	Href string
 
 	ID         string
 	ExtraAttrs html.Attrs
@@ -115,6 +120,11 @@ func Tag(p TagProps, s Classes) render.HTML {
 	b := p.Parts.Box(s)
 	if p.Label == "" {
 		panic("headless: Tag requires Label")
+	}
+	if p.Href != "" {
+		if urlsafe.CleanAnchor(p.Href) == "" {
+			panic("headless: Tag Href " + strconv.Quote(p.Href) + " is not a URL the anchor policy allows")
+		}
 	}
 	kids := []render.HTML{}
 	if p.Icon != "" {
@@ -142,9 +152,13 @@ func Tag(p TagProps, s Classes) render.HTML {
 		kids = append(kids, b.El("a", PartBadgeDismiss, dismiss, render.Text("×")))
 	}
 
-	return b.El("span", PartRoot,
-		Merge(Safe(p.ExtraAttrs), Attrs(map[string]string{"id": p.ID})),
-		kids...)
+	rootAttrs := Merge(Safe(p.ExtraAttrs), Attrs(map[string]string{"id": p.ID}))
+	tag := "span"
+	if p.Href != "" {
+		tag = "a"
+		rootAttrs["href"] = urlsafe.CleanAnchor(p.Href)
+	}
+	return b.El(tag, PartRoot, rootAttrs, kids...)
 }
 
 // ─── Toolbar ────────────────────────────────────────────────────────
@@ -701,6 +715,124 @@ func init() {
 				Why:  "the search field is the one control in a toolbar that should grow, so its wrapper is the GET form that submits it — an island update with script, the page's own query without",
 				HTML: ToolbarSearch(ToolbarSearchProps{Island: Island{Endpoint: "/island/apps", Signal: "apps"}}, s,
 					Input(InputProps{Type: "search", Name: "q", AriaLabel: "Search apps"}, k.For("Input"))),
+			}}
+		},
+	})
+}
+
+// ─── BackToTop ──────────────────────────────────────────────────────
+
+// BackToTopProps configures the page's way back to its top.
+type BackToTopProps struct {
+	// Href is where the link goes: a same-origin anchor, usually the
+	// top of the page or the main content's id. Required — a jump
+	// control with no destination is a button pretending to be one,
+	// and the no-script page would carry a dead link.
+	Href string
+	// Target, when set, is the element id the module reads the scroll
+	// sentinel from and scrolls to. An id, not a selector: the module
+	// resolves it, and an id here cannot become a query the way a
+	// selector string can.
+	Target string
+	// Label is the accessible name. Empty takes Strings.BackToTop;
+	// the glyph alone names nothing.
+	Label string
+	// Icon is the glyph. The default arrow is the structure's own; a
+	// caller's SVG replaces it.
+	Icon render.HTML
+	// Threshold is the scroll offset in CSS pixels past which the
+	// module shows the link. Zero takes the module's default;
+	// negative is refused.
+	Threshold int
+	// Smooth asks for smooth scrolling. The module downgrades to an
+	// instant jump under reduced motion; the preference is honoured,
+	// not overridden.
+	Smooth bool
+
+	ID         string
+	ExtraAttrs html.Attrs
+
+	// Parts: attrs and binds on the root, the icon and the label.
+	// Strings are not read — the name is the caller's Label.
+	Parts Parts
+	// Strings are the strings this component says. Nil means the English
+	// defaults; a layer above sets them from the request's language.
+	Strings *Strings
+}
+
+// BackToTop renders the jump link.
+//
+// The anchor is the whole contract: its href is the no-script
+// destination, and the module that binds data-hui-back-to-top shows it
+// past the threshold (through data-hui-back-to-top-visible, which no
+// component renders — the module owns it), scrolls to the target, and
+// returns focus to the link after the scroll. A stylesheet hides the
+// link while the visible mark is absent, so the link appears when it
+// is true and never flashes on a page still at its top.
+func BackToTop(p BackToTopProps, s Classes) render.HTML {
+	if p.Href == "" {
+		panic("headless: BackToTop requires Href — a jump control with no destination is a dead link on the no-script page")
+	}
+	if urlsafe.CleanAnchor(p.Href) == "" {
+		panic("headless: BackToTop Href " + strconv.Quote(p.Href) + " is not a URL the anchor policy allows")
+	}
+	if p.Target != "" && (strings.ContainsAny(p.Target, " \t\n\r") || strings.HasPrefix(p.Target, "#")) {
+		panic("headless: BackToTop Target " + strconv.Quote(p.Target) + " is not an element id — an id, not a selector")
+	}
+	if p.Threshold < 0 {
+		panic("headless: BackToTop Threshold " + strconv.Itoa(p.Threshold) + " is negative — an offset before the top of the page is no threshold")
+	}
+
+	b := p.Parts.Box(s)
+	own := Merge(Safe(p.ExtraAttrs, "href"), Attrs(map[string]string{
+		"href":       urlsafe.CleanAnchor(p.Href),
+		"aria-label": orDefault(p.Label, p.Strings.Resolve().BackToTop),
+		"id":         p.ID,
+	}))
+	Mark(own, "data-hui-back-to-top")
+	if p.Target != "" {
+		own["data-hui-back-to-top-target"] = p.Target
+	}
+	if p.Threshold > 0 {
+		own["data-hui-back-to-top-threshold"] = strconv.Itoa(p.Threshold)
+	}
+	if p.Smooth {
+		own["data-hui-back-to-top-smooth"] = ""
+	}
+	label := orDefault(p.Label, p.Strings.Resolve().BackToTop)
+	icon := p.Icon
+	if icon == "" {
+		icon = render.Text("↑")
+	}
+	return b.El("a", PartRoot, own,
+		b.El("span", PartIcon, Attrs(map[string]string{"aria-hidden": "true"}), icon),
+		b.El("span", PartLabel, nil, render.Text(label)),
+	)
+}
+
+func init() {
+	Register(Spec{
+		Name:    "BackToTop",
+		Anatomy: []Part{PartRoot, PartIcon, PartLabel},
+		Hooks:   []string{"data-hui-back-to-top", "data-hui-back-to-top-target", "data-hui-back-to-top-threshold", "data-hui-back-to-top-smooth"},
+		WithParts: func(s Classes, parts Parts) render.HTML {
+			return BackToTop(BackToTopProps{Href: "#main-content", Label: "Back to top", Parts: parts}, s)
+		},
+		Cases: func(k Kit) []Case {
+			s := k.Classes
+			return []Case{{
+				Name: "to the page top",
+				Why:  "the anchor is a real same-origin link, so the no-script page jumps exactly where it says; the module only adds the threshold, the scroll and the focus return",
+				HTML: BackToTop(BackToTopProps{Href: "#main-content", Label: "Back to top"}, s),
+			}, {
+				Name: "the default name",
+				Why:  "a jump control with no label of its own still names itself — the default word is the one Strings carries, and a translated page says it in the reader's language",
+				HTML: BackToTop(BackToTopProps{Href: "#top"}, s),
+			}, {
+				Name: "an explicit target and threshold",
+				Why:  "the target is an element id, never a selector — the module resolves it — and a threshold of zero would be the module's default, so an explicit one is the caller tuning when the link becomes true",
+				HTML: BackToTop(BackToTopProps{Href: "#toc", Target: "toc", Label: "Back to contents",
+					Threshold: 480, Smooth: true}, s),
 			}}
 		},
 	})

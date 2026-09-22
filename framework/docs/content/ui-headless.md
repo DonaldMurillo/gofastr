@@ -252,7 +252,32 @@ nothing hidden submits); `ui.TextArea` is `headless.Field` +
 the control through the prop that survives the data-fui-* refusal.
 `ui.SearchInput` has no headless counterpart (the icon, the clear
 button and the role="search" wrap are its own) and keeps its own
-module.
+module; the `searchinput` and `shortcut` runtime modules stay with it
+until the Batch 3 Combobox decision — retention, not a gap.
+
+The stateful family renders through this package the same way, and
+its Island rules are the same rule: a `TagInput` owns its chips
+client-side and needs no Island; a `Repeater` whose add/remove
+re-renders the region needs `Action` plus a complete `Island`, and
+the same buttons stay named submit controls so the surrounding form
+is the no-script path; a `Toast` with a `DismissHref` needs a
+complete `Island` exactly as an `Alert`'s dismiss does; a
+`StepWizard`'s Island is optional and, when set, the form keeps its
+plain POST shape and the module focuses the new step's heading or
+the error summary after the swap. A `ToastStack` is mounted once by
+the layout: it carries the framework's `data-fui-toast-stack` name
+beside its own `data-hui-toast-stack` (the kernel's response-header
+toast path resolves the first, the component module the second), the
+SSR rows inside it are visible with no script, and it is the live
+region toasts announce by arriving in.
+
+The action buttons (`OptimisticAction`, `ToggleAction`, `Button`
+with an `Action`) keep the button contract: with no script they do
+nothing on their own. A caller that needs the no-script submit puts
+them inside a form whose action and method say where the request
+goes — the component never wraps itself in a generated form, because
+nested forms are invalid HTML and every caller that already composes
+a form would break.
 
 **See it live:** the product site ships a landing page under each of two
 boot-registered themes —
@@ -316,7 +341,10 @@ Fieldset, ValidationSummary, Card, Stack, Cluster, Grid, Container,
 Section, Divider, Spacer, Spinner, Skeleton, Alert, SystemBanner,
 Badge, Tag, Toolbar, ToolbarGroup, ToolbarSpacer, ToolbarSearch,
 Pagination, Table, Steps, Timeline, PageHeader, EmptyState, StatCard,
-DetailList, OptimisticAction and ToggleAction.
+DetailList, OptimisticAction and ToggleAction, plus the stateful
+family: Counter, NumberInput, Slider, RangeSlider, Rating, TagInput,
+Repeater, Toast, ToastStack, NotificationBell, StepWizard and
+BackToTop.
 
 ## The behaviour module
 
@@ -391,15 +419,66 @@ What it does, one line per behaviour:
   status where they were. A plain table's status and announcement
   render for the pager's later use; this module fills neither.
 
-Two attributes are the module's own, written by it and rendered by no
-component: `data-hui-when-off` and `data-hui-drop-over`.
+Three more modules of this package ship beside it, each registered the
+same way and each owning one family of the stateful controls:
 
-Arming is the kernel's. The module registers a scanner and the kernel
+- **headless-controls** (`[data-hui-counter-animate]`,
+  `[data-hui-number-input-decrement]`, `[data-hui-slider-output]`,
+  `[data-hui-range-slider]`): steps the number input inside the bounds
+  its own attributes declare and reports a real input event; mirrors
+  the slider's thumb into its output; cross-clamps the range pair and
+  re-formats its sentence through the shape the output carries; and
+  animates a counter from its recorded start to the SSR value, never
+  touching the number the signals kernel owns. It replaced the retired
+  `numberinput`, `slider`, `rangeslider` and `animatedcounter`
+  runtime modules (the unanimated counter needs no module at all —
+  the signals kernel is its whole increment path).
+- **headless-collections** (`[data-hui-tag-input]`,
+  `[data-hui-repeater]`): commits the tag draft on Enter, comma, the
+  add control or blur; refuses a duplicate; removes on the chip's ×
+  or Backspace-on-empty; returns focus to the field; announces
+  through the `data-hui-tag-input-added`/`-removed` sentences; and
+  after a repeater's island swap puts focus back on the row's control
+  or the add control and says the server's status. It replaced the
+  retired `taginput` and `formrepeater` runtime modules, and the IME
+  guard (an Enter that confirms a composition candidate commits
+  nothing) moved with it.
+- **headless-wizard** (`[data-hui-step-wizard]`): owns only the
+  island path — it records the step the reader left, and after the
+  swap focuses the failed submit's summary or the new step's heading
+  and says the step-of sentence when the step moved. The plain POST
+  wizard needs none of it.
+
+Two attributes are the `headless` module's own, written by it and
+rendered by no component: `data-hui-when-off` and `data-hui-drop-over`.
+One is `headless-navigation`'s: `data-hui-back-to-top-visible`.
+
+Two more modules of this package own the feedback and page-control
+families:
+
+- **headless-feedback** (`[data-hui-copy]`, `[data-hui-toast-stack]`
+  and `[data-fui-toast-stack]`, `[data-hui-notification-bell]`,
+  `[data-hui-network-retry]`): the copy control (no clipboard mutation
+  without script — the words travel on the wrapper from `Strings`),
+  the toast stack runtime (`NS.toast`, `_initToasts`, `_dismissToast`,
+  `_toastTimers`, `_toastSeq` — the API the kernel's `X-Gofastr-Toast`
+  dispatch and `ToastSlot` speak; the kernel's `loadModule` target is
+  this module now), the bell's spoken count re-said when a signal
+  changes it, and the offline banner's retry link. It replaced the
+  retired `copy`, `toasts` and `networkretrybanner` runtime modules.
+- **headless-navigation** (`[data-hui-back-to-top]`,
+  `[data-hui-theme-toggle]`): the back-to-top link (one sentinel for
+  the document, the visibility mark, the focus return) and the theme
+  group (persisted through the same storage key the bootstrap reads,
+  so the scheme never flashes). It replaced the retired `backtotop`
+  and `themeswitch` runtime modules.
+
+Arming is the kernel's. Each module registers a scanner and the kernel
 calls it on every inserted subtree and over the document after a
-client navigation; a host adds no observer, and the module adds none
-of its own. `framework/ui` is the styled layer on top of this package:
+client navigation; a host adds no observer, and no module adds one of
+its own. `framework/ui` is the styled layer on top of this package:
 its components render through these structures dressed with their own
-class maps (Button first), and a bare headless render stays unstyled.
+class maps, and a bare headless render stays unstyled.
 
 ## Common mistakes
 

@@ -2,20 +2,22 @@ package ui
 
 import (
 	"context"
-	"strconv"
+	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/headless"
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
 // ─── FormStepWizard ─────────────────────────────────────────────────
 //
-// Multi-step form with a visual progress indicator. Server-driven:
-// each "Continue" / "Back" click is a standard form POST. The server
-// reads wizard_action=next|back to know the direction and re-renders
-// with the updated CurrentStep.
+// Multi-step form over headless.StepWizard: a rail of named steps, a
+// validation summary the existing headless module focuses after a
+// failed submit, and Back/Continue controls that submit the plain form
+// with wizard_action=back|next. The server reads the action and
+// re-renders with the updated CurrentStep.
 
 // StepWizardStep is one step in the wizard.
 type StepWizardStep struct {
@@ -47,7 +49,7 @@ type StepWizardConfig struct {
 
 	// Errors is an optional set of field-level errors for the current
 	// step, the same shape ui.Form takes. When non-empty the wizard
-	// renders a ValidationSummary between the step indicator and the
+	// renders a ValidationSummary between the step rail and the
 	// step's fields, and marks the form (data-hui-form-errors) so the
 	// headless behaviour module moves focus to the summary after a
 	// failed submit — which requires ID, the summary's id being derived
@@ -64,29 +66,55 @@ type StepWizardConfig struct {
 	FieldIDs    map[string]string
 	FieldOrder  []string
 
+	// Island, when set, makes each submit a region update: the same
+	// form and controls, the answer swapped into the signal's region.
+	Island headless.Island
+
 	// ID is the form's id; required when Errors is set (the summary's
 	// id is derived from it).
 	ID string
 
 	Class string
 
-	// ExtraAttrs forwards additional attributes (data-* test hooks,
-	// analytics markers, ARIA overrides) to the wizard's root <form>
-	// element. Keys the component owns are dropped: class and id
-	// (use Class / ID), data-fui-*, method, and action (both
-	// validated above; the form posts wizard_action through them).
+	// ExtraAttrs forwards additional attributes to the wizard's root
+	// <form> element. Keys the component owns are dropped: class and
+	// id (use Class / ID), data-fui-*, method, and action (both
+	// validated by the primitive; the form posts wizard_action
+	// through them).
 	ExtraAttrs html.Attrs
 
 	// Ctx carries the per-request context used to resolve i18n strings
-	// (Back, Continue, Submit button labels). When nil, context.Background()
-	// is used and English fallbacks are returned, preserving today's behaviour.
+	// (Back, Continue, Submit button labels, the rail's sentence).
+	// When nil, context.Background() is used and English fallbacks are
+	// returned.
 	Ctx context.Context
+}
+
+// stepWizardClasses dresses headless.StepWizard's parts in this
+// package's own vocabulary — the names the registered ui-step-wizard
+// sheet matches. The rail's row (PartStepRow) carries no class: its
+// marker and step text are visually hidden and the sheet draws the
+// rail through the step-dot list items, so a class there would be a
+// selector nothing owns.
+var stepWizardClasses = headless.Classes{
+	headless.PartRoot:     "fui-step-wizard",
+	headless.PartSteps:    "fui-step-wizard__indicator",
+	headless.PartStep:     "fui-step-wizard__step-dot",
+	headless.PartMarker:   "fui-visually-hidden",
+	headless.PartStepText: "fui-visually-hidden",
+	headless.PartTitle:    "fui-step-wizard__heading",
+	headless.PartDesc:     "fui-step-wizard__description",
+	headless.PartBody:     "fui-step-wizard__fields",
+	headless.PartActions:  "fui-step-wizard__actions",
+	headless.PartPrev:     "fui-step-wizard__back",
+	headless.PartNext:     "fui-step-wizard__next",
+	headless.PartStatus:   "fui-visually-hidden",
 }
 
 // StepWizard renders a multi-step form with a progress indicator bar.
 //
 // Server-driven: each step is a full form submission. The server
-// reads the "wizard_action" field (value "next" or "back") to
+// reads the "wizard_action" field (value "back" or "next") to
 // determine direction and re-renders with the updated CurrentStep.
 func StepWizard(cfg StepWizardConfig) render.HTML {
 	if len(cfg.Steps) == 0 {
@@ -99,33 +127,23 @@ func StepWizard(cfg StepWizardConfig) render.HTML {
 		panic("ui: StepWizard CurrentStep out of range")
 	}
 
-	method := cfg.Method
-	if method == "" {
-		method = "POST"
-	}
-	if method != "GET" && method != "POST" {
-		panic("ui: StepWizard Method must be GET or POST, got " + method)
-	}
-
 	ctx := cfg.Ctx
 	if ctx == nil {
 		ctx = context.Background()
 	}
 
-	cls := "ui-step-wizard"
-	if cfg.Class != "" {
-		cls += " " + cfg.Class
+	steps := make([]headless.WizardStep, len(cfg.Steps))
+	for i, st := range cfg.Steps {
+		steps[i] = headless.WizardStep{
+			Heading:     st.Heading,
+			Description: st.Description,
+			Fields:      st.Fields,
+		}
 	}
 
-	children := []render.HTML{}
-
-	// 1. Step indicator bar (visual dots/segments).
-	children = append(children, renderStepIndicator(ctx, cfg.Steps, cfg.CurrentStep))
-
-	// 1b. The validation summary for a failed submit, the same one
-	// ui.Form renders: above the fields, and the form is marked so
-	// the behaviour module moves focus to it on arrival.
-	var formErrs bool
+	// The failed submit's summary, the same one ui.Form renders: above
+	// the fields, focused on arrival by the existing headless module.
+	var errors render.HTML
 	if len(cfg.Errors) > 0 || cfg.Summary != "" {
 		if cfg.ID == "" {
 			panic("ui: StepWizard rendering Errors requires ID — the summary's id is derived from it (StepWizardConfig.ID + \"-errors\"), and two summaries on one page would share one title id")
@@ -134,7 +152,7 @@ func StepWizard(cfg StepWizardConfig) render.HTML {
 		if general == "" {
 			general = i18nui.T(ctx, i18nui.KeyFormErrorsSummary)
 		}
-		children = append(children, ValidationSummary(ValidationSummaryConfig{
+		errors = ValidationSummary(ValidationSummaryConfig{
 			ID:          cfg.ID + "-errors",
 			Errors:      cfg.Errors,
 			General:     general,
@@ -143,130 +161,27 @@ func StepWizard(cfg StepWizardConfig) render.HTML {
 			FieldOrder:  cfg.FieldOrder,
 			Title:       i18nui.T(ctx, i18nui.KeyFormHasErrors),
 			Ctx:         ctx,
-		}))
-		formErrs = true
+		})
 	}
 
-	// 2. Current step content wrapped in a section.
-	step := cfg.Steps[cfg.CurrentStep]
-	stepContent := renderStepContent(step, cfg.CurrentStep, len(cfg.Steps))
-	children = append(children, stepContent)
-
-	// 3. Hidden fields for carrying state.
-	children = append(children, cfg.HiddenFields...)
-
-	// 4. Navigation buttons.
-	children = append(children, renderStepActions(ctx, cfg.CurrentStep, len(cfg.Steps)))
-
-	// data-fui-comp is set by hand (not left to WrapHTML) so the
-	// marker survives next to the sanitized caller extras.
-	formAttrs := html.SafeExtraAttrs(cfg.ExtraAttrs, "method", "action")
-	if formAttrs == nil {
-		formAttrs = html.Attrs{}
-	}
-	formAttrs["data-fui-comp"] = "ui-step-wizard"
-	if formErrs {
-		formAttrs["data-hui-form-errors"] = ""
-	}
-	return stepWizardStyle.WrapHTML(html.Form(html.FormConfig{
-		Method:     method,
-		Action:     cfg.Action,
-		Class:      cls,
-		ID:         cfg.ID,
-		ExtraAttrs: formAttrs,
-	}, children...))
-}
-
-// renderStepIndicator builds the visual progress bar.
-func renderStepIndicator(ctx context.Context, steps []StepWizardStep, current int) render.HTML {
-	dots := make([]render.HTML, 0, len(steps))
-	for i := range steps {
-		dotCls := "ui-step-wizard__step-dot"
-		if i < current {
-			dotCls += " is-completed"
-		} else if i == current {
-			dotCls += " is-current"
-		}
-		dotAttrs := map[string]string{
-			"class": dotCls,
-			"role":  "listitem",
-		}
-		if i == current {
-			dotAttrs["aria-current"] = "step"
-		}
-		dotAttrs["aria-label"] = i18nui.TVars(ctx, i18nui.KeyStepWizardStep, map[string]string{"step": strconv.Itoa(i + 1), "heading": steps[i].Heading})
-		dots = append(dots, render.Tag("div", dotAttrs))
-	}
-	return render.Tag("div", map[string]string{
-		"class":      "ui-step-wizard__indicator",
-		"role":       "list",
-		"aria-label": i18nui.TVars(ctx, i18nui.KeyStepWizardStepOf, map[string]string{"step": strconv.Itoa(current + 1), "total": strconv.Itoa(len(steps))}),
-	}, dots...)
-}
-
-// renderStepContent builds the current step's fields.
-func renderStepContent(step StepWizardStep, current, total int) render.HTML {
-	content := []render.HTML{}
-
-	if step.Heading != "" {
-		content = append(content, html.Heading(html.HeadingConfig{
-			Level: 2,
-			Class: "ui-step-wizard__heading",
-		}, render.Text(step.Heading)))
-	}
-	if step.Description != "" {
-		content = append(content, html.Paragraph(html.TextConfig{
-			Class: "ui-step-wizard__description",
-		}, render.Text(step.Description)))
-	}
-	if len(step.Fields) > 0 {
-		content = append(content, render.Tag("div", map[string]string{
-			"class": "ui-step-wizard__fields",
-		}, step.Fields...))
+	parts := headless.Parts{}
+	if rootClass := strings.TrimSpace(cfg.Class); rootClass != "" {
+		parts.Attrs = headless.PartAttrs{headless.PartRoot: {"class": rootClass}}
 	}
 
-	return render.Tag("div", map[string]string{
-		"class": "ui-step-wizard__content",
-	}, content...)
-}
-
-// renderStepActions builds the navigation buttons.
-func renderStepActions(ctx context.Context, current, total int) render.HTML {
-	btns := []render.HTML{}
-
-	// Back button (not on first step): secondary, so the step shows
-	// one weighted action — Continue/Submit — and a subdued way back,
-	// instead of two equally filled primary buttons.
-	if current > 0 {
-		btns = append(btns, Button(ButtonConfig{
-			Label:   i18nui.T(ctx, i18nui.KeyStepWizardBack),
-			Type:    "submit",
-			Variant: ButtonSecondary,
-			ExtraAttrs: html.Attrs{
-				"name":  "wizard_action",
-				"value": "back",
-			},
-		}))
-	}
-
-	// Continue or Submit button.
-	isLast := current == total-1
-	next := i18nui.T(ctx, i18nui.KeyStepWizardNext)
-	if isLast {
-		next = i18nui.T(ctx, i18nui.KeyStepWizardSubmit)
-	}
-	btns = append(btns, Button(ButtonConfig{
-		Label: next,
-		Type:  "submit",
-		ExtraAttrs: html.Attrs{
-			"name":  "wizard_action",
-			"value": "next",
-		},
-	}))
-
-	return render.Tag("div", map[string]string{
-		"class": "ui-step-wizard__actions",
-	}, btns...)
+	return stepWizardStyle.WrapHTML(headless.StepWizard(headless.StepWizardProps{
+		Steps:        steps,
+		Current:      cfg.CurrentStep,
+		Action:       cfg.Action,
+		Method:       cfg.Method,
+		HiddenFields: cfg.HiddenFields,
+		Errors:       errors,
+		Island:       cfg.Island,
+		ID:           cfg.ID,
+		ExtraAttrs:   headless.Safe(cfg.ExtraAttrs, "class", "id", "method", "action"),
+		Parts:        parts,
+		Strings:      StringsFor(ctx),
+	}, stepWizardClasses))
 }
 
 // stepWizardStyle is registered in styles_components.go
@@ -276,48 +191,85 @@ func stepWizardCSS(_ style.Theme) string {
   display: grid;
   gap: var(--spacing-lg, 16px);
 }
-[data-fui-comp="ui-step-wizard"] .ui-step-wizard__indicator {
+[data-fui-comp="ui-step-wizard"] .fui-visually-hidden {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
+[data-fui-comp="ui-step-wizard"] .fui-step-wizard__indicator {
+  list-style: none;
   display: flex;
   gap: var(--spacing-xs, 2px);
-  list-style: none;
   margin: 0;
   padding: 0;
 }
-[data-fui-comp="ui-step-wizard"] .ui-step-wizard__step-dot {
+[data-fui-comp="ui-step-wizard"] .fui-step-wizard__step-dot {
   flex: 1;
   height: 4px;
   border-radius: 2px;
   background: var(--color-border, #E4E4E7);
   transition: background 150ms ease;
 }
-[data-fui-comp="ui-step-wizard"] .ui-step-wizard__step-dot.is-completed {
+[data-fui-comp="ui-step-wizard"] .fui-step-wizard__step-dot[data-state="done"],
+[data-fui-comp="ui-step-wizard"] .fui-step-wizard__step-dot[data-state="current"] {
   background: var(--color-primary, #4F46E5);
 }
-[data-fui-comp="ui-step-wizard"] .ui-step-wizard__step-dot.is-current {
-  background: var(--color-primary, #4F46E5);
-}
-[data-fui-comp="ui-step-wizard"] .ui-step-wizard__content {
-  display: grid;
-  gap: var(--spacing-md, 8px);
-}
-[data-fui-comp="ui-step-wizard"] .ui-step-wizard__heading {
+[data-fui-comp="ui-step-wizard"] .fui-step-wizard__heading {
   margin: 0;
   font-size: var(--text-lg, 1.125rem);
   font-weight: 600;
   color: var(--color-text, #18181B);
 }
-[data-fui-comp="ui-step-wizard"] .ui-step-wizard__description {
+[data-fui-comp="ui-step-wizard"] .fui-step-wizard__description {
   margin: 0;
   color: var(--color-text-muted, #52525B);
 }
-[data-fui-comp="ui-step-wizard"] .ui-step-wizard__fields {
+[data-fui-comp="ui-step-wizard"] .fui-step-wizard__fields {
   display: grid;
   gap: var(--spacing-md, 8px);
 }
-[data-fui-comp="ui-step-wizard"] .ui-step-wizard__actions {
+[data-fui-comp="ui-step-wizard"] .fui-step-wizard__actions {
   display: flex;
   gap: var(--spacing-md, 8px);
   justify-content: flex-end;
+}
+[data-fui-comp="ui-step-wizard"] .fui-step-wizard__back,
+[data-fui-comp="ui-step-wizard"] .fui-step-wizard__next {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-block-size: 40px;
+  padding: 0 var(--spacing-lg, 16px);
+  border-radius: var(--radii-md, 8px);
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+}
+[data-fui-comp="ui-step-wizard"] .fui-step-wizard__back {
+  border: 1px solid var(--color-border, #E4E4E7);
+  background: var(--color-surface, #FFFFFF);
+  color: var(--color-text, #18181B);
+}
+[data-fui-comp="ui-step-wizard"] .fui-step-wizard__back:hover {
+  background: var(--color-surface-soft, #F4F4F5);
+}
+[data-fui-comp="ui-step-wizard"] .fui-step-wizard__next {
+  border: 1px solid var(--color-primary, #4F46E5);
+  background: var(--color-primary, #4F46E5);
+  color: var(--color-primary-fg, #FFFFFF);
+}
+[data-fui-comp="ui-step-wizard"] .fui-step-wizard__next:hover {
+  filter: brightness(1.05);
+}
+[data-fui-comp="ui-step-wizard"] .fui-step-wizard__back:focus-visible,
+[data-fui-comp="ui-step-wizard"] .fui-step-wizard__next:focus-visible {
+  outline: 2px solid var(--color-primary, #4F46E5);
+  outline-offset: 1px;
 }
 `
 }

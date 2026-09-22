@@ -175,7 +175,7 @@ func TestE2E_Toast_ServerHeaderFiresToast(t *testing.T) {
 		// The server-toast button on site is labelled "Server: header".
 		chromedp.Evaluate(`Array.from(document.querySelectorAll('button')).find(b => b.textContent.includes('Server: header')).click()`, nil),
 		chromedp.Sleep(500*time.Millisecond),
-		chromedp.Evaluate(`Array.from(document.querySelectorAll('.ui-notification__title')).map(n => n.textContent).join(',')`, &titles),
+		chromedp.Evaluate(`Array.from(document.querySelectorAll('.fui-notification__title')).map(n => n.textContent).join(',')`, &titles),
 	); err != nil {
 		t.Fatalf("toast server: %v", err)
 	}
@@ -197,9 +197,9 @@ func TestE2E_Toast_ClientJSAPIFiresToast(t *testing.T) {
 		pageReady(),
 		chromedp.Evaluate(`window.__gofastr.toast({variant: 'danger', title: 'Test alert', body: 'body'})`, nil),
 		chromedp.Sleep(200*time.Millisecond),
-		chromedp.Evaluate(`document.querySelector('.ui-notification__title')?.textContent`, &title),
-		chromedp.Evaluate(`document.querySelector('.ui-notification')?.getAttribute('role')`, &role),
-		chromedp.Evaluate(`document.querySelector('.ui-notification')?.getAttribute('aria-live')`, &live),
+		chromedp.Evaluate(`document.querySelector('.fui-notification__title')?.textContent`, &title),
+		chromedp.Evaluate(`document.querySelector('.fui-notification')?.getAttribute('role')`, &role),
+		chromedp.Evaluate(`document.querySelector('.fui-notification')?.getAttribute('aria-live')`, &live),
 	); err != nil {
 		t.Fatalf("toast client: %v", err)
 	}

@@ -7,6 +7,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/headless"
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
@@ -104,7 +105,7 @@ func FilterChipBar(cfg FilterChipBarConfig) render.HTML {
 		clearLabel = i18nui.T(ctx, i18nui.KeyFilterClearAll)
 	}
 
-	cls := "ui-filter-bar"
+	cls := "fui-filter-bar"
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
 	}
@@ -132,34 +133,36 @@ func FilterChipBar(cfg FilterChipBarConfig) render.HTML {
 		if f.DismissPath == "" {
 			panic("ui: FilterChip requires DismissPath")
 		}
-		dismissAttrs := html.Attrs{}
-		if f.DismissBody != "" {
-			dismissAttrs["data-fui-rpc-body"] = f.DismissBody
+		// A chip's dismissal is an in-page state change: the typed
+		// Island carries the endpoint and the signal, and the same
+		// anchor keeps its href for no script. The signal defaults to
+		// the bar's own region.
+		signal := cfg.RPCSignal
+		if signal == "" {
+			signal = "filter-bar"
 		}
-		if cfg.RPCSignal != "" {
-			dismissAttrs["data-fui-rpc-signal"] = cfg.RPCSignal
-		}
-		dismissAttrs["data-fui-rpc-method"] = "POST"
 		items = append(items, Tag(TagConfig{
 			Label:        f.Label,
 			Variant:      f.Variant,
 			Dismiss:      f.DismissPath,
 			DismissLabel: i18nui.TVars(ctx, i18nui.KeyFilterChipRemove, map[string]string{"label": f.Label}),
-			DismissAttrs: dismissAttrs,
+			Island:       headless.Island{Endpoint: f.DismissPath, Signal: signal},
 		}))
 	}
 
 	if cfg.ClearAllPath != "" && len(cfg.Filters) > 0 {
-		clearAttrs := html.Attrs{
-			"type":                "button",
-			"class":               "ui-filter-bar__clear",
+		signal := cfg.RPCSignal
+		if signal == "" {
+			signal = "filter-bar"
+		}
+		items = append(items, render.Tag("a", map[string]string{
+			"href":                cfg.ClearAllPath,
+			"class":               "fui-filter-bar__clear",
+			"aria-label":          clearLabel,
 			"data-fui-rpc":        cfg.ClearAllPath,
 			"data-fui-rpc-method": "POST",
-		}
-		if cfg.RPCSignal != "" {
-			clearAttrs["data-fui-rpc-signal"] = cfg.RPCSignal
-		}
-		items = append(items, render.Tag("button", flattenAttrs(clearAttrs), render.Text(clearLabel)))
+			"data-fui-rpc-signal": signal,
+		}, render.Text(clearLabel)))
 	}
 
 	return filterChipBarStyle.WrapHTML(render.Tag("div", flattenAttrs(wrapAttrs), items...))
@@ -176,7 +179,7 @@ func filterChipBarCSS(_ style.Theme) string {
   padding: var(--spacing-sm, 4px) 0;
 }
 [data-fui-comp="ui-filter-bar"]:empty { display: none; }
-[data-fui-comp="ui-filter-bar"] .ui-filter-bar__clear {
+[data-fui-comp="ui-filter-bar"] .fui-filter-bar__clear {
   display: inline-flex;
   align-items: center;
   min-height: var(--spacing-touch-target, 44px);
@@ -190,10 +193,10 @@ func filterChipBarCSS(_ style.Theme) string {
   font-size: var(--text-sm, 0.875rem);
   cursor: pointer;
 }
-[data-fui-comp="ui-filter-bar"] .ui-filter-bar__clear:hover {
+[data-fui-comp="ui-filter-bar"] .fui-filter-bar__clear:hover {
   background: var(--color-muted, #f1f1f3);
 }
-[data-fui-comp="ui-filter-bar"] .ui-filter-bar__clear:focus-visible {
+[data-fui-comp="ui-filter-bar"] .fui-filter-bar__clear:focus-visible {
   outline: 2px solid var(--color-primary, #4F46E5);
   outline-offset: 2px;
 }

@@ -31,8 +31,26 @@ var jsBlockComment = regexp.MustCompile(`(?s)/\*.*?\*/`)
 var jsLineComment = regexp.MustCompile(`//[^\n]*`)
 
 func jsWithoutComments() string {
-	return jsLineComment.ReplaceAllString(jsBlockComment.ReplaceAllString(behaviorJS, " "), " ")
+	out := ""
+	for _, src := range moduleSources {
+		out += jsStripComments(src) + "\n"
+	}
+	return out
 }
+
+func jsStripComments(src string) string {
+	return jsLineComment.ReplaceAllString(jsBlockComment.ReplaceAllString(src, " "), " ")
+}
+
+// moduleSources is every behaviour module source this package
+// registers, one entry per RegisterBehavior. The gates read them all:
+// a hook may be declared by one component and bound by any module in
+// the package, and a gate that read only one file would call the
+// others' hooks unbound. The list grows as the package registers
+// more modules (headless-controls, headless-collections,
+// headless-wizard; headless-feedback and headless-navigation land with
+// their components' callers).
+var moduleSources = []string{behaviorJS, controlsJS, collectionsJS, wizardJS, feedbackJS, navigationJS, whenJS}
 
 // moduleHook matches a data-hui-* name written out in the source (a
 // selector, an attribute string); datasetHook matches the camel-case
@@ -161,6 +179,9 @@ func TestEveryHookTheModuleBindsIsDeclared(t *testing.T) {
 		if runtimeOwned(src, n) {
 			continue
 		}
+		if _, ok := adapterHooks[n]; ok {
+			continue
+		}
 		t.Errorf("%s is bound by the module and declared by no Spec: a rename on either side fails silently", n)
 	}
 }
@@ -187,6 +208,31 @@ var sheetHooks = map[string]string{
 // the list is checked both ways, and a hook this package's own module
 // ever grows to read must leave it (the module-bound pass below
 // enforces that).
+// adapterHooks are the hooks whose declarer is a framework/ui
+// adapter, not a headless Spec: the copy control is a Button plus
+// behaviour (no copy primitive exists, by the plan's binding
+// decision), the theme group is a Button composition, and the retry
+// link is the offline SystemBanner's action. This package's modules
+// bind them; the markup that renders them is pinned where it lives,
+// in framework/ui's own tests. Same discipline as hostHooks: the
+// reason is mandatory and the list is checked against the module
+// sources below.
+var adapterHooks = map[string]string{
+	"data-hui-copy":          "the copy wrapper framework/ui.CopyButton renders around a headless Button; no copy primitive exists by binding decision",
+	"data-hui-copy-target":   "the copied element's id, rendered by ui.CopyButton",
+	"data-hui-copy-name":     "the copied thing's name for the status sentence, rendered by ui.CopyButton",
+	"data-hui-copy-label":    "the button's idle label span, rendered by ui.CopyButton",
+	"data-hui-copy-copied":   "the button's copied label, rendered by ui.CopyButton",
+	"data-hui-copy-back":     "the label restored after the copied flash, rendered by ui.CopyButton",
+	"data-hui-copy-sentence": "the status sentence shape with {name}, rendered by ui.CopyButton",
+	"data-hui-copy-status":   "the polite status region, rendered by ui.CopyButton",
+	"data-hui-theme-toggle":  "the scheme group wrapper, rendered by ui.ThemeToggle (a Button composition, no theme primitive by binding decision)",
+	"data-hui-theme-option":  "one scheme option control, rendered by ui.ThemeToggle",
+	"data-hui-theme-cycle":   "the single-button cycler, rendered by ui.ThemeToggle",
+	"data-hui-network-retry": "the offline banner's retry link, rendered by ui.NetworkRetryBanner as the SystemBanner's action",
+	"data-hui-copy-toast":    "the toast-on-copy config, rendered by ui.CopyButton on the button",
+}
+
 var hostHooks = map[string]string{
 	"data-hui-lightbox":       "the viewer's identity on an unwired render: what a host's own viewer module resolves the open viewer by",
 	"data-hui-lightbox-nav":   "the nav opt-in on an unwired render: for a host module that steps the gallery group itself",
@@ -211,10 +257,11 @@ func TestEveryDeclaredHookIsBoundOrForTheStylesheet(t *testing.T) {
 			if read[h] {
 				continue
 			}
-			if _, ok := sheetHooks[h]; !ok {
-				if _, ok := hostHooks[h]; !ok {
-					t.Errorf("%s (declared by %s) is read by neither the module, a stylesheet nor a host's own module: a hook nothing binds is an attribute the markup carries for no one", h, sp.Name)
-				}
+			if _, ok := sheetHooks[h]; ok {
+				continue
+			}
+			if _, ok := hostHooks[h]; !ok {
+				t.Errorf("%s (declared by %s) is read by neither the module, a stylesheet nor a host's own module: a hook nothing binds is an attribute the markup carries for no one", h, sp.Name)
 			}
 		}
 	}
@@ -222,6 +269,7 @@ func TestEveryDeclaredHookIsBoundOrForTheStylesheet(t *testing.T) {
 		if reason == "" {
 			t.Errorf("%s carries no reason: an unexplained exemption is one nobody re-reads", h)
 		}
+
 		if !declared[h] {
 			t.Errorf("%s is listed as stylesheet-only but no Spec declares it: the list has outlived its hook", h)
 		}
@@ -238,6 +286,17 @@ func TestEveryDeclaredHookIsBoundOrForTheStylesheet(t *testing.T) {
 		}
 		if read[h] {
 			t.Errorf("%s is listed as host-bound but this package's module reads it: the hook has its binder here now, drop the exemption", h)
+		}
+	}
+	for h, reason := range adapterHooks {
+		if reason == "" {
+			t.Errorf("%s carries no reason: an unexplained exemption is one nobody re-reads", h)
+		}
+		if declared[h] {
+			t.Errorf("%s is listed as adapter-owned but a Spec declares it: the declarer moved here, drop the exemption", h)
+		}
+		if !read[h] {
+			t.Errorf("%s is listed as adapter-owned but no module in this package reads it: the list has outlived its binder", h)
 		}
 	}
 }
@@ -277,16 +336,24 @@ func TestModuleSaysNothingInEnglish(t *testing.T) {
 // scanner markup that arrives after load is never handed to it, which
 // is exactly the arrival the contract exists for.
 func TestModuleKeepsTheKernelContract(t *testing.T) {
-	if body := strings.TrimSpace(jsWithoutComments()); !strings.HasPrefix(body, "(function () {") {
-		t.Fatal("the module does not open with the IIFE the kernel contract requires")
+	modules := []struct{ name, src string }{
+		{BehaviorName, behaviorJS},
+		{ControlsBehaviorName, controlsJS},
+		{CollectionsBehaviorName, collectionsJS},
+		{WizardBehaviorName, wizardJS},
 	}
-	for _, want := range []string{
-		"'use strict';",
-		"loadedModules[NAME] = true",
-		"_moduleScanners[NAME] = scan",
-	} {
-		if !strings.Contains(behaviorJS, want) {
-			t.Errorf("the module lost %q: half the kernel contract is a module that cannot be re-armed", want)
+	for _, m := range modules {
+		if body := strings.TrimSpace(jsStripComments(m.src)); !strings.HasPrefix(body, "(function () {") {
+			t.Errorf("%s does not open with the IIFE the kernel contract requires", m.name)
+		}
+		for _, want := range []string{
+			"'use strict';",
+			"loadedModules[NAME] = true",
+			"_moduleScanners[NAME] = scan",
+		} {
+			if !strings.Contains(m.src, want) {
+				t.Errorf("%s lost %q: half the kernel contract is a module that cannot be re-armed", m.name, want)
+			}
 		}
 	}
 }
@@ -367,6 +434,79 @@ func TestOfflineBannerReadsTheFieldsSseMirrors(t *testing.T) {
 	for _, want := range []string{"connected", "retryCount"} {
 		if !assigned[want] {
 			t.Errorf("sse.js no longer assigns %s on sseStatus: the offline banner cannot read the connection", want)
+		}
+	}
+}
+
+// TestEveryRegisteredBehaviorIsRegisteredWithItsMarkers holds the three
+// module registrations to the same contract the headless module's own
+// gate holds: the registered markers are exactly the literals on the
+// RegisterBehavior call (the hard-rule-5 gate reads that call), and
+// every marker names a hook some Spec declares, so the kernel never
+// fetches a module for markup this package cannot render.
+func TestEveryRegisteredBehaviorIsRegisteredWithItsMarkers(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		markers []string
+	}{
+		{ControlsBehaviorName, []string{"[data-hui-counter-animate]", "[data-hui-number-input-decrement]",
+			"[data-hui-slider-output]", "[data-hui-range-slider]"}},
+		{CollectionsBehaviorName, []string{"[data-hui-tag-input]", "[data-hui-repeater]"}},
+		{WizardBehaviorName, []string{"[data-hui-step-wizard]"}},
+		{FeedbackBehaviorName, []string{"[data-hui-copy]", "[data-hui-toast-stack]",
+			"[data-fui-toast-stack]", "[data-hui-notification-bell]", "[data-hui-network-retry]"}},
+		{NavigationBehaviorName, []string{"[data-hui-back-to-top]", "[data-hui-theme-toggle]"}},
+	} {
+		e, ok := uiregistry.LookupBehavior(tc.name)
+		if !ok {
+			t.Fatalf("%q is not registered: every hook its components render would be bound to nothing", tc.name)
+		}
+		if len(e.Markers) != len(tc.markers) {
+			t.Fatalf("%q registers %d markers, the call spells %d: the two lists have drifted", tc.name, len(e.Markers), len(tc.markers))
+		}
+		registered := map[string]bool{}
+		for _, m := range e.Markers {
+			registered[m] = true
+		}
+		for _, m := range tc.markers {
+			if !registered[m] {
+				t.Errorf("%q lists marker %s in its registration call and the registry does not carry it", tc.name, m)
+			}
+		}
+	}
+	declared := declaredHooks()
+	src := jsWithoutComments()
+	read := moduleBoundHooks(src)
+	for _, tc := range []struct {
+		name    string
+		markers []string
+	}{
+		{ControlsBehaviorName, []string{"[data-hui-counter-animate]", "[data-hui-number-input-decrement]",
+			"[data-hui-slider-output]", "[data-hui-range-slider]"}},
+		{CollectionsBehaviorName, []string{"[data-hui-tag-input]", "[data-hui-repeater]"}},
+		{WizardBehaviorName, []string{"[data-hui-step-wizard]"}},
+		{FeedbackBehaviorName, []string{"[data-hui-copy]", "[data-hui-toast-stack]",
+			"[data-fui-toast-stack]", "[data-hui-notification-bell]", "[data-hui-network-retry]"}},
+		{NavigationBehaviorName, []string{"[data-hui-back-to-top]", "[data-hui-theme-toggle]"}},
+	} {
+		for _, m := range tc.markers {
+			hook := strings.Trim(m, "[]")
+			known := declared[hook]
+			if _, ok := adapterHooks[hook]; ok {
+				known = true
+			}
+			if hook == "data-fui-toast-stack" {
+				// The kernel's own stack name: documented in
+				// core-ui/ARCHITECTURE.md's data-fui-* table, the one
+				// data-fui spelling a registered marker may carry.
+				known = true
+			}
+			if !known {
+				t.Errorf("%s's marker %s is a hook no Spec declares: the kernel would load it for markup this package cannot render", tc.name, m)
+			}
+			if !read[hook] && hook != "data-fui-toast-stack" {
+				t.Errorf("%s's marker %s is read by no module source in this package: a marker nothing binds is a fetch for a behaviour that does not exist", tc.name, m)
+			}
 		}
 	}
 }

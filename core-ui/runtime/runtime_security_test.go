@@ -654,14 +654,11 @@ func TestSelectorInterpolationEscaped(t *testing.T) {
 		{"src/multiselect.js", `label[for="`, "checkbox id → label[for=…] lookup"},
 		{"src/carousel.js", `data-fui-carousel-deferred-for="`, "carousel id → manifest script lookup"},
 		{"src/carousel.js", `'[data-fui-carousel-defer="`, "manifest key → defer placeholder lookup"},
-		{"src/rangeslider.js", `data-fui-range-slider="`, "data-fui-range-slider value → pair lookups (3 selectors)"},
-		{"src/slider.js", `output[for="`, "input id → output[for=…] lookup"},
 		{"src/widgets.js", `link[data-fui-style="`, "widget name → style-link dedup lookup"},
 		{"runtime.js", `link[data-fui-style="`, "component name → style-link dedup lookup (composed from frag/kernel.js)"},
 		{"runtime.js", `[data-widget="${`, "closest data-component/data-widget value → hydrate lookup (composed from frag/boot.js)"},
 		// Control group: these sites escape today and must keep doing so.
 		{"src/sse.js", `'[data-island="'`, "island name lookup (pinned by TestSseIslandSelectorEscaped)"},
-		{"src/toasts.js", `'[data-fui-toast-stack="'`, "toast stack name lookup"},
 		{"src/sortablelist.js", `data-fui-sortable-group="`, "sortable group lookup"},
 		{"src/panehost.js", `'[data-fui-pane-key="'`, "URL-borne pane key lookup"},
 		{"src/scrollspy.js", `'#' + cssEscape(`, "anchor id lookup (module-local cssEscape shim)"},
@@ -945,29 +942,27 @@ func TestAttributePathSegmentsValidated(t *testing.T) {
 // namespace the server reads back (and the real dismissal is never stored
 // under its own key).
 func TestBannerDismissCookieEncodesId(t *testing.T) {
-	// Benign banner at boot gives the marker scanner its load trigger;
-	// the crafted banner is injected post-boot, the reachable shape for
+	// The banner runtime is retired; the dismissal memory (and its
+	// cookie mirror) lives in the registered headless module now. The
+	// crafted banner is injected post-boot, the reachable shape for
 	// attribute injection (island swap / RPC innerHTML / SPA merge).
 	g := startGadgetServer(t, `[]`, `
-<div data-fui-comp="ui-banner" id="bn0">
-  <button type="button" id="dismiss0" data-fui-banner-dismiss
-          data-fui-banner-dismiss-id="boot-marker">x</button>
-</div>`)
+<div data-hui-system="" data-hui-system-id="boot-marker" id="bn0"></div>`)
 
 	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 	var raw string
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(g.Srv.URL+"/"),
 		chromedp.WaitVisible(`#ready`, chromedp.ByID),
-		chromedp.Poll(`!!(window.__gofastr&&window.__gofastr.banner&&window.__gofastr.banner.rescan)`, nil,
+		chromedp.Poll(`!!(window.__gofastr&&window.__gofastr.loadedModules&&window.__gofastr.loadedModules.headless)`, nil,
 			chromedp.WithPollingTimeout(10*time.Second), chromedp.WithPollingInterval(50*time.Millisecond)),
 		chromedp.Evaluate(`(function () {
 			var bn = document.createElement('div');
-			bn.setAttribute('data-fui-comp', 'ui-banner');
+			bn.setAttribute('data-hui-system', '');
+			bn.setAttribute('data-hui-system-id', 'probe=x; Path=/');
 			var b = document.createElement('button');
 			b.type = 'button';
-			b.setAttribute('data-fui-banner-dismiss', '');
-			b.setAttribute('data-fui-banner-dismiss-id', 'probe=x; Path=/');
+			b.setAttribute('data-hui-system-dismiss', '');
 			bn.appendChild(b);
 			document.body.appendChild(bn);
 			b.click();
@@ -1228,24 +1223,20 @@ func insideTryBlock(s string, pos int) bool {
 // handler that carries it.
 //
 // Surfaces (drift tripwire — every anchor must keep existing):
-//   - src/copy.js            data-fui-copy-text-from
 //   - src/widgethelpers.js   data-fui-fill-input, data-fui-charcount-source
 //   - src/shortcut.js        data-fui-shortcut-target
 //   - src/rpc.js             data-fui-rpc-scroll-to
 //   - frag/signals.js        data-fui-scroll-bottom-on-update
-//   - src/backtotop.js       data-fui-btt-target
 //   - src/infinitescroll.js  data-fui-infinite-items
 //   - src/scrollspy.js       data-fui-scrollspy, data-fui-scrollspy-target
 //   - src/toc.js             data-fui-toc
 func TestSelectorByDesignLookupsGuarded(t *testing.T) {
 	anchors := []struct{ file, anchor string }{
-		{"src/copy.js", `document.querySelector(sel)`},
 		{"src/widgethelpers.js", `widget.querySelector(sel)`},
 		{"src/widgethelpers.js", `sel && document.querySelector(sel)`},
 		{"src/shortcut.js", `el.querySelector(sel)`},
 		{"src/rpc.js", `document.querySelector(scrollSel)`},
 		{"frag/signals.js", `node.querySelector(sel)`},
-		{"src/backtotop.js", `document.querySelector(scrollTarget)`},
 		{"src/infinitescroll.js", `wrap.querySelector(itemsSel)`},
 		{"src/scrollspy.js", `document.querySelector(observeSel)`},
 		{"src/scrollspy.js", `root.querySelectorAll(targetSel)`},

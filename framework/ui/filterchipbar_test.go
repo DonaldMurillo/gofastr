@@ -35,7 +35,7 @@ func TestFilterChipBarEmpty(t *testing.T) {
 	if !strings.Contains(out, `role="toolbar"`) {
 		t.Errorf("expected empty toolbar still rendered, got: %s", out)
 	}
-	if strings.Contains(out, "ui-tag") {
+	if strings.Contains(out, "fui-tag") {
 		t.Errorf("did not expect any chips when empty, got: %s", out)
 	}
 }
@@ -50,8 +50,8 @@ func TestFilterChipBarClearAll(t *testing.T) {
 	}))
 	wants := []string{
 		`data-fui-rpc="/filters/clear-all"`,
-		`>Reset filters</button>`,
-		`ui-filter-bar__clear`,
+		`>Reset filters</a>`,
+		`fui-filter-bar__clear`,
 	}
 	for _, w := range wants {
 		if !strings.Contains(out, w) {

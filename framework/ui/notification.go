@@ -2,11 +2,12 @@ package ui
 
 import (
 	"context"
+	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
-	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
 	"github.com/DonaldMurillo/gofastr/core/render"
 
+	"github.com/DonaldMurillo/gofastr/framework/headless"
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
@@ -41,6 +42,13 @@ type NotificationConfig struct {
 	// Position pins the notification to a screen corner via fixed
 	// positioning. Defaults to NotificationInline (in document flow).
 	Position NotificationPosition
+
+	// Island is where the dismiss goes with script: a dismissing
+	// toast changes the stack, which is an in-page state change and
+	// needs the endpoint that renders the region again. Required by
+	// the primitive when DismissHref is set; without script the same
+	// link navigates to DismissHref.
+	Island headless.Island
 
 	// Ctx carries the per-request context used to resolve the
 	// dismiss-label string. When nil, English fallbacks apply.
@@ -84,72 +92,77 @@ func Notification(cfg NotificationConfig) render.HTML {
 		v = StatusInfo
 	}
 	checkStatusVariant("Notification", v)
-	cls := "ui-notification ui-notification--" + string(v)
+
+	// The toast's tone vocabulary is closed; a registered status
+	// variant outside it keeps the info tone and its sheet class.
+	tone := string(v)
+	switch tone {
+	case "info", "success", "warning", "danger":
+	default:
+		tone = "info"
+	}
+	live := headless.LivePolite
+	if v == StatusDanger || v == StatusWarning {
+		live = headless.LiveAssertive
+	}
+
+	var mods []string
+	if string(v) != tone {
+		// A registered variant (say "beta"): the sheet keeps its class
+		// through the root's class append, the tone through the word.
+		mods = append(mods, "fui-notification--"+string(v))
+	}
 	if cfg.Position != NotificationInline {
-		cls += " ui-notification--floating ui-notification--at-" + string(cfg.Position)
+		mods = append(mods, "fui-notification--floating", "fui-notification--at-"+string(cfg.Position))
 	}
 	if cfg.Class != "" {
-		cls += " " + cfg.Class
+		mods = append(mods, cfg.Class)
+	}
+	parts := headless.Parts{}
+	if len(mods) > 0 {
+		parts.Attrs = headless.PartAttrs{headless.PartRoot: {"class": strings.Join(mods, " ")}}
+	}
+	if cfg.ID != "" {
+		parts.Attrs = nil
+		// id rides the primitive's own ID prop, not the attrs.
 	}
 
-	// Pair role with the matching aria-live politeness so SR
-	// behavior matches the implied severity. role="alert" implies
-	// assertive; "polite" would contradict it.
-	role := "status"
-	live := "polite"
-	if v == StatusDanger || v == StatusWarning {
-		role = "alert"
-		live = "assertive"
+	dismissLabel := cfg.DismissLabel
+	if dismissLabel == "" && cfg.DismissHref != "" {
+		dismissLabel = i18nui.T(ctx, i18nui.KeyNotificationDismiss)
 	}
-	attrs := html.SafeExtraAttrs(cfg.ExtraAttrs, "role", "aria-live")
-	if attrs == nil {
-		attrs = html.Attrs{}
-	}
-	attrs["role"] = role
-	attrs["aria-live"] = live
+	return notificationStyle.WrapHTML(headless.Toast(headless.ToastProps{
+		Tone:         tone,
+		Icon:         render.Text(notificationGlyph(v)),
+		Title:        cfg.Title,
+		Body:         cfg.Body,
+		DismissHref:  cfg.DismissHref,
+		DismissLabel: dismissLabel,
+		Island:       cfg.Island,
+		Live:         live,
+		ID:           cfg.ID,
+		ExtraAttrs:   headless.Safe(cfg.ExtraAttrs, "role", "aria-live"),
+		Parts:        parts,
+		Strings:      StringsFor(ctx),
+	}, notificationClasses))
+}
 
-	icon := html.Span(html.TextConfig{
-		Class:      "ui-notification__icon",
-		ExtraAttrs: html.Attrs{"aria-hidden": "true"},
-	}, render.Text(notificationGlyph(v)))
+// notificationClasses dresses headless.Toast's parts in this
+// package's own vocabulary — the tone variant keeps the sheet's
+// fui-notification--<tone> family, which the primitive renders as the
+// root's variant class.
+var notificationClasses = headless.Classes{
+	headless.PartRoot:          "fui-notification",
+	headless.PartToastToneWord: "fui-visually-hidden",
+	headless.PartIcon:          "fui-notification__icon",
+	headless.PartTitle:         "fui-notification__title",
+	headless.PartBody:          "fui-notification__body",
+	headless.PartDismiss:       "fui-notification__dismiss",
 
-	textChildren := []render.HTML{
-		html.Strong(html.TextConfig{Class: "ui-notification__title"},
-			render.Text(cfg.Title)),
-	}
-	if cfg.Body != "" {
-		textChildren = append(textChildren,
-			html.Paragraph(html.TextConfig{Class: "ui-notification__body"},
-				render.Text(cfg.Body)))
-	}
-	textBlock := html.Div(html.DivConfig{Class: "ui-notification__text"}, textChildren...)
-
-	children := []render.HTML{icon, textBlock}
-	if cfg.DismissHref != "" {
-		label := cfg.DismissLabel
-		if label == "" {
-			label = i18nui.T(ctx, i18nui.KeyNotificationDismiss)
-		}
-		// safeURL drops javascript:, data:, vbscript:, file:, blob:,
-		// protocol-relative //host, and control bytes (see safety.go);
-		// a rejected href degrades to "#" like ui.Card / ui.Link.
-		// (Previously this used the weaker sanitizeHref, which let
-		// //evil.com, file:, and blob: through verbatim.)
-		dismissHref := urlsafe.CleanAnchor(cfg.DismissHref)
-		if dismissHref == "" {
-			dismissHref = "#"
-		}
-		children = append(children, html.LinkHTML(html.LinkHTMLConfig{
-			Href:       dismissHref,
-			Class:      "ui-notification__dismiss",
-			ExtraAttrs: html.Attrs{"aria-label": label},
-			Content:    render.Text("×"),
-		}))
-	}
-	return notificationStyle.WrapHTML(html.Div(html.DivConfig{
-		Class: cls, ID: cfg.ID,
-		ExtraAttrs: attrs,
-	}, children...))
+	"root--info":    "fui-notification--info",
+	"root--success": "fui-notification--success",
+	"root--warning": "fui-notification--warning",
+	"root--danger":  "fui-notification--danger",
 }
 
 func notificationGlyph(v StatusVariant) string {

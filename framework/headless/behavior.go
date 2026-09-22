@@ -23,7 +23,7 @@ const BehaviorName = "headless"
 // color, and grow, lines and skeleton-last are read by a stylesheet
 // and no script, so none of the four is a marker.
 var behaviorMarkers = []string{
-	"[data-hui-reveal]", "[data-hui-color]", "[data-hui-when]",
+	"[data-hui-reveal]", "[data-hui-color]",
 	"[data-hui-form-errors]", "[data-hui-action]", "[data-hui-drop]",
 	"[data-hui-system]", "[data-hui-table]",
 }
@@ -39,7 +39,7 @@ var behaviorMarkers = []string{
 // gate reads every registry.Markers call in the tree and refuses an
 // argument it cannot read.
 var _ = uiregistry.RegisterBehavior(BehaviorName, behaviorJS,
-	uiregistry.Markers("[data-hui-reveal]", "[data-hui-color]", "[data-hui-when]",
+	uiregistry.Markers("[data-hui-reveal]", "[data-hui-color]",
 		"[data-hui-form-errors]", "[data-hui-action]", "[data-hui-drop]",
 		"[data-hui-system]", "[data-hui-table]"),
 	// A first click on a table's sort anchor or its pager's page

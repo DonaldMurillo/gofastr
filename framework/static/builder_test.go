@@ -123,8 +123,8 @@ func TestBuildEmitsColorSchemeJS(t *testing.T) {
 
 	// Every page loads /__gofastr/color-scheme.js synchronously at the top of
 	// <head> to set data-color-scheme before first paint (FOUC prevention).
-	// themeswitch.js early-returns when window.__gofastr_colorScheme is absent,
-	// so a missing file silently kills the theme toggle on a static host.
+	// headless-navigation reads the stored scheme itself, but only from its
+	// own load onward — a missing file means a flash on every reload.
 	data, err := os.ReadFile(filepath.Join(out, "__gofastr", "color-scheme.js"))
 	if err != nil {
 		t.Fatalf("color-scheme.js missing: %v", err)

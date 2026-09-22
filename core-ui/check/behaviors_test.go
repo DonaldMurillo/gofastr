@@ -36,9 +36,12 @@ func TestRegisteredBehaviorSources_FindsTheTreesModules(t *testing.T) {
 	}
 	for _, want := range []string{
 		"framework/headless/behavior.js",
+		"framework/headless/controls.js",
+		"framework/headless/collections.js",
+		"framework/headless/wizard.js",
+		"framework/headless/feedback.js",
+		"framework/headless/navigation.js",
 		"examples/site/behavior_ping.js",
-		"framework/ui/optimisticaction.js",
-		"framework/ui/toggleaction.js",
 	} {
 		if !rel[want] {
 			t.Errorf("%s is a registered behaviour and the enumerator did not find it; found %v", want, files)

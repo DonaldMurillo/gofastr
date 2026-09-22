@@ -99,9 +99,10 @@ between `"true"` and `"false"`.
 ### Copy to clipboard
 
 `framework/ui.CopyButton` renders a button that copies text to the
-clipboard via `navigator.clipboard.writeText()`. The runtime module
-(`copy.js`) shows a brief "Copied!" state and announces it to screen
-readers. Works with a `document.execCommand('copy')` fallback.
+clipboard via `navigator.clipboard.writeText()`. The feedback module
+(`headless-feedback`, through the `data-hui-copy*` hooks) shows a
+brief "Copied!" state and announces it to screen readers. Without
+script the page promises nothing about the clipboard.
 
 ### Password visibility toggle
 
@@ -122,14 +123,16 @@ content. Triggered by the `data-fui-autogrow` attribute.
 ### Toast notifications
 
 `core-ui/widget/preset.ToastStack` renders a slide-in notification
-stack. The runtime module (`toasts.js`) is pure client-side. Toasts
+stack. The feedback module (`headless-feedback`) owns the pure
+client-side toast runtime. Toasts
 auto-dismiss with a TTL, pause on hover/focus, and can be dismissed
 by clicking the close button.
 
 ### Theme toggle
 
 `framework/ui.ThemeToggle` renders a dark/light/auto switch. The
-runtime (`themeswitch.js`) persists the preference in `localStorage`
+navigation module (`headless-navigation`, through the
+`data-hui-theme-*` hooks) persists the preference in `localStorage`
 and toggles the `color-scheme` meta + root attribute.
 
 ### Scroll spy
@@ -180,7 +183,9 @@ Attributes injected: `data-fui-rpc-trigger="input"`,
 that immediately flips to its success visual on click, then fires the
 RPC in the background. On failure the button shakes and reverts.
 
-Uses the `optimisticaction.js` runtime module.
+Uses the kernel's `action` module through the `data-hui-action*`
+hooks `interactive.OptimisticUpdate` (and `framework/ui.OptimisticAction`)
+render; see [runtime-contract](runtime-contract.md).
 
 ### Toggle Action (three-state commit/untoggle)
 
@@ -207,8 +212,9 @@ ui.ToggleAction(ui.ToggleActionConfig{
 })
 ```
 
-Uses the `toggleaction.js` runtime module (`data-fui-toggle-*`
-attributes; see [runtime-contract](runtime-contract.md)).
+Uses the kernel's `action` module through the `data-hui-action*`
+hooks (`data-hui-action-untoggle`, `data-hui-action-group`) the
+button renders; see [runtime-contract](runtime-contract.md).
 
 ### Inline Edit helpers
 
@@ -690,13 +696,13 @@ own runtime modules for client-side behavior.
 | Multi-select | `multiselect.js` | Checkbox group with chip display |
 | Notification Bell | (uses Popover) | Bell + unread badge + dropdown |
 | Popover | `popover.js` | Anchored positioning, auto-flip, arrow drawing |
-| Range Slider | `rangeslider.js` | Dual-thumb with cross-clamp |
-| Slider | `slider.js` | Live value mirror |
-| Tag Input | `taginput.js` | Free-form chips, Enter/comma to commit |
+| Range Slider | `headless-controls` | Dual-thumb with cross-clamp, live output sentence |
+| Slider | `headless-controls` | Live value mirror |
+| Tag Input | `headless-collections` | Free-form chips, Enter/comma/blur to commit, removal announcements |
 | Tree | `tree.js` | WAI-ARIA tree pattern, roving tabindex, expand/collapse |
-| Network Retry Banner | `networkretrybanner.js` | Auto-show on RPC failure threshold, retry button |
-| Animated Counter | `animatedcounter.js` | IntersectionObserver-driven number tick animation |
-| Banner | `banner.js` | Dismissible with optional persistence |
+| Network Retry Banner | `headless-feedback` (offline SystemBanner) | Shows on the framework's lost-connection report, retry link probes health |
+| Animated Counter | `headless-controls` | Number tick animation toward the SSR text, reduced-motion aware |
+| Banner | `headless` (SystemBanner) | Dismissible, session-persisted dismissal memory |
 
 ---
 

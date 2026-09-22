@@ -20,6 +20,8 @@ package gallery
 // they reference the same framework/ui + core-ui/* primitives the site did.
 
 import (
+	"fmt"
+
 	"context"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
@@ -137,8 +139,12 @@ var Catalog = []Entry{
 			ui.Tag(ui.TagConfig{Label: "warning", Variant: ui.StatusWarning}),
 			ui.Tag(ui.TagConfig{Label: "danger", Variant: ui.StatusDanger}),
 			ui.Tag(ui.TagConfig{Label: "info", Variant: ui.StatusInfo}),
-			// Dismissable variant: the × fires an RPC to Dismiss on click.
-			ui.Tag(ui.TagConfig{Label: "beta", Dismiss: "#", DismissLabel: "Remove beta"}),
+			// Dismissable variant: a dismissal is an in-page state
+			// change, so the Island renders this strip again and the
+			// same anchor is the no-script destination.
+			ui.Tag(ui.TagConfig{Label: "beta", Dismiss: "/components/tag?dismissed=beta",
+				DismissLabel: "Remove beta",
+				Island:       headless.Island{Endpoint: "/components/tag", Signal: "tag-demo"}}),
 		)
 	}},
 	{"statusbadge", "StatusBadge", "Tags & badges", "Inline dot + label status indicator.", func() render.HTML {
@@ -622,12 +628,17 @@ var Catalog = []Entry{
 		})
 	}},
 	{"filterchipbar", "FilterChipBar", "Forms", "Active filter chip strip with per-chip dismiss RPC.", func() render.HTML {
+		// A chip dismissal is an in-page state change: the demo points
+		// the island at its own page, which is honest about there being
+		// no per-demo backend — the contract (link + island on the same
+		// control) is the thing on show.
 		return ui.FilterChipBar(ui.FilterChipBarConfig{
+			RPCSignal: "filter-chips",
 			Filters: []ui.FilterChip{
-				{Label: "Open", DismissPath: "#", Variant: ui.StatusInfo},
-				{Label: "Mine", DismissPath: "#", Variant: ui.StatusNeutral},
+				{Label: "Open", DismissPath: "/components/filterchipbar?dismissed=open", Variant: ui.StatusInfo},
+				{Label: "Mine", DismissPath: "/components/filterchipbar?dismissed=mine", Variant: ui.StatusNeutral},
 			},
-			ClearAllPath: "#",
+			ClearAllPath: "/components/filterchipbar?dismissed=all",
 		})
 	}},
 	{"inputgroup", "InputGroup", "Forms", "Input plus leading/trailing addon.", func() render.HTML {
@@ -670,13 +681,36 @@ var Catalog = []Entry{
 		)
 	}},
 	{"formrepeater", "FormRepeater", "Forms", "Add/remove rows of fields.", func() render.HTML {
-		return html.Div(html.DivConfig{Class: "fact"},
-			render.Text("FormRepeater renders a +/- chrome over a Repeater base. Per-page integration shown in the form demo."),
+		row := func(i int) render.HTML {
+			return ui.TextField(ui.TextFieldConfig{
+				Name:  fmt.Sprintf("links[%d].label", i),
+				Label: fmt.Sprintf("Link %d", i+1),
+			})
+		}
+		// The rows and their controls live in the caller's form: the
+		// add/remove controls are named submit buttons, so a plain
+		// POST walks the same path the island does.
+		return render.Tag("form", map[string]string{"method": "post", "action": "/components/formrepeater", "class": "demo-stack"},
+			ui.FormRepeater(ui.FormRepeaterConfig{
+				Name:  "links",
+				Items: [][]render.HTML{{row(0)}, {row(1)}},
+			}),
 		)
 	}},
 	{"repeater", "Repeater", "Forms", "Generic repeatable group.", func() render.HTML {
-		return html.Div(html.DivConfig{Class: "fact"},
-			render.Text("Repeater is the headless variant of FormRepeater: bring your own chrome."),
+		row := func(i int) render.HTML {
+			return ui.TextField(ui.TextFieldConfig{
+				Name:  fmt.Sprintf("guests[%d].name", i),
+				Label: fmt.Sprintf("Guest %d", i+1),
+			})
+		}
+		return render.Tag("form", map[string]string{"method": "post", "action": "/components/repeater", "class": "demo-stack"},
+			ui.Repeater(ui.RepeaterConfig{
+				Name:     "guests",
+				Label:    "Guests",
+				MinItems: 1,
+				Template: row,
+			}),
 		)
 	}},
 
@@ -872,7 +906,7 @@ const page = await api.posts.list({ limit: 25 });`},
 	// via the Category field. They're grouped here only physically.
 	{"stepwizard", "StepWizard", "Wizards", "Numbered multi-step form (server-driven).", func() render.HTML {
 		return ui.StepWizard(ui.StepWizardConfig{
-			Action:      "#",
+			Action:      "/forms/wizard",
 			CurrentStep: 1,
 			Steps: []ui.StepWizardStep{
 				{Heading: "Account", Description: "Email + password"},
@@ -892,7 +926,7 @@ const page = await api.posts.list({ limit: 25 });`},
 	}},
 	{"optimisticaction", "OptimisticAction", "Feedback", "Action that commits + can rollback on error.", func() render.HTML {
 		return ui.OptimisticAction(ui.OptimisticActionConfig{
-			Endpoint:     "#",
+			Endpoint:     "/__site/optimistic/edit/ok",
 			IdleLabel:    "Mark as read",
 			SuccessLabel: "Marked ✓",
 		})
@@ -1029,6 +1063,7 @@ ui.OptimisticAction(ui.OptimisticActionConfig{
 		trigger, _ := ui.NotificationBell(ui.NotificationBellConfig{
 			Name:        "demo-bell",
 			Label:       "Notifications",
+			Href:        "/notifications",
 			UnreadCount: 3,
 			Items: []ui.NotificationItem{
 				{Title: "Welcome to GoFastr", Time: "Just now"},

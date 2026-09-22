@@ -123,8 +123,8 @@ func TestE2E_Tag_DismissButtonHasAccessibleLabel(t *testing.T) {
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/tag"),
 		pageReady(),
-		chromedp.Evaluate(`document.querySelector('.ui-tag__dismiss')?.getAttribute('aria-label') || ''`, &ariaLabel),
-		chromedp.Evaluate(`document.querySelector('.ui-tag__dismiss')?.getAttribute('data-fui-rpc') || ''`, &rpcPath),
+		chromedp.Evaluate(`document.querySelector('a.fui-tag__dismiss')?.getAttribute('aria-label') || ''`, &ariaLabel),
+		chromedp.Evaluate(`document.querySelector('a.fui-tag__dismiss')?.getAttribute('href') || ''`, &rpcPath),
 	); err != nil {
 		t.Fatalf("tag: %v", err)
 	}

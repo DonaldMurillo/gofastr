@@ -43,7 +43,7 @@ func TestDangerButtonColorTokens(t *testing.T) {
 // Same contract for the notification-bell unread badge.
 func TestBellBadgeColorTokens(t *testing.T) {
 	css := notificationBellCSS(style.DefaultTheme())
-	i := strings.Index(css, ".ui-notification-bell__badge {")
+	i := strings.Index(css, ".fui-notification-bell__badge {")
 	if i < 0 {
 		t.Fatal("badge rule missing")
 	}

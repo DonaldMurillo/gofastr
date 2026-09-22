@@ -36,22 +36,35 @@ func TestTabsPanelCapPanicsBeyondMax(t *testing.T) {
 }
 
 // TestRepeaterNegativeMinItemsNoBlowup pins the negative-MinItems
-// branch: a negative count must not drive a huge or negative loop; the
-// template expansion loop simply renders zero items and the attribute
-// carries the raw value for the runtime to treat as "no floor".
+// branch: the headless primitive refuses a negative floor at render —
+// a count below zero is no floor, not a floor the runtime gets to
+// interpret — so the render never reaches a loop driven by it.
 func TestRepeaterNegativeMinItemsNoBlowup(t *testing.T) {
-	h := string(ui.Repeater(ui.RepeaterConfig{
+	defer func() {
+		if recover() == nil {
+			t.Fatal("negative MinItems should be refused at render, not carried for a loop or a runtime to interpret")
+		}
+	}()
+	ui.Repeater(ui.RepeaterConfig{
 		Name:     "rows",
 		MinItems: -1000,
 		Template: func(int) render.HTML { return render.Text("t") },
+	})
+}
+
+func TestRepeaterNegativeMinItemsDropped(t *testing.T) {
+	h := string(ui.Repeater(ui.RepeaterConfig{
+		Name:     "rows",
+		MinItems: 0,
+		Template: func(int) render.HTML { return render.Text("t") },
 	}))
 	// Count the item wrapper class exactly; the region class is
-	// "ui-repeater-items", a superstring of "ui-repeater-item".
-	if n := strings.Count(h, `class="ui-repeater-item"`); n != 0 {
-		t.Errorf("negative MinItems rendered %d template items; expected none:\n%s", n, h)
+	// "fui-repeater__items", a superstring of "fui-repeater__item".
+	if n := strings.Count(h, `class="fui-repeater__item"`); n != 1 {
+		t.Errorf("a zero floor seeded %d template items; expected the one:\n%s", n, h)
 	}
-	if !strings.Contains(h, `data-min-items="-1000"`) {
-		t.Errorf("MinItems must still be carried on the region attribute:\n%s", h)
+	if strings.Contains(h, `data-min-items`) {
+		t.Errorf("no min attribute is carried: the floors speak through the disabled controls:\n%s", h)
 	}
 }
 

@@ -235,22 +235,6 @@ var moduleAttrs = map[string][]string{
 		"data-fui-animate-signal",
 		"data-fui-animate-class",
 	},
-	"animatedcounter": {
-		"data-fui-animated-counter",
-		"data-fui-animated-counter-from",
-		"data-fui-animated-counter-ms",
-	},
-	"backtotop": {
-		"data-fui-back-to-top",
-		"data-fui-btt-scroll",
-		"data-fui-btt-target",
-		"data-fui-btt-threshold",
-		"data-fui-btt-visible",
-	},
-	"banner": {
-		"data-fui-banner-dismiss",
-		"data-fui-banner-dismiss-id",
-	},
 	"carousel": {
 		"data-fui-carousel",
 		"data-fui-carousel-autorotate",
@@ -269,12 +253,6 @@ var moduleAttrs = map[string][]string{
 	"computed": {
 		"data-fui-computed",
 		"data-fui-computed-deps",
-	},
-	"copy": {
-		"data-fui-copy-text-from",
-		"data-fui-copy-announce",
-		"data-fui-copy-status",
-		"data-fui-copy-toast",
 	},
 	"disclosure": {
 		"data-fui-disclosure",
@@ -322,22 +300,11 @@ var moduleAttrs = map[string][]string{
 		"data-fui-multiselect-chips",
 		"data-fui-multiselect-remove",
 	},
-	"networkretrybanner": {
-		"data-fui-network-retry-threshold",
-		"data-fui-network-retry-health",
-		"data-fui-network-retry-button",
-		"data-fui-network-retry-sse-silence",
-		"data-fui-network-retry-demo-trigger",
-		"data-fui-network-retry-demo-recover",
-	},
-	"numberinput": {
-		"data-fui-number-step",
-		"data-fui-number-for",
-	},
-	// OptimisticAction's wiring (data-fui-optimistic-*) moved to
-	// framework/ui/optimisticaction.js, a registered behaviour: its
-	// attributes are read by a registered source, not by anything in
-	// this package, so they left this table.
+	// OptimisticAction's wiring is the kernel's action primitive
+	// (data-hui-action*, bound by the headless module): nothing in
+	// this package reads it, so it has no row here. The
+	// data-fui-optimistic-* hooks and framework/ui/optimisticaction.js
+	// are retired.
 	"panehost": {
 		"data-fui-pane-host",
 		"data-fui-pane",
@@ -358,9 +325,8 @@ var moduleAttrs = map[string][]string{
 		"data-fui-popover-side",
 		"data-fui-popover-trigger",
 	},
-	"rangeslider": {
-		"data-fui-range-slider",
-		"data-fui-range-slider-value",
+	"headless-feedback": {
+		"data-fui-toast-stack",
 	},
 	"rpc": {
 		"data-fui-rpc",
@@ -400,9 +366,6 @@ var moduleAttrs = map[string][]string{
 		"data-fui-sidebar",
 		"data-fui-sidebar-storage",
 	},
-	"slider": {
-		"data-fui-slider-mirror",
-	},
 	"sortablelist": {
 		"data-fui-sortable",
 		"data-fui-sort-key",
@@ -413,33 +376,17 @@ var moduleAttrs = map[string][]string{
 		"data-fui-sortable-version",
 		"data-fui-sortable-conflict",
 	},
-	"taginput": {
-		"data-fui-tag-input",
-		"data-fui-tag-input-id",
-		"data-fui-tag-input-zone",
-	},
 	"textarea": {
 		"data-fui-autogrow",
-	},
-	"themeswitch": {
-		"data-fui-theme-toggle",
-		"data-fui-theme-toggle-opt",
-	},
-	"toasts": {
-		"data-fui-toast-stack",
-		"data-fui-toast-id",
-		"data-fui-toast-dismiss",
-		"data-fui-toast-ttl-ms",
 	},
 	"toc": {
 		"data-fui-toc",
 		"data-fui-toc-levels",
 		"data-fui-toc-for",
 	},
-	// ToggleAction's wiring (data-fui-toggle-*) moved to
-	// framework/ui/toggleaction.js, a registered behaviour: its
-	// attributes are read by a registered source, not by anything in
-	// this package, so they left this table.
+	// ToggleAction's wiring is the same action primitive
+	// (data-hui-action*): no row here. The data-fui-toggle-* hooks
+	// and framework/ui/toggleaction.js are retired.
 	"tabs": {
 		"data-fui-tabs-state",
 		"data-fui-tabs-vacate",

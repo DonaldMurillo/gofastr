@@ -22,8 +22,8 @@
   //     (FOUC). It is enumerated here as documentation only.
   //   - data-fui-static is written by the static exporter (Go), never
   //     by the runtime. Enumerated as documentation only.
-  //   - Transient DOM (e.g. the copy.js textarea) and pure reads
-  //     (#fui-route-announce) stay unwrapped.
+  //   - Transient DOM (e.g. the feedback module's copy textarea) and
+  //     pure reads (#fui-route-announce) stay unwrapped.
   //
   // lockScroll/unlockScroll refcount by OWNER (a Set), so two
   // concurrent lockers, a modal over an image overlay, a drawer over a
@@ -497,12 +497,14 @@
 
 
     // Toast stack runtime (__gofastr.toast, _initToasts, _dismissToast,
-    // _toastTimers, _toastSeq) lives in the split-runtime toasts module
-    // at core-ui/runtime/src/toasts.js. The module self-registers
-    // those on window.__gofastr when it loads. Core code that calls
-    // them (the click delegator for data-fui-toast, the X-Gofastr-Toast
-    // header dispatch in dispatchRPC) awaits loadModule('toasts')
-    // first so the very first toast on a cold cache still fires.
+    // _toastTimers, _toastSeq) lives in the registered behaviour module
+    // headless-feedback (framework/headless/feedback.js), which
+    // replaced the retired core-ui/runtime src/toasts.js. The module
+    // self-registers those on window.__gofastr when it loads. Core
+    // code that calls them (the click delegator for data-fui-toast,
+    // the X-Gofastr-Toast header dispatch in dispatchRPC) awaits
+    // loadModule('headless-feedback') first so the very first toast on
+    // a cold cache still fires.
 
     // Widget runtime (mountWidget, openWidget, closeWidget,
     // _mountByName, _chromeCache, _deepLink{Push,Strip,Sync}, Modal
@@ -539,7 +541,7 @@
     // _toastOrFallback dispatches a single toast cfg, falling back to
     // the inline renderer if the toasts module isn't available.
     _toastOrFallback(cfg) {
-      this.loadModule('toasts')
+      this.loadModule('headless-feedback')
         .then(() => { try { this.toast(cfg); } catch (_) {} })
         .catch(() => { try { this._fallbackToast(cfg); } catch (_) {} });
     },

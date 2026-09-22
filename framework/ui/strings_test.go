@@ -114,6 +114,35 @@ func TestStringsForNilCtxIsHeadlessEnglish(t *testing.T) {
 	})
 }
 
+// placeholderProbes are the catalog probes for every bridged key whose
+// English carries a placeholder: a probe without it would be refused,
+// which is the refusal tests' job, not the pass-through's.
+func placeholderProbes() map[i18nui.Key]string {
+	return map[i18nui.Key]string{
+		i18nui.KeyDismissTitled:        "fr·Fermer : %s",
+		i18nui.KeyTagRemoveLabelled:    "fr·Retirer %s",
+		i18nui.KeyColorPick:            "fr·Choisir %s",
+		i18nui.KeyFileSelected:         "fr·{name} choisi.",
+		i18nui.KeyFilesSelected:        "fr·{n} fichiers : {names}.",
+		i18nui.KeyTableSortBy:          "fr·Trier par {column}",
+		i18nui.KeyTableSortedBy:        "fr·Trié par {column}, {direction}",
+		i18nui.KeyHuiCopyStatus:        "fr·{name} copié.",
+		i18nui.KeyHuiNumberDecrement:   "fr·Diminuer %s",
+		i18nui.KeyHuiNumberIncrement:   "fr·Augmenter %s",
+		i18nui.KeyHuiRangeLow:          "fr·Minimum %s",
+		i18nui.KeyHuiRangeHigh:         "fr·Maximum %s",
+		i18nui.KeyHuiRangeValue:        "fr·%s à %s",
+		i18nui.KeyHuiRatingChoice:      "fr·%d sur %d",
+		i18nui.KeyHuiTagInputAdd:       "fr·Ajouter %s",
+		i18nui.KeyHuiTagInputAdded:     "fr·{name} ajouté",
+		i18nui.KeyHuiTagInputRemoved:   "fr·{name} retiré",
+		i18nui.KeyHuiRepeaterRemove:    "fr·Retirer l'élément %d",
+		i18nui.KeyHuiNotificationCount: "fr·%d notifications non lues",
+		i18nui.KeyHuiStepOf:            "fr·Étape %d sur %d",
+		i18nui.KeyHuiStepName:          "fr·Étape %d : %s",
+	}
+}
+
 // TestStringsForTranslatesEveryField: a catalog entry for every
 // mapped key comes through on every field, proving the table is not
 // just listed but filled. The probe values carry the field's
@@ -137,6 +166,19 @@ func TestStringsForTranslatesEveryField(t *testing.T) {
 	entries[i18nui.KeyTableSortedBy] = "fr·Trié par {column}, {direction}"
 	entries[i18nui.KeyTableDirAscending] = "fr·ascendant"
 	entries[i18nui.KeyTableDirDescending] = "fr·descendant"
+	entries[i18nui.KeyHuiNumberDecrement] = "fr·Diminuer %s"
+	entries[i18nui.KeyHuiNumberIncrement] = "fr·Augmenter %s"
+	entries[i18nui.KeyHuiRangeLow] = "fr·Minimum %s"
+	entries[i18nui.KeyHuiRangeHigh] = "fr·Maximum %s"
+	entries[i18nui.KeyHuiRangeValue] = "fr·%s à %s"
+	entries[i18nui.KeyHuiRatingChoice] = "fr·%d sur %d"
+	entries[i18nui.KeyHuiTagInputAdd] = "fr·Ajouter %s"
+	entries[i18nui.KeyHuiTagInputAdded] = "fr·{name} ajouté"
+	entries[i18nui.KeyHuiTagInputRemoved] = "fr·{name} retiré"
+	entries[i18nui.KeyHuiRepeaterRemove] = "fr·Retirer l'élément %d"
+	entries[i18nui.KeyHuiNotificationCount] = "fr·%d notifications non lues"
+	entries[i18nui.KeyHuiStepOf] = "fr·Étape %d sur %d"
+	entries[i18nui.KeyHuiStepName] = "fr·Étape %d : %s"
 
 	got := StringsFor(stringsCtx(entries))
 	everyHeadlessStringField(t, got, func(name, val string) {
@@ -339,13 +381,9 @@ func TestCheckStringsCleanCatalogIsEmpty(t *testing.T) {
 	for _, key := range i18nui.AllKeys() {
 		entries[key] = "fr·" + string(key)
 	}
-	entries[i18nui.KeyDismissTitled] = "fr·Fermer : %s"
-	entries[i18nui.KeyTagRemoveLabelled] = "fr·Retirer %s"
-	entries[i18nui.KeyColorPick] = "fr·Choisir %s"
-	entries[i18nui.KeyFileSelected] = "fr·{name} choisi."
-	entries[i18nui.KeyFilesSelected] = "fr·{names} : {n}."
-	entries[i18nui.KeyTableSortBy] = "fr·Trier par {column}"
-	entries[i18nui.KeyTableSortedBy] = "fr·Trié par {column}, {direction}"
+	for k, v := range placeholderProbes() {
+		entries[k] = v
+	}
 	if got := CheckStrings(stringsCtx(entries)); len(got) != 0 {
 		t.Errorf("a catalog that keeps every placeholder reported %d refusal(s): %+v", len(got), got)
 	}

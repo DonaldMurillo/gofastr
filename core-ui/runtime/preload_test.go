@@ -57,15 +57,16 @@ func TestNeededModules_SidebarCollapse(t *testing.T) {
 }
 
 func TestNeededModules_MultipleMarkersDedupSorted(t *testing.T) {
-	// popover, widgets (twice), toasts
+	// popover, widgets (twice), rpc (the retired toasts marker no
+	// longer exists; rpc carries the toast-button dialect instead)
 	html := `
 		<button data-fui-open="m1">open</button>
 		<div data-fui-widget="m1"></div>
-		<button data-fui-toast='{"title":"hi"}'>toast</button>
+		<button data-fui-rpc="/x" data-fui-rpc-signal="t">toast</button>
 		<button data-fui-popover-anchor="auto">pop</button>
 	`
 	got := NeededModules(html)
-	want := []string{"popover", "toasts", "widgets"}
+	want := []string{"popover", "rpc", "widgets"}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("got %v, want %v", got, want)
 	}

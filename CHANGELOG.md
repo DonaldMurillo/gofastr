@@ -9,6 +9,89 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ### BREAKING
 
+- **Form controls:** `NumberInput`, `Slider`, `RangeSlider`,
+  `RatingInput`, `TagInput`, `Repeater`, `FormRepeater`,
+  `StepWizard`, `TimePicker` now render through headless primitives
+  under `fui-*` class names (`fui-number-input`, `fui-slider`,
+  `fui-range-slider`, `fui-rating`, `fui-tag-input`, `fui-repeater`,
+  `fui-form-repeater`, `fui-step-wizard`, `fui-time-picker`).
+  Screen-reader users get one typed label/group/value relationship
+  and form fallback instead of class-found controls and silent
+  updates. Retired runtime modules: `numberinput`, `slider`,
+  `rangeslider`, `taginput`, `formrepeater` — their `data-fui-*`
+  hooks (`data-fui-number-step`, `data-fui-number-for`,
+  `data-fui-slider-mirror`, `data-fui-range-slider`,
+  `data-fui-range-slider-value`, `data-fui-tag-input`,
+  `data-fui-tag-input-id`, `data-fui-tag-input-zone`,
+  `data-fui-comp="ui-form-repeater"`) are replaced by the
+  `data-hui-*` hooks the `headless-controls` and
+  `headless-collections` modules bind. Slider/range values the
+  server disagrees with are clamped or ordered, not refused;
+  empty ranges and non-positive steps still refuse. Posted values
+  carrying control bytes are scrubbed. `Repeater`'s add/remove are
+  named submit buttons (type=submit) — the no-script page submits
+  the surrounding form.
+- **Feedback and notification:** `Banner`, `NetworkRetryBanner`,
+  `Notification`, `NotificationBell`, `CopyButton`. Live roles,
+  severity/count labels, dismiss destinations and status
+  announcements are explicit: Banner/NetworkRetryBanner render the
+  `headless.SystemBanner` contract (`data-hui-system*`, session
+  dismissal memory, tone word said before the title, polite posture
+  — warn/danger no longer interrupt with role=alert), Notification
+  renders `headless.Toast` (`data-hui-toast*`; the dismiss link now
+  requires an `Island` — a dismissal is an in-page state change),
+  `NotificationBellConfig.Href` is required (same-origin; `#`
+  refused) and the anchor's name says the spoken count;
+  `NetworkRetryBannerConfig.FailureThreshold` and
+  `NetworkRetryBannerConfig.SSESilenceMs` are removed with the
+  failure-count and SSE-silence triggers that retired with the
+  `networkretrybanner` module,
+  `CopyButton`'s copy is `data-hui-copy*` on the feedback module
+  with no clipboard mutation promised without script. Retired
+  runtime modules: `banner`, `copy`, `toasts` (the kernel's toast
+  loader now targets `headless-feedback`, which owns `NS.toast`,
+  `_initToasts` and the `X-Gofastr-Toast` dispatch),
+  `networkretrybanner`.
+- **Actions:** `OptimisticAction` and `ToggleAction` render through
+  the headless action contract (`data-hui-action*`); busy, pressed,
+  committed and rollback states are announced by the typed action
+  primitive. The registered `optimisticaction` and `toggleaction`
+  UI adapters and their `.js` are deleted.
+- **Signals and passive refresh:** `Counter`, `SignalToggle`,
+  `SegmentedControl`, `PollingIndicator`, `ThemeToggle`. Counter
+  renders `headless.Counter` (the value follows the signal through
+  typed binds; the animation hooks are presentation), `ThemeToggle`
+  binds `data-hui-theme-toggle`/`-option` (the `themeswitch` module
+  is retired; storage keys are unchanged so schemes never flash).
+- **Navigation and tags:** `AnimatedCounter`, `BackToTop`, `Tag`,
+  `FilterChipBar`. AnimatedCounter's final value is SSR text and the
+  animation is presentation (`data-hui-counter-*`), BackToTop is a
+  real anchor (`Href` required; `data-hui-back-to-top*`), Tag's and
+  FilterChipBar's dismissals are links plus typed Islands
+  (`Dismiss` now requires `Island` — plain dismiss buttons and
+  caller-injected `data-fui-rpc` attrs are removed), `FilterChipBar`'s
+  Clear All is an anchor with the same island contract. Retired
+  runtime modules: `animatedcounter`, `backtotop`, `themeswitch`.
+- **Styled-only retained wrappers:** `SearchInput` and `Tooltip`
+  have no headless BREAKING entry; their Batch 2 decision is
+  retention (`searchinput` and `shortcut` modules stay until the
+  Batch 3 Combobox decision), not a new semantic contract.
+
+### Added
+
+- `framework/headless` gains `Counter`, `BackToTop`, `NumberInput`,
+  `Slider`, `RangeSlider`, `Rating`, `TagInput`, `Repeater`, `Toast`,
+  `ToastStack`, `NotificationBell` and `StepWizard` primitives with
+  Specs, refusal tests and goldens, the registered behaviour modules
+  `headless-controls`, `headless-collections`, `headless-wizard`,
+  `headless-feedback`, `headless-navigation` and `headless-when`
+  (ConditionalField's region show/hide/disable behaviour moved to it
+  from the `headless` module to keep both under the byte budget), and
+  new `Strings`
+  fields (counter, back-to-top, number-input, range, rating, tag-input,
+  repeater, notification-count and step-wizard words) bridged through
+  `ui.StringsFor`.
+
 - **The structural, status and layout family moved to `fui-*` class
   names.** Every component in this family now renders through its
   headless primitive (or, for the pure layout facts, stays a styled
@@ -1210,6 +1293,15 @@ are listed under Added above, not here.
   where the old module reverted in silence.
 
 ### Fixed
+- **`widget.RuntimeTag` emits its inline JSON blocks before the
+  runtime script.** The kernel parses `#gofastr-behaviors` while
+  `runtime.js` executes, in the pass that installs the interaction
+  bridge, so a block that followed the script was read as absent and
+  no registered behaviour's marker was scanned on a page built with
+  the tag: kiln's copy-transcript button stayed dead once the `copy`
+  fragment retired into `headless-feedback`. `framework/uihost`
+  already placed the blocks in `<head>`; `RuntimeTag` now does the
+  same, and its test refuses the old order.
 - **`ui.PasswordInput` ExtraAttrs reach the shell's root**, the
   contract every component's `ExtraAttrs` carries (`data-*` test
   hooks, analytics markers, via `html.SafeExtraAttrs`): they landed

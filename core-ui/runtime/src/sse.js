@@ -79,7 +79,7 @@
         // would otherwise re-target the write to an unintended element,
         // or throw an invalid-selector error that silently drops the
         // legitimate island's update. Matches the CSS.escape pattern in
-        // widgets.js / toasts.js.
+        // widgets.js / headless-feedback.
         const el = document.querySelector('[data-island="' + CSS.escape(String(island)) + '"]');
         if (!el) return;
         el.innerHTML = html;
