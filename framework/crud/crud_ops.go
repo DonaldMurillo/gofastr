@@ -90,9 +90,11 @@ func (ch *CrudHandler) doCreate(ctx context.Context, r *http.Request, body map[s
 		// double-add the column. Every OTHER ReadOnly/Hidden field is
 		// client-unsettable and skipped unless the caller opted in to
 		// server writes via WithServerWrites(ctx).
+		if ch.Entity.Config.Scope.MultiTenant && f.Name == ch.Entity.Config.TenantColumn() {
+			continue
+		}
 		if (f.ReadOnly || f.Hidden) && f.Name != ch.Entity.Config.Scope.OwnerField {
-			isTenantCol := ch.Entity.Config.Scope.MultiTenant && f.Name == ch.Entity.Config.TenantColumn()
-			if isTenantCol || !serverWrites(ctx) {
+			if !serverWrites(ctx) {
 				continue
 			}
 		}
