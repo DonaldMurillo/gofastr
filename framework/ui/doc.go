@@ -48,6 +48,7 @@
 //	CheckboxGroup:        <fieldset> of checkboxes with shared label + errors
 //	Cluster:              horizontal layout that wraps by default (NoWrap opts out)
 //	CodeBlock:            styled <pre><code> sample block
+//	Combobox:            input owning a listbox of suggestions (static or island-backed)
 //	CodeTabs:             one snippet in several languages behind a zero-JS tab strip
 //	Collapsible:          styled <details> disclosure with summary
 //	ColorField:           colour swatch beside a text input, one control

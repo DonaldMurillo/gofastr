@@ -19,15 +19,15 @@ func TestMenuRendersTriggerAndItems(t *testing.T) {
 	}))
 	for _, want := range []string{
 		`data-fui-comp="ui-menu"`,
-		`data-fui-disclosure`,
-		`data-fui-menu="`,
+		`data-hui-disclosure`,
+		`data-hui-menu="`,
 		`<summary`,
 		`aria-haspopup="menu"`,
 		`role="menu"`,
 		`role="menuitem"`,
 		`>Edit<`,
-		`<hr class="ui-menu__sep" role="separator">`,
-		`ui-menu__item--danger`,
+		`<hr class="fui-menu__sep" role="separator">`,
+		`fui-menu__item--danger`,
 		`data-fui-rpc="/delete"`,
 	} {
 		if !strings.Contains(out, want) {
@@ -41,16 +41,16 @@ func TestMenuHrefRendersAnchor(t *testing.T) {
 		Label: "Go",
 		Items: []ui.MenuItem{{Label: "Home", Href: "/"}},
 	}))
-	if !strings.Contains(out, `<a class="ui-menu__item" href="/"`) {
+	if !strings.Contains(out, `<a class="fui-menu__item" href="/"`) {
 		t.Errorf("Href item should render as <a>:\n%s", out)
 	}
 }
 
 func TestMenuPositionClass(t *testing.T) {
 	cases := map[ui.MenuPosition]string{
-		ui.MenuBottomEnd: "ui-menu--bottom-end",
-		ui.MenuTopStart:  "ui-menu--top-start",
-		ui.MenuTopEnd:    "ui-menu--top-end",
+		ui.MenuBottomEnd: "fui-menu--bottom-end",
+		ui.MenuTopStart:  "fui-menu--top-start",
+		ui.MenuTopEnd:    "fui-menu--top-end",
 	}
 	for pos, cls := range cases {
 		out := string(ui.Menu(ui.MenuConfig{
@@ -72,7 +72,7 @@ func TestMenuCustomTriggerHTML(t *testing.T) {
 	if !strings.Contains(out, `<svg class="icon"></svg>`) {
 		t.Error("custom TriggerHTML not rendered")
 	}
-	if strings.Contains(out, `ui-menu__caret`) {
+	if strings.Contains(out, `fui-menu__caret`) {
 		t.Error("custom TriggerHTML should suppress default caret")
 	}
 }
@@ -231,17 +231,17 @@ var goldenMenus = []struct {
 	{
 		name: "plain-button",
 		cfg:  ui.MenuConfig{Label: "Actions", Items: []ui.MenuItem{{Label: "Edit"}}},
-		want: `<details class="ui-menu ui-menu--bottom-start" data-fui-disclosure data-fui-menu="ui-menu-57ac0b74" data-fui-comp="ui-menu"><summary class="ui-menu__trigger" aria-haspopup="menu" aria-controls="ui-menu-57ac0b74-panel">Actions<span class="ui-menu__caret" aria-hidden="true">▾</span></summary><div class="ui-menu__panel" id="ui-menu-57ac0b74-panel" role="menu" data-fui-menu-panel><button class="ui-menu__item" type="button" role="menuitem" tabindex="-1"><span class="ui-menu__label">Edit</span></button></div></details>`,
+		want: `<details class="fui-menu fui-menu--bottom-start" data-hui-disclosure="" data-hui-menu="hui-menu-57ac0b74" data-fui-comp="ui-menu"><summary aria-controls="hui-menu-57ac0b74-panel" aria-haspopup="menu" class="fui-menu__trigger">Actions<span aria-hidden="true" class="fui-menu__caret">▾</span></summary><div class="fui-menu__panel" data-hui-menu-panel="" id="hui-menu-57ac0b74-panel" role="menu"><button class="fui-menu__item" role="menuitem" tabindex="-1" type="button"><span class="fui-menu__label">Edit</span></button></div></details>`,
 	},
 	{
 		name: "href-anchor",
 		cfg:  ui.MenuConfig{Label: "Go", Items: []ui.MenuItem{{Label: "Home", Href: "/"}}},
-		want: `<details class="ui-menu ui-menu--bottom-start" data-fui-disclosure data-fui-menu="ui-menu-96810e5c" data-fui-comp="ui-menu"><summary class="ui-menu__trigger" aria-haspopup="menu" aria-controls="ui-menu-96810e5c-panel">Go<span class="ui-menu__caret" aria-hidden="true">▾</span></summary><div class="ui-menu__panel" id="ui-menu-96810e5c-panel" role="menu" data-fui-menu-panel><a class="ui-menu__item" href="/" role="menuitem" tabindex="-1"><span class="ui-menu__label">Home</span></a></div></details>`,
+		want: `<details class="fui-menu fui-menu--bottom-start" data-hui-disclosure="" data-hui-menu="hui-menu-96810e5c" data-fui-comp="ui-menu"><summary aria-controls="hui-menu-96810e5c-panel" aria-haspopup="menu" class="fui-menu__trigger">Go<span aria-hidden="true" class="fui-menu__caret">▾</span></summary><div class="fui-menu__panel" data-hui-menu-panel="" id="hui-menu-96810e5c-panel" role="menu"><a class="fui-menu__item" href="/" role="menuitem" tabindex="-1"><span class="fui-menu__label">Home</span></a></div></details>`,
 	},
 	{
 		name: "href-refused-scheme",
 		cfg:  ui.MenuConfig{Label: "Go", Items: []ui.MenuItem{{Label: "Evil", Href: "javascript:alert(1)"}}},
-		want: `<details class="ui-menu ui-menu--bottom-start" data-fui-disclosure data-fui-menu="ui-menu-90970f37" data-fui-comp="ui-menu"><summary class="ui-menu__trigger" aria-haspopup="menu" aria-controls="ui-menu-90970f37-panel">Go<span class="ui-menu__caret" aria-hidden="true">▾</span></summary><div class="ui-menu__panel" id="ui-menu-90970f37-panel" role="menu" data-fui-menu-panel><a class="ui-menu__item" href="#" role="menuitem" tabindex="-1"><span class="ui-menu__label">Evil</span></a></div></details>`,
+		want: `<details class="fui-menu fui-menu--bottom-start" data-hui-disclosure="" data-hui-menu="hui-menu-90970f37" data-fui-comp="ui-menu"><summary aria-controls="hui-menu-90970f37-panel" aria-haspopup="menu" class="fui-menu__trigger">Go<span aria-hidden="true" class="fui-menu__caret">▾</span></summary><div class="fui-menu__panel" data-hui-menu-panel="" id="hui-menu-90970f37-panel" role="menu"><a class="fui-menu__item" href="#" role="menuitem" tabindex="-1"><span class="fui-menu__label">Evil</span></a></div></details>`,
 	},
 	{
 		name: "danger-disabled-icon-class",
@@ -249,12 +249,12 @@ var goldenMenus = []struct {
 			Label: "Delete", Danger: true, Disabled: true, Class: "extra-cls",
 			Icon: render.HTML(`<svg width="12"></svg>`),
 		}}},
-		want: `<details class="ui-menu ui-menu--bottom-start" data-fui-disclosure data-fui-menu="ui-menu-020cb409" data-fui-comp="ui-menu"><summary class="ui-menu__trigger" aria-haspopup="menu" aria-controls="ui-menu-020cb409-panel">Actions<span class="ui-menu__caret" aria-hidden="true">▾</span></summary><div class="ui-menu__panel" id="ui-menu-020cb409-panel" role="menu" data-fui-menu-panel><button class="ui-menu__item ui-menu__item--danger ui-menu__item--disabled extra-cls" type="button" role="menuitem" tabindex="-1" aria-disabled="true" disabled><span class="ui-menu__icon" aria-hidden="true"><svg width="12"></svg></span><span class="ui-menu__label">Delete</span></button></div></details>`,
+		want: `<details class="fui-menu fui-menu--bottom-start" data-hui-disclosure="" data-hui-menu="hui-menu-020cb409" data-fui-comp="ui-menu"><summary aria-controls="hui-menu-020cb409-panel" aria-haspopup="menu" class="fui-menu__trigger">Actions<span aria-hidden="true" class="fui-menu__caret">▾</span></summary><div class="fui-menu__panel" data-hui-menu-panel="" id="hui-menu-020cb409-panel" role="menu"><button aria-disabled="true" class="fui-menu__item fui-menu__item--danger fui-menu__item--disabled" disabled="" role="menuitem" tabindex="-1" type="button"><span aria-hidden="true" class="fui-menu__icon"><svg width="12"></svg></span><span class="fui-menu__label">Delete</span></button></div></details>`,
 	},
 	{
 		name: "disabled-anchor",
 		cfg:  ui.MenuConfig{Label: "Go", Items: []ui.MenuItem{{Label: "Locked", Href: "/x", Disabled: true}}},
-		want: `<details class="ui-menu ui-menu--bottom-start" data-fui-disclosure data-fui-menu="ui-menu-a636a70b" data-fui-comp="ui-menu"><summary class="ui-menu__trigger" aria-haspopup="menu" aria-controls="ui-menu-a636a70b-panel">Go<span class="ui-menu__caret" aria-hidden="true">▾</span></summary><div class="ui-menu__panel" id="ui-menu-a636a70b-panel" role="menu" data-fui-menu-panel><a class="ui-menu__item ui-menu__item--disabled" href="/x" role="menuitem" tabindex="-1" aria-disabled="true"><span class="ui-menu__label">Locked</span></a></div></details>`,
+		want: `<details class="fui-menu fui-menu--bottom-start" data-hui-disclosure="" data-hui-menu="hui-menu-a636a70b" data-fui-comp="ui-menu"><summary aria-controls="hui-menu-a636a70b-panel" aria-haspopup="menu" class="fui-menu__trigger">Go<span aria-hidden="true" class="fui-menu__caret">▾</span></summary><div class="fui-menu__panel" data-hui-menu-panel="" id="hui-menu-a636a70b-panel" role="menu"><a aria-disabled="true" class="fui-menu__item fui-menu__item--disabled" href="/x" role="menuitem" tabindex="-1"><span class="fui-menu__label">Locked</span></a></div></details>`,
 	},
 	{
 		name: "rpc-confirm-method",
@@ -263,7 +263,7 @@ var goldenMenus = []struct {
 			{Label: "Save", RPC: "/api/save"},
 			{Label: "Open", Href: "/x", Confirm: "inert without rpc"},
 		}},
-		want: `<details class="ui-menu ui-menu--bottom-start" data-fui-disclosure data-fui-menu="ui-menu-af395ced" data-fui-comp="ui-menu"><summary class="ui-menu__trigger" aria-haspopup="menu" aria-controls="ui-menu-af395ced-panel">Row<span class="ui-menu__caret" aria-hidden="true">▾</span></summary><div class="ui-menu__panel" id="ui-menu-af395ced-panel" role="menu" data-fui-menu-panel><button class="ui-menu__item ui-menu__item--danger" type="button" role="menuitem" tabindex="-1" data-fui-rpc="/api/items/1" data-fui-rpc-method="DELETE" data-fui-confirm="Delete this item?"><span class="ui-menu__label">Delete</span></button><button class="ui-menu__item" type="button" role="menuitem" tabindex="-1" data-fui-rpc="/api/save" data-fui-rpc-method="POST"><span class="ui-menu__label">Save</span></button><a class="ui-menu__item" href="/x" role="menuitem" tabindex="-1"><span class="ui-menu__label">Open</span></a></div></details>`,
+		want: `<details class="fui-menu fui-menu--bottom-start" data-hui-disclosure="" data-hui-menu="hui-menu-af395ced" data-fui-comp="ui-menu"><summary aria-controls="hui-menu-af395ced-panel" aria-haspopup="menu" class="fui-menu__trigger">Row<span aria-hidden="true" class="fui-menu__caret">▾</span></summary><div class="fui-menu__panel" data-hui-menu-panel="" id="hui-menu-af395ced-panel" role="menu"><button class="fui-menu__item fui-menu__item--danger" data-fui-confirm="Delete this item?" data-fui-rpc="/api/items/1" data-fui-rpc-method="DELETE" role="menuitem" tabindex="-1" type="button"><span class="fui-menu__label">Delete</span></button><button class="fui-menu__item" data-fui-rpc="/api/save" data-fui-rpc-method="POST" role="menuitem" tabindex="-1" type="button"><span class="fui-menu__label">Save</span></button><a class="fui-menu__item" href="/x" role="menuitem" tabindex="-1"><span class="fui-menu__label">Open</span></a></div></details>`,
 	},
 	{
 		name: "extraattrs-item",
@@ -274,7 +274,7 @@ var goldenMenus = []struct {
 				"aria-label": "Edit thing", "x onclick": "alert(1)", "onmouseover": "alert(2)",
 			},
 		}}},
-		want: `<details class="ui-menu ui-menu--bottom-start" data-fui-disclosure data-fui-menu="ui-menu-57ac0b74" data-fui-comp="ui-menu"><summary class="ui-menu__trigger" aria-haspopup="menu" aria-controls="ui-menu-57ac0b74-panel">Actions<span class="ui-menu__caret" aria-hidden="true">▾</span></summary><div class="ui-menu__panel" id="ui-menu-57ac0b74-panel" role="menu" data-fui-menu-panel><button class="ui-menu__item" type="button" role="menuitem" tabindex="-1" aria-label="Edit thing" data-test="hook"><span class="ui-menu__label">Edit</span></button></div></details>`,
+		want: `<details class="fui-menu fui-menu--bottom-start" data-hui-disclosure="" data-hui-menu="hui-menu-57ac0b74" data-fui-comp="ui-menu"><summary aria-controls="hui-menu-57ac0b74-panel" aria-haspopup="menu" class="fui-menu__trigger">Actions<span aria-hidden="true" class="fui-menu__caret">▾</span></summary><div class="fui-menu__panel" data-hui-menu-panel="" id="hui-menu-57ac0b74-panel" role="menu"><button aria-label="Edit thing" class="fui-menu__item" data-test="hook" role="menuitem" tabindex="-1" type="button"><span class="fui-menu__label">Edit</span></button></div></details>`,
 	},
 	{
 		name: "separator-and-mixed",
@@ -283,7 +283,7 @@ var goldenMenus = []struct {
 			{Separator: true},
 			{Label: "it's <b>escaped</b>", Icon: render.HTML("⚙")},
 		}},
-		want: `<details class="ui-menu ui-menu--bottom-start" data-fui-disclosure data-fui-menu="user-menu" data-fui-comp="ui-menu"><summary class="ui-menu__trigger" aria-haspopup="menu" aria-controls="user-menu-panel">Account<span class="ui-menu__caret" aria-hidden="true">▾</span></summary><div class="ui-menu__panel" id="user-menu-panel" role="menu" data-fui-menu-panel><a class="ui-menu__item" href="/me" role="menuitem" tabindex="-1"><span class="ui-menu__label">Profile</span></a><hr class="ui-menu__sep" role="separator"><button class="ui-menu__item" type="button" role="menuitem" tabindex="-1"><span class="ui-menu__icon" aria-hidden="true">⚙</span><span class="ui-menu__label">it&#39;s &lt;b&gt;escaped&lt;/b&gt;</span></button></div></details>`,
+		want: `<details class="fui-menu fui-menu--bottom-start" data-hui-disclosure="" data-hui-menu="user-menu" data-fui-comp="ui-menu"><summary aria-controls="user-menu-panel" aria-haspopup="menu" class="fui-menu__trigger">Account<span aria-hidden="true" class="fui-menu__caret">▾</span></summary><div class="fui-menu__panel" data-hui-menu-panel="" id="user-menu-panel" role="menu"><a class="fui-menu__item" href="/me" role="menuitem" tabindex="-1"><span class="fui-menu__label">Profile</span></a><hr class="fui-menu__sep" role="separator"><button class="fui-menu__item" role="menuitem" tabindex="-1" type="button"><span aria-hidden="true" class="fui-menu__icon">⚙</span><span class="fui-menu__label">it&#39;s &lt;b&gt;escaped&lt;/b&gt;</span></button></div></details>`,
 	},
 	{
 		name: "trigger-html-position-classes",
@@ -295,18 +295,18 @@ var goldenMenus = []struct {
 			ExtraAttrs:   map[string]string{"data-root": "yes", "id": "smuggled-root"},
 			Items:        []ui.MenuItem{{Label: "Settings"}},
 		},
-		want: `<details class="ui-menu ui-menu--top-end pan&#39;el" data-fui-disclosure data-fui-menu="ui-menu-6db4093c" data-root="yes" data-fui-comp="ui-menu"><summary class="ui-menu__trigger trig&#39;ger" aria-haspopup="menu" aria-controls="ui-menu-6db4093c-panel"><svg class="icon"></svg></summary><div class="ui-menu__panel" id="ui-menu-6db4093c-panel" role="menu" data-fui-menu-panel><button class="ui-menu__item" type="button" role="menuitem" tabindex="-1"><span class="ui-menu__label">Settings</span></button></div></details>`,
+		want: `<details class="fui-menu fui-menu--top-end" data-hui-disclosure="" data-hui-menu="hui-menu-6db4093c" data-root="yes" data-fui-comp="ui-menu"><summary aria-controls="hui-menu-6db4093c-panel" aria-haspopup="menu" class="fui-menu__trigger trig&#39;ger"><svg class="icon"></svg></summary><div class="fui-menu__panel pan&#39;el" data-hui-menu-panel="" id="hui-menu-6db4093c-panel" role="menu"><button class="fui-menu__item" role="menuitem" tabindex="-1" type="button"><span class="fui-menu__label">Settings</span></button></div></details>`,
 	},
 	{
 		name: "position-bottom-end",
 		cfg:  ui.MenuConfig{Label: "P", Items: []ui.MenuItem{{Label: "a"}}, Position: ui.MenuBottomEnd},
-		want: `<details class="ui-menu ui-menu--bottom-end" data-fui-disclosure data-fui-menu="ui-menu-c65b0be2" data-fui-comp="ui-menu"><summary class="ui-menu__trigger" aria-haspopup="menu" aria-controls="ui-menu-c65b0be2-panel">P<span class="ui-menu__caret" aria-hidden="true">▾</span></summary><div class="ui-menu__panel" id="ui-menu-c65b0be2-panel" role="menu" data-fui-menu-panel><button class="ui-menu__item" type="button" role="menuitem" tabindex="-1"><span class="ui-menu__label">a</span></button></div></details>`,
+		want: `<details class="fui-menu fui-menu--bottom-end" data-hui-disclosure="" data-hui-menu="hui-menu-c65b0be2" data-fui-comp="ui-menu"><summary aria-controls="hui-menu-c65b0be2-panel" aria-haspopup="menu" class="fui-menu__trigger">P<span aria-hidden="true" class="fui-menu__caret">▾</span></summary><div class="fui-menu__panel" data-hui-menu-panel="" id="hui-menu-c65b0be2-panel" role="menu"><button class="fui-menu__item" role="menuitem" tabindex="-1" type="button"><span class="fui-menu__label">a</span></button></div></details>`,
 	},
 	{
 		// Submenu + radio rows, captured from the renderer after both
 		// landed: the parent row is a <summary role=menuitem
 		// aria-haspopup=menu> inside a nested <details
-		// data-fui-disclosure data-fui-menu>, and the nested panel's
+		// data-hui-disclosure data-hui-menu>, and the nested panel's
 		// id chains off the parent panel (…-panel-sub-1-panel).
 		name: "submenu-with-radio-children",
 		cfg: ui.MenuConfig{Label: "Account", Items: []ui.MenuItem{
@@ -316,7 +316,7 @@ var goldenMenus = []struct {
 				{Label: "Dark", Radio: "theme", Checked: true},
 			}},
 		}},
-		want: `<details class="ui-menu ui-menu--bottom-start" data-fui-disclosure data-fui-menu="ui-menu-cc40fdbe" data-fui-comp="ui-menu"><summary class="ui-menu__trigger" aria-haspopup="menu" aria-controls="ui-menu-cc40fdbe-panel">Account<span class="ui-menu__caret" aria-hidden="true">▾</span></summary><div class="ui-menu__panel" id="ui-menu-cc40fdbe-panel" role="menu" data-fui-menu-panel><a class="ui-menu__item" href="/me" role="menuitem" tabindex="-1"><span class="ui-menu__label">Profile</span></a><details class="ui-menu__sub" data-fui-disclosure data-fui-menu="ui-menu-cc40fdbe-panel-sub-1"><summary class="ui-menu__item ui-menu__item--hassub" aria-haspopup="menu" aria-controls="ui-menu-cc40fdbe-panel-sub-1-panel" role="menuitem" tabindex="-1"><span class="ui-menu__label">Palette</span></summary><div class="ui-menu__panel ui-menu__panel--sub" id="ui-menu-cc40fdbe-panel-sub-1-panel" role="menu" data-fui-menu-panel><button class="ui-menu__item" type="button" role="menuitemradio" tabindex="-1" aria-checked="false" data-fui-menu-radio="theme"><span class="ui-menu__label">Light</span></button><button class="ui-menu__item" type="button" role="menuitemradio" tabindex="-1" aria-checked="true" data-fui-menu-radio="theme"><span class="ui-menu__label">Dark</span></button></div></details></div></details>`,
+		want: `<details class="fui-menu fui-menu--bottom-start" data-hui-disclosure="" data-hui-menu="hui-menu-cc40fdbe" data-fui-comp="ui-menu"><summary aria-controls="hui-menu-cc40fdbe-panel" aria-haspopup="menu" class="fui-menu__trigger">Account<span aria-hidden="true" class="fui-menu__caret">▾</span></summary><div class="fui-menu__panel" data-hui-menu-panel="" id="hui-menu-cc40fdbe-panel" role="menu"><a class="fui-menu__item" href="/me" role="menuitem" tabindex="-1"><span class="fui-menu__label">Profile</span></a><details class="fui-menu__sub" data-hui-disclosure="" data-hui-menu="hui-menu-cc40fdbe-panel-sub-1"><summary aria-controls="hui-menu-cc40fdbe-panel-sub-1-panel" aria-haspopup="menu" class="fui-menu__item fui-menu__item--hassub" role="menuitem" tabindex="-1"><span class="fui-menu__label">Palette</span></summary><div class="fui-menu__panel" data-hui-menu-panel="" id="hui-menu-cc40fdbe-panel-sub-1-panel" role="menu"><button aria-checked="false" class="fui-menu__item" data-hui-menu-radio="theme" role="menuitemradio" tabindex="-1" type="button"><span class="fui-menu__label">Light</span></button><button aria-checked="true" class="fui-menu__item" data-hui-menu-radio="theme" role="menuitemradio" tabindex="-1" type="button"><span class="fui-menu__label">Dark</span></button></div></details></div></details>`,
 	},
 	{
 		name: "radio-group",
@@ -324,19 +324,19 @@ var goldenMenus = []struct {
 			{Label: "Compact", Radio: "density", Checked: true},
 			{Label: "Cozy", Radio: "density", RPC: "/api/density", RPCMethod: "POST"},
 		}},
-		want: `<details class="ui-menu ui-menu--bottom-start" data-fui-disclosure data-fui-menu="view-menu" data-fui-comp="ui-menu"><summary class="ui-menu__trigger" aria-haspopup="menu" aria-controls="view-menu-panel">View<span class="ui-menu__caret" aria-hidden="true">▾</span></summary><div class="ui-menu__panel" id="view-menu-panel" role="menu" data-fui-menu-panel><button class="ui-menu__item" type="button" role="menuitemradio" tabindex="-1" aria-checked="true" data-fui-menu-radio="density"><span class="ui-menu__label">Compact</span></button><button class="ui-menu__item" type="button" role="menuitemradio" tabindex="-1" aria-checked="false" data-fui-menu-radio="density" data-fui-rpc="/api/density" data-fui-rpc-method="POST"><span class="ui-menu__label">Cozy</span></button></div></details>`,
+		want: `<details class="fui-menu fui-menu--bottom-start" data-hui-disclosure="" data-hui-menu="view-menu" data-fui-comp="ui-menu"><summary aria-controls="view-menu-panel" aria-haspopup="menu" class="fui-menu__trigger">View<span aria-hidden="true" class="fui-menu__caret">▾</span></summary><div class="fui-menu__panel" data-hui-menu-panel="" id="view-menu-panel" role="menu"><button aria-checked="true" class="fui-menu__item" data-hui-menu-radio="density" role="menuitemradio" tabindex="-1" type="button"><span class="fui-menu__label">Compact</span></button><button aria-checked="false" class="fui-menu__item" data-fui-rpc="/api/density" data-fui-rpc-method="POST" data-hui-menu-radio="density" role="menuitemradio" tabindex="-1" type="button"><span class="fui-menu__label">Cozy</span></button></div></details>`,
 	},
 	{
 		// Captured from the current renderer, not main (the shape is
 		// new): a disabled radio row is where the gluing fix's pair
-		// actually changed bytes — data-fui-menu-radio and
+		// actually changed bytes — data-hui-menu-radio and
 		// aria-disabled must be separated, exactly like tabindex and
 		// aria-disabled on plain rows.
 		name: "disabled-radio",
 		cfg: ui.MenuConfig{ID: "view-menu", Label: "View", Items: []ui.MenuItem{
 			{Label: "Compact", Radio: "density", Disabled: true},
 		}},
-		want: `<details class="ui-menu ui-menu--bottom-start" data-fui-disclosure data-fui-menu="view-menu" data-fui-comp="ui-menu"><summary class="ui-menu__trigger" aria-haspopup="menu" aria-controls="view-menu-panel">View<span class="ui-menu__caret" aria-hidden="true">▾</span></summary><div class="ui-menu__panel" id="view-menu-panel" role="menu" data-fui-menu-panel><button class="ui-menu__item ui-menu__item--disabled" type="button" role="menuitemradio" tabindex="-1" aria-checked="false" data-fui-menu-radio="density" aria-disabled="true" disabled><span class="ui-menu__label">Compact</span></button></div></details>`,
+		want: `<details class="fui-menu fui-menu--bottom-start" data-hui-disclosure="" data-hui-menu="view-menu" data-fui-comp="ui-menu"><summary aria-controls="view-menu-panel" aria-haspopup="menu" class="fui-menu__trigger">View<span aria-hidden="true" class="fui-menu__caret">▾</span></summary><div class="fui-menu__panel" data-hui-menu-panel="" id="view-menu-panel" role="menu"><button aria-checked="false" aria-disabled="true" class="fui-menu__item fui-menu__item--disabled" data-hui-menu-radio="density" disabled="" role="menuitemradio" tabindex="-1" type="button"><span class="fui-menu__label">Compact</span></button></div></details>`,
 	},
 }
 
@@ -351,12 +351,12 @@ func TestMenuItemIDEmittedOnRows(t *testing.T) {
 		{Label: "Delete", ID: "del", RPC: "/api/del", RPCMethod: "DELETE", Danger: true, Disabled: true},
 	}}))
 	for _, want := range []string{
-		`<button class="ui-menu__item" id="help-toggle" type="button" role="menuitem" tabindex="-1">`,
-		`<a class="ui-menu__item" id="profile-link" href="/me" role="menuitem" tabindex="-1">`,
+		`<button class="fui-menu__item" id="help-toggle" role="menuitem" tabindex="-1" type="button">`,
+		`<a class="fui-menu__item" href="/me" id="profile-link" role="menuitem" tabindex="-1">`,
 		// aria-disabled carries its own leading space; before the
 		// gluing fix it was glued to tabindex (pinned as-is back
 		// then, a defect, not a contract).
-		`<button class="ui-menu__item ui-menu__item--danger ui-menu__item--disabled" id="del" type="button" role="menuitem" tabindex="-1" aria-disabled="true" disabled data-fui-rpc="/api/del" data-fui-rpc-method="DELETE">`,
+		`<button aria-disabled="true" class="fui-menu__item fui-menu__item--danger fui-menu__item--disabled" data-fui-rpc="/api/del" data-fui-rpc-method="DELETE" disabled="" id="del" role="menuitem" tabindex="-1" type="button">`,
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("row with ID missing exact open tag %q:\n%s", want, out)
@@ -403,8 +403,8 @@ func TestMenuItemExtraAttrsIDStillDropped(t *testing.T) {
 
 // TestMenuSubmenuMarkup: the parent row is a disclosure-only menuitem —
 // <summary role=menuitem aria-haspopup=menu> inside a nested <details
-// data-fui-disclosure data-fui-menu> whose panel is a role=menu with
-// data-fui-menu-panel — and aria-controls names a panel id that exists
+// data-hui-disclosure data-hui-menu> whose panel is a role=menu with
+// data-hui-menu-panel — and aria-controls names a panel id that exists
 // at every depth.
 func TestMenuSubmenuMarkup(t *testing.T) {
 	out := string(ui.Menu(ui.MenuConfig{ID: "acct", Label: "Account", Items: []ui.MenuItem{
@@ -416,13 +416,13 @@ func TestMenuSubmenuMarkup(t *testing.T) {
 		}},
 	}}))
 	for _, want := range []string{
-		`<details class="ui-menu__sub" data-fui-disclosure data-fui-menu="acct-panel-sub-1">`,
-		`<summary class="ui-menu__item ui-menu__item--hassub" id="palette-row" aria-haspopup="menu" aria-controls="acct-panel-sub-1-panel" role="menuitem" tabindex="-1">`,
-		`<div class="ui-menu__panel ui-menu__panel--sub" id="acct-panel-sub-1-panel" role="menu" data-fui-menu-panel>`,
+		`<details class="fui-menu__sub" data-hui-disclosure="" data-hui-menu="acct-panel-sub-1">`,
+		`<summary aria-controls="acct-panel-sub-1-panel" aria-haspopup="menu" class="fui-menu__item fui-menu__item--hassub" id="palette-row" role="menuitem" tabindex="-1">`,
+		`<div class="fui-menu__panel" data-hui-menu-panel="" id="acct-panel-sub-1-panel" role="menu">`,
 		// ID on a nested row lands exactly like a top-level row.
-		`<button class="ui-menu__item" id="dark-row" type="button" role="menuitem" tabindex="-1">`,
+		`<button class="fui-menu__item" id="dark-row" role="menuitem" tabindex="-1" type="button">`,
 		// Separators render inside a submenu the same as at top level.
-		`<hr class="ui-menu__sep" role="separator">`,
+		`<hr class="fui-menu__sep" role="separator">`,
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("submenu markup missing %q:\n%s", want, out)
@@ -442,7 +442,7 @@ func TestMenuSubmenuExtraAttrsDropsIDAtDepth(t *testing.T) {
 			{Label: "Inner", ID: "real-inner", ExtraAttrs: map[string]string{"id": "smuggled"}},
 		}, ExtraAttrs: map[string]string{"id": "smuggled-outer"}},
 	}}))
-	if !strings.Contains(out, `<summary class="ui-menu__item ui-menu__item--hassub" id="real-sub"`) {
+	if !strings.Contains(out, `<summary aria-controls="hui-menu-67e18b9e-panel-sub-0-panel" aria-haspopup="menu" class="fui-menu__item fui-menu__item--hassub" id="real-sub"`) {
 		t.Errorf("field-set ID missing from submenu summary:\n%s", out)
 	}
 	if !strings.Contains(out, `id="real-inner"`) {
@@ -463,15 +463,15 @@ func TestMenuDisabledParentRendersInertChildrenPresent(t *testing.T) {
 		{Label: "Locked", Disabled: true, Children: []ui.MenuItem{{Label: "Inner"}}},
 	}}))
 	for _, want := range []string{
-		`ui-menu__item--disabled`,
-		` aria-disabled="true">`,
-		`<span class="ui-menu__label">Inner</span>`,
+		`fui-menu__item--disabled`,
+		`aria-controls="hui-menu-912b70c2-panel-sub-0-panel" aria-disabled="true"`,
+		`<span class="fui-menu__label">Inner</span>`,
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("disabled parent submenu missing %q:\n%s", want, out)
 		}
 	}
-	if strings.Contains(out, `<summary class="ui-menu__item ui-menu__item--hassub" aria-haspopup="menu" aria-controls="`) {
+	if strings.Contains(out, `<summary aria-haspopup="menu" aria-controls="NOPE`) {
 		t.Errorf("disabled parent summary gained an id attribute? unexpected shape:\n%s", out)
 	}
 }
@@ -523,12 +523,12 @@ func TestMenuRadioRows(t *testing.T) {
 		{Label: "Ghost", Checked: true}, // Checked without Radio: inert
 	}}))
 	for _, want := range []string{
-		`role="menuitemradio" tabindex="-1" aria-checked="false" data-fui-menu-radio="theme"`,
-		`role="menuitemradio" tabindex="-1" aria-checked="true" data-fui-menu-radio="theme"`,
-		`<span class="ui-menu__label">Dark</span>`,
+		`aria-checked="false" class="fui-menu__item" data-hui-menu-radio="theme" role="menuitemradio"`,
+		`aria-checked="true" class="fui-menu__item" data-hui-menu-radio="theme" role="menuitemradio"`,
+		`<span class="fui-menu__label">Dark</span>`,
 		// The ghost row is a plain menuitem: no radio role, no group
 		// attr, no aria-checked, nothing between tabindex and label.
-		`role="menuitem" tabindex="-1"><span class="ui-menu__label">Ghost</span>`,
+		`role="menuitem" tabindex="-1" type="button"><span class="fui-menu__label">Ghost</span>`,
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("radio row missing %q:\n%s", want, out)
@@ -542,15 +542,15 @@ func TestMenuRadioRows(t *testing.T) {
 }
 
 // TestMenuRadioExtraAttrsCannotOverrideOwned: aria-checked and the
-// data-fui-menu-radio group key are component-owned; smuggled
+// data-hui-menu-radio group key are component-owned; smuggled
 // case-variants of either are dropped.
 func TestMenuRadioExtraAttrsCannotOverrideOwned(t *testing.T) {
 	out := string(ui.Menu(ui.MenuConfig{Label: "Theme", Items: []ui.MenuItem{
 		{Label: "Light", Radio: "theme", ExtraAttrs: map[string]string{
-			"aria-checked": "true", "data-fui-menu-radio": "evil", "data-test": "ok",
+			"aria-checked": "true", "data-hui-menu-radio": "evil", "data-test": "ok",
 		}},
 	}}))
-	if !strings.Contains(out, `aria-checked="false" data-fui-menu-radio="theme"`) {
+	if !strings.Contains(out, `aria-checked="false" class="fui-menu__item" data-hui-menu-radio="theme"`) {
 		t.Errorf("owned radio attrs were overridden:\n%s", out)
 	}
 	if !strings.Contains(out, `data-test="ok"`) {
@@ -588,7 +588,7 @@ func TestMenuItemIDIgnoredOnSeparator(t *testing.T) {
 	out := string(ui.Menu(ui.MenuConfig{Label: "Actions", Items: []ui.MenuItem{
 		{Separator: true, ID: "sep-id", Label: "also ignored"},
 	}}))
-	if !strings.Contains(out, `<hr class="ui-menu__sep" role="separator">`) {
+	if !strings.Contains(out, `<hr class="fui-menu__sep" role="separator">`) {
 		t.Errorf("separator row changed shape:\n%s", out)
 	}
 	if strings.Contains(out, "sep-id") || strings.Contains(out, "also ignored") {
@@ -610,10 +610,10 @@ func TestMenuActionRowMarkup(t *testing.T) {
 		}},
 	}))
 	for _, want := range []string{
-		`<form class="ui-menu__form" method="POST" action="/admin/stop-impersonating">`,
-		`<input type="hidden" name="csrf" value="tok-1">`,
-		`<button type="submit" class="ui-menu__item" role="menuitem" tabindex="-1">`,
-		`<span class="ui-menu__label">Stop Impersonating</span></button></form>`,
+		`<form action="/admin/stop-impersonating" class="fui-menu__form" method="POST" role="none">`,
+		`<input name="csrf" type="hidden" value="tok-1">`,
+		`<button class="fui-menu__item" id="stop-imp" role="menuitem" tabindex="-1" type="submit">`,
+		`<span class="fui-menu__label">Stop Impersonating</span></button></form>`,
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("action row missing %q", want)

@@ -353,7 +353,7 @@ func (pe *panelEnv) headerHTML() string {
 			return `<span class="kiln-panel-agent" data-fui-signal="agent" data-fui-flash-on-update>` + render.Escape(label) + `</span>`
 		})() +
 		`<a class="kiln-panel-snapshot" data-fui-signal="world_snapshot" data-fui-flash-on-update href="/kiln/world" target="_blank" rel="noopener" title="` + render.Escape(pe.worldSnapshotTooltip()) + `">` + render.Escape(pe.worldSnapshotText()) + `</a>` +
-		`<button type="button" class="kiln-panel-help" title="Keyboard shortcuts (?)" data-fui-open="kiln-help" data-fui-shortcut-click="?" aria-keyshortcuts="?">?</button>` +
+		`<button type="button" class="kiln-panel-help" title="Keyboard shortcuts (?)" data-fui-open="kiln-help" data-hui-shortcut-click="?" aria-keyshortcuts="?">?</button>` +
 		`<span data-hui-copy="" data-hui-copy-target="kiln-log"><button type="button" class="kiln-panel-copy" title="Copy transcript to clipboard">⎘</button></span>` +
 		`<button type="button" class="kiln-panel-stop" title="Cancel running turn" data-fui-rpc="/kiln/agent/cancel" data-fui-rpc-method="POST">■</button>` +
 		`<button type="button" class="kiln-panel-config" title="Agent settings" data-fui-open="kiln-agent-settings">⚙</button>` +
@@ -582,7 +582,7 @@ func toolCountsLocked(chat []journal.ChatEvent) (calls, pending int) {
 
 func (pe *panelEnv) inputHTML() string {
 	return `<form class="kiln-form" data-fui-rpc="/kiln/panel/send" data-fui-rpc-reset data-fui-disable-when-invalid data-fui-submit-on-enter>` +
-		`<textarea class="kiln-input" name="text" placeholder="Tell the agent what to build…  (⌘K to focus · Enter to send · Esc to clear)" rows="2" autocomplete="off" required data-fui-autogrow data-fui-shortcut-focus="Mod+k" data-fui-clear-on-esc data-fui-persist-storage="kiln-input-draft"></textarea>` +
+		`<textarea class="kiln-input" name="text" placeholder="Tell the agent what to build…  (⌘K to focus · Enter to send · Esc to clear)" rows="2" autocomplete="off" required data-fui-autogrow data-hui-shortcut-focus="Mod+k" data-fui-clear-on-esc data-fui-persist-storage="kiln-input-draft"></textarea>` +
 		`<button class="kiln-send" type="submit" aria-keyshortcuts="Enter">Send <kbd class="kiln-kbd">⏎</kbd></button>` +
 		`<span class="kiln-input-charcount" data-fui-charcount-source=".kiln-input" aria-hidden="true"></span>` +
 		`</form>`
@@ -983,9 +983,9 @@ func renderPlanCard(b *strings.Builder, p *journal.Plan, primary bool) {
 		rejectLabel := "Reject"
 		modifyLabel := "Modify…"
 		if primary {
-			approveExtra = ` data-fui-shortcut-click="y" aria-keyshortcuts="y"`
-			rejectExtra = ` data-fui-shortcut-click="n" aria-keyshortcuts="n"`
-			modifyExtra = ` data-fui-shortcut-click="m" aria-keyshortcuts="m"`
+			approveExtra = ` data-hui-shortcut-click="y" aria-keyshortcuts="y"`
+			rejectExtra = ` data-hui-shortcut-click="n" aria-keyshortcuts="n"`
+			modifyExtra = ` data-hui-shortcut-click="m" aria-keyshortcuts="m"`
 			approveLabel = `Approve <kbd class="kiln-kbd">Y</kbd>`
 			rejectLabel = `Reject <kbd class="kiln-kbd">N</kbd>`
 			modifyLabel = `Modify… <kbd class="kiln-kbd">M</kbd>`

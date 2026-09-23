@@ -49,7 +49,12 @@ import (
 // (a dynamically-mounted control) is assigned a fresh index on the fly.
 const kbgateSetupJS = `(() => {
   const NS = window.__kbgate = window.__kbgate || {};
-  const TAB_SEL = 'a[href], area[href], button:not([disabled]):not([aria-disabled="true"]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), summary, [tabindex]:not([tabindex="-1"]), iframe, audio[controls], video[controls]';
+  // An element at tabindex="-1" is focusable but not sequentially
+  // focusable, whatever its tag: a roving-tabindex composite (tabs,
+  // menus) parks every member but the current one there and reaches
+  // them with the arrow keys, so the walk must not expect Tab to land
+  // on them.
+  const TAB_SEL = ['a[href]', 'area[href]', 'button:not([disabled]):not([aria-disabled="true"])', 'input:not([disabled])', 'select:not([disabled])', 'textarea:not([disabled])', 'summary', '[tabindex]', 'iframe', 'audio[controls]', 'video[controls]'].map(s => s + ':not([tabindex="-1"])').join(', ');
   const HIDDEN_VIS = { 'hidden': true, 'collapse': true };
 
   NS._snap = function(el) {

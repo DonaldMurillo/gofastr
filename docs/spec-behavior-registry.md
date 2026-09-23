@@ -3,7 +3,18 @@
 Status: accepted and underway, proposed 2026-09-15. Steps 1–3 of the
 sequence below are done (the seam with its tests, `framework/headless`'s
 registration, and dependencies + readiness with the action primitive and
-the two action adapters); steps 4–6 are open. Implements the direction
+the two action adapters); steps 4–6 are open.
+
+Registered modules of `framework/headless` at the 3a navigation
+cutover: `headless` (the original), `headless-controls`,
+`headless-collections`, `headless-wizard`, `headless-feedback`,
+`headless-navigation` (shortcuts folded in), `headless-rail`,
+`headless-toc`, `headless-disclosure`, `headless-menu`,
+`headless-combobox`, `headless-tabs`, `headless-carousel`,
+`headless-panehost`, `headless-sidebar`. Retired with them, their
+`core-ui/runtime/src` fragments deleted: scrollspy, toc, disclosure,
+menu, combobox, tabs, carousel, panehost, sidebar (searchinput and
+multiselect stay, widgets-owned). Implements the direction
 from the runtime exploration: the browser runtime is composed on the fly
 per page and loads its features lazily, and a component's behaviour is
 registered by the package that renders its markup, the way its

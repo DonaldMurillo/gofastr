@@ -175,24 +175,32 @@ func actionAttrs(a html.Attrs) html.Attrs {
 				panic("headless: Action carries a data-fui-toast that is not JSON — the runtime parses it at click time and would fail there instead")
 			}
 			out[k] = v
-		case "data-fui-pane-open":
+		case "data-hui-pane-open-control":
 			if v != "secondary" && v != "tertiary" {
-				panic("headless: Action carries data-fui-pane-open " + strconv.Quote(v) + ", which is not a pane a PaneHost renders")
+				panic("headless: Action carries data-hui-pane-open-control " + strconv.Quote(v) + ", which is not a pane a PaneHost renders")
 			}
 			out[k] = v
-		case "data-fui-pane-key":
+		case "data-hui-pane-key":
 			// The record identity a keyed pane deep-links into the
 			// URL (interactive.PaneKey; the runtime reads it on pane
 			// triggers). Names something; empty names nothing.
 			if v == "" {
-				panic("headless: Action carries an empty data-fui-pane-key — it names the record a keyed pane deep-links, and empty names nothing")
+				panic("headless: Action carries an empty data-hui-pane-key — it names the record a keyed pane deep-links, and empty names nothing")
 			}
 			out[k] = v
-		case "data-fui-pane-close":
+		case "data-hui-pane-close":
 			// An empty value closes the topmost pane.
 			if v != "" && v != "secondary" && v != "tertiary" {
-				panic("headless: Action carries data-fui-pane-close " + strconv.Quote(v) + ", which is not a pane a PaneHost renders")
+				panic("headless: Action carries data-hui-pane-close " + strconv.Quote(v) + ", which is not a pane a PaneHost renders")
 			}
+			out[k] = v
+		case "data-hui-pane-host-target":
+			// The id of the host an OUTSIDE trigger drives. Names an
+			// element; empty names nothing.
+			if v == "" {
+				panic("headless: Action carries an empty data-hui-pane-host-target — it names the host the trigger drives, and empty names nothing")
+			}
+			checkNoControlBytes("a Button Action", k, v)
 			out[k] = v
 		case "data-fui-prefetch":
 			for _, name := range strings.Fields(v) {

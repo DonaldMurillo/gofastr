@@ -1,15 +1,11 @@
 package ui
 
 import (
-	"maps"
-	"slices"
-	"strings"
-
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
-	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/headless"
 )
 
 // MenuPosition controls which corner of the trigger the menu panel
@@ -66,15 +62,15 @@ type MenuItem struct {
 	// ID becomes the rendered row's id attribute, so page JS, test
 	// suites, or aria wiring elsewhere on the page can address this
 	// exact item (a Help Mode toggle a script binds to, an Imports
-	// row a shortcut targets). Uniqueness is caller-owned, like any
-	// HTML id: duplicates are the caller's bug, not enforced here.
+	// row a shortcut targets). Uniqueness is caller-owned within one
+	// menu, like any HTML id: the menu refuses duplicates it can see.
 	// Ignored on separators, like every other field. Empty emits no
 	// id, leaving the output identical to a menu that never set it.
 	ID string
 
 	// Radio, when non-empty, renders the row as a radio option:
 	// role="menuitemradio" plus aria-checked (see Checked) and
-	// data-fui-menu-radio="<Radio>". Every item sharing the same Radio
+	// data-hui-menu-radio="<Radio>". Every item sharing the same Radio
 	// value within one Menu forms a radio group — across submenus too:
 	// a picker whose rarer options sit behind a "More" submenu is one
 	// group, not two. Exactly one of them should carry Checked (like
@@ -107,10 +103,10 @@ type MenuItem struct {
 
 	// Children nests a submenu behind this row: the row renders as a
 	// <summary role="menuitem" aria-haspopup="menu"> whose activation
-	// reveals a nested role="menu" panel, reusing the same
-	// data-fui-disclosure machinery the top level uses (Escape, SPA-nav
-	// close, aria-expanded mirroring, focus-on-open). Keyboard: the
-	// menu module opens it on ArrowRight (ArrowLeft in RTL) and enters,
+	// reveals a nested role="menu" panel, reusing the same disclosure
+	// machinery the top level uses (Escape, SPA-nav close,
+	// aria-expanded mirroring, focus-on-open). Keyboard: the menu
+	// module opens it on ArrowRight (ArrowLeft in RTL) and enters,
 	// closes it on ArrowLeft (ArrowRight in RTL) and ArrowUp-style
 	// roving focus applies inside it; Escape closes one level at a
 	// time. The parent row is purely a disclosure: setting Href, RPC,
@@ -127,10 +123,9 @@ type MenuItem struct {
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers, ARIA overrides) onto the rendered item
 	// element. Keys the item owns are dropped: class (use Class),
-	// id (use ID), data-fui-* (the disclosure / rpc wiring), and the
-	// menuitem contract (type, href, tabindex, role, aria-disabled,
-	// disabled, aria-checked, and on submenu rows aria-haspopup /
-	// aria-controls).
+	// id (use ID), the runtime wiring (data-fui-*), and the menuitem
+	// contract (type, href, tabindex, role, aria-disabled, disabled,
+	// aria-checked).
 	ExtraAttrs map[string]string
 }
 
@@ -181,22 +176,21 @@ type MenuConfig struct {
 
 	// TriggerElement replaces the framework-rendered summary with a
 	// caller-owned interactive element: inline HTML for a real <button>
-	// (or <a>). The menu renders a summary-less <details
-	// data-fui-disclosure> holding the panel, with the element in a
-	// presentation wrapper beside it, and the runtime makes the
-	// element the disclosure controller: click, Enter, and Space toggle
-	// the panel; aria-haspopup / aria-controls / aria-expanded are wired
-	// onto the element at hydration (attributes cannot be injected into
-	// raw caller HTML server-side); focus lands on the first menuitem on
-	// open; Escape closes one level at a time and returns focus to the
-	// element; Tab closes the chain. Use for host-styled triggers whose
-	// markup and classes the page owns: routing such an element through
+	// (or <a>). The menu renders a summary-less disclosure holding the
+	// panel, with the element in a presentation wrapper beside it, and
+	// the runtime makes the element the disclosure controller: click,
+	// Enter, and Space toggle the panel; aria-haspopup /
+	// aria-controls / aria-expanded are wired onto the element at
+	// hydration (attributes cannot be injected into raw caller HTML
+	// server-side); focus lands on the first menuitem on open; Escape
+	// closes one level at a time and returns focus to the element; Tab
+	// closes the chain. Use for host-styled triggers whose markup and
+	// classes the page owns: routing such an element through
 	// TriggerHTML nests an interactive control inside the summary
 	// control, which axe reports as nested-interactive (SERIOUS).
 	// Activation is preventDefaulted — the element opens the menu, it
 	// does not navigate or submit; put navigation on menu items.
-	// Overrides Label and TriggerHTML; TriggerClass is inert (the
-	// element brings its own classes). Auto-generated IDs fold the
+	// Overrides Label and TriggerHTML. Auto-generated IDs fold the
 	// markup in, but two structurally identical trigger menus on one
 	// page still need distinct IDs.
 	TriggerElement render.HTML
@@ -210,22 +204,21 @@ type MenuConfig struct {
 
 	// LazyPanel keeps the panel's rows out of the document tree until
 	// the menu is first opened: SSR wraps them in an inert
-	// <template data-fui-menu-lazy> as the panel's only child, and the
-	// runtime's disclosure module moves them into the panel on first
-	// open (the panel <div> itself always renders, so aria-controls
-	// still resolves while closed). Use it when page-scoped consumers
-	// must not see closed-menu rows in the live DOM: host test
-	// contracts that pin getByText('Theme') to a visible element or
-	// getByLabel to exactly one. The rows are still in the HTML
-	// source, so this hides nothing from a crawler that parses the
-	// response. The cost: rows are not in the DOM until first open, so
-	// host JS that binds rows by id at page load must use delegated
-	// listeners instead, and with JavaScript disabled the menu opens
-	// empty (only the disclosure module mounts the rows). The zero
-	// value (false) renders rows inline
-	// exactly as before — byte-identical output. Applies to the
-	// summary path and TriggerElement alike; nested submenus live
-	// inside the template and mount with the rest.
+	// <template data-hui-menu-lazy> as the panel's only child, and the
+	// menu module moves them into the panel on first open (the panel
+	// <div> itself always renders, so aria-controls still resolves
+	// while closed). Use it when page-scoped consumers must not see
+	// closed-menu rows in the live DOM: host test contracts that pin
+	// getByText('Theme') to a visible element or getByLabel to exactly
+	// one. The rows are still in the HTML source, so this hides
+	// nothing from a crawler that parses the response. The cost: rows
+	// are not in the DOM until first open, so host JS that binds rows
+	// by id at page load must use delegated listeners instead, and
+	// with JavaScript disabled the menu opens empty (only the module
+	// mounts the rows). The zero value (false) renders rows inline
+	// exactly as before. Applies to the summary path and
+	// TriggerElement alike; nested submenus live inside the template
+	// and mount with the rest.
 	LazyPanel bool
 
 	// TriggerClass / PanelClass append to the rendered element class
@@ -237,7 +230,7 @@ type MenuConfig struct {
 	// analytics markers, ARIA overrides) to the menu's root element
 	// (the <details> on the summary path, the wrapper <div> when
 	// TriggerElement is set). Keys the component owns are dropped:
-	// class, id, and data-fui-* (the disclosure wiring).
+	// class, id, and the disclosure/menu wiring.
 	ExtraAttrs html.Attrs
 }
 
@@ -246,384 +239,104 @@ var menuStyle = registry.RegisterStyle("ui-menu", menuCSS)
 // Menu renders a dropdown. The trigger toggles the panel; the panel
 // is a `role=menu` list with `role=menuitem` rows — `menuitemradio`
 // rows for items with Radio set, and nested `role=menu` submenus for
-// items with Children. Built on the runtime's `data-fui-disclosure`
-// machinery (Esc closes one level at a time, SPA nav closes,
-// aria-expanded mirroring), augmented with arrow / type-ahead keyboard
-// navigation that the runtime applies to any `[role=menu]` inside an
-// open disclosure. With TriggerElement set there is no framework
-// summary: the caller's element is the controller, and the runtime
-// supplies the toggle, the aria wiring, and the same keyboard
-// behaviour (see MenuConfig.TriggerElement).
+// items with Children. Renders headless.Menu dressed with the fui-menu
+// class map: the disclosure machinery (Escape one level at a time,
+// SPA-nav close, aria-expanded mirroring) is headless-disclosure's,
+// and the keyboard contract (roving focus, type-ahead, RTL-aware
+// submenus, radio arbitration) is headless-menu's. With
+// TriggerElement set there is no framework summary: the caller's
+// element is the controller (see MenuConfig.TriggerElement).
 func Menu(cfg MenuConfig) render.HTML {
-	if len(cfg.Items) == 0 {
-		panic("ui: Menu requires at least one Item")
-	}
-	pos := cfg.Position
-	if pos == "" {
-		pos = MenuBottomStart
-	}
-
-	id := cfg.ID
-	if id == "" {
-		// The trigger-element path folds the caller markup into the
-		// auto-id input: two trigger menus with identical items must not
-		// share a data-fui-menu value, because the runtime resolves a
-		// trigger's details BY THAT VALUE — a shared id would make the
-		// second trigger toggle the first menu. The summary path keeps
-		// its exact historical input (Label + positions).
-		hashIn := cfg.Label
-		if cfg.TriggerElement != "" {
-			hashIn += string(cfg.TriggerElement)
-		}
-		id = "ui-menu-" + shortHash(hashIn+positionsForHash(cfg.Items))
-	}
-	panelID := id + "-panel"
-
-	var b strings.Builder
-	// PanelClass is caller-supplied and passes through render.Escape so
-	// a value containing `"` or `'` cannot break out of the class
-	// attribute into a sibling attribute context (`onclick=…`, etc.).
-	cls := "ui-menu ui-menu--" + string(pos)
-	if cfg.PanelClass != "" {
-		cls += " " + cfg.PanelClass
-	}
-
-	if cfg.TriggerElement != "" {
-		// Caller-owned trigger: no <summary> (an interactive element
-		// inside one is axe nested-interactive, and the UA summary
-		// activation would not run for it anyway). The root is a plain
-		// div carrying the positioning classes; the caller's element
-		// sits in a presentation wrapper BESIDE a summary-less
-		// <details data-fui-disclosure> that holds the panel, and the
-		// runtime resolves the pairing through the shared menu id in
-		// data-fui-menu-trigger. The panel markup is byte-identical to
-		// the summary path's.
-		b.WriteString(`<div class="` + render.Escape(cls) + `"`)
-		b.WriteString(serializeExtraAttrs(html.SafeExtraAttrs(cfg.ExtraAttrs)))
-		b.WriteString(`>`)
-		b.WriteString(`<div data-fui-menu-trigger="` + render.Escape(id) + `" role="presentation">`)
-		b.WriteString(string(cfg.TriggerElement))
-		b.WriteString(`</div>`)
-		b.WriteString(`<details data-fui-disclosure data-fui-menu="` + render.Escape(id) + `">`)
-		b.WriteString(`<div class="ui-menu__panel" id="` + render.Escape(panelID) + `" role="menu" data-fui-menu-panel>`)
-		writeMenuRows(&b, cfg.Items, panelID, cfg.LazyPanel)
-		b.WriteString(`</div></details></div>`)
-		return menuStyle.WrapHTML(render.HTML(b.String()))
-	}
-
-	// `<details>` is the toggle. data-fui-disclosure adds Escape close
-	// and closes on SPA nav for free.
-	//
-	// TriggerClass is caller-supplied and passes through render.Escape
-	// so a value containing `"` or `'` cannot break out of the class
-	// attribute into a sibling attribute context (`onclick=…`, etc.).
-	b.WriteString(`<details class="` + render.Escape(cls) + `" data-fui-disclosure data-fui-menu="` + render.Escape(id) + `"`)
-	b.WriteString(serializeExtraAttrs(html.SafeExtraAttrs(cfg.ExtraAttrs)))
-	b.WriteString(`>`)
-
-	// Summary = trigger. We bolt aria-haspopup="menu" so SR users know
-	// the activation type; the runtime mirrors aria-expanded.
-	tcls := "ui-menu__trigger"
-	if cfg.TriggerClass != "" {
-		tcls += " " + cfg.TriggerClass
-	}
-	b.WriteString(`<summary class="` + render.Escape(tcls) + `" aria-haspopup="menu" aria-controls="` + render.Escape(panelID) + `">`)
-	if cfg.TriggerHTML != "" {
-		b.WriteString(string(cfg.TriggerHTML))
-	} else {
-		b.WriteString(render.Escape(cfg.Label))
-		// A subtle caret nudges that this is a menu.
-		b.WriteString(`<span class="ui-menu__caret" aria-hidden="true">▾</span>`)
-	}
-	b.WriteString(`</summary>`)
-
-	b.WriteString(`<div class="ui-menu__panel" id="` + render.Escape(panelID) + `" role="menu" data-fui-menu-panel>`)
-	writeMenuRows(&b, cfg.Items, panelID, cfg.LazyPanel)
-	b.WriteString(`</div></details>`)
-
-	return menuStyle.WrapHTML(render.HTML(b.String()))
-}
-
-// writeMenuItems renders one panel's rows. parentPanelID seeds the
-// deterministic id chain for nested submenu panels (parentPanelID +
-// "-sub-<index>"), so ids stay unique within a menu without caller
-// input.
-func writeMenuItems(b *strings.Builder, items []MenuItem, parentPanelID string) {
-	for i, it := range items {
-		writeMenuItem(b, it, parentPanelID, i)
-	}
-}
-
-// writeMenuRows renders a top-level panel's rows, wrapping them in the
-// inert <template data-fui-menu-lazy> a LazyPanel menu ships instead of
-// inline rows. The panel <div> itself always renders — aria-controls
-// must resolve while the menu is closed — and the template is its only
-// child. Template contents parse into an inert DocumentFragment that is
-// NOT part of the document tree, so row text, labels, and roles are
-// invisible to page-scoped queries until the disclosure module's
-// inflate moves them into the panel on first open (see
-// runtime/src/disclosure.js). Nested submenus render inside the
-// template and mount with the rest; only the top panel is lazy.
-func writeMenuRows(b *strings.Builder, items []MenuItem, parentPanelID string, lazy bool) {
-	if lazy {
-		b.WriteString(`<template data-fui-menu-lazy>`)
-	}
-	writeMenuItems(b, items, parentPanelID)
-	if lazy {
-		b.WriteString(`</template>`)
-	}
-}
-
-func writeMenuItem(b *strings.Builder, it MenuItem, parentPanelID string, idx int) {
-	if it.Separator {
-		b.WriteString(`<hr class="ui-menu__sep" role="separator">`)
-		return
-	}
-	if it.Label == "" {
-		panic("ui: MenuItem requires Label (or Separator: true)")
-	}
-	if len(it.Children) > 0 {
-		if it.Radio != "" {
-			panic("ui: MenuItem with Radio cannot have Children (a radio row is a leaf command, a submenu parent is a disclosure)")
-		}
-		if it.Href != "" || it.RPC != "" || it.Action != nil {
-			panic("ui: MenuItem with Children cannot also set Href, RPC, or Action (a submenu parent is purely a disclosure)")
-		}
-		writeSubMenu(b, it, parentPanelID, idx)
-		return
-	}
-	if it.Action != nil {
-		if it.Href != "" || it.RPC != "" || it.Radio != "" {
-			panic("ui: MenuItem with Action cannot also set Href, RPC, or Radio (a form row is a leaf command)")
-		}
-		if len(it.Action.Fields) == 0 && !it.Action.Unsafe {
-			panic("ui: MenuAction has no Fields (no CSRF token?) — pass the token in Fields or set Unsafe: true to acknowledge the endpoint protects itself")
-		}
-		method := it.Action.Method
-		if method == "" {
-			method = "POST"
-		}
-		cls := "ui-menu__item"
-		if it.Danger {
-			cls += " ui-menu__item--danger"
-		}
-		if it.Disabled {
-			cls += " ui-menu__item--disabled"
-		}
+	items := make([]headless.MenuItem, len(cfg.Items))
+	for i, it := range cfg.Items {
+		extras := headless.Safe(it.ExtraAttrs)
 		if it.Class != "" {
-			cls += " " + it.Class
+			extras["class"] = it.Class
 		}
-		extra := serializeExtraAttrs(html.SafeExtraAttrs(it.ExtraAttrs,
-			"type", "href", "tabindex", "role", "aria-disabled", "disabled", "aria-checked"))
-		// Same urlsafe.CleanAnchor allow-list as every other form-action
-		// sink (ui.Form, SearchInput, SignOut): render.Escape only
-		// HTML-escapes and is scheme-blind, so a javascript:/data:
-		// Path would render as a live form action. A rejected value
-		// degrades to the inert "#" ui.Form uses.
-		action := urlsafe.CleanAnchor(it.Action.Path)
-		if action == "" {
-			action = "#"
+		var action *headless.MenuAction
+		if it.Action != nil {
+			action = &headless.MenuAction{
+				Path:   it.Action.Path,
+				Method: it.Action.Method,
+				Fields: it.Action.Fields,
+				Unsafe: it.Action.Unsafe,
+			}
 		}
-		b.WriteString(`<form class="ui-menu__form" method="` + render.Escape(method) + `" action="` + render.Escape(action) + `">`)
-		for _, k := range slices.Sorted(maps.Keys(it.Action.Fields)) {
-			b.WriteString(`<input type="hidden" name="` + render.Escape(k) + `" value="` + render.Escape(it.Action.Fields[k]) + `">`)
+		children := make([]headless.MenuItem, len(it.Children))
+		for j, c := range it.Children {
+			cextras := headless.Safe(c.ExtraAttrs)
+			if c.Class != "" {
+				cextras["class"] = c.Class
+			}
+			children[j] = headless.MenuItem{
+				Label: c.Label, Href: c.Href, RPC: c.RPC, RPCMethod: c.RPCMethod,
+				Confirm: c.Confirm, Icon: c.Icon, Danger: c.Danger, Disabled: c.Disabled,
+				Separator: c.Separator, ID: c.ID, Radio: c.Radio, Checked: c.Checked,
+				ExtraAttrs: cextras,
+			}
 		}
-		disabledAttr := ""
-		if it.Disabled {
-			disabledAttr = ` disabled aria-disabled="true"`
-		}
-		// Confirm maps to data-fui-confirm here too: the runtime honors
-		// it on any form submit, so a destructive form row asks before
-		// it POSTs instead of silently dropping the field.
-		confirmAttr := ""
-		if it.Confirm != "" {
-			confirmAttr = ` data-fui-confirm="` + render.Escape(it.Confirm) + `"`
-		}
-		b.WriteString(`<button type="submit" class="` + render.Escape(cls) + `" role="menuitem" tabindex="-1"` + disabledAttr + confirmAttr + extra + `>`)
-		if it.Icon != "" {
-			b.WriteString(`<span class="ui-menu__icon" aria-hidden="true">` + string(it.Icon) + `</span>`)
-		}
-		b.WriteString(`<span class="ui-menu__label">` + render.Escape(it.Label) + `</span></button></form>`)
-		return
-	}
-	cls := "ui-menu__item"
-	if it.Danger {
-		cls += " ui-menu__item--danger"
-	}
-	if it.Disabled {
-		cls += " ui-menu__item--disabled"
-	}
-	if it.Class != "" {
-		cls += " " + it.Class
-	}
-	tag := "button"
-	openExtra := `type="button"`
-	if it.Href != "" {
-		tag = "a"
-		// safeURL drops javascript:, data:, vbscript:, file:, blob:,
-		// protocol-relative //host, and control bytes (see safety.go);
-		// a rejected href degrades to "#" like ui.Card / ui.Link.
-		href := urlsafe.CleanAnchor(it.Href)
-		if href == "" {
-			href = "#"
-		}
-		openExtra = `href="` + render.Escape(href) + `"`
-	}
-	tabindex := "-1" // managed by runtime via roving focus
-	// Radio rows swap the role and carry their group + checked state;
-	// the group attr names the runtime's client-side arbitration set.
-	radioAttr := ""
-	role := "menuitem"
-	if it.Radio != "" {
-		role = "menuitemradio"
-		checked := "false"
-		if it.Checked {
-			checked = "true"
-		}
-		radioAttr = ` aria-checked="` + checked + `" data-fui-menu-radio="` + render.Escape(it.Radio) + `"`
-	}
-	disabledAttr := ""
-	if it.Disabled {
-		// Leading space: this is the only optional fragment in the
-		// row's attribute chain whose neighbours (tabindex above,
-		// data-fui-menu-radio on radio rows) do NOT carry one, so
-		// omitting it glues two attributes together.
-		disabledAttr = ` aria-disabled="true"`
-		if tag == "button" {
-			disabledAttr += ` disabled`
+		items[i] = headless.MenuItem{
+			Label:      it.Label,
+			Href:       it.Href,
+			RPC:        it.RPC,
+			RPCMethod:  it.RPCMethod,
+			Confirm:    it.Confirm,
+			Icon:       it.Icon,
+			Danger:     it.Danger,
+			Disabled:   it.Disabled,
+			Separator:  it.Separator,
+			ID:         it.ID,
+			Radio:      it.Radio,
+			Checked:    it.Checked,
+			Action:     action,
+			Children:   children,
+			ExtraAttrs: extras,
 		}
 	}
-	rpcAttr := ""
-	if it.RPC != "" && it.Href == "" {
-		method := it.RPCMethod
-		if method == "" {
-			method = "POST"
-		}
-		rpcAttr = ` data-fui-rpc="` + render.Escape(it.RPC) + `" data-fui-rpc-method="` + render.Escape(method) + `"`
-		if it.Confirm != "" {
-			rpcAttr += ` data-fui-confirm="` + render.Escape(it.Confirm) + `"`
-		}
+	classes := headless.Classes{
+		headless.PartRoot:        "fui-menu",
+		headless.PartSummary:     "fui-menu__trigger",
+		headless.PartMenuCaret:   "fui-menu__caret",
+		headless.PartPanel:       "fui-menu__panel",
+		headless.PartMenuItem:    "fui-menu__item",
+		headless.PartIcon:        "fui-menu__icon",
+		headless.PartText:        "fui-menu__label",
+		headless.PartDividerLine: "fui-menu__sep",
+		headless.PartMenuSubmenu: "fui-menu__sub",
+		headless.PartMenuForm:    "fui-menu__form",
 	}
-	// ID lands right after class, mirroring the panel div (class,
-	// id, role). Empty stays empty so zero-value output is unchanged.
-	idAttr := ""
-	if it.ID != "" {
-		idAttr = ` id="` + render.Escape(it.ID) + `"`
+	for _, pos := range []string{"bottom-start", "bottom-end", "top-start", "top-end"} {
+		classes[headless.Part("root--"+pos)] = "fui-menu--" + pos
 	}
-	// ExtraAttrs join the SafeExtraAttrs contract: the item owns
-	// type/href/tabindex/role/aria-disabled/disabled/aria-checked plus
-	// the rpc data-fui-* wiring (data-fui-menu-radio included — every
-	// data-fui-* key is reserved). serializeExtraAttrs sorts the
-	// survivors and validates each key via render.Attr (unsafe keys
-	// drop).
-	extra := serializeExtraAttrs(html.SafeExtraAttrs(it.ExtraAttrs,
-		"type", "href", "tabindex", "role", "aria-disabled", "disabled", "aria-checked"))
-	b.WriteString(`<` + tag + ` class="` + render.Escape(cls) + `"` + idAttr + ` ` + openExtra +
-		` role="` + role + `" tabindex="` + tabindex + `"` + radioAttr + disabledAttr + rpcAttr + extra + `>`)
-	if it.Icon != "" {
-		b.WriteString(`<span class="ui-menu__icon" aria-hidden="true">` + string(it.Icon) + `</span>`)
+	for _, v := range []string{"danger", "disabled", "hassub"} {
+		classes[headless.Part("menu-item--"+v)] = "fui-menu__item--" + v
 	}
-	b.WriteString(`<span class="ui-menu__label">` + render.Escape(it.Label) + `</span></` + tag + `>`)
-}
-
-// writeSubMenu renders a parent row plus its nested role="menu"
-// panel. The wrapper is a <details data-fui-disclosure data-fui-menu>,
-// i.e. the exact machinery the top level uses, so Escape, SPA-nav
-// close, aria-expanded mirroring, focus-on-open, and the menu
-// module's keyboard handling all apply at depth without a second
-// mechanism. The summary IS the parent menuitem (role=menuitem,
-// aria-haspopup="menu", tabindex=-1 roving like every row); the
-// caller-incoherent combos (Radio, Href, RPC) were refused in
-// writeMenuItem before we got here.
-//
-// A Disabled parent renders the same markup with aria-disabled and
-// the disabled class: the row drops out of keyboard rotation and
-// pointer-events, while the children stay in the DOM (closed,
-// unreachable), so re-enabling is a data change, not a rebuild.
-func writeSubMenu(b *strings.Builder, it MenuItem, parentPanelID string, idx int) {
-	subID := parentPanelID + "-sub-" + itoaSmall(idx)
-	subPanelID := subID + "-panel"
-	cls := "ui-menu__item ui-menu__item--hassub"
-	if it.Danger {
-		cls += " ui-menu__item--danger"
+	classes[headless.Part("panel--sub")] = "fui-menu__panel--sub"
+	if cfg.TriggerClass != "" {
+		classes[headless.PartSummary] += " " + cfg.TriggerClass
 	}
-	if it.Disabled {
-		cls += " ui-menu__item--disabled"
+	if cfg.PanelClass != "" {
+		classes[headless.PartPanel] += " " + cfg.PanelClass
 	}
-	if it.Class != "" {
-		cls += " " + it.Class
-	}
-	disabledAttr := ""
-	if it.Disabled {
-		// <summary> has no native disabled attribute; aria + CSS
-		// pointer-events carry the state.
-		disabledAttr = ` aria-disabled="true"`
-	}
-	idAttr := ""
-	if it.ID != "" {
-		idAttr = ` id="` + render.Escape(it.ID) + `"`
-	}
-	extra := serializeExtraAttrs(html.SafeExtraAttrs(it.ExtraAttrs,
-		"type", "href", "tabindex", "role", "aria-disabled", "disabled",
-		"aria-haspopup", "aria-controls", "aria-checked"))
-	b.WriteString(`<details class="ui-menu__sub" data-fui-disclosure data-fui-menu="` + render.Escape(subID) + `">`)
-	b.WriteString(`<summary class="` + render.Escape(cls) + `"` + idAttr +
-		` aria-haspopup="menu" aria-controls="` + render.Escape(subPanelID) +
-		`" role="menuitem" tabindex="-1"` + disabledAttr + extra + `>`)
-	if it.Icon != "" {
-		b.WriteString(`<span class="ui-menu__icon" aria-hidden="true">` + string(it.Icon) + `</span>`)
-	}
-	// The disclosure caret is a CSS ::after (not a span like the
-	// trigger's) so it never pollutes the row's textContent —
-	// type-ahead matches the label alone.
-	b.WriteString(`<span class="ui-menu__label">` + render.Escape(it.Label) + `</span></summary>`)
-	b.WriteString(`<div class="ui-menu__panel ui-menu__panel--sub" id="` + render.Escape(subPanelID) + `" role="menu" data-fui-menu-panel>`)
-	writeMenuItems(b, it.Children, subPanelID)
-	b.WriteString(`</div></details>`)
-}
-
-// shortHash is a tiny FNV-style stable hash used only to derive a
-// unique fallback ID when the caller doesn't supply one. Collisions
-// are visually acceptable. Two menus sharing the same ID just both
-// respond to the same Esc; nothing breaks.
-func shortHash(s string) string {
-	var h uint32 = 2166136261
-	for i := 0; i < len(s); i++ {
-		h ^= uint32(s[i])
-		h *= 16777619
-	}
-	// Render as 8 lowercase hex chars.
-	const digits = "0123456789abcdef"
-	out := make([]byte, 8)
-	for i := 7; i >= 0; i-- {
-		out[i] = digits[h&0xF]
-		h >>= 4
-	}
-	return string(out)
-}
-
-// positionsForHash folds every item label (recursing into submenus,
-// which contribute their rows to the auto-id identity) into the
-// shortHash input. Zero-value menus (no Children anywhere) produce
-// the exact bytes they did before submenus existed.
-func positionsForHash(items []MenuItem) string {
-	var b strings.Builder
-	for _, it := range items {
-		b.WriteString(it.Label)
-		b.WriteString("|")
-		if len(it.Children) > 0 {
-			b.WriteString(positionsForHash(it.Children))
-		}
-	}
-	return b.String()
+	out := headless.Menu(headless.MenuProps{
+		ID:             cfg.ID,
+		Label:          cfg.Label,
+		TriggerHTML:    cfg.TriggerHTML,
+		TriggerElement: cfg.TriggerElement,
+		Items:          items,
+		Position:       string(cfg.Position),
+		LazyPanel:      cfg.LazyPanel,
+		ExtraAttrs:     headless.Safe(cfg.ExtraAttrs),
+	}, classes)
+	return menuStyle.WrapHTML(out)
 }
 
 func menuCSS(_ style.Theme) string {
-	return `[data-fui-comp="ui-menu"].ui-menu {
+	return `[data-fui-comp="ui-menu"].fui-menu {
   position: relative;
   display: inline-block;
 }
-[data-fui-comp="ui-menu"] > summary.ui-menu__trigger {
+[data-fui-comp="ui-menu"] > summary.fui-menu__trigger {
   display: inline-flex;
   align-items: center;
   gap: var(--spacing-xs, 2px);
@@ -638,14 +351,14 @@ func menuCSS(_ style.Theme) string {
   font: inherit;
   min-height: var(--spacing-touch-target, 44px);
 }
-[data-fui-comp="ui-menu"] > summary.ui-menu__trigger::-webkit-details-marker { display: none; }
-[data-fui-comp="ui-menu"] > summary.ui-menu__trigger:hover  { background: var(--color-surface-soft, #F4F4F5); }
-[data-fui-comp="ui-menu"] > summary.ui-menu__trigger:focus-visible {
+[data-fui-comp="ui-menu"] > summary.fui-menu__trigger::-webkit-details-marker { display: none; }
+[data-fui-comp="ui-menu"] > summary.fui-menu__trigger:hover  { background: var(--color-surface-soft, #F4F4F5); }
+[data-fui-comp="ui-menu"] > summary.fui-menu__trigger:focus-visible {
   outline: 2px solid var(--color-primary, #4F46E5);
   outline-offset: 2px;
 }
-[data-fui-comp="ui-menu"] .ui-menu__caret { font-size: 0.75em; opacity: 0.7; }
-[data-fui-comp="ui-menu"] .ui-menu__panel {
+[data-fui-comp="ui-menu"] .fui-menu__caret { font-size: 0.75em; opacity: 0.7; }
+[data-fui-comp="ui-menu"] .fui-menu__panel {
   position: absolute;
   z-index: var(--z-dropdown, 100);
   min-width: 12rem;
@@ -657,7 +370,7 @@ func menuCSS(_ style.Theme) string {
   box-shadow: var(--shadow-lg, 0 10px 15px -3px rgba(0,0,0,.10));
   display: grid;
   gap: var(--spacing-xs, 2px);
-  animation: ui-menu-in var(--duration-dropdown-enter, 120ms)
+  animation: fui-menu-in var(--duration-dropdown-enter, 120ms)
     var(--easing-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 /* The UA sheet hides closed-details children with display:none, but the
@@ -669,26 +382,26 @@ func menuCSS(_ style.Theme) string {
    data-fui-comp is a plain div, which never carries [open] — an
    untyped rule matches unconditionally and hides the panel even while
    the summary-less details child is open (#386). */
-details[data-fui-comp="ui-menu"]:not([open]) .ui-menu__panel { display: none; }
+details[data-fui-comp="ui-menu"]:not([open]) .fui-menu__panel { display: none; }
 /* Trigger-element path (MenuConfig.TriggerElement): the root is a div,
    so the rule above cannot key [open] on it — the closed panel is
-   hidden through the summary-less <details data-fui-menu> child for
+   hidden through the summary-less <details data-hui-menu> child for
    the same author-display:grid reason. The wrapper generates no box
    (display:contents), so the caller's element is laid out as a direct
    child of the root and host CSS written against the element itself
    (header button.rounded-full) keeps working; role="presentation"
    keeps it out of the accessibility tree. */
-[data-fui-comp="ui-menu"] > [data-fui-menu-trigger] { display: contents; }
-[data-fui-comp="ui-menu"] > details[data-fui-menu]:not([open]) .ui-menu__panel { display: none; }
-[data-fui-comp="ui-menu"].ui-menu--bottom-start .ui-menu__panel { inset-inline-start: 0; top: calc(100% + 4px); }
-[data-fui-comp="ui-menu"].ui-menu--bottom-end   .ui-menu__panel { inset-inline-end: 0;   top: calc(100% + 4px); }
-[data-fui-comp="ui-menu"].ui-menu--top-start    .ui-menu__panel { inset-inline-start: 0; bottom: calc(100% + 4px); }
-[data-fui-comp="ui-menu"].ui-menu--top-end      .ui-menu__panel { inset-inline-end: 0;   bottom: calc(100% + 4px); }
-@keyframes ui-menu-in {
+[data-fui-comp="ui-menu"] > [data-hui-menu-trigger] { display: contents; }
+[data-fui-comp="ui-menu"] > details[data-hui-menu]:not([open]) .fui-menu__panel { display: none; }
+[data-fui-comp="ui-menu"].fui-menu--bottom-start .fui-menu__panel { inset-inline-start: 0; top: calc(100% + 4px); }
+[data-fui-comp="ui-menu"].fui-menu--bottom-end   .fui-menu__panel { inset-inline-end: 0;   top: calc(100% + 4px); }
+[data-fui-comp="ui-menu"].fui-menu--top-start    .fui-menu__panel { inset-inline-start: 0; bottom: calc(100% + 4px); }
+[data-fui-comp="ui-menu"].fui-menu--top-end      .fui-menu__panel { inset-inline-end: 0;   bottom: calc(100% + 4px); }
+@keyframes fui-menu-in {
   from { opacity: 0; transform: translateY(-4px) scale(0.98); }
   to   { opacity: 1; transform: translateY(0)    scale(1);    }
 }
-[data-fui-comp="ui-menu"] .ui-menu__item {
+[data-fui-comp="ui-menu"] .fui-menu__item {
   display: flex;
   align-items: center;
   gap: var(--spacing-sm, 4px);
@@ -704,40 +417,41 @@ details[data-fui-comp="ui-menu"]:not([open]) .ui-menu__panel { display: none; }
   text-decoration: none;
   min-height: var(--spacing-touch-target, 44px);
 }
-[data-fui-comp="ui-menu"] .ui-menu__item:hover,
-[data-fui-comp="ui-menu"] .ui-menu__item:focus-visible {
+[data-fui-comp="ui-menu"] .fui-menu__item:hover,
+[data-fui-comp="ui-menu"] .fui-menu__item:focus-visible {
   background: var(--color-surface-soft, #F4F4F5);
   outline: none;
 }
-[data-fui-comp="ui-menu"] .ui-menu__item--danger { color: var(--color-danger, #DC2626); }
-[data-fui-comp="ui-menu"] .ui-menu__item--danger:hover,
-[data-fui-comp="ui-menu"] .ui-menu__item--danger:focus-visible {
+[data-fui-comp="ui-menu"] .fui-menu__item--danger { color: var(--color-danger, #DC2626); }
+[data-fui-comp="ui-menu"] .fui-menu__item--danger:hover,
+[data-fui-comp="ui-menu"] .fui-menu__item--danger:focus-visible {
   background: color-mix(in srgb, var(--color-danger, #DC2626) 10%, transparent);
 }
-[data-fui-comp="ui-menu"] .ui-menu__item--disabled {
+[data-fui-comp="ui-menu"] .fui-menu__item--disabled {
   opacity: 0.5;
   cursor: not-allowed;
   pointer-events: none;
 }
-[data-fui-comp="ui-menu"] .ui-menu__icon { display: inline-flex; width: 1em; justify-content: center; }
-[data-fui-comp="ui-menu"] .ui-menu__label { flex: 1; }
-[data-fui-comp="ui-menu"] .ui-menu__sep {
+[data-fui-comp="ui-menu"] .fui-menu__icon { display: inline-flex; width: 1em; justify-content: center; }
+[data-fui-comp="ui-menu"] .fui-menu__label { flex: 1; }
+[data-fui-comp="ui-menu"] .fui-menu__sep {
   border: 0;
   border-top: 1px solid var(--color-border, #E4E4E7);
   margin: var(--spacing-xs, 2px) 0;
 }
+[data-fui-comp="ui-menu"] .fui-menu__form { display: grid; gap: inherit; }
 /* Submenus: the nested <details> is one grid child of the parent
    panel; it positions the nested panel, which reuses every panel
    chrome rule above. The position-variant inset rules on the outer
    details would also match the nested panel, so this rule carries a
    higher specificity (element + two classes vs attr + class + class)
    and always wins, at any depth. */
-[data-fui-comp="ui-menu"] details.ui-menu__sub { position: relative; display: block; }
-[data-fui-comp="ui-menu"] details.ui-menu__sub > summary.ui-menu__item {
+[data-fui-comp="ui-menu"] details.fui-menu__sub { position: relative; display: block; }
+[data-fui-comp="ui-menu"] details.fui-menu__sub > summary.fui-menu__item {
   list-style: none;
 }
-[data-fui-comp="ui-menu"] details.ui-menu__sub > summary.ui-menu__item::-webkit-details-marker { display: none; }
-[data-fui-comp="ui-menu"] details.ui-menu__sub > .ui-menu__panel {
+[data-fui-comp="ui-menu"] details.fui-menu__sub > summary.fui-menu__item::-webkit-details-marker { display: none; }
+[data-fui-comp="ui-menu"] details.fui-menu__sub > .fui-menu__panel {
   inset-inline-start: 100%;
   top: calc(-1 * var(--spacing-xs, 2px));
 }
@@ -745,12 +459,12 @@ details[data-fui-comp="ui-menu"]:not([open]) .ui-menu__panel { display: none; }
    textContent (type-ahead) and accessible name, unlike the trigger's
    <span> caret. :dir() flips it in RTL; unsupported engines show the
    LTR glyph, a cosmetic-only degradation. */
-[data-fui-comp="ui-menu"] .ui-menu__item--hassub::after {
+[data-fui-comp="ui-menu"] .fui-menu__item--hassub::after {
   content: "▸";
   font-size: 0.75em;
   opacity: 0.7;
 }
-:dir(rtl) [data-fui-comp="ui-menu"] .ui-menu__item--hassub::after { content: "◂"; }
+:dir(rtl) [data-fui-comp="ui-menu"] .fui-menu__item--hassub::after { content: "◂"; }
 /* Radio rows: the check indicator is likewise a pseudo-element —
    space is reserved in both states so labels align whether checked
    or not. */
@@ -764,6 +478,6 @@ details[data-fui-comp="ui-menu"]:not([open]) .ui-menu__panel { display: none; }
 }
 [data-fui-comp="ui-menu"] [role="menuitemradio"][aria-checked="true"]::before { visibility: visible; }
 @media (prefers-reduced-motion: reduce) {
-  [data-fui-comp="ui-menu"] .ui-menu__panel { animation: none; }
+  [data-fui-comp="ui-menu"] .fui-menu__panel { animation: none; }
 }`
 }

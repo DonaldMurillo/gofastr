@@ -163,3 +163,32 @@ func TestFileUploadWrapperRefusesForgedDropHook(t *testing.T) {
 		t.Errorf("a legitimate extra attribute was dropped:\n%s", h)
 	}
 }
+
+// TestFileDropzonePreviewDoesNotStealDropOwnership: the preview marker
+// (data-fui-dropzone-preview, the widgets module's) and the headless
+// drop hooks (data-hui-drop-list/-status, this package's registered
+// module) must coexist on one zone without either doubling: exactly one
+// list hook, exactly one status hook, and the preview marker on the
+// input where the widgets module reads it — never on the region the
+// headless module binds.
+func TestFileDropzonePreviewDoesNotStealDropOwnership(t *testing.T) {
+	h := string(FileDropzone(FileDropzoneConfig{
+		Name: "files", Label: "Files", ShowPreview: true,
+	}))
+	if n := strings.Count(h, `data-hui-drop-list`); n != 1 {
+		t.Errorf("the drop-list hook must ride exactly once, got %d:\n%s", n, h)
+	}
+	if n := strings.Count(h, `data-hui-drop-status`); n != 1 {
+		t.Errorf("the drop-status hook must ride exactly once, got %d:\n%s", n, h)
+	}
+	if n := strings.Count(h, `data-fui-dropzone-preview=""`); n != 1 {
+		t.Errorf("the preview marker must ride exactly once, got %d:\n%s", n, h)
+	}
+	// The preview marker belongs to the file input; the region belongs
+	// to the headless module. A marker on the region would make the
+	// widgets module treat the whole zone as the preview target.
+	region := h[:strings.Index(h, "<input")]
+	if strings.Contains(region, "data-fui-dropzone-preview") {
+		t.Errorf("the preview marker leaked onto the drop region:\n%s", h)
+	}
+}

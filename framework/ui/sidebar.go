@@ -14,6 +14,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/widget"
 	"github.com/DonaldMurillo/gofastr/core-ui/widget/preset"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
 // SidebarVariant selects how the sidebar behaves at ≥ md viewports.
@@ -97,7 +98,7 @@ func checkSidebarCollapse(c SidebarCollapse) {
 //	  data-fui-disclosure-persist><summary>, the default since the
 //	  component exists.
 //	SidebarGroupButton: a <button type="button" aria-expanded
-//	  aria-controls data-fui-sidebar-group-toggle> header plus the
+//	  aria-controls data-hui-sidebar-group-toggle> header plus the
 //	  child links in a container that carries the hidden attribute
 //	  when closed. For hosts whose contract pins that shape for
 //	  keyboard/AT parity with the rest of their app; the sidebar
@@ -233,7 +234,7 @@ type SidebarConfig struct {
 	// ExpandLabel is the collapse button's aria-label when the sidebar
 	// is collapsed (the same button expands the rail). Defaults to
 	// "Expand navigation". Both labels are also emitted as
-	// data-fui-sidebar-collapse-label / data-fui-sidebar-expand-label
+	// data-hui-sidebar-collapse-label / data-hui-sidebar-expand-label
 	// so the runtime keeps using them after a client-side toggle.
 	ExpandLabel string
 
@@ -347,7 +348,7 @@ func (s sidebarComponent) render(ctx context.Context) render.HTML {
 	// landmark-complementary-is-top-level rule fires on the double
 	// landmark. The layout's <nav> is the sole landmark; this element
 	// is the styled shell (display:contents, so it adds no box).
-	b.WriteString(`<div class="ui-sidebar ui-sidebar--` + string(cfg.Variant) + `" data-fui-sidebar`)
+	b.WriteString(`<div class="ui-sidebar ui-sidebar--` + string(cfg.Variant) + `" data-hui-sidebar`)
 	if cfg.Variant == SidebarCollapsible {
 		if cfg.Collapse == SidebarCollapseAuto {
 			// Auto: the runtime owns the state and restores it from
@@ -356,7 +357,7 @@ func (s sidebarComponent) render(ctx context.Context) render.HTML {
 			if key == "" {
 				key = "gofastr.sidebar." + cfg.DrawerName + ".collapsed"
 			}
-			b.WriteString(` data-fui-sidebar-storage="` + render.Escape(key) + `"`)
+			b.WriteString(` data-hui-sidebar-storage="` + render.Escape(key) + `"`)
 		} else {
 			// Server-owned state ships in the SSR bytes. No storage
 			// attribute: the runtime module only restores (and only
@@ -393,14 +394,20 @@ func (s sidebarComponent) render(ctx context.Context) render.HTML {
 		// plus the expand label: hardcoding "true"/"Collapse navigation"
 		// (the old behaviour) named the wrong action whenever the rail
 		// rendered collapsed.
+		//
+		// Both labels ALWAYS ride along as data attributes, resolved
+		// through i18nui the way the component's other strings resolve
+		// (a caller's CollapseLabel/ExpandLabel wins): the runtime
+		// module carries no English fallback, so the pair in the markup
+		// is the only wording a client-side toggle can re-say.
 		collapsed := cfg.Collapse == SidebarCollapseCollapsed
 		collapseLabel := cfg.CollapseLabel
 		if collapseLabel == "" {
-			collapseLabel = "Collapse navigation"
+			collapseLabel = i18nui.T(ctx, i18nui.KeyHuiSidebarCollapse)
 		}
 		expandLabel := cfg.ExpandLabel
 		if expandLabel == "" {
-			expandLabel = "Expand navigation"
+			expandLabel = i18nui.T(ctx, i18nui.KeyHuiSidebarExpand)
 		}
 		label := collapseLabel
 		expandedAttr := "true"
@@ -408,17 +415,11 @@ func (s sidebarComponent) render(ctx context.Context) render.HTML {
 			label = expandLabel
 			expandedAttr = "false"
 		}
-		b.WriteString(`<button type="button" class="ui-sidebar__collapse" data-fui-sidebar-collapse ` +
+		b.WriteString(`<button type="button" class="ui-sidebar__collapse" data-hui-sidebar-toggle ` +
 			`aria-controls="` + render.Escape(inlineID) + `" aria-expanded="` + expandedAttr +
 			`" aria-label="` + render.Escape(label) + `"`)
-		// Custom labels ride along as data attributes so the runtime's
-		// client-side toggles keep using them instead of its defaults.
-		if cfg.CollapseLabel != "" {
-			b.WriteString(` data-fui-sidebar-collapse-label="` + render.Escape(cfg.CollapseLabel) + `"`)
-		}
-		if cfg.ExpandLabel != "" {
-			b.WriteString(` data-fui-sidebar-expand-label="` + render.Escape(cfg.ExpandLabel) + `"`)
-		}
+		b.WriteString(` data-hui-sidebar-collapse-label="` + render.Escape(collapseLabel) + `"`)
+		b.WriteString(` data-hui-sidebar-expand-label="` + render.Escape(expandLabel) + `"`)
 		b.WriteString(`><span aria-hidden="true">‹</span></button>`)
 	}
 	b.WriteString(string(sidebarBody(ctx, cfg, inlineID)))
@@ -445,7 +446,7 @@ func SidebarBody(cfg SidebarConfig) render.HTML {
 	// the component CSS into the comp-bundle, and a bare nav+footer pair
 	// would leave the footer outside the marker injectMarker stamps on
 	// the first element. The root deliberately does NOT carry
-	// data-fui-sidebar — the runtime treats those as sidebar roots
+	// data-hui-sidebar — the runtime treats those as sidebar roots
 	// (collapse storage, drawer wiring) and a nested root inside the
 	// full Sidebar shell would double-bind them. display:contents via
 	// the .ui-sidebar base rule keeps the wrapper box-free.
@@ -528,7 +529,7 @@ func writeSidebarItem(b *strings.Builder, it SidebarItem, st *sidebarNavState, d
 			if open {
 				expandedAttr = "true"
 			}
-			b.WriteString(`<button type="button" class="ui-sidebar__link ui-sidebar__group-toggle" data-fui-sidebar-group-toggle aria-expanded="` +
+			b.WriteString(`<button type="button" class="ui-sidebar__link ui-sidebar__group-toggle" data-hui-sidebar-group-toggle aria-expanded="` +
 				expandedAttr + `" aria-controls="` + render.Escape(id) + `">`)
 			if it.Icon != "" {
 				b.WriteString(`<span class="ui-sidebar__icon" aria-hidden="true">` + string(it.Icon) + `</span>`)
@@ -548,13 +549,18 @@ func writeSidebarItem(b *strings.Builder, it SidebarItem, st *sidebarNavState, d
 		} else {
 			// Details dialect (default): a persistent disclosure for
 			// child items; <details> reuses the framework's
-			// data-fui-disclosure machinery while retaining the user's
-			// expanded section across in-shell navigation.
+			// headless-disclosure machinery (Escape, aria mirror,
+			// navigate-close) while retaining the user's expanded
+			// section across in-shell navigation through a per-group
+			// persist key derived from the group's sequence id.
+			st.groupSeq++
+			persistKey := st.idPrefix + "-g" + strconv.Itoa(st.groupSeq)
 			openAttr := ""
 			if open {
 				openAttr = " open"
 			}
-			b.WriteString(`<details class="ui-sidebar__group" data-fui-disclosure data-fui-disclosure-persist` + openAttr + `>`)
+			b.WriteString(`<details class="ui-sidebar__group" data-hui-disclosure data-hui-disclosure-persist="` +
+				render.Escape(persistKey) + `"` + openAttr + `>`)
 			b.WriteString(`<summary class="ui-sidebar__link">`)
 			if it.Icon != "" {
 				b.WriteString(`<span class="ui-sidebar__icon" aria-hidden="true">` + string(it.Icon) + `</span>`)

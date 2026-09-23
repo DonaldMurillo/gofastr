@@ -393,10 +393,6 @@
     // The marker only loads the imperative __gofastr.compute API.
     { name: 'compute',    selector: '[data-fui-compute]' },
     { name: 'popover',    selector: '[data-fui-popover-anchor]' },
-    { name: 'menu',       selector: '[data-fui-menu]' },
-    // Disclosure: aria-expanded mirroring, Escape-to-close, menu
-    // focus-on-open, and the opt-in inert focus trap for drawers.
-    { name: 'disclosure', selector: 'details[data-fui-disclosure]' },
     // SSE: background event stream. Idle-loaded, never blocks first
     // interaction; the channel only carries push updates, not user
     // actions. See ROADMAP §8 Phase 5.
@@ -408,10 +404,6 @@
     // SSR-inlined widget chrome is already on the page; mounting is
     // hydration not first paint. See ROADMAP §8 Phase 5.
     { name: 'widgets',    selector: '[data-fui-widget],[data-fui-open]', idle: true },
-    // Combobox: any WAI-ARIA combobox + listbox pair. The module
-    // handles keyboard nav, click-to-pick, outside-click close, and
-    // updates aria-expanded + aria-activedescendant.
-    { name: 'combobox',   selector: '[role="combobox"]' },
     // Tree: any WAI-ARIA tree. The module handles roving tabindex,
     // arrow-key nav, type-ahead, and toggle clicks that flip
     // aria-expanded + show/hide child <ul role="group">.
@@ -437,18 +429,11 @@
     // RangeSlider: cross-clamp min/max thumbs + optional value mirror.
     // TagInput: commit on Enter/comma, backspace removes last, chip ×.
     // AnimatedCounter: IntersectionObserver-driven tick on first view.
-    // TableOfContents: harvest h2/h3 from target region + active-section tracking.
-    { name: 'toc',             selector: '[data-fui-toc]' },
-    // ScrollSpy: generic IntersectionObserver section tracking for any nav with in-page anchors.
-    { name: 'scrollspy',       selector: '[data-fui-scrollspy]' },
     // DragDismiss: pointer drag-to-close for BottomSheet-style widgets.
     { name: 'dragdismiss', selector: '[data-fui-drag-dismiss="true"]' },
     // NetworkRetryBanner: persistent banner gated by RPC-failure threshold / SSE silence. Health-check retry.
     // SortableList: HTML5 drag + keyboard reorder. POSTs new order on commit.
     { name: 'sortablelist',    selector: '[data-fui-sortable]' },
-    { name: 'shortcut',        selector: '[data-fui-shortcut-focus],[data-fui-shortcut-click]' },
-    { name: 'carousel',        selector: '[data-fui-carousel]' },
-    { name: 'sidebar', selector: '[data-fui-sidebar-collapse],[data-fui-sidebar-group-toggle]' },
     // BackToTop: scroll-past-threshold reveal + smooth scroll.
     // SearchInput: clear button visibility + input clearing.
     { name: 'searchinput',     selector: '[data-fui-comp="ui-search-input"]' },
@@ -462,7 +447,6 @@
     // PaneHost: primary pane + openable secondary/tertiary side panes
     // with a responsive overlay-drawer collapse. Wires open/close/swap
     // triggers + the focus/scroll-lock lifecycle.
-    { name: 'panehost',         selector: '[data-fui-pane-host]' },
     // Poll: page-level region polling. data-fui-poll="<duration>" +
     // data-fui-poll-src="<url>" re-fetches the URL on the cadence and
     // swaps the response HTML into the element. The module owns
@@ -729,11 +713,12 @@
   // fast parse, dynamic re-init).
 
   // Disclosure keyboard/AT behaviour, aria-expanded mirroring,
-  // Escape-to-close, menu focus-on-open, and the opt-in focus trap,
-  // lives in the split-runtime module at core-ui/runtime/src/disclosure.js,
-  // demand-loaded via the details[data-fui-disclosure] scanner below.
-  // Core keeps only the close-on-navigate lines; the `toggle` event they
-  // raise is what the module reacts to.
+  // Escape-to-close, and the focus containment live in
+  // framework/headless's headless-disclosure module (a registered
+  // behaviour, loaded on the details[data-hui-disclosure] marker).
+  // Core keeps only the close-on-navigate lines for the legacy
+  // data-fui-disclosure spelling; the `toggle` event they raise is
+  // what registered modules react to.
 
   // Task A: auto-inject aria-live onto signal nodes so screen readers
   // announce dynamic updates. Restricted to TEXT-mode nodes (the default

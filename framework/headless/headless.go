@@ -191,6 +191,14 @@ func refused(key string) bool {
 	case "style", "data-behavior", "data-island", "data-widget", "data-component", "data-bind", "data-action":
 		return true
 	}
+
+	// The on* family: an event handler attribute is inline script, the
+	// thing every other extra-attrs filter in the tree (ui.scrubAttrs,
+	// kiln/world) refuses outright. A data-driven host surface handing
+	// one in is a stored-XSS primitive, not an escape hatch.
+	if strings.HasPrefix(k, "on") {
+		return true
+	}
 	for _, prefix := range []string{"data-hui-", "data-fui-", "data-action-", "data-param-", "data-kiln-"} {
 		if strings.HasPrefix(k, prefix) {
 			return true

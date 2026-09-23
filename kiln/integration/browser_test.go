@@ -2364,7 +2364,7 @@ func TestBrowser_ConnectionStatusDotReflectsSSEState(t *testing.T) {
 }
 
 // Cmd/Ctrl+K focuses the chat input even when the focus is somewhere
-// else on the page. Verifies the framework's data-fui-shortcut-focus
+// else on the page. Verifies the framework's data-hui-shortcut-focus
 // primitive against the kiln textarea opt-in.
 func TestBrowser_CmdKFocusesChatInput(t *testing.T) {
 	urlBase, _, _ := startKilnExt(t)
@@ -3103,7 +3103,7 @@ func TestBrowser_GearModalShowsInstallHintWhenNoAdaptersInstalled(t *testing.T) 
 
 // Y key approves the most recent unresolved plan (when no input
 // is focused). N rejects. Verifies the framework's
-// data-fui-shortcut-click primitive against the kiln plan card
+// data-hui-shortcut-click primitive against the kiln plan card
 // opt-in.
 func TestBrowser_PlanCardYNApprovesAndRejects(t *testing.T) {
 	urlBase, _, tools := startKilnExt(t)
@@ -3114,7 +3114,7 @@ func TestBrowser_PlanCardYNApprovesAndRejects(t *testing.T) {
 	})
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(urlBase+"/"),
-		chromedp.WaitVisible(`.kiln-plan-btn-approve[data-fui-shortcut-click="y"]`, chromedp.ByQuery),
+		chromedp.WaitVisible(`.kiln-plan-btn-approve[data-hui-shortcut-click="y"]`, chromedp.ByQuery),
 		chromedp.Evaluate(`document.body.focus()`, nil),
 		chromedp.Evaluate(`(function(){
 			document.dispatchEvent(new KeyboardEvent('keydown', {key:'y', bubbles:true, cancelable:true}));
@@ -3129,7 +3129,7 @@ func TestBrowser_PlanCardYNApprovesAndRejects(t *testing.T) {
 		PlanID: "p-n", Steps: []string{"do other work"},
 	})
 	if err := chromedp.Run(ctx,
-		chromedp.WaitVisible(`.kiln-plan-btn-reject[data-fui-shortcut-click="n"]`, chromedp.ByQuery),
+		chromedp.WaitVisible(`.kiln-plan-btn-reject[data-hui-shortcut-click="n"]`, chromedp.ByQuery),
 		chromedp.Evaluate(`document.body.focus()`, nil),
 		chromedp.Evaluate(`(function(){
 			document.dispatchEvent(new KeyboardEvent('keydown', {key:'n', bubbles:true, cancelable:true}));

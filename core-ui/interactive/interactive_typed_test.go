@@ -119,8 +119,8 @@ func TestToastOnClickIncludesStack(t *testing.T) {
 
 func TestOpenPaneOnClickEmitsAttr(t *testing.T) {
 	got := string(OpenPaneOnClick(rawBtn(nil, "Open details"), "secondary"))
-	if !strings.Contains(got, `data-fui-pane-open="secondary"`) {
-		t.Errorf("missing data-fui-pane-open: %s", got)
+	if !strings.Contains(got, `data-hui-pane-open-control="secondary"`) {
+		t.Errorf("missing data-hui-pane-open-control: %s", got)
 	}
 }
 
@@ -131,16 +131,16 @@ func TestOpenPaneOnClickRejectsBadPane(t *testing.T) {
 
 func TestClosePaneOnClickEmitsAttr(t *testing.T) {
 	got := string(ClosePaneOnClick(rawBtn(nil, "Close"), "secondary"))
-	if !strings.Contains(got, `data-fui-pane-close="secondary"`) {
-		t.Errorf("missing data-fui-pane-close: %s", got)
+	if !strings.Contains(got, `data-hui-pane-close="secondary"`) {
+		t.Errorf("missing data-hui-pane-close: %s", got)
 	}
 }
 
 func TestClosePaneOnClickEmptyClosesTopmost(t *testing.T) {
 	got := string(ClosePaneOnClick(rawBtn(nil, "Close"), ""))
-	// Empty value → bare-value attribute form, matching the site demo.
-	if !strings.Contains(got, `data-fui-pane-close=""`) {
-		t.Errorf("empty pane-close should emit data-fui-pane-close=\"\": %s", got)
+	// Empty value → bare-value attribute form, matched by presence.
+	if !strings.Contains(got, `data-hui-pane-close=""`) {
+		t.Errorf("empty pane-close should emit data-hui-pane-close=\"\": %s", got)
 	}
 }
 

@@ -234,6 +234,57 @@ type Strings struct {
 	StepOf     string
 	StepName   string
 
+	// ─── TableOfContents ─────────────────────────────────────────────
+
+	// TableOfContentsLabel names the contents navigation, which is a
+	// landmark a screen reader jumps to by name. A short prepositional
+	// phrase naming what the list is of.
+	TableOfContentsLabel string
+
+	// ─── Combobox ─────────────────────────────────────────────────────
+
+	// ComboboxLoading is what the status region says while results
+	// are being fetched. One word or a short phrase.
+	ComboboxLoading string
+	// ComboboxNoResults is what the status region says when a query
+	// matched nothing.
+	ComboboxNoResults string
+	// ComboboxResultCount announces how many results a query found,
+	// "{n}" where the count goes — the module writes the count in when
+	// the results arrive, so the sentence travels as an attribute and
+	// the placeholder is a name, not a fmt verb.
+	ComboboxResultCount string
+	// ComboboxResultsLabel names the listbox: "<Label> results" is
+	// assembled at render, so the word here is the noun.
+	ComboboxResultsLabel string
+
+	// ─── Carousel ─────────────────────────────────────────────────────
+
+	// CarouselSlide names one slide and the total, "Slide {n} of
+	// {total}" — {n} and {total} are filled at render (the module
+	// re-says it into the status after each step).
+	CarouselSlide string
+	// CarouselGoTo names a dot control, "Go to slide {n}".
+	CarouselGoTo string
+
+	// ─── JSONTree ──────────────────────────────────────────────────────
+
+	// JSONObject names an object node in a JSON tree. One word.
+	JSONObject string
+	// JSONArray names an array node in a JSON tree. One word.
+	JSONArray string
+	// JSONNull is the null literal. One word.
+	JSONNull string
+	// JSONTrue / JSONFalse are the boolean literals. One word each.
+	JSONTrue  string
+	JSONFalse string
+	// JSONEmptyObject / JSONEmptyArray are what an empty collection
+	// renders: the literal braces/brackets. One token each.
+	JSONEmptyObject string
+	JSONEmptyArray  string
+	// JSONTruncated is the mark a truncated string ends with.
+	JSONTruncated string
+
 	// ─── ValidationSummary ──────────────────────────────────────────
 
 	// ThereIsAProblem heads the list a failed submit focuses. A short
@@ -304,11 +355,31 @@ var defaultStrings = Strings{
 
 	NotificationCount: "%d unread notifications",
 
-	StepBack:        "Back",
-	StepNext:        "Continue",
-	StepSubmit:      "Submit",
-	StepOf:          "Step %d of %d",
-	StepName:        "Step %d: %s",
+	StepBack:   "Back",
+	StepNext:   "Continue",
+	StepSubmit: "Submit",
+	StepOf:     "Step %d of %d",
+	StepName:   "Step %d: %s",
+
+	TableOfContentsLabel: "On this page",
+
+	CarouselSlide: "Slide {n} of {total}",
+	CarouselGoTo:  "Go to slide {n}",
+
+	ComboboxLoading:      "Loading…",
+	ComboboxNoResults:    "No matches",
+	ComboboxResultCount:  "{n} results",
+	ComboboxResultsLabel: "results",
+
+	JSONObject:      "Object",
+	JSONArray:       "Array",
+	JSONNull:        "null",
+	JSONTrue:        "true",
+	JSONFalse:       "false",
+	JSONEmptyObject: "{}",
+	JSONEmptyArray:  "[]",
+	JSONTruncated:   "…",
+
 	ThereIsAProblem: "There is a problem",
 }
 

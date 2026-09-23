@@ -141,11 +141,89 @@
     }
   });
 
+  // ─── shortcuts ───────────────────────────────────────────────────
+  //
+  // One document-level keydown for every chord on the page, the
+  // retired core-ui shortcut module's contract: no per-element
+  // listeners (remounted widgets need no rebinding, detached elements
+  // can never fire), composing events ignored (an IME confirmation is
+  // not a hotkey), and the first CONNECTED match wins so a stale SSR
+  // duplicate cannot steal the chord. data-hui-shortcut-target lets a
+  // non-focusable wrapper carry the chord while focus lands on (or the
+  // click lands in) the element its selector names — the styled search
+  // bar wrapping the input is the shape it exists for.
+  function parseCombo(combo) {
+    const parts = combo.split('+').map(function (s) { return s.trim().toLowerCase(); });
+    let key = '';
+    let mod = false, shift = false, alt = false;
+    parts.forEach(function (p) {
+      if (p === 'mod' || p === 'meta' || p === 'ctrl' || p === 'cmd') mod = true;
+      else if (p === 'shift') shift = true;
+      else if (p === 'alt' || p === 'option') alt = true;
+      else key = p;
+    });
+    return { key: key, mod: mod, shift: shift, alt: alt };
+  }
+
+  function chordMatches(e, combo) {
+    const m = parseCombo(combo);
+    if (!m.key) return false;
+    if (e.key.toLowerCase() !== m.key) return false;
+    if (m.mod && !(e.metaKey || e.ctrlKey)) return false;
+    if (m.shift && !e.shiftKey) return false;
+    if (m.alt && !e.altKey) return false;
+    // Don't intercept while typing into a text-like input, except
+    // when the chord includes a modifier (then it's an intentional
+    // hotkey, not a typed character).
+    const inField = document.activeElement && /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName);
+    if (inField && !m.mod && !m.alt) return false;
+    return true;
+  }
+
+  function shortcutTarget(el) {
+    const sel = el.getAttribute('data-hui-shortcut-target');
+    if (sel) {
+      // The selector is markup-borne input: a malformed value degrades
+      // to the wrapper instead of throwing out of the document
+      // keydown listener.
+      try {
+        const t = el.querySelector(sel) || document.querySelector(sel);
+        if (t && t.isConnected) return t;
+      } catch (_) {}
+    }
+    return el;
+  }
+
+  document.addEventListener('keydown', function (e) {
+    if (e.isComposing) return;
+    const els = document.querySelectorAll('[data-hui-shortcut-focus],[data-hui-shortcut-click]');
+    for (const el of els) {
+      if (!el.isConnected) continue;
+      const focusCombo = el.getAttribute('data-hui-shortcut-focus');
+      if (focusCombo && chordMatches(e, focusCombo)) {
+        e.preventDefault();
+        const target = shortcutTarget(el);
+        try { target.focus(); if (target.select) target.select(); } catch (_) {}
+        return;
+      }
+      const clickCombo = el.getAttribute('data-hui-shortcut-click');
+      if (clickCombo && chordMatches(e, clickCombo)) {
+        e.preventDefault();
+        shortcutTarget(el).click();
+        return;
+      }
+    }
+  });
   // ─── the arrival pass ────────────────────────────────────────────
 
   function scan(root) {
     const scope = root && root.querySelectorAll ? root : document;
     for (const link of within(scope, '[data-hui-back-to-top]')) armLink(link);
+    // A ShortcutHint with a BindTarget names its target's selector:
+    // nothing to arm (the chord itself rides -focus/-click on the
+    // target or its wrapper), but reading it here keeps the marker an
+    // owned contract rather than an attribute nothing binds.
+    for (const hint of within(scope, '[data-hui-shortcut-hint]')) void hint.getAttribute('data-hui-shortcut-hint');
     // within(), not scope.querySelector: the kernel hands scan() one
     // inserted subtree, and a subtree whose root IS the toggle group
     // is missed by a descendants-only lookup.

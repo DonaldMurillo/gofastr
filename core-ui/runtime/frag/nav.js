@@ -760,7 +760,8 @@
   // widget, which is why Forward across a deep link never worked. The
   // set is built at popstate time from what the page actually declares:
   // the widget catalog's deepLinkKey/deepLinkParams plus every
-  // [data-fui-pane-deeplink] attribute in the DOM. Everything else
+  // [data-hui-pane-deeplink] (or legacy [data-fui-pane-deeplink])
+  // attribute in the DOM. Everything else
   // (search, filters, ?p=) is screen identity and refetches as before.
   const _statefulParams = () => {
     const set = new Set();
@@ -771,8 +772,11 @@
       if (cfg.deepLinkKey) set.add(cfg.deepLinkKey);
       for (const p of cfg.deepLinkParams || []) set.add(p);
     }
-    for (const el of document.querySelectorAll('[data-fui-pane-deeplink]')) {
-      const p = el.getAttribute('data-fui-pane-deeplink');
+    // Both spellings: headless.PaneHost declares data-hui-pane-deeplink,
+    // the retired pane host declared data-fui-pane-deeplink and old
+    // server markup may still carry it.
+    for (const el of document.querySelectorAll('[data-hui-pane-deeplink],[data-fui-pane-deeplink]')) {
+      const p = el.getAttribute('data-hui-pane-deeplink') || el.getAttribute('data-fui-pane-deeplink');
       if (p) set.add(p);
     }
     return set;

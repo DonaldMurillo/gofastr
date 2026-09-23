@@ -1203,7 +1203,7 @@ func TestE2EInteractive_WorkspacePanes(t *testing.T) {
 		chromedp.Location(&url1),
 		chromedp.Evaluate(`document.querySelector('[data-fui-signal="ws-ticket"]').textContent`, &detail),
 		// "View customer" inside the detail fills the tertiary pane.
-		chromedp.Evaluate(`document.querySelector('[data-fui-pane-open="tertiary"]').click()`, nil),
+		chromedp.Evaluate(`document.querySelector('[data-hui-pane-open-control="tertiary"]').click()`, nil),
 		chromedp.Sleep(1*time.Second),
 		chromedp.Location(&url2),
 		chromedp.Evaluate(`document.querySelector('[data-fui-signal="ws-customer"]').textContent`, &customer),

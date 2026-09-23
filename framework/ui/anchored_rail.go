@@ -1,20 +1,26 @@
 package ui
 
-// AnchoredRail is a sticky in-page nav rail with scrollspy-tracked active state.
+import (
+	"strconv"
+
+	"github.com/DonaldMurillo/gofastr/core-ui/html"
+	"github.com/DonaldMurillo/gofastr/core-ui/registry"
+	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/headless"
+)
+
+// AnchoredRail is a sticky in-page nav rail with an active-entry state
+// the headless-rail module tracks.
 //
-// Bundles the rail markup (a labelled <aside> with an ordered list of
-// "#anchor" links, each optionally carrying an eyebrow number + trailing
-// count) with core-ui/patterns/scrollspy.Wrap so the runtime sets
-// aria-current="true" on the link whose target section is currently in
-// view.
+// Renders headless.Rail dressed with the fui-anchored-rail class map:
+// a labelled <aside> with an ordered list of "#anchor" links, each
+// optionally carrying an eyebrow chip and a trailing count. The
+// entries are real fragment links, so the whole rail works with no
+// script — the module only marks the link whose target section is in
+// view (aria-current and a class, never a style).
 //
-// Replaces the hand-rolled pattern that was rebuilt three times in the
-// product site (categories rail on /components/, intent rail on /docs/,
-// step rail on /get-started/) with hardcoded SSR ".active" hints that
-// stayed stuck on item 01 forever.
-//
-// Compose with ui.Section + auto-id-from-Heading for the cheapest possible
-// hook-up:
+// Compose with ui.Section + auto-id-from-Heading for the cheapest
+// possible hook-up:
 //
 //	rail := ui.AnchoredRail(ui.AnchoredRailConfig{
 //	    Label: "By intent",
@@ -28,14 +34,6 @@ package ui
 // And on the section side, since ui.Section auto-slugs Heading → ID:
 //
 //	ui.Section(ui.SectionConfig{Heading: "Modeling"}, …)  // ID="modeling"
-
-import (
-	"strconv"
-
-	"github.com/DonaldMurillo/gofastr/core-ui/html"
-	"github.com/DonaldMurillo/gofastr/core-ui/patterns/scrollspy"
-	"github.com/DonaldMurillo/gofastr/core/render"
-)
 
 // RailItem is one entry in the rail.
 //
@@ -61,14 +59,14 @@ type AnchoredRailConfig struct {
 	Items []RailItem
 
 	// ObserveSelector is the CSS selector for the container the
-	// scrollspy runtime watches for in-view sections. Typically the
+	// headless-rail module watches for in-view sections. Typically the
 	// id of a wrapper around the sections (e.g. "#docs-sections"). If
-	// empty, scrollspy is skipped and the rail is purely static. The
-	// runtime then can't track active state.
+	// empty, the rail is purely static: the links work and nothing is
+	// marked.
 	ObserveSelector string
 
-	// TargetSelector overrides the default ".fui-section[id]". Set it
-	// when the sections aren't ui.Section calls.
+	// TargetSelector overrides the module's default heading targets.
+	// Set it when the sections aren't headings (e.g. ".intent[id]").
 	TargetSelector string
 
 	// Class is appended to the <aside>'s class list.
@@ -80,108 +78,54 @@ type AnchoredRailConfig struct {
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers, ARIA overrides) to the rail's root <aside>.
 	// Keys the component owns are dropped: class and id (use Class /
-	// ID), data-fui-*, and aria-label (use Label).
+	// ID), data-hui-* (the rail wiring), and aria-label (use Label).
 	ExtraAttrs html.Attrs
 }
 
-// AnchoredRail returns the rail HTML. When ObserveSelector is set, the
-// rail is wrapped with scrollspy so the runtime tracks active state.
-//
-// The default CSS class is "ui-anchored-rail". Re-style with a Class
-// override and a scoped block in the host's stylesheet.
+// AnchoredRail returns the rail HTML. When ObserveSelector is set the
+// root carries the observer hooks the headless-rail module binds.
 func AnchoredRail(cfg AnchoredRailConfig) render.HTML {
-	if cfg.Label == "" {
-		panic("ui: AnchoredRail requires Label")
-	}
-	if len(cfg.Items) == 0 {
-		panic("ui: AnchoredRail requires at least one Item")
-	}
-
-	listItems := make([]render.HTML, 0, len(cfg.Items))
-	for _, it := range cfg.Items {
-		if it.Anchor == "" {
-			panic("ui: AnchoredRail item missing Anchor")
-		}
-		if it.Text == "" {
-			panic("ui: AnchoredRail item missing Text")
-		}
-		var content []render.HTML
-		if it.Eyebrow != "" {
-			content = append(content, html.Span(
-				html.TextConfig{Class: "ui-anchored-rail__eyebrow"},
-				render.Text(it.Eyebrow),
-			))
-		}
-		content = append(content, render.Text(it.Text))
+	items := make([]headless.RailItem, len(cfg.Items))
+	for i, it := range cfg.Items {
+		count := ""
 		if it.Count > 0 {
-			content = append(content, html.Span(
-				html.TextConfig{Class: "ui-anchored-rail__count"},
-				render.Text(strconv.Itoa(it.Count)),
-			))
+			count = strconv.Itoa(it.Count)
 		}
-		listItems = append(listItems, html.ListItem(html.ListItemConfig{},
-			html.LinkHTML(html.LinkHTMLConfig{
-				Href:    "#" + it.Anchor,
-				Content: render.Join(content...),
-			}),
-		))
+		items[i] = headless.RailItem{
+			Anchor:  it.Anchor,
+			Text:    it.Text,
+			Eyebrow: it.Eyebrow,
+			Count:   count,
+		}
 	}
-
-	asideClass := "ui-anchored-rail"
+	classes := map[headless.Part]string{
+		headless.PartRoot:        "fui-anchored-rail",
+		headless.PartLabel:       "fui-anchored-rail__label",
+		headless.PartRailList:    "fui-anchored-rail__list",
+		headless.PartRailItem:    "fui-anchored-rail__item",
+		headless.PartRailLink:    "fui-anchored-rail__link",
+		headless.PartRailEyebrow: "fui-anchored-rail__eyebrow",
+		headless.PartRailCount:   "fui-anchored-rail__count",
+	}
 	if cfg.Class != "" {
-		asideClass += " " + cfg.Class
+		classes[headless.PartRoot] += " " + cfg.Class
 	}
-	// Extras land on the <aside> (the element carrying data-fui-comp),
-	// not on scrollspy's sticky wrapper: the component's CSS keys on
-	// the aside.
-	asideAttrs := html.SafeExtraAttrs(cfg.ExtraAttrs, "aria-label")
-	if asideAttrs == nil {
-		asideAttrs = map[string]string{}
-	}
-	asideAttrs["class"] = asideClass
-	asideAttrs["aria-label"] = cfg.Label
-	if cfg.ID != "" {
-		asideAttrs["id"] = cfg.ID
-	}
-	rail := render.Tag("aside", asideAttrs,
-		// A plain label, NOT a heading: the rail is a complementary landmark
-		// already named by Label (aria-label above), and emitting an <h6>
-		// here injected a stray, out-of-order heading into the page outline
-		// (h1 → h6 → h2…). Same fix StepRail already made. The label keeps
-		// the visual + the landmark name without polluting the heading
-		// hierarchy.
-		render.Tag("div", map[string]string{"class": "ui-anchored-rail__label"},
-			render.Text(cfg.Label),
-		),
-		render.Tag("ol", map[string]string{"class": "ui-anchored-rail__list"},
-			listItems...,
-		),
-	)
-
-	// Stamp the rail FIRST so data-fui-comp="ui-anchored-rail" lands on
-	// the <aside>. If we wrapped with scrollspy first and then WrapHTML
-	// over that, the registry's injectMarker would see scrollspy's
-	// outermost data-fui-comp already present and skip ours, leaving
-	// our CSS un-bundled by the SSR scanner.
-	marked := anchoredRailStyle.WrapHTML(rail)
-
-	if cfg.ObserveSelector == "" {
-		return marked
-	}
-
 	target := cfg.TargetSelector
 	if target == "" {
-		// Match what ui.Section emits: auto-slugged-from-heading sections
-		// land as .fui-section[id="…"], so the default selector picks them
-		// up without the caller having to spell it out.
+		// Match what ui.Section emits: auto-slugged-from-heading
+		// sections land as .fui-section[id], so the default selector
+		// picks them up without the caller having to spell it out.
 		target = ".fui-section[id]"
 	}
-	return scrollspy.Wrap(scrollspy.Config{
+	rail := headless.Rail(headless.RailProps{
+		Label:           cfg.Label,
+		Items:           items,
 		ObserveSelector: cfg.ObserveSelector,
 		TargetSelector:  target,
-		// Keep the generated wrapper as the sticky layout item too. This
-		// preserves the plain AnchoredRail contract when the rail is
-		// composed inside a grid or stack.
-		Class: "scrollspy--sticky",
-	}, marked)
+		ID:              cfg.ID,
+		ExtraAttrs:      headless.Safe(cfg.ExtraAttrs, "class", "id", "aria-label"),
+	}, classes)
+	return anchoredRailStyle.WrapHTML(rail)
 }
+
+var anchoredRailStyle = registry.RegisterStyle("ui-anchored-rail", anchoredRailCSS)

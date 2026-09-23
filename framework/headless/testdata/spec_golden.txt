@@ -82,6 +82,14 @@ the footer is where the actions that apply to the whole card live
 an href on the card makes the surface itself the affordance — one focusable link wrapping what the div showed, so the click target is the card a reader can see rather than a Read more crammed into the footer
 <a href="/apps/blog"><div><div><h3>blog</h3><p>2 vCPU, 4 GB</p></div><div><p>Deployed 3 days ago.</p></div></div></a>
 
+=== Carousel / a carousel with every control ===
+the track is a real scrollable list, the dots and arrows are fragment anchors to the slide ids, and the first slide is current — the whole thing works with no script
+<div aria-label="Featured work" aria-roledescription="carousel" data-hui-carousel="" id="hui-carousel-d70082bc" role="region"><div><div data-hui-carousel-status="Slide 1 of 3" data-hui-carousel-status-fmt="Slide {n} of {total}|3" data-hui-carousel-track="" id="hui-carousel-d70082bc-track" tabindex="0"><div aria-current="true" aria-label="Slide 1 of 3" aria-roledescription="slide" id="hui-carousel-d70082bc-track-slide-0" role="group">Slide one</div><div aria-label="Slide 2 of 3" aria-roledescription="slide" id="hui-carousel-d70082bc-track-slide-1" role="group">Slide two</div><div aria-label="Slide 3 of 3" aria-roledescription="slide" id="hui-carousel-d70082bc-track-slide-2" role="group">Slide three</div></div><a aria-label="Previous" data-hui-carousel-prev="" href="#hui-carousel-d70082bc-track-slide-0">Previous</a><a aria-label="Next" data-hui-carousel-next="" href="#hui-carousel-d70082bc-track-slide-2">Next</a></div><nav aria-label="Featured work"><a aria-current="true" aria-label="Go to slide 1" data-hui-carousel-goto="0" href="#hui-carousel-d70082bc-track-slide-0">1</a><a aria-label="Go to slide 2" data-hui-carousel-goto="1" href="#hui-carousel-d70082bc-track-slide-1">2</a><a aria-label="Go to slide 3" data-hui-carousel-goto="2" href="#hui-carousel-d70082bc-track-slide-2">3</a></nav></div>
+
+=== Carousel / bare, rotating and looping ===
+without dots or arrows the track and the status are the whole contract, and the rotation flags ride the root for the module to pause on hover, focus, hidden and reduced motion
+<div aria-label="Hero" aria-roledescription="carousel" data-hui-carousel="" data-hui-carousel-loop="" data-hui-carousel-rotate-ms="6000" id="hui-carousel-9b67a879" role="region"><div><div data-hui-carousel-status="Slide 1 of 1" data-hui-carousel-status-fmt="Slide {n} of {total}|1" data-hui-carousel-track="" id="hui-carousel-9b67a879-track" tabindex="0"><div aria-current="true" aria-label="Slide 1 of 1" aria-roledescription="slide" id="hui-carousel-9b67a879-track-slide-0" role="group">Only</div></div></div></div>
+
 === Choice / checkbox with a hint ===
 the label WRAPS the control, so the hit area is the whole row and there is no for/id pair left to go stale
 <label><input name="prune" type="checkbox" value="1"><span>Prune old images<span>Keeps the last three builds.</span></span></label>
@@ -105,6 +113,14 @@ justify-between puts the destructive action at the far end from the safe one —
 === Color / swatch ===
 a colour input is useless alone to anyone who cannot see it, so the hex value stays beside it as text that can be read and typed — inside a Field, so the value is a labelled setting and not a bare control
 <div><label for="color-accent">Accent colour</label><div data-hui-affix="" data-hui-color=""><input aria-label="Pick accent" data-hui-affix-swatch="" id="color-accent-picker" tabindex="-1" type="color" value="#10b981"><input autocapitalize="off" autocomplete="off" data-hui-affix-input="" id="color-accent" name="accent" spellcheck="false" type="text" value="#10b981"></div></div>
+
+=== Combobox / a static combobox ===
+the options are real content the server rendered, the input owns the keyboard, and no script is needed to read the list
+<div data-hui-combobox=""><label for="q">Search</label><div><input aria-autocomplete="list" aria-controls="q-listbox" aria-expanded="false" autocomplete="off" data-hui-combobox-input="" id="q" name="q" role="combobox" spellcheck="false" type="text"></div><ul aria-label="Search results" data-hui-combobox-count="{n} results" data-hui-combobox-listbox="" data-hui-combobox-static="" hidden="" id="q-listbox" role="listbox"><li data-value="Docs" id="q-listbox-opt-0" role="option"><span>Docs</span><span>/docs</span></li><li data-fui-push-state="/examples" data-value="Examples" id="q-listbox-opt-1" role="option"><span>Examples</span></li></ul><span data-hui-combobox-no-results="No matches" data-hui-combobox-status="" role="status"></span></div>
+
+=== Combobox / an island combobox ===
+the results region is bound to the island's signal, and the no-script path is the same-origin GET form wrapping the whole combobox
+<form action="/search" method="GET" role="none"><div data-hui-combobox=""><label for="site-q">Search</label><div data-fui-rpc="/island/search" data-fui-rpc-debounce-ms="250" data-fui-rpc-method="POST" data-fui-rpc-signal="search" data-fui-rpc-trigger="input" data-hui-combobox-loader="" data-hui-combobox-loading="Loading…"><input aria-autocomplete="list" aria-controls="site-q-listbox" aria-expanded="false" autocomplete="off" data-hui-combobox-input="" id="site-q" name="q" role="combobox" spellcheck="false" type="text"></div><ul aria-label="Search results" data-fui-signal="search" data-fui-signal-mode="html" data-hui-combobox-count="{n} results" data-hui-combobox-listbox="" hidden="" id="site-q-listbox" role="listbox"></ul><span data-hui-combobox-no-results="No matches" data-hui-combobox-status="" role="status"></span></div></form>
 
 === ConditionalField / shown when the watched field matches ===
 rendered visible with no hidden attribute, because a field only script can reveal is a field a scriptless reader never reaches — the runtime hides it when the watched field does not match, and not before
@@ -149,6 +165,22 @@ a named number input submits without script, and the signal writes its value att
 === DetailList / a record ===
 a dt and the dd after it are one pair to assistive technology in a way a grid of divs never is, and the pair survives every restyling because the relationship is the element
 <dl><div><dt>Name</dt><dd>blog</dd></div><div><dt>Status</dt><dd><span>running</span></dd></div><div><dt>Restarts</dt><dd>263</dd></div></dl>
+
+=== Disclosure / a closed disclosure ===
+the summary is a real controller and the panel is real content with no script — the module only keeps the accessibility state the platform leaves missing
+<details data-hui-disclosure=""><summary>What is this?</summary><div>A native details element.</div></details>
+
+=== Disclosure / open, and persistent ===
+an open state a navigation keeps is opt-in: the persist key names the store the module restores from, so a shell's section survives a client-side page turn
+<details data-hui-disclosure="" data-hui-disclosure-persist="list.filters" open=""><summary>Filters</summary><div>Persistent across navigation.</div></details>
+
+=== Disclosure / the trap posture ===
+a disclosure used as a drawer contains focus while open — Tab walks inside it — through the widget runtime's containment, released on close and on detach
+<details data-hui-disclosure="" data-hui-disclosure-trap=""><summary>Menu</summary><div>A drawer-shaped disclosure.</div></details>
+
+=== Disclosure / an exclusive group ===
+two disclosures sharing a name open one at a time in the browser itself — the native accordion, no script on the page at all
+<details data-hui-disclosure="" name="faq"><summary>First question</summary><div>One answer.</div></details><details data-hui-disclosure="" name="faq"><summary>Second question</summary><div>Another answer.</div></details>
 
 === Divider / horizontal ===
 the default is a real hr: a break between two groups of content means separator, and the element already says it, so no role is claimed
@@ -218,6 +250,14 @@ errors set the hook that moves focus to the summary, so a screen reader hears wh
 multipart sets the encoding a file input needs, because without it the browser submits the file's name and no contents, which looks like a server bug and is not one
 <form action="/apps/definition" enctype="multipart/form-data" method="post"><div><div data-hui-drop="" data-hui-drop-input="definition-file" data-hui-drop-many="{n} files selected: {names}." data-hui-drop-one="{name} selected."><label for="definition-file"><span>Captain definition</span><span>Choose a file</span></label><input id="definition-file" name="definition" type="file"><ul data-hui-drop-list="" role="list"></ul><span data-hui-drop-status="" role="status"></span></div></div><div><button type="submit">Upload</button></div></form>
 
+=== Gallery / a gallery with captions ===
+every item is a real link to the full image, so the gallery works with no script at all
+<ul aria-label="Screenshots"><li><figure><a href="/one.png"><img alt="The dashboard" height="150" src="/one.png" width="200"></a><figcaption>Overview</figcaption></figure></li><li><a href="/two.png"><img alt="The settings" height="150" src="/two-thumb.png" width="200"></a></li></ul>
+
+=== Gallery / a gallery with per-item hrefs ===
+a caller's href replaces the full-image fallback per item, and an unsafe one degrades instead of shipping
+<ul aria-label="Photos"><li><a href="/detail/one"><img alt="One" height="150" src="/one.png" width="200"></a></li><li><a href="#"><img alt="Two" height="150" src="/two.png" width="200"></a></li></ul>
+
 === Grid / minimum column and gap ===
 Min is a floor — a column never gets narrower than the named step before the grid gives one up — and the name is what keeps the floor wired: the framework's Grid took a free-form Min that nothing read, so every auto-fit grid was the default width whatever its author asked
 <div><p>blog — 2 vCPU</p><p>wiki — 1 vCPU</p><p>api — 4 vCPU</p></div>
@@ -246,6 +286,14 @@ with no label the group is a plain div, because wrapping labelled controls in a 
 a group holding more than one focusable control takes a role and a name, so it appears in the landmark list as one identifiable control
 <div aria-label="Webhook URL and port" role="group"><div><label for="hook-host">Host</label><input id="hook-host" name="host" type="text" value="app.example.com"></div><div><label for="hook-port">Port</label><input id="hook-port" name="port" type="text" value="30000"></div></div>
 
+=== JSONTree / an object tree ===
+every collection is a native details, so the tree collapses and expands with no script
+<div><details open=""><summary><span>Object</span><span>(3)</span></summary><ul><li><span>&quot;meta&quot;</span><span>:</span><details><summary><span>Object</span><span>(1)</span></summary><ul><li><span>&quot;stars&quot;</span><span>:</span><span>42</span></li></ul></details></li><li><span>&quot;name&quot;</span><span>:</span><span>&quot;gofastr&quot;</span></li><li><span>&quot;tags&quot;</span><span>:</span><details><summary><span>Array</span><span>(2)</span></summary><ol><li><span>0</span><span>:</span><span>&quot;fast&quot;</span></li><li><span>1</span><span>:</span><span>&quot;ssr&quot;</span></li></ol></details></li></ul></details></div>
+
+=== JSONTree / the scalar and empty words ===
+an empty collection renders its word, not a details with nothing under it, and the null/boolean literals are words a translation owns
+<div><details open=""><summary><span>Object</span><span>(6)</span></summary><ul><li><span>&quot;emptyList&quot;</span><span>:</span><span>[]</span></li><li><span>&quot;emptyMap&quot;</span><span>:</span><span>{}</span></li><li><span>&quot;long&quot;</span><span>:</span><span>&quot;a string…&quot;</span></li><li><span>&quot;nothing&quot;</span><span>:</span><span>null</span></li><li><span>&quot;off&quot;</span><span>:</span><span>false</span></li><li><span>&quot;on&quot;</span><span>:</span><span>true</span></li></ul></details></div>
+
 === LightboxViewer / full ===
 the working end of a gallery: nav, caption and download all on, so every hook, binding and button a module or a signal could lose is on the page
 <div data-hui-lightbox="photos" data-hui-lightbox-nav="true"><figure><span data-fui-signal="alt" data-fui-signal-mode="text" id="photos-title">Image viewer</span><img data-fui-signal="src" data-fui-signal-attr="src" data-fui-signal-mode="attr" data-hui-lightbox-image=""><figcaption data-fui-signal="caption" data-fui-signal-mode="text"></figcaption></figure><div><button aria-label="Previous image" data-hui-lightbox-prev="photos" type="button"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="8" cy="8" r="6.25"/><path d="M5.5 8.25 7.25 10l3.25-3.5"/></svg></button><button aria-label="Next image" data-hui-lightbox-next="photos" type="button"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="8" cy="8" r="6.25"/><path d="M5.5 8.25 7.25 10l3.25-3.5"/></svg></button><a aria-label="Download image" data-fui-signal="src" data-fui-signal-attr="href" data-fui-signal-mode="attr" download=""><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="8" cy="8" r="6.25"/><path d="M5.5 8.25 7.25 10l3.25-3.5"/></svg></a></div></div>
@@ -257,6 +305,26 @@ the minimum a viewer is: a named image and its accessible name, nothing optional
 === LightboxViewer / framework wiring ===
 the binder's spellings instead of the hooks: the same identity, nav opt-in, buttons and zoom target as data-fui-lightbox*, for the framework module a styled lightbox ships — the hui twins are suppressed here; they render exactly when the host's own module is the intended binder
 <div data-fui-lightbox="photos" data-fui-lightbox-nav="true"><figure><span data-fui-signal="alt" data-fui-signal-mode="text" id="photos-title">Image viewer</span><img data-fui-lightbox-image="" data-fui-signal="src" data-fui-signal-attr="src" data-fui-signal-mode="attr"></figure><div><button aria-label="Previous image" data-fui-lightbox-prev="photos" type="button"></button><button aria-label="Next image" data-fui-lightbox-next="photos" type="button"></button><a aria-label="Download image" data-fui-signal="src" data-fui-signal-attr="href" data-fui-signal-mode="attr" download=""></a></div></div>
+
+=== Menu / a summary menu ===
+the summary is a real controller and every row is a real command with no script; the module adds the keyboard contract on top
+<details data-hui-disclosure="" data-hui-menu="hui-menu-51114016"><summary aria-controls="hui-menu-51114016-panel" aria-haspopup="menu">Account<span aria-hidden="true">▾</span></summary><div data-hui-menu-panel="" id="hui-menu-51114016-panel" role="menu"><a href="/me" role="menuitem" tabindex="-1"><span>Profile</span></a><hr role="separator"><button data-fui-rpc="/api/del" data-fui-rpc-method="DELETE" role="menuitem" tabindex="-1" type="button"><span>Delete</span></button></div></details>
+
+=== Menu / a submenu ===
+the nested panel is the same disclosure machinery at depth, so Escape walks back one level and the parent row is the controller
+<details data-hui-disclosure="" data-hui-menu="hui-menu-02743c3c"><summary aria-controls="hui-menu-02743c3c-panel" aria-haspopup="menu">Theme<span aria-hidden="true">▾</span></summary><div data-hui-menu-panel="" id="hui-menu-02743c3c-panel" role="menu"><details data-hui-disclosure="" data-hui-menu="hui-menu-02743c3c-panel-sub-0"><summary aria-controls="hui-menu-02743c3c-panel-sub-0-panel" aria-haspopup="menu" role="menuitem" tabindex="-1"><span>Palette</span></summary><div data-hui-menu-panel="" id="hui-menu-02743c3c-panel-sub-0-panel" role="menu"><button aria-checked="false" data-hui-menu-radio="theme" role="menuitemradio" tabindex="-1" type="button"><span>Light</span></button><button aria-checked="true" data-hui-menu-radio="theme" role="menuitemradio" tabindex="-1" type="button"><span>Dark</span></button></div></details><button role="menuitem" tabindex="-1" type="button"><span>Reset</span></button></div></details>
+
+=== Menu / a caller-owned trigger ===
+the caller's element sits beside a summary-less disclosure it controls — an interactive element inside a summary is axe nested-interactive
+<div><div data-hui-menu-trigger="hui-menu-8303815e" role="presentation"><button type="button">Open user menu</button></div><details data-hui-disclosure="" data-hui-menu="hui-menu-8303815e"><div data-hui-menu-panel="" id="hui-menu-8303815e-panel" role="menu"><a href="/me" role="menuitem" tabindex="-1"><span>Profile</span></a></div></details></div>
+
+=== Menu / a disabled row and a separator ===
+the disabled row keeps its place in the panel and leaves the keyboard rotation; the separator divides groups without joining them
+<details data-hui-disclosure="" data-hui-menu="hui-menu-aabcd531"><summary aria-controls="hui-menu-aabcd531-panel" aria-haspopup="menu">View<span aria-hidden="true">▾</span></summary><div data-hui-menu-panel="" id="hui-menu-aabcd531-panel" role="menu"><button role="menuitem" tabindex="-1" type="button"><span>Compact</span></button><hr role="separator"><button aria-disabled="true" disabled="" role="menuitem" tabindex="-1" type="button"><span>Experimental</span></button></div></details>
+
+=== Menu / rows with an icon and a form action, lazy-mounted ===
+an icon row and a form-POST row are commands like any other, and a lazy panel's rows travel inside a template the module mounts on first open — page-scoped queries cannot see them while the menu is closed
+<details data-hui-disclosure="" data-hui-menu="hui-menu-07666dff"><summary aria-controls="hui-menu-07666dff-panel" aria-haspopup="menu">Account<span aria-hidden="true">▾</span></summary><div data-hui-menu-panel="" id="hui-menu-07666dff-panel" role="menu"><template data-hui-menu-lazy=""><a href="/w" role="menuitem" tabindex="-1"><span aria-hidden="true"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="8" cy="8" r="6.25"/><path d="M5.5 8.25 7.25 10l3.25-3.5"/></svg></span><span>Open workspace</span></a><hr role="separator"><form action="/admin/stop-impersonation" method="POST" role="none"><input name="csrf" type="hidden" value="tok"><button role="menuitem" tabindex="-1" type="submit"><span>Stop impersonation</span></button></form></template></div></details>
 
 === NotificationBell / unread ===
 the anchor's accessible name says the count in words while the badge shows the number, and the href is the notifications page — the no-script page goes there
@@ -322,9 +390,33 @@ the gap is a span and not a link, the current page says aria-current=page rather
 Previous stays visible and named with no href — removing it moves every other control one place left — and a disabled end carries no island contract, because a control that goes nowhere fires nothing
 <nav aria-label="Application pages, first"><div><a aria-disabled="true" tabindex="-1">Previous</a><a aria-current="page" data-fui-push-state="/apps?p=1" data-fui-rpc="/island/apps?p=1" data-fui-rpc-method="GET" data-fui-rpc-signal="apps" data-hui-page="1" href="/apps?p=1">1</a><a data-fui-push-state="/apps?p=2" data-fui-rpc="/island/apps?p=2" data-fui-rpc-method="GET" data-fui-rpc-signal="apps" data-hui-page="2" href="/apps?p=2">2</a><a data-fui-push-state="/apps?p=3" data-fui-rpc="/island/apps?p=3" data-fui-rpc-method="GET" data-fui-rpc-signal="apps" data-hui-page="3" href="/apps?p=3">3</a><a data-fui-push-state="/apps?p=2" data-fui-rpc="/island/apps?p=2" data-fui-rpc-method="GET" data-fui-rpc-signal="apps" data-hui-page="2" href="/apps?p=2">Next</a></div></nav>
 
+=== PaneHost / a primary pane alone ===
+the host is the primary pane's frame; with no side panes there is nothing to open and no script needed
+<div data-hui-panehost="" id=""><div data-hui-pane="primary">Customers</div></div>
+
+=== PaneHost / a secondary pane, open, with a deep link ===
+the open state ships in the markup so first paint matches the server, and the deep-link parameter names the query key the runtime records the open pane in
+<div data-hui-pane-deeplink="pane" data-hui-pane-open="secondary" data-hui-panehost="" id=""><div data-hui-pane="primary">Customers</div><div aria-label="Details" data-hui-pane="secondary" role="region">Ticket detail</div></div>
+
+=== PaneHost / an outside trigger addressing its host by id ===
+a trigger beyond every host (a toolbar above the panes) drives the host its data-hui-pane-host-target names — the control attribute beside it is the same one an in-host trigger carries
+<div data-hui-panehost="" id="host"><div data-hui-pane="primary">Customers</div><div aria-label="Secondary" data-hui-pane="secondary" hidden="" role="region">Ticket detail</div></div><button data-hui-pane-host-target="host" data-hui-pane-open-control="secondary" type="button">Ticket detail</button>
+
 === Password / revealable ===
 the reveal button says what it will do next rather than what the field is doing now, and the labels it swaps between are published for the runtime instead of built from a class
 <div><label for="password-token">Registry token</label><div data-hui-affix=""><input data-hui-affix-input="" id="password-token" name="token" type="password"><button aria-label="Show password" aria-pressed="false" data-hui-hide-label="Hide password" data-hui-hide-text="Hide" data-hui-reveal="" data-hui-show-label="Show password" data-hui-show-text="Show" type="button">Show</button></div></div>
+
+=== Rail / an observed rail ===
+every entry is a real fragment link before any script runs, and the observer is armed by the module the root hook loads
+<aside aria-label="By intent" data-hui-rail="" data-hui-rail-observe="#sections" data-hui-rail-target="section[id]"><div>By intent</div><ol><li><a href="#modeling"><span>01</span>Modeling<span>9</span></a></li><li><a href="#serving"><span>02</span>Serving<span>9</span></a></li></ol></aside>
+
+=== Rail / a static rail ===
+with no observation selector the links still work and nothing is marked — the active state is enhancement, never the only state
+<aside aria-label="Sections"><div>Sections</div><ol><li><a href="#one">One</a></li></ol></aside>
+
+=== Rail / a bare entry ===
+the eyebrow and the count are optional, so the same list serves the plain and the annotated rail without a second anatomy
+<aside aria-label="Steps"><div>Steps</div><ol><li><a href="#install">Install</a></li><li><a href="#run">Run</a></li></ol></aside>
 
 === RangeSlider / a full default pair ===
 two named range inputs the form submits as -min and -max, each thumb named (Minimum/Maximum) because two anonymous thumbs in one group tell a screen reader user nothing
@@ -385,6 +477,14 @@ the level is the caller's decision — a section under an h2 that renders an h2 
 === Select / options ===
 a real select, because the platform's own picker is the one thing that already works on a phone, with a keyboard, and under every screen reader
 <select id="region" name="region"><option value="us-east">US East</option><option selected="" value="eu-west">EU West</option></select>
+
+=== Sidebar / a persistent sidebar ===
+every leaf is a real link and every group a native details, so the whole navigation works with no script
+<nav aria-label="Primary" data-hui-sidebar="" data-hui-sidebar-variant="persistent"><div>Workspace</div><ul><li><a aria-current="page" href="/"><span>Home</span></a></li><li><details data-hui-sidebar-group=""><summary><span>Settings</span></summary><ul><li><a href="/settings/profile"><span>Profile</span></a></li><li><a href="/settings/team"><span>Team</span></a></li></ul></details></li></ul></nav>
+
+=== Sidebar / collapsible with storage ===
+the collapse state is opt-in to storage through the key — without one the state is the server's, and the module never writes
+<nav aria-label="Primary" data-hui-sidebar="" data-hui-sidebar-collapse="auto" data-hui-sidebar-storage="nav.side" data-hui-sidebar-variant="collapsible"><button aria-label="Primary" data-fui-open="nav-drawer" data-hui-sidebar-toggle="" type="button">☰</button><ul><li><a href="/one"><span>One</span></a></li></ul></nav>
 
 === Skeleton / three lines ===
 every bar is hidden from the tree: a screen reader reading out eight empty boxes, or announcing each shimmer, is strictly worse than one polite "Loading apps" and silence
@@ -513,6 +613,26 @@ the footer renders as the scroll region's sibling, not inside the table, so a pa
 === Table / bare, nothing to click ===
 a read-only table is still a table: the caption is its name, the roles and scope are all that assistive technology is given, the header-less actions column is hidden rather than announced empty, and the scroll region is focusable even though this table has nothing to click — overflow is the viewport's decision, not the caller's
 <div data-hui-table=""><div aria-labelledby="table-recent-deployments-caption" data-hui-table-scroll="" role="region" tabindex="0"><table role="table"><caption id="table-recent-deployments-caption">Recent deployments</caption><thead role="rowgroup"><tr role="row"><th role="columnheader" scope="col">Application</th><th role="columnheader" scope="col">Status</th><th aria-hidden="true" role="columnheader" scope="col"></th></tr></thead><tbody role="rowgroup"><tr role="row"><td data-label="Application" role="cell">blog</td><td data-label="Status" role="cell">healthy</td><td role="cell">View</td></tr></tbody></table></div><span data-hui-table-status="" role="status"></span></div>
+
+=== TableOfContents / an observed contents list ===
+the entries are real links the server rendered, so the no-script reader gets the whole list, and the module only marks which entry is active
+<nav aria-label="On this page" data-hui-toc="" data-hui-toc-target="main"><ol><li><a href="#modeling">Modeling</a></li><li><a href="#serving">Serving</a></li><li><a href="#tuning">Tuning</a></li></ol></nav>
+
+=== TableOfContents / a static contents list ===
+with no target the links still work and nothing is marked — the active state is enhancement over a complete list, never the list's only source
+<nav aria-label="On this page" data-hui-toc=""><ol><li><a href="#one">One</a></li></ol></nav>
+
+=== TableOfContents / the unlabelled landmark names itself ===
+a contents navigation with no label of its own still names its landmark — the default word is the one Strings carries, so a translated page says it in the reader's language
+<nav aria-label="On this page" data-hui-toc=""><ol><li><a href="#one">One</a></li></ol></nav>
+
+=== Tabs / a signal tab strip ===
+one tab is in the tab order and the rest are reached by the arrows; the panels are real content and the fragment hrefs land on them without script
+<div data-active="0" data-fui-signal="cfg" data-fui-signal-attr="data-active" data-fui-signal-mode="attr" data-hui-tabs=""><nav role="tablist"><a aria-controls="cfg-panel-0" aria-selected="true" data-fui-signal-set="cfg:0" data-fui-tab-index="0" href="#cfg-panel-0" id="cfg-tab-0" role="tab" tabindex="0">General</a><a aria-controls="cfg-panel-1" aria-selected="false" data-fui-signal-set="cfg:1" data-fui-tab-index="1" href="#cfg-panel-1" id="cfg-tab-1" role="tab" tabindex="-1">Secrets</a></nav><div><div aria-labelledby="cfg-tab-0" data-fui-tab-index="0" id="cfg-panel-0" role="tabpanel" tabindex="0">The general panel.</div><div aria-labelledby="cfg-tab-1" data-fui-tab-index="1" id="cfg-panel-1" role="tabpanel" tabindex="0">The secrets panel.</div></div></div>
+
+=== Tabs / vacated and stateful ===
+hidden panels ship empty with their content in the stash the module restores on first show, and every tab carries the state attribute ports pin locators to
+<div data-active="1" data-fui-signal="vac" data-fui-signal-attr="data-active" data-fui-signal-mode="attr" data-hui-tabs="" data-hui-tabs-state="" data-hui-tabs-vacate=""><nav role="tablist"><a aria-controls="vac-panel-0" aria-selected="false" data-fui-signal-set="vac:0" data-fui-tab-index="0" data-state="inactive" href="#vac-panel-0" id="vac-tab-0" role="tab" tabindex="-1">One</a><a aria-controls="vac-panel-1" aria-selected="true" data-fui-signal-set="vac:1" data-fui-tab-index="1" data-state="active" href="#vac-panel-1" id="vac-tab-1" role="tab" tabindex="0">Two</a></nav><div><div aria-labelledby="vac-tab-0" data-fui-tab-index="0" id="vac-panel-0" role="tabpanel" tabindex="0"></div><div aria-labelledby="vac-tab-1" data-fui-tab-index="1" id="vac-panel-1" role="tabpanel" tabindex="0">Second panel.</div><script data-hui-tabs-stash="true" type="application/json">{"0":"First panel."}</script></div></div>
 
 === Tag / removable ===
 the × names what it removes — twelve controls all called Remove tell a screen reader user nothing — and it is an anchor that keeps its href for no script while carrying the island contract, because dropping a filter is an in-page state change and never a route

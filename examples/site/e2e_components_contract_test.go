@@ -230,8 +230,8 @@ func TestE2E_Menu_RolesAndKeyboardNav(t *testing.T) {
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/menu"),
 		pageReady(),
-		chromedp.Evaluate(`document.querySelector('summary.ui-menu__trigger')?.getAttribute('aria-haspopup')`, &triggerHasPopup),
-		chromedp.Evaluate(`document.querySelector('summary.ui-menu__trigger').click()`, nil),
+		chromedp.Evaluate(`document.querySelector('summary.fui-menu__trigger')?.getAttribute('aria-haspopup')`, &triggerHasPopup),
+		chromedp.Evaluate(`document.querySelector('summary.fui-menu__trigger').click()`, nil),
 		chromedp.Sleep(150*time.Millisecond),
 		chromedp.Evaluate(`document.querySelector('[role="menu"]')?.getAttribute('role')`, &panelRole),
 		// Keyboard nav: dispatch on the focused item so e.target.closest works.
@@ -338,23 +338,23 @@ func TestE2E_SidebarVariantsAdaptAndPersist(t *testing.T) {
 		chromedp.Evaluate(`localStorage.removeItem("`+storageKey+`")`, nil),
 		chromedp.Reload(),
 		pageReady(),
-		chromedp.WaitVisible(`[data-fui-sidebar-collapse]`, chromedp.ByQuery),
-		chromedp.Click(`[data-fui-sidebar-collapse]`, chromedp.ByQuery),
-		chromedp.Evaluate(`document.querySelector('[data-fui-sidebar]')?.dataset.collapsed === 'true'`, &collapsed),
-		chromedp.Evaluate(`document.querySelector('[data-fui-sidebar-collapse]')?.getAttribute('aria-expanded') ?? ''`, &expanded),
+		chromedp.WaitVisible(`[data-hui-sidebar-toggle]`, chromedp.ByQuery),
+		chromedp.Click(`[data-hui-sidebar-toggle]`, chromedp.ByQuery),
+		chromedp.Evaluate(`document.querySelector('[data-hui-sidebar]')?.dataset.collapsed === 'true'`, &collapsed),
+		chromedp.Evaluate(`document.querySelector('[data-hui-sidebar-toggle]')?.getAttribute('aria-expanded') ?? ''`, &expanded),
 		// Labels are clipped (visually-hidden pattern), NOT display:none,
 		// focusable links must keep their accessible names when collapsed.
 		chromedp.Evaluate(`(() => {
-			const l = document.querySelector('[data-fui-sidebar] .ui-sidebar__label');
+			const l = document.querySelector('[data-hui-sidebar] .ui-sidebar__label');
 			const cs = getComputedStyle(l);
 			return cs.position === 'absolute' && l.getBoundingClientRect().width <= 1 && cs.display !== 'none';
 		})()`, &labelHidden),
-		chromedp.Evaluate(`document.querySelector('[data-fui-sidebar] .ui-sidebar__inline').getBoundingClientRect().width`, &inlineWidth),
+		chromedp.Evaluate(`document.querySelector('[data-hui-sidebar] .ui-sidebar__inline').getBoundingClientRect().width`, &inlineWidth),
 		chromedp.Reload(),
 		pageReady(),
-		chromedp.Evaluate(`document.querySelector('[data-fui-sidebar]')?.dataset.collapsed === 'true'`, &persisted),
+		chromedp.Evaluate(`document.querySelector('[data-hui-sidebar]')?.dataset.collapsed === 'true'`, &persisted),
 		chromedp.Evaluate(`
-			const sidebar = document.querySelector('[data-fui-sidebar]');
+			const sidebar = document.querySelector('[data-hui-sidebar]');
 			sidebar.classList.remove('ui-sidebar--collapsible');
 			sidebar.classList.add('ui-sidebar--off-canvas');
 			[

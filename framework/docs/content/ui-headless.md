@@ -344,7 +344,9 @@ Pagination, Table, Steps, Timeline, PageHeader, EmptyState, StatCard,
 DetailList, OptimisticAction and ToggleAction, plus the stateful
 family: Counter, NumberInput, Slider, RangeSlider, Rating, TagInput,
 Repeater, Toast, ToastStack, NotificationBell, StepWizard and
-BackToTop.
+BackToTop. The navigation-behaviour members: Rail, TableOfContents,
+Disclosure, Menu, Combobox, Tabs, Carousel, PaneHost, Sidebar, and the
+two pure-render trees JSONTree and Gallery.
 
 ## The behaviour module
 
@@ -472,6 +474,51 @@ families:
   group (persisted through the same storage key the bootstrap reads,
   so the scheme never flashes). It replaced the retired `backtotop`
   and `themeswitch` runtime modules.
+
+The navigation-behaviour families ship as their own modules, each
+registered the same way:
+
+- **headless-rail** (`[data-hui-rail]`): the anchored rail's scroll
+  spy — one intersection observer for every rail on the page, marking
+  the link whose section owns the viewport. It replaced the retired
+  `scrollspy` runtime module.
+- **headless-toc** (`[data-hui-toc]`): the table of contents' current
+  heading, through the same rail watch. It replaced the retired `toc`
+  runtime module.
+- **headless-disclosure** (`[data-hui-disclosure]`): the exclusive
+  accordion group and the trap-and-inert Escape path, with optional
+  session restore through a storage key. It replaced the retired
+  `disclosure` runtime module.
+- **headless-menu** (`[data-hui-menu]`): the menu's open/close, arrow
+  traversal, typeahead and focus return, on top of the disclosure
+  primitive. It replaced the retired `menu` runtime module.
+- **headless-combobox** (`[data-hui-combobox]`): the listbox filter,
+  the count announcement and the loading word. It replaced the retired
+  `combobox` runtime module.
+- **headless-navigation** also carries the keyboard-shortcut family
+  (`data-hui-shortcut-*`), and **headless-tabs**
+  (`[data-hui-tabs]`) owns the roving tabindex and the vacate stash;
+  **headless-carousel** (`[data-hui-carousel]`) owns the fragment
+  controls, the status sentence and one rotation timer per root,
+  paused on hidden documents, reduced motion, hover and focus. They
+  replaced the retired `tabs` and `carousel` runtime modules.
+- **headless-panehost** (`[data-hui-panehost]`): the pane lifecycle —
+  open/close/swap through the `data-hui-pane-*` controls, focus
+  handoff and restore, the responsive drawer mode and the optional
+  query deep link; a crafted slot value is refused before any
+  selector, so the click is a no-op. It replaced the retired
+  `panehost` runtime module.
+- **headless-sidebar** (`[data-hui-sidebar]`): the collapse state —
+  persisted only under a namespaced, component-encoded storage key the
+  root names; a root with no key is the server's and the module never
+  writes — the custom collapse/expand labels, and the button-dialect
+  group toggle. It replaced the retired `sidebar` runtime module.
+
+Two of this package's members ship no module at all: `JSONTree` (the
+browser's own `<details>` is the whole behaviour, and its object keys
+render sorted so the bytes are deterministic) and `Gallery` (every
+item is a real link; a lightbox click travels the widget runtime's
+open contract, which the adapter carries).
 
 Arming is the kernel's. Each module registers a scanner and the kernel
 calls it on every inserted subtree and over the document after a

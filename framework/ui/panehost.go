@@ -19,9 +19,9 @@ package ui
 // parameter describing in-page state, not a route, the same shape
 // widget deep links use for modals.
 //
-// Shape (mirrors DocLayout, a display:grid whose column count CSS
-// keys off open-state modifier classes on the root, so no inline style
-// is emitted and CSP stays strict):
+// Shape (mirrors DocLayout, a display:grid whose column count CSS keys
+// off the host's open-state hook and the open modifier classes, so no
+// inline style is emitted and CSP stays strict):
 //
 //	list := ui.PaneHost(ui.PaneHostConfig{
 //	    Primary:   customerList,
@@ -32,7 +32,7 @@ package ui
 //	})
 //
 // See framework/docs/content/pane-host.md for the trigger attributes
-// (data-fui-pane-open / -close / -swap) and the drawer collapse.
+// (data-hui-pane-open-control / -close / -swap) and the drawer collapse.
 
 import (
 	"net/url"
@@ -42,6 +42,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/headless"
 )
 
 // PaneHostConfig configures a PaneHost.
@@ -98,14 +99,13 @@ type PaneHostConfig struct {
 	ExtraAttrs html.Attrs
 }
 
-// PaneHost renders a primary pane plus one or two openable side panes.
-//
-// The root carries data-fui-pane-host (the runtime marker) and an open
-// modifier class per open pane (ui-pane-host--secondary-open /
-// --tertiary-open); CSS derives the grid column count from those
-// classes. Each side pane is a labelled role="region" with
-// data-fui-pane="secondary|tertiary"; a closed side pane carries
-// hidden so first paint matches state.
+// PaneHost renders a primary pane plus one or two openable side panes
+// through headless.PaneHost with the fui-pane-host class map (the
+// sheet name "ui-pane-host" and marker stay). The root carries the
+// open state as data-hui-pane-open (the list the runtime module
+// maintains and the sheet's column rules key off, so a client-side
+// open changes the columns); the open modifier classes ride along for
+// first paint and any caller that reads them.
 func PaneHost(cfg PaneHostConfig) render.HTML {
 	if cfg.Primary == "" {
 		panic("ui: PaneHost requires Primary")
@@ -114,44 +114,40 @@ func PaneHost(cfg PaneHostConfig) render.HTML {
 	secondaryOpen := cfg.Secondary != "" && cfg.SecondaryOpen
 	tertiaryOpen := cfg.Tertiary != "" && cfg.TertiaryOpen
 
-	cls := "ui-pane-host"
+	rootCls := "fui-pane-host"
 	if secondaryOpen {
-		cls += " ui-pane-host--secondary-open"
+		rootCls += " fui-pane-host--secondary-open"
 	}
 	if tertiaryOpen {
-		cls += " ui-pane-host--tertiary-open"
+		rootCls += " fui-pane-host--tertiary-open"
 	}
 	if cfg.Class != "" {
-		cls += " " + cfg.Class
+		rootCls += " " + cfg.Class
 	}
 
-	// Sanitized extras first, owned keys on top so they win.
-	rootAttrs := html.SafeExtraAttrs(cfg.ExtraAttrs)
-	if rootAttrs == nil {
-		rootAttrs = html.Attrs{}
+	classes := headless.Classes{
+		headless.PartRoot: rootCls,
+		headless.PartPane: "fui-pane-host__pane",
 	}
-	rootAttrs["class"] = cls
-	rootAttrs["data-fui-pane-host"] = ""
-	if cfg.ID != "" {
-		rootAttrs["id"] = cfg.ID
-	}
-	if cfg.DeepLinkParam != "" {
-		rootAttrs["data-fui-pane-deeplink"] = cfg.DeepLinkParam
-	}
+	// Each pane's slot modifier rides beside the shared class, resolved
+	// by headless.PaneHost through Classes.Variant(PartPane, slot).
+	classes[headless.Part("pane--secondary")] = "fui-pane-host__pane--secondary"
+	classes[headless.Part("pane--primary")] = "fui-pane-host__pane--primary"
+	classes[headless.Part("pane--tertiary")] = "fui-pane-host__pane--tertiary"
 
-	children := []render.HTML{render.Tag("div", map[string]string{
-		"class":         "ui-pane-host__pane ui-pane-host__pane--primary",
-		"data-fui-pane": "primary",
-	}, cfg.Primary)}
-
-	if cfg.Secondary != "" {
-		children = append(children, paneSlot("secondary", "Secondary", cfg.SecondaryLabel, secondaryOpen, cfg.Secondary))
-	}
-	if cfg.Tertiary != "" {
-		children = append(children, paneSlot("tertiary", "Tertiary", cfg.TertiaryLabel, tertiaryOpen, cfg.Tertiary))
-	}
-
-	return paneHostStyle.WrapHTML(render.Tag("div", rootAttrs, children...))
+	out := headless.PaneHost(headless.PaneHostProps{
+		Primary:        cfg.Primary,
+		Secondary:      cfg.Secondary,
+		Tertiary:       cfg.Tertiary,
+		SecondaryOpen:  cfg.SecondaryOpen,
+		TertiaryOpen:   cfg.TertiaryOpen,
+		SecondaryLabel: cfg.SecondaryLabel,
+		TertiaryLabel:  cfg.TertiaryLabel,
+		DeepLinkParam:  cfg.DeepLinkParam,
+		ID:             cfg.ID,
+		ExtraAttrs:     headless.Safe(cfg.ExtraAttrs, "class"),
+	}, classes)
+	return paneHostStyle.WrapHTML(out)
 }
 
 // PaneDeepLink reads a PaneHost deep link out of a request's query.
@@ -193,55 +189,41 @@ func PaneDeepLink(q url.Values, param string) (slot, key string, ok bool) {
 	return slot, key, true
 }
 
-// paneSlot renders one side pane: a labelled role="region" that is
-// hidden when closed so the first paint matches state. fallbackLabel
-// names the region when the caller omits a label.
-func paneSlot(name, fallbackLabel, label string, open bool, body render.HTML) render.HTML {
-	aria := fallbackLabel
-	if label != "" {
-		aria = label
-	}
-	attrs := map[string]string{
-		"class":         "ui-pane-host__pane ui-pane-host__pane--" + name,
-		"data-fui-pane": name,
-		"role":          "region",
-		"aria-label":    aria,
-	}
-	if !open {
-		attrs["hidden"] = ""
-	}
-	return render.Tag("div", attrs, body)
-}
-
 var paneHostStyle = registry.RegisterStyle("ui-pane-host", paneHostCSS)
 
 func paneHostCSS(_ style.Theme) string {
 	return `[data-fui-comp="ui-pane-host"] {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: var(--ui-pane-host-gap, var(--spacing-lg, 16px));
+  gap: var(--fui-pane-host-gap, var(--spacing-lg, 16px));
   align-items: start;
   position: relative;
 }
-[data-fui-comp="ui-pane-host"] .ui-pane-host__pane { min-width: 0; }
+[data-fui-comp="ui-pane-host"] .fui-pane-host__pane { min-width: 0; }
 /* hidden must win over any pane display rule so a closed pane never
    claims a grid track or paints at first paint. */
-[data-fui-comp="ui-pane-host"] [data-fui-pane][hidden] { display: none; }
+[data-fui-comp="ui-pane-host"] [data-hui-pane][hidden] { display: none; }
 
-/* Column count is driven by open-state modifier classes on the root,
-   not inline style (strict CSP, Hard Rule 9b). */
-[data-fui-comp="ui-pane-host"].ui-pane-host--secondary-open {
-  grid-template-columns: minmax(0, 1fr) var(--ui-pane-host-secondary-w, 360px);
+/* Column count keys off the open-state HOOK the runtime module
+   maintains ([data-hui-pane-open], a space-separated list, matched
+   token-wise with ~=), so a pane opened in the browser changes the
+   columns; the open modifier classes ride along as the first-paint
+   spelling. Never inline style (strict CSP, Hard Rule 9b). */
+[data-fui-comp="ui-pane-host"].fui-pane-host--secondary-open,
+[data-fui-comp="ui-pane-host"][data-hui-pane-open~="secondary"] {
+  grid-template-columns: minmax(0, 1fr) var(--fui-pane-host-secondary-w, 360px);
 }
-[data-fui-comp="ui-pane-host"].ui-pane-host--tertiary-open:not(.ui-pane-host--secondary-open) {
-  grid-template-columns: minmax(0, 1fr) var(--ui-pane-host-tertiary-w, 300px);
+[data-fui-comp="ui-pane-host"].fui-pane-host--tertiary-open:not(.fui-pane-host--secondary-open),
+[data-fui-comp="ui-pane-host"][data-hui-pane-open~="tertiary"]:not([data-hui-pane-open~="secondary"]) {
+  grid-template-columns: minmax(0, 1fr) var(--fui-pane-host-tertiary-w, 300px);
 }
-[data-fui-comp="ui-pane-host"].ui-pane-host--secondary-open.ui-pane-host--tertiary-open {
-  grid-template-columns: minmax(0, 1fr) var(--ui-pane-host-secondary-w, 360px) var(--ui-pane-host-tertiary-w, 300px);
+[data-fui-comp="ui-pane-host"].fui-pane-host--secondary-open.fui-pane-host--tertiary-open,
+[data-fui-comp="ui-pane-host"][data-hui-pane-open~="secondary"][data-hui-pane-open~="tertiary"] {
+  grid-template-columns: minmax(0, 1fr) var(--fui-pane-host-secondary-w, 360px) var(--fui-pane-host-tertiary-w, 300px);
 }
 
-[data-fui-comp="ui-pane-host"] .ui-pane-host__pane--secondary,
-[data-fui-comp="ui-pane-host"] .ui-pane-host__pane--tertiary {
+[data-fui-comp="ui-pane-host"] .fui-pane-host__pane--secondary,
+[data-fui-comp="ui-pane-host"] .fui-pane-host__pane--tertiary {
   background: var(--color-surface, transparent);
   border: 1px solid var(--color-border, rgba(0, 0, 0, 0.10));
   border-radius: var(--radii-md, 8px);
@@ -249,27 +231,31 @@ func paneHostCSS(_ style.Theme) string {
 }
 
 /* Narrow viewport: the grid collapses to a single column. An open side
-   pane renders as a fixed overlay drawer when the runtime sets
-   data-fui-pane-mode="overlay" on the host (it does so once
+   pane renders as a fixed overlay drawer when the module sets
+   data-hui-pane-mode="overlay" on the host (it does so once
    matchMedia(max-width: 768px) matches AND a pane is open). The
-   breakpoint literal here MUST match the MQ in runtime/src/panehost.js. */
+   breakpoint literal here MUST match the MQ in
+   framework/headless/panehost.js. */
 @media (max-width: 768px) {
   [data-fui-comp="ui-pane-host"],
-  [data-fui-comp="ui-pane-host"].ui-pane-host--secondary-open,
-  [data-fui-comp="ui-pane-host"].ui-pane-host--tertiary-open,
-  [data-fui-comp="ui-pane-host"].ui-pane-host--secondary-open.ui-pane-host--tertiary-open {
+  [data-fui-comp="ui-pane-host"].fui-pane-host--secondary-open,
+  [data-fui-comp="ui-pane-host"].fui-pane-host--tertiary-open,
+  [data-fui-comp="ui-pane-host"].fui-pane-host--secondary-open.fui-pane-host--tertiary-open,
+  [data-fui-comp="ui-pane-host"][data-hui-pane-open~="secondary"],
+  [data-fui-comp="ui-pane-host"][data-hui-pane-open~="tertiary"],
+  [data-fui-comp="ui-pane-host"][data-hui-pane-open~="secondary"][data-hui-pane-open~="tertiary"] {
     grid-template-columns: minmax(0, 1fr);
   }
 }
 
 /* Drawer chrome while an open pane is in overlay mode. */
-[data-fui-pane-mode="overlay"] [data-fui-pane="secondary"]:not([hidden]),
-[data-fui-pane-mode="overlay"] [data-fui-pane="tertiary"]:not([hidden]) {
+[data-hui-pane-mode="overlay"] [data-hui-pane="secondary"]:not([hidden]),
+[data-hui-pane-mode="overlay"] [data-hui-pane="tertiary"]:not([hidden]) {
   position: fixed;
   inset-block: 0;
   inset-inline-end: 0;
   block-size: 100dvh;
-  inline-size: min(90vw, var(--ui-pane-host-drawer-w, 420px));
+  inline-size: min(90vw, var(--fui-pane-host-drawer-w, 420px));
   z-index: var(--z-modal, 300);
   border-radius: 0;
   border-inline-start: 1px solid var(--color-border, rgba(0, 0, 0, 0.10));
@@ -278,17 +264,17 @@ func paneHostCSS(_ style.Theme) string {
 }
 
 /* Backdrop scrim while a drawer is open. The host's ::before covers the
-   viewport; a click on it lands on the host itself, which the runtime
+   viewport; a click on it lands on the host itself, which the module
    treats as a dismiss (backdrop-click closes the topmost pane). It sits
    one step BELOW the drawer's modal tier: on the framework token scale
    --z-popover (400) is ABOVE --z-modal (300), so the scrim must key off
    --z-modal, not --z-popover, or it would paint over the drawer and eat
    every click inside it. */
-[data-fui-pane-mode="overlay"]::before {
+[data-hui-pane-mode="overlay"]::before {
   content: "";
   position: fixed;
   inset: 0;
-  background: var(--ui-pane-host-scrim, rgba(10, 9, 15, 0.42));
+  background: var(--fui-pane-host-scrim, rgba(10, 9, 15, 0.42));
   z-index: calc(var(--z-modal, 300) - 1);
 }`
 }

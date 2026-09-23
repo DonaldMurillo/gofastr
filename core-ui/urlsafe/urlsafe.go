@@ -4,7 +4,7 @@
 // It exists because the same ~40-line guard had been re-derived five times:
 // framework/ui.safeURL, framework/uihost.isSafeHeadURL,
 // framework/crud.isSafeMediaURL, framework/experimental/apiversions, and
-// core-ui/patterns/combobox.safePushHref, while core-ui/html, the layer
+// the retired core-ui/patterns/combobox.safePushHref, while core-ui/html, the layer
 // all of them render through, had none. Copies drift; a copy that does not
 // exist is worse. New URL sinks call this package rather than growing a
 // sixth copy.

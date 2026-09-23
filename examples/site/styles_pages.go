@@ -1285,9 +1285,11 @@ func pageWorkspace(ss *style.StyleSheet) {
 			"max-width", "68ch").End()
 
 	// Give the side panes usable widths + a workspace-height floor.
+	// (The pane host sheet reads the --fui-pane-host-* custom
+	// properties; the --ui- spelling went with the retired sheet.)
 	ss.Rule(".ws-host").
-		Set("--ui-pane-host-secondary-w", "22rem",
-			"--ui-pane-host-tertiary-w", "20rem",
+		Set("--fui-pane-host-secondary-w", "22rem",
+			"--fui-pane-host-tertiary-w", "20rem",
 			"min-height", "60vh").End()
 
 	// The queue list.

@@ -180,7 +180,7 @@ func sectionMenuGroup(g SectionGroup) render.HTML {
 
 	attrs := map[string]string{
 		"class":               "fui-section-menu__group",
-		"data-fui-disclosure": "",
+		"data-hui-disclosure": "",
 	}
 	// Open when not explicitly collapsed, or whenever it holds the active item.
 	if !g.Collapsed || hasActive {

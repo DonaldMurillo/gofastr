@@ -30,13 +30,12 @@ type ShortcutHintConfig struct {
 	// runtime's parseCombo: "Mod+K", "Ctrl+/", "Shift+Tab", "/",
 	// "Esc", "Enter". Required.
 	Chord string
-
-	// BindTarget is an optional CSS selector. When set, the chord is
-	// installed as a global shortcut that clicks the matched element.
-	// (The runtime hook lives on the TARGET, not the hint.)
-	// NOTE: This component renders only the hint; the caller must
-	// place data-fui-shortcut-click="<Chord>" on the actual target,
-	// or use ShortcutHintBind which returns both.
+	// BindTarget is an optional CSS selector. When set, the hint
+	// renders data-hui-shortcut-hint carrying the selector and the
+	// headless-navigation module resolves the first connected match and
+	// CLICKS it when the chord is pressed. The selector is validated at
+	// render: control bytes and markup openers are refused, and the
+	// value must be a single selector.
 	BindTarget string
 
 	// SROnlyLabel overrides the screen-reader announcement.
@@ -62,6 +61,9 @@ func ShortcutHint(cfg ShortcutHintConfig) render.HTML {
 	if len(parts) == 0 {
 		panic("ui: ShortcutHint Chord parsed to zero parts: " + cfg.Chord)
 	}
+	if cfg.BindTarget != "" {
+		checkShortcutSelector(cfg.BindTarget)
+	}
 
 	srLabel := cfg.SROnlyLabel
 	if srLabel == "" {
@@ -79,16 +81,44 @@ func ShortcutHint(cfg ShortcutHintConfig) render.HTML {
 	}
 	chips = append(chips, html.Span(html.TextConfig{Class: "ui-visually-hidden"}, render.Text("Shortcut: "+srLabel)))
 
+	extras := html.SafeExtraAttrs(cfg.ExtraAttrs, "aria-hidden", "data-hui-shortcut-hint")
+	if extras == nil {
+		extras = html.Attrs{}
+	}
+	// The real binding: the chord names the selector the
+	// headless-navigation module resolves and clicks. The module also
+	// carries the chord itself, so one declaration serves both the
+	// visual hint and the keyboard behavior.
+	if cfg.BindTarget != "" {
+		extras["data-hui-shortcut-hint"] = cfg.BindTarget
+		extras["data-hui-shortcut-click"] = cfg.Chord
+		extras["data-hui-shortcut-target"] = cfg.BindTarget
+	}
+
 	return shortcutHintStyle.WrapHTML(html.Span(html.TextConfig{
 		Class: cls,
 		ID:    cfg.ID,
 		// Owned aria-hidden wins over any caller override (protected
 		// above), so the SR-only label stays reachable.
-		ExtraAttrs: html.MergeAttrs(
-			html.SafeExtraAttrs(cfg.ExtraAttrs, "aria-hidden"),
-			html.Attrs{"aria-hidden": "false"},
-		),
+		ExtraAttrs: html.MergeAttrs(extras, html.Attrs{"aria-hidden": "false"}),
 	}, chips...))
+}
+
+// checkShortcutSelector refuses a BindTarget this component cannot hand
+// to the module: control bytes and markup openers never reach the
+// browser intact, and the module resolves ONE selector.
+func checkShortcutSelector(sel string) {
+	if sel == "" {
+		panic("ui: ShortcutHint BindTarget is empty — a chord that clicks nothing is not a binding")
+	}
+	for _, r := range sel {
+		if r < 0x20 || r == 0x7f {
+			panic("ui: ShortcutHint BindTarget carries a control byte: " + sel)
+		}
+	}
+	if strings.Contains(sel, "<") {
+		panic("ui: ShortcutHint BindTarget must be a selector, not markup: " + sel)
+	}
 }
 
 // chordPart is one normalized component of a chord.

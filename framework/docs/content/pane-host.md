@@ -29,13 +29,17 @@ body := ui.PaneHost(ui.PaneHostConfig{
 
 ## What it renders
 
-A root `<div data-fui-comp="ui-pane-host" data-fui-pane-host>` with
-three slot children, each carrying `data-fui-pane="primary|secondary|
-tertiary"`. The grid is `display:grid`; the column count is derived
-purely from open-state modifier classes on the root
-(`ui-pane-host--secondary-open`, `--tertiary-open`), so **no inline
-`style` is ever emitted** (strict CSP, Hard Rule 9b). A side pane closed
-at first paint carries `hidden`; the runtime reveals it on open.
+A root `<div data-fui-comp="ui-pane-host" data-hui-panehost>` with
+three slot children, each carrying `data-hui-pane="primary|secondary|
+tertiary"`. The grid is `display:grid`; the column count derives from
+the open-state hook the runtime module maintains —
+`data-hui-pane-open`, the space-separated list of open side panes
+(matched token-wise, `[data-hui-pane-open~="secondary"]`) — with the
+`fui-pane-host--secondary-open` / `--tertiary-open` classes riding
+along as the first-paint spelling, so **no inline `style` is ever
+emitted** (strict CSP, Hard Rule 9b) and a pane opened in the browser
+changes the columns. A side pane closed at first paint carries
+`hidden`; the runtime reveals it on open.
 
 ## Driving panes
 
@@ -44,20 +48,21 @@ swaps):
 
 | Attribute | Effect |
 |---|---|
-| `data-fui-pane-open="secondary\|tertiary"` | Open that pane. Focus moves to the pane's first focusable (or the region); the trigger is remembered for restore. |
-| `data-fui-pane-close="secondary\|tertiary"` | Hide it and restore focus to the opener. Bare attribute (no value) closes the topmost open pane. |
-| `data-fui-pane-swap="secondary\|tertiary"` | Open the named pane and close the other side sibling: the "this link fills the third pane instead of navigating" flow. |
+| `data-hui-pane-open-control="secondary\|tertiary"` | Open that pane. Focus moves to the pane's first focusable (or the region); the trigger is remembered for restore. |
+| `data-hui-pane-close="secondary\|tertiary"` | Hide it and restore focus to the opener. Bare attribute (no value) closes the topmost open pane. |
+| `data-hui-pane-swap="secondary\|tertiary"` | Open the named pane and close the other side sibling: the "this link fills the third pane instead of navigating" flow. |
 
 ```html
-<button data-fui-pane-open="secondary">Show details</button>
+<button data-hui-pane-open-control="secondary">Show details</button>
 <!-- inside the secondary pane -->
-<button data-fui-pane-close>Close</button>
+<button data-hui-pane-close>Close</button>
 ```
 
-A trigger resolves its host via the nearest `[data-fui-pane-host]`
+A trigger resolves its host via the nearest `[data-hui-panehost]`
 ancestor. For a trigger that lives OUTSIDE the host (e.g. in a global
-toolbar), set `data-fui-pane-host-target="<host-id>"` to the host's
-`id`.
+toolbar), set `data-hui-pane-host-target="<host-id>"` to the host's
+`id`; with neither a target nor an enclosing host the first host on
+the page answers.
 
 App code can also drive panes programmatically; the API mirrors
 `openWidget`/`closeWidget`:
@@ -70,7 +75,7 @@ __gofastr.swapPane("customers-host", "tertiary");
 
 The host dispatches `pane-host:open` and `pane-host:close` events
 (`{ bubbles: true, detail: { pane } }`) for observability; no
-`data-fui-*` attribute is needed to receive them.
+`data-hui-*` attribute is needed to receive them.
 
 ## Filling a pane from the server
 
@@ -80,7 +85,7 @@ pane, use the existing RPC + signal rail: the trigger carries
 bound to that signal in HTML mode:
 
 ```html
-<div data-fui-pane="secondary" role="region" aria-label="Details">
+<div data-hui-pane="secondary" role="region" aria-label="Details">
   <div data-fui-signal="customer-detail" data-fui-signal-mode="html">
     <!-- RPC response HTML lands here -->
   </div>
@@ -93,7 +98,7 @@ A row trigger then both opens the pane and fires the fetch:
 <a href="/api/customers/42/detail"
    data-fui-rpc data-fui-rpc-method="GET"
    data-fui-rpc-signal="customer-detail"
-   data-fui-pane-open="secondary">View</a>
+   data-hui-pane-open-control="secondary">View</a>
 ```
 
 Open/close is in-page state, never a URL route (Hard Rule 1).
@@ -112,7 +117,9 @@ ui.PaneHost(ui.PaneHostConfig{
     DeepLinkParam: "pane",          // → ?pane=secondary:4021
     SecondaryOpen: ticketLinked,    // first paint, see below
 })
+```
 
+```go
 interactive.PaneKey(
     interactive.OpenPaneOnClick(row, "secondary"), ticket.ID)
 ```
@@ -164,22 +171,26 @@ value. If two panes both need to survive a refresh, give them separate
 Below `768px` (the breakpoint the CSS and the runtime module share;
 they MUST stay in sync), an open side pane stops being an inline column
 and becomes a fixed overlay drawer. When `matchMedia('(max-width:
-768px)')` matches AND a pane is open, the runtime sets
-`data-fui-pane-mode="overlay"` on the host; CSS repositions the open
-pane to the right edge with a backdrop scrim (`::before`), and the
-module applies:
+768px)')` matches AND a pane is open, the module sets
+`data-hui-pane-mode="overlay"` on the host (and removes it otherwise,
+so a closed phone-width page never paints a scrim); CSS repositions
+the open pane to the right edge with a backdrop scrim (`::before`), and
+the module applies:
 
-- a **focus trap**: Tab cycles within the pane (reuses the shared
-  `NS._focusSel` selector; it does not touch the widgets module's
-  private `_modalStack`),
+- a **focus trap**: Tab cycles within the topmost open pane (the
+  kernel's shared `NS._focusSel` selector; it never touches the
+  widgets module's private `_modalStack`, and defers while a modal
+  widget is open),
 - a refcounted **scroll lock**: `__gofastr.doc.lockScroll('panehost:<id>')`,
   released on close / widen / navigate,
-- **ESC** and **backdrop-click** to close.
+- **ESC** and **backdrop-click** to close — ESC and the backdrop are
+  light-dismiss for the OVERLAY drawer only; an open inline column at
+  desktop width is page content and survives both.
 
 Widening the viewport or closing the pane clears overlay mode and
 releases the lock. Pane widths and the drawer width are themeable via
-the `--ui-pane-host-secondary-w` / `--ui-pane-host-tertiary-w` /
-`--ui-pane-host-drawer-w` custom properties (defaults 360px / 300px /
+the `--fui-pane-host-secondary-w` / `--fui-pane-host-tertiary-w` /
+`--fui-pane-host-drawer-w` custom properties (defaults 360px / 300px /
 420px).
 
 ## Common mistakes
@@ -204,6 +215,6 @@ the `--ui-pane-host-secondary-w` / `--ui-pane-host-tertiary-w` /
   `@media (max-width: 768px)` and the module's
   `matchMedia('(max-width: 768px)')` MUST match, or the drawer and the
   grid collapse disagree.
-- **Adding inline `style` to fix a column.** Column state comes from the
-  root's open modifier classes; CSP forbids inline style. Theme widths
-  via the `--ui-pane-host-*-w` custom properties instead.
+- **Adding inline `style` to fix a column.** Column state comes from
+  the root's open-state hook and classes; CSP forbids inline style.
+  Theme widths via the `--fui-pane-host-*-w` custom properties instead.

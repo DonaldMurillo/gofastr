@@ -96,7 +96,7 @@ func TestE2E_ComboboxFilterAndSelect(t *testing.T) {
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/combobox"),
 		pageReady(),
-		waitModule(`!!(window.__gofastr && window.__gofastr.loadedModules && window.__gofastr.loadedModules.combobox)`),
+		waitModule(`!!(window.__gofastr && window.__gofastr.loadedModules && window.__gofastr.loadedModules['headless-combobox'])`),
 		// SSR state: static listboxes ship CLOSED (an SSR-open listbox
 		// overlays the controls after it in a host form). Focus/typing
 		// opens it.
@@ -138,7 +138,7 @@ func TestE2E_ComboboxEscapeDismisses(t *testing.T) {
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/combobox"),
 		pageReady(),
-		waitModule(`!!(window.__gofastr && window.__gofastr.loadedModules && window.__gofastr.loadedModules.combobox)`),
+		waitModule(`!!(window.__gofastr && window.__gofastr.loadedModules && window.__gofastr.loadedModules['headless-combobox'])`),
 		// Click opens the closed-by-default listbox; Escape dismisses
 		// it again.
 		chromedp.Click(`#demo-combobox`, chromedp.ByID),

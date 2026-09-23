@@ -3,14 +3,16 @@ package ui
 import (
 	"strings"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/core-ui/style"
 )
 
 func TestCommandPaletteTrigger(t *testing.T) {
-	trigger, _ := CommandPalette(CommandPaletteConfig{RPCPath: "/commands/search"})
+	trigger, _ := CommandPalette(CommandPaletteConfig{RPCPath: "/commands/search", FallbackHref: "/search"})
 	out := string(trigger)
 	wants := []string{
 		`data-fui-open="command-palette"`,
-		`data-fui-shortcut-click="Meta+K"`,
+		`data-hui-shortcut-click="Meta+K"`,
 		`aria-label="Open command palette"`,
 		`class="ui-visually-hidden"`,
 	}
@@ -23,20 +25,22 @@ func TestCommandPaletteTrigger(t *testing.T) {
 
 func TestCommandPaletteCustomShortcut(t *testing.T) {
 	trigger, _ := CommandPalette(CommandPaletteConfig{
-		RPCPath:  "/cmds",
-		Shortcut: "Ctrl+/",
+		RPCPath:      "/cmds",
+		Shortcut:     "Ctrl+/",
+		FallbackHref: "/search",
 	})
-	if !strings.Contains(string(trigger), `data-fui-shortcut-click="Ctrl+/"`) {
+	if !strings.Contains(string(trigger), `data-hui-shortcut-click="Ctrl+/"`) {
 		t.Errorf("expected custom shortcut, got: %s", trigger)
 	}
 }
 
 func TestCommandPaletteSlotRendersCombobox(t *testing.T) {
 	_, b := CommandPalette(CommandPaletteConfig{
-		Name:        "cp",
-		RPCPath:     "/commands/search",
-		Placeholder: "Search…",
-		DebounceMs:  100,
+		Name:         "cp",
+		RPCPath:      "/commands/search",
+		Placeholder:  "Search…",
+		DebounceMs:   100,
+		FallbackHref: "/search",
 	})
 	d := b.Definition()
 	if d.Role != "dialog" {
@@ -87,8 +91,9 @@ func TestCommandPalettePanicsWithoutRPC(t *testing.T) {
 
 func TestCommandPaletteExtraAttrsOnRoot(t *testing.T) {
 	_, b := CommandPalette(CommandPaletteConfig{
-		RPCPath:    "/search",
-		ExtraAttrs: map[string]string{"data-test": "hook"},
+		RPCPath:      "/search",
+		ExtraAttrs:   map[string]string{"data-test": "hook"},
+		FallbackHref: "/search",
 	})
 	h := b.Definition().Slots[0].Component.Render()
 	root := string(h)[:strings.Index(string(h), ">")+1]
@@ -103,7 +108,7 @@ func TestCommandPaletteExtraAttrsOnRoot(t *testing.T) {
 // section-menu drawer uses), named for assistive tech, decorative
 // icon — and not swallowed by an aria-hidden footer.
 func TestCommandPaletteCloseControl(t *testing.T) {
-	_, b := CommandPalette(CommandPaletteConfig{Name: "cp", RPCPath: "/commands/search"})
+	_, b := CommandPalette(CommandPaletteConfig{Name: "cp", RPCPath: "/commands/search", FallbackHref: "/search"})
 	h := string(b.Definition().Slots[0].Component.Render())
 
 	for _, w := range []string{
@@ -152,5 +157,49 @@ func TestCommandPaletteCloseControl(t *testing.T) {
 	}
 	if hints := openTag(`ui-cmd-palette__hints`); !strings.Contains(hints, "aria-hidden") {
 		t.Errorf("hints row must stay decorative (aria-hidden) now that the footer is exposed:\n%s", hints)
+	}
+}
+
+func TestCommandPaletteFallbackHrefRefusals(t *testing.T) {
+	for name, href := range map[string]string{
+		"#": "#",
+		// `/\evil.example` starts with / and so reads same-origin to a
+		// prefix check; the URL parser normalises the backslash to a
+		// slash and the trigger navigates cross-origin.
+		"backslash after the leading slash": `/\evil.example`,
+		"backslash anywhere":                `/x\evil.example`,
+		"cross-origin":                      "//evil.example/x",
+		"scheme":                            "javascript:alert(1)",
+	} {
+		func() {
+			defer func() {
+				if recover() == nil {
+					t.Errorf("%s FallbackHref should have been refused", name)
+				}
+			}()
+			CommandPalette(CommandPaletteConfig{RPCPath: "/s", FallbackHref: href})
+		}()
+	}
+}
+
+func TestCommandPaletteCSSPadsTheInputRow(t *testing.T) {
+	css := commandPaletteCSS(style.Theme{})
+	// Item 22's contract: the row that directly wraps the input (the
+	// carrier — the no-script FORM wears the same combobox class, so
+	// the sheet selects by :has) carries the padding and the seam, and
+	// the input keeps its touch-target height. The retired rules
+	// targeted .combobox__* classes nothing renders and matched nothing.
+	for _, want := range []string{
+		"[data-fui-comp=\"ui-cmd-palette\"] .ui-cmd-palette__combobox:has(> .ui-cmd-palette__input) {",
+		"padding: var(--spacing-md, 8px);",
+		"[data-fui-comp=\"ui-cmd-palette\"] .ui-cmd-palette__input {",
+		"min-block-size: var(--spacing-touch-target, 44px);",
+	} {
+		if !strings.Contains(css, want) {
+			t.Errorf("commandPaletteCSS lost %q — the input row lost its chrome:\n%s", want, css)
+		}
+	}
+	if strings.Contains(css, ".combobox__") {
+		t.Errorf("the palette sheet still targets retired .combobox__* classes nothing renders:\n%s", css)
 	}
 }

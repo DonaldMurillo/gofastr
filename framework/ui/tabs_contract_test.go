@@ -25,7 +25,7 @@ func TestTabsZeroValueOutputPinned(t *testing.T) {
 			{Label: "B", Content: render.Text("beta")},
 		},
 	}))
-	want := `<div class="fui-tabs" data-active="0" data-fui-signal="t" data-fui-signal-attr="data-active" data-fui-signal-mode="attr" data-fui-comp="fui-tabs"><nav class="fui-tabs-nav" role="tablist"><button aria-selected="true" class="fui-tab" data-fui-signal-set="t:0" data-fui-tab-index="0" role="tab">A</button><button aria-selected="false" class="fui-tab" data-fui-signal-set="t:1" data-fui-tab-index="1" role="tab">B</button></nav><div class="fui-tabs-content"><div class="fui-tab-panel" data-fui-tab-index="0" role="tabpanel">alpha</div><div class="fui-tab-panel" data-fui-tab-index="1" role="tabpanel">beta</div></div></div>`
+	want := `<div class="fui-tabs" data-active="0" data-fui-signal="t" data-fui-signal-attr="data-active" data-fui-signal-mode="attr" data-hui-tabs="" data-fui-comp="fui-tabs"><nav class="fui-tabs-nav" role="tablist"><a aria-controls="t-panel-0" aria-selected="true" class="fui-tab" data-fui-signal-set="t:0" data-fui-tab-index="0" href="#t-panel-0" id="t-tab-0" role="tab" tabindex="0">A</a><a aria-controls="t-panel-1" aria-selected="false" class="fui-tab" data-fui-signal-set="t:1" data-fui-tab-index="1" href="#t-panel-1" id="t-tab-1" role="tab" tabindex="-1">B</a></nav><div class="fui-tabs-content"><div aria-labelledby="t-tab-0" class="fui-tab-panel" data-fui-tab-index="0" id="t-panel-0" role="tabpanel" tabindex="0">alpha</div><div aria-labelledby="t-tab-1" class="fui-tab-panel" data-fui-tab-index="1" id="t-panel-1" role="tabpanel" tabindex="0">beta</div></div></div>`
 	if got != want {
 		t.Errorf("zero-value Tabs output changed:\ngot:  %s\nwant: %s", got, want)
 	}
@@ -47,18 +47,18 @@ func TestTabsStateAttrsOnAndOff(t *testing.T) {
 			{Label: "C", Content: render.Text("c")},
 		},
 	}))
-	if !strings.Contains(on, `data-fui-tab-index="0" data-state="active" role="tab"`) {
+	if !strings.Contains(on, `data-fui-tab-index="0" data-state="active" href="#s-panel-0" id="s-tab-0" role="tab"`) {
 		t.Errorf("active tab must carry data-state=active:\n%s", on)
 	}
 	for _, i := range []string{"1", "2"} {
-		if !strings.Contains(on, `data-fui-tab-index="`+i+`" data-state="inactive" role="tab"`) {
+		if !strings.Contains(on, `data-fui-tab-index="`+i+`" data-state="inactive" href="#s-panel-`+i+`" id="s-tab-`+i+`" role="tab"`) {
 			t.Errorf("inactive tab %s must carry data-state=inactive:\n%s", i, on)
 		}
 	}
-	if !strings.Contains(on, `data-fui-tabs-state="true"`) {
-		t.Errorf("wrapper must carry the data-fui-tabs-state marker:\n%s", on)
+	if !strings.Contains(on, `data-hui-tabs-state=""`) {
+		t.Errorf("wrapper must carry the data-hui-tabs-state marker:\n%s", on)
 	}
-	if !strings.Contains(on, `data-fui-prefetch="tabs"`) {
+	if !strings.Contains(on, ``) {
 		t.Errorf("wrapper must demand-load the tabs module:\n%s", on)
 	}
 
@@ -69,7 +69,7 @@ func TestTabsStateAttrsOnAndOff(t *testing.T) {
 	if strings.Contains(off, "data-state") {
 		t.Errorf("zero-value Tabs must not emit data-state:\n%s", off)
 	}
-	if strings.Contains(off, "data-fui-tabs-state") || strings.Contains(off, "data-fui-prefetch") {
+	if strings.Contains(off, "data-hui-tabs-state") || strings.Contains(off, "data-fui-prefetch") {
 		t.Errorf("zero-value Tabs must not emit the tabs module markers:\n%s", off)
 	}
 }
@@ -134,7 +134,7 @@ func TestTabsAriaControlsPairsRoundTrip(t *testing.T) {
 	}
 }
 
-var stashBodyRe = regexp.MustCompile(`(?s)data-fui-tabs-stash="true"[^>]*>(.*?)</script>`)
+var stashBodyRe = regexp.MustCompile(`(?s)data-hui-tabs-stash="true"[^>]*>(.*?)</script>`)
 
 // TestTabsVacateHiddenShipsStashOnly: with VacateHidden the ACTIVE panel's
 // content ships in the DOM, every INACTIVE panel ships empty, and their
@@ -150,7 +150,7 @@ func TestTabsVacateHiddenShipsStashOnly(t *testing.T) {
 		},
 	}))
 
-	if !strings.Contains(out, `data-fui-tabs-vacate="true"`) {
+	if !strings.Contains(out, `data-hui-tabs-vacate=""`) {
 		t.Errorf("wrapper must carry the vacate marker:\n%s", out)
 	}
 	// VacateHidden ALONE must arm the module loader. Without it the panels
@@ -160,20 +160,17 @@ func TestTabsVacateHiddenShipsStashOnly(t *testing.T) {
 	// Nothing covered this arm. TestTabsStateAttrsOnAndOff asserts the
 	// attribute only under StateAttrs, TestTabsContractKnobsCompose sets all
 	// three knobs at once, and the runtime e2e fixtures hand-write
-	// data-fui-prefetch="tabs" into their HTML — so none of them can observe
+	//  into their HTML — so none of them can observe
 	// the component failing to emit it.
-	if !strings.Contains(out, `data-fui-prefetch="tabs"`) {
-		t.Errorf("VacateHidden alone must arm data-fui-prefetch=\"tabs\"; without the module the vacated panels never come back:\n%s", out)
-	}
-	if !strings.Contains(out, `data-fui-tab-index="0" role="tabpanel">alpha-body<`) {
+	if !strings.Contains(out, `data-fui-tab-index="0" id="v-panel-0" role="tabpanel" tabindex="0">alpha-body<`) {
 		t.Errorf("active panel content must ship in the DOM:\n%s", out)
 	}
-	if strings.Contains(out, "beta-body") && !strings.Contains(out, `data-fui-tabs-stash`) {
+	if strings.Contains(out, "beta-body") && !strings.Contains(out, `data-hui-tabs-stash`) {
 		t.Errorf("inactive content leaked into the DOM:\n%s", out)
 	}
 	// Inactive panels are EMPTY shells.
 	for _, i := range []string{"1", "2"} {
-		if !strings.Contains(out, `data-fui-tab-index="`+i+`" role="tabpanel"></div>`) {
+		if !strings.Contains(out, `data-fui-tab-index="`+i+`" id="v-panel-`+i+`" role="tabpanel" tabindex="0"></div>`) {
 			t.Errorf("inactive panel %s must ship empty:\n%s", i, out)
 		}
 	}
@@ -238,10 +235,10 @@ func TestTabsVacateSingleTabNoStash(t *testing.T) {
 		VacateHidden: true,
 		Tabs:         []TabItem{{Label: "Only", Content: render.Text("solo")}},
 	}))
-	if strings.Contains(out, "data-fui-tabs-stash") {
+	if strings.Contains(out, "data-hui-tabs-stash") {
 		t.Errorf("single-tab strip must not ship a stash:\n%s", out)
 	}
-	if !strings.Contains(out, `role="tabpanel">solo<`) {
+	if !strings.Contains(out, `id="one-panel-0" role="tabpanel" tabindex="0">solo<`) {
 		t.Errorf("the only panel ships its content:\n%s", out)
 	}
 }
@@ -260,13 +257,15 @@ func TestTabsContractKnobsCompose(t *testing.T) {
 			{Label: "B", Content: render.Text("b")},
 		},
 	}))
-	if strings.Count(out, `data-fui-prefetch="tabs"`) != 1 {
-		t.Errorf("prefetch marker must appear exactly once:\n%s", out)
+	// The prefetch bridge is gone with the retired module: the strip's
+	// own data-hui-tabs marker loads headless-tabs on first paint.
+	if !strings.Contains(out, `data-hui-tabs=""`) {
+		t.Errorf("the strip must carry its own module marker:\n%s", out)
 	}
 	if !strings.Contains(out, `aria-controls="allthree-panel-1"`) {
 		t.Errorf("aria-controls must survive vacate:\n%s", out)
 	}
-	if !strings.Contains(out, `data-fui-tab-index="1" data-state="inactive" id="allthree-tab-1"`) {
+	if !strings.Contains(out, `data-fui-tab-index="1" data-state="inactive" href="#allthree-panel-1" id="allthree-tab-1"`) {
 		t.Errorf("data-state must survive vacate:\n%s", out)
 	}
 }

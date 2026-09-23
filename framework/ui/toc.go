@@ -1,93 +1,96 @@
 package ui
 
 import (
-	"maps"
+	"strconv"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/headless"
 )
 
 // ─── TableOfContents ────────────────────────────────────────────────
 //
-// Auto-builds from headings inside a target selector. Server emits an
-// empty <nav> shell; the runtime walks the target region after first
-// paint, harvests every <h2>/<h3> with an id, and renders a sticky
-// list with IntersectionObserver-driven active-section tracking.
-//
-// No-JS users see an empty nav (sized so it doesn't shift layout
-// either way) and the in-document headings remain navigable.
+// Renders headless.TableOfContents dressed with the fui-toc class
+// map: a labelled <nav> whose ordered list of "#anchor" links the
+// SERVER rendered from explicit Items. The items are required: a
+// server-rendered component cannot discover headings that only exist
+// in a future browser DOM, and a TOC the runtime fills at hydration is
+// an empty landmark a reader without script never sees. The
+// headless-toc module's only job is the active state — aria-current
+// and a class on the entry whose heading is in view, through the
+// observer headless-rail owns.
+
+// TOCItem is one entry in the contents list.
+type TOCItem struct {
+	// ID is the fragment id of the heading this entry links to,
+	// without the leading #. Required.
+	ID string
+	// Label is the entry's visible text. Required.
+	Label string
+	// Level is the heading's level, 1 to 6; 0 takes 2. It names the
+	// item's modifier class (fui-toc__item--h3, …) so the sheet can
+	// indent by depth.
+	Level int
+}
 
 // TOCConfig configures a TableOfContents.
 type TOCConfig struct {
+	// Items are the entries, in document order. Required: the
+	// no-script contract is this rendered list.
+	Items []TOCItem
+
 	// Target is the CSS selector of the content region whose headings
-	// the runtime should scan. Required (e.g. "main", "article").
+	// the module watches for the active state (e.g. "main",
+	// "article"). Optional: without it the links work and nothing is
+	// marked.
 	Target string
+
 	// Label is the accessible nav-label (defaults to "On this page").
 	Label string
-	// Levels picks which heading levels to harvest. Bit flags:
-	// 2 = h2 only, 3 = h3 only, 0 / 5 = h2 + h3. Default 0.
-	// We keep the API minimal: most sites want h2 + h3.
-	Levels int
-	// Sticky toggles the position: sticky behaviour. Default true.
-	// When false the nav scrolls with the content.
+
+	// Sticky adds the position: sticky modifier. Default false: the
+	// nav scrolls with the content unless the caller opts in.
 	Sticky bool
-	ID     string
-	Class  string
+
+	ID    string
+	Class string
 	// ExtraAttrs forwards additional attributes to the <nav> root.
 	// Keys the component owns are dropped: class and id (use Class /
-	// ID), data-fui-* (incl. the toc/levels runtime wiring), and
-	// aria-label (use Label).
+	// ID), data-hui-* (the toc wiring), and aria-label (use Label).
 	ExtraAttrs html.Attrs
 }
 
-// TableOfContents renders a TOC nav that the runtime fills in.
+// TableOfContents renders the contents navigation.
 func TableOfContents(cfg TOCConfig) render.HTML {
-	if cfg.Target == "" {
-		panic("ui: TableOfContents requires Target")
+	items := make([]headless.TOCItem, len(cfg.Items))
+	for i, it := range cfg.Items {
+		items[i] = headless.TOCItem{ID: it.ID, Label: it.Label, Level: it.Level}
 	}
-	label := cfg.Label
-	if label == "" {
-		label = "On this page"
+	classes := map[headless.Part]string{
+		headless.PartRoot:    "fui-toc",
+		headless.PartTOCList: "fui-toc__list",
+		headless.PartTOCItem: "fui-toc__item",
+		headless.PartTOCLink: "fui-toc__link",
 	}
-	cls := "ui-toc"
-	if cfg.Sticky || (!cfg.Sticky && cfg.Class == "") {
-		// Default behaviour is sticky; opt-out is Sticky=false AND
-		// override via class. The branch above always picks sticky
-		// when no explicit class override is given.
+	for l := 1; l <= 6; l++ {
+		classes[headless.Part("toc-item--h"+strconv.Itoa(l))] = "fui-toc__item--h" + strconv.Itoa(l)
 	}
 	if cfg.Sticky {
-		cls += " ui-toc--sticky"
+		classes[headless.PartRoot] += " fui-toc--sticky"
 	}
 	if cfg.Class != "" {
-		cls += " " + cfg.Class
+		classes[headless.PartRoot] += " " + cfg.Class
 	}
-	attrs := html.Attrs{
-		"class":               cls,
-		"aria-label":          label,
-		"data-fui-toc":        cfg.Target,
-		"data-fui-toc-levels": tocLevelsAttr(cfg.Levels),
-	}
-	if cfg.ID != "" {
-		attrs["id"] = cfg.ID
-	}
-	maps.Copy(attrs, html.SafeExtraAttrs(cfg.ExtraAttrs, "aria-label"))
-	return tocStyle.WrapHTML(render.Tag("nav", attrs,
-		// Empty <ol> the runtime fills.
-		render.Tag("ol", map[string]string{"class": "ui-toc__list"}),
-	))
-}
-
-func tocLevelsAttr(l int) string {
-	switch l {
-	case 2:
-		return "2"
-	case 3:
-		return "3"
-	default:
-		return "2,3"
-	}
+	nav := headless.TableOfContents(headless.TableOfContentsProps{
+		Label:          cfg.Label,
+		Items:          items,
+		TargetSelector: cfg.Target,
+		ID:             cfg.ID,
+		ExtraAttrs:     headless.Safe(cfg.ExtraAttrs, "class", "id", "aria-label"),
+	}, classes)
+	return tocStyle.WrapHTML(nav)
 }
 
 var tocStyle = registry.RegisterStyle("ui-toc", tocCSS)
@@ -97,7 +100,7 @@ func tocCSS(_ style.Theme) string {
   display: block;
   font-size: var(--text-sm, 0.875rem);
 }
-[data-fui-comp="ui-toc"].ui-toc--sticky {
+[data-fui-comp="ui-toc"].fui-toc--sticky {
   position: sticky;
   inset-block-start: var(--spacing-lg, 16px);
   align-self: start;
@@ -114,20 +117,25 @@ func tocCSS(_ style.Theme) string {
   color: var(--color-text-muted, #52525B);
   margin-block-end: var(--spacing-sm, 4px);
 }
-[data-fui-comp="ui-toc"] .ui-toc__list {
+[data-fui-comp="ui-toc"] .fui-toc__list {
   list-style: none;
   margin: 0;
   padding: 0;
   display: grid;
   gap: var(--spacing-xs, 2px);
 }
-[data-fui-comp="ui-toc"] .ui-toc__item {
+[data-fui-comp="ui-toc"] .fui-toc__item {
   margin: 0;
 }
-[data-fui-comp="ui-toc"] .ui-toc__item--h3 {
+[data-fui-comp="ui-toc"] .fui-toc__item--h3 {
   margin-inline-start: var(--spacing-md, 8px);
 }
-[data-fui-comp="ui-toc"] .ui-toc__link {
+[data-fui-comp="ui-toc"] .fui-toc__item--h4,
+[data-fui-comp="ui-toc"] .fui-toc__item--h5,
+[data-fui-comp="ui-toc"] .fui-toc__item--h6 {
+  margin-inline-start: calc(var(--spacing-md, 8px) * 2);
+}
+[data-fui-comp="ui-toc"] .fui-toc__link {
   display: block;
   padding: var(--spacing-sm, 4px) var(--spacing-sm, 4px);
   border-radius: var(--radii-sm, 4px);
@@ -136,16 +144,17 @@ func tocCSS(_ style.Theme) string {
   text-decoration: none;
   line-height: 1.4;
 }
-[data-fui-comp="ui-toc"] .ui-toc__link:hover {
+[data-fui-comp="ui-toc"] .fui-toc__link:hover {
   color: var(--color-text, #18181B);
   background: var(--color-surface-soft, #F4F4F5);
 }
-[data-fui-comp="ui-toc"] .ui-toc__link.is-active {
+[data-fui-comp="ui-toc"] .fui-toc__link.is-active,
+[data-fui-comp="ui-toc"] .fui-toc__link[aria-current="true"] {
   color: var(--color-primary, #4F46E5);
   border-inline-start-color: var(--color-primary, #4F46E5);
   font-weight: 600;
 }
-[data-fui-comp="ui-toc"] .ui-toc__link:focus-visible {
+[data-fui-comp="ui-toc"] .fui-toc__link:focus-visible {
   outline: 2px solid var(--color-primary, #4F46E5);
   outline-offset: 1px;
 }`

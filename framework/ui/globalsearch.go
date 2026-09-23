@@ -4,52 +4,51 @@ import (
 	"context"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
-	"github.com/DonaldMurillo/gofastr/core-ui/patterns/combobox"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/headless"
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
 // ─── GlobalSearch ───────────────────────────────────────────────────
 //
-// Sticky page-level search bar with `/`-shortcut focus + a Combobox-
-// driven dropdown of results. Distinct from CommandPalette (which is
-// a focus-trapped ⌘K modal). GlobalSearch is inline, persistent, and
+// Sticky page-level search bar: headless.Combobox dressed with the
+// fui-global-search class map, a `/`-shortcut focus chord, and an
+// optional hint chip. Distinct from CommandPalette (which is a
+// focus-trapped ⌘K modal): GlobalSearch is inline, persistent, and
 // per-page.
-//
-// Compositional shape: GlobalSearch is mostly a wrapper around the
-// core-ui/patterns/combobox primitive, adding:
-//   - Sticky position styling
-//   - `/`-shortcut focus via data-fui-shortcut-focus
-//   - Optional ShortcutHint chip ("Press / to search")
 
 // GlobalSearchConfig configures a GlobalSearch.
 type GlobalSearchConfig struct {
-	// ID is the input element id (the runtime listbox uses
-	// <ID>-listbox). Required, page-unique.
+	// ID is the input element id (the listbox takes <ID>-listbox).
+	// Required, page-unique.
 	ID string
 	// Name is the form-submit name on the input. Required.
 	Name string
-	// Label is the visible label text (required, used as <label for=…>).
+	// Label is the visible label text (required, used as <label for=…>;
+	// visually hidden by the bar's shape).
 	Label string
-	// RPCPath is the search endpoint. Required. POSTed with the
-	// query in `<Name>=<value>`.
+	// RPCPath is the search endpoint. Required. POSTed with the query
+	// in `<Name>=<value>`; the listbox re-renders through the signal.
 	RPCPath string
-	// SignalName is the rpc-signal value used to swap the listbox
-	// HTML after each search response. Required.
+	// SignalName is the rpc-signal value used to swap the listbox HTML
+	// after each search response. Required.
 	SignalName string
+	// NoScriptAction is the same-origin GET destination the wrapping
+	// form submits to without script. Required: a reader without
+	// script must still reach the results page. `#` is refused.
+	NoScriptAction string
 	// Placeholder for the input. Default "Search…".
 	Placeholder string
 	// Shortcut, when set, opts the input into runtime focus-on-key:
-	// `data-fui-shortcut-focus="<chord>"` (default "/"). Pass an
+	// `data-hui-shortcut-focus="<chord>"` (default "/"). Pass an
 	// explicit empty string to disable.
 	Shortcut string
 	// ShowHint renders a small "Press <chord>" hint chip on the right
 	// of the input. Default true when Shortcut is set.
 	ShowHint *bool
-	// DebounceMs is the input debounce window (passed to combobox).
-	// Default 200.
+	// DebounceMs is the input debounce window. Default 200.
 	DebounceMs int
 	// Sticky toggles position: sticky on the wrapper. Default true.
 	Sticky bool
@@ -57,13 +56,13 @@ type GlobalSearchConfig struct {
 
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers, ARIA overrides) to the search bar's root
-	// wrapper div. Keys the component owns are dropped: class and id
-	// (use Class), data-fui-*, and the shortcut-focus wiring the
-	// runtime keys on.
+	// wrapper. Keys the component owns are dropped: class, the
+	// data-hui-* wiring, and the shortcut chords.
 	ExtraAttrs html.Attrs
 
 	// Ctx carries the per-request context used to resolve i18n labels
-	// (placeholder). When nil, English fallbacks apply.
+	// (placeholder, the combobox's sentences). When nil, English
+	// fallbacks apply.
 	Ctx context.Context
 }
 
@@ -95,8 +94,8 @@ func GlobalSearch(cfg GlobalSearchConfig) render.HTML {
 	shortcut := cfg.Shortcut
 	if cfg.Shortcut == "" && cfg.Shortcut != " " {
 		// Default to "/" unless caller explicitly passed " " to disable.
-		// Use a sentinel " " to express "off" because zero-value collides
-		// with "default".
+		// Use a sentinel " " to express "off" because zero-value
+		// collides with "default".
 		shortcut = "/"
 	}
 	if cfg.Shortcut == " " {
@@ -111,102 +110,115 @@ func GlobalSearch(cfg GlobalSearchConfig) render.HTML {
 		debounceMs = 200
 	}
 
-	box := combobox.Render(combobox.Config{
-		ID:          cfg.ID,
-		Name:        cfg.Name,
-		Label:       cfg.Label,
-		RPCPath:     cfg.RPCPath,
-		SignalName:  cfg.SignalName,
-		DebounceMs:  debounceMs,
-		Placeholder: placeholder,
-		LabelHidden: true,
-	})
-
-	// Decorate the combobox input with shortcut markers, done by
-	// emitting wrapping JS-free annotations the runtime picks up.
-	// The framework's `data-fui-shortcut-focus` listens for the chord
-	// globally and focuses the matching `[data-fui-shortcut-focus="<chord>"]`
-	// element. We add it via a sibling marker element that points at
-	// the input via aria-controls. But the simpler pattern is to
-	// expose Shortcut on the GlobalSearch wrapper and let the runtime
-	// focus the FIRST input within when the chord fires. We use a
-	// per-instance wrapper-level shortcut marker (data-fui-shortcut-
-	// focus + data-fui-shortcut-target="#<input-id>"). The runtime
-	// handler already supports targeting by selector.
-	wrapAttrs := html.SafeExtraAttrs(cfg.ExtraAttrs)
-	if wrapAttrs == nil {
-		wrapAttrs = html.Attrs{}
-	}
-	wrapAttrs["class"] = clsGlobalSearch(cfg)
-	if shortcut != "" {
-		wrapAttrs["data-fui-shortcut-focus"] = shortcut
-		wrapAttrs["data-fui-shortcut-target"] = "#" + cfg.ID
+	classes := headless.Classes{
+		headless.PartLabel:           "fui-visually-hidden",
+		headless.PartComboboxForm:    "fui-global-search__field",
+		headless.PartComboboxInput:   "fui-global-search__input",
+		headless.PartComboboxListbox: "fui-global-search__listbox",
+		headless.PartComboboxOption:  "fui-global-search__option",
+		headless.PartComboboxStatus:  "fui-visually-hidden",
+		headless.PartText:            "fui-global-search__option-label",
 	}
 
-	children := []render.HTML{box}
-	if showHint && shortcut != "" {
-		// shortcut flows raw into the kbd body; HTML-escape it so a
-		// CMS-supplied or untrusted-source shortcut hint can't smuggle
-		// `<script>` or breakout markup into the page.
-		children = append(children, html.Span(html.TextConfig{
-			Class:      "ui-global-search__hint",
-			ExtraAttrs: html.Attrs{"aria-hidden": "true"},
-		}, render.Tag("kbd", map[string]string{"class": "ui-global-search__chord"}, render.Text(shortcut))))
-	}
-	return globalSearchStyle.WrapHTML(render.Tag("div", wrapAttrs, children...))
-}
+	box := headless.Combobox(headless.ComboboxProps{
+		ID:             cfg.ID,
+		Name:           cfg.Name,
+		Label:          cfg.Label,
+		Placeholder:    placeholder,
+		Island:         &headless.Island{Endpoint: cfg.RPCPath, Signal: cfg.SignalName},
+		NoScriptAction: cfg.NoScriptAction,
+		DebounceMS:     debounceMs,
+		Strings:        StringsFor(ctx),
+	}, classes)
 
-func clsGlobalSearch(cfg GlobalSearchConfig) string {
-	cls := "ui-global-search"
+	// The bar's wrapper owns the class, the sticky posture, the chord,
+	// and the hint chip: one element the page composes, one place the
+	// shortcut lives.
+	cls := "fui-global-search"
 	if cfg.Sticky {
-		cls += " ui-global-search--sticky"
+		cls += " fui-global-search--sticky"
 	}
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
 	}
-	return cls
+	wrapAttrs := headless.Safe(cfg.ExtraAttrs, "class")
+	wrapAttrs["class"] = cls
+	if shortcut != "" {
+		wrapAttrs["data-hui-shortcut-focus"] = shortcut
+		wrapAttrs["data-hui-shortcut-target"] = "#" + cfg.ID
+	}
+	children := []render.HTML{box}
+	if showHint && shortcut != "" {
+		children = append(children, html.Span(html.TextConfig{
+			Class:      "fui-global-search__hint",
+			ExtraAttrs: html.Attrs{"aria-hidden": "true"},
+		}, render.Tag("kbd", map[string]string{"class": "fui-global-search__chord"}, render.Text(shortcut))))
+	}
+	boxWrapped := html.Div(html.DivConfig{ExtraAttrs: wrapAttrs}, children...)
+	return globalSearchStyle.WrapHTML(boxWrapped)
 }
 
 var globalSearchStyle = registry.RegisterStyle("ui-global-search", globalSearchCSS)
 
 func globalSearchCSS(_ style.Theme) string {
-	return `[data-fui-comp="ui-global-search"] {
-  position: relative;
-  display: block;
-  inline-size: 100%;
-  max-inline-size: 32rem;
+	return `[data-fui-comp="ui-global-search"].fui-global-search {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm, 4px);
 }
-[data-fui-comp="ui-global-search"].ui-global-search--sticky {
+[data-fui-comp="ui-global-search"].fui-global-search--sticky {
   position: sticky;
   inset-block-start: var(--spacing-md, 8px);
-  z-index: 5;
-  background: var(--color-background, #FFFFFF);
+  z-index: var(--z-sticky, 50);
 }
-[data-fui-comp="ui-global-search"] .ui-global-search__hint {
-  position: absolute;
-  inset-inline-end: var(--spacing-sm, 4px);
-  inset-block-start: 50%;
-  transform: translateY(-50%);
-  pointer-events: none;
+[data-fui-comp="ui-global-search"] .fui-global-search__field {
+  flex: 1;
 }
-[data-fui-comp="ui-global-search"] .ui-global-search__chord {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-inline-size: 22px;
-  block-size: 22px;
-  padding: 0 6px;
-  border-radius: var(--radii-sm, 4px);
-  background: var(--color-surface-soft, #F4F4F5);
+[data-fui-comp="ui-global-search"] .fui-global-search__input {
+  width: 100%;
+  padding: var(--spacing-sm, 4px) var(--spacing-md, 8px);
   border: 1px solid var(--color-border, #E4E4E7);
-  color: var(--color-text-muted, #52525B);
-  font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: var(--text-xs, 0.75rem);
-  font-weight: 600;
+  border-radius: var(--radii-md, 8px);
+  background: var(--color-surface, #FFF);
+  color: var(--color-text, #18181B);
+  font: inherit;
+  min-height: var(--spacing-touch-target, 44px);
 }
-
-/* Hide hint on touch — / shortcut is irrelevant. */
-@media (hover: none) {
-  [data-fui-comp="ui-global-search"] .ui-global-search__hint { display: none; }
+[data-fui-comp="ui-global-search"] .fui-global-search__input:focus-visible {
+  outline: 2px solid var(--color-primary, #4F46E5);
+  outline-offset: 1px;
+}
+[data-fui-comp="ui-global-search"] .fui-global-search__listbox {
+  margin: 0;
+  padding: var(--spacing-xs, 2px);
+  list-style: none;
+  background: var(--color-surface, #FFF);
+  border: 1px solid var(--color-border, #E4E4E7);
+  border-radius: var(--radii-md, 8px);
+  box-shadow: var(--shadow-lg, 0 10px 15px -3px rgba(0,0,0,.10));
+}
+[data-fui-comp="ui-global-search"] .fui-global-search__option {
+  display: flex;
+  align-items: baseline;
+  gap: var(--spacing-sm, 4px);
+  padding: var(--spacing-sm, 4px) var(--spacing-md, 8px);
+  border-radius: var(--radii-sm, 4px);
+  cursor: pointer;
+  min-height: var(--spacing-touch-target, 44px);
+}
+[data-fui-comp="ui-global-search"] .fui-global-search__option.is-active {
+  background: var(--color-surface-soft, #F4F4F5);
+}
+[data-fui-comp="ui-global-search"] .fui-global-search__hint {
+  font-size: var(--text-xs, 0.75rem);
+  color: var(--color-text-muted, #52525B);
+}
+[data-fui-comp="ui-global-search"] .fui-global-search__chord {
+  font-family: var(--font-mono, monospace);
+  font-size: var(--text-xs, 0.75rem);
+  border: 1px solid var(--color-border, #E4E4E7);
+  border-radius: var(--radii-sm, 4px);
+  padding: 1px 6px;
+  background: var(--color-surface-soft, #F4F4F5);
 }`
 }

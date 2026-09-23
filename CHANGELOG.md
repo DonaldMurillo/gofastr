@@ -9,6 +9,51 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ### BREAKING
 
+- **Navigation behaviour (headless 3a):** `Menu`, `Tabs`, `CodeTabs`
+  and `Collapsible` render through headless primitives
+  (`headless.Menu`, `headless.Tabs`, `headless.Disclosure`) under
+  `fui-*` class names, and their old runtime modules are retired:
+  `menu`, `tabs`, `carousel`, `disclosure`, `scrollspy`, `toc`,
+  `combobox`, `panehost`, `sidebar` no longer exist under
+  `core-ui/runtime/src`. Their `data-fui-*` trigger spellings are
+  replaced by the `data-hui-*` hooks the registered modules bind:
+  `data-fui-menu-*` → `data-hui-menu-*`,
+  `data-fui-tabs*`/`data-fui-tab*` → `data-hui-tabs`/`data-hui-tab`,
+  `data-fui-disclosure(-persist)` → `data-hui-disclosure(-persist)`,
+  `data-fui-combobox*` → `data-hui-combobox*`,
+  `data-fui-pane-open/-close/-key/-swap` → `data-hui-pane-open-control/
+  -close/-key/-swap`, `data-fui-sidebar*` → `data-hui-sidebar*`
+  (storage namespaced `gofastr.sidebar-collapse.<encoded key>`), and
+  `Carousel` dropped its `VirtualScroll` fields.
+- **Search surface:** `GlobalSearch` now REQUIRES `NoScriptAction`
+  (same-origin; `#` refused), `CommandPalette` REQUIRES a same-origin
+  `FallbackHref` and renders an anchor trigger, and `ShortcutHint`
+  binds a real chord target. The `shortcut` and `combobox` runtime
+  modules are retired; the shortcut hooks are
+  `data-hui-shortcut-focus/-click/-target/-hint` (folded into
+  `headless-navigation`).
+- **Shells:** `PaneHost`, `TableOfContents` and `AnchoredRail` render
+  through `headless.PaneHost`/`headless.TableOfContents`/
+  `headless.Rail` (sheet names kept); `headless.Sidebar` ships as a
+  primitive — `ui.Sidebar` still renders its own markup, and its
+  adapter move lands with the class rename in Batch 3b. The
+  interactive pane helpers are `data-hui-pane-open-control`
+  (`OpenPaneOnClick`), `data-hui-pane-close` (`ClosePaneOnClick`),
+  `data-hui-pane-key` (`PaneKey`) and the new `SwapPaneOnClick`
+  (`data-hui-pane-swap`), and Button Action wiring follows the same
+  spellings. `core-ui/interactive`'s `OpenPaneOnClick` attribute
+  value `data-fui-pane-open` no longer binds anything, and the
+  outside-trigger hook is renamed `data-fui-pane-host-target` →
+  `data-hui-pane-host-target`. The pane deep link keeps its URL
+  rules: only a keyed trigger writes the parameter, a close strips
+  only its own pane, Back and Forward replay the keyed trigger, and a
+  swap is one history entry.
+- **Media:** `JSONViewer` renders through `headless.JSONTree`
+  (deterministic sorted object keys; object/array/null/empty/truncated
+  words localizable through `Strings`/i18nui `ui.json.*`), and
+  `headless.Gallery` ships as the pure-render gallery primitive
+  (`ui.Gallery` keeps its variants and lightbox integration).
+
 - **Form controls:** `NumberInput`, `Slider`, `RangeSlider`,
   `RatingInput`, `TagInput`, `Repeater`, `FormRepeater`,
   `StepWizard`, `TimePicker` now render through headless primitives
@@ -78,6 +123,21 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   Batch 3 Combobox decision), not a new semantic contract.
 
 ### Added
+
+- `framework/headless` gains the navigation primitives `Rail`,
+  `TableOfContents`, `Disclosure`, `Menu`, `Combobox`, `Tabs`,
+  `Carousel`, `PaneHost`, `Sidebar`, `JSONTree` and `Gallery`, with
+  Specs, refusal tests and goldens, and the registered behaviour
+  modules `headless-rail`, `headless-toc`, `headless-disclosure`,
+  `headless-menu`, `headless-combobox`, `headless-tabs`,
+  `headless-carousel`, `headless-panehost` and `headless-sidebar`
+  (shortcut chords fold into `headless-navigation`). Required labels
+  that are only whitespace are refused, `Gallery` passes thumbnails
+  through the image URL policy, and `Safe` now drops `on*` keys.
+  `ui.Combobox` is the styled adapter over `headless.Combobox`, and
+  `CommandPalette`'s `FallbackHref` refuses any backslash. The pane
+  host keeps `__gofastr.openPane`/`closePane`/`swapPane` and the
+  `pane-host:open`/`pane-host:close` events.
 
 - `framework/headless` gains `Counter`, `BackToTop`, `NumberInput`,
   `Slider`, `RangeSlider`, `Rating`, `TagInput`, `Repeater`, `Toast`,
@@ -1293,6 +1353,7 @@ are listed under Added above, not here.
   where the old module reverted in silence.
 
 ### Fixed
+- **The navigator's stateful-param scan reads `data-hui-pane-deeplink`.** The kernel decides which query parameters survive a Back or Forward without a refetch from the pane hosts on the page; it read only the retired `data-fui-pane-deeplink` spelling, so a `headless.PaneHost` deep link refetched the screen on every history move. Both spellings are read now, pinned by the popstate e2e with one host of each.
 - **`widget.RuntimeTag` emits its inline JSON blocks before the
   runtime script.** The kernel parses `#gofastr-behaviors` while
   `runtime.js` executes, in the pass that installs the interaction
