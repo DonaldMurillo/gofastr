@@ -130,11 +130,12 @@ Two rules govern the opt-out (the selector is `.fui-pos-center >
 .fui-panel:not(:has(> .fui-slot > …))`):
 
 1. **The marker must be on the slot content's ROOT element**: the
-   direct child of `.fui-slot`. `.fui-slot-bare`, `[data-fui-lightbox]`,
-   and `[data-fui-comp="ui-cmd-palette"]` all qualify. A wrapper
-   `<div>` between `.fui-slot` and the marker defeats it:
-   `.fui-slot > <div> > .fui-slot-bare` does NOT match
-   `:has(> .fui-slot > .fui-slot-bare)`, so the panel re-paints.
+   direct child of `.fui-slot`. The marker is `.fui-slot-bare` —
+   `framework/ui.Lightbox` and `framework/ui.CommandPalette` put it
+   on their slot roots. A wrapper `<div>` between `.fui-slot` and
+   the marker defeats it: `.fui-slot > <div> > .fui-slot-bare` does
+   NOT match `:has(> .fui-slot > .fui-slot-bare)`, so the panel
+   re-paints.
 2. **One bare slot opts the WHOLE panel out.** The opt-out sits on the
    `.fui-panel`, which wraps every slot, so a single bare slot drops
    the panel chrome for the header and footer too. Bare means "this

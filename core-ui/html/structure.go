@@ -101,13 +101,6 @@ type DetailsConfig struct {
 	Class      string
 	ID         string
 	ExtraAttrs Attrs
-	// Disclosure marks this details element as a dismissible disclosure
-	// (mobile hamburger nav, popover, etc.). The kernel's navigator
-	// closes it automatically on SPA navigation. The full disclosure
-	// behaviour — Escape, the aria-expanded mirror, the focus trap —
-	// belongs to headless.Disclosure's data-hui-disclosure hook
-	// (framework/headless); see ARCHITECTURE.md data-fui-disclosure.
-	Disclosure bool
 	Open       bool
 }
 
@@ -268,9 +261,6 @@ func FigCaption(cfg FigCaptionConfig, children ...render.HTML) render.HTML {
 // Details produces a <details> element for a disclosure widget.
 func Details(cfg DetailsConfig, children ...render.HTML) render.HTML {
 	attrs := buildAttrs(cfg.ExtraAttrs, cfg.ID, cfg.Class)
-	if cfg.Disclosure {
-		attrs["data-fui-disclosure"] = ""
-	}
 	if cfg.Open {
 		attrs["open"] = ""
 	}

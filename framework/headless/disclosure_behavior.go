@@ -10,9 +10,9 @@ import (
 var disclosureJS string
 
 // DisclosureBehaviorName is the runtime module that binds the
-// disclosure family's data-hui-* hooks. It replaces the retired
-// core-ui/runtime disclosure module; the kernel keeps only its own
-// close-on-navigate lines for the legacy data-fui-disclosure spelling.
+// disclosure family's data-hui-* hooks (including the
+// close-on-navigate for non-persistent disclosures). It replaces the
+// retired core-ui/runtime disclosure module wholesale.
 const DisclosureBehaviorName = "headless-disclosure"
 
 // The marker: the disclosure root. headless-menu declares this module

@@ -279,10 +279,10 @@ goes — the component never wraps itself in a generated form, because
 nested forms are invalid HTML and every caller that already composes
 a form would break.
 
-**See it live:** the product site ships a landing page under each of two
-boot-registered themes —
-`/examples/headless/default/landing` and
-`/examples/headless/dense/landing` — with every variant and size, the
+**See it live:** the product site ships a landing page under each of five
+boot-registered themes, `/examples/headless/{theme}/landing` for
+`default`, `dense`, `soft`, `editorial` and `contrast`, with a theme
+switcher, every variant and size, the
 same palette under two option sets, an A → B → A nest, explicit scheme
 controls, bare headless beside styled ui, a newsletter form whose
 no-script POST is answered with a 303 back to the page (the outcome
@@ -291,10 +291,11 @@ chrome; the submitted address never travels in the URL), and a cold
 `LoadAuto` insertion. The browser proofs live in
 `examples/site/e2e_headless_landing_test.go`.
 
-The form family's first dashboard lives under the same routes —
-`/examples/headless/default/dashboard` and
-`/examples/headless/dense/dashboard` — one settings form that submits
-both ways (island RPC with the runtime, plain POST without),
+A basic dashboard lives under the same themes,
+`/examples/headless/{theme}/dashboard`: a `RecordSummary` with a
+`MetricBand`, a `LineChart` with its values as text, an invoice
+`DataTable` whose sort works as an island swap and as a plain link,
+and last a settings form that submits both ways (island RPC with the runtime, plain POST without),
 validates on the server, moves focus to the summary on a failed
 submit, carries a password field and an upload, and nests conditional
 regions two deep. Its browser proofs live in

@@ -312,6 +312,10 @@ func setupServer() *framework.App {
 	fwApp.Router().Post("/__site/headless/subscribe", http.HandlerFunc(serveHeadlessSubscribe))
 	//gofastr:allow(GOFASTR1902) docs-site demo endpoint, unauthenticated by design (the NOTE at the interactive endpoints), keeps no state
 	fwApp.Router().Post("/__site/headless/settings", http.HandlerFunc(serveHeadlessSettings))
+	// The dashboard's invoice table island (screen_headless_dashboard.go):
+	// a GET per theme, the re-rendered table back. Theme rides the path
+	// so the no-script sort hrefs stay clean.
+	fwApp.Router().Get("/__site/headless/invoices/{theme}", http.HandlerFunc(serveHeadlessInvoices))
 	fwApp.Router().Get("/__site/headless/late", http.HandlerFunc(serveHeadlessLate))
 	// Optimistic UI demo endpoints. See framework/docs/content/optimistic-ui.md
 	// and the four /components/optimistic-* demos. Each endpoint is a
@@ -784,25 +788,39 @@ type paletteRoute struct{ title, path string }
 
 // paletteCatalog seeds the ⌘K palette. Lives in main so add_routes
 // adds an entry here at the same time it adds a Register call below.
-var paletteCatalog = []paletteRoute{
-	{"Home", "/"},
-	{"Get started", "/get-started"},
-	{"Docs index", "/docs/"},
-	{"Entity declarations: modeling the domain", "/docs/entity-declarations"},
-	{"Examples: the reference apps", "/examples"},
-	{"Headless landing: default theme", "/examples/headless/default/landing"},
-	{"Headless landing: dense theme", "/examples/headless/dense/landing"},
-	{"Live dashboard: SSE + signals reference", "/examples/live-dashboard?presence=live-dashboard-demo"},
-	{"Live presence: viewer roster demo", "/examples/presence?presence=presence-demo"},
-	{"Plugins: the gofastr-plugins registry", "/plugins"},
-	{"Workspace: master-detail pane-host example", "/examples/workspace"},
-	{"Kiln: agent build mode (experimental)", "/kiln"},
-	{"Philosophy: the convictions essay", "/philosophy"},
-	{"Reader-ready pages: browser Reader Mode", "/reader"},
-	{"Components: gallery index", "/components/"},
-	{"SEO: per-page meta, canonical, JSON-LD", "/seo"},
-	{"Forms wizard: multi-step round-trip", "/forms/wizard"},
-	{"Print: invoice / receipt documents", "/print/invoice/1"},
+// The headless showcase's entries are derived from landingRoutes —
+// the same table the routes come from (screen_headless_landing.go) —
+// so a new theme cannot miss the palette.
+var paletteCatalog = buildPaletteCatalog()
+
+func buildPaletteCatalog() []paletteRoute {
+	catalog := []paletteRoute{
+		{"Home", "/"},
+		{"Get started", "/get-started"},
+		{"Docs index", "/docs/"},
+		{"Entity declarations: modeling the domain", "/docs/entity-declarations"},
+		{"Examples: the reference apps", "/examples"},
+	}
+	for _, r := range landingRoutes {
+		catalog = append(catalog, paletteRoute{
+			"Headless landing: " + r.Name + " theme",
+			landingRoutePath(r.Segment),
+		})
+	}
+	catalog = append(catalog,
+		paletteRoute{"Live dashboard: SSE + signals reference", "/examples/live-dashboard?presence=live-dashboard-demo"},
+		paletteRoute{"Live presence: viewer roster demo", "/examples/presence?presence=presence-demo"},
+		paletteRoute{"Plugins: the gofastr-plugins registry", "/plugins"},
+		paletteRoute{"Workspace: master-detail pane-host example", "/examples/workspace"},
+		paletteRoute{"Kiln: agent build mode (experimental)", "/kiln"},
+		paletteRoute{"Philosophy: the convictions essay", "/philosophy"},
+		paletteRoute{"Reader-ready pages: browser Reader Mode", "/reader"},
+		paletteRoute{"Components: gallery index", "/components/"},
+		paletteRoute{"SEO: per-page meta, canonical, JSON-LD", "/seo"},
+		paletteRoute{"Forms wizard: multi-step round-trip", "/forms/wizard"},
+		paletteRoute{"Print: invoice / receipt documents", "/print/invoice/1"},
+	)
+	return catalog
 }
 
 // paletteCommands maps the curated route catalog into static palette
@@ -879,9 +897,9 @@ func registerScreens(site *app.App) {
 	// in setupServer.
 	site.Register("/examples/workspace", &WorkspaceScreen{}, nil)
 	// ── Headless landing, the theme-layer showcase (additive) ──────
-	// /examples/headless/{default,dense}/landing: one screen
-	// parameterised by the theme segment, its content scoped by the
-	// route's boot-registered theme (screen_headless_landing.go). Its
+	// /examples/headless/{theme}/landing: one screen parameterised by
+	// the theme segment, its content scoped by the route's
+	// boot-registered theme (screen_headless_landing.go). Its
 	// /__site/headless/* endpoints are mounted in setupServer.
 	site.Register("/examples/headless/:theme/landing", &HeadlessLandingScreen{}, nil)
 	// The form family's dashboard: same parameterised shape, scoped by

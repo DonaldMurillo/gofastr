@@ -6,9 +6,10 @@ package ui
 //
 // Layout: [brand]  ·  [primary nav]  ·  [right cluster: actions + mobile trigger]
 //
-// On phones the primary nav hides and a <details>-based drawer
-// (data-fui-disclosure) opens with the same items inline. The runtime
-// auto-closes the drawer on cross-page SPA navigation.
+// On phones the primary nav hides and a <details>-based drawer (a
+// headless.Disclosure carrying data-hui-disclosure) opens with the
+// same items inline; the registered headless-disclosure module closes
+// it on cross-page SPA navigation.
 
 import (
 	"context"

@@ -32,6 +32,7 @@ import (
 	"net/http"
 	"net/mail"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -104,6 +105,112 @@ func landingDenseTheme() style.Theme {
 	})
 }
 
+// landingSoftTheme is the soft look: comfortable density, soft
+// treatment, pill radius, a violet palette on a faint lavender
+// background, and a violet-tinted dark palette. Every text/background
+// pair below clears 4.5:1; the ink pairs clear it in both schemes
+// (Theme.Validate, the boot-time guard, proves them on every boot).
+func landingSoftTheme() style.Theme {
+	return theme.Default(theme.Overrides{
+		Primary:    "#6D28D9",
+		PrimaryFg:  "#FFFFFF",
+		Accent:     "#6D28D9",
+		Background: "#FAF8FF", Surface: "#FFFFFF", SurfaceSoft: "#EDE7FB",
+		Border: "#DDD6F3", BorderStrong: "#B9AEDB",
+		Text: "#1E1B2E", TextMuted: "#5B5670", TextSubtle: "#6E6887",
+		Danger: "#B42318", DangerFg: "#FFFFFF",
+		RadiusSm: 8, RadiusMd: 14, RadiusLg: 22,
+		DarkColors: map[string]string{
+			"primary":       "#C4B5FD",
+			"primary-fg":    "#1E1535",
+			"accent":        "#C4B5FD",
+			"background":    "#15111F",
+			"surface":       "#1E1A2B",
+			"surface-soft":  "#2A2440",
+			"border":        "#3A3354",
+			"border-strong": "#564C78",
+			"text":          "#EDE9FE",
+			"text-muted":    "#B3ABCB",
+			"text-subtle":   "#8E86A8",
+			"danger":        "#F87171",
+		},
+		Components: landingSoftOptions,
+	})
+}
+
+// landingEditorialTheme is the editorial look: comfortable density,
+// filled treatment, square radius, a serif face on a warm paper
+// ground, and a rose primary. RadiusSm/Md are zeroed after Default
+// because Overrides cannot say "radius zero" (a zero field means
+// unset); the declared set is 0/0/2.
+func landingEditorialTheme() style.Theme {
+	t := theme.Default(theme.Overrides{
+		Primary:    "#9F1239",
+		PrimaryFg:  "#FFFFFF",
+		Accent:     "#9F1239",
+		Background: "#FBF7F0", Surface: "#FFFFFF", SurfaceSoft: "#F3ECE1",
+		Border: "#E4DACB", BorderStrong: "#A8998A",
+		Text: "#1C1917", TextMuted: "#57534E", TextSubtle: "#6F6963",
+		Danger: "#B91C1C", DangerFg: "#FFFFFF",
+		FontBody:    landingEditorialFont,
+		FontHeading: landingEditorialFont,
+		RadiusLg:    2,
+		DarkColors: map[string]string{
+			"primary":       "#FDA4AF",
+			"primary-fg":    "#4C0519",
+			"accent":        "#FDA4AF",
+			"background":    "#1A1613",
+			"surface":       "#231E1A",
+			"surface-soft":  "#2E2722",
+			"border":        "#3D342D",
+			"border-strong": "#5C5046",
+			"text":          "#F5EFE6",
+			"text-muted":    "#C8BFB3",
+			"text-subtle":   "#A39A8E",
+			"danger":        "#F87171",
+		},
+		Components: landingEditorialOptions,
+	})
+	t.Radii.SM.Value = 0
+	t.Radii.MD.Value = 0
+	return t
+}
+
+// landingContrastTheme is the high-contrast look: compact density,
+// outline treatment, pill radius, black ink on white (7:1+ pairs), and
+// the inverted dark palette — white on black with a yellow primary.
+func landingContrastTheme() style.Theme {
+	return theme.Default(theme.Overrides{
+		Primary:    "#0033CC",
+		PrimaryFg:  "#FFFFFF",
+		Accent:     "#0033CC",
+		Background: "#FFFFFF", Surface: "#FFFFFF", SurfaceSoft: "#F2F2F2",
+		Border: "#000000", BorderStrong: "#000000",
+		Text: "#000000", TextMuted: "#262626", TextSubtle: "#404040",
+		Danger: "#A30000", DangerFg: "#FFFFFF",
+		RadiusSm: 4, RadiusMd: 6, RadiusLg: 10,
+		DarkColors: map[string]string{
+			"primary":       "#FFD400",
+			"primary-fg":    "#000000",
+			"accent":        "#FFD400",
+			"background":    "#000000",
+			"surface":       "#000000",
+			"surface-soft":  "#141414",
+			"border":        "#FFFFFF",
+			"border-strong": "#FFFFFF",
+			"text":          "#FFFFFF",
+			"text-muted":    "#E5E5E5",
+			"text-subtle":   "#C7C7C7",
+			"danger":        "#FF8A8A",
+		},
+		Components: landingContrastOptions,
+	})
+}
+
+// landingEditorialFont is the serif stack the editorial theme sets on
+// both font roles.
+const landingEditorialFont = `"Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif`
+
 // landingTightOptions and landingRelaxedOptions are the two complete
 // option sets the showcase flips between. Every registered theme carries a
 // complete set — that is what makes option variables nest.
@@ -117,6 +224,25 @@ var (
 		Density: theme.Comfortable,
 		Button:  theme.ButtonOptions{Treatment: theme.Filled, Radius: theme.Round},
 		Field:   theme.FieldOptions{Layout: theme.Stacked, Radius: theme.FieldRound},
+	}
+	// The three new routes' own complete option sets. Soft keeps the
+	// comfortable rhythm but draws its buttons as soft pills; editorial
+	// is filled and square with inline fields; contrast is compact with
+	// outline pills and square fields.
+	landingSoftOptions = theme.ComponentOptions{
+		Density: theme.Comfortable,
+		Button:  theme.ButtonOptions{Treatment: theme.Soft, Radius: theme.Pill},
+		Field:   theme.FieldOptions{Layout: theme.Stacked, Radius: theme.FieldRound},
+	}
+	landingEditorialOptions = theme.ComponentOptions{
+		Density: theme.Comfortable,
+		Button:  theme.ButtonOptions{Treatment: theme.Filled, Radius: theme.Square},
+		Field:   theme.FieldOptions{Layout: theme.Inline, Radius: theme.FieldSquare},
+	}
+	landingContrastOptions = theme.ComponentOptions{
+		Density: theme.Compact,
+		Button:  theme.ButtonOptions{Treatment: theme.Outline, Radius: theme.Pill},
+		Field:   theme.FieldOptions{Layout: theme.Stacked, Radius: theme.FieldSquare},
 	}
 )
 
@@ -136,18 +262,40 @@ func withLandingOptions(t style.Theme, o theme.ComponentOptions) style.Theme {
 var (
 	landingRefFramework = style.RegisterThemeOverride(landingFrameworkTheme())
 	landingRefDense     = style.RegisterThemeOverride(landingDenseTheme())
-	// Option-only twins: each route's palette under the other option set.
-	landingRefFrameworkTight = style.RegisterThemeOverride(withLandingOptions(landingFrameworkTheme(), landingTightOptions))
-	landingRefDenseRelaxed   = style.RegisterThemeOverride(withLandingOptions(landingDenseTheme(), landingRelaxedOptions))
+	landingRefSoft      = style.RegisterThemeOverride(landingSoftTheme())
+	landingRefEditorial = style.RegisterThemeOverride(landingEditorialTheme())
+	landingRefContrast  = style.RegisterThemeOverride(landingContrastTheme())
+	// Option-only twins: each route's palette under the flipped option
+	// set. Default, dense, soft and editorial pair with the tight set;
+	// contrast — already compact — pairs with the relaxed one.
+	landingRefFrameworkTight  = style.RegisterThemeOverride(withLandingOptions(landingFrameworkTheme(), landingTightOptions))
+	landingRefDenseRelaxed    = style.RegisterThemeOverride(withLandingOptions(landingDenseTheme(), landingRelaxedOptions))
+	landingRefSoftTight       = style.RegisterThemeOverride(withLandingOptions(landingSoftTheme(), landingTightOptions))
+	landingRefEditorialTight  = style.RegisterThemeOverride(withLandingOptions(landingEditorialTheme(), landingTightOptions))
+	landingRefContrastRelaxed = style.RegisterThemeOverride(withLandingOptions(landingContrastTheme(), landingRelaxedOptions))
 )
 
 // landingRoute is one theme segment of the showcase.
 type landingRoute struct {
-	Segment string // URL segment: "default" | "dense"
+	Segment string // URL segment: "default" | "dense" | "soft" | "editorial" | "contrast"
 	Name    string
-	// Ref is the route's theme; Twin is the same palette under the other
-	// option set; Other is the other route's theme (the B of A → B → A).
+	// Ref is the route's theme; Twin is the same palette under the
+	// flipped option set; Other is the other route's theme (the B of
+	// A → B → A).
 	Ref, Twin, Other style.ThemeRef
+}
+
+// landingOtherName is the Name of the route whose theme is r.Other: the
+// nesting fixture's label for B, looked up so it cannot drift from the
+// theme it labels. Empty when Other is no route's theme, which
+// TestLandingRoutesOtherIsARoute refuses.
+func landingOtherName(r landingRoute) string {
+	for _, o := range landingRoutes {
+		if o.Ref == r.Other {
+			return o.Name
+		}
+	}
+	return ""
 }
 
 var landingRoutes = []landingRoute{
@@ -164,6 +312,27 @@ var landingRoutes = []landingRoute{
 		Ref:     landingRefDense,
 		Twin:    landingRefDenseRelaxed,
 		Other:   landingRefFramework,
+	},
+	{
+		Segment: "soft",
+		Name:    "Soft",
+		Ref:     landingRefSoft,
+		Twin:    landingRefSoftTight,
+		Other:   landingRefEditorial,
+	},
+	{
+		Segment: "editorial",
+		Name:    "Editorial",
+		Ref:     landingRefEditorial,
+		Twin:    landingRefEditorialTight,
+		Other:   landingRefContrast,
+	},
+	{
+		Segment: "contrast",
+		Name:    "High contrast",
+		Ref:     landingRefContrast,
+		Twin:    landingRefContrastRelaxed,
+		Other:   landingRefSoft,
 	},
 }
 
@@ -199,7 +368,7 @@ func (s *HeadlessLandingScreen) ScreenTitle() string {
 }
 
 func (s *HeadlessLandingScreen) ScreenDescription() string {
-	return "The theme layer and the Button rebuild on a real page: two registered themes, option fixtures, nesting, and a cold LoadAuto insertion."
+	return "The theme layer and the Button rebuild on a real page: " + landingThemeCountWord() + " registered themes, option fixtures, nesting, and a cold LoadAuto insertion."
 }
 
 func (s *HeadlessLandingScreen) ScreenType() app.ScreenType { return app.ScreenPage }
@@ -235,7 +404,7 @@ func (s *HeadlessLandingScreen) Load(ctx context.Context) error {
 }
 
 // StaticPaths enumerates one page per registered theme so the static
-// export, the sitemap, llm.md, and the coverage gate all see both routes.
+// export, the sitemap, llm.md, and the coverage gate all see every route.
 func (s *HeadlessLandingScreen) StaticPaths(ctx context.Context) []map[string]string {
 	out := make([]map[string]string, 0, len(landingRoutes))
 	for _, r := range landingRoutes {
@@ -264,7 +433,10 @@ func (s *HeadlessLandingScreen) RenderCtx(ctx context.Context) render.HTML {
 func (s *HeadlessLandingScreen) render(ctx context.Context) render.HTML {
 	r := s.Route
 	return ui.Themed(r.Ref, container(
-		landingHero(r),
+		ui.Stack(ui.StackConfig{Gap: ui.GapLG},
+			landingHero(r),
+			landingThemeSwitcher(landingRoutePath, r.Segment),
+		),
 		landingContentSection(),
 		landingNewsletterSection(r, s.Subscribe),
 		landingFieldLayoutSection(),
@@ -275,6 +447,44 @@ func (s *HeadlessLandingScreen) render(ctx context.Context) render.HTML {
 		landingBareSection(ctx),
 		landingLateSection(),
 	))
+}
+
+// landingThemeCountWord names len(landingRoutes) in prose, so the
+// hero title's count is derived from the route table and never
+// hand-restated. Counts past the word list fall back to digits.
+func landingThemeCountWord() string {
+	words := []string{"no", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"}
+	n := len(landingRoutes)
+	if n < len(words) {
+		return words[n]
+	}
+	return strconv.Itoa(n)
+}
+
+// landingThemeSwitcher renders the showcase's theme navigation for one
+// page: one LinkButton per registered route, the current route's
+// button primary and aria-current, the others secondary. Plain links,
+// so it works with no script; the current theme's own options draw the
+// buttons, so the switcher is itself a fixture.
+func landingThemeSwitcher(pathFor func(segment string) string, current string) render.HTML {
+	buttons := make([]render.HTML, 0, len(landingRoutes))
+	for _, r := range landingRoutes {
+		cfg := ui.LinkButtonConfig{
+			Label:   r.Name,
+			Href:    pathFor(r.Segment),
+			Variant: ui.ButtonSecondary,
+		}
+		if r.Segment == current {
+			cfg.Variant = ui.ButtonPrimary
+			cfg.ExtraAttrs = html.Attrs{"aria-current": "page"}
+		}
+		buttons = append(buttons, ui.LinkButton(cfg))
+	}
+	// The visible word tells the row apart from the hero's calls to
+	// action; the nav's accessible name stays "Themes".
+	row := append([]render.HTML{ui.Muted(render.Text("Theme"))}, buttons...)
+	return html.Nav(html.NavConfig{Label: "Themes", ID: "hl-theme-nav"},
+		ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM, Align: ui.AlignCenter}, row...))
 }
 
 // ── Hero ───────────────────────────────────────────────────────────
@@ -334,7 +544,7 @@ func landingHero(r landingRoute) render.HTML {
 	fallback, placeholder := landingHeroImage()
 	return ui.Hero(ui.HeroConfig{
 		Eyebrow:   "framework/ui on framework/headless",
-		Title:     "One page, two themes, zero bespoke CSS",
+		Title:     "One page, " + landingThemeCountWord() + " themes, zero bespoke CSS",
 		Subtitle:  "Every control below reads its look from the route's registered theme: palette tokens for colour, component options for density, treatment and radius. Same markup, same classes, different theme boundary.",
 		AriaLabel: "Headless landing, " + r.Name + " theme",
 		Actions: []render.HTML{
@@ -695,10 +905,10 @@ func landingNestLevel(label, note string) render.HTML {
 
 func landingNestingSection(r landingRoute) render.HTML {
 	page := r.Name
-	other := "Dense"
-	if r.Segment == "dense" {
-		other = "Framework default"
-	}
+	// The B boundary's label is the Other route's Name, looked up from
+	// the route's data: no branch on the segment, so a sixth route needs
+	// nothing here.
+	other := landingOtherName(r)
 	// Each nested boundary sits in a Card: the theme wrapper paints
 	// background and colour only, the Card gives the scope its edge
 	// and padding so the nesting reads as boxes within boxes.

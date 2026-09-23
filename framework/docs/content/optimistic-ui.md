@@ -371,11 +371,13 @@ it was), while a sibling `text`-mode status node renders a
 human-readable "Error: <status> — <text>" line.
 
 **The temp-row pattern (what "optimistic" adds):** a *true* optimistic
-create paints the row before the fetch resolves. That requires either (a)
-an island with a small amount of registered JS that mints a `temp:<id>`
+create paints the row before the fetch resolves. That requires an
+island with a small amount of registered JS that mints a `temp:<id>`
 row, fires the RPC, and swaps the temp row for the authoritative one on
-2xx, or (b) a future runtime attribute in the `data-fui-optimistic-*`
-family. The pattern's invariants, whichever path you take:
+2xx (the retired `data-fui-optimistic-*` family never shipped; the
+headless action contract — `data-hui-action*` — announces the trigger's
+busy/committed/rollback states, and the temp-row swap stays the
+island's). The pattern's invariants:
 
 1. Mint a temp id only the client will see; never let the server persist
    it.

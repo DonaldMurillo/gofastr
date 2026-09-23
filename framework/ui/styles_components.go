@@ -342,6 +342,9 @@ func codeBlockCSS(_ style.Theme) string {
 func sectionCSS(_ style.Theme) string {
 	return `[data-fui-comp="ui-section"] {
   display: grid;
+  /* A section a parent grid stretches keeps its head on its body: the
+     spare height goes below the body, not between the rows. */
+  align-content: start;
   gap: var(--spacing-md, 8px);
   margin: var(--spacing-xl, 24px) 0;
   border: 0;
@@ -1079,7 +1082,7 @@ func dataTableCSS(_ style.Theme) string {
     gap: var(--spacing-md, 8px);
     padding-block: var(--spacing-sm, 4px);
     padding-inline: 0;
-    border-block-end: 1px solid var(--color-border-subtle, #F4F4F5);
+    border-block-end: 1px solid var(--color-border, #F4F4F5);
     text-align: end;
   }
   [data-fui-comp="ui-data-table"].fui-data-table--responsive-cards .fui-data-table__table td:last-child {
@@ -1284,7 +1287,7 @@ html[data-color-scheme="dark"] [data-fui-comp="ui-theme-toggle"] .fui-theme-togg
 }
 [data-fui-comp="ui-theme-toggle"] .fui-theme-toggle__option[aria-checked="true"] {
   background: var(--color-primary, #4F46E5);
-  color: var(--color-primary-foreground, #fff);
+  color: var(--color-primary-fg, #fff);
 }`
 }
 
@@ -1301,7 +1304,7 @@ func backToTopCSS(_ style.Theme) string {
   height: 2.75rem;
   border-radius: var(--radii-full, 9999px);
   background: var(--color-primary, #4F46E5);
-  color: var(--color-primary-foreground, #fff);
+  color: var(--color-primary-fg, #fff);
   box-shadow: var(--shadow-md, 0 4px 6px -1px rgba(0,0,0,.1));
   opacity: 0;
   visibility: hidden;
@@ -1320,11 +1323,11 @@ func backToTopCSS(_ style.Theme) string {
 
 /* ── Interaction ── */
 [data-fui-comp="ui-back-to-top"]:hover {
-  background: var(--color-primary-hover, #4338CA);
+  background: color-mix(in srgb, var(--color-primary) 85%, var(--color-text));
   box-shadow: var(--shadow-lg, 0 10px 15px -3px rgba(0,0,0,.1));
 }
 [data-fui-comp="ui-back-to-top"]:focus-visible {
-  outline: var(--ring-width, 2px) solid var(--color-ring, #4F46E5);
+  outline: var(--ring-width, 2px) solid var(--color-primary, #4F46E5);
   outline-offset: 2px;
 }
 [data-fui-comp="ui-back-to-top"] svg {
@@ -1382,8 +1385,8 @@ func backToTopCSS(_ style.Theme) string {
   border: 1px solid var(--color-border, #e5e7eb);
 }
 .fui-back-to-top--secondary:hover {
-  background: var(--color-surface-hover, #f3f4f6);
-  border-color: var(--color-border-hover, #d1d5db);
+  background: var(--color-surface-soft, #f3f4f6);
+  border-color: var(--color-border-strong, #d1d5db);
 }
 .fui-back-to-top--ghost {
   background: transparent;
@@ -1391,7 +1394,7 @@ func backToTopCSS(_ style.Theme) string {
   box-shadow: none;
 }
 .fui-back-to-top--ghost:hover {
-  background: var(--color-surface-hover, #f3f4f6);
+  background: var(--color-surface-soft, #f3f4f6);
   color: var(--color-text, #1a1a1a);
 }
 
@@ -1444,13 +1447,13 @@ func backToTopCSS(_ style.Theme) string {
   border-color: var(--color-border, #374151);
 }
 [data-color-scheme="dark"] .fui-back-to-top--secondary:hover {
-  background: var(--color-surface-hover, #2d2d3f);
+  background: var(--color-surface-soft, #2d2d3f);
 }
 [data-color-scheme="dark"] .fui-back-to-top--ghost {
   color: var(--color-text-muted, #9ca3af);
 }
 [data-color-scheme="dark"] .fui-back-to-top--ghost:hover {
-  background: var(--color-surface-hover, #2d2d3f);
+  background: var(--color-surface-soft, #2d2d3f);
   color: var(--color-text, #e5e7eb);
 }
 

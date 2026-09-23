@@ -174,17 +174,6 @@ var fragmentAttrs = map[string][]string{
 		"data-fui-lang",
 		"data-fui-skip-label",
 		"data-fui-screen-group",
-		// The disclosure close-on-navigate lines: nav closes these
-		// details on a client-side navigation (and on an in-panel
-		// anchor click) unless they carry the persist exemption. The
-		// module that owned the rest of the behaviour is retired —
-		// the disclosure anatomy is headless.Disclosure's now.
-		"data-fui-disclosure",
-		"data-fui-disclosure-persist",
-		// The stateful-params scan above reads this legacy spelling so
-		// an old host's pane param stays stateful across history moves;
-		// the new spelling is the headless-panehost module's.
-		"data-fui-pane-deeplink",
 	},
 	"widgets-boot": {
 		"data-fui-open",
@@ -209,17 +198,14 @@ var fragmentAttrs = map[string][]string{
 // Every entry is markerClass: the kernel's _scanForModules demand-loads the
 // module when it sees the module's primary marker (the scanner table near
 // the bottom of runtime.js is the authoritative marker→module map), and
-// companion attributes ride along. The one exception is `tabs`, which has
-// no marker entry by design: it loads only via the data-fui-prefetch
-// bridge its component arms, so _scanForModules never demand-loads it.
-// A module not listed here still loads, this is the attribute-ownership
-// map, not the module registry.
+// companion attributes ride along. A module not listed here still loads,
+// this is the attribute-ownership map, not the module registry.
 //
 // Modules that own zero data-fui-* attributes are absent ON PURPOSE:
 // compute and sse (their attribute is claimed by the like-named core
-// fragment. See fragments note); formrepeater and searchinput
-// (triggered by data-fui-comp="ui-<name>" CSS markers, which kernel
-// owns, and otherwise driven by rpc/signals); widgetfocus and
+// fragment. See fragments note); searchinput (triggered by its
+// data-fui-comp CSS marker, which kernel owns, and otherwise driven
+// by rpc/signals); widgetfocus and
 // widgetlinks (triggered by internal JS markers, not data-fui-* at all);
 // preload (manifest-triggered like intercept, boot loads it when any
 // route declares a preload mode, and it reads route data, not markers);
@@ -238,15 +224,9 @@ var moduleAttrs = map[string][]string{
 	"activelink": {
 		// Carved out of the nav fragment (level-1 budget): the idle-loaded
 		// module owns prefix-matched aria-current highlighting and the
-		// data-fui-activelink-skip opt-out from it. data-fui-scrollspy
-		// survives its own module's retirement for this one reader:
-		// the hands-off rule skips links inside such a wrap, so a
-		// legacy wrap keeps its hand-set state. Nothing the framework
-		// renders carries it any more — the rail is headless.Rail and
-		// its observer is headless-rail's.
+		// data-fui-activelink-skip opt-out from it.
 		"data-fui-match-prefix",
 		"data-fui-activelink-skip",
-		"data-fui-scrollspy",
 	},
 	"animate": {
 		"data-fui-animate-signal",
@@ -265,13 +245,7 @@ var moduleAttrs = map[string][]string{
 	// disclosure and menu are retired: the disclosure anatomy is
 	// headless.Disclosure's (framework/headless, bound by the
 	// headless-disclosure and headless-menu modules through
-	// data-hui-* hooks). data-fui-disclosure and -persist survive
-	// their module's retirement as the KERNEL's close-on-navigate
-	// contract: frag/nav.js closes such details on a client-side
-	// navigation (and on an in-panel anchor click) unless they carry
-	// the persist exemption. html.Details{Disclosure: true} still
-	// emits it; the trap and the lazy-inflation hooks are gone with
-	// their readers.
+	// data-hui-* hooks).
 	"dragdismiss": {
 		"data-fui-drag-dismiss",
 		"data-fui-drag-handle",

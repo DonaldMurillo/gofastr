@@ -20,8 +20,9 @@ import (
 // in the SSR output and the wrong one hidden via CSS. Screen readers
 // see the SR-only label exactly once via aria-label on the wrapper.
 //
-// When BindTarget is set, the runtime's data-fui-shortcut-click hook
-// is applied to the target so pressing the chord clicks the target.
+// When BindTarget is set, the hint root carries the
+// data-hui-shortcut-click hook with BindTarget as the selector of the
+// element headless-navigation clicks when the chord is pressed.
 // The hint itself is purely visual.
 
 // ShortcutHintConfig configures the chord display.
@@ -253,7 +254,7 @@ func shortcutHintCSS(_ style.Theme) string {
   border: 1px solid var(--color-border, #d0d0d8);
   border-bottom-width: 2px;
   border-radius: var(--radii-sm, 4px);
-  background: var(--color-muted, #f5f5f7);
+  background: var(--color-surface-soft, #f5f5f7);
   color: var(--color-text, #111);
   font-size: var(--text-xs, 0.75rem);
   font-weight: 600;

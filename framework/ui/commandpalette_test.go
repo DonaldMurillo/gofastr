@@ -102,6 +102,22 @@ func TestCommandPaletteExtraAttrsOnRoot(t *testing.T) {
 	}
 }
 
+// TestCommandPaletteSlotRootIsBare: the palette opts out of the
+// centered-panel card chrome through .fui-slot-bare as a whole class
+// token on its slot root — the generic escape hatch, so the
+// always-shipped panel CSS names no framework/ui component.
+func TestCommandPaletteSlotRootIsBare(t *testing.T) {
+	_, b := CommandPalette(CommandPaletteConfig{RPCPath: "/search", FallbackHref: "/search"})
+	h := string(b.Definition().Slots[0].Component.Render())
+	root := h[:strings.Index(h, ">")+1]
+	if !classTokenPresent(root, "fui-slot-bare") {
+		t.Errorf("palette slot root missing fui-slot-bare token:\n%s", root)
+	}
+	if !classTokenPresent(root, "fui-cmd-palette") {
+		t.Errorf("palette slot root missing fui-cmd-palette token:\n%s", root)
+	}
+}
+
 // TestCommandPaletteCloseControl pins the visible close affordance
 // (#325): a real <button> wired through the framework's declarative
 // widget-dismiss hook (data-fui-action="close", the same wiring the

@@ -1175,9 +1175,8 @@ func TestPackReadsNavFromAGeneratedAuthApp(t *testing.T) {
 // hidden next input end to end: the generator emits it as
 // html.Input(html.InputConfig{Type: "hidden", Name: "next", …}) — not
 // a hand-rolled <input> string through render.Raw — and pack reads the
-// expression back. The legacy render.Raw branch stays for apps an
-// older generator emitted (meridian's hand-maintained screens), and is
-// covered by TestPack_MeridianRoundTrip.
+// expression back. It is the only shape pack reads; examples/meridian
+// (the hand-maintained auth screens) emits the same expression.
 func TestPack_RoundTripsAuthNextThroughHtmlInput(t *testing.T) {
 	bp := Blueprint{
 		App: BlueprintApp{Name: "Authy", Module: "example.com/authy", DBDriver: "sqlite", DBURL: "file:authy.db"},

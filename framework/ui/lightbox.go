@@ -151,7 +151,7 @@ type lightboxSlot struct {
 // package's own vocabulary. The pinch-zoom module and the stylesheet
 // key off the data-fui-lightbox* attributes, never off these classes.
 var lightboxClasses = headless.Classes{
-	headless.PartRoot:           "fui-lightbox",
+	headless.PartRoot:           "fui-lightbox fui-slot-bare",
 	headless.PartVisuallyHidden: "fui-visually-hidden",
 	headless.PartFigure:         "fui-lightbox__figure",
 	headless.PartImage:          "fui-lightbox__full",

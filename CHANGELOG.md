@@ -8,7 +8,6 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 ## [Unreleased]
 
 ### BREAKING
-
 - **Navigation behaviour (headless 3a):** `Menu`, `Tabs`, `CodeTabs`
   and `Collapsible` render through headless primitives
   (`headless.Menu`, `headless.Tabs`, `headless.Disclosure`) under
@@ -117,10 +116,11 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   caller-injected `data-fui-rpc` attrs are removed), `FilterChipBar`'s
   Clear All is an anchor with the same island contract. Retired
   runtime modules: `animatedcounter`, `backtotop`, `themeswitch`.
-- **Styled-only retained wrappers:** `SearchInput` and `Tooltip`
-  have no headless BREAKING entry; their Batch 2 decision is
-  retention (`searchinput` and `shortcut` modules stay until the
-  Batch 3 Combobox decision), not a new semantic contract.
+- **Styled-only retained wrappers:** `SearchInput` and `Tooltip` have
+  no headless BREAKING entry; their Batch 3a decision is retention.
+  `SearchInput` keeps the `searchinput` module for good — it is a
+  styled search form, not a Combobox — and the `shortcut` module is
+  retired into `headless-navigation`.
 
 - **Display components renamed to `fui-*` classes (Batch 3b).** The
   scripted rename moved every framework/ui display component's classes
@@ -175,35 +175,6 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   now refuses any `ui-*` class token in a rendered catalog entry and
   any `.ui-*` selector in a framework/ui sheet, so the prefix cannot
   drift back.
-### Added
-
-- `framework/headless` gains the navigation primitives `Rail`,
-  `TableOfContents`, `Disclosure`, `Menu`, `Combobox`, `Tabs`,
-  `Carousel`, `PaneHost`, `Sidebar`, `JSONTree` and `Gallery`, with
-  Specs, refusal tests and goldens, and the registered behaviour
-  modules `headless-rail`, `headless-toc`, `headless-disclosure`,
-  `headless-menu`, `headless-combobox`, `headless-tabs`,
-  `headless-carousel`, `headless-panehost` and `headless-sidebar`
-  (shortcut chords fold into `headless-navigation`). Required labels
-  that are only whitespace are refused, `Gallery` passes thumbnails
-  through the image URL policy, and `Safe` now drops `on*` keys.
-  `ui.Combobox` is the styled adapter over `headless.Combobox`, and
-  `CommandPalette`'s `FallbackHref` refuses any backslash. The pane
-  host keeps `__gofastr.openPane`/`closePane`/`swapPane` and the
-  `pane-host:open`/`pane-host:close` events.
-
-- `framework/headless` gains `Counter`, `BackToTop`, `NumberInput`,
-  `Slider`, `RangeSlider`, `Rating`, `TagInput`, `Repeater`, `Toast`,
-  `ToastStack`, `NotificationBell` and `StepWizard` primitives with
-  Specs, refusal tests and goldens, the registered behaviour modules
-  `headless-controls`, `headless-collections`, `headless-wizard`,
-  `headless-feedback`, `headless-navigation` and `headless-when`
-  (ConditionalField's region show/hide/disable behaviour moved to it
-  from the `headless` module to keep both under the byte budget), and
-  new `Strings`
-  fields (counter, back-to-top, number-input, range, rating, tag-input,
-  repeater, notification-count and step-wizard words) bridged through
-  `ui.StringsFor`.
 
 - **The structural, status and layout family moved to `fui-*` class
   names.** Every component in this family now renders through its
@@ -286,698 +257,6 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   (`core`'s page neighbourhood size) and `OmitPrevNext` are fields on
   the new config.
 
-### Added
-- **Five new headless primitives**: `Fieldset` (legend, description,
-  fields, a group error wired by aria-describedby), `PageHeader`
-  (heading, subtitle, eyebrow, an action slot; a plain `<header>`),
-  `EmptyState` (a named region, heading, description, an action),
-  `StatCard` (label, value, trend with a direction variant) and
-  `DetailList` (label/value rows as a `<dl>`). Each carries Parts,
-  refusals, spec fixtures and goldens; none says a word of its own,
-  so none carries Strings. Existing primitives gained the props the
-  adapters needed: `Stack.Justify`, `Section.Eyebrow/DescriptionHTML/
-  Label`, `Alert.Body`, `Card.Href` (+ the card-inner part),
-  `Spinner.Variant` (dots/grid shapes), `Steps` items with
-  `Hint/Href/Marker/State`, `Timeline.Event.Meta`, and `Parts` on the
-  layout/status primitives.
-- **The skeleton presets render through `headless.Skeleton`.** One
-  primitive render per preset: exactly one polite "Loading…"
-  announcement and one hidden bar set, however many lines the preset
-  draws. The presets gained `Label`/`Ctx` config fields;
-  `core-ui/patterns/skeleton` is deleted with its coverage floor,
-  its pinned properties moved to the preset tests.
-- **`ui.Pagination`: the styled pager, rendered through
-  `headless.Pagination`.** The anatomy is the headless one
-  (`nav > div > a|span`): no `ol/li`, and no buttons in island mode —
-  an island pager's anchors keep their hrefs and carry the RPC
-  contract beside them, where the core pattern replaced them with
-  `<button>`s and dropped the no-script destination. The class map
-  keeps the names the pattern's sheet read (`pagination` on the list,
-  `pagination-gap` on the gap) and a registered `ui-pagination` sheet
-  follows the new anatomy, so a host stylesheet written against the
-  pattern's names keeps matching. The labels resolve through
-  `StringsFor` (`ui.pagination.label` for the nav landmark,
-  `.previous`/`.next` for the ends).
-- **`headless.Pagination` takes typed page props and an optional
-  Island.** `HrefPattern`'s literal `%d` is gone the way the table's
-  `SortHrefPattern` went: the caller gives `Path`, `Query
-  url.Values` and `PageParam` (default `p`), and every href is built
-  through `net/url` with the page parameter replaced rather than
-  appended — the request-derived-string defect class a pattern string
-  carries cannot be expressed here. A `Path` with its own query or
-  fragment is refused; the carried `Query` is scrubbed of control
-  bytes exactly as the table's is (one shared helper). `Window` and
-  `OmitPrevNext` are props with the core pattern's semantics. The
-  Island is now optional, the Table posture: the URL is the truth for
-  a list, and a pager on a list screen is list state — without an
-  Island the page anchors are plain navigations the client router
-  intercepts; with one, the same anchors carry the RPC contract
-  beside their hrefs. An island pager renders `data-hui-page="<n>"`
-  on every enabled anchor (the ends carry the page they turn to), and
-  the table module treats a click on one exactly as a sort click:
-  focus returns to the same page's anchor after the swap, or the
-  current page's `aria-current` anchor when the answer has fewer
-  pages, or the scroll region — and the announcement is copied into
-  the status as a sort's is. The registration retains the page click
-  through the interaction bridge beside the sort's. The module stays
-  within its gzip budget (3053 of 3072 bytes) through mechanical
-  for-of conversions and shorthand properties in code the behaviour
-  shares.
-- **The resource engine's pager carries the active sort** (defect 10,
-  previously recorded as pre-existing): the pager's `Query` carries
-  `sort` and `dir` when a sort is active beside the search and the
-  facets, so turning a page no longer drops the order the reader
-  chose. Regression: `TestPagerCarriesTheActiveSort` parses the
-  page-2 href and asserts both survive. The battery's plain-link
-  posture is unchanged: its pager passes `Path`-less typed props with
-  the search, sort and direction in `Query`, no Island, and its
-  `patternWith` helper is deleted — the typed pager replaced what it
-  built.
-- `core-ui/patterns/pagination` is deleted, with its tests, its
-  security test and its coverage-floor line. The gallery's two plain
-  pagers render through `ui.Pagination` with `Path`/`Query` and no
-  Island, the same appearance the gallery page showed; the frozen
-  upgrade fixtures reach `ui.PaginationConfig` through their
-  `migration.patch` hunks, the way the typed-sort hunks reached them.
-  The properties its tests pinned that still apply moved: the
-  island-mode push-state and RPC sinks (a request-derived carry can
-  corrupt neither) to `framework/headless`'s
-  `TestPaginationCarryCannotCorruptTheIslandSinks`, the aria-current
-  count to `a11y_test.go`'s `TestPaginationIsNavigationWithACurrentPage`,
-  the "Pagination" nav label to `framework/ui`'s
-  `TestPaginationLabelsResolveThroughI18n` and
-  `TestDataTablePaginationFooterRenders`, the small-run/large-run
-  window shapes to `TestPaginationWindowsItsPages`, the boundary
-  refusals to `TestPaginationRefusesPagesOutsideTheRun`, and the
-  disabled ends to the spec's island cases; the `%d`-placeholder
-  refusal is obsolete — the typed props cannot express the defect it
-  guarded.
-
-- **The table behaviour: an island sort now gives focus back and
-  says what changed.** The runtime swaps a signal region's HTML, the
-  sort anchor the reader clicked is destroyed with it, and focus
-  fell to `<body>` with nothing announcing the change — the reader
-  had to re-find the table on every sort. `headless.Table` renders
-  the hooks (`data-hui-table` on the root, `-signal` and `-sort` on
-  island tables, `-scroll` on the focusable region, a visually
-  hidden `role="status"` span as the root's last child, empty on the
-  server) and `framework/headless`'s behaviour module binds them:
-  the click accepts a signal-bound table and records the column key and
-  replacement region; when a valid answer arrives, focus returns to the
-  same column's anchor in that region (`preventScroll`; the scroll region
-  when the answer dropped the column), and the sentence the server
-  rendered into `data-hui-table-announcement` is copied into the
-  status, clear then frame so a repeated identical sentence is
-  announced again. A failed answer leaves focus and status where they
-  were.
-  The sentence is the server's, composed from three new `Strings` fields
-  (`TableSortedBy` "Sorted by {column}, {direction}",
-  `SortAscending` "ascending", `SortDescending` "descending",
-  bridged to new `i18nui` keys `ui.table.sortedBy`,
-  `ui.table.dirAscending`, `ui.table.dirDescending`) with the
-  column's header or key and the direction word substituted at
-  render, and an optional caller-composed `Summary` (`TableProps`
-  and `ui.DataTableConfig`) appended — "Showing 8 of 10" is the
-  caller's to say, because the primitive does not know the total.
-  The module writes no sentence itself, so a translated page
-  announces in its own language. A plain table's status and
-  announcement render for the pager's later use; this module fills
-  neither. The registration declares the click on
-  `[data-hui-table-sort]` to the kernel's interaction bridge
-  (gofastr#436's seam), so a first click while the module is still
-  fetching is retained and replayed. No kernel change: nothing under
-  `core-ui/runtime` moved.
-- **`headless.Table`: the table as a headless primitive.** Structure,
-  roles and sort semantics with zero CSS and no caller moved —
-  `ui.DataTable`, the resource engine and the battery render exactly
-  as before; the move onto this primitive is its own change. A caller
-  renders named columns of cells with `<table role="table">` through
-  `<td role="cell">`: the explicit ARIA roles stay on every element
-  because a cards collapse sets `display: block` on them, and a table
-  element displayed as a block loses its implicit table semantics in
-  Chromium and WebKit — the roles keep a collapsed table a table.
-  `aria-sort` is three-state and the only sort indicator, so a
-  stylesheet draws from the attribute and state and appearance cannot
-  disagree. Sorting is typed props, not a pattern string: the caller
-  gives the active sort, the query the screen carries (`url.Values`)
-  and the parameter names, and every href is built through `net/url`
-  with the sort and direction parameters replaced rather than
-  appended — the literal-`Replace` pattern `ui.DataTable` still uses,
-  and the request-derived-string defect class it carries, cannot be
-  expressed here. The Island is optional, the `Form` posture: the URL
-  is the truth for a list, so a list screen's sort anchors are plain
-  navigations the client router intercepts, and an embedded table
-  whose sort must not change the URL gives the `Island` and its
-  anchors carry the RPC contract beside their hrefs (`Pagination`
-  still requires one, unchanged, until the pager moves). A column with
-  no visible header is hidden from assistive tech when it cannot be
-  sorted and named from a new `Strings.TableSortBy` ("Sort by
-  {column}", bridged over the existing `i18nui.KeyTableSortBy`) when
-  it can; every cell of a headered column carries `data-label` for a
-  cards-collapse stylesheet; rows carry `id` for keyed swaps; an
-  `Empty` slot renders under the head, which stays — an empty result
-  still has named columns and usable sort controls; and a `Footer`
-  slot renders as the scroll region's sibling, so a pager's `nav`
-  landmark never nests in a table. The root is one shape, footer or
-  none: a wrapper `div` (PartRoot) around a focusable scroll region
-  (PartScroll, `role="region"` `tabindex="0"`, named by the caption's
-  id through `aria-labelledby` when there is one) around the table —
-  the region is the element a class map makes the horizontal scroll
-  surface, and it is markup, not styling, because a scroll region that cannot take focus cannot be
-  scrolled by keyboard (WCAG 2.1.1; axe's
-  `scrollable-region-focusable`); `tabindex` is always `0` because
-  the server cannot know the viewport and a region that becomes
-  scrollable at a narrow width must already be reachable (Adrian
-  Roselli's responsive-table pattern). A `Path` carrying its own
-  query or fragment is refused at render — the carry belongs in
-  `Query`, where it survives the sort, and a silently replaced value
-  is the exact loss this component exists to make structural. The
-  carried `Query` itself is request state, so it is never refused: a
-  control byte in a key or value (a crafted `?q=` with CR LF, which
-  percent-encodes to what the anchor policy rejects) is stripped, and
-  a pair that scrubs to nothing is dropped, because a refusal there
-  would be a 500 from a link. A
-  column's `Variant` is the one channel a class map has for styling a
-  whole column (`<part>--<variant>` on that column's `<th>` and every
-  `<td>` under it), so alignment and column shading are the map's to
-  choose; the structure renders none of it at a nil class map.
-  Deliberately not here: no pager (the footer slot is the
-  seam the existing `core-ui/patterns/pagination` lands in), no row
-  selection, no behaviour module (it has arrived since, as the entry
-  above records — `Spec.Hooks` was empty here because a declared
-  hook nothing binds is a promise nothing keeps), and no zebra or
-  sticky: styling facts belong to the class map and the sheet.
-- **The Lightbox moves out of the kernel: the module, its viewer
-  anatomy and its interaction descriptor all belong to the
-  component's packages now.** `framework/ui/lightbox.js` replaces
-  `core-ui/runtime/src/lightbox.js`, registered in the Go that renders
-  the markup (`registry.RegisterBehavior("lightbox", …,
-  registry.Markers("[data-fui-lightbox]"), registry.Requires("widgets"),
-  registry.Interactions(…))`) — the first registered module to declare
-  interactions, using the seam the previous entry opened. The
-  prev/next clicks and the ArrowLeft/ArrowRight keys are retained
-  through the module's cold-cache fetch exactly as before, but from
-  the behaviours block, not the kernel's table: `frag/boot.js`'s
-  `_moduleMarkers` entry (the only one carrying interactions), its
-  interaction literals, `preload.go`'s mirror row and
-  `fragments.go`'s `moduleAttrs` ownership are gone, and
-  `TestRuntimeDemandInteractionBridgeIsGeneric` is inverted — it now FAILS on a
-  lightbox string appearing in the kernel's composed bytes or its
-  Go-side tables. Two contract violations the move forced: the
-  module's viewer lookup no longer keys off the kernel-owned
-  `data-fui-comp="ui-lightbox"` (the marker keeps its one job,
-  fetching the sheet; the viewer's own `data-fui-lightbox` is the
-  lookup), and pinch-zoom no longer finds the image by the
-  `.ui-lightbox__full` class — a new `data-fui-lightbox-image`
-  attribute on the `<img>` is the target, because a class map may
-  rename every class. The viewer's anatomy is new in
-  `framework/headless` (`LightboxViewer`: viewer root, figure, image,
-  caption, toolbar, prev, next, download; `data-hui-lightbox*` hooks
-  for a host writing its own viewer module, rendered exactly when
-  `LightboxWiring` is zero; four new `Strings`
-  fields — viewer label, previous image, next image, download —
-  bridged over the `i18nui.KeyLightbox*` keys, one new:
-  `ui.lightbox.label`), and `framework/ui.Lightbox` renders through
-  it dressed with the `fui-lightbox*` class map and the
-  `data-fui-lightbox*` wiring IN PLACE OF the hui hooks — one
-  vocabulary per render, so a host module cannot double-bind the
-  gallery the shipped module steps — so Gallery and its triggers are
-  untouched. One deliberate retention outside the kernel:
-  `core-ui/widget/server.go`'s centered-panel chrome keeps its
-  `> .fui-slot > [data-fui-lightbox]` exclusion (the row predates
-  this PR and sits beside the command palette's), and the follow-up
-  is named plainly: the lightbox adopts `.fui-slot-bare`, the
-  documented escape hatch for chrome-less content, the selector
-  shrinks to the generic cases, and the always-shipped widget CSS
-  stops naming a framework/ui component. The headless hook admission
-  gained a third binder class (`hostHooks` in behavior_test.go: hooks
-  a host's own module binds,
-  each with a reason, checked both ways), and the interaction side of
-  hard rule 5 is mechanical now:
-  `TestInteractionSelectorsInTheTreeUseDocumentedDataFuiAttrs` walks
-  every `registry.Interactions(...)` call in the tree and refuses a
-  `data-fui-*` selector naming an attribute outside the documented
-  table — the gate the interaction-descriptor layer deferred until a
-  real client existed. The cold-load regression (#161) and the
-  multi-instance regression are kept and re-headed: their fixtures
-  carry the inline behaviours block, their server serves the module
-  from `framework/ui/lightbox.js`, and their registration is PARSED
-  out of `framework/ui/lightbox.go` (markers, requirements,
-  interactions) so the browser tests run the real descriptor and
-  cannot drift from it. The guarded core bundle shrank: 13325 →
-  13242 gzip level 6 (−83) and 15386 → 15288 level 1 (−98); both
-  budget lines hold, the anti-vacuity fixture still crosses the
-  level-1 window, and the bracket is recorded in both constants'
-  histories. Two deeplink hardening tests moved with their subject
-  (`deeplink_decode_security_test.go` now reads
-  `framework/ui/lightbox.js` by path).
-- **`registry.Interactions` — a registered behaviour can declare the
-  interactions the runtime retains while its module is still
-  fetching.** Until now the interaction bridge (the fourth load path,
-  which keeps a click or a keypress from being lost in a module's
-  cold-cache window) read only the kernel's own hard-coded marker
-  table, so a behaviour registered through
-  `registry.RegisterBehavior` could not ask for retention — the one
-  property the Lightbox needs before it can leave the kernel, and
-  the prerequisite the behaviour-registry spec's sequence called out.
-  A behaviour now passes `registry.Interactions(...)` beside
-  `Markers(...)`: one spec per interaction, in the bridge's own shape
-  — an event (`click` or `keydown`), for a click the node's selector,
-  for a keydown the keys and a scope selector that arms the
-  retention only while it matches (a key that belongs to an open
-  surface is not eaten while that surface is closed). Specs are
-  validated at registration like markers — an unknown event, an
-  empty selector, a keyless or scopeless keydown, or a field the
-  event never reads is a startup panic naming the field; the
-  selector grammar is deliberately wider than a marker's
-  (combinators, `:not([attr])`, comma lists, plain HTML attributes
-  like `[hidden]`) because only the browser consumes it — a click's
-  selector through `Element.closest`, a keydown's scope through
-  `document.querySelector` — while a marker must stay parseable by
-  the host's preload scan. The behaviours manifest carries the specs
-  as `x` beside `s`, `i` and `r` through every delivery path (live
-  `manifest.js`, the export/embed inline block, the theme editor),
-  and the kernel's bridge installs its listeners over the registered
-  descriptors exactly as over its own table, with the loop body
-  unchanged. Nothing released changes shape: a behaviour that
-  declares no interactions adds not one byte to its manifest entry
-  and installs no listener. Cost in the core bundle: +21 bytes gzip
-  at level 6 and +25 at level 1, measured, with both budget lines
-  holding and the anti-vacuity self-test re-run. The Lightbox itself
-  does not move in this change.
-- **`ui.StringsFor` — the i18n bridge into `headless.Strings`.** The
-  headless layer's words are a typed struct, one field per sentence;
-  `ui.StringsFor(ctx)` is the layer above that resolves every field
-  from the `i18nui` key table through the request's translator, so a
-  component rebuilt on headless says its words in the reader's locale
-  via `Strings: ui.StringsFor(r.Context())`. No translator on the ctx
-  (or a per-key catalog miss) yields the English defaults headless
-  itself ships — byte for byte, pinned against
-  `headless.DefaultStrings()` — so a nil `Strings` and a translated
-  page share one English contract. Thirteen keys were added for
-  sentences no key said yet (`ui.dismiss.titled`,
-  `ui.tag.removeLabelled`, `ui.action.failed`, `ui.color.pick`,
-  `ui.passwordInput.revealShow`/`revealHide`,
-  `ui.tone.info`/`success`/`warning`/`danger`,
-  `ui.fileUpload.fileSelected`/`filesSelected`,
-  `ui.validationSummary.problem`); password show/hide and pagination
-  Previous/Next reuse the keys their existing consumers say. A
-  translation whose placeholders differ from the English default's is
-  refused and the field keeps its English, so a dropped `%s` cannot
-  put fmt's error text into an accessible name. The two kinds are
-  judged differently: `%s` verbs are positional, so their order binds,
-  while `{name}` tokens are replaced by name in the runtime, so a
-  translation may reorder those freely. A percent sign in prose is not
-  a verb (the scan follows `fmt`'s grammar), and a field whose English
-  carries no verb is not a format string, so a translator writing
-  "Échec à 100 %." is not refused. `ui.CheckStrings(ctx)` reports
-  every key whose translation would be refused, with the English that
-  renders instead, so a host fails a test on catalog drift rather than
-  shipping one English sentence among the translated ones. A reflection gate in `framework/ui` fails the build
-  when a field is added to `headless.Strings` without a bridge entry.
-  The headless landing screen's bare fixture renders a
-  `headless.SystemBanner` through the bridge as the seam proof.
-- **`framework/headless`**: the structure half of a design system.
-  Components render tags, roles, labelling relationships, state
-  attributes and `data-hui-*` hooks with no classes at a nil Classes; a
-  `Classes` value maps parts to classes; what a caller sets on the
-  parts (`Parts`: `Attrs`, `Slots`, `Binds`), its `Strings` and an
-  `Island` are typed and sanitised; every component registers a
-  `Spec` with its `Anatomy` that drives the nil-Classes sweep, the
-  parts gates and two
-  goldens.
-  An in-page state change is an `Island` at render time (hard rule 1):
-  `Pagination`, `ToolbarSearch` and a dismissible `Tag` or `Alert`
-  refuse the link-only render; every href passes the anchor policy.
-  Ships the vocabulary, the harness and the basic components.
-  `gofastr docs ui-headless`.
-- **`framework/headless` behaviour module**: the `data-hui-*` hooks
-  are bound. `behavior.go` registers the package's JavaScript as the
-  runtime module `headless` through `registry.RegisterBehavior`; the
-  kernel loads it on one of its seven markers (reveal, color, when,
-  form-errors, action, drop, system) and hands it inserted DOM. Every
-  sentence the module writes travels as a `data-hui-*` attribute from
-  `Strings` (Upload gains `FileSelected` and `FilesSelected`), and the
-  two attributes it writes back (`data-hui-when-off`,
-  `data-hui-drop-over`) are its own. Source gates in
-  `behavior_test.go`, browser coverage in `behavior_e2e_test.go`.
-- **`registry.Requires` and loader readiness**: a behaviour may name
-  the modules that must be loaded before it; the behaviours block
-  carries them as `r`, and `loadModule` loads requirements before the
-  module's script on every load path. Readiness is registration: a
-  module's promise resolves only when `loadedModules[name]` is set
-  after its script ran, and a script that ran and never registered
-  rejects with "module failed to register" and drops its cached
-  promise so a retry fetches again. Preload and the static export
-  list a needed behaviour's requirements with it. Spec:
-  `docs/spec-behavior-registry.md` "Dependencies and readiness".
-- **The action primitive** (`core-ui/runtime/src/action.js`): the
-  optimistic mutation machine written once —
-  `window.__gofastr.action.request(url, method)` performs the
-  same-origin mutation with the CSRF header and resolves to a
-  boolean, `window.__gofastr.action.bind(el, spec)` attaches the
-  idle → pending → committed → error lifecycle, the label flip,
-  `aria-busy` while pending (never `disabled`, which has other owners
-  and drops keyboard focus) and the `action:*` events. No
-  marker: owners reach it through `Requires("action")`.
-
-- **`headless.Classes` (renamed from `headless.Skin` while the package
-  is unreleased).** The type is the map
-  from part to class name, and the name now says what it holds: the
-  theme is the whole look, `Classes` is one component's part of it
-  (the word MUI uses). Same type, same nil behaviour, no golden
-  changed, and `Kit.Skin` is now `Kit.Classes`.
-
-- **`danger-fg` — the danger pair gets its own ink token.** The
-  component-options compiler paired the filled danger trio's foreground
-  with `--color-primary-fg`, which only has a contrast guarantee against
-  `--color-primary`: a host whose primary is light with dark ink
-  (amber, yellow, pastel) shipped an unreadable filled danger button and
-  an axe failure out of the box. `ColorSet` gains `DangerFg`
-  (`--color-danger-fg`, white in `DefaultTheme`, `#111827` on the
-  framework dark palette's `#F87171` — 6.4:1), `theme.Overrides` gains
-  `DangerFg`, the compiler compiles the trio from
-  `--color-danger` / `--color-danger-fg`, and the token rides every
-  name-pinned surface: the `gofastr theme init` scaffold, the blueprint
-  theme path (`app.theme.dark` accepts `danger-fg`), the theme editor's
-  controls + write-back, the pluginhost token bridge, and kiln's
-  `set_theme`. `Theme.Validate` now also refuses a hex `primary` ×
-  `primary-fg` or `danger` × `danger-fg` pair below 4.5:1 — in the
-  light palette and, resolved key by key with the light token as the
-  fallback for an absent key, in a non-empty `DarkColors` map (values
-  Go cannot parse exactly — oklch, var(), names — are skipped, never
-  approximated, and short-form `#RGB` expands per CSS, so `#FFF` is
-  white, not near-black) — so an unreadable pair fails at boot instead
-  of at the first axe run. **BREAKING** only for themes that already
-  ship such a pair in plain hex: validation now panics at `WithTheme`
-  where it previously passed silently.
-  Every in-tree palette now clears the bar: the blog, ecommerce, lms
-  and portfolio examples move their danger from red-500 (`#EF4444`,
-  3.76:1 under white ink) and project-manager and real-estate from
-  red-600 (`#DC2626`) to red-700 (`#B91C1C`, 6.47:1 under white ink
-  and 5.0:1 as label text on the status chips' 15% tint, where
-  red-600 measured 3.96:1); a host on red-500 with white ink either
-  does the same or sets `danger-fg`.
-- **`style.Theme.Components` — component options in the theme.** A
-  theme can carry a flattened option map
-  (`"density": "compact"`, `"button.treatment": "outline"`) beside
-  its tokens. `Theme.Validate` enforces the grammar (lowercase
-  dot-separated keys, one lowercase word per value);
-  `ThemeToTokens`/`ApplyTokens` carry the options under the reserved
-  `component.` prefix; `gofastr theme edit` write-back emits them, so
-  saving an edited theme keeps its options.
-- **`style.RegisterComponentOptionsCompiler`** — the one-per-process
-  hook that turns component options into CSS custom properties,
-  registered by `framework/ui` from its package `init` together with
-  the framework's complete default option set (`theme.DefaultOptions.
-  Flattened()`), validated with the same grammar at registration.
-  That default set is the **:root floor**: a theme with no
-  `Components` of its own — a bare `style.DefaultTheme()`, the
-  `gofastr theme init` scaffold, a host with no `App.Theme` — emits
-  it at `:root`, so the `--fui-*` variables the component stylesheets
-  consume resolve on every host (without the floor a primary button
-  rendered as an unstyled text label). The floor is root-only: scoped
-  themes with no options inherit their parent's variables, and
-  `ThemeHash` still hashes an optionless theme as optionless. The
-  compiled declarations join the `:root` block and every
-  theme-override scope block, are validated at emit (a name that is
-  not a custom property or a value that breaks a declaration panics),
-  and `ThemeHash` covers the flat option map, not the compiled
-  declarations nor the registered defaults, so themes that differ only
-  in options hash apart with or without a compiler registered, and an
-  optionless theme hashes as optionless. A registration after a theme
-  was hashed or theme CSS was emitted panics with the reason: the host freezes app.css, the
-  catalog and the manifest at first use. `Theme.Validate` runs the
-  registered compiler too, so an unknown option key or value (a
-  grammar-clean `"density": "cozy"`) fails at boot, not as a panic at
-  first render.
-- **Scoped dark mode follows the document.** A registered theme
-  override with a dark palette now emits it under
-  `[data-color-scheme="dark"] .fui-theme-<hash>` plus the
-  `prefers-color-scheme` fallback — the same two selectors the root
-  theme uses — and re-emits the `:root`-only alias tokens
-  (`--color-primary-foreground` and kin) and the compiled options
-  inside every scope block, so token references resolve against each
-  scope's own palette. A scope with no dark palette stays light in
-  dark mode (documented). `RegisterThemeOverride` deep-clones the
-  theme before storing it (dark maps and `Components`); reads return
-  deep copies; `ApplyTokens` and `RegisterThemeVariant` clone
-  `Components` the same way.
-- **`theme.ComponentOptions`** — typed component options for
-  `framework/ui/theme.Default`:
-  `Overrides.Components{Density, Button{Treatment, Radius}}`. Zero
-  means unspecified while overrides merge; `Default()` flattens a
-  complete set (Comfortable, Filled, Round), and an explicit
-  Comfortable/Filled/Round resets an earlier override. The compiler
-  emits `--fui-density-control-h`/`--fui-density-gap` (the
-  `--spacing-touch-target` token / 36px, md/sm spacing),
-  `--fui-button-radius` (radii-md/0/9999px) and the per-variant
-  treatment trios `--fui-button-primary-*` / `--fui-button-danger-*`.
-  Theme boundaries
-  declare the option variables, component rules consume them, no
-  descendant option rules — so options nest by inheritance
-  (browser-proven A → B → A). The `fui-` prefix is reserved for
-  `framework/ui`; `data-hui-*` hooks belong to `framework/headless`.
-
-- **`ui.Button` / `ui.LinkButton` render through `framework/headless`**,
-  dressed with the internal `fui-button` class map (root, variant and
-  size modifiers, icon part). The class map is framework/ui's: class
-  names are the same under every theme, `RegisterButtonVariant` /
-  `RegisterButtonSize` add their `root--<name>` entries at init, and
-  the marker that fetches the sheet stays `data-fui-comp="ui-button"`
-  (the registration name is unchanged — discovery and styling are
-  separate). `ButtonConfig.Disabled` renders the disabled state, and
-  `Class` appends after the class map's own classes without mutating
-  the shared map. The `ui-button` stylesheet is rewritten on class
-  selectors (`.fui-button`, variants, `[aria-busy="true"]`,
-  `:focus-visible`, `:disabled`, `__icon`), consumes the density /
-  radius / treatment option variables and redeclares none of them;
-  registered variants ship as plain `.fui-button--<name>` rules once,
-  which is also why the `ui-toggle-action` dual scope is gone —
-  `ToggleAction` and `OptimisticAction` take their root classes from
-  the class map under their own markers.
-- **`headless.ButtonProps.Action` admits the wiring vocabulary** a
-  page can put on a clickable: `interactive.Action.Attrs()` and every
-  `.OnSuccess` effect (including the post-success widget refresh,
-  `data-fui-rpc-refresh`), widget/pane open and close, keyed-pane
-  deep-links (`data-fui-pane-key`), toast, push-state, deeplink,
-  prefetch, `data-fui-intercept-close` — each checked for what it
-  deserves (same-origin for endpoints, push-state and navigate;
-  non-empty for names; JSON for bodies and toasts; the module-name
-  shape for prefetch; `secondary`/`tertiary` for panes).
-  On an anchor only the four keys that say where a click goes
-  (push-state, prefetch, open, deeplink) may ride; a request on a
-  link is still refused. `ButtonProps` also gains `External`
-  (target/rel owned, case-fold proof) and `Parts` (attrs on the root
-  and icon; a class appends).
-- **`headless.Button` renders through its `Parts` box**, so the
-  harness's part-attr, bind-routing and override sweeps cover it; the
-  spec gained a `WithParts` fixture and an off-site-link case (goldens
-  regenerated and read).
-- **The theme-layer showcase: `/examples/headless/{default,dense}/landing`
-  on the product site.** One screen parameterised by the theme segment,
-  its content scoped by the route's boot-registered theme
-  (`style.RegisterThemeOverride` at package init; hashing is lazy). The
-  default route is the framework look on the site's palette; the dense
-  route is compact · outline · square with its own teal-tinted dark
-  palette. Two option-only twins (same palette, flipped options) back
-  the same-palette fixture. The page carries every button variant and
-  size, a disabled button, an icon LinkButton and an external one, the
-  same palette under two option sets, an A → B → A nest, explicit
-  scheme controls (`ui.ThemeToggle` pill), a bare `headless.Button` with
-  nil `Classes` beside a `ui.Button`, a newsletter form whose island
-  round trip (200-with-the-region, focus on the summary) falls back,
-  without script, to the native POST answered with a 303 back to the
-  page whose query carries the outcome — blank, invalid or ok — and
-  re-renders the region from it (the address itself never travels in
-  the URL, so it stays out of history and out of any referrer), and a
-  cold `LoadAuto`
-  insertion (`ui.Callout` via `/__site/headless/late`) whose sheet the
-  runtime fetches on arrival. Unknown theme segments 404. Browser proofs
-  in `examples/site/e2e_headless_landing_test.go` (computed option
-  variables per scope, nesting, palette-keeping twin, scoped dark mode,
-  bare-vs-styled, cold sheet, both newsletter passes — the no-script
-  pass blocks `runtime.js` via `network.SetBlockedURLs`); both routes
-  joined the desktop and mobile axe lists; the static export test pins
-  the two pages under the `/gofastr` base with their wrapper classes,
-  the option variables in `app.css`, and the static-mode notice wiring
-  for the server-backed POST. Linked from `/examples` and the ⌘K
-  palette; `StaticPaths` enumerates both routes for export, sitemap and
-  the coverage gates.
-
-- **`registry.RegisterBehavior`**: behaviour registers like style. A
-  component's package embeds its runtime module beside the Go and
-  registers it with the markers the kernel scans for; the host serves
-  it at `/__gofastr/runtime/<name>.js` under the same minification and
-  cache rules as the embedded modules, lists it in the manifest, and
-  preloads it when a marker is in the page. The kernel reads registered
-  markers from one block beside the manifest and loads the module once
-  when one appears. No trigger vocabulary: the marker is the trigger.
-- **The plain-markup form family renders through
-  `framework/headless`.** `ui.Form`, `ui.FormField`, `ui.FormFieldFor`,
-  `ui.FormSection`, `ui.TextField`, `ui.NumberField`, `ui.DateField`,
-  `ui.Select`, `ui.ValidationSummary` and `ui.InputGroup` render their
-  headless counterparts dressed with this package's internal class maps
-  (`fui-form*`, `fui-field*`, `fui-select*`, `fui-input*`,
-  `fui-input-group*`, `fui-validation-summary*`), the way Button did:
-  class names are the same under every theme, the
-  `data-fui-comp` markers stay and fetch the same sheets, and the
-  field map and the control map are passed separately (Field and
-  Input both key their root on `PartRoot`; one merged map would lose
-  a root class). A `Select` carries its own marker on the `<select>`
-  beside the field's marker on the row, so it loads both sheets it
-  needs wherever it renders.
-- **The choice family and the affix shells render through
-  `framework/headless`.** `ui.Checkbox`, `ui.Radio`, `ui.Switch`,
-  `ui.RadioGroup`, `ui.CheckboxGroup`, `ui.PasswordInput` and
-  `ui.ColorField` render their headless counterparts
-  (`headless.Choice`, `headless.Switch`, `headless.Group`,
-  `headless.Password`, `headless.Color`) dressed with the internal
-  `fui-choice*` / `fui-switch*` / `fui-password*` / `fui-color*`
-  class maps; the `data-fui-comp` markers and registration names
-  stay and fetch the same sheets. A choice row is one inline run —
-  the label wraps the control — and keeps its own structure,
-  ignoring the field sheet's columns variables. A group's message
-  (error, else hint) belongs to the group and never to each leaf; a
-  standalone choice with an error wraps the run and its message in
-  the `fui-choice-field` shell, because the message cannot ride
-  inside the label without joining the control's accessible name.
-  `ui.PasswordInput`'s reveal words and `ui.ColorField`'s `PickColor`
-  resolve through `ui.StringsFor`. The retired
-  `core-ui/runtime/src/passwordinput.js` module is deleted (see
-  BREAKING): the headless behaviour module owns the reveal through
-  `data-hui-reveal`, and the theme editor's own swatch→hex sync is
-  deleted with its page loading the runtime so `data-hui-color`
-  binds — the editor's input handler now applies the picked hex
-  (uppercased the way the sync writes it) and touches no values
-  itself.
-- **`ui.Control` — the styled native control.** A single input for
-  the types the typed fields do not name (email, password,
-  datetime-local, file, tel, url, search, hidden), built inside a
-  `FormField` builder from the wiring the field handed it: the id,
-  the described-by chain, the invalid state and the required flag
-  come from the field and nowhere else, because two sources for one
-  fact is how they drift.
-- **The bespoke-behaviour family renders through
-  `framework/headless`.** `ui.FileUpload` is `headless.FileUpload`:
-  the zone a `<label>` for the real input (so the whole target opens
-  the picker with no script), the chosen names a `role="list"` and
-  the pick a `role="status"` sentence, both filled by the headless
-  module from the `FileSelected` / `FilesSelected` words the strings
-  bridge resolved per request. `ui.FileDropzone` carries the same
-  `data-hui-drop` hooks around its hero surface and keeps only the
-  thumbnail strip — a styling concern with no headless counterpart —
-  bound by framework/ui's own `filedropzone` module, which duplicates
-  nothing (the drop, the list and the sentence are the headless
-  module's). `ui.ConditionalField` is `headless.ConditionalField`;
-  `ui.TextArea` is `headless.Field` + `headless.Textarea` the way
-  `ui.Select` is, with `Autogrow` reaching the control through
-  `headless.Textarea`'s new `Autogrow` prop — the one data-fui-*
-  attribute a component there renders, because every caller-reachable
-  seam refuses the prefix and autogrow is a behaviour of the control,
-  not decoration. `ui.SearchInput` keeps its own module (no headless
-  counterpart) and is restyled onto `fui-*` classes only. The
-  gallery's conditional-field page is live now (a plan radio group
-  gating a coupon field) and its dropzone fixture opts into the
-  preview strip, so both halves of the family have pixels under
-  test. The family's first dashboard ships with it:
-  `/examples/headless/{default,dense}/dashboard`, one settings form
-  that submits both ways (the runtime's RPC sends multipart when the
-  form carries the upload's file input; the handler answers the
-  island region, and the no-script POST redirects back carrying the
-  outcome alone), validates on the server, moves focus to the summary
-  on a failed submit, and nests conditional regions two deep — the
-  plan's "what this layer makes possible" page.
-- **`FormFieldConfig.Input` is a builder.**
-  `func(headless.FieldControl) render.HTML` — the field hands its
-  control the id, the described-by chain, the invalid state and the
-  required flag before the control renders, which is how
-  `headless.Field` composes and the reason it exists. The
-  post-hoc `injectAttrs` string surgery (and its idempotence,
-  comment-skipping and quote-respecting helpers) is deleted; Tooltip
-  keeps its own local splice for its caller-built trigger.
-- **Hint and error are both visible.** `headless.Field` renders the
-  hint and the error when both are set, the error first, and
-  `Describe` joins both ids into `aria-describedby` in that order:
-  the hint is the rule the value must obey and the error is the
-  violation, so dropping the rule exactly when it was broken is
-  dropping it when it is needed most. The cost — longer descriptions
-  and taller errored rows for bare-headless callers — is the
-  deliberate trade of the primitive; a caller who wants the hint gone
-  on error says so by not setting it. `Choice` keeps hint-only.
-- **`headless.FieldProps.ReserveError`.** When set and `Error` is
-  empty, the field renders the error paragraph empty with its stable
-  id and keeps it in the control's `aria-describedby` — the node a
-  script fills without re-rendering (the theme editor's live apply).
-  The id is the contract it is found by (the control's id with
-  `-error`); the node carries no hook, because a `data-hui-*`
-  attribute is one this package's runtime module binds and no module
-  has behaviour for an empty paragraph. `framework/ui`'s field sheet
-  takes the node out of the grid while it is empty, so a reserved
-  field is not a field with a blank row under it. A caller that fills
-  it must also set `aria-invalid` on the control; the server-rendered
-  path should pass `Error` instead. The theme editor's hand-rolled
-  field rows and its `data-err-for` lookup are gone, moved onto
-  `ui.FormField` with `ReserveError`, targeting the node by its id.
-- **`headless.FormProps.Request` — the typed request seam for
-  forms.** What Button's `Action` is to a click: the
-  `data-fui-rpc` contract of a submitted form (endpoint, an RPC
-  method that may differ from the native one, the success effects —
-  signal, navigate, reset, widget open/close, refresh — the
-  input-trigger and debounce pair a live-search form uses, the
-  pre-flight confirm, and the generator's `data-action-mount` hook,
-  which `Safe` refuses like every `data-action-*` key and therefore
-  rides the seam). Every key is checked for what it deserves
-  (same-origin endpoints, methods the runtime sends, a numeric
-  debounce, non-empty names); `data-fui-rpc-body` is refused with its
-  own message (a form serializes itself); a key outside the
-  vocabulary panics naming the key and the seam; `Island` and
-  `Request` on one form are refused rather than resolved by
-  precedence. `ui.Form` routes `ExtraAttrs`' `data-fui-*` and
-  `data-action-*` keys through it, the way `splitButtonAttrs` does.
-- **`FieldOptions` — the form family's component options.**
-  `theme.ComponentOptions` gains `Field{Layout: Stacked | Inline,
-  Radius: Round | Square}` (defaults Stacked, Round; flattened keys
-  `field.layout`, `field.radius`); the compiler emits
-  `--fui-field-columns`, `--fui-field-message-column` and
-  `--fui-field-radius`. Inline is a preference, not a promise: the
-  field sheet stacks the row below a stated width, the control track
-  is `minmax(0, 1fr)` so a long value can never force overflow, a
-  long label wraps rather than widening its track, and choice rows
-  keep their own wrapping-label structure and ignore the columns
-  variable. The field sheet draws the required mark from the label's
-  `data-required` state (an asterisk whose alternative text is empty,
-  so the accessible name stays clean).
-- **`ui.StepWizard` takes the same error surface as `ui.Form`.**
-  `Errors`, `Summary`, `FieldLabels`, `FieldIDs`, `FieldOrder` and
-  `ID`: a non-empty `Errors` renders `ui.ValidationSummary` between
-  the step indicator and the step's fields, marks the form so the
-  headless behaviour module moves focus to it, and requires `ID` for
-  the same reason `ui.Form` does. A wizard validates the submitted
-  step on the server and re-renders it with the errors, which is what
-  a `novalidate` form owes its reader now that `required` on its
-  controls is real rather than decorative.
-- **`ui.Form` renders its errors through `ui.ValidationSummary`.**
-  With `Errors` set the form derives the summary's id from its own
-  (`<formID>-errors`), marks itself `data-hui-form-errors` so the
-  headless behaviour module moves focus to the summary after a
-  failed submit, and maps field names to control ids through the new
-  `FieldIDs`/`FieldLabels`/`FieldOrder` config — a link to `#email`
-  misses a control whose id is `f_email`. An error whose field has no
-  known id renders as text, not as an anchor to nothing. The summary is focusable by script
-  (`tabindex="-1"`, never a tab stop), `role="alert"`, and its links
-  go through the anchor policy. The newsletter on the headless
-  landing page migrated onto `Errors` with a stable id, replacing
-  its hand-stamped `data-hui-form-errors` and its own Callout.
-- **`ui.PasswordInput` takes the field's wiring.** A `Field
-  headless.FieldControl` on the config applies the enclosing field's
-  described-by, invalid state, required flag and id to the inner
-  input after the sanitiser, so a password field inside a labelled
-  field carries its description; when both are set the field wins.
-  The reveal button, its runtime module and its class family are
-  unchanged (they move in the next change of the stack).
-
-### BREAKING
 - **`ui.DataTable` renders through `headless.Table`: the sort pattern
   string is gone, sorting is typed props, and the sort control is an
   anchor in both postures.** `SortHrefPattern` (two literal `%s`
@@ -1247,8 +526,47 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   the field's, and `Autogrow` still reaches the control as
   `data-fui-autogrow` (its module is unchanged).
 
-### Migration ledger — the headless stack so far
+- **The legacy reads and aliases are removed.** Each item says what to
+  render or reference instead.
+  - `html.DetailsConfig.Disclosure` is removed (`html.Details` renders
+    a plain `<details>`). Render `headless.Disclosure` or
+    `ui.Collapsible` for a disclosure with behaviour.
+  - The kernel no longer reads `data-fui-disclosure`,
+    `data-fui-disclosure-persist`, `data-fui-pane-deeplink` or
+    `data-fui-scrollspy`. Close-on-navigate belongs to the
+    `headless-disclosure` module (`data-hui-disclosure` markup; put
+    `data-hui-disclosure-persist="<key>"` on a disclosure that must
+    survive soft navigation), the pane deep-link declaration is
+    `data-hui-pane-deeplink` (`headless.PaneHost` emits it), and the
+    scroll-spy rail is `headless.Rail`'s (`data-hui-rail`).
+  - The ten legacy token aliases are no longer emitted at `:root` or
+    inside theme-override scope blocks. Reference the canonical token
+    instead (each reader keeps its hex fallback; the color-mix rows
+    are the full replacement value):
 
+    | removed alias | replacement |
+    |---|---|
+    | `--color-muted` | `var(--color-surface-soft, …)` |
+    | `--color-surface-hover` | `var(--color-surface-soft, …)` |
+    | `--color-border-subtle` | `var(--color-border, …)` |
+    | `--color-border-hover` | `var(--color-border-strong, …)` |
+    | `--color-primary-hover` | `color-mix(in srgb, var(--color-primary) 85%, var(--color-text))` |
+    | `--color-primary-foreground` | `var(--color-primary-fg, …)` |
+    | `--color-ring` | `var(--color-primary, …)` |
+    | `--color-warn` | `var(--color-warning, …)` |
+    | `--color-warn-soft` | `color-mix(in srgb, var(--color-warning) 15%, transparent)` |
+    | `--color-warn-strong` | `color-mix(in srgb, var(--color-warning) 80%, var(--color-text))` |
+
+    A gate test (`framework/ui`) fails when any registered sheet or
+    Go/JS source under `framework/`, `core-ui/`, `battery/`, `kiln/`,
+    `cmd/gofastr/` or `examples/` references one of the ten names.
+  - `gofastr pack` reads the auth form's hidden `next` input only as
+    `html.Input(html.InputConfig{Type: "hidden", Name: "next", …})`;
+    a `render.Raw("<input …>")` string in a hand-maintained screen is
+    no longer recognized (the generator and `examples/meridian` both
+    emit the `html.Input` shape).
+
+### Migration ledger — the headless stack so far
 One place to read every breaking change this stack has landed, in
 application order. Each entry is detailed above in this release's
 `BREAKING` section; this ledger is the checklist for moving an app
@@ -1347,6 +665,757 @@ are listed under Added above, not here.
     action, tooltip, search input, visually hidden). The
     `framework/gallery` prefix gate holds the line from here on.
 
+17. **`html.DetailsConfig.Disclosure` is gone.** `html.Details` renders
+    a plain `<details>`; a disclosure with behaviour is
+    `headless.Disclosure` or `ui.Collapsible` (`data-hui-disclosure`).
+18. **The kernel's legacy attribute reads are gone.**
+    `data-fui-disclosure`, `data-fui-disclosure-persist`,
+    `data-fui-pane-deeplink` and `data-fui-scrollspy` are read by
+    nothing. Close-on-navigate is `headless-disclosure`'s
+    (`data-hui-disclosure` markup), the pane deep link is
+    `data-hui-pane-deeplink`, the rail is `data-hui-rail`.
+19. **The ten legacy token aliases are gone** (`--color-muted`,
+    `--color-surface-hover`, `--color-border-subtle`,
+    `--color-border-hover`, `--color-primary-hover`,
+    `--color-primary-foreground`, `--color-ring`, `--color-warn`,
+    `--color-warn-soft`, `--color-warn-strong`). Reference the
+    canonical ColorSet tokens (see the BREAKING table); a stylesheet
+    that sets one as a theme token (the product site's
+    `--color-muted`) deletes the line — nothing reads it.
+20. **`gofastr pack` reads the auth `next` input only as
+    `html.Input(html.InputConfig{…})`.** A hand-maintained screen
+    still carrying `render.Raw("<input …>")` emits
+    `next: ""` in the packed blueprint; switch to the `html.Input`
+    call (the generator's spelling).
+
+### Added
+- `framework/headless` gains the navigation primitives `Rail`,
+  `TableOfContents`, `Disclosure`, `Menu`, `Combobox`, `Tabs`,
+  `Carousel`, `PaneHost`, `Sidebar`, `JSONTree` and `Gallery`, with
+  Specs, refusal tests and goldens, and the registered behaviour
+  modules `headless-rail`, `headless-toc`, `headless-disclosure`,
+  `headless-menu`, `headless-combobox`, `headless-tabs`,
+  `headless-carousel`, `headless-panehost` and `headless-sidebar`
+  (shortcut chords fold into `headless-navigation`). Required labels
+  that are only whitespace are refused, `Gallery` passes thumbnails
+  through the image URL policy, and `Safe` now drops `on*` keys.
+  `ui.Combobox` is the styled adapter over `headless.Combobox`, and
+  `CommandPalette`'s `FallbackHref` refuses any backslash. The pane
+  host keeps `__gofastr.openPane`/`closePane`/`swapPane` and the
+  `pane-host:open`/`pane-host:close` events.
+
+- `framework/headless` gains `Counter`, `BackToTop`, `NumberInput`,
+  `Slider`, `RangeSlider`, `Rating`, `TagInput`, `Repeater`, `Toast`,
+  `ToastStack`, `NotificationBell` and `StepWizard` primitives with
+  Specs, refusal tests and goldens, the registered behaviour modules
+  `headless-controls`, `headless-collections`, `headless-wizard`,
+  `headless-feedback`, `headless-navigation` and `headless-when`
+  (ConditionalField's region show/hide/disable behaviour moved to it
+  from the `headless` module to keep both under the byte budget), and
+  new `Strings`
+  fields (counter, back-to-top, number-input, range, rating, tag-input,
+  repeater, notification-count and step-wizard words) bridged through
+  `ui.StringsFor`.
+
+- **Five new headless primitives**: `Fieldset` (legend, description,
+  fields, a group error wired by aria-describedby), `PageHeader`
+  (heading, subtitle, eyebrow, an action slot; a plain `<header>`),
+  `EmptyState` (a named region, heading, description, an action),
+  `StatCard` (label, value, trend with a direction variant) and
+  `DetailList` (label/value rows as a `<dl>`). Each carries Parts,
+  refusals, spec fixtures and goldens; none says a word of its own,
+  so none carries Strings. Existing primitives gained the props the
+  adapters needed: `Stack.Justify`, `Section.Eyebrow/DescriptionHTML/
+  Label`, `Alert.Body`, `Card.Href` (+ the card-inner part),
+  `Spinner.Variant` (dots/grid shapes), `Steps` items with
+  `Hint/Href/Marker/State`, `Timeline.Event.Meta`, and `Parts` on the
+  layout/status primitives.
+- **The skeleton presets render through `headless.Skeleton`.** One
+  primitive render per preset: exactly one polite "Loading…"
+  announcement and one hidden bar set, however many lines the preset
+  draws. The presets gained `Label`/`Ctx` config fields;
+  `core-ui/patterns/skeleton` is deleted with its coverage floor,
+  its pinned properties moved to the preset tests.
+- **`ui.Pagination`: the styled pager, rendered through
+  `headless.Pagination`.** The anatomy is the headless one
+  (`nav > div > a|span`): no `ol/li`, and no buttons in island mode —
+  an island pager's anchors keep their hrefs and carry the RPC
+  contract beside them, where the core pattern replaced them with
+  `<button>`s and dropped the no-script destination. The class map
+  keeps the names the pattern's sheet read (`pagination` on the list,
+  `pagination-gap` on the gap) and a registered `ui-pagination` sheet
+  follows the new anatomy, so a host stylesheet written against the
+  pattern's names keeps matching. The labels resolve through
+  `StringsFor` (`ui.pagination.label` for the nav landmark,
+  `.previous`/`.next` for the ends).
+- **`headless.Pagination` takes typed page props and an optional
+  Island.** `HrefPattern`'s literal `%d` is gone the way the table's
+  `SortHrefPattern` went: the caller gives `Path`, `Query
+  url.Values` and `PageParam` (default `p`), and every href is built
+  through `net/url` with the page parameter replaced rather than
+  appended — the request-derived-string defect class a pattern string
+  carries cannot be expressed here. A `Path` with its own query or
+  fragment is refused; the carried `Query` is scrubbed of control
+  bytes exactly as the table's is (one shared helper). `Window` and
+  `OmitPrevNext` are props with the core pattern's semantics. The
+  Island is now optional, the Table posture: the URL is the truth for
+  a list, and a pager on a list screen is list state — without an
+  Island the page anchors are plain navigations the client router
+  intercepts; with one, the same anchors carry the RPC contract
+  beside their hrefs. An island pager renders `data-hui-page="<n>"`
+  on every enabled anchor (the ends carry the page they turn to), and
+  the table module treats a click on one exactly as a sort click:
+  focus returns to the same page's anchor after the swap, or the
+  current page's `aria-current` anchor when the answer has fewer
+  pages, or the scroll region — and the announcement is copied into
+  the status as a sort's is. The registration retains the page click
+  through the interaction bridge beside the sort's. The module stays
+  within its gzip budget (3053 of 3072 bytes) through mechanical
+  for-of conversions and shorthand properties in code the behaviour
+  shares.
+- **The resource engine's pager carries the active sort** (defect 10,
+  previously recorded as pre-existing): the pager's `Query` carries
+  `sort` and `dir` when a sort is active beside the search and the
+  facets, so turning a page no longer drops the order the reader
+  chose. Regression: `TestPagerCarriesTheActiveSort` parses the
+  page-2 href and asserts both survive. The battery's plain-link
+  posture is unchanged: its pager passes `Path`-less typed props with
+  the search, sort and direction in `Query`, no Island, and its
+  `patternWith` helper is deleted — the typed pager replaced what it
+  built.
+- `core-ui/patterns/pagination` is deleted, with its tests, its
+  security test and its coverage-floor line. The gallery's two plain
+  pagers render through `ui.Pagination` with `Path`/`Query` and no
+  Island, the same appearance the gallery page showed; the frozen
+  upgrade fixtures reach `ui.PaginationConfig` through their
+  `migration.patch` hunks, the way the typed-sort hunks reached them.
+  The properties its tests pinned that still apply moved: the
+  island-mode push-state and RPC sinks (a request-derived carry can
+  corrupt neither) to `framework/headless`'s
+  `TestPaginationCarryCannotCorruptTheIslandSinks`, the aria-current
+  count to `a11y_test.go`'s `TestPaginationIsNavigationWithACurrentPage`,
+  the "Pagination" nav label to `framework/ui`'s
+  `TestPaginationLabelsResolveThroughI18n` and
+  `TestDataTablePaginationFooterRenders`, the small-run/large-run
+  window shapes to `TestPaginationWindowsItsPages`, the boundary
+  refusals to `TestPaginationRefusesPagesOutsideTheRun`, and the
+  disabled ends to the spec's island cases; the `%d`-placeholder
+  refusal is obsolete — the typed props cannot express the defect it
+  guarded.
+
+- **The table behaviour: an island sort now gives focus back and
+  says what changed.** The runtime swaps a signal region's HTML, the
+  sort anchor the reader clicked is destroyed with it, and focus
+  fell to `<body>` with nothing announcing the change — the reader
+  had to re-find the table on every sort. `headless.Table` renders
+  the hooks (`data-hui-table` on the root, `-signal` and `-sort` on
+  island tables, `-scroll` on the focusable region, a visually
+  hidden `role="status"` span as the root's last child, empty on the
+  server) and `framework/headless`'s behaviour module binds them:
+  the click accepts a signal-bound table and records the column key and
+  replacement region; when a valid answer arrives, focus returns to the
+  same column's anchor in that region (`preventScroll`; the scroll region
+  when the answer dropped the column), and the sentence the server
+  rendered into `data-hui-table-announcement` is copied into the
+  status, clear then frame so a repeated identical sentence is
+  announced again. A failed answer leaves focus and status where they
+  were.
+  The sentence is the server's, composed from three new `Strings` fields
+  (`TableSortedBy` "Sorted by {column}, {direction}",
+  `SortAscending` "ascending", `SortDescending` "descending",
+  bridged to new `i18nui` keys `ui.table.sortedBy`,
+  `ui.table.dirAscending`, `ui.table.dirDescending`) with the
+  column's header or key and the direction word substituted at
+  render, and an optional caller-composed `Summary` (`TableProps`
+  and `ui.DataTableConfig`) appended — "Showing 8 of 10" is the
+  caller's to say, because the primitive does not know the total.
+  The module writes no sentence itself, so a translated page
+  announces in its own language. A plain table's status and
+  announcement render for the pager's later use; this module fills
+  neither. The registration declares the click on
+  `[data-hui-table-sort]` to the kernel's interaction bridge
+  (gofastr#436's seam), so a first click while the module is still
+  fetching is retained and replayed. No kernel change: nothing under
+  `core-ui/runtime` moved.
+- **`headless.Table`: the table as a headless primitive.** Structure,
+  roles and sort semantics with zero CSS and no caller moved —
+  `ui.DataTable`, the resource engine and the battery render exactly
+  as before; the move onto this primitive is its own change. A caller
+  renders named columns of cells with `<table role="table">` through
+  `<td role="cell">`: the explicit ARIA roles stay on every element
+  because a cards collapse sets `display: block` on them, and a table
+  element displayed as a block loses its implicit table semantics in
+  Chromium and WebKit — the roles keep a collapsed table a table.
+  `aria-sort` is three-state and the only sort indicator, so a
+  stylesheet draws from the attribute and state and appearance cannot
+  disagree. Sorting is typed props, not a pattern string: the caller
+  gives the active sort, the query the screen carries (`url.Values`)
+  and the parameter names, and every href is built through `net/url`
+  with the sort and direction parameters replaced rather than
+  appended — the literal-`Replace` pattern `ui.DataTable` still uses,
+  and the request-derived-string defect class it carries, cannot be
+  expressed here. The Island is optional, the `Form` posture: the URL
+  is the truth for a list, so a list screen's sort anchors are plain
+  navigations the client router intercepts, and an embedded table
+  whose sort must not change the URL gives the `Island` and its
+  anchors carry the RPC contract beside their hrefs (`Pagination`
+  still requires one, unchanged, until the pager moves). A column with
+  no visible header is hidden from assistive tech when it cannot be
+  sorted and named from a new `Strings.TableSortBy` ("Sort by
+  {column}", bridged over the existing `i18nui.KeyTableSortBy`) when
+  it can; every cell of a headered column carries `data-label` for a
+  cards-collapse stylesheet; rows carry `id` for keyed swaps; an
+  `Empty` slot renders under the head, which stays — an empty result
+  still has named columns and usable sort controls; and a `Footer`
+  slot renders as the scroll region's sibling, so a pager's `nav`
+  landmark never nests in a table. The root is one shape, footer or
+  none: a wrapper `div` (PartRoot) around a focusable scroll region
+  (PartScroll, `role="region"` `tabindex="0"`, named by the caption's
+  id through `aria-labelledby` when there is one) around the table —
+  the region is the element a class map makes the horizontal scroll
+  surface, and it is markup, not styling, because a scroll region that cannot take focus cannot be
+  scrolled by keyboard (WCAG 2.1.1; axe's
+  `scrollable-region-focusable`); `tabindex` is always `0` because
+  the server cannot know the viewport and a region that becomes
+  scrollable at a narrow width must already be reachable (Adrian
+  Roselli's responsive-table pattern). A `Path` carrying its own
+  query or fragment is refused at render — the carry belongs in
+  `Query`, where it survives the sort, and a silently replaced value
+  is the exact loss this component exists to make structural. The
+  carried `Query` itself is request state, so it is never refused: a
+  control byte in a key or value (a crafted `?q=` with CR LF, which
+  percent-encodes to what the anchor policy rejects) is stripped, and
+  a pair that scrubs to nothing is dropped, because a refusal there
+  would be a 500 from a link. A
+  column's `Variant` is the one channel a class map has for styling a
+  whole column (`<part>--<variant>` on that column's `<th>` and every
+  `<td>` under it), so alignment and column shading are the map's to
+  choose; the structure renders none of it at a nil class map.
+  Deliberately not here: no pager (the footer slot is the
+  seam the existing `core-ui/patterns/pagination` lands in), no row
+  selection, no behaviour module (it has arrived since, as the entry
+  above records — `Spec.Hooks` was empty here because a declared
+  hook nothing binds is a promise nothing keeps), and no zebra or
+  sticky: styling facts belong to the class map and the sheet.
+- **The Lightbox moves out of the kernel: the module, its viewer
+  anatomy and its interaction descriptor all belong to the
+  component's packages now.** `framework/ui/lightbox.js` replaces
+  `core-ui/runtime/src/lightbox.js`, registered in the Go that renders
+  the markup (`registry.RegisterBehavior("lightbox", …,
+  registry.Markers("[data-fui-lightbox]"), registry.Requires("widgets"),
+  registry.Interactions(…))`) — the first registered module to declare
+  interactions, using the seam the previous entry opened. The
+  prev/next clicks and the ArrowLeft/ArrowRight keys are retained
+  through the module's cold-cache fetch exactly as before, but from
+  the behaviours block, not the kernel's table: `frag/boot.js`'s
+  `_moduleMarkers` entry (the only one carrying interactions), its
+  interaction literals, `preload.go`'s mirror row and
+  `fragments.go`'s `moduleAttrs` ownership are gone, and
+  `TestRuntimeDemandInteractionBridgeIsGeneric` is inverted — it now FAILS on a
+  lightbox string appearing in the kernel's composed bytes or its
+  Go-side tables. Two contract violations the move forced: the
+  module's viewer lookup no longer keys off the kernel-owned
+  `data-fui-comp="ui-lightbox"` (the marker keeps its one job,
+  fetching the sheet; the viewer's own `data-fui-lightbox` is the
+  lookup), and pinch-zoom no longer finds the image by the
+  `.ui-lightbox__full` class — a new `data-fui-lightbox-image`
+  attribute on the `<img>` is the target, because a class map may
+  rename every class. The viewer's anatomy is new in
+  `framework/headless` (`LightboxViewer`: viewer root, figure, image,
+  caption, toolbar, prev, next, download; `data-hui-lightbox*` hooks
+  for a host writing its own viewer module, rendered exactly when
+  `LightboxWiring` is zero; four new `Strings`
+  fields — viewer label, previous image, next image, download —
+  bridged over the `i18nui.KeyLightbox*` keys, one new:
+  `ui.lightbox.label`), and `framework/ui.Lightbox` renders through
+  it dressed with the `fui-lightbox*` class map and the
+  `data-fui-lightbox*` wiring IN PLACE OF the hui hooks — one
+  vocabulary per render, so a host module cannot double-bind the
+  gallery the shipped module steps — so Gallery and its triggers are
+  untouched. `core-ui/widget/server.go`'s centered-panel chrome no
+  longer keeps its `> .fui-slot > [data-fui-lightbox]` exclusion: the
+  release sweep has the lightbox and the command palette adopt
+  `.fui-slot-bare` (the documented escape hatch for chrome-less
+  content) on their slot roots, the selector shrinks to the generic
+  case, and the always-shipped widget CSS names no framework/ui
+  component. The headless hook admission
+  gained a third binder class (`hostHooks` in behavior_test.go: hooks
+  a host's own module binds,
+  each with a reason, checked both ways), and the interaction side of
+  hard rule 5 is mechanical now:
+  `TestInteractionSelectorsInTheTreeUseDocumentedDataFuiAttrs` walks
+  every `registry.Interactions(...)` call in the tree and refuses a
+  `data-fui-*` selector naming an attribute outside the documented
+  table — the gate the interaction-descriptor layer deferred until a
+  real client existed. The cold-load regression (#161) and the
+  multi-instance regression are kept and re-headed: their fixtures
+  carry the inline behaviours block, their server serves the module
+  from `framework/ui/lightbox.js`, and their registration is PARSED
+  out of `framework/ui/lightbox.go` (markers, requirements,
+  interactions) so the browser tests run the real descriptor and
+  cannot drift from it. The guarded core bundle shrank: 13325 →
+  13242 gzip level 6 (−83) and 15386 → 15288 level 1 (−98); both
+  budget lines hold, the anti-vacuity fixture still crosses the
+  level-1 window, and the bracket is recorded in both constants'
+  histories. Two deeplink hardening tests moved with their subject
+  (`deeplink_decode_security_test.go` now reads
+  `framework/ui/lightbox.js` by path).
+- **`registry.Interactions` — a registered behaviour can declare the
+  interactions the runtime retains while its module is still
+  fetching.** Until now the interaction bridge (the fourth load path,
+  which keeps a click or a keypress from being lost in a module's
+  cold-cache window) read only the kernel's own hard-coded marker
+  table, so a behaviour registered through
+  `registry.RegisterBehavior` could not ask for retention — the one
+  property the Lightbox needs before it can leave the kernel, and
+  the prerequisite the behaviour-registry spec's sequence called out.
+  A behaviour now passes `registry.Interactions(...)` beside
+  `Markers(...)`: one spec per interaction, in the bridge's own shape
+  — an event (`click` or `keydown`), for a click the node's selector,
+  for a keydown the keys and a scope selector that arms the
+  retention only while it matches (a key that belongs to an open
+  surface is not eaten while that surface is closed). Specs are
+  validated at registration like markers — an unknown event, an
+  empty selector, a keyless or scopeless keydown, or a field the
+  event never reads is a startup panic naming the field; the
+  selector grammar is deliberately wider than a marker's
+  (combinators, `:not([attr])`, comma lists, plain HTML attributes
+  like `[hidden]`) because only the browser consumes it — a click's
+  selector through `Element.closest`, a keydown's scope through
+  `document.querySelector` — while a marker must stay parseable by
+  the host's preload scan. The behaviours manifest carries the specs
+  as `x` beside `s`, `i` and `r` through every delivery path (live
+  `manifest.js`, the export/embed inline block, the theme editor),
+  and the kernel's bridge installs its listeners over the registered
+  descriptors exactly as over its own table, with the loop body
+  unchanged. Nothing released changes shape: a behaviour that
+  declares no interactions adds not one byte to its manifest entry
+  and installs no listener. Cost in the core bundle: +21 bytes gzip
+  at level 6 and +25 at level 1, measured, with both budget lines
+  holding and the anti-vacuity self-test re-run. The Lightbox itself
+  does not move in this change.
+- **`ui.StringsFor` — the i18n bridge into `headless.Strings`.** The
+  headless layer's words are a typed struct, one field per sentence;
+  `ui.StringsFor(ctx)` is the layer above that resolves every field
+  from the `i18nui` key table through the request's translator, so a
+  component rebuilt on headless says its words in the reader's locale
+  via `Strings: ui.StringsFor(r.Context())`. No translator on the ctx
+  (or a per-key catalog miss) yields the English defaults headless
+  itself ships — byte for byte, pinned against
+  `headless.DefaultStrings()` — so a nil `Strings` and a translated
+  page share one English contract. Thirteen keys were added for
+  sentences no key said yet (`ui.dismiss.titled`,
+  `ui.tag.removeLabelled`, `ui.action.failed`, `ui.color.pick`,
+  `ui.passwordInput.revealShow`/`revealHide`,
+  `ui.tone.info`/`success`/`warning`/`danger`,
+  `ui.fileUpload.fileSelected`/`filesSelected`,
+  `ui.validationSummary.problem`); password show/hide and pagination
+  Previous/Next reuse the keys their existing consumers say. A
+  translation whose placeholders differ from the English default's is
+  refused and the field keeps its English, so a dropped `%s` cannot
+  put fmt's error text into an accessible name. The two kinds are
+  judged differently: `%s` verbs are positional, so their order binds,
+  while `{name}` tokens are replaced by name in the runtime, so a
+  translation may reorder those freely. A percent sign in prose is not
+  a verb (the scan follows `fmt`'s grammar), and a field whose English
+  carries no verb is not a format string, so a translator writing
+  "Échec à 100 %." is not refused. `ui.CheckStrings(ctx)` reports
+  every key whose translation would be refused, with the English that
+  renders instead, so a host fails a test on catalog drift rather than
+  shipping one English sentence among the translated ones. A reflection gate in `framework/ui` fails the build
+  when a field is added to `headless.Strings` without a bridge entry.
+  The headless landing screen's bare fixture renders a
+  `headless.SystemBanner` through the bridge as the seam proof.
+- **`framework/headless`**: the structure half of a design system.
+  Components render tags, roles, labelling relationships, state
+  attributes and `data-hui-*` hooks with no classes at a nil Classes; a
+  `Classes` value maps parts to classes; what a caller sets on the
+  parts (`Parts`: `Attrs`, `Slots`, `Binds`), its `Strings` and an
+  `Island` are typed and sanitised; every component registers a
+  `Spec` with its `Anatomy` that drives the nil-Classes sweep, the
+  parts gates and two
+  goldens.
+  An in-page state change is an `Island` at render time (hard rule 1):
+  `Pagination`, `ToolbarSearch` and a dismissible `Tag` or `Alert`
+  refuse the link-only render; every href passes the anchor policy.
+  Ships the vocabulary, the harness and the basic components.
+  `gofastr docs ui-headless`.
+- **`framework/headless` behaviour module**: the `data-hui-*` hooks
+  are bound. `behavior.go` registers the package's JavaScript as the
+  runtime module `headless` through `registry.RegisterBehavior`; the
+  kernel loads it on one of its seven markers (reveal, color, when,
+  form-errors, action, drop, system) and hands it inserted DOM. Every
+  sentence the module writes travels as a `data-hui-*` attribute from
+  `Strings` (Upload gains `FileSelected` and `FilesSelected`), and the
+  two attributes it writes back (`data-hui-when-off`,
+  `data-hui-drop-over`) are its own. Source gates in
+  `behavior_test.go`, browser coverage in `behavior_e2e_test.go`.
+- **`registry.Requires` and loader readiness**: a behaviour may name
+  the modules that must be loaded before it; the behaviours block
+  carries them as `r`, and `loadModule` loads requirements before the
+  module's script on every load path. Readiness is registration: a
+  module's promise resolves only when `loadedModules[name]` is set
+  after its script ran, and a script that ran and never registered
+  rejects with "module failed to register" and drops its cached
+  promise so a retry fetches again. Preload and the static export
+  list a needed behaviour's requirements with it. Spec:
+  `docs/spec-behavior-registry.md` "Dependencies and readiness".
+- **The action primitive** (`core-ui/runtime/src/action.js`): the
+  optimistic mutation machine written once —
+  `window.__gofastr.action.request(url, method)` performs the
+  same-origin mutation with the CSRF header and resolves to a
+  boolean, `window.__gofastr.action.bind(el, spec)` attaches the
+  idle → pending → committed → error lifecycle, the label flip,
+  `aria-busy` while pending (never `disabled`, which has other owners
+  and drops keyboard focus) and the `action:*` events. No
+  marker: owners reach it through `Requires("action")`.
+
+- **`headless.Classes` (renamed from `headless.Skin` while the package
+  is unreleased).** The type is the map
+  from part to class name, and the name now says what it holds: the
+  theme is the whole look, `Classes` is one component's part of it
+  (the word MUI uses). Same type, same nil behaviour, no golden
+  changed, and `Kit.Skin` is now `Kit.Classes`.
+
+- **`danger-fg` — the danger pair gets its own ink token.** The
+  component-options compiler paired the filled danger trio's foreground
+  with `--color-primary-fg`, which only has a contrast guarantee against
+  `--color-primary`: a host whose primary is light with dark ink
+  (amber, yellow, pastel) shipped an unreadable filled danger button and
+  an axe failure out of the box. `ColorSet` gains `DangerFg`
+  (`--color-danger-fg`, white in `DefaultTheme`, `#111827` on the
+  framework dark palette's `#F87171` — 6.4:1), `theme.Overrides` gains
+  `DangerFg`, the compiler compiles the trio from
+  `--color-danger` / `--color-danger-fg`, and the token rides every
+  name-pinned surface: the `gofastr theme init` scaffold, the blueprint
+  theme path (`app.theme.dark` accepts `danger-fg`), the theme editor's
+  controls + write-back, the pluginhost token bridge, and kiln's
+  `set_theme`. `Theme.Validate` now also refuses a hex `primary` ×
+  `primary-fg` or `danger` × `danger-fg` pair below 4.5:1 — in the
+  light palette and, resolved key by key with the light token as the
+  fallback for an absent key, in a non-empty `DarkColors` map (values
+  Go cannot parse exactly — oklch, var(), names — are skipped, never
+  approximated, and short-form `#RGB` expands per CSS, so `#FFF` is
+  white, not near-black) — so an unreadable pair fails at boot instead
+  of at the first axe run. **BREAKING** only for themes that already
+  ship such a pair in plain hex: validation now panics at `WithTheme`
+  where it previously passed silently.
+  Every in-tree palette now clears the bar: the blog, ecommerce, lms
+  and portfolio examples move their danger from red-500 (`#EF4444`,
+  3.76:1 under white ink) and project-manager and real-estate from
+  red-600 (`#DC2626`) to red-700 (`#B91C1C`, 6.47:1 under white ink
+  and 5.0:1 as label text on the status chips' 15% tint, where
+  red-600 measured 3.96:1); a host on red-500 with white ink either
+  does the same or sets `danger-fg`.
+- **`style.Theme.Components` — component options in the theme.** A
+  theme can carry a flattened option map
+  (`"density": "compact"`, `"button.treatment": "outline"`) beside
+  its tokens. `Theme.Validate` enforces the grammar (lowercase
+  dot-separated keys, one lowercase word per value);
+  `ThemeToTokens`/`ApplyTokens` carry the options under the reserved
+  `component.` prefix; `gofastr theme edit` write-back emits them, so
+  saving an edited theme keeps its options.
+- **`style.RegisterComponentOptionsCompiler`** — the one-per-process
+  hook that turns component options into CSS custom properties,
+  registered by `framework/ui` from its package `init` together with
+  the framework's complete default option set (`theme.DefaultOptions.
+  Flattened()`), validated with the same grammar at registration.
+  That default set is the **:root floor**: a theme with no
+  `Components` of its own — a bare `style.DefaultTheme()`, the
+  `gofastr theme init` scaffold, a host with no `App.Theme` — emits
+  it at `:root`, so the `--fui-*` variables the component stylesheets
+  consume resolve on every host (without the floor a primary button
+  rendered as an unstyled text label). The floor is root-only: scoped
+  themes with no options inherit their parent's variables, and
+  `ThemeHash` still hashes an optionless theme as optionless. The
+  compiled declarations join the `:root` block and every
+  theme-override scope block, are validated at emit (a name that is
+  not a custom property or a value that breaks a declaration panics),
+  and `ThemeHash` covers the flat option map, not the compiled
+  declarations nor the registered defaults, so themes that differ only
+  in options hash apart with or without a compiler registered, and an
+  optionless theme hashes as optionless. A registration after a theme
+  was hashed or theme CSS was emitted panics with the reason: the host freezes app.css, the
+  catalog and the manifest at first use. `Theme.Validate` runs the
+  registered compiler too, so an unknown option key or value (a
+  grammar-clean `"density": "cozy"`) fails at boot, not as a panic at
+  first render.
+- **Scoped dark mode follows the document.** A registered theme
+  override with a dark palette now emits it under
+  `[data-color-scheme="dark"] .fui-theme-<hash>` plus the
+  `prefers-color-scheme` fallback — the same two selectors the root
+  theme uses — and re-emits the compiled options inside every
+  scope block, so token references resolve against each
+  scope's own palette. A scope with no dark palette stays light in
+  dark mode (documented). `RegisterThemeOverride` deep-clones the
+  theme before storing it (dark maps and `Components`); reads return
+  deep copies; `ApplyTokens` and `RegisterThemeVariant` clone
+  `Components` the same way.
+- **`theme.ComponentOptions`** — typed component options for
+  `framework/ui/theme.Default`:
+  `Overrides.Components{Density, Button{Treatment, Radius}}`. Zero
+  means unspecified while overrides merge; `Default()` flattens a
+  complete set (Comfortable, Filled, Round), and an explicit
+  Comfortable/Filled/Round resets an earlier override. The compiler
+  emits `--fui-density-control-h`/`--fui-density-gap` (the
+  `--spacing-touch-target` token / 36px, md/sm spacing),
+  `--fui-button-radius` (radii-md/0/9999px) and the per-variant
+  treatment trios `--fui-button-primary-*` / `--fui-button-danger-*`.
+  Theme boundaries
+  declare the option variables, component rules consume them, no
+  descendant option rules — so options nest by inheritance
+  (browser-proven A → B → A). The `fui-` prefix is reserved for
+  `framework/ui`; `data-hui-*` hooks belong to `framework/headless`.
+
+- **`ui.Button` / `ui.LinkButton` render through `framework/headless`**,
+  dressed with the internal `fui-button` class map (root, variant and
+  size modifiers, icon part). The class map is framework/ui's: class
+  names are the same under every theme, `RegisterButtonVariant` /
+  `RegisterButtonSize` add their `root--<name>` entries at init, and
+  the marker that fetches the sheet stays `data-fui-comp="ui-button"`
+  (the registration name is unchanged — discovery and styling are
+  separate). `ButtonConfig.Disabled` renders the disabled state, and
+  `Class` appends after the class map's own classes without mutating
+  the shared map. The `ui-button` stylesheet is rewritten on class
+  selectors (`.fui-button`, variants, `[aria-busy="true"]`,
+  `:focus-visible`, `:disabled`, `__icon`), consumes the density /
+  radius / treatment option variables and redeclares none of them;
+  registered variants ship as plain `.fui-button--<name>` rules once,
+  which is also why the `ui-toggle-action` dual scope is gone —
+  `ToggleAction` and `OptimisticAction` take their root classes from
+  the class map under their own markers.
+- **`headless.ButtonProps.Action` admits the wiring vocabulary** a
+  page can put on a clickable: `interactive.Action.Attrs()` and every
+  `.OnSuccess` effect (including the post-success widget refresh,
+  `data-fui-rpc-refresh`), widget/pane open and close, keyed-pane
+  deep-links (`data-fui-pane-key`), toast, push-state, deeplink,
+  prefetch, `data-fui-intercept-close` — each checked for what it
+  deserves (same-origin for endpoints, push-state and navigate;
+  non-empty for names; JSON for bodies and toasts; the module-name
+  shape for prefetch; `secondary`/`tertiary` for panes).
+  On an anchor only the four keys that say where a click goes
+  (push-state, prefetch, open, deeplink) may ride; a request on a
+  link is still refused. `ButtonProps` also gains `External`
+  (target/rel owned, case-fold proof) and `Parts` (attrs on the root
+  and icon; a class appends).
+- **`headless.Button` renders through its `Parts` box**, so the
+  harness's part-attr, bind-routing and override sweeps cover it; the
+  spec gained a `WithParts` fixture and an off-site-link case (goldens
+  regenerated and read).
+- **The theme-layer showcase: `/examples/headless/{theme}/landing` and
+  `/examples/headless/{theme}/dashboard` on the product site, under five
+  themes.** One screen per page parameterised by the theme segment, its
+  content scoped by the route's boot-registered theme
+  (`style.RegisterThemeOverride` at package init; hashing is lazy).
+  `default` is the framework look on the site's palette; `dense` is
+  compact · outline · square with a teal-tinted dark palette; `soft` is
+  soft · pill on violet; `editorial` is filled · square with a serif
+  face; `contrast` is outline · pill with 7:1 pairs. Each has its own
+  dark palette and an option-only twin (same palette, flipped options)
+  for the same-palette fixture. Every enumeration (`StaticPaths`, axe,
+  static export, the ⌘K palette, the hub links) iterates one route
+  table, `landingRoutes`, and a no-script theme switcher (`aria-current`
+  on the current theme) links the same page under each theme. The
+  dashboard follows the command-center recipe: a `RecordSummary` with a
+  `MetricBand`, a twelve-month `LineChart` with its values as text, an
+  invoice `DataTable` whose sort is an island swap with the runtime and
+  a plain link without it (`GET /__site/headless/invoices/{theme}`,
+  sort and direction allowlisted), then the settings form. The page carries every button variant and
+  size, a disabled button, an icon LinkButton and an external one, the
+  same palette under two option sets, an A → B → A nest, explicit
+  scheme controls (`ui.ThemeToggle` pill), a bare `headless.Button` with
+  nil `Classes` beside a `ui.Button`, a newsletter form whose island
+  round trip (200-with-the-region, focus on the summary) falls back,
+  without script, to the native POST answered with a 303 back to the
+  page whose query carries the outcome — blank, invalid or ok — and
+  re-renders the region from it (the address itself never travels in
+  the URL, so it stays out of history and out of any referrer), and a
+  cold `LoadAuto`
+  insertion (`ui.Callout` via `/__site/headless/late`) whose sheet the
+  runtime fetches on arrival. Unknown theme segments 404. Browser proofs
+  in `examples/site/e2e_headless_landing_test.go` (computed option
+  variables per scope, nesting, palette-keeping twin, scoped dark mode,
+  bare-vs-styled, cold sheet, both newsletter passes — the no-script
+  pass blocks `runtime.js` via `network.SetBlockedURLs`); every route
+  joined the desktop and mobile axe lists; the static export test pins
+  the pages under the `/gofastr` base with their wrapper classes,
+  the option variables in `app.css`, and the static-mode notice wiring
+  for the server-backed POST. Linked from `/examples` and the ⌘K
+  palette; `StaticPaths` enumerates every route for export, sitemap and
+  the coverage gates.
+
+- **`registry.RegisterBehavior`**: behaviour registers like style. A
+  component's package embeds its runtime module beside the Go and
+  registers it with the markers the kernel scans for; the host serves
+  it at `/__gofastr/runtime/<name>.js` under the same minification and
+  cache rules as the embedded modules, lists it in the manifest, and
+  preloads it when a marker is in the page. The kernel reads registered
+  markers from one block beside the manifest and loads the module once
+  when one appears. No trigger vocabulary: the marker is the trigger.
+- **The plain-markup form family renders through
+  `framework/headless`.** `ui.Form`, `ui.FormField`, `ui.FormFieldFor`,
+  `ui.FormSection`, `ui.TextField`, `ui.NumberField`, `ui.DateField`,
+  `ui.Select`, `ui.ValidationSummary` and `ui.InputGroup` render their
+  headless counterparts dressed with this package's internal class maps
+  (`fui-form*`, `fui-field*`, `fui-select*`, `fui-input*`,
+  `fui-input-group*`, `fui-validation-summary*`), the way Button did:
+  class names are the same under every theme, the
+  `data-fui-comp` markers stay and fetch the same sheets, and the
+  field map and the control map are passed separately (Field and
+  Input both key their root on `PartRoot`; one merged map would lose
+  a root class). A `Select` carries its own marker on the `<select>`
+  beside the field's marker on the row, so it loads both sheets it
+  needs wherever it renders.
+- **The choice family and the affix shells render through
+  `framework/headless`.** `ui.Checkbox`, `ui.Radio`, `ui.Switch`,
+  `ui.RadioGroup`, `ui.CheckboxGroup`, `ui.PasswordInput` and
+  `ui.ColorField` render their headless counterparts
+  (`headless.Choice`, `headless.Switch`, `headless.Group`,
+  `headless.Password`, `headless.Color`) dressed with the internal
+  `fui-choice*` / `fui-switch*` / `fui-password*` / `fui-color*`
+  class maps; the `data-fui-comp` markers and registration names
+  stay and fetch the same sheets. A choice row is one inline run —
+  the label wraps the control — and keeps its own structure,
+  ignoring the field sheet's columns variables. A group's message
+  (error, else hint) belongs to the group and never to each leaf; a
+  standalone choice with an error wraps the run and its message in
+  the `fui-choice-field` shell, because the message cannot ride
+  inside the label without joining the control's accessible name.
+  `ui.PasswordInput`'s reveal words and `ui.ColorField`'s `PickColor`
+  resolve through `ui.StringsFor`. The retired
+  `core-ui/runtime/src/passwordinput.js` module is deleted (see
+  BREAKING): the headless behaviour module owns the reveal through
+  `data-hui-reveal`, and the theme editor's own swatch→hex sync is
+  deleted with its page loading the runtime so `data-hui-color`
+  binds — the editor's input handler now applies the picked hex
+  (uppercased the way the sync writes it) and touches no values
+  itself.
+- **`ui.Control` — the styled native control.** A single input for
+  the types the typed fields do not name (email, password,
+  datetime-local, file, tel, url, search, hidden), built inside a
+  `FormField` builder from the wiring the field handed it: the id,
+  the described-by chain, the invalid state and the required flag
+  come from the field and nowhere else, because two sources for one
+  fact is how they drift.
+- **The bespoke-behaviour family renders through
+  `framework/headless`.** `ui.FileUpload` is `headless.FileUpload`:
+  the zone a `<label>` for the real input (so the whole target opens
+  the picker with no script), the chosen names a `role="list"` and
+  the pick a `role="status"` sentence, both filled by the headless
+  module from the `FileSelected` / `FilesSelected` words the strings
+  bridge resolved per request. `ui.FileDropzone` carries the same
+  `data-hui-drop` hooks around its hero surface and keeps only the
+  thumbnail strip — a styling concern with no headless counterpart —
+  bound by framework/ui's own `filedropzone` module, which duplicates
+  nothing (the drop, the list and the sentence are the headless
+  module's). `ui.ConditionalField` is `headless.ConditionalField`;
+  `ui.TextArea` is `headless.Field` + `headless.Textarea` the way
+  `ui.Select` is, with `Autogrow` reaching the control through
+  `headless.Textarea`'s new `Autogrow` prop — the one data-fui-*
+  attribute a component there renders, because every caller-reachable
+  seam refuses the prefix and autogrow is a behaviour of the control,
+  not decoration. `ui.SearchInput` keeps its own module (no headless
+  counterpart) and is restyled onto `fui-*` classes only. The
+  gallery's conditional-field page is live now (a plan radio group
+  gating a coupon field) and its dropzone fixture opts into the
+  preview strip, so both halves of the family have pixels under
+  test. The family's first dashboard ships with it:
+  `/examples/headless/{default,dense}/dashboard`, one settings form
+  that submits both ways (the runtime's RPC sends multipart when the
+  form carries the upload's file input; the handler answers the
+  island region, and the no-script POST redirects back carrying the
+  outcome alone), validates on the server, moves focus to the summary
+  on a failed submit, and nests conditional regions two deep — the
+  plan's "what this layer makes possible" page.
+- **`FormFieldConfig.Input` is a builder.**
+  `func(headless.FieldControl) render.HTML` — the field hands its
+  control the id, the described-by chain, the invalid state and the
+  required flag before the control renders, which is how
+  `headless.Field` composes and the reason it exists. The
+  post-hoc `injectAttrs` string surgery (and its idempotence,
+  comment-skipping and quote-respecting helpers) is deleted; Tooltip
+  keeps its own local splice for its caller-built trigger.
+- **Hint and error are both visible.** `headless.Field` renders the
+  hint and the error when both are set, the error first, and
+  `Describe` joins both ids into `aria-describedby` in that order:
+  the hint is the rule the value must obey and the error is the
+  violation, so dropping the rule exactly when it was broken is
+  dropping it when it is needed most. The cost — longer descriptions
+  and taller errored rows for bare-headless callers — is the
+  deliberate trade of the primitive; a caller who wants the hint gone
+  on error says so by not setting it. `Choice` keeps hint-only.
+- **`headless.FieldProps.ReserveError`.** When set and `Error` is
+  empty, the field renders the error paragraph empty with its stable
+  id and keeps it in the control's `aria-describedby` — the node a
+  script fills without re-rendering (the theme editor's live apply).
+  The id is the contract it is found by (the control's id with
+  `-error`); the node carries no hook, because a `data-hui-*`
+  attribute is one this package's runtime module binds and no module
+  has behaviour for an empty paragraph. `framework/ui`'s field sheet
+  takes the node out of the grid while it is empty, so a reserved
+  field is not a field with a blank row under it. A caller that fills
+  it must also set `aria-invalid` on the control; the server-rendered
+  path should pass `Error` instead. The theme editor's hand-rolled
+  field rows and its `data-err-for` lookup are gone, moved onto
+  `ui.FormField` with `ReserveError`, targeting the node by its id.
+- **`headless.FormProps.Request` — the typed request seam for
+  forms.** What Button's `Action` is to a click: the
+  `data-fui-rpc` contract of a submitted form (endpoint, an RPC
+  method that may differ from the native one, the success effects —
+  signal, navigate, reset, widget open/close, refresh — the
+  input-trigger and debounce pair a live-search form uses, the
+  pre-flight confirm, and the generator's `data-action-mount` hook,
+  which `Safe` refuses like every `data-action-*` key and therefore
+  rides the seam). Every key is checked for what it deserves
+  (same-origin endpoints, methods the runtime sends, a numeric
+  debounce, non-empty names); `data-fui-rpc-body` is refused with its
+  own message (a form serializes itself); a key outside the
+  vocabulary panics naming the key and the seam; `Island` and
+  `Request` on one form are refused rather than resolved by
+  precedence. `ui.Form` routes `ExtraAttrs`' `data-fui-*` and
+  `data-action-*` keys through it, the way `splitButtonAttrs` does.
+- **`FieldOptions` — the form family's component options.**
+  `theme.ComponentOptions` gains `Field{Layout: Stacked | Inline,
+  Radius: Round | Square}` (defaults Stacked, Round; flattened keys
+  `field.layout`, `field.radius`); the compiler emits
+  `--fui-field-columns`, `--fui-field-message-column` and
+  `--fui-field-radius`. Inline is a preference, not a promise: the
+  field sheet stacks the row below a stated width, the control track
+  is `minmax(0, 1fr)` so a long value can never force overflow, a
+  long label wraps rather than widening its track, and choice rows
+  keep their own wrapping-label structure and ignore the columns
+  variable. The field sheet draws the required mark from the label's
+  `data-required` state (an asterisk whose alternative text is empty,
+  so the accessible name stays clean).
+- **`ui.StepWizard` takes the same error surface as `ui.Form`.**
+  `Errors`, `Summary`, `FieldLabels`, `FieldIDs`, `FieldOrder` and
+  `ID`: a non-empty `Errors` renders `ui.ValidationSummary` between
+  the step indicator and the step's fields, marks the form so the
+  headless behaviour module moves focus to it, and requires `ID` for
+  the same reason `ui.Form` does. A wizard validates the submitted
+  step on the server and re-renders it with the errors, which is what
+  a `novalidate` form owes its reader now that `required` on its
+  controls is real rather than decorative.
+- **`ui.Form` renders its errors through `ui.ValidationSummary`.**
+  With `Errors` set the form derives the summary's id from its own
+  (`<formID>-errors`), marks itself `data-hui-form-errors` so the
+  headless behaviour module moves focus to the summary after a
+  failed submit, and maps field names to control ids through the new
+  `FieldIDs`/`FieldLabels`/`FieldOrder` config — a link to `#email`
+  misses a control whose id is `f_email`. An error whose field has no
+  known id renders as text, not as an anchor to nothing. The summary is focusable by script
+  (`tabindex="-1"`, never a tab stop), `role="alert"`, and its links
+  go through the anchor policy. The newsletter on the headless
+  landing page migrated onto `Errors` with a stable id, replacing
+  its hand-stamped `data-hui-form-errors` and its own Callout.
+- **`ui.PasswordInput` takes the field's wiring.** A `Field
+  headless.FieldControl` on the config applies the enclosing field's
+  described-by, invalid state, required flag and id to the inner
+  input after the sanitiser, so a password field inside a labelled
+  field carries its description; when both are set the field wins.
+  The reveal button, its runtime module and its class family are
+  unchanged (they move in the next change of the stack).
+
 ### Changed
 - **One home per helper.** A clone survey over the tree found the same
   bodies re-implemented across packages; each now has one canonical
@@ -1424,6 +1493,12 @@ are listed under Added above, not here.
   where the old module reverted in silence.
 
 ### Fixed
+- **A `ui.Section` a parent grid stretches keeps its heading on its
+  body.** The section is a two-row grid, and a shorter section beside
+  a taller one in a `ui.Grid` shared the spare height between its
+  rows, floating the heading and description far above the content.
+  The sheet sets `align-content: start`; pinned by a chromium test
+  that compares a stretched section with an unstretched one.
 - **The navigator's stateful-param scan reads `data-hui-pane-deeplink`.** The kernel decides which query parameters survive a Back or Forward without a refetch from the pane hosts on the page; it read only the retired `data-fui-pane-deeplink` spelling, so a `headless.PaneHost` deep link refetched the screen on every history move. Both spellings are read now, pinned by the popstate e2e with one host of each.
 - **`widget.RuntimeTag` emits its inline JSON blocks before the
   runtime script.** The kernel parses `#gofastr-behaviors` while

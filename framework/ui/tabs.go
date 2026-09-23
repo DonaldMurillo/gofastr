@@ -32,12 +32,9 @@ type TabsConfig struct {
 	// data-state anywhere.
 	StateAttrs bool
 
-	// ID wires tab↔panel semantics: each tab gets id "<ID>-tab-<i>"
-	// plus aria-controls "<ID>-panel-<i>", each panel gets id
-	// "<ID>-panel-<i>". With the headless primitive this is now
-	// ALWAYS wired (the primitive owns the ids from the signal
-	// name); the field is kept for config compatibility and used as
-	// an override of the signal name for the id prefix.
+	// ID overrides the id prefix the tab strip would derive from the
+	// signal name: each tab gets id "<ID>-tab-<i>" plus aria-controls
+	// "<ID>-panel-<i>", each panel gets id "<ID>-panel-<i>".
 	ID string
 
 	// VacateHidden ships hidden panels EMPTY, their server-rendered

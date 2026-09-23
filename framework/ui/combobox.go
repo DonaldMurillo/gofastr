@@ -182,7 +182,7 @@ func comboboxCSS(_ style.Theme) string {
   user-select: none;
 }
 [data-fui-comp="ui-combobox"] .fui-combobox__option.is-active {
-  background: var(--color-muted, #f1f1f3);
+  background: var(--color-surface-soft, #f1f1f3);
 }
 [data-fui-comp="ui-combobox"] .fui-combobox__option[aria-disabled="true"] {
   color: var(--color-text-muted, #6b7280);

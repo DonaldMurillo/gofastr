@@ -497,7 +497,7 @@ var Catalog = []Entry{
 	{"collapsible", "Collapsible", "Disclosure", "Expand/collapse section using native <details>.", func() render.HTML {
 		return render.Join(
 			ui.Collapsible(ui.CollapsibleConfig{Summary: "What is this?"},
-				html.Paragraph(html.TextConfig{}, render.Text("A collapsible section using native <details>. The browser handles open/close; the runtime adds keyboard support via data-fui-disclosure.")),
+				html.Paragraph(html.TextConfig{}, render.Text("A collapsible section using native <details>. The browser handles open/close; the headless-disclosure module adds keyboard support via data-hui-disclosure.")),
 			),
 			ui.Collapsible(ui.CollapsibleConfig{Summary: "Is it accessible?", Open: true},
 				html.Paragraph(html.TextConfig{}, render.Text("Yes. Escape to close, aria-expanded mirroring, all handled automatically.")),

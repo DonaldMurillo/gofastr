@@ -6787,7 +6787,7 @@ func renderBlueprintBlockForScreen(bp Blueprint, screen BlueprintScreen, block B
 	}
 	switch strings.ToLower(block.Type) {
 	case "", "text", "p", "paragraph":
-		return fmt.Sprintf("render.Tag(\"p\", %s, render.Text(%q))", attrs, block.Text)
+		return fmt.Sprintf("html.Paragraph(html.TextConfig{Class: %q}, render.Text(%q))", block.Class, block.Text)
 	case "heading", "h1", "h2", "h3", "h4", "h5", "h6":
 		level := block.Level
 		if level == 0 {
@@ -6812,7 +6812,7 @@ func renderBlueprintBlockForScreen(bp Blueprint, screen BlueprintScreen, block B
 	case "section":
 		return fmt.Sprintf("render.Tag(\"section\", %s, render.Text(%q))", attrs, block.Text)
 	default:
-		return fmt.Sprintf("render.Tag(\"div\", %s, render.Text(%q))", attrs, block.Text)
+		return fmt.Sprintf("html.Div(html.DivConfig{Class: %q}, render.Text(%q))", block.Class, block.Text)
 	}
 }
 
@@ -6942,8 +6942,7 @@ func blueprintAuthFormExpr(heading, action, next, submitLabel, pwAutocomplete st
 	// the generator ships zero raw markup (hard rule 7), and the
 	// primitive is the same one every other control in the emitted app
 	// goes through. gofastr pack reads this expression back —
-	// reverseAuthCard knows both this shape and the legacy render.Raw
-	// string an older generator emitted.
+	// reverseAuthCard knows exactly this shape.
 	hidden := fmt.Sprintf(`html.Input(html.InputConfig{Type: "hidden", Name: "next", Value: %q})`, next)
 	emailField := `ui.FormField(ui.FormFieldConfig{Label: "Email", For: "auth-email", Required: true,` +
 		` Input: func(c headless.FieldControl) render.HTML { return ui.Control(ui.ControlConfig{Field: c, Type: "email", Name: "email", AutoComplete: "email"}) }})`

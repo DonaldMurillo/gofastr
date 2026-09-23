@@ -284,7 +284,7 @@ func TestSidebarGroupDefaultDialectUnchanged(t *testing.T) {
 		},
 	}).Render())
 	if !strings.Contains(out, `<details class="fui-sidebar__group" data-hui-disclosure="" data-hui-disclosure-persist="workspace-nav-inline-g1">`) {
-		t.Errorf("default group markup must stay <details data-fui-disclosure-persist>:\n%s", out)
+		t.Errorf("default group markup must stay <details data-hui-disclosure-persist>:\n%s", out)
 	}
 	if strings.Contains(out, "data-hui-sidebar-group-toggle") || strings.Contains(out, "aria-controls=") {
 		t.Errorf("default dialect must not emit button markers or group ids:\n%s", out)

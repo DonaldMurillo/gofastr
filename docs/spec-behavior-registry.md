@@ -1,5 +1,11 @@
 # Spec: behaviour registers like style
 
+> Historical: superseded by what shipped — `framework/headless`'s
+> registered behaviour modules (`core-ui/registry.RegisterBehavior`)
+> and the `data-hui-action*` action contract; the
+> `optimisticaction`/`toggleaction` adapters this spec planned were
+> deleted. Kept for the design record.
+
 Status: accepted and underway, proposed 2026-09-15. Steps 1–3 of the
 sequence below are done (the seam with its tests, `framework/headless`'s
 registration, and dependencies + readiness with the action primitive and

@@ -57,7 +57,7 @@ library usually needs (every zero value keeps the default output
 byte-identical):
 
 - `StateAttrs bool` — adds `data-state="active"/"inactive"` to every
-  tab button. The demand-loaded `tabs` runtime module keeps it in step
+  tab button. The `headless-tabs` module keeps it in step
   with the selection after client-side switches, alongside the
   `aria-selected` mirroring core already does.
 - `ID string` — wires tab↔panel semantics: button
@@ -65,7 +65,7 @@ byte-identical):
   `id="<ID>-panel-<i>"`. You own cross-page uniqueness of `ID`.
 - `VacateHidden bool` — hidden panels ship empty with their content in
   an adjacent JSON stash, so page-scoped test locators cannot match
-  text inside hidden panels. The `tabs` module restores content on
+  text inside hidden panels. The `headless-tabs` module restores content on
   first show and moves the live nodes out/in on every later switch, so
   island content the runtime swapped in survives re-show. While a
   panel is vacated, document-scoped updates targeting it (SSE pushes,
@@ -73,8 +73,8 @@ byte-identical):
   for replay, re-show resurrects the panel's pre-vacate nodes, and only
   updates that arrive after re-show land.
 
-  Timing caveat for `VacateHidden`: the `tabs` module loads on the
-  strip's first hover/focus, so any signal write that lands before
+  Timing caveat for `VacateHidden`: the `headless-tabs` module is
+  demand-loaded on the strip's `data-hui-tabs` marker, so any signal write that lands before
   that — an SSE, poll, or RPC-driven update, or a hydration-time
   signal value differing from what SSR rendered — moves `data-active`
   on a strip nobody has touched, and the newly-active panel shows
@@ -93,7 +93,7 @@ between `"true"` and `"false"`.
 ### Collapsible
 
 `framework/ui.Collapsible` wraps native `<details>` with
-`data-fui-disclosure` for keyboard support (Escape to close) and
+`data-hui-disclosure` for keyboard support (Escape to close) and
 `aria-expanded` mirroring. The browser handles open/close natively.
 
 ### Copy to clipboard
@@ -144,8 +144,7 @@ IntersectionObserves which section is currently in the upper portion
 of the viewport and marks the corresponding nav link
 `aria-current="true"` / `.is-active`. The table of contents
 (`headless.TableOfContents`, `data-hui-toc`) shares the same observer.
-The retired `data-fui-scrollspy` spelling survives only as a marker
-the `activelink` module keeps its hands off.
+The retired scrollspy spelling is gone with its module.
 
 ---
 

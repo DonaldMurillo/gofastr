@@ -144,7 +144,7 @@ func (t Theme) ResolveRadius(name string) string {
 // fields, callers can use CSSCustomPropertiesOf(any) on the outer
 // struct to include the embedded extensions.
 func (t Theme) CSSCustomProperties() string {
-	css := CSSCustomPropertiesOf(t) + "\n" + aliasTokenCSS()
+	css := CSSCustomPropertiesOf(t)
 	if compiled := t.compiledOptionsCSS(); compiled != "" {
 		css += "\n" + compiled
 	}
@@ -155,13 +155,13 @@ func (t Theme) CSSCustomProperties() string {
 }
 
 // tokenCSS is CSSCustomProperties without the compiled component
-// options: the tokens, the aliases and the dark blocks, which depend on
-// the theme alone. ThemeHash fingerprints this plus the options in their
-// flat form, so a theme has the same identity in every binary, whether
-// or not a compiler is linked; the compiled block is a function of the
-// options and the linked layer, not part of what the theme is.
+// options: the tokens and the dark blocks, which depend on the theme
+// alone. ThemeHash fingerprints this plus the options in their flat
+// form, so a theme has the same identity in every binary, whether
+// or not a compiler is linked; the compiled block is a function of
+// the options and the linked layer, not part of what the theme is.
 func (t Theme) tokenCSS() string {
-	css := CSSCustomPropertiesOf(t) + "\n" + aliasTokenCSS()
+	css := CSSCustomPropertiesOf(t)
 	if dark := darkSchemeCSS(t.DarkColors, t.DarkCode); dark != "" {
 		css += "\n" + dark
 	}
@@ -219,52 +219,6 @@ func componentCompilerDefaults() map[string]string {
 	componentCompiler.mu.Lock()
 	defer componentCompiler.mu.Unlock()
 	return componentCompiler.defaults
-}
-
-// aliasTokenCSS emits derived aliases for token names that framework/ui
-// components reference but ColorSet never declared (--color-muted,
-// --color-warn, --color-surface-hover, …). Before this block existed those
-// references silently used their hardcoded fallbacks, constants tuned for
-// light themes, so dark themes got light-on-light hover states and similar
-// contrast failures. Each alias resolves through var(), so it tracks the
-// dark-scheme re-declarations automatically; emit once in :root and both
-// schemes are covered. New components should use the canonical ColorSet
-// names; this block exists so every theme keeps the legacy names live.
-// The bare declaration lines live in aliasTokenDecls, which the scope
-// emitter re-emits inside every theme-override block.
-func aliasTokenCSS() string {
-	var b strings.Builder
-	b.WriteString(":root {\n")
-	for _, line := range aliasTokenDecls() {
-		b.WriteString("  ")
-		b.WriteString(line)
-		b.WriteString("\n")
-	}
-	b.WriteString("}")
-	return b.String()
-}
-
-// aliasTokenDecls is aliasTokenCSS as bare "--name: value;" lines, the
-// form a theme-override scope block needs. The aliases are emitted at
-// :root only by the root emitter, but a custom property's var()
-// references compute at the element the declaration sits on: inside a
-// .fui-theme-<hash> scope with a different --color-primary, the root's
-// --color-primary-foreground would still carry the root's resolved
-// chain. Re-emitting the alias lines inside every scope block rebinds
-// them to that scope's palette.
-func aliasTokenDecls() []string {
-	return []string{
-		"--color-muted: var(--color-surface-soft);",
-		"--color-surface-hover: var(--color-surface-soft);",
-		"--color-border-subtle: var(--color-border);",
-		"--color-border-hover: var(--color-border-strong);",
-		"--color-primary-hover: color-mix(in srgb, var(--color-primary) 85%, var(--color-text));",
-		"--color-primary-foreground: var(--color-primary-fg);",
-		"--color-ring: var(--color-primary);",
-		"--color-warn: var(--color-warning);",
-		"--color-warn-soft: color-mix(in srgb, var(--color-warning) 15%, transparent);",
-		"--color-warn-strong: color-mix(in srgb, var(--color-warning) 80%, var(--color-text));",
-	}
 }
 
 // DarkSchemeCSS emits the dark-scheme token overrides for a theme's DarkColors
