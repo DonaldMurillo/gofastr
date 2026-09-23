@@ -79,7 +79,7 @@ func CodeTabs(cfg CodeTabsConfig, samples ...CodeSample) render.HTML {
 		})
 	}
 
-	cls := "ui-code-tabs"
+	cls := "fui-code-tabs"
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
 	}

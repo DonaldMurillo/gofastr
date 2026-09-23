@@ -60,7 +60,7 @@ func Icon(name string, cfg IconConfig) render.HTML {
 	if size == "" {
 		size = "20"
 	}
-	cls := "ui-icon"
+	cls := "fui-icon"
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
 	}

@@ -1,15 +1,13 @@
 package ui
 
 import (
-	"maps"
-	"net/url"
 	"strconv"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
-	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/headless"
 )
 
 // ─── Gallery ────────────────────────────────────────────────────────
@@ -32,6 +30,12 @@ import (
 //                navigates to. Use for "click photo → detail page".
 //
 // Caption rendering is controlled by CaptionMode.
+//
+// The structure renders through headless.Gallery with the fui-gallery
+// class map: a captioned item is li > figure > (a > img, figcaption) —
+// the caption sits beside the link, so the link's accessible name is
+// the image's alt alone and the caption text is not a click target —
+// and a captionless item is a plain li > a > img.
 
 // GalleryVariant picks the surface layout.
 type GalleryVariant string
@@ -103,7 +107,11 @@ type GalleryConfig struct {
 	ExtraAttrs html.Attrs
 }
 
-// Gallery renders the thumbnail surface.
+// Gallery renders the thumbnail surface through headless.Gallery with
+// the fui-gallery class map (the sheet name "ui-gallery" and marker
+// stay). The thumb loads lazily through the parts seam; the default
+// and lightbox anchors open the full image in a new tab through the
+// per-item attrs, so the no-script path keeps the old behaviour.
 func Gallery(cfg GalleryConfig) render.HTML {
 	if len(cfg.Items) == 0 {
 		panic("ui: Gallery requires ≥1 Item")
@@ -132,135 +140,89 @@ func Gallery(cfg GalleryConfig) render.HTML {
 		panic("ui: Gallery unknown Gap " + string(gap))
 	}
 
-	cls := "ui-gallery"
+	rootCls := "fui-gallery"
 	if cfg.Variant != GalleryGrid {
-		cls += " ui-gallery--" + string(cfg.Variant)
+		rootCls += " fui-gallery--" + string(cfg.Variant)
 	}
 	if cfg.CaptionMode != GalleryCaptionBelow {
-		cls += " ui-gallery--cap-" + string(cfg.CaptionMode)
+		rootCls += " fui-gallery--cap-" + string(cfg.CaptionMode)
 	}
 	if gap != "" {
-		cls += " ui-gallery--gap-" + string(gap)
+		rootCls += " fui-gallery--gap-" + string(gap)
+	}
+	// Columns maps to a precomputed .fui-gallery--cols-<n> class that
+	// sets --ui-gallery-cols, no inline style needed (CSP). Grid and
+	// masonry cap at 12 for the precomputed class set; very wide grids
+	// fall back to 12.
+	if cfg.Variant != GalleryStrip {
+		rootCls += " fui-gallery--cols-" + strconv.Itoa(min(max(cols, 1), 12))
 	}
 	if cfg.Class != "" {
-		cls += " " + cfg.Class
+		rootCls += " " + cfg.Class
 	}
 
-	attrs := html.Attrs{
-		"class":      cls,
-		"aria-label": label,
+	classes := headless.Classes{
+		headless.PartRoot:    rootCls,
+		headless.PartControl: "fui-gallery__row",
+		headless.PartHeader:  "fui-gallery__figure",
+		headless.PartLabel:   "fui-gallery__item",
+		headless.PartBody:    "fui-gallery__thumb",
+		headless.PartText:    "fui-gallery__caption",
 	}
-	// Columns maps to a precomputed .ui-gallery--cols-<n> class that
-	// sets --ui-gallery-cols, no inline style needed (CSP).
-	if cfg.Variant == GalleryGrid || cfg.Variant == GalleryMasonry {
-		// Cap at 12 for the precomputed class set; very wide grids
-		// fall back to 12.
-		c := min(max(cols, 1), 12)
-		attrs["class"] = cls + " ui-gallery--cols-" + strconv.Itoa(c)
-	}
-	if cfg.ID != "" {
-		attrs["id"] = cfg.ID
-	}
-	maps.Copy(attrs, html.SafeExtraAttrs(cfg.ExtraAttrs, "aria-label"))
 
-	rows := make([]render.HTML, 0, len(cfg.Items))
+	items := make([]headless.GalleryItem, len(cfg.Items))
 	for i, it := range cfg.Items {
-		if it.Src == "" {
-			panic("ui: Gallery item requires Src")
+		caption := it.Caption
+		if cfg.CaptionMode == GalleryCaptionOff {
+			caption = ""
 		}
-		if it.Alt == "" {
-			panic("ui: Gallery item requires Alt. Set a meaningful description; the framework panics by default to surface missing alt text")
+		items[i] = headless.GalleryItem{
+			Src: it.Src, Thumb: it.Thumb, Alt: it.Alt,
+			Caption: caption, Width: it.Width, Height: it.Height,
 		}
-		thumb := it.Thumb
-		if thumb == "" {
-			thumb = it.Src
-		}
-		// Drop unsafe schemes on the thumbnail src (see safety.go). An
-		// unsafe value falls back to the framework's 1×1 placeholder so
-		// a javascript: URL never reaches <img src>. safeImageURL, not
-		// safeResourceURL: a generated thumbnail is legitimately inlined
-		// as a raster data: URI, and the stricter policy turned that into
-		// an image that looked broken rather than blocked.
-		if safe := safeImageURL(thumb); safe != "" {
-			thumb = safe
-		} else {
-			thumb = "/__gofastr/blank.png"
-		}
-		w := it.Width
-		if w == 0 {
-			w = 200
-		}
-		h := it.Height
-		if h == 0 {
-			h = 150
-		}
-
-		linkAttrs := map[string]string{
-			"class":      "ui-gallery__item",
-			"aria-label": it.Alt,
-		}
-		// Click behaviour: Lightbox wins over HrefFn wins over the
-		// "open Src in new tab" default.
-		switch {
-		case cfg.Lightbox != "":
-			// Open the paired Lightbox. Deeplink carries src+alt+caption
-			// and group=<gallery-id> so the Lightbox runtime can walk
-			// siblings for prev/next nav.
-			groupID := cfg.ID
-			if groupID == "" {
-				groupID = cfg.Lightbox + "-gallery"
-			}
-			dl := "src=" + url.PathEscape(it.Src) +
-				"&alt=" + url.PathEscape(it.Alt) +
-				"&group=" + url.PathEscape(groupID)
-			if it.Caption != "" {
-				dl += "&caption=" + url.PathEscape(it.Caption)
-			}
-			if h := urlsafe.CleanAnchor(it.Src); h != "" {
-				linkAttrs["href"] = h
-				linkAttrs["target"] = "_blank"
-				linkAttrs["rel"] = "noopener"
-			}
-			linkAttrs["data-fui-open"] = cfg.Lightbox
-			linkAttrs["data-fui-deeplink"] = dl
-			linkAttrs["data-fui-lightbox-group"] = groupID
-		case cfg.HrefFn != nil:
-			if h := urlsafe.CleanAnchor(cfg.HrefFn(i, it)); h != "" {
-				linkAttrs["href"] = h
-			}
-		default:
-			if h := urlsafe.CleanAnchor(it.Src); h != "" {
-				linkAttrs["href"] = h
-				linkAttrs["target"] = "_blank"
-				linkAttrs["rel"] = "noopener"
-			}
-		}
-
-		figureChildren := []render.HTML{
-			render.Tag("img", map[string]string{
-				"src":     thumb,
-				"alt":     it.Alt,
-				"width":   strconv.Itoa(w),
-				"height":  strconv.Itoa(h),
-				"loading": "lazy",
-				"class":   "ui-gallery__thumb",
-			}),
-		}
-		if it.Caption != "" && cfg.CaptionMode != GalleryCaptionOff {
-			figureChildren = append(figureChildren,
-				render.Tag("figcaption", map[string]string{"class": "ui-gallery__caption"},
-					render.Text(it.Caption)))
-		}
-
-		rows = append(rows, render.Tag("li", map[string]string{"class": "ui-gallery__row"},
-			render.Tag("a", linkAttrs,
-				render.Tag("figure", map[string]string{"class": "ui-gallery__figure"},
-					figureChildren...,
-				),
-			),
-		))
 	}
-	return galleryStyle.WrapHTML(render.Tag("ul", attrs, rows...))
+
+	// The default and lightbox anchors open the full image in a new
+	// tab; an HrefFn anchor goes where the caller said.
+	var perItem map[int]html.Attrs
+	if cfg.HrefFn == nil {
+		perItem = make(map[int]html.Attrs, len(items))
+		for i := range items {
+			perItem[i] = html.Attrs{"target": "_blank", "rel": "noopener"}
+		}
+	}
+
+	var hrefFn func(i int, it headless.GalleryItem) string
+	if cfg.HrefFn != nil && cfg.Lightbox == "" {
+		hrefFn = func(i int, it headless.GalleryItem) string {
+			return cfg.HrefFn(i, cfg.Items[i])
+		}
+	}
+
+	var lightbox headless.GalleryLightbox
+	if cfg.Lightbox != "" {
+		group := cfg.ID
+		if group == "" {
+			group = cfg.Lightbox + "-gallery"
+		}
+		lightbox = headless.GalleryLightbox{Name: cfg.Lightbox, Group: group}
+	}
+
+	out := headless.Gallery(headless.GalleryProps{
+		Items:    items,
+		Label:    label,
+		HrefFn:   hrefFn,
+		Lightbox: lightbox,
+		// The thumb is below the fold as often as not: lazy loading is
+		// presentation, so it rides the parts seam rather than a prop.
+		ExtraAttrsPerItem: perItem,
+		ID:                cfg.ID,
+		ExtraAttrs:        headless.Safe(cfg.ExtraAttrs, "aria-label"),
+		Parts: headless.Parts{Attrs: headless.PartAttrs{
+			headless.PartBody: {"loading": "lazy"},
+		}},
+	}, classes)
+	return galleryStyle.WrapHTML(out)
 }
 
 var galleryStyle = registry.RegisterStyle("ui-gallery", galleryCSS)
@@ -274,11 +236,11 @@ func galleryCSS(_ style.Theme) string {
   --ui-gallery-min: 9.5rem;
   --ui-gallery-gap: var(--spacing-md, 8px);
 }
-[data-fui-comp="ui-gallery"] .ui-gallery__row {
+[data-fui-comp="ui-gallery"] .fui-gallery__row {
   margin: 0;
   padding: 0;
 }
-[data-fui-comp="ui-gallery"] .ui-gallery__item {
+[data-fui-comp="ui-gallery"] .fui-gallery__item {
   display: block;
   border-radius: var(--radii-md, 8px);
   overflow: hidden;
@@ -289,25 +251,25 @@ func galleryCSS(_ style.Theme) string {
   cursor: zoom-in;
   transition: border-color 120ms ease, transform 120ms ease;
 }
-[data-fui-comp="ui-gallery"] .ui-gallery__item:hover {
+[data-fui-comp="ui-gallery"] .fui-gallery__item:hover {
   border-color: var(--color-primary, #4F46E5);
 }
-[data-fui-comp="ui-gallery"] .ui-gallery__item:focus-visible {
+[data-fui-comp="ui-gallery"] .fui-gallery__item:focus-visible {
   outline: 2px solid var(--color-primary, #4F46E5);
   outline-offset: 2px;
 }
-[data-fui-comp="ui-gallery"] .ui-gallery__figure {
+[data-fui-comp="ui-gallery"] .fui-gallery__figure {
   margin: 0;
   display: grid;
   gap: var(--spacing-xs, 2px);
 }
-[data-fui-comp="ui-gallery"] .ui-gallery__thumb {
+[data-fui-comp="ui-gallery"] .fui-gallery__thumb {
   display: block;
   inline-size: 100%;
   block-size: auto;
   object-fit: cover;
 }
-[data-fui-comp="ui-gallery"] .ui-gallery__caption {
+[data-fui-comp="ui-gallery"] .fui-gallery__caption {
   margin: 0;
   padding: var(--spacing-sm, 4px) var(--spacing-sm, 4px) var(--spacing-sm, 4px);
   font-size: var(--text-sm, 0.875rem);
@@ -315,38 +277,38 @@ func galleryCSS(_ style.Theme) string {
 }
 
 /* Gap presets. */
-[data-fui-comp="ui-gallery"].ui-gallery--gap-xs { --ui-gallery-gap: var(--spacing-xs, 2px); }
-[data-fui-comp="ui-gallery"].ui-gallery--gap-sm { --ui-gallery-gap: var(--spacing-sm, 4px); }
-[data-fui-comp="ui-gallery"].ui-gallery--gap-lg { --ui-gallery-gap: var(--spacing-lg, 16px); }
-[data-fui-comp="ui-gallery"].ui-gallery--gap-xl { --ui-gallery-gap: var(--spacing-xl, 24px); }
+[data-fui-comp="ui-gallery"].fui-gallery--gap-xs { --ui-gallery-gap: var(--spacing-xs, 2px); }
+[data-fui-comp="ui-gallery"].fui-gallery--gap-sm { --ui-gallery-gap: var(--spacing-sm, 4px); }
+[data-fui-comp="ui-gallery"].fui-gallery--gap-lg { --ui-gallery-gap: var(--spacing-lg, 16px); }
+[data-fui-comp="ui-gallery"].fui-gallery--gap-xl { --ui-gallery-gap: var(--spacing-xl, 24px); }
 
 /* Columns presets — 1..12. */
-[data-fui-comp="ui-gallery"].ui-gallery--cols-1 { --ui-gallery-cols: 1; }
-[data-fui-comp="ui-gallery"].ui-gallery--cols-2 { --ui-gallery-cols: 2; }
-[data-fui-comp="ui-gallery"].ui-gallery--cols-3 { --ui-gallery-cols: 3; }
-[data-fui-comp="ui-gallery"].ui-gallery--cols-4 { --ui-gallery-cols: 4; }
-[data-fui-comp="ui-gallery"].ui-gallery--cols-5 { --ui-gallery-cols: 5; }
-[data-fui-comp="ui-gallery"].ui-gallery--cols-6 { --ui-gallery-cols: 6; }
-[data-fui-comp="ui-gallery"].ui-gallery--cols-7 { --ui-gallery-cols: 7; }
-[data-fui-comp="ui-gallery"].ui-gallery--cols-8 { --ui-gallery-cols: 8; }
-[data-fui-comp="ui-gallery"].ui-gallery--cols-9 { --ui-gallery-cols: 9; }
-[data-fui-comp="ui-gallery"].ui-gallery--cols-10 { --ui-gallery-cols: 10; }
-[data-fui-comp="ui-gallery"].ui-gallery--cols-11 { --ui-gallery-cols: 11; }
-[data-fui-comp="ui-gallery"].ui-gallery--cols-12 { --ui-gallery-cols: 12; }
+[data-fui-comp="ui-gallery"].fui-gallery--cols-1 { --ui-gallery-cols: 1; }
+[data-fui-comp="ui-gallery"].fui-gallery--cols-2 { --ui-gallery-cols: 2; }
+[data-fui-comp="ui-gallery"].fui-gallery--cols-3 { --ui-gallery-cols: 3; }
+[data-fui-comp="ui-gallery"].fui-gallery--cols-4 { --ui-gallery-cols: 4; }
+[data-fui-comp="ui-gallery"].fui-gallery--cols-5 { --ui-gallery-cols: 5; }
+[data-fui-comp="ui-gallery"].fui-gallery--cols-6 { --ui-gallery-cols: 6; }
+[data-fui-comp="ui-gallery"].fui-gallery--cols-7 { --ui-gallery-cols: 7; }
+[data-fui-comp="ui-gallery"].fui-gallery--cols-8 { --ui-gallery-cols: 8; }
+[data-fui-comp="ui-gallery"].fui-gallery--cols-9 { --ui-gallery-cols: 9; }
+[data-fui-comp="ui-gallery"].fui-gallery--cols-10 { --ui-gallery-cols: 10; }
+[data-fui-comp="ui-gallery"].fui-gallery--cols-11 { --ui-gallery-cols: 11; }
+[data-fui-comp="ui-gallery"].fui-gallery--cols-12 { --ui-gallery-cols: 12; }
 
 /* ── Grid variant (default) ──
    --ui-gallery-cols is a MAXIMUM: the calc() term sizes tracks for exactly
    that many columns, and the max() floor (--ui-gallery-min) makes auto-fill
    wrap to fewer columns when tracks would get narrower — responsive with no
    media queries. */
-[data-fui-comp="ui-gallery"]:not(.ui-gallery--strip):not(.ui-gallery--masonry) {
+[data-fui-comp="ui-gallery"]:not(.fui-gallery--strip):not(.fui-gallery--masonry) {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(min(100%, max(var(--ui-gallery-min), calc((100% - (var(--ui-gallery-cols) - 1) * var(--ui-gallery-gap)) / var(--ui-gallery-cols)))), 1fr));
   gap: var(--ui-gallery-gap);
 }
 
 /* ── Strip variant: horizontal scroll-snap ── */
-.ui-gallery--strip {
+.fui-gallery--strip {
   display: flex;
   flex-wrap: nowrap;
   overflow-x: auto;
@@ -354,7 +316,7 @@ func galleryCSS(_ style.Theme) string {
   gap: var(--ui-gallery-gap);
   padding-block-end: var(--spacing-xs, 2px);
 }
-.ui-gallery--strip > .ui-gallery__row {
+.fui-gallery--strip > .fui-gallery__row {
   flex: 0 0 auto;
   inline-size: 240px;
   scroll-snap-align: start;
@@ -364,22 +326,22 @@ func galleryCSS(_ style.Theme) string {
    With both column-width and column-count set, count is a maximum and the
    browser drops columns as the container narrows — same responsive contract
    as the grid variant. */
-.ui-gallery--masonry {
+.fui-gallery--masonry {
   column-width: var(--ui-gallery-min);
   column-count: var(--ui-gallery-cols);
   column-gap: var(--ui-gallery-gap);
   display: block;
 }
-.ui-gallery--masonry > .ui-gallery__row {
+.fui-gallery--masonry > .fui-gallery__row {
   break-inside: avoid;
   margin-block-end: var(--ui-gallery-gap);
 }
 
 /* ── Caption overlay mode ── */
-.ui-gallery--cap-overlay .ui-gallery__figure {
+.fui-gallery--cap-overlay .fui-gallery__figure {
   position: relative;
 }
-.ui-gallery--cap-overlay .ui-gallery__caption {
+.fui-gallery--cap-overlay .fui-gallery__caption {
   position: absolute;
   inset-inline: 0;
   inset-block-end: 0;
@@ -391,8 +353,10 @@ func galleryCSS(_ style.Theme) string {
   opacity: 0;
   transition: opacity 150ms ease;
 }
-.ui-gallery--cap-overlay .ui-gallery__item:hover .ui-gallery__caption,
-.ui-gallery--cap-overlay .ui-gallery__item:focus-within .ui-gallery__caption {
+/* The caption is the anchor's sibling in the primitive's markup, so
+   the row (the li) carries the hover/focus-within surface. */
+.fui-gallery--cap-overlay .fui-gallery__row:hover .fui-gallery__caption,
+.fui-gallery--cap-overlay .fui-gallery__row:focus-within .fui-gallery__caption {
   opacity: 1;
 }`
 }

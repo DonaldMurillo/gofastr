@@ -759,7 +759,7 @@ td[data-align="end"] {
    the helper is part of the built-in auto-emitted app.css floor. Apps
    that want a custom visually-hidden recipe can override either class
    via their own WithCustomCSS — last rule wins. */
-.fui-visually-hidden, .ui-visually-hidden {
+.fui-visually-hidden, .fui-visually-hidden {
   position: absolute !important;
   width: 1px; height: 1px;
   padding: 0; margin: -1px;

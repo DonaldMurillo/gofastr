@@ -60,7 +60,7 @@ func SignOut(cfg SignOutConfig) render.HTML {
 	if variant == "" {
 		variant = ButtonGhost
 	}
-	cls := "ui-sign-out"
+	cls := "fui-sign-out"
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
 	}

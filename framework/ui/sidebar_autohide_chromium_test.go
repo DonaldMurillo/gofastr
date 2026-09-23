@@ -56,11 +56,11 @@ func TestAutoHideRailWidensOnFocus(t *testing.T) {
 
 	// Computed width is the content box (64px / 220px); the border box
 	// adds the rail padding and would tie the test to a spacing token.
-	const width = `getComputedStyle(document.querySelector('.ui-sidebar__inline')).width`
+	const width = `getComputedStyle(document.querySelector('.fui-sidebar__inline')).width`
 	var rest, revealed string
 	// The malformed rule also swallowed the rest-state rule that follows
 	// it, so the title and footer leaked into the 64px rail; pin both.
-	const titleDisplay = `getComputedStyle(document.querySelector('.ui-sidebar__title')).display`
+	const titleDisplay = `getComputedStyle(document.querySelector('.fui-sidebar__title')).display`
 	var titleRest, titleRevealed string
 	var restShot, revealedShot []byte
 	if err := chromedp.Run(ctx,
@@ -69,14 +69,14 @@ func TestAutoHideRailWidensOnFocus(t *testing.T) {
 		chromedp.EmulateViewport(1280, 800),
 		// Poll on presence: chromedp.WaitVisible never settled on this
 		// node (display:contents parent) even with the box painted.
-		chromedp.Poll(`!!document.querySelector('.ui-sidebar__inline a')`, nil,
+		chromedp.Poll(`!!document.querySelector('.fui-sidebar__inline a')`, nil,
 			chromedp.WithPollingTimeout(15*time.Second), chromedp.WithPollingInterval(50*time.Millisecond)),
 		chromedp.Evaluate(width, &rest),
 		chromedp.Evaluate(titleDisplay, &titleRest),
 		chromedp.CaptureScreenshot(&restShot),
 		// Keyboard focus is the deterministic reveal path (:focus-within);
 		// it is also the one that matters for a11y, hover being optional.
-		chromedp.Evaluate(`document.querySelector('.ui-sidebar__inline a').focus()`, nil),
+		chromedp.Evaluate(`document.querySelector('.fui-sidebar__inline a').focus()`, nil),
 		// The width transitions over --duration-fast (150ms); wait it out.
 		chromedp.Sleep(400*time.Millisecond),
 		chromedp.Evaluate(width, &revealed),

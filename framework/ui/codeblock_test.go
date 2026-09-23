@@ -58,12 +58,12 @@ func TestCodeBlockHighlightLineClasses(t *testing.T) {
 		t.Fatalf("ParseLineRanges: %v", err)
 	}
 	h := string(CodeBlock(CodeBlockConfig{Code: "one\ntwo\nthree", HighlightLines: ranges}))
-	if want := `<span class="ui-code-block__line ui-code-block__line--highlight">two</span>`; !strings.Contains(h, want) {
+	if want := `<span class="fui-code-block__line fui-code-block__line--highlight">two</span>`; !strings.Contains(h, want) {
 		t.Errorf("highlighted line missing its class:\n%s", h)
 	}
 	for _, plain := range []string{
-		`<span class="ui-code-block__line">one</span>`,
-		`<span class="ui-code-block__line">three</span>`,
+		`<span class="fui-code-block__line">one</span>`,
+		`<span class="fui-code-block__line">three</span>`,
 	} {
 		if !strings.Contains(h, plain) {
 			t.Errorf("unhighlighted line must keep the bare class:\n%s", h)
@@ -77,12 +77,12 @@ func TestCodeBlockDiffLineClasses(t *testing.T) {
 		Diff: true,
 	}))
 	for _, want := range []string{
-		`class="ui-code-block__line ui-code-block__line--added">+added`,
-		`class="ui-code-block__line ui-code-block__line--removed">-removed`,
-		`class="ui-code-block__line"> ctx`,
+		`class="fui-code-block__line fui-code-block__line--added">+added`,
+		`class="fui-code-block__line fui-code-block__line--removed">-removed`,
+		`class="fui-code-block__line"> ctx`,
 		// File headers count as added/removed too (first char rules).
-		`class="ui-code-block__line ui-code-block__line--added">+++ new.go`,
-		`class="ui-code-block__line ui-code-block__line--removed">--- old.go`,
+		`class="fui-code-block__line fui-code-block__line--added">+++ new.go`,
+		`class="fui-code-block__line fui-code-block__line--removed">--- old.go`,
 	} {
 		if !strings.Contains(h, want) {
 			t.Errorf("diff classes wrong, missing %q:\n%s", want, h)
@@ -102,9 +102,9 @@ func TestCodeBlockDiffLinesPathTags(t *testing.T) {
 		Diff: true,
 	}))
 	for _, want := range []string{
-		`ui-code-block__line--removed"><span class="tk-pn">-</span>`,
-		`ui-code-block__line--added"><span class="tk-pn">+</span>`,
-		`class="ui-code-block__line"> ctx`,
+		`fui-code-block__line--removed"><span class="tk-pn">-</span>`,
+		`fui-code-block__line--added"><span class="tk-pn">+</span>`,
+		`class="fui-code-block__line"> ctx`,
 	} {
 		if !strings.Contains(h, want) {
 			t.Errorf("Lines-path diff classification wrong, missing %q:\n%s", want, h)
@@ -119,10 +119,10 @@ func TestCodeBlockWordMarksEscapeSafe(t *testing.T) {
 		Code:           `call <b> & done`,
 		HighlightWords: []string{"<b>", "done"},
 	}))
-	if want := `<mark class="ui-code-block__mark">&lt;b&gt;</mark>`; !strings.Contains(h, want) {
+	if want := `<mark class="fui-code-block__mark">&lt;b&gt;</mark>`; !strings.Contains(h, want) {
 		t.Errorf("source-looking word must be marked as escaped text:\n%s", h)
 	}
-	if want := `<mark class="ui-code-block__mark">done</mark>`; !strings.Contains(h, want) {
+	if want := `<mark class="fui-code-block__mark">done</mark>`; !strings.Contains(h, want) {
 		t.Errorf("plain word must be marked:\n%s", h)
 	}
 	if n := strings.Count(h, "<mark"); n != 2 {
@@ -142,18 +142,18 @@ func TestCodeBlockWordsNeverMarkAcrossTags(t *testing.T) {
 		t.Errorf("a word spanning two text nodes must not match:\n%s", h)
 	}
 	h = string(CodeBlock(CodeBlockConfig{Lines: []render.HTML{line}, HighlightWords: []string{"bar"}}))
-	if want := `<span class="tk-str"><mark class="ui-code-block__mark">bar</mark></span>`; !strings.Contains(h, want) {
+	if want := `<span class="tk-str"><mark class="fui-code-block__mark">bar</mark></span>`; !strings.Contains(h, want) {
 		t.Errorf("a word inside one text node must be marked in place:\n%s", h)
 	}
 }
 
 func TestCodeBlockWrapModifier(t *testing.T) {
 	bare := string(CodeBlock(CodeBlockConfig{Code: "x", Wrap: true}))
-	if !strings.Contains(bare, `class="ui-code-block ui-code-block--wrap"`) {
+	if !strings.Contains(bare, `class="fui-code-block fui-code-block--wrap"`) {
 		t.Errorf("bare Wrap block missing modifier:\n%s", bare)
 	}
 	framed := string(CodeBlock(CodeBlockConfig{Code: "x", Filename: "f", Wrap: true}))
-	if !strings.Contains(framed, `ui-code-block--framed ui-code-block--wrap`) {
+	if !strings.Contains(framed, `fui-code-block--framed fui-code-block--wrap`) {
 		t.Errorf("framed Wrap block missing modifier:\n%s", framed)
 	}
 }
@@ -162,7 +162,7 @@ func TestCodeBlockWrapModifier(t *testing.T) {
 // renders byte-identical markup to before they existed.
 func TestCodeBlockZeroConfigUnchanged(t *testing.T) {
 	bare := string(CodeBlock(CodeBlockConfig{Code: "x := 1\ny := 2\nit's <tagged>"}))
-	wantBare := "<pre aria-label=\"source code\" class=\"ui-code-block\" tabindex=\"0\" data-fui-comp=\"ui-code-block\"><code>x := 1\ny := 2\nit&#39;s &lt;tagged&gt;</code></pre>"
+	wantBare := "<pre aria-label=\"source code\" class=\"fui-code-block\" tabindex=\"0\" data-fui-comp=\"ui-code-block\"><code>x := 1\ny := 2\nit&#39;s &lt;tagged&gt;</code></pre>"
 	if bare != wantBare {
 		t.Errorf("bare zero-config output changed:\n got: %s\nwant: %s", bare, wantBare)
 	}
@@ -173,7 +173,7 @@ func TestCodeBlockZeroConfigUnchanged(t *testing.T) {
 		ShowCopy:    true,
 		ID:          "fixed-id",
 	}))
-	wantFramed := `<div class="ui-code-block ui-code-block--framed ui-code-block--numbered" id="fixed-id" data-fui-comp="ui-code-block"><div class="ui-code-block__head"><span aria-hidden="true" class="ui-code-block__status"></span><span class="ui-code-block__file">main.go</span><div class="ui-code-block__meta"><span class="fui-copy-btn-wrap" data-hui-copy="" data-hui-copy-back="copy" data-hui-copy-copied="copied" data-hui-copy-name="fixed-id" data-hui-copy-sentence="Copied" data-hui-copy-target="fixed-id" data-fui-comp="ui-copy-btn"><button class="fui-copy-btn ui-code-block__copy" id="" type="button"><span class="fui-copy-btn__label">copy</span><span aria-hidden="true" class="fui-copy-btn__copied">copied</span></button><span aria-live="polite" class="ui-visually-hidden" data-hui-copy-status="" role="status"></span></span></div></div><pre aria-label="source code" class="ui-code-block__body" id="fixed-id" tabindex="0"><code>x := 1</code></pre></div>`
+	wantFramed := `<div class="fui-code-block fui-code-block--framed fui-code-block--numbered" id="fixed-id" data-fui-comp="ui-code-block"><div class="fui-code-block__head"><span aria-hidden="true" class="fui-code-block__status"></span><span class="fui-code-block__file">main.go</span><div class="fui-code-block__meta"><span class="fui-copy-btn-wrap" data-hui-copy="" data-hui-copy-back="copy" data-hui-copy-copied="copied" data-hui-copy-name="fixed-id" data-hui-copy-sentence="Copied" data-hui-copy-target="fixed-id" data-fui-comp="ui-copy-btn"><button class="fui-copy-btn fui-code-block__copy" id="" type="button"><span class="fui-copy-btn__label">copy</span><span aria-hidden="true" class="fui-copy-btn__copied">copied</span></button><span aria-live="polite" class="fui-visually-hidden" data-hui-copy-status="" role="status"></span></span></div></div><pre aria-label="source code" class="fui-code-block__body" id="fixed-id" tabindex="0"><code>x := 1</code></pre></div>`
 	if framed != wantFramed {
 		t.Errorf("framed zero-config output changed:\n got: %s\nwant: %s", framed, wantFramed)
 	}
@@ -181,7 +181,7 @@ func TestCodeBlockZeroConfigUnchanged(t *testing.T) {
 		Filename: "lines.go",
 		Lines:    []render.HTML{render.Text("a := 1"), render.Text("b := 2")},
 	}))
-	wantLines := `<div class="ui-code-block ui-code-block--framed" data-fui-comp="ui-code-block"><div class="ui-code-block__head"><span aria-hidden="true" class="ui-code-block__status"></span><span class="ui-code-block__file">lines.go</span><div class="ui-code-block__meta"><span>2 lines</span></div></div><pre aria-label="source code" class="ui-code-block__body" tabindex="0"><span class="ui-code-block__line">a := 1</span><span class="ui-code-block__line">b := 2</span></pre></div>`
+	wantLines := `<div class="fui-code-block fui-code-block--framed" data-fui-comp="ui-code-block"><div class="fui-code-block__head"><span aria-hidden="true" class="fui-code-block__status"></span><span class="fui-code-block__file">lines.go</span><div class="fui-code-block__meta"><span>2 lines</span></div></div><pre aria-label="source code" class="fui-code-block__body" tabindex="0"><span class="fui-code-block__line">a := 1</span><span class="fui-code-block__line">b := 2</span></pre></div>`
 	if lines != wantLines {
 		t.Errorf("Lines zero-config output changed:\n got: %s\nwant: %s", lines, wantLines)
 	}
@@ -209,7 +209,7 @@ func TestCodeBlockCSSPerLineRules(t *testing.T) {
 		}
 	}
 	for _, line := range []string{"--highlight", "--added", "--removed"} {
-		start := strings.Index(css, "ui-code-block__line"+line)
+		start := strings.Index(css, "fui-code-block__line"+line)
 		if start < 0 {
 			t.Fatalf("no rule for %s lines", line)
 		}
@@ -225,7 +225,7 @@ func TestCodeBlockCSSPerLineRules(t *testing.T) {
 
 func TestCodeBlockTrailingNewlineNoBlankRow(t *testing.T) {
 	out := string(CodeBlock(CodeBlockConfig{Code: "one\n", Diff: true}))
-	if n := strings.Count(out, `class="ui-code-block__line`); n != 1 {
+	if n := strings.Count(out, `class="fui-code-block__line`); n != 1 {
 		t.Fatalf("line wrappers = %d, want 1 (a trailing newline is not a row):\n%s", n, out)
 	}
 }
@@ -233,9 +233,9 @@ func TestCodeBlockTrailingNewlineNoBlankRow(t *testing.T) {
 func TestCodeBlockNumberedBandsReachGutter(t *testing.T) {
 	css := codeBlockCSS(style.Theme{})
 	for _, want := range []string{
-		`.ui-code-block--numbered .ui-code-block__line--highlight,`,
+		`.fui-code-block--numbered .fui-code-block__line--highlight,`,
 		`margin-inline-start: -52px;`,
-		`.ui-code-block--numbered .ui-code-block__line--removed::before`,
+		`.fui-code-block--numbered .fui-code-block__line--removed::before`,
 		`left: 16px;`,
 	} {
 		if !strings.Contains(css, want) {

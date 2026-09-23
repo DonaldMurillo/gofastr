@@ -457,7 +457,7 @@ func siteNav(ss *style.StyleSheet) {
 	// Body needs to push down so the first viewport pixel of content
 	// isn't hidden under the fixed banner.
 	ss.Rule("body").Set("padding-top", "var(--nav-h)").End()
-	ss.Rule(".ui-site-header").
+	ss.Rule(".fui-site-header").
 		Set("height", "var(--nav-h)",
 			"display", "flex",
 			"align-items", "center",
@@ -539,9 +539,9 @@ func siteNav(ss *style.StyleSheet) {
 	// Nav links: minimal, with a subtle left-to-right underline reveal
 	// on hover/active so the relationship between hover and active is
 	// visible to keyboard users too.
-	ss.Rule(".ui-site-header__links").
+	ss.Rule(".fui-site-header__links").
 		Set("display", "flex", "gap", "{spacing.xl}", "margin-left", "{spacing.xl}").End()
-	ss.Rule(".ui-site-header__links a").
+	ss.Rule(".fui-site-header__links a").
 		Set("position", "relative",
 			"display", "inline-flex",
 			"align-items", "center",
@@ -555,11 +555,11 @@ func siteNav(ss *style.StyleSheet) {
 	// The animated underline-reveal is now ui.SiteHeader's NavUnderline
 	// variant; the site only positions it to clear the bar's baseline and
 	// tunes the active text colour via the component's vars.
-	ss.Rule(`[data-fui-comp="ui-site-header"].ui-site-header--nav-underline`).
+	ss.Rule(`[data-fui-comp="ui-site-header"].fui-site-header--nav-underline`).
 		Set("--ui-site-header-nav-underline-bottom", "14px",
 			"--ui-site-header-nav-active-color", "{colors.text}").End()
 
-	ss.Rule(".ui-site-header__right").
+	ss.Rule(".fui-site-header__right").
 		Set("margin-left", "auto",
 			"display", "flex",
 			"align-items", "center",
@@ -622,10 +622,10 @@ func siteNav(ss *style.StyleSheet) {
 	// CSS box-shadows on a single 22px square. When [open], the middle
 	// bar fades out and the outer two rotate into an ×. No SVG, no JS,
 	// state flips via the parent's open attribute.
-	// .ui-site-header__mobile sits inside .ui-site-header__right at every viewport; no auto
+	// .fui-site-header__mobile sits inside .fui-site-header__right at every viewport; no auto
 	// margin needed (the parent cluster owns the right-edge alignment).
-	ss.Rule(".ui-site-header__mobile").Set("display", "none").End()
-	ss.Rule(".ui-site-header__mobile > summary").
+	ss.Rule(".fui-site-header__mobile").Set("display", "none").End()
+	ss.Rule(".fui-site-header__mobile > summary").
 		Set("list-style", "none",
 			"cursor", "pointer",
 			"display", "inline-grid",
@@ -637,15 +637,15 @@ func siteNav(ss *style.StyleSheet) {
 			"background", "{colors.surface}",
 			"color", "{colors.text-muted}",
 			"transition", "border-color 160ms ease, background 160ms ease").End()
-	ss.Rule(".ui-site-header__mobile > summary::-webkit-details-marker").Set("display", "none").End()
-	ss.Rule(".ui-site-header__mobile > summary:hover").
+	ss.Rule(".fui-site-header__mobile > summary::-webkit-details-marker").Set("display", "none").End()
+	ss.Rule(".fui-site-header__mobile > summary:hover").
 		Set("border-color", "{colors.border-strong}",
 			"background", "{colors.surface-soft}").End()
 	// Open-state: brighten the color so the X reads cleanly. We
 	// deliberately do NOT change the border color, the X icon swap
 	// IS the state cue; a border tint added an outline that looked
 	// like a leftover focus ring.
-	ss.Rule(".ui-site-header__mobile[open] > summary").
+	ss.Rule(".fui-site-header__mobile[open] > summary").
 		Set("color", "{colors.text}").End()
 	// Hamburger ↔ X icon swap is handled entirely by ui.SiteHeader
 	// (SVG menu / SVG close, display-swapped by details[open]). No
@@ -673,14 +673,14 @@ func siteFooter(ss *style.StyleSheet) {
 	// --ui-site-footer-* vars; the site only supplies the 5-col template and
 	// v2 measures. The root padding is dropped to 0 horizontal because the
 	// centered grid carries its own inline padding.
-	ss.Rule(".ui-site-footer").
+	ss.Rule(".fui-site-footer").
 		Set("padding", "var(--s-8) 0 {spacing.xxl}",
 			"border-top", "1px solid {colors.border}").End()
 	ss.Rule(`[data-fui-comp="ui-site-footer"]`).
 		Set("--ui-site-footer-grid-template", "1.4fr 1fr 1fr 1fr 1fr",
 			"--ui-site-footer-grid-gap", "var(--s-8)",
 			"--ui-site-footer-max-width", "var(--col-max)").End()
-	ss.Rule(".ui-site-footer__grid").Set("padding", "0 {spacing.xxl}").End()
+	ss.Rule(".fui-site-footer__grid").Set("padding", "0 {spacing.xxl}").End()
 
 	ss.Rule(".site-foot-brand").
 		Set("display", "flex", "align-items", "baseline", "gap", "8px",
@@ -702,7 +702,7 @@ func siteFooter(ss *style.StyleSheet) {
 			"color", "{colors.text-subtle}",
 			"line-height", "1.6",
 			"max-width", "30ch").End()
-	ss.Rule(".ui-site-footer h6").
+	ss.Rule(".fui-site-footer h6").
 		Set("font-family", "{fonts.body}",
 			"font-weight", "500",
 			"font-size", "13px",
@@ -710,11 +710,11 @@ func siteFooter(ss *style.StyleSheet) {
 			"margin-bottom", "{spacing.md}",
 			"letter-spacing", "-0.005em",
 			"text-transform", "none").End()
-	ss.Rule(".ui-site-footer ul li").Set("padding", "3px 0").End()
-	ss.Rule(".ui-site-footer ul li a").
+	ss.Rule(".fui-site-footer ul li").Set("padding", "3px 0").End()
+	ss.Rule(".fui-site-footer ul li a").
 		Set("color", "{colors.text-subtle}", "font-size", "var(--t-sm)").End()
-	ss.Rule(".ui-site-footer ul li a:hover").Set("color", "{colors.text}", "opacity", "1").End()
-	ss.Rule(".ui-site-footer__bottom").
+	ss.Rule(".fui-site-footer ul li a:hover").Set("color", "{colors.text}", "opacity", "1").End()
+	ss.Rule(".fui-site-footer__bottom").
 		Set("display", "flex",
 			"justify-content", "space-between",
 			"padding-top", "{spacing.xl}",
@@ -742,7 +742,7 @@ func codeBlockStyles(ss *style.StyleSheet) {
 	// ui.CodeBlock, which ships its own framed CSS + the framework CopyButton.
 	// The site only retunes the green status dot to the v2 string-token colour
 	// and supplies the mono font scale via the component's vars.
-	ss.Rule(`[data-fui-comp="ui-code-block"].ui-code-block--framed`).
+	ss.Rule(`[data-fui-comp="ui-code-block"].fui-code-block--framed`).
 		Set("font-family", "{fonts.mono}",
 			"font-size", "var(--t-sm)",
 			"line-height", "1.65",
@@ -808,7 +808,7 @@ func heroLayout(ss *style.StyleSheet) {
 	// .hero__grid is gone, ui.HeroSplit (framework) owns the 2-col
 	// layout + mobile collapse. The home hero adds a small top
 	// padding on the copy column to align with the code block.
-	ss.Rule(`.hero-home .ui-hero-split__copy`).
+	ss.Rule(`.hero-home .fui-hero-split__copy`).
 		Set("padding-top", "{spacing.md}").End()
 	// Grid item escape, without min-width:0 the code block intrinsically
 	// pushes its column past the viewport on mobile and the page picks up
@@ -1203,9 +1203,9 @@ func responsive(ss *style.StyleSheet) {
 	// Selector specificity (attr + .site-header, 0,3,0) beats the
 	// component's own 0,2,0 collapse rules regardless of source order.
 	ss.Media("(max-width: 1120px)", func(inner *style.StyleSheet) {
-		inner.Rule(`[data-fui-comp="ui-site-header"].site-header .ui-site-header__links`).
+		inner.Rule(`[data-fui-comp="ui-site-header"].site-header .fui-site-header__links`).
 			Set("display", "none").End()
-		inner.Rule(`[data-fui-comp="ui-site-header"].site-header .ui-site-header__mobile`).
+		inner.Rule(`[data-fui-comp="ui-site-header"].site-header .fui-site-header__mobile`).
 			Set("display", "block").End()
 	})
 
@@ -1220,8 +1220,8 @@ func responsive(ss *style.StyleSheet) {
 		// just shed labels and tighten to a single 36px square apiece.
 		// The status capsule and desktop link bar do collapse since
 		// the links are mirrored in the drawer.
-		inner.Rule(".ui-site-header__links").Set("display", "none").End()
-		inner.Rule(".ui-site-header__mobile").Set("display", "block").End()
+		inner.Rule(".fui-site-header__links").Set("display", "none").End()
+		inner.Rule(".fui-site-header__mobile").Set("display", "block").End()
 		inner.Rule(".site-brand__status").Set("display", "none").End()
 		// Search pill morphs into an icon button on phones: the placeholder
 		// text + ⌘K hint hide, the magnifier glyph shows. Touch targets are
@@ -1239,11 +1239,11 @@ func responsive(ss *style.StyleSheet) {
 		inner.Rule(".site-cmd__glyph").
 			Set("display", "block").End()
 		// Icon buttons (theme toggle, GitHub) to 44×44. The hamburger
-		// (.ui-site-header__mobile-toggle) is sized by framework/ui's
+		// (.fui-site-header__mobile-toggle) is sized by framework/ui's
 		// SiteHeader CSS, bumped to 44px there.
 		inner.Rule(".site-icon").Set("width", "44px", "height", "44px").End()
-		inner.Rule(".ui-site-header").Set("padding", "0 {spacing.sm}", "gap", "{spacing.sm}").End()
-		inner.Rule(".ui-site-header__right").Set("gap", "4px").End()
+		inner.Rule(".fui-site-header").Set("padding", "0 {spacing.sm}", "gap", "{spacing.sm}").End()
+		inner.Rule(".fui-site-header__right").Set("gap", "4px").End()
 		// All card grids → 1 col.
 		inner.Rule(".arch__grid").Set("grid-template-columns", "1fr").End()
 		inner.Rule(".ex__grid").Set("grid-template-columns", "1fr").End()
@@ -1287,8 +1287,8 @@ func responsive(ss *style.StyleSheet) {
 		inner.Rule(`[data-fui-comp="ui-site-footer"]`).
 			Set("--ui-site-footer-grid-template", "1fr",
 				"--ui-site-footer-grid-gap", "{spacing.xl}").End()
-		inner.Rule(".ui-site-footer__bottom").Set("flex-direction", "column", "gap", "{spacing.md}", "align-items", "flex-start").End()
-		inner.Rule(".ui-site-footer ul li a").
+		inner.Rule(".fui-site-footer__bottom").Set("flex-direction", "column", "gap", "{spacing.md}", "align-items", "flex-start").End()
+		inner.Rule(".fui-site-footer ul li a").
 			Set("display", "inline-flex", "align-items", "center", "min-height", "44px").End()
 		// Step-rail (get-started) collapses too.
 		inner.Rule(".gs-body").Set("grid-template-columns", "1fr", "gap", "{spacing.lg}", "padding", "{spacing.xl} 0").End()

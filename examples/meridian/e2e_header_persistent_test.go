@@ -40,15 +40,15 @@ func TestE2E_SignInStaysInBarAt390(t *testing.T) {
 		chromedp.EmulateViewport(390, 844),
 		chromedp.Navigate(base+"/"),
 		chromedp.WaitReady("body", chromedp.ByQuery),
-		chromedp.Evaluate(measure(`.ui-site-header__persistent-actions a[href="/login"]`), &signIn),
-		chromedp.Evaluate(measure(`.ui-site-header__bar-actions [data-fui-comp="ui-theme-toggle"]`), &toggle),
+		chromedp.Evaluate(measure(`.fui-site-header__persistent-actions a[href="/login"]`), &signIn),
+		chromedp.Evaluate(measure(`.fui-site-header__bar-actions [data-fui-comp="ui-theme-toggle"]`), &toggle),
 		// Open the drawer: "collapsed into the drawer" must mean the
 		// toggle actually lives there, not that it vanished — and the
 		// persistent Sign in must not have a drawer duplicate.
-		chromedp.Click(`.ui-site-header__mobile-toggle`, chromedp.ByQuery),
-		chromedp.WaitVisible(`.ui-site-header__mobile-links`, chromedp.ByQuery),
-		chromedp.Evaluate(measure(`.ui-site-header__mobile-actions [data-fui-comp="ui-theme-toggle"]`), &drawerToggle),
-		chromedp.Evaluate(measure(`.ui-site-header__mobile-links a[href="/login"]`), &drawerSignIn),
+		chromedp.Click(`.fui-site-header__mobile-toggle`, chromedp.ByQuery),
+		chromedp.WaitVisible(`.fui-site-header__mobile-links`, chromedp.ByQuery),
+		chromedp.Evaluate(measure(`.fui-site-header__mobile-actions [data-fui-comp="ui-theme-toggle"]`), &drawerToggle),
+		chromedp.Evaluate(measure(`.fui-site-header__mobile-links a[href="/login"]`), &drawerSignIn),
 	); err != nil {
 		t.Fatal(err)
 	}

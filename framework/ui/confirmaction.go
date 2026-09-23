@@ -45,7 +45,7 @@ type ConfirmActionConfig struct {
 
 	// TriggerVariant maps to one of the framework button variants.
 	// Defaults to "danger". The trigger always renders as
-	// .ui-btn--<TriggerVariant>.
+	// .fui-btn--<TriggerVariant>.
 	TriggerVariant string
 
 	// Title is the alertdialog title (h2). Required.
@@ -255,12 +255,12 @@ func (s *confirmDialogSlot) Render() render.HTML {
 		confirmAttrs["autofocus"] = ""
 	}
 
-	return confirmActionStyle.WrapHTML(html.Div(html.DivConfig{Class: "ui-confirm-action", ExtraAttrs: s.extraAttrs},
-		html.Heading(html.HeadingConfig{Level: 2, Class: "ui-confirm-action__title", ID: s.titleID},
+	return confirmActionStyle.WrapHTML(html.Div(html.DivConfig{Class: "fui-confirm-action", ExtraAttrs: s.extraAttrs},
+		html.Heading(html.HeadingConfig{Level: 2, Class: "fui-confirm-action__title", ID: s.titleID},
 			render.Text(s.title)),
-		html.Paragraph(html.TextConfig{Class: "ui-confirm-action__body", ID: s.bodyID},
+		html.Paragraph(html.TextConfig{Class: "fui-confirm-action__body", ID: s.bodyID},
 			render.Text(s.body)),
-		html.Div(html.DivConfig{Class: "ui-confirm-action__actions"},
+		html.Div(html.DivConfig{Class: "fui-confirm-action__actions"},
 			Button(ButtonConfig{
 				Label:      s.cancelLabel,
 				Variant:    ButtonGhost,
@@ -289,18 +289,18 @@ func confirmActionCSS(_ style.Theme) string {
   display: block;
   max-inline-size: 28rem;
 }
-[data-fui-comp="ui-confirm-action"] .ui-confirm-action__title {
+[data-fui-comp="ui-confirm-action"] .fui-confirm-action__title {
   margin: 0 0 var(--spacing-sm, 4px) 0;
   font-size: var(--text-lg, 1.125rem);
   font-weight: 600;
   color: var(--color-text, #111);
 }
-[data-fui-comp="ui-confirm-action"] .ui-confirm-action__body {
+[data-fui-comp="ui-confirm-action"] .fui-confirm-action__body {
   margin: 0 0 var(--spacing-lg, 16px) 0;
   color: var(--color-text-muted, #4b5563);
   line-height: 1.45;
 }
-[data-fui-comp="ui-confirm-action"] .ui-confirm-action__actions {
+[data-fui-comp="ui-confirm-action"] .fui-confirm-action__actions {
   display: flex;
   justify-content: flex-end;
   gap: var(--spacing-sm, 4px);

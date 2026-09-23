@@ -34,18 +34,18 @@ func TerminalBlock(cfg TerminalBlockConfig, lines ...render.HTML) render.HTML {
 	if cfg.Label == "" {
 		panic("ui: TerminalBlock requires Label")
 	}
-	cls := "ui-terminal-block"
+	cls := "fui-terminal-block"
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
 	}
-	head := html.Div(html.DivConfig{Class: "ui-terminal-block__head"},
+	head := html.Div(html.DivConfig{Class: "fui-terminal-block__head"},
 		html.Span(html.TextConfig{
-			Class:      "ui-terminal-block__dot",
+			Class:      "fui-terminal-block__dot",
 			ExtraAttrs: html.Attrs{"aria-hidden": "true"},
 		}),
 		render.Text(cfg.Label),
 	)
-	body := html.Div(html.DivConfig{Class: "ui-terminal-block__body"}, lines...)
+	body := html.Div(html.DivConfig{Class: "fui-terminal-block__body"}, lines...)
 	return terminalBlockStyle.WrapHTML(
 		html.Div(html.DivConfig{Class: cls, ID: cfg.ID,
 			ExtraAttrs: html.SafeExtraAttrs(cfg.ExtraAttrs)}, head, body))
@@ -53,12 +53,12 @@ func TerminalBlock(cfg TerminalBlockConfig, lines ...render.HTML) render.HTML {
 
 // TerminalOut wraps a line of dim, secondary output (echoed commands, noise).
 func TerminalOut(s string) render.HTML {
-	return html.Span(html.TextConfig{Class: "ui-terminal-block__out"}, render.Text(s))
+	return html.Span(html.TextConfig{Class: "fui-terminal-block__out"}, render.Text(s))
 }
 
 // TerminalOK wraps a line of success output ("→ installed …").
 func TerminalOK(s string) render.HTML {
-	return html.Span(html.TextConfig{Class: "ui-terminal-block__ok"}, render.Text(s))
+	return html.Span(html.TextConfig{Class: "fui-terminal-block__ok"}, render.Text(s))
 }
 
 var terminalBlockStyle = registry.RegisterStyle("ui-terminal-block", terminalBlockCSS)
@@ -73,7 +73,7 @@ func terminalBlockCSS(_ style.Theme) string {
   font-size: var(--text-xs, 12px);
   margin-top: var(--spacing-md, 8px);
 }
-[data-fui-comp="ui-terminal-block"] .ui-terminal-block__head {
+[data-fui-comp="ui-terminal-block"] .fui-terminal-block__head {
   display: flex;
   align-items: center;
   gap: var(--spacing-md, 8px);
@@ -82,22 +82,22 @@ func terminalBlockCSS(_ style.Theme) string {
   font-size: var(--text-xs, 0.75rem);
   color: var(--color-text-subtle, #71717A);
 }
-[data-fui-comp="ui-terminal-block"] .ui-terminal-block__dot {
+[data-fui-comp="ui-terminal-block"] .fui-terminal-block__dot {
   width: 7px;
   height: 7px;
   border-radius: 999px;
   background: var(--color-primary, currentColor);
 }
-[data-fui-comp="ui-terminal-block"] .ui-terminal-block__body {
+[data-fui-comp="ui-terminal-block"] .fui-terminal-block__body {
   padding: 10px 12px;
   line-height: 1.7;
   color: var(--color-text, #18181B);
   white-space: pre-wrap;
 }
-[data-fui-comp="ui-terminal-block"] .ui-terminal-block__out {
+[data-fui-comp="ui-terminal-block"] .fui-terminal-block__out {
   color: var(--color-text-subtle, #71717A);
 }
-[data-fui-comp="ui-terminal-block"] .ui-terminal-block__ok {
+[data-fui-comp="ui-terminal-block"] .fui-terminal-block__ok {
   color: var(--ui-terminal-block-ok-color, var(--color-success, #16A34A));
 }`
 }

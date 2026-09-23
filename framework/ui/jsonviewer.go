@@ -41,25 +41,25 @@ type JSONViewerConfig struct {
 // JSONViewer renders a collapsible tree view of any Go value through
 // headless.JSONTree (deterministic sorted keys, native details).
 func JSONViewer(cfg JSONViewerConfig) render.HTML {
-	cls := "ui-json-viewer"
+	cls := "fui-json-viewer"
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
 	}
 	parts := headless.Parts{Attrs: headless.PartAttrs{
 		headless.PartRoot:      {"class": cls},
-		headless.PartControl:   {"class": "ui-json-viewer__node"},
-		headless.PartTitle:     {"class": "ui-json-viewer__summary"},
-		headless.PartLabel:     {"class": "ui-json-viewer__key"},
-		headless.PartBody:      {"class": "ui-json-viewer__list"},
-		headless.PartText:      {"class": "ui-json-viewer__item"},
-		headless.PartJSONColon: {"class": "ui-json-viewer__colon"},
-		headless.PartJSONType:  {"class": "ui-json-viewer__type"},
-		headless.PartJSONCount: {"class": "ui-json-viewer__count"},
-		headless.PartJSONStr:   {"class": "ui-json-viewer__str"},
-		headless.PartJSONNum:   {"class": "ui-json-viewer__num"},
-		headless.PartJSONBool:  {"class": "ui-json-viewer__bool"},
-		headless.PartJSONNull:  {"class": "ui-json-viewer__null"},
-		headless.PartJSONEmpty: {"class": "ui-json-viewer__empty"},
+		headless.PartControl:   {"class": "fui-json-viewer__node"},
+		headless.PartTitle:     {"class": "fui-json-viewer__summary"},
+		headless.PartLabel:     {"class": "fui-json-viewer__key"},
+		headless.PartBody:      {"class": "fui-json-viewer__list"},
+		headless.PartText:      {"class": "fui-json-viewer__item"},
+		headless.PartJSONColon: {"class": "fui-json-viewer__colon"},
+		headless.PartJSONType:  {"class": "fui-json-viewer__type"},
+		headless.PartJSONCount: {"class": "fui-json-viewer__count"},
+		headless.PartJSONStr:   {"class": "fui-json-viewer__str"},
+		headless.PartJSONNum:   {"class": "fui-json-viewer__num"},
+		headless.PartJSONBool:  {"class": "fui-json-viewer__bool"},
+		headless.PartJSONNull:  {"class": "fui-json-viewer__null"},
+		headless.PartJSONEmpty: {"class": "fui-json-viewer__empty"},
 	}}
 	return jsonViewerStyle.WrapHTML(headless.JSONTree(headless.JSONTreeProps{
 		Value:        cfg.Value,
@@ -80,10 +80,10 @@ func jsonViewerCSS(_ style.Theme) string {
   line-height: 1.5;
   color: var(--color-text, #18181B);
 }
-[data-fui-comp="ui-json-viewer"] .ui-json-viewer__node {
+[data-fui-comp="ui-json-viewer"] .fui-json-viewer__node {
   display: block;
 }
-[data-fui-comp="ui-json-viewer"] .ui-json-viewer__summary {
+[data-fui-comp="ui-json-viewer"] .fui-json-viewer__summary {
   cursor: pointer;
   list-style: none;
   user-select: none;
@@ -91,45 +91,45 @@ func jsonViewerCSS(_ style.Theme) string {
   align-items: center;
   gap: var(--spacing-sm, 4px);
 }
-[data-fui-comp="ui-json-viewer"] .ui-json-viewer__summary::-webkit-details-marker {
+[data-fui-comp="ui-json-viewer"] .fui-json-viewer__summary::-webkit-details-marker {
   display: none;
 }
-[data-fui-comp="ui-json-viewer"] .ui-json-viewer__summary::before {
+[data-fui-comp="ui-json-viewer"] .fui-json-viewer__summary::before {
   content: "▸";
   color: var(--color-text-muted, #52525B);
   transition: transform 100ms ease;
 }
-[data-fui-comp="ui-json-viewer"] .ui-json-viewer__node[open] > .ui-json-viewer__summary::before {
+[data-fui-comp="ui-json-viewer"] .fui-json-viewer__node[open] > .fui-json-viewer__summary::before {
   transform: rotate(90deg);
 }
-[data-fui-comp="ui-json-viewer"] .ui-json-viewer__type {
+[data-fui-comp="ui-json-viewer"] .fui-json-viewer__type {
   color: var(--color-text-muted, #52525B);
   font-weight: 600;
 }
-[data-fui-comp="ui-json-viewer"] .ui-json-viewer__count {
+[data-fui-comp="ui-json-viewer"] .fui-json-viewer__count {
   color: var(--color-text-muted, #52525B);
   font-size: 0.85em;
 }
-[data-fui-comp="ui-json-viewer"] .ui-json-viewer__list {
+[data-fui-comp="ui-json-viewer"] .fui-json-viewer__list {
   margin: 0;
   padding-inline-start: var(--spacing-lg, 16px);
   list-style: none;
   border-inline-start: 1px dashed var(--color-border, #E4E4E7);
 }
-[data-fui-comp="ui-json-viewer"] .ui-json-viewer__item {
+[data-fui-comp="ui-json-viewer"] .fui-json-viewer__item {
   padding-block: var(--spacing-xs, 2px);
 }
-[data-fui-comp="ui-json-viewer"] .ui-json-viewer__key {
+[data-fui-comp="ui-json-viewer"] .fui-json-viewer__key {
   color: var(--color-info, #3B82F6);
   font-weight: 600;
 }
-[data-fui-comp="ui-json-viewer"] .ui-json-viewer__colon {
+[data-fui-comp="ui-json-viewer"] .fui-json-viewer__colon {
   color: var(--color-text-muted, #52525B);
   margin-inline-end: var(--spacing-sm, 4px);
 }
-[data-fui-comp="ui-json-viewer"] .ui-json-viewer__str { color: var(--color-success, #16A34A); }
-[data-fui-comp="ui-json-viewer"] .ui-json-viewer__num { color: var(--color-warning, #D97706); }
-[data-fui-comp="ui-json-viewer"] .ui-json-viewer__bool { color: var(--color-primary, #4F46E5); font-weight: 600; }
-[data-fui-comp="ui-json-viewer"] .ui-json-viewer__null { color: var(--color-text-muted, #52525B); font-style: italic; }
-[data-fui-comp="ui-json-viewer"] .ui-json-viewer__empty { color: var(--color-text-muted, #52525B); }`
+[data-fui-comp="ui-json-viewer"] .fui-json-viewer__str { color: var(--color-success, #16A34A); }
+[data-fui-comp="ui-json-viewer"] .fui-json-viewer__num { color: var(--color-warning, #D97706); }
+[data-fui-comp="ui-json-viewer"] .fui-json-viewer__bool { color: var(--color-primary, #4F46E5); font-weight: 600; }
+[data-fui-comp="ui-json-viewer"] .fui-json-viewer__null { color: var(--color-text-muted, #52525B); font-style: italic; }
+[data-fui-comp="ui-json-viewer"] .fui-json-viewer__empty { color: var(--color-text-muted, #52525B); }`
 }

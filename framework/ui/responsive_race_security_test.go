@@ -55,7 +55,7 @@ func TestResponsiveCacheRace(t *testing.T) {
 	// contract, not a crash script.
 	got := string(Responsive(ResponsiveConfig{Breakpoint: 1024},
 		render.Text("d"), render.Text("m")))
-	for _, want := range []string{"ui-responsive__desktop", "ui-responsive__mobile", "d", "m"} {
+	for _, want := range []string{"fui-responsive__desktop", "fui-responsive__mobile", "d", "m"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("SECURITY: [responsive-cache-race] post-concurrency render missing %q — the unsynchronized responsiveStyleCache left the swap malformed:\n%s", want, got)
 		}

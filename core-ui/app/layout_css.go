@@ -68,7 +68,7 @@ func LayoutBaseCSS() string {
   padding-block: clamp(14px, 3vw, 22px);
   border-bottom: 1px solid var(--color-border, #e4e4e7);
 }
-.layout--contained [data-fui-comp="ui-site-header"] .ui-site-header__links { margin-inline-start: auto; }
+.layout--contained [data-fui-comp="ui-site-header"] .fui-site-header__links { margin-inline-start: auto; }
 /* Long-form content prose (heading + paragraph blocks live in the screen's
    wrapper div): a comfortable measure + vertical rhythm so /about, /terms read
    like prose, not a full-width wall. */

@@ -124,9 +124,9 @@ func Sparkline(cfg SparklineConfig) render.HTML {
 		pts = append(pts, ftoa(x)+","+ftoa(y))
 	}
 
-	cls := "ui-sparkline"
+	cls := "fui-sparkline"
 	if cfg.Color != "" {
-		cls += " ui-sparkline--" + escapeXML(cfg.Color)
+		cls += " fui-sparkline--" + escapeXML(cfg.Color)
 	}
 	if cfg.Class != "" {
 		cls += " " + escapeXML(cfg.Class)
@@ -175,10 +175,10 @@ func Sparkline(cfg SparklineConfig) render.HTML {
 
 	var body string
 	if cfg.Shape == SparklineArea {
-		body = `<path d="` + areaD + `" class="ui-sparkline__area"/><path d="` +
-			pathD.String() + `" class="ui-sparkline__line"/>`
+		body = `<path d="` + areaD + `" class="fui-sparkline__area"/><path d="` +
+			pathD.String() + `" class="fui-sparkline__line"/>`
 	} else {
-		body = `<path d="` + pathD.String() + `" class="ui-sparkline__line"/>`
+		body = `<path d="` + pathD.String() + `" class="fui-sparkline__line"/>`
 	}
 
 	out := `<svg ` + svgAttrs.String() + ` data-fui-comp="ui-sparkline"` + extraAttrs + `>` + body + `</svg>`
@@ -206,22 +206,22 @@ func sparklineCSS(_ style.Theme) string {
   vertical-align: middle;
   color: var(--color-primary, #4F46E5);
 }
-[data-fui-comp="ui-sparkline"] .ui-sparkline__line {
+[data-fui-comp="ui-sparkline"] .fui-sparkline__line {
   fill: none;
   stroke: currentColor;
   stroke-width: 1.5;
   stroke-linejoin: round;
   stroke-linecap: round;
 }
-[data-fui-comp="ui-sparkline"] .ui-sparkline__area {
+[data-fui-comp="ui-sparkline"] .fui-sparkline__area {
   fill: currentColor;
   opacity: 0.18;
   stroke: none;
 }
 
 /* Color presets — recolor via currentColor on the SVG root. */
-.ui-sparkline.ui-sparkline--success { color: var(--color-success, #16A34A); }
-.ui-sparkline.ui-sparkline--warning { color: var(--color-warning, #D97706); }
-.ui-sparkline.ui-sparkline--danger  { color: var(--color-danger, #DC2626); }
-.ui-sparkline.ui-sparkline--info    { color: var(--color-info, #3B82F6); }`
+.fui-sparkline.fui-sparkline--success { color: var(--color-success, #16A34A); }
+.fui-sparkline.fui-sparkline--warning { color: var(--color-warning, #D97706); }
+.fui-sparkline.fui-sparkline--danger  { color: var(--color-danger, #DC2626); }
+.fui-sparkline.fui-sparkline--info    { color: var(--color-info, #3B82F6); }`
 }

@@ -35,11 +35,11 @@ func TestE2E_SegmentedControl_ClickSlidesIndicator(t *testing.T) {
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/segmented"),
 		pageReady(),
-		chromedp.Evaluate(`document.querySelector('.ui-segmented input:checked')?.value || ''`, &initialChecked),
+		chromedp.Evaluate(`document.querySelector('.fui-segmented input:checked')?.value || ''`, &initialChecked),
 		// Click the 3rd option (index 2 = "Month")
-		chromedp.Evaluate(`document.querySelectorAll('.ui-segmented')[0].querySelectorAll('input[type="radio"]')[2].click()`, nil),
+		chromedp.Evaluate(`document.querySelectorAll('.fui-segmented')[0].querySelectorAll('input[type="radio"]')[2].click()`, nil),
 		settle(),
-		chromedp.Evaluate(`document.querySelector('.ui-segmented input:checked')?.value || ''`, &afterClick),
+		chromedp.Evaluate(`document.querySelector('.fui-segmented input:checked')?.value || ''`, &afterClick),
 	)
 	if err != nil {
 		t.Fatalf("chromedp: %v", err)
@@ -60,7 +60,7 @@ func TestE2E_SegmentedControl_EqualWidthColumns(t *testing.T) {
 		chromedp.Navigate(base+"/components/segmented"),
 		pageReady(),
 		chromedp.Evaluate(`JSON.stringify(
-			Array.from(document.querySelector('.ui-segmented').querySelectorAll('.ui-segmented__option'))
+			Array.from(document.querySelector('.fui-segmented').querySelectorAll('.fui-segmented__option'))
 				.map(o => Math.round(o.getBoundingClientRect().width))
 		)`, &widthsJSON),
 	)

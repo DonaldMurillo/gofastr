@@ -141,12 +141,12 @@ func TestE2E_CustomersSortIsland(t *testing.T) {
 	ctx := chromedptest.Context(t, chromedptest.WindowSize(1280, 800))
 	e2eLogin(t, ctx, base)
 
-	sortAnchor := `.ui-data-table th:first-child a.ui-data-table__sort`
+	sortAnchor := `.fui-data-table th:first-child a.fui-data-table__sort`
 	var mark int
 	var first, loc string
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/app/customers"),
-		chromedp.WaitVisible(`.ui-data-table`, chromedp.ByQuery),
+		chromedp.WaitVisible(`.fui-data-table`, chromedp.ByQuery),
 		chromedp.Evaluate(`window.__e2eMark = 1`, nil),
 		// Two clicks on the Name anchor: asc, then desc. Each swap
 		// re-renders the island, so re-query the anchor per click.
@@ -154,7 +154,7 @@ func TestE2E_CustomersSortIsland(t *testing.T) {
 		chromedp.Sleep(700*time.Millisecond),
 		chromedp.Click(sortAnchor, chromedp.ByQuery),
 		chromedp.Sleep(700*time.Millisecond),
-		chromedp.Evaluate(`document.querySelector('.ui-data-table tbody tr td').innerText`, &first),
+		chromedp.Evaluate(`document.querySelector('.fui-data-table tbody tr td').innerText`, &first),
 		chromedp.Evaluate(`window.__e2eMark || 0`, &mark),
 		chromedp.Evaluate(`location.search`, &loc),
 	); err != nil {
@@ -185,15 +185,15 @@ func TestE2E_CustomersPageIsland(t *testing.T) {
 	var loc string
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/app/customers"),
-		chromedp.WaitVisible(`.ui-data-table`, chromedp.ByQuery),
+		chromedp.WaitVisible(`.fui-data-table`, chromedp.ByQuery),
 		chromedp.Evaluate(`window.__e2eMark = 1`, nil),
 		// 10 seeded customers at page size 8 → the seed data alone
 		// paginates. Page 2 holds the last two rows. The pager is the
 		// typed one: page anchors keep their hrefs and carry the RPC
 		// contract beside them.
-		chromedp.Click(`.ui-data-table__footer a[data-fui-rpc$="p=2"]`, chromedp.ByQuery),
+		chromedp.Click(`.fui-data-table__footer a[data-fui-rpc$="p=2"]`, chromedp.ByQuery),
 		chromedp.Sleep(700*time.Millisecond),
-		chromedp.Evaluate(`document.querySelectorAll('.ui-data-table tbody tr').length`, &rows),
+		chromedp.Evaluate(`document.querySelectorAll('.fui-data-table tbody tr').length`, &rows),
 		chromedp.Evaluate(`window.__e2eMark || 0`, &mark),
 		chromedp.Evaluate(`location.search`, &loc),
 	); err != nil {

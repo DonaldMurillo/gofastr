@@ -40,9 +40,9 @@ func Markdown(cfg MarkdownConfig) render.HTML {
 	if cfg.Source == "" {
 		panic("ui: Markdown requires Source")
 	}
-	cls := "ui-markdown"
+	cls := "fui-markdown"
 	if cfg.Compact {
-		cls += " ui-markdown--compact"
+		cls += " fui-markdown--compact"
 	}
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
@@ -372,10 +372,10 @@ func markdownCSS(_ style.Theme) string {
 [data-fui-comp="ui-markdown"] img { max-width: 100%; height: auto; border-radius: var(--radii-md, 8px); }
 
 /* Compact variant — tighter rhythm for inline previews. */
-.ui-markdown.ui-markdown--compact { line-height: 1.6; }
-.ui-markdown.ui-markdown--compact > * + * { margin-block-start: 0.7em; }
-.ui-markdown.ui-markdown--compact h2 { font-size: var(--text-lg, 1.125rem); margin-block: 1.4em 0.4em; }
-.ui-markdown.ui-markdown--compact h3 { font-size: var(--text-base, 1rem); margin-block: 1.1em 0.35em; }
-.ui-markdown.ui-markdown--compact h4 { font-size: var(--text-base, 1rem); margin-block: 0.9em 0.3em; }
-.ui-markdown.ui-markdown--compact pre { margin-block-start: 0.9em; }`
+.fui-markdown.fui-markdown--compact { line-height: 1.6; }
+.fui-markdown.fui-markdown--compact > * + * { margin-block-start: 0.7em; }
+.fui-markdown.fui-markdown--compact h2 { font-size: var(--text-lg, 1.125rem); margin-block: 1.4em 0.4em; }
+.fui-markdown.fui-markdown--compact h3 { font-size: var(--text-base, 1rem); margin-block: 1.1em 0.35em; }
+.fui-markdown.fui-markdown--compact h4 { font-size: var(--text-base, 1rem); margin-block: 0.9em 0.3em; }
+.fui-markdown.fui-markdown--compact pre { margin-block-start: 0.9em; }`
 }

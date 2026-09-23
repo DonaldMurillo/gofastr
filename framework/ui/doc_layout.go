@@ -80,12 +80,12 @@ type DocLayoutConfig struct {
 
 // DocLayout assembles the doc page skeleton around the article body.
 func DocLayout(cfg DocLayoutConfig, body ...render.HTML) render.HTML {
-	cls := "ui-doc-layout"
+	cls := "fui-doc-layout"
 	switch {
 	case cfg.Nav == "":
-		cls += " ui-doc-layout--narrow"
+		cls += " fui-doc-layout--narrow"
 	case cfg.Toc == "":
-		cls += " ui-doc-layout--notoc"
+		cls += " fui-doc-layout--notoc"
 	}
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
@@ -100,7 +100,7 @@ func DocLayout(cfg DocLayoutConfig, body ...render.HTML) render.HTML {
 		articleChildren = append(articleChildren, DocPrevNext(*cfg.Pager))
 	}
 	article := render.Tag("article",
-		map[string]string{"class": "ui-doc-layout__content"}, articleChildren...)
+		map[string]string{"class": "fui-doc-layout__content"}, articleChildren...)
 
 	shellChildren := []render.HTML{}
 	if cfg.Nav != "" {
@@ -122,11 +122,11 @@ func docCrumbs(crumbs []DocCrumb, label string) render.HTML {
 	for i, c := range crumbs {
 		if i > 0 {
 			children = append(children,
-				html.Span(html.TextConfig{Class: "ui-doc-layout__crumb-sep"}, render.Text("/")))
+				html.Span(html.TextConfig{Class: "fui-doc-layout__crumb-sep"}, render.Text("/")))
 		}
 		if c.Href == "" {
 			children = append(children,
-				html.Span(html.TextConfig{Class: "ui-doc-layout__crumb-current"}, render.Text(c.Label)))
+				html.Span(html.TextConfig{Class: "fui-doc-layout__crumb-current"}, render.Text(c.Label)))
 		} else {
 			// Crumbs can be data-driven (doc titles/paths from content
 			// files). Drop unsafe href schemes; degrade to "#".
@@ -138,7 +138,7 @@ func docCrumbs(crumbs []DocCrumb, label string) render.HTML {
 		}
 	}
 	return render.Tag("nav",
-		map[string]string{"class": "ui-doc-layout__crumbs", "aria-label": label}, children...)
+		map[string]string{"class": "fui-doc-layout__crumbs", "aria-label": label}, children...)
 }
 
 // DocPrevNext renders the prev/next pager. The previous card is always shown
@@ -164,25 +164,25 @@ func DocPrevNext(p DocPager) render.HTML {
 	cards := []render.HTML{
 		html.LinkHTML(html.LinkHTMLConfig{
 			Href:  safeHref(p.PrevHref),
-			Class: "ui-doc-layout__prev",
+			Class: "fui-doc-layout__prev",
 			Content: render.Join(
-				html.Span(html.TextConfig{Class: "ui-doc-layout__pager-dir"}, render.Text(prevDir)),
-				html.Span(html.TextConfig{Class: "ui-doc-layout__pager-ttl"}, render.Text(p.PrevLabel)),
+				html.Span(html.TextConfig{Class: "fui-doc-layout__pager-dir"}, render.Text(prevDir)),
+				html.Span(html.TextConfig{Class: "fui-doc-layout__pager-ttl"}, render.Text(p.PrevLabel)),
 			),
 		}),
 	}
 	if p.NextHref != "" {
 		cards = append(cards, html.LinkHTML(html.LinkHTMLConfig{
 			Href:  safeHref(p.NextHref),
-			Class: "ui-doc-layout__next",
+			Class: "fui-doc-layout__next",
 			Content: render.Join(
-				html.Span(html.TextConfig{Class: "ui-doc-layout__pager-dir"}, render.Text(nextDir)),
-				html.Span(html.TextConfig{Class: "ui-doc-layout__pager-ttl"}, render.Text(p.NextLabel)),
+				html.Span(html.TextConfig{Class: "fui-doc-layout__pager-dir"}, render.Text(nextDir)),
+				html.Span(html.TextConfig{Class: "fui-doc-layout__pager-ttl"}, render.Text(p.NextLabel)),
 			),
 		}))
 	}
-	return html.Div(html.DivConfig{Class: "ui-doc-layout__foot"},
-		html.Div(html.DivConfig{Class: "ui-doc-layout__foot-nav"}, cards...))
+	return html.Div(html.DivConfig{Class: "fui-doc-layout__foot"},
+		html.Div(html.DivConfig{Class: "fui-doc-layout__foot-nav"}, cards...))
 }
 
 var docLayoutStyle = registry.RegisterStyle("ui-doc-layout", docLayoutCSS)
@@ -198,17 +198,17 @@ func docLayoutCSS(_ style.Theme) string {
   margin-inline: auto;
   padding: var(--ui-doc-layout-pad, var(--spacing-xl, 24px));
 }
-[data-fui-comp="ui-doc-layout"].ui-doc-layout--notoc {
+[data-fui-comp="ui-doc-layout"].fui-doc-layout--notoc {
   grid-template-columns: var(--ui-doc-layout-rail, 220px) minmax(0, 1fr);
 }
-[data-fui-comp="ui-doc-layout"].ui-doc-layout--narrow {
+[data-fui-comp="ui-doc-layout"].fui-doc-layout--narrow {
   grid-template-columns: minmax(0, 1fr);
 }
-[data-fui-comp="ui-doc-layout"] .ui-doc-layout__content {
+[data-fui-comp="ui-doc-layout"] .fui-doc-layout__content {
   max-width: var(--ui-doc-layout-content-max, 720px);
   min-width: 0;
 }
-[data-fui-comp="ui-doc-layout"].ui-doc-layout--narrow .ui-doc-layout__content {
+[data-fui-comp="ui-doc-layout"].fui-doc-layout--narrow .fui-doc-layout__content {
   margin-inline: auto;
 }
 
@@ -216,7 +216,7 @@ func docLayoutCSS(_ style.Theme) string {
    ships the sticky rail + mobile sheet). DocLayout only sizes its column. */
 
 /* Breadcrumbs */
-[data-fui-comp="ui-doc-layout"] .ui-doc-layout__crumbs {
+[data-fui-comp="ui-doc-layout"] .fui-doc-layout__crumbs {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
@@ -225,26 +225,26 @@ func docLayoutCSS(_ style.Theme) string {
   color: var(--color-text-subtle, #71717A);
   margin-bottom: var(--spacing-xl, 24px);
 }
-[data-fui-comp="ui-doc-layout"] .ui-doc-layout__crumbs a {
+[data-fui-comp="ui-doc-layout"] .fui-doc-layout__crumbs a {
   color: var(--ui-doc-layout-crumb-link-color, inherit);
   text-decoration: none;
 }
-[data-fui-comp="ui-doc-layout"] .ui-doc-layout__crumb-sep { color: var(--ui-doc-layout-crumb-sep-color, inherit); }
-[data-fui-comp="ui-doc-layout"] .ui-doc-layout__crumb-current { color: var(--color-text-muted, #52525B); }
+[data-fui-comp="ui-doc-layout"] .fui-doc-layout__crumb-sep { color: var(--ui-doc-layout-crumb-sep-color, inherit); }
+[data-fui-comp="ui-doc-layout"] .fui-doc-layout__crumb-current { color: var(--color-text-muted, #52525B); }
 
 /* Prev/next pager */
-[data-fui-comp="ui-doc-layout"] .ui-doc-layout__foot {
+[data-fui-comp="ui-doc-layout"] .fui-doc-layout__foot {
   margin-top: var(--spacing-2xl, 32px);
   padding-top: var(--spacing-xl, 24px);
   border-top: 1px solid var(--color-border, rgba(0,0,0,0.1));
 }
-[data-fui-comp="ui-doc-layout"] .ui-doc-layout__foot-nav {
+[data-fui-comp="ui-doc-layout"] .fui-doc-layout__foot-nav {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: var(--spacing-lg, 16px);
 }
-[data-fui-comp="ui-doc-layout"] .ui-doc-layout__prev,
-[data-fui-comp="ui-doc-layout"] .ui-doc-layout__next {
+[data-fui-comp="ui-doc-layout"] .fui-doc-layout__prev,
+[data-fui-comp="ui-doc-layout"] .fui-doc-layout__next {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-sm, 4px);
@@ -254,17 +254,17 @@ func docLayoutCSS(_ style.Theme) string {
   border-radius: var(--radii-md, 8px);
   text-decoration: none;
 }
-[data-fui-comp="ui-doc-layout"] .ui-doc-layout__next { text-align: right; }
-[data-fui-comp="ui-doc-layout"] .ui-doc-layout__prev:hover,
-[data-fui-comp="ui-doc-layout"] .ui-doc-layout__next:hover {
+[data-fui-comp="ui-doc-layout"] .fui-doc-layout__next { text-align: right; }
+[data-fui-comp="ui-doc-layout"] .fui-doc-layout__prev:hover,
+[data-fui-comp="ui-doc-layout"] .fui-doc-layout__next:hover {
   border-color: var(--color-border-strong, var(--color-border, rgba(0,0,0,0.2)));
 }
-[data-fui-comp="ui-doc-layout"] .ui-doc-layout__pager-dir {
+[data-fui-comp="ui-doc-layout"] .fui-doc-layout__pager-dir {
   font-family: var(--font-mono, ui-monospace, monospace);
   font-size: var(--text-xs, 0.75rem);
   color: var(--color-text-subtle, #71717A);
 }
-[data-fui-comp="ui-doc-layout"] .ui-doc-layout__pager-ttl { color: var(--color-text, #18181B); font-weight: 500; }
+[data-fui-comp="ui-doc-layout"] .fui-doc-layout__pager-ttl { color: var(--color-text, #18181B); font-weight: 500; }
 
 /* Collapse to a single column on narrow viewports. The root's explicit
    min-inline-size above is required when DocLayout is itself a flex child;
@@ -279,10 +279,10 @@ func docLayoutCSS(_ style.Theme) string {
   /* display:block drops the grid gap — restore separation between the
      stacked SectionMenu pill and the article below it. */
   [data-fui-comp="ui-doc-layout"] > * + * { margin-block-start: var(--spacing-xl, 24px); }
-  [data-fui-comp="ui-doc-layout"] .ui-doc-layout__content {
+  [data-fui-comp="ui-doc-layout"] .fui-doc-layout__content {
     max-width: none;
     overflow-x: hidden;
   }
-  [data-fui-comp="ui-doc-layout"] .ui-doc-layout__foot-nav { grid-template-columns: 1fr; }
+  [data-fui-comp="ui-doc-layout"] .fui-doc-layout__foot-nav { grid-template-columns: 1fr; }
 }`
 }

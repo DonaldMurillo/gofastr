@@ -675,7 +675,7 @@ func TestDataTable_QueryCarrySurvivesSortHref(t *testing.T) {
 				Rows:    []ui.Row{{Cells: map[string]render.HTML{"title": render.Text("x")}}},
 				Query:   query,
 			}))
-			const needle = `<a class="ui-data-table__sort" href="`
+			const needle = `<a class="fui-data-table__sort" href="`
 			i := strings.Index(h, needle)
 			if i < 0 {
 				t.Fatalf("SECURITY: [query-carry] no sort anchor in: %s", truncate(h, 300))
@@ -717,7 +717,7 @@ func TestDataTable_ControlBytesInQueryCarry(t *testing.T) {
 			"q": {"ev\r\nSet-Cookie: pwn=1\r\n\x00tail"},
 		},
 	}))
-	const needle = `<a class="ui-data-table__sort" href="`
+	const needle = `<a class="fui-data-table__sort" href="`
 	i := strings.Index(h, needle)
 	if i < 0 {
 		t.Fatalf("SECURITY: [query-c0] no sort anchor rendered for a hostile carry:\n%s", truncate(h, 300))

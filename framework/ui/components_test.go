@@ -542,7 +542,7 @@ func TestStatCardTrendDirection(t *testing.T) {
 func TestAvatarFallsBackToInitials(t *testing.T) {
 	h := Avatar(AvatarConfig{Name: "Donald Murillo"})
 	mustContain(t, h, "DM")
-	mustContain(t, h, "ui-avatar__initials")
+	mustContain(t, h, "fui-avatar__initials")
 }
 
 func TestAvatarUsesImageWhenSrcSet(t *testing.T) {
@@ -553,9 +553,9 @@ func TestAvatarUsesImageWhenSrcSet(t *testing.T) {
 
 func TestAvatarSizeVariantClass(t *testing.T) {
 	cases := map[AvatarSize]string{
-		AvatarSm: "ui-avatar--sm",
-		AvatarLg: "ui-avatar--lg",
-		AvatarXl: "ui-avatar--xl",
+		AvatarSm: "fui-avatar--sm",
+		AvatarLg: "fui-avatar--lg",
+		AvatarXl: "fui-avatar--xl",
 	}
 	for size, want := range cases {
 		h := Avatar(AvatarConfig{Name: "x", Size: size})
@@ -563,7 +563,7 @@ func TestAvatarSizeVariantClass(t *testing.T) {
 	}
 	// Default size: no variant class, but the base class is there.
 	h := Avatar(AvatarConfig{Name: "x"})
-	mustContain(t, h, "class=\"ui-avatar\"")
+	mustContain(t, h, "class=\"fui-avatar\"")
 }
 
 func TestInitialsHelper(t *testing.T) {

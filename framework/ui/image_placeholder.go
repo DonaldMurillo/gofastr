@@ -31,7 +31,7 @@ func placeholderImage(durl string) render.HTML {
 	return html.Image(html.ImageConfig{
 		Src:   durl,
 		Alt:   "", // decorative: html.Image adds role="presentation"
-		Class: "ui-image__lqip",
+		Class: "fui-image__lqip",
 		ExtraAttrs: html.Attrs{
 			"aria-hidden": "true",
 			// A data URI costs no request, so deferring or async-decoding it

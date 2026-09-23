@@ -87,23 +87,23 @@ func TestE2ERecordSummaryResponsiveContract(t *testing.T) {
 					chromedp.Sleep(100*time.Millisecond),
 					chromedp.Evaluate(`(() => {
   const root = document.querySelector('[data-fui-comp="ui-record-summary"]');
-  const title = root.querySelector('.ui-record-summary__title');
-  const actions = root.querySelector('.ui-record-summary__actions');
+  const title = root.querySelector('.fui-record-summary__title');
+  const actions = root.querySelector('.fui-record-summary__actions');
   const actionCluster = actions.querySelector('.fui-cluster');
   const primaryAction = actions.querySelector('.fui-button');
-  const highlight = root.querySelector('.ui-record-summary__highlight');
-  const lead = root.querySelector('.ui-record-summary__lead');
-  const overflow = root.querySelector('.ui-avatar-group__overflow');
-  const avatars = [...root.querySelectorAll('.ui-avatar-group .ui-avatar')];
+  const highlight = root.querySelector('.fui-record-summary__highlight');
+  const lead = root.querySelector('.fui-record-summary__lead');
+  const overflow = root.querySelector('.fui-avatar-group__overflow');
+  const avatars = [...root.querySelectorAll('.fui-avatar-group .fui-avatar')];
   const initialClearance = avatars.slice(1).map((avatar, index) =>
-    avatar.querySelector('.ui-avatar__initials').getBoundingClientRect().left - avatars[index].getBoundingClientRect().right);
-  const statusInsets = avatars.filter(avatar => avatar.querySelector('.ui-avatar__status')).map(avatar => {
+    avatar.querySelector('.fui-avatar__initials').getBoundingClientRect().left - avatars[index].getBoundingClientRect().right);
+  const statusInsets = avatars.filter(avatar => avatar.querySelector('.fui-avatar__status')).map(avatar => {
     const avatarRect = avatar.getBoundingClientRect();
-    const statusRect = avatar.querySelector('.ui-avatar__status').getBoundingClientRect();
+    const statusRect = avatar.querySelector('.fui-avatar__status').getBoundingClientRect();
     return Math.min(avatarRect.right - statusRect.right, avatarRect.bottom - statusRect.bottom);
   });
   const band = root.querySelector('[data-fui-comp="ui-metric-band"]');
-  const lastMetric = band.querySelector('.ui-metric-band__item:last-child');
+  const lastMetric = band.querySelector('.fui-metric-band__item:last-child');
   const layout = document.querySelector('.layout-components > .layout-body');
   const content = layout.querySelector('.layout-content');
   const doc = document.querySelector('[data-fui-comp="ui-doc-layout"]');

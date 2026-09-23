@@ -9,10 +9,11 @@ import (
 
 // TestGalleryDropsDangerousHref pins that a Gallery anchor href never
 // resolves to an executable scheme. Item Src (default + lightbox
-// branches) and HrefFn output all flow through the framework allow-list
-// (framework/ui/safety.go::safeURL); javascript:/data:/vbscript:/
-// protocol-relative URLs are dropped so the thumbnail renders as a
-// non-navigating figure instead of an XSS click target.
+// branches) and HrefFn output all flow through the headless primitive's
+// anchor and image-source policies (urlsafe.CleanAnchor /
+// urlsafe.ImageSource); javascript:/data:/vbscript:/ protocol-relative
+// URLs are dropped so the thumbnail renders as a non-navigating figure
+// instead of an XSS click target.
 func TestGalleryDropsDangerousHref(t *testing.T) {
 	dangerous := []string{
 		"javascript:alert(document.cookie)",

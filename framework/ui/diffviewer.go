@@ -64,9 +64,9 @@ func DiffViewer(cfg DiffViewerConfig) render.HTML {
 			`. Pick one of: "" (unified), split`)
 	}
 
-	cls := "ui-diff-viewer"
+	cls := "fui-diff-viewer"
 	if cfg.Mode == DiffSplit {
-		cls += " ui-diff-viewer--split"
+		cls += " fui-diff-viewer--split"
 	}
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
@@ -84,9 +84,9 @@ func DiffViewer(cfg DiffViewerConfig) render.HTML {
 		if right == "" {
 			right = "New"
 		}
-		sb.WriteString(`<div class="ui-diff-viewer__header"><div class="ui-diff-viewer__header-cell">`)
+		sb.WriteString(`<div class="fui-diff-viewer__header"><div class="fui-diff-viewer__header-cell">`)
 		sb.WriteString(escapeXML(left))
-		sb.WriteString(`</div><div class="ui-diff-viewer__header-cell">`)
+		sb.WriteString(`</div><div class="fui-diff-viewer__header-cell">`)
 		sb.WriteString(escapeXML(right))
 		sb.WriteString(`</div></div>`)
 
@@ -96,14 +96,14 @@ func DiffViewer(cfg DiffViewerConfig) render.HTML {
 		for i < len(lines) {
 			ln := lines[i]
 			if strings.HasPrefix(ln, "@@") {
-				sb.WriteString(`<div class="ui-diff-viewer__hunk">`)
+				sb.WriteString(`<div class="fui-diff-viewer__hunk">`)
 				sb.WriteString(escapeXML(ln))
 				sb.WriteString(`</div>`)
 				i++
 				continue
 			}
 			if strings.HasPrefix(ln, "---") || strings.HasPrefix(ln, "+++") {
-				sb.WriteString(`<div class="ui-diff-viewer__file">`)
+				sb.WriteString(`<div class="fui-diff-viewer__file">`)
 				sb.WriteString(escapeXML(ln))
 				sb.WriteString(`</div>`)
 				i++
@@ -133,10 +133,10 @@ func DiffViewer(cfg DiffViewerConfig) render.HTML {
 				if strings.HasPrefix(cur, " ") {
 					ctx = cur[1:]
 				}
-				sb.WriteString(`<div class="ui-diff-viewer__row ui-diff-viewer__row--context">`)
-				sb.WriteString(`<div class="ui-diff-viewer__cell"><pre class="ui-diff-viewer__code" tabindex="0">`)
+				sb.WriteString(`<div class="fui-diff-viewer__row fui-diff-viewer__row--context">`)
+				sb.WriteString(`<div class="fui-diff-viewer__cell"><pre class="fui-diff-viewer__code" tabindex="0">`)
 				sb.WriteString(escapeXML(ctx))
-				sb.WriteString(`</pre></div><div class="ui-diff-viewer__cell"><pre class="ui-diff-viewer__code" tabindex="0">`)
+				sb.WriteString(`</pre></div><div class="fui-diff-viewer__cell"><pre class="fui-diff-viewer__code" tabindex="0">`)
 				sb.WriteString(escapeXML(ctx))
 				sb.WriteString(`</pre></div></div>`)
 				i++
@@ -148,19 +148,19 @@ func DiffViewer(cfg DiffViewerConfig) render.HTML {
 		for _, ln := range lines {
 			switch {
 			case strings.HasPrefix(ln, "@@"):
-				sb.WriteString(`<div class="ui-diff-viewer__hunk">`)
+				sb.WriteString(`<div class="fui-diff-viewer__hunk">`)
 				sb.WriteString(escapeXML(ln))
 				sb.WriteString(`</div>`)
 			case strings.HasPrefix(ln, "---") || strings.HasPrefix(ln, "+++"):
-				sb.WriteString(`<div class="ui-diff-viewer__file">`)
+				sb.WriteString(`<div class="fui-diff-viewer__file">`)
 				sb.WriteString(escapeXML(ln))
 				sb.WriteString(`</div>`)
 			case strings.HasPrefix(ln, "+"):
-				sb.WriteString(`<div class="ui-diff-viewer__line ui-diff-viewer__line--add"><span class="ui-diff-viewer__gutter">+</span><pre class="ui-diff-viewer__code" tabindex="0">`)
+				sb.WriteString(`<div class="fui-diff-viewer__line fui-diff-viewer__line--add"><span class="fui-diff-viewer__gutter">+</span><pre class="fui-diff-viewer__code" tabindex="0">`)
 				sb.WriteString(escapeXML(ln[1:]))
 				sb.WriteString(`</pre></div>`)
 			case strings.HasPrefix(ln, "-"):
-				sb.WriteString(`<div class="ui-diff-viewer__line ui-diff-viewer__line--remove"><span class="ui-diff-viewer__gutter">−</span><pre class="ui-diff-viewer__code" tabindex="0">`)
+				sb.WriteString(`<div class="fui-diff-viewer__line fui-diff-viewer__line--remove"><span class="fui-diff-viewer__gutter">−</span><pre class="fui-diff-viewer__code" tabindex="0">`)
 				sb.WriteString(escapeXML(ln[1:]))
 				sb.WriteString(`</pre></div>`)
 			default:
@@ -168,7 +168,7 @@ func DiffViewer(cfg DiffViewerConfig) render.HTML {
 				if strings.HasPrefix(ln, " ") {
 					body = ln[1:]
 				}
-				sb.WriteString(`<div class="ui-diff-viewer__line ui-diff-viewer__line--context"><span class="ui-diff-viewer__gutter"> </span><pre class="ui-diff-viewer__code" tabindex="0">`)
+				sb.WriteString(`<div class="fui-diff-viewer__line fui-diff-viewer__line--context"><span class="fui-diff-viewer__gutter"> </span><pre class="fui-diff-viewer__code" tabindex="0">`)
 				sb.WriteString(escapeXML(body))
 				sb.WriteString(`</pre></div>`)
 			}
@@ -192,19 +192,19 @@ func flushSplit(sb *strings.Builder, removed, added []string) {
 	}
 	n := max(len(added), len(removed))
 	for i := range n {
-		sb.WriteString(`<div class="ui-diff-viewer__row">`)
+		sb.WriteString(`<div class="fui-diff-viewer__row">`)
 		// Left column: removed (or empty).
-		sb.WriteString(`<div class="ui-diff-viewer__cell ui-diff-viewer__cell--remove">`)
+		sb.WriteString(`<div class="fui-diff-viewer__cell fui-diff-viewer__cell--remove">`)
 		if i < len(removed) {
-			sb.WriteString(`<pre class="ui-diff-viewer__code" tabindex="0">`)
+			sb.WriteString(`<pre class="fui-diff-viewer__code" tabindex="0">`)
 			sb.WriteString(escapeXML(removed[i]))
 			sb.WriteString(`</pre>`)
 		}
 		sb.WriteString(`</div>`)
 		// Right column: added (or empty).
-		sb.WriteString(`<div class="ui-diff-viewer__cell ui-diff-viewer__cell--add">`)
+		sb.WriteString(`<div class="fui-diff-viewer__cell fui-diff-viewer__cell--add">`)
 		if i < len(added) {
-			sb.WriteString(`<pre class="ui-diff-viewer__code" tabindex="0">`)
+			sb.WriteString(`<pre class="fui-diff-viewer__code" tabindex="0">`)
 			sb.WriteString(escapeXML(added[i]))
 			sb.WriteString(`</pre>`)
 		}
@@ -228,71 +228,71 @@ func diffViewerCSS(_ style.Theme) string {
   overflow: hidden;
   background: var(--color-surface, #FFFFFF);
 }
-[data-fui-comp="ui-diff-viewer"] .ui-diff-viewer__hunk {
+[data-fui-comp="ui-diff-viewer"] .fui-diff-viewer__hunk {
   padding: var(--spacing-sm, 4px) var(--spacing-md, 8px);
   background: var(--color-surface-soft, #F4F4F5);
   color: var(--color-text-muted, #52525B);
   font-size: var(--text-xs, 0.75rem);
   border-block: 1px solid var(--color-border, #E4E4E7);
 }
-[data-fui-comp="ui-diff-viewer"] .ui-diff-viewer__file {
+[data-fui-comp="ui-diff-viewer"] .fui-diff-viewer__file {
   padding: var(--spacing-sm, 4px) var(--spacing-md, 8px);
   color: var(--color-text, #18181B);
   font-weight: 600;
   font-size: var(--text-sm, 0.875rem);
   border-block-end: 1px solid var(--color-border, #E4E4E7);
 }
-[data-fui-comp="ui-diff-viewer"] .ui-diff-viewer__line {
+[data-fui-comp="ui-diff-viewer"] .fui-diff-viewer__line {
   display: grid;
   grid-template-columns: 2ch 1fr;
   gap: var(--spacing-sm, 4px);
   padding-inline: var(--spacing-md, 8px);
 }
-[data-fui-comp="ui-diff-viewer"] .ui-diff-viewer__gutter {
+[data-fui-comp="ui-diff-viewer"] .fui-diff-viewer__gutter {
   user-select: none;
   text-align: end;
   color: var(--color-text-muted, #52525B);
 }
-[data-fui-comp="ui-diff-viewer"] .ui-diff-viewer__code {
+[data-fui-comp="ui-diff-viewer"] .fui-diff-viewer__code {
   margin: 0;
   padding: 0;
   font: inherit;
   white-space: pre;
   overflow-x: auto;
 }
-[data-fui-comp="ui-diff-viewer"] .ui-diff-viewer__line--add {
+[data-fui-comp="ui-diff-viewer"] .fui-diff-viewer__line--add {
   background: color-mix(in srgb, var(--color-success, #16A34A) 12%, transparent);
 }
-[data-fui-comp="ui-diff-viewer"] .ui-diff-viewer__line--remove {
+[data-fui-comp="ui-diff-viewer"] .fui-diff-viewer__line--remove {
   background: color-mix(in srgb, var(--color-danger, #DC2626) 12%, transparent);
 }
 
 /* Split layout */
-.ui-diff-viewer--split .ui-diff-viewer__header,
-.ui-diff-viewer--split .ui-diff-viewer__row {
+.fui-diff-viewer--split .fui-diff-viewer__header,
+.fui-diff-viewer--split .fui-diff-viewer__row {
   display: grid;
   grid-template-columns: 1fr 1fr;
 }
-.ui-diff-viewer--split .ui-diff-viewer__header-cell {
+.fui-diff-viewer--split .fui-diff-viewer__header-cell {
   padding: var(--spacing-sm, 4px) var(--spacing-md, 8px);
   background: var(--color-surface-soft, #F4F4F5);
   color: var(--color-text-muted, #52525B);
   font-weight: 600;
   border-block-end: 1px solid var(--color-border, #E4E4E7);
 }
-.ui-diff-viewer--split .ui-diff-viewer__header-cell + .ui-diff-viewer__header-cell {
+.fui-diff-viewer--split .fui-diff-viewer__header-cell + .fui-diff-viewer__header-cell {
   border-inline-start: 1px solid var(--color-border, #E4E4E7);
 }
-.ui-diff-viewer--split .ui-diff-viewer__cell {
+.fui-diff-viewer--split .fui-diff-viewer__cell {
   padding: 0 var(--spacing-md, 8px);
 }
-.ui-diff-viewer--split .ui-diff-viewer__cell + .ui-diff-viewer__cell {
+.fui-diff-viewer--split .fui-diff-viewer__cell + .fui-diff-viewer__cell {
   border-inline-start: 1px solid var(--color-border, #E4E4E7);
 }
-.ui-diff-viewer--split .ui-diff-viewer__cell--add {
+.fui-diff-viewer--split .fui-diff-viewer__cell--add {
   background: color-mix(in srgb, var(--color-success, #16A34A) 12%, transparent);
 }
-.ui-diff-viewer--split .ui-diff-viewer__cell--remove {
+.fui-diff-viewer--split .fui-diff-viewer__cell--remove {
   background: color-mix(in srgb, var(--color-danger, #DC2626) 12%, transparent);
 }`
 }

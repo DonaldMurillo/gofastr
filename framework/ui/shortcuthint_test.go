@@ -9,9 +9,9 @@ func TestShortcutHintModK(t *testing.T) {
 	out := string(ShortcutHint(ShortcutHintConfig{Chord: "Mod+K"}))
 	wants := []string{
 		`<kbd `,
-		`ui-shortcut-hint__key--mod`,
-		`ui-shortcut-hint__mod-mac`,
-		`ui-shortcut-hint__mod-other`,
+		`fui-shortcut-hint__key--mod`,
+		`fui-shortcut-hint__mod-mac`,
+		`fui-shortcut-hint__mod-other`,
 		`>⌘<`,
 		`>Ctrl<`,
 		`>K<`,

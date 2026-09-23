@@ -59,14 +59,14 @@ type gsCodeBlock struct {
 // extractGetStartedGoBlocks finds every framed ui.CodeBlock whose filename
 // ends in .go and returns the tag-stripped source. Non-Go blocks (yaml,
 // shell terminal output) are skipped. The CodeBlock chrome emits a stable
-// pair, a <span class="ui-code-block__file">NAME</span> header and a
-// <pre class="ui-code-block__body">…</pre> body, in document order; we pair
+// pair, a <span class="fui-code-block__file">NAME</span> header and a
+// <pre class="fui-code-block__body">…</pre> body, in document order; we pair
 // them by count. If the framework reshapes that chrome the count check fails
 // loudly, which is the intent: the gate must track what the page renders.
 func extractGetStartedGoBlocks(t *testing.T, page string) []gsCodeBlock {
 	t.Helper()
-	fileRe := regexp.MustCompile(`<span class="ui-code-block__file">(.*?)</span>`)
-	preRe := regexp.MustCompile(`(?s)<pre[^>]*class="ui-code-block__body"[^>]*>(.*?)</pre>`)
+	fileRe := regexp.MustCompile(`<span class="fui-code-block__file">(.*?)</span>`)
+	preRe := regexp.MustCompile(`(?s)<pre[^>]*class="fui-code-block__body"[^>]*>(.*?)</pre>`)
 	files := fileRe.FindAllStringSubmatch(page, -1)
 	pres := preRe.FindAllStringSubmatch(page, -1)
 	if len(files) != len(pres) {
@@ -93,13 +93,13 @@ var gsTagRe = regexp.MustCompile(`<[^>]*>`)
 func gsStripTags(s string) string { return gsTagRe.ReplaceAllString(s, "") }
 
 // gsSplitLines reverses the CodeBlock line wrapping back into source lines.
-// Each rendered line is wrapped in <span class="ui-code-block__line">…</span>;
+// Each rendered line is wrapped in <span class="fui-code-block__line">…</span>;
 // tokens inside are further <span class="tk-*">text</span> spans (or escaped
 // plain text). Splitting on the line-wrapper open tag, then stripping every
 // remaining tag and unescaping entities, reconstructs the exact Go source,
 // the token palette only adds styling, never alters text.
 func gsSplitLines(body string) []string {
-	const lineOpen = `<span class="ui-code-block__line">`
+	const lineOpen = `<span class="fui-code-block__line">`
 	parts := strings.Split(body, lineOpen)
 	lines := make([]string, 0, len(parts))
 	for _, p := range parts[1:] { // [0] is the preamble before the first line

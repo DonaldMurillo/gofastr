@@ -77,7 +77,7 @@ func TestRatingCustomIconOverridesShape(t *testing.T) {
 	// The ui- substring matches both spellings (fui- contains ui-), so
 	// this negative refuses the shape class whichever vocabulary
 	// emitted it.
-	if strings.Contains(h, "ui-rating--heart") {
+	if classTokenPresent(h, "fui-rating--heart") {
 		t.Errorf("Icon overrides Shape — Shape variant class should not emit:\n%s", h)
 	}
 }

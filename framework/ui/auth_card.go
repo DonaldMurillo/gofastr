@@ -37,22 +37,22 @@ type AuthCardConfig struct {
 func AuthCard(cfg AuthCardConfig) render.HTML {
 	inner := make([]render.HTML, 0, 4)
 	if cfg.Title != "" {
-		inner = append(inner, html.Heading(html.HeadingConfig{Level: 1, Class: "ui-auth-card__title"}, render.Text(cfg.Title)))
+		inner = append(inner, html.Heading(html.HeadingConfig{Level: 1, Class: "fui-auth-card__title"}, render.Text(cfg.Title)))
 	}
 	if cfg.Alert != "" {
-		inner = append(inner, html.Div(html.DivConfig{Class: "ui-auth-card__alert", Role: "alert"}, cfg.Alert))
+		inner = append(inner, html.Div(html.DivConfig{Class: "fui-auth-card__alert", Role: "alert"}, cfg.Alert))
 	}
 	if cfg.Body != "" {
 		inner = append(inner, cfg.Body)
 	}
 	if cfg.Footer != "" {
-		inner = append(inner, html.Div(html.DivConfig{Class: "ui-auth-card__footer"}, cfg.Footer))
+		inner = append(inner, html.Div(html.DivConfig{Class: "fui-auth-card__footer"}, cfg.Footer))
 	}
-	cls := "ui-auth-card"
+	cls := "fui-auth-card"
 	if cfg.Class != "" {
 		cls = cls + " " + cfg.Class
 	}
-	panel := html.Div(html.DivConfig{Class: "ui-auth-card__panel"}, inner...)
+	panel := html.Div(html.DivConfig{Class: "fui-auth-card__panel"}, inner...)
 	return authCardStyle.WrapHTML(html.Div(html.DivConfig{
 		Class: cls, ExtraAttrs: html.SafeExtraAttrs(cfg.ExtraAttrs),
 	}, panel))
@@ -66,7 +66,7 @@ func authCardCSS(_ style.Theme) string {
   justify-content: center;
   padding-block: clamp(24px, 6vw, 64px);
 }
-[data-fui-comp="ui-auth-card"] .ui-auth-card__panel {
+[data-fui-comp="ui-auth-card"] .fui-auth-card__panel {
   inline-size: 100%;
   max-inline-size: 24rem;
   display: flex;
@@ -78,13 +78,13 @@ func authCardCSS(_ style.Theme) string {
   border-radius: var(--radii-lg, 12px);
   box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
 }
-[data-fui-comp="ui-auth-card"] .ui-auth-card__title {
+[data-fui-comp="ui-auth-card"] .fui-auth-card__title {
   margin: 0;
   font-family: var(--font-heading, inherit);
   font-size: var(--text-xl, 1.25rem);
   letter-spacing: -0.01em;
 }
-[data-fui-comp="ui-auth-card"] .ui-auth-card__alert {
+[data-fui-comp="ui-auth-card"] .fui-auth-card__alert {
   font-size: var(--text-sm, 0.875rem);
   color: var(--color-danger, #b91c1c);
   background: color-mix(in srgb, var(--color-danger, #b91c1c) 8%, transparent);
@@ -92,11 +92,11 @@ func authCardCSS(_ style.Theme) string {
   border-radius: var(--radii-md, 8px);
   padding: 0.625rem 0.75rem;
 }
-[data-fui-comp="ui-auth-card"] .ui-auth-card__footer {
+[data-fui-comp="ui-auth-card"] .fui-auth-card__footer {
   font-size: var(--text-sm, 0.875rem);
   color: var(--color-text-muted, inherit);
 }
-[data-fui-comp="ui-auth-card"] .ui-auth-card__footer a {
+[data-fui-comp="ui-auth-card"] .fui-auth-card__footer a {
   color: var(--color-primary, #4f46e5);
   text-decoration: underline;
   text-underline-offset: 2px;

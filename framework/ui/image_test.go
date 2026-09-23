@@ -74,7 +74,7 @@ func TestOptimizedImageAspectAndFitClasses(t *testing.T) {
 		Src: "/a.png", Alt: "x", Width: 1, Height: 1,
 		Aspect: ImageAspect16x9, Fit: ImageFitContain, Rounded: true,
 	})
-	for _, want := range []string{"ui-image--aspect-16-9", "ui-image--fit-contain", "ui-image--rounded"} {
+	for _, want := range []string{"fui-image--aspect-16-9", "fui-image--fit-contain", "fui-image--rounded"} {
 		mustContain(t, h, want)
 	}
 }
@@ -82,7 +82,7 @@ func TestOptimizedImageAspectAndFitClasses(t *testing.T) {
 func TestOptimizedImageDecorativeAllowsEmptyAlt(t *testing.T) {
 	// Opt-in via class hook: should not panic.
 	h := OptimizedImage(OptimizedImageConfig{
-		Src: "/a.png", Alt: "", Width: 1, Height: 1, Class: "ui-image--decorative",
+		Src: "/a.png", Alt: "", Width: 1, Height: 1, Class: "fui-image--decorative",
 	})
 	if !strings.Contains(string(h), `alt=""`) {
 		t.Fatalf("decorative image must keep empty alt:\n%s", h)

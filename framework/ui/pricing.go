@@ -39,9 +39,9 @@ type PricingCardConfig struct {
 
 // PricingCard renders a single plan card.
 func PricingCard(cfg PricingCardConfig) render.HTML {
-	cls := "ui-pricing-card"
+	cls := "fui-pricing-card"
 	if cfg.Featured {
-		cls += " ui-pricing-card--featured"
+		cls += " fui-pricing-card--featured"
 	}
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
@@ -52,31 +52,31 @@ func PricingCard(cfg PricingCardConfig) render.HTML {
 		level = 3
 	}
 	head := []render.HTML{
-		html.Heading(html.HeadingConfig{Level: level, Class: "ui-pricing-card__name"}, render.Text(cfg.Name)),
+		html.Heading(html.HeadingConfig{Level: level, Class: "fui-pricing-card__name"}, render.Text(cfg.Name)),
 	}
 	if cfg.Featured {
-		head = append([]render.HTML{html.Span(html.TextConfig{Class: "ui-pricing-card__badge"}, render.Text("Recommended"))}, head...)
+		head = append([]render.HTML{html.Span(html.TextConfig{Class: "fui-pricing-card__badge"}, render.Text("Recommended"))}, head...)
 	}
 	if cfg.Description != "" {
-		head = append(head, html.Paragraph(html.TextConfig{Class: "ui-pricing-card__desc"}, render.Text(cfg.Description)))
+		head = append(head, html.Paragraph(html.TextConfig{Class: "fui-pricing-card__desc"}, render.Text(cfg.Description)))
 	}
 
-	price := []render.HTML{html.Span(html.TextConfig{Class: "ui-pricing-card__amount"}, render.Text(cfg.Price))}
+	price := []render.HTML{html.Span(html.TextConfig{Class: "fui-pricing-card__amount"}, render.Text(cfg.Price))}
 	if cfg.Period != "" {
-		price = append(price, html.Span(html.TextConfig{Class: "ui-pricing-card__period"}, render.Text(cfg.Period)))
+		price = append(price, html.Span(html.TextConfig{Class: "fui-pricing-card__period"}, render.Text(cfg.Period)))
 	}
 
 	items := make([]render.HTML, 0, len(cfg.Features))
 	for _, f := range cfg.Features {
-		items = append(items, html.ListItem(html.ListItemConfig{Class: "ui-pricing-card__feature"}, render.Text(f)))
+		items = append(items, html.ListItem(html.ListItemConfig{Class: "fui-pricing-card__feature"}, render.Text(f)))
 	}
 
 	out := []render.HTML{
-		html.Div(html.DivConfig{Class: "ui-pricing-card__head"}, head...),
-		html.Div(html.DivConfig{Class: "ui-pricing-card__price"}, price...),
+		html.Div(html.DivConfig{Class: "fui-pricing-card__head"}, head...),
+		html.Div(html.DivConfig{Class: "fui-pricing-card__price"}, price...),
 	}
 	if len(items) > 0 {
-		out = append(out, html.UnorderedList(html.ListConfig{Class: "ui-pricing-card__features"}, items...))
+		out = append(out, html.UnorderedList(html.ListConfig{Class: "fui-pricing-card__features"}, items...))
 	}
 	if cfg.CTALabel != "" || cfg.CTAHref != "" {
 		label := cfg.CTALabel
@@ -87,7 +87,7 @@ func PricingCard(cfg PricingCardConfig) render.HTML {
 		if cfg.Featured {
 			variant = ButtonPrimary
 		}
-		out = append(out, LinkButton(LinkButtonConfig{Label: label, Href: cfg.CTAHref, Variant: variant, Class: "ui-pricing-card__cta"}))
+		out = append(out, LinkButton(LinkButtonConfig{Label: label, Href: cfg.CTAHref, Variant: variant, Class: "fui-pricing-card__cta"}))
 	}
 
 	return pricingCardStyle.WrapHTML(html.Div(html.DivConfig{
@@ -110,13 +110,13 @@ func pricingCardCSS(_ style.Theme) string {
   border-radius: 14px;
   height: 100%;
 }
-[data-fui-comp="ui-pricing-card"].ui-pricing-card--featured {
+[data-fui-comp="ui-pricing-card"].fui-pricing-card--featured {
   border-color: var(--color-primary, #4338CA);
   box-shadow: 0 0 0 1px var(--color-primary, #4338CA);
   background-color: color-mix(in srgb, var(--color-primary, #4338CA) 4%, var(--color-surface, #fff));
 }
-[data-fui-comp="ui-pricing-card"] .ui-pricing-card__head { display: flex; flex-direction: column; gap: 0.35rem; }
-[data-fui-comp="ui-pricing-card"] .ui-pricing-card__badge {
+[data-fui-comp="ui-pricing-card"] .fui-pricing-card__head { display: flex; flex-direction: column; gap: 0.35rem; }
+[data-fui-comp="ui-pricing-card"] .fui-pricing-card__badge {
   align-self: flex-start;
   font-size: var(--text-xs, 0.75rem);
   font-weight: 600;
@@ -132,36 +132,36 @@ func pricingCardCSS(_ style.Theme) string {
   padding: 0.15rem var(--spacing-md, 0.5rem);
   border-radius: 999px;
 }
-[data-fui-comp="ui-pricing-card"] .ui-pricing-card__name {
+[data-fui-comp="ui-pricing-card"] .fui-pricing-card__name {
   font-family: var(--font-heading, inherit);
   font-size: var(--text-xl, 1.25rem);
   margin: 0;
 }
-[data-fui-comp="ui-pricing-card"] .ui-pricing-card__desc { margin: 0; color: var(--color-text-muted, #65657A); font-size: var(--text-sm, 0.875rem); line-height: 1.5; }
-[data-fui-comp="ui-pricing-card"] .ui-pricing-card__price { display: flex; align-items: baseline; gap: var(--spacing-sm, 0.25rem); }
-[data-fui-comp="ui-pricing-card"] .ui-pricing-card__amount {
+[data-fui-comp="ui-pricing-card"] .fui-pricing-card__desc { margin: 0; color: var(--color-text-muted, #65657A); font-size: var(--text-sm, 0.875rem); line-height: 1.5; }
+[data-fui-comp="ui-pricing-card"] .fui-pricing-card__price { display: flex; align-items: baseline; gap: var(--spacing-sm, 0.25rem); }
+[data-fui-comp="ui-pricing-card"] .fui-pricing-card__amount {
   font-family: var(--font-heading, inherit);
   font-size: 2.25rem;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.02em;
 }
-[data-fui-comp="ui-pricing-card"] .ui-pricing-card__period { color: var(--color-text-muted, #65657A); font-size: var(--text-base, 1rem); }
-[data-fui-comp="ui-pricing-card"] .ui-pricing-card__features { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.6rem; flex: 1 1 auto; }
-[data-fui-comp="ui-pricing-card"] .ui-pricing-card__feature {
+[data-fui-comp="ui-pricing-card"] .fui-pricing-card__period { color: var(--color-text-muted, #65657A); font-size: var(--text-base, 1rem); }
+[data-fui-comp="ui-pricing-card"] .fui-pricing-card__features { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.6rem; flex: 1 1 auto; }
+[data-fui-comp="ui-pricing-card"] .fui-pricing-card__feature {
   position: relative;
   padding-inline-start: 1.6rem;
   color: var(--color-text, #1B1B2A);
   font-size: var(--text-sm, 0.875rem);
   line-height: 1.45;
 }
-[data-fui-comp="ui-pricing-card"] .ui-pricing-card__feature::before {
+[data-fui-comp="ui-pricing-card"] .fui-pricing-card__feature::before {
   content: "✓";
   position: absolute;
   inset-inline-start: 0;
   color: var(--color-success, #15803D);
   font-weight: 700;
 }
-[data-fui-comp="ui-pricing-card"] .ui-pricing-card__cta { margin-top: auto; width: 100%; text-align: center; }
+[data-fui-comp="ui-pricing-card"] .fui-pricing-card__cta { margin-top: auto; width: 100%; text-align: center; }
 `
 }

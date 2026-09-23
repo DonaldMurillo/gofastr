@@ -195,22 +195,22 @@ func imageCSS(_ style.Theme) string {
   /* contain ensures the aspect-ratio rules below don't bleed out. */
   contain: layout style;
 }
-[data-fui-comp="ui-image"] .ui-image__img {
+[data-fui-comp="ui-image"] .fui-image__img {
   display: block;
   max-inline-size: 100%;
   block-size: auto;
   object-fit: cover;
   background: var(--color-surface-soft, #F4F4F5);
 }
-[data-fui-comp="ui-image"].ui-image--fit-contain .ui-image__img { object-fit: contain; }
-[data-fui-comp="ui-image"].ui-image--fit-fill    .ui-image__img { object-fit: fill;    }
+[data-fui-comp="ui-image"].fui-image--fit-contain .fui-image__img { object-fit: contain; }
+[data-fui-comp="ui-image"].fui-image--fit-fill    .fui-image__img { object-fit: fill;    }
 /* The root is included so its own background (which --placeheld sets, to
    back the letterbox bars) is rounded too — otherwise its square corners
    peek out around the rounded image. */
-[data-fui-comp="ui-image"].ui-image--rounded,
-[data-fui-comp="ui-image"].ui-image--rounded     .ui-image__img,
-[data-fui-comp="ui-image"].ui-image--rounded     .ui-image__lqip,
-[data-fui-comp="ui-image"].ui-image--rounded     picture {
+[data-fui-comp="ui-image"].fui-image--rounded,
+[data-fui-comp="ui-image"].fui-image--rounded     .fui-image__img,
+[data-fui-comp="ui-image"].fui-image--rounded     .fui-image__lqip,
+[data-fui-comp="ui-image"].fui-image--rounded     picture {
   border-radius: var(--radii-md, 8px);
 }
 
@@ -225,14 +225,14 @@ func imageCSS(_ style.Theme) string {
    placeholder is emitted first and the real image covers it. No z-index and
    no JavaScript are involved, and the placeholder is simply left in place
    once the image has loaded. */
-[data-fui-comp="ui-image"] .ui-image__lqip {
+[data-fui-comp="ui-image"] .fui-image__lqip {
   position: absolute;
   inset: 0;
   inline-size: 100%;
   block-size: 100%;
   object-fit: cover;
 }
-[data-fui-comp="ui-image"] .ui-image__img,
+[data-fui-comp="ui-image"] .fui-image__img,
 [data-fui-comp="ui-image"] picture {
   position: relative;
 }
@@ -240,25 +240,25 @@ func imageCSS(_ style.Theme) string {
    Without this, a fit-contain image (which does not fill its box) would show
    a cover-cropped blur through the empty bars — permanently, since the
    placeholder is never removed. */
-[data-fui-comp="ui-image"].ui-image--fit-contain .ui-image__lqip { object-fit: contain; }
-[data-fui-comp="ui-image"].ui-image--fit-fill    .ui-image__lqip { object-fit: fill;    }
+[data-fui-comp="ui-image"].fui-image--fit-contain .fui-image__lqip { object-fit: contain; }
+[data-fui-comp="ui-image"].fui-image--fit-fill    .fui-image__lqip { object-fit: fill;    }
 /* With a placeholder present the grey resting fill moves to the root, so it
    still backs the letterbox bars while the blur — not the grey — is what
    shows through the image itself. */
-[data-fui-comp="ui-image"].ui-image--placeheld {
+[data-fui-comp="ui-image"].fui-image--placeheld {
   background: var(--color-surface-soft, #F4F4F5);
 }
-[data-fui-comp="ui-image"].ui-image--placeheld .ui-image__img {
+[data-fui-comp="ui-image"].fui-image--placeheld .fui-image__img {
   background: transparent;
 }
-[data-fui-comp="ui-image"].ui-image--aspect-1-1  .ui-image__img { aspect-ratio: 1 / 1;  inline-size: 100%; block-size: auto; }
-[data-fui-comp="ui-image"].ui-image--aspect-4-3  .ui-image__img { aspect-ratio: 4 / 3;  inline-size: 100%; block-size: auto; }
-[data-fui-comp="ui-image"].ui-image--aspect-16-9 .ui-image__img { aspect-ratio: 16 / 9; inline-size: 100%; block-size: auto; }
-[data-fui-comp="ui-image"].ui-image--aspect-21-9 .ui-image__img { aspect-ratio: 21 / 9; inline-size: 100%; block-size: auto; }
-[data-fui-comp="ui-image"].ui-image--aspect-3-4  .ui-image__img { aspect-ratio: 3 / 4;  inline-size: 100%; block-size: auto; }
+[data-fui-comp="ui-image"].fui-image--aspect-1-1  .fui-image__img { aspect-ratio: 1 / 1;  inline-size: 100%; block-size: auto; }
+[data-fui-comp="ui-image"].fui-image--aspect-4-3  .fui-image__img { aspect-ratio: 4 / 3;  inline-size: 100%; block-size: auto; }
+[data-fui-comp="ui-image"].fui-image--aspect-16-9 .fui-image__img { aspect-ratio: 16 / 9; inline-size: 100%; block-size: auto; }
+[data-fui-comp="ui-image"].fui-image--aspect-21-9 .fui-image__img { aspect-ratio: 21 / 9; inline-size: 100%; block-size: auto; }
+[data-fui-comp="ui-image"].fui-image--aspect-3-4  .fui-image__img { aspect-ratio: 3 / 4;  inline-size: 100%; block-size: auto; }
 
 /* Decorative class — allows alt="" without alt-text warnings. */
-[data-fui-comp="ui-image"].ui-image--decorative .ui-image__img {
+[data-fui-comp="ui-image"].fui-image--decorative .fui-image__img {
   /* visual same as default; the marker exists for the linter / a11y
      audit to know empty alt is intentional. */
 }`
@@ -462,7 +462,7 @@ func tooltipCSS(_ style.Theme) string {
      the pop without requiring focus on a particular descendant
      element. */
 }
-[data-fui-comp="ui-tooltip"] .ui-tooltip__pop {
+[data-fui-comp="ui-tooltip"] .fui-tooltip__pop {
   position: absolute;
   inset-block-end: calc(100% + 6px);
   inset-inline-start: 50%;
@@ -483,45 +483,45 @@ func tooltipCSS(_ style.Theme) string {
               transform var(--duration-fast, 150ms) ease,
               visibility 0s var(--duration-fast, 150ms);
 }
-[data-fui-comp="ui-tooltip"]:hover .ui-tooltip__pop,
-[data-fui-comp="ui-tooltip"]:focus-within .ui-tooltip__pop {
+[data-fui-comp="ui-tooltip"]:hover .fui-tooltip__pop,
+[data-fui-comp="ui-tooltip"]:focus-within .fui-tooltip__pop {
   opacity: 1;
   visibility: visible;
   transform: translateX(-50%) translateY(0);
   transition-delay: 0s;
 }
 
-[data-fui-comp="ui-tooltip"].ui-tooltip--bottom .ui-tooltip__pop {
+[data-fui-comp="ui-tooltip"].fui-tooltip--bottom .fui-tooltip__pop {
   inset-block-end: auto;
   inset-block-start: calc(100% + 6px);
   transform: translateX(-50%) translateY(-4px);
 }
-[data-fui-comp="ui-tooltip"].ui-tooltip--bottom:hover .ui-tooltip__pop,
-[data-fui-comp="ui-tooltip"].ui-tooltip--bottom:focus-within .ui-tooltip__pop {
+[data-fui-comp="ui-tooltip"].fui-tooltip--bottom:hover .fui-tooltip__pop,
+[data-fui-comp="ui-tooltip"].fui-tooltip--bottom:focus-within .fui-tooltip__pop {
   transform: translateX(-50%) translateY(0);
 }
-[data-fui-comp="ui-tooltip"].ui-tooltip--left .ui-tooltip__pop {
+[data-fui-comp="ui-tooltip"].fui-tooltip--left .fui-tooltip__pop {
   inset-block-end: 50%;
   inset-inline-start: auto;
   inset-inline-end: calc(100% + 6px);
   transform: translateY(50%) translateX(4px);
 }
-[data-fui-comp="ui-tooltip"].ui-tooltip--left:hover .ui-tooltip__pop,
-[data-fui-comp="ui-tooltip"].ui-tooltip--left:focus-within .ui-tooltip__pop {
+[data-fui-comp="ui-tooltip"].fui-tooltip--left:hover .fui-tooltip__pop,
+[data-fui-comp="ui-tooltip"].fui-tooltip--left:focus-within .fui-tooltip__pop {
   transform: translateY(50%) translateX(0);
 }
-[data-fui-comp="ui-tooltip"].ui-tooltip--right .ui-tooltip__pop {
+[data-fui-comp="ui-tooltip"].fui-tooltip--right .fui-tooltip__pop {
   inset-block-end: 50%;
   inset-inline-start: calc(100% + 6px);
   transform: translateY(50%) translateX(-4px);
 }
-[data-fui-comp="ui-tooltip"].ui-tooltip--right:hover .ui-tooltip__pop,
-[data-fui-comp="ui-tooltip"].ui-tooltip--right:focus-within .ui-tooltip__pop {
+[data-fui-comp="ui-tooltip"].fui-tooltip--right:hover .fui-tooltip__pop,
+[data-fui-comp="ui-tooltip"].fui-tooltip--right:focus-within .fui-tooltip__pop {
   transform: translateY(50%) translateX(0);
 }
 
 @media (prefers-reduced-motion: reduce) {
-  [data-fui-comp="ui-tooltip"] .ui-tooltip__pop { transition: none; transform: translateX(-50%) translateY(0); }
+  [data-fui-comp="ui-tooltip"] .fui-tooltip__pop { transition: none; transform: translateX(-50%) translateY(0); }
 }`
 }
 
@@ -679,7 +679,7 @@ func spinnerCSS(_ style.Theme) string {
   }
 }
 
-.ui-visually-hidden,
+.fui-visually-hidden,
 .fui-visually-hidden {
   position: absolute;
   inline-size: 1px;

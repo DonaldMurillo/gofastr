@@ -52,7 +52,7 @@ type WorkbenchConfig struct {
 
 // Workbench renders the two-pane inspector shell.
 func Workbench(cfg WorkbenchConfig) render.HTML {
-	cls := "ui-workbench"
+	cls := "fui-workbench"
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
 	}
@@ -72,8 +72,8 @@ func Workbench(cfg WorkbenchConfig) render.HTML {
 	}
 	maps.Copy(attrs, html.SafeExtraAttrs(cfg.ExtraAttrs, "style"))
 	return workbenchStyle.WrapHTML(render.Tag("div", attrs,
-		render.Tag("div", html.Attrs{"class": "ui-workbench__rail"}, cfg.Rail),
-		render.Tag("div", html.Attrs{"class": "ui-workbench__pane"}, cfg.Pane),
+		render.Tag("div", html.Attrs{"class": "fui-workbench__rail"}, cfg.Rail),
+		render.Tag("div", html.Attrs{"class": "fui-workbench__pane"}, cfg.Pane),
 	))
 }
 
@@ -89,7 +89,7 @@ func workbenchCSS(_ style.Theme) string {
   box-sizing: border-box;
 }
 
-[data-fui-comp="ui-workbench"] .ui-workbench__rail {
+[data-fui-comp="ui-workbench"] .fui-workbench__rail {
   flex: 0 0 auto;
   inline-size: var(--ui-workbench-rail, 320px);
   min-inline-size: 0;
@@ -104,7 +104,7 @@ func workbenchCSS(_ style.Theme) string {
   border-inline-end: 1px solid var(--color-border, #e4e4e7);
 }
 
-[data-fui-comp="ui-workbench"] .ui-workbench__pane {
+[data-fui-comp="ui-workbench"] .fui-workbench__pane {
   flex: 1 1 auto;
   min-inline-size: 0;
   block-size: 100%;
@@ -114,7 +114,7 @@ func workbenchCSS(_ style.Theme) string {
 
 /* An iframe is the pane's motivating occupant and defaults to a small bordered
    box, so fill it here rather than making every caller remember. */
-[data-fui-comp="ui-workbench"] .ui-workbench__pane > iframe {
+[data-fui-comp="ui-workbench"] .fui-workbench__pane > iframe {
   display: block;
   inline-size: 100%;
   block-size: 100%;
@@ -129,13 +129,13 @@ func workbenchCSS(_ style.Theme) string {
     block-size: auto;
     overflow: visible;
   }
-  [data-fui-comp="ui-workbench"] .ui-workbench__rail {
+  [data-fui-comp="ui-workbench"] .fui-workbench__rail {
     inline-size: 100%;
     overflow-y: visible;
     border-inline-end: none;
     border-block-end: 1px solid var(--color-border, #e4e4e7);
   }
-  [data-fui-comp="ui-workbench"] .ui-workbench__pane {
+  [data-fui-comp="ui-workbench"] .fui-workbench__pane {
     block-size: 70vh;
   }
 }`

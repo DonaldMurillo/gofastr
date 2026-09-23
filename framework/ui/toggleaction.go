@@ -46,7 +46,7 @@ import (
 //	        data-hui-action-group="follows"
 //	        data-hui-action-failed="…"
 //	        data-state="idle" aria-pressed="false"
-//	        class="fui-button fui-button--primary ui-toggle-action">
+//	        class="fui-button fui-button--primary fui-toggle-action">
 //	    <span data-hui-action-idle>Follow</span>
 //	    <span data-hui-action-done hidden>Following ✓</span>
 //	</button>
@@ -146,7 +146,7 @@ func ToggleAction(cfg ToggleActionConfig) render.HTML {
 	checkButtonSize("ToggleAction", cfg.Size)
 
 	parts := headless.Parts{}
-	if extra := strings.TrimSpace(buttonClassTokens(tv, cfg.Size) + " ui-toggle-action " + cfg.Class); extra != "" {
+	if extra := strings.TrimSpace(buttonClassTokens(tv, cfg.Size) + " fui-toggle-action " + cfg.Class); extra != "" {
 		parts.Attrs = headless.PartAttrs{headless.PartRoot: {"class": strings.TrimSpace(extra)}}
 	}
 	ctx := cfg.Ctx

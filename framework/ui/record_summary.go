@@ -74,46 +74,46 @@ func RecordSummary(cfg RecordSummaryConfig) render.HTML {
 
 	copy := make([]render.HTML, 0, 3)
 	if cfg.Eyebrow != "" {
-		copy = append(copy, html.Paragraph(html.TextConfig{Class: "ui-record-summary__eyebrow"}, render.Text(cfg.Eyebrow)))
+		copy = append(copy, html.Paragraph(html.TextConfig{Class: "fui-record-summary__eyebrow"}, render.Text(cfg.Eyebrow)))
 	}
-	copy = append(copy, html.Heading(html.HeadingConfig{Level: level, Class: "ui-record-summary__title"}, render.Text(cfg.Title)))
+	copy = append(copy, html.Heading(html.HeadingConfig{Level: level, Class: "fui-record-summary__title"}, render.Text(cfg.Title)))
 	if cfg.Description != "" {
-		copy = append(copy, html.Paragraph(html.TextConfig{Class: "ui-record-summary__description"}, render.Text(cfg.Description)))
+		copy = append(copy, html.Paragraph(html.TextConfig{Class: "fui-record-summary__description"}, render.Text(cfg.Description)))
 	}
 
 	children := make([]render.HTML, 0, 6)
 	if cfg.Status != "" {
-		children = append(children, html.Div(html.DivConfig{Class: "ui-record-summary__status"}, cfg.Status))
+		children = append(children, html.Div(html.DivConfig{Class: "fui-record-summary__status"}, cfg.Status))
 	}
 
-	lead := []render.HTML{html.Div(html.DivConfig{Class: "ui-record-summary__copy"}, copy...)}
-	leadClass := "ui-record-summary__lead"
+	lead := []render.HTML{html.Div(html.DivConfig{Class: "fui-record-summary__copy"}, copy...)}
+	leadClass := "fui-record-summary__lead"
 	if cfg.Aside != "" || cfg.Actions != "" {
-		leadClass += " ui-record-summary__lead--with-support"
+		leadClass += " fui-record-summary__lead--with-support"
 		support := make([]render.HTML, 0, 2)
 		if cfg.Aside != "" {
-			support = append(support, html.Div(html.DivConfig{Class: "ui-record-summary__aside"}, cfg.Aside))
+			support = append(support, html.Div(html.DivConfig{Class: "fui-record-summary__aside"}, cfg.Aside))
 		}
 		if cfg.Actions != "" {
-			support = append(support, html.Div(html.DivConfig{Class: "ui-record-summary__actions"}, cfg.Actions))
+			support = append(support, html.Div(html.DivConfig{Class: "fui-record-summary__actions"}, cfg.Actions))
 		}
-		lead = append(lead, html.Div(html.DivConfig{Class: "ui-record-summary__support"}, support...))
+		lead = append(lead, html.Div(html.DivConfig{Class: "fui-record-summary__support"}, support...))
 	}
 	children = append(children, html.Div(html.DivConfig{Class: leadClass}, lead...))
 	if cfg.Highlight != "" {
-		children = append(children, html.Div(html.DivConfig{Class: "ui-record-summary__highlight"}, cfg.Highlight))
+		children = append(children, html.Div(html.DivConfig{Class: "fui-record-summary__highlight"}, cfg.Highlight))
 	}
 	if cfg.Metrics != "" {
-		children = append(children, html.Div(html.DivConfig{Class: "ui-record-summary__metrics"}, cfg.Metrics))
+		children = append(children, html.Div(html.DivConfig{Class: "fui-record-summary__metrics"}, cfg.Metrics))
 	}
 	if cfg.Footer != "" {
-		children = append(children, render.Tag("footer", map[string]string{"class": "ui-record-summary__footer"},
-			html.Div(html.DivConfig{Class: "ui-record-summary__footer-copy"}, cfg.Footer)))
+		children = append(children, render.Tag("footer", map[string]string{"class": "fui-record-summary__footer"},
+			html.Div(html.DivConfig{Class: "fui-record-summary__footer-copy"}, cfg.Footer)))
 	}
 
-	cls := "ui-record-summary"
+	cls := "fui-record-summary"
 	if cfg.Tone != RecordSummaryToneNeutral {
-		cls += " ui-record-summary--" + string(cfg.Tone)
+		cls += " fui-record-summary--" + string(cfg.Tone)
 	}
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
@@ -164,15 +164,15 @@ func MetricBand(cfg MetricBandConfig) render.HTML {
 			panic("ui: MetricBand items require Label and Value")
 		}
 		parts := []render.HTML{
-			render.Tag("dt", map[string]string{"class": "ui-metric-band__label"}, render.Text(item.Label)),
-			render.Tag("dd", map[string]string{"class": "ui-metric-band__value"}, render.Text(item.Value)),
+			render.Tag("dt", map[string]string{"class": "fui-metric-band__label"}, render.Text(item.Label)),
+			render.Tag("dd", map[string]string{"class": "fui-metric-band__value"}, render.Text(item.Value)),
 		}
 		if item.Hint != "" {
-			parts = append(parts, render.Tag("dd", map[string]string{"class": "ui-metric-band__hint"}, render.Text(item.Hint)))
+			parts = append(parts, render.Tag("dd", map[string]string{"class": "fui-metric-band__hint"}, render.Text(item.Hint)))
 		}
-		items = append(items, html.Div(html.DivConfig{Class: "ui-metric-band__item"}, parts...))
+		items = append(items, html.Div(html.DivConfig{Class: "fui-metric-band__item"}, parts...))
 	}
-	cls := "ui-metric-band ui-metric-band--" + strconv.Itoa(len(cfg.Items))
+	cls := "fui-metric-band fui-metric-band--" + strconv.Itoa(len(cfg.Items))
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
 	}
@@ -204,32 +204,32 @@ func recordSummaryCSS(t style.Theme) string {
 		"border-inline-start", "4px solid var(--ui-record-summary-accent, var(--color-primary, currentColor))",
 		"border-radius", "var(--radii-lg, 12px)",
 	).End().
-		Rule("&.ui-record-summary--info").Set("--ui-record-summary-accent", "var(--color-info, var(--color-primary, currentColor))").End().
-		Rule("&.ui-record-summary--success").Set("--ui-record-summary-accent", "var(--color-success, var(--color-primary, currentColor))").End().
-		Rule("&.ui-record-summary--warning").Set("--ui-record-summary-accent", "var(--color-warning, var(--color-primary, currentColor))").End().
-		Rule("&.ui-record-summary--danger").Set("--ui-record-summary-accent", "var(--color-danger, var(--color-primary, currentColor))").End().
-		Rule(".ui-record-summary__status").Set("display", "flex", "align-items", "center", "min-inline-size", "0").End().
-		Rule(".ui-record-summary__lead").Set("display", "grid", "gap", "var(--spacing-lg, 16px)", "min-inline-size", "0").End().
-		Rule(".ui-record-summary__lead--with-support").Set("grid-template-columns", "minmax(0, 1fr) minmax(15rem, 0.55fr)", "align-items", "start").End().
-		Rule(".ui-record-summary__copy").Set("display", "grid", "gap", "var(--spacing-sm, 4px)", "max-inline-size", "54rem").End().
-		Rule(".ui-record-summary__support").Set("display", "grid", "gap", "var(--spacing-md, 8px)", "min-inline-size", "0", "padding-inline-start", "var(--spacing-lg, 16px)", "border-inline-start", "1px solid var(--color-border, #e4e4e7)", "justify-items", "start").End().
-		Rule(".ui-record-summary__aside").Set("min-inline-size", "0", "max-inline-size", "100%", "color", "var(--color-text-muted, currentColor)").End().
-		Rule(".ui-record-summary__eyebrow").Set("margin", "0", "font-size", "var(--text-xs, 0.75rem)", "font-weight", "700", "letter-spacing", "0.08em", "text-transform", "uppercase", "color", "var(--color-text-subtle, currentColor)").End().
-		Rule(".ui-record-summary__title").Set("margin", "0", "max-inline-size", "24ch", "font-size", "var(--ui-record-summary-title-size, var(--text-4xl, 2.25rem))", "line-height", "1.08", "letter-spacing", "-0.025em", "color", "var(--color-text, currentColor)").End().
-		Rule(".ui-record-summary__description").Set("margin", "0", "max-inline-size", "64ch", "color", "var(--color-text-muted, currentColor)", "line-height", "1.6").End().
-		Rule(".ui-record-summary__highlight").Set("min-inline-size", "0").End().
-		Rule(".ui-record-summary__metrics").Set("min-inline-size", "0").End().
-		Rule(".ui-record-summary__footer").Set("display", "flex", "flex-wrap", "wrap", "align-items", "center", "justify-content", "space-between", "gap", "var(--spacing-md, 8px)", "padding-block-start", "var(--spacing-md, 8px)", "border-block-start", "1px solid var(--color-border, #e4e4e7)").End().
-		Rule(".ui-record-summary__footer-copy").Set("min-inline-size", "0", "color", "var(--color-text-muted, currentColor)").End().
-		Rule(".ui-record-summary__actions").Set("display", "flex", "flex-wrap", "wrap", "align-items", "center", "gap", "var(--spacing-sm, 4px)", "inline-size", "fit-content", "max-inline-size", "100%").End().
-		Rule(".ui-record-summary__actions > [data-fui-comp=\"ui-layout\"]").Set("max-inline-size", "100%").End().
+		Rule("&.fui-record-summary--info").Set("--ui-record-summary-accent", "var(--color-info, var(--color-primary, currentColor))").End().
+		Rule("&.fui-record-summary--success").Set("--ui-record-summary-accent", "var(--color-success, var(--color-primary, currentColor))").End().
+		Rule("&.fui-record-summary--warning").Set("--ui-record-summary-accent", "var(--color-warning, var(--color-primary, currentColor))").End().
+		Rule("&.fui-record-summary--danger").Set("--ui-record-summary-accent", "var(--color-danger, var(--color-primary, currentColor))").End().
+		Rule(".fui-record-summary__status").Set("display", "flex", "align-items", "center", "min-inline-size", "0").End().
+		Rule(".fui-record-summary__lead").Set("display", "grid", "gap", "var(--spacing-lg, 16px)", "min-inline-size", "0").End().
+		Rule(".fui-record-summary__lead--with-support").Set("grid-template-columns", "minmax(0, 1fr) minmax(15rem, 0.55fr)", "align-items", "start").End().
+		Rule(".fui-record-summary__copy").Set("display", "grid", "gap", "var(--spacing-sm, 4px)", "max-inline-size", "54rem").End().
+		Rule(".fui-record-summary__support").Set("display", "grid", "gap", "var(--spacing-md, 8px)", "min-inline-size", "0", "padding-inline-start", "var(--spacing-lg, 16px)", "border-inline-start", "1px solid var(--color-border, #e4e4e7)", "justify-items", "start").End().
+		Rule(".fui-record-summary__aside").Set("min-inline-size", "0", "max-inline-size", "100%", "color", "var(--color-text-muted, currentColor)").End().
+		Rule(".fui-record-summary__eyebrow").Set("margin", "0", "font-size", "var(--text-xs, 0.75rem)", "font-weight", "700", "letter-spacing", "0.08em", "text-transform", "uppercase", "color", "var(--color-text-subtle, currentColor)").End().
+		Rule(".fui-record-summary__title").Set("margin", "0", "max-inline-size", "24ch", "font-size", "var(--ui-record-summary-title-size, var(--text-4xl, 2.25rem))", "line-height", "1.08", "letter-spacing", "-0.025em", "color", "var(--color-text, currentColor)").End().
+		Rule(".fui-record-summary__description").Set("margin", "0", "max-inline-size", "64ch", "color", "var(--color-text-muted, currentColor)", "line-height", "1.6").End().
+		Rule(".fui-record-summary__highlight").Set("min-inline-size", "0").End().
+		Rule(".fui-record-summary__metrics").Set("min-inline-size", "0").End().
+		Rule(".fui-record-summary__footer").Set("display", "flex", "flex-wrap", "wrap", "align-items", "center", "justify-content", "space-between", "gap", "var(--spacing-md, 8px)", "padding-block-start", "var(--spacing-md, 8px)", "border-block-start", "1px solid var(--color-border, #e4e4e7)").End().
+		Rule(".fui-record-summary__footer-copy").Set("min-inline-size", "0", "color", "var(--color-text-muted, currentColor)").End().
+		Rule(".fui-record-summary__actions").Set("display", "flex", "flex-wrap", "wrap", "align-items", "center", "gap", "var(--spacing-sm, 4px)", "inline-size", "fit-content", "max-inline-size", "100%").End().
+		Rule(".fui-record-summary__actions > [data-fui-comp=\"ui-layout\"]").Set("max-inline-size", "100%").End().
 		Media("(max-width: 720px)", func(s *style.ComponentSheet) {
 			s.Rule("&").Set("gap", "var(--spacing-md, 8px)", "padding", "var(--spacing-lg, 16px)").End()
-			s.Rule(".ui-record-summary__lead--with-support").Set("grid-template-columns", "minmax(0, 1fr)", "gap", "var(--spacing-md, 8px)").End()
-			s.Rule(".ui-record-summary__support").Set("padding-inline-start", "0", "padding-block-start", "var(--spacing-md, 8px)", "border-inline-start", "0", "border-block-start", "1px solid var(--color-border, #e4e4e7)").End()
-			s.Rule(".ui-record-summary__actions").Set("order", "-1", "inline-size", "100%").End()
-			s.Rule(".ui-record-summary__title").Set("font-size", "var(--ui-record-summary-title-size-mobile, var(--text-2xl, 1.5rem))", "max-inline-size", "18ch").End()
-			s.Rule(".ui-record-summary__footer").Set("align-items", "flex-start", "flex-direction", "column").End()
+			s.Rule(".fui-record-summary__lead--with-support").Set("grid-template-columns", "minmax(0, 1fr)", "gap", "var(--spacing-md, 8px)").End()
+			s.Rule(".fui-record-summary__support").Set("padding-inline-start", "0", "padding-block-start", "var(--spacing-md, 8px)", "border-inline-start", "0", "border-block-start", "1px solid var(--color-border, #e4e4e7)").End()
+			s.Rule(".fui-record-summary__actions").Set("order", "-1", "inline-size", "100%").End()
+			s.Rule(".fui-record-summary__title").Set("font-size", "var(--ui-record-summary-title-size-mobile, var(--text-2xl, 1.5rem))", "max-inline-size", "18ch").End()
+			s.Rule(".fui-record-summary__footer").Set("align-items", "flex-start", "flex-direction", "column").End()
 		}).
 		MustBuild()
 }
@@ -237,25 +237,25 @@ func recordSummaryCSS(t style.Theme) string {
 func metricBandCSS(t style.Theme) string {
 	return style.NewComponentSheet("ui-metric-band", t).
 		Rule("&").Set("display", "grid", "margin", "0", "padding", "0", "border-block", "1px solid var(--color-border, #e4e4e7)").End().
-		Rule("&.ui-metric-band--1").Set("grid-template-columns", "1fr").End().
-		Rule("&.ui-metric-band--2").Set("grid-template-columns", "repeat(2, minmax(0, 1fr))").End().
-		Rule("&.ui-metric-band--3").Set("grid-template-columns", "repeat(3, minmax(0, 1fr))").End().
-		Rule("&.ui-metric-band--4").Set("grid-template-columns", "repeat(4, minmax(0, 1fr))").End().
-		Rule("&.ui-metric-band--5").Set("grid-template-columns", "repeat(5, minmax(0, 1fr))").End().
-		Rule("&.ui-metric-band--6").Set("grid-template-columns", "repeat(6, minmax(0, 1fr))").End().
-		Rule(".ui-metric-band__item").Set("display", "flex", "flex-direction", "column", "gap", "var(--spacing-xs, 2px)", "min-inline-size", "0", "padding", "var(--spacing-md, 8px)", "border-inline-start", "1px solid var(--color-border, #e4e4e7)").End().
-		Rule(".ui-metric-band__item:first-child").Set("border-inline-start", "0").End().
-		Rule(".ui-metric-band__label").Set("order", "2", "font-size", "var(--text-xs, 0.75rem)", "font-weight", "600", "letter-spacing", "0.04em", "text-transform", "uppercase", "color", "var(--color-text-subtle, currentColor)").End().
-		Rule(".ui-metric-band__value").Set("order", "1", "margin", "0", "font-size", "var(--text-lg, 1.125rem)", "font-weight", "700", "font-variant-numeric", "tabular-nums", "color", "var(--color-text, currentColor)").End().
-		Rule(".ui-metric-band__hint").Set("order", "3", "margin", "0", "font-size", "var(--text-xs, 0.75rem)", "color", "var(--color-text-muted, currentColor)").End().
+		Rule("&.fui-metric-band--1").Set("grid-template-columns", "1fr").End().
+		Rule("&.fui-metric-band--2").Set("grid-template-columns", "repeat(2, minmax(0, 1fr))").End().
+		Rule("&.fui-metric-band--3").Set("grid-template-columns", "repeat(3, minmax(0, 1fr))").End().
+		Rule("&.fui-metric-band--4").Set("grid-template-columns", "repeat(4, minmax(0, 1fr))").End().
+		Rule("&.fui-metric-band--5").Set("grid-template-columns", "repeat(5, minmax(0, 1fr))").End().
+		Rule("&.fui-metric-band--6").Set("grid-template-columns", "repeat(6, minmax(0, 1fr))").End().
+		Rule(".fui-metric-band__item").Set("display", "flex", "flex-direction", "column", "gap", "var(--spacing-xs, 2px)", "min-inline-size", "0", "padding", "var(--spacing-md, 8px)", "border-inline-start", "1px solid var(--color-border, #e4e4e7)").End().
+		Rule(".fui-metric-band__item:first-child").Set("border-inline-start", "0").End().
+		Rule(".fui-metric-band__label").Set("order", "2", "font-size", "var(--text-xs, 0.75rem)", "font-weight", "600", "letter-spacing", "0.04em", "text-transform", "uppercase", "color", "var(--color-text-subtle, currentColor)").End().
+		Rule(".fui-metric-band__value").Set("order", "1", "margin", "0", "font-size", "var(--text-lg, 1.125rem)", "font-weight", "700", "font-variant-numeric", "tabular-nums", "color", "var(--color-text, currentColor)").End().
+		Rule(".fui-metric-band__hint").Set("order", "3", "margin", "0", "font-size", "var(--text-xs, 0.75rem)", "color", "var(--color-text-muted, currentColor)").End().
 		Media("(max-width: 720px)", func(s *style.ComponentSheet) {
-			s.Rule("&.ui-metric-band--2, &.ui-metric-band--3, &.ui-metric-band--4, &.ui-metric-band--5, &.ui-metric-band--6").Set("grid-template-columns", "repeat(2, minmax(0, 1fr))").End()
-			s.Rule(".ui-metric-band__item").Set("border-inline-start", "0", "border-block-start", "1px solid var(--color-border, #e4e4e7)").End()
+			s.Rule("&.fui-metric-band--2, &.fui-metric-band--3, &.fui-metric-band--4, &.fui-metric-band--5, &.fui-metric-band--6").Set("grid-template-columns", "repeat(2, minmax(0, 1fr))").End()
+			s.Rule(".fui-metric-band__item").Set("border-inline-start", "0", "border-block-start", "1px solid var(--color-border, #e4e4e7)").End()
 			// Column divider for the two-up phone grid. A single-item band's
 			// sole item is odd AND full-width, no divider to paint.
-			s.Rule("&:not(.ui-metric-band--1) .ui-metric-band__item:nth-child(odd)").Set("border-inline-end", "1px solid var(--color-border, #e4e4e7)").End()
-			s.Rule(".ui-metric-band__item:first-child, .ui-metric-band__item:nth-child(2)").Set("border-block-start", "0").End()
-			s.Rule("&.ui-metric-band--3 .ui-metric-band__item:last-child, &.ui-metric-band--5 .ui-metric-band__item:last-child").Set("grid-column", "1 / -1", "align-items", "center", "text-align", "center", "border-inline-end", "0").End()
+			s.Rule("&:not(.fui-metric-band--1) .fui-metric-band__item:nth-child(odd)").Set("border-inline-end", "1px solid var(--color-border, #e4e4e7)").End()
+			s.Rule(".fui-metric-band__item:first-child, .fui-metric-band__item:nth-child(2)").Set("border-block-start", "0").End()
+			s.Rule("&.fui-metric-band--3 .fui-metric-band__item:last-child, &.fui-metric-band--5 .fui-metric-band__item:last-child").Set("grid-column", "1 / -1", "align-items", "center", "text-align", "center", "border-inline-end", "0").End()
 		}).
 		MustBuild()
 }

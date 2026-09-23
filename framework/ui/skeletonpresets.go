@@ -37,7 +37,7 @@ func skeletonClasses(root string) headless.Classes {
 	return headless.Classes{
 		headless.PartRoot:           root,
 		headless.PartSkeleton:       "fui-skeleton__line",
-		headless.PartVisuallyHidden: "ui-visually-hidden",
+		headless.PartVisuallyHidden: "fui-visually-hidden",
 	}
 }
 

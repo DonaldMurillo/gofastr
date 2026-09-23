@@ -258,6 +258,10 @@ every item is a real link to the full image, so the gallery works with no script
 a caller's href replaces the full-image fallback per item, and an unsafe one degrades instead of shipping
 <ul aria-label="Photos"><li><a href="/detail/one"><img alt="One" height="150" src="/one.png" width="200"></a></li><li><a href="#"><img alt="Two" height="150" src="/two.png" width="200"></a></li></ul>
 
+=== Gallery / a gallery wired to a lightbox ===
+the click opens the named overlay through the widget runtime's open contract, and the anchor keeps the full-image href for a reader with no script
+<ul aria-label="Shots"><li><figure><a data-fui-deeplink="src=%2Fone.png&amp;alt=The%20dashboard&amp;group=docs-gallery&amp;caption=Overview" data-fui-lightbox-group="docs-gallery" data-fui-open="docs" href="/one.png"><img alt="The dashboard" height="150" src="/one.png" width="200"></a><figcaption>Overview</figcaption></figure></li></ul>
+
 === Grid / minimum column and gap ===
 Min is a floor — a column never gets narrower than the named step before the grid gives one up — and the name is what keeps the floor wired: the framework's Grid took a free-form Min that nothing read, so every auto-fit grid was the default width whatever its author asked
 <div><p>blog — 2 vCPU</p><p>wiki — 1 vCPU</p><p>api — 4 vCPU</p></div>
@@ -480,11 +484,23 @@ a real select, because the platform's own picker is the one thing that already w
 
 === Sidebar / a persistent sidebar ===
 every leaf is a real link and every group a native details, so the whole navigation works with no script
-<nav aria-label="Primary" data-hui-sidebar="" data-hui-sidebar-variant="persistent"><div>Workspace</div><ul><li><a aria-current="page" href="/"><span>Home</span></a></li><li><details data-hui-sidebar-group=""><summary><span>Settings</span></summary><ul><li><a href="/settings/profile"><span>Profile</span></a></li><li><a href="/settings/team"><span>Team</span></a></li></ul></details></li></ul></nav>
+<div data-hui-sidebar="" data-hui-sidebar-variant="persistent"><div id="sidebar-inline"><h2>Workspace</h2><div>Workspace: acme</div><nav aria-label="Primary"><ul><li><a aria-current="page" href="/"><span aria-hidden="true">◆</span><span>Home</span></a></li><li><details data-hui-disclosure="" data-hui-disclosure-persist="sidebar-inline-g1"><summary><span>Settings</span></summary><ul><li><a href="/settings/profile"><span>Profile</span></a></li><li><a href="/settings/team"><span>Team</span></a></li></ul></details></li></ul></nav><div>v1.2.3</div></div></div>
 
 === Sidebar / collapsible with storage ===
 the collapse state is opt-in to storage through the key — without one the state is the server's, and the module never writes
-<nav aria-label="Primary" data-hui-sidebar="" data-hui-sidebar-collapse="auto" data-hui-sidebar-storage="nav.side" data-hui-sidebar-variant="collapsible"><button aria-label="Primary" data-fui-open="nav-drawer" data-hui-sidebar-toggle="" type="button">☰</button><ul><li><a href="/one"><span>One</span></a></li></ul></nav>
+<div data-hui-sidebar="" data-hui-sidebar-collapse="auto" data-hui-sidebar-storage="nav.side" data-hui-sidebar-variant="collapsible"><button aria-label="Open navigation" data-fui-open="nav-drawer" type="button"><span aria-hidden="true">☰</span></button><div id="nav-drawer-inline"><button aria-controls="nav-drawer-inline" aria-expanded="true" aria-label="Primary" data-hui-sidebar-toggle="" type="button"><span aria-hidden="true">‹</span></button><nav aria-label="Primary"><ul><li><a href="/one"><span>One</span></a></li></ul></nav></div></div>
+
+=== Sidebar / a server-collapsed sidebar with button groups ===
+the collapsed state ships in the SSR bytes and the module never writes storage for it, and the button dialect is the shape host contracts pin
+<div data-collapsed="true" data-hui-sidebar="" data-hui-sidebar-variant="collapsible"><div id="sidebar-inline"><button aria-controls="sidebar-inline" aria-expanded="false" aria-label="Expand navigation" data-hui-sidebar-collapse-label="Collapse navigation" data-hui-sidebar-expand-label="Expand navigation" data-hui-sidebar-toggle="" type="button"><span aria-hidden="true">‹</span></button><nav aria-label="Primary"><ul><li><a href="/one"><span>One</span></a></li><li><button aria-controls="sidebar-inline-g1" aria-expanded="false" data-hui-sidebar-group-toggle="" type="button"><span>Two</span></button><ul hidden="" id="sidebar-inline-g1"><li><a href="/two-a"><span>Two A</span></a></li></ul></li></ul></nav></div></div>
+
+=== SidebarRegion / a region slotted into a host's chrome ===
+no shell hooks render, so the module never treats the host's chrome as a sidebar root
+<div><h2>Docs</h2><div>Workspace: acme</div><nav aria-label="Sections"><ul><li><a href="/one"><span aria-hidden="true">◆</span><span>One</span></a></li><li><button aria-controls="host-panel-g1" aria-expanded="false" data-hui-sidebar-group-toggle="" type="button"><span>Two</span></button><ul hidden="" id="host-panel-g1"><li><a href="/two-a"><span>Two A</span></a></li></ul></li></ul></nav><div>v1.2.3</div></div>
+
+=== SidebarRegion / a region with details groups ===
+the default dialect is native details, so the region's groups open with no script at all
+<div><nav aria-label="Sections"><ul><li><details data-hui-disclosure="" data-hui-disclosure-persist="host-panel-g1"><summary><span>Two</span></summary><ul><li><a href="/two-a"><span>Two A</span></a></li></ul></details></li></ul></nav></div>
 
 === Skeleton / three lines ===
 every bar is hidden from the tree: a screen reader reading out eight empty boxes, or announcing each shimmer, is strictly worse than one polite "Loading apps" and silence

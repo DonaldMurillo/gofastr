@@ -9,7 +9,7 @@ func TestPollingIndicator_DefaultRendersLiveLabelAndDot(t *testing.T) {
 	got := string(PollingIndicator(PollingIndicatorConfig{}))
 	checks := []string{
 		"ui-polling-indicator",
-		"ui-polling-indicator__dot",
+		"fui-polling-indicator__dot",
 		"Live", // default label
 		`role="status"`,
 		`aria-live="polite"`,
@@ -33,16 +33,16 @@ func TestPollingIndicator_CustomLabel(t *testing.T) {
 
 func TestPollingIndicator_PausedVariant(t *testing.T) {
 	got := string(PollingIndicator(PollingIndicatorConfig{Paused: true}))
-	if !strings.Contains(got, "ui-polling-indicator--paused") {
+	if !classTokenPresent(got, "fui-polling-indicator--paused") {
 		t.Errorf("expected paused modifier class, got: %s", got)
 	}
 }
 
 func TestPollingIndicator_CSSRegistered(t *testing.T) {
 	for _, cls := range []string{
-		".ui-polling-indicator",
-		".ui-polling-indicator__dot",
-		".ui-polling-indicator--paused",
+		".fui-polling-indicator",
+		".fui-polling-indicator__dot",
+		".fui-polling-indicator--paused",
 		"prefers-reduced-motion",
 	} {
 		if !strings.Contains(pollingIndicatorCSSText, cls) {

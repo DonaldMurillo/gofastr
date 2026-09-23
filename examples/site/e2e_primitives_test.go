@@ -72,10 +72,10 @@ func TestE2E_OptimizedImage_HasWidthHeightAndLazyLoading(t *testing.T) {
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/image"),
 		pageReady(),
-		chromedp.Evaluate(`document.querySelector('.ui-image__img')?.getAttribute('width') || ''`, &w),
-		chromedp.Evaluate(`document.querySelector('.ui-image__img')?.getAttribute('height') || ''`, &h),
-		chromedp.Evaluate(`document.querySelector('.ui-image__img')?.getAttribute('loading') || ''`, &loading),
-		chromedp.Evaluate(`document.querySelector('.ui-image__img')?.getAttribute('decoding') || ''`, &decoding),
+		chromedp.Evaluate(`document.querySelector('.fui-image__img')?.getAttribute('width') || ''`, &w),
+		chromedp.Evaluate(`document.querySelector('.fui-image__img')?.getAttribute('height') || ''`, &h),
+		chromedp.Evaluate(`document.querySelector('.fui-image__img')?.getAttribute('loading') || ''`, &loading),
+		chromedp.Evaluate(`document.querySelector('.fui-image__img')?.getAttribute('decoding') || ''`, &decoding),
 	); err != nil {
 		t.Fatalf("image: %v", err)
 	}
@@ -101,7 +101,7 @@ func TestE2E_Tooltip_TriggerHasAriaDescribedBy(t *testing.T) {
 		chromedp.Navigate(base+"/components/tooltip"),
 		pageReady(),
 		chromedp.Evaluate(`document.querySelector('[data-fui-comp="ui-tooltip"] button')?.getAttribute('aria-describedby') || ''`, &describedBy),
-		chromedp.Evaluate(`document.querySelector('.ui-tooltip__pop')?.getAttribute('role') || ''`, &popRole),
+		chromedp.Evaluate(`document.querySelector('.fui-tooltip__pop')?.getAttribute('role') || ''`, &popRole),
 	); err != nil {
 		t.Fatalf("tooltip: %v", err)
 	}
@@ -147,7 +147,7 @@ func TestE2E_Spinner_HasStatusRoleAndAriaBusy(t *testing.T) {
 		chromedp.Navigate(base+"/components/spinner"),
 		pageReady(),
 		chromedp.Evaluate(`document.querySelector('[data-fui-comp="ui-spinner"]')?.getAttribute('role') || ''`, &role),
-		chromedp.Evaluate(`document.querySelector('[data-fui-comp="ui-spinner"] .ui-visually-hidden')?.textContent || ''`, &hiddenLabel),
+		chromedp.Evaluate(`document.querySelector('[data-fui-comp="ui-spinner"] .fui-visually-hidden')?.textContent || ''`, &hiddenLabel),
 	); err != nil {
 		t.Fatalf("spinner: %v", err)
 	}

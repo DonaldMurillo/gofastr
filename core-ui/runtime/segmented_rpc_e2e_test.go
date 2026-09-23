@@ -22,7 +22,7 @@ import (
 // framework/ui/segmented_test.go pins that the component emits these
 // attributes. rpc.js is the unit under test here, not the component.
 const segmentedRadio = `
-<input type="radio" name="%s" value="%s" class="ui-segmented__input" id="%s--%s"
+<input type="radio" name="%s" value="%s" class="fui-segmented__input" id="%s--%s"
        data-fui-rpc="%s" data-fui-rpc-method="POST"%s>`
 
 func segmentedPage(form bool, extraInputAttrs, signalSpan string) string {
@@ -43,9 +43,9 @@ func segmentedPage(form bool, extraInputAttrs, signalSpan string) string {
 	}
 	return fmt.Sprintf(`<!doctype html><html><head><title>seg</title></head><body>
 %s
-  <div class="ui-segmented" role="radiogroup" aria-label="Plan" data-count="2">
-    <label class="ui-segmented__option" for="plan--single" data-position="0">%s<span>Single machine</span></label>
-    <label class="ui-segmented__option" for="plan--unlimited" data-position="1">%s<span>Unlimited machines</span></label>
+  <div class="fui-segmented" role="radiogroup" aria-label="Plan" data-count="2">
+    <label class="fui-segmented__option" for="plan--single" data-position="0">%s<span>Single machine</span></label>
+    <label class="fui-segmented__option" for="plan--unlimited" data-position="1">%s<span>Unlimited machines</span></label>
   </div>
 %s
 <p>Chosen: <span id="echo" data-fui-signal="plan-echo" data-fui-signal-mode="text">%s</span></p>
@@ -220,13 +220,13 @@ func TestSegmentedControl_RPCNoFormDoesNotError(t *testing.T) {
 		// before fetch".
 		fmt.Fprint(w, `<!doctype html><html><head><title>seg-noform</title></head><body>
 <script>window.__pageErrors=[];window.addEventListener('error',function(e){window.__pageErrors.push(e.message||String(e));});</script>
-<div class="ui-segmented" role="radiogroup" aria-label="Plan" data-count="2">
-  <label class="ui-segmented__option" for="plan--single" data-position="0">
-    <input type="radio" name="plan" value="single" class="ui-segmented__input" id="plan--single" data-fui-rpc="/plan/set" data-fui-rpc-method="POST" data-fui-rpc-signal="plan-echo" checked>
+<div class="fui-segmented" role="radiogroup" aria-label="Plan" data-count="2">
+  <label class="fui-segmented__option" for="plan--single" data-position="0">
+    <input type="radio" name="plan" value="single" class="fui-segmented__input" id="plan--single" data-fui-rpc="/plan/set" data-fui-rpc-method="POST" data-fui-rpc-signal="plan-echo" checked>
     <span>Single machine</span>
   </label>
-  <label class="ui-segmented__option" for="plan--unlimited" data-position="1">
-    <input type="radio" name="plan" value="unlimited" class="ui-segmented__input" id="plan--unlimited" data-fui-rpc="/plan/set" data-fui-rpc-method="POST" data-fui-rpc-signal="plan-echo">
+  <label class="fui-segmented__option" for="plan--unlimited" data-position="1">
+    <input type="radio" name="plan" value="unlimited" class="fui-segmented__input" id="plan--unlimited" data-fui-rpc="/plan/set" data-fui-rpc-method="POST" data-fui-rpc-signal="plan-echo">
     <span>Unlimited machines</span>
   </label>
 </div>
@@ -304,13 +304,13 @@ func TestKiln_RPCFormControlCarriesValue(t *testing.T) {
 		// kiln-app body class satisfies _kilnOK so _dispatchKiln runs.
 		fmt.Fprint(w, `<!doctype html><html><head><title>kiln</title></head><body class="kiln-app">
 <form id="picker">
-  <div class="ui-segmented" role="radiogroup" aria-label="Plan" data-count="2">
-    <label class="ui-segmented__option" for="plan--single" data-position="0">
-      <input type="radio" name="plan" value="single" class="ui-segmented__input" id="plan--single" data-kiln-tool="set-plan" checked>
+  <div class="fui-segmented" role="radiogroup" aria-label="Plan" data-count="2">
+    <label class="fui-segmented__option" for="plan--single" data-position="0">
+      <input type="radio" name="plan" value="single" class="fui-segmented__input" id="plan--single" data-kiln-tool="set-plan" checked>
       <span>Single machine</span>
     </label>
-    <label class="ui-segmented__option" for="plan--unlimited" data-position="1">
-      <input type="radio" name="plan" value="unlimited" class="ui-segmented__input" id="plan--unlimited" data-kiln-tool="set-plan">
+    <label class="fui-segmented__option" for="plan--unlimited" data-position="1">
+      <input type="radio" name="plan" value="unlimited" class="fui-segmented__input" id="plan--unlimited" data-kiln-tool="set-plan">
       <span>Unlimited machines</span>
     </label>
   </div>

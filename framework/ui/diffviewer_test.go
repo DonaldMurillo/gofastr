@@ -35,13 +35,13 @@ func TestDiffViewerRejectsUnknownMode(t *testing.T) {
 
 func TestDiffViewerUnifiedHasAddAndRemoveLines(t *testing.T) {
 	h := string(DiffViewer(DiffViewerConfig{Patch: samplePatch}))
-	if !strings.Contains(h, "ui-diff-viewer__line--add") {
+	if !classTokenPresent(h, "fui-diff-viewer__line--add") {
 		t.Errorf("unified diff should emit add lines:\n%s", h)
 	}
-	if !strings.Contains(h, "ui-diff-viewer__line--remove") {
+	if !classTokenPresent(h, "fui-diff-viewer__line--remove") {
 		t.Errorf("unified diff should emit remove lines:\n%s", h)
 	}
-	if !strings.Contains(h, "ui-diff-viewer__line--context") {
+	if !classTokenPresent(h, "fui-diff-viewer__line--context") {
 		t.Errorf("unified diff should emit context lines:\n%s", h)
 	}
 }
@@ -51,7 +51,7 @@ func TestDiffViewerSplitEmitsHeaderRow(t *testing.T) {
 		Patch: samplePatch, Mode: DiffSplit,
 		LeftLabel: "Before", RightLabel: "After",
 	}))
-	if !strings.Contains(h, "ui-diff-viewer__header") {
+	if !classTokenPresent(h, "fui-diff-viewer__header") {
 		t.Errorf("split diff should emit header row:\n%s", h)
 	}
 	if !strings.Contains(h, "Before") || !strings.Contains(h, "After") {
@@ -61,28 +61,28 @@ func TestDiffViewerSplitEmitsHeaderRow(t *testing.T) {
 
 func TestDiffViewerSplitEmitsRowsWithBothCells(t *testing.T) {
 	h := string(DiffViewer(DiffViewerConfig{Patch: samplePatch, Mode: DiffSplit}))
-	if !strings.Contains(h, "ui-diff-viewer__row") {
+	if !classTokenPresent(h, "fui-diff-viewer__row") {
 		t.Errorf("split diff should emit rows:\n%s", h)
 	}
-	if !strings.Contains(h, "ui-diff-viewer__cell--add") {
+	if !classTokenPresent(h, "fui-diff-viewer__cell--add") {
 		t.Errorf("split diff should mark add cells:\n%s", h)
 	}
-	if !strings.Contains(h, "ui-diff-viewer__cell--remove") {
+	if !classTokenPresent(h, "fui-diff-viewer__cell--remove") {
 		t.Errorf("split diff should mark remove cells:\n%s", h)
 	}
 }
 
 func TestDiffViewerHunkHeaderRendersAsHunk(t *testing.T) {
 	h := string(DiffViewer(DiffViewerConfig{Patch: samplePatch}))
-	if !strings.Contains(h, "ui-diff-viewer__hunk") {
-		t.Errorf("@@ hunk header should render as .ui-diff-viewer__hunk:\n%s", h)
+	if !classTokenPresent(h, "fui-diff-viewer__hunk") {
+		t.Errorf("@@ hunk header should render as .fui-diff-viewer__hunk:\n%s", h)
 	}
 }
 
 func TestDiffViewerFileHeaderRenders(t *testing.T) {
 	h := string(DiffViewer(DiffViewerConfig{Patch: samplePatch}))
-	if !strings.Contains(h, "ui-diff-viewer__file") {
-		t.Errorf("--- / +++ headers should render as .ui-diff-viewer__file:\n%s", h)
+	if !classTokenPresent(h, "fui-diff-viewer__file") {
+		t.Errorf("--- / +++ headers should render as .fui-diff-viewer__file:\n%s", h)
 	}
 }
 

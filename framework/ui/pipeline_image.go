@@ -134,8 +134,8 @@ func PipelineImage(cfg PipelineImageConfig) render.HTML {
 	if cfg.Fallback == "" {
 		panic("ui: PipelineImage requires Fallback")
 	}
-	if cfg.Alt == "" && !strings.Contains(cfg.Class, "ui-image--decorative") {
-		panic("ui: PipelineImage requires Alt (or add ui-image--decorative to Class for intentional decorative images with alt=\"\")")
+	if cfg.Alt == "" && !strings.Contains(cfg.Class, "fui-image--decorative") {
+		panic("ui: PipelineImage requires Alt (or add fui-image--decorative to Class for intentional decorative images with alt=\"\")")
 	}
 
 	// Same URL allow-list OptimizedImage applies: drop unsafe schemes on
@@ -160,18 +160,18 @@ func PipelineImage(cfg PipelineImageConfig) render.HTML {
 
 	lqip := placeholderImage(cfg.Placeholder)
 
-	cls := "ui-image"
+	cls := "fui-image"
 	if cfg.Fit != ImageFitCover {
-		cls += " ui-image--fit-" + string(cfg.Fit)
+		cls += " fui-image--fit-" + string(cfg.Fit)
 	}
 	if cfg.Aspect != ImageAspectAuto {
-		cls += " ui-image--aspect-" + string(cfg.Aspect)
+		cls += " fui-image--aspect-" + string(cfg.Aspect)
 	}
 	if cfg.Rounded {
-		cls += " ui-image--rounded"
+		cls += " fui-image--rounded"
 	}
 	if lqip != "" {
-		cls += " ui-image--placeheld"
+		cls += " fui-image--placeheld"
 	}
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
@@ -203,7 +203,7 @@ func PipelineImage(cfg PipelineImageConfig) render.HTML {
 	img := html.Image(html.ImageConfig{
 		Src:        cfg.Fallback,
 		Alt:        cfg.Alt,
-		Class:      "ui-image__img",
+		Class:      "fui-image__img",
 		ExtraAttrs: imgAttrs,
 	})
 

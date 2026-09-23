@@ -199,7 +199,6 @@ var sheetHooks = map[string]string{
 	"data-hui-grow":          "the spacer's flex factor: the stylesheet sizes the spacer from the number, and no script ever reads it",
 	"data-hui-lines":         "the skeleton's line count: the stylesheet draws as many bars as the root says",
 	"data-hui-skeleton-last": "the short final line of a multi-line skeleton: a shape decision a stylesheet makes and a script never touches",
-	"data-hui-sidebar-group": "the sidebar group's details wrapper: an identity marker for host stylesheets to scope group overrides to, the way the lightbox names its zoom target by attribute so no class-map rename breaks a host selector; the framework's own sheet styles groups by class, and the group's open/close is the browser's (a script never reads it)",
 }
 
 // hostHooks are the declared hooks whose binder is not this package's
@@ -223,29 +222,26 @@ var sheetHooks = map[string]string{
 // in framework/ui's own tests. Same discipline as hostHooks: the
 // reason is mandatory and the list is checked against the module
 var adapterHooks = map[string]string{
-	"data-hui-pane-close":             "a trigger that closes a pane, rendered by core-ui/interactive's pane helpers",
-	"data-hui-pane-swap":              "a trigger that swaps the open pane, rendered by core-ui/interactive's pane helpers",
-	"data-hui-pane-key":               "a pane trigger's deep-link key, rendered by core-ui/interactive's PaneKey",
-	"data-hui-sidebar-collapse-label": "the collapse toggle's custom label, rendered by ui.Sidebar",
-	"data-hui-sidebar-expand-label":   "the collapse toggle's custom expand label, rendered by ui.Sidebar",
-	"data-hui-sidebar-group-toggle":   "the button-dialect group toggle, rendered by ui.Sidebar's SidebarGroupButton markup",
-	"data-hui-shortcut-focus":         "a chord that focuses its target, rendered by ui.GlobalSearch / ui.CommandPalette on the search wrapper",
-	"data-hui-shortcut-click":         "a chord that clicks its target, rendered by ui.ShortcutHint (BindTarget) and host chrome like the site header",
-	"data-hui-shortcut-target":        "the selector naming a chord's focus/click target, rendered by ui.GlobalSearch beside its focus chord",
-	"data-hui-shortcut-hint":          "ShortcutHint's own marker when BindTarget is set: names the element the chord will click",
-	"data-hui-copy":                   "the copy wrapper framework/ui.CopyButton renders around a headless Button; no copy primitive exists by binding decision",
-	"data-hui-copy-target":            "the copied element's id, rendered by ui.CopyButton",
-	"data-hui-copy-name":              "the copied thing's name for the status sentence, rendered by ui.CopyButton",
-	"data-hui-copy-label":             "the button's idle label span, rendered by ui.CopyButton",
-	"data-hui-copy-copied":            "the button's copied label, rendered by ui.CopyButton",
-	"data-hui-copy-back":              "the label restored after the copied flash, rendered by ui.CopyButton",
-	"data-hui-copy-sentence":          "the status sentence shape with {name}, rendered by ui.CopyButton",
-	"data-hui-copy-status":            "the polite status region, rendered by ui.CopyButton",
-	"data-hui-theme-toggle":           "the scheme group wrapper, rendered by ui.ThemeToggle (a Button composition, no theme primitive by binding decision)",
-	"data-hui-theme-option":           "one scheme option control, rendered by ui.ThemeToggle",
-	"data-hui-theme-cycle":            "the single-button cycler, rendered by ui.ThemeToggle",
-	"data-hui-network-retry":          "the offline banner's retry link, rendered by ui.NetworkRetryBanner as the SystemBanner's action",
-	"data-hui-copy-toast":             "the toast-on-copy config, rendered by ui.CopyButton on the button",
+	"data-hui-pane-close":      "a trigger that closes a pane, rendered by core-ui/interactive's pane helpers",
+	"data-hui-pane-swap":       "a trigger that swaps the open pane, rendered by core-ui/interactive's pane helpers",
+	"data-hui-pane-key":        "a pane trigger's deep-link key, rendered by core-ui/interactive's PaneKey",
+	"data-hui-shortcut-focus":  "a chord that focuses its target, rendered by ui.GlobalSearch / ui.CommandPalette on the search wrapper",
+	"data-hui-shortcut-click":  "a chord that clicks its target, rendered by ui.ShortcutHint (BindTarget) and host chrome like the site header",
+	"data-hui-shortcut-target": "the selector naming a chord's focus/click target, rendered by ui.GlobalSearch beside its focus chord",
+	"data-hui-shortcut-hint":   "ShortcutHint's own marker when BindTarget is set: names the element the chord will click",
+	"data-hui-copy":            "the copy wrapper framework/ui.CopyButton renders around a headless Button; no copy primitive exists by binding decision",
+	"data-hui-copy-target":     "the copied element's id, rendered by ui.CopyButton",
+	"data-hui-copy-name":       "the copied thing's name for the status sentence, rendered by ui.CopyButton",
+	"data-hui-copy-label":      "the button's idle label span, rendered by ui.CopyButton",
+	"data-hui-copy-copied":     "the button's copied label, rendered by ui.CopyButton",
+	"data-hui-copy-back":       "the label restored after the copied flash, rendered by ui.CopyButton",
+	"data-hui-copy-sentence":   "the status sentence shape with {name}, rendered by ui.CopyButton",
+	"data-hui-copy-status":     "the polite status region, rendered by ui.CopyButton",
+	"data-hui-theme-toggle":    "the scheme group wrapper, rendered by ui.ThemeToggle (a Button composition, no theme primitive by binding decision)",
+	"data-hui-theme-option":    "one scheme option control, rendered by ui.ThemeToggle",
+	"data-hui-theme-cycle":     "the single-button cycler, rendered by ui.ThemeToggle",
+	"data-hui-network-retry":   "the offline banner's retry link, rendered by ui.NetworkRetryBanner as the SystemBanner's action",
+	"data-hui-copy-toast":      "the toast-on-copy config, rendered by ui.CopyButton on the button",
 }
 
 var hostHooks = map[string]string{

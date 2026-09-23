@@ -24,10 +24,10 @@ func TestSidebarRendersInlineAndHamburger(t *testing.T) {
 	out := string(c.Render())
 	for _, want := range []string{
 		`data-fui-comp="ui-sidebar"`,
-		`ui-sidebar--persistent`,
+		`fui-sidebar--persistent`,
 		`data-fui-open="ui-sidebar-drawer"`,
 		`aria-label="Open navigation"`,
-		`<h2 class="ui-sidebar__title">App</h2>`,
+		`<h2 class="fui-sidebar__title">App</h2>`,
 		`href="/customers"`,
 		`aria-current="page"`,
 	} {
@@ -49,7 +49,7 @@ func TestSidebarNestedItemsUseDisclosure(t *testing.T) {
 	})
 	out := string(c.Render())
 	for _, want := range []string{
-		`<details class="ui-sidebar__group" data-hui-disclosure data-hui-disclosure-persist="ui-sidebar-drawer-inline-g1" open>`,
+		`<details class="fui-sidebar__group" data-hui-disclosure="" data-hui-disclosure-persist="ui-sidebar-drawer-inline-g1" open="">`,
 		`>Settings</span></summary>`,
 		`href="/settings/profile"`,
 		`aria-current="page"`,
@@ -69,7 +69,7 @@ func TestSidebarBodyExposesSharedContent(t *testing.T) {
 	if !strings.Contains(body, `aria-label="Workspace"`) {
 		t.Errorf("SidebarBody should use the configured landmark label: %s", body)
 	}
-	if !strings.Contains(body, `class="ui-sidebar__nav"`) {
+	if !strings.Contains(body, `class="fui-sidebar__nav"`) {
 		t.Errorf("SidebarBody should render the nav: %s", body)
 	}
 	if strings.Contains(body, "data-fui-open") {
@@ -97,13 +97,13 @@ func TestSidebarCollapsibleEmitsPersistedToggleContract(t *testing.T) {
 	})
 	out := string(c.Render())
 	for _, want := range []string{
-		`ui-sidebar--collapsible`,
+		`fui-sidebar--collapsible`,
 		`data-hui-sidebar-storage="app.sidebar.collapsed"`,
 		`data-hui-sidebar-toggle`,
 		`aria-controls="workspace-nav-inline"`,
 		`aria-expanded="true"`,
 		`aria-label="Collapse navigation"`,
-		`ui-sidebar__icon--fallback`,
+		`fui-sidebar__icon--fallback`,
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("collapsible sidebar missing %q\n--\n%s", want, out)
@@ -125,7 +125,7 @@ func TestSidebarCollapsibleAutoMatchesLegacyBytes(t *testing.T) {
 		Items:      []ui.SidebarItem{{Label: "Dashboard", Href: "/"}},
 	}).Render())
 	// Root: storage attribute present, no data-collapsed.
-	if !strings.Contains(out, `data-hui-sidebar data-hui-sidebar-storage="gofastr.sidebar.workspace-nav.collapsed"`) {
+	if !strings.Contains(out, `data-hui-sidebar-collapse="auto" data-hui-sidebar-storage="gofastr.sidebar.workspace-nav.collapsed"`) {
 		t.Errorf("Auto mode must emit the storage key and nothing else on the root:\n%s", out)
 	}
 	if strings.Contains(out, "data-collapsed") {
@@ -134,9 +134,11 @@ func TestSidebarCollapsibleAutoMatchesLegacyBytes(t *testing.T) {
 	// Button: the toggle hook, the resolved label pair riding beside
 	// it (i18nui's English defaults here), and the state-matched
 	// accessible name.
-	want := `<button type="button" class="ui-sidebar__collapse" data-hui-sidebar-toggle ` +
-		`aria-controls="workspace-nav-inline" aria-expanded="true" aria-label="Collapse navigation" ` +
-		`data-hui-sidebar-collapse-label="Collapse navigation" data-hui-sidebar-expand-label="Expand navigation">` +
+	// Attribute order is render.Tag's (sorted); the old hand-builder's
+	// order was incidental.
+	want := `<button aria-controls="workspace-nav-inline" aria-expanded="true" aria-label="Collapse navigation" ` +
+		`class="fui-sidebar__collapse" data-hui-sidebar-collapse-label="Collapse navigation" ` +
+		`data-hui-sidebar-expand-label="Expand navigation" data-hui-sidebar-toggle="" type="button">` +
 		`<span aria-hidden="true">‹</span></button>`
 	if !strings.Contains(out, want) {
 		t.Errorf("Auto mode button must match the pinned bytes exactly:\nwant %s\ngot  %s", want, out)
@@ -254,17 +256,17 @@ func TestSidebarGroupButtonDialectContract(t *testing.T) {
 		CurrentPath: "/settings/profile",
 	}).Render())
 	// Active group: expanded button + visible container.
-	if !strings.Contains(out, `<button type="button" class="ui-sidebar__link ui-sidebar__group-toggle" data-hui-sidebar-group-toggle aria-expanded="true" aria-controls="workspace-nav-inline-g1">`) {
+	if !strings.Contains(out, `<button aria-controls="workspace-nav-inline-g1" aria-expanded="true" class="fui-sidebar__link fui-sidebar__group-toggle" data-hui-sidebar-group-toggle="" type="button">`) {
 		t.Errorf("active group must render an expanded toggle button naming its container:\n%s", out)
 	}
-	if !strings.Contains(out, `<ul class="ui-sidebar__sublist" id="workspace-nav-inline-g1">`) {
+	if !strings.Contains(out, `<ul class="fui-sidebar__sublist" id="workspace-nav-inline-g1">`) {
 		t.Errorf("open group container must not carry hidden:\n%s", out)
 	}
 	// Inactive group: collapsed button + hidden container.
-	if !strings.Contains(out, `aria-expanded="false" aria-controls="workspace-nav-inline-g2">`) {
+	if !strings.Contains(out, `aria-controls="workspace-nav-inline-g2" aria-expanded="false"`) {
 		t.Errorf("inactive group must render a collapsed toggle button:\n%s", out)
 	}
-	if !strings.Contains(out, `<ul class="ui-sidebar__sublist" id="workspace-nav-inline-g2" hidden>`) {
+	if !strings.Contains(out, `<ul class="fui-sidebar__sublist" hidden="" id="workspace-nav-inline-g2">`) {
 		t.Errorf("closed group container must carry the hidden attribute:\n%s", out)
 	}
 	if strings.Contains(out, "<details") || strings.Contains(out, "<summary") {
@@ -281,7 +283,7 @@ func TestSidebarGroupDefaultDialectUnchanged(t *testing.T) {
 			{Label: "Settings", Children: []ui.SidebarItem{{Label: "Profile", Href: "/p"}}},
 		},
 	}).Render())
-	if !strings.Contains(out, `<details class="ui-sidebar__group" data-hui-disclosure data-hui-disclosure-persist="workspace-nav-inline-g1">`) {
+	if !strings.Contains(out, `<details class="fui-sidebar__group" data-hui-disclosure="" data-hui-disclosure-persist="workspace-nav-inline-g1">`) {
 		t.Errorf("default group markup must stay <details data-fui-disclosure-persist>:\n%s", out)
 	}
 	if strings.Contains(out, "data-hui-sidebar-group-toggle") || strings.Contains(out, "aria-controls=") {
@@ -312,7 +314,7 @@ func TestSidebarAutoHideVariantClassHook(t *testing.T) {
 		Variant: ui.SidebarAutoHide,
 		Items:   []ui.SidebarItem{{Label: "Dashboard", Href: "/"}},
 	}).Render())
-	if !strings.Contains(out, `class="ui-sidebar ui-sidebar--auto-hide" data-hui-sidebar`) {
+	if !strings.Contains(out, `class="fui-sidebar fui-sidebar--auto-hide" data-hui-sidebar="" data-hui-sidebar-variant="auto-hide"`) {
 		t.Errorf("auto-hide variant must emit its variant class as the host CSS hook:\n%s", out)
 	}
 	if strings.Contains(out, "data-hui-sidebar-collapse") {
@@ -364,7 +366,7 @@ func TestSidebarOffCanvasEmitsDrawerOnlyVariant(t *testing.T) {
 	})
 	out := string(c.Render())
 	for _, want := range []string{
-		`ui-sidebar--off-canvas`,
+		`fui-sidebar--off-canvas`,
 		`data-fui-open="workspace-nav"`,
 		`id="workspace-nav-inline"`,
 	} {
@@ -422,7 +424,7 @@ func TestSidebarBodySingleScopedRoot(t *testing.T) {
 		Footer:   render.HTML(`<a href="/x">x</a>`),
 		Items:    []ui.SidebarItem{{Label: "Home", Href: "/"}},
 	}))
-	if !strings.HasPrefix(out, `<div class="ui-sidebar ui-sidebar__body" data-fui-comp="ui-sidebar">`) {
+	if !strings.HasPrefix(out, `<div class="fui-sidebar fui-sidebar__body" data-fui-comp="ui-sidebar">`) {
 		t.Fatalf("SidebarBody root missing scope: %.120s", out)
 	}
 	if strings.Count(out, "data-hui-sidebar\"") != 0 || strings.Count(out, "data-hui-sidebar ") != 0 {
@@ -431,7 +433,7 @@ func TestSidebarBodySingleScopedRoot(t *testing.T) {
 			t.Fatal("SidebarBody must not emit data-hui-sidebar (runtime would treat it as a sidebar root)")
 		}
 	}
-	for _, want := range []string{`aria-label="Dashboard"`, `ui-sidebar__footer`, `>x</a>`} {
+	for _, want := range []string{`aria-label="Dashboard"`, `fui-sidebar__footer`, `>x</a>`} {
 		if !strings.Contains(out, want) {
 			t.Errorf("SidebarBody missing %q", want)
 		}
@@ -441,10 +443,10 @@ func TestSidebarBodySingleScopedRoot(t *testing.T) {
 func TestSidebarShellStillSingleRoot(t *testing.T) {
 	c := ui.Sidebar(ui.SidebarConfig{Items: []ui.SidebarItem{{Label: "Home", Href: "/"}}})
 	out := string(component.RenderComponent(c))
-	if got := strings.Count(out, `data-hui-sidebar`); got != 1 {
+	if got := strings.Count(out, `data-hui-sidebar=""`); got != 1 {
 		t.Fatalf("full Sidebar must emit exactly one data-hui-sidebar root, got %d", got)
 	}
-	if strings.Contains(out, `ui-sidebar__body`) {
+	if classTokenPresent(out, "fui-sidebar__body") {
 		t.Fatal("full Sidebar must not nest a SidebarBody root")
 	}
 }
@@ -480,15 +482,15 @@ func TestSidebarPrependSitsBetweenTitleAndNav(t *testing.T) {
 		"inline": string(component.RenderComponent(ui.Sidebar(cfg))),
 		"body":   string(ui.SidebarBody(cfg)),
 	} {
-		title := strings.Index(out, `ui-sidebar__title`)
-		pre := strings.Index(out, `<div class="ui-sidebar__prepend"><select id="section">`)
-		nav := strings.Index(out, `<nav class="ui-sidebar__nav"`)
+		title := classTokenIndex(out, "fui-sidebar__title")
+		pre := strings.Index(out, `<div class="fui-sidebar__prepend"><select id="section">`)
+		nav := strings.Index(out, `class="fui-sidebar__nav"`)
 		if title < 0 || pre < 0 || nav < 0 || !(title < pre && pre < nav) {
 			t.Errorf("%s: prepend must sit between title and nav (title=%d prepend=%d nav=%d):\n%s", name, title, pre, nav, out)
 		}
 	}
 	plain := string(ui.SidebarBody(ui.SidebarConfig{Items: cfg.Items}))
-	if strings.Contains(plain, "ui-sidebar__prepend") {
+	if classTokenPresent(plain, "fui-sidebar__prepend") {
 		t.Errorf("empty Prepend must emit no wrapper:\n%s", plain)
 	}
 }

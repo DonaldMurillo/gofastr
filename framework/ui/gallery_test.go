@@ -93,7 +93,7 @@ func TestGalleryStripVariantClass(t *testing.T) {
 		Variant: GalleryStrip,
 		Items:   []GalleryItem{{Src: "/a.jpg", Alt: "A"}},
 	}))
-	if !strings.Contains(h, "ui-gallery--strip") {
+	if !classTokenPresent(h, "fui-gallery--strip") {
 		t.Errorf("Strip variant should add modifier class:\n%s", h)
 	}
 }
@@ -103,7 +103,7 @@ func TestGalleryMasonryVariantClass(t *testing.T) {
 		Variant: GalleryMasonry,
 		Items:   []GalleryItem{{Src: "/a.jpg", Alt: "A"}},
 	}))
-	if !strings.Contains(h, "ui-gallery--masonry") {
+	if !classTokenPresent(h, "fui-gallery--masonry") {
 		t.Errorf("Masonry variant should add modifier class:\n%s", h)
 	}
 }
@@ -113,7 +113,7 @@ func TestGalleryColumnsClassClampedTo12(t *testing.T) {
 		Columns: 24,
 		Items:   []GalleryItem{{Src: "/a.jpg", Alt: "A"}},
 	}))
-	if !strings.Contains(h, "ui-gallery--cols-12") {
+	if !classTokenPresent(h, "fui-gallery--cols-12") {
 		t.Errorf("Columns > 12 should clamp to 12:\n%s", h)
 	}
 }
@@ -123,7 +123,7 @@ func TestGalleryCaptionOverlayClass(t *testing.T) {
 		CaptionMode: GalleryCaptionOverlay,
 		Items:       []GalleryItem{{Src: "/a.jpg", Alt: "A", Caption: "C"}},
 	}))
-	if !strings.Contains(h, "ui-gallery--cap-overlay") {
+	if !classTokenPresent(h, "fui-gallery--cap-overlay") {
 		t.Errorf("Overlay caption mode should add modifier class:\n%s", h)
 	}
 }

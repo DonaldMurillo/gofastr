@@ -172,7 +172,7 @@ func TestDocPageRendersEmbeddedMarkdown(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("/docs/entity-declarations: got %d", rec.Code)
 	}
-	if !strings.Contains(rec.Body.String(), "ui-markdown") {
+	if !strings.Contains(rec.Body.String(), `data-fui-comp="ui-markdown"`) {
 		t.Fatal("doc page should render markdown via ui.Markdown")
 	}
 }
@@ -348,8 +348,8 @@ func TestCodeBlockHasFunctionalCopyButton(t *testing.T) {
 	if !strings.Contains(out, `id="`+m[1]+`"`) {
 		t.Error("code block pre should carry the id the copy button targets")
 	}
-	if !strings.Contains(out, `class="ui-code-block__body"`) {
-		t.Error("code block body should be the framework's ui-code-block__body pre")
+	if !strings.Contains(out, `class="fui-code-block__body"`) {
+		t.Error("code block body should be the framework's fui-code-block__body pre")
 	}
 	if !strings.Contains(out, `<button`) {
 		t.Error("copy affordance should be a real <button>, not a span")

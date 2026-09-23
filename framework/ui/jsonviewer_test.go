@@ -33,7 +33,7 @@ func TestJSONViewerRendersObjectAsDetails(t *testing.T) {
 	if !strings.Contains(h, "<details ") {
 		t.Errorf("object should render as <details> node:\n%s", h)
 	}
-	if !strings.Contains(h, "ui-json-viewer__key") {
+	if !classTokenPresent(h, "fui-json-viewer__key") {
 		t.Errorf("object should emit key spans:\n%s", h)
 	}
 }
@@ -101,14 +101,14 @@ func TestJSONViewerScalarAndColonPartsCarryClasses(t *testing.T) {
 	// the string colour and the colon's space silently die (review
 	// item 21) while every existing test stays green.
 	for _, want := range []string{
-		`ui-json-viewer__str`,
-		`ui-json-viewer__num`,
-		`ui-json-viewer__bool`,
-		`ui-json-viewer__null`,
-		`ui-json-viewer__empty`,
-		`ui-json-viewer__colon`,
-		`ui-json-viewer__type`,
-		`ui-json-viewer__count`,
+		`fui-json-viewer__str`,
+		`fui-json-viewer__num`,
+		`fui-json-viewer__bool`,
+		`fui-json-viewer__null`,
+		`fui-json-viewer__empty`,
+		`fui-json-viewer__colon`,
+		`fui-json-viewer__type`,
+		`fui-json-viewer__count`,
 	} {
 		if !strings.Contains(h, want) {
 			t.Errorf("the rendered tree lost the selectable class %q:\n%s", want, h)
@@ -118,10 +118,10 @@ func TestJSONViewerScalarAndColonPartsCarryClasses(t *testing.T) {
 
 func TestJSONViewerCSSColoursStringsAndSpacesColons(t *testing.T) {
 	css := jsonViewerCSS(style.Theme{})
-	if !strings.Contains(css, `.ui-json-viewer__str { color:`) {
+	if !strings.Contains(css, `.fui-json-viewer__str { color:`) {
 		t.Errorf("the string colour rule is gone:\n%s", css)
 	}
-	if !strings.Contains(css, ".ui-json-viewer__colon {") || !strings.Contains(css, "margin-inline-end") {
+	if !strings.Contains(css, ".fui-json-viewer__colon {") || !strings.Contains(css, "margin-inline-end") {
 		t.Errorf("the colon rule is gone — the space after each colon rides its margin:\n%s", css)
 	}
 }

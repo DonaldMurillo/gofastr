@@ -102,7 +102,7 @@ func SegmentedControl(cfg SegmentedControlConfig) render.HTML {
 		selected = cfg.Options[0].Value
 	}
 
-	cls := "ui-segmented"
+	cls := "fui-segmented"
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
 	}
@@ -128,7 +128,7 @@ func SegmentedControl(cfg SegmentedControlConfig) render.HTML {
 			"type":  "radio",
 			"name":  cfg.Name,
 			"value": o.Value,
-			"class": "ui-segmented__input",
+			"class": "fui-segmented__input",
 			"id":    cfg.Name + "--" + slug(o.Value),
 		}
 		if o.Value == selected {
@@ -145,10 +145,10 @@ func SegmentedControl(cfg SegmentedControlConfig) render.HTML {
 			}
 		}
 		input := render.Tag("input", flattenAttrs(inputAttrs))
-		labelHTML := html.Span(html.TextConfig{Class: "ui-segmented__label"}, render.Text(o.Label))
+		labelHTML := html.Span(html.TextConfig{Class: "fui-segmented__label"}, render.Text(o.Label))
 		// Position index for sliding indicator CSS.
 		labelAttrs := html.Attrs{
-			"class":         "ui-segmented__option",
+			"class":         "fui-segmented__option",
 			"for":           cfg.Name + "--" + slug(o.Value),
 			"data-position": itoaSmall(i),
 		}
@@ -156,7 +156,7 @@ func SegmentedControl(cfg SegmentedControlConfig) render.HTML {
 	}
 	// Indicator (CSS-positioned via :has() / data-position siblings).
 	items = append(items, html.Span(html.TextConfig{
-		Class:      "ui-segmented__indicator",
+		Class:      "fui-segmented__indicator",
 		ExtraAttrs: html.Attrs{"aria-hidden": "true"},
 	}))
 
@@ -207,7 +207,7 @@ func segmentedCSS(_ style.Theme) string {
 [data-fui-comp="ui-segmented"][data-count="5"] { min-inline-size: 30rem; }
 [data-fui-comp="ui-segmented"][data-count="6"] { min-inline-size: 34rem; }
 
-[data-fui-comp="ui-segmented"] .ui-segmented__option {
+[data-fui-comp="ui-segmented"] .fui-segmented__option {
   position: relative;
   z-index: 1;
   display: inline-flex;
@@ -224,10 +224,10 @@ func segmentedCSS(_ style.Theme) string {
   white-space: nowrap;
   margin: 0;
 }
-[data-fui-comp="ui-segmented"] .ui-segmented__option:hover {
+[data-fui-comp="ui-segmented"] .fui-segmented__option:hover {
   color: var(--color-text, #111);
 }
-[data-fui-comp="ui-segmented"] .ui-segmented__input {
+[data-fui-comp="ui-segmented"] .fui-segmented__input {
   position: absolute;
   opacity: 0;
   pointer-events: none;
@@ -235,15 +235,15 @@ func segmentedCSS(_ style.Theme) string {
   block-size: 0;
   margin: 0;
 }
-[data-fui-comp="ui-segmented"] .ui-segmented__option:has(.ui-segmented__input:checked) {
+[data-fui-comp="ui-segmented"] .fui-segmented__option:has(.fui-segmented__input:checked) {
   color: var(--color-text, #111);
   font-weight: 600;
 }
-[data-fui-comp="ui-segmented"] .ui-segmented__option:has(.ui-segmented__input:focus-visible) {
+[data-fui-comp="ui-segmented"] .fui-segmented__option:has(.fui-segmented__input:focus-visible) {
   outline: 2px solid var(--color-primary, #4F46E5);
   outline-offset: 2px;
 }
-[data-fui-comp="ui-segmented"] .ui-segmented__option:has(.ui-segmented__input:disabled) {
+[data-fui-comp="ui-segmented"] .fui-segmented__option:has(.fui-segmented__input:disabled) {
   cursor: not-allowed;
   opacity: 0.45;
 }
@@ -251,7 +251,7 @@ func segmentedCSS(_ style.Theme) string {
 /* Sliding pill indicator. Sized to one column width via the data-count
    attribute on the wrapper; translated by (position × 100%) which is
    exact because every column is exactly 1fr wide. */
-[data-fui-comp="ui-segmented"] .ui-segmented__indicator {
+[data-fui-comp="ui-segmented"] .fui-segmented__indicator {
   position: absolute;
   z-index: 0;
   top: 4px;
@@ -265,21 +265,21 @@ func segmentedCSS(_ style.Theme) string {
   transition: transform var(--duration-medium, 200ms) var(--easing-standard, cubic-bezier(0.4, 0, 0.2, 1));
   pointer-events: none;
 }
-[data-fui-comp="ui-segmented"][data-count="2"] .ui-segmented__indicator { inline-size: calc((100% - 8px) / 2); }
-[data-fui-comp="ui-segmented"][data-count="3"] .ui-segmented__indicator { inline-size: calc((100% - 8px) / 3); }
-[data-fui-comp="ui-segmented"][data-count="4"] .ui-segmented__indicator { inline-size: calc((100% - 8px) / 4); }
-[data-fui-comp="ui-segmented"][data-count="5"] .ui-segmented__indicator { inline-size: calc((100% - 8px) / 5); }
-[data-fui-comp="ui-segmented"][data-count="6"] .ui-segmented__indicator { inline-size: calc((100% - 8px) / 6); }
+[data-fui-comp="ui-segmented"][data-count="2"] .fui-segmented__indicator { inline-size: calc((100% - 8px) / 2); }
+[data-fui-comp="ui-segmented"][data-count="3"] .fui-segmented__indicator { inline-size: calc((100% - 8px) / 3); }
+[data-fui-comp="ui-segmented"][data-count="4"] .fui-segmented__indicator { inline-size: calc((100% - 8px) / 4); }
+[data-fui-comp="ui-segmented"][data-count="5"] .fui-segmented__indicator { inline-size: calc((100% - 8px) / 5); }
+[data-fui-comp="ui-segmented"][data-count="6"] .fui-segmented__indicator { inline-size: calc((100% - 8px) / 6); }
 
-[data-fui-comp="ui-segmented"]:has(.ui-segmented__option[data-position="0"] .ui-segmented__input:checked) .ui-segmented__indicator { transform: translateX(0); }
-[data-fui-comp="ui-segmented"]:has(.ui-segmented__option[data-position="1"] .ui-segmented__input:checked) .ui-segmented__indicator { transform: translateX(100%); }
-[data-fui-comp="ui-segmented"]:has(.ui-segmented__option[data-position="2"] .ui-segmented__input:checked) .ui-segmented__indicator { transform: translateX(200%); }
-[data-fui-comp="ui-segmented"]:has(.ui-segmented__option[data-position="3"] .ui-segmented__input:checked) .ui-segmented__indicator { transform: translateX(300%); }
-[data-fui-comp="ui-segmented"]:has(.ui-segmented__option[data-position="4"] .ui-segmented__input:checked) .ui-segmented__indicator { transform: translateX(400%); }
-[data-fui-comp="ui-segmented"]:has(.ui-segmented__option[data-position="5"] .ui-segmented__input:checked) .ui-segmented__indicator { transform: translateX(500%); }
+[data-fui-comp="ui-segmented"]:has(.fui-segmented__option[data-position="0"] .fui-segmented__input:checked) .fui-segmented__indicator { transform: translateX(0); }
+[data-fui-comp="ui-segmented"]:has(.fui-segmented__option[data-position="1"] .fui-segmented__input:checked) .fui-segmented__indicator { transform: translateX(100%); }
+[data-fui-comp="ui-segmented"]:has(.fui-segmented__option[data-position="2"] .fui-segmented__input:checked) .fui-segmented__indicator { transform: translateX(200%); }
+[data-fui-comp="ui-segmented"]:has(.fui-segmented__option[data-position="3"] .fui-segmented__input:checked) .fui-segmented__indicator { transform: translateX(300%); }
+[data-fui-comp="ui-segmented"]:has(.fui-segmented__option[data-position="4"] .fui-segmented__input:checked) .fui-segmented__indicator { transform: translateX(400%); }
+[data-fui-comp="ui-segmented"]:has(.fui-segmented__option[data-position="5"] .fui-segmented__input:checked) .fui-segmented__indicator { transform: translateX(500%); }
 
 @media (prefers-reduced-motion: reduce) {
-  [data-fui-comp="ui-segmented"] .ui-segmented__indicator { transition: none; }
+  [data-fui-comp="ui-segmented"] .fui-segmented__indicator { transition: none; }
 }
 `
 }

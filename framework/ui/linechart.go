@@ -109,7 +109,7 @@ func LineChart(cfg LineChartConfig) render.HTML {
 		span = 1
 	}
 
-	cls := "ui-line-chart"
+	cls := "fui-line-chart"
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
 	}
@@ -166,17 +166,17 @@ func LineChart(cfg LineChartConfig) render.HTML {
 			pathD.WriteString(" L" + pts[j])
 		}
 
-		seriesCls := "ui-line-chart__line"
+		seriesCls := "fui-line-chart__line"
 		if isPalette {
-			seriesCls += " ui-line-chart__line--" + color
+			seriesCls += " fui-line-chart__line--" + color
 		}
 
 		if s.Area {
 			areaD := pathD.String() + " L" + ftoa(plotW) + "," + ftoa(plotH) +
 				" L0," + ftoa(plotH) + " Z"
-			areaCls := "ui-line-chart__area"
+			areaCls := "fui-line-chart__area"
 			if isPalette {
-				areaCls += " ui-line-chart__area--" + color
+				areaCls += " fui-line-chart__area--" + color
 			}
 			sb.WriteString(`<path d="`)
 			sb.WriteString(areaD)
@@ -233,7 +233,7 @@ func LineChart(cfg LineChartConfig) render.HTML {
 			sb.WriteString(ftoa(x))
 			sb.WriteString(`" y="`)
 			sb.WriteString(ftoa(ny))
-			sb.WriteString(`" class="ui-line-chart__label" text-anchor="`)
+			sb.WriteString(`" class="fui-line-chart__label" text-anchor="`)
 			sb.WriteString(anchor)
 			sb.WriteString(`">`)
 			sb.WriteString(escapeXML(lbl))
@@ -253,9 +253,9 @@ func LineChart(cfg LineChartConfig) render.HTML {
 				color = palette[i%len(palette)]
 				isPalette = true
 			}
-			swatchCls := "ui-line-chart__legend-swatch"
+			swatchCls := "fui-line-chart__legend-swatch"
 			if isPalette {
-				swatchCls += " ui-line-chart__legend-swatch--" + color
+				swatchCls += " fui-line-chart__legend-swatch--" + color
 			}
 			sb.WriteString(`<circle cx="`)
 			sb.WriteString(ftoa(x + 4))
@@ -274,7 +274,7 @@ func LineChart(cfg LineChartConfig) render.HTML {
 			sb.WriteString(ftoa(x + 12))
 			sb.WriteString(`" y="`)
 			sb.WriteString(ftoa(legY + 4))
-			sb.WriteString(`" class="ui-line-chart__legend">`)
+			sb.WriteString(`" class="fui-line-chart__legend">`)
 			sb.WriteString(escapeXML(s.Name))
 			sb.WriteString(`</text>`)
 			x += float64(len(s.Name))*7 + 24
@@ -292,37 +292,37 @@ func lineChartCSS(_ style.Theme) string {
   display: block;
   max-inline-size: 100%;
 }
-[data-fui-comp="ui-line-chart"] .ui-line-chart__line {
+[data-fui-comp="ui-line-chart"] .fui-line-chart__line {
   fill: none;
   stroke-width: 1.5;
   stroke-linejoin: round;
   stroke-linecap: round;
 }
-.ui-line-chart__line--primary { stroke: var(--color-primary, #4F46E5); }
-.ui-line-chart__line--info    { stroke: var(--color-info, #3B82F6); }
-.ui-line-chart__line--success { stroke: var(--color-success, #16A34A); }
-.ui-line-chart__line--warning { stroke: var(--color-warning, #D97706); }
-.ui-line-chart__line--danger  { stroke: var(--color-danger, #DC2626); }
+.fui-line-chart__line--primary { stroke: var(--color-primary, #4F46E5); }
+.fui-line-chart__line--info    { stroke: var(--color-info, #3B82F6); }
+.fui-line-chart__line--success { stroke: var(--color-success, #16A34A); }
+.fui-line-chart__line--warning { stroke: var(--color-warning, #D97706); }
+.fui-line-chart__line--danger  { stroke: var(--color-danger, #DC2626); }
 
-[data-fui-comp="ui-line-chart"] .ui-line-chart__area { opacity: 0.18; stroke: none; }
-.ui-line-chart__area--primary { fill: var(--color-primary, #4F46E5); }
-.ui-line-chart__area--info    { fill: var(--color-info, #3B82F6); }
-.ui-line-chart__area--success { fill: var(--color-success, #16A34A); }
-.ui-line-chart__area--warning { fill: var(--color-warning, #D97706); }
-.ui-line-chart__area--danger  { fill: var(--color-danger, #DC2626); }
+[data-fui-comp="ui-line-chart"] .fui-line-chart__area { opacity: 0.18; stroke: none; }
+.fui-line-chart__area--primary { fill: var(--color-primary, #4F46E5); }
+.fui-line-chart__area--info    { fill: var(--color-info, #3B82F6); }
+.fui-line-chart__area--success { fill: var(--color-success, #16A34A); }
+.fui-line-chart__area--warning { fill: var(--color-warning, #D97706); }
+.fui-line-chart__area--danger  { fill: var(--color-danger, #DC2626); }
 
-[data-fui-comp="ui-line-chart"] .ui-line-chart__label {
+[data-fui-comp="ui-line-chart"] .fui-line-chart__label {
   font-size: var(--text-xs, 0.75rem);
   fill: var(--color-text-muted, #52525B);
 }
-[data-fui-comp="ui-line-chart"] .ui-line-chart__legend {
+[data-fui-comp="ui-line-chart"] .fui-line-chart__legend {
   font-size: var(--text-xs, 0.75rem);
   fill: var(--color-text, #18181B);
   font-weight: 500;
 }
-.ui-line-chart__legend-swatch--primary { fill: var(--color-primary, #4F46E5); }
-.ui-line-chart__legend-swatch--info    { fill: var(--color-info, #3B82F6); }
-.ui-line-chart__legend-swatch--success { fill: var(--color-success, #16A34A); }
-.ui-line-chart__legend-swatch--warning { fill: var(--color-warning, #D97706); }
-.ui-line-chart__legend-swatch--danger  { fill: var(--color-danger, #DC2626); }`
+.fui-line-chart__legend-swatch--primary { fill: var(--color-primary, #4F46E5); }
+.fui-line-chart__legend-swatch--info    { fill: var(--color-info, #3B82F6); }
+.fui-line-chart__legend-swatch--success { fill: var(--color-success, #16A34A); }
+.fui-line-chart__legend-swatch--warning { fill: var(--color-warning, #D97706); }
+.fui-line-chart__legend-swatch--danger  { fill: var(--color-danger, #DC2626); }`
 }

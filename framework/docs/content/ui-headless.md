@@ -345,8 +345,31 @@ DetailList, OptimisticAction and ToggleAction, plus the stateful
 family: Counter, NumberInput, Slider, RangeSlider, Rating, TagInput,
 Repeater, Toast, ToastStack, NotificationBell, StepWizard and
 BackToTop. The navigation-behaviour members: Rail, TableOfContents,
-Disclosure, Menu, Combobox, Tabs, Carousel, PaneHost, Sidebar, and the
-two pure-render trees JSONTree and Gallery.
+Disclosure, Menu, Combobox, Tabs, Carousel, PaneHost, Sidebar and
+SidebarRegion, and the two pure-render trees JSONTree and Gallery.
+
+The parts the navigation members draw beyond the shared vocabulary:
+
+- **Carousel**: `carousel-stage` (the overflow scroller the slides sit
+  in), `carousel-track`, `carousel-slide`, `carousel-dot`,
+  `carousel-prev`, `carousel-next`.
+- **Combobox**: `combobox-form` (the no-script GET form),
+  `combobox-input`, `combobox-listbox`, `combobox-option`,
+  `combobox-status`.
+- **JSONTree**: under each value's shared parts, one part per JSON
+  scalar kind so a class map can colour a string without colouring a
+  number: `json-colon`, `json-type`, `json-count`, `json-str`,
+  `json-num`, `json-bool`, `json-null`, `json-empty`.
+- **Sidebar** draws the shell (`sidebar-drawer`, `sidebar-inline`,
+  `sidebar-toggle`) and, with `SidebarRegion`, the slot-in version of
+  the same content with no shell hooks; items carry `sidebar-item`
+  (with a `--sub` variant), `sidebar-nav`, `sidebar-prepend`,
+  `sidebar-group`, `sidebar-group-toggle` (the button dialect),
+  `sidebar-group-list`, and `icon` with a `--fallback` variant (the
+  label's initial, for rail states). `Gallery` takes a
+  `GalleryLightbox` wiring: the typed prop that renders the widget
+  runtime's `data-fui-open` / `data-fui-deeplink` /
+  `data-fui-lightbox-group` trigger family on every item anchor.
 
 ## The behaviour module
 

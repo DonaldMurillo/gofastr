@@ -690,14 +690,14 @@ own runtime modules for client-side behavior.
 
 | Component | Runtime module | Behavior |
 |---|---|---|
-| Carousel | `carousel.js` | Prev/next navigation, pagination dots, keyboard, auto-rotation |
-| Combobox | `combobox.js` | Debounced search RPC, listbox navigation, type-ahead |
+| Carousel | `headless-carousel` | Prev/next navigation, pagination dots, keyboard, auto-rotation |
+| Combobox | `headless-combobox` | Debounced search RPC, listbox navigation, type-ahead |
 | Command Palette | (uses Modal + Combobox) | ⌘K overlay with search |
 | Drag Sortable List | `sortablelist.js` | Native drag-and-drop + keyboard reorder, cross-container kanban, version-aware 409 conflict recovery, RPC commit |
 | File Dropzone | `filedropzone.js` (framework/ui) | Image thumbnail strip; the drop, the chosen-files list and the pick announcement are the headless module's `data-hui-drop` hooks |
 | Gallery + Lightbox | `framework/ui/lightbox.js` (registered behaviour) | Image zoom overlay, prev/next, keyboard |
 | Infinite Scroll | `infinitescroll.js` | IntersectionObserver-driven lazy loading |
-| Menu | `menu.js` | Keyboard navigation (arrows, Home/End, type-ahead), submenu open/close (ArrowRight/Left, swapped in RTL), menuitemradio group arbitration |
+| Menu | `headless-menu` | Keyboard navigation (arrows, Home/End, type-ahead), submenu open/close (ArrowRight/Left, swapped in RTL), menuitemradio group arbitration |
 | Multi-select | `multiselect.js` | Checkbox group with chip display |
 | Notification Bell | (uses Popover) | Bell + unread badge + dropdown |
 | Popover | `popover.js` | Anchored positioning, auto-flip, arrow drawing |

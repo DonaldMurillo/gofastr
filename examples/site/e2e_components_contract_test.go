@@ -293,10 +293,10 @@ func TestE2E_Sidebar_HamburgerOpensDrawer(t *testing.T) {
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/sidebar"),
 		pageReady(),
-		chromedp.Evaluate(`!!document.querySelector('button.ui-sidebar__hamburger[data-fui-open="ui-sidebar-drawer"]')`, &triggerExists),
+		chromedp.Evaluate(`!!document.querySelector('button.fui-sidebar__hamburger[data-fui-open="ui-sidebar-drawer"]')`, &triggerExists),
 		// Click via JS so the test is viewport-independent, the open is gated
 		// on the runtime handler, not CSS visibility.
-		chromedp.Evaluate(`document.querySelector('button.ui-sidebar__hamburger[data-fui-open="ui-sidebar-drawer"]')?.click()`, nil),
+		chromedp.Evaluate(`document.querySelector('button.fui-sidebar__hamburger[data-fui-open="ui-sidebar-drawer"]')?.click()`, nil),
 		chromedp.Sleep(350*time.Millisecond),
 		chromedp.Evaluate(`!!document.querySelector('[data-fui-widget="ui-sidebar-drawer"]')`, &drawerPresent),
 		// Coalesce undefined→'' so an absent drawer fails on the assertion below
@@ -345,21 +345,21 @@ func TestE2E_SidebarVariantsAdaptAndPersist(t *testing.T) {
 		// Labels are clipped (visually-hidden pattern), NOT display:none,
 		// focusable links must keep their accessible names when collapsed.
 		chromedp.Evaluate(`(() => {
-			const l = document.querySelector('[data-hui-sidebar] .ui-sidebar__label');
+			const l = document.querySelector('[data-hui-sidebar] .fui-sidebar__label');
 			const cs = getComputedStyle(l);
 			return cs.position === 'absolute' && l.getBoundingClientRect().width <= 1 && cs.display !== 'none';
 		})()`, &labelHidden),
-		chromedp.Evaluate(`document.querySelector('[data-hui-sidebar] .ui-sidebar__inline').getBoundingClientRect().width`, &inlineWidth),
+		chromedp.Evaluate(`document.querySelector('[data-hui-sidebar] .fui-sidebar__inline').getBoundingClientRect().width`, &inlineWidth),
 		chromedp.Reload(),
 		pageReady(),
 		chromedp.Evaluate(`document.querySelector('[data-hui-sidebar]')?.dataset.collapsed === 'true'`, &persisted),
 		chromedp.Evaluate(`
 			const sidebar = document.querySelector('[data-hui-sidebar]');
-			sidebar.classList.remove('ui-sidebar--collapsible');
-			sidebar.classList.add('ui-sidebar--off-canvas');
+			sidebar.classList.remove('fui-sidebar--collapsible');
+			sidebar.classList.add('fui-sidebar--off-canvas');
 			[
-				getComputedStyle(sidebar.querySelector('.ui-sidebar__inline')).display === 'none',
-				getComputedStyle(sidebar.querySelector('.ui-sidebar__hamburger')).display !== 'none'
+				getComputedStyle(sidebar.querySelector('.fui-sidebar__inline')).display === 'none',
+				getComputedStyle(sidebar.querySelector('.fui-sidebar__hamburger')).display !== 'none'
 			]
 		`, &offCanvasState),
 	); err != nil {

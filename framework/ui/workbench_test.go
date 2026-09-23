@@ -15,7 +15,7 @@ import (
 // page beside a preview nobody could see.
 func TestWorkbenchRailScrollsIndependently(t *testing.T) {
 	css := workbenchCSS(style.Theme{})
-	rail := sectionOf(t, css, `[data-fui-comp="ui-workbench"] .ui-workbench__rail`)
+	rail := sectionOf(t, css, `[data-fui-comp="ui-workbench"] .fui-workbench__rail`)
 	if !strings.Contains(rail, "overflow-y: auto") {
 		t.Fatalf("the rail does not scroll on its own:\n%s", rail)
 	}
@@ -33,7 +33,7 @@ func TestWorkbenchRailScrollsIndependently(t *testing.T) {
 // first caller that forgets ships a postage-stamp preview.
 func TestWorkbenchPaneFillsAnIframe(t *testing.T) {
 	rule := sectionOf(t, workbenchCSS(style.Theme{}),
-		`[data-fui-comp="ui-workbench"] .ui-workbench__pane > iframe`)
+		`[data-fui-comp="ui-workbench"] .fui-workbench__pane > iframe`)
 	for _, want := range []string{"inline-size: 100%", "block-size: 100%", "border: 0"} {
 		if !strings.Contains(rule, want) {
 			t.Fatalf("iframe rule is missing %q:\n%s", want, rule)
@@ -128,7 +128,7 @@ func TestWorkbenchExtraAttrsCannotOverrideOwned(t *testing.T) {
 		}
 	}
 	for _, want := range []string{
-		`data-test="hook"`, `style="--ui-workbench-rail: 480px"`, `class="ui-workbench mine"`,
+		`data-test="hook"`, `style="--ui-workbench-rail: 480px"`, `class="fui-workbench mine"`,
 	} {
 		if !strings.Contains(root, want) {
 			t.Errorf("root missing %q:\n%s", want, root)

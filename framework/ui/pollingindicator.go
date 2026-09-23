@@ -50,9 +50,9 @@ func PollingIndicator(cfg PollingIndicatorConfig) render.HTML {
 	if label == "" {
 		label = i18nui.T(ctx, i18nui.KeyPollingLive)
 	}
-	cls := "ui-polling-indicator"
+	cls := "fui-polling-indicator"
 	if cfg.Paused {
-		cls += " ui-polling-indicator--paused"
+		cls += " fui-polling-indicator--paused"
 	}
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
@@ -70,10 +70,10 @@ func PollingIndicator(cfg PollingIndicatorConfig) render.HTML {
 	}
 	return pollingIndicatorStyle.WrapHTML(render.Tag("span", attrs,
 		render.Tag("span", map[string]string{
-			"class":       "ui-polling-indicator__dot",
+			"class":       "fui-polling-indicator__dot",
 			"aria-hidden": "true",
 		}),
-		html.Span(html.TextConfig{Class: "ui-polling-indicator__label"}, render.Text(label)),
+		html.Span(html.TextConfig{Class: "fui-polling-indicator__label"}, render.Text(label)),
 	))
 }
 
@@ -82,7 +82,7 @@ var pollingIndicatorStyle = registry.RegisterStyle("ui-polling-indicator", func(
 })
 
 const pollingIndicatorCSSText = `
-.ui-polling-indicator {
+.fui-polling-indicator {
   display: inline-flex;
   align-items: center;
   gap: var(--spacing-xs, 2px);
@@ -90,14 +90,14 @@ const pollingIndicatorCSSText = `
   color: var(--color-text-muted, #6B7280);
   line-height: 1;
 }
-.ui-polling-indicator__dot {
+.fui-polling-indicator__dot {
   inline-size: 0.5rem;
   block-size: 0.5rem;
   border-radius: var(--radii-full, 9999px);
   background: var(--color-success, #16A34A);
   animation: ui-polling-pulse 1.6s ease-in-out infinite;
 }
-.ui-polling-indicator--paused .ui-polling-indicator__dot {
+.fui-polling-indicator--paused .fui-polling-indicator__dot {
   background: var(--color-text-muted, #6B7280);
   animation: none;
   opacity: 0.6;
@@ -108,6 +108,6 @@ const pollingIndicatorCSSText = `
   100% { transform: scale(1);   opacity: 1; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .ui-polling-indicator__dot { animation: none; }
+  .fui-polling-indicator__dot { animation: none; }
 }
 `

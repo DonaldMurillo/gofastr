@@ -886,12 +886,12 @@ func Avatar(cfg AvatarConfig) render.HTML {
 	if cfg.Name == "" {
 		panic("ui: Avatar requires Name")
 	}
-	cls := "ui-avatar"
+	cls := "fui-avatar"
 	if cfg.Size != AvatarMd {
-		cls += " ui-avatar--" + string(cfg.Size)
+		cls += " fui-avatar--" + string(cfg.Size)
 	}
 	if cfg.Status != AvatarStatusNone {
-		cls += " ui-avatar--has-status"
+		cls += " fui-avatar--has-status"
 	}
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
@@ -902,15 +902,15 @@ func Avatar(cfg AvatarConfig) render.HTML {
 	var inner []render.HTML
 	if cfg.Src != "" {
 		inner = append(inner, html.Image(html.ImageConfig{
-			Src: cfg.Src, Alt: cfg.Name, Class: "ui-avatar__img",
+			Src: cfg.Src, Alt: cfg.Name, Class: "fui-avatar__img",
 		}))
 	} else {
 		inner = append(inner,
 			html.Span(html.TextConfig{
-				Class:      "ui-avatar__initials",
+				Class:      "fui-avatar__initials",
 				ExtraAttrs: html.Attrs{"aria-hidden": "true"},
 			}, render.Text(initials(cfg.Name))),
-			html.Span(html.TextConfig{Class: "ui-visually-hidden"},
+			html.Span(html.TextConfig{Class: "fui-visually-hidden"},
 				render.Text(cfg.Name)),
 		)
 	}
@@ -929,7 +929,7 @@ func avatarStatusDot(status AvatarStatus, label string) render.HTML {
 		label = string(status)
 	}
 	return html.Span(html.TextConfig{
-		Class: "ui-avatar__status ui-avatar__status--" + string(status),
+		Class: "fui-avatar__status fui-avatar__status--" + string(status),
 		ExtraAttrs: html.Attrs{
 			"role":       "img",
 			"aria-label": label,
@@ -987,17 +987,17 @@ type CodeBlockConfig struct {
 	// container.
 	Scroll bool
 	// HighlightLines marks the given 1-based source lines with
-	// ui-code-block__line--highlight, a background band that reaches the
+	// fui-code-block__line--highlight, a background band that reaches the
 	// block's edge. Ranges past the last line match nothing.
 	HighlightLines []LineRange
 	// Diff classifies lines by their first character: '+' (including the
-	// '+++' file-header form) gets ui-code-block__line--added, '-' (and
+	// '+++' file-header form) gets fui-code-block__line--added, '-' (and
 	// '---') gets --removed. The marker stays in the text: a diff's
 	// content IS the diff. On the Lines path a leading token span is
 	// skipped, so the marker behind it still classifies.
 	Diff bool
 	// HighlightWords wraps literal (not regex) matches inside a line in
-	// <mark class="ui-code-block__mark">. Matching runs on the source
+	// <mark class="fui-code-block__mark">. Matching runs on the source
 	// text of each line's text nodes: a word never matches across a tag
 	// boundary, and marked text is escaped like the rest of the line.
 	HighlightWords []string
@@ -1095,7 +1095,7 @@ func CodeBlock(cfg CodeBlockConfig) render.HTML {
 	}
 	// Any per-line feature (highlight, diff, word marks) forces the
 	// per-line wrapper on the Code path so the classes attach to the same
-	// ui-code-block__line element the Lines path uses; a config with none
+	// fui-code-block__line element the Lines path uses; a config with none
 	// keeps today's <code> body.
 	perLine := len(cfg.HighlightLines) > 0 || cfg.Diff || len(cfg.HighlightWords) > 0
 	var body render.HTML
@@ -1131,9 +1131,9 @@ func CodeBlock(cfg CodeBlockConfig) render.HTML {
 	}
 
 	if !framed {
-		cls := "ui-code-block"
+		cls := "fui-code-block"
 		if cfg.Wrap {
-			cls += " ui-code-block--wrap"
+			cls += " fui-code-block--wrap"
 		}
 		if cfg.Class != "" {
 			cls += " " + cfg.Class
@@ -1151,15 +1151,15 @@ func CodeBlock(cfg CodeBlockConfig) render.HTML {
 		return codeBlockStyle.WrapHTML(render.Tag("pre", preAttrs, body))
 	}
 
-	cls := "ui-code-block ui-code-block--framed"
+	cls := "fui-code-block fui-code-block--framed"
 	if cfg.LineNumbers {
-		cls += " ui-code-block--numbered"
+		cls += " fui-code-block--numbered"
 	}
 	if cfg.Scroll {
-		cls += " ui-code-block--scroll"
+		cls += " fui-code-block--scroll"
 	}
 	if cfg.Wrap {
-		cls += " ui-code-block--wrap"
+		cls += " fui-code-block--wrap"
 	}
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
@@ -1169,10 +1169,10 @@ func CodeBlock(cfg CodeBlockConfig) render.HTML {
 	if cfg.Filename != "" {
 		headChildren = append(headChildren,
 			html.Span(html.TextConfig{
-				Class:      "ui-code-block__status",
+				Class:      "fui-code-block__status",
 				ExtraAttrs: html.Attrs{"aria-hidden": "true"},
 			}),
-			html.Span(html.TextConfig{Class: "ui-code-block__file"}, render.Text(cfg.Filename)),
+			html.Span(html.TextConfig{Class: "fui-code-block__file"}, render.Text(cfg.Filename)),
 		)
 	}
 	metaChildren := []render.HTML{}
@@ -1186,16 +1186,16 @@ func CodeBlock(cfg CodeBlockConfig) render.HTML {
 			Label:        "copy",
 			CopiedLabel:  "copied",
 			AnnounceText: "Copied",
-			Class:        "ui-code-block__copy",
+			Class:        "fui-code-block__copy",
 		}))
 	}
 	if len(metaChildren) > 0 {
 		headChildren = append(headChildren,
-			html.Div(html.DivConfig{Class: "ui-code-block__meta"}, metaChildren...))
+			html.Div(html.DivConfig{Class: "fui-code-block__meta"}, metaChildren...))
 	}
-	head := html.Div(html.DivConfig{Class: "ui-code-block__head"}, headChildren...)
+	head := html.Div(html.DivConfig{Class: "fui-code-block__head"}, headChildren...)
 
-	preAttrs := map[string]string{"class": "ui-code-block__body", "tabindex": "0", "aria-label": label}
+	preAttrs := map[string]string{"class": "fui-code-block__body", "tabindex": "0", "aria-label": label}
 	if bodyID != "" {
 		preAttrs["id"] = bodyID
 	}
@@ -1250,23 +1250,23 @@ func firstTextByte(s string) byte {
 // codeBlockLineClass builds the per-line class: the base wrapper plus
 // the highlight band and/or the diff marker class.
 func codeBlockLineClass(cfg CodeBlockConfig, n int, content string) string {
-	cls := "ui-code-block__line"
+	cls := "fui-code-block__line"
 	if lineHighlighted(cfg.HighlightLines, n) {
-		cls += " ui-code-block__line--highlight"
+		cls += " fui-code-block__line--highlight"
 	}
 	if cfg.Diff {
 		switch firstTextByte(content) {
 		case '+':
-			cls += " ui-code-block__line--added"
+			cls += " fui-code-block__line--added"
 		case '-':
-			cls += " ui-code-block__line--removed"
+			cls += " fui-code-block__line--removed"
 		}
 	}
 	return cls
 }
 
 // markWords wraps literal matches of any word in
-// <mark class="ui-code-block__mark">, touching text nodes only: tags
+// <mark class="fui-code-block__mark">, touching text nodes only: tags
 // pass through untouched and a word never matches across a tag boundary,
 // because each text node is matched on its own. Text nodes are decoded
 // to source text for matching and re-escaped on output, so a word like
@@ -1323,7 +1323,7 @@ func markText(text string, words []string) string {
 	for i := 0; i < len(text); {
 		if w := matchWordAt(text, i, words); w != "" {
 			b.WriteString(render.Escape(text[start:i]))
-			b.WriteString(`<mark class="ui-code-block__mark">`)
+			b.WriteString(`<mark class="fui-code-block__mark">`)
 			b.WriteString(render.Escape(w))
 			b.WriteString(`</mark>`)
 			i += len(w)
