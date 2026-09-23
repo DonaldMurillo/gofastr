@@ -228,37 +228,55 @@ const (
 	// (fmt.Sprintf at the site that owns the value), {name} tokens
 	// where the runtime substitutes. A catalog translation keeps the
 	// placeholders and may reorder the words around them.
-	KeyDismissTitled        Key = "ui.dismiss.titled"            // "Dismiss: %s"
-	KeyTagRemoveLabelled    Key = "ui.tag.removeLabelled"        // "Remove %s"
-	KeyActionFailed         Key = "ui.action.failed"             // "Could not save. Try again."
-	KeyColorPick            Key = "ui.color.pick"                // "Pick %s"
-	KeyPasswordRevealShow   Key = "ui.passwordInput.revealShow"  // "Show"
-	KeyPasswordRevealHide   Key = "ui.passwordInput.revealHide"  // "Hide"
-	KeyToneInfo             Key = "ui.tone.info"                 // "Information"
-	KeyToneSuccess          Key = "ui.tone.success"              // "Success"
-	KeyToneWarning          Key = "ui.tone.warning"              // "Warning"
-	KeyToneDanger           Key = "ui.tone.danger"               // "Error"
-	KeyFileSelected         Key = "ui.fileUpload.fileSelected"   // "{name} selected."
-	KeyFilesSelected        Key = "ui.fileUpload.filesSelected"  // "{n} files selected: {names}."
-	KeyValidationProblem    Key = "ui.validationSummary.problem" // "There is a problem"
-	KeyTableSortedBy        Key = "ui.table.sortedBy"            // "Sorted by {column}, {direction}"
-	KeyTableDirAscending    Key = "ui.table.dirAscending"        // "ascending"
-	KeyTableDirDescending   Key = "ui.table.dirDescending"       // "descending"
-	KeyHuiBackToTop         Key = "ui.backToTop.label"           // "Back to top"
-	KeyHuiCopyStatus        Key = "ui.copy.status"               // "Copied {name}"
-	KeyHuiNumberDecrement   Key = "ui.number.decrementLabelled"  // "Decrement %s"
-	KeyHuiNumberIncrement   Key = "ui.number.incrementLabelled"  // "Increment %s"
-	KeyHuiRangeLow          Key = "ui.range.low"                 // "Minimum %s"
-	KeyHuiRangeHigh         Key = "ui.range.high"                // "Maximum %s"
-	KeyHuiRangeValue        Key = "ui.range.value"               // "%s to %s"
-	KeyHuiRatingChoice      Key = "ui.rating.choice"             // "%d out of %d"
-	KeyHuiTagInputAdd       Key = "ui.tagInput.add"              // "Add %s"
-	KeyHuiTagInputAdded     Key = "ui.tagInput.added"            // "{name} added"
-	KeyHuiTagInputRemoved   Key = "ui.tagInput.removed"          // "{name} removed"
-	KeyHuiRepeaterRemove    Key = "ui.repeater.removeItemIndex"  // "Remove item %d"
-	KeyHuiNotificationCount Key = "ui.notification.countUnread"  // "%d unread notifications"
-	KeyHuiStepOf            Key = "ui.stepWizard.stepOfFormat"   // "Step %d of %d"
-	KeyHuiStepName          Key = "ui.stepWizard.stepNameFormat" // "Step %d: %s"
+	KeyDismissTitled           Key = "ui.dismiss.titled"            // "Dismiss: %s"
+	KeyTagRemoveLabelled       Key = "ui.tag.removeLabelled"        // "Remove %s"
+	KeyActionFailed            Key = "ui.action.failed"             // "Could not save. Try again."
+	KeyColorPick               Key = "ui.color.pick"                // "Pick %s"
+	KeyPasswordRevealShow      Key = "ui.passwordInput.revealShow"  // "Show"
+	KeyPasswordRevealHide      Key = "ui.passwordInput.revealHide"  // "Hide"
+	KeyToneInfo                Key = "ui.tone.info"                 // "Information"
+	KeyToneSuccess             Key = "ui.tone.success"              // "Success"
+	KeyToneWarning             Key = "ui.tone.warning"              // "Warning"
+	KeyToneDanger              Key = "ui.tone.danger"               // "Error"
+	KeyFileSelected            Key = "ui.fileUpload.fileSelected"   // "{name} selected."
+	KeyFilesSelected           Key = "ui.fileUpload.filesSelected"  // "{n} files selected: {names}."
+	KeyValidationProblem       Key = "ui.validationSummary.problem" // "There is a problem"
+	KeyTableSortedBy           Key = "ui.table.sortedBy"            // "Sorted by {column}, {direction}"
+	KeyTableDirAscending       Key = "ui.table.dirAscending"        // "ascending"
+	KeyTableDirDescending      Key = "ui.table.dirDescending"       // "descending"
+	KeyHuiBackToTop            Key = "ui.backToTop.label"           // "Back to top"
+	KeyHuiCopyStatus           Key = "ui.copy.status"               // "Copied {name}"
+	KeyHuiNumberDecrement      Key = "ui.number.decrementLabelled"  // "Decrement %s"
+	KeyHuiNumberIncrement      Key = "ui.number.incrementLabelled"  // "Increment %s"
+	KeyHuiRangeLow             Key = "ui.range.low"                 // "Minimum %s"
+	KeyHuiRangeHigh            Key = "ui.range.high"                // "Maximum %s"
+	KeyHuiRangeValue           Key = "ui.range.value"               // "%s to %s"
+	KeyHuiRatingChoice         Key = "ui.rating.choice"             // "%d out of %d"
+	KeyHuiTagInputAdd          Key = "ui.tagInput.add"              // "Add %s"
+	KeyHuiTagInputAdded        Key = "ui.tagInput.added"            // "{name} added"
+	KeyHuiTagInputRemoved      Key = "ui.tagInput.removed"          // "{name} removed"
+	KeyHuiRepeaterRemove       Key = "ui.repeater.removeItemIndex"  // "Remove item %d"
+	KeyHuiNotificationCount    Key = "ui.notification.countUnread"  // "%d unread notifications"
+	KeyHuiStepOf               Key = "ui.stepWizard.stepOfFormat"   // "Step %d of %d"
+	KeyHuiStepName             Key = "ui.stepWizard.stepNameFormat" // "Step %d: %s"
+	KeyHuiTableOfContentsLabel Key = "ui.toc.label"
+	KeyHuiCarouselSlide        Key = "ui.carousel.slide"     // "Slide {n} of {total}"
+	KeyHuiCarouselGoToSlide    Key = "ui.carousel.goToSlide" // "Go to slide {n}"
+
+	KeyHuiJSONObject           Key = "ui.json.object"           // "Object"
+	KeyHuiJSONArray            Key = "ui.json.array"            // "Array"
+	KeyHuiJSONNull             Key = "ui.json.null"             // "null"
+	KeyHuiJSONTrue             Key = "ui.json.true"             // "true"
+	KeyHuiJSONFalse            Key = "ui.json.false"            // "false"
+	KeyHuiJSONEmptyObj         Key = "ui.json.emptyObj"         // "{}"
+	KeyHuiJSONEmptyArr         Key = "ui.json.emptyArr"         // "[]"
+	KeyHuiJSONTruncated        Key = "ui.json.truncated"        // "…"
+	KeyHuiComboboxLoading      Key = "ui.combobox.loading"      // "Loading…"
+	KeyHuiComboboxNoResults    Key = "ui.combobox.noResults"    // "No matches"
+	KeyHuiComboboxResultCount  Key = "ui.combobox.resultCount"  // "{n} results"
+	KeyHuiComboboxResultsLabel Key = "ui.combobox.resultsLabel" // "results"                 // "On this page"
+	KeyHuiSidebarCollapse      Key = "ui.sidebar.collapse"      // "Collapse navigation"
+	KeyHuiSidebarExpand        Key = "ui.sidebar.expand"        // "Expand navigation"
 )
 
 // Defaults are the English fallback strings. Apps that provide their
@@ -428,37 +446,54 @@ var Defaults = map[Key]string{
 	// English matches headless's own defaults byte for byte — the
 	// bridge's no-translator output must be the words the goldens
 	// pin, and framework/ui's bridge test holds the two together).
-	KeyDismissTitled:        "Dismiss: %s",
-	KeyTagRemoveLabelled:    "Remove %s",
-	KeyActionFailed:         "Could not save. Try again.",
-	KeyColorPick:            "Pick %s",
-	KeyPasswordRevealShow:   "Show",
-	KeyPasswordRevealHide:   "Hide",
-	KeyToneInfo:             "Information",
-	KeyToneSuccess:          "Success",
-	KeyToneWarning:          "Warning",
-	KeyToneDanger:           "Error",
-	KeyTableSortedBy:        "Sorted by {column}, {direction}",
-	KeyTableDirAscending:    "ascending",
-	KeyTableDirDescending:   "descending",
-	KeyFileSelected:         "{name} selected.",
-	KeyFilesSelected:        "{n} files selected: {names}.",
-	KeyValidationProblem:    "There is a problem",
-	KeyHuiBackToTop:         "Back to top",
-	KeyHuiCopyStatus:        "Copied {name}",
-	KeyHuiNumberDecrement:   "Decrement %s",
-	KeyHuiNumberIncrement:   "Increment %s",
-	KeyHuiRangeLow:          "Minimum %s",
-	KeyHuiRangeHigh:         "Maximum %s",
-	KeyHuiRangeValue:        "%s to %s",
-	KeyHuiRatingChoice:      "%d out of %d",
-	KeyHuiTagInputAdd:       "Add %s",
-	KeyHuiTagInputAdded:     "{name} added",
-	KeyHuiTagInputRemoved:   "{name} removed",
-	KeyHuiRepeaterRemove:    "Remove item %d",
-	KeyHuiNotificationCount: "%d unread notifications",
-	KeyHuiStepOf:            "Step %d of %d",
-	KeyHuiStepName:          "Step %d: %s",
+	KeyDismissTitled:           "Dismiss: %s",
+	KeyTagRemoveLabelled:       "Remove %s",
+	KeyActionFailed:            "Could not save. Try again.",
+	KeyColorPick:               "Pick %s",
+	KeyPasswordRevealShow:      "Show",
+	KeyPasswordRevealHide:      "Hide",
+	KeyToneInfo:                "Information",
+	KeyToneSuccess:             "Success",
+	KeyToneWarning:             "Warning",
+	KeyToneDanger:              "Error",
+	KeyTableSortedBy:           "Sorted by {column}, {direction}",
+	KeyTableDirAscending:       "ascending",
+	KeyTableDirDescending:      "descending",
+	KeyFileSelected:            "{name} selected.",
+	KeyFilesSelected:           "{n} files selected: {names}.",
+	KeyValidationProblem:       "There is a problem",
+	KeyHuiBackToTop:            "Back to top",
+	KeyHuiCopyStatus:           "Copied {name}",
+	KeyHuiNumberDecrement:      "Decrement %s",
+	KeyHuiNumberIncrement:      "Increment %s",
+	KeyHuiRangeLow:             "Minimum %s",
+	KeyHuiRangeHigh:            "Maximum %s",
+	KeyHuiRangeValue:           "%s to %s",
+	KeyHuiRatingChoice:         "%d out of %d",
+	KeyHuiTagInputAdd:          "Add %s",
+	KeyHuiTagInputAdded:        "{name} added",
+	KeyHuiTagInputRemoved:      "{name} removed",
+	KeyHuiRepeaterRemove:       "Remove item %d",
+	KeyHuiNotificationCount:    "%d unread notifications",
+	KeyHuiStepOf:               "Step %d of %d",
+	KeyHuiStepName:             "Step %d: %s",
+	KeyHuiTableOfContentsLabel: "On this page",
+	KeyHuiCarouselSlide:        "Slide {n} of {total}",
+	KeyHuiJSONObject:           "Object",
+	KeyHuiJSONArray:            "Array",
+	KeyHuiJSONNull:             "null",
+	KeyHuiJSONTrue:             "true",
+	KeyHuiJSONFalse:            "false",
+	KeyHuiJSONEmptyObj:         "{}",
+	KeyHuiJSONEmptyArr:         "[]",
+	KeyHuiJSONTruncated:        "…",
+	KeyHuiCarouselGoToSlide:    "Go to slide {n}",
+	KeyHuiComboboxLoading:      "Loading…",
+	KeyHuiComboboxNoResults:    "No matches",
+	KeyHuiComboboxResultCount:  "{n} results",
+	KeyHuiComboboxResultsLabel: "results",
+	KeyHuiSidebarCollapse:      "Collapse navigation",
+	KeyHuiSidebarExpand:        "Expand navigation",
 }
 
 // translatorKey is the unexported context key used by WithTranslator
@@ -647,6 +682,14 @@ func AllKeys() []Key {
 		KeyHuiTagInputAdd, KeyHuiTagInputAdded, KeyHuiTagInputRemoved,
 		KeyHuiRepeaterRemove, KeyHuiNotificationCount,
 		KeyHuiStepOf, KeyHuiStepName,
+		KeyHuiTableOfContentsLabel,
+		KeyHuiCarouselSlide, KeyHuiCarouselGoToSlide,
+		KeyHuiJSONObject, KeyHuiJSONArray, KeyHuiJSONNull,
+		KeyHuiJSONTrue, KeyHuiJSONFalse, KeyHuiJSONEmptyObj,
+		KeyHuiJSONEmptyArr, KeyHuiJSONTruncated,
+		KeyHuiComboboxLoading, KeyHuiComboboxNoResults,
+		KeyHuiComboboxResultCount, KeyHuiComboboxResultsLabel,
+		KeyHuiSidebarCollapse, KeyHuiSidebarExpand,
 	}
 }
 

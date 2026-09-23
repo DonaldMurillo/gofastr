@@ -133,6 +133,30 @@ var stringsKeys = map[string]i18nui.Key{
 	"StepSubmit": i18nui.KeyStepWizardSubmit,
 	"StepOf":     i18nui.KeyHuiStepOf,
 	"StepName":   i18nui.KeyHuiStepName,
+
+	// TableOfContents' landmark name. New with the primitive; its
+	// English is the word the config-struct TOC hardcoded.
+	"TableOfContentsLabel": i18nui.KeyHuiTableOfContentsLabel,
+
+	// Combobox's status sentences and listbox noun. New with the
+	// primitive; the config-struct pattern hardcoded the first three
+	// in English.
+	"CarouselSlide": i18nui.KeyHuiCarouselSlide,
+	"CarouselGoTo":  i18nui.KeyHuiCarouselGoToSlide,
+
+	"ComboboxLoading":      i18nui.KeyHuiComboboxLoading,
+	"ComboboxNoResults":    i18nui.KeyHuiComboboxNoResults,
+	"ComboboxResultCount":  i18nui.KeyHuiComboboxResultCount,
+	"ComboboxResultsLabel": i18nui.KeyHuiComboboxResultsLabel,
+
+	"JSONObject":      i18nui.KeyHuiJSONObject,
+	"JSONArray":       i18nui.KeyHuiJSONArray,
+	"JSONNull":        i18nui.KeyHuiJSONNull,
+	"JSONTrue":        i18nui.KeyHuiJSONTrue,
+	"JSONFalse":       i18nui.KeyHuiJSONFalse,
+	"JSONEmptyObject": i18nui.KeyHuiJSONEmptyObj,
+	"JSONEmptyArray":  i18nui.KeyHuiJSONEmptyArr,
+	"JSONTruncated":   i18nui.KeyHuiJSONTruncated,
 }
 
 // StringsFor resolves a headless.Strings from the request's context:

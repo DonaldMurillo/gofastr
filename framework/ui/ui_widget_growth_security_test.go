@@ -79,7 +79,7 @@ func TestCarouselVisiblePerViewClamped(t *testing.T) {
 			VisiblePerView: in,
 			Slides:         []ui.CarouselSlide{{Content: render.Text("s")}},
 		}))
-		if !strings.Contains(h, "ui-carousel--cols-"+want+" ") && !strings.Contains(h, "ui-carousel--cols-"+want+`"`) {
+		if !strings.Contains(h, "fui-carousel--cols-"+want+" ") && !strings.Contains(h, "fui-carousel--cols-"+want+`"`) {
 			t.Errorf("VisiblePerView=%d must clamp to cols-%s:\n%s", in, want, h)
 		}
 	}

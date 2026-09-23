@@ -45,7 +45,7 @@ func paletteTestServer(t *testing.T) *httptest.Server {
 			Meta:  fmt.Sprintf("/cmd/%03d", i+1),
 		}
 	}
-	_, pal := CommandPalette(CommandPaletteConfig{Commands: commands})
+	_, pal := CommandPalette(CommandPaletteConfig{Commands: commands, FallbackHref: "/cmds"})
 
 	r := router.New()
 	widget.MountBuilder(r, pal)

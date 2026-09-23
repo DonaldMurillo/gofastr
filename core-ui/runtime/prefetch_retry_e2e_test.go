@@ -15,7 +15,7 @@ import (
 // A failed prefetch fetch must not pin the element as attempted. Marker-
 // driven modules self-heal: every SPA nav and DOM insertion re-runs
 // _scanForModules, which retries loadModule for present-but-unloaded
-// markers. `tabs` deliberately has no marker entry (core bundle budget),
+// markers. `widgetfocus` has no data-fui-* scanner entry (widgets.js demand-loads it),
 // so the prefetch bridge is the ONLY loader: pin the element on failure
 // and a vacate strip's panels stay empty for the page lifetime. The
 // bridge marks an element attempted only once its fetch succeeds, so the
@@ -26,9 +26,9 @@ func TestPrefetchRetriesAfterFailedFetch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	mod, ok := Module("tabs")
+	mod, ok := Module("widgetfocus")
 	if !ok {
-		t.Fatal("tabs module not embedded")
+		t.Fatal("widgetfocus module not embedded")
 	}
 
 	var hits atomic.Int32
@@ -41,9 +41,9 @@ func TestPrefetchRetriesAfterFailedFetch(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		w.Write([]byte(`{"hits":` + strconv.FormatInt(int64(hits.Load()), 10) + `}`))
 	})
-	// First tabs.js request fails (network error class: deploy blip,
+	// First widgetfocus.js request fails (network error class: deploy blip,
 	// transient 404); every later one succeeds.
-	mux.HandleFunc("/__gofastr/runtime/tabs.js", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/__gofastr/runtime/widgetfocus.js", func(w http.ResponseWriter, r *http.Request) {
 		if hits.Add(1) == 1 {
 			http.NotFound(w, r)
 			return
@@ -54,7 +54,7 @@ func TestPrefetchRetriesAfterFailedFetch(t *testing.T) {
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		w.Write([]byte(`<!doctype html><html><head><title>prefetch-retry</title></head><body>
-  <div id="wrap" data-fui-prefetch="tabs">strip</div>
+  <div id="wrap" data-fui-prefetch="widgetfocus">strip</div>
   <script src="/__gofastr/runtime.js"></script>
 </body></html>`))
 	})
@@ -72,24 +72,24 @@ func TestPrefetchRetriesAfterFailedFetch(t *testing.T) {
 			new PointerEvent('pointerover', {bubbles: true}))`, nil),
 		chromedp.Poll(`fetch('/hits').then(r => r.json()).then(j => j.hits >= 1)`,
 			&ok, chromedp.WithPollingInterval(50*time.Millisecond)),
-		chromedp.Evaluate(`!!(window.__gofastr.loadedModules && window.__gofastr.loadedModules.tabs)`, &loaded),
+		chromedp.Evaluate(`!!(window.__gofastr.loadedModules && window.__gofastr.loadedModules.widgetfocus)`, &loaded),
 	); err != nil || !ok || loaded {
 		t.Fatalf("setup: first fetch must fail without loading the module (fetched ok=%v, loaded=%v, err=%v)", ok, loaded, err)
 	}
 	if got := hits.Load(); got != 1 {
-		t.Fatalf("setup: tabs.js requests = %d, want exactly 1", got)
+		t.Fatalf("setup: widgetfocus.js requests = %d, want exactly 1", got)
 	}
 
 	// Second hover on the SAME element: the bridge must retry.
 	if err := chromedp.Run(ctx,
 		chromedp.Evaluate(`document.getElementById('wrap').dispatchEvent(
 			new PointerEvent('pointerover', {bubbles: true}))`, nil),
-		chromedp.Poll(`!!(window.__gofastr.loadedModules && window.__gofastr.loadedModules.tabs)`,
+		chromedp.Poll(`!!(window.__gofastr.loadedModules && window.__gofastr.loadedModules.widgetfocus)`,
 			&ok, chromedp.WithPollingInterval(50*time.Millisecond)),
 	); err != nil || !ok {
 		t.Fatalf("a failed prefetch must be retried on the next hover of the same element (ok=%v, err=%v)", ok, err)
 	}
 	if got := hits.Load(); got < 2 {
-		t.Fatalf("tabs.js requests = %d, want >= 2 (the retry must hit the network)", got)
+		t.Fatalf("widgetfocus.js requests = %d, want >= 2 (the retry must hit the network)", got)
 	}
 }

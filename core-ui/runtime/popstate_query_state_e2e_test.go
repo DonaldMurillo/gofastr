@@ -27,7 +27,8 @@ func stateSite(t *testing.T) (*httptest.Server, *atomic.Int64) {
 		`</head><body><div data-fui-layout="site" data-fui-layout-key="l:site">` +
 		`<main role="main" tabindex="-1" data-fui-layout-slot="l:site">` +
 		`<h1 id="list-screen">List</h1>` +
-		`<div id="host" data-fui-pane-deeplink="pane"></div>` +
+		`<div id="host" data-hui-pane-deeplink="pane"></div>` +
+		`<div id="legacy" data-fui-pane-deeplink="oldpane"></div>` +
 		`</main></div><script src="/__gofastr/runtime.js"></script></body></html>`
 	mux := http.NewServeMux()
 	mux.HandleFunc("/__gofastr/runtime.js", func(w http.ResponseWriter, _ *http.Request) {
@@ -41,7 +42,7 @@ func stateSite(t *testing.T) (*httptest.Server, *atomic.Int64) {
 			w.Header().Set("X-Gofastr-Partial", "true")
 			w.Header().Set("X-Gofastr-Title", "List")
 			w.Header().Set("X-Gofastr-Swap", "l:site")
-			fmt.Fprint(w, `<h1 id="list-screen">List</h1><div id="host" data-fui-pane-deeplink="pane"></div>`)
+			fmt.Fprint(w, `<h1 id="list-screen">List</h1><div id="host" data-hui-pane-deeplink="pane"></div><div id="legacy" data-fui-pane-deeplink="oldpane"></div>`)
 			return
 		}
 		w.Header().Set("Content-Type", "text/html")
@@ -121,5 +122,31 @@ func TestIdentityQueryBackRefetches(t *testing.T) {
 	}
 	if got := count.Load(); got != 1 {
 		t.Errorf("identity back should replay the cached screen (%d requests, want 1)", got)
+	}
+}
+
+// The retired pane host's spelling still declares a stateful param: a
+// page served by an older host keeps its Back/Forward across a deep link.
+func TestStatefulQueryLegacySpellingStillDeclares(t *testing.T) {
+	srv, count := stateSite(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
+	var stampKept bool
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(srv.URL+"/list"),
+		chromedp.WaitVisible(`#list-screen`, chromedp.ByID),
+		chromedp.Evaluate(`document.getElementById('list-screen').dataset.stamp = 'kept'`, nil),
+		chromedp.Evaluate(`__gofastr._pushURL('/list?oldpane=secondary:7')`, nil),
+		chromedp.Sleep(100*time.Millisecond),
+		chromedp.Evaluate(`history.back()`, nil),
+		chromedp.Sleep(300*time.Millisecond),
+		chromedp.Evaluate(`document.getElementById('list-screen').dataset.stamp === 'kept'`, &stampKept),
+	); err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	if !stampKept {
+		t.Error("screen content was rebuilt on a legacy-spelled stateful-only history move")
+	}
+	if got := count.Load(); got != 1 {
+		t.Errorf("legacy stateful back fetched the screen (%d requests, want 1)", got)
 	}
 }

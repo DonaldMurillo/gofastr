@@ -98,14 +98,10 @@ FLOORS="
 ./core-ui/node/ 91.0
 ./core-ui/patterns/accordion/ 93.4
 ./core-ui/patterns/breadcrumbs/ 85.5
-./core-ui/patterns/combobox/ 96.9
-./core-ui/patterns/disclosure/ 69.9
 ./core-ui/patterns/multiselect/ 85.0
 ./core-ui/patterns/nestedlist/ 89.1
 ./core-ui/patterns/progress/ 88.0
-./core-ui/patterns/scrollspy/ 81.8
 ./core-ui/patterns/sortablelist/ 87.4
-./core-ui/patterns/tabs/ 90.2
 ./core-ui/patterns/tree/ 92.5
 ./core-ui/registry/ 84.8
 ./core-ui/runtime/minify/ 85.5

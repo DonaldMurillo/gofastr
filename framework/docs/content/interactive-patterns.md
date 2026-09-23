@@ -137,10 +137,15 @@ and toggles the `color-scheme` meta + root attribute.
 
 ### Scroll spy
 
-`core-ui/patterns/scrollspy` uses IntersectionObserver to track which
-section is currently in the upper portion of the viewport and marks
-the corresponding nav link as active. Triggered by
-`data-fui-scrollspy`.
+The scroll-spy rail is `framework/ui.AnchoredRail` over
+`headless.Rail` (`data-hui-rail` on the nav, `data-hui-rail-observe`
+naming the observed region): the `headless-rail` module
+IntersectionObserves which section is currently in the upper portion
+of the viewport and marks the corresponding nav link
+`aria-current="true"` / `.is-active`. The table of contents
+(`headless.TableOfContents`, `data-hui-toc`) shares the same observer.
+The retired `data-fui-scrollspy` spelling survives only as a marker
+the `activelink` module keeps its hands off.
 
 ---
 
@@ -788,10 +793,14 @@ interactive.ToastOnClick(ui.Button(ui.ButtonConfig{Label: "Saved!"}),
 
 ### Pane triggers
 
-`OpenPaneOnClick` / `ClosePaneOnClick` drive a `PaneHost` side pane on click.
-Both validate the pane name (`"secondary"` / `"tertiary"`; `ClosePaneOnClick`
-also accepts `""` to close the topmost pane, emitting `data-fui-pane-close=""`).
-Attributes injected: `data-fui-pane-open` / `data-fui-pane-close`.
+`OpenPaneOnClick` / `ClosePaneOnClick` / `SwapPaneOnClick` drive a
+`PaneHost` side pane on click. All validate the pane name
+(`"secondary"` / `"tertiary"`; `ClosePaneOnClick` also accepts `""` to
+close the topmost pane, emitting `data-hui-pane-close=""`, matched by
+presence). Attributes injected: `data-hui-pane-open-control`
+(`OpenPaneOnClick`), `data-hui-pane-close` (`ClosePaneOnClick`),
+`data-hui-pane-swap` (`SwapPaneOnClick`); `PaneKey` adds
+`data-hui-pane-key` for deep-linked hosts.
 
 ### Signal display bindings
 

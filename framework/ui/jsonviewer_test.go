@@ -3,11 +3,13 @@ package ui
 import (
 	"strings"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/core-ui/style"
 )
 
 func TestJSONViewerRendersPrimitives(t *testing.T) {
 	h := string(JSONViewer(JSONViewerConfig{Value: "hello"}))
-	if !strings.Contains(h, `"hello"`) {
+	if !strings.Contains(h, "&quot;hello&quot;") {
 		t.Errorf("string Value should render quoted:\n%s", h)
 	}
 	n := string(JSONViewer(JSONViewerConfig{Value: 42}))
@@ -62,12 +64,11 @@ func TestJSONViewerEmptyContainersInline(t *testing.T) {
 func TestJSONViewerOpenDepthControlsOpen(t *testing.T) {
 	deep := map[string]any{"outer": map[string]any{"inner": "x"}}
 	closed := string(JSONViewer(JSONViewerConfig{Value: deep, OpenDepth: 0}))
-	// Root open, inner closed.
-	if strings.Count(closed, "<details  open>") > 1 {
-		// alt format: " open" vs "  open". Fall back to a more general check.
+	if n := strings.Count(closed, `open=""`); n != 1 {
+		t.Errorf("OpenDepth=0 should open exactly the root, got %d:\n%s", n, closed)
 	}
 	openAll := string(JSONViewer(JSONViewerConfig{Value: deep, OpenDepth: -1}))
-	if strings.Count(openAll, " open>") < 2 {
+	if strings.Count(openAll, `open=""`) < 2 {
 		t.Errorf("OpenDepth=-1 should open every node:\n%s", openAll)
 	}
 }
@@ -88,5 +89,39 @@ func TestJSONViewerExtraAttrsOnRoot(t *testing.T) {
 	root := string(h)[:strings.Index(string(h), ">")+1]
 	if !strings.Contains(root, `data-test="hook"`) {
 		t.Errorf("json viewer root missing data-test:\n%s", root)
+	}
+}
+
+func TestJSONViewerScalarAndColonPartsCarryClasses(t *testing.T) {
+	h := string(JSONViewer(JSONViewerConfig{Value: map[string]any{
+		"s": "text", "n": 1, "b": true, "nil": nil, "e": map[string]any{},
+	}}))
+	// The typed scalar parts are what the sheet's colour rules select;
+	// when the primitive renders them all as the generic text part
+	// the string colour and the colon's space silently die (review
+	// item 21) while every existing test stays green.
+	for _, want := range []string{
+		`ui-json-viewer__str`,
+		`ui-json-viewer__num`,
+		`ui-json-viewer__bool`,
+		`ui-json-viewer__null`,
+		`ui-json-viewer__empty`,
+		`ui-json-viewer__colon`,
+		`ui-json-viewer__type`,
+		`ui-json-viewer__count`,
+	} {
+		if !strings.Contains(h, want) {
+			t.Errorf("the rendered tree lost the selectable class %q:\n%s", want, h)
+		}
+	}
+}
+
+func TestJSONViewerCSSColoursStringsAndSpacesColons(t *testing.T) {
+	css := jsonViewerCSS(style.Theme{})
+	if !strings.Contains(css, `.ui-json-viewer__str { color:`) {
+		t.Errorf("the string colour rule is gone:\n%s", css)
+	}
+	if !strings.Contains(css, ".ui-json-viewer__colon {") || !strings.Contains(css, "margin-inline-end") {
+		t.Errorf("the colon rule is gone — the space after each colon rides its margin:\n%s", css)
 	}
 }

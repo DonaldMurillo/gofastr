@@ -207,9 +207,11 @@ func TestFilterToolbarAllLabelTVars(t *testing.T) {
 	}
 }
 
-// Carousel "Go to slide N" dot aria-labels use TVars.
+// Carousel "Go to slide N" dot aria-labels use TVars. The words moved
+// to the headless Strings table with the primitive: the key the bridge
+// reads is the Hui one ({n}-shaped).
 func TestCarouselGoToSlideTVars(t *testing.T) {
-	swapDefault(t, i18nui.KeyCarouselGoTo, "Goto {slide}")
+	swapDefault(t, i18nui.KeyHuiCarouselGoToSlide, "Goto {n}")
 	out := htmlString(t, Carousel(CarouselConfig{
 		Label:  "gallery",
 		Slides: []CarouselSlide{{Content: render.Text("a")}, {Content: render.Text("b")}},

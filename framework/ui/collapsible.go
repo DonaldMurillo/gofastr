@@ -5,11 +5,20 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/headless"
 )
 
 // collapsibleStyle registers the scoped CSS for fui-collapsible so the
 // host emits it for any page that renders a Collapsible.
 var collapsibleStyle = registry.RegisterStyle("fui-collapsible", collapsibleCSS)
+
+// collapsibleClasses dresses headless.Disclosure's parts in this
+// package's own vocabulary.
+var collapsibleClasses = headless.Classes{
+	headless.PartRoot:    "fui-collapsible",
+	headless.PartSummary: "fui-collapsible__summary",
+	headless.PartPanel:   "fui-collapsible__content",
+}
 
 func collapsibleCSS(_ style.Theme) string {
 	// Token chain: --fui-* (the interactive set's host override bridge,
@@ -27,8 +36,9 @@ func collapsibleCSS(_ style.Theme) string {
 // ─── Collapsible ────────────────────────────────────────────────────
 
 // CollapsibleConfig configures an expand/collapse section.
-// Uses the native <details> element with data-fui-disclosure for
-// keyboard support (Escape to close, aria-expanded mirroring).
+// Uses the native <details> element; the headless-disclosure module
+// supplies the accessibility behaviour (Escape to close,
+// aria-expanded mirroring) through the data-hui-disclosure hook.
 type CollapsibleConfig struct {
 	Summary string // required:  the always-visible header
 	Open    bool   // optional:  start expanded (default: collapsed)
@@ -38,45 +48,31 @@ type CollapsibleConfig struct {
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers, ARIA overrides) to the root <details>. Keys
 	// the component owns are dropped: class and id (use Class / ID),
-	// data-fui-*, and open (use Open).
+	// the data-hui-* wiring, and open (use Open).
 	ExtraAttrs html.Attrs
 }
 
 // Collapsible renders a <details> element with a clickable summary.
-// The data-fui-disclosure attribute wires up keyboard accessibility
-// via the runtime (Escape to close, aria-expanded mirroring).
+// The data-hui-disclosure hook wires up keyboard accessibility via
+// the runtime (Escape to close, aria-expanded mirroring).
 //
 // The body is wrapped in a fui-collapsible__content div so CSS can
 // target the expandable region independently of the summary.
 func Collapsible(cfg CollapsibleConfig, body ...render.HTML) render.HTML {
-	if cfg.Summary == "" {
-		panic("ui: Collapsible requires Summary")
-	}
-
-	attrs := html.SafeExtraAttrs(cfg.ExtraAttrs, "open")
-	if attrs == nil {
-		attrs = map[string]string{}
-	}
-	attrs["class"] = "fui-collapsible"
-	attrs["data-fui-comp"] = "fui-collapsible"
-	attrs["data-fui-disclosure"] = ""
-	if cfg.Open {
-		attrs["open"] = ""
-	}
-	if cfg.ID != "" {
-		attrs["id"] = cfg.ID
+	classes := map[headless.Part]string{
+		headless.PartRoot:    "fui-collapsible",
+		headless.PartSummary: "fui-collapsible__summary",
+		headless.PartPanel:   "fui-collapsible__content",
 	}
 	if cfg.Class != "" {
-		attrs["class"] = "fui-collapsible " + cfg.Class
+		classes[headless.PartRoot] += " " + cfg.Class
 	}
-
-	summary := render.Tag("summary", map[string]string{
-		"class": "fui-collapsible__summary",
-	}, render.Text(cfg.Summary))
-
-	content := render.Tag("div", map[string]string{
-		"class": "fui-collapsible__content",
-	}, body...)
-
-	return render.Tag("details", attrs, summary, content)
+	out := headless.Disclosure(headless.DisclosureProps{
+		Summary:    render.Text(cfg.Summary),
+		Content:    render.Join(body...),
+		Open:       cfg.Open,
+		ID:         cfg.ID,
+		ExtraAttrs: headless.Safe(cfg.ExtraAttrs, "open"),
+	}, classes)
+	return collapsibleStyle.WrapHTML(out)
 }

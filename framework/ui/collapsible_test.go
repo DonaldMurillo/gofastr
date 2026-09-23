@@ -92,7 +92,7 @@ func TestCollapsibleOpen(t *testing.T) {
 func TestCollapsibleDisclosure(t *testing.T) {
 	h := Collapsible(CollapsibleConfig{Summary: "Section"}, render.Text("content"))
 
-	mustContain(t, h, "data-fui-disclosure")
+	mustContain(t, h, "data-hui-disclosure")
 }
 
 func TestCollapsibleMissingSummary(t *testing.T) {

@@ -164,7 +164,7 @@ func (s *WorkspaceScreen) RenderCtx(ctx context.Context) render.HTML {
 
 // workspaceRow is one clickable ticket row. A semantic <button> (not an
 // <a>, so there's no navigation to intercept) carrying two independent
-// delegated behaviors: data-fui-pane-open reveals the secondary pane and
+// delegated behaviors: data-hui-pane-open-control reveals the secondary pane and
 // data-fui-rpc GETs the detail into the ws-ticket signal region.
 // The ticket pane is addressable, so its rows carry a pane key: clicking
 // one writes ?pane=secondary:<id>, and Back replays it by re-clicking
@@ -172,10 +172,10 @@ func (s *WorkspaceScreen) RenderCtx(ctx context.Context) render.HTML {
 func workspaceRow(t wsTicket) render.HTML {
 	action := interactive.Get("/__site/workspace/ticket?id=" + t.ID).OnSuccess(interactive.SetSignal("ws-ticket"))
 	return interactive.PaneKey(render.Tag("button", html.MergeAttrs(map[string]string{
-		"type":               "button",
-		"class":              "ws-row",
-		"aria-label":         "Open ticket " + t.ID + ": " + t.Subject,
-		"data-fui-pane-open": "secondary",
+		"type":                       "button",
+		"class":                      "ws-row",
+		"aria-label":                 "Open ticket " + t.ID + ": " + t.Subject,
+		"data-hui-pane-open-control": "secondary",
 	}, action.Attrs()),
 		render.Tag("span", map[string]string{"class": "ws-row__id"}, render.Text("#"+t.ID)),
 		render.Tag("span", map[string]string{"class": "ws-row__subject"}, render.Text(t.Subject)),
@@ -212,7 +212,7 @@ func renderTicketDetail(t wsTicket) render.HTML {
 		ui.Button(ui.ButtonConfig{
 			Label:   "View customer",
 			Variant: ui.ButtonSecondary,
-			ExtraAttrs: html.MergeAttrs(html.Attrs{"data-fui-pane-open": "tertiary"},
+			ExtraAttrs: html.MergeAttrs(html.Attrs{"data-hui-pane-open-control": "tertiary"},
 				interactive.Get("/__site/workspace/customer?id="+t.CustomerID).OnSuccess(interactive.SetSignal("ws-customer")).Attrs()),
 		}),
 	)

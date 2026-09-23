@@ -3,15 +3,16 @@ package ui
 import (
 	"context"
 	"strconv"
+	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
-	"github.com/DonaldMurillo/gofastr/core-ui/patterns/combobox"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core-ui/widget"
 	"github.com/DonaldMurillo/gofastr/core-ui/widget/preset"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/headless"
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
@@ -71,6 +72,12 @@ type CommandPaletteConfig struct {
 	// where no RPC handler exists. Takes precedence over RPCPath.
 	Commands []PaletteCommand
 
+	// FallbackHref is the ordinary same-origin destination the trigger
+	// navigates to without script: a modal trigger with no navigation
+	// path is a button a scriptless reader cannot use. Required; "#"
+	// and cross-origin values are refused at render.
+	FallbackHref string
+
 	// Ctx carries the per-request context used to resolve i18n labels
 	// (placeholder, trigger + dialog titles, hint chips). When nil,
 	// English fallbacks apply.
@@ -98,6 +105,21 @@ func CommandPalette(cfg CommandPaletteConfig) (render.HTML, *widget.Builder) {
 	if cfg.RPCPath == "" && len(cfg.Commands) == 0 {
 		panic("ui: CommandPalette requires RPCPath or Commands")
 	}
+	if cfg.FallbackHref == "" {
+		panic("ui: CommandPalette requires FallbackHref — a modal trigger with no ordinary navigation path is a button a scriptless reader cannot use")
+	}
+	if cfg.FallbackHref == "#" {
+		panic("ui: CommandPalette FallbackHref must be a real same-origin destination, not #")
+	}
+	// Same shape as headless's shared same-origin refusal (island.go
+	// checkSameOrigin), plus any backslash anywhere: browsers normalise
+	// `\` to `/` at the authority boundary, so `/\evil.example` reads
+	// same-origin to this check and resolves cross-origin in the URL
+	// parser. urlsafe.OK refuses the byte outright; so does this.
+	if !strings.HasPrefix(cfg.FallbackHref, "/") || strings.HasPrefix(cfg.FallbackHref, "//") ||
+		strings.ContainsRune(cfg.FallbackHref, '\\') {
+		panic("ui: CommandPalette FallbackHref must be same-origin and start with /, not " + cfg.FallbackHref)
+	}
 	ctx := cfg.Ctx
 	if ctx == nil {
 		ctx = context.Background()
@@ -123,17 +145,21 @@ func CommandPalette(cfg CommandPaletteConfig) (render.HTML, *widget.Builder) {
 		triggerLabel = i18nui.T(ctx, i18nui.KeyCommandPaletteOpen)
 	}
 
-	trigger := render.Tag("button", map[string]string{
-		"type":                    "button",
+	// The trigger is an anchor to the fallback: with script the widget
+	// runtime's open handler preventDefaults the navigation and opens
+	// the modal; without script it is an ordinary link.
+	trigger := render.Tag("a", map[string]string{
+		"href":                    cfg.FallbackHref,
 		"class":                   "ui-visually-hidden",
 		"data-fui-open":           name,
-		"data-fui-shortcut-click": shortcut,
+		"data-hui-shortcut-click": shortcut,
 		"aria-label":              triggerLabel,
 	}, render.Text(triggerLabel))
 
 	slot := &commandPaletteSlot{
 		widgetName:    name,
 		rpcPath:       cfg.RPCPath,
+		fallbackHref:  cfg.FallbackHref,
 		placeholder:   placeholder,
 		debounceMs:    debounce,
 		emptyHTML:     cfg.EmptyHTML,
@@ -154,24 +180,25 @@ func CommandPalette(cfg CommandPaletteConfig) (render.HTML, *widget.Builder) {
 
 // paletteCommandsToOptions maps the palette's public Commands into the
 // combobox's Option shape. data-value defaults to the label.
-func paletteCommandsToOptions(cmds []PaletteCommand) []combobox.Option {
+func paletteCommandsToOptions(cmds []PaletteCommand) []headless.ComboboxOption {
 	if len(cmds) == 0 {
 		return nil
 	}
-	opts := make([]combobox.Option, 0, len(cmds))
+	opts := make([]headless.ComboboxOption, 0, len(cmds))
 	for _, c := range cmds {
-		opts = append(opts, combobox.Option{Label: c.Label, Value: c.Label, Href: c.Href, Meta: c.Meta})
+		opts = append(opts, headless.ComboboxOption{Label: c.Label, Value: c.Label, Href: c.Href, Meta: c.Meta})
 	}
 	return opts
 }
 
 type commandPaletteSlot struct {
 	widgetName    string
+	fallbackHref  string
 	rpcPath       string
 	placeholder   string
 	debounceMs    int
 	emptyHTML     string
-	options       []combobox.Option
+	options       []headless.ComboboxOption
 	title         string
 	navigateLabel string
 	selectLabel   string
@@ -202,18 +229,30 @@ func (s *commandPaletteSlot) Render() render.HTML {
 		Level: 2, ID: titleID, Class: "ui-visually-hidden",
 	}, render.Text(title))
 
-	combo := combobox.Render(combobox.Config{
-		ID:          inputID,
-		Label:       title,
-		Name:        "q",
-		RPCPath:     s.rpcPath,
-		SignalName:  signalName,
-		DebounceMs:  s.debounceMs,
-		Placeholder: s.placeholder,
-		EmptyHTML:   s.emptyHTML,
-		LabelHidden: true,
-		Class:       "ui-cmd-palette__combobox",
-		Options:     s.options,
+	var island *headless.Island
+	if s.rpcPath != "" && len(s.options) == 0 {
+		island = &headless.Island{Endpoint: s.rpcPath, Signal: signalName}
+	}
+	opts := make([]headless.ComboboxOption, len(s.options))
+	for i, o := range s.options {
+		opts[i] = headless.ComboboxOption{Value: o.Value, Label: o.Label, Href: o.Href, Meta: o.Meta}
+	}
+	combo := headless.Combobox(headless.ComboboxProps{
+		ID:             inputID,
+		Name:           "q",
+		Label:          title,
+		Placeholder:    s.placeholder,
+		Island:         island,
+		NoScriptAction: s.fallbackHref,
+		DebounceMS:     s.debounceMs,
+		Options:        opts,
+	}, headless.Classes{
+		headless.PartLabel:           "ui-visually-hidden",
+		headless.PartComboboxInput:   "ui-cmd-palette__input",
+		headless.PartComboboxForm:    "ui-cmd-palette__combobox",
+		headless.PartComboboxListbox: "ui-cmd-palette__listbox",
+		headless.PartComboboxOption:  "ui-cmd-palette__option",
+		headless.PartComboboxStatus:  "ui-visually-hidden",
 	})
 
 	// Visible close control (#325). data-fui-action="close" is the
@@ -293,26 +332,35 @@ func commandPaletteCSS(_ style.Theme) string {
   flex-direction: column;
   min-block-size: 0;
 }
-[data-fui-comp="ui-cmd-palette"] .ui-cmd-palette__combobox .combobox__form { padding: var(--spacing-md, 8px); border-bottom: 1px solid var(--color-border, #d0d0d8); flex: 0 0 auto; }
-[data-fui-comp="ui-cmd-palette"] .ui-cmd-palette__combobox .combobox__input {
+[data-fui-comp="ui-cmd-palette"] .ui-cmd-palette__combobox:has(> .ui-cmd-palette__input) {
+  /* The carrier row (the div directly wrapping the input — the
+     no-script FORM also wears the combobox class, so :has() picks
+     the row): the search field's padding and seam. */
+  padding: var(--spacing-md, 8px);
+  border-bottom: 1px solid var(--color-border, #d0d0d8);
+  flex: 0 0 auto;
+}
+[data-fui-comp="ui-cmd-palette"] .ui-cmd-palette__input {
   font-size: var(--text-base, 1rem);
   border: none;
   background: transparent;
   padding: 0;
-  min-height: var(--spacing-touch-target, 44px);
+  min-block-size: var(--spacing-touch-target, 44px);
+  inline-size: 100%;
+  box-sizing: border-box;
 }
-[data-fui-comp="ui-cmd-palette"] .ui-cmd-palette__combobox .combobox__input:focus-visible {
+[data-fui-comp="ui-cmd-palette"] .ui-cmd-palette__input:focus-visible {
   box-shadow: none;
   outline: none;
 }
-[data-fui-comp="ui-cmd-palette"] .ui-cmd-palette__combobox .combobox__listbox {
+[data-fui-comp="ui-cmd-palette"] .ui-cmd-palette__listbox {
   position: static;
   margin: 0;
   border: none;
   border-radius: 0;
   box-shadow: none;
   max-block-size: min(50vh, 24rem);
-  /* The only scrolling region: takes whatever space the bounded dialog
+  /* The only scrolling region: Takes whatever space the bounded dialog
      has left. overflow-y: auto does double duty — it scrolls AND, per
      flexbox §4.5, zeroes the item's automatic minimum size, so the
      list shrinks into the remaining space instead of pushing the form
@@ -383,7 +431,7 @@ func commandPaletteCSS(_ style.Theme) string {
      the listbox cap is dropped because the palette cap now governs —
      the list takes every remaining pixel and scrolls inside. */
   [data-fui-comp="ui-cmd-palette"] { inline-size: 100vw; block-size: 100dvh; min-block-size: 100dvh; max-block-size: 100dvh; border-radius: 0; }
-  [data-fui-comp="ui-cmd-palette"] .ui-cmd-palette__combobox .combobox__listbox { max-block-size: none; }
+  [data-fui-comp="ui-cmd-palette"] .ui-cmd-palette__listbox { max-block-size: none; }
 }
 `
 }

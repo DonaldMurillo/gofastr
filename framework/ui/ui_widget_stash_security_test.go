@@ -17,9 +17,8 @@ import (
 // a live one.
 //
 // Surfaces: every framework/ui emitter of the idiom — Tabs.VacateHidden
-// (hidden tab panels) and Carousel.VirtualScroll (deferred slides).
-// Content in both is page content, which on real screens includes
-// user/record-derived fragments.
+// (hidden tab panels). The content is page content, which on real
+// screens includes user/record-derived fragments.
 func TestInlineJSONStashResistsScriptClose(t *testing.T) {
 	evil := `</script><script>alert(1)</script><!--<script>`
 
@@ -31,17 +30,10 @@ func TestInlineJSONStashResistsScriptClose(t *testing.T) {
 			{Label: "B", Content: render.HTML(evil)}, // inactive → parked in stash
 		},
 	}))
-	carousel := string(ui.Carousel(ui.CarouselConfig{
-		Label:         "L",
-		VirtualScroll: true,
-		Slides: []ui.CarouselSlide{
-			{Content: render.Text("s1")}, {Content: render.Text("s2")},
-			{Content: render.Text("s3")}, {Content: render.Text("s4")},
-			{Content: render.Text("s5")}, {Content: render.HTML(evil)}, // beyond window → deferred
-		},
-	}))
-
-	for name, h := range map[string]string{"tabs-vacate-stash": tabs, "carousel-deferred-manifest": carousel} {
+	// (The carousel's deferred-slide manifest is retired with its
+	// module; the tabs vacate stash below carries the same JSON + </
+	// rewrite property alone now.)
+	for name, h := range map[string]string{"tabs-vacate-stash": tabs} {
 		t.Run(name, func(t *testing.T) {
 			// The stash script region is the only legitimate </script> in
 			// play; the payload's own one must never appear raw.

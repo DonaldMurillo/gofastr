@@ -174,6 +174,17 @@ var fragmentAttrs = map[string][]string{
 		"data-fui-lang",
 		"data-fui-skip-label",
 		"data-fui-screen-group",
+		// The disclosure close-on-navigate lines: nav closes these
+		// details on a client-side navigation (and on an in-panel
+		// anchor click) unless they carry the persist exemption. The
+		// module that owned the rest of the behaviour is retired —
+		// the disclosure anatomy is headless.Disclosure's now.
+		"data-fui-disclosure",
+		"data-fui-disclosure-persist",
+		// The stateful-params scan above reads this legacy spelling so
+		// an old host's pane param stays stateful across history moves;
+		// the new spelling is the headless-panehost module's.
+		"data-fui-pane-deeplink",
 	},
 	"widgets-boot": {
 		"data-fui-open",
@@ -227,42 +238,40 @@ var moduleAttrs = map[string][]string{
 	"activelink": {
 		// Carved out of the nav fragment (level-1 budget): the idle-loaded
 		// module owns prefix-matched aria-current highlighting and the
-		// data-fui-activelink-skip opt-out from it.
+		// data-fui-activelink-skip opt-out from it. data-fui-scrollspy
+		// survives its own module's retirement for this one reader:
+		// the hands-off rule skips links inside such a wrap, so a
+		// legacy wrap keeps its hand-set state. Nothing the framework
+		// renders carries it any more — the rail is headless.Rail and
+		// its observer is headless-rail's.
 		"data-fui-match-prefix",
 		"data-fui-activelink-skip",
+		"data-fui-scrollspy",
 	},
 	"animate": {
 		"data-fui-animate-signal",
 		"data-fui-animate-class",
 	},
-	"carousel": {
-		"data-fui-carousel",
-		"data-fui-carousel-autorotate",
-		"data-fui-carousel-defer",
-		"data-fui-carousel-deferred-for",
-		"data-fui-carousel-dot",
-		"data-fui-carousel-loop",
-		"data-fui-carousel-next",
-		"data-fui-carousel-prev",
-		"data-fui-carousel-slide",
-		"data-fui-carousel-track",
-	},
-	"combobox": {
-		"data-fui-static-options",
-	},
+	// carousel is retired: the carousel is headless.Carousel's (bound
+	// by the headless-carousel registered module through data-hui-*
+	// hooks; the deferred-slide virtual scroll went with its reader).
+	// combobox is retired: the combobox anatomy is headless.Combobox's
+	// (framework/headless, bound by headless-combobox through
+	// data-hui-* hooks). data-fui-static-options went with it.
 	"computed": {
 		"data-fui-computed",
 		"data-fui-computed-deps",
 	},
-	"disclosure": {
-		"data-fui-disclosure",
-		"data-fui-disclosure-trap",
-		"data-fui-disclosure-persist",
-		// Lazy menu panel inflation (framework/ui MenuConfig.LazyPanel)
-		// lives in this module's toggle listener and scan pass, ahead of
-		// the menu focus-on-open it already owns.
-		"data-fui-menu-lazy",
-	},
+	// disclosure and menu are retired: the disclosure anatomy is
+	// headless.Disclosure's (framework/headless, bound by the
+	// headless-disclosure and headless-menu modules through
+	// data-hui-* hooks). data-fui-disclosure and -persist survive
+	// their module's retirement as the KERNEL's close-on-navigate
+	// contract: frag/nav.js closes such details on a client-side
+	// navigation (and on an in-panel anchor click) unless they carry
+	// the persist exemption. html.Details{Disclosure: true} still
+	// emits it; the trap and the lazy-inflation hooks are gone with
+	// their readers.
 	"dragdismiss": {
 		"data-fui-drag-dismiss",
 		"data-fui-drag-handle",
@@ -290,11 +299,6 @@ var moduleAttrs = map[string][]string{
 	// framework/ui/lightbox.js, a registered behaviour: its attributes
 	// are read by a registered source, not by anything in this package,
 	// so they left this table.
-	"menu": {
-		"data-fui-menu",
-		"data-fui-menu-radio",
-		"data-fui-menu-trigger",
-	},
 	"multiselect": {
 		"data-fui-multiselect",
 		"data-fui-multiselect-chips",
@@ -305,17 +309,10 @@ var moduleAttrs = map[string][]string{
 	// this package reads it, so it has no row here. The
 	// data-fui-optimistic-* hooks and framework/ui/optimisticaction.js
 	// are retired.
-	"panehost": {
-		"data-fui-pane-host",
-		"data-fui-pane",
-		"data-fui-pane-open",
-		"data-fui-pane-close",
-		"data-fui-pane-swap",
-		"data-fui-pane-host-target",
-		"data-fui-pane-mode",
-		"data-fui-pane-deeplink",
-		"data-fui-pane-key",
-	},
+	// panehost is retired: the pane host is headless.PaneHost's (bound
+	// by the headless-panehost registered module through data-hui-*
+	// hooks; the trigger controls are core-ui/interactive's
+	// data-hui-pane-open-control/-close/-swap/-key).
 	"poll": {
 		"data-fui-poll",
 		"data-fui-poll-src",
@@ -349,23 +346,13 @@ var moduleAttrs = map[string][]string{
 	"reveal": {
 		"data-fui-reveal",
 	},
-	"scrollspy": {
-		"data-fui-scrollspy",
-		"data-fui-scrollspy-target",
-	},
-	"shortcut": {
-		"data-fui-shortcut-focus",
-		"data-fui-shortcut-click",
-		"data-fui-shortcut-target",
-	},
-	"sidebar": {
-		"data-fui-sidebar-collapse",
-		"data-fui-sidebar-collapse-label",
-		"data-fui-sidebar-expand-label",
-		"data-fui-sidebar-group-toggle",
-		"data-fui-sidebar",
-		"data-fui-sidebar-storage",
-	},
+	// scrollspy is retired: the rail is headless.Rail and the observer
+	// that marks the active entry is headless-rail's (data-hui-*,
+	// owned by that package's modules).
+	// shortcut is retired: the chord bindings are headless-navigation's
+	// (data-hui-shortcut-*, owned by that registered module's markers).
+	// sidebar is retired: the sidebar is bound by the headless-sidebar
+	// registered module (framework/headless) through data-hui-* hooks.
 	"sortablelist": {
 		"data-fui-sortable",
 		"data-fui-sort-key",
@@ -379,19 +366,13 @@ var moduleAttrs = map[string][]string{
 	"textarea": {
 		"data-fui-autogrow",
 	},
-	"toc": {
-		"data-fui-toc",
-		"data-fui-toc-levels",
-		"data-fui-toc-for",
-	},
+	// toc is retired: the table of contents is headless.TableOfContents
+	// (server-rendered items) and its active state is headless-toc's.
 	// ToggleAction's wiring is the same action primitive
 	// (data-hui-action*): no row here. The data-fui-toggle-* hooks
 	// and framework/ui/toggleaction.js are retired.
-	"tabs": {
-		"data-fui-tabs-state",
-		"data-fui-tabs-vacate",
-		"data-fui-tabs-stash",
-	},
+	// tabs is retired: the tab strip is headless.Tabs's (bound by the
+	// headless-tabs registered module through data-hui-* hooks).
 	"tree": {
 		"data-fui-tree-toggle",
 	},

@@ -119,27 +119,34 @@ func TestStringsForNilCtxIsHeadlessEnglish(t *testing.T) {
 // which is the refusal tests' job, not the pass-through's.
 func placeholderProbes() map[i18nui.Key]string {
 	return map[i18nui.Key]string{
-		i18nui.KeyDismissTitled:        "fr·Fermer : %s",
-		i18nui.KeyTagRemoveLabelled:    "fr·Retirer %s",
-		i18nui.KeyColorPick:            "fr·Choisir %s",
-		i18nui.KeyFileSelected:         "fr·{name} choisi.",
-		i18nui.KeyFilesSelected:        "fr·{n} fichiers : {names}.",
-		i18nui.KeyTableSortBy:          "fr·Trier par {column}",
-		i18nui.KeyTableSortedBy:        "fr·Trié par {column}, {direction}",
-		i18nui.KeyHuiCopyStatus:        "fr·{name} copié.",
-		i18nui.KeyHuiNumberDecrement:   "fr·Diminuer %s",
-		i18nui.KeyHuiNumberIncrement:   "fr·Augmenter %s",
-		i18nui.KeyHuiRangeLow:          "fr·Minimum %s",
-		i18nui.KeyHuiRangeHigh:         "fr·Maximum %s",
-		i18nui.KeyHuiRangeValue:        "fr·%s à %s",
-		i18nui.KeyHuiRatingChoice:      "fr·%d sur %d",
-		i18nui.KeyHuiTagInputAdd:       "fr·Ajouter %s",
-		i18nui.KeyHuiTagInputAdded:     "fr·{name} ajouté",
-		i18nui.KeyHuiTagInputRemoved:   "fr·{name} retiré",
-		i18nui.KeyHuiRepeaterRemove:    "fr·Retirer l'élément %d",
-		i18nui.KeyHuiNotificationCount: "fr·%d notifications non lues",
-		i18nui.KeyHuiStepOf:            "fr·Étape %d sur %d",
-		i18nui.KeyHuiStepName:          "fr·Étape %d : %s",
+		i18nui.KeyDismissTitled:          "fr·Fermer : %s",
+		i18nui.KeyTagRemoveLabelled:      "fr·Retirer %s",
+		i18nui.KeyColorPick:              "fr·Choisir %s",
+		i18nui.KeyFileSelected:           "fr·{name} choisi.",
+		i18nui.KeyFilesSelected:          "fr·{n} fichiers : {names}.",
+		i18nui.KeyTableSortBy:            "fr·Trier par {column}",
+		i18nui.KeyTableSortedBy:          "fr·Trié par {column}, {direction}",
+		i18nui.KeyHuiCopyStatus:          "fr·{name} copié.",
+		i18nui.KeyHuiNumberDecrement:     "fr·Diminuer %s",
+		i18nui.KeyHuiNumberIncrement:     "fr·Augmenter %s",
+		i18nui.KeyHuiRangeLow:            "fr·Minimum %s",
+		i18nui.KeyHuiRangeHigh:           "fr·Maximum %s",
+		i18nui.KeyHuiRangeValue:          "fr·%s à %s",
+		i18nui.KeyHuiRatingChoice:        "fr·%d sur %d",
+		i18nui.KeyHuiTagInputAdd:         "fr·Ajouter %s",
+		i18nui.KeyHuiTagInputAdded:       "fr·{name} ajouté",
+		i18nui.KeyHuiTagInputRemoved:     "fr·{name} retiré",
+		i18nui.KeyHuiRepeaterRemove:      "fr·Retirer l'élément %d",
+		i18nui.KeyHuiNotificationCount:   "fr·%d notifications non lues",
+		i18nui.KeyHuiStepOf:              "fr·Étape %d sur %d",
+		i18nui.KeyHuiStepName:            "fr·Étape %d : %s",
+		i18nui.KeyHuiComboboxResultCount: "fr·{n} résultats",
+		i18nui.KeyHuiCarouselSlide:       "fr·Diapositive {n} sur {total}",
+		i18nui.KeyHuiCarouselGoToSlide:   "fr·Aller à la diapositive {n}",
+		// The JSON literals: the checker reads {} and [] as tokens,
+		// so the probes carry the braces verbatim.
+		i18nui.KeyHuiJSONEmptyObj: "fr·{}",
+		i18nui.KeyHuiJSONEmptyArr: "fr·[]",
 	}
 }
 
@@ -179,6 +186,12 @@ func TestStringsForTranslatesEveryField(t *testing.T) {
 	entries[i18nui.KeyHuiNotificationCount] = "fr·%d notifications non lues"
 	entries[i18nui.KeyHuiStepOf] = "fr·Étape %d sur %d"
 	entries[i18nui.KeyHuiStepName] = "fr·Étape %d : %s"
+	entries[i18nui.KeyHuiComboboxResultCount] = "fr·{n} résultats"
+	entries[i18nui.KeyHuiCarouselSlide] = "fr·Diapositive {n} sur {total}"
+	entries[i18nui.KeyHuiCarouselGoToSlide] = "fr·Aller à la diapositive {n}"
+	for k, v := range placeholderProbes() {
+		entries[k] = v
+	}
 
 	got := StringsFor(stringsCtx(entries))
 	everyHeadlessStringField(t, got, func(name, val string) {

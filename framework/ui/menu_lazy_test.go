@@ -9,7 +9,7 @@ import (
 )
 
 // TestMenuLazyPanelWrapsRowsInTemplate: LazyPanel wraps the panel's
-// rows in an inert <template data-fui-menu-lazy> as the panel's ONLY
+// rows in an inert <template data-hui-menu-lazy> as the panel's ONLY
 // child, on the summary path and the TriggerElement path alike. The
 // panel <div> itself must stay (aria-controls resolves while closed),
 // and nothing may sit between the panel open tag and the template or
@@ -28,10 +28,10 @@ func TestMenuLazyPanelWrapsRowsInTemplate(t *testing.T) {
 	for _, want := range []string{
 		// Panel div intact: id, role, marker, and the template as its
 		// only child — bytes on both sides of the rows.
-		`<div class="ui-menu__panel" id="lm-panel" role="menu" data-fui-menu-panel><template data-fui-menu-lazy>`,
+		`<div class="fui-menu__panel" data-hui-menu-panel="" id="lm-panel" role="menu"><template data-hui-menu-lazy="">`,
 		`</template></div></details>`,
 		// Nested submenu lives inside the template.
-		`<template data-fui-menu-lazy><a class="ui-menu__item" href="/me" role="menuitem" tabindex="-1">`,
+		`<template data-hui-menu-lazy=""><a class="fui-menu__item" href="/me" role="menuitem" tabindex="-1">`,
 	} {
 		if !strings.Contains(summary, want) {
 			t.Errorf("summary path missing %q\n--\n%s", want, summary)
@@ -48,7 +48,7 @@ func TestMenuLazyPanelWrapsRowsInTemplate(t *testing.T) {
 		Items:          items,
 	}))
 	for _, want := range []string{
-		`<div class="ui-menu__panel" id="lmt-panel" role="menu" data-fui-menu-panel><template data-fui-menu-lazy>`,
+		`<div class="fui-menu__panel" data-hui-menu-panel="" id="lmt-panel" role="menu"><template data-hui-menu-lazy="">`,
 		`</template></div></details></div>`,
 	} {
 		if !strings.Contains(trigger, want) {

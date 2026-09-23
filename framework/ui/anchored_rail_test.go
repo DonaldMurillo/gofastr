@@ -3,48 +3,55 @@ package ui
 import (
 	"strings"
 	"testing"
-
-	"github.com/DonaldMurillo/gofastr/core-ui/patterns/scrollspy"
-	"github.com/DonaldMurillo/gofastr/core-ui/style"
 )
 
-func TestAnchoredRailScrollspyWrapperPreservesStickyContract(t *testing.T) {
+func TestAnchoredRailRendersThroughHeadlessRail(t *testing.T) {
 	h := string(AnchoredRail(AnchoredRailConfig{
 		Label:           "On this page",
-		Items:           []RailItem{{Anchor: "overview", Text: "Overview"}},
+		Items:           []RailItem{{Anchor: "overview", Text: "Overview", Eyebrow: "01", Count: 9}},
 		ObserveSelector: "#docs-sections",
 	}))
-
-	if !strings.Contains(h, `class="scrollspy scrollspy--sticky"`) {
-		t.Fatalf("scrollspy-wrapped AnchoredRail should mark its wrapper sticky:\n%s", h)
+	for _, want := range []string{
+		`<aside aria-label="On this page" class="fui-anchored-rail" data-hui-rail="" data-hui-rail-observe="#docs-sections" data-hui-rail-target=".fui-section[id]" data-fui-comp="ui-anchored-rail">`,
+		`<a class="fui-anchored-rail__link" href="#overview"><span class="fui-anchored-rail__eyebrow">01</span>Overview<span class="fui-anchored-rail__count">9</span></a>`,
+	} {
+		if !strings.Contains(h, want) {
+			t.Errorf("rail missing %q:\n%s", want, h)
+		}
 	}
-	if !strings.Contains(h, `data-fui-scrollspy="#docs-sections"`) {
-		t.Fatalf("scrollspy wrapper should keep its observe selector:\n%s", h)
+	// The retired scrollspy wrapper is gone: the aside itself is the
+	// layout item the caller composes.
+	if strings.Contains(h, "data-fui-scrollspy") || strings.Contains(h, `class="scrollspy`) {
+		t.Errorf("the retired scrollspy wrapper is still rendered:\n%s", h)
 	}
 }
 
-func TestAnchoredRailScrollspyWrapperUsesRailStickyCSS(t *testing.T) {
-	css := scrollspy.Style.Entry().CSSFor(style.Theme{})
-	for _, want := range []string{
-		`.scrollspy.scrollspy--sticky`,
-		`position: sticky`,
-		`top: calc(var(--nav-h, 60px) + var(--spacing-lg, 16px))`,
-		`align-self: start`,
-	} {
-		if !strings.Contains(css, want) {
-			t.Errorf("scrollspy sticky wrapper CSS missing %q:\n%s", want, css)
-		}
+func TestAnchoredRailStaticWithoutObserver(t *testing.T) {
+	h := string(AnchoredRail(AnchoredRailConfig{
+		Label: "Sections",
+		Items: []RailItem{{Text: "A", Anchor: "a"}},
+	}))
+	if strings.Contains(h, "data-hui-rail-observe") {
+		t.Errorf("a rail with no ObserveSelector carries observer wiring:\n%s", h)
+	}
+	if !strings.Contains(h, `href="#a"`) {
+		t.Errorf("static rail lost its fragment link:\n%s", h)
 	}
 }
 
 func TestAnchoredRailExtraAttrsOnRoot(t *testing.T) {
-	h := AnchoredRail(AnchoredRailConfig{
+	h := string(AnchoredRail(AnchoredRailConfig{
 		Label:      "Sections",
 		Items:      []RailItem{{Text: "A", Anchor: "a"}},
-		ExtraAttrs: map[string]string{"data-test": "hook"},
-	})
-	root := string(h)[:strings.Index(string(h), ">")+1]
-	if !strings.Contains(root, `data-test="hook"`) {
-		t.Errorf("aside root missing data-test:\n%s", root)
+		Class:      "site-rail",
+		ExtraAttrs: map[string]string{"data-test": "hook", "data-hui-rail": "forged"},
+	}))
+	for _, want := range []string{`data-test="hook"`, "site-rail"} {
+		if !strings.Contains(h, want) {
+			t.Errorf("rail lost %q:\n%s", want, h)
+		}
+	}
+	if strings.Contains(h, `data-hui-rail="forged"`) {
+		t.Errorf("a caller forged the rail hook:\n%s", h)
 	}
 }

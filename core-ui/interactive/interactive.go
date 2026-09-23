@@ -681,36 +681,47 @@ func marshalToast(t Toast) string {
 var validPanes = map[string]bool{"secondary": true, "tertiary": true}
 
 // OpenPaneOnClick wraps an HTML element so clicking it opens the named
-// side pane. Maps to data-fui-pane-open="<pane>". Panics unless pane is
+// side pane. Maps to data-hui-pane-open-control="<pane>". Panics unless pane is
 // "secondary" or "tertiary".
 func OpenPaneOnClick(html render.HTML, pane string) render.HTML {
 	if !validPanes[pane] {
 		panic(fmt.Sprintf("interactive: OpenPaneOnClick pane must be \"secondary\" or \"tertiary\", got %q", pane))
 	}
-	return injectAttr(html, "data-fui-pane-open", pane)
+	return injectAttr(html, "data-hui-pane-open-control", pane)
 }
 
 // ClosePaneOnClick wraps an HTML element so clicking it closes a side
-// pane. Maps to data-fui-pane-close="<pane>". A non-empty pane
+// pane. Maps to data-hui-pane-close="<pane>". A non-empty pane
 // ("secondary" or "tertiary") closes that specific pane; an empty pane
-// emits data-fui-pane-close="" and closes the topmost open pane. Any
+// emits data-hui-pane-close="" and closes the topmost open pane. Any
 // other value panics.
 func ClosePaneOnClick(html render.HTML, pane string) render.HTML {
 	if pane != "" && !validPanes[pane] {
 		panic(fmt.Sprintf("interactive: ClosePaneOnClick pane must be \"secondary\", \"tertiary\", or \"\" (topmost), got %q", pane))
 	}
-	return injectAttr(html, "data-fui-pane-close", pane)
+	return injectAttr(html, "data-hui-pane-close", pane)
+}
+
+// SwapPaneOnClick wraps an HTML element so clicking it opens the named
+// side pane and closes its sibling (one open pane at a time). Maps to
+// data-hui-pane-swap="<pane>". Panics unless pane is "secondary" or
+// "tertiary".
+func SwapPaneOnClick(html render.HTML, pane string) render.HTML {
+	if !validPanes[pane] {
+		panic(fmt.Sprintf("interactive: SwapPaneOnClick pane must be \"secondary\" or \"tertiary\", got %q", pane))
+	}
+	return injectAttr(html, "data-hui-pane-swap", pane)
 }
 
 // PaneKey labels a pane trigger with the identity of what it opens,
 // the ticket id, the record slug, whatever the pane will show. Maps to
-// data-fui-pane-key="<key>".
+// data-hui-pane-key="<key>".
 //
 // It is only read on hosts that opted into URL round-tripping with
 // ui.PaneHostConfig.DeepLinkParam: opening through a keyed trigger
 // writes `?<param>=<pane>:<key>`, so refreshing or sharing that URL
 // reproduces the open pane, and Back closes it. Compose it with
-// OpenPaneOnClick (or a manual data-fui-pane-open) on the same element:
+// OpenPaneOnClick (or a manual data-hui-pane-open-control) on the same element:
 //
 //	interactive.PaneKey(
 //	    interactive.OpenPaneOnClick(row, "secondary"), ticket.ID)
@@ -724,7 +735,7 @@ func ClosePaneOnClick(html render.HTML, pane string) render.HTML {
 // The server must look it up rather than trusting it. See
 // ui.PaneDeepLink.
 func PaneKey(html render.HTML, key string) render.HTML {
-	return injectAttr(html, "data-fui-pane-key", key)
+	return injectAttr(html, "data-hui-pane-key", key)
 }
 
 // ─── Signal display bindings ───────────────────────────────────────

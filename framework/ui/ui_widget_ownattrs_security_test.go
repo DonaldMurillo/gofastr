@@ -32,8 +32,9 @@ func TestOwnedAttrsWinOverExtraAttrsFold(t *testing.T) {
 				Tabs: []ui.TabItem{{Label: "A", Content: render.Text("a")}}}))
 		}, `data-active`, `data-active="0"`},
 		{"toc-target", func(ex map[string]string) string {
-			return string(ui.TableOfContents(ui.TOCConfig{Target: "main", ExtraAttrs: ex}))
-		}, `data-fui-toc`, `data-fui-toc="main"`},
+			return string(ui.TableOfContents(ui.TOCConfig{Target: "main", ExtraAttrs: ex,
+				Items: []ui.TOCItem{{ID: "a", Label: "A"}}}))
+		}, `data-hui-toc`, `data-hui-toc="" data-hui-toc-target="main"`},
 		{"carousel-arialabel", func(ex map[string]string) string {
 			return string(ui.Carousel(ui.CarouselConfig{Label: "Slideshow", ExtraAttrs: ex,
 				Slides: []ui.CarouselSlide{{Content: render.Text("s")}}}))
@@ -60,7 +61,7 @@ func TestOwnedAttrsWinOverExtraAttrsFold(t *testing.T) {
 		}, `data-hui-tag-input`, `data-hui-tag-input="tags"`},
 		{"panehost-marker", func(ex map[string]string) string {
 			return string(ui.PaneHost(ui.PaneHostConfig{Primary: render.Text("p"), ExtraAttrs: ex}))
-		}, `data-fui-pane-host`, `data-fui-pane-host=""`},
+		}, `data-hui-panehost`, `data-hui-panehost=""`},
 	}
 
 	for _, s := range surfaces {

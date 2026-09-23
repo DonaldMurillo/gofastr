@@ -9,10 +9,15 @@ package headless
 // it, so they hold everywhere the package's tests run, browser or not.
 
 import (
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -45,12 +50,12 @@ func jsStripComments(src string) string {
 // moduleSources is every behaviour module source this package
 // registers, one entry per RegisterBehavior. The gates read them all:
 // a hook may be declared by one component and bound by any module in
-// the package, and a gate that read only one file would call the
+var moduleSources = []string{behaviorJS, controlsJS, collectionsJS, wizardJS, feedbackJS, navigationJS, whenJS, railJS, tocJS, disclosureJS, menuJS, comboboxJS, tabsJS, carouselJS, panehostJS, sidebarJS}
+
 // others' hooks unbound. The list grows as the package registers
 // more modules (headless-controls, headless-collections,
 // headless-wizard; headless-feedback and headless-navigation land with
 // their components' callers).
-var moduleSources = []string{behaviorJS, controlsJS, collectionsJS, wizardJS, feedbackJS, navigationJS, whenJS}
 
 // moduleHook matches a data-hui-* name written out in the source (a
 // selector, an attribute string); datasetHook matches the camel-case
@@ -194,6 +199,7 @@ var sheetHooks = map[string]string{
 	"data-hui-grow":          "the spacer's flex factor: the stylesheet sizes the spacer from the number, and no script ever reads it",
 	"data-hui-lines":         "the skeleton's line count: the stylesheet draws as many bars as the root says",
 	"data-hui-skeleton-last": "the short final line of a multi-line skeleton: a shape decision a stylesheet makes and a script never touches",
+	"data-hui-sidebar-group": "the sidebar group's details wrapper: an identity marker for host stylesheets to scope group overrides to, the way the lightbox names its zoom target by attribute so no class-map rename breaks a host selector; the framework's own sheet styles groups by class, and the group's open/close is the browser's (a script never reads it)",
 }
 
 // hostHooks are the declared hooks whose binder is not this package's
@@ -216,21 +222,30 @@ var sheetHooks = map[string]string{
 // bind them; the markup that renders them is pinned where it lives,
 // in framework/ui's own tests. Same discipline as hostHooks: the
 // reason is mandatory and the list is checked against the module
-// sources below.
 var adapterHooks = map[string]string{
-	"data-hui-copy":          "the copy wrapper framework/ui.CopyButton renders around a headless Button; no copy primitive exists by binding decision",
-	"data-hui-copy-target":   "the copied element's id, rendered by ui.CopyButton",
-	"data-hui-copy-name":     "the copied thing's name for the status sentence, rendered by ui.CopyButton",
-	"data-hui-copy-label":    "the button's idle label span, rendered by ui.CopyButton",
-	"data-hui-copy-copied":   "the button's copied label, rendered by ui.CopyButton",
-	"data-hui-copy-back":     "the label restored after the copied flash, rendered by ui.CopyButton",
-	"data-hui-copy-sentence": "the status sentence shape with {name}, rendered by ui.CopyButton",
-	"data-hui-copy-status":   "the polite status region, rendered by ui.CopyButton",
-	"data-hui-theme-toggle":  "the scheme group wrapper, rendered by ui.ThemeToggle (a Button composition, no theme primitive by binding decision)",
-	"data-hui-theme-option":  "one scheme option control, rendered by ui.ThemeToggle",
-	"data-hui-theme-cycle":   "the single-button cycler, rendered by ui.ThemeToggle",
-	"data-hui-network-retry": "the offline banner's retry link, rendered by ui.NetworkRetryBanner as the SystemBanner's action",
-	"data-hui-copy-toast":    "the toast-on-copy config, rendered by ui.CopyButton on the button",
+	"data-hui-pane-close":             "a trigger that closes a pane, rendered by core-ui/interactive's pane helpers",
+	"data-hui-pane-swap":              "a trigger that swaps the open pane, rendered by core-ui/interactive's pane helpers",
+	"data-hui-pane-key":               "a pane trigger's deep-link key, rendered by core-ui/interactive's PaneKey",
+	"data-hui-sidebar-collapse-label": "the collapse toggle's custom label, rendered by ui.Sidebar",
+	"data-hui-sidebar-expand-label":   "the collapse toggle's custom expand label, rendered by ui.Sidebar",
+	"data-hui-sidebar-group-toggle":   "the button-dialect group toggle, rendered by ui.Sidebar's SidebarGroupButton markup",
+	"data-hui-shortcut-focus":         "a chord that focuses its target, rendered by ui.GlobalSearch / ui.CommandPalette on the search wrapper",
+	"data-hui-shortcut-click":         "a chord that clicks its target, rendered by ui.ShortcutHint (BindTarget) and host chrome like the site header",
+	"data-hui-shortcut-target":        "the selector naming a chord's focus/click target, rendered by ui.GlobalSearch beside its focus chord",
+	"data-hui-shortcut-hint":          "ShortcutHint's own marker when BindTarget is set: names the element the chord will click",
+	"data-hui-copy":                   "the copy wrapper framework/ui.CopyButton renders around a headless Button; no copy primitive exists by binding decision",
+	"data-hui-copy-target":            "the copied element's id, rendered by ui.CopyButton",
+	"data-hui-copy-name":              "the copied thing's name for the status sentence, rendered by ui.CopyButton",
+	"data-hui-copy-label":             "the button's idle label span, rendered by ui.CopyButton",
+	"data-hui-copy-copied":            "the button's copied label, rendered by ui.CopyButton",
+	"data-hui-copy-back":              "the label restored after the copied flash, rendered by ui.CopyButton",
+	"data-hui-copy-sentence":          "the status sentence shape with {name}, rendered by ui.CopyButton",
+	"data-hui-copy-status":            "the polite status region, rendered by ui.CopyButton",
+	"data-hui-theme-toggle":           "the scheme group wrapper, rendered by ui.ThemeToggle (a Button composition, no theme primitive by binding decision)",
+	"data-hui-theme-option":           "one scheme option control, rendered by ui.ThemeToggle",
+	"data-hui-theme-cycle":            "the single-button cycler, rendered by ui.ThemeToggle",
+	"data-hui-network-retry":          "the offline banner's retry link, rendered by ui.NetworkRetryBanner as the SystemBanner's action",
+	"data-hui-copy-toast":             "the toast-on-copy config, rendered by ui.CopyButton on the button",
 }
 
 var hostHooks = map[string]string{
@@ -455,7 +470,13 @@ func TestEveryRegisteredBehaviorIsRegisteredWithItsMarkers(t *testing.T) {
 		{WizardBehaviorName, []string{"[data-hui-step-wizard]"}},
 		{FeedbackBehaviorName, []string{"[data-hui-copy]", "[data-hui-toast-stack]",
 			"[data-fui-toast-stack]", "[data-hui-notification-bell]", "[data-hui-network-retry]"}},
-		{NavigationBehaviorName, []string{"[data-hui-back-to-top]", "[data-hui-theme-toggle]"}},
+		{NavigationBehaviorName, []string{"[data-hui-back-to-top]", "[data-hui-theme-toggle]",
+			"[data-hui-shortcut-focus]", "[data-hui-shortcut-click]"}},
+		{ComboboxBehaviorName, []string{"[data-hui-combobox-input]"}},
+		{TabsBehaviorName, []string{"[data-hui-tabs]"}},
+		{CarouselBehaviorName, []string{"[data-hui-carousel]"}},
+		{PaneHostBehaviorName, []string{"[data-hui-panehost]"}},
+		{SidebarBehaviorName, []string{"[data-hui-sidebar]"}},
 	} {
 		e, ok := uiregistry.LookupBehavior(tc.name)
 		if !ok {
@@ -487,7 +508,13 @@ func TestEveryRegisteredBehaviorIsRegisteredWithItsMarkers(t *testing.T) {
 		{WizardBehaviorName, []string{"[data-hui-step-wizard]"}},
 		{FeedbackBehaviorName, []string{"[data-hui-copy]", "[data-hui-toast-stack]",
 			"[data-fui-toast-stack]", "[data-hui-notification-bell]", "[data-hui-network-retry]"}},
-		{NavigationBehaviorName, []string{"[data-hui-back-to-top]", "[data-hui-theme-toggle]"}},
+		{NavigationBehaviorName, []string{"[data-hui-back-to-top]", "[data-hui-theme-toggle]",
+			"[data-hui-shortcut-focus]", "[data-hui-shortcut-click]"}},
+		{ComboboxBehaviorName, []string{"[data-hui-combobox-input]"}},
+		{TabsBehaviorName, []string{"[data-hui-tabs]"}},
+		{CarouselBehaviorName, []string{"[data-hui-carousel]"}},
+		{PaneHostBehaviorName, []string{"[data-hui-panehost]"}},
+		{SidebarBehaviorName, []string{"[data-hui-sidebar]"}},
 	} {
 		for _, m := range tc.markers {
 			hook := strings.Trim(m, "[]")
@@ -509,4 +536,62 @@ func TestEveryRegisteredBehaviorIsRegisteredWithItsMarkers(t *testing.T) {
 			}
 		}
 	}
+}
+
+// TestEveryRenderedHookInGoIsDeclared catches the hook that ships
+// without its contract: a data-hui-* name written into this package's
+// Go source — a Mark call, a registration's marker list — that no Spec
+// declares and no reasoned exemption owns. The module-bound and
+// declared-hook gates above read the Spec list; this one reads the
+// source, so a hook rendered by a component whose Spec forgot it (or
+// by a helper no Spec backs) fails here rather than shipping as an
+// attribute with no declared owner. The exemption classes are the
+// same three the declared-hook gate knows, checked the same both ways.
+func TestEveryRenderedHookInGoIsDeclared(t *testing.T) {
+	fset := token.NewFileSet()
+	pkgs, err := parser.ParseDir(fset, ".", func(fi fs.FileInfo) bool {
+		return strings.HasSuffix(fi.Name(), ".go") && !strings.HasSuffix(fi.Name(), "_test.go")
+	}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rendered := map[string]bool{}
+	for _, pkg := range pkgs {
+		for _, f := range pkg.Files {
+			for _, lit := range stringLiteralsOf(f) {
+				for _, m := range moduleHook.FindAllStringSubmatch(lit, -1) {
+					rendered[m[0]] = true
+				}
+			}
+		}
+	}
+	declared := declaredHooks()
+	for h := range rendered {
+		if declared[h] {
+			continue
+		}
+		if _, ok := adapterHooks[h]; ok {
+			continue
+		}
+		if _, ok := hostHooks[h]; ok {
+			continue
+		}
+		t.Errorf("%s is rendered by this package's Go source and declared by no Spec, adapter or host exemption: a hook with no owner is an attribute the markup carries for no one", h)
+	}
+}
+
+// stringLiteralsOf collects every string literal in f, comments
+// stripped first so a name mentioned in prose cannot count as
+// rendered.
+func stringLiteralsOf(f *ast.File) []string {
+	var out []string
+	ast.Inspect(f, func(n ast.Node) bool {
+		if lit, ok := n.(*ast.BasicLit); ok && lit.Kind == token.STRING {
+			if s, err := strconv.Unquote(lit.Value); err == nil {
+				out = append(out, s)
+			}
+		}
+		return true
+	})
+	return out
 }

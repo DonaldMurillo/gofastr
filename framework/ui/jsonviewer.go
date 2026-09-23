@@ -1,15 +1,11 @@
 package ui
 
 import (
-	"encoding/json"
-	"sort"
-	"strconv"
-	"strings"
-
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/headless"
 )
 
 // ─── JSONViewer ─────────────────────────────────────────────────────
@@ -42,115 +38,37 @@ type JSONViewerConfig struct {
 	ExtraAttrs html.Attrs
 }
 
-// JSONViewer renders a collapsible tree view of any Go value.
+// JSONViewer renders a collapsible tree view of any Go value through
+// headless.JSONTree (deterministic sorted keys, native details).
 func JSONViewer(cfg JSONViewerConfig) render.HTML {
-	raw, err := json.Marshal(cfg.Value)
-	if err != nil {
-		panic("ui: JSONViewer cannot marshal Value: " + err.Error())
-	}
-	var parsed any
-	if err := json.Unmarshal(raw, &parsed); err != nil {
-		panic("ui: JSONViewer cannot re-parse marshalled JSON: " + err.Error())
-	}
-
 	cls := "ui-json-viewer"
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
 	}
-	attrs := html.SafeExtraAttrs(cfg.ExtraAttrs)
-	if attrs == nil {
-		attrs = map[string]string{}
-	}
-	attrs["class"] = cls
-	if cfg.ID != "" {
-		attrs["id"] = cfg.ID
-	}
-
-	body := jsonRender(parsed, 0, cfg)
-	return jsonViewerStyle.WrapHTML(render.Tag("div", attrs, render.HTML(body)))
-}
-
-func jsonRender(v any, depth int, cfg JSONViewerConfig) string {
-	switch t := v.(type) {
-	case nil:
-		return `<span class="ui-json-viewer__null">null</span>`
-	case bool:
-		if t {
-			return `<span class="ui-json-viewer__bool">true</span>`
-		}
-		return `<span class="ui-json-viewer__bool">false</span>`
-	case float64:
-		// JSON numbers come back as float64.
-		s := strconv.FormatFloat(t, 'f', -1, 64)
-		return `<span class="ui-json-viewer__num">` + escapeXML(s) + `</span>`
-	case string:
-		s := t
-		if cfg.MaxStringLen > 0 && len(s) > cfg.MaxStringLen {
-			s = s[:cfg.MaxStringLen] + "…"
-		}
-		return `<span class="ui-json-viewer__str">"` + escapeXML(s) + `"</span>`
-	case []any:
-		return jsonRenderArray(t, depth, cfg)
-	case map[string]any:
-		return jsonRenderObject(t, depth, cfg)
-	}
-	return ""
-}
-
-func jsonRenderArray(arr []any, depth int, cfg JSONViewerConfig) string {
-	if len(arr) == 0 {
-		return `<span class="ui-json-viewer__empty">[]</span>`
-	}
-	open := ""
-	if cfg.OpenDepth < 0 || depth <= cfg.OpenDepth {
-		open = " open"
-	}
-	var sb strings.Builder
-	sb.WriteString(`<details class="ui-json-viewer__node"`)
-	sb.WriteString(open)
-	sb.WriteString(`><summary class="ui-json-viewer__summary"><span class="ui-json-viewer__type">Array</span><span class="ui-json-viewer__count">(`)
-	sb.WriteString(strconv.Itoa(len(arr)))
-	sb.WriteString(`)</span></summary><ol class="ui-json-viewer__list">`)
-	for i, item := range arr {
-		sb.WriteString(`<li class="ui-json-viewer__item"><span class="ui-json-viewer__key">`)
-		sb.WriteString(strconv.Itoa(i))
-		sb.WriteString(`</span><span class="ui-json-viewer__colon">:</span>`)
-		sb.WriteString(jsonRender(item, depth+1, cfg))
-		sb.WriteString(`</li>`)
-	}
-	sb.WriteString(`</ol></details>`)
-	return sb.String()
-}
-
-func jsonRenderObject(obj map[string]any, depth int, cfg JSONViewerConfig) string {
-	if len(obj) == 0 {
-		return `<span class="ui-json-viewer__empty">{}</span>`
-	}
-	open := ""
-	if cfg.OpenDepth < 0 || depth <= cfg.OpenDepth {
-		open = " open"
-	}
-	// Sorted keys for deterministic render.
-	keys := make([]string, 0, len(obj))
-	for k := range obj {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	var sb strings.Builder
-	sb.WriteString(`<details class="ui-json-viewer__node"`)
-	sb.WriteString(open)
-	sb.WriteString(`><summary class="ui-json-viewer__summary"><span class="ui-json-viewer__type">Object</span><span class="ui-json-viewer__count">(`)
-	sb.WriteString(strconv.Itoa(len(obj)))
-	sb.WriteString(`)</span></summary><ul class="ui-json-viewer__list">`)
-	for _, k := range keys {
-		sb.WriteString(`<li class="ui-json-viewer__item"><span class="ui-json-viewer__key">"`)
-		sb.WriteString(escapeXML(k))
-		sb.WriteString(`"</span><span class="ui-json-viewer__colon">:</span>`)
-		sb.WriteString(jsonRender(obj[k], depth+1, cfg))
-		sb.WriteString(`</li>`)
-	}
-	sb.WriteString(`</ul></details>`)
-	return sb.String()
+	parts := headless.Parts{Attrs: headless.PartAttrs{
+		headless.PartRoot:      {"class": cls},
+		headless.PartControl:   {"class": "ui-json-viewer__node"},
+		headless.PartTitle:     {"class": "ui-json-viewer__summary"},
+		headless.PartLabel:     {"class": "ui-json-viewer__key"},
+		headless.PartBody:      {"class": "ui-json-viewer__list"},
+		headless.PartText:      {"class": "ui-json-viewer__item"},
+		headless.PartJSONColon: {"class": "ui-json-viewer__colon"},
+		headless.PartJSONType:  {"class": "ui-json-viewer__type"},
+		headless.PartJSONCount: {"class": "ui-json-viewer__count"},
+		headless.PartJSONStr:   {"class": "ui-json-viewer__str"},
+		headless.PartJSONNum:   {"class": "ui-json-viewer__num"},
+		headless.PartJSONBool:  {"class": "ui-json-viewer__bool"},
+		headless.PartJSONNull:  {"class": "ui-json-viewer__null"},
+		headless.PartJSONEmpty: {"class": "ui-json-viewer__empty"},
+	}}
+	return jsonViewerStyle.WrapHTML(headless.JSONTree(headless.JSONTreeProps{
+		Value:        cfg.Value,
+		OpenDepth:    cfg.OpenDepth,
+		MaxStringLen: cfg.MaxStringLen,
+		ID:           cfg.ID,
+		ExtraAttrs:   html.SafeExtraAttrs(cfg.ExtraAttrs),
+		Parts:        parts,
+	}, nil))
 }
 
 var jsonViewerStyle = registry.RegisterStyle("ui-json-viewer", jsonViewerCSS)

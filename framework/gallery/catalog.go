@@ -28,8 +28,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/interactive"
 	patternsAccordion "github.com/DonaldMurillo/gofastr/core-ui/patterns/accordion"
 	patternsBreadcrumbs "github.com/DonaldMurillo/gofastr/core-ui/patterns/breadcrumbs"
-	patternsCombobox "github.com/DonaldMurillo/gofastr/core-ui/patterns/combobox"
-	patternsDisclosure "github.com/DonaldMurillo/gofastr/core-ui/patterns/disclosure"
 	patternsMultiselect "github.com/DonaldMurillo/gofastr/core-ui/patterns/multiselect"
 	patternsNestedlist "github.com/DonaldMurillo/gofastr/core-ui/patterns/nestedlist"
 	patternsProgress "github.com/DonaldMurillo/gofastr/core-ui/patterns/progress"
@@ -394,8 +392,36 @@ var Catalog = []Entry{
 	{"sidebar", "Sidebar", "Navigation", "Hierarchical navigation sidebar.", func() render.HTML {
 		return ui.Sidebar(SidebarShowcaseConfig).Render()
 	}},
-	{"toc", "TableOfContents", "Navigation", "In-page anchor list (runtime fills from headings).", func() render.HTML {
-		return ui.TableOfContents(ui.TOCConfig{Target: "main", Sticky: true})
+	{"toc", "TableOfContents", "Navigation", "In-page anchor list the server rendered; the module marks the active entry.", func() render.HTML {
+		// The items are explicit and the headings they name render in
+		// the same demo, so every link resolves and the no-script
+		// reader gets the whole list.
+		return html.Div(html.DivConfig{Class: "demo-stack"},
+			ui.TableOfContents(ui.TOCConfig{
+				Target: "main", Sticky: true,
+				Items: []ui.TOCItem{
+					{ID: "toc-what", Label: "What it is"},
+					{ID: "toc-how", Label: "How it works"},
+					{ID: "toc-active", Label: "The active entry", Level: 3},
+				},
+			}),
+			html.Heading(html.HeadingConfig{Level: 3, ID: "toc-what"}, render.Text("What it is")),
+			html.Paragraph(html.TextConfig{}, render.Text("A labelled nav of fragment links. The server renders every entry, so a reader without script still gets the list.")),
+			html.Heading(html.HeadingConfig{Level: 3, ID: "toc-how"}, render.Text("How it works")),
+			html.Paragraph(html.TextConfig{}, render.Text("The headless-toc module watches the target region and marks the entry whose heading is in view — aria-current and a class, never a style.")),
+			html.Heading(html.HeadingConfig{Level: 4, ID: "toc-active"}, render.Text("The active entry")),
+			html.Paragraph(html.TextConfig{}, render.Text("The observer is headless-rail's, shared with AnchoredRail: one implementation, not two scroll-spies.")),
+		)
+	}},
+	{"anchoredrail", "AnchoredRail", "Navigation", "Sticky in-page rail with active-entry tracking.", func() render.HTML {
+		return ui.AnchoredRail(ui.AnchoredRailConfig{
+			Label: "By intent",
+			Items: []ui.RailItem{
+				{Eyebrow: "01", Text: "Modeling", Anchor: "rail-modeling", Count: 9},
+				{Eyebrow: "02", Text: "Serving", Anchor: "rail-serving", Count: 9},
+				{Eyebrow: "03", Text: "Operating", Anchor: "rail-operating", Count: 9},
+			},
+		})
 	}},
 	{"backtotop", "BackToTop", "Navigation", "Floating back-to-top button.", func() render.HTML {
 		return ui.BackToTop(ui.BackToTopConfig{})
@@ -598,13 +624,13 @@ var Catalog = []Entry{
 		)
 	}},
 	{"combobox", "Combobox", "Forms", "Type-ahead suggestion picker.", func() render.HTML {
-		// Static-options variant: the runtime filters the inline rows
-		// client-side, so the demo needs no search RPC. The RPC-backed
-		// variant is wired the same way with RPCPath+SignalName.
-		return patternsCombobox.Render(patternsCombobox.Config{
+		// Static-options variant: headless-combobox filters the inline
+		// rows client-side, so the demo needs no search RPC. The
+		// island-backed variant is wired with Island+NoScriptAction.
+		return ui.Combobox(ui.ComboboxConfig{
 			ID: "demo-combobox", Name: "q", Label: "Filter components",
 			Placeholder: "Type to filter…",
-			Options: []patternsCombobox.Option{
+			Options: []headless.ComboboxOption{
 				{Label: "Accordion", Value: "accordion"},
 				{Label: "Badge", Value: "badge"},
 				{Label: "Card", Value: "card"},
@@ -1307,10 +1333,13 @@ ui.OptimisticAction(ui.OptimisticActionConfig{
 	// Disclosure / overlays / navigation patterns and the overlay widgets
 	// (modal/drawer/bottomsheet/toast) the gallery used to show.
 	{"disclosure", "Disclosure", "Disclosure", "Single styled <details>/<summary> reveal: keyboard + find-in-page work with no JS.", func() render.HTML {
+		// The pattern package retired with the move: the anatomy is
+		// headless.Disclosure's now, dressed here with the same shape
+		// the pattern rendered.
 		return html.Div(html.DivConfig{Class: "demo-stack"},
-			patternsDisclosure.Render(patternsDisclosure.Config{Title: "What's included in the free plan?"},
+			ui.Collapsible(ui.CollapsibleConfig{Summary: "What's included in the free plan?"},
 				html.Paragraph(html.TextConfig{}, render.Text("Up to 5 projects, 1 GB storage, community support, and all core features."))),
-			patternsDisclosure.Render(patternsDisclosure.Config{Title: "Can I export my data?", Open: true},
+			ui.Collapsible(ui.CollapsibleConfig{Summary: "Can I export my data?", Open: true},
 				html.Paragraph(html.TextConfig{}, render.Text("Yes: Settings → Export emits a JSON archive with everything, no questions asked."))),
 		)
 	}},
@@ -1378,20 +1407,6 @@ ui.OptimisticAction(ui.OptimisticActionConfig{
 			interactive.ToastOnClick(ui.Button(ui.ButtonConfig{Label: "Client: success", Variant: ui.ButtonPrimary}), interactive.Toast{Variant: "success", Title: "Saved", Body: "Triggered from JS, no round-trip.", TTLMs: 5000}),
 			interactive.ToastOnClick(ui.Button(ui.ButtonConfig{Label: "Client: info", Variant: ui.ButtonSecondary}), interactive.Toast{Variant: "info", Title: "FYI", Body: "Body text + five-second TTL.", TTLMs: 5000}),
 			ui.Button(ui.ButtonConfig{Label: "Server: header", Variant: ui.ButtonSecondary, ExtraAttrs: interactive.Post("/__site/toast/push").WithBody("{}").Attrs()}),
-		)
-	}},
-	{"scrollspy", "ScrollSpy", "Navigation", "IntersectionObserver active-section tracking for in-page anchor navs.", func() render.HTML {
-		return html.Div(html.DivConfig{Class: "demo-stack"},
-			patternsNestedlist.Render(patternsNestedlist.Config{
-				AriaLabel: "On this page",
-				Items: []patternsNestedlist.Item{
-					{Label: "Intro", Href: "#intro"},
-					{Label: "How it works", Href: "#how"},
-					{Label: "Accessibility", Href: "#a11y"},
-				},
-			}),
-			html.Div(html.DivConfig{Class: "fact"}, render.Text(
-				"ScrollSpy wraps a nav like the one above with scrollspy.Wrap(cfg, nav) and sets aria-current + .is-active on the link whose target is in view. It needs a tall, scrollable page region: see it working live in the left rail of any /docs/* page.")),
 		)
 	}},
 	{"sortablelist", "SortableList", "Forms", "Drag + keyboard reorderable list: single list or linked kanban columns with version-aware 409 recovery.", func() render.HTML {
@@ -1611,7 +1626,7 @@ interactive.SetLocal(ui.Button(ui.ButtonConfig{Label: "Rename"}), Company.Name()
 Company.Bind(ctx, "h3", nil)
 Company.Bind(ctx, "strong", nil)`,
 
-	"disclosure": `disclosure.Render(disclosure.Config{Title: "What's included?"},
+	"disclosure": `ui.Collapsible(ui.CollapsibleConfig{Summary: "What's included?"},
     html.Paragraph(html.TextConfig{}, render.Text("Up to 5 projects, 1 GB storage, …")),
 )`,
 
@@ -1685,7 +1700,7 @@ var noteOnlySlugs = map[string]bool{
 	"formrepeater": true, "repeater": true,
 	"gallery": true, "lightbox": true, "commandpalette": true,
 	"globalsearch": true, "notificationbell": true, "pipelineimage": true,
-	"confirmaction": true, "scrollspy": true,
+	"confirmaction":  true,
 	"infinitescroll": true,
 }
 
@@ -1695,7 +1710,7 @@ var noteOnlySlugs = map[string]bool{
 func PkgForSlug(slug string) string {
 	switch slug {
 	case "accordion", "breadcrumbs",
-		"tree", "nestedlist", "progress", "scrollspy", "disclosure",
+		"tree", "nestedlist", "progress",
 		"sortablelist", "infinitescroll":
 		return "core-ui/patterns/" + slug
 	case "image", "pipelineimage":

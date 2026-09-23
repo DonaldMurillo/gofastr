@@ -30,7 +30,7 @@ import (
 //
 // The CommandPalette widget is mounted globally in main.go; the header's
 // own search button opens it (data-fui-open) and binds ⌘K
-// (data-fui-shortcut-click), so the header needs no injected trigger.
+// (data-hui-shortcut-click), so the header needs no injected trigger.
 type HeaderComponent struct{}
 
 // siteVersion is the framework version the site displays. It is injected at
@@ -104,7 +104,7 @@ func (h *HeaderComponent) Render() render.HTML {
 
 	// Action cluster: a single search trigger (theme toggle, GitHub icon
 	// follow). It opens the CommandPalette on click (data-fui-open) AND
-	// binds ⌘K (data-fui-shortcut-click) directly, so there's exactly one
+	// binds ⌘K (data-hui-shortcut-click) directly, so there's exactly one
 	// "open search" control. Previously a second, visually-hidden trigger
 	// from ui.CommandPalette carried the shortcut, which left screen-reader
 	// users hearing two identical "open search" buttons.
@@ -114,7 +114,7 @@ func (h *HeaderComponent) Render() render.HTML {
 			"type":                    "button",
 			"aria-label":              "Open search to find a doc, component, or example",
 			"data-fui-open":           "site-command-palette",
-			"data-fui-shortcut-click": "Meta+K",
+			"data-hui-shortcut-click": "Meta+K",
 		},
 		// Magnifier glyph, shown only on phones (CSS swap below).
 		// Desktop: hidden; the placeholder text + ⌘K hint carries

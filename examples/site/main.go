@@ -147,6 +147,10 @@ func setupServer() *framework.App {
 		// and on the static export (no search endpoint needed). Takes
 		// precedence over RPCPath in the combobox.
 		Commands: paletteCommands(),
+		// The no-script destination: the docs index lists everything the
+		// palette lists (it is the palette's own catalog), so a reader
+		// without script reaches the same set by an ordinary link.
+		FallbackHref: "/docs/",
 	})
 
 	layout := app.NewLayout("main").

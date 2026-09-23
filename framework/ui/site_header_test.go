@@ -40,7 +40,7 @@ func TestSiteHeaderRendersBrandPrimaryAndRight(t *testing.T) {
 		`data-fui-match-prefix=""`,
 		`href="/examples"`,
 		`<button>Search</button>`,
-		`data-fui-disclosure=""`,
+		`data-hui-disclosure=""`,
 		`aria-label="Mobile primary"`,
 	} {
 		if !strings.Contains(h, want) {
@@ -118,7 +118,7 @@ func TestSiteHeaderDesktopNavOmitsExternalAttrs(t *testing.T) {
 			{Label: "GitHub", Href: "https://gh", External: true},
 		},
 	}))
-	desktopBlock := h[:strings.Index(h, `data-fui-disclosure`)]
+	desktopBlock := h[:strings.Index(h, `data-hui-disclosure`)]
 	if strings.Contains(desktopBlock, `target="_blank"`) {
 		t.Errorf("desktop nav must not open external links in new tabs:\n%s", desktopBlock)
 	}
@@ -149,7 +149,7 @@ func TestSiteHeaderMobileDrawerHasFocusTrapOptIn(t *testing.T) {
 		Brand:    render.Raw(`<a>x</a>`),
 		NavItems: []SiteHeaderLink{{Label: "Docs", Href: "/docs/"}},
 	}))
-	if !strings.Contains(h, "data-fui-disclosure-trap") {
+	if !strings.Contains(h, "data-hui-disclosure-trap") {
 		t.Errorf("mobile drawer must opt into the runtime's focus trap "+
 			"so Tab doesn't walk into hidden main content:\n%s", h)
 	}
@@ -177,7 +177,7 @@ func TestSiteHeaderMobileExtraLinksRenderOnlyInDrawer(t *testing.T) {
 			{Label: "GitHub ↗", Href: "https://gh", External: true},
 		},
 	}))
-	idx := strings.Index(h, `data-fui-disclosure`)
+	idx := strings.Index(h, `data-hui-disclosure`)
 	if idx == -1 {
 		t.Fatal("missing mobile drawer")
 	}
@@ -209,7 +209,7 @@ func TestSiteHeaderActionsCollapseIntoDrawer(t *testing.T) {
 		t.Error("Actions did not render into the mobile drawer")
 	}
 	// The drawer copy sits after the disclosure marker (mobile block).
-	idx := strings.Index(h, `data-fui-disclosure`)
+	idx := strings.Index(h, `data-hui-disclosure`)
 	if idx == -1 || !strings.Contains(h[idx:], "ui-site-header__mobile-actions") {
 		t.Error("mobile-actions must live inside the mobile drawer")
 	}
@@ -231,7 +231,7 @@ func TestSiteHeaderPersistentActionsStayInBar(t *testing.T) {
 	if n := strings.Count(h, `id="cta"`); n != 1 {
 		t.Errorf("persistent action must render exactly once, got %d:\n%s", n, h)
 	}
-	idx := strings.Index(h, `data-fui-disclosure`)
+	idx := strings.Index(h, `data-hui-disclosure`)
 	if idx == -1 || strings.Contains(h[idx:], `id="cta"`) {
 		t.Error("persistent action must not be copied into the mobile drawer")
 	}

@@ -316,7 +316,7 @@ func TestPrefetchAttrRejectsForeignModule(t *testing.T) {
 	}{
 		{"traversal", `../../../evil`},  // normalizes to /evil.js
 		{"relative-escape", `../other`}, // normalizes to /__gofastr/other.js
-		{"happy-path", `menu`},          // real module; the loader must still work
+		{"happy-path", `sortablelist`},  // real module; the loader must still work (menu retired)
 	}
 	for _, tc := range cases {
 		t.Run(tc.label, func(t *testing.T) {
@@ -337,7 +337,7 @@ func TestPrefetchAttrRejectsForeignModule(t *testing.T) {
 				chromedp.Sleep(500*time.Millisecond),
 				chromedp.Evaluate(`window.__pwned === true`, &pwned),
 				chromedp.Evaluate(`window.__other === true`, &other),
-				chromedp.Evaluate(`!!(window.__gofastr && window.__gofastr.loadedModules && window.__gofastr.loadedModules.menu)`, &menuLoaded),
+				chromedp.Evaluate(`!!(window.__gofastr && window.__gofastr.loadedModules && window.__gofastr.loadedModules.sortablelist)`, &menuLoaded),
 			); err != nil {
 				t.Fatal(err)
 			}

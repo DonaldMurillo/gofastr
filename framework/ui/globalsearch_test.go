@@ -7,11 +7,12 @@ import (
 
 func TestGlobalSearchRequiresAllCoreFields(t *testing.T) {
 	cases := []GlobalSearchConfig{
-		{Name: "q", Label: "Search", RPCPath: "/s", SignalName: "search"}, // no ID
-		{ID: "s", Label: "Search", RPCPath: "/s", SignalName: "search"},   // no Name
-		{ID: "s", Name: "q", RPCPath: "/s", SignalName: "search"},         // no Label
-		{ID: "s", Name: "q", Label: "Search", SignalName: "search"},       // no RPCPath
-		{ID: "s", Name: "q", Label: "Search", RPCPath: "/s"},              // no SignalName
+		{Name: "q", Label: "Search", RPCPath: "/s", SignalName: "search", NoScriptAction: "/search"}, // no ID
+		{ID: "s", Label: "Search", RPCPath: "/s", SignalName: "search", NoScriptAction: "/search"},   // no Name
+		{ID: "s", Name: "q", RPCPath: "/s", SignalName: "search", NoScriptAction: "/search"},         // no Label
+		{ID: "s", Name: "q", Label: "Search", SignalName: "search", NoScriptAction: "/search"},       // no RPCPath
+		{ID: "s", Name: "q", Label: "Search", RPCPath: "/s", NoScriptAction: "/search"},              // no SignalName
+		{ID: "s", Name: "q", Label: "Search", RPCPath: "/s", SignalName: "x"},                        // no NoScriptAction
 	}
 	for i, c := range cases {
 		func() {
@@ -29,8 +30,11 @@ func TestGlobalSearchEmitsCombobox(t *testing.T) {
 	h := string(GlobalSearch(GlobalSearchConfig{
 		ID: "global-search", Name: "q",
 		Label: "Search the site", RPCPath: "/api/search",
-		SignalName: "search-results",
+		SignalName: "search-results", NoScriptAction: "/search",
 	}))
+	if !strings.Contains(h, `<form action="/search" class="fui-global-search__field" method="GET" role="none">`) {
+		t.Errorf("the no-script GET form should wrap the combobox:\n%s", h)
+	}
 	if !strings.Contains(h, `id="global-search"`) {
 		t.Errorf("expected the combobox input id to surface:\n%s", h)
 	}
@@ -41,12 +45,12 @@ func TestGlobalSearchEmitsCombobox(t *testing.T) {
 
 func TestGlobalSearchShortcutDefaultsToSlash(t *testing.T) {
 	h := string(GlobalSearch(GlobalSearchConfig{
-		ID: "s", Name: "q", Label: "Search", RPCPath: "/s", SignalName: "x",
+		ID: "s", Name: "q", Label: "Search", RPCPath: "/s", SignalName: "x", NoScriptAction: "/s",
 	}))
-	if !strings.Contains(h, `data-fui-shortcut-focus="/"`) {
+	if !strings.Contains(h, `data-hui-shortcut-focus="/"`) {
 		t.Errorf("default Shortcut should be '/':\n%s", h)
 	}
-	if !strings.Contains(h, `data-fui-shortcut-target="#s"`) {
+	if !strings.Contains(h, `data-hui-shortcut-target="#s"`) {
 		t.Errorf("wrapper should target the inner input by id selector:\n%s", h)
 	}
 }
@@ -54,37 +58,37 @@ func TestGlobalSearchShortcutDefaultsToSlash(t *testing.T) {
 func TestGlobalSearchShortcutDisabled(t *testing.T) {
 	// Pass a sentinel space to disable.
 	h := string(GlobalSearch(GlobalSearchConfig{
-		ID: "s", Name: "q", Label: "Search", RPCPath: "/s", SignalName: "x",
+		ID: "s", Name: "q", Label: "Search", RPCPath: "/s", SignalName: "x", NoScriptAction: "/s",
 		Shortcut: " ",
 	}))
-	if strings.Contains(h, "data-fui-shortcut-focus") {
+	if strings.Contains(h, "data-hui-shortcut-focus") {
 		t.Errorf("Shortcut=\" \" should disable the focus binding:\n%s", h)
 	}
 }
 
 func TestGlobalSearchShortcutChordCustom(t *testing.T) {
 	h := string(GlobalSearch(GlobalSearchConfig{
-		ID: "s", Name: "q", Label: "Search", RPCPath: "/s", SignalName: "x",
+		ID: "s", Name: "q", Label: "Search", RPCPath: "/s", SignalName: "x", NoScriptAction: "/s",
 		Shortcut: "k",
 	}))
-	if !strings.Contains(h, `data-fui-shortcut-focus="k"`) {
+	if !strings.Contains(h, `data-hui-shortcut-focus="k"`) {
 		t.Errorf("Shortcut=k should bind to the k chord:\n%s", h)
 	}
 }
 
 func TestGlobalSearchStickyClass(t *testing.T) {
 	on := string(GlobalSearch(GlobalSearchConfig{
-		ID: "s", Name: "q", Label: "Search", RPCPath: "/s", SignalName: "x",
+		ID: "s", Name: "q", Label: "Search", RPCPath: "/s", SignalName: "x", NoScriptAction: "/s",
 		Sticky: true,
 	}))
-	if !strings.Contains(on, "ui-global-search--sticky") {
+	if !strings.Contains(on, "fui-global-search--sticky") {
 		t.Errorf("Sticky=true should add modifier class:\n%s", on)
 	}
 }
 
 func TestGlobalSearchExtraAttrsOnRoot(t *testing.T) {
 	h := GlobalSearch(GlobalSearchConfig{
-		ID: "s", Name: "q", Label: "Search", RPCPath: "/s", SignalName: "sig",
+		ID: "s", Name: "q", Label: "Search", RPCPath: "/s", SignalName: "sig", NoScriptAction: "/s",
 		ExtraAttrs: map[string]string{"data-test": "hook"},
 	})
 	root := string(h)[:strings.Index(string(h), ">")+1]

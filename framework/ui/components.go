@@ -498,6 +498,12 @@ func splitButtonAttrs(extra html.Attrs) (action, plain html.Attrs) {
 			// Owned: use AriaLabel.
 		case strings.HasPrefix(lk, "data-fui-"):
 			action[lk] = v
+		case strings.HasPrefix(lk, "data-hui-pane-"):
+			// The pane controls a Button can trigger are data-hui-*
+			// hooks the headless-panehost module binds (the retired
+			// fragment's data-fui-pane family, renamed); they ride the
+			// Action seam like every wiring key.
+			action[lk] = v
 		default:
 			plain[lk] = v
 		}

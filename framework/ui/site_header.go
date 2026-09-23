@@ -177,8 +177,8 @@ func SiteHeader(cfg SiteHeaderConfig) render.HTML {
 	mobile := render.Tag("details",
 		map[string]string{
 			"class":                    "ui-site-header__mobile",
-			"data-fui-disclosure":      "",
-			"data-fui-disclosure-trap": "",
+			"data-hui-disclosure":      "",
+			"data-hui-disclosure-trap": "",
 		},
 		render.Tag("summary",
 			map[string]string{"class": "ui-site-header__mobile-toggle", "aria-label": i18nui.T(ctx, i18nui.KeyNavToggle)},

@@ -24,32 +24,32 @@ func triggerMenu(cfg ui.MenuConfig) render.HTML {
 }
 
 // TestMenuTriggerElementMarkup: the caller's element lands verbatim in
-// a presentation wrapper carrying data-fui-menu-trigger="<menu id>",
-// BESIDE a summary-less <details data-fui-disclosure data-fui-menu>
+// a presentation wrapper carrying data-hui-menu-trigger="<menu id>",
+// BESIDE a summary-less <details data-hui-disclosure data-hui-menu>
 // that holds the byte-identical panel markup. No <summary> anywhere at
 // the top level — an interactive element inside one is axe
 // nested-interactive, the violation this path exists to avoid.
 func TestMenuTriggerElementMarkup(t *testing.T) {
 	out := string(triggerMenu(ui.MenuConfig{ID: "um"}))
 	for _, want := range []string{
-		`<div class="ui-menu ui-menu--bottom-start" data-fui-comp="ui-menu">`,
-		`<div data-fui-menu-trigger="um" role="presentation">` + triggerBtn + `</div>`,
-		`<details data-fui-disclosure data-fui-menu="um">`,
-		`<div class="ui-menu__panel" id="um-panel" role="menu" data-fui-menu-panel>`,
+		`<div class="fui-menu fui-menu--bottom-start" data-fui-comp="ui-menu">`,
+		`<div data-hui-menu-trigger="um" role="presentation">` + triggerBtn + `</div>`,
+		`<details data-hui-disclosure="" data-hui-menu="um">`,
+		`<div class="fui-menu__panel" data-hui-menu-panel="" id="um-panel" role="menu">`,
 		`role="menuitem"`,
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("trigger menu missing %q\n--\n%s", want, out)
 		}
 	}
-	if strings.Contains(out, "<summary class=\"ui-menu__trigger\"") {
+	if strings.Contains(out, "<summary class=\"fui-menu__trigger\"") {
 		t.Errorf("trigger menu must not render the framework summary:\n%s", out)
 	}
 	// The wrapper precedes the details (both children of the root) and
 	// the panel sits INSIDE the details, so the disclosure machinery
 	// (Escape, SPA-nav close, focus-on-open) scopes to the panel.
-	wrapperAt := strings.Index(out, `data-fui-menu-trigger="um"`)
-	detailsAt := strings.Index(out, `<details data-fui-disclosure data-fui-menu="um">`)
+	wrapperAt := strings.Index(out, `data-hui-menu-trigger="um"`)
+	detailsAt := strings.Index(out, `<details data-hui-disclosure="" data-hui-menu="um">`)
 	if wrapperAt < 0 || detailsAt < 0 || wrapperAt > detailsAt {
 		t.Errorf("wrapper must precede the details sibling:\n%s", out)
 	}
@@ -86,22 +86,22 @@ func TestMenuTriggerElementOverridesLabelAndHTML(t *testing.T) {
 	if !strings.Contains(out, triggerBtn) {
 		t.Errorf("TriggerElement not rendered:\n%s", out)
 	}
-	for _, stale := range []string{">Actions<", "ui-menu__trigger", "<em>old</em>", "ui-menu__caret"} {
+	for _, stale := range []string{">Actions<", "fui-menu__trigger", "<em>old</em>", "fui-menu__caret"} {
 		if strings.Contains(out, stale) {
 			t.Errorf("summary-path %q leaked into trigger menu:\n%s", stale, out)
 		}
 	}
 }
 
-// TestMenuTriggerIDEscaped: the menu id feeds data-fui-menu-trigger and
-// data-fui-menu raw, so it passes through render.Escape like every
+// TestMenuTriggerIDEscaped: the menu id feeds data-hui-menu-trigger and
+// data-hui-menu raw, so it passes through render.Escape like every
 // other interpolated value — a quote in the id cannot break out of the
 // attribute.
 func TestMenuTriggerIDEscaped(t *testing.T) {
 	out := string(triggerMenu(ui.MenuConfig{ID: `it's "x"`}))
 	for _, want := range []string{
-		`data-fui-menu-trigger="it&#39;s &quot;x&quot;"`,
-		`data-fui-menu="it&#39;s &quot;x&quot;"`,
+		`data-hui-menu-trigger="it&#39;s &quot;x&quot;"`,
+		`data-hui-menu="it&#39;s &quot;x&quot;"`,
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("trigger menu missing escaped %q:\n%s", want, out)
@@ -115,7 +115,7 @@ func TestMenuTriggerIDEscaped(t *testing.T) {
 }
 
 // TestMenuTriggerAutoIDIncludesTrigger: the runtime resolves a trigger
-// wrapper's details BY the shared data-fui-menu value, so two
+// wrapper's details BY the shared data-hui-menu value, so two
 // structurally identical trigger menus must not collide on the
 // auto-generated id — the second trigger would toggle the first menu.
 // Folding the caller markup into the hash input keeps them apart; two
@@ -136,15 +136,15 @@ func TestMenuTriggerAutoIDIncludesTrigger(t *testing.T) {
 	// The wrapper and the details must agree on the value: that is the
 	// runtime's pairing contract.
 	for _, out := range []string{a, b} {
-		if !strings.Contains(out, `data-fui-menu="`+menuTriggerID(t, out)+`"`) {
-			t.Errorf("details data-fui-menu does not match wrapper value:\n%s", out)
+		if !strings.Contains(out, `data-hui-menu="`+menuTriggerID(t, out)+`"`) {
+			t.Errorf("details data-hui-menu does not match wrapper value:\n%s", out)
 		}
 	}
 }
 
 func menuTriggerID(t *testing.T, out string) string {
 	t.Helper()
-	const marker = `data-fui-menu-trigger="`
+	const marker = `data-hui-menu-trigger="`
 	i := strings.Index(out, marker)
 	if i < 0 {
 		return ""
@@ -152,7 +152,7 @@ func menuTriggerID(t *testing.T, out string) string {
 	rest := out[i+len(marker):]
 	j := strings.Index(rest, `"`)
 	if j < 0 {
-		t.Fatalf("unterminated data-fui-menu-trigger in:\n%s", out)
+		t.Fatalf("unterminated data-hui-menu-trigger in:\n%s", out)
 	}
 	return rest[:j]
 }
@@ -163,7 +163,7 @@ func menuTriggerID(t *testing.T, out string) string {
 func TestMenuTriggerExtraAttrsOnRoot(t *testing.T) {
 	out := string(triggerMenu(ui.MenuConfig{
 		ID:         "um",
-		ExtraAttrs: map[string]string{"data-test": "hook", "data-fui-menu": "smuggled", "id": "smuggled"},
+		ExtraAttrs: map[string]string{"data-test": "hook", "data-hui-menu": "smuggled", "id": "smuggled"},
 	}))
 	root := out[:strings.Index(out, ">")+1]
 	if !strings.Contains(root, `data-test="hook"`) {
@@ -191,7 +191,7 @@ func TestMenuTriggerGoldenBytes(t *testing.T) {
 			}},
 		},
 	}))
-	want := `<div class="ui-menu ui-menu--bottom-start" data-fui-comp="ui-menu"><div data-fui-menu-trigger="um" role="presentation"><button type="button" class="rounded-full">Open user menu</button></div><details data-fui-disclosure data-fui-menu="um"><div class="ui-menu__panel" id="um-panel" role="menu" data-fui-menu-panel><a class="ui-menu__item" href="/me" role="menuitem" tabindex="-1"><span class="ui-menu__label">Profile</span></a><details class="ui-menu__sub" data-fui-disclosure data-fui-menu="um-panel-sub-1"><summary class="ui-menu__item ui-menu__item--hassub" aria-haspopup="menu" aria-controls="um-panel-sub-1-panel" role="menuitem" tabindex="-1"><span class="ui-menu__label">Palette</span></summary><div class="ui-menu__panel ui-menu__panel--sub" id="um-panel-sub-1-panel" role="menu" data-fui-menu-panel><button class="ui-menu__item" type="button" role="menuitemradio" tabindex="-1" aria-checked="true" data-fui-menu-radio="theme"><span class="ui-menu__label">Dark</span></button></div></details></div></details></div>`
+	want := `<div class="fui-menu fui-menu--bottom-start" data-fui-comp="ui-menu"><div data-hui-menu-trigger="um" role="presentation"><button type="button" class="rounded-full">Open user menu</button></div><details data-hui-disclosure="" data-hui-menu="um"><div class="fui-menu__panel" data-hui-menu-panel="" id="um-panel" role="menu"><a class="fui-menu__item" href="/me" role="menuitem" tabindex="-1"><span class="fui-menu__label">Profile</span></a><details class="fui-menu__sub" data-hui-disclosure="" data-hui-menu="um-panel-sub-1"><summary aria-controls="um-panel-sub-1-panel" aria-haspopup="menu" class="fui-menu__item fui-menu__item--hassub" role="menuitem" tabindex="-1"><span class="fui-menu__label">Palette</span></summary><div class="fui-menu__panel" data-hui-menu-panel="" id="um-panel-sub-1-panel" role="menu"><button aria-checked="true" class="fui-menu__item" data-hui-menu-radio="theme" role="menuitemradio" tabindex="-1" type="button"><span class="fui-menu__label">Dark</span></button></div></details></div></details></div>`
 	if got != want {
 		t.Errorf("trigger menu bytes drifted:\n--got--\n%s\n--want--\n%s", got, want)
 	}

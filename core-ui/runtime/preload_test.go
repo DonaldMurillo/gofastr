@@ -40,22 +40,6 @@ func TestNeededModules_RPCMarkers(t *testing.T) {
 	}
 }
 
-func TestNeededModules_SidebarCollapse(t *testing.T) {
-	html := `<button data-fui-sidebar-collapse>Collapse</button>`
-	got := NeededModules(html)
-	want := []string{"sidebar"}
-	if !reflect.DeepEqual(got, want) {
-		t.Errorf("NeededModules(%q) = %v, want %v", html, got, want)
-	}
-	// Button-dialect groups load the same module even when the sidebar
-	// has no collapse button (e.g. a persistent variant).
-	html = `<button data-fui-sidebar-group-toggle aria-expanded="false">Group</button>`
-	got = NeededModules(html)
-	if !reflect.DeepEqual(got, want) {
-		t.Errorf("NeededModules(%q) = %v, want %v", html, got, want)
-	}
-}
-
 func TestNeededModules_MultipleMarkersDedupSorted(t *testing.T) {
 	// popover, widgets (twice), rpc (the retired toasts marker no
 	// longer exists; rpc carries the toast-button dialect instead)
@@ -137,7 +121,9 @@ func TestDemandLoadMarkersMatchRuntimeJS(t *testing.T) {
 
 func TestNeededModules_StableSort(t *testing.T) {
 	// Same input → same output ordering, regardless of map iteration.
-	html := `<div data-fui-carousel><div data-fui-toast></div><div data-fui-widget></div></div>`
+	// (The retired data-fui-carousel marker loaded nothing; live
+	// markers from three different modules keep the sort observable.)
+	html := `<div data-fui-widget="x"></div><button data-fui-popover-anchor="auto">p</button><button data-fui-rpc="/x">r</button>`
 	for range 50 {
 		got := NeededModules(html)
 		if !sort.StringsAreSorted(got) {

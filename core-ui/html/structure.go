@@ -102,12 +102,13 @@ type DetailsConfig struct {
 	ID         string
 	ExtraAttrs Attrs
 	// Disclosure marks this details element as a dismissible disclosure
-	// (mobile hamburger nav, popover, etc.). The runtime will close it
-	// automatically on SPA navigation and on Escape. See ARCHITECTURE.md
-	// data-fui-disclosure.
+	// (mobile hamburger nav, popover, etc.). The kernel's navigator
+	// closes it automatically on SPA navigation. The full disclosure
+	// behaviour — Escape, the aria-expanded mirror, the focus trap —
+	// belongs to headless.Disclosure's data-hui-disclosure hook
+	// (framework/headless); see ARCHITECTURE.md data-fui-disclosure.
 	Disclosure bool
-	// Open opens the details element on initial render.
-	Open bool
+	Open       bool
 }
 
 // SummaryConfig configures a <summary> element. No required fields.

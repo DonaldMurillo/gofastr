@@ -344,7 +344,7 @@ func (b *Battery) sortControl(ent *entity.Entity, q url.Values) render.HTML {
 		opts = append(opts, render.Tag("a", attrs, render.Text(label)))
 	}
 
-	return render.Tag("details", map[string]string{"class": "admin-sort", "data-fui-disclosure": ""},
+	return render.Tag("details", map[string]string{"class": "admin-sort", "data-hui-disclosure": ""},
 		render.Tag("summary", map[string]string{"class": "admin-sort__summary"}, render.Text(summary)),
 		render.Tag("div", map[string]string{"class": "admin-sort__menu"}, opts...),
 	)

@@ -277,9 +277,15 @@ func TestEveryControlHasAName(t *testing.T) {
 			if strings.Contains(attrs, `aria-hidden="true"`) || strings.Contains(attrs, "hidden") {
 				continue
 			}
+			// An inner <img alt="…"> names the control the way the
+			// accessible-name computation does; the tag-stripping
+			// below exists to find TEXT, and alt text lives inside a
+			// tag.
+			imgAlt := regexp.MustCompile(`<img\b[^>]*\balt="[^"]+"`)
 			named := strings.Contains(attrs, "aria-label=") ||
 				strings.Contains(attrs, "aria-labelledby=") ||
 				strings.Contains(attrs, "title=") ||
+				imgAlt.MatchString(inner) ||
 				strings.TrimSpace(tags.ReplaceAllString(inner, "")) != ""
 			if !named {
 				t.Errorf("a <%s> with no accessible name: %s", m[1], strings.TrimSpace(m[0]))
