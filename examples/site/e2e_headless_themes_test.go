@@ -10,9 +10,12 @@ package main
 // cascade path, per scheme, not merely exist in the theme struct.
 
 import (
+	"context"
+	"fmt"
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/chromedp/chromedp"
 )
@@ -216,7 +219,9 @@ func TestE2E_HeadlessLanding_ThemeSwitcher(t *testing.T) {
 			var landed string
 			if err := chromedp.Run(ctx,
 				chromedp.Evaluate(`document.querySelector('#hl-theme-nav a[href="`+page.pathOf(target.Segment)+`"]').click()`, nil),
-				chromedp.WaitReady("body", chromedp.ByQuery),
+				// The current document satisfies any ready wait, so wait
+				// until the click's navigation has committed.
+				waitLocation(func(u string) bool { return strings.HasPrefix(u, base+page.pathOf(target.Segment)) }),
 				chromedp.Location(&landed),
 			); err != nil {
 				t.Fatalf("chromedp click: %v", err)
@@ -264,4 +269,21 @@ func TestE2E_HeadlessLanding_NestingLabelIsOtherName(t *testing.T) {
 			}
 		}
 	}
+}
+
+// waitLocation reads the tab's URL from Go until ok accepts it: a click
+// that navigates leaves the old document answering every ready or
+// visibility wait, and a JS poll dies with the old document's context.
+func waitLocation(ok func(string) bool) chromedp.Action {
+	return chromedp.ActionFunc(func(ctx context.Context) error {
+		deadline := time.Now().Add(10 * time.Second)
+		var u string
+		for time.Now().Before(deadline) {
+			if err := chromedp.Location(&u).Do(ctx); err == nil && ok(u) {
+				return nil
+			}
+			time.Sleep(50 * time.Millisecond)
+		}
+		return fmt.Errorf("the tab stayed on %q", u)
+	})
 }

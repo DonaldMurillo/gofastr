@@ -286,6 +286,9 @@ func TestE2E_HeadlessDashboard_SortLinkRoundTripsNoScript(t *testing.T) {
 		pageReady(),
 		// The inactive Amount column's first click sorts ascending.
 		chromedp.Click(`#hd-invoices-table th a[href*="sort=amount"]`, chromedp.ByQuery),
+		// The pre-click table already satisfies a visibility wait, so
+		// wait until the anchor's navigation has committed.
+		waitLocation(func(u string) bool { return strings.Contains(u, "sort=amount") }),
 		chromedp.WaitVisible(`#hd-invoices-table`, chromedp.ByQuery),
 		chromedp.Location(&afterURL),
 		chromedp.Evaluate(`document.querySelector('#hd-invoices-table tbody tr td').textContent.trim()`, &firstRow),

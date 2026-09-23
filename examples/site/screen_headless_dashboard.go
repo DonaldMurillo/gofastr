@@ -582,7 +582,7 @@ func dashboardInvoicesSection(r landingRoute, sortBy string, dir ui.SortDir) ren
 	return ui.Section(ui.SectionConfig{
 		ID:          "hd-invoices",
 		Heading:     "Recent invoices",
-		Description: "Five most recent. Sort works both ways: an island swap with the runtime, a plain link without it.",
+		Description: "Five most recent. Sorting asks the server: an island swap with the runtime, a plain link without it.",
 	}, dashboardInvoicesRegion(r.Segment, sortBy, dir))
 }
 
