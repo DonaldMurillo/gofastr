@@ -119,6 +119,7 @@ func landingSoftTheme() style.Theme {
 		Border: "#DDD6F3", BorderStrong: "#B9AEDB",
 		Text: "#1E1B2E", TextMuted: "#5B5670", TextSubtle: "#6E6887",
 		Danger: "#B42318", DangerFg: "#FFFFFF",
+		RadiusSm: 8, RadiusMd: 14, RadiusLg: 22,
 		DarkColors: map[string]string{
 			"primary":       "#C4B5FD",
 			"primary-fg":    "#1E1535",
@@ -149,7 +150,7 @@ func landingEditorialTheme() style.Theme {
 		Accent:     "#9F1239",
 		Background: "#FBF7F0", Surface: "#FFFFFF", SurfaceSoft: "#F3ECE1",
 		Border: "#E4DACB", BorderStrong: "#A8998A",
-		Text: "#1C1917", TextMuted: "#57534E", TextSubtle: "#78716C",
+		Text: "#1C1917", TextMuted: "#57534E", TextSubtle: "#6F6963",
 		Danger: "#B91C1C", DangerFg: "#FFFFFF",
 		FontBody:    landingEditorialFont,
 		FontHeading: landingEditorialFont,
@@ -282,52 +283,56 @@ type landingRoute struct {
 	// flipped option set; Other is the other route's theme (the B of
 	// A → B → A).
 	Ref, Twin, Other style.ThemeRef
-	// OtherName is the Other route's Name, carried so the nesting
-	// fixture's label for B is data on the route, not a branch on the
-	// segment.
-	OtherName string
+}
+
+// landingOtherName is the Name of the route whose theme is r.Other: the
+// nesting fixture's label for B, looked up so it cannot drift from the
+// theme it labels. Empty when Other is no route's theme, which
+// TestLandingRoutesOtherIsARoute refuses.
+func landingOtherName(r landingRoute) string {
+	for _, o := range landingRoutes {
+		if o.Ref == r.Other {
+			return o.Name
+		}
+	}
+	return ""
 }
 
 var landingRoutes = []landingRoute{
 	{
-		Segment:   "default",
-		Name:      "Framework default",
-		Ref:       landingRefFramework,
-		Twin:      landingRefFrameworkTight,
-		Other:     landingRefDense,
-		OtherName: "Dense",
+		Segment: "default",
+		Name:    "Framework default",
+		Ref:     landingRefFramework,
+		Twin:    landingRefFrameworkTight,
+		Other:   landingRefDense,
 	},
 	{
-		Segment:   "dense",
-		Name:      "Dense",
-		Ref:       landingRefDense,
-		Twin:      landingRefDenseRelaxed,
-		Other:     landingRefFramework,
-		OtherName: "Framework default",
+		Segment: "dense",
+		Name:    "Dense",
+		Ref:     landingRefDense,
+		Twin:    landingRefDenseRelaxed,
+		Other:   landingRefFramework,
 	},
 	{
-		Segment:   "soft",
-		Name:      "Soft",
-		Ref:       landingRefSoft,
-		Twin:      landingRefSoftTight,
-		Other:     landingRefEditorial,
-		OtherName: "Editorial",
+		Segment: "soft",
+		Name:    "Soft",
+		Ref:     landingRefSoft,
+		Twin:    landingRefSoftTight,
+		Other:   landingRefEditorial,
 	},
 	{
-		Segment:   "editorial",
-		Name:      "Editorial",
-		Ref:       landingRefEditorial,
-		Twin:      landingRefEditorialTight,
-		Other:     landingRefContrast,
-		OtherName: "High contrast",
+		Segment: "editorial",
+		Name:    "Editorial",
+		Ref:     landingRefEditorial,
+		Twin:    landingRefEditorialTight,
+		Other:   landingRefContrast,
 	},
 	{
-		Segment:   "contrast",
-		Name:      "High contrast",
-		Ref:       landingRefContrast,
-		Twin:      landingRefContrastRelaxed,
-		Other:     landingRefSoft,
-		OtherName: "Soft",
+		Segment: "contrast",
+		Name:    "High contrast",
+		Ref:     landingRefContrast,
+		Twin:    landingRefContrastRelaxed,
+		Other:   landingRefSoft,
 	},
 }
 
@@ -900,10 +905,10 @@ func landingNestLevel(label, note string) render.HTML {
 
 func landingNestingSection(r landingRoute) render.HTML {
 	page := r.Name
-	// The B boundary's label is the Other route's Name, carried on the
-	// route as data: no branch on the segment, so a sixth route needs
+	// The B boundary's label is the Other route's Name, looked up from
+	// the route's data: no branch on the segment, so a sixth route needs
 	// nothing here.
-	other := r.OtherName
+	other := landingOtherName(r)
 	// Each nested boundary sits in a Card: the theme wrapper paints
 	// background and colour only, the Card gives the scope its edge
 	// and padding so the nesting reads as boxes within boxes.

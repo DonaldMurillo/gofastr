@@ -1161,14 +1161,25 @@ the release after this one:
   harness's part-attr, bind-routing and override sweeps cover it; the
   spec gained a `WithParts` fixture and an off-site-link case (goldens
   regenerated and read).
-- **The theme-layer showcase: `/examples/headless/{default,dense}/landing`
-  on the product site.** One screen parameterised by the theme segment,
-  its content scoped by the route's boot-registered theme
-  (`style.RegisterThemeOverride` at package init; hashing is lazy). The
-  default route is the framework look on the site's palette; the dense
-  route is compact · outline · square with its own teal-tinted dark
-  palette. Two option-only twins (same palette, flipped options) back
-  the same-palette fixture. The page carries every button variant and
+- **The theme-layer showcase: `/examples/headless/{theme}/landing` and
+  `/examples/headless/{theme}/dashboard` on the product site, under five
+  themes.** One screen per page parameterised by the theme segment, its
+  content scoped by the route's boot-registered theme
+  (`style.RegisterThemeOverride` at package init; hashing is lazy).
+  `default` is the framework look on the site's palette; `dense` is
+  compact · outline · square with a teal-tinted dark palette; `soft` is
+  soft · pill on violet; `editorial` is filled · square with a serif
+  face; `contrast` is outline · pill with 7:1 pairs. Each has its own
+  dark palette and an option-only twin (same palette, flipped options)
+  for the same-palette fixture. Every enumeration (`StaticPaths`, axe,
+  static export, the ⌘K palette, the hub links) iterates one route
+  table, `landingRoutes`, and a no-script theme switcher (`aria-current`
+  on the current theme) links the same page under each theme. The
+  dashboard follows the command-center recipe: a `RecordSummary` with a
+  `MetricBand`, a twelve-month `LineChart` with its values as text, an
+  invoice `DataTable` whose sort is an island swap with the runtime and
+  a plain link without it (`GET /__site/headless/invoices/{theme}`,
+  sort and direction allowlisted), then the settings form. The page carries every button variant and
   size, a disabled button, an icon LinkButton and an external one, the
   same palette under two option sets, an A → B → A nest, explicit
   scheme controls (`ui.ThemeToggle` pill), a bare `headless.Button` with
@@ -1184,12 +1195,12 @@ the release after this one:
   in `examples/site/e2e_headless_landing_test.go` (computed option
   variables per scope, nesting, palette-keeping twin, scoped dark mode,
   bare-vs-styled, cold sheet, both newsletter passes — the no-script
-  pass blocks `runtime.js` via `network.SetBlockedURLs`); both routes
+  pass blocks `runtime.js` via `network.SetBlockedURLs`); every route
   joined the desktop and mobile axe lists; the static export test pins
-  the two pages under the `/gofastr` base with their wrapper classes,
+  the pages under the `/gofastr` base with their wrapper classes,
   the option variables in `app.css`, and the static-mode notice wiring
   for the server-backed POST. Linked from `/examples` and the ⌘K
-  palette; `StaticPaths` enumerates both routes for export, sitemap and
+  palette; `StaticPaths` enumerates every route for export, sitemap and
   the coverage gates.
 
 - **`registry.RegisterBehavior`**: behaviour registers like style. A

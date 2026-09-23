@@ -49,6 +49,17 @@ const hlPrimaryMetrics = `(() => {
   };
 })()`
 
+// TestLandingRoutesOtherIsARoute: every route's Other is some route's
+// theme, so the nesting fixture's B label (landingOtherName) is never
+// empty and the A → B → A walk stays inside the showcase.
+func TestLandingRoutesOtherIsARoute(t *testing.T) {
+	for _, r := range landingRoutes {
+		if got := landingOtherName(r); got == "" || got == r.Name {
+			t.Errorf("%s: Other resolves to %q, want another route's name", r.Segment, got)
+		}
+	}
+}
+
 func TestHeadlessLandingRoutesRender(t *testing.T) {
 	for _, r := range landingRoutes {
 		page := body(t, landingRoutePath(r.Segment))
@@ -67,8 +78,10 @@ func TestHeadlessLandingRoutesRender(t *testing.T) {
 		t.Error("the two route themes share one wrapper class; they must hash apart")
 	}
 	// An unknown theme segment is a 404, not a panic and not a wrong theme.
-	if got := serve(t, "GET", "/examples/headless/retro/landing").Code; got != 404 {
-		t.Errorf("unknown theme segment = %d, want 404", got)
+	for _, page := range []string{"landing", "dashboard"} {
+		if got := serve(t, "GET", "/examples/headless/retro/"+page).Code; got != 404 {
+			t.Errorf("unknown theme segment on the %s = %d, want 404", page, got)
+		}
 	}
 	paths := (&HeadlessLandingScreen{}).StaticPaths(t.Context())
 	if len(paths) != len(landingRoutes) {

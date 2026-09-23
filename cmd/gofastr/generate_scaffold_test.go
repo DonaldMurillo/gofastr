@@ -259,9 +259,6 @@ func TestScaffoldEntityRefusesLegacyLayout(t *testing.T) {
 // replace (the harness the blueprint build test uses), and build every
 // package it emitted.
 func TestRunInitGeneratesBuildableApp(t *testing.T) {
-	if testing.Short() {
-		t.Skip("builds the generated app against the repo; skipped under -short")
-	}
 	dir := t.TempDir()
 	covT_chdir(t, dir)
 	covT_capStdout(t, func() { runInit([]string{"myapp"}) })
@@ -277,9 +274,6 @@ func TestRunInitGeneratesBuildableApp(t *testing.T) {
 // required-list, not by a compiler. Generate the file for real and
 // build it against the repo.
 func TestRunThemeInitScaffoldCompiles(t *testing.T) {
-	if testing.Short() {
-		t.Skip("compiles the scaffolded theme against the repo; skipped under -short")
-	}
 	dir := t.TempDir()
 	writeAddGoMod(t, dir, "example.com/themegen")
 	covT_chdir(t, dir)

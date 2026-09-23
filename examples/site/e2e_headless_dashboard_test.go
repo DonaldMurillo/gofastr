@@ -3,6 +3,8 @@ package main
 import (
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -232,9 +234,17 @@ func TestHeadlessDashboardInvoiceSorting(t *testing.T) {
 		if first > last {
 			t.Errorf("query %q: %s renders before %s — the sort did not apply", c.query, c.first, c.last)
 		}
-		// The active column announces its direction.
-		if c.query != "" && !strings.Contains(page, `aria-sort="ascending"`) && !strings.Contains(page, `aria-sort="descending"`) {
-			t.Errorf("query %q: no th carries aria-sort", c.query)
+		// The active column's header announces the query's direction,
+		// tied to that column: the th that holds its sort anchor.
+		if c.query != "" {
+			q, _ := url.ParseQuery(strings.TrimPrefix(c.query, "?"))
+			want := map[string]string{"asc": "ascending", "desc": "descending"}[q.Get("dir")]
+			th := regexp.MustCompile(`<th aria-sort="([a-z]+)"[^>]*><a [^>]*data-hui-table-sort="` + q.Get("sort") + `"`).FindStringSubmatch(page)
+			if th == nil {
+				t.Errorf("query %q: no th holds the %s column's sort anchor", c.query, q.Get("sort"))
+			} else if th[1] != want {
+				t.Errorf("query %q: the %s column's th says aria-sort=%q, want %q", c.query, q.Get("sort"), th[1], want)
+			}
 		}
 	}
 

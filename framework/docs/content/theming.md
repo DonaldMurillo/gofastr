@@ -395,12 +395,14 @@ alias tokens (`--color-primary-foreground` and kin) are re-emitted in
 scope blocks for the same reason.
 
 **See it:** the product site renders the whole contract on one page under
-each of two boot-registered themes —
-`/examples/headless/default/landing` (comfortable · filled · round) and
-`/examples/headless/dense/landing` (compact · outline · square, its own
-dark palette) — including the same palette under two option sets, an
-A → B → A nest, and the browser proofs that read the computed values
-(`examples/site/e2e_headless_landing_test.go`).
+each of five boot-registered themes, `/examples/headless/{theme}/landing`:
+`default` (comfortable · filled · round), `dense` (compact · outline ·
+square), `soft` (soft · pill, violet), `editorial` (filled · square, a
+serif face) and `contrast` (outline · pill, 7:1 pairs), each with its own
+dark palette. The page carries a theme switcher, the same palette under
+two option sets, an A → B → A nest, and the browser proofs that read the
+computed values (`examples/site/e2e_headless_landing_test.go`,
+`examples/site/e2e_headless_themes_test.go`).
 
 The `fui-` prefix is reserved for `framework/ui`'s class names and
 option variables. Writing `fui-button` on your own markup gets the

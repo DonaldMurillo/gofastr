@@ -229,8 +229,8 @@ func TestE2E_HeadlessLanding_ThemeSwitcher(t *testing.T) {
 }
 
 // TestE2E_HeadlessLanding_NestingLabelIsOtherName proves the nesting
-// fixture's B boundary is labelled with the Other route's Name — data
-// carried on landingRoute, not a segment branch — on every route: the
+// fixture's B boundary is labelled with the Name of the route whose
+// theme is Other — not a segment branch — on every route: the
 // three level headings read [this route, the Other route, this route
 // again].
 func TestE2E_HeadlessLanding_NestingLabelIsOtherName(t *testing.T) {
@@ -248,7 +248,13 @@ func TestE2E_HeadlessLanding_NestingLabelIsOtherName(t *testing.T) {
 		); err != nil {
 			t.Fatalf("chromedp: %v", err)
 		}
-		want := []string{r.Name, r.OtherName, r.Name + " again"}
+		var otherName string
+		for _, o := range landingRoutes {
+			if o.Ref == r.Other {
+				otherName = o.Name
+			}
+		}
+		want := []string{r.Name, otherName, r.Name + " again"}
 		if len(labels) != len(want) {
 			t.Fatalf("%s: nesting fixture has %d level headings (%v), want %d", r.Segment, len(labels), labels, len(want))
 		}
