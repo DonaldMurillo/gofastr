@@ -260,18 +260,28 @@ In-process and typed queries can apply nested filters directly:
 - **`framework.NestedFilter`**: Structured declaration representing a filter across relations:
   ```go
   type NestedFilter struct {
-      RelationPath string   // e.g. "author" or "comments.author" (max 4 hops)
-      Field        string   // field name on the target entity
-      Op           string   // operator: "eq", "gt", "gte", "lt", "lte", "like", "in"
-      Value        string   // filter value
-      Values       []string // filter values for "in" operator
+      Relation string          // declared relation on the entity (supports dot-paths up to 4 hops)
+      Field    string          // field name on the target entity
+      Op       filter.FilterOp // operator: filter.OpEq, filter.OpIn, filter.OpLike, etc.
+      Value    string          // filter value
+      Values   []string        // filter values for filter.OpIn
   }
   ```
 
 - **`TypedQuery.WhereNested`**: Fluent query builder method to filter typed collections across relations:
   ```go
+  import (
+      "github.com/DonaldMurillo/gofastr/framework"
+      "github.com/DonaldMurillo/gofastr/framework/filter"
+  )
+
   posts, err := repo.Query().
-      WhereNested("author.profile", "verified", "eq", true).
+      WhereNested(framework.NestedFilter{
+          Relation: "author.profile",
+          Field:    "verified",
+          Op:       filter.OpEq,
+          Value:    "true",
+      }).
       Find(ctx)
   ```
-  `WhereNested` is supported on all `TypedQuery` execution methods, including `Find`, `First`, `Count`, `Exists`, `UpdateAll`, and `DeleteAll`.
+  `WhereNested` accepts one or more `framework.NestedFilter` objects (with `filter.Values` for `filter.OpIn`) and is supported on all `TypedQuery` execution methods, including `Find`, `First`, `Count`, `Exists`, `UpdateAll`, and `DeleteAll`.
