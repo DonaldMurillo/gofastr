@@ -78,7 +78,7 @@ func TestDataTableEmptyStateRenders(t *testing.T) {
 		Rows:    nil,
 	}))
 	for _, want := range []string{
-		"ui-data-table is-empty",
+		`class="fui-data-table is-empty"`,
 		"<table",
 		"<thead",
 		">Name<",

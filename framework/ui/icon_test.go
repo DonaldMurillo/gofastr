@@ -59,7 +59,7 @@ func TestIcon_SizeOverridesDefault(t *testing.T) {
 
 func TestIcon_CustomClass(t *testing.T) {
 	got := string(Icon("check", IconConfig{Class: "my-icon"}))
-	if !strings.Contains(got, "ui-icon my-icon") {
+	if !classTokenPresent(got, "fui-icon") || !classTokenPresent(got, "my-icon") {
 		t.Errorf("expected base + custom class, got: %s", got)
 	}
 }

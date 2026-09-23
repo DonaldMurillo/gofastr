@@ -132,7 +132,12 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `ui-gallery*` family — `ui.Gallery` now renders through
   `headless.Gallery`, so a captioned item is `li > figure >
   (a > img, figcaption)`: the caption is no longer inside the link,
-  and a captionless item is a plain `li > a > img`), code
+  and a captionless item is a plain `li > a > img`; an item whose
+  `Src` the anchor policy refuses now renders `href="#"` without
+  `target`, where it used to render an anchor with no `href`; an
+  `HrefFn` that returns empty for an item now links that item to its
+  full image, where it used to leave the anchor without an `href`;
+  Gallery panics now start `headless:`), code
   (`ui-code-block*`, `ui-code-tabs`), markdown (`ui-markdown*`),
   terminal (`ui-terminal-block*`, `ui-terminal-ok`, `ui-terminal-out`),
   avatar (`ui-avatar*`, `ui-avatar-group*`), icon (`ui-icon*`), color
@@ -154,6 +159,12 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `data-hui-sidebar-variant`), the button/details group dialects and
   the collapse storage contract are unchanged, and group ids/persist
   keys keep their `<drawer>-inline|-body|-drawer-g<N>` spellings.
+  Configs that used to render and now panic at render time: an item
+  with both `Href` and `Children`, an item whose `Label` is empty or
+  only whitespace, and a `DrawerName` or `CollapseStorageKey` holding
+  control bytes. A sidebar whose items all fall to `Roles` filtering
+  renders nothing, and a group whose children all fall away is
+  dropped.
 - **The residue renamed to `fui-*` classes (Batch 3b).** Data table
   (`ui-data-table*`), segmented (`ui-segmented*`), command palette
   parts (`ui-cmd-palette*`), JSONViewer parts (`ui-json-viewer*`),
@@ -1327,7 +1338,10 @@ are listed under Added above, not here.
     footer, doc layout, workbench, toolbar, filter toolbar, sidebar,
     responsive, themed). `ui.Sidebar` renders through
     `headless.Sidebar`: hooks, ids and storage keys unchanged; byte
-    pins re-read (sorted attribute order, `hidden=""` spelling).
+    pins re-read (sorted attribute order, `hidden=""` spelling). An
+    item with both `Href` and `Children`, a blank `Label`, or control
+    bytes in `DrawerName`/`CollapseStorageKey` now panics: fix the
+    config.
 16. **The residue is `fui-*`** (data table, segmented, palette parts,
     JSONViewer parts, polling indicator, shortcut hint, confirm
     action, tooltip, search input, visually hidden). The

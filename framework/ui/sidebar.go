@@ -252,10 +252,11 @@ type SidebarConfig struct {
 	SuppressDrawerTrigger bool
 
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
-	// analytics markers, ARIA overrides) to the sidebar's root
-	// element. Keys the component owns are dropped: class and id, plus
-	// every data-fui-*/data-hui-* wiring key (the sidebar marker and
-	// collapse-storage contract).
+	// analytics markers) to the sidebar's root element. Keys the
+	// component owns are dropped: class and id, aria-label (the
+	// navigation landmark's name comes from NavLabel), data-collapsed,
+	// and every data-fui-*/data-hui-* wiring key (the sidebar marker
+	// and collapse-storage contract).
 	ExtraAttrs html.Attrs
 }
 
@@ -345,6 +346,12 @@ func filterSidebarItems(ctx context.Context, items []SidebarItem) []SidebarItem 
 		}
 		if len(it.Children) > 0 {
 			it.Children = filterSidebarItems(ctx, it.Children)
+			// A group whose every child is gated away is an empty
+			// disclosure; a group with no href is not a link either.
+			// Drop it rather than render a dead entry.
+			if len(it.Children) == 0 && it.Href == "" {
+				continue
+			}
 		}
 		out = append(out, it)
 	}
@@ -363,8 +370,17 @@ type sidebarComponent struct{ cfg SidebarConfig }
 // RenderCtx renders the sidebar with role-filtered items. The app layout
 // threads the request context here (WrapCtx), so role-gated entries (e.g. an
 // admin-only link) never appear for users who lack the role.
+//
+// When the filter leaves nothing (a guest on an admin-only nav), the
+// sidebar renders nothing: an empty navigation landmark names a region
+// with nothing in it, and the headless primitive refuses one. Roles are
+// request data, so this path renders instead of panicking.
 func (s sidebarComponent) RenderCtx(ctx context.Context) render.HTML {
-	return sidebarComponent{cfg: s.cfg.withFilteredItems(ctx)}.render(ctx)
+	cfg := s.cfg.withFilteredItems(ctx)
+	if len(cfg.Items) == 0 && len(s.cfg.Items) > 0 {
+		return ""
+	}
+	return sidebarComponent{cfg: cfg}.render(ctx)
 }
 
 func (s sidebarComponent) Render() render.HTML { return s.render(context.Background()) }
@@ -571,7 +587,13 @@ type sidebarDrawerSlot struct{ cfg SidebarConfig }
 // context here, so the mobile drawer hides the same role-gated entries the
 // desktop sidebar does.
 func (s sidebarDrawerSlot) RenderCtx(ctx context.Context) render.HTML {
-	return sidebarDrawerSlot{cfg: s.cfg.withFilteredItems(ctx)}.render(ctx)
+	cfg := s.cfg.withFilteredItems(ctx)
+	if len(cfg.Items) == 0 && len(s.cfg.Items) > 0 {
+		// Every entry gated away: the drawer body is empty, as the
+		// inline sidebar is (see sidebarComponent.RenderCtx).
+		return ""
+	}
+	return sidebarDrawerSlot{cfg: cfg}.render(ctx)
 }
 
 func (s sidebarDrawerSlot) Render() render.HTML { return s.render(context.Background()) }

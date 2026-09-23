@@ -6,6 +6,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
+	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/headless"
 )
@@ -183,11 +184,16 @@ func Gallery(cfg GalleryConfig) render.HTML {
 	}
 
 	// The default and lightbox anchors open the full image in a new
-	// tab; an HrefFn anchor goes where the caller said.
+	// tab; an HrefFn anchor goes where the caller said. A Src the
+	// anchor policy refuses renders as href="#", which gets no target:
+	// a new tab opened on "#" is a blank page.
 	var perItem map[int]html.Attrs
 	if cfg.HrefFn == nil {
 		perItem = make(map[int]html.Attrs, len(items))
-		for i := range items {
+		for i, it := range items {
+			if urlsafe.CleanAnchor(it.Src) == "" {
+				continue
+			}
 			perItem[i] = html.Attrs{"target": "_blank", "rel": "noopener"}
 		}
 	}

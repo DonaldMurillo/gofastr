@@ -44,8 +44,8 @@ type GalleryProps struct {
 	// landmark a screen reader cannot jump to.
 	Label string
 	// HrefFn, when set, returns a per-item destination. Empty for an
-	// item makes that item's link the full image (the no-JS fallback
-	// the retired component shipped).
+	// item makes that item's link the full image, so every tile stays
+	// a working link.
 	HrefFn func(i int, it GalleryItem) string
 	// ExtraAttrsPerItem adds attributes to item N's anchor (a lightbox
 	// group id, a deeplink): index → attrs.

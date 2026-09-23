@@ -116,7 +116,7 @@ func TestCommandPaletteCloseControl(t *testing.T) {
 		`aria-label="Close"`,
 		`class="fui-cmd-palette__close"`,
 		`type="button"`,
-		`ui-icon fui-cmd-palette__close-icon`,
+		`class="fui-icon fui-cmd-palette__close-icon"`,
 	} {
 		if !strings.Contains(h, w) {
 			t.Errorf("close control missing %q\nbody: %s", w, h)
