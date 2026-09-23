@@ -30,6 +30,7 @@ type (
 	FieldDeclaration        = entity.FieldDeclaration
 	Relation                = entity.Relation
 	RelationType            = entity.RelationType
+	OnDeleteAction          = entity.OnDeleteAction
 	Condition               = entity.Condition
 	Order                   = entity.Order
 	StringColumn            = entity.StringColumn
@@ -47,6 +48,11 @@ const (
 	RelHasMany    = entity.RelHasMany
 	RelManyToOne  = entity.RelManyToOne
 	RelManyToMany = entity.RelManyToMany
+
+	OnDeleteNoAction = entity.OnDeleteNoAction
+	OnDeleteRestrict = entity.OnDeleteRestrict
+	OnDeleteCascade  = entity.OnDeleteCascade
+	OnDeleteSetNull  = entity.OnDeleteSetNull
 )
 
 // Define wraps entity.Define.

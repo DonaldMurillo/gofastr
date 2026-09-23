@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"regexp"
 	"slices"
 	"sort"
 	"strings"
@@ -34,6 +35,7 @@ type SchemaSnapshot struct {
 	// FK, defaults) rather than a lossy column-list reconstruction. Optional:
 	// snapshots written by an older gofastr fall back to recreateTableSQL.
 	TableDDL map[string]string     `json:"table_ddl,omitempty"`
+	Indices  map[string][]string   `json:"indices,omitempty"`
 	Views    map[string]RoutineDef `json:"views,omitempty"`
 	Routines map[string]RoutineDef `json:"routines,omitempty"`
 }
@@ -75,6 +77,130 @@ func SnapshotFromPlan(plan Plan, dialect Dialect) SchemaSnapshot {
 				}
 				snap.TableDDL[ent.GetTable()] = ddl
 			}
+			if safeTable, err := query.SafeIdent(ent.GetTable()); err == nil {
+				var idxDDLs []string
+				for _, idx := range entityIndices(ent) {
+					idxDDLs = append(idxDDLs, indexDDL(safeTable, idx))
+				}
+				if len(idxDDLs) > 0 {
+					if snap.Indices == nil {
+						snap.Indices = map[string][]string{}
+					}
+					snap.Indices[ent.GetTable()] = idxDDLs
+				}
+			}
+		}
+
+		// Record ManyToMany pivot tables in snapshot using the exact same topological ordering
+		// as diffPivotTables and migratePivotTables so reciprocal declarations pick identical
+		// canonical pivot metadata.
+		orderedPivots, err := topoSortEntities(all)
+		if err != nil {
+			names := make([]string, 0, len(all))
+			for n := range all {
+				names = append(names, n)
+			}
+			sort.Strings(names)
+			orderedPivots = make([]*entity.Entity, 0, len(names))
+			for _, n := range names {
+				orderedPivots = append(orderedPivots, all[n])
+			}
+		}
+		seenPivot := make(map[string]bool)
+		for _, ent := range orderedPivots {
+			for _, rel := range ent.Config.Relations {
+				if rel.Type != entity.RelManyToMany || rel.Through == "" {
+					continue
+				}
+				pivotTable := rel.Through
+				key := strings.ToLower(pivotTable)
+				if seenPivot[key] {
+					continue
+				}
+				hasEntity := false
+				if all != nil {
+					if all[pivotTable] != nil {
+						hasEntity = true
+					} else {
+						for _, e := range all {
+							if strings.EqualFold(e.GetTable(), pivotTable) {
+								hasEntity = true
+								break
+							}
+						}
+					}
+				}
+				if hasEntity {
+					continue
+				}
+				seenPivot[key] = true
+				target := all[rel.Entity]
+				if target == nil {
+					continue
+				}
+				sourcePK := ent.PrimaryKey
+				if sourcePK == "" {
+					sourcePK = "id"
+				}
+				targetPK := target.PrimaryKey
+				if targetPK == "" {
+					targetPK = "id"
+				}
+				sourcePKType := fkColumnSQLType(ent, sourcePK, dialect)
+				targetPKType := fkColumnSQLType(target, targetPK, dialect)
+				safeThrough, err := query.SafeIdent(pivotTable)
+				if err != nil {
+					continue
+				}
+				safeLocalKey, err := query.SafeIdent(rel.LocalKey)
+				if err != nil {
+					continue
+				}
+				safeTargetKey, err := query.SafeIdent(rel.ForeignKeyTarget)
+				if err != nil {
+					continue
+				}
+				safeSourceTable, err := query.SafeIdent(ent.GetTable())
+				if err != nil {
+					continue
+				}
+				safeSourcePK, err := query.SafeIdent(sourcePK)
+				if err != nil {
+					continue
+				}
+				safeTargetTable, err := query.SafeIdent(target.GetTable())
+				if err != nil {
+					continue
+				}
+				safeTargetPK, err := query.SafeIdent(targetPK)
+				if err != nil {
+					continue
+				}
+
+				snap.Tables[safeThrough] = map[string]string{
+					safeLocalKey:  sourcePKType,
+					safeTargetKey: targetPKType,
+				}
+				pivotDDL := fmt.Sprintf(
+					"CREATE TABLE IF NOT EXISTS %s (\n\t%s %s NOT NULL,\n\t%s %s NOT NULL,\n\tPRIMARY KEY (%s, %s),\n\tFOREIGN KEY (%s) REFERENCES %s(%s) ON DELETE CASCADE,\n\tFOREIGN KEY (%s) REFERENCES %s(%s) ON DELETE CASCADE\n)",
+					safeThrough,
+					safeLocalKey, sourcePKType,
+					safeTargetKey, targetPKType,
+					safeLocalKey, safeTargetKey,
+					safeLocalKey, safeSourceTable, safeSourcePK,
+					safeTargetKey, safeTargetTable, safeTargetPK,
+				)
+				if snap.TableDDL == nil {
+					snap.TableDDL = map[string]string{}
+				}
+				snap.TableDDL[safeThrough] = pivotDDL
+				if snap.Indices == nil {
+					snap.Indices = map[string][]string{}
+				}
+				snap.Indices[safeThrough] = []string{
+					fmt.Sprintf("CREATE INDEX IF NOT EXISTS idx_%s_%s ON %s(%s)", safeThrough, safeTargetKey, safeThrough, safeTargetKey),
+				}
+			}
 		}
 	}
 	if len(plan.Views) > 0 {
@@ -105,7 +231,7 @@ func GenerateMigration(reg entity.Registry, prev SchemaSnapshot, dialect Dialect
 }
 
 // GeneratePlan is GenerateMigration for a full Plan: it diffs both the tables
-// (entities + raw Tables) and the routines against the snapshot, emitting one
+// (entities + declared relations) and the views/routines against the snapshot, emitting one
 // reversible migration that covers everything. Routine bodies are compared
 // verbatim; a changed routine's Down restores the previous body, and a removed
 // routine is dropped (with its recreation as the Down).
@@ -125,26 +251,71 @@ func GeneratePlan(plan Plan, prev SchemaSnapshot, dialect Dialect) (up, down str
 		if ent.Config.Unmanaged {
 			continue // views / external tables generate no table DDL
 		}
-		prevCols := prev.Tables[ent.GetTable()]
+		prevCols := lookupTableCols(prev.Tables, ent.GetTable())
 		entChanges, derr := diffEntityFromLive(ent, all, dialect, prevCols)
 		if derr != nil {
 			return "", "", SchemaSnapshot{}, fmt.Errorf("generate %s: %w", ent.GetName(), derr)
 		}
 		changes = append(changes, entChanges...)
+
+		if len(prevCols) > 0 {
+			safeTable, err := query.SafeIdent(ent.GetTable())
+			if err == nil {
+				desiredIdxList := entityIndices(ent)
+				desiredIdxDDLs := make([]string, len(desiredIdxList))
+				for i, idx := range desiredIdxList {
+					desiredIdxDDLs[i] = indexDDL(safeTable, idx)
+				}
+				if prev.Indices != nil {
+					prevIdxDDLs := lookupIndicesCase(prev.Indices, ent.GetTable())
+					idxChanges := diffTableIndices(ent.GetName(), safeTable, desiredIdxDDLs, prevIdxDDLs)
+					changes = append(changes, idxChanges...)
+				} else {
+					// Legacy snapshot without Indices map: prior indices unknown.
+					// Emit idempotent CREATE INDEX IF NOT EXISTS for all desired indices
+					// so existing tables acquire new/missing indices without silent skips.
+					for _, ddl := range desiredIdxDDLs {
+						idxName := parseIndexName(ddl)
+						safeIdxName, err := query.SafeIdent(idxName)
+						if err != nil {
+							continue
+						}
+						changes = append(changes, SchemaChange{
+							Summary: fmt.Sprintf("%s: index %s", ent.GetName(), safeIdxName),
+							SQL:     ddl,
+							Down:    fmt.Sprintf("DROP INDEX IF EXISTS %s", safeIdxName),
+						})
+					}
+				}
+			}
+		}
+	}
+
+	if len(ordered) > 0 {
+		pivotChanges, err := diffPivotTables(ordered, all, dialect, prev.Tables)
+		if err != nil {
+			return "", "", SchemaSnapshot{}, err
+		}
+		changes = append(changes, pivotChanges...)
 	}
 
 	// Tables in the snapshot that no entity declares anymore → DROP TABLE.
 	declaredTables := map[string]bool{}
 	for _, ent := range all {
-		declaredTables[ent.GetTable()] = true
+		declaredTables[strings.ToLower(ent.GetTable())] = true
+		for _, rel := range ent.Config.Relations {
+			if rel.Type == entity.RelManyToMany && rel.Through != "" {
+				declaredTables[strings.ToLower(rel.Through)] = true
+			}
+		}
 	}
 	dropped := make([]string, 0)
 	for table := range prev.Tables {
-		if !declaredTables[table] {
+		if !declaredTables[strings.ToLower(table)] {
 			dropped = append(dropped, table)
 		}
 	}
-	sort.Strings(dropped)
+	dropped = sortDroppedTables(dropped, prev.TableDDL)
 	for _, table := range dropped {
 		qtable, qerr := query.SafeIdent(table)
 		if qerr != nil {
@@ -153,9 +324,18 @@ func GeneratePlan(plan Plan, prev SchemaSnapshot, dialect Dialect) (up, down str
 		// Prefer the faithful CREATE TABLE captured in the snapshot (all
 		// constraints); fall back to a column-list reconstruction for snapshots
 		// written before TableDDL existed.
-		down := prev.TableDDL[table]
+		down := lookupStringCase(prev.TableDDL, table)
 		if down == "" {
-			down = recreateTableSQL(table, prev.Tables[table])
+			down = recreateTableSQL(table, lookupTableCols(prev.Tables, table))
+		}
+		if prev.Indices != nil {
+			if idxs := lookupIndicesCase(prev.Indices, table); len(idxs) > 0 {
+				var trimmedIdxs []string
+				for _, idx := range idxs {
+					trimmedIdxs = append(trimmedIdxs, strings.TrimRight(strings.TrimSpace(idx), ";"))
+				}
+				down = strings.TrimRight(strings.TrimSpace(down), ";") + ";\n" + strings.Join(trimmedIdxs, ";\n")
+			}
 		}
 		changes = append(changes, SchemaChange{
 			Summary:     fmt.Sprintf("%s: drop table", table),
@@ -174,6 +354,22 @@ func GeneratePlan(plan Plan, prev SchemaSnapshot, dialect Dialect) (up, down str
 	}
 	changes = append(changes, routineChanges(viewRoutines, prev.Views)...)
 	changes = append(changes, routineChanges(plan.Routines, prev.Routines)...)
+
+	// Deduplicate identical SchemaChange statements (e.g. index DDL emitted
+	// both by diffEntityFromLive column additions and diffTableIndices).
+	seenSQL := make(map[string]bool, len(changes))
+	dedupedChanges := make([]SchemaChange, 0, len(changes))
+	for _, c := range changes {
+		norm := strings.TrimRight(strings.TrimSpace(c.SQL), ";")
+		if norm != "" && seenSQL[norm] {
+			continue
+		}
+		if norm != "" {
+			seenSQL[norm] = true
+		}
+		dedupedChanges = append(dedupedChanges, c)
+	}
+	changes = dedupedChanges
 
 	next = SnapshotFromPlan(plan, dialect)
 	if len(changes) == 0 {
@@ -380,4 +576,215 @@ func SaveSnapshot(path string, snap SchemaSnapshot) error {
 	// funcs, or cycles, so the only real error here is the file write.
 	data, _ := json.MarshalIndent(snap, "", "  ")
 	return os.WriteFile(path, append(data, '\n'), 0o644)
+}
+
+var reFKReferences = regexp.MustCompile(`(?i)\bREFERENCES\s+([a-zA-Z0-9_]+)`)
+
+// sortDroppedTables orders tables for DROP TABLE so that child/referencing tables
+// (such as pivot tables or tables with foreign keys) are dropped BEFORE the tables
+// they reference. Because formatPlan reverses the changes slice for Down migrations
+// (via slices.Backward), this ordering simultaneously guarantees that Down migrations
+// recreate referenced/parent tables BEFORE the child tables that reference them.
+func sortDroppedTables(tables []string, tableDDL map[string]string) []string {
+	if len(tables) <= 1 {
+		return tables
+	}
+	droppedSet := make(map[string]bool, len(tables))
+	for _, t := range tables {
+		droppedSet[strings.ToLower(t)] = true
+	}
+
+	// dep[A] = list of tables that A references (A must be dropped before B)
+	dep := make(map[string][]string, len(tables))
+	inDegree := make(map[string]int, len(tables))
+	canon := make(map[string]string, len(tables)) // lower -> original casing
+	for _, t := range tables {
+		low := strings.ToLower(t)
+		canon[low] = t
+		inDegree[low] = 0
+	}
+
+	for _, t := range tables {
+		low := strings.ToLower(t)
+		ddl := lookupStringCase(tableDDL, t)
+		if ddl == "" {
+			continue
+		}
+		matches := reFKReferences.FindAllStringSubmatch(ddl, -1)
+		seenRef := make(map[string]bool)
+		for _, m := range matches {
+			if len(m) > 1 {
+				target := strings.ToLower(m[1])
+				if target != low && droppedSet[target] && !seenRef[target] {
+					seenRef[target] = true
+					dep[low] = append(dep[low], target)
+					inDegree[target]++
+				}
+			}
+		}
+	}
+
+	var queue []string
+	for low, deg := range inDegree {
+		if deg == 0 {
+			queue = append(queue, low)
+		}
+	}
+	sort.Strings(queue)
+
+	result := make([]string, 0, len(tables))
+	visited := make(map[string]bool, len(tables))
+
+	for len(queue) > 0 {
+		curr := queue[0]
+		queue = queue[1:]
+		result = append(result, canon[curr])
+		visited[curr] = true
+
+		for _, next := range dep[curr] {
+			inDegree[next]--
+			if inDegree[next] == 0 {
+				queue = append(queue, next)
+				sort.Strings(queue)
+			}
+		}
+	}
+
+	if len(result) < len(tables) {
+		// In case of cycles or unvisited nodes, append remaining deterministically.
+		var remaining []string
+		for _, t := range tables {
+			if !visited[strings.ToLower(t)] {
+				remaining = append(remaining, t)
+			}
+		}
+		sort.Strings(remaining)
+		result = append(result, remaining...)
+	}
+
+	return result
+}
+
+// lookupTableCols performs a case-insensitive lookup in a table-to-columns map.
+// SQL identifiers are case-folded in PostgreSQL and case-insensitive in SQLite,
+// so snapshot matching must not treat case changes as missing tables.
+func lookupTableCols(tables map[string]map[string]string, name string) map[string]string {
+	if tables == nil {
+		return nil
+	}
+	if cols, ok := tables[name]; ok {
+		return cols
+	}
+	for k, cols := range tables {
+		if strings.EqualFold(k, name) {
+			return cols
+		}
+	}
+	return nil
+}
+
+// lookupStringCase performs a case-insensitive lookup in a string-to-string map.
+func lookupStringCase(m map[string]string, key string) string {
+	if m == nil {
+		return ""
+	}
+	if v, ok := m[key]; ok {
+		return v
+	}
+	for k, v := range m {
+		if strings.EqualFold(k, key) {
+			return v
+		}
+	}
+	return ""
+}
+
+// lookupIndicesCase performs a case-insensitive lookup in a table-to-indices map.
+func lookupIndicesCase(m map[string][]string, key string) []string {
+	if m == nil {
+		return nil
+	}
+	if v, ok := m[key]; ok {
+		return v
+	}
+	for k, v := range m {
+		if strings.EqualFold(k, key) {
+			return v
+		}
+	}
+	return nil
+}
+
+// diffTableIndices compares desired index DDLs against previous index DDLs for a table,
+// emitting CREATE INDEX for new indices and DROP INDEX for removed indices.
+func diffTableIndices(entName, safeTable string, desiredDDLs, prevDDLs []string) []SchemaChange {
+	var changes []SchemaChange
+	prevMap := make(map[string]string)
+	for _, ddl := range prevDDLs {
+		if name := parseIndexName(ddl); name != "" {
+			prevMap[strings.ToLower(name)] = ddl
+		}
+	}
+	desiredMap := make(map[string]string)
+	for _, ddl := range desiredDDLs {
+		if name := parseIndexName(ddl); name != "" {
+			desiredMap[strings.ToLower(name)] = ddl
+		}
+	}
+
+	for _, ddl := range desiredDDLs {
+		name := parseIndexName(ddl)
+		if name == "" {
+			continue
+		}
+		safeName, err := query.SafeIdent(name)
+		if err != nil {
+			continue
+		}
+		prevDDL, ok := prevMap[strings.ToLower(name)]
+		if !ok {
+			changes = append(changes, SchemaChange{
+				Summary: fmt.Sprintf("%s: index %s", entName, safeName),
+				SQL:     ddl,
+				Down:    fmt.Sprintf("DROP INDEX IF EXISTS %s", safeName),
+			})
+		} else if strings.TrimRight(strings.TrimSpace(prevDDL), ";") != strings.TrimRight(strings.TrimSpace(ddl), ";") {
+			// Index definition changed under the same index name (e.g. Unique flip, or column change under explicit name).
+			// Drop the old index and create the new index.
+			// Down reverses this: drops the new index and restores the old index DDL.
+			dropSQL := fmt.Sprintf("DROP INDEX IF EXISTS %s", safeName)
+			changes = append(changes,
+				SchemaChange{
+					Summary: fmt.Sprintf("%s: drop modified index %s", entName, safeName),
+					SQL:     dropSQL,
+					Down:    prevDDL,
+				},
+				SchemaChange{
+					Summary: fmt.Sprintf("%s: index %s", entName, safeName),
+					SQL:     ddl,
+					Down:    dropSQL,
+				},
+			)
+		}
+	}
+
+	for _, ddl := range prevDDLs {
+		name := parseIndexName(ddl)
+		if name == "" {
+			continue
+		}
+		safeName, err := query.SafeIdent(name)
+		if err != nil {
+			continue
+		}
+		if _, ok := desiredMap[strings.ToLower(name)]; !ok {
+			changes = append(changes, SchemaChange{
+				Summary:     fmt.Sprintf("%s: remove index %s", entName, safeName),
+				SQL:         fmt.Sprintf("DROP INDEX IF EXISTS %s", safeName),
+				Down:        ddl,
+				Destructive: true,
+			})
+		}
+	}
+	return changes
 }

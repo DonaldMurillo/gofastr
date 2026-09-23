@@ -1620,7 +1620,7 @@ func decodeRelations(node *coreyaml.Node) ([]framework.Relation, error) {
 		if err != nil {
 			return nil, err
 		}
-		allowed := map[string]bool{"type": true, "name": true, "entity": true, "foreign_key": true, "through": true, "local_key": true, "foreign_key_target": true}
+		allowed := map[string]bool{"type": true, "name": true, "entity": true, "foreign_key": true, "through": true, "local_key": true, "foreign_key_target": true, "on_delete": true, "cascade_write": true}
 		if err := rejectUnknownKeys(m, allowed, fmt.Sprintf("relations[%d]", i)); err != nil {
 			return nil, err
 		}
@@ -1628,6 +1628,22 @@ func decodeRelations(node *coreyaml.Node) ([]framework.Relation, error) {
 		if err != nil {
 			return nil, err
 		}
+		var onDelete framework.OnDeleteAction
+		if odVal := stringValue(m["on_delete"]); odVal != "" {
+			switch strings.ToLower(odVal) {
+			case "cascade":
+				onDelete = framework.OnDeleteCascade
+			case "set_null", "set null":
+				onDelete = framework.OnDeleteSetNull
+			case "restrict":
+				onDelete = framework.OnDeleteRestrict
+			case "no_action", "no action":
+				onDelete = framework.OnDeleteNoAction
+			default:
+				return nil, fmt.Errorf("relations[%d]: unknown on_delete action %q", i, odVal)
+			}
+		}
+		cascadeWrite := boolValue(m["cascade_write"])
 		out = append(out, framework.Relation{
 			Type:             relType,
 			Name:             stringValue(m["name"]),
@@ -1636,6 +1652,8 @@ func decodeRelations(node *coreyaml.Node) ([]framework.Relation, error) {
 			Through:          stringValue(m["through"]),
 			LocalKey:         stringValue(m["local_key"]),
 			ForeignKeyTarget: stringValue(m["foreign_key_target"]),
+			OnDelete:         onDelete,
+			CascadeWrite:     cascadeWrite,
 		})
 	}
 	return out, nil

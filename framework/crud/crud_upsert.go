@@ -153,9 +153,11 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 				vals = append(vals, body[f.Name])
 				continue
 			}
+			if ch.Entity.Config.Scope.MultiTenant && f.Name == ch.Entity.Config.TenantColumn() {
+				continue
+			}
 			if (f.ReadOnly || f.Hidden) && f.Name != ch.Entity.Config.Scope.OwnerField {
-				isTenantCol := ch.Entity.Config.Scope.MultiTenant && f.Name == ch.Entity.Config.TenantColumn()
-				if isTenantCol || !serverWrites(ctx) {
+				if !serverWrites(ctx) {
 					continue
 				}
 			}

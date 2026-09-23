@@ -70,6 +70,91 @@ func TestCreate_TenantMissing(t *testing.T) {
 	}
 }
 
+func TestCreate_ExplicitTenantField_NoDuplicateColumn(t *testing.T) {
+	db := setupDB(t, `CREATE TABLE mt_explicit (id TEXT PRIMARY KEY, tenant_id TEXT, body TEXT)`)
+	ent := entity.Define("mt_explicit", entity.EntityConfig{
+		Name:  "mt_explicit",
+		Table: "mt_explicit",
+		Scope: &entity.ScopeConfig{MultiTenant: true, TenantField: "tenant_id"},
+		Fields: []schema.Field{
+			{Name: "body", Type: schema.String},
+			{Name: "tenant_id", Type: schema.String},
+		},
+	}.WithTimestamps(false))
+	ent.SetDB(db)
+	ch := NewCrudHandler(ent, db).WithJSONCase(CaseSnake)
+
+	ctx := tenant.SetTenantID(context.Background(), "tenant-xyz")
+	created, err := ch.CreateOne(ctx, map[string]any{"body": "hello"})
+	if err != nil {
+		t.Fatalf("CreateOne with explicit tenant field failed: %v", err)
+	}
+	if created["body"] != "hello" {
+		t.Errorf("got body %v, want hello", created["body"])
+	}
+
+	var storedTenant string
+	err = db.QueryRow("SELECT tenant_id FROM mt_explicit WHERE id = $1", created["id"]).Scan(&storedTenant)
+	if err != nil {
+		t.Fatalf("query row: %v", err)
+	}
+	if storedTenant != "tenant-xyz" {
+		t.Errorf("got tenant_id %q, want tenant-xyz", storedTenant)
+	}
+}
+
+func TestUpsert_ExplicitTenantField_NoDuplicateColumn(t *testing.T) {
+	db := setupDB(t, `CREATE TABLE mt_explicit_upsert (id TEXT PRIMARY KEY, tenant_id TEXT, body TEXT)`)
+	ent := entity.Define("mt_explicit_upsert", entity.EntityConfig{
+		Name:  "mt_explicit_upsert",
+		Table: "mt_explicit_upsert",
+		Scope: &entity.ScopeConfig{MultiTenant: true, TenantField: "tenant_id"},
+		Fields: []schema.Field{
+			{Name: "id", Type: schema.String},
+			{Name: "body", Type: schema.String},
+			{Name: "tenant_id", Type: schema.String},
+		},
+	}.WithTimestamps(false))
+	ent.SetDB(db)
+	ch := NewCrudHandler(ent, db).WithJSONCase(CaseSnake)
+
+	ctx := tenant.SetTenantID(context.Background(), "tenant-xyz")
+	// 1. Initial upsert (insert path)
+	created, err := ch.UpsertOne(ctx, map[string]any{"id": "up-1", "body": "hello"})
+	if err != nil {
+		t.Fatalf("UpsertOne (insert) with explicit tenant field failed: %v", err)
+	}
+	if created["body"] != "hello" {
+		t.Errorf("got body %v, want hello", created["body"])
+	}
+
+	var storedTenant string
+	err = db.QueryRow("SELECT tenant_id FROM mt_explicit_upsert WHERE id = 'up-1'").Scan(&storedTenant)
+	if err != nil {
+		t.Fatalf("query row: %v", err)
+	}
+	if storedTenant != "tenant-xyz" {
+		t.Errorf("got tenant_id %q, want tenant-xyz", storedTenant)
+	}
+
+	// 2. Subsequent upsert (update path)
+	updated, err := ch.UpsertOne(ctx, map[string]any{"id": "up-1", "body": "hello-again"})
+	if err != nil {
+		t.Fatalf("UpsertOne (update) with explicit tenant field failed: %v", err)
+	}
+	if updated["body"] != "hello-again" {
+		t.Errorf("got body %v, want hello-again", updated["body"])
+	}
+
+	err = db.QueryRow("SELECT tenant_id FROM mt_explicit_upsert WHERE id = 'up-1'").Scan(&storedTenant)
+	if err != nil {
+		t.Fatalf("query row: %v", err)
+	}
+	if storedTenant != "tenant-xyz" {
+		t.Errorf("got tenant_id %q, want tenant-xyz", storedTenant)
+	}
+}
+
 func TestAfterHooks_RunOnAllOps(t *testing.T) {
 	ch, _ := covNotesHandler(t)
 	ch.Hooks = hook.NewHookRegistry()

@@ -86,3 +86,101 @@ func TestNestedFilterRefusesWithoutRegistry(t *testing.T) {
 		t.Fatal("SECURITY: a nested filter was applied with no registry to validate it against")
 	}
 }
+
+func TestBuildExistsSubquery_UnsafeRelationIdentifiers(t *testing.T) {
+	cases := []struct {
+		name string
+		nf   nestedFilter
+		ppk  string
+	}{
+		{
+			name: "unsafe foreign key in BelongsTo",
+			nf: nestedFilter{
+				Relation: entity.Relation{Type: entity.RelManyToOne, Entity: "authors", ForeignKey: "author_id; DROP TABLE users"},
+				Field:    "name",
+				Op:       "eq",
+				Value:    "alice",
+			},
+		},
+		{
+			name: "unsafe foreign key in HasMany",
+			nf: nestedFilter{
+				Relation: entity.Relation{Type: entity.RelHasMany, Entity: "comments", ForeignKey: "post_id; DROP TABLE users"},
+				Field:    "content",
+				Op:       "eq",
+				Value:    "test",
+			},
+		},
+		{
+			name: "unsafe through in ManyToMany",
+			nf: nestedFilter{
+				Relation: entity.Relation{
+					Type:             entity.RelManyToMany,
+					Entity:           "tags",
+					Through:          "post_tags; DROP TABLE users",
+					LocalKey:         "post_id",
+					ForeignKeyTarget: "tag_id",
+				},
+				Field: "name",
+				Op:    "eq",
+				Value: "go",
+			},
+		},
+		{
+			name: "unsafe local_key in ManyToMany",
+			nf: nestedFilter{
+				Relation: entity.Relation{
+					Type:             entity.RelManyToMany,
+					Entity:           "tags",
+					Through:          "post_tags",
+					LocalKey:         "post_id OR 1=1",
+					ForeignKeyTarget: "tag_id",
+				},
+				Field: "name",
+				Op:    "eq",
+				Value: "go",
+			},
+		},
+		{
+			name: "unsafe target_key in ManyToMany",
+			nf: nestedFilter{
+				Relation: entity.Relation{
+					Type:             entity.RelManyToMany,
+					Entity:           "tags",
+					Through:          "post_tags",
+					LocalKey:         "post_id",
+					ForeignKeyTarget: "tag_id OR 1=1",
+				},
+				Field: "name",
+				Op:    "eq",
+				Value: "go",
+			},
+		},
+		{
+			name: "unsafe parent pk",
+			ppk:  "id; SELECT 1",
+			nf: nestedFilter{
+				Relation: entity.Relation{Type: entity.RelHasMany, Entity: "comments", ForeignKey: "post_id"},
+				Field:    "content",
+				Op:       "eq",
+				Value:    "test",
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ppk := tc.ppk
+			if ppk == "" {
+				ppk = "id"
+			}
+			sql, _ := buildExistsSubquery("posts", ppk, tc.nf)
+			if strings.Contains(sql, ";") || strings.Contains(sql, "DROP") || strings.Contains(sql, "OR 1=1") {
+				t.Fatalf("SECURITY: unsafe SQL generated for %s: %s", tc.name, sql)
+			}
+			if sql != "1 = 0" {
+				t.Fatalf("expected '1 = 0' for unsafe identifier in %s, got %s", tc.name, sql)
+			}
+		})
+	}
+}

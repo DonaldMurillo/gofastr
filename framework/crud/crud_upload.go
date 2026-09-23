@@ -182,8 +182,8 @@ func (ch *CrudHandler) readRequestBody(r *http.Request) (map[string]any, []strin
 	if err := handler.CheckTopLevelKeys(data, ch.wireKeyColumn); err != nil {
 		return nil, nil, err
 	}
-	var body map[string]any
-	if err := handler.UnmarshalStrict(data, &body); err != nil {
+	body, err := decodeStrictUseNumber(data)
+	if err != nil {
 		return nil, nil, err
 	}
 	return ch.unconvertMapKeys(body), nil, nil

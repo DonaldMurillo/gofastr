@@ -261,3 +261,77 @@ func TestSchemaDiff_ApplyTransactional(t *testing.T) {
 		}
 	})
 }
+
+// TestSchemaDiff_MixedCaseField_NoDropColumn asserts that a declared mixed-case field
+// (e.g. Title) does not produce a DROP COLUMN on steady-state diff.
+func TestSchemaDiff_MixedCaseField_NoDropColumn(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
+		if _, err := db.Exec(`CREATE TABLE widgets (id TEXT PRIMARY KEY, "Title" TEXT NOT NULL, author_id TEXT)`); err != nil {
+			t.Fatalf("create: %v", err)
+		}
+		reg := NewRegistry()
+		reg.Register(entity.Define("widgets", entity.EntityConfig{
+			Table: "widgets",
+			Fields: []schema.Field{
+				{Name: "Title", Type: schema.String, Required: true},
+				{Name: "author_id", Type: schema.String},
+			},
+		}.WithTimestamps(false)))
+
+		changes, err := DiffSchema(context.Background(), db, reg)
+		if err != nil {
+			t.Fatalf("DiffSchema: %v", err)
+		}
+		for _, c := range changes {
+			if strings.Contains(c.SQL, "DROP COLUMN") {
+				t.Fatalf("unexpected DROP COLUMN in steady-state diff for mixed-case field: %s", c.SQL)
+			}
+		}
+	})
+}
+
+// TestSchemaDiff_CreateTableIncludesIndicesAndAutoFKIndex asserts that when a new
+// table is created by DiffSchema, declared indices and auto BelongsTo FK indices
+// are emitted in the creation SQL.
+func TestSchemaDiff_CreateTableIncludesIndicesAndAutoFKIndex(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
+		reg := NewRegistry()
+		reg.Register(entity.Define("users", entity.EntityConfig{
+			Table: "users",
+			Fields: []schema.Field{
+				{Name: "name", Type: schema.String},
+			},
+		}.WithTimestamps(false)))
+		reg.Register(entity.Define("posts", entity.EntityConfig{
+			Table: "posts",
+			Fields: []schema.Field{
+				{Name: "title", Type: schema.String, Required: true},
+				{Name: "author_id", Type: schema.String},
+			},
+			Indices: []entity.Index{
+				{Name: "idx_posts_title", Columns: []string{"title"}},
+			},
+			Relations: []entity.Relation{
+				{Name: "author", Type: entity.RelManyToOne, Entity: "users", ForeignKey: "author_id"},
+			},
+		}.WithTimestamps(false)))
+
+		changes, err := DiffSchema(context.Background(), db, reg)
+		if err != nil {
+			t.Fatalf("DiffSchema: %v", err)
+		}
+		var postsSQL string
+		for _, c := range changes {
+			if strings.Contains(c.Summary, "posts") {
+				postsSQL = c.SQL
+				break
+			}
+		}
+		if !strings.Contains(postsSQL, "idx_posts_title") {
+			t.Fatalf("expected declared index idx_posts_title in create table SQL: %s", postsSQL)
+		}
+		if !strings.Contains(postsSQL, "idx_posts_author_id") {
+			t.Fatalf("expected auto FK index idx_posts_author_id in create table SQL: %s", postsSQL)
+		}
+	})
+}
