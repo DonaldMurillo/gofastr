@@ -195,7 +195,7 @@ func segmentedCSS(_ style.Theme) string {
   padding: var(--spacing-sm, 4px);
   gap: 0;
   border-radius: var(--radii-md, 8px);
-  background: var(--color-muted, #f1f1f3);
+  background: var(--color-surface-soft, #f1f1f3);
   border: 1px solid var(--color-border, #e5e7eb);
   font-size: var(--text-sm, 0.875rem);
   vertical-align: middle;

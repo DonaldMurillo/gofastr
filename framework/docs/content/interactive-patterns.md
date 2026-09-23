@@ -93,7 +93,7 @@ between `"true"` and `"false"`.
 ### Collapsible
 
 `framework/ui.Collapsible` wraps native `<details>` with
-`data-fui-disclosure` for keyboard support (Escape to close) and
+`data-hui-disclosure` for keyboard support (Escape to close) and
 `aria-expanded` mirroring. The browser handles open/close natively.
 
 ### Copy to clipboard
@@ -144,8 +144,7 @@ IntersectionObserves which section is currently in the upper portion
 of the viewport and marks the corresponding nav link
 `aria-current="true"` / `.is-active`. The table of contents
 (`headless.TableOfContents`, `data-hui-toc`) shares the same observer.
-The retired `data-fui-scrollspy` spelling survives only as a marker
-the `activelink` module keeps its hands off.
+The retired scrollspy spelling is gone with its module.
 
 ---
 

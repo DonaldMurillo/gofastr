@@ -390,9 +390,7 @@ The declarations are re-emitted at every boundary — root and scope,
 light and dark — because a custom property's `var()` references
 compute where the declaration sits: `--fui-button-primary-bg:
 var(--color-primary)` declared only at `:root` would carry the root's
-resolved primary into a scope with its own palette. The `:root`-only
-alias tokens (`--color-primary-foreground` and kin) are re-emitted in
-scope blocks for the same reason.
+resolved primary into a scope with its own palette.
 
 **See it:** the product site renders the whole contract on one page under
 each of five boot-registered themes, `/examples/headless/{theme}/landing`:

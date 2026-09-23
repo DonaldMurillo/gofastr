@@ -695,13 +695,11 @@
   // them when runtime.js loaded after DOMContentLoaded (late injection,
   // fast parse, dynamic re-init).
 
-  // Disclosure keyboard/AT behaviour, aria-expanded mirroring,
-  // Escape-to-close, and the focus containment live in
+  // Disclosure behaviour — the aria-expanded mirror, Escape-to-close,
+  // the focus containment, the close-on-navigate — lives in
   // framework/headless's headless-disclosure module (a registered
-  // behaviour, loaded on the details[data-hui-disclosure] marker).
-  // Core keeps only the close-on-navigate lines for the legacy
-  // data-fui-disclosure spelling; the `toggle` event they raise is
-  // what registered modules react to.
+  // behaviour, loaded on the details[data-hui-disclosure] marker);
+  // the kernel holds none of it.
 
   // Task A: auto-inject aria-live onto signal nodes so screen readers
   // announce dynamic updates. Restricted to TEXT-mode nodes (the default
@@ -725,9 +723,9 @@
   // Initial-pass hooks: these scan the CURRENT DOM, so they have
   // to wait until the document is at least parsed.
   // _bootstrapComponentCSS scans existing markers; _scanForModules
-  // dispatches demand-load modules (the disclosure module is one of
-  // them, and does its own aria-expanded sync for server-rendered
-  // <details>).
+  // dispatches demand-load modules (headless behaviours among them —
+  // the disclosure module does its own aria-expanded sync for
+  // server-rendered <details>).
   // _runMountActions fires component actions marked data-action-mount once,
   // right after hydration. Component clientJS handlers (data-action) only run
   // on user events (click/input/change/submit); a server-rendered island that

@@ -194,7 +194,7 @@ func filterChipBarCSS(_ style.Theme) string {
   cursor: pointer;
 }
 [data-fui-comp="ui-filter-bar"] .fui-filter-bar__clear:hover {
-  background: var(--color-muted, #f1f1f3);
+  background: var(--color-surface-soft, #f1f1f3);
 }
 [data-fui-comp="ui-filter-bar"] .fui-filter-bar__clear:focus-visible {
   outline: 2px solid var(--color-primary, #4F46E5);

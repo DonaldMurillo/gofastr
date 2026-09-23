@@ -102,8 +102,8 @@ func TestComponentOptionsScopedEmission(t *testing.T) {
 	th.DarkColors = map[string]string{"background": "#0a0a0a"}
 	ref := RegisterThemeOverride(th)
 	css := ThemeOverrideCSS(ref.Hash(), th)
-	// The option and the alias lines must sit INSIDE every scope block,
-	// after the tokens they rebind against.
+	// The option lines must sit INSIDE every scope block, after the
+	// tokens they rebind against.
 	for _, probe := range []struct{ block, opener string }{
 		{"light", ".fui-theme-" + ref.Hash() + " {\n"},
 		{"explicit dark", "\n[data-color-scheme=\"dark\"] .fui-theme-" + ref.Hash() + " {\n"},
@@ -121,8 +121,18 @@ func TestComponentOptionsScopedEmission(t *testing.T) {
 		if !strings.Contains(body, "--fui-test-button-treatment: outline;") {
 			t.Errorf("%s block lacks the compiled option:\n%s", probe.block, body)
 		}
-		if !strings.Contains(body, "--color-primary-foreground: var(--color-primary-fg);") {
-			t.Errorf("%s block lacks the re-emitted alias tokens:\n%s", probe.block, body)
+		// The removed alias tokens must stay gone: no alias line may be
+		// re-emitted inside a scope block. The trailing colon pins the
+		// declaration spelling, so --color-warning never trips the
+		// --color-warn probe.
+		for _, alias := range []string{
+			"--color-muted", "--color-surface-hover", "--color-border-subtle",
+			"--color-border-hover", "--color-primary-hover", "--color-primary-foreground",
+			"--color-ring", "--color-warn", "--color-warn-soft", "--color-warn-strong",
+		} {
+			if strings.Contains(css, alias+":") {
+				t.Errorf("%s block re-emits the removed alias token %s:\n%s", probe.block, alias, body)
+			}
 		}
 	}
 	if !strings.Contains(css, "--color-background: #0a0a0a;") {

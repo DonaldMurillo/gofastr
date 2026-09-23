@@ -221,7 +221,6 @@ nav	2	_statefulParams
 nav	2	announceRoute
 nav	2	applyDocShell
 nav	2	cacheScreen
-nav	2	closeDisclosures
 nav	2	crossesDocBoundary
 nav	2	domChainKeys
 nav	2	findSlot

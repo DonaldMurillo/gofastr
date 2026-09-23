@@ -32,7 +32,7 @@ func styleFn(_ style.Theme) string {
   outline-offset: -2px;
 }
 [data-fui-comp="tree"] .tree__item[aria-selected="true"] > .tree__row {
-  background: var(--color-muted, #f1f1f3);
+  background: var(--color-surface-soft, #f1f1f3);
   font-weight: 600;
 }
 [data-fui-comp="tree"] .tree__toggle {

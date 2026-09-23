@@ -123,9 +123,8 @@ func TestRuntimeSize(t *testing.T) {
 	// (rpc-reset, disable-when-invalid, submit-on-enter, autogrow,
 	// clear-on-esc, shortcut-focus, shortcut-click, fill-input,
 	// scroll-bottom-on-update, flash-on-update, tick-elapsed,
-	// charcount-source, persist-storage, copy-text-from, data-fui-
 	// comp, rpc-after-text, rpc-after-disable, rpc-scroll-to,
-	// data-fui-disclosure SPA-nav+Escape close, route-announce live
+	// route-announce live
 	// region, overlay timer cleanup, LRU screen cache, full-script
 	// sanitization, inline-JSON catalog/routes hydration, per-signal
 	// RPC abort dedup, aria-busy progress + nav-failure toast,

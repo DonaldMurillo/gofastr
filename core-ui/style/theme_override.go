@@ -142,7 +142,6 @@ func AllThemeOverrides() map[string]Theme {
 //	.fui-theme-<hash> {
 //	  --color-primary: …;
 //	  …every typed token…
-//	  …the :root-only alias tokens, re-emitted…
 //	  …the compiled component options, re-emitted…
 //	  color: var(--color-text);
 //	  background: var(--color-background);
@@ -164,14 +163,13 @@ func AllThemeOverrides() map[string]Theme {
 // Descendant components reading `var(--color-primary)` get the
 // overridden value via the CSS variable cascade.
 //
-// # Why the aliases and the component options are re-emitted inside
+// # Why the component options are re-emitted inside
 //
 // A custom property's var() references compute at the element the
-// declaration sits on, before inheritance. --color-primary-foreground
-// and the --fui-* option variables are declared at :root only, so
-// without re-declaration a scope with a different palette would
-// inherit the ROOT's resolved colours. Every scope block therefore
-// carries the alias lines (aliasTokenDecls) and the compiled option
+// declaration sits on, before inheritance. The --fui-* option
+// variables are declared at :root only, so without re-declaration a
+// scope with a different palette would inherit the ROOT's resolved
+// options. Every scope block therefore carries the compiled option
 // lines (componentOptionDecls) after its own tokens, rebound to the
 // scope's palette.
 //
@@ -192,7 +190,6 @@ func ThemeOverrideCSS(hash string, t Theme) string {
 	var lines []string
 	collectTokenDecls(reflect.ValueOf(t), &lines)
 	sort.Strings(lines)
-	lines = append(lines, aliasTokenDecls()...)
 	lines = append(lines, componentOptionDecls(t.Components)...)
 	var b strings.Builder
 	fmt.Fprintf(&b, ".fui-theme-%s {\n", hash)
@@ -220,11 +217,11 @@ func ThemeOverrideCSS(hash string, t Theme) string {
 }
 
 // darkScopeLines builds the declaration lines for a scope's dark
-// blocks: the dark tokens first (so the aliases and options that
-// follow rebind against them), then the same alias and compiled-option
-// lines the light block carries. No color/background paint lines: the
-// light block's `color: var(--color-text)` re-resolves here against
-// the re-declared token.
+// blocks: the dark tokens first (so the options that follow rebind
+// against them), then the same compiled-option lines the light block
+// carries. No color/background paint lines: the light block's
+// `color: var(--color-text)` re-resolves here against the
+// re-declared token.
 func darkScopeLines(t Theme) []string {
 	lines := make([]string, 0, len(t.DarkColors)+len(t.DarkCode)+16)
 	for _, name := range sortedMapKeys(t.DarkColors) {
@@ -233,7 +230,6 @@ func darkScopeLines(t Theme) []string {
 	for _, name := range sortedMapKeys(t.DarkCode) {
 		lines = append(lines, fmt.Sprintf("--tk-%s: %s;", name, t.DarkCode[name]))
 	}
-	lines = append(lines, aliasTokenDecls()...)
 	lines = append(lines, componentOptionDecls(t.Components)...)
 	return lines
 }

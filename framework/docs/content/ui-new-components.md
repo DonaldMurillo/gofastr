@@ -272,7 +272,7 @@ Three more knobs round out the contract surface:
   click. For hosts whose specs pin that markup shape. Two `<details>`
   behaviours do not carry over: group open state is not persisted
   across navigation (every swap resets a group to its server-rendered
-  state; the details dialect carries `data-fui-disclosure-persist`),
+  state; the details dialect carries `data-hui-disclosure-persist`),
   and the dialect needs JavaScript — without the runtime module a
   closed group's links are unreachable, while `<details>` opens
   natively with JS off.

@@ -161,16 +161,8 @@ func rootTokens(ss *style.StyleSheet) {
 			// light-mode primary dips under 4.5:1.
 			"--color-primary-text", "var(--color-primary)",
 			"--ui-pricing-card-badge-fg", "var(--color-primary-text)",
+			// --fui-muted-bg: the soft surface fill (chips, hover washes).
 			"--fui-muted-bg", "var(--color-surface-soft)",
-			// Several framework components (SegmentedControl track,
-			// ShortcutHint key, AvatarGroup overflow chip) read
-			// --color-muted as a low-emphasis FILL and fall back to a LIGHT
-			// hardcoded grey when a host leaves it unset, which painted a
-			// near-white chip on this dark theme (the dark --color-text on
-			// top then dropped to ~1:1). Alias it to the soft surface so the
-			// fill flips with the scheme and the muted/foreground text on it
-			// reads at AA.
-			"--color-muted", "var(--color-surface-soft)",
 
 			// Semantic status hues. The framework defaults (Success #15803D,
 			// Danger #DC2626, Warning #A16207, Info #2563EB) are tuned to hit
@@ -614,17 +606,13 @@ func siteNav(ss *style.StyleSheet) {
 		Set("background", "{colors.surface-soft}", "color", "{colors.text}", "opacity", "1").End()
 
 	// Mobile drawer, hidden by default; the @media (max-width: 640px)
-	// block in responsive() flips display:block. Native <details>; the
-	// framework's runtime auto-closes on cross-page nav via
-	// data-fui-disclosure.
+	// block in responsive() flips display:block. Native <details> in
+	// the headless disclosure anatomy; the headless-disclosure module
+	// closes it on cross-page nav and on a nav-link click.
 	//
 	// Trigger is the trigram glyph: three stacked 1.5px bars built with
 	// CSS box-shadows on a single 22px square. When [open], the middle
 	// bar fades out and the outer two rotate into an ×. No SVG, no JS,
-	// state flips via the parent's open attribute.
-	// .fui-site-header__mobile sits inside .fui-site-header__right at every viewport; no auto
-	// margin needed (the parent cluster owns the right-edge alignment).
-	ss.Rule(".fui-site-header__mobile").Set("display", "none").End()
 	ss.Rule(".fui-site-header__mobile > summary").
 		Set("list-style", "none",
 			"cursor", "pointer",

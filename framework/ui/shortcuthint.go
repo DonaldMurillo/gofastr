@@ -254,7 +254,7 @@ func shortcutHintCSS(_ style.Theme) string {
   border: 1px solid var(--color-border, #d0d0d8);
   border-bottom-width: 2px;
   border-radius: var(--radii-sm, 4px);
-  background: var(--color-muted, #f5f5f7);
+  background: var(--color-surface-soft, #f5f5f7);
   color: var(--color-text, #111);
   font-size: var(--text-xs, 0.75rem);
   font-weight: 600;

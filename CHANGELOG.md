@@ -526,6 +526,46 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   the field's, and `Autogrow` still reaches the control as
   `data-fui-autogrow` (its module is unchanged).
 
+- **The legacy reads and aliases are removed.** Each item says what to
+  render or reference instead.
+  - `html.DetailsConfig.Disclosure` is removed (`html.Details` renders
+    a plain `<details>`). Render `headless.Disclosure` or
+    `ui.Collapsible` for a disclosure with behaviour.
+  - The kernel no longer reads `data-fui-disclosure`,
+    `data-fui-disclosure-persist`, `data-fui-pane-deeplink` or
+    `data-fui-scrollspy`. Close-on-navigate belongs to the
+    `headless-disclosure` module (`data-hui-disclosure` markup; put
+    `data-hui-disclosure-persist="<key>"` on a disclosure that must
+    survive soft navigation), the pane deep-link declaration is
+    `data-hui-pane-deeplink` (`headless.PaneHost` emits it), and the
+    scroll-spy rail is `headless.Rail`'s (`data-hui-rail`).
+  - The ten legacy token aliases are no longer emitted at `:root` or
+    inside theme-override scope blocks. Reference the canonical token
+    instead (each reader keeps its hex fallback; the color-mix rows
+    are the full replacement value):
+
+    | removed alias | replacement |
+    |---|---|
+    | `--color-muted` | `var(--color-surface-soft, …)` |
+    | `--color-surface-hover` | `var(--color-surface-soft, …)` |
+    | `--color-border-subtle` | `var(--color-border, …)` |
+    | `--color-border-hover` | `var(--color-border-strong, …)` |
+    | `--color-primary-hover` | `color-mix(in srgb, var(--color-primary) 85%, var(--color-text))` |
+    | `--color-primary-foreground` | `var(--color-primary-fg, …)` |
+    | `--color-ring` | `var(--color-primary, …)` |
+    | `--color-warn` | `var(--color-warning, …)` |
+    | `--color-warn-soft` | `color-mix(in srgb, var(--color-warning) 15%, transparent)` |
+    | `--color-warn-strong` | `color-mix(in srgb, var(--color-warning) 80%, var(--color-text))` |
+
+    A gate test (`framework/ui`) fails when any registered sheet or
+    Go/JS source under `framework/`, `core-ui/`, `battery/`, `kiln/`,
+    `cmd/gofastr/` or `examples/` references one of the ten names.
+  - `gofastr pack` reads the auth form's hidden `next` input only as
+    `html.Input(html.InputConfig{Type: "hidden", Name: "next", …})`;
+    a `render.Raw("<input …>")` string in a hand-maintained screen is
+    no longer recognized (the generator and `examples/meridian` both
+    emit the `html.Input` shape).
+
 ### Migration ledger — the headless stack so far
 One place to read every breaking change this stack has landed, in
 application order. Each entry is detailed above in this release's
@@ -625,26 +665,28 @@ are listed under Added above, not here.
     action, tooltip, search input, visually hidden). The
     `framework/gallery` prefix gate holds the line from here on.
 
-### Deprecated
-Legacy reads kept one release for hosts built on v0.85.0, removed in
-the release after this one:
-
-- The kernel's `data-fui-disclosure-persist` exemption
-  (`core-ui/runtime/frag/nav.js`): the framework renders
-  `data-hui-disclosure-persist`, handled by `headless-disclosure`.
-  Put `data-hui-disclosure-persist` on a disclosure that must survive
-  soft navigation instead.
-- `data-fui-scrollspy` in `activelink`'s hands-off rule: the wrapper
-  contract is gone — the rail is `headless.Rail` and its observer is
-  `headless-rail`'s; render that instead of a hand-rolled scrollspy
-  wrap.
-- The `data-fui-pane-deeplink` spelling nav reads beside
-  `data-hui-pane-deeplink`: render `data-hui-pane-deeplink`
-  (`headless.PaneHost` does).
-- The legacy token aliases `aliasTokenCSS` emits
-  (`core-ui/style/tokens.go`: `--color-muted`, `--color-warn`, … —
-  derived names ColorSet never declared): reference the canonical
-  ColorSet token names instead.
+17. **`html.DetailsConfig.Disclosure` is gone.** `html.Details` renders
+    a plain `<details>`; a disclosure with behaviour is
+    `headless.Disclosure` or `ui.Collapsible` (`data-hui-disclosure`).
+18. **The kernel's legacy attribute reads are gone.**
+    `data-fui-disclosure`, `data-fui-disclosure-persist`,
+    `data-fui-pane-deeplink` and `data-fui-scrollspy` are read by
+    nothing. Close-on-navigate is `headless-disclosure`'s
+    (`data-hui-disclosure` markup), the pane deep link is
+    `data-hui-pane-deeplink`, the rail is `data-hui-rail`.
+19. **The ten legacy token aliases are gone** (`--color-muted`,
+    `--color-surface-hover`, `--color-border-subtle`,
+    `--color-border-hover`, `--color-primary-hover`,
+    `--color-primary-foreground`, `--color-ring`, `--color-warn`,
+    `--color-warn-soft`, `--color-warn-strong`). Reference the
+    canonical ColorSet tokens (see the BREAKING table); a stylesheet
+    that sets one as a theme token (the product site's
+    `--color-muted`) deletes the line — nothing reads it.
+20. **`gofastr pack` reads the auth `next` input only as
+    `html.Input(html.InputConfig{…})`.** A hand-maintained screen
+    still carrying `render.Raw("<input …>")` emits
+    `next: ""` in the packed blueprint; switch to the `html.Input`
+    call (the generator's spelling).
 
 ### Added
 - `framework/headless` gains the navigation primitives `Rail`,
@@ -1102,9 +1144,8 @@ the release after this one:
   override with a dark palette now emits it under
   `[data-color-scheme="dark"] .fui-theme-<hash>` plus the
   `prefers-color-scheme` fallback — the same two selectors the root
-  theme uses — and re-emits the `:root`-only alias tokens
-  (`--color-primary-foreground` and kin) and the compiled options
-  inside every scope block, so token references resolve against each
+  theme uses — and re-emits the compiled options inside every
+  scope block, so token references resolve against each
   scope's own palette. A scope with no dark palette stays light in
   dark mode (documented). `RegisterThemeOverride` deep-clones the
   theme before storing it (dark maps and `Components`); reads return

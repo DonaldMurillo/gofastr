@@ -309,28 +309,14 @@
     currentPath = location.pathname + location.search;
   };
 
-  // Close ordinary disclosures inside scope so they do not float over the
-  // destination content. Persistent shell controls opt out explicitly.
-  // data-fui-disclosure-persist is the legacy spelling: the framework
-  // renders data-hui-disclosure-persist (handled by headless-disclosure),
-  // and this read is kept one release for hosts built on v0.85.0 — see
-  // the Unreleased "Deprecated" section in the CHANGELOG.
-  const closeDisclosures = (scope) => {
-    for (const d of scope.querySelectorAll('details[data-fui-disclosure][open]:not([data-fui-disclosure-persist])')) {
-      d.removeAttribute('open');
-    }
-  };
-
-  // swapAtSlot replaces one layer's content cell. Scope rule: swapping
-  // the outermost cell (or a layout-less <main>) closes disclosures
-  // document-wide, the user left the page, the hamburger must not float
-  // over the new one. A deeper swap closes only within its own layer so
-  // outer shell state (an open sidebar section) survives sibling nav.
-  const swapAtSlot = (slot, html, outermost) => {
+  // swapAtSlot replaces one layer's content cell. Closing disclosures
+  // that would float over the destination content is
+  // headless-disclosure's contract (framework/headless/disclosure.js,
+  // on gofastr:navigate), not the navigator's.
+  const swapAtSlot = (slot, html) => {
     slot.innerHTML = html;
     mergeSeedFromDOM(slot);
     if (window.__gofastr?.scanAndLoadCSS) window.__gofastr.scanAndLoadCSS(slot);
-    closeDisclosures(outermost ? document : (slot.parentElement || slot));
     // Move focus onto the fresh content so keyboard users are not
     // stranded on a detached node. Cells carry tabindex="-1".
     if (typeof slot.focus === 'function') {
@@ -454,7 +440,7 @@
           // before pushState fires (the click handler does pushState).
           document.title = cached.title;
           announceRoute(cached.title);
-          const root = swapAtSlot(slot, cached.html, !cached.layer || cached.layer === domChainKeys()[0]);
+          const root = swapAtSlot(slot, cached.html);
           finishNav(path, prevPath, true, root, ps);
           return;
         }
@@ -471,7 +457,7 @@
           if (slot) {
             document.title = pf.title;
             announceRoute(pf.title);
-            const root = swapAtSlot(slot, pf.html, !pf.layer || pf.layer === domChainKeys()[0]);
+            const root = swapAtSlot(slot, pf.html);
             cacheScreen(path, pf.html, pf.title, pf.layer);
             finishNav(path, prevPath, false, root, ps);
             return;
@@ -517,7 +503,7 @@
           // No live shell to replace (layout-less origin), fall back to
           // a whole-main swap; chain markers arrive with the content.
           const m = mainEl();
-          if (m) swapAtSlot(m, nm ? nm.innerHTML : '', true);
+          if (m) swapAtSlot(m, nm ? nm.innerHTML : '');
         }
         cacheScreen(dest, nm ? nm.innerHTML : '', t, nm ? (nm.getAttribute('data-fui-layout-slot') || '') : '');
         finishNav(dest, prevPath, false, el || mainEl(), ps);
@@ -595,7 +581,7 @@
       }
       document.title = title;
       announceRoute(title);
-      const root = swapAtSlot(slot, body, !swapKey || swapKey === domChainKeys()[0]);
+      const root = swapAtSlot(slot, body);
       cacheScreen(path, body, title, swapKey);
       finishNav(path, prevPath, false, root, ps);
     } catch (err) {
@@ -741,13 +727,6 @@
       bubbles: true, cancelable: true,
       detail: { href, path: fullPath, hash: navHash, anchor },
     }))) return;
-    // Eagerly close an enclosing dismissible disclosure (mobile nav
-    // hamburger). Without this, the menu floats over stale content
-    // for the entire SPA fetch duration, the user perceives the
-    // click as "didn't take". The -persist exemption is the legacy
-    // data-fui- spelling (deprecated, see the CHANGELOG's Unreleased
-    // "Deprecated" section): render data-hui-disclosure-persist.
-    anchor.closest('details[data-fui-disclosure]:not([data-fui-disclosure-persist])')?.removeAttribute('open');
     // An intercepting route presents as an overlay when reached from its
     // declared origin. The module owns the URL and the fetch in that
     // case; returning true means it took the navigation.
@@ -766,8 +745,7 @@
   // widget, which is why Forward across a deep link never worked. The
   // set is built at popstate time from what the page actually declares:
   // the widget catalog's deepLinkKey/deepLinkParams plus every
-  // [data-hui-pane-deeplink] (or legacy [data-fui-pane-deeplink])
-  // attribute in the DOM. Everything else
+  // [data-hui-pane-deeplink] attribute in the DOM. Everything else
   // (search, filters, ?p=) is screen identity and refetches as before.
   const _statefulParams = () => {
     const set = new Set();
@@ -778,13 +756,9 @@
       if (cfg.deepLinkKey) set.add(cfg.deepLinkKey);
       for (const p of cfg.deepLinkParams || []) set.add(p);
     }
-    // Both spellings: headless.PaneHost declares data-hui-pane-deeplink,
-    // the retired pane host declared data-fui-pane-deeplink and old
-    // server markup may still carry it. The fui spelling is deprecated,
-    // kept one release for hosts built on v0.85.0 (CHANGELOG, Unreleased
-    // "Deprecated"); render data-hui-pane-deeplink.
-    for (const el of document.querySelectorAll('[data-hui-pane-deeplink],[data-fui-pane-deeplink]')) {
-      const p = el.getAttribute('data-hui-pane-deeplink') || el.getAttribute('data-fui-pane-deeplink');
+    // headless.PaneHost declares data-hui-pane-deeplink.
+    for (const el of document.querySelectorAll('[data-hui-pane-deeplink]')) {
+      const p = el.getAttribute('data-hui-pane-deeplink');
       if (p) set.add(p);
     }
     return set;

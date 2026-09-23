@@ -241,9 +241,9 @@ func copyButtonCSS(_ style.Theme) string {
   transition: background-color 150ms ease, border-color 150ms ease;
 }
 /* Hover keeps the theme's own surface pair: surface-soft is defined by every
-   theme in both schemes, so text set to --color-text stays readable. (The old
-   rule referenced --color-muted — a token that does not exist — so the light
-   #f3f3f5 fallback always applied and dark themes got near-white on white.) */
+   theme in both schemes, so text set to --color-text stays readable (a rule
+   that names an undefined token silently renders its fallback constant
+   instead, which is how dark themes once got near-white on white here). */
 [data-fui-comp="ui-copy-btn"] .fui-copy-btn:hover {
   background: var(--color-surface-soft, #f3f3f5);
   border-color: var(--color-border-strong, var(--color-border, #d0d0d8));

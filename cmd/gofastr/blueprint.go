@@ -6942,8 +6942,7 @@ func blueprintAuthFormExpr(heading, action, next, submitLabel, pwAutocomplete st
 	// the generator ships zero raw markup (hard rule 7), and the
 	// primitive is the same one every other control in the emitted app
 	// goes through. gofastr pack reads this expression back —
-	// reverseAuthCard knows both this shape and the legacy render.Raw
-	// string an older generator emitted.
+	// reverseAuthCard knows exactly this shape.
 	hidden := fmt.Sprintf(`html.Input(html.InputConfig{Type: "hidden", Name: "next", Value: %q})`, next)
 	emailField := `ui.FormField(ui.FormFieldConfig{Label: "Email", For: "auth-email", Required: true,` +
 		` Input: func(c headless.FieldControl) render.HTML { return ui.Control(ui.ControlConfig{Field: c, Type: "email", Name: "email", AutoComplete: "email"}) }})`

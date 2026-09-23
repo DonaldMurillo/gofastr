@@ -387,7 +387,7 @@ func commandPaletteCSS(_ style.Theme) string {
   gap: var(--spacing-md, 8px);
   padding: var(--spacing-sm, 4px) var(--spacing-md, 8px);
   border-top: 1px solid var(--color-border, #d0d0d8);
-  background: var(--color-muted, #f7f7f8);
+  background: var(--color-surface-soft, #f7f7f8);
   flex: 0 0 auto;
 }
 [data-fui-comp="ui-cmd-palette"] .fui-cmd-palette__close {
