@@ -247,6 +247,7 @@ func (s *commandPaletteSlot) Render() render.HTML {
 		DebounceMS:     s.debounceMs,
 		Options:        opts,
 	}, headless.Classes{
+		headless.PartRoot:            "ui-cmd-palette__field",
 		headless.PartLabel:           "ui-visually-hidden",
 		headless.PartComboboxInput:   "ui-cmd-palette__input",
 		headless.PartComboboxForm:    "ui-cmd-palette__combobox",
@@ -330,6 +331,16 @@ func commandPaletteCSS(_ style.Theme) string {
      listbox (not the whole dialog) absorbs long command lists. */
   display: flex;
   flex-direction: column;
+  min-block-size: 0;
+}
+[data-fui-comp="ui-cmd-palette"] .ui-cmd-palette__field {
+  /* The combobox root between the no-script form and the listbox: a
+     flex column that may shrink, or the listbox grows to its content
+     and the dialog clips the tail on a phone, where the listbox has no
+     height cap of its own. */
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
   min-block-size: 0;
 }
 [data-fui-comp="ui-cmd-palette"] .ui-cmd-palette__combobox:has(> .ui-cmd-palette__input) {
