@@ -342,6 +342,9 @@ func codeBlockCSS(_ style.Theme) string {
 func sectionCSS(_ style.Theme) string {
 	return `[data-fui-comp="ui-section"] {
   display: grid;
+  /* A section a parent grid stretches keeps its head on its body: the
+     spare height goes below the body, not between the rows. */
+  align-content: start;
   gap: var(--spacing-md, 8px);
   margin: var(--spacing-xl, 24px) 0;
   border: 0;

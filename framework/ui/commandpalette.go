@@ -291,7 +291,7 @@ func (s *commandPaletteSlot) Render() render.HTML {
 	)
 
 	return commandPaletteStyle.WrapHTML(html.Div(html.DivConfig{
-		Class:      "fui-cmd-palette",
+		Class:      "fui-cmd-palette fui-slot-bare",
 		ExtraAttrs: s.extraAttrs,
 	}, srTitle, combo, footer))
 }

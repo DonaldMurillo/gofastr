@@ -94,18 +94,20 @@ func TestCenterPanelBareOptOutRendered(t *testing.T) {
 	}
 }
 
-// TestCenterPanelCmdPaletteExclusionRendered: the legacy
-// [data-fui-comp="ui-cmd-palette"] branch of the opt-out selector must
-// actually match a rendered palette root (the string test only checks
-// the selector text; a stray quote or typo would slip past it).
-func TestCenterPanelCmdPaletteExclusionRendered(t *testing.T) {
+// TestCenterPanelNamesNoComponentMarker: the opt-out selector is the
+// generic .fui-slot-bare case alone, so a component marker on the
+// body root without the class must PAINT — the shrunk selector names
+// no framework/ui component, and the real palette opts out through
+// the class its own root carries (asserted in framework/ui).
+func TestCenterPanelNamesNoComponentMarker(t *testing.T) {
 	ctx := chromedptest.Context(t)
 
 	if bg := barePanelBackgroundRGB(t, ctx, mountBarePage(t, `<div>plain</div>`)); bg != bareProbeSurface {
 		t.Fatalf("plain body panel background = %q, want %q — CSS not applied", bg, bareProbeSurface)
 	}
-	// (b) data-fui-comp="ui-cmd-palette" on the body root opts out.
-	if bg := barePanelBackgroundRGB(t, ctx, mountBarePage(t, `<div data-fui-comp="ui-cmd-palette">palette</div>`)); bg == bareProbeSurface {
-		t.Errorf("cmd-palette panel painted the surface %q — the [data-fui-comp=\"ui-cmd-palette\"] exclusion must suppress the panel background", bg)
+	// A palette-marked root without .fui-slot-bare paints: the marker
+	// is no longer an opt-out.
+	if bg := barePanelBackgroundRGB(t, ctx, mountBarePage(t, `<div data-fui-comp="ui-cmd-palette">palette</div>`)); bg != bareProbeSurface {
+		t.Errorf("cmd-palette-marked panel background = %q, want %q — a component marker must not opt the panel out; only .fui-slot-bare does", bg, bareProbeSurface)
 	}
 }

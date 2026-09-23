@@ -8,7 +8,6 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 ## [Unreleased]
 
 ### BREAKING
-
 - **Navigation behaviour (headless 3a):** `Menu`, `Tabs`, `CodeTabs`
   and `Collapsible` render through headless primitives
   (`headless.Menu`, `headless.Tabs`, `headless.Disclosure`) under
@@ -117,10 +116,11 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   caller-injected `data-fui-rpc` attrs are removed), `FilterChipBar`'s
   Clear All is an anchor with the same island contract. Retired
   runtime modules: `animatedcounter`, `backtotop`, `themeswitch`.
-- **Styled-only retained wrappers:** `SearchInput` and `Tooltip`
-  have no headless BREAKING entry; their Batch 2 decision is
-  retention (`searchinput` and `shortcut` modules stay until the
-  Batch 3 Combobox decision), not a new semantic contract.
+- **Styled-only retained wrappers:** `SearchInput` and `Tooltip` have
+  no headless BREAKING entry; their Batch 3a decision is retention.
+  `SearchInput` keeps the `searchinput` module for good — it is a
+  styled search form, not a Combobox — and the `shortcut` module is
+  retired into `headless-navigation`.
 
 - **Display components renamed to `fui-*` classes (Batch 3b).** The
   scripted rename moved every framework/ui display component's classes
@@ -175,35 +175,6 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   now refuses any `ui-*` class token in a rendered catalog entry and
   any `.ui-*` selector in a framework/ui sheet, so the prefix cannot
   drift back.
-### Added
-
-- `framework/headless` gains the navigation primitives `Rail`,
-  `TableOfContents`, `Disclosure`, `Menu`, `Combobox`, `Tabs`,
-  `Carousel`, `PaneHost`, `Sidebar`, `JSONTree` and `Gallery`, with
-  Specs, refusal tests and goldens, and the registered behaviour
-  modules `headless-rail`, `headless-toc`, `headless-disclosure`,
-  `headless-menu`, `headless-combobox`, `headless-tabs`,
-  `headless-carousel`, `headless-panehost` and `headless-sidebar`
-  (shortcut chords fold into `headless-navigation`). Required labels
-  that are only whitespace are refused, `Gallery` passes thumbnails
-  through the image URL policy, and `Safe` now drops `on*` keys.
-  `ui.Combobox` is the styled adapter over `headless.Combobox`, and
-  `CommandPalette`'s `FallbackHref` refuses any backslash. The pane
-  host keeps `__gofastr.openPane`/`closePane`/`swapPane` and the
-  `pane-host:open`/`pane-host:close` events.
-
-- `framework/headless` gains `Counter`, `BackToTop`, `NumberInput`,
-  `Slider`, `RangeSlider`, `Rating`, `TagInput`, `Repeater`, `Toast`,
-  `ToastStack`, `NotificationBell` and `StepWizard` primitives with
-  Specs, refusal tests and goldens, the registered behaviour modules
-  `headless-controls`, `headless-collections`, `headless-wizard`,
-  `headless-feedback`, `headless-navigation` and `headless-when`
-  (ConditionalField's region show/hide/disable behaviour moved to it
-  from the `headless` module to keep both under the byte budget), and
-  new `Strings`
-  fields (counter, back-to-top, number-input, range, rating, tag-input,
-  repeater, notification-count and step-wizard words) bridged through
-  `ui.StringsFor`.
 
 - **The structural, status and layout family moved to `fui-*` class
   names.** Every component in this family now renders through its
@@ -286,7 +257,424 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   (`core`'s page neighbourhood size) and `OmitPrevNext` are fields on
   the new config.
 
+- **`ui.DataTable` renders through `headless.Table`: the sort pattern
+  string is gone, sorting is typed props, and the sort control is an
+  anchor in both postures.** `SortHrefPattern` (two literal `%s`
+  markers substituted by `strings.Replace`), `IslandSignal` and
+  `IslandEndpoint` are removed with no alias; the same facts travel
+  as typed fields and the primitive builds every sort href through
+  `net/url`, replacing the sort parameters rather than substituting
+  into a caller's string. Field by field: `SortHrefPattern` becomes
+  `Query url.Values` (the request state a sort must carry) with
+  optional `Path`, `SortParam` and `DirParam` (empty `SortParam`/
+  `DirParam` keep the `sort`/`dir` names); `IslandSignal` +
+  `IslandEndpoint` become `Island headless.Island{Endpoint, Signal}`;
+  `SortBy` keeps its name and meaning. The island sort control is an
+  `<a>` that carries the `data-fui-rpc` contract beside its href —
+  the no-script fallback the old `<button>` dropped — so a
+  `th button.ui-data-table__sort` selector becomes
+  `th a.ui-data-table__sort`. An empty result renders the table with
+  its head and the styled empty state in one spanning cell, where it
+  rendered no table at all; `is-empty` stays on the root. Every
+  headered cell carries `data-label` in every mode: a cards
+  collapse reads it, the scroll sheet does not. A carried query
+  value with C0 control bytes is scrubbed by the primitive, so a
+  hostile `?q=` with CR LF (which the anchor policy would refuse as
+  `%0D%0A`) still renders the sort anchors and the page; nothing is
+  refused.
+  `CaptionHidden` keeps a caption out of sight for a table that sits
+  under a visible heading saying the same thing: the caption element,
+  its text and the region's `aria-labelledby` all stay (the resource
+  engine's detail-page related lists use it, so the table and its
+  scroll region keep a name without a second visible band), and
+  `CaptionHidden` without `Caption` is refused at render. The
+  markup carries no direction glyph; the stylesheet draws it from
+  `aria-sort`, and the `ui-data-table__sort-indicator` class is
+  gone. The pager is untouched (`core-ui/patterns/pagination`, still
+  a `%d` `HrefPattern`; its island page items are still buttons).
+  Worked example, the resource engine's carry:
+  ```go
+  // before
+  carry := "" // "q=" + url.QueryEscape(search) + "&" per active facet
+  dt := ui.DataTableConfig{
+      SortBy: sortCol, SortDir: ui.SortDir(q.Get("dir")),
+      SortHrefPattern: "?" + carry + "sort=%s&dir=%s",
+  }
+  if c.IslandPath != "" {
+      dt.IslandSignal, dt.IslandEndpoint = c.islandSignal(), c.IslandPath
+  }
+
+  // after
+  query := url.Values{} // query.Set("q", search); query.Set(facetKey, v)
+  dt := ui.DataTableConfig{
+      SortBy: sortCol, SortDir: ui.SortDir(q.Get("dir")),
+      Query:  query,
+  }
+  if c.IslandPath != "" {
+      dt.Island = headless.Island{Endpoint: c.IslandPath, Signal: c.islandSignal()}
+  }
+  ```
+  The page-2 pager href keeps its old shape (the carry plus `p=%d`);
+  it still does not carry the active sort, which is a pre-existing
+  defect recorded separately and unchanged here.
+- **The Lightbox viewer's classes are `fui-lightbox*` and its image
+  carries `data-fui-lightbox-image`.** The `ui-lightbox__viewer`,
+  `ui-lightbox__figure`, `ui-lightbox__full`, `ui-lightbox__caption`,
+  `ui-lightbox__toolbar`, `ui-lightbox__nav`, `ui-lightbox__download`
+  classes no longer exist in any emitted markup or stylesheet;
+  hand-rolled markup on them renders unstyled — call `ui.Lightbox`.
+  CSS that selected `.ui-lightbox__full[data-fui-zoomed]` selects
+  `.fui-lightbox__full[data-fui-zoomed]`. No `data-fui-*` attribute
+  the runtime contract documents changed spelling; the one new
+  attribute is `data-fui-lightbox-image`, and the module that read
+  `.ui-lightbox__full` by class reads it now. The move also changes
+  the module's availability: it no longer ships in the kernel's
+  `_moduleMarkers` table, it arrives with framework/ui's registration
+  — a host importing no `framework/ui` (a core-ui-only page
+  hand-rolling the `data-fui-comp="ui-lightbox"` markup the kernel
+  table used to serve) loses nav and zoom with no error; import
+  `framework/ui` (or mount a `ui.Lightbox`) so the registration
+  links in.
+- **`FormFieldConfig.Input` is a builder, not pre-built markup.**
+  `Input func(headless.FieldControl) render.HTML`; a nil `Input`
+  panics as an empty one did. The migration is one closure per call
+  site — build the control from the wiring the field hands the
+  closure with `ui.Control` (any input type), a typed field, or
+  `ui.PasswordInput`'s new `Field` — and the three raw-HTML feeders
+  (the blueprint generator, the resource engine, the admin battery)
+  emit the typed controls now, which is the better generator anyway.
+  A closure that ignores its `FieldControl` compiles and loses the
+  wiring; the docs say so once.
+- **The form family's classes are `fui-form*`, `fui-field*`,
+  `fui-select*`, `fui-input*`, `fui-input-group*`,
+  `fui-validation-summary*`.** No file emits or selects `ui-form`,
+  `ui-form-field`, `ui-form-section`, `ui-select`, `ui-input-group`
+  or `ui-validation-summary` as a class any more; the registration
+  names and `data-fui-comp` markers stay (the marker fetches the
+  sheet), with one narrowing: a group's LEAVES no longer carry the
+  toggle marker, only the fieldset does, so a host selecting
+  individual options by `[data-fui-comp="ui-toggle"]` now matches one
+  element per group. The choice family's one borrowed class
+  (`ui-form-field__required`, emitted by the toggle groups) is
+  renamed with its rule to `fui-field__required`. Hand-rolled
+  `class="ui-form-field"` markup renders unstyled — call
+  `ui.FormField`.
+- **The choice family's and the affix shells' classes are
+  `fui-choice*`, `fui-switch*`, `fui-choice-field*`,
+  `fui-password*` and `fui-color*`.** No file emits or selects
+  `ui-toggle`, `ui-toggle-group`, `ui-password-input` or
+  `ui-color-field` as a class any more; the registration names and
+  `data-fui-comp` markers stay (the marker fetches the sheet).
+  Hand-rolled selectors on the old classes render unstyled — call the
+  components. Markup changes with the classes: the label wraps the
+  control (no `for=`/indicator pair — the box, the dot and the
+  switch's thumb are drawn from the native input itself through
+  `appearance: none`), the groups are plain fieldsets with no
+  `role="radiogroup"`/`"group"` (the fieldset is the native group
+  semantic), and a required group says so twice: every leaf's input
+  carries `required`, which is how HTML makes a radio group required,
+  and the legend carries `data-required`, which the sheet draws the
+  asterisk from (`content: " *" / ""`, so the mark stays out of the
+  legend's accessible name). `ToggleConfig.ExtraAttrs` lands on the
+  `<input>` (the label offers no attribute seam), and the standalone
+  help id scheme is `-hint`. Two smaller changes to released
+  behaviour ride with the family: a `Checkbox`'s or `Radio`'s `Help`
+  joins the accessible name inside the wrapping label instead of
+  hanging off `aria-describedby`, and `ColorField`'s swatch is out of
+  the tab order (`tabindex="-1"`) so the pair is one focus target,
+  the hex input, which is the value that submits.
+- **`PasswordInputConfig.Error` is gone.** The affix-shell control
+  renders no message of its own; put the error on the enclosing
+  `FormField`. `PasswordInputConfig.ID` is no longer required when a
+  `Field` carries one.
+- **`ColorFieldConfig.SwatchValue` is gone; `Name` is required.**
+  headless.Color derives the swatch from `Value`: a non-`#rgb`/`#rrggbb`
+  value falls the swatch back to black and marks the shell
+  `data-invalid` instead of degrading, which is what `SwatchValue`
+  used to paper over. The hex text input takes the form-field name
+  (it is the control that submits) and gains `Field` (the builder
+  wiring: id, described-by, invalid) and `Ctx`; `SwatchLabel` stays
+  required and names the text input when `TextLabel` is empty — the
+  swatch names itself through `PickColor` + `Name`.
+- **The `passwordinput` runtime module is deleted**
+  (`core-ui/runtime/src/passwordinput.js`, its kernel marker-table
+  entry, its preload row and its docs row). `ui.PasswordInput` binds
+  through the headless module's `data-hui-reveal`; a host that
+  hand-loaded the old module gets a 404, which is the retirement
+  speaking. The reveal still works through the headless hooks — the
+  site's password e2e asserts the retype, the pressed state, the
+  swapped accessible name and the swapped visible word.
+- **`ui.ValidationSummary` requires `ID`, and a `ui.Form` rendering
+  `Errors` requires its own.** The summary's title id is derived from
+  the root id; two summaries (or two errored forms) without ids would
+  share one title id and break both labels and both announcements.
+  A form's summary id is `<formID>-errors` unless the caller
+  overrides it.
+- **The form wiring vocabulary is typed.** Every `data-fui-*` and
+  `data-action-*` key in `ui.Form`'s `ExtraAttrs` routes through the
+  request seam; a key outside the vocabulary panics at render,
+  naming the key and the seam. Build the wiring with
+  `interactive.Post(...).OnSuccess(...).Attrs()`: the request, the
+  method, the signal, navigate, open, refresh, close, reset, the
+  input trigger with its debounce, confirm, and `data-action-mount`
+  all ride. Four effects a button may carry are refused on a form,
+  each for its own reason: `AfterText` and `AfterDisable` would
+  rewrite or disable the form element itself rather than a control,
+  `ScrollTo` and `PushState` belong to a navigation the server owns
+  after a mutation, and `WithBody` gets its own refusal because a
+  form serializes its own fields and a static body would drop every
+  one of them. A host composing those on a form hits a render panic
+  naming the key.
+- **`FormConfig.Summary` is a row inside the summary, not a Callout's
+  body.** It was the whole text of an error Callout above the fields;
+  it is now the sentence that belongs to no field, rendered as a text
+  row inside `ui.ValidationSummary` above the per-field links. The
+  rendered output of a released component changes for every caller
+  that sets it. It also renders now when `Errors` is empty: a save
+  refused with no field error named — a conflict, a guard — used to
+  render nothing at all, which is the admin battery's general flash
+  going silent.
+- **`ui.Form` refuses an action the anchor policy rejects.** The old
+  behaviour substituted `#`, shipping a form whose submit went
+  nowhere; the refusal is a panic at render, where the mistake was
+  made (matching `headless.Form`, which always refused).
+- **A `data-fui-*` key the runtime does not read on a button panics.**
+  Under the old carrier contract `ui.Button`'s `ExtraAttrs` rendered
+  any `data-fui-*` key as a (usually dead) attribute; now every
+  `data-fui-*` key routes through the typed `Action` seam and any key
+  outside the vocabulary is refused at render, naming the key and the
+  seam. The admitted vocabulary (each value checked for what it
+  deserves): `data-fui-rpc`, `-rpc-method`, `-rpc-body`,
+  `-rpc-signal`, `-rpc-navigate`, `-rpc-open`, `-rpc-close`,
+  `-rpc-reset`, `-rpc-after-text`, `-rpc-after-disable`,
+  `-rpc-scroll-to`, `-rpc-refresh`, `-confirm`, `-signal-set`,
+  `-signal-inc`, `-signal-toggle`, `-push-state`, `-open`,
+  `-deeplink`, `-toast`, `-pane-open`, `-pane-key`, `-pane-close`,
+  `-prefetch`, `-intercept-close`. Notably `data-fui-rpc-refresh` and
+  `data-fui-pane-key` — both runtime-read, both legal on a button —
+  ARE in the vocabulary; everything else `data-fui-*` (signal
+  display bindings, `data-fui-toggle-*`, `data-fui-optimistic-*`,
+  polling, layout markers, …) belongs to the component that renders
+  its own markup for it and panics here. `ui.LinkButton` refuses
+  every `data-fui-*` key except the four link-legal ones
+  (`-push-state`, `-prefetch`, `-open`, `-deeplink`), as before.
+- **`disabled` belongs to `ButtonConfig.Disabled`.** A `disabled` key
+  in `ui.Button`'s `ExtraAttrs` panics pointing at the field (any
+  spelling; `FormRepeater`'s buttons now use the field).
+- **The button classes are `fui-button*`.** The `ui-button` class no
+  longer exists in any emitted markup or stylesheet; the four
+  `.ui-button`-selecting rules elsewhere (Form's block-actions,
+  FilterToolbar's actions, admin's row-action danger pair) select
+  `.fui-button` now. Hand-rolled `class="ui-button"` markup renders
+  unstyled — call `ui.Button` / `ui.LinkButton`. The option compiler
+  emits per-variant trios (`--fui-button-primary-*`,
+  `--fui-button-danger-*`) and no un-prefixed `--fui-button-bg/-fg/-border`.
+- **`style.ThemeRef.Hash` is a method now.** `RegisterThemeOverride`
+  no longer hashes at registration; the handle computes its content
+  hash on first use (`Hash()`/`Class()`). The documented package-level
+  pattern `var Dark = style.RegisterThemeOverride(darkTheme)` is
+  therefore safe in a library package that does not import
+  `framework/ui`: registering during init cannot hash, freeze the
+  component-options compiler hook and panic `framework/ui`'s later
+  init. Code that read `ref.Hash` as a field moves to `ref.Hash()`.
+
+- **The bespoke-behaviour family's classes are `fui-upload*`,
+  `fui-drop*`, `fui-when`, `fui-textarea` and `fui-search*`, and its
+  runtime modules are deleted.** No file emits or selects
+  `ui-fileupload`, `ui-dropzone`, `ui-conditional-field`,
+  `ui-textarea` or `ui-search-input` as a class any more; the
+  registration names and `data-fui-comp` markers stay (the marker
+  fetches the sheet). The selectors that reached into SearchInput's
+  shape move with it (`framework/ui/filtertoolbar.go`, the admin
+  toolbar's CSS, and the searchinput module's own clear-button
+  lookup). Three runtime modules are deleted with their sources,
+  kernel marker-table rows, preload rows and docs rows:
+  `conditionalfield.js`, `fileupload.js` and `dropzone.js` — the
+  headless module's `data-hui-when` and `data-hui-drop` hooks own
+  their behaviour now, and a host that hand-loaded a deleted module
+  gets a 404, which is the retirement speaking. Hand-rolled
+  `data-fui-fileupload` zones lose their drag-drop; render the
+  components or carry the `data-hui-drop` hooks. The one piece with
+  no headless counterpart — the dropzone's image thumbnails — ships
+  as framework/ui's own `filedropzone` module on the unchanged
+  `data-fui-dropzone-preview` wiring.
+- **`ui.ConditionalField` renders VISIBLE, and
+  `ConditionalFieldVisible` is gone.** The region ships with no
+  `hidden` and no `aria-hidden`, and the headless module hides it
+  once it arms and the watched field does not match — because a
+  field only a script can reveal is a field a reader without script
+  never reaches. A host relying on the old hidden-by-default posture
+  sees its dependent fields on first paint until the module arms.
+  Size that honestly: the headless module is split, so the window is
+  the runtime's load, the marker scan, and a second fetch for the
+  module itself — two round trips on a cold page, not a tick. The
+  module disables what it hides, so nothing hidden submits. The watched-field attributes are
+  `data-hui-when` / `data-hui-when-value` (was `data-when-name` /
+  `data-when-value`), `ConditionalFieldVisible` folds into
+  `ConditionalField` (the server-side pre-show it existed for is the
+  new default), and `ConditionalFieldConfig.EvaluateInitialState`
+  is withdrawn with it.
+- **`ui.FileUpload` and `ui.TextArea` changed shape with their
+  headless adoption.** FileUpload's hint renders inside the zone
+  (id `<id>-accept`, joined into the input's `aria-describedby`)
+  and its error below it as a `role="alert"` paragraph; the old
+  `.ui-fileupload__filename` live paragraph and its first-image
+  thumbnail are replaced by the module-filled `role="list"` of
+  chosen names and the `role="status"` announcement sentence.
+  TextArea is a field: the `fui-field` shell owns the label, hint
+  and error, the control carries the `ui-textarea` marker beside
+  the field's, and `Autogrow` still reaches the control as
+  `data-fui-autogrow` (its module is unchanged).
+
+### Migration ledger — the headless stack so far
+One place to read every breaking change this stack has landed, in
+application order. Each entry is detailed above in this release's
+`BREAKING` section; this ledger is the checklist for moving an app
+across the whole stack. `framework/headless` itself is unreleased
+(nothing in v0.85.0 ships it), so its rename and its vocabulary entry
+are listed under Added above, not here.
+
+1. **`style.ThemeRef.Hash` is a method now.** `RegisterThemeOverride`
+   hashes lazily, so package-level registration is safe in a library
+   that does not import `framework/ui`; move `ref.Hash` field reads to
+   `ref.Hash()`.
+2. **`disabled` belongs to `ButtonConfig.Disabled`.** A `disabled` key
+   in `ui.Button`'s `ExtraAttrs` panics pointing at the field.
+3. **The button wiring vocabulary is typed.** Every `data-fui-*` key on
+   a button routes through the `Action` seam
+   (`interactive.Action.Attrs()` and friends); a key outside the
+   admitted vocabulary panics at render, naming the key. On an anchor
+   only the four link-legal keys ride.
+4. **The button classes are `fui-button*`.** The `ui-button` class no
+   longer exists in any emitted markup or stylesheet; hand-rolled
+   `class="ui-button"` markup renders unstyled — call
+   `ui.Button` / `ui.LinkButton`. Selectors that targeted `.ui-button`
+   (Form's block-actions, FilterToolbar, admin row actions) select
+   `.fui-button` now.
+5. **The form family's `Input` is a builder and its classes are
+   `fui-*`.** `FormFieldConfig.Input` takes
+   `func(headless.FieldControl) render.HTML`; build the control with
+   `ui.Control`, a typed field, or `ui.PasswordInput`'s `Field`.
+   Hand-rolled `ui-form`/`ui-form-field`/`ui-select`/… class markup
+   renders unstyled.
+6. **`ui.ValidationSummary` requires `ID`; a `ui.Form` rendering
+   `Errors` requires `FormConfig.ID`.** The summary's id is derived
+   from the form's.
+7. **Form wiring rides the request seam.** `data-fui-*` and
+   `data-action-*` keys in `ui.Form`'s `ExtraAttrs` are admitted
+   vocabulary or a render-time panic; `data-fui-rpc-body` is refused
+   outright (a form serializes itself), as are `after-text`,
+   `after-disable`, `scroll-to` and `push-state`, which mean nothing
+   a form can honour.
+8. **An unsafe `FormConfig.Action` panics.** The `#` substitution is
+   gone.
+9. **`FormConfig.Summary` moved inside the summary.** It was an error
+   Callout's whole body; it is the no-field sentence rendered as a row
+   inside `ui.ValidationSummary`, and it now renders even when
+   `Errors` is empty. A caller that set it gets different markup and,
+   in the general-only case, output where there was none.
+
+10. **The bespoke-behaviour classes are `fui-upload*`, `fui-drop*`,
+   `fui-when`, `fui-textarea`, `fui-search*`; three runtime modules
+   are deleted.** Hand-rolled markup on the old classes renders
+   unstyled — call `ui.FileUpload` / `ui.FileDropzone` /
+   `ui.ConditionalField` / `ui.TextArea` / `ui.SearchInput`. Select
+   `.fui-search` where the admin toolbar and FilterToolbar selected
+   `.ui-search-input`. The `conditionalfield`, `fileupload` and
+   `dropzone` modules 404 if hand-loaded; the headless module's
+   `data-hui-when` / `data-hui-drop` hooks own their behaviour, and
+   hand-rolled `data-fui-fileupload` zones lose their drag-drop.
+11. **`ui.ConditionalField` renders visible; `ConditionalFieldVisible`
+   and `EvaluateInitialState` are gone.** A host relying on
+   hidden-by-default sees its dependent fields on first paint until
+   the headless module arms — two round trips on a cold page, since
+   the module is split, not one tick. The watched-field attributes
+   are `data-hui-when` / `data-hui-when-value`, and the marker the
+   runtime writes on a control it disables is `data-hui-when-off`
+   (was `data-fui-cond-disabled`): CSS that styled the old one has
+   no target now.
+12. **`ui.FileUpload`'s and `ui.TextArea`'s markup changed.** The
+   upload's hint sits inside the zone (`<id>-accept`) with the error
+   below it; the filename paragraph is a module-filled list plus a
+   status sentence. TextArea is a `fui-field` shell around a
+   `fui-textarea` control carrying its own marker.
+13. **The Lightbox viewer's classes are `fui-lightbox*`** (see
+   BREAKING): hand-rolled `ui-lightbox__*` markup renders unstyled,
+   `.ui-lightbox__full[data-fui-zoomed]` selectors retarget
+   `.fui-lightbox__full[data-fui-zoomed]`, and any custom script that
+   found the image by class reads `data-fui-lightbox-image`. Every
+   documented `data-fui-*` attribute keeps its spelling; the
+   `data-hui-lightbox*` hooks and `headless.LightboxViewer` are
+   unreleased surface (Added), not breaking.
+
+14. **Display classes are `fui-*`** (charts, images incl. the Gallery
+    DOM move, code incl. `fui-code-tabs`, markdown, terminal, avatar,
+    icon, color picker, diff viewer, metric band, record summary,
+    pricing card, auth card, sign out, optimistic/toggle action).
+    Rename `ui-*` selectors to `fui-*`; sheet names and markers stay.
+15. **Shell classes are `fui-*`** (hero, hero split, site header, site
+    footer, doc layout, workbench, toolbar, filter toolbar, sidebar,
+    responsive, themed). `ui.Sidebar` renders through
+    `headless.Sidebar`: hooks, ids and storage keys unchanged; byte
+    pins re-read (sorted attribute order, `hidden=""` spelling). An
+    item with both `Href` and `Children`, a blank `Label`, or control
+    bytes in `DrawerName`/`CollapseStorageKey` now panics: fix the
+    config.
+16. **The residue is `fui-*`** (data table, segmented, palette parts,
+    JSONViewer parts, polling indicator, shortcut hint, confirm
+    action, tooltip, search input, visually hidden). The
+    `framework/gallery` prefix gate holds the line from here on.
+
+### Deprecated
+Legacy reads kept one release for hosts built on v0.85.0, removed in
+the release after this one:
+
+- The kernel's `data-fui-disclosure-persist` exemption
+  (`core-ui/runtime/frag/nav.js`): the framework renders
+  `data-hui-disclosure-persist`, handled by `headless-disclosure`.
+  Put `data-hui-disclosure-persist` on a disclosure that must survive
+  soft navigation instead.
+- `data-fui-scrollspy` in `activelink`'s hands-off rule: the wrapper
+  contract is gone — the rail is `headless.Rail` and its observer is
+  `headless-rail`'s; render that instead of a hand-rolled scrollspy
+  wrap.
+- The `data-fui-pane-deeplink` spelling nav reads beside
+  `data-hui-pane-deeplink`: render `data-hui-pane-deeplink`
+  (`headless.PaneHost` does).
+- The legacy token aliases `aliasTokenCSS` emits
+  (`core-ui/style/tokens.go`: `--color-muted`, `--color-warn`, … —
+  derived names ColorSet never declared): reference the canonical
+  ColorSet token names instead.
+
 ### Added
+- `framework/headless` gains the navigation primitives `Rail`,
+  `TableOfContents`, `Disclosure`, `Menu`, `Combobox`, `Tabs`,
+  `Carousel`, `PaneHost`, `Sidebar`, `JSONTree` and `Gallery`, with
+  Specs, refusal tests and goldens, and the registered behaviour
+  modules `headless-rail`, `headless-toc`, `headless-disclosure`,
+  `headless-menu`, `headless-combobox`, `headless-tabs`,
+  `headless-carousel`, `headless-panehost` and `headless-sidebar`
+  (shortcut chords fold into `headless-navigation`). Required labels
+  that are only whitespace are refused, `Gallery` passes thumbnails
+  through the image URL policy, and `Safe` now drops `on*` keys.
+  `ui.Combobox` is the styled adapter over `headless.Combobox`, and
+  `CommandPalette`'s `FallbackHref` refuses any backslash. The pane
+  host keeps `__gofastr.openPane`/`closePane`/`swapPane` and the
+  `pane-host:open`/`pane-host:close` events.
+
+- `framework/headless` gains `Counter`, `BackToTop`, `NumberInput`,
+  `Slider`, `RangeSlider`, `Rating`, `TagInput`, `Repeater`, `Toast`,
+  `ToastStack`, `NotificationBell` and `StepWizard` primitives with
+  Specs, refusal tests and goldens, the registered behaviour modules
+  `headless-controls`, `headless-collections`, `headless-wizard`,
+  `headless-feedback`, `headless-navigation` and `headless-when`
+  (ConditionalField's region show/hide/disable behaviour moved to it
+  from the `headless` module to keep both under the byte budget), and
+  new `Strings`
+  fields (counter, back-to-top, number-input, range, rating, tag-input,
+  repeater, notification-count and step-wizard words) bridged through
+  `ui.StringsFor`.
+
 - **Five new headless primitives**: `Fieldset` (legend, description,
   fields, a group error wired by aria-describedby), `PageHeader`
   (heading, subtitle, eyebrow, an action slot; a plain `<header>`),
@@ -502,14 +890,13 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `data-fui-lightbox*` wiring IN PLACE OF the hui hooks — one
   vocabulary per render, so a host module cannot double-bind the
   gallery the shipped module steps — so Gallery and its triggers are
-  untouched. One deliberate retention outside the kernel:
-  `core-ui/widget/server.go`'s centered-panel chrome keeps its
-  `> .fui-slot > [data-fui-lightbox]` exclusion (the row predates
-  this PR and sits beside the command palette's), and the follow-up
-  is named plainly: the lightbox adopts `.fui-slot-bare`, the
-  documented escape hatch for chrome-less content, the selector
-  shrinks to the generic cases, and the always-shipped widget CSS
-  stops naming a framework/ui component. The headless hook admission
+  untouched. `core-ui/widget/server.go`'s centered-panel chrome no
+  longer keeps its `> .fui-slot > [data-fui-lightbox]` exclusion: the
+  release sweep has the lightbox and the command palette adopt
+  `.fui-slot-bare` (the documented escape hatch for chrome-less
+  content) on their slot roots, the selector shrinks to the generic
+  case, and the always-shipped widget CSS names no framework/ui
+  component. The headless hook admission
   gained a third binder class (`hostHooks` in behavior_test.go: hooks
   a host's own module binds,
   each with a reason, checked both ways), and the interaction side of
@@ -977,376 +1364,6 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   The reveal button, its runtime module and its class family are
   unchanged (they move in the next change of the stack).
 
-### BREAKING
-- **`ui.DataTable` renders through `headless.Table`: the sort pattern
-  string is gone, sorting is typed props, and the sort control is an
-  anchor in both postures.** `SortHrefPattern` (two literal `%s`
-  markers substituted by `strings.Replace`), `IslandSignal` and
-  `IslandEndpoint` are removed with no alias; the same facts travel
-  as typed fields and the primitive builds every sort href through
-  `net/url`, replacing the sort parameters rather than substituting
-  into a caller's string. Field by field: `SortHrefPattern` becomes
-  `Query url.Values` (the request state a sort must carry) with
-  optional `Path`, `SortParam` and `DirParam` (empty `SortParam`/
-  `DirParam` keep the `sort`/`dir` names); `IslandSignal` +
-  `IslandEndpoint` become `Island headless.Island{Endpoint, Signal}`;
-  `SortBy` keeps its name and meaning. The island sort control is an
-  `<a>` that carries the `data-fui-rpc` contract beside its href —
-  the no-script fallback the old `<button>` dropped — so a
-  `th button.ui-data-table__sort` selector becomes
-  `th a.ui-data-table__sort`. An empty result renders the table with
-  its head and the styled empty state in one spanning cell, where it
-  rendered no table at all; `is-empty` stays on the root. Every
-  headered cell carries `data-label` in every mode: a cards
-  collapse reads it, the scroll sheet does not. A carried query
-  value with C0 control bytes is scrubbed by the primitive, so a
-  hostile `?q=` with CR LF (which the anchor policy would refuse as
-  `%0D%0A`) still renders the sort anchors and the page; nothing is
-  refused.
-  `CaptionHidden` keeps a caption out of sight for a table that sits
-  under a visible heading saying the same thing: the caption element,
-  its text and the region's `aria-labelledby` all stay (the resource
-  engine's detail-page related lists use it, so the table and its
-  scroll region keep a name without a second visible band), and
-  `CaptionHidden` without `Caption` is refused at render. The
-  markup carries no direction glyph; the stylesheet draws it from
-  `aria-sort`, and the `ui-data-table__sort-indicator` class is
-  gone. The pager is untouched (`core-ui/patterns/pagination`, still
-  a `%d` `HrefPattern`; its island page items are still buttons).
-  Worked example, the resource engine's carry:
-  ```go
-  // before
-  carry := "" // "q=" + url.QueryEscape(search) + "&" per active facet
-  dt := ui.DataTableConfig{
-      SortBy: sortCol, SortDir: ui.SortDir(q.Get("dir")),
-      SortHrefPattern: "?" + carry + "sort=%s&dir=%s",
-  }
-  if c.IslandPath != "" {
-      dt.IslandSignal, dt.IslandEndpoint = c.islandSignal(), c.IslandPath
-  }
-
-  // after
-  query := url.Values{} // query.Set("q", search); query.Set(facetKey, v)
-  dt := ui.DataTableConfig{
-      SortBy: sortCol, SortDir: ui.SortDir(q.Get("dir")),
-      Query:  query,
-  }
-  if c.IslandPath != "" {
-      dt.Island = headless.Island{Endpoint: c.IslandPath, Signal: c.islandSignal()}
-  }
-  ```
-  The page-2 pager href keeps its old shape (the carry plus `p=%d`);
-  it still does not carry the active sort, which is a pre-existing
-  defect recorded separately and unchanged here.
-- **The Lightbox viewer's classes are `fui-lightbox*` and its image
-  carries `data-fui-lightbox-image`.** The `ui-lightbox__viewer`,
-  `ui-lightbox__figure`, `ui-lightbox__full`, `ui-lightbox__caption`,
-  `ui-lightbox__toolbar`, `ui-lightbox__nav`, `ui-lightbox__download`
-  classes no longer exist in any emitted markup or stylesheet;
-  hand-rolled markup on them renders unstyled — call `ui.Lightbox`.
-  CSS that selected `.ui-lightbox__full[data-fui-zoomed]` selects
-  `.fui-lightbox__full[data-fui-zoomed]`. No `data-fui-*` attribute
-  the runtime contract documents changed spelling; the one new
-  attribute is `data-fui-lightbox-image`, and the module that read
-  `.ui-lightbox__full` by class reads it now. The move also changes
-  the module's availability: it no longer ships in the kernel's
-  `_moduleMarkers` table, it arrives with framework/ui's registration
-  — a host importing no `framework/ui` (a core-ui-only page
-  hand-rolling the `data-fui-comp="ui-lightbox"` markup the kernel
-  table used to serve) loses nav and zoom with no error; import
-  `framework/ui` (or mount a `ui.Lightbox`) so the registration
-  links in.
-- **`FormFieldConfig.Input` is a builder, not pre-built markup.**
-  `Input func(headless.FieldControl) render.HTML`; a nil `Input`
-  panics as an empty one did. The migration is one closure per call
-  site — build the control from the wiring the field hands the
-  closure with `ui.Control` (any input type), a typed field, or
-  `ui.PasswordInput`'s new `Field` — and the three raw-HTML feeders
-  (the blueprint generator, the resource engine, the admin battery)
-  emit the typed controls now, which is the better generator anyway.
-  A closure that ignores its `FieldControl` compiles and loses the
-  wiring; the docs say so once.
-- **The form family's classes are `fui-form*`, `fui-field*`,
-  `fui-select*`, `fui-input*`, `fui-input-group*`,
-  `fui-validation-summary*`.** No file emits or selects `ui-form`,
-  `ui-form-field`, `ui-form-section`, `ui-select`, `ui-input-group`
-  or `ui-validation-summary` as a class any more; the registration
-  names and `data-fui-comp` markers stay (the marker fetches the
-  sheet), with one narrowing: a group's LEAVES no longer carry the
-  toggle marker, only the fieldset does, so a host selecting
-  individual options by `[data-fui-comp="ui-toggle"]` now matches one
-  element per group. The choice family's one borrowed class
-  (`ui-form-field__required`, emitted by the toggle groups) is
-  renamed with its rule to `fui-field__required`. Hand-rolled
-  `class="ui-form-field"` markup renders unstyled — call
-  `ui.FormField`.
-- **The choice family's and the affix shells' classes are
-  `fui-choice*`, `fui-switch*`, `fui-choice-field*`,
-  `fui-password*` and `fui-color*`.** No file emits or selects
-  `ui-toggle`, `ui-toggle-group`, `ui-password-input` or
-  `ui-color-field` as a class any more; the registration names and
-  `data-fui-comp` markers stay (the marker fetches the sheet).
-  Hand-rolled selectors on the old classes render unstyled — call the
-  components. Markup changes with the classes: the label wraps the
-  control (no `for=`/indicator pair — the box, the dot and the
-  switch's thumb are drawn from the native input itself through
-  `appearance: none`), the groups are plain fieldsets with no
-  `role="radiogroup"`/`"group"` (the fieldset is the native group
-  semantic), and a required group says so twice: every leaf's input
-  carries `required`, which is how HTML makes a radio group required,
-  and the legend carries `data-required`, which the sheet draws the
-  asterisk from (`content: " *" / ""`, so the mark stays out of the
-  legend's accessible name). `ToggleConfig.ExtraAttrs` lands on the
-  `<input>` (the label offers no attribute seam), and the standalone
-  help id scheme is `-hint`. Two smaller changes to released
-  behaviour ride with the family: a `Checkbox`'s or `Radio`'s `Help`
-  joins the accessible name inside the wrapping label instead of
-  hanging off `aria-describedby`, and `ColorField`'s swatch is out of
-  the tab order (`tabindex="-1"`) so the pair is one focus target,
-  the hex input, which is the value that submits.
-- **`PasswordInputConfig.Error` is gone.** The affix-shell control
-  renders no message of its own; put the error on the enclosing
-  `FormField`. `PasswordInputConfig.ID` is no longer required when a
-  `Field` carries one.
-- **`ColorFieldConfig.SwatchValue` is gone; `Name` is required.**
-  headless.Color derives the swatch from `Value`: a non-`#rgb`/`#rrggbb`
-  value falls the swatch back to black and marks the shell
-  `data-invalid` instead of degrading, which is what `SwatchValue`
-  used to paper over. The hex text input takes the form-field name
-  (it is the control that submits) and gains `Field` (the builder
-  wiring: id, described-by, invalid) and `Ctx`; `SwatchLabel` stays
-  required and names the text input when `TextLabel` is empty — the
-  swatch names itself through `PickColor` + `Name`.
-- **The `passwordinput` runtime module is deleted**
-  (`core-ui/runtime/src/passwordinput.js`, its kernel marker-table
-  entry, its preload row and its docs row). `ui.PasswordInput` binds
-  through the headless module's `data-hui-reveal`; a host that
-  hand-loaded the old module gets a 404, which is the retirement
-  speaking. The reveal still works through the headless hooks — the
-  site's password e2e asserts the retype, the pressed state, the
-  swapped accessible name and the swapped visible word.
-- **`ui.ValidationSummary` requires `ID`, and a `ui.Form` rendering
-  `Errors` requires its own.** The summary's title id is derived from
-  the root id; two summaries (or two errored forms) without ids would
-  share one title id and break both labels and both announcements.
-  A form's summary id is `<formID>-errors` unless the caller
-  overrides it.
-- **The form wiring vocabulary is typed.** Every `data-fui-*` and
-  `data-action-*` key in `ui.Form`'s `ExtraAttrs` routes through the
-  request seam; a key outside the vocabulary panics at render,
-  naming the key and the seam. Build the wiring with
-  `interactive.Post(...).OnSuccess(...).Attrs()`: the request, the
-  method, the signal, navigate, open, refresh, close, reset, the
-  input trigger with its debounce, confirm, and `data-action-mount`
-  all ride. Four effects a button may carry are refused on a form,
-  each for its own reason: `AfterText` and `AfterDisable` would
-  rewrite or disable the form element itself rather than a control,
-  `ScrollTo` and `PushState` belong to a navigation the server owns
-  after a mutation, and `WithBody` gets its own refusal because a
-  form serializes its own fields and a static body would drop every
-  one of them. A host composing those on a form hits a render panic
-  naming the key.
-- **`FormConfig.Summary` is a row inside the summary, not a Callout's
-  body.** It was the whole text of an error Callout above the fields;
-  it is now the sentence that belongs to no field, rendered as a text
-  row inside `ui.ValidationSummary` above the per-field links. The
-  rendered output of a released component changes for every caller
-  that sets it. It also renders now when `Errors` is empty: a save
-  refused with no field error named — a conflict, a guard — used to
-  render nothing at all, which is the admin battery's general flash
-  going silent.
-- **`ui.Form` refuses an action the anchor policy rejects.** The old
-  behaviour substituted `#`, shipping a form whose submit went
-  nowhere; the refusal is a panic at render, where the mistake was
-  made (matching `headless.Form`, which always refused).
-- **A `data-fui-*` key the runtime does not read on a button panics.**
-  Under the old carrier contract `ui.Button`'s `ExtraAttrs` rendered
-  any `data-fui-*` key as a (usually dead) attribute; now every
-  `data-fui-*` key routes through the typed `Action` seam and any key
-  outside the vocabulary is refused at render, naming the key and the
-  seam. The admitted vocabulary (each value checked for what it
-  deserves): `data-fui-rpc`, `-rpc-method`, `-rpc-body`,
-  `-rpc-signal`, `-rpc-navigate`, `-rpc-open`, `-rpc-close`,
-  `-rpc-reset`, `-rpc-after-text`, `-rpc-after-disable`,
-  `-rpc-scroll-to`, `-rpc-refresh`, `-confirm`, `-signal-set`,
-  `-signal-inc`, `-signal-toggle`, `-push-state`, `-open`,
-  `-deeplink`, `-toast`, `-pane-open`, `-pane-key`, `-pane-close`,
-  `-prefetch`, `-intercept-close`. Notably `data-fui-rpc-refresh` and
-  `data-fui-pane-key` — both runtime-read, both legal on a button —
-  ARE in the vocabulary; everything else `data-fui-*` (signal
-  display bindings, `data-fui-toggle-*`, `data-fui-optimistic-*`,
-  polling, layout markers, …) belongs to the component that renders
-  its own markup for it and panics here. `ui.LinkButton` refuses
-  every `data-fui-*` key except the four link-legal ones
-  (`-push-state`, `-prefetch`, `-open`, `-deeplink`), as before.
-- **`disabled` belongs to `ButtonConfig.Disabled`.** A `disabled` key
-  in `ui.Button`'s `ExtraAttrs` panics pointing at the field (any
-  spelling; `FormRepeater`'s buttons now use the field).
-- **The button classes are `fui-button*`.** The `ui-button` class no
-  longer exists in any emitted markup or stylesheet; the four
-  `.ui-button`-selecting rules elsewhere (Form's block-actions,
-  FilterToolbar's actions, admin's row-action danger pair) select
-  `.fui-button` now. Hand-rolled `class="ui-button"` markup renders
-  unstyled — call `ui.Button` / `ui.LinkButton`. The option compiler
-  emits per-variant trios (`--fui-button-primary-*`,
-  `--fui-button-danger-*`) and no un-prefixed `--fui-button-bg/-fg/-border`.
-- **`style.ThemeRef.Hash` is a method now.** `RegisterThemeOverride`
-  no longer hashes at registration; the handle computes its content
-  hash on first use (`Hash()`/`Class()`). The documented package-level
-  pattern `var Dark = style.RegisterThemeOverride(darkTheme)` is
-  therefore safe in a library package that does not import
-  `framework/ui`: registering during init cannot hash, freeze the
-  component-options compiler hook and panic `framework/ui`'s later
-  init. Code that read `ref.Hash` as a field moves to `ref.Hash()`.
-
-- **The bespoke-behaviour family's classes are `fui-upload*`,
-  `fui-drop*`, `fui-when`, `fui-textarea` and `fui-search*`, and its
-  runtime modules are deleted.** No file emits or selects
-  `ui-fileupload`, `ui-dropzone`, `ui-conditional-field`,
-  `ui-textarea` or `ui-search-input` as a class any more; the
-  registration names and `data-fui-comp` markers stay (the marker
-  fetches the sheet). The selectors that reached into SearchInput's
-  shape move with it (`framework/ui/filtertoolbar.go`, the admin
-  toolbar's CSS, and the searchinput module's own clear-button
-  lookup). Three runtime modules are deleted with their sources,
-  kernel marker-table rows, preload rows and docs rows:
-  `conditionalfield.js`, `fileupload.js` and `dropzone.js` — the
-  headless module's `data-hui-when` and `data-hui-drop` hooks own
-  their behaviour now, and a host that hand-loaded a deleted module
-  gets a 404, which is the retirement speaking. Hand-rolled
-  `data-fui-fileupload` zones lose their drag-drop; render the
-  components or carry the `data-hui-drop` hooks. The one piece with
-  no headless counterpart — the dropzone's image thumbnails — ships
-  as framework/ui's own `filedropzone` module on the unchanged
-  `data-fui-dropzone-preview` wiring.
-- **`ui.ConditionalField` renders VISIBLE, and
-  `ConditionalFieldVisible` is gone.** The region ships with no
-  `hidden` and no `aria-hidden`, and the headless module hides it
-  once it arms and the watched field does not match — because a
-  field only a script can reveal is a field a reader without script
-  never reaches. A host relying on the old hidden-by-default posture
-  sees its dependent fields on first paint until the module arms.
-  Size that honestly: the headless module is split, so the window is
-  the runtime's load, the marker scan, and a second fetch for the
-  module itself — two round trips on a cold page, not a tick. The
-  module disables what it hides, so nothing hidden submits. The watched-field attributes are
-  `data-hui-when` / `data-hui-when-value` (was `data-when-name` /
-  `data-when-value`), `ConditionalFieldVisible` folds into
-  `ConditionalField` (the server-side pre-show it existed for is the
-  new default), and `ConditionalFieldConfig.EvaluateInitialState`
-  is withdrawn with it.
-- **`ui.FileUpload` and `ui.TextArea` changed shape with their
-  headless adoption.** FileUpload's hint renders inside the zone
-  (id `<id>-accept`, joined into the input's `aria-describedby`)
-  and its error below it as a `role="alert"` paragraph; the old
-  `.ui-fileupload__filename` live paragraph and its first-image
-  thumbnail are replaced by the module-filled `role="list"` of
-  chosen names and the `role="status"` announcement sentence.
-  TextArea is a field: the `fui-field` shell owns the label, hint
-  and error, the control carries the `ui-textarea` marker beside
-  the field's, and `Autogrow` still reaches the control as
-  `data-fui-autogrow` (its module is unchanged).
-
-### Migration ledger — the headless stack so far
-
-One place to read every breaking change this stack has landed, in
-application order. Each entry is detailed above in this release's
-`BREAKING` section; this ledger is the checklist for moving an app
-across the whole stack. `framework/headless` itself is unreleased
-(nothing in v0.85.0 ships it), so its rename and its vocabulary entry
-are listed under Added above, not here.
-
-1. **`style.ThemeRef.Hash` is a method now.** `RegisterThemeOverride`
-   hashes lazily, so package-level registration is safe in a library
-   that does not import `framework/ui`; move `ref.Hash` field reads to
-   `ref.Hash()`.
-2. **`disabled` belongs to `ButtonConfig.Disabled`.** A `disabled` key
-   in `ui.Button`'s `ExtraAttrs` panics pointing at the field.
-3. **The button wiring vocabulary is typed.** Every `data-fui-*` key on
-   a button routes through the `Action` seam
-   (`interactive.Action.Attrs()` and friends); a key outside the
-   admitted vocabulary panics at render, naming the key. On an anchor
-   only the four link-legal keys ride.
-4. **The button classes are `fui-button*`.** The `ui-button` class no
-   longer exists in any emitted markup or stylesheet; hand-rolled
-   `class="ui-button"` markup renders unstyled — call
-   `ui.Button` / `ui.LinkButton`. Selectors that targeted `.ui-button`
-   (Form's block-actions, FilterToolbar, admin row actions) select
-   `.fui-button` now.
-5. **The form family's `Input` is a builder and its classes are
-   `fui-*`.** `FormFieldConfig.Input` takes
-   `func(headless.FieldControl) render.HTML`; build the control with
-   `ui.Control`, a typed field, or `ui.PasswordInput`'s `Field`.
-   Hand-rolled `ui-form`/`ui-form-field`/`ui-select`/… class markup
-   renders unstyled.
-6. **`ui.ValidationSummary` requires `ID`; a `ui.Form` rendering
-   `Errors` requires `FormConfig.ID`.** The summary's id is derived
-   from the form's.
-7. **Form wiring rides the request seam.** `data-fui-*` and
-   `data-action-*` keys in `ui.Form`'s `ExtraAttrs` are admitted
-   vocabulary or a render-time panic; `data-fui-rpc-body` is refused
-   outright (a form serializes itself), as are `after-text`,
-   `after-disable`, `scroll-to` and `push-state`, which mean nothing
-   a form can honour.
-8. **An unsafe `FormConfig.Action` panics.** The `#` substitution is
-   gone.
-9. **`FormConfig.Summary` moved inside the summary.** It was an error
-   Callout's whole body; it is the no-field sentence rendered as a row
-   inside `ui.ValidationSummary`, and it now renders even when
-   `Errors` is empty. A caller that set it gets different markup and,
-   in the general-only case, output where there was none.
-
-10. **The bespoke-behaviour classes are `fui-upload*`, `fui-drop*`,
-   `fui-when`, `fui-textarea`, `fui-search*`; three runtime modules
-   are deleted.** Hand-rolled markup on the old classes renders
-   unstyled — call `ui.FileUpload` / `ui.FileDropzone` /
-   `ui.ConditionalField` / `ui.TextArea` / `ui.SearchInput`. Select
-   `.fui-search` where the admin toolbar and FilterToolbar selected
-   `.ui-search-input`. The `conditionalfield`, `fileupload` and
-   `dropzone` modules 404 if hand-loaded; the headless module's
-   `data-hui-when` / `data-hui-drop` hooks own their behaviour, and
-   hand-rolled `data-fui-fileupload` zones lose their drag-drop.
-11. **`ui.ConditionalField` renders visible; `ConditionalFieldVisible`
-   and `EvaluateInitialState` are gone.** A host relying on
-   hidden-by-default sees its dependent fields on first paint until
-   the headless module arms — two round trips on a cold page, since
-   the module is split, not one tick. The watched-field attributes
-   are `data-hui-when` / `data-hui-when-value`, and the marker the
-   runtime writes on a control it disables is `data-hui-when-off`
-   (was `data-fui-cond-disabled`): CSS that styled the old one has
-   no target now.
-12. **`ui.FileUpload`'s and `ui.TextArea`'s markup changed.** The
-   upload's hint sits inside the zone (`<id>-accept`) with the error
-   below it; the filename paragraph is a module-filled list plus a
-   status sentence. TextArea is a `fui-field` shell around a
-   `fui-textarea` control carrying its own marker.
-13. **The Lightbox viewer's classes are `fui-lightbox*`** (see
-   BREAKING): hand-rolled `ui-lightbox__*` markup renders unstyled,
-   `.ui-lightbox__full[data-fui-zoomed]` selectors retarget
-   `.fui-lightbox__full[data-fui-zoomed]`, and any custom script that
-   found the image by class reads `data-fui-lightbox-image`. Every
-   documented `data-fui-*` attribute keeps its spelling; the
-   `data-hui-lightbox*` hooks and `headless.LightboxViewer` are
-   unreleased surface (Added), not breaking.
-
-14. **Display classes are `fui-*`** (charts, images incl. the Gallery
-    DOM move, code incl. `fui-code-tabs`, markdown, terminal, avatar,
-    icon, color picker, diff viewer, metric band, record summary,
-    pricing card, auth card, sign out, optimistic/toggle action).
-    Rename `ui-*` selectors to `fui-*`; sheet names and markers stay.
-15. **Shell classes are `fui-*`** (hero, hero split, site header, site
-    footer, doc layout, workbench, toolbar, filter toolbar, sidebar,
-    responsive, themed). `ui.Sidebar` renders through
-    `headless.Sidebar`: hooks, ids and storage keys unchanged; byte
-    pins re-read (sorted attribute order, `hidden=""` spelling). An
-    item with both `Href` and `Children`, a blank `Label`, or control
-    bytes in `DrawerName`/`CollapseStorageKey` now panics: fix the
-    config.
-16. **The residue is `fui-*`** (data table, segmented, palette parts,
-    JSONViewer parts, polling indicator, shortcut hint, confirm
-    action, tooltip, search input, visually hidden). The
-    `framework/gallery` prefix gate holds the line from here on.
-
 ### Changed
 - **One home per helper.** A clone survey over the tree found the same
   bodies re-implemented across packages; each now has one canonical
@@ -1424,6 +1441,12 @@ are listed under Added above, not here.
   where the old module reverted in silence.
 
 ### Fixed
+- **A `ui.Section` a parent grid stretches keeps its heading on its
+  body.** The section is a two-row grid, and a shorter section beside
+  a taller one in a `ui.Grid` shared the spare height between its
+  rows, floating the heading and description far above the content.
+  The sheet sets `align-content: start`; pinned by a chromium test
+  that compares a stretched section with an unstretched one.
 - **The navigator's stateful-param scan reads `data-hui-pane-deeplink`.** The kernel decides which query parameters survive a Back or Forward without a refetch from the pane hosts on the page; it read only the retired `data-fui-pane-deeplink` spelling, so a `headless.PaneHost` deep link refetched the screen on every history move. Both spellings are read now, pinned by the popstate e2e with one host of each.
 - **`widget.RuntimeTag` emits its inline JSON blocks before the
   runtime script.** The kernel parses `#gofastr-behaviors` while

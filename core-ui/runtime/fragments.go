@@ -209,17 +209,14 @@ var fragmentAttrs = map[string][]string{
 // Every entry is markerClass: the kernel's _scanForModules demand-loads the
 // module when it sees the module's primary marker (the scanner table near
 // the bottom of runtime.js is the authoritative marker→module map), and
-// companion attributes ride along. The one exception is `tabs`, which has
-// no marker entry by design: it loads only via the data-fui-prefetch
-// bridge its component arms, so _scanForModules never demand-loads it.
-// A module not listed here still loads, this is the attribute-ownership
-// map, not the module registry.
+// companion attributes ride along. A module not listed here still loads,
+// this is the attribute-ownership map, not the module registry.
 //
 // Modules that own zero data-fui-* attributes are absent ON PURPOSE:
 // compute and sse (their attribute is claimed by the like-named core
-// fragment. See fragments note); formrepeater and searchinput
-// (triggered by data-fui-comp="ui-<name>" CSS markers, which kernel
-// owns, and otherwise driven by rpc/signals); widgetfocus and
+// fragment. See fragments note); searchinput (triggered by its
+// data-fui-comp CSS marker, which kernel owns, and otherwise driven
+// by rpc/signals); widgetfocus and
 // widgetlinks (triggered by internal JS markers, not data-fui-* at all);
 // preload (manifest-triggered like intercept, boot loads it when any
 // route declares a preload mode, and it reads route data, not markers);

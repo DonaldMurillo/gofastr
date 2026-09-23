@@ -50,22 +50,19 @@ const hlPrimaryMetrics = `(() => {
 })()`
 
 func TestHeadlessLandingRoutesRender(t *testing.T) {
-	for _, seg := range []string{"default", "dense"} {
-		page := body(t, landingRoutePath(seg))
+	for _, r := range landingRoutes {
+		page := body(t, landingRoutePath(r.Segment))
 		if !strings.Contains(page, ">Headless landing") {
-			t.Errorf("%s: page title missing from render", seg)
+			t.Errorf("%s: page title missing from render", r.Segment)
+		}
+		if !strings.Contains(page, r.Ref.Class()) {
+			t.Errorf("%s route: the theme's wrapper class is not on the page", r.Segment)
 		}
 	}
 	def := body(t, landingRoutePath("default"))
-	dense := body(t, landingRoutePath("dense"))
-	if !strings.Contains(def, landingRefFramework.Class()) {
-		t.Error("default route: the framework theme's wrapper class is not on the page")
-	}
-	if !strings.Contains(dense, landingRefDense.Class()) {
-		t.Error("dense route: the dense theme's wrapper class is not on the page")
-	}
-	// The two themes must hash apart. (The other theme's class is
-	// legitimately on each page too: the nesting fixture wraps it.)
+	// The two original themes must hash apart. (The other themes'
+	// classes are legitimately on each page too: the nesting fixture
+	// wraps them.)
 	if landingRefDense.Class() == landingRefFramework.Class() {
 		t.Error("the two route themes share one wrapper class; they must hash apart")
 	}
@@ -74,8 +71,20 @@ func TestHeadlessLandingRoutesRender(t *testing.T) {
 		t.Errorf("unknown theme segment = %d, want 404", got)
 	}
 	paths := (&HeadlessLandingScreen{}).StaticPaths(t.Context())
-	if len(paths) != 2 || paths[0]["theme"] == paths[1]["theme"] {
-		t.Errorf("StaticPaths = %v, want one entry per registered theme", paths)
+	if len(paths) != len(landingRoutes) {
+		t.Errorf("StaticPaths = %v, want one entry per registered theme (%d)", paths, len(landingRoutes))
+	}
+	seen := map[string]bool{}
+	for _, p := range paths {
+		if seen[p["theme"]] {
+			t.Errorf("StaticPaths repeats theme %q", p["theme"])
+		}
+		seen[p["theme"]] = true
+	}
+	for _, r := range landingRoutes {
+		if !seen[r.Segment] {
+			t.Errorf("StaticPaths misses registered theme %q", r.Segment)
+		}
 	}
 	// The Strings bridge on the bare fixture: the site installs no
 	// translator, so ui.StringsFor(r.Context()) must leave the page
@@ -146,7 +155,7 @@ func TestE2E_HeadlessLanding_ThemeVariables(t *testing.T) {
 	}
 }
 
-// TestE2E_HeadlessLanding_WrapperClassesDiffer pins that the two routes
+// TestE2E_HeadlessLanding_WrapperClassesDiffer pins that the first two routes
 // really render under two different theme scopes (the class is the scope).
 func TestE2E_HeadlessLanding_WrapperClassesDiffer(t *testing.T) {
 	if testing.Short() {

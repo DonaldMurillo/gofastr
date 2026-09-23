@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	cdnetwork "github.com/chromedp/cdproto/network"
 	"github.com/chromedp/chromedp"
 )
 
@@ -158,5 +159,135 @@ func TestHeadlessSettingsHandlerAnswersBothWays(t *testing.T) {
 	}
 	if got, want := rec.Header().Get("Location"), dashboardRoutePath("dense")+"?settings=invalid-name"; got != want {
 		t.Fatalf("redirect is %q, want %q", got, want)
+	}
+}
+
+// TestHeadlessDashboardComposesOnEveryRoute pins the dashboard's
+// composition at the SSR level, per registered theme: the
+// RecordSummary leads, its MetricBand carries four signals, the usage
+// chart is named by its visible heading and echoed by the text
+// alternative, the invoice table renders five rows with a sortable
+// column, and the settings form is still the last section, unchanged.
+func TestHeadlessDashboardComposesOnEveryRoute(t *testing.T) {
+	for _, r := range landingRoutes {
+		page := body(t, dashboardRoutePath(r.Segment))
+		for _, probe := range []struct {
+			id   string
+			what string
+		}{
+			{"hd-summary", "the RecordSummary"},
+			{"hd-summary-metrics", "the MetricBand"},
+			{"hd-usage-chart", "the usage chart"},
+			{"hd-invoices-table", "the invoice table"},
+			{"hd-settings", "the settings form"},
+		} {
+			if !strings.Contains(page, `id="`+probe.id+`"`) {
+				t.Errorf("%s: %s (%s) missing from the render", r.Segment, probe.what, probe.id)
+			}
+		}
+		// The chart is named by its visible heading, not left unnamed.
+		if !strings.Contains(page, `aria-labelledby="hd-usage-title"`) {
+			t.Errorf("%s: the chart is not named through the section heading's id", r.Segment)
+		}
+		// The text alternative repeats all twelve values.
+		for _, month := range dashboardUsageMonths {
+			if !strings.Contains(page, month+" requests") {
+				t.Errorf("%s: the chart's text alternative misses %s", r.Segment, month)
+			}
+		}
+		// Five invoice rows, all five fixture numbers.
+		for _, inv := range dashboardInvoices {
+			if !strings.Contains(page, inv.Number) {
+				t.Errorf("%s: invoice %s missing from the table", r.Segment, inv.Number)
+			}
+		}
+		// The settings section is still headed "Account settings".
+		if !strings.Contains(page, "Account settings") {
+			t.Errorf("%s: the Account settings heading is gone", r.Segment)
+		}
+	}
+}
+
+// TestHeadlessDashboardInvoiceSorting pins the sort at the router
+// level, both directions of both sortable columns, plus the island
+// endpoint's face and its unknown-theme refusal.
+func TestHeadlessDashboardInvoiceSorting(t *testing.T) {
+	cases := []struct {
+		query       string
+		first, last string
+	}{
+		{"", "INV‑018", "INV‑014"},                      // default: newest first
+		{"?sort=issued&dir=asc", "INV‑014", "INV‑018"},  // oldest first
+		{"?sort=issued&dir=desc", "INV‑018", "INV‑014"}, // newest first
+		{"?sort=amount&dir=asc", "INV‑014", "INV‑018"},  // $147 first, $196 last
+		{"?sort=amount&dir=desc", "INV‑018", "INV‑014"}, // $196 first
+	}
+	for _, c := range cases {
+		page := body(t, dashboardRoutePath("soft")+c.query)
+		first := strings.Index(page, c.first)
+		last := strings.Index(page, c.last)
+		if first == -1 || last == -1 {
+			t.Fatalf("query %q: invoice numbers missing from the page", c.query)
+		}
+		if first > last {
+			t.Errorf("query %q: %s renders before %s — the sort did not apply", c.query, c.first, c.last)
+		}
+		// The active column announces its direction.
+		if c.query != "" && !strings.Contains(page, `aria-sort="ascending"`) && !strings.Contains(page, `aria-sort="descending"`) {
+			t.Errorf("query %q: no th carries aria-sort", c.query)
+		}
+	}
+
+	// The island endpoint answers the re-rendered table, sorted.
+	// Through the site's router: the {theme} path value is the
+	// router's to set, and this also proves the endpoint is mounted.
+	rec := serve(t, http.MethodGet, "/__site/headless/invoices/editorial?sort=amount&dir=asc")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("island GET answered %d, want 200", rec.Code)
+	}
+	if i, j := strings.Index(rec.Body.String(), "INV‑014"), strings.Index(rec.Body.String(), "INV‑018"); i == -1 || i > j {
+		t.Errorf("island GET did not answer the ascending-amount table:\n%s", rec.Body.String())
+	}
+	// An unknown theme is refused, the same line the sibling handlers hold.
+	if got := serve(t, http.MethodGet, "/__site/headless/invoices/retro?sort=amount&dir=asc").Code; got != http.StatusBadRequest {
+		t.Errorf("island GET with unknown theme answered %d, want 400", got)
+	}
+}
+
+// TestE2E_HeadlessDashboard_SortLinkRoundTripsNoScript blocks the
+// runtime the way a reader without script experiences the page, clicks
+// the Amount sort anchor, and watches the native navigation land back
+// on the same page carrying ?sort=amount&dir=asc with the table
+// re-rendered in that order.
+func TestE2E_HeadlessDashboard_SortLinkRoundTripsNoScript(t *testing.T) {
+	if testing.Short() {
+		t.Skip("e2e: -short")
+	}
+	base := startE2EServer(t)
+	ctx := newE2EBrowserCtx(t)
+	var afterURL, firstRow string
+	err := chromedp.Run(ctx,
+		cdnetwork.Enable(),
+		cdnetwork.SetBlockedURLs().WithURLPatterns([]*cdnetwork.BlockPattern{
+			{URLPattern: "*://*:*/*runtime.js*", Block: true},
+			{URLPattern: "*://*:*/*__gofastr/runtime/*", Block: true},
+		}),
+		chromedp.Navigate(base+dashboardRoutePath("contrast")),
+		pageReady(),
+		// The inactive Amount column's first click sorts ascending.
+		chromedp.Click(`#hd-invoices-table th a[href*="sort=amount"]`, chromedp.ByQuery),
+		chromedp.WaitVisible(`#hd-invoices-table`, chromedp.ByQuery),
+		chromedp.Location(&afterURL),
+		chromedp.Evaluate(`document.querySelector('#hd-invoices-table tbody tr td').textContent.trim()`, &firstRow),
+	)
+	if err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	wantPrefix := base + dashboardRoutePath("contrast") + "?"
+	if !strings.HasPrefix(afterURL, wantPrefix) || !strings.Contains(afterURL, "sort=amount") || !strings.Contains(afterURL, "dir=asc") {
+		t.Fatalf("after the sort click the browser is at %q, want %s…sort=amount&dir=asc — without the runtime the anchor must navigate", afterURL, wantPrefix)
+	}
+	if !strings.HasPrefix(firstRow, "INV‑014") {
+		t.Errorf("ascending amount puts %q in the first row, want INV‑014 ($147.00)", firstRow)
 	}
 }

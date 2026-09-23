@@ -89,6 +89,19 @@ Two documented `upgrades.yml` entries, identical for both fixtures:
   app builds and runs with `CGO_ENABLED=0`. The `sql.Open("sqlite3", …)` call is
   unchanged because the stdlib package registers the `sqlite3` name.
 
+- **Unreleased, the table's typed sort props.** `ui.DataTableConfig`
+  drops `SortHrefPattern` (the caller-assembled `"?" + carry +
+  "sort=%s&dir=%s"` pattern string) for `Query url.Values`: the carry
+  the old pattern hand-built (`q=` plus escaped facet pairs) becomes
+  `query.Set` calls, and every sort href is built through `net/url`
+  with the parameter replaced rather than spliced.
+- **Unreleased, the typed pager.** `ui.DataTableConfig.Pagination` is a
+  `*ui.PaginationConfig` (`Pages`/`Page`/`Query`, the headless
+  pager's props) and `core-ui/patterns/pagination` is deleted. The
+  fixture's `&pagination.Config{Total: pages, Current: page,
+  HrefPattern: "…"}` becomes `&ui.PaginationConfig{Pages: pages,
+  Page: page, Query: query}` — the same map the sort props carry.
+
 - **Unreleased, `ui.FormFieldConfig.Input` is a builder.** The field hands its
   control an id, an `aria-describedby` and an invalid state before the control
   renders, replacing the attribute splicing that injected them afterwards.
@@ -97,9 +110,10 @@ Two documented `upgrades.yml` entries, identical for both fixtures:
   that ignores the argument compiles and silently drops the wiring, which is
   the defect the builder exists to prevent.
 
-  This step has **no `upgrades.yml` entry yet**, and deliberately so: the
+  These unreleased steps have **no `upgrades.yml` entries yet**, and
+  deliberately so: the
   registry is keyed by released version and its `through:` marker is pinned to
-  the newest CHANGELOG release heading (two tests enforce both). The entry gets
+  the newest CHANGELOG release heading (two tests enforce both). The entries get
   written when the release carrying the framework/ui rebuild is cut; the
   fixtures cannot wait for that, because they build against the current tree.
 

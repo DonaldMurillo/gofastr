@@ -141,6 +141,21 @@ func TestLightboxExtraAttrsOnViewerRoot(t *testing.T) {
 	}
 }
 
+// TestLightboxSlotRootIsBare: the centered-panel chrome opts out
+// through .fui-slot-bare as a whole class token on the slot's root
+// element — the generic escape hatch, so the always-shipped panel CSS
+// names no framework/ui component.
+func TestLightboxSlotRootIsBare(t *testing.T) {
+	body := string((&lightboxSlot{name: "x", label: "x"}).Render())
+	root := body[:strings.Index(body, ">")+1]
+	if !classTokenPresent(root, "fui-slot-bare") {
+		t.Errorf("lightbox slot root missing fui-slot-bare token:\n%s", root)
+	}
+	if !classTokenPresent(root, "fui-lightbox") {
+		t.Errorf("lightbox slot root missing fui-lightbox token:\n%s", root)
+	}
+}
+
 // The viewer the styled Lightbox renders carries exactly ONE hook
 // vocabulary: the framework module's data-fui-lightbox* wiring. The
 // hui twins are suppressed on this path — a host module binding them

@@ -311,6 +311,10 @@
 
   // Close ordinary disclosures inside scope so they do not float over the
   // destination content. Persistent shell controls opt out explicitly.
+  // data-fui-disclosure-persist is the legacy spelling: the framework
+  // renders data-hui-disclosure-persist (handled by headless-disclosure),
+  // and this read is kept one release for hosts built on v0.85.0 — see
+  // the Unreleased "Deprecated" section in the CHANGELOG.
   const closeDisclosures = (scope) => {
     for (const d of scope.querySelectorAll('details[data-fui-disclosure][open]:not([data-fui-disclosure-persist])')) {
       d.removeAttribute('open');
@@ -740,7 +744,9 @@
     // Eagerly close an enclosing dismissible disclosure (mobile nav
     // hamburger). Without this, the menu floats over stale content
     // for the entire SPA fetch duration, the user perceives the
-    // click as "didn't take".
+    // click as "didn't take". The -persist exemption is the legacy
+    // data-fui- spelling (deprecated, see the CHANGELOG's Unreleased
+    // "Deprecated" section): render data-hui-disclosure-persist.
     anchor.closest('details[data-fui-disclosure]:not([data-fui-disclosure-persist])')?.removeAttribute('open');
     // An intercepting route presents as an overlay when reached from its
     // declared origin. The module owns the URL and the fetch in that
@@ -774,7 +780,9 @@
     }
     // Both spellings: headless.PaneHost declares data-hui-pane-deeplink,
     // the retired pane host declared data-fui-pane-deeplink and old
-    // server markup may still carry it.
+    // server markup may still carry it. The fui spelling is deprecated,
+    // kept one release for hosts built on v0.85.0 (CHANGELOG, Unreleased
+    // "Deprecated"); render data-hui-pane-deeplink.
     for (const el of document.querySelectorAll('[data-hui-pane-deeplink],[data-fui-pane-deeplink]')) {
       const p = el.getAttribute('data-hui-pane-deeplink') || el.getAttribute('data-fui-pane-deeplink');
       if (p) set.add(p);

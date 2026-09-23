@@ -1145,6 +1145,10 @@
 
   // Close ordinary disclosures inside scope so they do not float over the
   // destination content. Persistent shell controls opt out explicitly.
+  // data-fui-disclosure-persist is the legacy spelling: the framework
+  // renders data-hui-disclosure-persist (handled by headless-disclosure),
+  // and this read is kept one release for hosts built on v0.85.0 — see
+  // the Unreleased "Deprecated" section in the CHANGELOG.
   const closeDisclosures = (scope) => {
     for (const d of scope.querySelectorAll('details[data-fui-disclosure][open]:not([data-fui-disclosure-persist])')) {
       d.removeAttribute('open');
@@ -1574,7 +1578,9 @@
     // Eagerly close an enclosing dismissible disclosure (mobile nav
     // hamburger). Without this, the menu floats over stale content
     // for the entire SPA fetch duration, the user perceives the
-    // click as "didn't take".
+    // click as "didn't take". The -persist exemption is the legacy
+    // data-fui- spelling (deprecated, see the CHANGELOG's Unreleased
+    // "Deprecated" section): render data-hui-disclosure-persist.
     anchor.closest('details[data-fui-disclosure]:not([data-fui-disclosure-persist])')?.removeAttribute('open');
     // An intercepting route presents as an overlay when reached from its
     // declared origin. The module owns the URL and the fetch in that
@@ -1608,7 +1614,9 @@
     }
     // Both spellings: headless.PaneHost declares data-hui-pane-deeplink,
     // the retired pane host declared data-fui-pane-deeplink and old
-    // server markup may still carry it.
+    // server markup may still carry it. The fui spelling is deprecated,
+    // kept one release for hosts built on v0.85.0 (CHANGELOG, Unreleased
+    // "Deprecated"); render data-hui-pane-deeplink.
     for (const el of document.querySelectorAll('[data-hui-pane-deeplink],[data-fui-pane-deeplink]')) {
       const p = el.getAttribute('data-hui-pane-deeplink') || el.getAttribute('data-fui-pane-deeplink');
       if (p) set.add(p);
@@ -2314,40 +2322,23 @@
     // [data-fui-infinite-sentinel] inside and POSTs to
     // data-fui-infinite-scroll.
     { name: 'infinitescroll', selector: '[data-fui-infinite-scroll]' },
-    // Banner: dismissible inline-alert support. The module runs the
-    // localStorage-backed hide pass for already-dismissed banners and
-    // wires the delegated click handler for the X button.
-    // Slider: mirrors <input type="range"> value into the associated
-    // <output> on input events. Loaded only when ShowValue=true (the
-    // mirror marker is on the input then).
-    // NumberInput: wires the +/- step buttons of framework/ui.NumberInput
-    // to the associated <input type="number">.
     // TextArea autogrow: applies the same auto-resize handler the
     // widget runtime uses for textareas anywhere on the page.
     { name: 'textarea',       selector: 'textarea[data-fui-autogrow]' },
     // MultiSelect: chip rendering for checked options + chip removal.
     { name: 'multiselect',    selector: '[data-fui-multiselect-chips]' },
-    // RangeSlider: cross-clamp min/max thumbs + optional value mirror.
-    // TagInput: commit on Enter/comma, backspace removes last, chip ×.
-    // AnimatedCounter: IntersectionObserver-driven tick on first view.
     // DragDismiss: pointer drag-to-close for BottomSheet-style widgets.
     { name: 'dragdismiss', selector: '[data-fui-drag-dismiss="true"]' },
-    // NetworkRetryBanner: persistent banner gated by RPC-failure threshold / SSE silence. Health-check retry.
     // SortableList: HTML5 drag + keyboard reorder. POSTs new order on commit.
     { name: 'sortablelist',    selector: '[data-fui-sortable]' },
-    // BackToTop: scroll-past-threshold reveal + smooth scroll.
     // SearchInput: clear button visibility + input clearing.
     { name: 'searchinput',     selector: '[data-fui-comp="ui-search-input"]' },
-    // FormRepeater: serializes field values into RPC add/remove clicks.
-      // Dropdown: click-toggle + click-outside dismiss + Esc close.
+    // Dropdown: click-toggle + click-outside dismiss + Esc close.
     { name: 'dropdown',         selector: '[data-fui-dropdown-wrap]' },
     // Reveal: IntersectionObserver-driven entrance animations.
     { name: 'reveal',           selector: '[data-fui-reveal]' },
     // Animate: signal-driven CSS class toggling.
     { name: 'animate',          selector: '[data-fui-animate-signal]' },
-    // PaneHost: primary pane + openable secondary/tertiary side panes
-    // with a responsive overlay-drawer collapse. Wires open/close/swap
-    // triggers + the focus/scroll-lock lifecycle.
     // Poll: page-level region polling. data-fui-poll="<duration>" +
     // data-fui-poll-src="<url>" re-fetches the URL on the cadence and
     // swaps the response HTML into the element. The module owns

@@ -6787,7 +6787,7 @@ func renderBlueprintBlockForScreen(bp Blueprint, screen BlueprintScreen, block B
 	}
 	switch strings.ToLower(block.Type) {
 	case "", "text", "p", "paragraph":
-		return fmt.Sprintf("render.Tag(\"p\", %s, render.Text(%q))", attrs, block.Text)
+		return fmt.Sprintf("html.Paragraph(html.TextConfig{Class: %q}, render.Text(%q))", block.Class, block.Text)
 	case "heading", "h1", "h2", "h3", "h4", "h5", "h6":
 		level := block.Level
 		if level == 0 {
@@ -6812,7 +6812,7 @@ func renderBlueprintBlockForScreen(bp Blueprint, screen BlueprintScreen, block B
 	case "section":
 		return fmt.Sprintf("render.Tag(\"section\", %s, render.Text(%q))", attrs, block.Text)
 	default:
-		return fmt.Sprintf("render.Tag(\"div\", %s, render.Text(%q))", attrs, block.Text)
+		return fmt.Sprintf("html.Div(html.DivConfig{Class: %q}, render.Text(%q))", block.Class, block.Text)
 	}
 }
 

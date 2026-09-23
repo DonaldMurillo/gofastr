@@ -175,7 +175,7 @@ server side and the runtime does the work.
 | `data-fui-match-prefix` | On a `<nav> <a>` link: opts the link into prefix-matching for active-route highlighting. The runtime tags it `aria-current="page"` + `.active` when the current path equals the link's href or continues it at a segment boundary: `/docs` and `/docs/` both light up on `/docs` and `/docs/getting-started`, and neither matches `/docs-old`. Without this attribute the runtime does exact-href matching only, so breadcrumbs and sidebars (where multiple links share prefixes) keep the server-rendered single active item. Root `/` is never a prefix match. |
 | `data-fui-activelink-skip` | On a `<nav> <a>` link: opts OUT of active-route highlighting entirely. The `activelink` runtime module neither sets nor clears `aria-current` or `.active` on it, at load or after SPA navigation. The escape hatch for a link whose current-state is owned by something else: a hand-set attribute (`aria-current="location"` on an in-page anchor), app JS, a signal binding. Same hands-off treatment as href-less links. |
 | `data-fui-popover-anchor` | On a `data-fui-open` trigger button: opt the opened widget into trigger-anchored positioning. The value is the preferred side: `"top"`, `"bottom"`, `"left"`, `"right"`, or empty / `"auto"` (= bottom-first, then top, right, left). The runtime measures both rects after open and applies inline `position: fixed; top; left` so the popover sits next to the trigger; if the preferred side would overflow the viewport (8px margin), it auto-flips to the opposite. Re-runs on `window.resize` AND `window.scroll` (capture, rAF-throttled) so the popover tracks the trigger when the page scrolls. Distinct from `preset.Modal`'s deep-link affordances: popovers are click-driven and don't deep-link. |
-| `data-fui-scrollspy` | Marks a scrollspy wrapper (`core-ui/patterns/scrollspy.Wrap` emits a `<div>` around a nav of `<a href="#id">` anchors). The runtime demand-loads the scrollspy module, which IntersectionObserves the anchored targets inside the configured region and tags the link whose target is in the active band with `aria-current="true"` + `.is-active`. The `activelink` module leaves these links alone: scrollspy owns their current-state. |
+| `data-fui-scrollspy` | Legacy hands-off marker for `activelink`: links inside such a wrap are neither set nor cleared (a legacy wrap keeps its hand-set state). Nothing the framework renders carries it — the scroll-spy rail is `headless.Rail`'s (`data-hui-rail`, observed by the registered `headless-rail` module; see that row below). Deprecated: removed in the release after this one (CHANGELOG, Unreleased "Deprecated"). |
 | `data-fui-multiselect` | Marks a `core-ui/patterns/multiselect` disclosure root. The `multiselect` runtime module scopes its chip rebuild + remove handling to descendants of this element. |
 | `data-fui-multiselect-chips` | On the chips strip inside a `core-ui/patterns/multiselect`: the runtime rebuilds the chip list inside this element after every `change` event on a descendant `.ui-multiselect__check` checkbox. `aria-live="polite"` ships on the same element so SR users hear updates. |
 | `data-fui-multiselect-placeholder="<text>"` | Empty-state placeholder shown via `::before` when no chips are rendered. |
@@ -337,8 +337,11 @@ ARIA-correct value for a page link, NOT `true`, so
 `[aria-current="true"]` selectors do not match it. Every other `nav a`
 with an href that does not match loses both. Left completely untouched
 (neither set nor cleared): href-less links (server-managed), links
-inside a `[data-fui-scrollspy]` wrapper (the scrollspy module owns
-their `aria-current="true"`), and links carrying
+inside a `[data-fui-scrollspy]` wrapper (the legacy hands-off marker —
+nothing the framework renders carries it; today's rail is
+`data-hui-rail`, whose links carry `.is-active`, set by the registered
+`headless-rail` module, never `activelink`'s `.active`, so the sweep's
+strip branch never touches them), and links carrying
 `data-fui-activelink-skip` (the opt-out for a current-state owned by
 app code or a hand-set attribute). `data-fui-match-prefix` opts a link
 into segment-prefix matching: `/docs` lights up on `/docs` and
@@ -1773,7 +1776,7 @@ your need:
 | Dominant record, incident, or operational summary | `framework/ui.RecordSummary` | Bounded status, next-decision, signal, compact support rail, ownership, and natural-width action slots. Actions stay in the lead region and move ahead of support context on phones. One page summary; do not duplicate it in a Banner. |
 | Compact related signals without a card grid | `framework/ui.MetricBand` | Semantic description list; one flat row wide, two columns on phones, with an odd final signal spanning the row instead of leaving an empty quadrant. |
 | Action menu on a row | `framework/ui.Menu` | Renders headless.Menu: a native `<details>` disclosure (Esc / SPA-nav close come free) whose keyboard contract the registered `headless-menu` module binds. |
-| Command palette (Cmd+K) | `framework/ui.CommandPalette` | Modal + `core-ui/patterns/combobox`. Debounced server search, keyboard nav, listbox selection. Returns trigger + preset pair. |
+| Command palette (Cmd+K) | `framework/ui.CommandPalette` | Modal + `headless.Combobox` (bound by the registered `headless-combobox` module). Debounced server search, keyboard nav, listbox selection. Returns trigger + preset pair. |
 | Global search input | `framework/ui.GlobalSearch` | Renders headless.Combobox (island-backed search with a no-script GET form) with a `/` focus chord bound by the registered `headless-navigation` module. |
 | Page-width wrapper | `framework/ui.Container` | Max-width page wrapper with breakpoint-aware padding. Narrow / default / wide / full variants. |
 | Vertical/horizontal spacing | `framework/ui.Stack` / `Cluster` / `Grid` / `Center` / `Spacer` / `Box` | Six spatial primitives sharing one stylesheet (all in `layout.go`). `Cluster` wraps by default; `ClusterConfig.NoWrap` is the explicit compact-chrome opt-out. Replace hand-rolled `display:flex` divs. |
@@ -1803,7 +1806,7 @@ your need:
 | Multi-select with chips | `framework/ui.Multiselect` (pattern) | Checkbox list with chip strip. Runtime rebuilds chips on change. `aria-live="polite"`. |
 | Drag-drop file picker | `framework/ui.FileUpload` | Native `<input type="file">` is the source of truth; the headless module's `data-hui-drop` hooks add drag-zone enhancement, list the chosen names and announce the pick. |
 | Drag-drop with image preview | `framework/ui.FileDropzone` | File input + drop zone + FileReader image previews. |
-| Combobox (autocomplete search) | `core-ui/patterns/combobox` | Input + listbox, debounced RPC search, signal-driven list swap. Used by CommandPalette and GlobalSearch. |
+| Combobox (autocomplete search) | `framework/ui.Combobox` | Typed combobox over the headless primitive: labelled input with `role=combobox` wiring, a GET-form no-script fallback to the same endpoint, an RPC-driven listbox whose options are real links. Used by CommandPalette and GlobalSearch. |
 
 ### Feedback & status
 

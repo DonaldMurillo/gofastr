@@ -20,8 +20,9 @@ import (
 // in the SSR output and the wrong one hidden via CSS. Screen readers
 // see the SR-only label exactly once via aria-label on the wrapper.
 //
-// When BindTarget is set, the runtime's data-fui-shortcut-click hook
-// is applied to the target so pressing the chord clicks the target.
+// When BindTarget is set, the headless-navigation module's
+// data-hui-shortcut-click hook is applied to the target so pressing
+// the chord clicks the target.
 // The hint itself is purely visual.
 
 // ShortcutHintConfig configures the chord display.

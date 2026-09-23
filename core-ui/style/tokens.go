@@ -230,6 +230,9 @@ func componentCompilerDefaults() map[string]string {
 // dark-scheme re-declarations automatically; emit once in :root and both
 // schemes are covered. New components should use the canonical ColorSet
 // names; this block exists so every theme keeps the legacy names live.
+// The legacy aliases are deprecated for hosts built on v0.85.0: they are
+// removed in the release after this one (CHANGELOG, Unreleased
+// "Deprecated") — reference the canonical ColorSet token names instead.
 // The bare declaration lines live in aliasTokenDecls, which the scope
 // emitter re-emits inside every theme-override block.
 func aliasTokenCSS() string {

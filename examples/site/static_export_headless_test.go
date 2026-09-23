@@ -28,12 +28,12 @@ func TestStaticExportWritesHeadlessLanding(t *testing.T) {
 		t.Fatalf("ExportStatic: %v", err)
 	}
 
-	cases := []struct {
+	cases := make([]struct {
 		seg string
 		ref string // the theme wrapper class the page must carry
-	}{
-		{"default", landingRefFramework.Class()},
-		{"dense", landingRefDense.Class()},
+	}, 0, len(landingRoutes))
+	for _, r := range landingRoutes {
+		cases = append(cases, struct{ seg, ref string }{r.Segment, r.Ref.Class()})
 	}
 	for _, c := range cases {
 		t.Run(c.seg, func(t *testing.T) {
@@ -84,22 +84,19 @@ func TestStaticExportWritesHeadlessLanding(t *testing.T) {
 	if !strings.Contains(denseBlock, "--fui-density-control-h") || !strings.Contains(denseBlock, "--fui-button-radius") {
 		t.Error("the dense scope block redeclares no option variables; nesting would leak the root's values into it")
 	}
-	// The option-only twins share their route's palette byte for byte:
+	// Every route's option-only twin shares its palette byte for byte:
 	// the twin's scope block minus its option lines equals the route's
-	// scope block minus its option lines, on both routes. This is the
-	// "same palette, different options" fixture's claim, pinned at the
-	// stylesheet rather than through one computed colour.
-	for _, pair := range []struct{ name, route, twin string }{
-		{"default", landingRefFramework.Class(), landingRefFrameworkTight.Class()},
-		{"dense", landingRefDense.Class(), landingRefDenseRelaxed.Class()},
-	} {
-		routeTokens := withoutOptionLines(scopedCSSBlock(sheet, pair.route))
-		twinTokens := withoutOptionLines(scopedCSSBlock(sheet, pair.twin))
+	// scope block minus its option lines, on every registered route.
+	// This is the "same palette, different options" fixture's claim,
+	// pinned at the stylesheet rather than through one computed colour.
+	for _, r := range landingRoutes {
+		routeTokens := withoutOptionLines(scopedCSSBlock(sheet, r.Ref.Class()))
+		twinTokens := withoutOptionLines(scopedCSSBlock(sheet, r.Twin.Class()))
 		if routeTokens == "" || twinTokens == "" {
-			t.Fatalf("%s: a scope block is missing for the route or its twin", pair.name)
+			t.Fatalf("%s: a scope block is missing for the route or its twin", r.Segment)
 		}
 		if routeTokens != twinTokens {
-			t.Errorf("%s: the option-only twin's palette drifted from its route's:\n--- route ---\n%s\n--- twin ---\n%s", pair.name, routeTokens, twinTokens)
+			t.Errorf("%s: the option-only twin's palette drifted from its route's:\n--- route ---\n%s\n--- twin ---\n%s", r.Segment, routeTokens, twinTokens)
 		}
 	}
 }

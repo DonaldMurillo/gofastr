@@ -398,18 +398,24 @@ func exHero() render.HTML {
 			// The theme-layer showcase lives on this site rather than
 			// under examples/<slug>, so it links from the hub hero
 			// instead of joining exRowItems (whose row set the source-
-			// link gate pins).
-			ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM},
-				ui.LinkButton(ui.LinkButtonConfig{
-					Label: "Headless landing · default theme",
-					Href:  "/examples/headless/default/landing",
-				}),
-				ui.LinkButton(ui.LinkButtonConfig{
-					Label:   "Headless landing · dense theme",
-					Href:    "/examples/headless/dense/landing",
-					Variant: ui.ButtonSecondary,
-				}),
-			),
+			// link gate pins). One link per registered route — the first
+			// primary, the rest secondary — derived from landingRoutes so
+			// a new theme cannot miss the hub.
+			func() render.HTML {
+				buttons := make([]render.HTML, 0, len(landingRoutes))
+				for i, r := range landingRoutes {
+					variant := ui.ButtonSecondary
+					if i == 0 {
+						variant = ui.ButtonPrimary
+					}
+					buttons = append(buttons, ui.LinkButton(ui.LinkButtonConfig{
+						Label:   "Headless landing · " + r.Name + " theme",
+						Href:    landingRoutePath(r.Segment),
+						Variant: variant,
+					}))
+				}
+				return ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM}, buttons...)
+			}(),
 		),
 	)
 }
@@ -421,7 +427,7 @@ func exHero() render.HTML {
 // remembered.
 var exampleLoC = map[string]int{
 	"blog":                 190,
-	"site":                 9300,
+	"site":                 12000,
 	"api-tour":             160,
 	"semantic-demo":        120,
 	"spa":                  110,
