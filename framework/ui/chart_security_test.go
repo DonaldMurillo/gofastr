@@ -77,7 +77,7 @@ func TestChartConfigStringsEscaped(t *testing.T) {
 		h := ui.PieChart(ui.PieChartConfig{
 			Slices: []ui.PieSlice{{Value: 1, Color: "primary"}},
 		})
-		if !strings.Contains(string(h), "ui-pie-chart__slice--primary") {
+		if !classTokenPresent(string(h), "fui-pie-chart__slice--primary") {
 			t.Fatalf("palette color class missing: %s", h)
 		}
 	})

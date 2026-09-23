@@ -52,7 +52,7 @@ func ColorPicker(cfg ColorPickerConfig) render.HTML {
 	if id == "" {
 		id = cfg.Name
 	}
-	cls := "ui-color-picker"
+	cls := "fui-color-picker"
 	if cfg.Disabled {
 		cls += " is-disabled"
 	}
@@ -64,7 +64,7 @@ func ColorPicker(cfg ColorPickerConfig) render.HTML {
 		"type":  "color",
 		"name":  cfg.Name,
 		"id":    id,
-		"class": "ui-color-picker__input",
+		"class": "fui-color-picker__input",
 	}
 	if cfg.Value != "" {
 		inputAttrs["value"] = cfg.Value
@@ -79,7 +79,7 @@ func ColorPicker(cfg ColorPickerConfig) render.HTML {
 		render.Tag("input", inputAttrs),
 		render.Tag("label", map[string]string{
 			"for":   id,
-			"class": "ui-color-picker__label",
+			"class": "fui-color-picker__label",
 		}, render.Text(cfg.Label)),
 	}
 
@@ -91,7 +91,7 @@ func ColorPicker(cfg ColorPickerConfig) render.HTML {
 	rootAttrs["id"] = id + "-wrap"
 	return colorPickerStyle.WrapHTML(render.Tag("div",
 		rootAttrs,
-		render.Tag("div", map[string]string{"class": "ui-color-picker__row"}, row...),
+		render.Tag("div", map[string]string{"class": "fui-color-picker__row"}, row...),
 	))
 }
 
@@ -102,17 +102,17 @@ func colorPickerCSS(_ style.Theme) string {
   display: grid;
   gap: var(--spacing-sm, 4px);
 }
-[data-fui-comp="ui-color-picker"] .ui-color-picker__row {
+[data-fui-comp="ui-color-picker"] .fui-color-picker__row {
   display: flex;
   align-items: center;
   gap: var(--spacing-md, 8px);
 }
-[data-fui-comp="ui-color-picker"] .ui-color-picker__label {
+[data-fui-comp="ui-color-picker"] .fui-color-picker__label {
   font-weight: 500;
   font-size: var(--text-sm, 0.875rem);
   color: var(--color-text, #18181B);
 }
-[data-fui-comp="ui-color-picker"] .ui-color-picker__input {
+[data-fui-comp="ui-color-picker"] .fui-color-picker__input {
   appearance: none;
   -webkit-appearance: none;
   width: var(--spacing-touch-target, 44px);
@@ -123,22 +123,22 @@ func colorPickerCSS(_ style.Theme) string {
   background: transparent;
   cursor: pointer;
 }
-[data-fui-comp="ui-color-picker"] .ui-color-picker__input::-webkit-color-swatch-wrapper {
+[data-fui-comp="ui-color-picker"] .fui-color-picker__input::-webkit-color-swatch-wrapper {
   padding: 0;
 }
-[data-fui-comp="ui-color-picker"] .ui-color-picker__input::-webkit-color-swatch {
+[data-fui-comp="ui-color-picker"] .fui-color-picker__input::-webkit-color-swatch {
   border: 0;
   border-radius: calc(var(--radii-md, 8px) - 2px);
 }
-[data-fui-comp="ui-color-picker"] .ui-color-picker__input::-moz-color-swatch {
+[data-fui-comp="ui-color-picker"] .fui-color-picker__input::-moz-color-swatch {
   border: 0;
   border-radius: calc(var(--radii-md, 8px) - 2px);
 }
-[data-fui-comp="ui-color-picker"] .ui-color-picker__input:focus-visible {
+[data-fui-comp="ui-color-picker"] .fui-color-picker__input:focus-visible {
   outline: 2px solid var(--color-primary, #4F46E5);
   outline-offset: 2px;
 }
-[data-fui-comp="ui-color-picker"].is-disabled .ui-color-picker__input {
+[data-fui-comp="ui-color-picker"].is-disabled .fui-color-picker__input {
   opacity: 0.6;
   cursor: not-allowed;
 }`

@@ -78,7 +78,7 @@ func TestDataTableEmptyStateRenders(t *testing.T) {
 		Rows:    nil,
 	}))
 	for _, want := range []string{
-		"ui-data-table is-empty",
+		`class="fui-data-table is-empty"`,
 		"<table",
 		"<thead",
 		">Name<",
@@ -144,7 +144,7 @@ func TestDataTableSortableColumnRendersClickableLink(t *testing.T) {
 		},
 		Rows: []Row{{Cells: map[string]render.HTML{"name": render.Text("Alice")}}},
 	}))
-	if !strings.Contains(h, `<a class="ui-data-table__sort"`) {
+	if !strings.Contains(h, `<a class="fui-data-table__sort"`) {
 		t.Errorf("expected sort anchor with its class, got: %s", h)
 	}
 	q := sortAnchorQuery(t, h)
@@ -186,7 +186,7 @@ func TestDataTableActiveSortFlipsDirection(t *testing.T) {
 	// The direction indicator is the stylesheet's, drawn from
 	// aria-sort: the markup carries no glyph and no indicator span.
 	for _, h := range []string{hAsc, hDesc} {
-		if strings.Contains(h, "ui-data-table__sort-indicator") {
+		if classTokenPresent(h, "fui-data-table__sort-indicator") {
 			t.Errorf("indicator span must not render: %s", h)
 		}
 		start := strings.Index(h, ">Name<")
@@ -208,7 +208,7 @@ func TestDataTablePaginationFooterRenders(t *testing.T) {
 			Pages: 5, Page: 2,
 		},
 	}))
-	if !strings.Contains(h, "ui-data-table__footer") {
+	if !classTokenPresent(h, "fui-data-table__footer") {
 		t.Errorf("expected pagination footer, got: %s", h)
 	}
 	if !strings.Contains(h, `aria-label="Pagination"`) {
@@ -226,7 +226,7 @@ func TestDataTablePaginationFooterRenders(t *testing.T) {
 	// The footer is the scroll region's sibling, never inside the
 	// table: a pager's nav landmark must not nest in one.
 	tableEnd := strings.Index(h, "</table>")
-	footerAt := strings.Index(h, `class="ui-data-table__footer"`)
+	footerAt := strings.Index(h, `class="fui-data-table__footer"`)
 	if tableEnd < 0 || footerAt < 0 || footerAt < tableEnd {
 		t.Errorf("footer must render after the table (tableEnd=%d footerAt=%d):\n%s", tableEnd, footerAt, h)
 	}
@@ -283,7 +283,7 @@ func TestDataTableCaptionRenders(t *testing.T) {
 	// recipe must not leak into it. (The status span carries the
 	// recipe by design — it must be read and not seen — so the check
 	// reads the caption element, not the whole markup.)
-	if capAt := strings.Index(h, "<caption"); capAt < 0 || strings.Contains(h[capAt:strings.Index(h, "</caption>")], "ui-visually-hidden") {
+	if capAt := strings.Index(h, "<caption"); capAt < 0 || classTokenPresent(h[capAt:strings.Index(h, "</caption>")], "fui-visually-hidden") {
 		t.Errorf("visible caption must not carry the hidden class: %s", h)
 	}
 }
@@ -303,7 +303,7 @@ func TestDataTableCaptionHidden(t *testing.T) {
 		t.Fatalf("hidden caption must still render: %s", h)
 	}
 	capTag := h[capAt : strings.Index(h[capAt:], ">")+capAt+1]
-	if !strings.Contains(capTag, `class="ui-data-table__caption ui-visually-hidden"`) {
+	if !strings.Contains(capTag, `class="fui-data-table__caption fui-visually-hidden"`) {
 		t.Errorf("hidden caption must append the hidden class to its own: %s", capTag)
 	}
 	if !strings.Contains(h, ">Invoices<") {
@@ -341,7 +341,7 @@ func TestDataTable_ResponsiveCards_AddsModifierClass(t *testing.T) {
 		},
 		Responsive: ResponsiveCards,
 	}))
-	if !strings.Contains(h, "ui-data-table--responsive-cards") {
+	if !classTokenPresent(h, "fui-data-table--responsive-cards") {
 		t.Errorf("expected modifier class on wrapper with ResponsiveCards, got: %s", h)
 	}
 }
@@ -382,7 +382,7 @@ func TestDataTable_ResponsiveScrollAddsDataLabel(t *testing.T) {
 	if !strings.Contains(h, `data-label="Name"`) {
 		t.Errorf("default DataTable must carry data-label on headered cells, got: %s", h)
 	}
-	if strings.Contains(h, "ui-data-table--responsive-cards") {
+	if classTokenPresent(h, "fui-data-table--responsive-cards") {
 		t.Errorf("default DataTable should not carry the responsive-cards modifier, got: %s", h)
 	}
 }
@@ -443,7 +443,7 @@ func TestDataTableIslandSortAnchorCarriesContract(t *testing.T) {
 		Query:   url.Values{"q": {"z"}},
 		Island:  headless.Island{Endpoint: "/island/tbl", Signal: "tbl"},
 	}))
-	if !strings.Contains(h, `<a class="ui-data-table__sort"`) {
+	if !strings.Contains(h, `<a class="fui-data-table__sort"`) {
 		t.Errorf("island sort control must stay an anchor:\n%s", h)
 	}
 	if strings.Contains(h, "<button") {
@@ -467,7 +467,7 @@ func TestDataTableIslandSortAnchorCarriesContract(t *testing.T) {
 // rendered table.
 func sortAnchorHref(t *testing.T, h string) string {
 	t.Helper()
-	const needle = `<a class="ui-data-table__sort" href="`
+	const needle = `<a class="fui-data-table__sort" href="`
 	i := strings.Index(h, needle)
 	if i < 0 {
 		t.Fatalf("no sort anchor in:\n%s", h)

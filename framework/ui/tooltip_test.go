@@ -29,12 +29,12 @@ func TestTooltipWrapsTriggerAndAddsAriaDescribedBy(t *testing.T) {
 func TestTooltipPlacementVariantClass(t *testing.T) {
 	h := Tooltip(TooltipConfig{Text: "x", Placement: TooltipBottom},
 		render.Text("trigger"))
-	mustContain(t, h, "ui-tooltip--bottom")
+	mustContain(t, h, "fui-tooltip--bottom")
 }
 
 func TestTooltipDefaultPlacementOmitsModifier(t *testing.T) {
 	h := Tooltip(TooltipConfig{Text: "x"}, render.Text("trigger"))
-	if strings.Contains(string(h), "ui-tooltip--top") {
+	if classTokenPresent(string(h), "fui-tooltip--top") {
 		t.Fatalf("default top placement should not emit modifier:\n%s", h)
 	}
 }

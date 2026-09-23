@@ -92,7 +92,7 @@ func PieChart(cfg PieChartConfig) render.HTML {
 		ir = 0.95
 	}
 
-	cls := "ui-pie-chart"
+	cls := "fui-pie-chart"
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
 	}
@@ -150,10 +150,10 @@ func PieChart(cfg PieChartConfig) render.HTML {
 			color = pieDefaultPalette[paletteIdx%len(pieDefaultPalette)]
 			paletteIdx++
 		}
-		cls := "ui-pie-chart__slice"
+		cls := "fui-pie-chart__slice"
 		switch color {
 		case "primary", "info", "success", "warning", "danger":
-			cls += " ui-pie-chart__slice--" + color
+			cls += " fui-pie-chart__slice--" + color
 		}
 
 		x1 := cx + r*math.Cos(start)
@@ -248,7 +248,7 @@ func PieChart(cfg PieChartConfig) render.HTML {
 		sb.WriteString(ftoa(cx))
 		sb.WriteString(`" y="`)
 		sb.WriteString(ftoa(cy))
-		sb.WriteString(`" class="ui-pie-chart__center-label" text-anchor="middle" dominant-baseline="central">`)
+		sb.WriteString(`" class="fui-pie-chart__center-label" text-anchor="middle" dominant-baseline="central">`)
 		sb.WriteString(escapeXML(cfg.CenterLabel))
 		sb.WriteString(`</text>`)
 		if cfg.CenterSubtext != "" {
@@ -256,7 +256,7 @@ func PieChart(cfg PieChartConfig) render.HTML {
 			sb.WriteString(ftoa(cx))
 			sb.WriteString(`" y="`)
 			sb.WriteString(ftoa(cy + 16))
-			sb.WriteString(`" class="ui-pie-chart__center-sub" text-anchor="middle" dominant-baseline="central">`)
+			sb.WriteString(`" class="fui-pie-chart__center-sub" text-anchor="middle" dominant-baseline="central">`)
 			sb.WriteString(escapeXML(cfg.CenterSubtext))
 			sb.WriteString(`</text>`)
 		}
@@ -284,22 +284,22 @@ func pieChartCSS(_ style.Theme) string {
   display: inline-block;
   vertical-align: middle;
 }
-[data-fui-comp="ui-pie-chart"] .ui-pie-chart__slice {
+[data-fui-comp="ui-pie-chart"] .fui-pie-chart__slice {
   stroke: var(--color-background, #FFFFFF);
   stroke-width: 1;
 }
-.ui-pie-chart__slice--primary { fill: var(--color-primary, #4F46E5); }
-.ui-pie-chart__slice--info    { fill: var(--color-info, #3B82F6); }
-.ui-pie-chart__slice--success { fill: var(--color-success, #16A34A); }
-.ui-pie-chart__slice--warning { fill: var(--color-warning, #D97706); }
-.ui-pie-chart__slice--danger  { fill: var(--color-danger, #DC2626); }
+.fui-pie-chart__slice--primary { fill: var(--color-primary, #4F46E5); }
+.fui-pie-chart__slice--info    { fill: var(--color-info, #3B82F6); }
+.fui-pie-chart__slice--success { fill: var(--color-success, #16A34A); }
+.fui-pie-chart__slice--warning { fill: var(--color-warning, #D97706); }
+.fui-pie-chart__slice--danger  { fill: var(--color-danger, #DC2626); }
 
-[data-fui-comp="ui-pie-chart"] .ui-pie-chart__center-label {
+[data-fui-comp="ui-pie-chart"] .fui-pie-chart__center-label {
   font-size: var(--text-xl, 1.25rem);
   font-weight: 700;
   fill: var(--color-text, #18181B);
 }
-[data-fui-comp="ui-pie-chart"] .ui-pie-chart__center-sub {
+[data-fui-comp="ui-pie-chart"] .fui-pie-chart__center-sub {
   font-size: var(--text-xs, 0.75rem);
   fill: var(--color-text-muted, #52525B);
 }`

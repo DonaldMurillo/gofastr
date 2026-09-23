@@ -42,8 +42,8 @@ type footerLink struct {
 // that test is what notices, not this one.
 func chromeFooter(links ...footerLink) component.Component {
 	var b strings.Builder
-	b.WriteString(`<div class="ui-site-footer"><div class="ui-site-footer__grid"><div class="ui-site-footer__col">`)
-	b.WriteString(`<p class="ui-site-footer__col-title">Legal</p><ul>`)
+	b.WriteString(`<div class="fui-site-footer"><div class="fui-site-footer__grid"><div class="fui-site-footer__col">`)
+	b.WriteString(`<p class="fui-site-footer__col-title">Legal</p><ul>`)
 	for _, l := range links {
 		fmt.Fprintf(&b, `<li><a href=%q>%s</a></li>`, l.Href, l.Label)
 	}

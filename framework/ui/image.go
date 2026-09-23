@@ -140,10 +140,10 @@ func OptimizedImage(cfg OptimizedImageConfig) render.HTML {
 		}
 		cfg.Sources = filtered
 	}
-	if cfg.Alt == "" && !strings.Contains(cfg.Class, "ui-image--decorative") {
+	if cfg.Alt == "" && !strings.Contains(cfg.Class, "fui-image--decorative") {
 		// Decorative images must opt in explicitly to skip alt: Alt=""
 		// is otherwise treated as missing, not "intentionally empty".
-		panic("ui: OptimizedImage requires Alt (or add ui-image--decorative to Class for intentional decorative images with alt=\"\")")
+		panic("ui: OptimizedImage requires Alt (or add fui-image--decorative to Class for intentional decorative images with alt=\"\")")
 	}
 	if cfg.Width <= 0 || cfg.Height <= 0 {
 		panic("ui: OptimizedImage requires Width and Height > 0 to prevent CLS")
@@ -151,18 +151,18 @@ func OptimizedImage(cfg OptimizedImageConfig) render.HTML {
 
 	lqip := placeholderImage(cfg.Placeholder)
 
-	cls := "ui-image"
+	cls := "fui-image"
 	if cfg.Fit != ImageFitCover {
-		cls += " ui-image--fit-" + string(cfg.Fit)
+		cls += " fui-image--fit-" + string(cfg.Fit)
 	}
 	if cfg.Aspect != ImageAspectAuto {
-		cls += " ui-image--aspect-" + string(cfg.Aspect)
+		cls += " fui-image--aspect-" + string(cfg.Aspect)
 	}
 	if cfg.Rounded {
-		cls += " ui-image--rounded"
+		cls += " fui-image--rounded"
 	}
 	if lqip != "" {
-		cls += " ui-image--placeheld"
+		cls += " fui-image--placeheld"
 	}
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
@@ -186,7 +186,7 @@ func OptimizedImage(cfg OptimizedImageConfig) render.HTML {
 	imgCfg := html.ImageConfig{
 		Src:        cfg.Src,
 		Alt:        cfg.Alt,
-		Class:      "ui-image__img",
+		Class:      "fui-image__img",
 		ExtraAttrs: imgAttrs,
 	}
 

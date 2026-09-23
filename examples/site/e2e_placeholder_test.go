@@ -40,10 +40,10 @@ type placeholderGeometry struct {
 // placeholderProbe inspects the PipelineImage instance on the showcase page,
 // the one with a placeholder stacked behind a real image.
 const placeholderProbe = `(() => {
-  const lqip = document.querySelector('.ui-image--placeheld .ui-image__lqip');
+  const lqip = document.querySelector('.fui-image--placeheld .fui-image__lqip');
   if (!lqip) return {found: false};
   const root = lqip.closest('[data-fui-comp="ui-image"]');
-  const real = root && root.querySelector('.ui-image__img');
+  const real = root && root.querySelector('.fui-image__img');
   const a = lqip.getBoundingClientRect();
   const b = real ? real.getBoundingClientRect() : a;
   const cs = getComputedStyle(lqip);
@@ -70,7 +70,7 @@ const placeholderProbe = `(() => {
 // what the placeholder alone puts on screen. Done in the browser at runtime
 // rather than by shipping a test-only CSS hook.
 const hideRealImage = `(() => {
-  const img = document.querySelector('.ui-image--placeheld .ui-image__img');
+  const img = document.querySelector('.fui-image--placeheld .fui-image__img');
   if (!img) return false;
   img.style.opacity = '0';
   return true;
@@ -94,7 +94,7 @@ func TestE2EPlaceholderPaints(t *testing.T) {
 	var shot []byte
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/pipelineimage"),
-		chromedp.WaitVisible(".ui-image__lqip", chromedp.ByQuery),
+		chromedp.WaitVisible(".fui-image__lqip", chromedp.ByQuery),
 		chromedp.Evaluate(placeholderProbe, &geo),
 		chromedp.Evaluate(hideRealImage, &hidden),
 		chromedp.ActionFunc(func(ctx context.Context) error {
@@ -107,7 +107,7 @@ func TestE2EPlaceholderPaints(t *testing.T) {
 	}
 
 	if !geo.Found {
-		t.Fatal("no placeheld .ui-image__lqip on /components/pipelineimage — the demo regressed")
+		t.Fatal("no placeheld .fui-image__lqip on /components/pipelineimage — the demo regressed")
 	}
 	if geo.NaturalWidth == 0 || geo.NaturalHeight == 0 {
 		t.Errorf("browser did not decode the placeholder (natural size %dx%d) — the data URI is not a valid image",

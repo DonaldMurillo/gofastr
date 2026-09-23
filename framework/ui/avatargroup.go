@@ -64,9 +64,9 @@ func AvatarGroup(cfg AvatarGroupConfig) render.HTML {
 		label = "Avatars"
 	}
 
-	cls := "ui-avatar-group"
+	cls := "fui-avatar-group"
 	if cfg.Size != AvatarMd {
-		cls += " ui-avatar-group--" + string(cfg.Size)
+		cls += " fui-avatar-group--" + string(cfg.Size)
 	}
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
@@ -85,9 +85,9 @@ func AvatarGroup(cfg AvatarGroupConfig) render.HTML {
 			a.Size = cfg.Size
 		}
 		if a.Class == "" {
-			a.Class = "ui-avatar-group__item"
+			a.Class = "fui-avatar-group__item"
 		} else {
-			a.Class = "ui-avatar-group__item " + a.Class
+			a.Class = "fui-avatar-group__item " + a.Class
 		}
 		av := Avatar(a)
 		if cfg.ShowNames {
@@ -104,7 +104,7 @@ func AvatarGroup(cfg AvatarGroupConfig) render.HTML {
 		// supports the attribute. role=img reads "image, N more" to
 		// screen readers, close enough to the visual "+N" chip.
 		items = append(items, html.Span(html.TextConfig{
-			Class: "ui-avatar-group__overflow",
+			Class: "fui-avatar-group__overflow",
 			ExtraAttrs: html.Attrs{
 				"role":       "img",
 				"aria-label": more + " more",
@@ -143,13 +143,13 @@ func avatarGroupCSS(_ style.Theme) string {
 [data-fui-comp="ui-avatar-group"] > *:not(:first-child) {
   margin-inline-start: -0.25rem; /* default md: ~10% overlap on 2.5rem avatars */
 }
-[data-fui-comp="ui-avatar-group"].ui-avatar-group--sm > *:not(:first-child) {
+[data-fui-comp="ui-avatar-group"].fui-avatar-group--sm > *:not(:first-child) {
   margin-inline-start: -0.15rem;
 }
-[data-fui-comp="ui-avatar-group"].ui-avatar-group--lg > *:not(:first-child) {
+[data-fui-comp="ui-avatar-group"].fui-avatar-group--lg > *:not(:first-child) {
   margin-inline-start: -0.3rem;
 }
-[data-fui-comp="ui-avatar-group"].ui-avatar-group--xl > *:not(:first-child) {
+[data-fui-comp="ui-avatar-group"].fui-avatar-group--xl > *:not(:first-child) {
   margin-inline-start: -0.4rem;
 }
 /* Reverse z-index so earlier siblings sit on top of later ones — the
@@ -164,11 +164,11 @@ func avatarGroupCSS(_ style.Theme) string {
 [data-fui-comp="ui-avatar-group"] > *:focus-within {
   z-index: 10; /* surface the focused/hovered chip above siblings */
 }
-[data-fui-comp="ui-avatar-group"] .ui-avatar {
+[data-fui-comp="ui-avatar-group"] .fui-avatar {
   border: 2px solid var(--color-surface, #fff);
   box-sizing: content-box;
 }
-[data-fui-comp="ui-avatar-group"] .ui-avatar-group__overflow {
+[data-fui-comp="ui-avatar-group"] .fui-avatar-group__overflow {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -182,13 +182,13 @@ func avatarGroupCSS(_ style.Theme) string {
   line-height: 1;
   border: 2px solid var(--color-surface, #fff);
 }
-[data-fui-comp="ui-avatar-group"].ui-avatar-group--sm .ui-avatar-group__overflow {
+[data-fui-comp="ui-avatar-group"].fui-avatar-group--sm .fui-avatar-group__overflow {
   inline-size: 1.5rem; block-size: 1.5rem; font-size: 0.65rem;
 }
-[data-fui-comp="ui-avatar-group"].ui-avatar-group--lg .ui-avatar-group__overflow {
+[data-fui-comp="ui-avatar-group"].fui-avatar-group--lg .fui-avatar-group__overflow {
   inline-size: 3rem; block-size: 3rem; font-size: var(--text-sm, 0.875rem);
 }
-[data-fui-comp="ui-avatar-group"].ui-avatar-group--xl .ui-avatar-group__overflow {
+[data-fui-comp="ui-avatar-group"].fui-avatar-group--xl .fui-avatar-group__overflow {
   inline-size: 4rem; block-size: 4rem; font-size: var(--text-base, 1rem);
 }
 `

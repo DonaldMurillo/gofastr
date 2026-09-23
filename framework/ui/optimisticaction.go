@@ -35,7 +35,7 @@ import (
 //	        data-hui-action="" data-hui-action-endpoint="/follow"
 //	        data-hui-action-failed="…"
 //	        data-state="idle"
-//	        class="fui-button fui-button--primary ui-optimistic-action">
+//	        class="fui-button fui-button--primary fui-optimistic-action">
 //	    <span data-hui-action-idle>Follow</span>
 //	    <span data-hui-action-done hidden>Following ✓</span>
 //	    …a visually-hidden role=status span the rollback sentence is
@@ -117,7 +117,7 @@ func OptimisticAction(cfg OptimisticActionConfig) render.HTML {
 	// The optimistic classes ride beside the button family's own so
 	// this sheet's flip styling reaches the same button.
 	parts := headless.Parts{}
-	if extra := strings.TrimSpace(buttonClassTokens(ov, cfg.Size) + " ui-optimistic-action " + cfg.Class); extra != "" {
+	if extra := strings.TrimSpace(buttonClassTokens(ov, cfg.Size) + " fui-optimistic-action " + cfg.Class); extra != "" {
 		parts.Attrs = headless.PartAttrs{headless.PartRoot: {"class": strings.TrimSpace(extra)}}
 	}
 	ctx := cfg.Ctx

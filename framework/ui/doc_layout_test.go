@@ -14,9 +14,9 @@ func TestDocLayoutThreeColumnWithToc(t *testing.T) {
 		Toc: render.Raw(`<aside class="toc"></aside>`),
 	}, render.Text("BODY")))
 	mustContain(t, render.HTML(h), `data-fui-comp="ui-doc-layout"`)
-	mustContain(t, render.HTML(h), "ui-doc-layout__content")
+	mustContain(t, render.HTML(h), "fui-doc-layout__content")
 	mustContain(t, render.HTML(h), "BODY")
-	if strings.Contains(h, "ui-doc-layout--notoc") || strings.Contains(h, "ui-doc-layout--narrow") {
+	if strings.Contains(h, "fui-doc-layout--notoc") || strings.Contains(h, "fui-doc-layout--narrow") {
 		t.Errorf("nav+content+toc should be the default 3-col shape:\n%s", h)
 	}
 }
@@ -25,12 +25,12 @@ func TestDocLayoutNotocWhenNoToc(t *testing.T) {
 	h := string(DocLayout(DocLayoutConfig{
 		Nav: render.Raw(`<nav class="rail">nav</nav>`),
 	}, render.Text("BODY")))
-	mustContain(t, render.HTML(h), "ui-doc-layout--notoc")
+	mustContain(t, render.HTML(h), "fui-doc-layout--notoc")
 }
 
 func TestDocLayoutNarrowWhenNoNav(t *testing.T) {
 	h := string(DocLayout(DocLayoutConfig{}, render.Text("BODY")))
-	mustContain(t, render.HTML(h), "ui-doc-layout--narrow")
+	mustContain(t, render.HTML(h), "fui-doc-layout--narrow")
 }
 
 func TestDocLayoutCrumbsAndCurrent(t *testing.T) {
@@ -39,20 +39,20 @@ func TestDocLayoutCrumbsAndCurrent(t *testing.T) {
 	}, render.Text("BODY")))
 	mustContain(t, render.HTML(h), `aria-label="Breadcrumb"`)
 	mustContain(t, render.HTML(h), `href="/docs/"`)
-	mustContain(t, render.HTML(h), "ui-doc-layout__crumb-current")
-	if !strings.Contains(h, "ui-doc-layout__crumb-sep") {
+	mustContain(t, render.HTML(h), "fui-doc-layout__crumb-current")
+	if !classTokenPresent(h, "fui-doc-layout__crumb-sep") {
 		t.Errorf("multi-crumb trail should have a separator:\n%s", h)
 	}
 }
 
 func TestDocPrevNextOmitsNextWhenEmpty(t *testing.T) {
 	withNext := string(DocPrevNext(DocPager{PrevHref: "/p", PrevLabel: "Prev", NextHref: "/n", NextLabel: "Next"}))
-	mustContain(t, render.HTML(withNext), "ui-doc-layout__next")
+	mustContain(t, render.HTML(withNext), "fui-doc-layout__next")
 	last := string(DocPrevNext(DocPager{PrevHref: "/p", PrevLabel: "Prev"}))
-	if strings.Contains(last, "ui-doc-layout__next") {
+	if classTokenPresent(last, "fui-doc-layout__next") {
 		t.Errorf("no NextHref should omit the next card:\n%s", last)
 	}
-	mustContain(t, render.HTML(last), "ui-doc-layout__prev")
+	mustContain(t, render.HTML(last), "fui-doc-layout__prev")
 }
 
 // The direction lines were hardcoded English, so a translated docs site was
@@ -103,7 +103,7 @@ func TestDocLayoutPagerAfterBody(t *testing.T) {
 		Pager: &DocPager{PrevHref: "/p", PrevLabel: "Prev"},
 	}, render.Text("BODY")))
 	bodyIdx := strings.Index(h, "BODY")
-	footIdx := strings.Index(h, "ui-doc-layout__foot")
+	footIdx := classTokenIndex(h, "fui-doc-layout__foot")
 	if bodyIdx == -1 || footIdx == -1 || footIdx < bodyIdx {
 		t.Errorf("pager should render after the body:\n%s", h)
 	}

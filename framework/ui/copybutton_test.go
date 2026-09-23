@@ -61,9 +61,10 @@ func TestCopyButtonIconOnly(t *testing.T) {
 	if !strings.Contains(out, `aria-label="Copy to clipboard"`) {
 		t.Errorf("icon-only must have default aria-label, got: %s", out)
 	}
-	// The ui- substring matches both spellings (fui- contains ui-), so
-	// this negative refuses the label span whichever vocabulary emitted it.
-	if strings.Contains(out, "ui-copy-btn__label") {
+	// Whole tokens, both spellings: the negative refuses the label
+	// span whichever vocabulary emitted it without a substring match
+	// (fui- contains ui-).
+	if classTokenPresent(out, "fui-copy-btn__label") || classTokenPresent(out, "ui-copy-btn__label") {
 		t.Errorf("icon-only must not render visible label span, got: %s", out)
 	}
 	if !strings.Contains(out, "fui-copy-btn--icon") {

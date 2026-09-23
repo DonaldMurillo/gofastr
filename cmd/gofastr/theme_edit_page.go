@@ -280,10 +280,13 @@ func controlInputID(key string) string {
 // of this file.
 func themeEditPageHTML(token, controls, outPath, previewKey string) string {
 	// Sidebar header: title + action buttons. ui.Cluster with justify-between
-	// pushes the actions to the trailing edge; the title leads.
-	title := render.Tag("h1", map[string]string{
-		"class": "ui-pageheader__title",
-	}, render.Text("theme edit"))
+	// pushes the actions to the trailing edge; the title leads. The h1
+	// carries no class: fui-page-header__title is scoped under the
+	// PageHeader marker and styles nothing outside one, and no
+	// design-system class styles a workbench rail heading — the old
+	// ui-pageheader__title named nothing, so the heading's rendering is
+	// the browser's own h1 either way.
+	title := render.Tag("h1", nil, render.Text("theme edit"))
 	schemeBtn := ui.Button(ui.ButtonConfig{
 		Label:   "◐ Light",
 		Variant: ui.ButtonSecondary,

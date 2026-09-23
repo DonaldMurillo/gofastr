@@ -13,7 +13,7 @@ func TestResponsiveEmitsBothVariants(t *testing.T) {
 	for _, want := range []string{
 		`data-fui-comp="ui-responsive-1024"`,
 		"DESKTOP",
-		"ui-responsive__mobile",
+		"fui-responsive__mobile",
 		"MOBILE",
 	} {
 		if !strings.Contains(h, want) {

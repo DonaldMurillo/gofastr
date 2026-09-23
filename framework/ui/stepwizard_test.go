@@ -235,9 +235,9 @@ func TestStepWizardRendersValidationSummaryForErrors(t *testing.T) {
 	}
 	// The summary sits between the indicator and the step content:
 	// indicator < summary < heading.
-	indAt := strings.Index(s, "ui-step-wizard__indicator")
+	indAt := classTokenIndex(s, "fui-step-wizard__indicator")
 	sumAt := strings.Index(s, `id="wiz-form-errors"`)
-	headingAt := strings.Index(s, "ui-step-wizard__heading")
+	headingAt := classTokenIndex(s, "fui-step-wizard__heading")
 	if indAt == -1 || sumAt == -1 || headingAt == -1 {
 		t.Fatalf("indicator, summary or heading missing (%d/%d/%d):\n%s", indAt, sumAt, headingAt, s)
 	}
@@ -248,7 +248,7 @@ func TestStepWizardRendersValidationSummaryForErrors(t *testing.T) {
 	// module that has nothing to announce.
 	clean := string(StepWizard(StepWizardConfig{Action: "/wiz", ID: "wiz-form",
 		Steps: []StepWizardStep{{Heading: "A"}}}))
-	if strings.Contains(clean, "data-hui-form-errors") || strings.Contains(clean, "ui-validation-summary") {
+	if strings.Contains(clean, "data-hui-form-errors") || classTokenPresent(clean, "fui-validation-summary") {
 		t.Errorf("a clean wizard carries the error surface anyway:\n%s", clean)
 	}
 }

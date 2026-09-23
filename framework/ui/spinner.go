@@ -74,7 +74,7 @@ var spinnerClasses = headless.Classes{
 	headless.PartSpinnerDot:        "fui-spinner__dot",
 	headless.PartSpinnerGrid:       "fui-spinner__grid",
 	headless.PartSpinnerCell:       "fui-spinner__cell",
-	headless.PartVisuallyHidden:    "ui-visually-hidden",
+	headless.PartVisuallyHidden:    "fui-visually-hidden",
 	headless.Part("root--size-sm"): "fui-spinner--sm",
 	headless.Part("root--size-lg"): "fui-spinner--lg",
 }

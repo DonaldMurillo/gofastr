@@ -66,10 +66,10 @@ func Tooltip(cfg TooltipConfig, trigger render.HTML) render.HTML {
 		id = "tip-" + slug(cfg.Text)
 	}
 
-	cls := "ui-tooltip"
+	cls := "fui-tooltip"
 	placement := cfg.Placement
 	if placement != TooltipTop {
-		cls += " ui-tooltip--" + string(placement)
+		cls += " fui-tooltip--" + string(placement)
 	}
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
@@ -83,7 +83,7 @@ func Tooltip(cfg TooltipConfig, trigger render.HTML) render.HTML {
 	triggerWithDescribedBy := injectTriggerDescribedBy(trigger, id)
 
 	pop := html.Span(html.TextConfig{
-		Class:      "ui-tooltip__pop",
+		Class:      "fui-tooltip__pop",
 		ID:         id,
 		ExtraAttrs: html.Attrs{"role": "tooltip"},
 	}, render.Text(cfg.Text))

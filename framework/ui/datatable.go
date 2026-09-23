@@ -181,19 +181,19 @@ type DataTableConfig struct {
 // dataTableClasses dresses headless.Table's parts in this package's
 // own vocabulary — the names the registered ui-data-table sheet
 // matches. Only the parts a selector reads: the sheet reaches the
-// head, rows and cells by tag inside .ui-data-table__table, so those
+// head, rows and cells by tag inside .fui-data-table__table, so those
 // parts carry no class. Alignment travels as the column variant: the
 // same is-align-* class names the header and the cell variant. The
 // status span is the exception to "only what a selector reads": it
 // must not be seen, and ui-visually-hidden is the recipe that hides
 // it without taking it out of the accessibility tree.
 var dataTableClasses = headless.Classes{
-	headless.PartRoot:    "ui-data-table",
-	headless.PartScroll:  "ui-data-table__scroll",
-	headless.PartTable:   "ui-data-table__table",
-	headless.PartCaption: "ui-data-table__caption",
-	headless.PartSort:    "ui-data-table__sort",
-	headless.PartStatus:  "ui-visually-hidden",
+	headless.PartRoot:    "fui-data-table",
+	headless.PartScroll:  "fui-data-table__scroll",
+	headless.PartTable:   "fui-data-table__table",
+	headless.PartCaption: "fui-data-table__caption",
+	headless.PartSort:    "fui-data-table__sort",
+	headless.PartStatus:  "fui-visually-hidden",
 
 	"header--center": "is-align-center",
 	"header--end":    "is-align-end",
@@ -265,14 +265,14 @@ func DataTable(cfg DataTableConfig) render.HTML {
 		if pag.Ctx == nil {
 			pag.Ctx = ctx
 		}
-		footer = html.Div(html.DivConfig{Class: "ui-data-table__footer"}, Pagination(pag))
+		footer = html.Div(html.DivConfig{Class: "fui-data-table__footer"}, Pagination(pag))
 	}
 
 	// The root's modifier classes travel as part attrs, which append
 	// to the class map's own root class rather than replacing it.
 	rootClass := cfg.Class
 	if cfg.Responsive == ResponsiveCards {
-		rootClass = "ui-data-table--responsive-cards " + rootClass
+		rootClass = "fui-data-table--responsive-cards " + rootClass
 	}
 	if len(cfg.Rows) == 0 {
 		rootClass = "is-empty " + rootClass
@@ -283,13 +283,13 @@ func DataTable(cfg DataTableConfig) render.HTML {
 	}
 	if cfg.CaptionHidden {
 		// The hidden caption travels as a part attr so it APPENDS to
-		// the caption's own class (ui-data-table__caption stays, the
+		// the caption's own class (fui-data-table__caption stays, the
 		// visually-hidden recipe takes it out of the paint) while the
 		// element, its id and its text stay for aria-labelledby.
 		if parts.Attrs == nil {
 			parts.Attrs = headless.PartAttrs{}
 		}
-		parts.Attrs[headless.PartCaption] = html.Attrs{"class": "ui-visually-hidden"}
+		parts.Attrs[headless.PartCaption] = html.Attrs{"class": "fui-visually-hidden"}
 	}
 
 	return dataTableStyle.WrapHTML(headless.Table(headless.TableProps{

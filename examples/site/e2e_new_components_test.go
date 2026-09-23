@@ -50,8 +50,8 @@ func TestE2E_NewComponents_AvatarGroupOverflow(t *testing.T) {
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/avatargroup"),
 		pageReady(),
-		chromedp.Evaluate(`document.querySelectorAll('[data-fui-comp="ui-avatar-group"] .ui-avatar').length`, &visibleCount),
-		chromedp.Evaluate(`document.querySelector('[data-fui-comp="ui-avatar-group"] .ui-avatar-group__overflow')?.textContent || ''`, &overflow),
+		chromedp.Evaluate(`document.querySelectorAll('[data-fui-comp="ui-avatar-group"] .fui-avatar').length`, &visibleCount),
+		chromedp.Evaluate(`document.querySelector('[data-fui-comp="ui-avatar-group"] .fui-avatar-group__overflow')?.textContent || ''`, &overflow),
 	)
 	if err != nil {
 		t.Fatalf("chromedp: %v", err)
@@ -89,7 +89,7 @@ func TestE2E_NewComponents_SegmentedControlRole(t *testing.T) {
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/segmented"),
 		pageReady(),
-		chromedp.Evaluate(`document.querySelector('.ui-segmented[role="radiogroup"]')?.getAttribute('role') || ''`, &role),
+		chromedp.Evaluate(`document.querySelector('.fui-segmented[role="radiogroup"]')?.getAttribute('role') || ''`, &role),
 	)
 	if err != nil {
 		t.Fatalf("chromedp: %v", err)
@@ -414,7 +414,7 @@ func TestE2E_BarChart_RendersBars(t *testing.T) {
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/barchart"),
 		pageReady(),
-		chromedp.Evaluate(`document.querySelectorAll('[data-fui-comp="ui-bar-chart"] rect.ui-bar-chart__bar').length`, &bars),
+		chromedp.Evaluate(`document.querySelectorAll('[data-fui-comp="ui-bar-chart"] rect.fui-bar-chart__bar').length`, &bars),
 	)
 	if err != nil {
 		t.Fatalf("chromedp: %v", err)
@@ -431,7 +431,7 @@ func TestE2E_LineChart_SeriesAndLegend(t *testing.T) {
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/linechart"),
 		pageReady(),
-		chromedp.Evaluate(`document.querySelectorAll('[data-fui-comp="ui-line-chart"] path.ui-line-chart__line').length`, &lines),
+		chromedp.Evaluate(`document.querySelectorAll('[data-fui-comp="ui-line-chart"] path.fui-line-chart__line').length`, &lines),
 	)
 	if err != nil {
 		t.Fatalf("chromedp: %v", err)
@@ -448,7 +448,7 @@ func TestE2E_JSONViewer_DetailsNodes(t *testing.T) {
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/jsonviewer"),
 		pageReady(),
-		chromedp.Evaluate(`document.querySelectorAll('[data-fui-comp="ui-json-viewer"] details.ui-json-viewer__node').length`, &nodes),
+		chromedp.Evaluate(`document.querySelectorAll('[data-fui-comp="ui-json-viewer"] details.fui-json-viewer__node').length`, &nodes),
 	)
 	if err != nil {
 		t.Fatalf("chromedp: %v", err)

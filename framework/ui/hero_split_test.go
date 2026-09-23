@@ -17,9 +17,9 @@ func TestHeroSplitRendersBothColumns(t *testing.T) {
 	for _, want := range []string{
 		`data-fui-comp="ui-hero-split"`,
 		`aria-label="Hero"`,
-		`class="ui-hero-split__copy"`,
+		`class="fui-hero-split__copy"`,
 		`<h1>Hello</h1>`,
-		`class="ui-hero-split__media"`,
+		`class="fui-hero-split__media"`,
 		`<pre>code</pre>`,
 	} {
 		if !strings.Contains(h, want) {
@@ -30,7 +30,7 @@ func TestHeroSplitRendersBothColumns(t *testing.T) {
 
 func TestHeroSplitEqualRatioOmitsModifier(t *testing.T) {
 	h := string(HeroSplit(HeroSplitConfig{Copy: render.Raw("a"), Media: render.Raw("b"), AriaLabel: "x"}))
-	if strings.Contains(h, "ui-hero-split--") {
+	if classTokenPrefixPresent(h, "fui-hero-split--") {
 		t.Errorf("equal ratio should not emit a modifier class:\n%s", h)
 	}
 }
@@ -40,7 +40,7 @@ func TestHeroSplitCopyWideEmitsModifier(t *testing.T) {
 		Copy: render.Raw("a"), Media: render.Raw("b"),
 		Ratio: HeroSplitCopyWide, AriaLabel: "x",
 	}))
-	if !strings.Contains(h, "ui-hero-split--copy") {
+	if !classTokenPresent(h, "fui-hero-split--copy") {
 		t.Errorf("CopyWide should emit --copy modifier:\n%s", h)
 	}
 }
@@ -50,7 +50,7 @@ func TestHeroSplitMediaWideEmitsModifier(t *testing.T) {
 		Copy: render.Raw("a"), Media: render.Raw("b"),
 		Ratio: HeroSplitMediaWide, AriaLabel: "x",
 	}))
-	if !strings.Contains(h, "ui-hero-split--media") {
+	if !classTokenPresent(h, "fui-hero-split--media") {
 		t.Errorf("MediaWide should emit --media modifier:\n%s", h)
 	}
 }

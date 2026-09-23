@@ -33,7 +33,7 @@ func TestMarkdownCompactClass(t *testing.T) {
 	h := string(Markdown(MarkdownConfig{
 		Source: "Hello.", Compact: true,
 	}))
-	if !strings.Contains(h, "ui-markdown--compact") {
+	if !classTokenPresent(h, "fui-markdown--compact") {
 		t.Errorf("Compact=true should add modifier class:\n%s", h)
 	}
 }
@@ -54,10 +54,10 @@ func TestMarkdownFenceOptionsReachTheCodeBlock(t *testing.T) {
 	h := string(Markdown(MarkdownConfig{
 		Source: "```go title=\"main.go\" showLineNumbers\nfunc main() {}\n```\n",
 	}))
-	if !strings.Contains(h, `class="ui-code-block__file">main.go<`) {
+	if !strings.Contains(h, `class="fui-code-block__file">main.go<`) {
 		t.Errorf("title= should become the code block's filename header:\n%s", h)
 	}
-	if !strings.Contains(h, "ui-code-block--numbered") {
+	if !classTokenPresent(h, "fui-code-block--numbered") {
 		t.Errorf("showLineNumbers should turn on the gutter:\n%s", h)
 	}
 	// The point of the fix: highlighting survives the options.
@@ -78,7 +78,7 @@ func TestMarkdownPlainFenceUnaffected(t *testing.T) {
 
 func TestMarkdownFenceScrollForwards(t *testing.T) {
 	h := string(Markdown(MarkdownConfig{Source: "```go scroll\nx := 1\n```\n"}))
-	if !strings.Contains(h, "ui-code-block--scroll") {
+	if !classTokenPresent(h, "fui-code-block--scroll") {
 		t.Errorf("scroll option should reach the block:\n%s", h)
 	}
 }
@@ -86,7 +86,7 @@ func TestMarkdownFenceScrollForwards(t *testing.T) {
 func TestMarkdownFenceHighlightForwards(t *testing.T) {
 	for _, meta := range []string{"highlight=2", "{2}"} {
 		h := string(Markdown(MarkdownConfig{Source: "```txt " + meta + "\nalpha\nbeta\n```\n"}))
-		if !strings.Contains(h, `class="ui-code-block__line ui-code-block__line--highlight">beta<`) {
+		if !strings.Contains(h, `class="fui-code-block__line fui-code-block__line--highlight">beta<`) {
 			t.Errorf("option %q should highlight line 2:\n%s", meta, h)
 		}
 		if strings.Contains(h, `--highlight">alpha`) {
@@ -106,28 +106,28 @@ func TestMarkdownFenceDiffForwards(t *testing.T) {
 		`--added">+++ b/main.go`,
 		`--removed">-old`,
 		`--added">+new`,
-		`class="ui-code-block__line"> ctx`,
+		`class="fui-code-block__line"> ctx`,
 	} {
 		if !strings.Contains(h, want) {
 			t.Errorf("diff option missing %q:\n%s", want, h)
 		}
 	}
 	langOnly := string(Markdown(MarkdownConfig{Source: "```diff\n-x\n```\n"}))
-	if strings.Contains(langOnly, "ui-code-block__line--") {
+	if classTokenPrefixPresent(langOnly, "fui-code-block__line--") {
 		t.Errorf("lang diff must not imply diff marking:\n%s", langOnly)
 	}
 }
 
 func TestMarkdownFenceWordsForwards(t *testing.T) {
 	h := string(Markdown(MarkdownConfig{Source: "```txt words=\"beta\"\nalpha beta\n```\n"}))
-	if !strings.Contains(h, `<mark class="ui-code-block__mark">beta</mark>`) {
+	if !strings.Contains(h, `<mark class="fui-code-block__mark">beta</mark>`) {
 		t.Errorf("words option should mark matches:\n%s", h)
 	}
 }
 
 func TestMarkdownFenceWrapForwards(t *testing.T) {
 	h := string(Markdown(MarkdownConfig{Source: "```txt wrap\nalpha\n```\n"}))
-	if !strings.Contains(h, "ui-code-block--wrap") {
+	if !classTokenPresent(h, "fui-code-block--wrap") {
 		t.Errorf("wrap option should reach the block:\n%s", h)
 	}
 }
@@ -205,7 +205,7 @@ func TestMarkdownExtraAttrsCannotOverrideOwned(t *testing.T) {
 	if !strings.Contains(root, `id="real"`) {
 		t.Errorf("framework id lost:\n%s", root)
 	}
-	if !strings.Contains(root, "ui-markdown") {
+	if !classTokenPresent(root, "fui-markdown") {
 		t.Errorf("framework class lost:\n%s", root)
 	}
 	if strings.Contains(root, "evil") {

@@ -172,7 +172,7 @@ func BarChart(cfg BarChartConfig) render.HTML {
 		drawW = maxBarW
 	}
 
-	cls := "ui-bar-chart"
+	cls := "fui-bar-chart"
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
 	}
@@ -219,12 +219,12 @@ func BarChart(cfg BarChartConfig) render.HTML {
 			sb.WriteString(ftoa(float64(w)))
 			sb.WriteString(`" y2="`)
 			sb.WriteString(ftoa(ty))
-			sb.WriteString(`" class="ui-bar-chart__grid"/>`)
+			sb.WriteString(`" class="fui-bar-chart__grid"/>`)
 			sb.WriteString(`<text x="`)
 			sb.WriteString(ftoa(axisGutter - 5))
 			sb.WriteString(`" y="`)
 			sb.WriteString(ftoa(ty + 3))
-			sb.WriteString(`" class="ui-bar-chart__axis-label" text-anchor="end">`)
+			sb.WriteString(`" class="fui-bar-chart__axis-label" text-anchor="end">`)
 			sb.WriteString(ftoa(tv))
 			sb.WriteString(`</text>`)
 		}
@@ -239,7 +239,7 @@ func BarChart(cfg BarChartConfig) render.HTML {
 	sb.WriteString(ftoa(float64(w)))
 	sb.WriteString(`" y2="`)
 	sb.WriteString(ftoa(baseY))
-	sb.WriteString(`" class="ui-bar-chart__baseline"/>`)
+	sb.WriteString(`" class="fui-bar-chart__baseline"/>`)
 
 	for i, b := range cfg.Bars {
 		slotX := axisGutter + float64(i)*slotW
@@ -253,7 +253,7 @@ func BarChart(cfg BarChartConfig) render.HTML {
 		y := baseY - barH
 
 		color := b.Color
-		barCls := "ui-bar-chart__bar"
+		barCls := "fui-bar-chart__bar"
 		isPalette := color == "primary" || color == "info" ||
 			color == "success" || color == "warning" || color == "danger"
 
@@ -265,15 +265,15 @@ func BarChart(cfg BarChartConfig) render.HTML {
 		// "draft" never renders an invalid (black) fill.
 		var fill string
 		if isPalette {
-			barCls += " ui-bar-chart__bar--" + color
+			barCls += " fui-bar-chart__bar--" + color
 		} else if color == "" {
-			barCls += " ui-bar-chart__bar--primary"
+			barCls += " fui-bar-chart__bar--primary"
 		} else if c, ok := registeredStatusColor(color); ok {
 			fill = c
 		} else if plausibleCSSColor(color) {
 			fill = color
 		} else {
-			barCls += " ui-bar-chart__bar--primary"
+			barCls += " fui-bar-chart__bar--primary"
 		}
 
 		sb.WriteString(`<rect x="`)
@@ -306,7 +306,7 @@ func BarChart(cfg BarChartConfig) render.HTML {
 			sb.WriteString(ftoa(cx))
 			sb.WriteString(`" y="`)
 			sb.WriteString(ftoa(y - 4))
-			sb.WriteString(`" class="ui-bar-chart__value" text-anchor="middle">`)
+			sb.WriteString(`" class="fui-bar-chart__value" text-anchor="middle">`)
 			sb.WriteString(escapeXML(ftoa(b.Value)))
 			sb.WriteString(`</text>`)
 		}
@@ -319,7 +319,7 @@ func BarChart(cfg BarChartConfig) render.HTML {
 			sb.WriteString(ftoa(cx))
 			sb.WriteString(`" y="`)
 			sb.WriteString(ftoa(ly))
-			sb.WriteString(`" class="ui-bar-chart__label" text-anchor="middle">`)
+			sb.WriteString(`" class="fui-bar-chart__label" text-anchor="middle">`)
 			for li, ln := range lines {
 				sb.WriteString(`<tspan x="`)
 				sb.WriteString(ftoa(cx))
@@ -483,38 +483,38 @@ func barChartCSS(_ style.Theme) string {
   display: block;
   max-inline-size: 100%;
 }
-[data-fui-comp="ui-bar-chart"] .ui-bar-chart__bar {
+[data-fui-comp="ui-bar-chart"] .fui-bar-chart__bar {
   transition: opacity 120ms ease;
 }
-[data-fui-comp="ui-bar-chart"] .ui-bar-chart__bar:hover {
+[data-fui-comp="ui-bar-chart"] .fui-bar-chart__bar:hover {
   opacity: 0.85;
 }
-.ui-bar-chart__bar--primary { fill: var(--color-primary, #4F46E5); }
-.ui-bar-chart__bar--info    { fill: var(--color-info, #3B82F6); }
-.ui-bar-chart__bar--success { fill: var(--color-success, #16A34A); }
-.ui-bar-chart__bar--warning { fill: var(--color-warning, #D97706); }
-.ui-bar-chart__bar--danger  { fill: var(--color-danger, #DC2626); }
+.fui-bar-chart__bar--primary { fill: var(--color-primary, #4F46E5); }
+.fui-bar-chart__bar--info    { fill: var(--color-info, #3B82F6); }
+.fui-bar-chart__bar--success { fill: var(--color-success, #16A34A); }
+.fui-bar-chart__bar--warning { fill: var(--color-warning, #D97706); }
+.fui-bar-chart__bar--danger  { fill: var(--color-danger, #DC2626); }
 
-[data-fui-comp="ui-bar-chart"] .ui-bar-chart__baseline {
+[data-fui-comp="ui-bar-chart"] .fui-bar-chart__baseline {
   stroke: var(--color-border, #E4E4E7);
   stroke-width: 1;
 }
-[data-fui-comp="ui-bar-chart"] .ui-bar-chart__grid {
+[data-fui-comp="ui-bar-chart"] .fui-bar-chart__grid {
   stroke: var(--color-border, #E4E4E7);
   stroke-width: 1;
   opacity: 0.55;
 }
-[data-fui-comp="ui-bar-chart"] .ui-bar-chart__value {
+[data-fui-comp="ui-bar-chart"] .fui-bar-chart__value {
   font-size: var(--text-xs, 0.75rem);
   font-weight: 600;
   fill: var(--color-text, #18181B);
   font-variant-numeric: tabular-nums;
 }
-[data-fui-comp="ui-bar-chart"] .ui-bar-chart__label {
+[data-fui-comp="ui-bar-chart"] .fui-bar-chart__label {
   font-size: var(--text-xs, 0.75rem);
   fill: var(--color-text-muted, #52525B);
 }
-[data-fui-comp="ui-bar-chart"] .ui-bar-chart__axis-label {
+[data-fui-comp="ui-bar-chart"] .fui-bar-chart__axis-label {
   font-size: 0.68rem;
   fill: var(--color-text-muted, #52525B);
   font-variant-numeric: tabular-nums;

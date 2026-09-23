@@ -215,7 +215,7 @@ func TestE2E_Optimistic_Delete_RemovesOnConfirm(t *testing.T) {
 		chromedp.Sleep(350*time.Millisecond),
 		chromedp.Evaluate(`!!document.querySelector('[data-fui-widget="opt-delete-n1"]')`, &dialogVisible),
 		// Confirm is the danger button inside the modal's actions row.
-		chromedp.Click(`[data-fui-widget="opt-delete-n1"] .ui-confirm-action__actions button.fui-button--danger`, chromedp.ByQuery),
+		chromedp.Click(`[data-fui-widget="opt-delete-n1"] .fui-confirm-action__actions button.fui-button--danger`, chromedp.ByQuery),
 		chromedp.Sleep(600*time.Millisecond), // wait for RPC + swap
 		chromedp.Evaluate(listItemCount, &after),
 		chromedp.Evaluate(n1Present, &n1After),
@@ -402,7 +402,7 @@ func TestE2E_Optimistic_Delete_Fail_LeavesListUnchanged(t *testing.T) {
 		chromedp.Sleep(350*time.Millisecond),
 		chromedp.Evaluate(`!!document.querySelector('[data-fui-widget="opt-delete-fail-n1"]')`, &dialogVisible),
 		// Confirm is the danger button inside the modal's actions row.
-		chromedp.Click(`[data-fui-widget="opt-delete-fail-n1"] .ui-confirm-action__actions button.fui-button--danger`, chromedp.ByQuery),
+		chromedp.Click(`[data-fui-widget="opt-delete-fail-n1"] .fui-confirm-action__actions button.fui-button--danger`, chromedp.ByQuery),
 		chromedp.Sleep(600*time.Millisecond), // wait for RPC + (no) swap
 		chromedp.Evaluate(listHTML, &afterHTML),
 		chromedp.Evaluate(listItemCount, &afterCount),

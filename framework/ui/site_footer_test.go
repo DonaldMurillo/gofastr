@@ -24,9 +24,9 @@ func TestSiteFooterRendersLeadColumnsAndBottom(t *testing.T) {
 
 	for _, want := range []string{
 		`data-fui-comp="ui-site-footer"`,
-		`class="ui-site-footer__lead"`,
+		`class="fui-site-footer__lead"`,
 		`<div class="brand">GoFastr</div>`,
-		`class="ui-site-footer__col-title"`,
+		`class="fui-site-footer__col-title"`,
 		`>Read<`,
 		`>Use<`,
 		`href="/docs/"`,
@@ -63,7 +63,7 @@ func TestSiteFooterWithoutBottomOmitsBottomStrip(t *testing.T) {
 			{Title: "x", Links: []SiteFooterLink{{Label: "a", Href: "/a"}}},
 		},
 	}))
-	if strings.Contains(h, "ui-site-footer__bottom") {
+	if classTokenPresent(h, "fui-site-footer__bottom") {
 		t.Errorf("empty Bottom must not emit the bottom strip element:\n%s", h)
 	}
 }
@@ -74,7 +74,7 @@ func TestSiteFooterWithoutLeadOmitsLeadSlot(t *testing.T) {
 			{Title: "x", Links: []SiteFooterLink{{Label: "a", Href: "/a"}}},
 		},
 	}))
-	if strings.Contains(h, "ui-site-footer__lead") {
+	if classTokenPresent(h, "fui-site-footer__lead") {
 		t.Errorf("Lead slot should be omitted when nil:\n%s", h)
 	}
 }

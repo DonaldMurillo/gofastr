@@ -226,16 +226,16 @@ func TestE2EDocCardNavigates(t *testing.T) {
 		chromedp.Navigate(base+"/docs/"),
 		chromedp.WaitVisible(`a.doc[href="/docs/query-dsl"]`, chromedp.ByQuery),
 		chromedp.Click(`a.doc[href="/docs/query-dsl"]`, chromedp.ByQuery),
-		chromedp.WaitVisible(`.ui-markdown`, chromedp.ByQuery),
+		chromedp.WaitVisible(`.fui-markdown`, chromedp.ByQuery),
 		chromedp.Evaluate(`window.location.pathname`, &pathname),
-		chromedp.OuterHTML(".ui-doc-layout__content", &html, chromedp.ByQuery),
+		chromedp.OuterHTML(".fui-doc-layout__content", &html, chromedp.ByQuery),
 	); err != nil {
 		t.Fatalf("doc nav: %v", err)
 	}
 	if pathname != "/docs/query-dsl" {
 		t.Fatalf("expected to land on /docs/query-dsl, got %q", pathname)
 	}
-	if !strings.Contains(html, "ui-markdown") {
+	if !strings.Contains(html, `data-fui-comp="ui-markdown"`) {
 		t.Fatal("doc page should render embedded markdown")
 	}
 }
@@ -1240,8 +1240,8 @@ func TestE2EHomeAdaptsAtTabletAndPhoneWidths(t *testing.T) {
 		chromedp.Navigate(base+"/"),
 		chromedp.WaitReady("body"),
 		chromedp.Evaluate(`(() => {
-			const nav = document.querySelector('.ui-site-header__links');
-			const drawer = document.querySelector('.ui-site-header__mobile');
+			const nav = document.querySelector('.fui-site-header__links');
+			const drawer = document.querySelector('.fui-site-header__mobile');
 			const search = document.querySelector('.site-cmd');
 			return {
 				inlineNav: getComputedStyle(nav).display,
@@ -1271,7 +1271,7 @@ func TestE2EHomeAdaptsAtTabletAndPhoneWidths(t *testing.T) {
 		chromedp.WaitReady("body"),
 		chromedp.Evaluate(`(() => {
 			const cta = document.querySelector('.hero__ctas');
-			const headerTargets = [...document.querySelectorAll('.site-cmd, .site-icon, .ui-site-header__mobile-toggle')]
+			const headerTargets = [...document.querySelectorAll('.site-cmd, .site-icon, .fui-site-header__mobile-toggle')]
 				.map(el => el.getBoundingClientRect())
 				.filter(rect => rect.width > 0 && rect.height > 0)
 				.map(rect => Math.min(rect.width, rect.height));

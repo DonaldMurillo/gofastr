@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -71,7 +72,7 @@ func paletteTestServer(t *testing.T) *httptest.Server {
 <meta name=viewport content="width=device-width, initial-scale=1">
 <style>`+th.CSSCustomProperties()+`
 body{margin:0}
-.ui-visually-hidden{position:absolute !important;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+.fui-visually-hidden{position:absolute !important;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
 </style>
 <script type="application/json" id="gofastr-catalog">
 {"ui-cmd-palette":{"stylePath":"/__gofastr/comp/ui-cmd-palette.css","version":"test","loadMode":"auto"}}
@@ -187,7 +188,7 @@ func TestCommandPaletteBoundedDialogChromium(t *testing.T) {
 				const pal = document.querySelector('[data-fui-comp="ui-cmd-palette"]');
 				const r = pal.getBoundingClientRect();
 				const input = document.getElementById('command-palette-input').getBoundingClientRect();
-				const footer = pal.querySelector('.ui-cmd-palette__footer').getBoundingClientRect();
+				const footer = pal.querySelector('.fui-cmd-palette__footer').getBoundingClientRect();
 				const list = document.getElementById('command-palette-input-listbox');
 				return {innerHeight: window.innerHeight,
 					paletteTop: r.top, paletteBottom: r.bottom, paletteHeight: r.height,
@@ -292,7 +293,7 @@ func TestCommandPaletteCloseBehaviorChromium(t *testing.T) {
 		InputFocused bool   `json:"inputFocused"`
 	}
 	if err := chromedp.Run(ctx, chromedp.Evaluate(`(() => {
-		const btn = document.querySelector('.ui-cmd-palette__close');
+		const btn = document.querySelector('.fui-cmd-palette__close');
 		return {label: btn.getAttribute('aria-label') || '',
 			type: btn.getAttribute('type') || '',
 			visible: btn.offsetParent !== null,
@@ -330,7 +331,7 @@ func TestCommandPaletteCloseBehaviorChromium(t *testing.T) {
 	); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(afterTab1, "ui-cmd-palette__close") {
+	if !slices.Contains(strings.Fields(afterTab1), "fui-cmd-palette__close") {
 		t.Errorf("Tab from input landed on %q, want the close button — the control is not in the focus order", afterTab1)
 	}
 	if afterTab2 != "command-palette-input" {
@@ -340,7 +341,7 @@ func TestCommandPaletteCloseBehaviorChromium(t *testing.T) {
 	// Dismiss via the close control, then check focus restore + reopen.
 	var closed, focusBack bool
 	if err := chromedp.Run(ctx,
-		chromedp.Click(`.ui-cmd-palette__close`),
+		chromedp.Click(`.fui-cmd-palette__close`),
 		chromedp.Sleep(300*time.Millisecond),
 		chromedp.Evaluate(`(() => {
 			const w = document.querySelector('[data-fui-widget="command-palette"]');

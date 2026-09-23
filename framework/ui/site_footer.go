@@ -51,7 +51,7 @@ type SiteFooterConfig struct {
 func SiteFooter(cfg SiteFooterConfig) render.HTML {
 	gridChildren := []render.HTML{}
 	if cfg.Lead != "" {
-		gridChildren = append(gridChildren, html.Div(html.DivConfig{Class: "ui-site-footer__lead"}, cfg.Lead))
+		gridChildren = append(gridChildren, html.Div(html.DivConfig{Class: "fui-site-footer__lead"}, cfg.Lead))
 	}
 	for _, c := range cfg.Columns {
 		items := make([]render.HTML, 0, len(c.Links))
@@ -65,20 +65,20 @@ func SiteFooter(cfg SiteFooterConfig) render.HTML {
 				html.Link(html.LinkConfig{Href: l.Href, Text: l.Label, ExtraAttrs: extra}),
 			))
 		}
-		col := html.Div(html.DivConfig{Class: "ui-site-footer__col"},
-			render.Tag("p", map[string]string{"class": "ui-site-footer__col-title"}, render.Text(c.Title)),
+		col := html.Div(html.DivConfig{Class: "fui-site-footer__col"},
+			render.Tag("p", map[string]string{"class": "fui-site-footer__col-title"}, render.Text(c.Title)),
 			html.UnorderedList(html.ListConfig{}, items...),
 		)
 		gridChildren = append(gridChildren, col)
 	}
-	grid := html.Div(html.DivConfig{Class: "ui-site-footer__grid"}, gridChildren...)
+	grid := html.Div(html.DivConfig{Class: "fui-site-footer__grid"}, gridChildren...)
 
 	body := []render.HTML{grid}
 	if len(cfg.Bottom) > 0 {
-		body = append(body, html.Div(html.DivConfig{Class: "ui-site-footer__bottom"}, cfg.Bottom...))
+		body = append(body, html.Div(html.DivConfig{Class: "fui-site-footer__bottom"}, cfg.Bottom...))
 	}
 
-	cls := "ui-site-footer"
+	cls := "fui-site-footer"
 	if cfg.Class != "" {
 		cls = cls + " " + cfg.Class
 	}
@@ -97,7 +97,7 @@ func siteFooterCSS(_ style.Theme) string {
   padding-inline: var(--spacing-lg, 16px);
   border-block-start: 1px solid var(--color-border, rgba(0,0,0,0.1));
 }
-[data-fui-comp="ui-site-footer"] .ui-site-footer__grid {
+[data-fui-comp="ui-site-footer"] .fui-site-footer__grid {
   display: grid;
   /* Default: as many auto-sized columns as fit, min 180px each. Hosts
      wanting a fixed N-column layout (5-col GoFastr-style, etc.) set
@@ -110,13 +110,13 @@ func siteFooterCSS(_ style.Theme) string {
   margin-inline: auto;
   margin-block-end: var(--spacing-xl, 24px);
 }
-[data-fui-comp="ui-site-footer"] .ui-site-footer__lead {
+[data-fui-comp="ui-site-footer"] .fui-site-footer__lead {
   /* Default span is 1 cell. Sites that want a wider, marketing-y
-     lead column can override with .ui-site-footer__lead {
+     lead column can override with .fui-site-footer__lead {
      grid-column: span 2 } in their app.css. */
   grid-column: auto;
 }
-[data-fui-comp="ui-site-footer"] .ui-site-footer__col-title {
+[data-fui-comp="ui-site-footer"] .fui-site-footer__col-title {
   margin: 0 0 var(--spacing-sm, 4px);
   font-size: var(--text-xs, 0.75rem);
   font-weight: 600;
@@ -150,7 +150,7 @@ func siteFooterCSS(_ style.Theme) string {
   text-decoration: underline;
   text-underline-offset: 3px;
 }
-[data-fui-comp="ui-site-footer"] .ui-site-footer__bottom {
+[data-fui-comp="ui-site-footer"] .fui-site-footer__bottom {
   display: flex;
   flex-wrap: wrap;
   gap: var(--spacing-md, 8px);

@@ -152,7 +152,7 @@ func SiteHeader(cfg SiteHeaderConfig) render.HTML {
 		desktopChildren = append(desktopChildren, navLink(desktopItem))
 	}
 	primary := render.Tag("nav",
-		map[string]string{"class": "ui-site-header__links", "aria-label": primaryLabel},
+		map[string]string{"class": "fui-site-header__links", "aria-label": primaryLabel},
 		desktopChildren...,
 	)
 
@@ -168,7 +168,7 @@ func SiteHeader(cfg SiteHeaderConfig) render.HTML {
 	// drawer; CSS hides the bar copy ≤720px so they collapse into the hamburger.
 	if cfg.Actions != "" {
 		mobileChildren = append(mobileChildren,
-			html.Div(html.DivConfig{Class: "ui-site-header__mobile-actions"}, cfg.Actions))
+			html.Div(html.DivConfig{Class: "fui-site-header__mobile-actions"}, cfg.Actions))
 	}
 	// SVG icons: menu (3 bars) shown in closed state, close (×) shown
 	// in open state. The swap is purely CSS-driven (display: none on
@@ -176,17 +176,17 @@ func SiteHeader(cfg SiteHeaderConfig) render.HTML {
 	// stroke="currentColor" so they inherit the summary's text color.
 	mobile := render.Tag("details",
 		map[string]string{
-			"class":                    "ui-site-header__mobile",
+			"class":                    "fui-site-header__mobile",
 			"data-hui-disclosure":      "",
 			"data-hui-disclosure-trap": "",
 		},
 		render.Tag("summary",
-			map[string]string{"class": "ui-site-header__mobile-toggle", "aria-label": i18nui.T(ctx, i18nui.KeyNavToggle)},
-			render.Raw(`<svg class="ui-site-header__icon ui-site-header__icon--menu" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/></svg>`),
-			render.Raw(`<svg class="ui-site-header__icon ui-site-header__icon--close" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg>`),
+			map[string]string{"class": "fui-site-header__mobile-toggle", "aria-label": i18nui.T(ctx, i18nui.KeyNavToggle)},
+			render.Raw(`<svg class="fui-site-header__icon fui-site-header__icon--menu" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/></svg>`),
+			render.Raw(`<svg class="fui-site-header__icon fui-site-header__icon--close" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg>`),
 		),
 		render.Tag("nav",
-			map[string]string{"class": "ui-site-header__mobile-links", "aria-label": mobileLabel},
+			map[string]string{"class": "fui-site-header__mobile-links", "aria-label": mobileLabel},
 			mobileChildren...,
 		),
 	)
@@ -196,30 +196,30 @@ func SiteHeader(cfg SiteHeaderConfig) render.HTML {
 		// Wrapped so CSS can hide just the bar copy on phones (the same Actions
 		// also render inside the drawer).
 		rightChildren = append(rightChildren,
-			html.Div(html.DivConfig{Class: "ui-site-header__bar-actions"}, cfg.Actions))
+			html.Div(html.DivConfig{Class: "fui-site-header__bar-actions"}, cfg.Actions))
 	}
 	if cfg.PersistentActions != "" {
 		// Bar-only, all widths: no drawer copy exists, so the ≤720px
 		// block must never hide this wrapper.
 		rightChildren = append(rightChildren,
-			html.Div(html.DivConfig{Class: "ui-site-header__persistent-actions"}, cfg.PersistentActions))
+			html.Div(html.DivConfig{Class: "fui-site-header__persistent-actions"}, cfg.PersistentActions))
 	}
 	rightChildren = append(rightChildren, mobile)
-	right := html.Div(html.DivConfig{Class: "ui-site-header__right"}, rightChildren...)
-	brand := html.Div(html.DivConfig{Class: "ui-site-header__brand"}, cfg.Brand)
+	right := html.Div(html.DivConfig{Class: "fui-site-header__right"}, rightChildren...)
+	brand := html.Div(html.DivConfig{Class: "fui-site-header__brand"}, cfg.Brand)
 	if cfg.MobileBrand != "" {
 		brand = render.Join(
-			html.Div(html.DivConfig{Class: "ui-site-header__brand ui-site-header__brand--desktop"}, cfg.Brand),
-			html.Div(html.DivConfig{Class: "ui-site-header__brand ui-site-header__brand--mobile"}, cfg.MobileBrand),
+			html.Div(html.DivConfig{Class: "fui-site-header__brand fui-site-header__brand--desktop"}, cfg.Brand),
+			html.Div(html.DivConfig{Class: "fui-site-header__brand fui-site-header__brand--mobile"}, cfg.MobileBrand),
 		)
 	}
 
-	cls := "ui-site-header"
+	cls := "fui-site-header"
 	if cfg.NavUnderline {
-		cls += " ui-site-header--nav-underline"
+		cls += " fui-site-header--nav-underline"
 	}
 	if cfg.Drawer == SiteHeaderDrawerSheet {
-		cls += " ui-site-header--drawer-sheet"
+		cls += " fui-site-header--drawer-sheet"
 	}
 	if cfg.Class != "" {
 		cls = cls + " " + cfg.Class
@@ -247,14 +247,14 @@ func siteHeaderCSS(_ style.Theme) string {
   block-size: 100%;
   padding-inline: var(--spacing-lg, 16px);
 }
-[data-fui-comp="ui-site-header"] .ui-site-header__brand {
+[data-fui-comp="ui-site-header"] .fui-site-header__brand {
   display: flex;
   align-items: center;
   min-inline-size: 0;
 }
 /* Slot LAYOUT is framework-owned (like the wrapper flex row), so it keeps
    normal specificity and survives a host's generic anchor reset. */
-[data-fui-comp="ui-site-header"] .ui-site-header__brand a {
+[data-fui-comp="ui-site-header"] .fui-site-header__brand a {
   display: inline-flex;
   align-items: center;
   gap: var(--ui-site-header-brand-gap, var(--spacing-sm, 4px));
@@ -264,34 +264,34 @@ func siteHeaderCSS(_ style.Theme) string {
    :where() keeps them at zero specificity so they replace browser-default
    link styling when the consumer ships none, and lose to ANY consumer
    selector — even a bare element reset — when they do. */
-:where([data-fui-comp="ui-site-header"] .ui-site-header__brand a) {
+:where([data-fui-comp="ui-site-header"] .fui-site-header__brand a) {
   color: var(--ui-site-header-brand-color, var(--color-text, currentColor));
   text-decoration: none;
   font-weight: var(--ui-site-header-brand-weight, 700);
 }
-[data-fui-comp="ui-site-header"] .ui-site-header__brand--mobile { display: none; }
-[data-fui-comp="ui-site-header"] .ui-site-header__links {
+[data-fui-comp="ui-site-header"] .fui-site-header__brand--mobile { display: none; }
+[data-fui-comp="ui-site-header"] .fui-site-header__links {
   display: flex;
   align-items: center;
   gap: var(--spacing-lg, 16px);
   margin-inline-start: var(--spacing-xl, 24px);
 }
-[data-fui-comp="ui-site-header"] .ui-site-header__links a {
+[data-fui-comp="ui-site-header"] .fui-site-header__links a {
   color: var(--ui-site-header-nav-color, currentColor);
   text-decoration: none;
   font-size: var(--text-sm, 14px);
 }
-[data-fui-comp="ui-site-header"] .ui-site-header__links a[aria-current="page"] {
+[data-fui-comp="ui-site-header"] .fui-site-header__links a[aria-current="page"] {
   color: var(--ui-site-header-nav-active-color, var(--color-primary, currentColor));
 }
 
 /* Opt-in underline-reveal variant (NavUnderline:true). A 1px rule wipes in
    from the left on hover / focus / active. Colour + vertical offset are
    themeable via the --ui-site-header-nav-underline-* vars. */
-[data-fui-comp="ui-site-header"].ui-site-header--nav-underline .ui-site-header__links a {
+[data-fui-comp="ui-site-header"].fui-site-header--nav-underline .fui-site-header__links a {
   position: relative;
 }
-[data-fui-comp="ui-site-header"].ui-site-header--nav-underline .ui-site-header__links a::after {
+[data-fui-comp="ui-site-header"].fui-site-header--nav-underline .fui-site-header__links a::after {
   content: "";
   position: absolute;
   left: 0;
@@ -301,31 +301,31 @@ func siteHeaderCSS(_ style.Theme) string {
   background: var(--ui-site-header-nav-underline-color, var(--color-primary, currentColor));
   transition: right 200ms cubic-bezier(0.4, 0, 0.2, 1);
 }
-[data-fui-comp="ui-site-header"].ui-site-header--nav-underline .ui-site-header__links a:hover,
-[data-fui-comp="ui-site-header"].ui-site-header--nav-underline .ui-site-header__links a:focus-visible {
+[data-fui-comp="ui-site-header"].fui-site-header--nav-underline .fui-site-header__links a:hover,
+[data-fui-comp="ui-site-header"].fui-site-header--nav-underline .fui-site-header__links a:focus-visible {
   color: var(--ui-site-header-nav-active-color, var(--color-text, currentColor));
 }
-[data-fui-comp="ui-site-header"].ui-site-header--nav-underline .ui-site-header__links a:hover::after,
-[data-fui-comp="ui-site-header"].ui-site-header--nav-underline .ui-site-header__links a:focus-visible::after,
-[data-fui-comp="ui-site-header"].ui-site-header--nav-underline .ui-site-header__links a[aria-current="page"]::after {
+[data-fui-comp="ui-site-header"].fui-site-header--nav-underline .fui-site-header__links a:hover::after,
+[data-fui-comp="ui-site-header"].fui-site-header--nav-underline .fui-site-header__links a:focus-visible::after,
+[data-fui-comp="ui-site-header"].fui-site-header--nav-underline .fui-site-header__links a[aria-current="page"]::after {
   right: 0;
 }
 @media (prefers-reduced-motion: reduce) {
-  [data-fui-comp="ui-site-header"].ui-site-header--nav-underline .ui-site-header__links a::after {
+  [data-fui-comp="ui-site-header"].fui-site-header--nav-underline .fui-site-header__links a::after {
     transition: none;
   }
 }
-[data-fui-comp="ui-site-header"] .ui-site-header__right {
+[data-fui-comp="ui-site-header"] .fui-site-header__right {
   display: flex;
   align-items: center;
   gap: var(--spacing-sm, 4px);
   margin-inline-start: auto;
 }
-[data-fui-comp="ui-site-header"] .ui-site-header__mobile {
+[data-fui-comp="ui-site-header"] .fui-site-header__mobile {
   display: none;
   position: relative;
 }
-[data-fui-comp="ui-site-header"] .ui-site-header__mobile-toggle {
+[data-fui-comp="ui-site-header"] .fui-site-header__mobile-toggle {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -337,22 +337,22 @@ func siteHeaderCSS(_ style.Theme) string {
   cursor: pointer;
   list-style: none;
 }
-[data-fui-comp="ui-site-header"] .ui-site-header__mobile-toggle::-webkit-details-marker { display: none; }
+[data-fui-comp="ui-site-header"] .fui-site-header__mobile-toggle::-webkit-details-marker { display: none; }
 
 /* Icon swap: menu in closed state, X in open state. Inline SVG paths
    inherit color via stroke="currentColor". Single source of visual
    truth — no pseudo-bar math, no transform animations to misalign. */
-[data-fui-comp="ui-site-header"] .ui-site-header__icon { display: block; }
-[data-fui-comp="ui-site-header"] .ui-site-header__icon--close { display: none; }
-[data-fui-comp="ui-site-header"] details[open] .ui-site-header__icon--menu { display: none; }
-[data-fui-comp="ui-site-header"] details[open] .ui-site-header__icon--close { display: block; }
+[data-fui-comp="ui-site-header"] .fui-site-header__icon { display: block; }
+[data-fui-comp="ui-site-header"] .fui-site-header__icon--close { display: none; }
+[data-fui-comp="ui-site-header"] details[open] .fui-site-header__icon--menu { display: none; }
+[data-fui-comp="ui-site-header"] details[open] .fui-site-header__icon--close { display: block; }
 
 /* Mobile drawer: position-, size-, and color-themable via CSS vars
    so a host can pick the popover-vs-sheet shape without overriding
    the rule. Defaults are a trigger-anchored popover at the top right;
    set --ui-site-header-drawer-position: fixed + inset values to
    convert to a viewport-anchored sheet. */
-[data-fui-comp="ui-site-header"] .ui-site-header__mobile-links {
+[data-fui-comp="ui-site-header"] .fui-site-header__mobile-links {
   position: var(--ui-site-header-drawer-position, absolute);
   inset-block-start: var(--ui-site-header-drawer-top, calc(100% + 8px));
   inset-inline-end: var(--ui-site-header-drawer-right, 0);
@@ -368,15 +368,15 @@ func siteHeaderCSS(_ style.Theme) string {
   box-shadow: var(--ui-site-header-drawer-shadow, 0 10px 30px rgba(0,0,0,0.18));
   z-index: 50;
 }
-[data-fui-comp="ui-site-header"] .ui-site-header__mobile-links a {
+[data-fui-comp="ui-site-header"] .fui-site-header__mobile-links a {
   display: block;
   padding: var(--spacing-sm, 4px) var(--spacing-md, 8px);
   color: currentColor;
   text-decoration: none;
   border-radius: var(--radii-sm, 4px);
 }
-[data-fui-comp="ui-site-header"] .ui-site-header__mobile-links a:hover,
-[data-fui-comp="ui-site-header"] .ui-site-header__mobile-links a:focus-visible {
+[data-fui-comp="ui-site-header"] .fui-site-header__mobile-links a:hover,
+[data-fui-comp="ui-site-header"] .fui-site-header__mobile-links a:focus-visible {
   background: var(--color-surface-soft, rgba(0,0,0,0.04));
 }
 
@@ -384,9 +384,9 @@ func siteHeaderCSS(_ style.Theme) string {
    the right group directly); the foot-of-drawer copy is hidden until ≤720px.
    Persistent actions get the same transparency but no breakpoint rule: they
    stay in the bar at every width and have no drawer copy. */
-[data-fui-comp="ui-site-header"] .ui-site-header__bar-actions { display: contents; }
-[data-fui-comp="ui-site-header"] .ui-site-header__persistent-actions { display: contents; }
-[data-fui-comp="ui-site-header"] .ui-site-header__mobile-actions {
+[data-fui-comp="ui-site-header"] .fui-site-header__bar-actions { display: contents; }
+[data-fui-comp="ui-site-header"] .fui-site-header__persistent-actions { display: contents; }
+[data-fui-comp="ui-site-header"] .fui-site-header__mobile-actions {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-sm, 4px);
@@ -395,20 +395,20 @@ func siteHeaderCSS(_ style.Theme) string {
   border-block-start: 1px solid var(--color-border, rgba(0,0,0,0.1));
 }
 @media (max-width: 720px) {
-  [data-fui-comp="ui-site-header"] .ui-site-header__brand--desktop { display: none; }
-  [data-fui-comp="ui-site-header"] .ui-site-header__brand--mobile { display: flex; }
-  [data-fui-comp="ui-site-header"] .ui-site-header__links { display: none; }
-  [data-fui-comp="ui-site-header"] .ui-site-header__mobile { display: block; }
+  [data-fui-comp="ui-site-header"] .fui-site-header__brand--desktop { display: none; }
+  [data-fui-comp="ui-site-header"] .fui-site-header__brand--mobile { display: flex; }
+  [data-fui-comp="ui-site-header"] .fui-site-header__links { display: none; }
+  [data-fui-comp="ui-site-header"] .fui-site-header__mobile { display: block; }
   /* Collapse the bar actions into the drawer so the phone bar is just brand +
-     hamburger. The drawer copy (.ui-site-header__mobile-actions) carries them. */
-  [data-fui-comp="ui-site-header"] .ui-site-header__bar-actions { display: none; }
+     hamburger. The drawer copy (.fui-site-header__mobile-actions) carries them. */
+  [data-fui-comp="ui-site-header"] .fui-site-header__bar-actions { display: none; }
 }
 
 /* Sheet drawer variant: a full-height slide-in side drawer with a backdrop
    scrim, instead of the compact popover. The panel is only in the layout when
    the mobile <details> is shown (≤720px) and open, so these rules need no
    extra breakpoint guard. */
-[data-fui-comp="ui-site-header"].ui-site-header--drawer-sheet .ui-site-header__mobile-links {
+[data-fui-comp="ui-site-header"].fui-site-header--drawer-sheet .fui-site-header__mobile-links {
   position: fixed;
   inset-block: 0;
   inset-inline: auto 0;
@@ -424,11 +424,11 @@ func siteHeaderCSS(_ style.Theme) string {
   box-shadow: var(--ui-site-header-drawer-shadow, -16px 0 44px rgba(15,12,24,0.28));
   animation: ui-site-header-drawer-in 0.24s cubic-bezier(0.22, 1, 0.36, 1);
 }
-[data-fui-comp="ui-site-header"].ui-site-header--drawer-sheet .ui-site-header__mobile-links a {
+[data-fui-comp="ui-site-header"].fui-site-header--drawer-sheet .fui-site-header__mobile-links a {
   padding: var(--spacing-sm, 4px) var(--spacing-md, 8px);
   font-size: var(--text-base, 1rem);
 }
-[data-fui-comp="ui-site-header"].ui-site-header--drawer-sheet details[open]::before {
+[data-fui-comp="ui-site-header"].fui-site-header--drawer-sheet details[open]::before {
   content: "";
   position: fixed;
   inset: 0;
@@ -438,12 +438,12 @@ func siteHeaderCSS(_ style.Theme) string {
 }
 /* Keep the ✕ toggle above the sheet so there's a visible, tappable close
    affordance (Escape and nav-tap also close the disclosure). */
-[data-fui-comp="ui-site-header"].ui-site-header--drawer-sheet summary { position: relative; z-index: 60; }
+[data-fui-comp="ui-site-header"].fui-site-header--drawer-sheet summary { position: relative; z-index: 60; }
 @keyframes ui-site-header-drawer-in { from { transform: translateX(100%); } to { transform: translateX(0); } }
 @keyframes ui-site-header-scrim-in { from { opacity: 0; } to { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) {
-  [data-fui-comp="ui-site-header"].ui-site-header--drawer-sheet .ui-site-header__mobile-links,
-  [data-fui-comp="ui-site-header"].ui-site-header--drawer-sheet details[open]::before { animation: none; }
+  [data-fui-comp="ui-site-header"].fui-site-header--drawer-sheet .fui-site-header__mobile-links,
+  [data-fui-comp="ui-site-header"].fui-site-header--drawer-sheet details[open]::before { animation: none; }
 }
 `
 }

@@ -185,7 +185,7 @@ func CopyButton(cfg CopyButtonConfig) render.HTML {
 	// runtime can find it via parentElement.querySelector. Wrapper is
 	// a plain inline-block; CSS class lets consumers target it.
 	status := html.Span(html.TextConfig{
-		Class: "ui-visually-hidden",
+		Class: "fui-visually-hidden",
 		ExtraAttrs: html.Attrs{
 			"role":                 "status",
 			"aria-live":            "polite",

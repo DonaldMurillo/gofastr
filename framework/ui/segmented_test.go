@@ -24,7 +24,7 @@ func TestSegmentedControlBasic(t *testing.T) {
 		`value="week"`,
 		`value="month"`,
 		`checked`,
-		`ui-segmented__indicator`,
+		`fui-segmented__indicator`,
 		`data-position="0"`,
 		`data-position="2"`,
 		`data-count="3"`, // now on the wrapper, drives equal-width column math

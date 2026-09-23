@@ -12,7 +12,7 @@ func TestCollapsedSidebarLabelsStayAccessible(t *testing.T) {
 	// The collapsed rail must hide labels with the visually-hidden clip
 	// pattern, never display:none. Focusable links would lose their
 	// accessible names (WCAG 4.1.2).
-	start := strings.Index(css, `[data-collapsed="true"] .ui-sidebar__label`)
+	start := strings.Index(css, `[data-collapsed="true"] .fui-sidebar__label`)
 	if start == -1 {
 		t.Fatal("no collapsed-state label rule found")
 	}
@@ -34,9 +34,9 @@ func TestGroupSublistHiddenAttributeWins(t *testing.T) {
 	// [hidden] { display: none } (author rule, same-or-higher
 	// specificity). Without an explicit [hidden] win, a closed
 	// button-dialect group keeps its links visible.
-	start := strings.Index(css, `.ui-sidebar__sublist[hidden]`)
+	start := strings.Index(css, `.fui-sidebar__sublist[hidden]`)
 	if start == -1 {
-		t.Fatal("no .ui-sidebar__sublist[hidden] rule found — closed groups render their links")
+		t.Fatal("no .fui-sidebar__sublist[hidden] rule found — closed groups render their links")
 	}
 	block := css[start:]
 	if end := strings.Index(block, "}"); end != -1 {
@@ -49,17 +49,17 @@ func TestGroupSublistHiddenAttributeWins(t *testing.T) {
 
 func TestAutoHideVariantShipsRevealCSS(t *testing.T) {
 	css := sidebarCSS(style.Theme{})
-	if !strings.Contains(css, `.ui-sidebar--auto-hide .ui-sidebar__hamburger`) {
+	if !strings.Contains(css, `.fui-sidebar--auto-hide .fui-sidebar__hamburger`) {
 		t.Fatal("auto-hide variant must hide the hamburger at >= md like persistent/collapsible")
 	}
 	// The reveal ships in the component stylesheet (one styling
 	// surface: hosts write zero CSS), and it must key on BOTH :hover
 	// and :focus-within. A hover-only reveal is an accessibility
 	// defect: every link in the rail is unreachable by keyboard.
-	if !strings.Contains(css, `.ui-sidebar--auto-hide:hover .ui-sidebar__inline`) {
+	if !strings.Contains(css, `.fui-sidebar--auto-hide:hover .fui-sidebar__inline`) {
 		t.Fatal("auto-hide must ship a :hover reveal rule in the component stylesheet")
 	}
-	sel := `.ui-sidebar--auto-hide:focus-within .ui-sidebar__inline`
+	sel := `.fui-sidebar--auto-hide:focus-within .fui-sidebar__inline`
 	start := strings.Index(css, sel)
 	if start == -1 {
 		t.Fatal("auto-hide must ship a :focus-within reveal rule — hover-only hides every link from keyboard users")
@@ -109,12 +109,12 @@ func TestCalloutHiddenAttributeWins(t *testing.T) {
 func TestSidebarPrependHidesWithTitleAndFooter(t *testing.T) {
 	css := sidebarCSS(style.Theme{})
 	for _, state := range []string{
-		`[data-collapsed="true"] .ui-sidebar__prepend,`,
-		`.ui-sidebar--auto-hide:not(:hover):not(:focus-within) .ui-sidebar__prepend,`,
+		`[data-collapsed="true"] .fui-sidebar__prepend,`,
+		`.fui-sidebar--auto-hide:not(:hover):not(:focus-within) .fui-sidebar__prepend,`,
 	} {
 		start := strings.Index(css, state)
 		if start == -1 {
-			t.Errorf("sidebar CSS must hide .ui-sidebar__prepend in state %q", state)
+			t.Errorf("sidebar CSS must hide .fui-sidebar__prepend in state %q", state)
 			continue
 		}
 		block := css[start:]
@@ -122,7 +122,7 @@ func TestSidebarPrependHidesWithTitleAndFooter(t *testing.T) {
 			block = block[:end]
 		}
 		if !strings.Contains(block, "display: none") {
-			t.Errorf("the rule hiding .ui-sidebar__prepend in state %q must set display:none:\n%s", state, block)
+			t.Errorf("the rule hiding .fui-sidebar__prepend in state %q must set display:none:\n%s", state, block)
 		}
 	}
 }

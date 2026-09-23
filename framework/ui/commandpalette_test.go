@@ -14,7 +14,7 @@ func TestCommandPaletteTrigger(t *testing.T) {
 		`data-fui-open="command-palette"`,
 		`data-hui-shortcut-click="Meta+K"`,
 		`aria-label="Open command palette"`,
-		`class="ui-visually-hidden"`,
+		`class="fui-visually-hidden"`,
 	}
 	for _, w := range wants {
 		if !strings.Contains(out, w) {
@@ -114,9 +114,9 @@ func TestCommandPaletteCloseControl(t *testing.T) {
 	for _, w := range []string{
 		`data-fui-action="close"`,
 		`aria-label="Close"`,
-		`class="ui-cmd-palette__close"`,
+		`class="fui-cmd-palette__close"`,
 		`type="button"`,
-		`ui-icon ui-cmd-palette__close-icon`,
+		`class="fui-icon fui-cmd-palette__close-icon"`,
 	} {
 		if !strings.Contains(h, w) {
 			t.Errorf("close control missing %q\nbody: %s", w, h)
@@ -152,10 +152,10 @@ func TestCommandPaletteCloseControl(t *testing.T) {
 		}
 		return h[start : i+end+1]
 	}
-	if foot := openTag(`ui-cmd-palette__footer`); strings.Contains(foot, "aria-hidden") {
+	if foot := openTag(`fui-cmd-palette__footer`); strings.Contains(foot, "aria-hidden") {
 		t.Errorf("footer must not be aria-hidden (it hosts the close button):\n%s", foot)
 	}
-	if hints := openTag(`ui-cmd-palette__hints`); !strings.Contains(hints, "aria-hidden") {
+	if hints := openTag(`fui-cmd-palette__hints`); !strings.Contains(hints, "aria-hidden") {
 		t.Errorf("hints row must stay decorative (aria-hidden) now that the footer is exposed:\n%s", hints)
 	}
 }
@@ -190,9 +190,9 @@ func TestCommandPaletteCSSPadsTheInputRow(t *testing.T) {
 	// the input keeps its touch-target height. The retired rules
 	// targeted .combobox__* classes nothing renders and matched nothing.
 	for _, want := range []string{
-		"[data-fui-comp=\"ui-cmd-palette\"] .ui-cmd-palette__combobox:has(> .ui-cmd-palette__input) {",
+		"[data-fui-comp=\"ui-cmd-palette\"] .fui-cmd-palette__combobox:has(> .fui-cmd-palette__input) {",
 		"padding: var(--spacing-md, 8px);",
-		"[data-fui-comp=\"ui-cmd-palette\"] .ui-cmd-palette__input {",
+		"[data-fui-comp=\"ui-cmd-palette\"] .fui-cmd-palette__input {",
 		"min-block-size: var(--spacing-touch-target, 44px);",
 	} {
 		if !strings.Contains(css, want) {

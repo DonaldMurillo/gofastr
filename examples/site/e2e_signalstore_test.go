@@ -363,9 +363,9 @@ func TestE2E_BreadcrumbCategoryScrollsToSection(t *testing.T) {
 	var scrollY, sectionTop, headerBottom, innerH float64
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/signal-store"),
-		chromedp.WaitReady(`.ui-doc-layout__crumbs`, chromedp.ByQuery),
+		chromedp.WaitReady(`.fui-doc-layout__crumbs`, chromedp.ByQuery),
 		// The category crumb is the breadcrumb link whose href has a #.
-		chromedp.Click(`.ui-doc-layout__crumbs a[href*="#"]`, chromedp.ByQuery),
+		chromedp.Click(`.fui-doc-layout__crumbs a[href*="#"]`, chromedp.ByQuery),
 		chromedp.Sleep(500*time.Millisecond), // SPA nav + scroll + rAF re-correct
 		chromedp.Evaluate(`location.hash`, &hash),
 		chromedp.Evaluate(`window.scrollY`, &scrollY),

@@ -99,7 +99,7 @@ raw (enumerated in `framework/ui/extraattrs_contract_test.go`). See
 
 ### Selection & input composition
 
-- **combobox**: `core-ui/patterns/combobox`, debounced search with RPC-driven listbox
+- **combobox**: `framework/ui.Combobox`, typed combobox over the headless primitive: a labelled input with `role=combobox` wiring, a GET-form no-script fallback to the same endpoint, an RPC-driven listbox whose options are real links, and a status region the module announces results through; `core-ui/patterns/combobox` is retired
 - **commandpalette**: `framework/ui.CommandPalette`, ⌘K modal + combobox composition
 - **globalsearch**: `framework/ui.GlobalSearch`, sticky inline `/`-shortcut search bar
 - **dropzone**: `framework/ui.FileDropzone`, hero file-drop surface with image previews
@@ -379,7 +379,7 @@ diff, wrap long lines, and cap its height without leaving Markdown:
 | `scroll` | `Scroll` | caps body height at `--ui-code-block-scroll-max`, scrolls |
 | `{1,3-5}` or `highlight=1,3-5` | `HighlightLines []LineRange` | background band on those lines (1-based, inclusive) |
 | `diff` | `Diff` | lines starting `+` (and `+++`) get an added band, `-` (and `---`) a removed band; the marker stays in the text |
-| `words="err,nil"` / `words=err,nil` | `HighlightWords []string` | literal matches wrapped in `<mark class="ui-code-block__mark">` |
+| `words="err,nil"` / `words=err,nil` | `HighlightWords []string` | literal matches wrapped in `<mark class="fui-code-block__mark">` |
 | `wrap` (`nowrap` / `wrap=false` off) | `Wrap` | soft-wrap long lines instead of horizontal scrolling |
 
 Unknown options are ignored, and so is an invalid `highlight=` or

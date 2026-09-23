@@ -22,7 +22,7 @@ func TestAvatarGroupRendersAll(t *testing.T) {
 			t.Errorf("expected %q in output, got: %s", name, out)
 		}
 	}
-	if strings.Contains(out, "ui-avatar-group__overflow") {
+	if classTokenPresent(out, "fui-avatar-group__overflow") {
 		t.Error("did not expect overflow indicator")
 	}
 }
@@ -36,7 +36,7 @@ func TestAvatarGroupOverflow(t *testing.T) {
 		Avatars: avatars,
 		Max:     5,
 	}))
-	if !strings.Contains(out, "ui-avatar-group__overflow") {
+	if !classTokenPresent(out, "fui-avatar-group__overflow") {
 		t.Errorf("expected overflow indicator, got: %s", out)
 	}
 	if !strings.Contains(out, ">+2<") {
@@ -67,11 +67,11 @@ func TestAvatarGroupSizePropagates(t *testing.T) {
 		Avatars: []AvatarConfig{{Name: "Alice"}, {Name: "Bob"}},
 		Size:    AvatarLg,
 	}))
-	if !strings.Contains(out, "ui-avatar-group--lg") {
-		t.Errorf("expected ui-avatar-group--lg class, got: %s", out)
+	if !classTokenPresent(out, "fui-avatar-group--lg") {
+		t.Errorf("expected fui-avatar-group--lg class, got: %s", out)
 	}
-	if !strings.Contains(out, "ui-avatar--lg") {
-		t.Errorf("expected Size to propagate to children (ui-avatar--lg), got: %s", out)
+	if !classTokenPresent(out, "fui-avatar--lg") {
+		t.Errorf("expected Size to propagate to children (fui-avatar--lg), got: %s", out)
 	}
 }
 
@@ -83,7 +83,7 @@ func TestAvatarGroupChildSizeOverrides(t *testing.T) {
 		},
 		Size: AvatarLg,
 	}))
-	if !strings.Contains(out, "ui-avatar--xl") {
+	if !classTokenPresent(out, "fui-avatar--xl") {
 		t.Errorf("expected child Size=xl to be preserved, got: %s", out)
 	}
 }

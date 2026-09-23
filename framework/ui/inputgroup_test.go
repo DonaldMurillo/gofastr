@@ -23,10 +23,10 @@ func TestInputGroupRendersInputOnly(t *testing.T) {
 	if !strings.Contains(h, `name="price"`) {
 		t.Errorf("expected input with name=price:\n%s", h)
 	}
-	if strings.Contains(h, "ui-input-group__prepend") {
+	if classTokenPresent(h, "fui-input-group__prepend") {
 		t.Errorf("no Prepend should not render prepend:\n%s", h)
 	}
-	if strings.Contains(h, "ui-input-group__append") {
+	if classTokenPresent(h, "fui-input-group__append") {
 		t.Errorf("no Append should not render append:\n%s", h)
 	}
 }
@@ -37,7 +37,7 @@ func TestInputGroupWithPrepend(t *testing.T) {
 		Prepend: render.Text("$"),
 		Input:   in,
 	}))
-	if !strings.Contains(h, "ui-input-group__prepend") {
+	if !classTokenPresent(h, "fui-input-group__prepend") {
 		t.Errorf("expected prepend span:\n%s", h)
 	}
 	if !strings.Contains(h, ">$<") {
@@ -51,7 +51,7 @@ func TestInputGroupWithAppend(t *testing.T) {
 		Input:  in,
 		Append: render.Text("kg"),
 	}))
-	if !strings.Contains(h, "ui-input-group__append") {
+	if !classTokenPresent(h, "fui-input-group__append") {
 		t.Errorf("expected append span:\n%s", h)
 	}
 	if !strings.Contains(h, ">kg<") {
@@ -66,10 +66,10 @@ func TestInputGroupWithPrependAndAppend(t *testing.T) {
 		Input:   in,
 		Append:  render.Text(".com"),
 	}))
-	if !strings.Contains(h, "ui-input-group__prepend") {
+	if !classTokenPresent(h, "fui-input-group__prepend") {
 		t.Errorf("expected prepend:\n%s", h)
 	}
-	if !strings.Contains(h, "ui-input-group__append") {
+	if !classTokenPresent(h, "fui-input-group__append") {
 		t.Errorf("expected append:\n%s", h)
 	}
 	if !strings.Contains(h, ">https://<") {
@@ -133,9 +133,9 @@ func TestInputGroupComposesPrependInputAppend(t *testing.T) {
 		t.Errorf("missing data-fui-comp=\"ui-input-group\" marker:\n%s", h)
 	}
 
-	prependIdx := strings.Index(h, "ui-input-group__prepend")
+	prependIdx := classTokenIndex(h, "fui-input-group__prepend")
 	inputIdx := strings.Index(h, `name="price"`)
-	appendIdx := strings.Index(h, "ui-input-group__append")
+	appendIdx := classTokenIndex(h, "fui-input-group__append")
 
 	if prependIdx < 0 || inputIdx < 0 || appendIdx < 0 {
 		t.Fatalf("expected prepend, input, and append in output:\n%s", h)
@@ -144,7 +144,7 @@ func TestInputGroupComposesPrependInputAppend(t *testing.T) {
 		t.Errorf("expected source order prepend → input → append (got %d / %d / %d):\n%s",
 			prependIdx, inputIdx, appendIdx, h)
 	}
-	if !strings.Contains(h, "ui-input-group") {
+	if !classTokenPresent(h, "fui-input-group") {
 		t.Errorf("missing wrapper class ui-input-group:\n%s", h)
 	}
 }

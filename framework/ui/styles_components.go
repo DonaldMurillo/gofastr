@@ -229,12 +229,12 @@ func codeBlockCSS(_ style.Theme) string {
 
 /* Framed variant: a container with a chrome header (filename + copy) over a
    scrollable body. The container owns the surface; the body owns padding. */
-[data-fui-comp="ui-code-block"].ui-code-block--framed {
+[data-fui-comp="ui-code-block"].fui-code-block--framed {
   padding: 0;
   overflow: hidden;
   white-space: normal;
 }
-[data-fui-comp="ui-code-block"] .ui-code-block__head {
+[data-fui-comp="ui-code-block"] .fui-code-block__head {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -244,20 +244,20 @@ func codeBlockCSS(_ style.Theme) string {
   font-size: var(--text-xs, 12px);
   color: var(--color-text-subtle, #71717A);
 }
-[data-fui-comp="ui-code-block"] .ui-code-block__status {
+[data-fui-comp="ui-code-block"] .fui-code-block__status {
   width: 7px;
   height: 7px;
   border-radius: 999px;
   background: var(--ui-code-block-status-color, var(--color-success, #16A34A));
 }
-[data-fui-comp="ui-code-block"] .ui-code-block__file { color: var(--color-text, #18181B); }
-[data-fui-comp="ui-code-block"] .ui-code-block__meta {
+[data-fui-comp="ui-code-block"] .fui-code-block__file { color: var(--color-text, #18181B); }
+[data-fui-comp="ui-code-block"] .fui-code-block__meta {
   margin-left: auto;
   display: flex;
   align-items: center;
   gap: 10px;
 }
-[data-fui-comp="ui-code-block"] .ui-code-block__body {
+[data-fui-comp="ui-code-block"] .fui-code-block__body {
   display: block;
   margin: 0;
   padding: var(--spacing-md, 8px) var(--spacing-lg, 16px);
@@ -266,19 +266,19 @@ func codeBlockCSS(_ style.Theme) string {
   white-space: pre;
   overflow-x: auto;
 }
-[data-fui-comp="ui-code-block"].ui-code-block--numbered .ui-code-block__body {
+[data-fui-comp="ui-code-block"].fui-code-block--numbered .fui-code-block__body {
   counter-reset: ui-cb-ln;
   padding-left: 52px;
 }
-[data-fui-comp="ui-code-block"].ui-code-block--scroll .ui-code-block__body {
+[data-fui-comp="ui-code-block"].fui-code-block--scroll .fui-code-block__body {
   /* Cap the body so a long file scrolls internally instead of dominating the
      page. Override per-page via --ui-code-block-scroll-max if a taller/shorter
      window is wanted. Horizontal panning still works (overflow-x above). */
   max-block-size: var(--ui-code-block-scroll-max, 26rem);
   overflow-y: auto;
 }
-[data-fui-comp="ui-code-block"] .ui-code-block__line { display: block; position: relative; }
-[data-fui-comp="ui-code-block"].ui-code-block--numbered .ui-code-block__line::before {
+[data-fui-comp="ui-code-block"] .fui-code-block__line { display: block; position: relative; }
+[data-fui-comp="ui-code-block"].fui-code-block--numbered .fui-code-block__line::before {
   counter-increment: ui-cb-ln;
   content: counter(ui-cb-ln);
   position: absolute;
@@ -299,41 +299,41 @@ func codeBlockCSS(_ style.Theme) string {
    under the gutter too and the ::before number is re-anchored to the
    same visual spot. Colours derive from the theme's status tokens
    through overridable knobs. */
-[data-fui-comp="ui-code-block"] .ui-code-block__line--highlight {
+[data-fui-comp="ui-code-block"] .fui-code-block__line--highlight {
   background: var(--ui-code-block-highlight-bg, color-mix(in srgb, var(--color-primary, #4F46E5) 14%, transparent));
   margin-inline: calc(-1 * var(--spacing-lg, 16px));
   padding-inline: var(--spacing-lg, 16px);
 }
-[data-fui-comp="ui-code-block"] .ui-code-block__line--added {
+[data-fui-comp="ui-code-block"] .fui-code-block__line--added {
   background: var(--ui-code-block-added-bg, color-mix(in srgb, var(--color-success, #16A34A) 12%, transparent));
   margin-inline: calc(-1 * var(--spacing-lg, 16px));
   padding-inline: var(--spacing-lg, 16px);
 }
-[data-fui-comp="ui-code-block"] .ui-code-block__line--removed {
+[data-fui-comp="ui-code-block"] .fui-code-block__line--removed {
   background: var(--ui-code-block-removed-bg, color-mix(in srgb, var(--color-danger, #DC2626) 12%, transparent));
   margin-inline: calc(-1 * var(--spacing-lg, 16px));
   padding-inline: var(--spacing-lg, 16px);
 }
-[data-fui-comp="ui-code-block"].ui-code-block--numbered .ui-code-block__line--highlight,
-[data-fui-comp="ui-code-block"].ui-code-block--numbered .ui-code-block__line--added,
-[data-fui-comp="ui-code-block"].ui-code-block--numbered .ui-code-block__line--removed {
+[data-fui-comp="ui-code-block"].fui-code-block--numbered .fui-code-block__line--highlight,
+[data-fui-comp="ui-code-block"].fui-code-block--numbered .fui-code-block__line--added,
+[data-fui-comp="ui-code-block"].fui-code-block--numbered .fui-code-block__line--removed {
   margin-inline-start: -52px;
   padding-inline-start: 52px;
 }
-[data-fui-comp="ui-code-block"].ui-code-block--numbered .ui-code-block__line--highlight::before,
-[data-fui-comp="ui-code-block"].ui-code-block--numbered .ui-code-block__line--added::before,
-[data-fui-comp="ui-code-block"].ui-code-block--numbered .ui-code-block__line--removed::before {
+[data-fui-comp="ui-code-block"].fui-code-block--numbered .fui-code-block__line--highlight::before,
+[data-fui-comp="ui-code-block"].fui-code-block--numbered .fui-code-block__line--added::before,
+[data-fui-comp="ui-code-block"].fui-code-block--numbered .fui-code-block__line--removed::before {
   left: 16px;
 }
-[data-fui-comp="ui-code-block"] .ui-code-block__mark {
+[data-fui-comp="ui-code-block"] .fui-code-block__mark {
   background: var(--ui-code-block-mark-bg, color-mix(in srgb, var(--color-warning, #F59E0B) 28%, transparent));
   color: inherit;
   border-radius: var(--radii-sm, 4px);
 }
 /* Wrap variant: soft-wrap long lines instead of horizontal scrolling.
    The bare <pre> IS the root; the framed variant's body is the <pre>. */
-[data-fui-comp="ui-code-block"].ui-code-block--wrap,
-[data-fui-comp="ui-code-block"].ui-code-block--wrap .ui-code-block__body {
+[data-fui-comp="ui-code-block"].fui-code-block--wrap,
+[data-fui-comp="ui-code-block"].fui-code-block--wrap .fui-code-block__body {
   white-space: pre-wrap;
 }
 `
@@ -709,22 +709,22 @@ func avatarCSS(_ style.Theme) string {
   inline-size: 2.5rem;
   block-size:  2.5rem;
 }
-[data-fui-comp="ui-avatar"].ui-avatar--sm { inline-size: 1.5rem; block-size: 1.5rem; font-size: var(--text-xs, 0.75rem); }
-[data-fui-comp="ui-avatar"].ui-avatar--lg { inline-size: 3rem;   block-size: 3rem;   font-size: var(--text-base, 1rem); }
-[data-fui-comp="ui-avatar"].ui-avatar--xl { inline-size: 4rem;   block-size: 4rem;   font-size: var(--text-lg, 1.125rem); }
-[data-fui-comp="ui-avatar"] .ui-avatar__img {
+[data-fui-comp="ui-avatar"].fui-avatar--sm { inline-size: 1.5rem; block-size: 1.5rem; font-size: var(--text-xs, 0.75rem); }
+[data-fui-comp="ui-avatar"].fui-avatar--lg { inline-size: 3rem;   block-size: 3rem;   font-size: var(--text-base, 1rem); }
+[data-fui-comp="ui-avatar"].fui-avatar--xl { inline-size: 4rem;   block-size: 4rem;   font-size: var(--text-lg, 1.125rem); }
+[data-fui-comp="ui-avatar"] .fui-avatar__img {
   width: 100%;
   height: 100%;
   object-fit: cover;
   border-radius: var(--radii-full, 9999px);
 }
-[data-fui-comp="ui-avatar"] .ui-avatar__initials {
+[data-fui-comp="ui-avatar"] .fui-avatar__initials {
   letter-spacing: 0.04em;
 }
 /* Presence dot: sized as a fraction of the avatar so it scales with
    every size variant, with a ring in the surface color so it reads as
    an overlay. Colors come from the status tokens. */
-[data-fui-comp="ui-avatar"] .ui-avatar__status {
+[data-fui-comp="ui-avatar"] .fui-avatar__status {
   position: absolute;
   inset-block-end: 0.0625rem;
   inset-inline-end: 0.0625rem;
@@ -737,10 +737,10 @@ func avatarCSS(_ style.Theme) string {
   border-radius: var(--radii-full, 9999px);
   box-shadow: 0 0 0 0.14em var(--color-surface, #fff);
 }
-[data-fui-comp="ui-avatar"] .ui-avatar__status--online  { background: var(--color-success, #16A34A); }
-[data-fui-comp="ui-avatar"] .ui-avatar__status--away     { background: var(--color-warning, #D97706); }
-[data-fui-comp="ui-avatar"] .ui-avatar__status--busy     { background: var(--color-danger, #DC2626); }
-[data-fui-comp="ui-avatar"] .ui-avatar__status--offline  { background: var(--color-text-muted, #9CA3AF); }`
+[data-fui-comp="ui-avatar"] .fui-avatar__status--online  { background: var(--color-success, #16A34A); }
+[data-fui-comp="ui-avatar"] .fui-avatar__status--away     { background: var(--color-warning, #D97706); }
+[data-fui-comp="ui-avatar"] .fui-avatar__status--busy     { background: var(--color-danger, #DC2626); }
+[data-fui-comp="ui-avatar"] .fui-avatar__status--offline  { background: var(--color-text-muted, #9CA3AF); }`
 }
 
 func formCSS(_ style.Theme) string {
@@ -926,7 +926,7 @@ func toastStackCSS(_ style.Theme) string {
 
 func dataTableCSS(_ style.Theme) string {
 	return `[data-fui-comp="ui-data-table"] { display: grid; gap: var(--spacing-md, 8px); }
-[data-fui-comp="ui-data-table"] .ui-data-table__scroll {
+[data-fui-comp="ui-data-table"] .fui-data-table__scroll {
   overflow-x: auto;
   border: 1px solid var(--color-border, #E4E4E7);
   border-radius: var(--radii-md, 8px);
@@ -935,16 +935,16 @@ func dataTableCSS(_ style.Theme) string {
 /* The scroll region is a keyboard tab stop (tabindex=0, so it can be
    scrolled by keyboard whenever it overflows), so its focus state
    must be visible. */
-[data-fui-comp="ui-data-table"] .ui-data-table__scroll:focus-visible {
+[data-fui-comp="ui-data-table"] .fui-data-table__scroll:focus-visible {
   outline: 2px solid var(--color-primary, #4F46E5);
   outline-offset: -2px;
 }
-[data-fui-comp="ui-data-table"] .ui-data-table__table {
+[data-fui-comp="ui-data-table"] .fui-data-table__table {
   width: 100%;
   border-collapse: collapse;
   font-size: var(--text-base, 1rem);
 }
-[data-fui-comp="ui-data-table"] .ui-data-table__caption {
+[data-fui-comp="ui-data-table"] .fui-data-table__caption {
   text-align: start;
   padding: var(--spacing-sm, 4px) var(--spacing-lg, 16px);
   font-size: var(--text-xs, 0.75rem);
@@ -956,17 +956,17 @@ func dataTableCSS(_ style.Theme) string {
   border-bottom: 1px solid var(--color-border, #E4E4E7);
   caption-side: top;
 }
-[data-fui-comp="ui-data-table"] .ui-data-table__table th,
-[data-fui-comp="ui-data-table"] .ui-data-table__table td {
+[data-fui-comp="ui-data-table"] .fui-data-table__table th,
+[data-fui-comp="ui-data-table"] .fui-data-table__table td {
   padding: var(--spacing-sm, 4px) var(--spacing-lg, 16px);
   text-align: start;
   vertical-align: middle;
   border-bottom: 1px solid var(--color-border, #E4E4E7);
 }
-[data-fui-comp="ui-data-table"] .ui-data-table__table tbody tr:last-child td {
+[data-fui-comp="ui-data-table"] .fui-data-table__table tbody tr:last-child td {
   border-bottom: 0;
 }
-[data-fui-comp="ui-data-table"] .ui-data-table__table th {
+[data-fui-comp="ui-data-table"] .fui-data-table__table th {
   font-weight: 600;
   color: var(--color-text-muted, #52525B);
   background: var(--color-surface-soft, #F4F4F5);
@@ -974,12 +974,12 @@ func dataTableCSS(_ style.Theme) string {
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
-[data-fui-comp="ui-data-table"] .ui-data-table__table tbody tr:hover {
+[data-fui-comp="ui-data-table"] .fui-data-table__table tbody tr:hover {
   background: var(--color-surface-soft, #F4F4F5);
 }
-[data-fui-comp="ui-data-table"] .ui-data-table__table .is-align-end   { text-align: end; }
-[data-fui-comp="ui-data-table"] .ui-data-table__table .is-align-center { text-align: center; }
-[data-fui-comp="ui-data-table"] .ui-data-table__sort {
+[data-fui-comp="ui-data-table"] .fui-data-table__table .is-align-end   { text-align: end; }
+[data-fui-comp="ui-data-table"] .fui-data-table__table .is-align-center { text-align: center; }
+[data-fui-comp="ui-data-table"] .fui-data-table__sort {
   display: inline-flex;
   align-items: center;
   /* Token-scaled tap target. Sort headers are the most-tapped
@@ -998,43 +998,43 @@ func dataTableCSS(_ style.Theme) string {
   text-decoration: none;
   cursor: pointer;
 }
-[data-fui-comp="ui-data-table"] .ui-data-table__sort:hover {
+[data-fui-comp="ui-data-table"] .fui-data-table__sort:hover {
   color: var(--color-text, #18181B);
   text-decoration: none;
 }
-[data-fui-comp="ui-data-table"] .ui-data-table__sort:focus-visible {
+[data-fui-comp="ui-data-table"] .fui-data-table__sort:focus-visible {
   outline: 2px solid var(--color-primary, #4F46E5);
   outline-offset: 2px;
 }
 /* The direction indicator is drawn from aria-sort, the same
    attribute assistive technology reads: state and appearance share
    one source and cannot disagree. The markup carries no glyph. */
-[data-fui-comp="ui-data-table"] .ui-data-table__table th[aria-sort="ascending"] .ui-data-table__sort::after,
-[data-fui-comp="ui-data-table"] .ui-data-table__table th[aria-sort="descending"] .ui-data-table__sort::after {
+[data-fui-comp="ui-data-table"] .fui-data-table__table th[aria-sort="ascending"] .fui-data-table__sort::after,
+[data-fui-comp="ui-data-table"] .fui-data-table__table th[aria-sort="descending"] .fui-data-table__sort::after {
   font-size: 0.7em;
   color: var(--color-primary, #4F46E5);
 }
-[data-fui-comp="ui-data-table"] .ui-data-table__table th[aria-sort="ascending"] .ui-data-table__sort::after {
+[data-fui-comp="ui-data-table"] .fui-data-table__table th[aria-sort="ascending"] .fui-data-table__sort::after {
   content: "↑";
 }
-[data-fui-comp="ui-data-table"] .ui-data-table__table th[aria-sort="descending"] .ui-data-table__sort::after {
+[data-fui-comp="ui-data-table"] .fui-data-table__table th[aria-sort="descending"] .fui-data-table__sort::after {
   content: "↓";
 }
-[data-fui-comp="ui-data-table"] .ui-data-table__table th[aria-sort="ascending"],
-[data-fui-comp="ui-data-table"] .ui-data-table__table th[aria-sort="descending"] {
+[data-fui-comp="ui-data-table"] .fui-data-table__table th[aria-sort="ascending"],
+[data-fui-comp="ui-data-table"] .fui-data-table__table th[aria-sort="descending"] {
   color: var(--color-primary, #4F46E5);
 }
-[data-fui-comp="ui-data-table"] .ui-data-table__footer {
+[data-fui-comp="ui-data-table"] .fui-data-table__footer {
   display: flex;
   justify-content: flex-end;
 }
 
 /* Responsive-cards mode (Container Queries).
-   The .ui-data-table__scroll wrapper becomes a containment context
+   The .fui-data-table__scroll wrapper becomes a containment context
    so the table responds to its own container's inline size — not the
    viewport. A wide table in a narrow sidebar collapses to cards even
    when the page itself is wide. */
-[data-fui-comp="ui-data-table"].ui-data-table--responsive-cards .ui-data-table__scroll {
+[data-fui-comp="ui-data-table"].fui-data-table--responsive-cards .fui-data-table__scroll {
   container-type: inline-size;
   /* Keep horizontal scroll: at container widths > 640px the table is still a
      table and can be wider than its column — it must scroll WITHIN this
@@ -1044,14 +1044,14 @@ func dataTableCSS(_ style.Theme) string {
 }
 
 @container (max-width: 640px) {
-  [data-fui-comp="ui-data-table"].ui-data-table--responsive-cards .ui-data-table__table,
-  [data-fui-comp="ui-data-table"].ui-data-table--responsive-cards .ui-data-table__table tbody,
-  [data-fui-comp="ui-data-table"].ui-data-table--responsive-cards .ui-data-table__table tr,
-  [data-fui-comp="ui-data-table"].ui-data-table--responsive-cards .ui-data-table__table td {
+  [data-fui-comp="ui-data-table"].fui-data-table--responsive-cards .fui-data-table__table,
+  [data-fui-comp="ui-data-table"].fui-data-table--responsive-cards .fui-data-table__table tbody,
+  [data-fui-comp="ui-data-table"].fui-data-table--responsive-cards .fui-data-table__table tr,
+  [data-fui-comp="ui-data-table"].fui-data-table--responsive-cards .fui-data-table__table td {
     display: block;
     inline-size: 100%;
   }
-  [data-fui-comp="ui-data-table"].ui-data-table--responsive-cards .ui-data-table__table thead {
+  [data-fui-comp="ui-data-table"].fui-data-table--responsive-cards .fui-data-table__table thead {
     /* Visually hide the header row — labels travel with each cell via
        data-label and the ::before pseudo. Keep it accessible for screen
        readers via clip-path so column semantics aren't lost. */
@@ -1062,17 +1062,17 @@ func dataTableCSS(_ style.Theme) string {
     clip: rect(0 0 0 0);
     white-space: nowrap;
   }
-  [data-fui-comp="ui-data-table"].ui-data-table--responsive-cards .ui-data-table__table tr {
+  [data-fui-comp="ui-data-table"].fui-data-table--responsive-cards .fui-data-table__table tr {
     border: 1px solid var(--color-border, #E4E4E7);
     border-radius: var(--radii-md, 8px);
     margin-block-end: var(--spacing-md, 8px);
     padding: var(--spacing-sm, 4px) var(--spacing-md, 8px);
     background: var(--color-surface, #FFFFFF);
   }
-  [data-fui-comp="ui-data-table"].ui-data-table--responsive-cards .ui-data-table__table tbody tr:hover {
+  [data-fui-comp="ui-data-table"].fui-data-table--responsive-cards .fui-data-table__table tbody tr:hover {
     background: var(--color-surface, #FFFFFF);
   }
-  [data-fui-comp="ui-data-table"].ui-data-table--responsive-cards .ui-data-table__table td {
+  [data-fui-comp="ui-data-table"].fui-data-table--responsive-cards .fui-data-table__table td {
     display: flex;
     align-items: baseline;
     justify-content: space-between;
@@ -1082,10 +1082,10 @@ func dataTableCSS(_ style.Theme) string {
     border-block-end: 1px solid var(--color-border-subtle, #F4F4F5);
     text-align: end;
   }
-  [data-fui-comp="ui-data-table"].ui-data-table--responsive-cards .ui-data-table__table td:last-child {
+  [data-fui-comp="ui-data-table"].fui-data-table--responsive-cards .fui-data-table__table td:last-child {
     border-block-end: 0;
   }
-  [data-fui-comp="ui-data-table"].ui-data-table--responsive-cards .ui-data-table__table td::before {
+  [data-fui-comp="ui-data-table"].fui-data-table--responsive-cards .fui-data-table__table td::before {
     content: attr(data-label);
     font-weight: 600;
     font-size: var(--text-xs, 0.75rem);
@@ -1097,10 +1097,10 @@ func dataTableCSS(_ style.Theme) string {
   }
   /* Cells without a data-label (e.g. the Actions column) drop the
      header pseudo and fill the row. */
-  [data-fui-comp="ui-data-table"].ui-data-table--responsive-cards .ui-data-table__table td:not([data-label])::before {
+  [data-fui-comp="ui-data-table"].fui-data-table--responsive-cards .fui-data-table__table td:not([data-label])::before {
     content: none;
   }
-  [data-fui-comp="ui-data-table"].ui-data-table--responsive-cards .ui-data-table__table td:not([data-label]) {
+  [data-fui-comp="ui-data-table"].fui-data-table--responsive-cards .fui-data-table__table td:not([data-label]) {
     justify-content: flex-end;
   }
 }`

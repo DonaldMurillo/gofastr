@@ -222,7 +222,7 @@ func FilterToolbar(cfg FilterToolbarConfig) render.HTML {
 			Label:   applyLabel,
 			Variant: ButtonPrimary,
 			Type:    "submit",
-			Class:   "ui-filter-toolbar__apply",
+			Class:   "fui-filter-toolbar__apply",
 		}),
 	}
 	if !cfg.HideReset {
@@ -234,15 +234,15 @@ func FilterToolbar(cfg FilterToolbarConfig) render.HTML {
 			Label:   resetLabel,
 			Href:    action,
 			Variant: ButtonGhost,
-			Class:   "ui-filter-toolbar__reset",
+			Class:   "fui-filter-toolbar__reset",
 		}))
 	}
 	controls = append(controls, html.Div(html.DivConfig{
-		Class: "ui-filter-toolbar__actions",
+		Class: "fui-filter-toolbar__actions",
 	}, actionsKids...))
 
 	formAttrs := html.Attrs{
-		"class":      cls("ui-filter-toolbar", cfg.Class),
+		"class":      cls("fui-filter-toolbar", cfg.Class),
 		"method":     "GET",
 		"action":     action,
 		"role":       "search",
@@ -275,7 +275,7 @@ func renderSelectFacet(ctx context.Context, f Facet) render.HTML {
 	for _, o := range f.Options {
 		opts = append(opts, SelectOption{Value: o.Value, Text: o.Label, Selected: o.Value == f.Value})
 	}
-	return html.Div(html.DivConfig{Class: "ui-filter-toolbar__facet"},
+	return html.Div(html.DivConfig{Class: "fui-filter-toolbar__facet"},
 		Select(SelectConfig{Name: f.Name, Label: f.Label, Options: opts}))
 }
 
@@ -296,7 +296,7 @@ func renderSortFacet(ctx context.Context, cfg FilterToolbarConfig) render.HTML {
 		}
 		opts = append(opts, SelectOption{Value: o.Value, Text: o.Label, Selected: o.Value == cfg.SortValue})
 	}
-	return html.Div(html.DivConfig{Class: "ui-filter-toolbar__facet ui-filter-toolbar__sort"},
+	return html.Div(html.DivConfig{Class: "fui-filter-toolbar__facet fui-filter-toolbar__sort"},
 		Select(SelectConfig{Name: name, Label: sortLabel, Options: opts}))
 }
 
@@ -313,7 +313,7 @@ func renderSearchFacet(ctx context.Context, s FilterSearch) render.HTML {
 	if s.Label != "" {
 		extra["aria-label"] = s.Label
 	}
-	return html.Div(html.DivConfig{Class: "ui-filter-toolbar__facet ui-filter-toolbar__search"},
+	return html.Div(html.DivConfig{Class: "fui-filter-toolbar__facet fui-filter-toolbar__search"},
 		SearchInput(SearchInputConfig{
 			Name:        s.Name,
 			ID:          "filter-search-" + slug(s.Name),
@@ -355,10 +355,10 @@ func renderPillFacet(ctx context.Context, f Facet) render.HTML {
 		}
 		pills = append(pills, pill(f.Name, o, o.Value == f.Value, pillID(o)))
 	}
-	legend := render.Tag("legend", map[string]string{"class": "ui-filter-toolbar__legend"}, render.Text(f.Label))
-	group := render.Tag("div", map[string]string{"class": "ui-filter-toolbar__pill-group"}, pills...)
+	legend := render.Tag("legend", map[string]string{"class": "fui-filter-toolbar__legend"}, render.Text(f.Label))
+	group := render.Tag("div", map[string]string{"class": "fui-filter-toolbar__pill-group"}, pills...)
 	return render.Tag("fieldset",
-		map[string]string{"class": "ui-filter-toolbar__facet ui-filter-toolbar__pills"},
+		map[string]string{"class": "fui-filter-toolbar__facet fui-filter-toolbar__pills"},
 		legend, group)
 }
 
@@ -369,15 +369,15 @@ func pill(name string, o FacetOption, checked bool, id string) render.HTML {
 		"type":  "radio",
 		"name":  name,
 		"value": o.Value,
-		"class": "ui-filter-toolbar__pill-input",
+		"class": "fui-filter-toolbar__pill-input",
 		"id":    id,
 	}
 	if checked {
 		inputAttrs["checked"] = ""
 	}
-	return render.Tag("label", map[string]string{"class": "ui-filter-toolbar__pill"},
+	return render.Tag("label", map[string]string{"class": "fui-filter-toolbar__pill"},
 		render.Tag("input", inputAttrs),
-		html.Span(html.TextConfig{Class: "ui-filter-toolbar__pill-text"}, render.Text(o.Label)),
+		html.Span(html.TextConfig{Class: "fui-filter-toolbar__pill-text"}, render.Text(o.Label)),
 	)
 }
 
@@ -416,14 +416,14 @@ func filterToolbarCSS(_ style.Theme) string {
    row; min-inline-size:0 lets it shrink below content width so a wide
    <select> or search box never forces horizontal overflow of a narrow
    ancestor (the bug both eval apps shipped). */
-[data-fui-comp="ui-filter-toolbar"] .ui-filter-toolbar__facet {
+[data-fui-comp="ui-filter-toolbar"] .fui-filter-toolbar__facet {
   flex: 1 1 12rem;
   min-inline-size: 0;
   margin: 0;
   padding: 0;
   border: 0;
 }
-[data-fui-comp="ui-filter-toolbar"] .ui-filter-toolbar__search {
+[data-fui-comp="ui-filter-toolbar"] .fui-filter-toolbar__search {
   flex: 2 1 14rem;
 }
 /* Pill facets prefer their natural one-line width: max-content basis
@@ -433,11 +433,11 @@ func filterToolbarCSS(_ style.Theme) string {
    flex-wrap) only kicks in when a single group is wider than the whole
    toolbar. The ≤32rem container query below overrides flex-basis to
    100%, so the mobile stack is unaffected. */
-[data-fui-comp="ui-filter-toolbar"] .ui-filter-toolbar__pills {
+[data-fui-comp="ui-filter-toolbar"] .fui-filter-toolbar__pills {
   flex: 0 1 max-content;
 }
 /* ui.SearchInput / ui.Select fill their facet cell. */
-[data-fui-comp="ui-filter-toolbar"] .ui-filter-toolbar__search [data-fui-comp="ui-search-input"] {
+[data-fui-comp="ui-filter-toolbar"] .fui-filter-toolbar__search [data-fui-comp="ui-search-input"] {
   display: flex;
   inline-size: 100%;
 }
@@ -445,31 +445,31 @@ func filterToolbarCSS(_ style.Theme) string {
 /* Actions cluster: pushed to the trailing edge on a wide row; wraps to
    its own line and stretches full width on a narrow one. Always stays
    on-screen and tappable — never clipped. */
-[data-fui-comp="ui-filter-toolbar"] .ui-filter-toolbar__actions {
+[data-fui-comp="ui-filter-toolbar"] .fui-filter-toolbar__actions {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--spacing-sm, 4px);
   margin-inline-start: auto;
 }
-[data-fui-comp="ui-filter-toolbar"] .ui-filter-toolbar__actions .fui-button {
+[data-fui-comp="ui-filter-toolbar"] .fui-filter-toolbar__actions .fui-button {
   min-block-size: var(--spacing-touch-target, 44px);
 }
 
 /* Pill facet — fieldset reset + legend as a field label. */
-[data-fui-comp="ui-filter-toolbar"] .ui-filter-toolbar__legend {
+[data-fui-comp="ui-filter-toolbar"] .fui-filter-toolbar__legend {
   padding: 0;
   margin-block-end: var(--spacing-xs, 2px);
   font-weight: 500;
   font-size: var(--text-sm, 0.875rem);
   color: var(--color-text, #18181B);
 }
-[data-fui-comp="ui-filter-toolbar"] .ui-filter-toolbar__pill-group {
+[data-fui-comp="ui-filter-toolbar"] .fui-filter-toolbar__pill-group {
   display: flex;
   flex-wrap: wrap;
   gap: var(--spacing-xs, 2px);
 }
-[data-fui-comp="ui-filter-toolbar"] .ui-filter-toolbar__pill {
+[data-fui-comp="ui-filter-toolbar"] .fui-filter-toolbar__pill {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -489,12 +489,12 @@ func filterToolbarCSS(_ style.Theme) string {
               color var(--duration-fast, 150ms) var(--easing-standard, ease),
               border-color var(--duration-fast, 150ms) var(--easing-standard, ease);
 }
-[data-fui-comp="ui-filter-toolbar"] .ui-filter-toolbar__pill:hover {
+[data-fui-comp="ui-filter-toolbar"] .fui-filter-toolbar__pill:hover {
   color: var(--color-text, #18181B);
   border-color: var(--color-text-muted, #a1a1aa);
 }
 /* Visually hide the radio; the pill label is the visible control. */
-[data-fui-comp="ui-filter-toolbar"] .ui-filter-toolbar__pill-input {
+[data-fui-comp="ui-filter-toolbar"] .fui-filter-toolbar__pill-input {
   position: absolute;
   inline-size: 1px;
   block-size: 1px;
@@ -505,13 +505,13 @@ func filterToolbarCSS(_ style.Theme) string {
   white-space: nowrap;
   border: 0;
 }
-[data-fui-comp="ui-filter-toolbar"] .ui-filter-toolbar__pill:has(.ui-filter-toolbar__pill-input:checked) {
+[data-fui-comp="ui-filter-toolbar"] .fui-filter-toolbar__pill:has(.fui-filter-toolbar__pill-input:checked) {
   background: var(--color-primary, #4F46E5);
   border-color: var(--color-primary, #4F46E5);
   color: var(--color-primary-fg, #FFFFFF);
   font-weight: 600;
 }
-[data-fui-comp="ui-filter-toolbar"] .ui-filter-toolbar__pill:has(.ui-filter-toolbar__pill-input:focus-visible) {
+[data-fui-comp="ui-filter-toolbar"] .fui-filter-toolbar__pill:has(.fui-filter-toolbar__pill-input:focus-visible) {
   outline: 2px solid var(--color-primary, #4F46E5);
   outline-offset: 2px;
 }
@@ -521,17 +521,17 @@ func filterToolbarCSS(_ style.Theme) string {
    control, and the whole actions cluster, goes full width and Apply
    stretches so it stays an obvious, reachable tap target. */
 @container (max-width: 32rem) {
-  [data-fui-comp="ui-filter-toolbar"] .ui-filter-toolbar__facet,
-  [data-fui-comp="ui-filter-toolbar"] .ui-filter-toolbar__actions {
+  [data-fui-comp="ui-filter-toolbar"] .fui-filter-toolbar__facet,
+  [data-fui-comp="ui-filter-toolbar"] .fui-filter-toolbar__actions {
     flex-basis: 100%;
     margin-inline-start: 0;
   }
-  [data-fui-comp="ui-filter-toolbar"] .ui-filter-toolbar__actions .ui-filter-toolbar__apply {
+  [data-fui-comp="ui-filter-toolbar"] .fui-filter-toolbar__actions .fui-filter-toolbar__apply {
     flex: 1 1 auto;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  [data-fui-comp="ui-filter-toolbar"] .ui-filter-toolbar__pill { transition: none; }
+  [data-fui-comp="ui-filter-toolbar"] .fui-filter-toolbar__pill { transition: none; }
 }`
 }

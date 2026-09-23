@@ -421,7 +421,7 @@ func TestE2E_Analytics_SPANav(t *testing.T) {
 	// gofastr:navigate; the destination hub hero is the "DOM appeared"
 	// marker.
 	if err := chromedp.Run(ctx,
-		chromedp.Evaluate(`document.querySelector('nav.ui-site-header__links a[href="/primitives"]').click()`, nil),
+		chromedp.Evaluate(`document.querySelector('nav.fui-site-header__links a[href="/primitives"]').click()`, nil),
 		chromedp.WaitVisible(`section.ex-hero[aria-label="Primitives"]`, chromedp.ByQuery),
 	); err != nil {
 		t.Fatalf("SPA nav to /primitives: %v", err)
@@ -501,7 +501,7 @@ func TestE2E_Analytics_CancelledNav(t *testing.T) {
 	before := len(upstream.pageviews())
 
 	if err := chromedp.Run(ctx,
-		chromedp.Evaluate(`document.querySelector('nav.ui-site-header__links a[href="/framework"]').click()`, nil),
+		chromedp.Evaluate(`document.querySelector('nav.fui-site-header__links a[href="/framework"]').click()`, nil),
 		// Bounded settle: a pageview that should not exist cannot be
 		// waited for, so give the (suppressed) nav room to misfire.
 		chromedp.Sleep(1200*time.Millisecond),

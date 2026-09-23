@@ -28,7 +28,7 @@ func TestSidebarDrawerSlotGroupIdsUseDrawerPrefix(t *testing.T) {
 	if !strings.Contains(out, `aria-controls="workspace-nav-drawer-g1"`) {
 		t.Errorf("drawer slot groups must use the -drawer prefix on aria-controls:\n%s", out)
 	}
-	if !strings.Contains(out, `<ul class="ui-sidebar__sublist" id="workspace-nav-drawer-g1" hidden>`) {
+	if !strings.Contains(out, `<ul class="fui-sidebar__sublist" hidden="" id="workspace-nav-drawer-g1">`) {
 		t.Errorf("drawer slot group container must carry the -drawer-prefixed id:\n%s", out)
 	}
 }
@@ -62,8 +62,8 @@ func TestSidebarPrependRendersWithRequestCtx(t *testing.T) {
 		"drawer": string(sidebarDrawerSlot{cfg: cfg}.RenderCtx(ctx)),
 		"inline": string(sidebarComponent{cfg: cfg}.RenderCtx(ctx)),
 	} {
-		pre := strings.Index(out, `<div class="ui-sidebar__prepend"><select id="section"><option selected>Batteries</option>`)
-		nav := strings.Index(out, `<nav class="ui-sidebar__nav"`)
+		pre := strings.Index(out, `<div class="fui-sidebar__prepend"><select id="section"><option selected>Batteries</option>`)
+		nav := strings.Index(out, `class="fui-sidebar__nav"`)
 		if pre < 0 || nav < 0 || pre > nav {
 			t.Errorf("%s: Prepend must render with the request ctx above the nav (prepend=%d nav=%d):\n%s", name, pre, nav, out)
 		}

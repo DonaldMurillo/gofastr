@@ -122,6 +122,59 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   retention (`searchinput` and `shortcut` modules stay until the
   Batch 3 Combobox decision), not a new semantic contract.
 
+- **Display components renamed to `fui-*` classes (Batch 3b).** The
+  scripted rename moved every framework/ui display component's classes
+  from `ui-*` to `fui-*`; registered sheet names and
+  `data-fui-comp="ui-*"` markers are unchanged. Apps that style or
+  select these classes must rename: charts (`ui-bar-chart*`,
+  `ui-line-chart*`, `ui-pie-chart*`, `ui-sparkline*`), images
+  (`ui-optimized-image*`, `ui-pipeline-image*`, `ui-image*`, and the
+  `ui-gallery*` family — `ui.Gallery` now renders through
+  `headless.Gallery`, so a captioned item is `li > figure >
+  (a > img, figcaption)`: the caption is no longer inside the link,
+  and a captionless item is a plain `li > a > img`; an item whose
+  `Src` the anchor policy refuses now renders `href="#"` without
+  `target`, where it used to render an anchor with no `href`; an
+  `HrefFn` that returns empty for an item now links that item to its
+  full image, where it used to leave the anchor without an `href`;
+  Gallery panics now start `headless:`), code
+  (`ui-code-block*`, `ui-code-tabs`), markdown (`ui-markdown*`),
+  terminal (`ui-terminal-block*`, `ui-terminal-ok`, `ui-terminal-out`),
+  avatar (`ui-avatar*`, `ui-avatar-group*`), icon (`ui-icon*`), color
+  picker (`ui-color-picker*`), diff viewer (`ui-diff-viewer*`), metric
+  band (`ui-metric-band*`), record summary (`ui-record-summary*`),
+  pricing card (`ui-pricing-card*`), auth card (`ui-auth-card*`), sign
+  out (`ui-sign-out*`), and the optimistic/toggle action hooks
+  (`ui-optimistic-action`, `ui-toggle-action`).
+- **Shell components renamed to `fui-*` classes (Batch 3b).** Hero
+  (`ui-hero*`, `ui-hero-split*`), site header (`ui-site-header*`),
+  site footer (`ui-site-footer*`), doc layout (`ui-doc-layout*`,
+  `ui-doc-prev-next*`), workbench (`ui-workbench*`), toolbar
+  (`ui-toolbar*`), filter toolbar (`ui-filter-toolbar*`), sidebar
+  (`ui-sidebar*`), responsive (`ui-responsive*`), themed (`ui-themed`).
+  `ui.Sidebar`/`ui.SidebarBody` now render through
+  `headless.Sidebar`/`headless.SidebarRegion`: the shell is the
+  primitive's (attribute order is sorted, presence attributes render
+  `hidden=""`/`open=""`, the title stays an `h2`, the root now carries
+  `data-hui-sidebar-variant`), the button/details group dialects and
+  the collapse storage contract are unchanged, and group ids/persist
+  keys keep their `<drawer>-inline|-body|-drawer-g<N>` spellings.
+  Configs that used to render and now panic at render time: an item
+  with both `Href` and `Children`, an item whose `Label` is empty or
+  only whitespace, and a `DrawerName` or `CollapseStorageKey` holding
+  control bytes. A sidebar whose items all fall to `Roles` filtering
+  renders nothing, and a group whose children all fall away is
+  dropped.
+- **The residue renamed to `fui-*` classes (Batch 3b).** Data table
+  (`ui-data-table*`), segmented (`ui-segmented*`), command palette
+  parts (`ui-cmd-palette*`), JSONViewer parts (`ui-json-viewer*`),
+  polling indicator (`ui-polling-indicator*`), shortcut hint
+  (`ui-shortcut-hint*`), confirm action (`ui-confirm-action*`),
+  tooltip (`ui-tooltip*`), search input (`ui-search-input*`), visually
+  hidden (`ui-visually-hidden`). A gallery gate in `framework/gallery`
+  now refuses any `ui-*` class token in a rendered catalog entry and
+  any `.ui-*` selector in a framework/ui sheet, so the prefix cannot
+  drift back.
 ### Added
 
 - `framework/headless` gains the navigation primitives `Rail`,
@@ -1275,6 +1328,24 @@ are listed under Added above, not here.
    documented `data-fui-*` attribute keeps its spelling; the
    `data-hui-lightbox*` hooks and `headless.LightboxViewer` are
    unreleased surface (Added), not breaking.
+
+14. **Display classes are `fui-*`** (charts, images incl. the Gallery
+    DOM move, code incl. `fui-code-tabs`, markdown, terminal, avatar,
+    icon, color picker, diff viewer, metric band, record summary,
+    pricing card, auth card, sign out, optimistic/toggle action).
+    Rename `ui-*` selectors to `fui-*`; sheet names and markers stay.
+15. **Shell classes are `fui-*`** (hero, hero split, site header, site
+    footer, doc layout, workbench, toolbar, filter toolbar, sidebar,
+    responsive, themed). `ui.Sidebar` renders through
+    `headless.Sidebar`: hooks, ids and storage keys unchanged; byte
+    pins re-read (sorted attribute order, `hidden=""` spelling). An
+    item with both `Href` and `Children`, a blank `Label`, or control
+    bytes in `DrawerName`/`CollapseStorageKey` now panics: fix the
+    config.
+16. **The residue is `fui-*`** (data table, segmented, palette parts,
+    JSONViewer parts, polling indicator, shortcut hint, confirm
+    action, tooltip, search input, visually hidden). The
+    `framework/gallery` prefix gate holds the line from here on.
 
 ### Changed
 - **One home per helper.** A clone survey over the tree found the same

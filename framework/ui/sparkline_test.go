@@ -36,8 +36,8 @@ func TestSparklineAreaShapeAddsAreaPath(t *testing.T) {
 	h := string(Sparkline(SparklineConfig{
 		Values: []float64{1, 2, 3}, Shape: SparklineArea,
 	}))
-	if !strings.Contains(h, "ui-sparkline__area") {
-		t.Errorf("area shape should add .ui-sparkline__area path:\n%s", h)
+	if !classTokenPresent(h, "fui-sparkline__area") {
+		t.Errorf("area shape should add .fui-sparkline__area path:\n%s", h)
 	}
 }
 
@@ -64,7 +64,7 @@ func TestSparklineColorPreset(t *testing.T) {
 	h := string(Sparkline(SparklineConfig{
 		Values: []float64{1, 2}, Color: "danger",
 	}))
-	if !strings.Contains(h, "ui-sparkline--danger") {
+	if !classTokenPresent(h, "fui-sparkline--danger") {
 		t.Errorf("Color=danger should add modifier class:\n%s", h)
 	}
 }

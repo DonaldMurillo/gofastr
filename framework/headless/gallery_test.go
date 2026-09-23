@@ -91,7 +91,8 @@ func TestGalleryRefusesBrokenConfiguration(t *testing.T) {
 		p    GalleryProps
 	}{
 		{"no items", GalleryProps{Label: "L"}},
-		{"whitespace-only label", GalleryProps{Label: "  ", Items: []GalleryItem{{Src: "/a.png", Alt: "a"}}}},
+		{"control bytes in the lightbox name", GalleryProps{Label: "L", Lightbox: GalleryLightbox{Name: "a\rb"}, Items: []GalleryItem{{Src: "/a.png", Alt: "a"}}}},
+		{"control bytes in the lightbox group", GalleryProps{Label: "L", Lightbox: GalleryLightbox{Name: "lb", Group: "g\x7f"}, Items: []GalleryItem{{Src: "/a.png", Alt: "a"}}}},
 		{"no src", GalleryProps{Label: "L", Items: []GalleryItem{{Alt: "a"}}}},
 		{"no alt", GalleryProps{Label: "L", Items: []GalleryItem{{Src: "/a.png"}}}},
 	}
@@ -104,5 +105,36 @@ func TestGalleryRefusesBrokenConfiguration(t *testing.T) {
 			}()
 			Gallery(tc.p, nil)
 		}()
+	}
+}
+
+func TestGalleryLightboxWiring(t *testing.T) {
+	h := renderGallery(GalleryProps{Label: "Shots", Lightbox: GalleryLightbox{Name: "docs"}, Items: []GalleryItem{
+		{Src: "/one.png", Alt: "The dashboard", Caption: "Overview"},
+	}})
+	for _, want := range []string{
+		`data-fui-open="docs"`,
+		`data-fui-lightbox-group="docs-gallery"`, // derived: Group empty
+		`data-fui-deeplink="src=%2Fone.png&amp;alt=The%20dashboard&amp;group=docs-gallery&amp;caption=Overview"`,
+		`href="/one.png"`, // the no-script path stays the full image
+	} {
+		if !strings.Contains(h, want) {
+			t.Errorf("lightbox wiring missing %q:\n%s", want, h)
+		}
+	}
+	// An explicit group wins over the derived one, and the caption is
+	// absent from the deeplink when the item carries none.
+	h2 := renderGallery(GalleryProps{Label: "Shots", Lightbox: GalleryLightbox{Name: "docs", Group: "shots"}, Items: []GalleryItem{
+		{Src: "/a.png", Alt: "A"},
+	}})
+	if !strings.Contains(h2, `data-fui-lightbox-group="shots"`) || strings.Contains(h2, "caption=") {
+		t.Errorf("explicit group or captionless deeplink wrong:\n%s", h2)
+	}
+	// A hostile caption cannot smuggle a control byte into the deeplink.
+	h3 := renderGallery(GalleryProps{Label: "Shots", Lightbox: GalleryLightbox{Name: "docs"}, Items: []GalleryItem{
+		{Src: "/a.png", Alt: "A", Caption: "x\x00y"},
+	}})
+	if strings.Contains(h3, "x%00y") {
+		t.Errorf("a control byte travelled into the deeplink:\n%s", h3)
 	}
 }

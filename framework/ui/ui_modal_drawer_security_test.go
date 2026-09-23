@@ -162,10 +162,10 @@ func TestModal_IDInjection(t *testing.T) {
 // drawer body) containing <script> tags is escaped via render.Escape().
 func TestDrawer_TitleXSS(t *testing.T) {
 	t.Parallel()
-	h := string(sidebarBody(context.Background(), SidebarConfig{
+	h := string(sidebarBodyRegion(context.Background(), SidebarConfig{
 		Title: `<script>alert("xss")</script>`,
 		Items: []SidebarItem{{Label: "Home", Href: "/"}},
-	}, "t"))
+	}, "t", "fui-sidebar fui-sidebar__body"))
 	mustNotContainRaw(t, h, "<script>", "drawer-title-xss")
 	if !strings.Contains(h, "&lt;script&gt;") {
 		t.Errorf("SECURITY: [drawer-title-xss] expected &lt;script&gt;, got: %s", h)
@@ -176,11 +176,11 @@ func TestDrawer_TitleXSS(t *testing.T) {
 // script tags are escaped. The key protection is < → &lt;.
 func TestDrawer_BodyXSS(t *testing.T) {
 	t.Parallel()
-	h := string(sidebarBody(context.Background(), SidebarConfig{
+	h := string(sidebarBodyRegion(context.Background(), SidebarConfig{
 		Items: []SidebarItem{
 			{Label: `<img src=x onerror="alert(1)">`, Href: "/safe"},
 		},
-	}, "t"))
+	}, "t", "fui-sidebar fui-sidebar__body"))
 	// < is escaped → no <img> element can be parsed
 	mustNotContainRaw(t, h, "<img", "drawer-body-xss")
 	if !strings.Contains(h, "&lt;img") {
@@ -209,15 +209,15 @@ func TestDrawer_PositionInjection(t *testing.T) {
 // class-injection payloads are rendered safely in text node context.
 func TestDrawer_ClassInjection(t *testing.T) {
 	t.Parallel()
-	h := string(sidebarBody(context.Background(), SidebarConfig{
+	h := string(sidebarBodyRegion(context.Background(), SidebarConfig{
 		Items: []SidebarItem{
 			{Label: `" onclick="alert(1)" data-x="`, Href: "/safe"},
 		},
-	}, "t"))
+	}, "t", "fui-sidebar fui-sidebar__body"))
 	// The label is text-escaped via render.Escape (5-char: <>&"').
 	// " and ' become &quot;/&#39; in the text node, inert there, and
-	// the payload cannot leave the <span class="ui-sidebar__label">.
-	if !strings.Contains(h, `ui-sidebar__label`) {
+	// the payload cannot leave the <span class="fui-sidebar__label">.
+	if !classTokenPresent(h, "fui-sidebar__label") {
 		t.Errorf("SECURITY: [drawer-class-injection] expected label span, got: %s", h)
 	}
 	t.Logf("NOTE: [drawer-class-injection] label is in text node of <span> (safe; \\\" not special in text)")
@@ -372,7 +372,7 @@ func TestCommandPalette_ItemsXSS(t *testing.T) {
 	// TriggerLabel which is rendered in the trigger button.
 	trigger := render.Tag("button", map[string]string{
 		"type":       "button",
-		"class":      "ui-visually-hidden",
+		"class":      "fui-visually-hidden",
 		"aria-label": `<script>alert("xss")</script>`,
 	}, render.Text(`<script>alert("xss")</script>`))
 	h := string(trigger)

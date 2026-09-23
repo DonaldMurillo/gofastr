@@ -1,6 +1,7 @@
 package headless
 
 import (
+	"net/url"
 	"strconv"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
@@ -43,12 +44,17 @@ type GalleryProps struct {
 	// landmark a screen reader cannot jump to.
 	Label string
 	// HrefFn, when set, returns a per-item destination. Empty for an
-	// item makes that item's link the full image (the no-JS fallback
-	// the retired component shipped).
+	// item makes that item's link the full image, so every tile stays
+	// a working link.
 	HrefFn func(i int, it GalleryItem) string
 	// ExtraAttrsPerItem adds attributes to item N's anchor (a lightbox
 	// group id, a deeplink): index → attrs.
 	ExtraAttrsPerItem map[int]html.Attrs
+	// Lightbox, when set, wires every item's anchor to a framework
+	// lightbox: the click opens the named overlay instead of
+	// navigating, through the widget runtime's open contract. The
+	// no-script path stays the full-image href the anchor carries.
+	Lightbox GalleryLightbox
 
 	ID         string
 	ExtraAttrs html.Attrs
@@ -58,12 +64,35 @@ type GalleryProps struct {
 	Parts Parts
 }
 
+// GalleryLightbox names the lightbox a gallery's items open. It is a
+// typed prop rather than per-item extra attrs because the data-fui-*
+// keys it renders are the widget runtime's open contract, which the
+// extra-attrs surface refuses on purpose — a caller's decoration can
+// never become a request, but a lightbox trigger is a first-class
+// intent, so it is named here where it is reviewable.
+type GalleryLightbox struct {
+	// Name is the lightbox to open: the data-fui-open value, the Name
+	// of a mounted framework/ui.Lightbox. Required when the wiring is
+	// set; a zero GalleryLightbox renders plain links.
+	Name string
+	// Group is the data-fui-lightbox-group value: the id the lightbox's
+	// prev/next nav walks across this gallery's items. Empty derives
+	// "<Name>-gallery".
+	Group string
+}
+
 // Gallery renders the image list.
 func Gallery(p GalleryProps, s Classes) render.HTML {
 	if len(p.Items) == 0 {
 		panic("headless: Gallery requires at least one item — an empty gallery is a list that lists nothing")
 	}
 	checkLabel("Gallery", "Label", p.Label)
+	if p.Lightbox.Name != "" {
+		checkNoControlBytes("Gallery", "Lightbox.Name", p.Lightbox.Name)
+		if p.Lightbox.Group != "" {
+			checkNoControlBytes("Gallery", "Lightbox.Group", p.Lightbox.Group)
+		}
+	}
 	b := p.Parts.Box(s)
 	own := Merge(Safe(p.ExtraAttrs, "aria-label"), Attrs(map[string]string{
 		"aria-label": scrubControlBytes(p.Label),
@@ -119,6 +148,28 @@ func galleryItem(b Box, i int, it GalleryItem, p GalleryProps) render.HTML {
 	// check subsumes the walk this replaced.
 	for k, v := range Safe(p.ExtraAttrsPerItem[i], "href") {
 		linkAttrs[k] = v
+	}
+	// The lightbox wiring rides as the component's own attrs, after the
+	// refusal: the data-fui-* family is the widget runtime's open
+	// contract, not a caller's decoration, which is why it is a typed
+	// prop (GalleryLightbox) rather than an extra attr. The deeplink
+	// carries what the viewer shows — src, alt, caption and the group
+	// its prev/next nav walks — scrubbed then percent-encoded, so a
+	// control byte never travels into an attribute value.
+	if p.Lightbox.Name != "" {
+		group := p.Lightbox.Group
+		if group == "" {
+			group = p.Lightbox.Name + "-gallery"
+		}
+		dl := "src=" + url.PathEscape(it.Src) +
+			"&alt=" + url.PathEscape(scrubControlBytes(it.Alt)) +
+			"&group=" + url.PathEscape(group)
+		if it.Caption != "" {
+			dl += "&caption=" + url.PathEscape(scrubControlBytes(it.Caption))
+		}
+		linkAttrs["data-fui-open"] = p.Lightbox.Name
+		linkAttrs["data-fui-deeplink"] = dl
+		linkAttrs["data-fui-lightbox-group"] = group
 	}
 	img := b.El("img", PartBody, Attrs(map[string]string{
 		"src":    thumb,
@@ -184,6 +235,15 @@ func init() {
 				}, Items: []GalleryItem{
 					{Src: "/one.png", Alt: "One"},
 					{Src: "/two.png", Alt: "Two"},
+				}}, s),
+			}, {
+				Name: "a gallery wired to a lightbox",
+				Why:  "the click opens the named overlay through the widget runtime's open contract, and the anchor keeps the full-image href for a reader with no script",
+				HTML: Gallery(GalleryProps{Label: "Shots", Lightbox: GalleryLightbox{
+					Name:  "docs",
+					Group: "docs-gallery",
+				}, Items: []GalleryItem{
+					{Src: "/one.png", Alt: "The dashboard", Caption: "Overview"},
 				}}, s),
 			}}
 		},

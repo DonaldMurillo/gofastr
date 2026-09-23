@@ -22,7 +22,7 @@ package ui
 //	    desktopSidebar,   // shown when viewport >= 1024
 //	    mobilePicker)     // shown when viewport < 1024
 //
-// The primitive wraps each variant in a `<div class="ui-responsive__…">`
+// The primitive wraps each variant in a `<div class="fui-responsive__…">`
 // and registers a stylesheet that toggles their display: above the
 // breakpoint the desktop variant shows, below it the mobile variant.
 
@@ -63,7 +63,7 @@ func Responsive(cfg ResponsiveConfig, desktop, mobile render.HTML) render.HTML {
 	// one bundled CSS asset.
 	style := getOrRegisterResponsiveStyle(bp)
 
-	cls := "ui-responsive"
+	cls := "fui-responsive"
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
 	}
@@ -72,10 +72,10 @@ func Responsive(cfg ResponsiveConfig, desktop, mobile render.HTML) render.HTML {
 		ExtraAttrs: html.SafeExtraAttrs(cfg.ExtraAttrs),
 	},
 		html.Div(html.DivConfig{
-			Class: "ui-responsive__desktop",
+			Class: "fui-responsive__desktop",
 		}, desktop),
 		html.Div(html.DivConfig{
-			Class: "ui-responsive__mobile",
+			Class: "fui-responsive__mobile",
 		}, mobile),
 	))
 }
@@ -117,13 +117,13 @@ func getOrRegisterResponsiveStyle(bp int) *registry.Style {
 func responsiveCSS(name string, bp int) string {
 	bps := strconv.Itoa(bp)
 	// Use the registered Name as a data-fui-comp scope so multiple
-	// breakpoints don't collide on .ui-responsive__desktop class.
+	// breakpoints don't collide on .fui-responsive__desktop class.
 	scope := `[data-fui-comp="` + name + `"]`
 	return `` +
 		`@media (min-width: ` + bps + `px) {` +
-		`  ` + scope + ` .ui-responsive__mobile { display: none !important; }` +
+		`  ` + scope + ` .fui-responsive__mobile { display: none !important; }` +
 		`}` +
 		`@media (max-width: ` + strconv.Itoa(bp-1) + `px) {` +
-		`  ` + scope + ` .ui-responsive__desktop { display: none !important; }` +
+		`  ` + scope + ` .fui-responsive__desktop { display: none !important; }` +
 		`}`
 }

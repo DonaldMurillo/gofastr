@@ -81,7 +81,7 @@ func TestListCarryQueryKeepsFmtVerbs(t *testing.T) {
 // sorted, so class precedes href. anyHref matches every href on the
 // page; the page-2 link is the one whose parsed query says p=2.
 var (
-	sortAnchorHref = regexp.MustCompile(`<a class="ui-data-table__sort" href="([^"]*)"`)
+	sortAnchorHref = regexp.MustCompile(`<a class="fui-data-table__sort" href="([^"]*)"`)
 	anyHref        = regexp.MustCompile(`href="([^"]*)"`)
 )
 
