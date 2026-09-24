@@ -370,54 +370,6 @@ func TestRuntimeModule_Popover(t *testing.T) {
 // source contract moved to framework/headless's headless-combobox,
 // whose registration gates and budget hold it there.)
 
-func TestRuntimeModule_Tree(t *testing.T) {
-	src, ok := Module("tree")
-	if !ok {
-		t.Fatal("tree module not embedded")
-	}
-	for _, want := range []string{
-		`role="treeitem"`,
-		`role="tree"`,
-		`role="group"`,
-		"aria-expanded",
-		"data-fui-tree-toggle",
-		"ArrowRight",
-		"ArrowLeft",
-		"loadedModules",
-	} {
-		if !strings.Contains(src, want) {
-			t.Errorf("tree module missing %q", want)
-		}
-	}
-	if size := ModuleSize("tree"); size > 8000 {
-		t.Errorf("tree module is %d bytes — budget is 8000", size)
-	}
-}
-
-func TestRuntimeModule_InfiniteScroll(t *testing.T) {
-	src, ok := Module("infinitescroll")
-	if !ok {
-		t.Fatal("infinitescroll module not embedded")
-	}
-	for _, want := range []string{
-		"data-fui-infinite-scroll",
-		"data-fui-infinite-sentinel",
-		"data-fui-infinite-cursor",
-		"X-Gofastr-Infinite-Cursor",
-		"IntersectionObserver",
-		"aria-busy",
-		"_moduleScanners",
-		"loadedModules",
-	} {
-		if !strings.Contains(src, want) {
-			t.Errorf("infinitescroll module missing %q", want)
-		}
-	}
-	if size := ModuleSize("infinitescroll"); size > 8000 {
-		t.Errorf("infinitescroll module is %d bytes — budget is 8000", size)
-	}
-}
-
 func TestRuntimeModuleNames(t *testing.T) {
 	names := ModuleNames()
 	if len(names) == 0 {

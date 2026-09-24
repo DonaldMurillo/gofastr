@@ -3,7 +3,7 @@ package main
 // =============================================================================
 // /components, the showcase screens.
 //
-// The catalog itself (the 141 entries, the code snippets, the note-only
+// The catalog itself (the 138 entries, the code snippets, the note-only
 // set, the demo support code for the three stateful demos) now lives in
 // framework/gallery, so the theme-configuration tool inside cmd/gofastr
 // can render every component without importing examples/. This file keeps
@@ -130,7 +130,7 @@ type ComponentsIndexScreen struct{}
 
 func (s *ComponentsIndexScreen) ScreenTitle() string { return "Components" }
 func (s *ComponentsIndexScreen) ScreenDescription() string {
-	return "Every framework/ui and core-ui/patterns constructor, one page each."
+	return "Every framework/ui constructor, one page each."
 }
 func (s *ComponentsIndexScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 

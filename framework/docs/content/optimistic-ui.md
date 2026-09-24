@@ -196,7 +196,7 @@ users. The primitives handle this differently:
   reduce)`; the visible label flip is unchanged because it carries
   information, not decoration.
 - **`aria-live`** regions announce sortable grab/move/rollback/conflict
-  events (the polite region is wired in `sortablelist.js`).
+  events (the polite region is wired into the `headless-sortablelist` module).
 
 The two button primitives (`OptimisticAction`, `ToggleAction`) do **not**
 today emit a spoken "Saved" / "Rolled back" announcement; they rely on
@@ -486,11 +486,12 @@ byte-identical, row still present).
 **Use for:** reordering within a list, or moving cards between columns on
 a board, where two users can move the same item concurrently.
 
-**Primitive:** `core-ui/patterns/sortablelist` with `Config.Version`
-(the concurrency token) and `Config.ConflictRPC` (the reconciliation
-endpoint). Runtime: `sortablelist.js`.
+**Primitive:** `framework/ui.SortableList` with `SortableListConfig.Version`
+(the concurrency token) and `SortableListConfig.ConflictRPC` (the reconciliation
+endpoint; `ui.SortableListItems` renders the fresh rows it returns).
+Runtime: the registered `headless-sortablelist` module.
 
-**Compose:** one `sortablelist.Render` per column, all sharing the same
+**Compose:** one `ui.SortableList` per column, all sharing the same
 `Group` (the board id), each with a unique `Container` (the column id).
 `Version` is appended to every commit POST as `version=<token>`. A 409
 response triggers `ConflictRPC` (a GET), whose response body replaces the
@@ -498,15 +499,15 @@ destination column's `innerHTML`.
 
 <!-- gofastr:compile
 import "fmt"
-import patternsSortablelist "github.com/DonaldMurillo/gofastr/core-ui/patterns/sortablelist"
+import "github.com/DonaldMurillo/gofastr/framework/ui"
 type w4Col struct{ Title, ID string }
 type w4Board struct{ Version int }
 var col = w4Col{Title: "todo", ID: "col-1"}
 var board = w4Board{Version: 2}
-var items []patternsSortablelist.Item
+var items []ui.SortableItem
 -->
 ```go
-patternsSortablelist.Render(patternsSortablelist.Config{
+ui.SortableList(ui.SortableListConfig{
     Label:       col.Title,
     Group:       "board-1",
     Container:   col.ID,
@@ -614,7 +615,7 @@ recipe must survive.
 **Primitive:** the `error`/`idle` revert path in the kernel's
 `action` module (bound through the `data-hui-action*` hooks the
 headless action primitives render), the rollback in
-`sortablelist.js`, and `ui.NetworkRetryBanner` for the global "you
+the registered `headless-sortablelist` module, and `ui.NetworkRetryBanner` for the global "you
 appear to be offline" surface.
 
 **What happens on failure:**

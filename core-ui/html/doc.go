@@ -2,10 +2,9 @@
 // for the GoFastr core-ui framework.
 //
 // The package maps 1:1 to HTML tags: every exported function produces a
-// single element (Div, Button, Heading, Form, Table…). Higher-level
-// patterns that compose multiple elements (accordion, pagination, tabs,
-// breadcrumbs, etc.) live in [core-ui/patterns]; opinionated semantic
-// components live in [framework/ui].
+// single element (Div, Button, Heading, Form, Table…). Components that
+// compose multiple elements (pagination, tabs, breadcrumbs, etc.) live
+// in [framework/ui], built on the [framework/headless] primitives.
 //
 // Every function returns a [render.HTML] value and uses the core render
 // package's Tag and VoidTag builders to produce well-formed markup.

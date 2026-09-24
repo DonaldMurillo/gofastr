@@ -156,7 +156,32 @@ var stringsKeys = map[string]i18nui.Key{
 	"JSONFalse":       i18nui.KeyHuiJSONFalse,
 	"JSONEmptyObject": i18nui.KeyHuiJSONEmptyObj,
 	"JSONEmptyArray":  i18nui.KeyHuiJSONEmptyArr,
-	"JSONTruncated":   i18nui.KeyHuiJSONTruncated,
+
+	"JSONTruncated": i18nui.KeyHuiJSONTruncated,
+
+	// Breadcrumbs' landmark name. New with the primitive; its English
+	// is the word the pattern hardcoded.
+	"BreadcrumbsLabel": i18nui.KeyHuiBreadcrumbsLabel,
+
+	// SortableList's row names and the module's announcements. New
+	// with the primitive; the {label}/{list}/{position} tokens are
+	// written in by the module when the move has happened.
+	"SortableItemRole":          i18nui.KeyHuiSortableItemRole,
+	"SortableDragLabel":         i18nui.KeyHuiSortableDragLabel,
+	"SortableGrabbed":           i18nui.KeyHuiSortableGrabbed,
+	"SortablePosition":          i18nui.KeyHuiSortablePosition,
+	"SortableMoved":             i18nui.KeyHuiSortableMoved,
+	"SortableSaved":             i18nui.KeyHuiSortableSaved,
+	"SortableReverted":          i18nui.KeyHuiSortableReverted,
+	"SortableCancelled":         i18nui.KeyHuiSortableCancelled,
+	"SortableConflictReverted":  i18nui.KeyHuiSortableConflictReverted,
+	"SortableConflictRefreshed": i18nui.KeyHuiSortableConflictRefreshed,
+
+	// MultiSelect's empty-state word and the chip remove control's
+	// name. New with the primitive; the {label} token is written in
+	// by the module when it builds the chip.
+	"MultiSelectPlaceholder": i18nui.KeyHuiMultiSelectPlaceholder,
+	"MultiSelectRemoveLabel": i18nui.KeyHuiMultiSelectRemoveLabel,
 }
 
 // StringsFor resolves a headless.Strings from the request's context:

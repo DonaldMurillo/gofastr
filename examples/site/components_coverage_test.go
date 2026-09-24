@@ -38,6 +38,7 @@ func TestComponentGalleryCoversUI(t *testing.T) {
 		"SiteFooter":           "page chrome; shown on every site page",
 		"SignOut":              "auth action button; needs an auth session to demo",
 		"Control":              "builder half of FormField; cannot render outside a field's Input closure (its wiring comes from the field), shown via every typed-field and FormField tile",
+		"SortableListItems":    "the rows-only fragment a 409 reconciliation returns; not a tile (shown via the sortablelist kanban demo's conflict path)",
 	}
 
 	// Gallery display names, normalized (lowercase, spaces stripped).

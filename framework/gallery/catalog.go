@@ -16,7 +16,7 @@ package gallery
 // every page has SOMETHING that works. Comments call out the simplification.
 //
 // This file is a faithful move of the original examples/site/components.go
-// catalog (141 entries, 16 categories). The closure bodies are unchanged,
+// catalog (138 entries). The closure bodies are unchanged,
 // they reference the same framework/ui + core-ui/* primitives the site did.
 
 import (
@@ -26,12 +26,6 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/interactive"
-	patternsAccordion "github.com/DonaldMurillo/gofastr/core-ui/patterns/accordion"
-	patternsBreadcrumbs "github.com/DonaldMurillo/gofastr/core-ui/patterns/breadcrumbs"
-	patternsMultiselect "github.com/DonaldMurillo/gofastr/core-ui/patterns/multiselect"
-	patternsNestedlist "github.com/DonaldMurillo/gofastr/core-ui/patterns/nestedlist"
-	patternsProgress "github.com/DonaldMurillo/gofastr/core-ui/patterns/progress"
-	patternsTree "github.com/DonaldMurillo/gofastr/core-ui/patterns/tree"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/headless"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
@@ -361,10 +355,10 @@ var Catalog = []Entry{
 		})
 	}},
 	{"breadcrumbs", "Breadcrumbs", "Navigation", "Hierarchy trail.", func() render.HTML {
-		return patternsBreadcrumbs.New(patternsBreadcrumbs.Config{Label: "Component breadcrumb example"},
-			patternsBreadcrumbs.Crumb{Text: "Docs", Href: "/docs/"},
-			patternsBreadcrumbs.Crumb{Text: "Modeling", Href: "/docs/#modeling"},
-			patternsBreadcrumbs.Crumb{Text: "Entities"},
+		return ui.Breadcrumbs(ui.BreadcrumbsConfig{Label: "Component breadcrumb example"},
+			ui.Crumb{Text: "Docs", Href: "/docs/"},
+			ui.Crumb{Text: "Modeling", Href: "/docs/#modeling"},
+			ui.Crumb{Text: "Entities"},
 		)
 	}},
 	{"pagination", "Pagination", "Navigation", "Page-cursor controls.", func() render.HTML {
@@ -463,13 +457,7 @@ var Catalog = []Entry{
 	}},
 
 	// ---------- Disclosure ----------
-	{"accordion", "Accordion", "Disclosure", "Native <details> accordion stack.", func() render.HTML {
-		return patternsAccordion.Stack(patternsAccordion.StackConfig{},
-			patternsAccordion.Item{Summary: "What is an entity?", Content: html.Paragraph(html.TextConfig{}, render.Text("A typed declaration the framework turns into SQL + REST + MCP + Go."))},
-			patternsAccordion.Item{Summary: "How are migrations stored?", Content: html.Paragraph(html.TextConfig{}, render.Text("Plain SQL up/down files under migrations/."))},
-			patternsAccordion.Item{Summary: "Can agents drop tables?", Content: html.Paragraph(html.TextConfig{}, render.Text("Only with an approved plan: see /kiln."))},
-		)
-	}},
+
 	{"tooltip", "Tooltip", "Disclosure", "Hover/focus-triggered tip.", func() render.HTML {
 		return ui.Tooltip(ui.TooltipConfig{Text: "This is a tooltip"},
 			ui.Button(ui.ButtonConfig{Label: "Hover me"}),
@@ -642,10 +630,10 @@ var Catalog = []Entry{
 	{"multiselect", "Multiselect", "Forms", "Multi-pick from a list with chips.", func() render.HTML {
 		// Value deliberately differs from Label ("cpp" vs "C++") so the
 		// e2e suite catches chip-shows-Value regressions.
-		return patternsMultiselect.Render(patternsMultiselect.Config{
+		return ui.MultiSelect(ui.MultiSelectConfig{
 			ID: "demo-multiselect", Name: "langs", Label: "Pick languages",
 			Placeholder: "No languages selected",
-			Options: []patternsMultiselect.Option{
+			Options: []ui.MultiSelectOption{
 				{Value: "go", Label: "Go", Selected: true},
 				{Value: "cpp", Label: "C++"},
 				{Value: "csharp", Label: "C Sharp"},
@@ -1344,43 +1332,27 @@ ui.OptimisticAction(ui.OptimisticActionConfig{
 		)
 	}},
 	{"tree", "Tree", "Navigation", "WAI-ARIA treeview with roving tabindex, type-ahead, and arrow-key nav.", func() render.HTML {
-		return patternsTree.Render(patternsTree.Config{
-			ID:           "files-tree",
-			Label:        "Project files",
-			SignalPrefix: "files-tree",
-			Nodes: []patternsTree.Node{
-				{ID: "src", Label: "src", Expanded: true, Children: []patternsTree.Node{
+		return ui.Tree(ui.TreeConfig{
+			ID:               "files-tree",
+			Label:            "Project files",
+			LazySignalPrefix: "files-tree",
+			Items: []ui.TreeItem{
+				{ID: "src", Label: "src", Expanded: true, Children: []ui.TreeItem{
 					{ID: "src-main", Label: "main.go", Href: "#main"},
 					{ID: "src-util", Label: "util.go", Href: "#util"},
 				}},
-				{ID: "docs", Label: "docs", Children: []patternsTree.Node{
+				{ID: "docs", Label: "docs", Children: []ui.TreeItem{
 					{ID: "docs-readme", Label: "README.md", Href: "#readme"},
 				}},
 				{ID: "vendor", Label: "vendor", LazyPath: "/tree/vendor"},
 			},
 		})
 	}},
-	{"nestedlist", "NestedList", "Navigation", "Recursive ul/ol with native <details> collapse on branches, no runtime module.", func() render.HTML {
-		return patternsNestedlist.Render(patternsNestedlist.Config{
-			AriaLabel: "Settings",
-			Items: []patternsNestedlist.Item{
-				{Label: "Account", Expanded: true, Children: []patternsNestedlist.Item{
-					{Label: "Profile", Href: "/settings/profile"},
-					{Label: "Security", Href: "/settings/security"},
-				}},
-				{Label: "Notifications", Children: []patternsNestedlist.Item{
-					{Label: "Email", Href: "/settings/email"},
-					{Label: "Push", Href: "/settings/push"},
-				}},
-				{Label: "Billing", Href: "/settings/billing"},
-			},
-		})
-	}},
 	{"progress", "Progress", "Feedback", "Native <progress> wrapper: determinate (Value set) or indeterminate (Value < 0).", func() render.HTML {
 		return html.Div(html.DivConfig{Class: "demo-stack"},
-			patternsProgress.New(patternsProgress.Config{Value: 73, Max: 100, Label: "Upload progress", Description: "73 of 100"}),
-			patternsProgress.New(patternsProgress.Config{Value: 18, Max: 100, Label: "Storage used", Description: "18% of 1 TB"}),
-			patternsProgress.New(patternsProgress.Config{Value: -1, Label: "Working…", Description: "Reticulating splines…"}),
+			ui.Progress(ui.ProgressConfig{Value: 73, Max: 100, Label: "Upload progress", Description: "73 of 100"}),
+			ui.Progress(ui.ProgressConfig{Value: 18, Max: 100, Label: "Storage used", ShowLabel: true, Description: "18% of 1 TB"}),
+			ui.Progress(ui.ProgressConfig{Value: -1, Label: "Working…", Description: "Reticulating splines…"}),
 		)
 	}},
 	{"kbd", "Kbd", "Buttons & links", "Semantic <kbd> primitive for keyboard input: pair with ShortcutHint for styled chips.", func() render.HTML {
@@ -1411,10 +1383,6 @@ ui.OptimisticAction(ui.OptimisticActionConfig{
 	}},
 	{"sortablelist", "SortableList", "Forms", "Drag + keyboard reorderable list: single list or linked kanban columns with version-aware 409 recovery.", func() render.HTML {
 		return RenderKanbanBoard(InitialKanbanColumns(), 1)
-	}},
-	{"infinitescroll", "InfiniteScroll", "Data", "Sentinel-driven lazy pagination: server appends HTML + a next-cursor header.", func() render.HTML {
-		return html.Div(html.DivConfig{Class: "fact"}, render.Text(
-			"infinitescroll.Render(cfg) observes a sentinel and GETs cfg.RPCPath?cursor=X; the handler returns the next page's HTML and sets X-Gofastr-Infinite-Cursor (empty = end). Needs a per-page RPC, so it's shown as a note here."))
 	}},
 
 	// ---------- Marketing ----------
@@ -1630,28 +1598,18 @@ Company.Bind(ctx, "strong", nil)`,
     html.Paragraph(html.TextConfig{}, render.Text("Up to 5 projects, 1 GB storage, …")),
 )`,
 
-	"tree": `tree.Render(tree.Config{
-    ID: "files", Label: "Project files", SignalPrefix: "files-tree",
-    Nodes: []tree.Node{
-        {ID: "src", Label: "src", Expanded: true, Children: []tree.Node{
+	"tree": `ui.Tree(ui.TreeConfig{
+    ID: "files", Label: "Project files", LazySignalPrefix: "files-tree",
+    Items: []ui.TreeItem{
+        {ID: "src", Label: "src", Expanded: true, Children: []ui.TreeItem{
             {ID: "src-main", Label: "main.go", Href: "#main"},
         }},
         // {ID: "vendor", Label: "vendor", LazyPath: "/tree/vendor"} // RPC lazy-load
     },
 })`,
 
-	"nestedlist": `nestedlist.Render(nestedlist.Config{
-    AriaLabel: "Settings",
-    Items: []nestedlist.Item{
-        {Label: "Account", Expanded: true, Children: []nestedlist.Item{
-            {Label: "Profile", Href: "/settings/profile"},
-        }},
-        {Label: "Billing", Href: "/settings/billing"},
-    },
-})`,
-
-	"progress": `progress.New(progress.Config{Value: 73, Max: 100, Label: "Upload", Description: "73 of 100"})
-progress.New(progress.Config{Value: -1, Label: "Working…"}) // indeterminate`,
+	"progress": `ui.Progress(ui.ProgressConfig{Value: 73, Max: 100, Label: "Upload", Description: "73 of 100"})
+ui.Progress(ui.ProgressConfig{Value: -1, Label: "Working…"}) // indeterminate`,
 
 	"kbd": `html.Paragraph(html.TextConfig{},
     render.Text("Press "), html.Kbd(html.TextConfig{}, render.Text("Esc")), render.Text(" to dismiss."),
@@ -1675,13 +1633,12 @@ widget.MountBuilder(r, preset.Modal("user-edit").
 // Server: any data-fui-rpc handler attaches the header on 2xx.
 func push(w http.ResponseWriter, r *http.Request) { ui.AddToastSuccess(w, "Saved", "", 5000) }`,
 
-	"sortablelist": `// Single list (back-compat: sends only order=<keys>)
-sortablelist.Render(sortablelist.Config{
+	"sortablelist": `ui.SortableList(ui.SortableListConfig{
     Label: "Priorities", RPCPath: "/api/reorder",
-    Items: []sortablelist.Item{{Key: "a", Label: "A"}},
+    Items: []ui.SortableItem{{Key: "a", Label: "A"}},
 })
-// Kanban: one Render per column, same Group, unique Container
-sortablelist.Render(sortablelist.Config{
+// Kanban: one SortableList per column, same Group, unique Container
+ui.SortableList(ui.SortableListConfig{
     Label: "To do", Group: "board-1", Container: "todo",
     RPCPath: "/api/move", Version: "v1",
     ConflictRPC: "/api/conflict?col=todo",
@@ -1700,8 +1657,7 @@ var noteOnlySlugs = map[string]bool{
 	"formrepeater": true, "repeater": true,
 	"gallery": true, "lightbox": true, "commandpalette": true,
 	"globalsearch": true, "notificationbell": true, "pipelineimage": true,
-	"confirmaction":  true,
-	"infinitescroll": true,
+	"confirmaction": true,
 }
 
 // PkgForSlug returns the Go source package for a component, used to link
@@ -1709,10 +1665,6 @@ var noteOnlySlugs = map[string]bool{
 // framework/ui; a few are core-ui patterns or the image pipeline.
 func PkgForSlug(slug string) string {
 	switch slug {
-	case "accordion", "breadcrumbs",
-		"tree", "nestedlist", "progress",
-		"sortablelist", "infinitescroll":
-		return "core-ui/patterns/" + slug
 	case "image", "pipelineimage":
 		return "framework/image"
 	case "section-menu", "dropdown", "scroll-reveal", "signal-animate":

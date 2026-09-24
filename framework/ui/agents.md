@@ -4,8 +4,8 @@ The design system ships roughly 100 ready-made components — layout
 (Hero, Grid, Stack, Sidebar, PageHeader, RecordSummary), forms (Form, FormField,
 Select, TagInput, step wizards), data (DataTable, MetricBand, StatCard, charts,
 DetailList), chrome (SiteHeader, AuthCard, ThemeToggle, Card, Banner) —
-plus layout shells (`core-ui/app`), composed patterns
-(`core-ui/patterns`), overlay widgets (`core-ui/widget/preset`), and
+plus layout shells (`core-ui/app`), the headless primitives every
+component is built on (`framework/headless`), overlay widgets (`core-ui/widget/preset`), and
 theme tokens (`framework/ui/theme`). All styling and structural markup
 lives in this system; apps ship zero bespoke CSS.
 

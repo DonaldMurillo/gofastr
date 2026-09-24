@@ -14,11 +14,13 @@ import (
 // ─── ProgressSteps ──────────────────────────────────────────────────
 //
 // Step indicator showing current + completed + upcoming steps in a
-// linear flow. headless.Steps carries the contract — the ordered
-// list, the per-step data-state, aria-current on the current step,
-// and the optional link back on a completed step. This adapter adds
-// the typed status vocabulary, the orientation modifier and the nav
-// landmark wrapper with its label.
+// linear flow: a walk through named stages, not a fraction — a single
+// quantity filling towards a maximum is Progress (ui.Progress), a
+// different component. headless.Steps carries the contract — the
+// ordered list, the per-step data-state, aria-current on the current
+// step, and the optional link back on a completed step. This adapter
+// adds the typed status vocabulary, the orientation modifier and the
+// nav landmark wrapper with its label.
 
 // ProgressStepStatus is the rendered state of a single step.
 type ProgressStepStatus string

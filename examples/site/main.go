@@ -27,7 +27,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/interactive"
 	"github.com/DonaldMurillo/gofastr/core-ui/island"
-	patternsSortablelist "github.com/DonaldMurillo/gofastr/core-ui/patterns/sortablelist"
 	"github.com/DonaldMurillo/gofastr/core-ui/widget"
 	"github.com/DonaldMurillo/gofastr/core-ui/widget/preset"
 	"github.com/DonaldMurillo/gofastr/core/handler"
@@ -563,12 +562,12 @@ func setupServer() *framework.App {
 			http.Error(w, "unknown container", http.StatusNotFound)
 			return
 		}
-		items := make([]patternsSortablelist.Item, len(col.Cards))
+		items := make([]ui.SortableItem, len(col.Cards))
 		for i, c := range col.Cards {
-			items[i] = patternsSortablelist.Item{Key: c.Key, Label: c.Title}
+			items[i] = ui.SortableItem{Key: c.Key, Label: c.Title}
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		fmt.Fprint(w, string(patternsSortablelist.RenderItems(patternsSortablelist.Config{
+		fmt.Fprint(w, string(ui.SortableListItems(ui.SortableListConfig{
 			Label:       col.Title,
 			Group:       "kanban-demo",
 			Container:   col.ID,
@@ -950,7 +949,7 @@ func registerScreens(site *app.App) {
 	componentsGroup := app.NewScreenGroup("/components", componentsLayout)
 	componentsGroup.Screen(app.NewScreen("/components/", &ComponentsIndexScreen{}).
 		WithTitle("Components").
-		WithDescription("Every framework/ui and core-ui/patterns constructor, one page each."), nil)
+		WithDescription("Every framework/ui constructor, one page each."), nil)
 	for _, c := range componentCatalog {
 		componentsGroup.Screen(app.NewScreen("/components/"+c.Slug, &ComponentShowcaseScreen{Entry: c}).
 			WithTitle(c.Name), nil)

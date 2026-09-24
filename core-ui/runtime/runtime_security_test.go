@@ -90,14 +90,13 @@ func TestSchemeGuardStripsInteriorControls(t *testing.T) {
 // meta[name="csrf-token"] tag), the documented channel the auth.CSRF
 // middleware accepts for JSON-bodied requests.
 //
-// Surfaces: shared dispatchRPC + kiln POST (src/rpc.js), infinite-scroll
-// (src/infinitescroll.js), and sortable-list reorder
-// (src/sortablelist.js).
+// Surfaces: shared dispatchRPC + kiln POST (src/rpc.js), and
+// sortable-list reorder (framework/headless/sortablelist.js, a
+// registered behaviour whose own commit POST forwards the token).
 func TestCsrfHeaderForwardedOnRPC(t *testing.T) {
 	surfaces := []string{
 		filepath.Join("src", "rpc.js"),
-		filepath.Join("src", "infinitescroll.js"),
-		filepath.Join("src", "sortablelist.js"),
+		filepath.Join("..", "..", "framework", "headless", "sortablelist.js"),
 	}
 	for _, rel := range surfaces {
 		src := readSrc(t, rel)
@@ -526,13 +525,13 @@ func TestSelectorInterpolationEscaped(t *testing.T) {
 		anchor string // unique literal at the selector call site
 		where  string // human-readable surface description
 	}{
-		{"src/multiselect.js", `label[for="`, "checkbox id → label[for=…] lookup"},
+		{"../../framework/headless/multiselect.js", `label[for="`, "checkbox id → label[for=…] lookup"},
 		{"src/widgets.js", `link[data-fui-style="`, "widget name → style-link dedup lookup"},
 		{"runtime.js", `link[data-fui-style="`, "component name → style-link dedup lookup (composed from frag/kernel.js)"},
 		{"runtime.js", `[data-widget="${`, "closest data-component/data-widget value → hydrate lookup (composed from frag/boot.js)"},
 		// Control group: these sites escape today and must keep doing so.
 		{"src/sse.js", `'[data-island="'`, "island name lookup (pinned by TestSseIslandSelectorEscaped)"},
-		{"src/sortablelist.js", `data-fui-sortable-group="`, "sortable group lookup"},
+		{"../../framework/headless/sortablelist.js", `data-hui-sortable-group="`, "sortable group lookup"},
 		{"src/widgets.js", `'[data-fui-widget="'`, "widget name → mounted-widget lookup"},
 		{"src/widgets.js", `'[data-fui-backdrop="'`, "widget name → backdrop lookup"},
 		{"runtime.js", `'[data-fui-signal="'`, "signal name → consumer fanout lookup"},
@@ -677,8 +676,7 @@ func TestResponseHTMLMountedOnlyAfterOK(t *testing.T) {
 		from, to string // unique literals bracketing the fetch→mount span
 		where    string
 	}{
-		{"src/sortablelist.js", "fetch(crpc", "dest.innerHTML = html", "conflict-recovery refresh"},
-		{"src/infinitescroll.js", "await fetch(path", "tmp.innerHTML = html", "infinite-scroll append"},
+		{"../../framework/headless/sortablelist.js", "fetch(crpc", "dest.innerHTML = html", "conflict-recovery refresh"},
 		{"src/poll.js", "fetch(src", "el.innerHTML = html", "poll region swap"},
 		{"src/intercept.js", "fetch(path", "mount(res.html", "intercept overlay mount"},
 	}
@@ -1045,18 +1043,17 @@ func insideTryBlock(s string, pos int) bool {
 //   - src/widgethelpers.js   data-fui-fill-input, data-fui-charcount-source
 //   - src/rpc.js             data-fui-rpc-scroll-to
 //   - frag/signals.js        data-fui-scroll-bottom-on-update
-//   - src/infinitescroll.js  data-fui-infinite-items
 //
 // (scrollspy and toc are retired; their selector-by-design lookups
 // moved into framework/headless's headless-rail module, whose own
-// try/catch owns the degrade contract now.)
+// try/catch owns the degrade contract now. infinitescroll is retired
+// with its pattern: nothing in the repository used it.)
 func TestSelectorByDesignLookupsGuarded(t *testing.T) {
 	anchors := []struct{ file, anchor string }{
 		{"src/widgethelpers.js", `widget.querySelector(sel)`},
 		{"src/widgethelpers.js", `sel && document.querySelector(sel)`},
 		{"src/rpc.js", `document.querySelector(scrollSel)`},
 		{"frag/signals.js", `node.querySelector(sel)`},
-		{"src/infinitescroll.js", `wrap.querySelector(itemsSel)`},
 	}
 	for _, a := range anchors {
 		if !strings.Contains(readSrc(t, a.file), a.anchor) {

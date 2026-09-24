@@ -597,7 +597,7 @@ func TestDocumentedAttrsHaveAnOwner(t *testing.T) {
 }
 
 // goEmittedAttrs scans the Go source that emits data-fui-* HTML attributes,
-// core-ui/{interactive,html,widget,app,patterns/**} and framework/ui, for
+// core-ui/{interactive,html,widget,app} and framework/ui, for
 // literal "data-fui-*" string constants, in non-comment, non-test source. It
 // generalizes goInteractiveAttrs (which covers core-ui/interactive alone) so
 // the doc→owner gate can see attributes emitted outside the interactive
@@ -609,7 +609,6 @@ func goEmittedAttrs(t *testing.T) []string {
 		filepath.Join("..", "html"),
 		filepath.Join("..", "widget"),
 		filepath.Join("..", "app"),
-		filepath.Join("..", "patterns"),
 		filepath.Join("..", "..", "framework", "ui"),
 		// framework/headless renders the host framework's runtime
 		// vocabulary too: the lightbox viewer's LightboxWiring emits the

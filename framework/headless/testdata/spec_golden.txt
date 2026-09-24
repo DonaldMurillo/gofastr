@@ -38,6 +38,18 @@ a badge is a word, and the word is the accessible name — which is why the icon
 the icon adds emphasis and no meaning: anything it means that the label does not say belongs in the label
 <span><span aria-hidden="true"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="8" cy="8" r="6.25"/><path d="M5.5 8.25 7.25 10l3.25-3.5"/></svg></span>degraded</span>
 
+=== Breadcrumbs / a trail ending on the current page ===
+the ordered list is the hierarchy and the last step names the page as text with aria-current, so a reader knows where they are without a link that goes nowhere
+<nav aria-label="Breadcrumb"><ol><li><a href="/">Home</a></li><li><span aria-hidden="true">/</span><a href="/docs/">Docs</a></li><li><span aria-hidden="true">/</span><span aria-current="page">Entities</span></li></ol></nav>
+
+=== Breadcrumbs / the unlabelled landmark names itself ===
+a trail with no label of its own still names its navigation landmark — the default word is the one Strings carries, so a translated page says it in the reader's language
+<nav aria-label="Breadcrumb"><ol><li><a href="/">Home</a></li><li><span aria-hidden="true">/</span><span aria-current="page">Here</span></li></ol></nav>
+
+=== Breadcrumbs / a page linked inside its own trail ===
+Current turns a linked step into the page's name for itself — the href the caller supplied stays on the steps around it, and the trail still ends in text
+<nav aria-label="Breadcrumb"><ol><li><a href="/settings">Settings</a></li><li><span aria-hidden="true">/</span><span aria-current="page">Profile</span></li></ol></nav>
+
 === Button / labelled ===
 the ordinary case, and the reason type is always stated: inside a form the default is submit
 <button type="button">Save changes</button>
@@ -330,6 +342,18 @@ the disabled row keeps its place in the panel and leaves the keyboard rotation; 
 an icon row and a form-POST row are commands like any other, and a lazy panel's rows travel inside a template the module mounts on first open — page-scoped queries cannot see them while the menu is closed
 <details data-hui-disclosure="" data-hui-menu="hui-menu-07666dff"><summary aria-controls="hui-menu-07666dff-panel" aria-haspopup="menu">Account<span aria-hidden="true">▾</span></summary><div data-hui-menu-panel="" id="hui-menu-07666dff-panel" role="menu"><template data-hui-menu-lazy=""><a href="/w" role="menuitem" tabindex="-1"><span aria-hidden="true"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="8" cy="8" r="6.25"/><path d="M5.5 8.25 7.25 10l3.25-3.5"/></svg></span><span>Open workspace</span></a><hr role="separator"><form action="/admin/stop-impersonation" method="POST" role="none"><input name="csrf" type="hidden" value="tok"><button role="menuitem" tabindex="-1" type="submit"><span>Stop impersonation</span></button></form></template></div></details>
 
+=== MultiSelect / a picker with one option checked ===
+the form contract is the checkboxes: the field name repeats for each checked option and the page submits with no script — the chips above are an enhancement the module rebuilds from the checkboxes' own state
+<div data-hui-multiselect=""><div aria-live="polite" data-hui-multiselect-chips="" data-hui-multiselect-placeholder="Choose…" data-hui-multiselect-remove-label="Remove {label}"></div><details data-hui-disclosure=""><summary>Pick languages</summary><div><fieldset aria-label="Pick languages" role="group"><label for="langs-opt-0"><input checked="" id="langs-opt-0" name="langs" type="checkbox" value="go"><span>Go</span></label><label for="langs-opt-1"><input id="langs-opt-1" name="langs" type="checkbox" value="cpp"><span>C++</span></label><label for="langs-opt-2"><input id="langs-opt-2" name="langs" type="checkbox" value="csharp"><span>C Sharp</span></label></fieldset></div></details></div>
+
+=== MultiSelect / an open picker with nothing picked ===
+the disclosure is open and the chips strip carries the placeholder — the empty state is a sentence the Strings table owns, so a translated page says it in the reader's language
+<div data-hui-multiselect=""><div aria-live="polite" data-hui-multiselect-chips="" data-hui-multiselect-placeholder="Choose…" data-hui-multiselect-remove-label="Remove {label}"></div><details data-hui-disclosure="" open=""><summary>Tags</summary><div><fieldset aria-label="Tags" role="group"><label for="tags-opt-0"><input id="tags-opt-0" name="tags" type="checkbox" value="a"><span>Alpha</span></label></fieldset></div></details></div>
+
+=== MultiSelect / a disabled option ===
+a disabled checkbox stays in the tab-free, unsubmitting state the platform gives it; the label wraps it so the state is announced with the name
+<div data-hui-multiselect=""><div aria-live="polite" data-hui-multiselect-chips="" data-hui-multiselect-placeholder="Choose…" data-hui-multiselect-remove-label="Remove {label}"></div><details data-hui-disclosure=""><summary>Plan</summary><div><fieldset aria-label="Plan" role="group"><label for="plan-opt-0"><input id="plan-opt-0" name="plan" type="checkbox" value="free"><span>Free</span></label><label for="plan-opt-1"><input disabled="" id="plan-opt-1" name="plan" type="checkbox" value="pro"><span>Pro</span></label></fieldset></div></details></div>
+
 === NotificationBell / unread ===
 the anchor's accessible name says the count in words while the badge shows the number, and the href is the notifications page — the no-script page goes there
 <a aria-label="3 unread notifications" data-hui-notification-bell="" data-hui-notification-count-fmt="%d unread notifications" href="/notifications"><span aria-hidden="true">🔔</span><span data-hui-notification-count="3"><span>3</span></span></a>
@@ -409,6 +433,18 @@ a trigger beyond every host (a toolbar above the panes) drives the host its data
 === Password / revealable ===
 the reveal button says what it will do next rather than what the field is doing now, and the labels it swaps between are published for the runtime instead of built from a class
 <div><label for="password-token">Registry token</label><div data-hui-affix=""><input data-hui-affix-input="" id="password-token" name="token" type="password"><button aria-label="Show password" aria-pressed="false" data-hui-hide-label="Hide password" data-hui-hide-text="Hide" data-hui-reveal="" data-hui-show-label="Show password" data-hui-show-text="Show" type="button">Show</button></div></div>
+
+=== Progress / a determinate bar ===
+the native element carries the value and the maximum; the component's whole job is the name and the clamp that keeps the fraction honest
+<div><progress aria-label="Upload progress" max="100" value="73"></progress><span>73 of 100</span></div>
+
+=== Progress / an indeterminate bar ===
+a negative value is the documented posture for work whose fraction is not known: no value attribute, the browser animates, the label alone names it
+<div><progress aria-label="Working" max="100"></progress></div>
+
+=== Progress / a visible label ===
+a label a reader can see as well as hear: the same name rendered as text and wired through aria-labelledby, for a bar whose purpose deserves the space
+<div><span id="hui-progress-1a3757df-label">Storage used</span><progress aria-labelledby="hui-progress-1a3757df-label" max="100" value="18"></progress><span>18% of 1 TB</span></div>
 
 === Rail / an observed rail ===
 every entry is a real fragment link before any script runs, and the observer is armed by the module the root hook loads
@@ -517,6 +553,22 @@ a slider with no output renders no hook at all — markup carried for no one is 
 === Slider / bounded custom step ===
 a step the value lands on: the browser, the server and the module all read the same three attributes, and a value between steps renders as given — data, not a broken prop
 <div data-hui-slider=""><label for="batch">Batch size</label><output data-hui-slider-output="" for="batch">50</output><input aria-label="Batch size" id="batch" max="100" min="10" name="batch" step="10" type="range" value="50"></div>
+
+=== SortableItems / the reconciliation fragment ===
+a versioned 409 replaces the list's rows with the server's own — this is that fragment, the rows without the wrapper (empty items render it empty, a column honestly emptied)
+<li aria-label="Drag Design API" aria-roledescription="sortable item" data-hui-sort-key="k1" data-hui-sortable-item="" draggable="true" role="option" tabindex="0"><span aria-hidden="true"><svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor" aria-hidden="true" xmlns="http://www.w3.org/2000/svg"><circle cx="5" cy="3" r="1.2"/><circle cx="5" cy="7" r="1.2"/><circle cx="5" cy="11" r="1.2"/><circle cx="9" cy="3" r="1.2"/><circle cx="9" cy="7" r="1.2"/><circle cx="9" cy="11" r="1.2"/></svg></span><span>Design API</span></li><li aria-label="Drag Write tests" aria-roledescription="sortable item" data-hui-sort-key="k2" data-hui-sortable-item="" draggable="true" role="option" tabindex="0"><span aria-hidden="true"><svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor" aria-hidden="true" xmlns="http://www.w3.org/2000/svg"><circle cx="5" cy="3" r="1.2"/><circle cx="5" cy="7" r="1.2"/><circle cx="5" cy="11" r="1.2"/><circle cx="9" cy="3" r="1.2"/><circle cx="9" cy="7" r="1.2"/><circle cx="9" cy="11" r="1.2"/></svg></span><span>Write tests</span></li>
+
+=== SortableList / a single list ===
+the rows are a plain ordered list a reader without script sees whole; the module owns the moves, the announcements and the commit the server stays authoritative over
+<ol aria-label="Priorities" data-hui-sortable="" data-hui-sortable-rpc="/api/reorder" data-hui-sortable-s-cancelled="Cancelled." data-hui-sortable-s-conflict-refreshed="Conflict. List refreshed from server." data-hui-sortable-s-conflict-reverted="Conflict. Reverted." data-hui-sortable-s-grabbed="Grabbed {label}. Arrow keys to move, Space to drop." data-hui-sortable-s-moved="Moved to {list}, position {position}." data-hui-sortable-s-position="Position {position} in {list}." data-hui-sortable-s-reverted="Save failed. Reverted." data-hui-sortable-s-saved="Order saved." role="listbox"><li aria-label="Drag First" aria-roledescription="sortable item" data-hui-sort-key="a" data-hui-sortable-item="" draggable="true" role="option" tabindex="0"><span aria-hidden="true"><svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor" aria-hidden="true" xmlns="http://www.w3.org/2000/svg"><circle cx="5" cy="3" r="1.2"/><circle cx="5" cy="7" r="1.2"/><circle cx="5" cy="11" r="1.2"/><circle cx="9" cy="3" r="1.2"/><circle cx="9" cy="7" r="1.2"/><circle cx="9" cy="11" r="1.2"/></svg></span><span>First</span></li><li aria-label="Drag Second" aria-roledescription="sortable item" data-hui-sort-key="b" data-hui-sortable-item="" draggable="true" role="option" tabindex="0"><span aria-hidden="true"><svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor" aria-hidden="true" xmlns="http://www.w3.org/2000/svg"><circle cx="5" cy="3" r="1.2"/><circle cx="5" cy="7" r="1.2"/><circle cx="5" cy="11" r="1.2"/><circle cx="9" cy="3" r="1.2"/><circle cx="9" cy="7" r="1.2"/><circle cx="9" cy="11" r="1.2"/></svg></span><span>Second</span></li></ol>
+
+=== SortableList / a linked column on a kanban board ===
+one column of a board: the shared Group lets rows cross between lists, the Container routes the write, and Version plus the conflict endpoint reconcile a 409 with the server's own rows instead of a rollback
+<ol aria-label="To do" data-hui-sortable="" data-hui-sortable-conflict="/api/conflict?col=todo" data-hui-sortable-container="todo" data-hui-sortable-group="board-1" data-hui-sortable-rpc="/api/move" data-hui-sortable-s-cancelled="Cancelled." data-hui-sortable-s-conflict-refreshed="Conflict. List refreshed from server." data-hui-sortable-s-conflict-reverted="Conflict. Reverted." data-hui-sortable-s-grabbed="Grabbed {label}. Arrow keys to move, Space to drop." data-hui-sortable-s-moved="Moved to {list}, position {position}." data-hui-sortable-s-position="Position {position} in {list}." data-hui-sortable-s-reverted="Save failed. Reverted." data-hui-sortable-s-saved="Order saved." data-hui-sortable-version="v1" role="listbox"><li aria-label="Drag Design API" aria-roledescription="sortable item" data-hui-sort-key="k1" data-hui-sortable-item="" draggable="true" role="option" tabindex="0"><span aria-hidden="true"><svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor" aria-hidden="true" xmlns="http://www.w3.org/2000/svg"><circle cx="5" cy="3" r="1.2"/><circle cx="5" cy="7" r="1.2"/><circle cx="5" cy="11" r="1.2"/><circle cx="9" cy="3" r="1.2"/><circle cx="9" cy="7" r="1.2"/><circle cx="9" cy="11" r="1.2"/></svg></span><span>Design API</span></li></ol>
+
+=== SortableList / an empty column ===
+a list with no rows is still a valid drop target: the kanban's empty column accepts a dragged row, so the wrapper renders and the rows are simply absent
+<ol aria-label="Done" data-hui-sortable="" data-hui-sortable-container="done" data-hui-sortable-group="board-1" data-hui-sortable-rpc="/api/move" data-hui-sortable-s-cancelled="Cancelled." data-hui-sortable-s-conflict-refreshed="Conflict. List refreshed from server." data-hui-sortable-s-conflict-reverted="Conflict. Reverted." data-hui-sortable-s-grabbed="Grabbed {label}. Arrow keys to move, Space to drop." data-hui-sortable-s-moved="Moved to {list}, position {position}." data-hui-sortable-s-position="Position {position} in {list}." data-hui-sortable-s-reverted="Save failed. Reverted." data-hui-sortable-s-saved="Order saved." role="listbox"></ol>
 
 === Spacer / plain ===
 it renders nothing, says nothing, and is in the markup only because a row needs a thing to grow — the space between two controls is the skin's, not a third control somebody wedged between them
@@ -737,6 +789,18 @@ the search field is the one control in a toolbar that should grow, so its wrappe
 === ToolbarSpacer / gap ===
 an empty element that pushes what follows to the far end — it renders nothing, says nothing, and is in the markup only because the layout needs a thing to grow
 <div></div>
+
+=== Tree / a tree with a selected leaf ===
+the roving tabindex puts the keyboard on the first row and aria-selected says which leaf is the current one — the whole keyboard contract is the module's, on hooks the markup carries
+<ul aria-label="File system" data-hui-tree="" id="t" role="tree"><li aria-level="1" aria-posinset="1" aria-setsize="3" id="a" role="treeitem" tabindex="0"><div><a href="/a">A</a></div></li><li aria-level="1" aria-posinset="2" aria-setsize="3" id="b" role="treeitem" tabindex="-1"><div><span>B</span></div></li><li aria-level="1" aria-posinset="3" aria-selected="true" aria-setsize="3" id="c" role="treeitem" tabindex="-1"><div><span>C</span></div></li></ul>
+
+=== Tree / an expanded branch ===
+children are real markup the server rendered, so a reader without script sees the whole branch — the module only moves focus and flips aria-expanded
+<ul aria-label="FS" data-hui-tree="" id="fs" role="tree"><li aria-expanded="true" aria-level="1" aria-posinset="1" aria-setsize="2" id="src" role="treeitem" tabindex="0"><div><button aria-hidden="true" data-hui-tree-toggle="" tabindex="-1" type="button">▶</button><span>src</span></div><ul role="group"><li aria-level="2" aria-posinset="1" aria-setsize="2" id="src-main" role="treeitem" tabindex="-1"><div><a href="#main">main.go</a></div></li><li aria-level="2" aria-posinset="2" aria-setsize="2" id="src-util" role="treeitem" tabindex="-1"><div><a href="#util">util.go</a></div></li></ul></li><li aria-expanded="false" aria-level="1" aria-posinset="2" aria-setsize="2" id="docs" role="treeitem" tabindex="-1"><div><button aria-hidden="true" data-hui-tree-toggle="" tabindex="-1" type="button">▶</button><span>docs</span></div><ul hidden="" role="group"><li aria-level="2" aria-posinset="1" aria-setsize="1" id="docs-readme" role="treeitem" tabindex="-1"><div><a href="#readme">README.md</a></div></li></ul></li></ul>
+
+=== Tree / a lazy branch ===
+a branch whose children are not known at render keeps a hidden group the kernel's rpc primitive fills on first expand — the same contract the pattern shipped, on the framework's own wiring
+<ul aria-label="Lazy" data-hui-tree="" id="lz" role="tree"><li aria-expanded="false" aria-level="1" aria-posinset="1" aria-setsize="1" id="vendor" role="treeitem" tabindex="0"><div><button aria-hidden="true" data-fui-rpc="/tree/vendor" data-fui-rpc-method="POST" data-fui-rpc-signal="lz-vendor" data-hui-tree-toggle="" tabindex="-1" type="button">▶</button><span>vendor</span></div><ul data-fui-signal="lz-vendor" data-fui-signal-mode="html" hidden="" role="group"></ul></li></ul>
 
 === ValidationSummary / after a failed submit ===
 it interrupts and can take focus, and every error is a link to the field it is about — a list of complaints you cannot navigate to is a list you have to hunt through

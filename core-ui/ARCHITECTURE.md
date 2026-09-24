@@ -149,12 +149,7 @@ server side and the runtime does the work.
 | `data-fui-charcount-source="<id>"` | An element that displays the live character count of the referenced input. |
 | `data-fui-os` *(on `<html>`)* | Set by the runtime at boot to `"mac"` or `"other"` based on best-effort platform detection. Used by `framework/ui.ShortcutHint` to display platform-correct mod-key glyphs purely in CSS (no per-component JS). Functional shortcut matching does not depend on this attribute. |
 | `data-fui-static` *(on `<html>`)* | Injected **only** by the static exporter (`framework/static.Builder`) onto `<html>`. When present, the runtime enters static mode: it fetches the dumped catalog file (`/__gofastr/widgets.json`) instead of the live session-gated endpoint, and a `data-fui-rpc` click/submit surfaces a "Needs the Go server" notice (via the CSP-clean `#fui-nav-toast` mini toast) instead of firing a dead request, so a visitor who tries a server-backed demo learns why it's inert and how to run it locally. `data-fui-open` is **not** gated: overlays resolve against the widget catalog + chrome HTML the exporter dumps as query-free files, so navigation surfaces (command palette, section-menu drawers) work. Client-only features (theme toggle, copy, signal mutations) are unaffected. Live pages never carry it, so every static-mode guard is a no-op in the normal server-backed app. |
-| `data-fui-infinite-scroll="<rpc-path>"` | Marks an infinite-scroll wrapper. The runtime POSTs to `<rpc-path>` (form-encoded body with `cursor=<token>`) when the contained `data-fui-infinite-sentinel` enters the viewport, then appends the HTML response into the items container. Pair with `data-fui-infinite-cursor`, `data-fui-infinite-items` (optional, CSS selector, default the wrapper itself), and `data-fui-infinite-root-margin` (default `200px`). Response carries `X-Gofastr-Infinite-Cursor: <next>` for the next call; empty/missing → end of feed, sentinel removed, observer disconnected. `aria-busy` toggles during fetch. |
-| `data-fui-infinite-sentinel` | Marks the IntersectionObserver target inside an infinite-scroll wrapper. The sentinel is removed when end-of-feed is reached. |
-| `data-fui-infinite-cursor="<token>"` | Initial cursor token on the infinite-scroll wrapper. Updated in-place after every fetch. |
-| `data-fui-infinite-items="<selector>"` | Optional CSS selector identifying the child container into which new items are appended. Defaults to the wrapper itself. |
-| `data-fui-infinite-root-margin="<px>"` | Optional IntersectionObserver `rootMargin` value. Default `200px`. |
-| `data-fui-tree-toggle` | Marks the expand/collapse button inside a `core-ui/patterns/tree` treeitem row. The keyboard nav (ArrowRight to expand, ArrowLeft to collapse, Enter/Space to toggle) clicks this button so any `data-fui-rpc` on it fires lazy-load. |
+| `data-hui-tree` / `data-hui-tree-toggle` | On a `framework/ui.Tree` (headless.Tree anatomy): the registered `headless-tree` module (framework/headless, `Requires("rpc")` for the lazy branches) owns the WAI-ARIA keyboard contract — the roving tabindex, arrows, Home/End, type-ahead, and expand/collapse that drives the same toggle button a click drives, so any lazy-load `data-fui-rpc` on the toggle fires either way. |
 | `data-fui-fill-input="<selector>"` / `data-fui-fill-text="<selector>"` | A button that fills the target input or text node with this element's `data-value` (or text content). |
 | `data-fui-disable-when-invalid` | On a submit button: disabled while any field in the surrounding `<form>` reports `:invalid`. |
 | `data-fui-persist-storage="<key>"` | The element's value persists across reloads in `localStorage`, stored namespaced as `gofastr.persist.` + `encodeURIComponent(<key>)` so an attribute-borne key can only ever touch that namespace. A value stored under the pre-namespace raw `<key>` is not read. |
@@ -173,11 +168,7 @@ server side and the runtime does the work.
 | `data-fui-match-prefix` | On a `<nav> <a>` link: opts the link into prefix-matching for active-route highlighting. The runtime tags it `aria-current="page"` + `.active` when the current path equals the link's href or continues it at a segment boundary: `/docs` and `/docs/` both light up on `/docs` and `/docs/getting-started`, and neither matches `/docs-old`. Without this attribute the runtime does exact-href matching only, so breadcrumbs and sidebars (where multiple links share prefixes) keep the server-rendered single active item. Root `/` is never a prefix match. |
 | `data-fui-activelink-skip` | On a `<nav> <a>` link: opts OUT of active-route highlighting entirely. The `activelink` runtime module neither sets nor clears `aria-current` or `.active` on it, at load or after SPA navigation. The escape hatch for a link whose current-state is owned by something else: a hand-set attribute (`aria-current="location"` on an in-page anchor), app JS, a signal binding. Same hands-off treatment as href-less links. |
 | `data-fui-popover-anchor` | On a `data-fui-open` trigger button: opt the opened widget into trigger-anchored positioning. The value is the preferred side: `"top"`, `"bottom"`, `"left"`, `"right"`, or empty / `"auto"` (= bottom-first, then top, right, left). The runtime measures both rects after open and applies inline `position: fixed; top; left` so the popover sits next to the trigger; if the preferred side would overflow the viewport (8px margin), it auto-flips to the opposite. Re-runs on `window.resize` AND `window.scroll` (capture, rAF-throttled) so the popover tracks the trigger when the page scrolls. Distinct from `preset.Modal`'s deep-link affordances: popovers are click-driven and don't deep-link. |
-| `data-fui-multiselect` | Marks a `core-ui/patterns/multiselect` disclosure root. The `multiselect` runtime module scopes its chip rebuild + remove handling to descendants of this element. |
-| `data-fui-multiselect-chips` | On the chips strip inside a `core-ui/patterns/multiselect`: the runtime rebuilds the chip list inside this element after every `change` event on a descendant `.ui-multiselect__check` checkbox. `aria-live="polite"` ships on the same element so SR users hear updates. |
-| `data-fui-multiselect-placeholder="<text>"` | Empty-state placeholder shown via `::before` when no chips are rendered. |
-| `data-fui-multiselect-remove="<input-id>"` | On a chip's × button: clicking unchecks the linked checkbox (which fires `change` and re-renders chips). |
-| `data-fui-multiselect-name="<field>"` | Emitted by `core-ui/patterns/multiselect` on the disclosure root with the form-field name. No runtime or CSS consumer today; emit-only marker (the module scopes by `data-fui-multiselect`). |
+| `data-hui-multiselect` / `data-hui-multiselect-chips` / `data-hui-multiselect-placeholder="<text>"` / `data-hui-multiselect-remove-label="<fmt>"` / `data-hui-multiselect-remove="<input-id>"` | On a `framework/ui.MultiSelect` (headless.MultiSelect anatomy; the disclosure itself is `data-hui-disclosure`'s): the registered `headless-multiselect` module (framework/headless, `Requires("headless-disclosure")`) rebuilds the chips strip from the checkboxes' own state after every change, names each chip's × from the remove-label format ({label} substituted), and closes the disclosure on click-outside. The placeholder is the sheet's `:empty::before` content. The submit contract is the plain form: every checkbox shares the field name, no script needed. |
 | `data-fui-dropdown` | On a dropdown trigger button. The `dropdown` runtime module toggles `aria-expanded` and shows/hides the paired panel on click. Outside-click and SPA navigation close all dropdowns without moving focus. Escape defers to the modal stack, then closes only the focused (or topmost) dropdown layer; when focus was inside its panel, focus returns to that dropdown's trigger. Opening one dropdown still closes the others by default. |
 | `data-fui-dropdown-wrap` | On the wrapper around a `data-fui-dropdown` trigger + `data-fui-dropdown-panel`. Scopes open/close to one dropdown instance; the runtime sets/clears `data-fui-dropdown-open` on it to track state. |
 | `data-fui-dropdown-panel` | On the floating panel sibling of a `data-fui-dropdown` trigger. The runtime toggles its `hidden` attribute as the dropdown opens/closes. |
@@ -195,14 +186,7 @@ server side and the runtime does the work.
 | `data-hui-tabs` / `data-hui-tabs-state` / `data-hui-tabs-vacate` / `data-hui-tabs-stash` | On a `headless.Tabs` strip: the registered `headless-tabs` module (framework/headless) owns the roving-tabindex keyboard contract (RTL-aware arrows, Home/End), the data-state mirror and the vacate stash restore. Selection stays the kernel's signal contract (`data-fui-signal-set` beside each tab's fragment href). |
 | `data-hui-panehost` / `data-hui-pane` / `data-hui-pane-open` / `data-hui-pane-deeplink` / `data-hui-pane-open-control` / `-close` / `-swap` / `-key` | The pane host anatomy and its trigger controls: headless.PaneHost renders the shell (bound by the registered `headless-panehost` module, framework/headless, `Requires("widgets")` for the drawer trap), and core-ui/interactive's OpenPaneOnClick/ClosePaneOnClick/SwapPaneOnClick/PaneKey render the triggers. The retired panehost-module spellings are gone with the module. |
 | `data-hui-sidebar` / `-variant` / `-collapse` / `-storage` / `-toggle` / `-group` / `-group-toggle` / `-collapse-label` / `-expand-label` | The sidebar anatomy and its collapse contract: headless.Sidebar renders the shell (bound by the registered `headless-sidebar` module, framework/headless, `Requires("widgets")` for the mobile drawer); the storage hook rides only when the caller names a key — a keyless sidebar is server-owned and the module never writes. The retired sidebar-module spellings are gone with the module. |
-| `data-fui-sortable` | Marks the `<ol>` of a `core-ui/patterns/sortablelist` as reorderable. Pair with `data-fui-sortable-rpc`. |
-| `data-fui-sortable-rpc="<path>"` | POST endpoint that receives the commit after every successful reorder; non-2xx response reverts the DOM. Same-container reorders send `order=<comma-separated-keys>` plus `container=<id>` when the source list carries `data-fui-sortable-container` (#84) and `version=<token>` when versioned. Cross-container drops add `moved=<key>` and always carry `container=` (empty if unconfigured). |
-| `data-fui-sortable-item` | Marks an `<li>` as a drag-and-drop item inside a `data-fui-sortable` list. Pair with `data-fui-sort-key` and (typically) `draggable="true"` + `tabindex="0"`. Keyboard: Space grabs / drops; Arrow Up/Down moves within a column; Arrow Left/Right moves to an adjacent column (same group, including an empty one, #82); Esc cancels. A `data-fui-sortable` list may legally hold zero items (empty Kanban column) and remains a valid drop target. |
-| `data-fui-sort-key="<key>"` | Stable identifier the server uses to apply the new order. |
-| `data-fui-sortable-group="<id>"` | Board id shared by linked `data-fui-sortable` columns (kanban). Lists with the same non-empty group id allow cross-container drag and keyboard moves between them; lists with no group (or different groups) stay isolated. Back-compat: existing single lists have no group → unchanged behavior. |
-| `data-fui-sortable-container="<id>"` | Per-column id emitted on each `data-fui-sortable` `<ol>` of a linked board. Sent as the `container` body field in EVERY commit from that list, same-container reorders included (#84), so the server can route the write without inferring the column from the key set. Distinct from `data-fui-sortable-group` (the board id) because a board has one group but N containers: the server needs both to route the write. Lists without this attr keep the legacy payload (no `container` field on same-container commits; empty `container=` on cross-container commits). |
-| `data-fui-sortable-version="<token>"` | Optional optimistic-concurrency token. When set, appended as a `version` body field to every commit POST. A 409 response then fires the conflict path (refetch `data-fui-sortable-conflict` HTML) instead of a blanket rollback. Without this attr, 409 is treated like any other non-2xx (rollback), the back-compat behavior. |
-| `data-fui-sortable-conflict="<rpc>"` | GET endpoint refetched on a 409 response (only when `data-fui-sortable-version` is set). The response body replaces the destination list's `innerHTML`: server-rendered reconciliation (an empty body reconciles the column to zero items, #82). Before refetching, the runtime reads the 409 response body under hard safety bounds (#83): Content-Type MUST be `application/json`, at most ~4 KB is read, the body MUST parse as `{"error":{"code","message":<string>}}`, and `error.message` is capped at ~300 chars. When a valid message is present it is surfaced through the polite `aria-live` region (replacing the generic copy) and the framework toast surface (`__gofastr.toast`) when wired; any malformed / oversized / non-JSON / empty body falls back to today's generic copy. Without this attr, a 409 falls back to rollback + a `console.warn`. |
+| `data-hui-sortable` / `data-hui-sortable-rpc="<path>"` / `data-hui-sortable-item` / `data-hui-sort-key="<key>"` / `data-hui-sortable-group="<id>"` / `data-hui-sortable-container="<id>"` / `data-hui-sortable-version="<token>"` / `data-hui-sortable-conflict="<rpc>"` / `data-hui-sortable-s-*` | On a `framework/ui.SortableList` (headless.SortableList anatomy): the registered `headless-sortablelist` module (framework/headless) owns HTML5 drag reorder plus the keyboard model (Space grabs, Arrow Up/Down moves within a column, Arrow Left/Right crosses to an adjacent column of the same group, Space drops, Esc cancels), the polite per-move announcements (the `data-hui-sortable-s-*` attributes carry the Strings, `{label}`/`{list}`/`{position}` substituted at say-time), and the server-authoritative commit: same-container reorders POST `order=<keys>` plus `container=` when configured and `version=` when versioned; cross-container drops add `moved=<key>` and always carry `container=`; non-2xx reverts the DOM; a versioned 409 fires the conflict path (GET the conflict endpoint, replace the list's rows — an empty body reconciles the column to zero items), after reading the 409 body under hard bounds (JSON content-type, ~4 KB, `{"error":{"message":<string>}}`, capped ~300 chars). |
 | `data-fui-lightbox="<name>"` | On the slot wrapper of a `framework/ui.Lightbox`: identifies the open viewer for the lightbox module (a registered behaviour `framework/ui` ships; the kernel's own tables name no lightbox). Pair with optional `data-fui-lightbox-nav="true"` to enable Prev/Next + ArrowLeft/Right keyboard nav across siblings sharing `data-fui-lightbox-group`. |
 | `data-fui-lightbox-nav="true"` | On the lightbox slot wrapper: opts into the lightbox module's arrow-key + Prev/Next button navigation. |
 | `data-fui-lightbox-image` | On the `<img>` inside a Lightbox viewer: the image the module's pinch-to-zoom owns. Present so the zoom targets an attribute, never a class (a class map may rename every class); an unwired `headless.LightboxViewer` publishes the same fact as `data-hui-lightbox-image` — the two spellings are alternatives, one vocabulary per render. |
@@ -981,8 +965,8 @@ completeness test: when it can't, you found the gap.
    - `app.ParamSetter`: `SetParams(map[string]string)` receives route params from dynamic paths
    (`Screen` itself is a struct value the router holds, not the interface you implement on your component.)
 2. Inside Render, compose `core-ui/html` (1:1 tag primitives) +
-   `core-ui/patterns` (accordion, tabs…) + `framework/ui`
-   (semantic components like PageHeader, FormField, DataTable).
+   `framework/ui` (semantic components like PageHeader, FormField,
+   DataTable; unstyled structure via `framework/headless`).
 3. Anything that changes state in response to a user action → wrap it in
    an **island** (see below).
 4. Register on the app router.
@@ -1280,7 +1264,7 @@ ships CSS: no app, no battery, no generator, no page.
 
 | Styling | Lives in | Mechanism |
 | --- | --- | --- |
-| A component's look | its `framework/ui` (or `core-ui/patterns`) file | `registry.RegisterStyle(name, fn)`, scoped to `[data-fui-comp]` |
+| A component's look | its `framework/ui` file | `registry.RegisterStyle(name, fn)`, scoped to `[data-fui-comp]` |
 | Layout shells (`.layout-body`, the centered container, sidebar row) | `core-ui/app` | `app.LayoutBaseCSS()`, injected once by the UI host |
 | Global resets, base typography, tabular figures, landmark-focus | `framework/uihost` | `frameworkBuiltinCSS` |
 | Colors / fonts / dark scheme | `core-ui/style` | theme tokens (`--color-*`, `--font-*`, `Theme.DarkColors`) |
@@ -1417,56 +1401,18 @@ unscopable selectors (`body`, `html`, `:root`, `*`, `::backdrop`,
 `::view-transition-*`). Authors `go test` a sheet without chromedp
 by building the `ComponentSheet` directly and asserting on bytes.
 
-### Patterns use the same contract
+### The pattern packages are gone
 
-Every package under `core-ui/patterns/*` (accordion, breadcrumbs,
-combobox, disclosure, infinitescroll, multiselect, nestedlist,
-progress, skeleton, sortablelist, tabs, tree) uses
-`registry.RegisterStyle` and wraps its top-level rendered element
-with `Style.WrapHTML(...)`. Class selectors stay class-based
-(`.accordion`, `.tabs`, `.nested-list`); the marker only signals
-to the auto-loader "fetch this stylesheet". No host setup required.
-(The pagination pattern is gone: the pager lives in `framework/ui`
-as `ui.Pagination`, rendered through the `headless.Pagination`
-primitive under the same style seam — `ui-data-table`'s footer
-carries it.)
-
-**Legacy `BaseCSS() string` exports are forbidden**: host apps used
-to import each pattern and concatenate `BaseCSS()` into their custom
-CSS via `WithCustomCSS`, but a single forgotten concat shipped a
-component without any styling on the page (the 2026-05-19 nestedlist
-incident). The contract is enforced by
-`core-ui/check.LintNoPatternBaseCSS`, run as a test in CI: any new
-pattern package exporting a `BaseCSS` function fails the build.
-
-The canonical shape for a new pattern package:
-
-```go
-// core-ui/patterns/foo/foo.go
-package foo
-
-import (
-    "github.com/DonaldMurillo/gofastr/core-ui/registry"
-    "github.com/DonaldMurillo/gofastr/core-ui/style"
-    "github.com/DonaldMurillo/gofastr/core/render"
-)
-
-var Style = registry.RegisterStyle("foo", styleFn)
-
-func styleFn(_ style.Theme) string { return baseCSS }
-
-func Render(cfg Config) render.HTML {
-    return Style.WrapHTML(render.Tag("div", attrs(cfg), ...))
-}
-
-const baseCSS = `.foo { ... }`
-```
-
-**Registration names are bare.** A pattern's `RegisterStyle` name, and the
-matching `data-fui-comp` value its CSS scopes to, is the package name
-verbatim (`accordion`, `breadcrumbs`, `multiselect`, `sortablelist`), not an
-`ui-`-prefixed alias. The prefix matches no convention in the repo and only
-hides which package owns the stylesheet.
+`core-ui/patterns/` no longer exists: every pattern either moved to
+`framework/ui` on its `framework/headless` primitive (breadcrumbs,
+multiselect, progress, sortablelist, tree — and combobox, disclosure,
+pagination, skeleton and tabs before them) or was deleted with no
+replacement (accordion and nestedlist are `ui.Collapsible`;
+infinitescroll had no user). A component that needs styling the design
+system does not provide is a MISSING component: add it upstream, in
+`framework/ui`, on the headless primitive that owns its structure. Its stylesheet registers through
+`RegisterStyle` like every other sheet; there is no `BaseCSS()` export
+for a host to concatenate.
 
 ### Component behaviour: the same seam
 
@@ -1828,9 +1774,8 @@ your need:
 | Markdown rendered as HTML | `framework/ui.Markdown` | Themed prose wrapper over `core/markdown`. Headings, lists, code blocks get theme tokens. |
 | Keyboard shortcut hint | `framework/ui.ShortcutHint` | Platform-aware mod-key glyphs (⌘ vs Ctrl) via `data-fui-os`. |
 | Theme override for a subtree | `framework/ui.Themed` | Wraps any content in a `.fui-theme-<hash>` div for section-level theming. |
-| Infinite scroll feed | `core-ui/patterns/infinitescroll` | IntersectionObserver sentinel, cursor-based pagination, appends HTML on scroll. |
-| Sortable drag-and-drop list | `core-ui/patterns/sortablelist` | Drag reorder + keyboard reorder. POSTs new order to RPC. Reverts on non-2xx. |
-| Expandable tree view | `core-ui/patterns/tree` | Lazy-load children via RPC on expand. Arrow-key nav, `data-fui-tree-toggle`. |
+| Sortable drag-and-drop list | `framework/ui.SortableList` | Drag reorder + keyboard reorder on the headless primitive; the registered `headless-sortablelist` module POSTs the new order and reverts on non-2xx. |
+| Expandable tree view | `framework/ui.Tree` | WAI-ARIA treeview on the headless primitive; lazy-load children via the toggle's `data-fui-rpc` on expand. Arrow-key nav, `data-hui-tree`. |
 
 ### Deep-linking modals + drawers
 

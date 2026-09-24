@@ -227,9 +227,9 @@ func TestCoreBudgetRejectsCliffOverflow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RuntimeJS: %v", err)
 	}
-	filler, ok := Module("sortablelist")
+	filler, ok := Module("rtc")
 	if !ok {
-		t.Fatal("sortablelist module not embedded")
+		t.Fatal("rtc module not embedded")
 	}
 
 	grown := core

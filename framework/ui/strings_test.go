@@ -143,6 +143,13 @@ func placeholderProbes() map[i18nui.Key]string {
 		i18nui.KeyHuiComboboxResultCount: "fr·{n} résultats",
 		i18nui.KeyHuiCarouselSlide:       "fr·Diapositive {n} sur {total}",
 		i18nui.KeyHuiCarouselGoToSlide:   "fr·Aller à la diapositive {n}",
+		// SortableList's formats: the drag label is a server %s, the
+		// three sentences are runtime {token} substitutions.
+		i18nui.KeyHuiSortableDragLabel:      "fr·Glisser %s",
+		i18nui.KeyHuiSortableGrabbed:        "fr·{label} saisi. Flèches pour déplacer, Espace pour poser.",
+		i18nui.KeyHuiSortablePosition:       "fr·Position {position} dans {list}.",
+		i18nui.KeyHuiSortableMoved:          "fr·Déplacé vers {list}, position {position}.",
+		i18nui.KeyHuiMultiSelectRemoveLabel: "fr·Retirer {label}",
 		// The JSON literals: the checker reads {} and [] as tokens,
 		// so the probes carry the braces verbatim.
 		i18nui.KeyHuiJSONEmptyObj: "fr·{}",

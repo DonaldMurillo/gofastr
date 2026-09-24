@@ -21,7 +21,6 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/interactive"
-	patternsSortablelist "github.com/DonaldMurillo/gofastr/core-ui/patterns/sortablelist"
 	"github.com/DonaldMurillo/gofastr/core-ui/store"
 	"github.com/DonaldMurillo/gofastr/core-ui/widget"
 	"github.com/DonaldMurillo/gofastr/core/render"
@@ -65,14 +64,14 @@ func InitialKanbanColumns() []KanbanColumn {
 func RenderKanbanBoard(cols []KanbanColumn, version int) render.HTML {
 	rendered := make([]render.HTML, 0, len(cols))
 	for _, c := range cols {
-		items := make([]patternsSortablelist.Item, len(c.Cards))
+		items := make([]ui.SortableItem, len(c.Cards))
 		for i, card := range c.Cards {
-			items[i] = patternsSortablelist.Item{Key: card.Key, Label: card.Title}
+			items[i] = ui.SortableItem{Key: card.Key, Label: card.Title}
 		}
 		rendered = append(rendered, html.Div(html.DivConfig{Class: "kanban-col"},
 			html.Heading(html.HeadingConfig{Level: 3, Class: "kanban-col__title"},
 				render.Text(c.Title)),
-			patternsSortablelist.Render(patternsSortablelist.Config{
+			ui.SortableList(ui.SortableListConfig{
 				Label:       c.Title,
 				Group:       "kanban-demo",
 				Container:   c.ID,

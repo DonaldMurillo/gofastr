@@ -165,8 +165,6 @@ component PR must include chromedp e2e tests that:
   - Combobox: type → option count goes from 0 to N, `aria-expanded` flips
     to `"true"`, Enter sets `input.value` to the picked option's
     `data-value`.
-  - InfiniteScroll: scrolling the sentinel into view → item count
-    increases; end-of-feed (empty cursor header) removes the sentinel.
   - Tree: clicking the toggle (or pressing ArrowRight) flips
     `aria-expanded="true"` AND populates `<ul role="group">` children.
   - CopyButton: click → `.fui-copied` applied, the
@@ -190,32 +188,33 @@ the bug you would have shipped without it. Always add both.
 
 **Every styled package registers its stylesheet via
 `registry.RegisterStyle` and wraps its top-level rendered element in
-`Style.WrapHTML(...)`. That covers `framework/ui/*`,
-`core-ui/patterns/*`, and widget chrome.**
+`Style.WrapHTML(...)`. That covers `framework/ui/*`
+and widget chrome.** (`core-ui/patterns/` is deleted; a composed
+pattern is a `framework/ui` component on its `framework/headless`
+primitive.)
 The runtime emits a `data-fui-comp="<name>"` marker on the wrapper,
 the SSR collector scans the rendered HTML, and CSS auto-loads: one
 `<link>` per used component per page, dedup'd globally.
 
 ```go
-// core-ui/patterns/foo/foo.go: canonical pattern shape
-var Style = registry.RegisterStyle("foo", styleFn)
+// framework/ui/foo.go: canonical component shape (on its headless
+// primitive for the structure + accessibility contract)
+var fooStyle = registry.RegisterStyle("ui-foo", fooCSS)
 
-func styleFn(_ style.Theme) string { return baseCSS }
+func fooCSS(_ style.Theme) string { return fooBaseCSS }
 
-func Render(cfg Config) render.HTML {
-    return Style.WrapHTML(render.Tag("div", attrs(cfg), ...))
+func Foo(cfg FooConfig) render.HTML {
+    return fooStyle.WrapHTML(headless.Foo(headless.FooProps{...}, classes))
 }
 
-const baseCSS = `.foo { ... }`
+const fooBaseCSS = `[data-fui-comp="ui-foo"] .fui-foo { ... }`
 ```
 
-**Do NOT export `func BaseCSS() string`** from a `core-ui/patterns/*`
-package. That was the legacy contract: host apps had to import the
+**Do NOT export `func BaseCSS() string`** from a component package.
+That was the legacy pattern contract: host apps had to import the
 package AND concatenate `BaseCSS()` into their custom CSS, and a
 single missed concat shipped a component without any styling on the
-live site (the 2026-05-19 nestedlist incident). The rule is enforced
-by `core-ui/check.LintNoPatternBaseCSS`, a build-time test that
-fails CI on the next regression.
+live site (the 2026-05-19 nestedlist incident).
 
 Selectors stay class-based (`.foo`, `.nested-list`); the marker
 only signals to the auto-loader "fetch this stylesheet". Apps don't
@@ -292,7 +291,7 @@ new RPC is still in flight.
   module contract.
 - ❌ Async triggers without `aria-busy` / `disabled` during pending;
   see the runtime-module contract.
-- ❌ Exporting `BaseCSS()` from a `core-ui/patterns/*` package. Use
+- ❌ Exporting `BaseCSS()` from a component package. Use
   `registry.RegisterStyle` + `Style.WrapHTML` instead. See the CSS
   contract section above.
 - ❌ Embedding full chrome HTML in `/__gofastr/widgets` JSON catalog.
@@ -311,7 +310,7 @@ new RPC is still in flight.
 - ❌ Reading form data with `req.FormValue()` when the runtime POSTs
   JSON. `dispatchRPC` serializes non-multipart forms as JSON
   (`Content-Type: application/json`); only manual `URLSearchParams`
-  POSTs (InfiniteScroll) are form-encoded. Use a helper that handles
+  POSTs (SortableList's commit) are form-encoded. Use a helper that handles
   both.
 - ❌ Writing the response body **before** setting a custom header.
   Go's `net/http` sends headers automatically on the first `Write`,

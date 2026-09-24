@@ -85,8 +85,8 @@
         el.innerHTML = html;
         // A server-pushed island can introduce a [data-fui-comp] the
         // page hadn't carried, load its component CSS, same as every
-        // other innerHTML swap path (nav/signals/poll/widgets/
-        // infinitescroll). This used to be the only swap that skipped
+        // other innerHTML swap path (nav/signals/poll/widgets).
+        // This used to be the only swap that skipped
         // scanAndLoadCSS, so pushed islands rendered unstyled.
         window.__gofastr.scanAndLoadCSS?.(el);
         el.classList.add('island-updated');

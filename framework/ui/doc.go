@@ -38,6 +38,7 @@
 //	BackToTop:            fixed scroll-to-top affordance after a threshold
 //	Banner:               page-level persistent status strip (dismissible)
 //	BarChart:             categorical SVG bar chart
+//	Breadcrumbs:         labelled nav trail ending at the current page
 //	Box:                  padded/bordered layout box
 //	Button:               primary/secondary/danger/ghost variants, Disabled, Action wiring seam
 //	Callout:              inline info/warning/danger/neutral block
@@ -89,6 +90,7 @@
 //	Markdown:             themed wrapper over core/markdown
 //	Menu:                 <details>-driven dropdown menu (keyboard + ARIA; submenus, radio rows)
 //	MetricBand:           compact semantic band of one to six related signals
+//	MultiSelect:          checkbox-group disclosure with a chips summary
 //	Muted:                subdued inline <span> for secondary text
 //	NetworkRetryBanner:   RPC-failure banner with health-probe retry
 //	Notification:         toast-styled inline notification (variant + dismiss)
@@ -108,6 +110,7 @@
 //	                       low-fidelity placeholder from a data: URI)
 //	PollingIndicator:     pulsing dot confirming a polling RPC is firing
 //	PricingCard:          plan tile with price + feature list + CTA
+//	Progress:             native <progress> bar, determinate or indeterminate
 //	ProgressSteps:        linear step indicator (horizontal + vertical)
 //	Radio:                labelled radio with FieldErrors wiring
 //	RadioGroup:           <fieldset> of radios with shared label + errors
@@ -133,6 +136,8 @@
 //	SkipLink:             focus-visible bypass link to main content
 //	Slider:               <input type=range> with optional live value mirror
 //	Sparkline:            pure-SVG inline trend chart
+//	SortableList:         drag + keyboard reorderable list with server-authoritative commit
+//	SortableListItems:    the rows-only fragment a 409 reconciliation returns
 //	Spinner:              inline role="status" loading indicator
 //	Stack:                vertical layout with gap
 //	StatCard:             metric tile with label/value/trend
@@ -157,6 +162,7 @@
 //	ToggleAction:         three-state commit/untoggle button with mutex groups
 //	Toolbar:              role=toolbar wrapper for grouped actions
 //	Tooltip:              CSS-only hover/focus reveal
+//	Tree:                 WAI-ARIA treeview (roving tabindex, lazy branches)
 //	ValidationSummary:    inline summary of form validation errors
 //
 // Layout primitives (Stack, Cluster, Grid, Center, Spacer, Box) share

@@ -50,7 +50,7 @@ func jsStripComments(src string) string {
 // moduleSources is every behaviour module source this package
 // registers, one entry per RegisterBehavior. The gates read them all:
 // a hook may be declared by one component and bound by any module in
-var moduleSources = []string{behaviorJS, controlsJS, collectionsJS, wizardJS, feedbackJS, navigationJS, whenJS, railJS, tocJS, disclosureJS, menuJS, comboboxJS, tabsJS, carouselJS, panehostJS, sidebarJS}
+var moduleSources = []string{behaviorJS, controlsJS, collectionsJS, wizardJS, feedbackJS, navigationJS, whenJS, railJS, tocJS, disclosureJS, menuJS, comboboxJS, tabsJS, carouselJS, panehostJS, sidebarJS, treeJS, sortablelistJS, multiselectJS}
 
 // others' hooks unbound. The list grows as the package registers
 // more modules (headless-controls, headless-collections,
@@ -196,9 +196,10 @@ func TestEveryHookTheModuleBindsIsDeclared(t *testing.T) {
 // refuses an empty one, because an unexplained exemption is an
 // exemption nobody re-reads.
 var sheetHooks = map[string]string{
-	"data-hui-grow":          "the spacer's flex factor: the stylesheet sizes the spacer from the number, and no script ever reads it",
-	"data-hui-lines":         "the skeleton's line count: the stylesheet draws as many bars as the root says",
-	"data-hui-skeleton-last": "the short final line of a multi-line skeleton: a shape decision a stylesheet makes and a script never touches",
+	"data-hui-grow":                    "the spacer's flex factor: the stylesheet sizes the spacer from the number, and no script ever reads it",
+	"data-hui-lines":                   "the skeleton's line count: the stylesheet draws as many bars as the root says",
+	"data-hui-skeleton-last":           "the short final line of a multi-line skeleton: a shape decision a stylesheet makes and a script never touches",
+	"data-hui-multiselect-placeholder": "the multiselect chips strip's empty-state word: the sheet's :empty ::before says it (content: attr(...)), and the module rebuilds the chips rather than saying anything",
 }
 
 // hostHooks are the declared hooks whose binder is not this package's

@@ -399,8 +399,9 @@ MCP tools `framework_docs_list` / `framework_docs_get` /
 - New UI / any styling decision? It goes in the design system, full stop
   (Hard rules 7–8). Start in `framework/ui/` if it composes intent
   (PageHeader, FormField, DataTable, Hero, AuthCard). Use `core-ui/html`
-  if it maps 1:1 to an HTML tag, `core-ui/patterns/` for a composed
-  pattern (accordion, tabs, pagination…), `core-ui/app` for layout shells
+  if it maps 1:1 to an HTML tag, `framework/headless` for the unstyled
+  structure + accessibility contract a styled component renders
+  through, `core-ui/app` for layout shells
   (the centered container, sidebar row: see `LayoutBaseCSS`), and
   `core-ui/style` for tokens (incl. `DarkColors`).
 - Using a general design skill (`/impeccable`, `/shape`)? Its "implement

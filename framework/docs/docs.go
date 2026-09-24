@@ -191,8 +191,10 @@ func extractSummary(body []byte) string {
 
 // excerptAround returns a substring of `line` centred on the first
 // occurrence of `needle` (matched case-insensitively against `lower`,
-// which must be strings.ToLower(line)) and capped at `cap` chars.
-// Prepends/appends "…" when the cut hits before/after the match.
+// which must be strings.ToLower(line)): cap/2 chars either side of the
+// match, shifted inward at the line's ends, so a cut line is cap chars
+// plus the needle. Prepends/appends "…" when the cut hits before/after
+// the match.
 func excerptAround(line, lower, needle string, cap int) string {
 	if len(line) <= cap {
 		return line

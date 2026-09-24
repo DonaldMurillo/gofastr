@@ -263,20 +263,33 @@ const (
 	KeyHuiCarouselSlide        Key = "ui.carousel.slide"     // "Slide {n} of {total}"
 	KeyHuiCarouselGoToSlide    Key = "ui.carousel.goToSlide" // "Go to slide {n}"
 
-	KeyHuiJSONObject           Key = "ui.json.object"           // "Object"
-	KeyHuiJSONArray            Key = "ui.json.array"            // "Array"
-	KeyHuiJSONNull             Key = "ui.json.null"             // "null"
-	KeyHuiJSONTrue             Key = "ui.json.true"             // "true"
-	KeyHuiJSONFalse            Key = "ui.json.false"            // "false"
-	KeyHuiJSONEmptyObj         Key = "ui.json.emptyObj"         // "{}"
-	KeyHuiJSONEmptyArr         Key = "ui.json.emptyArr"         // "[]"
-	KeyHuiJSONTruncated        Key = "ui.json.truncated"        // "…"
-	KeyHuiComboboxLoading      Key = "ui.combobox.loading"      // "Loading…"
-	KeyHuiComboboxNoResults    Key = "ui.combobox.noResults"    // "No matches"
-	KeyHuiComboboxResultCount  Key = "ui.combobox.resultCount"  // "{n} results"
-	KeyHuiComboboxResultsLabel Key = "ui.combobox.resultsLabel" // "results"                 // "On this page"
-	KeyHuiSidebarCollapse      Key = "ui.sidebar.collapse"      // "Collapse navigation"
-	KeyHuiSidebarExpand        Key = "ui.sidebar.expand"        // "Expand navigation"
+	KeyHuiJSONObject                Key = "ui.json.object"                // "Object"
+	KeyHuiJSONArray                 Key = "ui.json.array"                 // "Array"
+	KeyHuiJSONNull                  Key = "ui.json.null"                  // "null"
+	KeyHuiJSONTrue                  Key = "ui.json.true"                  // "true"
+	KeyHuiJSONFalse                 Key = "ui.json.false"                 // "false"
+	KeyHuiJSONEmptyObj              Key = "ui.json.emptyObj"              // "{}"
+	KeyHuiJSONEmptyArr              Key = "ui.json.emptyArr"              // "[]"
+	KeyHuiJSONTruncated             Key = "ui.json.truncated"             // "…"
+	KeyHuiComboboxLoading           Key = "ui.combobox.loading"           // "Loading…"
+	KeyHuiComboboxNoResults         Key = "ui.combobox.noResults"         // "No matches"
+	KeyHuiComboboxResultCount       Key = "ui.combobox.resultCount"       // "{n} results"
+	KeyHuiComboboxResultsLabel      Key = "ui.combobox.resultsLabel"      // "results"                 // "On this page"
+	KeyHuiSidebarCollapse           Key = "ui.sidebar.collapse"           // "Collapse navigation"
+	KeyHuiSidebarExpand             Key = "ui.sidebar.expand"             // "Expand navigation"
+	KeyHuiBreadcrumbsLabel          Key = "ui.breadcrumbs.label"          // "Breadcrumb"
+	KeyHuiSortableItemRole          Key = "ui.sortable.itemRole"          // "sortable item"
+	KeyHuiSortableDragLabel         Key = "ui.sortable.dragLabel"         // "Drag %s"
+	KeyHuiSortableGrabbed           Key = "ui.sortable.grabbed"           // "Grabbed {label}. …"
+	KeyHuiSortablePosition          Key = "ui.sortable.position"          // "Position {position} in {list}."
+	KeyHuiSortableMoved             Key = "ui.sortable.moved"             // "Moved to {list}, position {position}."
+	KeyHuiSortableSaved             Key = "ui.sortable.saved"             // "Order saved."
+	KeyHuiSortableReverted          Key = "ui.sortable.reverted"          // "Save failed. Reverted."
+	KeyHuiSortableCancelled         Key = "ui.sortable.cancelled"         // "Cancelled."
+	KeyHuiSortableConflictReverted  Key = "ui.sortable.conflictReverted"  // "Conflict. Reverted."
+	KeyHuiSortableConflictRefreshed Key = "ui.sortable.conflictRefreshed" // "Conflict. List refreshed from server."
+	KeyHuiMultiSelectPlaceholder    Key = "ui.multiselect.placeholder"    // "Choose…"
+	KeyHuiMultiSelectRemoveLabel    Key = "ui.multiselect.removeLabel"    // "Remove {label}"
 )
 
 // Defaults are the English fallback strings. Apps that provide their
@@ -446,54 +459,67 @@ var Defaults = map[Key]string{
 	// English matches headless's own defaults byte for byte — the
 	// bridge's no-translator output must be the words the goldens
 	// pin, and framework/ui's bridge test holds the two together).
-	KeyDismissTitled:           "Dismiss: %s",
-	KeyTagRemoveLabelled:       "Remove %s",
-	KeyActionFailed:            "Could not save. Try again.",
-	KeyColorPick:               "Pick %s",
-	KeyPasswordRevealShow:      "Show",
-	KeyPasswordRevealHide:      "Hide",
-	KeyToneInfo:                "Information",
-	KeyToneSuccess:             "Success",
-	KeyToneWarning:             "Warning",
-	KeyToneDanger:              "Error",
-	KeyTableSortedBy:           "Sorted by {column}, {direction}",
-	KeyTableDirAscending:       "ascending",
-	KeyTableDirDescending:      "descending",
-	KeyFileSelected:            "{name} selected.",
-	KeyFilesSelected:           "{n} files selected: {names}.",
-	KeyValidationProblem:       "There is a problem",
-	KeyHuiBackToTop:            "Back to top",
-	KeyHuiCopyStatus:           "Copied {name}",
-	KeyHuiNumberDecrement:      "Decrement %s",
-	KeyHuiNumberIncrement:      "Increment %s",
-	KeyHuiRangeLow:             "Minimum %s",
-	KeyHuiRangeHigh:            "Maximum %s",
-	KeyHuiRangeValue:           "%s to %s",
-	KeyHuiRatingChoice:         "%d out of %d",
-	KeyHuiTagInputAdd:          "Add %s",
-	KeyHuiTagInputAdded:        "{name} added",
-	KeyHuiTagInputRemoved:      "{name} removed",
-	KeyHuiRepeaterRemove:       "Remove item %d",
-	KeyHuiNotificationCount:    "%d unread notifications",
-	KeyHuiStepOf:               "Step %d of %d",
-	KeyHuiStepName:             "Step %d: %s",
-	KeyHuiTableOfContentsLabel: "On this page",
-	KeyHuiCarouselSlide:        "Slide {n} of {total}",
-	KeyHuiJSONObject:           "Object",
-	KeyHuiJSONArray:            "Array",
-	KeyHuiJSONNull:             "null",
-	KeyHuiJSONTrue:             "true",
-	KeyHuiJSONFalse:            "false",
-	KeyHuiJSONEmptyObj:         "{}",
-	KeyHuiJSONEmptyArr:         "[]",
-	KeyHuiJSONTruncated:        "…",
-	KeyHuiCarouselGoToSlide:    "Go to slide {n}",
-	KeyHuiComboboxLoading:      "Loading…",
-	KeyHuiComboboxNoResults:    "No matches",
-	KeyHuiComboboxResultCount:  "{n} results",
-	KeyHuiComboboxResultsLabel: "results",
-	KeyHuiSidebarCollapse:      "Collapse navigation",
-	KeyHuiSidebarExpand:        "Expand navigation",
+	KeyDismissTitled:                "Dismiss: %s",
+	KeyTagRemoveLabelled:            "Remove %s",
+	KeyActionFailed:                 "Could not save. Try again.",
+	KeyColorPick:                    "Pick %s",
+	KeyPasswordRevealShow:           "Show",
+	KeyPasswordRevealHide:           "Hide",
+	KeyToneInfo:                     "Information",
+	KeyToneSuccess:                  "Success",
+	KeyToneWarning:                  "Warning",
+	KeyToneDanger:                   "Error",
+	KeyTableSortedBy:                "Sorted by {column}, {direction}",
+	KeyTableDirAscending:            "ascending",
+	KeyTableDirDescending:           "descending",
+	KeyFileSelected:                 "{name} selected.",
+	KeyFilesSelected:                "{n} files selected: {names}.",
+	KeyValidationProblem:            "There is a problem",
+	KeyHuiBackToTop:                 "Back to top",
+	KeyHuiCopyStatus:                "Copied {name}",
+	KeyHuiNumberDecrement:           "Decrement %s",
+	KeyHuiNumberIncrement:           "Increment %s",
+	KeyHuiRangeLow:                  "Minimum %s",
+	KeyHuiRangeHigh:                 "Maximum %s",
+	KeyHuiRangeValue:                "%s to %s",
+	KeyHuiRatingChoice:              "%d out of %d",
+	KeyHuiTagInputAdd:               "Add %s",
+	KeyHuiTagInputAdded:             "{name} added",
+	KeyHuiTagInputRemoved:           "{name} removed",
+	KeyHuiRepeaterRemove:            "Remove item %d",
+	KeyHuiNotificationCount:         "%d unread notifications",
+	KeyHuiStepOf:                    "Step %d of %d",
+	KeyHuiStepName:                  "Step %d: %s",
+	KeyHuiTableOfContentsLabel:      "On this page",
+	KeyHuiCarouselSlide:             "Slide {n} of {total}",
+	KeyHuiJSONObject:                "Object",
+	KeyHuiJSONArray:                 "Array",
+	KeyHuiJSONNull:                  "null",
+	KeyHuiJSONTrue:                  "true",
+	KeyHuiJSONFalse:                 "false",
+	KeyHuiJSONEmptyObj:              "{}",
+	KeyHuiJSONEmptyArr:              "[]",
+	KeyHuiJSONTruncated:             "…",
+	KeyHuiCarouselGoToSlide:         "Go to slide {n}",
+	KeyHuiComboboxLoading:           "Loading…",
+	KeyHuiComboboxNoResults:         "No matches",
+	KeyHuiComboboxResultCount:       "{n} results",
+	KeyHuiComboboxResultsLabel:      "results",
+	KeyHuiSidebarCollapse:           "Collapse navigation",
+	KeyHuiSidebarExpand:             "Expand navigation",
+	KeyHuiBreadcrumbsLabel:          "Breadcrumb",
+	KeyHuiSortableItemRole:          "sortable item",
+	KeyHuiSortableDragLabel:         "Drag %s",
+	KeyHuiSortableGrabbed:           "Grabbed {label}. Arrow keys to move, Space to drop.",
+	KeyHuiSortablePosition:          "Position {position} in {list}.",
+	KeyHuiSortableMoved:             "Moved to {list}, position {position}.",
+	KeyHuiSortableSaved:             "Order saved.",
+	KeyHuiSortableReverted:          "Save failed. Reverted.",
+	KeyHuiSortableCancelled:         "Cancelled.",
+	KeyHuiSortableConflictReverted:  "Conflict. Reverted.",
+	KeyHuiSortableConflictRefreshed: "Conflict. List refreshed from server.",
+	KeyHuiMultiSelectPlaceholder:    "Choose…",
+	KeyHuiMultiSelectRemoveLabel:    "Remove {label}",
 }
 
 // translatorKey is the unexported context key used by WithTranslator
@@ -689,7 +715,11 @@ func AllKeys() []Key {
 		KeyHuiJSONEmptyArr, KeyHuiJSONTruncated,
 		KeyHuiComboboxLoading, KeyHuiComboboxNoResults,
 		KeyHuiComboboxResultCount, KeyHuiComboboxResultsLabel,
-		KeyHuiSidebarCollapse, KeyHuiSidebarExpand,
+		KeyHuiSidebarCollapse, KeyHuiSidebarExpand, KeyHuiBreadcrumbsLabel, KeyHuiSortableItemRole,
+		KeyHuiSortableDragLabel, KeyHuiSortableGrabbed, KeyHuiSortablePosition, KeyHuiSortableMoved,
+		KeyHuiSortableSaved, KeyHuiSortableReverted, KeyHuiSortableCancelled, KeyHuiSortableConflictReverted,
+		KeyHuiSortableConflictRefreshed, KeyHuiMultiSelectPlaceholder,
+		KeyHuiMultiSelectRemoveLabel,
 	}
 }
 

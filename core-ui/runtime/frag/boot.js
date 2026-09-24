@@ -404,24 +404,11 @@
     // SSR-inlined widget chrome is already on the page; mounting is
     // hydration not first paint. See ROADMAP §8 Phase 5.
     { name: 'widgets',    selector: '[data-fui-widget],[data-fui-open]', idle: true },
-    // Tree: any WAI-ARIA tree. The module handles roving tabindex,
-    // arrow-key nav, type-ahead, and toggle clicks that flip
-    // aria-expanded + show/hide child <ul role="group">.
-    { name: 'tree',       selector: '[role="tree"]' },
-    // InfiniteScroll: wrappers with the marker attribute. The module
-    // attaches an IntersectionObserver to each
-    // [data-fui-infinite-sentinel] inside and POSTs to
-    // data-fui-infinite-scroll.
-    { name: 'infinitescroll', selector: '[data-fui-infinite-scroll]' },
     // TextArea autogrow: applies the same auto-resize handler the
     // widget runtime uses for textareas anywhere on the page.
     { name: 'textarea',       selector: 'textarea[data-fui-autogrow]' },
-    // MultiSelect: chip rendering for checked options + chip removal.
-    { name: 'multiselect',    selector: '[data-fui-multiselect-chips]' },
     // DragDismiss: pointer drag-to-close for BottomSheet-style widgets.
     { name: 'dragdismiss', selector: '[data-fui-drag-dismiss="true"]' },
-    // SortableList: HTML5 drag + keyboard reorder. POSTs new order on commit.
-    { name: 'sortablelist',    selector: '[data-fui-sortable]' },
     // SearchInput: clear button visibility + input clearing.
     { name: 'searchinput',     selector: '[data-fui-comp="ui-search-input"]' },
     // Dropdown: click-toggle + click-outside dismiss + Esc close.

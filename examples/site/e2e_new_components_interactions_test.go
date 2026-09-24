@@ -17,7 +17,7 @@ import (
 //
 // Dropped (note-only in site): combobox, multiselect, confirmaction,
 // commandpalette, filterchipbar dismiss RPC (uses # stub in site),
-// infinitescroll, sortablelist.
+// sortablelist (its keyboard contract moved to framework/headless).
 //
 // Dropped (duplicated by e2e_test.go): copybutton flash/announce,
 // textarea autogrow, password toggle.
@@ -389,7 +389,7 @@ func TestE2E_TreeView_ArrowRightExpandsLazyBranch(t *testing.T) {
 		pageReady(),
 		// Site tree: vendor node is collapsed by default
 		chromedp.Evaluate(`document.getElementById('vendor')?.getAttribute('aria-expanded') || ''`, &expandedBefore),
-		chromedp.Evaluate(`document.querySelector('#vendor [data-fui-tree-toggle]')?.click()`, nil),
+		chromedp.Evaluate(`document.querySelector('#vendor [data-hui-tree-toggle]')?.click()`, nil),
 		chromedp.Sleep(500*1e6),
 		chromedp.Evaluate(`document.getElementById('vendor')?.getAttribute('aria-expanded') || ''`, &expandedAfter),
 		chromedp.Evaluate(`document.querySelectorAll('#vendor > [role="group"] > [role="treeitem"]').length`, &childCountAfter),

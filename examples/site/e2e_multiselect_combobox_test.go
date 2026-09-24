@@ -32,17 +32,17 @@ func TestE2E_MultiselectChipShowsLabel(t *testing.T) {
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/multiselect"),
 		pageReady(),
-		waitModule(`!!(window.__gofastr && window.__gofastr.multiselect)`),
+		waitModule(`!!(window.__gofastr && window.__gofastr.loadedModules && window.__gofastr.loadedModules['headless-multiselect'])`),
 		settle(),
 		// Go ships Selected:true, the boot scan must render its chip
 		// with the visible Label.
-		chromedp.Evaluate(`document.querySelector('.ui-multiselect__chip span')?.textContent || ''`, &bootChip),
+		chromedp.Evaluate(`document.querySelector('[data-hui-multiselect-chip-text]')?.textContent || ''`, &bootChip),
 		// Open the disclosure and pick C++ (Value "cpp").
-		chromedp.Click(`.ui-multiselect__summary`, chromedp.ByQuery),
+		chromedp.Click(`[data-hui-multiselect] summary`, chromedp.ByQuery),
 		chromedp.Evaluate(`document.getElementById('demo-multiselect-opt-1').click()`, nil),
 		settle(),
-		chromedp.Evaluate(`document.querySelectorAll('.ui-multiselect__chip').length`, &chipCount),
-		chromedp.Evaluate(`Array.from(document.querySelectorAll('.ui-multiselect__chip span')).map(s => s.textContent).join('|')`, &cppChip),
+		chromedp.Evaluate(`document.querySelectorAll('[data-hui-multiselect-chip]').length`, &chipCount),
+		chromedp.Evaluate(`Array.from(document.querySelectorAll('[data-hui-multiselect-chip-text]')).map(s => s.textContent).join('|')`, &cppChip),
 	)
 	if err != nil {
 		t.Fatalf("chromedp: %v", err)
@@ -66,12 +66,12 @@ func TestE2E_MultiselectChipRemove(t *testing.T) {
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/multiselect"),
 		pageReady(),
-		waitModule(`!!(window.__gofastr && window.__gofastr.multiselect)`),
+		waitModule(`!!(window.__gofastr && window.__gofastr.loadedModules && window.__gofastr.loadedModules['headless-multiselect'])`),
 		settle(),
 		// Remove the pre-selected Go chip via its × button.
-		chromedp.Click(`[data-fui-multiselect-remove="demo-multiselect-opt-0"]`, chromedp.ByQuery),
+		chromedp.Click(`[data-hui-multiselect-remove="demo-multiselect-opt-0"]`, chromedp.ByQuery),
 		settle(),
-		chromedp.Evaluate(`document.querySelectorAll('.ui-multiselect__chip').length`, &chipCount),
+		chromedp.Evaluate(`document.querySelectorAll('[data-hui-multiselect-chip]').length`, &chipCount),
 		chromedp.Evaluate(`document.getElementById('demo-multiselect-opt-0').checked`, &checked),
 	)
 	if err != nil {
