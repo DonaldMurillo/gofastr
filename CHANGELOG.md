@@ -825,7 +825,7 @@ are listed under Added above, not here.
   `"button.treatment": "outline"` into the emitted theme.go.
 
 - `gofastr upgrade` knows v0.86.0 ("Headless design system"): one note
-  per row of the migration ledger below (29 rows), each carrying a
+  per row of the migration ledger above (29 rows), each carrying a
   `detect` regex the CLI runs per-line over a project's non-test .go
   files to point at the exact lines the release breaks — import paths
   of the deleted `core-ui/patterns/*` packages, removed fields
