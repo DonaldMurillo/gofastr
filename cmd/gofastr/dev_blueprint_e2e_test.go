@@ -58,7 +58,7 @@ func TestE2E_DevLoop_BlueprintApp(t *testing.T) {
 	port := nextE2EPort(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	dev := exec.CommandContext(ctx, bin, "dev", "-p", port, "--dir", dir)
-	dev.Env = append(os.Environ(),
+	dev.Env = append(append(os.Environ(), devTempEnv(t)...),
 		"PORT=localhost:"+port,
 		"DATABASE_URL=file:"+filepath.Join(dir, "devloop.db"),
 		// The child app resolves worktree isolation from its cwd; a linked
@@ -76,7 +76,6 @@ func TestE2E_DevLoop_BlueprintApp(t *testing.T) {
 		_ = killTestProcessTree(dev)
 		cancel()
 		_ = dev.Wait()
-		removeDevServerBinary(dev)
 	})
 
 	base := "http://localhost:" + port

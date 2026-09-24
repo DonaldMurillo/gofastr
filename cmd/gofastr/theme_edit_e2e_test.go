@@ -89,12 +89,25 @@ func themeBrowserCtx(t *testing.T) context.Context {
 }
 
 func TestMain(m *testing.M) {
+	// One temp root for the whole package run. `gofastr dev` mints its
+	// build dir once per process (devServerBinDir) and removes it only on
+	// a clean shutdown, which the in-process tests never reach; under
+	// this root it goes when the run ends.
+	tmpRoot, err := os.MkdirTemp("", "gofastr-cmd-test-")
+	if err == nil {
+		for _, k := range []string{"TMPDIR", "TMP", "TEMP"} {
+			_ = os.Setenv(k, tmpRoot)
+		}
+	}
 	code := m.Run()
 	if themeBrowserKill != nil {
 		themeBrowserKill()
 	}
 	if themeAllocKill != nil {
 		themeAllocKill()
+	}
+	if tmpRoot != "" {
+		_ = os.RemoveAll(tmpRoot)
 	}
 	os.Exit(code)
 }
