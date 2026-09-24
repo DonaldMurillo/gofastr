@@ -5,7 +5,6 @@ import (
 	"net/http"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
-	"github.com/DonaldMurillo/gofastr/core-ui/widget"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
@@ -143,17 +142,3 @@ var _ component.Component = toastSlot{}
 // preset.ToastStack uses it internally; this is exported so a host can
 // build its own custom layout while sharing the runtime contract.
 func ToastSlot(name string) component.Component { return toastSlot{name: name} }
-
-// SignalSource for the toast stack. Returns the empty container.
-// Surface state is purely client-side; this exists so the widget
-// /state endpoint stays a no-op rather than 404.
-type toastStackSource struct{ name string }
-
-func (t toastStackSource) Read() (any, error) {
-	return string(toastSlot{name: t.name}.Render()), nil
-}
-
-// ToastStackSignal returns a SignalSource that emits the empty stack
-// container. Wired into preset.ToastStack automatically; exported for
-// hosts composing their own widget.
-func ToastStackSignal(name string) widget.SignalSource { return toastStackSource{name: name} }

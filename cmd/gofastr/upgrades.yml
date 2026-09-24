@@ -10,7 +10,10 @@
 # Fields per release: version (vX.Y.Z), title.
 # Fields per note: change (one line), breaking (bool), guidance (one
 # line — this parser has no block scalars), detect (optional Go regex
-# applied per-line to non-test .go files).
+# applied per-line to non-test .go files), nodetect (optional one-line
+# reason a breaking note carries no detect — only for changes with no
+# line-level spelling an old app carries, e.g. a field that survives
+# under the same name on another config; the reason is mandatory).
 #
 # Maintenance rule: EVERY release PR bumps `through` below; a release
 # that lands BREAKING changes also adds its entry under `releases`
@@ -19,7 +22,7 @@
 # The registry is complete through this release: releases ≤ through
 # with no entry below genuinely had no migration-relevant changes.
 # Targets beyond it make the CLI warn that it may be out of date.
-through: v0.85.0
+through: v0.86.0
 
 releases:
   - version: v0.3.0
@@ -1112,3 +1115,122 @@ releases:
       - change: "CodeBlockConfig gains HighlightLines, Diff, HighlightWords, and Wrap, and ui.Markdown forwards the fence options title, showLineNumbers, scroll, {1,3-5}/highlight=, diff, words=, and wrap"
         breaking: false
         guidance: "Additive; a zero config renders byte-identical markup. A docs site that lifted option-carrying fences out of Markdown to render them itself can delete that parser. Option-carrying fences now also carry the raw info string on the block's data-meta attribute."
+  - version: v0.86.0
+    title: Headless design system
+    notes:
+      - change: "style.ThemeRef.Hash is a method now; RegisterThemeOverride hashes lazily so package-level registration is safe in a library that does not import framework/ui"
+        breaking: true
+        detect: '\.Hash([^(\w]|$)'
+        guidance: "Move ref.Hash field reads to ref.Hash(); registering during init no longer hashes, freezes the component-options compiler hook, or panics framework/ui's later init."
+      - change: "disabled belongs to ButtonConfig.Disabled; a disabled key in ui.Button's ExtraAttrs panics pointing at the field"
+        breaking: true
+        detect: 'ExtraAttrs[^}]*"disabled"'
+        guidance: "Move the disabled key out of ui.Button's ExtraAttrs into the Disabled field — any spelling of the attr key panics at render now."
+      - change: "the button wiring vocabulary is typed: every data-fui-* key on a button routes through the Action seam and a key outside the admitted vocabulary panics at render, naming the key"
+        breaking: true
+        detect: '"data-fui-signal":|"data-fui-toggle-|"data-fui-optimistic-'
+        guidance: "Build button wiring with the interactive Action seam (interactive.Post/Put/Delete(...).OnSuccess(...).Attrs()) instead of data-fui-* keys in ExtraAttrs; the admitted vocabulary keeps its spelling, everything else panics."
+      - change: "the button classes are fui-button*; the ui-button class no longer exists in any emitted markup or stylesheet"
+        breaking: true
+        detect: '(^|[^a-z])ui-button'
+        guidance: "Call ui.Button / ui.LinkButton instead of hand-rolled class=\"ui-button\" markup, and rename .ui-button selectors (Form's block-actions, FilterToolbar, admin row actions) to .fui-button."
+      - change: "the form family's Input is a builder and its classes are fui-form*/fui-field*/fui-select*; hand-rolled ui-form/ui-form-field/ui-select class markup renders unstyled"
+        breaking: true
+        detect: '(^|[^a-z])ui-(form|form-field|form-section|select|input-group|validation-summary)'
+        guidance: "FormFieldConfig.Input now takes func(headless.FieldControl) render.HTML — build the control with ui.Control, a typed field, or ui.PasswordInput's Field — and rename ui-form/ui-form-field/ui-select markup to the fui-* names."
+      - change: "ui.ValidationSummary requires ID, and a ui.Form rendering Errors requires FormConfig.ID"
+        breaking: true
+        nodetect: "no line-level spelling: ValidationSummaryConfig gained a required ID and FormConfig.ID became required when Errors is set, but every identifier survives — old and new call sites read identically per line."
+        guidance: "Give every ui.ValidationSummary an ID and every ui.Form that renders Errors a FormConfig.ID; the summary's id is derived from the form's."
+      - change: "form wiring rides the request seam: data-fui-* and data-action-* keys in ui.Form's ExtraAttrs are admitted vocabulary or a render-time panic, and data-fui-rpc-body, after-text, after-disable, scroll-to and push-state are refused outright"
+        breaking: true
+        detect: 'data-fui-rpc-after-text|data-fui-rpc-after-disable|data-fui-rpc-scroll-to|data-fui-push-state'
+        guidance: "Build form wiring with interactive.Post(...).OnSuccess(...).Attrs(); a form serializes its own fields, so a static body and the four button-only effects panic at render."
+      - change: "an unsafe FormConfig.Action panics at render; the # substitution is gone"
+        breaking: true
+        detect: 'Action: *"(javascript:|//)'
+        guidance: "Fix the action URL — one the anchor policy refuses (protocol-relative //host, javascript:, control bytes) is a panic where the mistake was made, not a silent action=\"#\"."
+      - change: "FormConfig.Summary moved inside the validation summary and now renders even when Errors is empty"
+        breaking: true
+        nodetect: "no line-level spelling: FormConfig.Summary keeps its name and type (only its rendered shape moved), and the sentence's new home ValidationSummaryConfig.General is an addition, not a rename."
+        guidance: "Review FormConfig.Summary callers: the sentence renders as a row inside ui.ValidationSummary above the per-field links, no longer as an error Callout's whole body."
+      - change: "the bespoke-behaviour classes are fui-upload*/fui-drop*/fui-when/fui-textarea/fui-search*, and the conditionalfield, fileupload and dropzone runtime modules are deleted"
+        breaking: true
+        detect: '(^|[^a-z])ui-(fileupload|dropzone|conditional-field|textarea|search-input)|data-fui-fileupload'
+        guidance: "Call ui.FileUpload / ui.FileDropzone / ui.ConditionalField / ui.TextArea / ui.SearchInput instead of the old class markup; the three deleted modules 404 if hand-loaded, and hand-rolled data-fui-fileupload zones lose their drag-drop."
+      - change: "ui.ConditionalField renders visible; ConditionalFieldVisible and EvaluateInitialState are gone"
+        breaking: true
+        detect: 'ConditionalFieldVisible|EvaluateInitialState|data-when-name|data-when-value|data-fui-cond-disabled'
+        guidance: "Drop ConditionalFieldVisible/EvaluateInitialState (visible-until-armed is the default), rename data-when-name/data-when-value to data-hui-when/data-hui-when-value, and retarget data-fui-cond-disabled CSS to data-hui-when-off."
+      - change: "ui.FileUpload's and ui.TextArea's markup changed shape with their headless adoption"
+        breaking: true
+        detect: 'ui-fileupload__filename'
+        guidance: "The upload's hint renders inside the zone (<id>-accept, joined into aria-describedby) with the error below as role=alert, the filename paragraph is a module-filled role=list plus a status sentence; TextArea is a fui-field shell around a fui-textarea control."
+      - change: "the Lightbox viewer's classes are fui-lightbox* and its image carries data-fui-lightbox-image"
+        breaking: true
+        detect: '(^|[^a-z])ui-lightbox'
+        guidance: "Rename ui-lightbox__* selectors and markup to fui-lightbox__* and read the image via data-fui-lightbox-image; a core-ui-only page hand-rolling the markup must import framework/ui so the module links in."
+      - change: "display classes are fui-* (charts, images incl. the gallery DOM move, code incl. fui-code-tabs, markdown, terminal, avatar, icon, color picker, diff viewer, metric band, record summary, pricing card, auth card, sign out, optimistic/toggle action)"
+        breaking: true
+        detect: '(^|[^a-z])ui-(bar-chart|line-chart|pie-chart|sparkline|optimized-image|pipeline-image|image|gallery|code-block|code-tabs|markdown|terminal-block|terminal-ok|terminal-out|avatar|avatar-group|icon|color-picker|diff-viewer|metric-band|record-summary|pricing-card|auth-card|sign-out|optimistic-action|toggle-action)'
+        guidance: "Rename ui-* selectors to fui-* for the display family; registered sheet names and data-fui-comp markers stay."
+      - change: "shell classes are fui-* (hero, hero split, site header, site footer, doc layout, workbench, toolbar, filter toolbar, sidebar, responsive, themed)"
+        breaking: true
+        detect: '(^|[^a-z])ui-(hero|site-header|site-footer|doc-layout|doc-prev-next|workbench|toolbar|filter-toolbar|sidebar|responsive|themed)'
+        guidance: "Rename ui-* selectors to fui-* for the shell family; ui.Sidebar renders through headless.Sidebar (byte pins re-read: sorted attribute order, hidden=\"\" spelling), and an item with both Href and Children, a blank Label, or control bytes in DrawerName/CollapseStorageKey now panics — fix the config."
+      - change: "the residue is fui-* (data table, segmented, palette parts, JSONViewer parts, polling indicator, shortcut hint, confirm action, tooltip, search input, visually hidden)"
+        breaking: true
+        detect: '(^|[^a-z])ui-(data-table|segmented|cmd-palette|json-viewer|polling-indicator|shortcut-hint|confirm-action|tooltip|visually-hidden)'
+        guidance: "Rename ui-* selectors to fui-* for the residue family; the framework/gallery prefix gate refuses any ui-* class token in a rendered catalog entry from here on."
+      - change: "html.DetailsConfig.Disclosure is gone; html.Details renders a plain <details>"
+        breaking: true
+        detect: 'Disclosure:'
+        guidance: "Render headless.Disclosure or ui.Collapsible (data-hui-disclosure markup) for a disclosure with behaviour."
+      - change: "the kernel no longer reads data-fui-disclosure, data-fui-disclosure-persist, data-fui-pane-deeplink or data-fui-scrollspy"
+        breaking: true
+        detect: 'data-fui-disclosure|data-fui-pane-deeplink|data-fui-scrollspy'
+        guidance: "Close-on-navigate belongs to the headless-disclosure module (data-hui-disclosure markup, data-hui-disclosure-persist=\"<key>\" to survive soft navigation), the pane deep link is data-hui-pane-deeplink, and the scroll-spy rail is data-hui-rail."
+      - change: "the ten legacy token aliases are no longer emitted at :root or inside theme-override scope blocks (--color-muted, --color-surface-hover, --color-border-subtle, --color-border-hover, --color-primary-hover, --color-primary-foreground, --color-ring, --color-warn, --color-warn-soft, --color-warn-strong)"
+        breaking: true
+        detect: '--color-(muted|surface-hover|border-subtle|border-hover|primary-hover|primary-foreground|ring)|--color-warn([^a-zA-Z0-9]|$)|--color-warn-soft|--color-warn-strong'
+        guidance: "Reference the canonical ColorSet token instead (the CHANGELOG table maps each alias to its replacement or color-mix value); a stylesheet setting one as a theme token deletes the line — nothing reads it."
+      - change: "gofastr pack reads the auth form's hidden next input only as html.Input(html.InputConfig{Type: \"hidden\", Name: \"next\", ...})"
+        breaking: true
+        detect: 'name=\\?"next'
+        guidance: "Switch a hand-maintained render.Raw(\"<input ...>\") hidden next field to the html.Input call (the generator's spelling) or the packed blueprint emits next: \"\"."
+      - change: "core-ui/patterns/accordion is deleted; none replaces it"
+        breaking: true
+        detect: 'patterns/accordion|accordion\.(Group|Stack)\('
+        guidance: "A stacked disclosure group is ui.Collapsible sections, an exclusive one is Collapsibles sharing a name; the accordion style name and its .accordion* classes are gone."
+      - change: "core-ui/patterns/nestedlist is deleted; none replaces it"
+        breaking: true
+        detect: 'patterns/nestedlist|nestedlist\.Render\(|(^|[^a-z])nested-list'
+        guidance: "A recursive list with native collapse is ui.Tree (the WAI-ARIA treeview) or plain Collapsibles; the nestedlist style name and its .nested-list* classes are gone."
+      - change: "core-ui/patterns/infinitescroll is deleted; none replaces it"
+        breaking: true
+        detect: 'patterns/infinitescroll|infinitescroll\.Render\(|data-fui-infinite-|X-Gofastr-Infinite-Cursor'
+        guidance: "A lazy feed composes a poll or an island on the appending region; the infinitescroll module, its data-fui-infinite-* hooks and the header contract are gone."
+      - change: "core-ui/patterns/breadcrumbs is deleted; ui.Breadcrumbs replaces it"
+        breaking: true
+        detect: 'patterns/breadcrumbs|breadcrumbs\.New\('
+        guidance: "breadcrumbs.New(Config, ...Crumb) becomes ui.Breadcrumbs(ui.BreadcrumbsConfig{...}, ui.Crumb{...}); Crumb.Text/Href/Current keep their names, the default label resolves through Strings/i18nui, and separators are rendered aria-hidden spans."
+      - change: "core-ui/patterns/progress is deleted; ui.Progress replaces it"
+        breaking: true
+        detect: 'patterns/progress|progress\.New\(|LabelVisible'
+        guidance: "progress.New(Config) becomes ui.Progress(ui.ProgressConfig{...}); LabelVisible is spelled ShowLabel, a value past Max clamps at render and a non-finite one renders indeterminate."
+      - change: "core-ui/patterns/multiselect is deleted; ui.MultiSelect replaces it"
+        breaking: true
+        detect: 'patterns/multiselect|multiselect\.Render\(|data-fui-multiselect'
+        guidance: "multiselect.Render(Config) becomes ui.MultiSelect(ui.MultiSelectConfig{...}); Option keeps its fields, the placeholder and chip remove labels resolve through Strings/i18nui, and the classes are .fui-multiselect* under the ui-multiselect marker."
+      - change: "core-ui/patterns/sortablelist is deleted; ui.SortableList replaces it"
+        breaking: true
+        detect: 'patterns/sortablelist|sortablelist\.Render\(|data-fui-sortable'
+        guidance: "sortablelist.Render/RenderItems become ui.SortableList/ui.SortableListItems; Item is SortableItem with Key/Label/Content unchanged, the commit payload and versioned-409 path keep their contract, and the classes are .fui-sortablelist*."
+      - change: "core-ui/patterns/tree is deleted; ui.Tree replaces it"
+        breaking: true
+        detect: 'patterns/tree|tree\.Render\(|\bSignalPrefix\b|data-fui-tree-toggle'
+        guidance: "tree.Render(Config) becomes ui.Tree(ui.TreeConfig{...}); Node is TreeItem with fields unchanged, SignalPrefix is LazySignalPrefix, a lazy branch's toggle keeps the kernel's data-fui-rpc wiring verbatim, and duplicate node ids refuse at render."
+      - change: "four unused exports are removed: html.ContainerType, style.DarkSchemeCSS, gallery.MustLookup and ui.ToastStackSignal"
+        breaking: true
+        detect: '\bhtml\.ContainerType\(|\bstyle\.DarkSchemeCSS\(|\bgallery\.MustLookup\(|\bui\.ToastStackSignal\('
+        guidance: "Set container-type as a CSS property (ContainerType emitted an ignored HTML attribute), set Theme.DarkColors instead of DarkSchemeCSS, call gallery.Lookup and check its bool, and use preset.ToastStack(name) for the toast signal."

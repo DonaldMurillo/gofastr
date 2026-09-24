@@ -2,7 +2,6 @@ package ui
 
 import (
 	"context"
-	"strconv"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
@@ -166,16 +165,6 @@ func NotificationBell(cfg NotificationBellConfig) (render.HTML, *widget.Builder)
 		pb = pb.Pages(cfg.Pages...)
 	}
 	return trigger, pb
-}
-
-func formatBellCount(n int) string {
-	if n <= 0 {
-		return ""
-	}
-	if n > 99 {
-		return "99+"
-	}
-	return strconv.Itoa(n)
 }
 
 func bellIcon() string {

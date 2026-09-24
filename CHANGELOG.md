@@ -7,6 +7,8 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+## [0.86.0] - 2026-09-24
+
 ### BREAKING
 - **The `core-ui/patterns` family is deleted, and its four scripted
   runtime modules with it.** Every pattern either moved to
@@ -634,6 +636,19 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   embed route use it, and `app.EmbedLayout()` is the same primitive
   with no chrome. Generated apps own their shell as code, the way
   they own their screens.
+- **Four unused exports are removed.** Nothing in the repository
+  called them; each has a working replacement.
+  - `html.ContainerType` is removed. It set `container-type` and
+    `container-name` as HTML attributes, which browsers ignore, so it
+    never made a container. Set both as CSS properties in the
+    component's style (`ComponentSheet.Set`) and query them with
+    `ComponentSheet.Container`.
+  - `style.DarkSchemeCSS` is removed. Set `Theme.DarkColors`;
+    `Theme.CSSCustomProperties` emits the dark-scheme block.
+  - `gallery.MustLookup` is removed. Call `gallery.Lookup` and check
+    its bool.
+  - `ui.ToastStackSignal` is removed. `preset.ToastStack(name)` wires
+    the stack's signal source.
 
 - **The page dimensions are theme tokens; the private `--ui-*`
   width and height variables are gone.** `ui.Container` and
@@ -871,6 +886,11 @@ are listed under Added above, not here.
     `helpdocs` into the app and change them (see the BREAKING entry).
     Crumbs are `ui.Breadcrumbs`; the pager is the docs package's own.
 
+29. **Four unused exports are removed.** `html.ContainerType` (it
+    never worked: set `container-type` in CSS), `style.DarkSchemeCSS`
+    (set `Theme.DarkColors`), `gallery.MustLookup` (use `Lookup`) and
+    `ui.ToastStackSignal` (use `preset.ToastStack`).
+
 ### Added
 - **`gofastr generate package` copies the canonical chrome into an
   app.** `gofastr generate package [<name>] [--out=<dir>] [--dry-run]`
@@ -1025,6 +1045,22 @@ are listed under Added above, not here.
   whole round trip: picking `outline` re-renders the preview's primary
   button transparent and the write-back carries
   `"button.treatment": "outline"` into the emitted theme.go.
+
+- `gofastr upgrade` knows v0.86.0 ("Headless design system"): one note
+  per row of the migration ledger below (29 rows), each carrying a
+  `detect` regex the CLI runs per-line over a project's non-test .go
+  files to point at the exact lines the release breaks — import paths
+  of the deleted `core-ui/patterns/*` packages, removed fields
+  (`SignalPrefix`, `LabelVisible`), removed classes (`ui-button`,
+  `ui-form-field`, the ten `--color-*` aliases), retired hooks
+  (`data-fui-fileupload`, `data-fui-tree-toggle`). The two notes with
+  no line-level spelling an app carries (`ui.ValidationSummary`'s new
+  required `ID`, `FormConfig.Summary`'s moved render) carry a
+  `nodetect` reason instead — a new registry field, mandatory when
+  used, so an omission is a documented decision rather than an
+  oversight — and a test drives every detect through the real
+  detectHits path against one pre-stack line it must flag and the
+  migrated spelling it must stay silent on.
 
 - `framework/headless` gains the navigation primitives `Rail`,
   `TableOfContents`, `Disclosure`, `Menu`, `Combobox`, `Tabs`,

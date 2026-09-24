@@ -333,24 +333,6 @@ func innermostOpenerBefore(s string, pos int) int {
 	return -1
 }
 
-// matchParenBack returns the index of the `(` that pairs with the `)` at
-// index i in s, or -1.
-func matchParenBack(s string, i int) int {
-	depth := 0
-	for ; i >= 0; i-- {
-		switch s[i] {
-		case ')':
-			depth++
-		case '(':
-			if depth <= 1 {
-				return i
-			}
-			depth--
-		}
-	}
-	return -1
-}
-
 // skipSpaceBack returns the index of the last non-space char at or
 // before pos in s, or -1.
 func skipSpaceBack(s string, pos int) int {
@@ -362,66 +344,6 @@ func skipSpaceBack(s string, pos int) int {
 		}
 	}
 	return -1
-}
-
-// isBareElseOpen reports whether the block opener at index i in s is a
-// bare `else {` (no condition of its own), i.e. the preceding token is
-// the else keyword.
-func isBareElseOpen(s string, i int) bool {
-	j := skipSpaceBack(s, i-1)
-	if j < 3 || j-3 > len(s)-1 {
-		return false
-	}
-	if s[j-3:j+1] != "else" {
-		return false
-	}
-	// Reject identifiers merely ending in "else" (e.g. `xelse`).
-	if k := j - 4; k >= 0 {
-		c := s[k]
-		if c == '_' || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') {
-			return false
-		}
-	}
-	return true
-}
-
-// ifStmtStartBefore returns the start of the if-statement the bare
-// `else` block at index elseOpen belongs to: its condition's `(` when
-// the associated if-block is headed by one, else that block's `{`.
-func ifStmtStartBefore(s string, elseOpen int) int {
-	j := skipSpaceBack(s, elseOpen-1)
-	if j >= 3 && s[j-3:j+1] == "else" {
-		// Bare `else {` — hop over the keyword to the if-block's `}`.
-		j = skipSpaceBack(s, j-4)
-	}
-	if j < 0 || s[j] != '}' {
-		return elseOpen
-	}
-	depth := 0
-	open := -1
-	for i := j; i >= 0; i-- {
-		switch s[i] {
-		case '}':
-			depth++
-		case '{':
-			depth--
-			if depth == 0 {
-				open = i
-			}
-		}
-		if open >= 0 {
-			break
-		}
-	}
-	if open < 0 {
-		return elseOpen
-	}
-	if k := skipSpaceBack(s, open-1); k >= 0 && s[k] == ')' {
-		if m := matchParenBack(s, k); m >= 0 {
-			return m
-		}
-	}
-	return open
 }
 
 // moduleSrcValidatesNameShape asserts the split-module loader validates

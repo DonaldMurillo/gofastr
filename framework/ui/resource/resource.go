@@ -163,15 +163,6 @@ func (c Config) sortable(k string) bool {
 	return false
 }
 
-func (c Config) hasField(k string) bool {
-	for _, f := range c.Fields {
-		if f.Key == k {
-			return true
-		}
-	}
-	return false
-}
-
 func (c Config) field(k string) (Field, bool) {
 	for _, f := range c.Fields {
 		if f.Key == k {
