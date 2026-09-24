@@ -105,6 +105,17 @@ The preview renders the `framework/gallery` catalog, every design-system
 component against your theme, so you see the effect of a token change
 across buttons, badges, cards, inputs, and the status tones at once.
 
+The controls pane groups tokens — Colors first, then **Component
+options**, then the rest. Component options (density, the button
+treatment and radius, the field layout and radius) render as selects
+whose options are exactly the members the option vocabulary accepts,
+with the current value preselected: the list comes from
+`theme.Options()` in `framework/ui/theme`, so a new option cannot
+appear without its control following. Picking one applies through the
+same `ApplyTokens` path as a typed token, and the API behind it refuses
+a non-member value or an unknown `component.*` key with a 4xx, leaving
+the working theme untouched.
+
 **Contrast checking runs in the browser**, not in Go. `getComputedStyle`
 resolves every colour space (`oklch()`, `color-mix()`, `var()`) natively.
 The checker reads RGBA values through a canvas, composites text over the

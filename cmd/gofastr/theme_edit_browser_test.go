@@ -20,6 +20,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -657,4 +658,104 @@ func TestReservedErrorNodeFillsAndClears(t *testing.T) {
 		time.Sleep(100 * time.Millisecond)
 	}
 	t.Fatalf("the error state never cleared after a valid edit: msg=%q invalid=%q", state.Msg, state.Invalid)
+}
+
+// tePickSelectJS returns a JS expression that picks an option on a
+// token's select control and dispatches the same 'input' event a real
+// pick dispatches — the wiring the editor's JS installs on every
+// [data-token] control, selects included (a select fires 'input' on
+// change, exactly like a typed input).
+func tePickSelectJS(key, value string) string {
+	return fmt.Sprintf(`(function () {
+  var el = document.querySelector('select[data-token=%[1]q]');
+  if (!el) throw new Error('no select for ' + %[1]q);
+  el.value = %[2]q;
+  el.dispatchEvent(new Event('input', { bubbles: true }));
+  return el.value;
+})()`, key, value)
+}
+
+// tePreviewButtonBgJS yields the preview iframe's computed background
+// for the first primary button: the gallery's Button demo renders one
+// with .fui-button--primary, whose sheet reads
+// var(--fui-button-primary-bg) — the custom property the button
+// treatment option compiles to. Filled resolves a colour; outline
+// resolves transparent.
+const tePreviewButtonBgJS = `(function () {
+  var f = document.getElementById('te-frame');
+  if (!f || !f.contentDocument) return '';
+  var b = f.contentDocument.querySelector('.fui-button--primary');
+  if (!b) return '';
+  return f.contentWindow.getComputedStyle(b).backgroundColor;
+})()`
+
+// TestComponentOptionSelectReachesPreviewAndWriteBack is the component
+// options' whole round trip through a real browser: pick "outline" on
+// the Button treatment select, watch the preview's primary button lose
+// its fill (the variant is re-registered and the iframe's app.css
+// swaps), then Write and read the emitted theme.go, which must carry
+// the option. A control that applies nothing, or a write-back that
+// drops component options, both fail here.
+func TestComponentOptionSelectReachesPreviewAndWriteBack(t *testing.T) {
+	srv, httpSrv := newBrowserThemeServer(t)
+	if testing.Short() {
+		t.Skip("boots Chrome")
+	}
+	ctx := chromedptest.Context(t, chromedptest.WindowSize(1280, 800))
+	navigateToEditor(t, ctx, httpSrv)
+
+	// Baseline: the default treatment is filled, so the primary button
+	// paints a real colour, not transparency.
+	var before string
+	if err := chromedp.Run(ctx, chromedp.Evaluate(tePreviewButtonBgJS, &before)); err != nil {
+		t.Fatalf("read baseline button background: %v", err)
+	}
+	if before == "" {
+		t.Fatal("no primary button in the preview iframe — the gallery button demo is gone")
+	}
+	if before == "rgba(0, 0, 0, 0)" {
+		t.Fatalf("baseline primary button is already transparent (%q) — the filled default is not what the preview shows", before)
+	}
+
+	if err := chromedp.Run(ctx, chromedp.Evaluate(tePickSelectJS("component.button.treatment", "outline"), nil)); err != nil {
+		t.Fatalf("pick outline on the button treatment select: %v", err)
+	}
+	waitStatusContains(t, ctx, "updated component.button.treatment", 12*time.Second)
+
+	// The preview's rendered CSS must change: outline draws a
+	// transparent background where filled drew the primary colour.
+	deadline := time.Now().Add(12 * time.Second)
+	var after string
+	for time.Now().Before(deadline) {
+		_ = chromedp.Run(ctx, chromedp.Evaluate(tePreviewButtonBgJS, &after))
+		if after == "rgba(0, 0, 0, 0)" {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if after != "rgba(0, 0, 0, 0)" {
+		t.Fatalf("preview primary button background never went transparent: %q before, %q after — the treatment option did not reach the rendered variant CSS", before, after)
+	}
+
+	// Write-back carries the option into the emitted theme.go.
+	if err := chromedp.Run(ctx, chromedp.Evaluate(`document.getElementById('te-write').click()`, nil)); err != nil {
+		t.Fatalf("click Write: %v", err)
+	}
+	waitStatusContains(t, ctx, "wrote", 12*time.Second)
+	src, err := os.ReadFile(srv.outPath)
+	if err != nil {
+		t.Fatalf("read written theme: %v", err)
+	}
+	if !strings.Contains(string(src), `"button.treatment": "outline"`) {
+		t.Fatalf("written theme does not carry the outline treatment:\n%s", truncate(string(src), 400))
+	}
+	// The four options nobody touched survive the write too.
+	for _, o := range uitheme.Options() {
+		if o.Key == "button.treatment" {
+			continue
+		}
+		if !regexp.MustCompile(regexp.QuoteMeta(`"`+o.Key+`":`) + `\s+"`).MatchString(string(src)) {
+			t.Errorf("written theme dropped the untouched option %q:\n%s", o.Key, truncate(string(src), 400))
+		}
+	}
 }

@@ -25,6 +25,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/headless"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
+	uitheme "github.com/DonaldMurillo/gofastr/framework/ui/theme"
 )
 
 // serveControlsPage renders the editor chrome: the token controls (left),
@@ -87,7 +88,7 @@ func renderTokenControls(tokens map[string]string) string {
 		// bespoke badge markup: the count is what the operator scans for.
 		parts = append(parts, ui.Collapsible(ui.CollapsibleConfig{
 			Summary: fmt.Sprintf("%s (%d)", g.Name, len(g.Tokens)),
-			Open:    g.Name == "Colors" || g.Name == "Colors (dark)",
+			Open:    g.Name == "Colors" || g.Name == "Colors (dark)" || g.Name == "Component options",
 		}, rows...))
 	}
 	return string(ui.Stack(ui.StackConfig{Gap: ui.GapSM}, parts...))
@@ -96,19 +97,20 @@ func renderTokenControls(tokens map[string]string) string {
 func groupTokenControls(tokens map[string]string) []tokenGroupEntry {
 	groupMap := make(map[string]*tokenGroupEntry)
 	order := map[string]int{
-		"Colors":        0,
-		"Colors (dark)": 1,
-		"Spacing":       2,
-		"Radii":         3,
-		"Fonts":         4,
-		"Typography":    5,
-		"Shadows":       6,
-		"Z-Index":       7,
-		"Durations":     8,
-		"Easings":       9,
-		"Breakpoints":   10,
-		"Code":          11,
-		"Code (dark)":   12,
+		"Colors":            0,
+		"Component options": 1,
+		"Colors (dark)":     2,
+		"Spacing":           3,
+		"Radii":             4,
+		"Fonts":             5,
+		"Typography":        6,
+		"Shadows":           7,
+		"Z-Index":           8,
+		"Durations":         9,
+		"Easings":           10,
+		"Breakpoints":       11,
+		"Code":              12,
+		"Code (dark)":       13,
 	}
 	for k, v := range tokens {
 		gn := tokenGroupName(k)
@@ -123,8 +125,21 @@ func groupTokenControls(tokens map[string]string) []tokenGroupEntry {
 		ge.Tokens = append(ge.Tokens, tokenControl{Key: k, Value: v, Type: tokenControlType(k)})
 	}
 	out := make([]tokenGroupEntry, 0, len(groupMap))
+	// Component options follow the catalogue's order (density, then the
+	// button family, then the field family); every other group is by key.
+	catalogue := map[string]int{}
+	for i, o := range uitheme.Options() {
+		catalogue["component."+o.Key] = i
+	}
 	for _, g := range groupMap {
-		sort.Slice(g.Tokens, func(i, j int) bool { return g.Tokens[i].Key < g.Tokens[j].Key })
+		sort.Slice(g.Tokens, func(i, j int) bool {
+			ci, iok := catalogue[g.Tokens[i].Key]
+			cj, jok := catalogue[g.Tokens[j].Key]
+			if iok && jok {
+				return ci < cj
+			}
+			return g.Tokens[i].Key < g.Tokens[j].Key
+		})
 		out = append(out, *g)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Order < out[j].Order })
@@ -138,6 +153,8 @@ func tokenGroupName(key string) string {
 	switch {
 	case strings.HasPrefix(base, "color-"):
 		group = "Colors"
+	case strings.HasPrefix(base, "component."):
+		group = "Component options"
 	case strings.HasPrefix(base, "tk-"):
 		group = "Code"
 	case strings.HasPrefix(base, "spacing-"):
@@ -182,6 +199,16 @@ func tokenGroupName(key string) string {
 // data-field on the wrapper (so the JS can flip the error state
 // without selecting on a bespoke class).
 func renderOneControl(t tokenControl) render.HTML {
+	// Component options render as ui.Select rather than a FormField row:
+	// Select composes its own headless.Field with a readable label, and
+	// its members are a closed list the catalogue owns. A component key
+	// the catalogue does not know falls through to the text control
+	// below — an unrecognised prefix is never hidden.
+	if t.Type == "select" {
+		if opt, ok := componentOptionCatalogue[t.Key]; ok {
+			return componentOptionSelect(t, opt)
+		}
+	}
 	displayValue := t.Value
 	if t.Type == "number-px" {
 		displayValue = strings.TrimSuffix(t.Value, "px")
@@ -262,6 +289,60 @@ func controlInputID(key string) string {
 		}
 	}
 	return "te-input-" + b.String()
+}
+
+// componentOptionCatalogue indexes the option catalogue by flattened
+// token key ("component.button.treatment"), the shape the controls map
+// carries. Built once: the catalogue is static for the process life.
+var componentOptionCatalogue = func() map[string]uitheme.Option {
+	m := make(map[string]uitheme.Option, len(uitheme.Options()))
+	for _, o := range uitheme.Options() {
+		m["component."+o.Key] = o
+	}
+	return m
+}()
+
+// componentOptionSelect renders one component option as a ui.Select: the
+// design system's labelled native select, its options the catalogue's
+// members in declaration order with the current value selected. The key
+// rides data-token exactly as every other control does, so the editor's
+// JS applies a change the same way it applies a typed value; the label
+// is the readable form of the key.
+func componentOptionSelect(t tokenControl, opt uitheme.Option) render.HTML {
+	options := make([]ui.SelectOption, 0, len(opt.Members))
+	matched := false
+	for _, m := range opt.Members {
+		options = append(options, ui.SelectOption{Value: m, Text: m, Selected: m == t.Value})
+		matched = matched || m == t.Value
+	}
+	// A value no member matches would otherwise show as the first member
+	// while the theme holds something else: say what the theme holds.
+	// Picking it again is refused by the apply path like any non-member.
+	if !matched {
+		options = append([]ui.SelectOption{{Value: t.Value, Text: t.Value, Selected: true}}, options...)
+	}
+	return ui.Select(ui.SelectConfig{
+		Name:    t.Key,
+		Label:   componentOptionLabel(t.Key),
+		ID:      controlInputID(t.Key),
+		Options: options,
+		ExtraAttrs: html.Attrs{
+			"data-token": t.Key,
+			"data-type":  t.Type,
+		},
+	})
+}
+
+// componentOptionLabel renders a component option key as the label its
+// select shows: "component.button.treatment" → "Button treatment".
+// Derived from the key, not a second list: the option's name is its key.
+func componentOptionLabel(key string) string {
+	base := strings.TrimPrefix(key, "component.")
+	if base == "" {
+		return key
+	}
+	words := strings.ReplaceAll(base, ".", " ")
+	return strings.ToUpper(words[:1]) + words[1:]
 }
 
 // themeEditPageHTML composes the editor chrome from design-system primitives

@@ -242,6 +242,10 @@ func printThemeEditHelp() {
 	fmt.Println()
 	fmt.Println("Boots a local theme configurator with a live preview.")
 	fmt.Println()
+	fmt.Println("The controls pane groups tokens (Colors, Component options,")
+	fmt.Println("Spacing, ...). Component options render as selects listing the")
+	fmt.Println("values each option accepts; picking one re-renders the preview.")
+	fmt.Println()
 	fmt.Println("Flags:")
 	fmt.Println("  --addr=host:port   Bind address (default 127.0.0.1:0 = ephemeral loopback).")
 	fmt.Println("  --out=path         Write-back destination (default theme/theme.go).")
@@ -545,14 +549,18 @@ func writeJSONError(w http.ResponseWriter, code int, msg string) {
 // controls page renders. Derived purely from the key prefix, the same
 // prefix walkTokens/tokenPair use, so a token added to style.Theme later
 // gets a usable control automatically. "color" tokens get a colour picker,
-// integer-px and unitless-integer tokens get number inputs, everything else
-// (fonts, shadows, durations, easings, font-sizes, code colours) gets a
-// text input. An unrecognised prefix falls through to "text", never hidden.
+// integer-px and unitless-integer tokens get number inputs, "component.*"
+// keys get a select listing the option catalogue's members, and everything
+// else (fonts, shadows, durations, easings, font-sizes, code colours) gets
+// a text input. An unrecognised prefix falls through to "text", never
+// hidden.
 func tokenControlType(key string) string {
 	base := strings.TrimPrefix(key, "dark.")
 	switch {
 	case strings.HasPrefix(base, "color-"):
 		return "color"
+	case strings.HasPrefix(base, "component."):
+		return "select"
 	case strings.HasPrefix(base, "z-"):
 		return "number"
 	case strings.HasPrefix(base, "spacing-"), strings.HasPrefix(base, "radii-"), strings.HasPrefix(base, "breakpoint-"):

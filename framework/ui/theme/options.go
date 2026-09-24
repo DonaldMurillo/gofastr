@@ -321,3 +321,61 @@ func sortedOptionKeys(m map[string]string) []string {
 	sort.Strings(keys)
 	return keys
 }
+
+// Option is one entry of the option catalogue: a flattened Components
+// key, the member values its enum accepts in declaration order, and the
+// default DefaultOptions carries. Tools that author themes list these
+// members, so a control can never offer a value OptionsFromFlattened
+// refuses.
+type Option struct {
+	// Key is the flattened Components key ("button.treatment"), the
+	// exact string Flattened writes and OptionsFromFlattened switches
+	// on; ThemeToTokens emits it under "component.".
+	Key string
+	// Members are the values the option's enum accepts, in declaration
+	// order, derived from the enums' String methods.
+	Members []string
+	// Default is the value DefaultOptions carries for the key.
+	Default string
+}
+
+// Options returns the option catalogue: every flattened option key in a
+// fixed order — the declaration order the option set documents, density
+// first, then the button family, then the field family — each with its
+// members in declaration order and its default. The theme editor renders
+// each entry as a select whose options are the members, so an authored
+// value is a member by construction; the catalogue test pins the
+// catalogue to the flattened vocabulary so a new option cannot be added
+// without the catalogue following.
+func Options() []Option {
+	def := DefaultOptions.Flattened()
+	return []Option{
+		{Key: "density", Members: optionMembers(Density.String), Default: def["density"]},
+		{Key: "button.treatment", Members: optionMembers(ButtonTreatment.String), Default: def["button.treatment"]},
+		{Key: "button.radius", Members: optionMembers(ButtonRadius.String), Default: def["button.radius"]},
+		{Key: "field.layout", Members: optionMembers(FieldLayout.String), Default: def["field.layout"]},
+		{Key: "field.radius", Members: optionMembers(FieldRadius.String), Default: def["field.radius"]},
+	}
+}
+
+// optionMembers derives one enum's member strings by walking its values
+// from one upward through String, the same method Flattened writes
+// through, until String returns "". Every option enum is iota-based with
+// its Unset sentinel at zero, its members contiguous from one, and ""
+// past the last, so a member added to an enum joins the catalogue with
+// no second list and no bound to move.
+func optionMembers[T ~int](stringOf func(T) string) []string {
+	var out []string
+	for v := T(1); v <= maxOptionMembers; v++ {
+		name := stringOf(v)
+		if name == "" {
+			return out
+		}
+		out = append(out, name)
+	}
+	panic(fmt.Sprintf("theme: an option enum's String never returns \"\" past its last member (walked %d values)", maxOptionMembers))
+}
+
+// maxOptionMembers bounds the member walk: a String whose default arm
+// returns a word instead of "" would otherwise walk forever.
+const maxOptionMembers = 32
