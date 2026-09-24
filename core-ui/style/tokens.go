@@ -221,23 +221,18 @@ func componentCompilerDefaults() map[string]string {
 	return componentCompiler.defaults
 }
 
-// DarkSchemeCSS emits the dark-scheme token overrides for a theme's DarkColors
-// map (token name → CSS value), or "" when empty. Two selectors cover both ways
-// the scheme is chosen: an explicit `data-color-scheme="dark"` on <html> (set by
-// a ui.ThemeToggle / the color-scheme bootstrap) and the OS preference (unless
-// the user has explicitly forced light). Both re-declare the same tokens, so any
-// surface emitting the theme CSS recolors via the CSS-variable cascade. `color`
-// + `background-color` are set on the scope so bare text/elements without their
-// own token rule still flip.
-func DarkSchemeCSS(dark map[string]string) string {
-	return darkSchemeCSS(dark, nil)
-}
-
-// darkSchemeCSS is DarkSchemeCSS plus the optional dark syntax
-// palette (Theme.DarkCode): code entries emit `--tk-<name>` lines in
-// the same two dark-scheme blocks. The `color` + `background-color`
-// scope lines only accompany a color re-declaration, a code-only
-// dark palette shouldn't imply the page itself flips.
+// darkSchemeCSS emits the dark-scheme token overrides for a theme's
+// DarkColors map (token name → CSS value) plus the optional dark syntax
+// palette (Theme.DarkCode): code entries emit `--tk-<name>` lines in the
+// same two dark-scheme blocks. Two selectors cover both ways the scheme
+// is chosen: an explicit `data-color-scheme="dark"` on <html> (set by a
+// ui.ThemeToggle / the color-scheme bootstrap) and the OS preference
+// (unless the user has explicitly forced light). Both re-declare the same
+// tokens, so any surface emitting the theme CSS recolors via the
+// CSS-variable cascade. `color` + `background-color` are set on the scope
+// so bare text/elements without their own token rule still flip; the
+// scope lines only accompany a color re-declaration — a code-only dark
+// palette shouldn't imply the page itself flips.
 func darkSchemeCSS(dark, code map[string]string) string {
 	if len(dark) == 0 && len(code) == 0 {
 		return ""

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -259,6 +260,10 @@ func TestSemverPrereleaseAndPseudoVersions(t *testing.T) {
 // A breaking note in the release being shipped must carry a detector.
 // `gofastr upgrade` uses it to point at the exact lines the release will
 // break; without one the note is advice the tool cannot locate for you.
+// The one sanctioned exception is a change with no line-level spelling
+// an old app carries (a field that survives under the same name on the
+// config that changed) — such a note must say why in `nodetect`, so an
+// omission is a documented decision, never an oversight.
 //
 // Scoped to the newest release deliberately. Older entries are
 // grandfathered: several describe changes no regex can find (a removed
@@ -280,8 +285,16 @@ func TestNewestReleaseBreakingNotesHaveDetectors(t *testing.T) {
 		t.Fatalf("no release matching through=%s", through)
 	}
 	for _, note := range newest.Notes {
-		if note.Breaking && strings.TrimSpace(note.Detect) == "" {
-			t.Errorf("%s: breaking note %q has no detect regex — `gofastr upgrade` cannot show the user where it bites", newest.Version, note.Change)
+		if !note.Breaking {
+			continue
+		}
+		hasDetect := strings.TrimSpace(note.Detect) != ""
+		reason := strings.TrimSpace(note.Nodetect)
+		switch {
+		case hasDetect && reason != "":
+			t.Errorf("%s: breaking note %q carries both detect and nodetect — pick one", newest.Version, note.Change)
+		case !hasDetect && reason == "":
+			t.Errorf("%s: breaking note %q has no detect regex — `gofastr upgrade` cannot show the user where it bites, and no nodetect reason says why", newest.Version, note.Change)
 		}
 	}
 }
@@ -300,6 +313,170 @@ func TestBreakingMarkerIsNotDoubled(t *testing.T) {
 	for in, want := range cases {
 		if got := trimBreakingPrefix(in); got != want {
 			t.Errorf("trimBreakingPrefix(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// v086DetectPairs pins every v0.86.0 detector to one line an app written
+// against v0.85.0 carries (the detector must flag it) and the same line
+// after the migration the note's guidance prescribes (the detector must
+// stay silent — a detect that fires on the new spelling cries wolf on
+// every migrated project). Keyed by the note's detect regex.
+var v086DetectPairs = map[string][2]string{
+	`\.Hash([^(\w]|$)`: {
+		`if Dark.Hash != want {`,
+		`if Dark.Hash() != want {`,
+	},
+	`ExtraAttrs[^}]*"disabled"`: {
+		`ExtraAttrs: map[string]string{"disabled": ""},`,
+		`Disabled: true,`,
+	},
+	`"data-fui-signal":|"data-fui-toggle-|"data-fui-optimistic-`: {
+		`"data-fui-toggle-on": "done",`,
+		`Action: interactive.Post("/api/todos").Attrs(),`,
+	},
+	`(^|[^a-z])ui-button`: {
+		`cls := "ui-button ui-button--primary"`,
+		`cls := "fui-button fui-button--primary"`,
+	},
+	`(^|[^a-z])ui-(form|form-field|form-section|select|input-group|validation-summary)`: {
+		`cls := "ui-form ui-form--block-actions"`,
+		`cls := "fui-form fui-form--block-actions"`,
+	},
+	`data-fui-rpc-after-text|data-fui-rpc-after-disable|data-fui-rpc-scroll-to|data-fui-push-state`: {
+		`"data-fui-rpc-scroll-to": "form",`,
+		`ExtraAttrs: interactive.Post("/save").Attrs(),`,
+	},
+	`Action: *"(javascript:|//)`: {
+		`Action: "//cdn.example.com/save",`,
+		`Action: "/customers",`,
+	},
+	`(^|[^a-z])ui-(fileupload|dropzone|conditional-field|textarea|search-input)|data-fui-fileupload`: {
+		`cls := "ui-fileupload"`,
+		`cls := "fui-upload"`,
+	},
+	`ConditionalFieldVisible|EvaluateInitialState|data-when-name|data-when-value|data-fui-cond-disabled`: {
+		`Visible: ui.ConditionalFieldVisible{},`,
+		`attrs := map[string]string{"data-hui-when": "kind", "data-hui-when-value": "business"}`,
+	},
+	`ui-fileupload__filename`: {
+		`sel := ".ui-fileupload__filename:empty"`,
+		`hintID := id + "-accept"`,
+	},
+	`(^|[^a-z])ui-lightbox`: {
+		`sel := ".ui-lightbox__full[data-fui-zoomed]"`,
+		`sel := ".fui-lightbox__full[data-fui-zoomed]"`,
+	},
+	`(^|[^a-z])ui-(bar-chart|line-chart|pie-chart|sparkline|optimized-image|pipeline-image|image|gallery|code-block|code-tabs|markdown|terminal-block|terminal-ok|terminal-out|avatar|avatar-group|icon|color-picker|diff-viewer|metric-band|record-summary|pricing-card|auth-card|sign-out|optimistic-action|toggle-action)`: {
+		`sel := ".ui-avatar-group .ui-avatar"`,
+		`sel := ".fui-avatar-group .fui-avatar"`,
+	},
+	`(^|[^a-z])ui-(hero|site-header|site-footer|doc-layout|doc-prev-next|workbench|toolbar|filter-toolbar|sidebar|responsive|themed)`: {
+		`sel := ".ui-sidebar__group"`,
+		`sel := ".fui-sidebar__group"`,
+	},
+	`(^|[^a-z])ui-(data-table|segmented|cmd-palette|json-viewer|polling-indicator|shortcut-hint|confirm-action|tooltip|visually-hidden)`: {
+		`sel := "th a.ui-data-table__sort"`,
+		`sel := "th a.fui-data-table__sort"`,
+	},
+	`Disclosure:`: {
+		`out := html.Details(html.DetailsConfig{Summary: "More", Disclosure: true})`,
+		`out := ui.Collapsible(ui.CollapsibleConfig{Label: "More"})`,
+	},
+	`data-fui-disclosure|data-fui-pane-deeplink|data-fui-scrollspy`: {
+		`attrs := map[string]string{"data-fui-disclosure-persist": "toc"}`,
+		`attrs := map[string]string{"data-hui-disclosure-persist": "toc"}`,
+	},
+	`--color-(muted|surface-hover|border-subtle|border-hover|primary-hover|primary-foreground|ring)|--color-warn([^a-zA-Z0-9]|$)|--color-warn-soft|--color-warn-strong`: {
+		`body := "--color-muted: #6b7280;"`,
+		`body := "--color-surface-soft: #6b7280;"`,
+	},
+	`name=\\?"next`: {
+		`next := "<input type=\"hidden\" name=\"next\" value=\"/dash\">"`,
+		`next := html.Input(html.InputConfig{Type: "hidden", Name: "next", Value: "/dash"})`,
+	},
+	`patterns/accordion|accordion\.(Group|Stack)\(`: {
+		`faq := accordion.Group(accordion.GroupConfig{}, items...)`,
+		`faq := ui.Collapsible(ui.CollapsibleConfig{Name: "faq", Label: q, Children: a})`,
+	},
+	`patterns/nestedlist|nestedlist\.Render\(|(^|[^a-z])nested-list`: {
+		`tree := nestedlist.Render(nestedlist.Config{Items: nodes})`,
+		`tree := ui.Tree(ui.TreeConfig{Items: items})`,
+	},
+	`patterns/infinitescroll|infinitescroll\.Render\(|data-fui-infinite-|X-Gofastr-Infinite-Cursor`: {
+		`feed := infinitescroll.Render(infinitescroll.Config{Endpoint: ep})`,
+		`w.Poll(5 * time.Second)`,
+	},
+	`patterns/breadcrumbs|breadcrumbs\.New\(`: {
+		`crumbs := breadcrumbs.New(breadcrumbs.Config{}, breadcrumbs.Crumb{Text: "Tags"})`,
+		`crumbs := ui.Breadcrumbs(ui.BreadcrumbsConfig{}, ui.Crumb{Text: "Tags"})`,
+	},
+	`patterns/progress|progress\.New\(|LabelVisible`: {
+		`bar := progress.New(progress.Config{Value: 3, Max: 5, LabelVisible: true})`,
+		`bar := ui.Progress(ui.ProgressConfig{Value: 3, Max: 5, ShowLabel: true})`,
+	},
+	`patterns/multiselect|multiselect\.Render\(|data-fui-multiselect`: {
+		`ms := multiselect.Render(multiselect.Config{Name: "tags"})`,
+		`ms := ui.MultiSelect(ui.MultiSelectConfig{Name: "tags"})`,
+	},
+	`patterns/sortablelist|sortablelist\.Render\(|data-fui-sortable`: {
+		`list := sortablelist.Render(sortablelist.Config{Endpoint: ep, Items: items})`,
+		`list := ui.SortableList(ui.SortableListConfig{Endpoint: ep, Items: items})`,
+	},
+	`patterns/tree|tree\.Render\(|\bSignalPrefix\b|data-fui-tree-toggle`: {
+		`t := tree.Render(tree.Config{SignalPrefix: "nodes-"})`,
+		`t := ui.Tree(ui.TreeConfig{LazySignalPrefix: "nodes-"})`,
+	},
+	`\bhtml\.ContainerType\(|\bstyle\.DarkSchemeCSS\(|\bgallery\.MustLookup\(|\bui\.ToastStackSignal\(`: {
+		`grid := html.Div(html.ContainerType("inline-size", "cards"), cards)`,
+		`grid := html.Div(html.Class("cards"), cards)`,
+	},
+}
+
+// TestV086DetectorsSeparateOldFromNew runs every v0.86.0 detector through
+// the real detectHits path (temp project, per-line matching) against one
+// pre-stack line and its migrated spelling, and fails when a detector is
+// missing its pair — a note whose detect has no pair here is unproven.
+func TestV086DetectorsSeparateOldFromNew(t *testing.T) {
+	const version = "v0.86.0"
+	reg, err := loadUpgradeRegistry()
+	if err != nil {
+		t.Fatalf("loadUpgradeRegistry: %v", err)
+	}
+	var rel *upgradeRelease
+	for i := range reg {
+		if reg[i].Version == version {
+			rel = &reg[i]
+		}
+	}
+	if rel == nil {
+		t.Fatalf("no %s entry in the registry", version)
+	}
+	oldDir, newDir := t.TempDir(), t.TempDir()
+	seen := map[string]bool{}
+	for i, note := range rel.Notes {
+		if note.Detect == "" {
+			continue
+		}
+		pair, ok := v086DetectPairs[note.Detect]
+		if !ok {
+			t.Errorf("%s note %d (%s): detect %q has no old/new pair in v086DetectPairs", version, i+1, note.Change, note.Detect)
+			continue
+		}
+		seen[note.Detect] = true
+		rel := fmt.Sprintf("note%02d/app.go", i+1)
+		writeUpgradeFixture(t, oldDir, rel, "package app\n\n"+pair[0]+"\n")
+		writeUpgradeFixture(t, newDir, rel, "package app\n\n"+pair[1]+"\n")
+		if hits := detectHits(oldDir, note.Detect); len(hits) != 1 || !strings.HasSuffix(hits[0], rel+":3") {
+			t.Errorf("%s note %d: detect %q must flag the old line %q, got hits %v", version, i+1, note.Detect, pair[0], hits)
+		}
+		if hits := detectHits(newDir, note.Detect); len(hits) != 0 {
+			t.Errorf("%s note %d: detect %q must stay silent on the new spelling %q, got hits %v", version, i+1, note.Detect, pair[1], hits)
+		}
+	}
+	for pattern := range v086DetectPairs {
+		if !seen[pattern] {
+			t.Errorf("v086DetectPairs has a pair for %q but no %s note carries that detect", pattern, version)
 		}
 	}
 }

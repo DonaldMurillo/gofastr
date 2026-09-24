@@ -33,6 +33,7 @@ type upgradeNote struct {
 	Breaking bool
 	Guidance string // one-line, actionable
 	Detect   string // optional Go regex run per-line over the project's .go files
+	Nodetect string // optional one-line reason a breaking note has no detect (no line-level spelling exists)
 }
 
 // upgradeRelease groups the notes for one tagged release.
@@ -84,6 +85,7 @@ func loadUpgradeRegistryFull() ([]upgradeRelease, string, error) {
 					Breaking: yamlBool(n.Map["breaking"]),
 					Guidance: yamlString(n.Map["guidance"]),
 					Detect:   yamlString(n.Map["detect"]),
+					Nodetect: yamlString(n.Map["nodetect"]),
 				})
 			}
 		}

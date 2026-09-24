@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
-	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
 // Attrs is a type alias for map[string]string, matching [render.Attrs].
@@ -185,21 +184,6 @@ func Bind(key string) Attrs {
 	return Attrs{"data-bind": key}
 }
 
-// ContainerType returns Attrs that declare an element as a CSS container query context.
-// The containerType is typically "inline-size" (respond to width) or "size" (width + height).
-// Use this on parent elements whose children should respond to the parent's size.
-//
-//	html.Div(
-//		html.ContainerType("inline-size", "product-grid"),
-//		productCards...,
-//	)
-func ContainerType(containerType string, name string) Attrs {
-	return Attrs{
-		"container-type": containerType,
-		"container-name": name,
-	}
-}
-
 // buildAttrs constructs an Attrs map from optional base attrs, ID, and Class.
 // It never returns nil, always returns a usable map.
 func buildAttrs(base Attrs, id, class string) Attrs {
@@ -238,9 +222,4 @@ func setURLAttr(attrs Attrs, key, value string, policy urlsafe.Policy) Attrs {
 		return attrs
 	}
 	return setAttr(attrs, key, value)
-}
-
-// renderChildren is a helper that joins children into a single HTML fragment.
-func renderChildren(children []render.HTML) render.HTML {
-	return render.Join(children...)
 }
