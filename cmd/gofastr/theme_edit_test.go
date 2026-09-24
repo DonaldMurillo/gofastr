@@ -287,7 +287,9 @@ func TestTokenControlType(t *testing.T) {
 		{"spacing-md", "number-px"},
 		{"radii-lg", "number-px"},
 		{"breakpoint-md", "number-px"},
-		{"font-body", "text"},
+		{"component.density", "select"},
+		{"component.button.treatment", "select"},
+		{"component.field.radius", "select"},
 		{"shadow-md", "text"},
 		{"duration-fast", "text"},
 		{"easing-spring", "text"},
@@ -322,6 +324,77 @@ func TestThemeEditControlsPageContainsTokenControls(t *testing.T) {
 	}
 	if !strings.Contains(body, `name="theme-edit-token"`) {
 		t.Errorf("controls page missing the bearer-token meta tag (name=\"theme-edit-token\")")
+	}
+}
+
+// The component options render as selects, not free-text inputs: the
+// option key rides data-token on a <select> whose options are the
+// catalogue's members with the current value selected, labelled
+// readably ("Button treatment", not "component.button.treatment"),
+// inside a "Component options" group ordered first after Colors. A
+// select is the one control whose values the operator cannot get wrong;
+// a text input here is the regression this pins.
+func TestThemeEditComponentOptionsRenderAsSelects(t *testing.T) {
+	srv := newTestServer(t)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Host = "127.0.0.1:0"
+	srv.serveControlsPage(rec, req)
+	if rec.Code != 200 {
+		t.Fatalf("controls page status %d, want 200", rec.Code)
+	}
+	body := rec.Body.String()
+
+	// A <select> carrying the key, with every member offered and the
+	// current value (filled, the default) selected.
+	iSel := strings.Index(body, `data-token="component.button.treatment"`) // not-a-secret: the editor's data-token control selector
+	if iSel == -1 || !strings.Contains(body[max(0, iSel-40):iSel], "<select") {
+		t.Errorf("button treatment control is not a select carrying data-token:\n%s", truncate(body, 400))
+	}
+	for _, m := range []string{"filled", "outline", "soft"} {
+		if !strings.Contains(body, `value="`+m+`">`+m+`</option>`) {
+			t.Errorf("button treatment select does not offer member %q", m)
+		}
+	}
+	if !strings.Contains(body, `selected="" value="filled">filled</option>`) {
+		t.Error("button treatment select does not preselect the current value (filled)")
+	}
+
+	// The group follows the catalogue's order, not the keys' spelling.
+	last := -1
+	for _, o := range uitheme.Options() {
+		at := strings.Index(body, `data-token="component.`+o.Key+`"`) // not-a-secret: the editor's data-token control selector
+		if at <= last {
+			t.Errorf("component option %q renders out of catalogue order", o.Key)
+		}
+		last = at
+	}
+
+	// The readable label, not the raw key.
+	if !strings.Contains(body, ">Button treatment</label>") {
+		t.Error("button treatment select is not labelled \"Button treatment\"")
+	}
+
+	// The group exists and sits first after Colors (before Colors (dark)).
+	for _, marker := range []string{"Component options (5)", "Colors (", "Colors (dark)"} {
+		if !strings.Contains(body, marker) {
+			t.Errorf("controls page missing group %q", marker)
+		}
+	}
+	iColors := strings.Index(body, "Colors (")
+	iComponent := strings.Index(body, "Component options (5)")
+	iDark := strings.Index(body, "Colors (dark)")
+	if !(iColors < iComponent && iComponent < iDark) {
+		t.Errorf("Component options group is not first after Colors: colors=%d component=%d dark=%d", iColors, iComponent, iDark)
+	}
+
+	// Every option key in the catalogue has a select; nothing falls back
+	// to free text.
+	for _, opt := range uitheme.Options() {
+		i := strings.Index(body, `data-token="component.`+opt.Key+`"`) // not-a-secret: the editor's data-token control selector
+		if i == -1 || !strings.Contains(body[max(0, i-40):i], "<select") {
+			t.Errorf("component option %q renders as something other than a select", opt.Key)
+		}
 	}
 }
 
@@ -638,6 +711,45 @@ func TestThemeEditApplyInvalidValueJSON(t *testing.T) {
 	}
 	if !strings.Contains(rec.Body.String(), `"error"`) {
 		t.Errorf("invalid apply response missing error field:\n%s", rec.Body.String())
+	}
+}
+
+// The selects can only send members, but the API must not depend on
+// that: a non-member value for a known component key and a value for an
+// unknown component key both POST /__theme/apply, both come back 4xx,
+// and neither moves the working theme. ApplyTokens' grammar accepts
+// both shapes (they are lowercase words); the refusal is
+// applyToken's Validate, which runs the compiler's vocabulary — the
+// same boundary a hand-written theme file crosses.
+func TestThemeEditApplyRefusesBadComponentOptions(t *testing.T) {
+	srv := newTestServer(t)
+	before := make(map[string]string, len(srv.working.Components))
+	for k, v := range srv.working.Components {
+		before[k] = v
+	}
+
+	apply := func(body string) int {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/__theme/apply", strings.NewReader(body))
+		req.Host = "127.0.0.1:0"
+		req.Header.Set("Authorization", "Bearer "+srv.token)
+		srv.ServeHTTP(rec, req)
+		return rec.Code
+	}
+
+	if code := apply(`{"key":"component.button.treatment","value":"sparkly"}`); code < 400 || code > 499 {
+		t.Errorf("non-member component value: status %d, want 4xx", code)
+	}
+	if code := apply(`{"key":"component.button.sparkle","value":"filled"}`); code < 400 || code > 499 {
+		t.Errorf("unknown component key: status %d, want 4xx", code)
+	}
+	if !reflect.DeepEqual(srv.working.Components, before) {
+		t.Errorf("refused component applies mutated the working theme: %v", srv.working.Components)
+	}
+	// The refused keys never landed anywhere: the preview variant is
+	// unchanged too (applyToken only registers on success).
+	if got := srv.working.Components["button.treatment"]; got != before["button.treatment"] {
+		t.Errorf("button.treatment = %q after refusals, want %q", got, before["button.treatment"])
 	}
 }
 

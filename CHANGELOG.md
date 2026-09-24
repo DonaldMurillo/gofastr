@@ -785,6 +785,24 @@ are listed under Added above, not here.
     marker.
 
 ### Added
+- `gofastr theme edit` authors component options: the editor's controls
+  pane gains a "Component options" group (first after Colors) whose
+  density / button treatment / button radius / field layout / field
+  radius keys render as selects listing the members each option accepts,
+  with the current value preselected and a readable label ("Button
+  treatment"). The list comes from the new
+  `theme.Options()` catalogue in `framework/ui/theme` — one entry per
+  flattened option key, in a fixed order the controls follow, members
+  walked from the enums' `String` methods so a new member joins its
+  select with no other edit, defaults from `DefaultOptions` — and a test
+  pins the catalogue to the flattened vocabulary so a new option cannot
+  be added without its select following. The apply API already refused non-member
+  values and unknown `component.*` keys through `Theme.Validate`; a
+  regression test now pins that path, and a browser test drives the
+  whole round trip: picking `outline` re-renders the preview's primary
+  button transparent and the write-back carries
+  `"button.treatment": "outline"` into the emitted theme.go.
+
 - `framework/headless` gains the navigation primitives `Rail`,
   `TableOfContents`, `Disclosure`, `Menu`, `Combobox`, `Tabs`,
   `Carousel`, `PaneHost`, `Sidebar`, `JSONTree` and `Gallery`, with

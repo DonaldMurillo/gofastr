@@ -135,3 +135,68 @@ func TestApplyComponentOptionsMakesTheMapWhenNil(t *testing.T) {
 		t.Fatalf("Components[density] = %q after applying to a nil map, want compact", got)
 	}
 }
+
+// The catalogue is the authoring vocabulary: Options() must carry every
+// flattened option key (and nothing else), each with members that all
+// parse back through OptionsFromFlattened and a default that is one of
+// them. DefaultOptions is complete by construction, so its flattened
+// form IS the full key set the option system knows; comparing the
+// catalogue against it is what makes a new option unable to land
+// without the catalogue following — the editor's selects are generated
+// from the catalogue, so a key it misses would fall back to free text
+// with no list of what is allowed.
+func TestOptionsCatalogueCoversTheFlattenedVocabulary(t *testing.T) {
+	catalogue := Options()
+	if len(catalogue) == 0 {
+		t.Fatal("Options() returned an empty catalogue")
+	}
+	seen := map[string]bool{}
+	for _, opt := range catalogue {
+		if seen[opt.Key] {
+			t.Errorf("catalogue lists %q twice", opt.Key)
+			continue
+		}
+		seen[opt.Key] = true
+		if len(opt.Members) == 0 {
+			t.Errorf("catalogue entry %q carries no members — a select needs at least one option", opt.Key)
+			continue
+		}
+		defaultIsMember := false
+		for _, m := range opt.Members {
+			if _, err := OptionsFromFlattened(map[string]string{opt.Key: m}); err != nil {
+				t.Errorf("catalogue member %q for %q does not parse: %v", m, opt.Key, err)
+			}
+			if m == opt.Default {
+				defaultIsMember = true
+			}
+		}
+		if !defaultIsMember {
+			t.Errorf("catalogue default %q for %q is not among its members %v", opt.Default, opt.Key, opt.Members)
+		}
+	}
+	// Exactly the accepted keys, no more and no fewer. A key in the
+	// flattened set the catalogue misses is an option with no select; a
+	// catalogue key outside it is a select whose value can never round
+	// trip.
+	complete := DefaultOptions.Flattened()
+	for k := range complete {
+		if !seen[k] {
+			t.Errorf("flattened option %q is missing from the catalogue — the editor would render it as free text", k)
+		}
+	}
+	for k := range seen {
+		if _, ok := complete[k]; !ok {
+			t.Errorf("catalogue key %q is not an option DefaultOptions carries — it can never round-trip", k)
+		}
+	}
+	// The fixed order is part of the contract (the editor's Component
+	// options group and the docs both read it), so pin it.
+	wantOrder := []string{"density", "button.treatment", "button.radius", "field.layout", "field.radius"}
+	got := make([]string, 0, len(catalogue))
+	for _, opt := range catalogue {
+		got = append(got, opt.Key)
+	}
+	if !reflect.DeepEqual(got, wantOrder) {
+		t.Errorf("catalogue order = %v, want %v", got, wantOrder)
+	}
+}
