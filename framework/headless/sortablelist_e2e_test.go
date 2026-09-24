@@ -214,10 +214,23 @@ func TestE2E_SortableCrossContainerMove(t *testing.T) {
 	if !pollTrue(ctx, `document.querySelectorAll('[aria-label="Doing"] > [data-hui-sortable-item]').length === 1`) {
 		t.Fatal("the row never crossed into the Doing column")
 	}
-	if len(bodies) == 0 {
+	// The row moves in the DOM before its commit reaches the handler, so
+	// wait for the request instead of reading bodies once.
+	var got string
+	for range 40 {
+		mu.Lock()
+		if len(bodies) > 0 {
+			got = bodies[len(bodies)-1]
+		}
+		mu.Unlock()
+		if got != "" {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if got == "" {
 		t.Fatal("the crossing never committed")
 	}
-	got := bodies[len(bodies)-1]
 	v, _ := url.ParseQuery(got)
 	if v.Get("moved") != "k1" || v.Get("container") != "doing" || v.Get("order") != "k1" {
 		t.Fatalf("cross-container commit sent %q, want moved=k1 container=doing order=k1", got)
