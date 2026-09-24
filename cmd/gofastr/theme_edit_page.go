@@ -88,7 +88,7 @@ func renderTokenControls(tokens map[string]string) string {
 		// bespoke badge markup: the count is what the operator scans for.
 		parts = append(parts, ui.Collapsible(ui.CollapsibleConfig{
 			Summary: fmt.Sprintf("%s (%d)", g.Name, len(g.Tokens)),
-			Open:    g.Name == "Colors" || g.Name == "Colors (dark)",
+			Open:    g.Name == "Colors" || g.Name == "Colors (dark)" || g.Name == "Component options",
 		}, rows...))
 	}
 	return string(ui.Stack(ui.StackConfig{Gap: ui.GapSM}, parts...))
@@ -310,8 +310,16 @@ var componentOptionCatalogue = func() map[string]uitheme.Option {
 // is the readable form of the key.
 func componentOptionSelect(t tokenControl, opt uitheme.Option) render.HTML {
 	options := make([]ui.SelectOption, 0, len(opt.Members))
+	matched := false
 	for _, m := range opt.Members {
 		options = append(options, ui.SelectOption{Value: m, Text: m, Selected: m == t.Value})
+		matched = matched || m == t.Value
+	}
+	// A value no member matches would otherwise show as the first member
+	// while the theme holds something else: say what the theme holds.
+	// Picking it again is refused by the apply path like any non-member.
+	if !matched {
+		options = append([]ui.SelectOption{{Value: t.Value, Text: t.Value, Selected: true}}, options...)
 	}
 	return ui.Select(ui.SelectConfig{
 		Name:    t.Key,

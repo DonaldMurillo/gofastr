@@ -20,6 +20,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -747,5 +748,14 @@ func TestComponentOptionSelectReachesPreviewAndWriteBack(t *testing.T) {
 	}
 	if !strings.Contains(string(src), `"button.treatment": "outline"`) {
 		t.Fatalf("written theme does not carry the outline treatment:\n%s", truncate(string(src), 400))
+	}
+	// The four options nobody touched survive the write too.
+	for _, o := range uitheme.Options() {
+		if o.Key == "button.treatment" {
+			continue
+		}
+		if !regexp.MustCompile(regexp.QuoteMeta(`"`+o.Key+`":`) + `\s+"`).MatchString(string(src)) {
+			t.Errorf("written theme dropped the untouched option %q:\n%s", o.Key, truncate(string(src), 400))
+		}
 	}
 }

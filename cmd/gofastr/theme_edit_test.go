@@ -374,6 +374,15 @@ func TestThemeEditComponentOptionsRenderAsSelects(t *testing.T) {
 	if !strings.Contains(body, ">Button treatment</label>") {
 		t.Error("button treatment select is not labelled \"Button treatment\"")
 	}
+	// The label names the select: its for is the select's id.
+	labelFor := regexp.MustCompile(`<label[^>]*for="([^"]+)"[^>]*>Button treatment</label>`).FindStringSubmatch(body)
+	if labelFor == nil {
+		t.Fatal("the Button treatment label carries no for")
+	}
+	treatment := regexp.MustCompile(`<select[^>]*data-token="component.button.treatment"[^>]*>`).FindString(body) // not-a-secret: the editor's data-token control selector
+	if !strings.Contains(treatment, ` id="`+labelFor[1]+`"`) {
+		t.Errorf("the Button treatment label's for=%q is not the treatment select's id: %s", labelFor[1], treatment)
+	}
 
 	// The group exists and sits first after Colors (before Colors (dark)).
 	for _, marker := range []string{"Component options (5)", "Colors (", "Colors (dark)"} {
@@ -1341,5 +1350,28 @@ func TestThemeEditRejectsDeclarationBreaks(t *testing.T) {
 		if _, err := srv.applyToken(tc.key, tc.value); err != nil {
 			t.Errorf("legitimate %s value %q rejected: %v", tc.key, tc.value, err)
 		}
+	}
+}
+
+// A working value no member matches must show as itself, selected; with
+// no selected option the browser would show the first member while the
+// theme holds something else.
+func TestThemeEditSelectShowsAnUnmatchedValue(t *testing.T) {
+	var opt uitheme.Option
+	for _, o := range uitheme.Options() {
+		if o.Key == "button.treatment" {
+			opt = o
+		}
+	}
+	h := string(componentOptionSelect(tokenControl{Key: "component.button.treatment", Value: "ghostly", Type: "select"}, opt))
+	if !strings.Contains(h, `selected="" value="ghostly">ghostly</option>`) {
+		t.Errorf("an unmatched value is not shown selected:\n%s", h)
+	}
+	if strings.Count(h, `selected=""`) != 1 {
+		t.Errorf("want exactly one selected option:\n%s", h)
+	}
+	h = string(componentOptionSelect(tokenControl{Key: "component.button.treatment", Value: "outline", Type: "select"}, opt))
+	if strings.Contains(h, "ghostly") || !strings.Contains(h, `selected="" value="outline">`) {
+		t.Errorf("a member value should select that member and add nothing:\n%s", h)
 	}
 }

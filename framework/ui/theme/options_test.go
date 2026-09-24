@@ -200,3 +200,33 @@ func TestOptionsCatalogueCoversTheFlattenedVocabulary(t *testing.T) {
 		t.Errorf("catalogue order = %v, want %v", got, wantOrder)
 	}
 }
+
+// The member walk stops at the first "" String returns, so a hole in an
+// option enum (members at 1, 2 and 4) would silently drop every member
+// after it from the editor while Parse still accepts them. Past the
+// walk's end, String must stay "" all the way to the walk's bound.
+func TestOptionEnumsHaveNoHoles(t *testing.T) {
+	check := func(name string, members []string, stringOf func(int) string) {
+		for v := len(members) + 1; v <= maxOptionMembers; v++ {
+			if s := stringOf(v); s != "" {
+				t.Errorf("%s(%d) = %q after the walk stopped at %d members: a hole hides it from the catalogue", name, v, s, len(members))
+			}
+		}
+	}
+	check("Density", optionMembers(Density.String), func(v int) string { return Density(v).String() })
+	check("ButtonTreatment", optionMembers(ButtonTreatment.String), func(v int) string { return ButtonTreatment(v).String() })
+	check("ButtonRadius", optionMembers(ButtonRadius.String), func(v int) string { return ButtonRadius(v).String() })
+	check("FieldLayout", optionMembers(FieldLayout.String), func(v int) string { return FieldLayout(v).String() })
+	check("FieldRadius", optionMembers(FieldRadius.String), func(v int) string { return FieldRadius(v).String() })
+}
+
+// A String whose default arm returns a word would walk forever; the
+// bound turns that into a panic naming the cause.
+func TestOptionMembersRefusesAnUnterminatedEnum(t *testing.T) {
+	defer func() {
+		if recover() == nil {
+			t.Fatal("a String that never returns \"\" should panic, not hang or return")
+		}
+	}()
+	optionMembers(func(int) string { return "unknown" })
+}

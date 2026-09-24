@@ -366,11 +366,16 @@ func Options() []Option {
 // no second list and no bound to move.
 func optionMembers[T ~int](stringOf func(T) string) []string {
 	var out []string
-	for v := T(1); ; v++ {
+	for v := T(1); v <= maxOptionMembers; v++ {
 		name := stringOf(v)
 		if name == "" {
 			return out
 		}
 		out = append(out, name)
 	}
+	panic(fmt.Sprintf("theme: an option enum's String never returns \"\" past its last member (walked %d values)", maxOptionMembers))
 }
+
+// maxOptionMembers bounds the member walk: a String whose default arm
+// returns a word instead of "" would otherwise walk forever.
+const maxOptionMembers = 32
