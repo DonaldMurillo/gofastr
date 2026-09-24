@@ -316,14 +316,14 @@ func TestPrefetchAttrRejectsForeignModule(t *testing.T) {
 	}{
 		{"traversal", `../../../evil`},  // normalizes to /evil.js
 		{"relative-escape", `../other`}, // normalizes to /__gofastr/other.js
-		{"happy-path", `sortablelist`},  // real module; the loader must still work (menu retired)
+		{"happy-path", `poll`},          // real module; the loader must still work (menu and its kin retired)
 	}
 	for _, tc := range cases {
 		t.Run(tc.label, func(t *testing.T) {
 			g := startGadgetServer(t, `[]`, `<div id="host"></div>`)
 
 			ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
-			var pwned, other, menuLoaded bool
+			var pwned, other, pollLoaded bool
 			if err := chromedp.Run(ctx,
 				chromedp.Navigate(g.Srv.URL+"/"),
 				chromedp.WaitVisible(`#ready`, chromedp.ByID),
@@ -337,7 +337,7 @@ func TestPrefetchAttrRejectsForeignModule(t *testing.T) {
 				chromedp.Sleep(500*time.Millisecond),
 				chromedp.Evaluate(`window.__pwned === true`, &pwned),
 				chromedp.Evaluate(`window.__other === true`, &other),
-				chromedp.Evaluate(`!!(window.__gofastr && window.__gofastr.loadedModules && window.__gofastr.loadedModules.sortablelist)`, &menuLoaded),
+				chromedp.Evaluate(`!!(window.__gofastr && window.__gofastr.loadedModules && window.__gofastr.loadedModules.poll)`, &pollLoaded),
 			); err != nil {
 				t.Fatal(err)
 			}
@@ -353,8 +353,8 @@ func TestPrefetchAttrRejectsForeignModule(t *testing.T) {
 						tc.attr, g.OtherJS.Load(), other)
 				}
 			case "happy-path":
-				if !menuLoaded {
-					t.Errorf("data-fui-prefetch=%q no longer loads the real module 'menu' — a name guard must not reject the emitted shape",
+				if !pollLoaded {
+					t.Errorf("data-fui-prefetch=%q no longer loads the real module 'poll' — a name guard must not reject the emitted shape",
 						tc.attr)
 				}
 			}

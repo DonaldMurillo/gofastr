@@ -82,7 +82,7 @@ func TestE2E_Breadcrumbs_AriaCurrentIsExactlyOne(t *testing.T) {
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/breadcrumbs"),
 		pageReady(),
-		chromedp.Evaluate(`document.querySelectorAll('.breadcrumbs [aria-current="page"]').length`, &current),
+		chromedp.Evaluate(`document.querySelectorAll('.fui-breadcrumbs__link[aria-current="page"]').length`, &current),
 	)
 	if err != nil {
 		t.Fatalf("chromedp: %v", err)

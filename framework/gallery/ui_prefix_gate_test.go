@@ -26,33 +26,14 @@ import (
 // quotes and unquoted values do not occur in framework output.
 var classAttrRe = regexp.MustCompile(`class="([^"]*)"`)
 
-// patternSlugs are the catalog entries that render a core-ui pattern
-// package. Those packages own their own class vocabulary — multiselect
-// and sortablelist still emit ui-* classes — so the framework gate
-// exempts them by name until each pattern migrates in a change of its
-// own. One line per entry, so a name here is a decision, not drift.
-var patternSlugs = map[string]string{
-	"accordion":      "core-ui/patterns/accordion owns its class vocabulary until it migrates",
-	"breadcrumbs":    "core-ui/patterns/breadcrumbs owns its class vocabulary until it migrates",
-	"infinitescroll": "core-ui/patterns/infinitescroll owns its class vocabulary until it migrates",
-	"multiselect":    "core-ui/patterns/multiselect still emits ui-multiselect* classes",
-	"nestedlist":     "core-ui/patterns/nestedlist owns its class vocabulary until it migrates",
-	"progress":       "core-ui/patterns/progress owns its class vocabulary until it migrates",
-	"sortablelist":   "core-ui/patterns/sortablelist still emits ui-sortable-list* classes",
-	"tree":           "core-ui/patterns/tree owns its class vocabulary until it migrates",
-}
-
 // TestCatalogRendersNoUIClassTokens renders every catalog entry and
 // refuses any class token starting with ui-. A token, not a substring:
 // fui-hero must not be matched by a ui-hero needle, and the check is
-// the whole class value split on spaces.
+// the whole class value split on spaces. The pattern-package
+// exemptions this gate once carried are gone with the patterns:
+// every entry renders through framework/ui's fui-* vocabulary.
 func TestCatalogRendersNoUIClassTokens(t *testing.T) {
 	for _, e := range Catalog {
-		reason, exempt := patternSlugs[e.Slug]
-		if exempt {
-			t.Logf("slug %q exempt: %s", e.Slug, reason)
-			continue
-		}
 		html := string(e.Demo())
 		bad := map[string]bool{}
 		for _, m := range classAttrRe.FindAllStringSubmatch(html, -1) {

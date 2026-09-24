@@ -1,6 +1,6 @@
 # framework/gallery — importable component catalog
 
-A library that ships every framework/ui + core-ui/patterns component as a
+A library that ships every framework/ui component as a
 pre-canned, self-contained demo. Originally `examples/site/components.go`,
 it was lifted so any tool can render the whole design system against an
 arbitrary theme — most importantly the theme-configuration tool that will
@@ -17,7 +17,7 @@ component catalog, "what does the system look like with this theme".
 ```go
 import "github.com/DonaldMurillo/gofastr/framework/gallery"
 
-// Iterate the catalog (141 entries, 16 categories, display order).
+// Iterate the catalog (138 entries, display order).
 for _, e := range gallery.Catalog {
     fmt.Println(e.Slug, e.Name, e.Category)
     html := e.Demo() // render.HTML — self-contained, no host wiring
@@ -86,7 +86,7 @@ slice is unchanged.
 ## Don't reinvent
 
 The gallery is a catalog of *existing* components — adding a new component
-belongs in `framework/ui` (or `core-ui/patterns` for composed patterns,
+belongs in `framework/ui` (composed patterns included,
 `core-ui/html` for 1:1 HTML tags). When a new component lands there, add a
 matching `Catalog` entry so the showcase and `TestComponentGalleryCoversUI`
 in `examples/site` stay complete. Ship zero bespoke CSS — every demo

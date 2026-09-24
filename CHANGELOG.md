@@ -8,6 +8,47 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 ## [Unreleased]
 
 ### BREAKING
+- **The `core-ui/patterns` family is deleted, and its four scripted
+  runtime modules with it.** Every pattern either moved to
+  `framework/ui` on its `framework/headless` primitive (Breadcrumbs,
+  MultiSelect, Progress, SortableList, Tree) or was removed with no
+  replacement: `core-ui/patterns/accordion` and
+  `core-ui/patterns/nestedlist` — none; use `ui.Collapsible`
+  (a stacked disclosure group is Collapsibles, an exclusive one is
+  Collapsibles sharing a `name`) — and
+  `core-ui/patterns/infinitescroll` — none (nothing in the repository
+  used it; a sentinel-driven feed composes a poll or an island on
+  the region that appends). The `tree`, `multiselect`,
+  `sortablelist` and `infinitescroll` modules are gone from
+  `core-ui/runtime/src` and the kernel's demand table; their
+  `data-fui-*` hooks are replaced by the `data-hui-*` hooks the
+  registered modules bind: `data-fui-tree-toggle` →
+  `data-hui-tree`/`data-hui-tree-toggle` (`headless-tree`,
+  `Requires("rpc")` — a lazy branch's toggle keeps the kernel's
+  `data-fui-rpc` wiring verbatim), the `data-fui-multiselect*` family
+  → `data-hui-multiselect*` (`headless-multiselect`,
+  `Requires("headless-disclosure")`; the submit contract is still the
+  plain checkbox form), and the `data-fui-sortable*` family →
+  `data-hui-sortable*` plus the `data-hui-sortable-s-*` announcement
+  attributes (`headless-sortablelist`; the commit payload is
+  unchanged: `order=`, `container=`, `version=`, `moved=`; the
+  versioned-409 conflict path keeps its hard bounds (JSON
+  content-type, ~4 KB read, ~300-char message) and its error toast,
+  and the live region's id is now `hui-sortable-live`). Renames for callers:
+  `patternsBreadcrumbs.New(Config, ...Crumb)` → `ui.Breadcrumbs`
+  (`Crumb.Text/Href/Current` keep their names; separators are now
+  rendered `aria-hidden` spans, not `::before` content),
+  `patternsProgress.New` → `ui.Progress` (`LabelVisible` is
+  `ShowLabel`; a value past `Max` clamps at render),
+  `patternsMultiselect.Render` → `ui.MultiSelect` (`Option` keeps
+  its fields; the chips strip's live region and remove buttons are
+  module-built with `Strings`-travelled labels),
+  `patternsSortablelist.Render`/`RenderItems` →
+  `ui.SortableList`/`ui.SortableListItems` (`Item` → `SortableItem`,
+  `Key`/`Label`/`Content` keep their names),
+  `patternsTree.Render` → `ui.Tree` (`Node` → `TreeItem`,
+  `SignalPrefix` → `LazySignalPrefix`).
+
 - **Navigation behaviour (headless 3a):** `Menu`, `Tabs`, `CodeTabs`
   and `Collapsible` render through headless primitives
   (`headless.Menu`, `headless.Tabs`, `headless.Disclosure`) under
@@ -567,6 +608,7 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
     emit the `html.Input` shape).
 
 ### Migration ledger — the headless stack so far
+
 One place to read every breaking change this stack has landed, in
 application order. Each entry is detailed above in this release's
 `BREAKING` section; this ledger is the checklist for moving an app
@@ -687,6 +729,60 @@ are listed under Added above, not here.
     still carrying `render.Raw("<input …>")` emits
     `next: ""` in the packed blueprint; switch to the `html.Input`
     call (the generator's spelling).
+21. **`core-ui/patterns/accordion` is deleted; none replaces it.**
+    A stacked disclosure group is `ui.Collapsible` sections (the
+    gallery's accordion page is gone; the collapsible page is the
+    demo), an exclusive one is Collapsibles sharing a `name`
+    (the native accordion). The `accordion` style name and its
+    `.accordion*` classes are gone.
+22. **`core-ui/patterns/nestedlist` is deleted; none replaces it.**
+    A recursive list with native `<details>` collapse is
+    `ui.Tree` (the WAI-ARIA treeview) or plain Collapsibles; the
+    `nestedlist` style name and its `.nested-list*` classes are gone.
+23. **`core-ui/patterns/infinitescroll` is deleted; none.** Nothing
+    in the repository used it. The `infinitescroll` runtime module,
+    its `data-fui-infinite-*` hooks and the `X-Gofastr-Infinite-Cursor`
+    header contract are gone with it; a lazy feed composes a poll or
+    an island on the appending region.
+24. **`core-ui/patterns/breadcrumbs` is deleted;
+    `ui.Breadcrumbs` replaces it.** `New(Config, ...Crumb)` →
+    `ui.Breadcrumbs(ui.BreadcrumbsConfig{...}, ui.Crumb{...})`;
+    `Crumb.Text/Href/Current` keep their names, the default label
+    ("Breadcrumb") now resolves through `Strings`/i18nui, and the
+    separators are rendered `aria-hidden` spans (`.fui-breadcrumbs__sep`)
+    instead of `::before` content.
+25. **`core-ui/patterns/progress` is deleted; `ui.Progress`
+    replaces it.** `New(Config)` → `ui.Progress(ui.ProgressConfig{...})`;
+    `LabelVisible` is spelled `ShowLabel`, a value past `Max` clamps
+    at render and a non-finite one renders indeterminate, and the
+    classes are `.fui-progress*` under the `ui-progress` marker.
+26. **`core-ui/patterns/multiselect` is deleted; `ui.MultiSelect`
+    replaces it.** `Render(Config)` →
+    `ui.MultiSelect(ui.MultiSelectConfig{...})`; `Option` keeps its
+    fields, the placeholder and the chip remove labels resolve
+    through `Strings`/i18nui, the disclosure half is
+    `headless.Disclosure`'s, and the classes are `.fui-multiselect*`
+    under the `ui-multiselect` marker.
+27. **`core-ui/patterns/sortablelist` is deleted;
+    `ui.SortableList` replaces it.** `Render(Config)` →
+    `ui.SortableList(ui.SortableListConfig{...})` and
+    `RenderItems(Config)` → `ui.SortableListItems(...)` (the fragment
+    a 409 reconciliation returns); `Item` is `SortableItem` with
+    `Key`/`Label`/`Content` unchanged (the key is data now: spaces,
+    quotes and markup render escaped, only the empty key refuses),
+    the commit payload is unchanged and the versioned-409 path
+    keeps its bounds and its error toast (the live region's id is
+    `hui-sortable-live`), the per-move
+    announcements travel as `data-hui-sortable-s-*` attributes, and
+    the classes are `.fui-sortablelist*` under the `ui-sortablelist`
+    marker.
+28. **`core-ui/patterns/tree` is deleted; `ui.Tree` replaces it.**
+    `Render(Config)` → `ui.Tree(ui.TreeConfig{...})`; `Node` is
+    `TreeItem` (fields unchanged), `SignalPrefix` is
+    `LazySignalPrefix`, a lazy branch's toggle keeps the kernel's
+    `data-fui-rpc` wiring verbatim, duplicate node ids now refuse at
+    render, and the classes are `.fui-tree*` under the `ui-tree`
+    marker.
 
 ### Added
 - `framework/headless` gains the navigation primitives `Rail`,
@@ -716,6 +812,42 @@ are listed under Added above, not here.
   fields (counter, back-to-top, number-input, range, rating, tag-input,
   repeater, notification-count and step-wizard words) bridged through
   `ui.StringsFor`.
+
+- `framework/headless` gains the pattern ports `Breadcrumbs`,
+  `Progress`, `Tree`, `SortableList`, `SortableItems` and
+  `MultiSelect` (the last with its disclosure built on the existing
+  `Disclosure` primitive), with Specs, refusal tests and goldens, and
+  the registered behaviour modules
+  `headless-tree` (the WAI-ARIA treeview keyboard contract — roving
+  tabindex, arrows, Home/End, type-ahead, expand/collapse through the
+  toggle button; `Requires("rpc")` so a lazy branch's toggle keeps
+  the kernel's wiring),
+  `headless-sortablelist` (drag + keyboard reorder, the
+  server-authoritative commit with container/version/moved fields and
+  the versioned-409 conflict refresh, per-move announcements through
+  Strings that travel as `data-hui-sortable-s-*` attributes) and
+  `headless-multiselect` (chips rebuilt from the checkboxes' own
+  state, chip remove buttons named from Strings, click-outside close;
+  `Requires("headless-disclosure")` for the disclosure half). New
+  Strings fields: `BreadcrumbsLabel`, `SortableItemRole`,
+  `SortableDragLabel`, `SortableGrabbed`, `SortablePosition`,
+  `SortableMoved`, `SortableSaved`, `SortableReverted`,
+  `SortableCancelled`, `SortableConflictReverted`,
+  `SortableConflictRefreshed`, `MultiSelectPlaceholder`,
+  `MultiSelectRemoveLabel` — every one bridged through
+  `ui.StringsFor` over i18nui. `framework/ui` gains the styled
+  adapters `Breadcrumbs` (`fui-breadcrumbs*`, sheet `ui-breadcrumbs`),
+  `Progress` (`fui-progress*`, sheet `ui-progress`; distinct from
+  `ProgressSteps`, which walks named stages), `Tree` (`fui-tree*`,
+  sheet `ui-tree`, bound by `headless-tree`), `SortableList` +
+  `SortableListItems` (`fui-sortablelist*`, sheet `ui-sortablelist`)
+  and `MultiSelect` (`fui-multiselect*`, sheet `ui-multiselect`).
+  `Progress` clamps a request-carried value into `[0, Max]` at render
+  and renders NaN/±Inf indeterminate; `Breadcrumbs` renders the last
+  step (or the one carrying `Current`) as `aria-current="page"` text
+  with `aria-hidden` separators; a `MultiSelect` submits as a plain
+  checkbox form with no script and a `SortableList` renders a plain
+  ordered list of rows.
 
 - **Five new headless primitives**: `Fieldset` (legend, description,
   fields, a group error wired by aria-describedby), `PageHeader`

@@ -40,7 +40,8 @@ var retiredModuleNames = []string{
 	"numberinput", "slider", "rangeslider", "taginput", "formrepeater",
 	"animatedcounter", "backtotop", "banner", "copy", "networkretrybanner",
 	"themeswitch", "toasts",
-	"scrollspy", "toc", "disclosure", "menu", "shortcut", "combobox", "tabs", "carousel", "panehost", "sidebar",
+	"scrollspy", "toc", "disclosure", "menu", "shortcut", "combobox", "tabs", "carousel", "panehost", "sidebar", "infinitescroll",
+	"tree", "multiselect", "sortablelist",
 }
 
 func TestBespokeBehaviourModulesAreRetired(t *testing.T) {
@@ -82,18 +83,16 @@ func TestBespokeBehaviourModulesAreRetired(t *testing.T) {
 		}
 	}
 	// The retention, held as hard as the retirement: SearchInput is a
-	// styled wrapper by binding decision (Batch 3 keeps it), the
-	// shortcut module's callers are Batch 3 family 3's, multiselect is
-	// a core-ui pattern the catalog still renders. shortcut's owner is
-	// headless-navigation now (folded into its keydown listener). Either name going missing is a silent break, not a
+	// styled wrapper by binding decision, the only pattern-era module
+	// still served. Either name going missing is a silent break, not a
 	// cleanup.
 	// (filedropzone is a REGISTERED behaviour framework/ui owns, not an
 	// embedded module: this binary does not link framework/ui, so its
 	// retention is pinned where it registers — framework/ui's own
 	// behaviour tests.)
-	for _, kept := range []string{"searchinput", "multiselect"} {
+	for _, kept := range []string{"searchinput"} {
 		if _, ok := Module(kept); !ok {
-			t.Errorf("%s is no longer served — it is retained on purpose (SearchInput is a styled wrapper; the shortcut callers are Batch 3 family 3's; multiselect is a catalog pattern); restore it or change the binding decision with it", kept)
+			t.Errorf("%s is no longer served — it is retained on purpose (SearchInput is a styled wrapper); restore it or change the binding decision with it", kept)
 		}
 	}
 }

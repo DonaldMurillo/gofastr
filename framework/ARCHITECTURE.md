@@ -299,7 +299,7 @@ framework/
 ├── static/          HTTP static-file serving
 ├── ui/              Server-rendered UI primitives (PageHeader, FormField,
 │                    DataTable, …). The largest UI surface: composes
-│                    core-ui/html + core-ui/patterns into intent-level
+│                    core-ui/html (and the headless primitives) into intent-level
 │                    components; see core-ui/ARCHITECTURE.md for the rule
 │                    on when a primitive lives here vs in core-ui/.
 └── uihost/          UI host + page renderer (SEO/Screen wiring)

@@ -12,7 +12,7 @@
   // Links with an exact-href match get aria-current=page. A link can
   // opt in to prefix matching via data-fui-match-prefix, useful for
   // primary nav entries like "Components" (href="/components/") that
-  // should light up on /components/accordion, /components/card, etc.
+  // should light up on /components/card, /components/modal, etc.
   // Prefix matching is OFF by default so breadcrumbs and sidebars (where
   // multiple links share a path prefix) keep their server-rendered
   // single aria-current. Non-matching links get aria-current cleared.

@@ -888,7 +888,7 @@ Read ` + "`" + `gofastr docs ui-composition-recipes` + "`" + `, then record:
 
 ## Framework boundary
 
-Applications compose ` + "`" + `framework/ui` + "`" + `, ` + "`" + `core-ui/app` + "`" + `, and ` + "`" + `core-ui/patterns` + "`" + `.
+Applications compose ` + "`" + `framework/ui` + "`" + `, ` + "`" + `core-ui/app` + "`" + `, and ` + "`" + `framework/headless` + "`" + `.
 They do not ship bespoke CSS or recreate structural components. When the design
 system cannot express a required treatment, record the gap and add the reusable
 capability upstream.

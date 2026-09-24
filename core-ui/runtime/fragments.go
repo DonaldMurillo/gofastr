@@ -257,13 +257,6 @@ var moduleAttrs = map[string][]string{
 		"data-fui-dropdown-open",
 		"data-fui-dropdown-panel",
 	},
-	"infinitescroll": {
-		"data-fui-infinite-scroll",
-		"data-fui-infinite-sentinel",
-		"data-fui-infinite-cursor",
-		"data-fui-infinite-items",
-		"data-fui-infinite-root-margin",
-	},
 	"intercept": {
 		"data-fui-intercept-overlay",
 		"data-fui-intercept-as",
@@ -273,11 +266,9 @@ var moduleAttrs = map[string][]string{
 	// framework/ui/lightbox.js, a registered behaviour: its attributes
 	// are read by a registered source, not by anything in this package,
 	// so they left this table.
-	"multiselect": {
-		"data-fui-multiselect",
-		"data-fui-multiselect-chips",
-		"data-fui-multiselect-remove",
-	},
+	// multiselect is retired: the multiselect is headless.MultiSelect
+	// (bound by the headless-multiselect registered module through
+	// data-hui-* hooks).
 	// OptimisticAction's wiring is the kernel's action primitive
 	// (data-hui-action*, bound by the headless module): nothing in
 	// this package reads it, so it has no row here. The
@@ -327,16 +318,9 @@ var moduleAttrs = map[string][]string{
 	// (data-hui-shortcut-*, owned by that registered module's markers).
 	// sidebar is retired: the sidebar is bound by the headless-sidebar
 	// registered module (framework/headless) through data-hui-* hooks.
-	"sortablelist": {
-		"data-fui-sortable",
-		"data-fui-sort-key",
-		"data-fui-sortable-item",
-		"data-fui-sortable-rpc",
-		"data-fui-sortable-group",
-		"data-fui-sortable-container",
-		"data-fui-sortable-version",
-		"data-fui-sortable-conflict",
-	},
+	// sortablelist is retired: the sortable list is headless.SortableList
+	// (bound by the headless-sortablelist registered module through
+	// data-hui-* hooks).
 	"textarea": {
 		"data-fui-autogrow",
 	},
@@ -347,9 +331,8 @@ var moduleAttrs = map[string][]string{
 	// and framework/ui/toggleaction.js are retired.
 	// tabs is retired: the tab strip is headless.Tabs's (bound by the
 	// headless-tabs registered module through data-hui-* hooks).
-	"tree": {
-		"data-fui-tree-toggle",
-	},
+	// tree is retired: the tree is headless.Tree (bound by the
+	// headless-tree registered module through data-hui-* hooks).
 	"widgethelpers": {
 		"data-fui-persist-storage",
 		"data-fui-charcount-source",

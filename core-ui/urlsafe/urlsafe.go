@@ -165,8 +165,8 @@ func Clean(u string, p Policy) string {
 // CleanAnchor returns u when it is safe to render as an href / action /
 // formaction value (http(s), relative, fragment, mailto, tel) under the
 // Anchor policy, and "" otherwise. It is the one shared helper for anchor-
-// style URL sinks; framework/ui and the breadcrumbs, nestedlist and tree
-// patterns all delegate here instead of each re-wrapping Clean(u, Anchor).
+// style URL sinks; framework/ui and the framework/headless primitives
+// (breadcrumbs, tree and the rest) all delegate here instead of each re-wrapping Clean(u, Anchor).
 func CleanAnchor(u string) string {
 	return Clean(u, Anchor)
 }

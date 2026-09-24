@@ -15,7 +15,6 @@ because each release lands the demo + the code together.
 | Live behavior (click it, drag it)    | Run the website: `./scripts/dev-watch.sh` → `/components/<slug>` |
 | Constructor signature + every field  | `go doc github.com/DonaldMurillo/gofastr/framework/ui.<Name>`    |
 | Full-page composition choice          | `gofastr docs ui-composition-recipes`                           |
-| Pattern packages (Combobox, Tree, …) | `go doc github.com/DonaldMurillo/gofastr/core-ui/patterns/<pkg>` |
 | Widget presets (Modal, Drawer, …)    | `go doc github.com/DonaldMurillo/gofastr/core-ui/widget/preset`  |
 | Runtime data-fui-\* attributes       | [runtime-contract](runtime-contract.md)                          |
 | What's coming / deferred             | [`ROADMAP.md` §2](../../../ROADMAP.md)                                  |
@@ -83,7 +82,7 @@ raw (enumerated in `framework/ui/extraattrs_contract_test.go`). See
 - **timepicker**: `framework/ui.TimePicker`, styled native `<input type=time>`
 - **select**: `framework/ui.Select`, labelled native `<select>` with help, error, placeholder, and required marker
 - **taginput**: `framework/ui.TagInput`, free-form chips, Enter/comma to commit, Backspace to remove
-- **multiselect**: `core-ui/patterns/multiselect`, checkbox group with chip display above
+- **multiselect**: `framework/ui.MultiSelect`, checkbox group inside a disclosure with a chips strip above; submits as a plain form (the field name repeats per checked option, no script needed), the chips are the enhancement the `headless-multiselect` module rebuilds from the checkboxes' own state
 - **form**: `framework/ui.Form`, opinionated `<form>` wrapper with submit + error summary
 - **formfield**: `framework/ui.FormField`, labelled input with required + help + error states
 - **control**: `framework/ui.Control`, styled native input (email, password, datetime-local, file, tel, url, search…) for a FormField builder
@@ -115,18 +114,17 @@ raw (enumerated in `framework/ui/extraattrs_contract_test.go`). See
 - **anchoredrail**: `framework/ui.AnchoredRail`, sticky in-page nav rail with scrollspy-tracked active state
 - **doclayout**: `framework/ui.DocLayout` / `DocPrevNext`, documentation page skeleton (nav rail + article + prev/next pager). The pager's direction lines come from `DocPager.PrevDirLabel` / `NextDirLabel`; empty keeps `← Previous` / `Next →`. The arrow is part of the value, so a translation can move it to the other side of the word
 - **tabs-signal**: `framework/ui.Tabs`, signal-driven tab strip (click sets the signal; CSS shows the panel); `StateAttrs` adds `data-state=active/inactive` to the buttons, `ID` wires `aria-controls`/`id` pairs, `VacateHidden` ships hidden panels empty with their content in a JSON stash (restored on show by the `headless-tabs` module) so page-scoped test locators cannot match hidden text — the contract knobs a port needs, each off by default
-- **breadcrumbs**: `core-ui/patterns/breadcrumbs`, `<nav aria-label=Breadcrumb>` trail
+- **breadcrumbs**: `framework/ui.Breadcrumbs`, `<nav aria-label>` landmark over an ordered trail; the last step (or the one carrying `Current`) is `aria-current="page"` text, never a link to itself, and separators are `aria-hidden`
 - **pagination**: `framework/ui.Pagination`, numeric page pager with typed query props (`Path`, `Query url.Values`, `PageParam` default `p`) — every href is built through `net/url` with the page parameter replaced, never a `%d` pattern; `Window` sizes the page neighbourhood, `OmitPrevNext` drops the ends. The Island is optional, the Table posture: a list screen's page anchors are plain navigations the client router intercepts, and a pager inside an island region (a `DataTable` footer) carries the RPC contract beside its hrefs and the `data-hui-page` hook the table module restores focus through. `core-ui/patterns/pagination` is retired: this is the only pager
 - **sidebar**: `framework/ui.Sidebar`, responsive primary nav with persistent, collapsible (local-storage persisted), off-canvas, and auto-hide variants; `Collapse` moves the collapsed state to the server, `GroupMarkup` swaps `<details>` groups for `button[aria-expanded][aria-controls]` + `hidden` container, `CollapseLabel`/`ExpandLabel` rename the toggle (see [Sidebar: server-owned collapse state](#sidebar-server-owned-collapse-state)); set `NavLabel` when a page has multiple navigation landmarks and mount the matching drawer with `MountSidebar`
 - **menu**: `framework/ui.Menu`, keyboard-driven dropdown built on `<details>`; `MenuItem.ID` gives a row an addressable `id` (caller-owned uniqueness, ignored on separators; `ExtraAttrs` still cannot set `id`); `MenuConfig.TriggerElement` swaps the framework `<summary>` for a caller-owned trigger — pass the inline HTML of your own `<button>` (or `<a>`) and the runtime makes it the controller: it wires `aria-haspopup`/`aria-controls`/`aria-expanded` at hydration, toggles on click/Enter/Space (activation is prevented — put navigation on menu items), focuses the first menuitem on open, and returns focus to your element on Escape. Use it whenever the page owns the trigger's markup or classes (avatar buttons, pill buttons): routing such an element through `TriggerHTML` nests it inside the summary, which axe reports as `nested-interactive`. `TriggerElement` overrides `Label` and `TriggerHTML`; give each trigger menu a distinct `ID` when two structurally identical ones share a page. `MenuConfig.LazyPanel: true` keeps the panel's rows out of the document tree until the menu is first opened: SSR ships them inside an inert `<template data-fui-menu-lazy>` as the panel's only child (the panel `<div>` stays, so `aria-controls` still resolves), and the runtime mounts them on first open — before its focus-on-open lookup, so the keyboard contract is unchanged. Use it when live-DOM queries must not see closed-menu rows: host Playwright contracts that pin `getByText('Theme')` to the first visible match or `getByLabel` to exactly one element. The rows are still in the HTML source, so this hides nothing from a crawler that parses the response. The cost: rows are not in the DOM until first open, so host JS that binds menu rows by id at page load must use delegated listeners instead, and with JavaScript disabled the menu opens empty (only the disclosure module mounts the rows); the zero value renders rows inline exactly as before.
-- **tree**: `core-ui/patterns/tree`, recursive tree with roving tabindex + lazy-load
+- **tree**: `framework/ui.Tree`, WAI-ARIA treeview on the headless primitive: roving tabindex, arrows/Home/End/type-ahead bound by the registered `headless-tree` module; leaf hrefs are real anchors, a static branch is real markup, and a `LazyPath` branch keeps the kernel's rpc wiring on its toggle with a hidden signal-bound group (`LazySignalPrefix` names the signal)
 - **toc**: `framework/ui.TableOfContents`, auto-built sticky nav from `<h2>` / `<h3>`
 - **steprail**: `framework/ui.StepRail`, vertical numbered step rail with an active step + anchor links
 - **steps**: `framework/ui.ProgressSteps`, linear step indicator (horizontal + vertical)
 
 ### Disclosure / surface widgets
 
-- **accordion**: `core-ui/patterns/accordion`, Group + Stack disclosure variants
 - **collapsible**: `framework/ui.Collapsible`, styled `<details>` with clickable summary + Escape-to-close
 - **modal**: `core-ui/widget/preset.Modal`, focus-trapped dialog with deeplink
 - **drawer**: `core-ui/widget/preset.Drawer`, edge-mounted sliding panel
@@ -157,9 +155,7 @@ raw (enumerated in `framework/ui/extraattrs_contract_test.go`). See
 - **gallery**: `framework/ui.Gallery`, Grid / Strip / Masonry thumbnail surface
 - **lightbox**: `framework/ui.Lightbox`, zoom-overlay modal; pairs with Gallery
 - **carousel**: `framework/ui.Carousel`, horizontal scroll-snap slider
-- **infinitescroll**: `core-ui/patterns/infinitescroll`, IntersectionObserver-driven lazy feed
-- **sortablelist**: `core-ui/patterns/sortablelist`, drag-and-drop + keyboard reorderable list
-- **nestedlist**: `core-ui/patterns/nestedlist`, recursive `<ul>`/`<ol>` with native `<details>` collapse on branches
+- **sortablelist**: `framework/ui.SortableList`, drag-and-drop + keyboard reorderable list on the headless primitive (Space grabs, arrows move, Space drops, Esc cancels); the commit is the pattern's server round trip — 2xx confirms, non-2xx reverts, linked columns share `Group`, a versioned 409 refetches fresh rows (`SortableListItems` is that fragment)
 - **optimisticaction**: `framework/ui.OptimisticAction`, button that flips to its SSR-declared success state on click; the RPC fires underneath and rolls back with a shake on non-2xx
 - **toggleaction**: `framework/ui.ToggleAction`, OptimisticAction's three-state cousin: idle ↔ committed with optional untoggle endpoint and `Group` mutex (committing one reverts its siblings)
 - **networkretrybanner**: `framework/ui.NetworkRetryBanner`, persistent banner that shows on RPC-failure threshold or SSE silence; retry button pings a health endpoint to recover
@@ -181,10 +177,10 @@ raw (enumerated in `framework/ui/extraattrs_contract_test.go`). See
 - **jsonviewer**: `framework/ui.JSONViewer`, collapsible tree of arbitrary values
 - **diffviewer**: `framework/ui.DiffViewer`, unified or split diff renderer
 - **markdown**: `framework/ui.Markdown`, themed wrapper over `core/markdown`. Fence options reach it through the `data-meta` attribute `core/markdown` emits and forward onto `CodeBlockConfig`: `title=`, `showLineNumbers`, `scroll`, `{1,3-5}` / `highlight=`, `diff`, `words=`, and `wrap` (see the [CodeBlock section](#codeblock-line-highlighting-diffs-wrapping) for the table). Unknown options are ignored, so an option added later degrades to a plain block rather than breaking one, and the raw info string stays on the block root in `data-meta`
-- **detaillist**: `framework/ui.DetailList`, label/value description list for record detail views
 - **factbox**: `framework/ui.FactBox`, single labelled fact (compact label + value pair; label-first or value-first)
+- **detaillist**: `framework/ui.DetailList`, label/value description list for record detail views
+- **progress**: `framework/ui.Progress`, native `<progress>` with theme styling; determinate (`Value` 0..`Max`, clamped at render) or indeterminate (`Value` < 0), labelled visibly (`ShowLabel`) or through `aria-label`. A named-stage walk is `ProgressSteps`, a different component
 - **terminalblock**: `framework/ui.TerminalBlock`, terminal transcript with a labelled header and `TerminalOut` / `TerminalOK` lines
-- **progress**: `core-ui/patterns/progress`, native `<progress>` with theme styling
 - **skeleton**: `framework/ui.SkeletonCard` / `SkeletonRow` / `SkeletonAvatar`, loading placeholders over `framework/headless.Skeleton`: hidden shimmer bars, one polite "Loading…" announcement per preset
 - **spinner**: `framework/ui.Spinner`, inline CSS loading indicator
 
@@ -435,7 +431,7 @@ not.
 The framework's drift tests catch most of these; this list is a
 helpful pre-flight read for human reviewers.
 
-1. **Implementation**: `framework/ui/<name>.go` (or `core-ui/patterns/<name>/`).
+1. **Implementation**: `framework/ui/<name>.go`.
 2. **Theme-token CSS only**: register your own `RegisterStyle`; use
    `var(--color-*, fallback)` etc. No top-level `.ui-*` rules in
    `examples/site/styles.go`, the site chrome is page-only.

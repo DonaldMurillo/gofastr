@@ -36,6 +36,9 @@ func TestRegisteredBehaviorSources_FindsTheTreesModules(t *testing.T) {
 	}
 	for _, want := range []string{
 		"framework/headless/behavior.js",
+		"framework/headless/tree.js",
+		"framework/headless/sortablelist.js",
+		"framework/headless/multiselect.js",
 		"framework/headless/controls.js",
 		"framework/headless/collections.js",
 		"framework/headless/wizard.js",

@@ -393,24 +393,26 @@ collaborative editing, sub-second updates. See
 
 ## Sortable list (single + kanban)
 
-`core-ui/patterns/sortablelist` renders a reorderable `<ol>` with HTML5
-drag-and-drop plus a keyboard fallback (Space to grab, Arrow keys to
-move, Space to drop, Esc to cancel). After a successful reorder the
-runtime POSTs the new key sequence to `RPCPath` as form-encoded
-`order=<comma-sep-keys>`. A non-2xx response reverts the DOM. The
-`Items` slice may be empty. An empty column renders a valid, sortable
-`<ol>` wrapper with no `<li>` children and remains a drop target
-(empty Kanban columns, issue #82). `RenderItems` with no items returns
-an empty fragment, so an authoritative conflict-reconciliation
-endpoint can replace a column with an empty response.
+`framework/ui.SortableList` (on the `headless.SortableList` primitive,
+bound by the registered `headless-sortablelist` module) renders a
+reorderable `<ol>` with HTML5 drag-and-drop plus a keyboard fallback
+(Space to grab, Arrow keys to move, Space to drop, Esc to cancel).
+After a successful reorder the module POSTs the new key sequence to
+`RPCPath` as form-encoded `order=<comma-sep-keys>`. A non-2xx response
+reverts the DOM. The `Items` slice may be empty. An empty column
+renders a valid, sortable `<ol>` wrapper with no `<li>` children and
+remains a drop target (empty Kanban columns, issue #82).
+`ui.SortableListItems` with no items returns an empty fragment, so an
+authoritative conflict-reconciliation endpoint can replace a column
+with an empty response.
 
 ### Single list (back-compat)
 
 ```go
-sortablelist.Render(sortablelist.Config{
+ui.SortableList(ui.SortableListConfig{
     Label:   "Priorities",
     RPCPath: "/api/reorder",
-    Items:   []Item{{Key: "a", Label: "A"}, {Key: "b", Label: "B"}},
+    Items:   []ui.SortableItem{{Key: "a", Label: "A"}, {Key: "b", Label: "B"}},
 })
 ```
 
@@ -429,7 +431,7 @@ sortable wrapper and accepts drops.
 
 ```go
 for _, col := range board.Columns {
-    sortablelist.Render(sortablelist.Config{
+    ui.SortableList(ui.SortableListConfig{
         Label:     col.Title,           // aria-label = column name
         Group:     "board-1",           // same for every column
         Container: col.ID,              // unique per column
@@ -692,18 +694,17 @@ own runtime modules for client-side behavior.
 | Carousel | `headless-carousel` | Prev/next navigation, pagination dots, keyboard, auto-rotation |
 | Combobox | `headless-combobox` | Debounced search RPC, listbox navigation, type-ahead |
 | Command Palette | (uses Modal + Combobox) | ⌘K overlay with search |
-| Drag Sortable List | `sortablelist.js` | Native drag-and-drop + keyboard reorder, cross-container kanban, version-aware 409 conflict recovery, RPC commit |
+| Drag Sortable List | `headless-sortablelist` (framework/headless) | Native drag-and-drop + keyboard reorder, cross-container kanban, version-aware 409 conflict recovery, RPC commit, per-move announcements through Strings |
 | File Dropzone | `filedropzone.js` (framework/ui) | Image thumbnail strip; the drop, the chosen-files list and the pick announcement are the headless module's `data-hui-drop` hooks |
 | Gallery + Lightbox | `framework/ui/lightbox.js` (registered behaviour) | Image zoom overlay, prev/next, keyboard |
-| Infinite Scroll | `infinitescroll.js` | IntersectionObserver-driven lazy loading |
 | Menu | `headless-menu` | Keyboard navigation (arrows, Home/End, type-ahead), submenu open/close (ArrowRight/Left, swapped in RTL), menuitemradio group arbitration |
-| Multi-select | `multiselect.js` | Checkbox group with chip display |
+| Multi-select | `headless-multiselect` (framework/headless) | Checkbox group with chip display; plain-form submit, disclosure via `headless-disclosure` |
 | Notification Bell | (uses Popover) | Bell + unread badge + dropdown |
 | Popover | `popover.js` | Anchored positioning, auto-flip, arrow drawing |
 | Range Slider | `headless-controls` | Dual-thumb with cross-clamp, live output sentence |
 | Slider | `headless-controls` | Live value mirror |
 | Tag Input | `headless-collections` | Free-form chips, Enter/comma/blur to commit, removal announcements |
-| Tree | `tree.js` | WAI-ARIA tree pattern, roving tabindex, expand/collapse |
+| Tree | `headless-tree` (framework/headless) | WAI-ARIA tree pattern, roving tabindex, arrows/Home/End/type-ahead, expand/collapse through the toggle (lazy branches keep the kernel rpc wiring) |
 | Network Retry Banner | `headless-feedback` (offline SystemBanner) | Shows on the framework's lost-connection report, retry link probes health |
 | Animated Counter | `headless-controls` | Number tick animation toward the SSR text, reduced-motion aware |
 | Banner | `headless` (SystemBanner) | Dismissible, session-persisted dismissal memory |

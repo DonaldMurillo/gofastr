@@ -449,9 +449,11 @@ Dependencies and the primitive add:
    (`framework/headless.LightboxViewer`) and its descriptor all owned
    by the component's packages, and the kernel's table holds no
    lightbox entry.)
-6. `core-ui/patterns`, the same way. What remains in `core-ui/runtime`
-   is the kernel, its fragments, and the kernel-side modules: the
-   primitives, the manifest-driven loaders and the widget internals.
+6. `core-ui/patterns` is gone entirely (every pattern moved to
+   framework/ui on its headless primitive or was deleted). What
+   remains in `core-ui/runtime` is the kernel, its fragments, and the
+   kernel-side modules: the primitives, the manifest-driven loaders
+   and the widget internals.
 
 ## Open questions
 

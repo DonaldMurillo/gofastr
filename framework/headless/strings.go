@@ -290,6 +290,57 @@ type Strings struct {
 	// ThereIsAProblem heads the list a failed submit focuses. A short
 	// sentence; it names the fact, the list names each field.
 	ThereIsAProblem string
+
+	// ─── Breadcrumbs ────────────────────────────────────────────────
+
+	// BreadcrumbsLabel names the trail's navigation landmark, which a
+	// screen reader jumps to by name. One word.
+	BreadcrumbsLabel string
+
+	// ─── SortableList ───────────────────────────────────────────────
+
+	// SortableItemRole is the roledescription every row carries: it
+	// tells a screen reader what kind of thing the row is before any
+	// key is pressed. Two words.
+	SortableItemRole string
+	// SortableDragLabel names one row by what it offers: a format
+	// taking the row's visible label as %s, applied at render.
+	SortableDragLabel string
+	// SortableGrabbed is said when a row is picked up, with {label}
+	// where the row's name goes. Substituted by the runtime when the
+	// grab happens, so the sentence travels as an attribute.
+	SortableGrabbed string
+	// SortablePosition says where the grabbed row now is, with
+	// {position} and {list} (the list's own name) written in by the
+	// runtime after each move.
+	SortablePosition string
+	// SortableMoved says the row changed lists, with {list} and
+	// {position}: the kanban crossing, announced after it lands.
+	SortableMoved string
+	// SortableSaved confirms a commit the server accepted.
+	SortableSaved string
+	// SortableReverted says a failed commit put the rows back.
+	SortableReverted string
+	// SortableCancelled says Esc put the grabbed row back where it
+	// started, uncommitted.
+	SortableCancelled string
+	// SortableConflictReverted says a 409 was reconciled by putting
+	// the rows back.
+	SortableConflictReverted string
+	// SortableConflictRefreshed says a 409 was reconciled by
+	// replacing the list with the server's own rows.
+	SortableConflictRefreshed string
+
+	// ─── MultiSelect ────────────────────────────────────────────────
+
+	// MultiSelectPlaceholder is what the chips strip says when
+	// nothing is picked. A short phrase; the chips replace it the
+	// moment one is.
+	MultiSelectPlaceholder string
+	// MultiSelectRemoveLabel names a chip's remove control, with
+	// {label} where the picked option's name goes — the runtime
+	// writes it in when it builds the chip.
+	MultiSelectRemoveLabel string
 }
 
 // defaultStrings is the English the components rendered before Strings
@@ -371,16 +422,31 @@ var defaultStrings = Strings{
 	ComboboxResultCount:  "{n} results",
 	ComboboxResultsLabel: "results",
 
-	JSONObject:      "Object",
-	JSONArray:       "Array",
-	JSONNull:        "null",
-	JSONTrue:        "true",
-	JSONFalse:       "false",
-	JSONEmptyObject: "{}",
-	JSONEmptyArray:  "[]",
-	JSONTruncated:   "…",
-
 	ThereIsAProblem: "There is a problem",
+
+	BreadcrumbsLabel: "Breadcrumb",
+
+	SortableItemRole:          "sortable item",
+	SortableDragLabel:         "Drag %s",
+	SortableGrabbed:           "Grabbed {label}. Arrow keys to move, Space to drop.",
+	SortablePosition:          "Position {position} in {list}.",
+	SortableMoved:             "Moved to {list}, position {position}.",
+	SortableSaved:             "Order saved.",
+	SortableReverted:          "Save failed. Reverted.",
+	SortableCancelled:         "Cancelled.",
+	SortableConflictReverted:  "Conflict. Reverted.",
+	SortableConflictRefreshed: "Conflict. List refreshed from server.",
+
+	MultiSelectPlaceholder: "Choose…",
+	MultiSelectRemoveLabel: "Remove {label}",
+	JSONObject:             "Object",
+	JSONArray:              "Array",
+	JSONNull:               "null",
+	JSONTrue:               "true",
+	JSONFalse:              "false",
+	JSONEmptyObject:        "{}",
+	JSONEmptyArray:         "[]",
+	JSONTruncated:          "…",
 }
 
 // DefaultStrings returns a fresh copy of the English defaults, every

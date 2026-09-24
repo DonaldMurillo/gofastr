@@ -13,7 +13,7 @@ import (
 // applicable) basic runtime-driven behaviour.
 //
 // NOTE: several slugs are note-only in site (combobox, multiselect,
-// confirmaction, sortablelist, infinitescroll, gallery, lightbox,
+// confirmaction, sortablelist, gallery, lightbox,
 // commandpalette, globalsearch, notificationbell, datatable, scrollspy,
 // pipelineimage, formrepeater, repeater), those
 // are only tested for page-loads or dropped entirely. The
@@ -132,24 +132,6 @@ func TestE2E_NewComponents_FilterChipBarToolbarRole(t *testing.T) {
 	}
 	if chipCount < 1 {
 		t.Errorf("expected ≥1 chip in FilterChipBar demo, got %d", chipCount)
-	}
-}
-
-// infinitescroll is note-only, just page loads.
-func TestE2E_NewComponents_InfiniteScrollPageLoads(t *testing.T) {
-	base := startE2EServer(t)
-	ctx := newE2EBrowserCtx(t)
-	var h1 string
-	err := chromedp.Run(ctx,
-		chromedp.Navigate(base+"/components/infinitescroll"),
-		pageReady(),
-		chromedp.Evaluate(`document.querySelector('h1')?.textContent || ''`, &h1),
-	)
-	if err != nil {
-		t.Fatalf("chromedp: %v", err)
-	}
-	if h1 == "" {
-		t.Error("expected a heading on /components/infinitescroll")
 	}
 }
 

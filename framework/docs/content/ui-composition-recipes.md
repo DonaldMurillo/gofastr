@@ -196,7 +196,7 @@ active controls.
 2. Pick the closest recipe by task, not by visual fashion.
 3. Name the dominant element and the content that can remain secondary.
 4. Decide desktop regions and the mobile priority order before implementation.
-5. Survey `framework/ui`, `core-ui/app`, and `core-ui/patterns` for the named
+5. Survey `framework/ui` and `core-ui/app` for the named
    primitives.
 6. Render at about 390px and 1440px in light and dark schemes.
 7. Identify the three weakest visible decisions and revise them.
