@@ -1375,3 +1375,19 @@ func TestThemeEditSelectShowsAnUnmatchedValue(t *testing.T) {
 		t.Errorf("a member value should select that member and add nothing:\n%s", h)
 	}
 }
+
+// A select-typed component key the catalogue does not know (a newer
+// theme.go, a typo) falls through to the text control: an unrecognised
+// key is shown, never hidden.
+func TestThemeEditUnknownComponentKeyFallsBackToText(t *testing.T) {
+	out := string(renderOneControl(tokenControl{Key: "component.button.sparkle", Value: "x", Type: "select"}))
+	if !strings.Contains(out, `data-token="component.button.sparkle"`) { // not-a-secret: the editor's data-token control selector
+		t.Fatalf("an unknown component key renders no control:\n%s", out)
+	}
+	if !strings.Contains(out, "<input") || strings.Contains(out, "<select") {
+		t.Errorf("an unknown component key should fall back to a text input, not a select:\n%s", out)
+	}
+	if !strings.Contains(out, `value="x"`) {
+		t.Errorf("the fallback input does not carry the current value:\n%s", out)
+	}
+}
