@@ -45,6 +45,32 @@ store), so any replica serves any request.
 **Forms and mutations** follow the in-page pattern: POST to the island's
 RPC handler, response carries the new island HTML.
 
+## Screen render failures: 404 vs 500
+
+The render pipeline folds every failure into one error return; the host
+discriminates on it:
+
+- **A panic in a screen's `Render` or `Load`** is a server bug. It is
+  contained (`component.SafeRenderCtx` / `safeScreenLoad`), wrapped
+  with `app.ErrScreenPanicked`, and answered **500** plus one `slog`
+  Error line naming the path and the scrubbed panic
+  (`textsafe.Recovered`). The panic text never reaches the response
+  body. Same outcome on every serving path: full page with layout,
+  layout-less page, partial navigation, overlay, and the embed content
+  route. A screen that implements `component.ErrorBoundary` does not
+  change this: its `RenderError` markup is dropped with the rest of the
+  page, as it always was on the layout path.
+- **A `Load` that returns an error** keeps the 404 it contracted (the
+  screen chose "not found"; `uihost.ScreenStatusCode` renders a body
+  with a chosen status instead), logged at Warn with the path so it is
+  no longer silent.
+- **A path no route owns** stays a plain 404 and logs nothing.
+
+The 500 mirrors `serveNotFound`'s content negotiation (RFC 9457
+`application/problem+json` for machine Accepts, HTML otherwise,
+`Vary: Accept` on both arms) and echoes neither the path nor the
+panic. There is deliberately no host-configurable 500 screen yet.
+
 ---
 
 ## What is an island?

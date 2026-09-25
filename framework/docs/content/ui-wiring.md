@@ -162,8 +162,11 @@ Useful options:
   NotFound fall-through, so replacing it disables every page (the
   router now warns when a NotFound handler is replaced; compose with
   `Router.WrapNotFound` when both must run). The custom screen renders
-  behind the same panic containment as every other screen; if its
-  render panics, the default 404 page is served instead.
+  behind panic containment: if its render panics, the default 404 page
+  is served instead. (A registered screen's render panic is answered
+  differently — 500 plus one logged error line, because a broken screen
+  is a server bug. The 404 screen only runs for paths no route owns,
+  and those must stay 404s, not become incidents.)
 
 **`fwApp.Start`** runs migrations, binds the port, serves. Nothing
 UI-specific.
