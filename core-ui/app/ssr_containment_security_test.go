@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -15,11 +16,13 @@ import (
 
 // Pins: the SSR pipeline's host-supplied hooks (screen Render/RenderCtx,
 // the Load hook, the post-Load ScreenTitle/ScreenLang re-reads) run under
-// containment — a panic degrades (SafeRenderCtx fallback / the error
-// channel a Load error already takes / the registered title) and never
-// escapes the caller. A standalone host wires no recovery middleware, so
-// an escaped panic would kill the request with no response. Found by the
-// 2026-09-06/07 adversarial round 5 probes (framework/uihost
+// containment — a panic degrades to the ErrScreenPanicked error channel
+// (the SafeRenderCtx fallback box survives only on the Screen.Render /
+// RenderCtx convenience pair) and never escapes the caller; a Load error
+// takes the same channel without the sentinel; a panicking title re-read
+// degrades to the registered title. A standalone host wires no recovery
+// middleware, so an escaped panic would kill the request with no response.
+// Found by the 2026-09-06/07 adversarial round 5 probes (framework/uihost
 // ssr_panic_red_test.go); pinned here at the package that owns the
 // pipeline. The layout-slot family grammar (layout.go: an errored slot
 // renders empty rather than killing the page) is the contract.
@@ -75,15 +78,19 @@ func TestSSRPipelineContainsHostHookPanics(t *testing.T) {
 	ctx := context.Background()
 
 	// Empty-layout full-page arm: RenderPageResult → renderComponentAs.
-	// This is the arm a standalone host (no SetDefaultLayout) serves.
+	// This is the arm a standalone host (no SetDefaultLayout) serves. The
+	// contained panic takes the error channel tagged with
+	// ErrScreenPanicked — the fallback box this arm used to render
+	// shipped the panic text inside a 200 page.
 	a := NewApp("ssr-plain")
 	a.Register("/", ssrBoomScreen{}, nil)
 	ssrNoPanic(t, "ssr-containment", "RenderPageResult (no layout) on a panicking screen", func() {
 		res, err := a.RenderPageResult(ctx, "/")
-		if err != nil {
-			t.Errorf("a panicking screen must render its fallback, not error: %v", err)
-		} else if !strings.Contains(string(res.HTML), "fui-render-error") {
-			t.Errorf("panicking screen must render the SafeRenderCtx fallback box, got:\n%s", res.HTML)
+		if err == nil {
+			t.Fatalf("a panicking screen must take the ErrScreenPanicked error channel, got a page:\n%s", res.HTML)
+		}
+		if !errors.Is(err, ErrScreenPanicked) {
+			t.Errorf("the panic error must carry ErrScreenPanicked, got: %v", err)
 		}
 	})
 
@@ -91,8 +98,8 @@ func TestSSRPipelineContainsHostHookPanics(t *testing.T) {
 	aCtx := NewApp("ssr-ctx")
 	aCtx.Register("/", ssrBoomCtxScreen{}, nil)
 	ssrNoPanic(t, "ssr-containment", "RenderPageResult (no layout) on a panicking ctx screen", func() {
-		if _, err := aCtx.RenderPageResult(ctx, "/"); err != nil {
-			t.Errorf("a panicking ctx screen must render its fallback, not error: %v", err)
+		if _, err := aCtx.RenderPageResult(ctx, "/"); !errors.Is(err, ErrScreenPanicked) {
+			t.Errorf("a panicking ctx screen must take the ErrScreenPanicked error channel, got: %v", err)
 		}
 	})
 
@@ -113,8 +120,8 @@ func TestSSRPipelineContainsHostHookPanics(t *testing.T) {
 	aIx.SetDefaultLayout(NewLayout("ctl"))
 	aIx.Register("/", ssrBoomScreen{}, nil)
 	ssrNoPanic(t, "ssr-containment", "RenderOverlayResult (drawer) on a panicking screen", func() {
-		if _, err := aIx.RenderOverlayResult(ctx, "/", ScreenDrawer); err != nil {
-			t.Errorf("overlay arm must render the fallback, not error: %v", err)
+		if _, err := aIx.RenderOverlayResult(ctx, "/", ScreenDrawer); !errors.Is(err, ErrScreenPanicked) {
+			t.Errorf("overlay arm must take the ErrScreenPanicked error channel, got: %v", err)
 		}
 	})
 

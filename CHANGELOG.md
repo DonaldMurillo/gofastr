@@ -137,6 +137,22 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   where the old module reverted in silence.
 
 ### Fixed
+- **A screen that panics is a logged 500, never a silent 404.** A
+  render or `Load` panic on any serving path — full page with or
+  without a layout, partial navigation, overlay, and the embed content
+  route — used to answer 404 with nothing in the server log (the
+  layout-less page even shipped the panic text inside a 200 body). It
+  now answers 500 with one error log line naming the path and the
+  scrubbed panic, and a body that echoes neither. A `Load` that
+  returns an error keeps the 404 it contracted but is logged at Warn;
+  a path no route owns still 404s silently. Hosts can discriminate via
+  the new `app.ErrScreenPanicked` sentinel. A screen implementing
+  `component.ErrorBoundary` gets the 500 too; its fallback markup
+  showed only on layout-less pages before. A static export
+  (`framework/static`) now fails on such a screen instead of
+  publishing the error box; a screen with a layout already failed it.
+  The llm.md render path scrubs the path and panic it logs. Covered by the
+  `screen_panic_500_test.go` suite in `framework/uihost`.
 - **Action groups converge on one committed member.** Two members of
   one `data-fui-toggle-group` clicked inside one round trip both
   passed the per-element re-entry guard, and the click-time revoke

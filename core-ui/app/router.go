@@ -348,7 +348,11 @@ func (r *Router) RenderRaw(path string) (render.HTML, error) {
 			return renderLayoutChain(ctx, chain, wrapArticle(screen, comp, content)), nil
 		}
 	}
-	return renderComponentInScreen(ctx, screen, comp), nil
+	out, err := renderComponentInScreen(ctx, screen, comp)
+	if err != nil {
+		return "", screenRenderPanicError(path, err)
+	}
+	return out, nil
 }
 
 // Paths returns all registered paths (exact + dynamic patterns).

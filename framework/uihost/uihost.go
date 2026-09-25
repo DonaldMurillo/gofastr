@@ -1368,7 +1368,7 @@ func (ds *UIHost) handlePage(w http.ResponseWriter, r *http.Request) {
 	ctx = store.WithValues(ctx)
 	res, err := ds.App.RenderPageResult(ctx, path)
 	if err != nil {
-		ds.serveNotFound(w, r, path)
+		ds.serveRenderError(w, r, path, err)
 		return
 	}
 	switch res.Kind {
@@ -2167,6 +2167,70 @@ func (ds *UIHost) serveNotFound(w http.ResponseWriter, r *http.Request, path str
 		stdhtml.EscapeString(ds.LangForPath(path)), stdhtml.EscapeString(appName), stdhtml.EscapeString(textsafe.StripInvisible(path)))
 }
 
+// serveRenderError discriminates the render pipeline's error channel,
+// which folds every failure into one error return. A contained panic
+// (app.ErrScreenPanicked, from a screen's Render or its Load) is a
+// server bug: one Error log line naming the path and the scrubbed
+// panic, then a 500 — the silent 404 this used to answer cost an agent
+// its longest debugging loop. Every other error keeps the 404 it always
+// had (a Load that RETURNS an error is the documented screen-chooses-
+// not-found contract), but a route that resolves is no longer silent:
+// one Warn line carries the path and the error. A path no route owns
+// stays a plain, unlogged 404 — an unknown URL is not an incident.
+func (ds *UIHost) serveRenderError(w http.ResponseWriter, r *http.Request, path string, err error) {
+	if errors.Is(err, app.ErrScreenPanicked) {
+		slog.Default().Error("uihost: screen render panicked; serving 500",
+			"path", textsafe.ScrubControlBytes(path),
+			"panic", textsafe.Recovered(err))
+		ds.serveServerError(w, r, path)
+		return
+	}
+	if _, _, ok := ds.App.Router.Resolve(path); ok {
+		slog.Default().Warn("uihost: screen render failed; serving 404",
+			"path", textsafe.ScrubControlBytes(path),
+			"err", textsafe.Recovered(err))
+	}
+	ds.serveNotFound(w, r, path)
+}
+
+// serveServerError writes the 500 a panicking screen answers with. It
+// mirrors serveNotFound's content negotiation — an RFC 9457 problem
+// document when the Accept header names a machine representation, HTML
+// otherwise, Vary: Accept on both arms — and deliberately echoes
+// nothing: neither the path (a hostile URL is a reflection vector no
+// error page needs) nor any panic text (host/component state). Kept
+// minimal: no host-configurable 500 screen.
+func (ds *UIHost) serveServerError(w http.ResponseWriter, r *http.Request, path string) {
+	w.Header().Add("Vary", "Accept")
+	if acceptsProblemJSON(r) {
+		w.Header().Set("Content-Type", "application/problem+json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(struct {
+			Type   string `json:"type"`
+			Title  string `json:"title"`
+			Status int    `json:"status"`
+			Detail string `json:"detail"`
+		}{
+			Type:   "about:blank",
+			Title:  "Internal Server Error",
+			Status: http.StatusInternalServerError,
+			Detail: "The page failed to render.",
+		})
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusInternalServerError)
+	appName := "GoFastr"
+	if ds.App != nil && ds.App.Name != "" {
+		appName = ds.App.Name
+	}
+	fmt.Fprintf(w,
+		`<!DOCTYPE html><html lang="%s"><head><meta charset="UTF-8"><title>Server error: %s</title></head>`+
+			`<body><main role="main"><h1>500: Server error</h1><p>The page failed to render.</p>`+
+			`<p><a href="/">Back to home</a></p></main></body></html>`,
+		stdhtml.EscapeString(ds.LangForPath(path)), stdhtml.EscapeString(appName))
+}
+
 // handlePartialPage returns just the screen content for client-side navigation.
 // The runtime.js router swaps the <main> content without a full page reload.
 func (ds *UIHost) handlePartialPage(w http.ResponseWriter, r *http.Request, path string) {
@@ -2258,7 +2322,7 @@ func (ds *UIHost) handlePartialPage(w http.ResponseWriter, r *http.Request, path
 		res, err = ds.App.RenderPartialResult(ctx, path)
 	}
 	if err != nil {
-		ds.serveNotFound(w, r, path)
+		ds.serveRenderError(w, r, path, err)
 		return
 	}
 	switch res.Kind {

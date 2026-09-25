@@ -459,7 +459,9 @@ func (a *App) RenderPageResult(ctx context.Context, path string) (RenderResult, 
 	// Run the component's Load hook if present. Loaders run AFTER DI so they can
 	// use injected services, and BEFORE render so they can populate fields.
 	// A panicking Load takes the same error channel a Load error takes
-	// (safeScreenLoad), never an escaped panic.
+	// (safeScreenLoad), never an escaped panic — but tagged with
+	// ErrScreenPanicked so a host can answer 500 + a logged panic where a
+	// returned Load error keeps the 404 contract.
 	if loader, ok := comp.(ScreenLoader); ok {
 		if err := safeScreenLoad(loader, ctx); err != nil {
 			return RenderResult{}, fmt.Errorf("app: load failed for %q: %w", path, err)
@@ -491,17 +493,25 @@ func (a *App) RenderPageResult(ctx context.Context, path string) (RenderResult, 
 			var renderErr error
 			content, renderErr = component.SafeRenderCtx(ctx, comp)
 			if renderErr != nil {
-				return RenderResult{}, fmt.Errorf("app: component render error for %q: %w", path, renderErr)
+				return RenderResult{}, screenRenderPanicError(path, renderErr)
 			}
 			content = wrapArticle(screen, comp, content)
 			wrapped = renderLayoutChain(ctx, chain, content)
 		} else {
-			content = renderComponentInScreen(ctx, screen, comp)
+			var renderErr error
+			content, renderErr = renderComponentInScreen(ctx, screen, comp)
+			if renderErr != nil {
+				return RenderResult{}, screenRenderPanicError(path, renderErr)
+			}
 			wrapped = content
 		}
 	} else {
 		// Drawer/sheet/dialog: render with ARIA wrapping, skip layout
-		content = renderComponentInScreen(ctx, screen, comp)
+		var renderErr error
+		content, renderErr = renderComponentInScreen(ctx, screen, comp)
+		if renderErr != nil {
+			return RenderResult{}, screenRenderPanicError(path, renderErr)
+		}
 		wrapped = content
 	}
 
@@ -694,6 +704,24 @@ func (a *App) RenderOverlayResult(ctx context.Context, path string, as ScreenTyp
 	return a.renderPartial(ctx, path, &as)
 }
 
+// ErrScreenPanicked reports that a screen's Load or Render panicked
+// while the app rendered it. Every render entry point (RenderPageResult,
+// RenderPartialResult, RenderPartialFromResult, RenderOverlayResult, and
+// Router.RenderRaw) wraps it into the error a contained panic becomes,
+// and nothing else does: a Load that returns an error, an unknown path,
+// and a DI wiring failure all keep their own errors. Hosts discriminate
+// with errors.Is so a panic answers a logged 500 while every other
+// render error keeps the 404 it contracted.
+var ErrScreenPanicked = errors.New("screen panicked")
+
+// screenRenderPanicError is the one wrap every render site puts around a
+// contained render panic: it names the path and tags the chain with
+// ErrScreenPanicked so a host can tell a 500-worthy panic apart from the
+// 404 a Load error keeps.
+func screenRenderPanicError(path string, err error) error {
+	return fmt.Errorf("app: component render error for %q: %w: %w", path, ErrScreenPanicked, err)
+}
+
 // renderPartial is the shared body. overlay, when non-nil, replaces the
 // screen's registered type for wrapping only, routing, policy, params,
 // DI, and Load are identical, so an intercepted render can never diverge
@@ -742,7 +770,7 @@ func (a *App) renderPartial(ctx context.Context, path string, overlay *ScreenTyp
 	if effType == ScreenPage {
 		html, renderErr := component.SafeRenderCtx(ctx, comp)
 		if renderErr != nil {
-			return RenderResult{}, fmt.Errorf("app: component render error for %q: %w", path, renderErr)
+			return RenderResult{}, screenRenderPanicError(path, renderErr)
 		}
 		// Same article wrapping as the full-page path, without it, SPA
 		// navigation silently dropped the <article> element Reader Mode
@@ -750,7 +778,11 @@ func (a *App) renderPartial(ctx context.Context, path string, overlay *ScreenTyp
 		// client-side visit.
 		body = wrapArticle(screen, comp, html)
 	} else {
-		body = renderComponentAs(ctx, screen, effType, comp)
+		var renderErr error
+		body, renderErr = renderComponentAs(ctx, screen, effType, comp)
+		if renderErr != nil {
+			return RenderResult{}, screenRenderPanicError(path, renderErr)
+		}
 	}
 
 	out := RenderResult{HTML: body, Component: comp}
@@ -772,7 +804,7 @@ func (a *App) renderPartial(ctx context.Context, path string, overlay *ScreenTyp
 // dictated by screen.Type. Lets the caller substitute a different
 // component (used for RenderAlt + no-layout fallback) without copying
 // the Screen struct (which embeds a sync.Mutex).
-func renderComponentInScreen(ctx context.Context, screen *Screen, comp component.Component) render.HTML {
+func renderComponentInScreen(ctx context.Context, screen *Screen, comp component.Component) (render.HTML, error) {
 	return renderComponentAs(ctx, screen, screen.Type, comp)
 }
 
@@ -784,13 +816,14 @@ func renderComponentInScreen(ctx context.Context, screen *Screen, comp component
 // hook gets (SafeRenderCtx): the empty-layout ScreenPage full-page arm and
 // every drawer/sheet/dialog/intercept-overlay arm flow through here, and a
 // standalone host wires no recovery middleware, so an escaped panic would
-// kill the request with no response. A panicking screen renders its
-// SafeRenderCtx fallback; the failure is logged, not propagated.
-func renderComponentAs(ctx context.Context, screen *Screen, effType ScreenType, comp component.Component) render.HTML {
+// kill the request with no response. A panicking screen returns the
+// contained error instead of its fallback markup; the caller wraps it with
+// ErrScreenPanicked so the host answers a logged 500 rather than shipping
+// the panic text inside a 200 page.
+func renderComponentAs(ctx context.Context, screen *Screen, effType ScreenType, comp component.Component) (render.HTML, error) {
 	content, renderErr := component.SafeRenderCtx(ctx, comp)
 	if renderErr != nil {
-		slog.Default().Error("app: screen render panicked; rendering fallback",
-			"panic", textsafe.Recovered(renderErr))
+		return "", renderErr
 	}
 	content = wrapArticle(screen, comp, content)
 	// A layout-less ScreenPage page carries the doc markers on its bare
@@ -799,20 +832,22 @@ func renderComponentAs(ctx context.Context, screen *Screen, effType ScreenType, 
 	// must arrive with it. Mirrors wrapByScreenType's ScreenPage arm with
 	// the extra attributes; every other type keeps the shared wrapper.
 	if attrs := docShellAttrs(ctx); attrs != nil && effType == ScreenPage {
-		return html.Main(html.MainConfig{ExtraAttrs: attrs}, content)
+		return html.Main(html.MainConfig{ExtraAttrs: attrs}, content), nil
 	}
-	return wrapByScreenType(effType, screen.Title, content)
+	return wrapByScreenType(effType, screen.Title, content), nil
 }
 
 // safeScreenLoad runs the ScreenLoader hook under the SSR containment: a
-// panicking Load is converted to the same error channel a Load error takes
-// (the host's not-found path), never an escaped panic. The panicked-on
-// bytes are scrubbed through textsafe.Recovered; they are host/component
-// state and must not forge log lines.
+// panicking Load is converted to the same error channel a Load error
+// takes, never an escaped panic — but tagged with ErrScreenPanicked so a
+// host can answer 500 + a logged panic where a returned Load error keeps
+// the 404 contract. The panicked-on bytes are scrubbed through
+// textsafe.Recovered; they are host/component state and must not forge
+// log lines.
 func safeScreenLoad(loader ScreenLoader, ctx context.Context) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			err = errors.New("screen Load panicked: " + textsafe.Recovered(r))
+			err = fmt.Errorf("%w: Load: %s", ErrScreenPanicked, textsafe.Recovered(r))
 		}
 	}()
 	return loader.Load(ctx)

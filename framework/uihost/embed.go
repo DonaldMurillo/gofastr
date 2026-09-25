@@ -3,6 +3,7 @@ package uihost
 import (
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	stdhtml "html"
 	"log/slog"
@@ -17,6 +18,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/router"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	fembed "github.com/DonaldMurillo/gofastr/framework/embed"
 	"github.com/DonaldMurillo/gofastr/framework/tenant"
 )
@@ -1009,6 +1011,26 @@ func (ds *UIHost) handleEmbedContent(w http.ResponseWriter, r *http.Request) {
 
 	res, err := ds.App.RenderPartialResult(ctx, s.Path())
 	if err != nil {
+		if errors.Is(err, app.ErrScreenPanicked) {
+			// Same contract as every other render path: a panic is a
+			// server bug, logged and answered 500, never the plain 404
+			// that hid it.
+			slog.Default().Error("uihost: embed surface screen render panicked; serving 500",
+				"surface", s.Name,
+				"path", textsafe.ScrubControlBytes(s.Path()),
+				"panic", textsafe.Recovered(err))
+			ds.serveServerError(w, r, s.Path())
+			return
+		}
+		// Any other render error keeps this route's plain http.NotFound:
+		// it is the body an unknown surface name already produces on this
+		// handler's fall-through, and the frame has no better answer. But
+		// it is no longer silent — a configured surface whose screen fails
+		// its Load is a host bug worth one Warn line.
+		slog.Default().Warn("uihost: embed surface screen render failed; serving 404",
+			"surface", s.Name,
+			"path", textsafe.ScrubControlBytes(s.Path()),
+			"err", textsafe.Recovered(err))
 		http.NotFound(w, r)
 		return
 	}

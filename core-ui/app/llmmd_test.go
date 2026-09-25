@@ -1,7 +1,9 @@
 package app
 
 import (
+	"bytes"
 	"context"
+	"log"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -379,6 +381,36 @@ func TestScreenLLMMD_PanicGuard(t *testing.T) {
 	}
 	if !strings.Contains(md, "error rendering") {
 		t.Error("expected generic error fallback message, got:", md)
+	}
+}
+
+type forgingPanicComp struct{}
+
+func (c *forgingPanicComp) Render() render.HTML {
+	panic("boom\r\nllm.md: FORGED line")
+}
+
+// TestScreenLLMMDForPath_PanicLogIsOneLine pins the scrub on the
+// llm.md render-error log: a panic value carrying CR LF must stay on
+// the one line the server writes, not forge a second.
+func TestScreenLLMMDForPath_PanicLogIsOneLine(t *testing.T) {
+	var buf bytes.Buffer
+	prevOut, prevFlags := log.Writer(), log.Flags()
+	log.SetOutput(&buf)
+	log.SetFlags(0)
+	t.Cleanup(func() { log.SetOutput(prevOut); log.SetFlags(prevFlags) })
+
+	a := NewApp("Test")
+	a.Register("/crash", &forgingPanicComp{}, NewLayout("default"))
+	if _, ok := ScreenLLMMDForPath(context.Background(), a, "/crash"); !ok {
+		t.Fatal("ScreenLLMMDForPath did not resolve /crash")
+	}
+	out := buf.String()
+	if !strings.Contains(out, "llm.md: render error for /crash") {
+		t.Fatalf("expected the render-error log line, got %q", out)
+	}
+	if strings.Contains(out, "\nllm.md: FORGED") || strings.Contains(out, "\rllm.md: FORGED") {
+		t.Errorf("panic value forged a log line: %q", out)
 	}
 }
 
