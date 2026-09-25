@@ -19,7 +19,7 @@ import (
 
 func pageGetStarted(ss *style.StyleSheet) {
 	ss.Rule(".gs-hero").
-		Set("padding", "var(--s-9) 0 {spacing.xxl}",
+		Set("padding", "var(--s-9) 0 {spacing.2xl}",
 			"border-bottom", "1px solid var(--line-faint)").End()
 	// .gs-hero__grid is gone, ui.HeroSplit handles the 2-col grid.
 	ss.Rule(".gs-hero h1").
@@ -66,7 +66,7 @@ func pageGetStarted(ss *style.StyleSheet) {
 	ss.Rule(".gs-body").
 		Set("display", "grid",
 			"grid-template-columns", "220px minmax(0, 1fr)",
-			"gap", "{spacing.xxxl}",
+			"gap", "{spacing.3xl}",
 			"padding", "var(--s-9) 0").End()
 	// Below 720px the StepRail itself goes static (framework default
 	// at the same breakpoint); collapse the .gs-body grid to a single
@@ -77,7 +77,7 @@ func pageGetStarted(ss *style.StyleSheet) {
 		inner.Rule(".gs-body").
 			Set("grid-template-columns", "1fr",
 				"gap", "{spacing.xl}",
-				"padding", "{spacing.xxl} 0").End()
+				"padding", "{spacing.2xl} 0").End()
 	})
 	// Pin the framework's ui-step-rail flush below the fixed header.
 	// All of the visual styling (typography, list layout, active state,
@@ -157,7 +157,7 @@ func pageGetStarted(ss *style.StyleSheet) {
 
 func pageConceptsIndex(ss *style.StyleSheet) {
 	ss.Rule(".cx-hero").
-		Set("padding", "var(--s-9) 0 {spacing.xxl}",
+		Set("padding", "var(--s-9) 0 {spacing.2xl}",
 			"border-bottom", "1px solid var(--line-faint)").End()
 	// .cx-hero__grid is gone, ui.HeroSplit handles the 2-col grid.
 	ss.Rule(".cx-hero h1").
@@ -184,8 +184,8 @@ func pageConceptsIndex(ss *style.StyleSheet) {
 	ss.Rule(".cx-body").
 		Set("display", "grid",
 			"grid-template-columns", "220px minmax(0, 1fr)",
-			"gap", "{spacing.xxxl}",
-			"padding", "{spacing.xxl} 0 var(--s-9)").End()
+			"gap", "{spacing.3xl}",
+			"padding", "{spacing.2xl} 0 var(--s-9)").End()
 	ss.Rule(".intent-rail").
 		Set("position", "sticky",
 			"top", "calc(var(--nav-h) + {spacing.lg})",
@@ -327,8 +327,8 @@ func pageConceptsDoc(ss *style.StyleSheet) {
 	// prose + doc-head typography below stays site-owned.
 	ss.Rule(`[data-fui-comp="ui-doc-layout"]`).
 		Set("--ui-doc-layout-top", "calc(var(--nav-h) + {spacing.lg})",
-			"--ui-doc-layout-gap", "{spacing.xxxl}",
-			"--ui-doc-layout-pad", "{spacing.xxl} {spacing.xxl} var(--s-9)",
+			"--ui-doc-layout-gap", "{spacing.3xl}",
+			"--ui-doc-layout-pad", "{spacing.2xl} {spacing.2xl} var(--s-9)",
 			// Restore the site's original breadcrumb tones: amber links, dim
 			// separators (the framework default leaves links inheriting).
 			"--ui-doc-layout-crumb-link-color", "{colors.primary}",
@@ -374,12 +374,12 @@ func pageConceptsDoc(ss *style.StyleSheet) {
 			"margin-bottom", "{spacing.lg}").End()
 	ss.Rule(".prose h2").
 		Set("font-size", "var(--t-2xl)",
-			"margin-top", "{spacing.xxxl}",
+			"margin-top", "{spacing.3xl}",
 			"margin-bottom", "{spacing.md}",
 			"letter-spacing", "-0.02em").End()
 	ss.Rule(".prose h3").
 		Set("font-size", "var(--t-xl)",
-			"margin-top", "{spacing.xxl}",
+			"margin-top", "{spacing.2xl}",
 			"margin-bottom", "{spacing.md}",
 			"letter-spacing", "-0.015em").End()
 	ss.Rule(".prose ul, .prose ol").
@@ -465,7 +465,7 @@ func pageConceptsDoc(ss *style.StyleSheet) {
 
 func pageExamples(ss *style.StyleSheet) {
 	ss.Rule(".ex-hero").
-		Set("padding", "var(--s-9) 0 {spacing.xxl}",
+		Set("padding", "var(--s-9) 0 {spacing.2xl}",
 			"border-bottom", "1px solid var(--line-faint)").End()
 	ss.Rule(".ex-hero h1").
 		Set("font-size", "clamp(40px, 5vw, 64px)",
@@ -606,7 +606,7 @@ func pageKiln(ss *style.StyleSheet) {
 			"color", "{colors.text}").End()
 	ss.Rule(".k-hero__cli .p").Set("color", "{colors.primary}", "margin-right", "8px").End()
 
-	ss.Rule(".k-demo").Set("padding", "{spacing.xxl} 0").End()
+	ss.Rule(".k-demo").Set("padding", "{spacing.2xl} 0").End()
 	ss.Rule(".k-demo__frame").
 		Set("border", "1px solid {colors.border}",
 			"border-radius", "{radii.lg}",
@@ -828,7 +828,7 @@ func pagePhilosophy(ss *style.StyleSheet) {
 	ss.Rule(".ph-hero__grid").
 		Set("display", "grid",
 			"grid-template-columns", "120px minmax(0, 1fr) 180px",
-			"gap", "{spacing.xxxl}",
+			"gap", "{spacing.3xl}",
 			"align-items", "start").End()
 	ss.Rule(".ph-hero .meta").
 		Set("font-family", "{fonts.mono}",
@@ -851,7 +851,7 @@ func pagePhilosophy(ss *style.StyleSheet) {
 	ss.Rule(".ph-body").
 		Set("display", "grid",
 			"grid-template-columns", "220px minmax(0, 1fr)",
-			"gap", "{spacing.xxxl}",
+			"gap", "{spacing.3xl}",
 			"padding", "var(--s-9) 0").End()
 	ss.Rule(".ph-toc").
 		Set("position", "sticky",
@@ -897,7 +897,7 @@ func pagePhilosophy(ss *style.StyleSheet) {
 		Set("border-top", "1px solid {colors.primary}",
 			"border-bottom", "1px solid {colors.primary}",
 			"padding", "{spacing.xl} 0",
-			"margin", "{spacing.xxl} 0",
+			"margin", "{spacing.2xl} 0",
 			"font-size", "var(--t-xl)",
 			"color", "{colors.text}",
 			"line-height", "1.4",
@@ -962,7 +962,7 @@ func pagePhilosophy(ss *style.StyleSheet) {
 		Set("background", "{colors.surface-soft}", "color", "{colors.text-subtle}").End()
 
 	ss.Rule(".biblio").
-		Set("margin-top", "{spacing.xxl}",
+		Set("margin-top", "{spacing.2xl}",
 			"padding-top", "{spacing.lg}",
 			"border-top", "1px solid var(--line-faint)").End()
 	ss.Rule(".biblio h2").
@@ -989,7 +989,7 @@ func pageComponents(ss *style.StyleSheet) {
 	ss.Rule(".doc-shell-narrow").
 		Set("max-width", "880px",
 			"margin", "0 auto",
-			"padding", "{spacing.xxl} {spacing.xxl} var(--s-9)").End()
+			"padding", "{spacing.2xl} {spacing.2xl} var(--s-9)").End()
 
 	// .demo-stage, live component preview frame. Surface + border + label
 	// chip so the rendered component reads as a deliberate sample, not
@@ -1130,10 +1130,10 @@ func pageComponents(ss *style.StyleSheet) {
 	ss.Rule(".layout-components > .layout-body").
 		Set("display", "grid",
 			"grid-template-columns", "260px minmax(0, 1fr)",
-			"gap", "{spacing.xxxl}",
+			"gap", "{spacing.3xl}",
 			"max-width", "var(--col-max)",
 			"margin", "0 auto",
-			"padding", "{spacing.xxl} {spacing.xxl} var(--s-9)",
+			"padding", "{spacing.2xl} {spacing.2xl} var(--s-9)",
 			"min-height", "calc(100vh - var(--nav-h))",
 			// align-content defaults to `normal` which behaves as
 			// `stretch` for grid containers. With min-height > sum of
@@ -1175,7 +1175,7 @@ func pageComponents(ss *style.StyleSheet) {
 			"max-width", "52ch").End()
 	ss.Rule(".components-overview__sections").
 		Set("display", "grid",
-			"gap", "{spacing.xxl}").End()
+			"gap", "{spacing.2xl}").End()
 }
 
 // -----------------------------------------------------------------------------
@@ -1193,7 +1193,7 @@ func pageNotFound(ss *style.StyleSheet) {
 			"grid-template-columns", "1fr 1fr",
 			"gap", "var(--s-8)",
 			"max-width", "1120px",
-			"padding", "0 {spacing.xxl}",
+			"padding", "0 {spacing.2xl}",
 			"width", "100%").End()
 	ss.Rule(".nf__num").
 		Set("font-size", "clamp(120px, 18vw, 220px)",
@@ -1271,7 +1271,7 @@ func pageNotFound(ss *style.StyleSheet) {
 // -----------------------------------------------------------------------------
 
 func pageWorkspace(ss *style.StyleSheet) {
-	ss.Rule(".ws-page").Set("padding", "var(--s-8) 0 {spacing.xxl}").End()
+	ss.Rule(".ws-page").Set("padding", "var(--s-8) 0 {spacing.2xl}").End()
 	ss.Rule(".ws-intro").Set("margin-bottom", "{spacing.xl}").End()
 	ss.Rule(".ws-intro h1").
 		Set("font-size", "clamp(28px, 3.4vw, 40px)",
@@ -1361,7 +1361,7 @@ func pageWorkspace(ss *style.StyleSheet) {
 // -----------------------------------------------------------------------------
 
 func pageCatalog(ss *style.StyleSheet) {
-	ss.Rule(".cat-page").Set("padding", "var(--s-8) 0 {spacing.xxl}").End()
+	ss.Rule(".cat-page").Set("padding", "var(--s-8) 0 {spacing.2xl}").End()
 	ss.Rule(".cat-list").
 		Set("display", "flex", "flex-direction", "column", "gap", "{spacing.sm}",
 			"margin-top", "{spacing.xl}").End()
@@ -1396,7 +1396,7 @@ func pageCatalog(ss *style.StyleSheet) {
 		Set("display", "flex", "flex-direction", "column", "gap", "{spacing.lg}",
 			"align-items", "flex-start",
 			"max-width", "60ch",
-			"padding", "var(--s-8) 0 {spacing.xxl}").End()
+			"padding", "var(--s-8) 0 {spacing.2xl}").End()
 	// Inside the drawer the framework already pads the overlay child
 	// (app.InterceptOverlayCSS), so drop the page padding rather than
 	// stacking the two. Same markup, two contexts, one rule.

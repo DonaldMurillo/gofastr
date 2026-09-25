@@ -623,6 +623,24 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   - `ui.ToastStackSignal` is removed. `preset.ToastStack(name)` wires
     the stack's signal source.
 
+- **Auto-named size-scale tokens spell `2xl`/`3xl`.**
+  `style.AutoFillNames` derived the ALL-CAPS scale steps through
+  plain kebab-casing — `Spacing.XXL`/`Typography.XXL`/
+  `Breakpoints.XXL` became `xxl`, the `XXXL` steps became `xxxl` —
+  while `style.DefaultTheme`, the framework's own component CSS and
+  the docs spell them `--spacing-2xl`, `--text-3xl`,
+  `--breakpoint-2xl`. Any theme that relied on auto-naming (the
+  `gofastr theme init` starter, the `theme edit` write-back, a
+  hand-written `Theme{}` whose tokens carry only Values) emitted
+  `--spacing-xxl`, `--spacing-xxxl`, `--text-xxl`, `--text-xxxl` and
+  `--breakpoint-xxl` variables no framework rule reads, and the
+  affected rules silently fell back to their hard-coded values. The
+  derivation now maps the scale steps to their numeric spellings
+  (`XXL` → `2xl`, `XXXL` → `3xl`) in one place, so derived names
+  equal `DefaultTheme`'s everywhere (a reflection test pins them
+  token by token). App CSS reading the old spellings, and
+  `{spacing.xxl}`-style token references, must switch to `2xl`/`3xl`.
+
 ### Migration ledger — the headless stack so far
 
 One place to read every breaking change this stack has landed, in
@@ -805,6 +823,17 @@ are listed under Added above, not here.
     (set `Theme.DarkColors`), `gallery.MustLookup` (use `Lookup`) and
     `ui.ToastStackSignal` (use `preset.ToastStack`).
 
+30. **Auto-named size-scale tokens are `2xl`/`3xl`, not `xxl`/`xxxl`.**
+    `style.AutoFillNames` maps the ALL-CAPS scale steps the way
+    `DefaultTheme` and the framework CSS already spell them
+    (`XXL` → `2xl`, `XXXL` → `3xl`). A theme that relied on
+    auto-naming emitted `--spacing-xxl`, `--spacing-xxxl`,
+    `--text-xxl`, `--text-xxxl` and `--breakpoint-xxl` — variables
+    nothing reads; rename them in app CSS, and `{spacing.xxl}`-style
+    token references, to the numeric spellings. The site and
+    backoffice examples named `Spacing.XXL`/`XXXL` `xxl`/`xxxl`
+    explicitly and now use `2xl`/`3xl`.
+
 ### Added
 - `gofastr theme edit` authors component options: the editor's controls
   pane gains a "Component options" group (first after Colors) whose
@@ -825,7 +854,7 @@ are listed under Added above, not here.
   `"button.treatment": "outline"` into the emitted theme.go.
 
 - `gofastr upgrade` knows v0.86.0 ("Headless design system"): one note
-  per row of the migration ledger above (29 rows), each carrying a
+  per row of the migration ledger above (30 rows), each carrying a
   `detect` regex the CLI runs per-line over a project's non-test .go
   files to point at the exact lines the release breaks — import paths
   of the deleted `core-ui/patterns/*` packages, removed fields
@@ -1680,6 +1709,20 @@ are listed under Added above, not here.
   where the old module reverted in silence.
 
 ### Fixed
+- **`gofastr theme init` writes a theme that boots.** The starter was
+  a hand-maintained template that omitted required tokens
+  (`Colors.CodeSurface`/`CodeText`/`CodeBorder`, the five
+  overlay/toast/dropdown durations, the whole easing set), so a fresh
+  scaffold panicked on `go run .` with `style.Theme: invalid:
+  Theme.Colors.CodeSurface: Color.Value is empty`. The starter is now
+  generated from the same emitter `theme edit` writes back with,
+  over `framework/ui/theme.Default` (named `app`, with no component
+  options), so it carries every field by construction and the two
+  surfaces cannot drift; the regression test that grepped eleven field names (and
+  passed on the panicking starter) is replaced by one that compiles
+  and runs the scaffolded file in a temp Go module against
+  `App.Validate()`. The same fix names the auto-derived size-scale
+  tokens `2xl`/`3xl` (see the BREAKING entry).
 - **A `ui.Section` a parent grid stretches keeps its heading on its
   body.** The section is a two-row grid, and a shorter section beside
   a taller one in a `ui.Grid` shared the spare height between its

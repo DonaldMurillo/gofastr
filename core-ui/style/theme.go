@@ -189,8 +189,8 @@ type LayoutSet struct {
 }
 
 // AutoFillNames walks every typed token field of t and, for any
-// token whose Name is empty, assigns it from the Go struct-field
-// path in kebab-case. Authors can write
+// token whose Name is empty, assigns the canonical token name derived
+// from the Go struct-field path. Authors can write
 //
 //	t.Colors.Primary = style.Color{Value: "#FF0000"}
 //
@@ -206,11 +206,12 @@ func AutoFillNames(t *Theme) {
 
 // autofillTokens walks the struct, recursing into named sub-structs
 // (Colors, Spacing, …). When it reaches a typed-token leaf (Color,
-// Spacing, …) with an empty Name, it assigns a kebab-case name
-// derived from the most-recent struct field name visited.
+// Spacing, …) with an empty Name, it assigns the name derived from
+// the most-recent struct field name visited.
 //
-// path[len-1] is the immediate field name (e.g. "Primary"); the
-// kebab-case of that is the canonical CSS variable suffix.
+// path[len-1] is the immediate field name (e.g. "Primary");
+// derivedTokenName maps it to the canonical CSS variable suffix
+// (kebab-case, with the size-scale steps XXL/XXXL spelled 2xl/3xl).
 func autofillTokens(v reflect.Value, path []string) {
 	if v.Kind() != reflect.Struct {
 		return
@@ -222,7 +223,7 @@ func autofillTokens(v reflect.Value, path []string) {
 		nameField := v.FieldByName("Name")
 		if v.FieldByName("Value").String() != "" && nameField.String() == "" &&
 			len(path) > 0 && nameField.CanSet() {
-			nameField.SetString(camelToKebab(path[len(path)-1]))
+			nameField.SetString(derivedTokenName(path[len(path)-1]))
 		}
 		return
 	}
@@ -240,7 +241,7 @@ func autofillTokens(v reflect.Value, path []string) {
 		if len(path) == 0 || !nameField.CanSet() {
 			return
 		}
-		nameField.SetString(camelToKebab(path[len(path)-1]))
+		nameField.SetString(derivedTokenName(path[len(path)-1]))
 		return
 	}
 	for i := 0; i < v.NumField(); i++ {
@@ -254,6 +255,24 @@ func autofillTokens(v reflect.Value, path []string) {
 			continue
 		}
 		autofillTokens(f, append(path, fieldName))
+	}
+}
+
+// derivedTokenName maps a Go struct-field name to its canonical token
+// name. The size-scale steps spell their ALL-CAPS runs numerically the
+// way DefaultTheme, the framework's own CSS and the docs already read
+// them (XXL → "2xl", XXXL → "3xl"); everything else is camelToKebab.
+// One table at the single derivation site keeps auto-named themes and
+// DefaultTheme from emitting two different spellings of one token
+// (TestAutoFillNamesDeriveCanonicalNames pins them equal).
+func derivedTokenName(field string) string {
+	switch field {
+	case "XXL":
+		return "2xl"
+	case "XXXL":
+		return "3xl"
+	default:
+		return camelToKebab(field)
 	}
 }
 

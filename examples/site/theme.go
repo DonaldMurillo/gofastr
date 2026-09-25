@@ -71,8 +71,8 @@ func createTheme() style.Theme {
 	t.Spacing.MD = style.Spacing{Name: "md", Value: 12}
 	t.Spacing.LG = style.Spacing{Name: "lg", Value: 16}
 	t.Spacing.XL = style.Spacing{Name: "xl", Value: 24}
-	t.Spacing.XXL = style.Spacing{Name: "xxl", Value: 32}
-	t.Spacing.XXXL = style.Spacing{Name: "xxxl", Value: 48}
+	t.Spacing.XXL = style.Spacing{Name: "2xl", Value: 32}
+	t.Spacing.XXXL = style.Spacing{Name: "3xl", Value: 48}
 
 	return t
 }
