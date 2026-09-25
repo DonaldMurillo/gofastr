@@ -261,13 +261,6 @@ func (b Box) Filled(p Part) bool {
 	return ok && v != ""
 }
 
-// Child returns a Box for a nested component: the same class map, and none
-// of the slots or attrs. A slot named "footer" means this
-// component's footer, not the footer of everything it happens to
-// contain — passing them down would make one name reach an unbounded
-// set of elements.
-func (b Box) Child(s Classes) Box { return Box{Classes: s} }
-
 // allowedPartAttrs drops what a caller may not set on a part. It is a function
 // rather than a method so the test can state the rule directly. Keys
 // are stored folded, as Safe stores them, and one key under two

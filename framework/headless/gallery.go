@@ -195,16 +195,6 @@ func safeGalleryHref(href string) string {
 	return "#"
 }
 
-func lowerASCII(s string) string {
-	out := []byte(s)
-	for i := range out {
-		if out[i] >= 'A' && out[i] <= 'Z' {
-			out[i] += 'a' - 'A'
-		}
-	}
-	return string(out)
-}
-
 func init() {
 	Register(Spec{
 		Name: "Gallery",

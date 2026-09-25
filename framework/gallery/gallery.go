@@ -67,17 +67,6 @@ func Lookup(slug string) (Entry, bool) {
 	return Entry{}, false
 }
 
-// MustLookup returns the entry for slug, panicking if it is unknown. Use
-// only for slugs that are guaranteed by construction (e.g. the slug came
-// from ranging over Catalog itself).
-func MustLookup(slug string) Entry {
-	e, ok := Lookup(slug)
-	if !ok {
-		panic("gallery: unknown slug " + slug)
-	}
-	return e
-}
-
 // ByCategory returns every entry whose Category matches, in catalog order.
 // Returns nil if the category is unknown.
 func ByCategory(category string) []Entry {

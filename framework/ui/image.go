@@ -123,9 +123,10 @@ func OptimizedImage(cfg OptimizedImageConfig) render.HTML {
 	// surrounding layout is preserved. Preferable to silently shipping
 	// a `javascript:` URL into <img src>.
 	//
-	// safeImageURL, not safeResourceURL: an inline raster data: URI is a
-	// legitimate image source, and rejecting it here produced an image that
-	// looked broken rather than one that looked blocked.
+	// safeImageURL, not the stricter subresource policy: an inline raster
+	// data: URI is a legitimate image source, and rejecting it here
+	// produced an image that looked broken rather than one that looked
+	// blocked.
 	if safe := safeImageURL(cfg.Src); safe != "" {
 		cfg.Src = safe
 	} else {

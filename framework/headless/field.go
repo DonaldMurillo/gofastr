@@ -172,14 +172,6 @@ func nonEmpty(vals ...string) string {
 	return strings.Join(out, " ")
 }
 
-// FieldDescribedBy is what a control inside a Field must carry so the
-// hint or error actually reaches assistive tech. Controls call it; it
-// exists so the id scheme lives in exactly one place.
-func FieldDescribedBy(controlID, hint, errText string) string {
-	d, _, _ := Describe(controlID, hint, errText)
-	return d
-}
-
 // FieldRow lays fields side by side.
 func FieldRow(s Classes, fields ...render.HTML) render.HTML {
 	return El("div", s, PartFieldRow, nil, fields...)

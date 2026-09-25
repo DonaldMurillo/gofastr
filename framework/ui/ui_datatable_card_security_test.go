@@ -11,22 +11,6 @@ import (
 	ui "github.com/DonaldMurillo/gofastr/framework/ui"
 )
 
-// secHelper checks for a literal substring in rendered HTML.
-func secHelper(t *testing.T, name string, html render.HTML, mustContain, mustNotContain []string) {
-	t.Helper()
-	s := string(html)
-	for _, sub := range mustContain {
-		if !strings.Contains(s, sub) {
-			t.Errorf("SECURITY: [%s] expected output to contain %q", name, sub)
-		}
-	}
-	for _, sub := range mustNotContain {
-		if strings.Contains(s, sub) {
-			t.Errorf("SECURITY: [%s] output must NOT contain %q\n  got: %s", name, sub, truncate(s, 300))
-		}
-	}
-}
-
 // truncate limits a string for error messages.
 func truncate(s string, max int) string {
 	if len(s) <= max {

@@ -453,8 +453,8 @@ func siteNav(ss *style.StyleSheet) {
 		Set("height", "var(--nav-h)",
 			"display", "flex",
 			"align-items", "center",
-			"gap", "{spacing.xxl}",
-			"padding", "0 {spacing.xxl}",
+			"gap", "{spacing.2xl}",
+			"padding", "0 {spacing.2xl}",
 			"font-size", "var(--t-sm)").End()
 
 	// Brand, λ mark + lowercase wordmark + status capsule. Each part
@@ -662,13 +662,13 @@ func siteFooter(ss *style.StyleSheet) {
 	// v2 measures. The root padding is dropped to 0 horizontal because the
 	// centered grid carries its own inline padding.
 	ss.Rule(".fui-site-footer").
-		Set("padding", "var(--s-8) 0 {spacing.xxl}",
+		Set("padding", "var(--s-8) 0 {spacing.2xl}",
 			"border-top", "1px solid {colors.border}").End()
 	ss.Rule(`[data-fui-comp="ui-site-footer"]`).
 		Set("--ui-site-footer-grid-template", "1.4fr 1fr 1fr 1fr 1fr",
 			"--ui-site-footer-grid-gap", "var(--s-8)",
 			"--ui-site-footer-max-width", "var(--col-max)").End()
-	ss.Rule(".fui-site-footer__grid").Set("padding", "0 {spacing.xxl}").End()
+	ss.Rule(".fui-site-footer__grid").Set("padding", "0 {spacing.2xl}").End()
 
 	ss.Rule(".site-foot-brand").
 		Set("display", "flex", "align-items", "baseline", "gap", "8px",
@@ -714,8 +714,8 @@ func siteFooter(ss *style.StyleSheet) {
 			"max-width", "var(--col-max)",
 			"margin-left", "auto",
 			"margin-right", "auto",
-			"padding-left", "{spacing.xxl}",
-			"padding-right", "{spacing.xxl}").End()
+			"padding-left", "{spacing.2xl}",
+			"padding-right", "{spacing.2xl}").End()
 }
 
 // -----------------------------------------------------------------------------
@@ -765,8 +765,8 @@ func sectionFraming(ss *style.StyleSheet) {
 	ss.Rule(".section__head").
 		Set("display", "grid",
 			"grid-template-columns", "minmax(0, 1fr) 360px",
-			"gap", "{spacing.xxxl}",
-			"margin-bottom", "{spacing.xxl}",
+			"gap", "{spacing.3xl}",
+			"margin-bottom", "{spacing.2xl}",
 			"align-items", "end").End()
 	ss.Rule(".section__head h2").
 		Set("font-size", "clamp(var(--t-3xl), 4vw, var(--t-4xl))",
@@ -780,8 +780,8 @@ func sectionFraming(ss *style.StyleSheet) {
 	// only pins it to the section's top-right corner.
 	ss.Rule(".section-v2 .fui-section__eyebrow").
 		Set("position", "absolute",
-			"top", "{spacing.xxxl}",
-			"right", "{spacing.xxl}",
+			"top", "{spacing.3xl}",
+			"right", "{spacing.2xl}",
 			"color", "var(--fg-4)").End()
 }
 
@@ -816,7 +816,7 @@ func heroLayout(ss *style.StyleSheet) {
 			"line-height", "1.55",
 			"max-width", "44ch",
 			"margin-bottom", "{spacing.lg}").End()
-	ss.Rule(".hero__lede + .hero__lede").Set("margin-bottom", "{spacing.xxl}").End()
+	ss.Rule(".hero__lede + .hero__lede").Set("margin-bottom", "{spacing.2xl}").End()
 	ss.Rule(".hero__lede strong").Set("color", "{colors.text}", "font-weight", "500").End()
 	ss.Rule(".hero__ctas").
 		Set("display", "flex", "gap", "{spacing.md}", "align-items", "center").End()
@@ -1106,7 +1106,7 @@ func alphaLayout(ss *style.StyleSheet) {
 	ss.Rule(".alpha__grid").
 		Set("display", "grid",
 			"grid-template-columns", "minmax(0, 1.1fr) minmax(0, 1.4fr)",
-			"gap", "{spacing.xxxl}").End()
+			"gap", "{spacing.3xl}").End()
 	ss.Rule(".alpha__copy h2").
 		Set("font-size", "var(--t-3xl)",
 			"margin-bottom", "{spacing.lg}",
