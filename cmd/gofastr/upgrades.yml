@@ -1234,3 +1234,7 @@ releases:
         breaking: true
         detect: '\bhtml\.ContainerType\(|\bstyle\.DarkSchemeCSS\(|\bgallery\.MustLookup\(|\bui\.ToastStackSignal\('
         guidance: "Set container-type as a CSS property (ContainerType emitted an ignored HTML attribute), set Theme.DarkColors instead of DarkSchemeCSS, call gallery.Lookup and check its bool, and use preset.ToastStack(name) for the toast signal."
+      - change: "auto-named size-scale tokens are 2xl/3xl: AutoFillNames maps XXL and XXXL to the numeric spellings DefaultTheme and the framework CSS already use, so derived token names equal the canonical ones"
+        breaking: true
+        detect: '--(spacing|text|breakpoint)-x{2,3}l\b|\{(spacing|typography|text|breakpoints?)\.x{2,3}l\}'
+        guidance: "App CSS or StyleSheet strings reading --spacing-xxl/--spacing-xxxl/--text-xxl/--text-xxxl/--breakpoint-xxl, or the {spacing.xxl}-style token references that resolve to them, (the variables any auto-named theme emitted: the theme init starter, the theme edit write-back, a hand-written Theme with Value-only tokens) must switch to the 2xl/3xl spellings — the framework never read the xxl/xxxl names and silently fell back to its hard-coded values."

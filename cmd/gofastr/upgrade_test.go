@@ -431,6 +431,10 @@ var v086DetectPairs = map[string][2]string{
 		`grid := html.Div(html.ContainerType("inline-size", "cards"), cards)`,
 		`grid := html.Div(html.Class("cards"), cards)`,
 	},
+	`--(spacing|text|breakpoint)-x{2,3}l\b|\{(spacing|typography|text|breakpoints?)\.x{2,3}l\}`: {
+		`css := "--spacing-xxl: 32px; gap: var(--spacing-xxxl); padding: {spacing.xxl};"`,
+		`css := "--spacing-2xl: 32px; gap: var(--spacing-3xl); padding: {spacing.2xl};"`,
+	},
 }
 
 // TestV086DetectorsSeparateOldFromNew runs every v0.86.0 detector through
@@ -477,6 +481,35 @@ func TestV086DetectorsSeparateOldFromNew(t *testing.T) {
 	for pattern := range v086DetectPairs {
 		if !seen[pattern] {
 			t.Errorf("v086DetectPairs has a pair for %q but no %s note carries that detect", pattern, version)
+		}
+	}
+}
+
+// TestV086TokenRenameDetectSeesEverySpelling runs the 2xl/3xl note's
+// detect over each old spelling on its own: the CSS variable and the
+// {category.name} reference ResolveAll turns into one. The old/new pair
+// above carries both on one line, so it would still pass with either
+// alternative of the regex deleted.
+func TestV086TokenRenameDetectSeesEverySpelling(t *testing.T) {
+	const detect = `--(spacing|text|breakpoint)-x{2,3}l\b|\{(spacing|typography|text|breakpoints?)\.x{2,3}l\}`
+	if _, ok := v086DetectPairs[detect]; !ok {
+		t.Fatalf("no v0.86.0 pair for %q; keep this test's detect equal to the note's", detect)
+	}
+	re := regexp.MustCompile(detect)
+	for _, old := range []string{
+		"--spacing-xxl", "--spacing-xxxl", "--text-xxl", "--text-xxxl", "--breakpoint-xxl",
+		"{spacing.xxl}", "{spacing.xxxl}", "{typography.xxxl}", "{text.xxl}", "{breakpoints.xxl}", "{breakpoint.xxl}",
+	} {
+		if !re.MatchString(old) {
+			t.Errorf("detect misses the old spelling %q", old)
+		}
+	}
+	for _, cur := range []string{
+		"--spacing-2xl", "--spacing-3xl", "--text-3xl", "--breakpoint-2xl",
+		"{spacing.2xl}", "{typography.3xl}", "{breakpoints.2xl}", "--spacing-xl", "{spacing.xl}",
+	} {
+		if re.MatchString(cur) {
+			t.Errorf("detect flags the current spelling %q", cur)
 		}
 	}
 }
