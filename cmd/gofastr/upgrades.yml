@@ -1230,6 +1230,38 @@ releases:
         breaking: true
         detect: 'patterns/tree|tree\.Render\(|\bSignalPrefix\b|data-fui-tree-toggle'
         guidance: "tree.Render(Config) becomes ui.Tree(ui.TreeConfig{...}); Node is TreeItem with fields unchanged, SignalPrefix is LazySignalPrefix, a lazy branch's toggle keeps the kernel's data-fui-rpc wiring verbatim, and duplicate node ids refuse at render."
+      - change: "app.NewLayout is the tree-layout constructor NewLayout(name, spec, build); the single-argument form and the WithHeader/WithSidebar/WithFooter/WithContainer/WithStickyHeader builders are deleted (not deprecated), with the fixed Header/Sidebar/Footer/Container/StickyHeader fields"
+        breaking: true
+        detect: 'NewLayout\("[^"]*"\)'
+        guidance: "Declare app.NewLayout(name, app.LayoutSpec{}, func(ctx, l *app.LayoutTree) render.HTML { ... }) whose build places l.Primary() and composes your chrome; see the layouts doc topic and the BREAKING changelog entry for the port spelled end to end."
+      - change: "Layout.WithHeader is removed; the header renders in the layout build"
+        breaking: true
+        detect: '\.WithHeader\('
+        guidance: "Move the header component into the build (component.SafeRenderCtx) and wrap it with ui.Shell(ui.ShellConfig{Header: ...}, l.Primary()); a banner band with chrome is ui.Shell's Sidebar dialect, the marketing band its Contained one."
+      - change: "Layout.WithSidebar is removed; the sidebar row is ui.Shell"
+        breaking: true
+        detect: '\.WithSidebar\('
+        guidance: "Render your sidebar in the build and pass it as ui.Shell's Sidebar slot (ui.Shell(ui.ShellConfig{Sidebar: nav}, l.Primary())); ui.MountSidebar for the drawer is unchanged."
+      - change: "Layout.WithFooter is removed; the footer renders in the layout build"
+        breaking: true
+        detect: '\.WithFooter\('
+        guidance: "Move the footer component into the build and pass it as ui.Shell's Footer slot (ui.SiteFooter composes cleanly there)."
+      - change: "Layout.WithContainer is removed; the centered editorial column is ui.Shell's Contained dialect"
+        breaking: true
+        detect: '\.WithContainer\(\)'
+        guidance: "Compose ui.Shell(ui.ShellConfig{Contained: true, Header: ..., Footer: ...}, l.Primary()); the measure and gutter tokens (--ui-layout-container-width, --ui-layout-gutter) are unchanged."
+      - change: "Layout.WithStickyHeader is removed; the sticky band is ui.Shell's StickyHeader option"
+        breaking: true
+        detect: '\.WithStickyHeader\(\)'
+        guidance: "Pass StickyHeader: true to ui.Shell beside your Header; the shell sticks the band for the whole page on the theme's --z-sticky layer, exactly as the old modifier did."
+      - change: "app.LayoutBaseCSS is deleted; the structural shell CSS moved into the ui.Shell component's registered sheet"
+        breaking: true
+        detect: 'LayoutBaseCSS'
+        guidance: "Delete the reference; compose ui.Shell for the shapes that CSS covered (the --ui-layout-* override tokens are unchanged). A hand-rolled shell keeps whatever CSS it shipped, or adopts ui.Shell."
+      - change: "Layout.Wrap is removed; WrapCtx stays and renders a tree layout"
+        breaking: true
+        detect: '\.Wrap\(render\.|EmbedLayout\(\)\.Wrap\('
+        guidance: "Call WrapCtx(ctx, body) — the primary fills from the body, outlets render their Default; battery/rtc fanout.Wrap is unrelated and untouched."
       - change: "four unused exports are removed: html.ContainerType, style.DarkSchemeCSS, gallery.MustLookup and ui.ToastStackSignal"
         breaking: true
         detect: '\bhtml\.ContainerType\(|\bstyle\.DarkSchemeCSS\(|\bgallery\.MustLookup\(|\bui\.ToastStackSignal\('

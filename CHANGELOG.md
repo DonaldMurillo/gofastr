@@ -904,12 +904,12 @@ are listed under Added above, not here.
     `helpdocs` into the app and change them (see the BREAKING entry).
     Crumbs are `ui.Breadcrumbs`; the pager is the docs package's own.
 
-29. **Four unused exports are removed.** `html.ContainerType` (it
+30. **Four unused exports are removed.** `html.ContainerType` (it
     never worked: set `container-type` in CSS), `style.DarkSchemeCSS`
     (set `Theme.DarkColors`), `gallery.MustLookup` (use `Lookup`) and
     `ui.ToastStackSignal` (use `preset.ToastStack`).
 
-30. **Auto-named size-scale tokens are `2xl`/`3xl`, not `xxl`/`xxxl`.**
+31. **Auto-named size-scale tokens are `2xl`/`3xl`, not `xxl`/`xxxl`.**
     `style.AutoFillNames` maps the ALL-CAPS scale steps the way
     `DefaultTheme` and the framework CSS already spell them
     (`XXL` → `2xl`, `XXXL` → `3xl`). A theme that relied on

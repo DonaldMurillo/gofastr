@@ -427,6 +427,38 @@ var v086DetectPairs = map[string][2]string{
 		`t := tree.Render(tree.Config{SignalPrefix: "nodes-"})`,
 		`t := ui.Tree(ui.TreeConfig{LazySignalPrefix: "nodes-"})`,
 	},
+	`NewLayout\("[^"]*"\)`: {
+		`appLayout := app.NewLayout("app")`,
+		`appLayout := app.NewLayout("app", app.LayoutSpec{}, build)`,
+	},
+	`\.WithHeader\(`: {
+		`appLayout = appLayout.WithHeader(hdr)`,
+		`return ui.Shell(ui.ShellConfig{Header: hdr}, l.Primary())`,
+	},
+	`\.WithSidebar\(`: {
+		`appLayout = appLayout.WithSidebar(nav)`,
+		`return ui.Shell(ui.ShellConfig{Sidebar: nav}, l.Primary())`,
+	},
+	`\.WithFooter\(`: {
+		`appLayout = appLayout.WithFooter(foot)`,
+		`return ui.Shell(ui.ShellConfig{Footer: foot}, l.Primary())`,
+	},
+	`\.WithContainer\(\)`: {
+		`appLayout = appLayout.WithContainer()`,
+		`return ui.Shell(ui.ShellConfig{Contained: true}, l.Primary())`,
+	},
+	`\.WithStickyHeader\(\)`: {
+		`appLayout = appLayout.WithStickyHeader()`,
+		`return ui.Shell(ui.ShellConfig{Header: hdr, StickyHeader: true}, l.Primary())`,
+	},
+	`LayoutBaseCSS`: {
+		`css := app.LayoutBaseCSS + siteCSS`,
+		`css := siteCSS`,
+	},
+	`\.Wrap\(render\.|EmbedLayout\(\)\.Wrap\(`: {
+		`page := appLayout.Wrap(render.HTML(body))`,
+		`page := appLayout.WrapCtx(ctx, render.HTML(body))`,
+	},
 	`\bhtml\.ContainerType\(|\bstyle\.DarkSchemeCSS\(|\bgallery\.MustLookup\(|\bui\.ToastStackSignal\(`: {
 		`grid := html.Div(html.ContainerType("inline-size", "cards"), cards)`,
 		`grid := html.Div(html.Class("cards"), cards)`,
