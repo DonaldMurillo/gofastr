@@ -1075,16 +1075,17 @@ are listed under Added above, not here.
   button transparent and the write-back carries
   `"button.treatment": "outline"` into the emitted theme.go.
 
-- `gofastr upgrade` knows v0.86.0 ("Headless design system"): one note
-  per row of the migration ledger above (30 rows), each carrying a
-  `detect` regex the CLI runs per-line over a project's non-test .go
-  files to point at the exact lines the release breaks — import paths
+- `gofastr upgrade` knows v0.86.0 ("Headless design system"): 38 notes
+  covering the 31 rows of the migration ledger above (the layout row
+  takes eight). 36 of them carry a `detect` regex the CLI runs per-line
+  over a project's non-test .go files to point at the exact lines the
+  release breaks — import paths
   of the deleted `core-ui/patterns/*` packages, removed fields
   (`SignalPrefix`, `LabelVisible`), removed classes (`ui-button`,
   `ui-form-field`, the ten `--color-*` aliases), retired hooks
-  (`data-fui-fileupload`, `data-fui-tree-toggle`). The two notes with
-  no line-level spelling an app carries (`ui.ValidationSummary`'s new
-  required `ID`, `FormConfig.Summary`'s moved render) carry a
+  (`data-fui-fileupload`, `data-fui-tree-toggle`). The other two notes
+  have no line-level spelling an app carries (`ui.ValidationSummary`'s new
+  required `ID`, `FormConfig.Summary`'s moved render), so they carry a
   `nodetect` reason instead — a new registry field, mandatory when
   used, so an omission is a documented decision rather than an
   oversight — and a test drives every detect through the real
