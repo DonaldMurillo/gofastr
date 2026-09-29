@@ -335,13 +335,13 @@ var v086DetectPairs = map[string][2]string{
 		`"data-fui-toggle-on": "done",`,
 		`Action: interactive.Post("/api/todos").Attrs(),`,
 	},
-	`(^|[^a-z])ui-button`: {
+	`(^|[^a-z-])ui-button`: {
 		`cls := "ui-button ui-button--primary"`,
-		`cls := "fui-button fui-button--primary"`,
+		`cls := "fui-button fui-button--primary" + "var(--ui-button-radius)"`,
 	},
-	`(^|[^a-z])ui-(form|form-field|form-section|select|input-group|validation-summary)`: {
+	`(^|[^a-z-])ui-(form|form-field|form-section|select|input-group|validation-summary)`: {
 		`cls := "ui-form ui-form--block-actions"`,
-		`cls := "fui-form fui-form--block-actions"`,
+		`cls := "fui-form fui-form--block-actions" + "var(--ui-form-gap)"`,
 	},
 	`data-fui-rpc-after-text|data-fui-rpc-after-disable|data-fui-rpc-scroll-to|data-fui-push-state`: {
 		`"data-fui-rpc-scroll-to": "form",`,
@@ -351,9 +351,9 @@ var v086DetectPairs = map[string][2]string{
 		`Action: "//cdn.example.com/save",`,
 		`Action: "/customers",`,
 	},
-	`(^|[^a-z])ui-(fileupload|dropzone|conditional-field|textarea|search-input)|data-fui-fileupload`: {
+	`(^|[^a-z-])ui-(fileupload|dropzone|conditional-field|textarea|search-input)|data-fui-fileupload`: {
 		`cls := "ui-fileupload"`,
-		`cls := "fui-upload"`,
+		`cls := "fui-upload" + "var(--ui-textarea-min-height)"`,
 	},
 	`ConditionalFieldVisible|EvaluateInitialState|data-when-name|data-when-value|data-fui-cond-disabled`: {
 		`Visible: ui.ConditionalFieldVisible{},`,
@@ -363,21 +363,21 @@ var v086DetectPairs = map[string][2]string{
 		`sel := ".ui-fileupload__filename:empty"`,
 		`hintID := id + "-accept"`,
 	},
-	`(^|[^a-z])ui-lightbox`: {
+	`(^|[^a-z-])ui-lightbox`: {
 		`sel := ".ui-lightbox__full[data-fui-zoomed]"`,
-		`sel := ".fui-lightbox__full[data-fui-zoomed]"`,
+		`sel := ".fui-lightbox__full[data-fui-zoomed]" + "var(--ui-lightbox-backdrop)"`,
 	},
-	`(^|[^a-z])ui-(bar-chart|line-chart|pie-chart|sparkline|optimized-image|pipeline-image|image|gallery|code-block|code-tabs|markdown|terminal-block|terminal-ok|terminal-out|avatar|avatar-group|icon|color-picker|diff-viewer|metric-band|record-summary|pricing-card|auth-card|sign-out|optimistic-action|toggle-action)`: {
+	`(^|[^a-z-])ui-(bar-chart|line-chart|pie-chart|sparkline|optimized-image|pipeline-image|image|gallery|code-block|code-tabs|markdown|terminal-block|terminal-ok|terminal-out|avatar|avatar-group|icon|color-picker|diff-viewer|metric-band|record-summary|pricing-card|auth-card|sign-out|optimistic-action|toggle-action)`: {
 		`sel := ".ui-avatar-group .ui-avatar"`,
-		`sel := ".fui-avatar-group .fui-avatar"`,
+		`sel := ".fui-avatar-group .fui-avatar" + "var(--ui-avatar-size)"`,
 	},
-	`(^|[^a-z])ui-(hero|site-header|site-footer|doc-layout|doc-prev-next|workbench|toolbar|filter-toolbar|sidebar|responsive|themed)`: {
+	`(^|[^a-z-])ui-(hero|site-header|site-footer|doc-layout|doc-prev-next|workbench|toolbar|filter-toolbar|sidebar|responsive|themed)`: {
 		`sel := ".ui-sidebar__group"`,
-		`sel := ".fui-sidebar__group"`,
+		`sel := ".fui-sidebar__group" + "var(--ui-site-header-min-block)"`,
 	},
-	`(^|[^a-z])ui-(data-table|segmented|cmd-palette|json-viewer|polling-indicator|shortcut-hint|confirm-action|tooltip|visually-hidden)`: {
+	`(^|[^a-z-])ui-(data-table|segmented|cmd-palette|json-viewer|polling-indicator|shortcut-hint|confirm-action|tooltip|visually-hidden)`: {
 		`sel := "th a.ui-data-table__sort"`,
-		`sel := "th a.fui-data-table__sort"`,
+		`sel := "th a.fui-data-table__sort" + "var(--ui-data-table-row-height)"`,
 	},
 	`Disclosure:`: {
 		`out := html.Details(html.DetailsConfig{Summary: "More", Disclosure: true})`,

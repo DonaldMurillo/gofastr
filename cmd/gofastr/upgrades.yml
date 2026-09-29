@@ -1132,11 +1132,11 @@ releases:
         guidance: "Build button wiring with the interactive Action seam (interactive.Post/Put/Delete(...).OnSuccess(...).Attrs()) instead of data-fui-* keys in ExtraAttrs; the admitted vocabulary keeps its spelling, everything else panics."
       - change: "the button classes are fui-button*; the ui-button class no longer exists in any emitted markup or stylesheet"
         breaking: true
-        detect: '(^|[^a-z])ui-button'
+        detect: '(^|[^a-z-])ui-button'
         guidance: "Call ui.Button / ui.LinkButton instead of hand-rolled class=\"ui-button\" markup, and rename .ui-button selectors (Form's block-actions, FilterToolbar, admin row actions) to .fui-button."
       - change: "the form family's Input is a builder and its classes are fui-form*/fui-field*/fui-select*; hand-rolled ui-form/ui-form-field/ui-select class markup renders unstyled"
         breaking: true
-        detect: '(^|[^a-z])ui-(form|form-field|form-section|select|input-group|validation-summary)'
+        detect: '(^|[^a-z-])ui-(form|form-field|form-section|select|input-group|validation-summary)'
         guidance: "FormFieldConfig.Input now takes func(headless.FieldControl) render.HTML — build the control with ui.Control, a typed field, or ui.PasswordInput's Field — and rename ui-form/ui-form-field/ui-select markup to the fui-* names."
       - change: "ui.ValidationSummary requires ID, and a ui.Form rendering Errors requires FormConfig.ID"
         breaking: true
@@ -1156,7 +1156,7 @@ releases:
         guidance: "Review FormConfig.Summary callers: the sentence renders as a row inside ui.ValidationSummary above the per-field links, no longer as an error Callout's whole body."
       - change: "the bespoke-behaviour classes are fui-upload*/fui-drop*/fui-when/fui-textarea/fui-search*, and the conditionalfield, fileupload and dropzone runtime modules are deleted"
         breaking: true
-        detect: '(^|[^a-z])ui-(fileupload|dropzone|conditional-field|textarea|search-input)|data-fui-fileupload'
+        detect: '(^|[^a-z-])ui-(fileupload|dropzone|conditional-field|textarea|search-input)|data-fui-fileupload'
         guidance: "Call ui.FileUpload / ui.FileDropzone / ui.ConditionalField / ui.TextArea / ui.SearchInput instead of the old class markup; the three deleted modules 404 if hand-loaded, and hand-rolled data-fui-fileupload zones lose their drag-drop."
       - change: "ui.ConditionalField renders visible; ConditionalFieldVisible and EvaluateInitialState are gone"
         breaking: true
@@ -1168,19 +1168,19 @@ releases:
         guidance: "The upload's hint renders inside the zone (<id>-accept, joined into aria-describedby) with the error below as role=alert, the filename paragraph is a module-filled role=list plus a status sentence; TextArea is a fui-field shell around a fui-textarea control."
       - change: "the Lightbox viewer's classes are fui-lightbox* and its image carries data-fui-lightbox-image"
         breaking: true
-        detect: '(^|[^a-z])ui-lightbox'
+        detect: '(^|[^a-z-])ui-lightbox'
         guidance: "Rename ui-lightbox__* selectors and markup to fui-lightbox__* and read the image via data-fui-lightbox-image; a core-ui-only page hand-rolling the markup must import framework/ui so the module links in."
       - change: "display classes are fui-* (charts, images incl. the gallery DOM move, code incl. fui-code-tabs, markdown, terminal, avatar, icon, color picker, diff viewer, metric band, record summary, pricing card, auth card, sign out, optimistic/toggle action)"
         breaking: true
-        detect: '(^|[^a-z])ui-(bar-chart|line-chart|pie-chart|sparkline|optimized-image|pipeline-image|image|gallery|code-block|code-tabs|markdown|terminal-block|terminal-ok|terminal-out|avatar|avatar-group|icon|color-picker|diff-viewer|metric-band|record-summary|pricing-card|auth-card|sign-out|optimistic-action|toggle-action)'
+        detect: '(^|[^a-z-])ui-(bar-chart|line-chart|pie-chart|sparkline|optimized-image|pipeline-image|image|gallery|code-block|code-tabs|markdown|terminal-block|terminal-ok|terminal-out|avatar|avatar-group|icon|color-picker|diff-viewer|metric-band|record-summary|pricing-card|auth-card|sign-out|optimistic-action|toggle-action)'
         guidance: "Rename ui-* selectors to fui-* for the display family; registered sheet names and data-fui-comp markers stay."
       - change: "shell classes are fui-* (hero, hero split, site header, site footer, doc layout, workbench, toolbar, filter toolbar, sidebar, responsive, themed)"
         breaking: true
-        detect: '(^|[^a-z])ui-(hero|site-header|site-footer|doc-layout|doc-prev-next|workbench|toolbar|filter-toolbar|sidebar|responsive|themed)'
+        detect: '(^|[^a-z-])ui-(hero|site-header|site-footer|doc-layout|doc-prev-next|workbench|toolbar|filter-toolbar|sidebar|responsive|themed)'
         guidance: "Rename ui-* selectors to fui-* for the shell family; ui.Sidebar renders through headless.Sidebar (byte pins re-read: sorted attribute order, hidden=\"\" spelling), and an item with both Href and Children, a blank Label, or control bytes in DrawerName/CollapseStorageKey now panics — fix the config."
       - change: "the residue is fui-* (data table, segmented, palette parts, JSONViewer parts, polling indicator, shortcut hint, confirm action, tooltip, search input, visually hidden)"
         breaking: true
-        detect: '(^|[^a-z])ui-(data-table|segmented|cmd-palette|json-viewer|polling-indicator|shortcut-hint|confirm-action|tooltip|visually-hidden)'
+        detect: '(^|[^a-z-])ui-(data-table|segmented|cmd-palette|json-viewer|polling-indicator|shortcut-hint|confirm-action|tooltip|visually-hidden)'
         guidance: "Rename ui-* selectors to fui-* for the residue family; the framework/gallery prefix gate refuses any ui-* class token in a rendered catalog entry from here on."
       - change: "html.DetailsConfig.Disclosure is gone; html.Details renders a plain <details>"
         breaking: true
