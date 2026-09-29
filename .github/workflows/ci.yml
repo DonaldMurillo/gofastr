@@ -389,9 +389,8 @@ jobs:
     # "(blocking)", so the suffix must stay in `name`.
     name: "browser e2e · ${{ matrix.suite }} (blocking)"
     runs-on: ubuntu-latest
-    # Budget = the largest per-suite go-test timeout (meridian, 25m) plus
-    # setup; the timeouts on each `run` are unchanged from the serialized
-    # steps they replace.
+    # Budget = the largest per-suite go-test timeout (site-axe, 30m) plus
+    # setup.
     timeout-minutes: 35
     env:
       CGO_ENABLED: "1"
@@ -402,11 +401,12 @@ jobs:
           - suite: site
             run: go test -count=1 -timeout=15m -skip 'TestAxe' ./examples/site/
           - suite: site-axe
-            # 15m, not 10, the gate scans every page under BOTH color
-            # schemes (≈3.5min locally; CI runners are slower). Its own
+            # 30m: the gate scans every page under BOTH color schemes,
+            # ≈8.5min locally and 11-15min on CI runners (2026-09), so a
+            # 15m limit failed slow runners with nothing hung. Its own
             # shard: CLAUDE.md documents the axe suite flaking when it
             # shares a go-test run with the other chromedp tests.
-            run: go test -count=1 -timeout=15m -run 'TestAxe_AllPagesAreClean' ./examples/site/
+            run: go test -count=1 -timeout=30m -run 'TestAxe_AllPagesAreClean' ./examples/site/
           - suite: kiln-integration
             run: go test -count=1 -timeout=15m ./kiln/integration/
           - suite: gofastr-cli
