@@ -25,6 +25,9 @@ const (
 	CardOutlined CardVariant = "outlined"
 	// CardFlat drops both the border and the shadow.
 	CardFlat CardVariant = "flat"
+	// CardRow is a dense linked record: heading and body metadata above
+	// the description, with no elevated chrome.
+	CardRow CardVariant = "row"
 )
 
 // CardConfig configures a card.

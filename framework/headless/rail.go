@@ -120,8 +120,8 @@ func Rail(p RailProps, s Classes) render.HTML {
 	}
 
 	return b.El("aside", PartRoot, own,
-		b.El("div", PartLabel, nil, render.Text(p.Label)),
-		b.El("ol", PartRailList, nil, items...),
+		b.El("div", PartLabel, Internal(nil), render.Text(p.Label)),
+		b.El("ol", PartRailList, Internal(nil), items...),
 	)
 }
 

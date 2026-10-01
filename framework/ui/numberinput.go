@@ -135,7 +135,7 @@ func numberInputCSS(_ style.Theme) string {
   gap: var(--spacing-xs, 2px);
 }
 [data-fui-comp="ui-number-input"] .fui-number-input__label {
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
   font-size: var(--text-sm, 0.875rem);
   color: var(--color-text, #18181B);
 }
@@ -181,7 +181,7 @@ func numberInputCSS(_ style.Theme) string {
   background: var(--color-surface-soft, #F4F4F5);
   border: 0;
   font-size: var(--text-xl, 1.25rem);
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
   color: var(--color-text, #18181B);
   cursor: pointer;
   user-select: none;

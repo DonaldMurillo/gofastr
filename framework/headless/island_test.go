@@ -107,7 +107,7 @@ func TestPaginationCarriesTheContractOnItsAnchors(t *testing.T) {
 	plain := Pagination(PaginationProps{Page: 5, Pages: 5, Path: "/apps", PageParam: "page",
 		AriaLabel: "Pages"}, nil)
 	has(t, plain, `href="/apps?page=4"`, "the plain pager lost its href")
-	hasNot(t, plain, "data-fui", "a list screen's plain pager carried an island contract it was not given")
+	hasNoContract(t, plain, "a list screen's plain pager carried an island contract it was not given")
 	hasNot(t, plain, "data-hui-page", "a plain pager rendered a page hook nothing reads")
 
 	island := Pagination(PaginationProps{Page: 5, Pages: 5, Path: "/apps", PageParam: "page",
@@ -170,7 +170,7 @@ func TestRequiredIslandsRefuseTheLinkOnlyRender(t *testing.T) {
 // puts the POST contract on the form that keeps its action.
 func TestOptionalIslandsAreOptional(t *testing.T) {
 	plain := Form(FormProps{Action: "/apps"}, nil)
-	hasNot(t, plain, "data-fui", "a form with no Island carries framework attributes")
+	hasNoContract(t, plain, "a form with no Island carries framework attributes")
 	isled := Form(FormProps{Action: "/apps", Island: fixtureIsland}, nil)
 	has(t, isled, `action="/apps"`, "the form lost its action")
 	has(t, isled, `data-fui-rpc="/island/apps" data-fui-rpc-method="POST" data-fui-rpc-signal="apps"`,
@@ -188,7 +188,7 @@ func TestTagCarriesTheContractOnItsDismiss(t *testing.T) {
 		"the dismiss did not carry the GET contract with the href's query")
 	has(t, got, `data-fui-push-state="/apps?env="`, "the dismiss did not write the URL")
 	fixed := Tag(TagProps{Label: "env=prod", Island: fixtureIsland}, nil)
-	hasNot(t, fixed, "data-fui", "a tag with nothing to dismiss carries the contract anyway")
+	hasNoContract(t, fixed, "a tag with nothing to dismiss carries the contract anyway")
 }
 
 // The one "wired and is not" failure Island.check exists to catch: a

@@ -97,6 +97,11 @@ func TestBreadcrumbsDropsDangerousHrefs(t *testing.T) {
 		if strings.Count(h, "<a ") != 1 {
 			t.Errorf("the dangerous step should degrade to plain text for %q:\n%s", href, h)
 		}
+		// Refusing the link does not make the step the current page:
+		// the trail still has exactly one current step, the last.
+		if strings.Count(h, `aria-current="page"`) != 1 {
+			t.Errorf("a refused href marked its step current for %q:\n%s", href, h)
+		}
 	}
 }
 

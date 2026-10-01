@@ -162,6 +162,9 @@ func StepWizard(cfg StepWizardConfig) render.HTML {
 			Title:       i18nui.T(ctx, i18nui.KeyFormHasErrors),
 			Ctx:         ctx,
 		})
+		// headless.StepWizard takes Errors as slot content; this
+		// summary is built here from the config, so it is marked here.
+		errors = headless.Own(errors)
 	}
 
 	parts := headless.Parts{}
@@ -222,7 +225,7 @@ func stepWizardCSS(_ style.Theme) string {
 [data-fui-comp="ui-step-wizard"] .fui-step-wizard__heading {
   margin: 0;
   font-size: var(--text-lg, 1.125rem);
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
   color: var(--color-text, #18181B);
 }
 [data-fui-comp="ui-step-wizard"] .fui-step-wizard__description {
@@ -247,7 +250,7 @@ func stepWizardCSS(_ style.Theme) string {
   padding: 0 var(--spacing-lg, 16px);
   border-radius: var(--radii-md, 8px);
   font: inherit;
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
   cursor: pointer;
 }
 [data-fui-comp="ui-step-wizard"] .fui-step-wizard__back {

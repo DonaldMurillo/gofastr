@@ -16,7 +16,7 @@ package gallery
 // every page has SOMETHING that works. Comments call out the simplification.
 //
 // This file is a faithful move of the original examples/site/components.go
-// catalog (138 entries). The closure bodies are unchanged,
+// catalog (141 entries). The closure bodies are unchanged,
 // they reference the same framework/ui + core-ui/* primitives the site did.
 
 import (
@@ -186,6 +186,12 @@ var Catalog = []Entry{
 			ui.SkeletonCard(ui.SkeletonCardConfig{}),
 		)
 	}},
+	{"skeletontimeline", "SkeletonTimeline", "Feedback", "Timeline-shaped placeholder: a dot, a name line, and two text lines per event — the shape ui.Timeline arrivals have.", func() render.HTML {
+		return ui.SkeletonTimeline(ui.SkeletonTimelineConfig{Rows: 3, Label: "Loading activity"})
+	}},
+	{"skeletonline", "SkeletonLine", "Feedback", "One short shimmer bar — the loading twin of a breadcrumb trail or a one-line label.", func() render.HTML {
+		return ui.SkeletonLine(ui.SkeletonLineConfig{Label: "Loading location"})
+	}},
 	{"pollingindicator", "PollingIndicator", "Feedback", "Animated live-data heartbeat.", func() render.HTML {
 		return ui.PollingIndicator(ui.PollingIndicatorConfig{Label: "Live"})
 	}},
@@ -221,6 +227,17 @@ var Catalog = []Entry{
 			html.Div(html.DivConfig{Class: "fact"}, render.Text("Middle")),
 			html.Div(html.DivConfig{Class: "fact"}, render.Text("Bottom")),
 		)
+	}},
+	{"listdetail", "ListDetail", "Layout", "Scrollable list beside a routed detail slot; stacked on phones.", func() render.HTML {
+		return ui.ListDetail(ui.ListDetailConfig{
+			ListLabel: "Layout guides",
+			List: ui.Stack(ui.StackConfig{Gap: ui.GapSM},
+				ui.Card(ui.CardConfig{Heading: "Layouts", Href: "/docs/layouts"}),
+				ui.Card(ui.CardConfig{Heading: "Reactivity", Href: "/docs/reactivity"}),
+			),
+			Detail: ui.Card(ui.CardConfig{Heading: "Layout layers"},
+				render.Text("Place the list in a kept layout layer. Render the selected page in its primary slot.")),
+		})
 	}},
 	{"grid", "Grid", "Layout", "CSS Grid with min column width + gap tokens.", func() render.HTML {
 		return ui.Grid(ui.GridConfig{Min: "12rem", Gap: ui.GapMD},
@@ -386,6 +403,9 @@ var Catalog = []Entry{
 	{"sidebar", "Sidebar", "Navigation", "Hierarchical navigation sidebar.", func() render.HTML {
 		return ui.Sidebar(SidebarShowcaseConfig).Render()
 	}},
+	{"sidebardrawertrigger", "SidebarDrawerTrigger", "Navigation", "The sidebar's drawer toggle on its own — the relocated hamburger a header row carries at narrow widths (the component hides itself at >= md, exactly as in a real shell).", func() render.HTML {
+		return ui.SidebarDrawerTrigger(SidebarShowcaseConfig)
+	}},
 	{"toc", "TableOfContents", "Navigation", "In-page anchor list the server rendered; the module marks the active entry.", func() render.HTML {
 		// The items are explicit and the headings they name render in
 		// the same demo, so every link resolves and the no-script
@@ -418,7 +438,13 @@ var Catalog = []Entry{
 		})
 	}},
 	{"backtotop", "BackToTop", "Navigation", "Floating back-to-top button.", func() render.HTML {
-		return ui.BackToTop(ui.BackToTopConfig{})
+		// The demo needs scroll to demo: a viewport-tall centered hint
+		// gives the page past-threshold scroll (the page frame no
+		// longer pads pages to a minimum height).
+		return ui.Stack(ui.StackConfig{Gap: ui.Gap2XL},
+			ui.BackToTop(ui.BackToTopConfig{}),
+			ui.Center(ui.CenterConfig{MinHeight: "viewport"},
+				ui.Muted(render.Text("Scroll down — the button appears past 400px and returns you to the top."))))
 	}},
 	{"skiplink", "SkipLink", "Navigation", "Skip-nav for assistive tech.", func() render.HTML {
 		return ui.SkipLink(ui.SkipLinkConfig{})
@@ -1504,6 +1530,15 @@ ui.OptimisticAction(ui.OptimisticActionConfig{
 // to the map after init would race the reader (fatal concurrent map
 // access, not recoverable).
 var codeSnippets = map[string]string{
+	"listdetail": `ui.ListDetail(ui.ListDetailConfig{
+    ListLabel: "Layout guides",
+    List: ui.Stack(ui.StackConfig{Gap: ui.GapSM},
+        ui.Card(ui.CardConfig{Heading: "Layouts", Href: "/docs/layouts"}),
+        ui.Card(ui.CardConfig{Heading: "Reactivity", Href: "/docs/reactivity"}),
+    ),
+    Detail: ui.Card(ui.CardConfig{Heading: "Layout layers"},
+        render.Text("Place the list in a kept layout layer. Render the selected page in its primary slot.")),
+})`,
 	"recordsummary": `ui.RecordSummary(ui.RecordSummaryConfig{
     Eyebrow: "INC-2841 · Payments",
     Title: "Checkout latency is elevated",

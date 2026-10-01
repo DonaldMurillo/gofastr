@@ -73,7 +73,7 @@ func buttonCSS(t style.Theme) string {
   border-radius: var(--fui-button-radius);
   font: inherit;
   font-size: var(--text-base, 1rem);
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
   /* flex: 0 0 auto sizes the button to its unwrapped label (max-content), so
      wrapping action rows move whole controls to the next line first. The
      clamp below is container-driven, not viewport-driven: only a label wider
@@ -277,7 +277,9 @@ func codeBlockCSS(_ style.Theme) string {
   max-block-size: var(--ui-code-block-scroll-max, 26rem);
   overflow-y: auto;
 }
-[data-fui-comp="ui-code-block"] .fui-code-block__line { display: block; position: relative; }
+/* A blank source line is an empty span with no line box; min-block-size
+   keeps its row, so its gutter number does not land on the next line's. */
+[data-fui-comp="ui-code-block"] .fui-code-block__line { display: block; position: relative; min-block-size: 1lh; }
 [data-fui-comp="ui-code-block"].fui-code-block--numbered .fui-code-block__line::before {
   counter-increment: ui-cb-ln;
   content: counter(ui-cb-ln);
@@ -352,6 +354,7 @@ func sectionCSS(_ style.Theme) string {
      with a fixed header set --ui-section-scroll-margin to its height. */
   scroll-margin-top: var(--ui-section-scroll-margin, 0);
 }
+:where([data-fui-comp="ui-section"]).fui-section--compact { margin-block: 0; }
 [data-fui-comp="ui-section"] .fui-section__head {
   display: grid;
   gap: var(--spacing-md, 8px);
@@ -426,7 +429,7 @@ func formFieldCSS(_ style.Theme) string {
 }
 .fui-field__label {
   align-self: center;
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
   font-size: var(--text-sm, 0.875rem);
   color: var(--color-text, #18181B);
   /* A long label wraps rather than widening its track. */
@@ -487,8 +490,8 @@ func formFieldCSS(_ style.Theme) string {
    a whole Field inside a group keeps the group from overflowing: the
    group's flex children need min-width 0 the same way the grid's
    tracks do. */
-.fui-field .fui-input-group { inline-size: 100%; }
-.fui-input-group > .fui-field { flex: 1; min-width: 0; }`
+:where(.fui-field) .fui-input-group { inline-size: 100%; }
+:where(.fui-input-group) > .fui-field { flex: 1; min-width: 0; }`
 }
 
 func formSectionCSS(_ style.Theme) string {
@@ -503,7 +506,7 @@ func formSectionCSS(_ style.Theme) string {
 .fui-form-section__heading {
   margin: 0;
   font-size: var(--text-base, 1rem);
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
   color: var(--color-text, #18181B);
 }
 .fui-form-section__description {
@@ -524,9 +527,13 @@ func statusBadgeCSS(t style.Theme) string {
   padding: var(--spacing-xs, 2px) var(--spacing-md, 8px);
   border-radius: var(--radii-full, 9999px);
   font-size: var(--text-xs, 0.75rem);
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
   letter-spacing: 0.02em;
   border: 1px solid transparent;
+  /* A pill states one word; wrapping mid-label breaks the shape and
+     the reading. Narrow columns must give the badge room, not fold
+     it (a detail-list value column, a table cell). */
+  white-space: nowrap;
 }
 [data-fui-comp="ui-badge"].fui-badge--success {
   background: color-mix(in oklab, var(--color-success, #16A34A) 15%, var(--color-surface, #fff) 85%);
@@ -573,7 +580,7 @@ func emptyStateCSS(_ style.Theme) string {
 [data-fui-comp="ui-empty-state"] .fui-empty-state__title {
   margin: 0;
   font-size: var(--text-base, 1rem);
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
   color: var(--color-text, #18181B);
 }
 [data-fui-comp="ui-empty-state"] .fui-empty-state__description {
@@ -617,7 +624,7 @@ func calloutCSS(t style.Theme) string {
   margin-block-start: 1px;
   font-family: var(--font-mono, ui-monospace, monospace);
   font-size: var(--text-xs, 12px);
-  font-weight: 700;
+  font-weight: var(--font-weight-bold);
   font-style: normal;
   line-height: 1;
   color: var(--ui-callout-accent, var(--color-text-muted, #52525B));
@@ -639,7 +646,7 @@ func calloutCSS(t style.Theme) string {
      must not retune its metrics — the rhythm is the family's. */
   line-height: inherit;
   font-size: var(--text-sm, 0.875rem);
-  font-weight: 700;
+  font-weight: var(--font-weight-bold);
   color: var(--color-text, #18181B);
 }
 [data-fui-comp="ui-callout"] .fui-callout__body {
@@ -672,7 +679,7 @@ func statCardCSS(_ style.Theme) string {
 [data-fui-comp="ui-stat-card"] .fui-stat-card__label {
   margin: 0;
   font-size: var(--text-xs, 0.75rem);
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--color-text-muted, #52525B);
@@ -680,14 +687,14 @@ func statCardCSS(_ style.Theme) string {
 [data-fui-comp="ui-stat-card"] .fui-stat-card__value {
   margin: 0;
   font-size: 1.75rem;
-  font-weight: 700;
+  font-weight: var(--font-weight-bold);
   line-height: 1;
   color: var(--color-text, #18181B);
 }
 [data-fui-comp="ui-stat-card"] .fui-stat-card__trend {
   margin: 0;
   font-size: var(--text-sm, 0.875rem);
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
 }
 [data-fui-comp="ui-stat-card"] .fui-stat-card__trend--up   { color: var(--color-success, #16A34A); }
 [data-fui-comp="ui-stat-card"] .fui-stat-card__trend--down { color: var(--color-danger, #DC2626); }
@@ -706,15 +713,15 @@ func avatarCSS(_ style.Theme) string {
   border-radius: var(--radii-full, 9999px);
   background: var(--color-surface-soft, #F4F4F5);
   color: var(--color-text-muted, #52525B);
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
   font-size: var(--text-xs, 0.75rem);
   flex-shrink: 0;
   inline-size: 2.5rem;
   block-size:  2.5rem;
 }
-[data-fui-comp="ui-avatar"].fui-avatar--sm { inline-size: 1.5rem; block-size: 1.5rem; font-size: var(--text-xs, 0.75rem); }
-[data-fui-comp="ui-avatar"].fui-avatar--lg { inline-size: 3rem;   block-size: 3rem;   font-size: var(--text-base, 1rem); }
-[data-fui-comp="ui-avatar"].fui-avatar--xl { inline-size: 4rem;   block-size: 4rem;   font-size: var(--text-lg, 1.125rem); }
+:where([data-fui-comp="ui-avatar"]).fui-avatar--sm { inline-size: 1.5rem; block-size: 1.5rem; font-size: var(--text-xs, 0.75rem); }
+:where([data-fui-comp="ui-avatar"]).fui-avatar--lg { inline-size: 3rem;   block-size: 3rem;   font-size: var(--text-base, 1rem); }
+:where([data-fui-comp="ui-avatar"]).fui-avatar--xl { inline-size: 4rem;   block-size: 4rem;   font-size: var(--text-lg, 1.125rem); }
 [data-fui-comp="ui-avatar"] .fui-avatar__img {
   width: 100%;
   height: 100%;
@@ -798,7 +805,7 @@ func notificationCSS(t style.Theme) string {
   border-radius: var(--radii-full, 9999px);
   color: var(--color-primary-fg, #FFFFFF);
   background: var(--color-info, #2563EB);
-  font-weight: 700;
+  font-weight: var(--font-weight-bold);
   font-size: var(--text-sm, 0.875rem);
   line-height: 1;
 }
@@ -811,7 +818,7 @@ func notificationCSS(t style.Theme) string {
 [data-fui-comp="ui-notification"] > .fui-notification__dismiss { grid-column: 3; grid-row: 1 / span 2; }
 [data-fui-comp="ui-notification"] .fui-notification__title {
   font-size: var(--text-base, 1rem);
-  font-weight: 700;
+  font-weight: var(--font-weight-bold);
   color: var(--color-text, #18181B);
 }
 [data-fui-comp="ui-notification"] .fui-notification__body {
@@ -852,22 +859,22 @@ func notificationCSS(t style.Theme) string {
   background: var(--color-surface-soft, #F4F4F5);
   color: var(--color-text-muted, #52525B);
 }
-[data-fui-comp="ui-notification"].fui-notification--floating {
+:where([data-fui-comp="ui-notification"]).fui-notification--floating {
   position: fixed;
   z-index: 1000;
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.18);
   animation: ui-notification-slide-in 220ms ease-out;
 }
-[data-fui-comp="ui-notification"].fui-notification--at-top-right    { top: 1rem; right: 1rem; }
-[data-fui-comp="ui-notification"].fui-notification--at-top-left     { top: 1rem; left: 1rem; }
-[data-fui-comp="ui-notification"].fui-notification--at-bottom-right { bottom: 1rem; right: 1rem; }
-[data-fui-comp="ui-notification"].fui-notification--at-bottom-left  { bottom: 1rem; left: 1rem; }
+:where([data-fui-comp="ui-notification"]).fui-notification--at-top-right    { top: 1rem; right: 1rem; }
+:where([data-fui-comp="ui-notification"]).fui-notification--at-top-left     { top: 1rem; left: 1rem; }
+:where([data-fui-comp="ui-notification"]).fui-notification--at-bottom-right { bottom: 1rem; right: 1rem; }
+:where([data-fui-comp="ui-notification"]).fui-notification--at-bottom-left  { bottom: 1rem; left: 1rem; }
 @keyframes ui-notification-slide-in {
   from { opacity: 0; transform: translateY(-12px); }
   to   { opacity: 1; transform: translateY(0); }
 }
-[data-fui-comp="ui-notification"].fui-notification--at-bottom-right,
-[data-fui-comp="ui-notification"].fui-notification--at-bottom-left {
+:where([data-fui-comp="ui-notification"]).fui-notification--at-bottom-right,
+:where([data-fui-comp="ui-notification"]).fui-notification--at-bottom-left {
   animation-name: ui-notification-slide-in-up;
 }
 @keyframes ui-notification-slide-in-up {
@@ -875,7 +882,7 @@ func notificationCSS(t style.Theme) string {
   to   { opacity: 1; transform: translateY(0); }
 }
 @media (prefers-reduced-motion: reduce) {
-  [data-fui-comp="ui-notification"].fui-notification--floating { animation: none; }
+  :where([data-fui-comp="ui-notification"]).fui-notification--floating { animation: none; }
 }` + customStatusCSS("ui-notification", "fui-notification", t)
 }
 
@@ -951,7 +958,7 @@ func dataTableCSS(_ style.Theme) string {
   text-align: start;
   padding: var(--spacing-sm, 4px) var(--spacing-lg, 16px);
   font-size: var(--text-xs, 0.75rem);
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--color-text-muted, #52525B);
@@ -970,7 +977,7 @@ func dataTableCSS(_ style.Theme) string {
   border-bottom: 0;
 }
 [data-fui-comp="ui-data-table"] .fui-data-table__table th {
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
   color: var(--color-text-muted, #52525B);
   background: var(--color-surface-soft, #F4F4F5);
   font-size: var(--text-xs, 0.75rem);
@@ -1090,7 +1097,7 @@ func dataTableCSS(_ style.Theme) string {
   }
   [data-fui-comp="ui-data-table"].fui-data-table--responsive-cards .fui-data-table__table td::before {
     content: attr(data-label);
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     font-size: var(--text-xs, 0.75rem);
     text-transform: uppercase;
     letter-spacing: 0.04em;
@@ -1161,7 +1168,7 @@ func paginationCSS(_ style.Theme) string {
 [data-fui-comp="ui-pagination"] .pagination [aria-current="page"] {
   background: var(--color-primary, #4F46E5);
   color: white;
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
   border-color: var(--color-primary, #4F46E5);
 }
 [data-fui-comp="ui-pagination"] .pagination [aria-disabled="true"] {
@@ -1186,7 +1193,7 @@ func skipLinkCSS(_ style.Theme) string {
   overflow: hidden;
   z-index: 9999;
 }
-[data-fui-comp="ui-skip-link"]:focus {
+:where([data-fui-comp="ui-skip-link"]):focus {
   position: fixed;
   top: var(--spacing-sm, 4px);
   left: var(--spacing-sm, 4px);
@@ -1196,7 +1203,7 @@ func skipLinkCSS(_ style.Theme) string {
   background: var(--color-primary, #4F46E5);
   color: var(--color-primary-fg, #fff);
   border-radius: var(--radii-md, 8px);
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
   font-size: var(--text-sm, 0.875rem);
   text-decoration: none;
   z-index: 9999;
@@ -1211,7 +1218,7 @@ func themeToggleCSS(_ style.Theme) string {
    variants (button[data-fui-comp]) and a descendant for the pill variant
    ([data-fui-comp] button) — target both. */
 [data-fui-comp="ui-theme-toggle"] button,
-button[data-fui-comp="ui-theme-toggle"] {
+:where(button)[data-fui-comp="ui-theme-toggle"] {
   cursor: pointer;
   border: 1px solid var(--color-border, #E4E4E7);
   border-radius: var(--radii-md, 8px);
@@ -1268,7 +1275,7 @@ html[data-color-scheme="dark"] [data-fui-comp="ui-theme-toggle"] .fui-theme-togg
 html[data-color-scheme="dark"] [data-fui-comp="ui-theme-toggle"] .fui-theme-toggle__dark  { display: inline; }
 
 /* Pill variant */
-[data-fui-comp="ui-theme-toggle"] .fui-theme-toggle--pill {
+:where([data-fui-comp="ui-theme-toggle"]).fui-theme-toggle--pill {
   display: inline-flex;
   border: 1px solid var(--color-border, #E4E4E7);
   border-radius: 999px;
@@ -1280,7 +1287,7 @@ html[data-color-scheme="dark"] [data-fui-comp="ui-theme-toggle"] .fui-theme-togg
   border-radius: 999px;
   padding: var(--spacing-xs, 2px) var(--spacing-sm, 4px);
   font-size: var(--text-sm, 0.875rem);
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
   min-inline-size: auto;
   min-block-size: 36px;
   background: transparent;
@@ -1314,7 +1321,7 @@ func backToTopCSS(_ style.Theme) string {
 }
 
 /* ── Visible state (written by headless-navigation) ── */
-[data-fui-comp="ui-back-to-top"][data-hui-back-to-top-visible] {
+:where([data-fui-comp="ui-back-to-top"])[data-hui-back-to-top-visible] {
   opacity: 1;
   visibility: visible;
   transform: translateY(0);
@@ -1334,7 +1341,7 @@ func backToTopCSS(_ style.Theme) string {
   pointer-events: none;
 }
 /* Inside demo frames, show BackToTop inline (not fixed). */
-.demo-live [data-fui-comp="ui-back-to-top"] {
+:where(.demo-live) [data-fui-comp="ui-back-to-top"] {
   position: relative;
   opacity: 1;
   visibility: visible;
@@ -1423,22 +1430,22 @@ func backToTopCSS(_ style.Theme) string {
   --btt-bottom: var(--btt-offset);
   --btt-top: var(--btt-offset);
 }
-.fui-back-to-top--offset-none.fui-back-to-top--br,
-.fui-back-to-top--offset-sm.fui-back-to-top--br,
-.fui-back-to-top--offset-lg.fui-back-to-top--br,
-.fui-back-to-top--offset-xl.fui-back-to-top--br { right: var(--btt-right, var(--spacing-lg, 16px)); bottom: var(--btt-bottom, var(--spacing-lg, 16px)); }
-.fui-back-to-top--offset-none.fui-back-to-top--bl,
-.fui-back-to-top--offset-sm.fui-back-to-top--bl,
-.fui-back-to-top--offset-lg.fui-back-to-top--bl,
-.fui-back-to-top--offset-xl.fui-back-to-top--bl { left: var(--btt-left, var(--spacing-lg, 16px)); bottom: var(--btt-bottom, var(--spacing-lg, 16px)); }
-.fui-back-to-top--offset-none.fui-back-to-top--tr,
-.fui-back-to-top--offset-sm.fui-back-to-top--tr,
-.fui-back-to-top--offset-lg.fui-back-to-top--tr,
-.fui-back-to-top--offset-xl.fui-back-to-top--tr { right: var(--btt-right, var(--spacing-lg, 16px)); top: var(--btt-top, var(--spacing-lg, 16px)); }
-.fui-back-to-top--offset-none.fui-back-to-top--tl,
-.fui-back-to-top--offset-sm.fui-back-to-top--tl,
-.fui-back-to-top--offset-lg.fui-back-to-top--tl,
-.fui-back-to-top--offset-xl.fui-back-to-top--tl { left: var(--btt-left, var(--spacing-lg, 16px)); top: var(--btt-top, var(--spacing-lg, 16px)); }
+:where(.fui-back-to-top--offset-none).fui-back-to-top--br,
+:where(.fui-back-to-top--offset-sm).fui-back-to-top--br,
+:where(.fui-back-to-top--offset-lg).fui-back-to-top--br,
+:where(.fui-back-to-top--offset-xl).fui-back-to-top--br { right: var(--btt-right, var(--spacing-lg, 16px)); bottom: var(--btt-bottom, var(--spacing-lg, 16px)); }
+:where(.fui-back-to-top--offset-none).fui-back-to-top--bl,
+:where(.fui-back-to-top--offset-sm).fui-back-to-top--bl,
+:where(.fui-back-to-top--offset-lg).fui-back-to-top--bl,
+:where(.fui-back-to-top--offset-xl).fui-back-to-top--bl { left: var(--btt-left, var(--spacing-lg, 16px)); bottom: var(--btt-bottom, var(--spacing-lg, 16px)); }
+:where(.fui-back-to-top--offset-none).fui-back-to-top--tr,
+:where(.fui-back-to-top--offset-sm).fui-back-to-top--tr,
+:where(.fui-back-to-top--offset-lg).fui-back-to-top--tr,
+:where(.fui-back-to-top--offset-xl).fui-back-to-top--tr { right: var(--btt-right, var(--spacing-lg, 16px)); top: var(--btt-top, var(--spacing-lg, 16px)); }
+:where(.fui-back-to-top--offset-none).fui-back-to-top--tl,
+:where(.fui-back-to-top--offset-sm).fui-back-to-top--tl,
+:where(.fui-back-to-top--offset-lg).fui-back-to-top--tl,
+:where(.fui-back-to-top--offset-xl).fui-back-to-top--tl { left: var(--btt-left, var(--spacing-lg, 16px)); top: var(--btt-top, var(--spacing-lg, 16px)); }
 
 /* ── Dark mode adjustments ── */
 [data-color-scheme="dark"] .fui-back-to-top--secondary {

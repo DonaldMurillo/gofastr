@@ -152,7 +152,7 @@ func Form(cfg FormConfig, fields ...render.HTML) render.HTML {
 		if submitLabel == "" {
 			submitLabel = i18nui.T(ctx, i18nui.KeyFormSave)
 		}
-		actions = Button(ButtonConfig{Label: submitLabel, Type: "submit"})
+		actions = headless.Own(Button(ButtonConfig{Label: submitLabel, Type: "submit"}))
 	}
 
 	// The summary, when there is one, renders above the body and marks
@@ -180,6 +180,9 @@ func Form(cfg FormConfig, fields ...render.HTML) render.HTML {
 			Title:       i18nui.T(ctx, i18nui.KeyFormHasErrors),
 			Ctx:         ctx,
 		})
+		// headless.Form takes Errors as slot content; this summary is
+		// built here from strings, so it is marked here.
+		errorsHTML = headless.Own(errorsHTML)
 	}
 
 	rootClass := cfg.Class
@@ -400,7 +403,7 @@ func validationSummaryCSS(_ style.Theme) string {
 }
 .fui-validation-summary__title {
   font-size: var(--text-sm, 0.875rem);
-  font-weight: 700;
+  font-weight: var(--font-weight-bold);
   margin: 0;
   color: var(--color-danger, #DC2626);
 }

@@ -292,7 +292,7 @@ func confirmActionCSS(_ style.Theme) string {
 [data-fui-comp="ui-confirm-action"] .fui-confirm-action__title {
   margin: 0 0 var(--spacing-sm, 4px) 0;
   font-size: var(--text-lg, 1.125rem);
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
   color: var(--color-text, #111);
 }
 [data-fui-comp="ui-confirm-action"] .fui-confirm-action__body {

@@ -81,3 +81,26 @@ func TestSparklineExtraAttrsOnEveryRootShape(t *testing.T) {
 		}
 	}
 }
+
+// FullWidth stretches the chart to its container: the width attribute
+// becomes 100% while the viewBox keeps the configured aspect (the
+// fluid-card spelling — a fixed px width leaves dead margins in a
+// responsive grid column).
+func TestSparklineFullWidthEmitsPercentWidth(t *testing.T) {
+	h := string(Sparkline(SparklineConfig{
+		Values: []float64{1, 3, 2, 5}, Width: 220, Height: 36, FullWidth: true,
+	}))
+	if !strings.Contains(h, `width="100%"`) || !strings.Contains(h, `height="36"`) {
+		t.Errorf("FullWidth sparkline must emit width=100%% with fixed height:\n%s", h)
+	}
+	if !strings.Contains(h, `preserveAspectRatio="none"`) {
+		t.Errorf("FullWidth sparkline must stretch, not letterbox (preserveAspectRatio=none):\n%s", h)
+	}
+	if !strings.Contains(h, `viewBox="0 0 220 36"`) {
+		t.Errorf("FullWidth sparkline must keep its viewBox aspect basis:\n%s", h)
+	}
+	fixed := string(Sparkline(SparklineConfig{Values: []float64{1, 3, 2, 5}, Width: 220, Height: 36}))
+	if !strings.Contains(fixed, `width="220"`) {
+		t.Errorf("default sparkline keeps its px width:\n%s", fixed)
+	}
+}

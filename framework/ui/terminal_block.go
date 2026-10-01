@@ -38,14 +38,22 @@ func TerminalBlock(cfg TerminalBlockConfig, lines ...render.HTML) render.HTML {
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
 	}
-	head := html.Div(html.DivConfig{Class: "fui-terminal-block__head"},
+	// Label is a string, so the head is always this component's own.
+	head := html.Div(html.DivConfig{Class: "fui-terminal-block__head", ExtraAttrs: html.Attrs{"data-fui-internal": ""}},
 		html.Span(html.TextConfig{
 			Class:      "fui-terminal-block__dot",
 			ExtraAttrs: html.Attrs{"aria-hidden": "true"},
 		}),
 		render.Text(cfg.Label),
 	)
-	body := html.Div(html.DivConfig{Class: "fui-terminal-block__body"}, lines...)
+	// The body holds lines, the caller's slot; empty renders a body
+	// with none of a caller's markup in it, so that body is this
+	// component's own.
+	var bodyOwn html.Attrs
+	if len(lines) == 0 {
+		bodyOwn = html.Attrs{"data-fui-internal": ""}
+	}
+	body := html.Div(html.DivConfig{Class: "fui-terminal-block__body", ExtraAttrs: bodyOwn}, lines...)
 	return terminalBlockStyle.WrapHTML(
 		html.Div(html.DivConfig{Class: cls, ID: cfg.ID,
 			ExtraAttrs: html.SafeExtraAttrs(cfg.ExtraAttrs)}, head, body))

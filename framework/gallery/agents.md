@@ -17,7 +17,7 @@ component catalog, "what does the system look like with this theme".
 ```go
 import "github.com/DonaldMurillo/gofastr/framework/gallery"
 
-// Iterate the catalog (138 entries, display order).
+// Iterate the catalog in display order.
 for _, e := range gallery.Catalog {
     fmt.Println(e.Slug, e.Name, e.Category)
     html := e.Demo() // render.HTML — self-contained, no host wiring

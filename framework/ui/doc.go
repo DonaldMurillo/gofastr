@@ -58,6 +58,7 @@
 //	ConditionalField:     form region visible until the watched field mismatches (the runtime hides it)
 //	ConfirmAction:        trigger + themed alertdialog modal pair
 //	Container:            max-width page wrapper with breakpoint padding
+//	ContentRow:           nav column + main + optional context aside row
 //	CopyButton:           clipboard button with SR-announced confirmation
 //	Counter:              signal-driven counter with +/− buttons
 //	DataTable:            sortable/paginated table (island-friendly)
@@ -65,7 +66,6 @@
 //	DetailList:           label/value description list for record detail
 //	DiffViewer:           unified or split diff renderer
 //	Divider:              <hr> for plain horizontal; role="separator" otherwise
-//	DocLayout:            doc page skeleton (nav rail + article + pager)
 //	EmptyState:           title/description/action block for no-data screens
 //	FactBox:              labelled tile (label-first OR value-first KPI)
 //	FileDropzone:         hero file-drop surface with image previews
@@ -87,6 +87,8 @@
 //	LineChart:            multi-series SVG time-series chart
 //	Link:                 typed-variant anchor with unsafe-href sanitizing
 //	LinkButton:            anchor styled as Button, for CTAs that navigate
+//	ListDetail:           kept scrollable list beside routed detail, stacked on phones
+//	ListDetailPlaceholder: unselected detail for a single-pane phone list/detail view
 //	Markdown:             themed wrapper over core/markdown
 //	Menu:                 <details>-driven dropdown menu (keyboard + ARIA; submenus, radio rows)
 //	MetricBand:           compact semantic band of one to six related signals
@@ -126,13 +128,14 @@
 //	ShortcutHint:         OS-aware keyboard chord chips
 //	Sidebar:              responsive primary navigation (inline/drawer)
 //	SidebarBody:          nav content only, for a mirroring drawer slot
+//	SidebarDrawerTrigger: the drawer hamburger standalone, for host chrome
 //	SignalToggle:         role=switch bound to a boolean signal
 //	SignOut:              logout form POSTing the auth sign-out endpoint
-//	SiteFooter:           multi-column footer grid + bottom strip
-//	SiteHeader:           top bar with brand + nav + actions + mobile drawer
 //	SkeletonAvatar:       circular shimmer placeholder
 //	SkeletonCard:         card-shaped shimmer placeholder
 //	SkeletonRow:          row-shaped shimmer placeholder
+//	SkeletonLine:         one short shimmer bar (a trail, a one-line label)
+//	SkeletonTimeline:     event-row shimmer placeholder (dot + lines)
 //	SkipLink:             focus-visible bypass link to main content
 //	Slider:               <input type=range> with optional live value mirror
 //	Sparkline:            pure-SVG inline trend chart

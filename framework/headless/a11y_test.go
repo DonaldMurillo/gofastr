@@ -15,6 +15,14 @@ func has(t *testing.T, got render.HTML, want, why string) {
 	}
 }
 
+// hasNoContract fails when got carries any framework runtime
+// attribute. data-fui-internal is left out: it is the owned-style
+// boundary every component renders, not an island contract.
+func hasNoContract(t *testing.T, got render.HTML, why string) {
+	t.Helper()
+	hasNot(t, render.HTML(strings.ReplaceAll(string(got), ` data-fui-internal=""`, "")), "data-fui", why)
+}
+
 func hasNot(t *testing.T, got render.HTML, unwanted, why string) {
 	t.Helper()
 	if strings.Contains(string(got), unwanted) {
@@ -167,13 +175,13 @@ func TestTableScrollRegionIsFocusableAndNamedByItsCaption(t *testing.T) {
 	// One substring binds the three attributes to the one element
 	// that wraps the table, and the caption's id to the name that
 	// points at it: attributes render sorted, so the shape is exact.
-	has(t, got, `<div aria-labelledby="apps-caption" data-hui-table-scroll="" role="region" tabindex="0"><table role="table"><caption id="apps-caption">Applications</caption>`,
+	has(t, got, `<div aria-labelledby="apps-caption" data-fui-internal="" data-hui-table-scroll="" role="region" tabindex="0"><table role="table"><caption id="apps-caption">Applications</caption>`,
 		"the scroll region does not carry focus and the caption's name on the one element that wraps the table")
 
 	unnamed := Table(TableProps{
 		Columns: []Column{{Key: "name", Header: "Name"}}}, nil)
 	hasNot(t, unnamed, "aria-labelledby", "a region with no caption carried a name pointing at nothing")
-	has(t, unnamed, `<div data-hui-table-scroll="" role="region" tabindex="0"><table role="table">`, "the unnamed region is not the element wrapping the table")
+	has(t, unnamed, `<div data-fui-internal="" data-hui-table-scroll="" role="region" tabindex="0"><table role="table">`, "the unnamed region is not the element wrapping the table")
 }
 
 func TestStepsSayWhichStepIsCurrent(t *testing.T) {
@@ -273,7 +281,7 @@ func TestSectionLabelledByNameKeepsItsEyebrow(t *testing.T) {
 	got := Section(SectionProps{Label: "The numbers", Eyebrow: "01 / the numbers"}, nil,
 		render.HTML("<h2>The numbers</h2><p>x</p>"))
 	has(t, got, `aria-label="The numbers"`, "the section is not named by its label")
-	has(t, got, `aria-hidden="true">01 / the numbers</p>`, "the kicker was dropped from the Label branch")
+	has(t, got, `aria-hidden="true" data-fui-internal="">01 / the numbers</p>`, "the kicker was dropped from the Label branch")
 	if b, h := strings.Index(string(got), "01 / the numbers"), strings.Index(string(got), "<h2"); b > h {
 		t.Errorf("the kicker renders after the heading it decorates:\n%s", got)
 	}

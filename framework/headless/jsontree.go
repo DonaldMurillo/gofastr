@@ -74,30 +74,38 @@ func JSONTree(p JSONTreeProps, s Classes) render.HTML {
 	return b.El("div", PartRoot, own, jsonNode(b, parsed, 0, p, w))
 }
 
-// jsonNode renders one value at one depth.
+// jsonNode renders one value at one depth. Value is data, never markup
+// — the whole tree is drawn from it, with no caller content anywhere —
+// so only the outermost call (depth 0) carries the mark: it is the
+// topmost of the entire internal subtree, and marking a node inside it
+// too, at any depth, would be a mark inside an already-marked subtree.
 func jsonNode(b Box, v any, depth int, p JSONTreeProps, w *Strings) render.HTML {
+	var own html.Attrs
+	if depth == 0 {
+		own = Internal(nil)
+	}
 	switch t := v.(type) {
 	case nil:
-		return b.El("span", PartJSONNull, nil, render.Text(w.JSONNull))
+		return b.El("span", PartJSONNull, own, render.Text(w.JSONNull))
 	case bool:
 		word := w.JSONFalse
 		if t {
 			word = w.JSONTrue
 		}
-		return b.El("span", PartJSONBool, nil, render.Text(word))
+		return b.El("span", PartJSONBool, own, render.Text(word))
 	case float64:
 		s := strconv.FormatFloat(t, 'f', -1, 64)
-		return b.El("span", PartJSONNum, nil, render.Text(s))
+		return b.El("span", PartJSONNum, own, render.Text(s))
 	case string:
 		s := t
 		if p.MaxStringLen > 0 && len(s) > p.MaxStringLen {
 			s = s[:p.MaxStringLen] + w.JSONTruncated
 		}
-		return b.El("span", PartJSONStr, nil, render.Text(`"`+s+`"`))
+		return b.El("span", PartJSONStr, own, render.Text(`"`+s+`"`))
 	case []any:
-		return jsonNodeArray(b, t, depth, p, w)
+		return jsonNodeArray(b, t, depth, p, w, own)
 	case map[string]any:
-		return jsonNodeObject(b, t, depth, p, w)
+		return jsonNodeObject(b, t, depth, p, w, own)
 	}
 	panic("headless: JSONTree walked a value that is not JSON")
 }
@@ -108,9 +116,9 @@ func jsonOpenAttr(p JSONTreeProps, depth int) html.Attrs {
 	}
 	return nil
 }
-func jsonNodeArray(b Box, arr []any, depth int, p JSONTreeProps, w *Strings) render.HTML {
+func jsonNodeArray(b Box, arr []any, depth int, p JSONTreeProps, w *Strings, own html.Attrs) render.HTML {
 	if len(arr) == 0 {
-		return b.El("span", PartJSONEmpty, nil, render.Text(w.JSONEmptyArray))
+		return b.El("span", PartJSONEmpty, own, render.Text(w.JSONEmptyArray))
 	}
 	items := make([]render.HTML, 0, len(arr))
 	for i, item := range arr {
@@ -123,11 +131,11 @@ func jsonNodeArray(b Box, arr []any, depth int, p JSONTreeProps, w *Strings) ren
 	count := b.El("span", PartJSONCount, nil, render.Text("("+strconv.Itoa(len(arr))+")"))
 	typ := b.El("span", PartJSONType, nil, render.Text(w.JSONArray))
 	summary := b.El("summary", PartTitle, nil, typ, count)
-	return b.El("details", PartControl, jsonOpenAttr(p, depth), summary, list)
+	return b.El("details", PartControl, Merge(jsonOpenAttr(p, depth), own), summary, list)
 }
-func jsonNodeObject(b Box, obj map[string]any, depth int, p JSONTreeProps, w *Strings) render.HTML {
+func jsonNodeObject(b Box, obj map[string]any, depth int, p JSONTreeProps, w *Strings, own html.Attrs) render.HTML {
 	if len(obj) == 0 {
-		return b.El("span", PartJSONEmpty, nil, render.Text(w.JSONEmptyObject))
+		return b.El("span", PartJSONEmpty, own, render.Text(w.JSONEmptyObject))
 	}
 	// Sorted keys: a map's range order is random, and a tree whose
 	// bytes change per render defeats every cache and golden.
@@ -142,7 +150,7 @@ func jsonNodeObject(b Box, obj map[string]any, depth int, p JSONTreeProps, w *St
 	count := b.El("span", PartJSONCount, nil, render.Text("("+strconv.Itoa(len(obj))+")"))
 	typ := b.El("span", PartJSONType, nil, render.Text(w.JSONObject))
 	summary := b.El("summary", PartTitle, nil, typ, count)
-	return b.El("details", PartControl, jsonOpenAttr(p, depth), summary, list)
+	return b.El("details", PartControl, Merge(jsonOpenAttr(p, depth), own), summary, list)
 }
 
 func init() {

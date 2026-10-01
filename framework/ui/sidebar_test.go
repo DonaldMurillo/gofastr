@@ -494,3 +494,51 @@ func TestSidebarPrependSitsBetweenTitleAndNav(t *testing.T) {
 		t.Errorf("empty Prepend must emit no wrapper:\n%s", plain)
 	}
 }
+
+// An item with MatchPath must hand the runtime's active-link module
+// its section prefix: the server marks the item current on first
+// paint, and after a client navigation inside a kept shell it is
+// data-fui-match-prefix (carrying the MatchPath value) that lets
+// src/activelink.js re-derive the highlight. Without it the exact-href
+// sweep clears the item the moment the URL grows a deeper segment.
+func TestSidebarEmitsMatchPrefixForActiveLink(t *testing.T) {
+	out := string(ui.Sidebar(ui.SidebarConfig{
+		NavLabel: "Primary",
+		Items: []ui.SidebarItem{
+			{Label: "Billing", Href: "/projects/billing", MatchPath: "/projects/billing"},
+			{Label: "Plain", Href: "/plain"},
+		},
+	}).Render())
+	if !strings.Contains(out, `data-fui-match-prefix="/projects/billing"`) {
+		t.Errorf("MatchPath item did not emit data-fui-match-prefix for the runtime:\n%s", out)
+	}
+	if strings.Contains(out, `data-fui-match-prefix="/plain"`) {
+		t.Error("an item with no MatchPath must not carry data-fui-match-prefix (exact-href matching is its contract)")
+	}
+}
+
+// The standalone trigger is the SAME button the shell renders (the
+// relocated-header spelling of SidebarConfig.SuppressDrawerTrigger):
+// same part class plus the variant class the >= md hiding keys on,
+// same data-fui-open widget contract, same accessible name.
+func TestSidebarDrawerTriggerMatchesShellTrigger(t *testing.T) {
+	cfg := ui.SidebarConfig{Items: []ui.SidebarItem{{Label: "Home", Href: "/"}}}
+	trigger := string(ui.SidebarDrawerTrigger(cfg))
+	for _, want := range []string{
+		`class="fui-sidebar__hamburger fui-sidebar__hamburger--persistent"`,
+		`data-fui-open="ui-sidebar-drawer"`,
+		`aria-label="Open navigation"`,
+		`type="button"`,
+	} {
+		if !strings.Contains(trigger, want) {
+			t.Errorf("standalone trigger missing %q:\n%s", want, trigger)
+		}
+	}
+	// And the shell's own copy renders the same bytes (minus position).
+	shell := string(ui.Sidebar(cfg).Render())
+	i := strings.Index(shell, `<button`)
+	j := strings.Index(shell[i:], `</button>`) + i
+	if !strings.Contains(shell[i:j], `fui-sidebar__hamburger--persistent`) {
+		t.Errorf("shell trigger lost the variant class:\n%s", shell[i:j])
+	}
+}

@@ -15,12 +15,12 @@ func TestComboboxRendersTheARIAContract(t *testing.T) {
 	}})
 	for _, want := range []string{
 		`<input aria-autocomplete="list" aria-controls="q-listbox" aria-expanded="false" autocomplete="off" data-hui-combobox-input="" id="q" name="q" role="combobox"`,
-		`<ul aria-label="Search results" data-hui-combobox-count="{n} results" data-hui-combobox-listbox="" data-hui-combobox-static="" hidden="" id="q-listbox" role="listbox">`,
+		`<ul aria-label="Search results" data-fui-internal="" data-hui-combobox-count="{n} results" data-hui-combobox-listbox="" data-hui-combobox-static="" hidden="" id="q-listbox" role="listbox">`,
 		`<li data-value="Docs" id="q-listbox-opt-0" role="option"><span>Docs</span><span>/docs</span></li>`,
 		`<li data-fui-push-state="/examples" data-value="Examples"`,
 		`<li data-value="ex" id="q-listbox-opt-2" role="option">`,
-		`<span data-hui-combobox-no-results="No matches" data-hui-combobox-status="" role="status">`,
-		`<label for="q">Search</label>`,
+		`<span data-fui-internal="" data-hui-combobox-no-results="No matches" data-hui-combobox-status="" role="status">`,
+		`<label data-fui-internal="" for="q">Search</label>`,
 	} {
 		if !strings.Contains(h, want) {
 			t.Errorf("combobox missing %q:\n%s", want, h)
@@ -107,7 +107,7 @@ func TestComboboxScrubbedCarriedStrings(t *testing.T) {
 	h := renderCombobox(ComboboxProps{ID: "q", Name: "q", Label: "Sea\r\nrch", Placeholder: "Find\r\ndocs",
 		Options: []ComboboxOption{{Label: "Do\r\ncs"}}})
 	for _, want := range []string{
-		`<label for="q">Search</label>`,
+		`<label data-fui-internal="" for="q">Search</label>`,
 		`placeholder="Finddocs"`,
 		`<span>Docs</span>`,
 	} {

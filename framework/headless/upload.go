@@ -126,16 +126,18 @@ func FileUpload(p FileUploadProps, s Classes) render.HTML {
 	})
 	own["data-hui-drop"] = ""
 	return b.El("div", PartRoot, own,
-		b.El("label", PartDropZone, Attrs(map[string]string{"for": p.ID}), zoneKids...),
-		b.El("input", PartDropInput, input),
+		// None of the zone's own text (Label, CTA, Hint) is caller
+		// content, so the mark sits on the zone and not the spans in it.
+		b.El("label", PartDropZone, Internal(Attrs(map[string]string{"for": p.ID})), zoneKids...),
+		b.El("input", PartDropInput, Internal(input)),
 		// Populated by the runtime as files are chosen, so the names
 		// are on screen as well as announced.
-		b.El("ul", PartDropList, Mark(Attrs(map[string]string{"role": "list"}), "data-hui-drop-list")),
+		b.El("ul", PartDropList, Internal(Mark(Attrs(map[string]string{"role": "list"}), "data-hui-drop-list"))),
 		// role=status already means polite; stating it twice can
 		// announce twice.
-		b.El("span", PartStatus, Mark(Attrs(map[string]string{
+		b.El("span", PartStatus, Internal(Mark(Attrs(map[string]string{
 			"role": "status",
-		}), "data-hui-drop-status")),
+		}), "data-hui-drop-status"))),
 	)
 }
 

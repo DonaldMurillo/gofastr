@@ -102,7 +102,17 @@ func StepRail(cfg StepRailConfig) render.HTML {
 			State:  state,
 		}
 	}
-	list := headless.Steps(headless.StepsProps{Steps: steps}, stepRailClasses)
+	// Built entirely from StepRailItem's own typed fields — Marker is
+	// always render.Text(item.Number), never caller HTML — so the
+	// list holds nothing of the caller's; headless.Steps' own root
+	// never self-marks (an owner must place it), so the mark is
+	// spliced on here.
+	list, err := registry.InjectAttribute(
+		headless.Steps(headless.StepsProps{Steps: steps}, stepRailClasses),
+		"data-fui-internal", "")
+	if err != nil {
+		panic(err)
+	}
 
 	body := []render.HTML{}
 	if cfg.Title != "" {
@@ -111,18 +121,21 @@ func StepRail(cfg StepRailConfig) render.HTML {
 		// emitting an <h6> here would inject a stray, out-of-order
 		// heading into the page outline. The label keeps the visual +
 		// the landmark name without polluting the heading hierarchy.
+		// Built entirely from cfg.Title, a string: this component's own.
 		body = append(body, html.Div(
-			html.DivConfig{Class: "fui-step-rail__title"},
+			html.DivConfig{Class: "fui-step-rail__title", ExtraAttrs: html.Attrs{"data-fui-internal": ""}},
 			render.Text(cfg.Title)))
 	}
 	body = append(body, list)
 	if cfg.Meta != "" {
+		// Built entirely from cfg.Meta/cfg.MetaHref, both strings:
+		// this component's own.
 		var meta render.HTML = render.Text(cfg.Meta)
 		if cfg.MetaHref != "" {
 			meta = html.Link(html.LinkConfig{Href: cfg.MetaHref, Text: cfg.Meta})
 		}
 		body = append(body, html.Div(
-			html.DivConfig{Class: "fui-step-rail__meta"}, meta))
+			html.DivConfig{Class: "fui-step-rail__meta", ExtraAttrs: html.Attrs{"data-fui-internal": ""}}, meta))
 	}
 
 	attrs := headless.Safe(cfg.ExtraAttrs, "class", "role", "aria-label")
@@ -154,7 +167,7 @@ func stepRailCSS(_ style.Theme) string {
 [data-fui-comp="ui-step-rail"] .fui-step-rail__title {
   margin: 0;
   font-size: var(--text-xs, 0.75rem);
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--color-text-subtle, currentColor);

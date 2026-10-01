@@ -397,9 +397,9 @@ func renderAction(a action, s Classes) render.HTML {
 		// and stating it twice can announce twice: the flip is
 		// visible, and this is how the rollback reaches anyone who
 		// cannot see it.
-		b.El("span", PartVisuallyHidden, Mark(Attrs(map[string]string{
+		b.El("span", PartVisuallyHidden, Internal(Mark(Attrs(map[string]string{
 			"role": "status",
-		}), "data-hui-action-status")),
+		}), "data-hui-action-status"))),
 	}
 	return b.El("button", PartRoot, own, kids...)
 }
@@ -416,6 +416,13 @@ func actionSpan(b Box, part Part, hidden bool, label string, icon render.HTML) r
 	attrs := html.Attrs{hook: ""}
 	if hidden {
 		Mark(attrs, "hidden")
+	}
+	// With no icon the span holds only its own label text, so the
+	// boundary sits on the span itself; with an icon the span is a
+	// slot ancestor (the icon is caller content) and is left for an
+	// owner to reach.
+	if icon == "" {
+		attrs = Internal(attrs)
 	}
 	kids := make([]render.HTML, 0, 2)
 	if icon != "" {

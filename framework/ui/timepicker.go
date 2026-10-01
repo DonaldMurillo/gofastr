@@ -105,7 +105,11 @@ func TimePicker(cfg TimePickerConfig) render.HTML {
 		Parts:      parts,
 		ExtraAttrs: headless.Safe(cfg.ExtraAttrs, "class", "id"),
 	}, timePickerClasses, func(c headless.FieldControl) render.HTML {
-		return headless.Input(headless.InputProps{
+		// TimePicker builds this input itself from cfg's strings/bools;
+		// it is never content TimePicker's own caller handed in, so the
+		// input's root — headless.Field sees it only as its build
+		// closure's caller-content return — takes the mark here.
+		return headless.Own(headless.Input(headless.InputProps{
 			Type:        "time",
 			Name:        cfg.Name,
 			ID:          c.ID,
@@ -116,7 +120,7 @@ func TimePicker(cfg TimePickerConfig) render.HTML {
 			DescribedBy: c.DescribedBy,
 			AriaLabel:   cfg.Label,
 			Owned:       owned,
-		}, timePickerInputClasses)
+		}, timePickerInputClasses))
 	}))
 }
 
@@ -128,7 +132,7 @@ func timePickerCSS(_ style.Theme) string {
   gap: var(--spacing-xs, 2px);
 }
 [data-fui-comp="ui-time-picker"] .fui-time-picker__label {
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
   font-size: var(--text-sm, 0.875rem);
   color: var(--color-text, #18181B);
 }

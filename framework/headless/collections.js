@@ -150,6 +150,17 @@
     }
   }, true);
 
+  // Chromium runs implicit submission as the default action of the
+  // Enter keypress, and a keypress can arrive as its own task after
+  // the keydown's (CDP's Input.dispatchKeyEvent sends keyDown and char
+  // separately), past the task-scoped flag above. Cancelling the
+  // keypress itself closes that path whatever the task boundaries.
+  document.addEventListener('keypress', function (ev) {
+    const t = ev.target;
+    if (!t || !t.matches || !t.matches('[data-hui-tag-input-field]')) return;
+    if (ev.key === 'Enter' && !ev.isComposing) ev.preventDefault();
+  }, true);
+
   // Commit on blur so a half-typed tag is not lost on tab.
   document.addEventListener('blur', function (ev) {
     const t = ev.target;

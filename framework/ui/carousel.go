@@ -133,7 +133,7 @@ func Carousel(cfg CarouselConfig) render.HTML {
 var carouselStyle = registry.RegisterStyle("ui-carousel", carouselCSS)
 
 func carouselCSS(_ style.Theme) string {
-	return `[data-fui-comp="ui-carousel"].fui-carousel {
+	return `:where([data-fui-comp="ui-carousel"]).fui-carousel {
   position: relative;
 }
 [data-fui-comp="ui-carousel"] .fui-carousel__stage {

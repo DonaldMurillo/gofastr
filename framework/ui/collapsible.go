@@ -25,7 +25,7 @@ func collapsibleCSS(_ style.Theme) string {
 	// see TestFuiBridgeChainsToColorTokens) wins when a host sets it, then
 	// the canonical adaptive --color-* theme, then the light literal.
 	return `[data-fui-comp="fui-collapsible"]{border:1px solid var(--fui-border, var(--color-border, #e2e8f0));border-radius:var(--radii-md,.5rem);background:var(--fui-surface, var(--color-surface, #fff));color:var(--fui-foreground, var(--color-text, #0f172a));overflow:hidden}` +
-		`[data-fui-comp="fui-collapsible"] .fui-collapsible__summary{padding:.75rem var(--spacing-lg, 1rem);cursor:pointer;font-weight:600;color:var(--fui-foreground, var(--color-text, #0f172a));list-style:none;display:flex;align-items:center;justify-content:space-between;user-select:none}` +
+		`[data-fui-comp="fui-collapsible"] .fui-collapsible__summary{padding:.75rem var(--spacing-lg, 1rem);cursor:pointer;font-weight:var(--font-weight-semibold);color:var(--fui-foreground, var(--color-text, #0f172a));list-style:none;display:flex;align-items:center;justify-content:space-between;user-select:none}` +
 		`[data-fui-comp="fui-collapsible"] .fui-collapsible__summary::-webkit-details-marker{display:none}` +
 		`[data-fui-comp="fui-collapsible"] .fui-collapsible__summary::after{content:"\25B8";transition:transform var(--duration-fast,150ms) var(--easing-standard,ease);color:var(--fui-muted, var(--color-text-muted, #64748b))}` +
 		`[data-fui-comp="fui-collapsible"][open] .fui-collapsible__summary::after{transform:rotate(90deg)}` +
@@ -67,8 +67,13 @@ func Collapsible(cfg CollapsibleConfig, body ...render.HTML) render.HTML {
 	if cfg.Class != "" {
 		classes[headless.PartRoot] += " " + cfg.Class
 	}
+	if cfg.Summary == "" {
+		panic("ui: Collapsible requires Summary — a details whose summary says nothing is a button with no name")
+	}
 	out := headless.Disclosure(headless.DisclosureProps{
-		Summary:    render.Text(cfg.Summary),
+		// Wrapped so it can carry the mark: the summary is built from
+		// a string, so it is the component's own.
+		Summary:    headless.Own(render.Tag("span", nil, render.Text(cfg.Summary))),
 		Content:    render.Join(body...),
 		Open:       cfg.Open,
 		ID:         cfg.ID,

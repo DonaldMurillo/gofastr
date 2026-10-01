@@ -49,7 +49,10 @@ func TestGroupSublistHiddenAttributeWins(t *testing.T) {
 
 func TestAutoHideVariantShipsRevealCSS(t *testing.T) {
 	css := sidebarCSS(style.Theme{})
-	if !strings.Contains(css, `.fui-sidebar--auto-hide .fui-sidebar__hamburger`) {
+	// The hiding keys on the hamburger's own variant class so a
+	// relocated trigger (SidebarDrawerTrigger in a page header) hides
+	// at >= md too, not only the copy inside the sidebar root.
+	if !strings.Contains(css, `.fui-sidebar__hamburger--auto-hide`) {
 		t.Fatal("auto-hide variant must hide the hamburger at >= md like persistent/collapsible")
 	}
 	// The reveal ships in the component stylesheet (one styling

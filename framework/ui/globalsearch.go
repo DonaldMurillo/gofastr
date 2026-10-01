@@ -130,6 +130,9 @@ func GlobalSearch(cfg GlobalSearchConfig) render.HTML {
 		DebounceMS:     debounceMs,
 		Strings:        StringsFor(ctx),
 	}, classes)
+	// The combobox is built from this component's config; the wrapper
+	// below is the root.
+	box = headless.Own(box)
 
 	// The bar's wrapper owns the class, the sticky posture, the chord,
 	// and the hint chip: one element the page composes, one place the
@@ -149,9 +152,11 @@ func GlobalSearch(cfg GlobalSearchConfig) render.HTML {
 	}
 	children := []render.HTML{box}
 	if showHint && shortcut != "" {
+		// Built entirely from shortcut (a string), never caller markup:
+		// this component's own.
 		children = append(children, html.Span(html.TextConfig{
 			Class:      "fui-global-search__hint",
-			ExtraAttrs: html.Attrs{"aria-hidden": "true"},
+			ExtraAttrs: html.Attrs{"aria-hidden": "true", "data-fui-internal": ""},
 		}, render.Tag("kbd", map[string]string{"class": "fui-global-search__chord"}, render.Text(shortcut))))
 	}
 	boxWrapped := html.Div(html.DivConfig{ExtraAttrs: wrapAttrs}, children...)
@@ -161,12 +166,12 @@ func GlobalSearch(cfg GlobalSearchConfig) render.HTML {
 var globalSearchStyle = registry.RegisterStyle("ui-global-search", globalSearchCSS)
 
 func globalSearchCSS(_ style.Theme) string {
-	return `[data-fui-comp="ui-global-search"].fui-global-search {
+	return `:where([data-fui-comp="ui-global-search"]).fui-global-search {
   display: flex;
   align-items: center;
   gap: var(--spacing-sm, 4px);
 }
-[data-fui-comp="ui-global-search"].fui-global-search--sticky {
+:where([data-fui-comp="ui-global-search"]).fui-global-search--sticky {
   position: sticky;
   inset-block-start: var(--spacing-md, 8px);
   z-index: var(--z-sticky, 50);

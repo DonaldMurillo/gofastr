@@ -33,11 +33,18 @@ func pageHeaderCSS(t style.Theme) string {
 		Rule(".fui-page-header__text").
 		Set("display", "grid", "gap", "var(--spacing-xs, 2px)").
 		End().
+		Rule(".fui-page-header__title-row").
+		Set("display", "flex", "flex-wrap", "wrap", "align-items", "center",
+			"gap", "var(--spacing-md, 8px)", "min-inline-size", "0").
+		End().
+		Rule(".fui-page-header__title-row > .fui-page-header__title").
+		Set("min-inline-size", "0", "overflow-wrap", "anywhere").
+		End().
 		Rule(".fui-page-header__eyebrow").
 		Set(
 			"margin", "0",
 			"font-size", "var(--text-xs, 0.75rem)",
-			"font-weight", "600",
+			"font-weight", "{font-weight.semibold}",
 			"text-transform", "uppercase",
 			"letter-spacing", "0.06em",
 			"color", "var(--color-text-subtle, #71717A)",
@@ -50,7 +57,7 @@ func pageHeaderCSS(t style.Theme) string {
 		Set(
 			"margin", "0",
 			"font-size", "var(--ui-page-header-title-size, var(--text-2xl, 1.5rem))",
-			"font-weight", "700",
+			"font-weight", "{font-weight.bold}",
 			"line-height", "var(--ui-page-header-title-leading, 1.25)",
 			"letter-spacing", "var(--ui-page-header-title-tracking, normal)",
 			"color", "var(--color-text, #18181B)",
@@ -65,6 +72,12 @@ func pageHeaderCSS(t style.Theme) string {
 			"flex-wrap", "wrap",
 			"gap", "var(--spacing-sm, 4px)",
 		).
+		End().
+		Rule("&.fui-page-header--compact").
+		Set("padding", "0", "border-bottom", "0").
+		End().
+		Rule("&.fui-page-header--compact h2.fui-page-header__title").
+		Set("font-size", "var(--text-lg)", "line-height", "1.3").
 		End().
 		MustBuild()
 }

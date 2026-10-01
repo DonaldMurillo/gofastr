@@ -187,7 +187,7 @@ func timelineCSS(_ style.Theme) string {
   /* The title is a p; a host's global p rule must not retune its
      metrics — the rhythm is the family's, inherited. */
   line-height: inherit;
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
   color: var(--color-text, #18181B);
 }
 [data-fui-comp="ui-timeline"] .fui-timeline__meta {

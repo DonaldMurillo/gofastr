@@ -75,8 +75,8 @@ func Choice(p ChoiceProps, s Classes) render.HTML {
 	}
 
 	return El("label", s, PartRoot, nil,
-		El("input", s, PartControl, input),
-		El("span", s, PartText, nil, text...),
+		El("input", s, PartControl, Internal(input)),
+		El("span", s, PartText, Internal(nil), text...),
 	)
 }
 
@@ -120,10 +120,10 @@ func Switch(p SwitchProps, s Classes) render.HTML {
 	Flag(input, "checked", p.Checked)
 	Flag(input, "disabled", p.Disabled)
 	return El("label", s, PartRoot, nil,
-		El("input", s, PartControl, input),
+		El("input", s, PartControl, Internal(input)),
 		// No part: the switch's text span carries no class today and
 		// PartText is left to the class map to decide.
-		El("span", s, PartText, nil, render.Text(p.Label)),
+		El("span", s, PartText, Internal(nil), render.Text(p.Label)),
 	)
 }
 
@@ -159,7 +159,7 @@ func Group(p GroupProps, s Classes, items ...render.HTML) render.HTML {
 		legendAttrs["data-required"] = ""
 	}
 	kids := append([]render.HTML{
-		El("legend", s, PartLabel, legendAttrs, render.Text(p.Legend)),
+		El("legend", s, PartLabel, Internal(legendAttrs), render.Text(p.Legend)),
 	}, items...)
 	return El("fieldset", s, PartRoot, attrs, kids...)
 }

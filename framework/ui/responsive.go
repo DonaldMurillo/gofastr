@@ -18,18 +18,16 @@ package ui
 // vs. a <select> jump menu). NOT worth it when CSS alone could
 // reflow the desktop tree (use plain @media for that case).
 //
-//	ui.Responsive(ui.ResponsiveConfig{Breakpoint: 1024},
-//	    desktopSidebar,   // shown when viewport >= 1024
-//	    mobilePicker)     // shown when viewport < 1024
+//	ui.Responsive(ui.ResponsiveConfig{Below: ui.StackBelowLG},
+//	    desktopSidebar,   // shown at 64rem and wider
+//	    mobilePicker)     // shown below 64rem
 //
 // The primitive wraps each variant in a `<div class="fui-responsive__…">`
-// and registers a stylesheet that toggles their display: above the
-// breakpoint the desktop variant shows, below it the mobile variant.
+// and toggles their display from one stylesheet registered at package
+// init: at and above the breakpoint the desktop variant shows, below it
+// the mobile variant.
 
 import (
-	"strconv"
-	"sync"
-
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
@@ -38,10 +36,10 @@ import (
 
 // ResponsiveConfig configures the swap.
 type ResponsiveConfig struct {
-	// Breakpoint in pixels: viewport >= Breakpoint renders the
-	// desktop variant; < Breakpoint renders the mobile variant.
-	// Defaults to 1024 when zero.
-	Breakpoint int
+	// Below is the breakpoint the mobile variant shows below; the
+	// desktop variant shows at and above it. The zero value is
+	// StackBelowMD (48rem); StackBelowLG is 64rem. Other values panic.
+	Below StackBreakpoint
 	// Class is appended to the wrapping <div>'s class list.
 	Class string
 
@@ -54,76 +52,50 @@ type ResponsiveConfig struct {
 
 // Responsive emits both variants wrapped in viewport-toggled divs.
 func Responsive(cfg ResponsiveConfig, desktop, mobile render.HTML) render.HTML {
-	bp := cfg.Breakpoint
-	if bp <= 0 {
-		bp = 1024
-	}
-	// Register a per-breakpoint stylesheet so multiple Responsive
-	// instances on the same page that pick the same breakpoint share
-	// one bundled CSS asset.
-	style := getOrRegisterResponsiveStyle(bp)
-
+	checkStackBreakpoint(cfg.Below)
 	cls := "fui-responsive"
+	if cfg.Below == StackBelowLG {
+		cls += " fui-responsive--stack-below-lg"
+	}
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
 	}
-	return style.WrapHTML(html.Div(html.DivConfig{
+	desktopAttrs := html.Attrs{}
+	if desktop == "" {
+		desktopAttrs["data-fui-internal"] = ""
+	}
+	mobileAttrs := html.Attrs{}
+	if mobile == "" {
+		mobileAttrs["data-fui-internal"] = ""
+	}
+	return responsiveStyle.WrapHTML(html.Div(html.DivConfig{
 		Class:      cls,
 		ExtraAttrs: html.SafeExtraAttrs(cfg.ExtraAttrs),
 	},
 		html.Div(html.DivConfig{
-			Class: "fui-responsive__desktop",
+			Class:      "fui-responsive__desktop",
+			ExtraAttrs: desktopAttrs,
 		}, desktop),
 		html.Div(html.DivConfig{
-			Class: "fui-responsive__mobile",
+			Class:      "fui-responsive__mobile",
+			ExtraAttrs: mobileAttrs,
 		}, mobile),
 	))
 }
 
-// responsiveStyleCache holds one registered Style per breakpoint. The
-// registry dedupes per Name, so registering "ui-responsive-1024" twice
-// returns the same handle and emits one CSS rule in the bundle.
-//
-// responsiveStyleMu guards the map: SSR renders run concurrently, and
-// two first calls with different breakpoints take the miss path at the
-// same time. An unguarded check-then-set is a data race under -race and
-// a fatal "concurrent map writes" without the detector, taking the
-// whole host process down. registry.RegisterStyle has its own lock and
-// never calls back into this package, so holding ours across the call
-// cannot deadlock.
-var (
-	responsiveStyleMu    sync.Mutex
-	responsiveStyleCache = make(map[int]*registry.Style)
-)
+// responsiveStyle registers at package init, before any host builds
+// its component catalog, so a page reached by client-side navigation
+// can load it. A sheet registered on first render missed the catalog.
+var responsiveStyle = registry.RegisterStyle("ui-responsive", responsiveCSS)
 
-func getOrRegisterResponsiveStyle(bp int) *registry.Style {
-	responsiveStyleMu.Lock()
-	defer responsiveStyleMu.Unlock()
-	if s, ok := responsiveStyleCache[bp]; ok {
-		return s
-	}
-	name := "ui-responsive-" + strconv.Itoa(bp)
-	bpCopy := bp // capture for closure
-	s := registry.RegisterStyle(name, func(_ style.Theme) string {
-		return responsiveCSS(name, bpCopy)
-	})
-	responsiveStyleCache[bp] = s
-	return s
-}
-
-// responsiveCSS generates the breakpoint-specific show/hide rules.
-// Two queries (above and below the breakpoint) so neither variant
-// flashes on initial paint before media queries evaluate.
-func responsiveCSS(name string, bp int) string {
-	bps := strconv.Itoa(bp)
-	// Use the registered Name as a data-fui-comp scope so multiple
-	// breakpoints don't collide on .fui-responsive__desktop class.
-	scope := `[data-fui-comp="` + name + `"]`
-	return `` +
-		`@media (min-width: ` + bps + `px) {` +
-		`  ` + scope + ` .fui-responsive__mobile { display: none !important; }` +
-		`}` +
-		`@media (max-width: ` + strconv.Itoa(bp-1) + `px) {` +
-		`  ` + scope + ` .fui-responsive__desktop { display: none !important; }` +
-		`}`
+// responsiveCSS holds both postures. The child combinator keeps a
+// nested Responsive's variants out of its parent's rules. Two queries
+// per posture, so neither variant flashes before media queries apply.
+func responsiveCSS(_ style.Theme) string {
+	return `
+@media (min-width: 48rem) { .fui-responsive:not(.fui-responsive--stack-below-lg) > .fui-responsive__mobile { display: none !important; } }
+@media (max-width: 47.99rem) { .fui-responsive:not(.fui-responsive--stack-below-lg) > .fui-responsive__desktop { display: none !important; } }
+@media (min-width: 64rem) { .fui-responsive--stack-below-lg > .fui-responsive__mobile { display: none !important; } }
+@media (max-width: 63.99rem) { .fui-responsive--stack-below-lg > .fui-responsive__desktop { display: none !important; } }
+`
 }

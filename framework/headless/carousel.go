@@ -155,23 +155,42 @@ func Carousel(p CarouselProps, s Classes) render.HTML {
 	// positioned prev/next centres on the slides and can never grow
 	// down over the dot row (a WCAG 2.2 target-size failure the flat
 	// structure brought with it).
+	// hasContent says whether any slide carries content. When none do,
+	// the stage is marked as a whole below and the prev/next controls
+	// — already fully generated, never the caller's — sit under that
+	// mark instead of carrying their own; marking both would be
+	// marking inside an already-marked subtree.
+	hasContent := carouselSlidesHaveContent(p.Slides)
+	arrowOwn := func(a html.Attrs) html.Attrs {
+		if hasContent {
+			return Internal(a)
+		}
+		return a
+	}
 	stage := []render.HTML{b.El("div", PartCarouselTrack, trackAttrs, slides...)}
 	if !p.NoArrows {
 		last := len(p.Slides) - 1
 		stage = append(stage,
-			b.El("a", PartCarouselPrev, html.Attrs{
+			b.El("a", PartCarouselPrev, arrowOwn(html.Attrs{
 				"href":                   "#" + p.Slides[0].ID,
 				"aria-label":             w.Previous,
 				"data-hui-carousel-prev": "",
-			}, render.Text(w.Previous)),
-			b.El("a", PartCarouselNext, html.Attrs{
+			}), render.Text(w.Previous)),
+			b.El("a", PartCarouselNext, arrowOwn(html.Attrs{
 				"href":                   "#" + p.Slides[last].ID,
 				"aria-label":             w.Next,
 				"data-hui-carousel-next": "",
-			}, render.Text(w.Next)),
+			}), render.Text(w.Next)),
 		)
 	}
-	children := []render.HTML{b.El("div", PartCarouselStage, nil, stage...)}
+	stageOwn := html.Attrs(nil)
+	if !hasContent {
+		// No slide carries content — a degenerate carousel, but a
+		// legal one — so the stage (the track's slides plus the
+		// prev/next controls) is entirely the component's own.
+		stageOwn = Internal(nil)
+	}
+	children := []render.HTML{b.El("div", PartCarouselStage, stageOwn, stage...)}
 
 	if !p.NoDots {
 		dots := make([]render.HTML, 0, len(p.Slides))
@@ -186,11 +205,22 @@ func Carousel(p CarouselProps, s Classes) render.HTML {
 			}
 			dots = append(dots, b.El("a", PartCarouselDot, own, render.Text(strconv.Itoa(i+1))))
 		}
-		children = append(children, b.El("nav", PartMarker, html.Attrs{
+		children = append(children, b.El("nav", PartMarker, Internal(html.Attrs{
 			"aria-label": scrubControlBytes(p.Label),
-		}, dots...))
+		}), dots...))
 	}
 	return b.El("div", PartRoot, rootAttrs, children...)
+}
+
+// carouselSlidesHaveContent reports whether any slide carries content —
+// the only caller content the stage can hold.
+func carouselSlidesHaveContent(slides []CarouselSlide) bool {
+	for _, sl := range slides {
+		if sl.Content != "" {
+			return true
+		}
+	}
+	return false
 }
 
 // carouselSlideName formats the slide sentence.

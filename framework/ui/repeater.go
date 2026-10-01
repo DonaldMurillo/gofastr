@@ -61,6 +61,19 @@ var repeaterClasses = headless.Classes{
 	headless.PartStatus:         "fui-visually-hidden",
 }
 
+// repeaterFields wraps one row's rendered content for
+// headless.RepeaterItem.Fields: an empty render.HTML carries none of
+// the caller's markup, so it is an empty slice rather than a
+// one-element slice holding nothing — headless.Repeater's own marking
+// keys off whether a row's Fields is empty to find the boundary
+// between a caller's row and one with nothing in it.
+func repeaterFields(item render.HTML) []render.HTML {
+	if item == "" {
+		return nil
+	}
+	return []render.HTML{item}
+}
+
 // Repeater renders a dynamic list of form fields with add/remove controls.
 func Repeater(cfg RepeaterConfig) render.HTML {
 	ctx := cfg.Ctx
@@ -74,7 +87,7 @@ func Repeater(cfg RepeaterConfig) render.HTML {
 
 	items := make([]headless.RepeaterItem, 0, len(cfg.Items)+max(cfg.MinItems, 1))
 	for _, item := range cfg.Items {
-		items = append(items, headless.RepeaterItem{Fields: []render.HTML{item}})
+		items = append(items, headless.RepeaterItem{Fields: repeaterFields(item)})
 	}
 	// A Template with no seeded items seeds the minimum (one row when
 	// no minimum): a repeater that renders no row and no way to add
@@ -86,7 +99,7 @@ func Repeater(cfg RepeaterConfig) render.HTML {
 		}
 		for i := range count {
 			items = append(items, headless.RepeaterItem{
-				Fields: []render.HTML{cfg.Template(i)},
+				Fields: repeaterFields(cfg.Template(i)),
 			})
 		}
 	}

@@ -7,6 +7,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/headless"
 )
 
 // PipelineSource is one entry in a typed responsive source set,
@@ -159,6 +160,13 @@ func PipelineImage(cfg PipelineImageConfig) render.HTML {
 	}
 
 	lqip := placeholderImage(cfg.Placeholder)
+	if lqip != "" {
+		// Placeholder is a data: URI string, never a caller's markup,
+		// so the placeholder image is always this component's own;
+		// its root becomes a sibling here rather than one an owner
+		// could place, so its own marks collapse into a single one.
+		lqip = headless.Own(lqip)
+	}
 
 	cls := "fui-image"
 	if cfg.Fit != ImageFitCover {
@@ -216,7 +224,11 @@ func PipelineImage(cfg PipelineImageConfig) render.HTML {
 		}))
 	}
 	children = append(children, img)
-	picture := render.Tag("picture", nil, children...)
+	// The source groups and the fallback img are both built from this
+	// component's own fields (Sources, a struct slice, carries no
+	// render.HTML), so picture — with no wrapper an owner could reach
+	// around — is the topmost internal element here.
+	picture := render.Tag("picture", map[string]string{"data-fui-internal": ""}, children...)
 
 	// The placeholder is emitted before the picture so the real image paints
 	// over it in DOM order. Both are positioned, so tree order decides,

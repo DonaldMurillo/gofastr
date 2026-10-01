@@ -167,7 +167,7 @@ func typedFormField(label, name, id, inputType, value, placeholder, help, fieldE
 		Label: label, For: id, Help: help, Error: fieldError,
 		Required: required, Class: class,
 		Input: func(c headless.FieldControl) render.HTML {
-			return inputHTML(headless.InputProps{
+			return headless.Own(inputHTML(headless.InputProps{
 				Type:        inputType,
 				DescribedBy: c.DescribedBy,
 				Name:        name,
@@ -179,7 +179,7 @@ func typedFormField(label, name, id, inputType, value, placeholder, help, fieldE
 				Required:    c.Required,
 				Extra:       extra,
 				Owned:       owned,
-			}, "")
+			}, ""))
 		},
 	})
 }

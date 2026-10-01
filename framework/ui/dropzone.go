@@ -154,8 +154,11 @@ func FileDropzone(cfg FileDropzoneConfig) render.HTML {
 			render.Text(cfg.Label)),
 		html.Paragraph(html.TextConfig{Class: "fui-drop__prompt"}, render.Text(prompt)),
 	}
+	// None of the zone's own content (the input, the icon, the label
+	// and the prompt) is the caller's, so the mark sits on the
+	// label wrapper and not the elements inside it.
 	zone := render.Tag("label",
-		map[string]string{"for": id, "class": "fui-drop__label-wrap"},
+		map[string]string{"for": id, "class": "fui-drop__label-wrap", "data-fui-internal": ""},
 		render.Tag("div", map[string]string{
 			"class": "fui-drop__zone",
 			// role=region + aria-label so AT users hear "<Label>, region"
@@ -168,17 +171,20 @@ func FileDropzone(cfg FileDropzoneConfig) render.HTML {
 
 	children := []render.HTML{zone}
 	// The names list and the announcement: the headless module fills
-	// these on every pick or drop (showFiles).
+	// these on every pick or drop (showFiles). Neither ever holds the
+	// caller's own markup.
 	children = append(children,
 		render.Tag("ul", map[string]string{
 			"class":              "fui-drop__list",
 			"role":               "list",
 			"data-hui-drop-list": "",
+			"data-fui-internal":  "",
 		}),
 		render.Tag("span", map[string]string{
 			"class":                "fui-drop__status",
 			"role":                 "status",
 			"data-hui-drop-status": "",
+			"data-fui-internal":    "",
 		}),
 	)
 	if cfg.ShowPreview {
@@ -186,17 +192,18 @@ func FileDropzone(cfg FileDropzoneConfig) render.HTML {
 			"class":                         "fui-drop__previews",
 			"data-fui-dropzone-preview-for": id,
 			"aria-live":                     "polite",
+			"data-fui-internal":             "",
 		}))
 	}
 
 	if help := dropzoneHelp(cfg, ctx); help != "" {
 		children = append(children, render.Tag("p", map[string]string{
-			"id": id + "-help", "class": "fui-drop__help",
+			"id": id + "-help", "class": "fui-drop__help", "data-fui-internal": "",
 		}, render.Text(help)))
 	}
 	if cfg.Error != "" {
 		children = append(children, render.Tag("p", map[string]string{
-			"id": id + "-error", "class": "fui-drop__error", "role": "alert",
+			"id": id + "-error", "class": "fui-drop__error", "role": "alert", "data-fui-internal": "",
 		}, render.Text(cfg.Error)))
 	}
 
@@ -310,7 +317,7 @@ func dropzoneCSS(_ style.Theme) string {
 .fui-drop__label {
   margin: 0;
   font-size: var(--text-base, 1rem);
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
   color: var(--color-text, #18181B);
 }
 .fui-drop__prompt {
@@ -325,7 +332,7 @@ func dropzoneCSS(_ style.Theme) string {
   display: grid;
   gap: 1px;
   font-size: var(--text-sm, 0.875rem);
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
   color: var(--color-primary, #4F46E5);
   justify-items: start;
 }

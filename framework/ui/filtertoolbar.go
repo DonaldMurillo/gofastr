@@ -135,6 +135,9 @@ type FilterToolbarConfig struct {
 	// HideReset suppresses the Reset link (e.g. when the caller renders
 	// an active-filter chip bar with its own "Clear all").
 	HideReset bool
+	// Compact keeps search and actions on one row in narrow record lists.
+	// Below 18rem the controls still stack so none are clipped.
+	Compact bool
 
 	// Label is the toolbar's accessible name (search landmark
 	// aria-label). Default "Filters".
@@ -157,6 +160,9 @@ type FilterToolbarConfig struct {
 
 // FilterToolbar renders the filter/sort control strip for a list screen.
 func FilterToolbar(cfg FilterToolbarConfig) render.HTML {
+	if cfg.Compact {
+		cfg.Class = cls(cfg.Class, "fui-filter-toolbar--compact")
+	}
 	if cfg.Action == "" {
 		panic("ui: FilterToolbar requires Action")
 	}
@@ -238,7 +244,8 @@ func FilterToolbar(cfg FilterToolbarConfig) render.HTML {
 		}))
 	}
 	controls = append(controls, html.Div(html.DivConfig{
-		Class: "fui-filter-toolbar__actions",
+		Class:      "fui-filter-toolbar__actions",
+		ExtraAttrs: html.Attrs{"data-fui-internal": ""},
 	}, actionsKids...))
 
 	formAttrs := html.Attrs{
@@ -275,7 +282,7 @@ func renderSelectFacet(ctx context.Context, f Facet) render.HTML {
 	for _, o := range f.Options {
 		opts = append(opts, SelectOption{Value: o.Value, Text: o.Label, Selected: o.Value == f.Value})
 	}
-	return html.Div(html.DivConfig{Class: "fui-filter-toolbar__facet"},
+	return html.Div(html.DivConfig{Class: "fui-filter-toolbar__facet", ExtraAttrs: html.Attrs{"data-fui-internal": ""}},
 		Select(SelectConfig{Name: f.Name, Label: f.Label, Options: opts}))
 }
 
@@ -296,7 +303,8 @@ func renderSortFacet(ctx context.Context, cfg FilterToolbarConfig) render.HTML {
 		}
 		opts = append(opts, SelectOption{Value: o.Value, Text: o.Label, Selected: o.Value == cfg.SortValue})
 	}
-	return html.Div(html.DivConfig{Class: "fui-filter-toolbar__facet fui-filter-toolbar__sort"},
+	return html.Div(html.DivConfig{Class: "fui-filter-toolbar__facet fui-filter-toolbar__sort",
+		ExtraAttrs: html.Attrs{"data-fui-internal": ""}},
 		Select(SelectConfig{Name: name, Label: sortLabel, Options: opts}))
 }
 
@@ -313,7 +321,8 @@ func renderSearchFacet(ctx context.Context, s FilterSearch) render.HTML {
 	if s.Label != "" {
 		extra["aria-label"] = s.Label
 	}
-	return html.Div(html.DivConfig{Class: "fui-filter-toolbar__facet fui-filter-toolbar__search"},
+	return html.Div(html.DivConfig{Class: "fui-filter-toolbar__facet fui-filter-toolbar__search",
+		ExtraAttrs: html.Attrs{"data-fui-internal": ""}},
 		SearchInput(SearchInputConfig{
 			Name:        s.Name,
 			ID:          "filter-search-" + slug(s.Name),
@@ -460,7 +469,7 @@ func filterToolbarCSS(_ style.Theme) string {
 [data-fui-comp="ui-filter-toolbar"] .fui-filter-toolbar__legend {
   padding: 0;
   margin-block-end: var(--spacing-xs, 2px);
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
   font-size: var(--text-sm, 0.875rem);
   color: var(--color-text, #18181B);
 }
@@ -509,7 +518,7 @@ func filterToolbarCSS(_ style.Theme) string {
   background: var(--color-primary, #4F46E5);
   border-color: var(--color-primary, #4F46E5);
   color: var(--color-primary-fg, #FFFFFF);
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
 }
 [data-fui-comp="ui-filter-toolbar"] .fui-filter-toolbar__pill:has(.fui-filter-toolbar__pill-input:focus-visible) {
   outline: 2px solid var(--color-primary, #4F46E5);
@@ -529,6 +538,11 @@ func filterToolbarCSS(_ style.Theme) string {
   [data-fui-comp="ui-filter-toolbar"] .fui-filter-toolbar__actions .fui-filter-toolbar__apply {
     flex: 1 1 auto;
   }
+}
+@container (min-width: 18rem) {
+  [data-fui-comp="ui-filter-toolbar"].fui-filter-toolbar--compact .fui-filter-toolbar__search { flex: 1 1 0; }
+  [data-fui-comp="ui-filter-toolbar"].fui-filter-toolbar--compact .fui-filter-toolbar__actions { flex: 0 0 auto; }
+  [data-fui-comp="ui-filter-toolbar"].fui-filter-toolbar--compact .fui-filter-toolbar__actions .fui-filter-toolbar__apply { flex: 0 0 auto; }
 }
 
 @media (prefers-reduced-motion: reduce) {

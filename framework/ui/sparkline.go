@@ -35,6 +35,11 @@ type SparklineConfig struct {
 	// Width / Height in CSS pixels. Default 120×32.
 	Width  int
 	Height int
+	// FullWidth stretches the chart to its container's content width
+	// (width="100%"): the viewBox keeps the configured aspect, Height
+	// stays fixed. For cards whose column width is fluid (responsive
+	// grids) where a fixed px width would leave dead margins.
+	FullWidth bool
 	// Shape picks line or area. Default line.
 	Shape SparklineShape
 	// Color override: defaults to var(--color-primary) via CSS.
@@ -140,8 +145,12 @@ func Sparkline(cfg SparklineConfig) render.HTML {
 
 	svgAttrs := strings.Builder{}
 	svgAttrs.WriteString(`width="`)
-	svgAttrs.WriteString(strconv.Itoa(w))
-	svgAttrs.WriteString(`" height="`)
+	if cfg.FullWidth {
+		svgAttrs.WriteString(`100%" height="`)
+	} else {
+		svgAttrs.WriteString(strconv.Itoa(w))
+		svgAttrs.WriteString(`" height="`)
+	}
 	svgAttrs.WriteString(strconv.Itoa(h))
 	svgAttrs.WriteString(`" viewBox="0 0 `)
 	svgAttrs.WriteString(strconv.Itoa(w))
@@ -150,6 +159,13 @@ func Sparkline(cfg SparklineConfig) render.HTML {
 	svgAttrs.WriteString(`" class="`)
 	svgAttrs.WriteString(cls)
 	svgAttrs.WriteString(`" xmlns="http://www.w3.org/2000/svg"`)
+	if cfg.FullWidth {
+		// Stretch the viewBox to the box: the default xMidYMid meet
+		// letterboxes a wide container (the drawing keeps its 220:36
+		// aspect and centers, leaving dead margins). The height is
+		// 1:1 by construction, so only X stretches.
+		svgAttrs.WriteString(` preserveAspectRatio="none"`)
+	}
 	if cfg.ID != "" {
 		svgAttrs.WriteString(` id="`)
 		svgAttrs.WriteString(escapeXML(cfg.ID))

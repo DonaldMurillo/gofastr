@@ -104,7 +104,7 @@ func Tree(p TreeProps, s Classes) render.HTML {
 
 	rendered := make([]render.HTML, len(p.Nodes))
 	for i, n := range p.Nodes {
-		rendered[i] = treeNode(b, n, 1, i+1, len(p.Nodes), p.LazySignalPrefix, i == 0)
+		rendered[i] = treeNode(b, n, 1, i+1, len(p.Nodes), p.LazySignalPrefix, i == 0, true)
 	}
 	return b.El("ul", PartRoot, own, rendered...)
 }
@@ -135,7 +135,11 @@ func treeNeedsSignals(nodes []TreeNode) bool {
 
 // treeNode renders one treeitem. firstFocusable carries the roving
 // tabindex: the first root row is the tree's keyboard entry point.
-func treeNode(b Box, n TreeNode, level, pos, setSize int, signalPrefix string, firstFocusable bool) render.HTML {
+// mark is true for a root-level node — TreeNode holds only strings, so
+// every row, at any depth, is this component's own, and the topmost
+// point of that is each root node; a node's own children never mark
+// themselves, since a root's mark already covers them.
+func treeNode(b Box, n TreeNode, level, pos, setSize int, signalPrefix string, firstFocusable, mark bool) render.HTML {
 	isBranch := len(n.Children) > 0 || n.LazyPath != ""
 
 	itemAttrs := Attrs(map[string]string{
@@ -201,11 +205,14 @@ func treeNode(b Box, n TreeNode, level, pos, setSize int, signalPrefix string, f
 		}
 		childRendered := make([]render.HTML, len(n.Children))
 		for i, c := range n.Children {
-			childRendered[i] = treeNode(b, c, level+1, i+1, len(n.Children), signalPrefix, false)
+			childRendered[i] = treeNode(b, c, level+1, i+1, len(n.Children), signalPrefix, false, false)
 		}
 		body = append(body, b.El("ul", PartTreeGroup, groupAttrs, childRendered...))
 	}
 
+	if mark {
+		itemAttrs = Internal(itemAttrs)
+	}
 	return b.El("li", PartTreeItem, itemAttrs, body...)
 }
 

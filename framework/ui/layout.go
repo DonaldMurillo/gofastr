@@ -94,6 +94,15 @@ type StackConfig struct {
 	Justify Justify // main-axis (vertical) alignment
 	ID      string
 	Class   string
+	// TrimMargins lets Gap own vertical rhythm by removing direct children's
+	// block margins. Useful for a stack of paragraphs or headings.
+	TrimMargins bool
+	// Screen makes the stack at least one viewport tall and pushes its
+	// last child to the bottom: the page-frame option a recipe uses to
+	// keep a short page's footer at the bottom of the screen, the way
+	// a shell's flex column does. The stack is the page column — do
+	// not nest one screen-tall stack inside another.
+	Screen bool
 
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers, ARIA overrides) to the stack's root <div>.
@@ -107,6 +116,12 @@ type StackConfig struct {
 // replacement for hand-rolled `<div style="display:flex;
 // flex-direction:column;gap:…">` patterns.
 func Stack(cfg StackConfig, children ...render.HTML) render.HTML {
+	if cfg.TrimMargins {
+		cfg.Class = cls(cfg.Class, "fui-stack--trim-margins")
+	}
+	if cfg.Screen {
+		cfg.Class = cls(cfg.Class, "fui-stack--screen")
+	}
 	return layoutStyle.WrapHTML(headless.Stack(headless.StackProps{
 		Gap:        string(cfg.Gap),
 		Align:      string(cfg.Align),

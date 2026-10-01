@@ -105,9 +105,9 @@ func Tabs(cfg TabsConfig) render.HTML {
 
 func tabsCSS(_ style.Theme) string {
 	var b strings.Builder
-	b.WriteString(`[data-fui-comp="fui-tabs"].fui-tabs{margin:0}`)
+	b.WriteString(`:where([data-fui-comp="fui-tabs"]).fui-tabs{margin:0}`)
 	b.WriteString(`[data-fui-comp="fui-tabs"] .fui-tabs-nav{display:flex;gap:0;border-bottom:1px solid var(--fui-border, var(--color-border, #e2e8f0));margin-bottom:0}`)
-	b.WriteString(`[data-fui-comp="fui-tabs"] .fui-tab{padding:var(--spacing-md, .5rem) var(--spacing-lg, 1rem);background:none;border:none;border-bottom:2px solid transparent;cursor:pointer;font-size:var(--text-sm, .875rem);font-weight:500;color:var(--fui-muted, var(--color-text-muted, #64748b));transition:color .15s,border-color .15s;text-decoration:none;display:inline-block}`)
+	b.WriteString(`[data-fui-comp="fui-tabs"] .fui-tab{padding:var(--spacing-md, .5rem) var(--spacing-lg, 1rem);background:none;border:none;border-bottom:2px solid transparent;cursor:pointer;font-size:var(--text-sm, .875rem);font-weight:var(--font-weight-medium);color:var(--fui-muted, var(--color-text-muted, #64748b));transition:color .15s,border-color .15s;text-decoration:none;display:inline-block}`)
 	b.WriteString(`[data-fui-comp="fui-tabs"] .fui-tab:hover{color:var(--fui-foreground, var(--color-text, #0f172a))}`)
 	b.WriteString(`[data-fui-comp="fui-tabs"] .fui-tab:focus-visible{outline:2px solid var(--fui-primary, var(--color-primary, #3b82f6));outline-offset:-2px;border-radius:2px}`)
 	b.WriteString(`[data-fui-comp="fui-tabs"] .fui-tabs-content{padding-top:1rem}`)

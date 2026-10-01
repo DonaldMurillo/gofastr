@@ -112,9 +112,11 @@ func ValidationSummary(p ValidationSummaryProps, s Classes) render.HTML {
 
 	return b.El("div", PartRoot, own,
 		b.El(headingTag(p.Level), PartTitle,
-			Attrs(map[string]string{"id": titleIDFor(p.ID)}),
+			Internal(Attrs(map[string]string{"id": titleIDFor(p.ID)})),
 			render.Text(orDefault(p.Title, p.Strings.Resolve().ThereIsAProblem))),
-		b.El("ul", PartErrorList, nil, items...),
+		// Every error is built from FieldError's strings, never from
+		// caller markup, so the whole list is the component's own.
+		b.El("ul", PartErrorList, Internal(nil), items...),
 	)
 }
 
@@ -195,7 +197,7 @@ func Timeline(p TimelineProps, s Classes) render.HTML {
 			panic("headless: Event requires Title")
 		}
 		kids := make([]render.HTML, 0, 4)
-		markAttrs := Attrs(map[string]string{"aria-hidden": "true"})
+		markAttrs := internalIf(e.Body != "", Attrs(map[string]string{"aria-hidden": "true"}))
 		// Tone reaches the class map as the mark's variant, joined to
 		// the mark's own class the way Alert's tone joins its root: a
 		// tinted dot is still a dot.
@@ -215,29 +217,32 @@ func Timeline(p TimelineProps, s Classes) render.HTML {
 					panic("headless: Event Machine must be an RFC 3339 timestamp, not " + strconv.Quote(e.Machine))
 				}
 				body = append(body, b.El("time", PartTimelineTime,
-					Attrs(map[string]string{"datetime": e.Machine}), render.Text(e.When)))
+					internalIf(e.Body != "", Attrs(map[string]string{"datetime": e.Machine})), render.Text(e.When)))
 			} else {
-				body = append(body, b.El("span", PartTimelineTime, nil, render.Text(e.When)))
+				body = append(body, b.El("span", PartTimelineTime, internalIf(e.Body != "", nil), render.Text(e.When)))
 			}
 		}
-		body = append(body, b.El("p", PartTitle, nil, render.Text(e.Title)))
+		// The title is marked by the header row when there is one.
+		body = append(body, b.El("p", PartTitle, internalIf(e.Body != "" && e.Meta == "", nil), render.Text(e.Title)))
 		if e.Meta != "" {
 			// The meta line and the title share a header row: the meta
 			// qualifies the title, and DOM order keeps the title first
 			// for a reader who hears the event before its attribution.
 			headRow := body[len(body)-1]
-			body[len(body)-1] = b.El("div", PartTimelineHead, nil,
+			body[len(body)-1] = b.El("div", PartTimelineHead, internalIf(e.Body != "", nil),
 				headRow,
 				b.El("span", PartTimelineMeta, nil, render.Text(e.Meta)))
 		}
 		if e.Detail != "" {
-			body = append(body, b.El("p", PartDesc, nil, render.Text(e.Detail)))
+			body = append(body, b.El("p", PartDesc, internalIf(e.Body != "", nil), render.Text(e.Detail)))
 		}
 		if e.Body != "" {
 			body = append(body, e.Body)
 		}
+		// A caller's Body makes the item a slot ancestor; without one
+		// the whole item is the component's own.
 		kids = append(kids, b.El("div", PartTimelineBody, nil, body...))
-		items = append(items, b.El("li", PartTimelineItem, nil, kids...))
+		items = append(items, b.El("li", PartTimelineItem, internalIf(e.Body == "", nil), kids...))
 	}
 	own := Merge(Safe(p.ExtraAttrs), Attrs(map[string]string{
 		"id": p.ID, "aria-label": p.Label,

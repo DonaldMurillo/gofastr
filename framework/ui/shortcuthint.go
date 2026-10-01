@@ -80,7 +80,7 @@ func ShortcutHint(cfg ShortcutHintConfig) render.HTML {
 	for _, p := range parts {
 		chips = append(chips, renderChordPart(p))
 	}
-	chips = append(chips, html.Span(html.TextConfig{Class: "fui-visually-hidden"}, render.Text("Shortcut: "+srLabel)))
+	chips = append(chips, html.Span(html.TextConfig{Class: "fui-visually-hidden", ExtraAttrs: html.Attrs{"data-fui-internal": ""}}, render.Text("Shortcut: "+srLabel)))
 
 	extras := html.SafeExtraAttrs(cfg.ExtraAttrs, "aria-hidden", "data-hui-shortcut-hint")
 	if extras == nil {
@@ -181,7 +181,7 @@ func renderChordPart(p chordPart) render.HTML {
 		// Two spans: ⌘ for Mac, Ctrl for others. CSS hides the wrong one.
 		return html.Kbd(html.TextConfig{
 			Class:      "fui-shortcut-hint__key fui-shortcut-hint__key--mod",
-			ExtraAttrs: html.Attrs{"aria-hidden": "true"},
+			ExtraAttrs: html.Attrs{"aria-hidden": "true", "data-fui-internal": ""},
 		},
 			html.Span(html.TextConfig{Class: "fui-shortcut-hint__mod-mac"}, render.Text("⌘")),
 			html.Span(html.TextConfig{Class: "fui-shortcut-hint__mod-other"}, render.Text("Ctrl")),
@@ -189,17 +189,17 @@ func renderChordPart(p chordPart) render.HTML {
 	case "shift":
 		return html.Kbd(html.TextConfig{
 			Class:      "fui-shortcut-hint__key",
-			ExtraAttrs: html.Attrs{"aria-hidden": "true"},
+			ExtraAttrs: html.Attrs{"aria-hidden": "true", "data-fui-internal": ""},
 		}, render.Text("⇧"))
 	case "alt":
 		return html.Kbd(html.TextConfig{
 			Class:      "fui-shortcut-hint__key",
-			ExtraAttrs: html.Attrs{"aria-hidden": "true"},
+			ExtraAttrs: html.Attrs{"aria-hidden": "true", "data-fui-internal": ""},
 		}, render.Text("⌥"))
 	default:
 		return html.Kbd(html.TextConfig{
 			Class:      "fui-shortcut-hint__key",
-			ExtraAttrs: html.Attrs{"aria-hidden": "true"},
+			ExtraAttrs: html.Attrs{"aria-hidden": "true", "data-fui-internal": ""},
 		}, render.Text(p.key))
 	}
 }
@@ -257,7 +257,7 @@ func shortcutHintCSS(_ style.Theme) string {
   background: var(--color-surface-soft, #f5f5f7);
   color: var(--color-text, #111);
   font-size: var(--text-xs, 0.75rem);
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
   line-height: 1;
 }
 [data-fui-comp="ui-shortcut-hint"] .fui-shortcut-hint__mod-mac,

@@ -214,3 +214,37 @@ func TestSkeletonCardKeepsThePatternWidths(t *testing.T) {
 		}
 	}
 }
+
+// The timeline preset draws four bars per event row (dot, name line,
+// two text lines) — the shape ui.Timeline arrivals have — with the
+// sheet placing the dot on a 16px rail exactly like the real timeline.
+func TestSkeletonTimelineRowsAndRail(t *testing.T) {
+	got := string(SkeletonTimeline(SkeletonTimelineConfig{}))
+	if !strings.Contains(got, `data-hui-lines="12"`) {
+		t.Errorf("default 3 rows must draw 12 bars:\n%s", got)
+	}
+	if c := strings.Count(got, `class="fui-skeleton__line`); c != 12 {
+		t.Errorf("expected 12 bars, got %d:\n%s", c, got)
+	}
+	if !strings.Contains(got, "fui-skeleton-timeline") {
+		t.Errorf("the preset's root class is missing:\n%s", got)
+	}
+	custom := string(SkeletonTimeline(SkeletonTimelineConfig{Rows: 2, Label: "Loading activity"}))
+	if !strings.Contains(custom, `data-hui-lines="8"`) {
+		t.Errorf("Rows: 2 must draw 8 bars:\n%s", custom)
+	}
+	if !strings.Contains(custom, "Loading activity") {
+		t.Errorf("the caller's label must be the announcement:\n%s", custom)
+	}
+	// The sheet's geometry: a 12px dot every 4th bar spanning its
+	// row's text lines, the rail column matching the real timeline's.
+	for _, want := range []string{
+		".fui-skeleton-timeline > .fui-skeleton__line:nth-child(4n+1)",
+		"grid-row: span 3",
+		"grid-template-columns: var(--spacing-lg, 16px) 1fr",
+	} {
+		if !strings.Contains(skeletonPresetsCSS, want) {
+			t.Errorf("the timeline sheet lost %q", want)
+		}
+	}
+}

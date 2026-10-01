@@ -100,7 +100,7 @@ func tocCSS(_ style.Theme) string {
   display: block;
   font-size: var(--text-sm, 0.875rem);
 }
-[data-fui-comp="ui-toc"].fui-toc--sticky {
+:where([data-fui-comp="ui-toc"]).fui-toc--sticky {
   position: sticky;
   inset-block-start: var(--spacing-lg, 16px);
   align-self: start;
@@ -111,7 +111,7 @@ func tocCSS(_ style.Theme) string {
   content: attr(aria-label);
   display: block;
   font-size: var(--text-xs, 0.75rem);
-  font-weight: 700;
+  font-weight: var(--font-weight-bold);
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--color-text-muted, #52525B);
@@ -152,7 +152,7 @@ func tocCSS(_ style.Theme) string {
 [data-fui-comp="ui-toc"] .fui-toc__link[aria-current="true"] {
   color: var(--color-primary, #4F46E5);
   border-inline-start-color: var(--color-primary, #4F46E5);
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
 }
 [data-fui-comp="ui-toc"] .fui-toc__link:focus-visible {
   outline: 2px solid var(--color-primary, #4F46E5);

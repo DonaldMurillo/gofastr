@@ -121,7 +121,7 @@ func Counter(p CounterProps, s Classes) render.HTML {
 		// The signal writes the input's value attribute, so a named
 		// counter is still one control: the buttons, the display and
 		// the submitted field hold one number.
-		value = b.El("input", PartCounterValue, html.Attrs{
+		value = b.El("input", PartCounterValue, Internal(html.Attrs{
 			"type":                 "number",
 			"name":                 p.Name,
 			"step":                 strconv.Itoa(step),
@@ -129,24 +129,24 @@ func Counter(p CounterProps, s Classes) render.HTML {
 			"aria-label":           label,
 			"data-fui-signal":      p.Signal,
 			"data-fui-signal-attr": "value",
-		})
+		}))
 	} else {
-		value = b.El("span", PartCounterValue, html.Attrs{
+		value = b.El("span", PartCounterValue, Internal(html.Attrs{
 			"aria-live":       "polite",
 			"data-fui-signal": p.Signal,
-		}, render.Text(strconv.Itoa(p.Value)))
+		}), render.Text(strconv.Itoa(p.Value)))
 	}
 
 	return b.El("div", PartRoot, own,
-		b.El("button", PartCounterDecrement, Merge(dec, Attrs(map[string]string{
+		b.El("button", PartCounterDecrement, Internal(Merge(dec, Attrs(map[string]string{
 			"type":       "button",
 			"aria-label": w.CounterDecrement,
-		})), render.Text("−")),
+		}))), render.Text("−")),
 		value,
-		b.El("button", PartCounterIncrement, Merge(plus, Attrs(map[string]string{
+		b.El("button", PartCounterIncrement, Internal(Merge(plus, Attrs(map[string]string{
 			"type":       "button",
 			"aria-label": w.CounterIncrement,
-		})), render.Text("+")),
+		}))), render.Text("+")),
 	)
 }
 

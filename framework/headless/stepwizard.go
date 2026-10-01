@@ -140,9 +140,12 @@ func StepWizard(p StepWizardProps, s Classes) render.HTML {
 
 	step := p.Steps[p.Current]
 	kids := []render.HTML{
-		b.El("ol", PartSteps, html.Attrs{
+		// The rail is built entirely from step Headings (strings) plus
+		// generated markers and dots: nothing of the caller's, so the
+		// whole list is the component's own.
+		b.El("ol", PartSteps, Internal(html.Attrs{
 			"aria-label": fmt.Sprintf(w.StepOf, p.Current+1, total),
-		}, dots...),
+		}), dots...),
 	}
 	if p.Errors != "" {
 		kids = append(kids, p.Errors)
@@ -150,11 +153,12 @@ func StepWizard(p StepWizardProps, s Classes) render.HTML {
 	if step.Heading != "" {
 		// Focusable by script only: after an island swap the module
 		// lands focus here, the same posture a summary's title keeps.
+		// The heading text is a string field: the component's own.
 		kids = append(kids, b.El("h2", PartTitle,
-			html.Attrs{"tabindex": "-1"}, render.Text(step.Heading)))
+			Internal(html.Attrs{"tabindex": "-1"}), render.Text(step.Heading)))
 	}
 	if step.Description != "" {
-		kids = append(kids, b.El("p", PartDesc, nil, render.Text(step.Description)))
+		kids = append(kids, b.El("p", PartDesc, Internal(nil), render.Text(step.Description)))
 	}
 	if len(step.Fields) > 0 {
 		kids = append(kids, b.El("div", PartBody, nil, step.Fields...))
@@ -181,14 +185,16 @@ func StepWizard(p StepWizardProps, s Classes) render.HTML {
 		"data-hui-step-wizard-action": "next",
 	}, render.Text(nextWord))
 	kids = append(kids,
-		b.El("div", PartActions, nil, back, next),
+		// Back and Next are both fully generated controls, so the
+		// whole actions wrapper is the component's own.
+		b.El("div", PartActions, Internal(nil), back, next),
 		// The step-of sentence: the server's words, repeated into the
 		// live region after a swap by the module, clear then frame,
 		// the way a table's announcement is.
-		b.El("span", PartStatus, html.Attrs{
+		b.El("span", PartStatus, Internal(html.Attrs{
 			"role":                        "status",
 			"data-hui-step-wizard-status": "",
-		}, render.Text(fmt.Sprintf(w.StepOf, p.Current+1, total))),
+		}), render.Text(fmt.Sprintf(w.StepOf, p.Current+1, total))),
 	)
 
 	own := Merge(Safe(p.ExtraAttrs, "method", "action"), Attrs(map[string]string{

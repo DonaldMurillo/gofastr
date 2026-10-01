@@ -12,7 +12,7 @@ import (
 // ─── Custom variants ────────────────────────────────────────────────
 //
 // The built-in variant sets (ButtonPrimary…ButtonGhost, StatusSuccess…
-// StatusNeutral, CardElevated…CardFlat) are validated at render time:
+// StatusNeutral, CardElevated…CardRow) are validated at render time:
 // an unknown value panics so typos surface immediately. Apps that need
 // a brand variant register it here instead of shipping loose CSS: the
 // registration extends the validation set AND routes the variant's CSS
@@ -183,7 +183,7 @@ var (
 	cardMods = &variantSet{
 		sheet: "ui-card",
 		reserved: map[string]bool{
-			"outlined": true, "flat": true, "interactive": true,
+			"outlined": true, "flat": true, "row": true, "interactive": true,
 		},
 	}
 	// statusMods guards one shared validation set for every
@@ -480,14 +480,14 @@ func checkStatusVariant(component string, v StatusVariant) {
 
 func checkCardVariant(v CardVariant) {
 	switch v {
-	case CardElevated, CardOutlined, CardFlat:
+	case CardElevated, CardOutlined, CardFlat, CardRow:
 		return
 	}
 	if cardMods.has(string(v), kindVariant) {
 		return
 	}
 	panic("ui: Card unknown Variant " + string(v) +
-		". Pick one of: \"\" (elevated), outlined, flat, or register it via ui.RegisterCardVariant")
+		". Pick one of: \"\" (elevated), outlined, flat, row, or register it via ui.RegisterCardVariant")
 }
 
 // registeredStatusIcon returns the registered icon glyph for a custom

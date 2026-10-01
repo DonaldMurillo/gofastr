@@ -16,7 +16,7 @@ func TestTabsRendersRovingTabindexAndPanels(t *testing.T) {
 		{Label: "Secrets", Panel: render.Text("The secrets panel.")},
 	}})
 	for _, want := range []string{
-		`<nav role="tablist">`,
+		`<nav data-fui-internal="" role="tablist">`,
 		`<a aria-controls="cfg-panel-0" aria-selected="true" data-fui-signal-set="cfg:0" data-fui-tab-index="0" href="#cfg-panel-0" id="cfg-tab-0" role="tab" tabindex="0">General</a>`,
 		`<a aria-controls="cfg-panel-1" aria-selected="false" data-fui-signal-set="cfg:1" data-fui-tab-index="1" href="#cfg-panel-1" id="cfg-tab-1" role="tab" tabindex="-1">Secrets</a>`,
 		`<div aria-labelledby="cfg-tab-0" data-fui-tab-index="0" id="cfg-panel-0" role="tabpanel" tabindex="0">The general panel.</div>`,
@@ -42,9 +42,9 @@ func TestTabsVacateStashAndState(t *testing.T) {
 		`data-hui-tabs-state="" data-hui-tabs-vacate=""`,
 		`data-state="inactive"`,
 		`data-state="active"`,
-		`<div aria-labelledby="vac-tab-0" data-fui-tab-index="0" id="vac-panel-0" role="tabpanel" tabindex="0"></div>`,
+		`<div aria-labelledby="vac-tab-0" data-fui-internal="" data-fui-tab-index="0" id="vac-panel-0" role="tabpanel" tabindex="0"></div>`,
 		`<div aria-labelledby="vac-tab-1" data-fui-tab-index="1" id="vac-panel-1" role="tabpanel" tabindex="0">Second</div>`,
-		`<script data-hui-tabs-stash="true" type="application/json">`,
+		`<script data-fui-internal="" data-hui-tabs-stash="true" type="application/json">`,
 	} {
 		if !strings.Contains(h, want) {
 			t.Errorf("vacated tabs missing %q:\n%s", want, h)

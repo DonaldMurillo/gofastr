@@ -190,10 +190,27 @@ func Combobox(p ComboboxProps, s Classes) render.HTML {
 	statusAttrs := Attrs(map[string]string{"role": "status"})
 	Mark(statusAttrs, "data-hui-combobox-status")
 	statusAttrs["data-hui-combobox-no-results"] = w.ComboboxNoResults
+
+	// Nothing in a combobox is the caller's: every option is static
+	// text the server rendered (a ComboboxOption carries only strings).
+	// The root div is wrapped in a no-script form whenever there is a
+	// NoScriptAction, so it is no longer what this function returns at
+	// top level; when wrapped, the div itself is the topmost element of
+	// the internal subtree, and its children must not carry a second
+	// mark — when it is not wrapped, the div IS the returned root (never
+	// marked), so its own children carry the mark instead.
+	wrapped := p.NoScriptAction != ""
+	labelAttrs := Attrs(map[string]string{"for": p.ID})
+	if !wrapped {
+		labelAttrs = Internal(labelAttrs)
+		carrierAttrs = Internal(carrierAttrs)
+		listboxAttrs = Internal(listboxAttrs)
+		statusAttrs = Internal(statusAttrs)
+	}
 	status := b.El("span", PartComboboxStatus, statusAttrs, render.HTML(""))
 
 	body := []render.HTML{
-		b.El("label", PartLabel, Attrs(map[string]string{"for": p.ID}),
+		b.El("label", PartLabel, labelAttrs,
 			render.Text(scrubControlBytes(p.Label))),
 		b.El("div", PartComboboxForm, carrierAttrs,
 			b.El("input", PartComboboxInput, inputAttrs)),
@@ -203,8 +220,11 @@ func Combobox(p ComboboxProps, s Classes) render.HTML {
 
 	rootAttrs := Merge(Safe(p.ExtraAttrs, "role"), nil)
 	Mark(rootAttrs, "data-hui-combobox")
+	if wrapped {
+		rootAttrs = Internal(rootAttrs)
+	}
 	inner := b.El("div", PartRoot, rootAttrs, body...)
-	if p.NoScriptAction != "" {
+	if wrapped {
 		// The no-script GET: the same query, submitted as a form to the
 		// same-origin destination. With script, the submit never fires
 		// (Enter picks the active option instead).

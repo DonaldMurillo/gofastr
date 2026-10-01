@@ -153,7 +153,7 @@ func formRepeaterCSS(_ style.Theme) string {
   color: var(--color-danger, #DC2626);
   font: inherit;
   font-size: var(--text-sm, 0.875rem);
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
   cursor: pointer;
 }
 [data-fui-comp="ui-form-repeater"] .fui-form-repeater__remove:hover:not(:disabled) {
@@ -180,7 +180,7 @@ func formRepeaterCSS(_ style.Theme) string {
   color: var(--color-text, #18181B);
   font: inherit;
   font-size: var(--text-sm, 0.875rem);
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
   cursor: pointer;
 }
 [data-fui-comp="ui-form-repeater"] .fui-form-repeater__add:hover:not(:disabled) {

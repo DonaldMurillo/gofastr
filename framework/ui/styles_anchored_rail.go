@@ -30,7 +30,7 @@ func anchoredRailCSS(t style.Theme) string {
 			"font-family", "{fonts.mono}",
 			"font-size", "var(--text-xs, 0.75rem)",
 			"color", "{colors.text-subtle}",
-			"font-weight", "400",
+			"font-weight", "{font-weight.normal}",
 			"margin", "0 0 {spacing.md} 0",
 		).End().
 		Rule(".fui-anchored-rail__list").

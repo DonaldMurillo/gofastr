@@ -32,7 +32,7 @@ func TestComboboxRendersStyledFieldWithHiddenStatus(t *testing.T) {
 	// (role=status, clipped — never display:none) and is not seen.
 	// Attributes render sorted, so the recipe class sits directly
 	// before the status hooks on the span.
-	if !strings.Contains(h, `<span class="fui-visually-hidden" data-hui-combobox-no-results`) {
+	if !strings.Contains(h, `<span class="fui-visually-hidden" data-fui-internal="" data-hui-combobox-no-results`) {
 		t.Errorf("the status region must carry the visually-hidden recipe:\n%s", h)
 	}
 }

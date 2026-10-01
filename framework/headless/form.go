@@ -143,9 +143,14 @@ func Form(p FormProps, s Classes, fields ...render.HTML) render.HTML {
 		Mark(own, "data-hui-form-errors")
 		kids = append(kids, p.Errors)
 	}
-	kids = append(kids, b.El("div", PartFormBody, nil, fields...))
+	// The body holds nothing but the caller's fields; empty, it draws
+	// none of its own markup either, so the whole (empty) div is this
+	// component's own.
+	kids = append(kids, b.El("div", PartFormBody, internalIf(len(fields) == 0, nil), fields...))
 	if p.Actions != "" {
-		kids = append(kids, b.El("div", PartFormActions, nil, p.Actions))
+		// Actions a composer Own'd (ui.Form's submit row) leave the row
+		// the component's own.
+		kids = append(kids, b.El("div", PartFormActions, internalIf(ownedSlot(p.Actions), nil), p.Actions))
 	}
 	return b.El("form", PartRoot, own, kids...)
 }

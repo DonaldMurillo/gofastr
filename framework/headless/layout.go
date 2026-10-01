@@ -323,7 +323,14 @@ func Section(p SectionProps, s Classes, children ...render.HTML) render.HTML {
 	b := p.Parts.Box(s)
 	own := Merge(Safe(p.ExtraAttrs, "aria-label"), Attrs(map[string]string{"id": p.ID}))
 	mods(own, s, "gap", p.Gap)
-	body := b.El("div", PartSectionBody, nil, children...)
+	// The body holds only the caller's children; with none passed it
+	// draws nothing of its own either, so an empty body is itself the
+	// topmost of an (empty) internal subtree.
+	bodyOwn := html.Attrs(nil)
+	if len(children) == 0 {
+		bodyOwn = Internal(nil)
+	}
+	body := b.El("div", PartSectionBody, bodyOwn, children...)
 	if p.Title == "" {
 		if p.Label != "" {
 			// A named section without a heading is still a landmark:
@@ -337,7 +344,7 @@ func Section(p SectionProps, s Classes, children ...render.HTML) render.HTML {
 				// unnamed one, and the kicker was never the name.
 				return b.El("section", PartRoot, own,
 					b.El("p", PartSectionBrow,
-						Attrs(map[string]string{"aria-hidden": "true"}), render.Text(p.Eyebrow)),
+						Internal(Attrs(map[string]string{"aria-hidden": "true"})), render.Text(p.Eyebrow)),
 					body)
 			}
 			return b.El("section", PartRoot, own, body)
@@ -351,19 +358,32 @@ func Section(p SectionProps, s Classes, children ...render.HTML) render.HTML {
 	titleID += "-title"
 	own["aria-labelledby"] = titleID
 
+	// The header holds only the eyebrow, the title and Description when
+	// there is no DescriptionHTML; with one the header is an ancestor
+	// of a slot, so the boundary moves down to the eyebrow and the
+	// title (the description directly holds the slot, so it is left
+	// unmarked either way).
+	headOwn, partOwn := Internal(nil), html.Attrs(nil)
+	if p.DescriptionHTML != "" {
+		headOwn, partOwn = nil, Internal(nil)
+	}
 	head := make([]render.HTML, 0, 3)
 	if p.Eyebrow != "" {
 		head = append(head, b.El("p", PartSectionBrow,
-			Attrs(map[string]string{"aria-hidden": "true"}), render.Text(p.Eyebrow)))
+			Merge(Attrs(map[string]string{"aria-hidden": "true"}), partOwn), render.Text(p.Eyebrow)))
 	}
 	head = append(head, b.El(headingTag(p.Level), PartTitle,
-		Attrs(map[string]string{"id": titleID}), render.Text(p.Title)))
+		Merge(Attrs(map[string]string{"id": titleID}), partOwn), render.Text(p.Title)))
 	if p.DescriptionHTML != "" {
 		head = append(head, b.El("p", PartDesc, nil, p.DescriptionHTML))
 	} else if p.Description != "" {
+		// Description-as-text never holds a slot, but it only renders
+		// when DescriptionHTML is empty — exactly when headOwn already
+		// marks the whole header — so it is left unmarked to avoid a
+		// repeat.
 		head = append(head, b.El("p", PartDesc, nil, render.Text(p.Description)))
 	}
-	headWrap := b.El("div", PartHeader, nil, head...)
+	headWrap := b.El("div", PartHeader, headOwn, head...)
 	if p.Actions != "" {
 		headWrap = b.El("div", PartSectionHead, nil, headWrap,
 			b.El("div", PartFooter, nil, p.Actions))
@@ -456,9 +476,9 @@ func Divider(p DividerProps, s Classes) render.HTML {
 	// model — so the role is stated on the element that replaces it.
 	own["role"] = "separator"
 	return b.El("div", PartRoot, own,
-		b.El("span", PartDividerLine, Attrs(map[string]string{"aria-hidden": "true"}), render.HTML("")),
-		b.El("span", PartText, nil, render.Text(p.Label)),
-		b.El("span", PartDividerLine, Attrs(map[string]string{"aria-hidden": "true"}), render.HTML("")),
+		b.El("span", PartDividerLine, Internal(Attrs(map[string]string{"aria-hidden": "true"})), render.HTML("")),
+		b.El("span", PartText, Internal(nil), render.Text(p.Label)),
+		b.El("span", PartDividerLine, Internal(Attrs(map[string]string{"aria-hidden": "true"})), render.HTML("")),
 	)
 }
 func init() {

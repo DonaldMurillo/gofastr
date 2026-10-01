@@ -171,7 +171,7 @@ func BackToTop(cfg BackToTopConfig) render.HTML {
 
 	icon := cfg.Icon
 	if icon == "" {
-		icon = render.HTML(defaultArrowUpSVG)
+		icon = headless.Own(render.HTML(defaultArrowUpSVG))
 	}
 
 	return backToTopStyle.WrapHTML(headless.BackToTop(headless.BackToTopProps{

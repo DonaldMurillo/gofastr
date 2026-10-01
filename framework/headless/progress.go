@@ -77,19 +77,19 @@ func Progress(p ProgressProps, s Classes) render.HTML {
 		labelID += "-label"
 		barAttrs["aria-labelledby"] = labelID
 		parts := []render.HTML{
-			b.El("span", PartLabel, Attrs(map[string]string{"id": labelID}), render.Text(label)),
-			b.El("progress", PartProgressValue, barAttrs),
+			b.El("span", PartLabel, Internal(Attrs(map[string]string{"id": labelID})), render.Text(label)),
+			b.El("progress", PartProgressValue, Internal(barAttrs)),
 		}
 		if d := scrubControlBytes(p.Description); d != "" {
-			parts = append(parts, b.El("span", PartDesc, nil, render.Text(d)))
+			parts = append(parts, b.El("span", PartDesc, Internal(nil), render.Text(d)))
 		}
 		return b.El("div", PartRoot,
 			Merge(Safe(p.ExtraAttrs), Attrs(map[string]string{"id": p.ID})), parts...)
 	}
 	barAttrs["aria-label"] = label
-	parts := []render.HTML{b.El("progress", PartProgressValue, barAttrs)}
+	parts := []render.HTML{b.El("progress", PartProgressValue, Internal(barAttrs))}
 	if d := scrubControlBytes(p.Description); d != "" {
-		parts = append(parts, b.El("span", PartDesc, nil, render.Text(d)))
+		parts = append(parts, b.El("span", PartDesc, Internal(nil), render.Text(d)))
 	}
 	return b.El("div", PartRoot,
 		Merge(Safe(p.ExtraAttrs), Attrs(map[string]string{"id": p.ID})), parts...)

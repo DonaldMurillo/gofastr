@@ -46,6 +46,13 @@ type SidebarItem struct {
 	Active bool
 	// Open opens a group at SSR. Inert on leaves.
 	Open bool
+	// MatchPrefix, when non-empty, is emitted as the leaf link's
+	// data-fui-match-prefix value: the runtime's active-link module
+	// re-derives the item's current-state on sub-paths after a client
+	// navigation, using this value (not the href) as the section
+	// prefix. The caller resolves the active state for first paint;
+	// this is the same rule, handed to the client.
+	MatchPrefix string
 	// Children make this entry a group. Mutually exclusive with Href.
 	Children []SidebarItem
 }
@@ -184,21 +191,17 @@ func Sidebar(p SidebarProps, s Classes) render.HTML {
 
 	children := []render.HTML{}
 	if p.DrawerName != "" && !p.HideDrawerTrigger {
-		drawerAttrs := Attrs(map[string]string{
-			"type":          "button",
-			"data-fui-open": p.DrawerName,
-		})
-		if p.DrawerLabel != "" {
-			drawerAttrs["aria-label"] = scrubControlBytes(p.DrawerLabel)
-		}
-		children = append(children,
-			b.El("button", PartSidebarDrawer, drawerAttrs,
-				render.Tag("span", map[string]string{"aria-hidden": "true"}, render.Text("☰"))))
+		children = append(children, sidebarDrawerTrigger(b, p, PartSidebarDrawer))
 	}
 
 	inlineID := p.groupIDPrefix()
+	hasToggle := p.Variant == "collapsible"
+	// selfMark is false: this column has a wrapper of its own (the
+	// inline div below), so when nothing inside carries caller content
+	// the mark goes on the wrapper instead of on each part.
+	regionChildren, hasContent := sidebarRegionChildren(b, p, false)
 	inline := []render.HTML{}
-	if p.Variant == "collapsible" {
+	if hasToggle {
 		collapsed := p.ServerCollapsed != nil && *p.ServerCollapsed
 		label := p.CollapseLabel
 		if collapsed && p.ExpandLabel != "" {
@@ -216,16 +219,72 @@ func Sidebar(p SidebarProps, s Classes) render.HTML {
 			"data-hui-sidebar-expand-label":   scrubControlBytes(p.ExpandLabel),
 		})
 		Mark(toggleAttrs, "data-hui-sidebar-toggle")
+		if hasContent {
+			// The toggle never carries caller content; when something
+			// else in the column does, the wrapper below cannot be
+			// marked as a whole, so the toggle marks itself.
+			toggleAttrs = Internal(toggleAttrs)
+		}
 		inline = append(inline,
 			b.El("button", PartSidebarToggle, toggleAttrs,
-				render.Tag("span", map[string]string{"aria-hidden": "true"}, render.Text("‹"))))
+				render.Tag("span", html.Attrs{"aria-hidden": "true"}, render.Text("‹"))))
 	}
-	inline = append(inline, sidebarRegionChildren(b, p)...)
-	children = append(children,
-		b.El("div", PartSidebarInline, Attrs(map[string]string{"id": inlineID}), inline...))
+	inline = append(inline, regionChildren...)
+	inlineOwn := Attrs(map[string]string{"id": inlineID})
+	if !hasContent {
+		// Nothing in the column — no toggle, no title needing its own
+		// mark below, no prepend/footer/item icon — carries caller
+		// content, so the whole column is the component's own.
+		inlineOwn = Internal(inlineOwn)
+	}
+	children = append(children, b.El("div", PartSidebarInline, inlineOwn, inline...))
 	return b.El("div", PartRoot, own, children...)
 }
 
+// SidebarDrawerTrigger renders the drawer-opening hamburger button on
+// its own, for hosts that place it in their own chrome (the page
+// header) instead of above the sidebar's inline column — pair it with
+// SidebarProps.HideDrawerTrigger so the shell does not draw a second
+// one. Same button and widget contract as the shell's own trigger
+// (data-fui-open names the drawer widget); the styled component's
+// class map carries the variant class the sheet's >= md hiding keys
+// on — the button IS the component's root, so root overrides and
+// binds land on it. Empty DrawerName renders nothing.
+func SidebarDrawerTrigger(p SidebarProps, s Classes) render.HTML {
+	if p.DrawerName == "" {
+		return ""
+	}
+	return sidebarDrawerTrigger(p.Parts.Box(s), p, PartRoot)
+}
+
+// sidebarDrawerTrigger is the one implementation of the hamburger:
+// Sidebar's inline copy and the standalone SidebarDrawerTrigger both
+// render through it, so the two can never drift apart. part names the
+// element's slot: PartSidebarDrawer inside the shell (a child part),
+// PartRoot for the standalone (the button is the component).
+func sidebarDrawerTrigger(b Box, p SidebarProps, part Part) render.HTML {
+	drawerAttrs := Attrs(map[string]string{
+		"type":          "button",
+		"data-fui-open": p.DrawerName,
+	})
+	if p.DrawerLabel != "" {
+		drawerAttrs["aria-label"] = scrubControlBytes(p.DrawerLabel)
+	}
+	glyphAttrs := html.Attrs{"aria-hidden": "true"}
+	if part == PartRoot {
+		// The root is the owner's to place and is never marked; the
+		// glyph beneath it is the next element down with nothing of
+		// the caller's, so the boundary sits there instead.
+		glyphAttrs = Internal(glyphAttrs)
+	} else {
+		// Nested inside the shell (Sidebar's own inline trigger), the
+		// whole button holds nothing of the caller's.
+		drawerAttrs = Internal(drawerAttrs)
+	}
+	return b.El("button", part, drawerAttrs, render.Tag("span", glyphAttrs, render.Text("☰")))
+}
+
+// sidebarDrawerTrigger is the one implementation of the hamburger:
 // SidebarRegion renders the navigation content alone — the title, the
 // prepend slot, the nav landmark with the items, the footer — with no
 // data-hui-sidebar shell hooks: a host slotting the region into its
@@ -246,16 +305,51 @@ func SidebarRegion(p SidebarProps, s Classes) render.HTML {
 }
 
 func sidebarRegion(b Box, p SidebarProps) render.HTML {
-	return b.El("div", PartRoot, nil, sidebarRegionChildren(b, p)...)
+	// selfMark is true: the region renders straight onto its own root,
+	// which is never marked, so nothing above it will ever absorb a
+	// blanket mark on its behalf — every generated part below marks
+	// itself.
+	children, _ := sidebarRegionChildren(b, p, true)
+	return b.El("div", PartRoot, nil, children...)
+}
+
+// sidebarItemsHaveOwnContent reports whether any item in items, or any
+// of their nested children at any depth, carries an icon — the only
+// caller content a sidebar item can hold. It recurses because a
+// group's nested list renders inside the same subtree as the group's
+// own row, so a caller's icon anywhere in there must stay reachable.
+func sidebarItemsHaveOwnContent(items []SidebarItem) bool {
+	for _, it := range items {
+		if it.Icon != "" {
+			return true
+		}
+		if len(it.Children) > 0 && sidebarItemsHaveOwnContent(it.Children) {
+			return true
+		}
+	}
+	return false
 }
 
 // sidebarRegionChildren renders the region's parts bare, so the shell
 // can slot them straight into its inline column without an extra
-// wrapper box.
-func sidebarRegionChildren(b Box, p SidebarProps) []render.HTML {
+// wrapper box. selfMark says whether the caller has no wrapper of its
+// own to blanket-mark when nothing here carries caller content (see
+// sidebarRegion and Sidebar); the returned bool says whether anything
+// here does, so a caller with such a wrapper can decide.
+func sidebarRegionChildren(b Box, p SidebarProps, selfMark bool) ([]render.HTML, bool) {
+	itemsContent := sidebarItemsHaveOwnContent(p.Items)
+	hasContent := p.Prepend != "" || p.Footer != "" || itemsContent
+
 	children := []render.HTML{}
 	if p.Title != "" {
-		children = append(children, b.El("h2", PartTitle, nil, render.Text(scrubControlBytes(p.Title))))
+		titleOwn := html.Attrs(nil)
+		if hasContent || selfMark {
+			// A caller wrapper only absorbs the mark when NOTHING in the
+			// column carries content; whenever something does (or there
+			// is no wrapper to begin with), the title marks itself.
+			titleOwn = Internal(nil)
+		}
+		children = append(children, b.El("h2", PartTitle, titleOwn, render.Text(scrubControlBytes(p.Title))))
 	}
 	if p.Prepend != "" {
 		children = append(children, b.El("div", PartSidebarPrepend, nil, p.Prepend))
@@ -263,16 +357,21 @@ func sidebarRegionChildren(b Box, p SidebarProps) []render.HTML {
 	st := &sidebarWalk{buttons: p.GroupMarkup == "button", prefix: p.groupIDPrefix()}
 	items := make([]render.HTML, 0, len(p.Items))
 	for _, it := range p.Items {
-		items = append(items, sidebarItem(b, it, st, 0))
+		items = append(items, sidebarItem(b, it, st, 0, itemsContent))
+	}
+	navOwn := Attrs(map[string]string{"aria-label": scrubControlBytes(p.NavLabel)})
+	if !itemsContent && (hasContent || selfMark) {
+		// No item (at any depth) carries an icon, so the whole list is
+		// the component's own; when an item does, the mark moves to
+		// whichever item lacks one instead (sidebarItem).
+		navOwn = Internal(navOwn)
 	}
 	children = append(children,
-		b.El("nav", PartSidebarNav, Attrs(map[string]string{
-			"aria-label": scrubControlBytes(p.NavLabel),
-		}), b.El("ul", PartBody, nil, items...)))
+		b.El("nav", PartSidebarNav, navOwn, b.El("ul", PartBody, nil, items...)))
 	if p.Footer != "" {
 		children = append(children, b.El("div", PartFooter, nil, p.Footer))
 	}
-	return children
+	return children, hasContent
 }
 
 // sidebarWalk threads the group dialect and the per-render id
@@ -288,12 +387,17 @@ func (st *sidebarWalk) groupID() string {
 	return st.prefix + "-g" + strconv.Itoa(st.seq)
 }
 
-func sidebarItem(b Box, it SidebarItem, st *sidebarWalk, depth int) render.HTML {
+// sidebarItem renders one entry. mark says whether the entry must mark
+// its own control when it has no icon: only needed when some sibling
+// in this same list DOES have one (at any depth), so the list around
+// them cannot be marked as a whole (see sidebarRegionChildren, which
+// marks the list instead when mark is false for the whole list).
+func sidebarItem(b Box, it SidebarItem, st *sidebarWalk, depth int, mark bool) render.HTML {
 	if strings.TrimSpace(it.Label) == "" {
 		panic("headless: Sidebar item requires Label — a link with no text is not a link")
 	}
 	if len(it.Children) > 0 && it.Href != "" {
-		panic("headless: Sidebar item with Children cannot also set Href — a group parent is a disclosure, not a link")
+		panic("headless: Sidebar item with Children cannot also set Href — a group parent is a disclosure, not a link; put the section's overview page in the group's first child link instead")
 	}
 	itemAttrs := html.Attrs(nil)
 	if depth > 0 {
@@ -317,10 +421,33 @@ func sidebarItem(b Box, it SidebarItem, st *sidebarWalk, depth int) render.HTML 
 			"aria-hidden": "true", "class": v,
 		}), render.Text(sidebarInitial(it.Label)))
 	}
+	// The icon is the caller's; the label beside it is always the
+	// component's own. With no icon at all, the control that carries
+	// them (the button/summary/anchor below) holds nothing of the
+	// caller's, so the mark moves to it — but only when mark says a
+	// sibling DOES have one.
+	textOwn, controlMark := html.Attrs(nil), html.Attrs(nil)
+	if it.Icon != "" {
+		textOwn = Internal(nil)
+	} else if mark {
+		controlMark = Internal(nil)
+	}
 	if len(it.Children) > 0 {
+		childMark := sidebarItemsHaveOwnContent(it.Children)
 		kids := make([]render.HTML, 0, len(it.Children))
 		for _, c := range it.Children {
-			kids = append(kids, sidebarItem(b, c, st, depth+1))
+			kids = append(kids, sidebarItem(b, c, st, depth+1, childMark))
+		}
+		listOwn := html.Attrs(nil)
+		if mark && !childMark {
+			// No child (at any depth) carries an icon, so the nested
+			// list is the component's own; the row above it is a
+			// separate subtree, decided by controlMark instead. When
+			// mark is false, this whole list already sits under a
+			// mark placed higher up (that decision already recursed
+			// into every descendant), so marking it again would be
+			// marking inside an already-marked subtree.
+			listOwn = Internal(nil)
 		}
 		if st.buttons {
 			// Button dialect: the toggle owns aria-expanded, the
@@ -336,13 +463,13 @@ func sidebarItem(b Box, it SidebarItem, st *sidebarWalk, depth int) render.HTML 
 			if v := b.Classes.Class(PartSidebarGroupToggle); v != "" {
 				toggleAttrs["class"] = v
 			}
-			listAttrs := Attrs(map[string]string{"id": id})
+			listAttrs := Merge(Attrs(map[string]string{"id": id}), listOwn)
 			if !it.Open {
 				Mark(listAttrs, "hidden")
 			}
 			return b.El("li", PartSidebarItem, itemAttrs,
-				b.El("button", PartControl, toggleAttrs,
-					icon, b.El("span", PartText, nil, render.Text(scrubControlBytes(it.Label)))),
+				b.El("button", PartControl, Merge(toggleAttrs, controlMark),
+					icon, b.El("span", PartText, textOwn, render.Text(scrubControlBytes(it.Label)))),
 				b.El("ul", PartSidebarGroupList, listAttrs, kids...))
 		}
 		// Details dialect: native open/close, the disclosure module's
@@ -357,19 +484,26 @@ func sidebarItem(b Box, it SidebarItem, st *sidebarWalk, depth int) render.HTML 
 		}
 		return b.El("li", PartSidebarItem, itemAttrs,
 			b.El("details", PartSidebarGroup, groupAttrs,
-				b.El("summary", PartControl, nil,
-					icon, b.El("span", PartText, nil, render.Text(scrubControlBytes(it.Label)))),
-				b.El("ul", PartSidebarGroupList, nil, kids...)))
+				b.El("summary", PartControl, controlMark,
+					icon, b.El("span", PartText, textOwn, render.Text(scrubControlBytes(it.Label)))),
+				b.El("ul", PartSidebarGroupList, listOwn, kids...)))
 	}
 	href := safeHref(it.Href)
 	own := Attrs(map[string]string{"href": href})
 	if it.Active {
 		own["aria-current"] = "page"
 	}
+	if it.MatchPrefix != "" {
+		// The runtime's active-link sweep (src/activelink.js) reads
+		// this value as the link's section prefix, so the highlight
+		// the server settled for first paint survives client
+		// navigations into sub-paths.
+		own["data-fui-match-prefix"] = scrubControlBytes(it.MatchPrefix)
+	}
 	return b.El("li", PartSidebarItem, itemAttrs,
-		b.El("a", PartControl, own,
+		b.El("a", PartControl, Merge(own, controlMark),
 			icon,
-			b.El("span", PartText, nil, render.Text(scrubControlBytes(it.Label)))))
+			b.El("span", PartText, textOwn, render.Text(scrubControlBytes(it.Label)))))
 }
 
 // sidebarInitial takes a label's first rune, uppercased — the glyph a
@@ -490,6 +624,32 @@ func init() {
 							{Label: "Two A", Href: "/two-a"},
 						}},
 					}}, s),
+			}}
+		},
+	})
+}
+
+func init() {
+	Register(Spec{
+		Name:    "SidebarDrawerTrigger",
+		Anatomy: []Part{PartRoot},
+		WithParts: func(s Classes, parts Parts) render.HTML {
+			return SidebarDrawerTrigger(SidebarProps{NavLabel: "Primary", DrawerName: "nav-drawer",
+				DrawerLabel: "Open navigation", Items: []SidebarItem{{Label: "Home", Href: "/"}},
+				Parts: parts}, s)
+		},
+		Cases: func(k Kit) []Case {
+			s := k.Classes
+			return []Case{{
+				Name: "the hamburger on its own",
+				Why:  "the standalone trigger is the SAME button and widget contract as the shell's own — a host that relocates it into its header opens the same drawer, and the button is the component's root so the host's overrides land on it",
+				HTML: SidebarDrawerTrigger(SidebarProps{NavLabel: "Primary", DrawerName: "nav-drawer",
+					DrawerLabel: "Open navigation", Items: []SidebarItem{{Label: "Home", Href: "/"}}}, s),
+			}, {
+				Name: "a quiet label-free copy",
+				Why:  "without a label the button still opens the drawer — the name is the host's to add, and the contract does not depend on it",
+				HTML: SidebarDrawerTrigger(SidebarProps{NavLabel: "Primary", DrawerName: "nav-drawer",
+					Items: []SidebarItem{{Label: "Home", Href: "/"}}}, s),
 			}}
 		},
 	})

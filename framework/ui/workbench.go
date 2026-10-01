@@ -71,9 +71,17 @@ func Workbench(cfg WorkbenchConfig) render.HTML {
 		attrs["style"] = "--ui-workbench-rail: " + w
 	}
 	maps.Copy(attrs, html.SafeExtraAttrs(cfg.ExtraAttrs, "style"))
+	railAttrs := html.Attrs{"class": "fui-workbench__rail"}
+	if cfg.Rail == "" {
+		railAttrs["data-fui-internal"] = ""
+	}
+	paneAttrs := html.Attrs{"class": "fui-workbench__pane"}
+	if cfg.Pane == "" {
+		paneAttrs["data-fui-internal"] = ""
+	}
 	return workbenchStyle.WrapHTML(render.Tag("div", attrs,
-		render.Tag("div", html.Attrs{"class": "fui-workbench__rail"}, cfg.Rail),
-		render.Tag("div", html.Attrs{"class": "fui-workbench__pane"}, cfg.Pane),
+		render.Tag("div", railAttrs, cfg.Rail),
+		render.Tag("div", paneAttrs, cfg.Pane),
 	))
 }
 

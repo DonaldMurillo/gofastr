@@ -87,7 +87,10 @@ func TextArea(cfg TextAreaConfig) render.HTML {
 	}
 
 	control := func(c headless.FieldControl) render.HTML {
-		return textAreaStyle.WrapHTML(headless.Textarea(headless.TextareaProps{
+		// This component's own control from TextArea's own caller's
+		// view — Field sees it only as its build closure's caller-
+		// content return.
+		return headless.Own(textAreaStyle.WrapHTML(headless.Textarea(headless.TextareaProps{
 			Name:        cfg.Name,
 			DescribedBy: c.DescribedBy,
 			Value:       cfg.Value,
@@ -99,7 +102,7 @@ func TextArea(cfg TextAreaConfig) render.HTML {
 			Autogrow:    cfg.Autogrow,
 			ID:          c.ID,
 			Extra:       extra,
-		}, textAreaClasses))
+		}, textAreaClasses)))
 	}
 	return formFieldStyle.WrapHTML(headless.Field(headless.FieldProps{
 		Label:    cfg.Label,

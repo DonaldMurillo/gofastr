@@ -332,7 +332,7 @@ func Menu(cfg MenuConfig) render.HTML {
 }
 
 func menuCSS(_ style.Theme) string {
-	return `[data-fui-comp="ui-menu"].fui-menu {
+	return `:where([data-fui-comp="ui-menu"]).fui-menu {
   position: relative;
   display: inline-block;
 }

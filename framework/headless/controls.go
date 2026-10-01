@@ -130,11 +130,12 @@ func NumberInput(p NumberInputProps, s Classes) render.HTML {
 	}
 
 	kids := []render.HTML{
-		b.El("label", PartLabel, Attrs(map[string]string{"for": id}), render.Text(p.Label)),
+		b.El("label", PartLabel, Internal(Attrs(map[string]string{"for": id})), render.Text(p.Label)),
 		// The three controls draw one bordered row in the sheet, which
 		// is why they share a wrapper: a pill border belongs to the
-		// trio, not to each element of it.
-		b.El("div", PartFieldRow, nil,
+		// trio, not to each element of it. None of the row holds caller
+		// content, so the mark sits on the row and not its children.
+		b.El("div", PartFieldRow, Internal(nil),
 			stepper(PartNumberDecrement, "data-hui-number-input-decrement",
 				fmt.Sprintf(w.NumberDecrement, p.Label), "−"),
 			b.El("input", PartControl, input),
@@ -144,11 +145,11 @@ func NumberInput(p NumberInputProps, s Classes) render.HTML {
 	}
 	if p.Error != "" {
 		kids = append(kids, b.El("p", PartError,
-			Attrs(map[string]string{"id": errID, "role": "alert"}), render.Text(p.Error)))
+			Internal(Attrs(map[string]string{"id": errID, "role": "alert"})), render.Text(p.Error)))
 	}
 	if p.Help != "" {
 		kids = append(kids, b.El("p", PartHint,
-			Attrs(map[string]string{"id": hintID}), render.Text(p.Help)))
+			Internal(Attrs(map[string]string{"id": hintID})), render.Text(p.Help)))
 	}
 
 	own := Merge(Safe(p.ExtraAttrs, "role", "aria-label", "type", "name", "step",
@@ -262,19 +263,21 @@ func Slider(p SliderProps, s Classes) render.HTML {
 		// input, and the module (through data-hui-slider-output)
 		// keeps the text in step while the thumb moves. The SSR text
 		// is the true value, so the number is right before script.
-		output = b.El("output", PartSliderOutput, html.Attrs{
+		output = b.El("output", PartSliderOutput, Internal(html.Attrs{
 			"for":                    id,
 			"data-hui-slider-output": "",
-		}, render.Text(strconv.Itoa(value)))
+		}), render.Text(strconv.Itoa(value)))
 	}
 
 	kids := []render.HTML{
-		b.El("label", PartLabel, Attrs(map[string]string{"for": id}), render.Text(p.Label)),
+		b.El("label", PartLabel, Internal(Attrs(map[string]string{"for": id})), render.Text(p.Label)),
 		output,
-		b.El("input", PartControl, input),
+		b.El("input", PartControl, Internal(input)),
 	}
 	if p.ShowEdgeLabels {
-		kids = append(kids, b.El("div", PartSliderEdges, nil,
+		// Neither edge label is caller content, so the mark sits on
+		// the wrapper and not the two spans inside it.
+		kids = append(kids, b.El("div", PartSliderEdges, Internal(nil),
 			b.El("span", PartSliderEdge, nil, render.Text(strconv.Itoa(min))),
 			b.El("span", PartSliderEdge, nil, render.Text(strconv.Itoa(max))),
 		))
@@ -408,10 +411,10 @@ func RangeSlider(p RangeSliderProps, s Classes) render.HTML {
 		// The hook carries the sentence's SHAPE and the text carries
 		// the sentence: the module re-formats through the shape as a
 		// thumb moves, so a translated page keeps its own words live.
-		output = b.El("output", PartRangeOutput, html.Attrs{
+		output = b.El("output", PartRangeOutput, Internal(html.Attrs{
 			"for":                          id + "-min " + id + "-max",
 			"data-hui-range-slider-output": w.RangeValue,
-		}, render.Text(fmt.Sprintf(w.RangeValue, strconv.Itoa(lo), strconv.Itoa(hi))))
+		}), render.Text(fmt.Sprintf(w.RangeValue, strconv.Itoa(lo), strconv.Itoa(hi))))
 	}
 
 	own := Merge(Safe(p.ExtraAttrs, "role", "aria-label", "type", "name",
@@ -425,9 +428,11 @@ func RangeSlider(p RangeSliderProps, s Classes) render.HTML {
 		own["data-state"] = "disabled"
 	}
 	return b.El("div", PartRoot, own,
-		b.El("span", PartLabel, nil, render.Text(p.Label)),
+		b.El("span", PartLabel, Internal(nil), render.Text(p.Label)),
 		output,
-		b.El("div", PartRangeTrack, nil,
+		// Neither thumb is caller content, so the mark sits on the
+		// track and not the two inputs inside it.
+		b.El("div", PartRangeTrack, Internal(nil),
 			thumb(PartRangeLow, "min", "data-hui-range-slider-low",
 				fmt.Sprintf(w.RangeLow, p.Label), lo),
 			thumb(PartRangeHigh, "max", "data-hui-range-slider-high",
@@ -534,8 +539,10 @@ func Rating(p RatingProps, s Classes) render.HTML {
 			Mark(radio, "checked")
 		}
 		Flag(radio, "disabled", p.Disabled)
-		items = append(items, b.El("input", PartControl, radio))
-		label := html.Attrs{"for": idV}
+		items = append(items, b.El("input", PartControl, Internal(radio)))
+		// The glyph is the caller's unless it is the default star or a
+		// composer Own'd it; then the whole label is the component's.
+		label := internalIf(p.Icon == "" || ownedSlot(p.Icon), html.Attrs{"for": idV})
 		items = append(items, b.El("label", PartOptionChoice, label,
 			b.El("span", PartIcon, Attrs(map[string]string{"aria-hidden": "true"}), glyph)))
 	}

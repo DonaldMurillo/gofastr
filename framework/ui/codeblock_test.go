@@ -173,7 +173,10 @@ func TestCodeBlockZeroConfigUnchanged(t *testing.T) {
 		ShowCopy:    true,
 		ID:          "fixed-id",
 	}))
-	wantFramed := `<div class="fui-code-block fui-code-block--framed fui-code-block--numbered" id="fixed-id" data-fui-comp="ui-code-block"><div class="fui-code-block__head"><span aria-hidden="true" class="fui-code-block__status"></span><span class="fui-code-block__file">main.go</span><div class="fui-code-block__meta"><span class="fui-copy-btn-wrap" data-hui-copy="" data-hui-copy-back="copy" data-hui-copy-copied="copied" data-hui-copy-name="fixed-id" data-hui-copy-sentence="Copied" data-hui-copy-target="fixed-id" data-fui-comp="ui-copy-btn"><button class="fui-copy-btn fui-code-block__copy" id="" type="button"><span class="fui-copy-btn__label">copy</span><span aria-hidden="true" class="fui-copy-btn__copied">copied</span></button><span aria-live="polite" class="fui-visually-hidden" data-hui-copy-status="" role="status"></span></span></div></div><pre aria-label="source code" class="fui-code-block__body" id="fixed-id" tabindex="0"><code>x := 1</code></pre></div>`
+	// The head (built from Filename, ShowCopy's copy button, and the
+	// line count — none of it a caller's markup) and the body (Code
+	// only here, no Lines) are both this component's own.
+	wantFramed := `<div class="fui-code-block fui-code-block--framed fui-code-block--numbered" id="fixed-id" data-fui-comp="ui-code-block"><div class="fui-code-block__head" data-fui-internal=""><span aria-hidden="true" class="fui-code-block__status"></span><span class="fui-code-block__file">main.go</span><div class="fui-code-block__meta"><span class="fui-copy-btn-wrap" data-hui-copy="" data-hui-copy-back="copy" data-hui-copy-copied="copied" data-hui-copy-name="fixed-id" data-hui-copy-sentence="Copied" data-hui-copy-target="fixed-id" data-fui-comp="ui-copy-btn"><button class="fui-copy-btn fui-code-block__copy" data-fui-internal="" id="" type="button"><span class="fui-copy-btn__label">copy</span><span aria-hidden="true" class="fui-copy-btn__copied">copied</span></button><span aria-live="polite" class="fui-visually-hidden" data-fui-internal="" data-hui-copy-status="" role="status"></span></span></div></div><pre aria-label="source code" class="fui-code-block__body" data-fui-internal="" id="fixed-id" tabindex="0"><code>x := 1</code></pre></div>`
 	if framed != wantFramed {
 		t.Errorf("framed zero-config output changed:\n got: %s\nwant: %s", framed, wantFramed)
 	}
@@ -181,7 +184,9 @@ func TestCodeBlockZeroConfigUnchanged(t *testing.T) {
 		Filename: "lines.go",
 		Lines:    []render.HTML{render.Text("a := 1"), render.Text("b := 2")},
 	}))
-	wantLines := `<div class="fui-code-block fui-code-block--framed" data-fui-comp="ui-code-block"><div class="fui-code-block__head"><span aria-hidden="true" class="fui-code-block__status"></span><span class="fui-code-block__file">lines.go</span><div class="fui-code-block__meta"><span>2 lines</span></div></div><pre aria-label="source code" class="fui-code-block__body" tabindex="0"><span class="fui-code-block__line">a := 1</span><span class="fui-code-block__line">b := 2</span></pre></div>`
+	// The head is still this component's own; the body now holds
+	// Lines, the caller's slot, so it is left unmarked.
+	wantLines := `<div class="fui-code-block fui-code-block--framed" data-fui-comp="ui-code-block"><div class="fui-code-block__head" data-fui-internal=""><span aria-hidden="true" class="fui-code-block__status"></span><span class="fui-code-block__file">lines.go</span><div class="fui-code-block__meta"><span>2 lines</span></div></div><pre aria-label="source code" class="fui-code-block__body" tabindex="0"><span class="fui-code-block__line">a := 1</span><span class="fui-code-block__line">b := 2</span></pre></div>`
 	if lines != wantLines {
 		t.Errorf("Lines zero-config output changed:\n got: %s\nwant: %s", lines, wantLines)
 	}

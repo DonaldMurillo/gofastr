@@ -13,6 +13,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/internal/casing"
 	"github.com/DonaldMurillo/gofastr/framework/sdk"
+	"github.com/DonaldMurillo/gofastr/framework/sdkdocs/internal/docpage"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
 
@@ -60,18 +61,18 @@ func sectionMenuDrawer(s *site) *widget.Builder {
 }
 
 // page wraps a screen body in the standard doc chrome (nav rail, crumbs,
-// drift banner).
+// drift banner) on the package's own docs page (internal/docpage).
 func (s *site) page(active, title string, body ...render.HTML) render.HTML {
-	crumbs := []ui.DocCrumb{{Label: "API & SDKs", Href: s.cfg.BasePath}}
+	crumbs := []ui.Crumb{{Text: "API & SDKs", Href: s.cfg.BasePath}}
 	if title != "" {
-		crumbs = append(crumbs, ui.DocCrumb{Label: title})
+		crumbs = append(crumbs, ui.Crumb{Text: title})
 	}
 	content := make([]render.HTML, 0, len(body)+1)
 	if banner := s.driftBanner(); banner != "" {
 		content = append(content, banner)
 	}
 	content = append(content, body...)
-	return ui.DocLayout(ui.DocLayoutConfig{
+	return docpage.Render(docpage.Config{
 		Nav:    interactive.SectionMenu(s.menuConfig(active)),
 		Crumbs: crumbs,
 	}, content...)

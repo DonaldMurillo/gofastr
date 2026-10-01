@@ -135,6 +135,13 @@ func Alert(p AlertProps, s Classes) render.HTML {
 		own["class"] = cls
 	}
 
+	// The header holds the caller's icon when there is one, so the
+	// owned-style boundary sits on the title; with no icon the whole
+	// header is the component's own and the boundary moves up to it.
+	headOwn, titleOwn := html.Attrs(nil), Internal(nil)
+	if p.Icon == "" {
+		headOwn, titleOwn = Internal(nil), nil
+	}
 	head := make([]render.HTML, 0, 3)
 	if p.Icon != "" {
 		head = append(head, b.El("span", PartIcon,
@@ -150,12 +157,12 @@ func Alert(p AlertProps, s Classes) render.HTML {
 	}
 	if p.Title != "" || p.ToneWord != "" {
 		title = append(title, render.Text(p.Title))
-		head = append(head, b.El("p", PartTitle, nil, title...))
+		head = append(head, b.El("p", PartTitle, titleOwn, title...))
 	}
 
-	kids := []render.HTML{b.El("div", PartHeader, nil, head...)}
+	kids := []render.HTML{b.El("div", PartHeader, headOwn, head...)}
 	if p.Text != "" {
-		kids = append(kids, b.El("p", PartDesc, nil, render.Text(p.Text)))
+		kids = append(kids, b.El("p", PartDesc, Internal(nil), render.Text(p.Text)))
 	}
 	if p.Body != "" {
 		kids = append(kids, b.El("div", PartBody, nil, p.Body))
@@ -177,7 +184,7 @@ func Alert(p AlertProps, s Classes) render.HTML {
 		// with it.
 		dismiss := Merge(Attrs(map[string]string{"href": p.DismissHref, "aria-label": label}),
 			p.Island.attrs(p.DismissHref, "GET"))
-		kids = append(kids, b.El("a", PartDismiss, dismiss, render.Text("×")))
+		kids = append(kids, b.El("a", PartDismiss, Internal(dismiss), render.Text("×")))
 	}
 	return b.El("div", PartRoot, own, kids...)
 }

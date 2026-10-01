@@ -169,17 +169,33 @@ func LightboxViewer(p LightboxViewerProps, s Classes) render.HTML {
 			"aria-label": w.LightboxNext,
 			nextAttr:     nextName,
 		})
+		// Each button holds only its icon: with none it draws nothing
+		// of its own beside the label already in aria-label, so the
+		// boundary sits on the button; with one the button is a slot
+		// ancestor and is left for an owner to reach.
+		if p.PrevIcon == "" {
+			prev = Internal(prev)
+		}
+		if p.NextIcon == "" {
+			next = Internal(next)
+		}
 		tools = append(tools,
 			b.El("button", PartPrev, prev, p.PrevIcon),
 			b.El("button", PartNext, next, p.NextIcon))
 	}
 	if p.Download {
 		dl := Mark(Attrs(map[string]string{"aria-label": w.LightboxDownload}), "download")
-		tools = append(tools,
-			b.El("a", PartDownload, Merge(dl, Bind{Signal: "src", Mode: "attr", Attr: "href"}.attrs()), p.DownloadIcon))
+		dlAttrs := Merge(dl, Bind{Signal: "src", Mode: "attr", Attr: "href"}.attrs())
+		if p.DownloadIcon == "" {
+			dlAttrs = Internal(dlAttrs)
+		}
+		tools = append(tools, b.El("a", PartDownload, dlAttrs, p.DownloadIcon))
 	}
 
-	kids := []render.HTML{b.El("figure", PartFigure, nil, figKids...)}
+	// The figure never holds caller content — the title is drawn from
+	// Label, the image and the caption are signal-bound, not passed in
+	// as markup — so it is the topmost element of its own subtree.
+	kids := []render.HTML{b.El("figure", PartFigure, Internal(nil), figKids...)}
 	if len(tools) > 0 {
 		kids = append(kids, b.El("div", PartToolbar, nil, tools...))
 	}

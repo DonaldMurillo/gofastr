@@ -6,6 +6,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/headless"
 )
 
 // ─── OptimizedImage ─────────────────────────────────────────────────
@@ -150,6 +151,13 @@ func OptimizedImage(cfg OptimizedImageConfig) render.HTML {
 	}
 
 	lqip := placeholderImage(cfg.Placeholder)
+	if lqip != "" {
+		// Placeholder is a data: URI string, never a caller's markup,
+		// so the placeholder image is always this component's own;
+		// its root becomes a sibling here rather than one an owner
+		// could place, so its own marks collapse into a single one.
+		lqip = headless.Own(lqip)
+	}
 
 	cls := "fui-image"
 	if cfg.Fit != ImageFitCover {
@@ -190,12 +198,16 @@ func OptimizedImage(cfg OptimizedImageConfig) render.HTML {
 		ExtraAttrs: imgAttrs,
 	}
 
-	// Single-source path: just <img>.
+	// Single-source path: just <img>. With no picture wrapper, the img
+	// itself — built entirely from this component's own fields — is
+	// the topmost internal element.
 	if len(cfg.Sources) == 0 {
+		single := imgCfg
+		single.ExtraAttrs = html.MergeAttrs(imgAttrs, html.Attrs{"data-fui-internal": ""})
 		return imageStyle.WrapHTML(html.Span(html.TextConfig{
 			Class: cls, ID: cfg.ID,
 			ExtraAttrs: html.SafeExtraAttrs(cfg.ExtraAttrs),
-		}, lqip, html.Image(imgCfg)))
+		}, lqip, html.Image(single)))
 	}
 
 	// Multi-source <picture> wrapper.
@@ -208,7 +220,11 @@ func OptimizedImage(cfg OptimizedImageConfig) render.HTML {
 		"srcset": srcset,
 		"sizes":  sizes,
 	})
-	picture := render.Tag("picture", nil, source, html.Image(imgCfg))
+	// The source set and the img are both built from this component's
+	// own fields (Sources, a struct slice, carries no render.HTML), so
+	// picture — with no picture wrapper an owner could reach around —
+	// is the topmost internal element here.
+	picture := render.Tag("picture", map[string]string{"data-fui-internal": ""}, source, html.Image(imgCfg))
 	return imageStyle.WrapHTML(html.Span(html.TextConfig{
 		Class: cls, ID: cfg.ID,
 		ExtraAttrs: html.SafeExtraAttrs(cfg.ExtraAttrs),

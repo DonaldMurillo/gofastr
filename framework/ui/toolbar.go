@@ -40,6 +40,8 @@ type ToolbarConfig struct {
 	Align string
 	ID    string
 	Class string
+	// Plain removes the frame and padding when placed in existing chrome.
+	Plain bool
 	// ExtraAttrs forwards additional attributes to the root element.
 	// Keys the component owns are dropped: class and id (use Class /
 	// ID), data-fui-*, role, and aria-label (use Label).
@@ -61,6 +63,9 @@ func Toolbar(cfg ToolbarConfig) render.HTML {
 			`. Pick one of: "" (start), start, center, end, between`)
 	}
 	cls := "fui-toolbar"
+	if cfg.Plain {
+		cls += " fui-toolbar--plain"
+	}
 	if cfg.Align != "" && cfg.Align != "start" {
 		cls += " fui-toolbar--" + cfg.Align
 	}
@@ -106,6 +111,7 @@ func toolbarCSS(_ style.Theme) string {
   border-radius: var(--radii-md, 8px);
   flex-wrap: wrap;
 }
+[data-fui-comp="ui-toolbar"].fui-toolbar--plain { padding: 0; border: 0; border-radius: 0; background: transparent; }
 [data-fui-comp="ui-toolbar"].fui-toolbar--center { justify-content: center; }
 [data-fui-comp="ui-toolbar"].fui-toolbar--end    { justify-content: flex-end; }
 [data-fui-comp="ui-toolbar"].fui-toolbar--between { justify-content: space-between; }

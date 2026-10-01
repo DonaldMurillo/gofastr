@@ -153,16 +153,20 @@ func countFontSizeLiterals(css string) (int, []string) {
 // or, for a genuinely off-scale size, raise the budget with a
 // comment saying why.
 func TestFontSizeLiteralBudget(t *testing.T) {
-	// Current leftovers (8 total):
+	// Current leftovers (9 total):
 	//   - Fluid clamp() display sizes in ui-hero: clamp(2.5rem, 6vw, 4rem),
 	//     clamp(1.125rem, 2.2vw, 1.375rem): viewport-interpolated, no
 	//     single token fits (2).
+	//   - The contained ui-shell's page heading, clamp(2rem, 4vw, 2.75rem):
+	//     the same fluid kind, carried over from the deleted LayoutBaseCSS
+	//     (an unregistered string this test never counted). A token here
+	//     shrank every contained page's bare h1 from 44px to 30px (1).
 	//   - Display sizes above --text-3xl: 2.25rem (pricing-card), 1.75rem
 	//     (stat-card) (2).
 	//   - Micro-labels below --text-xs: 0.625rem (anchored-rail),
 	//     0.65rem (avatar-group), 0.68rem (bar-chart) (3).
 	//   - Test-registered "hero" button size: 1.15rem (1).
-	const budget = 8
+	const budget = 9
 	theme := style.DefaultTheme()
 	total := 0
 	for _, e := range registry.All() {

@@ -21,6 +21,7 @@ type PageHeaderConfig struct {
 	Subtitle string      // optional supporting text below the title
 	Eyebrow  string      // optional small label above the title (e.g. "Customers")
 	Actions  render.HTML // optional trailing action slot (button row, link)
+	Badge    render.HTML // optional status beside the title; wraps below when needed
 	// HeadingLevel overrides the title's heading level (default 1). Set to
 	// 2 when the header is a sub-section of a page that already has an <h1>
 	// (e.g. a related-list block on a detail page) so the outline doesn't
@@ -28,6 +29,8 @@ type PageHeaderConfig struct {
 	HeadingLevel int
 	Class        string
 	ID           string
+	// Compact removes the divider and outer padding for pane and article titles.
+	Compact bool
 
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers, ARIA overrides) to the header's root <header>
@@ -44,6 +47,7 @@ var pageHeaderClasses = headless.Classes{
 	headless.PartPageSubtitle: "fui-page-header__subtitle",
 	headless.PartPageText:     "fui-page-header__text",
 	headless.PartPageActions:  "fui-page-header__actions",
+	headless.PartPageTitleRow: "fui-page-header__title-row",
 }
 
 // PageHeader renders a top-of-page header on headless.PageHeader:
@@ -51,12 +55,16 @@ var pageHeaderClasses = headless.Classes{
 // The element is a plain <header> — claiming role=banner is the
 // top-level page header's decision, not the component's.
 func PageHeader(cfg PageHeaderConfig) render.HTML {
+	if cfg.Compact {
+		cfg.Class += " fui-page-header--compact"
+	}
 	return pageHeaderStyle.WrapHTML(headless.PageHeader(headless.PageHeaderProps{
 		Title:      cfg.Title,
 		Level:      cfg.HeadingLevel,
 		Eyebrow:    cfg.Eyebrow,
 		Subtitle:   cfg.Subtitle,
 		Actions:    cfg.Actions,
+		Badge:      cfg.Badge,
 		ID:         cfg.ID,
 		ExtraAttrs: headless.Safe(cfg.ExtraAttrs, "class", "id", "role"),
 		Parts:      rootClassParts(cfg.Class),
@@ -116,6 +124,8 @@ type SectionConfig struct {
 	Label string
 	Class string
 	ID    string
+	// Compact removes outer margins when a parent Stack owns section spacing.
+	Compact bool
 
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers) to the section's root <section> element.
@@ -140,6 +150,9 @@ var sectionClasses = headless.Classes{
 // aria-label when there is no heading, and neither means the region
 // renders as a plain div rather than an unnamed landmark.
 func Section(cfg SectionConfig, body ...render.HTML) render.HTML {
+	if cfg.Compact {
+		cfg.Class += " fui-section--compact"
+	}
 	sectionID := cfg.ID
 	if sectionID == "" && cfg.Heading != "" {
 		// Auto-anchor: typical use is in-page rails / scrollspy where the
@@ -903,14 +916,15 @@ func Avatar(cfg AvatarConfig) render.HTML {
 	if cfg.Src != "" {
 		inner = append(inner, html.Image(html.ImageConfig{
 			Src: cfg.Src, Alt: cfg.Name, Class: "fui-avatar__img",
+			ExtraAttrs: html.Attrs{"data-fui-internal": ""},
 		}))
 	} else {
 		inner = append(inner,
 			html.Span(html.TextConfig{
 				Class:      "fui-avatar__initials",
-				ExtraAttrs: html.Attrs{"aria-hidden": "true"},
+				ExtraAttrs: html.Attrs{"aria-hidden": "true", "data-fui-internal": ""},
 			}, render.Text(initials(cfg.Name))),
-			html.Span(html.TextConfig{Class: "fui-visually-hidden"},
+			html.Span(html.TextConfig{Class: "fui-visually-hidden", ExtraAttrs: html.Attrs{"data-fui-internal": ""}},
 				render.Text(cfg.Name)),
 		)
 	}
@@ -931,8 +945,9 @@ func avatarStatusDot(status AvatarStatus, label string) render.HTML {
 	return html.Span(html.TextConfig{
 		Class: "fui-avatar__status fui-avatar__status--" + string(status),
 		ExtraAttrs: html.Attrs{
-			"role":       "img",
-			"aria-label": label,
+			"role":              "img",
+			"aria-label":        label,
+			"data-fui-internal": "",
 		},
 	})
 }
@@ -1193,11 +1208,21 @@ func CodeBlock(cfg CodeBlockConfig) render.HTML {
 		headChildren = append(headChildren,
 			html.Div(html.DivConfig{Class: "fui-code-block__meta"}, metaChildren...))
 	}
-	head := html.Div(html.DivConfig{Class: "fui-code-block__head"}, headChildren...)
+	// The header draws only from Filename (a string), the line count
+	// and the copy button — none of it a caller's markup — so it is
+	// always this component's own.
+	head := html.Div(html.DivConfig{Class: "fui-code-block__head", ExtraAttrs: html.Attrs{"data-fui-internal": ""}}, headChildren...)
 
 	preAttrs := map[string]string{"class": "fui-code-block__body", "tabindex": "0", "aria-label": label}
 	if bodyID != "" {
 		preAttrs["id"] = bodyID
+	}
+	// The body holds a caller's markup only on the Lines path — every
+	// other path (perLine, or the plain default) draws the same text
+	// from Code, a string field, so the body is this component's own
+	// whenever Lines is empty.
+	if len(cfg.Lines) == 0 {
+		preAttrs["data-fui-internal"] = ""
 	}
 	pre := render.Tag("pre", preAttrs, body)
 	return codeBlockStyle.WrapHTML(

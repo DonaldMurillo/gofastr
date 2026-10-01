@@ -78,9 +78,18 @@ func HeroSplit(cfg HeroSplitConfig) render.HTML {
 	if cfg.AriaLabel != "" {
 		attrs["aria-label"] = cfg.AriaLabel
 	}
+	// Copy/Media are slots; empty renders a div with none of a
+	// caller's markup in it, so that div is this component's own.
+	var copyOwn, mediaOwn html.Attrs
+	if cfg.Copy == "" {
+		copyOwn = html.Attrs{"data-fui-internal": ""}
+	}
+	if cfg.Media == "" {
+		mediaOwn = html.Attrs{"data-fui-internal": ""}
+	}
 	return heroSplitStyle.WrapHTML(render.Tag("section", attrs,
-		html.Div(html.DivConfig{Class: "fui-hero-split__copy"}, cfg.Copy),
-		html.Div(html.DivConfig{Class: "fui-hero-split__media"}, cfg.Media),
+		html.Div(html.DivConfig{Class: "fui-hero-split__copy", ExtraAttrs: copyOwn}, cfg.Copy),
+		html.Div(html.DivConfig{Class: "fui-hero-split__media", ExtraAttrs: mediaOwn}, cfg.Media),
 	))
 }
 

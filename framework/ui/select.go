@@ -78,10 +78,7 @@ func Select(cfg SelectConfig) render.HTML {
 		for _, opt := range cfg.Options {
 			opts = append(opts, headless.Option{Value: opt.Value, Label: opt.Text})
 		}
-		// The select carries this component's own marker: its sheet is
-		// fetched wherever the control renders, not only inside the
-		// field whose marker fetches the field sheet.
-		return selectStyle.WrapHTML(headless.Select(headless.SelectProps{
+		sel := selectStyle.WrapHTML(headless.Select(headless.SelectProps{
 			Name:        cfg.Name,
 			DescribedBy: c.DescribedBy,
 			Options:     opts,
@@ -94,6 +91,12 @@ func Select(cfg SelectConfig) render.HTML {
 			Extra: html.SafeExtraAttrs(cfg.ExtraAttrs,
 				"name", "disabled", "required", "aria-invalid", "aria-describedby"),
 		}, selectClasses))
+		// The select carries this component's own marker: its sheet is
+		// fetched wherever the control renders, not only inside the
+		// field whose marker fetches the field sheet. Field sees the
+		// control as slot content; it is this component's own, so it
+		// is marked here.
+		return headless.Own(sel)
 	}
 	return formFieldStyle.WrapHTML(headless.Field(headless.FieldProps{
 		Label:    cfg.Label,
@@ -113,6 +116,10 @@ func selectCSS(_ style.Theme) string {
   font-size: var(--text-base, 1rem);
   padding: 10px var(--spacing-md, 8px);
   border: 1px solid var(--color-border, #E4E4E7);
+  /* Same field surface as the text inputs (.fui-input): without an
+     explicit background the UA paints its own base colour, which in
+     dark schemes is a lighter grey than --color-surface. */
+  background-color: var(--color-surface, #FFFFFF);
   border-radius: var(--fui-field-radius);
   color: var(--color-text, #18181B);
   appearance: none;

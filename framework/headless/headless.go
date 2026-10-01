@@ -156,6 +156,23 @@ func Mark(a html.Attrs, names ...string) html.Attrs {
 	return a
 }
 
+// Internal returns own with data-fui-internal set: the attribute an
+// owned style's @scope stops at. A component puts it on each subtree
+// that holds none of the caller's content (a header built from a Title
+// string, a control's input, a dismiss button), and never on an
+// element that holds a slot, or on any ancestor of one: content passed
+// in stays in the owner's reach. The component's root is never marked;
+// an owner may place it. A mark under another mark is inert. own is
+// not modified; nil is fine.
+func Internal(own html.Attrs) html.Attrs {
+	out := make(html.Attrs, len(own)+1)
+	for k, v := range own {
+		out[k] = v
+	}
+	out["data-fui-internal"] = ""
+	return out
+}
+
 // Flag sets a boolean attribute when on.
 func Flag(a html.Attrs, name string, on bool) html.Attrs {
 	if on {

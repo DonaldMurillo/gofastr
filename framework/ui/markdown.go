@@ -26,6 +26,10 @@ type MarkdownConfig struct {
 	// Compact tightens spacing, useful for inline previews where
 	// hero-page paragraph rhythm would feel wrong.
 	Compact bool
+	// Measure caps the line length at a reading width
+	// (--ui-markdown-measure, 72ch) for long-form pages: about, terms,
+	// an explanatory paragraph in a wide page column.
+	Measure bool
 	ID      string
 	Class   string
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
@@ -43,6 +47,9 @@ func Markdown(cfg MarkdownConfig) render.HTML {
 	cls := "fui-markdown"
 	if cfg.Compact {
 		cls += " fui-markdown--compact"
+	}
+	if cfg.Measure {
+		cls += " fui-markdown--measure"
 	}
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
@@ -268,8 +275,8 @@ func markdownCSS(_ style.Theme) string {
   line-height: 1.25;
   text-wrap: balance;
 }
-[data-fui-comp="ui-markdown"] h1 { font-size: var(--text-3xl, 1.875rem);  font-weight: 700; letter-spacing: -0.014em; margin-block: 0 0.5em; }
-[data-fui-comp="ui-markdown"] h2 { font-size: var(--text-2xl, 1.5rem); font-weight: 700; letter-spacing: -0.01em;  margin-block: 2.6em 0.55em; }
+[data-fui-comp="ui-markdown"] h1 { font-size: var(--text-3xl, 1.875rem);  font-weight: var(--font-weight-bold); letter-spacing: -0.014em; margin-block: 0 0.5em; }
+[data-fui-comp="ui-markdown"] h2 { font-size: var(--text-2xl, 1.5rem); font-weight: var(--font-weight-bold); letter-spacing: -0.01em;  margin-block: 2.6em 0.55em; }
 [data-fui-comp="ui-markdown"] h3 { font-size: var(--text-lg, 1.125rem); font-weight: 650; margin-block: 1.9em 0.45em; }
 [data-fui-comp="ui-markdown"] h4 { font-size: var(--text-base, 1rem);    font-weight: 650; margin-block: 1.5em 0.35em; }
 /* A heading straight after another heading shouldn't double the gap. */
@@ -307,7 +314,7 @@ func markdownCSS(_ style.Theme) string {
 /* Fenced code blocks are upgraded to framed ui.CodeBlock surfaces (syntax
    highlighting + copy button) by enrichCodeBlocks — they bring their own
    chrome; we only give them a little extra room above. */
-[data-fui-comp="ui-markdown"] > [data-fui-comp="ui-code-block"] {
+:where([data-fui-comp="ui-markdown"]) > [data-fui-comp="ui-code-block"] {
   margin-block-start: 1.5em;
 }
 /* Any RAW <pre> that slipped through unframed (no class) still reads well. */
@@ -373,6 +380,7 @@ func markdownCSS(_ style.Theme) string {
 
 /* Compact variant — tighter rhythm for inline previews. */
 .fui-markdown.fui-markdown--compact { line-height: 1.6; }
+:where(.fui-markdown).fui-markdown--measure { max-inline-size: var(--ui-markdown-measure, 72ch); }
 .fui-markdown.fui-markdown--compact > * + * { margin-block-start: 0.7em; }
 .fui-markdown.fui-markdown--compact h2 { font-size: var(--text-lg, 1.125rem); margin-block: 1.4em 0.4em; }
 .fui-markdown.fui-markdown--compact h3 { font-size: var(--text-base, 1rem); margin-block: 1.1em 0.35em; }

@@ -8,6 +8,8 @@ package ui
 // screens don't hand-roll key/value CSS.
 
 import (
+	"strings"
+
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
@@ -25,6 +27,9 @@ type DetailItem struct {
 type DetailListConfig struct {
 	Items []DetailItem
 	Class string
+	// Inline keeps short label/value pairs on one line in narrow panes.
+	// Long values wrap within their column instead of moving below the label.
+	Inline bool
 
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers, ARIA overrides) to the root <dl>. Keys the
@@ -54,7 +59,7 @@ func DetailList(cfg DetailListConfig) render.HTML {
 	for _, it := range cfg.Items {
 		value := it.Value
 		if value == "" {
-			value = EmptyValue()
+			value = headless.Own(EmptyValue())
 		}
 		rows = append(rows, headless.DetailRow{Label: it.Label, Value: value})
 	}
@@ -62,8 +67,15 @@ func DetailList(cfg DetailListConfig) render.HTML {
 	if attrs == nil {
 		attrs = html.Attrs{}
 	}
+	class := ""
+	if cfg.Inline {
+		class = "fui-detail-list--inline"
+	}
 	if cfg.Class != "" {
-		attrs["class"] = cfg.Class
+		class = strings.TrimSpace(class + " " + cfg.Class)
+	}
+	if class != "" {
+		attrs["class"] = class
 	}
 	return detailListStyle.WrapHTML(headless.DetailList(headless.DetailListProps{
 		Rows: rows,
@@ -79,6 +91,7 @@ func detailListCSS(_ style.Theme) string {
 	return `[data-fui-comp="ui-detail-list"] {
   display: flex;
   flex-direction: column;
+  container-type: inline-size;
   max-width: 44rem;
   margin: 0;
 }
@@ -94,14 +107,19 @@ func detailListCSS(_ style.Theme) string {
 [data-fui-comp="ui-detail-list"] .fui-detail-list__label {
   margin: 0;
   color: var(--color-text-muted, inherit);
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
 }
 [data-fui-comp="ui-detail-list"] .fui-detail-list__value {
   margin: 0;
   color: var(--color-text, inherit);
 }
+@container (max-width: 30rem) {
+  [data-fui-comp="ui-detail-list"] .fui-detail-list__row { grid-template-columns: 1fr; gap: var(--spacing-xs, 2px); }
+}
 @media (max-width: 30rem) {
   [data-fui-comp="ui-detail-list"] .fui-detail-list__row { grid-template-columns: 1fr; gap: var(--spacing-xs, 2px); }
 }
+[data-fui-comp="ui-detail-list"].fui-detail-list--inline .fui-detail-list__row { grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); gap: var(--spacing-sm); }
+[data-fui-comp="ui-detail-list"].fui-detail-list--inline .fui-detail-list__value { min-inline-size: 0; overflow-wrap: anywhere; }
 `
 }

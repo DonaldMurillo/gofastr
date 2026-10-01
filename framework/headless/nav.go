@@ -149,7 +149,7 @@ func Tag(p TagProps, s Classes) render.HTML {
 		// without script, the island contract is the region update
 		// with it.
 		dismiss = Merge(dismiss, p.Island.attrs(p.DismissHref, "GET"))
-		kids = append(kids, b.El("a", PartBadgeDismiss, dismiss, render.Text("×")))
+		kids = append(kids, b.El("a", PartBadgeDismiss, Internal(dismiss), render.Text("×")))
 	}
 
 	rootAttrs := Merge(Safe(p.ExtraAttrs), Attrs(map[string]string{"id": p.ID}))
@@ -187,7 +187,7 @@ func Toolbar(p ToolbarProps, s Classes, children ...render.HTML) render.HTML {
 func ToolbarGroup(s Classes, label string, children ...render.HTML) render.HTML {
 	kids := make([]render.HTML, 0, len(children)+1)
 	if label != "" {
-		kids = append(kids, El("span", s, PartToolbarLabel, nil, render.Text(label)))
+		kids = append(kids, El("span", s, PartToolbarLabel, Internal(nil), render.Text(label)))
 	}
 	kids = append(kids, children...)
 	return El("div", s, PartToolbarGroup, nil, kids...)
@@ -335,7 +335,7 @@ func Pagination(p PaginationProps, s Classes) render.HTML {
 			"aria-label": p.AriaLabel,
 			"id":         p.ID,
 		})),
-		b.El("div", PartPagination, nil, links...))
+		b.El("div", PartPagination, Internal(nil), links...))
 }
 
 // paginationLink renders one pagination anchor. Disabled end links
@@ -552,11 +552,20 @@ func Steps(p StepsProps, s Classes) render.HTML {
 			tag = "a"
 			rowAttrs["href"] = href
 		}
-		items = append(items, El("li", s, PartStep, attrs,
+		// The marker is the caller's when Marker is set, so the row and
+		// the step around it are a slot ancestor and stay unmarked; with
+		// no caller marker the glyph is generated (a checkmark or the
+		// step number), so the whole step is the component's own and the
+		// boundary moves up to it.
+		stepOwn, textOwn := html.Attrs(nil), Internal(nil)
+		if st.Marker == "" {
+			stepOwn, textOwn = Internal(nil), nil
+		}
+		items = append(items, El("li", s, PartStep, Merge(attrs, stepOwn),
 			El(tag, s, PartStepRow, rowAttrs,
 				El("span", s, PartMarker,
 					Attrs(map[string]string{"aria-hidden": "true"}), marker),
-				El("span", s, PartStepText, nil, text...),
+				El("span", s, PartStepText, textOwn, text...),
 			),
 		))
 	}
@@ -804,9 +813,17 @@ func BackToTop(p BackToTopProps, s Classes) render.HTML {
 	if icon == "" {
 		icon = render.Text("↑")
 	}
+	// The label is always the component's own generated text. The icon
+	// is the caller's when Icon is set, so it stays reachable; with no
+	// caller icon the glyph is the component's own default arrow, and
+	// it is marked too.
+	iconOwn, labelOwn := Attrs(map[string]string{"aria-hidden": "true"}), Internal(nil)
+	if p.Icon == "" || ownedSlot(p.Icon) {
+		iconOwn = Internal(iconOwn)
+	}
 	return b.El("a", PartRoot, own,
-		b.El("span", PartIcon, Attrs(map[string]string{"aria-hidden": "true"}), icon),
-		b.El("span", PartLabel, nil, render.Text(label)),
+		b.El("span", PartIcon, iconOwn, icon),
+		b.El("span", PartLabel, labelOwn, render.Text(label)),
 	)
 }
 

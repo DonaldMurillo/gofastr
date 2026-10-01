@@ -81,10 +81,12 @@ func Breadcrumbs(p BreadcrumbsProps, s Classes) render.HTML {
 		// A dangerous Href (javascript:, vbscript:, data:, a
 		// protocol-relative host, a smuggled control byte) is dropped
 		// and the step degrades to plain text rather than a clickable
-		// XSS vector. An empty result means "no link", which folds
-		// into the same plain-text path.
+		// XSS vector. A step with no Href is the current page; a
+		// refused Href is plain text but not current, so the trail
+		// keeps exactly one current step.
 		href := urlsafe.CleanAnchor(c.Href)
-		current := c.Current || href == ""
+		current := c.Current || c.Href == ""
+		refused := !current && href == ""
 		kids := []render.HTML{}
 		if i > 0 {
 			// The separator is real markup so its glyph can be styled
@@ -94,11 +96,15 @@ func Breadcrumbs(p BreadcrumbsProps, s Classes) render.HTML {
 			kids = append(kids, b.El("span", PartBreadcrumbSeparator,
 				Attrs(map[string]string{"aria-hidden": "true"}), render.Text("/")))
 		}
-		if current {
+		switch {
+		case current:
 			kids = append(kids, b.El("span", PartBreadcrumbLink,
 				Attrs(map[string]string{"aria-current": "page"}),
 				render.Text(scrubControlBytes(c.Text))))
-		} else {
+		case refused:
+			kids = append(kids, b.El("span", PartBreadcrumbLink, nil,
+				render.Text(scrubControlBytes(c.Text))))
+		default:
 			kids = append(kids, b.El("a", PartBreadcrumbLink,
 				Attrs(map[string]string{"href": href}),
 				render.Text(scrubControlBytes(c.Text))))
@@ -107,7 +113,7 @@ func Breadcrumbs(p BreadcrumbsProps, s Classes) render.HTML {
 	}
 
 	return b.El("nav", PartRoot, own,
-		b.El("ol", PartBreadcrumbList, nil, items...),
+		b.El("ol", PartBreadcrumbList, Internal(nil), items...),
 	)
 }
 

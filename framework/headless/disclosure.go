@@ -88,9 +88,17 @@ func Disclosure(p DisclosureProps, s Classes) render.HTML {
 	if p.Open {
 		Mark(own, "open")
 	}
+	content := b.Fill(PartPanel, p.Content)
+	// The panel is the caller's whenever there is content to show it;
+	// an empty panel renders nothing of the caller's, so the boundary
+	// sits on the panel wrapper itself.
+	panelOwn := Internal(nil)
+	if content != "" {
+		panelOwn = nil
+	}
 	return b.El("details", PartRoot, own,
-		b.El("summary", PartSummary, nil, b.Fill(PartSummary, p.Summary)),
-		b.El("div", PartPanel, nil, b.Fill(PartPanel, p.Content)),
+		b.El("summary", PartSummary, internalIf(ownedSlot(p.Summary), nil), b.Fill(PartSummary, p.Summary)),
+		b.El("div", PartPanel, panelOwn, content),
 	)
 }
 

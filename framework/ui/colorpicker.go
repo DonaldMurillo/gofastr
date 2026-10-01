@@ -89,9 +89,13 @@ func ColorPicker(cfg ColorPickerConfig) render.HTML {
 	}
 	rootAttrs["class"] = cls
 	rootAttrs["id"] = id + "-wrap"
+	// The row holds only the swatch input and its label, both built
+	// here from cfg's strings — none of ColorPickerConfig is caller
+	// markup — so the row is the topmost internal subtree under the
+	// (exempt) root.
 	return colorPickerStyle.WrapHTML(render.Tag("div",
 		rootAttrs,
-		render.Tag("div", map[string]string{"class": "fui-color-picker__row"}, row...),
+		render.Tag("div", map[string]string{"class": "fui-color-picker__row", "data-fui-internal": ""}, row...),
 	))
 }
 
@@ -108,7 +112,7 @@ func colorPickerCSS(_ style.Theme) string {
   gap: var(--spacing-md, 8px);
 }
 [data-fui-comp="ui-color-picker"] .fui-color-picker__label {
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
   font-size: var(--text-sm, 0.875rem);
   color: var(--color-text, #18181B);
 }

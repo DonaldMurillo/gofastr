@@ -125,7 +125,7 @@ func Field(p FieldProps, s Classes, build func(FieldControl) render.HTML) render
 		labelAttrs["data-required"] = ""
 	}
 	kids := []render.HTML{
-		b.El("label", PartLabel, labelAttrs, render.Text(p.Label)),
+		b.El("label", PartLabel, Internal(labelAttrs), render.Text(p.Label)),
 		control,
 	}
 	if p.Error != "" {
@@ -133,7 +133,7 @@ func Field(p FieldProps, s Classes, build func(FieldControl) render.HTML) render
 		// failed submit has to interrupt, and the element is inserted
 		// rather than updated in place.
 		kids = append(kids, b.El("p", PartError,
-			Attrs(map[string]string{"id": errID, "role": "alert"}),
+			Internal(Attrs(map[string]string{"id": errID, "role": "alert"})),
 			render.Text(p.Error)))
 	} else if reserved {
 		// The same paragraph, empty, found by its id. An empty alert
@@ -148,11 +148,11 @@ func Field(p FieldProps, s Classes, build func(FieldControl) render.HTML) render
 		// while it is empty, so a reserved field is not a field with a
 		// blank row under it.
 		kids = append(kids, b.El("p", PartError,
-			Attrs(map[string]string{"id": errID, "role": "alert"})))
+			Internal(Attrs(map[string]string{"id": errID, "role": "alert"}))))
 	}
 	if p.Hint != "" {
 		kids = append(kids, b.El("p", PartHint,
-			Attrs(map[string]string{"id": hintID}), render.Text(p.Hint)))
+			Internal(Attrs(map[string]string{"id": hintID})), render.Text(p.Hint)))
 	}
 
 	own := Merge(Safe(p.ExtraAttrs), Attrs(map[string]string{"id": p.ID}))
@@ -229,7 +229,7 @@ func Fieldset(p FieldsetProps, s Classes, fields ...render.HTML) render.HTML {
 	b := p.Parts.Box(s)
 	head := make([]render.HTML, 0, 3)
 	if p.Legend != "" {
-		head = append(head, b.El("legend", PartLegend, nil, render.Text(p.Legend)))
+		head = append(head, b.El("legend", PartLegend, Internal(nil), render.Text(p.Legend)))
 	}
 	// A description and an error are both wired to the group by id,
 	// and an id needs a base: the explicit group id, or the legend's
@@ -247,20 +247,27 @@ func Fieldset(p FieldsetProps, s Classes, fields ...render.HTML) render.HTML {
 		descID := base + "-desc"
 		described = append(described, descID)
 		head = append(head, b.El("p", PartGroupDesc,
-			Attrs(map[string]string{"id": descID}), render.Text(p.Description)))
+			Internal(Attrs(map[string]string{"id": descID})), render.Text(p.Description)))
 	}
 	if p.Error != "" {
 		errID := base + "-error"
 		described = append(described, errID)
 		head = append(head, b.El("p", PartGroupError,
-			Attrs(map[string]string{"id": errID}), render.Text(p.Error)))
+			Internal(Attrs(map[string]string{"id": errID})), render.Text(p.Error)))
 	}
 	if len(described) > 0 {
 		// The description first, then the error: the rule the group
 		// must obey is read before the way it was broken.
 		own["aria-describedby"] = strings.Join(described, " ")
 	}
-	body := b.El("div", PartFields, nil, fields...)
+	// Fields holds nothing but the caller's own fields; empty, it draws
+	// none of its own markup either, so the whole (empty) div is this
+	// component's own — the same rule Form's body div follows.
+	fieldsOwn := html.Attrs(nil)
+	if len(fields) == 0 {
+		fieldsOwn = Internal(nil)
+	}
+	body := b.El("div", PartFields, fieldsOwn, fields...)
 
 	kids := append(head, body)
 	if p.Legend == "" {

@@ -62,8 +62,8 @@ func TestStepsHrefStateAndMarker(t *testing.T) {
 	overridden := Steps(StepsProps{Steps: []Step{
 		{Label: "Source"}, {Label: "Build", State: "done"}, {Label: "Deploy"},
 	}, Current: 1}, nil)
-	has(t, overridden, `<li aria-current="step" data-state="current">`, "the derived current state was lost")
-	has(t, overridden, `<li data-state="done"><span><span aria-hidden="true">✓</span>`, "the explicit done state did not win")
+	has(t, overridden, `<li aria-current="step" data-fui-internal="" data-state="current">`, "the derived current state was lost")
+	has(t, overridden, `<li data-fui-internal="" data-state="done"><span><span aria-hidden="true">✓</span>`, "the explicit done state did not win")
 }
 
 // Exactly one step may be current: Current on one step and an

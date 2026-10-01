@@ -440,7 +440,7 @@ func exportedComponents(t *testing.T) []string {
 	if err != nil {
 		t.Fatalf("parsing the package: %v", err)
 	}
-	helpers := map[string]bool{"El": true}
+	helpers := map[string]bool{"El": true, "Own": true}
 	var out []string
 	for _, pkg := range pkgs {
 		for _, f := range pkg.Files {

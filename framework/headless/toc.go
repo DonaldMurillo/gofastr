@@ -112,7 +112,9 @@ func TableOfContents(p TableOfContentsProps, s Classes) render.HTML {
 	}
 
 	return b.El("nav", PartRoot, own,
-		b.El("ol", PartTOCList, nil, items...),
+		// TOCItem holds only strings — no caller content is ever
+		// possible here, so the whole list is this component's own.
+		b.El("ol", PartTOCList, Internal(nil), items...),
 	)
 }
 

@@ -95,7 +95,15 @@ func Card(p CardProps, s Classes, body ...render.HTML) render.HTML {
 			panic("headless: Card Href " + strconv.Quote(p.Href) + " is not a URL the anchor policy allows")
 		}
 		own["href"] = href
-		inner := b.El("div", PartCardInner, nil, kids...)
+		// The inner wrapper holds only the component's own markup when
+		// none of the header, the body or the footer carries caller
+		// content — otherwise it is an ancestor of a slot and is left
+		// for an owner to reach.
+		var innerOwn html.Attrs
+		if !b.Filled(PartCardHeader) && len(body) == 0 && p.Footer == "" {
+			innerOwn = Internal(nil)
+		}
+		inner := b.El("div", PartCardInner, innerOwn, kids...)
 		return b.El("a", PartRoot, own, inner)
 	}
 	return b.El("div", PartRoot, own, kids...)

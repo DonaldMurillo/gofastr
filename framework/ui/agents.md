@@ -3,8 +3,10 @@
 The design system ships roughly 100 ready-made components — layout
 (Hero, Grid, Stack, Sidebar, PageHeader, RecordSummary), forms (Form, FormField,
 Select, TagInput, step wizards), data (DataTable, MetricBand, StatCard, charts,
-DetailList), chrome (SiteHeader, AuthCard, ThemeToggle, Card, Banner) —
-plus layout shells (`core-ui/app`), the headless primitives every
+DetailList), chrome (AuthCard, ThemeToggle, Card, Banner) —
+plus the layout primitive that owns page shells (`core-ui/app`:
+`app.NewLayout` with outlets and fills — `gofastr docs layouts`),
+the headless primitives every
 component is built on (`framework/headless`), overlay widgets (`core-ui/widget/preset`), and
 theme tokens (`framework/ui/theme`). All styling and structural markup
 lives in this system; apps ship zero bespoke CSS.
@@ -52,14 +54,17 @@ Composition requirements:
 - On wide detail routes, pair related bounded modules such as `DetailList`s in
   `Grid` instead of stacking them in a half-width column with an accidental
   empty rail. Reflow that authored desktop composition to one column on phones.
-- If a `SiteHeader` wordmark or identity is long, supply `MobileBrand` rather
-  than squeezing status, identity, and navigation into one phone row.
+- The site header, footer and docs page are the app's own packages, not
+  kit components: copy `examples/acme-site/siteheader`, `sitefooter` and
+  `helpdocs` (Go plus an owned `<name>.style.css`, tokens for every
+  dimension). If the wordmark is long, give the phone row a shorter mark
+  rather than squeezing status, identity, and navigation into one row.
 - Keep the scaffold's `WithTheme(theme.Default())`: it supplies a complete
   adaptive palette for `ThemeToggle` and OS dark preference. App-owned themes
   must define every semantic `DarkColors` value before rendering a toggle.
-- Use `ui.Link` for visible text links and `ui.SiteFooter` for linked footer
-  chrome; never depend on browser-default anchor colors. SiteHeader owns the
-  appearance of a linked Brand slot.
+- Use `ui.Link` for visible text links; never depend on browser-default
+  anchor colors. Links inside the app's own header or footer take their
+  look from that package's owned sheet.
 - Group with typography, alignment, whitespace, and separators before adding
   another Card.
 - Do not default to a stat-card row, three equal feature cards, a centered

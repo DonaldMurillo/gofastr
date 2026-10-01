@@ -133,18 +133,18 @@ func Toast(p ToastProps, s Classes) render.HTML {
 	if p.Tone != "" {
 		// Read, not shown: the adapter hides it visually and shows the
 		// icon instead, the way Alert and SystemBanner say their tone.
-		kids = append(kids, b.El("span", PartToastToneWord, nil,
+		kids = append(kids, b.El("span", PartToastToneWord, Internal(nil),
 			render.Text(toneWord(p.Tone, w)+": ")))
 	}
 	if p.Icon != "" {
 		kids = append(kids, b.El("span", PartIcon,
-			Attrs(map[string]string{"aria-hidden": "true"}), p.Icon))
+			internalIf(ownedSlot(p.Icon), Attrs(map[string]string{"aria-hidden": "true"})), p.Icon))
 	}
 	if title != "" {
-		kids = append(kids, b.El("span", PartTitle, nil, render.Text(title)))
+		kids = append(kids, b.El("span", PartTitle, Internal(nil), render.Text(title)))
 	}
 	if body != "" {
-		kids = append(kids, b.El("span", PartBody, nil, render.Text(body)))
+		kids = append(kids, b.El("span", PartBody, Internal(nil), render.Text(body)))
 	}
 	if p.DismissHref != "" {
 		requireIsland("Toast with DismissHref", p.Island)
@@ -155,14 +155,14 @@ func Toast(p ToastProps, s Classes) render.HTML {
 		if label == "" {
 			label = fmt.Sprintf(w.DismissTitled, orDefault(title, body))
 		}
-		kids = append(kids, b.El("a", PartDismiss, Merge(html.Attrs{
+		kids = append(kids, b.El("a", PartDismiss, Internal(Merge(html.Attrs{
 			"href":       p.DismissHref,
 			"aria-label": label,
 			// The module that owns the runtime dismissal reads the
 			// hook; the island contract beside the href is the
 			// in-page path.
 			"data-hui-toast-dismiss": "",
-		}, p.Island.attrs(p.DismissHref, "GET")), render.Text("×")))
+		}, p.Island.attrs(p.DismissHref, "GET"))), render.Text("×")))
 	}
 	return b.El("div", PartRoot, own, kids...)
 }
@@ -316,18 +316,37 @@ func NotificationBell(p NotificationBellProps, s Classes) render.HTML {
 		own["data-fui-popover-anchor"] = "bottom"
 	}
 
-	kids := []render.HTML{
-		b.El("span", PartIcon, Attrs(map[string]string{"aria-hidden": "true"}), orDefaultHTML(p.Icon, render.Text("🔔"))),
+	// The glyph span carries the badge INSIDE it: the marker is laid
+	// out on the GLYPH's top-end corner (the component CSS anchors it
+	// to the icon), never the button's — a 44px touch target centres a
+	// 20px glyph with 12px margins, and a badge pinned to the button
+	// covered about half the glyph. The count is decorative (the
+	// anchor's aria-label says it in words), so the glyph span's
+	// aria-hidden="true" is no loss.
+	//
+	// With a caller's Icon the glyph span is a slot ancestor, so the
+	// boundary moves to the marker (the count is always the
+	// component's own); with the default bell there is no slot in the
+	// glyph span at all, so the boundary sits on the span itself and
+	// the marker is left unmarked to avoid a repeat.
+	iconOwn, markerOwn := Internal(nil), html.Attrs(nil)
+	if p.Icon != "" {
+		iconOwn, markerOwn = nil, Internal(nil)
 	}
+	iconKids := []render.HTML{orDefaultHTML(p.Icon, render.Text("🔔"))}
 	if p.UnreadCount > 0 || p.UnreadBind != nil {
-		countAttrs := html.Attrs{"data-hui-notification-count": strconv.Itoa(p.UnreadCount)}
+		countAttrs := Merge(html.Attrs{"data-hui-notification-count": strconv.Itoa(p.UnreadCount)}, markerOwn)
 		if p.UnreadBind != nil {
 			for k, v := range p.UnreadBind.attrs() {
 				countAttrs[k] = v
 			}
 		}
-		kids = append(kids, b.El("span", PartMarker, countAttrs,
-			b.El("span", PartText, nil, render.Text(strconv.Itoa(p.UnreadCount)))))
+		iconKids = append(iconKids,
+			b.El("span", PartMarker, countAttrs,
+				b.El("span", PartText, nil, render.Text(strconv.Itoa(p.UnreadCount)))))
+	}
+	kids := []render.HTML{
+		b.El("span", PartIcon, Merge(Attrs(map[string]string{"aria-hidden": "true"}), iconOwn), iconKids...),
 	}
 	return b.El("a", PartRoot, own, kids...)
 }

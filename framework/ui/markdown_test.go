@@ -3,7 +3,26 @@ package ui
 import (
 	"strings"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/core-ui/style"
 )
+
+// Measure caps long-form prose at a reading width. The retired page
+// shell capped markdown in a contained main at 72ch from outside; the
+// cap is the component's own option now.
+func TestMarkdownMeasureCapsLineLength(t *testing.T) {
+	h := string(Markdown(MarkdownConfig{Source: "Hello.", Measure: true}))
+	if !strings.Contains(h, "fui-markdown--measure") {
+		t.Errorf("Measure should mark the root:\n%s", h)
+	}
+	if h := string(Markdown(MarkdownConfig{Source: "Hello."})); strings.Contains(h, "--measure") {
+		t.Errorf("no Measure should leave the width uncapped:\n%s", h)
+	}
+	css := markdownCSS(style.DefaultTheme())
+	if !strings.Contains(css, `.fui-markdown--measure { max-inline-size: var(--ui-markdown-measure, 72ch); }`) {
+		t.Error("sheet should cap .fui-markdown--measure at --ui-markdown-measure (72ch)")
+	}
+}
 
 func TestMarkdownRequiresSource(t *testing.T) {
 	defer func() {

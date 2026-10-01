@@ -69,7 +69,7 @@ func AnimatedCounter(cfg AnimatedCounterConfig) render.HTML {
 	kids := []render.HTML{}
 	if cfg.Prefix != "" {
 		kids = append(kids, render.Tag("span",
-			map[string]string{"class": "fui-animated-counter__prefix"},
+			map[string]string{"class": "fui-animated-counter__prefix", "data-fui-internal": ""},
 			render.Text(cfg.Prefix)))
 	}
 	inner := headless.Counter(headless.CounterProps{
@@ -82,10 +82,13 @@ func AnimatedCounter(cfg AnimatedCounterConfig) render.HTML {
 		Parts:       parts,
 		Strings:     StringsFor(nil),
 	}, animatedCounterClasses)
-	kids = append(kids, inner)
+	// headless.Counter's root becomes a nested tag here, never reachable
+	// as one itself, so it is collapsed into a single mark the same way
+	// combobox and fileupload do for their own headless calls.
+	kids = append(kids, headless.Own(inner))
 	if cfg.Suffix != "" {
 		kids = append(kids, render.Tag("span",
-			map[string]string{"class": "fui-animated-counter__suffix"},
+			map[string]string{"class": "fui-animated-counter__suffix", "data-fui-internal": ""},
 			render.Text(cfg.Suffix)))
 	}
 	return animatedCounterStyle.WrapHTML(render.Tag("span",
@@ -100,7 +103,7 @@ func animatedCounterCSS(_ style.Theme) string {
   align-items: baseline;
   gap: var(--spacing-xs, 2px);
   font-variant-numeric: tabular-nums;
-  font-weight: 700;
+  font-weight: var(--font-weight-bold);
 }
 [data-fui-comp="ui-animated-counter"] .fui-animated-counter__value {
   color: var(--color-text, #18181B);
@@ -108,6 +111,6 @@ func animatedCounterCSS(_ style.Theme) string {
 [data-fui-comp="ui-animated-counter"] .fui-animated-counter__prefix,
 [data-fui-comp="ui-animated-counter"] .fui-animated-counter__suffix {
   color: var(--color-text-muted, #52525B);
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
 }`
 }

@@ -143,6 +143,21 @@ func Tabs(p TabsProps, s Classes) render.HTML {
 		tabs = append(tabs, b.El("a", PartTab, own, render.Text(scrubControlBytes(tab.Label))))
 	}
 
+	// panelsRenderContent says whether any panel actually renders its
+	// Panel as a DOM child — the only caller content a panel can hold.
+	// A vacated panel never does (its content moves to the stash
+	// below, inert JSON text, not markup). When no panel renders any,
+	// the whole panels wrapper is marked as a unit below; otherwise a
+	// panel that itself renders nothing marks itself instead, since
+	// its siblings may still hold the caller's.
+	panelsRenderContent := false
+	for i, t := range p.Tabs {
+		if t.Panel != "" && !(p.VacateHidden && i != p.Active) {
+			panelsRenderContent = true
+			break
+		}
+	}
+
 	// VacateHidden parks every inactive panel's content in the stash.
 	stash := map[string]string{}
 	var panels []render.HTML
@@ -154,7 +169,12 @@ func Tabs(p TabsProps, s Classes) render.HTML {
 			"tabindex":           "0",
 			"data-fui-tab-index": strconv.Itoa(i),
 		}
-		if p.VacateHidden && i != p.Active {
+		vacated := p.VacateHidden && i != p.Active
+		rendersContent := tab.Panel != "" && !vacated
+		if panelsRenderContent && !rendersContent {
+			own = Internal(own)
+		}
+		if vacated {
 			stash[strconv.Itoa(i)] = string(tab.Panel)
 			panels = append(panels, b.El("div", PartTabPanel, own))
 			continue
@@ -165,10 +185,22 @@ func Tabs(p TabsProps, s Classes) render.HTML {
 	if len(stash) > 0 {
 		if buf, err := json.Marshal(stash); err == nil {
 			enc := strings.ReplaceAll(string(buf), `</`, `<\/`)
-			panelChildren = append(panelChildren, render.Tag("script", html.Attrs{
+			// The stash is inert JSON, none of it markup: it is marked
+			// here unless the wrapper's own mark below already covers it.
+			// Each branch keeps its attrs a literal at the call so the
+			// inline-script lint sees the inert type.
+			el := render.Tag("script", html.Attrs{
 				"type":                "application/json",
 				"data-hui-tabs-stash": "true",
-			}, render.HTML(enc)))
+			}, render.HTML(enc))
+			if panelsRenderContent {
+				el = render.Tag("script", html.Attrs{
+					"type":                "application/json",
+					"data-hui-tabs-stash": "true",
+					"data-fui-internal":   "",
+				}, render.HTML(enc))
+			}
+			panelChildren = append(panelChildren, el)
 		}
 	}
 
@@ -186,9 +218,15 @@ func Tabs(p TabsProps, s Classes) render.HTML {
 		Mark(rootAttrs, "data-hui-tabs-vacate")
 	}
 
+	// Every tab is built from Label (a string) plus generated attrs, so
+	// the whole tablist is always this component's own.
+	panelsOwn := html.Attrs(nil)
+	if !panelsRenderContent {
+		panelsOwn = Internal(nil)
+	}
 	return b.El("div", PartRoot, rootAttrs,
-		b.El("nav", PartTabsNav, html.Attrs{"role": "tablist"}, tabs...),
-		b.El("div", PartTabsPanel, nil, panelChildren...),
+		b.El("nav", PartTabsNav, Internal(html.Attrs{"role": "tablist"}), tabs...),
+		b.El("div", PartTabsPanel, panelsOwn, panelChildren...),
 	)
 }
 

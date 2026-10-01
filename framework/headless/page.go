@@ -27,6 +27,7 @@ const (
 	PartPageText     Part = "page-text"
 	PartPageSubtitle Part = "page-subtitle"
 	PartPageActions  Part = "page-actions"
+	PartPageTitleRow Part = "page-title-row"
 )
 
 // PageHeaderProps is the top of a page: a heading, the words that
@@ -46,6 +47,8 @@ type PageHeaderProps struct {
 	Eyebrow string
 	// Subtitle is the supporting line under the title.
 	Subtitle string
+	// Badge is status content beside the heading, outside its accessible name.
+	Badge render.HTML
 	// Actions are the page-level controls — New, Import, Filter — in
 	// the trailing slot. They apply to the page, not to an item in
 	// it; an action about one row belongs on that row.
@@ -69,20 +72,33 @@ func PageHeader(p PageHeaderProps, s Classes) render.HTML {
 	if p.Title == "" {
 		panic("headless: PageHeader requires Title — a header that names nothing is padding above the content")
 	}
+	// The text block holds only the component's own eyebrow, title and
+	// subtitle when there is no Badge; with a Badge the title wraps
+	// into a row that holds it, so the boundary moves down to the
+	// eyebrow, the title and the subtitle individually and the badge's
+	// wrapping row is left for an owner to reach.
+	textOwn, partOwn := Internal(nil), html.Attrs(nil)
+	if p.Badge != "" {
+		textOwn, partOwn = nil, Internal(nil)
+	}
 	kids := make([]render.HTML, 0, 3)
 	if p.Eyebrow != "" {
 		kids = append(kids, b.El("p", PartPageEyebrow,
-			Attrs(map[string]string{"aria-hidden": "true"}), render.Text(p.Eyebrow)))
+			Merge(Attrs(map[string]string{"aria-hidden": "true"}), partOwn), render.Text(p.Eyebrow)))
 	}
 	level := p.Level
 	if level < 1 || level > 6 {
 		level = 1
 	}
-	kids = append(kids, b.El(headingTag(level), PartTitle, nil, render.Text(p.Title)))
-	if p.Subtitle != "" {
-		kids = append(kids, b.El("p", PartPageSubtitle, nil, render.Text(p.Subtitle)))
+	title := b.El(headingTag(level), PartTitle, partOwn, render.Text(p.Title))
+	if p.Badge != "" {
+		title = b.El("div", PartPageTitleRow, nil, title, p.Badge)
 	}
-	text := b.El("div", PartPageText, nil, kids...)
+	kids = append(kids, title)
+	if p.Subtitle != "" {
+		kids = append(kids, b.El("p", PartPageSubtitle, partOwn, render.Text(p.Subtitle)))
+	}
+	text := b.El("div", PartPageText, textOwn, kids...)
 
 	out := []render.HTML{text}
 	if p.Actions != "" {
@@ -97,9 +113,9 @@ func init() {
 	Register(Spec{
 		Name: "PageHeader",
 		WithParts: func(s Classes, parts Parts) render.HTML {
-			return PageHeader(PageHeaderProps{Title: "Apps", Parts: parts}, s)
+			return PageHeader(PageHeaderProps{Title: "Apps", Badge: Badge(BadgeProps{Label: "Ready"}, nil), Parts: parts}, s)
 		},
-		Anatomy: []Part{PartRoot, PartPageEyebrow, PartTitle, PartPageSubtitle, PartPageText, PartPageActions},
+		Anatomy: []Part{PartRoot, PartPageEyebrow, PartTitle, PartPageTitleRow, PartPageSubtitle, PartPageText, PartPageActions},
 		Cases: func(k Kit) []Case {
 			s := k.Classes
 			return []Case{{
@@ -107,6 +123,10 @@ func init() {
 				Why:  "the title is the page's h1 and the actions beside it are the page's own — a reader who lands mid-scroll jumps here to learn where they are",
 				HTML: PageHeader(PageHeaderProps{Title: "Apps", Subtitle: "Eleven apps across three workers.",
 					Actions: Button(ButtonProps{Label: "New app", Variant: "primary"}, k.For("Button"))}, s),
+			}, {
+				Name: "status beside the title",
+				Why:  "a badge is the page's state, not part of its name: it rides beside the heading where the eye lands, and the screen reader hears the title alone",
+				HTML: PageHeader(PageHeaderProps{Title: "Billing", Badge: Badge(BadgeProps{Label: "On track"}, k.For("Badge"))}, s),
 			}, {
 				Name: "eyebrow",
 				Why:  "a kicker above the title is hidden from the tree: it repeats what the title or the navigation already says, and hearing the page's name twice is the alternative",
@@ -174,13 +194,13 @@ func EmptyState(p EmptyStateProps, s Classes) render.HTML {
 	if level < 1 || level > 6 {
 		level = 3
 	}
-	var titleAttrs html.Attrs
+	titleAttrs := Internal(nil)
 	own := Merge(Safe(p.ExtraAttrs, "role", "aria-label", "aria-labelledby"), Attrs(map[string]string{
 		"id": p.ID,
 	}))
 	own["role"] = "region"
 	if p.ID != "" {
-		titleAttrs = Attrs(map[string]string{"id": p.ID + "-title"})
+		titleAttrs = Internal(Attrs(map[string]string{"id": p.ID + "-title"}))
 		own["aria-labelledby"] = p.ID + "-title"
 	} else {
 		own["aria-label"] = p.Title
@@ -189,7 +209,7 @@ func EmptyState(p EmptyStateProps, s Classes) render.HTML {
 		b.El(headingTag(level), PartEmptyTitle, titleAttrs, render.Text(p.Title)),
 	}
 	if p.Description != "" {
-		kids = append(kids, b.El("p", PartEmptyDesc, nil, render.Text(p.Description)))
+		kids = append(kids, b.El("p", PartEmptyDesc, Internal(nil), render.Text(p.Description)))
 	}
 	if p.Action != "" {
 		kids = append(kids, b.El("div", PartEmptyAct, nil, p.Action))
@@ -285,11 +305,11 @@ func StatCard(p StatCardProps, s Classes) render.HTML {
 		}
 	}
 	kids := []render.HTML{
-		b.El("p", PartLabel, nil, render.Text(p.Label)),
-		b.El("p", PartStatValue, nil, render.Text(p.Value)),
+		b.El("p", PartLabel, Internal(nil), render.Text(p.Label)),
+		b.El("p", PartStatValue, Internal(nil), render.Text(p.Value)),
 	}
 	if p.Trend != "" {
-		kids = append(kids, b.El("p", PartStatTrend, trendAttrs, render.Text(p.Trend)))
+		kids = append(kids, b.El("p", PartStatTrend, Internal(trendAttrs), render.Text(p.Trend)))
 	}
 	return b.El("div", PartRoot,
 		Merge(Safe(p.ExtraAttrs), Attrs(map[string]string{"id": p.ID})), kids...)
@@ -374,8 +394,10 @@ func DetailList(p DetailListProps, s Classes) render.HTML {
 		if r.Value == "" {
 			panic("headless: DetailRow requires Value — render the empty-value dash for a missing value, so the absence is deliberate")
 		}
-		rows = append(rows, b.El("div", PartDetailRow, nil,
-			b.El("dt", PartDetailTerm, nil, render.Text(r.Label)),
+		// A Value the composer Own'd (ui.DetailList's empty-value
+		// dash) leaves nothing of the caller's in the row.
+		rows = append(rows, b.El("div", PartDetailRow, internalIf(ownedSlot(r.Value), nil),
+			b.El("dt", PartDetailTerm, Internal(nil), render.Text(r.Label)),
 			b.El("dd", PartDetailValue, nil, r.Value),
 		))
 	}

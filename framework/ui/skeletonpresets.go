@@ -137,6 +137,48 @@ func SkeletonRow(cfg SkeletonRowConfig) render.HTML {
 	}, skeletonRowClasses))
 }
 
+// SkeletonTimelineConfig configures a SkeletonTimeline.
+type SkeletonTimelineConfig struct {
+	// Rows is the number of event-shaped rows to draw (dot, name
+	// line, two text lines each). Default 3, the shape of a short
+	// activity feed.
+	Rows int
+	// Label is the polite announcement. Default "Loading…".
+	Label string
+	// Ctx carries the per-request context used to resolve the default
+	// label. When nil, English fallback applies.
+	Ctx   context.Context
+	ID    string
+	Class string
+
+	// ExtraAttrs forwards additional attributes (data-* test hooks,
+	// analytics markers) to the placeholder's root element. Keys the
+	// component owns are dropped: class and id (use Class / ID),
+	// style, data-fui-* and aria-hidden.
+	ExtraAttrs html.Attrs
+}
+
+var skeletonTimelineClasses = skeletonClasses("fui-skeleton-timeline")
+
+// SkeletonTimeline renders a timeline-shaped loading placeholder on
+// headless.Skeleton: one row per event — a dot on the rail, a name
+// line, and two text lines — the shape ui.Timeline arrivals have, so
+// the placeholder promises exactly what lands. One announcement, one
+// hidden set of bars.
+func SkeletonTimeline(cfg SkeletonTimelineConfig) render.HTML {
+	rows := cfg.Rows
+	if rows <= 0 {
+		rows = 3
+	}
+	return skeletonPresetsStyle.WrapHTML(headless.Skeleton(headless.SkeletonProps{
+		Label:      skeletonLabel(cfg.Label, cfg.Ctx),
+		Lines:      rows * 4,
+		ID:         cfg.ID,
+		ExtraAttrs: headless.Safe(cfg.ExtraAttrs, "class", "id", "aria-hidden"),
+		Parts:      rootClassParts(cfg.Class),
+	}, skeletonTimelineClasses))
+}
+
 var skeletonRowClasses = skeletonClasses("fui-skeleton-row")
 
 // SkeletonAvatarConfig configures a SkeletonAvatar.
@@ -179,6 +221,41 @@ func SkeletonAvatar(cfg SkeletonAvatarConfig) render.HTML {
 		ExtraAttrs: headless.Safe(cfg.ExtraAttrs, "class", "id", "aria-hidden"),
 		Parts:      rootClassParts(cfg.Class),
 	}, skeletonAvatarClasses))
+}
+
+// SkeletonLineConfig configures a SkeletonLine.
+type SkeletonLineConfig struct {
+	// Label is the announcement the preset makes once, politely.
+	// Defaults to the reader's "Loading…".
+	Label string
+	// Ctx carries the per-request context used to resolve the default
+	// label. When nil, English fallback applies.
+	Ctx   context.Context
+	ID    string
+	Class string
+
+	// ExtraAttrs forwards additional attributes (data-* test hooks,
+	// analytics markers) to the placeholder's root element. Keys the
+	// component owns are dropped: class and id (use Class / ID),
+	// style, data-fui-* and aria-hidden.
+	ExtraAttrs html.Attrs
+}
+
+var skeletonLineClasses = skeletonClasses("fui-skeleton-line")
+
+// SkeletonLine renders ONE bar on headless.Skeleton — the loading
+// twin of a short text run (a breadcrumb trail, a one-line label),
+// where Card/Row/Timeline would promise a shape that never arrives.
+// One announcement, one bar, capped at the width a run of text
+// occupies so it never reads as a full-width block.
+func SkeletonLine(cfg SkeletonLineConfig) render.HTML {
+	return skeletonPresetsStyle.WrapHTML(headless.Skeleton(headless.SkeletonProps{
+		Label:      skeletonLabel(cfg.Label, cfg.Ctx),
+		Lines:      1,
+		ID:         cfg.ID,
+		ExtraAttrs: headless.Safe(cfg.ExtraAttrs, "class", "id", "aria-hidden"),
+		Parts:      rootClassParts(cfg.Class),
+	}, skeletonLineClasses))
 }
 
 var skeletonPresetsStyle = registry.RegisterStyle("ui-skeleton-presets", func(_ style.Theme) string {
@@ -295,4 +372,39 @@ const skeletonPresetsCSS = `
 }
 .fui-skeleton-avatar > .fui-skeleton__line:nth-child(2) { inline-size: 60%; }
 .fui-skeleton-avatar > .fui-skeleton__line:nth-child(3) { inline-size: 40%; }
+
+/* Timeline: one row per event — dot on the rail, name line, two
+   text lines — the shape ui.Timeline arrivals have. Every row is
+   four bars in the flat list; the grid spans the dot over the
+   row's three text lines (grid-template-columns matches the real
+   timeline's 16px rail + 1fr content columns). The visually-hidden
+   announcement rides after the bars and is no grid item (the
+   primitive's sheet hides it). */
+.fui-skeleton-timeline {
+  display: grid;
+  grid-template-columns: var(--spacing-lg, 16px) 1fr;
+  column-gap: var(--spacing-md, 8px);
+  row-gap: var(--spacing-xs, 2px);
+  align-content: start;
+}
+.fui-skeleton-timeline > .fui-skeleton__line:nth-child(4n+1) {
+  grid-row: span 3;
+  justify-self: center;
+  align-self: start;
+  inline-size: 12px;
+  block-size: 12px;
+  border-radius: var(--radii-full, 9999px);
+  margin-block-start: var(--spacing-xs, 2px);
+}
+.fui-skeleton-timeline > .fui-skeleton__line:nth-child(4n+2) { grid-column: 2; inline-size: 60%; }
+.fui-skeleton-timeline > .fui-skeleton__line:nth-child(4n+3) { grid-column: 2; }
+.fui-skeleton-timeline > .fui-skeleton__line:nth-child(4n+4) { grid-column: 2; inline-size: 65%; margin-block-end: var(--spacing-lg, 16px); }
+.fui-skeleton-timeline > .fui-skeleton__line[data-hui-skeleton-last] { margin-block-end: 0; }
+
+/* Line: ONE bar — the loading twin of a short text run (a breadcrumb
+   trail, a one-line label), where Card/Row/Timeline would promise a
+   shape that never arrives. Capped so it reads as a run of text, not
+   a full-width block. */
+.fui-skeleton-line { display: block; }
+.fui-skeleton-line > .fui-skeleton__line { inline-size: min(100%, 12rem); }
 `

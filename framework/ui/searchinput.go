@@ -105,9 +105,15 @@ func SearchInput(cfg SearchInputConfig) render.HTML {
 	// The wrapper is a <label> so the whole visual box (icon + padding, not just
 	// the input itself) is a click target that focuses the input. Otherwise the
 	// hit area is smaller than it looks.
-	innerWrapper := render.Tag("label",
-		map[string]string{"class": cls, "for": cfg.ID},
-		inner...)
+	labelAttrs := map[string]string{"class": cls, "for": cfg.ID}
+	// The label is this render's own root when there is no Action, and
+	// the root is exempt — but wrapped in a <form> it is no longer the
+	// root, and holds nothing but this component's own icon/input/clear
+	// trio, so it becomes the topmost internal subtree instead.
+	if cfg.Action != "" {
+		labelAttrs["data-fui-internal"] = ""
+	}
+	innerWrapper := render.Tag("label", labelAttrs, inner...)
 	// Wrap in <form role="search"> when Action is provided. The action
 	// runs through the same urlsafe.CleanAnchor allow-list as ui.Form so a
 	// javascript:/vbscript:/data: Action never becomes a live form action;
@@ -171,9 +177,19 @@ func searchInputCSS(_ style.Theme) string {
 .fui-search .fui-search__input::-webkit-search-decoration {
   -webkit-appearance: none;
 }
+.fui-search .fui-search__input:focus,
 .fui-search .fui-search__input:focus-visible {
+  /* One ring, drawn on the input itself. The input fills the frame,
+     so its outline lands at the frame's inner edge and reads as a
+     single ring. The frame's old :focus-within outline showed nothing
+     on the focused control itself, which a keyboard user scanning the
+     control (and any element-local focus check) reads as no indicator. */
   outline: 2px solid var(--color-primary, #4F46E5);
   outline-offset: -2px;
+}
+.fui-search .fui-search__clear:focus-visible {
+  outline: 2px solid var(--color-primary, #4F46E5);
+  outline-offset: 2px;
 }
 .fui-search .fui-search__clear {
   display: inline-flex;

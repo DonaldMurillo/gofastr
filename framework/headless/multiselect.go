@@ -120,8 +120,11 @@ func MultiSelect(p MultiSelectProps, s Classes) render.HTML {
 		))
 	}
 
+	// The options are data, never the caller's markup, but the group
+	// renders as Disclosure's Content, which Disclosure leaves unmarked.
+	neitherFilled := !b.Filled(PartSummary) && !b.Filled(PartPanel)
 	group := b.El("fieldset", PartMultiSelectGroup,
-		Attrs(map[string]string{"role": "group", "aria-label": p.Label}), rows...)
+		Internal(Attrs(map[string]string{"role": "group", "aria-label": p.Label})), rows...)
 
 	details := Disclosure(DisclosureProps{
 		Summary: render.Text(scrubControlBytes(p.Label)),
@@ -133,6 +136,11 @@ func MultiSelect(p MultiSelectProps, s Classes) render.HTML {
 		// the disclosure under this instead of a second one.
 		Parts: p.Parts,
 	}, s)
+	if neitherFilled {
+		// Disclosure leaves its root for an owner to place; composed
+		// here with neither part filled, nothing in it is the caller's.
+		details = Own(details)
+	}
 
 	rootAttrs := Merge(Safe(p.ExtraAttrs, "id"), Attrs(map[string]string{"id": p.ID}))
 	Mark(rootAttrs, "data-hui-multiselect")
@@ -147,7 +155,7 @@ func MultiSelect(p MultiSelectProps, s Classes) render.HTML {
 	})
 	Mark(chipsAttrs, "data-hui-multiselect-chips")
 	return b.El("div", PartRoot, rootAttrs,
-		b.El("div", PartMultiSelectChips, chipsAttrs),
+		b.El("div", PartMultiSelectChips, Internal(chipsAttrs)),
 		details,
 	)
 }

@@ -69,7 +69,7 @@ func TestButtonWithoutAnActionIsUnchanged(t *testing.T) {
 	if plain != withNil || plain != withEmpty {
 		t.Errorf("an absent action changed the markup:\n%s\n%s\n%s", plain, withNil, withEmpty)
 	}
-	hasNot(t, plain, "data-fui", "a button with no action carries framework attributes")
+	hasNoContract(t, plain, "a button with no action carries framework attributes")
 }
 
 // The wiring keys core-ui/interactive can splice onto a clickable are

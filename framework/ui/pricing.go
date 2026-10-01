@@ -5,6 +5,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/headless"
 )
 
 // ─── PricingCard ─────────────────────────────────────────────────────
@@ -71,9 +72,12 @@ func PricingCard(cfg PricingCardConfig) render.HTML {
 		items = append(items, html.ListItem(html.ListItemConfig{Class: "fui-pricing-card__feature"}, render.Text(f)))
 	}
 
+	// Every field PricingCard draws from is a string or a []string, so
+	// the head and price groups hold none of a caller's markup — both
+	// are the topmost of their own internal subtree.
 	out := []render.HTML{
-		html.Div(html.DivConfig{Class: "fui-pricing-card__head"}, head...),
-		html.Div(html.DivConfig{Class: "fui-pricing-card__price"}, price...),
+		html.Div(html.DivConfig{Class: "fui-pricing-card__head", ExtraAttrs: html.Attrs{"data-fui-internal": ""}}, head...),
+		html.Div(html.DivConfig{Class: "fui-pricing-card__price", ExtraAttrs: html.Attrs{"data-fui-internal": ""}}, price...),
 	}
 	if len(items) > 0 {
 		out = append(out, html.UnorderedList(html.ListConfig{Class: "fui-pricing-card__features"}, items...))
@@ -87,7 +91,10 @@ func PricingCard(cfg PricingCardConfig) render.HTML {
 		if cfg.Featured {
 			variant = ButtonPrimary
 		}
-		out = append(out, LinkButton(LinkButtonConfig{Label: label, Href: cfg.CTAHref, Variant: variant, Class: "fui-pricing-card__cta"}))
+		// LinkButton's root becomes a nested tag here, never reachable as
+		// one itself: collapse its own marks into a single one, the way
+		// combobox and fileupload do for their own headless calls.
+		out = append(out, headless.Own(LinkButton(LinkButtonConfig{Label: label, Href: cfg.CTAHref, Variant: variant, Class: "fui-pricing-card__cta"})))
 	}
 
 	return pricingCardStyle.WrapHTML(html.Div(html.DivConfig{
@@ -119,7 +126,7 @@ func pricingCardCSS(_ style.Theme) string {
 [data-fui-comp="ui-pricing-card"] .fui-pricing-card__badge {
   align-self: flex-start;
   font-size: var(--text-xs, 0.75rem);
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
   letter-spacing: 0.04em;
   text-transform: uppercase;
   /* Mix the primary 70% toward the text token so the badge text adapts to
@@ -142,7 +149,7 @@ func pricingCardCSS(_ style.Theme) string {
 [data-fui-comp="ui-pricing-card"] .fui-pricing-card__amount {
   font-family: var(--font-heading, inherit);
   font-size: 2.25rem;
-  font-weight: 700;
+  font-weight: var(--font-weight-bold);
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.02em;
 }
@@ -160,7 +167,7 @@ func pricingCardCSS(_ style.Theme) string {
   position: absolute;
   inset-inline-start: 0;
   color: var(--color-success, #15803D);
-  font-weight: 700;
+  font-weight: var(--font-weight-bold);
 }
 [data-fui-comp="ui-pricing-card"] .fui-pricing-card__cta { margin-top: auto; width: 100%; text-align: center; }
 `

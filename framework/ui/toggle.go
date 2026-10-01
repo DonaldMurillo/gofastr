@@ -122,7 +122,7 @@ func Switch(cfg ToggleConfig) render.HTML {
 		p.Extra["aria-describedby"] = id + "-hint"
 	}
 	return toggleStyle.WrapHTML(erroredRun(
-		headless.Switch(p, classes),
+		headless.Own(headless.Switch(p, classes)),
 		cfg.Help, cfg.Error, id))
 }
 
@@ -193,7 +193,8 @@ func renderToggle(inputType string, cfg ToggleConfig) render.HTML {
 	if cfg.Error == "" {
 		return toggleStyle.WrapHTML(run)
 	}
-	return toggleStyle.WrapHTML(erroredRun(run, "", cfg.Error, id))
+	// The shell is the root; the run inside it is the component's own.
+	return toggleStyle.WrapHTML(erroredRun(headless.Own(run), "", cfg.Error, id))
 }
 
 // erroredRun wraps a rendered choice run with its message paragraph —
@@ -202,19 +203,23 @@ func renderToggle(inputType string, cfg ToggleConfig) render.HTML {
 // holds the run and the paragraph together for whatever lays fields
 // out around them. errText wins over helpText: the family's shape.
 func erroredRun(run render.HTML, helpText, errText, id string) render.HTML {
+	// The shell is the component's root and stays unmarked; the caller
+	// marks the run, and the message is marked here.
 	switch {
 	case errText != "":
 		return render.Tag("div", map[string]string{"class": "fui-choice-field"}, run,
 			render.Tag("p", map[string]string{
-				"id":    id + "-error",
-				"class": "fui-choice-field__error",
-				"role":  "alert",
+				"id":                id + "-error",
+				"class":             "fui-choice-field__error",
+				"role":              "alert",
+				"data-fui-internal": "",
 			}, render.Text(errText)))
 	case helpText != "":
 		return render.Tag("div", map[string]string{"class": "fui-choice-field"}, run,
 			render.Tag("p", map[string]string{
-				"id":    id + "-hint",
-				"class": "fui-choice-field__hint",
+				"id":                id + "-hint",
+				"class":             "fui-choice-field__hint",
+				"data-fui-internal": "",
 			}, render.Text(helpText)))
 	default:
 		return render.Tag("div", map[string]string{"class": "fui-choice-field"}, run)
@@ -406,11 +411,13 @@ func renderToggleGroup(spec toggleGroupSpec) render.HTML {
 		if opt.value == "" {
 			optID = fmt.Sprintf("%s-%d", id, i)
 		}
-		leaf := headless.Choice(headless.ChoiceProps{
+		// Group sees each leaf as slot content; it is built here from
+		// Options' strings, so it is marked here.
+		leaf := headless.Own(headless.Choice(headless.ChoiceProps{
 			Type: spec.leafType, Name: spec.name, Value: opt.value, Label: opt.label,
 			Checked: opt.checked, Disabled: opt.disabled, ID: optID,
 			Extra: choiceLeafExtra(spec.required),
-		}, withRootClass(choiceClasses, "fui-choice--"+spec.leafType))
+		}, withRootClass(choiceClasses, "fui-choice--"+spec.leafType)))
 		items = append(items, leaf)
 	}
 	// The group's message: error wins, else the hint. It is the
@@ -420,16 +427,18 @@ func renderToggleGroup(spec toggleGroupSpec) render.HTML {
 	var hasMsg bool
 	if spec.errText != "" {
 		msg = string(render.Tag("p", map[string]string{
-			"id":    id + "-error",
-			"class": "fui-choice-group__error",
-			"role":  "alert",
+			"id":                id + "-error",
+			"class":             "fui-choice-group__error",
+			"role":              "alert",
+			"data-fui-internal": "",
 		}, render.Text(spec.errText)))
 		extra["aria-describedby"] = id + "-error"
 		hasMsg = true
 	} else if spec.help != "" {
 		msg = string(render.Tag("p", map[string]string{
-			"id":    id + "-hint",
-			"class": "fui-choice-group__hint",
+			"id":                id + "-hint",
+			"class":             "fui-choice-group__hint",
+			"data-fui-internal": "",
 		}, render.Text(spec.help)))
 		extra["aria-describedby"] = id + "-hint"
 		hasMsg = true

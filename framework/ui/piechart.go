@@ -296,7 +296,7 @@ func pieChartCSS(_ style.Theme) string {
 
 [data-fui-comp="ui-pie-chart"] .fui-pie-chart__center-label {
   font-size: var(--text-xl, 1.25rem);
-  font-weight: 700;
+  font-weight: var(--font-weight-bold);
   fill: var(--color-text, #18181B);
 }
 [data-fui-comp="ui-pie-chart"] .fui-pie-chart__center-sub {

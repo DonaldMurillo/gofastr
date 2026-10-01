@@ -75,7 +75,7 @@ func progressCSS(_ style.Theme) string {
 [data-fui-comp="ui-progress"] .fui-progress__label {
   font-size: var(--text-sm, 0.875rem);
   color: var(--color-text, #1F2937);
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
 }
 [data-fui-comp="ui-progress"] .fui-progress__bar {
   appearance: none;

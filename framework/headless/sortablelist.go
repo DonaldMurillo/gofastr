@@ -94,7 +94,7 @@ type SortableListProps struct {
 // SortableList renders the list.
 func SortableList(p SortableListProps, s Classes) render.HTML {
 	b := p.Parts.Box(s)
-	return b.El("ol", PartRoot, sortableRootAttrs(p), sortableRows(p, b)...)
+	return b.El("ol", PartRoot, sortableRootAttrs(p), sortableRows(p, b, false)...)
 }
 
 // SortableItems renders just the row elements without the <ol>
@@ -103,7 +103,7 @@ func SortableList(p SortableListProps, s Classes) render.HTML {
 // render an empty fragment: authoritative reconciliation may empty a
 // column.
 func SortableItems(p SortableListProps, s Classes) render.HTML {
-	return render.Join(sortableRows(p, p.Parts.Box(s))...)
+	return render.Join(sortableRows(p, p.Parts.Box(s), true)...)
 }
 
 func sortableRootAttrs(p SortableListProps) html.Attrs {
@@ -144,7 +144,12 @@ func sortableRootAttrs(p SortableListProps) html.Attrs {
 	return own
 }
 
-func sortableRows(p SortableListProps, b Box) []render.HTML {
+// sortableRows renders the rows. fragment says whether they render
+// with no wrapping <ol> (SortableItems, where each row is its own
+// parse root and can never itself be marked) or inside SortableList's
+// <ol> (where a row with no caller content at all is not a root and
+// can carry the mark as a whole).
+func sortableRows(p SortableListProps, b Box, fragment bool) []render.HTML {
 	w := p.Strings.Resolve()
 	rows := make([]render.HTML, 0, len(p.Items))
 	for _, it := range p.Items {
@@ -158,10 +163,6 @@ func sortableRows(p SortableListProps, b Box) []render.HTML {
 			panic("headless: SortableList item Key is required — the server applies the new order by these keys; an empty key orders nothing")
 		}
 		checkLabel("SortableList item "+it.Key, "Label", it.Label)
-		body := it.Content
-		if body == "" {
-			body = b.El("span", PartLabel, nil, render.Text(scrubControlBytes(it.Label)))
-		}
 		attrs := Attrs(map[string]string{
 			// An option of the listbox root: a listbox with no option
 			// children fails aria-required-children.
@@ -175,13 +176,35 @@ func sortableRows(p SortableListProps, b Box) []render.HTML {
 		// <li> under auto is not draggable, so pointer drag needs "true".
 		attrs["draggable"] = "true"
 		attrs["tabindex"] = "0"
+
+		gripOwn := Attrs(map[string]string{"aria-hidden": "true"})
+		liOwn := attrs
+		body := it.Content
+		switch {
+		case body != "":
+			// The caller's content stays reachable; the grip beside it
+			// is still the component's own.
+			gripOwn = Internal(gripOwn)
+		case fragment:
+			// Each row is its own root here (no wrapping <ol>), so the
+			// row itself can never be marked — the grip and the
+			// generated label mark themselves instead.
+			gripOwn = Internal(gripOwn)
+			body = b.El("span", PartLabel, Internal(nil), render.Text(scrubControlBytes(it.Label)))
+		default:
+			// Wrapped in SortableList's <ol>, the row is not a root:
+			// with no caller content at all the whole row is the
+			// component's own, so the mark goes there instead of on
+			// the grip alone.
+			liOwn = Internal(attrs)
+			body = b.El("span", PartLabel, nil, render.Text(scrubControlBytes(it.Label)))
+		}
 		// The <li> itself is the focusable + draggable interactive
 		// element (a focusable <li> must not contain a <button> —
 		// axe nested-interactive); the grip is a decorative span and
 		// the row's name rides its aria-label.
-		rows = append(rows, b.El("li", PartSortableItem, attrs,
-			b.El("span", PartSortableGrip, Attrs(map[string]string{"aria-hidden": "true"}),
-				sortableGripIcon),
+		rows = append(rows, b.El("li", PartSortableItem, liOwn,
+			b.El("span", PartSortableGrip, gripOwn, sortableGripIcon),
 			body,
 		))
 	}

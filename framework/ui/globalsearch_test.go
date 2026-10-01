@@ -32,7 +32,7 @@ func TestGlobalSearchEmitsCombobox(t *testing.T) {
 		Label: "Search the site", RPCPath: "/api/search",
 		SignalName: "search-results", NoScriptAction: "/search",
 	}))
-	if !strings.Contains(h, `<form action="/search" class="fui-global-search__field" method="GET" role="none">`) {
+	if !strings.Contains(h, `<form action="/search" class="fui-global-search__field" method="GET" role="none" data-fui-internal="">`) {
 		t.Errorf("the no-script GET form should wrap the combobox:\n%s", h)
 	}
 	if !strings.Contains(h, `id="global-search"`) {

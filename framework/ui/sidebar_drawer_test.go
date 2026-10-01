@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
+	"github.com/DonaldMurillo/gofastr/core-ui/widget"
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
@@ -32,6 +33,58 @@ func TestSidebarDrawerSlotGroupIdsUseDrawerPrefix(t *testing.T) {
 		t.Errorf("drawer slot group container must carry the -drawer-prefixed id:\n%s", out)
 	}
 }
+
+// The MountSidebar drawer carries a header row: the app's brand and a
+// 44px close button wired to the widget runtime's close contract, so
+// the open panel is not a bare link list pressed against the edge.
+func TestSidebarDrawerHeaderRenders(t *testing.T) {
+	r := &mountRecorder{}
+	def := MountSidebar(r, SidebarConfig{
+		DrawerTitle: "Acme Tracker",
+		Items:       []SidebarItem{{Label: "Home", Href: "/"}},
+	})
+	chrome := string(widget.RenderChrome(&def))
+	for _, want := range []string{
+		`class="fui-sidebar__drawer-head"`,
+		`<span class="fui-sidebar__drawer-brand">Acme Tracker</span>`,
+		`aria-label="Close navigation"`,
+		`data-fui-action="close"`,
+		`class="fui-sidebar__drawer-close"`,
+	} {
+		if !strings.Contains(chrome, want) {
+			t.Errorf("drawer chrome missing %s:\n%s", want, chrome)
+		}
+	}
+	// The header must sit ABOVE the body slot (brand read first).
+	if head, body := strings.Index(chrome, "fui-sidebar__drawer-head"),
+		strings.Index(chrome, "fui-slot-body"); head < 0 || body < 0 || head > body {
+	}
+}
+
+// No brand anywhere (both Title and DrawerTitle empty): the drawer
+// renders no header rather than an empty row above the nav.
+func TestSidebarDrawerHeaderOmittedWithoutTitle(t *testing.T) {
+	r := &mountRecorder{}
+	def := MountSidebar(r, SidebarConfig{Items: []SidebarItem{{Label: "Home", Href: "/"}}})
+	if chrome := string(widget.RenderChrome(&def)); strings.Contains(chrome, "fui-sidebar__drawer-head") {
+		t.Errorf("an untitled sidebar must render no drawer header:\n%s", chrome)
+	}
+}
+
+// DrawerTitle wins over Title (the inline column's heading and the
+// drawer's brand can differ).
+func TestSidebarDrawerTitleBeatsTitle(t *testing.T) {
+	r := &mountRecorder{}
+	def := MountSidebar(r, SidebarConfig{Title: "Sections", DrawerTitle: "Acme"})
+	chrome := string(widget.RenderChrome(&def))
+	if !strings.Contains(chrome, `<span class="fui-sidebar__drawer-brand">Acme</span>`) {
+		t.Errorf("DrawerTitle must win the drawer brand slot:\n%s", chrome)
+	}
+}
+
+type mountRecorder struct{ mounted []*widget.Definition }
+
+func (m *mountRecorder) MountWidget(def *widget.Definition) { m.mounted = append(m.mounted, def) }
 
 // sectionKey is the request-scoped value a context-aware Prepend reads.
 type sectionKey struct{}

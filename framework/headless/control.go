@@ -216,14 +216,14 @@ func Select(p SelectProps, s Classes) render.HTML {
 		if p.Selected == "" {
 			ph["selected"] = ""
 		}
-		kids = append(kids, El("option", s, PartOption, ph, render.Text(p.Placeholder)))
+		kids = append(kids, El("option", s, PartOption, Internal(ph), render.Text(p.Placeholder)))
 	}
 	for _, o := range p.Options {
 		a := html.Attrs{"value": o.Value}
 		if p.Selected != "" && o.Value == p.Selected {
 			a["selected"] = ""
 		}
-		kids = append(kids, El("option", s, PartOption, a, render.Text(o.Label)))
+		kids = append(kids, El("option", s, PartOption, Internal(a), render.Text(o.Label)))
 	}
 
 	attrs := Safe(p.Extra)
@@ -318,8 +318,8 @@ func Password(p PasswordProps, s Classes) render.HTML {
 	}
 
 	return b.El("div", PartRoot, shell,
-		b.El("input", PartControl, input),
-		b.El("button", PartAffixButton, reveal, render.Text(p.Strings.Resolve().RevealShow)),
+		b.El("input", PartControl, Internal(input)),
+		b.El("button", PartAffixButton, Internal(reveal), render.Text(p.Strings.Resolve().RevealShow)),
 	)
 }
 
@@ -411,8 +411,8 @@ func Color(p ColorProps, s Classes) render.HTML {
 	}
 
 	return b.El("div", PartRoot, shell,
-		b.El("input", PartAffixSwatch, swatch),
-		b.El("input", PartControl, hex),
+		b.El("input", PartAffixSwatch, Internal(swatch)),
+		b.El("input", PartControl, Internal(hex)),
 	)
 }
 

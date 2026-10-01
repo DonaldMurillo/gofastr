@@ -120,7 +120,7 @@ func FileUpload(cfg FileUploadConfig) render.HTML {
 		prompt = i18nui.T(ctx, i18nui.KeyFileUploadDropSingle)
 	}
 
-	children := []render.HTML{headless.FileUpload(headless.FileUploadProps{
+	field := headless.FileUpload(headless.FileUploadProps{
 		Name:     cfg.Name,
 		ID:       id,
 		Label:    cfg.Label,
@@ -138,12 +138,16 @@ func FileUpload(cfg FileUploadConfig) render.HTML {
 			}
 			return ""
 		}(),
-	}, uploadClasses)}
+	}, uploadClasses)
+	// The wrapper below is the root; the whole headless render sits
+	// inside it and is the component's own.
+	children := []render.HTML{headless.Own(field)}
 	if cfg.Error != "" {
 		children = append(children, render.Tag("p", html.Attrs{
-			"id":    id + "-error",
-			"class": "fui-upload__error",
-			"role":  "alert",
+			"id":                id + "-error",
+			"class":             "fui-upload__error",
+			"role":              "alert",
+			"data-fui-internal": "",
 		}, render.Text(cfg.Error)))
 	}
 
@@ -225,7 +229,7 @@ func fileUploadCSS(_ style.Theme) string {
   border-color: var(--color-danger, #DC2626);
 }
 .fui-upload__label {
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
   font-size: var(--text-base, 1rem);
   color: var(--color-text, #18181B);
 }
@@ -260,7 +264,7 @@ func fileUploadCSS(_ style.Theme) string {
   display: grid;
   gap: 1px;
   font-size: var(--text-sm, 0.875rem);
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
   color: var(--color-text, #18181B);
   justify-items: start;
 }

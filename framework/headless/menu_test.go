@@ -18,8 +18,8 @@ func TestMenuRendersTheDisclosureContract(t *testing.T) {
 	}})
 	for _, want := range []string{
 		`<details data-hui-disclosure="" data-hui-menu="acct">`,
-		`<summary aria-controls="acct-panel" aria-haspopup="menu">`,
-		`<div data-hui-menu-panel="" id="acct-panel" role="menu">`,
+		`<summary aria-controls="acct-panel" aria-haspopup="menu" data-fui-internal="">`,
+		`<div data-fui-internal="" data-hui-menu-panel="" id="acct-panel" role="menu">`,
 		`<a href="/me" role="menuitem" tabindex="-1">`,
 		`<button data-fui-confirm="Really?" data-fui-rpc="/api/del" data-fui-rpc-method="DELETE" role="menuitem" tabindex="-1" type="button">`,
 		`aria-hidden="true">▾<`, // the caret says the activation opens a list

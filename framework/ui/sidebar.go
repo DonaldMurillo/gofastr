@@ -138,6 +138,33 @@ func checkSidebarGroupMarkup(m SidebarGroupMarkup) {
 	}
 }
 
+// StackBreakpoint picks the viewport width a responsive piece switches
+// its posture at: below md (48rem — phones; the default) or below lg
+// (64rem — phones and tablets, leaving the wide form to large
+// screens). SidebarConfig.DrawerBreakpoint and ContentRowConfig
+// .Breakpoint share it so a page's sidebar and its content row collapse
+// at the same width.
+type StackBreakpoint string
+
+const (
+	// StackBelowMD is the zero value: switch below md (48rem).
+	StackBelowMD StackBreakpoint = ""
+	// StackBelowLG switches below lg (64rem): tablets join phones in
+	// the collapsed form.
+	StackBelowLG StackBreakpoint = "lg"
+)
+
+// checkStackBreakpoint panics on a value outside the built-in set, the
+// same contract as checkSidebarVariant: a typo'd "lge" would silently
+// fall back to md and the column would collapse one step too early.
+func checkStackBreakpoint(b StackBreakpoint) {
+	switch b {
+	case StackBelowMD, StackBelowLG:
+	default:
+		panic("ui: unknown StackBreakpoint " + string(b) + `. Pick one of: "" (below md), "lg" (below lg)`)
+	}
+}
+
 // SidebarItem is one navigation entry. Children nest one level deep.
 // Deeper nesting is unsupported by design. Sidebars should not be
 // trees.
@@ -192,6 +219,18 @@ type SidebarConfig struct {
 
 	// Variant defaults to SidebarPersistent.
 	Variant SidebarVariant
+	// Compact is a documentation rail: tighter links and a thin current marker.
+	// On phones its full-width trigger shows NavLabel and links keep 44px targets.
+	Compact bool
+
+	// DrawerBreakpoint picks the viewport width below which the
+	// sidebar collapses to its hamburger drawer instead of the inline
+	// column. The default (StackBelowMD, 48rem) serves phones; below
+	// lg (StackBelowLG, 64rem) collapses the column on tablets too.
+	// Every place the component encodes the switch follows it: the
+	// inline column's hiding, the drawer trigger's self-hiding, and
+	// the NativeMobile no-script disclosure.
+	DrawerBreakpoint StackBreakpoint
 
 	// Collapse decides who owns the collapsed state when Variant is
 	// SidebarCollapsible. Zero (SidebarCollapseAuto) keeps the
@@ -224,6 +263,13 @@ type SidebarConfig struct {
 	// user pill, settings link, etc.).
 	Footer render.HTML
 
+	// DrawerTitle is the brand text the < md drawer's header row
+	// shows. Falls back to Title when empty; when both are empty the
+	// drawer renders no header (just the nav, as before). Set it to
+	// the same brand the top bar shows when the layout does not
+	// expose one.
+	DrawerTitle string
+
 	// DrawerName overrides the widget name used for the < md drawer.
 	// Defaults to "ui-sidebar-drawer". Apps that host multiple
 	// sidebars per page must override to avoid collisions.
@@ -251,6 +297,10 @@ type SidebarConfig struct {
 	// instead and call MountSidebar themselves).
 	SuppressDrawerTrigger bool
 
+	// NativeMobile adds a native disclosure when scripting is disabled.
+	// Scripted browsers keep the mounted drawer and its keyboard behavior.
+	NativeMobile bool
+
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers) to the sidebar's root element. Keys the
 	// component owns are dropped: class and id, aria-label (the
@@ -269,7 +319,7 @@ var sidebarStyle = registry.RegisterStyle("ui-sidebar", sidebarCSS,
 func sidebarClasses(variant SidebarVariant) headless.Classes {
 	return headless.Classes{
 		headless.PartRoot:                  "fui-sidebar fui-sidebar--" + string(variant),
-		headless.PartSidebarDrawer:         "fui-sidebar__hamburger",
+		headless.PartSidebarDrawer:         "fui-sidebar__hamburger fui-sidebar__hamburger--" + string(variant),
 		headless.PartSidebarInline:         "fui-sidebar__inline",
 		headless.PartSidebarToggle:         "fui-sidebar__collapse",
 		headless.PartTitle:                 "fui-sidebar__title",
@@ -293,9 +343,10 @@ func sidebarClasses(variant SidebarVariant) headless.Classes {
 // opens the < md drawer. The drawer widget itself is mounted by the
 // caller via MountSidebar (once per app, at startup).
 //
-// Pair with core-ui/app/layout.Layout.WithSidebar to slot it into the
-// canonical chrome. Inline use is also fine. The component is
-// self-contained.
+// Slot it into a layout as the shell's static chrome: render it inside
+// an app.NewLayout build function, beside l.Primary() — the way
+// examples/tracker's buildShell does. Inline use is also fine. The
+// component is self-contained.
 func Sidebar(cfg SidebarConfig) component.Component {
 	if cfg.Variant == "" {
 		cfg.Variant = SidebarPersistent
@@ -310,6 +361,55 @@ func Sidebar(cfg SidebarConfig) component.Component {
 // nil = role-aware nav not wired (items render unfiltered). The app registers
 // it once via SetRolesExtractor (the generated app wires it to the auth user).
 var rolesExtractor func(ctx context.Context) []string
+
+// SidebarDrawerTrigger renders the sidebar's hamburger button on its
+// own, for hosts that place it in their own chrome — the page header —
+// and pass SidebarConfig.SuppressDrawerTrigger so the sidebar itself
+// draws no second copy. Same button, class, and widget contract as the
+// trigger Sidebar renders (data-fui-open names the MountSidebar
+// drawer), and the same >= md self-hiding from the component's own
+// stylesheet: at widths where the inline column shows, the header
+// trigger disappears on its own. The drawer widget still has to be
+// mounted once via MountSidebar.
+func SidebarDrawerTrigger(cfg SidebarConfig) render.HTML {
+	if cfg.Variant == "" {
+		cfg.Variant = SidebarPersistent
+	}
+	if cfg.DrawerName == "" {
+		cfg.DrawerName = "ui-sidebar-drawer"
+	}
+	checkSidebarVariant(cfg.Variant)
+	checkStackBreakpoint(cfg.DrawerBreakpoint)
+	classes := drawerTriggerClasses(cfg.Variant)
+	if cfg.DrawerBreakpoint == StackBelowLG {
+		classes[headless.PartRoot] += " fui-sidebar__hamburger--drawer-below-lg"
+	}
+	drawerLabel := "Open navigation"
+	if cfg.Compact {
+		drawerLabel = cfg.navLabel()
+		classes[headless.PartRoot] += " fui-sidebar__hamburger--labelled"
+	}
+	if cfg.NativeMobile {
+		classes[headless.PartRoot] += " fui-sidebar__hamburger--native"
+	}
+	// The standalone trigger's button IS its component root (see the
+	// headless primitive), so the hamburger part's classes map onto
+	// the root here — the same bytes the shell's inline copy renders.
+	return sidebarStyle.WrapHTML(headless.SidebarDrawerTrigger(headless.SidebarProps{
+		DrawerName:  cfg.DrawerName,
+		DrawerLabel: drawerLabel,
+		Variant:     string(cfg.Variant),
+	}, classes))
+}
+
+// drawerTriggerClasses is sidebarClasses with the hamburger's own
+// part mapped onto the root: the button wears fui-sidebar__hamburger
+// (and its variant), never the column shell's fui-sidebar classes.
+func drawerTriggerClasses(variant SidebarVariant) headless.Classes {
+	return headless.Classes{
+		headless.PartRoot: "fui-sidebar__hamburger fui-sidebar__hamburger--" + string(variant),
+	}
+}
 
 // SetRolesExtractor installs the function that pulls the current user's roles
 // from a request context, enabling SidebarItem.Roles filtering. Idempotent;
@@ -391,9 +491,21 @@ func (s sidebarComponent) render(ctx context.Context) render.HTML {
 	// an unstyled fui-sidebar--<anything> class silently. Empty is the
 	// documented default (Sidebar() normalizes it to persistent).
 	cfg := s.cfg
+	classes := sidebarClasses(cfg.Variant)
+	drawerLabel := "Open navigation"
+	if cfg.Compact {
+		classes[headless.PartRoot] += " fui-sidebar--compact"
+		drawerLabel = cfg.navLabel()
+		classes[headless.PartSidebarDrawer] += " fui-sidebar__hamburger--labelled"
+	}
 	checkSidebarVariant(cfg.Variant)
 	checkSidebarCollapse(cfg.Collapse)
 	checkSidebarGroupMarkup(cfg.GroupMarkup)
+	checkStackBreakpoint(cfg.DrawerBreakpoint)
+	if cfg.DrawerBreakpoint == StackBelowLG {
+		classes[headless.PartRoot] += " fui-sidebar--drawer-below-lg"
+		classes[headless.PartSidebarDrawer] += " fui-sidebar__hamburger--drawer-below-lg"
+	}
 
 	// The collapse contract exists only on the collapsible variant:
 	// the other variants carry no collapse attrs at all.
@@ -441,7 +553,7 @@ func (s sidebarComponent) render(ctx context.Context) render.HTML {
 		Collapse:           collapse,
 		ServerCollapsed:    serverCollapsed,
 		DrawerName:         cfg.DrawerName,
-		DrawerLabel:        "Open navigation",
+		DrawerLabel:        drawerLabel,
 		CollapseStorageKey: storageKey,
 		HideDrawerTrigger:  cfg.SuppressDrawerTrigger,
 		CollapseLabel:      collapseLabel,
@@ -451,7 +563,23 @@ func (s sidebarComponent) render(ctx context.Context) render.HTML {
 		Prepend:            sidebarPrepend(ctx, cfg),
 		Footer:             cfg.Footer,
 		ExtraAttrs:         headless.Safe(cfg.ExtraAttrs),
-	}, sidebarClasses(cfg.Variant))
+	}, classes)
+	if cfg.NativeMobile {
+		nativeClass := "fui-sidebar-native"
+		if cfg.DrawerBreakpoint == StackBelowLG {
+			nativeClass += " fui-sidebar-native--drawer-below-lg"
+		}
+		return html.Div(html.DivConfig{Class: nativeClass},
+			sidebarStyle.WrapHTML(out),
+			html.Div(html.DivConfig{Class: "fui-sidebar-native__mobile"},
+				Collapsible(CollapsibleConfig{Summary: cfg.navLabel()},
+					// The mobile disclosure sits OUTSIDE the marked
+					// inline root, so it carries its own marker: the
+					// sheet's [data-fui-comp]-scoped rules (link
+					// styling, the compact variants) must reach it.
+					sidebarStyle.WrapHTML(sidebarBodyRegion(ctx, cfg, cfg.DrawerName+"-mobile", "fui-sidebar__body")))),
+		)
+	}
 	return sidebarStyle.WrapHTML(out)
 }
 
@@ -483,6 +611,11 @@ func sidebarNavItems(cfg SidebarConfig) []headless.SidebarItem {
 		for _, it := range items {
 			mapped := headless.SidebarItem{
 				Label: it.Label, Href: it.Href, Icon: it.Icon,
+				// MatchPath rides the leaf as data-fui-match-prefix so
+				// the runtime's active-link sweep keeps the item lit on
+				// sub-paths after a client navigation (the server owns
+				// only first paint).
+				MatchPrefix: it.MatchPath,
 			}
 			if len(it.Children) > 0 {
 				kids := walk(it.Children)
@@ -544,6 +677,9 @@ func sidebarBodyRegion(ctx context.Context, cfg SidebarConfig, idPrefix, rootCla
 	checkSidebarGroupMarkup(cfg.GroupMarkup)
 	classes := sidebarClasses(cfg.Variant)
 	classes[headless.PartRoot] = rootClass
+	if cfg.Compact {
+		classes[headless.PartRoot] += " fui-sidebar--compact"
+	}
 	out := headless.SidebarRegion(headless.SidebarProps{
 		NavLabel:      cfg.navLabel(),
 		Title:         cfg.Title,
@@ -606,6 +742,31 @@ func (s sidebarDrawerSlot) render(ctx context.Context) render.HTML {
 	return sidebarBodyRegion(ctx, cfg, cfg.DrawerName+"-drawer", "fui-sidebar fui-sidebar--drawer-body")
 }
 
+// sidebarDrawerHeader renders the drawer's header row: the app's
+// brand (DrawerTitle, falling back to Title) beside a 44px close
+// button that rides the widget runtime's data-fui-action="close"
+// contract — the same dismiss path the backdrop and Escape take, and
+// dismiss returns focus to the trigger that opened the drawer.
+type sidebarDrawerHeader struct{ title string }
+
+func (h sidebarDrawerHeader) Render() render.HTML {
+	if h.title == "" {
+		return ""
+	}
+	// Wrapped in the ui-sidebar marker so the drawer's chrome fetch
+	// pulls this sheet too — the header slot sits in the widget
+	// chrome, beside (not inside) the body's marked region.
+	return sidebarStyle.WrapHTML(html.Div(html.DivConfig{Class: "fui-sidebar__drawer-head"},
+		html.Span(html.TextConfig{Class: "fui-sidebar__drawer-brand"}, render.Text(h.title)),
+		render.Tag("button", map[string]string{
+			"type":            "button",
+			"class":           "fui-sidebar__drawer-close",
+			"aria-label":      "Close navigation",
+			"data-fui-action": "close",
+		}, render.Text("×")),
+	))
+}
+
 // MountSidebar registers BOTH the sidebar drawer widget (for < md
 // viewports) AND mounts it on r. Returns the widget definition. Call
 // once per app at startup. The same SidebarConfig is passed to
@@ -622,8 +783,13 @@ func MountSidebar(r WidgetMounter, cfg SidebarConfig, pages ...string) widget.De
 	if cfg.DrawerName == "" {
 		cfg.DrawerName = "ui-sidebar-drawer"
 	}
+	title := cfg.DrawerTitle
+	if title == "" {
+		title = cfg.Title
+	}
 	b := preset.Drawer(cfg.DrawerName).
 		Hidden().
+		Slot("header", sidebarDrawerHeader{title: title}).
 		Slot("body", sidebarDrawerSlot{cfg: cfg})
 	// Optional page scoping: apps that only use the sidebar on a
 	// subset of routes can declare them explicitly; omitting `pages`
@@ -653,10 +819,32 @@ type WidgetMounter interface {
 }
 
 func sidebarCSS(_ style.Theme) string {
-	return `[data-fui-comp="ui-sidebar"].fui-sidebar {
+	return `.fui-sidebar-native { min-inline-size: 0; }
+.fui-sidebar-native__mobile { display: none; }
+[data-fui-comp="ui-sidebar"].fui-sidebar--compact .fui-sidebar__inline { width: 100%; min-width: 0; padding: 0; }
+[data-fui-comp="ui-sidebar"].fui-sidebar--compact .fui-sidebar__link { min-height: 0; padding: var(--spacing-xs) var(--spacing-sm); font-size: var(--text-sm); border-radius: 0; border-inline-start: 1px solid transparent; }
+[data-fui-comp="ui-sidebar"].fui-sidebar--compact .fui-sidebar__link[aria-current="page"] { background: transparent; color: var(--color-primary); border-inline-start-color: var(--color-primary); }
+[data-fui-comp="ui-sidebar"].fui-sidebar--compact .fui-sidebar__sublist { padding: 0; margin-inline-start: var(--spacing-md); box-shadow: inset 1px 0 var(--color-border); }
+[data-fui-comp="ui-sidebar"].fui-sidebar--compact .fui-sidebar__group > summary,
+[data-fui-comp="ui-sidebar"].fui-sidebar--compact .fui-sidebar__group-toggle { font-weight: var(--font-weight-semibold); }
+[data-fui-comp="ui-sidebar"].fui-sidebar--compact .fui-sidebar__item + .fui-sidebar__item > .fui-sidebar__group { margin-block-start: var(--spacing-sm); }
+[data-fui-comp="ui-sidebar"].fui-sidebar--compact .fui-sidebar__group-toggle { padding: var(--spacing-sm); font-size: var(--text-xs); }
+[data-fui-comp="ui-sidebar"].fui-sidebar--compact .fui-sidebar__list { gap: 0; }
+@media (scripting: none) { .fui-sidebar__hamburger.fui-sidebar__hamburger--native { display: none; } }
+@media (max-width: 47.99rem) and (scripting: none) {
+  .fui-sidebar-native:not(.fui-sidebar-native--drawer-below-lg) > .fui-sidebar-native__mobile { display: block; }
+  .fui-sidebar-native:not(.fui-sidebar-native--drawer-below-lg) .fui-sidebar__hamburger { display: none; }
+}
+/* DrawerBreakpoint lg: the no-script disclosure takes over below lg
+   (64rem) instead, so tablets without script get the native menu too. */
+@media (max-width: 63.99rem) and (scripting: none) {
+  .fui-sidebar-native--drawer-below-lg > .fui-sidebar-native__mobile { display: block; }
+  .fui-sidebar-native--drawer-below-lg .fui-sidebar__hamburger { display: none; }
+}
+:where([data-fui-comp="ui-sidebar"]).fui-sidebar {
   display: contents;
 }
-[data-fui-comp="ui-sidebar"] .fui-sidebar__hamburger {
+.fui-sidebar__hamburger {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -670,6 +858,8 @@ func sidebarCSS(_ style.Theme) string {
   font-size: var(--text-xl, 1.25rem);
   line-height: 1;
 }
+.fui-sidebar__hamburger--labelled { width: 100%; justify-content: flex-start; gap: var(--spacing-md); padding-inline: var(--spacing-md); font-size: var(--text-sm); }
+.fui-sidebar__hamburger--labelled::after { content: attr(aria-label); }
 [data-fui-comp="ui-sidebar"] .fui-sidebar__collapse {
   display: inline-flex;
   align-items: center;
@@ -764,7 +954,7 @@ func sidebarCSS(_ style.Theme) string {
      primary text failed contrast for some primary hues. */
   background: var(--color-primary, #4F46E5);
   color: var(--color-primary-fg, #FFFFFF);
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
 }
 [data-fui-comp="ui-sidebar"] .fui-sidebar__group > summary {
   list-style: none;
@@ -822,9 +1012,17 @@ func sidebarCSS(_ style.Theme) string {
 }
 /* Viewport behaviour: < md collapses to the hamburger; ≥ md the
    inline column appears and the hamburger hides. OffCanvas keeps the
-   hamburger on every viewport.                                       */
+   hamburger on every viewport. DrawerBreakpoint lg moves the whole
+   switch to < lg (64rem): the marker classes ride the component root
+   (and the standalone trigger's own button), and the md rules scope
+   themselves with :not() so the two postures never both apply. */
 @media (max-width: 47.99rem) {
-  [data-fui-comp="ui-sidebar"] .fui-sidebar__inline { display: none; }
+  [data-fui-comp="ui-sidebar"]:not(.fui-sidebar--drawer-below-lg) .fui-sidebar__inline { display: none; }
+  [data-fui-comp="ui-sidebar"].fui-sidebar--compact:not(.fui-sidebar--drawer-below-lg) .fui-sidebar__link { min-block-size: var(--spacing-touch-target, 44px); }
+}
+@media (max-width: 63.99rem) {
+  [data-fui-comp="ui-sidebar"].fui-sidebar--drawer-below-lg .fui-sidebar__inline { display: none; }
+  [data-fui-comp="ui-sidebar"].fui-sidebar--drawer-below-lg.fui-sidebar--compact .fui-sidebar__link { min-block-size: var(--spacing-touch-target, 44px); }
 }
 /* Auto-hide variant: icon rail at rest, full column on :hover OR
    :focus-within. The focus-within half is load-bearing, not a
@@ -876,14 +1074,71 @@ func sidebarCSS(_ style.Theme) string {
 [data-fui-comp="ui-sidebar"].fui-sidebar--auto-hide:not(:hover):not(:focus-within) .fui-sidebar__icon--fallback {
   display: inline-flex;
 }
+/* The MountSidebar drawer's header row: the app's brand beside a
+   44px close button, so the panel reads as the app's own and closes
+   without hunting for the scrim. Keyed on the drawer classes (not
+   the ui-sidebar marker prefix) because the header slot lives in the
+   widget chrome, beside the body's marked region — the marker rides
+   the header root only to fetch this sheet. */
+.fui-sidebar__drawer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-md, 8px);
+  /* The same INLINE inset the nav rows' own padding gives their
+     icons/text (the drawer body carries no column padding, so the
+     row's padding IS the inset): the brand lines up with the first
+     row's icon instead of starting 8px deeper. */
+  padding: var(--spacing-md, 8px) var(--spacing-md, 8px);
+  border-bottom: 1px solid var(--color-border, #E4E4E7);
+}
+.fui-sidebar__drawer-brand {
+  font-weight: var(--font-weight-bold);
+  font-size: var(--text-base, 1rem);
+  color: var(--color-text, #18181B);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fui-sidebar__drawer-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: var(--spacing-touch-target, 44px);
+  height: var(--spacing-touch-target, 44px);
+  border: 1px solid var(--color-border, #E4E4E7);
+  border-radius: var(--radii-md, 8px);
+  background: var(--color-surface, #FFF);
+  color: var(--color-text, #18181B);
+  cursor: pointer;
+  font-size: var(--text-xl, 1.25rem);
+  line-height: 1;
+}
+.fui-sidebar__drawer-close:hover {
+  background: var(--color-surface-soft, #F4F4F5);
+}
+.fui-sidebar__drawer-close:focus-visible {
+  outline: 2px solid var(--color-primary, #4F46E5);
+  outline-offset: 2px;
+}
 @media (prefers-reduced-motion: reduce) {
   [data-fui-comp="ui-sidebar"].fui-sidebar--auto-hide .fui-sidebar__inline { transition: none; }
 }
 @media (min-width: 48rem) {
-  [data-fui-comp="ui-sidebar"].fui-sidebar--persistent .fui-sidebar__hamburger,
-  [data-fui-comp="ui-sidebar"].fui-sidebar--collapsible .fui-sidebar__hamburger,
-  [data-fui-comp="ui-sidebar"].fui-sidebar--auto-hide .fui-sidebar__hamburger {
+  .fui-sidebar__hamburger--persistent:not(.fui-sidebar__hamburger--drawer-below-lg),
+  .fui-sidebar__hamburger--collapsible:not(.fui-sidebar__hamburger--drawer-below-lg),
+  .fui-sidebar__hamburger--auto-hide:not(.fui-sidebar__hamburger--drawer-below-lg) {
     display: none;
   }
-}`
+}
+@media (min-width: 64rem) {
+  .fui-sidebar__hamburger--drawer-below-lg.fui-sidebar__hamburger--persistent,
+  .fui-sidebar__hamburger--drawer-below-lg.fui-sidebar__hamburger--collapsible,
+  .fui-sidebar__hamburger--drawer-below-lg.fui-sidebar__hamburger--auto-hide {
+    display: none;
+  }
+}
+`
 }

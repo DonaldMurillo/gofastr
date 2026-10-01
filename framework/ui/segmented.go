@@ -146,18 +146,23 @@ func SegmentedControl(cfg SegmentedControlConfig) render.HTML {
 		}
 		input := render.Tag("input", flattenAttrs(inputAttrs))
 		labelHTML := html.Span(html.TextConfig{Class: "fui-segmented__label"}, render.Text(o.Label))
-		// Position index for sliding indicator CSS.
+		// Position index for sliding indicator CSS. Every option comes
+		// from SegmentedControlConfig's Options (label/value strings),
+		// never from caller markup, so each label is a topmost internal
+		// subtree; its input/labelHTML children need no mark of their own.
 		labelAttrs := html.Attrs{
-			"class":         "fui-segmented__option",
-			"for":           cfg.Name + "--" + slug(o.Value),
-			"data-position": itoaSmall(i),
+			"class":             "fui-segmented__option",
+			"for":               cfg.Name + "--" + slug(o.Value),
+			"data-position":     itoaSmall(i),
+			"data-fui-internal": "",
 		}
 		items = append(items, render.Tag("label", flattenAttrs(labelAttrs), input, labelHTML))
 	}
-	// Indicator (CSS-positioned via :has() / data-position siblings).
+	// Indicator (CSS-positioned via :has() / data-position siblings) —
+	// also this component's own, not caller content.
 	items = append(items, html.Span(html.TextConfig{
 		Class:      "fui-segmented__indicator",
-		ExtraAttrs: html.Attrs{"aria-hidden": "true"},
+		ExtraAttrs: html.Attrs{"aria-hidden": "true", "data-fui-internal": ""},
 	}))
 
 	return segmentedStyle.WrapHTML(render.Tag("div", flattenAttrs(wrapAttrs), items...))
@@ -201,11 +206,11 @@ func segmentedCSS(_ style.Theme) string {
   vertical-align: middle;
   isolation: isolate;
 }
-[data-fui-comp="ui-segmented"][data-count="2"] { min-inline-size: 16rem; }
-[data-fui-comp="ui-segmented"][data-count="3"] { min-inline-size: 22rem; }
-[data-fui-comp="ui-segmented"][data-count="4"] { min-inline-size: 26rem; }
-[data-fui-comp="ui-segmented"][data-count="5"] { min-inline-size: 30rem; }
-[data-fui-comp="ui-segmented"][data-count="6"] { min-inline-size: 34rem; }
+:where([data-fui-comp="ui-segmented"])[data-count="2"] { min-inline-size: 16rem; }
+:where([data-fui-comp="ui-segmented"])[data-count="3"] { min-inline-size: 22rem; }
+:where([data-fui-comp="ui-segmented"])[data-count="4"] { min-inline-size: 26rem; }
+:where([data-fui-comp="ui-segmented"])[data-count="5"] { min-inline-size: 30rem; }
+:where([data-fui-comp="ui-segmented"])[data-count="6"] { min-inline-size: 34rem; }
 
 [data-fui-comp="ui-segmented"] .fui-segmented__option {
   position: relative;
@@ -237,7 +242,7 @@ func segmentedCSS(_ style.Theme) string {
 }
 [data-fui-comp="ui-segmented"] .fui-segmented__option:has(.fui-segmented__input:checked) {
   color: var(--color-text, #111);
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
 }
 [data-fui-comp="ui-segmented"] .fui-segmented__option:has(.fui-segmented__input:focus-visible) {
   outline: 2px solid var(--color-primary, #4F46E5);

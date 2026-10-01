@@ -318,7 +318,7 @@ func lineChartCSS(_ style.Theme) string {
 [data-fui-comp="ui-line-chart"] .fui-line-chart__legend {
   font-size: var(--text-xs, 0.75rem);
   fill: var(--color-text, #18181B);
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
 }
 .fui-line-chart__legend-swatch--primary { fill: var(--color-primary, #4F46E5); }
 .fui-line-chart__legend-swatch--info    { fill: var(--color-info, #3B82F6); }

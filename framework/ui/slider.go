@@ -94,7 +94,7 @@ func sliderCSS(_ style.Theme) string {
   gap: var(--spacing-xs, 2px);
 }
 [data-fui-comp="ui-slider"] .fui-slider__label {
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
   font-size: var(--text-sm, 0.875rem);
   color: var(--color-text, #18181B);
 }
@@ -103,7 +103,7 @@ func sliderCSS(_ style.Theme) string {
 }
 [data-fui-comp="ui-slider"] .fui-slider__value {
   font-variant-numeric: tabular-nums;
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
   font-size: var(--text-sm, 0.875rem);
   color: var(--color-primary, #4F46E5);
   min-inline-size: 3ch;

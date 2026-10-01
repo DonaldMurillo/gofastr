@@ -79,12 +79,12 @@ func TestTableBehaviourHooks(t *testing.T) {
 	has(t, island, `data-hui-table-sort="name"`, "a sort anchor lost its column key")
 	has(t, island, `data-hui-table-sort="env"`, "a sort anchor lost its column key")
 	has(t, island, `data-hui-table-scroll=""`, "the scroll region lost the focus-fallback hook")
-	has(t, island, `<span data-hui-table-status="" role="status"></span>`, "the status span did not render empty on the server")
+	has(t, island, `<span data-fui-internal="" data-hui-table-status="" role="status"></span>`, "the status span did not render empty on the server")
 
 	plain := Table(TableProps{Columns: cols, SortBy: "name"}, nil)
 	has(t, plain, `data-hui-table=""`, "a plain table root lost the module marker")
 	has(t, plain, `data-hui-table-scroll=""`, "a plain table's scroll region lost the hook")
-	has(t, plain, `<span data-hui-table-status="" role="status"></span>`, "a plain table carries no status for its next page to announce into")
+	has(t, plain, `<span data-fui-internal="" data-hui-table-status="" role="status"></span>`, "a plain table carries no status for its next page to announce into")
 	hasNot(t, plain, "data-hui-table-signal", "a plain table named a signal no island gave it")
 	hasNot(t, plain, "data-hui-table-sort", "a plain table's sort anchors carry keys nothing reads")
 }
@@ -315,8 +315,8 @@ func TestTableRootIsOneShapeWithAScrollRegion(t *testing.T) {
 	if !strings.HasPrefix(string(plain), "<div") {
 		t.Errorf("the root should be the wrapper div, footer or none: %s", plain)
 	}
-	has(t, plain, `<div data-hui-table=""><div data-hui-table-scroll="" role="region" tabindex="0"><table role="table">`, "the root, the focusable region and the table are not nested in that order")
-	has(t, plain, `</table></div><span data-hui-table-status="" role="status"></span></div>`, "the status is not the root's last child")
+	has(t, plain, `<div data-hui-table=""><div data-fui-internal="" data-hui-table-scroll="" role="region" tabindex="0"><table role="table">`, "the root, the focusable region and the table are not nested in that order")
+	has(t, plain, `</table></div><span data-fui-internal="" data-hui-table-status="" role="status"></span></div>`, "the status is not the root's last child")
 
 	withFooter := Table(TableProps{Columns: cols,
 		Footer: render.HTML(`<nav aria-label="Pages">Page 1 of 2</nav>`)}, nil)
@@ -324,7 +324,7 @@ func TestTableRootIsOneShapeWithAScrollRegion(t *testing.T) {
 	if close == -1 || nav < close {
 		t.Errorf("the footer did not render after the table: %s", withFooter)
 	}
-	has(t, withFooter, `</table></div><nav aria-label="Pages">Page 1 of 2</nav><span data-hui-table-status="" role="status"></span></div>`, "the footer is not the scroll region's sibling inside the root, with the status last")
+	has(t, withFooter, `</table></div><nav aria-label="Pages">Page 1 of 2</nav><span data-fui-internal="" data-hui-table-status="" role="status"></span></div>`, "the footer is not the scroll region's sibling inside the root, with the status last")
 }
 
 // The scroll region is named by the caption when there is one — the
@@ -334,13 +334,13 @@ func TestTableRootIsOneShapeWithAScrollRegion(t *testing.T) {
 func TestTableScrollRegionIsNamedByTheCaption(t *testing.T) {
 	cols := []Column{{Key: "app", Header: "Application"}}
 	named := Table(TableProps{ID: "apps", Caption: "Applications", Columns: cols}, nil)
-	has(t, named, `<div aria-labelledby="apps-caption" data-hui-table-scroll="" role="region" tabindex="0"><table role="table"><caption id="apps-caption">Applications</caption>`,
+	has(t, named, `<div aria-labelledby="apps-caption" data-fui-internal="" data-hui-table-scroll="" role="region" tabindex="0"><table role="table"><caption id="apps-caption">Applications</caption>`,
 		"the scroll region is not named by the caption it wraps")
 
 	// No ID: the id is derived from the caption the way Section
 	// derives its title's.
 	derived := Table(TableProps{Caption: "Recent deployments", Columns: cols}, nil)
-	has(t, derived, `<div aria-labelledby="table-recent-deployments-caption" data-hui-table-scroll="" role="region" tabindex="0"><table role="table"><caption id="table-recent-deployments-caption">`,
+	has(t, derived, `<div aria-labelledby="table-recent-deployments-caption" data-fui-internal="" data-hui-table-scroll="" role="region" tabindex="0"><table role="table"><caption id="table-recent-deployments-caption">`,
 		"the caption id was not derived from the caption text, or the region does not point at it")
 
 	// No caption: no name, and no attribute pointing at nothing.

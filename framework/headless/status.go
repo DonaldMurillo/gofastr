@@ -66,7 +66,7 @@ func Spinner(p SpinnerProps, s Classes) render.HTML {
 	if p.Announce {
 		own["role"] = "status"
 	}
-	hidden := Attrs(map[string]string{"aria-hidden": "true"})
+	hidden := Internal(Attrs(map[string]string{"aria-hidden": "true"}))
 	var shape render.HTML
 	switch p.Variant {
 	case "dots":
@@ -89,7 +89,7 @@ func Spinner(p SpinnerProps, s Classes) render.HTML {
 	}
 	return b.El("span", PartRoot, own,
 		shape,
-		b.El("span", PartVisuallyHidden, nil, render.Text(p.Label)),
+		b.El("span", PartVisuallyHidden, Internal(nil), render.Text(p.Label)),
 	)
 }
 
@@ -131,7 +131,7 @@ func Skeleton(p SkeletonProps, s Classes) render.HTML {
 	b := p.Parts.Box(s)
 	bars := make([]render.HTML, 0, n+1)
 	for i := range n {
-		attrs := Attrs(map[string]string{"aria-hidden": "true"})
+		attrs := Internal(Attrs(map[string]string{"aria-hidden": "true"}))
 		// The last line of a paragraph is short, and a skeleton that
 		// draws every line full width reads as a block, not as text.
 		if n > 1 && i == n-1 {
@@ -148,7 +148,7 @@ func Skeleton(p SkeletonProps, s Classes) render.HTML {
 	}))
 	own["role"] = "status"
 	return b.El("div", PartRoot, own,
-		append(bars, b.El("span", PartVisuallyHidden, nil, render.Text(p.Label)))...)
+		append(bars, b.El("span", PartVisuallyHidden, Internal(nil), render.Text(p.Label)))...)
 }
 
 func init() {

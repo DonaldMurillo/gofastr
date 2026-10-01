@@ -191,12 +191,18 @@ func Menu(p MenuProps, s Classes) render.HTML {
 			menuDetails(b, id, panelID, p.Items, p.LazyPanel, PartMenuToggle, "", html.Attrs{}),
 		)
 	}
-	// The summary is the trigger; the caret says the activation opens
-	// a list.
-	summary := b.El("summary", PartSummary, Attrs(map[string]string{
+	// The summary is the trigger; the caret says the activation opens a
+	// list. TriggerHTML is the caller's, replacing the summary's whole
+	// content — with none, the label and the caret are both the
+	// component's own, and the mark goes on the summary itself.
+	summaryOwn := Attrs(map[string]string{
 		"aria-haspopup": "menu",
 		"aria-controls": panelID,
-	}), menuTriggerContent(b, p))
+	})
+	if p.TriggerHTML == "" {
+		summaryOwn = Internal(summaryOwn)
+	}
+	summary := b.El("summary", PartSummary, summaryOwn, menuTriggerContent(b, p))
 	return menuDetails(b, id, panelID, p.Items, p.LazyPanel, PartRoot, summary, rootAttrs)
 }
 
@@ -223,7 +229,8 @@ func menuDetails(b Box, id, panelID string, items []MenuItem, lazy bool, root Pa
 		"data-hui-disclosure": "",
 		"data-hui-menu":       id,
 	})
-	rows := menuRows(b, items, panelID)
+	hasContent := menuItemsHaveOwnContent(items)
+	rows := menuRows(b, items, panelID, hasContent)
 	if lazy {
 		tplAttrs := html.Attrs{}
 		Mark(tplAttrs, "data-hui-menu-lazy")
@@ -234,6 +241,13 @@ func menuDetails(b Box, id, panelID string, items []MenuItem, lazy bool, root Pa
 		"role": "menu",
 	})
 	Mark(panelAttrs, "data-hui-menu-panel")
+	if !hasContent {
+		// No row in this panel carries a caller icon, so the whole
+		// panel is the component's own and the mark sits on it; with
+		// any icon present the mark moves to each row that lacks one
+		// instead (menuRows), so a caller's icon stays reachable.
+		panelAttrs = Internal(panelAttrs)
+	}
 	panel := b.El("div", PartPanel, panelAttrs, rows)
 	if summary != "" {
 		return b.El("details", root, own, summary, panel)
@@ -241,11 +255,28 @@ func menuDetails(b Box, id, panelID string, items []MenuItem, lazy bool, root Pa
 	return b.El("details", root, own, panel)
 }
 
-// menuRows renders one panel's rows.
-func menuRows(b Box, items []MenuItem, parentPanelID string) render.HTML {
+// menuItemsHaveOwnContent reports whether any row in items carries a
+// caller icon — the only caller content a row can hold. A submenu
+// row's own icon counts here for the panel that renders it; the rows
+// nested behind it live in a separate panel, checked on its own.
+func menuItemsHaveOwnContent(items []MenuItem) bool {
+	for _, it := range items {
+		if it.Icon != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// menuRows renders one panel's rows. mark says whether a row lacking
+// its own icon must carry the internal mark itself: only needed when
+// some sibling in items DOES have an icon, so the panel around them
+// cannot be marked as a whole (see menuDetails and menuSubmenu, which
+// mark the panel instead when it is false).
+func menuRows(b Box, items []MenuItem, parentPanelID string, mark bool) render.HTML {
 	var out []render.HTML
 	for i, it := range items {
-		out = append(out, menuItemEl(b, it, parentPanelID, i))
+		out = append(out, menuItemEl(b, it, parentPanelID, i, mark))
 	}
 	if out == nil {
 		return ""
@@ -254,16 +285,20 @@ func menuRows(b Box, items []MenuItem, parentPanelID string) render.HTML {
 }
 
 // menuItemEl renders one row (or separator, or submenu).
-func menuItemEl(b Box, it MenuItem, parentPanelID string, idx int) render.HTML {
+func menuItemEl(b Box, it MenuItem, parentPanelID string, idx int, mark bool) render.HTML {
 	if it.Separator {
-		return b.El("hr", PartDividerLine, Attrs(map[string]string{"role": "separator"}))
+		hrOwn := html.Attrs{"role": "separator"}
+		if mark {
+			hrOwn = Internal(hrOwn)
+		}
+		return b.El("hr", PartDividerLine, hrOwn)
 	}
 	if strings.TrimSpace(it.Label) == "" {
 		panic("headless: MenuItem requires Label (or Separator: true) — a row of nothing but whitespace is a command nobody can read")
 	}
 	checkMenuItemCoherence(it)
 	if len(it.Children) > 0 {
-		return menuSubmenu(b, it, parentPanelID, idx)
+		return menuSubmenu(b, it, parentPanelID, idx, mark)
 	}
 
 	own := Safe(it.ExtraAttrs, "type", "href", "tabindex", "role",
@@ -297,10 +332,24 @@ func menuItemEl(b Box, it MenuItem, parentPanelID string, idx int) render.HTML {
 		own["aria-disabled"] = "true"
 	}
 	var icon render.HTML
+	// The icon is the caller's; the label text beside it is always the
+	// component's own. With no icon at all the row itself (the a/button
+	// this function returns, or the form wrapping it below) holds
+	// nothing of the caller's, so the mark moves to the row — but only
+	// when some sibling row in this panel DOES have an icon, which is
+	// exactly when the panel around them cannot carry the mark as a
+	// whole (see menuRows/menuDetails/menuSubmenu).
+	textOwn, rowMark, hiddenMark := html.Attrs(nil), html.Attrs(nil), html.Attrs(nil)
 	if it.Icon != "" {
 		icon = b.El("span", PartIcon, Attrs(map[string]string{"aria-hidden": "true"}), it.Icon)
+		textOwn = Internal(nil)
+		if mark {
+			hiddenMark = Internal(nil)
+		}
+	} else if mark {
+		rowMark = Internal(nil)
 	}
-	kids := []render.HTML{icon, b.El("span", PartText, nil, render.Text(scrubControlBytes(it.Label)))}
+	kids := []render.HTML{icon, b.El("span", PartText, textOwn, render.Text(scrubControlBytes(it.Label)))}
 
 	if it.Action != nil {
 		method := it.Action.Method
@@ -315,11 +364,11 @@ func menuItemEl(b Box, it MenuItem, parentPanelID string, idx int) render.HTML {
 		}
 		var hidden []render.HTML
 		for _, k := range slices.Sorted(maps.Keys(it.Action.Fields)) {
-			hidden = append(hidden, render.VoidTag("input", html.Attrs{
+			hidden = append(hidden, render.VoidTag("input", Merge(html.Attrs{
 				"type":  "hidden",
 				"name":  k,
 				"value": it.Action.Fields[k],
-			}))
+			}, hiddenMark)))
 		}
 		rowOwn := own
 		if it.Confirm != "" {
@@ -332,12 +381,14 @@ func menuItemEl(b Box, it MenuItem, parentPanelID string, idx int) render.HTML {
 		// elements (menuitem, menuitemcheckbox, menuitemradio, group,
 		// separator) — the presentation role takes it out of the AX
 		// tree so the row's menuitem is what a menu parent is judged
-		// against.
-		return b.El("form", PartMenuForm, Attrs(map[string]string{
+		// against. The mark sits on the form (the row's own topmost
+		// element) rather than the button, so the hidden inputs beside
+		// it are covered too.
+		return b.El("form", PartMenuForm, Merge(Attrs(map[string]string{
 			"role":   "none",
 			"method": method,
 			"action": action,
-		}), append(hidden,
+		}), rowMark), append(hidden,
 			b.El("button", PartMenuItem, Merge(rowOwn, Attrs(map[string]string{"type": "submit"})), kids...))...)
 	}
 
@@ -349,7 +400,7 @@ func menuItemEl(b Box, it MenuItem, parentPanelID string, idx int) render.HTML {
 			href = "#"
 		}
 		own["href"] = href
-		return b.El("a", PartMenuItem, own, kids...)
+		return b.El("a", PartMenuItem, Merge(own, rowMark), kids...)
 	}
 
 	if it.RPC != "" {
@@ -367,7 +418,7 @@ func menuItemEl(b Box, it MenuItem, parentPanelID string, idx int) render.HTML {
 		// Presence, not value: the button element's own spelling.
 		Mark(own, "disabled")
 	}
-	return b.El("button", PartMenuItem, Merge(own, Attrs(map[string]string{"type": "button"})), kids...)
+	return b.El("button", PartMenuItem, Merge(Merge(own, rowMark), Attrs(map[string]string{"type": "button"})), kids...)
 }
 
 // menuRowRole names the row's ARIA role.
@@ -382,7 +433,10 @@ func menuRowRole(it MenuItem) string {
 // is a disclosure — the exact machinery the top level uses — so
 // Escape, the aria mirror and the module's keyboard handling apply at
 // depth without a second mechanism. The summary IS the parent row.
-func menuSubmenu(b Box, it MenuItem, parentPanelID string, idx int) render.HTML {
+// mark says whether the summary must carry the internal mark itself
+// when it has no icon (see menuRows); the nested panel behind it is a
+// separate subtree with its own such decision, made here.
+func menuSubmenu(b Box, it MenuItem, parentPanelID string, idx int, mark bool) render.HTML {
 	subID := parentPanelID + "-sub-" + strconv.Itoa(idx)
 	subPanelID := subID + "-panel"
 	rowAttrs := Merge(Safe(it.ExtraAttrs, "type", "href", "tabindex", "role",
@@ -410,6 +464,18 @@ func menuSubmenu(b Box, it MenuItem, parentPanelID string, idx int) render.HTML 
 		// pointer-events carry the state.
 		rowAttrs["aria-disabled"] = "true"
 	}
+	// The row's own icon is caller content; the label beside it is
+	// always the component's own. With no icon, the summary row holds
+	// nothing of the caller's, so the mark moves to it — but only when
+	// mark says some sibling row DOES have one (see menuRows). The
+	// nested panel behind the summary is a separate subtree and makes
+	// its own such decision below.
+	textOwn := html.Attrs(nil)
+	if it.Icon != "" {
+		textOwn = Internal(nil)
+	} else if mark {
+		rowAttrs = Internal(rowAttrs)
+	}
 	return b.El("details", PartMenuSubmenu, html.Attrs{
 		"data-hui-disclosure": "",
 		"data-hui-menu":       subID,
@@ -425,14 +491,26 @@ func menuSubmenu(b Box, it MenuItem, parentPanelID string, idx int) render.HTML 
 				}
 				return b.El("span", PartIcon, Attrs(map[string]string{"aria-hidden": "true"}), it.Icon)
 			}(),
-			b.El("span", PartText, nil, render.Text(scrubControlBytes(it.Label)))),
+			b.El("span", PartText, textOwn, render.Text(scrubControlBytes(it.Label)))),
 		func() render.HTML {
 			subAttrs := Attrs(map[string]string{
 				"id":   subPanelID,
 				"role": "menu",
 			})
 			Mark(subAttrs, "data-hui-menu-panel")
-			return b.El("div", PartPanel, subAttrs, menuRows(b, it.Children, subPanelID))
+			childHasContent := menuItemsHaveOwnContent(it.Children)
+			if !mark {
+				// This whole row's enclosing panel is already marked as
+				// a whole (mark is false), which — since that decision
+				// already recursed into every descendant — covers this
+				// nested panel too; marking it again would be marking
+				// inside an already-marked subtree.
+				return b.El("div", PartPanel, subAttrs, menuRows(b, it.Children, subPanelID, false))
+			}
+			if !childHasContent {
+				subAttrs = Internal(subAttrs)
+			}
+			return b.El("div", PartPanel, subAttrs, menuRows(b, it.Children, subPanelID, childHasContent))
 		}(),
 	)
 }

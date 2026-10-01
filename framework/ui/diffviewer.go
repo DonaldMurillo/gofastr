@@ -84,7 +84,7 @@ func DiffViewer(cfg DiffViewerConfig) render.HTML {
 		if right == "" {
 			right = "New"
 		}
-		sb.WriteString(`<div class="fui-diff-viewer__header"><div class="fui-diff-viewer__header-cell">`)
+		sb.WriteString(`<div class="fui-diff-viewer__header" data-fui-internal=""><div class="fui-diff-viewer__header-cell">`)
 		sb.WriteString(escapeXML(left))
 		sb.WriteString(`</div><div class="fui-diff-viewer__header-cell">`)
 		sb.WriteString(escapeXML(right))
@@ -96,14 +96,14 @@ func DiffViewer(cfg DiffViewerConfig) render.HTML {
 		for i < len(lines) {
 			ln := lines[i]
 			if strings.HasPrefix(ln, "@@") {
-				sb.WriteString(`<div class="fui-diff-viewer__hunk">`)
+				sb.WriteString(`<div class="fui-diff-viewer__hunk" data-fui-internal="">`)
 				sb.WriteString(escapeXML(ln))
 				sb.WriteString(`</div>`)
 				i++
 				continue
 			}
 			if strings.HasPrefix(ln, "---") || strings.HasPrefix(ln, "+++") {
-				sb.WriteString(`<div class="fui-diff-viewer__file">`)
+				sb.WriteString(`<div class="fui-diff-viewer__file" data-fui-internal="">`)
 				sb.WriteString(escapeXML(ln))
 				sb.WriteString(`</div>`)
 				i++
@@ -133,7 +133,7 @@ func DiffViewer(cfg DiffViewerConfig) render.HTML {
 				if strings.HasPrefix(cur, " ") {
 					ctx = cur[1:]
 				}
-				sb.WriteString(`<div class="fui-diff-viewer__row fui-diff-viewer__row--context">`)
+				sb.WriteString(`<div class="fui-diff-viewer__row fui-diff-viewer__row--context" data-fui-internal="">`)
 				sb.WriteString(`<div class="fui-diff-viewer__cell"><pre class="fui-diff-viewer__code" tabindex="0">`)
 				sb.WriteString(escapeXML(ctx))
 				sb.WriteString(`</pre></div><div class="fui-diff-viewer__cell"><pre class="fui-diff-viewer__code" tabindex="0">`)
@@ -148,19 +148,19 @@ func DiffViewer(cfg DiffViewerConfig) render.HTML {
 		for _, ln := range lines {
 			switch {
 			case strings.HasPrefix(ln, "@@"):
-				sb.WriteString(`<div class="fui-diff-viewer__hunk">`)
+				sb.WriteString(`<div class="fui-diff-viewer__hunk" data-fui-internal="">`)
 				sb.WriteString(escapeXML(ln))
 				sb.WriteString(`</div>`)
 			case strings.HasPrefix(ln, "---") || strings.HasPrefix(ln, "+++"):
-				sb.WriteString(`<div class="fui-diff-viewer__file">`)
+				sb.WriteString(`<div class="fui-diff-viewer__file" data-fui-internal="">`)
 				sb.WriteString(escapeXML(ln))
 				sb.WriteString(`</div>`)
 			case strings.HasPrefix(ln, "+"):
-				sb.WriteString(`<div class="fui-diff-viewer__line fui-diff-viewer__line--add"><span class="fui-diff-viewer__gutter">+</span><pre class="fui-diff-viewer__code" tabindex="0">`)
+				sb.WriteString(`<div class="fui-diff-viewer__line fui-diff-viewer__line--add" data-fui-internal=""><span class="fui-diff-viewer__gutter">+</span><pre class="fui-diff-viewer__code" tabindex="0">`)
 				sb.WriteString(escapeXML(ln[1:]))
 				sb.WriteString(`</pre></div>`)
 			case strings.HasPrefix(ln, "-"):
-				sb.WriteString(`<div class="fui-diff-viewer__line fui-diff-viewer__line--remove"><span class="fui-diff-viewer__gutter">−</span><pre class="fui-diff-viewer__code" tabindex="0">`)
+				sb.WriteString(`<div class="fui-diff-viewer__line fui-diff-viewer__line--remove" data-fui-internal=""><span class="fui-diff-viewer__gutter">−</span><pre class="fui-diff-viewer__code" tabindex="0">`)
 				sb.WriteString(escapeXML(ln[1:]))
 				sb.WriteString(`</pre></div>`)
 			default:
@@ -168,7 +168,7 @@ func DiffViewer(cfg DiffViewerConfig) render.HTML {
 				if strings.HasPrefix(ln, " ") {
 					body = ln[1:]
 				}
-				sb.WriteString(`<div class="fui-diff-viewer__line fui-diff-viewer__line--context"><span class="fui-diff-viewer__gutter"> </span><pre class="fui-diff-viewer__code" tabindex="0">`)
+				sb.WriteString(`<div class="fui-diff-viewer__line fui-diff-viewer__line--context" data-fui-internal=""><span class="fui-diff-viewer__gutter"> </span><pre class="fui-diff-viewer__code" tabindex="0">`)
 				sb.WriteString(escapeXML(body))
 				sb.WriteString(`</pre></div>`)
 			}
@@ -192,7 +192,7 @@ func flushSplit(sb *strings.Builder, removed, added []string) {
 	}
 	n := max(len(added), len(removed))
 	for i := range n {
-		sb.WriteString(`<div class="fui-diff-viewer__row">`)
+		sb.WriteString(`<div class="fui-diff-viewer__row" data-fui-internal="">`)
 		// Left column: removed (or empty).
 		sb.WriteString(`<div class="fui-diff-viewer__cell fui-diff-viewer__cell--remove">`)
 		if i < len(removed) {
@@ -238,7 +238,7 @@ func diffViewerCSS(_ style.Theme) string {
 [data-fui-comp="ui-diff-viewer"] .fui-diff-viewer__file {
   padding: var(--spacing-sm, 4px) var(--spacing-md, 8px);
   color: var(--color-text, #18181B);
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
   font-size: var(--text-sm, 0.875rem);
   border-block-end: 1px solid var(--color-border, #E4E4E7);
 }
@@ -277,7 +277,7 @@ func diffViewerCSS(_ style.Theme) string {
   padding: var(--spacing-sm, 4px) var(--spacing-md, 8px);
   background: var(--color-surface-soft, #F4F4F5);
   color: var(--color-text-muted, #52525B);
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
   border-block-end: 1px solid var(--color-border, #E4E4E7);
 }
 .fui-diff-viewer--split .fui-diff-viewer__header-cell + .fui-diff-viewer__header-cell {

@@ -46,7 +46,7 @@ func TestTabsWrapperHasSignalAttr(t *testing.T) {
 
 	// The content wrapper must NOT carry the signal binding. If it did,
 	// the binding couldn't reach the sibling nav buttons.
-	if !strings.Contains(string(html), `<div class="fui-tabs-content">`) {
+	if !strings.Contains(string(html), `<div class="fui-tabs-content" data-fui-internal="">`) {
 		t.Errorf("content wrapper should be bare (no signal binding), got:\n%s", html)
 	}
 }

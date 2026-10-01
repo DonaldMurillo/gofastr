@@ -90,10 +90,12 @@ func ThemeToggle(cfg ThemeToggleConfig) render.HTML {
 }
 
 // sunSVG is the sun icon shown when in dark mode (click → switch to light).
-const sunSVG = `<svg class="fui-theme-toggle__sun" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>`
+// A fixed glyph, never caller markup: it marks itself.
+const sunSVG = `<svg class="fui-theme-toggle__sun" data-fui-internal xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>`
 
 // moonSVG is the moon icon shown when in light mode (click → switch to dark).
-const moonSVG = `<svg class="fui-theme-toggle__moon" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>`
+// A fixed glyph, never caller markup: it marks itself.
+const moonSVG = `<svg class="fui-theme-toggle__moon" data-fui-internal xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>`
 
 func renderThemeToggleButton(cfg ThemeToggleConfig, cls string, variant ThemeToggleVariant) render.HTML {
 	ctx := cfg.Ctx
@@ -105,6 +107,12 @@ func renderThemeToggleButton(cfg ThemeToggleConfig, cls string, variant ThemeTog
 		attrs = map[string]string{}
 	}
 	attrs["type"] = "button"
+	// The loader marker: headless-navigation's module is demand-loaded
+	// by the [data-hui-theme-toggle] scan, and the click logic lives
+	// in that module. Without the marker on the button variants' own
+	// root, a page whose only theme control is an icon toggle never
+	// loads the module and the button does nothing.
+	attrs["data-hui-theme-toggle"] = ""
 	attrs["data-hui-theme-cycle"] = ""
 	attrs["aria-label"] = i18nui.T(ctx, i18nui.KeyThemeToggle)
 	if cfg.ID != "" {

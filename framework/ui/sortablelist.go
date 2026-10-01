@@ -123,7 +123,7 @@ func sortablelistCSS(_ style.Theme) string {
   display: grid;
   gap: var(--spacing-xs, 2px);
 }
-[data-fui-comp="ui-sortablelist"] .fui-sortablelist__item {
+:where([data-fui-comp="ui-sortablelist"]) .fui-sortablelist__item {
   display: flex;
   align-items: center;
   gap: var(--spacing-sm, 4px);
@@ -166,7 +166,7 @@ func sortablelistCSS(_ style.Theme) string {
   cursor: grabbing;
 }
 [data-fui-comp="ui-sortablelist"] .fui-sortablelist__label {
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
   color: var(--color-text, #18181B);
 }
 /* The live region the module mints carries its own hook: clip it out

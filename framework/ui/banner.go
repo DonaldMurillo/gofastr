@@ -43,6 +43,8 @@ type BannerConfig struct {
 	Body string
 	// Variant picks color + role. Defaults to BannerInfo.
 	Variant BannerVariant
+	// Strip renders a full-width announcement with square edges and inline copy.
+	Strip bool
 	// Dismissible adds an X button. When DismissID is set the runtime
 	// records the dismissal in localStorage AND a same-name cookie; when
 	// Ctx also carries the request (app.WithRequest, layouts and screens
@@ -108,13 +110,18 @@ func Banner(cfg BannerConfig) render.HTML {
 	// module for the session, and the posture is polite whatever the
 	// tone (the offline banner is the one that alerts).
 	dismiss := cfg.Dismissible
+	if cfg.Strip {
+		cfg.Class += " fui-banner--strip"
+	}
 	parts := headless.Parts{}
 	if cfg.Class != "" {
 		parts.Attrs = headless.PartAttrs{headless.PartRoot: {"class": cfg.Class}}
 	}
 	return bannerStyle.WrapHTML(headless.SystemBanner(headless.SystemBannerProps{
-		ID:     orDefaultStr(orDefaultStr(cfg.DismissID, cfg.ID), autoID("banner")),
-		Icon:   render.HTML(bannerIcon(cfg.Variant)),
+		ID: orDefaultStr(orDefaultStr(cfg.DismissID, cfg.ID), autoID("banner")),
+		// Banner has no Icon field of its own: the icon is always this
+		// component's own choice, drawn from Variant, never a caller's.
+		Icon:   headless.Own(render.HTML(bannerIcon(cfg.Variant))),
 		Tone:   tone,
 		Title:  cfg.Title,
 		Text:   cfg.Body,
@@ -207,7 +214,7 @@ func bannerCSS(_ style.Theme) string {
   grid-row: 1;
   min-width: 0;
   margin: 0;
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
   font-size: var(--text-base, 1rem);
 }
 [data-fui-comp="ui-banner"] .fui-banner__body {
@@ -259,6 +266,9 @@ func bannerCSS(_ style.Theme) string {
 .fui-banner--warn .fui-banner__icon { color: var(--color-warning, #D97706); }
 .fui-banner--danger { --ui-banner-accent: var(--color-danger, #DC2626); }
 .fui-banner--danger .fui-banner__icon { color: var(--color-danger, #DC2626); }
+:where([data-fui-comp="ui-banner"]).fui-banner--strip { display: block; text-align: center; font-size: var(--text-sm); line-height: 1.5; border: 0; border-radius: 0; background: var(--color-surface-soft); padding: var(--spacing-sm) var(--spacing-lg); }
+[data-fui-comp="ui-banner"].fui-banner--strip .fui-banner__icon { display: none; }
+[data-fui-comp="ui-banner"].fui-banner--strip :is(.fui-banner__title, .fui-banner__body, .fui-banner__action) { display: inline; font-size: inherit; margin-inline-end: var(--spacing-sm); }
 
 /* Hidden state for runtime dismiss. */
 [data-fui-comp="ui-banner"][hidden] { display: none; }`

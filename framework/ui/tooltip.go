@@ -82,10 +82,11 @@ func Tooltip(cfg TooltipConfig, trigger render.HTML) render.HTML {
 	// trigger has no builder seam to hand wiring to (yet).
 	triggerWithDescribedBy := injectTriggerDescribedBy(trigger, id)
 
+	// Built entirely from cfg.Text, a string: this component's own.
 	pop := html.Span(html.TextConfig{
 		Class:      "fui-tooltip__pop",
 		ID:         id,
-		ExtraAttrs: html.Attrs{"role": "tooltip"},
+		ExtraAttrs: html.Attrs{"role": "tooltip", "data-fui-internal": ""},
 	}, render.Text(cfg.Text))
 
 	return tooltipStyle.WrapHTML(html.Span(html.TextConfig{

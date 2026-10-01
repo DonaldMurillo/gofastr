@@ -141,10 +141,11 @@ var extraAttrsRawLegacy = map[string]bool{
 // never be one — a caller could spoof its wiring, the exact class the
 // SafeExtraAttrs contract closes. Adding an entry is a design
 // decision: the component must emit no wiring of its own and be a
-// documented attachment point for interactive.Action.Attrs().
+// documented attachment point for runtime attributes.
 var safeCarrierAllowed = map[string]bool{
-	"components.go": true, // ui.Button (interactive-patterns.md)
-	"link.go":       true, // ui.Link (uinoderender ActionRef links)
+	"components.go":  true, // ui.Button (interactive-patterns.md)
+	"link.go":        true, // ui.Link (uinoderender ActionRef links)
+	"list_detail.go": true, // LayoutTree.VTRegion only; other wiring is dropped.
 }
 
 // TestExtraAttrsForwardingIsSanitized fails when a file outside the

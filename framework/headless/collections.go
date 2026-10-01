@@ -152,23 +152,26 @@ func TagInput(p TagInputProps, s Classes) render.HTML {
 		b.El("button", PartTagInputAdd, add, render.Text("+")))
 
 	kids := []render.HTML{
-		b.El("label", PartLabel, Attrs(map[string]string{"for": id}), render.Text(p.Label)),
-		b.El("div", PartTagInputZone, nil, zone...),
+		b.El("label", PartLabel, Internal(Attrs(map[string]string{"for": id})), render.Text(p.Label)),
+		// The values are data, not caller markup, so the whole zone —
+		// the chip list, the draft field and the add control — is the
+		// component's own; the mark sits on the zone, not its children.
+		b.El("div", PartTagInputZone, Internal(nil), zone...),
 	}
 	kids = append(kids,
 		// The status is empty and wired: the sentences travel as
 		// attributes from Strings, the module writes one after a chip
 		// operation, and a translated page announces in its own
 		// language.
-		b.El("span", PartStatus, html.Attrs{
+		b.El("span", PartStatus, Internal(html.Attrs{
 			"role":                       "status",
 			"data-hui-tag-input-status":  "",
 			"data-hui-tag-input-added":   w.TagInputAdded,
 			"data-hui-tag-input-removed": w.TagInputRemoved,
-		}),
+		})),
 	)
 	if p.Help != "" {
-		kids = append(kids, b.El("p", PartHint, nil, render.Text(p.Help)))
+		kids = append(kids, b.El("p", PartHint, Internal(nil), render.Text(p.Help)))
 	}
 
 	own := Merge(Safe(p.ExtraAttrs, "role", "aria-label"), Attrs(map[string]string{
@@ -308,6 +311,15 @@ func Repeater(p RepeaterProps, s Classes) render.HTML {
 		return q
 	}
 
+	// anyFields says whether any row carries the caller's fields: with
+	// none, the whole list is the component's own.
+	anyFields := false
+	for _, item := range p.Items {
+		if len(item.Fields) > 0 {
+			anyFields = true
+			break
+		}
+	}
 	rows := make([]render.HTML, 0, len(p.Items))
 	for i, item := range p.Items {
 		remove := html.Attrs{
@@ -326,12 +338,16 @@ func Repeater(p RepeaterProps, s Classes) render.HTML {
 		}
 		atFloor := len(p.Items) <= p.MinItems
 		Flag(remove, "disabled", atFloor)
-		row := b.El("li", PartRepeaterItem, html.Attrs{
+		itemOwn := html.Attrs{
 			"data-hui-repeater-item":  "",
 			"data-hui-repeater-index": strconv.Itoa(i),
-		},
+		}
+		if len(item.Fields) == 0 {
+			itemOwn = Internal(itemOwn)
+		}
+		row := b.El("li", PartRepeaterItem, itemOwn,
 			b.El("div", PartRepeaterFields, nil, item.Fields...),
-			b.El("div", PartActions, nil,
+			b.El("div", PartActions, Internal(nil),
 				b.El("button", PartDismiss, remove,
 					render.Text(orDefault(p.RemoveLabel, fmt.Sprintf(w.RepeaterRemove, i+1))))),
 		)
@@ -356,20 +372,23 @@ func Repeater(p RepeaterProps, s Classes) render.HTML {
 
 	kids := []render.HTML{}
 	if p.Label != "" {
-		kids = append(kids, b.El("span", PartLabel, nil, render.Text(p.Label)))
+		kids = append(kids, b.El("span", PartLabel, Internal(nil), render.Text(p.Label)))
 	}
 	kids = append(kids,
 		func() render.HTML {
 			items := Attrs(map[string]string{"id": id + "-items", "role": "list"})
 			attrsSet(items, "aria-label", p.Label)
+			if !anyFields {
+				items = Internal(items)
+			}
 			return b.El("ul", PartRepeaterItems, items, rows...)
 		}(),
-		b.El("button", PartRepeaterAdd, add,
+		b.El("button", PartRepeaterAdd, Internal(add),
 			render.Text(orDefault(p.AddLabel, w.RepeaterAdd))),
-		b.El("span", PartStatus, html.Attrs{
+		b.El("span", PartStatus, Internal(html.Attrs{
 			"role":                     "status",
 			"data-hui-repeater-status": "",
-		}, render.Text(p.Status)),
+		}), render.Text(p.Status)),
 	)
 
 	own := Merge(Safe(p.ExtraAttrs, "role", "aria-label"), Attrs(map[string]string{

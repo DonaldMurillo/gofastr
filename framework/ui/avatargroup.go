@@ -7,6 +7,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/headless"
 )
 
 // ─── AvatarGroup ────────────────────────────────────────────────────
@@ -93,7 +94,13 @@ func AvatarGroup(cfg AvatarGroupConfig) render.HTML {
 		if cfg.ShowNames {
 			av = Tooltip(TooltipConfig{Text: a.Name}, av)
 		}
-		items = append(items, av)
+		// AvatarConfig draws from strings only, so the rendered Avatar
+		// (and the Tooltip wrapping it, when ShowNames is set) holds
+		// none of a caller's markup here; its root becomes a nested
+		// item rather than one an owner could place, so it is
+		// collapsed into a single mark, as combobox/fileupload do for
+		// their own nested headless calls.
+		items = append(items, headless.Own(av))
 	}
 	if overflow > 0 {
 		more := strconv.Itoa(overflow)
@@ -178,7 +185,7 @@ func avatarGroupCSS(_ style.Theme) string {
   background: var(--color-surface-soft, #e5e5e5);
   color: var(--color-text, #111);
   font-size: var(--text-xs, 0.75rem);
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
   line-height: 1;
   border: 2px solid var(--color-surface, #fff);
 }

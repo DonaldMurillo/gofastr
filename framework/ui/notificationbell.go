@@ -290,17 +290,39 @@ func notificationBellCSS(_ style.Theme) string {
   color: var(--color-text, #18181B);
   cursor: pointer;
 }
-[data-fui-comp="ui-notification-bell"]:hover {
+[data-fui-comp="ui-notification-bell"]:hover:not(.is-popover-trigger-active) {
   background: var(--color-surface-soft, #F4F4F5);
+}
+/* Open: the runtime's generic trigger highlight (.is-popover-trigger-active,
+   primary fill + primary-fg) restated at this component's specificity.
+   Without it the hover rule above won the background while the generic
+   rule won the colour: a white glyph on light grey (dark: near-black on
+   dark grey) the moment the popover opened under the pointer. */
+[data-fui-comp="ui-notification-bell"].is-popover-trigger-active {
+  background: var(--color-primary, #4F46E5);
+  color: var(--color-primary-fg, #FFFFFF);
 }
 [data-fui-comp="ui-notification-bell"]:focus-visible {
   outline: 2px solid var(--color-primary, #4F46E5);
   outline-offset: 2px;
 }
+[data-fui-comp="ui-notification-bell"] .fui-notification-bell__icon {
+  /* The badge's containing block: anchoring it to the GLYPH's
+     top-end corner (not the 44px button's) keeps the count from
+     covering the bell — a badge pinned to the button covered about
+     half the glyph, leaving a red "3" and a curl. */
+  position: relative;
+  display: inline-flex;
+  line-height: 0;
+}
 [data-fui-comp="ui-notification-bell"] .fui-notification-bell__badge {
   position: absolute;
-  inset-block-start: 6px;
-  inset-inline-end: 6px;
+  /* Outward from the glyph's top-end corner: a single digit covers
+     ~15% of the 20px glyph, a two-digit count ~24% (≤ a quarter),
+     and the overshoot stays inside the 44px button's 12px margins. */
+  inset-block-start: -12px;
+  inset-inline-end: -10px;
+  box-sizing: border-box;
   min-inline-size: 18px;
   block-size: 18px;
   padding: 0 5px;
@@ -312,7 +334,7 @@ func notificationBellCSS(_ style.Theme) string {
   background: var(--color-danger, #B91C1C);
   color: var(--color-primary-fg, #FFFFFF);
   font-size: var(--text-xs, 0.75rem);
-  font-weight: 700;
+  font-weight: var(--font-weight-bold);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -334,7 +356,7 @@ func notificationBellCSS(_ style.Theme) string {
 .fui-notification-bell__title {
   margin: 0;
   font-size: var(--text-sm, 0.875rem);
-  font-weight: 700;
+  font-weight: var(--font-weight-bold);
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--color-text-muted, #52525B);
@@ -376,7 +398,7 @@ a.fui-notification-bell__row-link:hover {
   gap: var(--spacing-sm, 4px);
 }
 .fui-notification-bell__row-title {
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
   font-size: var(--text-sm, 0.875rem);
 }
 .fui-notification-bell__row-time {

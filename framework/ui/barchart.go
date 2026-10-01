@@ -65,6 +65,15 @@ type BarChartConfig struct {
 	// cap. Values are shown by default. Set this to opt out (e.g. a dense
 	// sparkline-style strip where the numbers would crowd).
 	HideValues bool
+	// FitHeight sizes the SVG to hug the tallest bar instead of a
+	// fixed Height: the plot area is chosen so the tallest bar lands
+	// at 96px and the SVG height becomes the value/label gutters plus
+	// exactly that, so no empty band pads the space above the caps.
+	// The y-scale still rounds up to a clean maximum (the headroom
+	// rule), so bar RATIOS are identical to the fixed-height chart —
+	// only the blank pixels above the tallest bar are gone. Ignored
+	// when Height is set explicitly.
+	FitHeight bool
 	// LabelledBy is the id of an element naming the chart for AT.
 	LabelledBy string
 	ID         string
@@ -152,6 +161,19 @@ func BarChart(cfg BarChartConfig) render.HTML {
 
 	plotW := float64(w) - axisGutter
 	plotH := float64(h) - topGutter - bottomGutter
+	if cfg.FitHeight && cfg.Height == 0 {
+		// Hug the tallest bar (see FitHeight): the plot is sized so
+		// the tallest bar lands at 96px, then the SVG height follows
+		// from the gutters — the clean-maximum headroom lives in the
+		// scale, not as blank pixels above the caps.
+		const fitTallestBar = 96.0
+		if dataMax > 0 {
+			plotH = fitTallestBar * valueMax / dataMax
+		} else {
+			plotH = fitTallestBar
+		}
+		h = int(math.Round(topGutter + plotH + bottomGutter))
+	}
 	if plotH < 8 {
 		plotH = 8
 	}
@@ -219,12 +241,12 @@ func BarChart(cfg BarChartConfig) render.HTML {
 			sb.WriteString(ftoa(float64(w)))
 			sb.WriteString(`" y2="`)
 			sb.WriteString(ftoa(ty))
-			sb.WriteString(`" class="fui-bar-chart__grid"/>`)
+			sb.WriteString(`" class="fui-bar-chart__grid" data-fui-internal=""/>`)
 			sb.WriteString(`<text x="`)
 			sb.WriteString(ftoa(axisGutter - 5))
 			sb.WriteString(`" y="`)
 			sb.WriteString(ftoa(ty + 3))
-			sb.WriteString(`" class="fui-bar-chart__axis-label" text-anchor="end">`)
+			sb.WriteString(`" class="fui-bar-chart__axis-label" data-fui-internal="" text-anchor="end">`)
 			sb.WriteString(ftoa(tv))
 			sb.WriteString(`</text>`)
 		}
@@ -239,7 +261,7 @@ func BarChart(cfg BarChartConfig) render.HTML {
 	sb.WriteString(ftoa(float64(w)))
 	sb.WriteString(`" y2="`)
 	sb.WriteString(ftoa(baseY))
-	sb.WriteString(`" class="fui-bar-chart__baseline"/>`)
+	sb.WriteString(`" class="fui-bar-chart__baseline" data-fui-internal=""/>`)
 
 	for i, b := range cfg.Bars {
 		slotX := axisGutter + float64(i)*slotW
@@ -286,7 +308,7 @@ func BarChart(cfg BarChartConfig) render.HTML {
 		sb.WriteString(ftoa(barH))
 		sb.WriteString(`" rx="3" class="`)
 		sb.WriteString(barCls)
-		sb.WriteString(`"`)
+		sb.WriteString(`" data-fui-internal=""`)
 		if fill != "" {
 			sb.WriteString(` fill="`)
 			sb.WriteString(escapeXML(fill))
@@ -306,7 +328,7 @@ func BarChart(cfg BarChartConfig) render.HTML {
 			sb.WriteString(ftoa(cx))
 			sb.WriteString(`" y="`)
 			sb.WriteString(ftoa(y - 4))
-			sb.WriteString(`" class="fui-bar-chart__value" text-anchor="middle">`)
+			sb.WriteString(`" class="fui-bar-chart__value" data-fui-internal="" text-anchor="middle">`)
 			sb.WriteString(escapeXML(ftoa(b.Value)))
 			sb.WriteString(`</text>`)
 		}
@@ -319,7 +341,7 @@ func BarChart(cfg BarChartConfig) render.HTML {
 			sb.WriteString(ftoa(cx))
 			sb.WriteString(`" y="`)
 			sb.WriteString(ftoa(ly))
-			sb.WriteString(`" class="fui-bar-chart__label" text-anchor="middle">`)
+			sb.WriteString(`" class="fui-bar-chart__label" data-fui-internal="" text-anchor="middle">`)
 			for li, ln := range lines {
 				sb.WriteString(`<tspan x="`)
 				sb.WriteString(ftoa(cx))
@@ -506,7 +528,7 @@ func barChartCSS(_ style.Theme) string {
 }
 [data-fui-comp="ui-bar-chart"] .fui-bar-chart__value {
   font-size: var(--text-xs, 0.75rem);
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
   fill: var(--color-text, #18181B);
   font-variant-numeric: tabular-nums;
 }

@@ -121,8 +121,12 @@ func CopyButton(cfg CopyButtonConfig) render.HTML {
 		cls += " " + cfg.Class
 	}
 
+	// Every field CopyButton draws from is a string, bool or int, so
+	// the button and the status span below hold none of a caller's
+	// markup — both are the topmost of their own internal subtree.
 	btnAttrs := html.Attrs{
-		"type": "button",
+		"type":              "button",
+		"data-fui-internal": "",
 	}
 	if cfg.ToastOnCopy {
 		variant := cfg.ToastVariant
@@ -190,6 +194,7 @@ func CopyButton(cfg CopyButtonConfig) render.HTML {
 			"role":                 "status",
 			"aria-live":            "polite",
 			"data-hui-copy-status": "",
+			"data-fui-internal":    "",
 		},
 	})
 

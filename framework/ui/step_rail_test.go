@@ -87,7 +87,7 @@ func TestStepRailMetaHrefRendersLink(t *testing.T) {
 		ActiveIndex: 0,
 		Meta:        "Plain note",
 	}))
-	if !strings.Contains(plain, `fui-step-rail__meta">Plain note</div>`) {
+	if !strings.Contains(plain, `fui-step-rail__meta" data-fui-internal="">Plain note</div>`) {
 		t.Fatalf("Meta without MetaHref should be plain text in the meta div; got %q", plain)
 	}
 }

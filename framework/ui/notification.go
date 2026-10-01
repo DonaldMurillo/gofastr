@@ -132,8 +132,10 @@ func Notification(cfg NotificationConfig) render.HTML {
 		dismissLabel = i18nui.T(ctx, i18nui.KeyNotificationDismiss)
 	}
 	return notificationStyle.WrapHTML(headless.Toast(headless.ToastProps{
-		Tone:         tone,
-		Icon:         render.Text(notificationGlyph(v)),
+		Tone: tone,
+		// NotificationConfig has no Icon field of its own: the glyph
+		// is always this component's choice, drawn from Variant.
+		Icon:         headless.Own(render.Tag("span", nil, render.Text(notificationGlyph(v)))),
 		Title:        cfg.Title,
 		Body:         cfg.Body,
 		DismissHref:  cfg.DismissHref,

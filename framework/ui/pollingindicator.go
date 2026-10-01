@@ -68,12 +68,15 @@ func PollingIndicator(cfg PollingIndicatorConfig) render.HTML {
 	if cfg.ID != "" {
 		attrs["id"] = cfg.ID
 	}
+	// Every field PollingIndicator draws from is a string or bool, so
+	// the dot and the label both hold none of a caller's markup.
 	return pollingIndicatorStyle.WrapHTML(render.Tag("span", attrs,
 		render.Tag("span", map[string]string{
-			"class":       "fui-polling-indicator__dot",
-			"aria-hidden": "true",
+			"class":             "fui-polling-indicator__dot",
+			"aria-hidden":       "true",
+			"data-fui-internal": "",
 		}),
-		html.Span(html.TextConfig{Class: "fui-polling-indicator__label"}, render.Text(label)),
+		html.Span(html.TextConfig{Class: "fui-polling-indicator__label", ExtraAttrs: html.Attrs{"data-fui-internal": ""}}, render.Text(label)),
 	))
 }
 

@@ -20,7 +20,7 @@ import (
 // landmark or the anchors, which the sheet reaches by tag.
 func TestPaginationClassMapKeepsTheSheetsNames(t *testing.T) {
 	h := string(Pagination(PaginationConfig{Page: 5, Pages: 12}))
-	if !strings.Contains(h, `<div class="pagination">`) {
+	if !strings.Contains(h, `<div class="pagination" data-fui-internal="">`) {
 		t.Errorf("the list did not carry the sheet's pagination class:\n%s", h)
 	}
 	if !strings.Contains(h, `class="pagination-gap"`) {

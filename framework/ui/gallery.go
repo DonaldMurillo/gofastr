@@ -307,7 +307,7 @@ func galleryCSS(_ style.Theme) string {
    that many columns, and the max() floor (--ui-gallery-min) makes auto-fill
    wrap to fewer columns when tracks would get narrower — responsive with no
    media queries. */
-[data-fui-comp="ui-gallery"]:not(.fui-gallery--strip):not(.fui-gallery--masonry) {
+[data-fui-comp="ui-gallery"]:where(:not(.fui-gallery--strip):not(.fui-gallery--masonry)) {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(min(100%, max(var(--ui-gallery-min), calc((100% - (var(--ui-gallery-cols) - 1) * var(--ui-gallery-gap)) / var(--ui-gallery-cols)))), 1fr));
   gap: var(--ui-gallery-gap);

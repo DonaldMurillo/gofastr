@@ -112,7 +112,7 @@ func multiselectCSS(_ style.Theme) string {
   color: var(--color-primary-fg, #FFFFFF);
   border-radius: 999px;
   font-size: var(--text-sm, 0.875rem);
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
 }
 [data-fui-comp="ui-multiselect"] [data-hui-multiselect-remove] {
   display: inline-flex;
@@ -142,7 +142,7 @@ func multiselectCSS(_ style.Theme) string {
   align-items: center;
   min-block-size: var(--spacing-touch-target, 44px);
   padding: 0 var(--spacing-md, 8px);
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
   color: var(--color-text, #18181B);
   cursor: pointer;
   user-select: none;

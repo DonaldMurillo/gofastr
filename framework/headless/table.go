@@ -260,6 +260,18 @@ func Table(p TableProps, s Classes) render.HTML {
 	// column the answer dropped: focus stays inside the table the
 	// reader is reading.
 	Mark(scroll, "data-hui-table-scroll")
+	// emptyHasCallerContent says whether the one cell spanning every
+	// column carries Empty, the caller's own render.HTML. It is the
+	// only caller content the region can ever hold: Row.Cells is a
+	// map, not a render.HTML/[]render.HTML field, so a cell's value —
+	// like a column's Header — is not caller content under this rule.
+	// When Empty is what's showing, the region stays reachable down to
+	// that cell; otherwise the whole region, headers, sort controls
+	// and cell values alike, is the component's own.
+	emptyHasCallerContent := len(p.Rows) == 0 && p.Empty != ""
+	if !emptyHasCallerContent {
+		scroll = Internal(scroll)
+	}
 	scrollRegion := b.El("div", PartScroll, scroll,
 		b.El("table", PartTable, Attrs(map[string]string{"role": "table"}), kids...))
 
@@ -277,7 +289,7 @@ func Table(p TableProps, s Classes) render.HTML {
 	// said again. role=status already means polite; stating aria-live
 	// too can announce twice.
 	rootKids = append(rootKids,
-		b.El("span", PartStatus, Mark(Attrs(map[string]string{"role": "status"}), "data-hui-table-status")))
+		b.El("span", PartStatus, Internal(Mark(Attrs(map[string]string{"role": "status"}), "data-hui-table-status"))))
 	own := Merge(Safe(p.ExtraAttrs), Attrs(map[string]string{"id": p.ID}))
 	// The module marker, the signal it records the clicked sort
 	// against, and the sentence it copies: everything the behaviour

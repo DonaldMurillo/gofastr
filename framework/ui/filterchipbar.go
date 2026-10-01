@@ -141,13 +141,15 @@ func FilterChipBar(cfg FilterChipBarConfig) render.HTML {
 		if signal == "" {
 			signal = "filter-bar"
 		}
-		items = append(items, Tag(TagConfig{
+		// Every chip is built from FilterChip's strings, so the whole
+		// Tag is the component's own.
+		items = append(items, headless.Own(Tag(TagConfig{
 			Label:        f.Label,
 			Variant:      f.Variant,
 			Dismiss:      f.DismissPath,
 			DismissLabel: i18nui.TVars(ctx, i18nui.KeyFilterChipRemove, map[string]string{"label": f.Label}),
 			Island:       headless.Island{Endpoint: f.DismissPath, Signal: signal},
-		}))
+		})))
 	}
 
 	if cfg.ClearAllPath != "" && len(cfg.Filters) > 0 {
@@ -155,6 +157,8 @@ func FilterChipBar(cfg FilterChipBarConfig) render.HTML {
 		if signal == "" {
 			signal = "filter-bar"
 		}
+		// Built entirely from cfg.ClearAllPath/clearLabel, never caller
+		// markup: this component's own.
 		items = append(items, render.Tag("a", map[string]string{
 			"href":                cfg.ClearAllPath,
 			"class":               "fui-filter-bar__clear",
@@ -162,6 +166,7 @@ func FilterChipBar(cfg FilterChipBarConfig) render.HTML {
 			"data-fui-rpc":        cfg.ClearAllPath,
 			"data-fui-rpc-method": "POST",
 			"data-fui-rpc-signal": signal,
+			"data-fui-internal":   "",
 		}, render.Text(clearLabel)))
 	}
 

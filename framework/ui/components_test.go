@@ -44,6 +44,23 @@ func TestPageHeaderOmitsActionsWhenEmpty(t *testing.T) {
 	}
 }
 
+func TestPageHeaderBadgeKeepsHeadingNameAndActionsSeparate(t *testing.T) {
+	h := string(PageHeader(PageHeaderConfig{
+		Title: "Billing", Badge: StatusBadge(StatusBadgeConfig{Label: "On track"}),
+		Subtitle: "Eight issues", Actions: Button(ButtonConfig{Label: "New issue"}),
+	}))
+	titleEnd := strings.Index(h, "</h1>")
+	badge := strings.Index(h, "On track")
+	subtitle := strings.Index(h, "Eight issues")
+	actions := strings.Index(h, "New issue")
+	if titleEnd < 0 || badge < titleEnd || subtitle < badge || actions < subtitle {
+		t.Fatalf("badge must follow the heading, before supporting text and page actions: %s", h)
+	}
+	if !strings.Contains(h[:titleEnd], ">Billing") {
+		t.Fatal("heading lost its page name")
+	}
+}
+
 // ─── Section ───
 func TestSectionRendersHeadingDescriptionBody(t *testing.T) {
 	h := Section(SectionConfig{Heading: "Settings", Description: "Account-wide"},
@@ -641,7 +658,7 @@ func TestFormSectionExtraAttrsOnEveryRootShape(t *testing.T) {
 // typography, and a rule for that token exists in the sheet.
 func TestFormSectionLegendCarriesTheSheetHeadingClass(t *testing.T) {
 	h := FormSection(FormSectionConfig{Heading: "Access"}, render.Text("f"))
-	if !strings.Contains(string(h), `<legend class="fui-form-section__heading">`) {
+	if !strings.Contains(string(h), `<legend class="fui-form-section__heading" data-fui-internal="">`) {
 		t.Errorf("the legend does not carry the heading class the sheet styles:\n%s", h)
 	}
 	css := formSectionCSS(style.Theme{})

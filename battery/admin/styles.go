@@ -94,7 +94,7 @@ func adminCSS(_ style.Theme) string {
   border-radius: var(--radii-md, 8px);
   background: var(--color-surface, #17181a);
   color: var(--color-text, #f2f2f3);
-  font-size: 0.9rem; font-weight: 500;
+  font-size: 0.9rem; font-weight: var(--font-weight-medium);
   white-space: nowrap;
 }
 .admin-sort__summary::-webkit-details-marker { display: none; }
@@ -117,7 +117,7 @@ func adminCSS(_ style.Theme) string {
   white-space: nowrap;
 }
 .admin-sort__opt:hover { background: var(--color-surface-soft, #202123); }
-.admin-sort__opt[aria-current="true"] { color: var(--color-primary, #f0b429); font-weight: 600; }
+.admin-sort__opt[aria-current="true"] { color: var(--color-primary, #f0b429); font-weight: var(--font-weight-semibold); }
 
 /* Active-search chip — a quiet pill, not a stripe. Shows the term + count
    and a real link back to the unfiltered list (so clearing always works). */
@@ -132,7 +132,7 @@ func adminCSS(_ style.Theme) string {
   color: var(--color-text-muted, #a8a8ad);
   font-size: var(--text-sm, 0.875rem);
 }
-.admin-filter strong { color: var(--color-text, #f2f2f3); font-weight: 600; }
+.admin-filter strong { color: var(--color-text, #f2f2f3); font-weight: var(--font-weight-semibold); }
 .admin-filter__clear {
   display: inline-flex; align-items: center; justify-content: center;
   inline-size: 1.4rem; block-size: 1.4rem; border-radius: 999px;
@@ -155,7 +155,7 @@ func adminCSS(_ style.Theme) string {
 /* Booleans read as a glanceable pill, not the word "false". */
 .admin-bool {
   display: inline-flex; align-items: center; gap: 0.35rem;
-  font-size: 0.8125rem; font-weight: 500;
+  font-size: 0.8125rem; font-weight: var(--font-weight-medium);
   padding: 0.15rem 0.55rem; border-radius: 999px;
   border: 1px solid var(--color-border, #2a2b2e);
   color: var(--color-text-muted, #a8a8ad);
@@ -271,7 +271,7 @@ body.admin-standalone {
    the current page's link carries aria-current="page". */
 .admin-nav .fui-link[aria-current="page"] {
   color: var(--color-primary, #f0b429);
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
 }
 /* Compact text input for inline cell forms (grant / revoke / assign-roles). */
 .admin-input {

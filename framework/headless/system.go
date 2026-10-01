@@ -161,20 +161,20 @@ func SystemBanner(p SystemBannerProps, s Classes) render.HTML {
 	kids := []render.HTML{}
 	if p.Icon != "" {
 		kids = append(kids, b.El("span", PartIcon,
-			Attrs(map[string]string{"aria-hidden": "true"}), p.Icon))
+			internalIf(ownedSlot(p.Icon), Attrs(map[string]string{"aria-hidden": "true"})), p.Icon))
 	}
-	kids = append(kids, b.El("p", PartTitle, nil, title...))
+	kids = append(kids, b.El("p", PartTitle, Internal(nil), title...))
 	if p.Text != "" {
-		kids = append(kids, b.El("p", PartText, nil, render.Text(p.Text)))
+		kids = append(kids, b.El("p", PartText, Internal(nil), render.Text(p.Text)))
 	}
 	if p.Action != "" {
-		kids = append(kids, b.El("div", PartActions, nil, p.Action))
+		kids = append(kids, b.El("div", PartActions, internalIf(ownedSlot(p.Action), nil), p.Action))
 	}
 	if p.Dismiss == nil || *p.Dismiss {
-		dismiss := Mark(Attrs(map[string]string{
+		dismiss := Internal(Mark(Attrs(map[string]string{
 			"type":       "button",
 			"aria-label": orDefault(p.DismissLabel, fmt.Sprintf(p.Strings.Resolve().DismissTitled, p.Title)),
-		}), "data-hui-system-dismiss")
+		}), "data-hui-system-dismiss"))
 		kids = append(kids, b.El("button", PartDismiss, dismiss, render.Text("×")))
 	}
 	return b.El("div", PartRoot, own, kids...)

@@ -162,7 +162,7 @@ func RatingInput(cfg RatingConfig) render.HTML {
 	if icon == "" {
 		// The bundled glyph is this layer's art: the primitive's own
 		// default is a plain star, and every other shape is ours.
-		icon = render.HTML(ratingIcon(cfg.Shape))
+		icon = headless.Own(render.HTML(ratingIcon(cfg.Shape)))
 	}
 
 	return ratingStyle.WrapHTML(headless.Rating(headless.RatingProps{

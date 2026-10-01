@@ -96,7 +96,7 @@ func treeCSS(_ style.Theme) string {
 }
 [data-fui-comp="ui-tree"] .fui-tree__item[aria-selected="true"] > .fui-tree__row {
   background: var(--color-surface-soft, #f1f1f3);
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
 }
 [data-fui-comp="ui-tree"] .fui-tree__toggle {
   display: inline-flex;

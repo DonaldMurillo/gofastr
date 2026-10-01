@@ -162,11 +162,18 @@ func ProgressSteps(cfg ProgressStepsConfig) render.HTML {
 		}
 	}
 
-	return progressStepsStyle.WrapHTML(render.Tag("nav", navAttrs,
-		headless.Steps(headless.StepsProps{
-			Steps: steps,
-		}, progressStepsClasses),
-	))
+	// Steps is built entirely from ProgressStep's own typed fields —
+	// Marker is always this package's own check icon or nothing, never
+	// a caller's — so the list Steps renders holds nothing of the
+	// caller's either; Steps' own root never self-marks (an owner must
+	// place it), so the mark is spliced on here.
+	list, err := registry.InjectAttribute(headless.Steps(headless.StepsProps{
+		Steps: steps,
+	}, progressStepsClasses), "data-fui-internal", "")
+	if err != nil {
+		panic(err)
+	}
+	return progressStepsStyle.WrapHTML(render.Tag("nav", navAttrs, list))
 }
 
 func progressStepsCheckIcon() string {
@@ -240,12 +247,12 @@ func progressStepsCSS(_ style.Theme) string {
   background: var(--color-surface, #FFFFFF);
   border: 2px solid var(--color-border, #E4E4E7);
   font-size: var(--text-sm, 0.875rem);
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
   color: var(--color-text-muted, #52525B);
 }
 [data-fui-comp="ui-progress-steps"] .fui-progress-steps__label {
   font-size: var(--text-sm, 0.875rem);
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
   text-align: center;
 }
 [data-fui-comp="ui-progress-steps"] .fui-progress-steps__hint {

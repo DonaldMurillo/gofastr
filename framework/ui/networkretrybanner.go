@@ -95,11 +95,14 @@ func NetworkRetryBanner(cfg NetworkRetryBannerConfig) render.HTML {
 	}, render.Text(retryLabel))
 	_ = noDismiss
 	return networkRetryBannerStyle.WrapHTML(headless.SystemBanner(headless.SystemBannerProps{
-		ID:      orDefaultStr(cfg.ID, "network-offline"),
-		Tone:    "warning",
-		Title:   title,
-		Text:    desc,
-		Action:  retry,
+		ID:    orDefaultStr(cfg.ID, "network-offline"),
+		Tone:  "warning",
+		Title: title,
+		Text:  desc,
+		// NetworkRetryBannerConfig carries no render.HTML field of its
+		// own: this link is always built here from HealthEndpoint and
+		// RetryLabel, never handed in by a caller.
+		Action:  headless.Own(retry),
 		Dismiss: &noDismiss,
 		Offline: true,
 		ExtraAttrs: headless.Safe(cfg.ExtraAttrs, "role", "aria-live", "hidden",
@@ -151,7 +154,7 @@ var networkRetryBannerStyle = registry.RegisterStyle("ui-network-retry-banner", 
   grid-column: 1;
   grid-row: 1;
   margin: 0;
-  font-weight: 700;
+  font-weight: var(--font-weight-bold);
 }
 [data-fui-comp="ui-network-retry-banner"] .fui-network-retry-banner__desc {
   grid-column: 1;
@@ -180,7 +183,7 @@ var networkRetryBannerStyle = registry.RegisterStyle("ui-network-retry-banner", 
   background: var(--color-surface, #fff);
   color: var(--color-text, #18181B);
   font: inherit;
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
   text-decoration: none;
   cursor: pointer;
   white-space: nowrap;

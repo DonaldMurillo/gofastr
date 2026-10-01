@@ -102,7 +102,7 @@ func tagInputCSS(_ style.Theme) string {
   gap: var(--spacing-xs, 2px);
 }
 [data-fui-comp="ui-tag-input"] .fui-tag-input__label {
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
   font-size: var(--text-sm, 0.875rem);
   color: var(--color-text, #18181B);
 }
@@ -134,7 +134,7 @@ func tagInputCSS(_ style.Theme) string {
   color: var(--color-primary-fg, #FFFFFF);
   border-radius: 999px;
   font-size: var(--text-sm, 0.875rem);
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
 }
 [data-fui-comp="ui-tag-input"] .fui-tag-input__chip-remove {
   display: inline-flex;
@@ -175,7 +175,7 @@ func tagInputCSS(_ style.Theme) string {
   border-radius: var(--radii-md, 8px);
   background: var(--color-surface-soft, #F4F4F5);
   font: inherit;
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
   color: var(--color-text, #18181B);
   cursor: pointer;
 }

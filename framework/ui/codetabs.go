@@ -99,6 +99,13 @@ func CodeTabs(cfg CodeTabsConfig, samples ...CodeSample) render.HTML {
 		headless.PartTabsPanel: "fui-code-tabs__panels",
 	}
 	inner := headless.Tabs(headless.TabsProps{Name: cfg.Name, ID: cfg.ID, Tabs: items}, classes)
+	// Every panel here is a CodeBlock built from CodeSample's strings —
+	// CodeSample carries no render.HTML field, so nothing a caller
+	// handed CodeTabs ever reaches into this subtree. headless.Tabs'
+	// root becomes a nested tag here, never one an owner could place,
+	// so its own marks collapse into a single one, as combobox and
+	// fileupload do for their own nested headless calls.
+	inner = headless.Own(inner)
 	return codeTabsStyle.WrapHTML(render.Tag("div",
 		rootAttrs,
 		inner,
@@ -125,7 +132,7 @@ func codeTabsCSS(_ style.Theme) string {
   display: inline-flex;
   align-items: center;
   padding: var(--spacing-md, 8px) var(--spacing-lg, 16px);
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
   font-size: var(--text-base, 1rem);
   color: var(--color-text-muted, #6B7280);
   border-bottom: 2px solid transparent;
@@ -147,7 +154,7 @@ func codeTabsCSS(_ style.Theme) string {
 [data-fui-comp="ui-code-tabs"] .fui-code-tabs__panel { display: none; max-inline-size: 100%; }
 `)
 	for i := range headless.TabsMaxPanels() {
-		b.WriteString(fmt.Sprintf(`[data-fui-comp="ui-code-tabs"] .fui-code-tabs__strip[data-active="%d"] .fui-code-tabs__tab[data-fui-tab-index="%d"]{color:var(--color-primary, #4F46E5);border-bottom-color:var(--color-primary, #4F46E5);font-weight:600}`,
+		b.WriteString(fmt.Sprintf(`[data-fui-comp="ui-code-tabs"] .fui-code-tabs__strip[data-active="%d"] .fui-code-tabs__tab[data-fui-tab-index="%d"]{color:var(--color-primary, #4F46E5);border-bottom-color:var(--color-primary, #4F46E5);font-weight:var(--font-weight-semibold)}`,
 			i, i))
 		b.WriteString(fmt.Sprintf(`[data-fui-comp="ui-code-tabs"] .fui-code-tabs__strip[data-active="%d"] .fui-code-tabs__panel[data-fui-tab-index="%d"]{display:block}`,
 			i, i))

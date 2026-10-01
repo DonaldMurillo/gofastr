@@ -19,7 +19,7 @@ package ui
 // parameter describing in-page state, not a route, the same shape
 // widget deep links use for modals.
 //
-// Shape (mirrors DocLayout, a display:grid whose column count CSS keys
+// Shape (a display:grid whose column count CSS keys
 // off the host's open-state hook and the open modifier classes, so no
 // inline style is emitted and CSP stays strict):
 //
@@ -48,8 +48,7 @@ import (
 // PaneHostConfig configures a PaneHost.
 type PaneHostConfig struct {
 	// Primary is the always-visible main pane. Required: PaneHost
-	// panics when it is empty (mirrors DataTable/DocLayout required
-	// slots).
+	// panics when it is empty (mirrors DataTable's required slots).
 	Primary render.HTML
 	// Secondary is the first optional side pane. When empty, no
 	// secondary pane is rendered.

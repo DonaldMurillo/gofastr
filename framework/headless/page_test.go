@@ -60,7 +60,7 @@ func TestEmptyStateIsARegionNamedByItsHeading(t *testing.T) {
 	// label resolves to the heading inside the same render.
 	named := EmptyState(EmptyStateProps{Title: "No apps yet", ID: "apps-empty"}, nil)
 	has(t, named, `aria-labelledby="apps-empty-title"`, "an explicit ID does not name the heading")
-	has(t, named, `<h3 id="apps-empty-title">`, "the heading does not carry the referenced id")
+	has(t, named, `<h3 data-fui-internal="" id="apps-empty-title">`, "the heading does not carry the referenced id")
 	// Two empty states with one title on one render share no id.
 	twice := group(
 		EmptyState(EmptyStateProps{Title: "No results"}, nil),
@@ -125,7 +125,7 @@ func TestDetailListRendersADescriptionList(t *testing.T) {
 		{Label: "Status", Value: render.Text("running")},
 	}}, nil)
 	has(t, got, "<dl>", "the record is not a description list")
-	if n := strings.Count(string(got), "<dt>"); n != 2 {
+	if n := strings.Count(string(got), `<dt data-fui-internal="">`); n != 2 {
 		t.Errorf("rendered %d terms, wanted 2:\n%s", n, got)
 	}
 	if n := strings.Count(string(got), "<dd>"); n != 2 {
@@ -141,7 +141,7 @@ func TestDetailListRendersADescriptionList(t *testing.T) {
 func TestFieldsetRendersTheNativeGroupSemantic(t *testing.T) {
 	got := Fieldset(FieldsetProps{Legend: "Notifications"}, nil, render.HTML("<input name=a>"))
 	has(t, got, "<fieldset>", "the group is not a fieldset")
-	has(t, got, "<legend>Notifications</legend>", "the legend is not a legend element")
+	has(t, got, `<legend data-fui-internal="">Notifications</legend>`, "the legend is not a legend element")
 	// The heading-less branch is a div, never an unlabelled fieldset.
 	bare := Fieldset(FieldsetProps{}, nil, render.HTML("<input name=a>"))
 	hasNot(t, bare, "fieldset", "a group with no legend rendered a fieldset nothing names")
@@ -150,7 +150,7 @@ func TestFieldsetRendersTheNativeGroupSemantic(t *testing.T) {
 	// itself, where both the fields and the question are read from.
 	errored := Fieldset(FieldsetProps{Legend: "Access", Error: "Pick at least one role."}, nil)
 	has(t, errored, `aria-describedby="fieldset-access-error"`, "the group error is not described-by")
-	has(t, errored, `<p id="fieldset-access-error">`, "the group error carries no id")
+	has(t, errored, `<p data-fui-internal="" id="fieldset-access-error">`, "the group error carries no id")
 }
 
 // The description under the legend is read with the group it
@@ -161,7 +161,7 @@ func TestFieldsetDescribesItsGroupWithDescriptionAndError(t *testing.T) {
 	got := Fieldset(FieldsetProps{Legend: "Access",
 		Description: "Pick the roles blog may act with.",
 		Error:       "Pick at least one role."}, nil)
-	has(t, got, `<p id="fieldset-access-desc">`, "the description carries no id")
+	has(t, got, `<p data-fui-internal="" id="fieldset-access-desc">`, "the description carries no id")
 	has(t, got, `aria-describedby="fieldset-access-desc fieldset-access-error"`,
 		"the group is not described by its description and its error")
 

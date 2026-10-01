@@ -35,9 +35,19 @@ type AuthCardConfig struct {
 
 // AuthCard renders a centered, constrained auth card.
 func AuthCard(cfg AuthCardConfig) render.HTML {
+	// The panel holds only the title when Alert, Body and Footer are
+	// all empty — the whole panel is then the component's own — and
+	// holds a slot the moment any of them arrives, so the boundary
+	// moves down to the title alone and the panel is left for an owner
+	// to reach.
+	hasSlot := cfg.Alert != "" || cfg.Body != "" || cfg.Footer != ""
+	var titleAttrs html.Attrs
+	if hasSlot {
+		titleAttrs = html.Attrs{"data-fui-internal": ""}
+	}
 	inner := make([]render.HTML, 0, 4)
 	if cfg.Title != "" {
-		inner = append(inner, html.Heading(html.HeadingConfig{Level: 1, Class: "fui-auth-card__title"}, render.Text(cfg.Title)))
+		inner = append(inner, html.Heading(html.HeadingConfig{Level: 1, Class: "fui-auth-card__title", ExtraAttrs: titleAttrs}, render.Text(cfg.Title)))
 	}
 	if cfg.Alert != "" {
 		inner = append(inner, html.Div(html.DivConfig{Class: "fui-auth-card__alert", Role: "alert"}, cfg.Alert))
@@ -52,7 +62,11 @@ func AuthCard(cfg AuthCardConfig) render.HTML {
 	if cfg.Class != "" {
 		cls = cls + " " + cfg.Class
 	}
-	panel := html.Div(html.DivConfig{Class: "fui-auth-card__panel"}, inner...)
+	var panelAttrs html.Attrs
+	if !hasSlot {
+		panelAttrs = html.Attrs{"data-fui-internal": ""}
+	}
+	panel := html.Div(html.DivConfig{Class: "fui-auth-card__panel", ExtraAttrs: panelAttrs}, inner...)
 	return authCardStyle.WrapHTML(html.Div(html.DivConfig{
 		Class: cls, ExtraAttrs: html.SafeExtraAttrs(cfg.ExtraAttrs),
 	}, panel))

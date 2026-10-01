@@ -37,6 +37,9 @@ type BreadcrumbsConfig struct {
 	// "Breadcrumb", resolved per request through StringsFor when a
 	// translator is on the context.
 	Label string
+	// CompactMobile shows only the final two steps below md, without
+	// a leading separator. The full trail remains on wide screens.
+	CompactMobile bool
 
 	ID    string
 	Class string
@@ -65,6 +68,9 @@ func Breadcrumbs(cfg BreadcrumbsConfig, crumbs ...Crumb) render.HTML {
 		headless.PartBreadcrumbItem:      "fui-breadcrumbs__item",
 		headless.PartBreadcrumbLink:      "fui-breadcrumbs__link",
 		headless.PartBreadcrumbSeparator: "fui-breadcrumbs__sep",
+	}
+	if cfg.CompactMobile {
+		classes[headless.PartRoot] += " fui-breadcrumbs--compact-mobile"
 	}
 	if cfg.Class != "" {
 		classes[headless.PartRoot] += " " + cfg.Class
@@ -111,7 +117,11 @@ func breadcrumbsCSS(_ style.Theme) string {
 }
 [data-fui-comp="ui-breadcrumbs"] .fui-breadcrumbs__link[aria-current="page"] {
   color: var(--color-text, #1F2937);
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
   text-decoration: none;
+}
+@media (max-width: 47.99rem) {
+  [data-fui-comp="ui-breadcrumbs"].fui-breadcrumbs--compact-mobile .fui-breadcrumbs__item:not(:nth-last-child(-n+2)) { display: none; }
+  [data-fui-comp="ui-breadcrumbs"].fui-breadcrumbs--compact-mobile .fui-breadcrumbs__item:nth-last-child(2) .fui-breadcrumbs__sep { display: none; }
 }`
 }

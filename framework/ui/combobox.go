@@ -105,6 +105,10 @@ func Combobox(cfg ComboboxConfig) render.HTML {
 		ExtraAttrs:     headless.Safe(cfg.ExtraAttrs),
 		Strings:        StringsFor(ctx),
 	}, classes)
+	// The wrapper below is the root; the whole headless render sits
+	// inside it and is the component's own.
+	out = headless.Own(out)
+
 	cls := "fui-combobox"
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
@@ -116,7 +120,7 @@ func Combobox(cfg ComboboxConfig) render.HTML {
 var comboboxStyle = registry.RegisterStyle("ui-combobox", comboboxCSS)
 
 func comboboxCSS(_ style.Theme) string {
-	return `[data-fui-comp="ui-combobox"].fui-combobox {
+	return `:where([data-fui-comp="ui-combobox"]).fui-combobox {
   position: relative;
   display: block;
   inline-size: 100%;

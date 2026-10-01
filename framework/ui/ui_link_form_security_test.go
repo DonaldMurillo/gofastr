@@ -292,44 +292,38 @@ func TestTagHrefDropsUnsafeSchemes(t *testing.T) {
 }
 
 // TestNavHrefSinksDropUnsafeSchemes pins the URL scheme allow-list on
-// the remaining content-level Href sinks that render live anchors:
-// Sidebar item Href, DocLayout crumb Href, and DocPrevNext pager
-// Hrefs. Each degrades to "#", never a live javascript: link.
-// ProgressSteps step Href is no longer in this set: it rides
-// headless.Steps, which refuses a configured href the anchor policy
-// rejects (see TestProgressStepsHrefIsRefusedNotDegraded).
+// the Sidebar item Href, which degrades a refused href to the inert
+// "#" anchor, never a live javascript: link. ProgressSteps step Href
+// is not in this set: it rides headless.Steps, which refuses a
+// configured href the anchor policy rejects (see
+// TestProgressStepsHrefIsRefusedNotDegraded).
 func TestNavHrefSinksDropUnsafeSchemes(t *testing.T) {
-	const payload = "javascript:alert(1)"
-	surfaces := map[string]func() render.HTML{
-		"sidebar-item": func() render.HTML {
-			return ui.SidebarBody(ui.SidebarConfig{
-				Items: []ui.SidebarItem{{Label: "Home", Href: payload}},
-			})
-		},
-		"doc-crumb": func() render.HTML {
-			return ui.DocLayout(ui.DocLayoutConfig{
-				Crumbs: []ui.DocCrumb{{Label: "Docs", Href: payload}, {Label: "Here"}},
-			}, render.Text("body"))
-		},
-		"doc-pager": func() render.HTML {
-			return ui.DocPrevNext(ui.DocPager{
-				PrevHref: payload, PrevLabel: "p",
-				NextHref: payload, NextLabel: "n",
-			})
-		},
+	h := ui.SidebarBody(ui.SidebarConfig{
+		Items: []ui.SidebarItem{{Label: "Home", Href: "javascript:alert(1)"}},
+	})
+	if strings.Contains(strings.ToLower(string(h)), "javascript:") {
+		t.Fatalf("javascript: href reached output: %s", h)
 	}
-	for name, renderFn := range surfaces {
-		t.Run(name, func(t *testing.T) {
-			h := renderFn()
-			if strings.Contains(strings.ToLower(string(h)), "javascript:") {
-				t.Fatalf("javascript: href reached output: %s", h)
-			}
-			// Every surface here degrades the refused href to the
-			// inert "#" anchor it keeps.
-			if !strings.Contains(string(h), `href="#"`) {
-				t.Fatalf("a refused href still rendered an anchor: %s", h)
-			}
-		})
+	if !strings.Contains(string(h), `href="#"`) {
+		t.Fatalf("a refused href still rendered a live anchor: %s", h)
+	}
+}
+
+// A breadcrumb Href the anchor policy refuses degrades the step to
+// plain text: no anchor at all, and not a second current page.
+func TestCrumbUnsafeHrefIsPlainText(t *testing.T) {
+	h := string(ui.Breadcrumbs(ui.BreadcrumbsConfig{},
+		ui.Crumb{Text: "Docs", Href: "javascript:alert(1)"},
+		ui.Crumb{Text: "Here"},
+	))
+	if strings.Contains(strings.ToLower(h), "javascript:") {
+		t.Fatalf("javascript: href reached output: %s", h)
+	}
+	if strings.Contains(h, "<a ") {
+		t.Fatalf("a refused crumb href still rendered an anchor: %s", h)
+	}
+	if n := strings.Count(h, `aria-current="page"`); n != 1 {
+		t.Fatalf("aria-current count = %d, want 1: %s", n, h)
 	}
 }
 

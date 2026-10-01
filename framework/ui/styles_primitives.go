@@ -35,12 +35,19 @@ func layoutCSS(_ style.Theme) string {
 	return `[data-fui-comp="ui-layout"] {
   box-sizing: border-box;
 }
-[data-fui-comp="ui-layout"].fui-stack {
+[data-fui-comp="ui-layout"].fui-stack--trim-margins > * { margin-block: 0; }
+/* Screen: the page column — at least one viewport tall, last child
+   pushed to the bottom, so a short page keeps its footer at the
+   bottom of the screen. margin-block-start:auto (not justify-content)
+   so earlier children and their gaps keep their rhythm. */
+:where([data-fui-comp="ui-layout"]).fui-stack--screen { min-block-size: 100dvh; }
+[data-fui-comp="ui-layout"].fui-stack--screen > :last-child { margin-block-start: auto; }
+:where([data-fui-comp="ui-layout"]).fui-stack {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-md, 8px);
 }
-[data-fui-comp="ui-layout"].fui-cluster {
+:where([data-fui-comp="ui-layout"]).fui-cluster {
   display: flex;
   flex-direction: row;
   flex-wrap: wrap;
@@ -49,21 +56,21 @@ func layoutCSS(_ style.Theme) string {
 }
 [data-fui-comp="ui-layout"].fui-cluster--nowrap { flex-wrap: nowrap; }
 
-[data-fui-comp="ui-layout"].fui-grid {
+:where([data-fui-comp="ui-layout"]).fui-grid {
   display: grid;
   gap: var(--spacing-md, 8px);
   grid-template-columns: repeat(auto-fit, minmax(var(--ui-grid-min, 16rem), 1fr));
 }
 
-[data-fui-comp="ui-layout"].fui-center {
+:where([data-fui-comp="ui-layout"]).fui-center {
   display: flex;
   align-items: center;
   justify-content: center;
 }
-[data-fui-comp="ui-layout"].fui-center--viewport { min-block-size: 100vh; }
-[data-fui-comp="ui-layout"].fui-center--screen   { min-block-size: 100dvh; }
+:where([data-fui-comp="ui-layout"]).fui-center--viewport { min-block-size: 100vh; }
+:where([data-fui-comp="ui-layout"]).fui-center--screen   { min-block-size: 100dvh; }
 
-[data-fui-comp="ui-layout"].fui-spacer {
+:where([data-fui-comp="ui-layout"]).fui-spacer {
   flex: 1 1 auto;
   align-self: stretch;
 }
@@ -134,6 +141,11 @@ func cardCSS(t style.Theme) string {
   transform: translateY(-2px);
   box-shadow: var(--shadows-md, 0 4px 6px -1px rgba(0,0,0,0.10));
 }
+[data-fui-comp="ui-card"].fui-card--interactive[aria-current="page"] {
+  background: color-mix(in srgb, var(--color-primary) 12%, var(--color-surface));
+  outline: 1px solid var(--color-primary);
+  outline-offset: -1px;
+}
 [data-fui-comp="ui-card"].fui-card--interactive:focus-visible {
   outline: 2px solid var(--color-primary, #4F46E5);
   outline-offset: 2px;
@@ -152,7 +164,7 @@ func cardCSS(t style.Theme) string {
 [data-fui-comp="ui-card"] .fui-card__heading {
   margin: 0;
   font-size: var(--text-base, 1rem);
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
   color: var(--color-text, #18181B);
 }
 [data-fui-comp="ui-card"] .fui-card__description {
@@ -181,7 +193,15 @@ func cardCSS(t style.Theme) string {
   gap: var(--spacing-sm, 4px);
   background: var(--color-surface-soft, #F4F4F5);
 }
-[data-fui-comp="ui-card"].fui-card--flat .fui-card__footer { background: transparent; }` +
+[data-fui-comp="ui-card"].fui-card--flat .fui-card__footer { background: transparent; }
+[data-fui-comp="ui-card"].fui-card--row { box-shadow: none; border-radius: var(--radii-sm); background: transparent; overflow: visible; }
+[data-fui-comp="ui-card"].fui-card--row.fui-card--interactive:hover { transform: none; box-shadow: none; background: var(--color-surface-soft); }
+[data-fui-comp="ui-card"].fui-card--row .fui-card__inner { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--spacing-xs); padding: var(--spacing-xs) var(--spacing-sm); }
+[data-fui-comp="ui-card"].fui-card--row .fui-card__header { display: contents; }
+[data-fui-comp="ui-card"].fui-card--row .fui-card__heading { grid-column: 1; grid-row: 1; font-size: var(--text-xs); font-weight: var(--font-weight-normal); color: var(--color-text-muted); }
+[data-fui-comp="ui-card"].fui-card--row .fui-card__description { grid-column: 1 / -1; grid-row: 2; color: var(--color-text); line-height: 1.3; }
+[data-fui-comp="ui-card"].fui-card--row .fui-card__body { grid-column: 2; grid-row: 1; padding: 0; }
+[data-fui-comp="ui-card"].fui-card--row .fui-card__footer { grid-column: 1 / -1; }` +
 		customModsCSS(cardMods, "ui-card", "fui-card", t)
 }
 
@@ -429,7 +449,7 @@ func toggleCSS(_ style.Theme) string {
   gap: var(--spacing-sm, 4px);
 }
 .fui-choice-group__legend {
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
   font-size: var(--text-sm, 0.875rem);
   color: var(--color-text, #18181B);
   padding: 0;
@@ -536,7 +556,7 @@ func tagCSS(t style.Theme) string {
   border: 1px solid transparent;
   border-radius: var(--radii-full, 9999px);
   font-size: var(--text-xs, 0.75rem);
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
   line-height: 1.3;
   text-decoration: none;
 }
@@ -609,7 +629,7 @@ func spinnerCSS(_ style.Theme) string {
 }
 [data-fui-comp="ui-spinner"].fui-spinner--sm { --ui-spinner-size: 1rem; }
 [data-fui-comp="ui-spinner"].fui-spinner--lg { --ui-spinner-size: 2.5rem; }
-[data-fui-comp="ui-spinner"].fui-spinner--inline { display: inline-flex; }
+:where([data-fui-comp="ui-spinner"]).fui-spinner--inline { display: inline-flex; }
 [data-fui-comp="ui-spinner"] .fui-spinner__ring {
   display: inline-block;
   inline-size: var(--ui-spinner-size);
@@ -700,19 +720,19 @@ func dividerCSS(_ style.Theme) string {
   border: 0;
   background: var(--color-border, #E4E4E7);
 }
-hr[data-fui-comp="ui-divider"] {
+:where(hr)[data-fui-comp="ui-divider"] {
   block-size: 1px;
   inline-size: 100%;
   margin: var(--spacing-md, 8px) 0;
 }
-[data-fui-comp="ui-divider"].fui-divider--vertical {
+:where([data-fui-comp="ui-divider"]).fui-divider--vertical {
   display: inline-block;
   inline-size: 1px;
   block-size: 1em;
   margin: 0 var(--spacing-sm, 4px);
   vertical-align: middle;
 }
-[data-fui-comp="ui-divider"].fui-divider--labelled {
+:where([data-fui-comp="ui-divider"]).fui-divider--labelled {
   display: flex;
   align-items: center;
   gap: var(--spacing-md, 8px);
@@ -720,7 +740,7 @@ hr[data-fui-comp="ui-divider"] {
   background: transparent;
   color: var(--color-text-muted, #52525B);
   font-size: var(--text-sm, 0.875rem);
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
 }
 [data-fui-comp="ui-divider"] .fui-divider__line {
   flex: 1 1 0;
@@ -739,10 +759,10 @@ func stickyCSS(_ style.Theme) string {
   position: sticky;
   z-index: var(--z-sticky, 200);
 }
-[data-fui-comp="ui-sticky"][data-fui-z-tier="dropdown"] { z-index: var(--z-dropdown, 100); }
-[data-fui-comp="ui-sticky"][data-fui-z-tier="modal"]    { z-index: var(--z-modal, 300); }
-[data-fui-comp="ui-sticky"][data-fui-z-tier="popover"]  { z-index: var(--z-popover, 400); }
-[data-fui-comp="ui-sticky"][data-fui-z-tier="toast"]    { z-index: var(--z-toast, 500); }
+:where([data-fui-comp="ui-sticky"])[data-fui-z-tier="dropdown"] { z-index: var(--z-dropdown, 100); }
+:where([data-fui-comp="ui-sticky"])[data-fui-z-tier="modal"]    { z-index: var(--z-modal, 300); }
+:where([data-fui-comp="ui-sticky"])[data-fui-z-tier="popover"]  { z-index: var(--z-popover, 400); }
+:where([data-fui-comp="ui-sticky"])[data-fui-z-tier="toast"]    { z-index: var(--z-toast, 500); }
 [data-fui-comp="ui-sticky"]::after {
   content: "";
   position: absolute;
@@ -755,12 +775,12 @@ func stickyCSS(_ style.Theme) string {
   transition: opacity 0.15s;
 }
 /* Edge offsets */
-[data-fui-comp="ui-sticky"].fui-sticky--top { top: 0; }
-[data-fui-comp="ui-sticky"].fui-sticky--bottom { bottom: 0; }
-[data-fui-comp="ui-sticky"].fui-sticky--offset-sm { top: var(--spacing-sm, 4px); }
-[data-fui-comp="ui-sticky"].fui-sticky--offset-md { top: var(--spacing-md, 8px); }
-[data-fui-comp="ui-sticky"].fui-sticky--offset-lg { top: var(--spacing-lg, 16px); }
-[data-fui-comp="ui-sticky"].fui-sticky--offset-xl { top: var(--spacing-xl, 24px); }
+:where([data-fui-comp="ui-sticky"]).fui-sticky--top { top: 0; }
+:where([data-fui-comp="ui-sticky"]).fui-sticky--bottom { bottom: 0; }
+:where([data-fui-comp="ui-sticky"]).fui-sticky--offset-sm { top: var(--spacing-sm, 4px); }
+:where([data-fui-comp="ui-sticky"]).fui-sticky--offset-md { top: var(--spacing-md, 8px); }
+:where([data-fui-comp="ui-sticky"]).fui-sticky--offset-lg { top: var(--spacing-lg, 16px); }
+:where([data-fui-comp="ui-sticky"]).fui-sticky--offset-xl { top: var(--spacing-xl, 24px); }
 /* Show a subtle bottom border when the element is stuck (only top-sticky) */
 @supports ((position: -webkit-sticky) or (position: sticky)) {
   [data-fui-comp="ui-sticky"].fui-sticky--top:not(:is(:first-child))::after {

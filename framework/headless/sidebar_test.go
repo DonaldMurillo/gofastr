@@ -108,7 +108,7 @@ func TestSidebarCollapseContract(t *testing.T) {
 	// opening the widget the caller mounts.
 	drawer := renderSidebar(SidebarProps{NavLabel: "N", DrawerName: "nav-drawer",
 		DrawerLabel: "Open navigation", Items: []SidebarItem{{Label: "One", Href: "/1"}}})
-	if !strings.Contains(drawer, `aria-label="Open navigation" data-fui-open="nav-drawer"`) {
+	if !strings.Contains(drawer, `aria-label="Open navigation" data-fui-internal="" data-fui-open="nav-drawer"`) {
 		t.Errorf("the drawer trigger must open the widget and carry its label:\n%s", drawer)
 	}
 	hidden := renderSidebar(SidebarProps{NavLabel: "N", DrawerName: "nav-drawer",
@@ -125,8 +125,8 @@ func TestSidebarRegionRendersNoShellHooks(t *testing.T) {
 			{Label: "Two", Children: []SidebarItem{{Label: "A", Href: "/a"}}},
 		}}, nil))
 	for _, want := range []string{
-		`<h2>Docs</h2>`,
-		`<nav aria-label="Sections">`,
+		`<h2 data-fui-internal="">Docs</h2>`,
+		`<nav aria-label="Sections" data-fui-internal="">`,
 		`data-hui-disclosure-persist="panel-g1"`,
 	} {
 		if !strings.Contains(h, want) {

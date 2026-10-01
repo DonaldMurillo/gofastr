@@ -134,7 +134,7 @@ func TestNumberInputScrubsControlBytes(t *testing.T) {
 func TestSliderOutputAndEdges(t *testing.T) {
 	got := Slider(SliderProps{Name: "cpu", Label: "CPU share", Value: 40,
 		ShowValue: true, ShowEdgeLabels: true}, nil)
-	has(t, got, `<output data-hui-slider-output="" for="cpu">40</output>`, "the output is not a form output carrying its hook with the true value")
+	has(t, got, `<output data-fui-internal="" data-hui-slider-output="" for="cpu">40</output>`, "the output is not a form output carrying its hook with the true value")
 	has(t, got, ">0</span>", "the min edge label is missing")
 	has(t, got, ">100</span>", "the max edge label is missing")
 

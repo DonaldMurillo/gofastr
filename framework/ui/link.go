@@ -96,7 +96,7 @@ func linkCSS(_ style.Theme) string {
 	return `[data-fui-comp="ui-link"], .fui-link {
   color: var(--color-primary);
   text-decoration: none;
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
   cursor: pointer;
 }
 [data-fui-comp="ui-link"]:hover, .fui-link:hover { text-decoration: underline; }
@@ -119,6 +119,6 @@ func linkCSS(_ style.Theme) string {
 
 /* Muted — quieter affordance ("see all", "view details") that doesn't
    compete with primary CTAs. */
-.fui-link--muted { color: var(--color-text-muted); font-weight: 400; }
+.fui-link--muted { color: var(--color-text-muted); font-weight: var(--font-weight-normal); }
 .fui-link--muted:hover { color: var(--color-text); }`
 }

@@ -177,10 +177,13 @@ func galleryItem(b Box, i int, it GalleryItem, p GalleryProps) render.HTML {
 		"width":  strconv.Itoa(w),
 		"height": strconv.Itoa(h),
 	}))
+	// A GalleryItem is data, never markup — Src, Alt and Caption are
+	// strings the component draws its own img/anchor/figcaption from —
+	// so the whole item is the component's own, with no slot inside it.
 	if it.Caption == "" {
-		return b.El("li", PartControl, nil, b.El("a", PartLabel, linkAttrs, img))
+		return b.El("li", PartControl, Internal(nil), b.El("a", PartLabel, linkAttrs, img))
 	}
-	return b.El("li", PartControl, nil,
+	return b.El("li", PartControl, Internal(nil),
 		b.El("figure", PartHeader, nil,
 			b.El("a", PartLabel, linkAttrs, img),
 			b.El("figcaption", PartText, nil, render.Text(scrubControlBytes(it.Caption)))))

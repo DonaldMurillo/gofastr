@@ -265,7 +265,15 @@ func DataTable(cfg DataTableConfig) render.HTML {
 		if pag.Ctx == nil {
 			pag.Ctx = ctx
 		}
-		footer = html.Div(html.DivConfig{Class: "fui-data-table__footer"}, Pagination(pag))
+		// The footer is built entirely from cfg.Pagination, a typed
+		// config, never caller HTML: the wrapper and the pager inside
+		// it are this component's own, so the boundary sits on the
+		// wrapper (Pagination also marks its own list; a mark nested
+		// inside an already-marked wrapper is fine).
+		footer = html.Div(html.DivConfig{
+			Class:      "fui-data-table__footer",
+			ExtraAttrs: html.Attrs{"data-fui-internal": ""},
+		}, Pagination(pag))
 	}
 
 	// The root's modifier classes travel as part attrs, which append
