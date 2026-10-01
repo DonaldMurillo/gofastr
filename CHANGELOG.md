@@ -1081,7 +1081,8 @@ are listed under Added above, not here.
 - `gofastr upgrade` knows v0.86.0 ("Headless design system"): 40 notes
   covering the 33 rows of the migration ledger above (the layout row
   takes eight). 38 of them carry a `detect` regex the CLI runs per-line
-  over a project's non-test .go files to point at the exact lines the
+  over a project's non-test .go files and its .css sheets to point at
+  the exact lines the
   release breaks — import paths
   of the deleted `core-ui/patterns/*` packages, removed fields
   (`SignalPrefix`, `LabelVisible`), removed classes (`ui-button`,
@@ -1093,7 +1094,9 @@ are listed under Added above, not here.
   used, so an omission is a documented decision rather than an
   oversight — and a test drives every detect through the real
   detectHits path against one pre-stack line it must flag and the
-  migrated spelling it must stay silent on.
+  migrated spelling it must stay silent on. A second test runs every
+  v0.86.0 detect over the migrated `examples/` tree and requires zero
+  hits.
 
 - `framework/headless` gains the navigation primitives `Rail`,
   `TableOfContents`, `Disclosure`, `Menu`, `Combobox`, `Tabs`,

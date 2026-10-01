@@ -240,9 +240,13 @@ func goModGofastrVersion(root string) (version string, replaced bool, err error)
 	return version, replaced, nil
 }
 
-// detectHits runs one note's regex over the project's non-test .go
-// files and returns "file:line" hits (root-relative), capped so one
-// pervasive pattern doesn't drown the report.
+// detectHits runs one note's regex over the project's source and
+// returns "file:line" hits (root-relative), capped so one pervasive
+// pattern doesn't drown the report. Scanned are non-test .go files and
+// .css stylesheets — owned .style.css/.tokens.css sheets and plain app
+// styles alike — because several releases' breaks are CSS class and
+// token renames a Go-only scan can never see. The same directories are
+// skipped for both.
 func detectHits(root, pattern string) []string {
 	re, err := regexp.Compile(pattern)
 	if err != nil {
@@ -265,7 +269,9 @@ func detectHits(root, pattern string) []string {
 			}
 			return nil
 		}
-		if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+		scan := strings.HasSuffix(path, ".css") ||
+			(strings.HasSuffix(path, ".go") && !strings.HasSuffix(path, "_test.go"))
+		if !scan {
 			return nil
 		}
 		body, err := os.ReadFile(path)
@@ -275,7 +281,7 @@ func detectHits(root, pattern string) []string {
 		rel, _ := filepath.Rel(root, path)
 		for i, line := range strings.Split(string(body), "\n") {
 			if re.MatchString(line) {
-				hits = append(hits, fmt.Sprintf("%s:%d", rel, i+1))
+				hits = append(hits, rel+":"+strconv.Itoa(i+1))
 				if len(hits) >= maxHits {
 					break
 				}

@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -156,6 +157,62 @@ func writeUpgradeFixture(t *testing.T, dir, rel, body string) {
 	}
 	if err := os.WriteFile(full, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// v086NoteDetect finds the v0.86.0 note whose change line starts with
+// prefix and returns its detect. The change text is the stable handle:
+// detect regexes are rewritten as the detector learns finer shapes.
+func v086NoteDetect(t *testing.T, reg []upgradeRelease, prefix string) string {
+	t.Helper()
+	for _, r := range reg {
+		if r.Version != "v0.86.0" {
+			continue
+		}
+		for _, n := range r.Notes {
+			if strings.HasPrefix(n.Change, prefix) {
+				return n.Detect
+			}
+		}
+	}
+	t.Fatalf("no v0.86.0 note starts with %q", prefix)
+	return ""
+}
+
+// TestUpgradeDetectScansCSSheets pins that detectors run over a
+// project's stylesheets, not just its Go source: several v0.86.0 breaks
+// live in CSS (class renames, the removed token aliases, the retired
+// layout variables), and a detector blind to .css files reports a
+// project holding `.ui-button { color: var(--color-primary) }` as
+// clean. The same directory skips (node_modules & co.) apply.
+func TestUpgradeDetectScansCSSheets(t *testing.T) {
+	reg, err := loadUpgradeRegistry()
+	if err != nil {
+		t.Fatalf("loadUpgradeRegistry: %v", err)
+	}
+	dir := t.TempDir()
+	writeUpgradeFixture(t, dir, "static/app.css",
+		".save.ui-button { color: var(--color-primary); }\n"+
+			":root { --ui-container-wide: 1240px; }\n")
+	writeUpgradeFixture(t, dir, "web/hdr.style.css",
+		".ui-site-header__inner { gap: var(--spacing-xxl); }\n")
+	writeUpgradeFixture(t, dir, "theme/tokens.css", "  --color-warn: #b45309;\n")
+	writeUpgradeFixture(t, dir, "node_modules/pkg/a.css", ".ui-button {}\n")
+	buttonDetect := v086NoteDetect(t, reg, "the button classes are fui-button")
+	for _, tc := range []struct{ rel, change string }{
+		{filepath.Join("static", "app.css") + ":1", "the button classes are fui-button"},
+		{filepath.Join("static", "app.css") + ":2", "the page dimensions are theme tokens"},
+		{filepath.Join("web", "hdr.style.css") + ":1", "shell classes are fui-"},
+		{filepath.Join("web", "hdr.style.css") + ":1", "auto-named size-scale tokens are 2xl/3xl"},
+		{filepath.Join("theme", "tokens.css") + ":1", "the ten legacy token aliases"},
+	} {
+		hits := detectHits(dir, v086NoteDetect(t, reg, tc.change))
+		if !slices.Contains(hits, tc.rel) {
+			t.Errorf("detect for %q must flag %s in a stylesheet, got hits %v", tc.change, tc.rel, hits)
+		}
+	}
+	if hits := detectHits(dir, buttonDetect); slices.Contains(hits, filepath.Join("node_modules", "pkg", "a.css")+":1") {
+		t.Errorf("stylesheets under node_modules must be skipped, got hits %v", hits)
 	}
 }
 
@@ -323,36 +380,36 @@ func TestBreakingMarkerIsNotDoubled(t *testing.T) {
 // stay silent — a detect that fires on the new spelling cries wolf on
 // every migrated project). Keyed by the note's detect regex.
 var v086DetectPairs = map[string][2]string{
-	`\.Hash([^(\w]|$)`: {
+	`(^|[^\w])([A-Z]\w*)\.Hash([^(\w]|$)`: {
 		`if Dark.Hash != want {`,
 		`if Dark.Hash() != want {`,
 	},
-	`ExtraAttrs[^}]*"disabled"`: {
-		`ExtraAttrs: map[string]string{"disabled": ""},`,
+	`Button.*ExtraAttrs.*"disabled"|ExtraAttrs.*"disabled".*Button`: {
+		`btn := ui.Button(ui.ButtonConfig{ExtraAttrs: map[string]string{"disabled": ""}})`,
 		`Disabled: true,`,
 	},
-	`"data-fui-signal":|"data-fui-toggle-|"data-fui-optimistic-`: {
-		`"data-fui-toggle-on": "done",`,
+	`(Button.*"data-fui-(signal":|toggle-|optimistic-)|"data-fui-(signal":|toggle-|optimistic-).*Button)`: {
+		`ui.Button(ui.ButtonConfig{ExtraAttrs: map[string]string{"data-fui-toggle-on": "done"}})`,
 		`Action: interactive.Post("/api/todos").Attrs(),`,
 	},
-	`(^|[^a-z-])ui-button`: {
+	`\.ui-(button)|class=\\?"([^"]*[^a-z-])?ui-(button)|(^|[^a-z-])ui-(button)(--[a-z0-9_-]*|__|[^a-z0-9"-]|$)`: {
 		`cls := "ui-button ui-button--primary"`,
 		`cls := "fui-button fui-button--primary" + "var(--ui-button-radius)"`,
 	},
-	`(^|[^a-z-])ui-(form|form-field|form-section|select|input-group|validation-summary)`: {
+	`\.ui-(form|form-field|form-section|select|input-group|validation-summary)|class=\\?"([^"]*[^a-z-])?ui-(form|form-field|form-section|select|input-group|validation-summary)|(^|[^a-z-])ui-(form|form-field|form-section|select|input-group|validation-summary)(--[a-z0-9_-]*|__|[^a-z0-9"-]|$)`: {
 		`cls := "ui-form ui-form--block-actions"`,
 		`cls := "fui-form fui-form--block-actions" + "var(--ui-form-gap)"`,
 	},
-	`data-fui-rpc-after-text|data-fui-rpc-after-disable|data-fui-rpc-scroll-to|data-fui-push-state`: {
-		`"data-fui-rpc-scroll-to": "form",`,
+	`(Form.*data-fui-(rpc-after-text|rpc-after-disable|rpc-scroll-to|push-state)|data-fui-(rpc-after-text|rpc-after-disable|rpc-scroll-to|push-state).*Form)`: {
+		`ui.Form(ui.FormConfig{ExtraAttrs: map[string]string{"data-fui-push-state": "x"}})`,
 		`ExtraAttrs: interactive.Post("/save").Attrs(),`,
 	},
 	`Action: *"(javascript:|//)`: {
 		`Action: "//cdn.example.com/save",`,
 		`Action: "/customers",`,
 	},
-	`(^|[^a-z-])ui-(fileupload|dropzone|conditional-field|textarea|search-input)|data-fui-fileupload`: {
-		`cls := "ui-fileupload"`,
+	`\.ui-(fileupload|dropzone|conditional-field|textarea|search-input)|data-fui-fileupload|class=\\?"([^"]*[^a-z-])?ui-(fileupload|dropzone|conditional-field|textarea|search-input)|(^|[^a-z-])ui-(fileupload|dropzone|conditional-field|textarea|search-input)(--[a-z0-9_-]*|__|[^a-z0-9"-]|$)`: {
+		"raw := `<div class=\"ui-fileupload\" id=\"up\">`",
 		`cls := "fui-upload" + "var(--ui-textarea-min-height)"`,
 	},
 	`ConditionalFieldVisible|EvaluateInitialState|data-when-name|data-when-value|data-fui-cond-disabled`: {
@@ -363,19 +420,19 @@ var v086DetectPairs = map[string][2]string{
 		`sel := ".ui-fileupload__filename:empty"`,
 		`hintID := id + "-accept"`,
 	},
-	`(^|[^a-z-])ui-lightbox`: {
+	`\.ui-(lightbox)|class=\\?"([^"]*[^a-z-])?ui-(lightbox)|(^|[^a-z-])ui-(lightbox)(--[a-z0-9_-]*|__|[^a-z0-9"-]|$)`: {
 		`sel := ".ui-lightbox__full[data-fui-zoomed]"`,
 		`sel := ".fui-lightbox__full[data-fui-zoomed]" + "var(--ui-lightbox-backdrop)"`,
 	},
-	`(^|[^a-z-])ui-(bar-chart|line-chart|pie-chart|sparkline|optimized-image|pipeline-image|image|gallery|code-block|code-tabs|markdown|terminal-block|terminal-ok|terminal-out|avatar|avatar-group|icon|color-picker|diff-viewer|metric-band|record-summary|pricing-card|auth-card|sign-out|optimistic-action|toggle-action)`: {
+	`\.ui-(bar-chart|line-chart|pie-chart|sparkline|optimized-image|pipeline-image|image|gallery|code-block|code-tabs|markdown|terminal-block|terminal-ok|terminal-out|avatar|avatar-group|icon|color-picker|diff-viewer|metric-band|record-summary|pricing-card|auth-card|sign-out|optimistic-action|toggle-action)|class=\\?"([^"]*[^a-z-])?ui-(bar-chart|line-chart|pie-chart|sparkline|optimized-image|pipeline-image|image|gallery|code-block|code-tabs|markdown|terminal-block|terminal-ok|terminal-out|avatar|avatar-group|icon|color-picker|diff-viewer|metric-band|record-summary|pricing-card|auth-card|sign-out|optimistic-action|toggle-action)|(^|[^a-z-])ui-(bar-chart|line-chart|pie-chart|sparkline|optimized-image|pipeline-image|image|gallery|code-block|code-tabs|markdown|terminal-block|terminal-ok|terminal-out|avatar|avatar-group|icon|color-picker|diff-viewer|metric-band|record-summary|pricing-card|auth-card|sign-out|optimistic-action|toggle-action)(--[a-z0-9_-]*|__|[^a-z0-9"-]|$)`: {
 		`sel := ".ui-avatar-group .ui-avatar"`,
 		`sel := ".fui-avatar-group .fui-avatar" + "var(--ui-avatar-size)"`,
 	},
-	`(^|[^a-z-])ui-(hero|site-header|site-footer|doc-layout|doc-prev-next|workbench|toolbar|filter-toolbar|sidebar|responsive|themed)`: {
+	`\.ui-(hero|site-header|site-footer|doc-layout|doc-prev-next|workbench|toolbar|filter-toolbar|sidebar|responsive|themed)|class=\\?"([^"]*[^a-z-])?ui-(hero|site-header|site-footer|doc-layout|doc-prev-next|workbench|toolbar|filter-toolbar|sidebar|responsive|themed)|(^|[^a-z-])ui-(hero|site-header|site-footer|doc-layout|doc-prev-next|workbench|toolbar|filter-toolbar|sidebar|responsive|themed)(--[a-z0-9_-]*|__|[^a-z0-9"-]|$)`: {
 		`sel := ".ui-sidebar__group"`,
 		`sel := ".fui-sidebar__group" + "var(--ui-site-header-min-block)"`,
 	},
-	`(^|[^a-z-])ui-(data-table|segmented|cmd-palette|json-viewer|polling-indicator|shortcut-hint|confirm-action|tooltip|visually-hidden)`: {
+	`\.ui-(data-table|segmented|cmd-palette|json-viewer|polling-indicator|shortcut-hint|confirm-action|tooltip|visually-hidden)|class=\\?"([^"]*[^a-z-])?ui-(data-table|segmented|cmd-palette|json-viewer|polling-indicator|shortcut-hint|confirm-action|tooltip|visually-hidden)|(^|[^a-z-])ui-(data-table|segmented|cmd-palette|json-viewer|polling-indicator|shortcut-hint|confirm-action|tooltip|visually-hidden)(--[a-z0-9_-]*|__|[^a-z0-9"-]|$)`: {
 		`sel := "th a.ui-data-table__sort"`,
 		`sel := "th a.fui-data-table__sort" + "var(--ui-data-table-row-height)"`,
 	},
@@ -411,7 +468,7 @@ var v086DetectPairs = map[string][2]string{
 		`crumbs := breadcrumbs.New(breadcrumbs.Config{}, breadcrumbs.Crumb{Text: "Tags"})`,
 		`crumbs := ui.Breadcrumbs(ui.BreadcrumbsConfig{}, ui.Crumb{Text: "Tags"})`,
 	},
-	`patterns/progress|progress\.New\(|LabelVisible`: {
+	`patterns/progress|progress\.New\(|progress\.Config\{`: {
 		`bar := progress.New(progress.Config{Value: 3, Max: 5, LabelVisible: true})`,
 		`bar := ui.Progress(ui.ProgressConfig{Value: 3, Max: 5, ShowLabel: true})`,
 	},
@@ -427,27 +484,27 @@ var v086DetectPairs = map[string][2]string{
 		`t := tree.Render(tree.Config{SignalPrefix: "nodes-"})`,
 		`t := ui.Tree(ui.TreeConfig{LazySignalPrefix: "nodes-"})`,
 	},
-	`NewLayout\("[^"]*"\)`: {
+	`NewLayout\([^,)]+\)`: {
 		`appLayout := app.NewLayout("app")`,
 		`appLayout := app.NewLayout("app", app.LayoutSpec{}, build)`,
 	},
-	`\.WithHeader\(`: {
+	`WithHeader\([^"\\)]`: {
 		`appLayout = appLayout.WithHeader(hdr)`,
 		`return ui.Stack(ui.StackConfig{Screen: true, Gap: ui.GapNone}, hdr, ui.ContentRow(ui.ContentRowConfig{}, l.Primary()))`,
 	},
-	`\.WithSidebar\(`: {
+	`WithSidebar\([^"\\)]`: {
 		`appLayout = appLayout.WithSidebar(nav)`,
 		`return ui.ContentRow(ui.ContentRowConfig{Sidebar: nav}, l.Primary())`,
 	},
-	`\.WithFooter\(`: {
+	`WithFooter\([^"\\)]`: {
 		`appLayout = appLayout.WithFooter(foot)`,
 		`return ui.Stack(ui.StackConfig{Screen: true}, l.Primary(), foot)`,
 	},
-	`\.WithContainer\(\)`: {
+	`WithContainer\(\)`: {
 		`appLayout = appLayout.WithContainer()`,
 		`return ui.Container(ui.ContainerConfig{Width: ui.ContainerPage, Pad: ui.ContainerPadPage}, l.Primary())`,
 	},
-	`\.WithStickyHeader\(\)`: {
+	`WithStickyHeader\(\)`: {
 		`appLayout = appLayout.WithStickyHeader()`,
 		`return ui.Sticky(ui.StickyConfig{Edge: ui.StickyTop}, hdr)`,
 	},
@@ -455,7 +512,7 @@ var v086DetectPairs = map[string][2]string{
 		`css := app.LayoutBaseCSS + siteCSS`,
 		`css := siteCSS`,
 	},
-	`\.Wrap\(render\.|EmbedLayout\(\)\.Wrap\(`: {
+	`\.Wrap\(render\.|EmbedLayout\(\)\.Wrap\(|\.Wrap\([^,)]+\)`: {
 		`page := appLayout.Wrap(render.HTML(body))`,
 		`page := appLayout.WrapCtx(ctx, render.HTML(body))`,
 	},
@@ -467,13 +524,58 @@ var v086DetectPairs = map[string][2]string{
 		`hdr := ui.SiteHeader(ui.SiteHeaderConfig{Brand: "Acme"})`,
 		`hdr := siteheader.Render(siteheader.Config{Name: "Acme"})`,
 	},
-	`\bhtml\.ContainerType\(|\bstyle\.DarkSchemeCSS\(|\bgallery\.MustLookup\(|\bui\.ToastStackSignal\(`: {
+	`\bhtml\.ContainerType\(|\bstyle\.DarkSchemeCSS\(|\bgallery\.MustLookup\b|\bui\.ToastStackSignal\(`: {
 		`grid := html.Div(html.ContainerType("inline-size", "cards"), cards)`,
 		`grid := html.Div(html.Class("cards"), cards)`,
 	},
 	`--(spacing|text|breakpoint)-x{2,3}l\b|\{(spacing|typography|text|breakpoints?)\.x{2,3}l\}`: {
 		`css := "--spacing-xxl: 32px; gap: var(--spacing-xxxl); padding: {spacing.xxl};"`,
 		`css := "--spacing-2xl: 32px; gap: var(--spacing-3xl); padding: {spacing.2xl};"`,
+	},
+}
+
+// v086MustStaySilent pins spellings that are current framework
+// vocabulary, not migration work, and must produce zero hits: the
+// registered sheet names and data-fui-comp markers the renamed classes
+// keep as identity strings, stdlib hash types, the headless progress
+// props that survive, disabled in a non-button component's ExtraAttrs,
+// and the live data-fui-signal / data-fui-push-state seams outside
+// buttons and forms. Keyed by the note's detect regex, like
+// v086DetectPairs.
+var v086MustStaySilent = map[string][]string{
+	`(^|[^\w])([A-Z]\w*)\.Hash([^(\w]|$)`: {
+		`var algo crypto.Hash`,
+		`func sign(h hash.Hash) error {`,
+	},
+	`Button.*ExtraAttrs.*"disabled"|ExtraAttrs.*"disabled".*Button`: {
+		`qty := ui.Control(ui.ControlConfig{Name: "qty", ExtraAttrs: html.Attrs{"disabled": ""}})`,
+	},
+	`(Button.*"data-fui-(signal":|toggle-|optimistic-)|"data-fui-(signal":|toggle-|optimistic-).*Button)`: {
+		`html.Span(html.TextConfig{ExtraAttrs: html.Attrs{"id": "lab-count", "data-fui-signal": "lab.count"}}, render.Text("0")),`,
+	},
+	`\.ui-(button)|class=\\?"([^"]*[^a-z-])?ui-(button)|(^|[^a-z-])ui-(button)(--[a-z0-9_-]*|__|[^a-z0-9"-]|$)`: {
+		`buttonStyle = registry.RegisterStyle("ui-button", buttonCSS, registry.WithLoad(registry.LoadAlways))`,
+	},
+	`(Form.*data-fui-(rpc-after-text|rpc-after-disable|rpc-scroll-to|push-state)|data-fui-(rpc-after-text|rpc-after-disable|rpc-scroll-to|push-state).*Form)`: {
+		`// data-fui-push-state navigates without a hard refresh on click.`,
+		"`<li role=\"option\" id=\"site-pal-%d\" data-value=%q data-fui-push-state=%q><span>%s</span></li>`,",
+	},
+	`\.ui-(form|form-field|form-section|select|input-group|validation-summary)|class=\\?"([^"]*[^a-z-])?ui-(form|form-field|form-section|select|input-group|validation-summary)|(^|[^a-z-])ui-(form|form-field|form-section|select|input-group|validation-summary)(--[a-z0-9_-]*|__|[^a-z0-9"-]|$)`: {
+		`formStyle = registry.RegisterStyle("ui-form", formCSS)`,
+	},
+	`\.ui-(bar-chart|line-chart|pie-chart|sparkline|optimized-image|pipeline-image|image|gallery|code-block|code-tabs|markdown|terminal-block|terminal-ok|terminal-out|avatar|avatar-group|icon|color-picker|diff-viewer|metric-band|record-summary|pricing-card|auth-card|sign-out|optimistic-action|toggle-action)|class=\\?"([^"]*[^a-z-])?ui-(bar-chart|line-chart|pie-chart|sparkline|optimized-image|pipeline-image|image|gallery|code-block|code-tabs|markdown|terminal-block|terminal-ok|terminal-out|avatar|avatar-group|icon|color-picker|diff-viewer|metric-band|record-summary|pricing-card|auth-card|sign-out|optimistic-action|toggle-action)|(^|[^a-z-])ui-(bar-chart|line-chart|pie-chart|sparkline|optimized-image|pipeline-image|image|gallery|code-block|code-tabs|markdown|terminal-block|terminal-ok|terminal-out|avatar|avatar-group|icon|color-picker|diff-viewer|metric-band|record-summary|pricing-card|auth-card|sign-out|optimistic-action|toggle-action)(--[a-z0-9_-]*|__|[^a-z0-9"-]|$)`: {
+		"ss.Rule(`[data-fui-comp=\"ui-code-block\"].fui-code-block--framed`).",
+		"ss.Rule(`[data-fui-comp=\"ui-terminal-block\"]`).",
+	},
+	`\.ui-(hero|site-header|site-footer|doc-layout|doc-prev-next|workbench|toolbar|filter-toolbar|sidebar|responsive|themed)|class=\\?"([^"]*[^a-z-])?ui-(hero|site-header|site-footer|doc-layout|doc-prev-next|workbench|toolbar|filter-toolbar|sidebar|responsive|themed)|(^|[^a-z-])ui-(hero|site-header|site-footer|doc-layout|doc-prev-next|workbench|toolbar|filter-toolbar|sidebar|responsive|themed)(--[a-z0-9_-]*|__|[^a-z0-9"-]|$)`: {
+		`widget.MountBuilder(fwApp.Router(), preset.Drawer("ui-sidebar-drawer").Name("nav")),`,
+		`sidebarStyle = registry.RegisterStyle("ui-sidebar", sidebarCSS,`,
+	},
+	`patterns/progress|progress\.New\(|progress\.Config\{`: {
+		`p := headless.ProgressProps{Label: "Upload", LabelVisible: true}`,
+	},
+	`WithHeader\([^"\\)]`: {
+		`msg := mailer.WithHeader("X-Tenant", tenantID)`,
 	},
 }
 
@@ -496,7 +598,7 @@ func TestV086DetectorsSeparateOldFromNew(t *testing.T) {
 	if rel == nil {
 		t.Fatalf("no %s entry in the registry", version)
 	}
-	oldDir, newDir := t.TempDir(), t.TempDir()
+	oldDir, newDir, silentDir := t.TempDir(), t.TempDir(), t.TempDir()
 	seen := map[string]bool{}
 	for i, note := range rel.Notes {
 		if note.Detect == "" {
@@ -517,10 +619,22 @@ func TestV086DetectorsSeparateOldFromNew(t *testing.T) {
 		if hits := detectHits(newDir, note.Detect); len(hits) != 0 {
 			t.Errorf("%s note %d: detect %q must stay silent on the new spelling %q, got hits %v", version, i+1, note.Detect, pair[1], hits)
 		}
+		for j, silent := range v086MustStaySilent[note.Detect] {
+			srel := fmt.Sprintf("note%02d/silent%02d.go", i+1, j+1)
+			writeUpgradeFixture(t, silentDir, srel, "package app\n\n"+silent+"\n")
+			if hits := detectHits(silentDir, note.Detect); len(hits) != 0 {
+				t.Errorf("%s note %d: detect %q must stay silent on current-vocabulary spelling %q, got hits %v", version, i+1, note.Detect, silent, hits)
+			}
+		}
 	}
 	for pattern := range v086DetectPairs {
 		if !seen[pattern] {
 			t.Errorf("v086DetectPairs has a pair for %q but no %s note carries that detect", pattern, version)
+		}
+	}
+	for pattern := range v086MustStaySilent {
+		if !seen[pattern] {
+			t.Errorf("v086MustStaySilent pins %q but no %s note carries that detect", pattern, version)
 		}
 	}
 }
@@ -550,6 +664,89 @@ func TestV086TokenRenameDetectSeesEverySpelling(t *testing.T) {
 	} {
 		if re.MatchString(cur) {
 			t.Errorf("detect flags the current spelling %q", cur)
+		}
+	}
+}
+
+// TestV086DetectorsSilentOnExamples is the migrated-tree gate: the
+// repo's examples tree carries only current spellings, so every
+// v0.86.0 detector must return zero hits over it through the real
+// detectHits walk, Go and CSS alike. A hit means the detector fires on
+// correct, already-migrated code — registered sheet names,
+// data-fui-comp markers, live seams like the command palette's
+// data-fui-push-state — and cries wolf on every migrated project.
+func TestV086DetectorsSilentOnExamples(t *testing.T) {
+	reg, err := loadUpgradeRegistry()
+	if err != nil {
+		t.Fatalf("loadUpgradeRegistry: %v", err)
+	}
+	examples := filepath.Join("..", "..", "examples")
+	for _, r := range reg {
+		if r.Version != "v0.86.0" {
+			continue
+		}
+		for i, n := range r.Notes {
+			if n.Detect == "" {
+				continue
+			}
+			if hits := detectHits(examples, n.Detect); len(hits) > 0 {
+				t.Errorf("v0.86.0 note %d (%s): detect fires on the migrated examples tree: %v", i+1, n.Change, hits)
+			}
+		}
+	}
+}
+
+// TestV086WidenedDetectorsSeeNonLiteral runs the v0.86.0 detectors that
+// reach past literal spellings over the forms real apps carry: a layout
+// name held in a variable, Wrap around a plain body value (while
+// battery/rtc's two-arg fanout.Wrap stays silent — it is unrelated),
+// gallery.MustLookup as a function value, the With* chain continuations
+// the v0.85 generator emitted across lines, and a bare progress.Config
+// literal. Every pattern is resolved from the registry, so a registry
+// that loses the widened spelling fails here.
+func TestV086WidenedDetectorsSeeNonLiteral(t *testing.T) {
+	cases := []struct {
+		detect string
+		line   string
+		want   bool
+	}{
+		{`NewLayout\([^,)]+\)`, "appLayout := app.NewLayout(layoutName)", true},
+		{`\.Wrap\(render\.|EmbedLayout\(\)\.Wrap\(|\.Wrap\([^,)]+\)`, "page := appLayout.Wrap(body)", true},
+		{`\.Wrap\(render\.|EmbedLayout\(\)\.Wrap\(|\.Wrap\([^,)]+\)`, "send(fanout.Wrap(nodeID, body))", false},
+		{`\bhtml\.ContainerType\(|\bstyle\.DarkSchemeCSS\(|\bgallery\.MustLookup\b|\bui\.ToastStackSignal\(`, "var lookup = gallery.MustLookup", true},
+		{`WithHeader\([^"\\)]`, "\t\tWithHeader(&HeaderComponent{}).", true},
+		{`WithSidebar\([^"\\)]`, "\t\tWithSidebar(sb).", true},
+		{`WithFooter\([^"\\)]`, "\t\tWithFooter(app.NewStaticComponent(marketingFooter())).", true},
+		{`WithContainer\(\)`, "\t\tWithContainer().", true},
+		{`WithStickyHeader\(\)`, "\t\tWithStickyHeader().", true},
+		{`patterns/progress|progress\.New\(|progress\.Config\{`, "cfg := progress.Config{LabelVisible: true}", true},
+	}
+	reg, err := loadUpgradeRegistry()
+	if err != nil {
+		t.Fatalf("loadUpgradeRegistry: %v", err)
+	}
+	carried := map[string]bool{}
+	for _, r := range reg {
+		if r.Version != "v0.86.0" {
+			continue
+		}
+		for _, n := range r.Notes {
+			carried[n.Detect] = true
+		}
+	}
+	for _, tc := range cases {
+		if !carried[tc.detect] {
+			t.Errorf("no v0.86.0 note carries detect %q; the widened spelling was lost from the registry", tc.detect)
+			continue
+		}
+		dir := t.TempDir()
+		writeUpgradeFixture(t, dir, "app/app.go", "package app\n\n"+tc.line+"\n")
+		hits := detectHits(dir, tc.detect)
+		if tc.want && len(hits) != 1 {
+			t.Errorf("detect %q must flag %q, got hits %v", tc.detect, tc.line, hits)
+		}
+		if !tc.want && len(hits) != 0 {
+			t.Errorf("detect %q must stay silent on %q, got hits %v", tc.detect, tc.line, hits)
 		}
 	}
 }
