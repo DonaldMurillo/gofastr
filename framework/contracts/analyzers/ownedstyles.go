@@ -183,53 +183,52 @@ func isTokensFilePath(rel string) bool {
 
 // checkOwnedStyles runs every owned-style rule over the pass. The
 // program-wide rules (the tokens-file checks, 1816, 1822) run once
-// per program, grouped in ownedstyleprograms.go; the per-sheet and
-// Go-side rules run once per sheet.
+// per program through CheckStylePrograms, the one implementation
+// `gofastr gen styles` shares; the per-sheet and Go-side rules run
+// once per sheet.
 func checkOwnedStyles(p *contracts.Pass) []contracts.Diagnostic {
 	sheets := collectOwnedSheets(p)
-	groups, out := ownedStyleGroups(p, sheets)
+	inputs := make([]SheetInput, len(sheets))
+	for i, s := range sheets {
+		inputs[i] = SheetInput{Path: s.rel, Src: s.src}
+	}
+	var tokensFiles []SheetInput
+	for _, f := range p.StyleFiles() {
+		if !isTokensFilePath(f.Rel) {
+			continue
+		}
+		if body, ok := p.Source(f.Rel); ok {
+			tokensFiles = append(tokensFiles, SheetInput{Path: f.Rel, Src: string(body)})
+		}
+	}
+	checks := CheckStylePrograms(p, inputs, tokensFiles)
+
+	// The tokens-file checks, run per program; a finding two programs
+	// would both report is kept once (identical FileDiagnostics
+	// collapse, genuinely different ones — a duplicate key with a
+	// different partner in each program — survive).
+	var out []contracts.Diagnostic
+	seenTokenFinding := map[ownstyle.FileDiagnostic]bool{}
+	for _, g := range checks.Groups {
+		for _, d := range g.TokenFindings {
+			if !strings.HasPrefix(d.Diag.Rule, "GOFASTR") || seenTokenFinding[d] {
+				continue
+			}
+			seenTokenFinding[d] = true
+			out = append(out, contracts.Diagnostic{
+				RuleID: d.Diag.Rule, File: d.File, Line: d.Diag.Line, Column: d.Diag.Col, Message: d.Diag.Message,
+			})
+		}
+	}
 	if len(sheets) == 0 {
 		return out
 	}
-	// A sheet's own CSS is judged against the union of its groups'
-	// token maps: a library sheet two programs share may read either
-	// program's tokens. Groups are visited in sorted order and the
-	// first definition of a key wins, so the map is deterministic.
-	tokensFor := map[*ownedSheet]map[string]string{}
-	for _, s := range sheets {
-		tokensFor[s] = map[string]string{}
-	}
-	for _, g := range groups {
-		for _, s := range g.sheets {
-			m := tokensFor[s]
-			for k, v := range g.tokens {
-				if _, ok := m[k]; !ok {
-					m[k] = v
-				}
-			}
-		}
-	}
-	out = append(out, checkOwnedStyleCSS(sheets, tokensFor)...)
-	out = append(out, checkRepeatedLiterals(groups)...)
-	out = append(out, checkUpstreamCandidates(sheets)...)
-	out = append(out, checkDuplicateStyleNames(groups)...)
-	idx := newHandleIndex(p, sheets)
-	out = append(out, checkKitRootStyles(p, idx, sheets)...)
-	out = append(out, checkOwnedHandleLeaks(p, idx)...)
-	return out
-}
 
-// checkOwnedStyleCSS runs ownstyle.Check, the gen styles checks, over
-// every owned sheet: GOFASTR1806, 1807, 1808, 1810, 1811, 1812, 1813,
-// 1819 (app sheet) and 1820, each at its line:column and each against
-// that sheet's token map (see checkOwnedStyles). Parse errors and
-// the generator's model errors carry no GOFASTR id: gen styles
-// refuses the file, so its Go is missing or stale, which GOFASTR1814
-// reports.
-func checkOwnedStyleCSS(sheets []*ownedSheet, tokens map[*ownedSheet]map[string]string) []contracts.Diagnostic {
-	var out []contracts.Diagnostic
+	// A sheet's own CSS is judged against EACH of its groups' token
+	// maps (SheetFindings): a binary only carries its own tokens, so a
+	// library sheet two programs share must satisfy each program's set.
 	for _, s := range sheets {
-		for _, d := range ownstyle.Check(s.rel, s.src, s.kind, tokens[s]) {
+		for _, d := range checks.SheetFindings[s.rel] {
 			if !strings.HasPrefix(d.Rule, "GOFASTR") {
 				continue
 			}
@@ -242,6 +241,12 @@ func checkOwnedStyleCSS(sheets []*ownedSheet, tokens map[*ownedSheet]map[string]
 			})
 		}
 	}
+	out = append(out, renderRepeatedLiterals(checks.RepeatedLiterals)...)
+	out = append(out, checkUpstreamCandidates(sheets)...)
+	out = append(out, renderDuplicateStyleNames(checks.DuplicateNames)...)
+	idx := newHandleIndex(p, sheets)
+	out = append(out, checkKitRootStyles(p, idx, sheets)...)
+	out = append(out, checkOwnedHandleLeaks(p, idx)...)
 	return out
 }
 

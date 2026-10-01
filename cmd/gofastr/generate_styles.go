@@ -5,6 +5,7 @@ import (
 	"go/parser"
 	"go/token"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -13,17 +14,23 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core-ui/ownstyle"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
+	"github.com/DonaldMurillo/gofastr/framework/contracts"
+	"github.com/DonaldMurillo/gofastr/framework/contracts/analyzers"
 	uitheme "github.com/DonaldMurillo/gofastr/framework/ui/theme"
 )
 
 // runGenerateStyles is the `gofastr generate styles [patterns]` path.
 // Under the package patterns (Go-style, relative to the working
 // directory, ./... by default) it first checks every <name>.tokens.css
-// together (ownstyle.CheckTokenFiles) and writes <name>_tokens.gen.go
-// beside each clean one; then, for every <name>.style.css, it runs the
-// ownstyle checks against the theme's tokens plus the app's, extracts
-// the class model, and writes <name>_style.gen.go. GOFASTR1822 runs
-// across all the sheets at the end. It also writes .gofastr/tokens.css,
+// per program and writes <name>_tokens.gen.go beside each clean one;
+// then, for every <name>.style.css, it runs the ownstyle checks
+// against the theme's tokens plus the app's — judged per program, the
+// same grouping `gofastr verify` uses (analyzers.CheckStylePrograms,
+// one implementation) — extracts the class model, and writes
+// <name>_style.gen.go. GOFASTR1816 and GOFASTR1822 run per program at
+// the end: a name (or literal) two binaries never share is no finding.
+// A sheet reached by several programs is generated once and validated
+// against each program's tokens. It also writes .gofastr/tokens.css,
 // every token for editor completion.
 //
 // A finding a gofastr:allow(<rule>) <reason> comment waives is not
@@ -64,44 +71,66 @@ func runGenerateStyles(args []string) {
 		return
 	}
 
-	// The theme the checks judge against is the one `gofastr verify`
-	// uses (style.DefaultTheme), plus every app token in the program.
-	builtins := style.ThemeToTokens(style.DefaultTheme())
-	appTokens, tokensFailed := generateTokenFiles(tokenFiles, builtins)
-	failed = failed || tokensFailed
-	tokens := ownstyle.CheckTokens(builtins, appTokens)
+	// The program grouping `gofastr verify`'s owned-style rules judge:
+	// one implementation, so the layout the docs promise (two binaries
+	// in one module, each with its own copy of a siteheader package)
+	// passes here because it passes there.
+	srcOf := map[string]string{}
+	readAll := func(fs []styleFile) []analyzers.SheetInput {
+		inputs := make([]analyzers.SheetInput, 0, len(fs))
+		for _, f := range fs {
+			body, rerr := os.ReadFile(f.path)
+			if rerr != nil {
+				fail("%s: read: %v", f.rel, rerr)
+				failed = true
+				continue
+			}
+			srcOf[f.rel] = string(body)
+			inputs = append(inputs, analyzers.SheetInput{Path: f.rel, Src: string(body)})
+		}
+		return inputs
+	}
+	sheetInputs := readAll(files)
+	tokenInputs := readAll(tokenFiles)
+	pass, perr := contracts.NewPass(".", contracts.DefaultConfig())
+	if perr != nil {
+		fail("read the module for program grouping: %v", perr)
+		osExit(1)
+		return
+	}
+	checks := analyzers.CheckStylePrograms(pass, sheetInputs, tokenInputs)
 
-	// Names are unique across the program (GOFASTR1816's generator
+	appTokens, tokensFailed := generateTokenFiles(tokenFiles, srcOf, checks)
+	failed = failed || tokensFailed
+
+	// Names are unique within one program (GOFASTR1816's generator
 	// arm; ownstyle.Must panics on the duplicate at init otherwise).
 	// Files on both sides of a duplicate generate nothing: either
 	// could be the wrong one, and generated Go holding both panics at
 	// init.
-	seen := map[string]string{}
 	dup := map[string]bool{}
-	for _, f := range files {
-		if prev, isDup := seen[f.name]; isDup {
-			fail("%s: an owned style named %q already exists (%s); owned style names are unique across the program (GOFASTR1816)",
-				f.rel, f.name, prev)
-			dup[f.name] = true
-			failed = true
-		}
-		seen[f.name] = f.rel
+	for _, rel := range slices.Sorted(maps.Keys(checks.DuplicateNames)) {
+		fail("%s: an owned style named %q already exists (%s); owned style names are unique across the program (GOFASTR1816)",
+			rel, strings.TrimSuffix(filepath.Base(rel), ".style.css"),
+			strings.Join(checks.DuplicateNames[rel], ", "))
+		dup[rel] = true
+		failed = true
 	}
 
 	// The exported var is Style for a package's only style file,
 	// <Owner>Style when the package holds several.
 	perDir := map[string]int{}
 	for _, f := range files {
-		if !dup[f.name] {
+		if !dup[f.rel] {
 			perDir[filepath.Dir(f.path)]++
 		}
 	}
 
 	for _, f := range files {
-		if dup[f.name] {
+		if dup[f.rel] {
 			continue
 		}
-		if err := generateStyleFile(f, tokens, perDir[filepath.Dir(f.path)] > 1); err != nil {
+		if err := generateStyleFile(f, srcOf[f.rel], checks.SheetFindings[f.rel], perDir[filepath.Dir(f.path)] > 1); err != nil {
 			failed = true
 			if err != errSilent { // diagnostics were already printed
 				fail("%s: %v", f.rel, err)
@@ -109,7 +138,7 @@ func runGenerateStyles(args []string) {
 			continue
 		}
 	}
-	reportRepeatedLiterals(files, tokens)
+	printRepeatedLiterals(srcOf, checks.RepeatedLiterals)
 	if len(files) > 0 {
 		info("Checked %d style file(s).", len(files))
 	}
@@ -189,28 +218,25 @@ func discoverOwnedFiles(patterns []string, suffix string) ([]styleFile, error) {
 // generator's error names the file before Must can panic.
 var styleNamePattern = regexp.MustCompile(`^[a-z][a-z0-9-]*$`)
 
-// generateStyleFile checks, models and generates one style file. It
-// returns errSilent when the failure was already reported as printed
-// diagnostics.
-func generateStyleFile(f styleFile, tokens map[string]string, sharedPkg bool) error {
-	src, err := os.ReadFile(f.path)
-	if err != nil {
-		return fmt.Errorf("read: %w", err)
-	}
-	css := string(src)
+// generateStyleFile checks, models and generates one style file.
+// checkDiags are the per-program ownstyle.Check findings the shared
+// grouping already computed (deduplicated across the file's programs);
+// only the model diagnostics are added here. It returns errSilent
+// when the failure was already reported as printed diagnostics.
+func generateStyleFile(f styleFile, src string, checkDiags []ownstyle.Diagnostic, sharedPkg bool) error {
+	css := src
 	kind := ownstyle.KindScoped
 	if f.name == "app" {
 		kind = ownstyle.KindApp
 	}
 
-	diags := ownstyle.Check(f.rel, css, kind, tokens)
-	sheet, parseDiags := ownstyle.Parse(css)
-	diags = append(diags, parseDiags...)
+	diags := checkDiags
+	sheet, _ := ownstyle.Parse(css) // parse errors are in checkDiags (ownstyle.Check)
 	var model *ownstyle.SheetModel
 	if sheet != nil {
 		var modelDiags []ownstyle.Diagnostic
 		model, modelDiags = ownstyle.Model(sheet)
-		diags = append(diags, modelDiags...)
+		diags = append(slices.Clone(diags), modelDiags...)
 	}
 	if printDiagnostics(f.rel, css, diags) {
 		return errSilent
@@ -422,9 +448,11 @@ Usage:
 
 Under the package patterns (Go-style, relative to the working
 directory; ./... by default; vendor/, testdata/, node_modules/ and dot
-directories are skipped):
+directories are skipped). Files are judged per program — a main
+package plus the packages its imports resolve to, build constraints
+per target platform — the same grouping gofastr verify uses.
 
-Every <name>.tokens.css is checked first, all together:
+Every <name>.tokens.css is checked first, one set per program:
 
   - it holds only @property rules (--<type>-<name>, a syntax that
     matches the type, inherits: true, an initial-value) and one
@@ -448,8 +476,8 @@ Then every <name>.style.css:
     variants gets <Base>With(<Base>Variants), a value group becomes a
     string type with Parse<Group>.
 
-Last, a literal written in two or more sheets for the same token type
-is a GOFASTR1822 warning: declare it once as a token.
+Last, a literal written in two or more sheets of one program for the
+same token type is a GOFASTR1822 warning: declare it once as a token.
 
 A comment /* gofastr:allow(GOFASTRnnnn) reason */ waives that rule on
 its own line (when code precedes it) or the next line with code. The
@@ -477,42 +505,50 @@ func printDiagnostics(rel, src string, diags []ownstyle.Diagnostic) (hasErr bool
 	return hasErr
 }
 
-// generateTokenFiles checks every tokens file together and writes
-// <name>_tokens.gen.go beside each one with no unwaived error. It
-// returns every app token that parsed (the owned-sheet checks know
-// them even when their file failed, so one typo does not cascade into
-// GOFASTR1806 across the program) and whether any file failed.
-func generateTokenFiles(files []styleFile, builtins map[string]string) ([]ownstyle.AppTokenAt, bool) {
+// generateTokenFiles writes <name>_tokens.gen.go beside each tokens
+// file with no unwaived error in ANY program that reaches it (the
+// shared grouping already checked each program's tokens files
+// together; findings a second program would repeat are collapsed). It
+// returns the union of every program's app tokens — completion and
+// nothing else reads it — and whether any file failed. A file whose
+// tokens parsed is in that union even when its Go was not written, so
+// one typo does not cascade into GOFASTR1806 across the program.
+func generateTokenFiles(files []styleFile, srcOf map[string]string, checks analyzers.StyleProgramChecks) ([]ownstyle.AppTokenAt, bool) {
 	failed := false
-	srcs := make([]ownstyle.SheetSource, 0, len(files))
-	for _, f := range files {
-		body, err := os.ReadFile(f.path)
-		if err != nil {
-			fail("%s: read: %v", f.rel, err)
-			failed = true
-			continue
+	diagsOf := map[string][]ownstyle.Diagnostic{}
+	seen := map[ownstyle.FileDiagnostic]bool{}
+	parsedOf := map[string]*ownstyle.TokensFile{}
+	for _, g := range checks.Groups {
+		for _, d := range g.TokenFindings {
+			if seen[d] {
+				continue
+			}
+			seen[d] = true
+			diagsOf[d.File] = append(diagsOf[d.File], d.Diag)
 		}
-		srcs = append(srcs, ownstyle.SheetSource{File: f.rel, Src: string(body)})
-	}
-	parsed, tokens, diags := ownstyle.CheckTokenFiles(srcs, builtins)
-	byFile := map[string][]ownstyle.Diagnostic{}
-	for _, d := range diags {
-		byFile[d.File] = append(byFile[d.File], d.Diag)
+		for _, rel := range slices.Sorted(maps.Keys(g.ParsedTokens)) {
+			if parsedOf[rel] == nil {
+				parsedOf[rel] = g.ParsedTokens[rel]
+			}
+		}
 	}
 	perDir := map[string]int{}
 	for _, f := range files {
 		perDir[filepath.Dir(f.path)]++
 	}
-	for i, src := range srcs {
-		f := files[i]
-		ds := byFile[src.File]
+	for _, f := range files {
+		src, ok := srcOf[f.rel]
+		if !ok {
+			continue // the read failure was reported before grouping
+		}
+		ds := diagsOf[f.rel]
 		slices.SortStableFunc(ds, func(a, b ownstyle.Diagnostic) int {
 			if a.Line != b.Line {
 				return a.Line - b.Line
 			}
 			return a.Col - b.Col
 		})
-		if printDiagnostics(src.File, src.Src, ds) {
+		if printDiagnostics(f.rel, src, ds) {
 			failed = true
 			continue
 		}
@@ -522,7 +558,7 @@ func generateTokenFiles(files []styleFile, builtins map[string]string) ([]ownsty
 			failed = true
 			continue
 		}
-		out, err := ownstyle.GenerateTokensFile(f.name, src.Src, parsed[src.File], pkg, perDir[filepath.Dir(f.path)] > 1)
+		out, err := ownstyle.GenerateTokensFile(f.name, src, parsedOf[f.rel], pkg, perDir[filepath.Dir(f.path)] > 1)
 		if err != nil {
 			fail("%s: %v", f.rel, err)
 			failed = true
@@ -537,25 +573,19 @@ func generateTokenFiles(files []styleFile, builtins map[string]string) ([]ownsty
 		}
 		success("wrote %s", filepath.ToSlash(dst))
 	}
-	return tokens, failed
+	var app []ownstyle.AppTokenAt
+	for _, g := range checks.Groups {
+		app = append(app, g.AppTokens...)
+	}
+	return app, failed
 }
 
-// reportRepeatedLiterals prints GOFASTR1822 warnings across every owned
-// sheet: a literal written in two or more of them is a missing token.
-// Warnings never fail the run.
-func reportRepeatedLiterals(files []styleFile, tokens map[string]string) {
-	srcs := make([]ownstyle.SheetSource, 0, len(files))
-	bySrc := map[string]string{}
-	for _, f := range files {
-		body, err := os.ReadFile(f.path)
-		if err != nil {
-			continue // generateStyleFile already reported it
-		}
-		srcs = append(srcs, ownstyle.SheetSource{File: f.rel, Src: string(body)})
-		bySrc[f.rel] = string(body)
-	}
-	for _, d := range ownstyle.RepeatedLiterals(srcs, tokens) {
-		if ownstyle.Suppressed(bySrc[d.File], d.Diag) {
+// printRepeatedLiterals prints the GOFASTR1822 warnings the shared
+// grouping found (per program, merged per site). Warnings never fail
+// the run.
+func printRepeatedLiterals(srcOf map[string]string, found []ownstyle.FileDiagnostic) {
+	for _, d := range found {
+		if ownstyle.Suppressed(srcOf[d.File], d.Diag) {
 			continue
 		}
 		fmt.Printf("%s:%d:%d: %s %s %s\n", d.File, d.Diag.Line, d.Diag.Col, d.Diag.Severity, d.Diag.Rule, d.Diag.Message)

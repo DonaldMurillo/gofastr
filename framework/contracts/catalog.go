@@ -1126,13 +1126,18 @@ func renderingRules() []Rule {
 	}, {
 		ID: RuleDuplicateStyleName, Slug: "rendering/duplicate-style-name",
 		Title: "Two owned styles share a name", Capability: CapRendering, Severity: SeverityError,
-		Summary: "Two *.style.css files with the same file stem sit in one program: a main package plus the packages it imports. " +
-			"Style files no program reaches (library packages meant to be composed into one app) form one program together.",
+		Summary: "Two *.style.css files with the same file stem sit in one program: a main package plus the " +
+			"packages its imports resolve to — build constraints honoured per target platform (darwin/linux/windows, " +
+			"amd64/arm64), packages under a nested go.mod importing under the nested module's path. Style files " +
+			"no program reaches (library packages meant to be composed into one app) form one program together.",
 		Why: "The owner name is the file stem, and it is the registry key, the /__gofastr/comp/<name>.css URL and the " +
-			"data-fui-scope value. Two sheets with one name cannot both register: the second ownstyle.Must panics at init, so " +
-			"the program does not start. `gofastr gen styles` refuses both files for the same reason. Sheets are checked per " +
-			"program, so two binaries that each carry their own copy of a siteheader package do not collide; a name shared " +
-			"only by sheets no one build links together is not a duplicate.",
+			"data-fui-scope value. Two sheets with one name cannot both register: the second ownstyle.Must panics at init, " +
+			"so the program does not start. `gofastr gen styles` refuses both files for the same reason — it judges the " +
+			"same programs `gofastr verify` does. Sheets are checked per program, so two binaries that each carry their " +
+			"own copy of a siteheader package do not collide, and a main whose platform-specific files each import their " +
+			"own card package is no duplicate: no one build links both. One gap remains: a build tag that names no " +
+			"platform (a project's own `extra`) is treated as set, so the imports of a `//go:build !extra` file are " +
+			"never followed.",
 		Fix: "Rename one of the files (board-card.style.css, review-card.style.css) and run `gofastr gen styles`.",
 		Doc: "contracts",
 		Examples: []Example{{
@@ -1218,8 +1223,9 @@ func renderingRules() []Rule {
 	}, {
 		ID: RuleRepeatedLiteral, Slug: "rendering/repeated-literal",
 		Title: "One literal written in several owned styles", Capability: CapRendering, Severity: SeverityWarn,
-		Summary: "The same literal value appears in two or more *.style.css files of one program — a main package plus the " +
-			"packages it imports; style files no program reaches form one group together — for properties of one token type " +
+		Summary: "The same literal value appears in two or more *.style.css files of one program — the same grouping " +
+			"GOFASTR1816 judges (per target platform, build constraints honoured; style files no program reaches form one " +
+			"group together) — for properties of one token type " +
 			"(a colour, a size, a spacing, …). Zeros, 100% and a z-index of -1 pass: they say none, fill or behind, not a size.",
 		Why: "A value written in two sheets is a design decision with no name. The two copies drift the first time one sheet " +
 			"is edited, and a theme swap reaches neither. The second copy is the moment a token was missing. Sheets are " +

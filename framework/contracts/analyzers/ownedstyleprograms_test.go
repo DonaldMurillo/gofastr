@@ -204,3 +204,101 @@ func TestOwnedStyleProgramsDeterministic(t *testing.T) {
 		t.Fatalf("two runs disagree:\n%v\n%v", first, second)
 	}
 }
+
+// A shared library sheet is judged against EACH program's tokens, not
+// the union of them: alpha links shared plus themea's tokens file,
+// beta links shared alone, and the sheet's var(--size-hero-gap) is
+// unknown to beta's binary even though alpha's declares it.
+func TestSharedSheetNeedsEachProgramsTokens(t *testing.T) {
+	ds := fixture(t, merge(
+		map[string]string{
+			"cmd/alpha/main.go":      mainImporting("example.com/app/shared", "example.com/app/themea"),
+			"cmd/beta/main.go":       mainImporting("example.com/app/shared"),
+			"themea/themea.go":       "package themea\n",
+			"themea/acme.tokens.css": "@property --size-hero-gap { syntax: \"<length>\"; inherits: true; initial-value: clamp(2rem, 6vw, 5rem); }\n",
+		},
+		ownedPair(t, "shared", "shared", "hero", ".hero { padding-block: var(--size-hero-gap); }\n"),
+	))
+	found := countRule(t, ds, contracts.RuleUnknownThemeToken)
+	if len(found) != 1 {
+		t.Fatalf("want exactly one GOFASTR1806 (beta links the sheet without the tokens file), got %v", found)
+	}
+	if found[0].File != "shared/hero.style.css" {
+		t.Errorf("reported %s, want shared/hero.style.css", found[0].File)
+	}
+}
+
+// A package under a nested go.mod imports under the nested module's
+// path, so a main linking example.com/app/good and example.com/other/x
+// (other/go.mod declares module example.com/other) is one program and
+// its two card sheets collide.
+func TestNestedModuleImportsResolve(t *testing.T) {
+	ds := fixture(t, merge(
+		map[string]string{
+			"go.mod":          "module example.com/app\n\ngo 1.26\n",
+			"other/go.mod":    "module example.com/other\n\ngo 1.26\n",
+			"cmd/app/main.go": mainImporting("example.com/app/good", "example.com/other/x"),
+		},
+		ownedPair(t, "good", "good", "card", ".a { order: 1; }\n"),
+		ownedPair(t, "other/x", "x", "card", ".b { order: 1; }\n"),
+	))
+	found := countRule(t, ds, contracts.RuleDuplicateStyleName)
+	if len(found) != 2 {
+		t.Fatalf("want both card sheets of the one program reported, got %v", found)
+	}
+}
+
+// A pass root with no go.mod of its own (verify run from a
+// subdirectory, a go.work root) still resolves packages against the
+// module enclosing it: two binaries under the root that each link
+// their own siteheader copy are two programs, not one unreached group.
+func TestGroupingFindsModuleAboveRoot(t *testing.T) {
+	ds := fixtureRoot(t, "sub", merge(
+		map[string]string{
+			"go.mod": "module example.com/app\n\ngo 1.26\n",
+		},
+		map[string]string{
+			"sub/cmd/alpha/main.go": mainImporting("example.com/app/sub/alpha/siteheader"),
+			"sub/cmd/beta/main.go":  mainImporting("example.com/app/sub/beta/siteheader"),
+		},
+		ownedPair(t, "sub/alpha/siteheader", "siteheader", "siteheader", ".brand { color: #ab34cd; }\n"),
+		ownedPair(t, "sub/beta/siteheader", "siteheader", "siteheader", ".brand { color: #ab34cd; }\n"),
+	))
+	assertNot(t, ds, contracts.RuleDuplicateStyleName, "two binaries of one module never link both siteheaders")
+}
+
+// A //go:build ignore package main file never builds, so it cannot
+// turn a library directory into a program and split the tree the
+// library's sheets are judged in.
+func TestBuildIgnoreMainIsNoProgram(t *testing.T) {
+	ds := fixture(t, merge(
+		map[string]string{
+			"one/main.go": "//go:build ignore\n\npackage main\n\nfunc main() {}\n",
+			"two/main.go": "//go:build ignore\n\npackage main\n\nfunc main() {}\n",
+		},
+		ownedPair(t, "one", "one", "card", ".a { order: 1; }\n"),
+		ownedPair(t, "two", "two", "card", ".b { order: 1; }\n"),
+	))
+	found := countRule(t, ds, contracts.RuleDuplicateStyleName)
+	if len(found) != 2 {
+		t.Fatalf("want the two library sheets reported as one group, got %v", found)
+	}
+}
+
+// Build constraints split one main's imports per platform: a darwin
+// file importing one card package and a linux file importing another
+// never link both into one binary, so the shared name is no duplicate.
+func TestPlatformSplitDuplicateIsQuiet(t *testing.T) {
+	ds := fixture(t, merge(
+		map[string]string{
+			"cmd/app/main.go":          "package main\n\nfunc main() {}\n",
+			"cmd/app/styles_darwin.go": "package main\n\nimport \"example.com/app/one\"\n\nvar _ = one.One\n",
+			"cmd/app/alt.go":           "//go:build linux\n\npackage main\n\nimport \"example.com/app/two\"\n\nvar _ = two.Two\n",
+			"one/one.go":               "package one\n\nvar One = 1\n",
+			"two/two.go":               "package two\n\nvar Two = 2\n",
+		},
+		ownedPair(t, "one", "one", "card", ".a { order: 1; }\n"),
+		ownedPair(t, "two", "two", "card", ".b { order: 1; }\n"),
+	))
+	assertNot(t, ds, contracts.RuleDuplicateStyleName, "no platform links both card sheets")
+}

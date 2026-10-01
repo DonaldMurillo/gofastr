@@ -104,7 +104,10 @@ Every other owned-style check runs the same code `gofastr gen styles`
 runs before it writes Go (`core-ui/ownstyle`), against the same token
 set: the built-in theme plus every app token the program's
 `*.tokens.css` files declare ([theming](theming.md#app-tokens-in-css-nametokenscss)).
-The generator and `gofastr verify` cannot disagree about a sheet.
+The generator and `gofastr verify` share one program grouping — the
+same grouping GOFASTR1816 and GOFASTR1822 judge, per target platform —
+so the two cannot disagree about a sheet, and a sheet two programs
+share satisfies each program's tokens, not their union.
 Findings point at the CSS line and column. `testdata/` trees are
 skipped here too. Inside a `.css` file, a
 `/* gofastr:allow(GOFASTRnnnn) reason */` comment waives the rule on

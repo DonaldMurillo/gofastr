@@ -911,15 +911,16 @@ are listed under Added above, not here.
   tokens file declares an app's tokens as `@property` rules
   (`--<type>-<name>`, the type's `syntax`, `inherits: true`, an
   `initial-value`) plus one `@media (--dark)` block of dark colours.
-  `gofastr gen styles` checks every tokens file as one set and writes
+  `gofastr gen styles` checks the tokens files one set per program and writes
   `<name>_tokens.gen.go` beside each: a `Tokens` value grouped like
   `style.Theme`, for `theme.Default().Extend(pkg.Tokens)`. `Extend`
   merges dark values from any set with a `DarkTokens()` method, which
   the generated set has when its file has a dark block.
   `style.ParseToken(key, value)` turns a token key and CSS value into
   its typed slot with the validators `ApplyTokens` uses. Owned sheets
-  are checked against the built-in tokens plus every app token, and
-  `gofastr gen styles` and `gofastr verify` now share that set.
+  are checked against the built-in tokens plus the app tokens of each
+  program that links them, and `gofastr gen styles` and
+  `gofastr verify` compute that set with the same code.
   GOFASTR1814 covers the tokens pair.
 - **Duplicate-value rules.** GOFASTR1821 refuses an app token whose
   value is another token's value of the same type. GOFASTR1822 warns
@@ -928,7 +929,12 @@ are listed under Added above, not here.
   contract catalog to **77 rules**. These rules, the duplicate style
   name rule and the cross-file token checks judge one program at a
   time (a `main` package and the packages it imports), so two binaries
-  in one module can each own a `siteheader`. `gofastr gen styles` honours the
+  in one module can each own a `siteheader`. The grouping follows
+  build constraints for each shipped platform (darwin and linux on
+  amd64 and arm64, windows on amd64), skips `//go:build ignore`
+  mains, and resolves imports through the nearest `go.mod`, so nested
+  modules and a tree checked from a subdirectory group correctly.
+  `gofastr gen styles` honours the
   same `/* gofastr:allow(GOFASTRnnnn) reason */` CSS markers as
   `gofastr verify`.
 - **`headless.Own` marks markup a component composes for another.**

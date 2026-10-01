@@ -240,9 +240,19 @@ token is declared in one file only.
 
 The checks that compare files (duplicate style names, GOFASTR1821 and
 GOFASTR1822, a token declared twice) judge one program at a time: a
-`main` package and every package of the module it imports. Two
-binaries in one module may each carry their own `siteheader` copy.
-Packages no `main` imports are checked together as one group.
+`main` package plus every package its imports resolve to. Build
+constraints are evaluated for each shipped platform (darwin and linux
+on amd64 and arm64, windows on amd64), and a package under a nested
+`go.mod` imports through that module's path. Two binaries in one module
+may each carry their own `siteheader` copy, so
+`generate package siteheader --out=alpha/siteheader` beside
+`--out=beta/siteheader` generates both. Packages no `main` imports are
+checked together as one group. A sheet two programs share is judged
+against each program's tokens, not their union, because a binary
+carries only its own. `gofastr gen styles` runs the same grouping as
+`gofastr verify`, so the two cannot disagree. One gap remains: a build
+tag that names no platform (a project's own `extra`) is treated as
+set, so the imports of a `//go:build !extra` file are never followed.
 
 When a line is deliberately off-token, waive the rule in place:
 

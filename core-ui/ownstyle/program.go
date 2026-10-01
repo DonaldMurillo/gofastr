@@ -105,7 +105,9 @@ func (r RepeatedLiteral) FileDiagnostic() FileDiagnostic {
 // (see [RepeatedLiteral]). sheets is the checked group's share of the
 // tree — one program's, or the one group of sheets no program
 // reaches; a literal repeated only across two groups is not a
-// finding, since no binary links both. A value equal to a theme
+// finding, since no binary links both. Both `gofastr verify` and
+// `gofastr gen styles` call this once per program through the shared
+// grouping (framework/contracts/analyzers). A value equal to a theme
 // token is skipped, since GOFASTR1807 already names the token; so are
 // keyword values, anything holding var(), and structural values (see
 // structuralLiteral) that say "none" or "fill" rather than a size.
@@ -170,21 +172,6 @@ func RepeatedLiteralsIn(sheets []SheetSource, tokens map[string]string) []Repeat
 				File: s.file, Pos: s.pos, Value: s.value, Cat: k.cat, Others: others,
 			})
 		}
-	}
-	return out
-}
-
-// RepeatedLiterals runs GOFASTR1822 over every owned sheet handed to
-// it: a literal value written in two or more sheets for properties of
-// the same token type (a colour in one sheet's color and another's
-// background counts) is reported at each occurrence, naming the other
-// sheets. `gofastr gen styles` passes one app's sheets; `gofastr
-// verify` calls [RepeatedLiteralsIn] once per program instead, so
-// sheets two binaries never share are not held against each other.
-func RepeatedLiterals(sheets []SheetSource, tokens map[string]string) []FileDiagnostic {
-	var out []FileDiagnostic
-	for _, r := range RepeatedLiteralsIn(sheets, tokens) {
-		out = append(out, r.FileDiagnostic())
 	}
 	return out
 }

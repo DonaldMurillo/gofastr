@@ -37,6 +37,16 @@ func TestSuppressedHonoursMarkers(t *testing.T) {
 	}
 }
 
+// repeatedLiteralFindings flattens RepeatedLiteralsIn (what both
+// verify and gen styles consume per program) for the assertions below.
+func repeatedLiteralFindings(sheets []SheetSource, tokens map[string]string) []FileDiagnostic {
+	var out []FileDiagnostic
+	for _, r := range RepeatedLiteralsIn(sheets, tokens) {
+		out = append(out, r.FileDiagnostic())
+	}
+	return out
+}
+
 func TestRepeatedLiterals(t *testing.T) {
 	sheets := []SheetSource{
 		{File: "a/board.style.css", Src: ".x { color: #0F766E; max-width: 37rem; padding: 10px; }"},
@@ -45,7 +55,7 @@ func TestRepeatedLiterals(t *testing.T) {
 		{File: "c/tag.style.css", Src: ".v { border-radius: 3px; }"},
 	}
 	tokens := map[string]string{"color-primary": "#4F46E5"}
-	got := RepeatedLiterals(sheets, tokens)
+	got := repeatedLiteralFindings(sheets, tokens)
 	var lines []string
 	for _, d := range got {
 		lines = append(lines, d.File+": "+d.Diag.Message)
@@ -82,7 +92,7 @@ func TestRepeatedStructuralValuesPass(t *testing.T) {
 		{File: "b/y.style.css", Src: ".l { margin: 0px; padding: 0; inline-size: 100%; z-index: -1; }\n.m { z-index: 5; margin: 0 1px; }"},
 	}
 	var msgs []string
-	for _, d := range RepeatedLiterals(sheets, nil) {
+	for _, d := range repeatedLiteralFindings(sheets, nil) {
 		msgs = append(msgs, d.Diag.Message)
 	}
 	joined := strings.Join(msgs, "\n")

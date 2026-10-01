@@ -330,3 +330,65 @@ func TestGenerateStylesWritesTokensCSS(t *testing.T) {
 		}
 	}
 }
+
+// The program grouping gen styles shares with verify: two binaries in
+// one module may each carry their own siteheader copy — the documented
+// `generate package siteheader` layout — and generate; inside ONE
+// binary's import closure the duplicate is still refused.
+func TestGenerateStylesPerProgram(t *testing.T) {
+	const css = ":scope { display: grid; gap: var(--spacing-xs); }\n.brand { color: var(--color-text-muted); }\n"
+	pkgGo := "package siteheader\n"
+	siteheaders := map[string]string{
+		"go.mod":                                "module test.example/app\n\ngo 1.26\n",
+		"alpha/siteheader/ui.go":                pkgGo,
+		"alpha/siteheader/siteheader.style.css": css,
+		"beta/siteheader/ui.go":                 pkgGo,
+		"beta/siteheader/siteheader.style.css":  css,
+	}
+	mains := func(alpha, beta string) map[string]string {
+		return map[string]string{
+			"cmd/alpha/main.go": "package main\n\nimport (\n\t_ \"test.example/app/alpha/siteheader\"\n" + alpha + ")\n\nfunc main() {}\n",
+			"cmd/beta/main.go":  "package main\n\nimport (\n" + beta + "\t_ \"test.example/app/beta/siteheader\"\n)\n\nfunc main() {}\n",
+		}
+	}
+
+	t.Run("two binaries each generate", func(t *testing.T) {
+		dir, code, printed := runStylesCase(t, merge2(siteheaders, mains("", "")), "")
+		if code != -1 && code != 0 {
+			t.Fatalf("exit %d:\n%s", code, printed)
+		}
+		for _, f := range []string{
+			filepath.Join("alpha", "siteheader", "siteheader_style.gen.go"),
+			filepath.Join("beta", "siteheader", "siteheader_style.gen.go"),
+		} {
+			if _, err := os.Stat(filepath.Join(dir, f)); err != nil {
+				t.Errorf("%s not written: %v", f, err)
+			}
+		}
+	})
+
+	t.Run("one binary's duplicate is refused", func(t *testing.T) {
+		_, code, printed := runStylesCase(t, merge2(siteheaders, mains(
+			"\t_ \"test.example/app/beta/siteheader\"\n", "",
+		)), filepath.Join("alpha", "siteheader", "siteheader_style.gen.go"))
+		if code != 1 {
+			t.Fatalf("exit %d, want 1:\n%s", code, printed)
+		}
+		if !strings.Contains(printed, `an owned style named "siteheader"`) {
+			t.Errorf("output does not name the duplicate:\n%s", printed)
+		}
+	})
+}
+
+// merge2 folds two file maps (the cmd/gofastr twin of the analyzers
+// package's merge).
+func merge2(a, b map[string]string) map[string]string {
+	out := map[string]string{}
+	for k, v := range a {
+		out[k] = v
+	}
+	for k, v := range b {
+		out[k] = v
+	}
+	return out
+}

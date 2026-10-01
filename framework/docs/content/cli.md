@@ -64,9 +64,10 @@ each command to the doc that covers it.
 ### Owned styles (`generate styles`)
 
 - `gofastr generate styles [patterns]`: first, every `<name>.tokens.css`
-  under the package patterns is checked as one set and
-  `<name>_tokens.gen.go` is written beside each clean file: the app's
-  own typed tokens, for `Theme.Extend` (format and rules in
+  under the package patterns is checked, one set per program (a `main`
+  package plus the packages its imports reach, the grouping
+  `gofastr verify` uses), and `<name>_tokens.gen.go` is written beside
+  each clean file: the app's own typed tokens, for `Theme.Extend` (format and rules in
   [theming](theming.md#app-tokens-in-css-nametokenscss)). Then, for
   every `<name>.style.css` under the package patterns (Go-style, relative to the working
   directory; `./...` by default; `vendor/`, `testdata/`,
@@ -77,8 +78,8 @@ each command to the doc that covers it.
   error-severity finding generates nothing, the run continues so one
   pass reports everything, and the exit code is non-zero. `app.style.css`
   is the app sheet; every other name is a scoped owner. Names match
-  `^[a-z][a-z0-9-]*$`, must not start with `ui-`, and are unique across
-  the program.
+  `^[a-z][a-z0-9-]*$`, must not start with `ui-`, and are unique within
+  each program.
 
   The generated file carries the CSS as a raw-string constant with a
   `// Source hash: sha256:<hex>` header, registers it as

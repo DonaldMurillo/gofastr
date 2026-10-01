@@ -5,6 +5,7 @@ import (
 	"go/ast"
 	"maps"
 	"path"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -19,21 +20,258 @@ import (
 // module with two binaries, each importing its own copy of a
 // siteheader package, must not fail for a name no single program
 // registers twice. This file computes those programs from what the
-// pass already knows — the parsed imports and each directory's import
-// path — and runs the group-wide rules once per program, merging
-// findings for a sheet two programs reach so it is reported once.
+// pass already knows — the parsed imports, each file's build
+// constraints, and each directory's import path resolved from its
+// nearest enclosing go.mod (styleimports.go) — and publishes the
+// grouping so `gofastr gen styles` judges the very same groups:
+// one implementation, never two, or the generator and the verifier
+// drift apart on exactly the layouts the rules exist for.
 
-// ownedStyleGroup is one program's share of the owned-style universe:
-// the sheets and tokens files whose directories the program's import
-// closure contains, plus one final group holding what no program
-// reaches (library packages meant to be composed into one app, which
-// are still checked against each other). Groups carry no name: they
-// are identified by position, programs in main-directory order with
-// the unreached group last.
-type ownedStyleGroup struct {
-	sheets   []*ownedSheet
-	tokenSrc []ownstyle.SheetSource // sorted by path
-	tokens   map[string]string      // the built-in theme plus this group's app tokens
+// SheetInput is one owned-style sheet the shared program checks read:
+// its pass-relative path and its CSS bytes.
+type SheetInput struct {
+	Path string
+	Src  string
+}
+
+// StyleGroup is one program's share of the owned-style universe: the
+// sheets and tokens files whose directories the program's import
+// closure contains, plus (as the final group) what no program reaches —
+// library packages meant to be composed into one app, still checked
+// against each other. Each group carries the target platform its
+// closure was computed for (build constraints are honoured, so one
+// main with platform-specific imports can yield several groups) and
+// the token map that program's sheets are judged against: the built-in
+// theme plus that group's app tokens. Groups come in deterministic
+// order — by main directory, then platform, the unreached group last —
+// and their members are sorted by path.
+type StyleGroup struct {
+	// GOOS and GOARCH are the platform the closure was computed for.
+	GOOS, GOARCH string
+	// MainDir is the pass-relative directory of the package main; ""
+	// for the unreached group.
+	MainDir string
+	// Dirs are the pass-relative, slash-separated directories of the
+	// program's import closure, sorted; empty for the unreached group.
+	Dirs []string
+	// Sheets and TokensFiles are the pass-relative sheet and tokens
+	// file paths under Dirs, sorted.
+	Sheets, TokensFiles []string
+	// Tokens is the token map this group's sheets are judged against.
+	Tokens map[string]string
+	// AppTokens is every app token that parsed, in file order.
+	AppTokens []ownstyle.AppTokenAt
+	// ParsedTokens holds each tokens file's parse, keyed by path; a
+	// file two programs reach parses identically in both.
+	ParsedTokens map[string]*ownstyle.TokensFile
+	// TokenFindings are this group's tokens-file checks (the call
+	// `gofastr gen styles` makes), in check order.
+	TokenFindings []ownstyle.FileDiagnostic
+}
+
+// StyleProgramChecks is the per-program owned-style judgement both
+// `gofastr verify` and `gofastr gen styles` run: the groups, each
+// sheet's findings judged against every group that reaches it, the
+// duplicate owner names, and the repeated literals.
+type StyleProgramChecks struct {
+	Groups []StyleGroup
+
+	// SheetFindings maps each input sheet path to its ownstyle.Check
+	// findings across every group that reaches it — a binary only
+	// carries its own tokens, so a sheet two programs share must
+	// satisfy each — with identical findings collapsed to one, sorted
+	// by line, column, rule, message.
+	SheetFindings map[string][]ownstyle.Diagnostic
+
+	// DuplicateNames maps each sheet whose owner name another sheet of
+	// one program shares to the sorted other sheets of every such
+	// program (GOFASTR1816's shape).
+	DuplicateNames map[string][]string
+
+	// RepeatedLiterals are the GOFASTR1822 occurrences, one per site
+	// with every program's partners merged into the message.
+	RepeatedLiterals []ownstyle.FileDiagnostic
+}
+
+// CheckStylePrograms runs the shared per-program owned-style checks:
+// the grouping (see OwnedStyleGroups), each sheet's ownstyle.Check
+// findings against every group that reaches it, the duplicate owner
+// names, and the repeated literals. tokensFiles carries the app tokens
+// files the same way. `gofastr verify` renders these as diagnostics;
+// `gofastr gen styles` prints them and lets them decide what
+// generates. One implementation: the two cannot disagree.
+func CheckStylePrograms(p *contracts.Pass, sheets, tokensFiles []SheetInput) StyleProgramChecks {
+	groups := OwnedStyleGroups(p, sheets, tokensFiles)
+	srcOf := make(map[string]string, len(sheets)+len(tokensFiles))
+	for _, s := range sheets {
+		srcOf[s.Path] = s.Src
+	}
+	for _, s := range tokensFiles {
+		srcOf[s.Path] = s.Src
+	}
+	return StyleProgramChecks{
+		Groups:           groups,
+		SheetFindings:    sheetFindings(groups, srcOf),
+		DuplicateNames:   duplicateStyleNames(groups),
+		RepeatedLiterals: repeatedLiterals(groups, srcOf),
+	}
+}
+
+// sheetFindings judges every sheet against each of its groups' token
+// maps and reports what fails in any of them, identical findings
+// collapsed to one so a sheet two programs reach with the same problem
+// reports once.
+func sheetFindings(groups []StyleGroup, srcOf map[string]string) map[string][]ownstyle.Diagnostic {
+	type key struct {
+		rule      string
+		line, col int
+		severity  ownstyle.Severity
+		message   string
+	}
+	seen := map[string]map[key]bool{}
+	out := map[string][]ownstyle.Diagnostic{}
+	for _, g := range groups {
+		for _, rel := range g.Sheets {
+			src, ok := srcOf[rel]
+			if !ok {
+				continue
+			}
+			for _, d := range ownstyle.Check(rel, src, styleKindFor(rel), g.Tokens) {
+				k := key{d.Rule, d.Line, d.Col, d.Severity, d.Message}
+				if seen[rel][k] {
+					continue
+				}
+				if seen[rel] == nil {
+					seen[rel] = map[key]bool{}
+				}
+				seen[rel][k] = true
+				out[rel] = append(out[rel], d)
+			}
+		}
+	}
+	for rel, ds := range out {
+		slices.SortStableFunc(ds, func(a, b ownstyle.Diagnostic) int {
+			if a.Line != b.Line {
+				return a.Line - b.Line
+			}
+			if a.Col != b.Col {
+				return a.Col - b.Col
+			}
+			if a.Rule != b.Rule {
+				return strings.Compare(a.Rule, b.Rule)
+			}
+			return strings.Compare(a.Message, b.Message)
+		})
+		out[rel] = ds
+	}
+	return out
+}
+
+// styleKindFor derives the sheet kind from its path: app.style.css is
+// the app sheet, everything else a scoped one.
+func styleKindFor(rel string) ownstyle.Kind {
+	if path.Base(rel) == "app.style.css" {
+		return ownstyle.KindApp
+	}
+	return ownstyle.KindScoped
+}
+
+// duplicateStyleNames reports GOFASTR1816's shape per group: two owned
+// sheets of one program (or of the unreached group) sharing a name. A
+// sheet two programs reach is reported once, with the other sheets of
+// every group merged into one sorted list.
+func duplicateStyleNames(groups []StyleGroup) map[string][]string {
+	byFile := map[string]map[string]bool{}
+	for _, g := range groups {
+		byName := map[string][]string{}
+		for _, rel := range g.Sheets {
+			name := strings.TrimSuffix(path.Base(rel), ".style.css")
+			byName[name] = append(byName[name], rel)
+		}
+		for _, name := range slices.Sorted(maps.Keys(byName)) {
+			rels := byName[name]
+			if len(rels) < 2 {
+				continue
+			}
+			for _, rel := range rels {
+				if byFile[rel] == nil {
+					byFile[rel] = map[string]bool{}
+				}
+				for _, o := range rels {
+					if o != rel {
+						byFile[rel][o] = true
+					}
+				}
+			}
+		}
+	}
+	out := make(map[string][]string, len(byFile))
+	for _, rel := range slices.Sorted(maps.Keys(byFile)) {
+		out[rel] = slices.Sorted(maps.Keys(byFile[rel]))
+	}
+	return out
+}
+
+// repeatedLiterals runs GOFASTR1822 per group, over each group's
+// sheets and that group's token map, merging per site: a literal two
+// programs each repeat with a different partner is reported once at
+// the shared sheet, with the partners merged; a value repeated only
+// across two programs is no finding at all, since no binary links both
+// sheets.
+func repeatedLiterals(groups []StyleGroup, srcOf map[string]string) []ownstyle.FileDiagnostic {
+	type site struct {
+		file      string
+		line, col int
+	}
+	found := map[site]*ownstyle.RepeatedLiteral{}
+	for _, g := range groups {
+		srcs := make([]ownstyle.SheetSource, 0, len(g.Sheets))
+		for _, rel := range g.Sheets {
+			if src, ok := srcOf[rel]; ok {
+				srcs = append(srcs, ownstyle.SheetSource{File: rel, Src: src})
+			}
+		}
+		for _, r := range ownstyle.RepeatedLiteralsIn(srcs, g.Tokens) {
+			k := site{r.File, r.Pos.Line, r.Pos.Col}
+			if prev, ok := found[k]; ok {
+				prev.Others = mergeSortedUnique(prev.Others, r.Others)
+				continue
+			}
+			r.Others = slices.Clone(r.Others)
+			found[k] = &r
+		}
+	}
+	keys := make([]site, 0, len(found))
+	for k := range found {
+		keys = append(keys, k)
+	}
+	slices.SortFunc(keys, func(a, b site) int {
+		if a.file != b.file {
+			return strings.Compare(a.file, b.file)
+		}
+		if a.line != b.line {
+			return a.line - b.line
+		}
+		return a.col - b.col
+	})
+	out := make([]ownstyle.FileDiagnostic, 0, len(keys))
+	for _, k := range keys {
+		out = append(out, found[k].FileDiagnostic())
+	}
+	return out
+}
+
+// mergeSortedUnique unions two sorted, duplicate-free lists into one
+// sorted, duplicate-free list.
+func mergeSortedUnique(a, b []string) []string {
+	out := slices.Clone(a)
+	for _, v := range b {
+		if !slices.Contains(out, v) {
+			out = append(out, v)
+		}
+	}
+	slices.Sort(out)
+	return out
 }
 
 // inTestdataPath reports whether rel sits under a testdata tree, the
@@ -42,61 +280,175 @@ func inTestdataPath(rel string) bool {
 	return slices.Contains(strings.Split(rel, "/"), "testdata")
 }
 
-// ownedStylePrograms returns each program of the pass as the set of
-// directories it links: a package main directory (test files and
-// testdata trees excluded) plus the transitive closure of its non-test
-// imports that resolve to directories inside the pass. A pass with no
-// main package returns nil, which leaves every sheet in the unreached
-// group — today's whole-tree behaviour for library-only repos. The
-// sets are returned in main-directory order, so grouping output is
-// deterministic.
-func ownedStylePrograms(p *contracts.Pass) []map[string]bool {
-	filesOfDir := map[string][]contracts.SourceFile{}
+// OwnedStyleGroups groups the given owned sheets and tokens files
+// (pass-relative paths) by program, checks each group's tokens files
+// together (the call `gofastr gen styles` makes) and fills each group's
+// token map, and appends one unreached group for what no program
+// reaches. A pass with no buildable main package leaves every sheet in
+// the unreached group — the whole-tree behaviour for library-only
+// repos.
+func OwnedStyleGroups(p *contracts.Pass, sheets, tokensFiles []SheetInput) []StyleGroup {
+	sortInputs(sheets)
+	sortInputs(tokensFiles)
+
+	programs := stylePrograms(p)
+	groups := make([]StyleGroup, 0, len(programs)+1)
+	reachedSheet := make([]bool, len(sheets))
+	reachedToken := make([]bool, len(tokensFiles))
+	for _, prog := range programs {
+		g := StyleGroup{
+			GOOS: prog.platform.GOOS, GOARCH: prog.platform.GOARCH,
+			MainDir: prog.mainDir,
+			Dirs:    slices.Sorted(maps.Keys(prog.dirs)),
+		}
+		for i, s := range sheets {
+			if prog.dirs[path.Dir(s.Path)] {
+				g.Sheets = append(g.Sheets, s.Path)
+				reachedSheet[i] = true
+			}
+		}
+		srcs := []ownstyle.SheetSource{}
+		for i, t := range tokensFiles {
+			if !prog.dirs[path.Dir(t.Path)] {
+				continue
+			}
+			g.TokensFiles = append(g.TokensFiles, t.Path)
+			reachedToken[i] = true
+			srcs = append(srcs, ownstyle.SheetSource{File: t.Path, Src: t.Src})
+		}
+		g.ParsedTokens, g.AppTokens, g.TokenFindings = ownstyle.CheckTokenFiles(srcs, ownedStyleTokens())
+		g.Tokens = ownstyle.CheckTokens(ownedStyleTokens(), g.AppTokens)
+		groups = append(groups, g)
+	}
+	var rest StyleGroup
+	srcs := []ownstyle.SheetSource{}
+	for i, s := range sheets {
+		if !reachedSheet[i] {
+			rest.Sheets = append(rest.Sheets, s.Path)
+		}
+	}
+	for i, t := range tokensFiles {
+		if reachedToken[i] {
+			continue
+		}
+		rest.TokensFiles = append(rest.TokensFiles, t.Path)
+		srcs = append(srcs, ownstyle.SheetSource{File: t.Path, Src: t.Src})
+	}
+	if len(rest.Sheets) > 0 || len(rest.TokensFiles) > 0 {
+		rest.ParsedTokens, rest.AppTokens, rest.TokenFindings = ownstyle.CheckTokenFiles(srcs, ownedStyleTokens())
+		rest.Tokens = ownstyle.CheckTokens(ownedStyleTokens(), rest.AppTokens)
+		groups = append(groups, rest)
+	}
+	return groups
+}
+
+// sortInputs sorts file inputs by path, the deterministic group order.
+func sortInputs(in []SheetInput) {
+	slices.SortFunc(in, func(a, b SheetInput) int { return strings.Compare(a.Path, b.Path) })
+}
+
+// styleProgram is one program on one target platform: the set of
+// directories inside the pass that its binary links.
+type styleProgram struct {
+	platform stylePlatform
+	mainDir  string
+	dirs     map[string]bool
+}
+
+// stylePrograms returns every program of the pass per target platform:
+// a package main directory (test files, testdata trees and files whose
+// build constraints exclude them from the platform excluded) plus the
+// transitive closure of its non-test imports that resolve to
+// directories inside the pass. Programs come ordered by main
+// directory, then platform, so grouping output is deterministic. A
+// duplicate reported on any one platform is a duplicate; the group
+// rules merge per file so it is still reported once.
+func stylePrograms(p *contracts.Pass) []styleProgram {
+	resolver := newStyleModuleResolver()
+	filesOfDir := map[string][]styleGoFile{}
 	dirOfImport := map[string]string{}
-	var mainDirs []string
-	isMain := map[string]bool{}
+	absOfDir := map[string]string{}
 	for _, f := range p.Files() {
-		if f.IsTest || inTestdataPath(f.Rel) {
+		if f.IsTest || f.IsCSS || inTestdataPath(f.Rel) {
 			continue
 		}
 		dir := path.Dir(f.Rel)
-		filesOfDir[dir] = append(filesOfDir[dir], f)
-		if f.Package != "" {
-			if _, known := dirOfImport[f.Package]; !known {
-				dirOfImport[f.Package] = dir
+		sf := styleGoFile{rel: f.Rel}
+		if src, ok := p.Source(f.Rel); ok {
+			sf.build = newStyleBuildFilter(f.Rel, string(src))
+		}
+		if file, ok := p.AST(f.Rel); ok && file.Name != nil {
+			sf.pkg = file.Name.Name
+		}
+		filesOfDir[dir] = append(filesOfDir[dir], sf)
+		absOfDir[dir] = filepath.Dir(f.Abs)
+	}
+	for _, dir := range slices.Sorted(maps.Keys(filesOfDir)) {
+		if ip := resolver.importPathFor(absOfDir[dir]); ip != "" {
+			if _, known := dirOfImport[ip]; !known {
+				dirOfImport[ip] = dir
 			}
 		}
-		if file, ok := p.AST(f.Rel); ok && file.Name.Name == "main" && !isMain[dir] {
-			isMain[dir] = true
-			mainDirs = append(mainDirs, dir)
+	}
+
+	mains := map[string]bool{}
+	for dir, files := range filesOfDir {
+		for _, sf := range files {
+			if sf.pkg == "main" {
+				mains[dir] = true
+				break
+			}
 		}
 	}
-	slices.Sort(mainDirs)
-	var out []map[string]bool
-	for _, mainDir := range mainDirs {
-		dirs := map[string]bool{mainDir: true}
-		queue := []string{mainDir}
-		for len(queue) > 0 {
-			d := queue[0]
-			queue = queue[1:]
-			for _, f := range filesOfDir[d] {
-				file, ok := p.AST(f.Rel)
-				if !ok {
-					continue
+	var out []styleProgram
+	for _, mainDir := range slices.Sorted(maps.Keys(mains)) {
+		for _, plat := range stylePlatforms {
+			buildsMain := false
+			for _, sf := range filesOfDir[mainDir] {
+				if sf.pkg == "main" && sf.build.buildsOn(plat) {
+					buildsMain = true
+					break
 				}
-				for _, imp := range importsOf(file) {
-					target, resolves := dirOfImport[imp]
-					if !resolves || dirs[target] {
+			}
+			if !buildsMain {
+				continue
+			}
+			dirs := map[string]bool{mainDir: true}
+			queue := []string{mainDir}
+			for len(queue) > 0 {
+				d := queue[0]
+				queue = queue[1:]
+				for _, sf := range filesOfDir[d] {
+					if !sf.build.buildsOn(plat) {
 						continue
 					}
-					dirs[target] = true
-					queue = append(queue, target)
+					file, ok := p.AST(sf.rel)
+					if !ok {
+						continue
+					}
+					for _, imp := range importsOf(file) {
+						target, resolves := dirOfImport[imp]
+						if !resolves || dirs[target] {
+							continue
+						}
+						dirs[target] = true
+						queue = append(queue, target)
+					}
 				}
 			}
+			out = append(out, styleProgram{platform: plat, mainDir: mainDir, dirs: dirs})
 		}
-		out = append(out, dirs)
 	}
 	return out
+}
+
+// styleGoFile is one non-test Go file the grouping reads: its
+// pass-relative path, its package clause ("" when it does not parse),
+// and its build constraints.
+type styleGoFile struct {
+	rel   string
+	pkg   string
+	build styleBuildFilter
 }
 
 // importsOf returns a file's import paths, blank and dot imports
@@ -112,193 +464,31 @@ func importsOf(file *ast.File) []string {
 	return out
 }
 
-// ownedStyleGroups groups the pass's owned sheets and tokens files by
-// program (see ownedStylePrograms), checks each group's tokens files
-// together, and appends one unreached group for what no program
-// reaches. Groups come back in deterministic order — programs by main
-// directory, the unreached group last — and their members sorted by
-// path. Each group's tokens map is the built-in theme plus that
-// group's app tokens, the map that program's sheets are judged
-// against; token findings are returned deduplicated, since a tokens
-// file two programs reach would otherwise report its per-group
-// findings twice.
-func ownedStyleGroups(p *contracts.Pass, sheets []*ownedSheet) ([]ownedStyleGroup, []contracts.Diagnostic) {
-	var tokenSrc []ownstyle.SheetSource
-	for _, f := range p.StyleFiles() {
-		if !isTokensFilePath(f.Rel) {
-			continue
-		}
-		if body, ok := p.Source(f.Rel); ok {
-			tokenSrc = append(tokenSrc, ownstyle.SheetSource{File: f.Rel, Src: string(body)})
-		}
-	}
-	slices.SortFunc(tokenSrc, func(a, b ownstyle.SheetSource) int { return strings.Compare(a.File, b.File) })
-
-	programs := ownedStylePrograms(p)
-	groups := make([]ownedStyleGroup, len(programs))
-	reachedSheet := make([]bool, len(sheets))
-	reachedToken := make([]bool, len(tokenSrc))
+// renderDuplicateStyleNames renders the shared duplicate-name map as
+// GOFASTR1816 diagnostics, the message `gofastr verify` reports.
+func renderDuplicateStyleNames(dups map[string][]string) []contracts.Diagnostic {
 	var out []contracts.Diagnostic
-	seenTokenFinding := map[ownstyle.FileDiagnostic]bool{}
-	for i, dirs := range programs {
-		g := &groups[i]
-		for j, s := range sheets {
-			if dirs[s.dir] {
-				g.sheets = append(g.sheets, s)
-				reachedSheet[j] = true
-			}
-		}
-		for j, ts := range tokenSrc {
-			if dirs[path.Dir(ts.File)] {
-				g.tokenSrc = append(g.tokenSrc, ts)
-				reachedToken[j] = true
-			}
-		}
-		out = append(out, g.readTokens(seenTokenFinding)...)
-	}
-	var unreached ownedStyleGroup
-	for j, s := range sheets {
-		if !reachedSheet[j] {
-			unreached.sheets = append(unreached.sheets, s)
-		}
-	}
-	for j, ts := range tokenSrc {
-		if !reachedToken[j] {
-			unreached.tokenSrc = append(unreached.tokenSrc, ts)
-		}
-	}
-	if len(unreached.sheets) > 0 || len(unreached.tokenSrc) > 0 {
-		out = append(out, unreached.readTokens(seenTokenFinding)...)
-		groups = append(groups, unreached)
-	}
-	return groups, out
-}
-
-// readTokens checks the group's tokens files together (the call
-// `gofastr gen styles` makes) and fills the group's token map. A
-// tokens file two programs reach reports an identical finding per
-// program; seen collapses those, keeping genuinely different ones
-// (a duplicate key with a different partner in each program).
-func (g *ownedStyleGroup) readTokens(seen map[ownstyle.FileDiagnostic]bool) []contracts.Diagnostic {
-	_, app, diags := ownstyle.CheckTokenFiles(g.tokenSrc, ownedStyleTokens())
-	g.tokens = ownstyle.CheckTokens(ownedStyleTokens(), app)
-	var out []contracts.Diagnostic
-	for _, d := range diags {
-		if !strings.HasPrefix(d.Diag.Rule, "GOFASTR") {
-			continue
-		}
-		if seen[d] {
-			continue
-		}
-		seen[d] = true
-		out = append(out, contracts.Diagnostic{
-			RuleID: d.Diag.Rule, File: d.File, Line: d.Diag.Line, Column: d.Diag.Col, Message: d.Diag.Message,
-		})
-	}
-	return out
-}
-
-// checkDuplicateStyleNames reports GOFASTR1816 per group: two owned
-// sheets of one program (or of the unreached group) sharing a name.
-// A sheet two programs reach is reported once, with the other sheets
-// of every group merged into one sorted list.
-func checkDuplicateStyleNames(groups []ownedStyleGroup) []contracts.Diagnostic {
-	type duplicate struct {
-		name   string
-		others map[string]bool
-	}
-	byFile := map[string]*duplicate{}
-	for _, g := range groups {
-		byName := map[string][]string{}
-		for _, s := range g.sheets {
-			byName[s.name] = append(byName[s.name], s.rel)
-		}
-		for _, name := range slices.Sorted(maps.Keys(byName)) {
-			rels := byName[name]
-			if len(rels) < 2 {
-				continue
-			}
-			for _, rel := range rels {
-				d := byFile[rel]
-				if d == nil {
-					d = &duplicate{name: name, others: map[string]bool{}}
-					byFile[rel] = d
-				}
-				for _, o := range rels {
-					if o != rel {
-						d.others[o] = true
-					}
-				}
-			}
-		}
-	}
-	var out []contracts.Diagnostic
-	for _, rel := range slices.Sorted(maps.Keys(byFile)) {
-		d := byFile[rel]
+	for _, rel := range slices.Sorted(maps.Keys(dups)) {
+		name := strings.TrimSuffix(path.Base(rel), ".style.css")
 		out = append(out, contracts.Diagnostic{
 			RuleID: contracts.RuleDuplicateStyleName,
 			File:   rel,
 			Line:   1,
 			Message: fmt.Sprintf("an owned style named %q also lives at %s; owned style names are unique within one program (the second ownstyle.Must panics at init)",
-				d.name, strings.Join(slices.Sorted(maps.Keys(d.others)), ", ")),
+				name, strings.Join(dups[rel], ", ")),
 		})
 	}
 	return out
 }
 
-// checkRepeatedLiterals reports GOFASTR1822 per group, over each
-// group's sheets and that group's token map. A literal two programs
-// each repeat with a different partner is reported once at the shared
-// sheet, with the partners merged; a value repeated only across two
-// programs is no finding at all, since no binary links both sheets.
-func checkRepeatedLiterals(groups []ownedStyleGroup) []contracts.Diagnostic {
-	type site struct {
-		file      string
-		line, col int
-	}
-	found := map[site]*ownstyle.RepeatedLiteral{}
-	for _, g := range groups {
-		srcs := make([]ownstyle.SheetSource, len(g.sheets))
-		for i, s := range g.sheets {
-			srcs[i] = ownstyle.SheetSource{File: s.rel, Src: s.src}
-		}
-		for _, r := range ownstyle.RepeatedLiteralsIn(srcs, g.tokens) {
-			k := site{r.File, r.Pos.Line, r.Pos.Col}
-			if prev, ok := found[k]; ok {
-				prev.Others = mergeSortedUnique(prev.Others, r.Others)
-				continue
-			}
-			r.Others = slices.Clone(r.Others)
-			found[k] = &r
-		}
-	}
-	var out []contracts.Diagnostic
-	for _, k := range slices.SortedFunc(maps.Keys(found), func(a, b site) int {
-		if a.file != b.file {
-			return strings.Compare(a.file, b.file)
-		}
-		if a.line != b.line {
-			return a.line - b.line
-		}
-		return a.col - b.col
-	}) {
-		d := found[k].FileDiagnostic()
+// renderRepeatedLiterals renders the shared GOFASTR1822 findings as
+// diagnostics.
+func renderRepeatedLiterals(found []ownstyle.FileDiagnostic) []contracts.Diagnostic {
+	out := make([]contracts.Diagnostic, 0, len(found))
+	for _, d := range found {
 		out = append(out, contracts.Diagnostic{
 			RuleID: d.Diag.Rule, File: d.File, Line: d.Diag.Line, Column: d.Diag.Col, Message: d.Diag.Message,
 		})
 	}
-	return out
-}
-
-// mergeSortedUnique unions two sorted, duplicate-free lists into one
-// sorted, duplicate-free list.
-func mergeSortedUnique(a, b []string) []string {
-	out := slices.Clone(a)
-	for _, v := range b {
-		if !slices.Contains(out, v) {
-			out = append(out, v)
-		}
-	}
-	slices.Sort(out)
 	return out
 }
