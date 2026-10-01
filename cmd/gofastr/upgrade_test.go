@@ -433,7 +433,7 @@ var v086DetectPairs = map[string][2]string{
 	},
 	`\.WithHeader\(`: {
 		`appLayout = appLayout.WithHeader(hdr)`,
-		`return ui.Stack(ui.StackConfig{Screen: true}, hdr, l.Primary())`,
+		`return ui.Stack(ui.StackConfig{Screen: true, Gap: ui.GapNone}, hdr, ui.ContentRow(ui.ContentRowConfig{}, l.Primary()))`,
 	},
 	`\.WithSidebar\(`: {
 		`appLayout = appLayout.WithSidebar(nav)`,
@@ -445,7 +445,7 @@ var v086DetectPairs = map[string][2]string{
 	},
 	`\.WithContainer\(\)`: {
 		`appLayout = appLayout.WithContainer()`,
-		`return ui.Container(ui.ContainerConfig{}, l.Primary())`,
+		`return ui.Container(ui.ContainerConfig{Width: ui.ContainerPage, Pad: ui.ContainerPadPage}, l.Primary())`,
 	},
 	`\.WithStickyHeader\(\)`: {
 		`appLayout = appLayout.WithStickyHeader()`,

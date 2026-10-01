@@ -618,7 +618,8 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   Port by moving the header/sidebar/footer components into a build
   function and the screen cell to `l.Primary()`, then compose the
   frame from the structural pieces: a page-tall
-  `ui.Stack{Screen: true}`, `ui.ContentRow` for the sidebar row (with
+  `ui.Stack(ui.StackConfig{Screen: true}, ...)`, `ui.ContentRow` for
+  the sidebar row (with
   an optional toolbar band and context aside), and `ui.Container` for
   the centered column:
 
@@ -684,18 +685,6 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   path. Crumbs move to `ui.Breadcrumbs`
   (`DocCrumb{Label, Href}` is `Crumb{Text, Href}`), and a docs pager
   is the docs package's own two links (`docpage.Pager`).
-
-- **Owned sheets read tokens for weights, sizes and every
-  `var()`.** In a `*.style.css`, a `var()` fallback no longer
-  exempts an undeclared name from GOFASTR1806:
-  `var(--brand-glow, #FF7A00)` fails until `--color-brand-glow` (or
-  whatever the sheet means) is declared in a `*.tokens.css` or waived
-  with `/* gofastr:allow(GOFASTR1806) reason */`. GOFASTR1807 now
-  compares `font-weight` against the weight tokens and `width`,
-  `height`, `inline-size`, `block-size`, their `min-`/`max-` forms
-  and `flex-basis` against the size tokens, so `font-weight: 600`
-  must read `var(--font-weight-semibold)`. The design system's own
-  weights read the tokens; rendered output is unchanged.
 
 - **Auto-named size-scale tokens spell `2xl`/`3xl`.**
   `style.AutoFillNames` derived the ALL-CAPS scale steps through
@@ -895,13 +884,15 @@ are listed under Added above, not here.
 29. **The fixed-template layout API is deleted.** `NewLayout(name)`,
     the five `With*` builders, `Layout.Wrap`, the fixed slot fields,
     and `app.LayoutBaseCSS` are gone. Declare
-    `app.NewLayout(name, spec, build)`; compose `ui.Stack{Screen:
-    true}`, `ui.ContentRow` and `ui.Container` for the page column,
+    `app.NewLayout(name, spec, build)`; compose
+    `ui.Stack(ui.StackConfig{Screen: true}, ...)`, `ui.ContentRow` and
+    `ui.Container` for the page column,
     the sidebar row and the centered column. `WithKey` and `WrapCtx`
     stay (see the BREAKING entry for the port, spelled end to end).
 30. **The page dimensions are theme tokens.** The
     `--ui-layout-container-width`, `--ui-layout-header-height`,
-    `--ui-layout-gutter` and `--ui-container-*` variables are gone; set
+    `--ui-layout-gutter` and `--ui-container-*` variables no longer
+    take an app's value; set
     `Theme.Layout` (`PageWidth`, `PageGutter`, `HeaderHeight`,
     `NarrowWidth`, `ContentWidth`, `WideWidth`) instead (see the
     BREAKING entry).
@@ -958,7 +949,13 @@ are listed under Added above, not here.
   the theme editor shows them under "Sizes" and "Font weights".
   `style.TokenCategory` names a token key's category by its longest
   type prefix, so the checks read `--font-weight-bold` as a weight,
-  never as a font family.
+  never as a font family. Owned sheets read these tokens: GOFASTR1807
+  compares `font-weight` against the weight tokens and `width`,
+  `height`, `inline-size`, `block-size`, their `min-`/`max-` forms
+  and `flex-basis` against the size tokens (`font-weight: 600` reads
+  `var(--font-weight-semibold)`), and a `var()` fallback does not
+  exempt an undeclared name from GOFASTR1806 (`var(--brand-glow,
+  #FF7A00)` needs `--color-brand-glow` declared in a `*.tokens.css`).
 - **`Theme.Extend` adds an app's own typed tokens.** Pass a struct of
   typed fields (`BrandGlow style.Color`, `HeroGap style.Size`) and each
   field emits under its type's prefix (`--color-brand-glow`,
