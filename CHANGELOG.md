@@ -14,8 +14,8 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   MultiSelect, Progress, SortableList, Tree) or was removed with no
   replacement: `core-ui/patterns/accordion` and
   `core-ui/patterns/nestedlist` — none; use `ui.Collapsible`
-  (a stacked disclosure group is Collapsibles, an exclusive one is
-  Collapsibles sharing a `name`) — and
+  (a stacked disclosure group is `ui.Collapsible` sections, an
+  exclusive one is sections sharing a `CollapsibleConfig.Name`) — and
   `core-ui/patterns/infinitescroll` — none (nothing in the repository
   used it; a sentinel-driven feed composes a poll or an island on
   the region that appends). The `tree`, `multiselect`,
@@ -807,12 +807,13 @@ are listed under Added above, not here.
 21. **`core-ui/patterns/accordion` is deleted; none replaces it.**
     A stacked disclosure group is `ui.Collapsible` sections (the
     gallery's accordion page is gone; the collapsible page is the
-    demo), an exclusive one is Collapsibles sharing a `name`
-    (the native accordion). The `accordion` style name and its
+    demo), an exclusive one is sections sharing a
+    `CollapsibleConfig.Name` (the native accordion). The `accordion` style name and its
     `.accordion*` classes are gone.
 22. **`core-ui/patterns/nestedlist` is deleted; none replaces it.**
     A recursive list with native `<details>` collapse is
-    `ui.Tree` (the WAI-ARIA treeview) or plain Collapsibles; the
+    `ui.Tree` (the WAI-ARIA treeview) or plain `ui.Collapsible`
+    sections; the
     `nestedlist` style name and its `.nested-list*` classes are gone.
 23. **`core-ui/patterns/infinitescroll` is deleted; none.** Nothing
     in the repository used it. The `infinitescroll` runtime module,
@@ -942,6 +943,9 @@ are listed under Added above, not here.
   `gofastr gen styles` honours the
   same `/* gofastr:allow(GOFASTRnnnn) reason */` CSS markers as
   `gofastr verify`.
+- **`CollapsibleConfig.Name` groups sections into an exclusive set.**
+  Sections sharing a `Name` render as one native `<details name>`
+  group: opening one closes the others, with no script.
 - **`headless.Own` marks markup a component composes for another.**
   A component that builds markup from its own config and passes it to
   another component as slot content (a default banner glyph, a form's

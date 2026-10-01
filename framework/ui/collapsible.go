@@ -44,6 +44,10 @@ type CollapsibleConfig struct {
 	Open    bool   // optional:  start expanded (default: collapsed)
 	Class   string // optional:  additional CSS classes
 	ID      string // optional:  element id
+	// Name groups sections into an exclusive set: sections sharing a
+	// Name are the native <details name> group, so opening one closes
+	// the others with no script. Empty leaves each section independent.
+	Name string
 
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers, ARIA overrides) to the root <details>. Keys
@@ -76,6 +80,7 @@ func Collapsible(cfg CollapsibleConfig, body ...render.HTML) render.HTML {
 		Summary:    headless.Own(render.Tag("span", nil, render.Text(cfg.Summary))),
 		Content:    render.Join(body...),
 		Open:       cfg.Open,
+		Name:       cfg.Name,
 		ID:         cfg.ID,
 		ExtraAttrs: headless.Safe(cfg.ExtraAttrs, "open"),
 	}, classes)

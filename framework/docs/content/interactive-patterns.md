@@ -95,6 +95,14 @@ between `"true"` and `"false"`.
 `framework/ui.Collapsible` wraps native `<details>` with
 `data-hui-disclosure` for keyboard support (Escape to close) and
 `aria-expanded` mirroring. The browser handles open/close natively.
+Sections that share a `CollapsibleConfig.Name` form an exclusive
+group (the native `<details name>` accordion): opening one closes
+the others, with no script.
+
+```go
+ui.Collapsible(ui.CollapsibleConfig{Summary: "Billing", Name: "faq"}, billing)
+ui.Collapsible(ui.CollapsibleConfig{Summary: "Security", Name: "faq"}, security)
+```
 
 ### Copy to clipboard
 
