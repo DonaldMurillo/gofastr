@@ -201,7 +201,7 @@ func TestE2ECommandPaletteOpensAndHydrates(t *testing.T) {
 		chromedp.Navigate(base+"/"),
 		chromedp.WaitReady("body", chromedp.ByQuery),
 		chromedp.Sleep(500*time.Millisecond),
-		chromedp.Click("button.site-cmd", chromedp.ByQuery),
+		chromedp.Click(`[data-fui-scope="docsite-header"] button.cmd`, chromedp.ByQuery),
 		chromedp.WaitVisible(`#site-command-palette-input`, chromedp.ByQuery),
 		chromedp.Evaluate(`!!document.querySelector('[role="dialog"]')`, &dialogVisible),
 	); err != nil {
@@ -228,7 +228,7 @@ func TestE2EDocCardNavigates(t *testing.T) {
 		chromedp.Click(`a.doc[href="/docs/query-dsl"]`, chromedp.ByQuery),
 		chromedp.WaitVisible(`.fui-markdown`, chromedp.ByQuery),
 		chromedp.Evaluate(`window.location.pathname`, &pathname),
-		chromedp.OuterHTML(".fui-doc-layout__content", &html, chromedp.ByQuery),
+		chromedp.OuterHTML(`[data-fui-scope="docsite-docpage"] article.content`, &html, chromedp.ByQuery),
 	); err != nil {
 		t.Fatalf("doc nav: %v", err)
 	}
@@ -1240,9 +1240,9 @@ func TestE2EHomeAdaptsAtTabletAndPhoneWidths(t *testing.T) {
 		chromedp.Navigate(base+"/"),
 		chromedp.WaitReady("body"),
 		chromedp.Evaluate(`(() => {
-			const nav = document.querySelector('.fui-site-header__links');
-			const drawer = document.querySelector('.fui-site-header__mobile');
-			const search = document.querySelector('.site-cmd');
+			const nav = document.querySelector('[data-fui-scope="docsite-header"] .links');
+			const drawer = document.querySelector('[data-fui-scope="docsite-header"] .menu');
+			const search = document.querySelector('[data-fui-scope="docsite-header"] .cmd');
 			return {
 				inlineNav: getComputedStyle(nav).display,
 				drawer: getComputedStyle(drawer).display,
@@ -1271,7 +1271,7 @@ func TestE2EHomeAdaptsAtTabletAndPhoneWidths(t *testing.T) {
 		chromedp.WaitReady("body"),
 		chromedp.Evaluate(`(() => {
 			const cta = document.querySelector('.hero__ctas');
-			const headerTargets = [...document.querySelectorAll('.site-cmd, .site-icon, .fui-site-header__mobile-toggle')]
+			const headerTargets = [...document.querySelectorAll('[data-fui-scope="docsite-header"] .cmd, [data-fui-scope="docsite-header"] .icon, [data-fui-scope="docsite-header"] .toggle')]
 				.map(el => el.getBoundingClientRect())
 				.filter(rect => rect.width > 0 && rect.height > 0)
 				.map(rect => Math.min(rect.width, rect.height));

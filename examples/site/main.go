@@ -24,6 +24,7 @@ import (
 
 	gflog "github.com/DonaldMurillo/gofastr/battery/log"
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
+	"github.com/DonaldMurillo/gofastr/core-ui/component"
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/interactive"
 	"github.com/DonaldMurillo/gofastr/core-ui/island"
@@ -31,6 +32,9 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/widget/preset"
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/examples/site/docpage"
+	"github.com/DonaldMurillo/gofastr/examples/site/sitefooter"
+	"github.com/DonaldMurillo/gofastr/examples/site/siteheader"
 	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/docs"
 	"github.com/DonaldMurillo/gofastr/framework/gallery"
@@ -132,7 +136,10 @@ var siteIslands *island.Manager
 func setupServer() *framework.App {
 	site := app.NewApp("GoFastr")
 
-	t := createTheme()
+	// The site's chrome packages bring their own tokens (type-ramp
+	// steps, the colophon's 64px, the doc page's 96px, the banner
+	// hairline); Extend adds them to the theme.
+	t := createTheme().Extend(siteheader.Tokens, sitefooter.Tokens, docpage.Tokens)
 	site.WithTheme(t)
 
 	// CommandPalette, the global ⌘K palette. We only need the widget
@@ -152,9 +159,17 @@ func setupServer() *framework.App {
 		FallbackHref: "/docs/",
 	})
 
-	layout := app.NewLayout("main").
-		WithHeader(&HeaderComponent{}).
-		WithFooter(&FooterComponent{})
+	layout := app.NewLayout("main", app.LayoutSpec{}, func(ctx context.Context, l *app.LayoutTree) render.HTML {
+		// The page-tall stack with the sticky banner bar directly
+		// inside it: the header pins for the whole page (siteheader
+		// owns the sticky + z-order), the primary slot scrolls under
+		// it, and the colophon closes the page.
+		return ui.Stack(ui.StackConfig{Screen: true, Gap: ui.GapNone},
+			siteHeader(ctx),
+			l.Primary(),
+			siteFooter(),
+		)
+	})
 	site.SetDefaultLayout(layout)
 
 	registerScreens(site)
@@ -944,8 +959,13 @@ func registerScreens(site *app.App) {
 	// detects sibling-nav inside the group (via data-fui-screen-group on
 	// the layout wrapper) and swaps ONLY the inner content cell, the
 	// sidebar stays in place across navigations, no full reload.
-	componentsLayout := app.NewLayout("components").
-		WithSidebar(&ComponentsSidebar{})
+	componentsLayout := app.NewLayout("components", app.LayoutSpec{}, func(ctx context.Context, l *app.LayoutTree) render.HTML {
+		nav, _ := component.SafeRenderCtx(ctx, &ComponentsSidebar{})
+		// The row (not a second screen-tall stack: this layer nests
+		// inside the default layout's page column) arranges the
+		// multi-level sidebar beside the primary slot.
+		return ui.ContentRow(ui.ContentRowConfig{Sidebar: nav}, l.Primary())
+	})
 	componentsGroup := app.NewScreenGroup("/components", componentsLayout)
 	componentsGroup.Screen(app.NewScreen("/components/", &ComponentsIndexScreen{}).
 		WithTitle("Components").

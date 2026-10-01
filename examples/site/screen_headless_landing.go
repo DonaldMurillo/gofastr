@@ -88,18 +88,18 @@ func landingDenseTheme() style.Theme {
 		Primary:   "#0F766E",
 		PrimaryFg: "#FFFFFF",
 		Accent:    "#0F766E",
-		DarkColors: map[string]string{
-			"primary":       "#5EEAD4",
-			"primary-fg":    "#042F2E",
-			"accent":        "#5EEAD4",
-			"background":    "#0C1A19",
-			"surface":       "#122422",
-			"surface-soft":  "#1A2F2D",
-			"border":        "#27403E",
-			"border-strong": "#3E5B58",
-			"text":          "#E6F5F3",
-			"text-muted":    "#A7C4C1",
-			"text-subtle":   "#7FA3A0",
+		Dark: &theme.Overrides{
+			Primary:      "#5EEAD4",
+			PrimaryFg:    "#042F2E",
+			Accent:       "#5EEAD4",
+			Background:   "#0C1A19",
+			Surface:      "#122422",
+			SurfaceSoft:  "#1A2F2D",
+			Border:       "#27403E",
+			BorderStrong: "#3E5B58",
+			Text:         "#E6F5F3",
+			TextMuted:    "#A7C4C1",
+			TextSubtle:   "#7FA3A0",
 		},
 		Components: landingTightOptions,
 	})
@@ -120,19 +120,19 @@ func landingSoftTheme() style.Theme {
 		Text: "#1E1B2E", TextMuted: "#5B5670", TextSubtle: "#6E6887",
 		Danger: "#B42318", DangerFg: "#FFFFFF",
 		RadiusSm: 8, RadiusMd: 14, RadiusLg: 22,
-		DarkColors: map[string]string{
-			"primary":       "#C4B5FD",
-			"primary-fg":    "#1E1535",
-			"accent":        "#C4B5FD",
-			"background":    "#15111F",
-			"surface":       "#1E1A2B",
-			"surface-soft":  "#2A2440",
-			"border":        "#3A3354",
-			"border-strong": "#564C78",
-			"text":          "#EDE9FE",
-			"text-muted":    "#B3ABCB",
-			"text-subtle":   "#8E86A8",
-			"danger":        "#F87171",
+		Dark: &theme.Overrides{
+			Primary:      "#C4B5FD",
+			PrimaryFg:    "#1E1535",
+			Accent:       "#C4B5FD",
+			Background:   "#15111F",
+			Surface:      "#1E1A2B",
+			SurfaceSoft:  "#2A2440",
+			Border:       "#3A3354",
+			BorderStrong: "#564C78",
+			Text:         "#EDE9FE",
+			TextMuted:    "#B3ABCB",
+			TextSubtle:   "#8E86A8",
+			Danger:       "#F87171",
 		},
 		Components: landingSoftOptions,
 	})
@@ -155,19 +155,19 @@ func landingEditorialTheme() style.Theme {
 		FontBody:    landingEditorialFont,
 		FontHeading: landingEditorialFont,
 		RadiusLg:    2,
-		DarkColors: map[string]string{
-			"primary":       "#FDA4AF",
-			"primary-fg":    "#4C0519",
-			"accent":        "#FDA4AF",
-			"background":    "#1A1613",
-			"surface":       "#231E1A",
-			"surface-soft":  "#2E2722",
-			"border":        "#3D342D",
-			"border-strong": "#5C5046",
-			"text":          "#F5EFE6",
-			"text-muted":    "#C8BFB3",
-			"text-subtle":   "#A39A8E",
-			"danger":        "#F87171",
+		Dark: &theme.Overrides{
+			Primary:      "#FDA4AF",
+			PrimaryFg:    "#4C0519",
+			Accent:       "#FDA4AF",
+			Background:   "#1A1613",
+			Surface:      "#231E1A",
+			SurfaceSoft:  "#2E2722",
+			Border:       "#3D342D",
+			BorderStrong: "#5C5046",
+			Text:         "#F5EFE6",
+			TextMuted:    "#C8BFB3",
+			TextSubtle:   "#A39A8E",
+			Danger:       "#F87171",
 		},
 		Components: landingEditorialOptions,
 	})
@@ -189,19 +189,19 @@ func landingContrastTheme() style.Theme {
 		Text: "#000000", TextMuted: "#262626", TextSubtle: "#404040",
 		Danger: "#A30000", DangerFg: "#FFFFFF",
 		RadiusSm: 4, RadiusMd: 6, RadiusLg: 10,
-		DarkColors: map[string]string{
-			"primary":       "#FFD400",
-			"primary-fg":    "#000000",
-			"accent":        "#FFD400",
-			"background":    "#000000",
-			"surface":       "#000000",
-			"surface-soft":  "#141414",
-			"border":        "#FFFFFF",
-			"border-strong": "#FFFFFF",
-			"text":          "#FFFFFF",
-			"text-muted":    "#E5E5E5",
-			"text-subtle":   "#C7C7C7",
-			"danger":        "#FF8A8A",
+		Dark: &theme.Overrides{
+			Primary:      "#FFD400",
+			PrimaryFg:    "#000000",
+			Accent:       "#FFD400",
+			Background:   "#000000",
+			Surface:      "#000000",
+			SurfaceSoft:  "#141414",
+			Border:       "#FFFFFF",
+			BorderStrong: "#FFFFFF",
+			Text:         "#FFFFFF",
+			TextMuted:    "#E5E5E5",
+			TextSubtle:   "#C7C7C7",
+			Danger:       "#FF8A8A",
 		},
 		Components: landingContrastOptions,
 	})
@@ -255,24 +255,34 @@ func withLandingOptions(t style.Theme, o theme.ComponentOptions) style.Theme {
 	return t
 }
 
+// registerLanding registers a demo theme with the site's own page frame
+// (Theme.Layout): a themed section re-declares every token of its theme,
+// so without this a ui.Container inside one would take the framework's
+// 1280px wide cap instead of the site's 1240px column. The demos change
+// the look, not the page they sit in.
+func registerLanding(t style.Theme) style.ThemeRef {
+	t.Layout = createTheme().Layout
+	return style.RegisterThemeOverride(t)
+}
+
 // The registered refs. Registration must precede the first render (the
 // host freezes app.css); package init is that guarantee, and hashing is
 // lazy so init-time registration cannot clash with framework/ui's own
 // compiler registration.
 var (
-	landingRefFramework = style.RegisterThemeOverride(landingFrameworkTheme())
-	landingRefDense     = style.RegisterThemeOverride(landingDenseTheme())
-	landingRefSoft      = style.RegisterThemeOverride(landingSoftTheme())
-	landingRefEditorial = style.RegisterThemeOverride(landingEditorialTheme())
-	landingRefContrast  = style.RegisterThemeOverride(landingContrastTheme())
+	landingRefFramework = registerLanding(landingFrameworkTheme())
+	landingRefDense     = registerLanding(landingDenseTheme())
+	landingRefSoft      = registerLanding(landingSoftTheme())
+	landingRefEditorial = registerLanding(landingEditorialTheme())
+	landingRefContrast  = registerLanding(landingContrastTheme())
 	// Option-only twins: each route's palette under the flipped option
 	// set. Default, dense, soft and editorial pair with the tight set;
 	// contrast — already compact — pairs with the relaxed one.
-	landingRefFrameworkTight  = style.RegisterThemeOverride(withLandingOptions(landingFrameworkTheme(), landingTightOptions))
-	landingRefDenseRelaxed    = style.RegisterThemeOverride(withLandingOptions(landingDenseTheme(), landingRelaxedOptions))
-	landingRefSoftTight       = style.RegisterThemeOverride(withLandingOptions(landingSoftTheme(), landingTightOptions))
-	landingRefEditorialTight  = style.RegisterThemeOverride(withLandingOptions(landingEditorialTheme(), landingTightOptions))
-	landingRefContrastRelaxed = style.RegisterThemeOverride(withLandingOptions(landingContrastTheme(), landingRelaxedOptions))
+	landingRefFrameworkTight  = registerLanding(withLandingOptions(landingFrameworkTheme(), landingTightOptions))
+	landingRefDenseRelaxed    = registerLanding(withLandingOptions(landingDenseTheme(), landingRelaxedOptions))
+	landingRefSoftTight       = registerLanding(withLandingOptions(landingSoftTheme(), landingTightOptions))
+	landingRefEditorialTight  = registerLanding(withLandingOptions(landingEditorialTheme(), landingTightOptions))
+	landingRefContrastRelaxed = registerLanding(withLandingOptions(landingContrastTheme(), landingRelaxedOptions))
 )
 
 // landingRoute is one theme segment of the showcase.

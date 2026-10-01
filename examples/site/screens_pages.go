@@ -435,8 +435,8 @@ var exampleLoC = map[string]int{
 	"static-site":          60,
 	"backoffice":           310,
 	"processmodule-demo":   330,
-	"webmcp-remote-assist": 1600,
-	"rtc-call":             540,
+	"webmcp-remote-assist": 2000,
+	"rtc-call":             700,
 }
 
 // locBadge renders the "~N LoC" badge for one example row; suffix adds a

@@ -1,3 +1,4 @@
+/* gofastr:allow(GOFASTR1809) This folder of static HTML is the user's own frontend, not framework UI. */
 :root {
   --bg: #fafafa; --surface: #fff; --text: #1a1a1a; --text-dim: #666;
   --accent: #646cff; --accent-light: #eef0ff; --border: #e5e5e5;

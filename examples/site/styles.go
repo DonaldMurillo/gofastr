@@ -30,8 +30,6 @@ func createStyleSheet(t style.Theme) string {
 	rootTokens(ss)
 	resetAndType(ss)
 	tagsAndButtons(ss)
-	siteNav(ss)
-	siteFooter(ss)
 	codeBlockStyles(ss)
 	sectionFraming(ss)
 	heroLayout(ss)
@@ -180,12 +178,6 @@ func rootTokens(ss *style.StyleSheet) {
 			// Layout caps.
 			"--col-max", "1240px",
 			"--nav-h", "60px",
-			// Override framework ui.Container's "wide" cap to match
-			// the v2 1240px target. ui.Container reads
-			// --ui-container-{narrow,default,wide}; setting wide here
-			// lets us use ui.Container(ContainerWide) site-wide
-			// instead of a local .container-site helper.
-			"--ui-container-wide", "1240px",
 		).End()
 
 	// ─── Light theme branch ──────────────────────────────────────────
@@ -377,7 +369,7 @@ func resetAndType(ss *style.StyleSheet) {
 
 	// Layout helpers used inline. The .container-site class is gone,
 	// callers use ui.Container(ContainerWide) and the wide cap is
-	// themed via --ui-container-wide in tokens(). The framework
+	// set to 1240px on the theme (createTheme). The framework
 	// component owns its own responsive padding.
 	ss.Rule(".muted").Set("color", "{colors.text-subtle}").End()
 	// Command palette result rows: path meta is dimmed against the title.
@@ -413,309 +405,6 @@ func tagsAndButtons(ss *style.StyleSheet) {
 		Set("outline", "2px solid {colors.primary}",
 			"outline-offset", "2px",
 			"border-radius", "{radii.sm}").End()
-}
-
-// -----------------------------------------------------------------------------
-// .nav, fixed top bar. Layout-only styling; structure is in layout.go.
-//
-// Position: fixed on the OUTER <header role="banner"> (the framework's
-// layout wrapper), not on .nav itself. position:sticky on .nav was a
-// no-op because .nav's parent <header> isn't a scrolling container,
-// sticky needs an ancestor that scrolls, and the scrolling viewport
-// is the document body, not the immediate parent. Fixed on the outer
-// <header> pins it across every screen + survives screen-group
-// sibling-nav (which only swaps the inner content cell).
-// -----------------------------------------------------------------------------
-
-func siteNav(ss *style.StyleSheet) {
-	// Outer banner, the framework's layout wraps HeaderComponent in this.
-	// z-index hardcoded because the {z-index.sticky} token wasn't
-	// resolving (left the literal in the CSS → invalid → auto → content
-	// scrolled over the header). 100 sits above the framework's default
-	// sticky tier (10) and below modal/toast tiers (1000+).
-	ss.Rule(`header[role="banner"]`).
-		Set("position", "fixed",
-			"top", "0",
-			"left", "0",
-			"right", "0",
-			"z-index", "100",
-			// Opaque background, the previous 88%/12% mix produced a
-			// see-through bar even with backdrop-filter:blur because
-			// nothing on this site has the visual density behind it
-			// for a blur to register against. Solid surface keeps the
-			// header legible against any scroll position.
-			"background", "{colors.background}",
-			"border-bottom", "1px solid var(--line-faint)").End()
-	// Body needs to push down so the first viewport pixel of content
-	// isn't hidden under the fixed banner.
-	ss.Rule("body").Set("padding-top", "var(--nav-h)").End()
-	ss.Rule(".fui-site-header").
-		Set("height", "var(--nav-h)",
-			"display", "flex",
-			"align-items", "center",
-			"gap", "{spacing.xxl}",
-			"padding", "0 {spacing.xxl}",
-			"font-size", "var(--t-sm)").End()
-
-	// Brand, λ mark + lowercase wordmark + status capsule. Each part
-	// has its own selector so the rhythm is tunable: mark a touch
-	// brighter, wordmark heavier, status quieter.
-	ss.Rule(".site-brand").
-		Set("display", "inline-flex",
-			"align-items", "center",
-			"gap", "10px",
-			"color", "{colors.text}",
-			"font-family", "{fonts.body}",
-			"font-weight", "500",
-			"font-size", "15px",
-			"letter-spacing", "-0.01em").End()
-	// The mark is a typographic λ, sized + colored to feel like a
-	// confident chip without resembling a logo placeholder. Mono
-	// fixes its width so it lines up with vertical text neighbours.
-	ss.Rule(".site-brand__mark").
-		Set("display", "inline-grid",
-			"place-items", "center",
-			"width", "22px",
-			"height", "22px",
-			"border-radius", "5px",
-			"background", "color-mix(in oklch, {colors.primary} 14%, {colors.surface})",
-			"color", "{colors.primary}",
-			"font-family", "{fonts.mono}",
-			"font-size", "14px",
-			"line-height", "1",
-			"font-weight", "500").End()
-	ss.Rule(".site-brand__name").
-		Set("font-weight", "500",
-			"color", "{colors.text}",
-			"letter-spacing", "-0.012em").End()
-	// Status capsule: three child spans separated by 6px gap, mono.
-	// Visually subordinate to the wordmark, but together they read as
-	// the project's live tag.
-	ss.Rule(".site-brand__status").
-		Set("display", "inline-flex",
-			"align-items", "center",
-			"gap", "6px",
-			"padding", "2px 8px 2px 6px",
-			"margin-left", "4px",
-			"border", "1px solid color-mix(in oklch, {colors.primary} 30%, transparent)",
-			"border-radius", "999px",
-			"color", "{colors.text-muted}",
-			"font-family", "{fonts.mono}",
-			"font-size", "12px",
-			"line-height", "1",
-			"text-transform", "lowercase",
-			"font-weight", "400").End()
-	ss.Rule(".site-brand__pulse").
-		Set("display", "inline-block",
-			"width", "6px",
-			"height", "6px",
-			"border-radius", "50%",
-			"background", "{colors.primary}",
-			"box-shadow", "0 0 0 0 color-mix(in oklch, {colors.primary} 60%, transparent)",
-			"animation", "nav-pulse 2.4s ease-out infinite").End()
-	ss.Rule(".site-brand__ver").Set("color", "{colors.text-subtle}").End()
-	// Respect reduced motion preference, pulse becomes a static dot
-	// when the user has prefers-reduced-motion: reduce.
-	ss.Media("(prefers-reduced-motion: reduce)", func(inner *style.StyleSheet) {
-		inner.Rule(".site-brand__pulse").
-			Set("animation", "none", "box-shadow", "none").End()
-	})
-	// The keyframes live at the top level so the at-rule is emitted
-	// once and reused.
-	ss.Keyframes("nav-pulse",
-		style.Step("0%", "box-shadow", "0 0 0 0 color-mix(in oklch, {colors.primary} 50%, transparent)"),
-		style.Step("70%", "box-shadow", "0 0 0 8px color-mix(in oklch, {colors.primary} 0%, transparent)"),
-		style.Step("100%", "box-shadow", "0 0 0 0 color-mix(in oklch, {colors.primary} 0%, transparent)"),
-	)
-
-	// Nav links: minimal, with a subtle left-to-right underline reveal
-	// on hover/active so the relationship between hover and active is
-	// visible to keyboard users too.
-	ss.Rule(".fui-site-header__links").
-		Set("display", "flex", "gap", "{spacing.xl}", "margin-left", "{spacing.xl}").End()
-	ss.Rule(".fui-site-header__links a").
-		Set("position", "relative",
-			"display", "inline-flex",
-			"align-items", "center",
-			"height", "var(--nav-h)",
-			"color", "{colors.text-muted}",
-			"font-weight", "400",
-			"font-size", "var(--t-sm)",
-			"letter-spacing", "-0.005em",
-			"white-space", "nowrap",
-			"transition", "color 120ms ease").End()
-	// The animated underline-reveal is now ui.SiteHeader's NavUnderline
-	// variant; the site only positions it to clear the bar's baseline and
-	// tunes the active text colour via the component's vars.
-	ss.Rule(`[data-fui-comp="ui-site-header"].fui-site-header--nav-underline`).
-		Set("--ui-site-header-nav-underline-bottom", "14px",
-			"--ui-site-header-nav-active-color", "{colors.text}").End()
-
-	ss.Rule(".fui-site-header__right").
-		Set("margin-left", "auto",
-			"display", "flex",
-			"align-items", "center",
-			"gap", "{spacing.md}").End()
-	// Search pill, replaces the old "Search ⌘K" wireframe with a real
-	// dual-affordance control: left-aligned mono placeholder text +
-	// right-aligned kbd group. Width is fluid so the pill grows on
-	// hover (subtle invitation), and the placeholder rotates through
-	// real catalog hints to advertise what the palette knows.
-	ss.Rule(".site-cmd").
-		Set("display", "inline-flex",
-			"align-items", "center",
-			"gap", "10px",
-			"min-width", "200px",
-			"padding", "6px 8px 6px 12px",
-			"border", "1px solid {colors.border}",
-			"border-radius", "{radii.md}",
-			"color", "{colors.text-subtle}",
-			"font-size", "var(--t-xs)",
-			"font-family", "{fonts.body}",
-			"background", "{colors.surface}",
-			"transition", "border-color 160ms ease, color 160ms ease, background 160ms ease").End()
-	ss.Rule(".site-cmd__glyph").Set("display", "none").End()
-	ss.Rule(".site-cmd:hover").
-		Set("border-color", "color-mix(in oklch, {colors.primary} 35%, {colors.border})",
-			"color", "{colors.text}",
-			"background", "color-mix(in oklch, {colors.primary} 4%, {colors.surface})").End()
-	ss.Rule(".site-cmd > span").
-		Set("flex", "1",
-			"text-align", "left",
-			"color", "{colors.text}",
-			"letter-spacing", "-0.005em").End()
-	ss.Rule(".site-cmd kbd").
-		Set("display", "inline-flex",
-			"align-items", "center",
-			"gap", "2px",
-			"font-family", "{fonts.mono}",
-			"font-size", "11px",
-			"line-height", "1",
-			"padding", "3px 6px",
-			"border", "1px solid {colors.border}",
-			"border-radius", "{radii.sm}",
-			"background", "{colors.background}",
-			"color", "{colors.text-muted}",
-			"font-weight", "500").End()
-	ss.Rule(".site-icon").
-		Set("width", "44px", "height", "44px",
-			"display", "grid", "place-items", "center",
-			"border-radius", "{radii.md}",
-			"color", "{colors.text-subtle}").End()
-	ss.Rule(".site-icon:hover").
-		Set("background", "{colors.surface-soft}", "color", "{colors.text}", "opacity", "1").End()
-
-	// Mobile drawer, hidden by default; the @media (max-width: 640px)
-	// block in responsive() flips display:block. Native <details> in
-	// the headless disclosure anatomy; the headless-disclosure module
-	// closes it on cross-page nav and on a nav-link click.
-	//
-	// Trigger is the trigram glyph: three stacked 1.5px bars built with
-	// CSS box-shadows on a single 22px square. When [open], the middle
-	// bar fades out and the outer two rotate into an ×. No SVG, no JS,
-	ss.Rule(".fui-site-header__mobile > summary").
-		Set("list-style", "none",
-			"cursor", "pointer",
-			"display", "inline-grid",
-			"place-items", "center",
-			"width", "36px",
-			"height", "36px",
-			"border", "1px solid {colors.border}",
-			"border-radius", "{radii.md}",
-			"background", "{colors.surface}",
-			"color", "{colors.text-muted}",
-			"transition", "border-color 160ms ease, background 160ms ease").End()
-	ss.Rule(".fui-site-header__mobile > summary::-webkit-details-marker").Set("display", "none").End()
-	ss.Rule(".fui-site-header__mobile > summary:hover").
-		Set("border-color", "{colors.border-strong}",
-			"background", "{colors.surface-soft}").End()
-	// Open-state: brighten the color so the X reads cleanly. We
-	// deliberately do NOT change the border color, the X icon swap
-	// IS the state cue; a border tint added an outline that looked
-	// like a leftover focus ring.
-	ss.Rule(".fui-site-header__mobile[open] > summary").
-		Set("color", "{colors.text}").End()
-	// Hamburger ↔ X icon swap is handled entirely by ui.SiteHeader
-	// (SVG menu / SVG close, display-swapped by details[open]). No
-	// site-level overrides needed.
-	// Convert the framework's trigger-anchored popover into a
-	// viewport-anchored sheet, v2 prefers full-width drawers on
-	// phones so the right edge can't clip on narrow viewports.
-	// Done entirely via CSS vars exposed by ui.SiteHeader; no
-	// selector-stacking overrides needed.
-	ss.Rule(`[data-fui-comp="ui-site-header"]`).
-		Set("--ui-site-header-drawer-position", "fixed",
-			"--ui-site-header-drawer-top", "calc(var(--nav-h) + 8px)",
-			"--ui-site-header-drawer-right", "{spacing.md}",
-			"--ui-site-header-drawer-left", "{spacing.md}",
-			"--ui-site-header-drawer-min-width", "0",
-			"--ui-site-header-drawer-shadow", "0 10px 30px rgba(0,0,0,0.35)").End()
-}
-
-// -----------------------------------------------------------------------------
-// .foot, 5-col footer + bottom strip.
-// -----------------------------------------------------------------------------
-
-func siteFooter(ss *style.StyleSheet) {
-	// ui.SiteFooter owns the grid (template/gap/max-width/centering) via its
-	// --ui-site-footer-* vars; the site only supplies the 5-col template and
-	// v2 measures. The root padding is dropped to 0 horizontal because the
-	// centered grid carries its own inline padding.
-	ss.Rule(".fui-site-footer").
-		Set("padding", "var(--s-8) 0 {spacing.xxl}",
-			"border-top", "1px solid {colors.border}").End()
-	ss.Rule(`[data-fui-comp="ui-site-footer"]`).
-		Set("--ui-site-footer-grid-template", "1.4fr 1fr 1fr 1fr 1fr",
-			"--ui-site-footer-grid-gap", "var(--s-8)",
-			"--ui-site-footer-max-width", "var(--col-max)").End()
-	ss.Rule(".fui-site-footer__grid").Set("padding", "0 {spacing.xxl}").End()
-
-	ss.Rule(".site-foot-brand").
-		Set("display", "flex", "align-items", "baseline", "gap", "8px",
-			"margin-bottom", "{spacing.md}",
-			"color", "{colors.text}", "font-weight", "500").End()
-	ss.Rule(".site-foot-brand__mark").
-		Set("display", "inline-block",
-			"width", "9px", "height", "9px",
-			"border-radius", "2px",
-			"background", "{colors.primary}",
-			"transform", "translateY(1px)").End()
-	ss.Rule(".site-foot-brand__ver").
-		Set("font-family", "{fonts.mono}",
-			"font-size", "11px",
-			"color", "{colors.text-subtle}",
-			"font-weight", "400").End()
-	ss.Rule(".site-foot-brand__copy").
-		Set("font-size", "var(--t-sm)",
-			"color", "{colors.text-subtle}",
-			"line-height", "1.6",
-			"max-width", "30ch").End()
-	ss.Rule(".fui-site-footer h6").
-		Set("font-family", "{fonts.body}",
-			"font-weight", "500",
-			"font-size", "13px",
-			"color", "{colors.text}",
-			"margin-bottom", "{spacing.md}",
-			"letter-spacing", "-0.005em",
-			"text-transform", "none").End()
-	ss.Rule(".fui-site-footer ul li").Set("padding", "3px 0").End()
-	ss.Rule(".fui-site-footer ul li a").
-		Set("color", "{colors.text-subtle}", "font-size", "var(--t-sm)").End()
-	ss.Rule(".fui-site-footer ul li a:hover").Set("color", "{colors.text}", "opacity", "1").End()
-	ss.Rule(".fui-site-footer__bottom").
-		Set("display", "flex",
-			"justify-content", "space-between",
-			"padding-top", "{spacing.xl}",
-			"margin-top", "var(--s-8)",
-			"border-top", "1px solid var(--line-faint)",
-			"color", "var(--fg-4)",
-			"font-size", "12px",
-			"font-family", "{fonts.mono}",
-			"max-width", "var(--col-max)",
-			"margin-left", "auto",
-			"margin-right", "auto",
-			"padding-left", "{spacing.xxl}",
-			"padding-right", "{spacing.xxl}").End()
 }
 
 // -----------------------------------------------------------------------------
@@ -765,8 +454,8 @@ func sectionFraming(ss *style.StyleSheet) {
 	ss.Rule(".section__head").
 		Set("display", "grid",
 			"grid-template-columns", "minmax(0, 1fr) 360px",
-			"gap", "{spacing.xxxl}",
-			"margin-bottom", "{spacing.xxl}",
+			"gap", "{spacing.3xl}",
+			"margin-bottom", "{spacing.2xl}",
 			"align-items", "end").End()
 	ss.Rule(".section__head h2").
 		Set("font-size", "clamp(var(--t-3xl), 4vw, var(--t-4xl))",
@@ -780,8 +469,8 @@ func sectionFraming(ss *style.StyleSheet) {
 	// only pins it to the section's top-right corner.
 	ss.Rule(".section-v2 .fui-section__eyebrow").
 		Set("position", "absolute",
-			"top", "{spacing.xxxl}",
-			"right", "{spacing.xxl}",
+			"top", "{spacing.3xl}",
+			"right", "{spacing.2xl}",
 			"color", "var(--fg-4)").End()
 }
 
@@ -816,7 +505,7 @@ func heroLayout(ss *style.StyleSheet) {
 			"line-height", "1.55",
 			"max-width", "44ch",
 			"margin-bottom", "{spacing.lg}").End()
-	ss.Rule(".hero__lede + .hero__lede").Set("margin-bottom", "{spacing.xxl}").End()
+	ss.Rule(".hero__lede + .hero__lede").Set("margin-bottom", "{spacing.2xl}").End()
 	ss.Rule(".hero__lede strong").Set("color", "{colors.text}", "font-weight", "500").End()
 	ss.Rule(".hero__ctas").
 		Set("display", "flex", "gap", "{spacing.md}", "align-items", "center").End()
@@ -875,7 +564,7 @@ func realAppLayout(ss *style.StyleSheet) {
 	ss.Rule(".screen-mock__url").
 		Set("margin-left", "{spacing.sm}",
 			"font-family", "ui-monospace, SFMono-Regular, Menlo, monospace",
-			"font-size", "var(--t-xs)", "color", "var(--fg-2)").End()
+			"font-size", "var(--t-xs)", "color", "var(--color-text-muted)").End()
 	ss.Rule(".screen-mock__body").Set("padding", "{spacing.md}").End()
 	ss.Rule(".screen-mock__head").
 		Set("display", "flex", "align-items", "center", "justify-content", "space-between",
@@ -1106,7 +795,7 @@ func alphaLayout(ss *style.StyleSheet) {
 	ss.Rule(".alpha__grid").
 		Set("display", "grid",
 			"grid-template-columns", "minmax(0, 1.1fr) minmax(0, 1.4fr)",
-			"gap", "{spacing.xxxl}").End()
+			"gap", "{spacing.3xl}").End()
 	ss.Rule(".alpha__copy h2").
 		Set("font-size", "var(--t-3xl)",
 			"margin-bottom", "{spacing.lg}",
@@ -1156,7 +845,8 @@ func responsive(ss *style.StyleSheet) {
 			Set("grid-template-columns", "1fr",
 				"gap", "{spacing.lg}",
 				"padding", "{spacing.lg}").End()
-		// The in-page TOC un-sticks on mobile (ui.DocLayout self-collapses).
+		// The in-page TOC un-sticks on mobile (the docpage grid
+		// self-collapses below SectionMenu's 900px swap).
 		inner.Rule(".toc").Set("position", "static").End()
 	})
 
@@ -1175,63 +865,12 @@ func responsive(ss *style.StyleSheet) {
 		inner.Rule(".pane--left").
 			Set("border-right", "0", "border-bottom", "1px solid {colors.border}").End()
 		inner.Rule(".alpha__grid").Set("grid-template-columns", "1fr").End()
-		// Set the component's template var (not the property) so it wins
-		// against ui.SiteFooter's own var-based grid rule.
-		inner.Rule(`[data-fui-comp="ui-site-footer"]`).
-			Set("--ui-site-footer-grid-template", "1fr 1fr").End()
 	})
 
-	// Header nav, tablet collapse. This site runs a dense primary nav
-	// (5 links) next to a wide search trigger, so ui.SiteHeader's default
-	// 720px collapse leaves the bar crowded through tablet width: the
-	// search trigger gets squeezed from ~288px down to ~209px (768–900px)
-	// and the row reads as busy / pushed. Drop into the framework's own
-	// hamburger drawer at 1120px instead, tablets and compact laptops get
-	// brand + search + actions + drawer, and the search keeps full width.
-	// Selector specificity (attr + .site-header, 0,3,0) beats the
-	// component's own 0,2,0 collapse rules regardless of source order.
-	ss.Media("(max-width: 1120px)", func(inner *style.StyleSheet) {
-		inner.Rule(`[data-fui-comp="ui-site-header"].site-header .fui-site-header__links`).
-			Set("display", "none").End()
-		inner.Rule(`[data-fui-comp="ui-site-header"].site-header .fui-site-header__mobile`).
-			Set("display", "block").End()
-	})
-
-	// Phone: collapse everything to one column, hide horizontal nav links
-	// (the mobile drawer in HeaderComponent's <details> takes over), shrink
-	// hero headlines, drop multi-col card grids to single-col.
+	// Phone: collapse everything to one column, shrink hero headlines,
+	// drop multi-col card grids to single-col. (The header's own phone
+	// shape lives in the siteheader package's sheet.)
 	ss.Media("(max-width: 640px)", func(inner *style.StyleSheet) {
-		// Nav at phone width: brand (λ + gofastr) on the left, four
-		// icon-sized controls tight on the right: search, trigram,
-		// theme, GitHub. NOTHING gets removed (search + GitHub were
-		// fully accessible on desktop, they stay so on phone), they
-		// just shed labels and tighten to a single 36px square apiece.
-		// The status capsule and desktop link bar do collapse since
-		// the links are mirrored in the drawer.
-		inner.Rule(".fui-site-header__links").Set("display", "none").End()
-		inner.Rule(".fui-site-header__mobile").Set("display", "block").End()
-		inner.Rule(".site-brand__status").Set("display", "none").End()
-		// Search pill morphs into an icon button on phones: the placeholder
-		// text + ⌘K hint hide, the magnifier glyph shows. Touch targets are
-		// 44×44 (WCAG 2.5.5), the header controls were 30–36px before.
-		inner.Rule(".site-cmd").
-			Set("min-width", "44px",
-				"width", "44px",
-				"height", "44px",
-				"padding", "0",
-				"justify-content", "center",
-				"gap", "0",
-				"border-radius", "{radii.md}").End()
-		inner.Rule(".site-cmd__placeholder, .site-cmd kbd").
-			Set("display", "none").End()
-		inner.Rule(".site-cmd__glyph").
-			Set("display", "block").End()
-		// Icon buttons (theme toggle, GitHub) to 44×44. The hamburger
-		// (.fui-site-header__mobile-toggle) is sized by framework/ui's
-		// SiteHeader CSS, bumped to 44px there.
-		inner.Rule(".site-icon").Set("width", "44px", "height", "44px").End()
-		inner.Rule(".fui-site-header").Set("padding", "0 {spacing.sm}", "gap", "{spacing.sm}").End()
-		inner.Rule(".fui-site-header__right").Set("gap", "4px").End()
 		// All card grids → 1 col.
 		inner.Rule(".arch__grid").Set("grid-template-columns", "1fr").End()
 		inner.Rule(".ex__grid").Set("grid-template-columns", "1fr").End()
@@ -1270,14 +909,6 @@ func responsive(ss *style.StyleSheet) {
 		// Cap hero headline sizes.
 		inner.Rule(".hero__title, .gs-hero h1, .cx-hero h1, .ex-hero h1, .k-hero h1, .ph-hero h1").
 			Set("font-size", "clamp(32px, 10vw, 44px)").End()
-		// Footer goes single column, drive ui.SiteFooter's vars so the
-		// component's own grid rule picks the collapse up.
-		inner.Rule(`[data-fui-comp="ui-site-footer"]`).
-			Set("--ui-site-footer-grid-template", "1fr",
-				"--ui-site-footer-grid-gap", "{spacing.xl}").End()
-		inner.Rule(".fui-site-footer__bottom").Set("flex-direction", "column", "gap", "{spacing.md}", "align-items", "flex-start").End()
-		inner.Rule(".fui-site-footer ul li a").
-			Set("display", "inline-flex", "align-items", "center", "min-height", "44px").End()
 		// Step-rail (get-started) collapses too.
 		inner.Rule(".gs-body").Set("grid-template-columns", "1fr", "gap", "{spacing.lg}", "padding", "{spacing.xl} 0").End()
 		inner.Rule(".step-rail").Set("position", "static", "max-height", "200px", "overflow-y", "auto", "padding-bottom", "{spacing.md}", "border-bottom", "1px solid var(--line-faint)").End()

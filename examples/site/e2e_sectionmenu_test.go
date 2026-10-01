@@ -208,7 +208,7 @@ func TestE2E_PaletteKeepsDocsRailVisible(t *testing.T) {
 		chromedp.Evaluate(`window.scrollTo(0, 1500)`, nil),
 		chromedp.Sleep(150*time.Millisecond),
 		// Open the palette (⌘K trigger in the header).
-		chromedp.Click(`.site-cmd`, chromedp.ByQuery),
+		chromedp.Click(`[data-fui-scope="docsite-header"] .cmd`, chromedp.ByQuery),
 		chromedp.Sleep(500*time.Millisecond),
 		chromedp.Evaluate(`window.innerHeight`, &innerH),
 		chromedp.Evaluate(`getComputedStyle(document.querySelector('.fui-section-menu__rail')).display`, &railDisplay),

@@ -3,7 +3,7 @@ package main
 // =============================================================================
 // /components, the showcase screens.
 //
-// The catalog itself (the 138 entries, the code snippets, the note-only
+// The catalog itself (the entries, the code snippets, the note-only
 // set, the demo support code for the three stateful demos) now lives in
 // framework/gallery, so the theme-configuration tool inside cmd/gofastr
 // can render every component without importing examples/. This file keeps
@@ -34,6 +34,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/examples/site/docpage"
 	"github.com/DonaldMurillo/gofastr/framework/gallery"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
@@ -262,13 +263,16 @@ func (s *ComponentShowcaseScreen) RenderCtx(ctx context.Context) render.HTML {
 		html.Paragraph(html.TextConfig{Class: "doc-head__lede"}, render.Text(s.Entry.Desc)),
 	)
 
-	// Narrow (no-rail) DocLayout: breadcrumb + head + live demo + usage code.
-	return ui.DocLayout(ui.DocLayoutConfig{
-		Crumbs: []ui.DocCrumb{
-			{Label: "Components", Href: "/components/"},
-			{Label: s.Entry.Category, Href: "/components/#" + categorySlug(s.Entry.Category)},
-			{Label: s.Entry.Name},
+	// Narrow (no-rail) docpage: breadcrumb + head + live demo + usage
+	// code, the article centered in the shell the site's docpage
+	// package draws.
+	return docpage.Render(docpage.Config{
+		Crumbs: []ui.Crumb{
+			{Text: "Components", Href: "/components/"},
+			{Text: s.Entry.Category, Href: "/components/#" + categorySlug(s.Entry.Category)},
+			{Text: s.Entry.Name, Current: true},
 		},
+		CrumbsLabel: "Components",
 	},
 		head,
 		// Demo panel. Components that render a self-contained live instance

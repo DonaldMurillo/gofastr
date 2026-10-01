@@ -282,12 +282,12 @@ func TestComponentDemoLabels(t *testing.T) {
 }
 
 func TestDocShellCollapsesOnMobile(t *testing.T) {
-	// /docs/<slug> pages render the framework's ui.DocLayout, which owns the
-	// nav-rail + content grid AND its mobile collapse (asserted directly in
-	// framework/ui's TestDocLayoutCSSCollapsesOnMobile). Here we just confirm
-	// the doc page actually mounts that component.
-	if !strings.Contains(body(t, "/docs/entity-declarations"), `data-fui-comp="ui-doc-layout"`) {
-		t.Fatal("a /docs/<slug> page should render the ui.DocLayout component")
+	// /docs/<slug> pages render the site's docpage package, whose owned
+	// sheet owns the nav-rail + content grid AND its mobile collapse in
+	// lockstep with SectionMenu's 900px swap. Here we just confirm the
+	// doc page actually mounts that owner.
+	if !strings.Contains(body(t, "/docs/entity-declarations"), `data-fui-scope="docsite-docpage"`) {
+		t.Fatal("a /docs/<slug> page should render the docpage owned style")
 	}
 }
 

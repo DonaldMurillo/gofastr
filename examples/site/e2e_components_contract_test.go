@@ -355,8 +355,12 @@ func TestE2E_SidebarVariantsAdaptAndPersist(t *testing.T) {
 		chromedp.Evaluate(`document.querySelector('[data-hui-sidebar]')?.dataset.collapsed === 'true'`, &persisted),
 		chromedp.Evaluate(`
 			const sidebar = document.querySelector('[data-hui-sidebar]');
+			// An off-canvas render names the variant on the root AND on the
+			// drawer hamburger (its visibility keys on its own modifier, so
+			// the standalone SidebarDrawerTrigger works outside the root).
 			sidebar.classList.remove('fui-sidebar--collapsible');
 			sidebar.classList.add('fui-sidebar--off-canvas');
+			sidebar.querySelector('.fui-sidebar__hamburger').classList.replace('fui-sidebar__hamburger--collapsible', 'fui-sidebar__hamburger--off-canvas');
 			[
 				getComputedStyle(sidebar.querySelector('.fui-sidebar__inline')).display === 'none',
 				getComputedStyle(sidebar.querySelector('.fui-sidebar__hamburger')).display !== 'none'

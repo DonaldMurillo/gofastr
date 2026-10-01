@@ -104,9 +104,9 @@ func TestE2ERecordSummaryResponsiveContract(t *testing.T) {
   });
   const band = root.querySelector('[data-fui-comp="ui-metric-band"]');
   const lastMetric = band.querySelector('.fui-metric-band__item:last-child');
-  const layout = document.querySelector('.layout-components > .layout-body');
+  const layout = document.querySelector('.layout-components .fui-content-row');
   const content = layout.querySelector('.layout-content');
-  const doc = document.querySelector('[data-fui-comp="ui-doc-layout"]');
+  const doc = document.querySelector('[data-fui-scope="docsite-docpage"]');
   const docStyle = getComputedStyle(doc);
   const widestDocChild = [...doc.children].sort((a, b) => b.getBoundingClientRect().width - a.getBoundingClientRect().width)[0];
   const descendants = [root, ...root.querySelectorAll('*')];

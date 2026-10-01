@@ -22,6 +22,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/interactive"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/examples/site/docpage"
 	"github.com/DonaldMurillo/gofastr/framework/docs"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
@@ -337,12 +338,12 @@ func (s *DocPageScreen) Render() render.HTML {
 			html.Link(html.LinkConfig{Href: "/docs/", Text: "docs index"}), render.Text("."))
 	}
 
-	return ui.DocLayout(ui.DocLayoutConfig{
+	return docpage.Render(docpage.Config{
 		Nav: docCatalogSidebar(s.Entry.Slug),
-		Crumbs: []ui.DocCrumb{
-			{Label: "Docs", Href: "/docs/"},
-			{Label: intent.Title, Href: "/docs/#" + intent.Slug},
-			{Label: s.Entry.Title},
+		Crumbs: []ui.Crumb{
+			{Text: "Docs", Href: "/docs/"},
+			{Text: intent.Title, Href: "/docs/#" + intent.Slug},
+			{Text: s.Entry.Title, Current: true},
 		},
 		Pager: docPrevNext(s.Entry.Slug),
 	}, content)
@@ -379,7 +380,7 @@ func docsSectionMenuConfig(active string) interactive.SectionMenuConfig {
 }
 
 // docPrevNext computes the previous/next doc in catalog order for the pager.
-func docPrevNext(slug string) *ui.DocPager {
+func docPrevNext(slug string) *docpage.PagerConfig {
 	flat := flatDocs()
 	idx := -1
 	for i, d := range flat {
@@ -388,7 +389,7 @@ func docPrevNext(slug string) *ui.DocPager {
 			break
 		}
 	}
-	p := ui.DocPager{PrevHref: "/docs/", PrevLabel: "Docs index"}
+	p := docpage.PagerConfig{PrevHref: "/docs/", PrevLabel: "Docs index"}
 	if idx > 0 {
 		p.PrevHref, p.PrevLabel = "/docs/"+flat[idx-1].Slug, flat[idx-1].Title
 	}

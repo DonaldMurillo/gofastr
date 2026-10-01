@@ -52,10 +52,12 @@ func collectRuntimeModuleURLs(ctx context.Context) (*sync.Map, func()) {
 
 // Visiting / (home page) must NOT trigger fetches for runtime
 // modules whose markers aren't on the page. The site mounts a
-// site-wide toast stack on every page + emits the gofastr-sse meta
-// tag, so headless-feedback.js (the toast runtime) and sse.js are
-// legitimately loaded, those are excluded. The split's payoff is
-// asserting headless/menu DON'T load.
+// site-wide toast stack on every page, so headless-feedback.js (the
+// toast runtime) is legitimately loaded; it is excluded. The split's
+// payoff is asserting headless/menu DON'T load. (sse.js no longer
+// loads here either: the module opens only for a page that takes
+// pushes — an island or the offline banner — and the home page has
+// neither, meta or no meta.)
 func TestE2E_RuntimeSplit_NoMarkersNoFetch(t *testing.T) {
 	if testing.Short() {
 		t.Skip("e2e: -short")
@@ -78,8 +80,9 @@ func TestE2E_RuntimeSplit_NoMarkersNoFetch(t *testing.T) {
 	}
 
 	// The home page has no headless hooks, no menu, those modules
-	// should not load. (toasts + sse load legitimately because of
-	// site-wide widgets above.)
+	// should not load. (toasts load legitimately because of the
+	// site-wide widget above; sse does not load at all — the home page
+	// takes no pushes.)
 	for _, mod := range []string{"headless", "menu"} {
 		urls.Range(func(k, _ any) bool {
 			u := k.(string)

@@ -363,15 +363,15 @@ func TestE2E_BreadcrumbCategoryScrollsToSection(t *testing.T) {
 	var scrollY, sectionTop, headerBottom, innerH float64
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/signal-store"),
-		chromedp.WaitReady(`.fui-doc-layout__crumbs`, chromedp.ByQuery),
+		chromedp.WaitReady(`[data-fui-scope="docsite-docpage"] .crumbs`, chromedp.ByQuery),
 		// The category crumb is the breadcrumb link whose href has a #.
-		chromedp.Click(`.fui-doc-layout__crumbs a[href*="#"]`, chromedp.ByQuery),
+		chromedp.Click(`[data-fui-scope="docsite-docpage"] .crumbs a[href*="#"]`, chromedp.ByQuery),
 		chromedp.Sleep(500*time.Millisecond), // SPA nav + scroll + rAF re-correct
 		chromedp.Evaluate(`location.hash`, &hash),
 		chromedp.Evaluate(`window.scrollY`, &scrollY),
 		chromedp.Evaluate(`(()=>{const el=document.getElementById(location.hash.slice(1));return el?el.getBoundingClientRect().top:-9999})()`, &sectionTop),
 		// The sticky site header that the section heading must clear.
-		chromedp.Evaluate(`(()=>{const h=document.querySelector('header, [data-fui-comp="ui-site-header"], nav');return h?h.getBoundingClientRect().bottom:0})()`, &headerBottom),
+		chromedp.Evaluate(`(()=>{const h=document.querySelector('header[role="banner"]');return h?h.getBoundingClientRect().bottom:0})()`, &headerBottom),
 		chromedp.Evaluate(`window.innerHeight`, &innerH),
 	); err != nil {
 		t.Fatalf("chromedp: %v", err)

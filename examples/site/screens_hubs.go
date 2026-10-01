@@ -437,6 +437,7 @@ if err := framework.AutoMigrate(db, app.Registry); err != nil {
 				CodeLang: "go",
 				Code: `t := theme.Default(theme.Overrides{
     Primary:  "oklch(0.82 0.155 78)", // amber accent
+    Dark:     &theme.Overrides{Primary: "oklch(0.82 0.155 78)"},
     Surface:  "oklch(0.17 0.006 75)",
     RadiusMd: 6,
 })

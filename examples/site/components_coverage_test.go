@@ -34,6 +34,7 @@ func TestComponentGalleryCoversUI(t *testing.T) {
 		"Section":              "semantic layout primitive, shown via layouts",
 		"SidebarBody":          "internal building block of Sidebar",
 		"DocLayout":            "full-page doc skeleton; shown in-context, not as a tile",
+		"ContentRow":           "page frame chrome; the site's components layout composes it, shown in-context on every components page",
 		"SiteHeader":           "page chrome; shown on every site page",
 		"SiteFooter":           "page chrome; shown on every site page",
 		"SignOut":              "auth action button; needs an auth session to demo",

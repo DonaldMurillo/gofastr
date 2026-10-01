@@ -78,16 +78,25 @@ func TestE2E_Breadcrumbs_AriaCurrentIsExactlyOne(t *testing.T) {
 	base := startE2EServer(t)
 	ctx := newE2EBrowserCtx(t)
 
-	var current int
+	// The showcase page carries two trails: the page's own docpage
+	// crumbs above the article and the live ui.Breadcrumbs demo in the
+	// stage. The contract under test is per trail: every breadcrumb
+	// landmark marks exactly one step aria-current="page".
+	var perTrail []int
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/breadcrumbs"),
 		pageReady(),
-		chromedp.Evaluate(`document.querySelectorAll('.fui-breadcrumbs__link[aria-current="page"]').length`, &current),
+		chromedp.Evaluate(`Array.from(document.querySelectorAll('[data-fui-comp="ui-breadcrumbs"]')).map(trail => trail.querySelectorAll('.fui-breadcrumbs__link[aria-current="page"]').length)`, &perTrail),
 	)
 	if err != nil {
 		t.Fatalf("chromedp: %v", err)
 	}
-	if current != 1 {
-		t.Errorf("expected exactly 1 aria-current=\"page\" in breadcrumbs, got %d", current)
+	if len(perTrail) < 2 {
+		t.Fatalf("expected the page's own crumbs and the demo trail, got %d trails", len(perTrail))
+	}
+	for i, n := range perTrail {
+		if n != 1 {
+			t.Errorf("trail %d: expected exactly 1 aria-current=\"page\", got %d", i, n)
+		}
 	}
 }
