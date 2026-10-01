@@ -1237,31 +1237,39 @@ releases:
       - change: "Layout.WithHeader is removed; the header renders in the layout build"
         breaking: true
         detect: '\.WithHeader\('
-        guidance: "Move the header component into the build (component.SafeRenderCtx) and wrap it with ui.Shell(ui.ShellConfig{Header: ...}, l.Primary()); a banner band with chrome is ui.Shell's Sidebar dialect, the marketing band its Contained one."
-      - change: "Layout.WithSidebar is removed; the sidebar row is ui.Shell"
+        guidance: "Move the header component into the build (component.SafeRenderCtx) and place it above l.Primary() in a page-tall ui.Stack(ui.StackConfig{Screen: true, Gap: ui.GapNone}, hdr, ...); a sidebar app puts it in ui.ContentRow's band, a marketing page above a ui.Container."
+      - change: "Layout.WithSidebar is removed; the sidebar row is ui.ContentRow"
         breaking: true
         detect: '\.WithSidebar\('
-        guidance: "Render your sidebar in the build and pass it as ui.Shell's Sidebar slot (ui.Shell(ui.ShellConfig{Sidebar: nav}, l.Primary())); ui.MountSidebar for the drawer is unchanged."
+        guidance: "Render your sidebar in the build and pass it as ui.ContentRow's Sidebar slot (ui.ContentRow(ui.ContentRowConfig{Sidebar: nav}, l.Primary())) inside a ui.Stack with Screen: true; ui.MountSidebar for the drawer is unchanged."
       - change: "Layout.WithFooter is removed; the footer renders in the layout build"
         breaking: true
         detect: '\.WithFooter\('
-        guidance: "Move the footer component into the build and pass it as ui.Shell's Footer slot (ui.SiteFooter composes cleanly there)."
-      - change: "Layout.WithContainer is removed; the centered editorial column is ui.Shell's Contained dialect"
+        guidance: "Move the footer component into the build and make it the last child of a ui.Stack with Screen: true, which keeps it at the bottom of a short page; gofastr generate package sitefooter copies a footer to start from."
+      - change: "Layout.WithContainer is removed; the centered editorial column is ui.Container"
         breaking: true
         detect: '\.WithContainer\(\)'
-        guidance: "Compose ui.Shell(ui.ShellConfig{Contained: true, Header: ..., Footer: ...}, l.Primary()); the measure and gutter tokens (--ui-layout-container-width, --ui-layout-gutter) are unchanged."
-      - change: "Layout.WithStickyHeader is removed; the sticky band is ui.Shell's StickyHeader option"
+        guidance: "Wrap l.Primary() in ui.Container(ui.ContainerConfig{}, l.Primary()) between the header and footer of a ui.Stack with Screen: true; the measure and gutter are the theme's Layout.PageWidth and Layout.PageGutter (--size-page-width, --size-page-gutter)."
+      - change: "Layout.WithStickyHeader is removed; the sticky band is ui.Sticky"
         breaking: true
         detect: '\.WithStickyHeader\(\)'
-        guidance: "Pass StickyHeader: true to ui.Shell beside your Header; the shell sticks the band for the whole page on the theme's --z-sticky layer, exactly as the old modifier did."
-      - change: "app.LayoutBaseCSS is deleted; the structural shell CSS moved into the ui.Shell component's registered sheet"
+        guidance: "Wrap the header in ui.Sticky(ui.StickyConfig{Edge: ui.StickyTop}, hdr) inside the page-tall ui.Stack; it sticks on the theme's sticky layer, as the old modifier did."
+      - change: "app.LayoutBaseCSS is deleted; the structural CSS moved into the ui.Stack, ui.ContentRow and ui.Container sheets"
         breaking: true
         detect: 'LayoutBaseCSS'
-        guidance: "Delete the reference; compose ui.Shell for the shapes that CSS covered (the --ui-layout-* override tokens are unchanged). A hand-rolled shell keeps whatever CSS it shipped, or adopts ui.Shell."
+        guidance: "Delete the reference and compose ui.Stack{Screen: true}, ui.ContentRow and ui.Container for the shapes that CSS covered; their dimensions are theme tokens (see the page-dimension note). A hand-rolled shell keeps whatever CSS it shipped."
       - change: "Layout.Wrap is removed; WrapCtx stays and renders a tree layout"
         breaking: true
         detect: '\.Wrap\(render\.|EmbedLayout\(\)\.Wrap\('
         guidance: "Call WrapCtx(ctx, body) — the primary fills from the body, outlets render their Default; battery/rtc fanout.Wrap is unrelated and untouched."
+      - change: "the page dimensions are theme tokens; the --ui-layout-* and --ui-container-* width, height and gutter variables are gone"
+        breaking: true
+        detect: '--ui-layout-(container-width|header-height|header-bg|gutter)\b|--ui-container-(narrow|default|wide)\b'
+        guidance: "Set the size on the theme instead of redeclaring a variable: --ui-layout-container-width is Layout.PageWidth (--size-page-width), the gutter is Layout.PageGutter (--size-page-gutter), --ui-layout-header-height is Layout.HeaderHeight (--size-header-height), and --ui-container-narrow/default/wide are Layout.NarrowWidth/ContentWidth/WideWidth. The header background belongs to the app's own header sheet."
+      - change: "ui.SiteHeader, ui.SiteFooter and ui.DocLayout are deleted, with their Config, Link, Column, Drawer, DocPager, DocPrevNext and DocCrumb parts"
+        breaking: true
+        detect: '\bui\.(SiteHeader|SiteFooter|DocLayout|DocPager|DocPrevNext|DocCrumb)'
+        guidance: "Run gofastr generate package siteheader, sitefooter and docpage to copy owned packages (Go, owned style sheet, tests) into the app, then call siteheader.Render, sitefooter.Render and docpage.Render and change them freely. Crumbs are ui.Breadcrumbs (DocCrumb{Label, Href} is Crumb{Text, Href}); the pager is docpage.Pager."
       - change: "four unused exports are removed: html.ContainerType, style.DarkSchemeCSS, gallery.MustLookup and ui.ToastStackSignal"
         breaking: true
         detect: '\bhtml\.ContainerType\(|\bstyle\.DarkSchemeCSS\(|\bgallery\.MustLookup\(|\bui\.ToastStackSignal\('

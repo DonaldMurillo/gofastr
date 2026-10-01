@@ -433,23 +433,23 @@ var v086DetectPairs = map[string][2]string{
 	},
 	`\.WithHeader\(`: {
 		`appLayout = appLayout.WithHeader(hdr)`,
-		`return ui.Shell(ui.ShellConfig{Header: hdr}, l.Primary())`,
+		`return ui.Stack(ui.StackConfig{Screen: true}, hdr, l.Primary())`,
 	},
 	`\.WithSidebar\(`: {
 		`appLayout = appLayout.WithSidebar(nav)`,
-		`return ui.Shell(ui.ShellConfig{Sidebar: nav}, l.Primary())`,
+		`return ui.ContentRow(ui.ContentRowConfig{Sidebar: nav}, l.Primary())`,
 	},
 	`\.WithFooter\(`: {
 		`appLayout = appLayout.WithFooter(foot)`,
-		`return ui.Shell(ui.ShellConfig{Footer: foot}, l.Primary())`,
+		`return ui.Stack(ui.StackConfig{Screen: true}, l.Primary(), foot)`,
 	},
 	`\.WithContainer\(\)`: {
 		`appLayout = appLayout.WithContainer()`,
-		`return ui.Shell(ui.ShellConfig{Contained: true}, l.Primary())`,
+		`return ui.Container(ui.ContainerConfig{}, l.Primary())`,
 	},
 	`\.WithStickyHeader\(\)`: {
 		`appLayout = appLayout.WithStickyHeader()`,
-		`return ui.Shell(ui.ShellConfig{Header: hdr, StickyHeader: true}, l.Primary())`,
+		`return ui.Sticky(ui.StickyConfig{Edge: ui.StickyTop}, hdr)`,
 	},
 	`LayoutBaseCSS`: {
 		`css := app.LayoutBaseCSS + siteCSS`,
@@ -458,6 +458,14 @@ var v086DetectPairs = map[string][2]string{
 	`\.Wrap\(render\.|EmbedLayout\(\)\.Wrap\(`: {
 		`page := appLayout.Wrap(render.HTML(body))`,
 		`page := appLayout.WrapCtx(ctx, render.HTML(body))`,
+	},
+	`--ui-layout-(container-width|header-height|header-bg|gutter)\b|--ui-container-(narrow|default|wide)\b`: {
+		`css := ":root { --ui-layout-container-width: 72rem; }"`,
+		`t.Layout.PageWidth.Value = "72rem"`,
+	},
+	`\bui\.(SiteHeader|SiteFooter|DocLayout|DocPager|DocPrevNext|DocCrumb)`: {
+		`hdr := ui.SiteHeader(ui.SiteHeaderConfig{Brand: "Acme"})`,
+		`hdr := siteheader.Render(siteheader.Config{Name: "Acme"})`,
 	},
 	`\bhtml\.ContainerType\(|\bstyle\.DarkSchemeCSS\(|\bgallery\.MustLookup\(|\bui\.ToastStackSignal\(`: {
 		`grid := html.Div(html.ContainerType("inline-size", "cards"), cards)`,

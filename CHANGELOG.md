@@ -669,9 +669,9 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `ui-doc-layout` sheets with their `--ui-site-header-*` and
   `--ui-doc-layout-*` variables. A preset site frame steered every
   site into one look, then into overrides to escape it. A site's
-  header, footer and docs page are now its own packages: copy
-  `examples/acme-site/siteheader`, `sitefooter` and `helpdocs` and
-  change them. Each is plain `html` elements and framework parts
+  header, footer and docs page are now its own packages:
+  `gofastr generate package siteheader`, `sitefooter` and `docpage`
+  copy them into the app, tests included, to change freely. Each is plain `html` elements and framework parts
   (`headless.Disclosure` for the phone menu, `ui.LinkButton`,
   `ui.Breadcrumbs`, `ui.ThemeToggle`) with an owned
   `<name>.style.css` whose every dimension is a token; the page
@@ -683,7 +683,7 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   enclosing `go.mod`): `app.go` imports the two packages by module
   path. Crumbs move to `ui.Breadcrumbs`
   (`DocCrumb{Label, Href}` is `Crumb{Text, Href}`), and a docs pager
-  is the docs package's own two links (acme's `helpdocs.Pager`).
+  is the docs package's own two links (`docpage.Pager`).
 
 - **Owned sheets read tokens for weights, sizes and every
   `var()`.** In a `*.style.css`, a `var()` fallback no longer
@@ -899,17 +899,23 @@ are listed under Added above, not here.
     true}`, `ui.ContentRow` and `ui.Container` for the page column,
     the sidebar row and the centered column. `WithKey` and `WrapCtx`
     stay (see the BREAKING entry for the port, spelled end to end).
-30. **`ui.SiteHeader`, `ui.SiteFooter` and `ui.DocLayout` are
-    deleted.** Copy `examples/acme-site/siteheader`, `sitefooter` and
-    `helpdocs` into the app and change them (see the BREAKING entry).
-    Crumbs are `ui.Breadcrumbs`; the pager is the docs package's own.
-
-30. **Four unused exports are removed.** `html.ContainerType` (it
+30. **The page dimensions are theme tokens.** The
+    `--ui-layout-container-width`, `--ui-layout-header-height`,
+    `--ui-layout-gutter` and `--ui-container-*` variables are gone; set
+    `Theme.Layout` (`PageWidth`, `PageGutter`, `HeaderHeight`,
+    `NarrowWidth`, `ContentWidth`, `WideWidth`) instead (see the
+    BREAKING entry).
+31. **`ui.SiteHeader`, `ui.SiteFooter` and `ui.DocLayout` are
+    deleted.** `gofastr generate package siteheader`, `sitefooter`
+    and `docpage` copy owned replacements into the app (see the
+    BREAKING entry). Crumbs are `ui.Breadcrumbs`; the pager is
+    `docpage.Pager`.
+32. **Four unused exports are removed.** `html.ContainerType` (it
     never worked: set `container-type` in CSS), `style.DarkSchemeCSS`
     (set `Theme.DarkColors`), `gallery.MustLookup` (use `Lookup`) and
     `ui.ToastStackSignal` (use `preset.ToastStack`).
 
-31. **Auto-named size-scale tokens are `2xl`/`3xl`, not `xxl`/`xxxl`.**
+33. **Auto-named size-scale tokens are `2xl`/`3xl`, not `xxl`/`xxxl`.**
     `style.AutoFillNames` maps the ALL-CAPS scale steps the way
     `DefaultTheme` and the framework CSS already spell them
     (`XXL` → `2xl`, `XXXL` → `3xl`). A theme that relied on
@@ -1075,9 +1081,9 @@ are listed under Added above, not here.
   button transparent and the write-back carries
   `"button.treatment": "outline"` into the emitted theme.go.
 
-- `gofastr upgrade` knows v0.86.0 ("Headless design system"): 38 notes
-  covering the 31 rows of the migration ledger above (the layout row
-  takes eight). 36 of them carry a `detect` regex the CLI runs per-line
+- `gofastr upgrade` knows v0.86.0 ("Headless design system"): 40 notes
+  covering the 33 rows of the migration ledger above (the layout row
+  takes eight). 38 of them carry a `detect` regex the CLI runs per-line
   over a project's non-test .go files to point at the exact lines the
   release breaks — import paths
   of the deleted `core-ui/patterns/*` packages, removed fields
