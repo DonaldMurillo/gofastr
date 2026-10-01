@@ -10,6 +10,44 @@ database on `t.Cleanup`.
 > and are not exported. `testkit` is the stable public API for
 > host-app test code.
 
+## Render failures
+
+`framework.TestHarness(t, app)` fails `t` when a component or layout
+panics while rendering a harness request, even if an error boundary
+returns normal-looking HTML and the response is 200. The failure names
+the component type and panic message. `AsUser` and the request builder
+keep this check.
+
+Plain UI host requests in Go test binaries also return HTTP 500 after a
+recovered render panic, preserving the fallback body. This covers full
+pages, navigation partials, intercepted screens, fills envelopes, and
+deferred parts. Production binaries keep the screen's recovery status.
+
+For a test that panics on purpose to check production recovery, wrap its
+handler with `testkit.AllowRenderPanics(t, handler)`:
+
+```go
+srv := httptest.NewServer(testkit.AllowRenderPanics(t, app.Router()))
+t.Cleanup(srv.Close)
+```
+
+`AllowRenderPanics(t testing.TB, next http.Handler) http.Handler` changes
+only requests through the returned handler. `t.Cleanup` revokes the
+exemption: later requests again get the test-only 500. Requests already
+admitted may finish with production status. Register server cleanup
+after creating the wrapper so the server closes before revocation.
+Parallel tests are safe when each owns its wrapper and server; do not
+share them with tests that did not opt out. There is no process-wide
+switch, header, or query parameter. Calling the helper outside a Go test
+binary panics. Error logs and TestHarness failure reporting remain active;
+use plain HTTP requests to assert intentional recovery.
+
+Generated app end-to-end tests capture the child server's logs and fail
+on recovered render panics, including those reached by browser requests.
+Recovered render panics log at error level with the component type,
+scrubbed panic message, and stack. Logging also runs in production;
+the existing fallback HTML and HTTP status behavior do not change.
+
 ## Isolated databases
 
 ```go

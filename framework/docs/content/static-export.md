@@ -42,6 +42,12 @@ go build -o site ./examples/site/
 - One `index.html` per route (`/` → `index.html`, `/about` →
   `about/index.html`, `/products/:slug` → `products/<slug>/index.html`).
 - `/__gofastr/runtime.js`: the runtime core.
+- `404.html` at the export root: the not-found page the live server
+  answers with, rendered through the app's root layout (see
+  [Error pages](#error-pages-404html-and-non-ok-navigation) below).
+  GitHub Pages, Netlify, Cloudflare Pages and S3 website hosting all
+  serve it for a miss; configure nothing, it is already the name they
+  look for.
 - `/__gofastr/color-scheme.js`: the FOUC-prevention bootstrap loaded
   synchronously at the top of `<head>`. Without it the stored scheme
   is applied only when `headless-navigation` loads, so a reload
@@ -125,6 +131,71 @@ live server. A screen that should ship in the export behind a gate uses a
 teaser) renders in place of the gated screen and is exported like any other
 page. `Allow` and `RenderAlt` are the only decisions a static export can
 materialize, so a Redirect/Block screen is never written to disk.
+
+## Failed fills refuse the export
+
+A tree-layout outlet fill whose `Load` or render fails can be **contained**
+on a live server: the outlet degrades to its fallback (or renders empty) and
+the page serves with status 200. An export must not freeze those degraded
+bytes into a page every visitor would see, so the builder reads the render's
+contained-failure record (`RenderResult.FillFailures`, surfaced through
+`UIHost.RenderStaticPageResult`) and **fails the build**, naming the route
+and each outlet address:
+
+```text
+static: render "/broken/load" refused: 1 fill(s) failed and were contained
+    (a live server degrades the outlet; the export will not bake it):
+    l:shell#aside (boom: ...)
+```
+
+Fix the fill, or keep the route out of the export set **on purpose** with
+`Builder.ExcludeRoutes` (exact pattern or a whole path-segment prefix —
+`"/broken"` excludes `/broken/load` and every other `/broken/*` page; each
+skip is logged). `ExcludeRoutes` is a builder field, so
+`App.ExportStatic` (which constructs the builder for you) exports every
+route: drive `static.Builder` directly when a route set needs exclusions.
+
+## SPA navigation reads whole documents as envelopes
+
+A static host serves whole HTML documents and ignores the runtime's request
+headers, so every SPA navigation answer is a full page, not a partial. The
+runtime handles this natively: it derives the swap boundary from the fetched
+document's own layout chain (the deepest layer the live DOM shares with it),
+swaps only that layer's content cell, and applies every outlet and route
+area outside it as a fill — the same treatment a served envelope partial
+gets. Layout state (a kept list pane and its typed filter) survives
+navigation and Back exactly as on a live server.
+
+## Error pages: 404.html and non-OK navigation
+
+The export writes `404.html` at the root, rendered from the same
+not-found page the live server serves: the app's root layout with its
+header and nav, outlets at their declared defaults, and the error body
+in `<main>`. Every major static host serves a file with that exact name
+for a miss — GitHub Pages, Netlify, Cloudflare Pages, and S3 website
+hosting — so a visitor who lands on a URL the export does not hold gets
+the site's own error page, not the host's default one.
+
+The runtime handles the 404 status on purpose. A navigation answer
+whose Content-Type is `text/html` — a static host's `404.html`, or a
+live server's error page — flows through the same apply paths a 200
+takes: the swap lands at the deepest layer the live DOM shares with the
+error document (the root shell), so the header stays and `<main>` shows
+the error page. The URL keeps the target (Back returns to where the
+visitor was), the title comes from the response, and the error page is
+never written to the screen cache.
+
+An error body that is NOT HTML (a plain-text `404 page not found` from
+a host that serves nothing custom, a JSON API miss) cannot be applied;
+the runtime then shows a toast naming the status — `Could not load /x
+(HTTP 404)` — and stays on the current page. Only a failed fetch
+(offline, DNS) keeps the older "check your connection" wording. There
+is never a full-page-reload fallback.
+
+Routes whose fills fail on purpose (see
+[Failed fills refuse the export](#failed-fills-refuse-the-export)) are
+absent from the export; clicking their links on the static host lands
+on this 404 page, which is exactly the honest answer for a static copy.
 
 ## Static mode: what works, what's disabled
 

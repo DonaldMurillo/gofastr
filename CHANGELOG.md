@@ -607,6 +607,81 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
     no longer recognized (the generator and `examples/meridian` both
     emit the `html.Input` shape).
 
+- **The fixed-template layout API is removed, not deprecated.**
+  `app.NewLayout(name)` with `WithHeader`, `WithSidebar`, `WithFooter`,
+  `WithContainer`, `WithStickyHeader`, `Layout.Wrap`, the fixed
+  `Header`/`Sidebar`/`Footer`/`Container`/`StickyHeader` fields, and
+  `app.LayoutBaseCSS` are gone; they shipped in v0.85.0, and the tree
+  layout primitive replaces them. `WithKey` and `WrapCtx` stay.
+  Port by moving the header/sidebar/footer components into a build
+  function and the screen cell to `l.Primary()`, then compose the
+  frame from the structural pieces: a page-tall
+  `ui.Stack{Screen: true}`, `ui.ContentRow` for the sidebar row (with
+  an optional toolbar band and context aside), and `ui.Container` for
+  the centered column:
+
+  ```go
+  appLayout = app.NewLayout("app", app.LayoutSpec{}, func(ctx context.Context, l *app.LayoutTree) render.HTML {
+      nav, _ := component.SafeRenderCtx(ctx, sbComponent)
+      return ui.Stack(ui.StackConfig{Screen: true, Gap: ui.GapNone},
+          ui.ContentRow(ui.ContentRowConfig{Sidebar: nav}, l.Primary()))
+  })
+  site.SetDefaultLayout(appLayout)
+  ```
+
+  `Layout.WrapCtx(ctx, body)` renders a tree layout (primary filled,
+  every outlet from its Default); the uihost error documents and the
+  embed route use it, and `app.EmbedLayout()` is the same primitive
+  with no chrome. Generated apps own their shell as code, the way
+  they own their screens.
+
+- **The page dimensions are theme tokens; the private `--ui-*`
+  width and height variables are gone.** `ui.Container` and
+  `ui.ContentRow` read the new `Theme.Layout` sizes, and so can an
+  app's owned sheets: `--ui-layout-container-width` is `--size-page-width`
+  (`Layout.PageWidth`), the page gutter is `--size-page-gutter`,
+  `--ui-layout-header-height` is `--size-header-height`, and
+  `--ui-container-narrow/default/wide` are `--size-narrow-width`,
+  `--size-content-width` and `--size-wide-width`. Set them on the
+  theme (`t.Layout.WideWidth.Value = "1240px"`) instead of
+  redeclaring a variable in app CSS. Defaults are unchanged.
+
+- **`ui.SiteHeader`, `ui.SiteFooter` and `ui.DocLayout` are gone.**
+  So are their parts: `SiteHeaderConfig`, `SiteHeaderLink`, the
+  `SiteHeaderDrawer*` values, `SiteFooterConfig`, `SiteFooterLink`,
+  `SiteFooterColumn`, `DocLayoutConfig`, `DocPrevNext`, `DocPager` and
+  `DocCrumb`, and the `ui-site-header`, `ui-site-footer` and
+  `ui-doc-layout` sheets with their `--ui-site-header-*` and
+  `--ui-doc-layout-*` variables. A preset site frame steered every
+  site into one look, then into overrides to escape it. A site's
+  header, footer and docs page are now its own packages: copy
+  `examples/acme-site/siteheader`, `sitefooter` and `helpdocs` and
+  change them. Each is plain `html` elements and framework parts
+  (`headless.Disclosure` for the phone menu, `ui.LinkButton`,
+  `ui.Breadcrumbs`, `ui.ThemeToggle`) with an owned
+  `<name>.style.css` whose every dimension is a token; the page
+  measure and header height are the built-in `--size-page-width`,
+  `--size-page-gutter` and `--size-header-height`. A
+  generated app gets the same header and footer packages as its own
+  code (`siteheader/`, `sitefooter/`), so a blueprint with a
+  `layout: marketing` screen now needs a module (`app.module`, or an
+  enclosing `go.mod`): `app.go` imports the two packages by module
+  path. Crumbs move to `ui.Breadcrumbs`
+  (`DocCrumb{Label, Href}` is `Crumb{Text, Href}`), and a docs pager
+  is the docs package's own two links (acme's `helpdocs.Pager`).
+
+- **Owned sheets read tokens for weights, sizes and every
+  `var()`.** In a `*.style.css`, a `var()` fallback no longer
+  exempts an undeclared name from GOFASTR1806:
+  `var(--brand-glow, #FF7A00)` fails until `--color-brand-glow` (or
+  whatever the sheet means) is declared in a `*.tokens.css` or waived
+  with `/* gofastr:allow(GOFASTR1806) reason */`. GOFASTR1807 now
+  compares `font-weight` against the weight tokens and `width`,
+  `height`, `inline-size`, `block-size`, their `min-`/`max-` forms
+  and `flex-basis` against the size tokens, so `font-weight: 600`
+  must read `var(--font-weight-semibold)`. The design system's own
+  weights read the tokens; rendered output is unchanged.
+
 ### Migration ledger — the headless stack so far
 
 One place to read every breaking change this stack has landed, in
@@ -783,8 +858,141 @@ are listed under Added above, not here.
     `data-fui-rpc` wiring verbatim, duplicate node ids now refuse at
     render, and the classes are `.fui-tree*` under the `ui-tree`
     marker.
+29. **The fixed-template layout API is deleted.** `NewLayout(name)`,
+    the five `With*` builders, `Layout.Wrap`, the fixed slot fields,
+    and `app.LayoutBaseCSS` are gone. Declare
+    `app.NewLayout(name, spec, build)`; compose `ui.Stack{Screen:
+    true}`, `ui.ContentRow` and `ui.Container` for the page column,
+    the sidebar row and the centered column. `WithKey` and `WrapCtx`
+    stay (see the BREAKING entry for the port, spelled end to end).
+30. **`ui.SiteHeader`, `ui.SiteFooter` and `ui.DocLayout` are
+    deleted.** Copy `examples/acme-site/siteheader`, `sitefooter` and
+    `helpdocs` into the app and change them (see the BREAKING entry).
+    Crumbs are `ui.Breadcrumbs`; the pager is the docs package's own.
 
 ### Added
+- **`gofastr generate package` copies the canonical chrome into an
+  app.** `gofastr generate package [<name>] [--out=<dir>] [--dry-run]`
+  copies one of the canonical packages under
+  `cmd/gofastr/packages/` (`siteheader`, `sitefooter`, `docpage`)
+  into the app as owned code: the Go, the owned `.style.css`, the
+  `.tokens.css` and its generated `_tokens.gen.go` when the package
+  has one, the `_style.gen.go`, and the tests, with the package's
+  self-import rewritten to the app's module path (an enclosing
+  `go.mod` is required). No name lists the packages with a one-line
+  summary from each package doc. The copy is one-shot: a non-empty
+  target is refused. A blueprint with marketing screens now writes
+  the same packages through the same copy — tests included — so a
+  generated app's header and footer can no longer drift from the
+  ones `generate package` hands out; the `blueprintchrome/`
+  templates are deleted.
+- **Size and font-weight tokens.** `style.Size` is a length token
+  (`--size-<name>`; a CSS length or a calc()/clamp()/min()/max()
+  over lengths) and `style.FontWeight` a weight from 1 to 1000
+  (`--font-weight-<name>`). The theme gains `FontWeights` (normal
+  400, medium 500, semibold 600, bold 700) and `Layout` gains the
+  dimensions every site is built around: `PageWidth` (66rem),
+  `PageGutter`, `HeaderHeight` (56px) and `ui.Container`'s three
+  caps. Both types validate at boot and through `ApplyTokens`, so
+  the theme editor shows them under "Sizes" and "Font weights".
+  `style.TokenCategory` names a token key's category by its longest
+  type prefix, so the checks read `--font-weight-bold` as a weight,
+  never as a font family.
+- **`Theme.Extend` adds an app's own typed tokens.** Pass a struct of
+  typed fields (`BrandGlow style.Color`, `HeroGap style.Size`) and each
+  field emits under its type's prefix (`--color-brand-glow`,
+  `--size-hero-gap`), on `:root`, in themed scopes and dark blocks,
+  through `ThemeToTokens`/`ApplyTokens` and in `ThemeHash`. `Extend`
+  panics when a token would emit a key the theme already emits, naming
+  both fields, and `Validate` refuses a duplicate key however the
+  theme was built. It replaces the advice to embed `style.Theme` in
+  an app struct, whose extra fields never reached the stylesheet.
+- **App tokens in `<name>.tokens.css`, generated as typed Go.** A
+  tokens file declares an app's tokens as `@property` rules
+  (`--<type>-<name>`, the type's `syntax`, `inherits: true`, an
+  `initial-value`) plus one `@media (--dark)` block of dark colours.
+  `gofastr gen styles` checks every tokens file as one set and writes
+  `<name>_tokens.gen.go` beside each: a `Tokens` value grouped like
+  `style.Theme`, for `theme.Default().Extend(pkg.Tokens)`. `Extend`
+  merges dark values from any set with a `DarkTokens()` method, which
+  the generated set has when its file has a dark block.
+  `style.ParseToken(key, value)` turns a token key and CSS value into
+  its typed slot with the validators `ApplyTokens` uses. Owned sheets
+  are checked against the built-in tokens plus every app token, and
+  `gofastr gen styles` and `gofastr verify` now share that set.
+  GOFASTR1814 covers the tokens pair.
+- **Duplicate-value rules.** GOFASTR1821 refuses an app token whose
+  value is another token's value of the same type. GOFASTR1822 warns
+  when two or more owned sheets write the same literal for one token
+  type; zeros, `100%` and `z-index: -1` pass. The two take the
+  contract catalog to **77 rules**. These rules, the duplicate style
+  name rule and the cross-file token checks judge one program at a
+  time (a `main` package and the packages it imports), so two binaries
+  in one module can each own a `siteheader`. `gofastr gen styles` honours the
+  same `/* gofastr:allow(GOFASTRnnnn) reason */` CSS markers as
+  `gofastr verify`.
+- **`headless.Own` marks markup a component composes for another.**
+  A component that builds markup from its own config and passes it to
+  another component as slot content (a default banner glyph, a form's
+  submit row) wraps it in `headless.Own`, which sets
+  `data-fui-internal` on each top-level element. The receiving
+  component treats a slot whose content is wholly `Own`'d as its own
+  and marks the element holding it too. Plain text cannot carry the
+  attribute: wrap it in an element first.
+- **The layout primitive: one constructor, outlets, fills, route
+  areas.** `app.NewLayout(name, spec, build)` declares a layout as a
+  build function over an `*app.LayoutTree` — static chrome plus the
+  placements — replacing the fixed header/sidebar/footer template.
+  Outlets are typed handles (`app.NewOutlet`); a screen or group fills
+  one by value (`Screen.Fill` / `ScreenGroup.Fill`), one URL fills
+  several, and every fill is re-applied on every navigation. Route
+  areas (`LayoutTree.RouteArea`) re-render server-side on every
+  navigation the layer survives. `ScreenGroup` prefixes may carry
+  params (`/projects/{project}`) and the layer key embeds the resolved
+  value, so one project's panes are kept across its pages;
+  `WithKey` re-renders one shape per context. Around the primitive:
+  resolvers (`group.Resolve` / `Requires`), region guards
+  (`OutletOptions.Policy`, `FillPolicy`), deferred outlets with
+  parallel part requests (DevTools shows each), loading content
+  (`Loading.Show/After/Min`), view transitions (`app.Slide`,
+  `app.Crossfade`, per-request sets), route signals (`app.Route.*`,
+  seeded atomically), a 404 outcome for an outlet nothing fills
+  (`FallbackNotFound`), mount validation, a per-render build
+  inventory, and the `layoutfunc` lint against reading route state in
+  static chrome. The builds compose the frame from `ui.Stack`,
+  `ui.ContentRow` and `ui.Container`; the framework ships no
+  ready-made layouts — the four page shapes live as examples
+  (`examples/tracker`, `examples/acme-site`) and real apps' own code.
+- **Page rows and compact variants for layout builds.**
+  `ui.ContentRow` takes a toolbar band and a context aside that
+  releases its column around an empty outlet; `ContentRowConfig.Viewport`
+  owns desktop scroll regions, and `PhoneNavFlush` drops the phone
+  separator when the sidebar's phone menu lives in the app bar. The
+  aside defaults to 18rem (`--ui-content-row-aside-width`).
+  `ui.ListDetail` keeps a scrollable list beside routed detail content,
+  and `ListDetailConfig.MobileSinglePane` with `ListDetailPlaceholder`
+  gives phones a list-or-detail journey. The compact variants: `ui.CardRow` record rows (only linked rows tint on hover),
+  `DetailListConfig.Inline`, `PageHeaderConfig.Compact` and `Badge`,
+  `SectionConfig.Compact`, `FilterToolbarConfig.Compact`,
+  `SidebarConfig.Compact` (a docs rail with a thin active marker),
+  `ToolbarConfig.Plain` and `StackConfig.TrimMargins`.
+  `SidebarConfig.NativeMobile` supplies a
+  no-script phone menu beside the mounted drawer, and `DetailList`
+  stacks inside narrow containers as well as phone viewports.
+- **A banner strip.** `BannerConfig.Strip` renders a full-width,
+  square-cornered announcement strip above a site header.
+- **`gofastr verify` reports app-owned `.css` files (GOFASTR1801).** A
+  leading `/* gofastr:allow(GOFASTR1801) <reason> */` comment documents
+  an exception; sheets that only assign custom properties stay quiet,
+  and `testdata/` is skipped.
+- **A render panic fails tests.** A recovered render panic fails
+  `TestHarness` requests and generated app tests, and UI host requests
+  in Go test binaries answer 500, navigation partials and deferred parts
+  included. Production keeps the screen's status. The error log names
+  what panicked (a component, a layout build, a layout area or a fill
+  fallback) and carries the stack. `testkit.AllowRenderPanics(t,
+  handler)` gives a test that panics on purpose the production status
+  for that handler, revoked by `t.Cleanup`.
 - `gofastr theme edit` authors component options: the editor's controls
   pane gains a "Component options" group (first after Colors) whose
   density / button treatment / button radius / field layout / field
@@ -1567,6 +1775,40 @@ are listed under Added above, not here.
   unchanged (they move in the next change of the stack).
 
 ### Changed
+- **Scaffolded files no longer start with a "Code generated" line.**
+  `gofastr init` and the blueprint wrote
+  `// Code generated by gofastr. Owned: safe to edit.` at the top of
+  `main.go`, `screens.go`, `resource.go` and the e2e tests. Agent
+  tooling reads a "Code generated" line as do-not-edit and refused to
+  change those files. They are the app's own code, so they now carry
+  no header. Files gofastr regenerates (`*_style.gen.go`,
+  `*_tokens.gen.go`) keep their `DO NOT EDIT` header.
+- **Kit rules on a component's root weigh no more than an owner's
+  rule.** A rule that sets a placement property (margin, size,
+  display, position, grid and flex placement) on a kit component's
+  root is lowered with `:where()` to one class. An owned style aimed
+  at that root then wins the tie by scope proximity instead of losing
+  on specificity. Hidden states (`display: none`, `visibility:
+  hidden`) and rules that only reach markup under a `data-fui-internal`
+  mark keep their weight. Computed styles are unchanged: every
+  Meridian page at three widths in light and dark matches before and
+  after. `TestKitRootPlacementRulesAreLowered` holds the line.
+  `style.ComponentSheet` accepts a selector opening `:where(&`, which
+  puts the component scope inside the `:where()` so it adds no weight.
+- **Kit components mark the markup that holds none of the caller's
+  content.** Every `framework/ui` and `framework/headless` component
+  puts `data-fui-internal` on each subtree built from its own config:
+  a title rendered from a string field, a control's input, a dismiss
+  button, an icon the component draws. An owned style's `@scope` stops
+  at the mark, so an owner styles the content it passes into a
+  component and never the component's insides. Roots, slots and slot
+  ancestors are never marked. `TestKitMarksInternalSubtrees` renders
+  every kit component with every slot filled and every slot empty and
+  fails on unmarked internal markup, a marked root, or caller content
+  under a mark. Default markup gains the attribute, so tests that pin
+  exact markup need it. `ui.Collapsible` now wraps its `Summary` text
+  in a `<span>` and `ui.Notification` its status glyph, so the mark
+  has an element to sit on.
 - **One home per helper.** A clone survey over the tree found the same
   bodies re-implemented across packages; each now has one canonical
   definition and the copies are gone (164 files, about 2,500 lines
@@ -1643,6 +1885,46 @@ are listed under Added above, not here.
   where the old module reverted in silence.
 
 ### Fixed
+- **A compact `ui.Sidebar` shows its groups as groups.** A group's label
+  was drawn like its links and the compact sublist had no indent, so a
+  docs rail with one group per section read as one flat list. The
+  label now takes the semibold weight, and its links sit indented on
+  a thin rail line that the current-page marker lands on.
+- **`interactive.SectionMenu`'s desktop rail shows every group.** It
+  forced closed groups open with `display: block`, which browsers no
+  longer honour now that closed `<details>` content is hidden through
+  `::details-content`. A collapsed group showed its label over an
+  empty gap. The rail now renders every group open, and `Collapsed`
+  applies to the drawer only, as its doc says. Group labels also start
+  where the lead link does instead of at the rail's edge.
+- **A blank line in a numbered `ui.CodeBlock` keeps its row.** An
+  empty line had no height, so its gutter number painted over the
+  next line's number. Each line row is now at least one line tall.
+- **`gofastr theme init` writes a theme that boots.** The starter
+  was a hand-written copy that had fallen behind `style.Theme`: it
+  had no code-surface colours and only three of the eight durations,
+  so `WithTheme` panicked on a fresh project. The starter is now the
+  framework theme written by the same emitter `gofastr theme edit`
+  saves through, and a test compiles it and runs `Validate`.
+- **`ui.ThemeToggle`'s pill variant draws its pill.** The border,
+  radius and surface were written as a descendant rule of the element
+  that carries them, so they never applied. They apply now.
+- **Client-side navigation scrolls after late component stylesheets
+  land.** Navigation waits for newly loaded component stylesheets before
+  it scrolls to a hash or restores a position, so late CSS no longer
+  moves the destination. Each stylesheet's wait is bounded, and only
+  user input or a newer navigation cancels the scroll write; browser
+  scroll anchoring does not.
+- **The generic render-panic fallback scrubs the panic value.** The
+  value goes through `textsafe.Recovered`, which strips control bytes
+  and truncates long values before the box reaches the client.
+- **Page titles no longer repeat the app name.** A title that already
+  ends with the app-name suffix does not get it appended again.
+- **`ui.Hero` actions no longer touch.** The actions row gap is the
+  `--spacing-md` token, up from `--spacing-sm`, so a button and a link
+  side by side read as two actions on every hero variant.
+- **The sidebar group error names the fix.** It says the overview page
+  belongs in the group's first child link.
 - **A `ui.Section` a parent grid stretches keeps its heading on its
   body.** The section is a two-row grid, and a shorter section beside
   a taller one in a `ui.Grid` shared the spare height between its

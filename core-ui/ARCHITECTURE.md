@@ -30,6 +30,29 @@ of client signals → RPC → poll → SSE push is
 (sessions are signed tokens, state lives in the DB or the client signal
 store), so any replica serves any request.
 
+Recovered component and layout render panics retain their fallback behavior,
+but report the component type, scrubbed panic message, and stack at error
+level. This applies in development and production. In Go test binaries,
+UI host page requests (full pages, navigation partials, fills envelopes,
+and deferred parts) answer 500 after a recovered render panic, keeping
+the existing fallback body. Rendering completes before the first response
+write; the test-only writer selects the status before committing headers.
+These finite responses do not stream. The separate SSE endpoint is unchanged.
+`framework.TestHarness` also attaches a request-local observer that fails
+its test. Generated end-to-end tests inspect captured server logs for the
+same failures, including requests made by their browser. Production and
+`gofastr dev` keep their existing recovery status.
+Tests that deliberately exercise recovery can wrap their own handler with
+`framework/testkit.AllowRenderPanics(t, handler)` to keep production status.
+The exemption ends at `t.Cleanup`, affects no other handler, and is safe
+for parallel tests with separate wrappers and servers. It does not silence
+logs or TestHarness reporters and cannot be selected by an HTTP request.
+
+Document titles append ` — <app name>` only when the screen title does
+not already end with that exact suffix. Full pages, not-found outlet
+outcomes, recovery screens, and partial-navigation title headers follow
+the same rule.
+
 ---
 
 ## The five scenarios
@@ -132,13 +155,27 @@ server side and the runtime does the work.
 | `data-fui-rpc-after-disable` | On 2xx RPC, mark the trigger as `aria-disabled="true"` and (for `<button>`/`<input>`) set `disabled=true` permanently. Use with `after-text` for "Saved ✓" / "Revealed ✓" feedback. |
 | `data-fui-rpc-scroll-to="<selector>"` | On 2xx RPC, smooth-scroll the matching element into view. Use to direct the user's eye at newly-inserted content. |
 | `data-fui-comp="<name>"` | Marks an instance of a registered styled component. The runtime scans for it on every DOM insertion and lazily loads `/<__gofastr/comp/<name>.css>` once per session via a `<link data-fui-style="<name>">` (dedup'd, never re-fetched). See "Component CSS" below. |
+| `data-fui-scope="<name>"` | Marks the root of an owned style: a layout root (`LayoutSpec.Style`), a screen's wrapper (`Screen.WithStyle`: its `<article>`, or one plain `<div>`, never the primary cell), or a component root (`Style.Scope`). The server writes it; the runtime never does. It is two things at once: the root of the style's compiled `@scope`, whose lower bound stops at the children of any nested owner, and a loader marker, read exactly like `data-fui-comp`: the SSR head scan (`registry.Scan`) links `/__gofastr/comp/<name>.css` for every name on the page, and the runtime's `scanAndLoadCSS` loads it on insertion (a cross-layout `swapShell` scans the new shell's parent, because the shell root carries its layout's scope). An element may carry both markers (`Style.Scope(ui.Card(...))`) and loads both sheets. Owned rules are scoped, so they beat an equal-specificity kit rule by scope proximity whatever order the sheets load in. App markup cannot set it: `html.SafeExtraAttrs` drops every `data-fui-*` key. |
+| `data-fui-internal` | Marks kit component markup that holds none of the caller's content: a label or title built from a string field, a control's input, a dismiss button, an icon the component draws. Every compiled owned style's `@scope` lower bound stops at it, so an owner styles the content it passes into a component and never the component's insides. Components set it through `headless.Internal`, and a component that builds markup and hands it to another as slot content marks it with `headless.Own`, which also marks the element holding that slot. Never on a component's root (an owner may place the root), never on an element that holds a slot or on an ancestor of one; a mark inside a marked subtree is allowed and inert. `TestKitMarksInternalSubtrees` (framework/ui) renders every kit component with every slot filled and every slot empty and fails on unmarked internal markup, a marked root, or caller content under a mark. The server writes it; the runtime never reads it. App markup cannot set it: `html.SafeExtraAttrs` drops every `data-fui-*` key. |
 | `data-fui-bundle="<a,b,c>"` | Set on the SSR-emitted bundle `<link>` to list the components it covers. The runtime reads it at boot and seeds `_pendingLinks` so the per-component scan never double-loads anything already in the bundle. |
 | `data-fui-layout="<name>"` | Set by EVERY layout layer on its wrapper `<div>` with the layout's name (e.g. `app`, `marketing`). Emit-only since the layout-chain rewrite: it is the CSS/debug contract (`.layout-<name>` pairing), and the runtime's swap decisions read `data-fui-layout-key` instead. |
 | `data-fui-layout-key="<key>"` | The layer's comparable identity, on the same wrapper `<div>`: `l:<name>` for a plain layout (the app default root, a direct screen's layout) (`l:<key>` in both forms when the layout declares `Layout.WithKey`, so a shell's identity can vary per language while its name keeps the CSS contract), `g:<prefix>:<name>` for a screen-group layer (`g:<prefix>` when the level is marker-only because its layout already renders at an outer level). The route manifest carries each route's chain as the `layouts` array of these keys, outermost → innermost; document order of the marked elements is the chain order. On SPA navigation the runtime compares the DOM's key spine against the destination's chain positionally: it swaps at the deepest shared layer, and when no root is shared it fetches the full page and replaces the whole shell. A group layer's key embeds the layout name so a per-screen layout override inside a group compares as a different layer than its siblings. |
-| `data-fui-layout-slot="<key>"` | On the layer's content cell: the `<main id="main-content">` for layer 0, the `.layout-content` div (tabindex="-1") for nested layers, the group wrapper itself for marker-only levels. This is the runtime's swap target: a partial response's `X-Gofastr-Swap: <key>` (or a cache entry's recorded layer) selects the cell whose slot key matches, replacing the old `.layout-content ?? [role=main] ?? main` structural guess. After the swap the runtime focuses the cell. |
+| `data-fui-layout-slot="<key>"` | On the layer's content cell: the `<main id="main-content">` for layer 0, the `.layout-content` div (tabindex="-1") for nested layers, the group wrapper itself for marker-only levels. This is the runtime's swap target: a partial response's `X-Gofastr-Swap: <key>` (or a cache entry's recorded layer) selects the cell whose slot key matches, replacing the old `.layout-content ?? [role=main] ?? main` structural guess. After the swap the runtime focuses the cell (screen-reader announcement); a pointer-initiated navigation passes `focusVisible: false` so the focus ring stays keyboard signal, and uihost's base CSS suppresses `outline` on the swap targets when they are not `:focus-visible`. |
+| `data-fui-outlet="<layer key>#<name>"` | On a tree-layout outlet cell (`app.NewLayout`): a non-primary outlet of a layout layer, addressed by its layer key plus outlet name. The SPA navigator resolves envelope fills by this address (loop + string compare, like `findSlot`) and swaps the cell's innerHTML when the fill's hash differs. |
+| `data-fui-area="<layer key>~<name>"` | On a tree-layout route-area cell: a layout area re-rendered by the server on every navigation its layer survives. Same addressing and swap rules as `data-fui-outlet`; the area's fn runs on every render, kept layers included (collect mode on partials). |
+| `data-fui-fill="<addr>"` | On the `<template>` elements of a fills-envelope partial body (`X-Gofastr-Envelope: 2`): the primary payload is addressed by the bare swap key (always applied), every non-primary fill by its `data-fui-outlet`/`data-fui-area` address. Parsed inert in a detached template. No fill-hash attribute exists — every kept-layer fill is re-applied on every navigation; outlet DOM that must persist lives in a nested layout layer the chain keeps. |
+| `data-fui-vt="<name>"` | On a tree-layout placed cell (primary, outlet, or route area) whose Go placement names a view transition (`app.PrimaryConfig.Transition` on the LayoutSpec primary / `app.OutletSpec.Transition` / `app.AreaSpec.Transition`, typed `app.Transition` values). The server renders the name (the author's raw `Transition.Name`, or a generated `vt-<layout>-<slot>`); the transition demand module (runtime `src/transition.js`, loaded when the document holds a `data-fui-vt` cell or a `data-fui-vt-kinds` vocabulary, at boot or after any apply) mirrors every `data-fui-vt` cell onto the CSSOM `view-transition-name` before a client navigation's view-transition snapshots (a `style` attribute is refused by the framework's default CSP, a CSSOM write is not), and wraps the swap in `document.startViewTransition({update, types})` with types `forward` / `back` / `reload`. Before that module loads — and on every page that declares no transition — the swap applies directly, with no view transition at all. `Layout.TransitionCSS()` generates the animation rules (enter/exit, back-direction variants, the name assignment), which the host collects into app.css for every registered layout; a raw `Transition.Name` with zero anims generates only the assignment and leaves the animation to author CSS (the platform's full power: shared-element morphs, geometry, custom keyframes); root-wide presets ship as `app.ViewTransitionPresetCSS` (fade / slide / none). Under `prefers-reduced-motion: reduce` the runtime starts no transition at all. A cancelable `gofastr:transition` event (detail `{from, to, types}`) fires on `document` before each transition; `preventDefault()` commits the swap with no transition. A streamed envelope's first unit (seed + primary + ready fills) commits through the same wrapper, so loading content being replaced by the real fill rides the same transition; late units apply directly. |
+| `data-fui-vt-when="<media condition>"` | Beside `data-fui-vt` on a placed cell, or on the region the layout build marks via `app.LayoutTree.VTRegion()`, when the transition declares `app.Transition.Narrow` ("920px"): the name is breakpoint-conditional — the placed cell owns it at `(width >= Narrow)`, the region below it. The master-detail collapse: below the breakpoint list and detail are one pane and the whole pane must transition; a detail-only snapshot there would morph its group geometry across the list. The runtime mirror writes the CSSOM `view-transition-name` only while the condition matches and CLEARS it otherwise, so a viewport resize across the breakpoint moves the name instead of duplicating it (two live names of one spelling make the browser skip the whole transition); `Layout.TransitionCSS()` wraps the two assignment rules in the same `@media` conditions, keyed on this attribute. |
+| `data-fui-loading="<addr>"` | On the inert `<template>` the server renders BESIDE an outlet cell, an area cell, or the primary slot's cell (addressed by the bare layer key) when that region declares `Loading` (`app.OutletSpec.Loading` / `app.AreaSpec.Loading` / `app.PrimaryConfig.Loading`): the browser already holds the loading content before any navigation fetch starts. On a navigation that will change the outlet, after `data-fui-after` ms of in-flight wait the runtime moves the outlet's old nodes into an in-document hidden park and clones the template's content in; on apply the response replaces it (honoring `data-fui-min`), and on failure, abort or a superseded navigation the parked nodes come back exactly — same nodes, so input values, listeners and island state survive. Inert with JavaScript off: SSR pages never show loading content, the real content is in the outlet. |
+| `data-fui-after="<ms>"` / `data-fui-min="<ms>"` | On the loading template: `after` is how long the navigation must be in flight before the loading content shows (default 120 ms, the dim's delay — a faster response paints nothing extra); `min` keeps it, once shown, at least this long before the apply replaces it (no skeleton flash). Emitted by the server from `app.Loading.After` / `.Min`. |
+| `data-fui-loadstate="shown\|exit"` | Runtime-written, on the outlet/slot cell across the loading content's lifecycle: `shown` while it holds the cloned content (the enter animation runs now — author CSS keys richer enter/exit effects off the same states; the framework ships a default fade in `frameworkDimCSS`), `exit` while the apply waits for the region's own `animationend` (capped at 400 ms, child animations ignored) before replacing it, absent otherwise. The framework CSS also exempts the region from the aria-busy dim (the loading content replaces the old content; dimming it would double the signal). Removed when the content is replaced or restored. |
+| `data-fui-vt-kinds="<names>"` | On `<html>` at first paint and on the doc shell every swapped payload's root layer carries (copied onto the documentElement after a swap): the document's declared keyed-transition vocabulary, the sorted union of the chain's `Transitions` map keys (`app.PrimaryConfig` / `app.OutletSpec` `.Transitions`). The runtime gates the page answer's `X-Gofastr-Transition` pick against it — a name outside the vocabulary is ignored and the navigation keeps the direction type only. After a swap the transition demand module copies the vocabulary off the payload's doc shell with a direct `setAttribute`; the attribute is module-owned, so the `__gofastr.doc` manifest does not list it. |
+| `data-fui-page-loading` | On the body-level `<div>` a host's `uihost.WithPageLoading(component)` renders into every full page: the host's own page-wide loading indicator, REPLACING the default `html[aria-busy]::after` progress strip (both never show at once). Pure CSS state — visibility keys off the same `html[aria-busy]` carrier, so it transitions in and out with no runtime involvement. The component is presentational config, rendered once per page with no Load/DI. |
 | `data-fui-lang="<tag>"` | On the outermost layer the server renders (layer 0 of a full page, the first re-rendered layer of a subtree partial, the bare `<main>` of a layout-less page): the page's resolved document language (`App.LangForPath`, layered with the screen's `ScreenLang`). `<html lang>` lives outside the shell the runtime swaps, so the value must travel with the swap payload; after every SPA swap the runtime copies it onto `document.documentElement.lang` via `doc.setHtmlAttr` (in the DOC_MANIFEST). A payload without the marker leaves the document alone. A site whose language varies per route keys its outer layout per language (`Layout.WithKey`), otherwise no carrier arrives for the other language. |
 | `data-fui-skip-label="<text>"` | Same carrier and same rule as `data-fui-lang`, for the app shell's skip-link text (`App.SkipLabelForPath` / `WithSkipLabelFunc`): after every SPA swap the runtime writes it into the `[data-skip-link]` link, the first string a keyboard user tabs to, so it speaks the destination page's language (#411). |
 | `data-hui-disclosure` / `data-hui-disclosure-trap` / `data-hui-disclosure-persist="<key>"` | On a `headless.Disclosure` / `framework/ui.Collapsible` `<details>` (and on menu dropdowns, which compose the same anatomy): `headless-disclosure` (a registered behaviour of `framework/headless`) mirrors `aria-expanded` onto the controller, closes the deepest open disclosure containing focus on Escape with focus returned to its controller, closes non-persistent disclosures on `gofastr:navigate`, restores/writes the open state of persistent ones under a namespaced, component-encoded session key, and confines Tab inside the topmost open trap disclosure (the widget runtime's own containment technique over the kernel's focus selector). |
+| `X-Gofastr-Defer: 1` | On a client navigation's PAGE request (with `X-Gofastr-Navigate`/`X-Gofastr-From`) whose destination route has deferred outlets (`app.OutletSpec.Deferred`, listed per route in the manifest's `deferred` array): the server skips those outlets' loaders and ships their `Loading` content in place — kept layers as envelope fills, rendered layers inline in the cells. Without the header (a first load, a whole document) every fill renders inline: nothing depends on JavaScript. Deferral belongs to the OUTLET, not a fill (a candidate can decline at request time, so a per-fill flag cannot tell the manifest in advance).. |
+| `X-Gofastr-Part: <addr>` | One deferred outlet's fill, as its own request beside the page fetch: the same URL plus this header (plus `X-Gofastr-Navigate: 1`), read with `text()` so DevTools shows the request with its body, status and timing (streaming was removed for exactly this: Chrome keeps no body for a fetch read through a stream reader). The server runs the policy phase and ONLY the winning fill's loader — no screen `Load`, no other fills, no area builds — and answers one `<template data-fui-fill="<addr>">` plus an optional seed delta (never a session mint; `Cache-Control: no-store`). Parts fetch with priority `low` beside the page's `high`, at most three in flight, the rest queued; parts landing before the page commit wait in a buffer, the commit applies the page then the buffer, later parts apply on land through the region's `data-fui-loadstate` exit (never a second view transition). A whole-page disagreement — the route not resolving, the address not a deferred outlet of it, a policy Redirect/Block, a dead session — answers 409 with `X-Gofastr-Part-Reset: 1` and no body the client applies; the runtime reloads the URL as a whole document, at most once per navigation. |
 | `data-fui-action="<name>"` | Marks an element as a server-action trigger. Used together with `data-fui-rpc` to dispatch a named action. |
 | `data-fui-widget="<name>"` | Marks a registered widget instance: the runtime mounts behavior on it after first paint. |
 | `data-fui-backdrop` | Marks an element as a click-to-dismiss overlay backdrop. Pairs with `data-fui-open` to make the floating surface dismissible. |
@@ -165,7 +202,7 @@ server side and the runtime does the work.
 | `data-fui-embed-state` *(on the embed root)* | Lifecycle of an embedded surface. The server writes `loading` into the shell HTML; the `boot-embed` fragment writes every later value, and ships **only** in the `embed` bundle served at `/__gofastr/embed-runtime.js`. `ready` once the handshake completed and the surface's server-rendered content was injected. `error` when there is no parent to hand over a nonce, no token arrived within 15s, the exchange was refused, or the content fetch failed. `expired` when the grant's absolute lifetime ran out and refresh could not renew it. Nothing in the runtime branches on it; it exists so tests can see the frame's state. The host page is cross-origin and can neither read nor style inside the frame. See `framework/docs/content/embed.md`. |
 | `data-fui-toast-fallback` | Marks the degraded inline container core injects when the `headless-feedback` module fails to load (transient 5xx, network hiccup). Used by `__gofastr._fallbackToast(cfg)` so an X-Gofastr-Toast payload still reaches the user even when the full module is unavailable. Unstyled-but-visible; no TTL, no animation. |
 | `data-hui-menu` / `data-hui-menu-trigger="<id>"` / `data-hui-menu-panel` / `data-hui-menu-radio="<group>"` / `data-hui-menu-lazy` | On a `framework/ui.Menu` (headless.Menu anatomy): the dropdown and its submenus are disclosures (`data-hui-disclosure` beside `data-hui-menu`), `headless-menu` (a registered behaviour of `framework/headless`, `Requires("headless-disclosure", "widgets")`) owns the keyboard contract — roving focus scoped to the item's own panel, wrapping arrows, Home/End, bounded type-ahead, RTL-aware submenu open/close, Tab closing the chain, radio arbitration across the whole menu, focus-on-open, and the lazy template's inflation. The retired menu-module attribute family is gone with the `menu` module. |
-| `data-fui-match-prefix` | On a `<nav> <a>` link: opts the link into prefix-matching for active-route highlighting. The runtime tags it `aria-current="page"` + `.active` when the current path equals the link's href or continues it at a segment boundary: `/docs` and `/docs/` both light up on `/docs` and `/docs/getting-started`, and neither matches `/docs-old`. Without this attribute the runtime does exact-href matching only, so breadcrumbs and sidebars (where multiple links share prefixes) keep the server-rendered single active item. Root `/` is never a prefix match. |
+| `data-fui-match-prefix` | On a `<nav> <a>` link: opts the link into prefix-matching for active-route highlighting. The attribute's VALUE, when non-empty, names the section prefix — a link can own a section it does not live at (`framework/ui.Sidebar` emits its items' `MatchPath` there, which is how a section stays lit across client navigations into it); an empty value falls back to the href. The runtime tags it `aria-current="page"` + `.active` when the current path equals the prefix or continues it at a segment boundary: `/docs` and `/docs/` both light up on `/docs` and `/docs/getting-started`, and neither matches `/docs-old`. Without this attribute the runtime does exact-href matching only, so breadcrumbs and sidebars (where multiple links share prefixes) keep the server-rendered single active item. Root `/` is never a prefix match. |
 | `data-fui-activelink-skip` | On a `<nav> <a>` link: opts OUT of active-route highlighting entirely. The `activelink` runtime module neither sets nor clears `aria-current` or `.active` on it, at load or after SPA navigation. The escape hatch for a link whose current-state is owned by something else: a hand-set attribute (`aria-current="location"` on an in-page anchor), app JS, a signal binding. Same hands-off treatment as href-less links. |
 | `data-fui-popover-anchor` | On a `data-fui-open` trigger button: opt the opened widget into trigger-anchored positioning. The value is the preferred side: `"top"`, `"bottom"`, `"left"`, `"right"`, or empty / `"auto"` (= bottom-first, then top, right, left). The runtime measures both rects after open and applies inline `position: fixed; top; left` so the popover sits next to the trigger; if the preferred side would overflow the viewport (8px margin), it auto-flips to the opposite. Re-runs on `window.resize` AND `window.scroll` (capture, rAF-throttled) so the popover tracks the trigger when the page scrolls. Distinct from `preset.Modal`'s deep-link affordances: popovers are click-driven and don't deep-link. |
 | `data-hui-multiselect` / `data-hui-multiselect-chips` / `data-hui-multiselect-placeholder="<text>"` / `data-hui-multiselect-remove-label="<fmt>"` / `data-hui-multiselect-remove="<input-id>"` | On a `framework/ui.MultiSelect` (headless.MultiSelect anatomy; the disclosure itself is `data-hui-disclosure`'s): the registered `headless-multiselect` module (framework/headless, `Requires("headless-disclosure")`) rebuilds the chips strip from the checkboxes' own state after every change, names each chip's × from the remove-label format ({label} substituted), and closes the disclosure on click-outside. The placeholder is the sheet's `:empty::before` content. The submit contract is the plain form: every checkbox shares the field name, no script needed. |
@@ -249,6 +286,7 @@ user-event-driven. Any `data-param-*` on the element flows into the handler's
 | `X-Gofastr-Push-State: <path>` | Apply via `history.pushState` after the RPC succeeds (URL update without re-fetch) |
 | `X-Gofastr-Partial: true` | Body is a screen-partial (used by the cross-page nav path) |
 | `X-Gofastr-Swap: <layer key>` | Names the layout layer the partial body renders BELOW (see `data-fui-layout-key`). The runtime swaps the matching `data-fui-layout-slot` cell and records the key on the cache entry so a replay swaps the same cell. Emitted when the navigation request carried `X-Gofastr-From` and the two routes share an addressable chain prefix; a key the DOM doesn't have (deploy skew) makes the runtime recover with a full-page load. Absent → the body is bare screen content for the whole `<main>`. |
+| `X-Gofastr-Envelope: 2` | Set when the partial body is a fills envelope: the seed island, then the primary `<template data-fui-fill>` (addressed by the bare swap key, no hash), then one hashed template per kept-layer fill. Emitted only when the request carried `X-Gofastr-Fills: 2` and the render produced fills; otherwise today's body. |
 | `X-Gofastr-Title: <text>` | Percent-encoded title: `decodeURIComponent` it, then set `document.title` after the partial swap. (It's encoded because HTTP header values are Latin-1; a raw UTF-8 title like `Docs — GoFastr` would otherwise arrive mojibaked as `Docs â GoFastr`.) |
 | `X-Gofastr-Invalidate: <JSON string array>` | Evict entries from the SPA screen cache on a 2xx response (read on every mutation or navigation dispatch: RPC, widget RPC, nav partials, full-shell fetches, intercepted nav, toggle/optimistic actions, sortable reorders, never on poll replies). `"/orders"` drops that pathname **and** every cached query variant (`/orders?page=2`, …); `"/orders?page=2"` drops exactly that entry; `"*"` clears the cache. No prefix matching: `"/orders"` never touches `/orders/42`. Applied before `X-Gofastr-Location`, so a mutated-and-redirected response evicts first and the redirect target is fetched fresh. Set from Go with `ui.InvalidateScreens(w, paths...)` (accumulates like `AddToast`). |
 
@@ -267,6 +305,28 @@ tab actually navigates. Surfaces that must stay fresh across tabs
 belong on the polling rung (`data-fui-poll`), not on cache eviction.
 The embed composition ships no nav fragment, hence no cache, so the
 header is a no-op there by construction.
+
+**Cache entry layering and whole-document navigation answers.** A cache
+entry records the layer key its HTML renders below, and a replay swaps
+exactly that content cell. Entries keyed shallower than a later
+navigation's swap boundary would destroy kept-layer DOM on replay, so the
+runtime **re-captures the leaving page's entry at each navigation's swap
+boundary** before the first DOM write (the boot capture starts keyed at
+layer 0; a fetch re-keys it deeper as needed). The capture is dropped when
+the DOM does not show the named page (a superseded navigation's origin
+mismatch), so a mid-flight drop cannot poison the dropped destination's
+entry; the route seed a replay restores comes from the tracked live route
+state, not the first-paint head island (which is stale after the first
+SPA navigation).
+
+When a navigation response is a **full HTML document** — a static host
+that serves whole pages and ignores the request headers — the runtime
+reads it as an envelope instead of taking only `<main>`: the swap
+boundary is the deepest layer key the live DOM and the fetched document
+both carry (the same rule the server applies to `X-Gofastr-Swap`), the
+document's cell for it is the primary, and every `data-fui-outlet` /
+`data-fui-area` outside it in the document is a fill applied through the
+same envelope path. Any miss falls back to the whole-`<main>` swap.
 
 **Cancelling a navigation (`gofastr:beforenavigate`).** The router
 dispatches this cancelable event on the anchor element (`bubbles`,
@@ -322,8 +382,10 @@ set by the registered `headless-rail` module, never `activelink`'s
 `.active`, so the sweep's strip branch never touches them), and links
 carrying `data-fui-activelink-skip` (the opt-out for a current-state
 owned by app code or a hand-set attribute). `data-fui-match-prefix`
-opts a link into segment-prefix matching: `/docs` lights up on
-`/docs` and `/docs/getting-started`, never on `/docs-old`.
+opts a link into segment-prefix matching, and its VALUE (when
+non-empty) names the prefix — the sidebar emits its `MatchPath` there
+(see the attribute table): `/docs` lights up on `/docs` and
+`/docs/getting-started`, never on `/docs-old`.
 
 **The flow for an in-page update** (e.g. clicking "page 2" on a pagination island):
 
@@ -414,7 +476,7 @@ by the SPA cross-chain swap after it replaces the layout shell.
 
 | Surface | Name | Writer | Consumer |
 |---|---|---|---|
-| `<html>` attr | `aria-busy` | core runtime during an in-flight SPA-nav fetch (`doc.setHtmlAttr`), removed when the nav settles | CSS can show a progress strip via `[aria-busy="true"]`; assistive tech hears "busy" |
+| `<html>` attr | `aria-busy` | core runtime during an in-flight SPA-nav fetch (`doc.setHtmlAttr`), removed when the nav settles. The same window also marks every outlet/area of the kept layers plus the swap slot with `aria-busy="true"` (`loadPage`'s busyMarks), cleared on apply/failure | CSS can show a progress strip via `[aria-busy="true"]`; assistive tech hears "busy" per region; `frameworkBuiltinCSS` dims the marked regions (with a transition delay so fast responses never flicker) |
 | `<html>` attr | `data-color-scheme` | `colorscheme.js`, the separate SYNCHRONOUS `<head>` bootstrap (plus the theme toggle via `window.__gofastr_colorScheme.set`). It must stay a separate sync script so dark tokens apply before first paint (FOUC); it runs before `runtime.js` exists, so it writes directly. Enumerated in the manifest as documentation | every `--color-*` token block; `<meta name="color-scheme">` mirrors it for UA controls |
 | `<html>` attr | `data-fui-os` | core runtime at boot (`doc.setHtmlAttr`) | `framework/ui.ShortcutHint` CSS picks ⌘ vs Ctrl glyphs |
 | `<html>` attr | `data-fui-static` | the static exporter (`framework/static.Builder`), server-side only. The runtime never writes it. Enumerated as documentation | runtime static-mode guards read it at boot |
@@ -628,16 +690,30 @@ WebAssembly authoring examples.
 
 ### SSE connection state (`__gofastr.sseStatus`)
 
-The island-stream module (`runtime/src/sse.js`, demand-loaded when a
-`<meta name="gofastr-sse">` marker is present) mirrors its transport
-state onto ONE live object, mutated in place so every reference (the
-NetworkRetryBanner, app code) sees updates without re-reading:
+The island-stream module (`runtime/src/sse.js`) is demand-loaded when
+the document holds a **push target**: any `[data-island]` region (the
+server can `PushUpdate` any island id, so every island counts —
+presence rosters included) or the offline connection banner
+(`[data-hui-system-offline]`, which reads the state this module
+mirrors). The `<meta name="gofastr-sse">` tag every session-bearing
+page carries means "SSE is available", never "open it": the stream
+holds one of the browser's six HTTP/1.1 connections per host, so it
+opens only while a push target is live and closes when the last one
+leaves. The module re-evaluates the document at load, after every
+navigation apply (cached replays included, through the per-module
+scanner hook), when a deferred part lands (`gofastr:fill`), and on DOM
+insertion; a reopen re-reads the meta, so the session parameter is the
+current one (the navigator's `X-Gofastr-Session` rollover rewrites it).
+
+The module mirrors its transport state onto ONE live object, mutated
+in place so every reference (the NetworkRetryBanner, app code) sees
+updates without re-reading:
 
 | Field | Updated when |
 | --- | --- |
-| `window.__gofastr.sseStatus.connected` | `true` on EventSource `open`, `false` on `error` and on `pagehide` (the transport closes when the page hides, bfcache entry or unload, and reconnects on `pageshow.persisted`, so a navigated-away page never hoards one of the tab's ~6 per-host connections) |
+| `window.__gofastr.sseStatus.connected` | `true` on EventSource `open`, `false` on `error`, when the last push target leaves the document, and on `pagehide` (the transport closes when the page hides, bfcache entry or unload, and reconnects on `pageshow.persisted`, so a navigated-away page never hoards one of the tab's ~6 per-host connections) |
 | `window.__gofastr.sseStatus.lastEventAt` | every received `island` frame and on `open` (a `Date.now()` ms timestamp) |
-| `window.__gofastr.sseStatus.retryCount` | incremented on each transport error, reset to 0 on `open` |
+| `window.__gofastr.sseStatus.retryCount` | incremented on each transport error, reset to 0 on `open` and on a deliberate close |
 
 Connect/disconnect transitions also dispatch
 `document.dispatchEvent(new CustomEvent('gofastr:sse-status', { detail: sseStatus }))`.
@@ -1053,6 +1129,27 @@ no screen matches carries no match; the guard falls through and the
 `WithNotFoundScreen` 404 stays truthful. See
 `framework/docs/content/ui-wiring.md` → "Guards on dynamic screens".
 
+---
+
+### Error pages that show (404 through the root layout)
+
+A request no route matches answers 404 with the not-found page rendered
+through the app's root layout — the layer-0 shell, header and nav
+included, outlets at their declared defaults, the error body in
+`<main>`'s slot — instead of a bare document: the runtime can keep the
+shell and swap only the slot. A navigation fetch (`X-Gofastr-Navigate`
+plus a known `X-Gofastr-From`) gets the same answer shape any route
+gives it (partial/envelope swapping at the shared layer, status 404).
+On the client, a non-OK response whose Content-Type is `text/html`
+flows through the same apply paths a 200 takes (envelope, partial,
+whole document via the doc-envelope reader, then the `<main>` swap):
+the URL stays the target so Back works, the title comes from the
+response, and the entry is never cached. A non-HTML error body cannot
+be applied and toasts naming the status (`Could not load /x (HTTP
+404)`); only a failed fetch keeps the "check your connection" wording.
+Never a `location.href` fallback. A static export ships the same page
+as `404.html` at the root (see `framework/docs/content/static-export.md`).
+
 ## Theme
 
 The framework's design tokens live in `core-ui/style.Theme`, a
@@ -1090,8 +1187,9 @@ t.Colors.Primary = style.Color{Name: "primary", Value: "#14B8A6"}
 app.WithTheme(t)
 ```
 
-`framework/ui/theme.Default(theme.Overrides{Primary: "#…"})`
-wraps this pattern as a convenience for the most common cases.
+`framework/ui/theme.Default(theme.Overrides{Primary: "#…", Dark: &theme.Overrides{Primary: "#…"}})`
+wraps this pattern as a convenience for the most common cases, light
+and dark.
 
 ### Apps with extra tokens
 
@@ -1260,28 +1358,81 @@ tokens) live in `theme.css` / `WithCustomCSS`.
 ### One styling surface (who ships CSS, and who must not)
 
 There is exactly one place each kind of styling lives. Nothing else
-ships CSS: no app, no battery, no generator, no page.
+ships CSS: no battery, no page, and no app or generator outside its
+owned sheets.
 
 | Styling | Lives in | Mechanism |
 | --- | --- | --- |
 | A component's look | its `framework/ui` file | `registry.RegisterStyle(name, fn)`, scoped to `[data-fui-comp]` |
-| Layout shells (`.layout-body`, the centered container, sidebar row) | `core-ui/app` | `app.LayoutBaseCSS()`, injected once by the UI host |
+| Page frames (the sidebar row, the centered container) | `framework/ui` | `ui.ContentRow`, `ui.Container`, composed in a `ui.Stack{Screen: true}` page column |
+| An app's own pieces (its header, footer, docs page, a layout root) | the app package's `<name>.style.css` | owned style: `gofastr gen styles` writes typed class methods; the compiled sheet is `@scope`d to `data-fui-scope` and reads theme tokens only (`<name>.tokens.css` adds the app's own) |
 | Global resets, base typography, tabular figures, landmark-focus | `framework/uihost` | `frameworkBuiltinCSS` |
 | Colors / fonts / dark scheme | `core-ui/style` | theme tokens (`--color-*`, `--font-*`, `Theme.DarkColors`) |
 
-**The blueprint generator and every app ship ZERO bespoke CSS.** They
+**The blueprint generator and every app ship ZERO unscoped CSS.** They
 *compose* the design system and inherit all styling from it: `ui.Hero`,
-`ui.Grid`, `ui.DetailList`, `ui.AuthCard`, `ui.Form`,
-`ui.SiteHeader{Drawer: Sheet}`, `app.NewLayout().WithContainer()`. Proof
-the system is cohesive and composable: a generated app's `BlueprintBaseCSS()`
-returns `""`.
+`ui.Grid`, `ui.DetailList`, `ui.AuthCard`, `ui.Form`. A generated app's
+`BlueprintBaseCSS()` returns `""`. What the kit does not ship, the
+site's own chrome above all, is the app's own package with an owned
+sheet: the framework has no site header, footer or docs-page component,
+because a preset frame steers every site into one look.
+`examples/acme-site/{siteheader,sitefooter,helpdocs}` are the
+references, and the blueprint writes the same header and footer
+packages into a generated app as its own code. An owned sheet never
+reaches into a kit component (`[data-fui-*]` and `.fui-*` selectors
+are refused, and `data-fui-internal` bounds its `@scope`), and every
+dimension in it is a token.
+
+A docs page releases its TOC column when the slot is an empty
+`data-fui-outlet` cell: the page's sheet observes the cell with
+`:has(> :empty)`, so navigation can clear or refill it without
+rebuilding the surrounding layout. Documentation navigation uses
+`SidebarConfig.Compact`, including in the mobile drawer and no-script
+fallback. It retains normal link and group semantics.
+
+Dense workspaces compose `CardRow`, `DetailListConfig.Inline`,
+`PageHeaderConfig.Compact`, and `ToolbarConfig.Plain`. Their opt-in styling
+does not change the default components. An app bar hosts the
+sidebar's own phone trigger (`ui.SidebarDrawerTrigger`) instead of
+drawing a second phone menu. `PageHeaderConfig.Badge` renders status beside the heading without adding
+it to the heading's accessible name. The title row wraps when space runs out;
+headers without a badge keep their existing structure.
+Screens compose their own block rhythm from `Stack` gaps,
+`ui.Section`, and `ui.PageHeader`. `SectionConfig.Compact` leaves section
+separation to its parent stack. `BannerConfig.Strip` is the square-edged,
+full-width announcement treatment. These options add no runtime attributes
+or navigation state.
+`FilterToolbarConfig.Compact` fits the search and submit controls in a
+narrow list without moving filter logic into JavaScript.
+`StackConfig.TrimMargins` lets the stack's gap own paragraph spacing
+without also adding the browser's paragraph margins.
+
+`ui.ContentRow` owns an optional labelled aside and toolbar placement.
+Its aside observes an empty outlet by the same CSS rule. `ui.ListDetail`
+owns a list scroll container beside a detail region, with detail first on phones.
+The group layout, not the component, determines whether that list stays
+mounted across detail navigation; putting it in an outlet replaces it.
+`ContentRowConfig.Viewport` confines desktop scrolling to the row's regions
+without forcing a fixed-height phone layout. `SidebarConfig.NativeMobile`
+adds a no-script disclosure selected by the CSS `scripting` media feature;
+the mounted drawer remains the scripted path. Apps need no detection script.
+The list/detail region accepts `LayoutTree.VTRegion()`'s existing two
+transition attributes; it adds no runtime vocabulary.
+`ListDetailConfig.MobileSinglePane` is an opt-in phone mode. Its index
+screen uses `ListDetailPlaceholder`; CSS `:has` selects the list or detail
+as the primary content changes. `BackHref` renders a back link at the top
+of the detail pane that the same CSS shows only on a phone detail; it
+survives detail navigation because it sits outside the primary slot. The
+default remains a stacked layout.
+`DetailList` also responds to its container width, so an aside can show
+complete values on desktop without relying on a phone viewport query.
 
 When a surface needs styling the design system doesn't provide, the fix is
 **upstream**: add or extend a component / layout / token, then compose it.
 Never inline CSS, never a `*BaseCSS` string of rules, never override a
 component's internals from outside. Give the component a config/variant
-instead (`SiteHeaderConfig.Drawer`, `Layout.WithContainer`,
-`FormConfig.ExtraAttrs`, a new theme token). See "Failure 4" above.
+instead (`FormConfig.ExtraAttrs`, a new theme token). See
+"Failure 4" above.
 
 ### The model in one paragraph
 
@@ -1313,6 +1464,21 @@ All three converge on `loadComponentCSS(name)`. The function is
 `appendChild`, plus a `_pendingLinks` guard, so promoting a
 component across modes or having two scans race never produces a
 duplicate request.
+
+Navigation's hash and history scroll writes wait for newly requested
+component stylesheets to load or fail before measuring the page — and
+each stylesheet wait is bounded (3 seconds): a stalled fetch that fires
+neither `load` nor `error` must not block the scroll write, or one hung
+request would freeze scrolling for the rest of the session. A newer
+navigation or USER scroll intent (wheel, touch, key, or pointer input)
+cancels the delayed write; browser scroll anchoring does not — the
+stylesheets the wait exists for can grow content above the viewport,
+and anchoring then moves `scrollY` with no user input, which is exactly
+the drift the write is there to correct. This applies to both plain
+partials and layout envelopes; cold component CSS must not move the
+destination after the runtime has scrolled to it.
+A row scrolled above a list pane can cross the window edge geometrically
+without being visible there; it must not become the window's anchor.
 
 The existence check is `link[data-fui-style="<name>"]`, so an
 SSR-emitted per-component link must carry the same marker (and the
@@ -1400,6 +1566,14 @@ re-registration (different StyleFn under the same name) and on
 unscopable selectors (`body`, `html`, `:root`, `*`, `::backdrop`,
 `::view-transition-*`). Authors `go test` a sheet without chromedp
 by building the `ComponentSheet` directly and asserting on bytes.
+
+Register in a package var, never on first render. The host builds its
+component catalog once (`registry.Freeze`), and the runtime loads sheets
+only through that catalog, so a style registered later is missing on
+every page reached by client-side navigation. `RegisterStyle` after the
+freeze panics with the style's name; re-registering an identical entry
+stays a no-op. Tests that register throwaway styles call
+`registry.IsolateForTest`, which starts an unfrozen registry.
 
 ### The pattern packages are gone
 
@@ -1712,7 +1886,7 @@ your need:
 | You want | Use | Notes |
 | --- | --- | --- |
 | Primary navigation | `framework/ui.Sidebar` | Inline column ≥ md, hamburger + `preset.Drawer` < md, same content tree, active-route highlighting from the current URL. |
-| Site top bar with mobile-safe identity | `framework/ui.SiteHeader` | Set `MobileBrand` when the desktop wordmark/identity is too long for the phone row; the component owns the breakpoint swap. |
+| Site top bar, footer, docs page | the app's own package with an owned sheet | Copy `examples/acme-site/{siteheader,sitefooter,helpdocs}`: `html` elements, `headless.Disclosure` for the phone menu, tokens for every dimension. The framework ships no frame component. |
 | Dominant record, incident, or operational summary | `framework/ui.RecordSummary` | Bounded status, next-decision, signal, compact support rail, ownership, and natural-width action slots. Actions stay in the lead region and move ahead of support context on phones. One page summary; do not duplicate it in a Banner. |
 | Compact related signals without a card grid | `framework/ui.MetricBand` | Semantic description list; one flat row wide, two columns on phones, with an odd final signal spanning the row instead of leaving an empty quadrant. |
 | Action menu on a row | `framework/ui.Menu` | Renders headless.Menu: a native `<details>` disclosure (Esc / SPA-nav close come free) whose keyboard contract the registered `headless-menu` module binds. |

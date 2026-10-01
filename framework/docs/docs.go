@@ -16,6 +16,7 @@ import (
 	"embed"
 	"fmt"
 	"io/fs"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -108,17 +109,50 @@ const minSearchTermLen = 3
 // from oversized responses.
 const defaultSearchHitCap = 50
 
-// Search returns every line across all topics that contains the (case-
-// insensitive) substring `term`, up to defaultSearchHitCap hits. Use
+// Search returns the matching lines across all topics, up to
+// defaultSearchHitCap hits, ordered by TOPIC RELEVANCE: a topic whose
+// title matches the term first, then topics with more heading matches,
+// then topics with more body matches, alphabetical only as the
+// tie-break. Within a topic the hits keep their line order. Use
 // SearchWithLimit for a caller-supplied cap.
 func Search(term string) ([]SearchHit, error) {
 	return SearchWithLimit(term, defaultSearchHitCap)
 }
 
+// topicScore is one topic's relevance for a term, tiered by WHERE the
+// term matches: a title match beats everything (the term names the
+// topic's subject), a match in the topic's own lede (the summary
+// before the first section heading — what the topic says it is about)
+// beats section headings, a heading match means the topic owns a
+// section on the term, and a body line is a mention. HOW OFTEN counts
+// within each tier; the topic name is the final tie-break.
+type topicScore struct {
+	name     string
+	title    bool
+	lede     int
+	headings int
+	body     int
+}
+
+func (a topicScore) moreRelevant(b topicScore) bool {
+	if a.title != b.title {
+		return a.title
+	}
+	if a.lede != b.lede {
+		return a.lede > b.lede
+	}
+	if a.headings != b.headings {
+		return a.headings > b.headings
+	}
+	if a.body != b.body {
+		return a.body > b.body
+	}
+	return a.name < b.name
+}
+
 // SearchWithLimit is the explicit-cap variant. limit <= 0 falls back to
-// defaultSearchHitCap. The first `limit` matching lines are returned;
-// the function stops scanning once the cap is reached so the cost is
-// O(limit) for common queries.
+// defaultSearchHitCap. Every topic is scanned (relevance needs the
+// whole corpus's counts); the ranked result is capped at `limit` hits.
 func SearchWithLimit(term string, limit int) ([]SearchHit, error) {
 	if term == "" || len(term) < minSearchTermLen {
 		return nil, nil
@@ -131,35 +165,71 @@ func SearchWithLimit(term string, limit int) ([]SearchHit, error) {
 	if err != nil {
 		return nil, err
 	}
-	var hits []SearchHit
+	perTopic := make(map[string][]SearchHit)
+	scores := make([]topicScore, 0, len(topics))
 	for _, t := range topics {
 		body, err := Get(t.Name)
 		if err != nil {
 			continue
 		}
+		score := topicScore{name: t.Name, title: strings.Contains(strings.ToLower(extractTitle(body, t.Name)), needle)}
 		lines := strings.Split(string(body), "\n")
 		var lastHeading string
+		lede := true // lines before the first section heading
+		var hits []SearchHit
 		for i, ln := range lines {
 			if strings.HasPrefix(ln, "#") {
+				if strings.HasPrefix(ln, "##") {
+					lede = false
+				}
 				lastHeading = strings.TrimSpace(strings.TrimLeft(ln, "# "))
+				if strings.Contains(strings.ToLower(lastHeading), needle) {
+					score.headings++
+				}
 				continue
 			}
 			lower := strings.ToLower(ln)
 			if !strings.Contains(lower, needle) {
 				continue
 			}
+			if lede {
+				score.lede++
+			}
+			score.body++
 			hits = append(hits, SearchHit{
 				Topic:   t.Name,
 				Line:    i + 1,
 				Heading: lastHeading,
 				Excerpt: excerptAround(ln, lower, needle, 240),
 			})
-			if len(hits) >= limit {
-				return hits, nil
+		}
+		if len(hits) > 0 {
+			perTopic[t.Name] = hits
+			scores = append(scores, score)
+		}
+	}
+	// Ranked order: relevance first, alphabetical as the tie-break
+	// (sort.SliceStable over an already name-sorted slice makes the
+	// comparison deterministic).
+	slices.SortStableFunc(scores, func(a, b topicScore) int {
+		if a.moreRelevant(b) {
+			return -1
+		}
+		if b.moreRelevant(a) {
+			return 1
+		}
+		return 0
+	})
+	var out []SearchHit
+	for _, s := range scores {
+		for _, h := range perTopic[s.name] {
+			out = append(out, h)
+			if len(out) >= limit {
+				return out, nil
 			}
 		}
 	}
-	return hits, nil
+	return out, nil
 }
 
 // extractTitle returns the first H1 heading or a humanised fallback.

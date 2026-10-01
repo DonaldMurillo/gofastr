@@ -24,7 +24,7 @@ body := ui.PaneHost(ui.PaneHostConfig{
 ```
 
 `Primary` is required (`PaneHost` panics when empty, mirroring
-`DataTable`/`DocLayout`). Each side pane is a labelled `role="region"`;
+`DataTable`). Each side pane is a labelled `role="region"`;
 `SecondaryLabel`/`TertiaryLabel` default to `"Secondary"`/`"Tertiary"`.
 
 ## What it renders

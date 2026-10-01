@@ -715,9 +715,30 @@ than letting the block silently vanish from the page. A chart with a
 
 ### Layouts (`screen.layout`)
 
-`layout: marketing` wraps the screen in a `ui.SiteHeader` + `ui.SiteFooter` shell
-(for the public/front-of-house pages); `layout: app` uses the sidebar shell
-(`nav`). Omitted → the default (sidebar if `nav` is set).
+`layout: marketing` wraps the screen in the site shell: a header and a
+footer the same generation writes as the app's **own packages**,
+`siteheader/` and `sitefooter/` (for the public/front-of-house pages);
+`layout: app` uses the sidebar shell (`nav`). Omitted → the default
+(sidebar if `nav` is set).
+
+The two chrome packages are the canonical ones `gofastr generate
+package` copies — tests included, self-imports rewritten to the app's
+module — not a separate blueprint fork: plain `core-ui/html` elements
+plus framework parts in Go (`headless.Disclosure` for the phone menu,
+`ui.ThemeToggle` for the scheme switch), the look in an owned
+`siteheader.style.css` / `sitefooter.style.css` beside them (every
+dimension a theme token), and the class methods in the `_style.gen.go`
+files the generator emits already current — the app compiles and
+passes `gofastr verify` with no extra step. `app.go` fills in the
+links (nav links, the Dashboard link
+when signed in, the footer's columns, the theme toggle when a dark
+scheme is declared) and `appTheme()` adds the header package's own
+tokens with `theme.Extend(siteheader.Tokens)`. `app.go` imports the
+two packages by module path, so a blueprint with a marketing screen
+needs a module: `app.module`, or the enclosing `go.mod` it is derived
+from. With neither, generation stops with an error saying so. To restyle the bar or
+the colophon, edit the packages — they are yours; rerun
+`gofastr gen styles` after editing a `.style.css`.
 
 ### Navigation (`nav`)
 

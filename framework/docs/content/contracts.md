@@ -28,7 +28,7 @@ Rules are grouped into capabilities, and each capability is also a filter:
 | `data` | writes whose result and error are both discarded |
 | `entities` | MCP tools on an entity with CRUD disabled, entities opted into anonymous access, a CRUD entity exposed with no auth wired (every operation 401s) |
 | `architecture` | imports that point up the layer stack, explicitly forbidden edges |
-| `rendering` | CSS outside the design system, `location.href` used as navigation, bespoke `EventSource`, inline `style=`, `<script>` with an inline body, `var(--…)` in project CSS naming a token the theme does not emit, design-system CSS hardcoding a literal a theme token already declares |
+| `rendering` | CSS outside the design system, stylesheets with no owner, `location.href` used as navigation, bespoke `EventSource`, inline `style=`, `<script>` with an inline body, `var(--…)` in project CSS naming a token the theme does not emit, design-system CSS hardcoding a literal a theme token already declares, the owned-style (`*.style.css`) checks |
 | `accessibility` | the static WCAG floor: missing alt text, unnamed controls and landmarks, incomplete form controls, implicit heading levels, elements missing required metadata |
 | `performance` | regexps compiled per call, N+1 queries, reflection on the request path |
 | `testing` | routes, permissions, roles, entity operations, lifecycle hooks, and event subscribers no test exercised; disabled tests; a line-coverage floor; an unreadable coverage manifest |
@@ -64,6 +64,105 @@ rejected outright: it would absorb every rule added afterwards.
 Put the directive at the end of the offending line, or on its own line
 directly above it. `//gofastr:allow-file(RULE) reason` covers a whole
 file.
+
+`GOFASTR1809` checks `.css` files discovered under the verification
+root outside the styling-owner paths, including embedded stylesheets and
+static assets: a stylesheet that is not a `<name>.style.css` has no
+owner. (This was `GOFASTR1801`'s stylesheet check; a stylesheet file is
+now reported under 1809 only, never under both, and 1801 keeps covering
+CSS in Go strings.) Sheets whose declarations only assign custom
+properties (`--name: value`) stay quiet, as token assignments do in Go
+strings. Files under a `testdata/` directory, `*.style.css` and
+`*.tokens.css` files are skipped. It does not need to trace `WithCustomCSS` or a file-server
+call. Existing path exemptions and discovery exclusions still apply.
+Each offending stylesheet gets one finding at its first non-comment
+line. The fix is to give the CSS an owner: rename the file to
+`<name>.style.css` beside the layout, screen or component it styles
+(`app.style.css` for page-wide classes) and run `gofastr gen styles`. A
+frontend that does not use framework UI can declare that exception in a
+leading CSS comment:
+
+```css
+/* gofastr:allow(GOFASTR1809) vendor stylesheet kept unchanged */
+.vendor-control { display: flex; }
+```
+
+The comment must precede the first rule. `rendering/ownerless-stylesheet`
+can replace the ID, and `allow-file` also works. A missing reason does
+not suppress the finding.
+
+`GOFASTR1814` checks the owned-styles pair: every `*.style.css` must
+carry its generated sibling `<name>_style.gen.go` (every `*.tokens.css`
+its `<name>_tokens.gen.go`), and the sibling's
+`// Source hash:` line must match the CSS bytes. The generated file is
+the only link between the hand-written sheet and the typed class
+vocabulary the app calls; edit one without regenerating the other and
+the Go silently serves the old CSS. `testdata/` trees are skipped.
+Regenerate with `gofastr gen styles` (see the [CLI](cli.md)).
+
+Every other owned-style check runs the same code `gofastr gen styles`
+runs before it writes Go (`core-ui/ownstyle`), against the same token
+set: the built-in theme plus every app token the program's
+`*.tokens.css` files declare ([theming](theming.md#app-tokens-in-css-nametokenscss)).
+The generator and `gofastr verify` cannot disagree about a sheet.
+Findings point at the CSS line and column. `testdata/` trees are
+skipped here too. Inside a `.css` file, a
+`/* gofastr:allow(GOFASTRnnnn) reason */` comment waives the rule on
+its own line when code precedes it, otherwise on the next line with
+code.
+
+| Rule | Severity | Fires on |
+|---|---|---|
+| `GOFASTR1806` | error | `var(--name)` naming a token neither the theme nor a `*.tokens.css` declares (in a `*.style.css`, reported once, by the owned-style check; a `var()` fallback does not waive it there) |
+| `GOFASTR1807` | error | a value that is exactly a theme or app token's value: `font-size: 0.75rem` where `--text-xs` is `0.75rem`, `font-weight: 600` where `--font-weight-semibold` is `600`, `max-width: 66rem` where `--size-page-width` is `66rem` |
+| `GOFASTR1808` | error | a `var()` fallback that restates a spacing, radius, text or duration token at a value the theme does not declare |
+| `GOFASTR1810` | error | a selector naming a kit class (`.fui-*`) or a `[data-fui-*]` attribute |
+| `GOFASTR1811` | error | `!important` |
+| `GOFASTR1812` | error | a raw width in `@media` (`min-width: 768px`); write `(--above-md)` or `(--below-lg)`. Raw widths stay legal in `@container` |
+| `GOFASTR1813` | warn | `animation` with no `@media (--reduced-motion)` block for the same selector |
+| `GOFASTR1815` | info | every owned sheet, listed with its owner name and class count as a candidate for `framework/ui` |
+| `GOFASTR1816` | error | two `*.style.css` files with the same name (file stem) that one program links; the second `ownstyle.Must` would panic at init |
+| `GOFASTR1817` | error | a rule on a kit component's root that sets anything but a placement property |
+| `GOFASTR1818` | error | a screen's or layout's style handle used outside its own package and the one that attaches it |
+| `GOFASTR1819` | error | in `app.style.css`: a selector whose subject is not a class, or a custom property declaration |
+| `GOFASTR1820` | error | any owned sheet declaring a custom property named like a theme token (`--color-primary`) |
+| `GOFASTR1821` | error | an app token (`*.tokens.css`) whose value is another token's value of the same type: `--color-brand: #4F46E5` where `--color-primary` is `#4F46E5` |
+| `GOFASTR1822` | warn | the same literal written in two or more owned sheets of one program for the same token type; declare it once as a token |
+
+`GOFASTR1817` reads Go as well as CSS. A class reaches a kit root when
+a handle method is called inside the `Class` field of a `framework/ui`
+config literal, `ui.Card(ui.CardConfig{Class: board.Style.Column()})`,
+or through its `With` form, `board.Style.ColumnWith(…)`. A sheet whose
+owner root is a kit root, `Style.Scope(ui.Card(…))`, has its `:scope`
+rules checked the same way. On those subjects only placement properties
+pass: `grid-area`, `grid-column*`, `grid-row*`, `margin*`, `align-self`,
+`justify-self`, `place-self`, `order`, `flex`, `flex-grow`,
+`flex-shrink`, `flex-basis`, `width`, `height`, `inline-size`,
+`block-size` and their `min-`/`max-` forms, `display`, `position`,
+`inset*`, `top`, `right`, `bottom`, `left`, `z-index`, `visibility`.
+Anything else, custom properties included, restyles the component.
+
+```css
+/* board.style.css */
+.column {
+  grid-column: span 2;             /* placement: fine */
+  padding: var(--spacing-md);      /* GOFASTR1817: pass Padding in ui.CardConfig instead */
+}
+```
+
+`GOFASTR1818` finds the handles attached with `LayoutSpec{Style: h}` or
+`Screen.WithStyle(h)` and reports any use of them (`h.Column()`,
+`h.Scope(…)`) in a package that is neither the handle's own (where its
+`.style.css` sits) nor the one that attaches it, so `main` may call
+`.WithStyle(board.Style)` while package `board` renders with the
+classes. A layout's or screen's classes
+only apply inside that owner's root; markup another package renders is
+a component and gets its own `<name>.style.css`.
+
+Both Go-side rules resolve a handle the way it is normally written:
+`Style` or `<Owner>Style` in the package that holds the generated file,
+or `pkg.Style` through an import. A handle first copied into a local
+variable is not traced.
 
 **A whole surface**, in `gofastr.contracts.yml`:
 
@@ -561,7 +660,7 @@ cannot see is a rule they will not apply.
 The catalog is checked against the analyzers, not just against itself: no
 rule may fire on its own documented *good* example, and a rule's *bad*
 example has to produce it. A rule and its documentation cannot drift apart
-without a test failing. Twenty rules whose examples need context one file
+without a test failing. Twenty-one rules whose examples need context one file
 cannot express, such as a coverage manifest, a multi-package layout, or a `_test.go`,
 are listed with the reason, and that list is guarded too: if such an
 example starts firing, the entry is stale and the test says so.

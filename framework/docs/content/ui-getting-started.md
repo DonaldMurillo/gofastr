@@ -46,6 +46,14 @@ myapp/
 `gofastr docs` lists every framework reference doc embedded in the
 binary; `gofastr docs --grep <term>` searches them. No internet needed.
 
+In Go tests, serving the UI host through `httptest.NewServer(app.Router())`
+returns HTTP 500 when rendering recovers a component or layout panic.
+Full pages, navigation partials, fills envelopes, and deferred parts keep
+their existing fallback body, but cannot pass a status-200 assertion.
+Production and `gofastr dev` keep their existing status and log the panic.
+`framework.TestHarness` additionally reports the panic directly to its test;
+generated browser tests check the child server's logs.
+
 ---
 
 ## 2. Customize the theme
@@ -61,8 +69,9 @@ site := app.NewApp("myapp").WithTheme(uitheme.Default())
 That default includes complete light and dark semantic palettes, so
 `ui.ThemeToggle` and the OS preference work without more setup. For small brand
 changes, pass `uitheme.Overrides` to `Default`.
-Set `Overrides.DarkColors` alongside any brand color that should also change in
-dark mode; light values are not copied automatically because their contrast may
+Set `Overrides.Dark` alongside any brand color that should also change in
+dark mode — the same typed colour fields, under `Dark: &uitheme.Overrides{…}`;
+light values are not copied automatically because their contrast may
 not be safe on dark surfaces.
 
 An app whose own styling assumes light tokens can stay light-only while it
@@ -485,12 +494,13 @@ local stylesheet or hand-roll structural markup.
 
 Choose the navigation primitive that matches the product shell:
 
-- `ui.SiteHeader` provides brand, desktop navigation, actions, and its mobile
-  drawer as one component. Set `MobileBrand` when the desktop identity is too
-  long for the phone row. `Actions` collapse into the drawer on phones; put
-  the one journey-critical control (a sign-in link, a primary CTA) in
-  `PersistentActions` and it stays in the bar at every width, with no drawer
-  copy.
+- A site's top bar is its own package: `gofastr generate package
+  siteheader` copies the canonical one into the app (brand, nav, call
+  to action, theme toggle, and a `headless.Disclosure` phone menu that
+  traps focus and closes on Escape, on a link tap and on navigation)
+  and it is yours to change. Its owned sheet reads tokens for every
+  dimension. See the marketing-site recipe in
+  [UI composition recipes](ui-composition-recipes.md).
 - `ui.Sidebar` provides the desktop rail; pair the same `SidebarConfig` with
   `ui.MountSidebar` for the framework-owned mobile drawer.
 - `ui.Responsive` is for cases where mobile needs a genuinely different
@@ -498,8 +508,8 @@ Choose the navigation primitive that matches the product shell:
 
 See [UI wiring](ui-wiring.md) for the complete mount pattern and
 [UI components](ui-new-components.md) for the navigation configs. Do not
-hand-roll a `<details>` menu plus route-local media-query CSS: that bypasses the
-framework's navigation, focus, and mobile-drawer contract.
+hand-roll a `<details>` menu with its own script: `headless.Disclosure`
+already carries the focus, Escape and close-on-navigation contract.
 
 ---
 

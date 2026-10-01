@@ -32,8 +32,9 @@ out. Each group writes CSS variables with a fixed prefix:
 | `Durations` | `--duration-<name>` | `--duration-fast`, `--duration-overlay-enter` |
 | `Easings` | `--easing-<name>` | `--easing-ease-out`, `--easing-spring` |
 | `Typography` | `--text-<name>` | `--text-sm`, `--text-base`, `--text-2xl` |
+| `FontWeights` | `--font-weight-<name>` | `--font-weight-normal` (400), `--font-weight-medium` (500), `--font-weight-semibold` (600), `--font-weight-bold` (700) |
 | `Breakpoints` | `--breakpoint-<name>` | `--breakpoint-md` (informational; media queries can't read vars) |
-| `Layout` | `--spacing-touch-target` | the WCAG 2.5.5 minimum tap-target size (44px default). Comfortable-density controls reach it through `--fui-density-control-h` (see component options); pagination, inputs, and the mobile hamburger summary read the token directly |
+| `Layout` | `--spacing-touch-target`, `--size-<name>` | `--spacing-touch-target` is the WCAG 2.5.5 minimum tap-target size (44px default); comfortable-density controls reach it through `--fui-density-control-h` (see component options), and pagination, inputs and the mobile hamburger summary read it directly. The `style.Size` fields are the dimensions a page is built around: `--size-page-width` (66rem, the column a site's header, main and footer share; `ui.Container`'s page width), `--size-page-gutter` (clamp(20px, 5vw, 32px), the side space outside it), `--size-header-height` (56px, which `ui.ContentRow`'s viewport mode subtracts), and `ui.Container`'s caps `--size-narrow-width` (640px), `--size-content-width` (1080px) and `--size-wide-width` (1280px) |
 | `Code` | `--tk-<name>` | `--tk-kw`, `--tk-str`, `--tk-com`, the syntax-highlight colors code blocks read. This is the only optional group: leave a slot unset and it falls back to the built-in palette. Dark values go in `Theme.DarkCode` (a map, like `DarkColors`) |
 
 Token names come from the Go field path, converted to kebab-case
@@ -50,26 +51,211 @@ Three entry points produce a `style.Theme` you pass to
 
 - **`style.DefaultTheme()`**: the fully-populated, lower-level light
   baseline. It leaves `DarkColors` empty on purpose, for compatibility.
-- **`framework/ui/theme.Default(theme.Overrides{Primary: "#0F766E", DarkColors: map[string]string{"primary": "#5EEAD4"}})`**:
+- **`framework/ui/theme.Default(theme.Overrides{Primary: "#0F766E", Dark: &theme.Overrides{Primary: "#5EEAD4"}})`**:
   the adaptive theme fresh scaffolds start with. It ships complete,
   contrast-safe light and dark palettes, plus a flat override struct for
-  the tokens hosts change most often: the light palette, explicit dark
-  token values, the three font stacks, and the radius scale. Light
-  overrides are not copied into dark mode automatically, because
-  contrast-safe values are usually different for dark. Any field you
-  don't set keeps its default.
+  the tokens hosts change most often: the light palette, the dark
+  palette (`Dark`, the same typed colour fields as the light), the
+  three font stacks, and the radius scale. Light overrides are not
+  copied into dark mode automatically, because contrast-safe values
+  are usually different for dark; a light colour with no dark twin
+  logs a warning naming it. Any field you don't set keeps its default.
 - **`gofastr theme init`**: writes `theme/theme.go`, the full adaptive
   default as a literal you own and can edit directly. Use this for apps
   that will keep changing their theme over time; edit `Colors` and
   `DarkColors` together.
 
-If your app needs tokens beyond the built-in set, embed `style.Theme`
-in your own struct and add fields. Framework components only read the
-embedded built-in tokens; your own components can read the extra
-fields directly.
-
 Check the result at `/__gofastr/app.css`; your values should show up
 as `:root` custom properties.
+
+## App tokens: `Theme.Extend`
+
+When your app needs a value the built-in set doesn't have, a brand
+accent, a hero spacing, a display weight, declare it as a token
+rather than a literal in a stylesheet. Group your tokens in a struct
+of typed fields and pass it to `Extend`:
+
+```go
+type brandTokens struct {
+	BrandGlow style.Color      // --color-brand-glow
+	HeroGap   style.Size       // --size-hero-gap
+	Display   style.FontWeight // --font-weight-display
+}
+
+t := theme.Default().Extend(brandTokens{
+	BrandGlow: style.Color{Value: "#FF7A00"},
+	HeroGap:   style.Size{Value: "clamp(2rem, 6vw, 5rem)"},
+	Display:   style.FontWeight{Value: 800},
+})
+t.DarkColors["brand-glow"] = "#FFB066"
+site.WithTheme(t)
+```
+
+The field's type picks the prefix and its name the rest, the same rule
+the built-in groups follow, so `--size-hero-gap` sits beside
+`--size-page-width` and reads as one vocabulary. An explicit `Name`
+overrides the field name. Nested structs work the way the built-in
+groups do.
+
+An app token goes everywhere a built-in token goes:
+
+- the `:root` block, and every `ui.Themed` scope;
+- the dark blocks, when `DarkColors` names an app colour (an app colour
+  without a dark value shows up in the dark-palette boot warning, like
+  a built-in one);
+- `ThemeToTokens` and `ApplyTokens`, validated by its type (a `Size`
+  takes a CSS length or a `calc()`/`clamp()`/`min()`/`max()` over
+  lengths, never a bare word);
+- `ThemeHash`, so the stylesheet URL changes when an app token does;
+- `Validate`, which names the field when a value is missing
+  (`main.brandTokens.HeroGap: Size.Value (Name="hero-gap"): value is empty`).
+
+`Extend` copies what you pass it and leaves its receiver alone. It
+panics when a token would emit a key the theme already emits, naming
+both fields: a `Primary style.Color` in your struct would declare
+`--color-primary` a second time, and whichever declaration the cascade
+reached last would paint the page. `Validate` makes the same check, so
+a hand-built `Theme.Extensions` slice can't slip a duplicate past it.
+
+Framework components read only the built-in tokens.
+
+## App tokens in CSS: `<name>.tokens.css`
+
+Writing the struct by hand works, but the stylesheets that read your
+tokens are CSS, and the tokens belong next to them. Declare them in a
+`<name>.tokens.css` file instead and let `gofastr gen styles` write the
+Go:
+
+```css
+/* acme.tokens.css */
+
+/* Space above and below the home hero. */
+@property --size-hero-gap { syntax: "<length>"; inherits: true; initial-value: clamp(2rem, 6vw, 5rem); }
+@property --color-highlight { syntax: "<color>"; inherits: true; initial-value: #0F766E; }
+@property --font-weight-display { syntax: "<number>"; inherits: true; initial-value: 800; }
+@property --duration-unroll { syntax: "<time>"; inherits: true; initial-value: 260ms; }
+
+@media (--dark) {
+  :root { --color-highlight: #5EEAD4; }
+}
+```
+
+A tokens file holds `@property` rules and, at most, one
+`@media (--dark) { :root { … } }` block of dark colour values. Nothing
+else: a class rule, another media query, or a dark value for a
+non-colour token is an error. Each `@property`:
+
+- is named `--<type>-<name>`, where the prefix is a token type
+  (`color`, `font`, `spacing`, `radii`, `shadow`, `z`, `duration`,
+  `easing`, `text`, `font-weight`, `size`) and the name is lowercase
+  kebab-case,
+- declares the syntax that matches its type,
+- says `inherits: true`, since a theme token must reach every element,
+- has an `initial-value`, validated exactly as `ApplyTokens` validates
+  that type.
+
+| Prefix | Go type | `syntax` |
+|---|---|---|
+| `--color-` | `style.Color` | `"<color>"` |
+| `--size-` | `style.Size` | `"<length>"` or `"<length-percentage>"` |
+| `--text-` | `style.FontSize` | `"<length>"` or `"<length-percentage>"` |
+| `--spacing-`, `--radii-` | `style.Spacing`, `style.Radius` | `"<length>"` |
+| `--font-weight-` | `style.FontWeight` | `"<number>"` or `"<integer>"` |
+| `--z-` | `style.ZIndexValue` | `"<integer>"` |
+| `--duration-` | `style.Duration` | `"<time>"` |
+| `--font-`, `--shadow-`, `--easing-` | `style.Font`, `style.Shadow`, `style.Easing` | `"*"` |
+
+Breakpoints and `--tk-*` code colours can't be app tokens; media
+queries read the custom-media names, and code colours belong to the
+built-in palette.
+
+The generator writes `acme_tokens.gen.go` beside the file, in the
+directory's package. The tokens are grouped the way `style.Theme`
+groups its own, and a CSS comment above an `@property` becomes the
+field's doc comment:
+
+```go
+// Code generated by "gofastr gen styles" from acme.tokens.css. DO NOT EDIT.
+var Tokens = acmeTokens{
+	Colors:      acmeColors{Highlight: style.Color{Name: "highlight", Value: "#0F766E"}},
+	Durations:   acmeDurations{Unroll: style.Duration{Name: "unroll", Value: 260 * time.Millisecond}},
+	FontWeights: acmeFontWeights{Display: style.FontWeight{Name: "display", Value: 800}},
+	Sizes:       acmeSizes{HeroGap: style.Size{Name: "hero-gap", Value: "clamp(2rem, 6vw, 5rem)"}},
+}
+
+func (acmeTokens) DarkTokens() map[string]string {
+	return map[string]string{"highlight": "#5EEAD4"}
+}
+```
+
+A package with more than one tokens file names each var after its file
+(`AcmeTokens`, `BrandTokens`). Add the set to the theme with `Extend`:
+
+```go
+site.WithTheme(theme.Default().Extend(ui.Tokens))
+```
+
+`Extend` reads `DarkTokens` from any value that has the method and
+merges it into `DarkColors`, so the dark block above reaches
+`data-color-scheme="dark"` with no extra line. It panics when a dark
+key isn't one of the set's own colours, or when the value isn't a
+colour. A theme with an empty `DarkColors` (`style.DefaultTheme()`)
+has no dark mode, so the dark values are dropped with it.
+
+Go code reads a token through its field: `ui.Tokens.Sizes.HeroGap.CSS()`
+is `var(--size-hero-gap)`. CSS reads it as `var(--size-hero-gap)`.
+
+`style.ParseToken(key, value)` is the parser underneath: it returns the
+typed slot for a `--<type>-<name>` key and a CSS value, or the
+validation error.
+
+### What the checks enforce
+
+`gofastr gen styles` and `gofastr verify` check owned sheets against
+the built-in tokens plus every app token in the program, so a sheet in
+one package can read a token declared in another.
+
+- **GOFASTR1806**: in a `*.style.css`, `var(--name)` must name a token
+  the theme or a tokens file declares. A fallback,
+  `var(--brand-glow, #FF7A00)`, does not waive it: the fallback hides
+  the missing declaration, and the value it carries is an untyped
+  literal. Declare the token, or waive the line with a reason.
+- **GOFASTR1807**: a literal equal to a token's value must read the
+  token. This covers app tokens too, and font weights
+  (`font-weight: 600` is `var(--font-weight-semibold)`) and sizes
+  (`width`, `height`, `inline-size`, `block-size`, their `min-`/`max-`
+  forms, and `flex-basis`). Padding, margin and gap compare against
+  spacing only.
+- **GOFASTR1821**: an app token whose value is already another token's
+  value of the same type, built-in or app (`--color-brand: #4F46E5`
+  where `--color-primary` is `#4F46E5`). Read the other token, or give
+  the new one its own value.
+- **GOFASTR1822** (warning): the same literal written in two or more
+  owned sheets of one program for the same token type. Declare it once as a token and
+  read `var()` in each. Values that are not a design choice pass: a zero
+  in any unit (`margin: 0`, `padding: 0 0`), `100%`, and `z-index: -1`.
+
+A tokens file may not reuse a built-in name (`--color-primary`), and a
+token is declared in one file only.
+
+The checks that compare files (duplicate style names, GOFASTR1821 and
+GOFASTR1822, a token declared twice) judge one program at a time: a
+`main` package and every package of the module it imports. Two
+binaries in one module may each carry their own `siteheader` copy.
+Packages no `main` imports are checked together as one group.
+
+When a line is deliberately off-token, waive the rule in place:
+
+```css
+.legacy { color: var(--vendor-ink); } /* gofastr:allow(GOFASTR1806) vendor widget sets this */
+```
+
+The marker starts the comment, names one rule and carries a reason. It
+covers its own line when code comes before it, otherwise the next line
+with code. A marker with no reason waives nothing.
+
+`gofastr theme edit` edits the built-in tokens; app tokens stay in
+their tokens file.
 
 ## Editing live: `gofastr theme edit`
 
@@ -510,25 +696,25 @@ hash := host.RegisterThemeVariant(brand) // framework/uihost.UIHost
 ## Per-component knobs: the `--ui-*` variables
 
 Some components expose dimensions or accents that aren't global
-tokens: a container's max width, a doc layout's rail width, a code
-block's scroll max height. These are exposed as
-`--ui-<component>-<knob>` variables with built-in fallbacks, so a host
-can override them from its own stylesheet without forking the
-component:
+tokens: a gallery's column count, a markdown block's reading measure.
+These are exposed as `--ui-<component>-<knob>` variables with
+built-in fallbacks, so a host can override them from its own
+stylesheet without forking the component:
 
 ```css
 /* app.css or a style.Contribute block */
-:root { --ui-container-wide: 1240px; }
+:root { --ui-markdown-measure: 68ch; }
 ```
+
+A dimension every page shares is a theme token instead: the page
+column, its gutter, the header height and `ui.Container`'s caps live
+in `Theme.Layout` (`t.Layout.WideWidth.Value = "1240px"`).
 
 You can also scope them: set one inside a `ui.Themed` section, or on
 a specific wrapper class, to change a single instance. Each
 component's source lists its knobs next to the CSS that reads them
-(for example `ui.Container`: `--ui-container-default/narrow/wide`;
-`ui.DocLayout`: `--ui-doc-layout-rail/gap/max-width`; the layout
-shells: `--ui-layout-container-width/gutter/header-height`, read by
-`app.LayoutBaseCSS`); grep `framework/ui` and `core-ui/app` for
-`--ui-` to see the full list.
+(for example `ui.Container`: `--ui-container-pad-start/end`); grep `framework/ui`
+and `core-ui/app` for `--ui-` to see the full list.
 
 ## Why you can't just override component CSS
 

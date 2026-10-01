@@ -514,15 +514,21 @@ promising a number.
   receive them. **A fixed topic is wrong for multi-tenant apps.**
   Derive a tenant-qualified topic from the authenticated identity and
   gate it with `Manager.SetAuthorizeTopic` (see [Tenant isolation](#tenant-isolation)).
-- **SPA navigation won't join the topic.** The SSE topic is read from
-  the page's `<meta name="gofastr-sse">` on initial load; partial-nav
-  (an in-site link click) does NOT re-thread the topic, so a user who
-  arrives at the dashboard via SPA nav sees the SSR paint but receives
-  no live updates, and leaving the page does not unsubscribe them.
-  Full-load the dashboard URL (or re-open the SSE connection) so the
-  topic join fires. The command-palette entry for the dashboard uses
-  normal SPA nav and so exhibits this. Open the page directly to see
-  live updates. See [Presence](presence.md), where the same limitation
-  applies to the roster demo ("Re-threading presence on SPA navigation").
+- **SPA navigation won't re-thread the topic.** The SSE topic is read
+  from the page's `<meta name="gofastr-sse">` at initial load; a
+  partial-nav (an in-site link click) does not rewrite it, so a user
+  who arrives at the dashboard via SPA nav sees the SSR paint but the
+  stream joins the topic the document was loaded with, if any. What
+  SPA nav DOES do now: the stream itself is on demand — it opens only
+  while the page holds a push target (an island region, or the offline
+  banner) and closes when the last one leaves, so navigating away from
+  the dashboard unsubscribes the viewer, and navigating back re-joins
+  the topic the meta still carries. A dashboard reached by SPA nav
+  whose initial load was a DIFFERENT page joins no topic at all;
+  full-load the dashboard URL so the meta is rendered with its topic.
+  The command-palette entry for the dashboard uses normal SPA nav and
+  so exhibits this. Open the page directly to see live updates. See
+  [Presence](presence.md), where the same limitation applies to the
+  roster demo ("Re-threading presence on SPA navigation").
 - **Stopping the ticker on shutdown.** A goroutine that pushes into a
   closed manager on SIGTERM is a leak. Register it with `app.OnStop`.

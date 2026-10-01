@@ -109,14 +109,14 @@ raw (enumerated in `framework/ui/extraattrs_contract_test.go`). See
 - **recordsummary**: `framework/ui.RecordSummary`, compact dominant record or event summary with status, next-decision, balanced phone metrics, a bounded support rail, ownership, and a lead-region natural-width action that stays early on phones
 - **skiplink**: `framework/ui.SkipLink`, focus-visible bypass link for jumping to main content
 - **pageheader**: `framework/ui.PageHeader`, top-of-page header with title / eyebrow / subtitle / actions
-- **siteheader**: `framework/ui.SiteHeader`, top bar with brand + nav + actions + mobile drawer; `MobileBrand` swaps in a concise phone identity; `PersistentActions` keeps one journey-critical control in the bar at every width (no drawer copy)
-- **sitefooter**: `framework/ui.SiteFooter`, multi-column footer grid + bottom strip
 - **anchoredrail**: `framework/ui.AnchoredRail`, sticky in-page nav rail with scrollspy-tracked active state
-- **doclayout**: `framework/ui.DocLayout` / `DocPrevNext`, documentation page skeleton (nav rail + article + prev/next pager). The pager's direction lines come from `DocPager.PrevDirLabel` / `NextDirLabel`; empty keeps `← Previous` / `Next →`. The arrow is part of the value, so a translation can move it to the other side of the word
+- **contentrow**: `framework/ui.ContentRow`, the page's content row — a start column (the nav landmark `ContentRowConfig.NavLabel` names, wrapping a `ui.Sidebar` whose own inner nav names only the links list), the main column, an optional toolbar band above main beside the nav, and an optional context aside that releases its width around an empty outlet. `Breakpoint` picks the stack width (below md by default, below lg to match `SidebarConfig.DrawerBreakpoint`); `Viewport: true` fills the rest of the viewport below the header and scrolls each column on its own — the row reads the header's height from `--size-header-height` and cannot style its parent, so recipes pair it with a page-tall `ui.Stack{Screen: true}` and the fixed header band.
 - **tabs-signal**: `framework/ui.Tabs`, signal-driven tab strip (click sets the signal; CSS shows the panel); `StateAttrs` adds `data-state=active/inactive` to the buttons, `ID` wires `aria-controls`/`id` pairs, `VacateHidden` ships hidden panels empty with their content in a JSON stash (restored on show by the `headless-tabs` module) so page-scoped test locators cannot match hidden text — the contract knobs a port needs, each off by default
 - **breadcrumbs**: `framework/ui.Breadcrumbs`, `<nav aria-label>` landmark over an ordered trail; the last step (or the one carrying `Current`) is `aria-current="page"` text, never a link to itself, and separators are `aria-hidden`
+  `CompactMobile: true` shows the final two steps below md and hides the leading separator; the full trail remains on desktop.
 - **pagination**: `framework/ui.Pagination`, numeric page pager with typed query props (`Path`, `Query url.Values`, `PageParam` default `p`) — every href is built through `net/url` with the page parameter replaced, never a `%d` pattern; `Window` sizes the page neighbourhood, `OmitPrevNext` drops the ends. The Island is optional, the Table posture: a list screen's page anchors are plain navigations the client router intercepts, and a pager inside an island region (a `DataTable` footer) carries the RPC contract beside its hrefs and the `data-hui-page` hook the table module restores focus through. `core-ui/patterns/pagination` is retired: this is the only pager
 - **sidebar**: `framework/ui.Sidebar`, responsive primary nav with persistent, collapsible (local-storage persisted), off-canvas, and auto-hide variants; `Collapse` moves the collapsed state to the server, `GroupMarkup` swaps `<details>` groups for `button[aria-expanded][aria-controls]` + `hidden` container, `CollapseLabel`/`ExpandLabel` rename the toggle (see [Sidebar: server-owned collapse state](#sidebar-server-owned-collapse-state)); set `NavLabel` when a page has multiple navigation landmarks and mount the matching drawer with `MountSidebar`
+- **sidebardrawertrigger**: `framework/ui.SidebarDrawerTrigger`, the sidebar's drawer toggle rendered on its own — the relocated hamburger a header row carries while the sidebar itself lives in the body; pass the SAME `SidebarConfig` the `ui.Sidebar` render uses and the pair stays one logical control (the trigger hides itself at >= md exactly like the sidebar's inline copy, so `SuppressDrawerTrigger` and a relocated trigger never draw two)
 - **menu**: `framework/ui.Menu`, keyboard-driven dropdown built on `<details>`; `MenuItem.ID` gives a row an addressable `id` (caller-owned uniqueness, ignored on separators; `ExtraAttrs` still cannot set `id`); `MenuConfig.TriggerElement` swaps the framework `<summary>` for a caller-owned trigger — pass the inline HTML of your own `<button>` (or `<a>`) and the runtime makes it the controller: it wires `aria-haspopup`/`aria-controls`/`aria-expanded` at hydration, toggles on click/Enter/Space (activation is prevented — put navigation on menu items), focuses the first menuitem on open, and returns focus to your element on Escape. Use it whenever the page owns the trigger's markup or classes (avatar buttons, pill buttons): routing such an element through `TriggerHTML` nests it inside the summary, which axe reports as `nested-interactive`. `TriggerElement` overrides `Label` and `TriggerHTML`; give each trigger menu a distinct `ID` when two structurally identical ones share a page. `MenuConfig.LazyPanel: true` keeps the panel's rows out of the document tree until the menu is first opened: SSR ships them inside an inert `<template data-fui-menu-lazy>` as the panel's only child (the panel `<div>` stays, so `aria-controls` still resolves), and the runtime mounts them on first open — before its focus-on-open lookup, so the keyboard contract is unchanged. Use it when live-DOM queries must not see closed-menu rows: host Playwright contracts that pin `getByText('Theme')` to the first visible match or `getByLabel` to exactly one element. The rows are still in the HTML source, so this hides nothing from a crawler that parses the response. The cost: rows are not in the DOM until first open, so host JS that binds menu rows by id at page load must use delegated listeners instead, and with JavaScript disabled the menu opens empty (only the disclosure module mounts the rows); the zero value renders rows inline exactly as before.
 - **tree**: `framework/ui.Tree`, WAI-ARIA treeview on the headless primitive: roving tabindex, arrows/Home/End/type-ahead bound by the registered `headless-tree` module; leaf hrefs are real anchors, a static branch is real markup, and a `LazyPath` branch keeps the kernel's rpc wiring on its toggle with a hidden signal-bound group (`LazySignalPrefix` names the signal)
 - **toc**: `framework/ui.TableOfContents`, auto-built sticky nav from `<h2>` / `<h3>`
@@ -139,14 +139,17 @@ raw (enumerated in `framework/ui/extraattrs_contract_test.go`). See
 
 ### Layout & display
 
-- **layout**: `framework/ui.Stack` / `Cluster` / `Grid` / `Center` / `Spacer` / `Box`; `Cluster` wraps by default and exposes the explicit `NoWrap` opt-out
-- **container**: `framework/ui.Container`, max-width page wrapper with breakpoint padding
+- **layout**: `framework/ui.Stack` / `Cluster` / `Grid` / `Center` / `Spacer` / `Box`; `Cluster` wraps by default and exposes the explicit `NoWrap` opt-out. `StackConfig.Screen: true` makes the stack the page column: at least one viewport tall (100dvh) with its last child pushed to the bottom — the option a recipe uses to keep a short page's footer at the bottom of the screen
+- **listdetail**: `framework/ui.ListDetail`, a labelled, keyboard-scrollable list beside a detail slot. Keep it in the group layout to preserve its node and scroll position while detail navigation swaps the primary slot. On phones the detail stacks above the list. `ExtraAttrs` accepts the two markers returned by `LayoutTree.VTRegion()` for whole-region transitions.
+- **listdetailplaceholder**: `framework/ui.ListDetailPlaceholder`, marks an unselected detail screen for `ListDetailConfig.MobileSinglePane`. This opt-in phone mode shows the list on an index and the detail on an issue, including a missing issue; desktop remains split. `BackHref` (with `BackLabel`, default "Back") adds a link to the list at the top of the detail pane, shown only while a phone shows the detail alone; it requires `MobileSinglePane`. The default ListDetail still stacks both regions on phones.
+- **container**: `framework/ui.Container`, max-width page wrapper with breakpoint padding; `Width: ContainerPage` caps at the page measure (`--size-page-width`, 66rem) — the editorial column a contained page's main and its header/footer bands share. Like the bands, its content box is the measure and the page gutter (`--size-page-gutter`, clamp(20px, 5vw, 32px)) sits outside it, so main's text starts on the header brand's edge at every width; `Pad` is the page's block rhythm: `ContainerPadPage` pads under the header (`--ui-container-pad-start`, clamp(40px, 6vw, 64px)) and above the footer (`--ui-container-pad-end`, clamp(48px, 7vw, 80px)), `ContainerPadEnd` only above the footer; an unknown value panics
 - **section**: `framework/ui.Section`, labelled content section with heading + description
-- **responsive**: `framework/ui.Responsive`, viewport-swap pair (independent desktop / mobile variants)
+- **responsive**: `framework/ui.Responsive`, viewport-swap pair (independent desktop / mobile variants). `Below` picks the breakpoint the mobile variant shows below: `ui.StackBelowMD` (the zero value, 48rem) or `ui.StackBelowLG` (64rem)
 - **panehost**: `framework/ui.PaneHost`, primary pane + openable secondary/tertiary side panes with a responsive overlay-drawer collapse
 - **themed**: `framework/ui.Themed`, wraps a subtree in a registered section-level theme override
 - **workbench**: `framework/ui.Workbench`, viewport-height inspector shell: a fixed-width rail that scrolls on its own beside a pane that fills the rest (an `<iframe>` in the pane fills it edge to edge); stacks below 720px
 - **card**: `framework/ui.Card`, a surface with header/body/footer over `headless.Card`; `Href` makes the whole card one link
+  An interactive card with `aria-current="page"` receives the active surface treatment, including marks applied by the runtime's navigation sweep.
 - **sticky**: `framework/ui.Sticky`, theme-token sticky wrapper for top or bottom edge pinning
 - **aspectratio**: `framework/ui.AspectRatio`, CLS-safe aspect-ratio wrapper for media and embeds
 - **image**: `framework/ui.OptimizedImage`, responsive `<picture>` with CLS-safe Width/Height
@@ -169,19 +172,19 @@ raw (enumerated in `framework/ui/extraattrs_contract_test.go`). See
 - **timeline**: `framework/ui.Timeline`, vertical event rail
 - **sparkline**: `framework/ui.Sparkline`, pure-SVG inline trend chart
 - **piechart**: `framework/ui.PieChart`, SVG ratio chart (donut variant via InnerRadius)
-- **barchart**: `framework/ui.BarChart`, categorical SVG bar chart. Legible by default: value labels ride above every bar cap (opt out with `HideValues`), the y-scale rounds up to a clean maximum so uniform / near-equal data keeps visible headroom (no wall of full-height slabs), a hairline baseline grounds the bars, and long `ShowLabels` category labels wrap onto two lines (a single over-long word ellipsizes, full text preserved in the bar's `<title>`). `ShowAxis` adds left value-axis ticks + gridlines. Per-bar `Color` accepts a palette token (primary/info/success/warning/danger), a registered status variant name, or a hex/rgb/hsl/oklch/var() CSS color; any other value falls back to the theme primary.
+- **barchart**: `framework/ui.BarChart`, categorical SVG bar chart. Legible by default: value labels ride above every bar cap (opt out with `HideValues`), the y-scale rounds up to a clean maximum so uniform / near-equal data keeps visible headroom (no wall of full-height slabs), a hairline baseline grounds the bars, and long `ShowLabels` category labels wrap onto two lines (a single over-long word ellipsizes, full text preserved in the bar's `<title>`). `FitHeight` sizes the SVG to hug the tallest bar (a 96px cap) instead of the fixed `Height`, so no blank band pads the space above the caps — bar ratios stay identical, only the padding goes. `ShowAxis` adds left value-axis ticks + gridlines. Per-bar `Color` accepts a palette token (primary/info/success/warning/danger), a registered status variant name, or a hex/rgb/hsl/oklch/var() CSS color; any other value falls back to the theme primary.
 - **linechart**: `framework/ui.LineChart`, multi-series time-series chart with area + legend. Edge x-axis labels anchor inward so the first/last tick don't clip against the SVG boundary.
 - **codeblock**: `framework/ui.CodeBlock`, styled `<pre><code>` sample block; the `HighlightLines` *func* pre-tokenizes lines for syntax highlighting, and the `HighlightLines []LineRange` *field* (fence `{1,3-5}`), `Diff`, `HighlightWords`, and `Wrap` add line bands, diff marking, word marks, and soft wrapping — see [CodeBlock: line highlighting, diffs, wrapping](#codeblock-line-highlighting-diffs-wrapping)
 - **codetabs**: `framework/ui.CodeTabs`, the same snippet in several languages (Go / TypeScript / curl …) behind a zero-JS tab strip; pure composition of `headless.Tabs` + `CodeBlock` with copy buttons. Selection is per-tabset, not a page-wide language preference. The SDK docs site (`framework/sdkdocs`) is the flagship consumer.
 - **counter**: `framework/ui.Counter`, numeric counter with +/− buttons mutating a client-side signal
 - **jsonviewer**: `framework/ui.JSONViewer`, collapsible tree of arbitrary values
 - **diffviewer**: `framework/ui.DiffViewer`, unified or split diff renderer
-- **markdown**: `framework/ui.Markdown`, themed wrapper over `core/markdown`. Fence options reach it through the `data-meta` attribute `core/markdown` emits and forward onto `CodeBlockConfig`: `title=`, `showLineNumbers`, `scroll`, `{1,3-5}` / `highlight=`, `diff`, `words=`, and `wrap` (see the [CodeBlock section](#codeblock-line-highlighting-diffs-wrapping) for the table). Unknown options are ignored, so an option added later degrades to a plain block rather than breaking one, and the raw info string stays on the block root in `data-meta`
+- **markdown**: `framework/ui.Markdown`, themed wrapper over `core/markdown`. `Measure: true` caps the line length at a reading width (`--ui-markdown-measure`, 72ch) for long-form pages in a wide column; generated markdown blocks set it. Fence options reach it through the `data-meta` attribute `core/markdown` emits and forward onto `CodeBlockConfig`: `title=`, `showLineNumbers`, `scroll`, `{1,3-5}` / `highlight=`, `diff`, `words=`, and `wrap` (see the [CodeBlock section](#codeblock-line-highlighting-diffs-wrapping) for the table). Unknown options are ignored, so an option added later degrades to a plain block rather than breaking one, and the raw info string stays on the block root in `data-meta`
 - **factbox**: `framework/ui.FactBox`, single labelled fact (compact label + value pair; label-first or value-first)
-- **detaillist**: `framework/ui.DetailList`, label/value description list for record detail views
+- **detaillist**: `framework/ui.DetailList`, label/value description list for record detail views; stacks labels above values in narrow containers, including desktop context cards, and on phones
 - **progress**: `framework/ui.Progress`, native `<progress>` with theme styling; determinate (`Value` 0..`Max`, clamped at render) or indeterminate (`Value` < 0), labelled visibly (`ShowLabel`) or through `aria-label`. A named-stage walk is `ProgressSteps`, a different component
 - **terminalblock**: `framework/ui.TerminalBlock`, terminal transcript with a labelled header and `TerminalOut` / `TerminalOK` lines
-- **skeleton**: `framework/ui.SkeletonCard` / `SkeletonRow` / `SkeletonAvatar`, loading placeholders over `framework/headless.Skeleton`: hidden shimmer bars, one polite "Loading…" announcement per preset
+- **skeleton**: `framework/ui.SkeletonCard` / `SkeletonRow` / `SkeletonAvatar` / `SkeletonTimeline` / `SkeletonLine`, loading placeholders over `framework/headless.Skeleton`: hidden shimmer bars, one polite "Loading…" announcement per preset; the timeline preset draws event-shaped rows (dot, name line, two text lines) matching what `ui.Timeline` arrivals look like, and `SkeletonLine` draws ONE capped bar — the loading twin of a breadcrumb trail or a one-line label (an area's `Loading.Show`, a crumbs skeleton)
 - **spinner**: `framework/ui.Spinner`, inline CSS loading indicator
 
 ### Tags, badges, filters
@@ -216,6 +219,10 @@ raw (enumerated in `framework/ui/extraattrs_contract_test.go`). See
 
 
 ## Sidebar: server-owned collapse state
+
+A sidebar group has `Children` and no `Href`: its label opens and closes
+the group. Put the section's overview page in the group's first child
+link instead. Setting both `Children` and `Href` panics with this fix.
 
 `SidebarConfig.CurrentPath` already splits who decides the active item:
 set it and the server renders the highlight, leave it empty and the
@@ -288,6 +295,22 @@ Three more knobs round out the contract surface:
   can mark the current section. Wrap static markup in
   `app.NewStaticComponent`. It hides with the title in the collapsed
   rail and the auto-hide rest state; `Footer` stays below the nav.
+- `MatchPath` rides the rendered link as `data-fui-match-prefix` (the
+  value, not the href, is the prefix): the server marks the item
+  current on first paint, and the runtime's active-link sweep keeps it
+  lit across client navigations into the section — without it the
+  exact-href sweep clears the highlight the moment the URL grows a
+  deeper segment inside a kept shell.
+- `SuppressDrawerTrigger: true` plus `ui.SidebarDrawerTrigger(cfg)`
+  moves the hamburger into your own chrome (the page header, left of
+  the brand): the standalone button is the same trigger — same class,
+  same `data-fui-open` widget contract, same `>= md` self-hiding from
+  the component's stylesheet. `MountSidebar` still mounts the drawer
+  itself, once, as always.
+- `NativeMobile: true` adds a native disclosure for browsers with scripting
+  disabled. CSS selects it with `(scripting: none)`; scripted browsers keep
+  the mounted drawer and its focus and Escape behavior. Keep calling
+  `MountSidebar`. The fallback uses the same filtered items and group markup.
 
 ---
 

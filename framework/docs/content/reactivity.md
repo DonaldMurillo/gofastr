@@ -278,7 +278,10 @@ issued by one replica verifies on every other replica that shares the secret.
   SSE/interaction transport session, not `battery/auth` login state; nobody is
   logged out). Recovery needs no user action: a page re-mints on its next render
   or navigation, and a purely idle tab re-mints from the SSE module itself
-  (`POST /__gofastr/session`) once its stream reconnect starts failing.
+  (`POST /__gofastr/session`) once its stream reconnect starts failing. The
+  idle re-mint only runs while the stream is open (the stream itself is on
+  demand — it exists only while the page holds a push target); a page without
+  one recovers on its next navigation, whose answer carries the fresh id.
 - **Multi-replica.** Set a shared secret so every replica verifies the same
   tokens. Two ways to set it:
   - `framework.WithSecret(secret)` in code, or
