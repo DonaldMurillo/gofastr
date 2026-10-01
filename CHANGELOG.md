@@ -881,7 +881,12 @@ are listed under Added above, not here.
   self-import rewritten to the app's module path (an enclosing
   `go.mod` is required). No name lists the packages with a one-line
   summary from each package doc. The copy is one-shot: a non-empty
-  target is refused. A blueprint with marketing screens now writes
+  target is refused. `--out` takes any path inside the module,
+  absolute or `..`-relative, and `--dry-run` accepts exactly the
+  targets the real copy does. A target under a nested module imports
+  through that module's own path. A copy that fails partway removes
+  the files and directories it created and leaves everything else
+  alone. A blueprint with marketing screens now writes
   the same packages through the same copy — tests included — so a
   generated app's header and footer can no longer drift from the
   ones `generate package` hands out; the `blueprintchrome/`

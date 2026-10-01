@@ -50,14 +50,21 @@ each command to the doc that covers it.
   every file of the package lands in `--out=<dir>` (default `./<name>`):
   the Go, the owned `.style.css`, its `.tokens.css` when there is one,
   the `_style.gen.go` / `_tokens.gen.go`, and the tests. The package's
-  self-import is rewritten to your module's path, so the command needs
-  an enclosing `go.mod` and refuses anything outside it. The copy is
-  one-shot: a non-empty target is refused, no merge, no overwrite.
-  After the copy the package is yours: edit the Go freely, run
-  `gofastr gen styles` after editing a sheet, `go mod tidy` once for
-  the chromium test's chromedp dependencies. A blueprint with marketing
-  screens writes the same packages (tests included) through the same
-  copy, so the two cannot drift.
+  self-import is rewritten to the path of the `go.mod` that encloses
+  the target, so a copy under a nested module (`tools/go.mod`) imports
+  through that module. The command needs an enclosing `go.mod` and
+  refuses a target outside the module. Inside it, `--out` may be
+  relative to the current directory (`../chrome/hdr` from a
+  subdirectory works) or absolute, and `--dry-run` accepts exactly the
+  targets the copy can write. The copy is one-shot: a non-empty target
+  is refused, and a file that appears in the target mid-copy is never
+  overwritten. The copy fails instead and removes the files and
+  directories it created, leaving everything else alone, so the command
+  can be re-run. After the copy the package is yours: edit the Go
+  freely, run `gofastr gen styles` after editing a sheet, `go mod tidy`
+  once for the chromium test's chromedp dependencies. A blueprint with
+  marketing screens writes the same packages (tests included) through
+  the same copy, so the two cannot drift.
 - `gofastr pack [app-dir]`: snapshot a generated app into a
   best-effort `gofastr.yml`. Lossy; not an inverse of `generate`.
 

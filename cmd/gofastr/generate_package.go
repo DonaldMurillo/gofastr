@@ -2,6 +2,7 @@ package main
 
 import (
 	"embed"
+	"errors"
 	"fmt"
 	"go/parser"
 	"go/token"
@@ -27,6 +28,12 @@ import (
 //
 //go:embed packages
 var canonicalPackages embed.FS
+
+// packageWriteFiles writes a package copy's files; a var so tests can
+// interpose exactly where a concurrent process can race the copy — after
+// the one-shot emptiness check, before the first file lands. The default
+// is the codegen writer the real copy uses.
+var packageWriteFiles = codegen.WriteFiles
 
 // canonicalPackageImport is the import path the packages carry inside
 // this repo; a copy rewrites it to the target module's own path.
@@ -80,49 +87,34 @@ func runGeneratePackage(args []string) {
 
 	// The copied code imports itself by module path, so an enclosing
 	// go.mod is a requirement, not a convenience. Mirrors generate cli.
+	// The target is resolved once, here, into everything both --dry-run
+	// and the real copy need — so the two modes can never disagree about
+	// which targets are acceptable.
 	wd, err := os.Getwd()
 	if err != nil {
 		fail("%v", err)
 		osExit(1)
 		return
 	}
-	modulePath, moduleRoot := findEnclosingGoMod(wd)
-	if modulePath == "" {
-		fail("no enclosing go.mod: the copied package imports itself by module path, so it cannot build until this directory is a Go module")
-		info("Run `go mod init <path>` in your app root first, then re-run the copy from anywhere under it.")
-		osExit(1)
-		return
-	}
-	target := outDir
-	if target == "" {
-		target = name
-	}
-	absTarget, err := filepath.Abs(target)
+	tgt, err := resolvePackageTarget(name, outDir, wd)
 	if err != nil {
 		fail("%v", err)
+		if errors.Is(err, errPackageNoModule) {
+			info("Run `go mod init <path>` in your app root first, then re-run the copy from anywhere under it.")
+		}
 		osExit(1)
 		return
-	}
-	rel, err := filepath.Rel(moduleRoot, absTarget)
-	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-		fail("target %s sits outside the module rooted at %s, so the package's import path cannot be derived from it", target, moduleRoot)
-		osExit(1)
-		return
-	}
-	importPath := modulePath
-	if rel != "." {
-		importPath += "/" + filepath.ToSlash(rel)
 	}
 
 	// One-shot copy: the app owns the result. An existing non-empty
 	// target means someone's code is already there; there is no merge
-	if entries, derr := os.ReadDir(target); derr == nil && len(entries) > 0 {
-		fail("%s already exists and is not empty: `generate package` is a one-shot copy and the app owns the result; move the directory away first if you really want to replace it", target)
+	if entries, derr := os.ReadDir(tgt.dir); derr == nil && len(entries) > 0 {
+		fail("%s already exists and is not empty: `generate package` is a one-shot copy and the app owns the result; move the directory away first if you really want to replace it", tgt.display)
 		osExit(1)
 		return
 	}
 
-	files, hasTokens, hasChromiumTest, err := copyCanonicalPackage(name, importPath)
+	files, hasTokens, hasChromiumTest, err := copyCanonicalPackage(name, tgt.importPath)
 	if err != nil {
 		fail("%v", err)
 		osExit(1)
@@ -131,7 +123,7 @@ func runGeneratePackage(args []string) {
 	if dryRun {
 		fmt.Println("Would write:")
 		for _, f := range files {
-			fmt.Printf("  %s\n", filepath.ToSlash(filepath.Join(target, f.name)))
+			fmt.Printf("  %s\n", filepath.ToSlash(filepath.Join(tgt.display, f.name)))
 		}
 		return
 	}
@@ -143,16 +135,30 @@ func runGeneratePackage(args []string) {
 			return
 		}
 	}
-	if err := codegen.WriteFiles(fileSet, codegen.WriteOptions{
-		OutputRoot:   target,
-		SkipManifest: true,
-		Conflict:     codegen.ConflictOverwrite,
-	}); err != nil {
-		fail("Failed to write package files: %v", err)
+	// The writer resolves its output root against the working directory
+	// and refuses absolute roots and parent traversal, so the write runs
+	// from the target's own module directory with a root relative to it —
+	// the one spelling every in-module target resolved to above.
+	if err := os.Chdir(tgt.anchorDir); err != nil {
+		fail("%v", err)
 		osExit(1)
 		return
 	}
-	success("Copied %s into %s (%d file(s)); the package is yours now — edit it freely", name, target, len(files))
+	existed := packageDirChainExisted(tgt)
+	writeErr := packageWriteFiles(fileSet, codegen.WriteOptions{
+		OutputRoot:   tgt.root,
+		SkipManifest: true,
+		Conflict:     codegen.ConflictRefuse,
+	})
+	_ = os.Chdir(wd)
+	if writeErr != nil {
+		filesRemoved, dirsRemoved := rollbackPackageCopy(tgt, files, existed)
+		fail("Failed to write package files: %v", writeErr)
+		info("Rolled back the partial copy: removed %d file(s) and %d dir(s) this run created in %s; anything this run did not write was left untouched", filesRemoved, dirsRemoved, tgt.display)
+		osExit(1)
+		return
+	}
+	success("Copied %s into %s (%d file(s)); the package is yours now — edit it freely", name, tgt.display, len(files))
 	fmt.Println()
 	fmt.Println("  Next steps:")
 	if hasTokens {
@@ -166,6 +172,139 @@ func runGeneratePackage(args []string) {
 		generated += " / " + name + "_tokens.gen.go"
 	}
 	fmt.Printf("    gofastr gen styles   : regenerate %s after editing the sheets\n", generated)
+}
+
+// errPackageNoModule names the missing-module failure; the caller prints
+// its own hint for it. Every other resolution failure carries a
+// self-explanatory message.
+var errPackageNoModule = errors.New("no enclosing go.mod: the copied package imports itself by module path, so it cannot build until this directory is a Go module")
+
+// packageTarget is a copy destination resolved once, so --dry-run and the
+// real copy judge exactly the same targets: display is the target as the
+// user spelled it (what every message prints), dir its absolute path,
+// importPath the module path the copied code will import itself by,
+// anchorDir the directory the write runs from, and root the output root
+// relative to anchorDir — a relative path with no parent traversal, the
+// only form the codegen writer accepts.
+type packageTarget struct {
+	display    string
+	dir        string
+	importPath string
+	anchorDir  string
+	root       string
+}
+
+// resolvePackageTarget resolves --out (default ./<name>) from the working
+// directory. The command runs inside a module and may only copy within
+// it; inside that fence any spelling works, including one that escapes
+// the working directory ("../chrome/hdr" from a subdirectory) or an
+// absolute path — both previously approved by --dry-run and then refused
+// by the writer. The import path comes from the go.mod that encloses the
+// TARGET, not the working directory: a nested module (tools/go.mod)
+// owns the packages under it, and a path glued onto the outer module
+// would not compile there.
+func resolvePackageTarget(name, outDir, wd string) (packageTarget, error) {
+	display := outDir
+	if display == "" {
+		display = name
+	}
+	dir := display
+	if !filepath.IsAbs(dir) {
+		dir = filepath.Join(wd, dir)
+	}
+	dir = filepath.Clean(dir)
+
+	modulePath, moduleRoot := findEnclosingGoMod(wd)
+	if modulePath == "" {
+		return packageTarget{}, errPackageNoModule
+	}
+	outside := fmt.Errorf("target %s sits outside the module rooted at %s, so the package's import path cannot be derived from it", display, moduleRoot)
+	if rel, err := filepath.Rel(moduleRoot, dir); err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return packageTarget{}, outside
+	}
+
+	// Safe by the fence above, but keep the failure honest if the walk
+	// ever disagrees: an import path must never be guessed.
+	enclosingPath, enclosingDir := findEnclosingGoMod(dir)
+	if enclosingPath == "" {
+		return packageTarget{}, outside
+	}
+	root, err := filepath.Rel(enclosingDir, dir)
+	if err != nil {
+		return packageTarget{}, outside
+	}
+	importPath := enclosingPath
+	if root != "." {
+		importPath += "/" + filepath.ToSlash(root)
+	}
+	return packageTarget{
+		display:    display,
+		dir:        dir,
+		importPath: importPath,
+		anchorDir:  enclosingDir,
+		root:       root,
+	}, nil
+}
+
+// packageDirChainExisted snapshots which directories on the anchor→target
+// chain exist, taken BEFORE the copy writes: rollback may remove a
+// directory only when this map says the copy itself created it.
+func packageDirChainExisted(tgt packageTarget) map[string]bool {
+	existed := map[string]bool{}
+	if codegen.EnsureNoSymlinkPath(tgt.dir) != nil {
+		// A symlinked chain is not the copy's to reason about; record
+		// everything as pre-existing so rollback removes no directory.
+		existed[tgt.dir] = true
+		return existed
+	}
+	for d := tgt.dir; ; d = filepath.Dir(d) {
+		if _, err := os.Stat(d); !os.IsNotExist(err) {
+			existed[d] = true
+		}
+		if d == tgt.anchorDir || d == filepath.Dir(d) {
+			return existed
+		}
+	}
+}
+
+// rollbackPackageCopy removes what a failed copy created in the target:
+// every file whose current bytes are exactly the copy's own output (the
+// target was verified empty before the write began, so matching bytes are
+// this run's), then the directories the run created along the
+// anchor→target chain (per the existed snapshot taken before the write),
+// deepest first, stopping at the first directory that existed before or
+// still holds something. A file another process dropped in mid-copy —
+// the refusal that failed the copy — does not match and survives; a
+// symlink planted on a path stops the rollback there (Remove never
+// follows one, and the guard keeps the walk from touching anything it
+// cannot see through).
+func rollbackPackageCopy(tgt packageTarget, files []generatedFile, existed map[string]bool) (filesRemoved, dirsRemoved int) {
+	for _, f := range files {
+		p := filepath.Join(tgt.dir, f.name)
+		if codegen.EnsureNoSymlinkPath(p) != nil {
+			continue
+		}
+		body, err := os.ReadFile(p)
+		if err != nil || string(body) != f.content {
+			continue
+		}
+		if err := os.Remove(p); err == nil {
+			filesRemoved++
+		}
+	}
+	for d := tgt.dir; ; d = filepath.Dir(d) {
+		if d == tgt.anchorDir || existed[d] {
+			break
+		}
+		if codegen.EnsureNoSymlinkPath(d) != nil {
+			break
+		}
+		if err := os.Remove(d); err != nil {
+			break
+		}
+		dirsRemoved++
+	}
+	return filesRemoved, dirsRemoved
 }
 
 // parsePackageArgs parses the flags accepted by `generate package

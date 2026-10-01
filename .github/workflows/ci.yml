@@ -447,23 +447,26 @@ jobs:
             # framework/ui + framework/pluginhost ship render guards
             # behind `-tags chromium` (card footer pinning, image
             # placeholder paint, srcset data-URI parsing, WASM tier
-            # instantiation). No other root-module step passes that
-            # tag — the nested chromepdf comment below is about a
-            # separate Go module and its tagged tests stay out of
-            # scope here — so before this shard those guards never ran
-            # in CI: a `go test` without the tag silently compiles the
-            # files out and passes. Verified locally green before
-            # landing: `go test -tags chromium ./framework/ui/
+            # instantiation), and cmd/gofastr/packages ships the
+            # canonical chrome packages' own capture tests behind the
+            # same tag. No other root-module step passes that tag — the
+            # nested chromepdf comment below is about a separate Go
+            # module and its tagged tests stay out of scope here — so
+            # before this shard those guards never ran in CI: a
+            # `go test` without the tag silently compiles the files out
+            # and passes. Verified locally green before landing:
+            # `go test -tags chromium ./framework/ui/
             # ./framework/pluginhost/` (~12s).
-            # -p 1: both packages drive their own headless Chrome, and go
-            # test runs packages CONCURRENTLY by default. Launching two
-            # Chromes on one runner is the documented "chrome failed to
-            # start" contention this workflow already serializes elsewhere
-            # (see the header note on TestBlueprintCLIGeneratesEntireWorkingAppE2E).
-            # It bit here as "websocket url timeout reached" in
-            # TestCardFooterPinsToBottomInGrid on a PR that touched neither
-            # package.
-            run: go test -count=1 -timeout=10m -p 1 -tags chromium ./framework/ui/ ./framework/pluginhost/ ./core/mcp/
+            # -p 1: these packages drive their own headless Chrome, and
+            # go test runs packages CONCURRENTLY by default. Launching
+            # several Chromes on one runner is the documented "chrome
+            # failed to start" contention this workflow already
+            # serializes elsewhere (see the header note on
+            # TestBlueprintCLIGeneratesEntireWorkingAppE2E). It bit here
+            # as "websocket url timeout reached" in
+            # TestCardFooterPinsToBottomInGrid on a PR that touched
+            # neither package.
+            run: go test -count=1 -timeout=10m -p 1 -tags chromium ./framework/ui/ ./framework/pluginhost/ ./core/mcp/ ./cmd/gofastr/packages/...
           - suite: ui-quality-evals
             # Its capture tests drive a real headless Chrome; kept out of
             # the deterministic -p 2 run for the same contention reason.

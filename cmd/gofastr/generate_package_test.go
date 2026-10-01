@@ -1,12 +1,14 @@
 package main
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/codegen"
 	"github.com/DonaldMurillo/gofastr/core-ui/ownstyle"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 )
@@ -148,6 +150,224 @@ func TestGeneratePackageDryRunWritesNothing(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(dir, "docpage")); !os.IsNotExist(err) {
 		t.Errorf("dry run created the target directory: %v", err)
+	}
+}
+
+// --dry-run must judge exactly the targets the real copy can write: a
+// target that escapes the working directory but not the module (spelled
+// with "..", or absolute) is approved by the dry run and then has to
+// survive the real write from the same place, not fail with the writer's
+// own jargon.
+func TestGeneratePackageSubdirOutWorks(t *testing.T) {
+	dir := t.TempDir()
+	writeTestModule(t, dir)
+	sub := filepath.Join(dir, "web")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	covT_chdir(t, sub)
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The absolute case spells the target the way a shell would (from the
+	// resolved working directory), not through a symlinked alias of it.
+	for _, tc := range []struct{ name, out string }{
+		{"parent-relative", "../chrome/hdr"},
+		{"absolute", filepath.Join(wd, "..", "chrome", "abs-hdr")},
+	} {
+		dry := covT_capStdout(t, func() {
+			runGeneratePackage([]string{"docpage", "--out=" + tc.out, "--dry-run"})
+		})
+		if !strings.Contains(dry, "Would write:") || !strings.Contains(dry, tc.out+"/docpage.go") {
+			t.Errorf("%s: dry run did not approve the in-module target:\n%s", tc.name, dry)
+		}
+		var code int
+		out := covT_capStdout(t, func() {
+			code = covT_capExit(t, func() {
+				runGeneratePackage([]string{"docpage", "--out=" + tc.out})
+			})
+		})
+		if code != -1 {
+			t.Errorf("%s: real copy from a subdirectory exited %d:\n%s", tc.name, code, out)
+		}
+		if _, serr := os.Stat(filepath.Join(dir, "chrome", filepath.Base(tc.out), "docpage.go")); serr != nil {
+			t.Errorf("%s: files did not land in the module: %v", tc.name, serr)
+		}
+	}
+}
+
+// A target outside the enclosing module is refused with the CLI's own
+// message in BOTH modes — the dry run must not approve a write the copy
+// would refuse.
+func TestGeneratePackageDryRunRefusesOutside(t *testing.T) {
+	dir := t.TempDir()
+	writeTestModule(t, dir)
+	sub := filepath.Join(dir, "web")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	covT_chdir(t, sub)
+
+	for _, args := range [][]string{
+		{"siteheader", "--out=../.."},
+		{"siteheader", "--out=../..", "--dry-run"},
+	} {
+		var code int
+		out := covT_capStdout(t, func() {
+			code = covT_capExit(t, func() {
+				runGeneratePackage(args)
+			})
+		})
+		if code != 1 {
+			t.Errorf("%v: exit = %d, want 1\n%s", args, code, out)
+		}
+		if !strings.Contains(out, "sits outside the module") {
+			t.Errorf("%v: refusal does not name the module fence:\n%s", args, out)
+		}
+		if strings.Contains(out, "Would write:") {
+			t.Errorf("%v: dry run approved an out-of-module target:\n%s", args, out)
+		}
+	}
+}
+
+// The import path comes from the go.mod that encloses the TARGET: with a
+// nested tools/go.mod, a copy into tools/ftr run from the outer root must
+// import example.com/tools/ftr, not a path glued onto the outer module.
+func TestGeneratePackageNestedModuleImport(t *testing.T) {
+	dir := t.TempDir()
+	writeTestModule(t, dir)
+	tools := filepath.Join(dir, "tools")
+	if err := os.MkdirAll(tools, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	repoRoot, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	version, err := repoGoVersion(repoRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeTestFile(t, filepath.Join(tools, "go.mod"), "module example.com/tools\n\ngo "+version+"\n")
+	covT_chdir(t, dir)
+
+	out := covT_capStdout(t, func() {
+		runGeneratePackage([]string{"sitefooter", "--out=tools/ftr"})
+	})
+	if !strings.Contains(out, "Copied sitefooter into tools/ftr") {
+		t.Fatalf("copy into the nested module failed:\n%s", out)
+	}
+	test, err := os.ReadFile(filepath.Join(dir, "tools", "ftr", "sitefooter_test.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(test), `"example.com/tools/ftr"`) {
+		t.Errorf("self-import not derived from the nested go.mod:\n%s", test)
+	}
+	for _, f := range packageCopyFiles(t, filepath.Join(dir, "tools", "ftr")) {
+		if strings.Contains(f.content, "pkgcopy/tools") {
+			t.Errorf("%s imports through the outer module", f.path)
+		}
+	}
+}
+
+// A file another process drops into the target between the emptiness
+// check and the write is never overwritten: the copy refuses, and the
+// rollback removes only the files this run wrote — the racer's file, and
+// anything else this run did not create, is left untouched.
+func TestGeneratePackageRacerRolledBack(t *testing.T) {
+	dir := t.TempDir()
+	writeTestModule(t, dir)
+	covT_chdir(t, dir)
+	sentinel := []byte("another process wrote here first\n")
+	packageWriteFiles = func(files *codegen.FileSet, opts codegen.WriteOptions) error {
+		all := files.All()
+		target, err := filepath.Abs(opts.OutputRoot)
+		if err != nil {
+			return err
+		}
+		if err := os.MkdirAll(target, 0o755); err != nil {
+			return err
+		}
+		if err := os.WriteFile(filepath.Join(target, all[len(all)-1].Path), sentinel, 0o644); err != nil {
+			return err
+		}
+		return codegen.WriteFiles(files, opts)
+	}
+	t.Cleanup(func() { packageWriteFiles = codegen.WriteFiles })
+
+	var code int
+	out := covT_capStdout(t, func() {
+		code = covT_capExit(t, func() {
+			runGeneratePackage([]string{"sitefooter"})
+		})
+	})
+	if code != 1 {
+		t.Fatalf("a racing file must fail the copy, exit = %d:\n%s", code, out)
+	}
+	if !strings.Contains(out, "Failed to write package files") {
+		t.Errorf("failure does not name the write:\n%s", out)
+	}
+	if !strings.Contains(out, "Rolled back the partial copy") {
+		t.Errorf("failure does not say the partial copy was removed:\n%s", out)
+	}
+	entries, err := os.ReadDir(filepath.Join(dir, "sitefooter"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || entries[0].Name() != "sitefooter_test.go" {
+		t.Fatalf("target holds %d entries, want only the racing file", len(entries))
+	}
+	kept, err := os.ReadFile(filepath.Join(dir, "sitefooter", "sitefooter_test.go"))
+	if err != nil || string(kept) != string(sentinel) {
+		t.Errorf("the racing file was overwritten: %q %v", kept, err)
+	}
+}
+
+// A copy that fails after writing began leaves nothing behind: the files
+// it wrote and the directories it created are removed, back to the state
+// before the copy, so the one-shot rule never bricks the target.
+func TestGeneratePackageFailureCleansDirs(t *testing.T) {
+	dir := t.TempDir()
+	writeTestModule(t, dir)
+	covT_chdir(t, dir)
+	packageWriteFiles = func(files *codegen.FileSet, opts codegen.WriteOptions) error {
+		sub := codegen.NewFileSet()
+		if err := sub.Add(files.All()[0]); err != nil {
+			return err
+		}
+		if err := codegen.WriteFiles(sub, opts); err != nil {
+			return err
+		}
+		return errors.New("injected failure after the first file")
+	}
+	t.Cleanup(func() { packageWriteFiles = codegen.WriteFiles })
+
+	var code int
+	out := covT_capStdout(t, func() {
+		code = covT_capExit(t, func() {
+			runGeneratePackage([]string{"docpage", "--out=deep/nested/hdr"})
+		})
+	})
+	if code != 1 {
+		t.Fatalf("injected write failure must fail the copy, exit = %d:\n%s", code, out)
+	}
+	if !strings.Contains(out, "Rolled back the partial copy") {
+		t.Errorf("failure does not say the partial copy was removed:\n%s", out)
+	}
+	if !strings.Contains(out, "removed 1 file(s)") {
+		t.Errorf("rollback does not report what it removed:\n%s", out)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "deep")); !os.IsNotExist(err) {
+		t.Errorf("directories the copy created were left behind: %v", err)
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || entries[0].Name() != "go.mod" {
+		t.Errorf("module dir holds leftovers: %v", entries)
 	}
 }
 
