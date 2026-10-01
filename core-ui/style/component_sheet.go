@@ -160,6 +160,12 @@ func scopeRules(rules []cssRule, prefix string) error {
 // (CSS-nesting style). `&` alone → prefix. `&.active` →
 // prefix.active. `& .foo` → prefix .foo (same as bare `.foo`).
 // Use & whenever you want a rule on the component root.
+//
+// A part opening `:where(&` puts the prefix inside the :where(), so
+// the scope adds no weight: `:where(& .actions) > .item` →
+// :where(prefix .actions) > .item, weighing only its subject. Kit
+// rules that place an element an owner may also place are spelled
+// this way (DESIGN-owned-styles, "Cascade").
 func scopeSelector(selector, prefix string) (string, error) {
 	parts := splitTopLevelCommas(selector)
 	out := make([]string, len(parts))
@@ -167,6 +173,10 @@ func scopeSelector(selector, prefix string) (string, error) {
 		trimmed := strings.TrimSpace(p)
 		if trimmed == "" {
 			return "", fmt.Errorf("empty selector part in %q (trailing or doubled comma?): %w", selector, ErrUnscopable)
+		}
+		if rest, ok := strings.CutPrefix(trimmed, ":where(&"); ok {
+			out[i] = ":where(" + prefix + rest
+			continue
 		}
 		if strings.HasPrefix(trimmed, "&") {
 			rest := strings.TrimSpace(trimmed[1:])

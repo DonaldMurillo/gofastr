@@ -149,7 +149,21 @@ func (s *Style) Entry() *Entry { return s.e }
 var (
 	mu      sync.Mutex
 	entries = map[string]*Entry{}
+	// frozen is set once a host has built its component catalog. A
+	// style registered after that is missing from the catalog the
+	// runtime loads sheets from, so a soft navigation to its first
+	// page shows it unstyled.
+	frozen bool
 )
+
+// Freeze marks the component catalog as built. The host calls it when
+// it first marshals the catalog; from then on RegisterStyle refuses new
+// names (re-registering an identical entry stays a no-op).
+func Freeze() {
+	mu.Lock()
+	frozen = true
+	mu.Unlock()
+}
 
 // RegisterStyle registers a component's stylesheet builder under a
 // process-wide unique name and returns a handle. Identical
@@ -178,6 +192,9 @@ func RegisterStyle(name string, fn func(style.Theme) string, opts ...Option) *St
 			))
 		}
 		return &Style{e: existing}
+	}
+	if frozen {
+		panic(fmt.Sprintf("registry: style %q registered after the component catalog froze; register styles at package init", name))
 	}
 	entries[name] = e
 	return &Style{e: e}
@@ -223,6 +240,7 @@ func reset() {
 	defer mu.Unlock()
 	entries = map[string]*Entry{}
 	behaviors = map[string]*BehaviorEntry{}
+	frozen = false
 }
 
 // testCleanup is the subset of *testing.T that IsolateForTest needs.
@@ -266,8 +284,11 @@ func IsolateForTest(t testCleanup) {
 	saved := entries
 	savedBehaviors := behaviors
 	savedReserved := reservedBehaviorNames
+	savedFrozen := frozen
 	entries = map[string]*Entry{}
 	behaviors = map[string]*BehaviorEntry{}
+	// The isolated registry has no catalog yet, so it starts unfrozen.
+	frozen = false
 	// The reserved names go too, so a test can reach the merge-time
 	// refusal in core-ui/runtime that the reservation normally
 	// forestalls; a test that wants the registration-time refusal
@@ -279,6 +300,7 @@ func IsolateForTest(t testCleanup) {
 		entries = saved
 		behaviors = savedBehaviors
 		reservedBehaviorNames = savedReserved
+		frozen = savedFrozen
 		mu.Unlock()
 	})
 }

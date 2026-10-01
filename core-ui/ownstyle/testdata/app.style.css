@@ -1,0 +1,18 @@
+/* The tracker's own vocabulary. Owned by the app: these apply
+   on every page, inside every layout, screen and component. */
+/* Figures that line up in tables, stats and prices. */
+.figure { font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+/* One line, ellipsis: long issue titles in lists and crumbs. */
+.one-line { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-inline-size: 0; }
+/* The issue key everywhere it appears: BIL-42. */
+.issue-key { font: var(--text-xs)/1 var(--font-mono); color: var(--color-text-muted); }
+/* A section that scrolls on its own inside a fixed-height pane. */
+.pane-scroll { overflow-y: auto; overscroll-behavior: contain; min-block-size: 0; }
+/* Priority as text colour: in tables, the board, notifications. */
+.priority.level--urgent { color: var(--color-danger); }
+.priority.level--high   { color: var(--color-warning); }
+/* Stacks on phones, a row from md up: filter bars, form footers. */
+.split { display: flex; flex-direction: column; gap: var(--spacing-sm); }
+@media (--above-md) {
+  .split { flex-direction: row; align-items: center; justify-content: space-between; }
+}

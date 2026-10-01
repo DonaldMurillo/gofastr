@@ -114,8 +114,41 @@ func categoryPrefix(category string) string {
 		return "text"
 	case "code", "tk":
 		return "tk"
+	case "size", "sizes":
+		return "size"
+	case "font-weight", "fontweights", "weight":
+		return "font-weight"
 	}
 	return ""
+}
+
+// tokenCategories is every custom-property prefix a typed token emits,
+// one per token type. TokenCategory matches against it longest first.
+var tokenCategories = []string{
+	"color", "spacing", "radii", "font", "breakpoint", "shadow", "z",
+	"duration", "easing", "text", "tk", "size", "font-weight",
+}
+
+// TokenCategory returns the category of a token key, the prefix its
+// type emits: "font-weight" for "font-weight-bold", "font" for
+// "font-body", "size" for "size-page-width". The longest known prefix
+// wins, so a weight is never read as a font family. A key with no
+// known prefix falls back to the text before its first dash, or the
+// whole key when it has none.
+func TokenCategory(key string) string {
+	best := ""
+	for _, c := range tokenCategories {
+		if len(c) > len(best) && strings.HasPrefix(key, c+"-") {
+			best = c
+		}
+	}
+	if best != "" {
+		return best
+	}
+	if i := strings.Index(key, "-"); i >= 0 {
+		return key[:i]
+	}
+	return key
 }
 
 // ResolveColor returns `var(--color-<name>)` for a named color.
@@ -322,6 +355,12 @@ func walkTokens(v reflect.Value, out *[]tokenKV) {
 		}
 		v = v.Elem()
 	}
+	if v.Kind() == reflect.Slice {
+		for i := range v.Len() {
+			walkTokens(v.Index(i), out)
+		}
+		return
+	}
 	if v.Kind() != reflect.Struct {
 		return
 	}
@@ -398,6 +437,16 @@ func tokenPair(v reflect.Value) (key, value string, ok bool) {
 			return "", "", false
 		}
 		return "text-" + t.Name, t.Value, true
+	case Size:
+		if t.Name == "" {
+			return "", "", false
+		}
+		return "size-" + t.Name, t.Value, true
+	case FontWeight:
+		if t.Name == "" {
+			return "", "", false
+		}
+		return "font-weight-" + t.Name, fmt.Sprintf("%d", t.Value), true
 	case CodeColor:
 		// Optional token: emitted only when fully set (an unset slot
 		// leaves the component-CSS fallback palette in charge).

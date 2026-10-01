@@ -72,8 +72,17 @@ type Theme struct {
 	Durations   DurationSet
 	Easings     EasingSet
 	Typography  FontSizeSet
+	FontWeights FontWeightSet
 	Layout      LayoutSet
 	Code        CodeSet
+
+	// Extensions holds the app's own token sets, added with Extend:
+	// pointers to structs of typed tokens, each token emitting under its
+	// type's prefix like a built-in (a style.Size field is a --size-*
+	// variable). Set it through Extend, which copies its inputs, fills
+	// in names and refuses a key another token already emits; Validate
+	// refuses a duplicate key however the slice was built.
+	Extensions []any
 }
 
 // ColorSet is the canonical palette. Every theme must declare every
@@ -178,14 +187,30 @@ type CodeSet struct {
 	KW, FN, Str, Num, Com, Type, PN CodeColor
 }
 
-// LayoutSet: interaction-affordance dimensions. TouchTarget is
-// the WCAG 2.5.5 minimum tap target (default 44px); pagination,
-// inputs and the mobile hamburger summary reference
+// FontWeightSet: the weights a design uses, by role.
+type FontWeightSet struct {
+	Normal, Medium, Semibold, Bold FontWeight
+}
+
+// LayoutSet: the dimensions a page is built around.
+//
+// TouchTarget is the WCAG 2.5.5 minimum tap target (default 44px);
+// pagination, inputs and the mobile hamburger summary reference
 // var(--spacing-touch-target) directly, while comfortable-density
 // controls reach it through the --fui-density-control-h option
 // variable (which the framework/ui compiler draws from this token).
+//
+// PageWidth is the page column a site's header, main and footer share
+// (ui.Container's page width); PageGutter is the side space outside it.
+// HeaderHeight is the top bar's height, which a viewport-filling row
+// subtracts. NarrowWidth, ContentWidth and WideWidth are ui.Container's
+// narrow, default and wide caps.
 type LayoutSet struct {
 	TouchTarget Spacing
+
+	PageWidth, PageGutter, HeaderHeight Size
+
+	NarrowWidth, ContentWidth, WideWidth Size
 }
 
 // AutoFillNames walks every typed token field of t and, for any
@@ -212,6 +237,20 @@ func AutoFillNames(t *Theme) {
 // path[len-1] is the immediate field name (e.g. "Primary"); the
 // kebab-case of that is the canonical CSS variable suffix.
 func autofillTokens(v reflect.Value, path []string) {
+	for v.Kind() == reflect.Pointer || v.Kind() == reflect.Interface {
+		if v.IsNil() {
+			return
+		}
+		v = v.Elem()
+	}
+	if v.Kind() == reflect.Slice {
+		// Extensions: each entry is its own token set, named from its
+		// own fields, so the slice's field name is not passed down.
+		for i := range v.Len() {
+			autofillTokens(v.Index(i), nil)
+		}
+		return
+	}
 	if v.Kind() != reflect.Struct {
 		return
 	}
@@ -232,7 +271,8 @@ func autofillTokens(v reflect.Value, path []string) {
 		reflect.TypeFor[Radius](), reflect.TypeFor[Font](),
 		reflect.TypeFor[Breakpoint](), reflect.TypeFor[Shadow](),
 		reflect.TypeFor[ZIndexValue](), reflect.TypeFor[Duration](),
-		reflect.TypeFor[Easing](), reflect.TypeFor[FontSize]():
+		reflect.TypeFor[Easing](), reflect.TypeFor[FontSize](),
+		reflect.TypeFor[Size](), reflect.TypeFor[FontWeight]():
 		nameField := v.FieldByName("Name")
 		if !nameField.IsValid() || nameField.String() != "" {
 			return
@@ -301,6 +341,9 @@ func camelToKebab(s string) string {
 // bad theme fails at boot, not at first request.
 func (t Theme) Validate() error {
 	if err := validateTokens(reflect.ValueOf(t), "Theme"); err != nil {
+		return err
+	}
+	if err := duplicateTokenKey(t); err != nil {
 		return err
 	}
 	if err := validateComponents(t.Components); err != nil {
@@ -387,6 +430,14 @@ func validateTokens(v reflect.Value, path string) error {
 			return nil
 		}
 		v = v.Elem()
+	}
+	if v.Kind() == reflect.Slice {
+		for i := range v.Len() {
+			if err := validateTokens(v.Index(i), extensionPath(v.Index(i))); err != nil {
+				return err
+			}
+		}
+		return nil
 	}
 	if v.Kind() != reflect.Struct {
 		return nil
@@ -478,6 +529,22 @@ func validateTokens(v reflect.Value, path string) error {
 		}
 		if tk.Value == "" {
 			return fmt.Errorf("%s: FontSize.Value is empty (Name=%q)", path, tk.Name)
+		}
+		return nil
+	case Size:
+		if tk.Name == "" {
+			return fmt.Errorf("%s: Size.Name is empty", path)
+		}
+		if err := validateSizeValue(tk.Value); err != nil {
+			return fmt.Errorf("%s: Size.Value (Name=%q): %w", path, tk.Name, err)
+		}
+		return nil
+	case FontWeight:
+		if tk.Name == "" {
+			return fmt.Errorf("%s: FontWeight.Name is empty", path)
+		}
+		if err := validateFontWeight(tk.Value); err != nil {
+			return fmt.Errorf("%s: FontWeight.Value (Name=%q): %w", path, tk.Name, err)
 		}
 		return nil
 	case CodeColor:
@@ -625,8 +692,20 @@ func DefaultTheme() Theme {
 			XXL:  FontSize{Name: "2xl", Value: "1.5rem"},
 			XXXL: FontSize{Name: "3xl", Value: "1.875rem"},
 		},
+		FontWeights: FontWeightSet{
+			Normal:   FontWeight{Name: "normal", Value: 400},
+			Medium:   FontWeight{Name: "medium", Value: 500},
+			Semibold: FontWeight{Name: "semibold", Value: 600},
+			Bold:     FontWeight{Name: "bold", Value: 700},
+		},
 		Layout: LayoutSet{
-			TouchTarget: Spacing{Name: "touch-target", Value: 44},
+			TouchTarget:  Spacing{Name: "touch-target", Value: 44},
+			PageWidth:    Size{Name: "page-width", Value: "66rem"},
+			PageGutter:   Size{Name: "page-gutter", Value: "clamp(20px, 5vw, 32px)"},
+			HeaderHeight: Size{Name: "header-height", Value: "56px"},
+			NarrowWidth:  Size{Name: "narrow-width", Value: "640px"},
+			ContentWidth: Size{Name: "content-width", Value: "1080px"},
+			WideWidth:    Size{Name: "wide-width", Value: "1280px"},
 		},
 		// Syntax-highlight palette (--tk-*). These are the values the
 		// ui.CodeBlock CSS previously carried only as var() fallbacks,

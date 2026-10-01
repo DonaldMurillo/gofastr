@@ -3,6 +3,7 @@ package analyzers
 import (
 	"fmt"
 	"math"
+	"path"
 	"regexp"
 	"slices"
 	"strconv"
@@ -13,6 +14,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/contracts"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/check"
+	"github.com/DonaldMurillo/gofastr/core-ui/ownstyle"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 )
 
@@ -29,6 +31,20 @@ func init() {
 			contracts.RuleUnknownThemeToken,
 			contracts.RuleHardcodedTokenValue,
 			contracts.RuleFallbackDrift,
+			contracts.RuleOwnerlessStylesheet,
+			contracts.RuleKitClassSelector,
+			contracts.RuleImportant,
+			contracts.RuleRawMediaWidth,
+			contracts.RuleAnimationNoReduced,
+			contracts.RuleStaleStyleSource,
+			contracts.RuleUpstreamCandidate,
+			contracts.RuleDuplicateStyleName,
+			contracts.RuleKitRootStyle,
+			contracts.RuleOwnedHandleLeak,
+			contracts.RuleAppSheetSelector,
+			contracts.RuleTokenCustomProperty,
+			contracts.RuleDuplicateTokenValue,
+			contracts.RuleRepeatedLiteral,
 		},
 		Run: runRendering,
 	})
@@ -271,9 +287,161 @@ func runRendering(p *contracts.Pass) ([]contracts.Diagnostic, error) {
 			}
 		}
 	}
+	// GOFASTR1809: a stylesheet file with no owner. This loop was
+	// GOFASTR1801's stylesheet arm; a stylesheet FILE is now reported
+	// under 1809 and never under 1801, so one file never carries both.
+	// The skips are the ones 1801 had (the design-system trees, testdata,
+	// sheets that only assign custom properties) plus every *.style.css,
+	// which is an owned style and never ownerless.
+	for _, f := range p.StyleFiles() {
+		if hasPrefixAny(f.Rel, designSystemPrefixes) || slices.Contains(strings.Split(f.Rel, "/"), "testdata") ||
+			strings.HasSuffix(f.Rel, ".style.css") || strings.HasSuffix(f.Rel, ".tokens.css") {
+			continue
+		}
+		body, ok := p.Source(f.Rel)
+		if !ok {
+			continue
+		}
+		clean := blankCSSCommentsAndStrings(string(body))
+		if stylesheetOnlyCustomProperties(clean) {
+			continue
+		}
+		// Keep the finding at the first rule, even when the first ordinary
+		// declaration comes later, so a leading allow covers the sheet.
+		for i, line := range strings.Split(clean, "\n") {
+			if strings.TrimSpace(line) == "" {
+				continue
+			}
+			out = append(out, contracts.Diagnostic{
+				RuleID: contracts.RuleOwnerlessStylesheet, File: f.Rel, Line: i + 1,
+				Message: fmt.Sprintf("%s has no owner; rename it to <name>.style.css beside the layout, screen or component it styles (app.style.css for page-wide classes) and run gofastr gen styles",
+					path.Base(f.Rel)),
+			})
+			break
+		}
+	}
+	out = append(out, checkStyleGenFreshness(p)...)
+	out = append(out, checkOwnedStyles(p)...)
 	out = append(out, checkInlineScripts(p)...)
 	out = append(out, checkStyleTokens(p)...)
 	return out, nil
+}
+
+// checkStyleGenFreshness reports GOFASTR1814: every *.style.css must
+// carry its generated sibling <name>_style.gen.go, and the sibling's
+// `// Source hash: sha256:<hex>` line must match the CSS bytes. The
+// generated file is the only link between the hand-written sheet and
+// the typed class vocabulary the app calls; a stale pair silently
+// serves the old CSS under the new names.
+//
+// testdata trees are skipped, the same convention GOFASTR1809's
+// stylesheet loop uses: they hold parser fixtures, not shipped
+// packages, and the generator itself refuses them (no Go package).
+func checkStyleGenFreshness(p *contracts.Pass) []contracts.Diagnostic {
+	var out []contracts.Diagnostic
+	for _, f := range p.StyleFiles() {
+		base := path.Base(f.Rel)
+		if slices.Contains(strings.Split(f.Rel, "/"), "testdata") {
+			continue
+		}
+		var genName string
+		switch {
+		case strings.HasSuffix(base, ".style.css"):
+			genName = ownstyle.GeneratedFileName(strings.TrimSuffix(base, ".style.css"))
+		case strings.HasSuffix(base, ".tokens.css"):
+			genName = ownstyle.GeneratedTokensFileName(strings.TrimSuffix(base, ".tokens.css"))
+		default:
+			continue
+		}
+		css, ok := p.Source(f.Rel)
+		if !ok {
+			continue
+		}
+		genRel := path.Join(path.Dir(f.Rel), genName)
+		gen, hasGen := p.Source(genRel)
+		if !hasGen {
+			out = append(out, contracts.Diagnostic{
+				RuleID: contracts.RuleStaleStyleSource,
+				File:   f.Rel,
+				Line:   1,
+				Message: fmt.Sprintf("%s has no generated sibling %s; run gofastr gen styles",
+					base, genName),
+			})
+			continue
+		}
+		if got, hasHash := generatedSourceHash(gen); !hasHash || got != ownstyle.SourceHash(string(css)) {
+			out = append(out, contracts.Diagnostic{
+				RuleID: contracts.RuleStaleStyleSource,
+				File:   f.Rel,
+				Line:   1,
+				Message: fmt.Sprintf("%s changed since its Go was generated; run gofastr gen styles",
+					base),
+			})
+		}
+	}
+	return out
+}
+
+// generatedSourceHash reads the `// Source hash: sha256:<hex>` line
+// from a generated file's bytes.
+func generatedSourceHash(gen []byte) (hash string, ok bool) {
+	for _, line := range strings.Split(string(gen), "\n") {
+		if rest, isHash := strings.CutPrefix(strings.TrimSpace(line), ownstyle.SourceHashHeader); isHash {
+			return strings.TrimSpace(rest), true
+		}
+	}
+	return "", false
+}
+
+// stylesheetOnlyCustomProperties classifies CSS, not Go: display: flex is
+// a declaration here even though the Go-string heuristic cannot distinguish
+// it from a struct literal. Selectors and grouping rules do not style anything
+// themselves; every declaration must assign a custom property to stay quiet.
+// Comments and strings have already been blanked. Balanced function arguments
+// and custom-property blocks keep value punctuation out of the statement scan.
+func stylesheetOnlyCustomProperties(clean string) bool {
+	start, parens, brackets, valueBraces := 0, 0, 0, 0
+	custom := false
+	for i := range len(clean) {
+		c := clean[i]
+		switch c {
+		case '(':
+			parens++
+		case ')':
+			parens--
+		case '[':
+			brackets++
+		case ']':
+			brackets--
+		}
+		if parens != 0 || brackets != 0 {
+			continue
+		}
+		switch c {
+		case ':':
+			if strings.HasPrefix(strings.TrimSpace(clean[start:i]), "--") {
+				custom = true
+			}
+		case '{':
+			if custom {
+				valueBraces++
+			} else {
+				start = i + 1
+			}
+		case ';', '}':
+			if valueBraces > 0 {
+				if c == '}' {
+					valueBraces--
+				}
+				continue
+			}
+			if strings.TrimSpace(clean[start:i]) != "" && !custom {
+				return false
+			}
+			start, custom = i+1, false
+		}
+	}
+	return strings.TrimSpace(clean[start:]) == ""
 }
 
 // checkStyleTokens reports var(--name) references in project
@@ -323,6 +491,11 @@ func checkStyleTokens(p *contracts.Pass) []contracts.Diagnostic {
 
 	var out []contracts.Diagnostic
 	for _, f := range files {
+		// An owned style's 1806 comes from ownstyle.Check, the check gen
+		// styles runs; reporting it here too would double every finding.
+		if isOwnedStylePath(f.Rel) {
+			continue
+		}
 		clean := cleaned[f.Rel]
 		for _, loc := range reVarRef.FindAllStringSubmatchIndex(clean, -1) {
 			name := clean[loc[2]:loc[3]]
@@ -559,25 +732,10 @@ func closestToken(name string, names []string) (string, bool) {
 // lowercase only: CSS is written lowercase and Go fields are
 // capitalised, and folding case is what let `Colors.Background:`
 // composite literals read as stylesheets in GOFASTR1801's first draft.
-var propTokenCategories = map[string][]string{
-	"font-size":     {"text"},
-	"border-radius": {"radii"},
-	"padding":       {"spacing"}, "padding-top": {"spacing"}, "padding-bottom": {"spacing"},
-	"padding-left": {"spacing"}, "padding-right": {"spacing"},
-	"margin": {"spacing"}, "margin-top": {"spacing"}, "margin-bottom": {"spacing"},
-	"margin-left": {"spacing"}, "margin-right": {"spacing"},
-	"gap": {"spacing"}, "row-gap": {"spacing"}, "column-gap": {"spacing"},
-	"color": {"color", "tk"}, "background": {"color", "tk"}, "background-color": {"color", "tk"},
-	"border-color": {"color", "tk"}, "outline-color": {"color", "tk"},
-	"fill": {"color", "tk"}, "stroke": {"color", "tk"},
-	"box-shadow":  {"shadow"},
-	"font-family": {"font"},
-	"transition":  {"duration", "easing"}, "transition-duration": {"duration"},
-	"transition-timing-function": {"easing"},
-	"animation":                  {"duration", "easing"}, "animation-duration": {"duration"},
-	"animation-timing-function": {"easing"},
-	"z-index":                   {"z"},
-}
+//
+// The table itself is ownstyle.PropTokenCategories, the one owned sheets
+// are judged by, so the two pipelines cannot drift.
+var propTokenCategories = ownstyle.PropTokenCategories
 
 // tokenPropAlternation is the property list as a regex alternation,
 // sorted so the compiled pattern is byte-stable.
@@ -658,14 +816,9 @@ func bareKeyword(v string) bool {
 	return true
 }
 
-// tokenCategory returns the category prefix of a token key ("z" of
-// "z-dropdown"), or the whole key when it carries no dash.
-func tokenCategory(key string) string {
-	if i := strings.Index(key, "-"); i >= 0 {
-		return key[:i]
-	}
-	return key
-}
+// tokenCategory is style.TokenCategory: the longest token-type prefix
+// of a key, so font-weight-bold is a weight and never a font family.
+func tokenCategory(key string) string { return style.TokenCategory(key) }
 
 // checkHardcodedTokenValues reports one GOFASTR1807 per declaration on a
 // design-system line whose FULL value is exactly a theme token's value.

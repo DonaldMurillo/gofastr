@@ -150,6 +150,20 @@ const (
 	RuleUnknownThemeToken   = "GOFASTR1806" // not-a-secret: a rule id, flagged only because the name ends in "Token"
 	RuleHardcodedTokenValue = "GOFASTR1807"
 	RuleFallbackDrift       = "GOFASTR1808"
+	RuleOwnerlessStylesheet = "GOFASTR1809"
+	RuleKitClassSelector    = "GOFASTR1810"
+	RuleImportant           = "GOFASTR1811"
+	RuleRawMediaWidth       = "GOFASTR1812"
+	RuleAnimationNoReduced  = "GOFASTR1813"
+	RuleStaleStyleSource    = "GOFASTR1814"
+	RuleUpstreamCandidate   = "GOFASTR1815"
+	RuleDuplicateStyleName  = "GOFASTR1816"
+	RuleKitRootStyle        = "GOFASTR1817"
+	RuleOwnedHandleLeak     = "GOFASTR1818"
+	RuleAppSheetSelector    = "GOFASTR1819"
+	RuleTokenCustomProperty = "GOFASTR1820"
+	RuleDuplicateTokenValue = "GOFASTR1821"
+	RuleRepeatedLiteral     = "GOFASTR1822"
 )
 
 // Permission rules.
@@ -901,13 +915,15 @@ func renderingRules() []Rule {
 	return []Rule{{
 		ID: RuleBespokeCSS, Slug: "rendering/bespoke-css",
 		Title: "CSS outside the design system", Capability: CapRendering, Severity: SeverityError,
-		Summary: "An app or generator ships its own CSS rules: CSS declarations in strings, not Go assigning token values.",
+		Summary: "An app or generator ships its own CSS rules in Go strings or a stylesheet.",
 		Why: "Two styling surfaces means every future change has to be made twice and stays consistent " +
 			"by luck. Bespoke CSS also loads in an order you do not control relative to component CSS, " +
 			"so it wins or loses by specificity accident rather than by intent. The rule matches CSS " +
 			"declarations, a property-colon-value shape in a string; a Go assignment of a design-system " +
-			"token reference to a variable, `fill := \"var(--color-surface)\"`, is not one and does not fire.",
-		Fix: "Compose `framework/ui` components and `core-ui/style` tokens. If the design system genuinely lacks what you need, add the component or token upstream and use it here. That is the fix, not a local rule.",
+			"token reference to a variable, `fill := \"var(--color-surface)\"`, is not one and does not fire. " +
+			"A stylesheet FILE is never this rule's finding: a .css file with no owner is GOFASTR1809, and a *.style.css is an owned style, " +
+			"checked by GOFASTR1806–1820. When both rules would describe one stylesheet, 1809 is the one reported.",
+		Fix: "Compose `framework/ui` components and `core-ui/style` tokens. Add missing components or tokens upstream. CSS the kit does not cover gets an owner: a <name>.style.css file beside the layout, screen or component (`gofastr gen styles` generates its typed Go).",
 		Doc: "ui-getting-started",
 		Examples: []Example{{
 			Bad:  "const baseCSS = `.my-card { padding: 16px; border-radius: 8px; }`",
@@ -958,13 +974,13 @@ func renderingRules() []Rule {
 	}, {
 		ID: RuleUnknownThemeToken, Slug: "rendering/unknown-theme-token",
 		Title: "var() references a token the theme does not emit", Capability: CapRendering, Severity: SeverityError,
-		Summary: "Project CSS reads `var(--name)` where `name` is not a theme token.",
+		Summary: "Project CSS reads `var(--name)` where `name` is not a theme token: neither built in nor declared in one of the app's <name>.tokens.css files.",
 		Why: "An invalid var() is not a CSS error: it resolves to nothing and the declaration is " +
 			"silently dropped, so a typo is invisible to the build, the browser console, and every " +
 			"linter, and the only symptom is the styling not applying. Issue #214's reporter wrote " +
 			"`--radius-lg` where the theme emits `--radii-lg`, and every rounded corner on the site " +
 			"rendered square for days.",
-		Fix: "Spell the token the theme emits (see `style.TokenNames()` or `gofastr docs theming`), declare the custom property in your own stylesheet if it is yours, or add a fallback: `var(--x, 8px)` degrades instead of dropping the declaration.",
+		Fix: "Spell the token the theme emits (see `style.TokenNames()` or `gofastr docs theming`). A value of the app's own is a token: declare it with @property in a <name>.tokens.css and run `gofastr gen styles`. In an owned style (*.style.css) a fallback does not waive the rule, since `var(--typo, 8px)` paints the fallback forever; a name set from outside the app (an embedding page) takes `/* gofastr:allow(GOFASTR1806) <reason> */` on the line above.",
 		Doc: "theming",
 		Examples: []Example{{
 			Bad:  "border-radius: var(--radius-lg);",
@@ -973,7 +989,7 @@ func renderingRules() []Rule {
 	}, {
 		ID: RuleHardcodedTokenValue, Slug: "rendering/hardcoded-token-value",
 		Title: "CSS hardcodes a value the theme declares as a token", Capability: CapRendering, Severity: SeverityError,
-		Summary: "Design-system CSS sets a property to a literal that is exactly a theme token's value.",
+		Summary: "Design-system CSS or an owned style (*.style.css) sets a property to a literal that is exactly a theme token's value, built in or declared in a <name>.tokens.css.",
 		Why: "The design system's promise is that one token swap re-skins every surface. A literal copy of " +
 			"a token's value silently opts out: re-theming --text-xs or --radii-sm leaves the rule behind, " +
 			"and nothing shows the drift, because the rendered pixels are identical until the day someone " +
@@ -988,7 +1004,7 @@ func renderingRules() []Rule {
 	}, {
 		ID: RuleFallbackDrift, Slug: "rendering/fallback-drift",
 		Title: "var() fallback disagrees with the token it stands in for", Capability: CapRendering, Severity: SeverityError,
-		Summary: "Design-system CSS writes `var(--spacing-md, 12px)` where the theme declares --spacing-md as 8px.",
+		Summary: "Design-system CSS or an owned style (*.style.css) writes `var(--spacing-md, 12px)` where the theme declares --spacing-md as 8px.",
 		Why: "A themed page resolves the variable, so the fallback never renders there; it only shows on a page " +
 			"with no theme CSS. But the number is what the next reader learns the token means. Issue #365 " +
 			"found about 450 such fallbacks teaching a 4/8/16/24/32 spacing ladder the theme does not " +
@@ -1002,6 +1018,217 @@ func renderingRules() []Rule {
 		Examples: []Example{{
 			Bad:  "padding: var(--spacing-md, 12px);",
 			Good: "padding: var(--spacing-md, 8px);",
+		}},
+	}, {
+		ID: RuleOwnerlessStylesheet, Slug: "rendering/ownerless-stylesheet",
+		Title: "Stylesheet with no owner", Capability: CapRendering, Severity: SeverityError,
+		Summary: "A .css file in an app tree is not a <name>.style.css, so no layout, screen, component or the app owns it.",
+		Why: "A loose stylesheet is unscoped and unchecked: its rules reach every page, it loads in an order nothing controls " +
+			"relative to component CSS, and none of the owned-style checks (theme tokens, kit classes, !important, breakpoints) " +
+			"run on it. An owned style compiles into an @scope bound to its owner's root, so its rules stop at that element and " +
+			"its class names are typed Go. This rule replaces GOFASTR1801 for stylesheet files: a .css file is reported under " +
+			"1809, never under 1801 as well. Skipped: *.style.css files, sheets whose declarations only assign custom properties " +
+			"(theme knobs such as --ui-*), files under testdata/, and the design-system trees.",
+		Fix: "Rename the file to <name>.style.css beside the layout, screen or component that owns it (app.style.css for page-wide " +
+			"classes), run `gofastr gen styles`, and attach the handle: LayoutSpec{Style: x.Style}, Screen.WithStyle(x.Style), " +
+			"x.Style.Scope(root) or App.WithStyle(appstyle.Style). A frontend that does not use GoFastr UI can state the exception " +
+			"in a CSS comment before the first rule, /* gofastr:allow(GOFASTR1809) <why> */, or with allow-file.",
+		Doc: "contracts",
+		Examples: []Example{{
+			Bad:  "/* static/board.css */\n.column { display: grid; gap: var(--spacing-sm); }",
+			Good: "/* board/board.style.css, attached with Screen.WithStyle(board.Style) */\n.column { display: grid; gap: var(--spacing-sm); }",
+		}},
+	}, {
+		ID: RuleKitClassSelector, Slug: "rendering/kit-class-selector",
+		Title: "Owned style selects a kit class or runtime attribute", Capability: CapRendering, Severity: SeverityError,
+		Summary: "A selector in a *.style.css names a kit class (.fui-*) or a [data-fui-*] attribute.",
+		Why: "Kit classes and data-fui-* attributes belong to the kit and the runtime. They change without notice, and an owner " +
+			"that selects them restyles the inside of a component it does not maintain. The compiled @scope already stops at kit " +
+			"internals ([data-fui-internal]), so such a selector either matches nothing or reaches past the boundary on the kit " +
+			"root, and either way the next kit release breaks it silently.",
+		Fix: "Style the content you pass into the component's slots, use the component's config, or add the option upstream in framework/ui.",
+		Doc: "contracts",
+		Examples: []Example{{
+			Bad:  ".column .fui-card-header { color: var(--color-primary); }",
+			Good: ".column-title { color: var(--color-primary); } /* on the heading passed into the card's slot */",
+		}},
+	}, {
+		ID: RuleImportant, Slug: "rendering/important",
+		Title: "!important in an owned style", Capability: CapRendering, Severity: SeverityError,
+		Summary: "A declaration in a *.style.css carries !important.",
+		Why: "Owned rules already win ties against kit rules by scope proximity (CSS Cascade 6 compares it before order of " +
+			"appearance), so !important is never needed to beat the kit. What it does beat is every later fix: a theme change, " +
+			"a component variant, a responsive override, and another owner's rule nested inside this one.",
+		Fix: "Delete it. If the rule still loses, raise the specificity inside your own scope, or give the component the option upstream.",
+		Doc: "contracts",
+		Examples: []Example{{
+			Bad:  ".key { color: var(--color-text-muted) !important; }",
+			Good: ".key { color: var(--color-text-muted); }",
+		}},
+	}, {
+		ID: RuleRawMediaWidth, Slug: "rendering/raw-media-width",
+		Title: "@media width that is not a theme breakpoint", Capability: CapRendering, Severity: SeverityError,
+		Summary: "An @media query in a *.style.css tests min-width, max-width or width against a raw length instead of a custom media name.",
+		Why: "Breakpoints are theme tokens. A raw 768px drifts from the theme the day the breakpoint moves, and two sheets " +
+			"writing 767px and 768px disagree about which layout a window between them gets. var() is invalid in a media query, " +
+			"so the owned-style compiler expands custom media names (--above-md, --below-lg) against the running theme's " +
+			"breakpoints instead. Raw widths stay legal in @container, which measures a container, not the viewport.",
+		Fix: "Write @media (--above-md) or (--below-lg); combine a custom medium with other features using `and`, e.g. (--above-md) and (hover: hover).",
+		Doc: "contracts",
+		Examples: []Example{{
+			Bad:  "@media (min-width: 768px) { .board { grid-template-columns: 1fr 1fr; } }",
+			Good: "@media (--above-md) { .board { grid-template-columns: 1fr 1fr; } }",
+		}},
+	}, {
+		ID: RuleAnimationNoReduced, Slug: "rendering/animation-without-reduced-motion",
+		Title: "Animation with no reduced-motion block", Capability: CapRendering, Severity: SeverityWarn,
+		Summary: "A rule in a *.style.css sets animation or animation-name, and no @media (--reduced-motion) block holds a rule for the same selector.",
+		Why: "Motion can trigger nausea and vestibular symptoms, and WCAG 2.3.3 asks that non-essential animation can be turned " +
+			"off. The owned-style compiler expands (--reduced-motion) to prefers-reduced-motion: reduce; the check looks for a " +
+			"rule with the same selector inside such a block. It is a warning because some animation is essential (a progress " +
+			"indicator), which the check cannot tell.",
+		Fix: "Add @media (--reduced-motion) { <the same selector> { animation: none; } }, or a slower, non-moving alternative.",
+		Doc: "accessibility",
+		Examples: []Example{{
+			Bad:  ".pulse { animation: pulse 1s infinite; }",
+			Good: ".pulse { animation: pulse 1s infinite; }\n@media (--reduced-motion) { .pulse { animation: none; } }",
+		}},
+	}, {
+		ID: RuleStaleStyleSource, Slug: "rendering/stale-style-source",
+		Title: "Owned style CSS changed since its Go was generated", Capability: CapRendering, Severity: SeverityError,
+		Summary: "A *.style.css has no sibling <name>_style.gen.go (a *.tokens.css no <name>_tokens.gen.go), or the sibling's Source hash does not match the CSS bytes.",
+		Why: "The generated file is the only thing connecting a hand-written stylesheet to the type-checked class vocabulary: " +
+			"the CSS constant, the ownstyle.Must registration and every class method are frozen at generate time. Edit the " +
+			"CSS without regenerating and the Go silently serves the OLD bytes — the class methods keep naming classes the " +
+			"sheet no longer declares, and the scope still loads the stale CSS. Nothing else can see the drift: the CSS is " +
+			"valid CSS and the Go is valid Go.",
+		Fix: "Run `gofastr gen styles` (regenerates every <name>_style.gen.go and <name>_tokens.gen.go whose CSS changed, and writes .gofastr/tokens.css for editor completion). Never hand-edit a generated file.",
+		Doc: "cli",
+		Examples: []Example{{
+			Bad:  "/* board.style.css */\n:scope { display: grid; }\n/* edited after board_style.gen.go was generated;\n   its Source hash line no longer matches these bytes */",
+			Good: "gofastr gen styles   # rewrites board_style.gen.go with the current Source hash",
+		}},
+	}, {
+		ID: RuleUpstreamCandidate, Slug: "rendering/upstream-candidate",
+		Title: "Owned style listed as an upstream candidate", Capability: CapRendering, Severity: SeverityInfo,
+		Summary: "Every *.style.css is listed with its owner name and the number of classes it declares.",
+		Why: "An owned style is CSS the kit does not cover. Some of it is specific to one page; some of it is a component or an " +
+			"option every app will want. Listing each sheet on every run keeps that decision in view instead of letting owned " +
+			"sheets pile up unreviewed: a sheet whose classes read like a card variant or a layout primitive belongs in " +
+			"framework/ui, where every app inherits it.",
+		Fix: "Nothing, when the style is specific to this app. When it is not, add the component, option or token upstream " +
+			"(framework/ui, core-ui/style) and delete the sheet.",
+		Doc: "contracts",
+		Examples: []Example{{
+			Bad:  "/* board.style.css: a stack with a gap, which the kit already has */\n.lane { display: flex; flex-direction: column; gap: var(--spacing-sm); }",
+			Good: "ui.Stack(ui.StackConfig{Gap: ui.GapSM}, cards...)",
+		}},
+	}, {
+		ID: RuleDuplicateStyleName, Slug: "rendering/duplicate-style-name",
+		Title: "Two owned styles share a name", Capability: CapRendering, Severity: SeverityError,
+		Summary: "Two *.style.css files with the same file stem sit in one program: a main package plus the packages it imports. " +
+			"Style files no program reaches (library packages meant to be composed into one app) form one program together.",
+		Why: "The owner name is the file stem, and it is the registry key, the /__gofastr/comp/<name>.css URL and the " +
+			"data-fui-scope value. Two sheets with one name cannot both register: the second ownstyle.Must panics at init, so " +
+			"the program does not start. `gofastr gen styles` refuses both files for the same reason. Sheets are checked per " +
+			"program, so two binaries that each carry their own copy of a siteheader package do not collide; a name shared " +
+			"only by sheets no one build links together is not a duplicate.",
+		Fix: "Rename one of the files (board-card.style.css, review-card.style.css) and run `gofastr gen styles`.",
+		Doc: "contracts",
+		Examples: []Example{{
+			Bad:  "board/card.style.css\nreview/card.style.css",
+			Good: "board/board-card.style.css\nreview/review-card.style.css",
+		}},
+	}, {
+		ID: RuleKitRootStyle, Slug: "rendering/kit-root-restyled",
+		Title: "Owned style restyles a kit component's root", Capability: CapRendering, Severity: SeverityError,
+		Summary: "A class passed to a framework/ui component's Class field, or the :scope of a sheet scoped onto a ui.X(…) root, has a rule setting a property that is not a placement property.",
+		Why: "Kit roots stay in reach of an owned style so an owner can place them. Placement is all an owner may do there: " +
+			"a colour, padding, border or custom property on the root restyles the component, and the next kit release that " +
+			"changes its internals breaks the override with no compile error. The rule reads the Go to learn which class lands " +
+			"on a kit root (a Class field in a ui.XConfig literal holding a handle method call such as Style.Column() or " +
+			"Style.ColumnWith(…), or Style.Scope(ui.X(…)) for the sheet's :scope), then checks that class's rules in the " +
+			"sheet. The handle must be named directly (Style, <Owner>Style, or pkg.Style); a handle copied into a local " +
+			"variable first is not traced.",
+		Fix: "Keep only placement properties on the root: grid-area, grid-column*, grid-row*, margin*, align-self, justify-self, " +
+			"place-self, order, flex, flex-grow, flex-shrink, flex-basis, width, height, inline-size, block-size and their " +
+			"min-/max- forms, display, position, inset*, top, right, bottom, left, z-index, visibility. Put the rest on the " +
+			"content you pass into the component's slots, use the component's config, or add the option upstream.",
+		Doc: "contracts",
+		Examples: []Example{{
+			Bad:  "/* board.style.css */ .column { grid-column: span 2; padding: var(--spacing-md); }\n// view.go\nui.Card(ui.CardConfig{Class: board.Style.Column()})",
+			Good: "/* board.style.css */ .column { grid-column: span 2; }\n// view.go\nui.Card(ui.CardConfig{Class: board.Style.Column(), Padding: style.SpaceMD})",
+		}},
+	}, {
+		ID: RuleOwnedHandleLeak, Slug: "rendering/owned-style-outside-owner",
+		Title: "Screen or layout style used outside its owner's package", Capability: CapRendering, Severity: SeverityError,
+		Summary: "A style handle attached with LayoutSpec.Style or Screen.WithStyle is used (its class methods called) in a package that is neither the handle's own nor the one that attaches it.",
+		Why: "A layout's or screen's style compiles into an @scope bound to that owner's root, so its class names mean something " +
+			"only inside that element. Called from another package (a shared component, another screen), a method returns a " +
+			"class that matches nothing when the markup renders outside the owner, or matches by accident when it happens to " +
+			"land inside, so the styling depends on where the caller is rendered today. The handle must be named directly " +
+			"(Style, <Owner>Style, or pkg.Style) for the rule to see it; a handle copied into a variable is not traced.",
+		Fix: "Keep a screen's or layout's classes in the style's own package (where its .style.css sits) or the one that attaches it. Markup another package renders is a " +
+			"component: give it its own <name>.style.css and scope its root with Style.Scope.",
+		Doc: "layouts",
+		Examples: []Example{{
+			Bad:  "// package widgets; board.Style is attached by Screen.WithStyle in package board\nfunc lane() string { return board.Style.Column() }",
+			Good: "// package widgets, with its own widgets/lane.style.css\nfunc lane(content render.HTML) render.HTML { return Style.Scope(content) }",
+		}},
+	}, {
+		ID: RuleAppSheetSelector, Slug: "rendering/app-sheet-non-class",
+		Title: "App sheet selects something other than a class", Capability: CapRendering, Severity: SeverityError,
+		Summary: "app.style.css has a selector whose subject is not a class, or declares a custom property.",
+		Why: "app.style.css covers every page. An element or attribute subject there (h2, a, [type=text]) restyles every " +
+			"instance on every page, the kit's own markup included: page-wide element defaults, which are the theme's job, where " +
+			"one token change reaches everything. A custom property declared by the app sheet is a new token that bypasses the " +
+			"theme, so a theme swap cannot reach it.",
+		Fix: "Select classes only (.lede, .figure) and apply them where you want them. Element defaults belong in the theme; a new value is a new theme token.",
+		Doc: "theming",
+		Examples: []Example{{
+			Bad:  "/* app.style.css */\nh2 { letter-spacing: -0.01em; }",
+			Good: "/* app.style.css */\n.section-title { letter-spacing: -0.01em; }",
+		}},
+	}, {
+		ID: RuleTokenCustomProperty, Slug: "rendering/theme-token-redeclared",
+		Title: "Owned style redeclares a theme token", Capability: CapRendering, Severity: SeverityError,
+		Summary: "A *.style.css declares a custom property whose name is a theme token (--color-primary, --spacing-md, …).",
+		Why: "Theme tokens are what a theme swap changes. An owned sheet declaring --color-primary forks the token for " +
+			"everything under its root: dark mode, a tenant theme and the next rebrand stop reaching that subtree, and every " +
+			"var(--color-primary) read inside it looks like a theme read while it is not one.",
+		Fix: "Declare a name of your own for a value that is yours (--board-lane-width) and read theme tokens directly where you need them. If the value should change with the theme, add a theme token.",
+		Doc: "theming",
+		Examples: []Example{{
+			Bad:  ":scope { --color-primary: #0F766E; }",
+			Good: ":scope { --board-accent: var(--color-primary); }",
+		}},
+	}, {
+		ID: RuleDuplicateTokenValue, Slug: "rendering/duplicate-token-value",
+		Title: "App token repeats another token's value", Capability: CapRendering, Severity: SeverityError,
+		Summary: "A <name>.tokens.css declares a token whose value is already another token's of the same type, built in or the app's own.",
+		Why: "Two names for one value look like two decisions and are one. The first time someone changes --color-primary, " +
+			"--color-brand keeps the old value and the page has two blues where it had one, with nothing to say they were " +
+			"meant to match. A token earns its name by being a value nothing else holds.",
+		Fix: "Read the existing token where you meant the same value (`var(--color-primary)`), or give the new token a value of its own. When the match is a coincidence you have checked, put `/* gofastr:allow(GOFASTR1821) <reason> */` above the @property rule.",
+		Doc: "theming",
+		Examples: []Example{{
+			Bad:  "@property --color-brand { syntax: \"<color>\"; inherits: true; initial-value: #4F46E5; }  /* --color-primary's value */",
+			Good: "@property --color-brand { syntax: \"<color>\"; inherits: true; initial-value: #0F766E; }",
+		}},
+	}, {
+		ID: RuleRepeatedLiteral, Slug: "rendering/repeated-literal",
+		Title: "One literal written in several owned styles", Capability: CapRendering, Severity: SeverityWarn,
+		Summary: "The same literal value appears in two or more *.style.css files of one program — a main package plus the " +
+			"packages it imports; style files no program reaches form one group together — for properties of one token type " +
+			"(a colour, a size, a spacing, …). Zeros, 100% and a z-index of -1 pass: they say none, fill or behind, not a size.",
+		Why: "A value written in two sheets is a design decision with no name. The two copies drift the first time one sheet " +
+			"is edited, and a theme swap reaches neither. The second copy is the moment a token was missing. Sheets are " +
+			"checked per program, so a literal repeated only across two binaries that never link is not a finding.",
+		Fix: "Declare the value once as a token in a <name>.tokens.css (`@property --size-reading-width { syntax: \"<length>\"; inherits: true; initial-value: 37rem; }`), run `gofastr gen styles`, and read `var(--size-reading-width)` in each sheet.",
+		Doc: "theming",
+		Examples: []Example{{
+			Bad:  "/* article.style.css */ .body { max-width: 37rem; }\n/* help.style.css */ .answer { max-width: 37rem; }",
+			Good: "/* article.style.css */ .body { max-width: var(--size-reading-width); }\n/* help.style.css */ .answer { max-width: var(--size-reading-width); }",
 		}},
 	}}
 }
