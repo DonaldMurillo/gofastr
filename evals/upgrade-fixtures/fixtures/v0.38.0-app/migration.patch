@@ -216,7 +216,7 @@ diff --git a/app.go b/app.go
 -	appLayout = app.NewLayout("app").WithSidebar(sb)
 +	appLayout = app.NewLayout("app", app.LayoutSpec{}, func(ctx context.Context, l *app.LayoutTree) render.HTML {
 +		nav, _ := component.SafeRenderCtx(ctx, sb)
-+		return ui.Shell(ui.ShellConfig{Sidebar: nav}, l.Primary())
++		return ui.Stack(ui.StackConfig{Screen: true, Gap: ui.GapNone}, ui.ContentRow(ui.ContentRowConfig{Sidebar: nav}, l.Primary()))
 +	})
  	site.SetDefaultLayout(appLayout)
  	ui.MountSidebar(routerMounter{fwApp.Router()}, sbCfg)

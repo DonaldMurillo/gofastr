@@ -333,6 +333,8 @@ func bootApp(t *testing.T, bin, dbPath string) *runningApp {
 		// Stable dev secret so the app boots deterministically (dev_mode is on).
 		"JWT_SECRET=upgrade-fixture-test-secret-32chars-min!!",
 		"GOFASTR_DEV_MCP=0",
+		// The test picked the port; a worktree's isolation would remap it.
+		"GOFASTR_ISOLATION=off",
 	)
 	cmd.Stdout = logf
 	cmd.Stderr = logf
@@ -343,6 +345,7 @@ func bootApp(t *testing.T, bin, dbPath string) *runningApp {
 
 	base := "http://" + addr
 	deadline := time.Now().Add(60 * time.Second)
+	last := "no response"
 	for time.Now().Before(deadline) {
 		resp, err := http.Get(base + "/")
 		if err == nil {
@@ -350,12 +353,16 @@ func bootApp(t *testing.T, bin, dbPath string) *runningApp {
 			if resp.StatusCode == 200 {
 				return ra
 			}
+			last = resp.Status
 		}
 		time.Sleep(300 * time.Millisecond)
 	}
+	// The child wrote through the same open file, so the shared offset
+	// sits at the end of what it wrote: rewind before reading it back.
+	_, _ = logf.Seek(0, io.SeekStart)
 	bootLog, _ := io.ReadAll(logf)
 	ra.kill()
-	t.Fatalf("upgraded app did not become ready on %s within 60s. Boot log:\n%s", addr, firstLines(string(bootLog), 40))
+	t.Fatalf("upgraded app did not become ready on %s within 60s (last GET /: %s). Boot log:\n%s", addr, last, firstLines(string(bootLog), 40))
 	return nil
 }
 
