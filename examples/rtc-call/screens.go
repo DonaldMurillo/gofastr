@@ -110,8 +110,8 @@ func (s *LobbyScreen) RenderCtx(ctx context.Context) render.HTML {
 					"title": "lowercase letters, digits, and hyphens"},
 			}),
 		),
-		html.Paragraph(html.TextConfig{},
-			render.Text("The room is whatever you and the people you call agree on: it is a name, not a reservation. The server relays the WebRTC handshake and never sees or hears the call.")),
+		ui.Markdown(ui.MarkdownConfig{Measure: true,
+			Source: "The room is whatever you and the people you call agree on: it is a name, not a reservation. The server relays the WebRTC handshake and never sees or hears the call."}),
 	)
 }
 

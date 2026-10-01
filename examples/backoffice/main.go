@@ -62,10 +62,16 @@ func setupApp(dsn string) *framework.App {
 
 	site := appui.NewApp("Backoffice")
 	site.WithTheme(createTheme())
-	// The public pages share the centered-container layout shell, the
-	// design system's editorial column, so the hero and auth card sit in
-	// a comfortable measure without any page CSS.
-	public := appui.NewLayout("public").WithContainer()
+	// The public pages share the centered-container shape, the design
+	// system's editorial column, so the hero and auth card sit in a
+	// comfortable measure without any page CSS.
+	public := appui.NewLayout("public", appui.LayoutSpec{}, func(ctx context.Context, l *appui.LayoutTree) render.HTML {
+		return ui.Stack(ui.StackConfig{Screen: true, Gap: ui.GapNone},
+			// The row (no sidebar) gives main its growth: a page-tall
+			// stack without a footer pushes a bare last child down.
+			ui.ContentRow(ui.ContentRowConfig{},
+				ui.Container(ui.ContainerConfig{Width: ui.ContainerPage, Pad: ui.ContainerPadPage}, l.Primary())))
+	})
 	site.Register("/", &homeScreen{}, public)
 	site.Register("/login", &loginScreen{}, public) // GET sign-in (themed); POST → loginSubmit
 

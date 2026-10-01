@@ -1,0 +1,2 @@
+/* The longest line an article's text runs to. */
+@property --size-prose-measure { syntax: "<length>"; inherits: true; initial-value: 68ch; }

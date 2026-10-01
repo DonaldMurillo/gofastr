@@ -30,7 +30,11 @@ func (s *HomeScreen) ScreenSchema() []seo.Thing {
 }
 
 func (s *HomeScreen) Render() render.HTML {
-	return html.Div(html.DivConfig{},
+	// The screen owns its rhythm: the page frame (marketingLayout)
+	// supplies only the measure; the stack's gap spaces the blocks.
+	// html.Div root: the pack reader (reverseRenderBody) accepts a
+	// tag-primitive root; the stack inside owns the rhythm.
+	return html.Div(html.DivConfig{}, ui.Stack(ui.StackConfig{Gap: ui.Gap2XL},
 		ui.Hero(ui.HeroConfig{Eyebrow: "Billing & revenue", Title: "See your revenue the moment it moves.", Subtitle: "Meridian gives SaaS teams one calm place to manage customers, subscriptions, and invoices, with the metrics that matter, live.", Actions: []render.HTML{ui.LinkButton(ui.LinkButtonConfig{Label: "Start free", Href: "/signup", Variant: ui.ButtonPrimary}), ui.LinkButton(ui.LinkButtonConfig{Label: "See pricing", Href: "/pricing", Variant: ui.ButtonSecondary})}}),
 		ui.Section(ui.SectionConfig{Heading: "Everything you need to run revenue", Eyebrow: "Why Meridian", Description: "", Label: "", Class: "", ID: ""}, ui.Grid(ui.GridConfig{Min: "16rem"}, ui.Card(ui.CardConfig{Heading: "Live MRR & churn", Description: "Watch monthly recurring revenue, growth, and churn update as customers sign up and pay."}), ui.Card(ui.CardConfig{Heading: "Subscriptions that flow", Description: "Trialing, active, past-due, canceled: drive the whole lifecycle from one screen."}), ui.Card(ui.CardConfig{Heading: "Invoices, handled", Description: "Open, paid, void: track every invoice and mark them paid in a click."}))),
 		// The closing CTA is an "ink band": ui.Themed re-skins this one
@@ -45,7 +49,7 @@ func (s *HomeScreen) Render() render.HTML {
 				),
 			),
 		),
-	)
+	))
 }
 
 // mountHomeScreen mounts the home screen with site.

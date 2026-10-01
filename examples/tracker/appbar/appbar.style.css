@@ -1,0 +1,46 @@
+/* The tracker's application bar: the fixed-height band a sidebar
+   shell fixes above its content row. Full-bleed — the bottom rule
+   spans edge to edge, and the bar's own padding is all the inset the
+   content gets; the page measure a marketing header sits on does not
+   apply here. The height is --size-header-height, the same token
+   ui.ContentRow's viewport mode subtracts, so the row below fills the
+   rest of the screen exactly. */
+:scope {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+  block-size: var(--size-header-height);
+  padding-inline: var(--spacing-lg);
+  background-color: var(--color-surface);
+  border-block-end: 1px solid var(--color-border);
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  color: var(--color-text);
+  font-weight: var(--font-weight-bold);
+  text-decoration: none;
+}
+
+/* The search field: flexible beside the brand, folding away below md
+   where the sidebar's drawer takes over navigation. */
+.search {
+  flex: 0 1 var(--size-appbar-search);
+  min-inline-size: var(--size-appbar-search-min);
+}
+.search > * { inline-size: 100%; }
+@media (--below-md) {
+  .search { display: none; }
+}
+
+/* The right cluster: actions at every width, then the drawer trigger
+   (which the sidebar's stylesheet removes once the inline column
+   shows). */
+.actions {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  margin-inline-start: auto;
+}

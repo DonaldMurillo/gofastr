@@ -33,6 +33,10 @@ func createTheme() style.Theme {
 		CodeText:    "oklch(0.96 0.006 80)",
 		CodeBorder:  "oklch(0.28 0.006 75)",
 
+		// Dark mode keeps the framework's dark palette on purpose (the
+		// light scheme above is already the dark-first brand ladder).
+		Dark: &theme.Overrides{},
+
 		FontBody:    "-apple-system, BlinkMacSystemFont, Inter, 'Segoe UI', system-ui, sans-serif",
 		FontHeading: "-apple-system, BlinkMacSystemFont, Inter, 'Segoe UI', system-ui, sans-serif",
 		FontMono:    "ui-monospace, SFMono-Regular, 'JetBrains Mono', Menlo, Consolas, monospace",

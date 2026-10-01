@@ -7,16 +7,20 @@ import (
 	"github.com/chromedp/chromedp"
 )
 
-// Pins #256: the guest header's Sign in CTA rides PersistentActions, so
-// at 390px it stays visible in the bar while the regular Actions cluster
-// (theme toggle) collapses into the drawer. Measured, not probed: the
-// assertions are on rendered bounding boxes inside the viewport.
+// Pins #256: the guest header's Sign in CTA rides the header's
+// persistent slot, so at 390px it stays visible in the bar while the
+// regular Actions cluster (theme toggle) folds into the phone menu.
+// Measured, not probed: the assertions are on rendered bounding boxes
+// inside the viewport.
 func TestE2E_SignInStaysInBarAt390(t *testing.T) {
 	if testing.Short() {
 		t.Skip("builds + boots the binary")
 	}
 	base := e2eBootApp(t)
 	ctx := chromedptest.Context(t, chromedptest.WindowSize(1280, 800))
+
+	// The header's owned style: everything below selects inside it.
+	const h = `[data-fui-scope="meridian-siteheader"]`
 
 	type rect struct {
 		Present bool    `json:"present"`
@@ -35,20 +39,20 @@ func TestE2E_SignInStaysInBarAt390(t *testing.T) {
 		})()`
 	}
 
-	var signIn, toggle, drawerToggle, drawerSignIn rect
+	var signIn, toggle, menuToggle, menuSignIn rect
 	if err := chromedp.Run(ctx,
 		chromedp.EmulateViewport(390, 844),
 		chromedp.Navigate(base+"/"),
 		chromedp.WaitReady("body", chromedp.ByQuery),
-		chromedp.Evaluate(measure(`.fui-site-header__persistent-actions a[href="/login"]`), &signIn),
-		chromedp.Evaluate(measure(`.fui-site-header__bar-actions [data-fui-comp="ui-theme-toggle"]`), &toggle),
-		// Open the drawer: "collapsed into the drawer" must mean the
+		chromedp.Evaluate(measure(h+` .end a[href="/login"]`), &signIn),
+		chromedp.Evaluate(measure(h+` .bar-actions [data-fui-comp="ui-theme-toggle"]`), &toggle),
+		// Open the phone menu: "folded into the menu" must mean the
 		// toggle actually lives there, not that it vanished — and the
-		// persistent Sign in must not have a drawer duplicate.
-		chromedp.Click(`.fui-site-header__mobile-toggle`, chromedp.ByQuery),
-		chromedp.WaitVisible(`.fui-site-header__mobile-links`, chromedp.ByQuery),
-		chromedp.Evaluate(measure(`.fui-site-header__mobile-actions [data-fui-comp="ui-theme-toggle"]`), &drawerToggle),
-		chromedp.Evaluate(measure(`.fui-site-header__mobile-links a[href="/login"]`), &drawerSignIn),
+		// persistent Sign in must not have a menu duplicate.
+		chromedp.Click(h+` summary`, chromedp.ByQuery),
+		chromedp.WaitVisible(h+` details[open] .panel-links`, chromedp.ByQuery),
+		chromedp.Evaluate(measure(h+` details[open] .panel-actions [data-fui-comp="ui-theme-toggle"]`), &menuToggle),
+		chromedp.Evaluate(measure(h+` details[open] a[href="/login"]`), &menuSignIn),
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -59,12 +63,12 @@ func TestE2E_SignInStaysInBarAt390(t *testing.T) {
 		t.Errorf("Sign in overflows the 390px viewport: %+v", signIn)
 	}
 	if toggle.Present && toggle.Visible {
-		t.Errorf("regular Actions must collapse into the drawer at 390px: %+v", toggle)
+		t.Errorf("regular Actions must fold into the phone menu at 390px: %+v", toggle)
 	}
-	if !drawerToggle.Present || !drawerToggle.Visible {
-		t.Errorf("theme toggle must be reachable in the open drawer: %+v", drawerToggle)
+	if !menuToggle.Present || !menuToggle.Visible {
+		t.Errorf("theme toggle must be reachable in the open menu: %+v", menuToggle)
 	}
-	if drawerSignIn.Present {
-		t.Errorf("persistent Sign in must have no drawer duplicate: %+v", drawerSignIn)
+	if menuSignIn.Present {
+		t.Errorf("persistent Sign in must have no menu duplicate: %+v", menuSignIn)
 	}
 }
