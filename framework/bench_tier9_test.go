@@ -408,7 +408,7 @@ func (a *appRouter) ServeHTTP(w http.ResponseWriter, r *http.Request) { a.inner.
 // what the SSR + hydration shell adds.
 func BenchmarkT9_UIHostPageRender(b *testing.B) {
 	site := app.NewApp("bench")
-	site.SetDefaultLayout(app.NewLayout("main"))
+	site.SetDefaultLayout(bareLayout("main"))
 	site.Register("/", &benchHomeScreen{}, nil)
 	site.Register("/about", &benchAboutScreen{}, nil)
 

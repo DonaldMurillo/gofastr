@@ -67,9 +67,7 @@ func (b *testClickButton) Actions() {
 
 func newTestUIHost() *UIHost {
 	application := app.NewApp("Test App")
-	layout := app.NewLayout("main").
-		WithHeader(&testHeaderComp{}).
-		WithFooter(&testFooterComp{})
+	layout := chromeTestLayout("main", &testHeaderComp{}, nil, &testFooterComp{})
 	application.SetDefaultLayout(layout)
 	application.RegisterScreen(app.NewScreen("/", &testHomeComp{}).WithTitle("Home").WithDescription("Home page"), nil)
 
@@ -136,6 +134,47 @@ func TestUIHost404(t *testing.T) {
 
 	if w.Code != 404 {
 		t.Fatalf("expected 404, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+// TestDefaultErrorPagesStyleHomeLink: the framework's default 404,
+// 405 and 500 bodies render their "Back to home" action through the
+// typed html.Link vocabulary dressed in framework/ui's button class
+// vocabulary (fui-button fui-button--primary) — the primary-action
+// look every composed surface uses — instead of a bare unstyled
+// anchor. The BARE-document fallbacks (no root layout) keep plain
+// HTML: no chrome is injected there, so no sheet exists to compose
+// with.
+func TestDefaultErrorPagesStyleHomeLink(t *testing.T) {
+	styled := `<a class="fui-button fui-button--primary" href="/">Back to home</a>`
+
+	ds := newTestUIHost()
+	w := httptest.NewRecorder()
+	ds.ServeHTTP(w, httptest.NewRequest("GET", "/no/such/route", nil))
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("want 404, got %d", w.Code)
+	}
+	if !strings.Contains(w.Body.String(), styled) {
+		t.Errorf("default 404 body must carry the styled home action:\n%s", w.Body.String())
+	}
+
+	w500 := httptest.NewRecorder()
+	ds.serveError(w500, httptest.NewRequest("GET", "/boom", nil), "/boom")
+	if w500.Code != http.StatusInternalServerError {
+		t.Fatalf("want 500, got %d", w500.Code)
+	}
+	if !strings.Contains(w500.Body.String(), styled) {
+		t.Errorf("default 500 body must carry the styled home action:\n%s", w500.Body.String())
+	}
+
+	w405 := httptest.NewRecorder()
+	w405.Header().Set("Allow", "GET")
+	ds.serveMethodNotAllowedPage(w405, httptest.NewRequest("POST", "/", nil))
+	if w405.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("want 405, got %d", w405.Code)
+	}
+	if !strings.Contains(w405.Body.String(), styled) {
+		t.Errorf("default 405 body must carry the styled home action:\n%s", w405.Body.String())
 	}
 }
 
@@ -493,7 +532,7 @@ func TestUIHostSessionEndpoint(t *testing.T) {
 
 func TestUIHostExtraScriptsInjectedBeforeBodyEnd(t *testing.T) {
 	application := app.NewApp("Test")
-	application.SetDefaultLayout(app.NewLayout("main"))
+	application.SetDefaultLayout(bareLayout("main"))
 	application.RegisterScreen(app.NewScreen("/", &testHomeComp{}).WithTitle("Home").WithDescription("h"), nil)
 	ds := New(application,
 		WithExtraScripts("/__livereload.js", "/diag.js"),

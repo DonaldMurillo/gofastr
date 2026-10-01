@@ -6,12 +6,14 @@ import (
 	"fmt"
 	"log/slog"
 	"reflect"
+	"slices"
 	"sort"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
 	"github.com/DonaldMurillo/gofastr/core-ui/di"
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
+	"github.com/DonaldMurillo/gofastr/core-ui/ownstyle"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
@@ -22,6 +24,8 @@ import (
 type App struct {
 	// Name is the application name, used in the page title.
 	Name string
+	// ownStyle is the app's owned style (WithStyle); nil for none.
+	ownStyle *ownstyle.Sheet
 	// Container is the dependency injection container.
 	Container *di.Container
 	// Router maps paths to screens and layouts.
@@ -56,6 +60,47 @@ type App struct {
 	// sets this once alongside LangFunc so the link speaks the page's
 	// language (#411). Set with WithSkipLabelFunc.
 	SkipLabelFunc func(path string) string
+
+	// NotFound is the body the 404-outlet outcome renders (an outlet
+	// declared FallbackNotFound that no candidate fills, Decided 5):
+	// the primary becomes this component through the full screen
+	// pipeline — per-request instance, DI, Load, safe render, its title
+	// — while every other outlet renders its Default or nothing, and
+	// the host answers 404. Hosts that configure a custom 404
+	// (uihost.WithNotFoundScreen) get it wired here by their host
+	// constructor; nil keeps the minimal built-in body below.
+	NotFound component.Component
+}
+
+// WithNotFoundBody sets the body the 404-outlet outcome renders and
+// returns the app for chaining (see App.NotFound).
+func (a *App) WithNotFoundBody(c component.Component) *App {
+	a.NotFound = c
+	return a
+}
+
+// notFoundBody resolves the 404-outlet outcome's body: App.NotFound
+// when the host wired one, else a minimal built-in (heading plus a
+// line of copy that stays truthful for a route that DID resolve —
+// "this page does not exist", never "no route matched").
+func (a *App) notFoundBody() component.Component {
+	if a.NotFound != nil {
+		return a.NotFound
+	}
+	return minimalNotFoundBody{}
+}
+
+// minimalNotFoundBody is the app-level fallback 404 body: plain
+// composed html, no chrome of its own (the root layout owns the
+// shell), no request data (the route resolved; echoing a path would
+// read as "no route matched" copy).
+type minimalNotFoundBody struct{}
+
+func (minimalNotFoundBody) Render() render.HTML {
+	return render.Join(
+		html.Heading(html.HeadingConfig{Level: 1}, render.Text("404: Page not found")),
+		html.Paragraph(html.TextConfig{}, render.Text("This page does not exist.")),
+	)
 }
 
 // NewApp creates a new application with the given name.
@@ -277,6 +322,48 @@ type RouteEntry struct {
 	// links are worth diverting, and loads the intercept module only
 	// when at least one route wants it. Nil for ordinary screens.
 	Intercept *Intercept
+	// Deferred lists the wire addresses of the route's DEFERRED outlets
+	// regions whose fills do not travel with the
+	// page request but as their own part requests (X-Gofastr-Part), one
+	// per address, launched by the client at the same moment as the
+	// page fetch. Nil when no outlet in the route's chain defers — the
+	// field is omitted from the manifest so pages without deferral pay
+	// nothing.
+	Deferred []string
+	// Loading carries a screen's (or its group's) swap-slot loading
+	// declaration for the route manifest (,
+	// the rendered loading HTML plus its
+	// After/Min in whole milliseconds. Nil when neither the screen nor
+	// any group declares one.
+	Loading *LoadingManifest
+}
+
+// LoadingManifest is the wire form of a Loading declaration in the
+// route manifest (, the loading content
+// rendered ONCE (the manifest is built once; loading content is
+// presentational config with no request state) and the timings the
+// client needs.
+type LoadingManifest struct {
+	HTML  string
+	After int // milliseconds
+	Min   int // milliseconds
+}
+
+// loadingManifestFor renders a Loading declaration into its manifest
+// form. A nil Show yields nil (nothing to carry).
+func loadingManifestFor(ld *Loading) *LoadingManifest {
+	if ld == nil || ld.Show == nil {
+		return nil
+	}
+	html, err := component.SafeRenderCtx(context.Background(), ld.Show)
+	if err != nil {
+		html = ""
+	}
+	return &LoadingManifest{
+		HTML:  string(html),
+		After: ld.loadingAfterMs(),
+		Min:   ld.loadingMinMs(),
+	}
 }
 
 // Routes returns every registered route, screens and redirects, as
@@ -302,6 +389,9 @@ func (a *App) Routes() []RouteEntry {
 				layouts[i] = layer.Key()
 			}
 		}
+		// Deferred outlet addresses the client
+		// launches one part request per address beside the page fetch.
+		deferred := deferredAddrs(chain)
 		entries = append(entries, RouteEntry{
 			Path:        screen.Path,
 			Title:       screen.Title,
@@ -310,6 +400,10 @@ func (a *App) Routes() []RouteEntry {
 			Preload:     screen.Preload,
 			Intercept:   screen.Intercept,
 			NoSPA:       screen.NoSPA,
+			Deferred:    deferred,
+			// the screen's (or its
+			// group's) swap-slot loading declaration, rendered once.
+			Loading: loadingManifestFor(screenLoading(screen)),
 		})
 	}
 	// Map iteration is randomized, sort exact redirects so Routes()
@@ -335,6 +429,41 @@ func (a *App) Routes() []RouteEntry {
 // SetDefaultLayout sets the default layout.
 func (a *App) SetDefaultLayout(layout *Layout) {
 	a.Router.DefaultLayout(layout)
+}
+
+// Layouts returns every layout a registered page renders in: the
+// default layout and each screen's layout chain, each layout once,
+// sorted by name. The host collects their TransitionCSS into app.css.
+func (a *App) Layouts() []*Layout {
+	seen := map[*Layout]bool{}
+	var out []*Layout
+	add := func(l *Layout) {
+		if l != nil && !seen[l] {
+			seen[l] = true
+			out = append(out, l)
+		}
+	}
+	add(a.Router.defaultLayout)
+	paths := a.Router.Paths()
+	slices.Sort(paths)
+	for _, p := range paths {
+		screen, ok := a.Router.ScreenByPattern(p)
+		if !ok {
+			continue
+		}
+		for _, layer := range a.Router.layoutChainFor(screen) {
+			add(layer.Layout)
+		}
+	}
+	slices.SortStableFunc(out, func(x, y *Layout) int { return strings.Compare(x.Name, y.Name) })
+	return out
+}
+
+// LayoutsVersion changes whenever a screen or the default layout is
+// registered. The host compares it against the value it saw when it
+// composed app.css, to notice layouts added afterwards.
+func (a *App) LayoutsVersion() uint64 {
+	return a.Router.layoutsGen.Load()
 }
 
 // RenderScreenRaw is a policy-bypassing convenience over
@@ -420,19 +549,156 @@ func injectTagCount(t reflect.Type) int {
 }
 
 func (a *App) RenderPageResult(ctx context.Context, path string) (RenderResult, error) {
+	return a.renderPageResult(ctx, path)
+}
+
+// notFoundScreenFor builds the synthetic page screen a not-found render
+// flows through: comp at a pattern no route table can hold, titled for
+// the <title> build and the X-Gofastr-Title header. The screen is never
+// registered; it exists so the render pipeline treats the 404 body
+// exactly like a registered screen (per-request instance, DI, Load,
+// article wrap, the default layout chain).
+func notFoundScreenFor(comp component.Component) *Screen {
+	return NewScreen("/__gofastr_not_found__", comp).WithTitle("Page not found")
+}
+
+// RenderNotFoundPageResult renders comp as the not-found page for an
+// unmatched path through the same pipeline a registered page takes:
+// the app's default (root) layout wraps the body in <main>, the root
+// layout's outlets show their defaults, route areas read the requested
+// path, and the document shell/head build is the one every page gets.
+// The caller owns the 404 status; the result's Kind is DecisionAllow.
+func (a *App) RenderNotFoundPageResult(ctx context.Context, path string, comp component.Component) (RenderResult, error) {
+	return a.renderScreenPage(ctx, path, notFoundScreenFor(comp), nil)
+}
+
+// RenderNotFoundFromResult is RenderNotFoundPageResult's subtree-partial
+// form for a client navigating from fromPath: the shared-layer rule is
+// the one every route's partial gets, so the answer swaps at the deepest
+// layer the two share (the root layout when the origin is any of its
+// pages) and carries the kept layers' outlet fills — the defaults
+// included. An unknown fromPath keeps the bare partial (empty SwapLayer),
+// the runtime's existing deploy-skew recovery answers with a full load.
+func (a *App) RenderNotFoundFromResult(ctx context.Context, path, fromPath string, comp component.Component) (RenderResult, error) {
+	target := notFoundScreenFor(comp)
+	res, err := a.renderScreenPartial(ctx, path, target, nil, nil)
+	if err != nil {
+		return res, err
+	}
+	if res.Kind != DecisionAllow && res.Kind != DecisionRenderAlt {
+		return res, nil
+	}
+	return a.partialFromShared(ctx, path, fromPath, res, target, nil, false)
+}
+
+// errorScreenFor builds the synthetic page screen a whole-page error
+// render flows through: the not-found twin for the 500 case, through
+// the same pipeline (per-request instance, DI, Load, article wrap,
+// the default layout chain) so the error body renders inside the root
+// layout like every page..
+func errorScreenFor(comp component.Component) *Screen {
+	return NewScreen("/__gofastr_error__", comp).WithTitle("Something went wrong")
+}
+
+// RenderErrorPageResult renders comp as the whole-page error body for
+// path: the resolver-failure outcome whose page answer is a 500 (see
+// PageError). The caller owns the status; the result's Kind is
+// DecisionAllow..
+func (a *App) RenderErrorPageResult(ctx context.Context, path string, comp component.Component) (RenderResult, error) {
+	return a.renderScreenPage(ctx, path, errorScreenFor(comp), nil)
+}
+
+// RenderErrorFromResult is RenderErrorPageResult's subtree-partial
+// form: the error body under the layers the origin route does not
+// share with the root layout, so a navigation whose resolver failed
+// whole-page shows the error page inside the live shell instead of
+// toasting..
+func (a *App) RenderErrorFromResult(ctx context.Context, path, fromPath string, comp component.Component) (RenderResult, error) {
+	target := errorScreenFor(comp)
+	res, err := a.renderScreenPartial(ctx, path, target, nil, nil)
+	if err != nil {
+		return res, err
+	}
+	if res.Kind != DecisionAllow && res.Kind != DecisionRenderAlt {
+		return res, nil
+	}
+	return a.partialFromShared(ctx, path, fromPath, res, target, nil, false)
+}
+
+// renderPageResult is RenderPageResult's body.
+func (a *App) renderPageResult(ctx context.Context, path string) (RenderResult, error) {
 	screen, params, ok := a.Router.Resolve(path)
 	if !ok {
 		return RenderResult{}, fmt.Errorf("app: no screen registered for path %q", path)
 	}
+	return a.renderScreenPage(ctx, path, screen, params)
+}
+
+// renderScreenPage is renderPageResult's body over an already-resolved
+// screen: a route reached by path, or the synthetic not-found screen
+// RenderNotFoundPageResult builds. Everything a page render does —
+// match install, policy, per-request instance, DI, Load, fills, the
+// layout chain, the document build — runs identically for both, so a
+// 404 page renders through the app's root layout with its outlets'
+// defaults exactly like a registered page.
+func (a *App) renderScreenPage(ctx context.Context, path string, screen *Screen, params map[string]string) (RenderResult, error) {
+	// Route areas read the route match from the context. The host's
+	// middleware normally installs it; direct renders (SSG, tests) get
+	// the same snapshot here so a RouteArea sees the path everywhere.
+	if _, ok := MatchFromContext(ctx); !ok {
+		ctx = WithMatch(ctx, newMatch(screen.Path, path, params))
+	}
+
+	// Resolvers the per-request store, the
+	// eager declarations, then the policy phase — a guard may read a
+	// resolver, and a whole-page failure at this stage IS the page's
+	// outcome (ErrNotFound → the not-found page, else the error page).
+	ctx = withResolverState(ctx, screen)
+	runEagerResolvers(ctx, screen)
+	if pe := resolverPageError(ctx, path); pe != nil {
+		return RenderResult{}, pe
+	}
 
 	// Evaluate policy chain BEFORE Load, a Redirect/Block decision
 	// short-circuits without touching the DB.
+	// The layout chain resolves here so the region guards (below) can
+	// walk it in the policy phase; the render reuses the same chain.
+	var chain []LayoutLayer
+	if screen.Type == ScreenPage {
+		// Resolved layer keys a {param} group
+		// prefix embeds the match's values, so guard addresses, fill
+		// addresses and the wrapper markers all carry the resolved key.
+		chain = resolveChainKeys(a.Router.layoutChainFor(screen), params)
+	}
+	// Fill validation (DESIGN "Validation at mount", render side): a
+	// fill naming an outlet whose layout is not in this screen's
+	// chain is a wiring mistake that would otherwise be a silent
+	// no-op; it panics here naming the layout and the outlet.
+	validateFills(screen, chain)
+	validateRequires(screen)
 	decision := ResolvePolicy(ctx, screen)
+	// A guard's resolver read fails the page the same way (the phase
+	// recorded on the cell decides, and a guard reads in policy phase);
+	// the check sits BEFORE the decision switch so a guard that read a
+	// failing resolver answers with the page outcome, not whatever it
+	// decided once it saw the error.
+	if pe := resolverPageError(ctx, path); pe != nil {
+		return RenderResult{}, pe
+	}
 	switch decision.Kind {
 	case DecisionRedirect:
 		return RenderResult{Kind: DecisionRedirect, URL: decision.URL}, nil
 	case DecisionBlock:
 		return RenderResult{Kind: DecisionBlock, Status: decision.Status, Message: decision.Message}, nil
+	}
+	// Region guards outlet, area and fill
+	// policies run in the policy phase, in declaration order after the
+	// screen chain. The first Redirect moves the whole page and no
+	// Load runs; RenderAlt/Block are recorded per region and applied
+	// when that region resolves.
+	guards, guardRedirect := ensureRegionGuards(ctx, screen, chain)
+	if guardRedirect.Kind == DecisionRedirect {
+		return RenderResult{Kind: DecisionRedirect, URL: guardRedirect.URL}, nil
 	}
 
 	// Per-request component instance: shallow-copy from the registered
@@ -455,16 +721,30 @@ func (a *App) RenderPageResult(ctx context.Context, path string) (RenderResult, 
 	if err := a.injectComponent(comp, path); err != nil {
 		return RenderResult{}, err
 	}
-
-	// Run the component's Load hook if present. Loaders run AFTER DI so they can
-	// use injected services, and BEFORE render so they can populate fields.
-	// A panicking Load takes the same error channel a Load error takes
-	// (safeScreenLoad), never an escaped panic.
+	// The Load phase: resolver reads inside Load are whole-page.
+	ctx = withResolvePhase(ctx, resolvePhaseLoad)
 	if loader, ok := comp.(ScreenLoader); ok {
 		if err := safeScreenLoad(loader, ctx); err != nil {
+			// A resolver the Load read (and returned, or swallowed)
+			// decides the outcome by its phase: the PageError, not the
+			// generic load failure.
+			if pe := resolverPageError(ctx, path); pe != nil {
+				return RenderResult{}, pe
+			}
 			return RenderResult{}, fmt.Errorf("app: load failed for %q: %w", path, err)
 		}
 	}
+	// A resolver the Load read may have failed while Load itself
+	// succeeded (the value was optional, the error was returned to a
+	// caller that ignored it): the cell still decides the outcome.
+	if pe := resolverPageError(ctx, path); pe != nil {
+		return RenderResult{}, pe
+	}
+
+	// Everything below the screen — fills, route areas, layout
+	// builds — reads resolvers in the REGION phase: a failure there is
+	// contained to the region that read it, never the page.
+	ctx = withResolvePhase(ctx, resolvePhaseRegion)
 
 	// Render the component directly for ScreenPage when the resolved layout
 	// chain is non-empty, layer 0 provides the <main> wrapper. For other
@@ -484,9 +764,38 @@ func (a *App) RenderPageResult(ctx context.Context, path string) (RenderResult, 
 		}
 	}
 	skip := a.SkipLabelForPath(path)
-	ctx = withDocShell(ctx, lang, skip)
+	// The keyed-transition vocabulary of THIS document's chain rides
+	// the doc shell (data-fui-vt-kinds, copied onto <html> by the
+	// runtime after a swap) beside the pick the answer carries.
+	vtKinds := chainVTKinds(chain)
+	ctx = withDocShell(ctx, lang, skip, strings.Join(vtKinds, " "))
+	// Effective title, resolved BEFORE the render so the route seeding
+	// below stamps the value the layouts and fills bind (route.title),
+	// and the <head> build reuses it. Same re-read-after-Load rule as
+	// before (ScreenTitler, contained), just earlier: nothing between
+	// here and the old computation mutates comp.
+	titleText := a.Name
+	effectiveTitle := screen.Title
+	if titler, ok := comp.(ScreenTitler); ok {
+		if t := safeScreenTitle(titler); t != "" {
+			effectiveTitle = t
+		}
+	}
+	if effectiveTitle != "" {
+		titleText = effectiveTitle
+		if suffix := " — " + a.Name; !strings.HasSuffix(titleText, suffix) {
+			titleText += suffix
+		}
+	}
+	// seed the route.* signal
+	// values for this render (bag-resident; Bind stamps them at SSR).
+	markChainArea(ctx, chain)
+	seedRouteValues(ctx, path, screen.Path, effectiveTitle, params, requestQuery(ctx))
+	// Contained fill failures of this render (): nil fills (no
+	// tree layers) records none.
+	var fillFailures []FillFailure
+	notFoundOutcome := false // the 404-outlet outcome, decided once below
 	if screen.Type == ScreenPage {
-		chain := a.Router.layoutChainFor(screen)
 		if len(chain) > 0 {
 			var renderErr error
 			content, renderErr = component.SafeRenderCtx(ctx, comp)
@@ -494,7 +803,64 @@ func (a *App) RenderPageResult(ctx context.Context, path string) (RenderResult, 
 				return RenderResult{}, fmt.Errorf("app: component render error for %q: %w", path, renderErr)
 			}
 			content = wrapArticle(screen, comp, content)
-			wrapped = renderLayoutChain(ctx, chain, content)
+			// Outlet fills for tree layers: concurrent, contained
+			// (fill.go). A full document never defers: the first load
+			// waits for every fill (deferred outlets included) so
+			// nothing depends on JavaScript.
+			fills := a.resolveFills(ctx, path, params, screen, chain, false, guards)
+			if fills != nil { // nil for a chain with no tree layers
+				fillFailures = fills.failures
+			}
+			// The 404-outlet outcome (FallbackNotFound, Decided 5): the
+			// route registers, but an outlet nothing fills makes the
+			// render the not-found page. The primary becomes the
+			// not-found body through the same pipeline a screen gets —
+			// fresh instance, DI, Load, safe render, its title — every
+			// other outlet renders its Default or nothing, and the host
+			// answers 404 (RenderResult.NotFoundOutlet). Only a clean
+			// decline decides this; a contained fill failure returned
+			// above and left the page alone.
+			if fills != nil && fills.notFoundOutlet {
+				nfScreen := notFoundScreenFor(a.notFoundBody())
+				nfComp := newComponentInstance(nfScreen.Component)
+				if err := a.injectComponent(nfComp, path); err != nil {
+					return RenderResult{}, err
+				}
+				if loader, ok := nfComp.(ScreenLoader); ok {
+					if err := safeScreenLoad(loader, ctx); err != nil {
+						return RenderResult{}, fmt.Errorf("app: not-found body load failed for %q: %w", path, err)
+					}
+				}
+				nfHTML, renderErr := component.SafeRenderCtx(ctx, nfComp)
+				if renderErr != nil {
+					return RenderResult{}, fmt.Errorf("app: not-found body render error for %q: %w", path, renderErr)
+				}
+				content = wrapArticle(nfScreen, nfComp, nfHTML)
+				comp = nfComp
+				effectiveTitle = nfScreen.Title
+				if titler, ok := nfComp.(ScreenTitler); ok {
+					if t := safeScreenTitle(titler); t != "" {
+						effectiveTitle = t
+					}
+				}
+				titleText = a.Name
+				if effectiveTitle != "" {
+					titleText = effectiveTitle
+					if suffix := " — " + a.Name; !strings.HasSuffix(titleText, suffix) {
+						titleText += suffix
+					}
+				}
+				// route.title follows the flipped outcome; the rest of
+				// the snapshot is the resolved route's own state.
+				seedRouteValues(ctx, path, screen.Path, effectiveTitle, params, requestQuery(ctx))
+				a.rebuildFillsFromDefaults(ctx, path, params, fills, chain)
+				notFoundOutcome = true
+			}
+			var wrapErr error
+			wrapped, wrapErr = renderLayoutChain(ctx, chain, content, fills, guards)
+			if wrapErr != nil {
+				return RenderResult{}, wrapErr
+			}
 		} else {
 			content = renderComponentInScreen(ctx, screen, comp)
 			wrapped = content
@@ -516,27 +882,13 @@ func (a *App) RenderPageResult(ctx context.Context, path string) (RenderResult, 
 			"content": "width=device-width, initial-scale=1.0",
 		}),
 	)
-	// Title: re-read ScreenTitle() AFTER Load so dynamic routes
-	// (e.g. /docs/:slug) can compute the title from data fetched in Load.
-	// Falls back to the registration-time title, then to the app name alone.
-	// The re-read is contained (safeScreenTitle): a hook that only panics
-	// from its second call degrades to the registered title instead of
-	// killing the request.
-	titleText := a.Name
-	effectiveTitle := screen.Title
-	if titler, ok := comp.(ScreenTitler); ok {
-		if t := safeScreenTitle(titler); t != "" {
-			effectiveTitle = t
-		}
-	}
-	if effectiveTitle != "" {
-		titleText = effectiveTitle + " — " + a.Name
-	}
-	// Document language was resolved before the render (it rides the
-	// outermost layer too); <html lang> below consumes the same value.
+	// Title: effectiveTitle was resolved before the render (see the
+	// route seeding above); titleText carries the app-name suffix.
 	headChildren = append(headChildren,
 		render.Tag("title", nil, render.Text(titleText)),
 	)
+	// Document language was resolved before the render (it rides the
+	// outermost layer too); <html lang> below consumes the same value.
 
 	// Theme + custom CSS + the route-graph script are NOT injected inline
 	// here. The host (e.g. framework/uihost) is responsible for emitting
@@ -568,9 +920,13 @@ func (a *App) RenderPageResult(ctx context.Context, path string) (RenderResult, 
 
 	// Assemble full document.
 	doctype := render.Raw("<!DOCTYPE html>")
-	htmlDoc := render.Tag("html", map[string]string{"lang": lang}, head, body)
+	htmlAttrs := map[string]string{"lang": lang}
+	if len(vtKinds) > 0 {
+		htmlAttrs["data-fui-vt-kinds"] = strings.Join(vtKinds, " ")
+	}
+	htmlDoc := render.Tag("html", htmlAttrs, head, body)
 
-	out := RenderResult{HTML: render.Join(doctype, htmlDoc), Title: effectiveTitle, Component: comp}
+	out := RenderResult{HTML: render.Join(doctype, htmlDoc), Title: effectiveTitle, Component: comp, FillFailures: fillFailures, NotFoundOutlet: notFoundOutcome, Transition: chainTransitionPick(ctx, chain)}
 	if decision.Kind == DecisionRenderAlt {
 		out.Kind = DecisionRenderAlt
 	} else {
@@ -624,6 +980,30 @@ func (a *App) RenderPartialResult(ctx context.Context, path string) (RenderResul
 // identical to RenderPartialResult (bare content, empty SwapLayer) and
 // the client falls back to a full-page fetch.
 func (a *App) RenderPartialFromResult(ctx context.Context, path, fromPath string) (RenderResult, error) {
+	return a.renderPartialFrom(ctx, path, fromPath, false)
+}
+
+// RenderPartialFromResultDefer is RenderPartialFromResult for a page
+// request that carries X-Gofastr-Defer: 1 the
+// route's DEFERRED outlets skip their loaders entirely and their
+// loading content travels in their place — exported as an envelope
+// fill for a kept layer, inline in the cell for a rendered layer. The
+// fills themselves arrive as separate part requests (RenderPartResult)
+// the client launched at the same moment as this one.
+func (a *App) RenderPartialFromResultDefer(ctx context.Context, path, fromPath string) (RenderResult, error) {
+	return a.renderPartialFrom(ctx, path, fromPath, true)
+}
+
+// renderPartialFrom is the shared body of RenderPartialFromResult and
+// its deferring variant.
+func (a *App) renderPartialFrom(ctx context.Context, path, fromPath string, deferOutlets bool) (RenderResult, error) {
+	// The resolver store is per REQUEST: install it here so the base
+	// render (renderPartial → renderScreenPartial) and the fills pass
+	// below (partialFromShared) share one set of cells — a resolver
+	// the Load read is not re-run for the fill that reads it again.
+	if target, _, ok := a.Router.Resolve(path); ok {
+		ctx = withResolverState(ctx, target)
+	}
 	res, err := a.renderPartial(ctx, path, nil)
 	if err != nil {
 		return res, err
@@ -631,27 +1011,49 @@ func (a *App) RenderPartialFromResult(ctx context.Context, path, fromPath string
 	if res.Kind != DecisionAllow && res.Kind != DecisionRenderAlt {
 		return res, nil
 	}
-	target, _, ok := a.Router.Resolve(path)
+	target, params, ok := a.Router.Resolve(path)
 	if !ok || target.Type != ScreenPage {
 		return res, nil
 	}
+	return a.partialFromShared(ctx, path, fromPath, res, target, params, deferOutlets)
+}
+
+// partialFromShared computes the subtree-partial form over an
+// already-rendered base result and its resolved target screen: the
+// shared-layer rule (deepest chain layer both routes hold), the kept
+// layers' fills export, and the swap-layer name. renderPartialFrom
+// reaches it after a router resolve; RenderNotFoundFromResult reaches
+// it with the synthetic not-found screen, so a 404 partial answers
+// with the same boundary semantics any route's partial answers with.
+// deferOutlets skips the deferred outlets' loaders and ships their
+// loading content in place (X-Gofastr-Defer, .
+func (a *App) partialFromShared(ctx context.Context, path, fromPath string, res RenderResult, target *Screen, params map[string]string, deferOutlets bool) (RenderResult, error) {
 	// Clients may send the origin with its query string (the intercept
 	// module reuses the same header with pathname+search); the chain is
 	// a property of the route, so resolve on the pathname alone.
 	if i := strings.IndexByte(fromPath, '?'); i >= 0 {
 		fromPath = fromPath[:i]
 	}
-	from, _, ok := a.Router.Resolve(fromPath)
+	from, fromParams, ok := a.Router.Resolve(fromPath)
 	if !ok {
 		return res, nil
 	}
-	tChain := a.Router.layoutChainFor(target)
-	fChain := a.Router.layoutChainFor(from)
+	// Resolved keys on BOTH matches the shared
+	// depth is computed on the keys the DOM actually holds — a
+	// {param} group's layer compares equal only within the same
+	// resolved value, so another project's page re-renders the layer
+	// instead of silently keeping the first project's chrome.
+	tChain := resolveChainKeys(a.Router.layoutChainFor(target), params)
+	fChain := resolveChainKeys(a.Router.layoutChainFor(from), fromParams)
+	// The partial path validates fills against the TARGET's chain —
+	// the same render-time rule the full page applies.
+	validateFills(target, tChain)
+	validateRequires(target)
 	shared := 0
 	for shared < len(tChain) && shared < len(fChain) &&
 		tChain[shared].Layout == fChain[shared].Layout &&
-		tChain[shared].GroupPrefix == fChain[shared].GroupPrefix &&
-		tChain[shared].Key() != "" {
+		tChain[shared].Key() != "" &&
+		tChain[shared].Key() == fChain[shared].Key() {
 		shared++
 	}
 	if shared == 0 {
@@ -677,10 +1079,182 @@ func (a *App) RenderPartialFromResult(ctx context.Context, path, fromPath string
 	// values the full page would carry: without them the document language
 	// and skip link could never change on an in-chain swap. ScreenLang is
 	// layered like the full-page path so both render shapes agree.
-	ctx = withDocShell(ctx, a.docLangFor(path, res.Component), a.SkipLabelForPath(path))
-	res.HTML = renderLayoutChainFrom(ctx, tChain, shared, res.HTML)
+	ctx = withDocShell(ctx, a.docLangFor(path, res.Component), a.SkipLabelForPath(path), strings.Join(chainVTKinds(tChain), " "))
+	// renderPartial installed the route match on its own ctx copy; the
+	// collect-mode builds below read it from THIS ctx, so install it here
+	// too when absent (kept layers' route areas re-run for the target).
+	if _, ok := MatchFromContext(ctx); !ok {
+		ctx = WithMatch(ctx, newMatch(target.Path, path, params))
+	}
+	// The fills and kept-layer builds below read resolvers in the
+	// REGION phase (the screen's Load already ran on this store inside
+	// renderScreenPartial): a failing read is contained to its region,
+	// never this partial.
+	ctx = withResolvePhase(ctx, resolvePhaseRegion)
+	// seed the route.* values for
+	// the fills and kept-layer builds below (route-title bindings in a
+	// kept layout stamp the TARGET's title, not the origin's). The
+	// effective title comes off the rendered result (post-Load), with
+	// the registered title as fallback.
+	routeTitle := res.Title
+	if routeTitle == "" {
+		routeTitle = target.Title
+	}
+	markChainArea(ctx, tChain)
+	seedRouteValues(ctx, path, target.Path, routeTitle, params, requestQuery(ctx))
+	// The region decisions the policy phase recorded (renderScreenPartial
+	// ran the guards on this request's store): the fills pass applies
+	// the same per-region outcomes the full page would.
+	guards, _ := ensureRegionGuards(ctx, target, tChain)
+
+	// Outlet fills resolve like the full-page path (concurrent,
+	// contained), then the kept layers' builds run in collect mode
+	// inside renderLayoutChainFrom so their route areas record fresh
+	// fills too. The kept layers' (0..shared-1) fills travel on the
+	// result; the rendered layers' outlets are inline in the payload.
+	// Under X-Gofastr-Defer the deferred outlets' loading content takes
+	// the place of every one of those (kept fills and inline cells
+	// alike), and the real fills arrive as part requests.
+	fills := a.resolveFills(ctx, path, params, target, tChain, deferOutlets, guards)
+	// The 404-outlet outcome, decided once on the partial path too: the
+	// payload's screen body becomes the not-found body (the same
+	// instance/load/render containment the full page gives it), the
+	// kept layers' fills are rebuilt from their Defaults, and the host
+	// answers the partial 404-shaped (writePartialResult reads
+	// NotFoundOutlet). The client applies the envelope and never caches
+	// a 404 answer.
+	if fills != nil && fills.notFoundOutlet {
+		nfScreen := notFoundScreenFor(a.notFoundBody())
+		nfComp := newComponentInstance(nfScreen.Component)
+		if err := a.injectComponent(nfComp, path); err != nil {
+			return res, err
+		}
+		if loader, ok := nfComp.(ScreenLoader); ok {
+			if err := safeScreenLoad(loader, ctx); err != nil {
+				return res, fmt.Errorf("app: not-found body load failed for %q: %w", path, err)
+			}
+		}
+		nfHTML, renderErr := component.SafeRenderCtx(ctx, nfComp)
+		if renderErr != nil {
+			return res, fmt.Errorf("app: not-found body render error for %q: %w", path, renderErr)
+		}
+		res.HTML = wrapArticle(nfScreen, nfComp, nfHTML)
+		res.Component = nfComp
+		res.Title = nfScreen.Title
+		if titler, ok := nfComp.(ScreenTitler); ok {
+			if t := safeScreenTitle(titler); t != "" {
+				res.Title = t
+			}
+		}
+		res.NotFoundOutlet = true
+		seedRouteValues(ctx, path, target.Path, res.Title, params, requestQuery(ctx))
+		a.rebuildFillsFromDefaults(ctx, path, params, fills, tChain)
+	}
+	html, wrapErr := renderLayoutChainFrom(ctx, tChain, shared, res.HTML, fills, guards)
+	if wrapErr != nil {
+		return res, wrapErr
+	}
+	res.HTML = html
+	res.Fills = exportFillsFor(tChain, fills, shared)
 	res.SwapLayer = tChain[shared-1].Key()
+	// The page answer's pick innermost layer
+	// with a TransitionFor wins; unknown names already resolved to "".
+	res.Transition = chainTransitionPick(ctx, tChain)
+	if fills != nil { // nil when the chain holds no tree layers
+		res.FillFailures = fills.failures
+	}
 	return res, nil
+}
+
+// PartOutcome classifies a part request's answer (RenderPartResult,
+// .
+type PartOutcome int
+
+const (
+	// PartApplied: the fill rendered; Fill carries its address and HTML
+	// (empty HTML for an outlet nothing fills — that is the region's
+	// answer, not a failure).
+	PartApplied PartOutcome = iota
+	// PartReset: a WHOLE-PAGE outcome. The route did not resolve, the
+	// address is not a deferred outlet of it, the policy phase
+	// redirected or blocked, or the render errored before the fill
+	// could run. The host answers 409 with X-Gofastr-Part-Reset and
+	// applies nothing; the client reloads the URL as a whole document.
+	PartReset
+)
+
+// RenderPartResult renders ONE deferred outlet's fill for a part
+// request (X-Gofastr-Part, the policy phase runs,
+// then the outlet's candidates resolve and ONLY the winning fill's
+// loader executes — no screen Load, no other fills, no area builds,
+// no layout chain rendering. A failing fill is contained to the region
+// exactly as the page contains it (the fallback HTML is the answer), so
+// the outcome is PartReset only for whole-page disagreement.
+func (a *App) RenderPartResult(ctx context.Context, path, addr string) (Fill, PartOutcome) {
+	screen, params, ok := a.Router.Resolve(path)
+	if !ok || screen.Type != ScreenPage {
+		return Fill{}, PartReset
+	}
+	chain := resolveChainKeys(a.Router.layoutChainFor(screen), params)
+	slots := fillSlots(screen, chain)
+	var slot *fillSlot
+	for i := range slots {
+		if slots[i].addr == addr {
+			slot = &slots[i]
+			break
+		}
+	}
+	// A forged address, or one that belongs to another route's chain or
+	// to an outlet that does not defer, is a whole-page disagreement.
+	if slot == nil || !slot.spec.Deferred {
+		return Fill{}, PartReset
+	}
+	// The policy phase, resolvers included: a whole-page resolver
+	// outcome (eager, or a guard's read) is the 409 reset — the part
+	// answer must never carry one side of a disagreement.
+	ctx = withResolverState(ctx, screen)
+	runEagerResolvers(ctx, screen)
+	if resolverPageError(ctx, path) != nil {
+		return Fill{}, PartReset
+	}
+	if decision := ResolvePolicy(ctx, screen); decision.Kind == DecisionRedirect || decision.Kind == DecisionBlock {
+		return Fill{}, PartReset
+	}
+	if resolverPageError(ctx, path) != nil {
+		return Fill{}, PartReset
+	}
+	// The region guards ran in the policy phase above (same store); a
+	// Redirect among them is a whole-page outcome the part can never
+	// carry — the reset. The requested region's own recorded decision
+	// (Block → its fallback, RenderAlt → the alt) applies through
+	// resolveFillSlot exactly as the page applies it.
+	guards, guardRedirect := ensureRegionGuards(ctx, screen, chain)
+	if guardRedirect.Kind == DecisionRedirect {
+		return Fill{}, PartReset
+	}
+	// The fill renders in the region phase: its resolver reads are
+	// contained to it, never the page.
+	ctx = withResolvePhase(ctx, resolvePhaseRegion)
+	// Route values seed before the fill renders so a fill binding
+	// route.* stamps the target's state (the registered title: the
+	// effective one is only known after a screen Load, which a part
+	// never runs).
+	markChainArea(ctx, chain)
+	seedRouteValues(ctx, path, screen.Path, screen.Title, params, requestQuery(ctx))
+	res := a.resolveFillSlot(ctx, path, params, *slot, guards)
+	if res.notFound {
+		// The 404-outlet outcome is a WHOLE-PAGE outcome: the page this
+		// part belongs to answers the not-found page with status 404, so
+		// the part applies nothing and the client reloads the URL as a
+		// whole document (the reset) — the full load then receives the
+		// real 404 (DESIGN "Parallel requests": a part reaching a
+		// whole-page outcome answers 409 and applies nothing).
+		return Fill{}, PartReset
+	}
+	// A failing fill is contained to its region exactly as the page
+	// contains it: the fallback HTML IS the answer (PartApplied), so
+	// the outcome is PartReset only for whole-page disagreement.
+	return Fill{Addr: addr, HTML: res.html}, PartApplied
 }
 
 // RenderOverlayResult renders the screen at path as an intercepted
@@ -703,14 +1277,52 @@ func (a *App) renderPartial(ctx context.Context, path string, overlay *ScreenTyp
 	if !ok {
 		return RenderResult{}, fmt.Errorf("app: no screen registered for path %q", path)
 	}
+	return a.renderScreenPartial(ctx, path, screen, params, overlay)
+}
 
+// renderScreenPartial is renderPartial's body over an already-resolved
+// screen (a route, or the synthetic not-found screen), the partial-path
+// twin of renderScreenPage.
+func (a *App) renderScreenPartial(ctx context.Context, path string, screen *Screen, params map[string]string, overlay *ScreenType) (RenderResult, error) {
+	// Same route-match installation as RenderPageResult: route areas of
+	// tree layouts read the match off the context on every render path.
+	if _, ok := MatchFromContext(ctx); !ok {
+		ctx = WithMatch(ctx, newMatch(screen.Path, path, params))
+	}
+
+	// Resolvers, the same phase ladder the full
+	// page walks: store + eager, policy, Load, then the region phase
+	// for whatever renders below (renderPartialFrom's fills re-run on
+	// the SAME store this installed — one cell per name per request).
+	ctx = withResolverState(ctx, screen)
+	runEagerResolvers(ctx, screen)
+	if pe := resolverPageError(ctx, path); pe != nil {
+		return RenderResult{}, pe
+	}
+
+	var chain []LayoutLayer
+	if screen.Type == ScreenPage {
+		chain = resolveChainKeys(a.Router.layoutChainFor(screen), params)
+	}
 	decision := ResolvePolicy(ctx, screen)
+	if pe := resolverPageError(ctx, path); pe != nil {
+		return RenderResult{}, pe
+	}
 	switch decision.Kind {
 	case DecisionRedirect:
 		return RenderResult{Kind: DecisionRedirect, URL: decision.URL}, nil
 	case DecisionBlock:
 		return RenderResult{Kind: DecisionBlock, Status: decision.Status, Message: decision.Message}, nil
 	}
+	// Region guards run here too a Redirect
+	// moves the page even on the bare partial path, and the recorded
+	// per-region decisions ride the store for partialFromShared's fills
+	// pass — one set of decisions per request.
+	guards, guardRedirect := ensureRegionGuards(ctx, screen, chain)
+	if guardRedirect.Kind == DecisionRedirect {
+		return RenderResult{Kind: DecisionRedirect, URL: guardRedirect.URL}, nil
+	}
+	_ = guards // the bare partial renders no regions; the fills pass reads the store
 
 	// Per-request component instance. See RenderPageResult for rationale.
 	comp := screen.newInstance()
@@ -728,12 +1340,30 @@ func (a *App) renderPartial(ctx context.Context, path string, overlay *ScreenTyp
 		return RenderResult{}, err
 	}
 
+	ctx = withResolvePhase(ctx, resolvePhaseLoad)
 	if loader, ok := comp.(ScreenLoader); ok {
 		if err := safeScreenLoad(loader, ctx); err != nil {
+			if pe := resolverPageError(ctx, path); pe != nil {
+				return RenderResult{}, pe
+			}
 			return RenderResult{}, fmt.Errorf("app: load failed for %q: %w", path, err)
 		}
 	}
+	if pe := resolverPageError(ctx, path); pe != nil {
+		return RenderResult{}, pe
+	}
+	// The partial's own body is the screen's; a layout's fills and
+	// areas (renderPartialFrom) render in the region phase.
+	ctx = withResolvePhase(ctx, resolvePhaseRegion)
 
+	// seed the route.* values
+	// before the component renders — a SCREEN-level route binding (not
+	// only layouts and fills) must resolve on the partial path too.
+	// Title here is the registered one (pre-Load);
+	// RenderPartialFromResult re-seeds the effective title after Load.
+	partialRouteTitle := screen.Title
+	markChainArea(ctx, chain)
+	seedRouteValues(ctx, path, screen.Path, partialRouteTitle, params, requestQuery(ctx))
 	effType := screen.Type
 	if overlay != nil {
 		effType = *overlay

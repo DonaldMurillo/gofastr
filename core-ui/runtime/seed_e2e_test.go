@@ -23,6 +23,7 @@ func startSeedE2EServer(t *testing.T, seedJSON string) string {
 		t.Fatal(err)
 	}
 	mux := http.NewServeMux()
+	handleRuntimeModules(t, mux)
 	mux.HandleFunc("/__gofastr/runtime.js", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/javascript")
 		w.Write([]byte(js))
@@ -85,6 +86,7 @@ func TestSeed_NoBlockLeavesSignalsEmpty(t *testing.T) {
 		t.Fatal(err)
 	}
 	mux := http.NewServeMux()
+	handleRuntimeModules(t, mux)
 	mux.HandleFunc("/__gofastr/runtime.js", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/javascript")
 		w.Write([]byte(js))

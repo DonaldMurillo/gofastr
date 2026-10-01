@@ -14,7 +14,7 @@ func TestUIHostAutoInjectsLiveReloadScriptWhenDev(t *testing.T) {
 	t.Setenv("GOFASTR_ENV", "")
 
 	application := app.NewApp("Test")
-	application.SetDefaultLayout(app.NewLayout("main"))
+	application.SetDefaultLayout(bareLayout("main"))
 	application.RegisterScreen(app.NewScreen("/", &testHomeComp{}).WithTitle("Home").WithDescription("h"), nil)
 
 	ds := New(application) // no WithExtraScripts
@@ -34,7 +34,7 @@ func TestUIHostOmitsLiveReloadScriptByDefault(t *testing.T) {
 	t.Setenv("GOFASTR_DEV_LIVERELOAD", "")
 
 	application := app.NewApp("Test")
-	application.SetDefaultLayout(app.NewLayout("main"))
+	application.SetDefaultLayout(bareLayout("main"))
 	application.RegisterScreen(app.NewScreen("/", &testHomeComp{}).WithTitle("Home").WithDescription("h"), nil)
 
 	ds := New(application)

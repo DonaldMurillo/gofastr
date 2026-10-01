@@ -49,6 +49,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/intwrap"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/laxcoerce"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/laxenvelope"
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/layoutfunc"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/mapwriter"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/negdur"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/nonfinite"
@@ -109,6 +110,11 @@ var repoAnalyzers = []*analysis.Analyzer{
 	// Round-4 red-probe rules (2026-09-05): one per repeated bug shape.
 	allow.Guard(laxenvelope.Analyzer),
 	allow.Guard(nonfinite.Analyzer),
+
+	// The layout contract a layout build that
+	// reads the route match or request outside a RouteArea closure bakes
+	// request-derived chrome no partial ever refreshes.
+	allow.Guard(layoutfunc.Analyzer),
 
 	// Round-5 red-probe rules (2026-09-07): one per repeated bug shape.
 	allow.Guard(recoverlog.Analyzer),

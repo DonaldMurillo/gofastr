@@ -3,7 +3,6 @@ package static
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,7 +11,6 @@ import (
 	coreapp "github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
-	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/uihost"
 )
@@ -156,16 +154,7 @@ func (c pwaStyledOffline) Render() render.HTML {
 // screen is what used to push an inexistent comp-bundle URL into the
 // precache.
 func TestBuildPWAPrecacheEntriesAllResolve(t *testing.T) {
-	styles := make([]*registry.Style, 2)
-	for i := range styles {
-		name := fmt.Sprintf("pwa-ssg-comp-%d", ssgNameSeq.Add(1))
-		styles[i] = registry.RegisterStyle(name, func(theme style.Theme) string {
-			return style.NewComponentSheet(name, theme).
-				Rule(".x").Set("color", "red").End().
-				MustBuild()
-		})
-	}
-	out := buildPWASite(t, "/sub", pwaStyledOffline{styles})
+	out := buildPWASite(t, "/sub", pwaStyledOffline{pwaCompStyles})
 	sw := readOut(t, out, "service-worker.js")
 	_, after, ok := strings.Cut(sw, "var PRECACHE = ")
 	if !ok {

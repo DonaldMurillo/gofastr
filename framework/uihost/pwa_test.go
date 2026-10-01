@@ -417,6 +417,7 @@ func (c styledOfflineComp) Render() render.HTML {
 // for every other page's bundle request, and does not exist at all in
 // static exports.
 func TestPWAOfflineNoBundleCSS(t *testing.T) {
+	registry.IsolateForTest(t) // its styles register after other tests' hosts froze the catalog
 	a := app.NewApp("x")
 	a.Register("/", &plainComp{}, nil)
 	ds := New(a, WithPWA(PWAConfig{OfflineScreen: styledOfflineComp{newPWAStyles(t, 2)}}))

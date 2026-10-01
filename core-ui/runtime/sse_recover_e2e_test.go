@@ -21,6 +21,7 @@ import (
 func TestSSEIdleSessionRecovery(t *testing.T) {
 	var minted atomic.Int32
 	mux := http.NewServeMux()
+	handleRuntimeModules(t, mux)
 	js, err := RuntimeJS()
 	if err != nil {
 		t.Fatal(err)
@@ -64,9 +65,13 @@ func TestSSEIdleSessionRecovery(t *testing.T) {
 	})
 	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
+		// The island is the push target: the stream opens only for a
+		// page that takes pushes, so the recovery loop this test pins
+		// needs one on the page.
 		fmt.Fprint(w, `<!doctype html><html><head>`+
 			`<meta name="gofastr-sse" content="/__gofastr/sse?session=sess-DEAD">`+
-			`</head><body><span id="ready">ready</span>`+
+			`</head><body><div data-island="recover"></div>`+
+			`<span id="ready">ready</span>`+
 			`<script src="/__gofastr/runtime.js"></script></body></html>`)
 	})
 

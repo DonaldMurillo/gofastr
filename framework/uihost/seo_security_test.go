@@ -18,7 +18,7 @@ func (c *headHTMLComp) HeadHTML() string    { return c.head }
 func renderHeadPage(t *testing.T, opts ...Option) string {
 	t.Helper()
 	application := app.NewApp("HeadSec")
-	application.SetDefaultLayout(app.NewLayout("main"))
+	application.SetDefaultLayout(bareLayout("main"))
 	application.RegisterScreen(app.NewScreen("/", &testHomeComp{}).WithTitle("Home"), nil)
 	host := New(application, opts...)
 	rec := httptest.NewRecorder()
@@ -29,7 +29,7 @@ func renderHeadPage(t *testing.T, opts ...Option) string {
 func renderScreenHeadPage(t *testing.T, head string) string {
 	t.Helper()
 	application := app.NewApp("ScreenHeadSec")
-	application.SetDefaultLayout(app.NewLayout("main"))
+	application.SetDefaultLayout(bareLayout("main"))
 	application.RegisterScreen(app.NewScreen("/", &headHTMLComp{head: head}).WithTitle("Home"), nil)
 	host := New(application)
 	rec := httptest.NewRecorder()
@@ -172,7 +172,7 @@ func (c *seoBundleComp) ScreenSEO() SEO      { return c.seo }
 func renderBundleSEOPage(t *testing.T, s SEO) string {
 	t.Helper()
 	application := app.NewApp("BundleSEOSec")
-	application.SetDefaultLayout(app.NewLayout("main"))
+	application.SetDefaultLayout(bareLayout("main"))
 	application.RegisterScreen(app.NewScreen("/", &seoBundleComp{seo: s}).WithTitle("Home"), nil)
 	host := New(application)
 	rec := httptest.NewRecorder()

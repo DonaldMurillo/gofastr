@@ -16,8 +16,8 @@ import (
 
 func TestLayoutKeyOverridesLayerIdentity(t *testing.T) {
 	a := app.NewApp("t")
-	a.Register("/en", &stubComp{html: "EN"}, app.NewLayout("docs").WithKey("docs-en"))
-	a.Register("/es", &stubComp{html: "ES"}, app.NewLayout("docs").WithKey("docs-es"))
+	a.Register("/en", &stubComp{html: "EN"}, app.BareShell("docs").WithKey("docs-en"))
+	a.Register("/es", &stubComp{html: "ES"}, app.BareShell("docs").WithKey("docs-es"))
 
 	for _, tc := range []struct{ path, wantKey string }{
 		{"/en", `data-fui-layout-key="l:docs-en"`},
@@ -53,7 +53,7 @@ func TestLayoutKeyOverridesLayerIdentity(t *testing.T) {
 }
 
 func TestGroupLayerKeyUsesDeclaredKey(t *testing.T) {
-	g := app.NewScreenGroup("/es", app.NewLayout("docs").WithKey("docs-es"))
+	g := app.NewScreenGroup("/es", app.BareShell("docs").WithKey("docs-es"))
 	g.Screen(app.NewScreen("x", &stubComp{html: "X"}), nil)
 	a := app.NewApp("t")
 	a.Router.ScreenGroup(g)

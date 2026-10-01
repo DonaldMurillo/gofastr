@@ -14,8 +14,8 @@ import (
 //
 // Usage:
 //
-//	sidebar := app.NewStaticComponent(sidebarHTML)
-//	group := app.NewScreenGroup("/settings", app.NewLayout("settings").WithSidebar(sidebar))
+//	group := app.NewScreenGroup("/settings", app.NewLayout("settings",
+//	    app.LayoutSpec{}, buildSettings))
 //	group.Screen(screen1, nil)
 //	group.Screen(screen2, nil)
 //	appRouter.ScreenGroup(group)
@@ -28,6 +28,26 @@ type ScreenGroup struct {
 	parent     *ScreenGroup
 	parentApp  *Router
 	standalone bool // when true, the host's default layout does NOT wrap this group
+
+	// fills are this group's outlet-fill declarations, keyed by
+	// (layout, outlet), consulted after each member screen's own fills
+	// and before the outlet's Default (innermost group first). See
+	// fill.go..
+	fills map[*Outlet]fillDecl
+
+	// resolvers are this group's route resolvers, visible to every
+	// member screen that does not declare its own for the same key.
+	// See resolver.go.
+	resolvers []resolverDecl
+
+	// requires lists the resolver keys (this group's or a member's)
+	// that run EAGERLY in the policy phase (group.Requires).
+	requires []AnyKey
+
+	// loading is this group's swap-slot loading declaration (,
+	// the default for every member screen that
+	// does not declare its own. Consulted innermost group first.
+	loading *Loading
 }
 
 // StaticComponent wraps raw HTML as a component.Component. Useful for

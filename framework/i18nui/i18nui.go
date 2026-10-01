@@ -212,7 +212,7 @@ const (
 	KeyThemeAuto        Key = "ui.themeToggle.auto"
 	KeyThemeColorScheme Key = "ui.themeToggle.colorScheme"
 
-	// SiteHeader nav
+	// Site navigation (an app's own header package)
 	KeyNavPrimary       Key = "ui.nav.primary"
 	KeyNavMobilePrimary Key = "ui.nav.mobilePrimary"
 	KeyNavToggle        Key = "ui.nav.toggle"

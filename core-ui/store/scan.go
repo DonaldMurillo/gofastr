@@ -64,10 +64,63 @@ func ResolveSeed(ctx context.Context, names []string) map[string]any {
 
 // SeedFor is the host convenience: scan the page for referenced names,
 // add all app-global names, and resolve the combined seed in one call.
+//
+// every DECLARED route.* name joins the
+// full-page seed as well. A route value can be named ONLY inside a
+// data-fui-computed-deps list (route.path in a breadcrumb computed),
+// which the scan reads as one comma-joined name it cannot decompose;
+// without the unconditional inclusion the boot recompute of such a
+// computed finds no value and clobbers the correct SSR stamp.
 func SeedFor(ctx context.Context, html string) map[string]any {
 	names := ScanReferenced(html)
 	names = append(names, GlobalNames()...)
+	if routeSeedDue(ctx, html) {
+		// Every DECLARED route.* name joins the full-page seed as well.
+		// A route value can be named ONLY inside a
+		// data-fui-computed-deps list (route.path in a breadcrumb
+		// computed), which the scan reads as one comma-joined name it
+		// cannot decompose; without the unconditional inclusion the
+		// boot recompute of such a computed finds no value and
+		// clobbers the correct SSR stamp.
+		names = append(names, RouteNames()...)
+	}
 	return ResolveSeed(ctx, names)
+}
+
+// routeSeedDue is the wire gate for the route.* family (the opt-in
+// decision, 2026-09-26): the names join a seed only when the render
+// READ a route slice (the bag tracker Bind/BindAttr set), the chain
+// carries a RouteArea (MarkRouteArea, whose markup may bind anything),
+// or the html names one inside a data-fui-computed-deps list the
+// reference scan cannot decompose. A render that did none of that — a
+// marketing page, a blog — seeds no route.* at all.
+func routeSeedDue(ctx context.Context, html string) bool {
+	if b := valuesFrom(ctx); b != nil {
+		b.mu.Lock()
+		due := b.routeRead || b.routeArea
+		b.mu.Unlock()
+		if due {
+			return true
+		}
+	}
+	return routeDepRe.MatchString(html)
+}
+
+// routeDepRe matches a computed's dependency list that names a route.*
+// slice. The attribute is comma-joined signal names (applyComputed),
+// so "a,route.path" matches and "aroute.path" does not: the prefix is
+// anchored on a comma or the opening quote.
+var routeDepRe = regexp.MustCompile(`data-fui-computed-deps="(?:[^"]*?,)?route\.`)
+
+// MarkRouteArea marks the request's chain as carrying a RouteArea: the
+// area re-renders on every navigation the layer survives and its
+// markup can bind any route.* slice, so the family seeds.
+func MarkRouteArea(ctx context.Context) {
+	if b := valuesFrom(ctx); b != nil {
+		b.mu.Lock()
+		b.routeArea = true
+		b.mu.Unlock()
+	}
 }
 
 // ScopeOf returns the declared scope of a slice (ScopePage if unknown).
@@ -84,8 +137,26 @@ func ScopeOf(name string) Scope {
 // scope. The client merges page-scoped values unconditionally (fresh
 // page) but only seeds a global the first time it is seen (preserving
 // any value the user mutated on a previous page).
+//
+// every DECLARED route.* name
+// joins the seed unconditionally. A partial's scanned HTML cannot see
+// a binding in a KEPT layer (the route-bound header of a kept shell
+// travels in no payload), so the scan alone would leave those names
+// unseeded and the kept bindings stale; and because SeedRoute writes
+// absent params as ”, the unconditional page-scoped merge also erases
+// the previous route's values on the client.
 func SeedSplit(ctx context.Context, html string) (page, global map[string]any) {
 	names := append(ScanReferenced(html), GlobalNames()...)
+	if routeSeedDue(ctx, html) {
+		//: every DECLARED route.* name joins the seed.
+		// A partial's scanned HTML cannot see a binding in a KEPT
+		// layer (the route-bound header of a kept shell travels in no
+		// payload), so the scan alone would leave those names unseeded
+		// and the kept bindings stale; and because SeedRoute writes
+		// absent params as '', the unconditional page-scoped merge
+		// also erases the previous route's values on the client.
+		names = append(names, RouteNames()...)
+	}
 	all := ResolveSeed(ctx, names)
 	page = map[string]any{}
 	global = map[string]any{}

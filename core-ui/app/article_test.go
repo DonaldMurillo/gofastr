@@ -25,7 +25,7 @@ func (a *articleTestComp) ScreenArticle() ArticleMeta {
 // and Firefox Reader View detect as an article.
 func TestScreenArticleWrapsContentInArticle(t *testing.T) {
 	a := NewApp("ArticleApp")
-	a.SetDefaultLayout(NewLayout("main"))
+	a.SetDefaultLayout(bareShell("main"))
 	a.RegisterScreen(NewScreen("/post", &articleTestComp{body: "<p>Body</p>"}), nil)
 
 	out, err := a.RenderPage(context.Background(), "/post")
@@ -56,7 +56,7 @@ func TestScreenArticleWrapsContentInArticle(t *testing.T) {
 // feature is opt-in.
 func TestNonArticleScreenHasNoArticleWrapper(t *testing.T) {
 	a := NewApp("PlainApp")
-	a.SetDefaultLayout(NewLayout("main"))
+	a.SetDefaultLayout(bareShell("main"))
 	a.RegisterScreen(NewScreen("/page", &stubComponent{html: render.Raw("<p>Plain</p>")}), nil)
 
 	out, err := a.RenderPage(context.Background(), "/page")
@@ -93,7 +93,7 @@ func TestScreenArticleNoLayoutStillWrapsInsideMain(t *testing.T) {
 // interface, no metadata. The framework wraps its content in <article>.
 func TestAsArticleOptionWrapsContent(t *testing.T) {
 	a := NewApp("AsArticleApp")
-	a.SetDefaultLayout(NewLayout("main"))
+	a.SetDefaultLayout(bareShell("main"))
 	a.Register("/post", &stubComponent{html: render.Raw("<p>Body</p>")}, nil, AsArticle())
 
 	out, err := a.RenderPage(context.Background(), "/post")

@@ -140,11 +140,13 @@ func TestNestedScopedThemeOptionsWinByProximity(t *testing.T) {
 		t.Skip("browser e2e: needs a real Chrome")
 	}
 	a := theme.Default(theme.Overrides{
-		Primary:    "#7C3AED", // distinct from the app default's #4F46E5 (see the dark-scope test)
+		Primary:    "#7C3AED",          // distinct from the app default's #4F46E5 (see the dark-scope test)
+		Dark:       &theme.Overrides{}, // these tests vary options, not the dark palette
 		Components: theme.ComponentOptions{Density: theme.Compact, Button: theme.ButtonOptions{Treatment: theme.Outline, Radius: theme.Square}},
 	})
 	b := theme.Default(theme.Overrides{
 		Primary:    "#0EA5E9",
+		Dark:       &theme.Overrides{},
 		Components: theme.ComponentOptions{Density: theme.Comfortable, Button: theme.ButtonOptions{Treatment: theme.Filled, Radius: theme.Pill}},
 	})
 	refA := style.RegisterThemeOverride(a)
@@ -202,10 +204,12 @@ func TestNestedFieldOptionsWinByProximity(t *testing.T) {
 	// leak assertions next door.
 	a := theme.Default(theme.Overrides{
 		Primary:    "#7C3AED",
+		Dark:       &theme.Overrides{}, // these tests vary options, not the dark palette
 		Components: theme.ComponentOptions{Field: theme.FieldOptions{Layout: theme.Stacked, Radius: theme.FieldSquare}},
 	})
 	b := theme.Default(theme.Overrides{
 		Primary:    "#0EA5E9",
+		Dark:       &theme.Overrides{},
 		Components: theme.ComponentOptions{Field: theme.FieldOptions{Layout: theme.Inline, Radius: theme.FieldRound}},
 	})
 	refA := style.RegisterThemeOverride(a)

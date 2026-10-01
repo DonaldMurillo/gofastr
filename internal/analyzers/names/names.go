@@ -32,6 +32,7 @@ var Analyzers = []string{
 	"intwrap",
 	"laxcoerce",
 	"laxenvelope",
+	"layoutfunc",
 	"mapwriter",
 	"negdur",
 	"nonfinite",

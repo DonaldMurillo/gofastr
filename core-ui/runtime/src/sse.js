@@ -6,6 +6,25 @@
 // is one long-lived EventSource per session; the bus multiplexes
 // updates by event type so multiple islands share one connection.
 //
+// ON DEMAND, not always: the meta means "SSE is available", never
+// "open it". The stream opens only while the live document holds a
+// PUSH TARGET, and closes when the last one leaves — an open stream
+// holds one of the browser's six HTTP/1.1 connections per host, so a
+// page that takes no pushes must not hold one. A push target is:
+//   - any [data-island] region: UIHost.PushUpdate can target any
+//     island id, so every island counts. Presence rosters are islands
+//     (the roster swap slot is [data-island]); there is deliberately
+//     no separate opt-in marker for islands, that would silently
+//     break hosts that push today.
+//   - the offline banner ([data-hui-system-offline], the connection
+//     banner built from NetworkRetryBanner): it reads the sseStatus
+//     this module mirrors, so it needs the stream to have a state.
+// The scan (demand below) runs at module load, after every navigation
+// apply (the kernel's scanner hook fires on gofastr:navigate — cached
+// replays included), when a deferred part lands (gofastr:fill — a
+// part can carry the page's only island), and on DOM insertion (the
+// kernel's MutationObserver runs the same scanner hook).
+//
 // Connection state is mirrored onto window.__gofastr.sseStatus
 // ({ connected, lastEventAt, retryCount }), one object mutated in
 // place so holders (NetworkRetryBanner, app code) keep a live
@@ -16,8 +35,9 @@
 // on reconnect.
 //
 // Loads on demand:
-//   - core looks for the <meta name="gofastr-sse"> tag on
-//     DOMContentLoaded; if present, idle-loads this module.
+//   - core looks for a push target (any [data-island] region, the
+//     offline banner) at boot and after every apply; if one is
+//     present, idle-loads this module.
 //   - reconnects on transport error (3s back-off).
 //   - closes the transport on pagehide and re-establishes it on a
 //     bfcache restore (pageshow.persisted). See the lifecycle block.
@@ -111,6 +131,52 @@
     };
   }
 
+  // The push-target selector, kept in one place with the kernel's
+  // marker row (frag/boot.js) and the preload mirror (preload.go):
+  // every island plus the offline banner that reads sseStatus. A new
+  // stream-status reader is a new push target and belongs here AND
+  // there — a target the selector misses is a page whose stream never
+  // opens.
+  const PUSH_TARGETS = '[data-island],[data-hui-system-offline]';
+
+  // demand is the open/close decision: the stream exists only while
+  // the live document holds a push target. Called at module load,
+  // after every navigation apply (through the scanner hook the kernel
+  // runs on gofastr:navigate — cached replays included), when a
+  // deferred part lands (gofastr:fill), and on DOM insertion (the
+  // kernel's MutationObserver runs the same hook). Always scans the
+  // DOCUMENT, never the passed root: a navigation can REMOVE the last
+  // target anywhere in the tree, so no region-scoped answer is sound.
+  // A deliberate close cancels the pending reconnect and clears
+  // retryCount, so a later reopen starts from a clean slate (a stale
+  // retry count plus connected:false would read as an outage to a
+  // banner arriving on the reopening page).
+  function demand() {
+    if (document.querySelector(PUSH_TARGETS)) {
+      if (!source) connect();
+      return;
+    }
+    clearTimeout(retryTimer);
+    retryTimer = 0;
+    if (source) {
+      source.close();
+      source = null;
+    }
+    if (status.connected || status.retryCount) {
+      status.connected = false;
+      status.retryCount = 0;
+      emit();
+    }
+  }
+
+  // The kernel runs every LOADED module's scanner after each apply and
+  // on DOM insertion; gofastr:fill is the parts module's landing event
+  // and fires for no scanner, so it gets its own listener here (a
+  // deferred part can carry the page's only island).
+  NS._moduleScanners = NS._moduleScanners || {};
+  NS._moduleScanners.sse = demand;
+  window.addEventListener('gofastr:fill', demand);
+
   // bfcache lifecycle. On a hard navigation Chrome puts the outgoing
   // page into the back/forward cache WITHOUT closing its EventSource:
   // the dead page's stream keeps hoarding one of the tab's ~6 per-host
@@ -119,11 +185,11 @@
   // loads. Close the transport when the page is hidden (pagehide fires
   // on both bfcache entry and real unload; closing is correct for
   // either), and re-establish it when the page comes back out of the
-  // cache (pageshow.persisted). connect() re-reads the stream meta, so
+  // cache (pageshow.persisted). demand() re-reads the stream meta, so
   // a session re-mint that landed before hiding is honored, and its
   // onopen resets retryCount/lastEventAt and re-announces the status.
   // The retry timer is cleared so a bfcached page's pending reconnect
-  // can't fire on restore alongside pageshow's own connect.
+  // can't fire on restore alongside pageshow's own demand.
   addEventListener('pagehide', () => {
     clearTimeout(retryTimer);
     if (source) {
@@ -135,14 +201,24 @@
     status.connected = false;
   });
   addEventListener('pageshow', (e) => {
-    if (e.persisted && !source) connect();
+    if (e.persisted && !source) demand();
   });
 
-  // Connect immediately when the module loads, by the time we're
-  // executed core has already determined the SSE meta tag is on the
-  // page (otherwise the marker scanner wouldn't have triggered us).
+  // remintSession runs only while the stream is open (it is the
+  // onerror recovery path), so a page with NO push target — no stream,
+  // no idle re-mint — recovers a dead session through the next
+  // navigation instead: the navigator's session rollover rewrites the
+  // stream meta from the X-Gofastr-Session header on every navigation
+  // answer (and a whole-document fetch copies the fresh head's meta),
+  // so the id is already current when a later page reopens the
+  // stream. No timer is added for this: a page that never navigates
+  // and never takes pushes has nothing to recover for.
+  //
+  // Connect through demand(), never blindly: the kernel loaded this
+  // module because a push target was on the page, but an idle-slot
+  // delay or a fast navigation may have removed it by now.
   NS.connectSSE = connect;
-  connect();
+  demand();
 
   (NS.loadedModules ||= {}).sse = true;
 })();

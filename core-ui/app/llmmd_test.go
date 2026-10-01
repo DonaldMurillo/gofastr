@@ -137,7 +137,7 @@ func TestScreenLLMMD_ScreenActions(t *testing.T) {
 
 func TestAppLLMMD_Index(t *testing.T) {
 	a := NewApp("Test App")
-	layout := NewLayout("default")
+	layout := bareShell("default")
 	a.Register("/", &basicComp{}, layout)
 	a.Register("/about", &basicComp{}, layout)
 	a.Register("/products/:slug", &loaderComp{}, layout)
@@ -325,7 +325,7 @@ func (c *actionsComp) Actions() {}
 
 func TestAppLLMMD_NoLLMMD_PerScreen(t *testing.T) {
 	a := NewApp("Test")
-	layout := NewLayout("default")
+	layout := bareShell("default")
 	a.Register("/about", &basicComp{}, layout)
 	a.Register("/home", &basicComp{}, layout)
 
@@ -345,7 +345,7 @@ func TestAppLLMMD_NoLLMMD_PerScreen(t *testing.T) {
 func TestAppLLMMD_NoLLMMD_Global(t *testing.T) {
 	a := NewApp("Test")
 	a.NoLLMMD = true
-	layout := NewLayout("default")
+	layout := bareShell("default")
 	a.Register("/about", &basicComp{}, layout)
 
 	md := AppLLMMD(a)

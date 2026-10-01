@@ -57,10 +57,12 @@ type fragmentDef struct {
 // These are the names the attribute map and the composition table (full /
 // static / embed) may use, nothing else.
 //
-// sse owns zero data-fui-* attributes: it is triggered by the privileged
-// <meta name="gofastr-sse"> marker rather than by a DOM attribute. boot-embed
-// is triggered by <meta name="gofastr-embed"> and owns one attribute,
-// data-fui-embed-state, which reports the frame's lifecycle.
+// sse owns zero data-fui-* attributes: it is triggered by push-target
+// markers (any [data-island] region, the offline banner's
+// [data-hui-system-offline]) rather than by a data-fui-* attribute; the
+// privileged <meta name="gofastr-sse"> is availability, never "open".
+// boot-embed is triggered by <meta name="gofastr-embed"> and owns one
+// attribute, data-fui-embed-state, which reports the frame's lifecycle.
 //
 // The action module is the same shape reached the other way: no
 // marker, no data-fui-* attribute (the adapters that bind through it
@@ -113,7 +115,7 @@ var fragments = map[string]fragmentDef{
 //     inside setSignal's attr-mode branch (aria-selected mirroring).
 //   - The <a>-click hijack owns the nav markers; data-fui-layout /
 //     data-fui-screen-group decide shell-vs-<main> swaps on navigation.
-//   - kernel owns the CSS scanner (data-fui-comp / data-fui-style), the
+//   - kernel owns the CSS scanner (data-fui-comp / data-fui-scope / data-fui-style), the
 //     boot-mode read (data-fui-static), the module-prefetch bridge
 //     (data-fui-prefetch), and the module-load-failure safety net
 //     (data-fui-toast-fallback, created by window.__gofastr._fallbackToast).
@@ -133,6 +135,7 @@ var fragmentAttrs = map[string][]string{
 		"data-fui-bundle",
 		"data-fui-trusted",
 		"data-fui-comp",
+		"data-fui-scope",
 		"data-fui-style",
 		"data-fui-static",
 		"data-fui-prefetch",
@@ -174,6 +177,10 @@ var fragmentAttrs = map[string][]string{
 		"data-fui-lang",
 		"data-fui-skip-label",
 		"data-fui-screen-group",
+		// The fills-envelope, view-transition and loading-content
+		// families moved to their demand modules with the opt-in split
+		// (see moduleAttrs: envelope, transition, loading). nav keeps
+		// only the layout-chain spine the plain navigator needs.
 	},
 	"widgets-boot": {
 		"data-fui-open",
@@ -281,6 +288,43 @@ var moduleAttrs = map[string][]string{
 	"poll": {
 		"data-fui-poll",
 		"data-fui-poll-src",
+	},
+	// The layout demand modules (docs/DESIGN-layout-outlets.md "Opt-in"
+	// table): each loads on its marker and owns its family.
+	"envelope": {
+		// The fills-envelope family the envelope module
+		// parses the <template data-fui-fill> envelope, resolves the targets by
+		// data-fui-outlet / data-fui-area address, and applies every fill. It
+		// also owns the scroll-anchor records (keyed off whatever identity the
+		// content carries) and, once loaded, the navigator itself.
+		"data-fui-fill",
+		"data-fui-outlet",
+		"data-fui-area",
+	},
+	"loading": {
+		// The loading-content family the module
+		// clones the inert <template data-fui-loading="<addr>"> the server
+		// renders beside an outlet, area, or slot cell into the region after
+		// data-fui-after ms of in-flight wait, parks the old nodes, restores
+		// them on failure, and marks the region data-fui-loadstate="shown"
+		// (data-fui-min is the no-flash hold the apply honors).
+		"data-fui-loading",
+		"data-fui-after",
+		"data-fui-min",
+		"data-fui-loadstate",
+	},
+	"transition": {
+		// a view-transition name marker the server
+		// renders on a placed cell; the transition module mirrors it onto the
+		// CSSOM view-transition-name before a navigation's snapshots.
+		// data-fui-vt-when gates the name on a media condition.
+		// data-fui-vt-kinds is the document's declared keyed-transition
+		// vocabulary, on <html> at first paint and on the doc shell every
+		// swapped payload's root layer carries; the module copies it onto the
+		// documentElement and gates the X-Gofastr-Transition pick against it.
+		"data-fui-vt",
+		"data-fui-vt-when",
+		"data-fui-vt-kinds",
 	},
 	"popover": {
 		"data-fui-popover-anchor",

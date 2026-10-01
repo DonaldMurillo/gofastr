@@ -619,6 +619,11 @@ func goEmittedAttrs(t *testing.T) []string {
 		// concat (mount.go); it owns its own parity gate too, but the
 		// doc→owner gate must still see them as emitted.
 		filepath.Join("..", "..", "framework", "pluginhost"),
+		// uihost emits attributes of its own beside the component trees:
+		// the data-fui-doc markers on registered document scripts and,
+		// since spike/layout-loading, the data-fui-page-loading wrapper
+		// div (WithPageLoading).
+		filepath.Join("..", "..", "framework", "uihost"),
 	}
 	set := map[string]struct{}{}
 	for _, root := range roots {

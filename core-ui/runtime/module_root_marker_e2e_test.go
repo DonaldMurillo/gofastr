@@ -31,6 +31,7 @@ func TestModuleLoadsForRootMarkerNode(t *testing.T) {
 
 	var modHits atomic.Int32
 	mux := http.NewServeMux()
+	handleRuntimeModules(t, mux)
 	mux.HandleFunc("/__gofastr/runtime.js", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/javascript")
 		w.Write([]byte(js))

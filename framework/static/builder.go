@@ -20,6 +20,7 @@ import (
 	coreapp "github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/runtime"
 	"github.com/DonaldMurillo/gofastr/core-ui/widget"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 	"github.com/DonaldMurillo/gofastr/framework/uihost"
 )
@@ -49,6 +50,15 @@ type Builder struct {
 	// build (or the user static dir) already produced win: extra files
 	// are written only when absent, matching the SEO/PWA precedence.
 	ExtraDirs map[string]fs.FS
+	// ExcludeRoutes skips routes whose pattern (or a prefix segment of
+	// it) matches an entry, e.g. ExcludeRoutes: []string{"/broken"}
+	// skips "/broken/load" and every other /broken/* page. A lab or
+	// example app uses it to keep routes that fail ON PURPOSE out of
+	// the export set; the skip is logged so the gap is never silent.
+	// the builder refuses a page whose fill
+	// failed and was contained, so routes that fail on purpose must be
+	// excluded explicitly or the export errors.
+	ExcludeRoutes []string
 }
 
 // Result is a summary of a Build run.
@@ -74,6 +84,10 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 
 	// Pages.
 	for _, route := range b.Host.App.Routes() {
+		if b.routeExcluded(route.Path) {
+			b.log("skipped excluded route %s", route.Path)
+			continue
+		}
 		if route.RedirectTo != "" {
 			continue // redirects render no page
 		}
@@ -82,16 +96,43 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 			return res, fmt.Errorf("static: expand %q: %w", route.Path, err)
 		}
 		for _, p := range paths {
-			html, err := b.Host.RenderStaticPage(ctx, p)
+			page, fillFailures, err := b.Host.RenderStaticPageResult(ctx, p)
 			if err != nil {
 				if blocked, ok := errors.AsType[*uihost.PolicyBlockedError](err); ok {
 					slog.Warn("static: skipped gated screen: policy refused the static render; the route stays reachable via the live server. Use a policy that RenderAlts (e.g. a login prompt) to keep the page in the export.",
 						"path", p, "decision", blocked.Decision)
 					continue
 				}
+				// The 404-outlet outcome (FallbackNotFound, Decided 5):
+				// the route's own answer is 404, so there is no page to
+				// bake in — skip with a warning naming the route, the way
+				// a dynamic route without StaticPaths is skipped.
+				if nf, ok := errors.AsType[*uihost.NotFoundOutletError](err); ok {
+					slog.Warn("static: skipped 404-outlet route: a FallbackNotFound outlet had no fill at build time, the route's own answer is 404; it stays reachable via the live server",
+						"path", nf.Path)
+					continue
+				}
 				return res, fmt.Errorf("static: render %q: %w", p, err)
 			}
-			html = b.applyStaticMode(html)
+			// a fill that failed and was
+			// contained degrades its outlet on a LIVE server, but an
+			// export would freeze the degraded bytes into the page for
+			// every visitor — refuse, naming the route and each outlet
+			// address, so the operator fixes the fill or excludes the
+			// route on purpose.
+			if len(fillFailures) > 0 {
+				parts := make([]string, 0, len(fillFailures))
+				for _, f := range fillFailures {
+					// The error text can carry hostile bytes (the lab's
+					// broken fills do on purpose); a build log is a
+					// sink, so it reaches it scrubbed.
+					parts = append(parts, fmt.Sprintf("%s (%v)", f.Addr, textsafe.StripUnsafe(f.Err.Error())))
+				}
+				return res, fmt.Errorf(
+					"static: render %q refused: %d fill(s) failed and were contained (a live server degrades the outlet; the export will not bake it): %s",
+					p, len(fillFailures), strings.Join(parts, "; "))
+			}
+			html := b.applyStaticMode(page)
 			dst := filepath.Join(b.OutDir, pathToFile(p))
 			if err := b.ensureContained(dst); err != nil {
 				return res, err
@@ -104,19 +145,34 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 		}
 	}
 
-	// Security headers for hosts that read a `_headers` file (Netlify,
-	// Cloudflare Pages). Pages also carry the policy as an in-document
-	// meta: that enforces the fetch directives on a host that ignores
-	// this file, but CSP Level 3 §3.1 ignores `frame-ancestors` in a
-	// meta (alongside `sandbox`/`report-uri`), so the clickjacking guard
-	// only lands where the header is read.
-	if err := writeHeadersFile(b.OutDir); err != nil {
-		return res, fmt.Errorf("static: write _headers: %w", err)
+	// 404.html at the export root (, GitHub
+	// Pages, Netlify, Cloudflare Pages and S3 website hosting all serve
+	// it for a miss, rendered from the same not-found page the live
+	// server answers with (the root layout's shell, outlets at their
+	// defaults, full chrome). The runtime reads a non-OK HTML document
+	// through the same swap paths a 200 takes, so a miss on the static
+	// host lands inside the shell with the error page in <main>, never
+	// a dead toast. A host without a root layout emits none: its bare
+	// 404 has no shell to keep.
+	if page, ok := b.Host.RenderStaticNotFoundPage(ctx, "/"); ok {
+		html := b.applyStaticMode(page)
+		dst := filepath.Join(b.OutDir, "404.html")
+		if err := b.ensureContained(dst); err != nil {
+			return res, err
+		}
+		if err := writeFile(dst, []byte(html)); err != nil {
+			return res, err
+		}
+		res.Assets = append(res.Assets, "/404.html")
+		b.log("rendered not-found page -> %s", dst)
 	}
 
 	// LLM documentation: per-page llm.md and top-level index.
 	if !b.Host.App.NoLLMMD {
 		for _, route := range b.Host.App.Routes() {
+			if b.routeExcluded(route.Path) {
+				continue
+			}
 			if route.RedirectTo != "" {
 				continue
 			}
@@ -296,6 +352,23 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 	}
 
 	return res, nil
+}
+
+// routeExcluded reports whether a route pattern is covered by an
+// ExcludeRoutes entry: exact match, or the pattern sits under the
+// entry as a whole path segment ("/broken" covers "/broken/load" but
+// not "/brokenly"). Entries normalize their trailing slash away.
+func (b *Builder) routeExcluded(pattern string) bool {
+	for _, ex := range b.ExcludeRoutes {
+		ex = strings.TrimSuffix(ex, "/")
+		if ex == "" {
+			continue
+		}
+		if pattern == ex || strings.HasPrefix(pattern, ex+"/") {
+			return true
+		}
+	}
+	return false
 }
 
 // ensureContained is the last line of defence before any generated file is

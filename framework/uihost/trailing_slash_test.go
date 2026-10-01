@@ -14,7 +14,7 @@ import (
 // it ourselves. A miss should redirect, not 404.
 func TestUIHostRedirectsMissingTrailingSlash(t *testing.T) {
 	application := app.NewApp("Test")
-	application.SetDefaultLayout(app.NewLayout("main"))
+	application.SetDefaultLayout(bareLayout("main"))
 	application.RegisterScreen(app.NewScreen("/components/", &testHomeComp{}).WithTitle("C"), nil)
 	ds := New(application)
 
@@ -33,7 +33,7 @@ func TestUIHostRedirectsMissingTrailingSlash(t *testing.T) {
 // Query string must survive the redirect.
 func TestUIHostTrailingSlashRedirectKeepsQuery(t *testing.T) {
 	application := app.NewApp("Test")
-	application.SetDefaultLayout(app.NewLayout("main"))
+	application.SetDefaultLayout(bareLayout("main"))
 	application.RegisterScreen(app.NewScreen("/items/", &testHomeComp{}).WithTitle("I"), nil)
 	ds := New(application)
 
@@ -53,7 +53,7 @@ func TestUIHostTrailingSlashRedirectKeepsQuery(t *testing.T) {
 // redirect to a non-existent path).
 func TestUIHostNoRedirectWhenSlashFormAlsoMisses(t *testing.T) {
 	application := app.NewApp("Test")
-	application.SetDefaultLayout(app.NewLayout("main"))
+	application.SetDefaultLayout(bareLayout("main"))
 	application.RegisterScreen(app.NewScreen("/", &testHomeComp{}).WithTitle("Home"), nil)
 	ds := New(application)
 

@@ -137,50 +137,19 @@ func TestScreenRender(t *testing.T) {
 	}
 }
 
-func TestLayout(t *testing.T) {
+func TestLayoutWrapCtx(t *testing.T) {
 	headerComp := &stubComponent{html: render.Raw("<h1>Header</h1>")}
 	sidebarComp := &stubComponent{html: render.Raw("<ul><li>Nav</li></ul>")}
 	footerComp := &stubComponent{html: render.Raw("<p>Footer</p>")}
 
-	l := NewLayout("app").
-		WithHeader(headerComp).
-		WithSidebar(sidebarComp).
-		WithFooter(footerComp)
-
-	if l.Name != "app" {
-		t.Errorf("expected name 'app', got %q", l.Name)
-	}
-	if l.Header != headerComp {
-		t.Error("expected header to be set")
-	}
-	if l.Sidebar != sidebarComp {
-		t.Error("expected sidebar to be set")
-	}
-	if l.Footer != footerComp {
-		t.Error("expected footer to be set")
-	}
-}
-
-func TestLayoutWrap(t *testing.T) {
-	headerComp := &stubComponent{html: render.Raw("<h1>Header</h1>")}
-	sidebarComp := &stubComponent{html: render.Raw("<ul><li>Nav</li></ul>")}
-	footerComp := &stubComponent{html: render.Raw("<p>Footer</p>")}
-
-	l := NewLayout("app").
-		WithHeader(headerComp).
-		WithSidebar(sidebarComp).
-		WithFooter(footerComp)
+	l := chromeShell("app", headerComp, sidebarComp, footerComp)
 
 	content := render.Raw("<p>Content</p>")
-	html := string(l.Wrap(content))
+	html := string(l.WrapCtx(context.Background(), content))
 
-	// Check structure. The wrapper carries the layout name plus modifier
-	// classes (layout--has-sidebar here, since this layout has a sidebar).
+	// Check structure. The wrapper carries the layout name.
 	if !strings.Contains(html, `class="layout-app`) {
 		t.Errorf("expected layout-app class, got: %s", html)
-	}
-	if !strings.Contains(html, `layout--has-sidebar`) {
-		t.Errorf("expected layout--has-sidebar modifier (layout has a sidebar), got: %s", html)
 	}
 	if !strings.Contains(html, `role="banner"`) {
 		t.Errorf("expected role=banner, got: %s", html)
@@ -202,10 +171,10 @@ func TestLayoutWrap(t *testing.T) {
 	}
 }
 
-func TestLayoutWrapNil(t *testing.T) {
+func TestLayoutWrapCtxNil(t *testing.T) {
 	var l *Layout
 	content := render.Raw("<p>Just content</p>")
-	html := string(l.Wrap(content))
+	html := string(l.WrapCtx(context.Background(), content))
 	if html != "<p>Just content</p>" {
 		t.Errorf("nil layout should pass through content, got: %s", html)
 	}
@@ -257,7 +226,7 @@ func TestRouterRenderWithLayout(t *testing.T) {
 	comp := &stubComponent{html: render.Raw("<p>Home</p>")}
 	screen := NewScreen("/", comp)
 
-	layout := NewLayout("sidebar").WithHeader(&stubComponent{html: render.Raw("<h1>App</h1>")})
+	layout := headerShell("sidebar", &stubComponent{html: render.Raw("<h1>App</h1>")})
 	r.Screen(screen, layout)
 
 	html, err := r.RenderRaw("/")
@@ -392,7 +361,7 @@ func TestAppRenderScreenWithLayout(t *testing.T) {
 	screen := NewScreen("/dashboard", comp)
 
 	headerComp := &stubComponent{html: render.Raw("<h1>Dashboard</h1>")}
-	layout := NewLayout("dashboard").WithHeader(headerComp)
+	layout := headerShell("dashboard", headerComp)
 	a.RegisterScreen(screen, layout)
 
 	html, err := a.RenderPage(context.Background(), "/dashboard")
@@ -419,7 +388,7 @@ func TestDefaultLayout(t *testing.T) {
 
 	// Set default layout after screen registration.
 	headerComp := &stubComponent{html: render.Raw("<h1>Global Header</h1>")}
-	defaultLayout := NewLayout("default").WithHeader(headerComp)
+	defaultLayout := headerShell("default", headerComp)
 	a.SetDefaultLayout(defaultLayout)
 
 	// Both screens should use the default layout.
@@ -450,11 +419,11 @@ func TestDefaultLayoutOverride(t *testing.T) {
 
 	// Default layout.
 	defaultHeader := &stubComponent{html: render.Raw("<h1>Default</h1>")}
-	a.SetDefaultLayout(NewLayout("default").WithHeader(defaultHeader))
+	a.SetDefaultLayout(headerShell("default", defaultHeader))
 
 	// Screen with explicit layout overrides default.
 	customHeader := &stubComponent{html: render.Raw("<h1>Custom</h1>")}
-	customLayout := NewLayout("custom").WithHeader(customHeader)
+	customLayout := headerShell("custom", customHeader)
 
 	a.RegisterScreen(NewScreen("/", &stubComponent{html: render.Raw("<p>Home</p>")}), nil)
 	a.RegisterScreen(NewScreen("/special", &stubComponent{html: render.Raw("<p>Special</p>")}), customLayout)
@@ -487,16 +456,18 @@ func TestDefaultLayoutOverride(t *testing.T) {
 // nests inside the default layout.
 func TestStandaloneGroupSkipsDefaultLayout(t *testing.T) {
 	a := NewApp("StandaloneApp")
-	a.SetDefaultLayout(NewLayout("app").WithSidebar(&stubComponent{html: render.Raw("<nav>App nav</nav>")}))
+	a.SetDefaultLayout(sidebarShell("app", &stubComponent{html: render.Raw("<nav>App nav</nav>")}))
 
 	// Standalone group with its own shell (e.g. the admin back-office).
-	adminLayout := NewLayout("admin").WithSidebar(&stubComponent{html: render.Raw("<nav>Admin nav</nav>")})
+	adminLayout := sidebarShell("admin", &stubComponent{html: render.Raw("<nav>Admin nav</nav>")})
 	admin := NewScreenGroup("/admin/e", adminLayout).Standalone()
 	admin.Screen(NewScreen("customers", &stubComponent{html: render.Raw("<p>Customers</p>")}), nil)
 	a.Router.ScreenGroup(admin)
 
 	// Normal group (no Standalone), should still nest in the default layout.
-	plain := NewScreenGroup("/dash", NewLayout("dash"))
+	plain := NewScreenGroup("/dash", NewLayout("dash", LayoutSpec{}, func(ctx context.Context, l *LayoutTree) render.HTML {
+		return l.Primary()
+	}))
 	plain.Screen(NewScreen("home", &stubComponent{html: render.Raw("<p>Home</p>")}), nil)
 	a.Router.ScreenGroup(plain)
 
@@ -567,8 +538,8 @@ func TestScreenTypeString(t *testing.T) {
 
 func TestLayoutWrapNoHeaderNoFooter(t *testing.T) {
 	// Layout with only sidebar, no header/footer.
-	l := NewLayout("minimal").WithSidebar(&stubComponent{html: render.Raw("<nav>Links</nav>")})
-	html := string(l.Wrap(render.Raw("<p>Content</p>")))
+	l := sidebarShell("minimal", &stubComponent{html: render.Raw("<nav>Links</nav>")})
+	html := string(l.WrapCtx(context.Background(), render.Raw("<p>Content</p>")))
 
 	if !strings.Contains(html, `class="layout-body"`) {
 		t.Errorf("expected layout-body, got: %s", html)

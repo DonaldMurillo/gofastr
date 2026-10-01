@@ -93,7 +93,7 @@ func TestEmbedEndToEndInABrowser(t *testing.T) {
 	t.Cleanup(customer.Close)
 
 	application := app.NewApp("Embed E2E")
-	application.SetDefaultLayout(app.NewLayout("main").WithHeader(&testHeaderComp{}))
+	application.SetDefaultLayout(headerLayout("main", &testHeaderComp{}))
 	reportsScreen := app.NewScreen("/reports", &tallEmbedComp{}).WithTitle("Reports")
 	application.RegisterScreen(reportsScreen, app.EmbedLayout())
 

@@ -60,6 +60,11 @@ func (sl *Slice[T]) Seed(ctx context.Context, v T) {
 // declared default.
 func (sl *Slice[T]) resolve(ctx context.Context) T {
 	if b := valuesFrom(ctx); b != nil {
+		if IsRouteName(sl.name) {
+			b.mu.Lock()
+			b.routeRead = true
+			b.mu.Unlock()
+		}
 		b.mu.Lock()
 		raw, ok := b.m[sl.name]
 		b.mu.Unlock()
@@ -164,12 +169,24 @@ func stripURLControlBytes(s string) string {
 // BindHTML binds in html mode (innerHTML). TRUSTED VALUES ONLY, the
 // value is written without escaping. Use Bind (text mode) for any value
 // that can be influenced by users.
+//
+// Route slices (route.*) refuse html mode outright: every route value
+// is user-influenced text (the path, params, query) or partially so
+// (the title), so the family is text-only by construction — the
+// refusal happens here, at the emitter, rather than as a runtime
+// warning after the markup shipped.
 func (sl *Slice[T]) BindHTML(ctx context.Context, tag string, attrs map[string]string) render.HTML {
+	if isRouteSliceName(sl.name) {
+		panic("store: route slices are text-only; BindHTML on " + sl.name + " would render user-influenced route state as markup")
+	}
 	a := cloneAttrs(attrs)
 	a["data-fui-signal"] = sl.name
 	a["data-fui-signal-mode"] = "html"
 	return renderEl(tag, a, render.HTML(valueString(any(sl.resolve(ctx)))))
 }
+
+// isRouteSliceName is the BindHTML guard's family test.
+func isRouteSliceName(name string) bool { return IsRouteName(name) }
 
 // Publish connects a producer's RPC to this slice: on a 2xx response the
 // runtime treats the response body as the new signal value and fans it
@@ -188,6 +205,13 @@ type valuesKey struct{}
 type values struct {
 	mu sync.Mutex
 	m  map[string]any
+	// routeRead records that this request's render READ a route.*
+	// slice (a Bind or BindAttr resolved one), the wire gate for
+	// seeding the family: routeSeedDue. routeArea is the other arm —
+	// the app marks a chain that carries a RouteArea (its fn runs
+	// every render, its markup can bind route.* anywhere).
+	routeRead bool
+	routeArea bool
 }
 
 // WithValues installs a fresh request-scoped value bag on ctx. The UI

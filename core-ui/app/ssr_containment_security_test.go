@@ -99,7 +99,7 @@ func TestSSRPipelineContainsHostHookPanics(t *testing.T) {
 	// With-layout control: the chain arm converts to the error channel
 	// (its pre-existing containment); it must never panic.
 	aCtl := NewApp("ssr-ctl")
-	aCtl.SetDefaultLayout(NewLayout("ctl"))
+	aCtl.SetDefaultLayout(bareShell("ctl"))
 	aCtl.Register("/", ssrBoomScreen{}, nil)
 	ssrNoPanic(t, "ssr-containment", "RenderPageResult (with layout) on a panicking screen", func() {
 		if _, err := aCtl.RenderPageResult(ctx, "/"); err == nil {
@@ -110,7 +110,7 @@ func TestSSRPipelineContainsHostHookPanics(t *testing.T) {
 	// Intercept-overlay partial arm: RenderOverlayResult renders the same
 	// screen through renderComponentAs with a drawer ScreenType.
 	aIx := NewApp("ssr-overlay")
-	aIx.SetDefaultLayout(NewLayout("ctl"))
+	aIx.SetDefaultLayout(bareShell("ctl"))
 	aIx.Register("/", ssrBoomScreen{}, nil)
 	ssrNoPanic(t, "ssr-containment", "RenderOverlayResult (drawer) on a panicking screen", func() {
 		if _, err := aIx.RenderOverlayResult(ctx, "/", ScreenDrawer); err != nil {
@@ -130,7 +130,7 @@ func TestSSRPipelineContainsHostHookPanics(t *testing.T) {
 	// Load panic: converted to the error channel a Load error already
 	// takes — an ERROR return, never an escaped panic.
 	aLoad := NewApp("ssr-load")
-	aLoad.SetDefaultLayout(NewLayout("ctl"))
+	aLoad.SetDefaultLayout(bareShell("ctl"))
 	aLoad.Register("/", &ssrLoadBoom{}, nil)
 	ssrNoPanic(t, "ssr-loadhook", "RenderPageResult with a panicking Load hook", func() {
 		if _, err := aLoad.RenderPageResult(ctx, "/"); err == nil {
@@ -139,7 +139,7 @@ func TestSSRPipelineContainsHostHookPanics(t *testing.T) {
 	})
 	// The partial path's Load hook takes the same channel.
 	aLoadP := NewApp("ssr-load-partial")
-	aLoadP.SetDefaultLayout(NewLayout("ctl"))
+	aLoadP.SetDefaultLayout(bareShell("ctl"))
 	aLoadP.Register("/", &ssrLoadBoom{}, nil)
 	ssrNoPanic(t, "ssr-loadhook", "RenderPartialResult with a panicking Load hook", func() {
 		if _, err := aLoadP.RenderPartialResult(ctx, "/"); err == nil {
@@ -150,7 +150,7 @@ func TestSSRPipelineContainsHostHookPanics(t *testing.T) {
 	// ScreenTitle that panics only from its 2nd call (the post-Load
 	// re-read): the page renders under the registered title, no escape.
 	aTitle := NewApp("ssr-title")
-	aTitle.SetDefaultLayout(NewLayout("ctl"))
+	aTitle.SetDefaultLayout(bareShell("ctl"))
 	aTitle.Register("/", &ssrTitleBoom{}, nil)
 	ssrNoPanic(t, "ssr-loadhook", "RenderPageResult with a 2nd-call-panicking ScreenTitle", func() {
 		res, err := aTitle.RenderPageResult(ctx, "/")

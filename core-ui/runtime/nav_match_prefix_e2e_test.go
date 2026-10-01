@@ -22,6 +22,12 @@ func navPrefixPage(path, js string) string {
     <a id="docs" href="/docs" data-fui-match-prefix="">Documentation</a>
     <a id="blog" href="/blog/" data-fui-match-prefix="">Blog</a>
     <a id="docsold" href="/docs-old" data-fui-match-prefix="">Archive</a>
+    <!-- The sidebar shape (framework/ui.SidebarItem.MatchPath): the
+         attribute's VALUE names the section the link owns, and it can
+         differ from the href — an overview entry linking deep into a
+         section while owning the whole section prefix. -->
+    <a id="ov" href="/projects/billing/overview" data-fui-match-prefix="/projects/billing">Billing</a>
+    <a id="other" href="/elsewhere" data-fui-match-prefix="/nope">Elsewhere</a>
   </nav>
   <main><a id="deep" href="/docs/getting-started">Getting started</a> %s</main>
   <script src="/__gofastr/runtime.js"></script>
@@ -35,6 +41,7 @@ func navPrefixServer(t *testing.T) *httptest.Server {
 		t.Fatal(err)
 	}
 	mux := http.NewServeMux()
+	handleRuntimeModules(t, mux)
 	mux.HandleFunc("/__gofastr/runtime.js", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/javascript")
 		w.Write([]byte(js))
@@ -176,5 +183,34 @@ func TestMatchPrefixAfterClientNav(t *testing.T) {
 	}
 	if docs != "page" {
 		t.Errorf(`href="/docs" must be active after client nav to /docs/getting-started, got aria-current=%q`, docs)
+	}
+}
+
+// The attribute's VALUE is the prefix when non-empty: ui.Sidebar emits
+// MatchPath there, and the value can differ from the href (an overview
+// link that owns a whole section). The href stays the fallback for the
+func TestMatchPrefixAttributeValueWinsOverHref(t *testing.T) {
+	srv := navPrefixServer(t)
+	ctx := chromedptest.Context(t)
+
+	var state map[string]any
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(srv.URL+"/projects/billing/issues/42"),
+		chromedp.WaitVisible(`#ov`, chromedp.ByID),
+		// The idle-loaded activelink module's initial pass.
+		chromedp.Sleep(600*time.Millisecond),
+		chromedp.Evaluate(`(() => ({
+			ov: document.getElementById('ov').getAttribute('aria-current'),
+			ovActive: document.getElementById('ov').classList.contains('active'),
+			other: document.getElementById('other').getAttribute('aria-current'),
+		}))()`, &state),
+	); err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	if state["ov"] != "page" || state["ovActive"] != true {
+		t.Errorf("value-bearing match-prefix link did not light up on its section (aria-current=%v active=%v); the module must use the attribute's value as the prefix", state["ov"], state["ovActive"])
+	}
+	if state["other"] != nil {
+		t.Errorf("link whose prefix value does not match must stay dark, got aria-current=%v", state["other"])
 	}
 }

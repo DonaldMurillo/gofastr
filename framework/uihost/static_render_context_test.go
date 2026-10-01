@@ -44,7 +44,7 @@ func (s *slugScreen) Render() render.HTML                { return render.Text("d
 // chrome of the site root.
 func TestRenderStaticPageCarriesTheRequestAndMatch(t *testing.T) {
 	application := app.NewApp("StaticContext")
-	application.SetDefaultLayout(app.NewLayout("main").WithHeader(pathAwareChrome{}))
+	application.SetDefaultLayout(headerLayout("main", pathAwareChrome{}))
 	application.RegisterScreen(app.NewScreen("/docs/{slug}", &slugScreen{}).WithTitle("Doc"), nil)
 
 	page, err := New(application).RenderStaticPage(context.Background(), "/docs/guide")
@@ -77,7 +77,7 @@ func excerpt(page, marker string) string {
 // have its context replaced.
 func TestRenderStaticPageKeepsASuppliedRequestAndMatch(t *testing.T) {
 	application := app.NewApp("StaticContextSupplied")
-	application.SetDefaultLayout(app.NewLayout("main").WithHeader(pathAwareChrome{}))
+	application.SetDefaultLayout(headerLayout("main", pathAwareChrome{}))
 	application.RegisterScreen(app.NewScreen("/docs/{slug}", &slugScreen{}).WithTitle("Doc"), nil)
 
 	req := httptest.NewRequest("GET", "/somewhere/else", nil)

@@ -63,6 +63,7 @@ func registerTestStyle(t *testing.T, prefix string, opts ...registry.Option) *re
 // app.css last." If a future refactor flips this back, every
 // consumer's theme override silently stops working.
 func TestCSSLoadOrder_AppCSSWinsOverComponentCSS(t *testing.T) {
+	registry.IsolateForTest(t) // its styles register after other tests' hosts froze the catalog
 	st := registerTestStyle(t, "order")
 	ds := newTestUIHostFor(st)
 	body := pageBody(t, ds, "/")
@@ -188,6 +189,7 @@ func TestComponentCSS_EagerLinkEvenWithoutRender(t *testing.T) {
 }
 
 func TestComponentCSS_ServeIndividualSheetIsScoped(t *testing.T) {
+	registry.IsolateForTest(t) // its styles register after other tests' hosts froze the catalog
 	st := registerTestStyle(t, "serve")
 	ds := newTestUIHostFor(st)
 	req := httptest.NewRequest("GET", "/__gofastr/comp/"+st.Name()+".css", nil)
@@ -204,6 +206,7 @@ func TestComponentCSS_ServeIndividualSheetIsScoped(t *testing.T) {
 }
 
 func TestComponentCSS_BundleConcatenates(t *testing.T) {
+	registry.IsolateForTest(t) // its styles register after other tests' hosts froze the catalog
 	a := registerTestStyle(t, "bun-a")
 	b := registerTestStyle(t, "bun-b")
 	ds := newTestUIHostForMany(a, b)
@@ -228,6 +231,7 @@ func TestComponentCSS_BundleConcatenates(t *testing.T) {
 // twice = wasted bandwidth + a real risk that some property cascade
 // gets reset by the duplicate.
 func TestComponentCSS_BundleDedupesNames(t *testing.T) {
+	registry.IsolateForTest(t) // its styles register after other tests' hosts froze the catalog
 	a := registerTestStyle(t, "dup-a")
 	ds := newTestUIHostFor(a)
 	// "a,a" should produce exactly one body block, not two.
@@ -246,6 +250,7 @@ func TestComponentCSS_BundleDedupesNames(t *testing.T) {
 }
 
 func TestComponentCSS_CatalogShipsViaManifestJS(t *testing.T) {
+	registry.IsolateForTest(t) // its styles register after other tests' hosts froze the catalog
 	st := registerTestStyle(t, "cat")
 	ds := newTestUIHostFor(st)
 	// Live pages externalize the catalog into the hashed manifest.js so
@@ -277,6 +282,7 @@ func TestComponentCSS_CatalogShipsViaManifestJS(t *testing.T) {
 }
 
 func TestComponentCSS_CacheHeaderImmutableOnlyWhenVMatches(t *testing.T) {
+	registry.IsolateForTest(t) // its styles register after other tests' hosts froze the catalog
 	st := registerTestStyle(t, "cache")
 	ds := newTestUIHostFor(st)
 	theme := ds.ActiveTheme()
@@ -395,6 +401,7 @@ func TestComponentCSS_BundleRefusesRegisteredUnsafeName(t *testing.T) {
 }
 
 func TestComponentCSS_BundleEmitsBundleAttr(t *testing.T) {
+	registry.IsolateForTest(t) // its styles register after other tests' hosts froze the catalog
 	a := registerTestStyle(t, "battr-a")
 	b := registerTestStyle(t, "battr-b")
 	ds := newTestUIHostForMany(a, b)
@@ -417,6 +424,7 @@ func TestComponentCSS_BundleEmitsBundleAttr(t *testing.T) {
 }
 
 func TestComponentCSS_PageReferencesManifestJS(t *testing.T) {
+	registry.IsolateForTest(t) // its styles register after other tests' hosts froze the catalog
 	st := registerTestStyle(t, "pglink")
 	ds := newTestUIHostFor(st)
 	body := pageBody(t, ds, "/")
@@ -451,9 +459,7 @@ func newTestUIHostFor(s *registry.Style) *UIHost {
 
 func newTestUIHostForMany(ss ...*registry.Style) *UIHost {
 	application := app.NewApp("Test App")
-	layout := app.NewLayout("main").
-		WithHeader(&testHeaderComp{}).
-		WithFooter(&testFooterComp{})
+	layout := chromeTestLayout("main", &testHeaderComp{}, nil, &testFooterComp{})
 	application.SetDefaultLayout(layout)
 	application.RegisterScreen(
 		app.NewScreen("/", &homeWithStyles{styles: ss}).WithTitle("Home"),

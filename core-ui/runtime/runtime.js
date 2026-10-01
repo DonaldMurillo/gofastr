@@ -8,7 +8,7 @@
 
 // kernel.js: always-present substrate (spec fragment `kernel`, boot class).
 // Owns: doc state (DOC_MANIFEST), module loader, same-origin guards, the
-// data-fui-comp CSS scanner, window.__gofastr namespace CREATION (other
+// data-fui-comp / data-fui-scope CSS scanner, window.__gofastr namespace CREATION (other
 // fragments and demand modules extend it via Object.assign), manifest reads,
 // component-action dispatch helpers.
 // Composed FIRST; every other fragment depends on it.
@@ -414,6 +414,11 @@
     // Component CSS: three modes share _pendingLinks + data-fui-style dedup.
     // See core-ui/ARCHITECTURE.md for the model. Catalog seeded by /__gofastr/catalog.js.
     _pendingLinks: new Set(),
+    // Page-lifetime conjunction of every component stylesheet load, awaited
+    // by _settleScroll before hash/history scroll writes. Initialized
+    // resolved so the first loadComponentCSS chains onto a real promise
+    // instead of relying on Promise.all tolerating undefined.
+    _stylesReady: Promise.resolve(),
     loadComponentCSS(name) {
       if (!name || this._pendingLinks.has(name)) return;
       if (document.querySelector('link[data-fui-style="' + CSS.escape(name) + '"]')) return;
@@ -431,15 +436,28 @@
       link.href = e.stylePath + (e.version ? (e.stylePath.indexOf('?') >= 0 ? '&' : '?') + 'v=' + e.version : '');
       link.setAttribute('data-fui-style', name);
       link.id = 'fui-css-' + name;
+      // Each link's promise is BOUNDED: a stalled fetch (connection
+      // accepted, response never arriving) fires neither onload nor
+      // onerror and <link> has no network timeout of its own, so an
+      // unbounded promise would poison this conjunction — and every
+      // later one chained onto it — freezing scroll settling for the
+      // rest of the session. resolve is idempotent, so a timer left
+      // running after the link settled fires harmlessly into it.
+      this._stylesReady = Promise.all([this._stylesReady, new Promise((resolve) => {
+        link.onload = link.onerror = () => resolve();
+        setTimeout(resolve, 3000);
+      })]).then(() => {});
       document.head.appendChild(link);
     },
+    // Loads the sheet each kit root (data-fui-comp) and owned-style
+    // root (data-fui-scope) under root names. Descendants only: a
+    // caller whose swapped element may itself be a root scans its
+    // parent (swapShell).
     scanAndLoadCSS(root) {
-      if (!root) return;
-      const html = root.outerHTML || root.innerHTML;
-      if (typeof html === 'string' && html.indexOf('data-fui-comp') < 0) return;
-      if (!root.querySelectorAll) return;
-      root.querySelectorAll('[data-fui-comp]').forEach((el) => {
-        this.loadComponentCSS(el.getAttribute('data-fui-comp'));
+      if (!root?.querySelectorAll) return;
+      root.querySelectorAll('[data-fui-comp],[data-fui-scope]').forEach((el) => {
+        this.loadComponentCSS(el.dataset.fuiComp);
+        this.loadComponentCSS(el.dataset.fuiScope);
       });
     },
     _idleQueue: [],
@@ -503,6 +521,18 @@
         initial-focus pass and the Tab focus trap. */
     _focusSel: 'a[href],button:not([disabled]):not([aria-disabled="true"]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])',
 
+    /** The layout demand modules' seam table (src/envelope.js,
+        src/loading.js, src/parts.js, src/transition.js). The navigator
+        calls into it defensively: an absent hook is the module not
+        having loaded, which means the page declared none of that
+        machinery. Modules assign their entry (NS._navHooks.envelope =
+        {…}) at evaluation. */
+    _navHooks: {},
+    // The navigation epoch: a plain counter both navigators (core's
+    // plain one and the envelope module's) bump and read through the
+    // supersede rule (NS._navLive). A writable slot, not a closure,
+    // because the module's navigator owns its own navigations.
+    _navEpoch: 0,
 
     // Toast stack runtime (__gofastr.toast, _initToasts, _dismissToast,
     // _toastTimers, _toastSeq) lives in the registered behaviour module
@@ -838,6 +868,19 @@
 // script boundaries (hard document load at a data-fui-doc scope edge),
 // updateActiveLink, document.title writes, the navigate() namespace
 // member.
+//
+// This is the PLAIN navigator: byte-for-byte the pre-layout source
+// plus the itemised fixes every page needs (error pages through the
+// swap path, pointer-modality focus, the atomic seed merge, the
+// data-fui-open anchor guard) and two seams the demand modules own —
+// the commit seam (_swapCommit delegates to the transition module so a
+// plain page declaring a transition gets one) and the opt-in
+// stand-down (a document holding an outlet or area marker hands its
+// navigations to the envelope module: the pending path rides a
+// one-field slot, the module load starts, and this navigator stands
+// down; the module carries its own navigator, cache and tail). The
+// epoch lives on the shared NS._navEpoch slot so both navigators and
+// the supersede rule (NS._navLive) see one counter.
 
   // -----------------------------------------------------------------------
   // Screen cache: stores rendered screens for instant back-navigation.
@@ -861,7 +904,11 @@
       const oldest = screenCache.keys().next().value;
       screenCache.delete(oldest);
     }
-    screenCache.set(path, { html, title, layer: layer || '' });
+    // vt is the transition pick this entry landed with, read off the
+    // hook at write time (the commit settles the pick before the apply
+    // writes), so a replay keeps the Back/Forward edge rule.
+    screenCache.set(path, { html, title, layer: layer || '',
+      vt: (window.__gofastr._navHooks.transition?.pick() || '') });
   };
 
   // --- Layout chain primitives ---
@@ -1020,7 +1067,14 @@
   // this, a rapid A→B where A's fetch resolves last swaps <main> back
   // to A's content while the URL bar already says B, and a repeat
   // click on B no-ops (fullPath === currentPath), stranding the user.
-  let _navEpoch = 0;
+  // The supersede rule, one decision: "is this navigation still the
+  // current one?" Every point that applies DOM, cache or history asks
+  // exactly this — in both navigators, the loading scheduler, the
+  // parts pump — and nothing else may decide it. The epoch is the
+  // shared NS._navEpoch slot, so the plain navigator, the envelope
+  // module's navigator and the demand modules all read one counter.
+  const _navLive = (epoch) => epoch === window.__gofastr._navEpoch;
+
   // Mini toast used by loadPage failures, strict-CSP-clean (no
   // inline styles since the .fui-nav-toast class is shipped via
   // frameworkBuiltinCSS).
@@ -1037,24 +1091,30 @@
     t._fuiTimer = setTimeout(() => t.classList.remove('is-visible'), 4000);
   };
 
-  // _settleScroll runs a scroll write now and once more after the swapped
-  // content's layout settles (fonts, late reflow shift the page height the
-  // instant after an innerHTML swap). Two guards on the second pass:
-  //   - the seq drops a superseded navigation's queued write (a rapid
-  //     back-then-forward let the BACK nav's settle scroll-to-top land
-  //     AFTER the forward nav had restored its position);
-  //   - the position check skips the re-correct when ANYTHING scrolled
-  //     since the first write, rAF can be throttled far past the swap
-  //     (background tabs, loaded CI runners), and a late settle pass was
-  //     yanking a user who had already started scrolling back to where
-  //     the navigation landed.
-  let _scrollSeq = 0;
-  const _settleScroll = (fn) => {
-    const seq = ++_scrollSeq;
+  // Wait for component styles before measuring hash/history destinations.
+  // A superseding navigation or USER scroll intent cancels either write,
+  // including the second pass after two animation frames. Intent is
+  // tracked as a counter bumped by wheel/touch/key/pointer input: pixel
+  // identity cannot be the cancel test, because the stylesheet wait's
+  // own purpose — cold CSS landing after the swap — can grow content
+  // above the viewport, and the browser's scroll anchoring then moves
+  // scrollY with no user input at all (observed: 1200 → 2682 on a
+  // 1482px growth). Cancelling on that drift skipped the first write
+  // and the hash target was never reached; only real input cancels.
+  let _userScrolls = 0;
+  const _userIntent = () => { _userScrolls++; };
+  for (const ev of ['wheel', 'touchmove', 'keydown', 'pointerdown']) {
+    addEventListener(ev, _userIntent, { capture: true, passive: true });
+  }
+  const _settleScroll = async (fn) => {
+    const epoch = window.__gofastr._navEpoch;
+    const u0 = _userScrolls;
+    await window.__gofastr._stylesReady;
+    if (!_navLive(epoch) || _userScrolls !== u0) return;
     fn();
-    const x0 = scrollX | 0, y0 = scrollY | 0;
+    const x = scrollX, y = scrollY;
     requestAnimationFrame(() => requestAnimationFrame(() => {
-      if (seq === _scrollSeq && (scrollX | 0) === x0 && (scrollY | 0) === y0) fn();
+      if (_navLive(epoch) && _userScrolls === u0 && scrollX === x && scrollY === y) fn();
     }));
   };
 
@@ -1121,11 +1181,11 @@
     const p0 = _scrollStore[_entryId];
     requestAnimationFrame(() => window.scrollTo(p0[0], p0[1]));
   }
-  // Scroll target for a popstate-initiated nav in flight; consumed by
-  // finishNav INSTEAD of scrollToHash so Back/Forward land where the
-  // user left, not at the top.
-  let _pendingScroll = null;
 
+  // The PUBLIC alias every runtime call site uses: modules wrap
+  // NS._pushURL to observe leaves (the envelope module's scroll
+  // records). Internal callers must not bypass it.
+  const _pushPub = (url, o) => window.__gofastr._pushURL(url, o);
   // Single choke point for every history write in the runtime (the click
   // hijack, navigate(), RPC X-Gofastr-Push-State, widget/pane deep
   // links, intercepts). Assigns the entry id for scroll restoration,
@@ -1147,15 +1207,24 @@
   // that would float over the destination content is
   // headless-disclosure's contract (framework/headless/disclosure.js,
   // on gofastr:navigate), not the navigator's.
+  // Whether the navigation in flight began from a POINTER (detail > 0;
+  // keyboard activations synthesize clicks with detail 0). The swap
+  // moves focus onto the fresh cell either way, but a pointer-initiated
+  // navigation must not paint the focus ring: focusVisible:false keeps
+  // the ring keyboard signal.
+  let _navPointer = false;
+  const _focusSwapTarget = (el) => {
+    if (typeof el.focus !== 'function') return;
+    try { el.focus({ preventScroll: true, focusVisible: !_navPointer }); } catch (_) { /* older Safari */ }
+  };
+
   const swapAtSlot = (slot, html) => {
     slot.innerHTML = html;
     mergeSeedFromDOM(slot);
-    if (window.__gofastr?.scanAndLoadCSS) window.__gofastr.scanAndLoadCSS(slot);
+    window.__gofastr.scanAndLoadCSS(slot);
     // Move focus onto the fresh content so keyboard users are not
     // stranded on a detached node. Cells carry tabindex="-1".
-    if (typeof slot.focus === 'function') {
-      try { slot.focus({ preventScroll: true }); } catch (_) { /* older Safari */ }
-    }
+    _focusSwapTarget(slot);
     return slot;
   };
 
@@ -1176,9 +1245,11 @@
     // (or a future whole-body swap) must not silently drop them.
     doc.reattach();
     mergeSeedFromDOM(el);
-    if (window.__gofastr?.scanAndLoadCSS) window.__gofastr.scanAndLoadCSS(el);
+    // The parent: the new shell root itself carries its layout's
+    // data-fui-scope, and the scan reads descendants only.
+    window.__gofastr.scanAndLoadCSS(el.parentNode);
     const m = el.matches('main, [role="main"]') ? el : (el.querySelector('[role="main"]') || el.querySelector('main'));
-    if (m && m.focus) { try { m.focus({ preventScroll: true }); } catch (_) {} }
+    if (m) _focusSwapTarget(m);
     return el;
   };
   // applyDocShell syncs the document-level markers that ride the swapped
@@ -1223,12 +1294,57 @@
     }
   };
 
+  // A navigation answer that arrives as HTML — 200 or NOT — can be
+  // applied through the same swap paths a 200 takes (an error page
+  // shows inside the shell instead of toasting). Anything else cannot,
+  // and its fetch throws so the toast names the status.
+  const respIsHTML = (r) => (r.headers.get('Content-Type') || '').toLowerCase().startsWith('text/html');
+
   /** Fetch page, swap at the deepest shared layer. Caches for instant back-nav.
       from names the origin route when the caller already moved the URL,
       _pushURL syncs currentPath BEFORE loadPage runs on the click path,
       so capturing currentPath here would report the destination as its
       own origin (and X-Gofastr-From would stop naming the real one). */
-  const loadPage = async (path, { bypassCache = false, forceFull = false, from = null, restore = null } = {}) => {
+  // The commit seam: one navigation's commit routes through the
+  // transition module's wrapper when the document declared a
+  // transition (a plain page declaring data-fui-vt runs this — its
+  // swaps animate); without the module the commit applies directly,
+  // the pre-layout behaviour, behind the supersede rule's check.
+  const _swapCommit = (epoch, from, to, apply, pickSrc) => {
+    const T = window.__gofastr._navHooks.transition;
+    if (T) return T.commit(epoch, from, to, apply, pickSrc);
+    if (_navLive(epoch)) apply();
+  };
+
+  const loadPage = (path, opts) => {
+    if (!window.__gofastr._originOK(path)) return;
+    if (crossesDocBoundary(path)) { location.assign(path); return; }
+    // The opt-in hand-off: a document holding an outlet or area marker
+    // hands its navigations to the envelope module. Warm, the
+    // delegation above runs them; cold, the load starts now and the
+    // module's navigator takes this one when it lands (the click has
+    // already pushed the URL, hash included — the module reads the
+    // served page off the performance navigation entry for its boot
+    // capture, so a from naming a destination that never painted is
+    // corrected module-side). A module that fails to load falls back
+    // to a whole-document load of the destination.
+    const G0 = window.__gofastr;
+    const N = G0._navHooks.envelope?.nav;
+    if (N || document.querySelector('[data-fui-outlet],[data-fui-area]')) {
+      // The pointer modality core recorded for THIS navigation rides
+      // the opts: the module demand-loads beside the FIRST fetch,
+      // after the click, so a listener of its own would miss that
+      // click and paint the ring on the first mouse navigation.
+      opts = Object.assign({ pointer: _navPointer }, opts);
+      if (N) return N(path, opts);
+      // loadModule resolves only when the module registered its hooks,
+      // so nav is there on the success arm.
+      return G0.loadModule('envelope').then(() => G0._navHooks.envelope.nav(path, opts),
+        () => _plainLoadPage(path, Object.assign({ bypassCache: true, forceFull: true }, opts)));
+    }
+    return _plainLoadPage(path, opts);
+  };
+  const _plainLoadPage = async (path, { bypassCache = false, forceFull = false, from = null, restore = null } = {}) => {
     // Single gate for every branch below: the SPA navigator's target
     // comes from an href / a data-fui-* attribute / a server header,
     // and a cross-origin one must never be fetched with the page's
@@ -1244,14 +1360,17 @@
     // epoch and is dropped, so returning here left the URL at /a showing B.
     if (_pendingNav.has(path) && currentPath === path) return;
     _pendingNav.add(path);
-    const myEpoch = ++_navEpoch;
+    const myEpoch = ++window.__gofastr._navEpoch;
+    // The transition module's direction seam (its twin sits in the
+    // module navigator's entry): binds the recorded direction and
+    // pick-edge rule to THIS navigation's epoch before any await.
+    window.__gofastr._navHooks.transition?.take(myEpoch);
     const prevPath = from || currentPath;
     currentPath = path;
     // Consume the popstate's restore target NOW, into this navigation,
     // left in module state, a superseded back/forward's position leaked
     // into whichever navigation ran finishNav next.
     let ps = restore;
-    if (!ps) { ps = _pendingScroll; _pendingScroll = null; }
     // Surface "I heard you" feedback to assistive tech and screen
     // readers while the fetch is in flight. The CSS hook can show a
     // progress strip via [aria-busy="true"] on documentElement.
@@ -1274,8 +1393,9 @@
           // before pushState fires (the click handler does pushState).
           document.title = cached.title;
           announceRoute(cached.title);
-          const root = swapAtSlot(slot, cached.html);
-          finishNav(path, prevPath, true, root, ps);
+          _swapCommit(myEpoch, prevPath, path, () => {
+            finishNav(path, prevPath, true, swapAtSlot(slot, cached.html), ps);
+          }, cached);
           return;
         }
       }
@@ -1291,9 +1411,10 @@
           if (slot) {
             document.title = pf.title;
             announceRoute(pf.title);
-            const root = swapAtSlot(slot, pf.html);
-            cacheScreen(path, pf.html, pf.title, pf.layer);
-            finishNav(path, prevPath, false, root, ps);
+            _swapCommit(myEpoch, prevPath, path, () => {
+              cacheScreen(path, pf.html, pf.title, pf.layer);
+              finishNav(path, prevPath, false, swapAtSlot(slot, pf.html), ps);
+            }, null);
             return;
           }
         }
@@ -1311,16 +1432,16 @@
       // destination and the same missing boundary looped the fetch.
       if (forceFull || ((layouts.length > 0 || domChainKeys().length > 0) && sharedDepth(layouts) === 0)) {
         const fr = await fetch(path);
-      if (myEpoch !== _navEpoch) return;
-        if (!fr.ok) throw new Error(`HTTP ${fr.status}`);
+      if (!_navLive(myEpoch)) return;
+        if (!fr.ok && !respIsHTML(fr)) throw new Error(`HTTP ${fr.status}`);
         window.__gofastr._inval(fr);
         const pdoc = new DOMParser().parseFromString(await fr.text(), 'text/html');
-      if (myEpoch !== _navEpoch) return;
+      if (!_navLive(myEpoch)) return;
         let dest = path;
         // resolvePath keeps the search string, the cache key and the
         // URL bar must carry a redirect-added query (e.g. ?next=/admin).
         if (fr.redirected && fr.url) dest = resolvePath(fr.url);
-        if (dest !== path) { _pushURL(dest, { replace: true }); currentPath = dest; }
+        if (dest !== path) { _pushPub(dest, { replace: true }); currentPath = dest; }
         const t = pdoc.querySelector('title')?.textContent || document.title;
         document.title = t;
         announceRoute(t);
@@ -1332,15 +1453,17 @@
         const fm = sseMeta(pdoc), lm = sseMeta();
         if (fm && lm) lm.setAttribute('content', fm.getAttribute('content'));
         const nm = pdoc.querySelector('main');
-        const el = swapShell(shellEl(pdoc) || nm);
-        if (!el) {
-          // No live shell to replace (layout-less origin), fall back to
-          // a whole-main swap; chain markers arrive with the content.
-          const m = mainEl();
-          if (m) swapAtSlot(m, nm ? nm.innerHTML : '');
-        }
-        cacheScreen(dest, nm ? nm.innerHTML : '', t, nm ? (nm.getAttribute('data-fui-layout-slot') || '') : '');
-        finishNav(dest, prevPath, false, el || mainEl(), ps);
+        _swapCommit(myEpoch, prevPath, dest, () => {
+          const el = swapShell(shellEl(pdoc) || nm);
+          if (!el) {
+            // No live shell to replace (layout-less origin), fall back to
+            // a whole-main swap; chain markers arrive with the content.
+            const m = mainEl();
+            if (m) swapAtSlot(m, nm ? nm.innerHTML : '');
+          }
+          cacheScreen(dest, nm ? nm.innerHTML : '', t, nm ? (nm.getAttribute('data-fui-layout-slot') || '') : '');
+          finishNav(dest, prevPath, false, el || mainEl(), ps);
+        }, null);
         return;
       }
 
@@ -1351,7 +1474,7 @@
       const fromPath = (prevPath || '').split('?')[0];
       if (fromPath && routeEntry(fromPath)) hdrs['X-Gofastr-From'] = fromPath;
       const resp = await fetch(path, { headers: hdrs });
-      if (myEpoch !== _navEpoch) return;
+      if (!_navLive(myEpoch)) return;
       // Apply a session rollover BEFORE the ok-check: the server re-mints
       // (and names the fresh stream id) on 404 / policy-block partials
       // too, and the browser has already stored the new cookie, if we
@@ -1359,7 +1482,8 @@
       // (the next OK nav presents the now-valid cookie, so no header).
       const rs = resp.headers.get('X-Gofastr-Session'), rm = rs && sseMeta();
       if (rm) rm.setAttribute('content', rm.getAttribute('content').replace(/([?&]session=)[^&]*/, '$1' + rs));
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      if (!resp.ok && !respIsHTML(resp)) throw new Error(`HTTP ${resp.status}`);
+      const notOk = !resp.ok;
 
       // Evict server-named stale screens BEFORE chasing a redirect, so
       // a "mutated + redirected" response drops entries first and the
@@ -1377,7 +1501,7 @@
         // pushState was already called by the click handler with the
         // requested path; replace it with the redirect destination so
         // the URL bar matches what we're about to load.
-        _pushURL(redirectTo, { replace: true });
+        _pushPub(redirectTo, { replace: true });
         currentPath = redirectTo;
         _pendingNav.delete(path);
         doc.removeHtmlAttr('aria-busy');
@@ -1389,7 +1513,7 @@
       }
 
       const html = await resp.text();
-      if (myEpoch !== _navEpoch) return;
+      if (!_navLive(myEpoch)) return;
 
       // Compute title BEFORE swapping content so document.title is
       // already correct when AT or extensions observe the new state.
@@ -1415,23 +1539,27 @@
       }
       document.title = title;
       announceRoute(title);
-      const root = swapAtSlot(slot, body);
-      cacheScreen(path, body, title, swapKey);
-      finishNav(path, prevPath, false, root, ps);
+      _swapCommit(myEpoch, prevPath, path, () => {
+        const root = swapAtSlot(slot, body);
+        if (!notOk) cacheScreen(path, body, title, swapKey);
+        finishNav(path, prevPath, false, root, ps);
+      }, resp);
     } catch (err) {
-      if (myEpoch !== _navEpoch) return;
+      if (!_navLive(myEpoch)) return;
       // CLAUDE.md hard rule 4, no location.href fallback. Surface a
       // toast and stay on the current page; URL has already been
       // pushState'd by the click handler so revert it.
       console.warn('[gofastr] Nav failed:', err);
-      _showNavToast('Could not load ' + path + ' — check your connection');
-      _pushURL(prevPath || location.pathname, { replace: true });
+      _showNavToast(err && /^HTTP \d+$/.test(err.message)
+        ? 'Could not load ' + path + ' (' + err.message + ')'
+        : 'Could not load ' + path + ' — check your connection');
+      _pushPub(prevPath || location.pathname, { replace: true });
       currentPath = prevPath;
     } finally {
       _pendingNav.delete(path);
       // Only the latest nav owns the aria-busy flag; a superseded nav
       // that bailed early must leave it for the in-flight one to clear.
-      if (myEpoch === _navEpoch) doc.removeHtmlAttr('aria-busy');
+      if (_navLive(myEpoch)) doc.removeHtmlAttr('aria-busy');
     }
   };
 
@@ -1471,15 +1599,24 @@
     try { data = JSON.parse(el.textContent || 'null'); } catch (_) { /* ignore */ }
     el.remove();
     if (!data) return;
-    const store = window.__gofastr && window.__gofastr._signals;
+    const G = window.__gofastr;
+    const store = G && G._signals;
     if (!store) return;
     const page = data.p || {};
+    // P7-C atomic merge: every CHANGED value installs silently first,
+    // then notifies once — a computed over two page signals observes
+    // one page's state on every evaluation, never a mid-merge mix.
+    const changed = [];
     for (const k in page) {
       if (!Object.prototype.hasOwnProperty.call(page, k)) continue;
       if (isReservedSignalKey(k)) continue;
-      if (store[k]) store[k].value = page[k];
-      else store[k] = { value: page[k], listeners: [] };
+      const v = page[k];
+      if (Object.prototype.hasOwnProperty.call(store, k) && store[k].value === v) continue;
+      if (store[k]) store[k].value = v;
+      else store[k] = { value: v, listeners: [] };
+      changed.push([k, v]);
     }
+    for (const [k, v] of changed) G.setSignal(k, v);
     const glob = data.g || {};
     for (const k in glob) {
       if (!Object.prototype.hasOwnProperty.call(glob, k)) continue;
@@ -1526,6 +1663,12 @@
     if (!isKnownRoute(href)) return;
     // data-fui-rpc anchors are RPC triggers, not navigation.
     if (anchor.hasAttribute('data-fui-rpc')) return;
+    // data-fui-open anchors are widget triggers, not navigation: the
+    // widgets-boot delegator preventDefaults the click and opens the
+    // widget, and the no-script page keeps the href as the fallback
+    // destination. A hijacked SPA navigation here meant one click BOTH
+    // navigated and opened the widget.
+    if (anchor.hasAttribute('data-fui-open')) return;
     // data-fui-nav="off" opts a link out of SPA navigation entirely:
     // hosts whose destination page depends on full-load scripts (legacy
     // page-runtime initializers) need a real document load.
@@ -1569,7 +1712,10 @@
     // destination, loadPage's X-Gofastr-From must name where the user
     // came from.
     const origin = currentPath;
-    _pushURL(fullPath + navHash);
+    // detail > 0 is a real pointer click; Enter/Space on a focused
+    // link synthesize a click with detail 0 (keyboard: keep the ring).
+    _navPointer = e.detail > 0;
+    _pushPub(fullPath + navHash);
     loadPage(fullPath, { from: origin });
   });
 
@@ -1638,8 +1784,9 @@
         // rather than lend this document's capabilities to it.
         location.replace(path);
       } else {
-        _pendingScroll = _scrollStore[_entryId] || null;
-        loadPage(path);
+        // The restore target rides the opts: the delegated (module)
+        // navigator receives it the same way the plain one does.
+        loadPage(path, { restore: _scrollStore[_entryId] || null });
       }
     }
     // Widget deep links ride the same event: a query-only change means
@@ -1655,7 +1802,12 @@
   // SPA navigation (scheme guard -> pushState -> loadPage). _originOK is read
   // via `this`, so it resolves at call time regardless of composition order.
   Object.assign(window.__gofastr, {
+    _settleScroll,
     // --- Router API ---
+
+    // The supersede rule, one decision, shared with the demand
+    // modules (src/envelope.js, loading.js, parts.js read it).
+    _navLive,
 
     /** Programmatically navigate to a path. force re-fetches even when
         the path is the current page and bypasses the screen cache,
@@ -1677,7 +1829,8 @@
         return;
       }
       const origin = currentPath;
-      _pushURL(path, { replace: replace || path === currentPath });
+      _navPointer = false; // programmatic: the browser's heuristic decides
+      _pushPub(path, { replace: replace || path === currentPath });
       loadPage(path, { bypassCache: force, from: origin });
     },
 
@@ -1710,7 +1863,7 @@
     /** Re-fetch and re-render the current screen from the server,
         bypassing the cache. Goes straight to loadPage, history is not
         touched, so a #fragment on the URL survives. */
-    refresh() { loadPage(currentPath, { bypassCache: true }); },
+    refresh() { _navPointer = false; loadPage(currentPath, { bypassCache: true }); },
 
     // X-Gofastr-Invalidate consumer, takes the whole Response (keeps
     // the header literal in one module; the callers in rpc/widgets/
@@ -2017,10 +2170,11 @@
   }
 
   // SSE Island Support ships in core-ui/runtime/src/sse.js, loaded on
-  // demand when <meta name="gofastr-sse"> is present on the page.
-  // The module self-installs an EventSource and reflects "island"
-  // events into matching [data-island] regions. Reconnect lives in
-  // the module too.
+  // demand when the page holds a push target (any [data-island] region
+  // or the offline banner). The module self-installs an EventSource and
+  // reflects "island" events into matching [data-island] regions, and
+  // re-evaluates the document's targets after every apply so leaving
+  // the last one closes the stream. Reconnect lives in the module too.
 
   // === MODULE LOADER ===================================================
   // loadModule(name) returns a cached Promise covering the module AND
@@ -2276,10 +2430,17 @@
     // The marker only loads the imperative __gofastr.compute API.
     { name: 'compute',    selector: '[data-fui-compute]' },
     { name: 'popover',    selector: '[data-fui-popover-anchor]' },
-    // SSE: background event stream. Idle-loaded, never blocks first
-    // interaction; the channel only carries push updates, not user
-    // actions. See ROADMAP §8 Phase 5.
-    { name: 'sse',        selector: 'meta[name="gofastr-sse"]', idle: true },
+    // SSE: background event stream, opened only for a page that takes
+    // pushes. The markers are the PUSH TARGETS (any island — the
+    // server can PushUpdate any island id — plus the offline banner
+    // that reads the stream's mirrored state), not the availability
+    // meta: <meta name="gofastr-sse"> stays on every session-bearing
+    // page and now means "SSE exists", while the module (and with it
+    // the EventSource, one of the tab's ~6 HTTP/1.1 connections) loads
+    // only when a target is on the page. Idle-loaded, never blocks
+    // first interaction; the channel only carries push updates, not
+    // user actions. See ROADMAP §8 Phase 5.
+    { name: 'sse',        selector: '[data-island],[data-hui-system-offline]', idle: true },
     // Widgets: any SSR-inlined widget element or any data-fui-open
     // trigger button anywhere on the page. The catalog auto-mount
     // path explicitly awaits loadModule('widgets') too, so this
@@ -2305,6 +2466,19 @@
     // swaps the response HTML into the element. The module owns
     // parse/clamp/jitter/pause/back-off/teardown; core only loads it.
     { name: 'poll',         selector: '[data-fui-poll]' },
+    // Envelope (fills, snapshots, scroll anchors): NOT a boot trigger.
+    // The outlet/area marker alone costs nothing until the first
+    // navigation that needs the module: frag/nav.js starts its load
+    // beside that navigation's page fetch (the opt-in decision of
+    // 2026-09-28 — a marketing page whose only layout feature is one
+    // outlet must not pay a module request on first paint). The one
+    // boot exception is the deferred trigger below.
+    // Loading content: the inert server-rendered template beside an
+    // outlet. Before it loads the busy dim alone shows.
+    // View transitions: the document declares a [data-fui-vt] cell or
+    // a data-fui-vt-kinds vocabulary. Before it loads swaps run bare
+    // and the X-Gofastr-Transition pick is not read.
+    { name: 'transition', selector: '[data-fui-vt-kinds],[data-fui-vt]' },
 ];
 
   // Registered behaviours (registry.RegisterBehavior): a component's own
@@ -2628,6 +2802,12 @@
     // loads the prefetch machinery; a manifest without one costs nothing.
     if (Array.isArray(window.__gofastr_routes) &&
         window.__gofastr_routes.some((r) => r.preload)) loadModule('preload');
+    // Deferred outlets: any route in the manifest carrying a
+    // `deferred` list loads the parallel-parts machinery. The address
+    // walk that decides whether the ENVELOPE module boot-loads too
+    // lives in src/parts.js (module-side: a plain page never runs it).
+    if (Array.isArray(window.__gofastr_routes) &&
+        window.__gofastr_routes.some((r) => r.deferred && r.deferred.length)) loadModule('parts');
     // Compiled server actions: the manifest names each screen's action
     // hash; the loader module fetches per-screen scripts on navigation.
     // Pages without actions load nothing.

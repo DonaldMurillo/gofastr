@@ -26,7 +26,12 @@ var demandLoadMarkers = []demandLoadMarker{
 	{"data-fui-computed", "computed"},
 	{"data-fui-compute", "compute"},
 	{"data-fui-popover-anchor", "popover"},
-	{`name="gofastr-sse"`, "sse"},
+	// SSE opens on demand: the module loads for a page that takes
+	// pushes (any island region or the offline banner that reads the
+	// stream's mirrored state), not for the availability meta, which
+	// every session-bearing page carries.
+	{"data-island", "sse"},
+	{"data-hui-system-offline", "sse"},
 	{"data-fui-widget", "widgets"},
 	{"data-fui-open", "widgets"},
 	{"data-fui-autogrow", "textarea"},
@@ -36,6 +41,17 @@ var demandLoadMarkers = []demandLoadMarker{
 	{"data-fui-animate-signal", "animate"},
 	{"data-fui-drag-dismiss", "dragdismiss"},
 	{"data-fui-poll", "poll"},
+	// The layout demand modules (docs/DESIGN-layout-outlets.md
+	// "### Opt-in"): transition loads on a declared cell or
+	// vocabulary. (parts has no DOM marker — it loads off the route
+	// manifest; the ENVELOPE module has no boot trigger at all: an
+	// outlet/area marker costs a page nothing until its first
+	// navigation; and LOADING is module-side: its scheduler is the
+	// envelope navigator's, so the template marker means nothing
+	// without it and the envelope module loads it at evaluation — no
+	// row here or in the scanner table the drift test aligns with.)
+	{"data-fui-vt", "transition"},
+	{"data-fui-vt-kinds", "transition"},
 }
 
 // NeededModules returns the deduplicated, sorted list of demand-load
@@ -78,7 +94,6 @@ func NeededModules(pageHTML string) []string {
 			add(m.Module)
 		}
 	}
-	// Registered behaviours preload by the same rule, from the markers
 	// they declared rather than from the table.
 	for _, name := range neededBehaviors(pageHTML) {
 		add(name)

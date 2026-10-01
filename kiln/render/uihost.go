@@ -1,8 +1,11 @@
 package render
 
 import (
+	"context"
 	"sort"
 	"strings"
+
+	"github.com/DonaldMurillo/gofastr/core-ui/component"
 
 	coreapp "github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
@@ -27,15 +30,30 @@ func applyUIHostPages(fwApp *framework.App, w *world.World) error {
 	site := coreapp.NewApp(name).WithTheme(worldTheme(w.App))
 	site.NoLLMMD = !w.App.LLMMD
 
-	layouts := map[string]*coreapp.Layout{}
-	defaultLayout := coreapp.NewLayout("app").WithContainer()
+	// Each layout's frame is composed from the framework's structural
+	// pieces (Stack, Container, ContentRow); kiln ships no CSS of its own.
+	containedLayout := func(n string) *coreapp.Layout {
+		return coreapp.NewLayout(n, coreapp.LayoutSpec{}, func(ctx context.Context, l *coreapp.LayoutTree) corerender.HTML {
+			return ui.Stack(ui.StackConfig{Screen: true, Gap: ui.GapNone},
+				// The row (no sidebar) gives main its growth: a page-tall
+				// stack without a footer pushes a bare last child down.
+				ui.ContentRow(ui.ContentRowConfig{},
+					ui.Container(ui.ContainerConfig{Width: ui.ContainerPage, Pad: ui.ContainerPadPage}, l.Primary())))
+		})
+	}
+	defaultLayout := containedLayout("app")
 	if len(w.Nav) > 0 {
 		sidebarCfg := ui.SidebarConfig{Title: name, Items: sidebarItems(w.Nav)}
-		defaultLayout = coreapp.NewLayout("app").WithSidebar(ui.Sidebar(sidebarCfg))
+		defaultLayout = coreapp.NewLayout("app", coreapp.LayoutSpec{}, func(ctx context.Context, l *coreapp.LayoutTree) corerender.HTML {
+			nav, _ := component.SafeRenderCtx(ctx, ui.Sidebar(sidebarCfg))
+			return ui.Stack(ui.StackConfig{Screen: true, Gap: ui.GapNone},
+				ui.ContentRow(ui.ContentRowConfig{Sidebar: nav}, l.Primary()))
+		})
 		ui.MountSidebar(routerMounter{fwApp.Router()}, sidebarCfg)
 	}
+	layouts := map[string]*coreapp.Layout{}
 	layouts["app"] = defaultLayout
-	layouts["marketing"] = coreapp.NewLayout("marketing").WithContainer()
+	layouts["marketing"] = containedLayout("marketing")
 	site.SetDefaultLayout(defaultLayout)
 
 	paths := make([]string, 0, len(w.Pages))
@@ -53,7 +71,7 @@ func applyUIHostPages(fwApp *framework.App, w *world.World) error {
 			var ok bool
 			layout, ok = layouts[page.Layout.Name]
 			if !ok {
-				layout = coreapp.NewLayout(page.Layout.Name).WithContainer()
+				layout = containedLayout(page.Layout.Name)
 				layouts[page.Layout.Name] = layout
 			}
 		}

@@ -56,6 +56,23 @@ func TestNeededModules_MultipleMarkersDedupSorted(t *testing.T) {
 	}
 }
 
+// TestNeededModules_SSEOpensOnPushTargets pins the on-demand preload
+// rule: a push target (an island region, the offline banner that reads
+// the stream's mirrored state) preloads the sse module, while the
+// availability meta — which every session-bearing page carries — must
+// preload nothing.
+func TestNeededModules_SSEOpensOnPushTargets(t *testing.T) {
+	if got, want := NeededModules(`<div data-island="live"></div>`), []string{"sse"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("island page: NeededModules = %v, want %v", got, want)
+	}
+	if got, want := NeededModules(`<div data-hui-system-offline="" hidden=""></div>`), []string{"sse"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("offline banner: NeededModules = %v, want %v", got, want)
+	}
+	if got := NeededModules(`<meta name="gofastr-sse" content="/__gofastr/sse?session=x">`); len(got) != 0 {
+		t.Errorf("the availability meta must not preload the sse module: %v", got)
+	}
+}
+
 // TestDemandLoadModuleNamesMatchEmbeddedModules enforces that every
 // module declared in the Go-side demand-load table has a corresponding
 // src/<name>.js file embedded. Catches typos and rename drift.

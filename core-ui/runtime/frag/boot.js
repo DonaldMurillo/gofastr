@@ -134,10 +134,11 @@
   }
 
   // SSE Island Support ships in core-ui/runtime/src/sse.js, loaded on
-  // demand when <meta name="gofastr-sse"> is present on the page.
-  // The module self-installs an EventSource and reflects "island"
-  // events into matching [data-island] regions. Reconnect lives in
-  // the module too.
+  // demand when the page holds a push target (any [data-island] region
+  // or the offline banner). The module self-installs an EventSource and
+  // reflects "island" events into matching [data-island] regions, and
+  // re-evaluates the document's targets after every apply so leaving
+  // the last one closes the stream. Reconnect lives in the module too.
 
   // === MODULE LOADER ===================================================
   // loadModule(name) returns a cached Promise covering the module AND
@@ -393,10 +394,17 @@
     // The marker only loads the imperative __gofastr.compute API.
     { name: 'compute',    selector: '[data-fui-compute]' },
     { name: 'popover',    selector: '[data-fui-popover-anchor]' },
-    // SSE: background event stream. Idle-loaded, never blocks first
-    // interaction; the channel only carries push updates, not user
-    // actions. See ROADMAP §8 Phase 5.
-    { name: 'sse',        selector: 'meta[name="gofastr-sse"]', idle: true },
+    // SSE: background event stream, opened only for a page that takes
+    // pushes. The markers are the PUSH TARGETS (any island — the
+    // server can PushUpdate any island id — plus the offline banner
+    // that reads the stream's mirrored state), not the availability
+    // meta: <meta name="gofastr-sse"> stays on every session-bearing
+    // page and now means "SSE exists", while the module (and with it
+    // the EventSource, one of the tab's ~6 HTTP/1.1 connections) loads
+    // only when a target is on the page. Idle-loaded, never blocks
+    // first interaction; the channel only carries push updates, not
+    // user actions. See ROADMAP §8 Phase 5.
+    { name: 'sse',        selector: '[data-island],[data-hui-system-offline]', idle: true },
     // Widgets: any SSR-inlined widget element or any data-fui-open
     // trigger button anywhere on the page. The catalog auto-mount
     // path explicitly awaits loadModule('widgets') too, so this
@@ -422,6 +430,19 @@
     // swaps the response HTML into the element. The module owns
     // parse/clamp/jitter/pause/back-off/teardown; core only loads it.
     { name: 'poll',         selector: '[data-fui-poll]' },
+    // Envelope (fills, snapshots, scroll anchors): NOT a boot trigger.
+    // The outlet/area marker alone costs nothing until the first
+    // navigation that needs the module: frag/nav.js starts its load
+    // beside that navigation's page fetch (the opt-in decision of
+    // 2026-09-28 — a marketing page whose only layout feature is one
+    // outlet must not pay a module request on first paint). The one
+    // boot exception is the deferred trigger below.
+    // Loading content: the inert server-rendered template beside an
+    // outlet. Before it loads the busy dim alone shows.
+    // View transitions: the document declares a [data-fui-vt] cell or
+    // a data-fui-vt-kinds vocabulary. Before it loads swaps run bare
+    // and the X-Gofastr-Transition pick is not read.
+    { name: 'transition', selector: '[data-fui-vt-kinds],[data-fui-vt]' },
 ];
 
   // Registered behaviours (registry.RegisterBehavior): a component's own
@@ -745,6 +766,12 @@
     // loads the prefetch machinery; a manifest without one costs nothing.
     if (Array.isArray(window.__gofastr_routes) &&
         window.__gofastr_routes.some((r) => r.preload)) loadModule('preload');
+    // Deferred outlets: any route in the manifest carrying a
+    // `deferred` list loads the parallel-parts machinery. The address
+    // walk that decides whether the ENVELOPE module boot-loads too
+    // lives in src/parts.js (module-side: a plain page never runs it).
+    if (Array.isArray(window.__gofastr_routes) &&
+        window.__gofastr_routes.some((r) => r.deferred && r.deferred.length)) loadModule('parts');
     // Compiled server actions: the manifest names each screen's action
     // hash; the loader module fetches per-screen scripts on navigation.
     // Pages without actions load nothing.

@@ -32,6 +32,11 @@ const docShellSwapPrefix = "doc:"
 type docShell struct {
 	lang      string
 	skipLabel string
+	// vtKinds is the document's declared keyed-transition vocabulary
+	//, space-separated and sorted; the runtime
+	// reads it off the documentElement (copied by applyDocShell) to
+	// gate the X-Gofastr-Transition pick.
+	vtKinds string
 }
 
 type docShellKey struct{}
@@ -41,8 +46,8 @@ type docShellKey struct{}
 // layout directly (Layout.Wrap*) passes the values the same way when it
 // wants the markers, and without them the render is byte-identical to
 // before this existed.
-func withDocShell(ctx context.Context, lang, skipLabel string) context.Context {
-	return context.WithValue(ctx, docShellKey{}, docShell{lang: lang, skipLabel: skipLabel})
+func withDocShell(ctx context.Context, lang, skipLabel, vtKinds string) context.Context {
+	return context.WithValue(ctx, docShellKey{}, docShell{lang: lang, skipLabel: skipLabel, vtKinds: vtKinds})
 }
 
 // docShellAttrs returns the doc markers to emit on the outermost layer
@@ -52,8 +57,12 @@ func docShellAttrs(ctx context.Context) html.Attrs {
 	if !ok {
 		return nil
 	}
-	return html.Attrs{
+	attrs := html.Attrs{
 		"data-fui-lang":       ds.lang,
 		"data-fui-skip-label": ds.skipLabel,
 	}
+	if ds.vtKinds != "" {
+		attrs["data-fui-vt-kinds"] = ds.vtKinds
+	}
+	return attrs
 }
