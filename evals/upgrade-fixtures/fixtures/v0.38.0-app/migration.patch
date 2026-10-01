@@ -194,3 +194,30 @@ diff --git a/resource.go b/resource.go
  	}
  }
  
+
+diff --git a/app.go b/app.go
+--- a/app.go
++++ b/app.go
+@@ -8,9 +8,11 @@ import (
+ 	"github.com/DonaldMurillo/gofastr/battery/auth"
+ 	"github.com/DonaldMurillo/gofastr/core-ui/app"
++	"github.com/DonaldMurillo/gofastr/core-ui/component"
+ 	"github.com/DonaldMurillo/gofastr/core-ui/widget"
+ 	"github.com/DonaldMurillo/gofastr/core-ui/widget/preset"
++	"github.com/DonaldMurillo/gofastr/core/render"
+ 	"github.com/DonaldMurillo/gofastr/core/handler"
+ 	"github.com/DonaldMurillo/gofastr/core/router"
+ 	"github.com/DonaldMurillo/gofastr/framework"
+ 	"github.com/DonaldMurillo/gofastr/framework/access"
+ 	"github.com/DonaldMurillo/gofastr/framework/ui"
+@@ -69,6 +71,9 @@ func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
+ 	sbCfg := sidebarConfig()
+ 	sb := ui.Sidebar(sbCfg)
+-	appLayout = app.NewLayout("app").WithSidebar(sb)
++	appLayout = app.NewLayout("app", app.LayoutSpec{}, func(ctx context.Context, l *app.LayoutTree) render.HTML {
++		nav, _ := component.SafeRenderCtx(ctx, sb)
++		return ui.Shell(ui.ShellConfig{Sidebar: nav}, l.Primary())
++	})
+ 	site.SetDefaultLayout(appLayout)
+ 	ui.MountSidebar(routerMounter{fwApp.Router()}, sbCfg)
+ 	{

@@ -1,0 +1,31 @@
+/* One issue: key, title, meta. */
+:scope {
+  display: grid;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-sm) var(--spacing-md);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radii-md);
+  background: var(--color-surface);
+}
+/* A group: one priority at a time. */
+:scope.priority--urgent { border-inline-start-color: var(--color-danger); }
+:scope.priority--low    { border-inline-start-color: var(--color-border-strong); }
+/* A flag: changed since the viewer last looked. */
+:scope.fresh { animation: settle var(--duration-slow) var(--easing-ease-out) 1; }
+@keyframes settle {
+  from { background: color-mix(in srgb, var(--color-primary) 14%, var(--color-surface)); }
+}
+@media (--reduced-motion) {
+  :scope.fresh { animation: none; }
+}
+.key { font: var(--text-xs)/1 var(--font-mono); color: var(--color-text-muted); }
+.title { font-size: var(--text-sm); overflow: hidden; }
+/* One status column, sized by its container. */
+.column {
+  container-type: inline-size;
+  display: grid;
+  gap: var(--spacing-sm);
+}
+/* A flag: more cards than the column's WIP limit. */
+.column.over-limit .count { color: var(--color-warning); font-weight: var(--font-weight-bold); }
+.count { font-size: var(--text-xs); color: var(--color-text-muted); }

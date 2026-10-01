@@ -111,6 +111,7 @@ func printHelp() {
   generate (gen, g) --from=<yml> Generate code from a deterministic YAML blueprint
   generate --config=<yml> Run YAML-configured code generators/extensions
   generate cli          Generate a customer-facing CLI for the app's API (docs: gofastr docs app-cli)
+  generate styles [patterns] Generate typed Go for app tokens and owned style sheets
   pack [app-dir]        Snapshot a generated app into a best-effort gofastr.yml (lossy; not an inverse of generate)
   validate <yml>        Validate a blueprint without generating (exit 0 = valid)
   theme init            Scaffold theme/theme.go for a UI project

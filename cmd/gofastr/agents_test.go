@@ -31,7 +31,7 @@ func TestBuildAgentsMDIsThinTOC(t *testing.T) {
 	mustContain(t, body, "RecordSummary + MetricBand")
 	mustContain(t, body, "description to one or two sentences")
 	mustContain(t, body, "compact Aside")
-	mustContain(t, body, "SiteHeader.MobileBrand")
+	mustContain(t, body, "short phone wordmark")
 	mustContain(t, body, "ClusterConfig.NoWrap")
 	mustContain(t, body, "do not repeat the same state in a Banner")
 

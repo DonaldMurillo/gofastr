@@ -14,6 +14,7 @@ import (
 	"reflect"
 	"regexp"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -135,6 +136,88 @@ func TestThemeEditWritebackProducesParseableGo(t *testing.T) {
 	// without naming every token manually.
 	if !strings.Contains(string(src), "style.AutoFillNames(&App)") {
 		t.Error("emitted file missing the AutoFillNames init guard")
+	}
+}
+
+// A theme carrying dark overrides (the compiled style.Theme.DarkColors
+// the editor works in) must survive the write-back intact: the emitted
+// file re-declares the dark palette key for key, so an app that saves
+// keeps its dark mode. This is the round-trip for a theme built with
+// theme.Overrides{Dark: &theme.Overrides{…}} — the typed dark config.
+func TestThemeEditWritebackRoundTripsDarkPalette(t *testing.T) {
+	th := uitheme.Default(uitheme.Overrides{
+		Primary: "#0F766E",
+		Dark: &uitheme.Overrides{
+			Primary: "#5EEAD4",
+			Surface: "#10201E",
+		},
+	})
+	src, err := emitThemeGoSource(th, "theme")
+	if err != nil {
+		t.Fatalf("emitThemeGoSource: %v", err)
+	}
+
+	// Locate `DarkColors: map[string]string{…}` inside var App and read
+	// its pairs back out of the AST.
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "theme.go", src, 0)
+	if err != nil {
+		t.Fatalf("emitted theme.go does not parse: %v\n--- source ---\n%s", err, src)
+	}
+	emitted := map[string]string{}
+	found := false
+	ast.Inspect(file, func(n ast.Node) bool {
+		kv, ok := n.(*ast.KeyValueExpr)
+		if !ok {
+			return true
+		}
+		if id, ok := kv.Key.(*ast.Ident); !ok || id.Name != "DarkColors" {
+			return true
+		}
+		cl, ok := kv.Value.(*ast.CompositeLit)
+		if !ok {
+			return true
+		}
+		found = true
+		for _, elt := range cl.Elts {
+			pair, ok := elt.(*ast.KeyValueExpr)
+			if !ok {
+				continue
+			}
+			k, ok := pair.Key.(*ast.BasicLit)
+			v, ok2 := pair.Value.(*ast.BasicLit)
+			if !ok || !ok2 {
+				continue
+			}
+			key, err := strconv.Unquote(k.Value)
+			if err != nil {
+				t.Errorf("dark key %s does not unquote: %v", k.Value, err)
+				continue
+			}
+			val, err := strconv.Unquote(v.Value)
+			if err != nil {
+				t.Errorf("dark value %s does not unquote: %v", v.Value, err)
+				continue
+			}
+			emitted[key] = val
+		}
+		return false
+	})
+	if !found {
+		t.Fatalf("emitted theme.go carries no DarkColors block:\n%s", src)
+	}
+	if len(emitted) != len(th.DarkColors) {
+		t.Errorf("dark palette shrank in the write-back: emitted %d entries, theme carries %d", len(emitted), len(th.DarkColors))
+	}
+	for k, v := range th.DarkColors {
+		if emitted[k] != v {
+			t.Errorf("dark token %q: emitted %q, theme carries %q", k, emitted[k], v)
+		}
+	}
+	// The typed Dark config specifically: its compiled values are what
+	// the emitted file re-declares.
+	if emitted["primary"] != "#5EEAD4" || emitted["surface"] != "#10201E" {
+		t.Errorf("typed Dark override did not reach the emitted palette: primary=%q surface=%q", emitted["primary"], emitted["surface"])
 	}
 }
 

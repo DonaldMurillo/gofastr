@@ -101,7 +101,11 @@ func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
 		html, _ := component.SafeRenderCtx(ctx, ui.Sidebar(sidebarConfig(ctx)))
 		return html
 	})
-	appLayout = app.NewLayout("app").WithSidebar(sbComponent)
+	appLayout = app.NewLayout("app", app.LayoutSpec{}, func(ctx context.Context, l *app.LayoutTree) render.HTML {
+		nav, _ := component.SafeRenderCtx(ctx, sbComponent)
+		return ui.Stack(ui.StackConfig{Screen: true, Gap: ui.GapNone},
+			ui.ContentRow(ui.ContentRowConfig{Sidebar: nav}, l.Primary()))
+	})
 	site.SetDefaultLayout(appLayout)
 	ui.MountSidebar(routerMounter{fwApp.Router()}, sbCfg)
 	{

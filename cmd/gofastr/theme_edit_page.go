@@ -104,13 +104,15 @@ func groupTokenControls(tokens map[string]string) []tokenGroupEntry {
 		"Radii":             4,
 		"Fonts":             5,
 		"Typography":        6,
-		"Shadows":           7,
-		"Z-Index":           8,
-		"Durations":         9,
-		"Easings":           10,
-		"Breakpoints":       11,
-		"Code":              12,
-		"Code (dark)":       13,
+		"Font weights":      7,
+		"Sizes":             8,
+		"Shadows":           9,
+		"Z-Index":           10,
+		"Durations":         11,
+		"Easings":           12,
+		"Breakpoints":       13,
+		"Code":              14,
+		"Code (dark)":       15,
 	}
 	for k, v := range tokens {
 		gn := tokenGroupName(k)
@@ -161,8 +163,12 @@ func tokenGroupName(key string) string {
 		group = "Spacing"
 	case strings.HasPrefix(base, "radii-"):
 		group = "Radii"
+	case strings.HasPrefix(base, "font-weight-"):
+		group = "Font weights"
 	case strings.HasPrefix(base, "font-"):
 		group = "Fonts"
+	case strings.HasPrefix(base, "size-"):
+		group = "Sizes"
 	case strings.HasPrefix(base, "breakpoint-"):
 		group = "Breakpoints"
 	case strings.HasPrefix(base, "shadow-"):

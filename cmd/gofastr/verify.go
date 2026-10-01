@@ -384,8 +384,23 @@ func printVerifyOutcome(report *contracts.Report, fixed bool) {
 // text mode the output streams straight through so it appears as vet
 // printed it; in JSON mode it is captured instead, because anything on
 // stdout would corrupt the document.
+//
+// A tree that carries the repo's vettool (./cmd/vettool — this repo;
+// a host app has none) gets it built and used: the repo's type-aware
+// contract analyzers (layoutfunc, rootwrite, …) run in the same lane
+// `make analyze` and CI drive, which plain `go vet` cannot see. The
+// vettool's own stock passes keep the default-vet coverage, matching
+// CI's single `go vet -vettool=… ./...` step. Any build failure falls
+// back to plain `go vet`, which fails on the same broken tree anyway.
 func runGoVet(root string, capture bool) (string, bool) {
-	cmd := exec.Command("go", "vet", "./...")
+	args := []string{"vet"}
+	tool, dir := buildRepoVettool(root)
+	if tool != "" {
+		defer os.RemoveAll(dir)
+		args = append(args, "-vettool="+tool)
+	}
+	args = append(args, "./...")
+	cmd := exec.Command("go", args...)
 	cmd.Dir = root
 	if capture {
 		var buf strings.Builder
@@ -395,6 +410,26 @@ func runGoVet(root string, capture bool) (string, bool) {
 	}
 	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
 	return "", cmd.Run() == nil
+}
+
+// buildRepoVettool builds ./cmd/vettool from root into a private temp
+// dir. Empty bin (with the dir still returned for cleanup) when the
+// tree has no vettool or the build fails.
+func buildRepoVettool(root string) (bin, dir string) {
+	if _, err := os.Stat(filepath.Join(root, "cmd", "vettool")); err != nil {
+		return "", ""
+	}
+	dir, err := os.MkdirTemp("", "gofastr-verify-vettool-")
+	if err != nil {
+		return "", ""
+	}
+	bin = filepath.Join(dir, "vettool")
+	build := exec.Command("go", "build", "-o", bin, "./cmd/vettool")
+	build.Dir = root
+	if err := build.Run(); err != nil {
+		return "", dir
+	}
+	return bin, dir
 }
 
 // emitVetFailureJSON writes the document for a run that stopped at the

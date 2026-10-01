@@ -549,9 +549,9 @@ func writeJSONError(w http.ResponseWriter, code int, msg string) {
 // controls page renders. Derived purely from the key prefix, the same
 // prefix walkTokens/tokenPair use, so a token added to style.Theme later
 // gets a usable control automatically. "color" tokens get a colour picker,
-// integer-px and unitless-integer tokens get number inputs, "component.*"
+// integer-px and unitless-integer tokens (z-index, font weights) get number inputs, "component.*"
 // keys get a select listing the option catalogue's members, and everything
-// else (fonts, shadows, durations, easings, font-sizes, code colours) gets
+// else (fonts, shadows, durations, easings, font-sizes, sizes, code colours) gets
 // a text input. An unrecognised prefix falls through to "text", never
 // hidden.
 func tokenControlType(key string) string {
@@ -561,7 +561,7 @@ func tokenControlType(key string) string {
 		return "color"
 	case strings.HasPrefix(base, "component."):
 		return "select"
-	case strings.HasPrefix(base, "z-"):
+	case strings.HasPrefix(base, "z-"), strings.HasPrefix(base, "font-weight-"):
 		return "number"
 	case strings.HasPrefix(base, "spacing-"), strings.HasPrefix(base, "radii-"), strings.HasPrefix(base, "breakpoint-"):
 		return "number-px"

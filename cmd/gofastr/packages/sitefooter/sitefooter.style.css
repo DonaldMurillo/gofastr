@@ -1,0 +1,79 @@
+/* The app's colophon: the name and a line about the app, then the
+   link columns, over a quiet bottom line. The content sits on the page
+   measure (--size-page-width, with --size-page-gutter outside it), the
+   column the header and main use. */
+:scope {
+  border-block-start: 1px solid var(--color-border);
+}
+
+.inner {
+  max-inline-size: calc(var(--size-page-width) + 2 * var(--size-page-gutter));
+  margin-inline: auto;
+  padding: var(--spacing-3xl) var(--size-page-gutter) var(--spacing-xl);
+}
+
+/* The lead takes the first third; the columns share the rest and wrap
+   when they run out of room. */
+.top {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+  gap: var(--spacing-2xl);
+}
+
+.brand {
+  color: var(--color-text);
+  font-weight: var(--font-weight-semibold);
+  text-decoration: none;
+}
+.tagline {
+  margin: var(--spacing-md) 0 0;
+  max-inline-size: 32ch;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  line-height: 1.6;
+}
+
+.columns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  gap: var(--spacing-xl);
+}
+.title {
+  margin: 0 0 var(--spacing-md);
+  color: var(--color-text);
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-medium);
+}
+.links {
+  display: grid;
+  gap: var(--spacing-md);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.links a {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  text-decoration: none;
+  transition: color var(--duration-fast) var(--easing-ease-out);
+}
+.links a:hover { color: var(--color-text); }
+.links a:focus-visible,
+.brand:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+
+.note {
+  margin: var(--spacing-2xl) 0 0;
+  padding-block-start: var(--spacing-lg);
+  border-block-start: 1px solid var(--color-border);
+  color: var(--color-text-subtle);
+  font-size: var(--text-xs);
+}
+
+@media (--reduced-motion) {
+  .links a { transition: none; }
+}
+
+/* Phones: the lead stacks over the columns. */
+@media (--below-md) {
+  .top { grid-template-columns: minmax(0, 1fr); }
+}
