@@ -35,8 +35,11 @@ func TestGoModEqual(t *testing.T) {
 }
 
 func TestGoModAbove(t *testing.T) {
-	n := gomodNote("1.27")
-	res := mustRun(t, goModApp(t, "go 1.27.1"), n)
+	// The app's go directive must not exceed the toolchain running the
+	// test: a newer one makes the load fetch a toolchain, which the
+	// hermetic GOPROXY=off refuses. So the threshold moves down instead.
+	n := gomodNote("1.26")
+	res := mustRun(t, goModApp(t, "go 1.26.1"), n)
 	wantHits(t, res, n)
 }
 
