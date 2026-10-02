@@ -722,7 +722,8 @@ builders are gone. Port by moving the header/sidebar/footer components
 into the build function's static chrome and the screen cell to
 `l.Primary()`; `ui.Sidebar` is unchanged, the header and footer are
 the app's own packages (`ui.SiteHeader`, `ui.SiteFooter` and
-`ui.DocLayout` are gone; see the upgrade notes in the changelog), and
+`ui.DocLayout` are gone; see [What changed in
+v0.86.0](release-0-86.md#layouts-one-primitive-no-preset-frames)), and
 the frame is composed from the structural pieces (the page-tall
 `ui.Stack`, `ui.ContentRow` for the sidebar row, `ui.Container` for the
 centered column):

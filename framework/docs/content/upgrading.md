@@ -6,6 +6,10 @@ Updating `go.mod` does NOT update the CLI binary; keep them on the same
 release. Every command below uses `vX.Y.Z` as a placeholder; substitute
 the release you're upgrading to.
 
+Crossing v0.86.0? Read [What changed in v0.86.0](release-0-86.md)
+first. That release rebuilt the UI layer, and the page lists every
+breaking change with what replaces it.
+
 ## The guided path: `gofastr upgrade`
 
 The CLI embeds a migration registry: one entry per release that

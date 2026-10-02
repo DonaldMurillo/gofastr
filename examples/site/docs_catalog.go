@@ -60,6 +60,7 @@ var docIntents = []docIntent{
 			{"project-structure", "Project structure", "Start flat; grow into internal/<domain> as real boundaries appear. Structure follows the app."},
 			{"comparison", "Comparison", "Where GoFastr sits relative to other full-stack frameworks."},
 			{"upgrading", "Upgrading", "Move an app (and the CLI) to a newer release, plus gofastr upgrade, the guided helper."},
+			{"release-0-86", "What changed in v0.86.0", "The UI-layer rebuild: headless components, fui-* classes, the layout primitive and owned styles, with every breaking change and how to move an app."},
 			{"stability", "API stability", "Compatibility windows, deprecation rules, and the public v1 promise."},
 		},
 	},

@@ -185,7 +185,7 @@ notes:
         properties: [--color-muted, --color-surface-hover, --color-border-subtle, --color-border-hover, --color-primary-hover, --color-primary-foreground, --color-ring, --color-warn, --color-warn-soft, --color-warn-strong]
       css:
         properties: [--color-muted, --color-surface-hover, --color-border-subtle, --color-border-hover, --color-primary-hover, --color-primary-foreground, --color-ring, --color-warn, --color-warn-soft, --color-warn-strong]
-    guidance: "Reference the canonical ColorSet token instead (the CHANGELOG table maps each alias to its replacement or color-mix value); a stylesheet setting one as a theme token deletes the line — nothing reads it."
+    guidance: "Reference the canonical ColorSet token instead (the table in `gofastr docs release-0-86` maps each alias to its replacement or color-mix value); a stylesheet setting one as a theme token deletes the line — nothing reads it."
   - change: "gofastr pack reads the auth form's hidden next input only as html.Input(html.InputConfig{Type: \"hidden\", Name: \"next\", ...})"
     breaking: true
     hits: edit
@@ -266,7 +266,7 @@ notes:
     find:
       uses:
         - gofastr/core-ui/app.NewLayout
-    guidance: "Declare app.NewLayout(name, app.LayoutSpec{}, func(ctx, l *app.LayoutTree) render.HTML { ... }) whose build places l.Primary() and composes your chrome; see the layouts doc topic and the BREAKING changelog entry for the port spelled end to end."
+    guidance: "Declare app.NewLayout(name, app.LayoutSpec{}, func(ctx, l *app.LayoutTree) render.HTML { ... }) whose build places l.Primary() and composes your chrome; see the layouts doc topic and `gofastr docs release-0-86` for the port spelled end to end."
   - change: "Layout.WithHeader is removed; the header renders in the layout build"
     breaking: true
     hits: edit
