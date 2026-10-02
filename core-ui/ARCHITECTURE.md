@@ -48,6 +48,12 @@ The exemption ends at `t.Cleanup`, affects no other handler, and is safe
 for parallel tests with separate wrappers and servers. It does not silence
 logs or TestHarness reporters and cannot be selected by an HTTP request.
 
+The same test binaries (and `gofastr dev`) scan served HTML responses
+for names the upgrade registry retired — classes and `data-fui-*`
+attributes — and report them through a separate observer; a retired
+name never changes a response's status. Production never scans. See
+`framework/docs/content/testkit.md` § Retired markup.
+
 Document titles append ` — <app name>` only when the screen title does
 not already end with that exact suffix. Full pages, not-found outlet
 outcomes, recovery screens, and partial-navigation title headers follow

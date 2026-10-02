@@ -48,6 +48,32 @@ Recovered render panics log at error level with the component type,
 scrubbed panic message, and stack. Logging also runs in production;
 the existing fallback HTML and HTTP status behavior do not change.
 
+## Retired markup
+
+`TestHarness` also fails `t` when a rendered response carries markup
+the upgrade registry has retired: a class name or `data-fui-*`
+attribute no longer emitted by the kit. This is what catches the names
+a source scan cannot see — a class built at run time
+(`fmt.Sprintf("ui-%s", kind)`), one read from the database, a template
+value. The failure reads:
+
+```text
+GET /orders: retired markup: class "ui-button" (v0.86.0: the button classes
+are fui-button*; the ui-button class no longer exists in any emitted markup
+or stylesheet); run gofastr upgrade
+```
+
+Attribute values never match — `data-fui-comp="ui-sidebar"` is a kept
+component marker, not the retired `ui-sidebar` class — and a migrated
+spelling reports nothing. Full pages, navigation partials, deferred
+parts, and 404/405/error documents are all scanned.
+
+The scan runs only in test binaries and under `gofastr dev` (which
+warns once per path and name, so a livereload loop cannot flood the
+console). Production never scans and never loads the registry. Apps
+that build their own `httptest.Server` instead of the harness get the
+same check: findings log at warn level in the test binary.
+
 ## Isolated databases
 
 ```go

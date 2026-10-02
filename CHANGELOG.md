@@ -1113,6 +1113,20 @@ are listed under Added above, not here.
   at the release before its note, and checks each historical fixture
   app's `migration.patch` hunk by hunk against the scan.
 
+- Rendered pages are checked for retired markup. A class built at run
+  time (`fmt.Sprintf("ui-%s", kind)`, a name read from the database)
+  never appears in source, so in Go test binaries and under
+  `gofastr dev` the framework scans each finite HTML response it serves
+  (full pages, navigation partials, deferred parts, error documents)
+  for the classes and attributes the registry's breaking notes retire.
+  `framework.TestHarness` fails the test on each one, other test
+  servers log it at warn level, and `gofastr dev` warns once per path
+  and name. Attribute values never match, so a kept
+  `data-fui-comp="ui-sidebar"` marker stays silent, and a finding never
+  changes the response. Production binaries never scan, never load the
+  registry, and do not link `golang.org/x/tools`.
+  `framework/docs/content/testkit.md` § Retired markup has the details.
+
 - `framework/headless` gains the navigation primitives `Rail`,
   `TableOfContents`, `Disclosure`, `Menu`, `Combobox`, `Tabs`,
   `Carousel`, `PaneHost`, `Sidebar`, `JSONTree` and `Gallery`, with

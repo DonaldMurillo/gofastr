@@ -231,6 +231,17 @@ so registered sheet names and `data-fui-comp` markers stay silent.
 An argument to a `testing` call (`t.Fatal`, `t.Errorf`, `t.Run`) is a
 failure message or subtest name, so no string matcher reads it.
 
+The registry has a second reader. `gofastr upgrade` scans an app's
+*source*; a name built at run time (`fmt.Sprintf("ui-%s", kind)`, a
+class read from the database) never appears there, but the rendered
+HTML can't hide it. So in Go test binaries and under `gofastr dev`, the
+framework scans each HTML response it serves for the registry's retired
+classes and `data-fui-*` attributes: `framework.TestHarness` fails the
+test on each one, and `gofastr dev` warns once per path and name
+([testkit](testkit.md)). Production binaries never scan and never load
+the registry — the check has no serving cost and no link on
+`golang.org/x/tools`.
+
 ## Verify
 
 - `gofastr verify [capability...]`: the contract analyzers. Covers routing,

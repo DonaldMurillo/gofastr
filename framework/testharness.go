@@ -60,6 +60,13 @@ func TestHarness(t testing.TB, app *App) *TestApp {
 				t.Helper()
 				t.Errorf("%s %s: %s", r.Method, r.URL.Path, message)
 			})
+			// Retired markup (names the upgrade registry retired, found
+			// in rendered HTML) fails the test the same way, through its
+			// own channel: it is a migration finding, never a 500.
+			ctx = renderdiag.WithRetiredReporter(ctx, func(message string) {
+				t.Helper()
+				t.Errorf("%s %s: %s", r.Method, r.URL.Path, message)
+			})
 			app.router.ServeHTTP(w, r.WithContext(ctx))
 		}),
 	}

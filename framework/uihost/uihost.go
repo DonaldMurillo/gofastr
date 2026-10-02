@@ -53,6 +53,7 @@ import (
 	fembed "github.com/DonaldMurillo/gofastr/framework/embed"
 	"github.com/DonaldMurillo/gofastr/framework/uihost/internal/sessiontoken"
 	"github.com/DonaldMurillo/gofastr/internal/renderdiag"
+	"github.com/DonaldMurillo/gofastr/internal/retired"
 )
 
 // OG holds Open Graph meta tag values for social sharing.
@@ -1473,6 +1474,12 @@ func (ds *UIHost) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // handlePage renders a full page with runtime.js, SSE meta tag, and compiled actions.
 func (ds *UIHost) handlePage(w http.ResponseWriter, r *http.Request) {
 	w, r = renderdiag.TestResponse(w, r)
+	// Every finite HTML arm below (full page, nav partial, deferred
+	// part, 404/error documents) writes through w: one tee covers them.
+	// In test binaries and `gofastr dev` the finished body is scanned
+	// for names the upgrade registry retired; production passes through.
+	w, finishScan := retired.Arm(w, r, dev.Enabled())
+	defer finishScan()
 	path := r.URL.Path
 	// A part request (X-Gofastr-Part, is answered
 	// before anything else: it never renders a document, never mints a
@@ -3825,6 +3832,9 @@ func (ds *UIHost) serveMethodNotAllowed(w http.ResponseWriter, r *http.Request) 
 // preserved (set by the router before dispatching). Composed entirely
 // from design-system elements, zero bespoke CSS.
 func (ds *UIHost) serveMethodNotAllowedPage(w http.ResponseWriter, r *http.Request) {
+	// The 405 document wraps app layout chrome; scan it like a page.
+	w, finishScan := retired.Arm(w, r, dev.Enabled())
+	defer finishScan()
 	path := r.URL.Path
 	allow := w.Header().Get("Allow")
 
