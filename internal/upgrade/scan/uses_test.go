@@ -125,7 +125,11 @@ func main() {
 func TestUsesInTestFile(t *testing.T) {
 	src := `package main
 
-import "example.com/kit/ui"
+import (
+	"testing"
+
+	"example.com/kit/ui"
+)
 
 func TestHeader(t *testing.T) {
 	_ = ui.SiteHeader("t")
@@ -136,6 +140,10 @@ func TestHeader(t *testing.T) {
 		"main.go":      "package main\n\nfunc main() {}\n",
 		"main_test.go": src,
 	}), n)
+	// The typed matcher must find it, not the compile-error fallback.
+	if !res.TypeChecked {
+		t.Fatalf("test variant did not type-check: %v", res.Broken)
+	}
 	wantHits(t, res, n, hitAt(src, "SiteHeader", "main_test.go", siteHeaderSym.String()))
 }
 
@@ -279,7 +287,7 @@ func Render() string { return ui.SiteHeader("t") }
 `
 	main := `package main
 
-import "example.com/app/build"
+import "example.com/app/internal/build"
 
 func main() { _ = build.Render() }
 `
@@ -290,6 +298,9 @@ func main() { _ = build.Render() }
 		"internal/build/build.go": src,
 		"main.go":                 main,
 	}), n)
+	if !res.TypeChecked {
+		t.Fatalf("fixture did not type-check: %v", res.Broken)
+	}
 	wantHits(t, res, n, hitAt(src, "SiteHeader", "internal/build/build.go", siteHeaderSym.String()))
 }
 
