@@ -15,6 +15,7 @@ import (
 	"github.com/chromedp/cdproto/fetch"
 	"github.com/chromedp/cdproto/network"
 	"github.com/chromedp/cdproto/page"
+	cdpruntime "github.com/chromedp/cdproto/runtime"
 	"github.com/chromedp/chromedp"
 )
 
@@ -176,10 +177,19 @@ func TestP9LoadingShowAndParkE2E(t *testing.T) {
 	if parked == 0 {
 		t.Error("no hidden park div on body during flight; old nodes must be parked in-document")
 	}
-	// The region holding loading content is not dimmed (P9-A CSS).
+	// The region holding loading content is not dimmed (P9-A CSS). It
+	// fades in when marked shown (fui-load-in, .18s), so read the
+	// opacity once the region's own animations finish: a fixed sleep
+	// lands mid-fade on a slow runner (0.997).
 	var op string
 	if err := chromedp.Run(tctx, chromedp.Evaluate(
-		`getComputedStyle(document.querySelector('[data-fui-outlet="l:shell#toolbar"]')).opacity`, &op)); err != nil {
+		`(async () => {
+			const el = document.querySelector('[data-fui-outlet="l:shell#toolbar"]');
+			await Promise.all(el.getAnimations().map(a => a.finished.catch(() => {})));
+			return getComputedStyle(el).opacity;
+		})()`, &op, func(p *cdpruntime.EvaluateParams) *cdpruntime.EvaluateParams {
+			return p.WithAwaitPromise(true)
+		})); err != nil {
 		t.Fatal(err)
 	}
 	if op != "1" {
