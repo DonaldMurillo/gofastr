@@ -14,16 +14,23 @@
 // checker (pinned by TestServingPackagesSkipXTools).
 package retired
 
-import "bytes"
+import (
+	"bytes"
+	stdhtml "html"
+)
 
 // Scan walks html's start tags and calls visit once per tag with the tag
 // name, its attribute names (in document order), and the
-// whitespace-split tokens of every class attribute. All arguments are
-// sub-slices of html and are only valid until visit returns. Comments,
-// doctypes, end tags, and the raw-text bodies of script, style,
-// textarea and title are skipped; markup-looking bytes inside them are
-// not markup. Malformed and truncated input yields whatever parsed; it
-// never panics and never loops.
+// whitespace-split tokens of its class attribute. It reads them the way
+// a browser does: of duplicate attributes (names fold case) only the
+// first counts, and character references in the class value decode
+// (ui&#45;button is ui-button). Arguments are only valid until visit
+// returns. Comments, doctypes, end tags, and the bodies of the elements
+// the HTML tokenizer reads as raw text (script, style, textarea, title,
+// iframe, noembed, noframes, xmp, and noscript with scripting on) are
+// skipped; markup-looking bytes inside them are not markup. Everything
+// after a plaintext start tag is text. Malformed and truncated input
+// yields whatever parsed; it never panics and never loops.
 func Scan(html []byte, visit func(tag []byte, attrs [][]byte, classes [][]byte)) {
 	var attrs, classes [][]byte
 	i := 0
@@ -43,6 +50,12 @@ func Scan(html []byte, visit func(tag []byte, attrs [][]byte, classes [][]byte))
 			// of it is markup. Find the closing '>' (a comment's may be
 			// far away; an unterminated one simply ends the document).
 			if bytes.HasPrefix(rest, []byte("!--")) {
+				// <!--> and <!---> are complete (empty) comments: the
+				// HTML tokenizer closes them abruptly at that '>'.
+				if body := rest[3:]; bytes.HasPrefix(body, []byte(">")) || bytes.HasPrefix(body, []byte("->")) {
+					i += 1 + 3 + bytes.IndexByte(body, '>') + 1
+					continue
+				}
 				end := bytes.Index(rest[3:], []byte("-->"))
 				if end < 0 {
 					return
@@ -69,8 +82,11 @@ func Scan(html []byte, visit func(tag []byte, attrs [][]byte, classes [][]byte))
 			attrs, classes = attrs[:0], classes[:0]
 			pos := scanAttrs(rest[nameEnd:], &attrs, &classes)
 			visit(name, attrs, classes)
-			// script/style/textarea/title have raw-text bodies: nothing
-			// inside is markup. Skip to the matching close tag.
+			if bytes.EqualFold(name, []byte("plaintext")) {
+				return // no end tag: the rest of the document is text
+			}
+			// Raw-text bodies hold no markup: skip to the matching
+			// close tag.
 			if isRawText(name) {
 				i = skipRawText(html, i+1+nameEnd+pos, name)
 				continue
@@ -121,7 +137,12 @@ func scanAttrs(b []byte, attrs *[][]byte, classes *[][]byte) int {
 			i++
 			continue
 		}
-		*attrs = append(*attrs, name)
+		// A duplicate attribute is dropped, value and all: the browser
+		// keeps the first.
+		dup := hasAttr(*attrs, name)
+		if !dup {
+			*attrs = append(*attrs, name)
+		}
 		// Optional value: whitespace, '=', whitespace, then a quoted or
 		// unquoted value.
 		j := i + skipWS(b[i:])
@@ -144,7 +165,9 @@ func scanAttrs(b []byte, attrs *[][]byte, classes *[][]byte) int {
 			if end < 0 {
 				// Unterminated quoted value runs to the end of input.
 				valueStart, valueEnd = vStart, len(b)
-				recordClassValue(name, b[valueStart:valueEnd], classes)
+				if !dup {
+					recordClassValue(name, b[valueStart:valueEnd], classes)
+				}
 				return len(b)
 			}
 			valueStart, valueEnd = vStart, vStart+end
@@ -157,16 +180,32 @@ func scanAttrs(b []byte, attrs *[][]byte, classes *[][]byte) int {
 			valueEnd = j
 			i = j
 		}
-		recordClassValue(name, b[valueStart:valueEnd], classes)
+		if !dup {
+			recordClassValue(name, b[valueStart:valueEnd], classes)
+		}
 	}
 	return i
 }
 
+// hasAttr reports whether attrs already holds name, folding case.
+func hasAttr(attrs [][]byte, name []byte) bool {
+	for _, a := range attrs {
+		if bytes.EqualFold(a, name) {
+			return true
+		}
+	}
+	return false
+}
+
 // recordClassValue appends the whitespace-split tokens of a class
-// attribute's value. Other attributes' values carry no classes.
+// attribute's value, character references decoded first. Other
+// attributes' values carry no classes.
 func recordClassValue(name, value []byte, classes *[][]byte) {
 	if len(value) == 0 || !bytes.EqualFold(name, []byte("class")) {
 		return
+	}
+	if bytes.IndexByte(value, '&') >= 0 {
+		value = []byte(stdhtml.UnescapeString(string(value)))
 	}
 	for len(value) > 0 {
 		value = value[skipWS(value):]
@@ -233,12 +272,22 @@ func tagNameEnd(b []byte) int {
 	return i
 }
 
-// isRawText reports whether the element's content is raw text (script,
-// style) or escapable raw text (textarea, title): the parser reads no
-// markup inside until the matching close tag.
+// rawTextElements are the elements whose content the HTML tokenizer
+// reads as raw text or escapable raw text, scripting on: no markup
+// inside until the matching close tag.
+var rawTextElements = [][]byte{
+	[]byte("script"), []byte("style"), []byte("textarea"), []byte("title"),
+	[]byte("iframe"), []byte("noembed"), []byte("noframes"), []byte("xmp"), []byte("noscript"),
+}
+
+// isRawText reports whether the element's content is raw text.
 func isRawText(name []byte) bool {
-	return bytes.EqualFold(name, []byte("script")) || bytes.EqualFold(name, []byte("style")) ||
-		bytes.EqualFold(name, []byte("textarea")) || bytes.EqualFold(name, []byte("title"))
+	for _, el := range rawTextElements {
+		if bytes.EqualFold(name, el) {
+			return true
+		}
+	}
+	return false
 }
 
 func indexFold(b, sub []byte) int {

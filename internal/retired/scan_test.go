@@ -36,12 +36,23 @@ func TestScanStartTags(t *testing.T) {
 		{"single quoted", "<div class='ui-button' data-y='a b'>", []string{`div[class data-y][ui-button]`}},
 		{"attr without value", `<input disabled class=chk>`, []string{`input[disabled class][chk]`}},
 		{"uppercase names", `<DIV CLASS="Up">`, []string{`DIV[class][Up]`}},
-		{"class repeated", `<p class="a" class="b">`, []string{`p[class class][a b]`}},
-		{"entities in values", `<a title="&quot;q&quot;" class="a&amp;b">`, []string{`a[title class][a&amp;b]`}},
+		// A browser keeps the first of duplicate attributes (names fold
+		// case) and drops the rest, value and all.
+		{"class repeated", `<p class="a" class="b">`, []string{`p[class][a]`}},
+		{"class repeated other case", `<p CLASS="a" class="ui-button">`, []string{`p[class][a]`}},
+		{"attr repeated", `<p data-fui-x data-fui-x="1" DATA-FUI-X>`, []string{`p[data-fui-x][]`}},
+		// Character references decode in attribute values: the class
+		// list the browser builds holds the decoded name.
+		{"entities in values", `<a title="&quot;q&quot;" class="a&amp;b">`, []string{`a[title class][a&b]`}},
+		{"decimal reference", `<div class="ui&#45;button">`, []string{`div[class][ui-button]`}},
+		{"hex reference", `<div class=ui&#x2D;button>`, []string{`div[class][ui-button]`}},
+		{"reference makes whitespace", `<div class="a&#32;ui-button">`, []string{`div[class][a ui-button]`}},
 		{"gt inside quoted value", `<div class="a>b" data-x="1">`, []string{`div[class data-x][a>b]`}},
 		{"lt in text", `3 < 5 and a < b <div class=x>`, []string{`div[class][x]`}},
 		{"comment skipped", `<!-- <div class="ui-button"> --><span>`, []string{`span[][]`}},
 		{"comment with an early >", `<!-- a > b <div class="ui-button"> --><span>`, []string{`span[][]`}},
+		{"abrupt empty comment", `<!--><div class="ui-button"><!-- x -->`, []string{`div[class][ui-button]`}},
+		{"abrupt dash comment", `<!---><div class="ui-button"><!-- x -->`, []string{`div[class][ui-button]`}},
 		{"doctype skipped", `<!DOCTYPE html><html>`, []string{`html[][]`}},
 		{"end tag skipped", `<div class=x></div><b>`, []string{`div[class][x]`, `b[][]`}},
 		{"self closing", `<br/><img src="a.png" />`, []string{`br[][]`, `img[src][]`}},
@@ -53,6 +64,14 @@ func TestScanStartTags(t *testing.T) {
 		{"textarea body skipped", `<textarea><div class="ui-button"></textarea>`, []string{`textarea[][]`}},
 		{"title body skipped", `<title>a < b "c"</title>`, []string{`title[][]`}},
 		{"uppercase raw text tag", `<STYLE>.x{}</STYLE><i>`, []string{`STYLE[][]`, `i[][]`}},
+		// Every element the HTML tokenizer reads as raw text (scripting
+		// on, as in the browser the runtime runs in).
+		{"iframe body skipped", `<iframe><div class="ui-button"></iframe><i>`, []string{`iframe[][]`, `i[][]`}},
+		{"noembed body skipped", `<noembed><div class="ui-button"></noembed>`, []string{`noembed[][]`}},
+		{"noframes body skipped", `<noframes><div class="ui-button"></noframes>`, []string{`noframes[][]`}},
+		{"xmp body skipped", `<xmp><div class="ui-button"></xmp>`, []string{`xmp[][]`}},
+		{"noscript body skipped", `<noscript><div class="ui-button"></noscript><i>`, []string{`noscript[][]`, `i[][]`}},
+		{"plaintext runs to the end", `<plaintext><div class="ui-button"></plaintext><i>`, []string{`plaintext[][]`}},
 		{"attr with quoted markup value", `<div data-a="<b class=x>">`, []string{`div[data-a][]`}},
 		{"equals before name", `<div =x class=y>`, []string{`div[=x class][y]`}},
 		{"empty class", `<div class="">`, []string{`div[class][]`}},
