@@ -2001,6 +2001,13 @@ are listed under Added above, not here.
   where the old module reverted in silence.
 
 ### Fixed
+- **`core/yaml` nests under a list item's first key.** In
+  `- props:` followed by deeper `href: /a`, the deeper lines were read
+  as the item's own keys, so `props` came back empty and `href` sat
+  beside it, with no error. A first key with an empty value now owns
+  the lines indented past it, and a continuation line that lines up
+  with neither the item's keys nor that value is refused as unexpected
+  indentation.
 - **A compact `ui.Sidebar` shows its groups as groups.** A group's label
   was drawn like its links and the compact sublist had no indent, so a
   docs rail with one group per section read as one flat list. The

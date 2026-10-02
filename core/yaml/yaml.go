@@ -287,9 +287,23 @@ func (p *parser) parseList(indent int) (*Node, error) {
 			if kErr != nil {
 				return nil, kErr
 			}
+			// The item's keys sit at keyCol, the column after "- ". A
+			// first key with an empty value owns the lines indented past
+			// keyCol as its own value; lines at keyCol are the item's
+			// further keys. Anything else between the dash and keyCol,
+			// or past it after a scalar, belongs to nothing.
+			keyCol := line.indent + 1 + (len(line.text) - 1 - len(strings.TrimLeft(line.text[1:], " ")))
 			value = strings.TrimSpace(value)
 			if value == "" {
-				child.Map[normKey] = &Node{Kind: Map, Map: map[string]*Node{}, Line: line.line, Column: line.indent + 3}
+				if p.pos < len(p.lines) && p.lines[p.pos].indent > keyCol {
+					owned, err := p.parseBlock(p.lines[p.pos].indent)
+					if err != nil {
+						return nil, err
+					}
+					child.Map[normKey] = owned
+				} else {
+					child.Map[normKey] = &Node{Kind: Map, Map: map[string]*Node{}, Line: line.line, Column: keyCol + 1}
+				}
 			} else {
 				scalar, err := parseScalar(value, line.line, strings.Index(line.text, value)+line.indent+1, 0)
 				if err != nil {
@@ -298,6 +312,10 @@ func (p *parser) parseList(indent int) (*Node, error) {
 				child.Map[normKey] = scalar
 			}
 			if p.pos < len(p.lines) && p.lines[p.pos].indent > indent {
+				// Parsed at keyCol: a line deeper than that is refused
+				// there, and one shallower ends the map and is refused
+				// back here as unexpected indentation.
+				//
 				// Seed with the key this item already defined, so a repeat
 				// among the continuation lines reports the item's line as
 				// the first definition rather than the first continuation.
@@ -305,7 +323,7 @@ func (p *parser) parseList(indent int) (*Node, error) {
 				for k, v := range child.Map {
 					seed[k] = v.Line
 				}
-				more, err := p.parseMapSeeded(p.lines[p.pos].indent, seed)
+				more, err := p.parseMapSeeded(keyCol, seed)
 				if err != nil {
 					return nil, err
 				}
