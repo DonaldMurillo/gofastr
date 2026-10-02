@@ -2,71 +2,46 @@ package upgrade
 
 import (
 	"fmt"
-	"strconv"
 	"strings"
+
+	"golang.org/x/mod/semver"
 )
 
-// Semver is a parsed version: the vX.Y.Z core plus any prerelease
-// suffix (which is also how Go pseudo-versions look:
-// v0.25.1-0.20260715120000-abcdef123456).
-type Semver struct {
-	nums [3]int
-	pre  string // "" for a release; the "-…" tail (sans dash) otherwise
+// ValidateSemver accepts vMAJOR.MINOR.PATCH with an optional
+// -prerelease (or +build) suffix, covering the pseudo-versions Go
+// writes into go.mod. The short forms semver allows (v1, v1.2) are
+// refused: a registry release and a go.mod require always spell all
+// three numbers.
+func ValidateSemver(v string) error {
+	if !semver.IsValid(v) || !hasThreeNumbers(v) {
+		return fmt.Errorf("version %q must look like vX.Y.Z", v)
+	}
+	return nil
 }
 
-// ParseSemver parses vMAJOR.MINOR.PATCH with an optional -prerelease
-// (or +build, ignored) suffix, covering the pseudo-versions Go writes
-// into go.mod.
-func ParseSemver(v string) (Semver, error) {
-	var out Semver
-	if !strings.HasPrefix(v, "v") {
-		return out, fmt.Errorf("version %q must look like vX.Y.Z", v)
-	}
-	core := strings.TrimPrefix(v, "v")
-	if i := strings.IndexByte(core, '+'); i >= 0 {
+// hasThreeNumbers reports whether the core, cut at the first "-" or
+// "+", spells all three numbers.
+func hasThreeNumbers(v string) bool {
+	core := v
+	if i := strings.IndexAny(core, "-+"); i >= 0 {
 		core = core[:i]
 	}
-	if i := strings.IndexByte(core, '-'); i >= 0 {
-		out.pre = core[i+1:]
-		core = core[:i]
-	}
-	parts := strings.Split(core, ".")
-	if len(parts) != 3 {
-		return out, fmt.Errorf("version %q must look like vX.Y.Z", v)
-	}
-	for i, p := range parts {
-		n, err := strconv.Atoi(p)
-		if err != nil || n < 0 {
-			return out, fmt.Errorf("version %q must look like vX.Y.Z", v)
-		}
-		out.nums[i] = n
-	}
-	return out, nil
+	return strings.Count(core, ".") == 2
 }
 
-// SemverLess reports a < b. Same-core comparisons follow semver: a
-// prerelease (or pseudo-version) sorts before its release; two
-// prereleases compare lexically (exact enough for pseudo-version
-// timestamps). Malformed versions compare as lowest so an unknown
-// current version includes every registry entry up to target.
+// SemverLess reports a < b by semver precedence: a prerelease (or
+// pseudo-version) sorts before its release, and numeric prerelease
+// identifiers compare as numbers (rc.2 < rc.10). Malformed versions
+// compare as lowest so an unknown current version includes every
+// registry entry up to target.
 func SemverLess(a, b string) bool {
-	av, aerr := ParseSemver(a)
-	bv, berr := ParseSemver(b)
-	if aerr != nil {
-		return berr == nil
+	if ValidateSemver(a) != nil {
+		return ValidateSemver(b) == nil
 	}
-	if berr != nil {
+	if ValidateSemver(b) != nil {
 		return false
 	}
-	for i := range 3 {
-		if av.nums[i] != bv.nums[i] {
-			return av.nums[i] < bv.nums[i]
-		}
-	}
-	if (av.pre == "") != (bv.pre == "") {
-		return av.pre != "" // prerelease < release
-	}
-	return av.pre < bv.pre
+	return semver.Compare(a, b) < 0
 }
 
 // ReleasesInRange returns the registry entries in (current, target],

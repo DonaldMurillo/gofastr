@@ -363,7 +363,7 @@ func normalizeFrameworkVersion(v string) string {
 	if !strings.HasPrefix(v, "v") {
 		v = "v" + v
 	}
-	if _, err := upgrade.ParseSemver(v); err != nil {
+	if err := upgrade.ValidateSemver(v); err != nil {
 		return ""
 	}
 	return v

@@ -300,7 +300,7 @@ func runUpgrade(args []string) {
 			osExit(1)
 		}
 	}
-	if _, err := upgrade.ParseSemver(target); err != nil {
+	if err := upgrade.ValidateSemver(target); err != nil {
 		fmt.Fprintf(os.Stderr, "upgrade: %v\n", err)
 		osExit(1)
 	}

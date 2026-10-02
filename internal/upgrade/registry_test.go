@@ -271,7 +271,7 @@ func TestEmbeddedRegistryParsesSorted(t *testing.T) {
 		t.Fatalf("registry suspiciously small: %d releases", len(reg.Releases))
 	}
 	for i, r := range reg.Releases {
-		if _, err := ParseSemver(r.Version); err != nil {
+		if err := ValidateSemver(r.Version); err != nil {
 			t.Errorf("release %d version %q: %v", i, r.Version, err)
 		}
 		if len(r.Notes) == 0 {
@@ -299,7 +299,7 @@ func TestThroughCoversNewestEntry(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if _, err := ParseSemver(reg.Through); err != nil {
+	if err := ValidateSemver(reg.Through); err != nil {
 		t.Fatalf("through: %v", err)
 	}
 	if last := reg.Releases[len(reg.Releases)-1].Version; SemverLess(reg.Through, last) {

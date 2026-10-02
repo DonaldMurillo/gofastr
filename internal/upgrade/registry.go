@@ -137,7 +137,7 @@ func parseHeader(root *coreyaml.Node, allowed ...string) (*Registry, error) {
 	if err != nil {
 		return nil, err
 	}
-	if _, err := ParseSemver(through); err != nil {
+	if err := ValidateSemver(through); err != nil {
 		return nil, errAt(tn.Line, "through: %v", err)
 	}
 	reg.Through = through
@@ -165,7 +165,7 @@ func parseRelease(n *coreyaml.Node, file string) (Release, error) {
 	if err != nil {
 		return rel, err
 	}
-	if _, err := ParseSemver(version); err != nil {
+	if err := ValidateSemver(version); err != nil {
 		return rel, errAt(vn.Line, "release version: %v", err)
 	}
 	rel.Version = version

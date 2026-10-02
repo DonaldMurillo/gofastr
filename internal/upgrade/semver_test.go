@@ -13,6 +13,12 @@ func TestSemverLess(t *testing.T) {
 		{"v0.23.0", "v0.23.0", false},
 		{"v0.23.0", "v0.23.1", true},
 		{"v1.0.0", "v0.25.0", false},
+		// Numeric prerelease identifiers compare as numbers, not text.
+		{"v0.86.0-rc.2", "v0.86.0-rc.10", true},
+		{"v0.86.0-rc.10", "v0.86.0-rc.2", false},
+		{"v0.86.0-rc.1", "v0.86.0-rc.1.1", true},
+		{"v0.86.0-alpha", "v0.86.0-alpha.1", true},
+		{"v0.86.0-alpha.9", "v0.86.0-beta", true},
 	}
 	for _, c := range cases {
 		if got := SemverLess(c.a, c.b); got != c.want {
@@ -33,8 +39,13 @@ func TestSemverPrereleaseAndPseudoVersions(t *testing.T) {
 		t.Errorf("release must not sort before its own prerelease")
 	}
 	// Prerelease targets parse.
-	if _, err := ParseSemver("v0.26.0-rc.1"); err != nil {
+	if err := ValidateSemver("v0.26.0-rc.1"); err != nil {
 		t.Errorf("prerelease target must parse: %v", err)
+	}
+	for _, bad := range []string{"0.26.0", "v0.26", "v1", "v0.26.0.1", "v0.026.0", "v0.26.0-", "v0.26.0-rc.01"} {
+		if ValidateSemver(bad) == nil {
+			t.Errorf("ValidateSemver(%q) accepted a malformed version", bad)
+		}
 	}
 	// A pseudo-version current skips already-crossed releases.
 	reg := &Registry{Releases: []Release{{Version: "v0.23.0"}, {Version: "v0.25.0"}}}

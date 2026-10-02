@@ -269,7 +269,7 @@ func newSymbolSource(repo string) (*symbolSource, error) {
 		return nil, fmt.Errorf("list git tags in %s: %w", repo, err)
 	}
 	for _, tag := range strings.Fields(out) {
-		if _, err := upgrade.ParseSemver(tag); err == nil {
+		if err := upgrade.ValidateSemver(tag); err == nil {
 			s.tags = append(s.tags, tag)
 		}
 	}

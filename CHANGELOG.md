@@ -1102,7 +1102,9 @@ are listed under Added above, not here.
   the Go matchers read the compile errors instead: an error naming a
   `uses` symbol or a missing `imports` package is a hit at its
   position, an error on a line a typed matcher already hit counts as
-  explained, and the report lists every error no note explains. The
+  explained, and the report lists every error no note explains.
+  Versions compare by semver precedence, so `rc.2` sorts before
+  `rc.10`. The
   registry is one file per release under `internal/upgrade/releases/`:
   294 notes from v0.3.0 on (181 `find`, 113 `nodetect`), 42 of them
   for v0.86.0 ("Headless design system"). Parse errors name the file

@@ -438,7 +438,7 @@ func fixtureGofastrVersion(t *testing.T, appDir string) string {
 		t.Fatalf("read %s/go.mod: %v", appDir, err)
 	}
 	for _, m := range regexp.MustCompile(`github\.com/DonaldMurillo/gofastr (v[0-9.]+)`).FindAllStringSubmatch(string(b), -1) {
-		if _, err := upgrade.ParseSemver(m[1]); err == nil {
+		if err := upgrade.ValidateSemver(m[1]); err == nil {
 			return m[1]
 		}
 	}
