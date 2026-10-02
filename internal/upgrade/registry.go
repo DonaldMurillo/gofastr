@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
 	coreyaml "github.com/DonaldMurillo/gofastr/core/yaml"
 )
 
@@ -193,12 +194,15 @@ func parseNote(n *coreyaml.Node) (Note, error) {
 	if n.Kind != coreyaml.Map {
 		return note, errAt(n.Line, "note must be a map")
 	}
-	if err := unknownKeys(n, "change", "breaking", "guidance", "find", "nodetect"); err != nil {
+	if err := unknownKeys(n, "change", "breaking", "hits", "guidance", "find", "nodetect"); err != nil {
 		return note, err
 	}
 	var err error
 	if note.Change, err = optString(n.Map["change"], "change"); err != nil {
 		return note, err
+	}
+	if p := "breaking:"; len(note.Change) >= len(p) && strings.EqualFold(note.Change[:len(p)], p) {
+		return note, errAt(n.Map["change"].Line, "change starts with %q: drop it, breaking: true says so and the report prints the marker", note.Change[:len(p)])
 	}
 	if note.Guidance, err = optString(n.Map["guidance"], "guidance"); err != nil {
 		return note, err
@@ -224,7 +228,33 @@ func parseNote(n *coreyaml.Node) (Note, error) {
 	case !hasFind && !hasReason:
 		return note, errAt(n.Line, "note has neither find nor nodetect: describe the code it affects, or say why no spelling differs")
 	}
-	return note, nil
+	return note, parseHits(n, &note)
+}
+
+// parseHits reads a note's hits key. A breaking note with a find must
+// say whether its hits are dead spellings (edit) or code that may
+// still be right (review); the key means nothing anywhere else.
+func parseHits(n *coreyaml.Node, note *Note) error {
+	hn := n.Map["hits"]
+	if !note.Breaking || note.Find.Empty() {
+		if hn != nil {
+			return errAt(hn.Line, "hits: only a breaking note with find says edit or review")
+		}
+		note.Review = true
+		return nil
+	}
+	if hn == nil {
+		return errAt(n.Line, "breaking note with find must say hits: edit (every hit spells something the release no longer accepts) or hits: review (the code may still be right)")
+	}
+	switch v, _ := hn.Value.(string); {
+	case hn.Kind == coreyaml.Scalar && v == "edit":
+		note.Review = false
+	case hn.Kind == coreyaml.Scalar && v == "review":
+		note.Review = true
+	default:
+		return errAt(hn.Line, "hits must be edit or review")
+	}
+	return nil
 }
 
 func parseFind(n *coreyaml.Node) (Find, error) {
@@ -313,7 +343,7 @@ func parseCSSMatch(n *coreyaml.Node) (CSSMatch, error) {
 	if n.Kind != coreyaml.Map {
 		return m, errAt(n.Line, "css must be a map")
 	}
-	if err := unknownKeys(n, "classes", "properties"); err != nil {
+	if err := unknownKeys(n, "classes", "properties", "selectors"); err != nil {
 		return m, err
 	}
 	var err error
@@ -323,7 +353,18 @@ func parseCSSMatch(n *coreyaml.Node) (CSSMatch, error) {
 	if m.Properties, err = parseStringList(n.Map["properties"], "css.properties", false); err != nil {
 		return m, err
 	}
+	if m.Selectors, err = parseStringList(n.Map["selectors"], "css.selectors", false); err != nil {
+		return m, err
+	}
 	return m, nil
+}
+
+// URLPolicies maps a fields entry's refused name to its core-ui/urlsafe
+// policy.
+var URLPolicies = map[string]urlsafe.Policy{
+	"anchor":       urlsafe.Anchor,
+	"resource":     urlsafe.Resource,
+	"image_source": urlsafe.ImageSource,
 }
 
 func parseFieldMatches(n *coreyaml.Node) ([]FieldMatch, error) {
@@ -335,7 +376,7 @@ func parseFieldMatches(n *coreyaml.Node) ([]FieldMatch, error) {
 		if item.Kind != coreyaml.Map {
 			return nil, errAt(item.Line, "fields entry must be a map")
 		}
-		if err := unknownKeys(item, "field", "key", "value"); err != nil {
+		if err := unknownKeys(item, "field", "key", "value", "refused"); err != nil {
 			return nil, err
 		}
 		fn := item.Map["field"]
@@ -351,6 +392,15 @@ func parseFieldMatches(n *coreyaml.Node) ([]FieldMatch, error) {
 			return nil, errAt(fn.Line, "field %q must name Type.Member (the type that declares the field)", sym.String())
 		}
 		fm.Field = sym
+		conds := 0
+		for _, k := range []string{"key", "value", "refused"} {
+			if item.Map[k] != nil {
+				conds++
+			}
+		}
+		if conds > 1 {
+			return nil, errAt(item.Line, "fields entry says at most one of key, value, refused: a key names a map entry, a value or a refusal judges a string field")
+		}
 		if fm.Key, err = optString(item.Map["key"], "fields.key"); err != nil {
 			return nil, err
 		}
@@ -361,6 +411,14 @@ func parseFieldMatches(n *coreyaml.Node) ([]FieldMatch, error) {
 			}
 			if fm.Value, err = compileRegex(vn.Line, "fields.value", src); err != nil {
 				return nil, err
+			}
+		}
+		if rn := item.Map["refused"]; rn != nil {
+			if fm.Refused, err = optString(rn, "fields.refused"); err != nil {
+				return nil, err
+			}
+			if _, ok := URLPolicies[fm.Refused]; !ok {
+				return nil, errAt(rn.Line, "refused must be anchor, resource or image_source, got %q", fm.Refused)
 			}
 		}
 		out = append(out, fm)
@@ -377,7 +435,7 @@ func parseConfigMatches(n *coreyaml.Node) ([]ConfigMatch, error) {
 		if item.Kind != coreyaml.Map {
 			return nil, errAt(item.Line, "config entry must be a map")
 		}
-		if err := unknownKeys(item, "key", "value"); err != nil {
+		if err := unknownKeys(item, "key", "value", "refused"); err != nil {
 			return nil, err
 		}
 		kn := item.Map["key"]
@@ -405,6 +463,17 @@ func parseConfigMatches(n *coreyaml.Node) ([]ConfigMatch, error) {
 			}
 			if cm.Value, err = compileRegex(vn.Line, "config.value", src); err != nil {
 				return nil, err
+			}
+		}
+		if rn := item.Map["refused"]; rn != nil {
+			if cm.Value != nil {
+				return nil, errAt(item.Line, "config entry says value or refused, not both")
+			}
+			if cm.Refused, err = optString(rn, "config.refused"); err != nil {
+				return nil, err
+			}
+			if _, ok := URLPolicies[cm.Refused]; !ok {
+				return nil, errAt(rn.Line, "refused must be anchor, resource or image_source, got %q", cm.Refused)
 			}
 		}
 		out = append(out, cm)
@@ -455,6 +524,9 @@ func parseTextMatches(n *coreyaml.Node) ([]TextMatch, error) {
 		}
 		if glob == "" {
 			return nil, errAt(gn.Line, "text glob is empty")
+		}
+		if err := checkGlob(glob); err != nil {
+			return nil, errAt(gn.Line, "text glob %q: %v", glob, err)
 		}
 		if ext, structural := globStructuralExt(glob); structural {
 			return nil, errAt(gn.Line, "text glob %q targets .%s files, which the %s structural matcher owns — never a text regex", glob, ext, ext)
@@ -555,6 +627,9 @@ func parseSymbol(n *coreyaml.Node) (Symbol, error) {
 		tail = spelled[i+1:]
 	}
 	parts := strings.Split(tail, ".")
+	if len(parts) < 2 {
+		return sym, errAt(n.Line, "malformed symbol %q: want importpath.Name", src)
+	}
 	if len(parts) > 3 {
 		return sym, errAt(n.Line, "malformed symbol %q: at most Type.Member after the import path", src)
 	}
@@ -661,6 +736,22 @@ func isGoVersion(s string) bool {
 		}
 	}
 	return true
+}
+
+// checkGlob refuses a glob the scanner's matcher would silently never
+// match: a segment path.Match rejects, or a "**" sharing a segment with
+// other characters (the matcher reads "a**" as "a*", within one
+// directory).
+func checkGlob(glob string) error {
+	for _, seg := range strings.Split(glob, "/") {
+		if seg != "**" && strings.Contains(seg, "**") {
+			return fmt.Errorf(`"**" must be a whole path segment, got %q`, seg)
+		}
+		if _, err := path.Match(seg, ""); err != nil {
+			return fmt.Errorf("segment %q: %v", seg, err)
+		}
+	}
+	return nil
 }
 
 // globStructuralExt reports which structural file extension a text

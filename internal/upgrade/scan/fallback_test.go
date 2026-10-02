@@ -105,6 +105,35 @@ func runBroken(t *testing.T, src string, n *upgrade.Note) *Result {
 	return res
 }
 
+// TestFallbackNestedModulePaths proves a nested module's compile errors
+// land on root-relative paths: the go command echoes them relative to
+// the module the load ran in, tools/ here, not the root module.
+func TestFallbackNestedModulePaths(t *testing.T) {
+	src := "package main\n\nimport \"example.com/kit/ui\"\n\nfunc main() { _ = ui.SiteHeader(\"t\") }\n"
+	// The root's main.go is long enough that a tools/ position joined
+	// onto the root module still names a line in it.
+	rootMain := "package main\n\n\n\n\n\nfunc main() {}\n"
+	root := newWorkspace(t, kitV2, map[string]string{"main.go": rootMain})
+	nestedTools(t, root, map[string]string{"main.go": src})
+	n := &upgrade.Note{Find: upgrade.Find{Uses: []upgrade.Symbol{siteHeaderSym}}}
+	testEnv(t)
+	res, err := Run(root, []*upgrade.Note{n}, upgrade.MarkerSinks{})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	for _, h := range res.Hits[n] {
+		if h.File != "tools/main.go" {
+			t.Errorf("hit at %s:%d (%s), want tools/main.go", h.File, h.Line, h.Why)
+		}
+	}
+	if len(res.Hits[n]) == 0 {
+		t.Error("no hits in the nested module")
+	}
+	for _, u := range res.Unexplained {
+		t.Errorf("unexplained: %s:%d: %s", u.File, u.Line, u.Why)
+	}
+}
+
 func TestFallbackLongerNameSilent(t *testing.T) {
 	src := `package main
 
@@ -252,5 +281,165 @@ func TestFallbackPositionlessErrorKept(t *testing.T) {
 	res := e.result()
 	if len(res.Unexplained) != 1 || res.Unexplained[0].Why != "go: inconsistent vendoring" || res.Unexplained[0].File != "" {
 		t.Fatalf("Unexplained = %+v, want the positionless error with no file", res.Unexplained)
+	}
+}
+
+func TestFallbackQuotedPathFieldExplained(t *testing.T) {
+	// Two imports sharing the name html make go/types write the type
+	// with its quoted import path; qualified must spell that too.
+	kit := map[string]string{"html/html.go": "package html\n\ntype DetailsConfig struct{ Title string }\n"}
+	src := `package main
+
+import (
+	stdhtml "html"
+
+	"example.com/kit/html"
+)
+
+func main() {
+	_ = stdhtml.EscapeString("x")
+	_ = html.DetailsConfig{Title: "t", Disclosure: true}
+}
+`
+	root := newWorkspace(t, kit, map[string]string{"main.go": src})
+	testEnv(t)
+	sym := upgrade.Symbol{Pkg: "example.com/kit/html", Name: "DetailsConfig", Member: "Disclosure"}
+	n := &upgrade.Note{Find: upgrade.Find{Fields: []upgrade.FieldMatch{{Field: sym}}}}
+	res, err := Run(root, []*upgrade.Note{n}, upgrade.MarkerSinks{})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	wantHits(t, res, n, hitAt(src, "Disclosure: true", "main.go", "field "+sym.String()))
+	if err := res.Hits[n][0].Err; !strings.Contains(err, "unknown field Disclosure") {
+		t.Fatalf("Err = %q, want the compile error the hit was read from", err)
+	}
+	if len(res.Unexplained) != 0 {
+		t.Fatalf("Unexplained = %v, want none", hitStrs(res.Unexplained))
+	}
+}
+
+func TestFallbackDotImportUseExplained(t *testing.T) {
+	// A dot import writes the symbol bare: "undefined: SiteHeader".
+	src := `package main
+
+import . "example.com/kit/ui"
+
+func main() {
+	var _ Stack[int]
+	_ = SiteHeader("t")
+}
+`
+	n := &upgrade.Note{Find: upgrade.Find{Uses: []upgrade.Symbol{siteHeaderSym}}}
+	res := runBroken(t, src, n)
+	wantHits(t, res, n, hitAt(src, "SiteHeader", "main.go", siteHeaderSym.String()))
+	if err := res.Hits[n][0].Err; !strings.Contains(err, "undefined: SiteHeader") {
+		t.Fatalf("Err = %q, want the compile error the hit was read from", err)
+	}
+	if len(res.Unexplained) != 0 {
+		t.Fatalf("Unexplained = %v, want none", hitStrs(res.Unexplained))
+	}
+}
+
+func TestFallbackDotImportFieldExplained(t *testing.T) {
+	// go/types still qualifies the type with its package name under a
+	// dot import, so the declared-name spelling matches; the bare
+	// spelling is what a bare message would need.
+	kit := map[string]string{"html/html.go": "package html\n\ntype DetailsConfig struct{ Title string }\n"}
+	src := `package main
+
+import . "example.com/kit/html"
+
+func main() { _ = DetailsConfig{Title: "t", Disclosure: true} }
+`
+	root := newWorkspace(t, kit, map[string]string{"main.go": src})
+	testEnv(t)
+	sym := upgrade.Symbol{Pkg: "example.com/kit/html", Name: "DetailsConfig", Member: "Disclosure"}
+	n := &upgrade.Note{Find: upgrade.Find{Fields: []upgrade.FieldMatch{{Field: sym}}}}
+	res, err := Run(root, []*upgrade.Note{n}, upgrade.MarkerSinks{})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	wantHits(t, res, n, hitAt(src, "Disclosure: true", "main.go", "field "+sym.String()))
+	if len(res.Unexplained) != 0 {
+		t.Fatalf("Unexplained = %v, want none", hitStrs(res.Unexplained))
+	}
+}
+
+func TestFallbackUnrelatedErrorKept(t *testing.T) {
+	// A typed hit explains only an error that names its symbol; the
+	// undefined helper beside the SiteHeader call stays in the report.
+	kit := map[string]string{"ui/ui.go": "package ui\n\nfunc SiteHeader(t string) string { return t }\n"}
+	src := `package main
+
+import "example.com/kit/ui"
+
+func main() { _ = ui.SiteHeader("t") + somethingRemoved() }
+`
+	root := newWorkspace(t, kit, map[string]string{"main.go": src})
+	testEnv(t)
+	n := &upgrade.Note{Find: upgrade.Find{Uses: []upgrade.Symbol{siteHeaderSym}}}
+	res, err := Run(root, []*upgrade.Note{n}, upgrade.MarkerSinks{})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	wantHits(t, res, n, hitAt(src, "SiteHeader", "main.go", siteHeaderSym.String()))
+	if err := res.Hits[n][0].Err; err != "" {
+		t.Fatalf("Err = %q, want empty: the typed matcher resolved the call", err)
+	}
+	if len(res.Unexplained) != 1 || !strings.Contains(res.Unexplained[0].Why, "undefined: somethingRemoved") {
+		t.Fatalf("Unexplained = %v, want the unrelated undefined symbol", hitStrs(res.Unexplained))
+	}
+}
+
+func TestFallbackFieldTypeChangeExplained(t *testing.T) {
+	// A changed field type names neither the type nor the field: the
+	// error is about the struct literal the hit's field sits in.
+	kit := map[string]string{"ui/ui.go": "package ui\n\ntype FormFieldConfig struct{ Input func() string }\n"}
+	src := `package main
+
+import "example.com/kit/ui"
+
+func main() { _ = ui.FormFieldConfig{Input: "oops"} }
+`
+	root := newWorkspace(t, kit, map[string]string{"main.go": src})
+	testEnv(t)
+	sym := upgrade.Symbol{Pkg: "example.com/kit/ui", Name: "FormFieldConfig", Member: "Input"}
+	n := &upgrade.Note{Find: upgrade.Find{Uses: []upgrade.Symbol{sym}}}
+	res, err := Run(root, []*upgrade.Note{n}, upgrade.MarkerSinks{})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	wantHits(t, res, n, hitAt(src, `Input: "oops"`, "main.go", sym.String()))
+	if err := res.Hits[n][0].Err; err != "" {
+		t.Fatalf("Err = %q, want empty: the typed matcher resolved the field key", err)
+	}
+	if len(res.Unexplained) != 0 {
+		t.Fatalf("Unexplained = %v, want none: the mismatch is the field's type change", hitStrs(res.Unexplained))
+	}
+}
+
+func TestFallbackLocalAliasFieldExplained(t *testing.T) {
+	// go/types writes a type alias declared in the erroring package
+	// bare, under the alias name: "... of type LocalConfig".
+	kit := map[string]string{"html/html.go": "package html\n\ntype DetailsConfig struct{ Title string }\n"}
+	src := `package main
+
+import "example.com/kit/html"
+
+type LocalConfig = html.DetailsConfig
+
+func main() { _ = LocalConfig{Title: "t", Disclosure: true} }
+`
+	root := newWorkspace(t, kit, map[string]string{"main.go": src})
+	testEnv(t)
+	sym := upgrade.Symbol{Pkg: "example.com/kit/html", Name: "DetailsConfig", Member: "Disclosure"}
+	n := &upgrade.Note{Find: upgrade.Find{Fields: []upgrade.FieldMatch{{Field: sym}}}}
+	res, err := Run(root, []*upgrade.Note{n}, upgrade.MarkerSinks{})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	wantHits(t, res, n, hitAt(src, "Disclosure: true", "main.go", "field "+sym.String()))
+	if len(res.Unexplained) != 0 {
+		t.Fatalf("Unexplained = %v, want none", hitStrs(res.Unexplained))
 	}
 }

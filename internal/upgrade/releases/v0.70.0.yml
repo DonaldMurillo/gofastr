@@ -1,8 +1,9 @@
 version: v0.70.0
 title: "Go 1.27 is the floor"
 notes:
-  - change: "BREAKING: the module requires Go 1.27"
+  - change: "the module requires Go 1.27"
     breaking: true
+    hits: edit
     guidance: "go.mod names go 1.27.0, so a toolchain older than that cannot build the module at all: `go build` reports the requirement and stops. Install Go 1.27 (or let GOTOOLCHAIN=auto fetch it) before upgrading, and raise your own go directive to 1.27.0 if you pin one. Nothing in your code has to change for the floor itself; the entries below are what moved behind it."
     find:
       gomod:

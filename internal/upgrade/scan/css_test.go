@@ -98,3 +98,24 @@ func TestCSSPropertyDeclAndVar(t *testing.T) {
 		hitAt(css, "--color-muted:", "static/app.style.css", "css --color-muted"),
 		hitAt(css, "--color-muted)", "static/app.style.css", "css --color-muted"))
 }
+
+func TestCSSEscapedClassSelector(t *testing.T) {
+	css := ".ui\\2d button {\n\tcolor: red;\n}\n.ui\\-card {\n\tcolor: blue;\n}\n.ui\\00002d button {\n\tcolor: green;\n}\n"
+	// A hex escape (with the one whitespace it swallows) or an escaped
+	// character names the same class: .ui\2d button is .ui-button.
+	n := cssNote([]string{"ui-button", "ui-card"}, nil)
+	res := mustRun(t, cssWorkspace(t, map[string]string{"static/app.style.css": css}), n)
+	wantHits(t, res, n,
+		hitAt(css, `ui\2d`, "static/app.style.css", "css .ui-button"),
+		hitAt(css, `ui\-card`, "static/app.style.css", "css .ui-card"),
+		hitAt(css, `ui\0000`, "static/app.style.css", "css .ui-button"))
+}
+
+func TestCSSEscapedProperty(t *testing.T) {
+	css := ".x {\n\t\\-\\-ui-gap: 1px;\n\tmargin: var(--ui\\2d gap);\n}\n"
+	n := cssNote(nil, []string{"--ui-gap"})
+	res := mustRun(t, cssWorkspace(t, map[string]string{"static/app.style.css": css}), n)
+	if got := len(res.Hits[n]); got != 2 {
+		t.Fatalf("hits = %v, want the escaped declaration and the escaped var() argument", hitStrs(res.Hits[n]))
+	}
+}

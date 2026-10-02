@@ -3,6 +3,7 @@ title: Process-isolated modules + cross-replica presence
 notes:
   - change: mcpclient.Spawn scrubs the child environment
     breaking: true
+    hits: review
     guidance: "Spawned MCP-server children no longer inherit the full host environment (JWT_SECRET, DB DSN, OAUTH_* all leaked before). If a child needs a host variable, pass it explicitly via the new SpawnConfig{Env, InheritEnv} — the default is now a minimal allowlist (PATH/HOME/TMPDIR/locale)."
     find:
       uses:

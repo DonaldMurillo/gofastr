@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
 	coreyaml "github.com/DonaldMurillo/gofastr/core/yaml"
 	"github.com/DonaldMurillo/gofastr/internal/upgrade"
 )
@@ -50,7 +51,7 @@ func (e *engine) configMatchers() {
 
 // configWalk descends one key segment; "*" matches any one map key or
 // list item. The matched node's line is the hit; a Value regexp must
-// match the scalar's source text.
+// match the scalar's source text, and a Refused policy must refuse it.
 func (e *engine) configWalk(n *upgrade.Note, cm upgrade.ConfigMatch, node *coreyaml.Node, segs, walked []string, file string) {
 	if node == nil {
 		return
@@ -58,6 +59,11 @@ func (e *engine) configWalk(n *upgrade.Note, cm upgrade.ConfigMatch, node *corey
 	if len(segs) == 0 {
 		if cm.Value != nil {
 			if node.Kind != coreyaml.Scalar || !cm.Value.MatchString(scalarText(node.Value)) {
+				return
+			}
+		}
+		if cm.Refused != "" {
+			if node.Kind != coreyaml.Scalar || urlsafe.OK(scalarText(node.Value), upgrade.URLPolicies[cm.Refused]) {
 				return
 			}
 		}

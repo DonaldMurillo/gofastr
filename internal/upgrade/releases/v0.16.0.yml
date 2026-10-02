@@ -3,6 +3,7 @@ title: Multi-replica outbox
 notes:
   - change: Transactional outbox delivers per-consumer
     breaking: true
+    hits: review
     guidance: "Outbox rows are tracked per consumer instead of globally; existing single-consumer apps are unaffected, multi-consumer handlers each get their own cursor. Review handlers that assumed at-most-once fan-out."
     find:
       uses:

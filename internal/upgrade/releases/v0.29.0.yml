@@ -3,6 +3,7 @@ title: Secure-by-default CRUD + unified response envelope
 notes:
   - change: Auto-CRUD and entity MCP tools require an authenticated session by default
     breaking: true
+    hits: review
     guidance: "An entity declaring none of owner_field, access, or the new public: true now refuses anonymous requests with 401 across List/Get/Create/Update/Delete (and its MCP tools). Add public: true (EntityConfig.Public) for genuinely public entities, or owner_field/access for scoped ones. Existing apps relying on anonymous CRUD will start returning 401 until an entity opts out."
     find:
       uses:

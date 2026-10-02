@@ -3,6 +3,7 @@ title: Review sweep — row-reachability parity, trusted IR rendering, embed CSR
 notes:
   - change: Untrusted IR no longer renders action attributes
     breaking: true
+    hits: review
     guidance: "core-ui/noderender's RenderNode/RenderKind now strip data-action, data-action-*, and data-param-*, and refuse data-island — frag/boot.js turns those into a __gofastr.trigger() call, so an untrusted tree naming them picks the action and its arguments. First-party IR (the blueprint generator's) must call RenderTrustedNode/RenderTrustedKind instead; on RenderNode it still renders, silently inert."
     find:
       uses:
@@ -10,24 +11,28 @@ notes:
         - gofastr/core-ui/noderender.RenderKind
   - change: Versions of one entity must agree on row reachability
     breaking: true
+    hits: review
     guidance: "MultiTenant, OwnerField, SoftDelete, Public, Access, and CrossOwnerRead must match across every version of one entity name, or registration panics. The versions share one physical table, so the weaker version was a bypass of the stronger. Per-version Hidden/WireName/ReadOnly still vary freely — column projection is presentation, row reachability is authorization."
     find:
       uses:
         - gofastr/framework.App.GroupEntity
   - change: The embed CSRF path exemption covers safe methods only
     breaking: true
+    hits: review
     guidance: "It exempted the whole /__gofastr/embed/ prefix; the framework mounts exactly two GET routes there. A host that added its own POST under that prefix and relied on the exemption must now send the CSRF token."
     find:
       strings:
         match: '__gofastr/embed/'
   - change: A pattern redirect that covers an exact screen panics at registration
     breaking: true
+    hits: review
     guidance: "RedirectScreen(\"/old/{x}\", ...) beside a screen at /old/special now panics in either registration order, like every other route collision. It used to register cleanly and 308 the screen away forever with no diagnostic. Narrow the redirect's constraint, or drop the screen."
     find:
       uses:
         - gofastr/core-ui/app.App.RedirectPattern
   - change: A custom magic-link ConfirmPage must render ConfirmPageData.CSRFField
     breaking: true
+    hits: review
     guidance: "Omit it and the confirmation button 403s under auth.CSRF(), which WithBFFPosture mounts app-wide — passwordless sign-in stops at the confirm step. Render render.HTML(d.CSRFField) inside the form. ConfirmPageData carries no request, so this field is the only way to reach the _csrf input."
     find:
       fields:

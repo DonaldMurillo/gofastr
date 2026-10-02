@@ -55,6 +55,21 @@ func NewStack[T any]() *Stack[T] { return nil }
 // RegisterStyle installs a style sheet under a component name.
 func RegisterStyle(name, css string) {}
 `,
+	"queue/queue.go": `package queue
+
+// Queue is the interface adapters implement to settle jobs.
+type Queue interface {
+	Ack() error
+	Nack() error
+}
+`,
+	"fw/fw.go": `package fw
+
+import "example.com/kit/ui"
+
+// Layout re-exports ui.Layout the way a facade package does.
+type Layout = ui.Layout
+`,
 	"patterns/accordion/accordion.go": `package accordion
 
 func Render() string { return "" }

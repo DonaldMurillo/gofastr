@@ -3,6 +3,7 @@ title: MCP spec coverage, core/acp, plugin host requirements, wasm tier
 notes:
   - change: kiln acp speaks the published session surface; tools/list, tools/call, prompt and shutdown are gone and initialize changed shape
     breaking: true
+    hits: review
     guidance: "Move to session/new, session/prompt and session/cancel; tool invocations now arrive as agent-driven session/update tool_call frames. kiln/agent/acp is deleted with no shim - kiln is not a production surface. Nothing changes for apps that do not drive `kiln acp`."
     find:
       imports:
@@ -12,6 +13,7 @@ notes:
           match: '\bkiln acp\b'
   - change: mcp.AppConfig.CSP is mcp.AppCSP (connectDomains/resourceDomains/frameDomains/baseUriDomains) instead of a string
     breaking: true
+    hits: edit
     guidance: "The old string emitted JSON no spec-compliant MCP Apps host could parse, so there is no working caller to preserve. Set the four fields instead; an app that sets no CSP is unaffected."
     find:
       fields:

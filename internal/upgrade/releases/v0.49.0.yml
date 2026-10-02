@@ -3,12 +3,14 @@ title: Embeddable surfaces take the embed name; API versions coexist
 notes:
   - change: "battery/embed is now battery/semantic"
     breaking: true
+    hits: edit
     guidance: "The semantic-search battery moved so the new embeddable-surfaces feature could take the embed name. Rewrite the import to github.com/DonaldMurillo/gofastr/battery/semantic and the package qualifier from embed. to semantic.; its routes moved from /embed/* to /semantic/* and its local snapshot dir from ~/.gofastr/embed to ~/.gofastr/semantic."
     find:
       imports:
         - gofastr/battery/embed
   - change: "kiln agent.NewEmbedContextHook is now agent.NewSemanticContextHook"
     breaking: true
+    hits: edit
     guidance: "Renamed with the battery it wraps. Behaviour is unchanged; only the name moved."
     find:
       uses:
@@ -19,6 +21,7 @@ notes:
     nodetect: the removed spelling is the shell command `gofastr embed`, which lives in no app file
   - change: The entity registry is keyed on (name, version)
     breaking: true
+    hits: review
     guidance: "Registry.Get errors instead of guessing when one name has several versions; use GetVersioned(name, version). Registry.All still returns one representative per name, so anything iterating it sees only the lex-first version."
     find:
       uses:

@@ -170,17 +170,26 @@ its version). Each note is a one-line
 `change`, whether it is `breaking`, a one-line `guidance`, and one of
 two things: a `find:` block saying which code the change affects, or a
 `nodetect:` one-liner saying why nothing can (a default that flipped, a
-removed CLI flag). The parser is strict: an unknown key, a regex that
-does not compile or a malformed symbol fails the build's registry tests,
-never a user's upgrade.
+removed CLI flag). A breaking note with a `find:` also says what its
+hits mean: `hits: edit` when every hit spells something the release no
+longer accepts (a removed symbol, a changed signature, a class no
+longer emitted), `hits: review` when the code may still be right (a
+default that flipped, a stricter check). The report prints the edit
+hits first, then the review hits, then the notes nothing matched; a
+hit read from a compile error is always an edit. The parser is strict:
+an unknown key, a regex that does not compile, a malformed symbol or a
+breaking `find:` note with no `hits:` fails the build's registry
+tests, never a user's upgrade. CI also refuses a `hits: review` note
+naming a symbol its own release removed.
 
 ```yaml
 # internal/upgrade/releases/v0.87.0.yml
 version: v0.87.0
 title: Site chrome moves to owned packages
 notes:
-  - change: 'BREAKING: ui.SiteHeader is now siteheader.Render'
+  - change: 'ui.SiteHeader is now siteheader.Render'
     breaking: true
+    hits: edit
     guidance: "Swap the ui.SiteHeader call for siteheader.Render(siteheader.Config{...})."
     find:
       uses: [gofastr/framework/ui.SiteHeader]
@@ -188,41 +197,90 @@ notes:
         classes: [ui-site-header]
 ```
 
+The scan type-checks every Go file the go tool would build in some
+configuration, tests included:
+
+- the module at or above the project root, scoped to the root;
+- each nested module below it (its own `go.mod`), except under
+  `vendor`, `testdata`, `node_modules` and directories starting with
+  `.` or `_`, which the go tool skips too; a module the root's
+  `go.work` already lists is loaded once;
+- each file a build constraint keeps out of the host build
+  (`//go:build windows`, `//go:build integration`, a `_linux.go`
+  suffix), loaded under one GOOS, GOARCH and tag set that satisfies
+  it. Only that file's hits are reported from that load, and an error
+  in a file the host load already checked does not mark the app
+  broken;
+- a `//go:build ignore` file declaring a package other than its
+  directory's: a program run by name, loaded alone the way
+  `go run gen.go` builds it.
+
+A file none of those reach is listed in a NOTE at the top of the
+report, with its reason: a constraint nothing satisfies
+(`linux && windows`), a `//go:build ignore` file declaring its
+directory's own package (disabled code that no build includes), or a
+configuration that did not compile it. Read those by hand.
+
 Each matcher reads the code the way its language means it:
 
 - `uses`: Go objects, spelled `import.path.Name` or
   `import.path.Type.Member` (a leading `gofastr/` is the module
   shorthand). Every reference the type checker resolves to the symbol is
   a hit — calls, selectors, method values, embedded promotion,
-  composite-literal keys, generics.
+  composite-literal keys, generics, uses through an alias of the
+  symbol's type. A member of an interface also matches every method
+  an app type declares to implement that interface, whether or not
+  its package imports the interface's.
 - `imports`: an import path, or a `path/...` subtree.
-- `fields`: a composite-literal field. `field` names `Type.Field`; `key`
-  requires the value to be a map literal holding that constant string
-  key; `value` is a regex the constant string value must match.
+- `fields`: a composite-literal field, an assignment to it, or a keyed
+  write into it. `field` names `Type.Field`, and at most one condition
+  narrows it. `key` is a constant string key in the field's map: in a
+  map literal, in the single initialiser of a variable the field is
+  set from (one level, in any file or package, never a reassigned
+  variable), or in `cfg.Field["key"] = ...`; keys compare with ASCII
+  case folded, as HTML attribute names do. `value` is a regex the
+  constant string value must match, found the same ways. `refused`
+  names a `core-ui/urlsafe` policy (`anchor`, `resource`,
+  `image_source`): the constant string must be a URL that policy
+  refuses, the predicate the component itself applies at render.
 - `strings`: constant-folded Go string values. `classes` matches a
   whitespace-delimited class token (BEM variants included), or a
-  `.name` selector when the value holds a CSS rule block; `attrs` an
+  `.name` selector when the value holds a CSS rule block. In a value
+  holding markup only class attributes count, read through the same
+  tokenizer as the runtime check below: any quoting, case or spacing,
+  character references decoded, only the first of duplicate class
+  attributes; `attrs` an
   attribute name (a trailing `-` is a prefix); `properties` a `--x`
   custom property; `match` a regex, the last resort.
-- `css`: `.css` files through the CSS tokenizer — class selectors and
-  custom properties.
+- `css`: `.css` files through the CSS tokenizer. `classes` matches a
+  class selector, `properties` a custom property, and `selectors` a
+  whole compound selector such as `.fui-pos-center > .fui-slot`
+  (whitespace around combinators does not matter). Escapes decode
+  first: `.ui\2d button` is `.ui-button`.
 - `config`: `gofastr.yml` keys (`*` matches any one key or list item),
-  with an optional `value` regex over the scalar.
+  with an optional `value` regex over the scalar or a `refused` URL
+  policy, as in `fields`.
 - `gomod`: the `go` directive; `go_below: "1.27"` flags an older one.
 - `text`: a per-line regex over files matching a glob, for languages
   nothing above reads (shell, JS). Go and CSS files are refused: their
-  matchers read them structurally.
+  matchers read them structurally. So is a glob that would never
+  match: a malformed segment, or `**` sharing a segment with other
+  characters.
 
 When the app does not type-check against its current gofastr version
 (the `go.mod` was bumped first), the Go matchers fall back to the
 compile errors: an error message naming a `uses` symbol or a `fields`
 entry with no key or value condition (under the declared type or a
 type alias of it, such as `framework.EntityConfig` for
-`framework/entity.EntityConfig`), or a missing `imports` package, is a
-hit at the error's position. An error on a line
-the typed matchers already hit counts as explained (a changed method
-signature still resolves, so the call is found even though the error
-text names no package). Errors no note explains are listed at the end
+`framework/entity.EntityConfig`; the quoted import path when two
+imports share a name, and the bare name under a dot import, count
+too), or a missing `imports` package, is a hit at the error's
+position. An error on a line a matcher already hit counts as
+explained only when the error names that hit's symbol (a changed
+method signature still resolves, so the call is found even though the
+error text names no package; a changed field type names only the
+struct literal, and that counts); an unrelated error on the same line
+stays in the report. Errors no note explains are listed at the end
 of the report.
 
 `marker_sinks:` (top level) lists where a kept `ui-*` name is an
@@ -230,8 +288,10 @@ identifier, not a class: `calls` (a function or method argument
 position), `fields` (a struct field), `attr_keys` (a map-literal key).
 A `strings.classes` value that only reaches marker sinks is not a hit,
 so registered sheet names and `data-fui-comp` markers stay silent.
-An argument to a `testing` call (`t.Fatal`, `t.Errorf`, `t.Run`) is a
-failure message or subtest name, so no string matcher reads it.
+A prose argument of a `testing` method (`t.Fatal`, `t.Errorf`, `t.Log`,
+`t.Skip`, and `t.Run`'s subtest name) is never markup the app renders,
+so no string matcher reads it; `t.Setenv` hands its arguments to the
+code under test, so those are read.
 
 The registry has a second reader. `gofastr upgrade` scans an app's
 *source*; a name built at run time (`fmt.Sprintf("ui-%s", kind)`, a

@@ -161,6 +161,94 @@ func main() {
 	wantHits(t, res, n)
 }
 
+func TestClassesConstSinkOtherPkgSilent(t *testing.T) {
+	decl := "package chrome\n\nconst ButtonSheet = \"ui-button\"\n"
+	use := `package pages
+
+import (
+	"example.com/app/chrome"
+	"example.com/kit/registry"
+)
+
+func Register() {
+	registry.RegisterStyle(chrome.ButtonSheet, "color:red")
+}
+`
+	// The constant's only use is the marker-sink call, in another package.
+	n := classesNote("ui-button")
+	res := mustRunWithSinks(t, newWorkspace(t, defaultKit, map[string]string{
+		"chrome/chrome.go": decl,
+		"pages/pages.go":   use,
+	}), n)
+	wantHits(t, res, n)
+}
+
+func TestClassesConstMixedUseOtherPkg(t *testing.T) {
+	decl := "package chrome\n\nconst ButtonSheet = \"ui-button\"\n"
+	use := `package pages
+
+import (
+	"example.com/app/chrome"
+	"example.com/kit/registry"
+	"example.com/kit/ui"
+)
+
+func Register() {
+	registry.RegisterStyle(chrome.ButtonSheet, "color:red")
+	_ = ui.Attrs{"class": chrome.ButtonSheet}
+}
+`
+	// One non-sink use in the other package is enough: both the
+	// constant's initialiser and the use (itself a constant string
+	// expression in a class slot) are hits again.
+	n := classesNote("ui-button")
+	res := mustRunWithSinks(t, newWorkspace(t, defaultKit, map[string]string{
+		"chrome/chrome.go": decl,
+
+		"pages/pages.go": use,
+	}), n)
+	wantHits(t, res, n,
+		hitAt(decl, "\"ui-button\"", "chrome/chrome.go", "class ui-button"),
+		hitAt(use, "chrome.ButtonSheet}", "pages/pages.go", "class ui-button"))
+}
+
+func TestClassesSpacedClassAttr(t *testing.T) {
+	src := "package main\n" +
+		"\n" +
+		"func main() {\n" +
+		"\t_ = `<div class = \"ui-button card\">x</div>`\n" +
+		"}\n"
+	// Whitespace around the "=" is valid HTML: the attribute still
+	// counts.
+	n := classesNote("ui-button")
+	res := mustRunWithSinks(t, newWorkspace(t, defaultKit, map[string]string{"main.go": src}), n)
+	wantHits(t, res, n, hitAt(src, "`<div class =", "main.go", "class ui-button"))
+}
+
+func TestClassesUppercaseClassAttr(t *testing.T) {
+	src := "package main\n" +
+		"\n" +
+		"func main() {\n" +
+		"\t_ = `<DIV CLASS=\"ui-button card\">x</DIV>`\n" +
+		"}\n"
+	// Attribute names are case-insensitive in HTML.
+	n := classesNote("ui-button")
+	res := mustRunWithSinks(t, newWorkspace(t, defaultKit, map[string]string{"main.go": src}), n)
+	wantHits(t, res, n, hitAt(src, "`<DIV CLASS=", "main.go", "class ui-button"))
+}
+
+func TestClassesDataClassAttrSilent(t *testing.T) {
+	src := "package main\n" +
+		"\n" +
+		"func main() {\n" +
+		"\t_ = `<div data-class=\"ui-button\">x</div>`\n" +
+		"}\n"
+	// data-class is a different attribute, not a class attribute.
+	n := classesNote("ui-button")
+	res := mustRunWithSinks(t, newWorkspace(t, defaultKit, map[string]string{"main.go": src}), n)
+	wantHits(t, res, n)
+}
+
 func TestClassesInCSSStringHit(t *testing.T) {
 	src := "package main\n\nvar css = `.ui-button:hover { color: red }\n.ui-card--flat{}`\n\nfunc main() { _ = css }\n"
 	n := classesNote("ui-button", "ui-card")
@@ -319,4 +407,57 @@ func main() {
 	res := mustRun(t, newWorkspace(t, defaultKit, map[string]string{"main.go": src}), n)
 	wantHits(t, res, n,
 		hitAt(src, `"X-Gofastr-Infinite-Cursor`, "main.go", "match ^X-Gofastr-Infinite-Cursor:"))
+}
+
+func TestClassesUnquotedClassAttr(t *testing.T) {
+	src := "package main\n" +
+		"\n" +
+		"func main() {\n" +
+		"\t_ = `<div class=ui-button>x</div>`\n" +
+		"}\n"
+	// An unquoted attribute value is valid HTML.
+	n := classesNote("ui-button")
+	res := mustRunWithSinks(t, newWorkspace(t, defaultKit, map[string]string{"main.go": src}), n)
+	wantHits(t, res, n, hitAt(src, "`<div class=", "main.go", "class ui-button"))
+}
+
+func TestClassesReferenceInClassAttr(t *testing.T) {
+	src := "package main\n" +
+		"\n" +
+		"func main() {\n" +
+		"\t_ = `<div class=\"ui&#45;button\">x</div>`\n" +
+		"}\n"
+	// The browser decodes the reference: the class is ui-button.
+	n := classesNote("ui-button")
+	res := mustRunWithSinks(t, newWorkspace(t, defaultKit, map[string]string{"main.go": src}), n)
+	wantHits(t, res, n, hitAt(src, "`<div class=", "main.go", "class ui-button"))
+}
+
+func TestClassesDuplicateClassAttrSilent(t *testing.T) {
+	src := "package main\n" +
+		"\n" +
+		"func main() {\n" +
+		"\t_ = `<div class=\"card\" class=\"ui-button\">x</div>`\n" +
+		"}\n"
+	// The browser keeps the first class attribute and drops the second.
+	n := classesNote("ui-button")
+	res := mustRunWithSinks(t, newWorkspace(t, defaultKit, map[string]string{"main.go": src}), n)
+	wantHits(t, res, n)
+}
+
+func TestClassesSetenvValueHits(t *testing.T) {
+	src := "package main\n" +
+		"\n" +
+		"import \"testing\"\n" +
+		"\n" +
+		"func TestX(t *testing.T) {\n" +
+		"\tt.Setenv(\"APP_CLASS\", \"ui-button\")\n" +
+		"\tt.Logf(\"ui-button %d\", 1)\n" +
+		"\tt.Run(\"ui-button\", func(t *testing.T) {})\n" +
+		"}\n"
+	// Setenv hands the value to the code under test; Logf and a
+	// subtest name are prose.
+	n := classesNote("ui-button")
+	res := mustRunWithSinks(t, newWorkspace(t, defaultKit, map[string]string{"x_test.go": src}), n)
+	wantHits(t, res, n, hitAt(src, "\"ui-button\")", "x_test.go", "class ui-button"))
 }

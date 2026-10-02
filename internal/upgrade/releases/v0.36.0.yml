@@ -3,6 +3,7 @@ title: Mandatory OAuth linking + multi-replica RBAC/seed hardening
 notes:
   - change: OAuth login requires a durable OAuthLinker store (#98)
     breaking: true
+    hits: review
     guidance: "OAuth2Plugin.Init now FAILS CLOSED when the configured UserStore does not implement OAuthLinker — the legacy email-only fallback is gone (an IdP emitting an unverified email could otherwise sign in as an existing account). Use auth.NewEntityUserStore (now a linker; it creates a <table>_oauth_links table on EnsureSchema) or set AuthConfig.AllowInMemoryStores:true for local dev. A verified-email OAuth login now REFUSES (409) an existing password account; the user adds the provider via the new authenticated GET /auth/oauth/{provider}/link flow. OIDC now enforces email_verified."
     find:
       uses:

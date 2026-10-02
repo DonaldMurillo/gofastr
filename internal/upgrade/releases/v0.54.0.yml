@@ -3,6 +3,7 @@ title: Zero-deprecated surface — grouped EntityConfig is the model
 notes:
   - change: The flat EntityConfig fields are gone; Scope/Pagination/Exposure are the config
     breaking: true
+    hits: edit
     guidance: "SoftDelete, MultiTenant, TenantField, OwnerField, and CrossOwnerRead move to Scope (&framework.ScopeConfig{...}); CursorField, CursorFields, and MaxListLimit move to Pagination (&framework.PaginationConfig{...}); CRUD, MCP, Public, and Access move to Exposure (&framework.ExposureConfig{...}). These fields were deprecated through the v0.40 line. Blueprint YAML flat keys (owner_field:, soft_delete:, crud:, mcp:, ...) still parse — only the Go struct changed. A flat YAML key that conflicts with its grouped twin is now an error instead of a silent precedence pick."
     find:
       fields:
@@ -20,24 +21,28 @@ notes:
         - field: gofastr/framework/entity.EntityConfig.Access
   - change: EntityConfig.Timestamps is *bool
     breaking: true
+    hits: edit
     guidance: "A literal false used to silently mean \"default true\" (an unexported set-bit controlled it); only WithTimestamps(false) worked. Timestamps is now *bool with nil = default true, so the visible value is the semantic value under copying and serialization. Replace Timestamps: false with WithTimestamps(false) or a *bool literal; Timestamps: true can simply be dropped."
     find:
       fields:
         - field: gofastr/framework/entity.EntityConfig.Timestamps
   - change: The harness moved under framework/experimental
     breaking: true
+    hits: edit
     guidance: "Import github.com/DonaldMurillo/gofastr/framework/experimental/harness/... instead of framework/harness/... — the subsystem is v0.1 and now carries the experimental-path stability exemption. The gofastr harness subcommand is unchanged."
     find:
       imports:
         - gofastr/framework/harness/...
   - change: Upload metadata and FileField emit camelCase JSON
     breaking: true
+    hits: edit
     guidance: "core/upload.Metadata keys changed from original_name/mime_type/uploaded_at to originalName/mimeType/uploadedAt, and framework/file.FileField from mime_type/storage_ref to mimeType/storageRef. Clients parsing those responses by key must switch. The persisted <field>_variants column format is unchanged on purpose."
     find:
       strings:
         match: 'original_name|"mime_type"|storage_ref'
   - change: battery/storage lost its dead registry; kiln lost two advertised action kinds
     breaking: true
+    hits: edit
     guidance: "storage.Register/New/NewBattery/StorageType never had a working path (New always errored) — construct NewLocalStorage/NewS3Storage directly and pass it to WithFileStorage. Kiln's create_entity and respond_query action kinds were advertised but never executed; authoring one is now rejected at journal time with an error naming the kind."
     find:
       uses:

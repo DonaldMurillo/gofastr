@@ -260,6 +260,31 @@ func TestUpgradeReportListsUnexplained(t *testing.T) {
 	}
 }
 
+func TestUpgradeReportListsUnscanned(t *testing.T) {
+	note := &upgrade.Note{Change: "c", Breaking: true, Guidance: "g"}
+	var unscanned []string
+	for i := range maxNoteHits + 3 {
+		unscanned = append(unscanned, fmt.Sprintf("x%02d.go (no satisfiable build configuration)", i+1))
+	}
+	stubScan(t, func(root string, notes []*upgrade.Note, sinks upgrade.MarkerSinks) (*scan.Result, error) {
+		return &scan.Result{TypeChecked: true, Unscanned: unscanned}, nil
+	})
+	report := upgradeReport(t.TempDir(), oneRelease(note), upgrade.MarkerSinks{})
+	head, _, _ := strings.Cut(report, "v0.23.0")
+	if !strings.Contains(head, "NOTE: 23 files could not be scanned") {
+		t.Errorf("the unscanned NOTE must lead the report, got:\n%s", report)
+	}
+	if !strings.Contains(head, "  x01.go (no satisfiable build configuration)\n") {
+		t.Errorf("report missing the first unscanned file, got:\n%s", report)
+	}
+	if got := strings.Count(report, "(no satisfiable build configuration)"); got != maxNoteHits {
+		t.Errorf("rendered %d unscanned files, want the cap of %d", got, maxNoteHits)
+	}
+	if !strings.Contains(head, "  … and 3 more\n") {
+		t.Errorf("capped files must end with a count line, got:\n%s", report)
+	}
+}
+
 func TestUpgradeReportPositionlessError(t *testing.T) {
 	note := &upgrade.Note{Change: "c", Breaking: true, Guidance: "g"}
 	stubScan(t, func(root string, notes []*upgrade.Note, sinks upgrade.MarkerSinks) (*scan.Result, error) {

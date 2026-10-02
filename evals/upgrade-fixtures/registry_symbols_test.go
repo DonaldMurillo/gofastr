@@ -94,6 +94,7 @@ releases:
     notes:
       - change: c1
         breaking: true
+        hits: edit
         guidance: g
         find:
           uses:
@@ -101,6 +102,16 @@ releases:
             - gofastr/framework/vaporware.Widget
           imports:
             - gofastr/framework/novapor/...
+  - version: v0.86.0
+    title: t
+    notes:
+      - change: c2
+        breaking: true
+        hits: review
+        guidance: g
+        find:
+          uses:
+            - gofastr/framework/ui.SiteHeader
 `
 	reg, err := upgrade.Parse(doc)
 	if err != nil {
@@ -110,7 +121,7 @@ releases:
 	if len(rep.failures) == 0 {
 		t.Fatal("the symbol checker accepted a misspelled member, a vanished package path and a nonexistent import subtree")
 	}
-	for _, want := range []string{"NotAField", "vaporware", "novapor"} {
+	for _, want := range []string{"NotAField", "vaporware", "novapor", "hits: review"} {
 		if !slices.ContainsFunc(rep.failures, func(f string) bool { return strings.Contains(f, want) }) {
 			t.Errorf("checker failures do not mention %q:\n%s", want, strings.Join(rep.failures, "\n"))
 		}
@@ -131,6 +142,7 @@ releases:
     notes:
       - change: c1
         breaking: true
+        hits: review
         guidance: g
         find:
           uses:
@@ -148,6 +160,63 @@ releases:
 	rep := checkRegistrySymbols(reg, openSymbolSource(t, repoRoot(t)))
 	if len(rep.failures) > 0 {
 		t.Fatalf("checker flagged symbols that existed at v0.53.0:\n%s", strings.Join(rep.failures, "\n"))
+	}
+}
+
+// TestSymbolGateCatchesUnlistedReexport proves the gate refuses a note
+// that names a symbol the framework package re-exported as a const, var
+// or one-call wrapper at the prior tag without naming the re-export
+// too: framework.AfterGet is its own object, so a scan for
+// hook.AfterGet never sees an app that spells it framework.AfterGet.
+// Listing the re-export clears it.
+func TestSymbolGateCatchesUnlistedReexport(t *testing.T) {
+	if os.Getenv("GOFASTR_UPGRADE_FIXTURES") != "1" {
+		t.Skip("set GOFASTR_UPGRADE_FIXTURES=1 to run the registry symbol gate (reads git history)")
+	}
+	const doc = `through: v0.86.0
+releases:
+  - version: v0.48.0
+    title: t
+    notes:
+      - change: c
+        breaking: true
+        hits: review
+        guidance: g
+        find:
+          uses:
+            - gofastr/framework/hook.AfterGet
+            - gofastr/framework/hook.NewHookRegistry
+  - version: v0.86.0
+    title: t
+    notes:
+      - change: c
+        breaking: true
+        hits: review
+        guidance: g
+        find:
+          uses:
+            - gofastr/framework/hook.NewHookRegistry
+`
+	src := openSymbolSource(t, repoRoot(t))
+	reg, err := upgrade.Parse(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rep := checkRegistrySymbols(reg, src)
+	// v0.47.0 re-exports both as a const and a var; v0.85.0 wraps
+	// NewHookRegistry in a one-call function.
+	for _, want := range []string{"framework.AfterGet at v0.47.0", "framework.NewHookRegistry at v0.47.0", "framework.NewHookRegistry at v0.85.0"} {
+		if !slices.ContainsFunc(rep.failures, func(f string) bool { return strings.Contains(f, want) }) {
+			t.Errorf("gate accepted a note missing the re-export %s:\n%s", want, strings.Join(rep.failures, "\n"))
+		}
+	}
+	listed, err := upgrade.Parse(strings.ReplaceAll(doc, "            - gofastr/framework/hook.NewHookRegistry\n",
+		"            - gofastr/framework/hook.NewHookRegistry\n            - gofastr/framework.AfterGet\n            - gofastr/framework.NewHookRegistry\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep := checkRegistrySymbols(listed, src); len(rep.failures) > 0 {
+		t.Errorf("gate refused a note that lists its re-exports:\n%s", strings.Join(rep.failures, "\n"))
 	}
 }
 
@@ -199,6 +268,30 @@ func checkRegistrySymbols(reg *upgrade.Registry, src *symbolSource) symbolReport
 			}
 			for _, imp := range note.Find.Imports {
 				src.checkImport(&rep, imp, where, ref)
+			}
+			src.checkReexports(&rep, note, where, ref)
+		}
+	}
+
+	// A hits: review note says its hits may still be right, so the code
+	// they point at still builds: every symbol it names exists at its own
+	// release (HEAD while the release is untagged). A symbol gone there
+	// is a dead spelling and the note is hits: edit.
+	for _, rel := range reg.Releases {
+		ref := rel.Version
+		if !src.hasTag(ref) {
+			ref = "HEAD"
+		}
+		for _, note := range rel.Notes {
+			if !note.Breaking || !note.Review {
+				continue
+			}
+			where := fmt.Sprintf("%s:%d (%s, hits: review)", note.File, note.Line, rel.Version)
+			for _, sym := range note.Find.Uses {
+				src.checkSymbol(&rep, sym, where, "uses", ref)
+			}
+			for _, fm := range note.Find.Fields {
+				src.checkSymbol(&rep, fm.Field, where, "fields", ref)
 			}
 		}
 	}
@@ -310,6 +403,12 @@ func semverTagLess(a, b string) int {
 type pkgSymbols struct {
 	decls   map[string]bool
 	members map[string]map[string]bool
+	// reexports maps a symbol of another package to the exported names
+	// this package re-exports it under as a separate object: a const or
+	// var initialised to it, or a function whose body is one call to
+	// it. (A type alias is the same object to the type checker, so the
+	// scan resolves it and it is not listed here.)
+	reexports map[upgrade.Symbol][]string
 }
 
 func (p *pkgSymbols) hasMember(typeName, member string) bool {
@@ -330,6 +429,38 @@ func (s *symbolSource) priorTag(version string) (string, bool) {
 
 func (s *symbolSource) hasTag(tag string) bool {
 	return slices.Contains(s.tags, tag)
+}
+
+// reexportDirs are the packages that re-export other packages' symbols
+// under their own names.
+var reexportDirs = []string{"framework"}
+
+// checkReexports records a failure for each re-export of a note's uses
+// symbol, at ref, that the note does not list as well: the re-export is
+// a separate object, so an app spelling it never matches the original.
+func (s *symbolSource) checkReexports(rep *symbolReport, note *upgrade.Note, where, ref string) {
+	listed := map[upgrade.Symbol]bool{}
+	for _, sym := range note.Find.Uses {
+		listed[sym] = true
+	}
+	for _, sym := range note.Find.Uses {
+		if sym.Member != "" {
+			continue
+		}
+		for _, dir := range reexportDirs {
+			ix, err := s.indexAt(ref, dir)
+			if err != nil || ix == nil {
+				continue
+			}
+			for _, local := range ix.reexports[sym] {
+				re := upgrade.Symbol{Pkg: upgrade.ModulePath + "/" + dir, Name: local}
+				if !listed[re] {
+					rep.failures = append(rep.failures, fmt.Sprintf("%s: uses %s is re-exported as %s at %s; list it too",
+						where, sym.String(), re.String(), ref))
+				}
+			}
+		}
+	}
 }
 
 // checkSymbol records a failure when sym (under the gofastr module) does
@@ -455,7 +586,7 @@ func (s *symbolSource) indexAt(ref, dir string) (*pkgSymbols, error) {
 }
 
 func newPkgSymbols() *pkgSymbols {
-	return &pkgSymbols{decls: map[string]bool{}, members: map[string]map[string]bool{}}
+	return &pkgSymbols{decls: map[string]bool{}, members: map[string]map[string]bool{}, reexports: map[upgrade.Symbol][]string{}}
 }
 
 func (p *pkgSymbols) member(typeName, name string) {
@@ -466,6 +597,33 @@ func (p *pkgSymbols) member(typeName, name string) {
 }
 
 func (p *pkgSymbols) addFile(file *ast.File) {
+	imports := map[string]string{}
+	for _, im := range file.Imports {
+		ipath := strings.Trim(im.Path.Value, `"`)
+		name := path.Base(ipath)
+		if im.Name != nil {
+			name = im.Name.Name
+		}
+		imports[name] = ipath
+	}
+	// target resolves pkg.Name, spelled through one of this file's
+	// imports, to the symbol it names.
+	target := func(e ast.Expr) (upgrade.Symbol, bool) {
+		sel, ok := e.(*ast.SelectorExpr)
+		if !ok {
+			return upgrade.Symbol{}, false
+		}
+		x, ok := sel.X.(*ast.Ident)
+		if !ok || imports[x.Name] == "" {
+			return upgrade.Symbol{}, false
+		}
+		return upgrade.Symbol{Pkg: imports[x.Name], Name: sel.Sel.Name}, true
+	}
+	reexport := func(local string, e ast.Expr) {
+		if sym, ok := target(e); ok && ast.IsExported(local) {
+			p.reexports[sym] = append(p.reexports[sym], local)
+		}
+	}
 	for _, decl := range file.Decls {
 		switch d := decl.(type) {
 		case *ast.GenDecl:
@@ -504,14 +662,20 @@ func (p *pkgSymbols) addFile(file *ast.File) {
 						}
 					}
 				case *ast.ValueSpec:
-					for _, n := range sp.Names {
+					for i, n := range sp.Names {
 						p.decls[n.Name] = true
+						if len(sp.Values) == len(sp.Names) {
+							reexport(n.Name, sp.Values[i])
+						}
 					}
 				}
 			}
 		case *ast.FuncDecl:
 			if d.Recv == nil || len(d.Recv.List) == 0 {
 				p.decls[d.Name.Name] = true // a package-level function
+				if call := wrappedCall(d); call != nil {
+					reexport(d.Name.Name, call.Fun)
+				}
 				continue
 			}
 			if base := recvBase(d.Recv.List[0].Type); base != "" {
@@ -529,6 +693,26 @@ func pkgDirInModule(pkgPath string) (string, bool) {
 	}
 	dir, ok := strings.CutPrefix(pkgPath, upgrade.ModulePath+"/")
 	return dir, ok
+}
+
+// wrappedCall returns the call a function's body consists of, or nil:
+// `return pkg.F(...)` or a lone `pkg.F(...)` statement.
+func wrappedCall(d *ast.FuncDecl) *ast.CallExpr {
+	if d.Body == nil || len(d.Body.List) != 1 {
+		return nil
+	}
+	var e ast.Expr
+	switch st := d.Body.List[0].(type) {
+	case *ast.ReturnStmt:
+		if len(st.Results) != 1 {
+			return nil
+		}
+		e = st.Results[0]
+	case *ast.ExprStmt:
+		e = st.X
+	}
+	call, _ := e.(*ast.CallExpr)
+	return call
 }
 
 // typeName reduces an embedded field or interface-method expression to the

@@ -11,9 +11,10 @@ notes:
     nodetect: the break is a Label left empty — an absent value has no spelling
   - change: Plain modals paint a real panel
     breaking: true
+    hits: edit
     guidance: "preset.Modal slots now render inside .fui-panel (surface, border, padding). Bodies that own their chrome opt out with .fui-slot-bare; selectors targeting .fui-pos-center > .fui-slot move to .fui-panel."
     find:
       strings:
-        classes: [fui-pos-center]
+        match: 'fui-pos-center[[:space:]]*>[[:space:]]*\.fui-slot'
       css:
-        classes: [fui-pos-center]
+        selectors: ['.fui-pos-center > .fui-slot']

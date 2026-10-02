@@ -297,6 +297,40 @@ var v086StringPairs = map[int]*v086Pair{
 // v0.86.0 release: each old spelling hits on its line, each migrated
 // spelling is silent, and a note with string or css matchers but no
 // pair fails.
+// The hidden next input in every spelling HTML accepts: attribute
+// case, quoting and spacing; and nothing that only resembles it.
+func TestV086NextInputSpellings(t *testing.T) {
+	_, rel := v086Loaded(t)
+	re := rel.Notes[19].Find.Strings.Match
+	if re == nil {
+		t.Fatal("note 19 lost its strings.match")
+	}
+	for _, v := range []string{
+		`<input type="hidden" name="next" value="/dash">`,
+		`<input type=hidden name=next value=/dash>`,
+		`<input type='hidden' name='next'>`,
+		`<INPUT TYPE="hidden" NAME="next">`,
+		`<input type="hidden" name = "next">`,
+		"<input\ttype=\"hidden\"\nname=\"next\">",
+		`<input value="/dash" name=next>`,
+	} {
+		if !re.MatchString(v) {
+			t.Errorf("missed %q", v)
+		}
+	}
+	for _, v := range []string{
+		`<input type="hidden" data-name="next">`,
+		`<input type="hidden" name="nextPage">`,
+		`<meta name="next">`,
+		`<a name="next">`,
+		`name="next"`,
+	} {
+		if re.MatchString(v) {
+			t.Errorf("matched %q", v)
+		}
+	}
+}
+
 func TestV086StringsOldVsNew(t *testing.T) {
 	reg, rel := v086Loaded(t)
 	oldFiles, newFiles := map[string]string{}, map[string]string{}
@@ -415,7 +449,17 @@ func (l *Layout) WrapCtx(ctx context.Context, content any) any { return content 
 `,
 	"framework/ui/ui.go": `package ui
 
-import "github.com/DonaldMurillo/gofastr/core-ui/html"
+import (
+	"github.com/DonaldMurillo/gofastr/core-ui/html"
+	"github.com/DonaldMurillo/gofastr/core-ui/patterns/pagination"
+)
+
+type DataTableConfig struct {
+	Pagination      *pagination.Config
+	SortHrefPattern string
+	IslandSignal    string
+	IslandEndpoint  string
+}
 
 type ButtonConfig struct {
 	ExtraAttrs html.Attrs
@@ -522,6 +566,15 @@ type Crumb struct {
 
 func New(cfg Config, crumbs ...Crumb) string { return "" }
 `,
+	"core-ui/patterns/pagination/pagination.go": `package pagination
+
+type Config struct {
+	Total, Current int
+	HrefPattern    string
+}
+
+func New(cfg Config) string { return "" }
+`,
 	"core-ui/patterns/progress/progress.go": `package progress
 
 type Config struct{ LabelVisible bool }
@@ -551,6 +604,24 @@ func Render(cfg Config) string { return "" }
 // v086GoOldFiles is one app written against v0.85.0: every Go API the
 // v0.86.0 notes retire, one spelling per note.
 var v086GoOldFiles = map[string]string{
+	"n40.go": `package app
+
+import "github.com/DonaldMurillo/gofastr/core-ui/patterns/pagination"
+
+var pageCfg = &pagination.Config{Total: 4, Current: 1, HrefPattern: "?p=%d"}
+
+var pager = pagination.New(*pageCfg)
+`,
+	"n41.go": `package app
+
+import "github.com/DonaldMurillo/gofastr/framework/ui"
+
+var sortTable = ui.DataTableConfig{
+	SortHrefPattern: "?sort=%s&dir=%s",
+	IslandSignal:    "rows",
+	IslandEndpoint:  "/rows",
+}
+`,
 	"n00.go": `package app
 
 import "github.com/DonaldMurillo/gofastr/core-ui/style"
@@ -783,6 +854,8 @@ var v086GoOldMarks = map[int][]string{
 	35: {"l.Wrap(body)"},
 	37: {"ui.SiteHeader(", "ui.SiteFooter(", "ui.DocLayout(", "ui.DocPager{}", "ui.DocPrevNext(", "ui.DocCrumb{"},
 	38: {"html.ContainerType(", "style.DarkSchemeCSS(", "gallery.MustLookup", "ui.ToastStackSignal("},
+	40: {"core-ui/patterns/pagination\"", "&pagination.Config{", "pagination.New("},
+	41: {"SortHrefPattern:", "IslandSignal:", "IslandEndpoint:"},
 }
 
 // v086GoNewFiles is the same app after the migration the notes
@@ -792,6 +865,18 @@ var v086GoOldMarks = map[int][]string{
 // have no entry here: their new spelling still references the old
 // symbol, so silence against the v0.85.0 stub proves nothing.
 var v086GoNewFiles = map[string]string{
+	"m40.go": `package app
+
+import "github.com/DonaldMurillo/gofastr/framework/ui"
+
+var pagedTable = ui.DataTableConfig{Pagination: nil}
+`,
+	"m41.go": `package app
+
+import "github.com/DonaldMurillo/gofastr/framework/ui"
+
+var sortTable = ui.DataTableConfig{}
+`,
 	"m02.go": `package app
 
 import "github.com/DonaldMurillo/gofastr/framework/ui"
@@ -908,7 +993,14 @@ func TestV086GoAPIOldVsNew(t *testing.T) {
 	oldRes := scantest.Run(t, scantest.App(t, v086GoOldFiles, scantest.Options{Kit: v086Kit}), rel.Notes, reg.MarkerSinks)
 	newRes := scantest.Run(t, scantest.App(t, v086GoNewFiles, scantest.Options{Kit: v086Kit}), rel.Notes, reg.MarkerSinks)
 	for i, n := range rel.Notes {
+		goAPI := len(n.Find.Uses) > 0 || len(n.Find.Imports) > 0 || len(n.Find.Fields) > 0
 		marks, ok := v086GoOldMarks[i]
+		if goAPI != ok {
+			// A Go-API note with no fixture is a matcher nobody watched
+			// fire; a fixture with no Go-API find tests nothing.
+			t.Errorf("note %d (%s): Go-API find %v, pinned in v086GoOldMarks %v", i, n.Change, goAPI, ok)
+			continue
+		}
 		if !ok {
 			continue
 		}

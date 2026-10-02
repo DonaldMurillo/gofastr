@@ -3,6 +3,7 @@ title: WebMCP bridge, per-route timeouts, CLI from OpenAPI, deterministic output
 notes:
   - change: ToggleConfig.ExtraAttrs (Checkbox / Radio / Switch) now follows the sanitized contract — extras land on the root <label>, and class/id/for/data-fui-* keys are dropped
     breaking: true
+    hits: review
     find:
       fields:
         - field: gofastr/framework/ui.ToggleConfig.ExtraAttrs

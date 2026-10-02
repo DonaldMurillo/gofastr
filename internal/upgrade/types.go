@@ -44,6 +44,13 @@ type Note struct {
 	// Nodetect is the reason a breaking note has no Find: no spelling
 	// an app carries differs between the old and the new release.
 	Nodetect string
+	// Review is false when every hit spells something the release no
+	// longer accepts (a removed symbol, a changed signature, a class no
+	// longer emitted), so each one must be edited; true when the hit
+	// may still be right and needs a look (a default that flipped, a
+	// stricter check). The registry's hits key sets it on a breaking
+	// note with a Find (edit or review); every other note is review.
+	Review bool
 	// Version is the release the note belongs to; File the registry
 	// file that holds it (releases/v0.86.0.yml) and Line its line there,
 	// for parse errors and test messages.
@@ -108,15 +115,35 @@ func (s Symbol) String() string {
 	return s.Pkg + "." + s.Name + "." + s.Member
 }
 
-// FieldMatch matches a composite-literal field. With Key set, the
-// field's value must be a map literal holding that constant string key.
-// With Value set, the field's value must be a constant string matching
-// it. With neither, any explicit use of the field matches (prefer Uses
+// FieldMatch matches a composite-literal field or an assignment to it.
+// With Key set, the match is that constant string key written into the
+// field's map: in an inline map literal, through a variable whose
+// single initialiser is one (a variable reassigned after its
+// initialiser is not followed — its value at the use cannot be known),
+// as the field's assigned value (cfg.Field = map[...]), or written into
+// the field directly (cfg.Field["key"] = ...). With Value set, the
+// field's value must be a constant string matching it, inline, assigned
+// (cfg.Field = "…"), or through the same one-level variable follow.
+// With neither, any explicit use of the field matches (prefer Uses
 // for that).
+//
+// With Refused set (a core-ui/urlsafe policy name: anchor, resource,
+// image_source), the field's value must be a constant string that
+// policy refuses, found the same ways as Value. It is the predicate the
+// component itself applies at render, so it matches every spelling the
+// component refuses (any scheme case, control bytes) and nothing else.
+// At most one of Key, Value and Refused is set.
 type FieldMatch struct {
-	Field Symbol // Name is the struct type, Member the field
-	Key   string
-	Value *regexp.Regexp
+	Field   Symbol // Name is the struct type, Member the field
+	Key     string
+	Value   *regexp.Regexp
+	Refused string
+}
+
+// Conditioned reports whether the match carries a key, value or
+// refused condition, rather than matching any use of the field.
+func (m FieldMatch) Conditioned() bool {
+	return m.Key != "" || m.Value != nil || m.Refused != ""
 }
 
 // StringMatch matches Go constant string values.
@@ -146,18 +173,26 @@ func (m StringMatch) Empty() bool {
 type CSSMatch struct {
 	Classes    []string // a .name class selector (BEM forms count)
 	Properties []string // a --x custom property, declared or read via var()
+	// Selectors: a compound selector (".a > .b") inside a rule prelude,
+	// compared with whitespace normalized around combinators. For a
+	// change that retires a selector shape while its classes stay.
+	Selectors []string
 }
 
 // Empty reports whether m has no matcher.
-func (m CSSMatch) Empty() bool { return len(m.Classes) == 0 && len(m.Properties) == 0 }
+func (m CSSMatch) Empty() bool {
+	return len(m.Classes) == 0 && len(m.Properties) == 0 && len(m.Selectors) == 0
+}
 
 // ConfigMatch matches gofastr.yml. Key is a dotted path from the
 // document root; "*" matches any one map key or list item. With Value
-// set, the scalar at the path must match it; without, the key existing
-// is a hit.
+// set, the scalar at the path must match it; with Refused set (a
+// urlsafe policy name, as in FieldMatch), the scalar must be a URL that
+// policy refuses; with neither, the key existing is a hit.
 type ConfigMatch struct {
-	Key   string
-	Value *regexp.Regexp
+	Key     string
+	Value   *regexp.Regexp
+	Refused string
 }
 
 // GoModMatch matches go.mod's go directive.

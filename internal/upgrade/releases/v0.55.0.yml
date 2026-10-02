@@ -3,12 +3,14 @@ title: Findings from five independent analyses, fixed test-first
 notes:
   - change: openapi.SwaggerUIHandler is now openapi.DocsHandler with a public flag
     breaking: true
+    hits: edit
     guidance: "Call openapi.DocsHandler(spec, basePath, public) — the third argument gates the landing page and its nested spec route together. framework passes AppConfig.PublicOpenAPI, so WithPublicOpenAPI() now opens /api/docs/ as well as /openapi.json; previously a published spec had an auth-gated page and no way to browse it. Pass false to keep the page private."
     find:
       uses:
         - gofastr/core/openapi.SwaggerUIHandler
   - change: island.Manager presence hooks are set through methods
     breaking: true
+    hits: edit
     guidance: "Replace manager.OnPresenceChange = fn with manager.SetOnPresenceChange(fn), and manager.AuthorizeTopic = fn with manager.SetAuthorizeTopic(fn) — the public fields were written by apps without the lock the hooks are read under. ConnectSession now returns (ch, cancel, error) so it can refuse a connection that would exceed the new stream caps; handle the error."
     find:
       uses:
@@ -16,6 +18,7 @@ notes:
         - gofastr/core-ui/island.Manager.AuthorizeTopic
   - change: Dead widget-builder API removed
     breaking: true
+    hits: edit
     guidance: "BootstrapMode, Definition.Bootstrap, Definition.BootstrapPath, Builder.Bootstrap, Builder.RPCWithSignal and RPCEndpoint.ResponseSignal are deleted. Mount never applied the documented bootstrap default and ResponseSignal was written but never read. Use RPC(...) and route signals through the data-fui-rpc-signal attribute."
     find:
       uses:
@@ -30,6 +33,7 @@ notes:
     nodetect: the missing session store is an absent setting; startup names it
   - change: battery/semantic routes require a bearer token
     breaking: true
+    hits: review
     guidance: "The handler accepted any non-empty Authorization header, so 'Authorization: x' granted index write, query and delete. Pass semantic.WithAuthToken(token) to Handler or Plugin (compared in constant time), or semantic.WithInsecureDisabledAuth() for local development. Configure neither and every route returns 401 instead of mounting open."
     find:
       uses:
@@ -41,6 +45,7 @@ notes:
     nodetect: existing projects keep working through the gofastr.yml fallback; only fresh `gofastr init` output changes
   - change: An over-length ?field_in= list is a 400
     breaking: true
+    hits: review
     guidance: "Above 1000 entries the filter parser silently dropped the remainder, narrowing the predicate without telling the caller — rows past the cap vanished from results. The request now fails with an error naming the field and the cap, matching the include-scoped IN list. Split large IN lists across requests, or filter server-side."
     find:
       strings:
@@ -55,24 +60,28 @@ notes:
     nodetect: the shape is an app-declared int8/int16/uint8/uint16 field in a bound struct; no framework symbol or string names it
   - change: Island endpoints enforce the entity's read permission and the screen's policy
     breaking: true
+    hits: review
     guidance: "resource.Config.TableHandler checked only that someone was signed in, so a list's sort/paginate endpoint served rows that GET /api/<entity> refused with 403. It now also applies the entity's declared read permission and the screen's own policy. Set Config.IslandPolicy to the SAME policy that gates the screen; a public list declares resource.PublicIsland(), because with no policy the handler still requires sign-in."
     find:
       uses:
         - gofastr/framework/ui/resource.Config.TableHandler
   - change: Generated island endpoints moved to /api/tables/<screen>/<entity>
     breaking: true
+    hits: edit
     guidance: "Blueprint apps mounted one island endpoint per entity on the bare registry config, so two screens showing the same entity shared it and a sort click on a filtered list came back unfiltered. Each screen now gets its own endpoint serving that screen's refined config behind that screen's policy. Regenerate the app; any hand-written client calling /api/tables/<entity> needs the screen segment."
     find:
       strings:
         match: '/api/tables/[A-Za-z0-9_-]+(["''&?<\s]|$)'
   - change: TryEntity rejects route collisions it used to half-commit
     breaking: true
+    hits: review
     find:
       uses:
         - gofastr/framework.App.TryEntity
     guidance: "Registration pre-flighted a guessed pair of paths. It now asks crud.CrudRoutePatterns for the full set it will mount and compares wildcard SHAPE, so a screen at /posts/{slug} colliding with the generated /posts/{id}, or an endpoint shadowing /posts/_batch, is caught during validation. A declaration that previously panicked mid-commit — leaving the entity registered and its CRUD routes mounted — now returns an error having registered nothing. Move the conflicting screen or endpoint, or mount entity routes under an APIPrefix."
   - change: RedisClient.RPop must report an empty list as queue.ErrRedisEmpty
     breaking: true
+    hits: review
     find:
       uses:
         - gofastr/battery/queue.RedisClient.RPop

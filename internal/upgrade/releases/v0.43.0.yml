@@ -3,6 +3,7 @@ title: Security audit remediation
 notes:
   - change: Client-selected SSE block mode is now a broker opt-in
     breaking: true
+    hits: review
     guidance: "?slow=block / X-SSE-Slow is ignored unless the broker sets SSEBrokerConfig.AllowClientSlowMode. A block-mode subscriber stalls deliver() on the publisher's goroutine, so a request-selected block mode let one unauthenticated client stall every other subscriber and the calling handler. Set AllowClientSlowMode on trusted-only endpoints; BlockTimeout (default 5s) bounds the stall even then."
     find:
       strings:
@@ -13,6 +14,7 @@ notes:
     nodetect: the abuse is a client request shape; apps keying streams legitimately are unaffected and no app spelling differs
   - change: Permission rules match literally unless Rule.Glob is set
     breaking: true
+    hits: review
     guidance: "permission.Rule.ArgvGlob was matched with filepath.Match, so an approved command widened into a pattern (approving 'git diff *' also matched 'git diff ; nc host 9') and persisted that way. Rules are literal now; set Glob: true on any rule you deliberately authored as a pattern."
     find:
       fields:

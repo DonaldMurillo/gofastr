@@ -1,8 +1,9 @@
 version: v0.68.0
 title: Row-level read scoping, in-process nested filters scoped, stale owner-key repair
 notes:
-  - change: "BREAKING: ListAll and CountAll scope a NestedFilters spec to the caller"
+  - change: "ListAll and CountAll scope a NestedFilters spec to the caller"
     breaking: true
+    hits: review
     guidance: "Owner, tenant, and read-scope predicates now narrow ListOptions.NestedFilters on every call, not only over HTTP. The narrowing was previously gated on a context marker no host could set, so the safe branch was unreachable and a host forwarding a caller-influenced relation into ListAll mid-request had a count oracle over rows the target hides. Server-side code that means across every owner now says so with owner.AllowCrossOwner or tenant.AllowCrossTenant; both already exist for this surface and neither is reachable from an HTTP route. The posture check (may this caller read the target at all) stays HTTP-only, matching ApplyIncludes, because it is the baseline session gate and in-process code has no session."
     find:
       uses:

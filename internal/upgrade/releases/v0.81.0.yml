@@ -3,6 +3,7 @@ title: Probe-audit hardening, static rules from the probes, per-module schemas
 notes:
   - change: "process-module schema and role names for names containing a hyphen, an underscore or an upper-case letter carry a digest suffix (module_billing_1_<12 hex>); pure lowercase-alphanumeric names are unchanged"
     breaking: true
+    hits: review
     find:
       uses:
         - gofastr/framework.App.RegisterProcessModule

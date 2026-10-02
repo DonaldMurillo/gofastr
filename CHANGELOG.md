@@ -1081,42 +1081,71 @@ are listed under Added above, not here.
 - `gofastr upgrade` reads a project the way the compiler does. Every
   registry note carries a `find:` block, or a one-line `nodetect:`
   reason when no spelling an app carries differs (a default that
-  flipped, a removed CLI flag). The scan loads the project once through
-  the type checker, tests included, and matches:
+  flipped, a removed CLI flag). The scan loads the project through the
+  type checker, tests included, and reaches every Go file the go tool
+  would build somewhere: a file a `//go:build` line or a `_windows.go`
+  suffix keeps out of the host build loads under one configuration
+  that satisfies it, a nested module below the root loads on its own,
+  and a `//go:build ignore` program beside another package loads by
+  name, the way `go run gen.go` builds it. A file no configuration
+  builds (`linux && windows`, a disabled `ignore` copy of its
+  package's code) is listed in a NOTE at the top of the report. The
+  scan matches:
   - `uses`: references resolved to the declaring object, so calls,
     method values, embedded promotion, composite-literal keys, generic
-    instantiations and aliased imports all count, and a longer name
-    (`SiteHeaderConfig` for `SiteHeader`) does not;
-  - `imports`, and `fields` (a composite-literal field, optionally with
-    a map-key or value condition);
+    instantiations, aliased imports and type aliases all count, and a
+    longer name (`SiteHeaderConfig` for `SiteHeader`) does not. A
+    member of an interface also matches each method an app type
+    declares to implement it, whether or not that package imports the
+    interface's;
+  - `imports`, and `fields`: a composite-literal field, an assignment
+    or a keyed write to it, optionally narrowed by a map key (ASCII
+    case folded, as HTML attribute names are, and followed one level
+    through a variable in any file or package), a value regex, or a
+    `refused` URL policy, the `core-ui/urlsafe` predicate the component
+    itself applies at render;
   - `strings`: Go constant strings after constant folding, read as
     class tokens, HTML attribute names, CSS custom properties or a
-    regex. A `ui-*` name that only reaches a marker sink (a registered
-    sheet name, a `data-fui-comp` value) is not a hit, and neither is
-    a `testing` call's message;
-  - `css` through the CSS tokenizer, `config` (`gofastr.yml`) through
-    the YAML parser, `gomod` against the `go` directive, and `text` as
-    the per-line last resort for files no parser reads (shell, JS).
+    regex. Markup in a string goes through the same HTML tokenizer as
+    the rendered-page check below, so unquoted, upper-case and spaced
+    class attributes and character references count. A `ui-*` name
+    that only reaches a marker sink (a registered sheet name, a
+    `data-fui-comp` value), in any package, is not a hit, and neither
+    is a `testing` failure message or subtest name; `t.Setenv`
+    arguments are;
+  - `css` through the CSS tokenizer with escapes decoded
+    (`.ui\2d button` is `.ui-button`), `config` (`gofastr.yml`)
+    through the YAML parser, `gomod` against the `go` directive, and
+    `text` as the per-line last resort for files no parser reads
+    (shell, JS).
 
   When the project no longer compiles (the `go.mod` was bumped first),
   the Go matchers read the compile errors instead: an error naming a
   `uses` symbol or a missing `imports` package is a hit at its
-  position, an error on a line a typed matcher already hit counts as
-  explained, and the report lists every error no note explains.
-  Versions compare by semver precedence, so `rc.2` sorts before
-  `rc.10`.
+  position (spelled through import aliases, dot imports, type aliases
+  in the package or its imports, or the quoted import path), an error
+  on a line a typed matcher already hit counts as explained only when
+  it names that hit's symbol, and the report lists every error no note
+  explains. Versions compare by semver precedence, so `rc.2` sorts
+  before `rc.10`.
   `--from vX.Y.Z` names the release the code was written for, since a
   bumped `go.mod` already names the target; without it that run reports
-  "nothing to do" and points at the flag. The
-  registry is one file per release under `internal/upgrade/releases/`:
-  294 notes from v0.3.0 on (181 `find`, 113 `nodetect`), 42 of them
-  for v0.86.0 ("Headless design system"). Parse errors name the file
-  and line. The registry tests refuse an unknown key, a note with
-  neither `find` nor `nodetect`, a v0.86.0 string or CSS matcher that
-  fires on its migrated spelling, and any v0.86.0 hit on the migrated
-  `examples/` tree; CI also refuses a `uses` symbol that did not exist
-  at the release before its note, and checks each historical fixture
-  app's `migration.patch` hunk by hunk against the scan.
+  "nothing to do" and points at the flag.
+
+  The registry is one file per release under
+  `internal/upgrade/releases/`: 294 notes from v0.3.0 on (181 `find`,
+  113 `nodetect`), 42 of them for v0.86.0 ("Headless design system").
+  Parse errors name the file and line. The registry tests refuse an
+  unknown key, a note with neither `find` nor `nodetect`, a breaking
+  `find` note with no `hits`, a `fields` entry with more than one
+  condition, an unknown URL policy, a text glob that could never
+  match, a v0.86.0 string or CSS matcher that fires on its migrated
+  spelling, a v0.86.0 Go-API note with no fixture, and any v0.86.0 hit
+  on the migrated `examples/` tree. CI also refuses a `uses` symbol
+  that did not exist at the release before its note and a
+  `hits: review` symbol its own release removed, checks each
+  historical fixture app's `migration.patch` hunk by hunk against the
+  scan.
 
 - Rendered pages are checked for retired markup. A class built at run
   time (`fmt.Sprintf("ui-%s", kind)`, a name read from the database)

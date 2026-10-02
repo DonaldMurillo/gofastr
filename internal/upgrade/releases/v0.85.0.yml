@@ -3,6 +3,7 @@ title: Red-probe rounds 4 and 5, per-language shells, widget lifecycle, CodeBloc
 notes:
   - change: "an MCP tool handler's plain error is answered to the caller as a generic internal tool error (its text is logged server-side); a message meant for the caller is returned as *mcp.RPCError or mcp.ToolResult{IsError: true}"
     breaking: true
+    hits: review
     find:
       uses:
         - gofastr/core/mcp.Server.RegisterTool
@@ -14,12 +15,14 @@ notes:
     guidance: "A client that sent a scalar field twice and relied on last-wins now gets 400; send it once. A JSON-typed field receives the list."
   - change: "/openapi.json and /api/docs/openapi.json filter entities by the caller's read scope; WithPublicOpenAPI opts into the full document"
     breaking: true
+    hits: review
     find:
       strings:
         match: 'openapi\.json'
     guidance: "A tooling flow that fetched the spec anonymously to see every entity now sees only what an anonymous caller can read; authenticate the fetch, or call WithPublicOpenAPI on an app whose whole schema is public."
   - change: "magic-link, password-reset, and email-verification tokens are stored as sha256 digests, so tokens minted before the upgrade stop redeeming"
     breaking: true
+    hits: review
     find:
       uses:
         - gofastr/battery/auth.MagicLinkTokenStore
@@ -28,6 +31,7 @@ notes:
     guidance: "They are short-lived: wait out the TTL or re-send. Nothing to change in code; a custom token store must store the digest the battery now looks up."
   - change: "RequireSession, SessionPolicy, and RolePolicy answer 401 to callers authenticated only by an API token"
     breaking: true
+    hits: review
     find:
       uses:
         - gofastr/battery/auth.RequireSession
@@ -36,6 +40,7 @@ notes:
     guidance: "A route meant for API tokens uses RequireAuth or RequireAPIScopes; the session-only policies now mean what their names say."
   - change: "a CRUD create or update whose BelongsTo foreign key names an owner-, tenant-, or read-scoped row the caller cannot read answers 404"
     breaking: true
+    hits: review
     find:
       uses:
         - gofastr/framework.BelongsTo
@@ -45,6 +50,7 @@ notes:
     guidance: "Exemptions are explicit: owner.AllowCrossOwner, the target's CrossOwnerRead permission, tenant.AllowCrossTenant, or WithServerWrites for server-side writes. A client that pointed a record at another user's parent by guessing ids was the bug."
   - change: "kiln's update_entity requires an approved plan (PlanID); pre-existing journals with ungated update_entity entries fail replay"
     breaking: true
+    hits: review
     find:
       strings:
         match: 'update_entity'
@@ -54,6 +60,7 @@ notes:
     guidance: "Re-record the affected journals through the plan flow; an entry recorded without a plan cannot be replayed."
   - change: "generated CLIs drop the --token flag; the token resolves from $PREFIX_TOKEN, the stored config, or login --with-token reading stdin"
     breaking: true
+    hits: review
     find:
       text:
         - glob: "**/*.sh"
@@ -61,6 +68,7 @@ notes:
     guidance: "Re-generate the CLI and update scripts that passed --token on the command line (visible to every local process via ps) to export the env var or pipe the token into login --with-token."
   - change: "the harness mcpserver answers malformed JSON-RPC with -32602 invalid params (was -32700 parse error)"
     breaking: true
+    hits: review
     find:
       imports:
         - gofastr/framework/experimental/harness/...

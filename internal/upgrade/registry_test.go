@@ -26,8 +26,9 @@ releases:
   - version: v0.86.0
     title: Headless design system
     notes:
-      - change: 'BREAKING: one line'
+      - change: 'one line'
         breaking: true
+        hits: edit
         guidance: one line, actionable
         find:
           uses:
@@ -59,7 +60,7 @@ releases:
           text:
             - glob: "**/*.js"
               match: 'data-fui-signal'
-      - change: 'BREAKING: silent change'
+      - change: 'silent change'
         breaking: true
         guidance: do the thing
         nodetect: no spelling an app carries differs
@@ -105,7 +106,7 @@ func TestParseFullDocument(t *testing.T) {
 		t.Fatalf("notes: %d, want 2", len(rel.Notes))
 	}
 	note := rel.Notes[0]
-	if note.Change != "BREAKING: one line" || !note.Breaking || note.Guidance != "one line, actionable" {
+	if note.Change != "one line" || !note.Breaking || note.Guidance != "one line, actionable" {
 		t.Errorf("note header = %+v", note)
 	}
 	if note.Version != "v0.86.0" || note.Line == 0 {
@@ -176,6 +177,42 @@ func TestParseFullDocument(t *testing.T) {
 	}
 }
 
+// hits decides the report section: edit for a breaking note whose
+// every hit is dead, review for one whose code may still be right. A
+// non-breaking note is always review.
+func TestParseHits(t *testing.T) {
+	reg, err := Parse(`through: v0.86.0
+releases:
+  - version: v0.86.0
+    notes:
+      - change: removed
+        breaking: true
+        hits: edit
+        guidance: g
+        find:
+          uses: [gofastr/framework/ui.X]
+      - change: behaviour
+        breaking: true
+        hits: review
+        guidance: g
+        find:
+          uses: [gofastr/framework/ui.Y]
+      - change: additive
+        guidance: g
+        find:
+          uses: [gofastr/framework/ui.Z]
+`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	notes := reg.Releases[0].Notes
+	for i, want := range []bool{false, true, true} {
+		if notes[i].Review != want {
+			t.Errorf("note %d (%s): Review = %v, want %v", i, notes[i].Change, notes[i].Review, want)
+		}
+	}
+}
+
 func TestParseRefuses(t *testing.T) {
 	note := func(body string) string {
 		return "through: v0.86.0\nreleases:\n  - version: v0.86.0\n    notes:\n      - change: c\n        breaking: true\n        guidance: g\n" + body
@@ -204,6 +241,7 @@ func TestParseRefuses(t *testing.T) {
 		{"config value regex", note("        find:\n          config:\n            - key: a\n              value: '[unclosed'\n"), "does not compile"},
 
 		{"symbol no name", note("        find:\n          uses: [gofastr/framework/ui.]\n"), "malformed symbol"},
+		{"symbol package only", note("        find:\n          uses: [gofastr/framework/ui]\n"), "malformed symbol"},
 		{"symbol two members", note("        find:\n          uses: [gofastr/framework/ui.A.B.C]\n"), "malformed symbol"},
 		{"symbol whitespace", note("        find:\n          uses: ['gofastr/framework/ui. X']\n"), "malformed symbol"},
 		{"field member without type", note("        find:\n          fields:\n            - field: gofastr/framework/ui.SiteHeader\n"), "must name Type.Member"},
@@ -213,6 +251,11 @@ func TestParseRefuses(t *testing.T) {
 		{"find with nodetect", note("        nodetect: reason\n        find:\n          uses: [gofastr/framework/ui.X]\n"), "find and nodetect"},
 		{"legacy detect key", note("        detect: 'x'\n"), `unknown key "detect"`},
 		{"neither find nor nodetect", note(""), "neither find nor nodetect"},
+		{"change spells breaking", "through: v0.86.0\nreleases:\n  - version: v0.86.0\n    notes:\n      - change: 'Breaking: x'\n        breaking: true\n        guidance: g\n        nodetect: r\n", "breaking: true says so"},
+		{"breaking find without hits", note("        find:\n          uses: [gofastr/framework/ui.X]\n"), "hits: edit"},
+		{"hits not edit or review", note("        hits: maybe\n        find:\n          uses: [gofastr/framework/ui.X]\n"), "edit or review"},
+		{"hits on a nodetect note", note("        hits: edit\n        nodetect: reason\n"), "only a breaking note with find"},
+		{"hits on a non-breaking note", "through: v0.86.0\nreleases:\n  - version: v0.86.0\n    notes:\n      - change: c\n        guidance: g\n        hits: review\n        find:\n          uses: [gofastr/framework/ui.X]\n", "only a breaking note with find"},
 
 		{"config key empty", note("        find:\n          config:\n            - key: \"\"\n"), "config key is empty"},
 		{"config key empty element", note("        find:\n          config:\n            - key: a..b\n"), "empty path element"},
@@ -222,6 +265,13 @@ func TestParseRefuses(t *testing.T) {
 		{"gomod empty", note("        find:\n          gomod:\n            go_below: \"\"\n"), "not a Go version"},
 
 		{"text glob empty", note("        find:\n          text:\n            - glob: \"\"\n              match: x\n"), "glob is empty"},
+		{"text glob bad pattern", note("        find:\n          text:\n            - glob: 'docs/[a-.md'\n              match: x\n"), "syntax error in pattern"},
+		{"text glob ** in a segment", note("        find:\n          text:\n            - glob: 'docs/a**/x.md'\n              match: x\n"), "\"**\" must be a whole path segment"},
+		{"fields key and value", note("        find:\n          fields:\n            - field: example.com/kit/ui.ButtonConfig.ExtraAttrs\n              key: disabled\n              value: x\n"), "at most one of key, value, refused"},
+		{"fields value and refused", note("        find:\n          fields:\n            - field: example.com/kit/ui.FormConfig.Action\n              value: x\n              refused: anchor\n"), "at most one of key, value, refused"},
+		{"config value and refused", note("        find:\n          config:\n            - key: a.b\n              value: x\n              refused: anchor\n"), "value or refused, not both"},
+		{"config refused unknown policy", note("        find:\n          config:\n            - key: a.b\n              refused: links\n"), "refused must be anchor, resource or image_source"},
+		{"fields refused unknown policy", note("        find:\n          fields:\n            - field: example.com/kit/ui.FormConfig.Action\n              refused: links\n"), "refused must be anchor, resource or image_source"},
 		{"text glob targets go", note("        find:\n          text:\n            - glob: '**/*.go'\n              match: x\n"), "structural matcher"},
 		{"text glob targets css", note("        find:\n          text:\n            - glob: '*.css'\n              match: x\n"), "structural matcher"},
 
@@ -361,5 +411,17 @@ func TestNewestReleaseBreakingNotesCarryFind(t *testing.T) {
 		case !hasFind && reason == "":
 			t.Errorf("%s: breaking note %q has no find — `gofastr upgrade` cannot show the user where it bites, and no nodetect reason says why", newest.Version, note.Change)
 		}
+	}
+}
+
+func TestParseFieldRefused(t *testing.T) {
+	src := "through: v0.86.0\nreleases:\n  - version: v0.86.0\n    notes:\n      - change: c\n        breaking: true\n        hits: edit\n        guidance: g\n        find:\n          fields:\n            - field: example.com/kit/ui.FormConfig.Action\n              refused: anchor\n"
+	reg, err := Parse(src)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	fm := reg.Releases[0].Notes[0].Find.Fields[0]
+	if fm.Refused != "anchor" || fm.Key != "" || fm.Value != nil {
+		t.Fatalf("field match = %+v, want Refused anchor alone", fm)
 	}
 }

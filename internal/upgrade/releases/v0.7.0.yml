@@ -3,6 +3,7 @@ title: Generated apps serve entity JSON under an API prefix
 notes:
   - change: Regenerated blueprint apps serve entity JSON at /api/<table>, not /<table>
     breaking: true
+    hits: review
     guidance: "A regenerated app moves every entity route under the api_prefix. Clients calling the bare path get 404. Update them, or set `app.api_prefix: \"\"` in the blueprint to keep the old paths. MCP tools and the OpenAPI spec follow the prefix automatically."
     find:
       config:

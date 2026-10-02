@@ -65,3 +65,32 @@ func TestConfigMissingFileNotError(t *testing.T) {
 	}), n)
 	wantHits(t, res, n)
 }
+
+func TestConfigRefusedAnchor(t *testing.T) {
+	yml := `screens:
+  - name: login
+    body:
+      - kind: login_form
+        props:
+          register_href: "JavaScript:alert(1)"
+          login_href: /login
+      - kind: login_form
+        props:
+          register_href: "data:text/html,x"
+          login_href: //evil.example
+`
+	// The anchor policy judges the scalar: scheme case does not hide it,
+	// and data: is refused as the component refuses it.
+	n := &upgrade.Note{Find: upgrade.Find{Config: []upgrade.ConfigMatch{
+		{Key: "screens.*.body.*.props.register_href", Refused: "anchor"},
+		{Key: "screens.*.body.*.props.login_href", Refused: "anchor"},
+	}}}
+	res := mustRun(t, newWorkspace(t, defaultKit, map[string]string{
+		"main.go":     "package main\n\nfunc main() {}\n",
+		"gofastr.yml": yml,
+	}), n)
+	wantHits(t, res, n,
+		fmt.Sprintf("gofastr.yml:%d:0 config screens.0.body.0.props.register_href", lineOf(yml, "JavaScript:")),
+		fmt.Sprintf("gofastr.yml:%d:0 config screens.0.body.1.props.register_href", lineOf(yml, "data:text")),
+		fmt.Sprintf("gofastr.yml:%d:0 config screens.0.body.1.props.login_href", lineOf(yml, "//evil")))
+}

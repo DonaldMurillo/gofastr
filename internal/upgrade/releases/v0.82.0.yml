@@ -3,6 +3,7 @@ title: Red-probe round 2, five analyzers, one exception marker
 notes:
   - change: "auth.NewEntityTwoFAStore takes an EntityTwoFAStoreConfig whose EncryptionKey is required and returns an error; the TOTP seed is sealed at rest with the sealer the OAuth token store already uses"
     breaking: true
+    hits: edit
     find:
       uses:
         - gofastr/battery/auth.NewEntityTwoFAStore
@@ -30,6 +31,8 @@ notes:
       uses:
         - gofastr/framework/access.DeciderMiddleware
         - gofastr/framework/access.WithDecider
+        - gofastr/framework.DeciderMiddleware
+        - gofastr/framework.WithDecider
   - change: "App.Start contains a panicking OnStart, OnReady or WithSeed hook and battery OnStart (attributed error, boot aborts through teardown); App.Shutdown keeps stopping the remaining batteries after one panics and joins the errors"
     breaking: false
     guidance: "A hook bug that used to crash the process now surfaces as the error App.Start returns; nothing changes for hooks that do not panic."

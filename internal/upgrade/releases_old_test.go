@@ -54,17 +54,18 @@ func TestOldNotesOldSpellingHitsNewDoesNot(t *testing.T) {
 			new: map[string]string{"main.go": "package main\n\nfunc main() {}\n"},
 		},
 		{
-			// v0.13.0/2: selectors and strings naming .fui-pos-center
-			// move to .fui-panel.
+			// v0.13.0/2: the .fui-pos-center > .fui-slot selector moves
+			// to .fui-panel. fui-pos-center itself is still emitted on
+			// every centered widget, so the class alone is no hit.
 			name: "v0.13.0/2", version: "v0.13.0", index: 2, kinds: []string{"strings", "css"},
-			wantWhy: []string{"class fui-pos-center", "css .fui-pos-center"},
+			wantWhy: []string{"match", "css .fui-pos-center > .fui-slot"},
 			old: map[string]string{
-				"main.go":        "package main\n\nvar modalPos = \"fui-pos-center\"\n\nfunc main() { _ = modalPos }\n",
+				"main.go":        "package main\n\nvar modalCSS = \".fui-pos-center>.fui-slot{padding:0}\"\n\nfunc main() { _ = modalCSS }\n",
 				"styles/app.css": ".fui-pos-center > .fui-slot { outline: none; }\n",
 			},
 			new: map[string]string{
-				"main.go":        "package main\n\nvar modalPos = \"fui-panel\"\n\nfunc main() { _ = modalPos }\n",
-				"styles/app.css": ".fui-panel > .fui-slot { outline: none; }\n",
+				"main.go":        "package main\n\nvar modalCSS = \".fui-pos-center>.fui-panel{padding:0}\"\nvar pos = \"fui-pos-center\"\n\nfunc main() { _, _ = modalCSS, pos }\n",
+				"styles/app.css": ".fui-pos-center > .fui-panel { outline: none; }\n",
 			},
 		},
 		{

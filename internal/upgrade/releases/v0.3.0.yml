@@ -3,12 +3,14 @@ title: Secure-by-default sweep
 notes:
   - change: Tenant scoping and multi-tenant CRUD are fail-closed
     breaking: true
+    hits: review
     guidance: "Typed-repo queries and HTTP CRUD now refuse to run without a tenant in context when an entity is tenant-scoped. If reads started returning empty/403 after upgrading, install the tenant middleware or mark the entity non-tenant."
     find:
       fields:
         - field: gofastr/framework/entity.EntityConfig.MultiTenant
   - change: Admin battery is default-deny for non-admins
     breaking: true
+    hits: review
     guidance: "battery/admin now requires the admin role by default. Set AdminRole (and grant it) or provide a custom policy."
     find:
       uses:
@@ -39,6 +41,7 @@ notes:
     nodetect: Screen.policies was already unexported at v0.2.2, the newest tag below v0.3.0
   - change: Access control installs via framework.WithAccessControl / AccessMiddleware
     breaking: true
+    hits: review
     guidance: "Policy + roles install in one line via the new helpers; hand-wired policy plumbing from v0.2 needs the new install path."
     find:
       uses:

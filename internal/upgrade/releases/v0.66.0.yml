@@ -1,8 +1,9 @@
 version: v0.66.0
 title: Queue lease fencing, multipart wire cap, blueprint boot gate
 notes:
-  - change: "BREAKING: Queue.Ack and Queue.Nack take a Job, not a job ID"
+  - change: "Queue.Ack and Queue.Nack take a Job, not a job ID"
     breaking: true
+    hits: edit
     guidance: "Pass the Job returned by Dequeue instead of job.ID. The string form carried no claim identity, so a worker that stalled past its lease could Ack a job another worker had already re-claimed — deleting the new holder's lease and losing the job with no dead-letter trace. RedisQueue now checks Job.ClaimToken and counts rejected calls in StaleClaimCount(). Custom Queue implementations must update both method signatures."
     find:
       uses:

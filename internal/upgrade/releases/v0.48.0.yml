@@ -3,6 +3,7 @@ title: Masked fields stop leaking through the query surface
 notes:
   - change: entity.Define panics on a Hidden or NoQuery cursor column
     breaking: true
+    hits: review
     guidance: "Keyset paging orders and compares on the cursor column and encodes its value into the cursor token, which is reversible base64 — so a masked column there hands the caller back what the mask withholds. The check covers CursorField, CursorFields, the primary-key default, and the primary key auto-appended as a composite tiebreak. Pick a different keyset column."
     find:
       fields:
@@ -12,6 +13,7 @@ notes:
         - field: gofastr/framework/entity.PaginationConfig.CursorFields
   - change: entity.Define panics on a NoQuery SearchFields entry
     breaking: true
+    hits: review
     guidance: "?q= runs LIKE against the stored value, so a masked column in SearchFields discloses exactly what NoQuery keeps off the query surface. Drop the column from search_fields, or drop no_query if the value is not sensitive."
     find:
       fields:
@@ -26,17 +28,21 @@ notes:
     nodetect: the failure moved into gofastr generate's decoder; the Go-side review point is the CursorField note above
   - change: AfterGet/AfterList now run on every HTTP path that returns a row
     breaking: true
+    hits: review
     guidance: "Keyset pages, ?include= children, _events deliveries and create/update response bodies previously returned stored values past an AfterGet/AfterList mask; they are redacted now. If a hook was written assuming it only ever saw GET responses, it now also sees include payloads, event records and write bodies — check it tolerates a primary-key-only delete stub and does not assume a full row."
     find:
       uses:
         - gofastr/framework/hook.AfterGet
         - gofastr/framework/hook.AfterList
+        - gofastr/framework.AfterGet
+        - gofastr/framework.AfterList
   - change: "A failed AfterGet on a write response returns the row id instead of 500"
     breaking: false
     guidance: "The write has already committed and its event has shipped by the time the response hook runs, so answering 500 made callers retry and write the row twice — and in a _batch it discarded the ids of every row that committed. The body degrades to the primary key and the hook error is logged. If your client asserts on a full body, handle the id-only shape."
     nodetect: a client asserting on the full write body has no framework spelling
   - change: "A nested ?rel.field= filter now refuses when the relation target is not a registered entity"
     breaking: true
+    hits: review
     guidance: "The Hidden/NoQuery/declared-column checks need the target's schema, and skipping them let any column of an unregistered table be predicated on — auth_users.password_hash among them. ?include= has always refused the same shape. If a filter that used to work now 400s, register the target entity (app.Entity) or filter on the parent instead."
     find:
       strings:
@@ -51,16 +57,19 @@ notes:
     nodetect: admin form rendering behaviour; no app spelling differs
   - change: "?cursor= now validates ?sort= instead of ignoring it unparsed"
     breaking: true
+    hits: review
     guidance: "Keyset mode still ignores the sort — the cursor fields control ORDER BY — but it no longer skips validation, so any ?sort= the offset path rejects is now rejected alongside a cursor too. That includes an UNKNOWN column, not just a masked one. A client that appends its UI sort state to a cursor request and previously got a silent 200 now gets a 400; drop the sort when paging by cursor."
     find:
       strings:
         match: '[?&]cursor='
   - change: "Nested ?rel.field= filters require CrudHandler.Registry"
     breaking: true
+    hits: review
     guidance: "The Hidden/NoQuery/declared-column checks need the target entity's schema, so a handler with no registry now refuses nested filters rather than trusting the column name. framework.App, App.View and generated typed repos all set it; a handler built by hand with crud.NewCrudHandler does not. Set Registry, or filter on the parent."
     find:
       uses:
         - gofastr/framework/crud.NewCrudHandler
+        - gofastr/framework.NewCrudHandler
   - change: In-process reads opt in to read hooks with crud.WithReadHooks
     breaking: false
     guidance: "ListAll/CountAll/GetOne still return stored values by default — right for read-modify-write, seed lookups and aggregates. Wrap the context with crud.WithReadHooks(ctx) where rows are rendered to an end user; generated blueprint screens already do. Do not set it on a context handed to a hook."

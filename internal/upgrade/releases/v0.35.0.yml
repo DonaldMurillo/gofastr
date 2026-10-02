@@ -3,6 +3,7 @@ title: Strict list filters + presence topic authorization
 notes:
   - change: Unknown list filters now return 400 (#100)
     breaking: true
+    hits: review
     guidance: "The auto-CRUD List endpoint REJECTS an unknown top-level filter (a typo like ?stauts=open, or a suffixed op on a non-field) with a 400 naming the bad key, instead of silently dropping it and returning an UNFILTERED result set. Fix clients that send unrecognized params. An endpoint whose BeforeList hook reads its own non-column query params declares them via EntityConfig.AllowedFilterParams; EntityConfig.LenientFilters (or filter.Lenient()) restores the old drop-silently behavior. Also: ?per_page is now a ?limit alias and ?offset is honored on both buffered and streaming list paths."
     find:
       uses:

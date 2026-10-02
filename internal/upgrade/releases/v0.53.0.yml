@@ -3,6 +3,7 @@ title: Security audit of the never-audited packages
 notes:
   - change: A module's reverse calls carry only the delegation handle
     breaking: true
+    hits: review
     guidance: "EntityQueryParams, EntityMutationParams, SearchQueryParams and EventEmitParams now take moduleproto.CallerRef (Delegation only) instead of moduleproto.Caller. A child echoing back its own Subject/Tenant is a confused-deputy shape — the host must resolve the principal from Delegation alone. Drop the two fields from the reverse call; the host already sent them outbound and does not need them back. Compile errors point at each construction site."
     find:
       uses:

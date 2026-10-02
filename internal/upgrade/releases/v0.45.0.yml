@@ -3,22 +3,26 @@ title: Security pass — 30 findings, mostly fail-closed defaults
 notes:
   - change: "?include= requires every relation target to be a registered entity"
     breaking: true
+    hits: review
     guidance: "A leaf include whose target was not registered loaded it with no Hidden-column scrub, owner scope, tenant scope or soft-delete filter. Register the entity (including tables a battery self-migrates, e.g. the auth user table) or drop the relation. A hand-built crud.NewCrudHandler must set .Registry."
     find:
       uses:
         - gofastr/framework/crud.NewCrudHandler
+        - gofastr/framework.NewCrudHandler
   - change: "?include= is capped at 4 relation hops and 20,000 related-row references"
     breaking: true
     guidance: "Deeper or wider includes return 400 with a message naming the limit. Narrow the include or reduce the page size."
     nodetect: the cap rejects client requests; no app spelling differs
   - change: "_like is a literal substring at every depth"
     breaking: true
+    hits: review
     guidance: "Nested filters passed the caller's value through as a raw LIKE pattern while top-level filters escaped it. Drop the wildcards: ?author.name_like=A%25 becomes ?author.name_like=A."
     find:
       strings:
         match: '_like='
   - change: Every login path mints its session through AuthManager.MintSession
     breaking: true
+    hits: review
     guidance: "Magic-link and OAuth created sessions the 2FA enforcement never saw, so an enrolled user got a fully-privileged session. A custom plugin that mints sessions must call mgr.MintSession instead of SessionStore().Create."
     find:
       uses:
@@ -34,18 +38,21 @@ notes:
     nodetect: the cookie is planted and checked by the framework; a synthesising test has no detectable shape
   - change: "A magic link renders a confirmation instead of signing in"
     breaking: true
+    hits: review
     guidance: "GET .../magic-link/verify?token= now renders a confirm screen; a same-origin POST with the token completes sign-in. Clients that scripted the GET must POST. Set MagicLinkConfig.ConfirmPage to render the screen with your design system."
     find:
       strings:
         match: 'magic-link/verify'
   - change: "middleware.Idempotency caches nothing without a Principal"
     breaking: true
+    hits: review
     guidance: "A nil Principal shared one key namespace across users and replayed response bodies between them. framework.WithIdempotency defaults it to the request owner; direct users of the middleware must set IdempotencyConfig.Principal."
     find:
       uses:
         - gofastr/core/middleware.IdempotencyConfig
   - change: "WithMCPControl tools require an authenticated caller"
     breaking: true
+    hits: review
     guidance: "app_module_enable/app_module_disable now run behind an mcp.Gated identity check. Make sure the app's session middleware runs on the /mcp route."
     find:
       uses:
@@ -56,6 +63,7 @@ notes:
     nodetect: the control is the dev server's bind posture and an env var; no app spelling
   - change: "A discovered codegen config cannot silently run command extensions"
     breaking: true
+    hits: review
     guidance: "gofastr generate/build refuse a `command` extension from a config found by walking the tree. Pass --config <path>, or set GOFASTR_CODEGEN_ALLOW_COMMANDS=1. Config discovery also stops at the module/repo root instead of walking to /."
     find:
       text:
@@ -67,6 +75,7 @@ notes:
     nodetect: the header is client-settable and the missing sitemap BaseURL is an absent setting
   - change: "The untrusted node IR emits a narrower attribute set"
     breaking: true
+    hits: review
     guidance: "core-ui/noderender refuses data-behavior, data-widget, data-component, data-bind and data-fui-*, plus style/srcdoc/on*. Inert data-* markers still pass. Only affects hosts rendering agent-authored IR (kiln, blueprint node screens)."
     find:
       uses:
@@ -74,6 +83,7 @@ notes:
         - gofastr/core-ui/noderender.RenderKind
   - change: "Plugin iframe sandbox tokens are an allow-list"
     breaking: true
+    hits: review
     guidance: "framework/pluginhost drops any sandbox token outside allow-scripts/forms/modals/popups/pointer-lock/orientation-lock/presentation. A manifest asking for allow-popups-to-escape-sandbox, allow-top-navigation or allow-downloads no longer gets them."
     find:
       fields:

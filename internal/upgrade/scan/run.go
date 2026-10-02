@@ -52,42 +52,71 @@ func Run(root string, notes []*upgrade.Note, sinks upgrade.MarkerSinks) (*Result
 		goHitLines:    map[lineKey]bool{},
 		broken:        map[string]bool{},
 		pkgNames:      map[string]string{},
+		loadOf:        map[*packages.Package]int{},
 		declTypeCache: map[*types.Package]map[types.Object]*types.TypeName{},
+		indexed:       []indexedPkg{},
+		objUses:       map[types.Object][]objRef{},
+		objDefs:       map[types.Object]objRef{},
 	}
 	e.buildIndexes()
-	e.collectPkgNames(pkgs)
-	for _, p := range pkgs {
-		if e.scansPackage(p) {
-			e.goPackage(p)
+	// Load everything before matching anything: the main module, every
+	// nested module below root, then one load per build configuration
+	// the collected files owe. All of it flows through the same
+	// collect+index pass, so the cross-package matchers — sink
+	// suppression, the variable follow — judge with the whole picture.
+	e.moduleDirs = []string{moduleRoot}
+	loads := []loadOutcome{{pkgs: pkgs, dir: moduleRoot, pattern: scanPattern(abs, moduleRoot)}}
+	loads = e.loadNestedModules(loads)
+	for _, lo := range loads {
+		e.collectPkgNames(lo.pkgs)
+		for _, p := range lo.pkgs {
+			if e.scansPackage(p) {
+				e.indexPackage(p, nil)
+			}
 		}
+	}
+	e.loadConfigurations(loads)
+	for _, ip := range e.indexed {
+		e.matchPackage(ip)
 	}
 	e.fileMatchers()
 	e.configMatchers()
-	e.gomodMatchers(moduleRoot)
+	for _, dir := range e.moduleDirs {
+		e.gomodMatchers(dir)
+	}
 	return e.result(), nil
 }
 
 // engine holds one scan's state: the rooted file handles, the note
 // indexes each matcher consults, and the accumulating result.
 type engine struct {
-	root       string // absolute
-	moduleRoot string // absolute; the go command's working directory
+	root string // absolute
+	// moduleRoot is the go command's working directory for the main
+	// load; moduleDirs holds it plus every nested module directory
+	// found below root, for the go.mod matcher.
+	moduleRoot string
+	moduleDirs []string
 	appRoot    *os.Root
 	appFS      fs.FS
 	notes      []*upgrade.Note
 	sinks      upgrade.MarkerSinks
 
-	hits        map[*upgrade.Note][]Hit
-	pendingErrs []Hit            // compile errors no symbol or import named
-	goHitLines  map[lineKey]bool // lines holding a typed Go hit
-	broken      map[string]bool
-	pkgNames    map[string]string // import path → declared package name
-
-	relCache      map[string]string // absolute file → root-relative rel ("" = outside root or skipped)
+	hits          map[*upgrade.Note][]Hit
+	pendingErrs   []Hit            // compile errors no symbol or import named
+	goHitLines    map[lineKey]bool // lines holding a typed Go hit
+	broken        map[string]bool
+	pkgNames      map[string]string           // import path → declared package name
+	typesByLoad   []map[string]*types.Package // per load: import path → type-checked package, whole graph
+	loadOf        map[*packages.Package]int   // package → its load's index in typesByLoad
+	relCache      map[string]string           // absolute file → root-relative rel ("" = outside root)
 	declTypeCache map[*types.Package]map[types.Object]*types.TypeName
-	objUses       map[types.Object][]*ast.Ident // per scanned package variant
-	parents       map[ast.Node]ast.Node         // per scanned package variant
-	propRes       map[string]*regexp.Regexp     // property name → bounded regexp
+	indexed       []indexedPkg              // scanned package variants, in load order
+	objUses       map[types.Object][]objRef // engine-wide: every scanned package's Info.Uses
+	objDefs       map[types.Object]objRef   // engine-wide: each object's defining ident
+	unscanned     []string                  // files no load reached, root-relative
+	report        map[string]bool           // during a configuration load's match: the only files it may report
+	propRes       map[string]*regexp.Regexp // property name → bounded regexp
+	ifaceCache    map[ifaceKey]*ifaceWant   // uses symbol, per load → resolved interface (nil: not one)
 
 	symIndex     map[upgrade.Symbol][]*upgrade.Note // uses
 	fieldWantIdx map[upgrade.Symbol][]fieldWant     // fields
@@ -169,21 +198,99 @@ func (e *engine) collectPkgNames(pkgs []*packages.Package) {
 			}
 		}
 	}
+	// Every type-checked package in this load's graph, by path, for
+	// resolving a symbol's declaring type. Each call is one load, and
+	// loads never share a types universe: a type from one never
+	// implements an interface from another. A test variant
+	// ("pkg [pkg.test]") never replaces the plain package.
+	load := len(e.typesByLoad)
+	byPath := map[string]*types.Package{}
+	e.typesByLoad = append(e.typesByLoad, byPath)
+	packages.Visit(pkgs, nil, func(p *packages.Package) {
+		e.loadOf[p] = load
+		if p.Types == nil {
+			return
+		}
+		if _, seen := byPath[p.PkgPath]; !seen || p.ID == p.PkgPath {
+			byPath[p.PkgPath] = p.Types
+		}
+	})
 }
 
-// goPackage runs every Go matcher over one package variant: the typed
-// matchers when its type info survived, the compile-error fallback when
-// it did not. A half-broken package gets both — whatever still resolves
-// is a real use.
-func (e *engine) goPackage(p *packages.Package) {
-	broken := len(p.TypeErrors) > 0 || len(p.Errors) > 0
-	if broken {
+// indexPackage records one package variant's syntax state engine-wide:
+// every identifier use (for the one-level variable follow) and every
+// defining ident (for decl follows), each with the package context it
+// was seen in. report limits where the package's hits may land (nil:
+// every file) — a configuration load reports only the files that owed
+// it, indexing the whole package so follows still see it all.
+func (e *engine) indexPackage(p *packages.Package, report map[string]bool) {
+	ip := indexedPkg{p: p, broken: len(p.TypeErrors) > 0 || len(p.Errors) > 0, report: report}
+	if ip.broken && (report == nil || e.errorInReport(p, report)) {
 		e.broken[pkgPathKey(p.PkgPath)] = true
 	}
+	if p.TypesInfo == nil {
+		return
+	}
+	ip.ctx = &pkgCtx{info: p.TypesInfo, parents: buildParents(p.Syntax)}
+	for id, obj := range p.TypesInfo.Uses {
+		e.objUses[obj] = append(e.objUses[obj], objRef{id, ip.ctx})
+	}
+	for id, obj := range p.TypesInfo.Defs {
+		if obj != nil {
+			e.objDefs[obj] = objRef{id, ip.ctx}
+		}
+	}
+	e.indexed = append(e.indexed, ip)
+}
+
+// errorInReport reports whether a configuration load's package failed
+// in a file that load owns: a windows build that breaks only in a file
+// the host load already type-checked says nothing new about the app. An
+// error with no position counts, since no file can disown it.
+func (e *engine) errorInReport(p *packages.Package, report map[string]bool) bool {
+	for _, te := range p.TypeErrors {
+		if report[p.Fset.Position(te.Pos).Filename] {
+			return true
+		}
+	}
+	dir := e.loadDir(p)
+	for _, pe := range p.Errors {
+		if echoed, ok := compilerEcho(pe.Msg, dir); ok {
+			for _, er := range echoed {
+				if report[er.pos.Filename] {
+					return true
+				}
+			}
+			continue
+		}
+		pos, ok := parsePos(pe.Pos)
+		if !ok || pos.Filename == "" {
+			return true
+		}
+		if !filepath.IsAbs(pos.Filename) {
+			pos.Filename = filepath.Join(dir, pos.Filename)
+		}
+		if report[pos.Filename] {
+			return true
+		}
+	}
+	return false
+}
+
+// matchPackage runs every Go matcher over one indexed package variant:
+// the typed matchers when its type info survived, the compile-error
+// fallback when it did not. A half-broken package gets both — whatever
+// still resolves is a real use. A configuration load narrows relToRoot
+// to the files that owed it for the duration, so a file an earlier
+// load already scanned cannot be reported twice.
+func (e *engine) matchPackage(ip indexedPkg) {
+	p := ip.p
+	prev := e.report
+	e.report = ip.report
+	defer func() { e.report = prev }()
 	if p.TypesInfo != nil {
-		e.objUses = indexObjectUses(p.TypesInfo)
-		e.parents = buildParents(p.Syntax)
 		e.usesPackage(p)
+		e.defsPackage(p)
 		for i, f := range p.Syntax {
 			if i >= len(p.CompiledGoFiles) {
 				break
@@ -194,21 +301,38 @@ func (e *engine) goPackage(p *packages.Package) {
 			}
 			e.importsFile(rel, f, p)
 			e.fieldsFile(rel, f, p)
-			e.stringsFile(rel, f, p)
+			e.stringsFile(rel, f, p, ip.ctx)
 		}
 	}
-	if broken {
+	if ip.broken {
 		e.fallbackPackage(p)
 	}
 }
 
-// indexObjectUses inverts Info.Uses for the one-level variable follow.
-func indexObjectUses(info *types.Info) map[types.Object][]*ast.Ident {
-	idx := make(map[types.Object][]*ast.Ident, len(info.Uses))
-	for id, obj := range info.Uses {
-		idx[obj] = append(idx[obj], id)
-	}
-	return idx
+// pkgCtx is one package's shared syntax state: its type info and the
+// parent map built from its files. A follow that starts at one file's
+// expression can read a use in another package through the use's own
+// context.
+type pkgCtx struct {
+	info    *types.Info
+	parents map[ast.Node]ast.Node
+}
+
+// objRef is one identifier occurrence: the ident and the package
+// context it was seen in.
+type objRef struct {
+	id  *ast.Ident
+	ctx *pkgCtx
+}
+
+// indexedPkg pairs a scanned package variant with its context,
+// whether it compiled, and the files its hits may be reported from
+// (nil: every file).
+type indexedPkg struct {
+	p      *packages.Package
+	ctx    *pkgCtx
+	broken bool
+	report map[string]bool
 }
 
 // scansPackage reports whether any compiled file of the package sits
@@ -233,9 +357,14 @@ func pkgPathKey(pkgPath string) string {
 }
 
 // relToRoot maps an absolute path to its root-relative slash path; ok is
-// false outside root or inside a skipped directory. Results are cached:
-// the typed matchers ask per identifier use.
+// false outside root — and, while a configuration load's package is
+// being matched, for every file that load does not own (see
+// matchPackage). Results are cached: the typed matchers ask per
+// identifier use, so the report gate sits ahead of the cache.
 func (e *engine) relToRoot(file string) (string, bool) {
+	if e.report != nil && !e.report[file] {
+		return "", false
+	}
 	if e.relCache == nil {
 		e.relCache = map[string]string{}
 	}
@@ -247,22 +376,19 @@ func (e *engine) relToRoot(file string) (string, bool) {
 	return rel, ok
 }
 
+// fileRel maps a Go file the go tool reported to its root-relative path.
+// Directory names the CSS/text walk skips (build, dist, vendor, …) do
+// not filter Go: the go tool already decided what loads.
 func (e *engine) fileRel(file string) (string, bool) {
 	rel, err := filepath.Rel(e.root, file)
 	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
 		return "", false
 	}
-	rel = filepath.ToSlash(rel)
-	segs := strings.Split(rel, "/")
-	for _, seg := range segs[:len(segs)-1] {
-		if skipDir(seg) {
-			return "", false
-		}
-	}
-	return rel, true
+	return filepath.ToSlash(rel), true
 }
 
-// skipDir names the directories no structural matcher scans.
+// skipDir names the directories the non-Go file walk (CSS, text) skips:
+// vendored and generated trees, and build output.
 func skipDir(name string) bool {
 	switch name {
 	case "vendor", "node_modules", "dist", "bin", "build", "tmp", "testdata":
@@ -329,6 +455,11 @@ func (e *engine) addGo(n *upgrade.Note, h Hit) {
 	e.goHitLines[lineKey{h.File, h.Line}] = true
 }
 
+// noteUnscanned records a file no load could compile, with its reason.
+func (e *engine) noteUnscanned(rel, reason string) {
+	e.unscanned = append(e.unscanned, rel+" ("+reason+")")
+}
+
 // result sorts and dedupes every hit list: sorted by File, Line, Col,
 // Why, identical (File, Line, Col, Why) entries merged — which is also
 // what makes the output independent of map iteration order.
@@ -351,6 +482,8 @@ func (e *engine) result() *Result {
 	}
 	sortHits(unexplained)
 	res.Unexplained = dedupeHits(unexplained)
+	res.Unscanned = append([]string(nil), e.unscanned...)
+	sort.Strings(res.Unscanned)
 	return res
 }
 

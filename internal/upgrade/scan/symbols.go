@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
 	"github.com/DonaldMurillo/gofastr/internal/upgrade"
 	"golang.org/x/tools/go/packages"
 )
@@ -57,6 +58,18 @@ func (e *engine) objectSymbols(obj types.Object) []upgrade.Symbol {
 		}
 		if pkg := o.Pkg(); pkg != nil {
 			out = append(out, upgrade.Symbol{Pkg: pkg.Path(), Name: o.Name()})
+		}
+		// A re-export alias (type Layout = ui.Layout) is matched by the
+		// declaring type's symbol too: members and literals reached
+		// through the alias belong to the target.
+		if o.IsAlias() {
+			if target, ok := types.Unalias(o.Type()).(*types.Named); ok {
+				if tn := target.Obj(); tn != nil && tn != o {
+					if pkg := tn.Pkg(); pkg != nil {
+						out = append(out, upgrade.Symbol{Pkg: pkg.Path(), Name: tn.Name()})
+					}
+				}
+			}
 		}
 	default:
 		if pkg := obj.Pkg(); pkg != nil {
@@ -149,6 +162,385 @@ func (e *engine) usesPackage(p *packages.Package) {
 	}
 }
 
+// defsPackage reports app-declared methods that implement a listed
+// interface method: a uses symbol naming an interface's method matches
+// not only call sites but every method an app type declares to
+// implement the interface, whatever the receiver's package. Symbols
+// whose declaring type is not an interface get no Defs matching at all.
+func (e *engine) defsPackage(p *packages.Package) {
+	if p.TypesInfo == nil {
+		return
+	}
+	var wants []ifaceWant
+	load := e.loadOf[p]
+	for _, n := range e.notes {
+		for _, sym := range n.Find.Uses {
+			if w := e.interfaceWant(sym, load); w != nil {
+				wants = append(wants, *w)
+			}
+		}
+	}
+	if len(wants) == 0 {
+		return
+	}
+	info := p.TypesInfo
+	ids := make([]*ast.Ident, 0, len(info.Defs))
+	for id := range info.Defs {
+		ids = append(ids, id)
+	}
+	sort.Slice(ids, func(i, j int) bool { return ids[i].Pos() < ids[j].Pos() })
+	for _, id := range ids {
+		fn, ok := info.Defs[id].(*types.Func)
+		if !ok {
+			continue
+		}
+		sig, ok := fn.Type().(*types.Signature)
+		if !ok || sig.Recv() == nil {
+			continue
+		}
+		for _, w := range wants {
+			if w.sym.Member != id.Name || !typeImplements(sig.Recv().Type(), w.iface) {
+				continue
+			}
+			pos := p.Fset.Position(id.Pos())
+			rel, ok := e.relToRoot(pos.Filename)
+			if !ok {
+				continue
+			}
+			for _, n := range e.symIndex[w.sym] {
+				e.addGo(n, Hit{File: rel, Line: pos.Line, Col: pos.Column, Why: w.sym.String()})
+			}
+		}
+	}
+}
+
+// ifaceWant is a uses symbol whose declaring type is an interface, with
+// that interface resolved for types.Implements.
+type ifaceWant struct {
+	sym   upgrade.Symbol
+	iface *types.Interface
+}
+
+// ifaceKey caches an interface resolution per load.
+type ifaceKey struct {
+	sym  upgrade.Symbol
+	load int
+}
+
+// interfaceWant resolves sym's declaring type once per load, from that
+// load's whole import graph: Go interfaces are structural, so neither
+// the implementing package nor the first package scanned need import
+// the interface's package. The cached entry is nil when the type is not
+// an interface or is in no package of the load.
+func (e *engine) interfaceWant(sym upgrade.Symbol, load int) *ifaceWant {
+	if e.ifaceCache == nil {
+		e.ifaceCache = map[ifaceKey]*ifaceWant{}
+	}
+	key := ifaceKey{sym, load}
+	if w, ok := e.ifaceCache[key]; ok {
+		return w
+	}
+	var w *ifaceWant
+	if sym.Member != "" {
+		if named := e.lookupNamed(sym, load); named != nil {
+			if iface, ok := named.Underlying().(*types.Interface); ok {
+				w = &ifaceWant{sym: sym, iface: iface}
+			}
+		}
+	}
+	e.ifaceCache[key] = w
+	return w
+}
+
+// lookupNamed resolves the named type a symbol's Name names in its
+// package as the given load type-checked it.
+func (e *engine) lookupNamed(sym upgrade.Symbol, load int) *types.Named {
+	if load >= len(e.typesByLoad) {
+		return nil
+	}
+	pkg := e.typesByLoad[load][sym.Pkg]
+	if pkg == nil {
+		return nil
+	}
+	tn, ok := pkg.Scope().Lookup(sym.Name).(*types.TypeName)
+	if !ok {
+		return nil
+	}
+	named, ok := types.Unalias(tn.Type()).(*types.Named)
+	if !ok {
+		return nil
+	}
+	return named
+}
+
+// typeImplements reports whether the receiver type, or its pointer,
+// implements iface.
+func typeImplements(t types.Type, iface *types.Interface) bool {
+	if ptr, ok := t.(*types.Pointer); ok {
+		t = ptr.Elem()
+	}
+	if _, ok := t.(*types.Named); !ok {
+		return false
+	}
+	return types.Implements(t, iface) || types.Implements(types.NewPointer(t), iface)
+}
+
+// fieldsFile reports composite-literal key/value pairs whose field meets
+// a FieldMatch, and assignments that set or write into the field: the
+// value is a map literal holding the constant string key (inline, or
+// one level through a variable's single initialiser), or a constant
+// string matching the value regexp.
+func (e *engine) fieldsFile(rel string, f *ast.File, p *packages.Package) {
+	if len(e.fieldWantIdx) == 0 {
+		return
+	}
+	info := p.TypesInfo
+	ast.Inspect(f, func(n ast.Node) bool {
+		switch x := n.(type) {
+		case *ast.CompositeLit:
+			for _, elt := range x.Elts {
+				kv, ok := elt.(*ast.KeyValueExpr)
+				if !ok {
+					continue
+				}
+				id, ok := kv.Key.(*ast.Ident)
+				if !ok {
+					continue
+				}
+				obj := info.Uses[id]
+				if obj == nil {
+					continue
+				}
+				for _, sym := range e.objectSymbols(obj) {
+					for _, w := range e.fieldWantIdx[sym] {
+						e.fieldWantHit(rel, p, kv, w)
+					}
+				}
+			}
+		case *ast.AssignStmt:
+			for i, lhs := range x.Lhs {
+				if i >= len(x.Rhs) {
+					break
+				}
+				if sel, ok := lhs.(*ast.SelectorExpr); ok {
+					e.fieldAssignHit(rel, p, sel, x.Rhs[i])
+				} else if ix, ok := lhs.(*ast.IndexExpr); ok {
+					e.fieldIndexHit(rel, p, ix)
+				}
+			}
+		}
+		return true
+	})
+}
+
+// fieldAssignHit checks an assignment to the field itself
+// (cfg.Field = value).
+func (e *engine) fieldAssignHit(rel string, p *packages.Package, sel *ast.SelectorExpr, value ast.Expr) {
+	obj := p.TypesInfo.Uses[sel.Sel]
+	if obj == nil {
+		return
+	}
+	for _, sym := range e.objectSymbols(obj) {
+		for _, w := range e.fieldWantIdx[sym] {
+			if !w.fm.Conditioned() {
+				continue // bare field wants are composite-literal keys
+			}
+			e.fieldValueHit(rel, p, value, w)
+		}
+	}
+}
+
+// fieldIndexHit checks a keyed write into the field's map
+// (cfg.Field["key"] = ...): the write names the key, so only key
+// conditions can match.
+func (e *engine) fieldIndexHit(rel string, p *packages.Package, ix *ast.IndexExpr) {
+	sel, ok := ix.X.(*ast.SelectorExpr)
+	if !ok {
+		return
+	}
+	obj := p.TypesInfo.Uses[sel.Sel]
+	if obj == nil {
+		return
+	}
+	key, ok := constStringOf(p.TypesInfo, unparenExpr(ix.Index))
+	if !ok {
+		return
+	}
+	for _, sym := range e.objectSymbols(obj) {
+		for _, w := range e.fieldWantIdx[sym] {
+			if w.fm.Key == "" || !attrNameEqual(key, w.fm.Key) {
+				continue
+			}
+			pos := p.Fset.Position(unparenExpr(ix.Index).Pos())
+			e.addGo(w.n, Hit{File: rel, Line: pos.Line, Col: pos.Column,
+				Why: "field " + w.fm.Field.String() + " key " + w.fm.Key})
+		}
+	}
+}
+
+// fieldWantHit checks one composite-literal key/value pair; conditions
+// share fieldValueHit with assignments.
+func (e *engine) fieldWantHit(rel string, p *packages.Package, kv *ast.KeyValueExpr, w fieldWant) {
+	if w.fm.Conditioned() {
+		e.fieldValueHit(rel, p, kv.Value, w)
+		return
+	}
+	pos := p.Fset.Position(kv.Key.Pos())
+	e.addGo(w.n, Hit{File: rel, Line: pos.Line, Col: pos.Column,
+		Why: "field " + w.fm.Field.String()})
+}
+
+// fieldValueHit checks one expression written to a want's field: a
+// composite-literal value or an assignment's right-hand side. A map
+// literal or constant may sit one level away, in the single initialiser
+// of the variable the value names — in this file, another file, or
+// another package. A key hit lands on the key, in the file holding it.
+func (e *engine) fieldValueHit(rel string, p *packages.Package, value ast.Expr, w fieldWant) {
+	up := unparenExpr(value)
+	switch {
+	case w.fm.Key != "":
+		info := p.TypesInfo
+		cl, ok := up.(*ast.CompositeLit)
+		if !ok {
+			if init, ctx, followed := e.followVarExpr(p.TypesInfo, up); followed {
+				cl, ok = init.(*ast.CompositeLit)
+				info = ctx.info
+			}
+		}
+		if !ok {
+			return
+		}
+		for _, elt := range cl.Elts {
+			ikv, ok := elt.(*ast.KeyValueExpr)
+			if !ok {
+				continue
+			}
+			key, ok := constStringOf(info, ikv.Key)
+			if !ok || !attrNameEqual(key, w.fm.Key) {
+				continue
+			}
+			pos := p.Fset.Position(ikv.Key.Pos())
+			keyRel, ok := e.relToRoot(pos.Filename)
+			if !ok {
+				continue
+			}
+			e.addGo(w.n, Hit{File: keyRel, Line: pos.Line, Col: pos.Column,
+				Why: "field " + w.fm.Field.String() + " key " + w.fm.Key})
+		}
+	case w.fm.Value != nil || w.fm.Refused != "":
+		tv := p.TypesInfo.Types[up]
+		if tv.Value == nil {
+			if init, ctx, followed := e.followVarExpr(p.TypesInfo, up); followed {
+				tv = ctx.info.Types[init]
+			}
+		}
+		if tv.Value == nil || tv.Value.Kind() != constant.String {
+			return
+		}
+		v, why := constant.StringVal(tv.Value), " value"
+		if w.fm.Refused != "" {
+			if urlsafe.OK(v, upgrade.URLPolicies[w.fm.Refused]) {
+				return
+			}
+			why = " refused by " + w.fm.Refused
+		} else if !w.fm.Value.MatchString(v) {
+			return
+		}
+		pos := p.Fset.Position(value.Pos())
+		e.addGo(w.n, Hit{File: rel, Line: pos.Line, Col: pos.Column,
+			Why: "field " + w.fm.Field.String() + why})
+	}
+}
+
+// attrNameEqual compares HTML attribute names the way the HTML parser
+// does: ASCII case folds, nothing else does (strings.EqualFold would
+// also fold the long s U+017F onto "s", a different attribute).
+func attrNameEqual(a, b string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := 0; i < len(a); i++ {
+		ca, cb := a[i], b[i]
+		if 'A' <= ca && ca <= 'Z' {
+			ca += 'a' - 'A'
+		}
+		if 'A' <= cb && cb <= 'Z' {
+			cb += 'a' - 'A'
+		}
+		if ca != cb {
+			return false
+		}
+	}
+	return true
+}
+
+// followVarExpr resolves expr — a variable or constant, bare or
+// package-qualified — to its single initialiser, one level, the way the
+// strings matcher follows a decl, with the context of the package that
+// declares it. Reassigned variables are not followed: their value at
+// the use cannot be known.
+func (e *engine) followVarExpr(info *types.Info, expr ast.Expr) (ast.Expr, *pkgCtx, bool) {
+	var id *ast.Ident
+	switch x := expr.(type) {
+	case *ast.Ident:
+		id = x
+	case *ast.SelectorExpr:
+		id = x.Sel
+	default:
+		return nil, nil, false
+	}
+	obj := info.Uses[id]
+	if obj == nil {
+		return nil, nil, false
+	}
+	if e.varReassigned(obj) {
+		return nil, nil, false
+	}
+	ref, ok := e.objDefs[obj]
+	if !ok {
+		return nil, nil, false
+	}
+	switch pv := ref.ctx.parents[ref.id].(type) {
+	case *ast.ValueSpec:
+		for i, name := range pv.Names {
+			if name == ref.id && i < len(pv.Values) {
+				return unparenExpr(pv.Values[i]), ref.ctx, true
+			}
+		}
+	case *ast.AssignStmt:
+		if len(pv.Lhs) != len(pv.Rhs) {
+			return nil, nil, false // a, b := f(): no per-name initialiser
+		}
+		for i, lhs := range pv.Lhs {
+			if lid, ok := lhs.(*ast.Ident); ok && lid == ref.id {
+				return unparenExpr(pv.Rhs[i]), ref.ctx, true
+			}
+		}
+	}
+	return nil, nil, false
+}
+
+// varReassigned reports whether any use of obj assigns to it after the
+// initialiser, bare (attrs = ...) or through its package (kitx.Attrs = ...).
+func (e *engine) varReassigned(obj types.Object) bool {
+	for _, u := range e.objUses[obj] {
+		var target ast.Expr = u.id
+		if sel, ok := u.ctx.parents[u.id].(*ast.SelectorExpr); ok && sel.Sel == u.id {
+			target = sel
+		}
+		as, ok := u.ctx.parents[target].(*ast.AssignStmt)
+		if !ok {
+			continue
+		}
+		for _, lhs := range as.Lhs {
+			if lhs == target {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // importsFile reports import specs whose path equals a listed entry, or
 // sits under one ending in "/...".
 func (e *engine) importsFile(rel string, f *ast.File, p *packages.Package) {
@@ -193,80 +585,6 @@ func (e *engine) isSinkField(obj types.Object) bool {
 		}
 	}
 	return false
-}
-
-// fieldsFile reports composite-literal key/value pairs whose field meets
-// a FieldMatch: the value is a map literal holding the constant string
-// key, or a constant string matching the value regexp.
-func (e *engine) fieldsFile(rel string, f *ast.File, p *packages.Package) {
-	if len(e.fieldWantIdx) == 0 {
-		return
-	}
-	info := p.TypesInfo
-	ast.Inspect(f, func(n ast.Node) bool {
-		cl, ok := n.(*ast.CompositeLit)
-		if !ok {
-			return true
-		}
-		for _, elt := range cl.Elts {
-			kv, ok := elt.(*ast.KeyValueExpr)
-			if !ok {
-				continue
-			}
-			id, ok := kv.Key.(*ast.Ident)
-			if !ok {
-				continue
-			}
-			obj := info.Uses[id]
-			if obj == nil {
-				continue
-			}
-			for _, sym := range e.objectSymbols(obj) {
-				for _, w := range e.fieldWantIdx[sym] {
-					e.fieldWantHit(rel, p, kv, w)
-				}
-			}
-		}
-		return true
-	})
-}
-
-func (e *engine) fieldWantHit(rel string, p *packages.Package, kv *ast.KeyValueExpr, w fieldWant) {
-	switch {
-	case w.fm.Key != "":
-		inner, ok := unparenExpr(kv.Value).(*ast.CompositeLit)
-		if !ok {
-			return
-		}
-		for _, elt := range inner.Elts {
-			ikv, ok := elt.(*ast.KeyValueExpr)
-			if !ok {
-				continue
-			}
-			key, ok := constStringOf(p.TypesInfo, ikv.Key)
-			if !ok || key != w.fm.Key {
-				continue
-			}
-			pos := p.Fset.Position(ikv.Key.Pos())
-			e.addGo(w.n, Hit{File: rel, Line: pos.Line, Col: pos.Column,
-				Why: "field " + w.fm.Field.String() + " key " + w.fm.Key})
-		}
-	case w.fm.Value != nil:
-		tv, ok := p.TypesInfo.Types[unparenExpr(kv.Value)]
-		if !ok || tv.Value == nil || tv.Value.Kind() != constant.String {
-			return
-		}
-		if !w.fm.Value.MatchString(constant.StringVal(tv.Value)) {
-			return
-		}
-		pos := p.Fset.Position(kv.Value.Pos())
-		e.addGo(w.n, Hit{File: rel, Line: pos.Line, Col: pos.Column,
-			Why: "field " + w.fm.Field.String() + " value"})
-	default:
-		pos := p.Fset.Position(kv.Key.Pos())
-		e.addGo(w.n, Hit{File: rel, Line: pos.Line, Col: pos.Column,
-			Why: "field " + w.fm.Field.String()})
-	}
 }
 
 // constStringOf reads an expression's constant string value.

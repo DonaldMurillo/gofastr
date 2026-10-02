@@ -96,6 +96,22 @@ func upgradeReport(root string, inRange []upgrade.Release, sinks upgrade.MarkerS
 		b.WriteString("      the Go matches below come from its compile errors, not the type\n")
 		b.WriteString("      checker. Packages that failed: " + brokenList(result.Broken) + ".\n\n")
 	}
+	if len(result.Unscanned) > 0 {
+		files := "files"
+		if len(result.Unscanned) == 1 {
+			files = "file"
+		}
+		fmt.Fprintf(&b, "NOTE: %d %s could not be scanned, so no line in them is pointed at\n", len(result.Unscanned), files)
+		b.WriteString("      below. Read them against every note by hand:\n")
+		for i, f := range result.Unscanned {
+			if i == maxNoteHits {
+				fmt.Fprintf(&b, "  … and %d more\n", len(result.Unscanned)-maxNoteHits)
+				break
+			}
+			b.WriteString("  " + f + "\n")
+		}
+		b.WriteString("\n")
+	}
 	b.WriteString(formatUpgradeNotes(result, inRange))
 	if len(result.Unexplained) > 0 {
 		b.WriteString("Compile errors no note explains:\n")

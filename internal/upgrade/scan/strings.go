@@ -7,18 +7,21 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/internal/retired"
 	"github.com/DonaldMurillo/gofastr/internal/upgrade"
 	"golang.org/x/tools/go/packages"
 )
 
-// strScan holds one file's state for the strings matcher. Parents come
-// from the package-wide map goPackage builds, so a constant declared in
-// one file and used in another still sees its uses' containers.
+// strScan holds one file's state for the strings matcher. The package
+// context carries the type info and the parents of every file in the
+// package, so a constant declared in one file and used in another still
+// sees its uses' containers — and uses in other packages are judged in
+// their own contexts at decision time.
 type strScan struct {
 	eng      *engine
 	rel      string
 	fset     *token.FileSet
-	info     *types.Info
+	ctx      *pkgCtx
 	exprs    []ast.Expr
 	excluded map[token.Pos]bool
 }
@@ -26,7 +29,7 @@ type strScan struct {
 // stringsFile runs the Strings matchers over one file: every MAXIMAL
 // constant string expression (a folded concatenation is one value; its
 // operands are not), reported at the expression's start.
-func (e *engine) stringsFile(rel string, f *ast.File, p *packages.Package) {
+func (e *engine) stringsFile(rel string, f *ast.File, p *packages.Package, ctx *pkgCtx) {
 	if len(e.strNotes) == 0 {
 		return
 	}
@@ -34,7 +37,7 @@ func (e *engine) stringsFile(rel string, f *ast.File, p *packages.Package) {
 		eng:      e,
 		rel:      rel,
 		fset:     p.Fset,
-		info:     p.TypesInfo,
+		ctx:      ctx,
 		excluded: map[token.Pos]bool{},
 	}
 	ast.Inspect(f, func(n ast.Node) bool {
@@ -74,19 +77,18 @@ func buildParents(files []*ast.File) map[ast.Node]ast.Node {
 	return parents
 }
 
-// parent returns n's syntactic parent.
-func (s *strScan) parent(n ast.Node) ast.Node { return s.eng.parents[n] }
-
 // parentNoParens is parent with parenthesis layers stripped, so a value
 // wrapped as f(("x")) or kv.Value=(x) is judged by its real container.
-func (s *strScan) parentNoParens(n ast.Node) ast.Node {
-	par := s.parent(n)
+// It is a method on the package context so a use in any scanned package
+// can be judged in its own syntax.
+func (c *pkgCtx) parentNoParens(n ast.Node) ast.Node {
+	par := c.parents[n]
 	for {
 		pe, ok := par.(*ast.ParenExpr)
 		if !ok {
 			return par
 		}
-		par = s.parent(pe)
+		par = c.parents[pe]
 	}
 }
 
@@ -96,7 +98,7 @@ func (s *strScan) constStringOf(n ast.Node) (string, bool) {
 	if !ok {
 		return "", false
 	}
-	return constStringOf(s.info, expr)
+	return constStringOf(s.ctx.info, expr)
 }
 
 func (s *strScan) run() {
@@ -107,7 +109,7 @@ func (s *strScan) run() {
 		if _, ok := s.constStringOf(expr); !ok {
 			continue
 		}
-		if par := s.parent(expr); par != nil {
+		if par := s.ctx.parents[expr]; par != nil {
 			if _, ok := s.constStringOf(par); ok {
 				continue // operand of a folded value, not maximal
 			}
@@ -120,12 +122,21 @@ func (s *strScan) run() {
 	}
 }
 
-// isTestingArg reports whether the value is an argument to a function or
-// method of package testing (t.Fatal, t.Errorf, t.Run, tb.Log): a failure message
-// or subtest name is prose, never markup the app renders, so naming a
-// retired class there is not a use of it.
+// testingProse names the package testing methods whose arguments are
+// prose: failure and log messages, skip reasons. Run is prose only in
+// its subtest name. Setenv and every other method hand their arguments
+// to the code under test, so those stay matched.
+var testingProse = map[string]bool{
+	"Log": true, "Logf": true, "Error": true, "Errorf": true,
+	"Fatal": true, "Fatalf": true, "Skip": true, "Skipf": true,
+}
+
+// isTestingArg reports whether the value is a prose argument of a
+// package testing method (t.Fatal, t.Errorf, tb.Log, t.Run's name): a
+// failure message or subtest name is never markup the app renders, so
+// naming a retired class there is not a use of it.
 func (s *strScan) isTestingArg(expr ast.Expr) bool {
-	call, ok := s.parentNoParens(unparenNode(expr)).(*ast.CallExpr)
+	call, ok := s.ctx.parentNoParens(unparenNode(expr)).(*ast.CallExpr)
 	if !ok || unparenNode(call.Fun) == unparenNode(expr) {
 		return false
 	}
@@ -133,8 +144,14 @@ func (s *strScan) isTestingArg(expr ast.Expr) bool {
 	if !ok {
 		return false
 	}
-	fn, ok := s.info.Uses[sel.Sel].(*types.Func)
-	return ok && fn.Pkg() != nil && fn.Pkg().Path() == "testing"
+	fn, ok := s.ctx.info.Uses[sel.Sel].(*types.Func)
+	if !ok || fn.Pkg() == nil || fn.Pkg().Path() != "testing" {
+		return false
+	}
+	if fn.Name() == "Run" {
+		return len(call.Args) > 0 && unparenNode(call.Args[0]) == unparenNode(expr)
+	}
+	return testingProse[fn.Name()]
 }
 
 // matchValue runs every note's string matchers over one value.
@@ -192,20 +209,28 @@ func (e *engine) propRegex(name string) *regexp.Regexp {
 // sinks: directly, or by initialising a variable or constant whose every
 // use is one (one-level follow).
 func (s *strScan) onlySinks(expr ast.Expr) bool {
-	return s.isSinkExpr(expr) || s.declReachesOnlySinks(expr)
+	return s.ctx.isSinkExpr(s.eng, expr) || s.declReachesOnlySinks(expr)
 }
 
 // isSinkExpr reports whether the value lands directly in a marker-sink
 // slot: a sink call argument, a sink field's value, or a map value under
-// an attr_keys key.
-func (s *strScan) isSinkExpr(n ast.Node) bool {
+// an attr_keys key. It lives on the package context so the decl follow
+// below can judge a use in any scanned package in that package's syntax.
+func (c *pkgCtx) isSinkExpr(eng *engine, n ast.Node) bool {
 	up := unparenNode(n)
-	par := s.parentNoParens(up)
+	// A qualified use (pkg.Const, cfg.Field) is judged at its whole
+	// selector: that expression is the value sitting in the sink slot.
+	if id, ok := up.(*ast.Ident); ok {
+		if sel, ok := c.parents[id].(*ast.SelectorExpr); ok && sel.Sel == id {
+			up = sel
+		}
+	}
+	par := c.parentNoParens(up)
 	switch pv := par.(type) {
 	case *ast.CallExpr:
 		for i, arg := range pv.Args {
 			if unparenNode(arg) == up {
-				return s.callSinkMatches(pv, i)
+				return c.callSinkMatches(eng, pv, i)
 			}
 		}
 	case *ast.KeyValueExpr:
@@ -213,12 +238,12 @@ func (s *strScan) isSinkExpr(n ast.Node) bool {
 			return false
 		}
 		if id, ok := pv.Key.(*ast.Ident); ok {
-			if obj := s.info.Uses[id]; obj != nil {
-				return s.eng.isSinkField(obj)
+			if obj := c.info.Uses[id]; obj != nil {
+				return eng.isSinkField(obj)
 			}
 		}
-		if key, ok := s.constStringOf(pv.Key); ok {
-			for _, k := range s.eng.sinks.AttrKeys {
+		if key, ok := constStringOf(c.info, pv.Key); ok {
+			for _, k := range eng.sinks.AttrKeys {
 				if key == k {
 					return true
 				}
@@ -230,22 +255,22 @@ func (s *strScan) isSinkExpr(n ast.Node) bool {
 
 // callSinkMatches reports whether call's argIdx-th argument position is a
 // listed marker sink.
-func (s *strScan) callSinkMatches(call *ast.CallExpr, argIdx int) bool {
+func (c *pkgCtx) callSinkMatches(eng *engine, call *ast.CallExpr, argIdx int) bool {
 	var obj types.Object
 	switch fn := call.Fun.(type) {
 	case *ast.Ident:
-		obj = s.info.Uses[fn]
+		obj = c.info.Uses[fn]
 	case *ast.SelectorExpr:
-		obj = s.info.Uses[fn.Sel]
+		obj = c.info.Uses[fn.Sel]
 	}
 	if obj == nil {
 		return false
 	}
-	for _, sink := range s.eng.sinks.Calls {
+	for _, sink := range eng.sinks.Calls {
 		if sink.Arg != argIdx {
 			continue
 		}
-		for _, sym := range s.eng.objectSymbols(obj) {
+		for _, sym := range eng.objectSymbols(obj) {
 			if sym == sink.Func {
 				return true
 			}
@@ -255,18 +280,21 @@ func (s *strScan) callSinkMatches(call *ast.CallExpr, argIdx int) bool {
 }
 
 // declReachesOnlySinks reports whether the value initialises a variable
-// or constant whose every use (via Info.Uses) is a marker sink.
+// or constant whose every use is a marker sink. Uses are indexed
+// engine-wide, so a constant declared in one package and sunk in
+// another is still suppressed; an object with no uses anywhere is
+// unknown flow and reported.
 func (s *strScan) declReachesOnlySinks(n ast.Node) bool {
 	up := unparenNode(n)
 	var obj types.Object
-	switch pv := s.parentNoParens(up).(type) {
+	switch pv := s.ctx.parentNoParens(up).(type) {
 	case *ast.ValueSpec:
 		for i, val := range pv.Values {
 			if unparenNode(val) != up && i < len(pv.Names) {
 				continue
 			}
 			if unparenNode(val) == up {
-				obj = s.info.Defs[pv.Names[i]]
+				obj = s.ctx.info.Defs[pv.Names[i]]
 			}
 		}
 	case *ast.AssignStmt:
@@ -275,7 +303,7 @@ func (s *strScan) declReachesOnlySinks(n ast.Node) bool {
 				continue
 			}
 			if id, ok := pv.Lhs[i].(*ast.Ident); ok {
-				obj = s.info.Defs[id]
+				obj = s.ctx.info.Defs[id]
 			}
 		}
 	}
@@ -287,7 +315,7 @@ func (s *strScan) declReachesOnlySinks(n ast.Node) bool {
 		return false // unknown flow: report it
 	}
 	for _, u := range uses {
-		if !s.isSinkExpr(u) {
+		if !u.ctx.isSinkExpr(s.eng, u.id) {
 			return false
 		}
 	}
@@ -298,7 +326,7 @@ func (s *strScan) declReachesOnlySinks(n ast.Node) bool {
 // expression is a map-literal key.
 func (s *strScan) mapKeyString(n ast.Node) (string, bool) {
 	up := unparenNode(n)
-	if kv, ok := s.parentNoParens(up).(*ast.KeyValueExpr); ok && unparenNode(kv.Key) == up {
+	if kv, ok := s.ctx.parentNoParens(up).(*ast.KeyValueExpr); ok && unparenNode(kv.Key) == up {
 		return s.constStringOf(up)
 	}
 	return "", false
@@ -314,12 +342,12 @@ func unparenNode(n ast.Node) ast.Node {
 }
 
 // classInValue reports whether a class token of v equals (or is a BEM
-// form of) a listed name. In markup — a value holding "<" and "class=" —
-// only tokens inside class attributes count.
+// form of) a listed name. In markup — a value holding "<" and a class
+// attribute — only tokens inside class attributes count.
 func classInValue(v string, names []string) (string, bool) {
 	tokens := strings.Fields(v)
-	if strings.Contains(v, "<") && strings.Contains(v, "class=") {
-		tokens = classAttrTokens(v)
+	if markup, ok := markupClassTokens(v); ok {
+		tokens = markup
 	}
 	for _, tok := range tokens {
 		for _, name := range names {
@@ -363,32 +391,23 @@ func isIdentByte(c byte) bool {
 	return isWordByte(c) || c == '-'
 }
 
-// classAttrTokens splits the contents of every class="..." / class='...'
-// attribute in a markup fragment.
-func classAttrTokens(v string) []string {
-	var tokens []string
-	rest := v
-	for {
-		i := strings.Index(rest, "class=")
-		if i < 0 {
-			return tokens
-		}
-		rest = rest[i+len("class="):]
-		j := 0
-		for j < len(rest) && isSpaceByte(rest[j]) {
-			j++
-		}
-		if j >= len(rest) || (rest[j] != '"' && rest[j] != '\'') {
-			continue
-		}
-		quote := rest[j]
-		end := strings.IndexByte(rest[j+1:], quote)
-		if end < 0 {
-			return tokens
-		}
-		tokens = append(tokens, strings.Fields(rest[j+1:j+1+end])...)
-		rest = rest[j+1+end+1:]
+// markupClassTokens reads v as markup when it holds a start tag and
+// returns the class tokens a browser would build from it, through the
+// same tokenizer the runtime retired-markup check uses: any attribute
+// quoting, case and spacing, character references decoded, only the
+// first of duplicate class attributes, nothing inside comments or
+// raw-text elements. ok is false when v holds no start tag.
+func markupClassTokens(v string) (tokens []string, ok bool) {
+	if !strings.Contains(v, "<") {
+		return nil, false
 	}
+	retired.Scan([]byte(v), func(_ []byte, _ [][]byte, classes [][]byte) {
+		ok = true
+		for _, c := range classes {
+			tokens = append(tokens, string(c))
+		}
+	})
+	return tokens, ok
 }
 
 // attrKeyMatch matches a map-literal key against the attr names: equal,
@@ -435,14 +454,6 @@ func attrBoundary(c byte, right bool) bool {
 		return true
 	case '>', '=', '/':
 		return right
-	}
-	return false
-}
-
-func isSpaceByte(c byte) bool {
-	switch c {
-	case ' ', '\t', '\n', '\r', '\f', '\v':
-		return true
 	}
 	return false
 }
