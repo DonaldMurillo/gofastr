@@ -79,6 +79,27 @@ func TestScanWithoutReporterLogs(t *testing.T) {
 	}
 }
 
+// Outside dev mode a hand-built test server logs every finding of every
+// response: the once-per-process dedupe is dev mode's, and a test that
+// served the same path earlier must not silence a later test.
+func TestScanNonDevLogsEveryResponse(t *testing.T) {
+	UseForTest(t, fixtureSet(t))
+	var logs bytes.Buffer
+	old := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
+	defer slog.SetDefault(old)
+
+	resetDevWarned(t)
+	for range 2 {
+		serve(t, httptest.NewRequest(http.MethodGet, "/old", nil),
+			func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, page) }, false)
+	}
+	// 2 requests x 2 findings, every one logged.
+	if n := strings.Count(logs.String(), "level=WARN"); n != 4 {
+		t.Fatalf("%d warnings for 2 non-dev requests, want 4: %s", n, logs.String())
+	}
+}
+
 // Dev mode warns once per (path, name) per process: a livereload loop
 // must not flood the console.
 func TestScanDevDedupesPerPathAndName(t *testing.T) {

@@ -44,7 +44,7 @@ func Middleware(devMode func() bool) func(http.Handler) http.Handler {
 			}
 			tee := &teeWriter{ResponseWriter: w}
 			r = r.WithContext(context.WithValue(r.Context(), armedKey{}, true))
-			defer reportFindings(tee, r)
+			defer reportFindings(tee, r, devMode())
 			next.ServeHTTP(reveal(tee), r)
 		})
 	}
@@ -67,7 +67,7 @@ func armed(ctx context.Context, devMode func() bool) bool {
 // per process: `gofastr dev`'s livereload re-serves the same page after
 // every edit, and the console must not drown in repeats. A reporter
 // (a test harness) sees every finding of every response.
-func reportFindings(tee *teeWriter, r *http.Request) {
+func reportFindings(tee *teeWriter, r *http.Request, dev bool) {
 	if tee.hijacked || tee.buf.Len() == 0 {
 		return
 	}
@@ -83,7 +83,7 @@ func reportFindings(tee *teeWriter, r *http.Request) {
 	ctx := r.Context()
 	reporter := renderdiag.HasRetiredReporter(ctx)
 	for _, f := range set.checkBody(tee.kind, tee.buf.Bytes()) {
-		if !reporter && devDedupe(r.URL.Path, f) {
+		if !reporter && dev && devDedupe(r.URL.Path, f) {
 			continue
 		}
 		renderdiag.ReportRetired(ctx, f.Message())
