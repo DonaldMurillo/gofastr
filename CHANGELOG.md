@@ -1132,6 +1132,13 @@ are listed under Added above, not here.
   bumped `go.mod` already names the target; without it that run reports
   "nothing to do" and points at the flag.
 
+  The report has three sections: "Edit these" (lines that spell
+  something the target no longer accepts), "Check these" (lines that
+  still build but whose behaviour changed), and the notes nothing
+  matched. Every breaking note with a `find:` says which kind its hits
+  are (`hits: edit` on 69, `hits: review` on 88), and a hit read from
+  a compile error is always an edit.
+
   The registry is one file per release under
   `internal/upgrade/releases/`: 294 notes from v0.3.0 on (181 `find`,
   113 `nodetect`), 42 of them for v0.86.0 ("Headless design system").

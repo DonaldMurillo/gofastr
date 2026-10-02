@@ -145,49 +145,94 @@ func brokenList(broken []string) string {
 }
 
 // formatUpgradeNotes renders the migration notes for the releases a
-// project crosses, each note followed by the lines the scan found in
-// the project. A nil result renders every note with no hits.
+// project crosses in three sections: the lines that must change, the
+// lines to check, and the notes the scan found nothing for. A nil
+// result (no scan ran) renders every note once, with no hits.
 func formatUpgradeNotes(result *scan.Result, releases []upgrade.Release) string {
 	if len(releases) == 0 {
 		return "No migration notes between these versions: the mechanical steps below are all there is.\n"
 	}
+	if result == nil {
+		return renderNotes(releases, func(*upgrade.Note) ([]scan.Hit, bool) { return nil, true })
+	}
+	sections := []struct {
+		head string
+		pick func(*upgrade.Note) ([]scan.Hit, bool)
+	}{
+		{"Edit these: each line spells something the target release no longer accepts.", func(n *upgrade.Note) ([]scan.Hit, bool) {
+			hits := hitsFor(result, n, true)
+			return hits, len(hits) > 0
+		}},
+		{"Check these: each line still builds; the behaviour behind it changed.", func(n *upgrade.Note) ([]scan.Hit, bool) {
+			hits := hitsFor(result, n, false)
+			return hits, len(hits) > 0
+		}},
+		{"Nothing found for these: read them in case the code is shaped in a way no scan sees.", func(n *upgrade.Note) ([]scan.Hit, bool) {
+			return nil, len(result.Hits[n]) == 0
+		}},
+	}
+	var b strings.Builder
+	for _, s := range sections {
+		if body := renderNotes(releases, s.pick); body != "" {
+			b.WriteString(s.head + "\n\n" + body)
+		}
+	}
+	return b.String()
+}
+
+// hitsFor returns a note's hits for one report section, sorted. A hit
+// is an edit when its note says every hit is a dead spelling, or when
+// it was read from a compile error: that line no longer builds.
+func hitsFor(result *scan.Result, n *upgrade.Note, edit bool) []scan.Hit {
+	var out []scan.Hit
+	for _, h := range sortedHits(result, n) {
+		if (!n.Review || h.Err != "") == edit {
+			out = append(out, h)
+		}
+	}
+	return out
+}
+
+// renderNotes renders the notes pick selects, grouped under their
+// release, each followed by the hits pick returns. It returns "" when
+// pick selects nothing.
+func renderNotes(releases []upgrade.Release, pick func(*upgrade.Note) ([]scan.Hit, bool)) string {
 	var b strings.Builder
 	for _, r := range releases {
-		if r.Title != "" {
-			fmt.Fprintf(&b, "%s: %s\n", r.Version, r.Title)
-		} else {
-			fmt.Fprintf(&b, "%s\n", r.Version)
-		}
+		headed := false
 		for _, n := range r.Notes {
-			marker, change := "•", n.Change
+			hits, ok := pick(n)
+			if !ok {
+				continue
+			}
+			if !headed {
+				headed = true
+				if r.Title != "" {
+					fmt.Fprintf(&b, "%s: %s\n", r.Version, r.Title)
+				} else {
+					fmt.Fprintf(&b, "%s\n", r.Version)
+				}
+			}
+			marker := "•"
 			if n.Breaking {
 				marker = "! BREAKING:"
-				// The registry's own convention writes "BREAKING: …" into
-				// the change line as well, so the two stack up and every
-				// breaking note has read "! BREAKING: BREAKING: …" since
-				// the first one. Drop the redundant half at render time
-				// rather than rewriting entries that are already correct
-				// as prose.
-				change = strings.TrimSpace(trimBreakingPrefix(change))
 			}
-			fmt.Fprintf(&b, "  %s %s\n", marker, change)
+			fmt.Fprintf(&b, "  %s %s\n", marker, n.Change)
 			fmt.Fprintf(&b, "      %s\n", n.Guidance)
-			hits := sortedHits(result, n)
-			if len(hits) > 0 {
-				b.WriteString("      found in your project:\n")
-				for i, h := range hits {
-					if i == maxNoteHits {
-						fmt.Fprintf(&b, "        … and %d more\n", len(hits)-maxNoteHits)
-						break
-					}
-					fmt.Fprintf(&b, "        %s  %s\n", hitPos(h), h.Why)
-					if h.Err != "" {
-						fmt.Fprintf(&b, "          compile error: %s\n", strings.ReplaceAll(h.Err, "\n", "\n          "))
-					}
+			for i, h := range hits {
+				if i == maxNoteHits {
+					fmt.Fprintf(&b, "        … and %d more\n", len(hits)-maxNoteHits)
+					break
+				}
+				fmt.Fprintf(&b, "        %s  %s\n", hitPos(h), h.Why)
+				if h.Err != "" {
+					fmt.Fprintf(&b, "          compile error: %s\n", strings.ReplaceAll(h.Err, "\n", "\n          "))
 				}
 			}
 		}
-		b.WriteString("\n")
+		if headed {
+			b.WriteString("\n")
+		}
 	}
 	return b.String()
 }
@@ -404,14 +449,4 @@ func runUpgrade(args []string) {
 	fmt.Println("Upgraded. Two manual steps remain:")
 	fmt.Println("  • go install " + gofastrModule + "/cmd/gofastr@" + target + "   (the CLI doesn't update with go.mod)")
 	fmt.Println("  • review the go.mod / go.sum diff before committing")
-}
-
-// trimBreakingPrefix removes a leading "BREAKING:" from a note's change
-// line, case-insensitively. The renderer supplies that marker itself.
-func trimBreakingPrefix(change string) string {
-	const p = "breaking:"
-	if len(change) >= len(p) && strings.EqualFold(change[:len(p)], p) {
-		return change[len(p):]
-	}
-	return change
 }

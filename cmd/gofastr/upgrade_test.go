@@ -166,7 +166,7 @@ func oneRelease(notes ...*upgrade.Note) []upgrade.Release {
 
 func TestUpgradeReportRendersHits(t *testing.T) {
 	note := &upgrade.Note{
-		Change: "BREAKING: theme.Default() is now adaptive", Breaking: true,
+		Change: "theme.Default() is now adaptive", Breaking: true,
 		Guidance: "Pass Overrides.",
 		Find:     upgrade.Find{Uses: []upgrade.Symbol{{Pkg: "p", Name: "N"}}},
 	}
@@ -195,7 +195,7 @@ func TestUpgradeReportRendersHits(t *testing.T) {
 		"v0.23.0: Auth",
 		"! BREAKING: theme.Default() is now adaptive",
 		"Pass Overrides.",
-		"found in your project:",
+		"Edit these:",
 		"theme/theme.go:5:12  p.N",
 		"gofastr.yml:9  config auth",
 	} {
@@ -208,6 +208,53 @@ func TestUpgradeReportRendersHits(t *testing.T) {
 	}
 	if strings.Contains(report, "Compile errors") {
 		t.Errorf("no Unexplained errors were reported, got:\n%s", report)
+	}
+}
+
+// The report leads with the lines that must change, then the lines to
+// look at, then the notes nothing in the project touched. A hit read
+// from a compile error is an edit whatever its note says: the line no
+// longer builds.
+func TestUpgradeReportSplitsEditFromCheck(t *testing.T) {
+	edit := &upgrade.Note{Change: "symbol removed", Breaking: true, Guidance: "g-edit"}
+	review := &upgrade.Note{Change: "default flipped", Breaking: true, Review: true, Guidance: "g-review"}
+	quiet := &upgrade.Note{Change: "nothing here", Breaking: true, Review: true, Guidance: "g-quiet"}
+	stubScan(t, func(string, []*upgrade.Note, upgrade.MarkerSinks) (*scan.Result, error) {
+		return &scan.Result{TypeChecked: true, Hits: map[*upgrade.Note][]scan.Hit{
+			edit:   {{File: "a.go", Line: 1, Col: 1, Why: "uses x.Gone"}},
+			review: {{File: "b.go", Line: 2, Col: 1, Why: "uses x.Flipped"}, {File: "c.go", Line: 3, Col: 1, Why: "uses x.Flipped", Err: "too many arguments"}},
+		}}, nil
+	})
+	report := upgradeReport(t.TempDir(), []upgrade.Release{
+		{Version: "v0.22.0", Title: "Old", Notes: []*upgrade.Note{review}},
+		{Version: "v0.23.0", Title: "Auth", Notes: []*upgrade.Note{edit, quiet}},
+	}, upgrade.MarkerSinks{})
+	order := []string{
+		"Edit these",
+		"v0.22.0: Old", "default flipped", "c.go:3:1", "too many arguments",
+		"v0.23.0: Auth", "symbol removed", "a.go:1:1",
+		"Check these",
+		"v0.22.0: Old", "default flipped", "b.go:2:1",
+		"Nothing found for these",
+		"v0.23.0: Auth", "nothing here", "g-quiet",
+	}
+	rest := report
+	for _, want := range order {
+		i := strings.Index(rest, want)
+		if i < 0 {
+			t.Fatalf("report missing %q after the previous lines, got:\n%s", want, report)
+		}
+		rest = rest[i+len(want):]
+	}
+	if strings.Count(report, "b.go:2:1") != 1 || strings.Count(report, "c.go:3:1") != 1 {
+		t.Errorf("each hit prints once, got:\n%s", report)
+	}
+	// A note prints once per section holding its hits, and under
+	// "Nothing found" only when it has none.
+	for change, want := range map[string]int{"symbol removed": 1, "default flipped": 2, "nothing here": 1} {
+		if got := strings.Count(report, change); got != want {
+			t.Errorf("%q prints %d times, want %d, got:\n%s", change, got, want, report)
+		}
 	}
 }
 
@@ -361,8 +408,8 @@ func TestUpgradeReportScansErrorShowsNotes(t *testing.T) {
 			t.Errorf("engine failure must not cost guidance: missing %q, got:\n%s", want, report)
 		}
 	}
-	if strings.Contains(report, "found in your project:") {
-		t.Errorf("a failed scan renders no hits, got:\n%s", report)
+	if strings.Contains(report, "Edit these") || strings.Contains(report, "Check these") {
+		t.Errorf("a failed scan renders no hit sections, got:\n%s", report)
 	}
 }
 
@@ -375,23 +422,5 @@ func TestUpgradeReportEmptyRangeSkipsScan(t *testing.T) {
 	want := "No migration notes between these versions: the mechanical steps below are all there is.\n"
 	if report != want {
 		t.Errorf("got:\n%s\nwant:\n%s", report, want)
-	}
-}
-
-// The registry writes "BREAKING: …" into the change line and the renderer
-// prefixes "! BREAKING:" of its own, so every breaking note rendered as
-// "! BREAKING: BREAKING: …" from the first one onward.
-func TestBreakingMarkerIsNotDoubled(t *testing.T) {
-	cases := map[string]string{
-		"BREAKING: the module requires Go 1.27": " the module requires Go 1.27",
-		"breaking: lowercase form":              " lowercase form",
-		"BREAKING:no space":                     "no space",
-		"a plain change line":                   "a plain change line",
-		"the word BREAKING: mid-sentence":       "the word BREAKING: mid-sentence",
-	}
-	for in, want := range cases {
-		if got := trimBreakingPrefix(in); got != want {
-			t.Errorf("trimBreakingPrefix(%q) = %q, want %q", in, got, want)
-		}
 	}
 }
